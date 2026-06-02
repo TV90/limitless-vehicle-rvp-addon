@@ -1,0 +1,40 @@
+{
+  "type": "ywzj_rvp:anti_radiation_missile",
+  "name": "AntiRadiation Missile",
+  "damage": 120,
+  "headshot_multiplier": 1.5,
+  "recoil": 0.1,
+  "shoot_interval": 1000,
+  "max_capacity": 4,
+  "reload": {
+    "time": 120,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 90,
+  "y_rot_min": -90,
+  "explosion": {
+    "explode": true,
+    "damage": 450,
+    "radius": 8,
+    "destroy_block": true
+  },
+  "seeker_fov": 35,
+  "mass": 0.01,
+  "thrust": 0.01,
+  "motor_burn_time": 300,
+  "drag_coefficient": 0.005,
+  "max_g": 30,
+  "reference_speed": 1,
+  "guidance": "PRESET",
+  "homing_mode": "ANTI_RADIATION",
+  "anti_radiation_scan_interval_tick": 2,
+  "anti_radiation_memory_tick": 40,
+  "anti_radiation_seek_range": 1024.0,
+  "anti_radiation_allow_reacquire": true,
+  "anti_radiation_allow_fire_without_seeker": true,
+  "anti_radiation_radiation_pulse_memory_tick": 25,
+  "anti_radiation_locked_bonus": 0.5,
+  "anti_radiation_preselect_enabled": true
+}

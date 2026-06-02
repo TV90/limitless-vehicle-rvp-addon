@@ -1,0 +1,14 @@
+{
+  "format_version": 1,
+  "id": "ywzj_tread_inward_normal",
+  "name": "YWZJ Tread Inward Normal",
+  "version": "1.0.0",
+  "min_version": "4.0.0",
+  "author": "YWZJ",
+  "description": "Creates/updates tread_*_* groups and rotates them so the green axis points inward (YZ plane), while keeping mesh rendering unchanged.",
+  "tags": [
+    "Animation",
+    "Tools"
+  ],
+  "main": "main.js"
+}
