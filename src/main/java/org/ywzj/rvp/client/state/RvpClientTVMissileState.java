@@ -107,20 +107,16 @@ public class RvpClientTVMissileState {
             return;
         }
         tickModeSwitch(mc);
-        syncAimFromVehicleView();
+        // Steering follows the player's free look (accumulated in applyTVMissileTurnDelta),
+        // NOT the launcher turret aim: in SCOPE view cameraAimRotX/Y is clamped by the
+        // weapon unit rotation limits, which would stop the missile from tracking once it
+        // turns past those limits ("看向哪里就飞向哪里").
         RvpNetwork.CHANNEL.sendToServer(C2STVMissileControlInput.of(
                 activeMissileId,
                 tvMissileYaw,
                 tvMissilePitch,
                 player.tickCount
         ));
-    }
-
-    /** Align missile steering with scope/camera aim updated by {@link LocalVehiclePlayer#handlePlayerTurn}. */
-    private static void syncAimFromVehicleView() {
-        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        tvMissileYaw = lvp.cameraAimRotY;
-        tvMissilePitch = lvp.cameraAimRotX;
     }
 
     public static void applyTVMissileTurnDelta(double pYRot, double pXRot) {
