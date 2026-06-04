@@ -51,12 +51,15 @@ public class RVP_EffectsData {
     @SerializedName("caliber")
     private Float caliber;
 
+    /** 机枪曳光 RGB 红分量，0–1；默认约 {@code 1.0}。 */
     @SerializedName("tracer_r")
     private Float tracerR;
 
+    /** 机枪曳光 RGB 绿分量，0–1；默认约 {@code 0.85}。 */
     @SerializedName("tracer_g")
     private Float tracerG;
 
+    /** 机枪曳光 RGB 蓝分量，0–1；默认约 {@code 0.2}。 */
     @SerializedName("tracer_b")
     private Float tracerB;
 

@@ -8,10 +8,15 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * One damage-decay rule (MCH {@code BulletDecay = ...} equivalent).
+ * 单条飞行距离伤害衰减规则（MCH {@code BulletDecay} 等价）。
+ * 写在 {@link RVP_DamageData} 的 {@code decay} 数组中，多条规则伤害系数相乘。
  */
 public class RVP_DamageDecayRuleData {
 
+    /**
+     * 衰减类型：{@code none}、{@code linear}、{@code exponential}/{@code exp}、
+     * {@code curve}/{@code polynomial}、{@code segmented}。
+     */
     @SerializedName("type")
     private String type = "none";
 

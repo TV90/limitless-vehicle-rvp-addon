@@ -7,7 +7,13 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 分段/复合制导配置。一个 stage 表示某个飞行阶段，stage 内可配置多个按优先级尝试的 source。
+ * 分段/复合制导配置。扩展包 JSON 键 {@code guidance_data}。
+ *
+ * <p>可写对象 {@code { "steering_data": {...}, "stages": [...] }}，也可直接写阶段数组
+ * （加载时由 {@link org.ywzj.rvp.all.RVP_WeaponTypes} 规范为 {@code stages}）。</p>
+ *
+ * <p>一个 {@link Stage} 表示某飞行时段；时段内多个 {@link Source} 按 {@code priority} 从高到低尝试。
+ * {@code TV}、{@code ARH} 仅对 {@code rvp:missile} 生效。</p>
  */
 public class RVP_GuidanceData {
 
