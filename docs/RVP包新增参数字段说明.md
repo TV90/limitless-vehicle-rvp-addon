@@ -61,7 +61,7 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
-| `sub_type` | 可选子类型标记，仅配置可读性；**落点逻辑请用 `detonate_data`**。遗留 `incendiary` 在未写 `detonate_data` 时仍回退单格火焰。 |
+| `sub_type` | 可选子类型标记，仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
 | `require_lock` | 是否要求发射前已有锁定。GPS、ARM、TV、MCLOS 等通常可设为 `false`。 |
 
 **破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
@@ -90,7 +90,7 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
-| `fire_mode` | 开火模式枚举 {@link org.ywzj.rvp.weapon.data.RVP_EnumFireMode}（JSON 须写枚举名，如 `FULL_AUTO`，大小写不敏感；无法识别时默认为 `FULL_AUTO`）。加载时旧键 `mode` 会迁到 `fire_mode`。 |
+| `fire_mode` | 开火模式枚举 {@link org.ywzj.rvp.weapon.data.RVP_EnumFireMode}（JSON 须写枚举名，如 `FULL_AUTO`，大小写不敏感；无法识别时默认为 `FULL_AUTO`）。 |
 | `charge_time` | `CHARGE`/`RAILGUN`：蓄满所需 tick；`MINIGUN`：转速爬满 tick。 |
 | `charge_power_scale` | 按蓄力/转速比例线性放大伤害或初速（`1` = 不放大）。 |
 | `minigun_spin_decay_tick` | 仅 `MINIGUN`：松开后每 tick 转速衰减量；默认 `max(charge_time/4, 1)`。 |
@@ -153,11 +153,11 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
-| `velocity` | 弹体初速/飞行速度（覆盖武器顶层 `velocity`）；为空时使用顶层 `velocity`。旧键 `acceleration` 加载时自动合并到此字段。 |
+| `velocity` | 弹体初速/飞行速度（覆盖武器顶层 `velocity`）；为空时使用顶层 `velocity`。 |
 | `gravity` | 空中每 tick 垂直加速度，负数向下。 |
 | `gravity_in_water` | 水中每 tick 垂直加速度。 |
-| `drag` | 空中阻力系数。 |
-| `drag_in_water` | 水中阻力系数。 |
+| `drag` | 空中水平阻力（MCH `DragInAir`）：每 tick 从 `motionX`/`motionZ` 减去 `(分量/|v|)*drag`，不改 `motionY`。 |
+| `drag_in_water` | 水中水平阻力，公式同 `drag`（MCH 水中默认无 `DragInAir`；RVP 用本字段可选开启）。 |
 | `inherit_vehicle_velocity` | 发射时是否继承载具当前速度。 |
 | `constant_speed` | 是否保持恒定速度，仅改变方向。适合导弹、火箭。 |
 | `rotate_to_motion` | 是否让实体朝向跟随运动方向。 |
@@ -202,7 +202,7 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
-| `delay_tick` | 定时引信：飞行 tick ≥ 该值时引爆；0 表示不启用。加载时会把旧 `time_tick` 合并到此字段。 |
+| `delay_tick` | 定时引信：飞行 tick ≥ 该值时引爆；0 表示不启用。 |
 | `programmable_airburst` | 可编程空爆（MCH）：按 **R（火控锁定键）** 对**弹道落点**（瞄准镜绿框处，非屏幕中心射线）测距，弹体沿弹道飞行 **测距 + `airburst_offset` 米** 时引爆；未测距或测距无效（≤`airburst_measure_min` 或 ≥`airburst_measure_max`）不触发。 |
 | `airburst_offset` | 可编程空爆附加距离（米），默认 **3**（对齐 MCH「测距 + 3m」）。 |
 | `airburst_measure_min` / `airburst_measure_max` | 有效测距范围（米），默认 **5** / **300**。 |
@@ -221,7 +221,7 @@ RVP 扩展武器数据包路径：
 | `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
-| `damage_factor` | 按目标类别缩放直击与爆炸波及伤害；见 [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md)。 |
+| `damage_factor` | 按目标类别缩放直击、激光与近炸直伤（不作用于 `VehicleExplosion` 波及伤害）；见 [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md)。 |
 
 ### `damage_factor` 子字段
 
@@ -277,7 +277,7 @@ RVP 扩展武器数据包路径：
 - 发射散布：写在 `fire_data.spread`（经 `RVP_WeaponData#getInaccuracy()` 读取，不再与顶层字段叠加）。
 - 弹体初速：写在 `projectile_data.velocity`；见「机枪与官方机炮弹速」。
 - 近炸半径：`fuse_data.proximity_radius` 优先，否则可读 `detonate_data.explosion_data.proximity_radius`。
-- 旧写法把 `damage` 写成对象时，加载器会拆成 `damage_model_data` + 顶层 `damage`（见 `RVP_WeaponTypes`）。
+- `damage` 为顶层直击数值；`damage_model_data` 为独立对象，勿把 `damage` 写成嵌套对象。
 - 加载时顶层 `explosion` / `explosion_data` 会迁入 `detonate_data`；`damage_model_data` 内的穿透/跳弹字段会迁入 `collision_data`；`guidance_data` 为数组时，顶层 `rigidity_time` 等会迁入 `steering_data`。
 
 ## `effects_data` 特效
@@ -285,13 +285,15 @@ RVP 扩展武器数据包路径：
 | 字段 | 说明 |
 | --- | --- |
 | `trajectory_particle` | 飞行轨迹粒子；写 `none` 可关闭。 |
-| `impact_particle` | 命中粒子。空或 `minecraft:block` = MCH 默认：方块破碎粒子 + 白烟（`CLOUD`）；`none` 关闭。 |
+| `impact_particle` | 命中粒子。空或 `minecraft:block` = MCH 默认：方块破碎粒子 + 白烟（`CLOUD`）；`none` 关闭。分布与 MCH `spawnBlockPar` 一致（破碎：`flak_particles_*`；白烟：命中点 ±1 格高斯偏移、速度 `gaussian/200`）。激光命中走 `MCH_WeaponLaser#spawnBlockPar`（无破碎，仅 cloud/smoke/flame）。 |
 | `explosion_particle` | 爆炸粒子。空或 `minecraft:explosion` / `explosion_emitter` = 原版 `EXPLOSION_EMITTER` + `EXPLOSION`；`none` 仅关闭额外粒子（`VehicleExplosion` 音效/烟雾仍由本体处理）。 |
 | `flak_particles_crack` | MCH `FlakParticlesCrack`：方块破碎粒子基数（实际 +0~2），默认 10。 |
 | `num_particles_flak` | MCH `NumParticlesFlak`：白烟数量，默认 3。 |
 | `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
 | `caliber` | **仅 `rvp:machinegun`**：口径（毫米），曳光条宽度与弹孔粒子大小。默认 `7.62`。 |
 | `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
+
+机枪飞行曳光与本体相同：固定 `ywzj_vehicle:entity/basic_bullet` + `textures/entity/basic_bullet.png`（`effects_data` 仅控制口径与 `tracer_*` 颜色）。导弹/炸弹飞行模型见 `assets/rvp/display/weapon/<id>.json`。
 
 机枪曳光示例（写在 `effects` 内）：
 
@@ -315,7 +317,7 @@ RVP 扩展武器数据包路径：
 | 字段 | 说明 |
 | --- | --- |
 | `effects_before_explosion` | 为 `true`（默认）时先执行下方自定义效果再爆炸；为 `false` 时先爆炸再自定义效果。 |
-| `explosion_data` | 爆炸参数（载具包 `Explosion` POJO）。与 `damage_model_data.direct` 无关。 |
+| `explosion_data` | 爆炸参数（`RVP_Explosion`，继承本体 `Explosion` POJO 字段）。与 `damage_model_data.direct` 无关。 |
 
 ### `detonate_data.explosion_data`
 

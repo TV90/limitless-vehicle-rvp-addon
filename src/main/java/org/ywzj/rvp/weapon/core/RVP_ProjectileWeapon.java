@@ -164,6 +164,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     private AimContext canisterAim(AimContext base, int pelletIndex, RVP_FireData fire) {
         AimContext out = new AimContext();
+        Vec3 muzzle = RVP_AimContexts.muzzle(base);
+        out.from = muzzle;
         out.position = base.position;
         float xRot = base.direction.x;
         float yRot = base.direction.y;
@@ -171,7 +173,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         int type = fire.getCanisterType();
 
         if (type == 0) {
-            out.position = base.position.add(
+            out.from = muzzle.add(
                     randomCentered(diff),
                     randomCentered(diff),
                     randomCentered(diff));
@@ -180,7 +182,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             yRot += randomCentered(diff);
             if (type == 2 && fire.getCanisterBurstDelayTime() > 0f) {
                 Vec3 dir = VectorUtil.rotToVec(xRot, yRot).normalize();
-                out.position = base.position.add(dir.scale(pelletIndex * fire.getCanisterBurstDelayTime()));
+                out.from = muzzle.add(dir.scale(pelletIndex * fire.getCanisterBurstDelayTime()));
             }
         }
 

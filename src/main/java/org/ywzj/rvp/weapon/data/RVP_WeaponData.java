@@ -3,7 +3,6 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
-import org.ywzj.vehicle.vehicle.pojo.Explosion;
 
 /**
  * 七个公开 {@code rvp:*} 武器类型共用的数据模型。
@@ -100,11 +99,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public RVP_DetonateData getDetonateData() {
-        RVP_DetonateData data = detonateData == null ? new RVP_DetonateData() : detonateData;
-        if (!data.hasAnyEffect() && "incendiary".equalsIgnoreCase(getSubType())) {
-            return RVP_DetonateData.legacyIncendiaryFallback();
-        }
-        return data;
+        return detonateData == null ? new RVP_DetonateData() : detonateData;
     }
 
     public RVP_SubmunitionData getSubmunitionData() {
@@ -139,7 +134,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return laserData == null ? new RVP_LaserData() : laserData;
     }
 
-    public Explosion getExplosionData() {
+    public RVP_Explosion getExplosionData() {
         return getDetonateData().getExplosionData();
     }
 
@@ -148,7 +143,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (override != null) {
             return override;
         }
-        Explosion ex = getExplosionData();
+        RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.damage : 0f;
     }
 
@@ -157,7 +152,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (override != null) {
             return override;
         }
-        Explosion ex = getExplosionData();
+        RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.radius : 0f;
     }
 
@@ -166,7 +161,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (override != null) {
             return override;
         }
-        Explosion ex = getExplosionData();
+        RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.damage : 0f;
     }
 
@@ -175,7 +170,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (override != null) {
             return override;
         }
-        Explosion ex = getExplosionData();
+        RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.radius : 0f;
     }
 
@@ -188,16 +183,34 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return override != null ? override : getVelocity();
     }
 
-    public float getCannonMuzzleVelocity() {
+    /**
+     * Blocks-per-tick muzzle speed, aligned with {@link org.ywzj.vehicle.vehicle.weapon.VehicleCannon}
+     * ({@code shootFromRotation(..., data.getVelocity(), ...)}) and {@link org.ywzj.vehicle.vehicle.weapon.VehicleRocket}.
+     */
+    public float resolveMuzzleSpeed(RVP_EnumWeaponKind kind) {
+        float fromProjectile = getProjectileData().getVelocityOverride() != null
+                ? getProjectileData().getVelocityOverride()
+                : 0f;
         float top = getVelocity();
-        Float proj = getProjectileData().getVelocityOverride();
-        if (top > 0f && top != 10f) {
-            return top;
+        if (kind == RVP_EnumWeaponKind.MACHINEGUN) {
+            if (fromProjectile > 0f) {
+                return fromProjectile;
+            }
+            if (top > 0f) {
+                return top;
+            }
+            return 16f;
         }
-        if (proj != null && proj > 0f) {
-            return proj;
+        if (fromProjectile > 0f) {
+            return fromProjectile;
         }
-        return 16f;
+        return Math.max(top, 0.01f);
+    }
+
+    /** @deprecated use {@link #resolveMuzzleSpeed(RVP_EnumWeaponKind)} */
+    @Deprecated
+    public float getCannonMuzzleVelocity() {
+        return resolveMuzzleSpeed(RVP_EnumWeaponKind.MACHINEGUN);
     }
 
     public float getCannonGravity() {
@@ -309,7 +322,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (getFuseData().getProximityRadius() > 0f) {
             return getFuseData().getProximityRadius();
         }
-        Explosion explosion = getExplosionData();
+        RVP_Explosion explosion = getExplosionData();
         if (explosion != null && explosion.proximityFuze && explosion.proximityRadius > 0f) {
             return explosion.proximityRadius;
         }

@@ -48,7 +48,7 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
         RVP_WeaponData data = getData();
         float chargeScale = consumeChargeScale();
         for (AimContext aim : aimContexts) {
-            Vec3 start = aim.position;
+            Vec3 start = RVP_AimContexts.muzzle(aim);
             Vec3 look = VectorUtil.rotToVec(aim.direction.x, aim.direction.y);
             float range = Math.max(data.getLaserRange(), data.getSeekerData().getRange());
 

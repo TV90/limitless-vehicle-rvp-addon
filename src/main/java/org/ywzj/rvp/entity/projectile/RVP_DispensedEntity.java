@@ -42,7 +42,7 @@ public class RVP_DispensedEntity extends RVP_BaseBullet {
         lastBlockHit = result;
         if (shouldAttemptDispenser()) {
             tryPlacePayload(result);
-            sendImpactParticles(result);
+            spawnAmmoBlockImpactEffects(result);
             discard();
             return true;
         }

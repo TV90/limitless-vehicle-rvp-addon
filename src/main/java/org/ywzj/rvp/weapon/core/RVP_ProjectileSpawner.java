@@ -65,16 +65,15 @@ public final class RVP_ProjectileSpawner {
         float xRot = aim.direction.x + randomSpread(level, spread);
         float yRot = aim.direction.y + randomSpread(level, spread);
         Vec3 direction = VectorUtil.rotToVec(xRot, yRot).normalize();
-        float muzzleSpeed = kind == RVP_EnumWeaponKind.MACHINEGUN
-                ? data.getCannonMuzzleVelocity()
-                : data.getProjectileVelocity();
+        float muzzleSpeed = data.resolveMuzzleSpeed(kind);
         Vec3 motion = direction.scale(Math.max(muzzleSpeed * powerScale, 0.01f));
         RVP_BaseBullet projectile = create(kind, entityType.get(), level, data);
         if (projectile == null) {
             return null;
         }
 
-        projectile.initFromWeapon(data, kind, vehicle, shooter, aim.position,
+        Vec3 muzzle = RVP_AimContexts.muzzle(aim);
+        projectile.initFromWeapon(data, kind, vehicle, shooter, muzzle,
                 new RVP_BaseBullet.AimRot(xRot, yRot), motion);
         projectile.setShooterWeaponUnit(weaponUnit);
         projectile.name = Component.translatable(data.getName());
@@ -92,6 +91,11 @@ public final class RVP_ProjectileSpawner {
                 && gps.dimension.equals(level.dimension().location())
                 && (data.usesGuidanceType(RVP_EnumGuidanceType.GPS) || data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS))) {
             projectile.setTargetPos(gps.pos);
+        } else {
+            Vec3 impact = RVP_AimContexts.impactPoint(aim);
+            if (impact != null && projectile.getTargetPos() == null && kind == RVP_EnumWeaponKind.MISSILE) {
+                projectile.setTargetPos(impact);
+            }
         }
 
         if (data.isInheritVehicleVelocity()) {

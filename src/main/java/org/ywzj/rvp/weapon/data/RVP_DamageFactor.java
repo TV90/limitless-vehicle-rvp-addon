@@ -13,7 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 按目标类别缩放 RVP 武器伤害（直击与 {@link org.ywzj.rvp.util.RVP_Explosion}）。
+ * 按目标类别缩放 RVP 武器直击、激光与近炸直伤（不作用于 {@link org.ywzj.vehicle.util.VehicleExplosion} 波及伤害）。
  *
  * <p>与 MCH {@code DamageFactor} 不同：载具倍率按 Forge 实体类型 ID 配置（如
  * {@code ywzj_vehicle:rotary_wing_vehicle}），不再写死直升机/坦克等枚举。</p>

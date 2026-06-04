@@ -17,15 +17,17 @@ import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-import org.ywzj.vehicle.vehicle.pojo.Explosion;
+import org.ywzj.rvp.weapon.data.RVP_Explosion;
 
 /**
  * Machinegun / cannon pellet. Motion and facing follow {@link org.ywzj.vehicle.entity.weapon.BulletEntity}
- * on both sides; server calls {@link RVP_BaseBullet#tickHitSegment} before motion in {@link #tickBullet()}.
+ * on both sides; server calls {@link RVP_BaseBullet#tickHit()} before motion in {@link #tickBullet()}.
  */
 public class RVP_BulletEntity extends RVP_BaseBullet {
 
     private Vec3 startPos = Vec3.ZERO;
+    /** Position at tick start (after {@link #tick()} housekeeping), before hit-test / motion integration. */
+    private Vec3 tickSegmentStart = Vec3.ZERO;
     private float caliber = 7.62f;
     private float tracerR = 1f;
     private float tracerG = 0.85f;
@@ -48,6 +50,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
                                org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle,
                                LivingEntity shooter, Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
+        this.keepChunkLoaded = false;
         this.startPos = spawnPos;
         RVP_EffectsData effects = data.getEffectsData();
         this.caliber = effects.getCaliber();
@@ -56,18 +59,19 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         this.tracerB = effects.getTracerB();
     }
 
-    /**
-     * Ignore server tracking rotation/lerp — client integrates facing from velocity like official bullets.
-     */
     @Override
-    public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps, boolean teleport) {
-        if (teleport) {
-            setPos(x, y, z);
-        }
+    protected Vec3 collisionSegmentStart() {
+        return tickSegmentStart;
+    }
+
+    @Override
+    protected Vec3 collisionSegmentEnd() {
+        return tickSegmentStart.add(getDeltaMovement());
     }
 
     /** Entry from {@link RVP_BaseBullet#tick()}. */
     public void tickBullet() {
+        tickSegmentStart = position();
         if (!level().isClientSide()) {
             if (!tickBulletServerPreMotion()) {
                 return;
@@ -94,8 +98,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         }
         tickSubmunition();
         tickGuidance();
-        // Hit test before motion (same segment as official BulletEntity / AmmoEntity#tickHit).
-        tickHitSegment(position(), position().add(getDeltaMovement()));
+        // Hit test before motion (same as {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()}).
+        tickHit();
         return isAlive();
     }
 
@@ -117,23 +121,44 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     }
 
     /**
-     * Identical integration order to {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()}.
+     * Copied from {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()} (motion / facing / life).
      */
     private void tickBulletMotionAndFacing() {
         Vec3 movement = getDeltaMovement();
-        if (isInWater() && level().isClientSide()) {
-            double mx = movement.x;
-            double my = movement.y;
-            double mz = movement.z;
-            double nextPosX = getX() + mx;
-            double nextPosY = getY() + my;
-            double nextPosZ = getZ() + mz;
+        double x = movement.x;
+        double y = movement.y;
+        double z = movement.z;
+        double distance = movement.horizontalDistance();
+        setYRot((float) Math.toDegrees(Mth.atan2(x, z)));
+        setXRot((float) Math.toDegrees(Mth.atan2(y, distance)));
+        if (xRotO == 0.0F && yRotO == 0.0F) {
+            yRotO = getYRot();
+            xRotO = getXRot();
+        }
+        setXRot(lerpRotation(xRotO, getXRot()));
+        setYRot(lerpRotation(yRotO, getYRot()));
+
+        double nextPosX = getX() + x;
+        double nextPosY = getY() + y;
+        double nextPosZ = getZ() + z;
+        setPos(nextPosX, nextPosY, nextPosZ);
+        flightDistance += movement.length();
+
+        float friction = cannonFriction;
+        float gravity = cannonGravity;
+        if (isInWater()) {
             for (int i = 0; i < 4; i++) {
                 level().addParticle(ParticleTypes.BUBBLE,
-                        nextPosX - mx * 0.25F, nextPosY - my * 0.25F, nextPosZ - mz * 0.25F, mx, my, mz);
+                        nextPosX - x * 0.25F, nextPosY - y * 0.25F, nextPosZ - z * 0.25F, x, y, z);
             }
+            friction = 0.4F;
+            gravity *= 0.6F;
         }
-        RVP_ProjectileMotion.tickCannonBullet(this);
+        setDeltaMovement(getDeltaMovement().scale(1 - friction));
+        setDeltaMovement(getDeltaMovement().add(0, -gravity, 0));
+        if (level().isClientSide() && tickCount >= life - 1) {
+            discard();
+        }
     }
 
     @Override
@@ -152,9 +177,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         child.sprinkleTime = 0;
         child.damage = Math.max(1f, damage * 0.35f);
         if (child.explosion != null) {
-            Explosion noBlast = new Explosion();
-            noBlast.explode = false;
-            child.explosion = noBlast;
+            child.explosion = RVP_Explosion.disabled();
         }
         RandomSource rand = level().getRandom();
         float spread = rvpData.getBombletDiff();
@@ -187,30 +210,6 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
 
     public float getTracerB() {
         return tracerB;
-    }
-
-    private static final String ID_SHOTGUN = "test_30mm_shotgun";
-    private static final String ID_HE_FRAG = "test_30mm_he_frag";
-    private static final String ID_CLUSTER = "test_30mm_cluster";
-
-    @Nullable
-    private String weaponPath() {
-        ResourceLocation id = rvpData != null ? rvpData.getWeaponId() : getWeaponId();
-        return id != null ? id.getPath() : null;
-    }
-
-    /** Cube tracer: 30mm 霰弹 / 榴霰弹；子母弹撒出的子弹粒也为正方体。 */
-    public boolean usesShotgunCubeVisual() {
-        String path = weaponPath();
-        if (ID_CLUSTER.equals(path) && submunitionFlag != 0) {
-            return true;
-        }
-        return ID_SHOTGUN.equals(path) || ID_HE_FRAG.equals(path);
-    }
-
-    /** Elongated dart tracer: 30mm 子母弹母弹。 */
-    public boolean usesSabotDartVisual() {
-        return ID_CLUSTER.equals(weaponPath()) && submunitionFlag == 0;
     }
 
     @Override

@@ -12,8 +12,7 @@
     "RadarUnitDataMixin",
     "RadarUnitMixin",
     "RocketEntityMixin",
-    "VehicleRocketWeaponDataMixin",
-    "VehicleExplosionMixin"
+    "VehicleRocketWeaponDataMixin"
   ],
   "client": [
     "InputHandlerAirburstMixin",

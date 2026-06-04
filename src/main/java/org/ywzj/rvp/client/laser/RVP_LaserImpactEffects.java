@@ -1,8 +1,6 @@
 package org.ywzj.rvp.client.laser;
 
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserState.LaserBeamKey;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -13,7 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Impact sparks at laser hit: flame + white smoke (MCH flak spread).
+ * Impact sparks at laser block hit ({@link mcheli.weapon.MCH_WeaponLaser#spawnBlockPar}).
  */
 public final class RVP_LaserImpactEffects {
 
@@ -34,31 +32,9 @@ public final class RVP_LaserImpactEffects {
         }
         LAST_SPAWN_TICK.put(key, gameTime);
 
-        Vec3 hit = beam.impactPoint();
         RVP_EffectsData effects = data.getEffectsData();
-        float diff = effects.getFlakParticlesDiff();
-        int smokeCount = Math.max(effects.getNumParticlesFlak(), 2);
-
-        for (int i = 0; i < 2; i++) {
-            double ox = (level.random.nextDouble() - 0.5) * 0.15;
-            double oz = (level.random.nextDouble() - 0.5) * 0.15;
-            level.addParticle(ParticleTypes.FLAME, true,
-                    hit.x + ox, hit.y + 0.05, hit.z + oz,
-                    0.0, 0.02 + level.random.nextDouble() * 0.02, 0.0);
-        }
-
-        for (int i = 0; i < smokeCount; i++) {
-            double px = hit.x + (level.random.nextFloat() - 0.5);
-            double py = hit.y + 0.1;
-            double pz = hit.z + (level.random.nextFloat() - 0.5);
-            double vx = (diff * 0.5) * level.random.nextGaussian();
-            double vz = (diff * 0.5) * level.random.nextGaussian();
-            double vy = diff * Math.abs(level.random.nextGaussian());
-            level.addParticle(ParticleTypes.CLOUD, true, px, py, pz, vx, vy, vz);
-        }
-
-        if (beam.blockHit() != null && effects.isDefaultBlockImpact()) {
-            RVP_ProjectileParticleEffects.spawnBlockImpactClient(level, beam.blockHit(), effects, 0.6f);
+        if (beam.blockHit() != null && !effects.isImpactDisabled()) {
+            RVP_ProjectileParticleEffects.spawnLaserBlockImpactClient(level, beam.blockHit(), effects);
         }
     }
 

@@ -5,6 +5,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserState.ActiveLaser;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserState.LaserBeamKey;
+import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.core.RVP_LaserWeapon;
 import org.ywzj.rvp.weapon.data.RVP_LaserVisualData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -58,7 +59,7 @@ public final class RVP_ClientLaserBeamResolver {
 
         RVP_LaserVisualData visual = RVP_ClientLaserState.visualOf(active);
         RVP_LaserBeam beam = RVP_LaserBeamGeometry.compute(
-                level, vehicle, shooter, aim.position,
+                level, vehicle, shooter, RVP_AimContexts.muzzle(aim),
                 VectorUtil.rotToVec(aim.direction.x, aim.direction.y),
                 range, visual);
 

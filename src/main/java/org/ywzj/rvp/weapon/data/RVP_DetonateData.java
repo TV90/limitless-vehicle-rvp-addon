@@ -2,8 +2,6 @@ package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.util.Mth;
-import org.ywzj.vehicle.vehicle.pojo.Explosion;
-
 /**
  * 弹体落点（方块命中、实体命中、引信/空爆结束点）效果：爆炸与自定义落点逻辑。
  *
@@ -18,9 +16,9 @@ public class RVP_DetonateData {
     @SerializedName("effects_before_explosion")
     private boolean effectsBeforeExplosion = true;
 
-    /** 爆炸参数（载具包 {@link Explosion} POJO）。 */
+    /** 爆炸参数（{@link RVP_Explosion}，继承本体 {@link org.ywzj.vehicle.vehicle.pojo.Explosion}）。 */
     @SerializedName("explosion_data")
-    private Explosion explosionData;
+    private RVP_Explosion explosionData;
 
     /** 点燃方块：范围、概率、是否灵魂火等。 */
     @SerializedName("fire_data")
@@ -66,7 +64,7 @@ public class RVP_DetonateData {
         return effectsBeforeExplosion;
     }
 
-    public Explosion getExplosionData() {
+    public RVP_Explosion getExplosionData() {
         return explosionData;
     }
 
@@ -159,16 +157,6 @@ public class RVP_DetonateData {
 
     public FluidEffectData getFluidData() {
         return fluidData == null ? new FluidEffectData() : fluidData;
-    }
-
-    /** 旧 {@code sub_type: incendiary} 的单格火焰，供迁移期回退。 */
-    public static RVP_DetonateData legacyIncendiaryFallback() {
-        RVP_DetonateData data = new RVP_DetonateData();
-        FireEffectData fire = new FireEffectData();
-        fire.radius = 0;
-        fire.chance = 1f;
-        data.fireData = fire;
-        return data;
     }
 
     public static class FireEffectData {

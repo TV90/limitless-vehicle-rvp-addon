@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
-| [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与 `RVP_Explosion` |
+| [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
 | [plan/](./plan/) | 功能设计 | TV 导弹、制导架构等方案稿（非日常配置手册） |
 
 ## 路径约定
@@ -29,6 +29,8 @@
 - 新武器 `type` 只用 7 个公开类型：`rvp:missile` / `rocket` / `machinegun` / `bomb` / `laser` / `dispenser` / `targetingpod`。
 - TV、ARH 制导仅挂在 `rvp:missile` 的 `guidance_data` 中。
 - 改 JSON 字段时同步更新 [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md)。
+- **禁止在 Java 中按武器资源 ID / 路径名分支**（例如 `if (weaponId.equals("mi28_2a42_canister"))`）。行为差异用武器 JSON（`fire_data`、`collision_data` 等）表达。
+- **弹体渲染**：RVP 实体须注册 RVP 专用 `EntityRenderer`（`RVP_BulletEntityRenderer`、`RVP_BedrockProjectileEntityRenderer`），绘制规则与本体一致；模型来自 `assets/rvp/display/weapon/<id>.json`，缺省回退本体 `missile_akd10` / `rocket_57mm` / `aerial_bomb` / `basic_bullet`。
 
 ## 相关代码入口
 
@@ -37,6 +39,7 @@
 | 武器加载与归一化 | `org.ywzj.rvp.all.RVP_WeaponTypes` |
 | 弹体数据 | `org.ywzj.rvp.weapon.data.RVP_ProjectileData` |
 | 弹体实体运动 | `org.ywzj.rvp.entity.projectile.RVP_BaseBullet` |
-| 伤害倍率 / 爆炸 | `RVP_DamageFactor`、`RVP_DamageApplier`、`RVP_Explosion` |
+| 伤害倍率 / 爆炸 | `RVP_Explosion`（配置）、`RVP_DamageFactor`、`VehicleExplosion`（本体运行时） |
 | 机炮弹丸 | `org.ywzj.rvp.entity.projectile.RVP_BulletEntity` |
-| 本体对照（只读） | `org.ywzj.vehicle.entity.weapon.BulletEntity`、`MissileEntity` |
+| 弹体客户端渲染 | `RVP_ClientEntityRenderers`、`VehicleProjectileRenderLogic`（对齐本体绘制） |
+| 本体对照（只读） | `BulletEntityRenderer`、`MissileEntityRenderer`、`AerialBombEntityRenderer` |
