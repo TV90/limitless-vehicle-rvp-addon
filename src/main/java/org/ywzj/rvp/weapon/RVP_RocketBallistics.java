@@ -10,6 +10,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
+import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponIndex;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -122,7 +123,7 @@ public final class RVP_RocketBallistics {
     private static Vec3 computeAimContextImpact(Level level, AimContext aimContext, Vec3 vehicleVelocity, Params params, @Nullable Entity clipEntity) {
         Vec2 direction = aimContext.direction;
         Vec3 launchVelocity = VectorUtil.rotToVec(direction.x, direction.y).normalize().scale(params.velocity()).add(vehicleVelocity);
-        return computeImpact(level, aimContext.position, launchVelocity, params, clipEntity);
+        return computeImpact(level, RVP_AimContexts.muzzle(aimContext), launchVelocity, params, clipEntity);
     }
 
     private static int resolveCurrentBoltIndex(WeaponUnit weaponUnit, int size) {

@@ -32,9 +32,10 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
         this.lastShootTime = System.currentTimeMillis();
         if (shooter instanceof ServerPlayer player) {
             AimContext aim = aimContexts.get(0);
+            Vec3 start = RVP_AimContexts.muzzle(aim);
             Vec3 look = Vec3.directionFromRotation(aim.direction.x, aim.direction.y).normalize();
-            Vec3 end = aim.position.add(look.scale(getData().getSeekerData().getRange()));
-            BlockHitResult blockHit = player.level().clip(new ClipContext(aim.position, end,
+            Vec3 end = start.add(look.scale(getData().getSeekerData().getRange()));
+            BlockHitResult blockHit = player.level().clip(new ClipContext(start, end,
                     ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, getVehicle()));
             Vec3 target = blockHit.getType() == HitResult.Type.MISS ? end : blockHit.getLocation();
             GPSTargetManager.set(player, player.level().dimension().location(), target);

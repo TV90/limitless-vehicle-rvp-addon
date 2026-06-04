@@ -42,7 +42,10 @@ public final class RVP_WeaponAimInterpolation {
         Vec3 delta = renderPos.subtract(tickPos);
 
         AimContext out = new AimContext();
-        out.position = aim.position.add(delta);
+        out.from = aim.from != null ? aim.from.add(delta) : null;
+        if (aim.position != null) {
+            out.position = aim.position.add(delta);
+        }
         out.direction = new Vec2(aim.direction.x, aim.direction.y);
         return out;
     }

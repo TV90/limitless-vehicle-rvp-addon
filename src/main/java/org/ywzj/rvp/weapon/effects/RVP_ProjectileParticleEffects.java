@@ -70,13 +70,7 @@ public final class RVP_ProjectileParticleEffects {
                         0.02D);
             }
             for (int i = 0; i < smokeCount; i++) {
-                double px = hit.x + level.random.nextGaussian() * 0.05D;
-                double py = hit.y + level.random.nextGaussian() * 0.05D;
-                double pz = hit.z + level.random.nextGaussian() * 0.05D;
-                double vx = level.random.nextGaussian() / 200.0D;
-                double vy = level.random.nextGaussian() / 200.0D;
-                double vz = level.random.nextGaussian() / 200.0D;
-                level.sendParticles(player, ParticleTypes.CLOUD, true, px, py, pz, 1, vx, vy, vz, 0.01D);
+                spawnMchBulletFlakSmokeServer(level, player, hit);
             }
         }
     }
@@ -138,14 +132,56 @@ public final class RVP_ProjectileParticleEffects {
                     px, py, pz, vx, vy, vz);
         }
         for (int i = 0; i < smokeCount; i++) {
+            spawnMchBulletFlakSmokeClient(level, hit, random);
+        }
+    }
+
+    /**
+     * MCH {@link mcheli.weapon.MCH_WeaponLaser#spawnBlockPar}: cloud + dark smoke + flame per {@code num_particles_flak}.
+     */
+    public static void spawnLaserBlockImpactClient(Level level, BlockHitResult result, RVP_EffectsData effects) {
+        if (!level.isClientSide() || effects == null || effects.isImpactDisabled()) {
+            return;
+        }
+        Vec3 hit = result.getLocation();
+        float diff = effects.getFlakParticlesDiff();
+        RandomSource random = level.random;
+        int count = effects.getNumParticlesFlak();
+
+        for (int i = 0; i < count; i++) {
             double px = hit.x + (random.nextFloat() - 0.5D);
             double py = hit.y + 0.1D;
             double pz = hit.z + (random.nextFloat() - 0.5D);
-            double vx = (diff * 0.5D) * random.nextGaussian();
-            double vz = (diff * 0.5D) * random.nextGaussian();
+            double vx = (diff / 2.0D) * random.nextGaussian();
+            double vz = (diff / 2.0D) * random.nextGaussian();
             double vy = diff * Math.abs(random.nextGaussian());
-            level.addParticle(ParticleTypes.CLOUD, px, py, pz, vx, vy, vz);
+
+            level.addParticle(ParticleTypes.CLOUD, true, px, py, pz, vx, vy, vz);
+            level.addParticle(ParticleTypes.SMOKE, true, px, py, pz, vx * 0.8D, vy * 0.7D, vz * 0.8D);
+            level.addParticle(ParticleTypes.FLAME, true, px, py, pz, vx * 0.4D, vy * 0.5D + 0.02D, vz * 0.4D);
         }
+    }
+
+    /** MCH {@link mcheli.weapon.MCH_EntityBaseBullet#spawnBlockPar} white smoke ({@code EntityCloudFX}). */
+    private static void spawnMchBulletFlakSmokeServer(ServerLevel level, ServerPlayer player, Vec3 hit) {
+        RandomSource random = level.random;
+        double px = hit.x + random.nextGaussian();
+        double py = hit.y + random.nextGaussian();
+        double pz = hit.z + random.nextGaussian();
+        double vx = random.nextGaussian() / 200.0D;
+        double vy = random.nextGaussian() / 200.0D;
+        double vz = random.nextGaussian() / 200.0D;
+        level.sendParticles(player, ParticleTypes.CLOUD, true, px, py, pz, 1, vx, vy, vz, 0.01D);
+    }
+
+    private static void spawnMchBulletFlakSmokeClient(Level level, Vec3 hit, RandomSource random) {
+        double px = hit.x + random.nextGaussian();
+        double py = hit.y + random.nextGaussian();
+        double pz = hit.z + random.nextGaussian();
+        double vx = random.nextGaussian() / 200.0D;
+        double vy = random.nextGaussian() / 200.0D;
+        double vz = random.nextGaussian() / 200.0D;
+        level.addParticle(ParticleTypes.CLOUD, px, py, pz, vx, vy, vz);
     }
 
     private static void spawnCustomImpact(ServerLevel level, Vec3 hit, String particleId) {

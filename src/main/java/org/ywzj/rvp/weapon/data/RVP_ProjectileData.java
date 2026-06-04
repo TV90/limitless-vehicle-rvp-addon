@@ -10,7 +10,7 @@ public class RVP_ProjectileData {
 
     /**
      * 弹体初速/飞行速度（覆盖武器顶层 {@code velocity}）；为空时使用顶层 {@code velocity}。
-     * 导弹、火箭、机枪等统一读此字段（旧 JSON 的 {@code acceleration} 在加载时合并到此键）。
+     * 导弹、火箭、机枪等统一读此字段。
      */
     @SerializedName("velocity")
     private Float velocity;

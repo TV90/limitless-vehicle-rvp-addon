@@ -3,8 +3,10 @@ package org.ywzj.rvp.entity.projectile;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -14,6 +16,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -23,7 +26,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
-import org.ywzj.rvp.util.RVP_Explosion;
+import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.weapon.damage.RVP_DamageDecayEvaluator;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
@@ -42,6 +45,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -62,7 +66,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected AbstractVehicle shooterVehicle;
     protected WeaponUnit shooterWeaponUnit;
     protected double flightSpeed;
-    protected float accelFactor = 1f;
     /** Official cannon-style linear friction (machinegun only). */
     protected float cannonFriction = 0.01f;
     /** Official cannon-style positive-down gravity per tick (machinegun only). */
@@ -89,7 +92,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected Vec3 targetPos;
     @Nullable
     protected Vec3 lastGuidancePos;
-    protected Vec3 previousTickPos;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
@@ -121,25 +123,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.bounceLeft = data.getBounce();
         this.bounceStrength = data.getBounceStrength();
         this.bounceFuseTick = data.getBounceFuseTick();
+        Vec3 spawnMotion = initialMotion;
         if (usesCannonBallistics(kind)) {
-            this.accelFactor = 1f;
             this.cannonFriction = data.getCannonFriction();
             this.cannonGravity = data.getCannonGravity();
-            this.flightSpeed = Math.max(initialMotion.length(), 0.01f);
+            this.flightSpeed = Math.max(spawnMotion.length(), 0.01f);
         } else {
             float projectileSpeed = data.getProjectileVelocity();
-            this.flightSpeed = Math.max(Math.max(initialMotion.length(), projectileSpeed), 0.01f);
-            this.accelFactor = 1f;
             if (data.getProjectileData().isRocketEngineMisconfigured()) {
                 LOGGER.warn(
                         "Weapon {} has_rocket_engine=true but missing mass/thrust/motor_burn_time; using simplified ballistics",
                         data.getWeaponId());
             } else if (!data.usesPropulsion() && kind == RVP_EnumWeaponKind.ROCKET && projectileSpeed > 4f) {
-                this.accelFactor = projectileSpeed / 4f;
+                // Legacy high-speed rockets without propulsion: scale once at spawn (was wrongly applied every tick).
+                spawnMotion = spawnMotion.scale(projectileSpeed / 4f);
             }
+            this.flightSpeed = Math.max(Math.max(spawnMotion.length(), projectileSpeed), 0.01f);
         }
         this.setPos(spawnPos);
-        this.setDeltaMovement(initialMotion);
+        this.setDeltaMovement(spawnMotion);
         if (data.getBomblet() > 0) {
             this.sprinkleTime = data.getSubmunitionData().getDelayTick() > 0
                     ? data.getSubmunitionData().getDelayTick()
@@ -258,6 +260,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.antiRadiationLostPermanent = lostPermanent;
     }
 
+    /**
+     * RVP integrates position manually ({@link RVP_ProjectileMotion} / {@link RVP_BulletEntity});
+     * block vanilla {@link Entity#move} so {@link AmmoEntity#tickHit()} segments stay blocks-per-tick.
+     */
+    @Override
+    public void move(MoverType type, Vec3 delta) {
+        if (type == MoverType.SELF) {
+            return;
+        }
+        super.move(type, delta);
+    }
+
     @Override
     public void tick() {
         super.tick();
@@ -287,7 +301,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
         tickSubmunition();
         tickGuidance();
-        previousTickPos = position();
         tickMotion();
         tickHit();
         tickProgrammableAirburst();
@@ -338,23 +351,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         RVP_ProjectileMotion.finalizeSpawnOrientation(this, aim);
     }
 
-    /** 无推力配置时的简化弹道（重力 + 线性阻力，可选恒定速度）。 */
+    /** 无推力配置时的简化弹道（MCH 重力 + {@link #applyMchHorizontalDrag}，可选恒定速度）。 */
     protected void tickBallisticMotion() {
         Vec3 velocity = getDeltaMovement();
         if (!isInWater()) {
             velocity = velocity.add(0, rvpData.getGravity(), 0);
-            velocity = applyDrag(velocity, rvpData.getDragInAir());
+            velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInAir());
         } else {
             velocity = velocity.add(0, rvpData.getGravityInWater(), 0);
-            velocity = applyDrag(velocity, rvpData.getDragInWater());
+            velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInWater());
         }
         if (rvpData.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-6) {
             velocity = velocity.normalize().scale(Math.max(flightSpeed, 0.01));
         }
         velocity = clampSpeed(velocity);
-        if (accelFactor != 1f && velocity.lengthSqr() > 1.0E-6) {
-            velocity = velocity.scale(accelFactor);
-        }
         setDeltaMovement(velocity);
         setPos(position().add(velocity));
         flightDistance += velocity.length();
@@ -365,13 +375,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         return RVP_ProjectileMotion.clampSpeed(this, velocity, rvpData);
     }
 
-    private static Vec3 applyDrag(Vec3 velocity, float drag) {
-        if (drag <= 0f || velocity.lengthSqr() <= 1.0E-6) {
+    /**
+     * MCH {@code DragInAir}: gravity already applied to Y; subtract {@code drag} along velocity direction
+     * from X/Z only (see {@code MCH_EntityBaseBullet#onUpdate}).
+     */
+    static Vec3 applyMchHorizontalDrag(Vec3 velocity, float drag) {
+        if (drag <= 0f) {
             return velocity;
         }
         double speed = velocity.length();
-        double nextSpeed = Math.max(speed - drag * speed * speed, 0.0);
-        return nextSpeed <= 0 ? Vec3.ZERO : velocity.normalize().scale(nextSpeed);
+        if (speed <= 1.0E-6) {
+            return velocity;
+        }
+        double dirX = velocity.x / speed;
+        double dirZ = velocity.z / speed;
+        return new Vec3(
+                velocity.x - dirX * drag,
+                velocity.y,
+                velocity.z - dirZ * drag
+        );
     }
 
     protected boolean tickDelayFuse() {
@@ -467,47 +489,58 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     /**
-     * Shared block/entity raycast for all RVP projectiles (bounce, wall pen, pierce, damage).
-     * Call with the travel segment for this tick; {@link #tickHit()} uses post-motion endpoints.
+     * Hit-scan segment; matches {@link AmmoEntity#tickHit()} ({@code position} → {@code position + deltaMovement}).
+     * {@link RVP_BulletEntity} overrides timing to run before integrating motion (like {@link org.ywzj.vehicle.entity.weapon.BulletEntity}).
      */
-    protected void tickHitSegment(Vec3 startVec, Vec3 endVec) {
+    protected Vec3 collisionSegmentStart() {
+        return position();
+    }
+
+    protected Vec3 collisionSegmentEnd() {
+        return position().add(getDeltaMovement());
+    }
+
+    /**
+     * Same detection order as {@link AmmoEntity#tickHit()}: entity → proximity fuze → block.
+     */
+    @Override
+    protected void tickHit() {
+        performAmmoEntityTickHit(collisionSegmentStart(), collisionSegmentEnd());
+    }
+
+    protected void performAmmoEntityTickHit(Vec3 startVec, Vec3 endVec) {
         Vec3 step = endVec.subtract(startVec);
-        if (step.lengthSqr() < 1.0E-8) {
-            step = getDeltaMovement();
-            endVec = startVec.add(step);
-        }
-        if (step.lengthSqr() < 1.0E-8) {
+        if (step.lengthSqr() < 1.0E-12) {
             return;
+        }
+
+        BulletHitResult entityResult = findEntityOnPathForSegment(startVec, endVec, step);
+
+        if (entityResult != null
+                && entityResult.getEntity() != vehicle
+                && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))) {
+            handleEntityImpact(entityResult);
+            return;
+        }
+
+        if (explosion != null && explosion.proximityFuze && tickCount > 5 && entityResult == null) {
+            if (tryAmmoProximityFuze()) {
+                return;
+            }
         }
 
         BlockHitResult blockResult = level().clip(
                 new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
         if (blockResult.getType() != HitResult.Type.MISS) {
-            if (handleBlockImpact(blockResult)) {
-                return;
-            }
+            onAmmoBlockHit(blockResult);
         }
-
-        BulletHitResult entityResult = findEntityOnPathSegment(startVec, endVec, step);
-        if (entityResult != null && canDamageEntity(entityResult.getEntity())) {
-            handleEntityImpact(entityResult);
-        }
-    }
-
-    /** After {@link #tickMotion()}: segment from {@link #previousTickPos} to current position. */
-    @Override
-    protected void tickHit() {
-        Vec3 startVec = previousTickPos != null ? previousTickPos : position();
-        tickHitSegment(startVec, position());
     }
 
     /**
-     * {@link EntityUtil#findEntityOnPath} expands the query box with {@link #getDeltaMovement()};
-     * after cannon integration that vector is the *next* tick velocity, not this segment — pass the
-     * actual travel vector instead.
+     * {@link EntityUtil#findEntityOnPath} expands AABB with {@link #getDeltaMovement()}; use this tick's travel vector.
      */
     @Nullable
-    protected BulletHitResult findEntityOnPathSegment(Vec3 startVec, Vec3 endVec, Vec3 step) {
+    protected BulletHitResult findEntityOnPathForSegment(Vec3 startVec, Vec3 endVec, Vec3 step) {
         Vec3 saved = getDeltaMovement();
         setDeltaMovement(step);
         try {
@@ -517,8 +550,34 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
     }
 
+    /** {@link AmmoEntity#tickHit()} proximity branch; explosion uses {@link #resolveImpactDetonation}. */
+    protected boolean tryAmmoProximityFuze() {
+        if (explosion == null || !explosion.proximityFuze || vehicle == null) {
+            return false;
+        }
+        AABB detectionBox = getBoundingBox().inflate(explosion.proximityRadius)
+                .move(getLookAngle().normalize().scale(-explosion.proximityRadius));
+        List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
+                entity -> entity != vehicle && !vehicle.getPassengers().contains(entity));
+        if (nearbyEntities.isEmpty()) {
+            return false;
+        }
+        resolveImpactDetonation(position(), null, false);
+        if (explosion.explode) {
+            triggerExplosion(position());
+        }
+        discard();
+        return true;
+    }
+
+    protected void onAmmoBlockHit(BlockHitResult result) {
+        if (handleBlockImpact(result)) {
+            return;
+        }
+    }
+
     protected boolean handleBlockImpact(BlockHitResult result) {
-        sendImpactParticles(result);
+        spawnAmmoBlockImpactEffects(result);
         Vec3 hit = result.getLocation();
         if (bounceLeft > 0 && getDeltaMovement().lengthSqr() > 0.05) {
             Direction direction = result.getDirection();
@@ -676,9 +735,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                 default -> explosion.radius;
             };
         }
-        RVP_Explosion ex = new RVP_Explosion(level(), getOwner(), vehicle, pos,
-                radius, damage, explosion.destroyBlock,
-                rvpData == null ? null : rvpData.getDamageFactor());
+        VehicleExplosion ex = new VehicleExplosion(level(), getOwner(), vehicle, pos,
+                radius, damage, explosion.destroyBlock);
         ex.explode();
         if (level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(
@@ -806,21 +864,31 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
     }
 
-    protected void sendImpactParticles(BlockHitResult result) {
-        if (!(level() instanceof ServerLevel serverLevel) || rvpData == null) {
-            return;
-        }
-        RVP_ProjectileParticleEffects.spawnBlockImpact(
-                serverLevel, result, rvpData.getEffectsData(), getBbWidth());
-        Vec3 normal = Vec3.atLowerCornerOf(result.getDirection().getNormal());
-        Vec3 loc2 = result.getLocation().add(normal.scale(0.01));
-        BlockPos hitPos = result.getBlockPos();
-        BulletHoleOption bulletHole = new BulletHoleOption(result.getDirection(), hitPos, 1, 0, 0, getCaliber());
-        for (ServerPlayer player : serverLevel.players()) {
-            if (player.distanceToSqr(loc2) > PARTICLE_VIEW_DISTANCE_SQ) {
-                continue;
+    /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */
+    protected void spawnAmmoBlockImpactEffects(BlockHitResult result) {
+        if (level() instanceof ServerLevel serverLevel) {
+            if (rvpData != null) {
+                RVP_ProjectileParticleEffects.spawnBlockImpact(
+                        serverLevel, result, rvpData.getEffectsData(), getBbWidth());
             }
-            serverLevel.sendParticles(player, bulletHole, true, loc2.x, loc2.y, loc2.z, 1, 0, 0, 0, 0);
+            BlockPos hitPos = result.getBlockPos();
+            BlockState hitBlock = level().getBlockState(hitPos);
+            Vec3 normal = Vec3.atLowerCornerOf(result.getDirection().getNormal());
+            Vec3 loc1 = result.getLocation().add(normal.scale(0.3));
+            Vec3 loc2 = result.getLocation().add(normal.scale(0.01));
+            BlockParticleOption option = new BlockParticleOption(ParticleTypes.BLOCK, hitBlock);
+            for (ServerPlayer player : serverLevel.players()) {
+                if (player.distanceToSqr(loc1) < 128 * 128) {
+                    serverLevel.sendParticles(player, option, true,
+                            loc1.x, loc1.y, loc1.z,
+                            5, 0, 0, 0, 0.1);
+                    BulletHoleOption bulletHole = new BulletHoleOption(
+                            result.getDirection(), hitPos, 1, 0, 0, getCaliber());
+                    serverLevel.sendParticles(player, bulletHole, true,
+                            loc2.x, loc2.y, loc2.z,
+                            1, 0, 0, 0, 0);
+                }
+            }
         }
     }
 
