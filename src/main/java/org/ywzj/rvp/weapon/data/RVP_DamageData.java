@@ -7,7 +7,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 伤害模型参数：直接命中伤害、距离衰减，以及引信专用爆炸/伤害覆盖。
+ * 伤害模型参数。JSON 键 {@code damage_model_data}。
+ * 直接命中、距离衰减、空爆/近炸专用爆炸参数，以及 {@link RVP_DamageFactor} 目标类别倍率。
  */
 public class RVP_DamageData {
 

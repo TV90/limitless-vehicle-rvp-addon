@@ -3,9 +3,10 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.util.Mth;
 /**
- * 弹体落点（方块命中、实体命中、引信/空爆结束点）效果：爆炸与自定义落点逻辑。
+ * 弹体落点效果：爆炸与自定义落点逻辑。JSON 键 {@code detonate_data}。
  *
- * <p>{@link #effectsBeforeExplosion} 控制火焰、药水云等自定义效果与 {@link #explosionData} 的触发顺序。</p>
+ * <p>{@link #effectsBeforeExplosion} 控制火焰、药水云等自定义效果与 {@link #explosionData}
+ * 的触发顺序。爆炸字段见 {@link RVP_Explosion}（继承本体 {@link org.ywzj.vehicle.vehicle.pojo.Explosion}）。</p>
  */
 public class RVP_DetonateData {
 
@@ -273,7 +274,9 @@ public class RVP_DetonateData {
         }
     }
 
+    /** 在落点周围放置方块（骨粉、TNT 等）。 */
     public static class PlaceBlockEffectData {
+        /** 方块 ID，如 {@code minecraft:tnt}。 */
         @SerializedName("block")
         private String block = "";
 
@@ -313,7 +316,9 @@ public class RVP_DetonateData {
         }
     }
 
+    /** 在落点召唤闪电。 */
     public static class LightningEffectData {
+        /** 是否对击中的实体造成闪电伤害。 */
         @SerializedName("damage")
         private boolean damage = true;
 

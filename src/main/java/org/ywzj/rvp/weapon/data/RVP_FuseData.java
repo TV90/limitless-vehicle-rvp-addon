@@ -3,7 +3,9 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * 引信参数。子弹、火箭、导弹、炸弹和投放物共用。
+ * 引信参数。JSON 键 {@code fuse_data}；子弹、火箭、导弹、炸弹、布撒弹共用。
+ * 近炸半径优先读本类 {@link #proximityRadius}，否则可读
+ * {@link RVP_DetonateData} 内爆炸数据的 {@code proximity_radius}。
  */
 public class RVP_FuseData {
 

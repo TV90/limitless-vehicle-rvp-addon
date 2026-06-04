@@ -15,19 +15,29 @@ public class RVP_ProjectileData {
     @SerializedName("velocity")
     private Float velocity;
 
-    /** 空中每 tick 的垂直加速度，负数向下。 */
+    /**
+     * 空中每 tick 竖直加速度（格/tick²），负数向下。
+     * 接近地球重力约 {@code -0.0245}（{@link org.ywzj.vehicle.vehicle.PhysicsEngine#G}）；
+     * 机枪常用 {@code -0.005} 以减小弹道弯曲。
+     */
     @SerializedName("gravity")
     private float gravity = 0f;
 
-    /** 水中每 tick 的垂直加速度，负数向下。 */
+    /**
+     * 水中每 tick 竖直加速度；未写时推力弹道在水中用 {@code PhysicsEngine.G * 0.6}。
+     */
     @SerializedName("gravity_in_water")
     private float gravityInWater = 0f;
 
-    /** 空中阻力系数，通常为小正数。 */
+    /**
+     * 空中水平阻力（MCH {@code DragInAir}）：每 tick 从 {@code motionX/Z} 减去
+     * {@code (分量/|v|)*drag}，<strong>不改变 motionY</strong>。见
+     * {@link org.ywzj.rvp.entity.projectile.RVP_BaseBullet#applyMchHorizontalDrag}。
+     */
     @SerializedName("drag")
     private float drag = 0f;
 
-    /** 水中阻力系数。 */
+    /** 水中水平阻力，公式同 {@link #drag}。 */
     @SerializedName("drag_in_water")
     private float dragInWater = 0f;
 
@@ -55,19 +65,26 @@ public class RVP_ProjectileData {
     @SerializedName("has_rocket_engine")
     private boolean hasRocketEngine = false;
 
+    /** 弹体质量；与 {@link #thrust}、{@link #motorBurnTime} 一并有效时启用推力弹道。 */
     @SerializedName("mass")
     private float mass = 0f;
 
+    /** 发动机推力（与质量比决定加速度）；燃烧期内每 tick 沿朝向加速。 */
     @SerializedName("thrust")
     private float thrust = 0f;
 
+    /** 发动机燃烧时间（tick）；燃尽后仅受重力与 {@link #dragCoefficient}。 */
     @SerializedName("motor_burn_time")
     private float motorBurnTime = 0f;
 
+    /** 点火延迟（tick）：此前不施加推力，可配合弹射/滑翔段。 */
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
 
-    /** 二次阻力系数，与 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 相同。 */
+    /**
+     * 二次阻力系数：每 tick {@code Δv -= drag_coefficient * |v|²}（沿速度反方向，含 Y）。
+     * 仅 {@link #hasRocketEngine} 推力弹道使用；与 {@link #drag} 线性水平阻力不同。
+     */
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 

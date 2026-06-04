@@ -6,3 +6,5 @@ docs目录下为项目文档，入口见 docs/README.md；docs/plan 下放计划
 **禁止旧版 JSON 迁移**：`RVP_WeaponTypes` 等加载器只接受当前 schema；勿写 `legacy*`、`migrate*` 或旧键别名。改历史 JSON 用 `scripts/`，不要塞进 Java。
 
 **Bedrock 模型**：只在载具包 `assets/rvp/models/bedrock/` 与 display JSON 的 `model` 配置；禁止在 Java 里维护模型 ID 白名单（已删除 `RVP_BedrockModels`）。
+
+**`RVP_*Data` JavaDoc**：每个 `@SerializedName` 字段须有与 `RVP_FireData` 同级的说明（单位、默认、生效条件）；规范见仓库 `.cursor/skills/mcheli-rvp-port/data-class-javadoc.md`。

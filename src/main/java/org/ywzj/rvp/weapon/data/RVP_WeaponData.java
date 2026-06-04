@@ -5,60 +5,80 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
 /**
- * 七个公开 {@code rvp:*} 武器类型共用的数据模型。
+ * 七个公开 {@code rvp:*} 武器类型共用的数据模型（{@code data/rvp/weapons/<id>.json}）。
  *
- * <p>配置应使用 {@code *_data} 分组字段；语义访问统一通过本类 getter。</p>
+ * <p>配置应使用 {@code *_data} 分组字段；语义访问统一通过本类 getter。
+ * 各分组字段的 JavaDoc 以对应 {@code RVP_*Data} 类为准（样板见 {@link RVP_FireData}）。</p>
  */
 public class RVP_WeaponData extends BaseVehicleWeaponData {
 
-    /** 运行时内部武器类别，由注册器根据 rvp:* 类型写入，JSON 不需要配置。 */
+    /** 运行时内部武器类别，由 {@link org.ywzj.rvp.all.RVP_WeaponTypes} 根据 {@code type} 写入，JSON 勿配置。 */
     private transient RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
 
+    /** 子类型标签（如 incendiary），供逻辑分支或显示；非 MCH 迁移字段。 */
     @SerializedName("sub_type")
     private String subType = "";
 
+    /** 开火模式、散布、点射/蓄力等，见 {@link RVP_FireData}。 */
     @SerializedName("fire_data")
     private RVP_FireData fireData = new RVP_FireData();
 
+    /** 弹体初速、重力、阻力、火箭发动机等，见 {@link RVP_ProjectileData}。 */
     @SerializedName("projectile_data")
     private RVP_ProjectileData projectileData = new RVP_ProjectileData();
 
+    /** 定时/近炸/空爆等引信，见 {@link RVP_FuseData}。 */
     @SerializedName("fuse_data")
     private RVP_FuseData fuseData = new RVP_FuseData();
 
+    /** 直击伤害、距离衰减、引信伤害覆盖、{@link RVP_DamageFactor}，见 {@link RVP_DamageData}。 */
     @SerializedName("damage_model_data")
     private RVP_DamageData damageModelData = new RVP_DamageData();
 
+    /** 穿透、穿墙、跳弹，见 {@link RVP_CollisionData}。 */
     @SerializedName("collision_data")
     private RVP_CollisionData collisionData = new RVP_CollisionData();
 
+    /** 轨迹/命中/爆炸粒子与机枪曳光，见 {@link RVP_EffectsData}。 */
     @SerializedName("effects_data")
     private RVP_EffectsData effectsData = new RVP_EffectsData();
 
+    /** 落点爆炸与火焰/药水等自定义效果，见 {@link RVP_DetonateData}。 */
     @SerializedName("detonate_data")
     private RVP_DetonateData detonateData = new RVP_DetonateData();
 
+    /** 子母弹释放节奏，见 {@link RVP_SubmunitionData}。 */
     @SerializedName("submunition_data")
     private RVP_SubmunitionData submunitionData = new RVP_SubmunitionData();
 
+    /** {@code rvp:dispenser} 投放物与散布，见 {@link RVP_DispenserPayloadData}。 */
     @SerializedName("dispenser_data")
     private RVP_DispenserPayloadData dispenserData = new RVP_DispenserPayloadData();
 
+    /** 导引头视场、距离、抗干扰等，见 {@link RVP_SeekerData}。 */
     @SerializedName("seeker_data")
     private RVP_SeekerData seekerData = new RVP_SeekerData();
 
+    /** 分段制导阶段与源，见 {@link RVP_GuidanceData}。 */
     @SerializedName("guidance_data")
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
 
+    /** 反辐射制导专用，见 {@link RVP_ArmData}。 */
     @SerializedName("arm_data")
     private RVP_ArmData armData = new RVP_ArmData();
 
+    /** TV 导弹接管与画面模式，见 {@link RVP_TvMissileData}。 */
     @SerializedName("tv_missile_data")
     private RVP_TvMissileData tvMissileData = new RVP_TvMissileData();
 
+    /** {@code rvp:laser} 射程与光束外观，见 {@link RVP_LaserData}。 */
     @SerializedName("laser_data")
     private RVP_LaserData laserData = new RVP_LaserData();
 
+    /**
+     * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
+     * {@code ui.need_lock_entity}。
+     */
     @SerializedName("require_lock")
     private boolean requireLock = true;
 
