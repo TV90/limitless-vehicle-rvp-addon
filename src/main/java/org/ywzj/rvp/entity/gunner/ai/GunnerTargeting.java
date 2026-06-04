@@ -10,7 +10,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
-import org.ywzj.rvp.entity.gunner.ai.profile.GunnerFaction;
+import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
@@ -154,8 +154,8 @@ public final class GunnerTargeting {
         return true;
     }
 
-    private static boolean shouldApplyTeamFilter(Entity entity, GunnerFaction faction) {
-        if (faction == GunnerFaction.ENEMY) {
+    private static boolean shouldApplyTeamFilter(Entity entity, RVP_EnumGunnerFaction faction) {
+        if (faction == RVP_EnumGunnerFaction.ENEMY) {
             return false;
         }
         return true;
@@ -195,13 +195,13 @@ public final class GunnerTargeting {
             if ("vehicle".equals(type) && entity instanceof AbstractVehicle) {
                 return isOccupiedVehicle(entity) ? TargetMatch.allowed(false) : TargetMatch.DISALLOWED;
             }
-            if ("vehicle:enemy_gunner".equals(type) && isVehicleDrivenByFaction(entity, GunnerFaction.ENEMY)) {
+            if ("vehicle:enemy_gunner".equals(type) && isVehicleDrivenByFaction(entity, RVP_EnumGunnerFaction.ENEMY)) {
                 return TargetMatch.allowed(true);
             }
-            if ("vehicle:friendly_gunner".equals(type) && isVehicleDrivenByFaction(entity, GunnerFaction.FRIENDLY)) {
+            if ("vehicle:friendly_gunner".equals(type) && isVehicleDrivenByFaction(entity, RVP_EnumGunnerFaction.FRIENDLY)) {
                 return TargetMatch.allowed(true);
             }
-            if ("vehicle:team_gunner".equals(type) && isVehicleDrivenByFaction(entity, GunnerFaction.TEAM)) {
+            if ("vehicle:team_gunner".equals(type) && isVehicleDrivenByFaction(entity, RVP_EnumGunnerFaction.TEAM)) {
                 return TargetMatch.allowed(true);
             }
             if ("vehicle:player".equals(type) && isVehicleDrivenByPlayer(entity)) {
@@ -250,7 +250,7 @@ public final class GunnerTargeting {
         return !isMonster(entity);
     }
 
-    private static boolean isVehicleDrivenByFaction(Entity entity, GunnerFaction faction) {
+    private static boolean isVehicleDrivenByFaction(Entity entity, RVP_EnumGunnerFaction faction) {
         if (!(entity instanceof AbstractVehicle vehicle)) {
             return false;
         }
@@ -273,20 +273,20 @@ public final class GunnerTargeting {
             return false;
         }
 
-        GunnerFaction sourceFaction = sourceGunner.getProfileFaction();
-        GunnerFaction targetFaction = targetGunner.getProfileFaction();
+        RVP_EnumGunnerFaction sourceFaction = sourceGunner.getProfileFaction();
+        RVP_EnumGunnerFaction targetFaction = targetGunner.getProfileFaction();
 
-        if (sourceFaction == GunnerFaction.ENEMY) {
-            return targetFaction == GunnerFaction.FRIENDLY || targetFaction == GunnerFaction.TEAM;
+        if (sourceFaction == RVP_EnumGunnerFaction.ENEMY) {
+            return targetFaction == RVP_EnumGunnerFaction.FRIENDLY || targetFaction == RVP_EnumGunnerFaction.TEAM;
         }
-        if (sourceFaction == GunnerFaction.FRIENDLY) {
-            return targetFaction == GunnerFaction.ENEMY;
+        if (sourceFaction == RVP_EnumGunnerFaction.FRIENDLY) {
+            return targetFaction == RVP_EnumGunnerFaction.ENEMY;
         }
-        if (sourceFaction == GunnerFaction.TEAM) {
-            if (targetFaction == GunnerFaction.ENEMY) {
+        if (sourceFaction == RVP_EnumGunnerFaction.TEAM) {
+            if (targetFaction == RVP_EnumGunnerFaction.ENEMY) {
                 return true;
             }
-            if (targetFaction == GunnerFaction.TEAM) {
+            if (targetFaction == RVP_EnumGunnerFaction.TEAM) {
                 Team sourceTeam = sourceGunner.getTeam();
                 Team targetTeam = targetGunner.getTeam();
                 return sourceTeam == null || targetTeam == null || !targetTeam.isAlliedTo(sourceTeam);

@@ -8,7 +8,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
-import org.ywzj.rvp.entity.gunner.ai.profile.GunnerFaction;
+import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.mixin.GunnerWeaponAccessorMixin;
@@ -77,7 +77,7 @@ public final class GunnerBrain {
         if (weaponUnit == null) {
             return;
         }
-        if (profile.getFaction() != GunnerFaction.ENEMY) {
+        if (profile.getFaction() != RVP_EnumGunnerFaction.ENEMY) {
             return;
         }
         if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF || weaponUnit.getMainRadarUnit() == null) {

@@ -8,17 +8,17 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.YwzjRvp;
+import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.util.ResourceScanner;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@Mod.EventBusSubscriber(modid = YwzjRvp.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class GunnerProfileManager extends SimplePreparableReloadListener<Map<ResourceLocation, JsonElement>> {
 
-    public static final ResourceLocation DEFAULT_PROFILE_ID = YwzjRvp.modLocation("default");
+    public static final ResourceLocation DEFAULT_PROFILE_ID = RVP_MOD.modLocation("default");
     public static final GunnerProfile DEFAULT_PROFILE = createDefaultProfile();
     public static final GunnerProfileManager INSTANCE = new GunnerProfileManager();
 
@@ -30,8 +30,8 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
         Map<ResourceLocation, JsonElement> legacy = ResourceScanner.scanDirectory(resourceManager, "gunner_profiles", GsonUtil.GSON);
         Map<ResourceLocation, JsonElement> gunner = ResourceScanner.scanDirectory(resourceManager, "gunner", GsonUtil.GSON);
 
-        legacy.forEach((id, json) -> map.put(YwzjRvp.modLocation(id.getPath()), json));
-        gunner.forEach((id, json) -> map.put(YwzjRvp.modLocation(id.getPath()), json));
+        legacy.forEach((id, json) -> map.put(RVP_MOD.modLocation(id.getPath()), json));
+        gunner.forEach((id, json) -> map.put(RVP_MOD.modLocation(id.getPath()), json));
 
         return Map.copyOf(map);
     }
@@ -62,7 +62,7 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
         }
         String normalized = profileName.trim();
         if (!normalized.contains(":")) {
-            return YwzjRvp.modLocation(normalized);
+            return RVP_MOD.modLocation(normalized);
         }
         ResourceLocation parsed = ResourceLocation.tryParse(normalized);
         if (parsed == null) {
@@ -72,7 +72,7 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
             return parsed;
         }
         if ("minecraft".equals(parsed.getNamespace())) {
-            ResourceLocation remapped = YwzjRvp.modLocation(parsed.getPath());
+            ResourceLocation remapped = RVP_MOD.modLocation(parsed.getPath());
             if (profiles.containsKey(remapped)) {
                 return remapped;
             }

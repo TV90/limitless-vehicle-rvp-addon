@@ -4,7 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.entity.weapon.TVMissileEntity;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import java.util.function.Supplier;
 
 public class C2STVMissileExit {
@@ -35,13 +35,13 @@ public class C2STVMissileExit {
                 return;
             }
             Entity e = player.level().getEntity(msg.missileEntityId);
-            if (!(e instanceof TVMissileEntity missile)) {
+            if (!(e instanceof RVP_MissileEntity missile)) {
                 return;
             }
             if (missile.getOwner() != player) {
                 return;
             }
-            missile.ywzj_rvp$exitTVMissile();
+            missile.rvp$exitTVMissile();
         });
     }
 }

@@ -1,2 +1,2 @@
-docs目录下为项目文档，docs/plan下放计划文档
+docs目录下为项目文档，入口见 docs/README.md；docs/plan 下放计划文档
 命名时武器名称要使用AntiRadiation、TVMissile这种正规写法，并且如GPS等缩写不要写成Gps
