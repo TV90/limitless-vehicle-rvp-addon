@@ -1,0 +1,79 @@
+package org.ywzj.rvp.weapon.data;
+
+import com.google.gson.annotations.SerializedName;
+
+/**
+ * 引信参数。子弹、火箭、导弹、炸弹和投放物共用。
+ */
+public class RVP_FuseData {
+
+    /**
+     * 定时引信：飞行 tick 达到该值后引爆；0 表示不启用。
+     * 原 {@code time_tick} 在加载时合并到此字段。
+     */
+    @SerializedName("delay_tick")
+    private int delayTick = 0;
+
+    /**
+     * 可编程空爆（MCH）：玩家按锁定键（R）测距后，弹体沿弹道累计飞行距离达到
+     * {@code 测距 + airburst_offset} 米时引爆。未测距或测距无效时不触发。
+     */
+    @SerializedName("programmable_airburst")
+    private boolean programmableAirburst = false;
+
+    /** 可编程空爆：测距目标距离之外的附加米数（MCH 固定 +3m，此处可配）。 */
+    @SerializedName("airburst_offset")
+    private float airburstOffset = 3f;
+
+    /** 可编程空爆：有效测距下限（米），低于等于该值视为未设置（MCH 默认 5）。 */
+    @SerializedName("airburst_measure_min")
+    private int airburstMeasureMin = 5;
+
+    /** 可编程空爆：有效测距上限（米），高于等于该值视为未设置（MCH 默认 300）。 */
+    @SerializedName("airburst_measure_max")
+    private int airburstMeasureMax = 300;
+
+    /** 近炸引信半径（米），0 表示不启用 RVP 近炸检测。 */
+    @SerializedName("proximity_radius")
+    private float proximityRadius = 0f;
+
+    /** 近炸引信：出生后至少经过多少 tick 才启用；&lt;0 表示不限制（MCH 默认 -1）。 */
+    @SerializedName("proximity_fuse_tick")
+    private int proximityFuseTick = -1;
+
+    /** 生命周期结束时是否爆炸；false 时只消失。 */
+    @SerializedName("detonate_on_life_end")
+    private boolean detonateOnLifeEnd = false;
+
+    public int getDelayTick() {
+        return Math.max(delayTick, 0);
+    }
+
+    public boolean isProgrammableAirburst() {
+        return programmableAirburst;
+    }
+
+    public float getAirburstOffset() {
+        return Math.max(airburstOffset, 0f);
+    }
+
+    public int getAirburstMeasureMin() {
+        return Math.max(airburstMeasureMin, 0);
+    }
+
+    public int getAirburstMeasureMax() {
+        return airburstMeasureMax > 0 ? airburstMeasureMax : 300;
+    }
+
+    public float getProximityRadius() {
+        return Math.max(proximityRadius, 0f);
+    }
+
+    public int getProximityFuseTick() {
+        return proximityFuseTick;
+    }
+
+    public boolean isDetonateOnLifeEnd() {
+        return detonateOnLifeEnd;
+    }
+}

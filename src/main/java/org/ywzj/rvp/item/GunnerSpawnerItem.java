@@ -14,9 +14,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.YwzjRvp;
+import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
-import org.ywzj.rvp.all.RvpEntities;
+import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.item.VehicleItem;
@@ -98,7 +98,7 @@ public class GunnerSpawnerItem extends VehicleItem {
         }
 
         ServerLevel level = (ServerLevel) player.level();
-        GunnerEntity gunner = RvpEntities.GUNNER.get().create(level);
+        GunnerEntity gunner = RVP_Entities.GUNNER.get().create(level);
         if (gunner == null) {
             return InteractionResult.FAIL;
         }
@@ -210,7 +210,7 @@ public class GunnerSpawnerItem extends VehicleItem {
         String path = ResourceLocation.tryParse(current) != null ? ResourceLocation.tryParse(current).getPath() : current;
         int idx = PROFILE_ORDER.indexOf(path);
         String next = PROFILE_ORDER.get((idx + 1 + PROFILE_ORDER.size()) % PROFILE_ORDER.size());
-        return YwzjRvp.modLocation(next).toString();
+        return RVP_MOD.modLocation(next).toString();
     }
 
     private static Component getSeatLabel(int seatIndex) {

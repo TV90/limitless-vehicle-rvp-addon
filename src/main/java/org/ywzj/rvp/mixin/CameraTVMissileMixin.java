@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.client.state.RvpClientTVMissileState;
-import org.ywzj.rvp.entity.weapon.TVMissileEntity;
+import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.client.handler.FirstPersonHandler;
 import org.ywzj.vehicle.util.VectorUtil;
 
@@ -48,9 +48,9 @@ public abstract class CameraTVMissileMixin {
     protected abstract void setRotation(float pYRot, float pXRot);
 
     @Inject(method = "setup", at = @At("TAIL"))
-    private void ywzj_rvp$TVMissileEntityCamera(BlockGetter pLevel, Entity pEntity, boolean pDetached, boolean pThirdPersonReverse, float pPartialTick, CallbackInfo ci) {
+    private void ywzj_rvp$RVP_TVMissileCamera(BlockGetter pLevel, Entity pEntity, boolean pDetached, boolean pThirdPersonReverse, float pPartialTick, CallbackInfo ci) {
         Minecraft mc = Minecraft.getInstance();
-        if (!RvpClientTVMissileState.isActive() || mc.level == null || mc.player == null) {
+        if (!RVP_ClientTVMissileState.isActive() || mc.level == null || mc.player == null) {
             return;
         }
         if (pEntity != mc.player) {
@@ -59,23 +59,23 @@ public abstract class CameraTVMissileMixin {
         if (!mc.options.getCameraType().isFirstPerson()) {
             return;
         }
-        Entity e = mc.level.getEntity(RvpClientTVMissileState.getActiveMissileId());
-        if (!(e instanceof TVMissileEntity missile) || missile.isRemoved()) {
+        Entity e = mc.level.getEntity(RVP_ClientTVMissileState.getActiveMissileId());
+        if (!(e instanceof RVP_MissileEntity) || e.isRemoved()) {
             return;
         }
-        double x = Mth.lerp(pPartialTick, missile.xo, missile.getX());
-        double y = Mth.lerp(pPartialTick, missile.yo, missile.getY());
-        double z = Mth.lerp(pPartialTick, missile.zo, missile.getZ());
-        float targetYaw = Mth.rotLerp(pPartialTick, missile.yRotO, missile.getYRot());
-        float targetPitch = Mth.lerp(pPartialTick, missile.xRotO, missile.getXRot());
+        double x = Mth.lerp(pPartialTick, e.xo, e.getX());
+        double y = Mth.lerp(pPartialTick, e.yo, e.getY());
+        double z = Mth.lerp(pPartialTick, e.zo, e.getZ());
+        float targetYaw = Mth.rotLerp(pPartialTick, e.yRotO, e.getYRot());
+        float targetPitch = Mth.lerp(pPartialTick, e.xRotO, e.getXRot());
 
         // The missile turns in coarse, discrete steps server-side (rate-limited deg/tick) and
         // its rotation arrives quantized over the network, so plain per-tick interpolation looks
         // jerky at the start/stop of a turn. Run a frame-rate-independent exponential low-pass
         // (critically damped feel) over the camera angles to smooth the view.
         long now = System.nanoTime();
-        if (ywzj_rvp$lastMissileId != missile.getId()) {
-            ywzj_rvp$lastMissileId = missile.getId();
+        if (ywzj_rvp$lastMissileId != e.getId()) {
+            ywzj_rvp$lastMissileId = e.getId();
             ywzj_rvp$smoothYaw = targetYaw;
             ywzj_rvp$smoothPitch = targetPitch;
         } else {

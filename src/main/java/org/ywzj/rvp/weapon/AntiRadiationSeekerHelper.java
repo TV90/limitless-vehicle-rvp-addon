@@ -40,8 +40,31 @@ public final class AntiRadiationSeekerHelper {
     }
 
     public static List<AntiRadiationEmitter> scanVisibleEmitters(net.minecraft.world.level.Level level, Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange, @Nullable AbstractVehicle excludeVehicle, int tickCount, Map<Long, Integer> pulseTickMap, int pulseMemoryTick) {
-        AABB searchBox = AABB.ofSize(seekerPos, seekRange * 2.0, seekRange * 2.0, seekRange * 2.0);
+        List<RVP_RadarPulseDescriptor> pulses = collectPulseDescriptors(level, seekerPos, seekerLook, seekerFov,
+                seekRange, excludeVehicle, tickCount, pulseTickMap, pulseMemoryTick);
         List<AntiRadiationEmitter> out = new ArrayList<>();
+        for (RVP_RadarPulseDescriptor pulse : pulses) {
+            if (!(level.getEntity(pulse.emitterVehicleId()) instanceof AbstractVehicle vehicle)) {
+                continue;
+            }
+            RadarUnit radarUnit = null;
+            for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+                if (partUnit instanceof RadarUnit candidate && candidate.getIndex() == pulse.emitterRadarIndex()) {
+                    radarUnit = candidate;
+                    break;
+                }
+            }
+            if (radarUnit != null) {
+                out.add(new AntiRadiationEmitter(vehicle.getId(), radarUnit.getIndex(), vehicle, radarUnit,
+                        pulse.emitterPosition(), pulse.lockedEmission(), pulse));
+            }
+        }
+        return out;
+    }
+
+    public static List<RVP_RadarPulseDescriptor> collectPulseDescriptors(net.minecraft.world.level.Level level, Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange, @Nullable AbstractVehicle excludeVehicle, int tickCount, Map<Long, Integer> pulseTickMap, int pulseMemoryTick) {
+        AABB searchBox = AABB.ofSize(seekerPos, seekRange * 2.0, seekRange * 2.0, seekRange * 2.0);
+        List<RVP_RadarPulseDescriptor> out = new ArrayList<>();
         for (AbstractVehicle vehicle : level.getEntitiesOfClass(AbstractVehicle.class, searchBox, entity -> excludeVehicle == null || entity != excludeVehicle)) {
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
                 if (!(partUnit instanceof RadarUnit radarUnit)) {
@@ -82,10 +105,24 @@ public final class AntiRadiationSeekerHelper {
                     continue;
                 }
 
-                out.add(new AntiRadiationEmitter(vehicle.getId(), radarUnit.getIndex(), vehicle, radarUnit, radarPos, locked));
+                out.add(createPdw(seekerPos, seekerLook, tickCount, vehicle, radarUnit, radarPos, locked));
             }
         }
         return out;
+    }
+
+    private static RVP_RadarPulseDescriptor createPdw(Vec3 seekerPos, Vec3 seekerLook, int tickCount,
+                                                      AbstractVehicle vehicle, RadarUnit radarUnit,
+                                                      Vec3 radarPos, boolean locked) {
+        double distance = Math.max(radarPos.distanceTo(seekerPos), 1.0);
+        double angle = Math.toDegrees(VectorUtil.angleBetween(seekerLook, radarPos.subtract(seekerPos)));
+        long key = emitterKey(vehicle.getId(), radarUnit.getIndex());
+        double carrierFrequencyMhz = 8000.0 + Math.floorMod(key, 4000);
+        double pulseWidthMicroseconds = locked ? 4.0 : 1.2;
+        double rcs = Math.max(vehicle.physicsEngine.radarCrossSection, 0.1f);
+        double amplitude = (locked ? 2.0 : 1.0) * rcs / (distance * distance);
+        return new RVP_RadarPulseDescriptor(tickCount, pulseWidthMicroseconds, angle,
+                carrierFrequencyMhz, amplitude, vehicle.getId(), radarUnit.getIndex(), radarPos, locked);
     }
 
     public static boolean isScanRadiatingToSeeker(RadarUnit radarUnit, Vec3 seekerPos) {
@@ -129,6 +166,18 @@ public final class AntiRadiationSeekerHelper {
         return base;
     }
 
+    public static double score(Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange,
+                               RVP_RadarPulseDescriptor pdw, float lockedBonus) {
+        double distance = pdw.emitterPosition().distanceTo(seekerPos);
+        double base = pdw.angleOfArrivalDegrees() / Math.max(seekerFov, 1.0f)
+                + distance / Math.max(seekRange, 1.0f)
+                - Math.min(pdw.amplitude() * 128.0, 1.0);
+        if (pdw.lockedEmission()) {
+            base -= lockedBonus;
+        }
+        return base;
+    }
+
     public static long emitterKey(int vehicleId, int radarIndex) {
         return (((long) vehicleId) << 32) | (radarIndex & 0xffffffffL);
     }
@@ -152,7 +201,7 @@ public final class AntiRadiationSeekerHelper {
         return Math.max(scanCycleTick, 1);
     }
 
-    public record AntiRadiationEmitter(int vehicleId, int radarIndex, AbstractVehicle vehicle, RadarUnit radarUnit, Vec3 position, boolean locked) {
+    public record AntiRadiationEmitter(int vehicleId, int radarIndex, AbstractVehicle vehicle, RadarUnit radarUnit, Vec3 position, boolean locked, RVP_RadarPulseDescriptor pdw) {
     }
 
     public record AntiRadiationTarget(int vehicleId, int radarIndex, AbstractVehicle vehicle, Vec3 position, int defaultMemoryTick) {

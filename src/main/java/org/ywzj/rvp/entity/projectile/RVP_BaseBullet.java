@@ -1,0 +1,887 @@
+package org.ywzj.rvp.entity.projectile;
+
+import com.mojang.logging.LogUtils;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.guidance.RVP_GuidanceController;
+import org.ywzj.rvp.util.RVP_Explosion;
+import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
+import org.ywzj.rvp.weapon.damage.RVP_DamageDecayEvaluator;
+import org.ywzj.rvp.weapon.data.RVP_FuseData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
+import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
+import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
+import org.ywzj.vehicle.all.AllDamageTypes;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.weapon.AmmoEntity;
+import org.ywzj.vehicle.particle.BulletHoleOption;
+import org.ywzj.vehicle.util.BulletHitResult;
+import org.ywzj.vehicle.util.EntityUtil;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.slf4j.Logger;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Common runtime base for all new RVP projectile entities.
+ *
+ * <p>It owns generic projectile mechanics: kinematics, fuses, proximity,
+ * submunition timing, impact effects, penetration, ricochet and damage falloff.
+ * Guidance-specific motion changes are delegated to {@link RVP_GuidanceController}.</p>
+ */
+public abstract class RVP_BaseBullet extends AmmoEntity {
+
+    private static final double PARTICLE_VIEW_DISTANCE = 512.0D;
+    private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    protected RVP_WeaponData rvpData;
+    protected RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
+    protected AbstractVehicle shooterVehicle;
+    protected WeaponUnit shooterWeaponUnit;
+    protected double flightSpeed;
+    protected float accelFactor = 1f;
+    /** Official cannon-style linear friction (machinegun only). */
+    protected float cannonFriction = 0.01f;
+    /** Official cannon-style positive-down gravity per tick (machinegun only). */
+    protected float cannonGravity;
+    protected int updateCount;
+    protected int sprinkleTime;
+    /** 可编程空爆测距（米），来自 MCH {@code airburstDist}。 */
+    protected int airburstDist;
+    protected double airburstTravelled;
+    protected boolean airburstTriggered;
+    protected int submunitionsRemaining;
+    protected byte submunitionFlag;
+    protected int piercingLeft;
+    protected int wallPenetrationLeft;
+    protected int bounceLeft;
+    protected float bounceStrength = 0.6f;
+    protected int bounceFuseTick;
+    protected int bounceFuseCountdown = -1;
+    protected double flightDistance;
+
+    @Nullable
+    protected Entity targetEntity;
+    @Nullable
+    protected Vec3 targetPos;
+    @Nullable
+    protected Vec3 lastGuidancePos;
+    protected Vec3 previousTickPos;
+    protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
+    protected int antiRadiationNextScanTick;
+    protected int antiRadiationMemoryLeftTick;
+    protected boolean antiRadiationLostPermanent;
+
+    public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level, ResourceLocation weaponId) {
+        super(type, level, weaponId);
+        this.keepChunkLoaded = true;
+    }
+
+    public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level) {
+        this(type, level, null);
+    }
+
+    public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
+                               Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
+        this.rvpData = data;
+        this.weaponKind = kind == null ? RVP_EnumWeaponKind.ROCKET : kind;
+        this.shooterVehicle = vehicle;
+        this.vehicle = vehicle;
+        this.setOwner(shooter);
+        this.damage = data.getDirectDamage();
+        this.headShot = data.getHeadshotMultiplier();
+        this.explosion = data.getExplosionData();
+        this.life = data.getLife();
+        this.submunitionsRemaining = data.getBomblet();
+        this.piercingLeft = data.getPiercing();
+        this.wallPenetrationLeft = data.getWallPenetration();
+        this.bounceLeft = data.getBounce();
+        this.bounceStrength = data.getBounceStrength();
+        this.bounceFuseTick = data.getBounceFuseTick();
+        if (usesCannonBallistics(kind)) {
+            this.accelFactor = 1f;
+            this.cannonFriction = data.getCannonFriction();
+            this.cannonGravity = data.getCannonGravity();
+            this.flightSpeed = Math.max(initialMotion.length(), 0.01f);
+        } else {
+            float projectileSpeed = data.getProjectileVelocity();
+            this.flightSpeed = Math.max(Math.max(initialMotion.length(), projectileSpeed), 0.01f);
+            this.accelFactor = 1f;
+            if (data.getProjectileData().isRocketEngineMisconfigured()) {
+                LOGGER.warn(
+                        "Weapon {} has_rocket_engine=true but missing mass/thrust/motor_burn_time; using simplified ballistics",
+                        data.getWeaponId());
+            } else if (!data.usesPropulsion() && kind == RVP_EnumWeaponKind.ROCKET && projectileSpeed > 4f) {
+                this.accelFactor = projectileSpeed / 4f;
+            }
+        }
+        this.setPos(spawnPos);
+        this.setDeltaMovement(initialMotion);
+        if (data.getBomblet() > 0) {
+            this.sprinkleTime = data.getSubmunitionData().getDelayTick() > 0
+                    ? data.getSubmunitionData().getDelayTick()
+                    : data.getBombletSTime();
+        }
+    }
+
+    /** 从炮塔武器槽读取 R 键测距结果（发射前由 {@link RVP_ProjectileSpawner} 调用）。 */
+    public void bindProgrammableAirburstRange(WeaponUnit unit, int weaponIndex) {
+        if (rvpData == null || shooterVehicle == null || unit == null
+                || !rvpData.getFuseData().isProgrammableAirburst()) {
+            airburstDist = 0;
+            return;
+        }
+        airburstDist = RVP_AirburstRangeStore.get(shooterVehicle, unit, weaponIndex);
+    }
+
+    @Nullable
+    public RVP_WeaponData getRvpData() {
+        return rvpData;
+    }
+
+    public RVP_EnumWeaponKind getWeaponKind() {
+        return weaponKind;
+    }
+
+    public double getFlightSpeed() {
+        return flightSpeed;
+    }
+
+    public AbstractVehicle getShooterVehicle() {
+        return shooterVehicle;
+    }
+
+    public WeaponUnit getShooterWeaponUnit() {
+        return shooterWeaponUnit;
+    }
+
+    public void setShooterWeaponUnit(WeaponUnit shooterWeaponUnit) {
+        this.shooterWeaponUnit = shooterWeaponUnit;
+    }
+
+    @Nullable
+    public Entity getTargetEntity() {
+        return targetEntity;
+    }
+
+    public void setTargetEntity(@Nullable Entity target) {
+        this.targetEntity = target;
+        if (target != null) {
+            this.lastGuidancePos = aimPoint(target);
+        }
+    }
+
+    @Nullable
+    public Vec3 getTargetPos() {
+        return targetPos;
+    }
+
+    public void setTargetPos(@Nullable Vec3 targetPos) {
+        this.targetPos = targetPos;
+        if (targetPos != null) {
+            this.lastGuidancePos = targetPos;
+        }
+    }
+
+    @Nullable
+    public Vec3 getLastGuidancePos() {
+        return lastGuidancePos;
+    }
+
+    public void clearTarget() {
+        this.targetEntity = null;
+        this.targetPos = null;
+    }
+
+    public void rememberGuidancePos(@Nullable Vec3 pos) {
+        if (pos != null) {
+            this.lastGuidancePos = pos;
+        }
+    }
+
+    public boolean isMissile() {
+        return weaponKind == RVP_EnumWeaponKind.MISSILE;
+    }
+
+    public int getUpdateCount() {
+        return updateCount;
+    }
+
+    public Map<Long, Integer> getRadiationPulseTickMap() {
+        return radiationPulseTickMap;
+    }
+
+    public int getAntiRadiationNextScanTick() {
+        return antiRadiationNextScanTick;
+    }
+
+    public void setAntiRadiationNextScanTick(int tick) {
+        this.antiRadiationNextScanTick = tick;
+    }
+
+    public int getAntiRadiationMemoryLeftTick() {
+        return antiRadiationMemoryLeftTick;
+    }
+
+    public void setAntiRadiationMemoryLeftTick(int tick) {
+        this.antiRadiationMemoryLeftTick = Math.max(tick, 0);
+    }
+
+    public boolean isAntiRadiationLostPermanent() {
+        return antiRadiationLostPermanent;
+    }
+
+    public void setAntiRadiationLostPermanent(boolean lostPermanent) {
+        this.antiRadiationLostPermanent = lostPermanent;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (this instanceof RVP_BulletEntity bullet) {
+            bullet.tickBullet();
+            return;
+        }
+        // Match {@link org.ywzj.vehicle.entity.weapon.MissileEntity}: motion server-only; client uses synced rot + AmmoEntity lerp.
+        if (level().isClientSide()) {
+            spawnTrailParticles();
+            return;
+        }
+
+        if (rvpData == null) {
+            discard();
+            return;
+        }
+
+        updateCount++;
+        if (tickDelayFuse()) {
+            return;
+        }
+        if (!checkShooterValid()) {
+            discard();
+            return;
+        }
+
+        tickSubmunition();
+        tickGuidance();
+        previousTickPos = position();
+        tickMotion();
+        tickHit();
+        tickProgrammableAirburst();
+        tickProximityFuse();
+        if (tickBounceFuse()) {
+            return;
+        }
+        broadcastTrailParticles();
+        life--;
+        if (life < 0) {
+            if (rvpData.getFuseData().isDetonateOnLifeEnd()) {
+                explodeAndDiscard(position());
+            } else {
+                discard();
+            }
+        }
+    }
+
+    protected void tickGuidance() {
+        RVP_GuidanceController.tick(this);
+    }
+
+    protected static boolean usesCannonBallistics(RVP_EnumWeaponKind kind) {
+        return kind == RVP_EnumWeaponKind.MACHINEGUN;
+    }
+
+    protected boolean usesCannonBallistics() {
+        return usesCannonBallistics(weaponKind);
+    }
+
+    /**
+     * Same integration as {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()}:
+     * position += velocity; velocity *= (1 - friction); velocity.y -= gravity.
+     */
+    protected void tickMotion() {
+        if (usesCannonBallistics()) {
+            return;
+        }
+        if (rvpData != null && rvpData.usesPropulsion()) {
+            RVP_ProjectileMotion.tickMissileMove(this);
+            return;
+        }
+        tickBallisticMotion();
+    }
+
+    /** 发射后由 {@link org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner} 在叠加载机速度后调用。 */
+    public void finalizeSpawnOrientation(AimRot aim) {
+        RVP_ProjectileMotion.finalizeSpawnOrientation(this, aim);
+    }
+
+    /** 无推力配置时的简化弹道（重力 + 线性阻力，可选恒定速度）。 */
+    protected void tickBallisticMotion() {
+        Vec3 velocity = getDeltaMovement();
+        if (!isInWater()) {
+            velocity = velocity.add(0, rvpData.getGravity(), 0);
+            velocity = applyDrag(velocity, rvpData.getDragInAir());
+        } else {
+            velocity = velocity.add(0, rvpData.getGravityInWater(), 0);
+            velocity = applyDrag(velocity, rvpData.getDragInWater());
+        }
+        if (rvpData.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-6) {
+            velocity = velocity.normalize().scale(Math.max(flightSpeed, 0.01));
+        }
+        velocity = clampSpeed(velocity);
+        if (accelFactor != 1f && velocity.lengthSqr() > 1.0E-6) {
+            velocity = velocity.scale(accelFactor);
+        }
+        setDeltaMovement(velocity);
+        setPos(position().add(velocity));
+        flightDistance += velocity.length();
+        RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
+    }
+
+    private Vec3 clampSpeed(Vec3 velocity) {
+        return RVP_ProjectileMotion.clampSpeed(this, velocity, rvpData);
+    }
+
+    private static Vec3 applyDrag(Vec3 velocity, float drag) {
+        if (drag <= 0f || velocity.lengthSqr() <= 1.0E-6) {
+            return velocity;
+        }
+        double speed = velocity.length();
+        double nextSpeed = Math.max(speed - drag * speed * speed, 0.0);
+        return nextSpeed <= 0 ? Vec3.ZERO : velocity.normalize().scale(nextSpeed);
+    }
+
+    protected boolean tickDelayFuse() {
+        int delay = rvpData.getDelayFuse();
+        if (delay > 0 && updateCount >= delay) {
+            detonateFuseAt(position(), FuseDetonation.NORMAL);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * MCH {@code onUpdateAirburst}：沿弹道累计距离达到 {@code airburstDist + offset} 米时引爆。
+     */
+    protected void tickProgrammableAirburst() {
+        if (rvpData == null || airburstTriggered) {
+            return;
+        }
+        RVP_FuseData fuse = rvpData.getFuseData();
+        if (!fuse.isProgrammableAirburst()) {
+            return;
+        }
+        int measured = airburstDist;
+        int min = fuse.getAirburstMeasureMin();
+        int max = fuse.getAirburstMeasureMax();
+        if (measured <= min || measured >= max) {
+            return;
+        }
+        double targetDist = measured + fuse.getAirburstOffset();
+        Vec3 motion = getDeltaMovement();
+        double segLen = motion.length();
+        if (segLen <= 0.0D) {
+            return;
+        }
+        double newTravel = airburstTravelled + segLen;
+        if (newTravel >= targetDist) {
+            double remain = targetDist - airburstTravelled;
+            double t = remain / segLen;
+            Vec3 detonatePos = position().add(motion.scale(t));
+            detonateFuseAt(detonatePos, FuseDetonation.AIRBURST);
+            airburstTriggered = true;
+            airburstTravelled = 0.0D;
+        } else {
+            airburstTravelled = newTravel;
+        }
+    }
+
+    protected void tickProximityFuse() {
+        if (rvpData == null) {
+            return;
+        }
+        RVP_FuseData fuse = rvpData.getFuseData();
+        int armTick = fuse.getProximityFuseTick();
+        if (armTick >= 0 && updateCount <= armTick) {
+            return;
+        }
+        float radius = rvpData.getProximityFuseDist();
+        if (radius <= 0f) {
+            return;
+        }
+        if (targetEntity != null && targetEntity.isAlive() && distanceToSqr(targetEntity) < radius * radius) {
+            detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
+            return;
+        }
+        AABB detectionBox = getBoundingBox().inflate(radius);
+        for (Entity entity : level().getEntities(this, detectionBox, this::canDamageEntity)) {
+            detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
+            return;
+        }
+    }
+
+    protected void tickSubmunition() {
+        if (submunitionsRemaining <= 0 || submunitionFlag != 0) {
+            return;
+        }
+        if (sprinkleTime > 0) {
+            sprinkleTime--;
+            return;
+        }
+        int interval = rvpData.getSubmunitionData().getIntervalTick();
+        int spawnCount = interval > 0 ? 1 : submunitionsRemaining;
+        for (int i = 0; i < spawnCount && submunitionsRemaining > 0; i++) {
+            sprinkleSubmunition();
+            submunitionsRemaining--;
+        }
+        if (submunitionsRemaining > 0) {
+            sprinkleTime = Math.max(interval, 1);
+        }
+    }
+
+    protected void sprinkleSubmunition() {
+        // Projectile subclasses decide the payload type.
+    }
+
+    /**
+     * Shared block/entity raycast for all RVP projectiles (bounce, wall pen, pierce, damage).
+     * Call with the travel segment for this tick; {@link #tickHit()} uses post-motion endpoints.
+     */
+    protected void tickHitSegment(Vec3 startVec, Vec3 endVec) {
+        Vec3 step = endVec.subtract(startVec);
+        if (step.lengthSqr() < 1.0E-8) {
+            step = getDeltaMovement();
+            endVec = startVec.add(step);
+        }
+        if (step.lengthSqr() < 1.0E-8) {
+            return;
+        }
+
+        BlockHitResult blockResult = level().clip(
+                new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+        if (blockResult.getType() != HitResult.Type.MISS) {
+            if (handleBlockImpact(blockResult)) {
+                return;
+            }
+        }
+
+        BulletHitResult entityResult = findEntityOnPathSegment(startVec, endVec, step);
+        if (entityResult != null && canDamageEntity(entityResult.getEntity())) {
+            handleEntityImpact(entityResult);
+        }
+    }
+
+    /** After {@link #tickMotion()}: segment from {@link #previousTickPos} to current position. */
+    @Override
+    protected void tickHit() {
+        Vec3 startVec = previousTickPos != null ? previousTickPos : position();
+        tickHitSegment(startVec, position());
+    }
+
+    /**
+     * {@link EntityUtil#findEntityOnPath} expands the query box with {@link #getDeltaMovement()};
+     * after cannon integration that vector is the *next* tick velocity, not this segment — pass the
+     * actual travel vector instead.
+     */
+    @Nullable
+    protected BulletHitResult findEntityOnPathSegment(Vec3 startVec, Vec3 endVec, Vec3 step) {
+        Vec3 saved = getDeltaMovement();
+        setDeltaMovement(step);
+        try {
+            return EntityUtil.findEntityOnPath(this, startVec, endVec);
+        } finally {
+            setDeltaMovement(saved);
+        }
+    }
+
+    protected boolean handleBlockImpact(BlockHitResult result) {
+        sendImpactParticles(result);
+        Vec3 hit = result.getLocation();
+        if (bounceLeft > 0 && getDeltaMovement().lengthSqr() > 0.05) {
+            Direction direction = result.getDirection();
+            Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
+            Vec3 velocity = getDeltaMovement();
+            Vec3 reflected = velocity.subtract(normal.scale(2.0 * velocity.dot(normal))).scale(bounceStrength);
+            bounceLeft--;
+            if (bounceFuseTick > 0 && bounceFuseCountdown < 0) {
+                bounceFuseCountdown = bounceFuseTick;
+            }
+            setPos(hit.add(normal.scale(0.08)));
+            setDeltaMovement(reflected);
+            applyRotationFromVelocity(reflected);
+            return true;
+        }
+        if (wallPenetrationLeft > 0) {
+            wallPenetrationLeft--;
+            Vec3 velocity = getDeltaMovement();
+            if (velocity.lengthSqr() > 1.0E-6) {
+                setPos(hit.add(velocity.normalize().scale(0.4)));
+            }
+            return false;
+        }
+        resolveImpactDetonation(hit, result, true);
+        discard();
+        return true;
+    }
+
+    private void handleEntityImpact(BulletHitResult result) {
+        Entity entity = result.getEntity();
+        Entity owner = this.getOwner();
+        boolean headshot = result.isHeadshot();
+        float finalDamage = computeDamage(headshot);
+        finalDamage = RVP_DamageApplier.applyScaled(finalDamage, entity, rvpData);
+        DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
+        EntityUtil.hurt(source, entity, finalDamage);
+        if (entity instanceof LivingEntity livingEntity) {
+            livingEntity.invulnerableTime = 0;
+        }
+        Vec3 hitPos = result.getLocation();
+        resolveImpactDetonation(hitPos, null, false);
+        if (explosion != null && explosion.explode) {
+            discard();
+            return;
+        }
+        if (piercingLeft > 0) {
+            piercingLeft--;
+            return;
+        }
+        discard();
+    }
+
+    protected float computeDamage(boolean headshot) {
+        float base = headshot ? damage * this.headShot : damage;
+        float decay = RVP_DamageDecayEvaluator.combinedFactor(
+                rvpData.getDamageModelData().getDecayRules(), (float) flightDistance);
+        return base * decay;
+    }
+
+    /** Returns true if bounce fuse detonated/discarded this tick. */
+    protected boolean tickBounceFuse() {
+        if (bounceFuseCountdown <= 0) {
+            return false;
+        }
+        bounceFuseCountdown--;
+        if (bounceFuseCountdown == 0) {
+            explodeAndDiscard(position());
+            return true;
+        }
+        return false;
+    }
+
+    protected boolean canDamageEntity(Entity entity) {
+        if (entity == null || !entity.isAlive()) {
+            return false;
+        }
+        if (entity == vehicle) {
+            return false;
+        }
+        return vehicle == null || !vehicle.getPassengers().contains(entity);
+    }
+
+    protected boolean checkShooterValid() {
+        if (shooterVehicle == null && getOwner() == null) {
+            return false;
+        }
+        if (shooterVehicle != null && !shooterVehicle.isAlive()) {
+            return false;
+        }
+        Entity shooter = getOwner() != null ? getOwner() : shooterVehicle;
+        if (shooter == null) {
+            return true;
+        }
+        double dx = getX() - shooter.getX();
+        double dz = getZ() - shooter.getZ();
+        return dx * dx + dz * dz < 3.38724E7D;
+    }
+
+    protected void applyDetonateAt(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
+                                   boolean blockImpact) {
+        if (!(level() instanceof net.minecraft.server.level.ServerLevel serverLevel) || rvpData == null) {
+            return;
+        }
+        if (!rvpData.getDetonateData().hasAnyEffect()) {
+            return;
+        }
+        RVP_DetonateApplier.apply(serverLevel, pos, blockHit, rvpData.getDetonateData(),
+                getOwner(), shooterVehicle, blockImpact);
+    }
+
+    /**
+     * 按 {@link org.ywzj.rvp.weapon.data.RVP_DetonateData#isEffectsBeforeExplosion()} 顺序触发自定义落点效果与爆炸。
+     */
+    protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
+                                           boolean blockImpact) {
+        if (rvpData == null) {
+            triggerExplosion(pos);
+            return;
+        }
+        org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
+        if (detonate.isEffectsBeforeExplosion()) {
+            applyDetonateAt(pos, blockHit, blockImpact);
+            triggerExplosion(pos);
+        } else {
+            triggerExplosion(pos);
+            applyDetonateAt(pos, blockHit, blockImpact);
+        }
+    }
+
+    protected enum FuseDetonation {
+        NORMAL,
+        AIRBURST,
+        PROXIMITY
+    }
+
+    protected void triggerExplosion(Vec3 pos) {
+        triggerExplosion(pos, FuseDetonation.NORMAL);
+    }
+
+    protected void triggerExplosion(Vec3 pos, FuseDetonation kind) {
+        if (explosion == null || !explosion.explode) {
+            return;
+        }
+        float damage = explosion.damage;
+        float radius = explosion.radius;
+        if (rvpData != null) {
+            damage = switch (kind) {
+                case AIRBURST -> rvpData.resolveAirburstExplosionDamage();
+                case PROXIMITY -> rvpData.resolveProximityFuseExplosionDamage();
+                default -> explosion.damage;
+            };
+            radius = switch (kind) {
+                case AIRBURST -> rvpData.resolveAirburstExplosionRadius();
+                case PROXIMITY -> rvpData.resolveProximityFuseExplosionRadius();
+                default -> explosion.radius;
+            };
+        }
+        RVP_Explosion ex = new RVP_Explosion(level(), getOwner(), vehicle, pos,
+                radius, damage, explosion.destroyBlock,
+                rvpData == null ? null : rvpData.getDamageFactor());
+        ex.explode();
+        if (level() instanceof ServerLevel serverLevel && rvpData != null) {
+            RVP_ProjectileParticleEffects.spawnExplosion(
+                    serverLevel, pos, rvpData.getEffectsData(), radius);
+        }
+    }
+
+    protected void detonateFuseAt(Vec3 pos, FuseDetonation kind) {
+        detonateFuseAt(pos, kind, null);
+    }
+
+    protected void detonateFuseAt(Vec3 pos, FuseDetonation kind, @Nullable Entity proximityTarget) {
+        if (kind == FuseDetonation.PROXIMITY && proximityTarget != null && rvpData != null) {
+            float direct = rvpData.getDamageModelData().getProximityFuseDamage();
+            if (direct > 0f) {
+                direct = RVP_DamageApplier.applyScaled(direct, proximityTarget, rvpData);
+                DamageSource source = AllDamageTypes.Sources.explosion(
+                        level().registryAccess(), this, getOwner(), pos);
+                proximityTarget.hurt(source, direct);
+            }
+        }
+        if (rvpData == null) {
+            triggerExplosion(pos);
+            discard();
+            return;
+        }
+        org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
+        if (detonate.isEffectsBeforeExplosion()) {
+            applyDetonateAt(pos, null, false);
+            triggerExplosion(pos, kind);
+        } else {
+            triggerExplosion(pos, kind);
+            applyDetonateAt(pos, null, false);
+        }
+        discard();
+    }
+
+    protected void explodeAndDiscard(Vec3 pos) {
+        detonateFuseAt(pos, FuseDetonation.NORMAL);
+    }
+
+    public void applyRotationFromVelocity(Vec3 velocity) {
+        RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
+    }
+
+    void applyCannonFacingFromVelocity(Vec3 velocity, boolean lerp) {
+        if (velocity.lengthSqr() <= 1.0E-8) {
+            return;
+        }
+        double horizontal = velocity.horizontalDistance();
+        float targetYRot = (float) Math.toDegrees(Mth.atan2(velocity.x, velocity.z));
+        float targetXRot = (float) Math.toDegrees(Mth.atan2(velocity.y, horizontal));
+        if (!lerp) {
+            setYRot(targetYRot);
+            setXRot(targetXRot);
+            return;
+        }
+        if (xRotO == 0.0F && yRotO == 0.0F) {
+            yRotO = targetYRot;
+            xRotO = targetXRot;
+        }
+        setYRot(targetYRot);
+        setXRot(targetXRot);
+        setXRot(lerpRotation(xRotO, getXRot()));
+        setYRot(lerpRotation(yRotO, getYRot()));
+    }
+
+    void applySpawnAimRot(AimRot aim) {
+        setYRot(aim.yRot());
+        setXRot(aim.xRot());
+    }
+
+    protected Vec3 aimPoint(Entity entity) {
+        return entity.position().add(0, entity.getBbHeight() * 0.5, 0);
+    }
+
+    protected void spawnTrailParticles() {
+        String configured = rvpData == null ? "" : rvpData.getEffectsData().getTrajectoryParticle();
+        boolean heavy = isHeavyProjectile();
+        ParticleOptions primary = resolveParticle(configured,
+                heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
+        if (primary == null) {
+            return;
+        }
+        Vec3 motion = getDeltaMovement();
+        double spread = heavy ? 0.08 : 0.04;
+        int count = heavy ? 3 : 1;
+        for (int i = 0; i < count; i++) {
+            double ox = (level().random.nextDouble() - 0.5) * spread;
+            double oy = (level().random.nextDouble() - 0.5) * spread;
+            double oz = (level().random.nextDouble() - 0.5) * spread;
+            level().addParticle(primary,
+                    getX() + ox, getY() + oy, getZ() + oz,
+                    -motion.x * 0.04, -motion.y * 0.04, -motion.z * 0.04);
+        }
+        if (heavy && tickCount % 2 == 0) {
+            level().addParticle(ParticleTypes.FLAME, getX(), getY(), getZ(),
+                    -motion.x * 0.02, -motion.y * 0.02, -motion.z * 0.02);
+            level().addParticle(ParticleTypes.CAMPFIRE_COSY_SMOKE, getX(), getY(), getZ(),
+                    -motion.x * 0.01, 0.05, -motion.z * 0.01);
+        }
+    }
+
+    protected boolean isHeavyProjectile() {
+        return this instanceof RVP_MissileEntity || this instanceof RVP_RocketEntity
+                || this instanceof RVP_BombEntity || this instanceof RVP_DispensedEntity;
+    }
+
+    protected void broadcastTrailParticles() {
+        if (!(level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        String configured = rvpData.getEffectsData().getTrajectoryParticle();
+        boolean heavy = isHeavyProjectile();
+        ParticleOptions primary = resolveParticle(configured,
+                heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
+        if (primary == null) {
+            return;
+        }
+        double spread = heavy ? 0.1 : 0.05;
+        int count = heavy ? 3 : 1;
+        serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+        if (heavy) {
+            serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
+        }
+    }
+
+    protected void sendImpactParticles(BlockHitResult result) {
+        if (!(level() instanceof ServerLevel serverLevel) || rvpData == null) {
+            return;
+        }
+        RVP_ProjectileParticleEffects.spawnBlockImpact(
+                serverLevel, result, rvpData.getEffectsData(), getBbWidth());
+        Vec3 normal = Vec3.atLowerCornerOf(result.getDirection().getNormal());
+        Vec3 loc2 = result.getLocation().add(normal.scale(0.01));
+        BlockPos hitPos = result.getBlockPos();
+        BulletHoleOption bulletHole = new BulletHoleOption(result.getDirection(), hitPos, 1, 0, 0, getCaliber());
+        for (ServerPlayer player : serverLevel.players()) {
+            if (player.distanceToSqr(loc2) > PARTICLE_VIEW_DISTANCE_SQ) {
+                continue;
+            }
+            serverLevel.sendParticles(player, bulletHole, true, loc2.x, loc2.y, loc2.z, 1, 0, 0, 0, 0);
+        }
+    }
+
+    private static ParticleOptions resolveParticle(String id, ParticleOptions fallback) {
+        if (id == null || id.isBlank()) {
+            return fallback;
+        }
+        return switch (id) {
+            case "none", "minecraft:none" -> null;
+            case "flame", "minecraft:flame" -> ParticleTypes.FLAME;
+            case "large_smoke", "minecraft:large_smoke" -> ParticleTypes.LARGE_SMOKE;
+            case "cloud", "minecraft:cloud" -> ParticleTypes.CLOUD;
+            case "lava", "minecraft:lava" -> ParticleTypes.LAVA;
+            case "campfire_smoke", "minecraft:campfire_cosy_smoke" -> ParticleTypes.CAMPFIRE_COSY_SMOKE;
+            case "explosion", "minecraft:explosion" -> ParticleTypes.EXPLOSION;
+            case "explosion_emitter", "minecraft:explosion_emitter" -> ParticleTypes.EXPLOSION_EMITTER;
+            case "smoke", "minecraft:smoke" -> ParticleTypes.SMOKE;
+            case "block", "minecraft:block" -> fallback;
+            default -> fallback;
+        };
+    }
+
+    public record AimRot(float xRot, float yRot) {}
+
+    @Override
+    public void writeSpawnData(FriendlyByteBuf buffer) {
+        super.writeSpawnData(buffer);
+        buffer.writeFloat(getXRot());
+        buffer.writeFloat(getYRot());
+        buffer.writeDouble(getDeltaMovement().x);
+        buffer.writeDouble(getDeltaMovement().y);
+        buffer.writeDouble(getDeltaMovement().z);
+        buffer.writeDouble(flightSpeed);
+        buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
+        buffer.writeBoolean(targetPos != null);
+        if (targetPos != null) {
+            buffer.writeDouble(targetPos.x);
+            buffer.writeDouble(targetPos.y);
+            buffer.writeDouble(targetPos.z);
+        }
+    }
+
+    @Override
+    public void readSpawnData(FriendlyByteBuf buffer) {
+        super.readSpawnData(buffer);
+        setXRot(buffer.readFloat());
+        setYRot(buffer.readFloat());
+        setDeltaMovement(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
+        this.flightSpeed = buffer.readDouble();
+        yRotO = getYRot();
+        xRotO = getXRot();
+        int id = buffer.readVarInt();
+        if (id > 0) {
+            Entity e = level().getEntity(id);
+            if (e != null) {
+                this.targetEntity = e;
+            }
+        }
+        if (buffer.readBoolean()) {
+            this.targetPos = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
+            this.lastGuidancePos = this.targetPos;
+        }
+    }
+}

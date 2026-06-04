@@ -6,8 +6,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.client.state.RvpRocketCcipState;
-import org.ywzj.rvp.weapon.RvpRocketBallistics;
+import org.ywzj.rvp.client.state.RVP_RocketCcipState;
+import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -32,21 +32,21 @@ public class LocalVehiclePlayerRocketAimMixin {
         WeaponUnit weaponUnit = self.getWeaponUnit();
         if (weaponUnit == null || weaponUnit.getCurrentWeapon().isEmpty()) {
             if (self.onVehicle()) {
-                RvpRocketCcipState.clear(self.getVehicle().getId());
+                RVP_RocketCcipState.clear(self.getVehicle().getId());
             }
             return;
         }
         AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
         if (!(currentWeapon instanceof VehicleRocket rocket)) {
             if (self.onVehicle()) {
-                RvpRocketCcipState.clear(self.getVehicle().getId());
+                RVP_RocketCcipState.clear(self.getVehicle().getId());
             }
             return;
         }
         WeaponUnit rocketWeaponUnit = rocket.getWeaponUnit();
         if (rocketWeaponUnit == null) {
             if (self.onVehicle()) {
-                RvpRocketCcipState.clear(self.getVehicle().getId());
+                RVP_RocketCcipState.clear(self.getVehicle().getId());
             }
             return;
         }
@@ -54,8 +54,8 @@ public class LocalVehiclePlayerRocketAimMixin {
             return;
         }
         AbstractVehicle vehicle = self.getVehicle();
-        Vec3 rawHit = RvpRocketBallistics.computeWeaponImpact(vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), rocket.getData(), vehicle);
-        Vec3 hit = RvpRocketCcipState.smooth(vehicle.getId(), rocket.getData().getWeaponId(), vehicle.tickCount, rawHit);
+        Vec3 rawHit = RVP_RocketBallistics.computeWeaponImpact(vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), rocket.getData(), vehicle);
+        Vec3 hit = RVP_RocketCcipState.smooth(vehicle.getId(), rocket.getData().getWeaponId(), vehicle.tickCount, rawHit);
         if (hit == null) {
             return;
         }

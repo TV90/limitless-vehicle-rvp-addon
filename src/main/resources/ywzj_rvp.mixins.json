@@ -7,19 +7,19 @@
   "mixins": [
     "GunnerWeaponAccessorMixin",
     "LocalVehiclePlayerTVMissileTurnMixin",
-    "MissileEntityMixin",
     "PartUnitAccessorMixin",
     "RadarUnitPojoMixin",
     "RadarUnitDataMixin",
     "RadarUnitMixin",
     "RocketEntityMixin",
-    "VehicleRocketWeaponDataMixin"
+    "VehicleRocketWeaponDataMixin",
+    "VehicleExplosionMixin"
   ],
   "client": [
+    "InputHandlerAirburstMixin",
     "BedrockModelRenderTypesMixin",
     "CameraTVMissileMixin",
     "LocalVehiclePlayerRocketAimMixin",
-    "MissileEntityRendererMixin",
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleScopeOverlayMixin",

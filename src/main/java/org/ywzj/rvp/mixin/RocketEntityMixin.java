@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.weapon.RvpRocketBallistics;
+import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.RocketEntity;
 
@@ -27,13 +27,13 @@ public abstract class RocketEntityMixin extends AmmoEntity {
             remap = false
     )
     private void ywzj_rvp$ballisticRocketTick(CallbackInfo ci) {
-        RvpRocketBallistics.Params params = RvpRocketBallistics.resolve(this.getWeaponId());
+        RVP_RocketBallistics.Params params = RVP_RocketBallistics.resolve(this.getWeaponId());
         if (params == null) {
             return;
         }
         Vec3 velocity = this.getDeltaMovement();
         this.setPos(this.getX() + velocity.x, this.getY() + velocity.y, this.getZ() + velocity.z);
-        this.setDeltaMovement(RvpRocketBallistics.stepVelocity(velocity, params));
+        this.setDeltaMovement(RVP_RocketBallistics.stepVelocity(velocity, params));
         ci.cancel();
     }
 }

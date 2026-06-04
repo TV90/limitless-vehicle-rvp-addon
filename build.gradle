@@ -68,6 +68,19 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
+// RVP 载具包仅维护在 run/client_1/limitless_vehicle/rvp（不再从 src/main/resources/rvp 同步）
+
+tasks.named('compileJava').configure {
+    // clean + FROM-CACHE can skip writing build/classes and breaks dev run (NoClassDefFoundError).
+    outputs.cacheIf { false }
+}
+
+['runClient', 'runClient2', 'runServer', 'runGameTestServer', 'runData'].each { taskName ->
+    tasks.matching { it.name == taskName }.configureEach {
+        dependsOn 'classes'
+    }
+}
+
 repositories {
     maven { name = 'AliyunPublic'; url = 'https://maven.aliyun.com/repository/public' }
     maven { name = 'AliyunCentral'; url = 'https://maven.aliyun.com/repository/central' }

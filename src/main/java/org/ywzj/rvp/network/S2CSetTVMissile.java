@@ -4,7 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.client.state.RvpClientTVMissileState;
+import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
 import java.util.function.Supplier;
 
 public class S2CSetTVMissile {
@@ -29,6 +29,6 @@ public class S2CSetTVMissile {
     public static void handle(S2CSetTVMissile msg, Supplier<NetworkEvent.Context> ctxSupplier) {
         NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.setPacketHandled(true);
-        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> RvpClientTVMissileState.setActiveMissileId(msg.missileEntityId)));
+        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> RVP_ClientTVMissileState.setActiveMissileId(msg.missileEntityId)));
     }
 }

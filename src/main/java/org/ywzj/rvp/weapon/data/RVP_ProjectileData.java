@@ -1,0 +1,181 @@
+package org.ywzj.rvp.weapon.data;
+
+import com.google.gson.JsonObject;
+import com.google.gson.annotations.SerializedName;
+
+/**
+ * 弹体运动学参数。扩展包 JSON 中的 {@code projectile_data} 字段会反序列化到这里。
+ */
+public class RVP_ProjectileData {
+
+    /**
+     * 弹体初速/飞行速度（覆盖武器顶层 {@code velocity}）；为空时使用顶层 {@code velocity}。
+     * 导弹、火箭、机枪等统一读此字段（旧 JSON 的 {@code acceleration} 在加载时合并到此键）。
+     */
+    @SerializedName("velocity")
+    private Float velocity;
+
+    /** 空中每 tick 的垂直加速度，负数向下。 */
+    @SerializedName("gravity")
+    private float gravity = 0f;
+
+    /** 水中每 tick 的垂直加速度，负数向下。 */
+    @SerializedName("gravity_in_water")
+    private float gravityInWater = 0f;
+
+    /** 空中阻力系数，通常为小正数。 */
+    @SerializedName("drag")
+    private float drag = 0f;
+
+    /** 水中阻力系数。 */
+    @SerializedName("drag_in_water")
+    private float dragInWater = 0f;
+
+    /** 发射时是否继承载具当前速度。 */
+    @SerializedName("inherit_vehicle_velocity")
+    private boolean inheritVehicleVelocity = false;
+
+    /** 是否保持恒定速度，仅改变方向。适合导弹、火箭。 */
+    @SerializedName("constant_speed")
+    private boolean constantSpeed = false;
+
+    /** 是否让实体朝向跟随运动方向。 */
+    @SerializedName("rotate_to_motion")
+    private boolean rotateToMotion = true;
+
+    /** 最大速度限制，0 表示不限制。 */
+    @SerializedName("max_speed")
+    private float maxSpeed = 0f;
+
+    /** 最小速度限制，0 表示不限制。 */
+    @SerializedName("min_speed")
+    private float minSpeed = 0f;
+
+    /** 是否装备火箭发动机；为 false 时不启用推力运动学。 */
+    @SerializedName("has_rocket_engine")
+    private boolean hasRocketEngine = false;
+
+    @SerializedName("mass")
+    private float mass = 0f;
+
+    @SerializedName("thrust")
+    private float thrust = 0f;
+
+    @SerializedName("motor_burn_time")
+    private float motorBurnTime = 0f;
+
+    @SerializedName("ignition_delay_tick")
+    private int ignitionDelayTick = 0;
+
+    /** 二次阻力系数，与 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 相同。 */
+    @SerializedName("drag_coefficient")
+    private float dragCoefficient = 0f;
+
+    /**
+     * 加载后解析推进参数：{@code projectile_data} 未写的键从武器 JSON 顶层补全。
+     * {@code has_rocket_engine} 为 false 时不做合并。
+     */
+    public void resolvePropulsionFallback(JsonObject weaponRoot, JsonObject projectileJson) {
+        if (!hasRocketEngine || weaponRoot == null) {
+            return;
+        }
+        JsonObject proj = projectileJson != null ? projectileJson : new JsonObject();
+        if (!proj.has("mass") && weaponRoot.has("mass") && weaponRoot.get("mass").isJsonPrimitive()) {
+            mass = weaponRoot.get("mass").getAsFloat();
+        }
+        if (!proj.has("thrust") && weaponRoot.has("thrust") && weaponRoot.get("thrust").isJsonPrimitive()) {
+            thrust = weaponRoot.get("thrust").getAsFloat();
+        }
+        if (!proj.has("motor_burn_time") && weaponRoot.has("motor_burn_time")
+                && weaponRoot.get("motor_burn_time").isJsonPrimitive()) {
+            motorBurnTime = weaponRoot.get("motor_burn_time").getAsFloat();
+        }
+        if (!proj.has("ignition_delay_tick") && weaponRoot.has("ignition_delay_tick")
+                && weaponRoot.get("ignition_delay_tick").isJsonPrimitive()) {
+            ignitionDelayTick = weaponRoot.get("ignition_delay_tick").getAsInt();
+        }
+        if (!proj.has("drag_coefficient") && weaponRoot.has("drag_coefficient")
+                && weaponRoot.get("drag_coefficient").isJsonPrimitive()) {
+            dragCoefficient = weaponRoot.get("drag_coefficient").getAsFloat();
+        }
+    }
+
+    public Float getVelocityOverride() {
+        return velocity;
+    }
+
+    public float getGravity() {
+        return gravity;
+    }
+
+    public float getGravityInWater() {
+        return gravityInWater;
+    }
+
+    public float getDrag() {
+        return drag;
+    }
+
+    public float getDragInWater() {
+        return dragInWater;
+    }
+
+    public boolean isInheritVehicleVelocity() {
+        return inheritVehicleVelocity;
+    }
+
+    public boolean isConstantSpeed() {
+        return constantSpeed;
+    }
+
+    public boolean isRotateToMotion() {
+        return rotateToMotion;
+    }
+
+    public float getMaxSpeed() {
+        return Math.max(maxSpeed, 0f);
+    }
+
+    public float getMinSpeed() {
+        return Math.max(minSpeed, 0f);
+    }
+
+    public boolean hasRocketEngine() {
+        return hasRocketEngine;
+    }
+
+    public float getResolvedMass() {
+        return hasRocketEngine ? Math.max(mass, 0f) : 0f;
+    }
+
+    public float getResolvedThrust() {
+        return hasRocketEngine ? Math.max(thrust, 0f) : 0f;
+    }
+
+    public float getResolvedMotorBurnTime() {
+        return hasRocketEngine ? Math.max(motorBurnTime, 0f) : 0f;
+    }
+
+    public int getResolvedIgnitionDelayTick() {
+        return hasRocketEngine ? Math.max(ignitionDelayTick, 0) : 0;
+    }
+
+    public float getResolvedDragCoefficient() {
+        return hasRocketEngine ? Math.max(dragCoefficient, 0f) : 0f;
+    }
+
+    /** 是否启用与本体 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 一致的推力运动学。 */
+    public boolean usesPropulsion() {
+        if (!hasRocketEngine) {
+            return false;
+        }
+        return getResolvedMass() > 1.0E-6f
+                && getResolvedThrust() > 0f
+                && getResolvedMotorBurnTime() > 0f;
+    }
+
+    /** {@code has_rocket_engine} 为 true 但质量/推力/燃烧时间未凑齐，会静默退回简化弹道。 */
+    public boolean isRocketEngineMisconfigured() {
+        return hasRocketEngine && !usesPropulsion();
+    }
+}

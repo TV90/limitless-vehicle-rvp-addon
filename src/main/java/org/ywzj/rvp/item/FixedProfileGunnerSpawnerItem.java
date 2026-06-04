@@ -13,7 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.all.RvpEntities;
+import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.item.VehicleItem;
@@ -95,7 +95,7 @@ public class FixedProfileGunnerSpawnerItem extends VehicleItem {
         }
 
         ServerLevel level = (ServerLevel) player.level();
-        GunnerEntity gunner = RvpEntities.GUNNER.get().create(level);
+        GunnerEntity gunner = RVP_Entities.GUNNER.get().create(level);
         if (gunner == null) {
             return InteractionResult.FAIL;
         }

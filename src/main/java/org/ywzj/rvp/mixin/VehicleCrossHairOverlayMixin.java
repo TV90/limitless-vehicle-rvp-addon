@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.client.gui.RvpRocketCcipOverlay;
+import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.client.gui.VehicleCrossHairOverlay;
 import org.ywzj.vehicle.util.RenderHelper;
@@ -24,10 +24,10 @@ public class VehicleCrossHairOverlayMixin {
 
     @Inject(method = "render", at = @At("TAIL"), require = 0, remap = false)
     private void ywzj_rvp$drawRocketCcip(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
-        if (!RvpRocketCcipOverlay.isBallisticRocketActive()) {
+        if (!RVP_RocketCcipOverlay.isBallisticRocketActive()) {
             return;
         }
-        Vec3 hitPos = RvpRocketCcipOverlay.getCurrentScreenHitPos();
+        Vec3 hitPos = RVP_RocketCcipOverlay.getCurrentScreenHitPos();
         if (hitPos == null || hitPos.z < 0) {
             return;
         }
@@ -36,7 +36,7 @@ public class VehicleCrossHairOverlayMixin {
         }
         double x = Math.max(0.0, Math.min(screenWidth, hitPos.x));
         double y = Math.max(0.0, Math.min(screenHeight, hitPos.y));
-        RvpRocketCcipOverlay.drawAtScreen(guiGraphics, x, y, partialTick, 32);
+        RVP_RocketCcipOverlay.drawAtScreen(guiGraphics, x, y, partialTick, 32);
     }
 
     @Redirect(
@@ -56,13 +56,13 @@ public class VehicleCrossHairOverlayMixin {
             int thickness,
             int color
     ) {
-        boolean replace = RvpRocketCcipOverlay.shouldReplaceReticle();
+        boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
         if (replace != ywzj_rvp$lastReticleReplaceState) {
             ywzj_rvp$lastReticleReplaceState = replace;
             LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
         }
         if (replace) {
-            RvpRocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
+            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
             return;
         }
         RenderHelper.drawReticle(guiGraphics, x, y, size, thickness, color);
@@ -88,7 +88,7 @@ public class VehicleCrossHairOverlayMixin {
             float start,
             float end
     ) {
-        if (RvpRocketCcipOverlay.isBallisticRocketActive()) {
+        if (RVP_RocketCcipOverlay.isBallisticRocketActive()) {
             return;
         }
         GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, start, end);

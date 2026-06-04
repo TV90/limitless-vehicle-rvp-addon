@@ -1,12 +1,11 @@
 package org.ywzj.rvp.mixin;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.ywzj.rvp.client.state.RvpClientTVMissileState;
+import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
 import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -55,7 +54,7 @@ public class VehicleScopeOverlayMixin {
     }
 
     private static boolean ywzj_rvp$isTVMissileFirstPerson() {
-        if (!RvpClientTVMissileState.isActive()) {
+        if (!RVP_ClientTVMissileState.isActive()) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();

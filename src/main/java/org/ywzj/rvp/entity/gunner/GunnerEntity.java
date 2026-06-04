@@ -18,10 +18,10 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
-import org.ywzj.rvp.entity.gunner.ai.profile.GunnerFaction;
+import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
-import org.ywzj.rvp.all.RvpEntities;
+import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -163,7 +163,7 @@ public class GunnerEntity extends Mob {
 
     @Override
     public EntityType<?> getType() {
-        return RvpEntities.GUNNER.get();
+        return RVP_Entities.GUNNER.get();
     }
 
     @Override
@@ -270,8 +270,8 @@ public class GunnerEntity extends Mob {
         return entityData.get(PROFILE_ID);
     }
 
-    public GunnerFaction getProfileFaction() {
-        return GunnerFaction.parse(entityData.get(PROFILE_FACTION));
+    public RVP_EnumGunnerFaction getProfileFaction() {
+        return RVP_EnumGunnerFaction.parse(entityData.get(PROFILE_FACTION));
     }
 
     public void setProfileId(String profileId) {

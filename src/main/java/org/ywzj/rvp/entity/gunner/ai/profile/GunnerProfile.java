@@ -169,8 +169,8 @@ public class GunnerProfile {
         return false;
     }
 
-    public GunnerFaction getFaction() {
-        return GunnerFaction.parse(faction);
+    public RVP_EnumGunnerFaction getFaction() {
+        return RVP_EnumGunnerFaction.parse(faction);
     }
 
     public String getName() {

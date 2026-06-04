@@ -27,5 +27,5 @@ side="BOTH"
 modId="ywzj_vehicle"
 mandatory=true
 versionRange="[0,)"
-ordering="AFTER"
+ordering="BEFORE"
 side="BOTH"

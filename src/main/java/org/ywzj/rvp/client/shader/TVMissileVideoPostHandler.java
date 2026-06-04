@@ -11,15 +11,15 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.YwzjRvp;
-import org.ywzj.rvp.client.debug.RvpTVMissileDebug;
+import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.debug.RVP_TVMissileDebug;
 import org.slf4j.Logger;
 
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = YwzjRvp.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class TVMissileVideoPostHandler implements ResourceManagerReloadListener {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final ResourceLocation BW_EFFECT = YwzjRvp.resourceLocation("ywzj_rvp:shaders/post/tvmissile_bw.json");
+    private static final ResourceLocation BW_EFFECT = RVP_MOD.resourceLocation("ywzj_rvp:shaders/post/tvmissile_bw.json");
 
     private static boolean active = false;
     private static PostChain bwChain;
@@ -52,7 +52,7 @@ public class TVMissileVideoPostHandler implements ResourceManagerReloadListener 
             return;
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            RvpTVMissileDebug.tryDumpOnce();
+            RVP_TVMissileDebug.tryDumpOnce();
             applyPostProcess(event.getPartialTick());
         }
     }
@@ -114,7 +114,7 @@ public class TVMissileVideoPostHandler implements ResourceManagerReloadListener 
 
     private static void debugState(String state) {
         Minecraft mc = Minecraft.getInstance();
-        boolean spam = RvpTVMissileDebug.shouldSpamBw(mc);
+        boolean spam = RVP_TVMissileDebug.shouldSpamBw(mc);
         if (!spam && state.equals(lastDebugState)) {
             return;
         }
