@@ -29,26 +29,4 @@ public class RVP_DispensedEntity extends RVP_BaseBullet {
         super(RVP_Entities.RVP_DISPENSED.get(), level);
     }
 
-    @Override
-    protected void sprinkleSubmunition() {
-        if (level().isClientSide() || rvpData == null || shooterVehicle == null) {
-            return;
-        }
-        RVP_DispensedEntity child = new RVP_DispensedEntity(RVP_Entities.RVP_DISPENSED.get(), level(), rvpData.getWeaponId());
-        Vec3 velocity = getDeltaMovement();
-        LivingEntity shooter = getOwner() instanceof LivingEntity living ? living : null;
-        child.initFromWeapon(rvpData, RVP_EnumWeaponKind.DISPENSER, shooterVehicle, shooter,
-                position(), new AimRot(getXRot(), getYRot()), velocity);
-        child.setShooterWeaponUnit(getShooterWeaponUnit());
-        child.submunitionFlag = 1;
-        child.submunitionsRemaining = 0;
-        RandomSource rand = level().getRandom();
-        float spread = rvpData.getBombletDiff();
-        child.setDeltaMovement(velocity.add(
-                (rand.nextDouble() - 0.5) * spread,
-                (rand.nextDouble() - 0.5) * spread,
-                (rand.nextDouble() - 0.5) * spread
-        ));
-        level().addFreshEntity(child);
-    }
 }

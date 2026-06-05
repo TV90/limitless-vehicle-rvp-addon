@@ -121,6 +121,10 @@ public class RVP_ProjectileData {
         return velocity;
     }
 
+    public boolean hasVelocityOverride() {
+        return velocity != null;
+    }
+
     public float getGravity() {
         return gravity;
     }

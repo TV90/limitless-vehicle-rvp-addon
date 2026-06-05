@@ -3,72 +3,130 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.util.Mth;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
- * 弹体碰撞行为：实体穿透、穿墙、跳弹与弹跳引信。
+ * 直击伤害、伤害衰减、穿透与跳弹。JSON 键 {@code collision_data}。
  */
 public class RVP_CollisionData {
 
-    /** 实体穿透次数，0 表示命中后立即处理。 */
-    @SerializedName("piercing")
-    private int piercing = 0;
+    /** 直接命中伤害；未写时使用武器顶层 {@code damage}。 */
+    @SerializedName("direct_damage")
+    private Float directDamage;
 
-    /** 方块/墙体穿透次数，0 表示不穿墙。 */
+    /** 直击伤害的目标类别倍率（玩家 / 生物 / 载具类型）。 */
+    @SerializedName("direct_damage_factor")
+    private RVP_DamageFactor directDamageFactor;
+
+    /**
+     * 伤害衰减规则（MCH {@code BulletDecay} 扩展）。{@code domain} 默认 {@code distance}；
+     * {@code angle} 为入射角分段（度）。距离类相乘，入射角类互斥，再相乘。
+     */
+    @SerializedName("damage_decay")
+    private List<RVP_DamageDecayRuleData> damageDecay = new ArrayList<>();
+
+    @SerializedName("living_penetration")
+    private int livingPenetration = 0;
+
     @SerializedName("wall_penetration")
     private int wallPenetration = 0;
 
-    /** 弹跳次数，0 表示不跳弹。 */
+    @SerializedName("penetration_damage_multiplier")
+    private float penetrationDamageMultiplier = 1f;
+
+    @SerializedName("penetration_speed_multiplier")
+    private float penetrationSpeedMultiplier = 1f;
+
     @SerializedName("bounce")
     private int bounce = 0;
 
-    /**
-     * 每次弹跳后速度保留比例（相对反射速度），如 0.8 表示每跳一次速度 ×0.8。
-     * 未写时默认 0.6（与旧版硬编码一致）。
-     */
+    /** 未写且 {@link #bounce} &gt; 0 时默认 0.6。 */
     @SerializedName("bounce_strength")
-    private float bounceStrength = 0f;
+    private Float bounceStrength;
 
-    /**
-     * 第一次弹跳后经过多少 tick 自动引信（引爆或消失，取决于 detonate_data.explosion_data.explode）。
-     * 0 表示不启用弹跳引信。
-     */
     @SerializedName("bounce_fuse_tick")
     private int bounceFuseTick = 0;
 
-    /**
-     * 入射角阈值（度）：速度方向与撞击面法线夹角 ≥ 该值时才跳弹（掠射跳弹、近垂直不跳）。
-     * 0 表示不限制角度（仅受 {@link #bounce} 次数约束）。
-     */
     @SerializedName("bounce_incidence_angle")
     private float bounceIncidenceAngle = 0f;
 
-    /**
-     * 击中 {@link org.ywzj.vehicle.entity.vehicle.AbstractVehicle} 时是否允许跳弹；默认 false（仅方块等环境跳弹）。
-     */
     @SerializedName("bounce_on_vehicle")
     private boolean bounceOnVehicle = false;
 
-    public boolean isSpecified() {
-        return piercing > 0 || wallPenetration > 0 || bounce > 0 || bounceFuseTick > 0 || bounceStrength > 0f
-                || bounceIncidenceAngle > 0f || bounceOnVehicle;
+    /**
+     * 方块跳弹：仅当 {@link net.minecraft.world.level.block.state.BlockState#getDestroySpeed} &gt; 该值时允许跳弹（默认 {@value #DEFAULT_BOUNCE_MIN_BLOCK_HARDNESS}）。
+     */
+    @SerializedName("bounce_min_block_hardness")
+    private float bounceMinBlockHardness = DEFAULT_BOUNCE_MIN_BLOCK_HARDNESS;
+
+    public static final float DEFAULT_BOUNCE_MIN_BLOCK_HARDNESS = 2.1f;
+
+    public Float getDirectDamageOverride() {
+        return directDamage;
     }
 
-    public int getPiercing() {
-        return Math.max(piercing, 0);
+    public boolean hasDirectDamageOverride() {
+        return directDamage != null;
+    }
+
+    public RVP_DamageFactor getDirectDamageFactor() {
+        return directDamageFactor == null ? RVP_DamageFactor.DEFAULT : directDamageFactor;
+    }
+
+    public boolean hasDirectDamageFactor() {
+        return directDamageFactor != null && directDamageFactor.isConfigured();
+    }
+
+    public List<RVP_DamageDecayRuleData> getDamageDecayRules() {
+        if (damageDecay == null || damageDecay.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return damageDecay;
+    }
+
+    public boolean hasDamageDecay() {
+        return !getDamageDecayRules().isEmpty();
+    }
+
+    public boolean isSpecified() {
+        return directDamage != null || hasDirectDamageFactor() || hasDamageDecay()
+                || livingPenetration > 0 || wallPenetration > 0 || bounce > 0 || bounceFuseTick > 0
+                || bounceStrength != null || bounceIncidenceAngle > 0f || bounceOnVehicle
+                || penetrationDamageMultiplier > 0f && penetrationDamageMultiplier < 0.999f
+                || penetrationSpeedMultiplier > 0f && penetrationSpeedMultiplier < 0.999f;
+    }
+
+    public int getLivingPenetration() {
+        return Math.max(livingPenetration, 0);
     }
 
     public int getWallPenetration() {
         return Math.max(wallPenetration, 0);
     }
 
+    public float getPenetrationDamageMultiplier() {
+        return Mth.clamp(penetrationDamageMultiplier, 0.01f, 1f);
+    }
+
+    public float getPenetrationSpeedMultiplier() {
+        return Mth.clamp(penetrationSpeedMultiplier, 0.01f, 1f);
+    }
+
     public int getBounce() {
         return Math.max(bounce, 0);
     }
 
+    public boolean hasBounceStrengthOverride() {
+        return bounceStrength != null;
+    }
+
     public float getBounceStrength() {
-        if (bounceStrength > 0f) {
+        if (bounceStrength != null) {
             return Mth.clamp(bounceStrength, 0.05f, 1f);
         }
-        return getBounce() > 0 ? 0.6f : 0.6f;
+        return 0.6f;
     }
 
     public int getBounceFuseTick() {
@@ -81,5 +139,10 @@ public class RVP_CollisionData {
 
     public boolean isBounceOnVehicle() {
         return bounceOnVehicle;
+    }
+
+    /** 方块硬度下限（{@code getDestroySpeed}）；仅严格大于该值的方块可触发跳弹。 */
+    public float getBounceMinBlockHardness() {
+        return Math.max(bounceMinBlockHardness, 0f);
     }
 }

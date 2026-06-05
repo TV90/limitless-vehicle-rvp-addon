@@ -9,6 +9,8 @@
 | [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
+| [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、`allow_submunition`、B01–B10 测试弹与安装步骤 |
+| [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | 边界测试武器 JSON 副本（可复制到载具包） |
 | [plan/](./plan/) | 功能设计 | TV 导弹、制导架构等方案稿（非日常配置手册） |
 
 ## 路径约定
@@ -39,6 +41,7 @@
 | 武器加载与归一化 | `org.ywzj.rvp.all.RVP_WeaponTypes` |
 | 弹体数据 | `org.ywzj.rvp.weapon.data.RVP_ProjectileData` |
 | 弹体实体运动 | `org.ywzj.rvp.entity.projectile.RVP_BaseBullet` |
+| 子母弹调度 / 生成 | `org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner`、`RVP_SubmunitionSpawner` |
 | 伤害倍率 / 爆炸 | `RVP_Explosion`（配置）、`RVP_DamageFactor`、`VehicleExplosion`（本体运行时） |
 | 机炮弹丸 | `org.ywzj.rvp.entity.projectile.RVP_BulletEntity` |
 | 弹体客户端渲染 | `RVP_ClientEntityRenderers`、`VehicleProjectileRenderLogic`（对齐本体绘制） |

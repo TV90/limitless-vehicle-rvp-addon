@@ -4,6 +4,8 @@ import com.google.gson.annotations.SerializedName;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
+import java.util.List;
+
 /**
  * 七个公开 {@code rvp:*} 武器类型共用的数据模型（{@code data/rvp/weapons/<id>.json}）。
  *
@@ -31,11 +33,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("fuse_data")
     private RVP_FuseData fuseData = new RVP_FuseData();
 
-    /** 直击伤害、距离衰减、引信伤害覆盖、{@link RVP_DamageFactor}，见 {@link RVP_DamageData}。 */
-    @SerializedName("damage_model_data")
-    private RVP_DamageData damageModelData = new RVP_DamageData();
-
-    /** 穿透、穿墙、跳弹，见 {@link RVP_CollisionData}。 */
+    /** 直击伤害、伤害衰减、穿透与跳弹，见 {@link RVP_CollisionData}。 */
     @SerializedName("collision_data")
     private RVP_CollisionData collisionData = new RVP_CollisionData();
 
@@ -47,7 +45,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("detonate_data")
     private RVP_DetonateData detonateData = new RVP_DetonateData();
 
-    /** 子母弹释放节奏，见 {@link RVP_SubmunitionData}。 */
+    /** 子母弹 / 空中布撒（触发器、载荷、散布），见 {@link RVP_SubmunitionData}。 */
     @SerializedName("submunition_data")
     private RVP_SubmunitionData submunitionData = new RVP_SubmunitionData();
 
@@ -106,10 +104,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return fuseData == null ? new RVP_FuseData() : fuseData;
     }
 
-    public RVP_DamageData getDamageModelData() {
-        return damageModelData == null ? new RVP_DamageData() : damageModelData;
-    }
-
     public RVP_CollisionData getCollisionData() {
         return collisionData == null ? new RVP_CollisionData() : collisionData;
     }
@@ -159,39 +153,39 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float resolveAirburstExplosionDamage() {
-        Float override = getDamageModelData().getAirburstExplosionDamage();
-        if (override != null) {
-            return override;
+        if (getFuseData().hasAirburstExplosionDamageOverride()) {
+            return getFuseData().getAirburstExplosionDamage();
         }
         RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.damage : 0f;
     }
 
     public float resolveAirburstExplosionRadius() {
-        Float override = getDamageModelData().getAirburstExplosionRadius();
-        if (override != null) {
-            return override;
+        if (getFuseData().hasAirburstExplosionRadiusOverride()) {
+            return getFuseData().getAirburstExplosionRadius();
         }
         RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.radius : 0f;
     }
 
     public float resolveProximityFuseExplosionDamage() {
-        Float override = getDamageModelData().getProximityFuseExplosionDamage();
-        if (override != null) {
-            return override;
+        if (getFuseData().hasProximityFuseExplosionDamageOverride()) {
+            return getFuseData().getProximityFuseExplosionDamage();
         }
         RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.damage : 0f;
     }
 
     public float resolveProximityFuseExplosionRadius() {
-        Float override = getDamageModelData().getProximityFuseExplosionRadius();
-        if (override != null) {
-            return override;
+        if (getFuseData().hasProximityFuseExplosionRadiusOverride()) {
+            return getFuseData().getProximityFuseExplosionRadius();
         }
         RVP_Explosion ex = getExplosionData();
         return ex != null ? ex.radius : 0f;
+    }
+
+    public float getProximityFuseDirectDamage() {
+        return getFuseData().getProximityFuseDamage();
     }
 
     public boolean isRequireLock() {
@@ -199,8 +193,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float getProjectileVelocity() {
-        Float override = getProjectileData().getVelocityOverride();
-        return override != null ? override : getVelocity();
+        if (getProjectileData().hasVelocityOverride()) {
+            return getProjectileData().getVelocityOverride();
+        }
+        return getVelocity();
     }
 
     /**
@@ -208,7 +204,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      * ({@code shootFromRotation(..., data.getVelocity(), ...)}) and {@link org.ywzj.vehicle.vehicle.weapon.VehicleRocket}.
      */
     public float resolveMuzzleSpeed(RVP_EnumWeaponKind kind) {
-        float fromProjectile = getProjectileData().getVelocityOverride() != null
+        float fromProjectile = getProjectileData().hasVelocityOverride()
                 ? getProjectileData().getVelocityOverride()
                 : 0f;
         float top = getVelocity();
@@ -246,12 +242,20 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return Math.min(Math.max(drag, 0.001f), 0.4f);
     }
 
-    public int getPiercing() {
-        return getCollisionData().getPiercing();
+    public int getLivingPenetration() {
+        return getCollisionData().getLivingPenetration();
     }
 
     public int getWallPenetration() {
         return getCollisionData().getWallPenetration();
+    }
+
+    public float getPenetrationDamageMultiplier() {
+        return getCollisionData().getPenetrationDamageMultiplier();
+    }
+
+    public float getPenetrationSpeedMultiplier() {
+        return getCollisionData().getPenetrationSpeedMultiplier();
     }
 
     public int getBounce() {
@@ -272,6 +276,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isBounceOnVehicle() {
         return getCollisionData().isBounceOnVehicle();
+    }
+
+    public float getBounceMinBlockHardness() {
+        return getCollisionData().getBounceMinBlockHardness();
+    }
+
+    public List<RVP_DamageDecayRuleData> getDamageDecayRules() {
+        return getCollisionData().getDamageDecayRules();
     }
 
     public int getRigidityTime() {
@@ -455,27 +467,31 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float getDirectDamage() {
-        Float direct = getDamageModelData().getDirectOverride();
-        if (direct != null) {
-            return direct;
+        if (getCollisionData().hasDirectDamageOverride()) {
+            return getCollisionData().getDirectDamageOverride();
         }
         return super.getDamage();
     }
 
-    /** 直击、爆炸、近炸直伤共用的目标类别伤害倍率。 */
+    /** 直击伤害的目标类别倍率。 */
+    public RVP_DamageFactor getDirectDamageFactor() {
+        return getCollisionData().getDirectDamageFactor();
+    }
+
+    /** @deprecated use {@link #getDirectDamageFactor()} */
+    @Deprecated
     public RVP_DamageFactor getDamageFactor() {
-        return getDamageModelData().getDamageFactor();
+        return getDirectDamageFactor();
     }
 
     /**
      * 发射角度散布（度）。{@link RVP_FireData#getSpreadOverride()} 优先于顶层 {@code inaccuracy}，
-     * 与 {@link #getDirectDamage()} / {@code damage_model_data.direct} 相对 {@code damage} 的规则一致。
+     * 与 {@link #getDirectDamage()} / {@code collision_data.direct_damage} 相对顶层 {@code damage} 的规则一致。
      */
     @Override
     public float getInaccuracy() {
-        Float spread = getFireData().getSpreadOverride();
-        if (spread != null) {
-            return Math.max(spread, 0f);
+        if (getFireData().hasSpreadOverride()) {
+            return Math.max(getFireData().getSpreadOverride(), 0f);
         }
         return super.getInaccuracy();
     }

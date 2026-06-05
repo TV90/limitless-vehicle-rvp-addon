@@ -1,4 +1,4 @@
-package org.ywzj.rvp.weapon.spread;
+package org.ywzj.rvp.weapon.util;
 
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadDistribution;
 
@@ -10,9 +10,9 @@ import java.util.List;
  * Rectangular pellet grid for {@link org.ywzj.rvp.weapon.data.RVP_FireData} canister spread
  * ({@code canister_shape: square}). E.g. 16 pellets → 4×4, 12 → 4×3.
  */
-public final class RVP_CanisterGridLayout {
+public final class RVP_CanisterGridUtil {
 
-    private RVP_CanisterGridLayout() {}
+    private RVP_CanisterGridUtil() {}
 
     public record Dimensions(int cols, int rows) {
         public int capacity() {

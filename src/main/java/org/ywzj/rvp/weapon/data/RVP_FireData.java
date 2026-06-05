@@ -75,14 +75,14 @@ public class RVP_FireData {
 
     /**
      * 霰弹散布密度，与投放器 {@code distribution} 同枚举（{@link RVP_EnumSpreadDistribution}）。
-     * 圆盘散布时控制随机密度；{@code square} 时决定在矩形网格上优先占用哪些格（见 {@link org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout}）。
+     * 圆盘散布时控制随机密度；{@code square} 时决定在矩形网格上优先占用哪些格（见 {@link org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil}）。
      */
     @SerializedName("canister_distribution")
     private String canisterDistribution = RVP_EnumSpreadDistribution.UNIFORM.getSerializedName();
 
     /**
      * 霰弹散布 footprint：{@code circle}（默认，随机圆盘/圆锥）或 {@code square}（矩形网格，如 16 弹为 4×4、12 弹为 4×3）。
-     * 见 {@link RVP_EnumSpreadShape#forCanister(String)}、{@link org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout}。
+     * 见 {@link RVP_EnumSpreadShape#forCanister(String)}、{@link org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil}。
      */
     @SerializedName("canister_shape")
     private String canisterShape = RVP_EnumSpreadShape.CIRCLE.getSerializedName();
@@ -132,6 +132,10 @@ public class RVP_FireData {
 
     public Float getSpreadOverride() {
         return spread;
+    }
+
+    public boolean hasSpreadOverride() {
+        return spread != null;
     }
 
     /** {@link #canisterCount} &gt; 1 时走多弹丸散布路径（见 {@link org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon}）。 */

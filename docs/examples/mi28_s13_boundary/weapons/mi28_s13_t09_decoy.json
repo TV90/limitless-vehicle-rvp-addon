@@ -1,0 +1,65 @@
+{
+  "type": "rvp:rocket",
+  "name": "B09 仅引信on_fuse",
+  "shoot_interval": 200,
+  "max_capacity": 8,
+  "reload": { "time": 60, "ammo": "ywzj_vehicle:ammo_rocket" },
+  "fire_data": { "spread": 0.08, "fire_mode": "FULL_AUTO" },
+  "projectile_data": {
+    "velocity": 3.8,
+    "gravity": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 4.2
+  },
+  "fuse_data": {
+    "proximity_fuse_tick": 8,
+    "proximity_radius": 6,
+    "proximity_fuse_height": 15,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": [
+    { "name": "unguided", "start_tick": 0, "sources": [{ "type": "NONE", "priority": 100 }] }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 110,
+      "radius": 5,
+      "destroy_block": true,
+      "proximity_fuze": true,
+      "proximity_radius": 6
+    }
+  },
+  "collision_data": { "direct_damage": 10, "bounce": 0 },
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": ["on_fuse"],
+        "release_events": 1,
+        "parent_action": "continue",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:mi28_s13_bomblet_he",
+            "count": 12,
+            "inherit_parent_velocity": true,
+            "velocity_scale": 0.55,
+            "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 8.0,
+              "canister_distribution": "normal",
+              "canister_shape": "circle"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
