@@ -17,13 +17,11 @@ import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.data.RVP_DetonateData;
-import org.ywzj.rvp.weapon.data.RVP_EnumFluidKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.List;
@@ -62,9 +60,6 @@ public final class RVP_DetonateApplier {
         if (detonate.hasLightning()) {
             spawnLightning(level, center, detonate.getLightningData());
         }
-        if (detonate.hasFreeze()) {
-            applyFreeze(level, center, detonate.getFreezeData(), owner, shooterVehicle);
-        }
         if (detonate.hasIgniteEntity()) {
             applyIgniteEntities(level, center, detonate.getIgniteEntityData(), owner, shooterVehicle);
         }
@@ -73,9 +68,6 @@ public final class RVP_DetonateApplier {
         }
         if (detonate.hasClearPlants()) {
             clearPlants(level, origin, detonate.getClearPlantsData());
-        }
-        if (detonate.hasFluid()) {
-            applyFluid(level, origin, detonate.getFluidData());
         }
     }
 
@@ -257,15 +249,6 @@ public final class RVP_DetonateApplier {
         level.addFreshEntity(bolt);
     }
 
-    private static void applyFreeze(ServerLevel level, Vec3 center, RVP_DetonateData.FreezeEffectData spec,
-                                    @Nullable Entity owner, @Nullable AbstractVehicle shooterVehicle) {
-        AABB box = new AABB(center, center).inflate(spec.getRadius());
-        for (LivingEntity living : level.getEntitiesOfClass(LivingEntity.class, box,
-                e -> matchesTarget(spec.getTargets(), e, owner, shooterVehicle))) {
-            living.setTicksFrozen(Math.max(living.getTicksFrozen(), spec.getFreezeTicks()));
-        }
-    }
-
     private static void applyIgniteEntities(ServerLevel level, Vec3 center, RVP_DetonateData.IgniteEntityEffectData spec,
                                             @Nullable Entity owner, @Nullable AbstractVehicle shooterVehicle) {
         AABB box = new AABB(center, center).inflate(spec.getRadius());
@@ -306,31 +289,6 @@ public final class RVP_DetonateApplier {
                             || state.is(BlockTags.FLOWERS)) {
                         level.destroyBlock(mutable, false);
                     }
-                }
-            }
-        }
-    }
-
-    private static void applyFluid(ServerLevel level, BlockPos origin, RVP_DetonateData.FluidEffectData spec) {
-        RVP_EnumFluidKind kind = spec.getFluidType();
-        if (kind == null) {
-            return;
-        }
-        BlockState fluidState = kind == RVP_EnumFluidKind.LAVA
-                ? Fluids.LAVA.defaultFluidState().createLegacyBlock()
-                : Fluids.WATER.defaultFluidState().createLegacyBlock();
-        int r = (int) Math.ceil(spec.getRadius());
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dz = -r; dz <= r; dz++) {
-                if (dx * dx + dz * dz > r * r) {
-                    continue;
-                }
-                BlockPos pos = origin.offset(dx, 0, dz);
-                if (level.random.nextFloat() > spec.getChance()) {
-                    continue;
-                }
-                if (level.getBlockState(pos).isAir()) {
-                    level.setBlock(pos, fluidState, 3);
                 }
             }
         }

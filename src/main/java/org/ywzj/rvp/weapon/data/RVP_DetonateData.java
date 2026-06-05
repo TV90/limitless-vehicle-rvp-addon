@@ -41,10 +41,6 @@ public class RVP_DetonateData {
     @SerializedName("lightning_data")
     private LightningEffectData lightningData;
 
-    /** 冰冻范围内实体（{@code LivingEntity#setTicksFrozen}）。 */
-    @SerializedName("freeze_data")
-    private FreezeEffectData freezeData;
-
     /** 点燃范围内实体。 */
     @SerializedName("ignite_entity_data")
     private IgniteEntityEffectData igniteEntityData;
@@ -56,10 +52,6 @@ public class RVP_DetonateData {
     /** 清除范围内可替换植物（草、花、树叶等）。 */
     @SerializedName("clear_plants_data")
     private RadiusEffectData clearPlantsData;
-
-    /** 在范围内放置流体源（水/熔岩）。 */
-    @SerializedName("fluid_data")
-    private FluidEffectData fluidData;
 
     public boolean isEffectsBeforeExplosion() {
         return effectsBeforeExplosion;
@@ -76,8 +68,8 @@ public class RVP_DetonateData {
     /** 是否配置了任意自定义落点效果（不含爆炸）。 */
     public boolean hasAnyEffect() {
         return hasFire() || hasPotionCloud() || hasPotionEffect() || hasPlaceBlock()
-                || hasLightning() || hasFreeze() || hasIgniteEntity() || hasKnockback()
-                || hasClearPlants() || hasFluid();
+                || hasLightning() || hasIgniteEntity() || hasKnockback()
+                || hasClearPlants();
     }
 
     public boolean hasFire() {
@@ -120,14 +112,6 @@ public class RVP_DetonateData {
         return lightningData == null ? new LightningEffectData() : lightningData;
     }
 
-    public boolean hasFreeze() {
-        return freezeData != null && freezeData.isActive();
-    }
-
-    public FreezeEffectData getFreezeData() {
-        return freezeData == null ? new FreezeEffectData() : freezeData;
-    }
-
     public boolean hasIgniteEntity() {
         return igniteEntityData != null && igniteEntityData.isActive();
     }
@@ -150,14 +134,6 @@ public class RVP_DetonateData {
 
     public RadiusEffectData getClearPlantsData() {
         return clearPlantsData == null ? new RadiusEffectData() : clearPlantsData;
-    }
-
-    public boolean hasFluid() {
-        return fluidData != null && fluidData.isActive();
-    }
-
-    public FluidEffectData getFluidData() {
-        return fluidData == null ? new FluidEffectData() : fluidData;
     }
 
     public static class FireEffectData {
@@ -331,20 +307,6 @@ public class RVP_DetonateData {
         }
     }
 
-    public static class FreezeEffectData extends RadiusEffectData {
-        @SerializedName("freeze_ticks")
-        private int freezeTicks = 140;
-
-        @Override
-        public boolean isActive() {
-            return freezeTicks > 0 && super.isActive();
-        }
-
-        public int getFreezeTicks() {
-            return Math.max(freezeTicks, 1);
-        }
-    }
-
     public static class IgniteEntityEffectData extends RadiusEffectData {
         @SerializedName("seconds")
         private int seconds = 5;
@@ -390,37 +352,6 @@ public class RVP_DetonateData {
 
         public String getTargets() {
             return targets == null || targets.isBlank() ? "living" : targets.trim().toLowerCase();
-        }
-    }
-
-    public static class FluidEffectData extends RadiusEffectData {
-        /** {@code water} 或 {@code lava}。 */
-        @SerializedName("type")
-        private String type = "water";
-
-        @SerializedName("chance")
-        private float chance = 1f;
-
-        @Override
-        public boolean isActive() {
-            return super.isActive() && getFluidType() != null;
-        }
-
-        public String getType() {
-            return type == null ? "water" : type.trim().toLowerCase();
-        }
-
-        @javax.annotation.Nullable
-        public RVP_EnumFluidKind getFluidType() {
-            return switch (getType()) {
-                case "water" -> RVP_EnumFluidKind.WATER;
-                case "lava" -> RVP_EnumFluidKind.LAVA;
-                default -> null;
-            };
-        }
-
-        public float getChance() {
-            return Mth.clamp(chance, 0f, 1f);
         }
     }
 }

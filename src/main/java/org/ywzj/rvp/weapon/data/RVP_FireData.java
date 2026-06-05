@@ -19,7 +19,8 @@ public class RVP_FireData {
     /**
      * 发射角度散布（度），优先于武器顶层 {@code inaccuracy}（见 {@link RVP_WeaponData#getInaccuracy()}）。
      * 未写该字段时使用顶层 {@code inaccuracy}；写了则含显式 {@code 0}。
-     * 多发霰弹（{@link #canisterCount} &gt; 1）时由 canister 散布接管，生成弹体时不叠加此项。
+     * 单发时叠加到每枚弹丸瞄准；多发霰弹（{@link #canisterCount} &gt; 1）时作为**每轮齐射**束心随机偏移（度），
+     * 各弹丸再叠加 {@link #canisterDiff} 网格/圆盘散布。
      */
     @SerializedName("spread")
     private Float spread;
@@ -71,6 +72,20 @@ public class RVP_FireData {
      */
     @SerializedName("canister_type")
     private int canisterType = 1;
+
+    /**
+     * 霰弹散布密度，与投放器 {@code distribution} 同枚举（{@link RVP_EnumSpreadDistribution}）。
+     * 圆盘散布时控制随机密度；{@code square} 时决定在矩形网格上优先占用哪些格（见 {@link org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout}）。
+     */
+    @SerializedName("canister_distribution")
+    private String canisterDistribution = RVP_EnumSpreadDistribution.UNIFORM.getSerializedName();
+
+    /**
+     * 霰弹散布 footprint：{@code circle}（默认，随机圆盘/圆锥）或 {@code square}（矩形网格，如 16 弹为 4×4、12 弹为 4×3）。
+     * 见 {@link RVP_EnumSpreadShape#forCanister(String)}、{@link org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout}。
+     */
+    @SerializedName("canister_shape")
+    private String canisterShape = RVP_EnumSpreadShape.CIRCLE.getSerializedName();
 
     /**
      * 多弹丸散布强度；{@link #canisterType} 为 1 或 2 时表示角度散布幅度，推荐 &gt; 0.5。
@@ -126,6 +141,14 @@ public class RVP_FireData {
 
     public int getCanisterType() {
         return Math.max(0, Math.min(canisterType, 2));
+    }
+
+    public RVP_EnumSpreadDistribution getCanisterDistribution() {
+        return RVP_EnumSpreadDistribution.fromString(canisterDistribution);
+    }
+
+    public RVP_EnumSpreadShape getCanisterShape() {
+        return RVP_EnumSpreadShape.forCanister(canisterShape);
     }
 
     public float getCanisterDiff() {

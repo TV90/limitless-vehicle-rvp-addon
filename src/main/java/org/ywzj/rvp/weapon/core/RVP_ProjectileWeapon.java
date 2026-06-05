@@ -13,6 +13,9 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CSetTVMissile;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
+import org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout;
+import org.ywzj.rvp.weapon.spread.RVP_SpreadDistributionSampler;
+import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -154,32 +157,57 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         RVP_FireData fire = data.getFireData();
         int pellets = Math.max(fire.getCanisterCount(), 1);
         int total = pellets * fire.getCanisterBurstCount();
+        int[][] gridCells = fire.getCanisterShape() == RVP_EnumSpreadShape.SQUARE
+                ? RVP_CanisterGridLayout.assignCells(pellets, fire.getCanisterDistribution())
+                : null;
+        float spread = data.getInaccuracy();
+        float[] centerOffset = new float[]{0f, 0f};
         for (int i = 0; i < total; i++) {
-            AimContext pelletAim = canisterAim(aim, i % pellets, fire);
+            int pelletIndex = i % pellets;
+            if (pelletIndex == 0) {
+                centerOffset = RVP_ProjectileSpawner.sampleSpreadCenter(getVehicle().level(), spread);
+            }
+            AimContext pelletAim = canisterAim(aim, pelletIndex, gridCells, fire, centerOffset);
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, pelletAim, lock, unit, chargeScale, 0f, false);
             maybeEnterTV(data, shooter, projectile, i);
         }
     }
 
-    private AimContext canisterAim(AimContext base, int pelletIndex, RVP_FireData fire) {
+    private AimContext canisterAim(AimContext base, int pelletIndex, int[][] gridCells, RVP_FireData fire,
+                                   float[] centerOffset) {
         AimContext out = new AimContext();
         Vec3 muzzle = RVP_AimContexts.muzzle(base);
         out.from = muzzle;
         out.position = base.position;
-        float xRot = base.direction.x;
-        float yRot = base.direction.y;
+        float xRot = base.direction.x + centerOffset[0];
+        float yRot = base.direction.y + centerOffset[1];
         float diff = fire.getCanisterDiff();
         int type = fire.getCanisterType();
+        var random = getVehicle().level().random;
+        var distribution = fire.getCanisterDistribution();
+        var footprint = fire.getCanisterShape();
+        boolean useGrid = gridCells != null && footprint == RVP_EnumSpreadShape.SQUARE;
 
         if (type == 0) {
-            out.from = muzzle.add(
-                    randomCentered(diff),
-                    randomCentered(diff),
-                    randomCentered(diff));
+            float[] offset = new float[3];
+            if (useGrid) {
+                RVP_SpreadDistributionSampler.sampleCanisterGridPosition(
+                        gridCells[pelletIndex], fire.getCanisterCount(), diff, offset);
+            } else {
+                RVP_SpreadDistributionSampler.sampleCanisterPosition(random, distribution, footprint, diff, offset);
+            }
+            out.from = muzzle.add(offset[0], offset[1], offset[2]);
         } else {
-            xRot += randomCentered(diff);
-            yRot += randomCentered(diff);
+            float[] angular = new float[2];
+            if (useGrid) {
+                RVP_SpreadDistributionSampler.sampleCanisterGridAngular(
+                        gridCells[pelletIndex], fire.getCanisterCount(), diff, angular);
+            } else {
+                RVP_SpreadDistributionSampler.sampleCanisterAngular(random, distribution, footprint, diff, angular);
+            }
+            xRot += angular[0];
+            yRot += angular[1];
             if (type == 2 && fire.getCanisterBurstDelayTime() > 0f) {
                 Vec3 dir = VectorUtil.rotToVec(xRot, yRot).normalize();
                 out.from = muzzle.add(dir.scale(pelletIndex * fire.getCanisterBurstDelayTime()));
@@ -188,13 +216,6 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
         out.direction = new Vec2(xRot, yRot);
         return out;
-    }
-
-    private float randomCentered(float diff) {
-        if (diff <= 0f) {
-            return 0f;
-        }
-        return (getVehicle().level().random.nextFloat() * 2f - 1f) * diff;
     }
 
     private void maybeEnterTV(RVP_WeaponData data, LivingEntity shooter, RVP_BaseBullet projectile, int projectileIndex) {

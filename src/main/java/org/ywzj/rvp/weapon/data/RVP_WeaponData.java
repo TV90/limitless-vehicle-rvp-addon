@@ -51,7 +51,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("submunition_data")
     private RVP_SubmunitionData submunitionData = new RVP_SubmunitionData();
 
-    /** {@code rvp:dispenser} 投放物与散布，见 {@link RVP_DispenserPayloadData}。 */
+    /** 落点布撒物品与散布（任意武器类型可用），见 {@link RVP_DispenserPayloadData}。 */
     @SerializedName("dispenser_data")
     private RVP_DispenserPayloadData dispenserData = new RVP_DispenserPayloadData();
 
@@ -264,6 +264,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public int getBounceFuseTick() {
         return getCollisionData().getBounceFuseTick();
+    }
+
+    public float getBounceIncidenceAngle() {
+        return getCollisionData().getBounceIncidenceAngle();
+    }
+
+    public boolean isBounceOnVehicle() {
+        return getCollisionData().isBounceOnVehicle();
     }
 
     public int getRigidityTime() {
