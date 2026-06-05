@@ -1,7 +1,9 @@
 package org.ywzj.rvp.guidance;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -125,6 +127,34 @@ public final class RVP_GuidanceMath {
         int groundY = entity.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 entity.getBlockX(), entity.getBlockZ());
         return entity.getY() - groundY < minHeight;
+    }
+
+    /**
+     * MCH {@code MCH_WeaponGuidanceSystem#isEntityOnGround(Entity, int)} for proximity fuse:
+     * {@code onGround} or any non-air block within {@code blocksBelow} under entity feet.
+     */
+    public static boolean isEntityNearGroundBlocks(Entity entity, int blocksBelow) {
+        if (entity == null || !entity.isAlive()) {
+            return false;
+        }
+        if (entity.onGround()) {
+            return true;
+        }
+        if (blocksBelow <= 0) {
+            return false;
+        }
+        Level level = entity.level();
+        int x = Mth.floor(entity.getX() + 0.5);
+        int y = Mth.floor(entity.getY() + 0.5);
+        int z = Mth.floor(entity.getZ() + 0.5);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int i = 0; i < blocksBelow; i++) {
+            pos.set(x, y - i, z);
+            if (!level.getBlockState(pos).isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean isVehicleTarget(Entity entity) {

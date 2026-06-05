@@ -6,8 +6,8 @@ import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * MCH {@code DispenseItem} / {@code DispenseRange} parity for {@code rvp:dispenser}.
- * On impact the payload attempts vanilla item use on blocks inside a configurable spread.
+ * MCH {@code DispenseItem} / {@code DispenseRange} parity. Any weapon with {@code dispenser_data}
+ * may place/use items on impact; {@code rvp:dispenser} uses placement-only when configured.
  */
 public class RVP_DispenserPayloadData {
 
@@ -23,7 +23,7 @@ public class RVP_DispenserPayloadData {
     private int placeRadius = 1;
 
     /**
-     * Vertical half-height for {@link RVP_EnumDispenserSpreadShape#usesYRadius()} shapes;
+     * Vertical half-height for {@link RVP_EnumSpreadShape#usesYRadius()} shapes;
      * {@code -1} uses shape-specific defaults.
      */
     @SerializedName("y_radius")
@@ -34,10 +34,11 @@ public class RVP_DispenserPayloadData {
     private int density = 100;
 
     @SerializedName("shape")
-    private String shape = RVP_EnumDispenserSpreadShape.CIRCLE.getSerializedName();
+    private String shape = RVP_EnumSpreadShape.CIRCLE.getSerializedName();
 
+    /** Spread density within {@link #shape}; see {@link RVP_EnumSpreadDistribution}. */
     @SerializedName("distribution")
-    private String distribution = RVP_EnumDispenserDistribution.UNIFORM.getSerializedName();
+    private String distribution = RVP_EnumSpreadDistribution.UNIFORM.getSerializedName();
 
     /**
      * When true (default), impact triggers {@link org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement}
@@ -79,16 +80,16 @@ public class RVP_DispenserPayloadData {
     }
 
     public int resolveYRadius() {
-        RVP_EnumDispenserSpreadShape spreadShape = getSpreadShape();
-        if (spreadShape == RVP_EnumDispenserSpreadShape.SPHERE
-                || spreadShape == RVP_EnumDispenserSpreadShape.CUBE
-                || spreadShape == RVP_EnumDispenserSpreadShape.DIAMOND) {
+        RVP_EnumSpreadShape spreadShape = getSpreadShape();
+        if (spreadShape == RVP_EnumSpreadShape.SPHERE
+                || spreadShape == RVP_EnumSpreadShape.CUBE
+                || spreadShape == RVP_EnumSpreadShape.DIAMOND) {
             return getSpreadRadius();
         }
         if (yRadius >= 0) {
             return Mth.clamp(yRadius, 0, 24);
         }
-        if (spreadShape == RVP_EnumDispenserSpreadShape.CYLINDER) {
+        if (spreadShape == RVP_EnumSpreadShape.CYLINDER) {
             return getSpreadRadius();
         }
         return 0;
@@ -98,12 +99,12 @@ public class RVP_DispenserPayloadData {
         return Mth.clamp(density, 1, 100);
     }
 
-    public RVP_EnumDispenserSpreadShape getSpreadShape() {
-        return RVP_EnumDispenserSpreadShape.fromString(shape);
+    public RVP_EnumSpreadShape getSpreadShape() {
+        return RVP_EnumSpreadShape.fromString(shape);
     }
 
-    public RVP_EnumDispenserDistribution getDistribution() {
-        return RVP_EnumDispenserDistribution.fromString(distribution);
+    public RVP_EnumSpreadDistribution getDistribution() {
+        return RVP_EnumSpreadDistribution.fromString(distribution);
     }
 
     public boolean isPlaceOnImpact() {

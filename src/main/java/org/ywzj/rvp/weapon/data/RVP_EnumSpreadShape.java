@@ -4,9 +4,9 @@ import net.minecraft.util.StringRepresentable;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Footprint of a dispenser spread relative to the impact center.
+ * Spread footprint: dispenser 3D shapes and canister 2D patterns ({@code circle} / {@code square}).
  */
-public enum RVP_EnumDispenserSpreadShape implements StringRepresentable {
+public enum RVP_EnumSpreadShape implements StringRepresentable {
     /** Horizontal disk ({@code x² + z² ≤ r²}), vertical extent from {@code y_radius}. */
     CIRCLE("circle"),
     /** Horizontal axis-aligned square (Chebyshev on XZ). */
@@ -22,7 +22,7 @@ public enum RVP_EnumDispenserSpreadShape implements StringRepresentable {
 
     private final String id;
 
-    RVP_EnumDispenserSpreadShape(String id) {
+    RVP_EnumSpreadShape(String id) {
         this.id = id;
     }
 
@@ -31,17 +31,23 @@ public enum RVP_EnumDispenserSpreadShape implements StringRepresentable {
         return id;
     }
 
-    public static RVP_EnumDispenserSpreadShape fromString(@Nullable String raw) {
+    public static RVP_EnumSpreadShape fromString(@Nullable String raw) {
         if (raw == null || raw.isBlank()) {
             return CIRCLE;
         }
         String key = raw.trim().toLowerCase();
-        for (RVP_EnumDispenserSpreadShape shape : values()) {
+        for (RVP_EnumSpreadShape shape : values()) {
             if (shape.id.equals(key)) {
                 return shape;
             }
         }
         return CIRCLE;
+    }
+
+    /** Canister angular/position spread: only {@code circle} and {@code square} are valid. */
+    public static RVP_EnumSpreadShape forCanister(@Nullable String raw) {
+        RVP_EnumSpreadShape shape = fromString(raw);
+        return shape == RVP_EnumSpreadShape.SQUARE ? SQUARE : CIRCLE;
     }
 
     public boolean contains(int x, int y, int z, int radius, int yRadius) {
@@ -55,7 +61,6 @@ public enum RVP_EnumDispenserSpreadShape implements StringRepresentable {
         };
     }
 
-    /** Whether this shape uses a separate vertical half-extent instead of {@code radius} on Y. */
     public boolean usesYRadius() {
         return this == CIRCLE || this == SQUARE || this == CYLINDER;
     }

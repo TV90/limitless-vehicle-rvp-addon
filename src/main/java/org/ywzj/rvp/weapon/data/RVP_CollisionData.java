@@ -34,8 +34,22 @@ public class RVP_CollisionData {
     @SerializedName("bounce_fuse_tick")
     private int bounceFuseTick = 0;
 
+    /**
+     * 入射角阈值（度）：速度方向与撞击面法线夹角 ≥ 该值时才跳弹（掠射跳弹、近垂直不跳）。
+     * 0 表示不限制角度（仅受 {@link #bounce} 次数约束）。
+     */
+    @SerializedName("bounce_incidence_angle")
+    private float bounceIncidenceAngle = 0f;
+
+    /**
+     * 击中 {@link org.ywzj.vehicle.entity.vehicle.AbstractVehicle} 时是否允许跳弹；默认 false（仅方块等环境跳弹）。
+     */
+    @SerializedName("bounce_on_vehicle")
+    private boolean bounceOnVehicle = false;
+
     public boolean isSpecified() {
-        return piercing > 0 || wallPenetration > 0 || bounce > 0 || bounceFuseTick > 0 || bounceStrength > 0f;
+        return piercing > 0 || wallPenetration > 0 || bounce > 0 || bounceFuseTick > 0 || bounceStrength > 0f
+                || bounceIncidenceAngle > 0f || bounceOnVehicle;
     }
 
     public int getPiercing() {
@@ -59,5 +73,13 @@ public class RVP_CollisionData {
 
     public int getBounceFuseTick() {
         return Math.max(bounceFuseTick, 0);
+    }
+
+    public float getBounceIncidenceAngle() {
+        return Mth.clamp(bounceIncidenceAngle, 0f, 90f);
+    }
+
+    public boolean isBounceOnVehicle() {
+        return bounceOnVehicle;
     }
 }

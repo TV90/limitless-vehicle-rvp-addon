@@ -114,6 +114,16 @@ public final class RVP_ProjectileSpawner {
         return (level.random.nextFloat() - 0.5f) * spread;
     }
 
+    /**
+     * Random pitch/yaw offset (degrees) for one shotgun volley center; pellets add {@code canister_diff} on top.
+     */
+    public static float[] sampleSpreadCenter(Level level, float spreadDegrees) {
+        return new float[]{
+                randomSpread(level, spreadDegrees),
+                randomSpread(level, spreadDegrees)
+        };
+    }
+
     @SuppressWarnings("unchecked")
     private static RVP_BaseBullet create(RVP_EnumWeaponKind kind, EntityType<? extends Projectile> type,
                                          Level level, RVP_WeaponData data) {

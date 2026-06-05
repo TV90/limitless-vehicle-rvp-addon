@@ -8,24 +8,31 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_Explosion;
 
 /**
- * Machinegun / cannon pellet. Motion and facing follow {@link org.ywzj.vehicle.entity.weapon.BulletEntity}
- * on both sides; server calls {@link RVP_BaseBullet#tickHit()} before motion in {@link #tickBullet()}.
+ * Machinegun / cannon pellet. Both sides integrate motion; server runs {@link RVP_BaseBullet#tickHit()} before
+ * movement. Clients with bounce predict block ricochet locally (no extra network packet).
  */
 public class RVP_BulletEntity extends RVP_BaseBullet {
 
+    private static final int LERP_SUPPRESS_TICKS_AFTER_BOUNCE = 3;
+
     private Vec3 startPos = Vec3.ZERO;
+    /** Suppress {@link org.ywzj.vehicle.entity.weapon.AmmoEntity} position lerp briefly after a bounce. */
+    private int lerpSuppressTicks;
     /** Position at tick start (after {@link #tick()} housekeeping), before hit-test / motion integration. */
     private Vec3 tickSegmentStart = Vec3.ZERO;
     private float caliber = 7.62f;
@@ -72,15 +79,67 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     /** Entry from {@link RVP_BaseBullet#tick()}. */
     public void tickBullet() {
         tickSegmentStart = position();
-        if (!level().isClientSide()) {
-            if (!tickBulletServerPreMotion()) {
-                return;
-            }
+        if (level().isClientSide()) {
+            predictBounceBeforeMotion();
+        } else if (!tickBulletServerPreMotion()) {
+            return;
         }
         tickBulletMotionAndFacing();
         if (!level().isClientSide()) {
             tickBulletServerPostMotion();
         }
+    }
+
+    /**
+     * Client-side bounce before motion (entity then block, same order as {@link #tickHit()}).
+     */
+    private void predictBounceBeforeMotion() {
+        if (bounceLeft <= 0) {
+            return;
+        }
+        Vec3 motion = getDeltaMovement();
+        if (motion.lengthSqr() <= 1.0E-6) {
+            return;
+        }
+        Vec3 end = tickSegmentStart.add(motion);
+        BulletHitResult entityResult = findEntityOnPathForSegment(tickSegmentStart, end, motion);
+        if (entityResult != null
+                && entityResult.getEntity() != vehicle
+                && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
+                && tryBounceFromEntityHit(entityResult)) {
+            applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
+            return;
+        }
+        BlockHitResult hit = level().clip(new ClipContext(
+                tickSegmentStart, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+        if (hit.getType() != HitResult.Type.MISS && tryBounceFromBlockHit(hit)) {
+            applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
+        }
+    }
+
+    @Override
+    public void lerpTo(double x, double y, double z, float yRot, float xRot, int steps, boolean teleport) {
+        if (level().isClientSide() && lerpSuppressTicks > 0) {
+            lerpSuppressTicks--;
+            setPos(x, y, z);
+            setRot(yRot, xRot);
+            yRotO = yRot;
+            xRotO = xRot;
+            return;
+        }
+        super.lerpTo(x, y, z, yRot, xRot, steps, teleport);
+    }
+
+    /** Snap client state after a locally predicted bounce. */
+    public void applyBounceVisualState(Vec3 pos, Vec3 velocity, float yRot, float xRot, int bouncesLeft) {
+        setPos(pos);
+        setDeltaMovement(velocity);
+        setYRot(yRot);
+        setXRot(xRot);
+        yRotO = yRot;
+        xRotO = xRot;
+        bounceLeft = bouncesLeft;
+        lerpSuppressTicks = LERP_SUPPRESS_TICKS_AFTER_BOUNCE;
     }
 
     private boolean tickBulletServerPreMotion() {
@@ -222,6 +281,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         buffer.writeFloat(tracerR);
         buffer.writeFloat(tracerG);
         buffer.writeFloat(tracerB);
+        buffer.writeVarInt(bounceLeft);
+        buffer.writeFloat(bounceStrength);
+        buffer.writeFloat(bounceIncidenceAngleMin);
+        buffer.writeBoolean(bounceOnVehicle);
     }
 
     @Override
@@ -234,6 +297,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         tracerR = buffer.readFloat();
         tracerG = buffer.readFloat();
         tracerB = buffer.readFloat();
+        bounceLeft = buffer.readVarInt();
+        bounceStrength = buffer.readFloat();
+        bounceIncidenceAngleMin = buffer.readFloat();
+        bounceOnVehicle = buffer.readBoolean();
         startPos = position();
         applyCannonFacingFromVelocity(getDeltaMovement(), false);
         yRotO = getYRot();

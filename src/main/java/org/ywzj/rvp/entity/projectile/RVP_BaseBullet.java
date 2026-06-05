@@ -27,13 +27,17 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.vehicle.util.VehicleExplosion;
+import org.ywzj.rvp.weapon.collision.RVP_BounceMath;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.weapon.damage.RVP_DamageDecayEvaluator;
+import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
+import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
+import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -84,7 +88,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected float bounceStrength = 0.6f;
     protected int bounceFuseTick;
     protected int bounceFuseCountdown = -1;
+    protected float bounceIncidenceAngleMin;
+    protected boolean bounceOnVehicle;
     protected double flightDistance;
+
+    @Nullable
+    protected BlockHitResult lastBlockHit;
 
     @Nullable
     protected Entity targetEntity;
@@ -123,6 +132,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.bounceLeft = data.getBounce();
         this.bounceStrength = data.getBounceStrength();
         this.bounceFuseTick = data.getBounceFuseTick();
+        this.bounceIncidenceAngleMin = data.getBounceIncidenceAngle();
+        this.bounceOnVehicle = data.isBounceOnVehicle();
         Vec3 spawnMotion = initialMotion;
         if (usesCannonBallistics(kind)) {
             this.cannonFriction = data.getCannonFriction();
@@ -454,15 +465,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         if (radius <= 0f) {
             return;
         }
-        if (targetEntity != null && targetEntity.isAlive() && distanceToSqr(targetEntity) < radius * radius) {
+        int fuseHeight = fuse.getProximityFuseHeight();
+        if (targetEntity != null && targetEntity.isAlive()
+                && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
+                && distanceToSqr(targetEntity) < radius * radius) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
             return;
         }
         AABB detectionBox = getBoundingBox().inflate(radius);
-        for (Entity entity : level().getEntities(this, detectionBox, this::canDamageEntity)) {
+        for (Entity entity : level().getEntities(this, detectionBox,
+                e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight))) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
             return;
         }
+    }
+
+    /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
+    protected boolean isProximityFuseTargetTooLow(Entity entity, int fuseHeight) {
+        return RVP_GuidanceMath.isEntityNearGroundBlocks(entity, fuseHeight);
     }
 
     protected void tickSubmunition() {
@@ -557,8 +577,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
         AABB detectionBox = getBoundingBox().inflate(explosion.proximityRadius)
                 .move(getLookAngle().normalize().scale(-explosion.proximityRadius));
+        int fuseHeight = rvpData != null ? rvpData.getFuseData().getProximityFuseHeight() : 20;
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
-                entity -> entity != vehicle && !vehicle.getPassengers().contains(entity));
+                entity -> entity != vehicle && !vehicle.getPassengers().contains(entity)
+                        && !isProximityFuseTargetTooLow(entity, fuseHeight));
         if (nearbyEntities.isEmpty()) {
             return false;
         }
@@ -577,20 +599,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     protected boolean handleBlockImpact(BlockHitResult result) {
+        lastBlockHit = result;
         spawnAmmoBlockImpactEffects(result);
         Vec3 hit = result.getLocation();
-        if (bounceLeft > 0 && getDeltaMovement().lengthSqr() > 0.05) {
-            Direction direction = result.getDirection();
-            Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
-            Vec3 velocity = getDeltaMovement();
-            Vec3 reflected = velocity.subtract(normal.scale(2.0 * velocity.dot(normal))).scale(bounceStrength);
-            bounceLeft--;
-            if (bounceFuseTick > 0 && bounceFuseCountdown < 0) {
-                bounceFuseCountdown = bounceFuseTick;
-            }
-            setPos(hit.add(normal.scale(0.08)));
-            setDeltaMovement(reflected);
-            applyRotationFromVelocity(reflected);
+        if (tryBounceFromBlockHit(result)) {
             return true;
         }
         if (wallPenetrationLeft > 0) {
@@ -601,12 +613,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             }
             return false;
         }
+        if (dispenserOnlyImpact()) {
+            applyDispenserAt(hit, result);
+            discard();
+            return true;
+        }
         resolveImpactDetonation(hit, result, true);
         discard();
         return true;
     }
 
     private void handleEntityImpact(BulletHitResult result) {
+        if (tryBounceFromEntityHit(result)) {
+            return;
+        }
         Entity entity = result.getEntity();
         Entity owner = this.getOwner();
         boolean headshot = result.isHeadshot();
@@ -648,6 +668,65 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             return true;
         }
         return false;
+    }
+
+    protected boolean isBounceEnabledForEntity(Entity entity) {
+        if (entity instanceof AbstractVehicle) {
+            return bounceOnVehicle;
+        }
+        return false;
+    }
+
+    /**
+     * Apply ricochet when incidence angle and target type allow it. Safe on client for prediction.
+     */
+    protected boolean tryApplyBounce(Vec3 hitLocation, Vec3 surfaceNormal) {
+        if (bounceLeft <= 0 || getDeltaMovement().lengthSqr() <= 0.05) {
+            return false;
+        }
+        Vec3 velocity = getDeltaMovement();
+        if (!RVP_BounceMath.meetsIncidenceThreshold(velocity, surfaceNormal, bounceIncidenceAngleMin)) {
+            return false;
+        }
+        Vec3 normal = surfaceNormal.normalize();
+        Vec3 reflected = RVP_BounceMath.reflect(velocity, normal, bounceStrength);
+        bounceLeft--;
+        if (!level().isClientSide() && bounceFuseTick > 0 && bounceFuseCountdown < 0) {
+            bounceFuseCountdown = bounceFuseTick;
+        }
+        setPos(hitLocation.add(normal.scale(0.08)));
+        setDeltaMovement(reflected);
+        applyRotationFromVelocity(reflected);
+        return true;
+    }
+
+    protected boolean tryBounceFromBlockHit(BlockHitResult result) {
+        Vec3 normal = Vec3.atLowerCornerOf(result.getDirection().getNormal());
+        if (!tryApplyBounce(result.getLocation(), normal)) {
+            return false;
+        }
+        onBounceApplied();
+        return true;
+    }
+
+    protected boolean tryBounceFromEntityHit(BulletHitResult result) {
+        Entity entity = result.getEntity();
+        if (!isBounceEnabledForEntity(entity)) {
+            return false;
+        }
+        Vec3 velocity = getDeltaMovement();
+        Vec3 normal = RVP_BounceMath.entityImpactNormal(entity, result.getLocation(), velocity);
+        if (!tryApplyBounce(result.getLocation(), normal)) {
+            return false;
+        }
+        onBounceApplied();
+        return true;
+    }
+
+    /** Hook after a bounce; resets rotation lerp anchors on both sides. */
+    protected void onBounceApplied() {
+        yRotO = getYRot();
+        xRotO = getXRot();
     }
 
     protected boolean canDamageEntity(Entity entity) {
@@ -698,11 +777,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             return;
         }
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
+        boolean applyDispenser = shouldApplyDispenser() && !dispenserOnlyImpact();
         if (detonate.isEffectsBeforeExplosion()) {
+            if (applyDispenser) {
+                applyDispenserAt(pos, blockHit);
+            }
             applyDetonateAt(pos, blockHit, blockImpact);
             triggerExplosion(pos);
         } else {
             triggerExplosion(pos);
+            if (applyDispenser) {
+                applyDispenserAt(pos, blockHit);
+            }
             applyDetonateAt(pos, blockHit, blockImpact);
         }
     }
@@ -764,18 +850,59 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             return;
         }
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
+        boolean applyDispenser = shouldApplyDispenser() && !dispenserOnlyImpact();
         if (detonate.isEffectsBeforeExplosion()) {
+            if (applyDispenser) {
+                applyDispenserAt(pos, lastBlockHit);
+            }
             applyDetonateAt(pos, null, false);
             triggerExplosion(pos, kind);
         } else {
             triggerExplosion(pos, kind);
+            if (applyDispenser) {
+                applyDispenserAt(pos, lastBlockHit);
+            }
             applyDetonateAt(pos, null, false);
         }
         discard();
     }
 
     protected void explodeAndDiscard(Vec3 pos) {
+        if (dispenserOnlyImpact()) {
+            applyDispenserAt(pos, lastBlockHit);
+            discard();
+            return;
+        }
         detonateFuseAt(pos, FuseDetonation.NORMAL);
+    }
+
+    protected boolean shouldApplyDispenser() {
+        if (rvpData == null) {
+            return false;
+        }
+        RVP_DispenserPayloadData payload = rvpData.getDispenserData();
+        return payload.hasItem() && payload.isPlaceOnImpact();
+    }
+
+    /**
+     * {@code rvp:dispenser} with {@code dispenser_data} places items only (no explosion/detonate chain).
+     */
+    protected boolean dispenserOnlyImpact() {
+        return shouldApplyDispenser() && weaponKind == RVP_EnumWeaponKind.DISPENSER;
+    }
+
+    protected int applyDispenserAt(Vec3 pos, @Nullable BlockHitResult blockHit) {
+        if (level().isClientSide() || rvpData == null || !shouldApplyDispenser()) {
+            return 0;
+        }
+        if (!(level() instanceof ServerLevel serverLevel)) {
+            return 0;
+        }
+        RVP_DispenserPayloadData payload = rvpData.getDispenserData();
+        if (blockHit != null) {
+            return RVP_DispenserPlacement.placeAtHit(serverLevel, blockHit, payload, getOwner());
+        }
+        return RVP_DispenserPlacement.placeAtPosition(serverLevel, pos, payload, getOwner(), lastBlockHit);
     }
 
     public void applyRotationFromVelocity(Vec3 velocity) {

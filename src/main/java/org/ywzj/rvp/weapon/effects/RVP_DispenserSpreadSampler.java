@@ -3,9 +3,10 @@ package org.ywzj.rvp.weapon.effects;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
-import org.ywzj.rvp.weapon.data.RVP_EnumDispenserDistribution;
 import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
-import org.ywzj.rvp.weapon.data.RVP_EnumDispenserSpreadShape;
+import org.ywzj.rvp.weapon.data.RVP_EnumSpreadDistribution;
+import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
+import org.ywzj.rvp.weapon.spread.RVP_SpreadDistributionSampler;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,7 +35,7 @@ public final class RVP_DispenserSpreadSampler {
     public static List<SpreadOffset> sampleOffsets(RVP_DispenserPayloadData payload, RandomSource random) {
         int radius = payload.getSpreadRadius();
         int yRadius = payload.resolveYRadius();
-        RVP_EnumDispenserSpreadShape shape = payload.getSpreadShape();
+        RVP_EnumSpreadShape shape = payload.getSpreadShape();
         int density = payload.getDensity();
 
         List<SpreadOffset> candidates = enumerateCandidates(shape, radius, yRadius, payload.isSurfaceOnly());
@@ -64,11 +65,11 @@ public final class RVP_DispenserSpreadSampler {
         return Math.max(1, Math.min(scaled, candidateCount));
     }
 
-    private static List<SpreadOffset> enumerateCandidates(RVP_EnumDispenserSpreadShape shape, int radius, int yRadius,
+    private static List<SpreadOffset> enumerateCandidates(RVP_EnumSpreadShape shape, int radius, int yRadius,
                                                           boolean surfaceOnly) {
         List<SpreadOffset> list = new ArrayList<>();
         if (surfaceOnly) {
-            RVP_EnumDispenserSpreadShape horizontalShape = horizontalProjection(shape);
+            RVP_EnumSpreadShape horizontalShape = horizontalProjection(shape);
             for (int x = -radius; x <= radius; x++) {
                 for (int z = -radius; z <= radius; z++) {
                     if (horizontalShape.contains(x, 0, z, radius, yRadius)) {
@@ -80,8 +81,8 @@ public final class RVP_DispenserSpreadSampler {
         }
         int yMin = -yRadius;
         int yMax = yRadius;
-        if (shape == RVP_EnumDispenserSpreadShape.SPHERE || shape == RVP_EnumDispenserSpreadShape.CUBE
-                || shape == RVP_EnumDispenserSpreadShape.DIAMOND) {
+        if (shape == RVP_EnumSpreadShape.SPHERE || shape == RVP_EnumSpreadShape.CUBE
+                || shape == RVP_EnumSpreadShape.DIAMOND) {
             yMin = -radius;
             yMax = radius;
         }
@@ -97,19 +98,19 @@ public final class RVP_DispenserSpreadSampler {
         return list;
     }
 
-    private static RVP_EnumDispenserSpreadShape horizontalProjection(RVP_EnumDispenserSpreadShape shape) {
+    private static RVP_EnumSpreadShape horizontalProjection(RVP_EnumSpreadShape shape) {
         return switch (shape) {
-            case SQUARE, CUBE -> RVP_EnumDispenserSpreadShape.SQUARE;
-            case DIAMOND -> RVP_EnumDispenserSpreadShape.DIAMOND;
-            default -> RVP_EnumDispenserSpreadShape.CIRCLE;
+            case SQUARE, CUBE -> RVP_EnumSpreadShape.SQUARE;
+            case DIAMOND -> RVP_EnumSpreadShape.DIAMOND;
+            default -> RVP_EnumSpreadShape.CIRCLE;
         };
     }
 
     private static List<SpreadOffset> subsample(List<SpreadOffset> candidates, int target,
-                                                RVP_EnumDispenserDistribution distribution,
-                                                RVP_EnumDispenserSpreadShape shape, int radius,
+                                                RVP_EnumSpreadDistribution distribution,
+                                                RVP_EnumSpreadShape shape, int radius,
                                                 RandomSource random) {
-        if (distribution == RVP_EnumDispenserDistribution.UNIFORM) {
+        if (RVP_SpreadDistributionSampler.isUniformSubsample(distribution)) {
             List<SpreadOffset> copy = new ArrayList<>(candidates);
             for (int i = copy.size() - 1; i > 0; i--) {
                 int j = random.nextInt(i + 1);
@@ -120,14 +121,13 @@ public final class RVP_DispenserSpreadSampler {
             return copy.subList(0, target);
         }
 
-        if (distribution == RVP_EnumDispenserDistribution.NORMAL
-                || distribution == RVP_EnumDispenserDistribution.CLUSTER_CENTER) {
+        if (RVP_SpreadDistributionSampler.isCenterClusterSubsample(distribution)) {
             List<SpreadOffset> sorted = new ArrayList<>(candidates);
             sorted.sort(Comparator.comparingDouble(o -> o.x * o.x + o.y * o.y + o.z * o.z));
             return sorted.subList(0, target);
         }
 
-        if (distribution == RVP_EnumDispenserDistribution.CLUSTER_EDGE) {
+        if (distribution == RVP_EnumSpreadDistribution.CLUSTER_EDGE) {
             List<SpreadOffset> sorted = new ArrayList<>(candidates);
             sorted.sort(Comparator.comparingDouble(
                     (SpreadOffset o) -> o.x * o.x + o.y * o.y + o.z * o.z).reversed());
@@ -138,8 +138,8 @@ public final class RVP_DispenserSpreadSampler {
     }
 
     private static List<SpreadOffset> weightedSample(List<SpreadOffset> candidates, int target,
-                                                     RVP_EnumDispenserDistribution distribution,
-                                                     RVP_EnumDispenserSpreadShape shape, int radius,
+                                                     RVP_EnumSpreadDistribution distribution,
+                                                     RVP_EnumSpreadShape shape, int radius,
                                                      RandomSource random) {
         List<SpreadOffset> picked = new ArrayList<>(target);
         Set<Long> seen = new HashSet<>(target * 2);

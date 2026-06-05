@@ -119,8 +119,10 @@ RVP 扩展武器数据包路径：
 | 字段 | 说明 |
 | --- | --- |
 | `canister_count` | 单次开火弹丸数量；未写或 ≤0 时视为 1。 |
-| `spread` | **发射角度散布（度）**；弹丸生成只用此值（勿在顶层写 `inaccuracy`）。多发霰弹（`canister_count > 1`）由 `canister_diff` 等控制，生成时不再叠加此项。 |
+| `spread` | **发射角度散布（度）**（勿在顶层写 `inaccuracy`）。单发：每枚弹丸随机偏移；霰弹（`canister_count > 1`）：每轮齐射采样一次**束心**偏移，各弹丸再按 `canister_diff` / 网格散布相对束心展开。 |
 | `canister_type` | 多弹丸散布：`0` 位置，`1` 角度，`2` 角度 + 前向错位模拟时间散布（`canister_count > 1` 时生效）。 |
+| `canister_distribution` | 圆盘散布（`circle`）时控制随机密度；矩形网格（`square`）时决定在网格上优先占用哪些格（`normal` 靠中心、`ring` 靠方环等）。 |
+| `canister_shape` | `circle`（默认，随机圆盘）或 `square`（矩形网格排布：16 弹→4×4，12 弹→4×3；格心映射到 `canister_diff` 角度/位置偏移）。 |
 | `canister_diff` | 散布强度；type=1/2 时为角度散布，推荐 &gt; 0.5。 |
 | `canister_burst_delay_time` | type=2 时沿弹道前向弹丸间距（方块），推荐 &gt; 3。 |
 | `canister_burst_count` | 单次 `shoot()` 内齐射轮数（每轮 `canister_count` 枚，同 tick）。 |
@@ -208,6 +210,7 @@ RVP 扩展武器数据包路径：
 | `airburst_measure_min` / `airburst_measure_max` | 有效测距范围（米），默认 **5** / **300**。 |
 | `proximity_radius` | 近炸引信检测半径（米），0 表示不启用。 |
 | `proximity_fuse_tick` | 近炸解保 tick：出生后至少经过该 tick 才启用；**-1** 表示不限制。 |
+| `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 
 可编程空爆与近炸的**爆炸伤害/半径**（及近炸对实体的直接伤害）在 `damage_model_data` 配置，见下表。
@@ -241,6 +244,8 @@ RVP 扩展武器数据包路径：
 | `bounce` | 弹跳次数，0 表示不跳弹。 |
 | `bounce_strength` | 每次弹跳后速度保留比例（如 `0.8` = 反射速度 ×0.8）。未写且 `bounce > 0` 时默认 `0.6`。 |
 | `bounce_fuse_tick` | 第一次弹跳后多少 tick 自动引信（引爆或消失，取决于 `detonate_data.explosion_data.explode`）；`0` 不启用。 |
+| `bounce_incidence_angle` | 入射角阈值（度）：速度方向与撞击面法线夹角 **≥** 该值时才跳弹（如 `50` = 掠射跳弹、近垂直击中不跳）；`0` 表示不限制角度。 |
+| `bounce_on_vehicle` | 击中载具（`AbstractVehicle`）时是否跳弹；默认 `false`（仅对方块等地形跳弹）。 |
 
 ### `decay` 规则类型（对应 MCH `BulletDecay = Type ...`）
 
@@ -264,7 +269,9 @@ RVP 扩展武器数据包路径：
 "collision_data": {
   "bounce": 2,
   "bounce_strength": 0.8,
-  "bounce_fuse_tick": 15
+  "bounce_fuse_tick": 15,
+  "bounce_incidence_angle": 50,
+  "bounce_on_vehicle": false
 }
 ```
 
@@ -274,7 +281,7 @@ RVP 扩展武器数据包路径：
 
 - 载具包武器 JSON **只写** `*_data` 分组中的弹道/伤害/散布；勿在顶层写 `damage`、`inaccuracy`、`velocity`。
 - 直接命中伤害：写在 `damage_model_data.direct`。
-- 发射散布：写在 `fire_data.spread`（经 `RVP_WeaponData#getInaccuracy()` 读取，不再与顶层字段叠加）。
+- 发射散布：写在 `fire_data.spread`（经 `RVP_WeaponData#getInaccuracy()` 读取）；霰弹为每轮齐射束心偏移，单发为每弹偏移。
 - 弹体初速：写在 `projectile_data.velocity`；见「机枪与官方机炮弹速」。
 - 近炸半径：`fuse_data.proximity_radius` 优先，否则可读 `detonate_data.explosion_data.proximity_radius`。
 - `damage` 为顶层直击数值；`damage_model_data` 为独立对象，勿把 `damage` 写成嵌套对象。
@@ -338,11 +345,9 @@ RVP 扩展武器数据包路径：
 | `potion_effect_data` | 对范围内实体**直接**上 buff，不生成云；字段同上（忽略 `cloud_duration_ticks`）。 |
 | `place_block_data` | 放置方块。`block`、`radius`、`chance`、`replace_mode`：`air_only` / `replaceable` / `always`。 |
 | `lightning_data` | 召唤闪电。`damage`：是否造成伤害（false 为纯特效）。 |
-| `freeze_data` | `radius`、`freeze_ticks`、`targets`。 |
 | `ignite_entity_data` | `radius`、`seconds`（着火秒数）、`targets`。 |
 | `knockback_data` | `radius`、`strength`、`targets`。 |
 | `clear_plants_data` | `radius`：清除草、花、树叶等可替换植物。 |
-| `fluid_data` | `type`：`water` / `lava`；`radius`、`chance`。 |
 
 `targets`（范围类效果共用）：`living`（默认）、`players`、`hostile`、`non_allied`（排除 owner 与发射载具乘员）、`all`。
 
@@ -371,9 +376,9 @@ RVP 扩展武器数据包路径：
 | `interval_tick` | 子弹药释放间隔；0 表示一次性释放全部。 |
 | `spread` | 子弹药速度散布。 |
 
-## `dispenser_data` 布撒器落点物品（`rvp:dispenser`）
+## `dispenser_data` 落点布撒物品（任意武器类型）
 
-对应 MCH `DispenseItem` / `DispenseRange`。弹体命中或引信结束时，在落点按**形状 + 密集度 + 分布**采样若干格，对有效方块尝试原版 `useOn` / `use`（骨粉、火把、TNT、萤石等）。可与 `submunition` 组合：母弹飞行中抛洒多枚子弹药，每枚弹体各自执行一次布撒采样。
+对应 MCH `DispenseItem` / `DispenseRange`。**导弹、炸弹、火箭、机枪弹等**均可配置；弹体命中或引信引爆时在落点按**形状 + 密集度 + 分布**采样若干格，对有效方块尝试原版 `useOn` / `use`（骨粉、火把、TNT、萤石等），顺序与 `detonate_data.effects_before_explosion` 一致（相对爆炸先后）。`rvp:dispenser` 类型在配置了 `item` 时仅布撒、不走路径爆炸链。可与 `submunition` 组合：母弹飞行中抛洒多枚子弹药，每枚弹体各自执行一次布撒采样。
 
 ### 字段
 
@@ -404,7 +409,7 @@ RVP 扩展武器数据包路径：
 
 | 值 | 说明 |
 | --- | --- |
-| `uniform` | 在候选格中均匀随机抽取。 |
+| `uniform` | 在候选格中均匀随机抽取；圆/柱 footprint 为圆盘均匀；`square` footprint 为轴对齐矩形内均匀。 |
 | `normal` | 优先靠近落点中心的格（按到原点距离升序取前 N 个）。 |
 | `cluster_center` | 同 `normal`，更强中心聚集。 |
 | `cluster_edge` | 优先形状外缘的格。 |

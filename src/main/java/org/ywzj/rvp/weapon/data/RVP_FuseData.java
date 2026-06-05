@@ -43,6 +43,13 @@ public class RVP_FuseData {
     @SerializedName("proximity_fuse_tick")
     private int proximityFuseTick = -1;
 
+    /**
+     * 近炸引信目标最低高度（格）：目标 {@code onGround} 或脚下该深度内有实心方块时**不触发**
+     * （MCH {@code ProximityFuseHeight}，默认 20）。0 表示仅 {@code onGround} 判定。
+     */
+    @SerializedName("proximity_fuse_height")
+    private int proximityFuseHeight = 20;
+
     /** 生命周期结束时是否爆炸；false 时只消失。 */
     @SerializedName("detonate_on_life_end")
     private boolean detonateOnLifeEnd = false;
@@ -73,6 +80,10 @@ public class RVP_FuseData {
 
     public int getProximityFuseTick() {
         return proximityFuseTick;
+    }
+
+    public int getProximityFuseHeight() {
+        return Math.max(proximityFuseHeight, 0);
     }
 
     public boolean isDetonateOnLifeEnd() {
