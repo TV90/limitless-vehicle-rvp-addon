@@ -36,6 +36,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.C2SSetGPSTarget;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
+import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -82,6 +83,8 @@ public class RVP_ClientEvents {
         if (player == null) {
             return;
         }
+
+        RVP_ClientBulletHitDebugState.clientTick();
 
         while (RVP_Keys.WEAPON_TEST_OVERLAY.consumeClick()) {
             boolean on = org.ywzj.rvp.client.RVP_WeaponTestMode.toggle();

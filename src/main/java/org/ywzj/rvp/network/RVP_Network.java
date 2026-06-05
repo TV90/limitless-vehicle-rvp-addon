@@ -47,5 +47,10 @@ public class RVP_Network {
                 .decoder(C2SSetAirburstRange::decode)
                 .consumerMainThread(C2SSetAirburstRange::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CBulletVehicleHitDebug.class, id++)
+                .encoder(S2CBulletVehicleHitDebug::encode)
+                .decoder(S2CBulletVehicleHitDebug::decode)
+                .consumerMainThread(S2CBulletVehicleHitDebug::handle)
+                .add();
     }
 }
