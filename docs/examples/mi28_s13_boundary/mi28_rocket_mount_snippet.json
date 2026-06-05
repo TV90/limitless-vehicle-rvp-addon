@@ -1,0 +1,12 @@
+[
+  { "id": "rvp:mi28_s13_t01_cluster", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t02_staged", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t03_starburst", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t04_impact_split", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t05_prox_bloom", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t06_salvo", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t07_dual", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t08_smoke_line", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t09_decoy", "part_unit_id": "rocket" },
+  { "id": "rvp:mi28_s13_t10_ground_disp", "part_unit_id": "rocket" }
+]

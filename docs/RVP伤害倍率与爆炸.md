@@ -1,24 +1,24 @@
 # RVP 伤害倍率与爆炸
 
-本文说明 `damage_model_data.damage_factor` 的配置方式，以及 RVP 爆炸与本体 `VehicleExplosion` 的关系。
+本文说明 `collision_data.direct_damage_factor` 的配置方式，以及 RVP 爆炸与本体 `VehicleExplosion` 的关系。
 
 ## 与 MCH 的差异
 
-| 项目 | MCH `DamageFactor` | RVP `damage_factor` |
+| 项目 | MCH `DamageFactor` | RVP `direct_damage_factor` |
 | --- | --- | --- |
 | 载具分类 | 固定枚举（Plane / Tank / Heli …） | 按 Forge **实体类型 ID** 配置，如 `ywzj_vehicle:rotary_wing_vehicle` |
-| 配置位置 | 武器 txt 多行 `DamageFactor = ...` | 武器 JSON `damage_model_data.damage_factor` |
-| 爆炸 | 在 `onImpact` 中乘系数 | 本体 `VehicleExplosion`（波及伤害**不**乘 `damage_factor`） |
+| 配置位置 | 武器 txt 多行 `DamageFactor = ...` | 武器 JSON `collision_data.direct_damage_factor` |
+| 爆炸 | 在 `onImpact` 中乘系数 | 本体 `VehicleExplosion`（波及伤害**不**乘 `direct_damage_factor`） |
 | 未列出载具 | 回退 1.0 | `vehicle_default`（默认 1.0） |
 
 ## JSON 结构
 
-写在 `damage_model_data` 内，与 `direct`、`decay` 同级：
+写在 `collision_data` 内，与 `direct_damage`、`damage_decay` 同级：
 
 ```json
-"damage_model_data": {
-  "direct": 90,
-  "damage_factor": {
+"collision_data": {
+  "direct_damage": 90,
+  "direct_damage_factor": {
     "player": 1.0,
     "living": 1.0,
     "vehicle_default": 0.8,

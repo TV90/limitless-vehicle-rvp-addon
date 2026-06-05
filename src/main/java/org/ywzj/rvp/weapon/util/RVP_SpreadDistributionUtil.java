@@ -1,4 +1,4 @@
-package org.ywzj.rvp.weapon.spread;
+package org.ywzj.rvp.weapon.util;
 
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -9,11 +9,11 @@ import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
  * Shared spread sampling for dispenser placement and {@link org.ywzj.rvp.weapon.data.RVP_FireData}
  * canister pellets (position / angle offset).
  */
-public final class RVP_SpreadDistributionSampler {
+public final class RVP_SpreadDistributionUtil {
 
     private static final int MAX_REJECTION_ATTEMPTS = 64;
 
-    private RVP_SpreadDistributionSampler() {}
+    private RVP_SpreadDistributionUtil() {}
 
     /**
      * Selection weight for a cell at offset (x,y,z). Higher = more likely when subsampling.
@@ -46,7 +46,7 @@ public final class RVP_SpreadDistributionSampler {
 
     /**
      * Rectangular grid angular spread ({@code canister_shape: square}).
-     * {@code gridCell} is {@code {col, row}} from {@link RVP_CanisterGridLayout#assignCells(int, RVP_EnumSpreadDistribution)}.
+     * {@code gridCell} is {@code {col, row}} from {@link RVP_CanisterGridUtil#assignCells(int, RVP_EnumSpreadDistribution)}.
      */
     public static void sampleCanisterGridAngular(int[] gridCell, int pelletCount,
                                                    float halfExtent, float[] out) {
@@ -76,9 +76,9 @@ public final class RVP_SpreadDistributionSampler {
     }
 
     private static float[] unitGridCenter(int[] gridCell, int pelletCount) {
-        RVP_CanisterGridLayout.Dimensions dim = RVP_CanisterGridLayout.dimensionsFor(pelletCount);
+        RVP_CanisterGridUtil.Dimensions dim = RVP_CanisterGridUtil.dimensionsFor(pelletCount);
         float[] uv = new float[2];
-        RVP_CanisterGridLayout.unitCenter(gridCell[0], gridCell[1], dim, uv);
+        RVP_CanisterGridUtil.unitCenter(gridCell[0], gridCell[1], dim, uv);
         return uv;
     }
 

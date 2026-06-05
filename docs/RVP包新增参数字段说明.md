@@ -45,8 +45,7 @@ RVP 扩展武器数据包路径：
   "fire_data": { "spread": 0 },
   "projectile_data": { "velocity": 2.5 },
   "fuse_data": {},
-  "damage_model_data": { "direct": 80 },
-  "collision_data": {},
+  "collision_data": { "direct_damage": 80 },
   "effects_data": {},
   "detonate_data": { "explosion_data": {} },
   "submunition_data": {},
@@ -57,7 +56,7 @@ RVP 扩展武器数据包路径：
 
 ## 顶层 RVP 字段（武器级）
 
-载具包武器 JSON **不要**在顶层写 `damage`、`inaccuracy`、`velocity`（分别用 `damage_model_data.direct`、`fire_data.spread`、`projectile_data.velocity`）。除 `shoot_interval`、`max_capacity`、`reload` 等武器级字段外，弹道、引信、制导、落点/爆炸等一律写入 `*_data` 分组。
+载具包武器 JSON **不要**在顶层写 `damage`、`inaccuracy`、`velocity`（分别用 `collision_data.direct_damage`、`fire_data.spread`、`projectile_data.velocity`）。除 `shoot_interval`、`max_capacity`、`reload` 等武器级字段外，弹道、引信、制导、落点/爆炸等一律写入 `*_data` 分组。
 
 | 字段 | 说明 |
 | --- | --- |
@@ -211,22 +210,30 @@ RVP 扩展武器数据包路径：
 | `proximity_radius` | 近炸引信检测半径（米），0 表示不启用。 |
 | `proximity_fuse_tick` | 近炸解保 tick：出生后至少经过该 tick 才启用；**-1** 表示不限制。 |
 | `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
+| `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
+| `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
+| `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 
-可编程空爆与近炸的**爆炸伤害/半径**（及近炸对实体的直接伤害）在 `damage_model_data` 配置，见下表。
-
-## `damage_model_data` 伤害模型
+## `collision_data` 直击、衰减与碰撞
 
 | 字段 | 说明 |
 | --- | --- |
-| `direct` | **直接命中伤害**；弹体命中、激光等均用此值（载具包 JSON 勿在顶层写 `damage`）。 |
-| `decay` | MCH `BulletDecay` 规则数组；各规则伤害系数**相乘**（见下表）。 |
-| `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
-| `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
-| `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
-| `damage_factor` | 按目标类别缩放直击、激光与近炸直伤（不作用于 `VehicleExplosion` 波及伤害）；见 [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md)。 |
+| `direct_damage` | **直接命中伤害**；未写时使用武器顶层 `damage`。 |
+| `direct_damage_factor` | 按目标类别缩放直击、激光与近炸直伤；见 [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md)。 |
+| `damage_decay` | 伤害衰减规则数组（见下表）；`domain=distance` 相乘，`domain=angle` 分段互斥，再相乘。 |
+| `living_penetration` | 可穿透的 **生物**（`LivingEntity`）数量：每穿过一只仍造成一次伤害；`0` 表示命中生物后立即引信/消失。`N` 表示除首次命中外还可再穿透 `N` 只生物（共可伤害 `N+1` 只）。 |
+| `wall_penetration` | 飞行途中可 **摧毁并穿过** 的实心方块最大数量（参考本体航空炸弹逐格破块；装饰性方块如树叶/玻璃可穿过且不扣次数）；`0` 表示命中实心方块后立即结算。不可破坏方块（如基岩）会阻挡穿透。 |
+| `penetration_damage_multiplier` | 每完成一次穿透后，后续命中伤害的连乘倍率（如 `0.9`：第 1 次命中满伤，穿透 1 次后第 2 次 ×0.9，再穿透 ×0.9²）。默认 `1` 不衰减。 |
+| `penetration_speed_multiplier` | 每完成一次穿透后弹速的连乘倍率（如 `0.9` 表示该次穿透后速度变为原来的 0.9）。默认 `1`。 |
+| `bounce` | 弹跳次数，0 表示不跳弹。 |
+| `bounce_strength` | 每次弹跳后速度保留比例（如 `0.8` = 反射速度 ×0.8）。未写且 `bounce > 0` 时默认 `0.6`。 |
+| `bounce_fuse_tick` | 第一次弹跳后多少 tick 自动引信（引爆或消失，取决于 `detonate_data.explosion_data.explode`）；`0` 不启用。 |
+| `bounce_incidence_angle` | 入射角阈值（度）：速度方向与撞击面法线夹角 **≥** 该值时才跳弹（如 `50` = 掠射跳弹、近垂直击中不跳）；`0` 表示不限制角度。 |
+| `bounce_on_vehicle` | 击中载具（`AbstractVehicle`）时是否跳弹；默认 `false`（仅对方块等地形跳弹）。 |
+| `bounce_min_block_hardness` | 方块跳弹硬度下限：仅当方块 `getDestroySpeed` **严格大于** 该值时才跳弹；默认 `2.1`（如石头约 1.5 不跳、铁块约 5 可跳）。不影响载具跳弹。 |
 
-### `damage_factor` 子字段
+### `direct_damage_factor` 子字段
 
 | 字段 | 说明 |
 | --- | --- |
@@ -235,57 +242,48 @@ RVP 扩展武器数据包路径：
 | `vehicle_default` | 对未单独列出的 `AbstractVehicle` 倍率，默认 `1` |
 | `vehicles` | 对象：键为实体类型 ID（如 `ywzj_vehicle:rotary_wing_vehicle`），值为倍率 |
 
-## `collision_data` 碰撞行为
+### `damage_decay` 规则
 
-| 字段 | 说明 |
+| `domain` | 说明 |
 | --- | --- |
-| `piercing` | 实体穿透次数，0 表示命中后立即处理。 |
-| `wall_penetration` | 方块/墙体穿透次数，0 表示不穿墙。 |
-| `bounce` | 弹跳次数，0 表示不跳弹。 |
-| `bounce_strength` | 每次弹跳后速度保留比例（如 `0.8` = 反射速度 ×0.8）。未写且 `bounce > 0` 时默认 `0.6`。 |
-| `bounce_fuse_tick` | 第一次弹跳后多少 tick 自动引信（引爆或消失，取决于 `detonate_data.explosion_data.explode`）；`0` 不启用。 |
-| `bounce_incidence_angle` | 入射角阈值（度）：速度方向与撞击面法线夹角 **≥** 该值时才跳弹（如 `50` = 掠射跳弹、近垂直击中不跳）；`0` 表示不限制角度。 |
-| `bounce_on_vehicle` | 击中载具（`AbstractVehicle`）时是否跳弹；默认 `false`（仅对方块等地形跳弹）。 |
-
-### `decay` 规则类型（对应 MCH `BulletDecay = Type ...`）
+| `distance`（默认） | 已飞行距离（米）；多条**相乘**。 |
+| `angle` | 入射角（度）；多条**分段互斥**。 |
 
 | `type` | 参数 | 说明 |
 | --- | --- | --- |
-| `segmented` | `segments`: `[[距离, 系数], ...]` | 与 MCH `Segmented` 相同：取满足 `距离 <= 已飞行距离` 的**最后一段**系数。 |
-| `linear` | `start_distance`, `end_distance`, `min_factor` | 在区间内从 `1` 线性降到 `min_factor`。 |
-| `exponential` / `exp` | `rate`, `min_factor` | `exp(-rate × 距离)`，不低于 `min_factor`。 |
-| `curve` / `polynomial` | `range`, `power`, `min_factor` | `1 - (距离/range)^power`，不低于 `min_factor`。 |
+| `constant` | `start_distance`, `end_distance`, `start_factor` | 区间内固定系数。 |
+| `segmented` | `segments`: `[[起点, 系数], ...]` | 取满足 `起点 <= 采样值` 的**最后一段**系数（常用于**距离**）。 |
+| `linear` | `start_distance`, `end_distance`, `start_factor`, `end_factor` | 区间内线性插值；距离衰减未写 `start_factor` 时起点为 `1`。 |
+| `exponential` / `exp` | `rate`, `min_factor` | `exp(-rate × 距离)`（**距离**）。 |
+| `curve` / `polynomial` | `start_distance`, `end_distance`, `start_factor`, `end_factor`, `power` | 在 `[start,end]` 上按 `t^power` 插值（**入射角**常用）。 |
 
-示例（分段 + 指数叠加）：
+30mm 低速榴弹示例（距离 + 入射角 + 跳弹）：
 
 ```json
-"damage_model_data": {
-  "direct": 18,
-  "decay": [
-    { "type": "segmented", "segments": [[0, 1.0], [80, 0.85], [160, 0.6]] },
-    { "type": "exponential", "rate": 0.002, "min_factor": 0.35 }
-  ]
-},
 "collision_data": {
+  "direct_damage": 30,
+  "damage_decay": [
+    { "domain": "distance", "type": "segmented", "segments": [[100, 0.9], [200, 0.8]] },
+    { "domain": "angle", "type": "constant", "start_distance": 50, "end_distance": 60, "start_factor": 0.9 },
+    { "domain": "angle", "type": "linear", "start_distance": 60, "end_distance": 70, "start_factor": 0.9, "end_factor": 0.8 },
+    { "domain": "angle", "type": "curve", "start_distance": 70, "end_distance": 80, "start_factor": 0.8, "end_factor": 0.5, "power": 2 }
+  ],
   "bounce": 2,
-  "bounce_strength": 0.8,
-  "bounce_fuse_tick": 15,
-  "bounce_incidence_angle": 50,
-  "bounce_on_vehicle": false
+  "bounce_incidence_angle": 80
 }
 ```
 
-爆炸伤害、爆炸半径、破坏方块等写在 `detonate_data.explosion_data`（与 `damage_model_data.direct` **无关**）。
+最终系数 = 距离衰减 × 入射角衰减 × 穿透衰减（若有）。爆炸参数写在 `detonate_data.explosion_data`（与 `direct_damage` **无关**）。
 
 ## 配置约定
 
 - 载具包武器 JSON **只写** `*_data` 分组中的弹道/伤害/散布；勿在顶层写 `damage`、`inaccuracy`、`velocity`。
-- 直接命中伤害：写在 `damage_model_data.direct`。
+- 直接命中伤害：写在 `collision_data.direct_damage`。
 - 发射散布：写在 `fire_data.spread`（经 `RVP_WeaponData#getInaccuracy()` 读取）；霰弹为每轮齐射束心偏移，单发为每弹偏移。
 - 弹体初速：写在 `projectile_data.velocity`；见「机枪与官方机炮弹速」。
 - 近炸半径：`fuse_data.proximity_radius` 优先，否则可读 `detonate_data.explosion_data.proximity_radius`。
-- `damage` 为顶层直击数值；`damage_model_data` 为独立对象，勿把 `damage` 写成嵌套对象。
-- 加载时顶层 `explosion` / `explosion_data` 会迁入 `detonate_data`；`damage_model_data` 内的穿透/跳弹字段会迁入 `collision_data`；`guidance_data` 为数组时，顶层 `rigidity_time` 等会迁入 `steering_data`。
+- 顶层 `damage` 为默认直击数值；覆盖用 `collision_data.direct_damage`。
+- 加载时顶层 `explosion` / `explosion_data` 会迁入 `detonate_data`；`guidance_data` 为数组时，顶层 `rigidity_time` 等会迁入 `steering_data`。
 
 ## `effects_data` 特效
 
@@ -324,7 +322,7 @@ RVP 扩展武器数据包路径：
 | 字段 | 说明 |
 | --- | --- |
 | `effects_before_explosion` | 为 `true`（默认）时先执行下方自定义效果再爆炸；为 `false` 时先爆炸再自定义效果。 |
-| `explosion_data` | 爆炸参数（`RVP_Explosion`，继承本体 `Explosion` POJO 字段）。与 `damage_model_data.direct` 无关。 |
+| `explosion_data` | 爆炸参数（`RVP_Explosion`，继承本体 `Explosion` POJO 字段）。与 `collision_data.direct_damage` 无关。 |
 
 ### `detonate_data.explosion_data`
 
@@ -367,14 +365,103 @@ RVP 扩展武器数据包路径：
 }
 ```
 
-## `submunition_data` 子弹药/投放物
+## `submunition_data` 子母弹 / 空中布撒
+
+对应 MCH `bomblet` / `bombletSTime` / `bombletDiff`，以及 `spawnBulletInAir`（飞行中按间隔抛洒其它武器 JSON）。
+
+与 `dispenser_data`（**落点**方块/物品布撒）不同：本分组在**飞行过程**或**撞击/引信**时生成**弹体实体**或**任意注册实体**。
+
+### 顶层（兼容旧版）
 
 | 字段 | 说明 |
 | --- | --- |
-| `count` | 子弹药数量，0 表示不释放。 |
-| `delay_tick` | 出生后延迟多少 tick 开始释放子弹药。 |
-| `interval_tick` | 子弹药释放间隔；0 表示一次性释放全部。 |
-| `spread` | 子弹药速度散布。 |
+| `releases` | **推荐**。释放方案数组；见下表。非空时忽略旧字段。 |
+| `count` | 旧版：子弹药释放次数（合成一条 `in_flight` 方案）。0 = 关闭。 |
+| `delay_tick` | 旧版：首波延迟 tick。 |
+| `interval_tick` | 旧版：波次间隔；0 = 同一 tick 打光 `count`。 |
+| `spread` | 旧版：子速度随机立方散布（`box_spread`）。 |
+
+### `releases[]` 单条释放方案
+
+| 字段 | 说明 |
+| --- | --- |
+| `triggers` | 触发器列表，见下表。默认 `["in_flight"]`。 |
+| `delay_tick` | `in_flight`：首波前倒计时 tick。 |
+| `interval_tick` | `in_flight`：波次间隔；0 = 剩余次数同一 tick 打完。 |
+| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时回退旧 `count` 或 payload 数量之和。 |
+| `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。 |
+| `payloads` | 本波要生成的弹药列表，见下表。 |
+| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`。 |
+
+#### `triggers` 取值
+
+| 值 | 说明 |
+| --- | --- |
+| `in_flight` | 飞行中按 `delay_tick` / `interval_tick` 释放。 |
+| `on_impact` | 致死撞击（方块或实体，穿透耗尽后）。 |
+| `on_block_hit` | 仅方块撞击。 |
+| `on_entity_hit` | 仅实体撞击。 |
+| `on_fuse` | 定时/近炸/空爆等引信引爆前（在爆炸链之前）。 |
+
+### `releases[].payloads[]` 单种载荷
+
+| 字段 | 说明 |
+| --- | --- |
+| `kind` | `rvp_weapon`（默认）或 `entity`。 |
+| `weapon_id` | RVP 武器 id（`rvp:xxx` 或短名 `xxx`）；空 = 克隆母弹武器。 |
+| `entity_type` | `kind: entity` 时实体类型，如 `minecraft:arrow`。 |
+| `entity_nbt` | 可选 SNBT，生成后 `Entity#load`。 |
+| `count` | 每波生成数量，默认 1。 |
+| `spread` | 散布，见下表。 |
+| `inherit_parent_velocity` | 是否叠加母弹速度，默认 true。 |
+| `inherit_vehicle_velocity` | 是否叠加发射载具速度，默认 false。 |
+| `velocity_scale` | 速度倍率，默认 1。 |
+| `power_scale` | RVP 武器伤害/初速蓄力倍率，默认 1。 |
+| `allow_submunition` | 写在**本层 `payloads` 条目**上：为 `true` 时，被生成的弹体可执行**其自身武器 JSON** 的 `submunition_data`（多级火箭、链式战斗部**必须**为 `true`）；默认 `false` 防止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md)。 |
+| `damage_multiplier` | 仅 RVP 弹体：直击伤害倍率（可选）。 |
+| `suppress_explosion` | 仅 RVP 弹体：关闭爆炸。 |
+
+### `payloads[].spread` 散布
+
+| 字段 | 说明 |
+| --- | --- |
+| `mode` | `box`（默认，随机立方）或 `canister`（复用机枪霰弹逻辑）。 |
+| `box_spread` | `box` 模式速度扰动幅度（MCH `BombletDiff`）。 |
+| `canister_type` | `0` 位置、`1` 角度、`2` 角度+前向错位（同 `fire_data.canister_type`）。 |
+| `canister_diff` | 散布强度（度或格）。 |
+| `canister_distribution` / `canister_shape` | 同 `fire_data` / `dispenser_data` 的 `distribution`、`shape`。 |
+
+### 示例场景
+
+| 场景 | 配置要点 |
+| --- | --- |
+| 子母火箭 / 集束炸弹 | `triggers: ["in_flight"]`，多 `payloads` 指向子战斗部 `weapon_id`，`parent_action: discard_after_release`。 |
+| 多级火箭 | 多段 `releases`，不同 `delay_tick`，`parent_action: continue`。 |
+| 星光导弹分弹头 | 一条 `in_flight`，`release_events: 3`，`payloads` 指向 `rvp:starstreak_dart`，`canister` 散布。 |
+| APFSDS 弹托 | `in_flight` + `entity` 载荷（装饰实体）+ `rvp_weapon` 穿甲杆，`discard_on_first_spawn` 仅脱托。 |
+| 撞击抛洒 | `triggers: ["on_impact"]`，`release_events: 1`。 |
+
+```json
+"submunition_data": {
+  "releases": [
+    {
+      "triggers": ["in_flight"],
+      "delay_tick": 20,
+      "interval_tick": 0,
+      "release_events": 8,
+      "parent_action": "discard_after_release",
+      "payloads": [
+        {
+          "kind": "rvp_weapon",
+          "weapon_id": "rvp:cluster_bomblet",
+          "count": 1,
+          "spread": { "mode": "canister", "canister_diff": 2.5, "canister_distribution": "cluster_center" }
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## `dispenser_data` 落点布撒物品（任意武器类型）
 

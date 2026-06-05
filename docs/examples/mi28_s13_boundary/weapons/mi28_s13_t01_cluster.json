@@ -1,0 +1,55 @@
+{
+  "type": "rvp:rocket",
+  "name": "B01 单tick齐射24",
+  "shoot_interval": 200,
+  "max_capacity": 8,
+  "reload": { "time": 60, "ammo": "ywzj_vehicle:ammo_rocket" },
+  "fire_data": { "spread": 0.1, "fire_mode": "FULL_AUTO" },
+  "projectile_data": {
+    "velocity": 4,
+    "gravity": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 4.5
+  },
+  "fuse_data": { "detonate_on_life_end": false },
+  "guidance_data": [
+    { "name": "unguided", "start_tick": 0, "sources": [{ "type": "NONE", "priority": 100 }] }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": { "explode": true, "damage": 20, "radius": 1.5, "destroy_block": false }
+  },
+  "collision_data": { "direct_damage": 15, "bounce": 0 },
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": ["in_flight"],
+        "delay_tick": 12,
+        "interval_tick": 0,
+        "release_events": 24,
+        "parent_action": "discard_after_release",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:mi28_s13_bomblet_he",
+            "count": 1,
+            "inherit_parent_velocity": true,
+            "velocity_scale": 0.88,
+            "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 5.0,
+              "canister_distribution": "uniform",
+              "canister_shape": "circle"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

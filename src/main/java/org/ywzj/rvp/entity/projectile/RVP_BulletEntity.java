@@ -20,8 +20,6 @@ import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-import org.ywzj.rvp.weapon.data.RVP_Explosion;
-
 /**
  * Machinegun / cannon pellet. Both sides integrate motion; server runs {@link RVP_BaseBullet#tickHit()} before
  * movement. Clients with bounce predict block ricochet locally (no extra network packet).
@@ -143,7 +141,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     }
 
     private boolean tickBulletServerPreMotion() {
-        if (rvpData == null) {
+        if (resolveWeaponConfig() == null) {
             discard();
             return false;
         }
@@ -218,36 +216,6 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         if (level().isClientSide() && tickCount >= life - 1) {
             discard();
         }
-    }
-
-    @Override
-    protected void sprinkleSubmunition() {
-        if (level().isClientSide() || rvpData == null || shooterVehicle == null) {
-            return;
-        }
-        RVP_BulletEntity child = new RVP_BulletEntity(RVP_Entities.RVP_BULLET.get(), level(), rvpData.getWeaponId());
-        Vec3 velocity = getDeltaMovement();
-        LivingEntity shooter = getOwner() instanceof LivingEntity living ? living : null;
-        child.initFromWeapon(rvpData, RVP_EnumWeaponKind.MACHINEGUN, shooterVehicle, shooter,
-                position(), new AimRot(getXRot(), getYRot()), velocity);
-        child.setShooterWeaponUnit(getShooterWeaponUnit());
-        child.submunitionFlag = 1;
-        child.submunitionsRemaining = 0;
-        child.sprinkleTime = 0;
-        child.damage = Math.max(1f, damage * 0.35f);
-        if (child.explosion != null) {
-            child.explosion = RVP_Explosion.disabled();
-        }
-        RandomSource rand = level().getRandom();
-        float spread = rvpData.getBombletDiff();
-        Vec3 spreadVel = velocity.add(
-                (rand.nextDouble() - 0.5) * spread,
-                (rand.nextDouble() - 0.5) * spread * 0.5,
-                (rand.nextDouble() - 0.5) * spread
-        );
-        child.setDeltaMovement(spreadVel);
-        child.finalizeSpawnOrientation(new AimRot(child.getXRot(), child.getYRot()));
-        level().addFreshEntity(child);
     }
 
     public Vec3 getStartPos() {

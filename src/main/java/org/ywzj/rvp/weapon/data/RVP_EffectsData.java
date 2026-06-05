@@ -87,8 +87,16 @@ public class RVP_EffectsData {
         return Math.max(flakParticlesDiff, 0f);
     }
 
+    public boolean hasCaliberOverride() {
+        return caliber != null;
+    }
+
     public float getCaliber() {
         return caliber != null && caliber > 0f ? caliber : 7.62f;
+    }
+
+    public boolean hasTracerColorOverride() {
+        return tracerR != null || tracerG != null || tracerB != null;
     }
 
     public float getTracerR() {

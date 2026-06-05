@@ -1,4 +1,4 @@
-package org.ywzj.rvp.weapon.effects;
+package org.ywzj.rvp.weapon.util;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
@@ -6,7 +6,6 @@ import net.minecraft.world.level.Level;
 import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadDistribution;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
-import org.ywzj.rvp.weapon.spread.RVP_SpreadDistributionSampler;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,11 +16,11 @@ import java.util.Set;
 /**
  * Resolves which block offsets inside a configured spread shape should receive a placement attempt.
  */
-public final class RVP_DispenserSpreadSampler {
+public final class RVP_DispenserSpreadUtil {
 
     private static final int REJECTION_MAX_ATTEMPTS = 4096;
 
-    private RVP_DispenserSpreadSampler() {}
+    private RVP_DispenserSpreadUtil() {}
 
     public record SpreadOffset(int x, int y, int z) {
         public BlockPos apply(BlockPos center) {
@@ -110,7 +109,7 @@ public final class RVP_DispenserSpreadSampler {
                                                 RVP_EnumSpreadDistribution distribution,
                                                 RVP_EnumSpreadShape shape, int radius,
                                                 RandomSource random) {
-        if (RVP_SpreadDistributionSampler.isUniformSubsample(distribution)) {
+        if (RVP_SpreadDistributionUtil.isUniformSubsample(distribution)) {
             List<SpreadOffset> copy = new ArrayList<>(candidates);
             for (int i = copy.size() - 1; i > 0; i--) {
                 int j = random.nextInt(i + 1);
@@ -121,7 +120,7 @@ public final class RVP_DispenserSpreadSampler {
             return copy.subList(0, target);
         }
 
-        if (RVP_SpreadDistributionSampler.isCenterClusterSubsample(distribution)) {
+        if (RVP_SpreadDistributionUtil.isCenterClusterSubsample(distribution)) {
             List<SpreadOffset> sorted = new ArrayList<>(candidates);
             sorted.sort(Comparator.comparingDouble(o -> o.x * o.x + o.y * o.y + o.z * o.z));
             return sorted.subList(0, target);

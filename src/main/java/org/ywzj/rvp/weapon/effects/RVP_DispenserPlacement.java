@@ -14,6 +14,7 @@ import net.minecraftforge.common.util.FakePlayerFactory;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
+import org.ywzj.rvp.weapon.util.RVP_DispenserSpreadUtil;
 
 import java.util.List;
 
@@ -56,15 +57,15 @@ public final class RVP_DispenserPlacement {
                                    Item item, ServerPlayer actor) {
         RandomSource random = level.getRandom();
         int damage = payload.getDamage();
-        List<RVP_DispenserSpreadSampler.SpreadOffset> offsets =
-                RVP_DispenserSpreadSampler.sampleOffsets(payload, random);
+        List<RVP_DispenserSpreadUtil.SpreadOffset> offsets =
+                RVP_DispenserSpreadUtil.sampleOffsets(payload, random);
 
         int verticalSearch = payload.getSpreadRadius() + payload.resolveYRadius() + 16;
         int placed = 0;
 
-        for (RVP_DispenserSpreadSampler.SpreadOffset offset : offsets) {
+        for (RVP_DispenserSpreadUtil.SpreadOffset offset : offsets) {
             BlockPos target = resolveTargetPos(level, anchor, offset, payload, verticalSearch);
-            if (target == null || !RVP_DispenserSpreadSampler.isWithinWorld(level, target)) {
+            if (target == null || !RVP_DispenserSpreadUtil.isWithinWorld(level, target)) {
                 continue;
             }
             if (!RVP_DispenserSurfaceResolver.isSolidSupport(level, target)) {
@@ -92,7 +93,7 @@ public final class RVP_DispenserPlacement {
 
     @Nullable
     private static BlockPos resolveTargetPos(ServerLevel level, BlockPos anchor,
-                                             RVP_DispenserSpreadSampler.SpreadOffset offset,
+                                             RVP_DispenserSpreadUtil.SpreadOffset offset,
                                              RVP_DispenserPayloadData payload, int verticalSearch) {
         int worldX = anchor.getX() + offset.x();
         int worldZ = anchor.getZ() + offset.z();

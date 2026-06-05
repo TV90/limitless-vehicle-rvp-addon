@@ -23,6 +23,6 @@ public final class RVP_DamageApplier {
         if (data == null) {
             return baseDamage;
         }
-        return applyScaled(baseDamage, target, data.getDamageFactor());
+        return applyScaled(baseDamage, target, data.getDirectDamageFactor());
     }
 }

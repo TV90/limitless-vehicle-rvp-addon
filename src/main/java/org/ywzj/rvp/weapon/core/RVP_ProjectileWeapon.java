@@ -13,8 +13,8 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CSetTVMissile;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
-import org.ywzj.rvp.weapon.spread.RVP_CanisterGridLayout;
-import org.ywzj.rvp.weapon.spread.RVP_SpreadDistributionSampler;
+import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
+import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -158,7 +158,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         int pellets = Math.max(fire.getCanisterCount(), 1);
         int total = pellets * fire.getCanisterBurstCount();
         int[][] gridCells = fire.getCanisterShape() == RVP_EnumSpreadShape.SQUARE
-                ? RVP_CanisterGridLayout.assignCells(pellets, fire.getCanisterDistribution())
+                ? RVP_CanisterGridUtil.assignCells(pellets, fire.getCanisterDistribution())
                 : null;
         float spread = data.getInaccuracy();
         float[] centerOffset = new float[]{0f, 0f};
@@ -192,19 +192,19 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (type == 0) {
             float[] offset = new float[3];
             if (useGrid) {
-                RVP_SpreadDistributionSampler.sampleCanisterGridPosition(
+                RVP_SpreadDistributionUtil.sampleCanisterGridPosition(
                         gridCells[pelletIndex], fire.getCanisterCount(), diff, offset);
             } else {
-                RVP_SpreadDistributionSampler.sampleCanisterPosition(random, distribution, footprint, diff, offset);
+                RVP_SpreadDistributionUtil.sampleCanisterPosition(random, distribution, footprint, diff, offset);
             }
             out.from = muzzle.add(offset[0], offset[1], offset[2]);
         } else {
             float[] angular = new float[2];
             if (useGrid) {
-                RVP_SpreadDistributionSampler.sampleCanisterGridAngular(
+                RVP_SpreadDistributionUtil.sampleCanisterGridAngular(
                         gridCells[pelletIndex], fire.getCanisterCount(), diff, angular);
             } else {
-                RVP_SpreadDistributionSampler.sampleCanisterAngular(random, distribution, footprint, diff, angular);
+                RVP_SpreadDistributionUtil.sampleCanisterAngular(random, distribution, footprint, diff, angular);
             }
             xRot += angular[0];
             yRot += angular[1];

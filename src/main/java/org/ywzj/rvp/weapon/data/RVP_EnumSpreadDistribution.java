@@ -3,7 +3,7 @@ package org.ywzj.rvp.weapon.data;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.StringRepresentable;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.weapon.spread.RVP_SpreadDistributionSampler;
+import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
 
 /**
  * Spread density within a {@link RVP_EnumSpreadShape} footprint.
@@ -46,6 +46,6 @@ public enum RVP_EnumSpreadDistribution implements StringRepresentable {
     }
 
     public float weight(int x, int y, int z, int radius, RVP_EnumSpreadShape shape, RandomSource random) {
-        return RVP_SpreadDistributionSampler.weight(this, x, y, z, radius, shape, random);
+        return RVP_SpreadDistributionUtil.weight(this, x, y, z, radius, shape, random);
     }
 }
