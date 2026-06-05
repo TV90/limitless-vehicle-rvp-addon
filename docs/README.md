@@ -42,6 +42,7 @@
 | 弹体数据 | `org.ywzj.rvp.weapon.data.RVP_ProjectileData` |
 | 弹体实体运动 | `org.ywzj.rvp.entity.projectile.RVP_BaseBullet` |
 | 子母弹调度 / 生成 | `org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner`、`RVP_SubmunitionSpawner` |
+| 载具命中调试 HUD（客户端） | `S2CBulletVehicleHitDebug`、`RVP_BulletHitDebugOverlay`（服务端 `RVP_BulletHitDebugNetworking`） |
 | 伤害倍率 / 爆炸 | `RVP_Explosion`（配置）、`RVP_DamageFactor`、`VehicleExplosion`（本体运行时） |
 | 机炮弹丸 | `org.ywzj.rvp.entity.projectile.RVP_BulletEntity` |
 | 弹体客户端渲染 | `RVP_ClientEntityRenderers`、`VehicleProjectileRenderLogic`（对齐本体绘制） |

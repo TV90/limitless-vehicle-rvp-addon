@@ -13,11 +13,11 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
-import org.ywzj.vehicle.client.gui.VehicleCrossHairOverlay;
+import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.slf4j.Logger;
 
-@Mixin(value = VehicleCrossHairOverlay.class, remap = false)
+@Mixin(value = VehicleAimAtOverlay.class, remap = false)
 public class VehicleCrossHairOverlayMixin {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean ywzj_rvp$lastReticleReplaceState;
