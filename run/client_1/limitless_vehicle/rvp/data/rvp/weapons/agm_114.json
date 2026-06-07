@@ -1,0 +1,66 @@
+{
+  "type": "rvp:missile",
+  "name": "AGM-114 Hellfire",
+  "shoot_interval": 800,
+  "max_capacity": 8,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": false,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 1.8,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 2.4
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 2.5,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": [
+    {
+      "name": "tv_command",
+      "start_tick": 0,
+      "sources": [
+        {
+          "type": "TV",
+          "priority": 100,
+          "take_over_motion": true
+        }
+      ]
+    }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "tv_missile_data": {
+    "control_range": 2000,
+    "timeout_tick": 400,
+    "video_modes": [
+      "COLOR",
+      "BW",
+      "THERMAL"
+    ]
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 160,
+      "radius": 5,
+      "proximity_fuze": true,
+      "proximity_radius": 2.5,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 90
+  }
+}

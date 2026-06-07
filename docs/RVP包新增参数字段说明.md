@@ -49,8 +49,7 @@ RVP 扩展武器数据包路径：
   "effects_data": {},
   "detonate_data": { "explosion_data": {} },
   "submunition_data": {},
-  "seeker_data": {},
-  "guidance_data": { "steering_data": {}, "stages": [] }
+  "guidance_data": { "stages": [] }
 }
 ```
 
@@ -367,19 +366,15 @@ RVP 扩展武器数据包路径：
 
 ## `submunition_data` 子母弹 / 空中布撒
 
-对应 MCH `bomblet` / `bombletSTime` / `bombletDiff`，以及 `spawnBulletInAir`（飞行中按间隔抛洒其它武器 JSON）。
+飞行中或撞击/引信时生成**弹体实体**或**任意注册实体**（对应 MCH `spawnBulletInAir` 等能力）。
 
-与 `dispenser_data`（**落点**方块/物品布撒）不同：本分组在**飞行过程**或**撞击/引信**时生成**弹体实体**或**任意注册实体**。
+与 `dispenser_data`（**落点**方块/物品布撒）不同：本分组在**飞行过程**或**撞击/引信**时生成载荷。
 
-### 顶层（兼容旧版）
+### 顶层
 
 | 字段 | 说明 |
 | --- | --- |
-| `releases` | **推荐**。释放方案数组；见下表。非空时忽略旧字段。 |
-| `count` | 旧版：子弹药释放次数（合成一条 `in_flight` 方案）。0 = 关闭。 |
-| `delay_tick` | 旧版：首波延迟 tick。 |
-| `interval_tick` | 旧版：波次间隔；0 = 同一 tick 打光 `count`。 |
-| `spread` | 旧版：子速度随机立方散布（`box_spread`）。 |
+| `releases` | 释放方案数组；见下表。为空则关闭子母弹。 |
 
 ### `releases[]` 单条释放方案
 
@@ -388,7 +383,7 @@ RVP 扩展武器数据包路径：
 | `triggers` | 触发器列表，见下表。默认 `["in_flight"]`。 |
 | `delay_tick` | `in_flight`：首波前倒计时 tick。 |
 | `interval_tick` | `in_flight`：波次间隔；0 = 剩余次数同一 tick 打完。 |
-| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时回退旧 `count` 或 payload 数量之和。 |
+| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时取各 payload `count` 之和。 |
 | `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。 |
 | `payloads` | 本波要生成的弹药列表，见下表。 |
 | `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`。 |
@@ -581,26 +576,33 @@ RVP 扩展武器数据包路径：
 | `test_disp_edge` | `cluster_edge`，金块外缘 |
 | `test_disp_cube` | `cube` 满密度，铁块（非 surface_only） |
 
-## `seeker_data` 导引头/传感器
+## `guidance_data` 分段/复合制导
+
+**已取消顶层 `seeker_data`**。导引头参数写在各制导阶段的 `seeker` 内；激光/瞄准吊舱射程用 `laser_data.range`。
+
+`guidance_data` 可为对象 `{ "phase_resolve_policy": "...", "stages": [...] }`，或直接写 **stages 数组**（加载器会包成对象）。兼容旧键 `phases` / `stage_policy`；顶层 `steering_data` 会在加载时下沉到各未写 `steering_data` 的阶段。
+
+运行时由 `RVP_GuidancePhaseSelector` 按 **activation** 策略链求值，返回**所有同时激活的阶段**；多阶段窗口重叠即跨阶段复合制导 → `RVP_GuidanceCompositor` 加权混合 → `RVP_GuidanceMath` 转向。
+
+### 顶层字段
 
 | 字段 | 说明 |
 | --- | --- |
-| `fov` | 搜索/锁定视场角，单位为度。 |
-| `range` | 搜索/锁定距离。 |
-| `scan_interval_tick` | 搜索间隔 tick 数。 |
-| `lock_min_height` | 雷达地杂波高度门限。 |
-| `ignore_flares` | 是否忽略热焰弹等红外假目标。 |
-| `ignore_chaff` | 是否忽略箔条等雷达假目标。 |
-| `jam_resistance` | 抗干扰能力预留值。 |
-| `dircm_resistance` | 抗 DIRCM 能力预留值。 |
-| `home_on_jam` | 雷达弹是否具备干扰源归向能力。 |
-| `decoy_filter` | 假目标过滤能力预留值。 |
+| `phase_resolve_policy` | 多阶段重叠且制导类型不兼容时的消解：`highest_specificity`（默认）/ `first_phase` / `sticky`。 |
+| `stages` | 制导阶段列表（每阶段见 `RVP_GuidanceStageData`）。 |
 
-## `guidance_data` 分段/复合制导
+### 阶段 `stages[]`（`RVP_GuidanceStageData`）
 
-`guidance_data` 可为对象 `{ "steering_data": {}, "stages": [...] }`，或直接写 **stages 数组**（加载器会包成对象）。每个 stage 可包含多个 source。
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 阶段名称（调试/HUD）。 |
+| `activation` | 激活条件对象（各维度 AND，见下表）。 |
+| `seeker` | **本阶段**导引头参数（`fov`/`range`/`scan_interval_tick`/`lock_min_height`/抗干扰等）。 |
+| `steering_data` | 本阶段转向参数（见下表）。 |
+| `composite_weight` | 跨阶段重叠复合时的默认权重，默认 1.0。 |
+| `sources` | 本阶段制导源列表。 |
 
-### `guidance_data.steering_data` 转向通用参数
+#### `steering_data` 转向参数
 
 | 字段 | 说明 |
 | --- | --- |
@@ -608,139 +610,218 @@ RVP 扩展武器数据包路径：
 | `turning_factor` | 每 tick 速度向目标插值比例。 |
 | `max_degree_of_missile` | 单 tick 最大转向角（度）。 |
 | `predict_target_pos` | 是否按弹速预测目标位置。 |
-| `tick_end_homing` | 超过该 tick 后停止转向；0 表示不限制。 |
+| `tick_end_homing` | 寿命末 N tick 内加大转向力度；0 表示全程一致。 |
+| `proportional_navigation_gain` | PN 导引增益预留；0 表示关闭。 |
+| `max_lateral_accel` | 最大横向过载（格/tick²）预留。 |
 
-```json
-"guidance_data": {
-  "steering_data": {
-    "turning_factor": 0.35,
-    "max_degree_of_missile": 50
-  },
-  "stages": [
-  {
-    "name": "terminal",
-    "start_tick": 20,
-    "min_distance": 0,
-    "max_distance": 300,
-    "sources": [
-      { "type": "ARH", "priority": 100, "fallback_on_jammed": true },
-      { "type": "IOG", "priority": 10 }
-    ]
-  }
-  ]
-}
-```
-
-阶段字段：
+#### `seeker` 阶段导引头
 
 | 字段 | 说明 |
 | --- | --- |
-| `name` | 阶段名称，仅用于可读性和调试。 |
-| `start_tick` | 阶段开始 tick。 |
-| `end_tick` | 阶段结束 tick；小于 0 表示不限制。 |
-| `min_distance` | 阶段生效的最小目标距离，0 表示不限制。 |
-| `max_distance` | 阶段生效的最大目标距离，0 表示不限制。 |
-| `sources` | 本阶段内的制导源列表。 |
+| `fov` | 搜索/锁定视场角（度）。 |
+| `range` | 搜索/锁定距离（格）。 |
+| `scan_interval_tick` | 搜索间隔 tick。 |
+| `lock_min_height` | 雷达地杂波高度门限。 |
+| `ignore_flares` / `ignore_chaff` | 是否忽略热焰/箔条。 |
+| `jam_resistance` / `dircm_resistance` / `decoy_filter` | 抗干扰预留。 |
+| `home_on_jam` | 雷达弹干扰源归向。 |
 
-source 字段：
+#### `activation` 激活条件（策略模式，AND 关系）
+
+| 字段 | 策略 | 说明 |
+| --- | --- | --- |
+| `start_tick` / `end_tick` | tick 窗 | `end_tick < 0` 不限制结束；未写表示该维度不限制。 |
+| `min_target_distance` / `max_target_distance` | 目标点距离 | 与制导目标点/记忆点的距离（格）。 |
+| `min_entity_distance` / `max_entity_distance` | 实体距离 | 与锁定实体中心的距离（格）；无实体时不满足。 |
+| `min_altitude_agl` / `max_altitude_agl` | 离地高度 | 弹体离地高度（格）。 |
+| `require_target` | 目标存在 | 无目标点且无实体时不激活。 |
+| `require_entity_target` | 实体目标 | 无锁定实体时不激活。 |
+| `require_illumination` | 照射 | 半主动雷达需平台照射。 |
+| `enter_once` | 粘性 | 一旦进入本阶段，后续 tick 保持激活（即使条件不再满足）。 |
+
+**多阶段同时激活 = 复合制导**（如末段 ARH 与 IR 窗口重叠）。不兼容组合由 `RVP_GuidanceCompositeCompatibility` 按 `phase_resolve_policy` 消解。
+
+#### 复合制导兼容性（不可复合 ❌）
+
+| 类型 A | 类型 B | 说明 |
+| --- | --- | --- |
+| TV / MCLOS | 任意自主导引 | 人在回路不能与弹载导引头并行 |
+| ARM | IR / ARH / SARH | 反辐射与目标追踪导引头逻辑冲突 |
+| SARH | ARH | 需照射与主动雷达并行无意义 |
+| SARH | IR | 照射链路 vs 红外成像 |
+| GPS | SACLOS | 坐标制导 vs 驾束 |
+
+**可复合 ✅**：任意类型 + `IOG`（备份）；`ARH` + `IR`；`GPS` + `IR`；同类型多阶段权重混合等。
+
+### 制导源 `sources[]`
 
 | 字段 | 说明 |
 | --- | --- |
-| `type` | 制导源类型。 |
-| `priority` | 同阶段内优先级，数值越大越先尝试。 |
-| `fallback_on_jammed` | 被干扰/遮挡时是否继续尝试低优先级 source。 |
-| `take_over_motion` | 是否直接接管弹体速度。TV/MCLOS 这类直控制导常用 true。 |
+| `type` | 制导源类型（见下表）。 |
+| `priority` | `primary`/`overlay`/`race` 模式下的尝试顺序。 |
+| `composite_mode` | `primary`（默认）/ `blend` / `overlay` / `race` / `disabled`。 |
+| `weight` | `blend`/`overlay` 权重，默认 1.0。 |
+| `fallback_on_jammed` | 被干扰时是否尝试下一 source。 |
+| `take_over_motion` | 直接对齐速度方向（TV/MCLOS）。 |
+| `steering_data` | source 级转向参数覆盖（导引头仅在 phase.seeker）。 |
+| `params` | 类型专用参数（见 `RVP_GuidanceSourceParamsData`）；**ARM/TV 专用字段也写在此**，不再使用顶层 `arm_data` / `tv_missile_data`。 |
 
-支持的制导源：
+`params` 常用字段（按 source 类型取用）：
+
+| 字段 | 适用 | 说明 |
+| --- | --- | --- |
+| `scan_interval_tick` | ARM | 辐射源扫描间隔（tick）。 |
+| `memory_tick` | ARM / IOG 等 | 丢失目标后的记忆制导 tick。 |
+| `radiation_pulse_memory_tick` | ARM | 雷达脉冲记忆窗口。 |
+| `reacquire` | ARM / 雷达弹 | ARM：丢失后是否允许再捕获。 |
+| `locked_bonus` | ARM | 正在锁定目标的辐射源评分加成。 |
+| `control_range` | TV | 玩家可接管的最大距离（格）。 |
+| `timeout_tick` | TV | 电视制导会话超时（tick）。 |
+| `video_modes` | TV | `COLOR` / `BW` / `THERMAL` 列表，决定可用与默认画面。 |
+
+| `composite_mode` | 行为 |
+| --- | --- |
+| `primary` | 按 priority 依次尝试，第一个成功即采用。 |
+| `blend` | 所有可用 source 方向按 weight 加权平均。 |
+| `overlay` | 最高 priority 为主航向，其余为修正。 |
+| `race` | 选与当前朝向角差最小的 source。 |
+
+### 支持的制导源
 
 | 类型 | 说明 |
 | --- | --- |
-| `NONE` | 无制导，只执行通用运动学。 |
-| `IOG` | 惯性制导，继续飞向最后一次有效目标/标记点。 |
-| `MCLOS` | 指令线/拖线制导，持续跟随发射平台或玩家视线。 |
-| `SACLOS` | 半自动指令/激光制导，跟随标记实体或地面点，会受遮挡/光电干扰影响。 |
-| `GPS` | GPS 坐标制导，飞向目标指示点。 |
-| `IR` | 红外实体 seeker，受热焰弹、DIRCM、遮挡影响。 |
-| `ARH` | 主动雷达制导，弹载雷达自主搜索/锁定。 |
-| `SARH` | 半主动雷达制导，需要发射平台持续照射。 |
-| `ARM` | 反辐射制导，基于雷达 PDW 选择辐射源。 |
-| `TV` | 电视制导，玩家视频链路控制，支持画面模式切换。 |
+| `NONE` | 无制导。 |
+| `IOG` | 惯性制导，飞向记忆点/目标点。 |
+| `MCLOS` | 线导，跟随炮塔或玩家视线。 |
+| `SACLOS` | 激光驾束/标记点。 |
+| `GPS` | GPS 目标点。 |
+| `IR` | 红外 seeker。 |
+| `ARH` | 主动雷达（仅 `rvp:missile`）。 |
+| `SARH` | 半主动雷达，需平台照射。 |
+| `ARM` | 反辐射；`params` 写扫描/记忆/再捕获（见上表），探测几何用阶段 `seeker`。 |
+| `TV` | 电视制导（仅 `rvp:missile`）；`params` 写控制距离/超时/画面模式。 |
 
-阶段选择优先使用带距离限制且匹配的阶段，再选择 `start_tick` 最新的阶段。
-
-## `tv_missile_data`（电视制导导弹）
-
-| 字段 | 说明 |
-| --- | --- |
-| `control_range` | 控制距离，超过后退出 TV 控制。 |
-| `timeout_tick` | 最大控制时间（tick）。 |
-| `video_modes` | 画面模式列表，可写 `COLOR`、`BW`、`THERMAL`，顺序决定默认模式。 |
-
-示例：
+### GPS 滑翔 + 末端 IR 示例（替代 `terminal_ir_*`）
 
 ```json
-{
-  "type": "rvp:missile",
-  "tv_missile_data": {
-    "control_range": 2000,
-    "timeout_tick": 400,
-    "video_modes": ["COLOR", "BW", "THERMAL"]
-  },
-  "guidance_data": [
+"guidance_data": {
+  "phase_resolve_policy": "highest_specificity",
+  "stages": [
     {
-      "name": "tv",
+      "name": "gps_midcourse",
+      "activation": { "start_tick": 0 },
       "sources": [
-        { "type": "TV", "priority": 100, "take_over_motion": true }
+        { "type": "GPS", "priority": 100 },
+        { "type": "IOG", "priority": 10 }
       ]
-    }
-  ]
-}
-```
-
-`video_modes` 可写：
-
-| 模式 | 说明 |
-| --- | --- |
-| `COLOR` | 彩色普通画面。 |
-| `BW` / `BLACK_WHITE` | 黑白电视画面。 |
-| `THERMAL` / `IR` | 热成像画面。 |
-
-## `arm_data` 与 PDW
-
-配合 `guidance_data` 中含 `ARM` 的 source 使用。`isAntiRadiationMissile()` 仅由制导类型判定，不再使用顶层布尔开关。
-
-| 字段 | 说明 |
-| --- | --- |
-| `scan_interval_tick` | 扫描辐射源间隔。 |
-| `memory_tick` | 丢失辐射源后的记忆制导时间。 |
-| `radiation_pulse_memory_tick` | 对雷达脉冲的记忆时间。 |
-| `allow_reacquire` | 丢失后是否允许重新捕获。 |
-| `locked_bonus` | 评分中对正在锁定目标的雷达加成。 |
-
-ARM 示例：
-
-```json
-{
-  "type": "rvp:missile",
-  "seeker_data": { "range": 1024, "fov": 35, "scan_interval_tick": 2 },
-  "arm_data": {
-    "scan_interval_tick": 2,
-    "memory_tick": 40,
-    "radiation_pulse_memory_tick": 25,
-    "allow_reacquire": true,
-    "locked_bonus": 0.5
-  },
-  "guidance_data": [
+    },
     {
-      "name": "arm",
+      "name": "terminal_ir",
+      "activation": { "max_target_distance": 100, "enter_once": true },
+      "seeker": { "fov": 40, "range": 80, "scan_interval_tick": 2 },
       "sources": [
-        { "type": "ARM", "priority": 100 },
+        {
+          "type": "IR",
+          "priority": 100,
+          "params": { "vehicle_only": true, "reacquire": false },
+          "fallback_on_jammed": true
+        },
+        { "type": "GPS", "priority": 50 },
         { "type": "IOG", "priority": 10 }
       ]
     }
   ]
 }
 ```
+
+AIM-120 分段示例：
+
+```json
+"guidance_data": {
+  "stages": [
+    {
+      "name": "boost_iog",
+      "activation": { "start_tick": 0, "end_tick": 9 },
+      "steering_data": { "rigidity_time": 8, "turning_factor": 0.35 },
+      "sources": [{ "type": "IOG", "priority": 100 }]
+    },
+    {
+      "name": "terminal_arh",
+      "activation": { "start_tick": 10, "enter_once": true },
+      "steering_data": { "rigidity_time": 8, "turning_factor": 0.35 },
+      "seeker": { "range": 256, "fov": 30, "scan_interval_tick": 15 },
+      "sources": [
+        { "type": "ARH", "priority": 100, "fallback_on_jammed": true },
+        { "type": "IOG", "priority": 10 }
+      ]
+    }
+  ]
+}
+```
+
+## TV / ARM 示例（参数在 `sources[].params`）
+
+电视制导：
+
+```json
+{
+  "type": "rvp:missile",
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "tv",
+        "seeker": { "range": 2000, "fov": 35 },
+        "sources": [
+          {
+            "type": "TV",
+            "priority": 100,
+            "take_over_motion": true,
+            "params": {
+              "control_range": 2000,
+              "timeout_tick": 400,
+              "video_modes": ["COLOR", "BW", "THERMAL"]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`video_modes`：`COLOR` 彩色；`BW` / `MONO` 黑白；`THERMAL` / `IR` 热成像。
+
+反辐射（`isAntiRadiationMissile()` 由是否含 `ARM` source 判定）：
+
+```json
+{
+  "type": "rvp:missile",
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "arm",
+        "seeker": { "range": 1024, "fov": 35, "scan_interval_tick": 2 },
+        "sources": [
+          {
+            "type": "ARM",
+            "priority": 100,
+            "params": {
+              "scan_interval_tick": 2,
+              "memory_tick": 40,
+              "radiation_pulse_memory_tick": 25,
+              "reacquire": true,
+              "locked_bonus": 0.5
+            }
+          },
+          { "type": "IOG", "priority": 10 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## ARM 与 PDW
 
 ARM seeker 会把雷达观测抽象为 PDW：
 
@@ -762,8 +843,8 @@ ARM seeker 会把雷达观测抽象为 PDW：
 | 旧类型 | 新写法 |
 | --- | --- |
 | `ywzj_rvp:gps_bomb` | `rvp:bomb` + `GPS`，可加 `IOG`/`IR` 分段。 |
-| `ywzj_rvp:tv_missile` | `rvp:missile` + `TV` + `tv_missile_data`。 |
-| `ywzj_rvp:anti_radiation_missile` | `rvp:missile` + `ARM` + `arm_data`。 |
+| `ywzj_rvp:tv_missile` | `rvp:missile` + `TV` source（`params` 写 TV 控制参数）。 |
+| `ywzj_rvp:anti_radiation_missile` | `rvp:missile` + `ARM` source（`params` 写反辐射参数）。 |
 | `ywzj_rvp:active_radar_missile` | `rvp:missile` + `ARH`。 |
 | `ywzj_rvp:semi_active_radar_missile` | `rvp:missile` + `SARH`。 |
 | `ywzj_rvp:manual_guidance_missile` | `rvp:missile` + `MCLOS`，如果需要视频链路则用 `TV`。 |

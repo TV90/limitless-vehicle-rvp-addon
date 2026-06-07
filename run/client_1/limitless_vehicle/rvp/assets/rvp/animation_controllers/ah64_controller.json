@@ -1,0 +1,9 @@
+{
+  "name": "ah64_controller",
+  "script": "rvp:ah64",
+  "parameters": {},
+  "graph": {
+    "type": "script",
+    "function": "updateBones"
+  }
+}

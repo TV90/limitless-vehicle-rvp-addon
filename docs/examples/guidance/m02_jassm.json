@@ -1,0 +1,59 @@
+{
+  "type": "rvp:missile",
+  "name": "M02 JASSM 远距 GPS+末段红外",
+  "require_lock": true,
+  "fire_data": { "spread": 0.02 },
+  "projectile_data": { "velocity": 1.8, "constant_speed": true, "max_speed": 2.8 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 4.0 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 30 },
+        "steering_data": { "rigidity_time": 15, "turning_factor": 0.15, "max_degree_of_missile": 35 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "gps_blend",
+        "composite_weight": 1.0,
+        "activation": { "start_tick": 31, "max_target_distance": 5000, "require_target": true },
+        "steering_data": { "turning_factor": 0.28, "max_degree_of_missile": 50, "predict_target_pos": true },
+        "sources": [
+          { "type": "GPS", "priority": 100, "composite_mode": "blend", "weight": 0.75, "params": { "use_target_pos": true } },
+          { "type": "IOG", "priority": 50, "composite_mode": "blend", "weight": 0.25, "params": { "use_last_guidance": true } }
+        ]
+      },
+      {
+        "name": "high_cruise",
+        "composite_weight": 0.6,
+        "activation": { "min_altitude_agl": 80, "max_altitude_agl": 220, "start_tick": 50 },
+        "steering_data": { "turning_factor": 0.2, "max_degree_of_missile": 42 },
+        "sources": [{ "type": "GPS", "priority": 100, "composite_mode": "primary", "params": { "terminal_dive_angle": 0 } }]
+      },
+      {
+        "name": "dive_prep",
+        "composite_weight": 0.8,
+        "activation": { "max_altitude_agl": 50, "start_tick": 80 },
+        "steering_data": { "turning_factor": 0.35, "max_degree_of_missile": 55 },
+        "sources": [
+          { "type": "IOG", "priority": 100, "composite_mode": "blend", "weight": 0.6, "params": { "terminal_dive_angle": 12 } },
+          { "type": "GPS", "priority": 80, "composite_mode": "blend", "weight": 0.4 }
+        ]
+      },
+      {
+        "name": "terminal_ir",
+        "composite_weight": 1.2,
+        "activation": { "max_target_distance": 80, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 20, "range": 90, "scan_interval_tick": 1, "dircm_resistance": 0.55 },
+        "steering_data": { "turning_factor": 0.62, "max_degree_of_missile": 82 },
+        "sources": [
+          { "type": "IR", "priority": 100, "composite_mode": "primary", "steering_data": { "turning_factor": 0.68 } },
+          { "type": "IOG", "priority": 15, "composite_mode": "primary" }
+        ]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 200, "radius": 7 } },
+  "collision_data": { "direct_damage": 90 }
+}

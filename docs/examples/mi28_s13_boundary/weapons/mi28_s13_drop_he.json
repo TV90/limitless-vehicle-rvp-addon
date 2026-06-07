@@ -1,0 +1,58 @@
+{
+  "type": "rvp:rocket",
+  "name": "下落集束子弹头",
+  "shoot_interval": 200,
+  "max_capacity": 1,
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 1.8,
+    "gravity": -0.028,
+    "drag": 0.002,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 3.5
+  },
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "unguided",
+        "sources": [
+          {
+            "type": "NONE",
+            "priority": 100
+          }
+        ],
+        "activation": {
+          "start_tick": 0
+        }
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 32,
+      "radius": 2.5,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 22,
+    "bounce": 0
+  }
+}

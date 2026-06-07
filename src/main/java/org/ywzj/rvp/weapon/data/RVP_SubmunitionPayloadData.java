@@ -122,22 +122,4 @@ public class RVP_SubmunitionPayloadData {
     public String getEntityNbt() {
         return entityNbt == null ? "" : entityNbt;
     }
-
-    public static RVP_SubmunitionPayloadData legacyCloneParent(float boxSpread) {
-        RVP_SubmunitionPayloadData payload = new RVP_SubmunitionPayloadData();
-        payload.weaponId = "";
-        payload.count = 1;
-        RVP_SubmunitionSpreadData spreadData = new RVP_SubmunitionSpreadData();
-        spreadData.setBoxSpread(boxSpread);
-        payload.spread = spreadData;
-        return payload;
-    }
-
-    /** Machine-gun flechette child: reduced damage, no explosion (historical behavior). */
-    public static RVP_SubmunitionPayloadData legacyMachinegunChild(float boxSpread) {
-        RVP_SubmunitionPayloadData payload = legacyCloneParent(boxSpread);
-        payload.damageMultiplier = 0.35f;
-        payload.suppressExplosion = true;
-        return payload;
-    }
 }

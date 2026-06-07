@@ -1,0 +1,90 @@
+{
+  "type": "rvp:missile",
+  "name": "9M120 红外对地测试弹",
+  "shoot_interval": 1000,
+  "max_capacity": 2,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": true,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.2,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 3.0
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 2.0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 8 },
+        "steering_data": {
+          "rigidity_time": 6,
+          "turning_factor": 0.14,
+          "max_degree_of_missile": 30
+        },
+        "sources": [
+          { "type": "IOG", "priority": 100, "composite_mode": "primary" }
+        ]
+      },
+      {
+        "name": "terminal_ir",
+        "activation": {
+          "start_tick": 9,
+          "require_entity_target": true
+        },
+        "seeker": {
+          "fov": 35,
+          "range": 2048,
+          "scan_interval_tick": 2,
+          "lock_min_height": 0,
+          "dircm_resistance": 0.4
+        },
+        "steering_data": {
+          "turning_factor": 0.34,
+          "max_degree_of_missile": 55,
+          "predict_target_pos": true
+        },
+        "sources": [
+          {
+            "type": "IR",
+            "priority": 100,
+            "composite_mode": "primary",
+            "params": {
+              "vehicle_only": false,
+              "reacquire": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 150,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 2.0,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 85
+  }
+}

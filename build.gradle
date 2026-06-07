@@ -103,6 +103,7 @@ repositories {
 }
 
 dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
     implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.5-all")
@@ -191,4 +192,8 @@ mixin {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
 }

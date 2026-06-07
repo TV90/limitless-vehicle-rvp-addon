@@ -6,7 +6,6 @@
   "refmap": "ywzj_rvp.refmap.json",
   "mixins": [
     "GunnerWeaponAccessorMixin",
-    "LocalVehiclePlayerTVMissileTurnMixin",
     "PartUnitAccessorMixin",
     "RadarUnitPojoMixin",
     "RadarUnitDataMixin",
@@ -15,9 +14,11 @@
     "VehicleRocketWeaponDataMixin"
   ],
   "client": [
+    "ClientLevelHitlTrailParticleMixin",
     "InputHandlerAirburstMixin",
     "BedrockModelRenderTypesMixin",
     "CameraTVMissileMixin",
+    "LocalVehiclePlayerTVMissileTurnMixin",
     "LocalVehiclePlayerRocketAimMixin",
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",

@@ -50,7 +50,7 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
         for (AimContext aim : aimContexts) {
             Vec3 start = RVP_AimContexts.muzzle(aim);
             Vec3 look = VectorUtil.rotToVec(aim.direction.x, aim.direction.y);
-            float range = Math.max(data.getLaserRange(), data.getSeekerData().getRange());
+            float range = data.getLaserRange();
 
             RVP_LaserBeam beam = RVP_LaserRaycast.computeBeam(
                     vehicle.level(), vehicle, shooter, start, look, range,

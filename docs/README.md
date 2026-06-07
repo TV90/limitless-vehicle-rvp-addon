@@ -9,9 +9,9 @@
 | [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
-| [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、`allow_submunition`、B01–B10 测试弹与安装步骤 |
-| [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | 边界测试武器 JSON 副本（可复制到载具包） |
-| [plan/](./plan/) | 功能设计 | TV 导弹、制导架构等方案稿（非日常配置手册） |
+| [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、`allow_submunition`、C01–C10 创意演示弹与安装步骤 |
+| [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |
+| [plan/](./plan/) | 功能设计 | TV 导弹、[分段复合制导](./plan/导弹分段复合制导实现.md) 等方案稿 |
 
 ## 路径约定
 

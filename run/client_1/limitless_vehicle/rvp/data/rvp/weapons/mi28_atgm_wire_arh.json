@@ -1,0 +1,114 @@
+{
+  "type": "rvp:missile",
+  "name": "9M123 线导+主动雷达 反坦克导弹",
+  "shoot_interval": 1000,
+  "max_capacity": 2,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": false,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.2,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 3.0
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 2.0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "mclos_wire",
+        "activation": {
+          "start_tick": 0,
+          "end_tick": 59
+        },
+        "seeker": { "range": 512, "fov": 45 },
+        "steering_data": {
+          "rigidity_time": 10,
+          "turning_factor": 0.26,
+          "max_degree_of_missile": 45
+        },
+        "sources": [
+          {
+            "type": "MCLOS",
+            "priority": 100,
+            "composite_mode": "primary",
+            "take_over_motion": true,
+            "params": {
+              "use_weapon_unit_aim": true,
+              "use_owner_look": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "terminal_arh",
+        "activation": {
+          "start_tick": 60,
+          "enter_once": true
+        },
+        "seeker": {
+          "range": 320,
+          "fov": 35,
+          "scan_interval_tick": 4,
+          "lock_min_height": 0,
+          "jam_resistance": 0.35,
+          "ignore_chaff": false
+        },
+        "steering_data": {
+          "turning_factor": 0.3,
+          "max_degree_of_missile": 55,
+          "predict_target_pos": true
+        },
+        "sources": [
+          {
+            "type": "ARH",
+            "priority": 100,
+            "composite_mode": "primary",
+            "fallback_on_jammed": true,
+            "params": {
+              "reacquire": true,
+              "vehicle_only": true
+            }
+          },
+          {
+            "type": "IOG",
+            "priority": 10,
+            "composite_mode": "primary",
+            "params": {
+              "use_last_guidance": true,
+              "memory_tick": 80
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 150,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 2.0,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 85
+  }
+}

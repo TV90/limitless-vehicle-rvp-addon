@@ -1,0 +1,57 @@
+{
+  "type": "rvp:machinegun",
+  "name": "2A42 30mm 霰弹",
+  "shoot_interval": 120,
+  "max_capacity": 120,
+  "life": 80,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_auto_cannon"
+  },
+  "fire_data": {
+    "fire_mode": "FULL_AUTO",
+    "spread": 0.8,
+    "canister_count": 16,
+    "canister_type": 1,
+    "canister_diff": 1.5,
+    "canister_distribution": "normal",
+    "canister_shape": "circle"
+  },
+  "projectile_data": {
+    "velocity": 14,
+    "gravity": -0.005,
+    "drag": 0.075,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 5,
+    "tracer_r": 0.95,
+    "tracer_g": 0.75,
+    "tracer_b": 0.2
+  },
+  "detonate_data": {
+    "effects_before_explosion": true,
+    "explosion_data": {
+      "explode": false,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0,
+    "direct_damage": 18,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 128,
+        "min_factor": 0.35
+      }
+    ]
+  },
+  "fuse_data": {}
+}

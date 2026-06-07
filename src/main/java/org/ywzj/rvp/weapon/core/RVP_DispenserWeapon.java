@@ -3,6 +3,7 @@ package org.ywzj.rvp.weapon.core;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
+import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -35,12 +36,13 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
         }
         this.lastShootTime = System.currentTimeMillis();
         RVP_WeaponData data = getData();
+        RVP_FireData fire = data.getFireData();
         float chargeScale = consumeChargeScale();
+        int count = fire.getCanisterCount() * fire.getCanisterBurstCount();
         for (AimContext aim : aimContexts) {
-            int count = Math.max(data.getSubmunitionData().getCount(), 1);
             for (int i = 0; i < count; i++) {
                 RVP_ProjectileSpawner.spawn(data, RVP_EnumWeaponKind.DISPENSER, entityType, getVehicle(), shooter, aim, null,
-                        getWeaponUnit().getRootParentWeaponUnit(), chargeScale, data.getSubmunitionData().getSpread());
+                        getWeaponUnit().getRootParentWeaponUnit(), chargeScale, fire.getCanisterDiff());
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }

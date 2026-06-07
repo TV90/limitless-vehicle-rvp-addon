@@ -1,0 +1,19 @@
+{
+  "name": "team",
+  "faction": "team",
+  "target_types": ["player", "vehicle:non_allied_gunner"],
+  "search_radius": 256.0,
+  "scan_interval_tick": 8,
+  "fire_window_deg": 5.0,
+  "lead_scale": 1.0,
+  "burst_fire_tick": 6,
+  "burst_rest_tick": 10,
+  "countermeasure_range": 36.0,
+  "countermeasure_cooldown_tick": 80,
+  "allow_drive": true,
+  "drive_pursuit_distance": 64.0,
+  "drive_stop_distance": 12.0,
+  "drive_stuck_check_tick": 20,
+  "drive_stuck_distance": 1.0,
+  "drive_recovery_tick": 20
+}

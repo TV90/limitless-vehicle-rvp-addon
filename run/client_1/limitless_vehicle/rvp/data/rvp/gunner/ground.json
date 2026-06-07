@@ -1,0 +1,19 @@
+{
+  "name": "ground",
+  "faction": "friendly",
+  "target_types": ["vehicle", "monster", "player"],
+  "search_radius": 192.0,
+  "scan_interval_tick": 8,
+  "fire_window_deg": 5.0,
+  "lead_scale": 0.8,
+  "burst_fire_tick": 10,
+  "burst_rest_tick": 14,
+  "countermeasure_range": 40.0,
+  "countermeasure_cooldown_tick": 70,
+  "allow_drive": true,
+  "drive_pursuit_distance": 72.0,
+  "drive_stop_distance": 10.0,
+  "drive_stuck_check_tick": 20,
+  "drive_stuck_distance": 0.8,
+  "drive_recovery_tick": 24
+}

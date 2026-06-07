@@ -11,7 +11,8 @@ import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.client.render.util.Color;
 
@@ -30,11 +31,11 @@ public class RVP_TVMissileOverlay {
             reset();
             return;
         }
-        if (!RVP_ClientTVMissileState.isActive()) {
+        if (!RVP_ClientHitlState.isActive()) {
             reset();
             return;
         }
-        Entity e = mc.level.getEntity(RVP_ClientTVMissileState.getActiveMissileId());
+        Entity e = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
         if (!(e instanceof RVP_MissileEntity) || e.isRemoved()) {
             reset();
             return;
@@ -47,15 +48,21 @@ public class RVP_TVMissileOverlay {
         int x = 6;
         int y = 6;
 
-        Component mode = switch (RVP_ClientTVMissileState.getVideoMode()) {
+        Component mode = switch (RVP_ClientHitlState.getVideoMode()) {
             case COLOR -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.color");
             case BW -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.bw");
             case THERMAL -> Component.translatable("overlay.ywzj_rvp.tv_missile.mode.thermal");
         };
+        Component control = switch (RVP_ClientHitlState.getControlMode()) {
+            case MOUSE -> Component.translatable("overlay.ywzj_rvp.hitl.control.mouse");
+            case DESIGNATE -> Component.translatable("overlay.ywzj_rvp.hitl.control.designate");
+            case VIEW -> Component.translatable("overlay.ywzj_rvp.hitl.control.view");
+        };
         Component header = Component.translatable("overlay.ywzj_rvp.tv_missile.header", mode);
         Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", (double) lastRateDegPerSec);
         gg.drawString(font, header, x, y, Color.GREEN, true);
-        gg.drawString(font, turnRate, x, y + 10, Color.GREEN, true);
+        gg.drawString(font, control, x, y + 10, Color.GREEN, true);
+        gg.drawString(font, turnRate, x, y + 20, Color.GREEN, true);
     }
 
     private static void updateRate(Entity missile) {

@@ -53,21 +53,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("dispenser_data")
     private RVP_DispenserPayloadData dispenserData = new RVP_DispenserPayloadData();
 
-    /** 导引头视场、距离、抗干扰等，见 {@link RVP_SeekerData}。 */
-    @SerializedName("seeker_data")
-    private RVP_SeekerData seekerData = new RVP_SeekerData();
-
-    /** 分段制导阶段与源，见 {@link RVP_GuidanceData}。 */
+    /** 分段制导阶段与源（含 ARM/TV 专用参数），见 {@link RVP_GuidanceData}。 */
     @SerializedName("guidance_data")
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
-
-    /** 反辐射制导专用，见 {@link RVP_ArmData}。 */
-    @SerializedName("arm_data")
-    private RVP_ArmData armData = new RVP_ArmData();
-
-    /** TV 导弹接管与画面模式，见 {@link RVP_TvMissileData}。 */
-    @SerializedName("tv_missile_data")
-    private RVP_TvMissileData tvMissileData = new RVP_TvMissileData();
 
     /** {@code rvp:laser} 射程与光束外观，见 {@link RVP_LaserData}。 */
     @SerializedName("laser_data")
@@ -124,24 +112,22 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return dispenserData == null ? new RVP_DispenserPayloadData() : dispenserData;
     }
 
-    public RVP_SeekerData getSeekerData() {
-        return seekerData == null ? new RVP_SeekerData() : seekerData;
-    }
-
     public RVP_GuidanceData getGuidanceData() {
         return guidanceData == null ? new RVP_GuidanceData() : guidanceData;
     }
 
+    /** 发射前 UI 用：取首个写了 {@code steering_data} 的阶段，无则默认。 */
     public RVP_GuidanceSteeringData getGuidanceSteeringData() {
-        return getGuidanceData().getSteeringData();
-    }
-
-    public RVP_ArmData getArmData() {
-        return armData == null ? new RVP_ArmData() : armData;
-    }
-
-    public RVP_TvMissileData getTvMissileData() {
-        return tvMissileData == null ? new RVP_TvMissileData() : tvMissileData;
+        return getGuidanceData().getStages().stream()
+                .map(RVP_GuidanceStageData::getSteeringData)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .map(steering -> {
+                    RVP_GuidanceSteeringData merged = new RVP_GuidanceSteeringData();
+                    merged.applyOverride(steering);
+                    return merged;
+                })
+                .orElse(new RVP_GuidanceSteeringData());
     }
 
     public RVP_LaserData getLaserData() {
@@ -322,16 +308,25 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return isActiveRadar() || isSemiActiveRadar();
     }
 
+    /** 发射前锁定 UI 用：取首个非空阶段导引头，无则默认。 */
+    public RVP_GuidanceSeekerData resolveLaunchSeeker() {
+        return getGuidanceData().getStages().stream()
+                .map(RVP_GuidanceStageData::getSeeker)
+                .filter(seeker -> !seeker.isEmpty())
+                .findFirst()
+                .orElse(new RVP_GuidanceSeekerData());
+    }
+
     public int getScanInterval() {
-        return getSeekerData().getScanIntervalTick();
+        return resolveLaunchSeeker().getScanIntervalTick();
     }
 
     public float getMaxLockOnRange() {
-        return getSeekerData().getRange();
+        return resolveLaunchSeeker().getRange();
     }
 
     public float getMaxLockOnAngle() {
-        return getSeekerData().getFov();
+        return resolveLaunchSeeker().getFov();
     }
 
     public float getMaxDegreeOfMissile() {
@@ -339,7 +334,15 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float getLockMinHeight() {
-        return getSeekerData().getLockMinHeight();
+        return resolveLaunchSeeker().getLockMinHeight();
+    }
+
+    /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */
+    public float getTargetingPodRange() {
+        if (getLaserData().getRange() > 1f) {
+            return getLaserData().getRange();
+        }
+        return 8192f;
     }
 
     public boolean isPredictTargetPos() {
@@ -367,21 +370,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
             return explosion.proximityRadius;
         }
         return 0f;
-    }
-
-    public int getBomblet() {
-        return getSubmunitionData().getCount();
-    }
-
-    public int getBombletSTime() {
-        if (getSubmunitionData().getIntervalTick() > 0) {
-            return getSubmunitionData().getIntervalTick();
-        }
-        return getSubmunitionData().getDelayTick();
-    }
-
-    public float getBombletDiff() {
-        return getSubmunitionData().getSpread();
     }
 
     /** 是否使用本体 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 推力/阻力模型。 */
@@ -417,48 +405,12 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return usesGuidanceType(RVP_EnumGuidanceType.ARM);
     }
 
-    public int getAntiRadiationScanIntervalTick() {
-        return getArmData().getScanIntervalTick();
-    }
-
-    public int getAntiRadiationMemoryTick() {
-        return getArmData().getMemoryTick();
-    }
-
-    public int getAntiRadiationRadiationPulseMemoryTick() {
-        return getArmData().getRadiationPulseMemoryTick();
-    }
-
-    public boolean isAntiRadiationAllowReacquire() {
-        return getArmData().isAllowReacquire();
-    }
-
-    public float getAntiRadiationLockedBonus() {
-        return getArmData().getLockedBonus();
-    }
-
     public float getLaserRange() {
         return getLaserData().getRange();
     }
 
     public RVP_LaserVisualData getLaserVisual() {
         return getLaserData().getVisualData();
-    }
-
-    public float getTVMissileControlRange() {
-        return getTvMissileData().getControlRange();
-    }
-
-    public int getTVMissileTimeoutTick() {
-        return getTvMissileData().getTimeoutTick();
-    }
-
-    public int getTVMissileVideoModeMask() {
-        return getTvMissileData().getVideoModeMask();
-    }
-
-    public int getDefaultTVMissileVideoMode() {
-        return getTvMissileData().getDefaultVideoMode();
     }
 
     @Override
@@ -500,8 +452,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (type == null) {
             return false;
         }
-        return getGuidanceData().getStages().stream()
-                .flatMap(stage -> stage.getSources().stream())
-                .anyMatch(source -> source.getType() == type);
+        return getGuidanceData().hasSourceType(type);
+    }
+
+    public boolean hasHumanInTheLoop() {
+        return getGuidanceData().isHumanInTheLoopEnabled();
     }
 }

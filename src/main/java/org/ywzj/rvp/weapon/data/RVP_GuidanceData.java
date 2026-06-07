@@ -1,106 +1,109 @@
 package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
+import org.ywzj.rvp.guidance.RVP_EnumCompositeMode;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_EnumPhaseResolvePolicy;
+
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.List;
 
 /**
- * 分段/复合制导配置。扩展包 JSON 键 {@code guidance_data}。
+ * 分段/复合制导配置。JSON 键 {@code guidance_data}。
  *
- * <p>可写对象 {@code { "steering_data": {...}, "stages": [...] }}，也可直接写阶段数组
- * （加载时由 {@link org.ywzj.rvp.all.RVP_WeaponTypes} 规范为 {@code stages}）。</p>
- *
- * <p>一个 {@link Stage} 表示某飞行时段；时段内多个 {@link Source} 按 {@code priority} 从高到低尝试。
- * {@code TV}、{@code ARH} 仅对 {@code rvp:missile} 生效。</p>
+ * <p>制导阶段列表 {@code stages}：每阶段见 {@link RVP_GuidanceStageData}。
+ * 多阶段激活窗口重叠时进入复合制导（见 {@link org.ywzj.rvp.guidance.RVP_GuidanceCompositeCompatibility}）。</p>
  */
 public class RVP_GuidanceData {
 
-    /** 转向/刚性/预测等通用制导参数。 */
-    @SerializedName("steering_data")
-    private RVP_GuidanceSteeringData steeringData = new RVP_GuidanceSteeringData();
+    /** 多阶段重叠且制导类型不兼容时的消解策略。 */
+    @SerializedName("phase_resolve_policy")
+    private RVP_EnumPhaseResolvePolicy phaseResolvePolicy = RVP_EnumPhaseResolvePolicy.HIGHEST_SPECIFICITY;
 
-    /** 制导阶段列表。JSON 可以直接写数组，也会被注册器规范化到 stages。 */
-    @SerializedName("stages")
-    private List<Stage> stages = Collections.emptyList();
+    @SerializedName(value = "stages", alternate = {"phases"})
+    private List<RVP_GuidanceStageData> stages = Collections.emptyList();
 
-    public RVP_GuidanceSteeringData getSteeringData() {
-        return steeringData == null ? new RVP_GuidanceSteeringData() : steeringData;
+    /** 人在回路弹载视角；与 MCLOS/SACLOS 等制导源组合使用。 */
+    @SerializedName("human_in_the_loop")
+    private RVP_HumanInTheLoopData humanInTheLoop;
+
+    public RVP_EnumPhaseResolvePolicy getPhaseResolvePolicy() {
+        return phaseResolvePolicy == null ? RVP_EnumPhaseResolvePolicy.HIGHEST_SPECIFICITY : phaseResolvePolicy;
     }
 
-    public List<Stage> getStages() {
+    public List<RVP_GuidanceStageData> getStages() {
         return stages == null ? Collections.emptyList() : stages;
     }
 
-    public static class Stage {
+    public RVP_HumanInTheLoopData getHumanInTheLoop() {
+        return humanInTheLoop != null ? humanInTheLoop : RVP_HumanInTheLoopData.DISABLED;
+    }
 
-        /** 阶段名称，仅用于配置可读性和调试。 */
-        @SerializedName("name")
-        private String name = "stage";
+    public boolean isHumanInTheLoopEnabled() {
+        return humanInTheLoop != null && humanInTheLoop.isEnabled();
+    }
 
-        /** 阶段开始 tick。 */
-        @SerializedName("start_tick")
-        private int startTick = 0;
-
-        /** 阶段结束 tick；小于 0 表示不限制结束时间。 */
-        @SerializedName("end_tick")
-        private int endTick = -1;
-
-        /** 阶段生效的最小目标距离，0 表示不限制。 */
-        @SerializedName("min_distance")
-        private float minDistance = 0f;
-
-        /** 阶段生效的最大目标距离，0 表示不限制。 */
-        @SerializedName("max_distance")
-        private float maxDistance = 0f;
-
-        /** 本阶段内的制导源列表，按 priority 从高到低尝试。 */
-        @SerializedName("sources")
-        private List<Source> sources = Collections.emptyList();
-
-        public String getName() {
-            return name == null ? "stage" : name;
+    public boolean hasSourceType(RVP_EnumGuidanceType type) {
+        if (type == null) {
+            return false;
         }
+        return getStages().stream()
+                .flatMap(stage -> stage.getSources().stream())
+                .anyMatch(source -> source.getType() == type);
+    }
 
-        public int getStartTick() {
-            return Math.max(startTick, 0);
+    /** 全阶段中 priority 最高的指定类型 source；无则 {@code null}。 */
+    @Nullable
+    public Source findPrimarySource(RVP_EnumGuidanceType type) {
+        if (type == null) {
+            return null;
         }
+        Source best = null;
+        for (RVP_GuidanceStageData stage : getStages()) {
+            for (Source source : stage.getSources()) {
+                if (source.getType() != type) {
+                    continue;
+                }
+                if (best == null || source.getPriority() > best.getPriority()) {
+                    best = source;
+                }
+            }
+        }
+        return best;
+    }
 
-        public int getEndTick() {
-            return endTick;
-        }
-
-        public float getMinDistance() {
-            return Math.max(minDistance, 0f);
-        }
-
-        public float getMaxDistance() {
-            return Math.max(maxDistance, 0f);
-        }
-
-        public List<Source> getSources() {
-            return sources == null ? Collections.emptyList() : sources;
-        }
+    public RVP_GuidanceSourceParamsData findPrimarySourceParams(RVP_EnumGuidanceType type) {
+        Source source = findPrimarySource(type);
+        return source != null ? source.getParams() : new RVP_GuidanceSourceParamsData();
     }
 
     public static class Source {
 
-        /** 制导源类型：NONE、IOG、MCLOS、SACLOS、GPS、IR、SARH、ARM、TV、ARH；TV/ARH 仅对 rvp:missile 生效。 */
         @SerializedName("type")
         private RVP_EnumGuidanceType type = RVP_EnumGuidanceType.NONE;
 
-        /** 同阶段内优先级，数值越大越先尝试。 */
         @SerializedName("priority")
         private int priority = 0;
 
-        /** 被干扰/遮挡时是否继续尝试低优先级 source。 */
+        @SerializedName("composite_mode")
+        private RVP_EnumCompositeMode compositeMode = RVP_EnumCompositeMode.PRIMARY;
+
         @SerializedName("fallback_on_jammed")
         private boolean fallbackOnJammed = true;
 
-        /** 是否直接接管弹体速度。TV/MCLOS 这类直控制导常用 true。 */
         @SerializedName("take_over_motion")
         private boolean takeOverMotion = false;
+
+        @SerializedName("weight")
+        private double weight = 1.0;
+
+        @SerializedName("steering_data")
+        private RVP_GuidanceSteeringData steeringData;
+
+        @SerializedName("params")
+        private RVP_GuidanceSourceParamsData params = new RVP_GuidanceSourceParamsData();
 
         public RVP_EnumGuidanceType getType() {
             return type == null ? RVP_EnumGuidanceType.NONE : type;
@@ -110,12 +113,28 @@ public class RVP_GuidanceData {
             return priority;
         }
 
+        public RVP_EnumCompositeMode getCompositeMode() {
+            return compositeMode == null ? RVP_EnumCompositeMode.PRIMARY : compositeMode;
+        }
+
         public boolean isFallbackOnJammed() {
             return fallbackOnJammed;
         }
 
         public boolean isTakeOverMotion() {
             return takeOverMotion;
+        }
+
+        public double getWeight() {
+            return weight <= 0.0 ? 1.0 : weight;
+        }
+
+        public RVP_GuidanceSteeringData getSteeringData() {
+            return steeringData;
+        }
+
+        public RVP_GuidanceSourceParamsData getParams() {
+            return params == null ? new RVP_GuidanceSourceParamsData() : params;
         }
     }
 }

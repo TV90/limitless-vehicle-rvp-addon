@@ -1,0 +1,42 @@
+{
+  "type": "rvp:missile",
+  "name": "M07 高抛弹道 爬升-滑翔-末制导",
+  "require_lock": true,
+  "fire_data": { "spread": 0.04 },
+  "projectile_data": { "velocity": 2.2, "constant_speed": false, "max_speed": 3.8 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 3.0 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_rigid",
+        "activation": { "start_tick": 0, "end_tick": 25 },
+        "steering_data": { "rigidity_time": 20, "turning_factor": 0.1, "max_degree_of_missile": 28 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary", "params": { "use_target_pos": true } }]
+      },
+      {
+        "name": "climb_iog",
+        "activation": { "start_tick": 26, "end_tick": 70, "min_altitude_agl": 50 },
+        "steering_data": { "turning_factor": 0.22, "max_degree_of_missile": 40 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary", "params": { "terminal_dive_angle": -15 } }]
+      },
+      {
+        "name": "apogee_gps",
+        "composite_weight": 0.9,
+        "activation": { "min_altitude_agl": 200, "max_altitude_agl": 450, "require_target": true },
+        "steering_data": { "turning_factor": 0.18, "max_degree_of_missile": 35, "predict_target_pos": true },
+        "sources": [{ "type": "GPS", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "terminal_arh",
+        "composite_weight": 1.4,
+        "activation": { "max_target_distance": 280, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 27, "range": 300, "scan_interval_tick": 2 },
+        "steering_data": { "turning_factor": 0.5, "max_degree_of_missile": 74, "tick_end_homing": 35 },
+        "sources": [{ "type": "ARH", "priority": 100, "composite_mode": "primary" }]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 160, "radius": 6 } },
+  "collision_data": { "direct_damage": 75 }
+}

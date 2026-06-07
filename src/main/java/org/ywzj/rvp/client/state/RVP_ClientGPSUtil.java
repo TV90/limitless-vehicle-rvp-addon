@@ -10,6 +10,8 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.network.C2SSetGPSTarget;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -44,8 +46,13 @@ public class RVP_ClientGPSUtil {
     }
 
     private static boolean usesDesignatedPoint(RVP_WeaponBase weapon) {
-        return weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                || weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
+        return weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS);
+    }
+
+    public static void clearGpsTarget(LocalPlayer player) {
+        RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.clear());
+        RVP_ClientGPSState.clear();
+        player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.clear_target"), true);
     }
 
     public static Vec3 raycastGPSTarget(Minecraft mc) {

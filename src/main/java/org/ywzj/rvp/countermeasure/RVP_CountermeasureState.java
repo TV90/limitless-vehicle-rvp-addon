@@ -6,7 +6,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.weapon.data.RVP_SeekerData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.vehicle.api.entity.SightObstruction;
 import org.ywzj.vehicle.api.entity.TargetObstruction;
 import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
@@ -25,14 +25,14 @@ public final class RVP_CountermeasureState {
 
     private RVP_CountermeasureState() {}
 
-    public static Result query(Entity seeker, Entity target, RVP_EnumGuidanceType guidanceType, RVP_SeekerData seekerData) {
+    public static Result query(Entity seeker, Entity target, RVP_EnumGuidanceType guidanceType, RVP_GuidanceSeekerData seekerData) {
         if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
             return new Result(false, false, false, true);
         }
         if (target == null || seekerData == null) {
             return Result.CLEAR;
         }
-        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.TV || guidanceType == RVP_EnumGuidanceType.IR) {
+        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.MCLOS || guidanceType == RVP_EnumGuidanceType.IR) {
             if (hasSightObstruction(seeker, target)) {
                 return new Result(true, true, false, false);
             }
@@ -46,14 +46,14 @@ public final class RVP_CountermeasureState {
         return Result.CLEAR;
     }
 
-    public static Result queryPoint(Entity seeker, Vec3 targetPos, RVP_EnumGuidanceType guidanceType, RVP_SeekerData seekerData) {
+    public static Result queryPoint(Entity seeker, Vec3 targetPos, RVP_EnumGuidanceType guidanceType, RVP_GuidanceSeekerData seekerData) {
         if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
             return new Result(false, false, false, true);
         }
         if (seeker == null || targetPos == null || seekerData == null) {
             return Result.CLEAR;
         }
-        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.TV || guidanceType == RVP_EnumGuidanceType.IR) {
+        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.MCLOS || guidanceType == RVP_EnumGuidanceType.IR) {
             if (hasSightObstruction(seeker, targetPos)) {
                 return new Result(true, true, false, false);
             }

@@ -8,7 +8,7 @@ import com.google.gson.annotations.SerializedName;
  */
 public class RVP_LaserData {
 
-    /** 射线最大射程（格）；未写时回退 {@link RVP_SeekerData#getRange()}。 */
+    /** 射线最大射程（格）；亦用于瞄准吊舱射线长度。 */
     @SerializedName("range")
     private float range = 512f;
 

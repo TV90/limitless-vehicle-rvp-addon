@@ -136,7 +136,7 @@ def machinegun(name: str, damage: int, interval: int, capacity: int) -> dict:
                     "min_factor": 0.25,
                 }
             ],
-            "piercing": 0,
+            "living_penetration": 0,
             "wall_penetration": 0,
             "bounce": 0,
         },
@@ -191,7 +191,7 @@ def rocket(name: str, capacity: int) -> dict:
                     "min_factor": 0.25,
                 }
             ],
-            "piercing": 0,
+            "living_penetration": 0,
             "wall_penetration": 0,
             "bounce": 0,
         },

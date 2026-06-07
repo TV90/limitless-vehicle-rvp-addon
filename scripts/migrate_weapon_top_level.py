@@ -47,16 +47,24 @@ def ensure_guidance_object(obj: dict) -> dict:
 
 
 def migrate_steering(obj: dict) -> bool:
-    changed = False
     steering = {k: obj.pop(k) for k in STEERING_KEYS if k in obj}
     if not steering:
         return False
     guidance = ensure_guidance_object(obj)
-    existing = guidance.get("steering_data")
-    if isinstance(existing, dict):
-        existing.update(steering)
+    stages = guidance.get("stages")
+    if not isinstance(stages, list):
+        stages = []
+        guidance["stages"] = stages
+    if stages and isinstance(stages[0], dict):
+        first = stages[0]
+        existing = first.get("steering_data")
+        if isinstance(existing, dict):
+            existing.update(steering)
+        else:
+            first["steering_data"] = steering
     else:
-        guidance["steering_data"] = steering
+        stages.append({"name": "default", "steering_data": steering, "sources": []})
+    guidance.pop("steering_data", None)
     return True
 
 

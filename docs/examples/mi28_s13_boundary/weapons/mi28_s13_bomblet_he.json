@@ -3,8 +3,14 @@
   "name": "S-13 子战斗部 HE",
   "shoot_interval": 200,
   "max_capacity": 1,
-  "reload": { "time": 1, "ammo": "ywzj_vehicle:ammo_rocket" },
-  "fire_data": { "spread": 0, "fire_mode": "FULL_AUTO" },
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
   "projectile_data": {
     "velocity": 3.2,
     "gravity": 0,
@@ -13,14 +19,25 @@
     "rotate_to_motion": true,
     "max_speed": 3.8
   },
-  "fuse_data": { "detonate_on_life_end": false },
-  "guidance_data": [
-    {
-      "name": "unguided",
-      "start_tick": 0,
-      "sources": [{ "type": "NONE", "priority": 100 }]
-    }
-  ],
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "unguided",
+        "sources": [
+          {
+            "type": "NONE",
+            "priority": 100
+          }
+        ],
+        "activation": {
+          "start_tick": 0
+        }
+      }
+    ]
+  },
   "effects_data": {
     "trajectory_particle": "minecraft:cloud",
     "impact_particle": "minecraft:block",

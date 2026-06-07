@@ -1,0 +1,9 @@
+{
+  "type": "ywzj_vehicle:weapon",
+  "model": "rvp:entity/bomb_spice_1000",
+  "texture": "rvp:textures/entity/bomb_spice_1000.png",
+  "sounds": {
+    "fire": "ywzj_vehicle:bomb_drop",
+    "reload": "ywzj_vehicle:common_reload"
+  }
+}

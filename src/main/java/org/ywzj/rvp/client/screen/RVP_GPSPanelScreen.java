@@ -53,13 +53,39 @@ public class RVP_GPSPanelScreen extends Screen {
         addRenderableWidget(yBox);
         addRenderableWidget(zBox);
 
+        int btnW = 58;
+        int btnGap = 4;
+        int btnY = centerY + 40;
+        int rowW = btnW * 3 + btnGap * 2;
+        int leftX = centerX - rowW / 2;
         addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.bind"), b -> bind())
-                .bounds(centerX - 60, centerY + 40, 55, 20)
+                .bounds(leftX, btnY, btnW, 20)
+                .build());
+
+        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.clear"), b -> clear())
+                .bounds(leftX + btnW + btnGap, btnY, btnW, 20)
                 .build());
 
         addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.cancel"), b -> onClose())
-                .bounds(centerX + 5, centerY + 40, 55, 20)
+                .bounds(leftX + (btnW + btnGap) * 2, btnY, btnW, 20)
                 .build());
+    }
+
+    private void clear() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        if (!RVP_ClientGPSUtil.ensureGPSBombSelected(mc.player)) {
+            return;
+        }
+        RVP_ClientGPSUtil.clearGpsTarget(mc.player);
+        if (mc.player != null) {
+            Vec3 pos = mc.player.position();
+            xBox.setValue(String.format("%.2f", pos.x));
+            yBox.setValue(String.format("%.2f", pos.y));
+            zBox.setValue(String.format("%.2f", pos.z));
+        }
     }
 
     private void bind() {

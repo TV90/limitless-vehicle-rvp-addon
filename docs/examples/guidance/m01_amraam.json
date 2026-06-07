@@ -1,0 +1,55 @@
+{
+  "type": "rvp:missile",
+  "name": "M01 AMRAAM 中距主动雷达弹",
+  "require_lock": true,
+  "fire_data": { "spread": 0.03 },
+  "projectile_data": { "velocity": 3.0, "constant_speed": true, "max_speed": 4.0 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 2.5 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 15 },
+        "steering_data": { "rigidity_time": 12, "turning_factor": 0.18, "max_degree_of_missile": 40 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary", "params": { "use_target_pos": true } }]
+      },
+      {
+        "name": "midcourse_sarh",
+        "composite_weight": 1.0,
+        "activation": {
+          "start_tick": 16,
+          "min_target_distance": 200,
+          "max_target_distance": 3000,
+          "require_target": true,
+          "require_illumination": true
+        },
+        "seeker": { "fov": 32, "range": 3200, "scan_interval_tick": 6, "jam_resistance": 0.35 },
+        "steering_data": { "turning_factor": 0.32, "max_degree_of_missile": 58, "predict_target_pos": true },
+        "sources": [
+          { "type": "SARH", "priority": 100, "composite_mode": "primary", "params": { "require_illumination": true } },
+          { "type": "IOG", "priority": 20, "composite_mode": "primary", "params": { "use_last_guidance": true, "memory_tick": 50 } }
+        ]
+      },
+      {
+        "name": "terminal_arh",
+        "composite_weight": 1.4,
+        "activation": { "max_target_distance": 200, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 26, "range": 220, "scan_interval_tick": 2, "jam_resistance": 0.55, "home_on_jam": true },
+        "steering_data": { "turning_factor": 0.5, "max_degree_of_missile": 75, "tick_end_homing": 25 },
+        "sources": [
+          { "type": "ARH", "priority": 100, "composite_mode": "primary", "steering_data": { "turning_factor": 0.58 } },
+          { "type": "IOG", "priority": 10, "composite_mode": "primary" }
+        ]
+      },
+      {
+        "name": "coast_iog",
+        "activation": { "start_tick": 60, "max_target_distance": 200, "require_target": true },
+        "steering_data": { "turning_factor": 0.22, "max_degree_of_missile": 45 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary", "params": { "memory_tick": 80 } }]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 120, "radius": 5 } },
+  "collision_data": { "direct_damage": 60 }
+}

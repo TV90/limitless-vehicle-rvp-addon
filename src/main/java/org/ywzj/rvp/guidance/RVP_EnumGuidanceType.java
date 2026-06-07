@@ -12,6 +12,5 @@ public enum RVP_EnumGuidanceType {
     IR,
     ARH,
     SARH,
-    ARM,
-    TV
+    ARM
 }

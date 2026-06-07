@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "src" / "main" / "resources"
-KEYS = ("piercing", "wall_penetration", "bounce", "bounce_strength", "bounce_fuse_tick")
+KEYS = ("living_penetration", "wall_penetration", "bounce", "bounce_strength", "bounce_fuse_tick")
 
 
 def migrate(obj: dict) -> bool:

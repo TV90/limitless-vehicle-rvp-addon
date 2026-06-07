@@ -1,0 +1,19 @@
+{
+  "name": "air",
+  "faction": "friendly",
+  "target_types": ["vehicle", "player"],
+  "search_radius": 320.0,
+  "scan_interval_tick": 6,
+  "fire_window_deg": 4.0,
+  "lead_scale": 1.5,
+  "burst_fire_tick": 4,
+  "burst_rest_tick": 8,
+  "countermeasure_range": 52.0,
+  "countermeasure_cooldown_tick": 60,
+  "allow_drive": false,
+  "drive_pursuit_distance": 96.0,
+  "drive_stop_distance": 20.0,
+  "drive_stuck_check_tick": 20,
+  "drive_stuck_distance": 1.0,
+  "drive_recovery_tick": 20
+}
