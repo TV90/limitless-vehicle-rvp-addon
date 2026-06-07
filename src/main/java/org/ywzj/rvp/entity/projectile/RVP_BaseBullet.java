@@ -29,6 +29,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceConfigMerger;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseSelector;
+import org.ywzj.rvp.guidance.RVP_GuidanceRigidityUtil;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
@@ -135,6 +136,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
+    protected final java.util.Map<Integer, Integer> guidanceStageEnteredTicks = new java.util.HashMap<>();
+    protected int guidanceOverlapResolveIndex = -1;
     protected final java.util.Set<Integer> guidanceStickyPhaseIndices = new java.util.HashSet<>();
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
@@ -235,33 +238,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     /**
-     * Rigidity window from the currently active MCLOS guidance stage(s).
-     * MCH {@code RigidityTime}: manual / TV steering is suppressed until this tick elapses.
+     * True when every currently active stage has passed its per-stage {@code rigidity_time} window.
      */
-    public int rvp$getActiveRigidityTime() {
+    public boolean rvp$isPastRigidityTime() {
         RVP_WeaponData data = resolveWeaponConfig();
         if (data == null) {
-            return 0;
+            return true;
         }
-        List<RVP_GuidancePhaseSelector.StageSelection> active =
-                RVP_GuidancePhaseSelector.selectActive(this, data);
-        int rigidity = 0;
-        for (RVP_GuidancePhaseSelector.StageSelection selection : active) {
-            for (RVP_GuidanceData.Source source : selection.stage().getSources()) {
-                if (source.getType() == RVP_EnumGuidanceType.MCLOS) {
-                    rigidity = Math.max(rigidity,
-                            RVP_GuidanceConfigMerger.forStage(selection.stage()).steering().getRigidityTime());
-                }
-            }
-        }
-        if (rigidity > 0) {
-            return rigidity;
-        }
-        return data.getRigidityTime();
-    }
-
-    public boolean rvp$isPastRigidityTime() {
-        return tickCount > rvp$getActiveRigidityTime();
+        return !RVP_GuidanceRigidityUtil.isAnyActiveStageRigid(this, data);
     }
 
     /** True while an active guidance stage includes SACLOS. */
@@ -422,6 +406,34 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     public void setGuidanceStageEnteredTick(int guidanceStageEnteredTick) {
         this.guidanceStageEnteredTick = Math.max(guidanceStageEnteredTick, 0);
+    }
+
+    public int getGuidanceStageEnteredTick(int stageIndex) {
+        Integer entered = guidanceStageEnteredTicks.get(stageIndex);
+        return entered != null ? entered : 0;
+    }
+
+    public void markGuidanceStageEnteredIfAbsent(int stageIndex, int tick) {
+        if (stageIndex < 0) {
+            return;
+        }
+        guidanceStageEnteredTicks.putIfAbsent(stageIndex, Math.max(tick, 0));
+    }
+
+    public void clearGuidanceStageEnteredTick(int stageIndex) {
+        guidanceStageEnteredTicks.remove(stageIndex);
+    }
+
+    public java.util.Set<Integer> getGuidanceStageEnteredTickIndices() {
+        return guidanceStageEnteredTicks.keySet();
+    }
+
+    public int getGuidanceOverlapResolveIndex() {
+        return guidanceOverlapResolveIndex;
+    }
+
+    public void setGuidanceOverlapResolveIndex(int guidanceOverlapResolveIndex) {
+        this.guidanceOverlapResolveIndex = guidanceOverlapResolveIndex;
     }
 
     @Nullable

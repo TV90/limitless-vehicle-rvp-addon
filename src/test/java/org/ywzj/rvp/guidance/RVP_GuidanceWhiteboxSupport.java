@@ -7,6 +7,7 @@ import org.ywzj.rvp.guidance.activation.RVP_GuidanceActivationContext;
 import org.ywzj.rvp.guidance.activation.RVP_GuidanceActivationEvaluator;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceActivationData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
+import org.ywzj.rvp.guidance.RVP_EnumPhaseResolvePolicy;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceStageData;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 
@@ -132,6 +133,44 @@ public final class RVP_GuidanceWhiteboxSupport {
             );
         }
         return active.stream().map(s -> s.stage().getName()).toList();
+    }
+
+    public static List<String> simulateStageNames(
+            RVP_GuidanceData guidance,
+            List<RVP_GuidanceStageData> stages,
+            RVP_GuidanceActivationContext ctx,
+            Set<Integer> sticky
+    ) {
+        List<RVP_GuidancePhaseSelector.StageSelection> active = new ArrayList<>();
+        for (int i = 0; i < stages.size(); i++) {
+            RVP_GuidanceStageData stage = stages.get(i);
+            RVP_GuidanceActivationData activation = stage.getActivation();
+            boolean stickyHeld = sticky.contains(i);
+            if (stickyHeld || isActive(activation, ctx)) {
+                active.add(new RVP_GuidancePhaseSelector.StageSelection(stage, i));
+                if (activation.isEnterOnce() && !stickyHeld) {
+                    sticky.add(i);
+                }
+            }
+        }
+        if (active.size() > 1) {
+            active = resolveWithPolicy(guidance.getPhaseResolvePolicy(), active);
+        }
+        return active.stream().map(s -> s.stage().getName()).toList();
+    }
+
+    private static List<RVP_GuidancePhaseSelector.StageSelection> resolveWithPolicy(
+            RVP_EnumPhaseResolvePolicy policy,
+            List<RVP_GuidancePhaseSelector.StageSelection> active
+    ) {
+        return switch (policy) {
+            case FIRST_PHASE -> List.of(active.get(0));
+            case STICKY, HIGHEST_SPECIFICITY -> RVP_GuidanceCompositeCompatibility.resolveCompatible(
+                    active,
+                    ss -> ss.stage().getActivation().specificityScore(),
+                    ss -> ss.stage().getPrimaryGuidanceType()
+            );
+        };
     }
 
     public static Set<Integer> emptySticky() {

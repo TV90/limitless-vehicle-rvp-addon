@@ -62,8 +62,8 @@ public final class RVP_GuidanceSeekerUtil {
             boolean vehicleOnly
     ) {
         RVP_GuidanceSeekerData seeker = config.seeker();
-        double range = seeker.getRange();
-        double maxAngle = seeker.getFov();
+        double range = seeker.resolvedRange();
+        double maxAngle = seeker.resolvedFov();
         AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
@@ -97,8 +97,8 @@ public final class RVP_GuidanceSeekerUtil {
 
     public static Entity scanRadarTarget(RVP_BaseBullet projectile, RVP_GuidanceEffectiveConfig config) {
         RVP_GuidanceSeekerData seeker = config.seeker();
-        double range = seeker.getRange();
-        double maxAngle = seeker.getFov();
+        double range = seeker.resolvedRange();
+        double maxAngle = seeker.resolvedFov();
         AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;

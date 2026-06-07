@@ -66,6 +66,7 @@
         { "id": "rvp:mi28_atgm_saclos_tv", "part_unit_id": "missile" },
         { "id": "rvp:mi28_atgm_ir_ground", "part_unit_id": "missile" },
         { "id": "rvp:mi28_atgm_sarh", "part_unit_id": "missile" },
+        { "id": "rvp:demo_laser_sarh_ir_arh", "part_unit_id": "missile" },
         { "id": "rvp:mi28_s13", "part_unit_id": "rocket" },
         { "id": "rvp:s13of_rocket", "part_unit_id": "rocket" }
       ]

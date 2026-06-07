@@ -57,21 +57,18 @@ public final class RVP_GuidanceController {
             RVP_WeaponData data,
             List<RVP_GuidancePhaseSelector.StageSelection> active
     ) {
-        List<RVP_GuidanceCompositor.StageSource> merged = new ArrayList<>();
+        List<RVP_GuidanceCompositor.PhaseBlend> merged = new ArrayList<>();
         for (RVP_GuidancePhaseSelector.StageSelection selection : active) {
             RVP_GuidanceStageData stage = selection.stage();
             RVP_GuidanceEffectiveConfig stageConfig = RVP_GuidanceConfigMerger.forStage(stage);
             RVP_GuidanceContext baseContext = new RVP_GuidanceContext(
                     projectile, data, stage, selection.index(), stageConfig);
-            double stageWeight = stage.getCompositeWeight();
-            for (RVP_GuidanceData.Source source : stage.getSources()) {
-                merged.add(new RVP_GuidanceCompositor.StageSource(
-                        baseContext.withSource(source),
-                        source,
-                        stageWeight * source.getWeight()
-                ));
-            }
+            List<RVP_GuidanceData.Source> sources = stage.getSources().stream()
+                    .sorted(Comparator.comparingInt(RVP_GuidanceData.Source::getPriority).reversed())
+                    .toList();
+            merged.add(new RVP_GuidanceCompositor.PhaseBlend(
+                    baseContext, sources, stage.getCompositeWeight()));
         }
-        RVP_GuidanceCompositor.applyOverlappingStages(projectile, merged);
+        RVP_GuidanceCompositor.applyOverlappingPhases(projectile, merged);
     }
 }

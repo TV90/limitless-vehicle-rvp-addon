@@ -48,7 +48,7 @@ public class RVP_GuidanceActivationData {
     @SerializedName("require_illumination")
     private Boolean requireIllumination;
 
-    /** 进入后粘性保持（见 {@link RVP_GuidanceData#getPhaseResolvePolicy()}）。 */
+    /** 一旦满足条件并进入本阶段，后续 tick 保持激活（即使距离/照射等条件不再满足）。 */
     @SerializedName("enter_once")
     private Boolean enterOnce;
 
