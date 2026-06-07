@@ -54,7 +54,7 @@ public class RVP_HumanInTheLoopData {
     private List<String> videoModes;
 
     public boolean isEnabled() {
-        return enabled == null || enabled;
+        return Boolean.TRUE.equals(enabled);
     }
 
     public RVP_EnumHitlControlMode getControlMode() {

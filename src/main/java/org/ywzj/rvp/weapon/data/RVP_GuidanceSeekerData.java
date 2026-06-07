@@ -37,12 +37,34 @@ public class RVP_GuidanceSeekerData {
     @SerializedName("decoy_filter")
     private Float decoyFilter;
 
+    public boolean hasFov() {
+        return fov != null;
+    }
+
+    public boolean hasRange() {
+        return range != null;
+    }
+
+    /** Configured FOV (degrees); falls back to 30 only when callers use {@link #resolvedFov()}. */
     public float getFov() {
         return Math.max(fov != null ? fov : 30f, 1f);
     }
 
+    /** Configured range (blocks); falls back to 512 only when callers use {@link #resolvedRange()}. */
     public float getRange() {
         return Math.max(range != null ? range : 512f, 1f);
+    }
+
+    public float resolvedFov() {
+        return hasFov() ? Math.max(fov, 1f) : 30f;
+    }
+
+    public float resolvedRange() {
+        return hasRange() ? Math.max(range, 1f) : 512f;
+    }
+
+    public boolean hasSeekerGeometry() {
+        return hasFov() || hasRange();
     }
 
     public int getScanIntervalTick() {

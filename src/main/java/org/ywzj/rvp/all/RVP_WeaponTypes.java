@@ -136,17 +136,70 @@ public final class RVP_WeaponTypes {
         JsonElement topSteering = guidanceObject.has("steering_data")
                 ? guidanceObject.remove("steering_data")
                 : null;
+        JsonElement topSeeker = guidanceObject.has("seeker_data")
+                ? guidanceObject.remove("seeker_data")
+                : null;
         if (guidanceObject.has("stages") && guidanceObject.get("stages").isJsonArray()) {
+            JsonObject seekerTargetStage = null;
             for (JsonElement stageElement : guidanceObject.getAsJsonArray("stages")) {
-                if (stageElement.isJsonObject()) {
-                    JsonObject stage = stageElement.getAsJsonObject();
-                    normalizeStageObject(stage);
-                    if (topSteering != null && !stage.has("steering_data")) {
-                        stage.add("steering_data", topSteering.deepCopy());
+                if (!stageElement.isJsonObject()) {
+                    continue;
+                }
+                JsonObject stage = stageElement.getAsJsonObject();
+                normalizeStageObject(stage);
+                if (topSteering != null && !stage.has("steering_data")) {
+                    stage.add("steering_data", topSteering.deepCopy());
+                }
+                if (topSeeker != null && stageUsesSeeker(stage) && seekerTargetStage == null) {
+                    seekerTargetStage = stage;
+                }
+            }
+            if (topSeeker != null) {
+                if (seekerTargetStage == null) {
+                    for (JsonElement stageElement : guidanceObject.getAsJsonArray("stages")) {
+                        if (stageElement.isJsonObject()) {
+                            seekerTargetStage = stageElement.getAsJsonObject();
+                            break;
+                        }
                     }
+                }
+                if (seekerTargetStage != null) {
+                    mergeSeekerDefaults(seekerTargetStage, topSeeker.getAsJsonObject());
                 }
             }
         }
+    }
+
+    private static boolean stageUsesSeeker(JsonObject stage) {
+        if (!stage.has("sources") || !stage.get("sources").isJsonArray()) {
+            return false;
+        }
+        for (JsonElement sourceElement : stage.getAsJsonArray("sources")) {
+            if (!sourceElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject source = sourceElement.getAsJsonObject();
+            if (!source.has("type") || !source.get("type").isJsonPrimitive()) {
+                continue;
+            }
+            String type = source.get("type").getAsString().trim().toUpperCase(Locale.ROOT);
+            if ("IR".equals(type) || "ARH".equals(type) || "SARH".equals(type) || "ARM".equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void mergeSeekerDefaults(JsonObject stage, JsonObject topSeeker) {
+        JsonObject seeker = stage.has("seeker") && stage.get("seeker").isJsonObject()
+                ? stage.getAsJsonObject("seeker").deepCopy()
+                : new JsonObject();
+        for (String key : topSeeker.keySet()) {
+            if (!seeker.has(key)) {
+                seeker.add(key, topSeeker.get(key).deepCopy());
+            }
+        }
+        stage.add("seeker", seeker);
     }
 
     /** Uppercase guidance enum strings so Gson can bind {@code blend} → {@code BLEND}. */

@@ -8,6 +8,7 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceStageData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -42,18 +43,29 @@ public final class RVP_GuidancePhaseSelector {
             }
         }
 
+        trackStageEntryTicks(projectile, active);
         if (active.size() <= 1) {
             updatePrimaryIndex(projectile, active);
             return active;
         }
 
-        List<StageSelection> resolved = RVP_GuidanceCompositeCompatibility.resolveCompatible(
-                active,
-                ss -> ss.stage().getActivation().specificityScore(),
-                ss -> ss.stage().getPrimaryGuidanceType()
-        );
+        List<StageSelection> resolved = RVP_GuidancePhaseResolver.resolve(projectile, data, active);
         updatePrimaryIndex(projectile, resolved);
         return resolved;
+    }
+
+    private static void trackStageEntryTicks(RVP_BaseBullet projectile, List<StageSelection> active) {
+        Set<Integer> activeIndices = new HashSet<>();
+        for (StageSelection selection : active) {
+            activeIndices.add(selection.index());
+            projectile.markGuidanceStageEnteredIfAbsent(selection.index(), projectile.tickCount);
+        }
+        Set<Integer> sticky = projectile.getGuidanceStickyPhaseIndices();
+        for (Integer tracked : new HashSet<>(projectile.getGuidanceStageEnteredTickIndices())) {
+            if (!activeIndices.contains(tracked) && !sticky.contains(tracked)) {
+                projectile.clearGuidanceStageEnteredTick(tracked);
+            }
+        }
     }
 
     private static void updatePrimaryIndex(RVP_BaseBullet projectile, List<StageSelection> active) {

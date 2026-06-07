@@ -1,7 +1,10 @@
 package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_GuidanceConfigResolver;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
 import java.util.List;
@@ -116,18 +119,13 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return guidanceData == null ? new RVP_GuidanceData() : guidanceData;
     }
 
-    /** 发射前 UI 用：取首个写了 {@code steering_data} 的阶段，无则默认。 */
+    /** 发射前 UI 用；飞行中优先当前激活阶段。 */
     public RVP_GuidanceSteeringData getGuidanceSteeringData() {
-        return getGuidanceData().getStages().stream()
-                .map(RVP_GuidanceStageData::getSteeringData)
-                .filter(java.util.Objects::nonNull)
-                .findFirst()
-                .map(steering -> {
-                    RVP_GuidanceSteeringData merged = new RVP_GuidanceSteeringData();
-                    merged.applyOverride(steering);
-                    return merged;
-                })
-                .orElse(new RVP_GuidanceSteeringData());
+        return getGuidanceSteeringData(null);
+    }
+
+    public RVP_GuidanceSteeringData getGuidanceSteeringData(@Nullable RVP_BaseBullet projectile) {
+        return RVP_GuidanceConfigResolver.resolveSteering(this, projectile);
     }
 
     public RVP_LaserData getLaserData() {
@@ -308,13 +306,13 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return isActiveRadar() || isSemiActiveRadar();
     }
 
-    /** 发射前锁定 UI 用：取首个非空阶段导引头，无则默认。 */
+    /** 发射前锁定 UI 用；飞行中优先当前激活阶段的导引头。 */
     public RVP_GuidanceSeekerData resolveLaunchSeeker() {
-        return getGuidanceData().getStages().stream()
-                .map(RVP_GuidanceStageData::getSeeker)
-                .filter(seeker -> !seeker.isEmpty())
-                .findFirst()
-                .orElse(new RVP_GuidanceSeekerData());
+        return resolveLaunchSeeker(null);
+    }
+
+    public RVP_GuidanceSeekerData resolveLaunchSeeker(@Nullable RVP_BaseBullet projectile) {
+        return RVP_GuidanceConfigResolver.resolveSeeker(this, projectile);
     }
 
     public int getScanInterval() {

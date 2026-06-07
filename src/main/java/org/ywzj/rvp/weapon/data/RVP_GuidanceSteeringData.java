@@ -9,7 +9,8 @@ import com.google.gson.annotations.SerializedName;
 public class RVP_GuidanceSteeringData {
 
     /**
-     * 发射后刚性飞行 tick 数：此期间不应用制导转向（MCH {@code RigidityTime}）。
+     * 本阶段进入后的刚性飞行 tick 数：从阶段激活 tick 起算，此期间本阶段制导源不转向
+     * （MCH {@code RigidityTime}）。
      */
     @SerializedName("rigidity_time")
     private Integer rigidityTime;
