@@ -25,7 +25,11 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_GuidanceConfigMerger;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
+import org.ywzj.rvp.guidance.RVP_GuidancePhaseSelector;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
 import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
@@ -129,6 +133,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
 
+    protected int guidanceStageIndex = -1;
+    protected int guidanceStageEnteredTick;
+    protected final java.util.Set<Integer> guidanceStickyPhaseIndices = new java.util.HashSet<>();
+    @Nullable
+    protected RVP_EnumGuidanceType activeSourceType;
+    @Nullable
+    protected String activeStageName;
+    /** Set when MCLOS {@code take_over_motion} applied wire-direct steering this tick. */
+    private boolean guidanceWireDirectApplied;
+
     public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level, ResourceLocation weaponId) {
         super(type, level, weaponId);
         this.keepChunkLoaded = true;
@@ -150,7 +164,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.headShot = data.getHeadshotMultiplier();
         this.explosion = data.getExplosionData();
         this.life = data.getLife();
-        this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth, kind);
+        this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
         this.piercedLivingIds.clear();
@@ -218,6 +232,47 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     @Nullable
     public RVP_WeaponData getRvpData() {
         return rvpData;
+    }
+
+    /**
+     * Rigidity window from the currently active MCLOS guidance stage(s).
+     * MCH {@code RigidityTime}: manual / TV steering is suppressed until this tick elapses.
+     */
+    public int rvp$getActiveRigidityTime() {
+        RVP_WeaponData data = resolveWeaponConfig();
+        if (data == null) {
+            return 0;
+        }
+        List<RVP_GuidancePhaseSelector.StageSelection> active =
+                RVP_GuidancePhaseSelector.selectActive(this, data);
+        int rigidity = 0;
+        for (RVP_GuidancePhaseSelector.StageSelection selection : active) {
+            for (RVP_GuidanceData.Source source : selection.stage().getSources()) {
+                if (source.getType() == RVP_EnumGuidanceType.MCLOS) {
+                    rigidity = Math.max(rigidity,
+                            RVP_GuidanceConfigMerger.forStage(selection.stage()).steering().getRigidityTime());
+                }
+            }
+        }
+        if (rigidity > 0) {
+            return rigidity;
+        }
+        return data.getRigidityTime();
+    }
+
+    public boolean rvp$isPastRigidityTime() {
+        return tickCount > rvp$getActiveRigidityTime();
+    }
+
+    /** True while an active guidance stage includes SACLOS. */
+    public boolean rvp$isInSaclosGuidanceStage() {
+        RVP_WeaponData data = resolveWeaponConfig();
+        if (data == null || !data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
+            return false;
+        }
+        return RVP_GuidancePhaseSelector.selectActive(this, data).stream()
+                .anyMatch(selection -> selection.stage().getSources().stream()
+                        .anyMatch(source -> source.getType() == RVP_EnumGuidanceType.SACLOS));
     }
 
     /** Live spawn config, or reload from the weapon index when {@link #rvpData} was not kept. */
@@ -353,6 +408,58 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.antiRadiationLostPermanent = lostPermanent;
     }
 
+    public int getGuidanceStageIndex() {
+        return guidanceStageIndex;
+    }
+
+    public void setGuidanceStageIndex(int guidanceStageIndex) {
+        this.guidanceStageIndex = guidanceStageIndex;
+    }
+
+    public int getGuidanceStageEnteredTick() {
+        return guidanceStageEnteredTick;
+    }
+
+    public void setGuidanceStageEnteredTick(int guidanceStageEnteredTick) {
+        this.guidanceStageEnteredTick = Math.max(guidanceStageEnteredTick, 0);
+    }
+
+    @Nullable
+    public RVP_EnumGuidanceType getActiveSourceType() {
+        return activeSourceType;
+    }
+
+    public void setActiveSourceType(@Nullable RVP_EnumGuidanceType activeSourceType) {
+        this.activeSourceType = activeSourceType;
+    }
+
+    public void rvp$markGuidanceWireDirectApplied() {
+        this.guidanceWireDirectApplied = true;
+    }
+
+    public boolean rvp$guidanceWireDirectApplied() {
+        return guidanceWireDirectApplied;
+    }
+
+    @Nullable
+    public String getActiveStageName() {
+        return activeStageName;
+    }
+
+    public void setActiveStageName(@Nullable String activeStageName) {
+        this.activeStageName = activeStageName;
+    }
+
+    public java.util.Set<Integer> getGuidanceStickyPhaseIndices() {
+        return guidanceStickyPhaseIndices;
+    }
+
+    public void addGuidanceStickyPhaseIndex(int index) {
+        if (index >= 0) {
+            guidanceStickyPhaseIndices.add(index);
+        }
+    }
+
     /**
      * RVP integrates position manually ({@link RVP_ProjectileMotion} / {@link RVP_BulletEntity});
      * block vanilla {@link Entity#move} so {@link AmmoEntity#tickHit()} segments stay blocks-per-tick.
@@ -393,6 +500,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
 
         tickSubmunition();
+        guidanceWireDirectApplied = false;
         tickGuidance();
         tickMotion();
         tickHit();
@@ -413,6 +521,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     protected void tickGuidance() {
+        if (!level().isClientSide()) {
+            org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation.tickUpdateLiveTarget(this);
+        }
         RVP_GuidanceController.tick(this);
     }
 

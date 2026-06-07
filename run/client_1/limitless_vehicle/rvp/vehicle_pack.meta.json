@@ -1,0 +1,16 @@
+{
+  "namespace": "rvp",
+  "title": "RealVehicleProject",
+  "description": "A realistic vehicle pack for YWZJ Vehicle.",
+  "version": "0.5.68",
+  "date": "2026-06-07",
+  "license": "All Rights Reserved",
+  "authors": [
+    "TV90",
+    "YWZJ"
+  ],
+  "dependencies": {
+    "ywzj_vehicle": "[0.5.3,)",
+    "ywzj_rvp": "[0.5.5,)"
+  }
+}

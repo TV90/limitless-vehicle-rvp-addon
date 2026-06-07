@@ -1,0 +1,65 @@
+{
+  "type": "rvp:missile",
+  "name": "YJ-15",
+  "shoot_interval": 1000,
+  "max_capacity": 1,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": false,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.2,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 3.0
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 4,
+    "detonate_on_life_end": false
+  },
+  "seeker_data": {
+    "range": 512,
+    "fov": 35,
+    "scan_interval_tick": 5
+  },
+  "guidance_data": [
+    {
+      "name": "ir_ashm",
+      "start_tick": 0,
+      "sources": [
+        {
+          "type": "IR",
+          "priority": 100
+        },
+        {
+          "type": "IOG",
+          "priority": 10
+        }
+      ]
+    }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 250,
+      "radius": 8,
+      "proximity_fuze": true,
+      "proximity_radius": 4,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 100
+  }
+}

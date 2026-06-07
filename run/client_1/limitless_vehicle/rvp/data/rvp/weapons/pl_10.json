@@ -1,0 +1,67 @@
+{
+  "type": "rvp:missile",
+  "name": "PL-10",
+  "shoot_interval": 500,
+  "max_capacity": 2,
+  "reload": {
+    "time": 80,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": true,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.4,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 3.4
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 3,
+    "detonate_on_life_end": false
+  },
+  "seeker_data": {
+    "range": 384,
+    "fov": 30,
+    "scan_interval_tick": 3,
+    "ignore_flares": false
+  },
+  "guidance_data": [
+    {
+      "name": "ir_terminal",
+      "start_tick": 0,
+      "sources": [
+        {
+          "type": "IR",
+          "priority": 100,
+          "fallback_on_jammed": true
+        },
+        {
+          "type": "IOG",
+          "priority": 10
+        }
+      ]
+    }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:large_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 180,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 3,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80
+  }
+}

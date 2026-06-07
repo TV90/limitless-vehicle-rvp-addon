@@ -1,0 +1,80 @@
+{
+  "type": "rvp:bomb",
+  "name": "SPICE-1000",
+  "recoil": 0,
+  "shoot_interval": 300,
+  "max_capacity": 2,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 180,
+  "y_rot_min": -180,
+  "fuse_delay_tick": 0,
+  "gravity_scale": 0.35,
+  "require_lock": false,
+  "projectile_data": {
+    "velocity": 3,
+    "gravity": -0.035,
+    "inherit_vehicle_velocity": true,
+    "rotate_to_motion": true,
+    "max_speed": 3
+  },
+  "seeker_data": {
+    "range": 2000,
+    "fov": 60,
+    "scan_interval_tick": 5
+  },
+  "guidance_data": {
+    "stage_policy": "sticky",
+    "stages": [
+      {
+        "name": "gps_midcourse",
+        "start_tick": 0,
+        "sources": [
+          { "type": "GPS", "priority": 100 },
+          { "type": "IOG", "priority": 10 }
+        ]
+      },
+      {
+        "name": "terminal_ir",
+        "start_tick": 0,
+        "max_distance": 100,
+        "enter_once": true,
+        "seeker_data": {
+          "fov": 40,
+          "range": 80,
+          "scan_interval_tick": 2
+        },
+        "sources": [
+          {
+            "type": "IR",
+            "priority": 100,
+            "params": {
+              "vehicle_only": true,
+              "reacquire": false,
+              "memory_tick": 0
+            },
+            "fallback_on_jammed": true
+          },
+          { "type": "GPS", "priority": 50 },
+          { "type": "IOG", "priority": 10 }
+        ]
+      }
+    ]
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 4399,
+      "radius": 15,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10
+  },
+  "fuse_data": {}
+}

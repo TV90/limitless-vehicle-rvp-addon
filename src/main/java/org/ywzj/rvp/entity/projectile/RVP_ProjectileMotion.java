@@ -166,6 +166,46 @@ public final class RVP_ProjectileMotion {
         }
     }
 
+    /**
+     * TV / HITL MOUSE flight: speed along {@link RVP_BaseBullet#getLookAngle()}, no {@code rotate_to_motion}.
+     */
+    public static void tickHitlTvMove(RVP_MissileEntity missile) {
+        RVP_WeaponData data = missile.rvpData;
+        if (data == null) {
+            return;
+        }
+        Vec3 velocity = missile.getDeltaMovement();
+        Vec3 lookDir = missile.getLookAngle();
+        int ignition = data.getResolvedIgnitionDelayTick();
+
+        if (missile.tickCount < ignition) {
+            velocity = applyPreIgnitionVelocity(missile, velocity, ignition);
+        } else {
+            double speed = Math.max(velocity.length(), Math.max(missile.flightSpeed, data.getProjectileVelocity()));
+            int motorTick = missile.tickCount - ignition;
+            if (motorTick <= data.getResolvedMotorBurnTime()) {
+                float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
+                speed += data.getResolvedThrust() / mass;
+            }
+            float dragCoeff = data.getResolvedDragCoefficient();
+            if (dragCoeff > 0 && speed > 0) {
+                speed -= dragCoeff * speed * speed;
+                speed = Math.max(speed, 0.01);
+            }
+            if (data.getProjectileData().isConstantSpeed()) {
+                speed = Math.max(missile.flightSpeed, data.getProjectileVelocity());
+            }
+            velocity = lookDir.scale(speed);
+            velocity = applyPropulsionGravity(missile, velocity, data);
+            velocity = clampSpeed(missile, velocity, data);
+        }
+
+        missile.setDeltaMovement(velocity);
+        missile.setPos(missile.position().add(velocity));
+        missile.flightDistance += velocity.length();
+        missile.flightSpeed = (float) Math.max(missile.flightSpeed, velocity.length());
+    }
+
     private static Vec3 applyPreIgnitionVelocity(RVP_BaseBullet projectile, Vec3 velocity, int ignition) {
         AbstractVehicle carrier = projectile.shooterVehicle;
         if (carrier == null) {

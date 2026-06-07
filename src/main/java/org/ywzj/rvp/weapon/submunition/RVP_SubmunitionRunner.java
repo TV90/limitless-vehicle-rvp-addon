@@ -3,9 +3,7 @@ package org.ywzj.rvp.weapon.submunition;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionParentAction;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionData;
-import org.ywzj.rvp.weapon.data.RVP_SubmunitionPayloadData;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionReleaseData;
 
 import java.util.ArrayList;
@@ -25,20 +23,13 @@ public final class RVP_SubmunitionRunner {
         this.waves.addAll(waves);
     }
 
-    public static RVP_SubmunitionRunner create(RVP_SubmunitionData data, int submunitionDepth,
-                                             RVP_EnumWeaponKind parentKind) {
+    public static RVP_SubmunitionRunner create(RVP_SubmunitionData data, int submunitionDepth) {
         if (data == null || !data.isEnabled()) {
             return new RVP_SubmunitionRunner(List.of());
         }
         List<WaveState> states = new ArrayList<>();
         for (RVP_SubmunitionReleaseData release : data.getReleases()) {
-            RVP_SubmunitionReleaseData effective = release;
-            if (data.usesLegacySchema() && parentKind == RVP_EnumWeaponKind.MACHINEGUN) {
-                effective = RVP_SubmunitionReleaseData.legacyInFlightMachinegun(
-                        data.getCount(), data.getDelayTick(), data.getIntervalTick(), data.getSpread());
-            }
-            int legacy = data.usesLegacySchema() ? data.getCount() : 0;
-            states.add(new WaveState(effective, legacy));
+            states.add(new WaveState(release));
         }
         return new RVP_SubmunitionRunner(states);
     }
@@ -154,9 +145,9 @@ public final class RVP_SubmunitionRunner {
         int sprinkleTimer;
         boolean oneShotFired;
 
-        WaveState(RVP_SubmunitionReleaseData config, int legacyCount) {
+        WaveState(RVP_SubmunitionReleaseData config) {
             this.config = config;
-            this.eventsRemaining = config.resolveReleaseEvents(legacyCount);
+            this.eventsRemaining = config.resolveReleaseEvents();
             this.sprinkleTimer = config.getDelayTick();
         }
     }

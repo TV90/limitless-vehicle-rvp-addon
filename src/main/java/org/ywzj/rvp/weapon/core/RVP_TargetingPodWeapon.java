@@ -34,7 +34,7 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
             AimContext aim = aimContexts.get(0);
             Vec3 start = RVP_AimContexts.muzzle(aim);
             Vec3 look = Vec3.directionFromRotation(aim.direction.x, aim.direction.y).normalize();
-            Vec3 end = start.add(look.scale(getData().getSeekerData().getRange()));
+            Vec3 end = start.add(look.scale(getData().getTargetingPodRange()));
             BlockHitResult blockHit = player.level().clip(new ClipContext(start, end,
                     ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, getVehicle()));
             Vec3 target = blockHit.getType() == HitResult.Type.MISS ? end : blockHit.getLocation();

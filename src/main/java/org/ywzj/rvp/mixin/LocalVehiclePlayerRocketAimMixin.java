@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -29,6 +30,11 @@ public class LocalVehiclePlayerRocketAimMixin {
     @Inject(method = "tickAim", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$applyRocketBallisticAim(CallbackInfo ci) {
         LocalVehiclePlayer self = (LocalVehiclePlayer) (Object) this;
+        if (RVP_ClientHitlState.isActive() && this.ywzj_rvp$prevWeaponHitPos != null) {
+            self.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos;
+            self.weaponHitPos = this.ywzj_rvp$prevWeaponHitPos;
+            return;
+        }
         WeaponUnit weaponUnit = self.getWeaponUnit();
         if (weaponUnit == null || weaponUnit.getCurrentWeapon().isEmpty()) {
             if (self.onVehicle()) {

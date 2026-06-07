@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
@@ -9,7 +8,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
@@ -23,18 +21,16 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.lwjgl.glfw.GLFW;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.screen.RVP_GPSPanelScreen;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
-import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.network.C2SSetGPSTarget;
-import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -53,25 +49,10 @@ import java.util.List;
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_ClientEvents {
 
-    private static final boolean[] ywzj_rvp$lastSetGPSDown = new boolean[1];
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
 
     private record VehicleMarker(int vehicleId, int argb) {}
-
-    private static boolean ywzj_rvp$consumeClick(Minecraft mc, KeyMapping mapping, boolean[] lastDown) {
-        long window = mc.getWindow().getWindow();
-        InputConstants.Key key = mapping.getKey();
-        boolean down;
-        if (key.getType() == InputConstants.Type.MOUSE) {
-            down = GLFW.glfwGetMouseButton(window, key.getValue()) == GLFW.GLFW_PRESS;
-        } else {
-            down = InputConstants.isKeyDown(window, key.getValue());
-        }
-        boolean clicked = down && !lastDown[0];
-        lastDown[0] = down;
-        return clicked;
-    }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onClientTick(TickEvent.ClientTickEvent event) {
@@ -97,34 +78,6 @@ public class RVP_ClientEvents {
             return;
         }
 
-        boolean setGPSTriggered = false;
-        while (RVP_Keys.SET_GPS_TARGET.consumeClick()) {
-            setGPSTriggered = true;
-            if (!RVP_ClientGPSUtil.ensureGPSBombSelected(player)) {
-                continue;
-            }
-            Vec3 target = RVP_ClientGPSUtil.raycastGPSTarget(mc);
-            if (target == null) {
-                player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.no_block"), true);
-                continue;
-            }
-            RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.set(player.level().dimension().location(), target));
-            RVP_ClientGPSState.set(player.level().dimension().location(), target);
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.set_target"), true);
-        }
-        if (!setGPSTriggered && ywzj_rvp$consumeClick(mc, RVP_Keys.SET_GPS_TARGET, ywzj_rvp$lastSetGPSDown)) {
-            if (RVP_ClientGPSUtil.ensureGPSBombSelected(player)) {
-                Vec3 target = RVP_ClientGPSUtil.raycastGPSTarget(mc);
-                if (target == null) {
-                    player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.no_block"), true);
-                } else {
-                    RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.set(player.level().dimension().location(), target));
-                    RVP_ClientGPSState.set(player.level().dimension().location(), target);
-                    player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.set_target"), true);
-                }
-            }
-        }
-
         while (RVP_Keys.OPEN_GPS_PANEL.consumeClick()) {
             if (!RVP_ClientGPSUtil.ensureGPSBombSelected(player)) {
                 continue;
@@ -132,13 +85,7 @@ public class RVP_ClientEvents {
             mc.setScreen(new RVP_GPSPanelScreen());
         }
 
-        while (RVP_Keys.CLEAR_GPS.consumeClick()) {
-            RVP_Network.CHANNEL.sendToServer(org.ywzj.rvp.network.C2SSetGPSTarget.clear());
-            RVP_ClientGPSState.clear();
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.clear_target"), true);
-        }
-
-        RVP_ClientTVMissileState.tick(mc, player);
+        RVP_ClientHitlState.tick(mc, player);
 
         ywzj_rvp$refreshVehicleMarkers(mc, player);
 
@@ -150,27 +97,22 @@ public class RVP_ClientEvents {
                 }
             });
         }
-        if (weaponUnit == null) {
-            return;
+        if (weaponUnit != null
+                && !weaponUnit.getCurrentWeapon().isEmpty()
+                && player.getVehicle() instanceof AbstractVehicle vehicle) {
+            AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
+            if (currentWeapon instanceof RVP_WeaponBase weapon
+                    && weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
+                RVP_RocketCcipState.clear(vehicle.getId());
+                ywzj_rvp$updateGPSBombCcip(vehicle, weaponUnit, weapon);
+            } else if (!(currentWeapon instanceof VehicleRocket)) {
+                RVP_RocketCcipState.clear(vehicle.getId());
+            }
         }
-        if (weaponUnit.getCurrentWeapon().isEmpty()) {
-            return;
+
+        if (LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
+            RVP_ClientSaclosState.tick(mc, player);
         }
-        if (!(player.getVehicle() instanceof AbstractVehicle vehicle)) {
-            return;
-        }
-        AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
-        if (currentWeapon instanceof RVP_WeaponBase weapon
-                && (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                || weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS))) {
-            RVP_RocketCcipState.clear(vehicle.getId());
-            ywzj_rvp$updateGPSBombCcip(vehicle, weaponUnit, weapon);
-            return;
-        }
-        if (currentWeapon instanceof VehicleRocket) {
-            return;
-        }
-        RVP_RocketCcipState.clear(vehicle.getId());
     }
 
     private static void ywzj_rvp$updateGPSBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
@@ -309,5 +251,8 @@ public class RVP_ClientEvents {
                 event.getWeapon(),
                 event.getVehicle().level().getGameTime(),
                 operatorId);
+        if (RVP_ClientSaclosState.isSaclosWeapon(event.getWeapon())) {
+            RVP_ClientSaclosState.onSaclosWeaponFired();
+        }
     }
 }

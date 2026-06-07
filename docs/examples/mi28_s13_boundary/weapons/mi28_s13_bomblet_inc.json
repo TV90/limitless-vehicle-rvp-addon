@@ -3,8 +3,14 @@
   "name": "S-13 燃烧子弹头",
   "shoot_interval": 200,
   "max_capacity": 1,
-  "reload": { "time": 1, "ammo": "ywzj_vehicle:ammo_rocket" },
-  "fire_data": { "spread": 0, "fire_mode": "FULL_AUTO" },
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
   "projectile_data": {
     "velocity": 2.8,
     "gravity": 0,
@@ -12,14 +18,25 @@
     "rotate_to_motion": true,
     "max_speed": 3.4
   },
-  "fuse_data": { "detonate_on_life_end": false },
-  "guidance_data": [
-    {
-      "name": "unguided",
-      "start_tick": 0,
-      "sources": [{ "type": "NONE", "priority": 100 }]
-    }
-  ],
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "unguided",
+        "sources": [
+          {
+            "type": "NONE",
+            "priority": 100
+          }
+        ],
+        "activation": {
+          "start_tick": 0
+        }
+      }
+    ]
+  },
   "effects_data": {
     "trajectory_particle": "minecraft:flame",
     "impact_particle": "minecraft:lava",
@@ -33,8 +50,16 @@
       "radius": 1.8,
       "destroy_block": false
     },
-    "fire_data": { "radius": 2.5, "chance": 0.92, "soul_fire": false },
-    "ignite_entity_data": { "radius": 2.5, "seconds": 5, "targets": "living" }
+    "fire_data": {
+      "radius": 2.5,
+      "chance": 0.92,
+      "soul_fire": false
+    },
+    "ignite_entity_data": {
+      "radius": 2.5,
+      "seconds": 5,
+      "targets": "living"
+    }
   },
   "collision_data": {
     "direct_damage": 12,

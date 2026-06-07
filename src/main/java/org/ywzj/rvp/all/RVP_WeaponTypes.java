@@ -18,6 +18,7 @@ import org.ywzj.vehicle.all.ModRegistries;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponType;
 
+import java.util.Locale;
 import java.util.function.Supplier;
 
 /**
@@ -104,7 +105,7 @@ public final class RVP_WeaponTypes {
     }
 
     /**
-     * Current schema allows {@code guidance_data} as a stage array; Gson expects an object with {@code stages}.
+     * Accepts legacy flat stage fields / top-level {@code steering_data}; canonical schema uses {@code stages}.
      */
     private static void normalizeGuidanceData(JsonObject root) {
         if (!root.has("guidance_data")) {
@@ -118,10 +119,101 @@ public final class RVP_WeaponTypes {
             JsonObject wrapper = new JsonObject();
             wrapper.add("stages", guidance);
             root.add("guidance_data", wrapper);
-            return;
+            guidance = root.get("guidance_data");
         }
         if (!guidance.isJsonObject()) {
             root.remove("guidance_data");
+            return;
+        }
+        JsonObject guidanceObject = guidance.getAsJsonObject();
+        if (guidanceObject.has("phases") && !guidanceObject.has("stages")) {
+            guidanceObject.add("stages", guidanceObject.remove("phases"));
+        }
+        if (guidanceObject.has("stage_policy") && !guidanceObject.has("phase_resolve_policy")) {
+            guidanceObject.add("phase_resolve_policy", guidanceObject.remove("stage_policy"));
+        }
+        normalizeGuidanceEnumFields(guidanceObject);
+        JsonElement topSteering = guidanceObject.has("steering_data")
+                ? guidanceObject.remove("steering_data")
+                : null;
+        if (guidanceObject.has("stages") && guidanceObject.get("stages").isJsonArray()) {
+            for (JsonElement stageElement : guidanceObject.getAsJsonArray("stages")) {
+                if (stageElement.isJsonObject()) {
+                    JsonObject stage = stageElement.getAsJsonObject();
+                    normalizeStageObject(stage);
+                    if (topSteering != null && !stage.has("steering_data")) {
+                        stage.add("steering_data", topSteering.deepCopy());
+                    }
+                }
+            }
+        }
+    }
+
+    /** Uppercase guidance enum strings so Gson can bind {@code blend} → {@code BLEND}. */
+    private static void normalizeGuidanceEnumFields(JsonObject guidanceObject) {
+        if (guidanceObject.has("phase_resolve_policy")
+                && guidanceObject.get("phase_resolve_policy").isJsonPrimitive()) {
+            String policy = guidanceObject.get("phase_resolve_policy").getAsString();
+            guidanceObject.addProperty("phase_resolve_policy", policy.trim().toUpperCase(Locale.ROOT));
+        }
+        if (!guidanceObject.has("stages") || !guidanceObject.get("stages").isJsonArray()) {
+            return;
+        }
+        for (JsonElement stageElement : guidanceObject.getAsJsonArray("stages")) {
+            if (!stageElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject stage = stageElement.getAsJsonObject();
+            if (!stage.has("sources") || !stage.get("sources").isJsonArray()) {
+                continue;
+            }
+            for (JsonElement sourceElement : stage.getAsJsonArray("sources")) {
+                if (!sourceElement.isJsonObject()) {
+                    continue;
+                }
+                JsonObject source = sourceElement.getAsJsonObject();
+                if (source.has("type") && source.get("type").isJsonPrimitive()) {
+                    source.addProperty("type", source.get("type").getAsString().trim().toUpperCase(Locale.ROOT));
+                }
+                if (source.has("composite_mode") && source.get("composite_mode").isJsonPrimitive()) {
+                    source.addProperty("composite_mode",
+                            source.get("composite_mode").getAsString().trim().toUpperCase(Locale.ROOT));
+                }
+            }
+        }
+    }
+
+    private static void normalizeStageObject(JsonObject stage) {
+        if (stage.has("seeker_data") && !stage.has("seeker")) {
+            stage.add("seeker", stage.remove("seeker_data"));
+        }
+        JsonObject activation = stage.has("activation") && stage.get("activation").isJsonObject()
+                ? stage.getAsJsonObject("activation").deepCopy()
+                : new JsonObject();
+        moveField(stage, activation, "start_tick");
+        moveField(stage, activation, "end_tick");
+        moveField(stage, activation, "enter_once");
+        moveField(stage, activation, "require_target");
+        moveField(stage, activation, "require_entity_target");
+        moveField(stage, activation, "require_illumination");
+        moveField(stage, activation, "min_distance", "min_target_distance");
+        moveField(stage, activation, "max_distance", "max_target_distance");
+        moveField(stage, activation, "min_entity_distance");
+        moveField(stage, activation, "max_entity_distance");
+        moveField(stage, activation, "min_altitude", "min_altitude_agl");
+        moveField(stage, activation, "max_altitude", "max_altitude_agl");
+        if (activation.size() > 0) {
+            stage.add("activation", activation);
+        }
+    }
+
+    private static void moveField(JsonObject from, JsonObject to, String key) {
+        moveField(from, to, key, key);
+    }
+
+    private static void moveField(JsonObject from, JsonObject to, String fromKey, String toKey) {
+        if (from.has(fromKey) && !to.has(toKey)) {
+            to.add(toKey, from.remove(fromKey));
         }
     }
 

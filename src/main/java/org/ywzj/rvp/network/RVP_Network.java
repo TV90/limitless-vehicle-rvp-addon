@@ -27,20 +27,25 @@ public class RVP_Network {
                 .decoder(C2SSetGPSTarget::decode)
                 .consumerMainThread(C2SSetGPSTarget::handle)
                 .add();
-        CHANNEL.messageBuilder(S2CSetTVMissile.class, id++)
-                .encoder(S2CSetTVMissile::encode)
-                .decoder(S2CSetTVMissile::decode)
-                .consumerMainThread(S2CSetTVMissile::handle)
+        CHANNEL.messageBuilder(S2CEnterHitlView.class, id++)
+                .encoder(S2CEnterHitlView::encode)
+                .decoder(S2CEnterHitlView::decode)
+                .consumerMainThread(S2CEnterHitlView::handle)
                 .add();
-        CHANNEL.messageBuilder(C2STVMissileControlInput.class, id++)
-                .encoder(C2STVMissileControlInput::encode)
-                .decoder(C2STVMissileControlInput::decode)
-                .consumerMainThread(C2STVMissileControlInput::handle)
+        CHANNEL.messageBuilder(C2SHitlSteeringInput.class, id++)
+                .encoder(C2SHitlSteeringInput::encode)
+                .decoder(C2SHitlSteeringInput::decode)
+                .consumerMainThread(C2SHitlSteeringInput::handle)
                 .add();
-        CHANNEL.messageBuilder(C2STVMissileExit.class, id++)
-                .encoder(C2STVMissileExit::encode)
-                .decoder(C2STVMissileExit::decode)
-                .consumerMainThread(C2STVMissileExit::handle)
+        CHANNEL.messageBuilder(C2SHitlDesignate.class, id++)
+                .encoder(C2SHitlDesignate::encode)
+                .decoder(C2SHitlDesignate::decode)
+                .consumerMainThread(C2SHitlDesignate::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SExitHitlView.class, id++)
+                .encoder(C2SExitHitlView::encode)
+                .decoder(C2SExitHitlView::decode)
+                .consumerMainThread(C2SExitHitlView::handle)
                 .add();
         CHANNEL.messageBuilder(C2SSetAirburstRange.class, id++)
                 .encoder(C2SSetAirburstRange::encode)
@@ -51,6 +56,11 @@ public class RVP_Network {
                 .encoder(S2CBulletVehicleHitDebug::encode)
                 .decoder(S2CBulletVehicleHitDebug::decode)
                 .consumerMainThread(S2CBulletVehicleHitDebug::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SSaclosDesignation.class, id++)
+                .encoder(C2SSaclosDesignation::encode)
+                .decoder(C2SSaclosDesignation::decode)
+                .consumerMainThread(C2SSaclosDesignation::handle)
                 .add();
     }
 }

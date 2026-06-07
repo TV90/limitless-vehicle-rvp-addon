@@ -1,0 +1,25 @@
+{
+  "name": "f16v_controller",
+  "script": "rvp:f16v",
+  "parameters": {},
+  "switchable_animations": {
+    "landing_gear": {
+      "part_id": "landing_gear",
+      "animation": "landing_gear"
+    }
+  },
+  "state_machines": {},
+  "graph": {
+    "type": "merge",
+    "inputs": [
+      {
+        "type": "switchable_animation",
+        "ref": "landing_gear"
+      },
+      {
+        "type": "script",
+        "function": "updateBones"
+      }
+    ]
+  }
+}

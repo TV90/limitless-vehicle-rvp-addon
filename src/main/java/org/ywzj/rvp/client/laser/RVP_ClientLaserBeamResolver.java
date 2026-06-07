@@ -46,7 +46,7 @@ public final class RVP_ClientLaserBeamResolver {
         RVP_WeaponData data = laserWeapon.getData();
         WeaponUnit aimUnit = RVP_LaserWeapons.aimUnit(laserWeapon);
         AimContext aim = RVP_WeaponAimInterpolation.aimContext(aimUnit, vehicle, partialTick);
-        float range = Math.max(data.getLaserRange(), data.getSeekerData().getRange());
+        float range = data.getLaserRange();
 
         LivingEntity shooter = null;
         int operatorId = RVP_ClientLaserState.operatorIdOf(active);

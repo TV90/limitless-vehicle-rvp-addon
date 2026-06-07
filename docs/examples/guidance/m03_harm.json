@@ -1,0 +1,64 @@
+{
+  "type": "rvp:missile",
+  "name": "M03 HARM 反辐射+GPS备份",
+  "require_lock": false,
+  "fire_data": { "spread": 0.04 },
+  "projectile_data": { "velocity": 2.8, "constant_speed": true, "max_speed": 3.6 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 3.5 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 7 },
+        "steering_data": { "rigidity_time": 6, "turning_factor": 0.2, "max_degree_of_missile": 38 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "arm_search",
+        "activation": { "start_tick": 8, "max_target_distance": 6000, "require_target": true },
+        "seeker": { "fov": 60, "range": 900, "scan_interval_tick": 2 },
+        "steering_data": { "turning_factor": 0.4, "max_degree_of_missile": 65 },
+        "sources": [{
+          "type": "ARM",
+          "priority": 100,
+          "composite_mode": "primary",
+          "params": {
+            "scan_interval_tick": 2,
+            "memory_tick": 120,
+            "radiation_pulse_memory_tick": 25,
+            "reacquire": true,
+            "locked_bonus": 0.5
+          }
+        }]
+      },
+      {
+        "name": "arm_attack",
+        "composite_weight": 1.5,
+        "activation": { "max_target_distance": 1200, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 45, "range": 1200, "home_on_jam": true },
+        "steering_data": { "turning_factor": 0.55, "max_degree_of_missile": 78, "predict_target_pos": true },
+        "sources": [{
+          "type": "ARM",
+          "priority": 100,
+          "composite_mode": "primary",
+          "params": {
+            "scan_interval_tick": 2,
+            "memory_tick": 120,
+            "radiation_pulse_memory_tick": 25,
+            "reacquire": true,
+            "locked_bonus": 0.5
+          }
+        }]
+      },
+      {
+        "name": "gps_divert",
+        "activation": { "start_tick": 25, "max_target_distance": 4000, "require_target": true },
+        "steering_data": { "turning_factor": 0.25, "max_degree_of_missile": 48 },
+        "sources": [{ "type": "GPS", "priority": 100, "composite_mode": "primary", "params": { "use_target_pos": true } }]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 140, "radius": 6 } },
+  "collision_data": { "direct_damage": 70 }
+}

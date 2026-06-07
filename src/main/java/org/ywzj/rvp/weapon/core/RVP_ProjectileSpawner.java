@@ -89,7 +89,7 @@ public final class RVP_ProjectileSpawner {
         GPSTarget gps = GPSTargetManager.get(shooter);
         if (gps != null
                 && gps.dimension.equals(level.dimension().location())
-                && (data.usesGuidanceType(RVP_EnumGuidanceType.GPS) || data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS))) {
+                && data.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
             projectile.setTargetPos(gps.pos);
         } else {
             Vec3 impact = RVP_AimContexts.impactPoint(aim);

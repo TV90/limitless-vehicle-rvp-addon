@@ -1,0 +1,64 @@
+{
+  "type": "rvp:missile",
+  "name": "M08 YJ-83 反舰 远距SARH+掠海+双模末段",
+  "require_lock": true,
+  "fire_data": { "spread": 0.025 },
+  "projectile_data": { "velocity": 2.0, "constant_speed": true, "max_speed": 2.9 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 4.5 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 22 },
+        "steering_data": { "rigidity_time": 16, "turning_factor": 0.16, "max_degree_of_missile": 34 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "gps_approach",
+        "activation": { "start_tick": 23, "max_target_distance": 7000, "require_target": true },
+        "steering_data": { "turning_factor": 0.24, "max_degree_of_missile": 46 },
+        "sources": [{ "type": "GPS", "priority": 100, "composite_mode": "blend", "weight": 0.7 }]
+      },
+      {
+        "name": "sarh_cruise",
+        "composite_weight": 1.0,
+        "activation": {
+          "start_tick": 40,
+          "min_target_distance": 300,
+          "max_target_distance": 4000,
+          "require_illumination": true,
+          "require_target": true
+        },
+        "seeker": { "fov": 34, "range": 4200, "scan_interval_tick": 7 },
+        "steering_data": { "turning_factor": 0.33, "max_degree_of_missile": 54 },
+        "sources": [{ "type": "SARH", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "sea_skim",
+        "composite_weight": 0.35,
+        "activation": { "max_altitude_agl": 18, "start_tick": 50 },
+        "steering_data": { "turning_factor": 0.28, "max_degree_of_missile": 42 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "blend", "weight": 0.45, "params": { "terminal_dive_angle": 4 } }]
+      },
+      {
+        "name": "arh_penetration",
+        "composite_weight": 1.3,
+        "activation": { "max_target_distance": 220, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 24, "range": 240, "scan_interval_tick": 2, "jam_resistance": 0.45 },
+        "steering_data": { "turning_factor": 0.48, "max_degree_of_missile": 70 },
+        "sources": [{ "type": "ARH", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "ir_endgame",
+        "composite_weight": 1.0,
+        "activation": { "max_target_distance": 50, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 16, "range": 55, "scan_interval_tick": 1 },
+        "steering_data": { "turning_factor": 0.66, "max_degree_of_missile": 88 },
+        "sources": [{ "type": "IR", "priority": 100, "composite_mode": "primary", "params": { "vehicle_only": true } }]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 250, "radius": 9 } },
+  "collision_data": { "direct_damage": 110 }
+}

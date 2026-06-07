@@ -1,0 +1,81 @@
+{
+  "type": "rvp:machinegun",
+  "name": "30mm 低速榴弹",
+  "shoot_interval": 100,
+  "max_capacity": 60,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_auto_cannon"
+  },
+  "fire_data": {
+    "spread": 0.4,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 5,
+    "gravity": -0.014,
+    "drag": 0.015,
+    "rotate_to_motion": true
+  },
+  "fuse_data": {},
+  "collision_data": {
+    "direct_damage": 1000,
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "segmented",
+        "segments": [[100, 0.9], [200, 0.8]]
+      },
+      {
+        "domain": "angle",
+        "type": "constant",
+        "start_distance": 50,
+        "end_distance": 60,
+        "start_factor": 0.9
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "curve",
+        "start_distance": 70,
+        "end_distance": 80,
+        "start_factor": 0.8,
+        "end_factor": 0.5,
+        "power": 2
+      }
+    ],
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "penetration_damage_multiplier": 0.9,
+    "penetration_speed_multiplier": 0.9,
+    "bounce": 2,
+    "bounce_strength": 0.4,
+    "bounce_fuse_tick": 40,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 30,
+    "tracer_r": 1.0,
+    "tracer_g": 0.35,
+    "tracer_b": 0.05
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 15,
+      "radius": 2.5,
+      "destroy_block": false
+    }
+  }
+}

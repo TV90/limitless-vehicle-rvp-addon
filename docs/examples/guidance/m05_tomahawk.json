@@ -1,0 +1,57 @@
+{
+  "type": "rvp:missile",
+  "name": "M05 战斧 巡航+地形跟随+末段红外",
+  "require_lock": true,
+  "fire_data": { "spread": 0.02 },
+  "projectile_data": { "velocity": 1.5, "constant_speed": true, "max_speed": 2.2 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 3.5 },
+  "guidance_data": {
+    "phase_resolve_policy": "highest_specificity",
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": { "start_tick": 0, "end_tick": 34 },
+        "steering_data": { "rigidity_time": 20, "turning_factor": 0.14, "max_degree_of_missile": 32 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "gps_transonic",
+        "composite_weight": 1.0,
+        "activation": { "start_tick": 35, "max_target_distance": 8000, "require_target": true },
+        "steering_data": { "turning_factor": 0.26, "max_degree_of_missile": 48, "predict_target_pos": true },
+        "sources": [
+          { "type": "GPS", "priority": 100, "composite_mode": "blend", "weight": 0.8 },
+          { "type": "IOG", "priority": 40, "composite_mode": "blend", "weight": 0.2 }
+        ]
+      },
+      {
+        "name": "terrain_follow",
+        "composite_weight": 0.5,
+        "activation": { "max_altitude_agl": 35, "start_tick": 60 },
+        "steering_data": { "turning_factor": 0.22, "max_degree_of_missile": 38 },
+        "sources": [{ "type": "IOG", "priority": 100, "composite_mode": "blend", "weight": 0.5, "params": { "terminal_dive_angle": 3 } }]
+      },
+      {
+        "name": "gps_terminal_band",
+        "activation": {
+          "min_target_distance": 500,
+          "max_target_distance": 2000,
+          "start_tick": 100,
+          "require_target": true
+        },
+        "steering_data": { "turning_factor": 0.3, "max_degree_of_missile": 52 },
+        "sources": [{ "type": "GPS", "priority": 100, "composite_mode": "primary" }]
+      },
+      {
+        "name": "ir_brief",
+        "composite_weight": 1.3,
+        "activation": { "max_target_distance": 120, "require_entity_target": true, "enter_once": true },
+        "seeker": { "fov": 24, "range": 130, "scan_interval_tick": 1 },
+        "steering_data": { "turning_factor": 0.58, "max_degree_of_missile": 76 },
+        "sources": [{ "type": "IR", "priority": 100, "composite_mode": "primary", "params": { "vehicle_only": false } }]
+      }
+    ]
+  },
+  "detonate_data": { "explosion_data": { "explode": true, "damage": 220, "radius": 8 } },
+  "collision_data": { "direct_damage": 85 }
+}

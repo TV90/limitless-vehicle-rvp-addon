@@ -8,6 +8,8 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 
 /**
@@ -38,6 +40,9 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
 
     @Override
     public boolean shouldRender(T entity, Frustum camera, double camX, double camY, double camZ) {
+        if (entity instanceof RVP_MissileEntity && RVP_ClientHitlState.shouldHideActiveMissileVfx(entity)) {
+            return false;
+        }
         return true;
     }
 

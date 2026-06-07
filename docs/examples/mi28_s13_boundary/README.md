@@ -1,18 +1,20 @@
-# Mi-28 S-13 子母弹边界测试 — 示例 JSON
+# Mi-28 S13 边界测试挂架（人在回路 TV 弹）
 
-本目录为 **可纳入 Git** 的武器数据副本；开发时复制到载具包：
+10 枚测试弹均开启 `guidance_data.human_in_the_loop`，发射后自动进入弹载视角；导弹销毁或右键退出后恢复原先观瞄视角。
 
-`limitless-vehicle-rvp-addon/run/client_1/limitless_vehicle/rvp/data/rvp/weapons/`
+| 挂架 | 名称 | 底层制导 | HITL 操控 |
+|------|------|----------|-----------|
+| t01 | ARH+人在回路 | ARH | VIEW（仅跟弹） |
+| t02 | IR+人在回路 | IR | VIEW |
+| t03 | SARH+人在回路 | SARH | VIEW |
+| t04 | MCLOS+人在回路 | MCLOS | MOUSE（鼠标驾控，战地3/4） |
+| t05 | ARM+人在回路 | ARM | VIEW |
+| t06 | 电视驾控弹 | MCLOS | MOUSE |
+| t07 | GPS+人在回路 | GPS | VIEW |
+| t08 | SACLOS+人在回路 | SACLOS | DESIGNATE（左键点选，战地2） |
+| t09 | IOG+人在回路 | IOG | VIEW |
+| t10 | GPS+末段IR | GPS→IR | VIEW |
 
-说明与预期结果见 [子母弹系统与Mi28边界测试.md](../../子母弹系统与Mi28边界测试.md)。
+**操作**：`4` 切换画面模式；右键退出弹载视角；T08 左键在画面上点选目标。
 
-## 文件列表
-
-| 文件 | 资源 ID |
-| --- | --- |
-| `mi28_s13_t01_cluster.json` … `mi28_s13_t10_ground_disp.json` | `rvp:mi28_s13_t01_cluster` … `t10` |
-| `mi28_s13_bomblet_he.json` 等 | 子战斗部，勿单独挂载 |
-
-## 载具挂载片段
-
-在 `data/rvp/vehicles/mi28.json` → `sighting_system` → `weapons` 追加 `part_unit_id: "rocket"` 条目（见主文档第 3 节）。
+JSON 路径：`weapons/mi28_s13_t*.json`（已同步至 `run/client_1/limitless_vehicle/rvp/data/rvp/weapons/`）。

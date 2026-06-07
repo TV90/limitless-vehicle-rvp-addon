@@ -7,7 +7,7 @@ import net.minecraft.world.entity.Entity;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.shader.TVMissileVideoPostHandler;
-import org.ywzj.rvp.client.state.RVP_ClientTVMissileState;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
@@ -57,15 +57,15 @@ public class RVP_TVMissileDebug {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        int missileId = RVP_ClientTVMissileState.getActiveMissileId();
+        int missileId = RVP_ClientHitlState.getActiveMissileId();
         Entity e = mc.level == null ? null : mc.level.getEntity(missileId);
 
         int drawFbo = GlStateManager._getInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         int readFbo = GlStateManager._getInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
 
         LOGGER.info("[RVP][TVMissile][Dump] active={}, mode={}, missileId={}, missileClass={}, removed={}, cam={}, viewType={}, thermalImaging={}, crtActive={}, thermalActive={}, bwActive={}, drawFbo={}, readFbo={}, mainRTStencil={}",
-                RVP_ClientTVMissileState.isActive(),
-                RVP_ClientTVMissileState.getVideoMode(),
+                RVP_ClientHitlState.isActive(),
+                RVP_ClientHitlState.getVideoMode(),
                 missileId,
                 e == null ? "null" : e.getClass().getName(),
                 e != null && e.isRemoved(),

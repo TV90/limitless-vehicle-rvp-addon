@@ -8,9 +8,9 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.RVP_Network;
-import org.ywzj.rvp.network.S2CSetTVMissile;
+import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
@@ -148,7 +148,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         for (int i = 0; i < totalProjectiles; i++) {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, aim, lock, unit, chargeScale, 0f);
-            maybeEnterTV(data, shooter, projectile, i);
+            maybeEnterHitlView(data, shooter, projectile, i);
         }
     }
 
@@ -170,7 +170,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             AimContext pelletAim = canisterAim(aim, pelletIndex, gridCells, fire, centerOffset);
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, pelletAim, lock, unit, chargeScale, 0f, false);
-            maybeEnterTV(data, shooter, projectile, i);
+            maybeEnterHitlView(data, shooter, projectile, i);
         }
     }
 
@@ -218,11 +218,15 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         return out;
     }
 
-    private void maybeEnterTV(RVP_WeaponData data, LivingEntity shooter, RVP_BaseBullet projectile, int projectileIndex) {
-        if (projectile instanceof RVP_MissileEntity && projectileIndex == 0 && data.usesGuidanceType(RVP_EnumGuidanceType.TV)
-                && !getVehicle().level().isClientSide()
-                && shooter instanceof net.minecraft.server.level.ServerPlayer player) {
-            RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), S2CSetTVMissile.set(projectile.getId()));
+    private void maybeEnterHitlView(RVP_WeaponData data, LivingEntity shooter, RVP_BaseBullet projectile, int projectileIndex) {
+        if (!(projectile instanceof RVP_MissileEntity) || projectileIndex != 0 || !data.hasHumanInTheLoop()) {
+            return;
         }
+        if (getVehicle().level().isClientSide() || !(shooter instanceof net.minecraft.server.level.ServerPlayer player)) {
+            return;
+        }
+        RVP_EnumHitlControlMode mode = data.getGuidanceData().getHumanInTheLoop().resolveControlMode(data.getGuidanceData());
+        RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                S2CEnterHitlView.of(projectile.getId(), mode));
     }
 }

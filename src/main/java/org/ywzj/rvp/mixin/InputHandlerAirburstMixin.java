@@ -4,6 +4,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.ywzj.rvp.client.state.RVP_AirburstInput;
+import org.ywzj.rvp.client.state.RVP_GpsLockInput;
+import org.ywzj.rvp.client.state.RVP_SaclosLockInput;
 import org.ywzj.vehicle.vehicle.control.InputHandler;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -22,8 +24,15 @@ public class InputHandlerAirburstMixin {
             )
     )
     private static void ywzj_rvp$redirectFireControlLock(WeaponUnit weaponUnit, int key, int scanCode, int action) {
-        if (!RVP_AirburstInput.tryMeasureOnLockKey(weaponUnit)) {
-            weaponUnit.fireControlLock();
+        if (RVP_SaclosLockInput.tryConsumeLockKey(weaponUnit)) {
+            return;
         }
+        if (RVP_AirburstInput.tryMeasureOnLockKey(weaponUnit)) {
+            return;
+        }
+        if (RVP_GpsLockInput.trySetOnLockKey(weaponUnit)) {
+            return;
+        }
+        weaponUnit.fireControlLock();
     }
 }

@@ -8,6 +8,8 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -18,15 +20,56 @@ public final class RVP_GuidanceMath {
 
     private RVP_GuidanceMath() {}
 
+    public static boolean applyIntent(RVP_BaseBullet projectile, RVP_GuidanceIntent intent, RVP_GuidanceEffectiveConfig config) {
+        if (!intent.success()) {
+            return false;
+        }
+        if (intent.directMotion()) {
+            if (intent.aimPoint() != null) {
+                if (intent.sourceType() == RVP_EnumGuidanceType.MCLOS) {
+                    Vec3 toTarget = intent.aimPoint().subtract(projectile.position());
+                    RVP_WireGuidanceSteering.applyFromDirection(
+                            projectile, toTarget, config.steering().getTurningFactor());
+                    projectile.rememberGuidancePos(intent.aimPoint());
+                    projectile.setTargetPos(intent.aimPoint());
+                    return true;
+                }
+                if (intent.sourceType() == RVP_EnumGuidanceType.SACLOS) {
+                    return guidanceToPos(projectile, intent.aimPoint(), config);
+                }
+                return directToPos(projectile, intent.aimPoint(), config);
+            }
+            if (intent.aimEntity() != null) {
+                return directToEntity(projectile, intent.aimEntity(), config);
+            }
+            return false;
+        }
+        if (intent.aimEntity() != null) {
+            return guidanceToTarget(projectile, intent.aimEntity(), config);
+        }
+        if (intent.aimPoint() != null) {
+            return guidanceToPos(projectile, intent.aimPoint(), config);
+        }
+        return false;
+    }
+
     public static boolean guidanceToPos(RVP_BaseBullet projectile, Vec3 target) {
         RVP_WeaponData data = projectile.getRvpData();
-        if (data == null || target == null) {
+        if (data == null) {
             return false;
         }
-        if (data.getTickEndHoming() > 0 && projectile.tickCount > data.getTickEndHoming()) {
-            return false;
-        }
+        RVP_GuidanceEffectiveConfig config = new RVP_GuidanceEffectiveConfig(
+                data.getGuidanceSteeringData(),
+                data.resolveLaunchSeeker(),
+                RVP_EnumGuidanceType.NONE
+        );
+        return guidanceToPos(projectile, target, config);
+    }
 
+    public static boolean guidanceToPos(RVP_BaseBullet projectile, Vec3 target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null || config == null) {
+            return false;
+        }
         Vec3 toTarget = target.subtract(projectile.position());
         double distance = toTarget.length();
         if (distance < 1.0E-6) {
@@ -43,11 +86,14 @@ public final class RVP_GuidanceMath {
             missileDir.set((float) desired.x, (float) desired.y, (float) desired.z);
         }
         double angle = Math.abs(missileDir.angle(targetDir));
-        if (angle > Math.toRadians(data.getMaxDegreeOfMissile())) {
+        if (angle > Math.toRadians(config.steering().getMaxDegreeOfMissile())) {
             return false;
         }
 
-        double turning = data.getTurningFactor();
+        double turning = config.steering().getTurningFactor();
+        if (config.steering().getTickEndHoming() > 0 && projectile.life <= config.steering().getTickEndHoming()) {
+            turning = Math.min(1.0, turning * 1.5);
+        }
         Vec3 next = new Vec3(
                 velocity.x + (desired.x - velocity.x) * turning,
                 velocity.y + (desired.y - velocity.y) * turning,
@@ -59,7 +105,15 @@ public final class RVP_GuidanceMath {
 
     public static boolean directToPos(RVP_BaseBullet projectile, Vec3 target) {
         RVP_WeaponData data = projectile.getRvpData();
-        if (data == null || target == null) {
+        if (data == null) {
+            return false;
+        }
+        return directToPos(projectile, target, new RVP_GuidanceEffectiveConfig(
+                data.getGuidanceSteeringData(), data.resolveLaunchSeeker(), RVP_EnumGuidanceType.NONE));
+    }
+
+    public static boolean directToPos(RVP_BaseBullet projectile, Vec3 target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null) {
             return false;
         }
         Vec3 toTarget = target.subtract(projectile.position());
@@ -72,25 +126,45 @@ public final class RVP_GuidanceMath {
         return true;
     }
 
+    private static boolean directToEntity(RVP_BaseBullet projectile, Entity target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null || !target.isAlive()) {
+            return false;
+        }
+        return directToPos(projectile, target.getBoundingBox().getCenter(), config);
+    }
+
     public static boolean guidanceToTarget(RVP_BaseBullet projectile, Entity target) {
         RVP_WeaponData data = projectile.getRvpData();
-        if (data == null || target == null || !target.isAlive()) {
+        if (data == null) {
+            return false;
+        }
+        RVP_EnumGuidanceType type = data.getGuidanceData().getStages().stream()
+                .flatMap(stage -> stage.getSources().stream())
+                .map(RVP_GuidanceData.Source::getType)
+                .findFirst()
+                .orElse(RVP_EnumGuidanceType.NONE);
+        return guidanceToTarget(projectile, target, new RVP_GuidanceEffectiveConfig(
+                data.getGuidanceSteeringData(), data.resolveLaunchSeeker(), type));
+    }
+
+    public static boolean guidanceToTarget(RVP_BaseBullet projectile, Entity target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null || !target.isAlive()) {
             return false;
         }
 
         Vec3 targetPos = target.position().add(0, target.getBbHeight() * 0.5, 0);
-        if (data.isPredictTargetPos()) {
+        if (config.steering().isPredictTargetPos()) {
             double speed = Math.max(projectile.getDeltaMovement().length(), projectile.getFlightSpeed());
             double time = speed <= 1.0E-4 ? 0 : projectile.position().distanceTo(targetPos) / speed;
             targetPos = targetPos.add(target.getDeltaMovement().scale(time));
         }
 
-        if (data.isSemiActiveRadar()) {
+        if (config.activeSourceType() == RVP_EnumGuidanceType.SARH) {
             Entity viewer = projectile.getShooterVehicle() != null ? projectile.getShooterVehicle() : projectile.getOwner();
             if (viewer != null) {
                 double semiAngle = angleFromViewer(viewer, targetPos);
-                if (semiAngle > data.getMaxLockOnAngle()
-                        || projectile.position().distanceTo(targetPos) > data.getMaxLockOnRange()) {
+                RVP_GuidanceSeekerData seeker = config.seeker();
+                if (semiAngle > seeker.getFov() || projectile.position().distanceTo(targetPos) > seeker.getRange()) {
                     projectile.clearTarget();
                     return false;
                 }
@@ -98,16 +172,24 @@ public final class RVP_GuidanceMath {
         }
 
         projectile.rememberGuidancePos(targetPos);
-        return guidanceToPos(projectile, targetPos);
+        return guidanceToPos(projectile, targetPos, config);
     }
 
     public static boolean isWithinSeekerCone(RVP_BaseBullet projectile, Entity target, RVP_WeaponData data) {
-        if (target == null || data == null) {
+        if (data == null) {
             return false;
         }
+        return isWithinSeekerCone(projectile, target, new RVP_GuidanceEffectiveConfig(
+                data.getGuidanceSteeringData(), data.resolveLaunchSeeker(), RVP_EnumGuidanceType.NONE));
+    }
+
+    public static boolean isWithinSeekerCone(RVP_BaseBullet projectile, Entity target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null || config == null) {
+            return false;
+        }
+        RVP_GuidanceSeekerData seeker = config.seeker();
         Vec3 targetCenter = target.getBoundingBox().getCenter();
-        double range = Math.max(data.getMaxLockOnRange(), data.getSeekerData().getRange());
-        if (projectile.position().distanceToSqr(targetCenter) > range * range) {
+        if (projectile.position().distanceToSqr(targetCenter) > seeker.getRange() * seeker.getRange()) {
             return false;
         }
         Vec3 toTarget = targetCenter.subtract(projectile.position());
@@ -117,7 +199,7 @@ public final class RVP_GuidanceMath {
         }
         double dot = Mth.clamp(look.dot(toTarget.normalize()), -1.0, 1.0);
         double angle = Math.toDegrees(Math.acos(dot));
-        return angle <= Math.max(data.getMaxLockOnAngle(), data.getSeekerData().getFov());
+        return angle <= seeker.getFov();
     }
 
     public static boolean isOnGround(Entity entity, float minHeight) {
@@ -129,10 +211,6 @@ public final class RVP_GuidanceMath {
         return entity.getY() - groundY < minHeight;
     }
 
-    /**
-     * MCH {@code MCH_WeaponGuidanceSystem#isEntityOnGround(Entity, int)} for proximity fuse:
-     * {@code onGround} or any non-air block within {@code blocksBelow} under entity feet.
-     */
     public static boolean isEntityNearGroundBlocks(Entity entity, int blocksBelow) {
         if (entity == null || !entity.isAlive()) {
             return false;

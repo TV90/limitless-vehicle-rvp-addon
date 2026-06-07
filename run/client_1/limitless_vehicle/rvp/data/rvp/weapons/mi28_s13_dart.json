@@ -1,0 +1,40 @@
+{
+  "type": "rvp:rocket",
+  "name": "S-13 杆式子弹头",
+  "shoot_interval": 200,
+  "max_capacity": 1,
+  "reload": { "time": 1, "ammo": "ywzj_vehicle:ammo_rocket" },
+  "fire_data": { "spread": 0, "fire_mode": "FULL_AUTO" },
+  "projectile_data": {
+    "velocity": 4.2,
+    "gravity": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 4.6
+  },
+  "fuse_data": { "detonate_on_life_end": false },
+  "guidance_data": [
+    {
+      "name": "unguided",
+      "start_tick": 0,
+      "sources": [{ "type": "NONE", "priority": 100 }]
+    }
+  ],
+  "effects_data": {
+    "trajectory_particle": "minecraft:crit",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 22,
+      "radius": 1.6,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "direct_damage": 35,
+    "bounce": 0
+  }
+}

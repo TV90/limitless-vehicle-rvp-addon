@@ -1,0 +1,68 @@
+{
+  "type": "rvp:missile",
+  "name": "KH-39 (TV)",
+  "headshot_multiplier": 1.5,
+  "recoil": 0.1,
+  "shoot_interval": 1000,
+  "max_capacity": 2,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 90,
+  "y_rot_min": -90,
+  "max_g": 80,
+  "reference_speed": 0.15,
+  "require_lock": false,
+  "guidance_data": [
+    {
+      "name": "tv_command",
+      "start_tick": 0,
+      "sources": [
+        {
+          "type": "TV",
+          "priority": 100,
+          "take_over_motion": true
+        }
+      ]
+    }
+  ],
+  "seeker_data": {
+    "range": 2000,
+    "fov": 35
+  },
+  "projectile_data": {
+    "has_rocket_engine": true,
+    "velocity": 2.5,
+    "rotate_to_motion": true,
+    "max_speed": 3.5,
+    "mass": 0.01,
+    "thrust": 0.0012,
+    "motor_burn_time": 600,
+    "ignition_delay_tick": 0,
+    "drag_coefficient": 0.005
+  },
+  "tv_missile_data": {
+    "control_range": 2000,
+    "timeout_tick": 400,
+    "video_modes": [
+      "BW",
+      "COLOR",
+      "THERMAL"
+    ]
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 100,
+      "radius": 8,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 1000
+  },
+  "fuse_data": {}
+}

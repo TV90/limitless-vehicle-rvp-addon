@@ -2,41 +2,50 @@ package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.ywzj.rvp.all.RVP_Entities;
-import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
+import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
+import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.data.RVP_HumanInTheLoopData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.VectorUtil;
 
 /**
  * Generic guided missile entity for {@code rvp:missile}.
+ *
+ * <p>MCLOS wire / TV+MCLOS 走分段制导（{@link org.ywzj.rvp.guidance.RVP_GuidanceController} +
+ * {@code take_over_motion}）。HITL MOUSE 鼠标指令写入 {@code hitlInputYaw/Pitch}，
+ * 弹体 {@code hitlSteeringYaw/Pitch} 直接跟随鼠标指令航向参与制导。</p>
  */
 public class RVP_MissileEntity extends RVP_BaseBullet {
 
-    private static final float TV_MAX_TURN_DEG_PER_TICK = 3.0f;
-    public static final int TV_MODE_COLOR = 1;
-    public static final int TV_MODE_BW = 1 << 1;
-    public static final int TV_MODE_THERMAL = 1 << 2;
-    public static final int TV_MODE_ALL = TV_MODE_COLOR | TV_MODE_BW | TV_MODE_THERMAL;
+    public static final int HITL_MODE_COLOR = RVP_TvVideoModeMask.COLOR;
+    public static final int HITL_MODE_BW = RVP_TvVideoModeMask.BW;
+    public static final int HITL_MODE_THERMAL = RVP_TvVideoModeMask.THERMAL;
+    public static final int HITL_MODE_ALL = RVP_TvVideoModeMask.ALL;
 
-    private float tvControlRange = 2000f;
-    private int tvTimeoutTick = 200;
-    private int tvLife = 200;
-    private int tvVideoModeMask = TV_MODE_ALL;
-    private int tvDefaultVideoMode = TV_MODE_COLOR;
-    private boolean tvEnabled = true;
-    private float tvInputYaw;
-    private float tvInputPitch;
-    private int tvInputSeq = Integer.MIN_VALUE;
-    private int tvLastInputTick = Integer.MIN_VALUE;
+    private float hitlControlRange = 2000f;
+    private int hitlTimeoutTick = 200;
+    private int hitlLife = 200;
+    private int hitlVideoModeMask = HITL_MODE_ALL;
+    private int hitlDefaultVideoMode = HITL_MODE_COLOR;
+    private RVP_EnumHitlControlMode hitlControlMode = RVP_EnumHitlControlMode.VIEW;
+    private boolean hitlEnabled;
+    private float hitlMaxTurnDegPerTick = RVP_HitlSteeringMath.DEFAULT_MAX_TURN_DEG_PER_TICK;
+    private float hitlMaxLookOffsetDeg = 20f;
+    private float hitlInputYaw;
+    private float hitlInputPitch;
+    private float hitlSteeringYaw;
+    private float hitlSteeringPitch;
+    private int hitlInputSeq = Integer.MIN_VALUE;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -54,109 +63,184 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        if (data != null && data.usesGuidanceType(RVP_EnumGuidanceType.TV)) {
-            this.tvControlRange = data.getTVMissileControlRange();
-            this.tvTimeoutTick = data.getTVMissileTimeoutTick();
-            this.tvLife = this.tvTimeoutTick;
-            this.tvVideoModeMask = data.getTVMissileVideoModeMask();
-            this.tvDefaultVideoMode = data.getDefaultTVMissileVideoMode();
-            this.tvEnabled = true;
-            this.tvInputYaw = aim.yRot();
-            this.tvInputPitch = aim.xRot();
+        if (data == null || !data.hasHumanInTheLoop()) {
+            return;
         }
+        RVP_HumanInTheLoopData hitl = data.getGuidanceData().getHumanInTheLoop();
+        this.hitlControlRange = hitl.controlRange(2000f);
+        this.hitlTimeoutTick = hitl.timeoutTick(200);
+        this.hitlLife = this.hitlTimeoutTick;
+        this.hitlVideoModeMask = hitl.videoModeMask();
+        this.hitlDefaultVideoMode = hitl.defaultVideoMode();
+        this.hitlControlMode = hitl.resolveControlMode(data.getGuidanceData());
+        this.hitlMaxTurnDegPerTick = hitl.maxTurnDegPerTick();
+        this.hitlMaxLookOffsetDeg = hitl.maxLookOffsetDeg(RVP_HitlSeekerUtil.saclosSeekerHalfFov(data));
+        this.hitlEnabled = true;
+        this.hitlInputYaw = aim.yRot();
+        this.hitlInputPitch = aim.xRot();
+        this.hitlSteeringYaw = aim.yRot();
+        this.hitlSteeringPitch = aim.xRot();
     }
 
     @Override
     protected void tickGuidance() {
-        tickTVState();
+        tickHitlSession();
+        tickHitlMouseInertia();
         super.tickGuidance();
     }
 
-    private void tickTVState() {
-        if (rvpData == null || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.TV)) {
+    @Override
+    protected void tickMotion() {
+        if (rvp$guidanceWireDirectApplied()) {
+            RVP_ProjectileMotion.tickHitlTvMove(this);
             return;
         }
-        if (!tvEnabled || tvLife <= 0) {
-            clearTarget();
+        super.tickMotion();
+    }
+
+    private void tickHitlSession() {
+        if (rvpData == null || !rvpData.hasHumanInTheLoop() || !hitlEnabled) {
             return;
         }
         LivingEntity controller = getOwner() instanceof LivingEntity living ? living : null;
         if (controller == null || !controller.isAlive() || controller.isSpectator()) {
-            clearTarget();
+            hitlEnabled = false;
             return;
         }
-        double maxRange = Math.max(tvControlRange, 1.0);
+        if (hitlLife <= 0) {
+            return;
+        }
+        hitlLife--;
+        double maxRange = Math.max(hitlControlRange, 1.0);
         if (controller.distanceToSqr(this) > maxRange * maxRange) {
-            clearTarget();
             return;
         }
-        tvLife--;
-        float desiredYaw = this.getYRot();
-        float desiredPitch = this.getXRot();
-        if (tvLastInputTick != Integer.MIN_VALUE && tickCount - tvLastInputTick <= 40) {
-            desiredYaw = tvInputYaw;
-            desiredPitch = tvInputPitch;
+    }
+
+    private void tickHitlMouseInertia() {
+        if (!rvp$isHitlMouseSteering() || !rvp$isHitlActive()) {
+            return;
         }
-        float nextPitch = getXRot() + Mth.clamp(Mth.wrapDegrees(desiredPitch - getXRot()), -TV_MAX_TURN_DEG_PER_TICK, TV_MAX_TURN_DEG_PER_TICK);
-        float nextYaw = getYRot() + Mth.clamp(Mth.wrapDegrees(desiredYaw - getYRot()), -TV_MAX_TURN_DEG_PER_TICK, TV_MAX_TURN_DEG_PER_TICK);
-        setXRot(Mth.clamp(nextPitch, -89.9f, 89.9f));
-        setYRot(Mth.wrapDegrees(nextYaw));
-        xRotO = getXRot();
-        yRotO = getYRot();
-        setTargetPos(position().add(rvp$getTVLookDirection().scale(64.0)));
+        if (!rvp$isPastRigidityTime()) {
+            hitlSteeringYaw = getYRot();
+            hitlSteeringPitch = getXRot();
+            return;
+        }
+        hitlSteeringYaw = hitlInputYaw;
+        hitlSteeringPitch = hitlInputPitch;
+    }
+
+    public RVP_EnumHitlControlMode rvp$getHitlControlMode() {
+        return hitlControlMode;
+    }
+
+    public int rvp$getHitlVideoModeMask() {
+        return hitlVideoModeMask;
+    }
+
+    public int rvp$getDefaultHitlVideoMode() {
+        return hitlDefaultVideoMode;
+    }
+
+    public float rvp$getHitlInputYaw() {
+        return hitlInputYaw;
+    }
+
+    public float rvp$getHitlInputPitch() {
+        return hitlInputPitch;
+    }
+
+    public float rvp$getHitlSteeringYaw() {
+        return hitlSteeringYaw;
+    }
+
+    public float rvp$getHitlSteeringPitch() {
+        return hitlSteeringPitch;
+    }
+
+    public float rvp$getHitlMaxTurnDegPerTick() {
+        return hitlMaxTurnDegPerTick;
+    }
+
+    public float rvp$getHitlMaxLookOffsetDeg() {
+        return hitlMaxLookOffsetDeg;
+    }
+
+    public void rvp$setHitlSteeringInput(float yaw, float pitch, int seq) {
+        if (hitlControlMode != RVP_EnumHitlControlMode.MOUSE || seq <= hitlInputSeq) {
+            return;
+        }
+        this.hitlInputYaw = yaw;
+        this.hitlInputPitch = pitch;
+        this.hitlInputSeq = seq;
+    }
+
+    public void rvp$setHitlDesignatedTarget(Vec3 target) {
+        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
+            return;
+        }
+        setTargetPos(target);
         setTargetEntity(null);
     }
 
-    public int rvp$getTVMissileVideoModeMask() {
-        return tvVideoModeMask;
-    }
-
-    public int rvp$getDefaultTVMissileVideoMode() {
-        return tvDefaultVideoMode;
-    }
-
-    public void rvp$setTVMissileInput(float yaw, float pitch, int seq) {
-        if (seq < tvInputSeq) {
+    public void rvp$clearHitlDesignation() {
+        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) {
             return;
         }
-        this.tvInputYaw = yaw;
-        this.tvInputPitch = pitch;
-        this.tvInputSeq = seq;
-        this.tvLastInputTick = tickCount;
-    }
-
-    public void rvp$exitTVMissile() {
-        this.tvEnabled = false;
         clearTarget();
     }
 
-    public Vec3 rvp$getTVLookDirection() {
-        return VectorUtil.rotToVec(getXRot(), getYRot()).normalize();
+    public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
+        if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
+            return;
+        }
+        setTargetEntity(target);
+        setTargetPos(target.getBoundingBox().getCenter());
     }
 
-    public boolean rvp$isTVGuidanceActive() {
-        return tvEnabled && tvLife > 0;
+    public void rvp$exitHitl() {
+        this.hitlEnabled = false;
+    }
+
+    public boolean rvp$isHitlActive() {
+        return hitlEnabled && hitlLife > 0;
+    }
+
+    public boolean rvp$isHitlMouseSteering() {
+        return hitlEnabled && hitlControlMode == RVP_EnumHitlControlMode.MOUSE;
     }
 
     @Override
     public void writeSpawnData(FriendlyByteBuf buffer) {
         super.writeSpawnData(buffer);
-        buffer.writeFloat(tvControlRange);
-        buffer.writeVarInt(tvTimeoutTick);
-        buffer.writeVarInt(tvLife);
-        buffer.writeVarInt(tvVideoModeMask);
-        buffer.writeVarInt(tvDefaultVideoMode);
-        buffer.writeBoolean(tvEnabled);
+        buffer.writeFloat(hitlControlRange);
+        buffer.writeVarInt(hitlTimeoutTick);
+        buffer.writeVarInt(hitlLife);
+        buffer.writeVarInt(hitlVideoModeMask);
+        buffer.writeVarInt(hitlDefaultVideoMode);
+        buffer.writeBoolean(hitlEnabled);
+        buffer.writeEnum(hitlControlMode);
+        buffer.writeFloat(hitlMaxTurnDegPerTick);
+        buffer.writeFloat(hitlMaxLookOffsetDeg);
     }
 
     @Override
     public void readSpawnData(FriendlyByteBuf buffer) {
         super.readSpawnData(buffer);
-        this.tvControlRange = buffer.readFloat();
-        this.tvTimeoutTick = buffer.readVarInt();
-        this.tvLife = buffer.readVarInt();
-        this.tvVideoModeMask = buffer.readVarInt();
-        this.tvDefaultVideoMode = buffer.readVarInt();
-        this.tvEnabled = buffer.readBoolean();
+        this.hitlControlRange = buffer.readFloat();
+        this.hitlTimeoutTick = buffer.readVarInt();
+        this.hitlLife = buffer.readVarInt();
+        this.hitlVideoModeMask = buffer.readVarInt();
+        this.hitlDefaultVideoMode = buffer.readVarInt();
+        this.hitlEnabled = buffer.readBoolean();
+        this.hitlControlMode = buffer.readEnum(RVP_EnumHitlControlMode.class);
+        if (buffer.readableBytes() >= Float.BYTES) {
+        this.hitlMaxTurnDegPerTick = buffer.readFloat();
+        this.hitlMaxLookOffsetDeg = buffer.readFloat();
+    }
+        this.hitlSteeringYaw = getYRot();
+        this.hitlSteeringPitch = getXRot();
+        this.hitlInputYaw = hitlSteeringYaw;
+        this.hitlInputPitch = hitlSteeringPitch;
     }
 }
