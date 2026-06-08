@@ -141,7 +141,9 @@
         "y_rot_min": -60
       },
       "scan_sector_angle": 90,
-      "max_scan_distance": 4096
+      "max_scan_distance": 4096,
+      "track_ground_targets": true,
+      "contact_hold_tick": 40
     },
     {
       "id": "seat",

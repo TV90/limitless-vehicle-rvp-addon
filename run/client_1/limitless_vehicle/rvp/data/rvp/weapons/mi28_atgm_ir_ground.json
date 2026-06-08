@@ -47,6 +47,9 @@
           "fov": 35,
           "range": 2048,
           "scan_interval_tick": 2,
+          "lock_acquire_tick": 40,
+          "lock_cooling_tick": 20,
+          "retain_lock_after_fire": false,
           "lock_min_height": 0,
           "dircm_resistance": 0.4
         },

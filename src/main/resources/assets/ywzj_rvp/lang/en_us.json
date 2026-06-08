@@ -2,6 +2,7 @@
   "key.category.ywzj_rvp": "YWZJ RVP",
   "key.ywzj_rvp.open_gps_panel.desc": "Open GPS Panel",
   "key.ywzj_rvp.weapon_test.desc": "RVP weapon data test overlay (F10)",
+  "key.ywzj_rvp.cycle_seeker_target.desc": "Cycle seeker lock target",
   "message.ywzj_rvp.weapon_test.on": "[RVP] Weapon test overlay: ON",
   "message.ywzj_rvp.weapon_test.off": "[RVP] Weapon test overlay: OFF",
   "overlay.ywzj_rvp.weapon_test.header": "[RVP Test] Current weapon",

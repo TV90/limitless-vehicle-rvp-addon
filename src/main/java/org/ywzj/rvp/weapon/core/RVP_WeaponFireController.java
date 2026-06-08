@@ -5,6 +5,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.vehicle.all.AllKeys;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
  * 按 {@link RVP_EnumFireMode} 驱动客户端是否发送开火包，以及服务端 spin / 轨道炮蓄力状态。
@@ -306,11 +307,20 @@ public final class RVP_WeaponFireController {
 
     @OnlyIn(Dist.CLIENT)
     private boolean isFireKeyDown() {
-        var unit = weapon.getWeaponUnit();
-        if (unit.getCurrentWeapon().orElse(null) == weapon) {
+        WeaponUnit mount = weapon.getWeaponUnit();
+        WeaponUnit operator = mount.getRootParentWeaponUnit();
+        if (operator != mount) {
+            if (operator.getCurrentWeapon().orElse(null) == weapon) {
+                return AllKeys.MAIN_WEAPON_SHOOT.isDown();
+            }
+            if (operator.getCurrentSecondaryWeapon().orElse(null) == weapon) {
+                return AllKeys.SECONDARY_WEAPON_SHOOT.isDown();
+            }
+        }
+        if (mount.getCurrentWeapon().orElse(null) == weapon) {
             return AllKeys.MAIN_WEAPON_SHOOT.isDown();
         }
-        if (unit.getCurrentSecondaryWeapon().orElse(null) == weapon) {
+        if (mount.getCurrentSecondaryWeapon().orElse(null) == weapon) {
             return AllKeys.SECONDARY_WEAPON_SHOOT.isDown();
         }
         return AllKeys.MAIN_WEAPON_SHOOT.isDown() || AllKeys.SECONDARY_WEAPON_SHOOT.isDown();

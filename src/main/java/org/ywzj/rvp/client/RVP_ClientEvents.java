@@ -27,6 +27,9 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
+import org.ywzj.rvp.client.seeker.RVP_ClientSeekerBridge;
+import org.ywzj.rvp.client.seeker.RVP_ClientSeekerController;
+import org.ywzj.rvp.weapon.seeker.RVP_SeekerWeaponUtil;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
@@ -86,6 +89,13 @@ public class RVP_ClientEvents {
         }
 
         RVP_ClientHitlState.tick(mc, player);
+        RVP_ClientSeekerController.tick();
+
+        if (mc.screen == null) {
+            while (RVP_Keys.CYCLE_SEEKER_TARGET.consumeClick()) {
+                RVP_ClientSeekerController.cycleTarget();
+            }
+        }
 
         ywzj_rvp$refreshVehicleMarkers(mc, player);
 
@@ -251,8 +261,14 @@ public class RVP_ClientEvents {
                 event.getWeapon(),
                 event.getVehicle().level().getGameTime(),
                 operatorId);
-        if (RVP_ClientSaclosState.isSaclosWeapon(event.getWeapon())) {
-            RVP_ClientSaclosState.onSaclosWeaponFired();
+        if (event.getWeapon() instanceof RVP_WeaponBase rvp) {
+            WeaponUnit unit = event.getWeapon().getWeaponUnit().getRootParentWeaponUnit();
+            if (RVP_ClientSaclosState.isSaclosWeapon(event.getWeapon())) {
+                RVP_ClientSaclosState.onSaclosWeaponFired();
+                RVP_ClientSeekerBridge.onWeaponFired(unit);
+            } else if (RVP_SeekerWeaponUtil.hasCockpitSeekerStage(rvp.getData())) {
+                RVP_ClientSeekerBridge.onWeaponFired(unit);
+            }
         }
     }
 }

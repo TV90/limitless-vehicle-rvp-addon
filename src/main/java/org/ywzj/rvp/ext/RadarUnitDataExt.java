@@ -5,4 +5,6 @@ public interface RadarUnitDataExt {
     int ywzj_rvp$getScanPeriodTick();
     boolean ywzj_rvp$isScanLineWhenLocked();
     int ywzj_rvp$getContactHoldTick();
+
+    boolean ywzj_rvp$isTrackGroundTargets();
 }

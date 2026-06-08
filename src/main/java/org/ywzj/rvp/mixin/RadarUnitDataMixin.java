@@ -24,6 +24,9 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Unique
     private int ywzj_rvp$contactHoldTick = 0;
 
+    @Unique
+    private boolean ywzj_rvp$trackGroundTargets = false;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/RadarUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(RadarUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof RadarUnitPojoExt ext) {
@@ -31,6 +34,7 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
             this.ywzj_rvp$scanPeriodTick = ext.ywzj_rvp$getScanPeriodTick();
             this.ywzj_rvp$scanLineWhenLocked = ext.ywzj_rvp$isScanLineWhenLocked();
             this.ywzj_rvp$contactHoldTick = ext.ywzj_rvp$getContactHoldTick();
+            this.ywzj_rvp$trackGroundTargets = ext.ywzj_rvp$isTrackGroundTargets();
         }
     }
 
@@ -52,5 +56,10 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Override
     public int ywzj_rvp$getContactHoldTick() {
         return ywzj_rvp$contactHoldTick;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isTrackGroundTargets() {
+        return ywzj_rvp$trackGroundTargets;
     }
 }

@@ -24,6 +24,10 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Unique
     public int ywzj_rvp$contactHoldTick = 0;
 
+    @SerializedName("track_ground_targets")
+    @Unique
+    public boolean ywzj_rvp$trackGroundTargets = false;
+
     @Override
     public String ywzj_rvp$getScanAnimationMode() {
         return ywzj_rvp$scanAnimationMode;
@@ -42,5 +46,10 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Override
     public int ywzj_rvp$getContactHoldTick() {
         return ywzj_rvp$contactHoldTick;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isTrackGroundTargets() {
+        return ywzj_rvp$trackGroundTargets;
     }
 }

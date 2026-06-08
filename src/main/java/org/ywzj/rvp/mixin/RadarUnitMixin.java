@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.radar.RVP_RadarGroundScan;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
@@ -62,6 +63,11 @@ public class RadarUnitMixin {
         for (Entity entity : entities) {
             self.detect(entity);
         }
+    }
+
+    @Inject(method = "tickScan", at = @At("RETURN"), remap = false)
+    private void ywzj_rvp$supplementGroundScan(CallbackInfo ci) {
+        RVP_RadarGroundScan.supplementGroundContacts((RadarUnit) (Object) this);
     }
 
     @Inject(method = "tickTargets", at = @At("HEAD"), cancellable = true, remap = false)

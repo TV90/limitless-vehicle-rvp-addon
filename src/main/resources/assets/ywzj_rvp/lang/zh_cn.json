@@ -2,6 +2,7 @@
   "key.category.ywzj_rvp": "YWZJ RVP",
   "key.ywzj_rvp.open_gps_panel.desc": "打开 GPS 面板",
   "key.ywzj_rvp.weapon_test.desc": "RVP 武器数据测试覆盖层 (F10)",
+  "key.ywzj_rvp.cycle_seeker_target.desc": "切换导引头锁定目标",
   "message.ywzj_rvp.weapon_test.on": "[RVP] 武器数据测试模式：开",
   "message.ywzj_rvp.weapon_test.off": "[RVP] 武器数据测试模式：关",
   "overlay.ywzj_rvp.weapon_test.header": "[RVP Test] 当前武器",

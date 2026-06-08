@@ -130,8 +130,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
         var unit = getWeaponUnit().getRootParentWeaponUnit();
-        var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE && data.isActiveRadar()
-                ? null : unit.getLockedEntity();
+        net.minecraft.world.entity.Entity lock = null;
+        if (data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE) {
+            lock = data.isActiveRadar() ? null : unit.getLockedEntity();
+        }
         for (AimContext aim : aimContexts) {
             if (data.getFireData().isCanister()) {
                 shootCanister(data, shooter, aim, lock, unit, chargeScale);

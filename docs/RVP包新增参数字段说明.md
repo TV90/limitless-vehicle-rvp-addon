@@ -634,6 +634,9 @@ RVP 扩展武器数据包路径：
 | `fov` | 搜索/锁定视场角（度）。 |
 | `range` | 搜索/锁定距离（格）。 |
 | `scan_interval_tick` | IR/ARH/SARH 弹载搜索间隔 tick（**不是** ARM 的 `params.scan_interval_tick`）。 |
+| `lock_acquire_tick` | 座舱 IR/SARH 导引头 HUD：目标在 FOV 内累计多少 tick 完成发射前锁定（内圈动画）；默认 `40`。 |
+| `lock_cooling_tick` | 导引头开启后多少 tick 内不开始锁定进度；默认 `20`。 |
+| `retain_lock_after_fire` | 发射后是否保留座舱锁定与导引头；未写时 IR 默认 `false`，SARH 默认 `true`。 |
 | `lock_min_height` | 雷达地杂波高度门限。 |
 | `ignore_flares` / `ignore_chaff` | 是否忽略热焰/箔条。 |
 | `jam_resistance` / `dircm_resistance` / `decoy_filter` | 抗干扰预留。 |

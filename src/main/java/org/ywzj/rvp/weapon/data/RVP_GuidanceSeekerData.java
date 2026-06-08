@@ -16,6 +16,27 @@ public class RVP_GuidanceSeekerData {
     @SerializedName("scan_interval_tick")
     private Integer scanIntervalTick;
 
+    /**
+     * 座舱 IR/SARH 导引头 HUD：目标待在 FOV 内累计多少 tick 后完成锁定（内圈填满）。
+     * 仅客户端发射前锁定 UI / {@code WeaponUnit#setLockedEntity} 使用；默认 {@code 40}（约 2s）。
+     */
+    @SerializedName("lock_acquire_tick")
+    private Integer lockAcquireTick;
+
+    /**
+     * 座舱导引头开启后，多少 tick 内不允许开始新的锁定进度（与本体 {@code lockCoolingTick} 对齐）。
+     * 默认 {@code 20}（约 1s）。
+     */
+    @SerializedName("lock_cooling_tick")
+    private Integer lockCoolingTick;
+
+    /**
+     * 发射后是否保留座舱锁定与导引头状态。未写时：IR 默认 {@code false}（需重新锁定），SARH 默认 {@code true}。
+     * 仅影响发射前 {@code WeaponUnit} 锁定 / 导引头 HUD，不改变弹体飞行阶段逻辑。
+     */
+    @SerializedName("retain_lock_after_fire")
+    private Boolean retainLockAfterFire;
+
     @SerializedName("lock_min_height")
     private Float lockMinHeight;
 
@@ -71,6 +92,22 @@ public class RVP_GuidanceSeekerData {
         return Math.max(scanIntervalTick != null ? scanIntervalTick : 2, 1);
     }
 
+    public int resolvedLockAcquireTick() {
+        return Math.max(lockAcquireTick != null ? lockAcquireTick : 40, 1);
+    }
+
+    public int resolvedLockCoolingTick() {
+        return Math.max(lockCoolingTick != null ? lockCoolingTick : 20, 0);
+    }
+
+    public boolean hasRetainLockAfterFire() {
+        return retainLockAfterFire != null;
+    }
+
+    public boolean isRetainLockAfterFire() {
+        return retainLockAfterFire != null && retainLockAfterFire;
+    }
+
     public float getLockMinHeight() {
         return lockMinHeight != null ? lockMinHeight : 4f;
     }
@@ -100,7 +137,8 @@ public class RVP_GuidanceSeekerData {
     }
 
     public boolean isEmpty() {
-        return fov == null && range == null && scanIntervalTick == null && lockMinHeight == null
+        return fov == null && range == null && scanIntervalTick == null && lockAcquireTick == null
+                && lockCoolingTick == null && retainLockAfterFire == null && lockMinHeight == null
                 && jamResistance == null && ignoreFlares == null && ignoreChaff == null
                 && dircmResistance == null && homeOnJam == null && decoyFilter == null;
     }
@@ -110,6 +148,9 @@ public class RVP_GuidanceSeekerData {
         copy.fov = this.fov;
         copy.range = this.range;
         copy.scanIntervalTick = this.scanIntervalTick;
+        copy.lockAcquireTick = this.lockAcquireTick;
+        copy.lockCoolingTick = this.lockCoolingTick;
+        copy.retainLockAfterFire = this.retainLockAfterFire;
         copy.lockMinHeight = this.lockMinHeight;
         copy.jamResistance = this.jamResistance;
         copy.ignoreFlares = this.ignoreFlares;
@@ -132,6 +173,15 @@ public class RVP_GuidanceSeekerData {
         }
         if (override.scanIntervalTick != null) {
             this.scanIntervalTick = override.scanIntervalTick;
+        }
+        if (override.lockAcquireTick != null) {
+            this.lockAcquireTick = override.lockAcquireTick;
+        }
+        if (override.lockCoolingTick != null) {
+            this.lockCoolingTick = override.lockCoolingTick;
+        }
+        if (override.retainLockAfterFire != null) {
+            this.retainLockAfterFire = override.retainLockAfterFire;
         }
         if (override.lockMinHeight != null) {
             this.lockMinHeight = override.lockMinHeight;

@@ -2,6 +2,10 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.fml.DistExecutor;
+import org.ywzj.rvp.ext.WeaponUnitSeekerExt;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.weapon.seeker.RVP_SeekerWeaponUtil;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -83,8 +87,26 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public boolean withSeeker() {
-        RVP_EnumWeaponKind kind = getData().getWeaponKind();
-        return kind == RVP_EnumWeaponKind.MISSILE && getData().isRequireLock();
+        return RVP_SeekerWeaponUtil.preLaunchSeekerHudActive(getData());
+    }
+
+    @Override
+    public void onSwitchTo() {
+        super.onSwitchTo();
+        WeaponUnit root = getWeaponUnit().getRootParentWeaponUnit();
+        if (RVP_SeekerWeaponUtil.preLaunchSeekerHudActive(getData())) {
+            if (getVehicle().level().isClientSide()) {
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                        org.ywzj.rvp.client.seeker.RVP_ClientSeekerBridge.onWeaponSelected(root, getData()));
+            }
+        } else if (root != null) {
+            if (getVehicle().level().isClientSide()) {
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                        org.ywzj.rvp.client.seeker.RVP_ClientSeekerBridge.onWeaponDeselected(root));
+            } else if (root.isSeekerOn() && root instanceof WeaponUnitSeekerExt seekerExt) {
+                seekerExt.ywzj_rvp$forceSeekerOff();
+            }
+        }
     }
 
     @Override
@@ -104,6 +126,11 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public void onSwitchFrom() {
+        if (getVehicle().level().isClientSide()) {
+            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                    org.ywzj.rvp.client.seeker.RVP_ClientSeekerBridge.onWeaponDeselected(
+                            getWeaponUnit().getRootParentWeaponUnit()));
+        }
         fireController.reset();
     }
 
@@ -128,9 +155,14 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean requiresEntityLock(RVP_WeaponData data) {
-        return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                && data.isRequireLock()
-                && !data.isActiveRadar()
+        if (data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE || !data.isRequireLock()) {
+            return false;
+        }
+        if (data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)) {
+            return true;
+        }
+        return !data.isActiveRadar()
                 && !data.isAntiRadiationMissile()
                 && !data.isGpsMissile();
     }

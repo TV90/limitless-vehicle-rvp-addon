@@ -22,6 +22,11 @@
     "LocalVehiclePlayerRocketAimMixin",
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",
+    "WeaponUnitClientWeaponSwitchMixin",
+    "WeaponUnitSeekerForceOffMixin",
+    "WeaponUnitTickFireControlMixin",
+    "VehicleSeekerHudMixin",
+    "VehicleScopeSeekerHudMixin",
     "VehicleScopeOverlayMixin",
     "VehicleRadarOverlayMixin"
   ],
