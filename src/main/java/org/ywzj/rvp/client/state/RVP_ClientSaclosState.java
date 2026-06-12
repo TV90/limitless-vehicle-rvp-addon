@@ -67,6 +67,14 @@ public final class RVP_ClientSaclosState {
     }
 
     private static void tickHitlDesignate(Minecraft mc) {
+        int designatedEntityId = RVP_ClientHitlState.getClientDesignatedEntityId();
+        if (designatedEntityId >= 0 && mc.level != null) {
+            Entity target = mc.level.getEntity(designatedEntityId);
+            if (target != null && target.isAlive()) {
+                laserHudPos = target.getBoundingBox().getCenter();
+                return;
+            }
+        }
         Vec3 clientPoint = RVP_ClientHitlState.getClientDesignatedPos();
         if (clientPoint != null) {
             laserHudPos = clientPoint;

@@ -63,6 +63,15 @@ public class RVP_TVMissileOverlay {
         gg.drawString(font, header, x, y, Color.GREEN, true);
         gg.drawString(font, control, x, y + 10, Color.GREEN, true);
         gg.drawString(font, turnRate, x, y + 20, Color.GREEN, true);
+
+        if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.DESIGNATE) {
+            int targetId = RVP_ClientHitlState.getClientDesignatedEntityId();
+            if (targetId >= 0) {
+                gg.drawString(font,
+                        Component.translatable("overlay.ywzj_rvp.hitl.designate.intercept"),
+                        x, y + 30, Color.GREEN, true);
+            }
+        }
     }
 
     private static void updateRate(Entity missile) {

@@ -19,7 +19,7 @@ public class GunnerProfile {
     private String faction = "friendly";
 
     @SerializedName("target_types")
-    private List<String> targetTypes = new ArrayList<>(List.of("vehicle", "monster", "player"));
+    private List<String> targetTypes = new ArrayList<>(List.of("rvp:missile", "vehicle", "monster", "player"));
 
     @SerializedName("search_radius")
     private double searchRadius = 96.0;

@@ -89,6 +89,11 @@ public class C2SHitlDesignate {
             if (msg.targetEntityId >= 0) {
                 Entity target = player.level().getEntity(msg.targetEntityId);
                 if (target != null && target.isAlive()) {
+                    Entity current = missile.getTargetEntity();
+                    if (current != null && current.isAlive() && current.getId() == target.getId()) {
+                        missile.rvp$setHitlDesignatedTarget(target.getBoundingBox().getCenter());
+                        return;
+                    }
                     missile.rvp$setHitlDesignatedEntity(target);
                     return;
                 }

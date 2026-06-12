@@ -126,8 +126,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             hitlSteeringPitch = getXRot();
             return;
         }
-        hitlSteeringYaw = hitlInputYaw;
-        hitlSteeringPitch = hitlInputPitch;
+        float max = Math.max(hitlMaxTurnDegPerTick, 0.05f);
+        hitlSteeringYaw = RVP_HitlSteeringMath.stepYawToward(hitlSteeringYaw, hitlInputYaw, max);
+        hitlSteeringPitch = RVP_HitlSteeringMath.stepPitchToward(hitlSteeringPitch, hitlInputPitch, max);
     }
 
     public RVP_EnumHitlControlMode rvp$getHitlControlMode() {
