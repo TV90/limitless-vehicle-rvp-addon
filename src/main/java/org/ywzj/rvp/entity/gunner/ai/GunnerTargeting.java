@@ -9,6 +9,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -35,6 +36,14 @@ public final class GunnerTargeting {
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
         List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile));
+        List<Entity> rvpMissiles = entities.stream()
+                .filter(GunnerTargeting::isRvpMissile)
+                .toList();
+        if (!rvpMissiles.isEmpty()) {
+            return rvpMissiles.stream()
+                    .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+                    .orElse(null);
+        }
         List<Entity> hostileGunnerVehicles = entities.stream()
                 .filter(entity -> isRelativeHostileGunnerVehicle(gunner, entity))
                 .toList();
@@ -131,6 +140,23 @@ public final class GunnerTargeting {
         if (vehicle.getPassengers().contains(entity)) {
             return false;
         }
+        if (entity instanceof AmmoEntity ammo) {
+            if (ammo.vehicle == vehicle) {
+                return false;
+            }
+            Entity owner = ammo.getOwner();
+            if (owner != null) {
+                if (vehicle.getPassengers().contains(owner)) {
+                    return false;
+                }
+                if (gunner.isOwnedBy(owner)) {
+                    return false;
+                }
+                if (isAllied(owner, vehicleTeam) || isAllied(owner, gunnerTeam)) {
+                    return false;
+                }
+            }
+        }
         if (entity instanceof Player player) {
             if (player.isSpectator()) {
                 return false;
@@ -180,6 +206,9 @@ public final class GunnerTargeting {
                 continue;
             }
             String type = raw.toLowerCase(Locale.ROOT).trim();
+            if ("rvp:missile".equals(type) && isRvpMissile(entity)) {
+                return TargetMatch.allowed(false);
+            }
             if ("monster".equals(type) && isMonster(entity)) {
                 return TargetMatch.allowed(false);
             }
@@ -212,6 +241,10 @@ public final class GunnerTargeting {
             }
         }
         return TargetMatch.DISALLOWED;
+    }
+
+    private static boolean isRvpMissile(Entity entity) {
+        return entity instanceof RVP_MissileEntity;
     }
 
     private static final class TargetMatch {

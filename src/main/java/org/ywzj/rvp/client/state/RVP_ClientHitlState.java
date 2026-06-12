@@ -48,6 +48,7 @@ public class RVP_ClientHitlState {
     private static boolean lastDesignateKeyDown;
     @Nullable
     private static Vec3 clientDesignatedPos;
+    private static int clientDesignatedEntityId = -1;
     @Nullable
     private static Vec3 clientAimPoint;
     /** Updated once per client tick for hot-path particle suppression (no getEntity in particle spawn). */
@@ -96,6 +97,10 @@ public class RVP_ClientHitlState {
 
     public static int getActiveMissileId() {
         return activeMissileId;
+    }
+
+    public static int getClientDesignatedEntityId() {
+        return clientDesignatedEntityId;
     }
 
     public static boolean shouldHideActiveMissileVfx(Entity entity) {
@@ -148,6 +153,7 @@ public class RVP_ClientHitlState {
         initialDesignateSent = false;
         lastDesignateKeyDown = false;
         clientDesignatedPos = null;
+        clientDesignatedEntityId = -1;
         clientAimPoint = null;
         clearParticleSuppressCache();
     }
@@ -171,6 +177,7 @@ public class RVP_ClientHitlState {
         initialDesignateSent = false;
         lastDesignateKeyDown = false;
         clientDesignatedPos = null;
+        clientDesignatedEntityId = -1;
         clientAimPoint = null;
         clearParticleSuppressCache();
         if (viewTypeCaptured) {
@@ -283,10 +290,16 @@ public class RVP_ClientHitlState {
                 mc, missile, aimYaw, aimPitch, DESIGNATE_AIM_RANGE, true);
         if (hit != null && hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit
                 && entityHit.getEntity() != null) {
+            int entityId = entityHit.getEntity().getId();
             Vec3 point = entityHit.getEntity().getBoundingBox().getCenter();
             clientDesignatedPos = point;
-            RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(
-                    activeMissileId, entityHit.getEntity().getId(), point));
+            if (clientDesignatedEntityId == entityId) {
+                clientDesignatedEntityId = -1;
+                RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
+                return;
+            }
+            clientDesignatedEntityId = entityId;
+            RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.entity(activeMissileId, entityId, point));
             return;
         }
         Vec3 point = resolveLiveAimPoint(mc, missile);
@@ -294,6 +307,7 @@ public class RVP_ClientHitlState {
             return;
         }
         clientDesignatedPos = point;
+        clientDesignatedEntityId = -1;
         RVP_Network.CHANNEL.sendToServer(C2SHitlDesignate.point(activeMissileId, point));
     }
 

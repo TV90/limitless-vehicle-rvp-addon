@@ -600,7 +600,7 @@ RVP 扩展武器数据包路径：
 | `control_mode` | `MOUSE`（MCLOS 鼠标驾控）/ `DESIGNATE`（SACLOS 屏幕点选）/ `VIEW`（仅观察）。省略时按制导源自动推断。 |
 | `control_range` | 玩家可保持弹载视角的最大距离（格）。 |
 | `timeout_tick` | 人在回路会话超时（tick）。 |
-| `max_turn_deg_per_tick` | MOUSE 模式每 tick 最大转向角（度）。 |
+| `max_turn_deg_per_tick` | MOUSE 模式每 tick 最大转向角（度）；用于限速更新弹体 `hitlSteeringYaw/Pitch`（方向机/高低机手感）。 |
 | `max_look_offset_deg` | DESIGNATE 模式鼠标视角偏移上限（度）；省略时取 SACLOS 阶段 `seeker.fov` 的一半。 |
 | `video_modes` | `COLOR` / `BW` / `THERMAL` 等可用画面列表。 |
 

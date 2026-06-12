@@ -56,6 +56,10 @@ public final class RVP_BounceUtil {
             if (obbNormal != null) {
                 return obbNormal;
             }
+            if (incomingVelocity.lengthSqr() > 1.0E-12) {
+                return incomingVelocity.normalize().scale(-1);
+            }
+            return new Vec3(0, 1, 0);
         }
         return entitySurfaceNormal(entity, hitLocation, incomingVelocity);
     }

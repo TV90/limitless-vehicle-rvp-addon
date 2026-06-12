@@ -4,11 +4,12 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.vehicle.api.entity.OBBEntity;
-import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
+import java.util.List;
+
 /**
- * OBB impact face normals for RVP (bounce / incidence). Hit selection uses {@link VectorUtil#obbHit}.
+ * OBB impact face normals for RVP (bounce / incidence).
  */
 public final class RVP_ObbHitUtil {
 
@@ -21,11 +22,39 @@ public final class RVP_ObbHitUtil {
         if (!(entity instanceof OBBEntity obbEntity)) {
             return null;
         }
-        VectorUtil.HitOBB hit = VectorUtil.obbHit(obbEntity.getOBBs(), segmentStart, segmentEnd);
+        List<OBB> obbs = obbEntity.getOBBs();
+        if (obbs == null || obbs.isEmpty()) {
+            return null;
+        }
+        HitOBB hit = hitOBB(obbs, segmentStart, segmentEnd);
         if (hit == null) {
             return null;
         }
         return faceNormalAtHit(hit.obb(), hit.hitPos(), incomingVelocity);
+    }
+
+    private record HitOBB(OBB obb, Vec3 hitPos, double distance) {}
+
+    private static HitOBB hitOBB(List<OBB> obbs, Vec3 start, Vec3 end) {
+        double minDistance = Double.MAX_VALUE;
+        Vec3 minDistanceHitPos = null;
+        OBB minDistanceOBB = null;
+        Vector3f from = start.toVector3f();
+        Vector3f to = end.toVector3f();
+        for (OBB obb : obbs) {
+            Vector3f hit = obb.clip(from, to).orElse(null);
+            if (hit == null) {
+                continue;
+            }
+            Vec3 hitPos = new Vec3(hit);
+            double distance = hitPos.distanceTo(start);
+            if (distance < minDistance) {
+                minDistance = distance;
+                minDistanceHitPos = hitPos;
+                minDistanceOBB = obb;
+            }
+        }
+        return minDistanceOBB == null ? null : new HitOBB(minDistanceOBB, minDistanceHitPos, minDistance);
     }
 
     /** Outward face normal on the struck OBB (faces incoming velocity). */
