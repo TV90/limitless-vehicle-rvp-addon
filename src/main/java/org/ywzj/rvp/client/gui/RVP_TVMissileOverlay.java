@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -45,6 +46,9 @@ public class RVP_TVMissileOverlay {
 
         GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
+        if (RVP_ClientHitlState.isHitlLinkBlocked()) {
+            drawSnow(gg, mc.level);
+        }
         int x = 6;
         int y = 6;
 
@@ -71,6 +75,26 @@ public class RVP_TVMissileOverlay {
                         Component.translatable("overlay.ywzj_rvp.hitl.designate.intercept"),
                         x, y + 30, Color.GREEN, true);
             }
+        }
+    }
+
+    private static void drawSnow(GuiGraphics gg, Level level) {
+        int w = gg.guiWidth();
+        int h = gg.guiHeight();
+        gg.fill(0, 0, w, h, 0xFF000000);
+        long t = level.getGameTime();
+        int seed = (int) (t ^ (t << 13) ^ (t >>> 7));
+        int count = Math.max(800, (w * h) / 800);
+        for (int i = 0; i < count; i++) {
+            seed = seed * 1664525 + 1013904223;
+            int x = (seed >>> 1) % Math.max(w, 1);
+            seed = seed * 1664525 + 1013904223;
+            int y = (seed >>> 1) % Math.max(h, 1);
+            seed = seed * 1664525 + 1013904223;
+            int g = 80 + ((seed >>> 24) & 0x7F);
+            int a = 0xFF;
+            int color = (a << 24) | (g << 16) | (g << 8) | g;
+            gg.fill(x, y, x + 2, y + 2, color);
         }
     }
 

@@ -598,6 +598,7 @@ RVP 扩展武器数据包路径：
 | --- | --- |
 | `enabled` | **必须显式 `true` 才开启**；省略或为 `false` 均关闭。 |
 | `control_mode` | `MOUSE`（MCLOS 鼠标驾控）/ `DESIGNATE`（SACLOS 屏幕点选）/ `VIEW`（仅观察）。省略时按制导源自动推断。 |
+| `signal_source` | 信号来源：`radio`（无线电，默认）或 `fiber`（光纤）。无线电模式下：每 tick 检测“导弹 ↔ 发射载机”连线是否被**方块**遮挡（空气/水不算）；遮挡时雪花屏且不可操控、导弹惯性飞行；遮挡消失立即恢复；若连续遮挡 ≥ 2 秒（40 tick）则永久断链并强制退出弹载视角。 |
 | `control_range` | 玩家可保持弹载视角的最大距离（格）。 |
 | `timeout_tick` | 人在回路会话超时（tick）。 |
 | `max_turn_deg_per_tick` | MOUSE 模式每 tick 最大转向角（度）；用于限速更新弹体 `hitlSteeringYaw/Pitch`（方向机/高低机手感）。 |

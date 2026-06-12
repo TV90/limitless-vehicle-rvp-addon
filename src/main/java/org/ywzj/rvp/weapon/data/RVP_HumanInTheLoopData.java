@@ -18,11 +18,19 @@ public class RVP_HumanInTheLoopData {
 
     public static final RVP_HumanInTheLoopData DISABLED = new RVP_HumanInTheLoopData();
 
+    public enum SignalSource {
+        FIBER,
+        RADIO
+    }
+
     @SerializedName("enabled")
     private Boolean enabled;
 
     @SerializedName("control_mode")
     private RVP_EnumHitlControlMode controlMode;
+
+    @SerializedName("signal_source")
+    private String signalSource;
 
     /** 玩家可保持弹载视角的最大距离（格）。 */
     @SerializedName("control_range")
@@ -72,6 +80,18 @@ public class RVP_HumanInTheLoopData {
             return RVP_EnumHitlControlMode.DESIGNATE;
         }
         return RVP_EnumHitlControlMode.VIEW;
+    }
+
+    public SignalSource signalSource() {
+        if (signalSource == null || signalSource.isBlank()) {
+            return SignalSource.RADIO;
+        }
+        String v = signalSource.trim().toLowerCase();
+        return switch (v) {
+            case "fiber", "optical_fiber", "opticalfiber", "wire", "wired", "光纤" -> SignalSource.FIBER;
+            case "radio", "wireless", "无线电" -> SignalSource.RADIO;
+            default -> SignalSource.RADIO;
+        };
     }
 
     public float controlRange(float defaultValue) {

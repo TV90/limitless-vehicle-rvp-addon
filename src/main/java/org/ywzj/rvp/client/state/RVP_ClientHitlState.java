@@ -49,6 +49,8 @@ public class RVP_ClientHitlState {
     @Nullable
     private static Vec3 clientDesignatedPos;
     private static int clientDesignatedEntityId = -1;
+    private static boolean hitlLinkBlocked;
+    private static boolean hitlLinkSevered;
     @Nullable
     private static Vec3 clientAimPoint;
     /** Updated once per client tick for hot-path particle suppression (no getEntity in particle spawn). */
@@ -103,6 +105,21 @@ public class RVP_ClientHitlState {
         return clientDesignatedEntityId;
     }
 
+    public static boolean isHitlLinkBlocked() {
+        return hitlLinkBlocked;
+    }
+
+    public static void onHitlLinkState(int missileEntityId, boolean blocked, boolean severed) {
+        if (missileEntityId != activeMissileId) {
+            return;
+        }
+        hitlLinkBlocked = blocked;
+        hitlLinkSevered = severed;
+        if (hitlLinkSevered) {
+            clear();
+        }
+    }
+
     public static boolean shouldHideActiveMissileVfx(Entity entity) {
         return entity != null && isActive() && entity.getId() == activeMissileId;
     }
@@ -154,6 +171,8 @@ public class RVP_ClientHitlState {
         lastDesignateKeyDown = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
+        hitlLinkBlocked = false;
+        hitlLinkSevered = false;
         clientAimPoint = null;
         clearParticleSuppressCache();
     }
@@ -178,6 +197,8 @@ public class RVP_ClientHitlState {
         lastDesignateKeyDown = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
+        hitlLinkBlocked = false;
+        hitlLinkSevered = false;
         clientAimPoint = null;
         clearParticleSuppressCache();
         if (viewTypeCaptured) {
@@ -250,6 +271,9 @@ public class RVP_ClientHitlState {
             tickModeSwitch(mc);
         }
         if (controlMode == RVP_EnumHitlControlMode.MOUSE) {
+            if (hitlLinkBlocked) {
+                return;
+            }
             controlSeq++;
             RVP_Network.CHANNEL.sendToServer(C2SHitlSteeringInput.of(
                     activeMissileId, hitlYaw, hitlPitch, controlSeq));
@@ -257,6 +281,9 @@ public class RVP_ClientHitlState {
     }
 
     public static void applySteeringDelta(double pYRot, double pXRot) {
+        if (hitlLinkBlocked) {
+            return;
+        }
         float yawStep = Mth.clamp((float) (pYRot * 0.15f), -4.0f, 4.0f);
         float pitchStep = Mth.clamp((float) (pXRot * 0.15f), -4.0f, 4.0f);
         hitlYaw = Mth.wrapDegrees(hitlYaw + yawStep);
@@ -265,6 +292,9 @@ public class RVP_ClientHitlState {
 
     /** BF2-style TV: offset crosshair within seeker FOV relative to missile body. */
     public static void applyLookOffsetDelta(double pYRot, double pXRot, float maxOffsetDeg) {
+        if (hitlLinkBlocked) {
+            return;
+        }
         float yawStep = Mth.clamp((float) (pYRot * 0.15f), -4.0f, 4.0f);
         float pitchStep = Mth.clamp((float) (pXRot * 0.15f), -4.0f, 4.0f);
         float limit = Math.max(maxOffsetDeg, 1f);
@@ -323,6 +353,9 @@ public class RVP_ClientHitlState {
 
     private static void tickDesignateKey(Minecraft mc, RVP_MissileEntity missile) {
         if (!isDesignateMode()) {
+            return;
+        }
+        if (hitlLinkBlocked) {
             return;
         }
         long window = mc.getWindow().getWindow();

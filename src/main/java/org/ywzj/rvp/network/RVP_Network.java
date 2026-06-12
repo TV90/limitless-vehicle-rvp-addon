@@ -47,6 +47,11 @@ public class RVP_Network {
                 .decoder(C2SExitHitlView::decode)
                 .consumerMainThread(C2SExitHitlView::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CHitlLinkState.class, id++)
+                .encoder(S2CHitlLinkState::encode)
+                .decoder(S2CHitlLinkState::decode)
+                .consumerMainThread(S2CHitlLinkState::handle)
+                .add();
         CHANNEL.messageBuilder(C2SSetAirburstRange.class, id++)
                 .encoder(C2SSetAirburstRange::encode)
                 .decoder(C2SSetAirburstRange::decode)
