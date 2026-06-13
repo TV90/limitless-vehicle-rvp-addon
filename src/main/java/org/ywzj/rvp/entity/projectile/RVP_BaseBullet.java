@@ -38,6 +38,8 @@ import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
+import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
@@ -893,9 +895,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         float penetrationMult = penetrationDamageFactor();
         RVP_WeaponData config = resolveWeaponConfig();
         float vehicleMult = config != null ? config.getDirectDamageFactor().getFactor(entity) : 1f;
-        float totalMult = distanceMult * incidenceMult * penetrationMult * vehicleMult;
+        float hitboxMult = 1f;
+        RVP_VehicleHitboxFactorManager.HitboxDamageResult hitboxRes = null;
+        if (entity instanceof AbstractVehicle targetVehicle) {
+            hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
+                    targetVehicle, collisionSegmentStart(), collisionSegmentEnd());
+            hitboxMult = hitboxRes.factor();
+        }
+        float preHitboxMult = distanceMult * incidenceMult * penetrationMult * vehicleMult;
+        float totalMult = preHitboxMult * hitboxMult;
         float base = headshot ? damage * headShot : damage;
-        float finalDamage = base * totalMult;
+        float preHitboxDamage = base * preHitboxMult;
+        float finalDamage = preHitboxDamage * hitboxMult;
         if (entity instanceof AbstractVehicle && level() instanceof ServerLevel serverLevel) {
             RVP_BulletHitDebugNetworking.notifyVehicleHit(
                     serverLevel,
@@ -909,7 +920,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                     vehicleMult);
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
-        EntityUtil.hurt(source, entity, finalDamage);
+        RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();
+        try {
+            EntityUtil.hurt(source, entity, finalDamage);
+        } finally {
+            RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
+        }
+        if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
+            RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(player, targetVehicle, preHitboxDamage, hitboxRes);
+        }
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.invulnerableTime = 0;
         }
