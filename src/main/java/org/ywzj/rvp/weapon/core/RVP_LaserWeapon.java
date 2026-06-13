@@ -3,6 +3,8 @@ package org.ywzj.rvp.weapon.core;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
+import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
 import org.ywzj.rvp.weapon.laser.RVP_LaserBeam;
@@ -61,7 +63,21 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                         vehicle.level().registryAccess(), shooter, shooter, beam.hitEntity().position());
                 float hitDamage = RVP_DamageApplier.applyScaled(
                         data.getDirectDamage() * chargeScale, beam.hitEntity(), data);
-                EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
+                if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
+                    var res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
+                            targetVehicle, start, beam.impactPoint());
+                    float before = hitDamage;
+                    hitDamage *= res.factor();
+                    if (shooter instanceof net.minecraft.world.entity.player.Player player) {
+                        RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(player, targetVehicle, before, res);
+                    }
+                }
+                RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();
+                try {
+                    EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
+                } finally {
+                    RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
+                }
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }

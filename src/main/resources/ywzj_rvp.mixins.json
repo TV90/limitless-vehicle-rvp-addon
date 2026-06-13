@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "ywzj_rvp.refmap.json",
   "mixins": [
+    "AbstractVehicleHitboxDamageFactorMixin",
     "GunnerWeaponAccessorMixin",
     "PartUnitAccessorMixin",
     "RadarUnitPojoMixin",
