@@ -62,6 +62,11 @@ public class RVP_Network {
                 .decoder(S2CBulletVehicleHitDebug::decode)
                 .consumerMainThread(S2CBulletVehicleHitDebug::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CVehicleEraState.class, id++)
+                .encoder(S2CVehicleEraState::encode)
+                .decoder(S2CVehicleEraState::decode)
+                .consumerMainThread(S2CVehicleEraState::handle)
+                .add();
         CHANNEL.messageBuilder(C2SSaclosDesignation.class, id++)
                 .encoder(C2SSaclosDesignation::encode)
                 .decoder(C2SSaclosDesignation::decode)

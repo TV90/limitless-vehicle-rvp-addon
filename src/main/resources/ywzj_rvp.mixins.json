@@ -5,13 +5,16 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "ywzj_rvp.refmap.json",
   "mixins": [
+    "AbstractVehicleEraStateMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
+    "VehicleExplosionCraterMixin",
     "GunnerWeaponAccessorMixin",
     "PartUnitAccessorMixin",
     "RadarUnitPojoMixin",
     "RadarUnitDataMixin",
     "RadarUnitMixin",
     "RocketEntityMixin",
+    "ServerHitVehicleEventMixin",
     "VehicleRocketWeaponDataMixin"
   ],
   "client": [

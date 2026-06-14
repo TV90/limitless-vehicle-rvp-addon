@@ -10,6 +10,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
+import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.resource.RVP_VehiclePackInstaller;
 
@@ -26,6 +27,7 @@ public class RVP_MOD {
     }
 
     public RVP_MOD(FMLJavaModLoadingContext context) {
+        RVP_Config.register(context);
         RVP_VehiclePackInstaller.ensureInstalled();
         IEventBus modBus = context.getModEventBus();
         RVP_Entities.register(modBus);

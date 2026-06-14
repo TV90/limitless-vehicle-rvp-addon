@@ -21,7 +21,10 @@
 
 ## 生效范围（明确边界）
 
-由于不能改动 ywzj_vehicle，本方案仅对 **RVP 武器造成的伤害**生效：
+由于不能改动 ywzj_vehicle，本方案的实现位置在 ywzj_rvp，但可以通过 mixin 在 `AbstractVehicle#hurt` 后置做“最终扣血转换”，因此生效范围分两类：
+
+1) **RVP 武器自身直击/直伤**：在 RVP 的伤害入口直接乘倍率（弹体直击、激光直击、近炸直伤等）
+2) **外源伤害命中载具**：包括 ywzj_vehicle 默认武器、原版弓箭等，走 ywzj_vehicle `DamageSystem` 后由 rvp 做“最终扣血转换”，使其也能按碰撞箱倍率结算
 
 - 弹体直击伤害（RVP_BaseBullet）
 - 激光直击（若存在独立伤害入口）
@@ -44,6 +47,13 @@
   "hitbox_damage_factor": {
     "vturret": 0.5,
     "turret_barrel": 1.2
+  },
+  "hitbox_era": {
+    "Upper_front": {
+      "damage_factor": 0.35,
+      "min_trigger_damage": 12.0,
+      "explosion": 1.5
+    }
   }
 }
 ```
@@ -56,6 +66,7 @@
   - `0.0~1.0`：部分保留（线性插值）
 - `hitbox_damage_factor_default`：当未命中任何配置分区或未配置对应 bone 时的倍率，默认 `1.0`
 - `hitbox_damage_factor`：按结构模型 bone 名称配置倍率
+- `hitbox_era`：爆炸反应装甲（ERA）配置（以“特殊碰撞箱”的思想实现，见下文扩展章节）
 
 约定：
 
@@ -162,6 +173,23 @@ rvp 侧需要从 `AbstractVehicle` 获取其 vehicleId（实体类型 ID），�
   对应本方案的：`boneName -> OBB 集合 -> factor`
 - MCH 在 `calculateIntercept` 里选最近命中并记录 `lastBBDamageFactor`  
   对应本方案的：命中阶段选 `hitBoneName`，结算阶段乘 `hitboxFactor`
+
+## 扩展：爆炸反应装甲（ERA）作为“特殊碰撞箱”
+
+目标：在现有“bone→OBB→命中”的基础上，引入一类特殊碰撞箱：**ERA 碰撞箱**。
+
+- ERA 仍然是按 bone 的 cubes 生成的 OBB（本质仍是碰撞箱）
+- ERA 具备“活跃/失效”状态（消耗式）
+- **失效的 ERA 碰撞箱不再参与命中计算**：射线命中时应当忽略该 ERA OBB，让弹药继续与后方车体/其它碰撞箱发生反应（穿过去）
+- 触发边界：当实际结算伤害低于一定阈值时，ERA 不引爆、不消耗（防止机枪快速摧毁大量爆反）
+
+建议字段（车包级）：
+
+- `hitbox_era.<bone>.damage_factor`：命中该 ERA 碰撞箱时的伤害系数（类似 MCH 的 `damageFactor`）
+- `hitbox_era.<bone>.min_trigger_damage`：大于该值才会引爆并将该 ERA 标记为失效
+- `hitbox_era.<bone>.explosion`：可选，触发时在该 bone 的近似中心播放一个小爆炸/特效（是否伤及车体由实现方案决定）
+
+实现细节与联动渲染方案见：`docs/plan/ywzj_rvp爆炸反应装甲开发方案.md`
 
 ## 交付与验证步骤
 
