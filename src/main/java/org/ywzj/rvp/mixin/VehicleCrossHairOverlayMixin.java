@@ -43,12 +43,68 @@ public class VehicleCrossHairOverlayMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/util/RenderHelper;drawReticle(Lnet/minecraft/client/gui/GuiGraphics;IIIII)V"
+                    target = "Lorg/ywzj/vehicle/util/RenderHelper;drawCross(Lnet/minecraft/client/gui/GuiGraphics;IIII)V"
             ),
             require = 0,
             remap = false
     )
-    private void ywzj_rvp$replaceRocketReticle(
+    private void ywzj_rvp$replaceRocketReticleCross(
+            GuiGraphics guiGraphics,
+            int x,
+            int y,
+            int size,
+            int color
+    ) {
+        boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
+        if (replace != ywzj_rvp$lastReticleReplaceState) {
+            ywzj_rvp$lastReticleReplaceState = replace;
+            LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+        }
+        if (replace) {
+            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
+            return;
+        }
+        RenderHelper.drawCross(guiGraphics, x, y, size, color);
+    }
+
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lorg/ywzj/vehicle/util/RenderHelper;drawSquare(Lnet/minecraft/client/gui/GuiGraphics;IIII)V"
+            ),
+            require = 0,
+            remap = false
+    )
+    private void ywzj_rvp$replaceRocketReticleSquare(
+            GuiGraphics guiGraphics,
+            int x,
+            int y,
+            int size,
+            int color
+    ) {
+        boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
+        if (replace != ywzj_rvp$lastReticleReplaceState) {
+            ywzj_rvp$lastReticleReplaceState = replace;
+            LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+        }
+        if (replace) {
+            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
+            return;
+        }
+        RenderHelper.drawSquare(guiGraphics, x, y, size, color);
+    }
+
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lorg/ywzj/vehicle/util/RenderHelper;drawCrossDiagonal(Lnet/minecraft/client/gui/GuiGraphics;IIIII)V"
+            ),
+            require = 0,
+            remap = false
+    )
+    private void ywzj_rvp$replaceRocketReticleCrossDiagonal(
             GuiGraphics guiGraphics,
             int x,
             int y,
@@ -65,7 +121,7 @@ public class VehicleCrossHairOverlayMixin {
             RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
             return;
         }
-        RenderHelper.drawReticle(guiGraphics, x, y, size, thickness, color);
+        RenderHelper.drawCrossDiagonal(guiGraphics, x, y, size, thickness, color);
     }
 
     @Redirect(

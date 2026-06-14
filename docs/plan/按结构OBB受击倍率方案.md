@@ -39,6 +39,7 @@
 
 ```json
 {
+  "core_distance_scale_multiplier": 1.0,
   "hitbox_damage_factor_default": 1.0,
   "hitbox_damage_factor": {
     "vturret": 0.5,
@@ -49,6 +50,10 @@
 
 字段含义：
 
+- `core_distance_scale_multiplier`：控制 ywzj_vehicle 本体的“命中点离主 OBB 核心越远伤害越低”缩放的强度（rvp 侧通过 mixin 调整最终扣血结果实现）
+  - `1.0`：保持原逻辑（默认）
+  - `0.0`：关闭该距离缩放（等效恒为 1 倍）
+  - `0.0~1.0`：部分保留（线性插值）
 - `hitbox_damage_factor_default`：当未命中任何配置分区或未配置对应 bone 时的倍率，默认 `1.0`
 - `hitbox_damage_factor`：按结构模型 bone 名称配置倍率
 
@@ -166,4 +171,3 @@ rvp 侧需要从 `AbstractVehicle` 获取其 vehicleId（实体类型 ID），�
 4. 用两台车验证：
    - 一台配置 `vturret=0.5`, `turret_barrel=1.2`
    - 近距离固定角度射击不同位置，观察同口径造成的最终伤害差异与命中分区 debug 输出一致
-

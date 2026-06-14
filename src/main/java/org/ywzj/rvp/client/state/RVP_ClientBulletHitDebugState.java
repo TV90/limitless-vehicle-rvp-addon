@@ -14,6 +14,8 @@ public final class RVP_ClientBulletHitDebugState {
     private static float incidenceMultiplier;
     private static float penetrationMultiplier;
     private static float vehicleTypeMultiplier;
+    private static float hitboxMultiplier;
+    private static String hitboxBoneName;
     private static int ticksRemaining;
 
     private RVP_ClientBulletHitDebugState() {}
@@ -26,6 +28,8 @@ public final class RVP_ClientBulletHitDebugState {
         incidenceMultiplier = msg.incidenceMultiplier;
         penetrationMultiplier = msg.penetrationMultiplier;
         vehicleTypeMultiplier = msg.vehicleTypeMultiplier;
+        hitboxMultiplier = msg.hitboxMultiplier;
+        hitboxBoneName = msg.hitboxBoneName;
         ticksRemaining = DISPLAY_TICKS;
     }
 
@@ -65,5 +69,13 @@ public final class RVP_ClientBulletHitDebugState {
 
     public static float getVehicleTypeMultiplier() {
         return vehicleTypeMultiplier;
+    }
+
+    public static float getHitboxMultiplier() {
+        return hitboxMultiplier;
+    }
+
+    public static String getHitboxBoneName() {
+        return hitboxBoneName;
     }
 }

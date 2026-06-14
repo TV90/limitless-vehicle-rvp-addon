@@ -69,7 +69,10 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     float before = hitDamage;
                     hitDamage *= res.factor();
                     if (shooter instanceof net.minecraft.world.entity.player.Player player) {
-                        RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(player, targetVehicle, before, res);
+                        RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
+                                player, targetVehicle, before, hitDamage, res,
+                                Float.NaN, 1f
+                        );
                     }
                 }
                 RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();

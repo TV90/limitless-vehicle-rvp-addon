@@ -917,7 +917,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                     distanceMult,
                     incidenceMult,
                     penetrationMult,
-                    vehicleMult);
+                    vehicleMult,
+                    hitboxMult,
+                    hitboxRes == null ? null : hitboxRes.hitBoneName());
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
         RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();
@@ -927,7 +929,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
         }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(player, targetVehicle, preHitboxDamage, hitboxRes);
+            RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
+                    player, targetVehicle, preHitboxDamage, finalDamage, hitboxRes,
+                    Float.NaN, 1f
+            );
         }
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.invulnerableTime = 0;

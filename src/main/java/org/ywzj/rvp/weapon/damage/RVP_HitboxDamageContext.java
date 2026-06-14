@@ -2,25 +2,36 @@ package org.ywzj.rvp.weapon.damage;
 
 public final class RVP_HitboxDamageContext {
 
-    private static final ThreadLocal<Integer> SKIP_GLOBAL = ThreadLocal.withInitial(() -> 0);
+    private static final ThreadLocal<Integer> SKIP_HITBOX = ThreadLocal.withInitial(() -> 0);
 
     private RVP_HitboxDamageContext() {}
 
+    public static boolean shouldSkipHitboxScaling() {
+        return SKIP_HITBOX.get() > 0;
+    }
+
     public static boolean shouldSkipGlobalVehicleHurtScaling() {
-        return SKIP_GLOBAL.get() > 0;
+        return shouldSkipHitboxScaling();
     }
 
     public static void pushSkipGlobalVehicleHurtScaling() {
-        SKIP_GLOBAL.set(SKIP_GLOBAL.get() + 1);
+        pushSkipHitboxScaling();
     }
 
     public static void popSkipGlobalVehicleHurtScaling() {
-        int next = SKIP_GLOBAL.get() - 1;
+        popSkipHitboxScaling();
+    }
+
+    public static void pushSkipHitboxScaling() {
+        SKIP_HITBOX.set(SKIP_HITBOX.get() + 1);
+    }
+
+    public static void popSkipHitboxScaling() {
+        int next = SKIP_HITBOX.get() - 1;
         if (next <= 0) {
-            SKIP_GLOBAL.remove();
+            SKIP_HITBOX.remove();
         } else {
-            SKIP_GLOBAL.set(next);
+            SKIP_HITBOX.set(next);
         }
     }
 }
-

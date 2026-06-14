@@ -14,7 +14,7 @@
   "overlay.ywzj_rvp.bullet_hit_debug.angle": "入射角: %s°",
   "overlay.ywzj_rvp.bullet_hit_debug.distance": "飞行距离: %s m",
   "overlay.ywzj_rvp.bullet_hit_debug.total_mult": "总伤害倍率: %s",
-  "overlay.ywzj_rvp.bullet_hit_debug.detail": "距离×%s  入射×%s  穿透×%s  载具×%s",
+  "overlay.ywzj_rvp.bullet_hit_debug.detail": "距离×%s  入射×%s  穿透×%s  载具×%s  碰撞箱×%s(%s)",
   "item.ywzj_rvp.gunner_spawner": "炮手生成器",
   "item.ywzj_rvp.friendly_gunner": "友好炮手",
   "item.ywzj_rvp.enemy_gunner": "敌对炮手",
