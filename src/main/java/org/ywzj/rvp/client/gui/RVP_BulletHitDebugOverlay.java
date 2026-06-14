@@ -49,7 +49,9 @@ public final class RVP_BulletHitDebugOverlay {
                 fmt(RVP_ClientBulletHitDebugState.getDistanceMultiplier()),
                 fmt(RVP_ClientBulletHitDebugState.getIncidenceMultiplier()),
                 fmt(RVP_ClientBulletHitDebugState.getPenetrationMultiplier()),
-                fmt(RVP_ClientBulletHitDebugState.getVehicleTypeMultiplier()));
+                fmt(RVP_ClientBulletHitDebugState.getVehicleTypeMultiplier()),
+                fmt(RVP_ClientBulletHitDebugState.getHitboxMultiplier()),
+                RVP_ClientBulletHitDebugState.getHitboxBoneName() == null ? "default" : RVP_ClientBulletHitDebugState.getHitboxBoneName());
 
         int screenW = gg.guiWidth();
         int y = 8;

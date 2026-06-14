@@ -17,11 +17,14 @@ public class S2CBulletVehicleHitDebug {
     public float incidenceMultiplier;
     public float penetrationMultiplier;
     public float vehicleTypeMultiplier;
+    public float hitboxMultiplier;
+    public String hitboxBoneName;
 
     public static S2CBulletVehicleHitDebug create(float incidenceAngleDeg, float distanceM,
-                                                   float totalMultiplier, float distanceMultiplier,
-                                                   float incidenceMultiplier, float penetrationMultiplier,
-                                                   float vehicleTypeMultiplier) {
+                                                  float totalMultiplier, float distanceMultiplier,
+                                                  float incidenceMultiplier, float penetrationMultiplier,
+                                                  float vehicleTypeMultiplier,
+                                                  float hitboxMultiplier, String hitboxBoneName) {
         S2CBulletVehicleHitDebug msg = new S2CBulletVehicleHitDebug();
         msg.incidenceAngleDeg = incidenceAngleDeg;
         msg.distanceM = distanceM;
@@ -30,6 +33,8 @@ public class S2CBulletVehicleHitDebug {
         msg.incidenceMultiplier = incidenceMultiplier;
         msg.penetrationMultiplier = penetrationMultiplier;
         msg.vehicleTypeMultiplier = vehicleTypeMultiplier;
+        msg.hitboxMultiplier = hitboxMultiplier;
+        msg.hitboxBoneName = hitboxBoneName;
         return msg;
     }
 
@@ -41,6 +46,8 @@ public class S2CBulletVehicleHitDebug {
         buf.writeFloat(msg.incidenceMultiplier);
         buf.writeFloat(msg.penetrationMultiplier);
         buf.writeFloat(msg.vehicleTypeMultiplier);
+        buf.writeFloat(msg.hitboxMultiplier);
+        buf.writeUtf(msg.hitboxBoneName == null ? "" : msg.hitboxBoneName, 128);
     }
 
     public static S2CBulletVehicleHitDebug decode(FriendlyByteBuf buf) {
@@ -52,6 +59,9 @@ public class S2CBulletVehicleHitDebug {
         msg.incidenceMultiplier = buf.readFloat();
         msg.penetrationMultiplier = buf.readFloat();
         msg.vehicleTypeMultiplier = buf.readFloat();
+        msg.hitboxMultiplier = buf.readFloat();
+        String bone = buf.readUtf(128);
+        msg.hitboxBoneName = bone.isEmpty() ? null : bone;
         return msg;
     }
 

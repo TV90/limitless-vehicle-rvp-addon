@@ -14,7 +14,7 @@
   "overlay.ywzj_rvp.bullet_hit_debug.angle": "Incidence: %s°",
   "overlay.ywzj_rvp.bullet_hit_debug.distance": "Distance: %s m",
   "overlay.ywzj_rvp.bullet_hit_debug.total_mult": "Total damage mult: %s",
-  "overlay.ywzj_rvp.bullet_hit_debug.detail": "dist×%s  inc×%s  pierce×%s  veh×%s",
+  "overlay.ywzj_rvp.bullet_hit_debug.detail": "dist×%s  inc×%s  pierce×%s  veh×%s  hitbox×%s(%s)",
   "item.ywzj_rvp.gunner_spawner": "Gunner Spawner",
   "item.ywzj_rvp.friendly_gunner": "Friendly Gunner",
   "item.ywzj_rvp.enemy_gunner": "Enemy Gunner",

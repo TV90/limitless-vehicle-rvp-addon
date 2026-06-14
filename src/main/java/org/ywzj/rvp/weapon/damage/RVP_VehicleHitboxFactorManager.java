@@ -68,6 +68,18 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return resolveHitboxDamage(vehicle, segmentStart, segmentEnd).factor();
     }
 
+    public float resolveCoreDistanceScaleMultiplier(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return 1f;
+        }
+        float m = cfg.coreDistanceScaleMultiplier;
+        if (!Float.isFinite(m) || m < 0f) {
+            return 1f;
+        }
+        return m;
+    }
+
     public HitboxDamageResult resolveHitboxDamage(AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
         if (cfg == null || !cfg.isEnabled()) {
@@ -84,7 +96,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return cfg.resolve(model, vehicle, segmentStart, segmentEnd);
     }
 
-    public void maybeSendHitboxDebug(Player player, AbstractVehicle vehicle, float amountIn, HitboxDamageResult result) {
+    public void maybeSendHitboxDebug(
+            Player player,
+            AbstractVehicle vehicle,
+            float damageBefore,
+            float damageAfter,
+            HitboxDamageResult result,
+            float coreFalloffScale,
+            float coreFalloffMultiplier
+    ) {
         if (player == null || vehicle == null || result == null) {
             return;
         }
@@ -100,11 +120,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         lastDebugAtMsByPlayer.put(id, now);
 
         String bone = result.hitBoneName() == null ? "default" : result.hitBoneName();
-        float out = amountIn * result.factor();
+        String coreInfo = "";
+        if (Float.isFinite(coreFalloffScale) && Float.isFinite(coreFalloffMultiplier) && coreFalloffMultiplier != 1f) {
+            coreInfo = " core=" + fmt(coreFalloffScale) + " m=" + fmt(coreFalloffMultiplier);
+        }
         Component msg = Component.literal(
                 "HBX " + bone
                         + " x" + fmt(result.factor())
-                        + " (" + fmt(amountIn) + " -> " + fmt(out) + ")"
+                        + " (" + fmt(damageBefore) + " -> " + fmt(damageAfter) + ")"
+                        + coreInfo
                         + (result.missingConfigBones() > 0 ? " missing=" + result.missingConfigBones() : "")
         );
         player.displayClientMessage(msg, true);
@@ -139,7 +163,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     private record VehicleHitboxConfig(
             @Nullable ResourceLocation structureModel,
             float defaultFactor,
-            Map<String, Float> factorByBoneName
+            Map<String, Float> factorByBoneName,
+            float coreDistanceScaleMultiplier
     ) {
         boolean isEnabled() {
             return defaultFactor != 1f || (factorByBoneName != null && !factorByBoneName.isEmpty());
@@ -197,10 +222,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             ResourceLocation structure = parseId(GsonHelper.getAsString(obj, "structure_model", null));
             float def = GsonHelper.getAsFloat(obj, "hitbox_damage_factor_default", 1f);
             Map<String, Float> map = parseFactorMap(obj.get("hitbox_damage_factor"));
-            if ((map == null || map.isEmpty()) && def == 1f) {
+            float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
+            if ((map == null || map.isEmpty()) && def == 1f && coreM == 1f) {
                 return null;
             }
-            return new VehicleHitboxConfig(structure, def, map == null ? Map.of() : Map.copyOf(map));
+            return new VehicleHitboxConfig(structure, def, map == null ? Map.of() : Map.copyOf(map), coreM);
         }
 
         private static @Nullable ResourceLocation parseId(@Nullable String raw) {

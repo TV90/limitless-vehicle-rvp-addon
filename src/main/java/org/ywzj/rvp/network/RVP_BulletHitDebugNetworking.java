@@ -17,10 +17,12 @@ public final class RVP_BulletHitDebugNetworking {
                                         float incidenceAngleDeg, float distanceM,
                                         float totalMultiplier, float distanceMultiplier,
                                         float incidenceMultiplier, float penetrationMultiplier,
-                                        float vehicleTypeMultiplier) {
+                                        float vehicleTypeMultiplier,
+                                        float hitboxMultiplier, String hitboxBoneName) {
         S2CBulletVehicleHitDebug msg = S2CBulletVehicleHitDebug.create(
                 incidenceAngleDeg, distanceM, totalMultiplier,
-                distanceMultiplier, incidenceMultiplier, penetrationMultiplier, vehicleTypeMultiplier);
+                distanceMultiplier, incidenceMultiplier, penetrationMultiplier, vehicleTypeMultiplier,
+                hitboxMultiplier, hitboxBoneName);
         RVP_Network.CHANNEL.send(
                 PacketDistributor.NEAR.with(() -> new PacketDistributor.TargetPoint(
                         hitPos.x, hitPos.y, hitPos.z, NOTIFY_RADIUS, level.dimension())),
