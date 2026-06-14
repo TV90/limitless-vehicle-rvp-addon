@@ -63,14 +63,16 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                         vehicle.level().registryAccess(), shooter, shooter, beam.hitEntity().position());
                 float hitDamage = RVP_DamageApplier.applyScaled(
                         data.getDirectDamage() * chargeScale, beam.hitEntity(), data);
+                RVP_VehicleHitboxFactorManager.HitboxDamageResult hitboxRes = null;
+                float hitDamageBeforeHitbox = hitDamage;
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
-                    var res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
+                    hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
                             targetVehicle, start, beam.impactPoint());
-                    float before = hitDamage;
-                    hitDamage *= res.factor();
+                    hitDamageBeforeHitbox = hitDamage;
+                    hitDamage *= hitboxRes.factor();
                     if (shooter instanceof net.minecraft.world.entity.player.Player player) {
                         RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                                player, targetVehicle, before, hitDamage, res,
+                                player, targetVehicle, hitDamageBeforeHitbox, hitDamage, hitboxRes,
                                 Float.NaN, 1f
                         );
                     }
@@ -80,6 +82,9 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
                 } finally {
                     RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
+                }
+                if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
+                    RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, hitDamageBeforeHitbox);
                 }
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());

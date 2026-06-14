@@ -1016,3 +1016,90 @@ ARM seeker 会把雷达观测抽象为 PDW：
 | `ywzj_rvp:manual_guidance_missile` | `rvp:missile` + `MCLOS`；需弹载视角时加 `human_in_the_loop`。 |
 
 当前运行时只注册七个 `rvp:*` 公开类型。新内容应只依赖 `RVP_` schema。
+
+---
+
+## 载具 JSON 扩展字段（`data/rvp/vehicles/<id>.json`）
+
+以下字段写在载具数据 JSON 的顶层（`ywzj_vehicle` 会忽略未知字段，无需修改本体）。
+
+### 碰撞箱受击倍率
+
+| 字段 | 说明 |
+| --- | --- |
+| `hitbox_damage_factor_default` | 未在 `hitbox_damage_factor` 中配置的骨骼的默认倍率；不写时 = 1。 |
+| `hitbox_damage_factor` | `Map<String, Float>`：结构模型骨骼名 → 直击该骨骼时的伤害倍率。 |
+| `core_distance_scale_multiplier` | 控制本体“命中点离核心越远伤害越低”的衰减强度（0 = 完全关闭衰减，按直击伤害计算；1 = 本体原值）。 |
+| `hitbox_era` | 爆炸反应装甲（ERA）配置，见下表。 |
+| `hide_passenger` | `bool`，默认 `false`。`true` 时坐进该载具的玩家在第三人称/旁观模式下不显示（`RenderPlayerEvent.Pre` + `RenderLivingEvent.Pre` 取消渲染）。 |
+
+```json
+"hitbox_damage_factor_default": 1.0,
+"hitbox_damage_factor": {
+  "Upper_front": 0.4,
+  "Lower_front": 0.8,
+  "turret": 0.6
+},
+"core_distance_scale_multiplier": 0.0,
+"hitbox_era": {
+  "ERA0": { "damage_factor": 0.35, "min_trigger_damage": 12.0, "explosion": 1.5 },
+  "ERA1": { "damage_factor": 0.35, "min_trigger_damage": 12.0 }
+}
+```
+
+#### `hitbox_era` 子字段
+
+| 字段 | 说明 |
+| --- | --- |
+| `damage_factor` | 命中该 ERA 时的伤害系数（类似 MCH 的 `damageFactor`）。 |
+| `min_trigger_damage` | 触发爆炸反应所需的最小基础伤害；低于此值不引爆、不消耗（防止机枪清空爆反）。 |
+| `explosion` | 可选，触发时在该骨块附近播放小爆炸（视觉效果 + 声音），0 = 不播放。 |
+
+ERA 以“特殊碰撞箱”思路实现：命中列表按距离排序，已失效的 ERA 碰撞箱跳过，继续检查后方普通碰撞箱。ERA 的 `damage_factor` 与普通 `hitbox_damage_factor` 互斥（ERA 命中时优先使用 ERA 的系数）。
+
+### 客户端模型渲染联动
+
+ERA 触发失效后，JS 脚本可通过 `ctx.getEntity().rvp_isEraActive("ERA0")` 查询状态并隐藏对应骨骼：
+
+```js
+function updateBones(context) {
+  const pose = createPoseBuilder();
+  const v = context.getEntity();
+  if (!v.rvp_isEraActive("ERA0")) pose.hideBone("$ERA0");
+  if (!v.rvp_isEraActive("ERA1")) pose.hideBone("$ERA1");
+  return pose;
+}
+```
+
+需要在 `animation_controllers/<vehicle>_controller.json` 的 `graph.base.inputs` 中加入 `{ "type": "script", "function": "updateBones" }`。
+
+---
+
+## 服务端配置（`config/ywzj_rvp-server.toml`）
+
+RVP 的服务端配置文件，单人/联机均生效，支持 `/forge config reload ywzj_rvp server` 热重载。
+
+### 爆炸坑深控制
+
+| 配置项 | 类型 | 说明 |
+| --- | --- | --- |
+| `explosion.craterDepthRules` | `String[]` | 格式 `"maxRadius:maxDepth"`，按 `maxRadius` 从小到大排序。空数组 = 不限制。 |
+
+默认值：
+```toml
+[explosion]
+    craterDepthRules = ["5:0", "15:1", "35:2", "65:3", "100:4", "9999:5"]
+```
+
+| 爆炸半径 | 最大破坏层数（中心Y以下） |
+|---------|------------------------|
+| ≤5 | 0（不破坏地表以下） |
+| ≤15 | 1 层 |
+| ≤35 | 2 层 |
+| ≤65 | 3 层 |
+| ≤100 | 4 层 |
+| >100 | 5 层封顶 |
+
+- 该限制对所有走 `VehicleExplosion` 的爆炸生效（RVP 武器、ywzj_vehicle 本体武器、其他附属）
+- 通过 mixin 注入 `VehicleExplosion$ExplosionCollectionTask.finish()` 实现，不修改本体代码
+- `ObjectArrayList.removeIf` 在返回给调用方之前过滤掉低 Y 方块，即时破坏和分帧大爆炸两条路径都覆盖

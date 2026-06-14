@@ -44,6 +44,7 @@ public class AbstractVehicleHitboxDamageFactorMixin {
     @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("HEAD"))
     private void rvp$hbxCapture(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
+        RVP_HitboxDamageContext.clearVehicleHitDisplayDamage();
         rvp$hitboxArmed = false;
         rvp$hitboxRes = null;
         rvp$hitboxHealthBefore = self.getHealth();
@@ -106,14 +107,14 @@ public class AbstractVehicleHitboxDamageFactorMixin {
         }
         if (segmentStart == null || segmentEnd == null) return;
 
+        boolean explosion = "ywzj_vehicle.explosion".equals(source.getMsgId());
         rvp$coreDistanceScaleMultiplier = RVP_VehicleHitboxFactorManager.INSTANCE.resolveCoreDistanceScaleMultiplier(self);
-        if (!rvp$skipHitboxScaling) {
+        if (!rvp$skipHitboxScaling && !explosion) {
             rvp$hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(self, segmentStart, segmentEnd);
         }
         rvp$predictedBaseDamage = rvp$predictBaseDamage(self, source, amount);
         boolean hitboxEnabled = !rvp$skipHitboxScaling && rvp$hitboxRes != null && rvp$hitboxRes.enabled();
 
-        boolean explosion = "ywzj_vehicle.explosion".equals(source.getMsgId());
         if (!explosion
                 && direct != null
                 && amount >= self.defenseStats.damageThreshold
@@ -137,6 +138,13 @@ public class AbstractVehicleHitboxDamageFactorMixin {
         }
 
         rvp$hitboxArmed = hitboxEnabled || rvp$coreDistanceScaleMultiplier != 1f;
+        if (rvp$hitboxArmed) {
+            float hitboxMult = hitboxEnabled ? rvp$hitboxRes.factor() : 1f;
+            float displayDamage = rvp$applyDisplayDamageScaling(rvp$predictedBaseDamage, hitboxMult);
+            if (displayDamage > 0f && Float.isFinite(displayDamage)) {
+                RVP_HitboxDamageContext.setVehicleHitDisplayDamage(displayDamage);
+            }
+        }
     }
 
     @Inject(
@@ -188,6 +196,9 @@ public class AbstractVehicleHitboxDamageFactorMixin {
         }
         float newHealth = rvp$hitboxHealthBefore - deltaAfterAll;
         self.setHealth(newHealth);
+        if (!rvp$skipHitboxScaling && rvp$hitboxRes != null) {
+            RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(self, rvp$hitboxRes, rvp$predictedBaseDamage);
+        }
 
         Entity attacker = source.getEntity();
         Player debugPlayer = null;
@@ -209,6 +220,29 @@ public class AbstractVehicleHitboxDamageFactorMixin {
                     rvp$coreDistanceScaleMultiplier
             );
         }
+    }
+
+    @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("RETURN"))
+    private void rvp$hbxCleanup(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
+        RVP_HitboxDamageContext.clearVehicleHitDisplayDamage();
+    }
+
+    @Unique
+    private float rvp$applyDisplayDamageScaling(float baseDamage, float hitboxMult) {
+        float scaledDamage = baseDamage;
+        if (rvp$coreDistanceScaleMultiplier != 1f
+                && Float.isFinite(rvp$coreFalloffScale)
+                && Math.abs(rvp$coreFalloffScale) > 1.0E-6f) {
+            float damageNoFalloff = scaledDamage / rvp$coreFalloffScale;
+            float effectiveScale = 1f + (rvp$coreFalloffScale - 1f) * rvp$coreDistanceScaleMultiplier;
+            if (Float.isFinite(damageNoFalloff) && Float.isFinite(effectiveScale)) {
+                scaledDamage = damageNoFalloff * effectiveScale;
+            }
+        }
+        if (Float.isFinite(hitboxMult)) {
+            scaledDamage *= hitboxMult;
+        }
+        return scaledDamage;
     }
 
     @Unique

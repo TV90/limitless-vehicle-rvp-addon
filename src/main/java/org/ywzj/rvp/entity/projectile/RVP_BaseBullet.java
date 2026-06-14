@@ -928,6 +928,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         } finally {
             RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
         }
+        if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
+            RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, preHitboxDamage);
+        }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
             RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
                     player, targetVehicle, preHitboxDamage, finalDamage, hitboxRes,
