@@ -136,6 +136,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
 
+    /** 尾焰粒子上帧位置（对标本体 MissileEntity.particlePosO）。 */
+    @Nullable
+    protected Vec3 particlePosO;
+
+    /** ARM preselect target vehicle ID (from HUD selection). -1 = none. */
+    protected int preselectedVehicleId = -1;
+    /** ARM preselect target radar index. -1 = any. */
+    protected int preselectedRadarIndex = -1;
+
+    /** ===== ARH 主动雷达制导状态字段（对标本体的 MissileEntity） ===== */
+    /** 弹载雷达是否已开机（主动雷达截获状态）。 */
+    protected boolean activeRadarOn;
+    /** 弹载雷达是否已成功捕获目标（true 后不再依赖载机雷达续标）。 */
+    protected boolean activeRadarCatch;
+    /** 主动雷达丢失目标后的倒计时 tick。≥60 自毁。 */
+    protected int activeRadarLostTargetTick;
+    /** 主动雷达开机距离阈值（JSON 中由 active_radar_activation_range 配置）。 */
+    protected double activeRadarActivationRange = 1024.0;
+
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
     protected final java.util.Map<Integer, Integer> guidanceStageEnteredTicks = new java.util.HashMap<>();
@@ -394,6 +413,41 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.antiRadiationLostPermanent = lostPermanent;
     }
 
+    public int getPreselectedVehicleId() {
+        return preselectedVehicleId;
+    }
+
+    public int getPreselectedRadarIndex() {
+        return preselectedRadarIndex;
+    }
+
+    public void setPreselectedTarget(int vehicleId, int radarIndex) {
+        this.preselectedVehicleId = vehicleId;
+        this.preselectedRadarIndex = radarIndex;
+    }
+
+    // ===== ARH 主动雷达 getters/setters =====
+
+    public boolean isActiveRadarOn() {
+        return activeRadarOn;
+    }
+
+    public boolean isActiveRadarCatch() {
+        return activeRadarCatch;
+    }
+
+    public int getActiveRadarLostTargetTick() {
+        return activeRadarLostTargetTick;
+    }
+
+    public double getActiveRadarActivationRange() {
+        return activeRadarActivationRange;
+    }
+
+    public void setActiveRadarActivationRange(double range) {
+        this.activeRadarActivationRange = range;
+    }
+
     public int getGuidanceStageIndex() {
         return guidanceStageIndex;
     }
@@ -516,8 +570,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         tickSubmunition();
         guidanceWireDirectApplied = false;
         tickGuidance();
-        tickMotion();
+        // 先碰撞检测再运动（对标本体 BulletEntity 顺序，修复直接命中丢失的 bug）
         tickHit();
+        tickMotion();
         tickProgrammableAirburst();
         tickProximityFuse();
         if (tickBounceFuse()) {
@@ -537,6 +592,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected void tickGuidance() {
         if (!level().isClientSide()) {
             org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation.tickUpdateLiveTarget(this);
+            // Mid-course update: if we have a live targetEntity (from launch lock),
+            // periodically update targetPos so IOG/coast phase tracks the moving target.
+            // This mirrors the base MissileEntity behavior where targetEntity is a
+            // live Java Entity reference updated every tick.
+            if (targetEntity != null && targetEntity.isAlive()) {
+                if (tickCount % 5 == 0) {
+                    targetPos = aimPoint(targetEntity);
+                    lastGuidancePos = targetPos;
+                }
+            } else if (targetEntity != null && !targetEntity.isAlive()) {
+                // Target died, clear it
+                targetEntity = null;
+            }
         }
         RVP_GuidanceController.tick(this);
     }
@@ -679,7 +747,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
             return;
         }
-        AABB detectionBox = getBoundingBox().inflate(radius);
+        // 对标本体 AmmoEntity.tickHit：检测盒向后偏移，捕获刚飞过的目标
+        Vec3 backward = getLookAngle().normalize().scale(-radius);
+        AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
         for (Entity entity : level().getEntities(this, detectionBox,
                 e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight))) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
@@ -1166,10 +1236,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     protected void triggerExplosion(Vec3 pos) {
-        triggerExplosion(pos, FuseDetonation.NORMAL);
+        triggerExplosion(pos, FuseDetonation.NORMAL, null);
     }
 
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind) {
+        triggerExplosion(pos, kind, null);
+    }
+
+    /**
+     * @param excludeEntity 如果非空，该实体将不会受到 {@link VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
+     */
+    protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
         if (explosion == null || !explosion.explode) {
             return;
         }
@@ -1192,7 +1269,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
         VehicleExplosion ex = new VehicleExplosion(level(), getOwner(), vehicle, pos,
                 radius, damage, explosion.destroyBlock);
-        ex.explode();
+        if (excludeEntity != null) {
+            ex.explode(Collections.singletonList(excludeEntity));
+        } else {
+            ex.explode();
+        }
         if (level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(
                     serverLevel, pos, rvpData.getEffectsData(), radius);
@@ -1208,17 +1289,28 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             discard();
             return;
         }
+        boolean hadGuaranteedDamage = false;
         if (kind == FuseDetonation.PROXIMITY && proximityTarget != null && rvpData != null) {
-            float direct = rvpData.getProximityFuseDirectDamage();
-            if (direct > 0f) {
-                direct = RVP_DamageApplier.applyScaled(direct, proximityTarget, rvpData);
+            // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 VehicleExplosion 距离衰减（修复高速目标炸不到的 bug）
+            float guaranteed = rvpData.getProximityFuseDirectDamage();
+            if (guaranteed <= 0f) {
+                guaranteed = rvpData.resolveProximityFuseExplosionDamage();
+            }
+            if (guaranteed <= 0f && explosion != null) {
+                guaranteed = explosion.damage;
+            }
+            if (guaranteed > 0f) {
+                guaranteed = RVP_DamageApplier.applyScaled(guaranteed, proximityTarget, rvpData);
                 DamageSource source = AllDamageTypes.Sources.explosion(
                         level().registryAccess(), this, getOwner(), pos);
-                proximityTarget.hurt(source, direct);
+                proximityTarget.hurt(source, guaranteed);
+                hadGuaranteedDamage = true;
             }
         }
+        // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害
+        Entity exclude = hadGuaranteedDamage ? proximityTarget : null;
         if (rvpData == null) {
-            triggerExplosion(pos);
+            triggerExplosion(pos, FuseDetonation.NORMAL, exclude);
             discard();
             return;
         }
@@ -1229,9 +1321,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                 applyDispenserAt(pos, lastBlockHit);
             }
             applyDetonateAt(pos, null, false);
-            triggerExplosion(pos, kind);
+            triggerExplosion(pos, kind, exclude);
         } else {
-            triggerExplosion(pos, kind);
+            triggerExplosion(pos, kind, exclude);
             if (applyDispenser) {
                 applyDispenserAt(pos, lastBlockHit);
             }
@@ -1314,35 +1406,66 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     }
 
     protected void spawnTrailParticles() {
-        String configured = rvpData == null ? "" : rvpData.getEffectsData().getTrajectoryParticle();
         boolean heavy = isHeavyProjectile();
-        ParticleOptions primary = resolveParticle(configured,
-                heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
-        if (primary == null) {
+        boolean motorBurning = isMotorBurning();
+        if (!motorBurning && isMotorPropulsion()) {
+            // 发动机熄火后不再产生尾焰轨迹
             return;
         }
-        Vec3 motion = getDeltaMovement();
-        double spread = heavy ? 0.08 : 0.04;
-        int count = heavy ? 3 : 1;
-        for (int i = 0; i < count; i++) {
-            double ox = (level().random.nextDouble() - 0.5) * spread;
-            double oy = (level().random.nextDouble() - 0.5) * spread;
-            double oz = (level().random.nextDouble() - 0.5) * spread;
-            level().addParticle(primary,
-                    getX() + ox, getY() + oy, getZ() + oz,
-                    -motion.x * 0.04, -motion.y * 0.04, -motion.z * 0.04);
+        // 对标本体 MissileEntity.tickParticle：弹体后方 3 格，两帧间分段插值形成连续烟柱
+        Vec3 pos = this.position().add(this.getLookAngle().scale(-3));
+        if (particlePosO == null) {
+            particlePosO = pos;
         }
-        if (heavy && tickCount % 2 == 0) {
-            level().addParticle(ParticleTypes.FLAME, getX(), getY(), getZ(),
-                    -motion.x * 0.02, -motion.y * 0.02, -motion.z * 0.02);
-            level().addParticle(ParticleTypes.CAMPFIRE_COSY_SMOKE, getX(), getY(), getZ(),
-                    -motion.x * 0.01, 0.05, -motion.z * 0.01);
+        Vec3 step = pos.subtract(particlePosO);
+        double dist = step.length();
+        int segments = (int) (dist / 0.5);
+        Vec3 dir = step.normalize();
+        // 用户可以自由配置 trajectory_particle 选择烟的类型，设为 "none" 可关闭
+        ParticleOptions primary = null;
+        if (rvpData != null) {
+            String configured = rvpData.getEffectsData().getTrajectoryParticle();
+            primary = resolveParticle(configured, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE);
         }
+        if (primary != null) {
+            for (int i = 0; i <= segments; i++) {
+                Vec3 particlePos = particlePosO.add(dir.scale(i * 0.5));
+                level().addParticle(primary, true,
+                        particlePos.x, particlePos.y, particlePos.z,
+                        0.0D, 0.0D, 0.0D);
+            }
+        }
+        // 火焰粒子（仅推进类弹体燃烧期产生，类比本体，但本体没有火焰）
+        if (motorBurning && tickCount % 2 == 0) {
+            level().addParticle(ParticleTypes.FLAME, true,
+                    getX(), getY(), getZ(),
+                    -getDeltaMovement().x * 0.02, -getDeltaMovement().y * 0.02, -getDeltaMovement().z * 0.02);
+            level().addParticle(ParticleTypes.CAMPFIRE_COSY_SMOKE, true,
+                    getX(), getY(), getZ(),
+                    -getDeltaMovement().x * 0.01, 0.05, -getDeltaMovement().z * 0.01);
+        }
+        particlePosO = pos;
     }
 
     protected boolean isHeavyProjectile() {
         return this instanceof RVP_MissileEntity || this instanceof RVP_RocketEntity
                 || this instanceof RVP_BombEntity || this instanceof RVP_DispensedEntity;
+    }
+
+    /** 是否有火箭推进发动机（推力弹道）。 */
+    protected boolean isMotorPropulsion() {
+        return rvpData != null && rvpData.usesPropulsion();
+    }
+
+    /** 发动机当前是否在燃烧期内（对标本体 MissileEntity.tickParticle）。非推进弹体始终返回 true。 */
+    protected boolean isMotorBurning() {
+        if (!isMotorPropulsion()) {
+            return true;
+        }
+        int ignition = rvpData.getResolvedIgnitionDelayTick();
+        float burnTime = rvpData.getResolvedMotorBurnTime();
+        int motorTick = tickCount - ignition;
+        return motorTick >= 0 && motorTick <= burnTime;
     }
 
     protected void broadcastTrailParticles() {
@@ -1351,15 +1474,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
         String configured = rvpData.getEffectsData().getTrajectoryParticle();
         boolean heavy = isHeavyProjectile();
-        ParticleOptions primary = resolveParticle(configured,
-                heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
-        if (primary == null) {
-            return;
+        boolean motorBurning = isMotorBurning();
+        // 轨迹粒子：推进类弹体仅在燃烧期发送
+        if ((!heavy || motorBurning) || !isMotorPropulsion()) {
+            ParticleOptions primary = resolveParticle(configured,
+                    heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
+            if (primary != null) {
+                double spread = heavy ? 0.1 : 0.05;
+                int count = heavy ? 3 : 1;
+                serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+            }
         }
-        double spread = heavy ? 0.1 : 0.05;
-        int count = heavy ? 3 : 1;
-        serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
-        if (heavy) {
+        // 尾焰：仅燃烧期
+        if (heavy && motorBurning) {
             serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
         }
     }
@@ -1403,6 +1530,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             case "cloud", "minecraft:cloud" -> ParticleTypes.CLOUD;
             case "lava", "minecraft:lava" -> ParticleTypes.LAVA;
             case "campfire_smoke", "minecraft:campfire_cosy_smoke" -> ParticleTypes.CAMPFIRE_COSY_SMOKE;
+            case "campfire_signal_smoke", "minecraft:campfire_signal_smoke" -> ParticleTypes.CAMPFIRE_SIGNAL_SMOKE;
             case "explosion", "minecraft:explosion" -> ParticleTypes.EXPLOSION;
             case "explosion_emitter", "minecraft:explosion_emitter" -> ParticleTypes.EXPLOSION_EMITTER;
             case "smoke", "minecraft:smoke" -> ParticleTypes.SMOKE;
