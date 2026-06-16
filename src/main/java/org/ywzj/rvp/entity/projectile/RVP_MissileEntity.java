@@ -236,6 +236,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
      */
     @Override
     protected boolean isMotorBurning() {
+        // 客户端 rvpData 可能为 null，用生成数据包同步的 motorBurnEndTick
+        if (rvpData == null) {
+            return tickCount <= motorBurnEndTick;
+        }
         if (!isMotorPropulsion()) {
             // 无发动机配置的导弹：默认燃烧期取一半寿命
             int defaultBurn = Math.max(life / 2, 20);
