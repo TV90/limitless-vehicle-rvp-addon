@@ -1,40 +1,171 @@
-# ywzj_rvp 爆炸反应装甲（ERA）开发方案（基于碰撞箱）
+# ywzj_rvp 爆炸反应装甲（ERA）开发方案
 
-## 目标与约束
+## 架构概览
 
-目标：在现有“按结构骨骼 cube→OBB 命中”的体系上，引入爆炸反应装甲（ERA）功能，使其成为一种“特殊碰撞箱”：
+两套独立的 ERA 破坏机制并行共存，互不冲突：
 
-- 命中 ERA 碰撞箱时可对伤害做独立的系数处理
-- 满足触发条件时，ERA 会引爆并被消耗（进入失效状态）
-- 失效的 ERA 碰撞箱不再参与命中计算，弹药应继续命中后方的车体/其它碰撞箱（“穿过去”）
-- 需要联动模型侧渲染：ERA 激活时渲染对应部件，失效时隐藏对应部件
+```
+武器命中载具
+    │
+    ├── 直击命中（有弹道/线段）
+    │      │
+    │      ├── APFSDS / 穿甲弹 / 直击武器
+    │      │     └── OBB 射线求交 → 命中单块 ERA → 消耗它 → 穿透继续
+    │      │
+    │      └── HE 弹（有爆炸范围）
+    │            └── 按爆炸范围分档 → 百分比摧毁直击附近的 ERA 块
+    │
+    └── 非直击爆炸（附近爆炸）
+           └── 按爆炸范围 + 距离衰减 → 百分比摧毁远处的 ERA 块（无 1 保底）
+```
 
-约束：
+---
 
-- 代码改动仅允许在 ywzj_rvp
-- 不改动 ywzj_vehicle
-- 现有 hitbox 倍率与“外源伤害转换”链路必须保持可用
+## 机制一：AP/穿甲弹 → OBB 穿透式命中（单块消耗）
 
-## 核心思想（与 MCH 对齐）
+### 适用对象
 
-MCH 的核心思想是：ERA 是一种特殊的子碰撞箱（有自己的 `damageFactor`、有 `active/inactive` 状态、命中后可一次性失效，并且失效后在命中检测阶段被跳过）。
+- 直击伤害高、爆炸范围 ≤ 5 或无爆炸的弹药
+- APFSDS、破甲弹（HEAT）、半穿甲弹等
 
-RVP 侧保持同样的思想，但将“子碰撞箱”映射为：
+### 工作流程
 
-- `boneName` 名下 cubes 生成的一组 OBB
+1. 弹道线段与载具所有 ERA bone 的 OBB 做射线求交
+2. 得到按距离从近到远排序的 ERA 命中列表
+3. 从最近开始处理：
+   - 若该 ERA 已失效 → 跳过，继续处理下一块
+   - 若该 ERA 激活 → 按 `damage_factor` 结算伤害，该块消耗→失效
+   - 弹药穿透继续命中后方车体碰撞箱
 
-其中一部分 bone 通过配置被标记为 ERA 碰撞箱。
-
-## 数据设计（vehicle json 扩展字段）
-
-在 `data/<ns>/vehicles/<id>.json` 顶层新增（ywzj_vehicle 会忽略未知字段）：
+### 配置（vehicle json）
 
 ```json
 {
-  "hitbox_damage_factor_default": 1.0,
-  "hitbox_damage_factor": {
-    "vehicle_body": 1.0
-  },
+  "hitbox_era": {
+    "Upper_front_era": {
+      "damage_factor": 0.35,
+      "min_trigger_damage": 12.0,
+      "explosion": 1.5
+    },
+    "Side_skirt_era": {
+      "damage_factor": 0.5,
+      "min_trigger_damage": 8.0,
+      "explosion": 1.0
+    }
+  }
+}
+```
+
+| 字段 | 意义 |
+|:--|:--|
+| `key`（boneName） | 载具模型中的骨骼名，该骨骼下的 cubes 被当作 ERA 碰撞箱 |
+| `damage_factor` | 命中该 ERA 时对伤害的倍率（减伤系数） |
+| `min_trigger_damage` | 触发阈值，用 `predictedBaseDamage` 判定，低于此值不触发不消耗 |
+| `explosion` | 可选，触发特效强度 |
+
+---
+
+## 机制二：HE/高爆弹 → 爆炸范围分档式破坏（百分比）
+
+### 适用对象
+
+- 爆炸范围 > 5 的弹药
+- HE 高爆弹、航弹、火箭弹、导弹的战斗部
+
+### 规则
+
+#### A. 直击命中载具
+
+以弹药爆炸范围（`explosion.radius`）查阈值表，**摧毁离直击位置最近的 N 块 ERA**：
+
+| 爆炸范围 | 破坏比例 | 保底 |
+|:--:|:--:|:--:|
+| 0 ~ 5 | 0%（不破坏） | 0 |
+| 5 ~ 8 | 10% | **至少 1 块** |
+| 9 ~ 12 | 25% | **至少 1 块** |
+| 13 ~ 18 | 50% | **至少 1 块** |
+| 19+ | **100%（全毁）** | 全部 |
+
+计算方式：
+```java
+destructCount = Math.max(minGuarantee, (int) Math.floor(eraTotalCount * percentage));
+```
+按"离直击命中点最近的 blocks"顺序选取。
+
+#### B. 非直击命中（附近爆炸）
+
+非直击爆炸指爆炸中心没有直接命中载具，但载具在爆炸范围内。
+
+- 不按直击位置计算
+- 按爆炸中心到车体最近点的距离 `dist` 做线性衰减
+- 无 1 保底（可衰减到 0）
+
+```java
+float distanceFactor = 1.0 - (dist / radius);
+// 以最大档位查表，再用 distanceFactor 衰减
+float effectiveRadius = radius * distanceFactor;
+// 按 effectiveRadius 查上述阈值表
+// 无 Math.max(1, ...) 保底
+```
+
+**示例**：radius=15 的航弹在车旁 10 格爆炸
+- `distanceFactor = 1.0 - 10/15 = 0.333`
+- `effectiveRadius = 15 × 0.333 = 5`
+- 进入 0~5 档 → 不破坏（衰减后半径不够）
+
+**示例2**：同样航弹在车旁 4 格爆炸
+- `distanceFactor = 1.0 - 4/15 = 0.733`
+- `effectiveRadius = 15 × 0.733 = 11`
+- 进入 9~12 档 → 破坏 25%（无保底）
+
+---
+
+## 两种机制共存时的联动
+
+| 弹药特性 | 直击伤害 | 爆炸范围 | 走哪条路径 |
+|:--|:--:|:--:|:--|
+| APFSDS | 高 | 0~5 | 机制一（OBB 穿透） |
+| 125mm HE | 低 | 8 | 机制二A（直击百分比） |
+| 航弹/JDAM | 中 | 25+ | 机制二A（直击→全毁） |
+| 附近爆炸（未直击） | — | 任意 | 机制二B（衰减百分比） |
+
+注意：
+- **两种机制不同时执行**——一发弹药要么走机制一，要么走机制二
+- 区分依据：`explosion.radius > 5` 走机制二，否则走机制一
+- 机制一（OBB 穿透）只消耗命中的那一块 ERA，不涉及百分比
+
+---
+
+## 运行时状态模型
+
+### 数据结构
+
+载具维护一个 `Map<boneName, Boolean>` 或 `BitSet`：
+- 以 `boneName` 为 key
+- `true` = 激活（ERA 仍在）
+- `false` = 失效（已被消耗）
+
+### 初始化
+
+- 载具生成时，从配置读取所有 ERA bone 名称，全部设为激活
+
+### 同步
+
+- 服务端权威，状态变化时通过 S2C 数据包同步到客户端
+- 持久化：写入实体 NBT，支持重登后保持失效状态
+
+### 渲染
+
+- 客户端同步 bone 状态
+- JS 脚本中通过 `v.rvp_isEraActive("boneName")` 查询状态
+- 失效的 bone 通过 `pose.hideBone("boneName")` 隐藏
+
+---
+
+## 配置数据结构（vehicle json 顶层新增）
+
+```json
+{
   "hitbox_era": {
     "Upper_front_era": {
       "damage_factor": 0.35,
@@ -45,131 +176,97 @@ RVP 侧保持同样的思想，但将“子碰撞箱”映射为：
 }
 ```
 
-字段语义：
+- `hitbox_era` 不存在 = 该载具无 ERA
+- ywzj_vehicle 忽略未知字段，无冲突
 
-- `hitbox_era`：键为 `boneName`
-- `damage_factor`：命中该 ERA 碰撞箱时对伤害乘的倍率（与普通 hitbox 倍率不同，ERA 有独立倍率）
-- `min_trigger_damage`：触发阈值（以“最终结算伤害/或预测基础伤害”为判定基础，见下文），低于该值不引爆、不消耗
-- `explosion`：可选，触发时播放小爆炸/特效的强度参数
+---
 
-默认行为：
+## 代码调研
 
-- `hitbox_era` 未配置时不启用 ERA
-- `damage_factor` 默认 `1.0`
-- `min_trigger_damage` 默认 `Float.POSITIVE_INFINITY`（即永不触发/仅作普通碰撞箱倍率）
+### 已有基础设施（全部就绪）
 
-## 运行时状态模型
+| 组件 | 位置 | 状态 |
+|:--|:--|:--:|
+| RVPEraStateAccess 接口 | [RVPEraStateAccess.java](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/ext/RVPEraStateAccess.java) | ✅ |
+| AbstractVehicleEraStateMixin | [AbstractVehicleEraStateMixin.java](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/mixin/AbstractVehicleEraStateMixin.java) | ✅ S2C同步+NBT持久化+生成数据包 |
+| S2CVehicleEraState 包 | [S2CVehicleEraState.java](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/network/S2CVehicleEraState.java) | ✅ |
+| VehicleHitboxConfig 加载 | [RVP_VehicleHitboxFactorManager.java](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/weapon/damage/RVP_VehicleHitboxFactorManager.java) | ✅ 从 `rvp/vehicles/<id>.json` 加载 |
+| 机制一单块消耗 | [RVP_VehicleHitboxFactorManager.java#L136-L158](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/weapon/damage/RVP_VehicleHitboxFactorManager.java#L136-L158) | ✅ `tryTriggerEra()` |
+| 机制一触发点 | [RVP_BaseBullet.java#L1012-L1014](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java#L1012-L1014) | ✅ `applyEntityHitDamage()` 末尾 |
+| OBB 射线求交 | [VectorUtil.java#L155-L214](file:///d:/ywzj/ywzj/ywzj_rvp/src/main/java/org/ywzj/rvp/util/VectorUtil.java#L155-L214) | ✅ `closestHitObbPosition()` → `hitOBB()` |
 
-每台载具需要维护“哪些 ERA bone 仍处于激活状态”。
+### 缺失组件
 
-建议的数据结构：
+| 组件 | 作用 |
+|:--|:--|
+| RVP_EraDestructionHelper | 核心逻辑：计算爆炸半径对应百分比，筛选离直击点最近的 N 块活跃 ERA，标记失效 |
+| VehicleExplosion 接入 | 非直击爆炸：`triggerExplosion()` 后遍历范围内的载具 |
 
-- `vehicleId + entityId -> BitSet/Set<String>`（服务端权威）
-- 以 `boneName` 为键的激活状态：
-  - `true`：激活（参与命中）
-  - `false`：失效（命中检测阶段跳过，相当于不存在）
+### 数据流
 
-同步与持久化建议：
+```
+弹药命中（服务端）
+    │
+    ├── findEntityOnPath → handleEntityImpact → applyEntityHitDamage
+    │      ├── RVP_VehicleHitboxFactorManager.resolveHitboxDamage()
+    │      │      └── OBB 射线求交 → 找到命中的 bone
+    │      ├── EntityUtil.hurt() → DamageSystem.hurt() → vehicle.setHealth()
+    │      └── tryTriggerEra(vehicle, hitboxRes, preHitboxDamage)   ← 机制一（已有）
+    │
+    ├── resolveImpactDetonation → triggerExplosion
+    │      └── VehicleExplosion.explode()
+    │             └── hurt() → EntityUtil.hurt() → AbstractVehicle.hurt()
+    │
+    └── [新增] applyEntityHitDamage 末尾:
+           如果 explosion.radius > 5（直击HE）:
+              RVP_EraDestructionHelper.destroyByExplosionRadius(vehicle, radius, hitPos, true)
+       
+       [新增] triggerExplosion 末尾:
+           ex.explode() 返回后:
+              遍历爆炸范围内所有载具:
+                 RVP_EraDestructionHelper.destroyByExplosionRadius(v, radius, null, false)
+```
 
-- 同步：服务端在状态变化时发 S2C 包，客户端缓存并用于渲染联动
-- 持久化：将状态写入实体 NBT（或附着能力/数据组件），以支持重登/区块卸载后仍保持失效状态
+### 实现方案
 
-## 命中与结算（关键：失效后“穿过去”）
+#### RVP_EraDestructionHelper 核心方法
 
-### 总体流程
+```java
+public static void destroyByExplosionRadius(
+    AbstractVehicle vehicle,
+    float explosionRadius,
+    @Nullable Vec3 hitPos,       // 直击命中点（非直击传 null）
+    boolean isDirectHit          // true=直击（有保底）, false=非直击（无保底）
+)
+```
 
-对一次“弹药/伤害线段”命中载具，执行分层命中：
+**计算步骤**：
+1. 从 `RVP_VehicleHitboxFactorManager.INSTANCE` 获取 `VehicleHitboxConfig`
+2. 获取所有 ERA bone 名称列表 → 总块数
+3. 过滤出当前活跃的（`rvp_isEraActive()` → true）
+4. 查阈值表确定破坏百分比 → 计算破坏数量
+5. 有 `hitPos` 时：按 bone 的 OBB 中心到 hitPos 距离排序；无时：随机选取
+6. 调用 `rvp$consumeEra()` 逐一标记失效
+7. 触发 `tryTriggerEra()` 的视觉特效（粒子+音效）
 
-1) 使用线段 `(start, end)` 与所有候选 OBB 做射线求交，得到按距离从近到远排序的命中列表
-2) 依次处理命中（从最近开始）：
-   - 若命中的是“失效 ERA OBB”：跳过，继续处理下一次命中（相当于穿过）
-   - 若命中的是“激活 ERA OBB”：按 ERA 规则结算；若触发则消耗并停止；若不触发则停止（因为弹药确实撞在 ERA 上）
-   - 若命中的是普通碰撞箱：按普通 hitbox 倍率结算并停止
+#### 区分 HE/AP
 
-该策略保证：
-
-- ERA 失效后不会把伤害回退到普通倍率，而是让命中继续向后寻找“真正的下一层碰撞箱”
-
-### 触发边界（防机枪快速摧毁）
-
-触发判定不应使用“输入 damage”或“显示 damage”，而应使用一个稳定基准，避免受到：
-
-- 核心距离衰减
-- 阈值减伤
-- 残血扣血截断
-
-建议优先使用“预测基础伤害”（现有外源伤害转换链路里已经计算的 predictedBaseDamage），再乘上 ERA 自身的 `damage_factor` 或在触发前不乘（实现时二选一并固定）。
-
-推荐规则（更接近直觉）：
-
-- `triggerDamage = predictedBaseDamage`
-- 若 `triggerDamage > min_trigger_damage` 才引爆并消耗
-
-这样机枪由于单发基础伤害低，无法触发 ERA 消耗；而反坦克弹单发基础伤害高，会触发。
-
-### ERA 结算与后续伤害
-
-命中激活 ERA 时：
-
-- 本次对载具造成的伤害：`finalDamage = baseDamage * damage_factor`
-- 若触发：将该 ERA 标记为失效，并播放爆炸/特效
-
-触发后是否让“同一发弹”继续作用于后方车体：
-
-- 默认建议：不继续（触发 ERA 等价于该发弹被反应装甲有效干扰）
-- 可选扩展：允许“减伤后剩余伤害/穿深”继续命中后方（需要与 RVP 自己的穿透系统联动）
-
-## 外源伤害与 RVP 武器的接入点
-
-需要覆盖两类链路：
-
-1) RVP 武器（直击/直伤）：在命中载具时使用上述分层命中规则，得到最终 bone（ERA 或普通），再做伤害结算
-2) 外源伤害（ywzj_vehicle 默认武器、原版弓箭等）：在 `AbstractVehicle#hurt` 后置做最终扣血转换时，同样用“命中线段”做分层命中，从而决定 ERA 是否拦截/触发/失效
-
-## 模型渲染联动（JS 脚本方向）
-
-本项目已有 JS 脚本驱动骨骼姿态的机制：
-
-- 动画控制器会调用脚本函数 `fn(ctx)`，参数是 `VehicleContext`
-- 脚本可通过 `createPoseBuilder()` 得到 `PoseHelper`
-- `PoseHelper.hideBone(boneName)` 可以通过缩放为 0 的方式隐藏骨骼
-
-参考实现入口：
-
-- 脚本调用方式：[ScriptPoseNode.evaluate](file:///d:/ywzj/ywzj/ywzj_vehicle/src/main/java/org/ywzj/vehicle/client/render/animation/graph/node/ScriptPoseNode.java#L25-L35)
-- `createPoseBuilder` 注入：[VehicleDisplay.initializeScriptScope](file:///d:/ywzj/ywzj/ywzj_vehicle/src/main/java/org/ywzj/vehicle/client/resource/vehicle/VehicleDisplay.java#L123-L137)
-- 隐藏 bone API：[PoseHelper.hideBone](file:///d:/ywzj/ywzj/ywzj_vehicle/src/main/java/org/ywzj/vehicle/client/render/animation/util/PoseHelper.java#L31-L41)
-
-联动方案：
-
-- rvp 在客户端维护 `boneName -> eraActive` 的状态（由服务端同步）
-- JS 脚本里按状态隐藏/显示 ERA 对应 bone：
-
-```js
-function updateBones(ctx) {
-  const pose = createPoseBuilder();
-  const v = ctx.getEntity();
-
-  if (!v.rvp_isEraActive("Upper_front_era")) {
-    pose.hideBone("Upper_front_era");
-  }
-
-  return pose;
+```java
+// 在 applyEntityHitDamage 中：
+if (explosion != null && explosion.explode && explosion.radius > 5) {
+    // HE 弹 → 机制二A（百分比破坏）
+    RVP_EraDestructionHelper.destroyByExplosionRadius(targetVehicle, explosion.radius, hitPos, true);
+} else {
+    // 非 HE → 机制一（OBB 单块）
+    RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, preHitboxDamage);
 }
 ```
 
-这里的 `rvp_isEraActive` 是 rvp 需要通过 mixin/扩展方法提供给 `AbstractVehicle` 的查询接口（仅 rvp 改动即可实现）。
+---
 
-## 调试与表现（建议）
+## 开发阶段
 
-- 命中调试输出增加：是否命中 ERA、是否触发、是否消耗、命中 bone 名
-- HUD 显示增加：`ERA` 标签（例如 `hitbox×0.35(Upper_front_era) ERA:TRIGGER`）
-- 触发特效：局部爆炸粒子/烟尘/音效（不建议默认破坏方块）
-
-## 里程碑（交付顺序）
-
-1) 仅实现：ERA 作为特殊碰撞箱 + 激活/失效 + 失效后穿透到下一层命中
-2) 触发边界：`min_trigger_damage` 生效，机枪不再快速消耗 ERA
-3) 同步与持久化：S2C 同步 + NBT 保存
-4) 模型联动：提供 `rvp_isEraActive(boneName)` 供 JS 脚本隐藏/显示 ERA 骨骼
-5) 可选扩展：触发后残余穿深、对不同弹药类别不同阈值/不同倍率
+1. ✅ **机制一（OBB 穿透）基线实现** — 已完成
+2. ✅ **同步 + 持久化** — S2C 同步 + NBT 保存已完成
+3. **机制二（百分比破坏）实现** — RVP_EraDestructionHelper + 两个接入点
+4. **模型渲染联动** — JS 脚本 `hideBone` API

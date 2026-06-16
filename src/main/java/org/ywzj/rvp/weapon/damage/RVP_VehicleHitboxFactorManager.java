@@ -209,6 +209,155 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         );
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // 机制二：按爆炸半径百分比破坏 ERA（HE 高爆弹 + 附近爆炸）
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * 按爆炸半径查阈值表，百分比破坏载具的 ERA。
+     *
+     * @param vehicle          目标载具
+     * @param explosionRadius  爆炸配置半径
+     * @param hitPos           直击命中位（非直击传 null）
+     * @param isDirectHit      true = 直击（有至少1块保底），false = 附近爆炸（无保底/距离衰减）
+     */
+    public static void destroyEraByExplosionRadius(
+            AbstractVehicle vehicle,
+            float explosionRadius,
+            @Nullable Vec3 hitPos,
+            boolean isDirectHit
+    ) {
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return;
+        }
+        VehicleHitboxConfig cfg = INSTANCE.configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.eraByBoneName == null || cfg.eraByBoneName.isEmpty()) {
+            return;
+        }
+        if (!(vehicle instanceof RVPEraStateAccess access)) {
+            return;
+        }
+        // 过滤活跃的 ERA bone
+        List<String> activeBones = new ArrayList<>();
+        for (String boneName : cfg.eraByBoneName.keySet()) {
+            if (access.rvp_isEraActive(boneName)) {
+                activeBones.add(boneName);
+            }
+        }
+        if (activeBones.isEmpty()) {
+            return;
+        }
+
+        int totalActive = activeBones.size();
+        int destroyCount = calcDestroyCount(explosionRadius, totalActive, isDirectHit);
+        if (destroyCount <= 0) {
+            return;
+        }
+
+        // 按位置排序或随机
+        List<String> sorted;
+        if (isDirectHit && hitPos != null) {
+            sorted = sortBonesByDistance(cfg, vehicle, activeBones, hitPos);
+        } else {
+            sorted = new ArrayList<>(activeBones);
+            java.util.Collections.shuffle(sorted);
+        }
+
+        if (!(vehicle.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        int destroyed = 0;
+        for (int i = 0; i < Math.min(destroyCount, sorted.size()); i++) {
+            String boneName = sorted.get(i);
+            if (access.rvp$consumeEra(boneName)) {
+                EraConfig eCfg = cfg.eraByBoneName.get(boneName);
+                float explosionScale = (eCfg != null && eCfg.explosion() > 0f) ? eCfg.explosion() : 1f;
+                spawnEraEffect(serverLevel, vehicle, boneName, explosionScale);
+                destroyed++;
+            }
+        }
+        if (destroyed > 0) {
+            INSTANCE.syncEraState(vehicle, access);
+        }
+    }
+
+    /** 查阈值表决定破坏数量。 */
+    private static int calcDestroyCount(float radius, int totalActive, boolean isDirectHit) {
+        float percentage;
+        if (radius <= 5f) {
+            percentage = 0f;
+        } else if (radius <= 8f) {
+            percentage = 0.10f;
+        } else if (radius <= 12f) {
+            percentage = 0.25f;
+        } else if (radius <= 18f) {
+            percentage = 0.50f;
+        } else {
+            percentage = 1.0f; // 全毁
+        }
+        if (percentage <= 0f) {
+            return 0;
+        }
+        int raw = (int) Math.floor(totalActive * percentage);
+        if (isDirectHit && raw < 1) {
+            raw = 1; // 直击至少 1 块保底
+        }
+        return Math.min(raw, totalActive);
+    }
+
+    /** 按每个 ERA bone 的 OBB 中心到 hitPos 的距离从小到大排序。 */
+    private static List<String> sortBonesByDistance(
+            VehicleHitboxConfig cfg, AbstractVehicle vehicle,
+            List<String> boneNames, Vec3 hitPos
+    ) {
+        ResourceLocation structureId = cfg.structureModel;
+        if (structureId == null) {
+            return new ArrayList<>(boneNames);
+        }
+        BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
+        if (model == null) {
+            return new ArrayList<>(boneNames);
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+
+        Map<String, Double> distances = new HashMap<>();
+        for (String name : boneNames) {
+            BedrockBone bone = boneMap.get(name);
+            if (bone == null) {
+                distances.put(name, Double.MAX_VALUE);
+                continue;
+            }
+            double minDist = Double.MAX_VALUE;
+            for (OBB.CubeOBB cubeObb : OBB.getOBBsFromBone(bone, vehicle, namedBones)) {
+                Vector3f center = cubeObb.obb().center();
+                double d = new Vec3(center).distanceToSqr(hitPos);
+                if (d < minDist) {
+                    minDist = d;
+                }
+            }
+            distances.put(name, minDist);
+        }
+
+        List<String> result = new ArrayList<>(boneNames);
+        result.sort(Comparator.comparingDouble(distances::get));
+        return result;
+    }
+
+    /** 播放松散 ERA 特效。 */
+    private static void spawnEraEffect(ServerLevel serverLevel, AbstractVehicle vehicle,
+                                        String boneName, float explosionScale) {
+        Vec3 pos = vehicle.getBoundingBox().getCenter();
+        serverLevel.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y, pos.z,
+                1, 0.02, 0.02, 0.02, 0.0);
+        serverLevel.sendParticles(ParticleTypes.SMOKE, pos.x, pos.y, pos.z,
+                Math.max(6, Math.round(8f * explosionScale)),
+                0.18 * explosionScale, 0.12 * explosionScale, 0.18 * explosionScale, 0.01);
+        serverLevel.playSound(null, pos.x, pos.y, pos.z,
+                SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
+                Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
+    }
+
     private static @Nullable RVPEraStateAccess eraAccess(AbstractVehicle vehicle) {
         return vehicle instanceof RVPEraStateAccess access ? access : null;
     }

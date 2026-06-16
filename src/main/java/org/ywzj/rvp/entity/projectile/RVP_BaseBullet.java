@@ -136,6 +136,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
 
+    /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
+    protected int motorBurnEndTick = Integer.MAX_VALUE;
+
+    /** 本 tick 内直击命中的载具 ID 集合，用于区分 HE 直击与非直击爆炸的 ERA 破坏。 */
+    protected final java.util.Set<Integer> directHitVehicleIds = new java.util.HashSet<>();
+
     /** 尾焰粒子上帧位置（对标本体 MissileEntity.particlePosO）。 */
     @Nullable
     protected Vec3 particlePosO;
@@ -188,6 +194,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this.headShot = data.getHeadshotMultiplier();
         this.explosion = data.getExplosionData();
         this.life = data.getLife();
+        // 计算发动机熄火 tick，供客户端尾焰控制（rvpData 不传客户端）
+        if (data.usesPropulsion()) {
+            int ignition = data.getResolvedIgnitionDelayTick();
+            int burnTicks = Math.round(data.getResolvedMotorBurnTime());
+            this.motorBurnEndTick = ignition + burnTicks;
+        } else {
+            this.motorBurnEndTick = Integer.MAX_VALUE;
+        }
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
@@ -999,7 +1013,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, preHitboxDamage);
+            // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
+            directHitVehicleIds.add(targetVehicle.getId());
+            // 区分 HE 弹与 AP 弹的 ERA 破坏路径
+            if (explosion != null && explosion.explode && explosion.radius > 5f) {
+                // HE 弹（爆炸半径 > 5）→ 机制二A（百分比破坏，按直击位置排序，至少 1 块保底）
+                RVP_VehicleHitboxFactorManager.destroyEraByExplosionRadius(
+                        targetVehicle, explosion.radius, result.getLocation(), true);
+            } else {
+                // AP 弹或小爆炸弹 → 机制一（OBB 单块）
+                RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, preHitboxDamage);
+            }
         }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
             RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
@@ -1278,6 +1302,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             RVP_ProjectileParticleEffects.spawnExplosion(
                     serverLevel, pos, rvpData.getEffectsData(), radius);
         }
+        // 机制二B：非直击爆炸 — 对爆炸范围内的其他载具按距离衰减破坏 ERA
+        if (!level().isClientSide() && radius > 5f) {
+            double half = radius;
+            AABB eraBox = new AABB(
+                    pos.x - half, pos.y - half, pos.z - half,
+                    pos.x + half, pos.y + half, pos.z + half);
+            for (AbstractVehicle v : level().getEntitiesOfClass(AbstractVehicle.class, eraBox)) {
+                if (v.isDestroyed() || directHitVehicleIds.contains(v.getId())) {
+                    continue;
+                }
+                RVP_VehicleHitboxFactorManager.destroyEraByExplosionRadius(
+                        v, radius, pos, false);
+            }
+            directHitVehicleIds.clear();
+        }
     }
 
     protected void detonateFuseAt(Vec3 pos, FuseDetonation kind) {
@@ -1408,8 +1447,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected void spawnTrailParticles() {
         boolean heavy = isHeavyProjectile();
         boolean motorBurning = isMotorBurning();
-        if (!motorBurning && isMotorPropulsion()) {
-            // 发动机熄火后不再产生尾焰轨迹
+        // 熄火后不再产生尾焰轨迹（客户端 isMotorPropulsion 始终 false，但 motorBurning 通过同步值正确判断）
+        if (!motorBurning) {
             return;
         }
         // 对标本体 MissileEntity.tickParticle：弹体后方 3 格，两帧间分段插值形成连续烟柱
@@ -1422,11 +1461,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         int segments = (int) (dist / 0.5);
         Vec3 dir = step.normalize();
         // 用户可以自由配置 trajectory_particle 选择烟的类型，设为 "none" 可关闭
-        ParticleOptions primary = null;
+        // rvpData 可能在客户端为 null，此时用 CAMPFIRE_SIGNAL_SMOKE 作为保底
+        String configured = "";
         if (rvpData != null) {
-            String configured = rvpData.getEffectsData().getTrajectoryParticle();
-            primary = resolveParticle(configured, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE);
+            configured = rvpData.getEffectsData().getTrajectoryParticle();
         }
+        ParticleOptions primary = resolveParticle(configured, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE);
         if (primary != null) {
             for (int i = 0; i <= segments; i++) {
                 Vec3 particlePos = particlePosO.add(dir.scale(i * 0.5));
@@ -1459,6 +1499,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     /** 发动机当前是否在燃烧期内（对标本体 MissileEntity.tickParticle）。非推进弹体始终返回 true。 */
     protected boolean isMotorBurning() {
+        // 客户端 rvpData 为 null，用生成数据包同步的 motorBurnEndTick
+        if (rvpData == null) {
+            return tickCount <= motorBurnEndTick;
+        }
         if (!isMotorPropulsion()) {
             return true;
         }
@@ -1550,6 +1594,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         buffer.writeDouble(getDeltaMovement().y);
         buffer.writeDouble(getDeltaMovement().z);
         buffer.writeDouble(flightSpeed);
+        buffer.writeVarInt(motorBurnEndTick);
         buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
         buffer.writeBoolean(targetPos != null);
         if (targetPos != null) {
@@ -1566,6 +1611,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         setYRot(buffer.readFloat());
         setDeltaMovement(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         this.flightSpeed = buffer.readDouble();
+        this.motorBurnEndTick = buffer.readVarInt();
         yRotO = getYRot();
         xRotO = getXRot();
         int id = buffer.readVarInt();
