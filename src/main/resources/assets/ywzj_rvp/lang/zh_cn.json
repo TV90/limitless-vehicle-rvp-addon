@@ -83,5 +83,11 @@
   "tips.ywzj_rvp.gunner_spawner.profile.mixed": "混合",
   "tips.ywzj_rvp.gunner_spawner.profile.friendly": "友好",
   "tips.ywzj_rvp.gunner_spawner.profile.enemy": "敌对",
-  "tips.ywzj_rvp.gunner_spawner.profile.team": "阵营"
+  "tips.ywzj_rvp.gunner_spawner.profile.team": "阵营",
+  "key.ywzj_rvp.hmd_toggle.desc": "头盔瞄准具 / 格斗模式切换",
+  "message.ywzj_rvp.hmd.on": "头盔瞄准具开启",
+  "message.ywzj_rvp.hmd.off": "头盔瞄准具关闭",
+  "message.ywzj_rvp.hmd.locked": "头盔瞄准具：目标已锁定",
+  "message.ywzj_rvp.hmd.out_of_bounds": "头盔瞄准具：超出雷达扫描范围",
+  "message.ywzj_rvp.hmd.ir_locked": "红外弹 HMD：目标已锁定"
 }

@@ -60,7 +60,7 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
         if (!RVP_GuidanceMath.isWithinSeekerCone(projectile, target, config)) {
             return false;
         }
-        if (RVP_GuidanceMath.isOnGround(target, config.seeker().getLockMinHeight())) {
+        if (!RVP_GuidanceMath.isTargetPassAltFilter(target, config.seeker().getLockMinHeight())) {
             return false;
         }
         RVP_CountermeasureState.Result result = RVP_CountermeasureState.query(

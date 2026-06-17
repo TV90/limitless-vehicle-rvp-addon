@@ -33,9 +33,64 @@ public class RVP_Keys {
             "key.category.ywzj_rvp"
     );
 
+    /** ARM target selection (previous). */
+    public static final KeyMapping ARM_SELECT_PREV = new KeyMapping(
+            "key.ywzj_rvp.arm_select_prev.desc",
+            KeyConflictContext.IN_GAME,
+            KeyModifier.NONE,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_LEFT_BRACKET,
+            "key.category.ywzj_rvp"
+    );
+
+    /** ARM target selection (next). */
+    public static final KeyMapping ARM_SELECT_NEXT = new KeyMapping(
+            "key.ywzj_rvp.arm_select_next.desc",
+            KeyConflictContext.IN_GAME,
+            KeyModifier.NONE,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_CAPS_LOCK,
+            "key.category.ywzj_rvp"
+    );
+
+    /** GPS target set (R key while in GPS weapon seat). */
+    public static final KeyMapping SET_GPS_TARGET = new KeyMapping(
+            "key.ywzj_rvp.set_gps_target.desc",
+            KeyConflictContext.IN_GAME,
+            KeyModifier.NONE,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_R,
+            "key.category.ywzj_rvp"
+    );
+
+    /** Clear GPS target. */
+    public static final KeyMapping CLEAR_GPS = new KeyMapping(
+            "key.ywzj_rvp.clear_gps.desc",
+            KeyConflictContext.IN_GAME,
+            KeyModifier.NONE,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_L,
+            "key.category.ywzj_rvp"
+    );
+
+    /** HMD helmet-mounted display / ACM dogfight mode toggle (5 key). */
+    public static final KeyMapping HMD_TOGGLE = new KeyMapping(
+            "key.ywzj_rvp.hmd_toggle.desc",
+            KeyConflictContext.IN_GAME,
+            KeyModifier.NONE,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_5,
+            "key.category.ywzj_rvp"
+    );
+
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
         event.register(WEAPON_TEST_OVERLAY);
+        event.register(ARM_SELECT_PREV);
+        event.register(ARM_SELECT_NEXT);
+        event.register(SET_GPS_TARGET);
+        event.register(CLEAR_GPS);
+        event.register(HMD_TOGGLE);
     }
 }

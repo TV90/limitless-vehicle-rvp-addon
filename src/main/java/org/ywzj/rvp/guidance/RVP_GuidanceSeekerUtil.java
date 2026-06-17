@@ -109,7 +109,7 @@ public final class RVP_GuidanceSeekerUtil {
             if (projectile.position().distanceToSqr(entity.position()) > range * range) {
                 continue;
             }
-            if (RVP_GuidanceMath.isOnGround(entity, seeker.getLockMinHeight())) {
+            if (!RVP_GuidanceMath.isTargetPassAltFilter(entity, seeker.getLockMinHeight())) {
                 continue;
             }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(projectile.position());

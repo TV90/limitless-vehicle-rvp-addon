@@ -49,6 +49,13 @@ public class RVP_GuidanceSteeringData {
     @SerializedName("max_lateral_accel")
     private Double maxLateralAccel;
 
+    /**
+     * 攻顶弹道俯冲角（度）。>0 时，本阶段制导向目标上方偏移，以指定角度俯冲攻击。
+     * 典型值 30–60。0 或未写 = 不启用攻顶。
+     */
+    @SerializedName("terminal_dive_angle")
+    private Double terminalDiveAngle;
+
     public int getRigidityTime() {
         return Math.max(rigidityTime != null ? rigidityTime : 0, 0);
     }
@@ -77,6 +84,10 @@ public class RVP_GuidanceSteeringData {
         return maxLateralAccel != null ? Math.max(maxLateralAccel, 0.0) : 0.0;
     }
 
+    public double getTerminalDiveAngle() {
+        return terminalDiveAngle != null ? Math.max(terminalDiveAngle, 0.0) : 0.0;
+    }
+
     public RVP_GuidanceSteeringData copy() {
         RVP_GuidanceSteeringData copy = new RVP_GuidanceSteeringData();
         copy.rigidityTime = this.rigidityTime;
@@ -86,6 +97,7 @@ public class RVP_GuidanceSteeringData {
         copy.tickEndHoming = this.tickEndHoming;
         copy.proportionalNavigationGain = this.proportionalNavigationGain;
         copy.maxLateralAccel = this.maxLateralAccel;
+        copy.terminalDiveAngle = this.terminalDiveAngle;
         return copy;
     }
 
@@ -113,6 +125,9 @@ public class RVP_GuidanceSteeringData {
         }
         if (override.maxLateralAccel != null) {
             this.maxLateralAccel = override.maxLateralAccel;
+        }
+        if (override.terminalDiveAngle != null) {
+            this.terminalDiveAngle = override.terminalDiveAngle;
         }
     }
 }

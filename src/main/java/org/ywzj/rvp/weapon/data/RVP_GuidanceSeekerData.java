@@ -37,6 +37,10 @@ public class RVP_GuidanceSeekerData {
     @SerializedName("decoy_filter")
     private Float decoyFilter;
 
+    /** 导引头离轴角（度），即导引头机械转动极限。仅用于范围限制（大圈），不参与扫描锁定。 */
+    @SerializedName("guide_head_max_angle")
+    private Float guideHeadMaxAngle;
+
     public boolean hasFov() {
         return fov != null;
     }
@@ -99,10 +103,15 @@ public class RVP_GuidanceSeekerData {
         return Math.max(decoyFilter != null ? decoyFilter : 0f, 0f);
     }
 
+    public float getGuideHeadMaxAngle() {
+        return Math.max(guideHeadMaxAngle != null ? guideHeadMaxAngle : getFov(), 1f);
+    }
+
     public boolean isEmpty() {
         return fov == null && range == null && scanIntervalTick == null && lockMinHeight == null
                 && jamResistance == null && ignoreFlares == null && ignoreChaff == null
-                && dircmResistance == null && homeOnJam == null && decoyFilter == null;
+                && dircmResistance == null && homeOnJam == null && decoyFilter == null
+                && guideHeadMaxAngle == null;
     }
 
     public RVP_GuidanceSeekerData copy() {
@@ -117,6 +126,7 @@ public class RVP_GuidanceSeekerData {
         copy.dircmResistance = this.dircmResistance;
         copy.homeOnJam = this.homeOnJam;
         copy.decoyFilter = this.decoyFilter;
+        copy.guideHeadMaxAngle = this.guideHeadMaxAngle;
         return copy;
     }
 
@@ -153,6 +163,9 @@ public class RVP_GuidanceSeekerData {
         }
         if (override.decoyFilter != null) {
             this.decoyFilter = override.decoyFilter;
+        }
+        if (override.guideHeadMaxAngle != null) {
+            this.guideHeadMaxAngle = override.guideHeadMaxAngle;
         }
     }
 }

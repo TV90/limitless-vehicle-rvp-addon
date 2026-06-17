@@ -1,8 +1,10 @@
 package org.ywzj.rvp.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -10,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -84,5 +87,20 @@ public class VehicleScopeOverlayMixin {
 
     private static boolean ywzj_rvp$pinCrosshairToCenter() {
         return ywzj_rvp$isHitlScopeView() && !RVP_ClientHitlState.isDesignateMode();
+    }
+
+    /**
+     * 对地 IR 锁定后，屏蔽 VehicleScopeOverlay.renderAimLockTarget 中的 15px 红色 IR 圈。
+     */
+    @Redirect(
+            method = "renderAimLockTarget",
+            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V"),
+            remap = false
+    )
+    private static void ywzj_rvp$suppressGroundIrCircle(PoseStack poseStack, float x, float y, float radius, int color, float thickness, float startAngle, float endAngle) {
+        if (RVP_ClientHmdState.getInstance().isGroundIr() && Math.abs(thickness - 0.03f) < 0.001f) {
+            return;
+        }
+        GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, startAngle, endAngle);
     }
 }

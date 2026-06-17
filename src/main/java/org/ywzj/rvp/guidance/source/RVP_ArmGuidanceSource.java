@@ -23,9 +23,10 @@ public final class RVP_ArmGuidanceSource implements RVP_GuidanceSource {
     public RVP_GuidanceIntent evaluate(RVP_GuidanceContext context, RVP_GuidanceData.Source source) {
         RVP_BaseBullet projectile = context.projectile();
         RVP_GuidanceSourceParamsData params = source.getParams();
-        AntiRadiationSeekerHelper.AntiRadiationEmitter best = null;
         boolean allowReacquire = params.reacquire(true);
         boolean canScan = !projectile.isAntiRadiationLostPermanent() || allowReacquire;
+        AntiRadiationSeekerHelper.AntiRadiationEmitter best = null;
+
         if (canScan && projectile.tickCount >= projectile.getAntiRadiationNextScanTick()) {
             projectile.setAntiRadiationNextScanTick(
                     projectile.tickCount + params.scanIntervalTick(2));
@@ -40,21 +41,40 @@ public final class RVP_ArmGuidanceSource implements RVP_GuidanceSource {
                     projectile.getRadiationPulseTickMap(),
                     params.radiationPulseMemoryTick(25)
             );
-            double bestScore = Double.MAX_VALUE;
-            for (AntiRadiationSeekerHelper.AntiRadiationEmitter emitter : emitters) {
-                double score = AntiRadiationSeekerHelper.score(
-                        projectile.position(),
-                        projectile.getLookAngle(),
-                        context.effective().seeker().getFov(),
-                        context.effective().seeker().getRange(),
-                        emitter.pdw(),
-                        params.lockedBonus(0.5f));
-                if (score < bestScore) {
-                    bestScore = score;
-                    best = emitter;
+
+            // STEP 1: If the projectile has a preselected target, try to find it first
+            int preselectVehicleId = projectile.getPreselectedVehicleId();
+            int preselectRadarIndex = projectile.getPreselectedRadarIndex();
+            if (preselectVehicleId >= 0) {
+                for (AntiRadiationSeekerHelper.AntiRadiationEmitter emitter : emitters) {
+                    if (emitter.vehicleId() == preselectVehicleId
+                            && (preselectRadarIndex < 0
+                            || emitter.radarIndex() == preselectRadarIndex)) {
+                        best = emitter;
+                        break;
+                    }
+                }
+            }
+
+            // STEP 2: If no preselected match (or no preselect), fall back to best score
+            if (best == null) {
+                double bestScore = Double.MAX_VALUE;
+                for (AntiRadiationSeekerHelper.AntiRadiationEmitter emitter : emitters) {
+                    double score = AntiRadiationSeekerHelper.score(
+                            projectile.position(),
+                            projectile.getLookAngle(),
+                            context.effective().seeker().getFov(),
+                            context.effective().seeker().getRange(),
+                            emitter.pdw(),
+                            params.lockedBonus(0.5f));
+                    if (score < bestScore) {
+                        bestScore = score;
+                        best = emitter;
+                    }
                 }
             }
         }
+
         if (best != null) {
             projectile.setAntiRadiationLostPermanent(false);
             int configuredMemory = params.memoryTick(0);

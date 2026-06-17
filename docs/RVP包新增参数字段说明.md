@@ -625,17 +625,19 @@ RVP 扩展武器数据包路径：
 | `max_degree_of_missile` | 单 tick 最大转向角（度）。 |
 | `predict_target_pos` | 是否按弹速预测目标位置。 |
 | `tick_end_homing` | 寿命末 N tick 内加大转向力度；0 表示全程一致。 |
-| `proportional_navigation_gain` | **预留**，当前版本未接入转向数学。 |
-| `max_lateral_accel` | **预留**，当前版本未接入转向数学。 |
+| `proportional_navigation_gain` | 比例导引增益。 |
+| `max_lateral_accel` | 最大横向过载（格/tick²），与 `max_degree_of_missile` 取更严。 |
+| `terminal_dive_angle` | 攻顶弹道俯冲角（度）。>0 时导弹向目标上方偏移以指定角度俯冲攻击，典型值 30–60。0/未写=不启用。 |
 
 #### `seeker` 阶段导引头
 
 | 字段 | 说明 |
 | --- | --- |
 | `fov` | 搜索/锁定视场角（度）。 |
+| `guide_head_max_angle` | 导引头最大离轴角（度）。仅用于锁定维持的范围限制（大圈），不参与扫描搜索。省略时默认等于 `fov`。 |
 | `range` | 搜索/锁定距离（格）。 |
 | `scan_interval_tick` | IR/ARH/SARH 弹载搜索间隔 tick（**不是** ARM 的 `params.scan_interval_tick`）。 |
-| `lock_min_height` | 雷达地杂波高度门限。 |
+| `lock_min_height` | 离地高度锁定过滤（格）。正数：只锁离地 ≥ 此值的目标（空中）；负数：只锁离地 ≤ |此值| 的目标（近地）；0：不限制。默认 4（仅锁空中）。 |
 | `ignore_flares` / `ignore_chaff` | 是否忽略热焰/箔条。 |
 | `jam_resistance` / `dircm_resistance` / `decoy_filter` | 抗干扰预留。 |
 | `home_on_jam` | 雷达弹干扰源归向。 |
@@ -841,7 +843,7 @@ IR 源激活时 `turning_factor` 为 0.5；IOG 备份仍为 0.3。`seeker` **没
 | `use_target_pos` / `use_last_guidance` | GPS / IOG | 坐标/记忆点制导开关。 |
 | `use_weapon_unit_aim` / `use_owner_look` | MCLOS | 线导参考炮塔瞄准或玩家视角。 |
 
-**预留（JSON 可写，运行时未接入）**：`terminal_dive_angle`、`break_on_smoke`、`use_launch_heading`。
+**预留（JSON 可写，运行时未接入）**：`break_on_smoke`、`use_launch_heading`。
 
 | `composite_mode` | 行为 |
 | --- | --- |

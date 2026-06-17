@@ -2,6 +2,8 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.world.entity.Entity;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -50,10 +52,21 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         RVP_WeaponData data = getData();
         if (requiresEntityLock(data)) {
             WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
-            if (unit.getLockedEntity() == null
-                    && unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.EO) {
+            // RVP HMD 管理的 IR 导弹：只认 HMD 锁状态（防止 vanilla tickFireControl 干扰）
+            boolean hasLock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                    && !data.isActiveRadar() && !data.isAntiRadiationMissile()
+                    ? RVP_ClientHmdState.getInstance().hasLock()
+                    : unit.getLockedEntity() != null;
+            if (!hasLock && unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.EO) {
                 LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
                 return false;
+            }
+            // 发射前强制同步 HMD 锁 → 服务器，防止 tickFireControl 的锁清除包比发射包先到
+            if (hasLock) {
+                Entity hmdEntity = RVP_ClientHmdState.getInstance().getLockedEntity();
+                if (hmdEntity != null) {
+                    unit.setLockedEntity(hmdEntity);
+                }
             }
         }
         boolean fired = super.doClientShoot();
@@ -83,8 +96,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public boolean withSeeker() {
-        RVP_EnumWeaponKind kind = getData().getWeaponKind();
-        return kind == RVP_EnumWeaponKind.MISSILE && getData().isRequireLock();
+        // 所有 RVP 导弹都允许开启导引头（IR/ARH 用于锁定，ARM 用于预选扫描）
+        return getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
     }
 
     @Override

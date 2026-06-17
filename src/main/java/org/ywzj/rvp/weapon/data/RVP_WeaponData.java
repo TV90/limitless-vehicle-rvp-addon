@@ -335,6 +335,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return resolveLaunchSeeker().getLockMinHeight();
     }
 
+    public float getMaxGuideHeadAngle() {
+        return resolveLaunchSeeker().getGuideHeadMaxAngle();
+    }
+
     /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */
     public float getTargetingPodRange() {
         if (getLaserData().getRange() > 1f) {
