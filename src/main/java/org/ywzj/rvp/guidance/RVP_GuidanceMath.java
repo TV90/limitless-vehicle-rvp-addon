@@ -169,6 +169,29 @@ public final class RVP_GuidanceMath {
         }
 
         projectile.rememberGuidancePos(targetPos);
+
+        // 攻顶弹道：先爬升到目标上方，再俯冲攻击
+        double diveAngle = config.steering().getTerminalDiveAngle();
+        if (diveAngle > 0) {
+            double dist = projectile.position().distanceTo(targetPos);
+            // 近距（< 10 格）直接瞄准目标中心
+            if (dist > 10.0) {
+                double targetTopY = targetPos.y;
+                double missileY = projectile.getY();
+                // 根据距离计算期望的制导点高度偏移
+                double aimHeight = Math.min(dist * Math.tan(Math.toRadians(diveAngle)), 80.0);
+                double desiredAimY = targetTopY + aimHeight;
+
+                if (missileY < desiredAimY - 8.0) {
+                    // 爬升阶段：直接瞄准目标正上方高点，让导弹拉起
+                    targetPos = new Vec3(targetPos.x, desiredAimY, targetPos.z);
+                } else {
+                    // 俯冲阶段：瞄准目标上方偏移点，以 diveAngle 俯冲
+                    targetPos = targetPos.add(0, aimHeight, 0);
+                }
+            }
+        }
+
         return guidanceToPos(projectile, targetPos, config);
     }
 
@@ -211,6 +234,32 @@ public final class RVP_GuidanceMath {
         int groundY = entity.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 entity.getBlockX(), entity.getBlockZ());
         return entity.getY() - groundY < minHeight;
+    }
+
+    /**
+     * 离地高度锁定过滤。
+     * <ul>
+     *   <li>{@code lockMinHeight > 0}：只锁定离地高度 ≥ 此值的目标（空中目标）</li>
+     *   <li>{@code lockMinHeight < 0}：只锁定离地高度 ≤ |此值| 的目标（近地目标）</li>
+     *   <li>{@code lockMinHeight == 0}：不限制</li>
+     * </ul>
+     */
+    public static boolean isTargetPassAltFilter(Entity entity, float lockMinHeight) {
+        if (entity == null || lockMinHeight == 0) {
+            return true;
+        }
+        double agl = getAgl(entity);
+        if (lockMinHeight > 0) {
+            return agl >= lockMinHeight;
+        } else {
+            return agl <= -lockMinHeight;
+        }
+    }
+
+    private static double getAgl(Entity entity) {
+        int groundY = entity.level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                entity.getBlockX(), entity.getBlockZ());
+        return entity.getY() - groundY;
     }
 
     public static boolean isEntityNearGroundBlocks(Entity entity, int blocksBelow) {

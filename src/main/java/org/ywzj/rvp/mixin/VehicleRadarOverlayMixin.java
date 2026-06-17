@@ -1,9 +1,20 @@
 package org.ywzj.rvp.mixin;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.world.entity.Entity;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -12,11 +23,19 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.client.gui.VehicleRadarOverlay;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
+import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+
+import java.util.List;
 
 @Mixin(value = VehicleRadarOverlay.class, remap = false)
 public class VehicleRadarOverlayMixin {
@@ -30,10 +49,28 @@ public class VehicleRadarOverlayMixin {
     @Unique
     private static final float ywzj_rvp$RWR_SCALE = 1.3f;
 
+    @Unique
+    private int ywzj_rvp$hmdCenterX;
+
+    @Unique
+    private int ywzj_rvp$hmdCenterY;
+
+    @Unique
+    private float ywzj_rvp$hmdRadius;
+
+    @Unique
+    private float ywzj_rvp$hmdYRotMin;
+
+    @Unique
+    private int ywzj_rvp$hmdYRotMax;
+
     @Inject(method = "render", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$captureFrame(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
         this.ywzj_rvp$partialTick = partialTick;
         this.ywzj_rvp$currentRadarUnit = null;
+        // 存储雷达小地图位置，供 HMD 扇形绘制使用
+        this.ywzj_rvp$hmdCenterX = screenWidth / 2 + 128;
+        this.ywzj_rvp$hmdCenterY = screenHeight - 80;
     }
 
     @Inject(
@@ -93,6 +130,34 @@ public class VehicleRadarOverlayMixin {
             remap = false
     )
     private float ywzj_rvp$modifyScanAngle(float angleDeg) {
+        // HMD 模式：扫描线只在 3° 小扇形内摆动，频率加快（每 5 tick 一个周期）
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        if (hmdState.isRadarHmd()) {
+            RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
+            if (radar != null) {
+                Vec3 radarPos = radar.worldRadarPosition();
+                // 使用平滑角度（同 HMD 框位置）
+                RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
+                Vec3 aimDir = VectorUtil.rotToVec(hmd.getSmoothPitch(), hmd.getSmoothYaw()).normalize();
+                Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
+                Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
+                float yMin = radar.getYRotMin();
+                float yMax = radar.getYRotMax();
+                if (yMax - yMin >= 360f) {
+                    yMin = 0f;
+                    yMax = 360f;
+                }
+                float center = Mth.clamp((float) localRot.y, yMin, yMax);
+                // 在 3° 内 ping-pong，每 5 tick 一个完整周期
+                int tick = hmd.getTickCount();
+                float phase = ((tick % 5) + this.ywzj_rvp$partialTick) / 5.0f;
+                phase = Mth.clamp(phase, 0f, 1f);
+                float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
+                return center - 1.5f + 3.0f * pingPong;
+            }
+            return angleDeg;
+        }
+
         RadarUnit radarUnit = this.ywzj_rvp$currentRadarUnit;
         if (radarUnit == null) {
             return angleDeg;
@@ -131,5 +196,73 @@ public class VehicleRadarOverlayMixin {
             return ext;
         }
         return null;
+    }
+
+    @Inject(method = "render", at = @At("TAIL"), remap = false)
+    private void ywzj_rvp$renderHmdSector(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        if (!hmdState.isHmdMode()) {
+            return;
+        }
+        // IR HMD 模式：不需要在雷达上画扇形
+        if (hmdState.isIrHmd()) {
+            return;
+        }
+        RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
+        if (radar == null) {
+            return;
+        }
+
+        // 使用平滑角度（同 HMD 框位置）
+        RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
+        Vec3 aimDir = VectorUtil.rotToVec(hmd.getSmoothPitch(), hmd.getSmoothYaw()).normalize();
+
+        Vec3 radarPos = radar.worldRadarPosition();
+        Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
+        Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
+
+        float yMin = radar.getYRotMin();
+        float yMax = radar.getYRotMax();
+        if (yMax - yMin >= 360f) {
+            yMin = 0f;
+            yMax = 360f;
+        }
+        // 取反 localRot.y：worldVecToLocalRot 与 drawRadarSector 的角方向相反
+        float hmdBearing = Mth.clamp(-(float) localRot.y, -yMax, -yMin);
+
+        int cx = this.ywzj_rvp$hmdCenterX;
+        int cy = this.ywzj_rvp$hmdCenterY;
+        float r = 50f;
+
+        float sectorStart = hmdBearing - 1.5f;
+        float sectorEnd = hmdBearing + 1.5f;
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        Tesselator tess = Tesselator.getInstance();
+        BufferBuilder buf = tess.getBuilder();
+        buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
+
+        int sectorColor = Color.RADAR_SECTOR;
+        float a = (float)(sectorColor >> 24 & 255) / 255.0F;
+        float rCol = (float)(sectorColor >> 16 & 255) / 255.0F;
+        float gCol = (float)(sectorColor >> 8 & 255) / 255.0F;
+        float bCol = (float)(sectorColor & 255) / 255.0F;
+
+        Matrix4f matrix = guiGraphics.pose().last().pose();
+
+        buf.vertex(matrix, (float) cx, (float) cy, 0).color(rCol, gCol, bCol, a).endVertex();
+        int segs = 8;
+        for (int i = 0; i <= segs; i++) {
+            float angle = sectorStart + (sectorEnd - sectorStart) * ((float) i / segs);
+            float rad = -(float) Math.toRadians(angle + 90);
+            float vx = cx + (float) Math.cos(rad) * r;
+            float vy = cy + (float) Math.sin(rad) * r;
+            buf.vertex(matrix, vx, vy, 0).color(rCol, gCol, bCol, a).endVertex();
+        }
+        tess.end();
+        RenderSystem.disableBlend();
     }
 }

@@ -7,7 +7,10 @@
   "mixins": [
     "AbstractVehicleEraStateMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
+    "accessor.MissileEntityAccessor",
     "VehicleExplosionCraterMixin",
+    "WeaponUnitArmMixin",
+    "MissileEntityMixin",
     "GunnerWeaponAccessorMixin",
     "PartUnitAccessorMixin",
     "RadarUnitPojoMixin",
@@ -19,6 +22,7 @@
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
+    "InfraredMixin",
     "InputHandlerAirburstMixin",
     "BedrockModelRenderTypesMixin",
     "CameraTVMissileMixin",
@@ -26,8 +30,13 @@
     "LocalVehiclePlayerRocketAimMixin",
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",
+    "VehicleAimAtOverlayMixin",
     "VehicleScopeOverlayMixin",
-    "VehicleRadarOverlayMixin"
+    "InfraredMixin",
+    "VehicleRadarOverlayMixin",
+    "WeaponUnitGetSeekerFovMixin",
+    "WeaponUnitTickFireControlMixin",
+    "WeaponUnitFireControlLockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

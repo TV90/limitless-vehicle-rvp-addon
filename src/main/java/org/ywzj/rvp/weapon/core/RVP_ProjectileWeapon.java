@@ -11,6 +11,7 @@ import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.S2CEnterHitlView;
+import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
@@ -130,24 +131,41 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
         var unit = getWeaponUnit().getRootParentWeaponUnit();
-        var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE && data.isActiveRadar()
-                ? null : unit.getLockedEntity();
+        // 所有导弹都传 lockedEntity（ARH 也需要 IOG 初始目标），弹体自主搜索阶段自行接管
+        var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                ? unit.getLockedEntity() : null;
+        // ARM 预选目标
+        int armPreselectVehicleId = -1;
+        int armPreselectRadarIndex = -1;
+        if (data.isAntiRadiationMissile() && unit instanceof WeaponUnitArmExt armExt) {
+            armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
+            armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
+        }
+        final int preselectVid = armPreselectVehicleId;
+        final int preselectRid = armPreselectRadarIndex;
+
         for (AimContext aim : aimContexts) {
             if (data.getFireData().isCanister()) {
                 shootCanister(data, shooter, aim, lock, unit, chargeScale);
             } else {
-                shootProjectiles(data, shooter, aim, lock, unit, chargeScale);
+                // 传递 ARM 预选给弹体
+                shootProjectiles(data, shooter, aim, lock, unit, chargeScale, preselectVid, preselectRid);
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
     }
 
     private void shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
-                                  net.minecraft.world.entity.Entity lock, WeaponUnit unit, float chargeScale) {
+                                  net.minecraft.world.entity.Entity lock, WeaponUnit unit, float chargeScale,
+                                  int armPreselectVehicleId, int armPreselectRadarIndex) {
         int totalProjectiles = data.getFireData().getCanisterCount() * data.getFireData().getCanisterBurstCount();
         for (int i = 0; i < totalProjectiles; i++) {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, aim, lock, unit, chargeScale, 0f);
+            // 设置 ARM 预选目标
+            if (armPreselectVehicleId >= 0 && projectile != null) {
+                projectile.setPreselectedTarget(armPreselectVehicleId, armPreselectRadarIndex);
+            }
             maybeEnterHitlView(data, shooter, projectile, i);
         }
     }

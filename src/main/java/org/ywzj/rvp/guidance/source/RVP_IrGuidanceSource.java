@@ -33,6 +33,16 @@ public final class RVP_IrGuidanceSource implements RVP_GuidanceSource {
         boolean vehicleOnly = source.getParams().vehicleOnly(type == RVP_EnumGuidanceType.IR);
 
         Entity target = projectile.getTargetEntity();
+
+        // 兜底：如果导弹尚无目标，尝试从发射武器站获取预锁（网络包延迟到达保护）
+        if (target == null || !target.isAlive()) {
+            Entity illuminated = RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile);
+            if (illuminated != null && illuminated.isAlive()) {
+                projectile.setTargetEntity(illuminated);
+                target = illuminated;
+            }
+        }
+
         if (target != null && target.isAlive()) {
             if (!RVP_GuidanceSeekerUtil.isValidEntityTarget(projectile, config, type, target)) {
                 projectile.clearTarget();

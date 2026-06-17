@@ -17,12 +17,15 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.screen.RVP_GPSPanelScreen;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
@@ -39,6 +42,7 @@ import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.CcipUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleRocket;
@@ -74,6 +78,31 @@ public class RVP_ClientEvents {
                     true);
         }
 
+        // HMD 模式切换：STT 状态下按 5 键先取消 STT 再进入 HMD
+        while (RVP_Keys.HMD_TOGGLE.consumeClick()) {
+            if (LocalVehiclePlayer.instance == null) continue;
+            RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
+            if (hmd.isHmdMode()) {
+                hmd.disable();
+                player.displayClientMessage(
+                        Component.translatable("message.ywzj_rvp.hmd.off"), true);
+            } else {
+                // 检查是否有 STT 锁定
+                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+                if (weaponUnit != null) {
+                    RadarUnit radar = weaponUnit.getMainRadarUnit();
+                    if (radar != null && radar.getLockedEntity() != null) {
+                        radar.setLockedEntity(null);
+                        weaponUnit.setLockedEntity(null);
+                    }
+                }
+                boolean on = hmd.toggle();
+                player.displayClientMessage(
+                        Component.translatable(on ? "message.ywzj_rvp.hmd.on" : "message.ywzj_rvp.hmd.off"),
+                        true);
+            }
+        }
+
         if (mc.screen != null) {
             return;
         }
@@ -86,6 +115,10 @@ public class RVP_ClientEvents {
         }
 
         RVP_ClientHitlState.tick(mc, player);
+        // IR HMD 自动检测（必须在雷达 HMD 逻辑之前）
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        hmdState.checkIrHmd();
+        hmdState.tick();
 
         ywzj_rvp$refreshVehicleMarkers(mc, player);
 
@@ -253,6 +286,13 @@ public class RVP_ClientEvents {
                 operatorId);
         if (RVP_ClientSaclosState.isSaclosWeapon(event.getWeapon())) {
             RVP_ClientSaclosState.onSaclosWeaponFired();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRenderGuiOverlayPost(RenderGuiOverlayEvent.Post event) {
+        if (RVP_ClientHmdState.getInstance().isHmdMode()) {
+            RVP_HmdOverlay.render(event.getGuiGraphics());
         }
     }
 }

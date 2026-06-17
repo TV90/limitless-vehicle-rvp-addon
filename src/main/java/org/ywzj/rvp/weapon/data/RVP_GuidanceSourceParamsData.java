@@ -56,6 +56,10 @@ public class RVP_GuidanceSourceParamsData {
     @SerializedName("locked_bonus")
     private Float lockedBonus;
 
+    /** ARH：主动雷达开机距离（格）。目标距离 ≤ 该值后弹载雷达开机。 */
+    @SerializedName("active_radar_activation_range")
+    private Float activeRadarActivationRange;
+
     public boolean useTargetPos(boolean defaultValue) {
         return useTargetPos != null ? useTargetPos : defaultValue;
     }
@@ -110,5 +114,9 @@ public class RVP_GuidanceSourceParamsData {
 
     public float lockedBonus(float defaultValue) {
         return lockedBonus != null ? lockedBonus : defaultValue;
+    }
+
+    public float activeRadarActivationRange(float defaultValue) {
+        return activeRadarActivationRange != null ? activeRadarActivationRange : defaultValue;
     }
 }

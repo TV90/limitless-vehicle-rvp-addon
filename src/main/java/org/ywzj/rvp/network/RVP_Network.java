@@ -72,5 +72,10 @@ public class RVP_Network {
                 .decoder(C2SSaclosDesignation::decode)
                 .consumerMainThread(C2SSaclosDesignation::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SSetArmPreselect.class, id++)
+                .encoder(C2SSetArmPreselect::encode)
+                .decoder(C2SSetArmPreselect::decode)
+                .consumerMainThread(C2SSetArmPreselect::handle)
+                .add();
     }
 }

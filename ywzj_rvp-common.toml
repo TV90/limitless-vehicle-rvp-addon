@@ -1,0 +1,6 @@
+#RVP Common Config
+[spawning]
+    #When placing a vehicle with the spawn item, automatically add a stack of creative ammo
+    #to the vehicle's inventory so it can be used immediately.
+    #Default: false
+    spawnVehicleWithCreativeAmmo = true
