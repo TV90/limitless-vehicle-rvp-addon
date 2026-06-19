@@ -427,6 +427,7 @@ public final class GunnerBrain {
         if (vehicle.onGround() && vehicle.getY() < 68) {
             pitchCmd = -10.0F;
         }
+        vehicle.controlUnit.forward = true;
         vehicle.controlUnit.xRot = pitchCmd;
         vehicle.controlUnit.xRotKeep = false;
     }

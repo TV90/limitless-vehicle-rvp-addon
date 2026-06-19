@@ -51,6 +51,13 @@ public abstract class WeaponUnitTickFireControlMixin {
         if (rvpWeapon.getData().getWeaponKind() != RVP_EnumWeaponKind.MISSILE) {
             return;
         }
+        // ARM 反辐射导弹使用独立预选系统，不用本体的 IR/雷达自动锁定
+        if (rvpWeapon.getData().isAntiRadiationMissile()) {
+            if (self.getLockedEntity() != null) {
+                self.setLockedEntity(null);
+            }
+            return;
+        }
 
         WeaponUnitData.FireControlSensorType sensorType = self.getFireControlSensorType();
         Entity entity = null;

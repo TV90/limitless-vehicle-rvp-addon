@@ -5,7 +5,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -301,15 +303,40 @@ public class RVP_ClientHmdState {
     }
 
     /**
+     * 查找第一个 HMS 启用的雷达。没有则返回主雷达（向后兼容）。
+     */
+    private static RadarUnit findHmdRadar(WeaponUnit weaponUnit) {
+        RadarUnit main = weaponUnit.getMainRadarUnit();
+        for (RadarUnit r : weaponUnit.getRadarUnits()) {
+            if (r == main) continue;
+            if (isRadarHmsEnabled(r)) return r;
+        }
+        if (main != null && isRadarHmsEnabled(main)) return main;
+        return main;
+    }
+
+    private static boolean isRadarHmsEnabled(RadarUnit radar) {
+        Object data = ((PartUnitAccessorMixin) (Object) radar).ywzj_rvp$getData();
+        if (data instanceof RadarUnitDataExt ext) {
+            return ext.ywzj_rvp$isEnableHms();
+        }
+        return true;
+    }
+
+    /**
      * 雷达 HMD 扫描逻辑（原格斗模式）。
      */
     private void tickRadarHmd(Minecraft mc, AbstractVehicle vehicle,
                               WeaponUnit weaponUnit, Vec3 headLook) {
-        RadarUnit radar = weaponUnit.getMainRadarUnit();
+        RadarUnit radar = findHmdRadar(weaponUnit);
         if (radar == null) {
             disable();
             return;
         }
+
+        // 观瞄模式下沿武器指向（屏幕中心）扫描，非观瞄沿头盔方向
+        boolean isScope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        Vec3 scanDir = isScope ? weaponUnit.worldVec().normalize() : headLook;
 
         Vec3 radarPos = radar.worldRadarPosition();
         float maxRange = radar.getMaxScanDistance() * HMD_RANGE_MULTIPLIER;
@@ -320,8 +347,8 @@ public class RVP_ClientHmdState {
         }
         scanCounter = 0;
 
-        // 离轴限制检查
-        if (!isWithinRadarLimits(radar, headLook)) {
+        // 离轴限制检查（观瞄模式用武器方向）
+        if (!isWithinRadarLimits(radar, scanDir)) {
             outOfBoundsTicks++;
             warningTicks = Math.min(warningTicks + 1, OUT_OF_BOUNDS_TIMEOUT + 5);
             if (outOfBoundsTicks >= OUT_OF_BOUNDS_TIMEOUT) {
@@ -348,7 +375,7 @@ public class RVP_ClientHmdState {
                 continue;
             }
             Vec3 dir = toTarget.normalize();
-            double angle = Math.toDegrees(Math.acos(headLook.dot(dir)));
+            double angle = Math.toDegrees(Math.acos(scanDir.dot(dir)));
             if (angle > RADAR_HMD_HALF_FOV) {
                 continue;
             }

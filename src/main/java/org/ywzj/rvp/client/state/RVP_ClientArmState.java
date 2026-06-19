@@ -39,6 +39,9 @@ public class RVP_ClientArmState {
     private int lockedVehicleId = -1;
     private int lockedRadarIndex = -1;
     private long lockedKeySent = Long.MIN_VALUE;
+    /** 连续无 contact 的 tick 数，用于去抖动。 */
+    private int lostTicks = 0;
+    private int maxLostTicks = 25; // 默认 pulseMemoryTick
 
     private RVP_ClientArmState() {
     }
@@ -122,6 +125,8 @@ public class RVP_ClientArmState {
         scanContacts(player, vehicle, seekerPos, seekerLook, seekerFov, seekRange, player.tickCount, pulseMemoryTick, lockedBonus, contacts);
         contacts.sort(Comparator.comparingDouble(Contact::score));
         active = true;
+        lostTicks = 0;
+        maxLostTicks = pulseMemoryTick; // 记忆时间内的脉冲闪烁不丢锁
 
         if (cursorIndex >= contacts.size()) {
             cursorIndex = 0;
@@ -146,13 +151,8 @@ public class RVP_ClientArmState {
                 ensureLocked(contacts.get(0), ext);
             }
         } else {
-            if (lockedVehicleId >= 0 || lockedRadarIndex >= 0) {
-                lockedVehicleId = -1;
-                lockedRadarIndex = -1;
-                lockedKeySent = Long.MIN_VALUE;
-                ext.ywzj_rvp$setArmPreselected(-1, -1, null);
-                RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.clear());
-            }
+            // 无 contact 时不清理预设——脉冲间歇期保持目标，等下次脉冲回来继续用
+            // 除非 rvp 明确告知 seeker 关闭
         }
     }
 
@@ -182,6 +182,7 @@ public class RVP_ClientArmState {
         active = false;
         contacts.clear();
         cursorIndex = 0;
+        lostTicks = 0;
         if (lockedVehicleId >= 0 || lockedRadarIndex >= 0 || lockedKeySent != Long.MIN_VALUE) {
             lockedVehicleId = -1;
             lockedRadarIndex = -1;

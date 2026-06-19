@@ -24,6 +24,8 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.config.UIPresetManager;
+import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.client.gui.VehicleRadarOverlay;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
@@ -64,13 +66,29 @@ public class VehicleRadarOverlayMixin {
     @Unique
     private int ywzj_rvp$hmdYRotMax;
 
+    @Unique
+    private int ywzj_rvp$processedRadarCount;
+
     @Inject(method = "render", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$captureFrame(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
         this.ywzj_rvp$partialTick = partialTick;
         this.ywzj_rvp$currentRadarUnit = null;
-        // 存储雷达小地图位置，供 HMD 扇形绘制使用
-        this.ywzj_rvp$hmdCenterX = screenWidth / 2 + 128;
-        this.ywzj_rvp$hmdCenterY = screenHeight - 80;
+        this.ywzj_rvp$processedRadarCount = 0;
+        // 获取当前载具的 UI 预设名，用于 HMD 扇形位置
+        String presetName = "default";
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        if (vehicle != null) {
+            String cached = VehicleUIPresetCache.get(vehicle);
+            if (cached != null && !cached.isEmpty()) presetName = cached;
+        }
+        var pos = UIPresetManager.getRadar(presetName);
+        if (pos != null) {
+            this.ywzj_rvp$hmdCenterX = pos.computeX(screenWidth);
+            this.ywzj_rvp$hmdCenterY = pos.computeY(screenHeight);
+        } else {
+            this.ywzj_rvp$hmdCenterX = screenWidth / 2 + 128;
+            this.ywzj_rvp$hmdCenterY = screenHeight - 80;
+        }
     }
 
     @Inject(
@@ -196,6 +214,27 @@ public class VehicleRadarOverlayMixin {
             return ext;
         }
         return null;
+    }
+
+    /**
+     * 多雷达固定间距：原代码 translate(-radius * sin(yRotMax) * 1.3) 因不同雷达
+     * yRotMax 值差异（如 180°→sin=0 vs 45°→sin≈0.85）导致间距不一致。
+     * 通过判断 a > 10（drawRotatedText 中 sin 参数是弧度值 < 6，translate 中是角度值 > 10）
+     * 拦截 translate 中的 Math.sin 调用，固定返回 sin(75°) 对应的弧度值 1.309，
+     * 使间距恒为 ~-1.256*radius。
+     */
+    @ModifyArg(
+            method = "render",
+            at = @At(value = "INVOKE", target = "Ljava/lang/Math;sin(D)D"),
+            index = 0,
+            remap = false
+    )
+    private double ywzj_rvp$fixRadarSpacing(double a) {
+        if (a > 10.0) {
+            // Math.toRadians(75°) ≈ 1.309 → Math.sin(1.309) ≈ 0.966
+            return 1.309;
+        }
+        return a;
     }
 
     @Inject(method = "render", at = @At("TAIL"), remap = false)

@@ -138,6 +138,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
+    /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
+    protected boolean showMslIndicator;
 
     /** 本 tick 内直击命中的载具 ID 集合，用于区分 HE 直击与非直击爆炸的 ERA 破坏。 */
     protected final java.util.Set<Integer> directHitVehicleIds = new java.util.HashSet<>();
@@ -202,6 +204,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         } else {
             this.motorBurnEndTick = Integer.MAX_VALUE;
         }
+        this.showMslIndicator = data.isShowMslIndicator();
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
@@ -1595,6 +1598,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         buffer.writeDouble(getDeltaMovement().z);
         buffer.writeDouble(flightSpeed);
         buffer.writeVarInt(motorBurnEndTick);
+        buffer.writeBoolean(showMslIndicator);
         buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
         buffer.writeBoolean(targetPos != null);
         if (targetPos != null) {
@@ -1612,6 +1616,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         setDeltaMovement(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         this.flightSpeed = buffer.readDouble();
         this.motorBurnEndTick = buffer.readVarInt();
+        this.showMslIndicator = buffer.readBoolean();
         yRotO = getYRot();
         xRotO = getXRot();
         int id = buffer.readVarInt();

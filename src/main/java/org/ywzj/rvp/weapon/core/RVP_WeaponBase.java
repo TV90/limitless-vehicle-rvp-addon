@@ -52,14 +52,22 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         RVP_WeaponData data = getData();
         if (requiresEntityLock(data)) {
             WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
-            // RVP HMD 管理的 IR 导弹：只认 HMD 锁状态（防止 vanilla tickFireControl 干扰）
-            boolean hasLock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                    && !data.isActiveRadar() && !data.isAntiRadiationMissile()
+            // RVP HMD 管理的 IR 导弹：只认 HMD 锁状态
+            boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                    && !data.isRadarHoming()
+                    && !data.isAntiRadiationMissile()
+                    && !data.isGpsMissile();
+            boolean hasLock = isIrHmdManaged
                     ? RVP_ClientHmdState.getInstance().hasLock()
                     : unit.getLockedEntity() != null;
-            if (!hasLock && unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.EO) {
-                LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
-                return false;
+            if (!hasLock) {
+                // HMD 管理的导弹不适用 EO 豁免（武器站 EO ≠ 导引头已锁定）
+                boolean eoExempt = !isIrHmdManaged
+                        && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO;
+                if (!eoExempt) {
+                    LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
+                    return false;
+                }
             }
             // 发射前强制同步 HMD 锁 → 服务器，防止 tickFireControl 的锁清除包比发射包先到
             if (hasLock) {
@@ -96,8 +104,12 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public boolean withSeeker() {
-        // 所有 RVP 导弹都允许开启导引头（IR/ARH 用于锁定，ARM 用于预选扫描）
-        return getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
+        // 只有寻的弹（IR/SARH/ARH/ARM）才允许开启导引头，SACLOS/MCLOS/IOG/GPS 没有寻的头
+        if (getData().getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE) return false;
+        RVP_WeaponData data = getData();
+        return data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IR)
+                || data.isRadarHoming()
+                || data.isAntiRadiationMissile();
     }
 
     @Override
@@ -143,7 +155,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     protected boolean requiresEntityLock(RVP_WeaponData data) {
         return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                 && data.isRequireLock()
-                && !data.isActiveRadar()
                 && !data.isAntiRadiationMissile()
                 && !data.isGpsMissile();
     }

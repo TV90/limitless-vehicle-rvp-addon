@@ -7,7 +7,10 @@
   "mixins": [
     "AbstractVehicleEraStateMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
+    "accessor.BaseBulletAccessor",
     "accessor.MissileEntityAccessor",
+    "accessor.WeaponUnitAccessor",
+    "accessor.SwitchableUnitAccessor",
     "VehicleExplosionCraterMixin",
     "WeaponUnitArmMixin",
     "MissileEntityMixin",
@@ -18,7 +21,12 @@
     "RadarUnitMixin",
     "RocketEntityMixin",
     "ServerHitVehicleEventMixin",
-    "VehicleRocketWeaponDataMixin"
+    "VehicleRocketWeaponDataMixin",
+    "WeaponUnitSetWeaponMixin",
+    "VehicleAutoLandingGearMixin",
+    "WeaponUnitSwitchWeaponMixin",
+    "BaseVehicleDataPojoMixin",
+    "BaseVehicleDataUIPresetMixin"
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
@@ -31,12 +39,16 @@
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleAimAtOverlayMixin",
-    "VehicleScopeOverlayMixin",
     "InfraredMixin",
     "VehicleRadarOverlayMixin",
+    "VehicleRadarOverlayPositionMixin",
+    "VehicleDisplayMixin",
     "WeaponUnitGetSeekerFovMixin",
     "WeaponUnitTickFireControlMixin",
-    "WeaponUnitFireControlLockMixin"
+    "WeaponUnitFireControlLockMixin",
+    "SwitchableRunnerLoopMixin",
+    "VehicleScopeOverlayHeadingMixin",
+    "AbstractVehicleUIPresetMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,0 +1,11 @@
+{
+  "name": "ps1sm_gunner",
+  "faction": "friendly",
+  "allow_drive": true,
+  "fixedwing_combat_radius_min": 20,
+  "fixedwing_combat_radius_max": 250,
+  "fixedwing_cruise_altitude_min": 80,
+  "fixedwing_cruise_altitude_max": 300,
+  "search_radius": 128.0,
+  "target_types": ["rvp:missile", "vehicle", "monster", "player"]
+}

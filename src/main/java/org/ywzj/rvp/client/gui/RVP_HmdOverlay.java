@@ -42,10 +42,21 @@ public class RVP_HmdOverlay {
 
     private static void renderRadarHmd(GuiGraphics guiGraphics, Minecraft mc, RVP_ClientHmdState state) {
         boolean warning = state.isWarning();
-        Camera camera = mc.gameRenderer.getMainCamera();
-        Vec3 hit = projectToScreen(mc, camera, state.getSmoothPitch(), state.getSmoothYaw());
-        if (hit == null) return;
-        int cx = (int) hit.x, cy = (int) hit.y;
+        int cx, cy;
+
+        // 观瞄模式：屏幕中心，非观瞄：跟随头盔方向（同 IR HMD 逻辑）
+        boolean isScope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        if (isScope) {
+            cx = mc.getWindow().getGuiScaledWidth() / 2;
+            cy = mc.getWindow().getGuiScaledHeight() / 2;
+        } else {
+            Camera camera = mc.gameRenderer.getMainCamera();
+            Vec3 hit = projectToScreen(mc, camera, state.getSmoothPitch(), state.getSmoothYaw());
+            if (hit == null) return;
+            cx = (int) hit.x;
+            cy = (int) hit.y;
+        }
+
         double fov = mc.options.fov().get();
         double tan = Math.tan(Math.toRadians(fov / 2.0));
         if (tan <= 0) return;

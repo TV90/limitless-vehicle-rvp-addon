@@ -7,13 +7,25 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.config.UIPresetManager;
+import org.ywzj.rvp.config.UIPresetManager.UIPosition;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_DebugCommands {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Path LOG_PATH = FMLPaths.CONFIGDIR.get().resolve("rvpui.log");
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -43,6 +55,109 @@ public class RVP_DebugCommands {
                                     return enabled ? 1 : 0;
                                 }))
                         )
+                        .then(Commands.literal("ui").executes(ctx -> {
+                            AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                            StringBuilder sb = new StringBuilder();
+                            String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                            sb.append("=== RVP UI Debug ").append(ts).append(" ===\n");
+
+                            if (vehicle == null) {
+                                sb.append("状态: 未乘坐载具\n");
+                                sb.append("已加载预设: ").append(String.join(", ", UIPresetManager.getLoadedPresetNames())).append("\n");
+                                writeLog(sb.toString());
+                                ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
+                                return 0;
+                            }
+
+                            // 载具信息
+                            sb.append("载具类型: ").append(vehicle.getClass().getName()).append("\n");
+
+                            // uiPreset 字段
+                            String vehiclePreset = org.ywzj.rvp.config.VehicleUIPresetCache.get(vehicle);
+                            if (vehiclePreset == null) vehiclePreset = "";
+                            sb.append("VehicleUIPresetCache.get(): \"").append(vehiclePreset).append("\"\n");
+
+                            // 预设管理器查询
+                            String lookupName = (vehiclePreset != null && !vehiclePreset.isEmpty()) ? vehiclePreset : "default";
+                            var preset = UIPresetManager.get(lookupName);
+                            sb.append("查询预设名: \"").append(lookupName).append("\"\n");
+                            sb.append("已加载预设: [").append(String.join(", ", UIPresetManager.getLoadedPresetNames())).append("]\n");
+
+                            if (preset == null) {
+                                sb.append("结果: 预设未找到\n");
+                                writeLog(sb.toString());
+                                ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
+                                return 0;
+                            }
+
+                            sb.append("预设名称: \"").append(preset.name).append("\"\n");
+
+                            // 雷达位置
+                            UIPosition radarPos = preset.radar;
+                            if (radarPos != null) {
+                                sb.append("雷达 radar: anchor=").append(radarPos.anchor)
+                                        .append(" offset_x=").append(radarPos.offsetX)
+                                        .append(" offset_y=").append(radarPos.offsetY)
+                                        .append(" scale=").append(radarPos.scale).append("\n");
+                                sb.append("  计算位置(1920x1080): X=").append(radarPos.computeX(1920))
+                                        .append(" Y=").append(radarPos.computeY(1080)).append("\n");
+                            } else {
+                                sb.append("雷达 radar: null\n");
+                            }
+
+                            // RWR 位置
+                            UIPosition rwrPos = preset.rwr;
+                            if (rwrPos != null) {
+                                sb.append("RWR rwr: anchor=").append(rwrPos.anchor)
+                                        .append(" offset_x=").append(rwrPos.offsetX)
+                                        .append(" offset_y=").append(rwrPos.offsetY)
+                                        .append(" scale=").append(rwrPos.scale).append("\n");
+                            } else {
+                                sb.append("RWR rwr: null\n");
+                            }
+
+                            // 多雷达独立位置
+                            if (preset.radars != null && !preset.radars.isEmpty()) {
+                                sb.append("多雷达 radars:\n");
+                                preset.radars.forEach((partId, pos) -> {
+                                    sb.append("  ").append(partId).append(": anchor=").append(pos.anchor)
+                                            .append(" offset_x=").append(pos.offsetX)
+                                            .append(" offset_y=").append(pos.offsetY)
+                                            .append(" scale=").append(pos.scale).append("\n");
+                                });
+                            } else {
+                                sb.append("多雷达 radars: null\n");
+                            }
+
+                            // 实际渲染情况：当前武器站雷达列表
+                            var wu = LocalVehiclePlayer.instance.getWeaponUnit();
+                            if (wu != null) {
+                                var radars = wu.getRadarUnits();
+                                sb.append("当前武器站雷达数: ").append(radars.size()).append("\n");
+                                for (int i = 0; i < radars.size(); i++) {
+                                    var r = radars.get(i);
+                                    sb.append("  雷达[").append(i).append("]: id=").append(r.getId())
+                                            .append(" isOn=").append(r.isOn())
+                                            .append(" isUiHide=").append(r.isUiHide()).append("\n");
+                                }
+                            } else {
+                                sb.append("当前武器站: null\n");
+                            }
+
+                            writeLog(sb.toString());
+                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
+                            return 1;
+                        }))
         );
+    }
+
+    private static void writeLog(String content) {
+        try {
+            Files.createDirectories(LOG_PATH.getParent());
+            Files.writeString(LOG_PATH, content);
+            LOGGER.info("Wrote debug log to {}", LOG_PATH);
+        } catch (IOException e) {
+            LOGGER.error("Failed to write debug log to {}", LOG_PATH, e);
+        }
     }
 }

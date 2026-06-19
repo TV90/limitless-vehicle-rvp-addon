@@ -17,7 +17,9 @@ import java.util.List;
  */
 public class RVP_WeaponData extends BaseVehicleWeaponData {
 
-    /** 运行时内部武器类别，由 {@link org.ywzj.rvp.all.RVP_WeaponTypes} 根据 {@code type} 写入，JSON 勿配置。 */
+    /** 是否在 HUD 中显示 MSL 导弹指示器（菱形框+距离）。 */
+    @SerializedName("show_msl_indicator")
+    private boolean showMslIndicator = false;
     private transient RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
 
     /** 子类型标签（如 incendiary），供逻辑分支或显示；非 MCH 迁移字段。 */
@@ -73,6 +75,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public RVP_EnumWeaponKind getWeaponKind() {
         return weaponKind;
+    }
+
+    public boolean isShowMslIndicator() {
+        return showMslIndicator;
     }
 
     public void setWeaponKind(RVP_EnumWeaponKind weaponKind) {
