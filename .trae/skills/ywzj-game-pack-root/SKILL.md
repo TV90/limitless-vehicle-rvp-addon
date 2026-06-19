@@ -7,7 +7,7 @@ description: "记录当前用于测试的游戏载具包根目录并约定默认
 
 ## 根目录（默认）
 
-`F:\载具包临时\ywzj\.minecraft\versions\Optimized fps\limitless_vehicle\rvp\`
+`E:\client_ywzj\ywzj\.minecraft\versions\Optimized fps\limitless_vehicle\rvp\`
 
 ## 常用子目录速查
 

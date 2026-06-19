@@ -1,0 +1,47 @@
+package org.ywzj.rvp.mixin;
+
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+
+import java.util.Optional;
+
+/**
+ * 切换武器时，如果新武器没有寻的头，自动关闭导引头。
+ * 防止从 SARH/IR 导弹切到 SACLOS 时导引头状态残留。
+ */
+@Mixin(value = WeaponUnit.class, remap = false)
+public class WeaponUnitSwitchWeaponMixin {
+
+    @Shadow(remap = false) private boolean seekerOn;
+
+    @Inject(
+            method = "setCurrentWeaponIndex",
+            at = @At("TAIL"),
+            remap = false
+    )
+    private void ywzj_rvp$resetSeekerOnWeaponSwitch(CallbackInfo ci) {
+        WeaponUnit self = (WeaponUnit) (Object) this;
+        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
+        if (weaponOpt.isPresent() && !weaponOpt.get().withSeeker()) {
+            seekerOn = false;
+        }
+    }
+
+    @Inject(
+            method = "setCurrentSecondaryWeaponIndex",
+            at = @At("TAIL"),
+            remap = false
+    )
+    private void ywzj_rvp$resetSeekerOnSecondaryWeaponSwitch(CallbackInfo ci) {
+        WeaponUnit self = (WeaponUnit) (Object) this;
+        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentSecondaryWeapon();
+        if (weaponOpt.isPresent() && !weaponOpt.get().withSeeker()) {
+            seekerOn = false;
+        }
+    }
+}

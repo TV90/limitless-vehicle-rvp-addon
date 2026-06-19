@@ -12,6 +12,7 @@ import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.config.RVP_Config;
+import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.resource.RVP_VehiclePackInstaller;
 
@@ -30,6 +31,7 @@ public class RVP_MOD {
     public RVP_MOD(FMLJavaModLoadingContext context) {
         RVP_Config.register(context);
         RVP_CommonConfig.register(context);
+        UIPresetManager.load();
         RVP_VehiclePackInstaller.ensureInstalled();
         IEventBus modBus = context.getModEventBus();
         RVP_Entities.register(modBus);

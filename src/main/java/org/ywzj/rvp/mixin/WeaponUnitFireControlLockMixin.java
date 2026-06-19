@@ -32,16 +32,22 @@ public abstract class WeaponUnitFireControlLockMixin {
         if (!locked && self.getLockedEntity() != null) {
             locked = true;
         }
-        if (!locked) {
+
+        // 只对 RVP 武器生效
+        Optional<?> weaponOpt = self.getCurrentWeapon();
+        if (weaponOpt.isEmpty()) return;
+        if (!(weaponOpt.get() instanceof RVP_WeaponBase rvpWeapon)) return;
+
+        // ARM 反辐射导弹：即使无锁也开启导引头，用于预选扫描
+        if (rvpWeapon.getData().isAntiRadiationMissile()) {
+            if (!self.isSeekerOn()) {
+                self.toggleSeeker(true);
+            }
             return;
         }
 
-        // 只对 RVP 导弹生效
-        Optional<?> weaponOpt = self.getCurrentWeapon();
-        if (weaponOpt.isEmpty()) return;
-        if (!(weaponOpt.get() instanceof RVP_WeaponBase)) return;
-
-        // 自动开启导引头（如果有 RVP 武器且导引头还没开）
+        // 其他 RVP 导弹：需要锁上目标后才开启导引头
+        if (!locked) return;
         if (!self.isSeekerOn()) {
             self.toggleSeeker(true);
         }

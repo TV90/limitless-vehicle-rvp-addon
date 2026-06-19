@@ -28,6 +28,15 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
         RVP_BaseBullet projectile = context.projectile();
         RVP_GuidanceEffectiveConfig config = context.effective();
         Entity target = projectile.getTargetEntity();
+
+        // 如果导弹尚无目标，尝试从发射载具雷达获取预锁
+        if (target == null || !target.isAlive()) {
+            Entity illuminated = RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile);
+            if (illuminated != null && illuminated.isAlive()) {
+                projectile.setTargetEntity(illuminated);
+                target = illuminated;
+            }
+        }
         if (target != null && target.isAlive()) {
             if (!isValidRadarTarget(projectile, config, target)) {
                 projectile.clearTarget();

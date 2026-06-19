@@ -1,7 +1,9 @@
 package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -293,7 +295,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     /**
-     * ARH 目标管理：载机雷达续标 → 实时追踪 → 距离触发弹载雷达开机 → 丢锁自毁。
+     * ARH 目标管理：载机雷达锁续标 → 实时追踪 → 距离触发弹载雷达开机 → 丢锁自毁。
      * 不取代 stage 系统的转向，只维护 targetEntity/targetPos 状态。
      */
     private void tickArhTargetManagement() {
@@ -301,14 +303,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             initArhParams();
         }
 
-        // 主动雷达截获前：载机雷达续标（对标本体续标逻辑）
+        // 主动雷达截获前：载机雷达必须持续锁定目标（不同于本体仅检测）
         if (!activeRadarCatch && targetEntity != null) {
             WeaponUnit weaponUnit = getShooterWeaponUnit();
+            boolean radarStillLocked = false;
             if (weaponUnit != null) {
                 RadarUnit radar = weaponUnit.getMainRadarUnit();
-                if (radar == null || !radar.getDetectedEntities().containsKey(targetEntity.getId())) {
-                    targetEntity = null;
-                }
+                radarStillLocked = radar != null && radar.getLockedEntity() == targetEntity;
+            }
+            if (!radarStillLocked) {
+                targetEntity = null;
             }
         }
 
@@ -319,6 +323,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
             if (!activeRadarOn && targetEntity.distanceTo(this) <= activeRadarActivationRange) {
                 activeRadarOn = true;
+                // 开机提示（action bar 不干扰聊天）
+                if (getOwner() instanceof ServerPlayer player) {
+                    player.displayClientMessage(Component.literal("主动雷达导引头开机"), true);
+                }
             }
         }
 
