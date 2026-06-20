@@ -73,9 +73,12 @@ public class RVP_DebugCommands {
                             sb.append("载具类型: ").append(vehicle.getClass().getName()).append("\n");
 
                             // uiPreset 字段
-                            String vehiclePreset = org.ywzj.rvp.config.VehicleUIPresetCache.get(vehicle);
+                            String vehiclePreset = "";
+                            if (vehicle.getVehicleId() != null) {
+                                vehiclePreset = org.ywzj.rvp.config.VehicleUIPresetCache.get(vehicle.getVehicleId());
+                            }
                             if (vehiclePreset == null) vehiclePreset = "";
-                            sb.append("VehicleUIPresetCache.get(): \"").append(vehiclePreset).append("\"\n");
+                            sb.append("VehicleUIPresetCache.get(").append(vehicle.getVehicleId()).append("): \"").append(vehiclePreset).append("\"\n");
 
                             // 预设管理器查询
                             String lookupName = (vehiclePreset != null && !vehiclePreset.isEmpty()) ? vehiclePreset : "default";
@@ -142,6 +145,62 @@ public class RVP_DebugCommands {
                                 }
                             } else {
                                 sb.append("当前武器站: null\n");
+                            }
+
+                            // === RVP Overlay 渲染状态 ===
+                            sb.append("--- RVP Overlay 渲染状态 ---\n");
+                            sb.append("RVP 雷达替代: ").append(vehiclePreset != null && !vehiclePreset.isEmpty() ? "是 (原版已取消)" : "否 (原版渲染)").append("\n");
+                            sb.append("RVP 观瞄替代: ").append(vehiclePreset != null && !vehiclePreset.isEmpty() ? "是 (原版已取消)" : "否 (原版渲染)").append("\n");
+
+                            // 如果使用 RVP，打印实际渲染参数
+                            if (vehiclePreset != null && !vehiclePreset.isEmpty()) {
+                                int screenW = 1920;
+                                int screenH = 1080;
+                                // 尝试从 Minecraft 获取实际分辨率
+                                var mc = net.minecraft.client.Minecraft.getInstance();
+                                if (mc.getWindow() != null) {
+                                    screenW = mc.getWindow().getGuiScaledWidth();
+                                    screenH = mc.getWindow().getGuiScaledHeight();
+                                }
+                                sb.append("当前分辨率: ").append(screenW).append("x").append(screenH).append("\n");
+
+                                // 雷达实际渲染位置
+                                UIPosition rp = UIPresetManager.getRadar(lookupName);
+                                if (rp != null) {
+                                    int rx = rp.computeX(screenW);
+                                    int ry = rp.computeY(screenH);
+                                    float radScale = rp.scale;
+                                    float radius = 50.0f * radScale;
+                                    sb.append("RVP 雷达渲染: center=(").append(rx).append(",").append(ry)
+                                            .append(") scale=").append(radScale)
+                                            .append(" radius=").append(String.format("%.1f", radius)).append("\n");
+                                }
+
+                                // RWR 实际渲染位置
+                                UIPosition rwp = UIPresetManager.getRwr(lookupName);
+                                if (rwp != null) {
+                                    int rwx = rwp.computeX(screenW);
+                                    int rwy = rwp.computeY(screenH);
+                                    sb.append("RVP RWR 渲染: center=(").append(rwx).append(",").append(rwy)
+                                            .append(") scale=").append(rwp.scale).append("\n");
+                                }
+
+                                // show_skeleton 状态
+                                sb.append("show_skeleton: ")
+                                        .append(org.ywzj.rvp.config.VehicleUIPresetCache.isShowSkeleton(vehicle.getVehicleId())).append("\n");
+
+                                // 雷达 yRot 值（扫描线动画）
+                                var wu2 = LocalVehiclePlayer.instance.getWeaponUnit();
+                                if (wu2 != null) {
+                                    var radars = wu2.getRadarUnits();
+                                    for (var ru : radars) {
+                                        sb.append("  雷达[").append(ru.getId()).append("] yRotO=")
+                                                .append(String.format("%.1f", ru.yRotO))
+                                                .append(" yRot=").append(String.format("%.1f", ru.getYRot()))
+                                                .append(" locked=").append(ru.getLockedEntity() != null ? "是" : "否")
+                                                .append("\n");
+                                    }
+                                }
                             }
 
                             writeLog(sb.toString());

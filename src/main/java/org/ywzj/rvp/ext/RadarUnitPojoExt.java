@@ -6,4 +6,6 @@ public interface RadarUnitPojoExt {
     boolean ywzj_rvp$isScanLineWhenLocked();
     int ywzj_rvp$getContactHoldTick();
     boolean ywzj_rvp$isEnableHms();
+    float ywzj_rvp$getScanMinHeight();
+    float ywzj_rvp$getScanMaxHeight();
 }

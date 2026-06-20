@@ -60,8 +60,8 @@ public class VehicleRadarOverlayPositionMixin {
         this.ywzj_rvp$presetName = null;
 
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
-        if (vehicle != null) {
-            String cached = VehicleUIPresetCache.get(vehicle);
+        if (vehicle != null && vehicle.getVehicleId() != null) {
+            String cached = VehicleUIPresetCache.get(vehicle.getVehicleId());
             if (cached != null && !cached.isEmpty()) this.ywzj_rvp$presetName = cached;
         }
 

@@ -37,6 +37,9 @@ public class UIPresetManager {
 
     /** 单组件位置 */
     public static class UIPosition {
+        /** 参考高度（1080p），offset 按实际分辨率等比缩放 */
+        public static final int REF_HEIGHT = 1080;
+
         public Anchor anchor;
         @SerializedName("offset_x")
         public int offsetX;
@@ -53,10 +56,12 @@ public class UIPresetManager {
         }
 
         public int computeY(int screenHeight) {
+            float ratio = (float) screenHeight / REF_HEIGHT;
+            int scaledOffset = Math.round(offsetY * ratio);
             return switch (anchor == null ? Anchor.RIGHT : anchor) {
-                case CENTER -> screenHeight / 2 + offsetY;
-                case RIGHT -> screenHeight + offsetY;
-                case RIGHT_BOTTOM -> screenHeight + offsetY;
+                case CENTER -> screenHeight / 2 + scaledOffset;
+                case RIGHT -> screenHeight + scaledOffset;
+                case RIGHT_BOTTOM -> screenHeight + scaledOffset;
             };
         }
     }
@@ -68,6 +73,8 @@ public class UIPresetManager {
         public UIPosition rwr;
         @SerializedName("vehicle_bones")
         public UIPosition vehicleBones;
+        @SerializedName("scope_envelope")
+        public UIPosition scopeEnvelope;
         /** 多雷达独立位置，key = sub_part_unit_id（如 "scan_radar"），value = 位置 */
         public Map<String, UIPosition> radars;
     }

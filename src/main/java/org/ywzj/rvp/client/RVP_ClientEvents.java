@@ -154,15 +154,15 @@ public class RVP_ClientEvents {
             return;
         }
         if (RVP_ClientGPSState.isActive()) {
-            LocalVehiclePlayer.instance.weaponHitPosO = null;
-            LocalVehiclePlayer.instance.weaponHitPos = null;
+            weaponUnit.weaponHitPosO = null;
+            weaponUnit.weaponHitPos = null;
         } else {
             Vec3 releasePos = weaponUnit.worldPivotPosition();
             float dragCoefficient = weapon.getData().getProjectileData().getDrag();
             Vec3 ccipHit = CcipUtil.computeCcipImpact(
                     vehicle.level(), releasePos, vehicle.getDeltaMovement(), dragCoefficient);
-            LocalVehiclePlayer.instance.weaponHitPosO = LocalVehiclePlayer.instance.weaponHitPos;
-            LocalVehiclePlayer.instance.weaponHitPos = ccipHit;
+            weaponUnit.weaponHitPosO = weaponUnit.weaponHitPos;
+            weaponUnit.weaponHitPos = ccipHit;
         }
     }
 

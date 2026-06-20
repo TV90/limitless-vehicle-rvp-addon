@@ -24,20 +24,14 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
-import org.ywzj.rvp.config.UIPresetManager;
-import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.client.gui.VehicleRadarOverlay;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.client.render.util.Color;
-import org.ywzj.vehicle.client.render.util.GuiHelper;
-import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
-
-import java.util.List;
 
 @Mixin(value = VehicleRadarOverlay.class, remap = false)
 public class VehicleRadarOverlayMixin {
@@ -51,44 +45,10 @@ public class VehicleRadarOverlayMixin {
     @Unique
     private static final float ywzj_rvp$RWR_SCALE = 1.3f;
 
-    @Unique
-    private int ywzj_rvp$hmdCenterX;
-
-    @Unique
-    private int ywzj_rvp$hmdCenterY;
-
-    @Unique
-    private float ywzj_rvp$hmdRadius;
-
-    @Unique
-    private float ywzj_rvp$hmdYRotMin;
-
-    @Unique
-    private int ywzj_rvp$hmdYRotMax;
-
-    @Unique
-    private int ywzj_rvp$processedRadarCount;
-
     @Inject(method = "render", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$captureFrame(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
         this.ywzj_rvp$partialTick = partialTick;
         this.ywzj_rvp$currentRadarUnit = null;
-        this.ywzj_rvp$processedRadarCount = 0;
-        // 获取当前载具的 UI 预设名，用于 HMD 扇形位置
-        String presetName = "default";
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
-        if (vehicle != null) {
-            String cached = VehicleUIPresetCache.get(vehicle);
-            if (cached != null && !cached.isEmpty()) presetName = cached;
-        }
-        var pos = UIPresetManager.getRadar(presetName);
-        if (pos != null) {
-            this.ywzj_rvp$hmdCenterX = pos.computeX(screenWidth);
-            this.ywzj_rvp$hmdCenterY = pos.computeY(screenHeight);
-        } else {
-            this.ywzj_rvp$hmdCenterX = screenWidth / 2 + 128;
-            this.ywzj_rvp$hmdCenterY = screenHeight - 80;
-        }
     }
 
     @Inject(
@@ -237,20 +197,31 @@ public class VehicleRadarOverlayMixin {
         return a;
     }
 
-    @Inject(method = "render", at = @At("TAIL"), remap = false)
-    private void ywzj_rvp$renderHmdSector(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
+    @Inject(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;translate(DDD)V",
+                    ordinal = 2,
+                    shift = At.Shift.BEFORE
+            ),
+            remap = false,
+            require = 0
+    )
+    private void ywzj_rvp$renderHmdSectorInRadarSpace(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
-        if (!hmdState.isHmdMode()) {
-            return;
-        }
-        // IR HMD 模式：不需要在雷达上画扇形
-        if (hmdState.isIrHmd()) {
-            return;
-        }
+        if (!hmdState.isRadarHmd()) return;
         RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
-        if (radar == null) {
-            return;
-        }
+        if (radar == null) return;
+
+        RadarUnitData data = radar.getData();
+        if (!(data instanceof RadarUnitDataExt ext) || !ext.ywzj_rvp$isEnableHms()) return;
+
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) return;
+        int radarCount = weaponUnit.getRadarUnits().size();
+        if (radarCount <= 0) return;
+        float radius = radarCount == 1 ? 50.0f : 50.0f / radarCount / 0.6f;
 
         // 使用平滑角度（同 HMD 框位置）
         RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
@@ -268,10 +239,6 @@ public class VehicleRadarOverlayMixin {
         }
         // 取反 localRot.y：worldVecToLocalRot 与 drawRadarSector 的角方向相反
         float hmdBearing = Mth.clamp(-(float) localRot.y, -yMax, -yMin);
-
-        int cx = this.ywzj_rvp$hmdCenterX;
-        int cy = this.ywzj_rvp$hmdCenterY;
-        float r = 50f;
 
         float sectorStart = hmdBearing - 1.5f;
         float sectorEnd = hmdBearing + 1.5f;
@@ -292,13 +259,13 @@ public class VehicleRadarOverlayMixin {
 
         Matrix4f matrix = guiGraphics.pose().last().pose();
 
-        buf.vertex(matrix, (float) cx, (float) cy, 0).color(rCol, gCol, bCol, a).endVertex();
+        buf.vertex(matrix, 0, 0, 0).color(rCol, gCol, bCol, a).endVertex();
         int segs = 8;
         for (int i = 0; i <= segs; i++) {
             float angle = sectorStart + (sectorEnd - sectorStart) * ((float) i / segs);
             float rad = -(float) Math.toRadians(angle + 90);
-            float vx = cx + (float) Math.cos(rad) * r;
-            float vy = cy + (float) Math.sin(rad) * r;
+            float vx = (float) Math.cos(rad) * radius;
+            float vy = (float) Math.sin(rad) * radius;
             buf.vertex(matrix, vx, vy, 0).color(rCol, gCol, bCol, a).endVertex();
         }
         tess.end();

@@ -24,18 +24,21 @@ public class LocalVehiclePlayerRocketAimMixin {
     @Inject(method = "tickAim", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$capturePreviousRocketAim(CallbackInfo ci) {
         LocalVehiclePlayer self = (LocalVehiclePlayer) (Object) this;
-        this.ywzj_rvp$prevWeaponHitPos = self.weaponHitPos;
+        WeaponUnit weaponUnit = self.getWeaponUnit();
+        this.ywzj_rvp$prevWeaponHitPos = weaponUnit != null ? weaponUnit.weaponHitPos : null;
     }
 
     @Inject(method = "tickAim", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$applyRocketBallisticAim(CallbackInfo ci) {
         LocalVehiclePlayer self = (LocalVehiclePlayer) (Object) this;
+        WeaponUnit weaponUnit = self.getWeaponUnit();
         if (RVP_ClientHitlState.isActive() && this.ywzj_rvp$prevWeaponHitPos != null) {
-            self.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos;
-            self.weaponHitPos = this.ywzj_rvp$prevWeaponHitPos;
+            if (weaponUnit != null) {
+                weaponUnit.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos;
+                weaponUnit.weaponHitPos = this.ywzj_rvp$prevWeaponHitPos;
+            }
             return;
         }
-        WeaponUnit weaponUnit = self.getWeaponUnit();
         if (weaponUnit == null || weaponUnit.getCurrentWeapon().isEmpty()) {
             if (self.onVehicle()) {
                 RVP_RocketCcipState.clear(self.getVehicle().getId());
@@ -65,7 +68,7 @@ public class LocalVehiclePlayerRocketAimMixin {
         if (hit == null) {
             return;
         }
-        self.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos == null ? hit : this.ywzj_rvp$prevWeaponHitPos;
-        self.weaponHitPos = hit;
+        rocketWeaponUnit.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos == null ? hit : this.ywzj_rvp$prevWeaponHitPos;
+        rocketWeaponUnit.weaponHitPos = hit;
     }
 }

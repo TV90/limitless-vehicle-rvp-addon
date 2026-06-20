@@ -20,6 +20,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 public class RVP_ClientHitlState {
 
@@ -375,8 +376,11 @@ public class RVP_ClientHitlState {
         clientAimPoint = aimPoint;
 
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        lvp.weaponHitPosO = aimPoint;
-        lvp.weaponHitPos = aimPoint;
+        WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        if (weaponUnit != null) {
+            weaponUnit.weaponHitPosO = aimPoint;
+            weaponUnit.weaponHitPos = aimPoint;
+        }
         lvp.aimLocationDistance = missile.position().distanceTo(aimPoint);
         lvp.outOfRangeFinding = false;
     }
