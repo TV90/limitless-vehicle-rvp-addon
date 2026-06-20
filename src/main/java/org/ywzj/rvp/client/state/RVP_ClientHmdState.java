@@ -161,12 +161,25 @@ public class RVP_ClientHmdState {
             warningTicks = 0;
             return false;
         }
+        ywzj_rvp$ensureRadarOn();
         hmdType = HmdType.RADAR;
         scanCounter = 0;
         outOfBoundsTicks = 0;
         warningTicks = 0;
         smoothInitialized = false;
         return true;
+    }
+
+    private void ywzj_rvp$ensureRadarOn() {
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) {
+            return;
+        }
+        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+            if (!radarUnit.isOn()) {
+                radarUnit.toggle(true);
+            }
+        }
     }
 
     /**

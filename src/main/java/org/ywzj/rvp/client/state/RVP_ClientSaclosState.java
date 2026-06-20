@@ -112,7 +112,7 @@ public final class RVP_ClientSaclosState {
         if (hit != null) {
             return hit;
         }
-        return LocalVehiclePlayer.instance.weaponHitPos;
+        return unit != null ? unit.weaponHitPos : null;
     }
 
     @Nullable

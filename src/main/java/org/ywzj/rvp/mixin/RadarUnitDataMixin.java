@@ -27,6 +27,12 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Unique
     private boolean ywzj_rvp$enableHms = true;
 
+    @Unique
+    private float ywzj_rvp$scanMinHeight = 25f;
+
+    @Unique
+    private float ywzj_rvp$scanMaxHeight = 10000f;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/RadarUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(RadarUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof RadarUnitPojoExt ext) {
@@ -35,6 +41,8 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
             this.ywzj_rvp$scanLineWhenLocked = ext.ywzj_rvp$isScanLineWhenLocked();
             this.ywzj_rvp$contactHoldTick = ext.ywzj_rvp$getContactHoldTick();
             this.ywzj_rvp$enableHms = ext.ywzj_rvp$isEnableHms();
+            this.ywzj_rvp$scanMinHeight = ext.ywzj_rvp$getScanMinHeight();
+            this.ywzj_rvp$scanMaxHeight = ext.ywzj_rvp$getScanMaxHeight();
         }
     }
 
@@ -61,5 +69,15 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Override
     public boolean ywzj_rvp$isEnableHms() {
         return ywzj_rvp$enableHms;
+    }
+
+    @Override
+    public float ywzj_rvp$getScanMinHeight() {
+        return ywzj_rvp$scanMinHeight;
+    }
+
+    @Override
+    public float ywzj_rvp$getScanMaxHeight() {
+        return ywzj_rvp$scanMaxHeight;
     }
 }

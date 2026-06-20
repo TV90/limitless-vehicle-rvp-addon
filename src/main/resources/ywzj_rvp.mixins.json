@@ -24,9 +24,10 @@
     "VehicleRocketWeaponDataMixin",
     "WeaponUnitSetWeaponMixin",
     "VehicleAutoLandingGearMixin",
+    "WeaponUnitPojoMixin",
+    "WeaponUnitDataMixin",
     "WeaponUnitSwitchWeaponMixin",
-    "BaseVehicleDataPojoMixin",
-    "BaseVehicleDataUIPresetMixin"
+    "VehicleDataManagerMixin"
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
@@ -38,17 +39,13 @@
     "LocalVehiclePlayerRocketAimMixin",
     "ModRenderTypesMixin",
     "VehicleCrossHairOverlayMixin",
-    "VehicleAimAtOverlayMixin",
-    "InfraredMixin",
     "VehicleRadarOverlayMixin",
-    "VehicleRadarOverlayPositionMixin",
     "VehicleDisplayMixin",
     "WeaponUnitGetSeekerFovMixin",
+    "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
-    "SwitchableRunnerLoopMixin",
-    "VehicleScopeOverlayHeadingMixin",
-    "AbstractVehicleUIPresetMixin"
+    "SwitchableRunnerLoopMixin"
   ],
   "injectors": {
     "defaultRequire": 1

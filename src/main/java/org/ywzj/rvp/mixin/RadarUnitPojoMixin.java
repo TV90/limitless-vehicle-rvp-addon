@@ -28,6 +28,14 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Unique
     public boolean ywzj_rvp$enableHms = true;
 
+    @SerializedName("scan_min_height")
+    @Unique
+    public float ywzj_rvp$scanMinHeight = 25f;
+
+    @SerializedName("scan_max_height")
+    @Unique
+    public float ywzj_rvp$scanMaxHeight = 10000f;
+
     @Override
     public String ywzj_rvp$getScanAnimationMode() {
         return ywzj_rvp$scanAnimationMode;
@@ -51,5 +59,15 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Override
     public boolean ywzj_rvp$isEnableHms() {
         return ywzj_rvp$enableHms;
+    }
+
+    @Override
+    public float ywzj_rvp$getScanMinHeight() {
+        return ywzj_rvp$scanMinHeight;
+    }
+
+    @Override
+    public float ywzj_rvp$getScanMaxHeight() {
+        return ywzj_rvp$scanMaxHeight;
     }
 }

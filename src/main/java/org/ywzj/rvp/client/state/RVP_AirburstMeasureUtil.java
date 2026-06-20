@@ -5,7 +5,7 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
- * 可编程空爆测距：以第一人称弹道落点（{@link LocalVehiclePlayer#weaponHitPos} /
+ * 可编程空爆测距：以第一人称弹道落点（{@link WeaponUnit#weaponHitPos} /
  * {@link WeaponUnit#aimHitPosition()}）为准，与 {@code VehicleScopeOverlay} 绿框下 “XX m” 一致。
  */
 public final class RVP_AirburstMeasureUtil {
@@ -24,7 +24,7 @@ public final class RVP_AirburstMeasureUtil {
             return 0;
         }
 
-        Vec3 hit = lvp.weaponHitPos;
+        Vec3 hit = weaponUnit.weaponHitPos;
         if (hit == null) {
             hit = weaponUnit.aimHitPosition();
         }
