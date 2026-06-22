@@ -1,6 +1,8 @@
 package org.ywzj.rvp.mixin;
 
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.resources.ResourceLocation;
+import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -9,6 +11,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -46,13 +50,13 @@ public class LocalVehiclePlayerRocketAimMixin {
             return;
         }
         AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
-        if (!(currentWeapon instanceof VehicleRocket rocket)) {
+        if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
             if (self.onVehicle()) {
                 RVP_RocketCcipState.clear(self.getVehicle().getId());
             }
             return;
         }
-        WeaponUnit rocketWeaponUnit = rocket.getWeaponUnit();
+        WeaponUnit rocketWeaponUnit = currentWeapon.getWeaponUnit();
         if (rocketWeaponUnit == null) {
             if (self.onVehicle()) {
                 RVP_RocketCcipState.clear(self.getVehicle().getId());
@@ -63,11 +67,27 @@ public class LocalVehiclePlayerRocketAimMixin {
             return;
         }
         AbstractVehicle vehicle = self.getVehicle();
-        Vec3 rawHit = RVP_RocketBallistics.computeWeaponImpact(vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), rocket.getData(), vehicle);
-        Vec3 hit = RVP_RocketCcipState.smooth(vehicle.getId(), rocket.getData().getWeaponId(), vehicle.tickCount, rawHit);
+        Vec3 rawHit = null;
+        ResourceLocation weaponId = null;
+        if (currentWeapon instanceof VehicleRocket rocket) {
+            rawHit = RVP_RocketBallistics.computeWeaponImpact(
+                    vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), rocket.getData(), vehicle);
+            weaponId = rocket.getData().getWeaponId();
+        } else if (currentWeapon instanceof RVP_ProjectileWeapon weapon
+                && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
+            rawHit = RVP_RocketBallistics.computeWeaponImpact(
+                    vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(), vehicle);
+            weaponId = weapon.getData().getWeaponId();
+        }
+        if (weaponId == null) {
+            return;
+        }
+        Vec3 hit = RVP_RocketCcipState.smooth(vehicle.getId(), weaponId, vehicle.tickCount, rawHit);
         if (hit == null) {
             return;
         }
+        weaponUnit.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos == null ? hit : this.ywzj_rvp$prevWeaponHitPos;
+        weaponUnit.weaponHitPos = hit;
         rocketWeaponUnit.weaponHitPosO = this.ywzj_rvp$prevWeaponHitPos == null ? hit : this.ywzj_rvp$prevWeaponHitPos;
         rocketWeaponUnit.weaponHitPos = hit;
     }

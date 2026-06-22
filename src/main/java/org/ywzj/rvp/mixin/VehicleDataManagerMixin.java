@@ -50,6 +50,6 @@ public class VehicleDataManagerMixin {
             }
         }
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
-        UIPresetManager.load();
+        UIPresetManager.load(manager);
     }
 }

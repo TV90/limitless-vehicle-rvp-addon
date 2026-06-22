@@ -2,10 +2,15 @@ package org.ywzj.rvp.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.annotations.SerializedName;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.vehicle.util.ResourceScanner;
 
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -27,6 +32,8 @@ public class UIPresetManager {
     private static final Logger LOGGER = LogManager.getLogger("UIPresetManager");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<String, UIPreset> PRESETS = new HashMap<>();
+    private static final String CONFIG_PRESET_DIR = "limitless_vehicle/ui_presets";
+    private static final String DATAPACK_PRESET_DIR = "ui_presets";
 
     /** 单组件锚点 */
     public enum Anchor {
@@ -48,21 +55,27 @@ public class UIPresetManager {
         public float scale = 1.0f;
 
         public int computeX(int screenWidth) {
-            return switch (anchor == null ? Anchor.RIGHT : anchor) {
-                case CENTER -> screenWidth / 2 + offsetX;
-                case RIGHT -> screenWidth / 2 + offsetX;
-                case RIGHT_BOTTOM -> screenWidth / 2 + offsetX;
-            };
+            Anchor resolvedAnchor = anchor == null ? Anchor.RIGHT : anchor;
+            if (resolvedAnchor == Anchor.CENTER) {
+                return screenWidth / 2 + offsetX;
+            }
+            if (resolvedAnchor == Anchor.RIGHT) {
+                return screenWidth / 2 + offsetX;
+            }
+            return screenWidth / 2 + offsetX;
         }
 
         public int computeY(int screenHeight) {
             float ratio = (float) screenHeight / REF_HEIGHT;
             int scaledOffset = Math.round(offsetY * ratio);
-            return switch (anchor == null ? Anchor.RIGHT : anchor) {
-                case CENTER -> screenHeight / 2 + scaledOffset;
-                case RIGHT -> screenHeight + scaledOffset;
-                case RIGHT_BOTTOM -> screenHeight + scaledOffset;
-            };
+            Anchor resolvedAnchor = anchor == null ? Anchor.RIGHT : anchor;
+            if (resolvedAnchor == Anchor.CENTER) {
+                return screenHeight / 2 + scaledOffset;
+            }
+            if (resolvedAnchor == Anchor.RIGHT) {
+                return screenHeight + scaledOffset;
+            }
+            return screenHeight + scaledOffset;
         }
     }
 
@@ -82,7 +95,19 @@ public class UIPresetManager {
     /** 获取指定名称的预设，不存在返回 null */
     public static UIPreset get(String name) {
         if (name == null || name.isEmpty()) return null;
-        return PRESETS.get(name);
+        UIPreset preset = PRESETS.get(name);
+        if (preset != null) {
+            return preset;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(name);
+        if (id != null) {
+            preset = PRESETS.get(id.toString());
+            if (preset != null) {
+                return preset;
+            }
+            return PRESETS.get(id.getPath());
+        }
+        return null;
     }
 
     /** 获取当前载具应使用的预设（根据 presetName），不存在或为空返回 null */
@@ -122,22 +147,53 @@ public class UIPresetManager {
 
     /** 加载所有预设文件 */
     public static void load() {
-        Path presetDir = FMLPaths.CONFIGDIR.get().resolve("limitless_vehicle/ui_presets");
+        PRESETS.clear();
+        loadConfigPresets();
+        if (PRESETS.isEmpty()) {
+            LOGGER.warn("No UI presets found, creating default presets");
+            createDefaultPresets(configPresetDir());
+        }
+    }
+
+    /** 从数据包 + config 加载预设。数据包同名预设优先，config 仅作回退。 */
+    public static void load(@Nullable ResourceManager resourceManager) {
+        PRESETS.clear();
+        if (resourceManager != null) {
+            loadDatapackPresets(resourceManager);
+        }
+        loadConfigPresets();
+        if (PRESETS.isEmpty()) {
+            LOGGER.warn("No UI presets found, creating default presets");
+            createDefaultPresets(configPresetDir());
+        }
+    }
+
+    private static void loadDatapackPresets(ResourceManager resourceManager) {
+        Map<ResourceLocation, JsonElement> entries = ResourceScanner.scanDirectory(resourceManager, DATAPACK_PRESET_DIR, GSON);
+        entries.forEach((id, json) -> {
+            try {
+                UIPreset preset = GSON.fromJson(json, UIPreset.class);
+                registerPreset(preset, id.getPath(), id.toString(), "data/" + id);
+            } catch (Exception e) {
+                LOGGER.error("Failed to load UI preset from data pack: {}", id, e);
+            }
+        });
+    }
+
+    private static void loadConfigPresets() {
+        Path presetDir = configPresetDir();
         if (Files.notExists(presetDir)) {
             createDefaultPresets(presetDir);
             return;
         }
-
-        PRESETS.clear();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(presetDir, "*.json")) {
             for (Path entry : stream) {
                 try {
                     String json = Files.readString(entry);
                     UIPreset preset = GSON.fromJson(json, UIPreset.class);
-                    if (preset != null && preset.name != null && !preset.name.isEmpty()) {
-                        PRESETS.put(preset.name, preset);
-                        LOGGER.info("Loaded UI preset: {}", preset.name);
-                    }
+                    String fileName = entry.getFileName().toString();
+                    String fallbackName = fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
+                    registerPreset(preset, fallbackName, null, "config/" + fileName);
                 } catch (Exception e) {
                     LOGGER.error("Failed to load UI preset: {}", entry.getFileName(), e);
                 }
@@ -145,10 +201,25 @@ public class UIPresetManager {
         } catch (IOException e) {
             LOGGER.error("Failed to scan UI presets directory", e);
         }
+    }
 
-        if (PRESETS.isEmpty()) {
-            LOGGER.warn("No UI presets found, creating default presets");
-            createDefaultPresets(presetDir);
+    private static Path configPresetDir() {
+        return FMLPaths.CONFIGDIR.get().resolve(CONFIG_PRESET_DIR);
+    }
+
+    private static void registerPreset(@Nullable UIPreset preset, String fallbackName, @Nullable String alias, String source) {
+        if (preset == null) {
+            return;
+        }
+        if (preset.name == null || preset.name.isBlank()) {
+            preset.name = fallbackName;
+        }
+        String key = preset.name.trim();
+        if (PRESETS.putIfAbsent(key, preset) == null) {
+            LOGGER.info("Loaded UI preset: {} from {}", key, source);
+        }
+        if (alias != null && !alias.isBlank()) {
+            PRESETS.putIfAbsent(alias, preset);
         }
     }
 
@@ -185,9 +256,7 @@ public class UIPresetManager {
 
             // 加载默认预设
             UIPreset preset = GSON.fromJson(defaultPreset, UIPreset.class);
-            if (preset != null) {
-                PRESETS.put(preset.name, preset);
-            }
+            registerPreset(preset, "default", null, "generated default");
         } catch (IOException e) {
             LOGGER.error("Failed to create default UI presets", e);
         }

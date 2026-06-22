@@ -35,6 +35,10 @@ public final class GunnerBrain {
     private static final int GROUND_TACTICAL_HOLD_TICK = 100;
     private static final int GROUND_TACTICAL_EVADE_MIN_TICK = 140;
     private static final int GROUND_TACTICAL_EVADE_MAX_TICK = 280;
+    private static final double FIXEDWING_ATTACK_ENTRY_MIN_AGL = 175.0;
+    private static final double FIXEDWING_INITIAL_DISENGAGE_SCALE = 0.45;
+    private static final double FIXEDWING_DISENGAGE_SCALE = 0.55;
+    private static final double FIXEDWING_ATTACK_SCALE = 1.4;
     private static final double ROTARY_INITIAL_DISENGAGE_SCALE = 0.2;
     private static final double ROTARY_DISENGAGE_SCALE = 0.35;
     private static final double ROTARY_ATTACK_SCALE = 1.15;
@@ -288,7 +292,7 @@ public final class GunnerBrain {
             tickFixedWingCruise(gunner, vehicle, profile, false);
             return false;
         }
-        boolean allowFire = ensureAirPhase(gunner, profile);
+        boolean allowFire = ensureAirPhase(gunner, vehicle, profile);
         boolean attackPhase = gunner.getAirPhase() == AIR_PHASE_ATTACK;
         tickFixedWingCruise(gunner, vehicle, profile, attackPhase);
 
@@ -412,7 +416,17 @@ public final class GunnerBrain {
         double currentAgl = vehicle.getY() - groundY;
         double min = profile.getFixedwingCruiseAltitudeMin();
         double max = profile.getFixedwingCruiseAltitudeMax();
-        double desiredAgl = attackPhase ? (min + max) * 0.5 : max;
+        double desiredAgl;
+        if (attackPhase) {
+            desiredAgl = Mth.clamp(175.0, min, max);
+        } else {
+            double span = Math.max(max - min, 0.0);
+            double lowCruise = min + span * 0.2;
+            double highCruise = min + span * 0.8;
+            // Give each gunner a slow, per-entity altitude wave so fixed-wing AI does not hug max altitude forever.
+            double wave = (Math.sin((gunner.tickCount + gunner.getId() * 37.0) * 0.0125) + 1.0) * 0.5;
+            desiredAgl = Mth.lerp(wave, lowCruise, highCruise);
+        }
         if (currentAgl < min) {
             desiredAgl = min;
         } else if (currentAgl > max) {
@@ -499,21 +513,36 @@ public final class GunnerBrain {
         }
     }
 
-    private static boolean ensureAirPhase(GunnerEntity gunner, GunnerProfile profile) {
+    private static boolean ensureAirPhase(GunnerEntity gunner, FixedWingVehicle vehicle, GunnerProfile profile) {
         if (!gunner.isAirPhaseInitialized()) {
             gunner.setAirPhaseInitialized(true);
             gunner.setAirPhase(AIR_PHASE_DISENGAGE);
-            int min = profile.getAirInitialDisengageTickMin();
-            int max = profile.getAirInitialDisengageTickMax();
-            int initial = min + gunner.getRandom().nextInt(Math.max(1, max - min + 1));
+            int initial = pickScaledTickRange(gunner,
+                    profile.getAirInitialDisengageTickMin(),
+                    profile.getAirInitialDisengageTickMax(),
+                    FIXEDWING_INITIAL_DISENGAGE_SCALE,
+                    40,
+                    180);
             gunner.setAirPhaseTicks(initial);
             return false;
         }
         int ticks = gunner.getAirPhaseTicks();
         if (ticks <= 0) {
             int nextPhase = gunner.getAirPhase() == AIR_PHASE_ATTACK ? AIR_PHASE_DISENGAGE : AIR_PHASE_ATTACK;
+            if (nextPhase == AIR_PHASE_ATTACK) {
+                double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
+                double currentAgl = vehicle.getY() - groundY;
+                if (currentAgl < FIXEDWING_ATTACK_ENTRY_MIN_AGL) {
+                    gunner.setAirPhase(AIR_PHASE_DISENGAGE);
+                    gunner.setAirPhaseTicks(20);
+                    return false;
+                }
+            }
             gunner.setAirPhase(nextPhase);
-            gunner.setAirPhaseTicks(nextPhase == AIR_PHASE_ATTACK ? profile.getAirAttackPhaseTick() : profile.getAirDisengagePhaseTick());
+            int nextTicks = nextPhase == AIR_PHASE_ATTACK
+                    ? scaleAirTicks(profile.getAirAttackPhaseTick(), FIXEDWING_ATTACK_SCALE, 140, 420)
+                    : scaleAirTicks(profile.getAirDisengagePhaseTick(), FIXEDWING_DISENGAGE_SCALE, 40, 140);
+            gunner.setAirPhaseTicks(nextTicks);
         } else {
             gunner.setAirPhaseTicks(ticks - 1);
         }

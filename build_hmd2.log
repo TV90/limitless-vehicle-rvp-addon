@@ -1,0 +1,300 @@
+﻿To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.8/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :
+MixinGradle did not locate the diffplug APT plugin, skipping eclipse task configuration
+Java: 1.8.0_301, JVM: 25.301-b09 (Oracle Corporation), Arch: amd64
+
+> Task :downloadMcpConfig
+> Task :extractSrg UP-TO-DATE
+> Task :createMcpToSrg UP-TO-DATE
+
+> Task :compileJava FAILED
+gradlew.bat : D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRad
+arOverlayMixin.java:163: 错误: 非法的类型开始
+所在位置 行:1 字符: 65
++ ... tion SilentlyContinue; & .\gradlew.bat build --no-daemon 2>&1 | Out-F ...
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\ywzj\ywzj\yw...63: 错误: 非法的类型开始 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+        if (radarUnit == null) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:163: 错误: 需要<标识符>
+        if (radarUnit == null) {
+                     ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:167: 错误: 非法的类型开始
+        if (ext == null) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:167: 错误: 需要<标识符>
+        if (ext == null) {
+               ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:170: 错误: 非法的类型开始
+        if (!"phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:170: 错误: 方法声明无效; 需要返回类型
+        if (!"phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())) {
+                     ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:170: 错误: 需要<标识符>
+        if (!"phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())) {
+                                                                       ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:174: 错误: 非法的类型开始
+        if (periodTick <= 0) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:174: 错误: 需要<标识符>
+        if (periodTick <= 0) {
+                      ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:180: 错误: 非法的类型开始
+        if (scanAz >= 360f) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:180: 错误: 需要<标识符>
+        if (scanAz >= 360f) {
+                  ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:185: 错误: 需要<标识符>
+        phase = Mth.clamp(phase, 0f, 1f);
+             ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:186: 错误: 非法的类型开始
+        if (scanAz >= 360f) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:186: 错误: 需要<标识符>
+        if (scanAz >= 360f) {
+                  ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:190: 错误: 非法的类型开始
+        return yRotMin + scanAz * pingPong;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:190: 错误: 需要<标识符>
+        return yRotMin + scanAz * pingPong;
+                      ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:190: 错误: 需要<标识符>
+        return yRotMin + scanAz * pingPong;
+                               ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:190: 错误: 需要<标识符>
+        return yRotMin + scanAz * pingPong;
+                                          ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:194: 错误: 需要 class、interface、enum 或 record
+    private static RadarUnitDataExt ywzj_rvp$getRadarDataExt(RadarUnit radarUni
+t) {
+                   ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:196: 错误: 需要 class、interface、enum 或 record
+        if (data instanceof RadarUnitDataExt ext) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:198: 错误: 需要 class、interface、enum 或 record
+        }
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:200: 错误: 需要 class、interface、enum 或 record
+    }
+    ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:203: 错误: 需要 class、interface、enum 或 record
+    private void ywzj_rvp$renderHmdSector(ForgeGui gui, GuiGraphics guiGraphics
+, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:206: 错误: 需要 class、interface、enum 或 record
+        }
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:208: 错误: 需要 class、interface、enum 或 record
+        if (radar == null) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:210: 错误: 需要 class、interface、enum 或 record
+        }
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:214: 错误: 需要 class、interface、enum 或 record
+        float aimYaw = LocalVehiclePlayer.instance.cameraAimRotY;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:215: 错误: 需要 class、interface、enum 或 record
+        Vec3 aimDir = VectorUtil.rotToVec(aimPitch, aimYaw).normalize();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:217: 错误: 需要 class、interface、enum 或 record
+        Vec3 radarPos = radar.worldRadarPosition();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:218: 错误: 需要 class、interface、enum 或 record
+        Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:219: 错误: 需要 class、interface、enum 或 record
+        Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:221: 错误: 需要 class、interface、enum 或 record
+        float yMin = radar.getYRotMin();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:222: 错误: 需要 class、interface、enum 或 record
+        float yMax = radar.getYRotMax();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:223: 错误: 需要 class、interface、enum 或 record
+        if (yMax - yMin >= 360f) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:225: 错误: 需要 class、interface、enum 或 record
+            yMax = 360f;
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:226: 错误: 需要 class、interface、enum 或 record
+        }
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:229: 错误: 需要 class、interface、enum 或 record
+        int cx = this.ywzj_rvp$hmdCenterX;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:230: 错误: 需要 class、interface、enum 或 record
+        int cy = this.ywzj_rvp$hmdCenterY;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:231: 错误: 需要 class、interface、enum 或 record
+        float r = 50f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:233: 错误: 需要 class、interface、enum 或 record
+        float sectorStart = hmdBearing - 1.5f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:234: 错误: 需要 class、interface、enum 或 record
+        float sectorEnd = hmdBearing + 1.5f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:236: 错误: 需要 class、interface、enum 或 record
+        RenderSystem.enableBlend();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:237: 错误: 需要 class、interface、enum 或 record
+        RenderSystem.defaultBlendFunc();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:238: 错误: 需要 class、interface、enum 或 record
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.8/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+4 actionable tasks: 2 executed, 2 up-to-date
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:240: 错误: 需要 class、interface、enum 或 record
+        Tesselator tess = Tesselator.getInstance();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:241: 错误: 需要 class、interface、enum 或 record
+        BufferBuilder buf = tess.getBuilder();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:242: 错误: 需要 class、interface、enum 或 record
+        buf.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_
+COLOR);
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:244: 错误: 需要 class、interface、enum 或 record
+        float a = 0.3f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:245: 错误: 需要 class、interface、enum 或 record
+        float rCol = 0.498f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:246: 错误: 需要 class、interface、enum 或 record
+        float gCol = 1.0f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:247: 错误: 需要 class、interface、enum 或 record
+        float bCol = 0.0f;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:249: 错误: 需要 class、interface、enum 或 record
+        Matrix4f matrix = guiGraphics.pose().last().pose();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:251: 错误: 需要 class、interface、enum 或 record
+        buf.vertex(matrix, (float) cx, (float) cy, 0).color(rCol, gCol, bCol, a
+).endVertex();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:252: 错误: 需要 class、interface、enum 或 record
+        int segs = 8;
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:253: 错误: 需要 class、interface、enum 或 record
+        for (int i = 0; i <= segs; i++) {
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:253: 错误: 需要 class、interface、enum 或 record
+        for (int i = 0; i <= segs; i++) {
+                        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:253: 错误: 需要 class、interface、enum 或 record
+        for (int i = 0; i <= segs; i++) {
+                                   ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:255: 错误: 需要 class、interface、enum 或 record
+            float rad = -(float) Math.toRadians(angle + 90);
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:256: 错误: 需要 class、interface、enum 或 record
+            float vx = cx + (float) Math.cos(rad) * r;
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:257: 错误: 需要 class、interface、enum 或 record
+            float vy = cy + (float) Math.sin(rad) * r;
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:258: 错误: 需要 class、interface、enum 或 record
+            buf.vertex(matrix, vx, vy, 0).color(rCol, gCol, bCol, a).endVertex(
+);
+            ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:259: 错误: 需要 class、interface、enum 或 record
+        }
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:261: 错误: 需要 class、interface、enum 或 record
+        RenderSystem.disableBlend();
+        ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:262: 错误: 需要 class、interface、enum 或 record
+    }
+    ^
+64 个错误
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+BUILD FAILED in 12s

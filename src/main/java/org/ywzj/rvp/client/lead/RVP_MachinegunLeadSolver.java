@@ -14,6 +14,10 @@ public final class RVP_MachinegunLeadSolver {
     private static final double MAX_SOLVE_TICKS = 120.0;
     private static final double SOLVE_STEP_TICKS = 0.5;
     private static final int AIM_REFINE_ITERATIONS = 6;
+    private static final double TARGET_FORWARD_OFFSET_METERS = 8.5;
+    private static final double LONG_RANGE_BIAS_START_TICKS = 15.0;
+    private static final double LONG_RANGE_BIAS_MAX_TICKS = 3.5;
+    private static final double LONG_RANGE_BIAS_PER_TICK = 0.06;
 
     private RVP_MachinegunLeadSolver() {}
 
@@ -35,8 +39,18 @@ public final class RVP_MachinegunLeadSolver {
         if (muzzle == null) {
             muzzle = weaponUnit.worldCurrentBoltPosition();
         }
-        Vec3 targetPos = interpolateEntityCenter(target, partialTick);
+        return solveForTarget(weaponUnit, data, muzzle, target, partialTick);
+    }
+
+    @Nullable
+    public static RVP_LeadSolution solveForTarget(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
+                                                  Entity target, float partialTick) {
+        if (weaponUnit == null || data == null || target == null || muzzle == null) {
+            return null;
+        }
         Vec3 targetVelocity = estimateEntityVelocity(target);
+        Vec3 targetPos = interpolateEntityCenter(target, partialTick)
+                .add(resolveTargetForward(target, targetVelocity).scale(TARGET_FORWARD_OFFSET_METERS));
         Vec3 inheritedVelocity = data.isInheritVehicleVelocity()
                 ? weaponUnit.getVehicle().getDeltaMovement()
                 : Vec3.ZERO;
@@ -62,11 +76,18 @@ public final class RVP_MachinegunLeadSolver {
     private static RVP_LeadSolution solve(Entity target, Vec3 muzzle, Vec3 targetPos, Vec3 targetVelocity,
                                           Vec3 inheritedVelocity, double muzzleSpeed, double gravity,
                                           double friction, double maxTicks) {
-        double acceptableMiss = Math.max(Math.max(target.getBbWidth(), target.getBbHeight()) * 0.8, 1.25);
         RVP_LeadSolution best = null;
 
         for (double timeTicks = 1.0; timeTicks <= maxTicks; timeTicks += SOLVE_STEP_TICKS) {
             Vec3 futureTargetPos = targetPos.add(targetVelocity.scale(timeTicks));
+            double extraLeadTicks = Mth.clamp(
+                    (timeTicks - LONG_RANGE_BIAS_START_TICKS) * LONG_RANGE_BIAS_PER_TICK,
+                    0.0,
+                    LONG_RANGE_BIAS_MAX_TICKS
+            );
+            if (extraLeadTicks > 0.0) {
+                futureTargetPos = futureTargetPos.add(targetVelocity.scale(extraLeadTicks));
+            }
             Vec3 aimPoint = futureTargetPos;
 
             for (int i = 0; i < AIM_REFINE_ITERATIONS; i++) {
@@ -107,14 +128,8 @@ public final class RVP_MachinegunLeadSolver {
             if (best == null || missDistance < best.missDistance()) {
                 best = new RVP_LeadSolution(target, targetPos, aimPoint, timeTicks, missDistance);
             }
-            if (missDistance <= acceptableMiss) {
-                return new RVP_LeadSolution(target, targetPos, aimPoint, timeTicks, missDistance);
-            }
         }
-        if (best != null && best.missDistance() <= acceptableMiss * 2.0) {
-            return best;
-        }
-        return null;
+        return best;
     }
 
     private static Vec3 simulateBulletPosition(Vec3 muzzle, Vec3 aimDir, Vec3 inheritedVelocity,
@@ -136,7 +151,7 @@ public final class RVP_MachinegunLeadSolver {
     }
 
     @Nullable
-    private static RVP_WeaponData resolveCurrentWeaponData(WeaponUnit weaponUnit) {
+    public static RVP_WeaponData resolveCurrentWeaponData(WeaponUnit weaponUnit) {
         AbstractVehicleWeapon<?> weapon = weaponUnit.getCurrentWeapon().orElse(null);
         if (weapon == null || !(weapon.getData() instanceof RVP_WeaponData data)) {
             return null;
@@ -148,7 +163,7 @@ public final class RVP_MachinegunLeadSolver {
     }
 
     @Nullable
-    private static Entity resolveTrackedTarget(WeaponUnit weaponUnit) {
+    public static Entity resolveTrackedTarget(WeaponUnit weaponUnit) {
         Entity target = weaponUnit.getLockedEntity();
         if (target != null && target.isAlive()) {
             return target;
@@ -177,5 +192,13 @@ public final class RVP_MachinegunLeadSolver {
         );
         Vec3 motion = entity.getDeltaMovement();
         return tickDelta.lerp(motion, 0.65);
+    }
+
+    private static Vec3 resolveTargetForward(Entity entity, Vec3 targetVelocity) {
+        Vec3 forward = targetVelocity.lengthSqr() > 0.25 ? targetVelocity : entity.getLookAngle();
+        if (forward.lengthSqr() < 1.0E-6) {
+            return Vec3.ZERO;
+        }
+        return forward.normalize();
     }
 }

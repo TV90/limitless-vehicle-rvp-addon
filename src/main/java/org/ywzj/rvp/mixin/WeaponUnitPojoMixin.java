@@ -16,6 +16,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private float ywzj_rvp$rfOffAxisDeg = 10.0f;
 
+    @SerializedName("rvp_disable_crt_effect")
+    @Unique
+    private boolean ywzj_rvp$disableCrtEffect;
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
@@ -24,5 +28,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public float ywzj_rvp$getRfOffAxisDeg() {
         return ywzj_rvp$rfOffAxisDeg;
+    }
+
+    @Override
+    public boolean ywzj_rvp$disableCrtEffect() {
+        return ywzj_rvp$disableCrtEffect;
     }
 }

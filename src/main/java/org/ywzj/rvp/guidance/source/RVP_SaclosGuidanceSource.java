@@ -27,6 +27,7 @@ public final class RVP_SaclosGuidanceSource implements RVP_GuidanceSource {
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceContext context, RVP_GuidanceData.Source source) {
         RVP_BaseBullet projectile = context.projectile();
+        boolean tvSaclos = projectile.getRvpData() != null && projectile.getRvpData().isSaclosTvGuided();
 
         if (!RVP_SaclosOperatorSession.isLaserEnabled(projectile)
                 && !isHitlDesignate(projectile)) {
@@ -34,7 +35,7 @@ public final class RVP_SaclosGuidanceSource implements RVP_GuidanceSource {
         }
 
         Entity target = projectile.getTargetEntity();
-        if (target != null && target.isAlive()) {
+        if (tvSaclos && isHitlDesignate(projectile) && target != null && target.isAlive()) {
             Vec3 aimPoint = target.getBoundingBox().getCenter();
             if (isDenied(projectile, aimPoint, source, context)) {
                 projectile.clearTarget();

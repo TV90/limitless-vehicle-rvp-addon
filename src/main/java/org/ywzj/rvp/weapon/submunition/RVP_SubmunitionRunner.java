@@ -1,5 +1,6 @@
 package org.ywzj.rvp.weapon.submunition;
 
+import org.ywzj.rvp.debug.RVP_AheadDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionParentAction;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
@@ -79,7 +80,8 @@ public final class RVP_SubmunitionRunner {
             if (interval <= 0) {
                 toFire = wave.eventsRemaining;
             }
-            RVP_SubmunitionSpawner.spawnReleaseWave(parent, wave.config, toFire);
+            int spawned = RVP_SubmunitionSpawner.spawnReleaseWave(parent, wave.config, toFire);
+            RVP_AheadDebug.logFuseRelease(parent, wave.config, RVP_EnumSubmunitionTrigger.IN_FLIGHT, toFire, spawned);
             wave.eventsRemaining -= toFire;
             if (wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN) {
                 discardParent = true;
@@ -112,7 +114,8 @@ public final class RVP_SubmunitionRunner {
                 continue;
             }
             int toFire = wave.config.getIntervalTick() > 0 ? wave.config.getPerTick() : wave.eventsRemaining;
-            RVP_SubmunitionSpawner.spawnReleaseWave(parent, wave.config, toFire);
+            int spawned = RVP_SubmunitionSpawner.spawnReleaseWave(parent, wave.config, toFire);
+            RVP_AheadDebug.logFuseRelease(parent, wave.config, trigger, toFire, spawned);
             wave.eventsRemaining -= toFire;
             if (isOneShotTrigger(trigger)) {
                 wave.oneShotFired = true;

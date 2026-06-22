@@ -1,0 +1,330 @@
+(() => {
+  const PLUGIN_ID = 'ywzj_tread_inward_normal';
+  const DEFAULT_PATTERN = '^tread_([a-z])_(-?\\d+)$';
+  const DEFAULT_PLANE = 'YZ';
+  const DEFAULT_SET_MESH_ORIGIN_TO_LOCAL_CENTER = true;
+  const DEFAULT_SET_GROUP_PIVOT_TO_WORLD_CENTER = true;
+  const DEFAULT_GROUP_ROTATION_AXIS = 'X';
+  const DEFAULT_KEEP_MESH_RENDER = true;
+
+  function wrapAngleDeg(a) {
+    let x = a % 360;
+    if (x > 180) x -= 360;
+    if (x < -180) x += 360;
+    return x;
+  }
+
+  function signedAreaYZ(points) {
+    let a = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const q = points[(i + 1) % points.length];
+      a += p.y * q.z - q.y * p.z;
+    }
+    return a * 0.5;
+  }
+
+  function rotXDegToAlignGreenTo(ny, nz) {
+    return wrapAngleDeg(Math.atan2(nz, ny) * 180 / Math.PI);
+  }
+
+  function getMeshLocalBBoxCenter(mesh) {
+    if (!mesh?.vertices) return null;
+    const keys = Object.keys(mesh.vertices);
+    if (!keys.length) return null;
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (const k of keys) {
+      const v = mesh.vertices[k];
+      if (!Array.isArray(v) || v.length < 3) continue;
+      minX = Math.min(minX, v[0]);
+      minY = Math.min(minY, v[1]);
+      minZ = Math.min(minZ, v[2]);
+      maxX = Math.max(maxX, v[0]);
+      maxY = Math.max(maxY, v[1]);
+      maxZ = Math.max(maxZ, v[2]);
+    }
+
+    if (!isFinite(minX)) return null;
+    return [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2];
+  }
+
+  function getMeshWorldCenter(mesh, tempVec) {
+    if (!mesh?.mesh || !mesh?.vertices) return new THREE.Vector3(0, 0, 0);
+    const keys = Object.keys(mesh.vertices);
+    if (!keys.length) return new THREE.Vector3(0, 0, 0);
+
+    mesh.mesh.updateMatrixWorld?.(true);
+
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (const key of keys) {
+      const v = mesh.vertices[key];
+      if (!Array.isArray(v) || v.length < 3) continue;
+      tempVec.set(v[0], v[1], v[2]);
+      mesh.mesh.localToWorld(tempVec);
+      minX = Math.min(minX, tempVec.x);
+      minY = Math.min(minY, tempVec.y);
+      minZ = Math.min(minZ, tempVec.z);
+      maxX = Math.max(maxX, tempVec.x);
+      maxY = Math.max(maxY, tempVec.y);
+      maxZ = Math.max(maxZ, tempVec.z);
+    }
+
+    if (!isFinite(minX)) return new THREE.Vector3(0, 0, 0);
+    return new THREE.Vector3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+  }
+
+  function captureWorldVertices(mesh, tempVec) {
+    const result = {};
+    if (!mesh?.mesh || !mesh?.vertices) return result;
+
+    mesh.mesh.updateMatrixWorld?.(true);
+
+    for (const key of Object.keys(mesh.vertices)) {
+      const v = mesh.vertices[key];
+      if (!Array.isArray(v) || v.length < 3) continue;
+      tempVec.set(v[0], v[1], v[2]);
+      mesh.mesh.localToWorld(tempVec);
+      result[key] = [tempVec.x, tempVec.y, tempVec.z];
+    }
+
+    return result;
+  }
+
+  function restoreVerticesFromWorld(mesh, worldVertices, tempVec) {
+    if (!mesh?.mesh || !mesh?.vertices) return;
+
+    mesh.mesh.updateMatrixWorld?.(true);
+
+    for (const key of Object.keys(worldVertices)) {
+      const w = worldVertices[key];
+      const v = mesh.vertices[key];
+      if (!w || !v) continue;
+      tempVec.set(w[0], w[1], w[2]);
+      mesh.mesh.worldToLocal(tempVec);
+      v[0] = tempVec.x;
+      v[1] = tempVec.y;
+      v[2] = tempVec.z;
+    }
+  }
+
+  function ensureSameLevelGroup(mesh) {
+    const parent = mesh.parent || 'root';
+    const siblings = mesh.getParentArray();
+    const meshIndex = siblings.indexOf(mesh);
+
+    let group = siblings.find(node => node instanceof Group && node.name === mesh.name);
+    let created = false;
+    if (!group) {
+      group = new Group({ name: mesh.name }).init();
+      group.addTo(parent, meshIndex);
+      created = true;
+    }
+    return { group, created };
+  }
+
+  function setGroupPivotWorld(group, center) {
+    if (group.origin && typeof group.origin.V3_set === 'function') {
+      group.origin.V3_set(center.x, center.y, center.z);
+    } else {
+      group.origin = [center.x, center.y, center.z];
+    }
+  }
+
+  function run(options) {
+    const patternRe = new RegExp(options.pattern || DEFAULT_PATTERN);
+    const plane = options.plane || DEFAULT_PLANE;
+    const setMeshOriginToLocalCenter = options.setMeshOriginToLocalCenter ?? DEFAULT_SET_MESH_ORIGIN_TO_LOCAL_CENTER;
+    const setGroupPivotToWorldCenter = options.setGroupPivotToWorldCenter ?? DEFAULT_SET_GROUP_PIVOT_TO_WORLD_CENTER;
+    const keepMeshRender = options.keepMeshRender ?? DEFAULT_KEEP_MESH_RENDER;
+
+    if (plane !== 'YZ') {
+      Blockbench.showQuickMessage('当前插件版本仅支持 YZ 平面');
+      return;
+    }
+
+    if (typeof Mesh === 'undefined' || !Mesh.all) {
+      Blockbench.showQuickMessage('当前项目不支持 Mesh 对象');
+      return;
+    }
+    if (typeof THREE === 'undefined') {
+      Blockbench.showQuickMessage('缺少 THREE');
+      return;
+    }
+
+    const allMeshes = Mesh.all.slice();
+    const parts = new Map();
+    const tempVec = new THREE.Vector3();
+
+    for (const mesh of allMeshes) {
+      const m = patternRe.exec(mesh?.name || '');
+      if (!m) continue;
+      const part = m[1];
+      const idx = parseInt(m[2], 10);
+      if (!parts.has(part)) parts.set(part, []);
+      parts.get(part).push({ idx, mesh });
+    }
+
+    if (!parts.size) {
+      Blockbench.showQuickMessage('未找到匹配的 tread Mesh');
+      return;
+    }
+
+    let createdGroups = 0;
+    let movedMeshes = 0;
+    let rotatedGroups = 0;
+    let skipped = 0;
+
+    Undo.initEdit({ outliner: true, elements: allMeshes });
+
+    try {
+      for (const [part, arr] of parts.entries()) {
+        arr.sort((a, b) => a.idx - b.idx);
+        if (arr.length < 3) continue;
+
+        const centers = arr.map(e => getMeshWorldCenter(e.mesh, tempVec));
+        const area = signedAreaYZ(centers);
+        const isCCW = area >= 0;
+
+        for (let i = 0; i < arr.length; i++) {
+          const mesh = arr[i].mesh;
+          if (!mesh?.mesh || !mesh?.vertices || !Array.isArray(mesh.rotation) || !Array.isArray(mesh.origin)) {
+            skipped++;
+            continue;
+          }
+
+          const worldBefore = keepMeshRender ? captureWorldVertices(mesh, tempVec) : null;
+
+          if (setMeshOriginToLocalCenter) {
+            const localCenter = getMeshLocalBBoxCenter(mesh);
+            if (localCenter) {
+              mesh.origin[0] = localCenter[0];
+              mesh.origin[1] = localCenter[1];
+              mesh.origin[2] = localCenter[2];
+            }
+          }
+
+          const prev = centers[(i - 1 + centers.length) % centers.length];
+          const next = centers[(i + 1) % centers.length];
+
+          const ty = next.y - prev.y;
+          const tz = next.z - prev.z;
+          const tLen = Math.sqrt(ty * ty + tz * tz);
+          if (tLen < 1e-8) {
+            skipped++;
+            continue;
+          }
+
+          const tyn = ty / tLen;
+          const tzn = tz / tLen;
+
+          let ny, nz;
+          if (isCCW) {
+            ny = -tzn;
+            nz = tyn;
+          } else {
+            ny = tzn;
+            nz = -tyn;
+          }
+
+          const nLen = Math.sqrt(ny * ny + nz * nz);
+          ny /= nLen;
+          nz /= nLen;
+
+          const rotX = rotXDegToAlignGreenTo(ny, nz);
+
+          const { group, created } = ensureSameLevelGroup(mesh);
+          if (created) createdGroups++;
+
+          if (setGroupPivotToWorldCenter) {
+            setGroupPivotWorld(group, centers[i]);
+          }
+
+          if (!Array.isArray(group.rotation)) group.rotation = [0, 0, 0];
+          group.rotation[0] = rotX;
+          group.rotation[1] = 0;
+          group.rotation[2] = 0;
+          group.preview_controller?.updateTransform?.(group);
+          rotatedGroups++;
+
+          if (mesh.parent !== group) {
+            mesh.addTo(group);
+            movedMeshes++;
+          }
+
+          group.preview_controller?.updateTransform?.(group);
+          group.mesh?.updateMatrixWorld?.(true);
+          mesh.preview_controller?.updateTransform?.(mesh);
+          mesh.mesh.updateMatrixWorld?.(true);
+
+          if (keepMeshRender && worldBefore) {
+            restoreVerticesFromWorld(mesh, worldBefore, tempVec);
+            mesh.preview_controller?.updateGeometry?.(mesh);
+            mesh.preview_controller?.updateTransform?.(mesh);
+          }
+        }
+      }
+
+      Canvas.updateAll();
+      Undo.finishEdit('Tread inward normal (YZ)');
+      Blockbench.showQuickMessage(`完成：新建组 ${createdGroups}，移动Mesh ${movedMeshes}，写旋转 ${rotatedGroups}，跳过 ${skipped}`);
+    } catch (e) {
+      Undo.cancelEdit();
+      console.error(e);
+      Blockbench.showQuickMessage('执行失败，已回滚。请看控制台报错');
+    }
+  }
+
+  function openDialog() {
+    const key = `${PLUGIN_ID}:settings`;
+    const saved = (() => {
+      try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+    })();
+
+    const dialog = new Dialog({
+      id: `${PLUGIN_ID}_dialog`,
+      title: '履带内侧法向（YZ）',
+      form: {
+        pattern: { label: '命名正则', type: 'text', value: saved.pattern ?? DEFAULT_PATTERN },
+        plane: { label: '计算平面', type: 'select', value: saved.plane ?? DEFAULT_PLANE, options: { YZ: 'YZ' } },
+        setMeshOriginToLocalCenter: { label: 'Mesh 枢轴设为几何中心', type: 'checkbox', value: saved.setMeshOriginToLocalCenter ?? DEFAULT_SET_MESH_ORIGIN_TO_LOCAL_CENTER },
+        setGroupPivotToWorldCenter: { label: 'Group 枢轴设为组选区中心', type: 'checkbox', value: saved.setGroupPivotToWorldCenter ?? DEFAULT_SET_GROUP_PIVOT_TO_WORLD_CENTER },
+        keepMeshRender: { label: '保持 Mesh 渲染不变', type: 'checkbox', value: saved.keepMeshRender ?? DEFAULT_KEEP_MESH_RENDER }
+      },
+      onConfirm(formData) {
+        localStorage.setItem(key, JSON.stringify(formData));
+        dialog.hide();
+        run(formData);
+      }
+    });
+    dialog.show();
+  }
+
+  Plugin.register(PLUGIN_ID, {
+    title: 'YWZJ Tread Inward Normal',
+    author: 'YWZJ',
+    description: 'Creates/updates tread groups and rotates them so the green axis points inward (YZ plane), while keeping mesh rendering unchanged.',
+    icon: 'sync',
+    version: '1.0.0',
+    variant: 'both'
+  }, () => {
+    const action = new Action(`${PLUGIN_ID}_run`, {
+      name: '履带：绿色轴指向内侧（YZ）',
+      description: '为 tread_*_* Mesh 创建同名组并计算内侧法向，写入组 rotation[0]，保持 Mesh 渲染不变',
+      icon: 'sync',
+      click() {
+        openDialog();
+      }
+    });
+
+    MenuBar.addAction(action, 'tools');
+
+    return () => {
+      action.delete();
+    };
+  });
+})();

@@ -7,6 +7,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
@@ -35,6 +36,10 @@ public class RVP_OverlayCancelHandler {
             return;
         }
         if (id.equals(VEHICLE_RADAR)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (RVP_ClientHitlState.isActive()) {
             event.setCanceled(true);
             return;
         }

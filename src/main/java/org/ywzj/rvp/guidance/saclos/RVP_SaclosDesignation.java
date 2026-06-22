@@ -71,7 +71,9 @@ public final class RVP_SaclosDesignation {
         }
 
         WeaponUnit aimUnit = resolveOperatorAimUnit(projectile);
-        Vec3 podAim = RVP_SaclosPodAim.resolvePodAimPoint(aimUnit);
+        boolean allowLockedEntity = projectile.getRvpData() != null
+                && projectile.getRvpData().isSaclosTvGuided();
+        Vec3 podAim = RVP_SaclosPodAim.resolvePodAimPoint(aimUnit, allowLockedEntity);
         if (podAim != null) {
             return podAim;
         }

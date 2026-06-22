@@ -2,8 +2,13 @@ package org.ywzj.rvp.mixin;
 
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -25,10 +30,28 @@ import org.ywzj.vehicle.client.handler.FirstPersonHandler;
 public abstract class CameraTVMissileMixin {
 
     @Shadow
-    protected abstract void setPosition(double pX, double pY, double pZ);
+    private Vec3 position;
 
     @Shadow
-    protected abstract void setRotation(float pYRot, float pXRot);
+    private BlockPos.MutableBlockPos blockPosition;
+
+    @Shadow
+    private Vector3f forwards;
+
+    @Shadow
+    private Vector3f up;
+
+    @Shadow
+    private Vector3f left;
+
+    @Shadow
+    private float xRot;
+
+    @Shadow
+    private float yRot;
+
+    @Shadow
+    private Quaternionf rotation;
 
     @Inject(method = "setup", at = @At("TAIL"))
     private void ywzj_rvp$RVP_HitlMissileCamera(BlockGetter pLevel, Entity pEntity, boolean pDetached,
@@ -56,8 +79,23 @@ public abstract class CameraTVMissileMixin {
             return;
         }
 
-        setPosition(pose[2], pose[3], pose[4]);
-        setRotation(pose[0], pose[1]);
+        ywzj_rvp$setPosition(pose[2], pose[3], pose[4]);
+        ywzj_rvp$setRotation(pose[0], pose[1]);
         FirstPersonHandler.zRot = 0f;
+    }
+
+    private void ywzj_rvp$setPosition(double x, double y, double z) {
+        Vec3 pos = new Vec3(x, y, z);
+        this.position = pos;
+        this.blockPosition.set(x, y, z);
+    }
+
+    private void ywzj_rvp$setRotation(float yRot, float xRot) {
+        this.xRot = xRot;
+        this.yRot = yRot;
+        this.rotation.rotationYXZ(-yRot * Mth.DEG_TO_RAD, xRot * Mth.DEG_TO_RAD, 0.0F);
+        this.forwards.set(0.0F, 0.0F, 1.0F).rotate(this.rotation);
+        this.up.set(0.0F, 1.0F, 0.0F).rotate(this.rotation);
+        this.left.set(1.0F, 0.0F, 0.0F).rotate(this.rotation);
     }
 }

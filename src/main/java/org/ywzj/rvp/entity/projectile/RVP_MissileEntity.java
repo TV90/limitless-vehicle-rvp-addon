@@ -24,6 +24,7 @@ import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_HumanInTheLoopData;
@@ -71,6 +72,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private int hitlLinkBlockedTicks;
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
+    private int hitlEnterViewResendTicks;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -102,6 +104,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlMaxLookOffsetDeg = hitl.maxLookOffsetDeg(RVP_HitlSeekerUtil.saclosSeekerHalfFov(data));
         this.hitlSignalSource = hitl.signalSource();
         this.hitlEnabled = true;
+        this.hitlEnterViewResendTicks = 5;
         this.hitlInputYaw = aim.yRot();
         this.hitlInputPitch = aim.xRot();
         this.hitlSteeringYaw = aim.yRot();
@@ -110,6 +113,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected void tickGuidance() {
+        maybeSyncEnterHitlView();
         tickHitlRadioLink();
         if (hitlLinkSevered || hitlLinkBlocked) {
             return;
@@ -134,6 +138,23 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
 
         super.tickGuidance();
+    }
+
+    private void maybeSyncEnterHitlView() {
+        if (level().isClientSide() || hitlEnterViewResendTicks <= 0) {
+            return;
+        }
+        if (rvpData == null || !rvpData.hasHumanInTheLoop() || !hitlEnabled) {
+            hitlEnterViewResendTicks = 0;
+            return;
+        }
+        if (!(getOwner() instanceof ServerPlayer player)) {
+            hitlEnterViewResendTicks = 0;
+            return;
+        }
+        RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                S2CEnterHitlView.of(getId(), hitlControlMode));
+        hitlEnterViewResendTicks--;
     }
 
     /**

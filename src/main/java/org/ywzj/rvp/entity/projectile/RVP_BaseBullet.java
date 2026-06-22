@@ -24,6 +24,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceConfigMerger;
@@ -64,6 +65,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.slf4j.Logger;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -273,6 +275,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     @Nullable
     public RVP_WeaponData getRvpData() {
         return rvpData;
+    }
+
+    public int getProgrammedAirburstDistance() {
+        return airburstDist;
     }
 
     /**
@@ -608,12 +614,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     protected void tickGuidance() {
         if (!level().isClientSide()) {
+            boolean allowEntityTracking = rvpData == null
+                    || !rvpData.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)
+                    || rvpData.isSaclosTvGuided();
+            if (!allowEntityTracking && targetEntity != null) {
+                targetEntity = null;
+            }
             org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation.tickUpdateLiveTarget(this);
             // Mid-course update: if we have a live targetEntity (from launch lock),
             // periodically update targetPos so IOG/coast phase tracks the moving target.
             // This mirrors the base MissileEntity behavior where targetEntity is a
             // live Java Entity reference updated every tick.
-            if (targetEntity != null && targetEntity.isAlive()) {
+            if (allowEntityTracking && targetEntity != null && targetEntity.isAlive()) {
                 if (tickCount % 5 == 0) {
                     targetPos = aimPoint(targetEntity);
                     lastGuidancePos = targetPos;
@@ -736,12 +748,30 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             double remain = targetDist - airburstTravelled;
             double t = remain / segLen;
             Vec3 detonatePos = position().add(motion.scale(t));
+            if (shouldSuppressAheadAirburstAt(detonatePos)) {
+                airburstTriggered = true;
+                airburstTravelled = 0.0D;
+                return;
+            }
             detonateFuseAt(detonatePos, FuseDetonation.AIRBURST);
             airburstTriggered = true;
             airburstTravelled = 0.0D;
         } else {
             airburstTravelled = newTravel;
         }
+    }
+
+    protected boolean shouldSuppressAheadAirburstAt(Vec3 detonatePos) {
+        if (rvpData == null || !rvpData.isAheadEnabled()) {
+            return false;
+        }
+        float minGroundClearance = rvpData.getAheadMinGroundClearance();
+        if (minGroundClearance <= 0f) {
+            return false;
+        }
+        int groundY = level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                Mth.floor(detonatePos.x), Mth.floor(detonatePos.z));
+        return detonatePos.y - groundY < minGroundClearance;
     }
 
     protected void tickProximityFuse() {
@@ -845,7 +875,33 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         Vec3 saved = getDeltaMovement();
         setDeltaMovement(step);
         try {
-            return EntityUtil.findEntityOnPath(this, startVec, endVec);
+            Entity owner = getOwner();
+            List<Entity> entities = level().getEntities(
+                    this,
+                    getBoundingBox().expandTowards(step).inflate(1.0),
+                    entity -> entity != null && entity.isPickable() && !entity.isSpectator()
+            );
+            BulletHitResult closestResult = null;
+            double closestDistance = Double.MAX_VALUE;
+            for (Entity entity : entities) {
+                if (entity == owner || !canDamageEntity(entity)) {
+                    continue;
+                }
+                BulletHitResult rawResult = EntityUtil.getHitResult(this, entity, startVec, endVec);
+                if (rawResult == null) {
+                    continue;
+                }
+                BulletHitResult normalizedResult = ywzj_rvp$normalizeBulletHitResult(entity, rawResult);
+                if (normalizedResult == null) {
+                    continue;
+                }
+                double hitDistance = startVec.distanceToSqr(normalizedResult.getLocation());
+                if (hitDistance < closestDistance) {
+                    closestDistance = hitDistance;
+                    closestResult = normalizedResult;
+                }
+            }
+            return closestResult;
         } finally {
             setDeltaMovement(saved);
         }
@@ -860,8 +916,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                 .move(getLookAngle().normalize().scale(-explosion.proximityRadius));
         int fuseHeight = rvpData != null ? rvpData.getFuseData().getProximityFuseHeight() : 20;
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
-                entity -> entity != vehicle && !vehicle.getPassengers().contains(entity)
-                        && !isProximityFuseTargetTooLow(entity, fuseHeight));
+                entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight));
         if (nearbyEntities.isEmpty()) {
             return false;
         }
@@ -1196,10 +1251,55 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         if (entity == null || !entity.isAlive()) {
             return false;
         }
-        if (entity == vehicle) {
+        if (ywzj_rvp$isEntityAttachedToShooterVehicle(entity)) {
             return false;
         }
-        return vehicle == null || !vehicle.getPassengers().contains(entity);
+        Entity rootEntity = ywzj_rvp$resolveCollisionRoot(entity);
+        return vehicle == null || rootEntity == null || !vehicle.getPassengers().contains(rootEntity);
+    }
+
+    @Nullable
+    private BulletHitResult ywzj_rvp$normalizeBulletHitResult(Entity fallbackEntity, BulletHitResult result) {
+        Entity hitEntity = result.getEntity() == this ? fallbackEntity : result.getEntity();
+        Entity rootEntity = ywzj_rvp$resolveCollisionRoot(hitEntity);
+        if (rootEntity == null) {
+            return null;
+        }
+        if (rootEntity == hitEntity) {
+            return new BulletHitResult(hitEntity, result.getLocation(), result.isHeadshot());
+        }
+        if (!rootEntity.isAlive()) {
+            return null;
+        }
+        return new BulletHitResult(rootEntity, result.getLocation(), result.isHeadshot());
+    }
+
+    @Nullable
+    private Entity ywzj_rvp$resolveCollisionRoot(@Nullable Entity entity) {
+        Entity current = entity;
+        int guard = 0;
+        while (current instanceof PartEntity<?> partEntity && guard++ < 8) {
+            current = partEntity.getParent();
+        }
+        return current;
+    }
+
+    private boolean ywzj_rvp$isEntityAttachedToShooterVehicle(@Nullable Entity entity) {
+        Entity rootEntity = ywzj_rvp$resolveCollisionRoot(entity);
+        if (rootEntity == null) {
+            return false;
+        }
+        if (rootEntity == this || rootEntity == getOwner()) {
+            return true;
+        }
+        if (rootEntity == vehicle || rootEntity == shooterVehicle) {
+            return true;
+        }
+        Entity owner = getOwner();
+        if (owner != null && rootEntity.isPassengerOfSameVehicle(owner)) {
+            return true;
+        }
+        return shooterVehicle != null && shooterVehicle.getPassengers().contains(rootEntity);
     }
 
     protected boolean checkShooterValid() {
@@ -1296,8 +1396,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         }
         VehicleExplosion ex = new VehicleExplosion(level(), getOwner(), vehicle, pos,
                 radius, damage, explosion.destroyBlock);
+        Set<Entity> excluded = new HashSet<>();
         if (excludeEntity != null) {
-            ex.explode(Collections.singletonList(excludeEntity));
+            excluded.add(excludeEntity);
+        }
+        if (getOwner() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity) {
+            excluded.add(getOwner());
+            if (shooterVehicle != null) {
+                excluded.add(shooterVehicle);
+            }
+        }
+        if (!excluded.isEmpty()) {
+            ex.explode(List.copyOf(excluded));
         } else {
             ex.explode();
         }

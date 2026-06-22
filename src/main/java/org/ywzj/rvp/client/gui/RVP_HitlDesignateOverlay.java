@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.entity.Entity;
@@ -64,11 +65,11 @@ public final class RVP_HitlDesignateOverlay {
 
         poseStack.pushPose();
         poseStack.translate(crosshair.x, crosshair.y, 0.0D);
-        drawSquare(gg, -2, -2, 5, Color.GREEN);
-        gg.fill(-1, -24, 0, -6, Color.GREEN);
-        gg.fill(-1, 6, 0, 24, Color.GREEN);
-        gg.fill(-24, -1, -6, 0, Color.GREEN);
-        gg.fill(6, -1, 24, 0, Color.GREEN);
+        drawSquare(gg, 0, 0, 5, Color.GREEN);
+        gg.vLine(0, -24, -6, Color.GREEN);
+        gg.vLine(0, 6, 24, Color.GREEN);
+        gg.hLine(-24, -6, 0, Color.GREEN);
+        gg.hLine(6, 24, 0, Color.GREEN);
         poseStack.popPose();
 
         Vec3 designated = RVP_ClientSaclosState.getLaserHudPos();
@@ -92,7 +93,27 @@ public final class RVP_HitlDesignateOverlay {
 
         poseStack.pushPose();
         poseStack.translate(lockScreen.x, lockScreen.y, 0.0D);
-        RenderHelper.drawCrossHollow(gg, 0, 0, 28, 6, Color.GREEN);
+        drawHollowDiagonalCross(gg, 0, 0, 28, 2, 5, Color.GREEN);
         poseStack.popPose();
+    }
+
+    private static void drawHollowDiagonalCross(GuiGraphics gg, int x, int y, int size, int thickness, int gap, int color) {
+        int len = Math.max(2, size / 2);
+        int halfThickness = thickness / 2;
+        PoseStack pose = gg.pose();
+
+        pose.pushPose();
+        pose.translate(x, y - 0.5D, 0.0D);
+        pose.mulPose(Axis.ZP.rotationDegrees(45.0F));
+        gg.fill(gap, -halfThickness, gap + len, thickness - halfThickness, color);
+        gg.fill(-gap - len, -halfThickness, -gap, thickness - halfThickness, color);
+        pose.popPose();
+
+        pose.pushPose();
+        pose.translate(x, y - 0.5D, 0.0D);
+        pose.mulPose(Axis.ZP.rotationDegrees(-45.0F));
+        gg.fill(gap, -halfThickness, gap + len, thickness - halfThickness, color);
+        gg.fill(-gap - len, -halfThickness, -gap, thickness - halfThickness, color);
+        pose.popPose();
     }
 }
