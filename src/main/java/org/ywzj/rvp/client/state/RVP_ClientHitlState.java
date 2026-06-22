@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.state;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -9,7 +8,7 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.Mth;
-import org.lwjgl.glfw.GLFW;
+import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.shader.TVMissileVideoPostHandler;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
@@ -36,8 +35,6 @@ public class RVP_ClientHitlState {
     private static boolean viewTypeCaptured;
     private static LocalVehiclePlayer.ViewType prevViewType;
     private static RVP_EnumVideoMode videoMode = RVP_EnumVideoMode.COLOR;
-    private static boolean lastModeKeyDown;
-    private static boolean lastExitMouseDown;
     private static float hitlYaw;
     private static float hitlPitch;
     private static float lookOffsetYaw;
@@ -46,7 +43,6 @@ public class RVP_ClientHitlState {
     private static float displayLookOffsetPitch;
     private static final float LOOK_OFFSET_TAU = 0.055f;
     private static boolean initialDesignateSent;
-    private static boolean lastDesignateKeyDown;
     @Nullable
     private static Vec3 clientDesignatedPos;
     private static int clientDesignatedEntityId = -1;
@@ -169,7 +165,6 @@ public class RVP_ClientHitlState {
         displayLookOffsetYaw = 0f;
         displayLookOffsetPitch = 0f;
         initialDesignateSent = false;
-        lastDesignateKeyDown = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         hitlLinkBlocked = false;
@@ -195,7 +190,6 @@ public class RVP_ClientHitlState {
         displayLookOffsetYaw = 0f;
         displayLookOffsetPitch = 0f;
         initialDesignateSent = false;
-        lastDesignateKeyDown = false;
         clientDesignatedPos = null;
         clientDesignatedEntityId = -1;
         hitlLinkBlocked = false;
@@ -359,11 +353,7 @@ public class RVP_ClientHitlState {
         if (hitlLinkBlocked) {
             return;
         }
-        long window = mc.getWindow().getWindow();
-        boolean down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_R);
-        boolean pressed = down && !lastDesignateKeyDown;
-        lastDesignateKeyDown = down;
-        if (pressed) {
+        while (RVP_Keys.HITL_REDESIGNATE.consumeClick()) {
             redesignateTargetAtCrosshair(mc, missile);
         }
     }
@@ -397,19 +387,11 @@ public class RVP_ClientHitlState {
     }
 
     private static boolean tickExitClick(Minecraft mc) {
-        long window = mc.getWindow().getWindow();
-        boolean down = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS;
-        boolean pressed = down && !lastExitMouseDown;
-        lastExitMouseDown = down;
-        return pressed;
+        return RVP_Keys.HITL_EXIT.consumeClick();
     }
 
     private static void tickModeSwitch(Minecraft mc) {
-        long window = mc.getWindow().getWindow();
-        boolean down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_4);
-        boolean pressed = down && !lastModeKeyDown;
-        lastModeKeyDown = down;
-        if (!pressed) {
+        if (!RVP_Keys.HITL_SWITCH_VIDEO_MODE.consumeClick()) {
             return;
         }
         Entity entity = mc.level == null ? null : mc.level.getEntity(activeMissileId);

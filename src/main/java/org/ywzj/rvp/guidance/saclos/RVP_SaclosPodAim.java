@@ -14,6 +14,11 @@ public final class RVP_SaclosPodAim {
 
     @Nullable
     public static Vec3 resolvePodAimPoint(@Nullable WeaponUnit unit) {
+        return resolvePodAimPoint(unit, true);
+    }
+
+    @Nullable
+    public static Vec3 resolvePodAimPoint(@Nullable WeaponUnit unit, boolean allowLockedEntity) {
         if (unit == null) {
             return null;
         }
@@ -23,9 +28,11 @@ public final class RVP_SaclosPodAim {
                 return focus;
             }
         }
-        Entity locked = unit.getLockedEntity();
-        if (locked != null && locked.isAlive()) {
-            return locked.getBoundingBox().getCenter();
+        if (allowLockedEntity) {
+            Entity locked = unit.getLockedEntity();
+            if (locked != null && locked.isAlive()) {
+                return locked.getBoundingBox().getCenter();
+            }
         }
         return unit.aimHitPosition();
     }

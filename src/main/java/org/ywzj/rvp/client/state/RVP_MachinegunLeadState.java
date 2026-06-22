@@ -15,6 +15,15 @@ import java.util.Map;
 
 public final class RVP_MachinegunLeadState {
     private static final Map<Integer, State> STATES = new HashMap<>();
+    private static final int RAW_MISS_HOLD_TICKS = 8;
+    private static final double LEAD_ALPHA_BASE = 0.23D;
+    private static final double LEAD_ALPHA_SCALE = 0.022D;
+    private static final double LEAD_ALPHA_MAX = 0.46D;
+    private static final double TARGET_ALPHA_BASE = 0.30D;
+    private static final double TARGET_ALPHA_SCALE = 0.034D;
+    private static final double TARGET_ALPHA_MAX = 0.66D;
+    private static final double LEAD_FORWARD_COMPENSATION = 0.02D;
+    private static final double TARGET_FORWARD_COMPENSATION = 0.01D;
 
     private RVP_MachinegunLeadState() {}
 
@@ -27,7 +36,7 @@ public final class RVP_MachinegunLeadState {
             if (state == null) {
                 return null;
             }
-            if (nowTick - state.lastSeenTick > 4) {
+            if (nowTick - state.lastSeenTick > RAW_MISS_HOLD_TICKS) {
                 STATES.remove(key);
                 return null;
             }
@@ -61,8 +70,16 @@ public final class RVP_MachinegunLeadState {
 
             double leadErr = state.currLead.distanceTo(raw.leadWorldPos());
             double targetErr = state.currTarget.distanceTo(raw.targetWorldPos());
-            double leadAlpha = Mth.clamp(0.16D + leadErr * 0.025D, 0.16D, 0.48D);
-            double targetAlpha = Mth.clamp(0.24D + targetErr * 0.05D, 0.24D, 0.72D);
+            double leadAlpha = Mth.clamp(
+                    LEAD_ALPHA_BASE + leadErr * LEAD_ALPHA_SCALE,
+                    LEAD_ALPHA_BASE,
+                    LEAD_ALPHA_MAX
+            );
+            double targetAlpha = Mth.clamp(
+                    TARGET_ALPHA_BASE + targetErr * TARGET_ALPHA_SCALE,
+                    TARGET_ALPHA_BASE,
+                    TARGET_ALPHA_MAX
+            );
 
             state.currLead = state.currLead.lerp(raw.leadWorldPos(), leadAlpha);
             state.currTarget = state.currTarget.lerp(raw.targetWorldPos(), targetAlpha);
@@ -108,6 +125,11 @@ public final class RVP_MachinegunLeadState {
         float clampedPartial = Mth.clamp(partialTick, 0f, 1f);
         Vec3 renderLead = state.prevLead.lerp(state.currLead, clampedPartial);
         Vec3 renderTarget = state.prevTarget.lerp(state.currTarget, clampedPartial);
+        // Keep a tiny forward compensation so the ring does not trail, but avoid the jumpy feel of aggressive feed-forward.
+        Vec3 leadVelocity = state.currLead.subtract(state.prevLead);
+        Vec3 targetVelocity = state.currTarget.subtract(state.prevTarget);
+        renderLead = renderLead.add(leadVelocity.scale(LEAD_FORWARD_COMPENSATION));
+        renderTarget = renderTarget.add(targetVelocity.scale(TARGET_FORWARD_COMPENSATION));
         double renderTime = Mth.lerp(clampedPartial, (float) state.prevTime, (float) state.currTime);
         double renderMiss = Mth.lerp(clampedPartial, (float) state.prevMiss, (float) state.currMiss);
         return new RVP_LeadSolution(target, renderTarget, renderLead, renderTime, renderMiss);

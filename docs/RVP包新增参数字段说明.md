@@ -59,6 +59,8 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
+| `show_msl_indicator` | 是否在 HUD 中显示导弹指示器（菱形框 + 距离）；默认 `false`。仅对需要在 HUD 上额外标示的导弹有意义。 |
+| `ahead_data` | `rvp:machinegun` 的 AHEAD 自动编程配置分组。要求同时启用 `fuse_data.programmable_airburst`；Java 侧只负责把空爆距离自动编到预瞄点附近，开花后的子弹药细节仍由 `submunition_data` 和子弹药自身 JSON 决定。旧顶层 `ahead_*` 仍兼容读取，但已不推荐继续使用。 |
 | `sub_type` | 可选子类型标记，仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
 | `require_lock` | 是否要求发射前已有锁定。GPS、ARM、TV、MCLOS 等通常可设为 `false`。 |
 
@@ -70,6 +72,15 @@ RVP 扩展武器数据包路径：
 | --- | --- |
 | `range` | 激光有效射程。 |
 | `visual_data` | 客户端光束外观（见下表）。 |
+
+## `ahead_data`（`rvp:machinegun`）
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 是否启用 AHEAD 自动编程逻辑。 |
+| `burst_offset_meters` | AHEAD 相对预瞄点提前多少米开花；正值表示在飞到预瞄点前开花。实际编程公式为 `programmedDistance = leadDistance - burst_offset_meters`。 |
+| `require_lock` | 是否要求必须存在锁定目标且能解出预瞄圈；为 `false` 时，无法解出预瞄圈会回退到当前 `AimContext.position` 的瞄点距离。 |
+| `min_ground_clearance` | 可编程空爆点的最低离地高度，单位米；低于该值时取消 AHEAD 空爆，让母弹继续飞行/撞击，避免对地过强。默认 `0` 表示不限制。 |
 
 ### `laser_data.visual_data` 激光光束（客户端）
 
@@ -1025,6 +1036,14 @@ ARM seeker 会把雷达观测抽象为 PDW：
 
 以下字段写在载具数据 JSON 的顶层（`ywzj_vehicle` 会忽略未知字段，无需修改本体）。
 
+### UI 预设与观瞄附加字段
+
+| 字段 | 说明 |
+| --- | --- |
+| `ui_preset` | 载具 UI 预设名。RVP 会优先从 `data/<namespace>/ui_presets/<name>.json` 读取；若未找到，再回退到 `config/limitless_vehicle/ui_presets/<name>.json`。 |
+| `show_skeleton` | 是否在观瞄/UI 预设启用时显示载具骨骼俯视图，默认 `true`。 |
+| `hide_passenger` | `bool`，默认 `false`。`true` 时坐进该载具的玩家在第三人称/旁观模式下不显示（`RenderPlayerEvent.Pre` + `RenderLivingEvent.Pre` 取消渲染）。 |
+
 ### 碰撞箱受击倍率
 
 | 字段 | 说明 |
@@ -1033,7 +1052,6 @@ ARM seeker 会把雷达观测抽象为 PDW：
 | `hitbox_damage_factor` | `Map<String, Float>`：结构模型骨骼名 → 直击该骨骼时的伤害倍率。 |
 | `core_distance_scale_multiplier` | 控制本体“命中点离核心越远伤害越低”的衰减强度（0 = 完全关闭衰减，按直击伤害计算；1 = 本体原值）。 |
 | `hitbox_era` | 爆炸反应装甲（ERA）配置，见下表。 |
-| `hide_passenger` | `bool`，默认 `false`。`true` 时坐进该载具的玩家在第三人称/旁观模式下不显示（`RenderPlayerEvent.Pre` + `RenderLivingEvent.Pre` 取消渲染）。 |
 
 ```json
 "hitbox_damage_factor_default": 1.0,
@@ -1074,6 +1092,113 @@ function updateBones(context) {
 ```
 
 需要在 `animation_controllers/<vehicle>_controller.json` 的 `graph.base.inputs` 中加入 `{ "type": "script", "function": "updateBones" }`。
+
+---
+
+## 部件 JSON 扩展字段
+
+以下字段写在载具 `parts[]` 内，对应 `type: "ywzj_vehicle:weapon"` 或 `type: "ywzj_vehicle:radar"` 的部件对象。
+
+### 武器站部件扩展（`type: "ywzj_vehicle:weapon"`）
+
+| 字段 | 说明 |
+| --- | --- |
+| `rvp_fire_control_mode` | RVP 扩展火控模式。当前公开值为 `rvp_rf`，表示在本体 `rf` 火控基础上启用 RVP 的软离轴/半自动跟踪逻辑。未写时走本体行为。 |
+| `rvp_rf_off_axis_deg` | `rvp_fire_control_mode: "rvp_rf"` 时允许的离轴角（度），默认 `10`。 |
+| `rvp_disable_crt_effect` | 关闭 CRT 扫描线/闪烁等后处理，但保留 CRT 观瞄框架；通常配合 `optical_sight_type: "crt_ui"` 由 RVP 自动写入，手动写 `true` 也可生效。 |
+
+### 雷达部件扩展（`type: "ywzj_vehicle:radar"`）
+
+| 字段 | 说明 |
+| --- | --- |
+| `scan_animation_mode` | 雷达扫描动画模式。当前默认 `mechanical`；主要影响客户端雷达 UI 的扫描线表现。 |
+| `scan_period_tick` | 扫描周期（tick）。`0` 表示沿用本体默认/每 tick 检测逻辑；`>0` 时按周期刷新扫描结果。 |
+| `scan_line_when_locked` | 锁定目标时是否仍显示扫描线动画，默认 `false`。 |
+| `contact_hold_tick` | 雷达目标保持 tick。`0` 表示不额外保持；`>0` 时目标短暂消失后在 UI/ARM 侧保留一段时间。 |
+| `enable_hms` | 是否为该雷达启用 HMS/HMD 相关显示与逻辑，默认 `true`。 |
+| `scan_min_height` | 雷达允许扫描的最低离地高度（格），默认 `25`。 |
+| `scan_max_height` | 雷达允许扫描的最高离地高度（格），默认 `10000`。 |
+
+### 本体火箭 CCIP 扩展（本体 `VehicleRocket` / `VehicleRocketWeaponData`）
+
+以下字段写在**本体火箭武器 JSON** 上，作用对象是 `ywzj_vehicle` 原生火箭，不是 `rvp:rocket`。
+
+| 字段 | 说明 |
+| --- | --- |
+| `ballistic_enabled` | 是否启用 RVP 为本体火箭提供的弹道落点预测/CCIP 支持，默认 `false`。 |
+| `ballistic_gravity` | CCIP 预测使用的重力系数，默认 `0.03`。仅影响预测，不改真实飞行。 |
+| `ballistic_drag` | CCIP 预测使用的阻力系数，默认 `0.002`。仅影响预测，不改真实飞行。 |
+| `ballistic_prediction_tick` | CCIP 最多向前模拟的 tick 数，默认 `240`。 |
+
+### UI 预设文件（`data/<namespace>/ui_presets/<name>.json`）
+
+RVP UI 预设现在支持两条加载路径：
+
+- 优先：`data/<namespace>/ui_presets/*.json`
+- 回退：`config/limitless_vehicle/ui_presets/*.json`
+
+单个预设文件的结构如下：
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 预设名；省略时可用文件名/资源路径作为查找别名。 |
+| `radar` | 主雷达 UI 位置。 |
+| `rwr` | RWR UI 位置。 |
+| `vehicle_bones` | 载具骨骼俯视图 UI 位置。 |
+| `scope_envelope` | 观瞄包线/边框 UI 位置。 |
+| `radars` | 多雷达位置表，键为 `part_unit_id`（如 `scan_radar`），值为位置对象；不存在时回退到 `radar`。 |
+
+位置对象通用字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `anchor` | 锚点：`center` / `right` / `right_bottom`。未写时默认按 `right` 处理。 |
+| `offset_x` | 横向偏移（像素）。 |
+| `offset_y` | 纵向偏移，按 1080p 参考高度等比缩放。 |
+| `scale` | UI 缩放，默认 `1.0`。 |
+
+示例：
+
+```json
+{
+  "name": "ps1sm",
+  "radar": { "anchor": "right", "offset_x": -220, "offset_y": -240, "scale": 1.0 },
+  "rwr": { "anchor": "right_bottom", "offset_x": -180, "offset_y": -180, "scale": 0.9 },
+  "vehicle_bones": { "anchor": "center", "offset_x": 0, "offset_y": 180, "scale": 0.8 },
+  "radars": {
+    "scan_radar": { "anchor": "right", "offset_x": -260, "offset_y": -260, "scale": 1.0 }
+  }
+}
+```
+
+### Gunner 配置文件（`data/<namespace>/gunner_profiles/<id>.json`）
+
+Gunner AI 配置通过资源重载加载；默认扫描目录为 `gunner_profiles`。
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 配置名称；空时回退为文件名。 |
+| `faction` | 阵营，默认 `friendly`。 |
+| `target_types` | 目标类型列表；常用值：`vehicle`、`player`、`monster`、`living`，也可写实体类型 ID（如 `rvp:missile`）。 |
+| `search_radius` | 搜敌半径，默认 `96`。 |
+| `scan_interval_tick` | 搜敌间隔，默认 `10`。 |
+| `fire_window_deg` | 开火窗口角（度），默认 `6`。 |
+| `lead_scale` | 提前量倍率，默认 `1.0`。 |
+| `burst_fire_tick` / `burst_rest_tick` | Gunner 扳机按住/松开节奏，默认 `6 / 10`。 |
+| `countermeasure_range` | 释放干扰弹的威胁距离，默认 `36`。 |
+| `countermeasure_cooldown_tick` | 干扰弹冷却，默认 `80`。 |
+| `allow_drive` | 是否允许 Gunner 驾驶载具，默认 `true`。 |
+| `drive_pursuit_distance` / `drive_stop_distance` | 地面追击/刹车距离，默认 `64 / 12`。 |
+| `drive_stuck_check_tick` / `drive_stuck_distance` / `drive_recovery_tick` | 卡住检测与恢复参数，默认 `20 / 1.0 / 20`。 |
+| `rotary_cruise_altitude_min` / `rotary_cruise_altitude_max` | 直升机巡航高度范围，默认 `28 / 60`。 |
+| `fixedwing_cruise_altitude_min` / `fixedwing_cruise_altitude_max` | 固定翼巡航高度范围，默认 `150 / 500`。 |
+| `fixedwing_combat_radius_min` / `fixedwing_combat_radius_max` | 固定翼攻击半径范围，默认 `40 / 350`。 |
+| `ground_wander_enabled` | 地面载具是否启用闲逛式机动，默认 `true`。 |
+| `ground_big_turn_interval_tick_min` / `ground_big_turn_interval_tick_max` | 地面大转向触发间隔范围，默认 `300 / 600`。 |
+| `ground_big_turn_angle_deg_min` / `ground_big_turn_angle_deg_max` | 地面大转向角范围，默认 `120 / 180`。 |
+| `ground_big_turn_duration_tick` | 地面大转向持续时间，默认 `40`。 |
+| `air_attack_phase_tick` / `air_disengage_phase_tick` | 空中攻击/脱离阶段时长，默认 `200 / 200`。 |
+| `air_initial_disengage_tick_min` / `air_initial_disengage_tick_max` | 起飞后首次脱离阶段随机范围，默认 `300 / 400`。 |
 
 ---
 

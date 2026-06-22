@@ -1,0 +1,68 @@
+﻿To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.8/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :
+MixinGradle did not locate the diffplug APT plugin, skipping eclipse task configuration
+Java: 1.8.0_301, JVM: 25.301-b09 (Oracle Corporation), Arch: amd64
+
+> Task :downloadMcpConfig
+> Task :extractSrg UP-TO-DATE
+> Task :createMcpToSrg UP-TO-DATE
+
+> Task :compileJava
+./gradlew.bat : D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleR
+adarOverlayMixin.java:67: 错误: 已在类 VehicleRadarOverlayMixin中定义了变量 ywzj_rvp$curre
+ntRadarUnit
+所在位置 行:1 字符: 1
++ ./gradlew.bat build --no-daemon 2>&1 | Out-File -FilePath build_log.t ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (D:\ywzj\ywzj\yw...urrentRadarUnit 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    private RadarUnit ywzj_rvp$currentRadarUnit;
+                      ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:70: 错误: 已在类 VehicleRadarOverlayMixin中定义了变量 ywzj_rvp$partialTick
+    private float ywzj_rvp$partialTick;
+                  ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\mixin\VehicleRadarOverlayMixin
+.java:73: 错误: 已在类 VehicleRadarOverlayMixin中定义了变量 ywzj_rvp$RWR_SCALE
+    private static final float ywzj_rvp$RWR_SCALE = 1.3f;
+                               ^
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\client\state\RVP_ClientHmdStat
+e.java:148: 错误: 找不到符号
+            Entity entity = obj.entity();
+                               ^
+  符号:   方法 entity()
+  位置: 类型为DetectedObject的变量 obj
+D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\client\state\RVP_ClientHmdStat
+e.java:189: 错误: 找不到符号
+        Vec2 localRot = radar.worldVecToLocalRot(aimPoint.subtract(radarPos));
+        ^
+  符号:   类 Vec2
+  位置: 类 RVP_ClientHmdState
+注: 某些输入文件使用或覆盖了已过时的 API。
+注: 有关详细信息, 请使用 -Xlint:deprecation 重新编译。
+5 个错误
+
+> Task :compileJava FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler error output for details.
+
+* Try:
+> Run with --info option to get more log output.
+> Run with --scan to get full insights.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.8/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 16s
+4 actionable tasks: 2 executed, 2 up-to-date

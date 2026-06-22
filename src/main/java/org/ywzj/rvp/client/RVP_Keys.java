@@ -14,74 +14,40 @@ import org.ywzj.rvp.RVP_MOD;
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class RVP_Keys {
 
-    public static final KeyMapping OPEN_GPS_PANEL = new KeyMapping(
-            "key.ywzj_rvp.open_gps_panel.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_K,
-            "key.category.ywzj_rvp"
-    );
+    private static KeyMapping key(String name, InputConstants.Type type, int key) {
+        return new KeyMapping(
+                "key.ywzj_rvp." + name + ".desc",
+                KeyConflictContext.IN_GAME,
+                KeyModifier.NONE,
+                type,
+                key,
+                "key.category.ywzj_rvp"
+        );
+    }
+
+    public static final KeyMapping OPEN_GPS_PANEL = key("open_gps_panel", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K);
 
     /** Toggle RVP weapon JSON test overlay (MCH test mode style). */
-    public static final KeyMapping WEAPON_TEST_OVERLAY = new KeyMapping(
-            "key.ywzj_rvp.weapon_test.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_F10,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping WEAPON_TEST_OVERLAY = key("weapon_test", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F10);
 
     /** ARM target selection (previous). */
-    public static final KeyMapping ARM_SELECT_PREV = new KeyMapping(
-            "key.ywzj_rvp.arm_select_prev.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_LEFT_BRACKET,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping ARM_SELECT_PREV = key("arm_select_prev", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET);
 
     /** ARM target selection (next). */
-    public static final KeyMapping ARM_SELECT_NEXT = new KeyMapping(
-            "key.ywzj_rvp.arm_select_next.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_CAPS_LOCK,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping ARM_SELECT_NEXT = key("arm_select_next", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET);
 
     /** GPS target set (R key while in GPS weapon seat). */
-    public static final KeyMapping SET_GPS_TARGET = new KeyMapping(
-            "key.ywzj_rvp.set_gps_target.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_R,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping SET_GPS_TARGET = key("set_gps_target", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R);
 
     /** Clear GPS target. */
-    public static final KeyMapping CLEAR_GPS = new KeyMapping(
-            "key.ywzj_rvp.clear_gps.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_L,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping CLEAR_GPS = key("clear_gps", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L);
 
     /** HMD helmet-mounted display / ACM dogfight mode toggle (5 key). */
-    public static final KeyMapping HMD_TOGGLE = new KeyMapping(
-            "key.ywzj_rvp.hmd_toggle.desc",
-            KeyConflictContext.IN_GAME,
-            KeyModifier.NONE,
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_5,
-            "key.category.ywzj_rvp"
-    );
+    public static final KeyMapping HMD_TOGGLE = key("hmd_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_5);
+    public static final KeyMapping FIRE_CONTROL_STABILIZER = key("fire_control_stabilizer", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F);
+    public static final KeyMapping HITL_REDESIGNATE = key("hitl_redesignate", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R);
+    public static final KeyMapping HITL_SWITCH_VIDEO_MODE = key("hitl_switch_video_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_4);
+    public static final KeyMapping HITL_EXIT = key("hitl_exit", InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT);
 
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
@@ -92,5 +58,9 @@ public class RVP_Keys {
         event.register(SET_GPS_TARGET);
         event.register(CLEAR_GPS);
         event.register(HMD_TOGGLE);
+        event.register(FIRE_CONTROL_STABILIZER);
+        event.register(HITL_REDESIGNATE);
+        event.register(HITL_SWITCH_VIDEO_MODE);
+        event.register(HITL_EXIT);
     }
 }

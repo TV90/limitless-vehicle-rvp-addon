@@ -1,0 +1,41 @@
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/state/RVP_AirburstMeasureUtil.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/state/RVP_ClientHitlState.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/state/RVP_ClientHmdState.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/state/RVP_ClientSaclosState.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/config/UIPresetManager.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/config/VehicleUIPresetCache.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/entity/gunner/ai/profile/GunnerProfile.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/ext/RadarUnitDataExt.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/ext/RadarUnitPojoExt.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/RadarUnitDataMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/RadarUnitPojoMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/VehicleRadarOverlayPositionMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/WeaponUnitGetSeekerFovMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/resources/assets/ywzj_rvp/gunner_profiles/ps1sm_gunner.json', LF will be replaced by CRLF the next time Git touches it
+ libs/ywzj_vehicle-1.20.1-0.5.6-all.jar             | Bin [31m9865784[m -> [32m10410637[m bytes
+ .../java/org/ywzj/rvp/client/RVP_ClientEvents.java |   8 [32m+[m[31m-[m
+ .../ywzj/rvp/client/debug/RVP_DebugCommands.java   |  63 [32m++++++++++[m[31m-[m
+ .../rvp/client/state/RVP_AirburstMeasureUtil.java  |   4 [32m+[m[31m-[m
+ .../ywzj/rvp/client/state/RVP_ClientHitlState.java |   8 [32m+[m[31m-[m
+ .../ywzj/rvp/client/state/RVP_ClientHmdState.java  |  13 [32m+++[m
+ .../rvp/client/state/RVP_ClientSaclosState.java    |   2 [32m+[m[31m-[m
+ .../java/org/ywzj/rvp/config/UIPresetManager.java  |  13 [32m++[m[31m-[m
+ .../org/ywzj/rvp/config/VehicleUIPresetCache.java  |  42 [32m++++[m[31m---[m
+ .../entity/gunner/ai/profile/GunnerProfile.java    |   4 [32m+[m[31m-[m
+ .../java/org/ywzj/rvp/ext/RadarUnitDataExt.java    |   2 [32m+[m
+ .../java/org/ywzj/rvp/ext/RadarUnitPojoExt.java    |   2 [32m+[m
+ .../rvp/mixin/AbstractVehicleUIPresetMixin.java    |  26 [31m-----[m
+ .../ywzj/rvp/mixin/BaseVehicleDataPojoMixin.java   |  22 [31m----[m
+ .../rvp/mixin/BaseVehicleDataUIPresetMixin.java    |  54 [31m---------[m
+ .../mixin/LocalVehiclePlayerRocketAimMixin.java    |  15 [32m++[m[31m-[m
+ .../org/ywzj/rvp/mixin/RadarUnitDataMixin.java     |  18 [32m+++[m
+ .../java/org/ywzj/rvp/mixin/RadarUnitMixin.java    | 123 [32m+++++++++++++++++[m[31m----[m
+ .../org/ywzj/rvp/mixin/RadarUnitPojoMixin.java     |  18 [32m+++[m
+ .../ywzj/rvp/mixin/VehicleAimAtOverlayMixin.java   |  46 [31m--------[m
+ .../ywzj/rvp/mixin/VehicleRadarOverlayMixin.java   |  85 [32m+++++[m[31m---------[m
+ .../mixin/VehicleRadarOverlayPositionMixin.java    |   4 [32m+[m[31m-[m
+ .../rvp/mixin/VehicleScopeOverlayHeadingMixin.java |  58 [31m----------[m
+ .../rvp/mixin/WeaponUnitGetSeekerFovMixin.java     |  38 [32m++++++[m[31m-[m
+ .../ywzj_rvp/gunner_profiles/ps1sm_gunner.json     |   4 [32m+[m[31m-[m
+ src/main/resources/ywzj_rvp.mixins.json            |  13 [32m+[m[31m--[m
+ 26 files changed, 348 insertions(+), 337 deletions(-)

@@ -1,10 +1,13 @@
 package org.ywzj.rvp.mixin;
 
+import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
@@ -26,10 +29,7 @@ public class WeaponUnitSwitchWeaponMixin {
     )
     private void ywzj_rvp$resetSeekerOnWeaponSwitch(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
-        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
-        if (weaponOpt.isPresent() && !weaponOpt.get().withSeeker()) {
-            seekerOn = false;
-        }
+        ywzj_rvp$syncAfterPrimarySwitch(self);
     }
 
     @Inject(
@@ -39,9 +39,51 @@ public class WeaponUnitSwitchWeaponMixin {
     )
     private void ywzj_rvp$resetSeekerOnSecondaryWeaponSwitch(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        ywzj_rvp$syncAfterSecondarySwitch(self);
+    }
+
+    @Inject(
+            method = "switchWeapon",
+            at = @At("TAIL"),
+            remap = false
+    )
+    private void ywzj_rvp$restoreLockOnRealWeaponSwitch(boolean secondary, boolean next, CallbackInfo ci) {
+        WeaponUnit self = (WeaponUnit) (Object) this;
+        if (secondary) {
+            ywzj_rvp$syncAfterSecondarySwitch(self);
+            return;
+        }
+        ywzj_rvp$syncAfterPrimarySwitch(self);
+    }
+
+    private void ywzj_rvp$syncAfterPrimarySwitch(WeaponUnit self) {
+        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
+        if (weaponOpt.isPresent() && !weaponOpt.get().withSeeker()) {
+            seekerOn = false;
+        }
+        ywzj_rvp$restoreRadarLockOnWeaponSwitch(self);
+    }
+
+    private void ywzj_rvp$syncAfterSecondarySwitch(WeaponUnit self) {
         Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentSecondaryWeapon();
         if (weaponOpt.isPresent() && !weaponOpt.get().withSeeker()) {
             seekerOn = false;
+        }
+        ywzj_rvp$restoreRadarLockOnWeaponSwitch(self);
+    }
+
+    private static void ywzj_rvp$restoreRadarLockOnWeaponSwitch(WeaponUnit self) {
+        WeaponUnit root = self.getRootParentWeaponUnit();
+        if (root.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+            return;
+        }
+        RadarUnit radar = root.getMainRadarUnit();
+        if (radar == null) {
+            return;
+        }
+        Entity radarLocked = radar.getLockedEntity();
+        if (radarLocked != null && radarLocked.isAlive()) {
+            root.setLockedEntity(radarLocked);
         }
     }
 }

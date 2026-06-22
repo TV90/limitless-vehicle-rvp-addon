@@ -23,20 +23,25 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.screen.RVP_GPSPanelScreen;
+import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
+import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.vehicle.client.shader.CrtHandler;
+import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -45,7 +50,6 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-import org.ywzj.vehicle.vehicle.weapon.VehicleRocket;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -103,6 +107,8 @@ public class RVP_ClientEvents {
             }
         }
 
+        ywzj_rvp$applyScopeOverrides();
+
         if (mc.screen != null) {
             return;
         }
@@ -138,13 +144,42 @@ public class RVP_ClientEvents {
                     && weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
                 ywzj_rvp$updateGPSBombCcip(vehicle, weaponUnit, weapon);
-            } else if (!(currentWeapon instanceof VehicleRocket)) {
+            } else if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
             }
         }
 
         if (LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
             RVP_ClientSaclosState.tick(mc, player);
+        }
+    }
+
+    private static void ywzj_rvp$applyScopeOverrides() {
+        if (LocalVehiclePlayer.instance == null || LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
+            RVP_CrtUiLiteHandler.setActive(false);
+            return;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null || weaponUnit.getOpticalSightType() != WeaponUnitData.OpticalSightType.CRT) {
+            RVP_CrtUiLiteHandler.setActive(false);
+            return;
+        }
+        if (!(weaponUnit.getData() instanceof WeaponUnitDataExt ext) || !ext.ywzj_rvp$disableCrtEffect()) {
+            RVP_CrtUiLiteHandler.setActive(false);
+            return;
+        }
+        if (CrtHandler.isActive()) {
+            CrtHandler.setActive(false);
+        }
+        if (!RVP_CrtUiLiteHandler.isActive()) {
+            RVP_CrtUiLiteHandler.setActive(true);
+        }
+        if (weaponUnit.withThermalImager() && LocalVehiclePlayer.instance.thermalImaging) {
+            if (!ThermalHandler.isActive()) {
+                ThermalHandler.setActive(true);
+            }
+        } else if (ThermalHandler.isActive()) {
+            ThermalHandler.setActive(false);
         }
     }
 

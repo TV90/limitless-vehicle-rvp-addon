@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
+import org.ywzj.rvp.debug.RVP_AheadDebug;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
@@ -52,6 +53,24 @@ public class RVP_DebugCommands {
                                     boolean enabled = RVP_TVMissileDebug.isBwSpamEnabled();
                                     Component state = Component.translatable(enabled ? "commands.ywzj_rvp.state.on" : "commands.ywzj_rvp.state.off");
                                     ctx.getSource().sendSuccess(() -> Component.translatable("commands.ywzj_rvp.debug.tv_missile.bw_spam.status", state), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                        )
+                        .then(Commands.literal("ahead")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_AheadDebug.setEnabled(true);
+                                    ctx.getSource().sendSuccess(() -> Component.translatable("commands.ywzj_rvp.debug.ahead.on"), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_AheadDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.translatable("commands.ywzj_rvp.debug.ahead.off"), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_AheadDebug.isEnabled();
+                                    Component state = Component.translatable(enabled ? "commands.ywzj_rvp.state.on" : "commands.ywzj_rvp.state.off");
+                                    ctx.getSource().sendSuccess(() -> Component.translatable("commands.ywzj_rvp.debug.ahead.status", state), false);
                                     return enabled ? 1 : 0;
                                 }))
                         )

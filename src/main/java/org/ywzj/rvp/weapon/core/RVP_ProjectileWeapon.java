@@ -16,6 +16,7 @@ import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
 import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
+import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -131,8 +132,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
         var unit = getWeaponUnit().getRootParentWeaponUnit();
-        // 所有导弹都传 lockedEntity（ARH 也需要 IOG 初始目标），弹体自主搜索阶段自行接管
+        // 仅允许 TV SACLOS 继承实体锁；普通 SACLOS 只吃实时指定点，不继承锁定实体。
         var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                && (!data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)
+                || data.isSaclosTvGuided())
                 ? unit.getLockedEntity() : null;
         // ARM 预选目标
         int armPreselectVehicleId = -1;
@@ -159,6 +162,9 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                                   net.minecraft.world.entity.Entity lock, WeaponUnit unit, float chargeScale,
                                   int armPreselectVehicleId, int armPreselectRadarIndex) {
         int totalProjectiles = data.getFireData().getCanisterCount() * data.getFireData().getCanisterBurstCount();
+        if (RVP_AheadProgrammer.isAheadWeapon(data)) {
+            RVP_AheadProgrammer.programForShot(getVehicle(), unit, getIndex(), data, aim, 1.0f);
+        }
         for (int i = 0; i < totalProjectiles; i++) {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, aim, lock, unit, chargeScale, 0f);
@@ -186,6 +192,9 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 centerOffset = RVP_ProjectileSpawner.sampleSpreadCenter(getVehicle().level(), spread);
             }
             AimContext pelletAim = canisterAim(aim, pelletIndex, gridCells, fire, centerOffset);
+            if (RVP_AheadProgrammer.isAheadWeapon(data)) {
+                RVP_AheadProgrammer.programForShot(getVehicle(), unit, getIndex(), data, pelletAim, 1.0f);
+            }
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
                     getVehicle(), shooter, pelletAim, lock, unit, chargeScale, 0f, false);
             maybeEnterHitlView(data, shooter, projectile, i);

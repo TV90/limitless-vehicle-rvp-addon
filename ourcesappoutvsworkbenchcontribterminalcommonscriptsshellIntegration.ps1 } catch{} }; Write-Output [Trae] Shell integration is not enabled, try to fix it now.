@@ -1,0 +1,61 @@
+[1mdiff --git a/src/main/java/org/ywzj/rvp/mixin/VehicleAimAtOverlayMixin.java b/src/main/java/org/ywzj/rvp/mixin/VehicleAimAtOverlayMixin.java[m
+[1mindex c0888e5..51958d4 100644[m
+[1m--- a/src/main/java/org/ywzj/rvp/mixin/VehicleAimAtOverlayMixin.java[m
+[1m+++ b/src/main/java/org/ywzj/rvp/mixin/VehicleAimAtOverlayMixin.java[m
+[36m@@ -1,28 +1,46 @@[m
+ package org.ywzj.rvp.mixin;[m
+ [m
+[31m-import com.mojang.blaze3d.vertex.PoseStack;[m
+ import org.spongepowered.asm.mixin.Mixin;[m
+ import org.spongepowered.asm.mixin.injection.At;[m
+ import org.spongepowered.asm.mixin.injection.Redirect;[m
+[31m-import org.ywzj.rvp.client.state.RVP_ClientHmdState;[m
+[32m+[m[32mimport org.ywzj.rvp.util.RVP_SeekerHelper;[m
+ import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;[m
+[31m-import org.ywzj.vehicle.client.render.util.GuiHelper;[m
+[32m+[m[32mimport org.ywzj.vehicle.custom.part.data.WeaponUnitData;[m
+[32m+[m[32mimport org.ywzj.vehicle.vehicle.part.WeaponUnit;[m
+ [m
+ /**[m
+[31m- * IR HMD 激活时，屏蔽原版 IR 15px 固定圈（由 HMD overlay 替代绘制）。[m
+[32m+[m[32m * 修复导引头圈显示：[m
+[32m+[m[32m * 当前武器是 IR 弹 → 显示红外大圈[m
+[32m+[m[32m * 当前武器是 SARH/ARH/ARM 弹 → 显示雷达小双圈[m
+[32m+[m[32m * 当前武器是 SACLOS/MCLOS/IOG/GPS 等 → 不画圈[m
+  */[m
+ @Mixin(value = VehicleAimAtOverlay.class, remap = false)[m
+ public class VehicleAimAtOverlayMixin {[m
+ [m
+     @Redirect([m
+             method = "render",[m
+[31m-            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V", remap = false)[m
+[32m+[m[32m            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;isSeekerOn()Z"),[m
+[32m+[m[32m            remap = false[m
+     )[m
+[31m-    private void ywzj_rvp$redirectIrCircle(PoseStack poseStack, float x, float y, float radius, int color, float thickness, float startAngle, float endAngle) {[m
+[31m-        // 只屏蔽 IR 15px 小圈（thickness=0.03f 唯一标识 IR 小圈）[m
+[31m-        if (RVP_ClientHmdState.getInstance().isIrHmd() && Math.abs(thickness - 0.03f) < 0.001f) {[m
+[31m-            return;[m
+[32m+[m[32m    private boolean ywzj_rvp$seekerOnByHomingMode(WeaponUnit weaponUnit) {[m
+[32m+[m[32m        RVP_SeekerHelper.SeekerType type = RVP_SeekerHelper.resolveSeekerType(weaponUnit);[m
+[32m+[m[32m        return type != RVP_SeekerHelper.SeekerType.NONE;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Redirect([m
+[32m+[m[32m            method = "render",[m
+[32m+[m[32m            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;getFireControlSensorType()Lorg/ywzj/vehicle/custom/part/data/WeaponUnitData$FireControlSensorType;"),[m
+[32m+[m[32m            remap = false[m
+[32m+[m[32m    )[m
+[32m+[m[32m    private WeaponUnitData.FireControlSensorType ywzj_rvp$sensorTypeByHomingMode(WeaponUnit weaponUnit) {[m
+[32m+[m[32m        RVP_SeekerHelper.SeekerType type = RVP_SeekerHelper.resolveSeekerType(weaponUnit);[m
+[32m+[m[32m        switch (type) {[m
+[32m+[m[32m            case INFRARED:[m
+[32m+[m[32m                return WeaponUnitData.FireControlSensorType.IR;[m
+[32m+[m[32m            case RADAR:[m
+[32m+[m[32m                return WeaponUnitData.FireControlSensorType.RF;[m
+[32m+[m[32m            default:[m
+[32m+[m[32m                return WeaponUnitData.FireControlSensorType.NONE;[m
+         }[m
+[31m-        GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, startAngle, endAngle);[m
+     }[m
+ }[m

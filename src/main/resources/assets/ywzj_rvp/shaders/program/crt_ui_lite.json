@@ -1,0 +1,23 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "one",
+    "dstrgb": "zero"
+  },
+  "vertex": "ywzj_rvp:crt_ui_lite",
+  "fragment": "ywzj_rvp:crt_ui_lite",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    { "name": "DiffuseSampler" }
+  ],
+  "uniforms": [
+    {
+      "name": "Resolution",
+      "type": "float",
+      "count": 2,
+      "values": [1.0, 1.0]
+    }
+  ]
+}

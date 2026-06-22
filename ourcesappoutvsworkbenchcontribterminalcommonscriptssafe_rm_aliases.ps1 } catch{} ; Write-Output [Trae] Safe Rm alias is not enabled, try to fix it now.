@@ -1,0 +1,23 @@
+warning: in the working copy of '.trae/skills/ywzj-game-pack-root/SKILL.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/RVP_Keys.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/gui/RVP_BulletHitDebugOverlay.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/state/RVP_ClientBulletHitDebugState.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/entity/projectile/RVP_MissileEntity.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/guidance/source/RVP_ArmGuidanceSource.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/VehicleCrossHairOverlayMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/network/RVP_BulletHitDebugNetworking.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/network/RVP_Network.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/network/S2CBulletVehicleHitDebug.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/weapon/data/RVP_HumanInTheLoopData.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/resources/ywzj_rvp.mixins.json', LF will be replaced by CRLF the next time Git touches it
+.trae/skills/ywzj-game-pack-root/SKILL.md
+blockbench_plugins/ywzj_tread_inward_normal/main.js
+src/main/java/org/ywzj/rvp/client/RVP_Keys.java
+src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java
+src/main/java/org/ywzj/rvp/entity/projectile/RVP_MissileEntity.java
+src/main/java/org/ywzj/rvp/guidance/source/RVP_ArmGuidanceSource.java
+src/main/java/org/ywzj/rvp/network/RVP_Network.java
+src/main/java/org/ywzj/rvp/weapon/core/RVP_ProjectileWeapon.java
+src/main/java/org/ywzj/rvp/weapon/core/RVP_WeaponBase.java
+src/main/java/org/ywzj/rvp/weapon/data/RVP_GuidanceSourceParamsData.java
+src/main/resources/ywzj_rvp.mixins.json

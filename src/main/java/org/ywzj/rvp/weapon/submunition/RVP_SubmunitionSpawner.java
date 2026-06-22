@@ -1,6 +1,7 @@
 package org.ywzj.rvp.weapon.submunition;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
@@ -10,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
@@ -29,6 +31,7 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponIndex;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.util.VectorUtil;
 
 /**
  * Spawns RVP projectiles or arbitrary entities for {@link RVP_SubmunitionRunner}.
@@ -93,14 +96,16 @@ public final class RVP_SubmunitionSpawner {
         }
         LivingEntity shooter = parent.getOwner() instanceof LivingEntity living ? living : null;
         AbstractVehicle vehicle = parent.getShooterVehicle();
+        RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), parent.getXRot(), parent.getYRot(),
+                parent.position(), refAim.xRot(), refAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount);
+        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount, refAim);
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
-                new RVP_BaseBullet.AimRot(parent.getXRot(), parent.getYRot()), velocity);
+                refAim, velocity);
         child.setShooterWeaponUnit(parent.getShooterWeaponUnit());
+        child.name = Component.translatable(childData.getName());
         // allow_submunition on the *spawn payload*: child may run its own weapon submunition_data (multi-stage).
         if (!payload.isAllowSubmunition()) {
             child.disableSubmunitionReleases();
@@ -133,12 +138,13 @@ public final class RVP_SubmunitionSpawner {
         if (entity == null) {
             return false;
         }
+        RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), parent.getXRot(), parent.getYRot(),
+                parent.position(), refAim.xRot(), refAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        entity.moveTo(pos.x, pos.y, pos.z, parent.getYRot(), parent.getXRot());
+        entity.moveTo(pos.x, pos.y, pos.z, refAim.yRot(), refAim.xRot());
         applyEntityNbt(entity, payload.getEntityNbt());
-        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount);
+        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount, refAim);
         entity.setDeltaMovement(velocity);
         if (entity instanceof Projectile projectile) {
             projectile.setOwner(parent.getOwner());
@@ -148,7 +154,7 @@ public final class RVP_SubmunitionSpawner {
     }
 
     private static Vec3 buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
-                                    int pelletIndex, int pelletCount) {
+                                      int pelletIndex, int pelletCount, RVP_BaseBullet.AimRot refAim) {
         Vec3 velocity = Vec3.ZERO;
         if (payload.isInheritParentVelocity()) {
             velocity = parent.getDeltaMovement();
@@ -164,8 +170,17 @@ public final class RVP_SubmunitionSpawner {
             velocity = parent.getDeltaMovement().normalize().scale(0.5);
         }
         return RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
-                velocity, parent.getXRot(), parent.getYRot(),
+                velocity, refAim.xRot(), refAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, parent.level().getRandom());
+    }
+
+    private static RVP_BaseBullet.AimRot referenceAim(RVP_BaseBullet parent) {
+        Vec3 velocity = parent.getDeltaMovement();
+        if (velocity.lengthSqr() > 1.0E-8) {
+            Vec2 rot = VectorUtil.vecToRot(velocity.normalize());
+            return new RVP_BaseBullet.AimRot(rot.x, rot.y);
+        }
+        return new RVP_BaseBullet.AimRot(parent.getXRot(), parent.getYRot());
     }
 
     private static void applyEntityNbt(Entity entity, String snbt) {

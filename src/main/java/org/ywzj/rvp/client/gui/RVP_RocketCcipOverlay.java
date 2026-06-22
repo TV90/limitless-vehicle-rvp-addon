@@ -21,7 +21,10 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -57,7 +60,23 @@ public final class RVP_RocketCcipOverlay {
 
     private RVP_RocketCcipOverlay() {}
 
-    private record ActiveRocketContext(AbstractVehicle vehicle, WeaponUnit weaponUnit, VehicleRocket rocket) {}
+    private record ActiveRocketContext(AbstractVehicle vehicle, WeaponUnit weaponUnit, AbstractVehicleWeapon<?> weapon) {}
+
+    public static boolean isBallisticRocketWeapon(AbstractVehicleWeapon<?> weapon, WeaponUnit activeWeaponUnit) {
+        if (weapon == null || activeWeaponUnit == null) {
+            return false;
+        }
+        if (activeWeaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+            return false;
+        }
+        if (weapon instanceof VehicleRocket rocket) {
+            return rocket.getData() instanceof VehicleRocketWeaponDataExt ext && ext.ywzj_rvp$isBallisticEnabled();
+        }
+        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon) {
+            return rvpWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET;
+        }
+        return false;
+    }
 
     private static ActiveRocketContext getActiveRocketContext() {
         if (LocalVehiclePlayer.instance == null) {
@@ -71,13 +90,10 @@ public final class RVP_RocketCcipOverlay {
             return null;
         }
         AbstractVehicleWeapon<?> weapon = weaponUnit.getCurrentWeapon().get();
-        if (!(weapon instanceof VehicleRocket rocket)) {
+        if (!isBallisticRocketWeapon(weapon, weaponUnit)) {
             return null;
         }
-        if (!(rocket.getData() instanceof VehicleRocketWeaponDataExt ext) || !ext.ywzj_rvp$isBallisticEnabled()) {
-            return null;
-        }
-        WeaponUnit rocketWeaponUnit = rocket.getWeaponUnit();
+        WeaponUnit rocketWeaponUnit = weapon.getWeaponUnit();
         if (rocketWeaponUnit == null) {
             return null;
         }
@@ -85,7 +101,7 @@ public final class RVP_RocketCcipOverlay {
         if (!(mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle)) {
             return null;
         }
-        return new ActiveRocketContext(vehicle, rocketWeaponUnit, rocket);
+        return new ActiveRocketContext(vehicle, rocketWeaponUnit, weapon);
     }
 
     public static boolean isBallisticRocketActive() {
@@ -144,16 +160,13 @@ public final class RVP_RocketCcipOverlay {
         if (context == null) {
             return null;
         }
-        Vec3 rawHit = RVP_RocketBallistics.computeWeaponImpact(
-                context.vehicle().level(),
-                context.weaponUnit(),
-                context.vehicle().getDeltaMovement(),
-                context.rocket().getData(),
-                context.vehicle()
-        );
+        Vec3 rawHit = ywzj_rvp$computeImpact(context);
+        if (rawHit == null) {
+            return null;
+        }
         Vec3 hitPos = RVP_RocketCcipState.smooth(
                 context.vehicle().getId(),
-                context.rocket().getData().getWeaponId(),
+                ywzj_rvp$getWeaponId(context.weapon()),
                 context.vehicle().tickCount,
                 rawHit
         );
@@ -161,6 +174,40 @@ public final class RVP_RocketCcipOverlay {
             return null;
         }
         return VectorUtil.worldToScreen(hitPos);
+    }
+
+    private static Vec3 ywzj_rvp$computeImpact(ActiveRocketContext context) {
+        AbstractVehicleWeapon<?> weapon = context.weapon();
+        if (weapon instanceof VehicleRocket rocket) {
+            return RVP_RocketBallistics.computeWeaponImpact(
+                    context.vehicle().level(),
+                    context.weaponUnit(),
+                    context.vehicle().getDeltaMovement(),
+                    rocket.getData(),
+                    context.vehicle()
+            );
+        }
+        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon
+                && rvpWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
+            return RVP_RocketBallistics.computeWeaponImpact(
+                    context.vehicle().level(),
+                    context.weaponUnit(),
+                    context.vehicle().getDeltaMovement(),
+                    rvpWeapon.getData(),
+                    context.vehicle()
+            );
+        }
+        return null;
+    }
+
+    private static ResourceLocation ywzj_rvp$getWeaponId(AbstractVehicleWeapon<?> weapon) {
+        if (weapon instanceof VehicleRocket rocket) {
+            return rocket.getData().getWeaponId();
+        }
+        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon) {
+            return rvpWeapon.getData().getWeaponId();
+        }
+        return null;
     }
 
     @SubscribeEvent
