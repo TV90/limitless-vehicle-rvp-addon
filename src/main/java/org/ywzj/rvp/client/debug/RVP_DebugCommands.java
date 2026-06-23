@@ -13,6 +13,8 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.debug.RVP_AheadDebug;
+import org.ywzj.rvp.debug.RVP_HitboxDebug;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
@@ -27,6 +29,7 @@ public class RVP_DebugCommands {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Path LOG_PATH = FMLPaths.CONFIGDIR.get().resolve("rvpui.log");
+    private static final Path HITBOX_RESOLVE_LOG_PATH = FMLPaths.GAMEDIR.get().resolve("logs").resolve("hitboxresolve.log");
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -74,6 +77,44 @@ public class RVP_DebugCommands {
                                     return enabled ? 1 : 0;
                                 }))
                         )
+                        .then(Commands.literal("hitboxlog")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_HitboxDebug.clearLog();
+                                    RVP_HitboxDebug.setEnabled(true);
+                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-on", LocalVehiclePlayer.instance.getVehicle());
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_HitboxDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_HitboxDebug.isEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] hitboxlog=" + enabled + " path=" + RVP_HitboxDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-dump", LocalVehiclePlayer.instance.getVehicle());
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已立即写入 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_HitboxDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已清空 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                        )
+                        .then(Commands.literal("hitboxresolve")
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    String content = RVP_VehicleHitboxFactorManager.INSTANCE.dumpResolveDebug(vehicle);
+                                    writeLog(HITBOX_RESOLVE_LOG_PATH, content);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + HITBOX_RESOLVE_LOG_PATH), false);
+                                    return vehicle == null ? 0 : 1;
+                                }))
+                        )
                         .then(Commands.literal("ui").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
                             StringBuilder sb = new StringBuilder();
@@ -83,7 +124,7 @@ public class RVP_DebugCommands {
                             if (vehicle == null) {
                                 sb.append("状态: 未乘坐载具\n");
                                 sb.append("已加载预设: ").append(String.join(", ", UIPresetManager.getLoadedPresetNames())).append("\n");
-                                writeLog(sb.toString());
+                                writeLog(LOG_PATH, sb.toString());
                                 ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
                                 return 0;
                             }
@@ -107,7 +148,7 @@ public class RVP_DebugCommands {
 
                             if (preset == null) {
                                 sb.append("结果: 预设未找到\n");
-                                writeLog(sb.toString());
+                                writeLog(LOG_PATH, sb.toString());
                                 ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
                                 return 0;
                             }
@@ -222,20 +263,20 @@ public class RVP_DebugCommands {
                                 }
                             }
 
-                            writeLog(sb.toString());
+                            writeLog(LOG_PATH, sb.toString());
                             ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
                             return 1;
                         }))
         );
     }
 
-    private static void writeLog(String content) {
+    private static void writeLog(Path path, String content) {
         try {
-            Files.createDirectories(LOG_PATH.getParent());
-            Files.writeString(LOG_PATH, content);
-            LOGGER.info("Wrote debug log to {}", LOG_PATH);
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, content);
+            LOGGER.info("Wrote debug log to {}", path);
         } catch (IOException e) {
-            LOGGER.error("Failed to write debug log to {}", LOG_PATH, e);
+            LOGGER.error("Failed to write debug log to {}", path, e);
         }
     }
 }
