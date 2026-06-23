@@ -25,6 +25,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
+import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.client.screen.RVP_GPSPanelScreen;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
@@ -135,6 +136,10 @@ public class RVP_ClientEvents {
                     rvp.getFireController().syncClientInput();
                 }
             });
+            AbstractVehicleWeapon<?> selectedWeapon = RVP_LaserWeapons.unwrap(weaponUnit.getCurrentWeapon().orElse(null));
+            if (selectedWeapon instanceof RVP_WeaponBase selectedRvp) {
+                selectedRvp.getFireController().syncClientInput();
+            }
         }
         if (weaponUnit != null
                 && !weaponUnit.getCurrentWeapon().isEmpty()

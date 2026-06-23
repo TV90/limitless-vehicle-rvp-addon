@@ -6,6 +6,8 @@ import org.spongepowered.asm.mixin.Unique;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
 
+import java.util.List;
+
 @Mixin(value = WeaponUnitPojo.class, remap = false)
 public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @SerializedName("rvp_fire_control_mode")
@@ -20,6 +22,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private boolean ywzj_rvp$disableCrtEffect;
 
+    @SerializedName("rvp_follow_parent_only_part_unit_ids")
+    @Unique
+    private List<String> ywzj_rvp$followParentOnlyPartUnitIds = List.of();
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
@@ -33,5 +39,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public boolean ywzj_rvp$disableCrtEffect() {
         return ywzj_rvp$disableCrtEffect;
+    }
+
+    @Override
+    public List<String> ywzj_rvp$getFollowParentOnlyPartUnitIds() {
+        return ywzj_rvp$followParentOnlyPartUnitIds;
     }
 }

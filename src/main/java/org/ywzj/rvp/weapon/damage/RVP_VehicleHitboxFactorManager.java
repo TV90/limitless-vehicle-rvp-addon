@@ -29,6 +29,7 @@ import org.ywzj.rvp.network.S2CVehicleEraState;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.util.ResourceScanner;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
@@ -323,14 +324,14 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
         Map<String, Double> distances = new HashMap<>();
         for (String name : boneNames) {
-            BedrockBone bone = boneMap.get(name);
-            if (bone == null) {
+            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, name);
+            if (resolvedObbs.isEmpty()) {
                 distances.put(name, Double.MAX_VALUE);
                 continue;
             }
             double minDist = Double.MAX_VALUE;
-            for (OBB.CubeOBB cubeObb : OBB.getOBBsFromBone(bone, vehicle, namedBones)) {
-                Vector3f center = cubeObb.obb().center();
+            for (ResolvedObb resolvedObb : resolvedObbs) {
+                Vector3f center = resolvedObb.obb().center();
                 double d = new Vec3(center).distanceToSqr(hitPos);
                 if (d < minDist) {
                     minDist = d;
@@ -342,6 +343,82 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         List<String> result = new ArrayList<>(boneNames);
         result.sort(Comparator.comparingDouble(distances::get));
         return result;
+    }
+
+    public String dumpResolveDebug(AbstractVehicle vehicle) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("vehicleId=").append(vehicle == null ? "<null>" : vehicle.getVehicleId()).append('\n');
+        if (vehicle == null) {
+            return sb.toString();
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            sb.append("config=<missing>\n");
+            return sb.toString();
+        }
+        sb.append("structureModel=").append(cfg.structureModel).append('\n');
+        sb.append("defaultFactor=").append(cfg.defaultFactor).append('\n');
+        sb.append("loadedFactorKeys=").append(new ArrayList<>(cfg.factorByBoneName.keySet())).append('\n');
+        for (var entry : cfg.factorByBoneName.entrySet()) {
+            sb.append("factor[").append(entry.getKey()).append("]=").append(entry.getValue()).append('\n');
+        }
+        BedrockModel model = cfg.structureModel == null
+                ? null
+                : CommonAssetsManager.structureModelManager().getStructureModel(cfg.structureModel).orElse(null);
+        if (model == null) {
+            sb.append("model=<missing>\n");
+            return sb.toString();
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        Set<String> allConfigBones = new LinkedHashSet<>();
+        allConfigBones.addAll(cfg.factorByBoneName.keySet());
+        allConfigBones.addAll(cfg.eraByBoneName.keySet());
+        for (String boneName : allConfigBones) {
+            Optional<PartUnit<?>> partUnitOptional = vehicle.getPartUnit(boneName);
+            int partUnitObbCount = partUnitOptional.map(partUnit -> partUnit.getOBBs().size()).orElse(0);
+            BedrockBone bone = boneMap.get(boneName);
+            int boneObbCount = bone == null ? 0 : OBB.getOBBsFromBone(bone, vehicle, namedBones).size();
+            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+            String source = resolvedObbs.isEmpty() ? "missing" : resolvedObbs.get(0).source();
+            sb.append("bone=").append(boneName)
+                    .append(" source=").append(source)
+                    .append(" resolvedObbs=").append(resolvedObbs.size())
+                    .append(" partUnitPresent=").append(partUnitOptional.isPresent())
+                    .append(" partUnitObbs=").append(partUnitObbCount)
+                    .append(" boneExists=").append(bone != null)
+                    .append(" boneObbs=").append(boneObbCount)
+                    .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static List<ResolvedObb> resolveBoneObbs(
+            AbstractVehicle vehicle,
+            Map<String, BedrockBone> boneMap,
+            HashSet<BedrockBone> namedBones,
+            String boneName
+    ) {
+        Optional<PartUnit<?>> partUnitOptional = vehicle.getPartUnit(boneName);
+        if (partUnitOptional.isPresent()) {
+            List<OBB> partUnitObbs = partUnitOptional.get().getOBBs();
+            if (partUnitObbs != null && !partUnitObbs.isEmpty()) {
+                List<ResolvedObb> resolved = new ArrayList<>(partUnitObbs.size());
+                for (OBB obb : partUnitObbs) {
+                    resolved.add(new ResolvedObb(obb, "part_unit"));
+                }
+                return resolved;
+            }
+        }
+        BedrockBone bone = boneMap.get(boneName);
+        if (bone == null) {
+            return List.of();
+        }
+        List<ResolvedObb> resolved = new ArrayList<>();
+        for (OBB.CubeOBB cubeObb : OBB.getOBBsFromBone(bone, vehicle, namedBones)) {
+            resolved.add(new ResolvedObb(cubeObb.obb(), "bone_fallback"));
+        }
+        return resolved;
     }
 
     /** 播放松散 ERA 特效。 */
@@ -433,15 +510,17 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 float factor = eraConfig != null
                         ? eraConfig.damageFactor()
                         : factorByBoneName.getOrDefault(boneName, defaultFactor);
-                BedrockBone bone = boneMap.get(boneName);
-                if (bone == null) {
-                    missingBones++;
+                List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+                if (resolvedObbs.isEmpty()) {
+                    if (boneMap.get(boneName) == null && vehicle.getPartUnit(boneName).isEmpty()) {
+                        missingBones++;
+                    }
                     continue;
                 }
                 boolean era = eraConfig != null;
                 boolean eraActive = !era || INSTANCE.isEraActive(vehicle, boneName);
-                for (OBB.CubeOBB cubeObb : OBB.getOBBsFromBone(bone, vehicle, namedBones)) {
-                    Vector3f hit = cubeObb.obb().clip(from, to).orElse(null);
+                for (ResolvedObb resolvedObb : resolvedObbs) {
+                    Vector3f hit = resolvedObb.obb().clip(from, to).orElse(null);
                     if (hit == null) {
                         continue;
                     }
@@ -606,6 +685,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             boolean eraActive,
             @Nullable EraConfig eraConfig
     ) {
+    }
+
+    private record ResolvedObb(OBB obb, String source) {
     }
 
     private record EraConfig(float damageFactor, float minTriggerDamage, float explosion) {

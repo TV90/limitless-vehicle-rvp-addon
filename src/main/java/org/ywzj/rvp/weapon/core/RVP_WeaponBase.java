@@ -2,16 +2,21 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.vehicle.client.resource.ClientAssetsManager;
+import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+
+import java.util.Optional;
 
 /**
  * Shared runtime base for the seven public RVP weapon types.
@@ -35,6 +40,15 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     protected void setChargeTick(int chargeTick) {
         this.chargeTick = Math.max(chargeTick, 0);
+    }
+
+    public int getChargeTickValue() {
+        return chargeTick;
+    }
+
+    public SoundEvent getChargeSound() {
+        Optional<BaseDisplay> displayOptional = ClientAssetsManager.INSTANCE.getWeaponDisplay(getData().getWeaponId());
+        return displayOptional.map(display -> display.getSoundEvents().get("charge")).orElse(null);
     }
 
     @Override

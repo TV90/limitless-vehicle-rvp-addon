@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "ywzj_rvp.refmap.json",
   "mixins": [
+    "AbstractVehicleApsMixin",
     "AbstractVehicleEraStateMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
     "accessor.BaseBulletAccessor",
@@ -27,6 +28,7 @@
     "VehicleAutoLandingGearMixin",
     "WeaponUnitPojoMixin",
     "WeaponUnitDataMixin",
+    "WeaponUnitFollowParentRotationMixin",
     "WeaponUnitSwitchWeaponMixin",
     "VehicleDataManagerMixin"
   ],
@@ -41,6 +43,9 @@
     "LocalVehiclePlayerTVMissileTurnMixin",
     "LocalVehiclePlayerRocketAimMixin",
     "ModRenderTypesMixin",
+    "VehicleMultiWeaponsChargeGateMixin",
+    "VehicleScopeOverlayHeadingFixMixin",
+    "VehicleScopeOverlayWeaponUnitsMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleRadarOverlayMixin",
     "VehicleDisplayMixin",

@@ -77,5 +77,15 @@ public class RVP_Network {
                 .decoder(C2SSetArmPreselect::decode)
                 .consumerMainThread(C2SSetArmPreselect::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CApsHudSync.class, id++)
+                .encoder(S2CApsHudSync::encode)
+                .decoder(S2CApsHudSync::decode)
+                .consumerMainThread(S2CApsHudSync::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CApsFlameLink.class, id++)
+                .encoder(S2CApsFlameLink::encode)
+                .decoder(S2CApsFlameLink::decode)
+                .consumerMainThread(S2CApsFlameLink::handle)
+                .add();
     }
 }

@@ -2,6 +2,8 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.vehicle.all.AllKeys;
@@ -55,6 +57,15 @@ public final class RVP_WeaponFireController {
     @OnlyIn(Dist.CLIENT)
     public void syncClientInput() {
         boolean fireDown = isFireKeyDown();
+        if (weapon.isReloading() || !weapon.hasAmmo()) {
+            lastPressed = false;
+            lastReleased = false;
+            lastFireDown = false;
+            // Treat blocked time like a released button so holding through reload can re-trigger charging when ready.
+            clientFireDownPrev = false;
+            clearChargeState();
+            return;
+        }
         lastPressed = fireDown && !clientFireDownPrev;
         lastReleased = !fireDown && clientFireDownPrev;
         clientFireDownPrev = fireDown;
@@ -65,13 +76,21 @@ public final class RVP_WeaponFireController {
             railgunCharging = true;
             railgunChargeTick = 0;
             weapon.setChargeTick(0);
+            playChargeSound();
+        }
+        if (mode() == RVP_EnumFireMode.RAILGUN && lastReleased) {
+            railgunCharging = false;
+            railgunChargeTick = 0;
+            weapon.setChargeTick(0);
+        }
+        if (mode() == RVP_EnumFireMode.CHARGE && lastReleased) {
+            weapon.setChargeTick(0);
+        }
+        if (mode() == RVP_EnumFireMode.CHARGE && lastPressed) {
+            playChargeSound();
         }
 
         tickSpinClient(fireDown);
-
-        if (weapon.isReloading() || !weapon.hasAmmo()) {
-            return;
-        }
         int chargeCap = fire.getChargeTime();
         if (chargeCap <= 0) {
             return;
@@ -83,6 +102,25 @@ public final class RVP_WeaponFireController {
             railgunChargeTick = Math.min(railgunChargeTick + 1, chargeCap);
             weapon.setChargeTick(railgunChargeTick);
         }
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private void playChargeSound() {
+        SoundEvent sound = weapon.getChargeSound();
+        if (sound == null) {
+            return;
+        }
+        var vehicle = weapon.getVehicle();
+        vehicle.level().playLocalSound(
+                vehicle.getX(),
+                vehicle.getY(),
+                vehicle.getZ(),
+                sound,
+                SoundSource.PLAYERS,
+                1f,
+                1f,
+                false
+        );
     }
 
     @OnlyIn(Dist.CLIENT)
@@ -183,18 +221,28 @@ public final class RVP_WeaponFireController {
     public void tick(boolean fireDown) {
         RVP_FireData fire = weapon.getData().getFireData();
         tickSpinServer(fireDown);
+        if (weapon.isReloading() || !weapon.hasAmmo()) {
+            clearChargeState();
+            return;
+        }
 
         if (mode() == RVP_EnumFireMode.RAILGUN && railgunCharging && fireDown) {
             railgunChargeTick = Math.min(railgunChargeTick + 1, fire.getChargeTime());
             weapon.setChargeTick(railgunChargeTick);
+        } else if (mode() == RVP_EnumFireMode.RAILGUN && !fireDown) {
+            railgunCharging = false;
+            railgunChargeTick = 0;
+            weapon.setChargeTick(0);
         }
 
         int chargeCap = fire.getChargeTime();
-        if (chargeCap <= 0 || weapon.isReloading() || !weapon.hasAmmo()) {
+        if (chargeCap <= 0) {
             return;
         }
         if (mode() == RVP_EnumFireMode.CHARGE && fireDown) {
             weapon.setChargeTick(Math.min(weapon.getChargeTick() + 1, chargeCap));
+        } else if (mode() == RVP_EnumFireMode.CHARGE && !fireDown) {
+            weapon.setChargeTick(0);
         }
         if (mode() == RVP_EnumFireMode.MINIGUN && fireDown) {
             spinTick = Math.min(spinTick + 1, chargeCap);
@@ -260,6 +308,22 @@ public final class RVP_WeaponFireController {
             }
             case BURST -> completeBurstRound(weapon.getData().getFireData());
             case MINIGUN -> { }
+            default -> { }
+        }
+    }
+
+    private void clearChargeState() {
+        switch (mode()) {
+            case CHARGE -> weapon.setChargeTick(0);
+            case RAILGUN -> {
+                railgunCharging = false;
+                railgunChargeTick = 0;
+                weapon.setChargeTick(0);
+            }
+            case MINIGUN -> {
+                spinTick = 0;
+                weapon.setChargeTick(0);
+            }
             default -> { }
         }
     }
