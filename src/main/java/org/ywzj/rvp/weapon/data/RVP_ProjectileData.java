@@ -77,6 +77,21 @@ public class RVP_ProjectileData {
     @SerializedName("motor_burn_time")
     private float motorBurnTime = 0f;
 
+    @SerializedName("dual_pulse")
+    private boolean dualPulse = false;
+
+    @SerializedName("second_pulse_trigger_speed")
+    private float secondPulseTriggerSpeed = 0f;
+
+    @SerializedName("second_pulse_trigger_distance")
+    private float secondPulseTriggerDistance = 0f;
+
+    @SerializedName("second_pulse_thrust")
+    private float secondPulseThrust = 0f;
+
+    @SerializedName("second_pulse_burn_time")
+    private float secondPulseBurnTime = 0f;
+
     /** 点火延迟（tick）：此前不施加推力，可配合弹射/滑翔段。 */
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
@@ -114,6 +129,26 @@ public class RVP_ProjectileData {
         if (!proj.has("drag_coefficient") && weaponRoot.has("drag_coefficient")
                 && weaponRoot.get("drag_coefficient").isJsonPrimitive()) {
             dragCoefficient = weaponRoot.get("drag_coefficient").getAsFloat();
+        }
+        if (!proj.has("dual_pulse") && weaponRoot.has("dual_pulse")
+                && weaponRoot.get("dual_pulse").isJsonPrimitive()) {
+            dualPulse = weaponRoot.get("dual_pulse").getAsBoolean();
+        }
+        if (!proj.has("second_pulse_trigger_speed") && weaponRoot.has("second_pulse_trigger_speed")
+                && weaponRoot.get("second_pulse_trigger_speed").isJsonPrimitive()) {
+            secondPulseTriggerSpeed = weaponRoot.get("second_pulse_trigger_speed").getAsFloat();
+        }
+        if (!proj.has("second_pulse_trigger_distance") && weaponRoot.has("second_pulse_trigger_distance")
+                && weaponRoot.get("second_pulse_trigger_distance").isJsonPrimitive()) {
+            secondPulseTriggerDistance = weaponRoot.get("second_pulse_trigger_distance").getAsFloat();
+        }
+        if (!proj.has("second_pulse_thrust") && weaponRoot.has("second_pulse_thrust")
+                && weaponRoot.get("second_pulse_thrust").isJsonPrimitive()) {
+            secondPulseThrust = weaponRoot.get("second_pulse_thrust").getAsFloat();
+        }
+        if (!proj.has("second_pulse_burn_time") && weaponRoot.has("second_pulse_burn_time")
+                && weaponRoot.get("second_pulse_burn_time").isJsonPrimitive()) {
+            secondPulseBurnTime = weaponRoot.get("second_pulse_burn_time").getAsFloat();
         }
     }
 
@@ -175,6 +210,36 @@ public class RVP_ProjectileData {
 
     public float getResolvedMotorBurnTime() {
         return hasRocketEngine ? Math.max(motorBurnTime, 0f) : 0f;
+    }
+
+    public boolean isDualPulse() {
+        return dualPulse;
+    }
+
+    public float getResolvedSecondPulseTriggerSpeed() {
+        return hasRocketEngine && dualPulse ? Math.max(secondPulseTriggerSpeed, 0f) : 0f;
+    }
+
+    public float getResolvedSecondPulseTriggerDistance() {
+        return hasRocketEngine && dualPulse ? Math.max(secondPulseTriggerDistance, 0f) : 0f;
+    }
+
+    public float getResolvedSecondPulseThrust() {
+        return hasRocketEngine && dualPulse ? Math.max(secondPulseThrust, 0f) : 0f;
+    }
+
+    public float getResolvedSecondPulseBurnTime() {
+        return hasRocketEngine && dualPulse ? Math.max(secondPulseBurnTime, 0f) : 0f;
+    }
+
+    public boolean usesSecondPulse() {
+        if (!hasRocketEngine || !dualPulse) {
+            return false;
+        }
+        if (getResolvedSecondPulseThrust() <= 0f || getResolvedSecondPulseBurnTime() <= 0f) {
+            return false;
+        }
+        return getResolvedSecondPulseTriggerSpeed() > 0f || getResolvedSecondPulseTriggerDistance() > 0f;
     }
 
     public int getResolvedIgnitionDelayTick() {

@@ -259,9 +259,18 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
      */
     @Override
     protected boolean isMotorBurning() {
-        // 客户端 rvpData 可能为 null，用生成数据包同步的 motorBurnEndTick
+        // 客户端 rvpData 可能为 null，需要同时支持双脉冲第二段的同步燃烧期判断。
         if (rvpData == null) {
-            return tickCount <= motorBurnEndTick;
+            if (tickCount <= motorBurnEndTick) {
+                return true;
+            }
+            int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
+            int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
+            if (start >= 0 && burn > 0) {
+                int t2 = tickCount - start;
+                return t2 >= 0 && t2 <= burn;
+            }
+            return false;
         }
         if (!isMotorPropulsion()) {
             // 无发动机配置的导弹：默认燃烧期取一半寿命
