@@ -5,6 +5,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
+import org.ywzj.rvp.debug.RVP_DualPulseDebug;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -65,9 +67,31 @@ public final class RVP_ProjectileMotion {
             }
             Vec3 lookDir = projectile.getLookAngle();
             int motorTick = projectile.tickCount - ignition;
-            if (motorTick <= data.getResolvedMotorBurnTime()) {
+            float burn1 = data.getResolvedMotorBurnTime();
+            boolean burning1 = motorTick <= burn1;
+            boolean burning2 = false;
+            if (!burning1
+                    && projectile.isMissile()
+                    && data.getProjectileData().usesSecondPulse()
+                    && isDualPulseSupportedMissile(data)) {
+                if (projectile.secondPulseStartTick < 0 && shouldStartSecondPulse(projectile, data, velocity)) {
+                    projectile.secondPulseStartTick = projectile.tickCount;
+                    projectile.getEntityData().set(RVP_BaseBullet.DATA_SECOND_PULSE_START_TICK, projectile.secondPulseStartTick);
+                    projectile.getEntityData().set(
+                            RVP_BaseBullet.DATA_SECOND_PULSE_BURN_TIME_TICK,
+                            Math.round(data.getProjectileData().getResolvedSecondPulseBurnTime())
+                    );
+                    RVP_DualPulseDebug.noteSecondPulseStarted(projectile, data);
+                }
+                if (projectile.secondPulseStartTick >= 0) {
+                    int t2 = projectile.tickCount - projectile.secondPulseStartTick;
+                    burning2 = t2 >= 0 && t2 <= data.getProjectileData().getResolvedSecondPulseBurnTime();
+                }
+            }
+            if (burning1 || burning2) {
                 float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
-                double acceleration = data.getResolvedThrust() / mass;
+                float thrust = burning1 ? data.getResolvedThrust() : data.getProjectileData().getResolvedSecondPulseThrust();
+                double acceleration = thrust / mass;
                 velocity = velocity.add(lookDir.scale(acceleration));
             }
             double speedSqr = velocity.lengthSqr();
@@ -92,6 +116,8 @@ public final class RVP_ProjectileMotion {
         if (projectile.tickCount >= ignition) {
             int motorTick = projectile.tickCount - ignition;
             boolean coasting = motorTick > data.getResolvedMotorBurnTime()
+                    && (projectile.secondPulseStartTick < 0
+                        || projectile.tickCount - projectile.secondPulseStartTick > data.getProjectileData().getResolvedSecondPulseBurnTime())
                     && projectile.getTargetEntity() == null
                     && projectile.getTargetPos() == null;
             if (data.getProjectileData().isRotateToMotion()) {
@@ -104,6 +130,83 @@ public final class RVP_ProjectileMotion {
                 applyMissileCoastFacing(projectile, velocity, (float) MISSILE_COAST_LERP);
             }
         }
+    }
+
+    private static boolean isDualPulseSupportedMissile(RVP_WeaponData data) {
+        return data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARM);
+    }
+
+    private static boolean shouldStartSecondPulse(RVP_BaseBullet projectile, RVP_WeaponData data, Vec3 velocity) {
+        int ignition = data.getResolvedIgnitionDelayTick();
+        int motorTick = projectile.tickCount - ignition;
+        if (motorTick <= data.getResolvedMotorBurnTime()) {
+            return false;
+        }
+
+        float speedThreshold = data.getProjectileData().getResolvedSecondPulseTriggerSpeed();
+        float distThreshold = data.getProjectileData().getResolvedSecondPulseTriggerDistance();
+        boolean speedEnabled = speedThreshold > 0f;
+        boolean distEnabled = distThreshold > 0f;
+
+        boolean speedOk = false;
+        if (speedEnabled) {
+            speedOk = velocity.length() <= speedThreshold;
+        }
+
+        boolean distOk = false;
+        double resolvedDistance = -1D;
+        String distanceSource = null;
+        Entity target = null;
+        Vec3 targetPos = null;
+        Vec3 lastGuidancePos = projectile.getLastGuidancePos();
+        if (distEnabled) {
+            target = projectile.getTargetEntity();
+            if (target != null && target.isAlive()) {
+                targetPos = projectile.aimPoint(target);
+                resolvedDistance = projectile.position().distanceTo(targetPos);
+                distanceSource = "targetEntity";
+                distOk = resolvedDistance <= distThreshold;
+            } else {
+                targetPos = projectile.getTargetPos();
+                if (targetPos == null) {
+                    targetPos = lastGuidancePos;
+                    if (targetPos != null) {
+                        distanceSource = "lastGuidancePos";
+                    }
+                } else {
+                    distanceSource = "targetPos";
+                }
+                if (targetPos != null) {
+                    resolvedDistance = projectile.position().distanceTo(targetPos);
+                    distOk = resolvedDistance <= distThreshold;
+                }
+            }
+        }
+
+        RVP_DualPulseDebug.noteEvaluation(
+                projectile,
+                data,
+                velocity,
+                ignition,
+                motorTick,
+                data.getResolvedMotorBurnTime(),
+                speedEnabled,
+                speedThreshold,
+                speedOk,
+                distEnabled,
+                distThreshold,
+                distOk,
+                target,
+                targetPos,
+                lastGuidancePos,
+                resolvedDistance,
+                distanceSource
+        );
+
+        return speedOk || distOk;
     }
 
     /** 发射完成：初速 + 可选载机速度已写入 {@code deltaMovement}。 */

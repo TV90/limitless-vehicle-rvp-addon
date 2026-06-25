@@ -8,6 +8,9 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -85,6 +88,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    static final EntityDataAccessor<Integer> DATA_SECOND_PULSE_START_TICK =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
+    static final EntityDataAccessor<Integer> DATA_SECOND_PULSE_BURN_TIME_TICK =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
+
     protected RVP_WeaponData rvpData;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
@@ -140,6 +148,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
+    protected int secondPulseStartTick = -1;
     /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
     protected boolean showMslIndicator;
 
@@ -149,6 +158,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     /** 尾焰粒子上帧位置（对标本体 MissileEntity.particlePosO）。 */
     @Nullable
     protected Vec3 particlePosO;
+    protected int trailParticleTickO = Integer.MIN_VALUE;
+    protected boolean trailMotorBurningO;
 
     /** ARM preselect target vehicle ID (from HUD selection). -1 = none. */
     protected int preselectedVehicleId = -1;
@@ -186,6 +197,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         this(type, level, null);
     }
 
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(DATA_SECOND_PULSE_START_TICK, -1);
+        this.entityData.define(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
+    }
+
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         this.rvpData = data;
@@ -206,6 +224,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         } else {
             this.motorBurnEndTick = Integer.MAX_VALUE;
         }
+        this.secondPulseStartTick = -1;
+        this.entityData.set(DATA_SECOND_PULSE_START_TICK, -1);
+        this.entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.showMslIndicator = data.isShowMslIndicator();
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
@@ -1562,11 +1583,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
         boolean motorBurning = isMotorBurning();
         // 熄火后不再产生尾焰轨迹（客户端 isMotorPropulsion 始终 false，但 motorBurning 通过同步值正确判断）
         if (!motorBurning) {
+            trailMotorBurningO = false;
             return;
         }
         // 对标本体 MissileEntity.tickParticle：弹体后方 3 格，两帧间分段插值形成连续烟柱
         Vec3 pos = this.position().add(this.getLookAngle().scale(-3));
-        if (particlePosO == null) {
+        if (!trailMotorBurningO || trailParticleTickO != tickCount - 1) {
+            particlePosO = pos;
+        } else if (particlePosO == null) {
             particlePosO = pos;
         }
         Vec3 step = pos.subtract(particlePosO);
@@ -1598,6 +1622,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
                     -getDeltaMovement().x * 0.01, 0.05, -getDeltaMovement().z * 0.01);
         }
         particlePosO = pos;
+        trailParticleTickO = tickCount;
+        trailMotorBurningO = true;
     }
 
     protected boolean isHeavyProjectile() {
@@ -1614,15 +1640,47 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected boolean isMotorBurning() {
         // 客户端 rvpData 为 null，用生成数据包同步的 motorBurnEndTick
         if (rvpData == null) {
-            return tickCount <= motorBurnEndTick;
+            if (tickCount <= motorBurnEndTick) {
+                return true;
+            }
+            int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
+            int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
+            if (start >= 0 && burn > 0) {
+                int t2 = tickCount - start;
+                return t2 >= 0 && t2 <= burn;
+            }
+            return false;
         }
         if (!isMotorPropulsion()) {
             return true;
+        }
+        if (rvpData.getProjectileData().usesSecondPulse() && isMissile()) {
+            int ignition = rvpData.getResolvedIgnitionDelayTick();
+            float burnTime = rvpData.getResolvedMotorBurnTime();
+            int motorTick = tickCount - ignition;
+            if (motorTick >= 0 && motorTick <= burnTime) {
+                return true;
+            }
+            int start = secondPulseStartTick;
+            if (start >= 0) {
+                int t2 = tickCount - start;
+                float burn2 = rvpData.getProjectileData().getResolvedSecondPulseBurnTime();
+                return t2 >= 0 && t2 <= burn2;
+            }
+            return false;
         }
         int ignition = rvpData.getResolvedIgnitionDelayTick();
         float burnTime = rvpData.getResolvedMotorBurnTime();
         int motorTick = tickCount - ignition;
         return motorTick >= 0 && motorTick <= burnTime;
+    }
+
+    public final boolean isMotorBurningNow() {
+        return isMotorBurning();
+    }
+
+    public final int getSecondPulseStartTick() {
+        return secondPulseStartTick;
     }
 
     protected void broadcastTrailParticles() {
