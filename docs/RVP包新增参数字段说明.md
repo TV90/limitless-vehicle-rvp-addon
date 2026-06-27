@@ -18,6 +18,88 @@ RVP 扩展武器数据包路径：
 - 武器 JSON：`data/rvp/weapons/<id>.json`（资源 ID 为 `rvp:<id>`）
 - 显示配置：`assets/rvp/display/weapon/<id>.json`
 
+## 载具 JSON 扩展字段
+
+除武器 JSON 外，RVP 也会从 `data/<namespace>/vehicles/<id>.json` 读取少量扩展字段。
+
+### `rvp_custom_mounts` 自定义外挂挂载渲染（客户端）
+
+用于“按当前选中的挂载类型，切换整套挂架 + 导弹外挂模型”，并在弹药打空后只隐藏导弹骨骼、保留挂架骨骼。
+
+```json
+"rvp_custom_mounts": [
+  {
+    "part_unit_id": "variable_weapon_1",
+    "attach_bone": "hardpoint_1",
+    "weapon_id": "rvp:yj_91_2",
+    "model": "rvp:entity/weapon_mount_yj91",
+    "texture": "rvp:textures/entity/weapon_mount/pylon_yj91.png",
+    "rack_bones": ["rack_root", "rail_l", "rail_r"],
+    "missile_bones": ["missile_root"],
+    "replace_weapon_display": true,
+    "offset": [0.0, 0.0, 0.0],
+    "rotation_deg": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0]
+  }
+]
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `part_unit_id` | 绑定到哪个 `WeaponUnit`。RVP 会读取这个武器站“当前选中的武器”，只有当其 `weapon_id` 与本条匹配时才渲染本外挂模型。 |
+| `attach_bone` | 可选。载具显示/结构模型中的挂点骨骼名。外挂模型整体会跟随这个骨骼的当前姿态渲染。 |
+| `attach_part_unit_id` | 可选。绑定到另一个“只负责提供挂点”的 `WeaponUnit`。RVP 会取该武器站第一个 bolt 的位置作为外挂挂点，适合直接复用结构模型里的 `*_barrel` 挂载位。与 `attach_bone` 二选一，优先推荐给固定翼多挂点使用。 |
+| `weapon_id` | 触发本外挂模型的武器 ID。通常对应 `rvp:yj_91_2`、`rvp:kd_88a`、`rvp:pl_12`、`rvp:pl_15` 这类具体挂载武器。 |
+| `model` | 外挂整体模型 ID（Bedrock 模型）。建议把“挂架 + 导弹”做到同一个模型里。 |
+| `texture` | 外挂整体贴图。 |
+| `rack_bones` | 挂架骨骼列表。当前主要用于配置可读性与后续扩展，建议如实填写。 |
+| `missile_bones` | 导弹/弹药骨骼列表。当对应武器剩余弹药 `<= 0` 时，RVP 会隐藏这些骨骼，仅保留挂架显示。 |
+| `replace_weapon_display` | 是否替代本体默认武器显示。默认 `true`；开启后，匹配到本条配置时会抑制 `WeaponUnit.render()` 的默认武器模型渲染，避免外挂模型与默认导弹模型重叠。 |
+| `ammo_slot` | 可选的弹药槽位序号（从 1 开始）。当同一个 `part_unit_id + weapon_id` 配了多条外挂时，RVP 会按 `remainAmmo` 与 `ammo_slot` 比较来决定哪些挂点的导弹继续显示。未填写时按 `rvp_custom_mounts` 的书写顺序自动分配。 |
+| `offset` | 外挂模型相对挂点骨骼的平移偏移 `[x, y, z]`，单位与载具渲染坐标一致（方块）。 |
+| `rotation_deg` | 外挂模型相对挂点骨骼的附加旋转 `[x, y, z]`（度）。 |
+| `scale` | 外挂模型的附加缩放 `[x, y, z]`。默认 `[1, 1, 1]`。 |
+
+**运行规则：**
+
+- 仅客户端渲染使用，不影响服务器武器逻辑、发射逻辑、命中逻辑。
+- 触发条件是“当前武器站选中的具体武器 ID”匹配 `weapon_id`，因此适合给 J15/J16 这类“同一挂点可切换不同挂载”的飞机做可变外挂。
+- 当 `replace_weapon_display=true` 且匹配成功时，默认武器显示会被抑制；未匹配到配置的武器仍按本体默认方式渲染。
+- 当同一 `part_unit_id + weapon_id` 存在多条配置时，RVP 会按 `ammo_slot`（或列表顺序）与 `remainAmmo` 对比，超出剩余弹药数的挂点会隐藏 `missile_bones`，从而实现多挂点逐枚消失。
+
+### `rvp_structure_bolt_bones` 多结构挂点聚合（WeaponUnit 扩展）
+
+用于一个主武器站统一控制多个结构 `*_barrel` 挂载位，典型场景是“4 个 AAM 挂点共用一个可切换的主武器站”。
+
+```json
+{
+  "id": "variable_aam",
+  "type": "ywzj_vehicle:weapon",
+  "structure_bone": "variable_aam_1",
+  "rvp_structure_bolt_bones": [
+    "variable_aam_1_barrel",
+    "variable_aam_2_barrel",
+    "variable_aam_3_barrel",
+    "variable_aam_4_barrel"
+  ],
+  "ammo_capacity": 4,
+  "weapons": [
+    "rvp:pl_12",
+    "rvp:pl_15"
+  ]
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `rvp_structure_bolt_bones` | 结构模型中的 barrel 骨骼列表。RVP 会从这些骨骼自动构建多个 bolts，并覆盖本体默认“只从 `structure_bone + "_barrel"` 读取一个挂点”的行为。 |
+
+**运行规则：**
+
+- 仅对 `WeaponUnit` 生效。
+- 这些 barrel 骨骼会被统一收束到同一个主武器站的 bolts 列表里，用于多发弹药的发射位/挂点位。
+- 适合“4 个挂架只能统一选 `pl_12` 或 `pl_15`”这类场景；不适合每个挂点独立选型的场景。
+
 ## 公开武器类型
 
 新内容应只使用以下 7 个公开类型：
@@ -63,6 +145,7 @@ RVP 扩展武器数据包路径：
 | `ahead_data` | `rvp:machinegun` 的 AHEAD 自动编程配置分组。要求同时启用 `fuse_data.programmable_airburst`；Java 侧只负责把空爆距离自动编到预瞄点附近，开花后的子弹药细节仍由 `submunition_data` 和子弹药自身 JSON 决定。旧顶层 `ahead_*` 仍兼容读取，但已不推荐继续使用。 |
 | `sub_type` | 可选子类型标记，仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
 | `require_lock` | 是否要求发射前已有锁定。GPS、ARM、TV、MCLOS 等通常可设为 `false`。 |
+| `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
 
 **破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
 
@@ -180,6 +263,32 @@ RVP 扩展武器数据包路径：
 | `motor_burn_time` | 发动机燃烧时间（tick）。 |
 | `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
 | `drag_coefficient` | 速度平方阻力系数。 |
+| `altitude_drag_factor_enabled` | 是否启用按高度变化的阻力倍率。仅 `rvp:missile` 生效；关闭时固定按原始 `drag_coefficient` / `drag` 计算。默认 `true`。 |
+| `altitude_drag_low_y` | 低空锚点高度；`y <= low_y` 时取 `altitude_drag_low_factor`。默认 `-64`。 |
+| `altitude_drag_low_factor` | 低空阻力倍率。默认 `2.0`。 |
+| `altitude_drag_base_y` | 标准高度锚点；在该高度取 `altitude_drag_base_factor`。默认 `384`。 |
+| `altitude_drag_base_factor` | 标准高度阻力倍率。默认 `1.0`。 |
+| `altitude_drag_thin_y` | 稀薄空气锚点高度。默认 `500`。 |
+| `altitude_drag_thin_factor` | 稀薄空气阻力倍率。默认 `0.6`。 |
+| `altitude_drag_high_y` | 高空锚点高度。默认 `1000`。 |
+| `altitude_drag_high_factor` | 高空阻力倍率。默认 `0.34`。 |
+| `dual_pulse` | 是否启用双脉冲推进（第二段推力）。仅对 `rvp:missile` 且制导源包含 `IR/ARH/SARH/ARM` 的导弹生效。 |
+| `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
+| `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
+| `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
+| `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
+
+`altitude_drag_*` 的运行规则：
+
+- 仅对 `rvp:missile` 生效；其它类型忽略这组字段。
+- 阻力倍率按四个高度锚点做三段平滑插值（smoothstep），而不是生硬分段跳变。
+- 推力弹道会把倍率乘到 `drag_coefficient`；简化弹道会把倍率乘到 `drag`。
+
+### 双脉冲推进（Dual Pulse）
+
+- 第一段推力：由 `thrust + motor_burn_time` 控制，结束后进入减速段。
+- 第二段推力：必须在第一段结束后才允许启动；触发条件为 `低速阈值 OR 近距阈值`，且只触发一次。
+- 禁用条件：`dual_pulse=false`，或第二段推力/燃烧时间无效，或速度阈值与距离阈值都为 0。
 
 ### 火箭发动机与推进回退
 
@@ -848,6 +957,7 @@ IR 源激活时 `turning_factor` 为 0.5；IOG 备份仍为 0.3。`seeker` **没
 | `radiation_pulse_memory_tick` | ARM | 雷达脉冲记忆窗口。 |
 | `reacquire` | ARM / 雷达弹 | ARM：丢失后是否允许再捕获。 |
 | `locked_bonus` | ARM | 正在锁定目标的辐射源评分加成。 |
+| `active_radar_activation_range` | ARH | 主动雷达开机距离（格）。目标距离 ≤ 该值后，弹载主动雷达开机并开始自行搜索/维持目标；默认 `1024`。 |
 | `require_illumination` | SARH | 源运行时是否检查平台照射（默认 `true`）；与 `activation.require_illumination` 配合使用，见上文易混说明。 |
 | `vehicle_only` | IR 等 | 只追踪载具实体。 |
 | `reacquire` | ARM / IR | 丢失目标后是否允许再搜索。 |
@@ -1048,6 +1158,7 @@ ARM seeker 会把雷达观测抽象为 PDW：
 
 | 字段 | 说明 |
 | --- | --- |
+| `structure_model` | 可选，结构模型资源 ID（如 `rvp:vehicle/abramsx.structure`）。写了 `hitbox_damage_factor` / `hitbox_era` 时，RVP 会优先按该结构模型的骨骼名匹配受击倍率与 ERA；不写时回退本体当前结构模型。 |
 | `hitbox_damage_factor_default` | 未在 `hitbox_damage_factor` 中配置的骨骼的默认倍率；不写时 = 1。 |
 | `hitbox_damage_factor` | `Map<String, Float>`：结构模型骨骼名 → 直击该骨骼时的伤害倍率。 |
 | `core_distance_scale_multiplier` | 控制本体“命中点离核心越远伤害越低”的衰减强度（0 = 完全关闭衰减，按直击伤害计算；1 = 本体原值）。 |
@@ -1106,6 +1217,7 @@ function updateBones(context) {
 | `rvp_fire_control_mode` | RVP 扩展火控模式。当前公开值为 `rvp_rf`，表示在本体 `rf` 火控基础上启用 RVP 的软离轴/半自动跟踪逻辑。未写时走本体行为。 |
 | `rvp_rf_off_axis_deg` | `rvp_fire_control_mode: "rvp_rf"` 时允许的离轴角（度），默认 `10`。 |
 | `rvp_disable_crt_effect` | 关闭 CRT 扫描线/闪烁等后处理，但保留 CRT 观瞄框架；通常配合 `optical_sight_type: "crt_ui"` 由 RVP 自动写入，手动写 `true` 也可生效。 |
+| `rvp_follow_parent_only_part_unit_ids` | 可选，子部件 `part_unit_id` 列表。每 tick 在父 `WeaponUnit.updateRot()` 后，把这些子部件的本地旋转重置回 `baseRotation`，从而实现“只跟随父级整体姿态、不再叠加自身局部旋转”。适合炮塔附属装甲块、装饰件、碰撞代理件等只应整体跟随的部件。 |
 
 ### 雷达部件扩展（`type: "ywzj_vehicle:radar"`）
 
@@ -1118,6 +1230,44 @@ function updateBones(context) {
 | `enable_hms` | 是否为该雷达启用 HMS/HMD 相关显示与逻辑，默认 `true`。 |
 | `scan_min_height` | 雷达允许扫描的最低离地高度（格），默认 `25`。 |
 | `scan_max_height` | 雷达允许扫描的最高离地高度（格），默认 `10000`。 |
+
+### `rvp_aps` 被动拦截系统（载具 JSON 顶层）
+
+写在载具 JSON 顶层；用于为该载具启用 RVP 的被动拦截系统（APS）。
+
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | 是否启用 APS。默认 `false`。 |
+| `ammo_max` | APS 最大备弹量。`0` 表示启用系统但没有可发射拦截弹。 |
+| `reload_one_tick` | 自动补充 1 发拦截弹所需 tick，默认 `600`。 |
+| `cooldown_tick` | 两次 APS 发射之间的最小间隔，默认 `20`。 |
+| `scan_interval_tick` | 扫描来袭威胁的间隔 tick，默认 `1`。 |
+| `detect_radius` | 威胁检测半径（格），默认 `32.0`。 |
+| `intercept_radius` | 拦截弹生效半径（格），默认 `8.0`。 |
+| `projectile_speed_min` | 允许拦截的来袭弹体最低速度，默认 `1.0`。 |
+| `projectile_speed_max` | 允许拦截的来袭弹体最高速度，默认 `80.0`。 |
+| `animation_part_ids` | 可选，触发 APS 发射动画时允许使用的部件 `part_unit_id` 列表；可用于左右发射器轮换。 |
+| `spawn_part_id` | 可选，APS 拦截弹生成位置关联的部件 `part_unit_id`。未写时回退为 `animation_part_ids` 的第一个。 |
+| `exclude_owner_projectile` | 是否忽略本载具及其乘员自己发射的 Projectile，默认 `true`。 |
+
+示例：
+
+```json
+"rvp_aps": {
+  "enabled": true,
+  "ammo_max": 8,
+  "reload_one_tick": 100,
+  "cooldown_tick": 20,
+  "scan_interval_tick": 1,
+  "detect_radius": 32.0,
+  "intercept_radius": 8.0,
+  "projectile_speed_min": 1.0,
+  "projectile_speed_max": 80.0,
+  "animation_part_ids": ["aps_left", "aps_right"],
+  "spawn_part_id": "aps_left",
+  "exclude_owner_projectile": true
+}
+```
 
 ### 本体火箭 CCIP 扩展（本体 `VehicleRocket` / `VehicleRocketWeaponData`）
 
