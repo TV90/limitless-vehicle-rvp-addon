@@ -1,0 +1,84 @@
+{
+  "name": "abramsx_controller",
+  "script": "rvp:abramsx",
+  "parameters": {},
+  "event_animations": {
+    "turret_fire": ["cannon_shoot"],
+    "commander_machine_gun_fire": ["auto_cannon_shoot"]
+  },
+  "loop_animations": {
+    "static": {
+      "animation": "static"
+    }
+  },
+  "graph": {
+    "type": "merge",
+    "inputs": [
+      {
+        "type": "loop_animation",
+        "ref": "static"
+      },
+      {
+        "type": "additive",
+        "base": {
+          "type": "merge",
+          "inputs": [
+            {
+              "type": "bone_binding",
+              "special_bindings": [
+                {
+                  "bones": [
+                    "FZL0", "FZL1", "FZL2", "FZL3", "FZL4", "FZL5", "FZL6", "FZL7", "FZL8"
+                  ],
+                  "source": "left_wheel_rotation",
+                  "axis": "x",
+                  "param": 0.375
+                }
+              ],
+              "part_bindings": [
+                {
+                  "bone": "$weapon0",
+                  "part": "turret",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "$weapon0_0",
+                  "part": "turret",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": false
+                },
+                {
+                  "bone": "$weapon1",
+                  "part": "commander_machine_gun",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "$weapon1_0",
+                  "part": "commander_machine_gun",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": false
+                }
+              ]
+            },
+            {
+              "type": "track_animation"
+            },
+            {
+              "type": "script",
+              "function": "updateBones"
+            }
+          ]
+        },
+        "add": {
+          "type": "event_animation"
+        }
+      }
+    ]
+  }
+}

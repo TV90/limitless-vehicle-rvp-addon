@@ -1,0 +1,51 @@
+{
+  "type": "rvp:machinegun",
+  "name": "XM829A5尾翼稳定脱壳穿甲弹",
+  "shoot_interval": 300,
+  "max_capacity": 1,
+  "reload": {
+    "time": 120,
+    "ammo": "ywzj_vehicle:ammo_artillery"
+  },
+  "fire_data": {
+    "spread": 0.02,
+    "fire_mode": "RAILGUN",
+    "charge_time": 20,
+    "charge_power_scale": 1.0
+  },
+  "projectile_data": {
+    "velocity": 40,
+    "gravity": -0.001,
+    "drag": 0.0,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 120,
+    "tracer_r": 0.6,
+    "tracer_g": 0.85,
+    "tracer_b": 1.0
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": false,
+      "damage": 0,
+      "radius": 0,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "direct_damage": 2000,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 512,
+        "min_factor": 0.9
+      }
+    ]
+  },
+  "fuse_data": {}
+}

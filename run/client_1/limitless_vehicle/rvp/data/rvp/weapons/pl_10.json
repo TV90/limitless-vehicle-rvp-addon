@@ -1,6 +1,7 @@
 {
   "type": "rvp:missile",
-  "name": "PL-10",
+  "name": "霹雳-10 红外格斗弹",
+  "show_msl_indicator": true,
   "shoot_interval": 500,
   "max_capacity": 2,
   "reload": {
@@ -13,48 +14,65 @@
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
-    "velocity": 2.4,
-    "constant_speed": true,
+    "velocity": 1.2,
+    "has_rocket_engine": true,
+    "mass": 0.008,
+    "thrust": 0.02,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
     "rotate_to_motion": true,
-    "max_speed": 3.4
+    "max_speed": 6.5
   },
   "fuse_data": {
     "delay_tick": 0,
     "proximity_radius": 3,
     "detonate_on_life_end": false
   },
-  "seeker_data": {
-    "range": 384,
-    "fov": 30,
-    "scan_interval_tick": 3,
-    "ignore_flares": false
-  },
-  "guidance_data": [
-    {
-      "name": "ir_terminal",
-      "start_tick": 0,
-      "sources": [
-        {
-          "type": "IR",
-          "priority": 100,
-          "fallback_on_jammed": true
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "ir_terminal",
+        "activation": {
+          "start_tick": 0
         },
-        {
-          "type": "IOG",
-          "priority": 10
-        }
-      ]
-    }
-  ],
+        "steering_data": {
+          "rigidity_time": 5,
+          "turning_factor": 0.2,
+          "max_degree_of_missile": 90
+        },
+        "seeker": {
+          "fov": 4,
+          "guide_head_max_angle": 80,
+          "range": 384,
+          "scan_interval_tick": 3,
+          "lock_min_height": 5,
+          "ignore_flares": false
+        },
+        "sources": [
+          {
+            "type": "IR",
+            "priority": 1000,
+            "params": {
+              "fallback_on_jammed": true
+            }
+          },
+          {
+            "type": "IOG",
+            "priority": 5
+          }
+        ]
+      }
+    ]
+  },
   "effects_data": {
-    "trajectory_particle": "minecraft:large_smoke",
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 180,
+      "damage": 250,
       "radius": 6,
       "proximity_fuze": true,
       "proximity_radius": 3,
@@ -62,6 +80,6 @@
     }
   },
   "collision_data": {
-    "direct_damage": 80
+    "direct_damage": 60
   }
 }

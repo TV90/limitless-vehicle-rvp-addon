@@ -41,6 +41,7 @@
   "with_warning_receiver": true,
   "center_offset": [0, 1.625, 0],
   "structure_model": "rvp:vehicle/f16v",
+  "core_distance_scale_multiplier": 0.0,
   "parts": [
     {
       "id": "sighting_system",
@@ -63,10 +64,22 @@
       "zoom_max": 12,
       "sub_part_unit_ids": ["radar"],
       "weapons": [
-        { "id": "rvp:gsh_30_1", "part_unit_id": "auto_cannon" },
-        { "id": "rvp:aim_120", "part_unit_id": "aim_120" },
-        { "id": "rvp:spice_1000", "part_unit_id": "spice_1000" },
-        { "id": "ywzj_vehicle:decoy_flare", "part_unit_id": "decoy_flare" }
+        {
+          "id": "rvp:gsh_30_1",
+          "part_unit_id": "auto_cannon"
+        },
+        {
+          "id": "rvp:aim_120",
+          "part_unit_id": "aim_120"
+        },
+        {
+          "id": "rvp:spice_1000",
+          "part_unit_id": "spice_1000"
+        },
+        {
+          "id": "ywzj_vehicle:decoy_flare",
+          "part_unit_id": "decoy_flare"
+        }
       ]
     },
     {

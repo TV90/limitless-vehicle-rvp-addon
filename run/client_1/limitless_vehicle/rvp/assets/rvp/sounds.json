@@ -14,5 +14,17 @@
       "rvp:weapon/missile/missile_start_med_003"
     ],
     "subtitle": "rvp.sounds.missile_start_med"
+  },
+  "railgun_charge": {
+    "sounds": [
+      "rvp:weapon/Railgun_SND"
+    ],
+    "subtitle": "rvp.sounds.railgun_charge"
+  },
+  "railgun_fire": {
+    "sounds": [
+      "rvp:weapon/railgun_f_snd"
+    ],
+    "subtitle": "rvp.sounds.railgun_fire"
   }
 }

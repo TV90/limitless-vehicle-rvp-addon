@@ -30,6 +30,7 @@
   },
   "with_warning_receiver": true,
   "structure_model": "rvp:vehicle/ah64",
+  "core_distance_scale_multiplier": 0.0,
   "parts": [
     {
       "id": "sighting_system",
@@ -53,10 +54,22 @@
       "with_thermal_imager": true,
       "zoom_max": 12,
       "weapons": [
-        { "id": "rvp:ah64_m230", "part_unit_id": "auto_cannon" },
-        { "id": "rvp:agm_114", "part_unit_id": "missile" },
-        { "id": "rvp:s13of_rocket", "part_unit_id": "rocket" },
-        { "id": "ywzj_vehicle:decoy_flare", "part_unit_id": "decoy_flare" }
+        {
+          "id": "ywzj_vehicle:auto_cannon",
+          "part_unit_id": "auto_cannon"
+        },
+        {
+          "id": "rvp:agm_114",
+          "part_unit_id": "missile"
+        },
+        {
+          "id": "ywzj_vehicle:rocket",
+          "part_unit_id": "rocket"
+        },
+        {
+          "id": "ywzj_vehicle:decoy_flare",
+          "part_unit_id": "decoy_flare"
+        }
       ]
     },
     {

@@ -1,0 +1,155 @@
+{
+  "type": "ywzj_vehicle:fixed_wing_vehicle",
+  "attributes": {
+    "thrust": 0.02,
+    "thrust_k": 1.4,
+    "ceiling": 512,
+    "x_rot_input_step": 0.2,
+    "y_rot_input_step": 0.5,
+    "z_rot_input_step": 0.2,
+    "air_drag_k_min": 0.002,
+    "air_drag_k_max": 0.008,
+    "lift_to_drag_k": 3,
+    "x_rot_input_drag_k": 1.0,
+    "y_rot_input_drag_k": 0.25,
+    "z_rot_input_drag_k": 0.125,
+    "landing_gear_drag_k": 0.5,
+    "turn_rate_by_speed": 0.4,
+    "x_turn_rate": 2.0,
+    "y_turn_rate": 3.0,
+    "z_turn_rate": 8.0,
+    "vortex_offsets": [[6.51, 1.808, -5.77], [-6.51, 1.808, -5.77], [1.15, 2.328, 3.541], [-1.15, 2.328, 3.541]],
+    "afterburner_offsets": [[1.4488875, 2.12966875, -7.0043875], [-1.4488875, 2.12966875, -7.0043875]]
+  },
+  "landing_gear_part_id": "landing_gear",
+  "max_health": 500,
+  "view_info": {
+    "third_person_center_offset": [0, 6, 0],
+    "third_person_distance": 20,
+    "third_person_center_offset_zoomed": [0, 7, 0],
+    "third_person_distance_zoomed": 4,
+    "sound_distance": 8
+  },
+  "energy_info": {
+    "energy_capacity": 0.25,
+    "energy_consumption_per_tick": 0.00001
+  },
+  "defense_stats": {
+    "damage_threshold": 10,
+    "impact_multiplier": 3
+  },
+  "with_warning_receiver": true,
+  "center_offset": [0, 1.625, 0],
+  "structure_model": "rvp:vehicle/su57",
+  "core_distance_scale_multiplier": 0.0,
+  "parts": [
+    {
+      "id": "sighting_system",
+      "name": "sighting_system",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "sighting_system",
+      "seat_offset": [0, 3.4625, 5.75],
+      "operator_on_weapon_unit": false,
+      "disable_scope_auto_level": true,
+      "rot_info": {
+        "x_rot_speed": 15,
+        "y_rot_speed": 15,
+        "x_rot_min": -40,
+        "x_rot_max": 40,
+        "y_rot_min": -80,
+        "y_rot_max": 80
+      },
+      "optical_sight_offset": [0, 0, 0],
+      "operator_view_offset": [0.140625, 0.3296875, -2.371875],
+      "optical_sight_type": "crt",
+      "zoom_max": 12,
+      "sub_part_unit_ids": ["radar"],
+      "weapons": [
+        {
+          "id": "rvp:gsh_30_1",
+          "part_unit_id": "auto_cannon"
+        },
+        {
+          "id": "rvp:su57_kh38",
+          "part_unit_id": "kh_38",
+          "weapon_bay_unit_id": "kh38_bay"
+        },
+        {
+          "id": "rvp:su57_kh58",
+          "part_unit_id": "kh_58",
+          "weapon_bay_unit_id": "kh58_bay"
+        }
+      ]
+    },
+    {
+      "id": "auto_cannon",
+      "name": "auto_cannon",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "auto_cannon",
+      "ammo_capacity": 150,
+      "is_seat": false,
+      "crosshair_style": "circle"
+    },
+    {
+      "id": "kh_38",
+      "name": "kh_38",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "kh_38",
+      "ammo_capacity": 2,
+      "fire_control_sensor_type": "eo",
+      "is_seat": false,
+      "parent_weapon_unit_aim": true,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "kh_58",
+      "name": "kh_58",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "kh_58",
+      "ammo_capacity": 2,
+      "fire_control_sensor_type": "rf",
+      "is_seat": false,
+      "parent_weapon_unit_aim": true,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "radar",
+      "name": "radar",
+      "type": "ywzj_vehicle:radar",
+      "structure_bone": "radar",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 30,
+        "y_rot_max": 120,
+        "y_rot_min": -120
+      },
+      "radar_type": "N036",
+      "scan_sector_angle": 240 ,
+      "max_scan_distance": 2048,
+      "scan_animation_mode": "phase",
+      "scan_period_tick": 60
+    },
+    {
+      "id": "kh38_bay",
+      "name": "kh38_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "kh38_bay",
+      "is_seat": false
+    },
+    {
+      "id": "kh58_bay",
+      "name": "kh58_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "kh58_bay",
+      "is_seat": false
+    },
+    {
+      "id": "landing_gear",
+      "name": "landing_gear",
+      "type": "ywzj_vehicle:landing_gear",
+      "structure_bone": "landing_gear",
+      "is_seat": false
+    }
+  ]
+}

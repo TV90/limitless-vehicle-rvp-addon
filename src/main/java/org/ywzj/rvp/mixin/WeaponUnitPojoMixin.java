@@ -26,6 +26,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private List<String> ywzj_rvp$followParentOnlyPartUnitIds = List.of();
 
+    @SerializedName("rvp_structure_bolt_bones")
+    @Unique
+    private List<String> ywzj_rvp$structureBoltBones = List.of();
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
@@ -44,5 +48,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public List<String> ywzj_rvp$getFollowParentOnlyPartUnitIds() {
         return ywzj_rvp$followParentOnlyPartUnitIds;
+    }
+
+    @Override
+    public List<String> ywzj_rvp$getStructureBoltBones() {
+        return ywzj_rvp$structureBoltBones;
     }
 }

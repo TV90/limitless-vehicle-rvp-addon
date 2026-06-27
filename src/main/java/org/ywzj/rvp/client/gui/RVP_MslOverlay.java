@@ -55,9 +55,8 @@ public class RVP_MslOverlay {
             AbstractVehicle shooterVehicle = missile.getShooterVehicle();
             boolean isOwn = (shooterVehicle == playerVehicle);
 
-            // 所有人（包括自己）的导弹都只在燃烧动力段内渲染
-            int burnEnd = acc.getMotorBurnEndTick();
-            if (burnEnd <= 0 || missile.tickCount > burnEnd) continue;
+            // 所有人（包括自己）的导弹都只在燃烧动力段内渲染（含双脉冲第二段）
+            if (!missile.isMotorBurningNow()) continue;
 
             // 投影到屏幕
             Vec3 targetPos = missile.position();

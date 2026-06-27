@@ -1,0 +1,111 @@
+{
+  "type": "rvp:missile",
+  "name": "霹雳-15 双脉冲 主动雷达弹",
+  "show_msl_indicator": true,
+  "shoot_interval": 500,
+  "max_capacity": 2,
+  "reload": {
+    "time": 80,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": true,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 0.3,
+    "has_rocket_engine": true,
+    "mass": 0.012,
+    "thrust": 0.04,
+    "motor_burn_time": 60,
+    "dual_pulse": true,
+    "second_pulse_trigger_speed": 3.5,
+    "second_pulse_trigger_distance": 200,
+    "second_pulse_thrust": 0.012857142857,
+    "second_pulse_burn_time": 140,
+    "drag_coefficient": 0.003,
+    "rotate_to_motion": true,
+    "max_speed": 6.0
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 3,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": {
+          "start_tick": 0,
+          "end_tick": 9
+        },
+        "steering_data": {
+          "rigidity_time": 10,
+          "turning_factor": 0.1,
+          "max_degree_of_missile": 70
+        },
+        "sources": [
+          {
+            "type": "IOG",
+            "priority": 100
+          }
+        ]
+      },
+      {
+        "name": "arh_terminal",
+        "activation": {
+          "start_tick": 10
+        },
+        "steering_data": {
+          "rigidity_time": 4,
+          "turning_factor": 0.15,
+          "max_degree_of_missile": 50,
+          "predict_target_pos": true
+        },
+        "seeker": {
+          "fov": 10,
+          "guide_head_max_angle": 60,
+          "range": 900,
+          "scan_interval_tick": 2
+        },
+        "sources": [
+          {
+            "type": "ARH",
+            "priority": 100,
+            "params": {
+              "active_radar_activation_range": 256,
+              "memory_tick": 120
+            }
+          },
+          {
+            "type": "IOG",
+            "priority": 10,
+            "params": {
+              "use_last_guidance": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 200,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 3,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80
+  }
+}

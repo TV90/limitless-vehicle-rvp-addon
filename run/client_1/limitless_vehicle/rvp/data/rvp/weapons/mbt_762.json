@@ -1,0 +1,49 @@
+{
+  "type": "rvp:machinegun",
+  "name": "7.62毫米轻机枪",
+  "shoot_interval": 100,
+  "max_capacity": 100,
+  "reload": {
+    "time": 80,
+    "ammo": "ywzj_vehicle:ammo_machine_gun"
+  },
+  "fire_data": {
+    "spread": 1.0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 10,
+    "gravity": -0.02,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 7.62,
+    "tracer_r": 0.7,
+    "tracer_g": 0.5,
+    "tracer_b": 0.1
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": false,
+      "damage": 0,
+      "radius": 0,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "direct_damage": 5,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 256,
+        "min_factor": 0.35
+      }
+    ]
+  },
+  "fuse_data": {}
+}

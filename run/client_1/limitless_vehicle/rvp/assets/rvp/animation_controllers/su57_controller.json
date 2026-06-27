@@ -1,0 +1,41 @@
+{
+  "name": "su57_controller",
+  "script": "rvp:su57",
+  "parameters": {},
+  "switchable_animations": {
+    "kh38_bay": {
+      "part_id": "kh38_bay",
+      "animation": "kh38"
+    },
+    "kh58_bay": {
+      "part_id": "kh58_bay",
+      "animation": "kh58"
+    },
+    "landing_gear": {
+      "part_id": "landing_gear",
+      "animation": "landing_gear"
+    }
+  },
+  "state_machines": {},
+  "graph": {
+    "type": "merge",
+    "inputs": [
+      {
+        "type": "switchable_animation",
+        "ref": "kh38_bay"
+      },
+      {
+        "type": "switchable_animation",
+        "ref": "kh58_bay"
+      },
+      {
+        "type": "switchable_animation",
+        "ref": "landing_gear"
+      },
+      {
+        "type": "script",
+        "function": "updateBones"
+      }
+    ]
+  }
+}

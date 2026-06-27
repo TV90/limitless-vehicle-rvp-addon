@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
+import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.debug.RVP_AheadDebug;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
@@ -113,6 +114,41 @@ public class RVP_DebugCommands {
                                     writeLog(HITBOX_RESOLVE_LOG_PATH, content);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + HITBOX_RESOLVE_LOG_PATH), false);
                                     return vehicle == null ? 0 : 1;
+                                }))
+                        )
+                        .then(Commands.literal("custommount")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_CustomMountRenderLogic.clearDebugLog();
+                                    RVP_CustomMountRenderLogic.setDebugEnabled(true);
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    if (vehicle != null) {
+                                        writeLog(RVP_CustomMountRenderLogic.getDebugLogPath(),
+                                                RVP_CustomMountRenderLogic.dumpDebugSnapshot(vehicle));
+                                    }
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 custommount 调试: " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_CustomMountRenderLogic.setDebugEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 custommount 调试: " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_CustomMountRenderLogic.isDebugEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] custommount=" + enabled + " path=" + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    String content = RVP_CustomMountRenderLogic.dumpDebugSnapshot(vehicle);
+                                    writeLog(RVP_CustomMountRenderLogic.getDebugLogPath(), content);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return vehicle == null ? 0 : 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_CustomMountRenderLogic.clearDebugLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已清空 custommount 调试日志: " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return 1;
                                 }))
                         )
                         .then(Commands.literal("ui").executes(ctx -> {

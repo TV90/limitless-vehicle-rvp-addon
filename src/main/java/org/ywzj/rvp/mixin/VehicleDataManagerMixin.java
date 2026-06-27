@@ -12,11 +12,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
+import org.ywzj.rvp.config.RVP_CustomMountConfig;
+import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +38,7 @@ public class VehicleDataManagerMixin {
                                           ResourceManager manager,
                                           ProfilerFiller profiler,
                                           CallbackInfo ci) {
+        Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -52,10 +56,15 @@ public class VehicleDataManagerMixin {
                         GsonHelper.getAsBoolean(obj, "show_skeleton", true));
 
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
+                List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
+                if (customMounts != null) {
+                    customMountsByVehicle.put(vehicleId, customMounts);
+                }
             } catch (Exception ignored) {
                 // JSON 解析错误，跳过
             }
         }
+        RVP_CustomMountConfigCache.replace(customMountsByVehicle);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);
     }

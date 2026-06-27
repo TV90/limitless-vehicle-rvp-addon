@@ -14,7 +14,11 @@
   },
   "projectile_data": {
     "velocity": 2.2,
-    "constant_speed": true,
+    "has_rocket_engine": true,
+    "mass": 0.015,
+    "thrust": 0.006,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
     "rotate_to_motion": true,
     "max_speed": 3.0
   },
@@ -36,7 +40,7 @@
       {
         "name": "saclos_tv",
         "activation": { "start_tick": 0 },
-        "seeker": { "range": 2000, "fov": 40 },
+        "seeker": { "range": 2000, "fov": 3, "guide_head_max_angle": 40 },
         "steering_data": {
           "rigidity_time": 5,
           "turning_factor": 0.24,
@@ -61,7 +65,7 @@
     ]
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:large_smoke",
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },

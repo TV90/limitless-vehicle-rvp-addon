@@ -1,0 +1,70 @@
+{
+  "name": "bmpt72_controller",
+  "script": "rvp:bmpt72",
+  "parameters": {},
+  "event_animations": {
+    "turret_fire": ["cannon"]
+  },
+  "graph": {
+    "type": "additive",
+    "base": {
+      "type": "merge",
+      "inputs": [
+        {
+          "type": "bone_binding",
+          "special_bindings": [
+            {
+              "bones": [
+                "FLZ0_R", "FZL1_R", "FZL2_R", "FZL3_R", "FZL4_R", "FZL5_R", "FZL6_R", "FZL7_R"
+              ],
+              "source": "left_wheel_rotation",
+              "axis": "x",
+              "param": 0.375
+            },
+            {
+              "bones": [
+                "FLZ0_L", "FZL1_L", "FZL2_L", "FZL3_L", "FZL4_L", "FZL5_L", "FZL6_L", "FZL7_L"
+              ],
+              "source": "right_wheel_rotation",
+              "axis": "x",
+              "param": 0.375
+            }
+          ],
+          "part_bindings": [
+            {
+              "bone": "$weapon0",
+              "part": "turret",
+              "rotation_type": "y",
+              "axis": "y",
+              "invert": true
+            },
+            {
+              "bone": "$weapon0_0",
+              "part": "turret",
+              "rotation_type": "x",
+              "axis": "x",
+              "invert": false
+            },
+            {
+              "bone": "$weapon0_2",
+              "part": "missile",
+              "rotation_type": "x",
+              "axis": "x",
+              "invert": false
+            }
+          ]
+        },
+        {
+          "type": "track_animation"
+        },
+        {
+          "type": "script",
+          "function": "updateBones"
+        }
+      ]
+    },
+    "add": {
+      "type": "event_animation"
+    }
+  }
+}

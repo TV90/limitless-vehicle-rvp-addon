@@ -1,0 +1,181 @@
+{
+  "type": "ywzj_vehicle:tracked_vehicle",
+  "attributes": {
+    "brake_acceleration": 0.025,
+    "forward_acceleration": 0.01,
+    "backward_acceleration": 0.01,
+    "max_speed_forward": 0.5,
+    "max_speed_backward": 0.2,
+    "turn_acceleration": 1,
+    "max_turn": 2
+  },
+  "max_health": 3000,
+  "view_info": {
+    "third_person_center_offset": [0, 3, 0],
+    "third_person_distance": 10,
+    "sound_distance": 7
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 0.00001,
+    "engine_particle_offsets": [[1.288, 1.47, -5.39]]
+  },
+  "physics_info": {
+    "can_destroy_block": true
+  },
+  "rvp_aps": {
+    "enabled": true,
+    "ammo_max": 4,
+    "reload_one_tick": 600,
+    "cooldown_tick": 20,
+    "scan_interval_tick": 1,
+    "detect_radius": 32.0,
+    "intercept_radius": 8.0,
+    "projectile_speed_min": 1.0,
+    "projectile_speed_max": 6.0,
+    "animation_part_ids": [
+      "aps_right",
+      "aps_left"
+    ],
+    "spawn_part_id": "aps_right",
+    "exclude_owner_projectile": true
+  },
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/vt4",
+  "core_distance_scale_multiplier": 0.0,
+  "parts": [
+    {
+      "id": "turret",
+      "name": "turret",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "seat_offset": [-0.01715625, 1.70740625, 0.0000375],
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 5,
+        "x_rot_min": -13
+      },
+      "optical_sight_offset": [0.5906875, 0.91875, 0.9375],
+      "operator_view_offset": [0, 1.5, 0],
+      "fire_control_lock_type": "aim_hit",
+      "optical_sight_type": "crt",
+      "with_stabilizer": true,
+      "with_thermal_imager": true,
+      "zoom_max": 8,
+      "weapons": [
+        "ywzj_vehicle:cannon_125mm",
+        {
+          "id": "ywzj_vehicle:gun_7.62mm",
+          "part_unit_id": "turret_machine_gun",
+          "secondary": true
+        },
+        {
+          "id": "ywzj_vehicle:launcher_smoke_grenade",
+          "part_unit_id": "turret_smoke_grenade"
+        }
+      ]
+    },
+    {
+      "id": "turret_machine_gun",
+      "name": "turret_machine_gun",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret_machine_gun",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 1.5,
+        "y_rot_speed": 0,
+        "x_rot_max": 5,
+        "x_rot_min": -13
+      }
+    },
+    {
+      "id": "turret_smoke_grenade",
+      "name": "turret_smoke_grenade",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret_smoke_grenade",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0
+      }
+    },
+    {
+      "id": "commander_machine_gun",
+      "name": "commander_machine_gun",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "commander_machine_gun",
+      "seat_offset": [-0.01715625, 1.70740625, 0.0000375],
+      "operator_on_weapon_unit": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 3,
+        "y_rot_speed": 3,
+        "x_rot_max": 15,
+        "x_rot_min": -45,
+        "need_power": false
+      },
+      "optical_sight_offset": [0.375, 0.5, 0.1875],
+      "operator_view_offset": [0, 0.7, -0.5],
+      "optical_sight_type": "crt",
+      "zoom_max": 2,
+      "weapons": [
+        "ywzj_vehicle:gun_14.5mm"
+      ]
+    },
+    {
+      "id": "aps_right",
+      "name": "aps_right",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "aps_right",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 64,
+        "y_rot_speed": 64,
+        "x_rot_max": 45,
+        "x_rot_min": -45,
+        "need_power": true
+      },
+      "weapons": [
+        "ywzj_vehicle:launcher_aps_grenade"
+      ],
+      "bolts": [
+        {
+          "offset": [0, 0, 0],
+          "barrel_length": 0.1,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ]
+    },
+    {
+      "id": "aps_left",
+      "name": "aps_left",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "aps_left",
+      "is_seat": false,
+      "base": "turret",
+      "rot_info": {
+        "x_rot_speed": 64,
+        "y_rot_speed": 64,
+        "x_rot_max": 45,
+        "x_rot_min": -45,
+        "need_power": true
+      },
+      "weapons": [
+        "ywzj_vehicle:launcher_aps_grenade"
+      ],
+      "bolts": [
+        {
+          "offset": [0, 0, 0],
+          "barrel_length": 0.1,
+          "x_rot": 0,
+          "y_rot": 0
+        }
+      ]
+    }
+  ]
+}

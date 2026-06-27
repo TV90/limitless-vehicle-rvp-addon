@@ -1,0 +1,85 @@
+{
+  "type": "rvp:missile",
+  "name": "空地88A 红外制导空对地导弹",
+  "shoot_interval": 500,
+  "max_capacity": 2,
+  "reload": {
+    "time": 80,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": true,
+  "fire_control_sensor_type_override": "eo",
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "has_rocket_engine": true,
+    "velocity": 0,
+    "rotate_to_motion": true,
+    "max_speed": 4.5,
+    "mass": 0.01,
+    "thrust": 0.015,
+    "motor_burn_time": 180,
+    "drag_coefficient": 0.0055,
+    "inherit_vehicle_velocity": true
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 3,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "ir_terminal",
+        "activation": {
+          "start_tick": 0
+        },
+        "steering_data": {
+          "rigidity_time": 5,
+          "turning_factor": 0.2,
+          "max_degree_of_missile": 90
+        },
+        "seeker": {
+          "fov": 4,
+          "guide_head_max_angle": 25,
+          "range": 384,
+          "scan_interval_tick": 3,
+          "lock_min_height": -25,
+          "ignore_flares": false
+        },
+        "sources": [
+          {
+            "type": "IR",
+            "priority": 1000,
+            "params": {
+              "fallback_on_jammed": true
+            }
+          },
+          {
+            "type": "IOG",
+            "priority": 5
+          }
+        ]
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 1000,
+      "radius": 9,
+      "proximity_fuze": false,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 60
+  }
+}

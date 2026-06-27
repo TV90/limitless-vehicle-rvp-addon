@@ -7,4 +7,5 @@ public interface WeaponUnitDataExt {
     float ywzj_rvp$getRfOffAxisDeg();
     boolean ywzj_rvp$disableCrtEffect();
     List<String> ywzj_rvp$getFollowParentOnlyPartUnitIds();
+    List<String> ywzj_rvp$getStructureBoltBones();
 }

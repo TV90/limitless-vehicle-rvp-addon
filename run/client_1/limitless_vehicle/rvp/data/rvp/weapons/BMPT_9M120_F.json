@@ -1,0 +1,97 @@
+{
+  "type": "rvp:missile",
+  "name": "9M120F 电视线导温压导弹",
+  "shoot_interval": 1000,
+  "max_capacity": 2,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "require_lock": false,
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 2.2,
+    "has_rocket_engine": true,
+    "mass": 0.015,
+    "thrust": 0.006,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
+    "rotate_to_motion": true,
+    "max_speed": 3.0
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 2.0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": {
+          "start_tick": 0,
+          "end_tick": 5
+        },
+        "steering_data": {
+          "rigidity_time": 5,
+          "turning_factor": 0.1,
+          "max_degree_of_missile": 28
+        },
+        "sources": [
+          {
+            "type": "IOG",
+            "priority": 100,
+            "composite_mode": "primary"
+          }
+        ]
+      },
+      {
+        "name": "saclos_midcourse",
+        "activation": {
+          "start_tick": 6,
+          "max_target_distance": 4500,
+          "require_target": true
+        },
+        "seeker": {
+          "fov": 3,
+          "guide_head_max_angle": 45,
+          "range": 4500
+        },
+        "steering_data": {
+          "rigidity_time": 5,
+          "turning_factor": 0.24,
+          "max_degree_of_missile": 50
+        },
+        "sources": [
+          {
+            "type": "SACLOS",
+            "priority": 100,
+            "composite_mode": "primary",
+            "take_over_motion": true
+          }
+        ]
+      }
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 800,
+      "radius": 8,
+      "proximity_fuze": true,
+      "proximity_radius": 2.0,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10
+  }
+}

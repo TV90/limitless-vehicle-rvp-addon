@@ -14,7 +14,11 @@
   },
   "projectile_data": {
     "velocity": 2.2,
-    "constant_speed": true,
+    "has_rocket_engine": true,
+    "mass": 0.015,
+    "thrust": 0.006,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
     "rotate_to_motion": true,
     "max_speed": 3.0
   },
@@ -29,14 +33,24 @@
       "control_mode": "MOUSE",
       "control_range": 2000,
       "timeout_tick": 400,
-      "max_turn_deg_per_tick": 2.4,
-      "video_modes": ["COLOR", "BW", "THERMAL"]
+      "max_turn_deg_per_tick": 1.5,
+      "video_modes": [
+        "COLOR",
+        "BW",
+        "THERMAL"
+      ]
     },
     "stages": [
       {
         "name": "mclos_tv",
-        "activation": { "start_tick": 0 },
-        "seeker": { "fov": 35, "range": 2000 },
+        "activation": {
+          "start_tick": 0
+        },
+        "seeker": {
+          "fov": 3,
+          "guide_head_max_angle": 35,
+          "range": 2000
+        },
         "steering_data": {
           "rigidity_time": 10,
           "turning_factor": 0.26,
@@ -58,7 +72,7 @@
     ]
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:large_smoke",
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },

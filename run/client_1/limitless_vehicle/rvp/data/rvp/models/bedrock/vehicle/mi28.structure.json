@@ -144,25 +144,6 @@
 					]
 				},
 				{
-					"name": "fire_control_radar",
-					"parent": "sighting_system",
-					"pivot": [-0.175, 12.4, 104.75],
-					"cubes": [
-						{
-							"origin": [-2.175, 11.9, 104.75],
-							"size": [4, 1, 2],
-							"uv": {
-								"north": {"uv": [0, 0], "uv_size": [4, 1]},
-								"east": {"uv": [0, 0], "uv_size": [2, 1]},
-								"south": {"uv": [0, 0], "uv_size": [4, 1]},
-								"west": {"uv": [0, 0], "uv_size": [2, 1]},
-								"up": {"uv": [4, 2], "uv_size": [-4, -2]},
-								"down": {"uv": [4, 2], "uv_size": [-4, -2]}
-							}
-						}
-					]
-				},
-				{
 					"name": "auto_cannon",
 					"pivot": [0.003, 14.1843, 84.7716],
 					"cubes": [
