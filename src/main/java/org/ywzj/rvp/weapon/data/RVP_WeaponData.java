@@ -6,6 +6,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.guidance.RVP_GuidanceConfigResolver;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
 import java.util.List;
@@ -77,6 +78,13 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      */
     @SerializedName("require_lock")
     private boolean requireLock = true;
+
+    /**
+     * Optional per-weapon override for the firing unit sensor type.
+     * Lets one shared weapon station behave as RF/EO/IR depending on the currently selected weapon.
+     */
+    @SerializedName("fire_control_sensor_type_override")
+    private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
 
     /** 兼容旧 JSON：顶层 `ahead_enabled`，优先级低于 `ahead_data.enabled`。 */
     @Deprecated
@@ -204,6 +212,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isRequireLock() {
         return requireLock;
+    }
+
+    @Nullable
+    public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
+        return fireControlSensorTypeOverride;
     }
 
     public boolean isAheadEnabled() {

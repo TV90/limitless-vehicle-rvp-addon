@@ -103,6 +103,42 @@ public class RVP_ProjectileData {
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 
+    /** 是否对导弹启用基于高度的空气阻力倍率。 */
+    @SerializedName("altitude_drag_factor_enabled")
+    private boolean altitudeDragFactorEnabled = true;
+
+    /** 最低空气层锚点高度（默认 -64），低于该值时取 {@link #altitudeDragLowFactor}。 */
+    @SerializedName("altitude_drag_low_y")
+    private float altitudeDragLowY = -64f;
+
+    /** 低空阻力倍率（默认 2.0）。 */
+    @SerializedName("altitude_drag_low_factor")
+    private float altitudeDragLowFactor = 2.0f;
+
+    /** 标准空气层锚点高度（默认 384），在该高度取 1.0 倍阻力。 */
+    @SerializedName("altitude_drag_base_y")
+    private float altitudeDragBaseY = 384f;
+
+    /** 标准高度阻力倍率（默认 1.0）。 */
+    @SerializedName("altitude_drag_base_factor")
+    private float altitudeDragBaseFactor = 1.0f;
+
+    /** 稀薄空气锚点高度（默认 500，对应约 5000m）。 */
+    @SerializedName("altitude_drag_thin_y")
+    private float altitudeDragThinY = 500f;
+
+    /** 稀薄空气层阻力倍率（默认 0.6）。 */
+    @SerializedName("altitude_drag_thin_factor")
+    private float altitudeDragThinFactor = 0.6f;
+
+    /** 高空空气锚点高度（默认 1000，对应约 10000m）。 */
+    @SerializedName("altitude_drag_high_y")
+    private float altitudeDragHighY = 1000f;
+
+    /** 高空阻力倍率（默认 0.34）。 */
+    @SerializedName("altitude_drag_high_factor")
+    private float altitudeDragHighFactor = 0.34f;
+
     /**
      * 加载后解析推进参数：{@code projectile_data} 未写的键从武器 JSON 顶层补全。
      * {@code has_rocket_engine} 为 false 时不做合并。
@@ -248,6 +284,57 @@ public class RVP_ProjectileData {
 
     public float getResolvedDragCoefficient() {
         return hasRocketEngine ? Math.max(dragCoefficient, 0f) : 0f;
+    }
+
+    public boolean isAltitudeDragFactorEnabled() {
+        return altitudeDragFactorEnabled;
+    }
+
+    /**
+     * 导弹空气阻力高度倍率。默认锚点：
+     * {@code -64 -> 2.0}, {@code 384 -> 1.0}, {@code 500 -> 0.6}, {@code 1000 -> 0.34}。
+     */
+    public float resolveAltitudeDragFactor(double y) {
+        if (!altitudeDragFactorEnabled) {
+            return 1.0f;
+        }
+        float lowY = altitudeDragLowY;
+        float baseY = Math.max(lowY + 1.0f, altitudeDragBaseY);
+        float thinY = Math.max(baseY + 1.0f, altitudeDragThinY);
+        float highY = Math.max(thinY + 1.0f, altitudeDragHighY);
+
+        float lowFactor = sanitizeFactor(altitudeDragLowFactor, 2.0f);
+        float baseFactor = sanitizeFactor(altitudeDragBaseFactor, 1.0f);
+        float thinFactor = sanitizeFactor(altitudeDragThinFactor, 0.6f);
+        float highFactor = sanitizeFactor(altitudeDragHighFactor, 0.34f);
+
+        if (y <= lowY) {
+            return lowFactor;
+        }
+        if (y < baseY) {
+            return smoothLerp((float) y, lowY, baseY, lowFactor, baseFactor);
+        }
+        if (y < thinY) {
+            return smoothLerp((float) y, baseY, thinY, baseFactor, thinFactor);
+        }
+        if (y < highY) {
+            return smoothLerp((float) y, thinY, highY, thinFactor, highFactor);
+        }
+        return highFactor;
+    }
+
+    private static float sanitizeFactor(float value, float fallback) {
+        if (Float.isNaN(value) || Float.isInfinite(value) || value <= 0f) {
+            return fallback;
+        }
+        return value;
+    }
+
+    private static float smoothLerp(float y, float y0, float y1, float f0, float f1) {
+        float t = (y - y0) / (y1 - y0);
+        t = Math.max(0.0f, Math.min(1.0f, t));
+        float s = t * t * (3.0f - 2.0f * t);
+        return f0 + (f1 - f0) * s;
     }
 
     /** 是否启用与本体 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 一致的推力运动学。 */

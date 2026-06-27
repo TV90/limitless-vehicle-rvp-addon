@@ -691,8 +691,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected void tickBallisticMotion() {
         Vec3 velocity = getDeltaMovement();
         if (!isInWater()) {
+            float dragInAir = rvpData.getDragInAir();
+            if (isMissile()) {
+                dragInAir *= RVP_ProjectileMotion.resolveMissileAltitudeDragFactor(this, rvpData);
+            }
             velocity = velocity.add(0, rvpData.getGravity(), 0);
-            velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInAir());
+            velocity = applyMchHorizontalDrag(velocity, dragInAir);
         } else {
             velocity = velocity.add(0, rvpData.getGravityInWater(), 0);
             velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInWater());
