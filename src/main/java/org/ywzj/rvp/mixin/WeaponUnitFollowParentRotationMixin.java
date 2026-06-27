@@ -22,9 +22,6 @@ public class WeaponUnitFollowParentRotationMixin {
         if (!(self.getData() instanceof WeaponUnitDataExt ext)) {
             return;
         }
-        if (!"rvp:abramsx".equals(String.valueOf(self.getVehicle().getVehicleId())) || !"turret".equals(self.getId())) {
-            return;
-        }
         List<String> ids = ext.ywzj_rvp$getFollowParentOnlyPartUnitIds();
         if (ids.isEmpty()) {
             RVP_HitboxDebug.noteEmptyConfig(self.getId());
