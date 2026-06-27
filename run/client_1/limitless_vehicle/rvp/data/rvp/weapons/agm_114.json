@@ -1,66 +1,46 @@
 {
   "type": "rvp:missile",
   "name": "AGM-114 Hellfire",
-  "shoot_interval": 800,
+  "damage": 1000,
+  "headshot_multiplier": 1.5,
+  "shoot_interval": 1000,
   "max_capacity": 8,
   "reload": {
     "time": 100,
     "ammo": "ywzj_vehicle:ammo_missile"
   },
-  "require_lock": false,
-  "fire_data": {
-    "spread": 0,
-    "fire_mode": "FULL_AUTO"
-  },
   "projectile_data": {
-    "velocity": 1.8,
-    "constant_speed": true,
-    "rotate_to_motion": true,
-    "max_speed": 2.4
-  },
-  "fuse_data": {
-    "delay_tick": 0,
-    "proximity_radius": 2.5,
-    "detonate_on_life_end": false
-  },
-  "guidance_data": [
-    {
-      "name": "tv_command",
-      "start_tick": 0,
-      "sources": [
-        {
-          "type": "TV",
-          "priority": 100,
-          "take_over_motion": true
-        }
-      ]
-    }
-  ],
-  "effects_data": {
-    "trajectory_particle": "minecraft:large_smoke",
-    "impact_particle": "minecraft:block",
-    "explosion_particle": "minecraft:explosion_emitter"
-  },
-  "tv_missile_data": {
-    "control_range": 2000,
-    "timeout_tick": 400,
-    "video_modes": [
-      "COLOR",
-      "BW",
-      "THERMAL"
-    ]
+    "mass": 0.05,
+    "thrust": 0.03,
+    "motor_burn_time": 600,
+    "drag_coefficient": 0.005,
+    "has_rocket_engine": true,
+    "rotate_to_motion": true
   },
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 160,
+      "damage": 100,
       "radius": 5,
-      "proximity_fuze": true,
-      "proximity_radius": 2.5,
       "destroy_block": true
     }
   },
-  "collision_data": {
-    "direct_damage": 90
-  }
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "saclos",
+        "sources": [
+          {
+            "type": "SACLOS",
+            "priority": 100
+          },
+          {
+            "type": "IOG",
+            "priority": 10
+          }
+        ]
+      }
+    ]
+  },
+  "require_lock": false
 }

@@ -1,7 +1,7 @@
 {
   "type": "ywzj_vehicle:fixed_wing_vehicle",
   "model": "rvp:entity/j15",
-  "texture": "rvp:textures/entity/j15.png",
+  "texture": "rvp:textures/entity/j15t.png",
   "slot_texture": "rvp:textures/slot/j15.png",
   "animations": "rvp:entity/j15.animation",
   "animation_controller": "rvp:j15_controller",

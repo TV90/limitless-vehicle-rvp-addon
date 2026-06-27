@@ -1,0 +1,119 @@
+{
+  "name": "vt4_controller",
+  "script": "rvp:vt4",
+  "parameters": {},
+  "event_animations": {
+    "turret_fire": ["turret_shoot"]
+  },
+  "loop_animations": {
+    "static": {
+      "animation": "static"
+    }
+  },
+  "graph": {
+    "type": "merge",
+    "inputs": [
+      {
+        "type": "loop_animation",
+        "ref": "static"
+      },
+      {
+        "type": "additive",
+        "base": {
+          "type": "merge",
+          "inputs": [
+            {
+              "type": "bone_binding",
+              "special_bindings": [
+                {
+                  "bones": [
+                    "FZL0_L", "FZL1_L", "FZL2_L", "FZL3_L", "FZL4_L", "FZL5_L", "FZL6_L", "FZL7_L"
+                  ],
+                  "source": "left_wheel_rotation",
+                  "axis": "x",
+                  "param": 0.375
+                },
+                {
+                  "bones": [
+                    "FZL0_R", "FZL1_R", "FZL2_R", "FZL3_R", "FZL4_R", "FZL5_R", "FZL6_R", "FZL7_R"
+                  ],
+                  "source": "right_wheel_rotation",
+                  "axis": "x",
+                  "param": 0.375
+                }
+              ],
+              "part_bindings": [
+                {
+                  "bone": "turret",
+                  "part": "turret",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "octagon",
+                  "part": "turret",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": false
+                },
+                {
+                  "bone": "machine_gun",
+                  "part": "commander_machine_gun",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "machine_gun_high",
+                  "part": "commander_machine_gun",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": false
+                },
+                {
+                  "bone": "APS_L",
+                  "part": "aps_left",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "APS_L_SHOT",
+                  "part": "aps_left",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": true
+                },
+                {
+                  "bone": "APS_R",
+                  "part": "aps_right",
+                  "rotation_type": "y",
+                  "axis": "y",
+                  "invert": true
+                },
+                {
+                  "bone": "APS_R_SHOT",
+                  "part": "aps_right",
+                  "rotation_type": "x",
+                  "axis": "x",
+                  "invert": true
+                }
+              ]
+            },
+            {
+              "type": "track_animation"
+            },
+            {
+              "type": "script",
+              "function": "updateBones"
+            }
+          ]
+        },
+        "add": {
+          "type": "event_animation"
+        }
+      }
+    ]
+  }
+}

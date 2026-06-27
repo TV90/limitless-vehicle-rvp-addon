@@ -1,0 +1,41 @@
+{
+  "type": "rvp:machinegun",
+  "name": "XM914 30毫米机炮",
+  "shoot_interval": 300,
+  "max_capacity": 20,
+  "reload": {
+    "time": 120,
+    "ammo": "ywzj_vehicle:ammo_auto_cannon"
+  },
+  "fire_data": {
+    "spread": 0.6,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 15,
+    "gravity": -0.008,
+    "drag": 0.005,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 30,
+    "tracer_r": 1.0,
+    "tracer_g": 0.5,
+    "tracer_b": 0.1
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 8,
+      "radius": 2,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10
+  },
+  "fuse_data": {}
+}

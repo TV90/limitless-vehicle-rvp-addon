@@ -31,7 +31,7 @@ public final class RVP_RocketBallistics {
     private RVP_RocketBallistics() {}
 
     public record Params(double velocity, double gravity, double drag, int predictionTick) {}
-    private record RvpState(Vec3 velocity, Vec3 lookDir, double flightSpeed) {}
+    private record RvpState(Vec3 velocity, Vec3 lookDir, double flightSpeed, int secondPulseStartTick) {}
 
     @Nullable
     public static Params resolve(ResourceLocation weaponId) {
@@ -138,7 +138,7 @@ public final class RVP_RocketBallistics {
                                      RVP_WeaponData data, @Nullable Entity clipEntity) {
         Vec3 pos = startPos;
         Vec3 lookDir = startLookDir.lengthSqr() > 1.0E-6 ? startLookDir.normalize() : Vec3.ZERO;
-        RvpState state = new RvpState(startVelocity, lookDir, Math.max(startVelocity.length(), 0.01));
+        RvpState state = new RvpState(startVelocity, lookDir, Math.max(startVelocity.length(), 0.01), -1);
         for (int tick = 0; tick < resolvePredictionTick(data); tick++) {
             Vec3 nextPos = pos.add(state.velocity());
             BlockHitResult hit = level.clip(new ClipContext(pos, nextPos, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, clipEntity));
@@ -218,6 +218,7 @@ public final class RVP_RocketBallistics {
         Vec3 velocity = state.velocity();
         Vec3 lookDir = state.lookDir();
         double flightSpeed = Math.max(state.flightSpeed(), velocity.length());
+        int secondPulseStartTick = state.secondPulseStartTick();
         if (data.usesPropulsion()) {
             int ignition = data.getResolvedIgnitionDelayTick();
             if (tick >= ignition) {
@@ -225,9 +226,23 @@ public final class RVP_RocketBallistics {
                     lookDir = velocity.normalize();
                 }
                 int motorTick = tick - ignition;
-                if (motorTick <= data.getResolvedMotorBurnTime()) {
+                float burn1 = data.getResolvedMotorBurnTime();
+                boolean burning1 = motorTick <= burn1;
+                boolean burning2 = false;
+                if (!burning1 && data.getProjectileData().usesSecondPulse()) {
+                    float speedThreshold = data.getProjectileData().getResolvedSecondPulseTriggerSpeed();
+                    if (secondPulseStartTick < 0 && speedThreshold > 0f && velocity.length() <= speedThreshold) {
+                        secondPulseStartTick = tick;
+                    }
+                    if (secondPulseStartTick >= 0) {
+                        int t2 = tick - secondPulseStartTick;
+                        burning2 = t2 >= 0 && t2 <= data.getProjectileData().getResolvedSecondPulseBurnTime();
+                    }
+                }
+                if (burning1 || burning2) {
                     float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
-                    velocity = velocity.add(lookDir.scale(data.getResolvedThrust() / mass));
+                    float thrust = burning1 ? data.getResolvedThrust() : data.getProjectileData().getResolvedSecondPulseThrust();
+                    velocity = velocity.add(lookDir.scale(thrust / mass));
                 }
                 double speedSqr = velocity.lengthSqr();
                 float dragCoeff = data.getResolvedDragCoefficient();
@@ -240,7 +255,7 @@ public final class RVP_RocketBallistics {
                     lookDir = velocity.normalize();
                 }
             }
-            return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()));
+            return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()), secondPulseStartTick);
         }
 
         velocity = velocity.add(0.0, data.getGravity(), 0.0);
@@ -252,7 +267,7 @@ public final class RVP_RocketBallistics {
         if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
             lookDir = velocity.normalize();
         }
-        return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()));
+        return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()), secondPulseStartTick);
     }
 
     private static Vec3 applyGravity(Vec3 velocity, RVP_WeaponData data) {

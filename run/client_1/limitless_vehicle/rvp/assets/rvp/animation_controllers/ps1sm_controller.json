@@ -1,0 +1,101 @@
+{
+  "name": "ps1sm_controller",
+  "script": "rvp:ps1sm",
+  "parameters": {},
+  "switchable_animations": {
+    "lock_radar": {
+      "part_id": "lock_radar",
+      "animation": "radar_turn_off",
+      "invert": true
+    },
+    "scan_radar": {
+      "part_id": "scan_radar",
+      "animation": "radar1_loop",
+      "invert": false
+    }
+  },
+  "event_animations": {
+    "turret_fire": ["auto_gun"]
+  },
+  "graph": {
+    "type": "additive",
+    "base": {
+      "type": "merge",
+      "inputs": [
+        {
+          "type": "bone_binding",
+          "special_bindings": [
+            {
+              "bones": [
+                "$track_roller0", "$track_roller1", "$track_roller2", "$track_roller3",
+                "$track_roller4", "$track_roller5", "$track_roller6", "$track_roller7",
+                "$track_roller8", "$track_roller9", "$track_roller10"
+              ],
+              "source": "left_wheel_rotation",
+              "axis": "x",
+              "param": 0.375
+            },
+            {
+              "bones": [
+                "$track_roller0", "$track_roller1", "$track_roller2", "$track_roller3",
+                "$track_roller4", "$track_roller5", "$track_roller6", "$track_roller7",
+                "$track_roller8", "$track_roller9", "$track_roller10"
+              ],
+              "source": "right_wheel_rotation",
+              "axis": "x",
+              "param": 0.375
+            }
+          ],
+          "part_bindings": [
+            {
+              "bone": "$weapon0",
+              "part": "turret",
+              "rotation_type": "y",
+              "axis": "y",
+              "invert": true
+            },
+            {
+              "bone": "$weapon0_0",
+              "part": "turret",
+              "rotation_type": "x",
+              "axis": "x",
+              "invert": false
+            },
+            {
+              "bone": "radar",
+              "part": "lock_radar",
+              "rotation_type": "y",
+              "axis": "y",
+              "invert": false
+            },
+            {
+              "bone": "radar1",
+              "part": "scan_radar",
+              "rotation_type": "y",
+              "axis": "y",
+              "invert": false
+            }
+          ]
+        },
+        {
+          "type": "track_animation"
+        },
+        {
+          "type": "script",
+          "function": "updateBones"
+        },
+        {
+          "type": "switchable_animation",
+          "ref": "lock_radar"
+        },
+        {
+          "type": "switchable_animation",
+          "ref": "scan_radar"
+        }
+      ]
+    },
+    "add": {
+      "type": "event_animation"
+    }
+  }
+}

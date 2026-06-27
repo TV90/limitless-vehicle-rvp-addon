@@ -4,6 +4,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.Map;
@@ -19,4 +20,7 @@ public interface WeaponUnitAccessor {
 
     @Accessor("currentSecondaryWeaponIndex")
     int getCurrentSecondaryWeaponIndex();
+
+    @Accessor("xTurnGroup")
+    VehicleCubeGroup getXTurnGroup();
 }

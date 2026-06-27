@@ -41,6 +41,141 @@
   "with_warning_receiver": true,
   "center_offset": [0, 1.625, 0],
   "structure_model": "rvp:vehicle/j15",
+  "core_distance_scale_multiplier": 0.0,
+  "rvp_custom_mounts": [
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_1",
+      "weapon_id": "rvp:pl_12",
+      "model": "rvp:entity/weapon_mount_pl12",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_2",
+      "weapon_id": "rvp:pl_12",
+      "model": "rvp:entity/weapon_mount_pl12",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 2
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_3",
+      "weapon_id": "rvp:pl_12",
+      "model": "rvp:entity/weapon_mount_pl12",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 3
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_4",
+      "weapon_id": "rvp:pl_12",
+      "model": "rvp:entity/weapon_mount_pl12",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 4
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_1",
+      "weapon_id": "rvp:pl_15",
+      "model": "rvp:entity/weapon_mount_pl15",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_2",
+      "weapon_id": "rvp:pl_15",
+      "model": "rvp:entity/weapon_mount_pl15",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 2
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_3",
+      "weapon_id": "rvp:pl_15",
+      "model": "rvp:entity/weapon_mount_pl15",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 3
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount_4",
+      "weapon_id": "rvp:pl_15",
+      "model": "rvp:entity/weapon_mount_pl15",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 4
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_1",
+      "weapon_id": "rvp:yj_91_2",
+      "model": "rvp:entity/weapon_mount_yj91",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_yj91.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_2",
+      "weapon_id": "rvp:yj_91_2",
+      "model": "rvp:entity/weapon_mount_yj91",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_yj91.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 2
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_1",
+      "weapon_id": "rvp:kd_88a",
+      "model": "rvp:entity/weapon_mount_kd88a",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_kd88a.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount_2",
+      "weapon_id": "rvp:kd_88a",
+      "model": "rvp:entity/weapon_mount_kd88a",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_kd88a.png",
+      "rack_bones": ["pylon"],
+      "missile_bones": ["missile1"],
+      "replace_weapon_display": true,
+      "ammo_slot": 2
+    }
+  ],
   "parts": [
     {
       "id": "sighting_system",
@@ -49,13 +184,14 @@
       "structure_bone": "sighting_system",
       "seat_offset": [0, 3.367, 5.594],
       "operator_on_weapon_unit": false,
+      "disable_scope_auto_level": true,
       "rot_info": {
         "x_rot_speed": 15,
         "y_rot_speed": 15,
-        "x_rot_min": -3,
-        "x_rot_max": 3,
-        "y_rot_min": -3,
-        "y_rot_max": 3
+        "x_rot_min": -40,
+        "x_rot_max": 40,
+        "y_rot_min": -80,
+        "y_rot_max": 80
       },
       "optical_sight_offset": [0, 0, 1],
       "operator_view_offset": [0.19, 0.45, -1.81],
@@ -63,10 +199,20 @@
       "zoom_max": 12,
       "sub_part_unit_ids": ["radar"],
       "weapons": [
-        { "id": "rvp:gsh_30_1", "part_unit_id": "auto_cannon" },
-        { "id": "rvp:pl_12", "part_unit_id": "pl_12" },
-        { "id": "rvp:yj_15", "part_unit_id": "yj_15" },
-        { "id": "ywzj_vehicle:decoy_flare", "part_unit_id": "decoy_flare" }
+        {
+          "id": "rvp:gsh_30_1",
+          "part_unit_id": "auto_cannon"
+        },
+        {
+          "part_unit_id": "variable_aam"
+        },
+        {
+          "part_unit_id": "variable_agm"
+        },
+        {
+          "id": "ywzj_vehicle:decoy_flare",
+          "part_unit_id": "decoy_flare"
+        }
       ]
     },
     {
@@ -79,27 +225,91 @@
       "crosshair_style": "circle"
     },
     {
-      "id": "pl_12",
-      "name": "pl_12",
+      "id": "variable_aam",
+      "name": "variable_aam",
       "type": "ywzj_vehicle:weapon",
-      "structure_bone": "pl_12",
-      "render_model": true,
+      "structure_bone": "variable_aam_1",
+      "rvp_structure_bolt_bones": [
+        "variable_aam_1_barrel",
+        "variable_aam_2_barrel",
+        "variable_aam_3_barrel",
+        "variable_aam_4_barrel"
+      ],
       "ammo_capacity": 4,
       "fire_control_sensor_type": "rf",
       "is_seat": false,
-      "parent_weapon_unit_aim": true,
+      "parent_weapon_unit_aim": false,
+      "crosshair_style": "none",
+      "weapons": [
+        "rvp:pl_12",
+        "rvp:pl_15"
+      ]
+    },
+    {
+      "id": "variable_agm",
+      "name": "variable_agm",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_agm_1",
+      "rvp_structure_bolt_bones": [
+        "variable_agm_1_barrel",
+        "variable_agm_2_barrel"
+      ],
+      "ammo_capacity": 2,
+      "fire_control_sensor_type": "eo",
+      "is_seat": false,
+      "parent_weapon_unit_aim": false,
+      "crosshair_style": "square",
+      "weapons": [
+        "rvp:yj_91_2",
+        "rvp:kd_88a"
+      ]
+    },
+    {
+      "id": "variable_aam_mount_1",
+      "name": "variable_aam_mount_1",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_aam_1",
+      "is_seat": false,
       "crosshair_style": "none"
     },
     {
-      "id": "yj_15",
-      "name": "yj_15",
+      "id": "variable_aam_mount_2",
+      "name": "variable_aam_mount_2",
       "type": "ywzj_vehicle:weapon",
-      "structure_bone": "yj_15",
-      "render_model": true,
-      "ammo_capacity": 2,
-      "fire_control_sensor_type": "ccip",
+      "structure_bone": "variable_aam_2",
       "is_seat": false,
-      "parent_weapon_unit_aim": true,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "variable_aam_mount_3",
+      "name": "variable_aam_mount_3",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_aam_3",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "variable_aam_mount_4",
+      "name": "variable_aam_mount_4",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_aam_4",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "variable_agm_mount_1",
+      "name": "variable_agm_mount_1",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_agm_1",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "variable_agm_mount_2",
+      "name": "variable_agm_mount_2",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_agm_2",
+      "is_seat": false,
       "crosshair_style": "none"
     },
     {

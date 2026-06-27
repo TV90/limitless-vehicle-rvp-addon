@@ -1,0 +1,23 @@
+{
+  "name": "ps1sm",
+  "radars": {
+    "scan_radar": {
+      "anchor": "right",
+      "offset_x": 128,
+      "offset_y": -400,
+      "scale": 1.0
+    },
+    "lock_radar": {
+      "anchor": "right",
+      "offset_x": 128,
+      "offset_y": -650,
+      "scale": 0.9
+    }
+  },
+  "vehicle_bones": {
+    "anchor": "right_bottom",
+    "offset_x": 116,
+    "offset_y": -80,
+    "scale": 1.0
+  }
+}

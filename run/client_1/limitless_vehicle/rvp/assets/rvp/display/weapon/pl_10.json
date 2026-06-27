@@ -1,7 +1,7 @@
 {
   "type": "ywzj_vehicle:weapon",
-  "model": "rvp:entity/missile_pl_12",
-  "texture": "rvp:textures/entity/j16d.png",
+  "model": "rvp:entity/missile_pl_10",
+  "texture": "rvp:textures/entity/pac_atkjet_t2_j16d.png",
   "sounds": {
     "fire": "ywzj_vehicle:missile_launch",
     "reload": "ywzj_vehicle:common_reload"

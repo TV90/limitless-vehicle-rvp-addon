@@ -1,0 +1,28 @@
+{
+  "type": "ywzj_vehicle:tracked_vehicle",
+  "model": "rvp:entity/vt4",
+  "texture": "rvp:textures/entity/vt4.png",
+  "slot_texture": "rvp:textures/slot/vt4.png",
+  "animations": "rvp:entity/vt4.animation",
+  "animation_controller": "rvp:vt4_controller",
+  "track_config": {
+    "left_track": "tread_l_move",
+    "right_track": "tread_r_move",
+    "module_length": 0.25,
+    "track_width": 3.0
+  },
+  "sounds": {
+    "engine_start": "ywzj_vehicle:ztz99a_engine_start",
+    "engine_idle": "ywzj_vehicle:ztz99a_engine_idle",
+    "engine_run": "ywzj_vehicle:ztz99a_engine_run"
+  },
+  "special_bone_effects": [
+    {
+      "bone": "turret_muzzle_flash",
+      "texture": "ywzj_vehicle:textures/bedrock/effect/muzzle_flash_1.png",
+      "type": "muzzle_flash"
+    }
+  ],
+  "description": "",
+  "tab_index": 305
+}

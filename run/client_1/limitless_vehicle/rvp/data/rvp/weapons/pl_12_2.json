@@ -1,64 +1,92 @@
 {
   "type": "rvp:missile",
-  "name": "PL-12C",
+  "name": "霹雳-12 主动雷达弹",
+  "show_msl_indicator": true,
   "shoot_interval": 500,
   "max_capacity": 2,
   "reload": {
     "time": 80,
     "ammo": "ywzj_vehicle:ammo_missile"
   },
-  "require_lock": false,
+  "require_lock": true,
   "fire_data": {
     "spread": 0,
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
-    "velocity": 2.5,
-    "constant_speed": true,
+    "velocity": 0.5,
+    "has_rocket_engine": true,
+    "mass": 0.012,
+    "thrust": 0.015,
+    "motor_burn_time": 200,
+    "drag_coefficient": 0.003,
     "rotate_to_motion": true,
-    "max_speed": 3.5
+    "max_speed": 6.0
   },
   "fuse_data": {
     "delay_tick": 0,
     "proximity_radius": 3,
     "detonate_on_life_end": false
   },
-  "seeker_data": {
-    "range": 256,
-    "scan_interval_tick": 20,
-    "fov": 30,
-    "ignore_chaff": false,
-    "jam_resistance": 0.2
-  },
-  "guidance_data": [
-    {
-      "name": "boost_iog",
-      "start_tick": 0,
-      "end_tick": 9,
-      "sources": [
-        {
-          "type": "IOG",
-          "priority": 100
-        }
-      ]
-    },
-    {
-      "name": "terminal_arh",
-      "start_tick": 10,
-      "sources": [
-        {
-          "type": "ARH",
-          "priority": 100
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "boost_iog",
+        "activation": {
+          "start_tick": 0,
+          "end_tick": 9
         },
-        {
-          "type": "IOG",
-          "priority": 10
-        }
-      ]
-    }
-  ],
+        "steering_data": {
+          "rigidity_time": 10,
+          "turning_factor": 0.1,
+          "max_degree_of_missile": 70
+        },
+        "sources": [
+          {
+            "type": "IOG",
+            "priority": 100
+          }
+        ]
+      },
+      {
+        "name": "arh_terminal",
+        "activation": {
+          "start_tick": 10
+        },
+        "steering_data": {
+          "rigidity_time": 4,
+          "turning_factor": 0.15,
+          "max_degree_of_missile": 50,
+          "predict_target_pos": true
+        },
+        "seeker": {
+          "fov": 10,
+          "guide_head_max_angle": 60,
+          "range": 900,
+          "scan_interval_tick": 2
+        },
+        "sources": [
+          {
+            "type": "ARH",
+            "priority": 100,
+            "params": {
+              "active_radar_activation_range": 256,
+              "memory_tick": 120
+            }
+          },
+          {
+            "type": "IOG",
+            "priority": 10,
+            "params": {
+              "use_last_guidance": true
+            }
+          }
+        ]
+      }
+    ]
+  },
   "effects_data": {
-    "trajectory_particle": "minecraft:large_smoke",
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },

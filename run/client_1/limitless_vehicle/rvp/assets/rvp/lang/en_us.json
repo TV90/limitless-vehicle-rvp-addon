@@ -4,5 +4,13 @@
   "entity.rvp.ah64": "AH-64",
   "rvp.ah64": "AH-64",
   "entity.rvp.mi28": "MI-28",
-  "rvp.mi28": "MI-28"
+  "rvp.mi28": "MI-28",
+  "entity.rvp.su57": "Su-57",
+  "rvp.su57": "Su-57",
+  "entity.rvp.vt4": "VT4",
+  "rvp.vt4": "VT4",
+  "entity.rvp.bmpt72": "BMPT-72",
+  "rvp.bmpt72": "BMPT-72",
+  "entity.rvp.abramsx": "AbramsX",
+  "rvp.abramsx": "AbramsX"
 }

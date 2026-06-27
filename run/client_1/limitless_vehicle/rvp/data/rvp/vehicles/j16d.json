@@ -39,8 +39,29 @@
     "impact_multiplier": 3
   },
   "with_warning_receiver": true,
-  "center_offset": [0, 1.625, 0],
+  "ew_enabled": true,
+  "ew_active_duration_tick": 60,
+  "ew_cooldown_tick": 20,
+  "ew_burn_through_distance": 250.0,
+  "ew_near_max_distance": 500.0,
+  "ew_mid_max_distance": 1000.0,
+  "ew_mid_far_max_distance": 1500.0,
+  "ew_far_decoy_count": 8,
+  "ew_far_decoy_radius": 360.0,
+  "ew_mid_far_decoy_count": 6,
+  "ew_mid_far_decoy_radius": 260.0,
+  "ew_mid_decoy_count": 4,
+  "ew_mid_decoy_radius": 180.0,
+  "ew_near_decoy_count": 2,
+  "ew_near_decoy_radius": 110.0,
+  "ew_far_diversion_chance": 0.9,
+  "ew_mid_far_diversion_chance": 0.72,
+  "ew_mid_diversion_chance": 0.5,
+  "ew_near_diversion_chance": 0.25,
+  "ew_diversion_count_bonus_per_decoy": 0.03,
+  "ew_diversion_chance_max": 0.95,  "center_offset": [0, 1.625, 0],
   "structure_model": "rvp:vehicle/j16d",
+  "core_distance_scale_multiplier": 0.0,
   "parts": [
     {
       "id": "sighting_system",
@@ -63,11 +84,26 @@
       "zoom_max": 12,
       "sub_part_unit_ids": ["radar"],
       "weapons": [
-        { "id": "rvp:pl_10", "part_unit_id": "pl_10" },
-        { "id": "rvp:pl_12_2", "part_unit_id": "pl_12_2" },
-        { "id": "rvp:yj_91", "part_unit_id": "yj_91" },
-        { "id": "rvp:gb_1000", "part_unit_id": "gb_1000" },
-        { "id": "ywzj_vehicle:decoy_flare", "part_unit_id": "decoy_flare" }
+        {
+          "id": "rvp:pl_10",
+          "part_unit_id": "pl_10"
+        },
+        {
+          "id": "rvp:pl_12_2",
+          "part_unit_id": "pl_12_2"
+        },
+        {
+          "id": "rvp:yj_91",
+          "part_unit_id": "yj_91"
+        },
+        {
+          "id": "rvp:gb_1000",
+          "part_unit_id": "gb_1000"
+        },
+        {
+          "id": "ywzj_vehicle:decoy_flare",
+          "part_unit_id": "decoy_flare"
+        }
       ]
     },
     {
@@ -76,7 +112,7 @@
       "type": "ywzj_vehicle:weapon",
       "structure_bone": "pl_10",
       "ammo_capacity": 2,
-      "fire_control_sensor_type": "ir",
+      "fire_control_sensor_type": "eo",
       "is_seat": false,
       "parent_weapon_unit_aim": true,
       "crosshair_style": "none"

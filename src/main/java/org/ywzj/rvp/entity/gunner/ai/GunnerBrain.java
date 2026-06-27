@@ -656,6 +656,9 @@ public final class GunnerBrain {
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (partUnit instanceof WeaponUnit weaponUnit) {
                 for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
+                    if (weapon.getData().getWeaponId() == null) {
+                        continue;
+                    }
                     weapon.setRemainAmmo(weapon.getMaxCapacity());
                     ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
                 }
@@ -670,6 +673,10 @@ public final class GunnerBrain {
                 continue;
             }
             for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
+                if (weapon.getData().getWeaponId() == null) {
+                    SINGLE_SHOT_READY_TIME.remove(weapon);
+                    continue;
+                }
                 if (weapon.getMaxCapacity() > 1) {
                     SINGLE_SHOT_READY_TIME.remove(weapon);
                     continue;
@@ -705,6 +712,10 @@ public final class GunnerBrain {
                 continue;
             }
             for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
+                if (weapon.getData().getWeaponId() == null) {
+                    SINGLE_SHOT_READY_TIME.remove(weapon);
+                    continue;
+                }
                 SINGLE_SHOT_READY_TIME.remove(weapon);
                 ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
             }

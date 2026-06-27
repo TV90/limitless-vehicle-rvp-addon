@@ -1,0 +1,52 @@
+{
+  "type": "rvp:missile",
+  "name": "PL-8",
+  "damage": 100,
+  "headshot_multiplier": 1.5,
+  "recoil": 0.1,
+  "shoot_interval": 1000,
+  "max_capacity": 6,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "projectile_data": {
+    "mass": 0.01,
+    "thrust": 0.01,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
+    "has_rocket_engine": true,
+    "rotate_to_motion": true
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 500,
+      "radius": 8,
+      "proximity_fuze": true,
+      "proximity_radius": 4,
+      "destroy_block": true
+    }
+  },
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "terminal_ir",
+        "sources": [
+          {
+            "type": "IR",
+            "priority": 100
+          },
+          {
+            "type": "IOG",
+            "priority": 10
+          }
+        ],
+        "seeker": {
+          "fov": 3,
+          "guide_head_max_angle": 30
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "type": "rvp:bomb",
-  "name": "GB-1000IR",
+  "name": "GB-1000IR GPS/红外复合制导炸弹",
   "recoil": 0,
   "shoot_interval": 300,
   "max_capacity": 2,
@@ -34,8 +34,14 @@
         "name": "gps_midcourse",
         "start_tick": 0,
         "sources": [
-          { "type": "GPS", "priority": 100 },
-          { "type": "IOG", "priority": 10 }
+          {
+            "type": "GPS",
+            "priority": 100
+          },
+          {
+            "type": "IOG",
+            "priority": 10
+          }
         ]
       },
       {
@@ -59,8 +65,14 @@
             },
             "fallback_on_jammed": true
           },
-          { "type": "GPS", "priority": 50 },
-          { "type": "IOG", "priority": 10 }
+          {
+            "type": "GPS",
+            "priority": 50
+          },
+          {
+            "type": "IOG",
+            "priority": 10
+          }
         ]
       }
     ]
