@@ -95,7 +95,7 @@ public final class RVP_ProjectileMotion {
                 velocity = velocity.add(lookDir.scale(acceleration));
             }
             double speedSqr = velocity.lengthSqr();
-            float dragCoeff = data.getResolvedDragCoefficient();
+            float dragCoeff = data.getResolvedDragCoefficient() * resolveMissileAltitudeDragFactor(projectile, data);
             if (speedSqr > 1.0E-12 && dragCoeff > 0) {
                 velocity = velocity.add(velocity.normalize().scale(-dragCoeff * speedSqr));
             }
@@ -290,7 +290,7 @@ public final class RVP_ProjectileMotion {
                 float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
                 speed += data.getResolvedThrust() / mass;
             }
-            float dragCoeff = data.getResolvedDragCoefficient();
+            float dragCoeff = data.getResolvedDragCoefficient() * resolveMissileAltitudeDragFactor(missile, data);
             if (dragCoeff > 0 && speed > 0) {
                 speed -= dragCoeff * speed * speed;
                 speed = Math.max(speed, 0.01);
@@ -339,6 +339,13 @@ public final class RVP_ProjectileMotion {
             return velocity.add(0, gravity, 0);
         }
         return velocity.subtract(0, PhysicsEngine.G, 0);
+    }
+
+    static float resolveMissileAltitudeDragFactor(RVP_BaseBullet projectile, RVP_WeaponData data) {
+        if (projectile == null || data == null || !projectile.isMissile()) {
+            return 1.0f;
+        }
+        return data.getProjectileData().resolveAltitudeDragFactor(projectile.getY());
     }
 
     public static Vec3 clampSpeed(RVP_BaseBullet projectile, Vec3 velocity, RVP_WeaponData data) {
