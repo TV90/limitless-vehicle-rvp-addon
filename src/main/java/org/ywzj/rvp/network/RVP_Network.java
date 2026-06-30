@@ -27,6 +27,11 @@ public class RVP_Network {
                 .decoder(C2SSetGPSTarget::decode)
                 .consumerMainThread(C2SSetGPSTarget::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CGpsStateSync.class, id++)
+                .encoder(S2CGpsStateSync::encode)
+                .decoder(S2CGpsStateSync::decode)
+                .consumerMainThread(S2CGpsStateSync::handle)
+                .add();
         CHANNEL.messageBuilder(S2CEnterHitlView.class, id++)
                 .encoder(S2CEnterHitlView::encode)
                 .decoder(S2CEnterHitlView::decode)
@@ -86,6 +91,11 @@ public class RVP_Network {
                 .encoder(S2CApsFlameLink::encode)
                 .decoder(S2CApsFlameLink::decode)
                 .consumerMainThread(S2CApsFlameLink::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CRemoteAmmoSnapshot.class, id++)
+                .encoder(S2CRemoteAmmoSnapshot::encode)
+                .decoder(S2CRemoteAmmoSnapshot::decode)
+                .consumerMainThread(S2CRemoteAmmoSnapshot::handle)
                 .add();
     }
 }

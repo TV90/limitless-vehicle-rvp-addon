@@ -7,6 +7,7 @@ import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -58,6 +59,7 @@ import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.vehicle.all.AllDamageTypes;
+import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
@@ -82,7 +84,7 @@ import java.util.Set;
  * submunition timing, impact effects, penetration, ricochet and damage falloff.
  * Guidance-specific motion changes are delegated to {@link RVP_GuidanceController}.</p>
  */
-public abstract class RVP_BaseBullet extends AmmoEntity {
+public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEntity {
 
     private static final double PARTICLE_VIEW_DISTANCE = 512.0D;
     private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
@@ -175,6 +177,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
     protected int activeRadarLostTargetTick;
     /** 主动雷达开机距离阈值（JSON 中由 active_radar_activation_range 配置）。 */
     protected double activeRadarActivationRange = 1024.0;
+    @Nullable
+    private ResourceLocation remoteWeaponId;
+    private int remoteOwnerId = -1;
+    private int remoteShooterVehicleId = -1;
 
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
@@ -195,6 +201,42 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level) {
         this(type, level, null);
+    }
+
+    @Override
+    public void writeData(CompoundTag data) {
+        ResourceLocation weaponId = getWeaponId();
+        if (weaponId != null) {
+            data.putString("weaponId", weaponId.toString());
+        }
+        if (getOwner() != null) {
+            data.putInt("ownerId", getOwner().getId());
+        }
+        if (shooterVehicle != null) {
+            data.putInt("shooterVehicleId", shooterVehicle.getId());
+        }
+        writeRemoteVec3(data, "targetPos", targetPos);
+        writeRemoteVec3(data, "lastGuidancePos", lastGuidancePos);
+    }
+
+    @Override
+    public void readData(CompoundTag data) {
+        if (data.contains("weaponId")) {
+            ResourceLocation weaponId = ResourceLocation.tryParse(data.getString("weaponId"));
+            if (weaponId != null) {
+                remoteWeaponId = weaponId;
+            }
+        }
+        remoteOwnerId = data.contains("ownerId") ? data.getInt("ownerId") : -1;
+        remoteShooterVehicleId = data.contains("shooterVehicleId") ? data.getInt("shooterVehicleId") : -1;
+        targetPos = readRemoteVec3(data, "targetPos");
+        lastGuidancePos = readRemoteVec3(data, "lastGuidancePos");
+        resolveRemoteRefs();
+    }
+
+    @Override
+    public void remoteTick() {
+        resolveRemoteRefs();
     }
 
     @Override
@@ -352,6 +394,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
             damageDecayRules = List.copyOf(loaded);
         }
         return damageDecayRules;
+    }
+
+    @Override
+    public ResourceLocation getWeaponId() {
+        ResourceLocation weaponId = super.getWeaponId();
+        return weaponId != null ? weaponId : remoteWeaponId;
     }
 
     /** Distance in meters for decay sampling (includes the current tick segment before motion integration). */
@@ -1580,6 +1628,42 @@ public abstract class RVP_BaseBullet extends AmmoEntity {
 
     protected Vec3 aimPoint(Entity entity) {
         return entity.position().add(0, entity.getBbHeight() * 0.5, 0);
+    }
+
+    private void resolveRemoteRefs() {
+        if (remoteOwnerId >= 0) {
+            Entity owner = level().getEntity(remoteOwnerId);
+            if (owner != null) {
+                setOwner(owner);
+            }
+        }
+        if (remoteShooterVehicleId >= 0) {
+            Entity entity = level().getEntity(remoteShooterVehicleId);
+            if (entity instanceof AbstractVehicle vehicle) {
+                shooterVehicle = vehicle;
+                this.vehicle = vehicle;
+            }
+        }
+    }
+
+    private static void writeRemoteVec3(CompoundTag data, String key, @Nullable Vec3 vec) {
+        if (vec == null) {
+            return;
+        }
+        CompoundTag tag = new CompoundTag();
+        tag.putDouble("x", vec.x);
+        tag.putDouble("y", vec.y);
+        tag.putDouble("z", vec.z);
+        data.put(key, tag);
+    }
+
+    @Nullable
+    private static Vec3 readRemoteVec3(CompoundTag data, String key) {
+        if (!data.contains(key, CompoundTag.TAG_COMPOUND)) {
+            return null;
+        }
+        CompoundTag tag = data.getCompound(key);
+        return new Vec3(tag.getDouble("x"), tag.getDouble("y"), tag.getDouble("z"));
     }
 
     protected void spawnTrailParticles() {

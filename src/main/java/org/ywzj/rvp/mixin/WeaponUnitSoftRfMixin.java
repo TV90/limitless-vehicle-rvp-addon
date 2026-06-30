@@ -176,8 +176,8 @@ public class WeaponUnitSoftRfMixin {
         if (desiredDir.lengthSqr() < 1.0E-6) {
             return;
         }
-        Vec3 pivot = self.worldPivotPosition();
-        self.aim(pivot.add(desiredDir.normalize().scale(4096.0)));
+        Vec3 aimFrom = ywzj_rvp$aimOrigin(self);
+        self.aim(aimFrom.add(desiredDir.normalize().scale(4096.0)));
     }
 
     private static void ywzj_rvp$clearAimAssist(WeaponUnit self) {

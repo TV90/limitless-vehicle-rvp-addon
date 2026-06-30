@@ -12,6 +12,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
@@ -131,7 +132,9 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
-        var unit = getWeaponUnit().getRootParentWeaponUnit();
+        WeaponUnit firedUnit = getWeaponUnit();
+        var unit = firedUnit.getRootParentWeaponUnit();
+        RVP_WeaponOriginDebug.noteDispatchInvocation(this, firedUnit, unit, shooter, aimContexts, chargeScale);
         // 仅允许 TV SACLOS 继承实体锁；普通 SACLOS 只吃实时指定点，不继承锁定实体。
         var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                 && (!data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)

@@ -50,10 +50,14 @@ public class RVP_GPSOverlay {
         if (!RVP_ClientGPSState.isActive()) {
             return;
         }
-        if (!player.level().dimension().location().equals(RVP_ClientGPSState.getDimension())) {
+        if (!RVP_ClientGPSUtil.isGPSBombSelected()) {
             return;
         }
-        Vec3 targetPos = RVP_ClientGPSState.getPos();
+        RVP_ClientGPSState.Point armedPoint = RVP_ClientGPSState.getArmedPoint();
+        if (armedPoint == null || !player.level().dimension().location().equals(armedPoint.dimension())) {
+            return;
+        }
+        Vec3 targetPos = armedPoint.pos();
         Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
         if (screenPos.z <= 0) {
             return;
@@ -69,13 +73,16 @@ public class RVP_GPSOverlay {
         int bx = (int) Math.floor(targetPos.x);
         int by = (int) Math.floor(targetPos.y);
         int bz = (int) Math.floor(targetPos.z);
-        Component line1 = Component.translatable("overlay.ywzj_rvp.gps.distance", (int) dist);
+        Component line1 = Component.literal(RVP_ClientGPSUtil.currentPointTag() + "  " + (int) dist + "m");
         Component line2 = Component.translatable("overlay.ywzj_rvp.gps.coords", bx, by, bz);
+        Component line3 = Component.literal("MODE " + RVP_ClientGPSUtil.currentModeTag() + "  CNT " + RVP_ClientGPSState.getPointCount());
 
         Font font = mc.font;
         int w1 = font.width(line1);
         int w2 = font.width(line2);
+        int w3 = font.width(line3);
         gg.drawString(font, line1, (int) (screenPos.x - w1 / 2f), (int) (screenPos.y + 14), Color.GREEN, true);
         gg.drawString(font, line2, (int) (screenPos.x - w2 / 2f), (int) (screenPos.y + 24), Color.GREEN, true);
+        gg.drawString(font, line3, (int) (screenPos.x - w3 / 2f), (int) (screenPos.y + 34), Color.GREEN, true);
     }
 }

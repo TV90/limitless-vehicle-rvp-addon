@@ -5,6 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.control.InputHandler;
@@ -23,6 +24,10 @@ public class InputHandlerRfStabilizerMixin {
             return;
         }
         WeaponUnit weaponUnit = instance.getWeaponUnit();
+        if (RVP_ClientGPSUtil.tryHandleModeToggleKey(key, scanCode)) {
+            ci.cancel();
+            return;
+        }
         if (RVP_FireControlStabilizerState.tryHandleToggleKey(weaponUnit, key, scanCode)) {
             ci.cancel();
         }

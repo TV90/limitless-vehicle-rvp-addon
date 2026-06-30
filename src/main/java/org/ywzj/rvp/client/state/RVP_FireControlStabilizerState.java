@@ -5,6 +5,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -63,6 +65,11 @@ public final class RVP_FireControlStabilizerState {
     }
 
     private static boolean isEligible(WeaponUnit unit) {
+        if (unit.getCurrentWeapon().isEmpty()
+                || !(unit.getCurrentWeapon().get() instanceof RVP_WeaponBase weapon)
+                || weapon.getData().getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
+            return false;
+        }
         if (unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
             return false;
         }

@@ -7,13 +7,17 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.server.level.ServerPlayer;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CGpsStateSync;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.gps.GPSTarget;
@@ -73,6 +77,22 @@ public final class RVP_ProjectileSpawner {
         }
 
         Vec3 muzzle = RVP_AimContexts.muzzle(aim);
+        RVP_WeaponOriginDebug.noteSpawnInvocation(
+                vehicle,
+                new RVP_WeaponOriginDebug.ResourceRef(
+                        data.getWeaponId() == null ? null : data.getWeaponId().toString(),
+                        kind == null ? "<null>" : kind.name()
+                ),
+                weaponUnit,
+                aim,
+                muzzle,
+                motion,
+                xRot,
+                yRot,
+                includeFireSpread,
+                powerScale,
+                extraSpread
+        );
         projectile.initFromWeapon(data, kind, vehicle, shooter, muzzle,
                 new RVP_BaseBullet.AimRot(xRot, yRot), motion);
         projectile.setShooterWeaponUnit(weaponUnit);
@@ -86,11 +106,20 @@ public final class RVP_ProjectileSpawner {
             projectile.setTargetEntity(lockTarget);
         }
 
-        GPSTarget gps = GPSTargetManager.get(shooter);
+        GPSTarget gps = data.usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                ? GPSTargetManager.consumeAssignedTarget(shooter, level.dimension().location())
+                : null;
         if (gps != null
-                && gps.dimension.equals(level.dimension().location())
+                && gps.dimension().equals(level.dimension().location())
                 && data.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
-            projectile.setTargetPos(gps.pos);
+            projectile.setTargetPos(gps.pos());
+            if (shooter instanceof ServerPlayer player) {
+                RVP_Network.CHANNEL.sendTo(
+                        S2CGpsStateSync.of(GPSTargetManager.snapshot(player)),
+                        player.connection.connection,
+                        net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT
+                );
+            }
         } else {
             Vec3 impact = RVP_AimContexts.impactPoint(aim);
             if (impact != null && projectile.getTargetPos() == null && kind == RVP_EnumWeaponKind.MISSILE) {

@@ -3,8 +3,6 @@ package org.ywzj.rvp.client.state;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
-import org.ywzj.rvp.network.C2SSetGPSTarget;
-import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -30,9 +28,7 @@ public final class RVP_GpsLockInput {
             mc.player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.no_block"), true);
             return true;
         }
-        RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.set(mc.player.level().dimension().location(), target));
-        RVP_ClientGPSState.set(mc.player.level().dimension().location(), target);
-        mc.player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.set_target"), true);
+        RVP_ClientGPSUtil.setGpsTarget(mc.player, mc.player.level().dimension().location(), target);
         return true;
     }
 }
