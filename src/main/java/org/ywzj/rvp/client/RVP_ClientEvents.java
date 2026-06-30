@@ -26,9 +26,11 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
-import org.ywzj.rvp.client.screen.RVP_GPSPanelScreen;
+import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
+import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
@@ -75,6 +77,12 @@ public class RVP_ClientEvents {
         }
 
         RVP_ClientBulletHitDebugState.clientTick();
+        RVP_ClientRemoteAmmoState.clientTick();
+
+        if (mc.level != null) {
+            RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
+            RVP_TacticalMapCache.uploadDirtyTextures();
+        }
 
         while (RVP_Keys.WEAPON_TEST_OVERLAY.consumeClick()) {
             boolean on = org.ywzj.rvp.client.RVP_WeaponTestMode.toggle();
@@ -115,10 +123,7 @@ public class RVP_ClientEvents {
         }
 
         while (RVP_Keys.OPEN_GPS_PANEL.consumeClick()) {
-            if (!RVP_ClientGPSUtil.ensureGPSBombSelected(player)) {
-                continue;
-            }
-            mc.setScreen(new RVP_GPSPanelScreen());
+            mc.setScreen(new RVP_TacticalMapScreen());
         }
 
         RVP_ClientHitlState.tick(mc, player);

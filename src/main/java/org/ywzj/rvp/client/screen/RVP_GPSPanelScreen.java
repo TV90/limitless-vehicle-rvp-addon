@@ -9,14 +9,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
-import org.ywzj.rvp.network.C2SSetGPSTarget;
-import org.ywzj.rvp.network.RVP_Network;
 
 public class RVP_GPSPanelScreen extends Screen {
 
     private EditBox xBox;
     private EditBox yBox;
     private EditBox zBox;
+    private Button modeButton;
 
     public RVP_GPSPanelScreen() {
         super(Component.translatable("gui.ywzj_rvp.gps.title"));
@@ -53,22 +52,36 @@ public class RVP_GPSPanelScreen extends Screen {
         addRenderableWidget(yBox);
         addRenderableWidget(zBox);
 
-        int btnW = 58;
+        int btnW = 54;
         int btnGap = 4;
         int btnY = centerY + 40;
-        int rowW = btnW * 3 + btnGap * 2;
+        int rowW = btnW * 4 + btnGap * 3;
         int leftX = centerX - rowW / 2;
         addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.bind"), b -> bind())
                 .bounds(leftX, btnY, btnW, 20)
                 .build());
 
-        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.clear"), b -> clear())
+        modeButton = addRenderableWidget(Button.builder(modeLabel(), b -> {
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc.player != null) {
+                        RVP_ClientGPSUtil.toggleGpsMode(mc.player);
+                        b.setMessage(modeLabel());
+                    }
+                })
                 .bounds(leftX + btnW + btnGap, btnY, btnW, 20)
                 .build());
 
-        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.cancel"), b -> onClose())
+        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.clear"), b -> clear())
                 .bounds(leftX + (btnW + btnGap) * 2, btnY, btnW, 20)
                 .build());
+
+        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.cancel"), b -> onClose())
+                .bounds(leftX + (btnW + btnGap) * 3, btnY, btnW, 20)
+                .build());
+    }
+
+    private Component modeLabel() {
+        return RVP_ClientGPSState.isMultiMode() ? Component.literal("MULTI") : Component.literal("SINGLE");
     }
 
     private void clear() {
@@ -76,10 +89,10 @@ public class RVP_GPSPanelScreen extends Screen {
         if (mc.player == null) {
             return;
         }
-        if (!RVP_ClientGPSUtil.ensureGPSBombSelected(mc.player)) {
-            return;
-        }
         RVP_ClientGPSUtil.clearGpsTarget(mc.player);
+        if (modeButton != null) {
+            modeButton.setMessage(modeLabel());
+        }
         if (mc.player != null) {
             Vec3 pos = mc.player.position();
             xBox.setValue(String.format("%.2f", pos.x));
@@ -94,18 +107,16 @@ public class RVP_GPSPanelScreen extends Screen {
             onClose();
             return;
         }
-        if (!RVP_ClientGPSUtil.ensureGPSBombSelected(mc.player)) {
-            return;
-        }
         try {
             double x = Double.parseDouble(xBox.getValue().trim());
             double y = Double.parseDouble(yBox.getValue().trim());
             double z = Double.parseDouble(zBox.getValue().trim());
             ResourceLocation dim = mc.player.level().dimension().location();
             Vec3 pos = new Vec3(x, y, z);
-            RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.set(dim, pos));
-            RVP_ClientGPSState.set(dim, pos);
-            mc.player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.set_target"), true);
+            RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, pos);
+            if (modeButton != null) {
+                modeButton.setMessage(modeLabel());
+            }
             onClose();
         } catch (NumberFormatException e) {
             if (mc.player != null) {
@@ -129,6 +140,10 @@ public class RVP_GPSPanelScreen extends Screen {
         this.renderBackground(guiGraphics);
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 70, 0xFFFFFF);
         guiGraphics.drawCenteredString(this.font, Component.translatable("gui.ywzj_rvp.gps.hint"), this.width / 2, this.height / 2 - 58, 0xA0A0A0);
+        String stateLine = "MODE " + RVP_ClientGPSUtil.currentModeTag()
+                + "  |  " + RVP_ClientGPSUtil.currentPointTag()
+                + "  |  CNT " + RVP_ClientGPSState.getPointCount();
+        guiGraphics.drawCenteredString(this.font, stateLine, this.width / 2, this.height / 2 - 46, 0xFFF0DF7A);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 }

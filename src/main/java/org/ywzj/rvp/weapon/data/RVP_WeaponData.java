@@ -22,6 +22,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     /** 是否在 HUD 中显示 MSL 导弹指示器（菱形框+距离）。 */
     @SerializedName("show_msl_indicator")
     private boolean showMslIndicator = false;
+
+    @SerializedName("tactical_map_icon")
+    private String tacticalMapIcon = "";
     private transient RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
 
     /** 子类型标签（如 incendiary），供逻辑分支或显示；非 MCH 迁移字段。 */
@@ -107,6 +110,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isShowMslIndicator() {
         return showMslIndicator;
+    }
+
+    public String getTacticalMapIcon() {
+        return tacticalMapIcon == null ? "" : tacticalMapIcon;
     }
 
     public void setWeaponKind(RVP_EnumWeaponKind weaponKind) {

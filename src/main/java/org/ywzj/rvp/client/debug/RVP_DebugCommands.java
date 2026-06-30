@@ -15,6 +15,7 @@ import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.debug.RVP_AheadDebug;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -114,6 +115,53 @@ public class RVP_DebugCommands {
                                     writeLog(HITBOX_RESOLVE_LOG_PATH, content);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + HITBOX_RESOLVE_LOG_PATH), false);
                                     return vehicle == null ? 0 : 1;
+                                }))
+                        )
+                        .then(Commands.literal("weaponorigin")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_WeaponOriginDebug.clearLog();
+                                    RVP_WeaponOriginDebug.setFireMonitorEnabled(true);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 weaponorigin 开火监控: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_WeaponOriginDebug.setFireMonitorEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 weaponorigin 开火监控: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("verbose")
+                                        .then(Commands.literal("on").executes(ctx -> {
+                                            RVP_WeaponOriginDebug.setVerboseEnabled(true);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 weaponorigin 详细发射链追踪: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                            return 1;
+                                        }))
+                                        .then(Commands.literal("off").executes(ctx -> {
+                                            RVP_WeaponOriginDebug.setVerboseEnabled(false);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 weaponorigin 详细发射链追踪: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                            return 1;
+                                        }))
+                                        .then(Commands.literal("status").executes(ctx -> {
+                                            boolean enabled = RVP_WeaponOriginDebug.isVerboseEnabled();
+                                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] weaponorigin.verbose=" + enabled + " path=" + RVP_WeaponOriginDebug.getLogPath()), false);
+                                            return enabled ? 1 : 0;
+                                        }))
+                                )
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+                                    RVP_WeaponOriginDebug.dumpVehicleSnapshot("command-dump", vehicle);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 weaponorigin 调试日志: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                    return vehicle == null ? 0 : 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_WeaponOriginDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已清空 weaponorigin 调试日志: " + RVP_WeaponOriginDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_WeaponOriginDebug.isFireMonitorEnabled();
+                                    boolean verbose = RVP_WeaponOriginDebug.isVerboseEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] weaponorigin=" + enabled + " verbose=" + verbose + " path=" + RVP_WeaponOriginDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
                                 }))
                         )
                         .then(Commands.literal("custommount")

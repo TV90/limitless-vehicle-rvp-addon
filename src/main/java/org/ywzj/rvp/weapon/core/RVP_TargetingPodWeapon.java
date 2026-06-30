@@ -6,6 +6,8 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CGpsStateSync;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -38,7 +40,12 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
             BlockHitResult blockHit = player.level().clip(new ClipContext(start, end,
                     ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, getVehicle()));
             Vec3 target = blockHit.getType() == HitResult.Type.MISS ? end : blockHit.getLocation();
-            GPSTargetManager.set(player, player.level().dimension().location(), target);
+            var snapshot = GPSTargetManager.applyCurrentMode(player, player.level().dimension().location(), target);
+            RVP_Network.CHANNEL.sendTo(
+                    S2CGpsStateSync.of(snapshot),
+                    player.connection.connection,
+                    net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT
+            );
         }
         return true;
     }
