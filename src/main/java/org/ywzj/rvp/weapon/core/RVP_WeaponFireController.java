@@ -29,6 +29,7 @@ public final class RVP_WeaponFireController {
     private boolean lastFireDown;
     private boolean lastPressed;
     private boolean lastReleased;
+    private boolean programmaticShotQueued;
 
     public RVP_WeaponFireController(RVP_WeaponBase weapon) {
         this.weapon = weapon;
@@ -47,6 +48,7 @@ public final class RVP_WeaponFireController {
         lastFireDown = false;
         lastPressed = false;
         lastReleased = false;
+        programmaticShotQueued = false;
         weapon.setChargeTick(0);
     }
 
@@ -128,6 +130,10 @@ public final class RVP_WeaponFireController {
         if (weapon.isReloading() || !weapon.hasAmmo()) {
             return false;
         }
+        if (programmaticShotQueued) {
+            programmaticShotQueued = false;
+            return !weapon.isCoolingDown();
+        }
         RVP_FireData fire = weapon.getData().getFireData();
         return switch (mode()) {
             case FULL_AUTO -> lastFireDown && !weapon.isCoolingDown();
@@ -137,6 +143,11 @@ public final class RVP_WeaponFireController {
             case MINIGUN -> lastFireDown && spinTick >= fire.getChargeTime() && !weapon.isCoolingDown();
             case RAILGUN -> railgunCharging && railgunChargeTick >= fire.getChargeTime() && !weapon.isCoolingDown();
         };
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    public void queueProgrammaticShot() {
+        programmaticShotQueued = true;
     }
 
     /**
