@@ -72,7 +72,7 @@ public final class RVP_RemoteAmmoSyncService {
                 bullet.getWeaponKind(),
                 classify(player, bullet),
                 isGpsAmmo(bullet),
-                bullet.getFlightSpeed() * 72.0,
+                bullet.getCurrentSpeed() * 72.0,
                 bullet.getX(),
                 bullet.getY(),
                 bullet.getZ(),

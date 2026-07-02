@@ -51,6 +51,11 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         return displayOptional.map(display -> display.getSoundEvents().get("charge")).orElse(null);
     }
 
+    @OnlyIn(Dist.CLIENT)
+    public void queueProgrammaticShot() {
+        fireController.queueProgrammaticShot();
+    }
+
     @Override
     @OnlyIn(Dist.CLIENT)
     public boolean doClientShoot() {
