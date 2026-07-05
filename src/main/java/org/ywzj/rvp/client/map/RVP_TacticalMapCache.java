@@ -14,6 +14,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.storage.LevelResource;
 import org.ywzj.rvp.RVP_MOD;
 import org.slf4j.Logger;
 
@@ -45,6 +46,9 @@ public final class RVP_TacticalMapCache {
     private static final int TILE_SIZE_BITS = 8;
     private static final String CACHE_ROOT = "ywzj_rvp_tactical_map";
     private static final Pattern TILE_FILE_PATTERN = Pattern.compile("tile_(-?\\d+)_(-?\\d+)\\.png");
+    private static final String SINGLEPLAYER_PREFIX = "sp_";
+    private static final String MULTIPLAYER_PREFIX = "mp_";
+    private static final String SESSION_PREFIX = "session_";
 
     private static final Queue<LevelChunk> PENDING_CHUNKS = new ArrayDeque<>();
     private static final Map<TilePos, NativeImage> TILE_IMAGES = new HashMap<>();
@@ -62,7 +66,7 @@ public final class RVP_TacticalMapCache {
         if (!(level instanceof ClientLevel clientLevel)) {
             return;
         }
-        String nextWorldKey = resolveWorldKey();
+        String nextWorldKey = resolveWorldKey(clientLevel);
         ResourceLocation nextDimension = clientLevel.dimension().location();
         if (Objects.equals(currentWorldKey, nextWorldKey) && Objects.equals(currentDimension, nextDimension)) {
             return;
@@ -70,8 +74,12 @@ public final class RVP_TacticalMapCache {
         clear();
         currentWorldKey = nextWorldKey;
         currentDimension = nextDimension;
-        currentCacheDirectory = resolveCacheDirectory(nextWorldKey, nextDimension);
-        loadPersistedState();
+        currentCacheDirectory = isPersistentWorldKey(nextWorldKey)
+                ? resolveCacheDirectory(nextWorldKey, nextDimension)
+                : null;
+        if (currentCacheDirectory != null) {
+            loadPersistedState();
+        }
     }
 
     public static void queueChunkUpdate(LevelChunk chunk) {
@@ -283,16 +291,24 @@ public final class RVP_TacticalMapCache {
                 .resolve(sanitizeKey(dimension.toString()));
     }
 
-    private static String resolveWorldKey() {
+    private static String resolveWorldKey(ClientLevel clientLevel) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.getSingleplayerServer() != null) {
-            return "sp_" + sanitizeKey(mc.getSingleplayerServer().getWorldData().getLevelName());
+            Path worldRoot = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+            Path fileName = worldRoot.getFileName();
+            String worldLabel = fileName != null ? sanitizeKey(fileName.toString()) : "world";
+            String worldHash = Integer.toHexString(worldRoot.toString().hashCode());
+            return SINGLEPLAYER_PREFIX + worldLabel + "_" + worldHash;
         }
         ServerData currentServer = mc.getCurrentServer();
         if (currentServer != null && currentServer.ip != null && !currentServer.ip.isBlank()) {
-            return "mp_" + sanitizeKey(currentServer.ip);
+            return MULTIPLAYER_PREFIX + sanitizeKey(currentServer.ip);
         }
-        return "unknown";
+        return SESSION_PREFIX + Integer.toHexString(System.identityHashCode(clientLevel));
+    }
+
+    private static boolean isPersistentWorldKey(String worldKey) {
+        return worldKey.startsWith(SINGLEPLAYER_PREFIX) || worldKey.startsWith(MULTIPLAYER_PREFIX);
     }
 
     private static String sanitizeKey(String raw) {

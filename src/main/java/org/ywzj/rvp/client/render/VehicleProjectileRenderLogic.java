@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.WeakHashMap;
 
+import static org.ywzj.vehicle.client.render.animation.util.PoseBlenders.BLENDER;
+
 /**
  * Same draw rules as {@link org.ywzj.vehicle.client.render.entity.weapon} projectile renderers,
  * for {@link AmmoEntity} / {@link RVP_BulletEntity} (no cast to {@link org.ywzj.vehicle.entity.weapon.BulletEntity}).
@@ -87,11 +89,17 @@ final class VehicleProjectileRenderLogic {
         if (texture == null) {
             texture = fallbackTexture;
         }
+        var runner = ammo.getAnimationRunner();
+        if (runner != null) {
+            runner.tick();
+            model.applyPose(BLENDER.blend(model.getBindPose(), runner.evaluate()));
+        }
         model.renderToBuffer(poseStack, bufferSource,
                 RenderType.entityCutout(texture),
                 BedrockModelRenderTypes.polyMeshCutout(texture),
                 packedLight,
                 OverlayTexture.pack(0f, false));
+        model.applyPose(model.getBindPose());
         poseStack.popPose();
     }
 

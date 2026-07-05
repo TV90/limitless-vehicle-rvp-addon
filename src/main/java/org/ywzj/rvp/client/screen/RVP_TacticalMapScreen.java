@@ -11,7 +11,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.renderer.GameRenderer;
@@ -104,6 +103,13 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final int QUICK_FIRE_LOCK_STABLE_TICKS = 2;
     private static final int QUICK_FIRE_RETRY_INTERVAL_TICKS = 2;
     private static final int IMPACT_CROSS_LIFE_TICKS = 20;
+    private static final int GPS_SECTION_GAP = 6;
+    private static final int GPS_SUMMARY_HEIGHT = 46;
+    private static final int GPS_CONTROLS_HEIGHT = 112;
+    private static final int GPS_TARGET_HEIGHT = 56;
+    private static final int GPS_FIELD_HEIGHT = 16;
+    private static final int GPS_FIELD_LABEL_GAP = 3;
+    private static final int GPS_FIELD_INNER_GAP = 8;
 
     private enum SidebarMode {
         NONE,
@@ -194,8 +200,8 @@ public class RVP_TacticalMapScreen extends Screen {
     private EditBox xBox;
     private EditBox yBox;
     private EditBox zBox;
-    private Button bindButton;
-    private Button clearButton;
+    private TerminalButton bindButton;
+    private TerminalButton clearButton;
     private TerminalButton centerButton;
     private TerminalButton followButton;
     private TerminalButton weaponDropdownButton;
@@ -275,9 +281,9 @@ public class RVP_TacticalMapScreen extends Screen {
         int boxHeight = 16;
         int compactToolbarHeight = 14;
 
-        xBox = new EditBox(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.x"));
-        yBox = new EditBox(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.y"));
-        zBox = new EditBox(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.z"));
+        xBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.x"));
+        yBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.y"));
+        zBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.z"));
         xBox.setMaxLength(32);
         yBox.setMaxLength(32);
         zBox.setMaxLength(32);
@@ -288,12 +294,20 @@ public class RVP_TacticalMapScreen extends Screen {
         addRenderableWidget(zBox);
 
         int buttonWidth = 72;
-        bindButton = addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.bind"), b -> bindGps())
-                .bounds(0, 0, buttonWidth, 16)
-                .build());
-        clearButton = addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.clear"), b -> clearGps())
-                .bounds(0, 0, buttonWidth, 16)
-                .build());
+        bindButton = addRenderableWidget(new TerminalButton(
+                0, 0, buttonWidth, 16,
+                Component.translatable("gui.ywzj_rvp.gps.bind"),
+                this::bindGps,
+                () -> false,
+                () -> GPS_ICON_COLOR
+        ));
+        clearButton = addRenderableWidget(new TerminalButton(
+                0, 0, buttonWidth, 16,
+                Component.translatable("gui.ywzj_rvp.gps.clear"),
+                this::clearGps,
+                () -> false,
+                () -> GPS_ICON_COLOR
+        ));
         centerButton = addRenderableWidget(new TerminalButton(
                 0, 0, 44, compactToolbarHeight,
                 Component.translatable("gui.ywzj_rvp.tactical_map.btn.center"),
@@ -484,27 +498,29 @@ public class RVP_TacticalMapScreen extends Screen {
             return;
         }
 
-        int contentX = sideLeft + 10;
-        int columnsWidth = sideRight - contentX - 10;
-        int gap = 4;
-        int rowY = mapTop + 74;
-        int fieldWidth = Math.max(56, Math.min(68, (columnsWidth - gap) / 2));
-        int rightColumnX = contentX + fieldWidth + gap;
-        xBox.setPosition(contentX, rowY);
+        int sectionX = sidePanelContentX();
+        int sectionWidth = sidePanelContentWidth();
+        int fieldsX = sectionX + 8;
+        int fieldsWidth = Math.max(96, sectionWidth - 16);
+        int columnGap = GPS_FIELD_INNER_GAP;
+        int fieldWidth = Math.max(60, (fieldsWidth - columnGap) / 2);
+        int rowY = gpsControlsSectionY() + 25 + 8 + GPS_FIELD_LABEL_GAP;
+        int rightColumnX = fieldsX + fieldWidth + columnGap;
+        xBox.setPosition(fieldsX, rowY);
         xBox.setWidth(fieldWidth);
         yBox.setPosition(rightColumnX, rowY);
         yBox.setWidth(fieldWidth);
-        zBox.setPosition(contentX, rowY + xBox.getHeight() + gap);
-        zBox.setWidth(fieldWidth);
+        zBox.setPosition(fieldsX, rowY + GPS_FIELD_HEIGHT + 17);
+        zBox.setWidth(fieldsWidth);
 
-        int actionY = zBox.getY() + zBox.getHeight() + 5;
-        int buttonWidth = Math.max(52, fieldWidth - 6);
-        bindButton.setPosition(contentX + (fieldWidth - buttonWidth) / 2, actionY);
+        int actionY = zBox.getY() + zBox.getHeight() + 8;
+        int buttonWidth = Math.max(62, (fieldsWidth - columnGap) / 2);
+        bindButton.setPosition(fieldsX, actionY);
         bindButton.setWidth(buttonWidth);
-        clearButton.setPosition(rightColumnX + (fieldWidth - buttonWidth) / 2, actionY);
+        clearButton.setPosition(fieldsX + buttonWidth + columnGap, actionY);
         clearButton.setWidth(buttonWidth);
-        radarHideFriendlyButton.setPosition(contentX, mapTop + 26);
-        radarHideFriendlyButton.setWidth(Math.min(94, Math.max(72, columnsWidth)));
+        radarHideFriendlyButton.setPosition(fieldsX, mapTop + 26);
+        radarHideFriendlyButton.setWidth(Math.min(94, Math.max(72, fieldsWidth)));
     }
 
     private void refreshSidebarWidgets() {
@@ -1574,7 +1590,7 @@ public class RVP_TacticalMapScreen extends Screen {
         }
 
         @Override
-        protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
             int bg = isHoveredOrFocused() ? 0xE81A1F2A : 0xD8111720;
             int border = toggled.getAsBoolean() ? accentColor.getAsInt() : 0x8842556E;
             guiGraphics.fill(getX(), getY(), getX() + width, getY() + height, bg);
@@ -1613,6 +1629,31 @@ public class RVP_TacticalMapScreen extends Screen {
 
         @Override
         protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
+        }
+    }
+
+    private static final class TerminalTextField extends EditBox {
+
+        private TerminalTextField(net.minecraft.client.gui.Font font, int x, int y, int width, int height, Component message) {
+            super(font, x, y, width, height, message);
+            setBordered(false);
+            setTextColor(0xFFEAF2FB);
+            setTextColorUneditable(0xFF93A6BA);
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+            if (!this.visible) {
+                return;
+            }
+            int border = this.isFocused() ? GPS_ICON_COLOR : 0xAA42556E;
+            int bg = this.isFocused() ? 0xF0121821 : 0xD8111720;
+            guiGraphics.fill(getX(), getY(), getX() + this.width, getY() + this.height, bg);
+            guiGraphics.fill(getX(), getY(), getX() + this.width, getY() + 1, border);
+            guiGraphics.fill(getX(), getY(), getX() + 1, getY() + this.height, border);
+            guiGraphics.fill(getX(), getY() + this.height - 1, getX() + this.width, getY() + this.height, 0x8842556E);
+            guiGraphics.fill(getX() + this.width - 1, getY(), getX() + this.width, getY() + this.height, 0x8842556E);
+            super.renderWidget(guiGraphics, mouseX, mouseY, partialTick);
         }
     }
 
@@ -1818,14 +1859,17 @@ public class RVP_TacticalMapScreen extends Screen {
         int x = sidePanelContentX();
         int width = sidePanelContentWidth();
         int y = sidePanelTitleY();
-        int titleHeight = sidePanelTitleHeight();
-        int textWidth = Math.max(88, width - 10);
+        int textWidth = Math.max(88, width - 14);
         drawSidePanelTitle(guiGraphics, x, y, width, Component.translatable("gui.ywzj_rvp.gps.title"), GPS_ICON_COLOR);
 
-        int summaryY = y + titleHeight + 6;
-        int summaryBottom = Math.max(summaryY + 42, xBox.getY() - 10);
-        drawSidePanelSection(guiGraphics, x, summaryY, width, summaryBottom - summaryY, 0xFF7C96B2);
-        int textX = x + 5;
+        int summaryY = gpsSummarySectionY();
+        int controlsY = gpsControlsSectionY();
+        int targetY = gpsTargetSectionY();
+        drawSidePanelSection(guiGraphics, x, summaryY, width, GPS_SUMMARY_HEIGHT, 0xFF7C96B2);
+        drawSidePanelSection(guiGraphics, x, controlsY, width, GPS_CONTROLS_HEIGHT, 0xFF6B86A2);
+        drawSidePanelSection(guiGraphics, x, targetY, width, GPS_TARGET_HEIGHT, 0xFF4E6D91);
+
+        int textX = x + 6;
         int textY = summaryY + 5;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.status"), textX, textY, 0xFF9CA9B8, false);
         textY += 9;
@@ -1843,15 +1887,12 @@ public class RVP_TacticalMapScreen extends Screen {
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.remote_count",
                 LocalVehiclePlayer.instance.serverEntities.size()), textX, textY, 0xFFE6EDF6, false);
 
-        int controlsY = summaryBottom + 6;
-        int controlsBottom = bindButton.getY() + bindButton.getHeight() + 8;
-        drawSidePanelSection(guiGraphics, x, controlsY, width, controlsBottom - controlsY, 0xFF6B86A2);
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.gps.title"), textX, controlsY + 5, 0xFFFFFFFF, false);
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_current"), textX, controlsY + 5, 0xFFFFFFFF, false);
         guiGraphics.drawString(this.font, followLabel(), textX, controlsY + 14, 0xFF9CA9B8, false);
+        drawGpsFieldLabel(guiGraphics, "X", xBox.getX(), controlsY + 25);
+        drawGpsFieldLabel(guiGraphics, "Y", yBox.getX(), controlsY + 25);
+        drawGpsFieldLabel(guiGraphics, "Z", zBox.getX(), zBox.getY() - 10);
 
-        int targetY = controlsBottom + 6;
-        int targetBottom = Math.min(mapBottom - 8, targetY + 38);
-        drawSidePanelSection(guiGraphics, x, targetY, width, targetBottom - targetY, 0xFF4E6D91);
         int targetTextY = targetY + 5;
         String hint = this.font.plainSubstrByWidth(Component.translatable("gui.ywzj_rvp.gps.hint").getString(), textWidth);
         guiGraphics.drawString(this.font, hint, textX, targetTextY, 0xFF9CA9B8, false);
@@ -1875,6 +1916,10 @@ public class RVP_TacticalMapScreen extends Screen {
         } else {
             guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_none"), textX, targetTextY, 0xFF9CA9B8, false);
         }
+    }
+
+    private void drawGpsFieldLabel(GuiGraphics guiGraphics, String label, int x, int y) {
+        guiGraphics.drawString(this.font, label, x + 1, y, 0xFFB8CADB, false);
     }
 
     private void renderRadarSidePanel(GuiGraphics guiGraphics) {
@@ -2483,6 +2528,18 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private int sidePanelTitleHeight() {
         return 14;
+    }
+
+    private int gpsSummarySectionY() {
+        return sidePanelTitleY() + sidePanelTitleHeight() + GPS_SECTION_GAP;
+    }
+
+    private int gpsControlsSectionY() {
+        return gpsSummarySectionY() + GPS_SUMMARY_HEIGHT + GPS_SECTION_GAP;
+    }
+
+    private int gpsTargetSectionY() {
+        return gpsControlsSectionY() + GPS_CONTROLS_HEIGHT + GPS_SECTION_GAP;
     }
 
     private void drawSidePanelTitle(GuiGraphics guiGraphics, int x, int y, int width, Component title, int accentColor) {
