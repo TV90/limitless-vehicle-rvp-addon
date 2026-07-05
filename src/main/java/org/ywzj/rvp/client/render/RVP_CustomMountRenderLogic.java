@@ -168,7 +168,26 @@ public final class RVP_CustomMountRenderLogic {
                 continue;
             }
 
-            applyAttachmentPose(attachmentModel, resolved.shouldHideMissile() ? config.missileBones() : List.of());
+            // 计算需要隐藏的骨骼：rack_bones 全显/全隐，missile_bones 逐枚隐藏
+            List<String> hiddenRackBones = resolved.shouldHideMissile() ? config.rackBones() : List.of();
+            List<PartiallyHiddenBone> partiallyHiddenMissiles = null;
+            if (config.missileBones().size() > 1) {
+                // 多枚导弹模式：逐枚隐藏
+                int visibleCount = resolved.visibleMissileCount();
+                partiallyHiddenMissiles = new ArrayList<>(config.missileBones().size());
+                for (int bi = 0; bi < config.missileBones().size(); bi++) {
+                    // missile_bones 按顺序对应弹药发射顺序：index 0 先发射先隐藏
+                    boolean visible = bi < visibleCount;
+                    partiallyHiddenMissiles.add(new PartiallyHiddenBone(config.missileBones().get(bi), visible));
+                }
+            } else {
+                // 单枚导弹模式：保持原有全显/全隐
+                if (resolved.shouldHideMissile()) {
+                    hiddenRackBones = new ArrayList<>(hiddenRackBones);
+                    hiddenRackBones.addAll(config.missileBones());
+                }
+            }
+            applyAttachmentPose(attachmentModel, hiddenRackBones, partiallyHiddenMissiles);
             if (DEBUG_ENABLED.get()) {
                 noteRenderPose(vehicle, resolved);
             }
@@ -349,8 +368,18 @@ public final class RVP_CustomMountRenderLogic {
         });
     }
 
-    private static void applyAttachmentPose(VehicleBedrockModel model, List<String> hiddenBones) {
-        if (hiddenBones.isEmpty()) {
+    /**
+     * 应用挂架模型的骨骼姿态。
+     *
+     * @param model              挂架模型
+     * @param hiddenBones        需要完全隐藏的骨骼列表（全显/全隐模式）
+     * @param partiallyHiddenBones 需要逐枚隐藏的导弹骨骼及其可见数量；
+     *                            为 null 或空时使用 hiddenBones 的全显/全隐逻辑
+     */
+    private static void applyAttachmentPose(VehicleBedrockModel model,
+                                            List<String> hiddenBones,
+                                            @Nullable List<PartiallyHiddenBone> partiallyHiddenBones) {
+        if (hiddenBones.isEmpty() && (partiallyHiddenBones == null || partiallyHiddenBones.isEmpty())) {
             model.applyPose(model.getBindPose());
             return;
         }
@@ -358,9 +387,19 @@ public final class RVP_CustomMountRenderLogic {
         for (String boneName : hiddenBones) {
             helper.hideBone(boneName);
         }
+        if (partiallyHiddenBones != null) {
+            for (PartiallyHiddenBone phb : partiallyHiddenBones) {
+                if (!phb.visible()) {
+                    helper.hideBone(phb.boneName());
+                }
+            }
+        }
         Pose pose = BLENDER.blend(model.getBindPose(), helper.build());
         model.applyPose(pose);
     }
+
+    /** 单枚导弹骨骼的可见性记录。 */
+    private record PartiallyHiddenBone(String boneName, boolean visible) {}
 
     private static Matrix4f getFullBoneTransform(BedrockBone targetBone) {
         Matrix4f matrix = VehicleBedrockModel.getGlobalTransform(targetBone);
@@ -370,6 +409,29 @@ public final class RVP_CustomMountRenderLogic {
         return matrix;
     }
 
+    /**
+     * 根据总剩余弹药数为每个挂架分配可见导弹数量。
+     *
+     * <p>对于单枚导弹挂架（{@code missileBones.size() <= 1}），保持原有逻辑：
+     * {@code hideMissile = visibleAmmo <= 0 || visibleAmmo < slot}。</p>
+     *
+     * <p>对于多枚导弹挂架（{@code missileBones.size() > 1}），按如下规则分配：
+     * <ul>
+     *   <li>每个挂架的弹药起始偏移 = {@code (ammoSlot - 1) × missileBones.size()}</li>
+     *   <li>该挂架可见导弹数 = {@code max(0, min(missileBones.size(), visibleAmmo - offset))}</li>
+     * </ul>
+     * 例如 AASM 三联挂架：2 个挂架 × 3 枚导弹 = 6 发总弹药
+     * <ul>
+     *   <li>ammo=6 → 挂架1=3, 挂架2=3</li>
+     *   <li>ammo=5 → 挂架1=3, 挂架2=2</li>
+     *   <li>ammo=4 → 挂架1=3, 挂架2=1</li>
+     *   <li>ammo=3 → 挂架1=3, 挂架2=0</li>
+     *   <li>ammo=2 → 挂架1=2, 挂架2=0</li>
+     *   <li>ammo=1 → 挂架1=1, 挂架2=0</li>
+     *   <li>ammo=0 → 挂架1=0, 挂架2=0</li>
+     * </ul>
+     * </p>
+     */
     private static void assignAmmoVisibility(List<ResolvedMount> mounts) {
         mounts.sort(Comparator
                 .comparingInt((ResolvedMount mount) -> mount.config().ammoSlot() > 0 ? mount.config().ammoSlot() : Integer.MAX_VALUE)
@@ -378,9 +440,21 @@ public final class RVP_CustomMountRenderLogic {
         for (int i = 0; i < mounts.size(); i++) {
             ResolvedMount mount = mounts.get(i);
             int slot = mount.config().ammoSlot() > 0 ? mount.config().ammoSlot() : fallbackSlot++;
-            boolean hideMissile = mount.visibleAmmo() <= 0 || mount.visibleAmmo() < slot;
-            mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
-                    mount.predictedAmmo(), slot, hideMissile));
+            int missileCount = mount.config().missileBones().size();
+
+            if (missileCount <= 1) {
+                // 单枚导弹模式：保持原有逻辑
+                boolean hideMissile = mount.visibleAmmo() <= 0 || mount.visibleAmmo() < slot;
+                mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
+                        mount.predictedAmmo(), slot, hideMissile));
+            } else {
+                // 多枚导弹模式：计算该挂架上可见导弹数量
+                int offset = (slot - 1) * missileCount;
+                int visibleOnThisPylon = Math.max(0, Math.min(missileCount, mount.visibleAmmo() - offset));
+                boolean hideMissile = visibleOnThisPylon <= 0;
+                mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
+                        mount.predictedAmmo(), slot, hideMissile, visibleOnThisPylon));
+            }
         }
     }
 
@@ -397,11 +471,23 @@ public final class RVP_CustomMountRenderLogic {
 
     private static void noteRenderPose(AbstractVehicle vehicle, ResolvedMount mount) {
         String key = debugKey(vehicle, mount) + "|pose";
-        String hiddenBones = mount.shouldHideMissile() ? mount.config().missileBones().toString() : "[]";
+        String hiddenBones;
+        if (mount.config().missileBones().size() > 1) {
+            List<String> hidden = new ArrayList<>();
+            for (int i = 0; i < mount.config().missileBones().size(); i++) {
+                if (i >= mount.visibleMissileCount()) {
+                    hidden.add(mount.config().missileBones().get(i));
+                }
+            }
+            hiddenBones = hidden.toString();
+        } else {
+            hiddenBones = mount.shouldHideMissile() ? mount.config().missileBones().toString() : "[]";
+        }
         String state = "render vehicle=" + vehicle.getVehicleId()
                 + " partUnit=" + mount.config().partUnitId()
                 + " attachPart=" + mount.config().attachPartUnitId()
                 + " weapon=" + mount.config().weaponId()
+                + " visibleMissileCount=" + mount.visibleMissileCount()
                 + " hiddenBones=" + hiddenBones;
         String previous = LAST_DEBUG_STATES.put(key, state);
         if (!state.equals(previous)) {
@@ -425,6 +511,7 @@ public final class RVP_CustomMountRenderLogic {
                 + " predictedAmmo=" + (mount.predictedAmmo() == null ? "<none>" : mount.predictedAmmo())
                 + " visibleAmmo=" + mount.visibleAmmo()
                 + " hideMissile=" + mount.shouldHideMissile()
+                + " visibleMissileCount=" + mount.visibleMissileCount()
                 + " missileBones=" + mount.config().missileBones();
     }
 
@@ -448,7 +535,20 @@ public final class RVP_CustomMountRenderLogic {
                                  int visibleAmmo,
                                  @Nullable Integer predictedAmmo,
                                  int ammoSlot,
-                                 boolean shouldHideMissile) {}
+                                 boolean shouldHideMissile,
+                                 int visibleMissileCount) {
+
+        /** 兼容旧调用点的便利构造器（单枚导弹模式，shouldHideMissile 与 visibleMissileCount 一致）。 */
+        ResolvedMount(RVP_CustomMountConfig config,
+                      int syncedAmmo,
+                      int visibleAmmo,
+                      @Nullable Integer predictedAmmo,
+                      int ammoSlot,
+                      boolean shouldHideMissile) {
+            this(config, syncedAmmo, visibleAmmo, predictedAmmo, ammoSlot,
+                    shouldHideMissile, shouldHideMissile ? 0 : 1);
+        }
+    }
 
     private record VisibleAmmo(int syncedAmmo, int visibleAmmo, @Nullable Integer predictedAmmo) {}
 

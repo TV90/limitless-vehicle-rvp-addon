@@ -53,7 +53,7 @@ RVP 扩展武器数据包路径：
 | `model` | 外挂整体模型 ID（Bedrock 模型）。建议把“挂架 + 导弹”做到同一个模型里。 |
 | `texture` | 外挂整体贴图。 |
 | `rack_bones` | 挂架骨骼列表。当前主要用于配置可读性与后续扩展，建议如实填写。 |
-| `missile_bones` | 导弹/弹药骨骼列表。当对应武器剩余弹药 `<= 0` 时，RVP 会隐藏这些骨骼，仅保留挂架显示。 |
+| `missile_bones` | 导弹/弹药骨骼列表。支持两种模式：（1）**单枚导弹**（列表长度 ≤ 1）：弹药耗尽时隐藏该骨骼，保留挂架；（2）**多枚导弹**（列表长度 > 1）：弹药按列表顺序逐枚消耗并逐枚隐藏，见下方"多枚导弹逐枚隐藏"小节。 |
 | `replace_weapon_display` | 是否替代本体默认武器显示。默认 `true`；开启后，匹配到本条配置时会抑制 `WeaponUnit.render()` 的默认武器模型渲染，避免外挂模型与默认导弹模型重叠。 |
 | `ammo_slot` | 可选的弹药槽位序号（从 1 开始）。当同一个 `part_unit_id + weapon_id` 配了多条外挂时，RVP 会按 `remainAmmo` 与 `ammo_slot` 比较来决定哪些挂点的导弹继续显示。未填写时按 `rvp_custom_mounts` 的书写顺序自动分配。 |
 | `offset` | 外挂模型相对挂点骨骼的平移偏移 `[x, y, z]`，单位与载具渲染坐标一致（方块）。 |
@@ -66,6 +66,58 @@ RVP 扩展武器数据包路径：
 - 触发条件是“当前武器站选中的具体武器 ID”匹配 `weapon_id`，因此适合给 J15/J16 这类“同一挂点可切换不同挂载”的飞机做可变外挂。
 - 当 `replace_weapon_display=true` 且匹配成功时，默认武器显示会被抑制；未匹配到配置的武器仍按本体默认方式渲染。
 - 当同一 `part_unit_id + weapon_id` 存在多条配置时，RVP 会按 `ammo_slot`（或列表顺序）与 `remainAmmo` 对比，超出剩余弹药数的挂点会隐藏 `missile_bones`，从而实现多挂点逐枚消失。
+
+### 多枚导弹逐枚隐藏
+
+当 `missile_bones` 列表包含多个骨骼时（如 `["missile1", "missile2", "missile3"]`），RVP 会按弹药消耗顺序逐枚隐藏，而非全显/全隐。
+
+**适用场景**：单挂架挂载多枚同型弹药（如 AASM 三联挂架、火箭巢等）。
+
+**运行规则：**
+
+- `missile_bones` 列表中的骨骼按**索引顺序**对应弹药发射顺序：index 0 的导弹最先发射、最先隐藏。
+- 每个挂架的可见导弹数 = `max(0, min(missileBones.size(), visibleAmmo - (ammoSlot - 1) × missileBones.size()))`。
+- 挂架本身（`rack_bones`/`pylon`）在所有弹药打空前始终显示；弹药全部打空后挂架也隐藏。
+- 单枚导弹模式（`missile_bones.size() <= 1`）不受影响，保持原有全显/全隐逻辑。
+
+**配置示例 — AASM 三联挂架 × 2 = 6 发总弹药：**
+
+```json
+"rvp_custom_mounts": [
+  {
+    "part_unit_id": "variable_agm",
+    "attach_part_unit_id": "variable_agm_mount_1",
+    "weapon_id": "rvp:rafale_aasm_ir",
+    "model": "rvp:entity/weapon_mount_aasm",
+    "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
+    "rack_bones": ["pylon"],
+    "missile_bones": ["missile1", "missile2", "missile3"],
+    "ammo_slot": 1
+  },
+  {
+    "part_unit_id": "variable_agm",
+    "attach_part_unit_id": "variable_agm_mount_2",
+    "weapon_id": "rvp:rafale_aasm_ir",
+    "model": "rvp:entity/weapon_mount_aasm",
+    "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
+    "rack_bones": ["pylon"],
+    "missile_bones": ["missile1", "missile2", "missile3"],
+    "ammo_slot": 2
+  }
+]
+```
+
+**弹药消耗效果：**
+
+| 剩余弹药 | 挂架1（slot=1） | 挂架2（slot=2） |
+| --- | --- | --- |
+| 6 | ✅✅✅ | ✅✅✅ |
+| 5 | ✅✅✅ | ✅✅❌ |
+| 4 | ✅✅✅ | ✅❌❌ |
+| 3 | ✅✅✅ | ❌❌❌ |
+| 2 | ✅✅❌ | ❌❌❌ |
+| 1 | ✅❌❌ | ❌❌❌ |
+| 0 | ❌❌❌ | ❌❌❌ |
 
 ### `rvp_structure_bolt_bones` 多结构挂点聚合（WeaponUnit 扩展）
 
