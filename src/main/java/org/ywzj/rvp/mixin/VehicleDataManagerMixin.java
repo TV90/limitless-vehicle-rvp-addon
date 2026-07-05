@@ -12,11 +12,14 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
+import org.ywzj.rvp.config.RVP_DeployableUavConfig;
+import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -39,6 +42,7 @@ public class VehicleDataManagerMixin {
                                           ProfilerFiller profiler,
                                           CallbackInfo ci) {
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
+        RVP_DeployableUavConfigCache.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -50,10 +54,16 @@ public class VehicleDataManagerMixin {
                 if (!uiPreset.isEmpty()) {
                     VehicleUIPresetCache.put(vehicleId, uiPreset);
                 }
+                VehicleUIPresetCache.putNctrName(vehicleId, GsonHelper.getAsString(obj, "nctr_name", "?"));
 
                 // show_skeleton（观瞄时骨骼俯视图，默认 true）
                 VehicleUIPresetCache.putShowSkeleton(vehicleId,
                         GsonHelper.getAsBoolean(obj, "show_skeleton", true));
+
+                RVP_DeployableUavConfig deployableUavConfig = ywzj_rvp$parseDeployableUavConfig(obj);
+                if (deployableUavConfig.isConfigured()) {
+                    RVP_DeployableUavConfigCache.put(vehicleId, deployableUavConfig);
+                }
 
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
                 List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
@@ -113,6 +123,56 @@ public class VehicleDataManagerMixin {
                 animationPartIds,
                 spawnPartId,
                 GsonHelper.getAsBoolean(apsObj, "exclude_owner_projectile", true)
+        );
+    }
+
+    private static RVP_DeployableUavConfig ywzj_rvp$parseDeployableUavConfig(JsonObject vehicleObj) {
+        boolean enabled = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_enabled", false);
+        if (!enabled) {
+            return RVP_DeployableUavConfig.DISABLED;
+        }
+
+        ResourceLocation vehicleId = ResourceLocation.tryParse(
+                GsonHelper.getAsString(vehicleObj, "deployable_uav_vehicle_id", "")
+        );
+        if (vehicleId == null) {
+            return RVP_DeployableUavConfig.DISABLED;
+        }
+
+        String role = GsonHelper.getAsString(vehicleObj, "deployable_uav_role", "uav");
+        String spawnYawMode = GsonHelper.getAsString(vehicleObj, "deployable_uav_spawn_yaw_mode", "parent");
+        boolean singleInstance = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_single_instance", true);
+        boolean allowControlSwitch = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_allow_control_switch", true);
+        boolean autoLinkDatalink = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_link_datalink", true);
+
+        Vec3 spawnOffset = Vec3.ZERO;
+        if (vehicleObj.has("deployable_uav_spawn_offset")) {
+            JsonElement offsetElement = vehicleObj.get("deployable_uav_spawn_offset");
+            if (offsetElement.isJsonObject()) {
+                JsonObject offsetObj = offsetElement.getAsJsonObject();
+                spawnOffset = new Vec3(
+                        GsonHelper.getAsDouble(offsetObj, "x", 0.0),
+                        GsonHelper.getAsDouble(offsetObj, "y", 0.0),
+                        GsonHelper.getAsDouble(offsetObj, "z", 0.0)
+                );
+            } else if (offsetElement.isJsonArray() && offsetElement.getAsJsonArray().size() >= 3) {
+                spawnOffset = new Vec3(
+                        offsetElement.getAsJsonArray().get(0).getAsDouble(),
+                        offsetElement.getAsJsonArray().get(1).getAsDouble(),
+                        offsetElement.getAsJsonArray().get(2).getAsDouble()
+                );
+            }
+        }
+
+        return new RVP_DeployableUavConfig(
+                true,
+                vehicleId,
+                role,
+                spawnOffset,
+                spawnYawMode,
+                singleInstance,
+                allowControlSwitch,
+                autoLinkDatalink
         );
     }
 }

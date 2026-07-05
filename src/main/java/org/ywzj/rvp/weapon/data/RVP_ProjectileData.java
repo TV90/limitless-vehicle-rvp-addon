@@ -139,6 +139,42 @@ public class RVP_ProjectileData {
     @SerializedName("altitude_drag_high_factor")
     private float altitudeDragHighFactor = 0.34f;
 
+    /** GPS 炸弹巡航段开始 tick；-1 表示禁用该弹道。 */
+    @SerializedName("gps_cruise_start_tick")
+    private int gpsCruiseStartTick = -1;
+
+    /** 进入末端俯冲的水平圆柱半径（米/格）；<= 0 表示禁用该弹道。 */
+    @SerializedName("gps_cruise_terminal_cylinder_radius")
+    private float gpsCruiseTerminalCylinderRadius = 0f;
+
+    /** GPS 巡航段重力系数；1 = 使用原始重力，0.5 = 重力减半。 */
+    @SerializedName("gps_cruise_gravity_scale")
+    private float gpsCruiseGravityScale = 1.0f;
+
+    /** GPS 巡航段自动改平强度；每 tick 将上抛竖直速度向 0 拉回的比例。 */
+    @SerializedName("gps_cruise_leveling_factor")
+    private float gpsCruiseLevelingFactor = 0.15f;
+
+    /** GPS 炸弹 CEP（米/格）；定义为 50% 落点落在该半径内的圆概率误差。 */
+    @SerializedName("gps_cep")
+    private float gpsCep = 0f;
+
+    /** GPS 弹药接近目标点后自动脱导的阈值距离（米/格）；0 表示不启用。 */
+    @SerializedName("gps_guidance_cancel_distance")
+    private float gpsGuidanceCancelDistance = 0f;
+
+    /**
+     * 信号尺寸（签名大小）：定义弹体在雷达/红外探测系统中的等效尺寸。
+     * <ul>
+     *   <li>{@code 0}（默认）：该弹体不可被雷达/红外探测，保持原有行为</li>
+     *   <li>{@code > 0}：替代 {@code getBoundingBox().getSize()} 用于扫描/探测/锁定过滤，
+     *       并作为 RCS（雷达截面积）倍率参与探测距离缩放</li>
+     * </ul>
+     * 典型值参考：大型导弹（AMRAAM/PL-15）1.0~2.0；格斗弹 0.5~1.0；炸弹/布撒器 0.3~0.8。
+     */
+    @SerializedName("signature_size")
+    private float signatureSize = 0f;
+
     /**
      * 加载后解析推进参数：{@code projectile_data} 未写的键从武器 JSON 顶层补全。
      * {@code has_rocket_engine} 为 false 时不做合并。
@@ -321,6 +357,54 @@ public class RVP_ProjectileData {
             return smoothLerp((float) y, thinY, highY, thinFactor, highFactor);
         }
         return highFactor;
+    }
+
+    public int getGpsCruiseStartTick() {
+        return gpsCruiseStartTick < 0 ? -1 : gpsCruiseStartTick;
+    }
+
+    public float getGpsCruiseTerminalCylinderRadius() {
+        return Math.max(gpsCruiseTerminalCylinderRadius, 0f);
+    }
+
+    public float getGpsCruiseGravityScale() {
+        if (Float.isNaN(gpsCruiseGravityScale) || Float.isInfinite(gpsCruiseGravityScale) || gpsCruiseGravityScale < 0f) {
+            return 1.0f;
+        }
+        return gpsCruiseGravityScale;
+    }
+
+    public float getGpsCruiseLevelingFactor() {
+        if (Float.isNaN(gpsCruiseLevelingFactor) || Float.isInfinite(gpsCruiseLevelingFactor)) {
+            return 0.15f;
+        }
+        return Math.max(0f, Math.min(1f, gpsCruiseLevelingFactor));
+    }
+
+    public boolean usesGpsCruiseProfile() {
+        return getGpsCruiseStartTick() >= 0 && getGpsCruiseTerminalCylinderRadius() > 0f;
+    }
+
+    public float getGpsCep() {
+        if (Float.isNaN(gpsCep) || Float.isInfinite(gpsCep)) {
+            return 0f;
+        }
+        return Math.max(gpsCep, 0f);
+    }
+
+    public float getGpsGuidanceCancelDistance() {
+        if (Float.isNaN(gpsGuidanceCancelDistance) || Float.isInfinite(gpsGuidanceCancelDistance)) {
+            return 0f;
+        }
+        return Math.max(gpsGuidanceCancelDistance, 0f);
+    }
+
+    /** 获取信号尺寸；0 表示不可被雷达/红外探测。 */
+    public float getSignatureSize() {
+        if (Float.isNaN(signatureSize) || Float.isInfinite(signatureSize)) {
+            return 0f;
+        }
+        return Math.max(signatureSize, 0f);
     }
 
     private static float sanitizeFactor(float value, float fallback) {

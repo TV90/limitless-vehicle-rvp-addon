@@ -6,7 +6,9 @@
   "refmap": "ywzj_rvp.refmap.json",
   "mixins": [
     "AbstractVehicleApsMixin",
-    "AbstractVehicleEraStateMixin",
+    "AbstractVehicleGunnerChunkLoadMixin",
+    "AbstractVehicleGunnerDataMixin",
+    "AbstractVehicleLinkedUavMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
     "accessor.BaseBulletAccessor",
     "accessor.MissileEntityAccessor",
@@ -29,16 +31,21 @@
     "VehicleAutoLandingGearMixin",
     "WeaponUnitPojoMixin",
     "WeaponUnitDataMixin",
+    "WeaponUnitExternalRadarLockMixin",
     "WeaponUnitFollowParentRotationMixin",
+    "WeaponUnitPendingRadarLockMixin",
     "WeaponUnitSensorOverrideMixin",
     "WeaponUnitShootDebugMixin",
     "WeaponUnitSwitchWeaponMixin",
-    "VehicleDataManagerMixin"
+    "VehicleDataManagerMixin",
+    "ClientRadarActionMixin",
+    "RadarSignatureMixin"
   ],
   "client": [
     "ClientAssetsManagerCustomMountMixin",
     "ClientLevelHitlTrailParticleMixin",
     "InfraredMixin",
+    "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",
     "InputHandlerRfStabilizerMixin",
     "BedrockModelRenderTypesMixin",

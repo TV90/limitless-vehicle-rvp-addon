@@ -16,6 +16,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -154,6 +155,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
     protected boolean showMslIndicator;
 
+    /** 信号尺寸：0=不可被雷达/红外探测；>0 替代碰撞箱尺寸用于探测过滤及 RCS 倍率。 */
+    protected float signatureSize = 0f;
+
     /** 本 tick 内直击命中的载具 ID 集合，用于区分 HE 直击与非直击爆炸的 ERA 破坏。 */
     protected final java.util.Set<Integer> directHitVehicleIds = new java.util.HashSet<>();
 
@@ -181,6 +185,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private ResourceLocation remoteWeaponId;
     private int remoteOwnerId = -1;
     private int remoteShooterVehicleId = -1;
+    @Nullable
+    private Vec3 gpsTargetOffset;
+    private boolean gpsTargetOffsetResolved;
+    private boolean gpsCruiseVerticalResetApplied;
 
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
@@ -217,6 +225,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         writeRemoteVec3(data, "targetPos", targetPos);
         writeRemoteVec3(data, "lastGuidancePos", lastGuidancePos);
+        writeRemoteVec3(data, "gpsTargetOffset", gpsTargetOffset);
     }
 
     @Override
@@ -231,6 +240,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         remoteShooterVehicleId = data.contains("shooterVehicleId") ? data.getInt("shooterVehicleId") : -1;
         targetPos = readRemoteVec3(data, "targetPos");
         lastGuidancePos = readRemoteVec3(data, "lastGuidancePos");
+        gpsTargetOffset = readRemoteVec3(data, "gpsTargetOffset");
+        gpsTargetOffsetResolved = gpsTargetOffset != null;
         resolveRemoteRefs();
     }
 
@@ -270,6 +281,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.set(DATA_SECOND_PULSE_START_TICK, -1);
         this.entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.showMslIndicator = data.isShowMslIndicator();
+        this.signatureSize = data.getProjectileData().getSignatureSize();
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
@@ -338,6 +350,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     @Nullable
     public RVP_WeaponData getRvpData() {
         return rvpData;
+    }
+
+    /** 获取信号尺寸；0 表示不可被雷达/红外探测。 */
+    public float getSignatureSize() {
+        return signatureSize;
     }
 
     public int getProgrammedAirburstDistance() {
@@ -417,6 +434,46 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return flightSpeed;
     }
 
+    public double getCurrentSpeed() {
+        return getDeltaMovement().length();
+    }
+
+    public boolean usesGpsCruiseProfile() {
+        return weaponKind == RVP_EnumWeaponKind.BOMB
+                && rvpData != null
+                && rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                && rvpData.getProjectileData().usesGpsCruiseProfile();
+    }
+
+    public boolean isGpsCruisePhaseActive() {
+        if (!usesGpsCruiseProfile() || targetPos == null) {
+            return false;
+        }
+        if (tickCount < rvpData.getProjectileData().getGpsCruiseStartTick()) {
+            return false;
+        }
+        return horizontalDistanceTo(targetPos) > rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
+    }
+
+    public boolean isGpsCruiseTerminalPhaseActive() {
+        if (!usesGpsCruiseProfile() || targetPos == null) {
+            return false;
+        }
+        if (tickCount < rvpData.getProjectileData().getGpsCruiseStartTick()) {
+            return false;
+        }
+        return horizontalDistanceTo(targetPos) <= rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
+    }
+
+    public double horizontalDistanceTo(Vec3 pos) {
+        if (pos == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double dx = pos.x - getX();
+        double dz = pos.z - getZ();
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
     public AbstractVehicle getShooterVehicle() {
         return shooterVehicle;
     }
@@ -447,9 +504,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void setTargetPos(@Nullable Vec3 targetPos) {
-        this.targetPos = targetPos;
-        if (targetPos != null) {
-            this.lastGuidancePos = targetPos;
+        Vec3 resolved = applyGpsTargetDispersion(targetPos);
+        this.targetPos = resolved;
+        this.gpsCruiseVerticalResetApplied = false;
+        if (resolved != null) {
+            this.lastGuidancePos = resolved;
         }
     }
 
@@ -461,12 +520,63 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public void clearTarget() {
         this.targetEntity = null;
         this.targetPos = null;
+        this.gpsCruiseVerticalResetApplied = false;
+    }
+
+    public boolean consumeGpsCruiseVerticalResetPending() {
+        if (gpsCruiseVerticalResetApplied) {
+            return false;
+        }
+        gpsCruiseVerticalResetApplied = true;
+        return true;
     }
 
     public void rememberGuidancePos(@Nullable Vec3 pos) {
         if (pos != null) {
             this.lastGuidancePos = pos;
         }
+    }
+
+    @Nullable
+    private Vec3 applyGpsTargetDispersion(@Nullable Vec3 targetPos) {
+        if (targetPos == null || !usesGpsCep()) {
+            return targetPos;
+        }
+        Vec3 offset = ensureGpsTargetOffset();
+        return offset == null ? targetPos : targetPos.add(offset);
+    }
+
+    private boolean usesGpsCep() {
+        return weaponKind == RVP_EnumWeaponKind.BOMB
+                && rvpData != null
+                && rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                && rvpData.getProjectileData().getGpsCep() > 0f;
+    }
+
+    @Nullable
+    private Vec3 ensureGpsTargetOffset() {
+        if (!usesGpsCep()) {
+            return null;
+        }
+        if (gpsTargetOffsetResolved) {
+            return gpsTargetOffset;
+        }
+        gpsTargetOffsetResolved = true;
+        float cep = rvpData.getProjectileData().getGpsCep();
+        if (cep <= 0f) {
+            gpsTargetOffset = null;
+            return null;
+        }
+        gpsTargetOffset = sampleGpsCepOffset(level().random, cep);
+        return gpsTargetOffset;
+    }
+
+    private static Vec3 sampleGpsCepOffset(RandomSource random, float cep) {
+        // 2D isotropic Gaussian: radius enclosing 50% impacts equals sigma * sqrt(2 ln 2).
+        double sigma = cep / Math.sqrt(2.0D * Math.log(2.0D));
+        double dx = random.nextGaussian() * sigma;
+        double dz = random.nextGaussian() * sigma;
+        return new Vec3(dx, 0.0D, dz);
     }
 
     public boolean isMissile() {
@@ -743,7 +853,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (isMissile()) {
                 dragInAir *= RVP_ProjectileMotion.resolveMissileAltitudeDragFactor(this, rvpData);
             }
-            velocity = velocity.add(0, rvpData.getGravity(), 0);
+            float gravity = rvpData.getGravity();
+            if (isGpsCruisePhaseActive()) {
+                gravity *= rvpData.getProjectileData().getGpsCruiseGravityScale();
+            }
+            velocity = velocity.add(0, gravity, 0);
             velocity = applyMchHorizontalDrag(velocity, dragInAir);
         } else {
             velocity = velocity.add(0, rvpData.getGravityInWater(), 0);
@@ -755,6 +869,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         velocity = clampSpeed(velocity);
         setDeltaMovement(velocity);
         setPos(position().add(velocity));
+        flightSpeed = Math.max(velocity.length(), 0.01);
         flightDistance += velocity.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
     }
@@ -1688,8 +1803,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 用户可以自由配置 trajectory_particle 选择烟的类型，设为 "none" 可关闭
         // rvpData 可能在客户端为 null，此时用 CAMPFIRE_SIGNAL_SMOKE 作为保底
         String configured = "";
-        if (rvpData != null) {
-            configured = rvpData.getEffectsData().getTrajectoryParticle();
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config != null) {
+            configured = config.getEffectsData().getTrajectoryParticle();
         }
         ParticleOptions primary = resolveParticle(configured, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE);
         if (primary != null) {
@@ -1700,8 +1816,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         0.0D, 0.0D, 0.0D);
             }
         }
-        // 火焰粒子（仅推进类弹体燃烧期产生，类比本体，但本体没有火焰）
-        if (motorBurning && tickCount % 2 == 0) {
+        // 火焰粒子：仅推进类弹体燃烧期产生
+        if (isMotorPropulsion() && motorBurning && tickCount % 2 == 0) {
             level().addParticle(ParticleTypes.FLAME, true,
                     getX(), getY(), getZ(),
                     -getDeltaMovement().x * 0.02, -getDeltaMovement().y * 0.02, -getDeltaMovement().z * 0.02);
@@ -1721,7 +1837,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 是否有火箭推进发动机（推力弹道）。 */
     protected boolean isMotorPropulsion() {
-        return rvpData != null && rvpData.usesPropulsion();
+        RVP_WeaponData config = resolveWeaponConfig();
+        return config != null && config.usesPropulsion();
     }
 
     /** 发动机当前是否在燃烧期内（对标本体 MissileEntity.tickParticle）。非推进弹体始终返回 true。 */
@@ -1775,7 +1892,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!(level() instanceof ServerLevel serverLevel)) {
             return;
         }
-        String configured = rvpData.getEffectsData().getTrajectoryParticle();
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config == null) {
+            return;
+        }
+        String configured = config.getEffectsData().getTrajectoryParticle();
         boolean heavy = isHeavyProjectile();
         boolean motorBurning = isMotorBurning();
         // 轨迹粒子：推进类弹体仅在燃烧期发送
@@ -1788,8 +1909,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
             }
         }
-        // 尾焰：仅燃烧期
-        if (heavy && motorBurning) {
+        // 尾焰：仅推进类弹体燃烧期
+        if (heavy && isMotorPropulsion() && motorBurning) {
             serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
         }
     }
@@ -1855,12 +1976,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeDouble(flightSpeed);
         buffer.writeVarInt(motorBurnEndTick);
         buffer.writeBoolean(showMslIndicator);
+        buffer.writeFloat(signatureSize);
         buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
         buffer.writeBoolean(targetPos != null);
         if (targetPos != null) {
             buffer.writeDouble(targetPos.x);
             buffer.writeDouble(targetPos.y);
             buffer.writeDouble(targetPos.z);
+        }
+        buffer.writeBoolean(gpsTargetOffset != null);
+        if (gpsTargetOffset != null) {
+            buffer.writeDouble(gpsTargetOffset.x);
+            buffer.writeDouble(gpsTargetOffset.y);
+            buffer.writeDouble(gpsTargetOffset.z);
         }
     }
 
@@ -1873,6 +2001,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.flightSpeed = buffer.readDouble();
         this.motorBurnEndTick = buffer.readVarInt();
         this.showMslIndicator = buffer.readBoolean();
+        this.signatureSize = buffer.readFloat();
         yRotO = getYRot();
         xRotO = getXRot();
         int id = buffer.readVarInt();
@@ -1885,6 +2014,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (buffer.readBoolean()) {
             this.targetPos = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
             this.lastGuidancePos = this.targetPos;
+        }
+        if (buffer.readBoolean()) {
+            this.gpsTargetOffset = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
+            this.gpsTargetOffsetResolved = true;
+        } else {
+            this.gpsTargetOffset = null;
+            this.gpsTargetOffsetResolved = false;
         }
     }
 }

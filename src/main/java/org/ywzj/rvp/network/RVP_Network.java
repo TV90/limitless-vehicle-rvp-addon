@@ -62,6 +62,26 @@ public class RVP_Network {
                 .decoder(C2SSetAirburstRange::decode)
                 .consumerMainThread(C2SSetAirburstRange::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SDeployDeployableUav.class, id++)
+                .encoder(C2SDeployDeployableUav::encode)
+                .decoder(C2SDeployDeployableUav::decode)
+                .consumerMainThread(C2SDeployDeployableUav::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SSwitchDeployableUav.class, id++)
+                .encoder(C2SSwitchDeployableUav::encode)
+                .decoder(C2SSwitchDeployableUav::decode)
+                .consumerMainThread(C2SSwitchDeployableUav::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SRequestExternalRadarLock.class, id++)
+                .encoder(C2SRequestExternalRadarLock::encode)
+                .decoder(C2SRequestExternalRadarLock::decode)
+                .consumerMainThread(C2SRequestExternalRadarLock::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SClearExternalRadarLock.class, id++)
+                .encoder(C2SClearExternalRadarLock::encode)
+                .decoder(C2SClearExternalRadarLock::decode)
+                .consumerMainThread(C2SClearExternalRadarLock::handle)
+                .add();
         CHANNEL.messageBuilder(S2CBulletVehicleHitDebug.class, id++)
                 .encoder(S2CBulletVehicleHitDebug::encode)
                 .decoder(S2CBulletVehicleHitDebug::decode)
@@ -96,6 +116,11 @@ public class RVP_Network {
                 .encoder(S2CRemoteAmmoSnapshot::encode)
                 .decoder(S2CRemoteAmmoSnapshot::decode)
                 .consumerMainThread(S2CRemoteAmmoSnapshot::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CExternalRadarSnapshot.class, id++)
+                .encoder(S2CExternalRadarSnapshot::encode)
+                .decoder(S2CExternalRadarSnapshot::decode)
+                .consumerMainThread(S2CExternalRadarSnapshot::handle)
                 .add();
     }
 }

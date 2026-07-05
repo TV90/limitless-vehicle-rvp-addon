@@ -79,7 +79,7 @@ public class GunnerProfile {
     private double fixedwingCombatRadiusMin = 40.0;
 
     @SerializedName("fixedwing_combat_radius_max")
-    private double fixedwingCombatRadiusMax = 350.0;
+    private double fixedwingCombatRadiusMax = 550.0;
 
     @SerializedName("ground_wander_enabled")
     private boolean groundWanderEnabled = true;

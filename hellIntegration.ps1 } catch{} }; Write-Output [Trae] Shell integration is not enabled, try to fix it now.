@@ -1,0 +1,37 @@
+warning: in the working copy of 'blockbench_plugins/ywzj_tread_inward_normal/ywzj_tread_inward_normal.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/plan/制导与反辐射架构最佳方案.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/client/gui/RVP_RadarOverlay.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/config/VehicleUIPresetCache.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/ext/RadarUnitDataExt.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/ext/RadarUnitPojoExt.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/guidance/RVP_GuidanceMath.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/RadarUnitDataMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/RadarUnitPojoMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/mixin/VehicleDataManagerMixin.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/weapon/core/RVP_WeaponBase.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/java/org/ywzj/rvp/weapon/data/RVP_ProjectileData.java', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main/resources/assets/ywzj_rvp/lang/en_us.json', LF will be replaced by CRLF the next time Git touches it
+ ...255\227\346\256\265\350\257\264\346\230\216.md" |   35 [32m+[m
+ ...234\200\344\275\263\346\226\271\346\241\210.md" |   23 [32m+[m
+ .../org/ywzj/rvp/client/gui/RVP_GPSOverlay.java    |  132 [32m+[m[31m-[m
+ .../org/ywzj/rvp/client/gui/RVP_RadarOverlay.java  |   87 [32m+[m[31m-[m
+ .../render/VehicleProjectileRenderLogic.java       |   43 [32m+[m[31m-[m
+ .../rvp/client/screen/RVP_TacticalMapScreen.java   | 1562 [32m+++++++++++++++++++[m[31m-[m
+ .../org/ywzj/rvp/config/VehicleUIPresetCache.java  |   18 [32m+[m
+ .../ywzj/rvp/entity/projectile/RVP_BaseBullet.java |  149 [32m+[m[31m-[m
+ .../java/org/ywzj/rvp/ext/RadarUnitDataExt.java    |    1 [32m+[m
+ .../java/org/ywzj/rvp/ext/RadarUnitPojoExt.java    |    1 [32m+[m
+ .../org/ywzj/rvp/guidance/RVP_GuidanceMath.java    |   74 [32m+[m
+ .../rvp/guidance/source/RVP_GpsGuidanceSource.java |    5 [32m+[m
+ .../org/ywzj/rvp/mixin/RadarUnitDataMixin.java     |   19 [32m+[m
+ .../java/org/ywzj/rvp/mixin/RadarUnitMixin.java    |   48 [32m+[m
+ .../org/ywzj/rvp/mixin/RadarUnitPojoMixin.java     |    9 [32m+[m
+ .../ywzj/rvp/mixin/VehicleDataManagerMixin.java    |    1 [32m+[m
+ .../rvp/network/RVP_RemoteAmmoSyncService.java     |    2 [32m+[m[31m-[m
+ .../org/ywzj/rvp/weapon/core/RVP_WeaponBase.java   |    5 [32m+[m
+ .../rvp/weapon/core/RVP_WeaponFireController.java  |   11 [32m+[m
+ .../ywzj/rvp/weapon/data/RVP_ProjectileData.java   |   64 [32m+[m
+ src/main/resources/assets/ywzj_rvp/lang/en_us.json |   46 [32m+[m
+ src/main/resources/assets/ywzj_rvp/lang/zh_cn.json |   46 [32m+[m
+ 22 files changed, 2270 insertions(+), 111 deletions(-)

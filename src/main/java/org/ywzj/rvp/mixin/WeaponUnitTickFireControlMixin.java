@@ -7,8 +7,11 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -28,6 +31,10 @@ public abstract class WeaponUnitTickFireControlMixin {
     @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)
     private void rvp$onTickFireControl(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
+            RVP_RadarRoleHelper.tickPendingRadarLock(self);
+            rvp$restoreExternalRadarLock(self);
+        }
 
         // 只处理 RVP 导弹的自动锁定
         if (!self.isSeekerOn()) {
@@ -74,7 +81,7 @@ public abstract class WeaponUnitTickFireControlMixin {
         }
         // 雷达锁定（包含主动雷达弹和半主动雷达弹）
         else if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
-            RadarUnit radar = self.getMainRadarUnit();
+            RadarUnit radar = RVP_RadarRoleHelper.getPreferredLockRadar(self);
             if (radar != null) {
                 entity = Radar.findTarget(radar, 90, self);
             }
@@ -82,6 +89,28 @@ public abstract class WeaponUnitTickFireControlMixin {
 
         if (entity != null) {
             self.setLockedEntity(entity);
+        }
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static void rvp$restoreExternalRadarLock(WeaponUnit self) {
+        WeaponUnit root = self.getRootParentWeaponUnit();
+        if (root != self || self.getLockedEntity() != null) {
+            return;
+        }
+        if (LocalVehiclePlayer.instance.getVehicle() != self.getVehicle()) {
+            return;
+        }
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        Entity externalLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(
+                self.getVehicle(),
+                mc.level.dimension().location()
+        );
+        if (externalLocked != null && externalLocked.isAlive()) {
+            self.setLockedEntity(externalLocked);
         }
     }
 }

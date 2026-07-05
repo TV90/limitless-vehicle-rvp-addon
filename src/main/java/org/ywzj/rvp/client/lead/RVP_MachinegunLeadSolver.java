@@ -4,6 +4,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -167,6 +168,14 @@ public final class RVP_MachinegunLeadSolver {
         Entity target = weaponUnit.getLockedEntity();
         if (target != null && target.isAlive()) {
             return target;
+        }
+        var vehicle = org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.getVehicle();
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (vehicle != null && mc.level != null) {
+            Entity externalLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(vehicle, mc.level.dimension().location());
+            if (externalLocked != null && externalLocked.isAlive()) {
+                return externalLocked;
+            }
         }
         RadarUnit radar = weaponUnit.getMainRadarUnit();
         if (radar == null) {

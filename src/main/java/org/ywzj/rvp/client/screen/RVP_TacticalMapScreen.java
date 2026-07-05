@@ -32,15 +32,20 @@ import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
+import org.ywzj.rvp.accessor.AbstractVehicleGunnerDataAccessor;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
+import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.network.S2CRemoteAmmoSnapshot;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -57,6 +62,7 @@ import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientRadarAction;
 import org.ywzj.vehicle.network.message.ClientVehicleSwitchWeapon;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -160,24 +166,24 @@ public class RVP_TacticalMapScreen extends Screen {
         private final Entity entity;
         private final RadarUnit sourceRadar;
         private final Vec3 detectedPos;
-        private final double distanceKm;
-        private final double altitudeKm;
-        private final double speedMs;
+        private final double distanceMeters;
+        private final double altitudeMeters;
+        private final double speedKph;
         private final String nctrLabel;
         private final String relationLabel;
         private final int relationColor;
         private final boolean locked;
 
         private RadarContactRow(int entityId, Entity entity, RadarUnit sourceRadar, Vec3 detectedPos,
-                                double distanceKm, double altitudeKm, double speedMs,
+                                double distanceMeters, double altitudeMeters, double speedKph,
                                 String nctrLabel, String relationLabel, int relationColor, boolean locked) {
             this.entityId = entityId;
             this.entity = entity;
             this.sourceRadar = sourceRadar;
             this.detectedPos = detectedPos;
-            this.distanceKm = distanceKm;
-            this.altitudeKm = altitudeKm;
-            this.speedMs = speedMs;
+            this.distanceMeters = distanceMeters;
+            this.altitudeMeters = altitudeMeters;
+            this.speedKph = speedKph;
             this.nctrLabel = nctrLabel;
             this.relationLabel = relationLabel;
             this.relationColor = relationColor;
@@ -437,7 +443,7 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private int sidebarWidth() {
-        return Mth.clamp((int) (this.width * 0.21), 196, 280);
+        return Mth.clamp((int) (this.width * 0.26), 228, 340);
     }
 
     private int toolbarButtonHeight() {
@@ -704,6 +710,9 @@ public class RVP_TacticalMapScreen extends Screen {
                 if (markerHit != null) {
                     selectMarker(markerHit);
                     rememberMarkerClick(markerHit, false);
+                    if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
+                        return true;
+                    }
                     if (markerHit.entity == null) {
                         return true;
                     }
@@ -1291,10 +1300,15 @@ public class RVP_TacticalMapScreen extends Screen {
                 tacticalRadarVisibleIds.add(lockedEntity.getId());
             }
         }
+        for (S2CExternalRadarSnapshot.Entry entry : currentExternalRadarEntries()) {
+            tacticalRadarVisibleIds.add(entry.entityId());
+        }
     }
 
     private void renderRadarCoverage(GuiGraphics guiGraphics, float partialTick) {
-        if (tacticalRadarUnits.isEmpty()) {
+        Minecraft mc = Minecraft.getInstance();
+        if (tacticalRadarUnits.isEmpty()
+                && !(mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle)) {
             return;
         }
         guiGraphics.enableScissor(mapLeft, mapTop, mapRight, mapBottom);
@@ -1322,7 +1336,47 @@ public class RVP_TacticalMapScreen extends Screen {
                 drawWorldLine(guiGraphics, centerWorldX, centerWorldZ, lockedEntity.getX(), lockedEntity.getZ(), lineColor);
             }
         }
+        if (mc.level != null && mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle launcher) {
+            List<S2CExternalRadarSnapshot.RadarSector> externalSectors =
+                    RVP_ClientExternalRadarState.getSectors(mc.level.dimension().location(), launcher.getUUID());
+            int sectorColor = 0x44FFE000;
+            int lineColor = 0xDDFFE000;
+            for (S2CExternalRadarSnapshot.RadarSector sector : externalSectors) {
+                Vec3 pos = sector.position();
+                double centerWorldX = pos.x;
+                double centerWorldZ = pos.z;
+                float radiusPixels = (float) Math.max(1.0, sector.maxDistance() / blocksPerPixel);
+                float yRotMin = sector.yRotMin();
+                float yRotMax = sector.yRotMax();
+                float span = yRotMax - yRotMin;
+                if (yRotMin == 0.0f && span >= 360.0f) {
+                    yRotMin = 0.0f;
+                    yRotMax = 360.0f;
+                }
+                int segments = Math.max(16, Mth.ceil(Math.abs(yRotMax - yRotMin) / 8.0f));
+                drawRadarSectorOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels,
+                        sector.yaw(), yRotMin, yRotMax, segments, sectorColor);
+                float scanAngle = externalScanAngle(sector, partialTick, mc.player.tickCount);
+                drawRadarScanLineOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels,
+                        sector.yaw(), scanAngle, 1.0f, lineColor);
+            }
+        }
         guiGraphics.disableScissor();
+    }
+
+    private float externalScanAngle(S2CExternalRadarSnapshot.RadarSector sector, float partialTick, int tickCount) {
+        float yRotMin = sector.yRotMin();
+        float yRotMax = sector.yRotMax();
+        float scanAz = yRotMax - yRotMin;
+        boolean fullCircle = yRotMin == 0f && scanAz >= 360f;
+        int periodTick = 60;
+        float phase = ((tickCount % periodTick) + partialTick) / periodTick;
+        phase = Mth.clamp(phase, 0f, 1f);
+        if (fullCircle) {
+            return phase * 360f;
+        }
+        float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
+        return yRotMin + scanAz * pingPong;
     }
 
     private boolean hasTrackedAmmoEntity(Minecraft mc, int entityId) {
@@ -1489,10 +1543,19 @@ public class RVP_TacticalMapScreen extends Screen {
         if (selectedMarkerHit == null) {
             return "";
         }
-        if (!selectedMarkerHit.gpsAmmo || selectedMarkerHit.targetPos == null) {
-            return "";
+        StringBuilder builder = new StringBuilder();
+        builder.append("ALT ");
+        builder.append(Mth.floor(selectedMarkerHit.focusPos.y));
+        builder.append(" m");
+        if (selectedMarkerHit.gpsAmmo && selectedMarkerHit.targetPos != null) {
+            builder.append("  |  GPS  ");
+            builder.append(Mth.floor(selectedMarkerHit.targetPos.x));
+            builder.append(' ');
+            builder.append(Mth.floor(selectedMarkerHit.targetPos.y));
+            builder.append(' ');
+            builder.append(Mth.floor(selectedMarkerHit.targetPos.z));
         }
-        return "GPS  " + Mth.floor(selectedMarkerHit.targetPos.x) + " " + Mth.floor(selectedMarkerHit.targetPos.y) + " " + Mth.floor(selectedMarkerHit.targetPos.z);
+        return builder.toString();
     }
 
     private static final class TerminalButton extends AbstractWidget {
@@ -1572,8 +1635,8 @@ public class RVP_TacticalMapScreen extends Screen {
         int x1 = left ? anchorX + length - 1 : anchorX;
         int y0 = top ? anchorY : anchorY - length + 1;
         int y1 = top ? anchorY + length - 1 : anchorY;
-        guiGraphics.hLine(x0, x1, anchorY, color);
-        guiGraphics.vLine(anchorX, y0, y1, color);
+        drawGuiLine(guiGraphics, x0, anchorY, x1, anchorY, 1.15f, color);
+        drawGuiLine(guiGraphics, anchorX, y0, anchorX, y1, 1.15f, color);
     }
 
     private void openMapContextMenu(double mouseX, double mouseY, Vec3 target) {
@@ -1752,61 +1815,72 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private void renderGpsSidePanel(GuiGraphics guiGraphics) {
         Minecraft mc = Minecraft.getInstance();
-        int x = sideLeft + 8;
-        int y = mapTop + 8;
-        int textWidth = Math.max(88, sideRight - x - 8);
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.gps.title"), x, y, 0xFFFFFFFF, false);
-        y += 10;
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.status"), x, y, 0xFF9CA9B8, false);
-        y += 9;
+        int x = sidePanelContentX();
+        int width = sidePanelContentWidth();
+        int y = sidePanelTitleY();
+        int titleHeight = sidePanelTitleHeight();
+        int textWidth = Math.max(88, width - 10);
+        drawSidePanelTitle(guiGraphics, x, y, width, Component.translatable("gui.ywzj_rvp.gps.title"), GPS_ICON_COLOR);
+
+        int summaryY = y + titleHeight + 6;
+        int summaryBottom = Math.max(summaryY + 42, xBox.getY() - 10);
+        drawSidePanelSection(guiGraphics, x, summaryY, width, summaryBottom - summaryY, 0xFF7C96B2);
+        int textX = x + 5;
+        int textY = summaryY + 5;
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.status"), textX, textY, 0xFF9CA9B8, false);
+        textY += 9;
 
         String vehicleName = mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle
                 ? vehicle.getType().getDescription().getString()
                 : "-";
         String vehicleLine = this.font.plainSubstrByWidth(
                 Component.translatable("gui.ywzj_rvp.tactical_map.vehicle", vehicleName).getString(), textWidth);
-        guiGraphics.drawString(this.font, vehicleLine, x, y, 0xFFE6EDF6, false);
-        y += 9;
+        guiGraphics.drawString(this.font, vehicleLine, textX, textY, 0xFFE6EDF6, false);
+        textY += 9;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.center_pos",
-                Mth.floor(viewWorldX), Mth.floor(viewWorldZ)), x, y, 0xFFE6EDF6, false);
-        y += 9;
+                Mth.floor(viewWorldX), Mth.floor(viewWorldZ)), textX, textY, 0xFFE6EDF6, false);
+        textY += 9;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.remote_count",
-                LocalVehiclePlayer.instance.serverEntities.size()), x, y, 0xFFE6EDF6, false);
-        y = Math.min(y + 12, xBox.getY() - 18);
+                LocalVehiclePlayer.instance.serverEntities.size()), textX, textY, 0xFFE6EDF6, false);
 
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.gps.title"), x, y, 0xFFFFFFFF, false);
-        y += 8;
-        guiGraphics.drawString(this.font, followLabel(), x, y, 0xFF9CA9B8, false);
-        y = bindButton.getY() + bindButton.getHeight() + 8;
+        int controlsY = summaryBottom + 6;
+        int controlsBottom = bindButton.getY() + bindButton.getHeight() + 8;
+        drawSidePanelSection(guiGraphics, x, controlsY, width, controlsBottom - controlsY, 0xFF6B86A2);
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.gps.title"), textX, controlsY + 5, 0xFFFFFFFF, false);
+        guiGraphics.drawString(this.font, followLabel(), textX, controlsY + 14, 0xFF9CA9B8, false);
+
+        int targetY = controlsBottom + 6;
+        int targetBottom = Math.min(mapBottom - 8, targetY + 38);
+        drawSidePanelSection(guiGraphics, x, targetY, width, targetBottom - targetY, 0xFF4E6D91);
+        int targetTextY = targetY + 5;
         String hint = this.font.plainSubstrByWidth(Component.translatable("gui.ywzj_rvp.gps.hint").getString(), textWidth);
-        guiGraphics.drawString(this.font, hint, x, y, 0xFF9CA9B8, false);
-        y += 9;
+        guiGraphics.drawString(this.font, hint, textX, targetTextY, 0xFF9CA9B8, false);
+        targetTextY += 9;
 
         if (RVP_ClientGPSState.isActive()) {
             Vec3 pos = RVP_ClientGPSState.getPos();
-            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_current"), x, y, 0xFFFFFFFF, false);
-            y += 9;
+            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_current"), textX, targetTextY, 0xFFFFFFFF, false);
+            targetTextY += 9;
             String coords = this.font.plainSubstrByWidth(
                     String.format("X %.1f  Y %.1f  Z %.1f", pos.x, pos.y, pos.z), textWidth);
-            guiGraphics.drawString(this.font, coords, x, y, 0xFFFFFF66, false);
-            y += 9;
+            guiGraphics.drawString(this.font, coords, textX, targetTextY, 0xFFFFFF66, false);
+            targetTextY += 9;
             String label = RVP_ClientGPSState.isMultiMode()
                     ? "GPS " + RVP_ClientGPSState.getArmedPointNumber()
                     : "GPS";
             String status = "MODE " + (RVP_ClientGPSState.isMultiMode() ? "MULTI" : "SINGLE")
                     + "  |  " + label
                     + "  |  CNT " + RVP_ClientGPSState.getPointCount();
-            guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(status, textWidth), x, y, GPS_ICON_COLOR, false);
+            guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(status, textWidth), textX, targetTextY, GPS_ICON_COLOR, false);
         } else {
-            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_none"), x, y, 0xFF9CA9B8, false);
+            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_none"), textX, targetTextY, 0xFF9CA9B8, false);
         }
     }
 
     private void renderRadarSidePanel(GuiGraphics guiGraphics) {
         collectRadarContacts();
-        int x = sideLeft + 8;
-        int y = mapTop + 8;
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_title"), x, y, 0xFFFFFFFF, false);
+        drawSidePanelTitle(guiGraphics, sidePanelContentX(), sidePanelTitleY(), sidePanelContentWidth(),
+                Component.translatable("gui.ywzj_rvp.tactical_map.radar_title"), 0xFF7BE0A5);
         renderRadarContactTable(guiGraphics);
     }
 
@@ -1814,7 +1888,12 @@ public class RVP_TacticalMapScreen extends Screen {
         radarContactRows.clear();
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        if (player == null || tacticalRadarUnits.isEmpty()) {
+        List<S2CExternalRadarSnapshot.Entry> externalEntries = currentExternalRadarEntries();
+        if (player == null) {
+            radarRowScroll = 0;
+            return;
+        }
+        if (tacticalRadarUnits.isEmpty() && externalEntries.isEmpty()) {
             radarRowScroll = 0;
             return;
         }
@@ -1841,9 +1920,9 @@ public class RVP_TacticalMapScreen extends Screen {
                         entity,
                         radarUnit,
                         detectedObject.detectedPosition,
-                        distanceMeters / 1000.0,
-                        detectedObject.detectedPosition.y / 1000.0,
-                        entity.getDeltaMovement().length() * 20.0,
+                        distanceMeters,
+                        detectedObject.detectedPosition.y,
+                        entity.getDeltaMovement().length() * 72.0,
                         resolveRadarNctrLabel(radarUnit, entity),
                         relationLabelForColor(relationColor),
                         relationColor,
@@ -1851,9 +1930,52 @@ public class RVP_TacticalMapScreen extends Screen {
                 ));
             }
         }
+        AbstractVehicle currentVehicle = LocalVehiclePlayer.instance.getVehicle();
+        Vec3 referencePos = currentVehicle != null ? currentVehicle.position() : player.position();
+        for (S2CExternalRadarSnapshot.Entry entry : externalEntries) {
+            if (!seen.add(entry.entityId())) {
+                continue;
+            }
+            Entity resolvedEntity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entry.entityId());
+            int relationColor;
+            if (resolvedEntity != null) {
+                int clientColor = relationColorForEntity(player, resolvedEntity);
+                // 客户端实体信息不全（如 getDriver() 为 null 导致判定为无人/中立色）时，
+                // 优先使用服务端外部雷达的 affiliation 判定
+                if (clientColor == UNMANNED_VEHICLE_ICON_COLOR || clientColor == NEUTRAL_ICON_COLOR) {
+                    S2CExternalRadarSnapshot.Affiliation affiliation = entry.affiliation();
+                    if (affiliation != S2CExternalRadarSnapshot.Affiliation.UNKNOWN) {
+                        relationColor = relationColorForAffiliation(affiliation);
+                    } else {
+                        relationColor = clientColor;
+                    }
+                } else {
+                    relationColor = clientColor;
+                }
+            } else {
+                relationColor = relationColorForAffiliation(entry.affiliation());
+            }
+            if (hideFriendlyRadarRows && isRealtimeVisibleRelation(relationColor)) {
+                continue;
+            }
+            Vec3 detectedPos = RVP_ExternalRadarLinkHelper.position(entry);
+            radarContactRows.add(new RadarContactRow(
+                    entry.entityId(),
+                    resolvedEntity,
+                    null,
+                    detectedPos,
+                    horizontalDistance(referencePos, detectedPos),
+                    detectedPos.y,
+                    RVP_ExternalRadarLinkHelper.speedKph(entry),
+                    entry.nctrLabel(),
+                    relationLabelForColor(relationColor),
+                    relationColor,
+                    false
+            ));
+        }
         radarContactRows.sort(Comparator
                 .comparing((RadarContactRow row) -> !row.locked)
-                .thenComparingDouble(row -> row.distanceKm));
+                .thenComparingDouble(row -> row.distanceMeters));
         if (selectedRadarEntityId != null) {
             radarContactRows.stream()
                     .filter(row -> row.entityId == selectedRadarEntityId)
@@ -1878,7 +2000,9 @@ public class RVP_TacticalMapScreen extends Screen {
         guiGraphics.fill(x + width - 1, y, x + width, y + height, 0xFF516579);
         guiGraphics.fill(x + 1, y + headerHeight, x + width - 1, y + headerHeight + 1, 0x6642556E);
 
-        drawRadarTableHeader(guiGraphics, x, y, width);
+        int contentX = x + 4;
+        int contentWidth = width - 12;
+        drawRadarTableHeader(guiGraphics, contentX, y, contentWidth);
 
         int visibleRows = radarVisibleRowCount();
         int rowStart = radarRowScroll;
@@ -1893,37 +2017,42 @@ public class RVP_TacticalMapScreen extends Screen {
             } else if ((index - rowStart) % 2 == 0) {
                 guiGraphics.fill(x + 1, rowY, x + width - 7, rowY + rowHeight, 0x22131B24);
             }
-            drawRadarRow(guiGraphics, row, x + 4, rowY + 2, width - 12);
+            drawRadarRow(guiGraphics, row, contentX, rowY + 2, contentWidth);
         }
         guiGraphics.disableScissor();
         drawRadarTableScrollbar(guiGraphics, x, y, width, height, visibleRows);
     }
 
     private void drawRadarTableHeader(GuiGraphics guiGraphics, int x, int y, int width) {
-        int tx = x + 4;
+        int iffX = x + width - 50;
+        int lockX = x + width - 24;
+        int nctrX = iffX - 42;
+        int tx = x;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_dist"), tx, y + 4, 0xFFBFD0E2, false);
-        tx += 32;
+        tx += 40;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_alt"), tx, y + 4, 0xFFBFD0E2, false);
-        tx += 30;
+        tx += 40;
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_speed"), tx, y + 4, 0xFFBFD0E2, false);
-        tx += 34;
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_nctr"), tx, y + 4, 0xFFBFD0E2, false);
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_iff"), x + width - 50, y + 4, 0xFFBFD0E2, false);
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_lock"), x + width - 24, y + 4, 0xFFBFD0E2, false);
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_nctr"), nctrX, y + 4, 0xFFBFD0E2, false);
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_iff"), iffX, y + 4, 0xFFBFD0E2, false);
+        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_lock"), lockX, y + 4, 0xFFBFD0E2, false);
     }
 
     private void drawRadarRow(GuiGraphics guiGraphics, RadarContactRow row, int x, int y, int width) {
+        int iffX = x + width - 50;
+        int lockX = x + width - 24;
+        int nctrX = iffX - 42;
         int tx = x;
-        guiGraphics.drawString(this.font, formatRadarNumber(row.distanceKm), tx, y, 0xFFE6EDF6, false);
-        tx += 32;
-        guiGraphics.drawString(this.font, formatRadarNumber(row.altitudeKm), tx, y, 0xFFE6EDF6, false);
-        tx += 30;
-        guiGraphics.drawString(this.font, formatRadarNumber(row.speedMs), tx, y, 0xFFE6EDF6, false);
-        tx += 34;
+        guiGraphics.drawString(this.font, formatRadarDistanceOrAltitude(row.distanceMeters), tx, y, 0xFFE6EDF6, false);
+        tx += 40;
+        guiGraphics.drawString(this.font, formatRadarDistanceOrAltitude(row.altitudeMeters), tx, y, 0xFFE6EDF6, false);
+        tx += 40;
+        guiGraphics.drawString(this.font, formatRadarSpeedKph(row.speedKph), tx, y, 0xFFE6EDF6, false);
         String nctr = StringUtils.abbreviate(row.nctrLabel == null || row.nctrLabel.isBlank() ? "?" : row.nctrLabel, 10);
-        guiGraphics.drawString(this.font, nctr, tx, y, 0xFFF0F6FF, false);
-        guiGraphics.drawString(this.font, row.relationLabel, x + width - 50, y, row.relationColor, false);
-        guiGraphics.drawString(this.font, row.locked ? "LCK" : "-", x + width - 24, y, row.locked ? 0xFF8FE3B8 : 0xFF8E9AA8, false);
+        nctr = this.font.plainSubstrByWidth(nctr, Math.max(16, iffX - nctrX - 6));
+        guiGraphics.drawString(this.font, nctr, nctrX, y, 0xFFF0F6FF, false);
+        guiGraphics.drawString(this.font, row.relationLabel, iffX, y, row.relationColor, false);
+        guiGraphics.drawString(this.font, row.locked ? "LCK" : "-", lockX, y, row.locked ? 0xFF8FE3B8 : 0xFF8E9AA8, false);
     }
 
     private void drawRadarTableScrollbar(GuiGraphics guiGraphics, int x, int y, int width, int height, int visibleRows) {
@@ -2042,8 +2171,9 @@ public class RVP_TacticalMapScreen extends Screen {
         if (weaponUnit == null || player == null) {
             return false;
         }
-        RadarUnit mainRadar = weaponUnit.getMainRadarUnit();
-        if (mainRadar == null) {
+        RadarUnit mainRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
+        boolean externalVisible = hasExternalRadarContact(target != null ? target.getId() : Integer.MIN_VALUE);
+        if (mainRadar == null && !externalVisible) {
             player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_no_unit"), true);
             return false;
         }
@@ -2051,7 +2181,17 @@ public class RVP_TacticalMapScreen extends Screen {
             player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_target_unavailable"), true);
             return false;
         }
-        applyRadarLockState(weaponUnit, mainRadar, target);
+        boolean lockApplied = false;
+        if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
+            lockApplied = RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
+        }
+        if (!lockApplied && mainRadar != null) {
+            lockApplied = RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
+        }
+        if (!lockApplied) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_no_unit"), true);
+            return false;
+        }
         beginRadarLockAssist(target.getId(), RADAR_LOCK_ASSIST_TICKS);
         selectedRadarEntityId = target.getId();
         selectMarker(findMarkerByEntityId(target.getId()));
@@ -2097,10 +2237,15 @@ public class RVP_TacticalMapScreen extends Screen {
         }
         assistedRadarLockTicks--;
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        RadarUnit mainRadar = weaponUnit != null ? weaponUnit.getMainRadarUnit() : null;
         Entity target = findTrackedEntityById(assistedRadarLockEntityId);
-        if (weaponUnit != null && mainRadar != null && target != null && target.isAlive()) {
-            applyRadarLockState(weaponUnit, mainRadar, target);
+        if (weaponUnit != null && target != null && target.isAlive()) {
+            RadarUnit mainRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
+            boolean externalVisible = hasExternalRadarContact(target.getId());
+            if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
+                RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
+            } else {
+                RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
+            }
             selectedRadarEntityId = target.getId();
             selectMarker(findMarkerByEntityId(target.getId()));
         }
@@ -2138,14 +2283,19 @@ public class RVP_TacticalMapScreen extends Screen {
             return;
         }
         Entity target = findTrackedEntityById(pendingQuickFireEntityId);
-        RadarUnit mainRadar = weaponUnit.getMainRadarUnit();
-        if (target != null && target.isAlive() && mainRadar != null) {
+        RadarUnit mainRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
+        if (target != null && target.isAlive()) {
             if (!weaponUnit.isSeekerOn()) {
                 weaponUnit.toggleSeeker(true);
             }
-            refreshTrackedRadarDetection(mainRadar, target);
-            applyRadarLockState(weaponUnit, mainRadar, target);
-            boolean radarLocked = entityMatches(mainRadar.getLockedEntity(), pendingQuickFireEntityId);
+            boolean externalVisible = hasExternalRadarContact(target.getId());
+            if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
+                RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
+            } else if (mainRadar != null) {
+                RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
+            }
+            boolean radarLocked = (mainRadar != null && entityMatches(mainRadar.getLockedEntity(), pendingQuickFireEntityId))
+                    || isExternalRadarLockedEntity(target);
             boolean weaponLocked = entityMatches(weaponUnit.getLockedEntity(), pendingQuickFireEntityId);
             boolean seekerReady = isTargetInQuickFireSeekerEnvelope(weaponUnit, data, target);
             pendingQuickFireEverRadarLocked |= radarLocked;
@@ -2214,16 +2364,7 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void applyRadarLockState(WeaponUnit weaponUnit, RadarUnit mainRadar, Entity target) {
-        if (!entityMatches(mainRadar.getLockedEntity(), target.getId())) {
-            mainRadar.setLockedEntity(target);
-        }
-        if (!entityMatches(weaponUnit.getLockedEntity(), target.getId())) {
-            weaponUnit.setLockedEntity(target);
-        }
-    }
-
-    private void refreshTrackedRadarDetection(RadarUnit mainRadar, Entity target) {
-        mainRadar.detect(target);
+        RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
         tacticalRadarVisibleIds.add(target.getId());
     }
 
@@ -2271,6 +2412,10 @@ public class RVP_TacticalMapScreen extends Screen {
             if (row.entityId == entityId && row.entity != null) {
                 return row.entity;
             }
+        }
+        Entity externalEntity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entityId);
+        if (externalEntity != null) {
+            return externalEntity;
         }
         for (RadarUnit radarUnit : tacticalRadarUnits) {
             RadarUnit.DetectedObject detectedObject = radarUnit.getDetectedEntities().get(entityId);
@@ -2324,19 +2469,62 @@ public class RVP_TacticalMapScreen extends Screen {
                 && mouseY >= y && mouseY <= y + radarTableHeight();
     }
 
+    private int sidePanelContentX() {
+        return sideLeft + 8;
+    }
+
+    private int sidePanelContentWidth() {
+        return Math.max(140, sideRight - sideLeft - 16);
+    }
+
+    private int sidePanelTitleY() {
+        return mapTop + 8;
+    }
+
+    private int sidePanelTitleHeight() {
+        return 14;
+    }
+
+    private void drawSidePanelTitle(GuiGraphics guiGraphics, int x, int y, int width, Component title, int accentColor) {
+        guiGraphics.fill(x, y, x + width, y + sidePanelTitleHeight(), 0xCC0C1117);
+        guiGraphics.fill(x, y, x + width, y + 1, accentColor);
+        guiGraphics.fill(x, y + sidePanelTitleHeight() - 1, x + width, y + sidePanelTitleHeight(), 0x8842556E);
+        guiGraphics.fill(x, y, x + 1, y + sidePanelTitleHeight(), 0x8842556E);
+        guiGraphics.fill(x + width - 1, y, x + width, y + sidePanelTitleHeight(), 0x8842556E);
+        guiGraphics.drawString(this.font, title, x + 5, y + 3, 0xFFFFFFFF, false);
+    }
+
+    private void drawSidePanelSection(GuiGraphics guiGraphics, int x, int y, int width, int height, int accentColor) {
+        if (height <= 0) {
+            return;
+        }
+        guiGraphics.fill(x, y, x + width, y + height, 0xA0091118);
+        guiGraphics.fill(x, y, x + width, y + 1, accentColor);
+        guiGraphics.fill(x, y + height - 1, x + width, y + height, 0xFF516579);
+        guiGraphics.fill(x, y, x + 1, y + height, 0xFF516579);
+        guiGraphics.fill(x + width - 1, y, x + width, y + height, 0xFF516579);
+    }
+
     private RadarUnit getMainRadarUnit() {
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        return weaponUnit != null ? weaponUnit.getMainRadarUnit() : null;
+        return weaponUnit != null ? RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit) : null;
     }
 
     private Entity getMainRadarLockedEntity() {
         RadarUnit mainRadar = getMainRadarUnit();
-        return mainRadar != null ? mainRadar.getLockedEntity() : null;
+        Entity localLocked = mainRadar != null ? mainRadar.getLockedEntity() : null;
+        if (localLocked != null) {
+            return localLocked;
+        }
+        return getExternalRadarLockedEntity();
     }
 
     private boolean isRadarLockedEntity(Entity entity) {
         if (entity == null) {
             return false;
+        }
+        if (isExternalRadarLockedEntity(entity)) {
+            return true;
         }
         for (RadarUnit radarUnit : tacticalRadarUnits) {
             Entity locked = radarUnit.getLockedEntity();
@@ -2345,6 +2533,30 @@ public class RVP_TacticalMapScreen extends Screen {
             }
         }
         return false;
+    }
+
+    @Nullable
+    private Entity getExternalRadarLockedEntity() {
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        Minecraft mc = Minecraft.getInstance();
+        if (launcher == null || mc.level == null) {
+            return null;
+        }
+        return RVP_ExternalRadarLinkHelper.getClientLockedEntity(launcher, mc.level.dimension().location());
+    }
+
+    private boolean isExternalRadarLockedEntity(@Nullable Entity entity) {
+        Entity locked = getExternalRadarLockedEntity();
+        return entity != null && locked != null && locked.getId() == entity.getId();
+    }
+
+    private boolean hasExternalRadarContact(int entityId) {
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        Minecraft mc = Minecraft.getInstance();
+        if (launcher == null || mc.level == null) {
+            return false;
+        }
+        return RVP_ExternalRadarLinkHelper.isClientTrackedByExternalRadar(launcher, mc.level.dimension().location(), entityId);
     }
 
     private String resolveRadarNctrLabel(RadarUnit radarUnit, Entity entity) {
@@ -2429,8 +2641,16 @@ public class RVP_TacticalMapScreen extends Screen {
         return Math.sqrt(dx * dx + dz * dz);
     }
 
-    private String formatRadarNumber(double value) {
-        return String.format(Locale.ROOT, "%.1f", value);
+    private String formatRadarDistanceOrAltitude(double meters) {
+        double absMeters = Math.abs(meters);
+        if (absMeters < 1000.0) {
+            return String.format(Locale.ROOT, "%.0f", meters);
+        }
+        return String.format(Locale.ROOT, "%.1fK", meters / 1000.0);
+    }
+
+    private String formatRadarSpeedKph(double speedKph) {
+        return String.format(Locale.ROOT, "%.0f", speedKph);
     }
 
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
@@ -2500,8 +2720,8 @@ public class RVP_TacticalMapScreen extends Screen {
         int y0 = centerY - Mth.floor((float) Math.cos(rad) * start);
         int x1 = centerX + Mth.floor((float) Math.sin(rad) * end);
         int y1 = centerY - Mth.floor((float) Math.cos(rad) * end);
-        drawLine(guiGraphics, x0, y0, x1, y1, withAlpha(color, 0xEE));
-        plot(guiGraphics, x1, y1, 0xFFFFFFFF);
+        drawGuiLine(guiGraphics, x0, y0, x1, y1, 1.2f, withAlpha(color, 0xEE));
+        guiGraphics.fill(x1 - 1, y1 - 1, x1 + 1, y1 + 1, 0xFFFFFFFF);
     }
 
     private int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
@@ -2511,9 +2731,34 @@ public class RVP_TacticalMapScreen extends Screen {
         if (player.getVehicle() == vehicle) {
             return OWN_ICON_COLOR;
         }
+        AbstractVehicle playerVehicle = player.getVehicle() instanceof AbstractVehicle v ? v : null;
+        if (playerVehicle != null) {
+            java.util.UUID relayUuid = RVP_ClientExternalRadarState.getRelayVehicleUuid(
+                    player.level().dimension().location(),
+                    playerVehicle.getUUID()
+            );
+            if (relayUuid != null && relayUuid.equals(vehicle.getUUID())) {
+                return FRIEND_ICON_COLOR;
+            }
+        }
         LivingEntity driver = vehicle.getDriver();
         if (driver != null) {
             return relationColorForEntity(player, driver);
+        }
+        // driver 为 null 时，检查远程实体的 rvpRemoteFaction 缓存
+        if (vehicle instanceof AbstractVehicleGunnerDataAccessor ext) {
+            RVP_EnumGunnerFaction faction = ext.ywzj_rvp$getRemoteFaction();
+            if (faction == RVP_EnumGunnerFaction.ENEMY) {
+                return HOSTILE_ICON_COLOR;
+            }
+            if (faction == RVP_EnumGunnerFaction.FRIENDLY) {
+                return FRIEND_ICON_COLOR;
+            }
+        }
+        // fallback：检查外部雷达的 affiliation 判定
+        S2CExternalRadarSnapshot.Affiliation affiliation = RVP_ExternalRadarLinkHelper.getAffiliation(vehicle);
+        if (affiliation != null && affiliation != S2CExternalRadarSnapshot.Affiliation.UNKNOWN) {
+            return relationColorForAffiliation(affiliation);
         }
         return UNMANNED_VEHICLE_ICON_COLOR;
     }
@@ -2750,6 +2995,24 @@ public class RVP_TacticalMapScreen extends Screen {
         };
     }
 
+    private int relationColorForAffiliation(S2CExternalRadarSnapshot.Affiliation affiliation) {
+        return switch (affiliation) {
+            case OWN -> OWN_ICON_COLOR;
+            case FRIEND -> FRIEND_ICON_COLOR;
+            case HOSTILE -> HOSTILE_ICON_COLOR;
+            case UNKNOWN -> NEUTRAL_ICON_COLOR;
+        };
+    }
+
+    private List<S2CExternalRadarSnapshot.Entry> currentExternalRadarEntries() {
+        Minecraft mc = Minecraft.getInstance();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        if (mc.level == null || vehicle == null) {
+            return List.of();
+        }
+        return List.copyOf(RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()));
+    }
+
     private float mapIconYaw(float yaw) {
         return yaw + 180.0f;
     }
@@ -2918,7 +3181,11 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private Component resolveMarkerDisplayName(Entity entity) {
         if (entity instanceof AbstractVehicle vehicle) {
-            return vehicle.getDisplayName();
+            String nctr = resolveModernNctrLabel(vehicle);
+            if (nctr != null && !nctr.isBlank() && !"?".equals(nctr)) {
+                return Component.literal(nctr);
+            }
+            return Component.literal("?");
         }
         if (entity instanceof AmmoEntity ammo) {
             return Component.literal(resolveWeaponDisplayName(ammo.getWeaponId()));
@@ -3097,15 +3364,14 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void drawDiamond(GuiGraphics guiGraphics, int cx, int cy, int radius, int color, boolean filled) {
-        for (int dy = -radius; dy <= radius; dy++) {
-            int width = radius - Math.abs(dy);
-            if (filled) {
-                guiGraphics.fill(cx - width, cy + dy, cx + width + 1, cy + dy + 1, color);
-            } else {
-                plot(guiGraphics, cx - width, cy + dy, color);
-                plot(guiGraphics, cx + width, cy + dy, color);
-            }
+        if (filled) {
+            fillDiamond(guiGraphics, cx, cy, radius, color);
+            return;
         }
+        drawGuiLine(guiGraphics, cx, cy - radius, cx + radius, cy, 1.1f, color);
+        drawGuiLine(guiGraphics, cx + radius, cy, cx, cy + radius, 1.1f, color);
+        drawGuiLine(guiGraphics, cx, cy + radius, cx - radius, cy, 1.1f, color);
+        drawGuiLine(guiGraphics, cx - radius, cy, cx, cy - radius, 1.1f, color);
     }
 
     private void drawDirectionTick(GuiGraphics guiGraphics, int cx, int cy, float yaw, int inner, int outer, int color) {
@@ -3114,32 +3380,48 @@ public class RVP_TacticalMapScreen extends Screen {
         int y1 = cy - Mth.floor((float) (Math.cos(rad) * inner));
         int x2 = cx + Mth.floor((float) (Math.sin(rad) * outer));
         int y2 = cy - Mth.floor((float) (Math.cos(rad) * outer));
-        drawLine(guiGraphics, x1, y1, x2, y2, color);
+        drawGuiLine(guiGraphics, x1, y1, x2, y2, 1.1f, color);
     }
 
     private void drawLine(GuiGraphics guiGraphics, int x0, int y0, int x1, int y1, int color) {
-        int dx = Math.abs(x1 - x0);
-        int dy = Math.abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-        int x = x0;
-        int y = y0;
-        while (true) {
-            plot(guiGraphics, x, y, color);
-            if (x == x1 && y == y1) {
-                return;
-            }
-            int e2 = err << 1;
-            if (e2 > -dy) {
-                err -= dy;
-                x += sx;
-            }
-            if (e2 < dx) {
-                err += dx;
-                y += sy;
-            }
+        drawGuiLine(guiGraphics, x0, y0, x1, y1, 1.0f, color);
+    }
+
+    private void drawGuiLine(GuiGraphics guiGraphics, float x0, float y0, float x1, float y1, float thickness, int color) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        if (dx * dx + dy * dy < 0.25f) {
+            guiGraphics.fill(Mth.floor(x0), Mth.floor(y0), Mth.floor(x0) + 1, Mth.floor(y0) + 1, color);
+            return;
         }
+        var pose = guiGraphics.pose();
+        pose.pushPose();
+        pose.translate(x0, y0, 0.0f);
+        RenderHelper.drawLine(pose, new Vec3(dx, 0.0, dy), thickness, color, -1, -1);
+        pose.popPose();
+    }
+
+    private void fillDiamond(GuiGraphics guiGraphics, int cx, int cy, int radius, int color) {
+        float a = alpha(color);
+        float r = red(color);
+        float g = green(color);
+        float b = blue(color);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        Tesselator tess = Tesselator.getInstance();
+        BufferBuilder buf = tess.getBuilder();
+        buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
+        var pose = guiGraphics.pose().last().pose();
+
+        buf.vertex(pose, cx, cy - radius, 0).color(r, g, b, a).endVertex();
+        buf.vertex(pose, cx + radius, cy, 0).color(r, g, b, a).endVertex();
+        buf.vertex(pose, cx, cy + radius, 0).color(r, g, b, a).endVertex();
+
+        buf.vertex(pose, cx, cy - radius, 0).color(r, g, b, a).endVertex();
+        buf.vertex(pose, cx, cy + radius, 0).color(r, g, b, a).endVertex();
+        buf.vertex(pose, cx - radius, cy, 0).color(r, g, b, a).endVertex();
+        tess.end();
     }
 
     private void drawDashedWorldLine(GuiGraphics guiGraphics, double worldX0, double worldZ0, double worldX1, double worldZ1,
@@ -3152,32 +3434,26 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void drawDashedLine(GuiGraphics guiGraphics, int x0, int y0, int x1, int y1, int dashLength, int gapLength, int color) {
-        int dx = Math.abs(x1 - x0);
-        int dy = Math.abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-        int x = x0;
-        int y = y0;
-        int pattern = Math.max(1, dashLength + gapLength);
-        int step = 0;
-        while (true) {
-            if (step % pattern < dashLength) {
-                plot(guiGraphics, x, y, color);
-            }
-            if (x == x1 && y == y1) {
-                return;
-            }
-            int e2 = err << 1;
-            if (e2 > -dy) {
-                err -= dy;
-                x += sx;
-            }
-            if (e2 < dx) {
-                err += dx;
-                y += sy;
-            }
-            step++;
+        double dx = x1 - x0;
+        double dy = y1 - y0;
+        double totalLength = Math.hypot(dx, dy);
+        if (totalLength <= 0.5) {
+            plot(guiGraphics, x0, y0, color);
+            return;
+        }
+        double pattern = Math.max(1.0, dashLength + gapLength);
+        double drawn = 0.0;
+        while (drawn < totalLength) {
+            double dashStart = drawn;
+            double dashEnd = Math.min(totalLength, drawn + Math.max(1, dashLength));
+            double startRatio = dashStart / totalLength;
+            double endRatio = dashEnd / totalLength;
+            int sx = Mth.floor(Mth.lerp(startRatio, x0, x1));
+            int sy = Mth.floor(Mth.lerp(startRatio, y0, y1));
+            int ex = Mth.floor(Mth.lerp(endRatio, x0, x1));
+            int ey = Mth.floor(Mth.lerp(endRatio, y0, y1));
+            drawLine(guiGraphics, sx, sy, ex, ey, color);
+            drawn += pattern;
         }
     }
 
@@ -3304,6 +3580,7 @@ public class RVP_TacticalMapScreen extends Screen {
                                       float vehicleYaw, float localStartDeg, float localEndDeg, int segments, int color) {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         Tesselator tesselator = Tesselator.getInstance();
@@ -3326,6 +3603,7 @@ public class RVP_TacticalMapScreen extends Screen {
             buffer.vertex(vx, vy, 0).color(r, g, b, a).endVertex();
         }
         tesselator.end();
+        RenderSystem.enableCull();
         RenderSystem.disableBlend();
     }
 
@@ -3366,7 +3644,7 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private float mapAngleForRadarLocal(float vehicleYaw, float localAngle) {
-        return mapIconYaw(vehicleYaw) - localAngle;
+        return mapIconYaw(vehicleYaw) + localAngle;
     }
 
     private float computeRadarScanAngle(RadarUnit radarUnit, float partialTick, double yRotO, double yRot) {

@@ -8,6 +8,8 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -67,6 +69,13 @@ public final class RVP_GuidanceMath {
         if (target == null || config == null) {
             return false;
         }
+        if (shouldUseGpsBombCruiseGuidance(projectile, config)) {
+            return guidanceToPosWithGpsCruise(projectile, target, config);
+        }
+        return guidanceToPosDefault(projectile, target, config);
+    }
+
+    private static boolean guidanceToPosDefault(RVP_BaseBullet projectile, Vec3 target, RVP_GuidanceEffectiveConfig config) {
         Vec3 toTarget = target.subtract(projectile.position());
         double distance = toTarget.length();
         if (distance < 1.0E-6) {
@@ -95,6 +104,71 @@ public final class RVP_GuidanceMath {
                 velocity.x + (desired.x - velocity.x) * turning,
                 velocity.y + (desired.y - velocity.y) * turning,
                 velocity.z + (desired.z - velocity.z) * turning
+        );
+        applyVelocityAndRotation(projectile, next);
+        return true;
+    }
+
+    private static boolean shouldUseGpsBombCruiseGuidance(RVP_BaseBullet projectile, RVP_GuidanceEffectiveConfig config) {
+        if (projectile == null || config == null) {
+            return false;
+        }
+        if (projectile.getWeaponKind() != RVP_EnumWeaponKind.BOMB || config.activeSourceType() != RVP_EnumGuidanceType.GPS) {
+            return false;
+        }
+        RVP_WeaponData data = projectile.getRvpData();
+        return data != null
+                && data.getProjectileData().usesGpsCruiseProfile()
+                && projectile.getUpdateCount() >= data.getProjectileData().getGpsCruiseStartTick();
+    }
+
+    private static boolean guidanceToPosWithGpsCruise(RVP_BaseBullet projectile, Vec3 target, RVP_GuidanceEffectiveConfig config) {
+        if (projectile.isGpsCruiseTerminalPhaseActive()) {
+            return guidanceToPosDefault(projectile, target, config);
+        }
+
+        Vec3 velocity = projectile.getDeltaMovement();
+        Vec3 toTarget = target.subtract(projectile.position());
+        Vec3 horizontalToTarget = new Vec3(toTarget.x, 0.0D, toTarget.z);
+        double horizontalDistance = horizontalToTarget.length();
+        if (horizontalDistance < 1.0E-6) {
+            return guidanceToPosDefault(projectile, target, config);
+        }
+
+        double currentHorizontalSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        double desiredHorizontalSpeed = Math.max(currentHorizontalSpeed, Math.max(projectile.getFlightSpeed(), velocity.length()) * 0.01D);
+        Vec3 desiredHorizontal = horizontalToTarget.scale(desiredHorizontalSpeed / horizontalDistance);
+
+        Vector3f currentHorizontalDir = new Vector3f((float) velocity.x, 0.0f, (float) velocity.z);
+        Vector3f targetHorizontalDir = new Vector3f((float) horizontalToTarget.x, 0.0f, (float) horizontalToTarget.z);
+        if (currentHorizontalDir.lengthSquared() < 1.0E-6f) {
+            currentHorizontalDir.set((float) desiredHorizontal.x, 0.0f, (float) desiredHorizontal.z);
+        }
+        double angle = Math.abs(currentHorizontalDir.angle(targetHorizontalDir));
+        if (angle > Math.toRadians(config.steering().getMaxDegreeOfMissile())) {
+            return false;
+        }
+
+        double turning = config.steering().getTurningFactor();
+        if (config.steering().getTickEndHoming() > 0 && projectile.life <= config.steering().getTickEndHoming()) {
+            turning = Math.min(1.0, turning * 1.5);
+        }
+
+        RVP_ProjectileData projectileData = projectile.getRvpData().getProjectileData();
+        double nextY;
+        if (projectile.consumeGpsCruiseVerticalResetPending()) {
+            nextY = 0.0D;
+        } else {
+            nextY = velocity.y;
+            if (nextY > 0.0D) {
+                nextY += (0.0D - nextY) * projectileData.getGpsCruiseLevelingFactor();
+            }
+        }
+
+        Vec3 next = new Vec3(
+                velocity.x + (desiredHorizontal.x - velocity.x) * turning,
+                nextY,
+                velocity.z + (desiredHorizontal.z - velocity.z) * turning
         );
         applyVelocityAndRotation(projectile, next);
         return true;

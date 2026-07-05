@@ -6,6 +6,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -22,11 +24,22 @@ public final class RVP_GuidanceSeekerUtil {
         if (unit == null) {
             return projectile.getTargetEntity();
         }
-        var radarUnit = unit.getMainRadarUnit();
+        WeaponUnit root = unit.getRootParentWeaponUnit();
+        var radarUnit = RVP_RadarRoleHelper.getLockedRadar(root);
         if (radarUnit != null && radarUnit.getLockedEntity() != null) {
             return radarUnit.getLockedEntity();
         }
-        return unit.getLockedEntity();
+        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
+            int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
+            if (externalLockedId != Integer.MIN_VALUE) {
+                Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+                if (externalLocked != null && externalLocked.isAlive()) {
+                    return externalLocked;
+                }
+            }
+        }
+        Entity tracked = root.getLockedEntity();
+        return tracked != null && tracked.isAlive() ? tracked : projectile.getTargetEntity();
     }
 
     public static boolean isValidEntityTarget(

@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
+| [无人机_TV弹_区块加载功能调研.md](./无人机_TV弹_区块加载功能调研.md) | 系统调研 / 接手开发 | 可部署 UAV、TV/HITL 导弹、区块加载器当前实现与风险 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
 | [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、`allow_submunition`、C01–C10 创意演示弹与安装步骤 |
 | [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |

@@ -160,6 +160,8 @@
   "key.ywzj_rvp.arm_select_next.desc": "ARM 下一个目标",
   "key.ywzj_rvp.set_gps_target.desc": "设置 GPS 目标点",
   "key.ywzj_rvp.clear_gps.desc": "清除 GPS 目标点",
+  "key.ywzj_rvp.deploy_deployable_uav.desc": "放飞分体式雷达车",
+  "key.ywzj_rvp.switch_deployable_uav.desc": "切换分体式雷达车 / 母车",
   "key.ywzj_rvp.hmd_toggle.desc": "头盔瞄准具 / 格斗模式切换",
   "key.ywzj_rvp.fire_control_stabilizer.desc": "火控模式切换",
   "key.ywzj_rvp.hitl_redesignate.desc": "TV/HITL 重新指定目标",
@@ -185,5 +187,15 @@
   "message.ywzj_rvp.fire_control_stabilizer.off": "火控稳定器关闭",
   "message.ywzj_rvp.fire_control_mode.stable": "火控模式：稳定",
   "message.ywzj_rvp.fire_control_mode.semi_auto": "火控模式：半自动",
-  "message.ywzj_rvp.fire_control_mode.off": "火控模式：关闭"
+  "message.ywzj_rvp.fire_control_mode.off": "火控模式：关闭",
+  "message.ywzj_rvp.uav.not_in_vehicle": "未在可操作载具中",
+  "message.ywzj_rvp.uav.no_config": "当前载具未配置分体式无人机",
+  "message.ywzj_rvp.uav.invalid_template": "分体式无人机模板无效",
+  "message.ywzj_rvp.uav.already_deployed": "雷达车已放飞",
+  "message.ywzj_rvp.uav.spawn_failed": "放飞雷达车失败",
+  "message.ywzj_rvp.uav.deploy_success": "已放飞雷达车并切换控制",
+  "message.ywzj_rvp.uav.switch_to_child_success": "已切换到雷达车",
+  "message.ywzj_rvp.uav.switch_to_child_failed": "切换到雷达车失败",
+  "message.ywzj_rvp.uav.switch_back_success": "已返回母车",
+  "message.ywzj_rvp.uav.switch_back_failed": "返回母车失败"
 }

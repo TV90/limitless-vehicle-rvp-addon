@@ -28,8 +28,11 @@ import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
@@ -42,6 +45,9 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
+import org.ywzj.rvp.network.C2SDeployDeployableUav;
+import org.ywzj.rvp.network.C2SSwitchDeployableUav;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
@@ -78,6 +84,7 @@ public class RVP_ClientEvents {
 
         RVP_ClientBulletHitDebugState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
+        RVP_ClientExternalRadarState.clientTick();
 
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
@@ -103,10 +110,14 @@ public class RVP_ClientEvents {
                 // 检查是否有 STT 锁定
                 WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
                 if (weaponUnit != null) {
-                    RadarUnit radar = weaponUnit.getMainRadarUnit();
+                    RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
                     if (radar != null && radar.getLockedEntity() != null) {
-                        radar.setLockedEntity(null);
+                        RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
                         weaponUnit.setLockedEntity(null);
+                    }
+                    if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.getVehicle(),
+                            mc.level != null ? mc.level.dimension().location() : null)) {
+                        RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
                     }
                 }
                 boolean on = hmd.toggle();
@@ -124,6 +135,12 @@ public class RVP_ClientEvents {
 
         while (RVP_Keys.OPEN_GPS_PANEL.consumeClick()) {
             mc.setScreen(new RVP_TacticalMapScreen());
+        }
+        while (RVP_Keys.DEPLOY_DEPLOYABLE_UAV.consumeClick()) {
+            RVP_Network.CHANNEL.sendToServer(new C2SDeployDeployableUav());
+        }
+        while (RVP_Keys.SWITCH_DEPLOYABLE_UAV.consumeClick()) {
+            RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
         }
 
         RVP_ClientHitlState.tick(mc, player);

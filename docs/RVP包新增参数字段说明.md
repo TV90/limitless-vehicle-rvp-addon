@@ -272,11 +272,18 @@ RVP 扩展武器数据包路径：
 | `altitude_drag_thin_factor` | 稀薄空气阻力倍率。默认 `0.6`。 |
 | `altitude_drag_high_y` | 高空锚点高度。默认 `1000`。 |
 | `altitude_drag_high_factor` | 高空阻力倍率。默认 `0.34`。 |
+| `gps_cruise_start_tick` | GPS 炸弹巡航段开始 tick；`-1` 或不写表示关闭该弹道。仅 `rvp:bomb + GPS` 生效。 |
+| `gps_cruise_terminal_cylinder_radius` | 末端俯冲触发的水平圆柱半径；进入以目标点为中心、半径为该值的无限高圆柱后，退出巡航并改为直扑目标点。 |
+| `gps_cruise_gravity_scale` | 巡航段重力系数；`1` = 原始 `gravity`，`0.5` = 巡航段下落减半。仅巡航段生效。 |
+| `gps_cruise_leveling_factor` | 巡航段自动改平强度；每 tick 把“向上”的竖直速度按该比例拉向 `0`，用于消掉抛投后的上仰。范围建议 `0~1`。 |
+| `gps_cep` | GPS 炸弹 CEP（米/格）；定义为“50% 落点落在该半径内”的圆概率误差。每枚弹只随机一次水平偏差，`Y` 不偏移。仅 `rvp:bomb + GPS` 生效。 |
+| `gps_guidance_cancel_distance` | GPS 弹药接近目标点后自动脱导的阈值距离（米/格）；`0` 表示不启用。用于避免空中 GPS 点附近来回穿梭。 |
 | `dual_pulse` | 是否启用双脉冲推进（第二段推力）。仅对 `rvp:missile` 且制导源包含 `IR/ARH/SARH/ARM` 的导弹生效。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
+| `signature_size` | 信号尺寸（签名大小）：定义弹体在雷达/红外探测系统中的等效尺寸。`0`（默认）：该弹体不可被雷达/红外探测，保持原有行为；`> 0`：替代 `getBoundingBox().getSize()` 用于扫描/探测/锁定过滤，并作为 RCS（雷达截面积）倍率参与探测距离缩放。 |
 
 `altitude_drag_*` 的运行规则：
 
@@ -284,11 +291,65 @@ RVP 扩展武器数据包路径：
 - 阻力倍率按四个高度锚点做三段平滑插值（smoothstep），而不是生硬分段跳变。
 - 推力弹道会把倍率乘到 `drag_coefficient`；简化弹道会把倍率乘到 `drag`。
 
+### GPS 炸弹巡航滑翔（Cruise Glide）
+
+- 仅对 `rvp:bomb` 且当前激活制导源为 `GPS` 生效；其它弹种、其它制导源忽略。
+- `gps_cruise_start_tick` 到达前，仍按普通 GPS 直扑目标点。
+- 进入巡航后：
+  - 制导只修正水平 `X/Z`，不再为了追目标主动修正 `Y`。
+  - 进入巡航的首 tick 会清零历史 `motionY`；后续 `Y` 方向只由重力重新累积，实际使用的重力为 `gravity * gps_cruise_gravity_scale`。
+  - 若当前仍在上抛，`gps_cruise_leveling_factor` 会逐 tick 把向上的 `motionY` 拉向 `0`，实现“先改平再滑翔”。
+- 当水平距离 `<= gps_cruise_terminal_cylinder_radius` 时，进入末端段并恢复普通 GPS 直扑逻辑，开始向目标点俯冲。
+
+### GPS CEP（圆概率误差）
+
+- 仅对 `rvp:bomb` 且当前激活制导源为 `GPS` 生效。
+- `gps_cep = 1` 表示：该弹采用二维高斯散布后，有约 50% 的落点会落在目标点周围半径 1 米的圆内。
+- 每枚弹在发射后只采样一次固定的水平偏差，因此整段飞行都会朝“带误差的目标点”飞，不会每 tick 抖动。
+- 当前实现只在水平面 `X/Z` 施加误差，`Y` 不做 CEP 偏移。
+
+### GPS 接近后脱导
+
+- `gps_guidance_cancel_distance > 0` 时，弹体与目标点的三维距离小于等于该阈值后，会立刻清除 GPS 目标点并退出 GPS 制导。
+- 典型用途是防止空中 GPS 点或高空引导点附近出现“穿过目标点后又掉头回来”的来回穿梭。
+
 ### 双脉冲推进（Dual Pulse）
 
 - 第一段推力：由 `thrust + motor_burn_time` 控制，结束后进入减速段。
 - 第二段推力：必须在第一段结束后才允许启动；触发条件为 `低速阈值 OR 近距阈值`，且只触发一次。
 - 禁用条件：`dual_pulse=false`，或第二段推力/燃烧时间无效，或速度阈值与距离阈值都为 0。
+
+### 信号尺寸 signature_size
+
+RVP 弹体实体注册时使用 `sized(0.0625, 0.0625)`（约 1/16 格），而本体雷达/红外导引头在 `scanTargets()`、`detectTargets()`、`findTarget()` 中硬编码了 `getBoundingBox().getSize() < 1` 过滤小实体，导致默认状态下 RVP 弹体无法被任何雷达或红外导引头扫描到。
+
+`signature_size` 解决此问题：为弹体指定一个等效信号尺寸，使其在雷达/红外探测中拥有与该尺寸匹配的可探测性。
+
+**运行规则：**
+
+- `0`（默认）：该弹体不可被雷达/红外探测，行为与未添加该字段完全一致。
+- `> 0`：RVP 通过 Mixin 向雷达/红外过滤逻辑注入虚拟碰撞箱，使 `getSize()` 返回 `signature_size` 而非物理碰撞箱尺寸，从而绕过 `getSize() < 1` 的过滤。
+- 该字段**不影响物理碰撞检测**，仅修改雷达/红外探测系统对弹体的可见性。
+- 在服务端雷达扫描（`RadarUnitMixin.appendRvpAmmoTargets`）中，`signatureSize > 0` 的 `rvp:missile`/`rvp:bomb` 才会被纳入雷达目标列表，且有效探测距离按 `maxScanDistanceSqr × signatureSize²` 缩放（等效 RCS 倍率）。
+- 对所有 `rvp:*` 武器类型均生效，但通常只有 `rvp:missile` 和 `rvp:bomb` 需要设置该值。
+
+**典型值参考：**
+
+| 弹药类型 | 推荐 `signature_size` | 说明 |
+| --- | --- | --- |
+| 大型中距弹（AMRAAM/PL-15） | 1.0 ~ 2.0 | RCS 较大，远距可被雷达探测 |
+| 格斗弹（PL-9/AIM-9） | 0.5 ~ 1.0 | 中等信号 |
+| 炸弹/布撒器 | 0.3 ~ 0.8 | 下落时有一定 RCS |
+| 火箭弹/机枪弹 | `0`（不设置） | 不需要被雷达/红外探测 |
+
+**示例：**
+
+```json
+"projectile_data": {
+  "velocity": 3.2,
+  "signature_size": 1.5
+}
+```
 
 ### 火箭发动机与推进回退
 
@@ -1152,6 +1213,7 @@ ARM seeker 会把雷达观测抽象为 PDW：
 | --- | --- |
 | `ui_preset` | 载具 UI 预设名。RVP 会优先从 `data/<namespace>/ui_presets/<name>.json` 读取；若未找到，再回退到 `config/limitless_vehicle/ui_presets/<name>.json`。 |
 | `show_skeleton` | 是否在观瞄/UI 预设启用时显示载具骨骼俯视图，默认 `true`。 |
+| `nctr_name` | 载具在 `MODERN` NCTR 模式下显示的识别名称，默认 `?`。例如 `F-16V`、`AH-64D`、`Z-10`。 |
 | `hide_passenger` | `bool`，默认 `false`。`true` 时坐进该载具的玩家在第三人称/旁观模式下不显示（`RenderPlayerEvent.Pre` + `RenderLivingEvent.Pre` 取消渲染）。 |
 
 ### 碰撞箱受击倍率
@@ -1230,6 +1292,12 @@ function updateBones(context) {
 | `enable_hms` | 是否为该雷达启用 HMS/HMD 相关显示与逻辑，默认 `true`。 |
 | `scan_min_height` | 雷达允许扫描的最低离地高度（格），默认 `25`。 |
 | `scan_max_height` | 雷达允许扫描的最高离地高度（格），默认 `10000`。 |
+| `nctr_mode` | 雷达 NCTR 识别档位。`NONE` = 不显示型号；`EARLY` = 固定翼显示 `JET`、直升机显示 `HELI`、`rvp:missile` 显示 `MSL`、`rvp:bomb` 显示 `BOMB`；`MODERN` = 载具显示其 `nctr_name`，RVP 弹药显示具体武器名。默认 `NONE`。 |
+
+补充说明：
+
+- RVP 雷达现在会额外把 `rvp:missile` 与 `rvp:bomb` 纳入雷达扫描/显示目标。
+- `nctr_mode` 只影响雷达 UI 上的目标标签显示，不改变本体雷达锁定、告警或命中判定逻辑。
 
 ### `rvp_aps` 被动拦截系统（载具 JSON 顶层）
 

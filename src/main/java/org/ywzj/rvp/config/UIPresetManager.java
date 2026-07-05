@@ -38,6 +38,8 @@ public class UIPresetManager {
     /** 单组件锚点 */
     public enum Anchor {
         @SerializedName("center") CENTER,
+        @SerializedName("top_left") TOP_LEFT,
+        @SerializedName("left") LEFT,
         @SerializedName("right") RIGHT,
         @SerializedName("right_bottom") RIGHT_BOTTOM
     }
@@ -59,6 +61,9 @@ public class UIPresetManager {
             if (resolvedAnchor == Anchor.CENTER) {
                 return screenWidth / 2 + offsetX;
             }
+            if (resolvedAnchor == Anchor.TOP_LEFT || resolvedAnchor == Anchor.LEFT) {
+                return offsetX;
+            }
             if (resolvedAnchor == Anchor.RIGHT) {
                 return screenWidth / 2 + offsetX;
             }
@@ -72,6 +77,12 @@ public class UIPresetManager {
             if (resolvedAnchor == Anchor.CENTER) {
                 return screenHeight / 2 + scaledOffset;
             }
+            if (resolvedAnchor == Anchor.TOP_LEFT) {
+                return scaledOffset;
+            }
+            if (resolvedAnchor == Anchor.LEFT) {
+                return screenHeight / 2 + scaledOffset;
+            }
             if (resolvedAnchor == Anchor.RIGHT) {
                 return screenHeight + scaledOffset;
             }
@@ -83,6 +94,8 @@ public class UIPresetManager {
     public static class UIPreset {
         public String name;
         public UIPosition radar;
+        @SerializedName("external_radar")
+        public UIPosition externalRadar;
         public UIPosition rwr;
         @SerializedName("vehicle_bones")
         public UIPosition vehicleBones;
@@ -114,6 +127,11 @@ public class UIPresetManager {
     public static UIPosition getRadar(String presetName) {
         UIPreset preset = get(presetName);
         return preset == null ? null : preset.radar;
+    }
+
+    public static UIPosition getExternalRadar(String presetName) {
+        UIPreset preset = get(presetName);
+        return preset == null ? null : preset.externalRadar;
     }
 
     /**
@@ -193,6 +211,25 @@ public class UIPresetManager {
                     UIPreset preset = GSON.fromJson(json, UIPreset.class);
                     String fileName = entry.getFileName().toString();
                     String fallbackName = fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
+                    if ("default".equalsIgnoreCase(fallbackName) && preset != null && preset.externalRadar != null) {
+                        UIPosition pos = preset.externalRadar;
+                        if ((pos.anchor == null || pos.anchor == Anchor.RIGHT)
+                                && pos.offsetX == -128
+                                && pos.offsetY == -260
+                                && Math.abs(pos.scale - 1.0f) < 0.0001f) {
+                            pos.anchor = Anchor.TOP_LEFT;
+                            pos.offsetX = 80;
+                            pos.offsetY = 300;
+                            Files.writeString(entry, GSON.toJson(preset));
+                        }
+                        if (pos.anchor == Anchor.TOP_LEFT
+                                && pos.offsetX == 80
+                                && (pos.offsetY == 160 || pos.offsetY == 220)
+                                && Math.abs(pos.scale - 1.0f) < 0.0001f) {
+                            pos.offsetY = 300;
+                            Files.writeString(entry, GSON.toJson(preset));
+                        }
+                    }
                     registerPreset(preset, fallbackName, null, "config/" + fileName);
                 } catch (Exception e) {
                     LOGGER.error("Failed to load UI preset: {}", entry.getFileName(), e);
@@ -235,6 +272,12 @@ public class UIPresetManager {
                         "anchor": "right",
                         "offset_x": 128,
                         "offset_y": -80,
+                        "scale": 1.0
+                      },
+                      "external_radar": {
+                        "anchor": "top_left",
+                        "offset_x": 80,
+                        "offset_y": 300,
                         "scale": 1.0
                       },
                       "rwr": {

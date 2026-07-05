@@ -19,7 +19,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeSet;
 
-@Mixin(AbstractVehicle.class)
+@Mixin(value = AbstractVehicle.class, remap = false)
 public abstract class AbstractVehicleEraStateMixin implements RVPEraStateAccess {
 
     @Unique
@@ -73,7 +73,7 @@ public abstract class AbstractVehicleEraStateMixin implements RVPEraStateAccess 
         return rvp$inactiveEraBones.removeIf(boneName -> !valid.contains(boneName));
     }
 
-    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
+    @Inject(method = "addAdditionalSaveData", at = @At("TAIL"), remap = false)
     private void rvp$saveEraState(CompoundTag compound, CallbackInfo ci) {
         ListTag list = new ListTag();
         for (String boneName : new TreeSet<>(rvp$inactiveEraBones)) {
@@ -82,7 +82,7 @@ public abstract class AbstractVehicleEraStateMixin implements RVPEraStateAccess 
         compound.put(RVP_ERA_INACTIVE_TAG, list);
     }
 
-    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"))
+    @Inject(method = "readAdditionalSaveData", at = @At("TAIL"), remap = false)
     private void rvp$readEraState(CompoundTag compound, CallbackInfo ci) {
         rvp$inactiveEraBones.clear();
         if (!compound.contains(RVP_ERA_INACTIVE_TAG, Tag.TAG_LIST)) {

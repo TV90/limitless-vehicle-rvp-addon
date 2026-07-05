@@ -1,7 +1,9 @@
 package org.ywzj.rvp.ext;
 
 public interface RadarUnitPojoExt {
+    String ywzj_rvp$getRadarRole();
     String ywzj_rvp$getScanAnimationMode();
+    String ywzj_rvp$getNctrMode();
     int ywzj_rvp$getScanPeriodTick();
     boolean ywzj_rvp$isScanLineWhenLocked();
     int ywzj_rvp$getContactHoldTick();
