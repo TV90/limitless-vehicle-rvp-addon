@@ -19,8 +19,12 @@ import org.joml.Matrix4f;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
+import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
+import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
@@ -53,6 +57,8 @@ import java.util.Map;
  * </ul>
  */
 public class RVP_RadarOverlay implements IGuiOverlay {
+    private static final int EXTERNAL_RADAR_LINE = 0xDDFFE000;
+    private static final int EXTERNAL_RADAR_SECTOR = 0x44FFE000;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -63,11 +69,15 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         AbstractVehicle vehicle = weaponUnit.getVehicle();
         String presetName = vehicle.getVehicleId() != null ? VehicleUIPresetCache.get(vehicle.getVehicleId()) : null;
         UIPosition radarPos = UIPresetManager.getRadar(presetName);
+        UIPosition externalRadarPos = UIPresetManager.getExternalRadar(presetName);
         UIPosition rwrPos = UIPresetManager.getRwr(presetName);
 
         int centerX = radarPos != null ? radarPos.computeX(screenWidth) : screenWidth / 2 + 128;
         int centerY = radarPos != null ? radarPos.computeY(screenHeight) : screenHeight - 80;
         float radarScale = radarPos != null ? radarPos.scale : 1.0f;
+        int externalCenterX = externalRadarPos != null ? externalRadarPos.computeX(screenWidth) : 80;
+        int externalCenterY = externalRadarPos != null ? externalRadarPos.computeY(screenHeight) : Math.round(300f * ((float) screenHeight / UIPresetManager.UIPosition.REF_HEIGHT));
+        float externalScale = externalRadarPos != null ? externalRadarPos.scale : 1.0f;
         int rwrCenterX = rwrPos != null ? rwrPos.computeX(screenWidth) : screenWidth / 2 + 128;
         int rwrCenterY = rwrPos != null ? rwrPos.computeY(screenHeight) : screenHeight - 180;
         float rwrScale = rwrPos != null ? rwrPos.scale : 0.8f;
@@ -138,6 +148,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
             }
         }
         poseStack.popPose(); // 恢复最外层的 pushPose
+
+        renderExternalRadar(guiGraphics, partialTick, screenWidth, screenHeight, vehicle,
+                externalCenterX, externalCenterY, externalScale);
+
         // RWR
         WarningReceiver warningReceiver = vehicle.warningReceiver;
         if (warningReceiver != null) {
@@ -208,13 +222,113 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         }
     }
 
+    private void renderExternalRadar(GuiGraphics guiGraphics,
+                                     float partialTick,
+                                     int screenWidth,
+                                     int screenHeight,
+                                     AbstractVehicle vehicle,
+                                     int centerX,
+                                     int centerY,
+                                     float scale) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        List<S2CExternalRadarSnapshot.RadarSector> sectors =
+                RVP_ClientExternalRadarState.getSectors(mc.level.dimension().location(), vehicle.getUUID());
+        if (sectors.isEmpty()) {
+            return;
+        }
+        S2CExternalRadarSnapshot.RadarSector sector = sectors.get(0);
+        List<S2CExternalRadarSnapshot.Entry> entries =
+                List.copyOf(RVP_ClientExternalRadarState.getEntries(mc.level.dimension().location(), vehicle.getUUID()));
+        float radius = 50.0f * scale;
+        PoseStack poseStack = guiGraphics.pose();
+        poseStack.pushPose();
+        {
+            poseStack.translate(centerX, centerY, 0);
+            Matrix4f matrix = poseStack.last().pose();
+            drawRadarSector(matrix, 0, 0, radius, sector.yRotMin(), sector.yRotMax(), 32, EXTERNAL_RADAR_SECTOR);
+            drawRotatedText(guiGraphics, "EXT", 0, 0, radius + 8, 0, EXTERNAL_RADAR_LINE);
+            int lockedId = RVP_ClientExternalRadarState.getLockedEntityId(mc.level.dimension().location(), vehicle.getUUID());
+            if (lockedId == Integer.MIN_VALUE) {
+                float scanAngle = externalScanAngle(sector, partialTick);
+                drawScanLine(matrix, 0, 0, radius, scanAngle, 0.4f, EXTERNAL_RADAR_LINE);
+            }
+            Vec3 radarPos = sector.position();
+            double maxScanDistance = Math.max(1.0, sector.maxDistance());
+            double yaw = sector.yaw();
+            for (S2CExternalRadarSnapshot.Entry entry : entries) {
+                Vec3 v = entry.position().subtract(radarPos);
+                Vec3 local = rotateYaw(v, -yaw);
+                double l = Math.sqrt(local.x * local.x + local.z * local.z) / maxScanDistance * radius;
+                if (l <= 0) {
+                    continue;
+                }
+                double nx = local.x / Math.sqrt(local.x * local.x + local.z * local.z);
+                double nz = local.z / Math.sqrt(local.x * local.x + local.z * local.z);
+                double px = -nx * l;
+                double pz = -nz * l;
+                int r = entry.entityId() == lockedId ? 2 : 1;
+                drawExternalTarget(guiGraphics, px, pz, r, EXTERNAL_RADAR_LINE, entry);
+            }
+        }
+        poseStack.popPose();
+    }
+
+    private float externalScanAngle(S2CExternalRadarSnapshot.RadarSector sector, float partialTick) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return 0.0f;
+        }
+        float yRotMin = sector.yRotMin();
+        float yRotMax = sector.yRotMax();
+        float scanAz = yRotMax - yRotMin;
+        boolean fullCircle = yRotMin == 0f && scanAz >= 360f;
+        int periodTick = 60;
+        float phase = ((mc.player.tickCount % periodTick) + partialTick) / periodTick;
+        phase = Mth.clamp(phase, 0f, 1f);
+        if (fullCircle) {
+            return phase * 360f;
+        }
+        float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
+        return yRotMin + scanAz * pingPong;
+    }
+
+    private static Vec3 rotateYaw(Vec3 v, double yawDeg) {
+        double rad = Math.toRadians(yawDeg);
+        double cos = Math.cos(rad);
+        double sin = Math.sin(rad);
+        double x = v.x * cos - v.z * sin;
+        double z = v.x * sin + v.z * cos;
+        return new Vec3(x, v.y, z);
+    }
+
+    private void drawExternalTarget(GuiGraphics guiGraphics, double x, double y, int r, int color, S2CExternalRadarSnapshot.Entry entry) {
+        PoseStack poseStack = guiGraphics.pose();
+        poseStack.pushPose();
+        {
+            poseStack.translate(x - r, y - r, 0);
+            guiGraphics.fill(0, 0, r * 2, r * 2, color);
+            if (!entry.ammo()) {
+                guiGraphics.vLine(-2, -2, 3, color);
+                guiGraphics.vLine(3, -2, 3, color);
+                if (entry.affiliation() == S2CExternalRadarSnapshot.Affiliation.OWN
+                        || entry.affiliation() == S2CExternalRadarSnapshot.Affiliation.FRIEND) {
+                    guiGraphics.hLine(-2, 3, -3, color);
+                }
+            }
+        }
+        poseStack.popPose();
+    }
+
     public void drawTarget(GuiGraphics guiGraphics, double x, double y, int r, int color, RadarUnit.DetectedObject detectedObject, RadarUnit radarUnit) {
         PoseStack poseStack = guiGraphics.pose();
         poseStack.pushPose();
         {
             poseStack.translate(x - r, y - r, 0);
             guiGraphics.fill(0, 0, r * 2, r * 2, color);
-            if (!(detectedObject.entity instanceof MissileEntity)) {
+            if (!isAmmoLikeTarget(detectedObject.entity)) {
                 guiGraphics.vLine(-2, -2, 3, color);
                 guiGraphics.vLine(3, -2, 3, color);
                 Team team = detectedObject.entity.getTeam();
@@ -231,6 +345,17 @@ public class RVP_RadarOverlay implements IGuiOverlay {
             }
         }
         poseStack.popPose();
+    }
+
+    private boolean isAmmoLikeTarget(Entity entity) {
+        if (entity instanceof MissileEntity) {
+            return true;
+        }
+        if (entity instanceof RVP_BaseBullet bullet) {
+            return bullet.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                    || bullet.getWeaponKind() == RVP_EnumWeaponKind.BOMB;
+        }
+        return false;
     }
 
     /**
@@ -252,7 +377,8 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                 Vec2 localRot = radarUnit.worldVecToLocalRot(radarToHead);
                 float yMin = radarUnit.getYRotMin();
                 float yMax = radarUnit.getYRotMax();
-                if (yMax - yMin >= 360f) {
+                float span = yMax - yMin;
+                if (yMin == 0f && span >= 360f) {
                     yMin = 0f;
                     yMax = 360f;
                 }
@@ -273,10 +399,7 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                 float yRotMin = (float) radarUnit.getYRotMin();
                 float yRotMax = (float) radarUnit.getYRotMax();
                 float scanAz = yRotMax - yRotMin;
-                if (scanAz >= 360f) {
-                    yRotMin = 0f;
-                    scanAz = 360f;
-                }
+                boolean fullCircle = yRotMin == 0f && scanAz >= 360f;
                 // [RVP] 首次开启雷达时从 0° 扫一次，再进入巡航
                 int enabledTick = RadarEnabledTickHelper.getEnabledTick(radarUnit);
                 int elapsed = radarUnit.getVehicle().tickCount - enabledTick;
@@ -288,7 +411,7 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                 // 巡航：ping-pong
                 float phase = ((radarUnit.getVehicle().tickCount % periodTick) + partialTick) / periodTick;
                 phase = Mth.clamp(phase, 0f, 1f);
-                if (scanAz >= 360f) {
+                if (fullCircle) {
                     return phase * 360f;
                 }
                 float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;

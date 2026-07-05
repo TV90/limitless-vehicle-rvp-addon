@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -77,7 +78,7 @@ public class WeaponUnitSwitchWeaponMixin {
         if (root.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
             return;
         }
-        RadarUnit radar = root.getMainRadarUnit();
+        RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(root);
         if (radar == null) {
             return;
         }

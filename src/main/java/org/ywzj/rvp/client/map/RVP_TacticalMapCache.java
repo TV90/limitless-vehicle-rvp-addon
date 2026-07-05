@@ -51,6 +51,7 @@ public final class RVP_TacticalMapCache {
     private static final Map<TilePos, DynamicTexture> TILE_TEXTURES = new HashMap<>();
     private static final Map<Long, short[]> CHUNK_HEIGHTS = new HashMap<>();
     private static final Set<TilePos> DIRTY_TILES = new HashSet<>();
+    private static final Set<TilePos> DIRTY_TILES_TO_PERSIST = new HashSet<>();
     private static String currentWorldKey;
     private static ResourceLocation currentDimension;
     private static Path currentCacheDirectory;
@@ -156,6 +157,7 @@ public final class RVP_TacticalMapCache {
         persistToDisk();
         PENDING_CHUNKS.clear();
         DIRTY_TILES.clear();
+        DIRTY_TILES_TO_PERSIST.clear();
         CHUNK_HEIGHTS.clear();
         TILE_IMAGES.values().forEach(NativeImage::close);
         TILE_IMAGES.clear();
@@ -180,10 +182,14 @@ public final class RVP_TacticalMapCache {
         }
         try {
             Files.createDirectories(tileDirectory());
-            for (Map.Entry<TilePos, NativeImage> entry : TILE_IMAGES.entrySet()) {
-                entry.getValue().writeToFile(tilePath(entry.getKey()));
+            for (TilePos tilePos : List.copyOf(DIRTY_TILES_TO_PERSIST)) {
+                NativeImage image = TILE_IMAGES.get(tilePos);
+                if (image != null) {
+                    image.writeToFile(tilePath(tilePos));
+                }
             }
             writeChunkHeights();
+            DIRTY_TILES_TO_PERSIST.clear();
         } catch (IOException exception) {
             LOGGER.warn("[RVP][TacticalMap] Failed to persist cache to {}", currentCacheDirectory, exception);
         }
@@ -351,6 +357,7 @@ public final class RVP_TacticalMapCache {
                     int localZ = worldZ & (TILE_SIZE - 1);
                     getOrCreateTile(tilePos).setPixelRGBA(localX, localZ, abgr);
                     DIRTY_TILES.add(tilePos);
+                    DIRTY_TILES_TO_PERSIST.add(tilePos);
                 }
             }
         }

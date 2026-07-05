@@ -71,7 +71,7 @@ public class RVP_Entities {
     public static final RegistryObject<EntityType<GunnerEntity>> GUNNER = ENTITIES.register("gunner",
             () -> EntityType.Builder.of(GunnerEntity::new, MobCategory.CREATURE)
                     .sized(0.6f, 1.8f)
-                    .clientTrackingRange(16)
+                    .clientTrackingRange(16)   // 骑乘时共享载具追踪范围；独立存在时16格
                     .updateInterval(1)
                     .build("gunner"));
 

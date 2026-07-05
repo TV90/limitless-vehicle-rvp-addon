@@ -41,6 +41,8 @@ public class RVP_Keys {
 
     /** Clear GPS target. */
     public static final KeyMapping CLEAR_GPS = key("clear_gps", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L);
+    public static final KeyMapping DEPLOY_DEPLOYABLE_UAV = key("deploy_deployable_uav", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N);
+    public static final KeyMapping SWITCH_DEPLOYABLE_UAV = key("switch_deployable_uav", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_M);
 
     /** HMD helmet-mounted display / ACM dogfight mode toggle (5 key). */
     public static final KeyMapping HMD_TOGGLE = key("hmd_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_5);
@@ -57,6 +59,8 @@ public class RVP_Keys {
         event.register(ARM_SELECT_NEXT);
         event.register(SET_GPS_TARGET);
         event.register(CLEAR_GPS);
+        event.register(DEPLOY_DEPLOYABLE_UAV);
+        event.register(SWITCH_DEPLOYABLE_UAV);
         event.register(HMD_TOGGLE);
         event.register(FIRE_CONTROL_STABILIZER);
         event.register(HITL_REDESIGNATE);

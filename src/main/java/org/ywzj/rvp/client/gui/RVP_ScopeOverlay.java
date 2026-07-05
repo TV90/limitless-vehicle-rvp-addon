@@ -5,6 +5,7 @@ import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -13,17 +14,29 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.UIPresetManager.UIPreset;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
+import org.ywzj.vehicle.custom.CommonAssetsManager;
+import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.VehicleMissileWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -317,28 +330,59 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 poseStack.popPose();
             }
         }
+        RadarUnit mainRadarUnit = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        Minecraft mc = Minecraft.getInstance();
+        Entity externalLockedEntity = null;
+        S2CExternalRadarSnapshot.Entry externalLockedEntry = null;
+        if (sensorType == WeaponUnitData.FireControlSensorType.RF && vehicle != null && mc.level != null) {
+            externalLockedEntity = RVP_ExternalRadarLinkHelper.getClientLockedEntity(vehicle, mc.level.dimension().location());
+            if (externalLockedEntity != null) {
+                externalLockedEntry = RVP_ExternalRadarLinkHelper.getClientEntry(vehicle, mc.level.dimension().location(), externalLockedEntity.getId());
+            }
+        }
+
         // 雷达锁定目标
-        RadarUnit mainRadarUnit = weaponUnit.getMainRadarUnit();
-        if (mainRadarUnit != null) {
-            if (sensorType == WeaponUnitData.FireControlSensorType.RF && mainRadarUnit.getLockedEntity() != null) {
-                RadarUnit.DetectedObject detectedObject = weaponUnit.getMainRadarUnit().getDetectedEntities().get(mainRadarUnit.getLockedEntity().getId());
-                if (detectedObject != null) {
-                    Vec3 screenPos = VectorUtil.worldToScreen(detectedObject.entity.position());
-                    if (screenPos.z >= 0) {
-                        PoseStack poseStack = guiGraphics.pose();
-                        poseStack.pushPose();
-                        {
-                            poseStack.translate(screenPos.x, screenPos.y, 0);
-                            RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
-                            RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
-                            alliesInfo(guiGraphics, detectedObject);
-                            radarInfo(guiGraphics, poseStack, detectedObject);
-                        }
-                        poseStack.popPose();
+        if (mainRadarUnit != null && sensorType == WeaponUnitData.FireControlSensorType.RF && mainRadarUnit.getLockedEntity() != null) {
+            RadarUnit.DetectedObject detectedObject = resolveDetectedObject(weaponUnit, mainRadarUnit, mainRadarUnit.getLockedEntity());
+            if (detectedObject != null) {
+                Vec3 screenPos = VectorUtil.worldToScreen(detectedObject.entity.position());
+                if (screenPos.z >= 0) {
+                    PoseStack poseStack = guiGraphics.pose();
+                    poseStack.pushPose();
+                    {
+                        poseStack.translate(screenPos.x, screenPos.y, 0);
+                        RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
+                        RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
+                        alliesInfo(guiGraphics, detectedObject);
+                        radarInfo(guiGraphics, poseStack, detectedObject);
                     }
+                    poseStack.popPose();
                 }
             }
-            // 雷达可锁定的目标
+        } else if (sensorType == WeaponUnitData.FireControlSensorType.RF
+                && externalLockedEntry != null
+                && vehicle != null) {
+            Vec3 targetPos = externalLockedEntity != null
+                    ? externalLockedEntity.getBoundingBox().getCenter()
+                    : RVP_ExternalRadarLinkHelper.position(externalLockedEntry);
+            Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
+            if (screenPos.z >= 0) {
+                PoseStack poseStack = guiGraphics.pose();
+                poseStack.pushPose();
+                {
+                    poseStack.translate(screenPos.x, screenPos.y, 0);
+                    RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
+                    RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
+                    alliesInfoExternal(guiGraphics, externalLockedEntry);
+                    radarInfoExternal(guiGraphics, poseStack, externalLockedEntry, externalLockedEntity, vehicle);
+                }
+                poseStack.popPose();
+            }
+        }
+
+        // 雷达可锁定的目标
+        if (mainRadarUnit != null) {
             for (RadarUnit.DetectedObject detectedObject : weaponUnit.getRadarDetectedEntities()) {
                 Entity lockedEntity = mainRadarUnit.getLockedEntity();
                 if (lockedEntity != null && detectedObject.entity.getId() == lockedEntity.getId()) {
@@ -363,13 +407,54 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 poseStack.popPose();
             }
         }
+        if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
+            renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
+                    externalLockedEntity != null ? externalLockedEntity.getId() : Integer.MIN_VALUE);
+        }
     }
 
+    private static void renderExternalRadarContacts(GuiGraphics guiGraphics, WeaponUnit weaponUnit,
+                                                    @Nullable RadarUnit mainRadarUnit,
+                                                    int externalLockedEntityId) {
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        Minecraft mc = Minecraft.getInstance();
+        if (vehicle == null || mc.level == null) {
+            return;
+        }
+        for (S2CExternalRadarSnapshot.Entry entry : RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location())) {
+            if (mainRadarUnit != null && mainRadarUnit.getDetectedEntities().containsKey(entry.entityId())) {
+                continue;
+            }
+            if (entry.entityId() == externalLockedEntityId) {
+                continue;
+            }
+            Entity resolvedEntity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entry.entityId());
+            Vec3 targetPos = resolvedEntity != null ? resolvedEntity.getBoundingBox().getCenter() : RVP_ExternalRadarLinkHelper.position(entry);
+            Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
+            if (screenPos.z < 0) {
+                continue;
+            }
+            PoseStack poseStack = guiGraphics.pose();
+            poseStack.pushPose();
+            {
+                poseStack.translate(screenPos.x, screenPos.y, 0);
+                if (entry.ammo()) {
+                    RenderHelper.drawSquareCorners(guiGraphics, 0, 0, 10, 3, Color.GREEN);
+                } else {
+                    RenderHelper.drawSquareCorners(guiGraphics, 0, 0, 15, 5, Color.GREEN);
+                    alliesInfoExternal(guiGraphics, entry);
+                    radarInfoExternal(guiGraphics, poseStack, entry, resolvedEntity, vehicle);
+                }
+            }
+            poseStack.popPose();
+        }
+    }
     private static void radarInfo(GuiGraphics guiGraphics, PoseStack poseStack, RadarUnit.DetectedObject detectedObject) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
         if (vehicle == null) {
             return;
         }
+        String nctrLabel = resolveRadarNctrLabel(detectedObject.entity);
         Vec3 velocity = detectedObject.entity.getDeltaMovement();
         poseStack.pushPose();
         {
@@ -383,6 +468,15 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             }
         }
         poseStack.popPose();
+        if (!nctrLabel.isBlank() && !(detectedObject.entity instanceof AmmoEntity)) {
+            poseStack.pushPose();
+            {
+                poseStack.translate(0, 22, 0);
+                poseStack.scale(0.8f, 0.8f, 0.8f);
+                guiGraphics.drawCenteredString(Minecraft.getInstance().font, nctrLabel, 0, 0, Color.GREEN);
+            }
+            poseStack.popPose();
+        }
         poseStack.pushPose();
         {
             if (detectedObject.entity instanceof AmmoEntity) {
@@ -403,6 +497,50 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         poseStack.popPose();
     }
 
+    private static void radarInfoExternal(GuiGraphics guiGraphics, PoseStack poseStack,
+                                          S2CExternalRadarSnapshot.Entry entry,
+                                          @Nullable Entity resolvedEntity,
+                                          AbstractVehicle vehicle) {
+        String nctrLabel = entry.nctrLabel();
+        Vec3 velocity = resolvedEntity != null ? resolvedEntity.getDeltaMovement() : RVP_ExternalRadarLinkHelper.velocity(entry);
+        Vec3 detectedPos = resolvedEntity != null ? resolvedEntity.getBoundingBox().getCenter() : RVP_ExternalRadarLinkHelper.position(entry);
+        poseStack.pushPose();
+        {
+            poseStack.translate(0, 12, 0);
+            RenderHelper.drawSquare(guiGraphics, 0, 0, 4, Color.GREEN);
+            if (velocity.lengthSqr() > 1.0E-6) {
+                poseStack.translate(0.5, 0, 0);
+                Vec3 direction = velocity.normalize().scale(-8);
+                direction = vehicle.relativeRotDirection(direction, true);
+                RenderHelper.drawLine(poseStack, direction, 1f, color, -1, -1);
+            }
+        }
+        poseStack.popPose();
+        if (!nctrLabel.isBlank()) {
+            poseStack.pushPose();
+            {
+                poseStack.translate(0, 22, 0);
+                poseStack.scale(0.8f, 0.8f, 0.8f);
+                guiGraphics.drawCenteredString(Minecraft.getInstance().font, StringUtils.abbreviate(nctrLabel, 14), 0, 0, Color.GREEN);
+            }
+            poseStack.popPose();
+        }
+        poseStack.pushPose();
+        {
+            poseStack.translate(12, -12, 0);
+            poseStack.scale(0.8f, 0.8f, 0.8f);
+            double distance = detectedPos.distanceTo(vehicle.position());
+            guiGraphics.drawString(Minecraft.getInstance().font, String.format("%.2f m", distance), 0, 0, Color.GREEN, false);
+            poseStack.translate(0, 12, 0);
+            Vec3 approach = velocity.subtract(vehicle.getDeltaMovement());
+            Vec3 relative = detectedPos.subtract(vehicle.position());
+            int sig = approach.dot(relative) > 0 ? -1 : 1;
+            double approachRate = sig * approach.length() * 20;
+            guiGraphics.drawString(Minecraft.getInstance().font, String.format("%.2f m/s", approachRate), 0, 0, Color.GREEN, false);
+        }
+        poseStack.popPose();
+    }
+
     private static void alliesInfo(GuiGraphics guiGraphics, RadarUnit.DetectedObject detectedObject) {
         Team team = detectedObject.entity.getTeam();
         if (team != null && team.isAlliedTo(LocalVehiclePlayer.instance.getPlayer().getTeam())) {
@@ -415,4 +553,121 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             guiGraphics.hLine(-6, 6, -11, teamColor);
         }
     }
+
+    private static void alliesInfoExternal(GuiGraphics guiGraphics, S2CExternalRadarSnapshot.Entry entry) {
+        if (entry.affiliation() == S2CExternalRadarSnapshot.Affiliation.FRIEND
+                || entry.affiliation() == S2CExternalRadarSnapshot.Affiliation.OWN) {
+            guiGraphics.hLine(-6, 6, -11, Color.GREEN);
+        }
+    }
+
+    private static String resolveRadarNctrLabel(Entity entity) {
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) {
+            return "";
+        }
+        RadarUnit radarUnit = resolveNctrRadar(weaponUnit, entity);
+        if (radarUnit == null) {
+            return "";
+        }
+        RadarUnitData data = radarUnit.getData();
+        if (!(data instanceof RadarUnitDataExt ext)) {
+            return "";
+        }
+        String mode = ext.ywzj_rvp$getNctrMode();
+        if ("NONE".equalsIgnoreCase(mode)) {
+            return "";
+        }
+        String label = "EARLY".equalsIgnoreCase(mode) ? resolveEarlyNctrLabel(entity) : resolveModernNctrLabel(entity);
+        if (label == null || label.isBlank()) {
+            return "";
+        }
+        return StringUtils.abbreviate(label, 14);
+    }
+
+    private static RadarUnit.DetectedObject resolveDetectedObject(WeaponUnit weaponUnit, RadarUnit preferredRadar, Entity entity) {
+        if (weaponUnit == null || entity == null) {
+            return null;
+        }
+        if (preferredRadar != null) {
+            RadarUnit.DetectedObject direct = preferredRadar.getDetectedEntities().get(entity.getId());
+            if (direct != null) {
+                return direct;
+            }
+        }
+        for (RadarUnit.DetectedObject detectedObject : weaponUnit.getRadarDetectedEntities()) {
+            if (detectedObject != null && detectedObject.entity != null && detectedObject.entity.getId() == entity.getId()) {
+                return detectedObject;
+            }
+        }
+        return null;
+    }
+
+    private static RadarUnit resolveNctrRadar(WeaponUnit weaponUnit, Entity entity) {
+        if (weaponUnit == null || entity == null) {
+            return null;
+        }
+        RadarUnit lockedRadar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+        if (isRadarNctrCapable(lockedRadar) && lockedRadar.getDetectedEntities().containsKey(entity.getId())) {
+            return lockedRadar;
+        }
+        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+            if (radarUnit == lockedRadar || !isRadarNctrCapable(radarUnit)) {
+                continue;
+            }
+            if (radarUnit.getDetectedEntities().containsKey(entity.getId())) {
+                return radarUnit;
+            }
+        }
+        return isRadarNctrCapable(lockedRadar) ? lockedRadar : null;
+    }
+
+    private static boolean isRadarNctrCapable(RadarUnit radarUnit) {
+        if (radarUnit == null) {
+            return false;
+        }
+        RadarUnitData data = radarUnit.getData();
+        if (!(data instanceof RadarUnitDataExt ext)) {
+            return false;
+        }
+        return !"NONE".equalsIgnoreCase(ext.ywzj_rvp$getNctrMode());
+    }
+
+    private static String resolveEarlyNctrLabel(Entity entity) {
+        if (entity instanceof FixedWingVehicle) {
+            return "JET";
+        }
+        if (entity instanceof RotaryWingVehicle) {
+            return "HELI";
+        }
+        if (entity instanceof RVP_BaseBullet bullet) {
+            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.MISSILE) {
+                return "MSL";
+            }
+            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.BOMB) {
+                return "BOMB";
+            }
+        }
+        return "?";
+    }
+
+    private static String resolveModernNctrLabel(Entity entity) {
+        if (entity instanceof AbstractVehicle vehicle) {
+            return VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
+        }
+        if (entity instanceof RVP_BaseBullet bullet) {
+            ResourceLocation weaponId = bullet.getWeaponId();
+            if (weaponId != null) {
+                String display = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
+                        .map(index -> index.data().getName())
+                        .filter(name -> name != null && !name.isBlank())
+                        .orElse(weaponId.getPath().toUpperCase());
+                if (!display.isBlank()) {
+                    return display;
+                }
+            }
+        }
+        return resolveEarlyNctrLabel(entity);
+    }
+
 }

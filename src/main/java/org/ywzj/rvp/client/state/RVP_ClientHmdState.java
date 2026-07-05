@@ -502,7 +502,10 @@ public class RVP_ClientHmdState {
         float yRot = (float) localRot.y;
         float yMin = radar.getYRotMin();
         float yMax = radar.getYRotMax();
-        if (yRot < yMin || yRot > yMax) {
+        if (yMax - yMin < 360f && yMin >= 0f && yMax > 180f && yRot < 0f) {
+            yRot += 360f;
+        }
+        if (yMax - yMin < 360f && (yRot < yMin || yRot > yMax)) {
             return false;
         }
         float xRot = (float) localRot.x;

@@ -18,13 +18,18 @@ import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.resource.BedrockModelLoader;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.WeakHashMap;
 
 /**
  * Same draw rules as {@link org.ywzj.vehicle.client.render.entity.weapon} projectile renderers,
  * for {@link AmmoEntity} / {@link RVP_BulletEntity} (no cast to {@link org.ywzj.vehicle.entity.weapon.BulletEntity}).
  */
 final class VehicleProjectileRenderLogic {
+
+    private static final float PROJECTILE_RENDER_ROT_SMOOTH = 0.35F;
+    private static final Map<AmmoEntity, RotationSmoother> ROTATION_SMOOTHERS = new WeakHashMap<>();
 
     private VehicleProjectileRenderLogic() {}
 
@@ -55,9 +60,10 @@ final class VehicleProjectileRenderLogic {
                                         ResourceLocation fallbackModel, ResourceLocation fallbackTexture) {
         poseStack.pushPose();
         Vec3 root = Vec3.ZERO;
-        poseStack.rotateAround(Axis.YP.rotationDegrees(-entityYaw),
+        RotationSample sample = sampleSmoothedRotation(ammo, entityYaw, partialTick);
+        poseStack.rotateAround(Axis.YP.rotationDegrees(-sample.yaw()),
                 (float) root.x, (float) root.y, (float) root.z);
-        poseStack.rotateAround(Axis.XP.rotationDegrees(Mth.lerp(partialTick, ammo.xRotO, ammo.getXRot())),
+        poseStack.rotateAround(Axis.XP.rotationDegrees(sample.pitch()),
                 (float) root.x, (float) root.y, (float) root.z);
 
         BedrockModel model = null;
@@ -87,5 +93,38 @@ final class VehicleProjectileRenderLogic {
                 packedLight,
                 OverlayTexture.pack(0f, false));
         poseStack.popPose();
+    }
+
+    private static RotationSample sampleSmoothedRotation(AmmoEntity ammo, float entityYaw, float partialTick) {
+        float targetYaw = entityYaw;
+        float targetPitch = Mth.rotLerp(partialTick, ammo.xRotO, ammo.getXRot());
+        RotationSmoother smoother = ROTATION_SMOOTHERS.computeIfAbsent(ammo, key -> new RotationSmoother(targetYaw, targetPitch));
+        return smoother.sample(targetYaw, targetPitch);
+    }
+
+    private record RotationSample(float yaw, float pitch) {}
+
+    private static final class RotationSmoother {
+        private float yaw;
+        private float pitch;
+        private boolean initialized;
+
+        private RotationSmoother(float yaw, float pitch) {
+            this.yaw = yaw;
+            this.pitch = pitch;
+            this.initialized = false;
+        }
+
+        private RotationSample sample(float targetYaw, float targetPitch) {
+            if (!initialized) {
+                yaw = targetYaw;
+                pitch = targetPitch;
+                initialized = true;
+            } else {
+                yaw = Mth.rotLerp(PROJECTILE_RENDER_ROT_SMOOTH, yaw, targetYaw);
+                pitch = Mth.rotLerp(PROJECTILE_RENDER_ROT_SMOOTH, pitch, targetPitch);
+            }
+            return new RotationSample(yaw, pitch);
+        }
     }
 }

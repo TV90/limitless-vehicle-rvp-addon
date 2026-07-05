@@ -22,6 +22,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
@@ -32,6 +33,7 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
@@ -338,8 +340,12 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             WeaponUnit weaponUnit = getShooterWeaponUnit();
             boolean radarStillLocked = false;
             if (weaponUnit != null) {
-                RadarUnit radar = weaponUnit.getMainRadarUnit();
+                WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+                RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(root);
                 radarStillLocked = radar != null && radar.getLockedEntity() == targetEntity;
+                if (!radarStillLocked && root instanceof WeaponUnitExternalRadarLockExt ext) {
+                    radarStillLocked = ext.ywzj_rvp$getExternalRadarLockedEntityId() == targetEntity.getId();
+                }
             }
             if (!radarStillLocked) {
                 targetEntity = null;

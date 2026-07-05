@@ -5,6 +5,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -76,9 +77,18 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
                     && !data.isGpsMissile();
+            Entity externalLocked = null;
+            if (!isIrHmdManaged
+                    && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    && net.minecraft.client.Minecraft.getInstance().level != null) {
+                externalLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(
+                        unit.getVehicle(),
+                        net.minecraft.client.Minecraft.getInstance().level.dimension().location()
+                );
+            }
             boolean hasLock = isIrHmdManaged
                     ? RVP_ClientHmdState.getInstance().hasLock()
-                    : unit.getLockedEntity() != null;
+                    : unit.getLockedEntity() != null || externalLocked != null;
             if (!hasLock) {
                 // HMD 管理的导弹不适用 EO 豁免（武器站 EO ≠ 导引头已锁定）
                 boolean eoExempt = !isIrHmdManaged
@@ -93,6 +103,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                 Entity hmdEntity = RVP_ClientHmdState.getInstance().getLockedEntity();
                 if (hmdEntity != null) {
                     unit.setLockedEntity(hmdEntity);
+                } else if (externalLocked != null && unit.getLockedEntity() == null) {
+                    unit.setLockedEntity(externalLocked);
                 }
             }
         }

@@ -14,7 +14,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
@@ -26,8 +28,10 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 
 @Mixin(value = RadarUnit.class, remap = false)
 public class RadarUnitMixin {
@@ -77,6 +81,78 @@ public class RadarUnitMixin {
         return false; // 执行扫描
     }
 
+    @Unique
+    private float ywzj_rvp$normalizeYawForLimits(float yaw, float yMin, float yMax) {
+        if (yMax - yMin >= 360.0f) {
+            return yaw;
+        }
+        boolean prefer360Space = yMin >= 0.0f && yMax > 180.0f;
+        if (prefer360Space && yaw < 0.0f) {
+            return yaw + 360.0f;
+        }
+        return yaw;
+    }
+
+    @Unique
+    private boolean ywzj_rvp$isYawWithin(float yaw, float yMin, float yMax) {
+        if (yMax - yMin >= 360.0f) {
+            return true;
+        }
+        return yaw >= yMin && yaw <= yMax;
+    }
+
+    @Unique
+    private void ywzj_rvp$appendRvpAmmoTargets(RadarUnit self, List<Entity> entities, boolean requireTrackingLine) {
+        Vec3 radarPos = self.worldRadarPosition();
+        double maxScanDistance = self.getMaxScanDistance();
+        double maxScanDistanceSqr = maxScanDistance * maxScanDistance;
+        AABB scanBox = new AABB(radarPos.subtract(maxScanDistance, maxScanDistance, maxScanDistance),
+                radarPos.add(maxScanDistance, maxScanDistance, maxScanDistance));
+        Set<Integer> existingIds = new HashSet<>();
+        for (Entity entity : entities) {
+            existingIds.add(entity.getId());
+        }
+        List<RVP_BaseBullet> bullets = self.getVehicle().level().getEntitiesOfClass(RVP_BaseBullet.class, scanBox, bullet -> {
+            if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
+                return false;
+            }
+            // 仅 signatureSize > 0 的弹体可被雷达探测
+            float sig = bullet.getSignatureSize();
+            if (sig <= 0) {
+                return false;
+            }
+            RVP_EnumWeaponKind kind = bullet.getWeaponKind();
+            if (kind != RVP_EnumWeaponKind.MISSILE && kind != RVP_EnumWeaponKind.BOMB) {
+                return false;
+            }
+            // 使用 signatureSize 作为 RCS 倍率缩放有效探测距离
+            double effectiveMaxSqr = maxScanDistanceSqr * sig * sig;
+            Vec3 targetPos = bullet.getBoundingBox().getCenter();
+            if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {
+                return false;
+            }
+            if (!ywzj_rvp$isWithinScanHeight(self, targetPos)) {
+                return false;
+            }
+            Vec2 aimRot = self.aimRot(targetPos);
+            float yMin = self.getYRotMin();
+            float yMax = self.getYRotMax();
+            float y = ywzj_rvp$normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            if (!ywzj_rvp$isYawWithin(y, yMin, yMax)) {
+                return false;
+            }
+            if (requireTrackingLine && self.getYRotSpeed() > 0f && Math.abs(y - self.getYRot()) > self.getYRotSpeed() / 2.0f) {
+                return false;
+            }
+            return !(Math.abs(aimRot.x - self.getXRot()) > self.getScanSectorAngle() / 2.0f);
+        });
+        for (RVP_BaseBullet bullet : bullets) {
+            if (existingIds.add(bullet.getId())) {
+                entities.add(bullet);
+            }
+        }
+    }
+
     @Inject(
             method = "tick",
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/RadarUnit;tickTargets()V", shift = At.Shift.BEFORE),
@@ -103,14 +179,18 @@ public class RadarUnitMixin {
                 return false;
             }
             Vec2 aimRot = self.aimRot(entityPos);
-            if (aimRot.y < self.getYRotMin() || aimRot.y > self.getYRotMax()) {
+            float yMin = self.getYRotMin();
+            float yMax = self.getYRotMax();
+            float y = ywzj_rvp$normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            if (!ywzj_rvp$isYawWithin(y, yMin, yMax)) {
                 return false;
             }
-            if (yRotSpeed > 0 && Math.abs(aimRot.y - self.getYRot()) > yRotSpeed / 2.0f) {
+            if (yRotSpeed > 0 && Math.abs(y - self.getYRot()) > yRotSpeed / 2.0f) {
                 return false;
             }
             return !(Math.abs(aimRot.x - self.getXRot()) > self.getScanSectorAngle() / 2.0f);
         });
+        ywzj_rvp$appendRvpAmmoTargets(self, entities, yRotSpeed > 0f);
         for (Entity entity : entities) {
             self.detect(entity);
         }
@@ -169,7 +249,8 @@ public class RadarUnitMixin {
             }
             // 实体出扇区 → 立即删除
             Vec2 aimRot = self.aimRot(detectedObject.detectedPosition);
-            if (aimRot.y < yRotMin || aimRot.y > yRotMax
+            float y = ywzj_rvp$normalizeYawForLimits((float) aimRot.y, yRotMin, yRotMax);
+            if (!ywzj_rvp$isYawWithin(y, yRotMin, yRotMax)
                     || Math.abs(aimRot.x - xRot) > scanSectorHalf) {
                 return true;
             }
@@ -239,6 +320,7 @@ public class RadarUnitMixin {
                             && !(Math.abs(aimRot.y - self.getYRot()) > self.getYRotSpeed() / 2.0f)
                             && !(Math.abs(aimRot.x - self.getXRot()) > self.getScanSectorAngle() / 2.0f);
                 });
+        ywzj_rvp$appendRvpAmmoTargets(self, entities, !phaseMode);
         entities.forEach(self::detect);
 
         for (RadarUnit.DetectedObject detectedObject : self.getDetectedEntities().values()) {
