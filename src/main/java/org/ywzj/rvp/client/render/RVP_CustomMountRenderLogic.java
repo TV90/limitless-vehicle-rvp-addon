@@ -169,7 +169,7 @@ public final class RVP_CustomMountRenderLogic {
             }
 
             // 计算需要隐藏的骨骼：rack_bones 全显/全隐，missile_bones 逐枚隐藏
-            List<String> hiddenRackBones = resolved.shouldHideMissile() ? config.rackBones() : List.of();
+            List<String> hiddenRackBones = List.of();
             List<PartiallyHiddenBone> partiallyHiddenMissiles = null;
             if (config.missileBones().size() > 1) {
                 // 多枚导弹模式：逐枚隐藏
@@ -239,7 +239,7 @@ public final class RVP_CustomMountRenderLogic {
             GroupKey key = new GroupKey(config.partUnitId(), config.weaponId());
             VisibleAmmo visibleAmmo = resolveVisibleAmmo(vehicle, config.partUnitId(), currentWeapon);
             ResolvedMount entry = new ResolvedMount(config, visibleAmmo.syncedAmmo(), visibleAmmo.visibleAmmo(),
-                    visibleAmmo.predictedAmmo(), 0, false);
+                    visibleAmmo.predictedAmmo(), 0, false, resolution.displayWeaponUnit().getFiringMode());
             resolved.add(entry);
             grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(entry);
         }
@@ -446,16 +446,38 @@ public final class RVP_CustomMountRenderLogic {
                 // 单枚导弹模式：保持原有逻辑
                 boolean hideMissile = mount.visibleAmmo() <= 0 || mount.visibleAmmo() < slot;
                 mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
-                        mount.predictedAmmo(), slot, hideMissile));
+                        mount.predictedAmmo(), slot, hideMissile, mount.firingMode()));
             } else {
                 // 多枚导弹模式：计算该挂架上可见导弹数量
-                int offset = (slot - 1) * missileCount;
-                int visibleOnThisPylon = Math.max(0, Math.min(missileCount, mount.visibleAmmo() - offset));
+                int visibleOnThisPylon;
+                if (mount.firingMode() == WeaponUnitData.FiringMode.RIPPLE && mounts.size() > 1) {
+                    int totalDisplayCapacity = mounts.stream()
+                            .mapToInt(entry -> entry.config().missileBones().size())
+                            .sum();
+                    int spentAmmo = Math.max(0, totalDisplayCapacity - mount.visibleAmmo());
+                    int spentOnThisPylon = roundRobinSpentForIndex(spentAmmo, i, mounts.size(), missileCount);
+                    visibleOnThisPylon = Math.max(0, missileCount - spentOnThisPylon);
+                } else if (mount.firingMode() == WeaponUnitData.FiringMode.SALVO && mounts.size() > 1) {
+                    int available = mount.visibleAmmo() - (slot - 1);
+                    visibleOnThisPylon = available <= 0 ? 0
+                            : Math.min(missileCount, (available + mounts.size() - 1) / mounts.size());
+                } else {
+                    int offset = (slot - 1) * missileCount;
+                    visibleOnThisPylon = Math.max(0, Math.min(missileCount, mount.visibleAmmo() - offset));
+                }
                 boolean hideMissile = visibleOnThisPylon <= 0;
                 mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
-                        mount.predictedAmmo(), slot, hideMissile, visibleOnThisPylon));
+                        mount.predictedAmmo(), slot, hideMissile, visibleOnThisPylon, mount.firingMode()));
             }
         }
+    }
+
+    private static int roundRobinSpentForIndex(int spentAmmo, int mountIndex, int mountCount, int mountCapacity) {
+        if (spentAmmo <= mountIndex) {
+            return 0;
+        }
+        int spent = 1 + (spentAmmo - 1 - mountIndex) / mountCount;
+        return Math.min(spent, mountCapacity);
     }
 
     private static void noteResolvedMountStates(AbstractVehicle vehicle, List<ResolvedMount> mounts) {
@@ -536,7 +558,8 @@ public final class RVP_CustomMountRenderLogic {
                                  @Nullable Integer predictedAmmo,
                                  int ammoSlot,
                                  boolean shouldHideMissile,
-                                 int visibleMissileCount) {
+                                 int visibleMissileCount,
+                                 WeaponUnitData.FiringMode firingMode) {
 
         /** 兼容旧调用点的便利构造器（单枚导弹模式，shouldHideMissile 与 visibleMissileCount 一致）。 */
         ResolvedMount(RVP_CustomMountConfig config,
@@ -544,9 +567,10 @@ public final class RVP_CustomMountRenderLogic {
                       int visibleAmmo,
                       @Nullable Integer predictedAmmo,
                       int ammoSlot,
-                      boolean shouldHideMissile) {
+                      boolean shouldHideMissile,
+                      WeaponUnitData.FiringMode firingMode) {
             this(config, syncedAmmo, visibleAmmo, predictedAmmo, ammoSlot,
-                    shouldHideMissile, shouldHideMissile ? 0 : 1);
+                    shouldHideMissile, shouldHideMissile ? 0 : 1, firingMode);
         }
     }
 

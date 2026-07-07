@@ -67,7 +67,7 @@ public class VehicleRadarOverlayMixin {
                     ),
                     to = @At(
                             value = "INVOKE",
-                            target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFIIFII)V",
+                            target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFFF)V",
                             ordinal = 0
                     )
             ),

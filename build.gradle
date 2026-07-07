@@ -106,7 +106,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
-    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.6-all")
+    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.7-all")
     // SBM
     jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.3.2-forge-mc1.20.1"))) {
         jarJar.ranged(it, "[2.3.2,)")

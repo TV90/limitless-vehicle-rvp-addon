@@ -1,8 +1,0 @@
-{
-  "type": "ywzj_vehicle:weapon",
-  "sounds": {
-    "charge": "rvp:railgun_charge",
-    "fire": "rvp:railgun_fire",
-    "reload": "ywzj_vehicle:artillery_reload"
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "type": "ywzj_vehicle:weapon",
-  "model": "rvp:entity/missile_kh_39",
-  "texture": "rvp:textures/entity/missile_kh_39.png",
-  "sounds": {
-    "fire": "ywzj_vehicle:missile_launch",
-    "reload": "ywzj_vehicle:common_reload"
-  }
-}

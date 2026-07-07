@@ -1,7 +1,0 @@
-{
-  "type": "ywzj_vehicle:weapon",
-  "model": "rvp:entity/weapon_mount_pl15",
-  "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
-  "description": "",
-  "tab_index": 0
-}
