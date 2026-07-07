@@ -48,7 +48,7 @@ public class WeaponUnitSwitchWeaponMixin {
             at = @At("TAIL"),
             remap = false
     )
-    private void ywzj_rvp$restoreLockOnRealWeaponSwitch(boolean secondary, boolean next, CallbackInfo ci) {
+    private void ywzj_rvp$restoreLockOnRealWeaponSwitch(boolean secondary, boolean next, boolean ignored, CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
         if (secondary) {
             ywzj_rvp$syncAfterSecondarySwitch(self);

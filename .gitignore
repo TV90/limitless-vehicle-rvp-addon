@@ -16,6 +16,17 @@ out
 # gradle
 build
 .gradle
+libs/*.jar
+libs/**/*.class
+
+# build logs
+build_log*.txt
+build_err*.txt
+build_out*.txt
+build_status.txt
+build_time.txt
+gradle_out.txt
+trae_build_exit.txt
 
 # other
 eclipse
