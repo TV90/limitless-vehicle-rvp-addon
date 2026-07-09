@@ -150,7 +150,37 @@ RVP 扩展武器数据包路径：
 
 - 仅对 `WeaponUnit` 生效。
 - 这些 barrel 骨骼会被统一收束到同一个主武器站的 bolts 列表里，用于多发弹药的发射位/挂点位。
-- 适合“4 个挂架只能统一选 `pl_12` 或 `pl_15`”这类场景；不适合每个挂点独立选型的场景。
+- 适合"4 个挂架只能统一选 `pl_12` 或 `pl_15`"这类场景；不适合每个挂点独立选型的场景。
+
+### `rvp_auto_landing_gear` 自动收放起落架
+
+用于为固定翼/旋翼载具启用自动收放起落架功能。启用后，RVP 会在服务端每 tick 检测速度与离地高度，自动切换起落架状态。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_auto_landing_gear` | 是否启用自动收放起落架。`true` 启用，`false` 或不写则关闭。 | `false` |
+| `rvp_auto_landing_gear_retract_speed` | 速度超过此值（km/h）→ 收起起落架。 | `100` |
+| `rvp_auto_landing_gear_deploy_speed` | 速度低于此值（km/h）且离地低于 `deploy_height` → 放下起落架。 | `50` |
+| `rvp_auto_landing_gear_deploy_height` | 离地高度低于此值（米）且速度低于 `deploy_speed` → 放下起落架。 | `25` |
+
+**运行规则：**
+
+- 仅服务端执行，客户端无感知。
+- 玩家手动按 **G 键** 切换起落架后，**5 秒内**自动逻辑不干预（手动覆盖冷却），防止"刚放下又被自动收起"。
+- 未写 `rvp_auto_landing_gear` 或写为 `false`：完全禁用自动逻辑，只能手动控制。
+- 只写 `rvp_auto_landing_gear: true`：使用默认阈值（100/50/25）。
+- 同时写其他参数：覆盖默认阈值。
+
+**示例：**
+
+```json
+{
+  "rvp_auto_landing_gear": true,
+  "rvp_auto_landing_gear_retract_speed": 120,
+  "rvp_auto_landing_gear_deploy_speed": 60,
+  "rvp_auto_landing_gear_deploy_height": 30
+}
+```
 
 ## 公开武器类型
 

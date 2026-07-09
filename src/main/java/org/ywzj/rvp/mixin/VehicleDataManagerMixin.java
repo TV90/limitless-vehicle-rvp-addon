@@ -10,6 +10,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.config.AutoLandingGearCache;
 import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
@@ -42,6 +43,7 @@ public class VehicleDataManagerMixin {
                                           ProfilerFiller profiler,
                                           CallbackInfo ci) {
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
+        Map<ResourceLocation, AutoLandingGearCache.AutoLandingGearConfig> autoGearByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
@@ -66,6 +68,14 @@ public class VehicleDataManagerMixin {
                 }
 
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
+                // 自动收放起落架
+                if (GsonHelper.getAsBoolean(obj, "rvp_auto_landing_gear", false)) {
+                    double retractSpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_speed", 100);
+                    double deploySpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_speed", 50);
+                    double deployHeight = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_height", 25);
+                    autoGearByVehicle.put(vehicleId, new AutoLandingGearCache.AutoLandingGearConfig(
+                            true, retractSpeed, deploySpeed, deployHeight));
+                }
                 List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
                 if (customMounts != null) {
                     customMountsByVehicle.put(vehicleId, customMounts);
@@ -75,6 +85,7 @@ public class VehicleDataManagerMixin {
             }
         }
         RVP_CustomMountConfigCache.replace(customMountsByVehicle);
+        AutoLandingGearCache.replace(autoGearByVehicle);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);
     }

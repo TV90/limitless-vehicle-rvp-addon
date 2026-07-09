@@ -29,6 +29,8 @@
     "VehicleRocketWeaponDataMixin",
     "WeaponUnitSetWeaponMixin",
     "VehicleAutoLandingGearMixin",
+    "AutoLandingGearManualOverrideMixin",
+    "RotaryWingAutoLandingGearOverrideMixin",
     "WeaponUnitPojoMixin",
     "WeaponUnitDataMixin",
     "WeaponUnitExternalRadarLockMixin",
