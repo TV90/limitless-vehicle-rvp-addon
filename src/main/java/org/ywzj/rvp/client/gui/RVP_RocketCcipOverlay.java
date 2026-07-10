@@ -57,6 +57,7 @@ public final class RVP_RocketCcipOverlay {
     private static boolean ywzj_rvp$hasTexture;
     private static String ywzj_rvp$lastTextureDebugState = "";
     private static String ywzj_rvp$lastCcipState = "";
+    private static String ywzj_rvp$lastImpactOverrideState = "";
 
     private RVP_RocketCcipOverlay() {}
 
@@ -133,16 +134,35 @@ public final class RVP_RocketCcipOverlay {
     }
 
     public static boolean shouldReplaceReticle() {
-        return isEnhancedCcipActive() && ensureTexture();
+        ActiveCcipContext context = getActiveCcipContext();
+        return context != null
+                && isBallisticRocketWeapon(context.weapon(), context.operatorWeaponUnit())
+                && ensureTexture();
     }
 
     public static boolean shouldOverrideImpactCrosshair() {
         ActiveCcipContext context = getActiveCcipContext();
-        if (context == null || !ensureTexture()) {
+        if (context == null) {
+            ywzj_rvp$debugImpactOverrideState("override context=null");
+            return false;
+        }
+        boolean hasTexture = ensureTexture();
+        if (!hasTexture) {
+            ywzj_rvp$debugImpactOverrideState("override weapon=" + ywzj_rvp$debugWeaponId(context.weapon())
+                    + " sensor=" + context.operatorWeaponUnit().getFireControlSensorType()
+                    + " style=" + (context.weapon().getWeaponUnit() == null ? "null" : context.weapon().getWeaponUnit().crosshairStyle)
+                    + " texture=false result=false");
             return false;
         }
         WeaponUnit reticleUnit = context.weapon().getWeaponUnit();
-        return reticleUnit != null && reticleUnit.crosshairStyle != null;
+        boolean override = isBallisticRocketWeapon(context.weapon(), context.operatorWeaponUnit())
+                && reticleUnit != null
+                && reticleUnit.crosshairStyle != null;
+        ywzj_rvp$debugImpactOverrideState("override weapon=" + ywzj_rvp$debugWeaponId(context.weapon())
+                + " sensor=" + context.operatorWeaponUnit().getFireControlSensorType()
+                + " style=" + (reticleUnit == null ? "null-unit" : reticleUnit.crosshairStyle)
+                + " texture=true result=" + override);
+        return override;
     }
 
     public static void draw(GuiGraphics guiGraphics, float partialTick) {
@@ -299,6 +319,24 @@ public final class RVP_RocketCcipOverlay {
             ywzj_rvp$lastCcipState = state;
             RVP_DebugStateLogs.logCcip(state);
         }
+    }
+
+    private static void ywzj_rvp$debugImpactOverrideState(String state) {
+        if (!state.equals(ywzj_rvp$lastImpactOverrideState)) {
+            ywzj_rvp$lastImpactOverrideState = state;
+            LOGGER.info("[RVP][RocketCCIP] {}", state);
+            RVP_DebugStateLogs.logCcip(state);
+        }
+    }
+
+    private static String ywzj_rvp$debugWeaponId(AbstractVehicleWeapon<?> weapon) {
+        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon) {
+            return rvpWeapon.getData().getWeaponId() == null ? "null" : rvpWeapon.getData().getWeaponId().toString();
+        }
+        if (weapon instanceof VehicleRocket rocket) {
+            return rocket.getData().getWeaponId() == null ? "null" : rocket.getData().getWeaponId().toString();
+        }
+        return weapon.getClass().getSimpleName();
     }
 
     private static Path resolvePackTexturePath() {

@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.client.debug.RVP_DebugStateLogs;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -22,6 +23,7 @@ import org.slf4j.Logger;
 public class VehicleCrossHairOverlayMixin {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean ywzj_rvp$lastReticleReplaceState;
+    private static String ywzj_rvp$lastImpactCrosshairDebugState = "";
 
     @Inject(method = "drawCrosshair", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
     private void ywzj_rvp$overrideImpactCrosshair(
@@ -31,9 +33,12 @@ public class VehicleCrossHairOverlayMixin {
             WeaponUnitData.CrosshairStyle crosshairStyle,
             CallbackInfo ci
     ) {
-        if (!RVP_RocketCcipOverlay.shouldOverrideImpactCrosshair()) {
+        boolean override = RVP_RocketCcipOverlay.shouldOverrideImpactCrosshair();
+        ywzj_rvp$debugImpactCrosshair("drawCrosshair style=" + crosshairStyle + " override=" + override);
+        if (!override) {
             return;
         }
+        ywzj_rvp$debugImpactCrosshair("drawCrosshair cancel style=" + crosshairStyle);
         RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
         ci.cancel();
     }
@@ -160,9 +165,17 @@ public class VehicleCrossHairOverlayMixin {
             float start,
             float end
     ) {
-        if (RVP_RocketCcipOverlay.isEnhancedCcipActive()) {
+        if (RVP_RocketCcipOverlay.shouldReplaceReticle()) {
             return;
         }
         GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, start, end);
+    }
+
+    private static void ywzj_rvp$debugImpactCrosshair(String state) {
+        if (!state.equals(ywzj_rvp$lastImpactCrosshairDebugState)) {
+            ywzj_rvp$lastImpactCrosshairDebugState = state;
+            LOGGER.info("[RVP][RocketCCIP] {}", state);
+            RVP_DebugStateLogs.logCcip(state);
+        }
     }
 }

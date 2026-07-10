@@ -65,6 +65,7 @@
     "VehicleDisplayMixin",
     "WeaponUnitCustomMountSuppressMixin",
     "WeaponUnitGetSeekerFovMixin",
+    "WeaponUnitRvpBombCcipMixin",
     "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
