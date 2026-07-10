@@ -14,10 +14,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
+import org.ywzj.rvp.mixin.accessor.PartUnitDataAccessor;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,26 +61,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     private void ywzj_rvp$initExtraBoltBones(BedrockModel model,
                                              Map<BedrockBone, VehicleCubeGroup> vehiclePartGroups,
                                              CallbackInfo ci) {
-        if (model == null || xTurnGroup == null || ywzj_rvp$structureBoltBones.isEmpty()) {
-            return;
-        }
-        VehicleCubeGroup.GlobalTransform rootTransform = xTurnGroup.globalTransform();
-        List<Bolt> explicitBolts = new ArrayList<>();
-        for (String boneName : ywzj_rvp$structureBoltBones) {
-            BedrockBone bone = model.getBoneMap().get(boneName);
-            if (bone == null) {
-                continue;
-            }
-            VehicleCubeGroup targetGroup = vehiclePartGroups.get(bone);
-            if (targetGroup == null) {
-                continue;
-            }
-            Vec3 groupOffset = targetGroup.globalTransform().offset().subtract(rootTransform.offset());
-            ywzj_rvp$appendBoltsFromBone(bone, Vec3.ZERO, groupOffset, explicitBolts);
-        }
-        if (!explicitBolts.isEmpty()) {
-            this.bolts = explicitBolts;
-        }
+        return;
     }
 
     @Unique
@@ -86,31 +69,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
                                               Vec3 childOffset,
                                               Vec3 groupOffset,
                                               List<Bolt> out) {
-        for (BedrockCube cube : bone.cubes) {
-            float x = cube.x() + cube.width() / 2;
-            float y = cube.y() + cube.height() / 2;
-            float z = cube.z();
-            Vec3 boltOffset = new Vec3(bone.rotation.transform(new Vector3f(x, y, z)))
-                    .add(childOffset)
-                    .add(groupOffset);
-            float barrelLength = cube.depth();
-            Vector3f selfRot = new Vector3f();
-            bone.rotation.getEulerAnglesYXZ(selfRot);
-            out.add(new Bolt(
-                    boltOffset,
-                    barrelLength,
-                    (float) Math.toDegrees(selfRot.x),
-                    (float) Math.toDegrees(-selfRot.y)
-            ));
-        }
-        for (BedrockBone child : bone.getChildren()) {
-            ywzj_rvp$appendBoltsFromBone(
-                    child,
-                    childOffset.add(child.x / 16.0, child.y / 16.0, child.z / 16.0),
-                    groupOffset,
-                    out
-            );
-        }
+        return;
     }
 
     @Unique

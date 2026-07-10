@@ -47,6 +47,7 @@ public class RVP_Keys {
     /** HMD helmet-mounted display / ACM dogfight mode toggle (5 key). */
     public static final KeyMapping HMD_TOGGLE = key("hmd_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_5);
     public static final KeyMapping FIRE_CONTROL_STABILIZER = key("fire_control_stabilizer", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F);
+    public static final KeyMapping TOGGLE_SACLOS_LASER = key("toggle_saclos_laser", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_GRAVE_ACCENT);
     public static final KeyMapping HITL_REDESIGNATE = key("hitl_redesignate", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R);
     public static final KeyMapping HITL_SWITCH_VIDEO_MODE = key("hitl_switch_video_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_4);
     public static final KeyMapping HITL_EXIT = key("hitl_exit", InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT);
@@ -63,6 +64,7 @@ public class RVP_Keys {
         event.register(SWITCH_DEPLOYABLE_UAV);
         event.register(HMD_TOGGLE);
         event.register(FIRE_CONTROL_STABILIZER);
+        event.register(TOGGLE_SACLOS_LASER);
         event.register(HITL_REDESIGNATE);
         event.register(HITL_SWITCH_VIDEO_MODE);
         event.register(HITL_EXIT);

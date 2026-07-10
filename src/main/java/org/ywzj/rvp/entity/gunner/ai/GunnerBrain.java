@@ -16,6 +16,7 @@ import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle.Seat;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.EntityUtil;
@@ -42,6 +43,11 @@ public final class GunnerBrain {
     private static final double ROTARY_INITIAL_DISENGAGE_SCALE = 0.2;
     private static final double ROTARY_DISENGAGE_SCALE = 0.35;
     private static final double ROTARY_ATTACK_SCALE = 1.15;
+    private static final int TRACKED_TARGET_VALIDATE_INTERVAL = 4;
+    private static final int THREAT_SCAN_INTERVAL = 4;
+    private static final int TRACKED_STUCK_CHECK_TICK = 35;
+    private static final double TRACKED_STUCK_DISTANCE = 0.5;
+    private static final int TRACKED_RECOVERY_TICK = 10;
     private static final Map<AbstractVehicleWeapon<?>, Long> SINGLE_SHOT_READY_TIME = new WeakHashMap<>();
 
     public static void tick(GunnerEntity gunner, AbstractVehicle vehicle) {
@@ -140,10 +146,15 @@ public final class GunnerBrain {
             gunner.setTrackedTarget(null);
             return null;
         }
-        if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
-            gunner.setTrackedTarget(GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile));
-        }
         Entity tracked = gunner.getTrackedTarget();
+        if (tracked != null && !ywzj_rvp$shouldKeepTrackedTarget(gunner, vehicle, weaponUnit, profile, tracked)) {
+            gunner.setTrackedTarget(null);
+            tracked = null;
+        }
+        if (tracked == null && ywzj_rvp$shouldRunScan(gunner, profile.getScanIntervalTick())) {
+            tracked = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
+            gunner.setTrackedTarget(tracked);
+        }
         if (tracked == null || !tracked.isAlive()) {
             gunner.setTrackedTarget(null);
             return null;
@@ -217,12 +228,14 @@ public final class GunnerBrain {
             gunner.clearTacticalEvade();
         }
 
-        if (gunner.tickCount % profile.getDriveStuckCheckTick() == 0 && gunner.getRecoveryCooldownTicks() <= 0) {
+        int stuckCheckTick = vehicle instanceof TrackedVehicle ? TRACKED_STUCK_CHECK_TICK : profile.getDriveStuckCheckTick();
+        double stuckDistance = vehicle instanceof TrackedVehicle ? TRACKED_STUCK_DISTANCE : profile.getDriveStuckDistance();
+        int recoveryTick = vehicle instanceof TrackedVehicle ? TRACKED_RECOVERY_TICK : profile.getDriveRecoveryTick();
+        if (gunner.tickCount % stuckCheckTick == 0 && gunner.getRecoveryCooldownTicks() <= 0) {
             double moved = vehicle.position().distanceToSqr(gunner.getLastDriveCheckX(), vehicle.getY(), gunner.getLastDriveCheckZ());
-            double stuckDist = profile.getDriveStuckDistance();
-            if (desireMove && moved < stuckDist * stuckDist) {
-                gunner.startRecovery(profile.getDriveRecoveryTick());
-                gunner.setRecoveryCooldownTicks(profile.getDriveRecoveryTick() * 2 + profile.getDriveStuckCheckTick());
+            if (desireMove && moved < stuckDistance * stuckDistance) {
+                gunner.startRecovery(recoveryTick);
+                gunner.setRecoveryCooldownTicks(recoveryTick * 2 + stuckCheckTick);
             }
             gunner.setLastDriveCheck(vehicle.getX(), vehicle.getZ());
         }
@@ -622,6 +635,9 @@ public final class GunnerBrain {
         if (gunner.getCountermeasureCooldown() > 0) {
             return;
         }
+        if (!ywzj_rvp$shouldRunThreatScan(gunner)) {
+            return;
+        }
         AmmoEntity threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, profile.getCountermeasureRange());
         if (threat == null) {
             return;
@@ -777,5 +793,30 @@ public final class GunnerBrain {
             }
         }
         return null;
+    }
+
+    private static boolean ywzj_rvp$shouldRunScan(GunnerEntity gunner, int interval) {
+        int normalizedInterval = Math.max(1, interval);
+        return Math.floorMod(gunner.tickCount + gunner.getId(), normalizedInterval) == 0;
+    }
+
+    private static boolean ywzj_rvp$shouldRunThreatScan(GunnerEntity gunner) {
+        return Math.floorMod(gunner.tickCount + gunner.getId(), THREAT_SCAN_INTERVAL) == 0;
+    }
+
+    private static boolean ywzj_rvp$shouldKeepTrackedTarget(
+            GunnerEntity gunner,
+            AbstractVehicle vehicle,
+            WeaponUnit weaponUnit,
+            GunnerProfile profile,
+            Entity tracked
+    ) {
+        if (!tracked.isAlive()) {
+            return false;
+        }
+        if (Math.floorMod(gunner.tickCount + gunner.getId(), TRACKED_TARGET_VALIDATE_INTERVAL) != 0) {
+            return true;
+        }
+        return GunnerTargeting.isStillValidTarget(gunner, vehicle, weaponUnit, tracked, profile);
     }
 }

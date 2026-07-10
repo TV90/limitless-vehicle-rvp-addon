@@ -68,6 +68,32 @@ public final class RVP_GuidanceSeekerUtil {
         return !result.isDenied();
     }
 
+    public static boolean isValidEntityTrack(
+            RVP_BaseBullet projectile,
+            RVP_GuidanceEffectiveConfig config,
+            RVP_EnumGuidanceType type,
+            Entity target
+    ) {
+        if (!RVP_GuidanceMath.isWithinTrackCone(projectile, target, config)) {
+            return false;
+        }
+        if (type == RVP_EnumGuidanceType.SARH
+                && RVP_GuidanceMath.isOnGround(target, config.seeker().getLockMinHeight())) {
+            return false;
+        }
+        RVP_CountermeasureState.Result result = RVP_CountermeasureState.query(
+                projectile, target, type, config.seeker());
+        if (result.intercepted()) {
+            projectile.discard();
+            return false;
+        }
+        if (result.decoyed()) {
+            RVP_CountermeasureState.findDecoyTarget(target, 16.0).ifPresent(projectile::setTargetEntity);
+            return true;
+        }
+        return !result.isDenied();
+    }
+
     public static Entity scanSeekerTarget(
             RVP_BaseBullet projectile,
             RVP_GuidanceEffectiveConfig config,

@@ -5,7 +5,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -18,9 +17,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.state.RVP_RocketCcipState;
+import org.ywzj.rvp.client.debug.RVP_DebugStateLogs;
+import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
-import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -57,10 +56,11 @@ public final class RVP_RocketCcipOverlay {
     private static ResourceLocation ywzj_rvp$activeTexture = FALLBACK_TEXTURE;
     private static boolean ywzj_rvp$hasTexture;
     private static String ywzj_rvp$lastTextureDebugState = "";
+    private static String ywzj_rvp$lastCcipState = "";
 
     private RVP_RocketCcipOverlay() {}
 
-    private record ActiveRocketContext(AbstractVehicle vehicle, WeaponUnit weaponUnit, AbstractVehicleWeapon<?> weapon) {}
+    private record ActiveCcipContext(AbstractVehicle vehicle, WeaponUnit operatorWeaponUnit, AbstractVehicleWeapon<?> weapon) {}
 
     public static boolean isBallisticRocketWeapon(AbstractVehicleWeapon<?> weapon, WeaponUnit activeWeaponUnit) {
         if (weapon == null || activeWeaponUnit == null) {
@@ -78,7 +78,22 @@ public final class RVP_RocketCcipOverlay {
         return false;
     }
 
-    private static ActiveRocketContext getActiveRocketContext() {
+    public static boolean isBombCcipWeapon(AbstractVehicleWeapon<?> weapon, WeaponUnit activeWeaponUnit) {
+        if (weapon == null || activeWeaponUnit == null) {
+            return false;
+        }
+        if (activeWeaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+            return false;
+        }
+        return weapon instanceof RVP_ProjectileWeapon rvpWeapon
+                && rvpWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.BOMB;
+    }
+
+    public static boolean isEnhancedCcipWeapon(AbstractVehicleWeapon<?> weapon, WeaponUnit activeWeaponUnit) {
+        return isBallisticRocketWeapon(weapon, activeWeaponUnit) || isBombCcipWeapon(weapon, activeWeaponUnit);
+    }
+
+    private static ActiveCcipContext getActiveCcipContext() {
         if (LocalVehiclePlayer.instance == null) {
             return null;
         }
@@ -89,27 +104,45 @@ public final class RVP_RocketCcipOverlay {
         if (weaponUnit.getCurrentWeapon().isEmpty()) {
             return null;
         }
-        AbstractVehicleWeapon<?> weapon = weaponUnit.getCurrentWeapon().get();
-        if (!isBallisticRocketWeapon(weapon, weaponUnit)) {
+        AbstractVehicleWeapon<?> weapon = RVP_LaserWeapons.unwrap(weaponUnit.getCurrentWeapon().get());
+        if (weapon == null) {
             return null;
         }
-        WeaponUnit rocketWeaponUnit = weapon.getWeaponUnit();
-        if (rocketWeaponUnit == null) {
+        if (!isEnhancedCcipWeapon(weapon, weaponUnit) || weapon.getWeaponUnit() == null) {
             return null;
         }
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle)) {
             return null;
         }
-        return new ActiveRocketContext(vehicle, rocketWeaponUnit, weapon);
+        return new ActiveCcipContext(vehicle, weaponUnit, weapon);
     }
 
-    public static boolean isBallisticRocketActive() {
-        return getActiveRocketContext() != null;
+    public static boolean isEnhancedCcipActive() {
+        return getActiveCcipContext() != null;
+    }
+
+    public static boolean shouldDrawDetachedPipper() {
+        ActiveCcipContext context = getActiveCcipContext();
+        if (context == null || !ensureTexture()) {
+            return false;
+        }
+        WeaponUnit reticleUnit = context.weapon().getWeaponUnit();
+        return reticleUnit == null
+                || reticleUnit.crosshairStyle == null;
     }
 
     public static boolean shouldReplaceReticle() {
-        return isBallisticRocketActive() && ensureTexture();
+        return isEnhancedCcipActive() && ensureTexture();
+    }
+
+    public static boolean shouldOverrideImpactCrosshair() {
+        ActiveCcipContext context = getActiveCcipContext();
+        if (context == null || !ensureTexture()) {
+            return false;
+        }
+        WeaponUnit reticleUnit = context.weapon().getWeaponUnit();
+        return reticleUnit != null && reticleUnit.crosshairStyle != null;
     }
 
     public static void draw(GuiGraphics guiGraphics, float partialTick) {
@@ -156,58 +189,24 @@ public final class RVP_RocketCcipOverlay {
     }
 
     public static Vec3 getCurrentScreenHitPos() {
-        ActiveRocketContext context = getActiveRocketContext();
+        ActiveCcipContext context = getActiveCcipContext();
         if (context == null) {
+            ywzj_rvp$debugCcipState("inactive");
             return null;
         }
-        Vec3 rawHit = ywzj_rvp$computeImpact(context);
-        if (rawHit == null) {
-            return null;
-        }
-        Vec3 hitPos = RVP_RocketCcipState.smooth(
-                context.vehicle().getId(),
-                ywzj_rvp$getWeaponId(context.weapon()),
-                context.vehicle().tickCount,
-                rawHit
-        );
+        Vec3 hitPos = context.operatorWeaponUnit().weaponHitPos;
         if (hitPos == null) {
+            ywzj_rvp$debugCcipState("active hitPos=null weapon=" + context.weapon().getClass().getSimpleName()
+                    + " sensor=" + context.operatorWeaponUnit().getFireControlSensorType()
+                    + " style=" + (context.weapon().getWeaponUnit() == null ? "null" : context.weapon().getWeaponUnit().crosshairStyle));
             return null;
         }
+        ywzj_rvp$debugCcipState("active hitPos=ok weapon=" + context.weapon().getClass().getSimpleName()
+                + " sensor=" + context.operatorWeaponUnit().getFireControlSensorType()
+                + " style=" + (context.weapon().getWeaponUnit() == null ? "null" : context.weapon().getWeaponUnit().crosshairStyle)
+                + " detached=" + shouldDrawDetachedPipper()
+                + " override=" + shouldOverrideImpactCrosshair());
         return VectorUtil.worldToScreen(hitPos);
-    }
-
-    private static Vec3 ywzj_rvp$computeImpact(ActiveRocketContext context) {
-        AbstractVehicleWeapon<?> weapon = context.weapon();
-        if (weapon instanceof VehicleRocket rocket) {
-            return RVP_RocketBallistics.computeWeaponImpact(
-                    context.vehicle().level(),
-                    context.weaponUnit(),
-                    context.vehicle().getDeltaMovement(),
-                    rocket.getData(),
-                    context.vehicle()
-            );
-        }
-        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon
-                && rvpWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
-            return RVP_RocketBallistics.computeWeaponImpact(
-                    context.vehicle().level(),
-                    context.weaponUnit(),
-                    context.vehicle().getDeltaMovement(),
-                    rvpWeapon.getData(),
-                    context.vehicle()
-            );
-        }
-        return null;
-    }
-
-    private static ResourceLocation ywzj_rvp$getWeaponId(AbstractVehicleWeapon<?> weapon) {
-        if (weapon instanceof VehicleRocket rocket) {
-            return rocket.getData().getWeaponId();
-        }
-        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon) {
-            return rvpWeapon.getData().getWeaponId();
-        }
-        return null;
     }
 
     @SubscribeEvent
@@ -216,9 +215,8 @@ public final class RVP_RocketCcipOverlay {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        LocalPlayer player = mc.player;
-        ActiveRocketContext context = getActiveRocketContext();
-        if (player == null || mc.options.hideGui || context == null || !ensureTexture()) {
+        ActiveCcipContext context = getActiveCcipContext();
+        if (mc.player == null || mc.options.hideGui || context == null || !ensureTexture()) {
             return;
         }
         Vec3 screenHitPos = getCurrentScreenHitPos();
@@ -293,6 +291,13 @@ public final class RVP_RocketCcipOverlay {
         if (!state.equals(ywzj_rvp$lastTextureDebugState)) {
             ywzj_rvp$lastTextureDebugState = state;
             LOGGER.info("[RVP][RocketCCIP] {}", state);
+        }
+    }
+
+    private static void ywzj_rvp$debugCcipState(String state) {
+        if (!state.equals(ywzj_rvp$lastCcipState)) {
+            ywzj_rvp$lastCcipState = state;
+            RVP_DebugStateLogs.logCcip(state);
         }
     }
 

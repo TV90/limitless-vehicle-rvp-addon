@@ -301,6 +301,27 @@ public final class RVP_GuidanceMath {
         return angle <= fov;
     }
 
+    public static boolean isWithinTrackCone(RVP_BaseBullet projectile, Entity target, RVP_GuidanceEffectiveConfig config) {
+        if (target == null || config == null) {
+            return false;
+        }
+        RVP_GuidanceSeekerData seeker = config.seeker();
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        float range = seeker.resolvedRange();
+        float guideHeadMaxAngle = seeker.getGuideHeadMaxAngle();
+        if (projectile.position().distanceToSqr(targetCenter) > range * range) {
+            return false;
+        }
+        Vec3 toTarget = targetCenter.subtract(projectile.position());
+        Vec3 look = projectile.getLookAngle().normalize();
+        if (look.lengthSqr() <= 1.0E-6 || toTarget.lengthSqr() <= 1.0E-6) {
+            return true;
+        }
+        double dot = Mth.clamp(look.dot(toTarget.normalize()), -1.0, 1.0);
+        double angle = Math.toDegrees(Math.acos(dot));
+        return angle <= guideHeadMaxAngle;
+    }
+
     public static boolean isOnGround(Entity entity, float minHeight) {
         if (entity == null) {
             return true;

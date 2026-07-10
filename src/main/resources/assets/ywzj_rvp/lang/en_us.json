@@ -143,6 +143,7 @@
   "key.ywzj_rvp.switch_deployable_uav.desc": "Switch radar relay UAV / parent vehicle",
   "key.ywzj_rvp.hmd_toggle.desc": "HMD / ACM mode toggle",
   "key.ywzj_rvp.fire_control_stabilizer.desc": "Fire control mode toggle",
+  "key.ywzj_rvp.toggle_saclos_laser.desc": "Toggle SACLOS laser designator",
   "key.ywzj_rvp.hitl_redesignate.desc": "TV/HITL redesignate target",
   "key.ywzj_rvp.hitl_switch_video_mode.desc": "TV/HITL switch video mode",
   "key.ywzj_rvp.hitl_exit.desc": "TV/HITL exit view",

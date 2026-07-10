@@ -25,6 +25,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
+import org.ywzj.rvp.client.debug.RVP_DebugStateLogs;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
@@ -38,11 +39,13 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
+import org.ywzj.rvp.client.state.RVP_BombCcipUtil;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
@@ -54,7 +57,6 @@ import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.CcipUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -68,6 +70,7 @@ public class RVP_ClientEvents {
 
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
+    private static String ywzj_rvp$lastBombCcipDebugState = "";
 
     private record VehicleMarker(int vehicleId, int argb) {}
 
@@ -142,6 +145,11 @@ public class RVP_ClientEvents {
         while (RVP_Keys.SWITCH_DEPLOYABLE_UAV.consumeClick()) {
             RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
         }
+        while (RVP_Keys.TOGGLE_SACLOS_LASER.consumeClick()) {
+            if (RVP_ClientSaclosState.isGuiding() && !RVP_ClientHitlState.isDesignateMode()) {
+                RVP_ClientSaclosState.toggleLaser();
+            }
+        }
 
         RVP_ClientHitlState.tick(mc, player);
         // IR HMD 自动检测（必须在雷达 HMD 逻辑之前）
@@ -166,11 +174,11 @@ public class RVP_ClientEvents {
         if (weaponUnit != null
                 && !weaponUnit.getCurrentWeapon().isEmpty()
                 && player.getVehicle() instanceof AbstractVehicle vehicle) {
-            AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
+            AbstractVehicleWeapon<?> currentWeapon = RVP_LaserWeapons.unwrap(weaponUnit.getCurrentWeapon().get());
             if (currentWeapon instanceof RVP_WeaponBase weapon
-                    && weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
+                    && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.BOMB) {
                 RVP_RocketCcipState.clear(vehicle.getId());
-                ywzj_rvp$updateGPSBombCcip(vehicle, weaponUnit, weapon);
+                ywzj_rvp$updateRvpBombCcip(vehicle, weaponUnit, weapon);
             } else if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
             }
@@ -210,21 +218,39 @@ public class RVP_ClientEvents {
         }
     }
 
-    private static void ywzj_rvp$updateGPSBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
-                                                    RVP_WeaponBase weapon) {
+    private static void ywzj_rvp$updateRvpBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                                   RVP_WeaponBase weapon) {
         if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+            ywzj_rvp$logBombCcipState("skip sensor=" + weaponUnit.getFireControlSensorType()
+                    + " view=" + LocalVehiclePlayer.instance.viewType
+                    + " weapon=" + weapon.getData().getWeaponId());
             return;
         }
-        if (RVP_ClientGPSState.isActive()) {
+        if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {
             weaponUnit.weaponHitPosO = null;
             weaponUnit.weaponHitPos = null;
+            ywzj_rvp$logBombCcipState("gps-active blank weapon=" + weapon.getData().getWeaponId());
         } else {
-            Vec3 releasePos = weaponUnit.worldPivotPosition();
-            float dragCoefficient = weapon.getData().getProjectileData().getDrag();
-            Vec3 ccipHit = CcipUtil.computeCcipImpact(
-                    vehicle.level(), releasePos, vehicle.getDeltaMovement(), dragCoefficient);
+            Vec3 rawHit = RVP_BombCcipUtil.computeImpact(vehicle, weaponUnit, weapon.getData());
+            Vec3 ccipHit = RVP_RocketCcipState.smooth(
+                    vehicle.getId(),
+                    weapon.getData().getWeaponId(),
+                    vehicle.tickCount,
+                    rawHit
+            );
             weaponUnit.weaponHitPosO = weaponUnit.weaponHitPos;
             weaponUnit.weaponHitPos = ccipHit;
+            ywzj_rvp$logBombCcipState("update weapon=" + weapon.getData().getWeaponId()
+                    + " rawHit=" + (rawHit != null)
+                    + " smoothed=" + (ccipHit != null)
+                    + " style=" + (weapon.getWeaponUnit() == null ? "null" : weapon.getWeaponUnit().crosshairStyle));
+        }
+    }
+
+    private static void ywzj_rvp$logBombCcipState(String state) {
+        if (!state.equals(ywzj_rvp$lastBombCcipDebugState)) {
+            ywzj_rvp$lastBombCcipDebugState = state;
+            RVP_DebugStateLogs.logCcip(state);
         }
     }
 

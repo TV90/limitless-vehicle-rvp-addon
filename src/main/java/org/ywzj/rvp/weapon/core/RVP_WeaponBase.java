@@ -8,7 +8,6 @@ import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -73,7 +72,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (requiresEntityLock(data)) {
             WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
             // RVP HMD 管理的 IR 导弹：只认 HMD 锁状态
-            boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+            boolean isIrHmdManaged = data.isHomingProjectile()
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
                     && !data.isGpsMissile();
@@ -136,7 +135,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     public boolean withSeeker() {
         // 只有寻的弹（IR/SARH/ARH/ARM）才允许开启导引头，SACLOS/MCLOS/IOG/GPS 没有寻的头
-        if (getData().getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE) return false;
+        if (!getData().isHomingProjectile()) return false;
         RVP_WeaponData data = getData();
         return data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IR)
                 || data.isRadarHoming()
@@ -184,7 +183,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean requiresEntityLock(RVP_WeaponData data) {
-        return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+        return data.isHomingProjectile()
                 && data.isRequireLock()
                 && !data.isAntiRadiationMissile()
                 && !data.isGpsMissile();

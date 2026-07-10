@@ -199,6 +199,52 @@ public class RVP_DebugCommands {
                                     return 1;
                                 }))
                         )
+                        .then(Commands.literal("ccip")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_DebugStateLogs.clearCcipLog();
+                                    RVP_DebugStateLogs.setCcipEnabled(true);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] ccip debug on: " + RVP_DebugStateLogs.getCcipLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_DebugStateLogs.setCcipEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] ccip debug off: " + RVP_DebugStateLogs.getCcipLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_DebugStateLogs.clearCcipLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] ccip debug cleared: " + RVP_DebugStateLogs.getCcipLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_DebugStateLogs.isCcipEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] ccip debug=" + enabled + " path=" + RVP_DebugStateLogs.getCcipLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                        )
+                        .then(Commands.literal("irhms")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_DebugStateLogs.clearIrHmsLog();
+                                    RVP_DebugStateLogs.setIrHmsEnabled(true);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] irhms debug on: " + RVP_DebugStateLogs.getIrHmsLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_DebugStateLogs.setIrHmsEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] irhms debug off: " + RVP_DebugStateLogs.getIrHmsLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_DebugStateLogs.clearIrHmsLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] irhms debug cleared: " + RVP_DebugStateLogs.getIrHmsLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_DebugStateLogs.isIrHmsEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] irhms debug=" + enabled + " path=" + RVP_DebugStateLogs.getIrHmsLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                        )
                         .then(Commands.literal("ui").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
                             StringBuilder sb = new StringBuilder();

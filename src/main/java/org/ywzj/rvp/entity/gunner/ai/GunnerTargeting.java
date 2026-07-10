@@ -53,6 +53,22 @@ public final class GunnerTargeting {
                 .orElse(null);
     }
 
+    public static boolean isStillValidTarget(
+            GunnerEntity gunner,
+            AbstractVehicle vehicle,
+            WeaponUnit weaponUnit,
+            Entity entity,
+            GunnerProfile profile
+    ) {
+        double radius = getTargetSearchRadius(vehicle, profile);
+        if (vehicle.position().distanceToSqr(entity.position()) > radius * radius) {
+            return false;
+        }
+        Team vehicleTeam = vehicle.getTeam();
+        Team gunnerTeam = gunner.getTeam();
+        return isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile);
+    }
+
     private static double getTargetSearchRadius(AbstractVehicle vehicle, GunnerProfile profile) {
         double base = profile.getSearchRadius();
         if (vehicle instanceof org.ywzj.vehicle.entity.vehicle.FixedWingVehicle

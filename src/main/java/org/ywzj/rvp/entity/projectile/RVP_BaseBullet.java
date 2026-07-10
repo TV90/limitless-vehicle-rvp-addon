@@ -144,6 +144,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected Vec3 targetPos;
     @Nullable
     protected Vec3 lastGuidancePos;
+    /** True when launch captured an entity lock snapshot; prevents accidental post-launch retargeting. */
+    protected boolean launchTargetSnapshot;
+    /** IR seeker temporary retain window for brief off-axis loss. */
+    protected int irSeekerGraceUntilTick = Integer.MIN_VALUE;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
@@ -226,6 +230,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         writeRemoteVec3(data, "targetPos", targetPos);
         writeRemoteVec3(data, "lastGuidancePos", lastGuidancePos);
         writeRemoteVec3(data, "gpsTargetOffset", gpsTargetOffset);
+        data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
+        data.putInt("irSeekerGraceUntilTick", irSeekerGraceUntilTick);
     }
 
     @Override
@@ -242,6 +248,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         lastGuidancePos = readRemoteVec3(data, "lastGuidancePos");
         gpsTargetOffset = readRemoteVec3(data, "gpsTargetOffset");
         gpsTargetOffsetResolved = gpsTargetOffset != null;
+        launchTargetSnapshot = data.getBoolean("launchTargetSnapshot");
+        irSeekerGraceUntilTick = data.contains("irSeekerGraceUntilTick") ? data.getInt("irSeekerGraceUntilTick") : Integer.MIN_VALUE;
         resolveRemoteRefs();
     }
 
@@ -521,6 +529,27 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.targetEntity = null;
         this.targetPos = null;
         this.gpsCruiseVerticalResetApplied = false;
+        resetIrSeekerGrace();
+    }
+
+    public void markLaunchTargetSnapshot() {
+        this.launchTargetSnapshot = true;
+    }
+
+    public boolean hasLaunchTargetSnapshot() {
+        return launchTargetSnapshot;
+    }
+
+    public void beginIrSeekerGrace(int ticks) {
+        irSeekerGraceUntilTick = Math.max(irSeekerGraceUntilTick, tickCount + Math.max(ticks, 0));
+    }
+
+    public boolean hasIrSeekerGrace() {
+        return tickCount <= irSeekerGraceUntilTick;
+    }
+
+    public void resetIrSeekerGrace() {
+        irSeekerGraceUntilTick = Integer.MIN_VALUE;
     }
 
     public boolean consumeGpsCruiseVerticalResetPending() {
@@ -1977,6 +2006,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeVarInt(motorBurnEndTick);
         buffer.writeBoolean(showMslIndicator);
         buffer.writeFloat(signatureSize);
+        buffer.writeBoolean(launchTargetSnapshot);
+        buffer.writeVarInt(Math.max(irSeekerGraceUntilTick, Integer.MIN_VALUE + 1));
         buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
         buffer.writeBoolean(targetPos != null);
         if (targetPos != null) {
@@ -2002,6 +2033,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.motorBurnEndTick = buffer.readVarInt();
         this.showMslIndicator = buffer.readBoolean();
         this.signatureSize = buffer.readFloat();
+        this.launchTargetSnapshot = buffer.readBoolean();
+        this.irSeekerGraceUntilTick = buffer.readVarInt();
         yRotO = getYRot();
         xRotO = getXRot();
         int id = buffer.readVarInt();

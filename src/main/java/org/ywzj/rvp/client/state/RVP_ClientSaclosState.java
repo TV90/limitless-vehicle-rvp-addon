@@ -14,9 +14,13 @@ import org.ywzj.rvp.network.C2SSaclosDesignation;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Client SACLOS laser designator: cockpit pod aim, or HITL TV designated target marker.
@@ -27,6 +31,7 @@ public final class RVP_ClientSaclosState {
     private static boolean lastSentTargeting = true;
     private static int trackedMissileId = -1;
     private static int pendingAcquireTicks;
+    private static final Map<WeaponStateKey, Boolean> WEAPON_LASER_STATES = new HashMap<>();
     @Nullable
     private static Vec3 laserHudPos;
 
@@ -35,7 +40,7 @@ public final class RVP_ClientSaclosState {
     public static void onSaclosWeaponFired() {
         pendingAcquireTicks = 40;
         trackedMissileId = -1;
-        laserEnabled = true;
+        syncLaserStateFromCurrentWeapon();
     }
 
     public static void tick(Minecraft mc, LocalPlayer player) {
@@ -54,6 +59,7 @@ public final class RVP_ClientSaclosState {
             return;
         }
 
+        syncLaserStateFromCurrentWeapon();
         acquireTrackedMissile(player, mc.level);
 
         boolean guiding = isGuiding();
@@ -88,9 +94,10 @@ public final class RVP_ClientSaclosState {
         }
     }
 
-    /** Press R while guiding (cockpit): toggle laser designator on/off. */
+    /** Toggle cockpit SACLOS laser designator on/off. */
     public static void toggleLaser() {
         laserEnabled = !laserEnabled;
+        rememberCurrentWeaponLaserState(laserEnabled);
         if (!laserEnabled) {
             laserHudPos = null;
             RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
@@ -177,7 +184,6 @@ public final class RVP_ClientSaclosState {
                 RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
                 lastSentTargeting = true;
             }
-            laserEnabled = true;
             trackedMissileId = -1;
             return;
         }
@@ -227,7 +233,7 @@ public final class RVP_ClientSaclosState {
     }
 
     public static void reset() {
-        laserEnabled = true;
+        syncLaserStateFromCurrentWeapon();
         lastSentTargeting = true;
         trackedMissileId = -1;
         pendingAcquireTicks = 0;
@@ -238,4 +244,36 @@ public final class RVP_ClientSaclosState {
         return weapon instanceof RVP_WeaponBase rvp
                 && rvp.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
     }
+
+    private static void syncLaserStateFromCurrentWeapon() {
+        WeaponStateKey key = resolveCurrentWeaponKey();
+        laserEnabled = key == null || WEAPON_LASER_STATES.getOrDefault(key, true);
+    }
+
+    private static void rememberCurrentWeaponLaserState(boolean enabled) {
+        WeaponStateKey key = resolveCurrentWeaponKey();
+        if (key != null) {
+            WEAPON_LASER_STATES.put(key, enabled);
+        }
+    }
+
+    @Nullable
+    private static WeaponStateKey resolveCurrentWeaponKey() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        WeaponUnit unit = lvp.getWeaponUnit();
+        AbstractVehicle vehicle = lvp.getVehicle();
+        if (unit == null || vehicle == null) {
+            return null;
+        }
+        WeaponUnit root = unit.isParentWeaponUnitAim() ? unit.getRootParentWeaponUnit() : unit;
+        var currentWeapon = root.getCurrentWeapon().orElse(null);
+        if (!(currentWeapon instanceof RVP_WeaponBase rvpWeapon) || !isSaclosWeapon(currentWeapon)) {
+            return null;
+        }
+        String weaponId = rvpWeapon.getData().getWeaponId() == null ? "" : rvpWeapon.getData().getWeaponId().toString();
+        String serializeId = currentWeapon.getSerializeId() == null ? "" : currentWeapon.getSerializeId();
+        return new WeaponStateKey(vehicle.getId(), root.getIndex(), currentWeapon.getIndex(), weaponId, serializeId);
+    }
+
+    private record WeaponStateKey(int vehicleId, int unitIndex, int weaponIndex, String weaponId, String serializeId) {}
 }

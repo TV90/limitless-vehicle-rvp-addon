@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.AutoLandingGearCache;
+import org.ywzj.rvp.config.ManualOverrideManager;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.network.message.ClientVehicleAction;
 
@@ -23,6 +24,6 @@ public abstract class AutoLandingGearManualOverrideMixin {
         if (!message.toggleLandingGear) return;
         FixedWingVehicle self = (FixedWingVehicle) (Object) this;
         if (!AutoLandingGearCache.isEnabled(self.getVehicleId())) return;
-        VehicleAutoLandingGearMixin.markManualOverride(self.getId(), self.level().getGameTime());
+        ManualOverrideManager.markManualOverride(self.getId(), self.level().getGameTime());
     }
 }

@@ -89,6 +89,13 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("fire_control_sensor_type_override")
     private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
 
+    /**
+     * RVP-only dynamic sensor behavior layered on top of the base sensor type enum.
+     * Keeps upstream {@code WeaponUnitData.FireControlSensorType} untouched.
+     */
+    @SerializedName("rvp_fire_control_sensor_mode")
+    private RVP_EnumSensorMode rvpFireControlSensorMode = RVP_EnumSensorMode.NONE;
+
     /** 兼容旧 JSON：顶层 `ahead_enabled`，优先级低于 `ahead_data.enabled`。 */
     @Deprecated
     @SerializedName("ahead_enabled")
@@ -224,6 +231,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @Nullable
     public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
         return fireControlSensorTypeOverride;
+    }
+
+    public RVP_EnumSensorMode getRvpFireControlSensorMode() {
+        return rvpFireControlSensorMode == null ? RVP_EnumSensorMode.NONE : rvpFireControlSensorMode;
+    }
+
+    public boolean isEoCcipSensorMode() {
+        return getRvpFireControlSensorMode() == RVP_EnumSensorMode.EO_CCIP;
     }
 
     public boolean isAheadEnabled() {
@@ -484,6 +499,18 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isAntiRadiationMissile() {
         return usesGuidanceType(RVP_EnumGuidanceType.ARM);
+    }
+
+    /**
+     * 是否为寻的弹体（MISSILE 或 BOMB），用于导引头/锁定/头瞄路径。
+     *
+     * <p>BOMB 与 MISSILE 共用同一套红外/雷达制导管线；本方法把它们统一视为"寻的弹"，
+     * 使 {@code rvp:bomb} 也能进入导引头开启、HMD 头瞄、发射前锁定等流程。
+     * 复合制导弹药（如 GPS+IR）会被后续的 {@link #isGpsMissile()}、
+     * {@link #isRequireLock()} 等条件自然过滤，不受影响。
+     */
+    public boolean isHomingProjectile() {
+        return weaponKind == RVP_EnumWeaponKind.MISSILE || weaponKind == RVP_EnumWeaponKind.BOMB;
     }
 
     public float getLaserRange() {

@@ -104,6 +104,7 @@ public final class RVP_ProjectileSpawner {
 
         if (lockTarget != null) {
             projectile.setTargetEntity(lockTarget);
+            projectile.markLaunchTargetSnapshot();
         }
 
         GPSTarget gps = data.usesGuidanceType(RVP_EnumGuidanceType.GPS)
@@ -122,7 +123,7 @@ public final class RVP_ProjectileSpawner {
             }
         } else {
             Vec3 impact = RVP_AimContexts.impactPoint(aim);
-            if (impact != null && projectile.getTargetPos() == null && kind == RVP_EnumWeaponKind.MISSILE) {
+            if (impact != null && projectile.getTargetPos() == null && shouldSeedLaunchTarget(data, kind)) {
                 projectile.setTargetPos(impact);
             }
         }
@@ -134,6 +135,15 @@ public final class RVP_ProjectileSpawner {
 
         level.addFreshEntity(projectile);
         return projectile;
+    }
+
+    private static boolean shouldSeedLaunchTarget(RVP_WeaponData data, RVP_EnumWeaponKind kind) {
+        if (kind == RVP_EnumWeaponKind.MISSILE) {
+            return true;
+        }
+        return kind == RVP_EnumWeaponKind.BOMB
+                && data != null
+                && data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
     }
 
     private static float randomSpread(Level level, float spread) {

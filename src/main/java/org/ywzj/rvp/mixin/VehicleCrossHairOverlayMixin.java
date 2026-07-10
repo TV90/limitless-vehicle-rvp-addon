@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.slf4j.Logger;
@@ -22,9 +23,24 @@ public class VehicleCrossHairOverlayMixin {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean ywzj_rvp$lastReticleReplaceState;
 
+    @Inject(method = "drawCrosshair", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
+    private void ywzj_rvp$overrideImpactCrosshair(
+            GuiGraphics guiGraphics,
+            int color,
+            PoseStack poseStack,
+            WeaponUnitData.CrosshairStyle crosshairStyle,
+            CallbackInfo ci
+    ) {
+        if (!RVP_RocketCcipOverlay.shouldOverrideImpactCrosshair()) {
+            return;
+        }
+        RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
+        ci.cancel();
+    }
+
     @Inject(method = "render", at = @At("TAIL"), require = 0, remap = false)
     private void ywzj_rvp$drawRocketCcip(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
-        if (!RVP_RocketCcipOverlay.isBallisticRocketActive()) {
+        if (!RVP_RocketCcipOverlay.shouldDrawDetachedPipper()) {
             return;
         }
         Vec3 hitPos = RVP_RocketCcipOverlay.getCurrentScreenHitPos();
@@ -144,7 +160,7 @@ public class VehicleCrossHairOverlayMixin {
             float start,
             float end
     ) {
-        if (RVP_RocketCcipOverlay.isBallisticRocketActive()) {
+        if (RVP_RocketCcipOverlay.isEnhancedCcipActive()) {
             return;
         }
         GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, start, end);

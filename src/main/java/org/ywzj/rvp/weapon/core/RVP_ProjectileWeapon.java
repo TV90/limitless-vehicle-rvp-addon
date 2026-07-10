@@ -20,7 +20,6 @@ import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
 import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -136,7 +135,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         var unit = firedUnit.getRootParentWeaponUnit();
         RVP_WeaponOriginDebug.noteDispatchInvocation(this, firedUnit, unit, shooter, aimContexts, chargeScale);
         // 仅允许 TV SACLOS 继承实体锁；普通 SACLOS 只吃实时指定点，不继承锁定实体。
-        var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+        var lock = data.isHomingProjectile()
                 && (!data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)
                 || data.isSaclosTvGuided())
                 ? unit.getLockedEntity() : null;

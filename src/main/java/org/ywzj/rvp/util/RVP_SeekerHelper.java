@@ -39,10 +39,10 @@ public class RVP_SeekerHelper {
 
         AbstractVehicleWeapon<?> weapon = currentOpt.get();
 
-        // === rvp:missile (RVP_WeaponBase) ===
+        // === rvp:missile / rvp:bomb (RVP_WeaponBase) ===
         if (weapon instanceof RVP_WeaponBase) {
             RVP_WeaponData data = ((RVP_WeaponBase) weapon).getData();
-            if (data.getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE) {
+            if (!data.isHomingProjectile()) {
                 return SeekerType.NONE;
             }
             if (data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
