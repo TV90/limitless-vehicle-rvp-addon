@@ -371,7 +371,8 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         if (hmdState.isRadarHmd()) {
             RadarUnitData data = radarUnit.getData();
             if (data instanceof RadarUnitDataExt ext && ext.ywzj_rvp$isEnableHms()) {
-                Vec3 aimDir = VectorUtil.rotToVec(hmdState.getSmoothPitch(), hmdState.getSmoothYaw()).normalize();
+                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+                Vec3 aimDir = hmdState.resolveRadarAimDir(weaponUnit, radarUnit);
                 Vec3 radarPos = radarUnit.worldRadarPosition();
                 Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
                 Vec2 localRot = radarUnit.worldVecToLocalRot(radarToHead);
@@ -433,7 +434,8 @@ public class RVP_RadarOverlay implements IGuiOverlay {
         RadarUnitData data = radarUnit.getData();
         if (!(data instanceof RadarUnitDataExt ext) || !ext.ywzj_rvp$isEnableHms()) return;
 
-        Vec3 aimDir = VectorUtil.rotToVec(hmdState.getSmoothPitch(), hmdState.getSmoothYaw()).normalize();
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        Vec3 aimDir = hmdState.resolveRadarAimDir(weaponUnit, radarUnit);
         Vec3 radarPos = radarUnit.worldRadarPosition();
         Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
         Vec2 localRot = radarUnit.worldVecToLocalRot(radarToHead);

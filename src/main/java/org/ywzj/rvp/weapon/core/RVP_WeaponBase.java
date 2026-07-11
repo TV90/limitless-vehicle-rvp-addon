@@ -76,7 +76,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
-                    && !data.isGpsMissile();
+                    && !data.isGpsMissile()
+                    && data.isEnableHms();
             Entity externalLocked = null;
             if (!isIrHmdManaged
                     && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF

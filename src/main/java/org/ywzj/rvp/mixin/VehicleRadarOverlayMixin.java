@@ -116,7 +116,8 @@ public class VehicleRadarOverlayMixin {
                 Vec3 radarPos = radar.worldRadarPosition();
                 // 使用平滑角度（同 HMD 框位置）
                 RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
-                Vec3 aimDir = VectorUtil.rotToVec(hmd.getSmoothPitch(), hmd.getSmoothYaw()).normalize();
+                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+                Vec3 aimDir = hmd.resolveRadarAimDir(weaponUnit, radar);
                 Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
                 Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
                 float yMin = radar.getYRotMin();
@@ -225,7 +226,7 @@ public class VehicleRadarOverlayMixin {
 
         // 使用平滑角度（同 HMD 框位置）
         RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
-        Vec3 aimDir = VectorUtil.rotToVec(hmd.getSmoothPitch(), hmd.getSmoothYaw()).normalize();
+        Vec3 aimDir = hmd.resolveRadarAimDir(weaponUnit, radar);
 
         Vec3 radarPos = radar.worldRadarPosition();
         Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);

@@ -1,26 +1,27 @@
 package org.ywzj.rvp.weapon.core;
 
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.network.RVP_Network;
-import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
-import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CEnterHitlView;
+import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
+import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
 import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
-import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
-import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -84,7 +85,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     }
 
     /**
-     * 一轮点射：立即打出第一发，其余按 {@code shoot_interval} 在服务端 tick 中连发。
+     * One burst round: fire the first shot immediately, then continue on server ticks.
      */
     private boolean shootBurstRound(List<AimContext> aimContexts, LivingEntity shooter, RVP_FireData fire) {
         var controller = getFireController();
@@ -132,46 +133,44 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
-        WeaponUnit firedUnit = getWeaponUnit();
-        var unit = firedUnit.getRootParentWeaponUnit();
-        RVP_WeaponOriginDebug.noteDispatchInvocation(this, firedUnit, unit, shooter, aimContexts, chargeScale);
-        // 仅允许 TV SACLOS 继承实体锁；普通 SACLOS 只吃实时指定点，不继承锁定实体。
-        var lock = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                && (!data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)
-                || data.isSaclosTvGuided())
-                ? unit.getLockedEntity() : null;
-        // ARM 预选目标
+        WeaponUnit launchUnit = getWeaponUnit();
+        WeaponUnit rootUnit = launchUnit.getRootParentWeaponUnit();
+        RVP_WeaponOriginDebug.noteDispatchInvocation(this, launchUnit, rootUnit, shooter, aimContexts, chargeScale);
+
+        Entity lock = data.isHomingProjectile()
+                && (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || data.isSaclosTvGuided())
+                ? rootUnit.getLockedEntity()
+                : null;
+
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
-        if (data.isAntiRadiationMissile() && unit instanceof WeaponUnitArmExt armExt) {
+        if (data.isAntiRadiationMissile() && rootUnit instanceof WeaponUnitArmExt armExt) {
             armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
             armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
         }
-        final int preselectVid = armPreselectVehicleId;
-        final int preselectRid = armPreselectRadarIndex;
 
         for (AimContext aim : aimContexts) {
             if (data.getFireData().isCanister()) {
-                shootCanister(data, shooter, aim, lock, unit, chargeScale);
+                shootCanister(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale);
             } else {
-                // 传递 ARM 预选给弹体
-                shootProjectiles(data, shooter, aim, lock, unit, chargeScale, preselectVid, preselectRid);
+                shootProjectiles(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale,
+                        armPreselectVehicleId, armPreselectRadarIndex);
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
     }
 
     private void shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
-                                  net.minecraft.world.entity.Entity lock, WeaponUnit unit, float chargeScale,
+                                  Entity lock, WeaponUnit rootUnit, WeaponUnit launchUnit, float chargeScale,
                                   int armPreselectVehicleId, int armPreselectRadarIndex) {
         int totalProjectiles = data.getFireData().getCanisterCount() * data.getFireData().getCanisterBurstCount();
         if (RVP_AheadProgrammer.isAheadWeapon(data)) {
-            RVP_AheadProgrammer.programForShot(getVehicle(), unit, getIndex(), data, aim, 1.0f);
+            RVP_AheadProgrammer.programForShot(getVehicle(), rootUnit, getIndex(), data, aim, 1.0f);
         }
         for (int i = 0; i < totalProjectiles; i++) {
-            RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
-                    getVehicle(), shooter, aim, lock, unit, chargeScale, 0f);
-            // 设置 ARM 预选目标
+            RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
+                    data, data.getWeaponKind(), entityType, getVehicle(), shooter, aim, lock,
+                    rootUnit, launchUnit, chargeScale, 0f, true);
             if (armPreselectVehicleId >= 0 && projectile != null) {
                 projectile.setPreselectedTarget(armPreselectVehicleId, armPreselectRadarIndex);
             }
@@ -180,7 +179,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
     }
 
     private void shootCanister(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
-                               net.minecraft.world.entity.Entity lock, WeaponUnit unit, float chargeScale) {
+                               Entity lock, WeaponUnit rootUnit, WeaponUnit launchUnit, float chargeScale) {
         RVP_FireData fire = data.getFireData();
         int pellets = Math.max(fire.getCanisterCount(), 1);
         int total = pellets * fire.getCanisterBurstCount();
@@ -196,10 +195,11 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             }
             AimContext pelletAim = canisterAim(aim, pelletIndex, gridCells, fire, centerOffset);
             if (RVP_AheadProgrammer.isAheadWeapon(data)) {
-                RVP_AheadProgrammer.programForShot(getVehicle(), unit, getIndex(), data, pelletAim, 1.0f);
+                RVP_AheadProgrammer.programForShot(getVehicle(), rootUnit, getIndex(), data, pelletAim, 1.0f);
             }
-            RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(data, data.getWeaponKind(), entityType,
-                    getVehicle(), shooter, pelletAim, lock, unit, chargeScale, 0f, false);
+            RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
+                    data, data.getWeaponKind(), entityType, getVehicle(), shooter, pelletAim, lock,
+                    rootUnit, launchUnit, chargeScale, 0f, false);
             maybeEnterHitlView(data, shooter, projectile, i);
         }
     }

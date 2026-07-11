@@ -1,9 +1,11 @@
 package org.ywzj.rvp.mixin;
 
+import com.google.gson.JsonElement;
 import com.google.gson.annotations.SerializedName;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.ywzj.rvp.ext.RadarUnitPojoExt;
+import org.ywzj.rvp.radar.RVP_RadarHmsMode;
 import org.ywzj.vehicle.custom.part.data.RadarUnitPojo;
 
 @Mixin(value = RadarUnitPojo.class, remap = false)
@@ -34,7 +36,7 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
 
     @SerializedName("enable_hms")
     @Unique
-    public boolean ywzj_rvp$enableHms = true;
+    public JsonElement ywzj_rvp$enableHms = null;
 
     @SerializedName("scan_min_height")
     @Unique
@@ -75,8 +77,8 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     }
 
     @Override
-    public boolean ywzj_rvp$isEnableHms() {
-        return ywzj_rvp$enableHms;
+    public RVP_RadarHmsMode ywzj_rvp$getHmsMode() {
+        return RVP_RadarHmsMode.fromJson(ywzj_rvp$enableHms);
     }
 
     @Override

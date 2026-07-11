@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.ext.RadarUnitPojoExt;
+import org.ywzj.rvp.radar.RVP_RadarHmsMode;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.custom.part.data.RadarUnitPojo;
 
@@ -31,7 +32,7 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     private int ywzj_rvp$contactHoldTick = 0;
 
     @Unique
-    private boolean ywzj_rvp$enableHms = true;
+    private RVP_RadarHmsMode ywzj_rvp$hmsMode = RVP_RadarHmsMode.FULL;
 
     @Unique
     private float ywzj_rvp$scanMinHeight = 25f;
@@ -48,7 +49,7 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
             this.ywzj_rvp$scanPeriodTick = ext.ywzj_rvp$getScanPeriodTick();
             this.ywzj_rvp$scanLineWhenLocked = ext.ywzj_rvp$isScanLineWhenLocked();
             this.ywzj_rvp$contactHoldTick = ext.ywzj_rvp$getContactHoldTick();
-            this.ywzj_rvp$enableHms = ext.ywzj_rvp$isEnableHms();
+            this.ywzj_rvp$hmsMode = ext.ywzj_rvp$getHmsMode();
             this.ywzj_rvp$scanMinHeight = ext.ywzj_rvp$getScanMinHeight();
             this.ywzj_rvp$scanMaxHeight = ext.ywzj_rvp$getScanMaxHeight();
         }
@@ -105,8 +106,8 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     }
 
     @Override
-    public boolean ywzj_rvp$isEnableHms() {
-        return ywzj_rvp$enableHms;
+    public RVP_RadarHmsMode ywzj_rvp$getHmsMode() {
+        return ywzj_rvp$hmsMode == null ? RVP_RadarHmsMode.FULL : ywzj_rvp$hmsMode;
     }
 
     @Override

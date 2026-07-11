@@ -1,5 +1,6 @@
 package org.ywzj.rvp.mixin;
 
+import org.ywzj.rvp.config.WeaponBayManualOverrideManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -29,6 +30,10 @@ public abstract class WeaponUnitSetWeaponMixin {
 
         int curPrimaryIdx = self.getCurrentWeaponIndex();
         int curSecondaryIdx = self.getCurrentSecondaryWeaponIndex();
+        if (WeaponBayManualOverrideManager.isOverrideActive(
+                self.getVehicle().getId(), self.getIndex(), curPrimaryIdx, curSecondaryIdx)) {
+            return;
+        }
 
         if (curPrimaryIdx == rvp$lastPrimaryWeaponIndex && curSecondaryIdx == rvp$lastSecondaryWeaponIndex) {
             return;
@@ -38,13 +43,7 @@ public abstract class WeaponUnitSetWeaponMixin {
         rvp$lastSecondaryWeaponIndex = curSecondaryIdx;
 
         // 找当前武器的弹舱
-        WeaponBayUnit targetBay = null;
-        if (curPrimaryIdx >= 0 && curPrimaryIdx < self.weapons.size()) {
-            targetBay = self.weaponBayUnits.get(self.weapons.get(curPrimaryIdx));
-        }
-        if (targetBay == null && curSecondaryIdx >= 0 && curSecondaryIdx < self.secondaryWeapons.size()) {
-            targetBay = self.weaponBayUnits.get(self.secondaryWeapons.get(curSecondaryIdx));
-        }
+        WeaponBayUnit targetBay = rvp$resolveActiveWeaponBay(self, curPrimaryIdx, curSecondaryIdx);
 
         // 同步所有弹舱（直接字段赋值绕过 WeaponBayUnit 的独立 chat message）
         for (WeaponBayUnit bay : self.weaponBayUnits.values()) {
@@ -53,5 +52,17 @@ public abstract class WeaponUnitSetWeaponMixin {
                 ((SwitchableUnitAccessor) bay).setOnField(shouldBeOn);
             }
         }
+    }
+
+    @Unique
+    private WeaponBayUnit rvp$resolveActiveWeaponBay(WeaponUnit self, int curPrimaryIdx, int curSecondaryIdx) {
+        WeaponBayUnit targetBay = null;
+        if (curPrimaryIdx >= 0 && curPrimaryIdx < self.weapons.size()) {
+            targetBay = self.weaponBayUnits.get(self.weapons.get(curPrimaryIdx));
+        }
+        if (targetBay == null && curSecondaryIdx >= 0 && curSecondaryIdx < self.secondaryWeapons.size()) {
+            targetBay = self.weaponBayUnits.get(self.secondaryWeapons.get(curSecondaryIdx));
+        }
+        return targetBay;
     }
 }

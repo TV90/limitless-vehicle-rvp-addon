@@ -10,10 +10,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
 
 import java.util.Optional;
 
@@ -26,6 +28,28 @@ public abstract class WeaponUnitFireControlLockMixin {
     @Inject(method = "fireControlLock", at = @At("HEAD"), cancellable = true, remap = false)
     private void rvp$handleRfFireControlLock(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        Optional<?> weaponOpt = self.getCurrentWeapon();
+        if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO
+                && weaponOpt.isPresent()
+                && weaponOpt.get() instanceof RVP_WeaponBase rvpWeapon
+                && rvpWeapon.getData().isHomingProjectile()
+                && rvpWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.IR)
+                && !rvpWeapon.getData().isEnableHms()) {
+            if (self.getLockedEntity() != null) {
+                self.setLockedEntity(null);
+                ci.cancel();
+                return;
+            }
+            Entity target = Infrared.findTarget(self, Math.max(1f, rvpWeapon.getData().getMaxGuideHeadAngle()));
+            if (target != null) {
+                self.setLockedEntity(target);
+                if (!self.isSeekerOn()) {
+                    self.toggleSeeker(true);
+                }
+            }
+            ci.cancel();
+            return;
+        }
         if (self.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
             return;
         }

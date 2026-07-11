@@ -56,7 +56,8 @@ public final class RVP_ProjectileSpawner {
                                        Supplier<EntityType<? extends Projectile>> entityType,
                                        AbstractVehicle vehicle, LivingEntity shooter, AimContext aim,
                                        Entity lockTarget, WeaponUnit weaponUnit, float powerScale, float extraSpread) {
-        return spawn(data, kind, entityType, vehicle, shooter, aim, lockTarget, weaponUnit, powerScale, extraSpread, true);
+        return spawn(data, kind, entityType, vehicle, shooter, aim, lockTarget, weaponUnit, weaponUnit,
+                powerScale, extraSpread, true);
     }
 
     public static RVP_BaseBullet spawn(RVP_WeaponData data, RVP_EnumWeaponKind kind,
@@ -64,6 +65,15 @@ public final class RVP_ProjectileSpawner {
                                        AbstractVehicle vehicle, LivingEntity shooter, AimContext aim,
                                        Entity lockTarget, WeaponUnit weaponUnit, float powerScale,
                                        float extraSpread, boolean includeFireSpread) {
+        return spawn(data, kind, entityType, vehicle, shooter, aim, lockTarget, weaponUnit, weaponUnit,
+                powerScale, extraSpread, includeFireSpread);
+    }
+
+    public static RVP_BaseBullet spawn(RVP_WeaponData data, RVP_EnumWeaponKind kind,
+                                       Supplier<EntityType<? extends Projectile>> entityType,
+                                       AbstractVehicle vehicle, LivingEntity shooter, AimContext aim,
+                                       Entity lockTarget, WeaponUnit weaponUnit, WeaponUnit launchUnit,
+                                       float powerScale, float extraSpread, boolean includeFireSpread) {
         Level level = vehicle.level();
         float spread = Math.max(includeFireSpread ? data.getInaccuracy() : 0f, 0f) + Math.max(extraSpread, 0f);
         float xRot = aim.direction.x + randomSpread(level, spread);
@@ -96,6 +106,7 @@ public final class RVP_ProjectileSpawner {
         projectile.initFromWeapon(data, kind, vehicle, shooter, muzzle,
                 new RVP_BaseBullet.AimRot(xRot, yRot), motion);
         projectile.setShooterWeaponUnit(weaponUnit);
+        projectile.initColdLaunch(launchUnit);
         projectile.name = Component.translatable(data.getName());
         if (weaponUnit != null) {
             int weaponIndex = weaponUnit.getCurrentWeapon().map(AbstractVehicleWeapon::getIndex).orElse(0);

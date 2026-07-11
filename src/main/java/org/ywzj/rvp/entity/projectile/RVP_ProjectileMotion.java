@@ -59,7 +59,7 @@ public final class RVP_ProjectileMotion {
         }
 
         Vec3 velocity = projectile.getDeltaMovement();
-        int ignition = data.getResolvedIgnitionDelayTick();
+        int ignition = resolveMotorIgnitionTick(projectile, data);
 
         if (projectile.tickCount >= ignition) {
             if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
@@ -140,7 +140,7 @@ public final class RVP_ProjectileMotion {
     }
 
     private static boolean shouldStartSecondPulse(RVP_BaseBullet projectile, RVP_WeaponData data, Vec3 velocity) {
-        int ignition = data.getResolvedIgnitionDelayTick();
+        int ignition = resolveMotorIgnitionTick(projectile, data);
         int motorTick = projectile.tickCount - ignition;
         if (motorTick <= data.getResolvedMotorBurnTime()) {
             return false;
@@ -279,7 +279,7 @@ public final class RVP_ProjectileMotion {
         }
         Vec3 velocity = missile.getDeltaMovement();
         Vec3 lookDir = missile.getLookAngle();
-        int ignition = data.getResolvedIgnitionDelayTick();
+        int ignition = resolveMotorIgnitionTick(missile, data);
 
         if (missile.tickCount < ignition) {
             velocity = applyPreIgnitionVelocity(missile, velocity, ignition);
@@ -309,12 +309,27 @@ public final class RVP_ProjectileMotion {
         missile.flightSpeed = (float) Math.max(missile.flightSpeed, velocity.length());
     }
 
+    private static int resolveMotorIgnitionTick(RVP_BaseBullet projectile, RVP_WeaponData data) {
+        if (projectile == null || data == null) {
+            return 0;
+        }
+        return Math.max(data.getResolvedIgnitionDelayTick(), projectile.getColdLaunchTimeTick());
+    }
+
     private static Vec3 applyPreIgnitionVelocity(RVP_BaseBullet projectile, Vec3 velocity, int ignition) {
         AbstractVehicle carrier = projectile.shooterVehicle;
         if (carrier == null) {
             return velocity;
         }
+        int coldLaunchTick = projectile.getColdLaunchTimeTick();
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
+        if (coldLaunchTick > 0 && projectile.tickCount < coldLaunchTick) {
+            Vec3 configured = projectile.getColdLaunchVelocity();
+            Vec3 launchVelocity = new Vec3(axes[0]).scale(configured.x)
+                    .add(new Vec3(axes[1]).scale(configured.y))
+                    .add(new Vec3(axes[2]).scale(configured.z));
+            return carrier.getDeltaMovement().add(launchVelocity);
+        }
         Vec3 eject = new Vec3(axes[1].negate());
         float muzzle = projectile.rvpData.getProjectileVelocity();
         if (muzzle > 1.0E-4f) {

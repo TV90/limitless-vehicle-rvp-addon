@@ -39,6 +39,7 @@
     "WeaponUnitSensorOverrideMixin",
     "WeaponUnitShootDebugMixin",
     "WeaponUnitSwitchWeaponMixin",
+    "ClientVehicleActionWeaponBayOverrideMixin",
     "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
     "RadarSignatureMixin"
@@ -68,6 +69,7 @@
     "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
+    "WeaponUnitToggleCurrentWeaponBayMixin",
     "SwitchableRunnerLoopMixin"
   ],
   "injectors": {

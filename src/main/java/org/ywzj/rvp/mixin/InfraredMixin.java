@@ -8,6 +8,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
@@ -23,44 +25,50 @@ public class InfraredMixin {
             at = @At("RETURN"),
             cancellable = true
     )
-    private static void ywzj_rvp$overrideCheckTarget(WeaponUnit weaponUnit, Entity target, CallbackInfoReturnable<Entity> cir) {
-        // 只在 IR HMD 激活时介入
+    private static void ywzj_rvp(WeaponUnit weaponUnit, Entity target, CallbackInfoReturnable<Entity> cir) {
+        if (cir.getReturnValue() == null || target == null) {
+            return;
+        }
+
         RVP_ClientHmdState state = RVP_ClientHmdState.getInstance();
-        if (!state.isIrHmd()) {
+        if (state.isIrHmd()) {
+            Entity hmdLocked = weaponUnit.getLockedEntity();
+            if (hmdLocked == null || hmdLocked.getId() != target.getId()) {
+                return;
+            }
+            float maxAngle = state.getIrGuideHeadMaxAngle();
+            float lockMinHeight = state.getIrLockMinHeight();
+            if (!RVP_GuidanceMath.isTargetPassAltFilter(target, lockMinHeight)) {
+                cir.setReturnValue(null);
+                return;
+            }
+            ywzj_rvp(weaponUnit, target, maxAngle, cir);
             return;
         }
 
-        // 从 HMD 状态获取当前锁定实体及离轴角
-        Entity hmdLocked = weaponUnit.getLockedEntity();
-        if (hmdLocked == null || hmdLocked.getId() != target.getId()) {
-            return; // HMD 锁定的是其他目标，不干预
-        }
-
-        // 获取 HMD 的离轴角限制和高度过滤
-        float maxAngle = state.getIrGuideHeadMaxAngle();
-        float lockMinHeight = state.getIrLockMinHeight();
-
-        // 离地高度过滤
-        if (!RVP_GuidanceMath.isTargetPassAltFilter(target, lockMinHeight)) {
-            cir.setReturnValue(null);
+        var weaponOpt = weaponUnit.getCurrentWeapon();
+        if (weaponOpt.isEmpty() || !(weaponOpt.get() instanceof RVP_WeaponBase rvpWeapon)) {
             return;
         }
-
-        if (maxAngle <= 0) {
+        var data = rvpWeapon.getData();
+        if (!data.isHomingProjectile() || !data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
             return;
         }
+        ywzj_rvp(weaponUnit, target, data.getMaxGuideHeadAngle(), cir);
+    }
 
-        // 计算目标相对武器指向的离轴角
+    private static void ywzj_rvp(WeaponUnit weaponUnit, Entity target, float maxAngle,
+                                                 CallbackInfoReturnable<Entity> cir) {
+        if (maxAngle <= 0f) {
+            return;
+        }
         Vec3 checkStart = weaponUnit.worldPivotPosition();
         Vec3 vLock = target.getBoundingBox().getCenter().subtract(checkStart);
         Vec3 vAim = weaponUnit.worldVec();
         double degree = Math.toDegrees(VectorUtil.angleBetween(vLock, vAim));
-
         if (degree > maxAngle) {
-            // 超出离轴角 → 丢锁
             cir.setReturnValue(null);
         } else {
-            // 在离轴角内 → 维持锁定（覆盖原 Infrared 的判定）
             cir.setReturnValue(target);
         }
     }

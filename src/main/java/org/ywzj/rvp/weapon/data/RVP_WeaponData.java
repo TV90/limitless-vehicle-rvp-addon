@@ -82,6 +82,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("require_lock")
     private boolean requireLock = true;
 
+    @SerializedName(value = "enableHMS", alternate = {"enable_hms"})
+    private boolean enableHms = true;
+
     /**
      * Optional per-weapon override for the firing unit sensor type.
      * Lets one shared weapon station behave as RF/EO/IR depending on the currently selected weapon.
@@ -219,6 +222,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isRequireLock() {
         return requireLock;
+    }
+
+    public boolean isEnableHms() {
+        return enableHms;
     }
 
     @Nullable
