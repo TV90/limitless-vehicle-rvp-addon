@@ -36,7 +36,7 @@ public final class RVP_IrGuidanceSource implements RVP_GuidanceSource {
 
         // 兜底：如果导弹尚无目标，尝试从发射武器站获取预锁（网络包延迟到达保护）
         if (target == null || !target.isAlive()) {
-            Entity illuminated = RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile);
+            Entity illuminated = RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile, type);
             if (illuminated != null && illuminated.isAlive()) {
                 projectile.setTargetEntity(illuminated);
                 target = illuminated;

@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -27,6 +28,15 @@ public class WeaponUnitSensorOverrideMixin {
             return;
         }
         RVP_WeaponData data = rvpWeapon.getData();
+        if ("eo_ccip".equalsIgnoreCase(data.getFireControlSensorMode())) {
+            if (LocalVehiclePlayer.instance != null
+                    && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE) {
+                cir.setReturnValue(WeaponUnitData.FireControlSensorType.EO);
+            } else {
+                cir.setReturnValue(WeaponUnitData.FireControlSensorType.CCIP);
+            }
+            return;
+        }
         WeaponUnitData.FireControlSensorType override = data.getFireControlSensorTypeOverride();
         if (override != null) {
             cir.setReturnValue(override);

@@ -9,12 +9,14 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
-import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
 
 import java.util.Optional;
@@ -29,18 +31,22 @@ public abstract class WeaponUnitFireControlLockMixin {
     private void rvp$handleRfFireControlLock(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
         Optional<?> weaponOpt = self.getCurrentWeapon();
+        AbstractVehicleWeapon<?> currentWeapon = weaponOpt.isPresent() && weaponOpt.get() instanceof AbstractVehicleWeapon<?> weapon
+                ? weapon
+                : null;
         if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO
                 && weaponOpt.isPresent()
-                && weaponOpt.get() instanceof RVP_WeaponBase rvpWeapon
-                && rvpWeapon.getData().isHomingProjectile()
-                && rvpWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.IR)
-                && !rvpWeapon.getData().isEnableHms()) {
+                && RVP_LaserWeapons.unwrap(currentWeapon) instanceof RVP_WeaponBase rvpWeapon
+                && RVP_IrLockHelper.usesIrAcquireOnEo(self.getFireControlSensorType(), rvpWeapon.getData())) {
             if (self.getLockedEntity() != null) {
                 self.setLockedEntity(null);
                 ci.cancel();
                 return;
             }
-            Entity target = Infrared.findTarget(self, Math.max(1f, rvpWeapon.getData().getMaxGuideHeadAngle()));
+            Entity target = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().getMaxLockOnAngle()));
+            if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
+                target = null;
+            }
             if (target != null) {
                 self.setLockedEntity(target);
                 if (!self.isSeekerOn()) {

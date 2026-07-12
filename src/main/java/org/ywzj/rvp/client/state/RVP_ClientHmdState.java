@@ -9,6 +9,7 @@ import org.ywzj.rvp.client.debug.RVP_DebugStateLogs;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -416,11 +417,23 @@ public class RVP_ClientHmdState {
         Entity tracked = resolveTrackedIrTarget(mc, weaponUnit);
         if (tracked != null) {
             Vec3 toTarget = tracked.getBoundingBox().getCenter().subtract(seekerPos);
+            double dist = toTarget.length();
+            if (dist > maxRange || dist < 1.0) {
+                RVP_DebugStateLogs.logIrHms("drop range target=" + tracked.getId() + " dist=" + formatAngle(dist));
+                clearIrLockState(weaponUnit);
+                return;
+            }
             Vec3 dir = toTarget.normalize();
             Vec3 refDir = weaponUnit.worldVec().normalize();
             double offBoresightAngle = Math.toDegrees(Math.acos(
                     Math.max(-1.0, Math.min(1.0, refDir.dot(dir)))));
-            if (!RVP_GuidanceMath.isTargetPassAltFilter(tracked, irLockMinHeight)) {
+            if (!RVP_IrLockHelper.isTargetWithinLimits(
+                    weaponUnit,
+                    tracked,
+                    180f,
+                    maxRange,
+                    irLockMinHeight
+            )) {
                 RVP_DebugStateLogs.logIrHms("drop alt-filter target=" + tracked.getId());
                 clearIrLockState(weaponUnit);
                 return;

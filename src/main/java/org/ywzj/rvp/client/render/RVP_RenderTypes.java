@@ -57,11 +57,65 @@ public class RVP_RenderTypes extends RenderType {
         );
     });
 
+    private static final Function<ResourceLocation, RenderType> CUBE_COCKPIT_TRANSLUCENT_CULLED = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setCullState(CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:cube_cockpit_translucent_culled",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.QUADS,
+                256,
+                true,
+                true,
+                state
+        );
+    });
+
+    private static final Function<ResourceLocation, RenderType> POLY_MESH_COCKPIT_TRANSLUCENT_CULLED = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                .setCullState(CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:poly_mesh_cockpit_translucent_culled",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.TRIANGLES,
+                256,
+                true,
+                true,
+                state
+        );
+    });
+
     public static RenderType polyMeshCutout(ResourceLocation texture) {
         return POLY_MESH_CUTOUT_CULLED.apply(texture);
     }
 
     public static RenderType polyMeshTransparent(ResourceLocation texture) {
         return POLY_MESH_TRANSLUCENT_CULLED.apply(texture);
+    }
+
+    public static RenderType cubeCockpitTransparent(ResourceLocation texture) {
+        return CUBE_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
+    }
+
+    public static RenderType polyMeshCockpitTransparent(ResourceLocation texture) {
+        return POLY_MESH_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
     }
 }

@@ -2,10 +2,13 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -23,10 +26,13 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
  */
 public final class RVP_ClientSaclosState {
 
-    private static boolean laserEnabled = true;
-    private static boolean lastSentTargeting = true;
+    private static boolean laserEnabled;
+    private static boolean serverTargetingActive;
     private static int trackedMissileId = -1;
     private static int pendingAcquireTicks;
+    private static int vehicleId = -1;
+    @Nullable
+    private static Boolean manualLaserOverride;
     @Nullable
     private static Vec3 laserHudPos;
 
@@ -35,12 +41,11 @@ public final class RVP_ClientSaclosState {
     public static void onSaclosWeaponFired() {
         pendingAcquireTicks = 40;
         trackedMissileId = -1;
-        laserEnabled = true;
     }
 
     public static void tick(Minecraft mc, LocalPlayer player) {
         if (mc.level == null || player == null) {
-            reset();
+            resetLocal();
             return;
         }
 
@@ -50,20 +55,20 @@ public final class RVP_ClientSaclosState {
         }
 
         if (!LocalVehiclePlayer.instance.onVehicle()) {
-            reset();
+            syncTargetingDisabled();
+            resetLocal();
             return;
         }
 
+        updateVehicleContext(player.getVehicle());
         acquireTrackedMissile(player, mc.level);
-
-        boolean guiding = isGuiding();
-        if (guiding && laserEnabled) {
+        laserEnabled = resolveEffectiveLaserEnabled();
+        if (laserEnabled) {
             laserHudPos = resolvePodAimPoint();
         } else {
             laserHudPos = null;
         }
-
-        syncDesignation(guiding);
+        syncDesignation();
     }
 
     private static void tickHitlDesignate(Minecraft mc) {
@@ -88,21 +93,25 @@ public final class RVP_ClientSaclosState {
         }
     }
 
-    /** Press R while guiding (cockpit): toggle laser designator on/off. */
-    public static void toggleLaser() {
-        laserEnabled = !laserEnabled;
-        if (!laserEnabled) {
-            laserHudPos = null;
-            RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
-            lastSentTargeting = false;
+    public static void toggleVehicleLaser(LocalPlayer player) {
+        if (player == null || !LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
             return;
         }
-        Vec3 point = resolvePodAimPoint();
-        laserHudPos = point;
-        if (point != null) {
-            RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(true, point));
-            lastSentTargeting = true;
+        boolean next = !isLaserEnabled();
+        manualLaserOverride = next;
+        laserEnabled = next;
+        laserHudPos = next ? resolvePodAimPoint() : null;
+        if (!next) {
+            syncTargetingDisabled();
+        } else {
+            syncDesignation();
         }
+        player.displayClientMessage(
+                Component.translatable(next
+                        ? "message.ywzj_rvp.saclos.designation_on"
+                        : "message.ywzj_rvp.saclos.designation_off"),
+                true
+        );
     }
 
     @Nullable
@@ -171,25 +180,21 @@ public final class RVP_ClientSaclosState {
         }
     }
 
-    private static void syncDesignation(boolean guiding) {
-        if (!guiding) {
-            if (!lastSentTargeting) {
-                RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
-                lastSentTargeting = true;
-            }
-            laserEnabled = true;
-            trackedMissileId = -1;
-            return;
-        }
-
-        if (!laserEnabled) {
-            return;
-        }
-        if (laserHudPos == null) {
+    private static void syncDesignation() {
+        if (!laserEnabled || laserHudPos == null) {
+            syncTargetingDisabled();
             return;
         }
         RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(true, laserHudPos));
-        lastSentTargeting = true;
+        serverTargetingActive = true;
+    }
+
+    private static void syncTargetingDisabled() {
+        if (!serverTargetingActive) {
+            return;
+        }
+        RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
+        serverTargetingActive = false;
     }
 
     public static boolean isGuiding() {
@@ -227,15 +232,58 @@ public final class RVP_ClientSaclosState {
     }
 
     public static void reset() {
-        laserEnabled = true;
-        lastSentTargeting = true;
+        syncTargetingDisabled();
+        resetLocal();
+    }
+
+    private static void resetLocal() {
+        laserEnabled = false;
         trackedMissileId = -1;
         pendingAcquireTicks = 0;
+        vehicleId = -1;
+        manualLaserOverride = null;
         laserHudPos = null;
     }
 
     public static boolean isSaclosWeapon(AbstractVehicleWeapon<?> weapon) {
         return weapon instanceof RVP_WeaponBase rvp
                 && rvp.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
+    }
+
+    private static void updateVehicleContext(@Nullable Entity vehicle) {
+        int nextVehicleId = vehicle != null ? vehicle.getId() : -1;
+        if (nextVehicleId == vehicleId) {
+            return;
+        }
+        syncTargetingDisabled();
+        vehicleId = nextVehicleId;
+        manualLaserOverride = null;
+        trackedMissileId = -1;
+        pendingAcquireTicks = 0;
+        laserHudPos = null;
+    }
+
+    private static boolean resolveEffectiveLaserEnabled() {
+        if (manualLaserOverride != null) {
+            return manualLaserOverride;
+        }
+        return isAutoLaserWeapon(resolveCurrentWeapon());
+    }
+
+    @Nullable
+    private static AbstractVehicleWeapon<?> resolveCurrentWeapon() {
+        WeaponUnit unit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (unit == null) {
+            return null;
+        }
+        return RVP_LaserWeapons.unwrap(unit.getCurrentWeapon().orElse(null));
+    }
+
+    private static boolean isAutoLaserWeapon(@Nullable AbstractVehicleWeapon<?> weapon) {
+        if (!(weapon instanceof RVP_WeaponBase rvp)) {
+            return false;
+        }
+        RVP_WeaponData data = rvp.getData();
+        return data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) && !data.isSaclosTvGuided();
     }
 }

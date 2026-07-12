@@ -1,16 +1,14 @@
 package org.ywzj.rvp.mixin;
 
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
-import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
-import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
 
@@ -36,13 +34,15 @@ public class InfraredMixin {
             if (hmdLocked == null || hmdLocked.getId() != target.getId()) {
                 return;
             }
-            float maxAngle = state.getIrGuideHeadMaxAngle();
-            float lockMinHeight = state.getIrLockMinHeight();
-            if (!RVP_GuidanceMath.isTargetPassAltFilter(target, lockMinHeight)) {
+            if (!RVP_IrLockHelper.isTargetWithinLimits(
+                    weaponUnit,
+                    target,
+                    Math.max(1f, state.getIrGuideHeadMaxAngle()),
+                    Math.max(0f, state.getIrSeekerRange()),
+                    state.getIrLockMinHeight()
+            )) {
                 cir.setReturnValue(null);
-                return;
             }
-            ywzj_rvp(weaponUnit, target, maxAngle, cir);
             return;
         }
 
@@ -51,25 +51,11 @@ public class InfraredMixin {
             return;
         }
         var data = rvpWeapon.getData();
-        if (!data.isHomingProjectile() || !data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
+        if (!RVP_IrLockHelper.isIrLaunchWeapon(data)) {
             return;
         }
-        ywzj_rvp(weaponUnit, target, data.getMaxGuideHeadAngle(), cir);
-    }
-
-    private static void ywzj_rvp(WeaponUnit weaponUnit, Entity target, float maxAngle,
-                                                 CallbackInfoReturnable<Entity> cir) {
-        if (maxAngle <= 0f) {
-            return;
-        }
-        Vec3 checkStart = weaponUnit.worldPivotPosition();
-        Vec3 vLock = target.getBoundingBox().getCenter().subtract(checkStart);
-        Vec3 vAim = weaponUnit.worldVec();
-        double degree = Math.toDegrees(VectorUtil.angleBetween(vLock, vAim));
-        if (degree > maxAngle) {
+        if (!RVP_IrLockHelper.isTargetWithinHoldLimits(weaponUnit, target, data)) {
             cir.setReturnValue(null);
-        } else {
-            cir.setReturnValue(target);
         }
     }
 }

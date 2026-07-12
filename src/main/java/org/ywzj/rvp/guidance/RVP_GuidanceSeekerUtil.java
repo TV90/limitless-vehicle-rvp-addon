@@ -4,10 +4,12 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -20,11 +22,19 @@ public final class RVP_GuidanceSeekerUtil {
     private RVP_GuidanceSeekerUtil() {}
 
     public static Entity getIlluminatedTarget(RVP_BaseBullet projectile) {
+        return getIlluminatedTarget(projectile, null);
+    }
+
+    public static Entity getIlluminatedTarget(RVP_BaseBullet projectile, @Nullable RVP_EnumGuidanceType requestedType) {
         WeaponUnit unit = projectile.getShooterWeaponUnit();
         if (unit == null) {
             return projectile.getTargetEntity();
         }
         WeaponUnit root = unit.getRootParentWeaponUnit();
+        if (requestedType == RVP_EnumGuidanceType.IR) {
+            Entity tracked = root.getLockedEntity();
+            return tracked != null && tracked.isAlive() ? tracked : projectile.getTargetEntity();
+        }
         var radarUnit = RVP_RadarRoleHelper.getLockedRadar(root);
         if (radarUnit != null && radarUnit.getLockedEntity() != null) {
             return radarUnit.getLockedEntity();
@@ -42,13 +52,62 @@ public final class RVP_GuidanceSeekerUtil {
         return tracked != null && tracked.isAlive() ? tracked : projectile.getTargetEntity();
     }
 
+    public static boolean isValidIrTrackTarget(
+            RVP_BaseBullet projectile,
+            RVP_GuidanceEffectiveConfig config,
+            Entity target
+    ) {
+        if (projectile == null || config == null || target == null || !target.isAlive()) {
+            return false;
+        }
+        RVP_WeaponData data = projectile.getRvpData();
+        if (data == null) {
+            return false;
+        }
+        if (!RVP_IrLockHelper.isIrLaunchWeapon(data)) {
+            return isWithinLaunchCone(projectile, config, target, RVP_IrLockHelper.halfAngleFromFull(config.seeker().resolvedFov()));
+        }
+        return isWithinLaunchCone(projectile, config, target, data.getMaxGuideHeadAngle());
+    }
+
+    private static boolean isWithinLaunchCone(
+            RVP_BaseBullet projectile,
+            RVP_GuidanceEffectiveConfig config,
+            Entity target,
+            float angleLimit
+    ) {
+        if (target == null || config == null) {
+            return false;
+        }
+        RVP_GuidanceSeekerData seeker = config.seeker();
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        float range = seeker.resolvedRange();
+        if (range > 0f && projectile.position().distanceToSqr(targetCenter) > range * range) {
+            return false;
+        }
+        if (!RVP_GuidanceMath.isTargetPassAltFilter(target, seeker.getLockMinHeight())) {
+            return false;
+        }
+        Vec3 toTarget = targetCenter.subtract(projectile.position());
+        Vec3 look = projectile.getLookAngle().normalize();
+        if (look.lengthSqr() <= 1.0E-6 || toTarget.lengthSqr() <= 1.0E-6) {
+            return true;
+        }
+        double dot = Mth.clamp(look.dot(toTarget.normalize()), -1.0, 1.0);
+        double angle = Math.toDegrees(Math.acos(dot));
+        return angle <= Math.max(1f, angleLimit);
+    }
+
     public static boolean isValidEntityTarget(
             RVP_BaseBullet projectile,
             RVP_GuidanceEffectiveConfig config,
             RVP_EnumGuidanceType type,
             Entity target
     ) {
-        if (!RVP_GuidanceMath.isWithinSeekerCone(projectile, target, config)) {
+        boolean geometryOk = type == RVP_EnumGuidanceType.IR
+                ? isValidIrTrackTarget(projectile, config, target)
+                : RVP_GuidanceMath.isWithinSeekerCone(projectile, target, config);
+        if (!geometryOk) {
             return false;
         }
         if (type == RVP_EnumGuidanceType.SARH
@@ -76,7 +135,7 @@ public final class RVP_GuidanceSeekerUtil {
     ) {
         RVP_GuidanceSeekerData seeker = config.seeker();
         double range = seeker.resolvedRange();
-        double maxAngle = seeker.resolvedFov();
+        double maxAngle = RVP_IrLockHelper.halfAngleFromFull(seeker.resolvedFov());
         AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
@@ -111,7 +170,7 @@ public final class RVP_GuidanceSeekerUtil {
     public static Entity scanRadarTarget(RVP_BaseBullet projectile, RVP_GuidanceEffectiveConfig config) {
         RVP_GuidanceSeekerData seeker = config.seeker();
         double range = seeker.resolvedRange();
-        double maxAngle = seeker.resolvedFov();
+        double maxAngle = RVP_IrLockHelper.halfAngleFromFull(seeker.resolvedFov());
         AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;

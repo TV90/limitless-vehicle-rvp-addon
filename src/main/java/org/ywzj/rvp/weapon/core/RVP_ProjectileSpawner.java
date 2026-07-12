@@ -115,6 +115,11 @@ public final class RVP_ProjectileSpawner {
 
         if (lockTarget != null) {
             projectile.setTargetEntity(lockTarget);
+            if (kind == RVP_EnumWeaponKind.MISSILE && data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
+                projectile.setTargetPos(lockTarget.getBoundingBox().getCenter());
+                projectile.markLaunchTargetSnapshot();
+                projectile.beginIrSeekerGrace(Math.max(6, data.getScanInterval() * 2));
+            }
         }
 
         GPSTarget gps = data.usesGuidanceType(RVP_EnumGuidanceType.GPS)

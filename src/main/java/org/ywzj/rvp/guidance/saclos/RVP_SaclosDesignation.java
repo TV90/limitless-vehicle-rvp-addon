@@ -24,7 +24,7 @@ public final class RVP_SaclosDesignation {
         if (projectile.level().isClientSide() || !projectile.isAlive()) {
             return;
         }
-        if (!isInSaclosGuidanceStage(projectile)) {
+        if (!usesSaclosGuidance(projectile)) {
             return;
         }
         if (isHitlDesignate(projectile)) {
@@ -51,6 +51,11 @@ public final class RVP_SaclosDesignation {
 
     public static boolean isInSaclosGuidanceStage(RVP_BaseBullet projectile) {
         return projectile.rvp$isInSaclosGuidanceStage();
+    }
+
+    private static boolean usesSaclosGuidance(RVP_BaseBullet projectile) {
+        return projectile.getRvpData() != null
+                && projectile.getRvpData().usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS);
     }
 
     @Nullable

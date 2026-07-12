@@ -42,7 +42,9 @@ public class RVP_SeekerHelper {
         // === rvp:missile (RVP_WeaponBase) ===
         if (weapon instanceof RVP_WeaponBase) {
             RVP_WeaponData data = ((RVP_WeaponBase) weapon).getData();
-            if (data.getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE) {
+            org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind kind = data.getWeaponKind();
+            if (kind != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE
+                    && kind != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB) {
                 return SeekerType.NONE;
             }
             if (data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {

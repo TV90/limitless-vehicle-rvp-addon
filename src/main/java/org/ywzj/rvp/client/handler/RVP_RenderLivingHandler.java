@@ -7,6 +7,7 @@ import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderer;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -30,6 +31,10 @@ public class RVP_RenderLivingHandler {
     private static boolean shouldHide(LivingEntity entity) {
         if (!(entity.getVehicle() instanceof AbstractVehicle vehicle)) {
             return false;
+        }
+        if (entity == net.minecraft.client.Minecraft.getInstance().player
+                && RVP_CockpitPassengerRenderer.shouldCustomRenderLocalPassenger(vehicle)) {
+            return true;
         }
         return RVP_VehicleHitboxFactorManager.INSTANCE.isHidePassenger(vehicle.getVehicleId());
     }

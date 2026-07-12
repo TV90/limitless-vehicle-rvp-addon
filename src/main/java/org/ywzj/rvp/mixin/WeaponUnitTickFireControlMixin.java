@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -51,9 +52,10 @@ public abstract class WeaponUnitTickFireControlMixin {
     @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)
     private void rvp$onTickFireControl(CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
+        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
         if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
             RVP_RadarRoleHelper.tickPendingRadarLock(self);
-            rvp$restoreExternalRadarLock(self);
+            rvp$restoreExternalRadarLock(self, weaponOpt.orElse(null));
         }
 
         if (!self.isSeekerOn()) {
@@ -61,7 +63,6 @@ public abstract class WeaponUnitTickFireControlMixin {
             return;
         }
 
-        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
         if (weaponOpt.isEmpty()) {
             rvp$clearIrLockMemory();
             return;
@@ -98,9 +99,8 @@ public abstract class WeaponUnitTickFireControlMixin {
 
         Entity entity = null;
         if (sensorType == WeaponUnitData.FireControlSensorType.IR
-                || rvp$useIrSeekerAcquireOnEo(sensorType, rvpWeapon)) {
-            float fov = Math.max(1f, rvpWeapon.getData().getMaxGuideHeadAngle());
-            entity = rvp$resolveIrLockWithHysteresis(self, fov);
+                || RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
+            entity = rvp$resolveIrLockWithHysteresis(self, rvpWeapon);
         } else if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
             RadarUnit radar = RVP_RadarRoleHelper.getPreferredLockRadar(self);
             if (radar != null) {
@@ -114,64 +114,26 @@ public abstract class WeaponUnitTickFireControlMixin {
     }
 
     @Unique
-    private Entity rvp$resolveIrLockWithHysteresis(WeaponUnit self, float fov) {
+    private Entity rvp$resolveIrLockWithHysteresis(WeaponUnit self, RVP_WeaponBase rvpWeapon) {
+        var data = rvpWeapon.getData();
         if (ywzj_rvp$lastIrLockedEntity != null
                 && ywzj_rvp$lastIrLockedEntity.isAlive()
                 && self.getVehicle().tickCount - ywzj_rvp$lastIrLockTick <= ywzj_rvp$IR_RELOCK_GRACE_TICKS
-                && rvp$isIrTargetStillAcceptable(self, ywzj_rvp$lastIrLockedEntity, fov + ywzj_rvp$IR_RELOCK_FOV_MARGIN_DEG)) {
+                && RVP_IrLockHelper.isTargetWithinAcquireLimits(
+                        self,
+                        ywzj_rvp$lastIrLockedEntity,
+                        data,
+                        ywzj_rvp$IR_RELOCK_FOV_MARGIN_DEG
+                )) {
             return ywzj_rvp$lastIrLockedEntity;
         }
-        Entity found = Infrared.findTarget(self, fov);
-        if (found != null) {
+        Entity found = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(data.getMaxLockOnAngle()));
+        if (found != null && RVP_IrLockHelper.isTargetWithinAcquireLimits(self, found, data)) {
             ywzj_rvp$lastIrLockedEntity = found;
             ywzj_rvp$lastIrLockTick = self.getVehicle().tickCount;
+            return found;
         }
-        return found;
-    }
-
-    @Unique
-    private boolean rvp$isIrTargetStillAcceptable(WeaponUnit weaponUnit, Entity target, float fovDeg) {
-        if (target == null || !target.isAlive()) {
-            return false;
-        }
-        Vec3 checkStart = weaponUnit.worldPivotPosition();
-        Vec3 vLock = target.getBoundingBox().getCenter().subtract(checkStart);
-        Vec3 vAim = weaponUnit.worldVec();
-        if (Math.toDegrees(VectorUtil.angleBetween(vLock, vAim)) > fovDeg) {
-            return false;
-        }
-
-        Level level = target.level();
-        var vehicle = weaponUnit.getVehicle();
-        Vec3 checkEnd = target.position();
-        BlockHitResult result = level.clip(new ClipContext(checkStart, checkEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, vehicle));
-        if (result.getType() != HitResult.Type.MISS) {
-            BlockPos pos = result.getBlockPos();
-            BlockState state = level.getBlockState(pos);
-            if (!state.getCollisionShape(level, pos).isEmpty() && state.canOcclude()) {
-                return false;
-            }
-        }
-
-        EntityHitResult entityHit = VectorUtil.hitEntity(vehicle, checkStart, checkEnd);
-        if (entityHit != null) {
-            Entity entity = entityHit.getEntity();
-            if (entity instanceof SightObstruction) {
-                return false;
-            }
-            if (entity instanceof TargetObstruction && entity != target && !(entity instanceof PartEntity<?>)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    @Unique
-    private boolean rvp$useIrSeekerAcquireOnEo(WeaponUnitData.FireControlSensorType sensorType, RVP_WeaponBase rvpWeapon) {
-        return sensorType == WeaponUnitData.FireControlSensorType.EO
-                && rvpWeapon.getData().isHomingProjectile()
-                && rvpWeapon.getData().usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IR)
-                && !rvpWeapon.getData().isEnableHms();
+        return null;
     }
 
     @Unique
@@ -181,7 +143,7 @@ public abstract class WeaponUnitTickFireControlMixin {
     }
 
     @OnlyIn(Dist.CLIENT)
-    private static void rvp$restoreExternalRadarLock(WeaponUnit self) {
+    private static void rvp$restoreExternalRadarLock(WeaponUnit self, AbstractVehicleWeapon<?> rawWeapon) {
         WeaponUnit root = self.getRootParentWeaponUnit();
         if (root != self || self.getLockedEntity() != null) {
             return;
@@ -197,6 +159,15 @@ public abstract class WeaponUnitTickFireControlMixin {
                 self.getVehicle(),
                 mc.level.dimension().location()
         );
+        AbstractVehicleWeapon<?> resolved = RVP_LaserWeapons.unwrap(rawWeapon);
+        if (resolved instanceof RVP_WeaponBase rvpWeapon
+                && RVP_IrLockHelper.isIrLaunchWeapon(rvpWeapon.getData())) {
+            Entity irTarget = RVP_IrLockHelper.resolveUsableIrTarget(self, null, externalLocked, rvpWeapon.getData());
+            if (irTarget != null) {
+                self.setLockedEntity(irTarget);
+            }
+            return;
+        }
         if (externalLocked != null && externalLocked.isAlive()) {
             self.setLockedEntity(externalLocked);
         }

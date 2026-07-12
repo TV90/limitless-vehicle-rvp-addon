@@ -85,6 +85,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName(value = "enableHMS", alternate = {"enable_hms"})
     private boolean enableHms = true;
 
+    @SerializedName("rvp_fire_control_sensor_mode")
+    private String fireControlSensorMode = "";
+
     /**
      * Optional per-weapon override for the firing unit sensor type.
      * Lets one shared weapon station behave as RF/EO/IR depending on the currently selected weapon.
@@ -226,6 +229,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isEnableHms() {
         return enableHms;
+    }
+
+    public String getFireControlSensorMode() {
+        return fireControlSensorMode == null ? "" : fireControlSensorMode;
     }
 
     @Nullable
@@ -390,6 +397,12 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isRadarHoming() {
         return isActiveRadar() || isSemiActiveRadar();
+    }
+
+    public boolean isHomingProjectile() {
+        return usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || isRadarHoming()
+                || isAntiRadiationMissile();
     }
 
     /** 发射前锁定 UI 用；飞行中优先当前激活阶段的导引头。 */

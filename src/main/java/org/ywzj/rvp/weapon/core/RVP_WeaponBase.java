@@ -1,14 +1,15 @@
 package org.ywzj.rvp.weapon.core;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -70,14 +71,15 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             return false;
         }
         RVP_WeaponData data = getData();
+        boolean isIrLaunchWeapon = RVP_IrLockHelper.isIrLaunchWeapon(data);
         if (requiresEntityLock(data)) {
             WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
-            // RVP HMD 管理的 IR 导弹：只认 HMD 锁状态
             boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
                     && !data.isGpsMissile()
                     && data.isEnableHms();
+
             Entity externalLocked = null;
             if (!isIrHmdManaged
                     && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
@@ -87,23 +89,35 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                         net.minecraft.client.Minecraft.getInstance().level.dimension().location()
                 );
             }
+
+            Entity validatedIrLock = isIrHmdManaged
+                    ? RVP_ClientHmdState.getInstance().getLockedEntity()
+                    : (isIrLaunchWeapon
+                    ? RVP_IrLockHelper.resolveUsableIrLaunchTarget(unit, unit.getLockedEntity(), externalLocked, data)
+                    : null);
+
             boolean hasLock = isIrHmdManaged
                     ? RVP_ClientHmdState.getInstance().hasLock()
-                    : unit.getLockedEntity() != null || externalLocked != null;
+                    : (isIrLaunchWeapon
+                    ? validatedIrLock != null
+                    : unit.getLockedEntity() != null || externalLocked != null);
+
             if (!hasLock) {
-                // HMD 管理的导弹不适用 EO 豁免（武器站 EO ≠ 导引头已锁定）
                 boolean eoExempt = !isIrHmdManaged
+                        && !isIrLaunchWeapon
                         && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO;
                 if (!eoExempt) {
                     LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
                     return false;
                 }
             }
-            // 发射前强制同步 HMD 锁 → 服务器，防止 tickFireControl 的锁清除包比发射包先到
+
             if (hasLock) {
                 Entity hmdEntity = RVP_ClientHmdState.getInstance().getLockedEntity();
-                if (hmdEntity != null) {
+                if (isIrHmdManaged && hmdEntity != null) {
                     unit.setLockedEntity(hmdEntity);
+                } else if (isIrLaunchWeapon && validatedIrLock != null) {
+                    unit.setLockedEntity(validatedIrLock);
                 } else if (externalLocked != null && unit.getLockedEntity() == null) {
                     unit.setLockedEntity(externalLocked);
                 }
@@ -116,9 +130,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         return fired;
     }
 
-    /**
-     * 非全自动/连发模式下的蓄力门槛；CHARGE/MINIGUN/RAILGUN 在 {@link RVP_WeaponFireController} 中判定。
-     */
     protected boolean passesFireModeChargeGate() {
         RVP_EnumFireMode mode = getData().getFireData().getFireMode();
         if (mode == RVP_EnumFireMode.FULL_AUTO || mode == RVP_EnumFireMode.SEMI_AUTO) {
@@ -136,8 +147,10 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     @Override
     public boolean withSeeker() {
-        // 只有寻的弹（IR/SARH/ARH/ARM）才允许开启导引头，SACLOS/MCLOS/IOG/GPS 没有寻的头
-        if (getData().getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE) return false;
+        RVP_EnumWeaponKind kind = getData().getWeaponKind();
+        if (kind != RVP_EnumWeaponKind.MISSILE && kind != RVP_EnumWeaponKind.BOMB) {
+            return false;
+        }
         RVP_WeaponData data = getData();
         return data.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.IR)
                 || data.isRadarHoming()
@@ -151,10 +164,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         fireController.tick(fireDown);
     }
 
-    /**
-     * 服务端：近似认为操作员仍在开火（用于 CHARGE/MINIGUN 蓄力 tick）。
-     * 玩家真实开火由客户端包驱动；此仅辅助同 tick 蓄力累加。
-     */
     protected boolean isServerOperatorFiring() {
         return false;
     }

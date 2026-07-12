@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.state;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
- * SACLOS: cockpit press-R toggles pod laser; HITL DESIGNATE press-R re-selects designated target.
+ * Only TV/HITL designate still consumes the base lock key path; vehicle laser designation uses its own key.
  */
 public final class RVP_SaclosLockInput {
 
@@ -13,10 +13,6 @@ public final class RVP_SaclosLockInput {
         if (RVP_ClientHitlState.isDesignateMode()) {
             return true;
         }
-        if (!RVP_ClientSaclosState.isGuiding()) {
-            return false;
-        }
-        RVP_ClientSaclosState.toggleLaser();
-        return true;
+        return false;
     }
 }

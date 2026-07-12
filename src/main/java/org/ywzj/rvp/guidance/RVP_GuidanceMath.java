@@ -235,7 +235,8 @@ public final class RVP_GuidanceMath {
             if (viewer != null) {
                 double semiAngle = angleFromViewer(viewer, targetPos);
                 RVP_GuidanceSeekerData seeker = config.seeker();
-                if (semiAngle > seeker.resolvedFov() || projectile.position().distanceTo(targetPos) > seeker.resolvedRange()) {
+                if (semiAngle > RVP_IrLockHelper.halfAngleFromFull(seeker.resolvedFov())
+                        || projectile.position().distanceTo(targetPos) > seeker.resolvedRange()) {
                     projectile.clearTarget();
                     return false;
                 }
@@ -287,7 +288,7 @@ public final class RVP_GuidanceMath {
         }
         Vec3 targetCenter = target.getBoundingBox().getCenter();
         float range = seeker.resolvedRange();
-        float fov = seeker.resolvedFov();
+        float fov = RVP_IrLockHelper.halfAngleFromFull(seeker.resolvedFov());
         if (projectile.position().distanceToSqr(targetCenter) > range * range) {
             return false;
         }

@@ -48,13 +48,16 @@ import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.CcipUtil;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -126,6 +129,9 @@ public class RVP_ClientEvents {
                         true);
             }
         }
+        while (RVP_Keys.TOGGLE_LASER_DESIGNATION.consumeClick()) {
+            RVP_ClientSaclosState.toggleVehicleLaser(player);
+        }
 
         ywzj_rvp$applyScopeOverrides();
 
@@ -168,9 +174,9 @@ public class RVP_ClientEvents {
                 && player.getVehicle() instanceof AbstractVehicle vehicle) {
             AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
             if (currentWeapon instanceof RVP_WeaponBase weapon
-                    && weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
+                    && ywzj_rvp$shouldUpdateBombCcip(weapon)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
-                ywzj_rvp$updateGPSBombCcip(vehicle, weaponUnit, weapon);
+                ywzj_rvp$updateBombCcip(vehicle, weaponUnit, weapon);
             } else if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
                 RVP_RocketCcipState.clear(vehicle.getId());
             }
@@ -210,19 +216,31 @@ public class RVP_ClientEvents {
         }
     }
 
-    private static void ywzj_rvp$updateGPSBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
-                                                    RVP_WeaponBase weapon) {
+    private static boolean ywzj_rvp$shouldUpdateBombCcip(RVP_WeaponBase weapon) {
+        if (weapon == null || weapon.getData().getWeaponKind() != org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB) {
+            return false;
+        }
+        return weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                || "eo_ccip".equalsIgnoreCase(weapon.getData().getFireControlSensorMode());
+    }
+
+    private static void ywzj_rvp$updateBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                                RVP_WeaponBase weapon) {
         if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
             return;
         }
-        if (RVP_ClientGPSState.isActive()) {
+        if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {
             weaponUnit.weaponHitPosO = null;
             weaponUnit.weaponHitPos = null;
         } else {
-            Vec3 releasePos = weaponUnit.worldPivotPosition();
-            float dragCoefficient = weapon.getData().getProjectileData().getDrag();
-            Vec3 ccipHit = CcipUtil.computeCcipImpact(
-                    vehicle.level(), releasePos, vehicle.getDeltaMovement(), dragCoefficient);
+            Vec3 releasePos = RVP_AimContexts.muzzle(weaponUnit.aimContext());
+            Vec3 aimDir = VectorUtil.rotToVec(weaponUnit.aimContext().direction.x, weaponUnit.aimContext().direction.y).normalize();
+            Vec3 startVelocity = aimDir.scale(weapon.getData().resolveMuzzleSpeed(org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB));
+            if (weapon.getData().isInheritVehicleVelocity()) {
+                startVelocity = startVelocity.add(vehicle.getDeltaMovement());
+            }
+            Vec3 ccipHit = RVP_CcipUtil.computeBombImpact(
+                    vehicle.level(), releasePos, startVelocity, weapon.getData());
             weaponUnit.weaponHitPosO = weaponUnit.weaponHitPos;
             weaponUnit.weaponHitPos = ccipHit;
         }

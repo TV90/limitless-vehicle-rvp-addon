@@ -4,6 +4,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
@@ -53,6 +54,10 @@ public class WeaponUnitGetSeekerFovMixin {
         try {
             Object data = weapon.getClass().getMethod("getData").invoke(weapon);
             if (data == null) return;
+            Object kind = data.getClass().getMethod("getWeaponKind").invoke(data);
+            if (kind != RVP_EnumWeaponKind.MISSILE) {
+                return;
+            }
             float fov = (float) data.getClass().getMethod("getMaxGuideHeadAngle").invoke(data);
             if (fov > 0) cir.setReturnValue(fov);
         } catch (Exception ignored) {
