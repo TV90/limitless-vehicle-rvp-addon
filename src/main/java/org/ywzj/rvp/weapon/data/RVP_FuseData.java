@@ -65,6 +65,9 @@ public class RVP_FuseData {
     @SerializedName("detonate_on_life_end")
     private boolean detonateOnLifeEnd = false;
 
+    @SerializedName("entity_collision_safe_tick")
+    private Integer entityCollisionSafeTick;
+
     public int getDelayTick() {
         return Math.max(delayTick, 0);
     }
@@ -143,5 +146,13 @@ public class RVP_FuseData {
 
     public boolean isDetonateOnLifeEnd() {
         return detonateOnLifeEnd;
+    }
+
+    public boolean hasEntityCollisionSafeTickOverride() {
+        return entityCollisionSafeTick != null;
+    }
+
+    public int getEntityCollisionSafeTick() {
+        return entityCollisionSafeTick == null ? 0 : Math.max(entityCollisionSafeTick, 0);
     }
 }

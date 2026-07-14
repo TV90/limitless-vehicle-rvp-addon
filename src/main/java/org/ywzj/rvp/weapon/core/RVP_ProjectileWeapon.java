@@ -15,6 +15,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_EnumSpreadShape;
@@ -22,6 +23,7 @@ import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.util.RVP_CanisterGridUtil;
 import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -137,10 +139,13 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         WeaponUnit rootUnit = launchUnit.getRootParentWeaponUnit();
         RVP_WeaponOriginDebug.noteDispatchInvocation(this, launchUnit, rootUnit, shooter, aimContexts, chargeScale);
 
-        Entity lock = data.isHomingProjectile()
-                && (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || data.isSaclosTvGuided())
-                ? rootUnit.getLockedEntity()
-                : null;
+        Entity lock = null;
+        if (data.isHomingProjectile()
+                && (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || data.isSaclosTvGuided())) {
+            lock = rootUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
+                    : rootUnit.getLockedEntity();
+        }
 
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;

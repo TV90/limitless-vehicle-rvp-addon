@@ -12,6 +12,7 @@ public final class RVP_ApsConfig {
             0,
             600,
             20,
+            10,
             1,
             32.0,
             8.0,
@@ -26,6 +27,7 @@ public final class RVP_ApsConfig {
     private final int ammoMax;
     private final int reloadOneTick;
     private final int cooldownTick;
+    private final int interceptDelayTick;
     private final int scanIntervalTick;
     private final double detectRadius;
     private final double interceptRadius;
@@ -39,6 +41,7 @@ public final class RVP_ApsConfig {
                          int ammoMax,
                          int reloadOneTick,
                          int cooldownTick,
+                         int interceptDelayTick,
                          int scanIntervalTick,
                          double detectRadius,
                          double interceptRadius,
@@ -51,6 +54,7 @@ public final class RVP_ApsConfig {
         this.ammoMax = Math.max(0, ammoMax);
         this.reloadOneTick = Math.max(1, reloadOneTick);
         this.cooldownTick = Math.max(1, cooldownTick);
+        this.interceptDelayTick = Math.max(0, interceptDelayTick);
         this.scanIntervalTick = Math.max(1, scanIntervalTick);
         this.detectRadius = Math.max(0.0, detectRadius);
         this.interceptRadius = Math.max(0.1, interceptRadius);
@@ -75,6 +79,10 @@ public final class RVP_ApsConfig {
 
     public int getCooldownTick() {
         return cooldownTick;
+    }
+
+    public int getInterceptDelayTick() {
+        return interceptDelayTick;
     }
 
     public int getScanIntervalTick() {

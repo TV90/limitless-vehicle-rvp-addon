@@ -21,6 +21,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.scores.Team;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -93,6 +94,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final ResourceLocation HELI_ICON = mapIcon("atkheli.png");
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
+    private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
     private static final ResourceLocation GPS_ICON = mapIcon("gps.png");
@@ -1372,9 +1374,24 @@ public class RVP_TacticalMapScreen extends Screen {
                 int segments = Math.max(16, Mth.ceil(Math.abs(yRotMax - yRotMin) / 8.0f));
                 drawRadarSectorOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels,
                         sector.yaw(), yRotMin, yRotMax, segments, sectorColor);
-                float scanAngle = externalScanAngle(sector, partialTick, mc.player.tickCount);
-                drawRadarScanLineOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels,
-                        sector.yaw(), scanAngle, 1.0f, lineColor);
+                Entity externalLocked = getExternalRadarLockedEntity();
+                if (externalLocked != null && externalLocked.isAlive()) {
+                    drawWorldLine(guiGraphics, centerWorldX, centerWorldZ,
+                            externalLocked.getX(), externalLocked.getZ(), lineColor);
+                } else {
+                    int lockedId = RVP_ClientExternalRadarState.getLockedEntityId(mc.level.dimension().location(), launcher.getUUID());
+                    S2CExternalRadarSnapshot.Entry lockedEntry =
+                            lockedId == Integer.MIN_VALUE ? null
+                                    : RVP_ClientExternalRadarState.getEntry(mc.level.dimension().location(), launcher.getUUID(), lockedId);
+                    if (lockedEntry != null) {
+                        Vec3 lockedPos = lockedEntry.position();
+                        drawWorldLine(guiGraphics, centerWorldX, centerWorldZ, lockedPos.x, lockedPos.z, lineColor);
+                    } else {
+                        float scanAngle = externalScanAngle(sector, partialTick, mc.player.tickCount);
+                        drawRadarScanLineOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels,
+                                sector.yaw(), scanAngle, 1.0f, lineColor);
+                    }
+                }
             }
         }
         guiGraphics.disableScissor();
@@ -2711,35 +2728,44 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true);
+        if (entity instanceof Monster) {
+            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
+            return;
+        }
+        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
     }
 
     private void drawVehicleMarker(GuiGraphics guiGraphics, AbstractVehicle vehicle, int color) {
-        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 12, color, true);
+        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 12, color, true, true);
     }
 
     private void drawPlayerMarker(GuiGraphics guiGraphics, Player player, int color) {
-        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 11, color, true);
+        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 11, color, false, true);
     }
 
     private void drawMissileMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true);
+        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
     }
 
     private void drawTargetMarker(GuiGraphics guiGraphics, int sx, int sy, int color) {
         long millis = System.currentTimeMillis();
         float pulse = 1.0f + ((millis % 900L) / 900.0f) * 0.16f;
-        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, color, false, 0.0f, pulse);
+        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, color, false, 0.0f, pulse, true);
     }
 
     private void drawMarkerIcon(GuiGraphics guiGraphics, ResourceLocation icon, double worldX, double worldZ, float yaw, int size, int color, boolean rotate) {
+        drawMarkerIcon(guiGraphics, icon, worldX, worldZ, yaw, size, color, rotate, true);
+    }
+
+    private void drawMarkerIcon(GuiGraphics guiGraphics, ResourceLocation icon, double worldX, double worldZ, float yaw, int size, int color,
+                                boolean rotate, boolean tint) {
         int sx = Mth.floor(worldToScreenX(worldX));
         int sy = Mth.floor(worldToScreenY(worldZ));
         if (!isMarkerVisible(sx, sy, size / 2 + 2)) {
             return;
         }
         float iconYaw = mapIconYaw(yaw);
-        drawScreenIcon(guiGraphics, icon, sx, sy, size, color, rotate, iconYaw, 1.0f);
+        drawScreenIcon(guiGraphics, icon, sx, sy, size, color, rotate, iconYaw, 1.0f, tint);
         if (rotate) {
             drawHeadingTick(guiGraphics, sx, sy, iconYaw, size, color);
         }
@@ -2747,15 +2773,24 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private void drawScreenIcon(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, int size, int color,
                                 boolean rotate, float yaw, float scale) {
+        drawScreenIcon(guiGraphics, icon, centerX, centerY, size, color, rotate, yaw, scale, true);
+    }
+
+    private void drawScreenIcon(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, int size, int color,
+                                boolean rotate, float yaw, float scale, boolean tint) {
         float actualSize = size * scale;
-        drawIconLayer(guiGraphics, icon, centerX, centerY, actualSize, color, rotate, yaw);
+        drawIconLayer(guiGraphics, icon, centerX, centerY, actualSize, color, rotate, yaw, tint);
     }
 
     private void drawIconLayer(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, float actualSize,
-                               int color, boolean rotate, float yaw) {
+                               int color, boolean rotate, float yaw, boolean tint) {
         float half = actualSize * 0.5f;
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderColor(red(color), green(color), blue(color), alpha(color));
+        if (tint) {
+            RenderSystem.setShaderColor(red(color), green(color), blue(color), alpha(color));
+        } else {
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        }
         var pose = guiGraphics.pose();
         pose.pushPose();
         pose.translate(centerX, centerY, 0.0f);
@@ -3077,6 +3112,9 @@ public class RVP_TacticalMapScreen extends Screen {
     private ResourceLocation resolveFallbackEntityIcon(Entity entity) {
         if (entity instanceof Player) {
             return PLAYER_ICON;
+        }
+        if (entity instanceof Monster) {
+            return MONSTER_ICON;
         }
         if (entity instanceof AbstractVehicle vehicle) {
             return resolveVehicleIcon(vehicle);

@@ -15,6 +15,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.PlayMessages;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
@@ -22,6 +23,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.network.RVP_Network;
@@ -75,6 +77,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
     private int hitlEnterViewResendTicks;
+    private int arhDesignatedTargetId = Integer.MIN_VALUE;
+    private boolean arhSupportReleased;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -336,20 +340,20 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
 
         // 主动雷达截获前：载机雷达必须持续锁定目标（不同于本体仅检测）
-        if (!activeRadarCatch && targetEntity != null) {
-            WeaponUnit weaponUnit = getShooterWeaponUnit();
-            boolean radarStillLocked = false;
-            if (weaponUnit != null) {
-                WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-                RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(root);
-                radarStillLocked = radar != null && radar.getLockedEntity() == targetEntity;
-                if (!radarStillLocked && root instanceof WeaponUnitExternalRadarLockExt ext) {
-                    radarStillLocked = ext.ywzj_rvp$getExternalRadarLockedEntityId() == targetEntity.getId();
-                }
+        Entity designatedTarget = rvp$getArhDesignatedTargetEntity();
+        boolean hasDesignatedTarget = designatedTarget != null && designatedTarget.isAlive();
+        boolean supportAvailable = rvp$hasArhSupportForDesignatedTarget();
+
+        if (hasDesignatedTarget && !supportAvailable) {
+            arhSupportReleased = true;
+        }
+
+        if (!activeRadarCatch && hasDesignatedTarget && !arhSupportReleased) {
+            if (targetEntity != designatedTarget) {
+                targetEntity = designatedTarget;
             }
-            if (!radarStillLocked) {
-                targetEntity = null;
-            }
+        } else if (!activeRadarCatch && targetEntity != null && !targetEntity.isAlive()) {
+            targetEntity = null;
         }
 
         // tickGuidance() HOMING 段：实时追踪 + 主动雷达开机距离检测
@@ -375,12 +379,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 activeRadarTarget = Radar.checkTarget(this, detectedEntities, targetEntity);
                 if (activeRadarTarget == targetEntity) {
                     activeRadarCatch = true;
+                    activeRadarLostTargetTick = 0;
                 }
             }
 
-            if (activeRadarTarget == null && !detectedEntities.isEmpty()) {
+            if (activeRadarTarget == null && rvp$canArhFreeAcquire() && !detectedEntities.isEmpty()) {
                 targetEntity = detectedEntities.get(0);
                 activeRadarCatch = true;
+                activeRadarLostTargetTick = 0;
             }
         }
 
@@ -396,6 +402,78 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /**
      * 从武器数据的 guidance stage 中读取 ARH 参数（activeRadarActivationRange、seekerFov 等）。
      */
+    public void rvp$setArhDesignatedTarget(@Nullable Entity target) {
+        if (target == null) {
+            this.arhDesignatedTargetId = Integer.MIN_VALUE;
+            this.arhSupportReleased = true;
+            return;
+        }
+        this.arhDesignatedTargetId = target.getId();
+        this.arhSupportReleased = false;
+        if (this.targetEntity == null) {
+            this.targetEntity = target;
+        }
+        this.lastGuidancePos = target.position().add(0, target.getBbHeight() * 0.5, 0);
+    }
+
+    @Nullable
+    public Entity rvp$getArhDesignatedTargetEntity() {
+        if (arhDesignatedTargetId == Integer.MIN_VALUE) {
+            return null;
+        }
+        Entity entity = level().getEntity(arhDesignatedTargetId);
+        if (entity == null || !entity.isAlive()) {
+            return null;
+        }
+        return entity;
+    }
+
+    public boolean rvp$canArhFreeAcquire() {
+        return arhDesignatedTargetId == Integer.MIN_VALUE || arhSupportReleased;
+    }
+
+    public boolean rvp$hasArhSupportForDesignatedTarget() {
+        Entity designatedTarget = rvp$getArhDesignatedTargetEntity();
+        if (designatedTarget == null) {
+            return false;
+        }
+        WeaponUnit weaponUnit = getShooterWeaponUnit();
+        if (weaponUnit == null) {
+            return false;
+        }
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        if (root == null) {
+            return false;
+        }
+
+        boolean anyRadarOn = false;
+        for (RadarUnit radarUnit : root.getRadarUnits()) {
+            if (!radarUnit.isOn()) {
+                continue;
+            }
+            anyRadarOn = true;
+            if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
+                    || radarUnit.getLockedEntity() == designatedTarget) {
+                return true;
+            }
+        }
+
+        if (root instanceof WeaponUnitExternalRadarLockExt ext && shooterVehicle != null) {
+            AbstractVehicle relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(shooterVehicle).orElse(null);
+            RadarUnit relayRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
+            if (relayRadar != null && relayRadar.isOn()) {
+                anyRadarOn = true;
+                if (RVP_RadarRoleHelper.radarCurrentlyDetects(relayRadar, designatedTarget)
+                        || relayRadar.getLockedEntity() == designatedTarget
+                        || ext.ywzj_rvp$getExternalRadarLockedEntityId() == designatedTarget.getId()) {
+                    return true;
+                }
+            }
+        }
+
+        return anyRadarOn && targetEntity == designatedTarget && targetEntity.isAlive() && activeRadarCatch;
+    }
+
     private void initArhParams() {
         if (rvpData == null) return;
         var stages = rvpData.getGuidanceData().getStages();

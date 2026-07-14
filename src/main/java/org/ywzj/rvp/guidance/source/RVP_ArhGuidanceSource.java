@@ -22,16 +22,27 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceContext context, RVP_GuidanceData.Source source) {
-        if (!(context.projectile() instanceof RVP_MissileEntity)) {
+        if (!(context.projectile() instanceof RVP_MissileEntity missile)) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
         }
         RVP_BaseBullet projectile = context.projectile();
         RVP_GuidanceEffectiveConfig config = context.effective();
         Entity target = projectile.getTargetEntity();
+        boolean canFreeAcquire = missile.rvp$canArhFreeAcquire();
+        Entity designatedTarget = missile.rvp$getArhDesignatedTargetEntity();
+
+        if (!canFreeAcquire && designatedTarget != null && designatedTarget.isAlive()) {
+            if (target != designatedTarget) {
+                projectile.setTargetEntity(designatedTarget);
+            }
+            target = designatedTarget;
+        }
 
         // 如果导弹尚无目标，尝试从发射载具雷达获取预锁
         if (target == null || !target.isAlive()) {
-            Entity illuminated = RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile);
+            Entity illuminated = !canFreeAcquire && designatedTarget != null && designatedTarget.isAlive()
+                    ? designatedTarget
+                    : RVP_GuidanceSeekerUtil.getIlluminatedTarget(projectile);
             if (illuminated != null && illuminated.isAlive()) {
                 projectile.setTargetEntity(illuminated);
                 target = illuminated;
@@ -39,6 +50,9 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
         }
         if (target != null && target.isAlive()) {
             if (!isValidRadarTarget(projectile, config, target)) {
+                if (!canFreeAcquire) {
+                    return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
+                }
                 projectile.clearTarget();
                 return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
             }
@@ -51,6 +65,9 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
         }
 
         if (projectile.tickCount % config.seeker().getScanIntervalTick() != 0) {
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
+        }
+        if (!canFreeAcquire) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
         }
         Entity scanned = RVP_GuidanceSeekerUtil.scanRadarTarget(projectile, config);

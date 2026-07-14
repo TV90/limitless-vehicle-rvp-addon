@@ -15,6 +15,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosPodAim;
 import org.ywzj.rvp.network.C2SSaclosDesignation;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -95,6 +96,9 @@ public final class RVP_ClientSaclosState {
 
     public static void toggleVehicleLaser(LocalPlayer player) {
         if (player == null || !LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
+            return;
+        }
+        if (!canUseVehicleLaserToggle(resolveCurrentWeapon())) {
             return;
         }
         boolean next = !isLaserEnabled();
@@ -264,10 +268,14 @@ public final class RVP_ClientSaclosState {
     }
 
     private static boolean resolveEffectiveLaserEnabled() {
+        AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon();
+        if (!canUseVehicleLaserToggle(currentWeapon)) {
+            return false;
+        }
         if (manualLaserOverride != null) {
             return manualLaserOverride;
         }
-        return isAutoLaserWeapon(resolveCurrentWeapon());
+        return isAutoLaserWeapon(currentWeapon);
     }
 
     @Nullable
@@ -285,5 +293,17 @@ public final class RVP_ClientSaclosState {
         }
         RVP_WeaponData data = rvp.getData();
         return data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) && !data.isSaclosTvGuided();
+    }
+
+    private static boolean canUseVehicleLaserToggle(@Nullable AbstractVehicleWeapon<?> weapon) {
+        if (!(weapon instanceof RVP_WeaponBase rvp)) {
+            return false;
+        }
+        RVP_WeaponData data = rvp.getData();
+        if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || data.isSaclosTvGuided()) {
+            return false;
+        }
+        return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                || data.getWeaponKind() == RVP_EnumWeaponKind.BOMB;
     }
 }

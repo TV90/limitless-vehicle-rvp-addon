@@ -9,7 +9,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -32,7 +31,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (weaponOpt.isEmpty()) return;
         Object rawData = weaponOpt.get().getData();
         if (!(rawData instanceof RVP_WeaponData data)) return;
-        if (data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE) return;
+        if (!data.isHomingProjectile()) return;
         if (!data.usesGuidanceType(RVP_EnumGuidanceType.IR)) return;
         if (data.getLockMinHeight() <= 0) return;
 

@@ -74,8 +74,9 @@ public final class RVP_ExternalRadarSyncService {
             msg.sectors = List.of();
             return msg;
         }
-        syncExternalLockState(player, launcher, relayVehicle, msg);
+        refreshRelayRadarDetectedEntities(launcher, relayVehicle);
         msg.entries = collectEntries(player, launcher, relayVehicle);
+        syncExternalLockState(player, launcher, relayVehicle, msg);
         msg.sectors = collectSectors(relayVehicle);
         return msg;
     }
@@ -214,6 +215,21 @@ public final class RVP_ExternalRadarSyncService {
             }
         }
         return new ArrayList<>(byEntityId.values());
+    }
+
+    private static void refreshRelayRadarDetectedEntities(AbstractVehicle launcher, AbstractVehicle relayVehicle) {
+        for (PartUnit<?> partUnit : relayVehicle.getPartUnits()) {
+            if (!(partUnit instanceof RadarUnit radarUnit) || !radarUnit.isOn()) {
+                continue;
+            }
+            List<Entity> detectedEntities = scanTargets(radarUnit, relayVehicle);
+            for (Entity entity : detectedEntities) {
+                if (!shouldIncludeTarget(launcher, relayVehicle, entity)) {
+                    continue;
+                }
+                radarUnit.detect(entity);
+            }
+        }
     }
 
     private static List<S2CExternalRadarSnapshot.RadarSector> collectSectors(AbstractVehicle relayVehicle) {

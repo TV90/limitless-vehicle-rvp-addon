@@ -72,7 +72,16 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
-        if (!LocalVehiclePlayer.instance.onVehicle() || LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
+        if (!LocalVehiclePlayer.instance.onVehicle()) {
+            return;
+        }
+        WeaponUnit currentWeaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
+            if (currentWeaponUnit != null
+                    && currentWeaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    && currentWeaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE) {
+                renderAimLockTarget(guiGraphics, partialTick);
+            }
             return;
         }
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
@@ -335,10 +344,12 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         Minecraft mc = Minecraft.getInstance();
         Entity externalLockedEntity = null;
         S2CExternalRadarSnapshot.Entry externalLockedEntry = null;
+        int externalLockedEntityId = Integer.MIN_VALUE;
         if (sensorType == WeaponUnitData.FireControlSensorType.RF && vehicle != null && mc.level != null) {
+            externalLockedEntityId = RVP_ExternalRadarLinkHelper.getClientLockedEntityId(vehicle, mc.level.dimension().location());
             externalLockedEntity = RVP_ExternalRadarLinkHelper.getClientLockedEntity(vehicle, mc.level.dimension().location());
-            if (externalLockedEntity != null) {
-                externalLockedEntry = RVP_ExternalRadarLinkHelper.getClientEntry(vehicle, mc.level.dimension().location(), externalLockedEntity.getId());
+            if (externalLockedEntityId != Integer.MIN_VALUE) {
+                externalLockedEntry = RVP_ExternalRadarLinkHelper.getClientEntry(vehicle, mc.level.dimension().location(), externalLockedEntityId);
             }
         }
 
@@ -409,7 +420,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
         if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
             renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
-                    externalLockedEntity != null ? externalLockedEntity.getId() : Integer.MIN_VALUE);
+                    externalLockedEntityId);
         }
     }
 

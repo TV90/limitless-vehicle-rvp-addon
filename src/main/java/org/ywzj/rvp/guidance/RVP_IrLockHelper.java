@@ -67,6 +67,17 @@ public final class RVP_IrLockHelper {
             float maxRange,
             float lockMinHeight
     ) {
+        return isTargetWithinLimits(weaponUnit, target, null, maxAngleDeg, maxRange, lockMinHeight);
+    }
+
+    public static boolean isTargetWithinLimits(
+            WeaponUnit weaponUnit,
+            Entity target,
+            @Nullable Vec3 referenceDir,
+            float maxAngleDeg,
+            float maxRange,
+            float lockMinHeight
+    ) {
         if (weaponUnit == null || target == null || !target.isAlive()) {
             return false;
         }
@@ -85,7 +96,7 @@ public final class RVP_IrLockHelper {
             return false;
         }
 
-        Vec3 aim = weaponUnit.worldVec();
+        Vec3 aim = referenceDir != null ? referenceDir : weaponUnit.worldVec();
         if (aim.lengthSqr() > 1.0E-6) {
             double dot = Mth.clamp(aim.normalize().dot(toTarget.normalize()), -1.0, 1.0);
             double degree = Math.toDegrees(Math.acos(dot));
@@ -143,6 +154,17 @@ public final class RVP_IrLockHelper {
             return fallback;
         }
         return null;
+    }
+
+    public static Vec3 resolveIrBoresightDir(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return Vec3.ZERO;
+        }
+        Vec3 boresight = weaponUnit.worldVec(0f, 0f);
+        if (boresight.lengthSqr() <= 1.0E-6) {
+            boresight = weaponUnit.worldVec();
+        }
+        return boresight.lengthSqr() <= 1.0E-6 ? Vec3.ZERO : boresight.normalize();
     }
 
     public static boolean usesIrAcquireOnEo(WeaponUnitData.FireControlSensorType sensorType, RVP_WeaponData data) {

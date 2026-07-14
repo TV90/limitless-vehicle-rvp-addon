@@ -223,8 +223,21 @@ public final class RVP_GuidanceMath {
             return false;
         }
 
-        Vec3 targetPos = target.position().add(0, target.getBbHeight() * 0.5, 0);
-        if (config.steering().isPredictTargetPos()) {
+        Vec3 targetCenter = target.position().add(0, target.getBbHeight() * 0.5, 0);
+        Vec3 targetPos = targetCenter;
+        boolean missilePnPath = projectile.getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
+        if (missilePnPath && config.steering().isPredictTargetPos()) {
+            RVP_InterceptSolver.Solution solution = RVP_InterceptSolver.solve(
+                    projectile.position(),
+                    projectile.getDeltaMovement(),
+                    Math.max(projectile.getFlightSpeed(), projectile.getCurrentSpeed()),
+                    targetCenter,
+                    target.getDeltaMovement()
+            );
+            if (solution.interceptPos() != null) {
+                targetPos = solution.interceptPos();
+            }
+        } else if (config.steering().isPredictTargetPos()) {
             double speed = Math.max(projectile.getDeltaMovement().length(), projectile.getFlightSpeed());
             double time = speed <= 1.0E-4 ? 0 : projectile.position().distanceTo(targetPos) / speed;
             targetPos = targetPos.add(target.getDeltaMovement().scale(time));
@@ -267,7 +280,59 @@ public final class RVP_GuidanceMath {
             }
         }
 
+        if (missilePnPath && config.steering().isUseProportionalNavigation()) {
+            return guidanceMissileToTarget(projectile, targetCenter, target.getDeltaMovement(), targetPos, config);
+        }
         return guidanceToPos(projectile, targetPos, config);
+    }
+
+    private static boolean guidanceMissileToTarget(RVP_BaseBullet projectile, Vec3 targetCenter, Vec3 targetVelocity,
+                                                   Vec3 aimPoint, RVP_GuidanceEffectiveConfig config) {
+        if (aimPoint == null) {
+            return false;
+        }
+        Vec3 velocity = projectile.getDeltaMovement();
+        double speed = Math.max(projectile.getFlightSpeed(), velocity.length());
+        if (speed <= 1.0E-4) {
+            return guidanceToPos(projectile, aimPoint, config);
+        }
+
+        Vec3 toAim = aimPoint.subtract(projectile.position());
+        double distance = toAim.length();
+        if (distance < 1.0E-6) {
+            return false;
+        }
+
+        Vector3f missileDir = new Vector3f((float) velocity.x, (float) velocity.y, (float) velocity.z);
+        Vector3f targetDir = new Vector3f((float) toAim.x, (float) toAim.y, (float) toAim.z);
+        if (missileDir.lengthSquared() < 1.0E-6f) {
+            missileDir.set((float) toAim.x, (float) toAim.y, (float) toAim.z);
+        }
+        double angle = Math.abs(missileDir.angle(targetDir));
+        if (angle > Math.toRadians(config.steering().getMaxDegreeOfMissile())) {
+            return false;
+        }
+
+        double turning = config.steering().getTurningFactor();
+        if (config.steering().getTickEndHoming() > 0 && projectile.life <= config.steering().getTickEndHoming()) {
+            turning = Math.min(1.0, turning * 1.5);
+        }
+
+        Vec3 desired = toAim.scale(speed / distance);
+        Vec3 next = new Vec3(
+                velocity.x + (desired.x - velocity.x) * turning,
+                velocity.y + (desired.y - velocity.y) * turning,
+                velocity.z + (desired.z - velocity.z) * turning
+        );
+
+        Vec3 pnDelta = proportionalNavigationDelta(projectile, velocity, targetCenter, targetVelocity, config);
+        next = next.add(pnDelta);
+        if (next.lengthSqr() <= 1.0E-6) {
+            return false;
+        }
+        next = next.normalize().scale(speed);
+        applyVelocityAndRotation(projectile, next);
+        return true;
     }
 
     public static boolean isWithinSeekerCone(RVP_BaseBullet projectile, Entity target, RVP_WeaponData data) {
@@ -368,6 +433,51 @@ public final class RVP_GuidanceMath {
     private static void applyVelocityAndRotation(RVP_BaseBullet projectile, Vec3 velocity) {
         projectile.setDeltaMovement(velocity);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, velocity);
+    }
+
+    private static Vec3 proportionalNavigationDelta(RVP_BaseBullet projectile, Vec3 missileVelocity, Vec3 targetPos,
+                                                    Vec3 targetVelocity, RVP_GuidanceEffectiveConfig config) {
+        double gain = config.steering().getProportionalNavigationGain();
+        if (gain <= 0.0) {
+            return Vec3.ZERO;
+        }
+        double speed = missileVelocity.length();
+        if (speed <= 1.0E-6) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 relPos = targetPos.subtract(projectile.position());
+        double relPosLenSqr = relPos.lengthSqr();
+        if (relPosLenSqr <= 1.0E-6) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 relVel = targetVelocity.subtract(missileVelocity);
+        Vec3 los = relPos.normalize();
+        double closingVelocity = -relVel.dot(los);
+        if (closingVelocity <= 0.0) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 vHat = missileVelocity.normalize();
+        Vec3 omega = relPos.cross(relVel).scale(1.0 / relPosLenSqr);
+        Vec3 lateralAccel = omega.cross(vHat).scale(gain * closingVelocity);
+        double parallel = lateralAccel.dot(vHat);
+        if (Math.abs(parallel) > 1.0E-9) {
+            lateralAccel = lateralAccel.subtract(vHat.scale(parallel));
+        }
+
+        double maxLateralAccel = config.steering().getMaxLateralAccel();
+        double lateralLen = lateralAccel.length();
+        if (maxLateralAccel > 0.0 && lateralLen > maxLateralAccel) {
+            lateralAccel = lateralAccel.scale(maxLateralAccel / lateralLen);
+        }
+
+        double turning = config.steering().getTurningFactor();
+        if (turning <= 0.0) {
+            return Vec3.ZERO;
+        }
+        return lateralAccel.scale(Mth.clamp(turning, 0.0, 1.0));
     }
 
     private static double angleFromViewer(Entity viewer, Vec3 pos) {

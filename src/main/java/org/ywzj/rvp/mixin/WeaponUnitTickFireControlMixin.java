@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -110,6 +111,30 @@ public abstract class WeaponUnitTickFireControlMixin {
 
         if (entity != null) {
             self.setLockedEntity(entity);
+        }
+    }
+
+    @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)
+    private void rvp$restoreServerExternalRadarLock(CallbackInfo ci) {
+        WeaponUnit self = (WeaponUnit) (Object) this;
+        if (self.getVehicle().level().isClientSide()) {
+            return;
+        }
+        if (self.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+            return;
+        }
+        RVP_RadarRoleHelper.tickPendingRadarLock(self);
+        WeaponUnit root = self.getRootParentWeaponUnit();
+        if (root != self || self.getLockedEntity() != null || !(root instanceof WeaponUnitExternalRadarLockExt ext)) {
+            return;
+        }
+        int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
+        if (externalLockedId == Integer.MIN_VALUE) {
+            return;
+        }
+        Entity externalLocked = self.getVehicle().level().getEntity(externalLockedId);
+        if (externalLocked != null && externalLocked.isAlive()) {
+            self.setLockedEntity(externalLocked);
         }
     }
 

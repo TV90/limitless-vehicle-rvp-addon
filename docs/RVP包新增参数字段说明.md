@@ -476,6 +476,7 @@ RVP 弹体实体注册时使用 `sized(0.0625, 0.0625)`（约 1/16 格），而�
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
+| `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
 
 ## `collision_data` 直击、衰减与碰撞
 
@@ -1391,6 +1392,7 @@ function updateBones(context) {
 | `ammo_max` | APS 最大备弹量。`0` 表示启用系统但没有可发射拦截弹。 |
 | `reload_one_tick` | 自动补充 1 发拦截弹所需 tick，默认 `600`。 |
 | `cooldown_tick` | 两次 APS 发射之间的最小间隔，默认 `20`。 |
+| `intercept_delay_tick` | 检测到来袭弹药后，延时多少 tick 再发射拦截弹，默认 `10`。 |
 | `scan_interval_tick` | 扫描来袭威胁的间隔 tick，默认 `1`。 |
 | `detect_radius` | 威胁检测半径（格），默认 `32.0`。 |
 | `intercept_radius` | 拦截弹生效半径（格），默认 `8.0`。 |
@@ -1408,6 +1410,7 @@ function updateBones(context) {
   "ammo_max": 8,
   "reload_one_tick": 100,
   "cooldown_tick": 20,
+  "intercept_delay_tick": 10,
   "scan_interval_tick": 1,
   "detect_radius": 32.0,
   "intercept_radius": 8.0,

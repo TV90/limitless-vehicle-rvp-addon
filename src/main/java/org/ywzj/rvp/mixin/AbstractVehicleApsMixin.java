@@ -2,10 +2,11 @@ package org.ywzj.rvp.mixin;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.network.RVP_Network;
@@ -18,12 +19,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
-import org.ywzj.vehicle.custom.weapon.data.VehicleGrenadeWeaponData;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
-import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -58,6 +57,12 @@ public abstract class AbstractVehicleApsMixin {
 
     @Unique
     private int rvp$apsAnimationCursor;
+
+    @Unique
+    private int rvp$apsPendingTargetId = -1;
+
+    @Unique
+    private int rvp$apsPendingDelayTick = -1;
 
     @Unique
     private boolean rvp$apsInitialized;
@@ -113,9 +118,35 @@ public abstract class AbstractVehicleApsMixin {
         rvp$tickReload(config);
         rvp$maybeSyncHud(vehicle, config);
 
-        if (rvp$apsAmmoCurrent <= 0 || rvp$apsCooldownRemaining > 0 || !vehicle.hasPower()) {
+        if (rvp$apsAmmoCurrent <= 0 || !vehicle.hasPower()) {
+            rvp$clearPendingTarget();
             return;
         }
+        if (rvp$apsCooldownRemaining > 0) {
+            rvp$clearPendingTarget();
+            return;
+        }
+
+        Projectile pendingTarget = rvp$getPendingTarget(vehicle, config);
+        if (pendingTarget != null) {
+            if (rvp$apsPendingDelayTick > 0) {
+                rvp$apsPendingDelayTick--;
+                if (rvp$apsPendingDelayTick > 0) {
+                    return;
+                }
+            }
+            if (rvp$fireInterceptor(vehicle, config, pendingTarget)) {
+                rvp$apsAmmoCurrent--;
+                rvp$apsCooldownRemaining = config.getCooldownTick();
+                rvp$apsReloadProgress = 0;
+                rvp$clearPendingTarget();
+                rvp$maybeSyncHud(vehicle, config);
+                return;
+            }
+            rvp$clearPendingTarget();
+            return;
+        }
+
         if (vehicle.tickCount % config.getScanIntervalTick() != 0) {
             return;
         }
@@ -125,12 +156,19 @@ public abstract class AbstractVehicleApsMixin {
             return;
         }
 
-        if (rvp$fireInterceptor(vehicle, config, target)) {
-            rvp$apsAmmoCurrent--;
-            rvp$apsCooldownRemaining = config.getCooldownTick();
-            rvp$apsReloadProgress = 0;
-            rvp$maybeSyncHud(vehicle, config);
+        if (config.getInterceptDelayTick() <= 0) {
+            if (rvp$fireInterceptor(vehicle, config, target)) {
+                rvp$apsAmmoCurrent--;
+                rvp$apsCooldownRemaining = config.getCooldownTick();
+                rvp$apsReloadProgress = 0;
+                rvp$clearPendingTarget();
+                rvp$maybeSyncHud(vehicle, config);
+            }
+            return;
         }
+
+        rvp$apsPendingTargetId = target.getId();
+        rvp$apsPendingDelayTick = config.getInterceptDelayTick();
     }
 
     @Unique
@@ -164,6 +202,7 @@ public abstract class AbstractVehicleApsMixin {
             rvp$apsReloadProgress = 0;
             rvp$apsCooldownRemaining = 0;
             rvp$apsAnimationCursor = 0;
+            rvp$clearPendingTarget();
             rvp$apsInitialized = true;
         }
         if (rvp$apsAmmoCurrent > config.getAmmoMax()) {
@@ -215,6 +254,38 @@ public abstract class AbstractVehicleApsMixin {
     }
 
     @Unique
+    private Projectile rvp$getPendingTarget(AbstractVehicle vehicle, RVP_ApsConfig config) {
+        if (rvp$apsPendingTargetId < 0) {
+            return null;
+        }
+        Entity entity = vehicle.level().getEntity(rvp$apsPendingTargetId);
+        if (!(entity instanceof Projectile projectile)) {
+            rvp$clearPendingTarget();
+            return null;
+        }
+        if (!rvp$isValidPendingTarget(vehicle, config, projectile)) {
+            rvp$clearPendingTarget();
+            return null;
+        }
+        return projectile;
+    }
+
+    @Unique
+    private static boolean rvp$isValidPendingTarget(AbstractVehicle vehicle, RVP_ApsConfig config, Projectile projectile) {
+        if (!rvp$isValidTarget(vehicle, config, projectile)) {
+            return false;
+        }
+        AABB detectBox = vehicle.getBoundingBox().inflate(config.getDetectRadius());
+        return detectBox.intersects(projectile.getBoundingBox());
+    }
+
+    @Unique
+    private void rvp$clearPendingTarget() {
+        rvp$apsPendingTargetId = -1;
+        rvp$apsPendingDelayTick = -1;
+    }
+
+    @Unique
     private boolean rvp$fireInterceptor(AbstractVehicle vehicle, RVP_ApsConfig config, Projectile target) {
         WeaponUnit spawnWeaponUnit = rvp$getWeaponUnit(vehicle, config.getSpawnPartId());
         VehicleGrenade grenadeWeapon = rvp$getGrenadeWeapon(spawnWeaponUnit);
@@ -222,31 +293,16 @@ public abstract class AbstractVehicleApsMixin {
             return false;
         }
 
-        VehicleGrenadeWeaponData grenadeData = grenadeWeapon.getData();
-        ActiveProtectionGrenadeEntity grenade = new ActiveProtectionGrenadeEntity(vehicle, vehicle.level(), grenadeData.getWeaponId());
-        grenade.setBaseData(grenadeData);
-
         Vec3 spawnPos = spawnWeaponUnit.worldCurrentBoltPosition();
-        Vec3 targetPos = target.position().add(target.getDeltaMovement());
-        Vec3 aimDir = targetPos.subtract(spawnPos);
-        if (aimDir.lengthSqr() < 1.0E-6) {
-            aimDir = target.position().subtract(vehicle.position());
-        }
-        if (aimDir.lengthSqr() < 1.0E-6) {
+        Vec3 interceptCenter = target.position();
+        boolean intercepted = rvp$interceptProjectiles(vehicle, config, interceptCenter);
+        if (!intercepted) {
             return false;
         }
-        aimDir = aimDir.normalize();
-
-        Vec2 aimRot = VectorUtil.vecToRot(aimDir);
-        grenade.setPos(spawnPos);
-        grenade.setXRot(aimRot.x);
-        grenade.setYRot(aimRot.y);
-        grenade.setDeltaMovement(aimDir.scale(grenadeData.getVelocity()).add(vehicle.getDeltaMovement()));
-        vehicle.level().addFreshEntity(grenade);
 
         RVP_Network.CHANNEL.send(
                 PacketDistributor.TRACKING_ENTITY.with(() -> vehicle),
-                new S2CApsFlameLink(vehicle.getId(), spawnPos, targetPos)
+                new S2CApsFlameLink(vehicle.getId(), spawnPos, interceptCenter)
         );
 
         WeaponUnit animationWeaponUnit = rvp$getAnimationWeaponUnit(vehicle, config, spawnWeaponUnit);
@@ -258,6 +314,45 @@ public abstract class AbstractVehicleApsMixin {
             );
         }
         return true;
+    }
+
+    @Unique
+    private boolean rvp$interceptProjectiles(AbstractVehicle vehicle, RVP_ApsConfig config, Vec3 center) {
+        double radius = config.getInterceptRadius();
+        double radiusSq = radius * radius;
+        AABB box = new AABB(
+                center.x - radius, center.y - radius, center.z - radius,
+                center.x + radius, center.y + radius, center.z + radius
+        );
+        List<Entity> candidates = vehicle.level().getEntities(vehicle, box, entity -> rvp$isValidTarget(vehicle, config, entity));
+        if (candidates.isEmpty()) {
+            return false;
+        }
+
+        boolean intercepted = false;
+        for (Entity entity : candidates) {
+            if (!(entity instanceof Projectile projectile) || !projectile.isAlive()) {
+                continue;
+            }
+            if (projectile.position().distanceToSqr(center) > radiusSq) {
+                continue;
+            }
+            rvp$neutralizeProjectile(projectile);
+            intercepted = true;
+        }
+        return intercepted;
+    }
+
+    @Unique
+    private void rvp$neutralizeProjectile(Projectile projectile) {
+        if (projectile instanceof RVP_BaseBullet bullet) {
+            bullet.rvp$detonateByAps();
+        } else {
+            projectile.discard();
+        }
+        if (projectile.getOwner() instanceof ServerPlayer player) {
+            player.displayClientMessage(Component.translatable("tips.active_protection_system_intercept"), true);
+        }
     }
 
     @Unique

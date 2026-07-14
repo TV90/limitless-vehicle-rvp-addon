@@ -1083,7 +1083,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
 
-        BulletHitResult entityResult = findEntityOnPathForSegment(startVec, endVec, step);
+        boolean entityCollisionSafetyActive = isEntityCollisionSafetyActive();
+        BulletHitResult entityResult = entityCollisionSafetyActive ? null : findEntityOnPathForSegment(startVec, endVec, step);
 
         if (entityResult != null
                 && entityResult.getEntity() != vehicle
@@ -1093,7 +1094,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
 
-        if (explosion != null && explosion.proximityFuze && tickCount > 5 && entityResult == null) {
+        if (!entityCollisionSafetyActive && explosion != null && explosion.proximityFuze && tickCount > 5 && entityResult == null) {
             if (tryAmmoProximityFuze()) {
                 return;
             }
@@ -1104,6 +1105,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (blockResult.getType() != HitResult.Type.MISS) {
             onAmmoBlockHit(blockResult);
         }
+    }
+
+    protected boolean isEntityCollisionSafetyActive() {
+        return tickCount < resolveEntityCollisionSafeTick();
+    }
+
+    protected int resolveEntityCollisionSafeTick() {
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config != null && config.getFuseData().hasEntityCollisionSafeTickOverride()) {
+            return config.getFuseData().getEntityCollisionSafeTick();
+        }
+        if (this instanceof RVP_MissileEntity) {
+            return 3;
+        }
+        if (this instanceof RVP_BombEntity) {
+            return 20;
+        }
+        return 0;
     }
 
     /**
@@ -1730,6 +1749,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         detonateFuseAt(pos, FuseDetonation.NORMAL);
+    }
+
+    public void rvp$detonateByAps() {
+        Vec3 pos = position();
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config == null) {
+            triggerExplosion(pos, FuseDetonation.NORMAL, null);
+            discard();
+            return;
+        }
+        org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = config.getDetonateData();
+        if (detonate.isEffectsBeforeExplosion()) {
+            applyDetonateAt(pos, null, false);
+            triggerExplosion(pos, FuseDetonation.NORMAL, null);
+        } else {
+            triggerExplosion(pos, FuseDetonation.NORMAL, null);
+            applyDetonateAt(pos, null, false);
+        }
+        discard();
     }
 
     protected boolean shouldApplyDispenser() {

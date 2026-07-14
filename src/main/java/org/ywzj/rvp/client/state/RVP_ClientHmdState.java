@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -302,15 +303,16 @@ public class RVP_ClientHmdState {
         smoothYaw += (aimYaw - smoothYaw) * SMOOTH_FACTOR;
 
         if (hmdType == HmdType.IR && irGuideHeadMaxAngle > 0f) {
-            Vec3 weaponDir = weaponUnit.worldVec();
+            Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit);
             Vec3 hmdDir = VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
-            double currentAngle = Math.toDegrees(Math.acos(
-                    Math.max(-1.0, Math.min(1.0, weaponDir.dot(hmdDir)))));
-            if (currentAngle > irGuideHeadMaxAngle) {
-                double excess = currentAngle - irGuideHeadMaxAngle;
-                float pull = (float) (1.0 - excess / currentAngle);
-                smoothPitch = aimPitch + (smoothPitch - aimPitch) * pull;
-                smoothYaw = aimYaw + (smoothYaw - aimYaw) * pull;
+            if (weaponDir.lengthSqr() > 1.0E-6) {
+                double currentAngle = angleBetweenDeg(weaponDir, hmdDir);
+                if (currentAngle > irGuideHeadMaxAngle) {
+                    Vec3 limitedDir = clampDirectionToCone(weaponDir, hmdDir, irGuideHeadMaxAngle);
+                    Vec2 limitedRot = VectorUtil.vecToRot(limitedDir);
+                    smoothPitch = limitedRot.x;
+                    smoothYaw = limitedRot.y;
+                }
             }
         }
 
@@ -424,12 +426,12 @@ public class RVP_ClientHmdState {
                 return;
             }
             Vec3 dir = toTarget.normalize();
-            Vec3 refDir = weaponUnit.worldVec().normalize();
-            double offBoresightAngle = Math.toDegrees(Math.acos(
-                    Math.max(-1.0, Math.min(1.0, refDir.dot(dir)))));
+            Vec3 refDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit);
+            double offBoresightAngle = angleBetweenDeg(refDir, dir);
             if (!RVP_IrLockHelper.isTargetWithinLimits(
                     weaponUnit,
                     tracked,
+                    refDir,
                     180f,
                     maxRange,
                     irLockMinHeight
@@ -555,6 +557,35 @@ public class RVP_ClientHmdState {
         }
         lockedEntityId = -1;
         clearIrLockState();
+    }
+
+    private static double angleBetweenDeg(Vec3 a, Vec3 b) {
+        if (a.lengthSqr() <= 1.0E-6 || b.lengthSqr() <= 1.0E-6) {
+            return 0.0;
+        }
+        return Math.toDegrees(Math.acos(Mth.clamp(a.normalize().dot(b.normalize()), -1.0, 1.0)));
+    }
+
+    private static Vec3 clampDirectionToCone(Vec3 baseDir, Vec3 targetDir, float maxAngleDeg) {
+        if (baseDir.lengthSqr() <= 1.0E-6) {
+            return targetDir.lengthSqr() <= 1.0E-6 ? Vec3.ZERO : targetDir.normalize();
+        }
+        Vec3 base = baseDir.normalize();
+        if (targetDir.lengthSqr() <= 1.0E-6) {
+            return base;
+        }
+        Vec3 target = targetDir.normalize();
+        double currentAngle = angleBetweenDeg(base, target);
+        if (currentAngle <= maxAngleDeg) {
+            return target;
+        }
+        Vec3 lateral = target.subtract(base.scale(base.dot(target)));
+        if (lateral.lengthSqr() <= 1.0E-6) {
+            return base;
+        }
+        Vec3 tangent = lateral.normalize();
+        double maxAngleRad = Math.toRadians(maxAngleDeg);
+        return base.scale(Math.cos(maxAngleRad)).add(tangent.scale(Math.sin(maxAngleRad))).normalize();
     }
 
     private static String formatAngle(double angle) {

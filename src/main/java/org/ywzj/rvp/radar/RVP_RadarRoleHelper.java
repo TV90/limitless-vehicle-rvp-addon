@@ -1,8 +1,11 @@
 package org.ywzj.rvp.radar;
 
-import net.minecraft.util.Mth;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPendingRadarLockExt;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
@@ -11,7 +14,10 @@ import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public final class RVP_RadarRoleHelper {
@@ -21,6 +27,8 @@ public final class RVP_RadarRoleHelper {
     public static final float MANUAL_LOCK_REQUEST_FOV = 18.0f;
 
     private RVP_RadarRoleHelper() {}
+
+    public record ManualLockCandidate(Entity entity, Vec3 position, double score) {}
 
     public static String getRadarRole(RadarUnit radarUnit) {
         if (radarUnit == null) {
@@ -79,6 +87,32 @@ public final class RVP_RadarRoleHelper {
     public static Entity getLockedRadarEntity(WeaponUnit weaponUnit) {
         RadarUnit radarUnit = getLockedRadar(weaponUnit);
         return radarUnit != null ? radarUnit.getLockedEntity() : null;
+    }
+
+    @Nullable
+    public static Entity getEffectiveRfLockedEntity(@Nullable WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return null;
+        }
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        RadarUnit radarUnit = getLockedRadar(root);
+        if (radarUnit != null) {
+            Entity radarLocked = radarUnit.getLockedEntity();
+            if (radarLocked != null && radarLocked.isAlive()) {
+                return radarLocked;
+            }
+        }
+        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
+            int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
+            if (externalLockedId != Integer.MIN_VALUE) {
+                Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+                if (externalLocked != null && externalLocked.isAlive()) {
+                    return externalLocked;
+                }
+            }
+        }
+        Entity localLocked = root.getLockedEntity();
+        return localLocked != null && localLocked.isAlive() ? localLocked : null;
     }
 
     public static void clearAllRadarLocks(WeaponUnit weaponUnit) {
@@ -154,14 +188,44 @@ public final class RVP_RadarRoleHelper {
         }
     }
 
-    public static Entity findManualLockCandidate(WeaponUnit weaponUnit) {
+    public static Vec3 resolveManualLockAimVec(@Nullable WeaponUnit weaponUnit) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player != null) {
+            Vec3 look = player.getLookAngle();
+            if (look.lengthSqr() > 1.0E-6) {
+                return look.normalize();
+            }
+        }
+        if (weaponUnit != null) {
+            Vec3 aimVec = weaponUnit.worldVec();
+            if (aimVec.lengthSqr() > 1.0E-6) {
+                return aimVec.normalize();
+            }
+        }
+        return new Vec3(0.0, 0.0, 1.0);
+    }
+
+    public static double scoreManualLockCandidate(Vec3 origin, Vec3 aimVec, Vec3 targetPos) {
+        Vec3 toTarget = targetPos.subtract(origin);
+        if (toTarget.lengthSqr() <= 1.0E-6) {
+            return Double.MAX_VALUE;
+        }
+        double angle = Math.toDegrees(VectorUtil.angleBetween(aimVec, toTarget));
+        if (Double.isNaN(angle)) {
+            return Double.MAX_VALUE;
+        }
+        double distance = Math.sqrt(origin.distanceToSqr(targetPos));
+        return angle * 4.0 + distance * 0.01;
+    }
+
+    public static List<ManualLockCandidate> collectManualLockCandidates(@Nullable WeaponUnit weaponUnit) {
         if (weaponUnit == null) {
-            return null;
+            return List.of();
         }
         Set<Integer> seen = new HashSet<>();
-        Entity bestTarget = null;
-        double bestScore = Double.MAX_VALUE;
-        Vec3 aimVec = weaponUnit.worldVec();
+        List<ManualLockCandidate> candidates = new ArrayList<>();
+        Vec3 aimVec = resolveManualLockAimVec(weaponUnit);
         Vec3 origin = weaponUnit.worldPivotPosition();
         for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
             if (!canSearch(radarUnit) || !radarUnit.isOn()) {
@@ -176,19 +240,21 @@ public final class RVP_RadarRoleHelper {
                 if (toTarget.lengthSqr() <= 1.0E-6) {
                     continue;
                 }
-                double angle = Math.toDegrees(VectorUtil.angleBetween(aimVec, toTarget));
-                if (Double.isNaN(angle) || angle > MANUAL_LOCK_REQUEST_FOV) {
+                Vec3 targetPos = entity.getBoundingBox().getCenter();
+                double score = scoreManualLockCandidate(origin, aimVec, targetPos);
+                if (!Double.isFinite(score)) {
                     continue;
                 }
-                double distanceScore = origin.distanceToSqr(entity.getBoundingBox().getCenter()) * 0.000001;
-                double score = angle + distanceScore;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestTarget = entity;
-                }
+                candidates.add(new ManualLockCandidate(entity, targetPos, score));
             }
         }
-        return bestTarget;
+        candidates.sort(Comparator.comparingDouble(ManualLockCandidate::score));
+        return candidates;
+    }
+
+    public static Entity findManualLockCandidate(WeaponUnit weaponUnit) {
+        List<ManualLockCandidate> candidates = collectManualLockCandidates(weaponUnit);
+        return candidates.isEmpty() ? null : candidates.get(0).entity();
     }
 
     public static boolean radarCurrentlyDetects(RadarUnit radarUnit, Entity target) {

@@ -23,10 +23,13 @@ import org.ywzj.vehicle.util.VectorUtil;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public final class RVP_ExternalRadarLinkHelper {
+    public record ClientLockCandidate(int entityId, Vec3 position, @Nullable Entity resolvedEntity) {}
+
     private RVP_ExternalRadarLinkHelper() {}
 
     public static Optional<AbstractVehicle> getLinkedRelayVehicle(AbstractVehicle launcher) {
@@ -118,32 +121,70 @@ public final class RVP_ExternalRadarLinkHelper {
 
     @Nullable
     public static Entity findManualClientLockCandidate(@Nullable WeaponUnit weaponUnit) {
+        ClientLockCandidate candidate = findManualClientLockCandidateData(weaponUnit);
+        return candidate != null ? candidate.resolvedEntity() : null;
+    }
+
+    @Nullable
+    public static ClientLockCandidate findManualClientLockCandidateData(@Nullable WeaponUnit weaponUnit) {
+        List<ClientLockCandidate> candidates = collectManualClientLockCandidateData(weaponUnit, null);
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
+    @Nullable
+    public static ClientLockCandidate findViewManualClientLockCandidateData(@Nullable WeaponUnit weaponUnit) {
+        List<ClientLockCandidate> candidates = collectViewManualClientLockCandidates(weaponUnit);
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
+    public static List<ClientLockCandidate> collectViewManualClientLockCandidates(@Nullable WeaponUnit weaponUnit) {
+        return collectManualClientLockCandidateData(weaponUnit, RVP_RadarRoleHelper.resolveManualLockAimVec(weaponUnit));
+    }
+
+    public static List<ClientLockCandidate> collectManualClientLockCandidateData(@Nullable WeaponUnit weaponUnit,
+                                                                                  @Nullable Vec3 aimVecOverride) {
         AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
         Minecraft mc = Minecraft.getInstance();
         if (weaponUnit == null || launcher == null || mc.level == null) {
-            return null;
+            return List.of();
         }
-        Vec3 aimVec = weaponUnit.worldVec();
         Vec3 origin = weaponUnit.worldPivotPosition();
+        Vec3 aimVec = aimVecOverride != null ? aimVecOverride : RVP_RadarRoleHelper.resolveManualLockAimVec(weaponUnit);
+        final Vec3 finalAimVec = aimVec;
         return getClientEntries(launcher, mc.level.dimension().location()).stream()
-                .map(entry -> resolveClientEntity(entry.entityId()))
-                .filter(entity -> entity != null && entity.isAlive())
-                .filter(entity -> {
-                    Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(origin);
-                    return toTarget.lengthSqr() > 1.0E-6
-                            && Math.toDegrees(VectorUtil.angleBetween(aimVec, toTarget)) <= RVP_RadarRoleHelper.MANUAL_LOCK_REQUEST_FOV;
+                .map(entry -> {
+                    Entity resolved = resolveClientEntity(entry.entityId());
+                    if (resolved != null && !resolved.isAlive()) {
+                        return null;
+                    }
+                    Vec3 targetPos = resolved != null ? resolved.getBoundingBox().getCenter() : position(entry);
+                    return new ClientLockCandidate(entry.entityId(), targetPos, resolved);
                 })
-                .min(Comparator.comparingDouble(entity -> {
-                    Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(origin);
-                    double angle = Math.toDegrees(VectorUtil.angleBetween(aimVec, toTarget));
-                    double distanceScore = origin.distanceToSqr(entity.getBoundingBox().getCenter()) * 0.000001;
-                    return angle + distanceScore;
-                }))
-                .orElse(null);
+                .filter(candidate -> candidate != null && candidate.entityId() != Integer.MIN_VALUE)
+                .filter(candidate -> {
+                    Vec3 toTarget = candidate.position().subtract(origin);
+                    return toTarget.lengthSqr() > 1.0E-6;
+                })
+                .sorted(Comparator.comparingDouble(candidate ->
+                        RVP_RadarRoleHelper.scoreManualLockCandidate(origin, finalAimVec, candidate.position())))
+                .toList();
     }
 
     public static boolean applyClientLockRequest(@Nullable WeaponUnit weaponUnit, @Nullable Entity target) {
         if (weaponUnit == null || target == null || !target.isAlive()) {
+            return false;
+        }
+        return applyClientLockRequest(weaponUnit, target.getId(), target);
+    }
+
+    public static boolean applyClientLockRequest(@Nullable WeaponUnit weaponUnit, int targetEntityId) {
+        return applyClientLockRequest(weaponUnit, targetEntityId, resolveClientEntity(targetEntityId));
+    }
+
+    private static boolean applyClientLockRequest(@Nullable WeaponUnit weaponUnit,
+                                                  int targetEntityId,
+                                                  @Nullable Entity target) {
+        if (weaponUnit == null || targetEntityId == Integer.MIN_VALUE) {
             return false;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
@@ -152,10 +193,14 @@ public final class RVP_ExternalRadarLinkHelper {
         }
         RVP_RadarRoleHelper.clearAllRadarLocks(root);
         root.setFocusLockPos(null);
-        root.setLockedEntity(target);
-        ext.ywzj_rvp$setExternalRadarRequestedEntityId(target.getId());
+        if (target != null && target.isAlive()) {
+            root.setLockedEntity(target);
+        } else if (root.getLockedEntity() != null && root.getLockedEntity().getId() != targetEntityId) {
+            root.setLockedEntity(null);
+        }
+        ext.ywzj_rvp$setExternalRadarRequestedEntityId(targetEntityId);
         ext.ywzj_rvp$clearExternalRadarLockedEntityId();
-        RVP_Network.CHANNEL.sendToServer(new C2SRequestExternalRadarLock(target.getId()));
+        RVP_Network.CHANNEL.sendToServer(new C2SRequestExternalRadarLock(targetEntityId));
         return true;
     }
 

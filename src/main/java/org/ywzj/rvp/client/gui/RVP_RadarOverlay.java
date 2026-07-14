@@ -251,13 +251,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
             drawRadarSector(matrix, 0, 0, radius, sector.yRotMin(), sector.yRotMax(), 32, EXTERNAL_RADAR_SECTOR);
             drawRotatedText(guiGraphics, "EXT", 0, 0, radius + 8, 0, EXTERNAL_RADAR_LINE);
             int lockedId = RVP_ClientExternalRadarState.getLockedEntityId(mc.level.dimension().location(), vehicle.getUUID());
-            if (lockedId == Integer.MIN_VALUE) {
-                float scanAngle = externalScanAngle(sector, partialTick);
-                drawScanLine(matrix, 0, 0, radius, scanAngle, 0.4f, EXTERNAL_RADAR_LINE);
-            }
             Vec3 radarPos = sector.position();
             double maxScanDistance = Math.max(1.0, sector.maxDistance());
             double yaw = sector.yaw();
+            Vec3 lockedLine = null;
             for (S2CExternalRadarSnapshot.Entry entry : entries) {
                 Vec3 v = entry.position().subtract(radarPos);
                 Vec3 local = rotateYaw(v, -yaw);
@@ -271,6 +268,15 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                 double pz = -nz * l;
                 int r = entry.entityId() == lockedId ? 2 : 1;
                 drawExternalTarget(guiGraphics, px, pz, r, EXTERNAL_RADAR_LINE, entry);
+                if (entry.entityId() == lockedId) {
+                    lockedLine = new Vec3(px, 0, pz);
+                }
+            }
+            if (lockedLine != null) {
+                RenderHelper.drawLine(poseStack, lockedLine, 0.5f, EXTERNAL_RADAR_LINE, 3, 1);
+            } else {
+                float scanAngle = externalScanAngle(sector, partialTick);
+                drawScanLine(matrix, 0, 0, radius, scanAngle, 0.4f, EXTERNAL_RADAR_LINE);
             }
         }
         poseStack.popPose();

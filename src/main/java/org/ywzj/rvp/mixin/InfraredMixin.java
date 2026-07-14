@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
-import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
@@ -37,6 +36,7 @@ public class InfraredMixin {
             if (!RVP_IrLockHelper.isTargetWithinLimits(
                     weaponUnit,
                     target,
+                    RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit),
                     Math.max(1f, state.getIrGuideHeadMaxAngle()),
                     Math.max(0f, state.getIrSeekerRange()),
                     state.getIrLockMinHeight()

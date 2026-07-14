@@ -31,6 +31,10 @@ public class RVP_GuidanceSteeringData {
     @SerializedName("predict_target_pos")
     private Boolean predictTargetPos;
 
+    /** 是否对 rvp:missile 启用比例制导横向修正；默认关闭。 */
+    @SerializedName("use_proportional_navigation")
+    private Boolean useProportionalNavigation;
+
     /**
      * 末段纯追踪 tick 数：大于 0 时仅在寿命末 N tick 内执行制导（MCH {@code TickEndHoming}）。
      */
@@ -72,6 +76,10 @@ public class RVP_GuidanceSteeringData {
         return predictTargetPos == null || predictTargetPos;
     }
 
+    public boolean isUseProportionalNavigation() {
+        return useProportionalNavigation != null && useProportionalNavigation;
+    }
+
     public int getTickEndHoming() {
         return Math.max(tickEndHoming != null ? tickEndHoming : 0, 0);
     }
@@ -94,6 +102,7 @@ public class RVP_GuidanceSteeringData {
         copy.turningFactor = this.turningFactor;
         copy.maxDegreeOfMissile = this.maxDegreeOfMissile;
         copy.predictTargetPos = this.predictTargetPos;
+        copy.useProportionalNavigation = this.useProportionalNavigation;
         copy.tickEndHoming = this.tickEndHoming;
         copy.proportionalNavigationGain = this.proportionalNavigationGain;
         copy.maxLateralAccel = this.maxLateralAccel;
@@ -116,6 +125,9 @@ public class RVP_GuidanceSteeringData {
         }
         if (override.predictTargetPos != null) {
             this.predictTargetPos = override.predictTargetPos;
+        }
+        if (override.useProportionalNavigation != null) {
+            this.useProportionalNavigation = override.useProportionalNavigation;
         }
         if (override.tickEndHoming != null) {
             this.tickEndHoming = override.tickEndHoming;

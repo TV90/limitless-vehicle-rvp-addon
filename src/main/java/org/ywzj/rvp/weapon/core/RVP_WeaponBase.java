@@ -81,9 +81,14 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     && data.isEnableHms();
 
             Entity externalLocked = null;
+            int externalLockedId = Integer.MIN_VALUE;
             if (!isIrHmdManaged
                     && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
                     && net.minecraft.client.Minecraft.getInstance().level != null) {
+                externalLockedId = RVP_ExternalRadarLinkHelper.getClientLockedEntityId(
+                        unit.getVehicle(),
+                        net.minecraft.client.Minecraft.getInstance().level.dimension().location()
+                );
                 externalLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(
                         unit.getVehicle(),
                         net.minecraft.client.Minecraft.getInstance().level.dimension().location()
@@ -100,7 +105,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     ? RVP_ClientHmdState.getInstance().hasLock()
                     : (isIrLaunchWeapon
                     ? validatedIrLock != null
-                    : unit.getLockedEntity() != null || externalLocked != null);
+                    : unit.getLockedEntity() != null || externalLocked != null || externalLockedId != Integer.MIN_VALUE);
 
             if (!hasLock) {
                 boolean eoExempt = !isIrHmdManaged

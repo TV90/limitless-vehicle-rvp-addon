@@ -10,6 +10,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.gui.RVP_ArmOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientArmState;
+import org.ywzj.rvp.client.state.RVP_ClientRadarLockState;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_ClientArmTickHandler {
@@ -20,10 +21,21 @@ public class RVP_ClientArmTickHandler {
             return;
         }
         RVP_ClientArmState.getInstance().tick();
+        RVP_ClientRadarLockState.getInstance().tick();
 
         // Handle key presses outside GUI
         RVP_ClientArmState state = RVP_ClientArmState.getInstance();
         if (!state.isActive()) {
+            RVP_ClientRadarLockState radarState = RVP_ClientRadarLockState.getInstance();
+            if (!radarState.isActive()) {
+                return;
+            }
+            while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {
+                radarState.selectPrev();
+            }
+            while (RVP_Keys.ARM_SELECT_NEXT.consumeClick()) {
+                radarState.selectNext();
+            }
             return;
         }
         while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {
@@ -43,6 +55,16 @@ public class RVP_ClientArmTickHandler {
     public static void onKeyInput(InputEvent.Key event) {
         RVP_ClientArmState state = RVP_ClientArmState.getInstance();
         if (!state.isActive()) {
+            RVP_ClientRadarLockState radarState = RVP_ClientRadarLockState.getInstance();
+            if (!radarState.isActive()) {
+                return;
+            }
+            while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {
+                radarState.selectPrev();
+            }
+            while (RVP_Keys.ARM_SELECT_NEXT.consumeClick()) {
+                radarState.selectNext();
+            }
             return;
         }
         while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {

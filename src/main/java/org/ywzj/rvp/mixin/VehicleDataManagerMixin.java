@@ -11,6 +11,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.AutoLandingGearCache;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
@@ -45,6 +47,7 @@ public class VehicleDataManagerMixin {
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
         Map<ResourceLocation, AutoLandingGearCache.AutoLandingGearConfig> autoGearByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
+        RVP_LauncherDeployConfigCache.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -68,6 +71,10 @@ public class VehicleDataManagerMixin {
                 }
 
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
+                List<RVP_LauncherDeployConfig> launcherDeployConfigs = RVP_LauncherDeployConfig.parseList(obj);
+                if (!launcherDeployConfigs.isEmpty()) {
+                    RVP_LauncherDeployConfigCache.put(vehicleId, launcherDeployConfigs);
+                }
                 // 自动收放起落架
                 if (GsonHelper.getAsBoolean(obj, "rvp_auto_landing_gear", false)) {
                     double retractSpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_speed", 100);
@@ -126,6 +133,7 @@ public class VehicleDataManagerMixin {
                 Math.max(0, GsonHelper.getAsInt(apsObj, "ammo_max", 0)),
                 Math.max(1, GsonHelper.getAsInt(apsObj, "reload_one_tick", 600)),
                 Math.max(1, GsonHelper.getAsInt(apsObj, "cooldown_tick", 20)),
+                Math.max(0, GsonHelper.getAsInt(apsObj, "intercept_delay_tick", 10)),
                 Math.max(1, GsonHelper.getAsInt(apsObj, "scan_interval_tick", 1)),
                 Math.max(0.0, GsonHelper.getAsDouble(apsObj, "detect_radius", 32.0)),
                 Math.max(0.1, GsonHelper.getAsDouble(apsObj, "intercept_radius", 8.0)),

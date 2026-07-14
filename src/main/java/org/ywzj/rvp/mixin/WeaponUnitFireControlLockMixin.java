@@ -87,8 +87,10 @@ public abstract class WeaponUnitFireControlLockMixin {
             ci.cancel();
             return;
         }
-        target = RVP_ExternalRadarLinkHelper.findManualClientLockCandidate(self);
-        if (target != null && RVP_ExternalRadarLinkHelper.applyClientLockRequest(self, target)) {
+        RVP_ExternalRadarLinkHelper.ClientLockCandidate externalCandidate =
+                RVP_ExternalRadarLinkHelper.findViewManualClientLockCandidateData(self);
+        if (externalCandidate != null
+                && RVP_ExternalRadarLinkHelper.applyClientLockRequest(self, externalCandidate.entityId())) {
             ci.cancel();
             return;
         }

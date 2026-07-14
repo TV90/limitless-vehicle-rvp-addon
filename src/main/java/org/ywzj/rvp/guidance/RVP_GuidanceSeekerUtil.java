@@ -35,21 +35,8 @@ public final class RVP_GuidanceSeekerUtil {
             Entity tracked = root.getLockedEntity();
             return tracked != null && tracked.isAlive() ? tracked : projectile.getTargetEntity();
         }
-        var radarUnit = RVP_RadarRoleHelper.getLockedRadar(root);
-        if (radarUnit != null && radarUnit.getLockedEntity() != null) {
-            return radarUnit.getLockedEntity();
-        }
-        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-            int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
-            if (externalLockedId != Integer.MIN_VALUE) {
-                Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
-                if (externalLocked != null && externalLocked.isAlive()) {
-                    return externalLocked;
-                }
-            }
-        }
-        Entity tracked = root.getLockedEntity();
-        return tracked != null && tracked.isAlive() ? tracked : projectile.getTargetEntity();
+        Entity tracked = RVP_RadarRoleHelper.getEffectiveRfLockedEntity(root);
+        return tracked != null ? tracked : projectile.getTargetEntity();
     }
 
     public static boolean isValidIrTrackTarget(
