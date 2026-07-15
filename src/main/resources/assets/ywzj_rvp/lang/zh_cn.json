@@ -195,6 +195,7 @@
   "message.ywzj_rvp.uav.no_config": "当前载具未配置分体式无人机",
   "message.ywzj_rvp.uav.invalid_template": "分体式无人机模板无效",
   "message.ywzj_rvp.uav.already_deployed": "雷达车已放飞",
+  "message.ywzj_rvp.uav.redeploy_cooldown": "雷达车重新放飞冷却中，剩余 %s 秒",
   "message.ywzj_rvp.uav.spawn_failed": "放飞雷达车失败",
   "message.ywzj_rvp.uav.deploy_success": "已放飞雷达车并切换控制",
   "message.ywzj_rvp.uav.switch_to_child_success": "已切换到雷达车",

@@ -20,6 +20,7 @@ import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -342,6 +343,9 @@ public final class RVP_ExternalRadarSyncService {
             if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
                 return false;
             }
+            if (!bullet.isRadarDetectableAmmo()) {
+                return false;
+            }
             Vec3 pos = bullet.getBoundingBox().getCenter();
             if (pos.distanceToSqr(radarPos) > maxDistanceSqr) {
                 return false;
@@ -389,7 +393,7 @@ public final class RVP_ExternalRadarSyncService {
                 entity.getId(),
                 resolveNctrLabel(radarUnit, entity),
                 classify(player, entity),
-                entity instanceof RVP_BaseBullet,
+                entity instanceof RVP_BaseBullet || RVP_RadarContactHelper.isHbmMissile(entity),
                 center.x,
                 center.y,
                 center.z,
@@ -408,6 +412,9 @@ public final class RVP_ExternalRadarSyncService {
             if (bullet.getOwner() == player || (playerVehicle != null && bullet.getShooterVehicle() == playerVehicle)) {
                 return S2CExternalRadarSnapshot.Affiliation.OWN;
             }
+        }
+        if (RVP_RadarContactHelper.forceHostileIff(entity)) {
+            return S2CExternalRadarSnapshot.Affiliation.HOSTILE;
         }
         if (isAllied(player, entity.getTeam())) {
             return S2CExternalRadarSnapshot.Affiliation.FRIEND;
@@ -458,6 +465,10 @@ public final class RVP_ExternalRadarSyncService {
     }
 
     private static String resolveEarlyNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof org.ywzj.vehicle.entity.vehicle.FixedWingVehicle) {
             return "JET";
         }
@@ -475,6 +486,10 @@ public final class RVP_ExternalRadarSyncService {
     }
 
     private static String resolveModernNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof AbstractVehicle vehicle) {
             return org.ywzj.rvp.config.VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }

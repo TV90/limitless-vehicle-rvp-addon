@@ -48,6 +48,23 @@ public final class RVP_ArhGuidanceSource implements RVP_GuidanceSource {
                 target = illuminated;
             }
         }
+        if (!missile.isActiveRadarOn()) {
+            if (!canFreeAcquire && target != null && target.isAlive()) {
+                if (!RVP_GuidanceMath.isTargetPassAltFilter(target, config.seeker().getLockMinHeight())) {
+                    return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
+                }
+                projectile.setTargetPos(target.position().add(0, target.getBbHeight() * 0.5, 0));
+            }
+            if (projectile.getTargetPos() != null) {
+                return RVP_GuidanceIntent.point(projectile.getTargetPos(),
+                        source.isTakeOverMotion(), source.getWeight(), RVP_EnumGuidanceType.ARH);
+            }
+            if (projectile.getLastGuidancePos() != null) {
+                return RVP_GuidanceIntent.point(projectile.getLastGuidancePos(),
+                        source.isTakeOverMotion(), source.getWeight(), RVP_EnumGuidanceType.ARH);
+            }
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARH);
+        }
         if (target != null && target.isAlive()) {
             if (!isValidRadarTarget(projectile, config, target)) {
                 if (!canFreeAcquire) {

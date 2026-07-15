@@ -8,10 +8,12 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -158,11 +160,17 @@ public final class RVP_GuidanceSeekerUtil {
         RVP_GuidanceSeekerData seeker = config.seeker();
         double range = seeker.resolvedRange();
         double maxAngle = RVP_IrLockHelper.halfAngleFromFull(seeker.resolvedFov());
-        AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
-        for (Entity entity : projectile.level().getEntities(projectile, box, RVP_GuidanceMath::isVehicleTarget)) {
+        for (Entity entity : Radar.scanTargets(projectile, projectile.position(), range, entityPos -> {
+            Vec3 toTarget = entityPos.subtract(projectile.position());
+            double angle = angleBetween(projectile.getLookAngle(), toTarget);
+            return angle <= maxAngle;
+        })) {
             if (entity == projectile.getShooterVehicle()) {
+                continue;
+            }
+            if (!isRadarScannableTarget(entity)) {
                 continue;
             }
             if (projectile.position().distanceToSqr(entity.position()) > range * range) {
@@ -183,6 +191,11 @@ public final class RVP_GuidanceSeekerUtil {
             }
         }
         return best;
+    }
+
+    public static boolean isRadarScannableTarget(@Nullable Entity entity) {
+        return entity instanceof AbstractVehicle && entity.isAlive()
+                || RVP_RadarContactHelper.isHbmMissile(entity);
     }
 
     public static double angleBetween(Vec3 a, Vec3 b) {

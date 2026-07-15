@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
@@ -358,10 +359,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
         // tickGuidance() HOMING 段：实时追踪 + 主动雷达开机距离检测
         if (tickCount >= 20 && targetEntity != null && targetEntity.isAlive()) {
-            targetPos = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.5, 0);
-            lastGuidancePos = targetPos;
+            boolean canRefreshFromLiveTrack = activeRadarCatch
+                    || (hasDesignatedTarget && !arhSupportReleased && supportAvailable);
+            if (canRefreshFromLiveTrack) {
+                targetPos = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.5, 0);
+                lastGuidancePos = targetPos;
+            }
 
-            if (!activeRadarOn && targetEntity.distanceTo(this) <= activeRadarActivationRange) {
+            Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
+            if (!activeRadarOn && activationReference != null
+                    && activationReference.distanceTo(position()) <= activeRadarActivationRange) {
                 activeRadarOn = true;
                 // 开机提示（action bar 不干扰聊天）
                 if (getOwner() instanceof ServerPlayer player) {
@@ -504,10 +511,57 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (rvpData != null && !rvpData.getGuidanceData().getStages().isEmpty()) {
             fov = rvpData.getGuidanceData().getStages().get(0).getSeeker().getFov();
         }
-        final float seekFov = fov;
-        return Radar.scanTargets(this, this.position(), activeRadarActivationRange,
+        final float seekFov = getArhSeekerFov();
+        final double seekRange = getArhSeekerRange();
+        return Radar.scanTargets(this, this.position(), seekRange,
                 entityPos -> Math.toDegrees(VectorUtil.angleBetween(this.getLookAngle(),
-                        entityPos.subtract(this.position()))) <= seekFov);
+                        entityPos.subtract(this.position()))) <= seekFov).stream()
+                .filter(RVP_GuidanceSeekerUtil::isRadarScannableTarget)
+                .toList();
+    }
+
+    private float getArhSeekerFov() {
+        if (rvpData == null) {
+            return 60f;
+        }
+        var stages = rvpData.getGuidanceData().getStages();
+        if (stages == null || stages.isEmpty()) {
+            return 60f;
+        }
+        for (var stage : stages) {
+            var sources = stage.getSources();
+            if (sources == null) {
+                continue;
+            }
+            for (var source : sources) {
+                if (source.getType() == RVP_EnumGuidanceType.ARH) {
+                    return stage.getSeeker().resolvedFov();
+                }
+            }
+        }
+        return stages.get(0).getSeeker().resolvedFov();
+    }
+
+    private double getArhSeekerRange() {
+        if (rvpData == null) {
+            return activeRadarActivationRange;
+        }
+        var stages = rvpData.getGuidanceData().getStages();
+        if (stages == null || stages.isEmpty()) {
+            return activeRadarActivationRange;
+        }
+        for (var stage : stages) {
+            var sources = stage.getSources();
+            if (sources == null) {
+                continue;
+            }
+            for (var source : sources) {
+                if (source.getType() == RVP_EnumGuidanceType.ARH) {
+                    return stage.getSeeker().resolvedRange();
+                }
+            }
+        }
+        return stages.get(0).getSeeker().resolvedRange();
     }
 
     @Override

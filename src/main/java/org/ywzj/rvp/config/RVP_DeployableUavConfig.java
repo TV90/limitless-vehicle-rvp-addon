@@ -14,7 +14,8 @@ public record RVP_DeployableUavConfig(
         String spawnYawMode,
         boolean singleInstance,
         boolean allowControlSwitch,
-        boolean autoLinkDatalink
+        boolean autoLinkDatalink,
+        int redeployCooldownTick
 ) {
     public static final RVP_DeployableUavConfig DISABLED = new RVP_DeployableUavConfig(
             false,
@@ -24,7 +25,8 @@ public record RVP_DeployableUavConfig(
             "parent",
             true,
             true,
-            true
+            true,
+            0
     );
 
     public boolean isConfigured() {

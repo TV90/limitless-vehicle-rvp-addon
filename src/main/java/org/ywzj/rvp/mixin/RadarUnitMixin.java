@@ -16,7 +16,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
@@ -75,10 +74,10 @@ public class RadarUnitMixin {
         }
         ywzj_rvp$scanTickCounter++;
         if (ywzj_rvp$scanTickCounter < period) {
-            return true; // 跳过本次扫描
+            return true; // 鐠哄疇绻冮張顒侇偧閹殿偅寮?
         }
         ywzj_rvp$scanTickCounter = 0;
-        return false; // 执行扫描
+        return false; // 閹笛嗩攽閹殿偅寮?
     }
 
     @Unique
@@ -116,16 +115,10 @@ public class RadarUnitMixin {
             if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
                 return false;
             }
-            // 仅 signatureSize > 0 的弹体可被雷达探测
+            if (!bullet.isRadarDetectableAmmo()) {
+                return false;
+            }
             float sig = bullet.getSignatureSize();
-            if (sig <= 0) {
-                return false;
-            }
-            RVP_EnumWeaponKind kind = bullet.getWeaponKind();
-            if (kind != RVP_EnumWeaponKind.MISSILE && kind != RVP_EnumWeaponKind.BOMB) {
-                return false;
-            }
-            // 使用 signatureSize 作为 RCS 倍率缩放有效探测距离
             double effectiveMaxSqr = maxScanDistanceSqr * sig * sig;
             Vec3 targetPos = bullet.getBoundingBox().getCenter();
             if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {
@@ -212,7 +205,6 @@ public class RadarUnitMixin {
             if (holdTick > 0) {
                 lifeMillis = Math.max(holdTick * 50L, 100L);
             } else if (scanPeriodTick > 0) {
-                // 默认 = scan_period_tick × 1.5（保证覆盖扫描间隔）
                 lifeMillis = Math.max((long) (scanPeriodTick * 1.5 * 50L), 100L);
             } else {
                 float yRotSpeed = self.getYRotSpeed();
@@ -227,7 +219,6 @@ public class RadarUnitMixin {
             }
         }
 
-        // [RVP] hold 期间目标位置预测 + 扇区外立即删除
         long finalTimeNow = timeNow;
         long finalLifeMillis = lifeMillis;
         float yRotMin = self.getYRotMin();
@@ -236,9 +227,8 @@ public class RadarUnitMixin {
         float scanSectorHalf = self.getScanSectorAngle() / 2.0f;
         detectedObjects.values().removeIf(detectedObject -> {
             if (detectedObject.detectedTime + finalLifeMillis < finalTimeNow) {
-                return true; // hold 超时，删除
+                return true;
             }
-            // hold 期间：每 tick 用实体真实位置，实现连续平滑跟踪
             Entity targetEntity = detectedObject.entity;
             if (targetEntity != null && targetEntity.isAlive()) {
                 AABB aabb = targetEntity.getBoundingBox();
@@ -247,7 +237,6 @@ public class RadarUnitMixin {
             if (!ywzj_rvp$isWithinScanHeight(self, detectedObject.detectedPosition)) {
                 return true;
             }
-            // 实体出扇区 → 立即删除
             Vec2 aimRot = self.aimRot(detectedObject.detectedPosition);
             float y = ywzj_rvp$normalizeYawForLimits((float) aimRot.y, yRotMin, yRotMax);
             if (!ywzj_rvp$isYawWithin(y, yRotMin, yRotMax)

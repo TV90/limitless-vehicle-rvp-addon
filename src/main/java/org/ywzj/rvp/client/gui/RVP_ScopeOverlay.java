@@ -26,6 +26,7 @@ import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -645,6 +646,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     private static String resolveEarlyNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof FixedWingVehicle) {
             return "JET";
         }
@@ -663,6 +668,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     private static String resolveModernNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof AbstractVehicle vehicle) {
             return VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }

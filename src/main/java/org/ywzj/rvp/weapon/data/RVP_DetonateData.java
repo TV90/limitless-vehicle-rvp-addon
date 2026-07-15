@@ -53,6 +53,9 @@ public class RVP_DetonateData {
     @SerializedName("clear_plants_data")
     private RadiusEffectData clearPlantsData;
 
+    @SerializedName("hbm_effect_data")
+    private RVP_HbmEffectData hbmEffectData;
+
     public boolean isEffectsBeforeExplosion() {
         return effectsBeforeExplosion;
     }
@@ -134,6 +137,14 @@ public class RVP_DetonateData {
 
     public RadiusEffectData getClearPlantsData() {
         return clearPlantsData == null ? new RadiusEffectData() : clearPlantsData;
+    }
+
+    public boolean hasHbmEffect() {
+        return hbmEffectData != null && hbmEffectData.hasAnyEffect();
+    }
+
+    public RVP_HbmEffectData getHbmEffectData() {
+        return hbmEffectData == null ? new RVP_HbmEffectData() : hbmEffectData;
     }
 
     public static class FireEffectData {

@@ -32,6 +32,7 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
@@ -86,6 +87,7 @@ public class RVP_ClientEvents {
         }
 
         RVP_ClientBulletHitDebugState.clientTick();
+        RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
 

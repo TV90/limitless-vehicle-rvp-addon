@@ -69,6 +69,8 @@
     "VehicleCrossHairOverlayMixin",
     "VehicleRadarOverlayMixin",
     "VehicleDisplayMixin",
+    "LevelRendererHbmCloudCompatMixin",
+    "RadarRemoteHbmEntitiesMixin",
     "VehicleRenderCockpitPassengerContextMixin",
     "WeaponUnitBombCcipMixin",
     "WeaponUnitCustomMountSuppressMixin",

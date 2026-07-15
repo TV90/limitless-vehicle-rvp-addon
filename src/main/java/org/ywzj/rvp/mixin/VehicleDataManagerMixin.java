@@ -163,6 +163,7 @@ public class VehicleDataManagerMixin {
         boolean singleInstance = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_single_instance", true);
         boolean allowControlSwitch = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_allow_control_switch", true);
         boolean autoLinkDatalink = GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_link_datalink", true);
+        int redeployCooldownTick = Math.max(0, GsonHelper.getAsInt(vehicleObj, "deployable_uav_redeploy_cooldown_tick", 0));
 
         Vec3 spawnOffset = Vec3.ZERO;
         if (vehicleObj.has("deployable_uav_spawn_offset")) {
@@ -191,7 +192,8 @@ public class VehicleDataManagerMixin {
                 spawnYawMode,
                 singleInstance,
                 allowControlSwitch,
-                autoLinkDatalink
+                autoLinkDatalink,
+                redeployCooldownTick
         );
     }
 }

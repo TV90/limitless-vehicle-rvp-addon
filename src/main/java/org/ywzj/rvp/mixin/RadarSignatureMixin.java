@@ -85,7 +85,7 @@ public class RadarSignatureMixin {
      * 返回以实体位置为中心、边长为 signatureSize 的虚拟碰撞箱。
      */
     private static AABB ywzj_rvp$effectiveBox(Entity entity) {
-        if (entity instanceof RVP_BaseBullet bullet && bullet.getSignatureSize() > 0) {
+        if (entity instanceof RVP_BaseBullet bullet && bullet.isRadarDetectableAmmo()) {
             double half = bullet.getSignatureSize() / 2.0;
             net.minecraft.world.phys.Vec3 pos = entity.position();
             return new AABB(pos.x - half, pos.y - half, pos.z - half,

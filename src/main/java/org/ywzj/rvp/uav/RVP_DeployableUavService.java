@@ -23,6 +23,7 @@ public final class RVP_DeployableUavService {
         NO_CONFIG,
         INVALID_TEMPLATE,
         ALREADY_DEPLOYED,
+        COOLDOWN,
         SPAWN_FAILED
     }
 
@@ -38,6 +39,9 @@ public final class RVP_DeployableUavService {
         }
         if (!(parent.level() instanceof ServerLevel serverLevel)) {
             return DeployResult.SPAWN_FAILED;
+        }
+        if (RVP_DeployableUavCooldownRegistry.getRemainingTick(serverLevel, parent.getUUID()) > 0) {
+            return DeployResult.COOLDOWN;
         }
         if (config.singleInstance()) {
             AbstractVehicle existing = getLinkedChild(parent).orElse(null);
@@ -142,6 +146,33 @@ public final class RVP_DeployableUavService {
             ext.ywzj_rvp$setLinkedChildVehicleUuid(null);
         }
         RVP_DeployableUavLinkRegistry.clearByParent(parent.getUUID());
+    }
+
+    public static int getRedeployCooldownRemainingTick(AbstractVehicle parent) {
+        if (parent == null || !(parent.level() instanceof ServerLevel serverLevel)) {
+            return 0;
+        }
+        return RVP_DeployableUavCooldownRegistry.getRemainingTick(serverLevel, parent.getUUID());
+    }
+
+    public static void handleDeployableUavRemoved(AbstractVehicle child) {
+        if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavInstance()) {
+            return;
+        }
+        AbstractVehicle parent = resolveVehicleByUuid(child.level(), childExt.ywzj_rvp$getLinkedParentVehicleUuid());
+        if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
+            if (parentExt.ywzj_rvp$getLinkedChildVehicleUuid() != null
+                    && parentExt.ywzj_rvp$getLinkedChildVehicleUuid().equals(child.getUUID())) {
+                parentExt.ywzj_rvp$setLinkedChildVehicleUuid(null);
+            }
+            if (parent.level() instanceof ServerLevel serverLevel) {
+                RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
+                if (config.isConfigured() && config.redeployCooldownTick() > 0) {
+                    RVP_DeployableUavCooldownRegistry.startCooldown(serverLevel, parent.getUUID(), config.redeployCooldownTick());
+                }
+            }
+        }
+        RVP_DeployableUavLinkRegistry.clearByChild(child.getUUID());
     }
 
     private static void configureLink(AbstractVehicle parent, AbstractVehicle child, ServerPlayer player, RVP_DeployableUavConfig config) {

@@ -21,7 +21,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.scores.Team;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -39,6 +38,7 @@ import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
+import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
@@ -46,6 +46,7 @@ import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.network.S2CRemoteAmmoSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -96,6 +97,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
     private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
+    private static final ResourceLocation CRUISE_MISSILE_ICON = mapIcon("cruise_msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
     private static final ResourceLocation GPS_ICON = mapIcon("gps.png");
     private static final float TOOLBAR_BUTTON_TEXT_SCALE = 0.78f;
@@ -936,8 +938,10 @@ public class RVP_TacticalMapScreen extends Screen {
         renderArhAmmoLinks(guiGraphics);
         renderLocalProjectiles(guiGraphics);
         renderRemoteAmmoCache(guiGraphics);
+        renderRemoteHbmMissiles(guiGraphics);
         finishTrackedAmmoFrame();
         renderLocalVehicles(guiGraphics);
+        renderLocalContacts(guiGraphics);
         renderRemoteEntities(guiGraphics);
         renderVehicleAndPlayer(guiGraphics);
         renderGpsMarker(guiGraphics);
@@ -1244,6 +1248,9 @@ public class RVP_TacticalMapScreen extends Screen {
             } else if (entity instanceof MissileEntity) {
                 drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
                 registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
+            } else if (RVP_RadarContactHelper.isHbmMissile(entity)) {
+                drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
+                registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
             } else if (entity instanceof Player remotePlayer && !(remotePlayer.getVehicle() instanceof AbstractVehicle)) {
                 drawPlayerMarker(guiGraphics, remotePlayer, relationColorForPlayer(player, remotePlayer));
                 registerMarkerHit(entity, MarkerKind.PLAYER, entity.getX(), entity.getY(), entity.getZ(), 7, null);
@@ -1276,6 +1283,39 @@ public class RVP_TacticalMapScreen extends Screen {
         }
     }
 
+    private void renderLocalContacts(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (mc.level == null || player == null) {
+            return;
+        }
+        AbstractVehicle playerVehicle = player.getVehicle() instanceof AbstractVehicle vehicle ? vehicle : null;
+        Set<Integer> renderedIds = new HashSet<>();
+        for (Entity rawEntity : mc.level.entitiesForRendering()) {
+            Entity entity = RVP_RadarContactHelper.resolveRadarIdentity(rawEntity);
+            if (entity == null || !renderedIds.add(entity.getId())) {
+                continue;
+            }
+            if (entity == player
+                    || entity == playerVehicle
+                    || entity instanceof AbstractVehicle
+                    || entity instanceof RVP_BaseBullet
+                    || entity instanceof Player) {
+                continue;
+            }
+            if (!shouldShowEntityOnTacticalMap(player, playerVehicle, entity)) {
+                continue;
+            }
+            if (entity instanceof MissileEntity || RVP_RadarContactHelper.isHbmMissile(entity)) {
+                drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
+                registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
+                continue;
+            }
+            drawContactMarker(guiGraphics, entity, relationColorForEntity(player, entity));
+            registerMarkerHit(entity, MarkerKind.CONTACT, entity.getX(), entity.getY(), entity.getZ(), 7, null);
+        }
+    }
+
     private void renderRemoteAmmoCache(GuiGraphics guiGraphics) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
@@ -1292,6 +1332,31 @@ public class RVP_TacticalMapScreen extends Screen {
             trackAmmoPosition(entry.entityId(), new Vec3(entry.x(), entry.y(), entry.z()), entry.weaponKind());
             drawRemoteAmmoMarker(guiGraphics, entry);
             registerRemoteAmmoHit(entry);
+        }
+    }
+
+    private void renderRemoteHbmMissiles(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (mc.level == null || player == null) {
+            return;
+        }
+        AbstractVehicle playerVehicle = player.getVehicle() instanceof AbstractVehicle vehicle ? vehicle : null;
+        ResourceLocation dimension = mc.level.dimension().location();
+        Set<Integer> renderedIds = new HashSet<>();
+        for (Entity proxy : RVP_ClientHbmMissileState.getProxyEntities(dimension)) {
+            Entity entity = RVP_RadarContactHelper.resolveRadarIdentity(proxy);
+            if (entity == null || !renderedIds.add(entity.getId())) {
+                continue;
+            }
+            if (mc.level.getEntity(entity.getId()) != null) {
+                continue;
+            }
+            if (!shouldShowEntityOnTacticalMap(player, playerVehicle, entity)) {
+                continue;
+            }
+            drawMissileMarker(guiGraphics, entity, relationColorForEntity(player, entity));
+            registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 7, getMarkerTargetPos(entity));
         }
     }
 
@@ -2649,6 +2714,10 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private String resolveEarlyNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof FixedWingVehicle) {
             return "JET";
         }
@@ -2667,6 +2736,10 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private String resolveModernNctrLabel(Entity entity) {
+        String special = RVP_RadarContactHelper.resolveShortNctr(entity);
+        if (special != null && !special.isBlank()) {
+            return special;
+        }
         if (entity instanceof AbstractVehicle vehicle) {
             return VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }
@@ -2728,7 +2801,7 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        if (entity instanceof Monster) {
+        if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
             drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
             return;
         }
@@ -2744,7 +2817,18 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void drawMissileMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 10, color, true, true);
+    }
+
+    private float resolveMarkerYaw(Entity entity) {
+        if (RVP_RadarContactHelper.isHbmMissile(entity)) {
+            Vec3 velocity = entity.getDeltaMovement();
+            double horizontalSqr = velocity.x * velocity.x + velocity.z * velocity.z;
+            if (horizontalSqr > 1.0E-6D) {
+                return (float) (Math.toDegrees(Math.atan2(velocity.z, velocity.x)) - 90.0D);
+            }
+        }
+        return entity.getYRot();
     }
 
     private void drawTargetMarker(GuiGraphics guiGraphics, int sx, int sy, int color) {
@@ -2930,6 +3014,9 @@ public class RVP_TacticalMapScreen extends Screen {
             }
             return HOSTILE_ICON_COLOR;
         }
+        if (RVP_RadarContactHelper.forceHostileIff(entity)) {
+            return HOSTILE_ICON_COLOR;
+        }
         Team team = entity.getTeam();
         if (team == null) {
             return NEUTRAL_ICON_COLOR;
@@ -2960,6 +3047,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private ResourceLocation resolveMissileIcon(Entity entity) {
+        if (RVP_RadarContactHelper.isHbmMissile(entity)) {
+            return CRUISE_MISSILE_ICON;
+        }
         if (entity instanceof RVP_BaseBullet bullet) {
             ResourceLocation weaponId = bullet.getWeaponId();
             if (weaponId != null) {
@@ -3113,7 +3203,7 @@ public class RVP_TacticalMapScreen extends Screen {
         if (entity instanceof Player) {
             return PLAYER_ICON;
         }
-        if (entity instanceof Monster) {
+        if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
             return MONSTER_ICON;
         }
         if (entity instanceof AbstractVehicle vehicle) {
@@ -3232,6 +3322,10 @@ public class RVP_TacticalMapScreen extends Screen {
         if (entity instanceof MissileEntity missile) {
             return missile.targetPos;
         }
+        Vec3 specialTarget = RVP_RadarContactHelper.resolveSpecialTargetPos(entity);
+        if (specialTarget != null) {
+            return specialTarget;
+        }
         return null;
     }
 
@@ -3275,11 +3369,11 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private Component resolveMarkerDisplayName(Entity entity) {
+        String special = resolveModernNctrLabel(entity);
+        if (special != null && !special.isBlank() && !"?".equals(special)) {
+            return Component.literal(special);
+        }
         if (entity instanceof AbstractVehicle vehicle) {
-            String nctr = resolveModernNctrLabel(vehicle);
-            if (nctr != null && !nctr.isBlank() && !"?".equals(nctr)) {
-                return Component.literal(nctr);
-            }
             return Component.literal("?");
         }
         if (entity instanceof AmmoEntity ammo) {

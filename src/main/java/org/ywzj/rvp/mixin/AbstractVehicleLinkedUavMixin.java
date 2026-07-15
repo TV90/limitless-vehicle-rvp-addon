@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
+import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.vehicle.all.AllEntities;
 import org.ywzj.vehicle.entity.misc.FakePlayer;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -136,6 +137,7 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
         if (!ywzj_rvp$isInstanceUavOnly() || self.level().isClientSide()) {
             return;
         }
+        RVP_DeployableUavService.handleDeployableUavRemoved(self);
         if (getDriver() instanceof ServerPlayer serverPlayer && fakeOperator != null) {
             onLeaveVehicle(serverPlayer);
             serverPlayer.unRide();

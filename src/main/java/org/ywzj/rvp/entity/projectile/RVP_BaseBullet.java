@@ -57,9 +57,11 @@ import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
 import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
+import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -365,6 +367,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 获取信号尺寸；0 表示不可被雷达/红外探测。 */
     public float getSignatureSize() {
         return signatureSize;
+    }
+
+    public boolean isRadarDetectableAmmo() {
+        return signatureSize > 0f && weaponKind != RVP_EnumWeaponKind.MACHINEGUN;
     }
 
     public int getProgrammedAirburstDistance() {
@@ -1264,7 +1270,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
         rememberImpactIncidence(velocity, normal);
-        applyEntityHitDamage(entity, result);
+        boolean hbmFuseTriggered = RVP_RadarContactHelper.triggerHbmMissileFuze(entity, result.getLocation());
+        if (!hbmFuseTriggered) {
+            applyEntityHitDamage(entity, result);
+        }
         if (entity instanceof LivingEntity && livingPenetrationLeft > 0) {
             livingPenetrationLeft--;
             piercedLivingIds.add(entity.getId());
@@ -1279,7 +1288,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             discard();
             return;
         }
-        resolveImpactDetonation(hitPos, null, false);
+        resolveImpactDetonation(hitPos, null, false, hbmFuseTriggered ? entity : null);
         if (explosion != null && explosion.explode) {
             discard();
             return;
@@ -1593,8 +1602,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
                                            boolean blockImpact) {
+        resolveImpactDetonation(pos, blockHit, blockImpact, null);
+    }
+
+    protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
+                                           boolean blockImpact, @Nullable Entity excludeEntity) {
         if (rvpData == null) {
-            triggerExplosion(pos);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
             return;
         }
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
@@ -1604,9 +1618,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 applyDispenserAt(pos, blockHit);
             }
             applyDetonateAt(pos, blockHit, blockImpact);
-            triggerExplosion(pos);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
         } else {
-            triggerExplosion(pos);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
             if (applyDispenser) {
                 applyDispenserAt(pos, blockHit);
             }
@@ -1632,6 +1646,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * @param excludeEntity 如果非空，该实体将不会受到 {@link VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
      */
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
+        org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
+        if (detonateData != null && detonateData.hasHbmEffect() && level() instanceof ServerLevel serverLevel) {
+            RVP_HbmEffectBridge.Result hbmResult =
+                    RVP_HbmEffectBridge.apply(serverLevel, pos, detonateData.getHbmEffectData(), getOwner());
+            if (hbmResult.realExplosionApplied()) {
+                return;
+            }
+        }
         if (explosion == null || !explosion.explode) {
             return;
         }
@@ -1709,7 +1731,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (guaranteed <= 0f && explosion != null) {
                 guaranteed = explosion.damage;
             }
-            if (guaranteed > 0f) {
+            if (RVP_RadarContactHelper.triggerHbmMissileFuze(proximityTarget, pos)) {
+                hadGuaranteedDamage = true;
+            } else if (guaranteed > 0f) {
                 guaranteed = RVP_DamageApplier.applyScaled(guaranteed, proximityTarget, rvpData);
                 DamageSource source = AllDamageTypes.Sources.explosion(
                         level().registryAccess(), this, getOwner(), pos);

@@ -12,6 +12,7 @@ import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CApsFlameLink;
 import org.ywzj.rvp.network.S2CApsHudSync;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -347,6 +348,8 @@ public abstract class AbstractVehicleApsMixin {
     private void rvp$neutralizeProjectile(Projectile projectile) {
         if (projectile instanceof RVP_BaseBullet bullet) {
             bullet.rvp$detonateByAps();
+        } else if (RVP_RadarContactHelper.neutralizeHbmMissile(projectile)) {
+            // HBM missiles recurse inside their own damage/explosion chain when hard-killed by damage.
         } else {
             projectile.discard();
         }

@@ -117,6 +117,11 @@ public class RVP_Network {
                 .decoder(S2CRemoteAmmoSnapshot::decode)
                 .consumerMainThread(S2CRemoteAmmoSnapshot::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CHbmMissileSnapshot.class, id++)
+                .encoder(S2CHbmMissileSnapshot::encode)
+                .decoder(S2CHbmMissileSnapshot::decode)
+                .consumerMainThread(S2CHbmMissileSnapshot::handle)
+                .add();
         CHANNEL.messageBuilder(S2CExternalRadarSnapshot.class, id++)
                 .encoder(S2CExternalRadarSnapshot::encode)
                 .decoder(S2CExternalRadarSnapshot::decode)
