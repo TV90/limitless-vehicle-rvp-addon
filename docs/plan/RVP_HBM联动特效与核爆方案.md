@@ -229,14 +229,35 @@ MCHR 通过 `Class.forName(...)` + `Method.invoke(...)` 反射调用 HBM 类，�
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `enabled` | `boolean` | `false` | 是否启用 HBM 特效桥接 |
-| `real_explosion` | `string` | `none` | 真实 HBM 爆炸核心，建议值：`none` / `vnt` / `nuclear` |
-| `visual_preset` | `string` | `none` | 纯视觉预设，建议值：`none` / `shell` / `bomb` |
-| `effect_yield` | `float/int` | `0` | 供 HBM 爆炸强度 / 视觉分级参考。对 `nuclear` 模式而言，它首先决定真实核爆半径；蘑菇云视觉半径与云中心高度会在代码里额外放大和上抬，不再与真实爆炸半径 1:1 绑定。 |
-| `spawn_frag` | `boolean` | `false` | 是否额外生成 HBM 破片 |
-| `white_phosphorus` | `boolean` | `false` | 是否附加白磷后效 |
-| `chlorine_yield` | `float/int` | `0` | 是否生成氯气类持续云体 |
-| `destroy_block` | `boolean` | `true` | HBM 爆炸是否允许破坏方块 |
+| `enabled` | `boolean` | `false` | 总开关。`false` 时整段 `hbm_effect_data` 直接不生效，既不会调 HBM 真实爆炸，也不会放 HBM 风格视觉。`true` 后，下面各字段才参与解析。 |
+| `real_explosion` | `string` | `none` | 控制“真实爆炸核心”类型。`none` = 不调用 HBM 真实爆炸，只允许纯视觉；`vnt` = 调用 HBM 常规高爆核心，适合大装药、钻地弹、重炮弹；`nuclear` = 调用 HBM 核爆核心，并可配合 `NukeTorexEntity` 生成蘑菇云。这个字段决定伤害、冲击、破坏等实体/方块层面的真实效果。 |
+| `visual_preset` | `string` | `none` | 控制“额外视觉预设”，不等于真实伤害。`none` = 不额外附加预设；`shell` = 小型炮弹/榴弹风格视觉；`bomb` = 大型航弹/重爆炸视觉；`nuclear` = 只生成 HBM 蘑菇云视觉，不触发真实核爆核心。它可以和 `real_explosion` 叠加，也可以单独用作“假核弹”纯视觉。 |
+| `visual_backend` | `string` | `auto` | 视觉后端选择。`auto` = 安装且兼容 HBM 时优先 HBM，接口缺失或未安装时回退 RVP；`hbm` = 只尝试 HBM，不回退；`rvp` = 强制使用 RVP 内置 `shell / bomb / nuclear` 视觉与音效。这个字段不控制真实爆炸核心。 |
+| `visual_sound` | `boolean` | `true` | RVP 内置视觉音效总开关。`false` 时 `shell / bomb / nuclear` 的内置音效都不播放，但粒子仍正常显示。使用 HBM 后端时，HBM 自身是否播放音效由 HBM 实现决定。 |
+| `suppress_native_explosion_effect` | `boolean` | `true` | 特殊视觉成功生成后，是否屏蔽 `ywzj_vehicle` 的普通爆炸烟云、闪光、爆炸声和震动，同时不再发送 RVP 自己的 vanilla explosion burst。只影响视觉与声音，不影响 `explosion_data` 的伤害、半径、方块破坏和 ERA 处理。若指定的 HBM 后端不可用且没有成功生成特殊视觉，则不会屏蔽普通爆炸，避免完全无特效。 |
+| `visual_scale` | `float/int` | `1.0` | 纯视觉预设缩放系数。对 `shell / bomb` 会缩放爆烟、冲击波、碎屑和声效范围；对 `nuclear` 会缩放传给 HBM 蘑菇云的视觉规模。它不改变 RVP 或 HBM 的真实爆炸伤害。 |
+| `visual_density` | `float/int` | `1.0` | 视觉粒子密度，范围 `0.1~1.0`。RVP 后端中，`nuclear` 只降低地面冲击尘云和凝结云数量，核心蘑菇帽、蘑菇柄和核爆环保持完整；`shell/bomb` 会降低云团与装饰碎屑数量，并适度放大保留下来的云团作视觉补偿。HBM 后端目前只把它传给支持密度接口的核爆蘑菇云，旧版 HBM 会自动忽略。 |
+| `effect_yield` | `float/int` | `0` | 爆炸强度标量，单位不是现实吨当量，而是 HBM/RVP 内部用的效果规模参数。值越大，真实爆炸半径、附带视觉尺度、持续时间通常越强。对 `real_explosion = nuclear` 而言，它先决定核爆核心规模，再由代码把蘑菇云的视觉半径和高度额外放大，所以不是和真实半径 1:1 对应。对 `vnt` / `shell` / `bomb` 来说，它更多决定“炸得多重、看起来多大”。填 `0` 基本等于不开有效强度。 |
+| `spawn_frag` | `boolean` | `false` | 是否额外生成 HBM 破片实体。`false` 时只有爆炸本体；`true` 时会追加破片杀伤，更适合防空破片战斗部、榴弹、预制破片弹。它会增加实体数量和计算量，不适合高频率小口径弹药滥用。 |
+| `white_phosphorus` | `boolean` | `false` | 是否附加白磷后效。`false` 时不生成；`true` 时在爆点附加白磷灼烧/持续伤害思路。它属于“爆后持续效应”，不是瞬时爆炸强度本身，通常和 `visual_preset` 或 `vnt` 叠加使用。 |
+| `chlorine_yield` | `float/int` | `0` | 氯气/毒云类持续云体强度。`0` = 不生成毒云；大于 `0` = 生成持续存在的化学云，数值越大通常意味着云体规模、持续时间或影响范围越强。它不是爆炸半径，而是化学后效规模，适合毒弹、化学航弹之类配置。 |
+| `destroy_block` | `boolean` | `true` | 真实爆炸是否允许破坏方块。`true` = HBM 真实爆炸可改地形、炸建筑；`false` = 仍可保留爆炸伤害/视觉，但尽量不改地形，适合只想要打单位、不想把地图炸烂的玩法。这个字段主要作用于 `real_explosion`，如果只开 `visual_preset` 而没有真实爆炸核心，它基本没有实际效果。 |
+| `nuclear_sound` | `boolean` | `true` | 只控制 RVP 内置 `nuclear` 的核爆长音效；它与 `visual_sound` 同时为 `true` 才播放。不会关闭 `shell/bomb` 音效。 |
+| `nuclear_flash` | `boolean` | `true` | 是否启用 RVP 内置核爆白屏闪光，只对 `nuclear` 有效。 |
+| `nuclear_shake` | `boolean` | `true` | 是否启用 RVP 内置核爆近距离受击式屏幕震动，只对 `nuclear` 有效。 |
+
+### 字段组合关系
+
+- `enabled = false` 时，其它字段全部视为未启用。
+- `real_explosion` 决定“真炸不真炸”；`visual_preset` 决定“额外长什么样”。
+- `visual_scale` 只管 `visual_preset` 的视觉大小，不管真实伤害范围。
+- `visual_backend = rvp` 时，三种视觉预设都不加载 HBM 类；没有安装 HBM 也能工作。
+- `visual_sound` 是内置视觉音效总开关，`nuclear_sound` 是核爆音效的第二层独立开关。
+- `suppress_native_explosion_effect` 只在特殊视觉后端返回成功时生效；默认开启，单发弹药可显式写 `false` 恢复叠加本体爆炸视觉。
+- `visual_density` 控制 RVP 内置三种视觉的粒子密度；降低它可以减少客户端模拟、排序与 billboard 提交开销。
+- `effect_yield` 是强度主参数，优先影响 `real_explosion`，同时也会影响对应视觉规模。
+- `spawn_frag`、`white_phosphorus`、`chlorine_yield` 都是附加后效，可以在同一发弹药上叠加。
+- `destroy_block` 只对真实爆炸链有意义，对纯视觉链基本无效。
 
 ---
 
@@ -284,8 +305,9 @@ HBM 的大部分蘑菇云 cloudlets 是在客户端 `AFTER_LEVEL` 阶段的全�
 | RVP 设计项 | 高版本 HBM 推荐入口 | 备注 |
 | --- | --- | --- |
 | `real_explosion = vnt` | `WeaponExplosionUtil` | 标准真实爆炸核心 |
-| `visual_preset = shell` | `ParticleUtil.spawnLegacyExplosionSmall(...)` | 小型炮弹视觉 |
-| `visual_preset = bomb` | `ParticleUtil.spawnLegacyExplosionLarge(...)` | 大型爆炸视觉 |
+| `visual_preset = shell` | `ParticleUtil.spawnExplosionSmall(...)` | 小型炮弹视觉，可由 `visual_scale` 缩放 |
+| `visual_preset = bomb` | `ParticleUtil.spawnExplosionLarge(...)` | 大型爆炸视觉，可由 `visual_scale` 缩放 |
+| `visual_preset = nuclear` | `NukeTorexEntity.createStandard(...)` | 纯视觉蘑菇云，不触发真实核爆核心 |
 | `spawn_frag = true` | `ExplosionLarge.spawnShrapnels(...)` | 正式破片实体 |
 | `white_phosphorus = true` | `LegacyArtilleryImpactExecutor` 思路 + `HbmLivingProperties.ensurePhosphorus(...)` | 需要组合实现 |
 | `chlorine_yield > 0` | `LegacyVentCloudEntity` 系云体 | 持续区域后效 |
@@ -445,9 +467,11 @@ HBM 的大部分蘑菇云 cloudlets 是在客户端 `AFTER_LEVEL` 阶段的全�
   },
   "hbm_effect_data": {
     "enabled": true,
-    "real_explosion": "bomb",
-    "visual_preset": "bomb",
+    "real_explosion": "none",
+    "visual_preset": "nuclear",
     "effect_yield": 20,
+    "visual_scale": 1.0,
+    "visual_density": 0.5,
     "destroy_block": false
   }
 }
@@ -472,7 +496,7 @@ HBM 的大部分蘑菇云 cloudlets 是在客户端 `AFTER_LEVEL` 阶段的全�
 说明：
 
 - 若想要真正的 HBM 核爆与蘑菇云，请使用 `real_explosion = "nuclear"`。
-- 当前没有单独的“纯视觉蘑菇云但无真实核爆”参数；如果只是想借 HBM 风格视觉，建议暂时使用 `visual_preset` 方案。
+- 若只想要假核弹视觉，请使用 `visual_preset = "nuclear"`，并关闭常规 `explosion_data`。
 
 ---
 

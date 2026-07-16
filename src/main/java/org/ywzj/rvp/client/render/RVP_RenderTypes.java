@@ -103,6 +103,38 @@ public class RVP_RenderTypes extends RenderType {
         );
     });
 
+    private static final Function<ResourceLocation, RenderType> TEXTURED_TRANSLUCENT_NO_DEPTH_WRITE = Util.memoize((location) -> {
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(false);
+        return create("ywzj_rvp:textured_translucent_no_depth_write_" + location.toString().replace(':', '_'),
+                DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1_048_576,
+                false, true, state);
+    });
+
+    private static final Function<ResourceLocation, RenderType> TEXTURED_ADDITIVE_NO_DEPTH_WRITE = Util.memoize((location) -> {
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(ADDITIVE_TRANSPARENCY)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(false);
+        return create("ywzj_rvp:textured_additive_no_depth_write_" + location.toString().replace(':', '_'),
+                DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 262_144,
+                false, true, state);
+    });
+
     public static RenderType polyMeshCutout(ResourceLocation texture) {
         return POLY_MESH_CUTOUT_CULLED.apply(texture);
     }
@@ -117,5 +149,13 @@ public class RVP_RenderTypes extends RenderType {
 
     public static RenderType polyMeshCockpitTransparent(ResourceLocation texture) {
         return POLY_MESH_COCKPIT_TRANSLUCENT_CULLED.apply(texture);
+    }
+
+    public static RenderType texturedTranslucentNoDepthWrite(ResourceLocation texture) {
+        return TEXTURED_TRANSLUCENT_NO_DEPTH_WRITE.apply(texture);
+    }
+
+    public static RenderType texturedAdditiveNoDepthWrite(ResourceLocation texture) {
+        return TEXTURED_ADDITIVE_NO_DEPTH_WRITE.apply(texture);
     }
 }

@@ -35,6 +35,10 @@ public final class RVP_HbmEffectBridge {
     @Nullable
     private static Method spawnLegacyExplosionLargeMethod;
     @Nullable
+    private static Method spawnExplosionSmallMethod;
+    @Nullable
+    private static Method spawnExplosionLargeMethod;
+    @Nullable
     private static Method explodeStandardMethod;
     @Nullable
     private static Method spawnNuclearMethod;
@@ -42,6 +46,8 @@ public final class RVP_HbmEffectBridge {
     private static Method spawnNuclearCoreMethod;
     @Nullable
     private static Method createStandardTorexMethod;
+    @Nullable
+    private static Method setTorexCloudDensityMethod;
     @Nullable
     private static Method spawnShrapnelsMethod;
     @Nullable
@@ -61,27 +67,43 @@ public final class RVP_HbmEffectBridge {
 
     private RVP_HbmEffectBridge() {}
 
-    public record Result(boolean anyApplied, boolean realExplosionApplied) {}
+    public record Result(boolean anyApplied, boolean realExplosionApplied, boolean visualApplied) {}
 
     public static Result apply(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec, @Nullable Entity source) {
         if (level == null || pos == null || spec == null || !spec.hasAnyEffect()) {
-            return new Result(false, false);
+            return new Result(false, false, false);
         }
         ensureResolved();
-        if (!modLoaded) {
-            return new Result(false, false);
-        }
 
-        boolean realApplied = applyRealExplosion(level, pos, spec, source);
+        boolean realApplied = modLoaded && applyRealExplosion(level, pos, spec, source);
         boolean visualApplied = false;
-        if (!realApplied) {
-            visualApplied = applyVisualPreset(level, pos, spec);
+        if (!realApplied || !realExplosionAlreadyIncludesVisual(spec)) {
+            visualApplied = applyVisualPresetWithBackend(level, pos, spec);
         }
-        boolean fragApplied = applyShrapnel(level, pos, spec, source);
-        boolean phosphorusApplied = applyWhitePhosphorus(level, pos, spec, source);
-        boolean chlorineApplied = applyChlorine(level, pos, spec);
+        boolean fragApplied = modLoaded && applyShrapnel(level, pos, spec, source);
+        boolean phosphorusApplied = modLoaded && applyWhitePhosphorus(level, pos, spec, source);
+        boolean chlorineApplied = modLoaded && applyChlorine(level, pos, spec);
         return new Result(realApplied || visualApplied || fragApplied || phosphorusApplied || chlorineApplied,
-                realApplied);
+                realApplied, visualApplied);
+    }
+
+    private static boolean applyVisualPresetWithBackend(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec) {
+        return switch (spec.getVisualBackend()) {
+            case "rvp" -> RVP_HbmVisualService.spawn(level, pos, spec);
+            case "hbm" -> modLoaded && applyVisualPreset(level, pos, spec);
+            default -> {
+                boolean hbmApplied = modLoaded && applyVisualPreset(level, pos, spec);
+                yield hbmApplied || RVP_HbmVisualService.spawn(level, pos, spec);
+            }
+        };
+    }
+
+    private static boolean realExplosionAlreadyIncludesVisual(RVP_HbmEffectData spec) {
+        if (!"nuclear".equalsIgnoreCase(spec.getRealExplosion())) {
+            return false;
+        }
+        String preset = spec.getVisualPreset();
+        return "nuclear".equalsIgnoreCase(preset) || "nuke".equalsIgnoreCase(preset);
     }
 
     private static boolean applyRealExplosion(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec,
@@ -127,6 +149,7 @@ public final class RVP_HbmEffectBridge {
                 pos.y,
                 pos.z,
                 (float) radius);
+        applyTorexCloudDensity(torex, spec);
         if (torex instanceof Entity entity && !entity.isRemoved()) {
             level.addFreshEntity(entity);
         }
@@ -138,19 +161,124 @@ public final class RVP_HbmEffectBridge {
             return false;
         }
         String preset = spec.getVisualPreset();
+        float visualScale = spec.getVisualScale();
         try {
-            if ("shell".equalsIgnoreCase(preset) && spawnLegacyExplosionSmallMethod != null) {
-                spawnLegacyExplosionSmallMethod.invoke(null, level, pos.x, pos.y, pos.z);
-                return true;
+            if ("nuclear".equalsIgnoreCase(preset) || "nuke".equalsIgnoreCase(preset)) {
+                return spawnVisualNuclear(level, pos, spec, visualScale);
             }
-            if ("bomb".equalsIgnoreCase(preset) && spawnLegacyExplosionLargeMethod != null) {
-                spawnLegacyExplosionLargeMethod.invoke(null, level, pos.x, pos.y, pos.z);
-                return true;
+            if ("shell".equalsIgnoreCase(preset)) {
+                if (spawnExplosionSmallMethod != null) {
+                    spawnExplosionSmallMethod.invoke(null, level, pos.x, pos.y, pos.z,
+                            shellCloudCount(visualScale), shellCloudScale(visualScale), shellCloudSpeed(visualScale),
+                            shellDebrisCount(visualScale));
+                    return true;
+                }
+                if (spawnLegacyExplosionSmallMethod != null) {
+                    spawnLegacyExplosionSmallMethod.invoke(null, level, pos.x, pos.y, pos.z);
+                    return true;
+                }
+            }
+            if ("bomb".equalsIgnoreCase(preset)) {
+                if (spawnExplosionLargeMethod != null) {
+                    spawnExplosionLargeMethod.invoke(null, level, pos.x, pos.y, pos.z,
+                            bombCloudCount(visualScale), bombCloudScale(visualScale), bombCloudSpeed(visualScale),
+                            bombWaveScale(visualScale), bombDebrisCount(visualScale), bombDebrisSize(visualScale),
+                            bombDebrisRetry(visualScale), bombDebrisVelocity(visualScale),
+                            bombDebrisHorizontalDeviation(visualScale), -2.0f, bombSoundRange(visualScale));
+                    return true;
+                }
+                if (spawnLegacyExplosionLargeMethod != null) {
+                    spawnLegacyExplosionLargeMethod.invoke(null, level, pos.x, pos.y, pos.z);
+                    return true;
+                }
             }
         } catch (ReflectiveOperationException ignored) {
             return false;
         }
         return false;
+    }
+
+    private static boolean spawnVisualNuclear(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec, float visualScale)
+            throws ReflectiveOperationException {
+        if (createStandardTorexMethod == null) {
+            return false;
+        }
+        float baseYield = Math.max(spec.getEffectYield(), 1.0f);
+        float mushroomScale = (float) clampDouble(baseYield * Math.max(visualScale, 0.1f), 1.0D, 500.0D);
+        Object torex = createStandardTorexMethod.invoke(null, level, pos.x, pos.y, pos.z, mushroomScale);
+        applyTorexCloudDensity(torex, spec);
+        if (torex instanceof Entity entity && !entity.isRemoved()) {
+            level.addFreshEntity(entity);
+            return true;
+        }
+        return false;
+    }
+
+    private static void applyTorexCloudDensity(Object torex, RVP_HbmEffectData spec) {
+        if (torex == null || setTorexCloudDensityMethod == null) {
+            return;
+        }
+        try {
+            setTorexCloudDensityMethod.invoke(torex, spec.getVisualDensity());
+        } catch (ReflectiveOperationException ignored) {
+            // Older HBM builds do not expose cloud density; keep the visual bridge compatible.
+        }
+    }
+
+    private static int shellCloudCount(float visualScale) {
+        return clampInt(Math.round(10.0f * visualScale), 4, 80);
+    }
+
+    private static float shellCloudScale(float visualScale) {
+        return (float) clampDouble(2.0D * visualScale, 0.4D, 16.0D);
+    }
+
+    private static float shellCloudSpeed(float visualScale) {
+        return (float) clampDouble(0.5D * Math.sqrt(visualScale), 0.15D, 4.0D);
+    }
+
+    private static int shellDebrisCount(float visualScale) {
+        return clampInt(Math.round(15.0f * visualScale), 0, 120);
+    }
+
+    private static int bombCloudCount(float visualScale) {
+        return clampInt(Math.round(30.0f * visualScale), 8, 180);
+    }
+
+    private static float bombCloudScale(float visualScale) {
+        return (float) clampDouble(6.5D * visualScale, 1.0D, 32.0D);
+    }
+
+    private static float bombCloudSpeed(float visualScale) {
+        return (float) clampDouble(2.0D * Math.sqrt(visualScale), 0.35D, 6.0D);
+    }
+
+    private static float bombWaveScale(float visualScale) {
+        return (float) clampDouble(65.0D * visualScale, 8.0D, 220.0D);
+    }
+
+    private static int bombDebrisCount(float visualScale) {
+        return clampInt(Math.round(25.0f * visualScale), 2, 160);
+    }
+
+    private static int bombDebrisSize(float visualScale) {
+        return clampInt(Math.round(16.0f * visualScale), 4, 64);
+    }
+
+    private static int bombDebrisRetry(float visualScale) {
+        return clampInt(Math.round(50.0f * visualScale), 8, 160);
+    }
+
+    private static float bombDebrisVelocity(float visualScale) {
+        return (float) clampDouble(1.25D * Math.sqrt(visualScale), 0.2D, 4.0D);
+    }
+
+    private static float bombDebrisHorizontalDeviation(float visualScale) {
+        return (float) clampDouble(3.0D * visualScale, 0.5D, 12.0D);
+    }
+
+    private static float bombSoundRange(float visualScale) {
+        return (float) clampDouble(350.0D * visualScale, 80.0D, 800.0D);
     }
 
     private static boolean applyShrapnel(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec,
@@ -378,6 +506,13 @@ public final class RVP_HbmEffectBridge {
                 "spawnLegacyExplosionSmall", levelClass, double.class, double.class, double.class);
         spawnLegacyExplosionLargeMethod = getMethod(particleUtilClass,
                 "spawnLegacyExplosionLarge", levelClass, double.class, double.class, double.class);
+        spawnExplosionSmallMethod = getMethod(particleUtilClass,
+                "spawnExplosionSmall", levelClass, double.class, double.class, double.class,
+                int.class, float.class, float.class, int.class);
+        spawnExplosionLargeMethod = getMethod(particleUtilClass,
+                "spawnExplosionLarge", levelClass, double.class, double.class, double.class,
+                int.class, float.class, float.class, float.class, int.class, int.class, int.class,
+                float.class, float.class, float.class, float.class);
         explodeStandardMethod = getMethod(weaponExplosionUtilClass,
                 "explodeStandard", levelClass, double.class, double.class, double.class, float.class,
                 entityClass, boolean.class, boolean.class);
@@ -387,6 +522,8 @@ public final class RVP_HbmEffectBridge {
                 "spawnNuclearCore", levelClass, int.class, double.class, double.class, double.class);
         createStandardTorexMethod = getMethod(nukeTorexEntityClass,
                 "createStandard", levelClass, double.class, double.class, double.class, float.class);
+        setTorexCloudDensityMethod = getMethod(nukeTorexEntityClass,
+                "setCloudDensity", float.class);
         spawnShrapnelsMethod = getMethod(explosionLargeClass,
                 "spawnShrapnels", levelClass, double.class, double.class, double.class, int.class, float.class,
                 entityClass);

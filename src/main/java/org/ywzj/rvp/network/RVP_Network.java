@@ -127,5 +127,10 @@ public class RVP_Network {
                 .decoder(S2CExternalRadarSnapshot::decode)
                 .consumerMainThread(S2CExternalRadarSnapshot::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CNuclearVisualEffect.class, id++)
+                .encoder(S2CNuclearVisualEffect::encode)
+                .decoder(S2CNuclearVisualEffect::decode)
+                .consumerMainThread(S2CNuclearVisualEffect::handle)
+                .add();
     }
 }

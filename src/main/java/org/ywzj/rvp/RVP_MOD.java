@@ -9,6 +9,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Items;
+import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.config.RVP_Config;
@@ -36,6 +37,7 @@ public class RVP_MOD {
         IEventBus modBus = context.getModEventBus();
         RVP_Entities.register(modBus);
         RVP_Items.register(modBus);
+        RVP_Sounds.register(modBus);
         RVP_WeaponTypes.register(modBus);
         modBus.addListener(this::onCommonSetup);
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->

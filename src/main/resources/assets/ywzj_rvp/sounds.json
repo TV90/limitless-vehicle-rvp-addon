@@ -1,0 +1,44 @@
+{
+  "nuclear_explosion": {
+    "subtitle": "subtitles.ywzj_rvp.nuclear_explosion",
+    "sounds": [
+      {
+        "name": "ywzj_rvp:nuclear/nuclear_explosion",
+        "stream": true
+      }
+    ]
+  },
+  "explosion_large_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      {
+        "name": "ywzj_rvp:nuclear/explosion_large_near",
+        "stream": false
+      }
+    ]
+  },
+  "explosion_large_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      {
+        "name": "ywzj_rvp:nuclear/explosion_large_far",
+        "stream": false
+      }
+    ]
+  },
+  "explosion_small_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:nuclear/explosion_small_near1",
+      "ywzj_rvp:nuclear/explosion_small_near2",
+      "ywzj_rvp:nuclear/explosion_small_near3"
+    ]
+  },
+  "explosion_small_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:nuclear/explosion_small_far1",
+      "ywzj_rvp:nuclear/explosion_small_far2"
+    ]
+  }
+}

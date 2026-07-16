@@ -58,6 +58,7 @@ import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
+import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
@@ -1647,12 +1648,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
+        boolean suppressNativeExplosionEffect = false;
         if (detonateData != null && detonateData.hasHbmEffect() && level() instanceof ServerLevel serverLevel) {
             RVP_HbmEffectBridge.Result hbmResult =
                     RVP_HbmEffectBridge.apply(serverLevel, pos, detonateData.getHbmEffectData(), getOwner());
             if (hbmResult.realExplosionApplied()) {
                 return;
             }
+            suppressNativeExplosionEffect = hbmResult.visualApplied()
+                    && detonateData.getHbmEffectData().isSuppressNativeExplosionEffect();
         }
         if (explosion == null || !explosion.explode) {
             return;
@@ -1686,12 +1690,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 excluded.add(shooterVehicle);
             }
         }
-        if (!excluded.isEmpty()) {
-            ex.explode(List.copyOf(excluded));
+        Runnable explosionAction = !excluded.isEmpty()
+                ? () -> ex.explode(List.copyOf(excluded))
+                : ex::explode;
+        if (suppressNativeExplosionEffect) {
+            RVP_ExplosionVisualSuppression.run(explosionAction);
         } else {
-            ex.explode();
+            explosionAction.run();
         }
-        if (level() instanceof ServerLevel serverLevel && rvpData != null) {
+        if (!suppressNativeExplosionEffect && level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(
                     serverLevel, pos, rvpData.getEffectsData(), radius);
         }
