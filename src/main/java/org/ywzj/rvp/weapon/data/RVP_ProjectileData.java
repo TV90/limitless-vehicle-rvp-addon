@@ -3,6 +3,8 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.JsonObject;
 import com.google.gson.annotations.SerializedName;
 
+import java.util.Map;
+
 /**
  * 弹体运动学参数。扩展包 JSON 中的 {@code projectile_data} 字段会反序列化到这里。
  */
@@ -60,6 +62,13 @@ public class RVP_ProjectileData {
     /** 最小速度限制，0 表示不限制。 */
     @SerializedName("min_speed")
     private float minSpeed = 0f;
+
+    /**
+     * Per-flight-tick maneuver factor. The first matching range wins, which keeps
+     * boundary behavior deterministic for ordered JSON object entries.
+     */
+    @SerializedName("turning_factor")
+    private Map<RVP_Range<Integer>, Float> turningFactor;
 
     /** 是否装备火箭发动机；为 false 时不启用推力运动学。 */
     @SerializedName("has_rocket_engine")
@@ -266,6 +275,29 @@ public class RVP_ProjectileData {
 
     public float getMinSpeed() {
         return Math.max(minSpeed, 0f);
+    }
+
+    public boolean hasTurningFactor() {
+        return turningFactor != null && !turningFactor.isEmpty();
+    }
+
+    public Float resolveTurningFactor(int flightTick) {
+        if (!hasTurningFactor()) {
+            return null;
+        }
+        int tick = Math.max(flightTick, 0);
+        for (Map.Entry<RVP_Range<Integer>, Float> entry : turningFactor.entrySet()) {
+            RVP_Range<Integer> range = entry.getKey();
+            Float value = entry.getValue();
+            if (range == null || value == null || !range.contains(tick)) {
+                continue;
+            }
+            if (!Float.isFinite(value)) {
+                return null;
+            }
+            return Math.max(0f, Math.min(1f, value));
+        }
+        return null;
     }
 
     public boolean hasRocketEngine() {
