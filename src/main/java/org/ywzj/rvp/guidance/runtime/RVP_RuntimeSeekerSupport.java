@@ -2,6 +2,7 @@ package org.ywzj.rvp.guidance.runtime;
 
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -23,7 +24,31 @@ final class RVP_RuntimeSeekerSupport {
             RVP_EnumGuidanceType type,
             RVP_GuidanceActiveConfig config
     ) {
-        if (!RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, config)) {
+        return validateEntity(projectile, target, type, config, false);
+    }
+
+    @Nullable
+    static Entity acquireEntity(
+            RVP_BaseBullet projectile,
+            Entity target,
+            RVP_EnumGuidanceType type,
+            RVP_GuidanceActiveConfig config
+    ) {
+        return validateEntity(projectile, target, type, config, true);
+    }
+
+    @Nullable
+    private static Entity validateEntity(
+            RVP_BaseBullet projectile,
+            Entity target,
+            RVP_EnumGuidanceType type,
+            RVP_GuidanceActiveConfig config,
+            boolean acquire
+    ) {
+        boolean withinLimits = acquire
+                ? RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, target, config)
+                : RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, config);
+        if (!withinLimits) {
             return null;
         }
         RVP_CountermeasureState.Result result = RVP_CountermeasureState.query(projectile, target, type, config);
@@ -62,6 +87,33 @@ final class RVP_RuntimeSeekerSupport {
             double angle = org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil.angleBetween(
                     projectile.getLookAngle(), toTarget);
             double score = angle * 4.0 + projectile.distanceTo(entity) / Math.max(range, 1.0);
+            if (score < bestScore) {
+                bestScore = score;
+                best = entity;
+            }
+        }
+        return best;
+    }
+
+    @Nullable
+    static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
+        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+        AABB box = projectile.getBoundingBox().inflate(range);
+        Entity best = null;
+        double bestScore = Double.MAX_VALUE;
+        for (Entity entity : projectile.level().getEntities(
+                projectile,
+                box,
+                candidate -> candidate instanceof AbstractVehicle && candidate.isAlive())) {
+            if (entity == projectile.getShooterVehicle()
+                    || !RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
+                continue;
+            }
+            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(projectile.position());
+            double angle = org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil.angleBetween(
+                    projectile.getLookAngle(), toTarget);
+            double score = angle / Math.max(config.maxLockHalfAngle(), 1.0)
+                    + projectile.distanceTo(entity) / Math.max(range, 1.0);
             if (score < bestScore) {
                 bestScore = score;
                 best = entity;

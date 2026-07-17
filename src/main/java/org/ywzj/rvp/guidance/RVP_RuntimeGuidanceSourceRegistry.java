@@ -5,7 +5,9 @@ import org.ywzj.rvp.guidance.runtime.RVP_RuntimeGpsGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeNoneGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeSarhGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeArhGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeAirGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeArmGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeIrGuidanceSource;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -21,6 +23,8 @@ public final class RVP_RuntimeGuidanceSourceRegistry {
         register(new RVP_RuntimeSarhGuidanceSource());
         register(new RVP_RuntimeArhGuidanceSource());
         register(new RVP_RuntimeArmGuidanceSource());
+        register(new RVP_RuntimeIrGuidanceSource());
+        register(new RVP_RuntimeAirGuidanceSource());
     }
 
     private RVP_RuntimeGuidanceSourceRegistry() {}

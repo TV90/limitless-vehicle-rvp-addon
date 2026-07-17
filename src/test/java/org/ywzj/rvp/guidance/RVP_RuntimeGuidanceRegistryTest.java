@@ -24,7 +24,9 @@ class RVP_RuntimeGuidanceRegistryTest {
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.SARH));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ARH));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ARM));
-        assertNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.IR));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.IR));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.AIR));
+        assertNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.SALH));
     }
 
     @Test
@@ -48,7 +50,9 @@ class RVP_RuntimeGuidanceRegistryTest {
                 RVP_EnumGuidanceType.GPS,
                 RVP_EnumGuidanceType.SARH,
                 RVP_EnumGuidanceType.ARH,
-                RVP_EnumGuidanceType.ARM
+                RVP_EnumGuidanceType.ARM,
+                RVP_EnumGuidanceType.IR,
+                RVP_EnumGuidanceType.AIR
         }) {
             assertEquals(type, RVP_RuntimeGuidanceSourceRegistry.get(type).type());
         }

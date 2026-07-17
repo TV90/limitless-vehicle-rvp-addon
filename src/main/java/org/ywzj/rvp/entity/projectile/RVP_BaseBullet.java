@@ -155,6 +155,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected boolean launchTargetSnapshot;
     /** IR seeker temporary retain window for brief off-axis loss. */
     protected int irSeekerGraceUntilTick = Integer.MIN_VALUE;
+    private boolean irSeekerLossGraceStarted;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
@@ -575,12 +576,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         irSeekerGraceUntilTick = Math.max(irSeekerGraceUntilTick, tickCount + Math.max(ticks, 0));
     }
 
+    public void beginIrSeekerLossGrace(int ticks) {
+        if (irSeekerLossGraceStarted) {
+            return;
+        }
+        irSeekerLossGraceStarted = true;
+        beginIrSeekerGrace(ticks);
+    }
+
     public boolean hasIrSeekerGrace() {
         return tickCount <= irSeekerGraceUntilTick;
     }
 
     public void resetIrSeekerGrace() {
         irSeekerGraceUntilTick = Integer.MIN_VALUE;
+        irSeekerLossGraceStarted = false;
     }
 
     public boolean consumeGpsCruiseVerticalResetPending() {
@@ -692,6 +702,31 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public boolean isActiveRadarOn() {
         return activeRadarOn;
+    }
+
+    public boolean isAutonomousSeekerOn() {
+        return activeRadarOn;
+    }
+
+    public void setAutonomousSeekerOn(boolean enabled) {
+        this.activeRadarOn = enabled;
+    }
+
+    public boolean hasAutonomousSeekerCatch() {
+        return activeRadarCatch;
+    }
+
+    public void markAutonomousSeekerCatch() {
+        this.activeRadarCatch = true;
+        this.activeRadarLostTargetTick = 0;
+    }
+
+    public void incrementAutonomousSeekerLostTargetTick() {
+        this.activeRadarLostTargetTick++;
+    }
+
+    public int getAutonomousSeekerLostTargetTick() {
+        return activeRadarLostTargetTick;
     }
 
     public boolean isActiveRadarCatch() {

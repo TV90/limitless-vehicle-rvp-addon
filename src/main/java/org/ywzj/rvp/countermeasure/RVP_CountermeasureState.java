@@ -62,8 +62,7 @@ public final class RVP_CountermeasureState {
         if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, target)) {
             return new Result(true, true, false, false);
         }
-        boolean flareSensitive = (guidanceType == RVP_EnumGuidanceType.IR
-                || guidanceType == RVP_EnumGuidanceType.AIR) && !config.ignoreFlares();
+        boolean flareSensitive = guidanceType == RVP_EnumGuidanceType.IR && !config.ignoreFlares();
         boolean chaffSensitive = (guidanceType == RVP_EnumGuidanceType.ARH
                 || guidanceType == RVP_EnumGuidanceType.SARH) && !config.ignoreChaff();
         if ((flareSensitive || chaffSensitive) && hasTargetObstructionNear(target, 16.0)) {

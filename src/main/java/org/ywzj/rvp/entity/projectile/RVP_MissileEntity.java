@@ -83,8 +83,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
     private int hitlEnterViewResendTicks;
-    private int arhDesignatedTargetId = Integer.MIN_VALUE;
-    private boolean arhSupportReleased;
+    private int activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
+    private boolean activeSeekerSupportReleased;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -152,9 +152,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
 
-        // ===== ARH 主动雷达弹：目标管理嵌入，转向走 stage 系统 =====
-        if (isArhMissile() && (legacyGuidance || isNewArhPhaseActive())) {
+        // Legacy ARH keeps its stage target manager; new ARH/AIR share one active-seeker state machine.
+        if (isArhMissile() && legacyGuidance) {
             tickArhTargetManagement();
+        } else if (!legacyGuidance) {
+            RVP_EnumGuidanceType activeType = resolveNewActiveSeekerType();
+            if (activeType == RVP_EnumGuidanceType.ARH || activeType == RVP_EnumGuidanceType.AIR) {
+                tickActiveSeekerTargetManagement(activeType);
+            }
         }
 
         super.tickGuidance();
@@ -195,14 +200,55 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 && rvpData.isAntiRadiationMissile();
     }
 
-    private boolean isNewArhPhaseActive() {
+    private RVP_EnumGuidanceType resolveNewActiveSeekerType() {
         if (rvpData == null || !rvpData.getGuidanceData().getStages().isEmpty()) {
-            return false;
+            return RVP_EnumGuidanceType.NONE;
         }
         return RVP_GuidanceModelResolver.resolveActive(
                 rvpData.getGuidanceData(),
                 getGuidancePhaseState().phase()
-        ).guidanceType() == RVP_EnumGuidanceType.ARH;
+        ).guidanceType();
+    }
+
+    private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
+        RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
+        if (config == null || config.guidanceType() != type) {
+            return;
+        }
+        activeRadarActivationRange = config.activeRadarActivationRange();
+
+        Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
+        boolean hasDesignation = rvp$hasActiveSeekerDesignation();
+        boolean supportAvailable = designated != null && rvp$hasActiveSeekerSupportForDesignatedTarget();
+        if (hasDesignation && !supportAvailable) {
+            activeSeekerSupportReleased = true;
+        }
+
+        if (!activeRadarCatch) {
+            if (designated != null && !activeSeekerSupportReleased && supportAvailable) {
+                setTargetEntity(designated);
+                setTargetPos(designated.getBoundingBox().getCenter());
+            } else if (activeSeekerSupportReleased) {
+                setTargetEntity(null);
+            }
+        }
+
+        if (!activeRadarOn && tickCount >= 20) {
+            Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
+            boolean withinActivationRange = activeRadarActivationRange <= 0
+                    || activationReference != null
+                    && activationReference.distanceTo(position()) <= activeRadarActivationRange;
+            if (withinActivationRange || !hasDesignation) {
+                activeRadarOn = true;
+            }
+        }
+
+        if (activeRadarOn && targetEntity == null) {
+            activeRadarLostTargetTick++;
+            if (activeRadarLostTargetTick >= 60) {
+                life = 0;
+            }
+        }
     }
 
     /**
@@ -369,10 +415,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         boolean supportAvailable = rvp$hasArhSupportForDesignatedTarget();
 
         if (hasDesignatedTarget && !supportAvailable) {
-            arhSupportReleased = true;
+            activeSeekerSupportReleased = true;
         }
 
-        if (!activeRadarCatch && hasDesignatedTarget && !arhSupportReleased) {
+        if (!activeRadarCatch && hasDesignatedTarget && !activeSeekerSupportReleased) {
             if (targetEntity != designatedTarget) {
                 targetEntity = designatedTarget;
             }
@@ -383,7 +429,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         // tickGuidance() HOMING 段：实时追踪 + 主动雷达开机距离检测
         if (tickCount >= 20 && targetEntity != null && targetEntity.isAlive()) {
             boolean canRefreshFromLiveTrack = activeRadarCatch
-                    || (hasDesignatedTarget && !arhSupportReleased && supportAvailable);
+                    || (hasDesignatedTarget && !activeSeekerSupportReleased && supportAvailable);
             if (canRefreshFromLiveTrack) {
                 targetPos = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.5, 0);
                 lastGuidancePos = targetPos;
@@ -429,41 +475,58 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
     }
 
-    /**
-     * 从武器数据的 guidance stage 中读取 ARH 参数（activeRadarActivationRange、seekerFov 等）。
-     */
-    public void rvp$setArhDesignatedTarget(@Nullable Entity target) {
+    /** Captures the launch-designated target shared by the new ARH/AIR runtime. */
+    public void rvp$setActiveSeekerDesignatedTarget(@Nullable Entity target) {
         if (target == null) {
-            this.arhDesignatedTargetId = Integer.MIN_VALUE;
-            this.arhSupportReleased = true;
+            this.activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
+            this.activeSeekerSupportReleased = true;
             return;
         }
-        this.arhDesignatedTargetId = target.getId();
-        this.arhSupportReleased = false;
+        this.activeSeekerDesignatedTargetId = target.getId();
+        this.activeSeekerSupportReleased = false;
         if (this.targetEntity == null) {
             this.targetEntity = target;
         }
         this.lastGuidancePos = target.position().add(0, target.getBbHeight() * 0.5, 0);
     }
 
+    public void rvp$setArhDesignatedTarget(@Nullable Entity target) {
+        rvp$setActiveSeekerDesignatedTarget(target);
+    }
+
     @Nullable
-    public Entity rvp$getArhDesignatedTargetEntity() {
-        if (arhDesignatedTargetId == Integer.MIN_VALUE) {
+    public Entity rvp$getActiveSeekerDesignatedTargetEntity() {
+        if (activeSeekerDesignatedTargetId == Integer.MIN_VALUE) {
             return null;
         }
-        Entity entity = level().getEntity(arhDesignatedTargetId);
+        Entity entity = level().getEntity(activeSeekerDesignatedTargetId);
         if (entity == null || !entity.isAlive()) {
             return null;
         }
         return entity;
     }
 
-    public boolean rvp$canArhFreeAcquire() {
-        return arhDesignatedTargetId == Integer.MIN_VALUE || arhSupportReleased;
+    @Nullable
+    public Entity rvp$getArhDesignatedTargetEntity() {
+        return rvp$getActiveSeekerDesignatedTargetEntity();
     }
 
-    public boolean rvp$hasArhSupportForDesignatedTarget() {
-        Entity designatedTarget = rvp$getArhDesignatedTargetEntity();
+    public boolean rvp$hasActiveSeekerDesignation() {
+        return activeSeekerDesignatedTargetId != Integer.MIN_VALUE;
+    }
+
+    public boolean rvp$canActiveSeekerFreeAcquire() {
+        return activeRadarCatch
+                || activeSeekerDesignatedTargetId == Integer.MIN_VALUE
+                || activeSeekerSupportReleased;
+    }
+
+    public boolean rvp$canArhFreeAcquire() {
+        return rvp$canActiveSeekerFreeAcquire();
+    }
+
+    public boolean rvp$hasActiveSeekerSupportForDesignatedTarget() {
+        Entity designatedTarget = rvp$getActiveSeekerDesignatedTargetEntity();
         if (designatedTarget == null) {
             return false;
         }
@@ -502,6 +565,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
 
         return anyRadarOn && targetEntity == designatedTarget && targetEntity.isAlive() && activeRadarCatch;
+    }
+
+    public boolean rvp$hasArhSupportForDesignatedTarget() {
+        return rvp$hasActiveSeekerSupportForDesignatedTarget();
     }
 
     private void initArhParams() {
@@ -611,6 +678,17 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.TERMINAL);
         }
         return null;
+    }
+
+    @Nullable
+    private RVP_GuidanceActiveConfig resolveNewActiveConfig() {
+        if (rvpData == null || !rvpData.getGuidanceData().getStages().isEmpty()) {
+            return null;
+        }
+        return RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(),
+                getGuidancePhaseState().phase()
+        );
     }
 
     @Override

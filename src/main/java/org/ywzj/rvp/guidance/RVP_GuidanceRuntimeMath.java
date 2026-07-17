@@ -21,7 +21,12 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 target = entity != null && entity.isAlive()
                 ? entity.getBoundingBox().getCenter()
                 : intent.aimPoint();
-        if (target == null || !RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, context.active())) {
+        boolean trackLimitsPassed = target != null
+                && RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, context.active());
+        boolean irGrace = entity != null
+                && context.active().guidanceType() == RVP_EnumGuidanceType.IR
+                && projectile.hasIrSeekerGrace();
+        if (target == null || (!trackLimitsPassed && !irGrace)) {
             return false;
         }
 
