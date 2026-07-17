@@ -555,7 +555,12 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         if (type == null) {
             return false;
         }
-        return getGuidanceData().hasSourceType(type);
+        RVP_GuidanceData guidance = getGuidanceData();
+        if (guidance.hasSourceType(type) || guidance.getGuidanceType() == type) {
+            return true;
+        }
+        return guidance.getTerminalGuidance() != null
+                && guidance.getTerminalGuidance().getGuidanceType() == type;
     }
 
     public boolean hasHumanInTheLoop() {

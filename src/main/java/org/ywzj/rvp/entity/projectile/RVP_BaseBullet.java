@@ -47,6 +47,7 @@ import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
 import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -205,6 +206,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected final java.util.Map<Integer, Integer> guidanceStageEnteredTicks = new java.util.HashMap<>();
     protected int guidanceOverlapResolveIndex = -1;
     protected final java.util.Set<Integer> guidanceStickyPhaseIndices = new java.util.HashSet<>();
+    protected final RVP_GuidancePhaseState guidancePhaseState = new RVP_GuidancePhaseState();
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
     @Nullable
@@ -780,6 +782,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public java.util.Set<Integer> getGuidanceStickyPhaseIndices() {
         return guidanceStickyPhaseIndices;
+    }
+
+    public RVP_GuidancePhaseState getGuidancePhaseState() {
+        return guidancePhaseState;
     }
 
     public void addGuidanceStickyPhaseIndex(int index) {

@@ -18,7 +18,11 @@ public final class RVP_GuidanceController {
 
     public static void tick(RVP_BaseBullet projectile) {
         RVP_WeaponData data = projectile.getRvpData();
-        if (data == null || data.getGuidanceData().getStages().isEmpty()) {
+        if (data == null) {
+            return;
+        }
+        if (data.getGuidanceData().getStages().isEmpty()) {
+            RVP_GuidanceRuntimeController.tick(projectile);
             return;
         }
 
