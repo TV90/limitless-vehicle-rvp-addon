@@ -1,6 +1,7 @@
 package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
+import com.google.gson.annotations.JsonAdapter;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -65,6 +66,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     /** 分段制导阶段与源（含 ARM/TV 专用参数），见 {@link RVP_GuidanceData}。 */
     @SerializedName("guidance_data")
+    @JsonAdapter(RVP_GuidanceDataAdapter.class)
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
 
     /** {@code rvp:laser} 射程与光束外观，见 {@link RVP_LaserData}。 */
