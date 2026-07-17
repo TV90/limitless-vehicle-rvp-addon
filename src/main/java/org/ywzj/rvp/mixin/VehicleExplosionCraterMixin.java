@@ -11,15 +11,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.config.RVP_Config;
 
 /**
- * Injects into {@code VehicleExplosion.ExplosionCollectionTask.finish()} to
+ * Injects into {@code VehicleExplosion.GridCollectionTask.finish()} to
  * limit crater depth based on server-side {@code craterDepthRules} config.
  * <p>
  * Since both the immediate and batched block destruction paths call
- * {@code ExplosionCollectionTask.finish()}, this single injection covers all
+ * {@code GridCollectionTask.finish()}, this single injection covers all
  * explosion sources that go through {@code VehicleExplosion} (RVP weapons,
  * ywzj_vehicle default weapons, etc.).
  */
-@Mixin(targets = "org.ywzj.vehicle.util.VehicleExplosion$ExplosionCollectionTask")
+@Mixin(targets = "org.ywzj.vehicle.util.VehicleExplosion$GridCollectionTask")
 public abstract class VehicleExplosionCraterMixin {
 
     @Shadow(remap = false)
