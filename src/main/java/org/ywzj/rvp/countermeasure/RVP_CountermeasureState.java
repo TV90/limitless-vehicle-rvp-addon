@@ -6,6 +6,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
 import org.ywzj.vehicle.api.entity.SightObstruction;
 import org.ywzj.vehicle.api.entity.TargetObstruction;
@@ -46,6 +47,31 @@ public final class RVP_CountermeasureState {
         return Result.CLEAR;
     }
 
+    public static Result query(
+            Entity seeker,
+            Entity target,
+            RVP_EnumGuidanceType guidanceType,
+            RVP_GuidanceActiveConfig config
+    ) {
+        if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
+            return new Result(false, false, false, true);
+        }
+        if (target == null || config == null) {
+            return Result.CLEAR;
+        }
+        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, target)) {
+            return new Result(true, true, false, false);
+        }
+        boolean flareSensitive = (guidanceType == RVP_EnumGuidanceType.IR
+                || guidanceType == RVP_EnumGuidanceType.AIR) && !config.ignoreFlares();
+        boolean chaffSensitive = (guidanceType == RVP_EnumGuidanceType.ARH
+                || guidanceType == RVP_EnumGuidanceType.SARH) && !config.ignoreChaff();
+        if ((flareSensitive || chaffSensitive) && hasTargetObstructionNear(target, 16.0)) {
+            return new Result(false, true, true, false);
+        }
+        return Result.CLEAR;
+    }
+
     public static Result queryPoint(Entity seeker, Vec3 targetPos, RVP_EnumGuidanceType guidanceType, RVP_GuidanceSeekerData seekerData) {
         if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
             return new Result(false, false, false, true);
@@ -59,6 +85,33 @@ public final class RVP_CountermeasureState {
             }
         }
         return Result.CLEAR;
+    }
+
+    public static Result queryPoint(
+            Entity seeker,
+            Vec3 targetPos,
+            RVP_EnumGuidanceType guidanceType,
+            RVP_GuidanceActiveConfig config
+    ) {
+        if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
+            return new Result(false, false, false, true);
+        }
+        if (seeker == null || targetPos == null || config == null) {
+            return Result.CLEAR;
+        }
+        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, targetPos)) {
+            return new Result(true, true, false, false);
+        }
+        return Result.CLEAR;
+    }
+
+    private static boolean usesOpticalLineOfSight(RVP_EnumGuidanceType type) {
+        return type == RVP_EnumGuidanceType.IR
+                || type == RVP_EnumGuidanceType.AIR
+                || type == RVP_EnumGuidanceType.LH
+                || type == RVP_EnumGuidanceType.SALH
+                || type == RVP_EnumGuidanceType.SACLOS
+                || type == RVP_EnumGuidanceType.LOSBR;
     }
 
     public static Optional<Entity> findDecoyTarget(Entity target, double radius) {

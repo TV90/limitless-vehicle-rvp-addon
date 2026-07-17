@@ -108,6 +108,9 @@ public class RVP_GuidanceData {
     @SerializedName("radiation_pulse_memory_tick")
     private int radiationPulseMemoryTick = 40;
 
+    @SerializedName("arm_memory_tick")
+    private int armMemoryTick = 120;
+
     @SerializedName("arm_locked_emitter_bonus")
     private float armLockedEmitterBonus = 0f;
 
@@ -245,6 +248,10 @@ public class RVP_GuidanceData {
         return Math.max(radiationPulseMemoryTick, 0);
     }
 
+    public int getArmMemoryTick() {
+        return Math.max(armMemoryTick, 0);
+    }
+
     public float getArmLockedEmitterBonus() {
         return armLockedEmitterBonus;
     }
@@ -277,6 +284,16 @@ public class RVP_GuidanceData {
         return getStages().stream()
                 .flatMap(stage -> stage.getSources().stream())
                 .anyMatch(source -> source.getType() == type);
+    }
+
+    public boolean usesGuidanceType(RVP_EnumGuidanceType type) {
+        if (type == null) {
+            return false;
+        }
+        if (hasSourceType(type) || getGuidanceType() == type) {
+            return true;
+        }
+        return terminalGuidance != null && terminalGuidance.getGuidanceType() == type;
     }
 
     /** 全阶段中 priority 最高的指定类型 source；无则 {@code null}。 */

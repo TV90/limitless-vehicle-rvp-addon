@@ -21,6 +21,11 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
+import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
 import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
@@ -133,14 +138,22 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
 
+        boolean legacyGuidance = !rvpData.getGuidanceData().getStages().isEmpty();
+        if (!legacyGuidance) {
+            getGuidancePhaseState().update(
+                    rvpData.getGuidanceData().getTerminalGuidance(),
+                    RVP_GuidanceTransitionContext.from(this)
+            );
+        }
+
         // ===== ARM 反辐射弹：独立制导，不经过 stage 系统（对标本体 SeadMissileEntity） =====
-        if (isArmMissile()) {
+        if (isArmMissile() && legacyGuidance) {
             tickArmGuidance();
             return;
         }
 
         // ===== ARH 主动雷达弹：目标管理嵌入，转向走 stage 系统 =====
-        if (isArhMissile()) {
+        if (isArhMissile() && (legacyGuidance || isNewArhPhaseActive())) {
             tickArhTargetManagement();
         }
 
@@ -180,6 +193,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         return rvpData != null
                 && rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                 && rvpData.isAntiRadiationMissile();
+    }
+
+    private boolean isNewArhPhaseActive() {
+        if (rvpData == null || !rvpData.getGuidanceData().getStages().isEmpty()) {
+            return false;
+        }
+        return RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(),
+                getGuidancePhaseState().phase()
+        ).guidanceType() == RVP_EnumGuidanceType.ARH;
     }
 
     /**
@@ -484,7 +507,13 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private void initArhParams() {
         if (rvpData == null) return;
         var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) return;
+        if (stages == null || stages.isEmpty()) {
+            RVP_GuidanceActiveConfig config = resolveNewArhConfig();
+            activeRadarActivationRange = config != null
+                    ? config.activeRadarActivationRange()
+                    : 1024f;
+            return;
+        }
 
         for (var stage : stages) {
             var sources = stage.getSources();
@@ -526,7 +555,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         var stages = rvpData.getGuidanceData().getStages();
         if (stages == null || stages.isEmpty()) {
-            return 60f;
+            RVP_GuidanceActiveConfig config = resolveNewArhConfig();
+            return config != null ? config.maxLockHalfAngle() : 30f;
         }
         for (var stage : stages) {
             var sources = stage.getSources();
@@ -548,7 +578,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         var stages = rvpData.getGuidanceData().getStages();
         if (stages == null || stages.isEmpty()) {
-            return activeRadarActivationRange;
+            RVP_GuidanceActiveConfig config = resolveNewArhConfig();
+            return config != null
+                    ? RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange())
+                    : activeRadarActivationRange;
         }
         for (var stage : stages) {
             var sources = stage.getSources();
@@ -562,6 +595,22 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             }
         }
         return stages.get(0).getSeeker().resolvedRange();
+    }
+
+    @Nullable
+    private RVP_GuidanceActiveConfig resolveNewArhConfig() {
+        if (rvpData == null) {
+            return null;
+        }
+        var guidance = rvpData.getGuidanceData();
+        if (guidance.getGuidanceType() == RVP_EnumGuidanceType.ARH) {
+            return RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.MAIN);
+        }
+        if (guidance.getTerminalGuidance() != null
+                && guidance.getTerminalGuidance().getGuidanceType() == RVP_EnumGuidanceType.ARH) {
+            return RVP_GuidanceModelResolver.resolveActive(guidance, RVP_GuidancePhase.TERMINAL);
+        }
+        return null;
     }
 
     @Override

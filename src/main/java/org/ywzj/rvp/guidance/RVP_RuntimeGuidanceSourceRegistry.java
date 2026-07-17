@@ -3,6 +3,9 @@ package org.ywzj.rvp.guidance;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeGpsGuidanceSource;
 import org.ywzj.rvp.guidance.runtime.RVP_RuntimeNoneGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeSarhGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeArhGuidanceSource;
+import org.ywzj.rvp.guidance.runtime.RVP_RuntimeArmGuidanceSource;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -15,6 +18,9 @@ public final class RVP_RuntimeGuidanceSourceRegistry {
     static {
         register(new RVP_RuntimeNoneGuidanceSource());
         register(new RVP_RuntimeGpsGuidanceSource());
+        register(new RVP_RuntimeSarhGuidanceSource());
+        register(new RVP_RuntimeArhGuidanceSource());
+        register(new RVP_RuntimeArmGuidanceSource());
     }
 
     private RVP_RuntimeGuidanceSourceRegistry() {}

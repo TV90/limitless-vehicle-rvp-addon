@@ -41,6 +41,17 @@ public final class RVP_GuidanceSeekerUtil {
         return tracked != null ? tracked : projectile.getTargetEntity();
     }
 
+    @Nullable
+    public static Entity getStrictRadarIlluminatedTarget(RVP_BaseBullet projectile) {
+        WeaponUnit unit = projectile.getShooterWeaponUnit();
+        if (unit == null) {
+            return null;
+        }
+        WeaponUnit root = unit.getRootParentWeaponUnit();
+        Entity tracked = RVP_RadarRoleHelper.getEffectiveRfLockedEntity(root);
+        return tracked != null && tracked.isAlive() ? tracked : null;
+    }
+
     public static boolean isValidIrTrackTarget(
             RVP_BaseBullet projectile,
             RVP_GuidanceEffectiveConfig config,

@@ -58,6 +58,9 @@ class RVP_GuidanceModelResolverTest {
                   "predict_target_pos":false,
                   "ignore_chaff":true,
                   "jam_resistance":0.4,
+                  "radiation_pulse_memory_tick":80,
+                  "arm_memory_tick":160,
+                  "arm_locked_emitter_bonus":0.75,
                   "terminal_guidance":{
                     "guidance_type":"ARH",
                     "guidance_target_distance_range":"[[0,100]]",
@@ -99,6 +102,9 @@ class RVP_GuidanceModelResolverTest {
         assertTrue(terminal.enableInertialGuidance());
         assertTrue(terminal.ignoreChaff());
         assertEquals(0.4f, terminal.jamResistance());
+        assertEquals(80, terminal.radiationPulseMemoryTick());
+        assertEquals(160, terminal.armMemoryTick());
+        assertEquals(0.75f, terminal.armLockedEmitterBonus());
         assertEquals(0f, terminal.gpsSpreadRadius());
     }
 

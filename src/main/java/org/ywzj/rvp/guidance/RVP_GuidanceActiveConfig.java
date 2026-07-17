@@ -33,6 +33,7 @@ public record RVP_GuidanceActiveConfig(
         boolean homeOnJam,
         float decoyFilter,
         int radiationPulseMemoryTick,
+        int armMemoryTick,
         float armLockedEmitterBonus,
         float gpsSpreadRadius,
         int hitlMaxTurnDegPerTick,
@@ -58,6 +59,7 @@ public record RVP_GuidanceActiveConfig(
         dircmResistance = Math.max(dircmResistance, 0f);
         decoyFilter = Math.max(decoyFilter, 0f);
         radiationPulseMemoryTick = Math.max(radiationPulseMemoryTick, 0);
+        armMemoryTick = Math.max(armMemoryTick, 0);
         gpsSpreadRadius = Math.max(gpsSpreadRadius, 0f);
         hitlMaxTurnDegPerTick = Math.max(hitlMaxTurnDegPerTick, 0);
         hitlSignalSource = hitlSignalSource == null ? "RADIO" : hitlSignalSource;
