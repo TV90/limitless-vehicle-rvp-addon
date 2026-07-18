@@ -8,7 +8,7 @@ import java.util.Locale;
 public class RVP_GuidanceDataHITL extends RVP_GuidanceData {
 
     @SerializedName("hitl_enabled")
-    private boolean hitlEnabled = true;
+    private boolean hitlEnabled = false;
 
     @SerializedName("hitl_max_turn_deg_per_tick")
     private int hitlMaxTurnDegPerTick = 2;

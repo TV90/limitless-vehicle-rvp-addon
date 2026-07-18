@@ -101,7 +101,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        if (data == null || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
+        if (data == null
+                || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)
+                || !hitl.isHitlEnabled()) {
             return;
         }
         initNewSchemaHitl(data, hitl, aim);

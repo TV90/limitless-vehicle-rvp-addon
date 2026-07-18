@@ -66,9 +66,12 @@ public final class RVP_GuidanceDataAdapter
             throw new JsonParseException("IOG is not a public guidance_type in the new schema");
         }
         object.addProperty("guidance_type", type.name());
+        if (HITL_TYPES.contains(type) && !object.has("hitl_enabled")) {
+            object.addProperty("hitl_enabled", true);
+        }
         normalizeTerminalType(object);
         boolean hasHitlFields = containsAny(object, HITL_FIELDS);
-        validateSubtypeFields(object, type, hasHitlFields);
+        validateSubtypeFields(object, type);
 
         Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields);
         return context.deserialize(object, targetClass);
@@ -104,14 +107,10 @@ public final class RVP_GuidanceDataAdapter
 
     private static void validateSubtypeFields(
             JsonObject object,
-            RVP_EnumGuidanceType type,
-            boolean hasHitlFields
+            RVP_EnumGuidanceType type
     ) {
         if (type != RVP_EnumGuidanceType.GPS && containsAny(object, GPS_FIELDS)) {
             throw new JsonParseException("gps_spread_radius requires guidance_type GPS");
-        }
-        if (type == RVP_EnumGuidanceType.GPS && hasHitlFields) {
-            throw new JsonParseException("GPS and HITL subtype fields cannot share one guidance_data object");
         }
     }
 

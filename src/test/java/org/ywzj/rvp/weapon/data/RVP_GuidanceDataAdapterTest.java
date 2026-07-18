@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -151,11 +152,38 @@ class RVP_GuidanceDataAdapterTest {
                 {"guidance_type":"IR","gps_spread_radius":4}
                 """));
         assertThrows(JsonParseException.class, () -> parseGuidance("""
-                {"guidance_type":"GPS","hitl_max_control_tick":200}
-                """));
-        assertThrows(JsonParseException.class, () -> parseGuidance("""
                 {"gps_spread_radius":4}
                 """));
+    }
+
+    @Test
+    void gpsCanCarryOptionalHitlViewDataWithoutEnablingItByDefault() {
+        RVP_GuidanceData plain = parseGuidance("""
+                {"guidance_type":"GPS","gps_spread_radius":4}
+                """);
+        RVP_GuidanceDataGPS plainGps = assertInstanceOf(RVP_GuidanceDataGPS.class, plain);
+        assertFalse(plainGps.isHitlEnabled());
+
+        RVP_GuidanceData combined = parseGuidance("""
+                {
+                  "guidance_type":"GPS",
+                  "gps_spread_radius":4,
+                  "hitl_enabled":true,
+                  "hitl_max_control_tick":200
+                }
+                """);
+        RVP_GuidanceDataGPS gpsHitl = assertInstanceOf(RVP_GuidanceDataGPS.class, combined);
+        assertTrue(gpsHitl.isHitlEnabled());
+        assertEquals(200, gpsHitl.getHitlMaxControlTick());
+    }
+
+    @Test
+    void explicitHitlGuidanceTypesRemainEnabledByDefault() {
+        RVP_GuidanceData guidance = parseGuidance("""
+                {"guidance_type":"HITL_CLOS_TV"}
+                """);
+
+        assertTrue(assertInstanceOf(RVP_GuidanceDataHITL.class, guidance).isHitlEnabled());
     }
 
     @Test
