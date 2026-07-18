@@ -78,7 +78,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
                     && !data.isGpsMissile()
-                    && data.isEnableHms();
+                    && data.isEnableIrHmd();
 
             Entity externalLocked = null;
             int externalLockedId = Integer.MIN_VALUE;

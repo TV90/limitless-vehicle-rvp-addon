@@ -8,6 +8,10 @@ import com.google.gson.annotations.SerializedName;
  */
 public class RVP_FireData {
 
+    /** Whether a missile must have a valid launch lock before firing. */
+    @SerializedName("require_lock")
+    private boolean requireLock = true;
+
     /**
      * 开火模式，见 {@link RVP_EnumFireMode}。
      * JSON 须写枚举名（如 {@code FULL_AUTO}）；无法识别时默认为全自动。
@@ -108,6 +112,10 @@ public class RVP_FireData {
 
     public RVP_EnumFireMode getFireMode() {
         return fireMode == null ? RVP_EnumFireMode.FULL_AUTO : fireMode;
+    }
+
+    public boolean isRequireLock() {
+        return requireLock;
     }
 
     public int getChargeTime() {

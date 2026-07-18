@@ -40,6 +40,7 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
@@ -2509,6 +2510,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private boolean isTargetInQuickFireSeekerEnvelope(WeaponUnit weaponUnit, RVP_WeaponData data, Entity target) {
+        if (!RVP_IrLockHelper.isTargetWithinLaunchAltitudeRange(data, target)) {
+            return false;
+        }
         WeaponUnit rootWeaponUnit = weaponUnit.getRootParentWeaponUnit();
         Vec3 origin = rootWeaponUnit.aimContext().from;
         Vec3 targetCenter = target.getBoundingBox().getCenter();

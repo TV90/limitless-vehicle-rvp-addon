@@ -10,6 +10,7 @@ import org.ywzj.rvp.client.debug.RVP_DebugStateLogs;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_IrHudProfile;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
@@ -53,6 +54,9 @@ public class RVP_ClientHmdState {
     private float irGuideHeadMaxAngle = 0f;
     private float irLockMinHeight = 4f;
     private boolean groundIr = false;
+    private boolean irUsesNewLaunchData;
+    private RVP_WeaponData irLaunchWeapon;
+    private RVP_IrHudProfile irHudProfile = RVP_IrHudProfile.AIR;
 
     private int irCachedLockedEntityId = -1;
     private int irLastConfirmedLockTick = Integer.MIN_VALUE;
@@ -149,7 +153,11 @@ public class RVP_ClientHmdState {
     }
 
     public boolean isGroundIr() {
-        return groundIr;
+        return resolveIrHudProfile() == RVP_IrHudProfile.GROUND;
+    }
+
+    public boolean isMixedIr() {
+        return resolveIrHudProfile() == RVP_IrHudProfile.MIXED;
     }
 
     public RadarUnit getRadarHmdUnit(WeaponUnit weaponUnit) {
@@ -231,6 +239,9 @@ public class RVP_ClientHmdState {
         float seekerRange = 0f;
         float guideHeadMaxAngle = 0f;
         float lockMinHeight = 4f;
+        boolean usesNewLaunchData = false;
+        RVP_IrHudProfile nextHudProfile = RVP_IrHudProfile.AIR;
+        RVP_WeaponData nextLaunchWeapon = null;
 
         java.util.Optional<AbstractVehicleWeapon<?>> weaponOpt = weaponUnit.getCurrentWeapon();
         AbstractVehicleWeapon<?> currentWeapon = RVP_LaserWeapons.unwrap(weaponOpt.orElse(null));
@@ -240,13 +251,18 @@ public class RVP_ClientHmdState {
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
                     && !data.isGpsMissile()
-                    && data.isEnableHms()
+                    && data.isEnableIrHmd()
                     && weaponUnit.isSeekerOn()) {
                 shouldBeActive = true;
                 seekerFov = data.getMaxLockOnAngle();
                 seekerRange = data.getMaxLockOnRange();
                 guideHeadMaxAngle = data.getMaxGuideHeadAngle();
                 lockMinHeight = data.getLockMinHeight();
+                usesNewLaunchData = data.getGuidanceData().getStages().isEmpty();
+                nextLaunchWeapon = data;
+                nextHudProfile = usesNewLaunchData
+                        ? RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data))
+                        : lockMinHeight < 0f ? RVP_IrHudProfile.GROUND : RVP_IrHudProfile.AIR;
             }
         }
 
@@ -258,19 +274,28 @@ public class RVP_ClientHmdState {
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
             irLockMinHeight = lockMinHeight;
-            groundIr = lockMinHeight < 0;
+            groundIr = nextHudProfile == RVP_IrHudProfile.GROUND;
+            irUsesNewLaunchData = usesNewLaunchData;
+            irLaunchWeapon = nextLaunchWeapon;
+            irHudProfile = nextHudProfile;
         } else if (!shouldBeActive && hmdType == HmdType.IR) {
             hmdType = HmdType.NONE;
             lockedEntityId = -1;
             warningTicks = 0;
             groundIr = false;
+            irUsesNewLaunchData = false;
+            irLaunchWeapon = null;
+            irHudProfile = RVP_IrHudProfile.AIR;
             clearIrLockState();
         } else if (hmdType == HmdType.IR) {
             irSeekerFov = seekerFov;
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
             irLockMinHeight = lockMinHeight;
-            groundIr = lockMinHeight < 0;
+            groundIr = nextHudProfile == RVP_IrHudProfile.GROUND;
+            irUsesNewLaunchData = usesNewLaunchData;
+            irLaunchWeapon = nextLaunchWeapon;
+            irHudProfile = nextHudProfile;
         }
     }
 
@@ -418,6 +443,12 @@ public class RVP_ClientHmdState {
 
         Entity tracked = resolveTrackedIrTarget(mc, weaponUnit);
         if (tracked != null) {
+            if (irUsesNewLaunchData && irLaunchWeapon != null
+                    && !RVP_IrLockHelper.isTargetWithinHoldEnvelope(weaponUnit, tracked, irLaunchWeapon)) {
+                RVP_DebugStateLogs.logIrHms("drop new-launch-envelope target=" + tracked.getId());
+                clearIrLockState(weaponUnit);
+                return;
+            }
             Vec3 toTarget = tracked.getBoundingBox().getCenter().subtract(seekerPos);
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
@@ -428,7 +459,7 @@ public class RVP_ClientHmdState {
             Vec3 dir = toTarget.normalize();
             Vec3 refDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit);
             double offBoresightAngle = angleBetweenDeg(refDir, dir);
-            if (!RVP_IrLockHelper.isTargetWithinLimits(
+            if (!irUsesNewLaunchData && !RVP_IrLockHelper.isTargetWithinLimits(
                     weaponUnit,
                     tracked,
                     refDir,
@@ -482,6 +513,11 @@ public class RVP_ClientHmdState {
         );
 
         for (Entity entity : entities) {
+            if (irUsesNewLaunchData && irLaunchWeapon != null
+                    && !RVP_IrLockHelper.isTargetWithinAcquireLimits(
+                    weaponUnit, entity, irLaunchWeapon, scanDir)) {
+                continue;
+            }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(seekerPos);
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
@@ -493,7 +529,7 @@ public class RVP_ClientHmdState {
             if (angle > scanHalfAngle) {
                 continue;
             }
-            if (!RVP_GuidanceMath.isTargetPassAltFilter(entity, irLockMinHeight)) {
+            if (!irUsesNewLaunchData && !RVP_GuidanceMath.isTargetPassAltFilter(entity, irLockMinHeight)) {
                 continue;
             }
             double score = angle * 0.7 + dist * 0.0003;
@@ -557,6 +593,17 @@ public class RVP_ClientHmdState {
         }
         lockedEntityId = -1;
         clearIrLockState();
+    }
+
+    private RVP_IrHudProfile resolveIrHudProfile() {
+        if (irHudProfile != RVP_IrHudProfile.MIXED || irLaunchWeapon == null) {
+            return irHudProfile;
+        }
+        Entity locked = getLockedEntity();
+        return locked != null && locked.isAlive()
+                ? RVP_IrHudProfile.resolveForTarget(
+                RVP_IrLockHelper.getLaunchAltitudeRange(irLaunchWeapon), locked)
+                : RVP_IrHudProfile.MIXED;
     }
 
     private static double angleBetweenDeg(Vec3 a, Vec3 b) {

@@ -226,10 +226,21 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isRequireLock() {
+        if (getGuidanceData().getStages().isEmpty()) {
+            return getFireData().isRequireLock();
+        }
         return requireLock;
     }
 
+    /** Legacy alias retained while stage-based weapon data is still supported. */
     public boolean isEnableHms() {
+        return isEnableIrHmd();
+    }
+
+    public boolean isEnableIrHmd() {
+        if (getGuidanceData().getStages().isEmpty()) {
+            return getGuidanceData().isEnableIrHmd();
+        }
         return enableHms;
     }
 
@@ -421,10 +432,17 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float getMaxLockOnRange() {
+        if (getGuidanceData().getStages().isEmpty()) {
+            return (float) org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry.resolveScanRadius(
+                    org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).targetDistanceRange());
+        }
         return resolveLaunchSeeker().getRange();
     }
 
     public float getMaxLockOnAngle() {
+        if (getGuidanceData().getStages().isEmpty()) {
+            return org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).maxLockAngle();
+        }
         return resolveLaunchSeeker().getFov();
     }
 
@@ -437,6 +455,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public float getMaxGuideHeadAngle() {
+        if (getGuidanceData().getStages().isEmpty()) {
+            return org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).maxOffAxisLockAngle();
+        }
         return resolveLaunchSeeker().getGuideHeadMaxAngle();
     }
 
