@@ -199,18 +199,6 @@ class RVP_GuidanceDataAdapterTest {
                 """));
     }
 
-    @Test
-    void keepsLegacyStageDataReadableUntilControllerMigration() {
-        RVP_GuidanceData guidance = parseGuidance("""
-                {"stages":[]}
-                """);
-
-        assertEquals(RVP_GuidanceData.class, guidance.getClass());
-        assertEquals(RVP_EnumGuidanceType.NONE, guidance.getGuidanceType());
-        assertTrue(guidance.getStages().isEmpty());
-        assertNull(guidance.getTerminalGuidance());
-    }
-
     private RVP_GuidanceData parseGuidance(String guidanceJson) {
         String weaponJson = "{\"guidance_data\":" + guidanceJson + "}";
         return gson.fromJson(weaponJson, GuidanceHolder.class).guidanceData;

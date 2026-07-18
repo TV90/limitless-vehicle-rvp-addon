@@ -42,36 +42,18 @@ public final class RVP_IrLockHelper {
     }
 
     public static boolean isTargetWithinAcquireLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data, float extraAngleMargin) {
-        if (usesNewLaunchData(data)) {
-            RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
-            return isTargetWithinRangedLimits(
-                    weaponUnit, target, null,
-                    launch.maxLockHalfAngle() + Math.max(0f, extraAngleMargin),
-                    launch.targetDistanceRange(), launch.altitudeRange());
-        }
-        return isTargetWithinLimits(
-                weaponUnit,
-                target,
-                halfAngleFromFull(data.getMaxLockOnAngle()) + Math.max(0f, extraAngleMargin),
-                Math.max(0f, data.getMaxLockOnRange()),
-                data.getLockMinHeight()
-        );
+        RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
+        return isTargetWithinRangedLimits(
+                weaponUnit, target, null,
+                launch.maxLockHalfAngle() + Math.max(0f, extraAngleMargin),
+                launch.targetDistanceRange(), launch.altitudeRange());
     }
 
     public static boolean isTargetWithinHoldLimits(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
-        if (usesNewLaunchData(data)) {
-            RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
-            return isTargetWithinRangedLimits(
-                    weaponUnit, target, null,
-                    launch.maxOffAxisLockAngle(), launch.targetDistanceRange(), launch.altitudeRange());
-        }
-        return isTargetWithinLimits(
-                weaponUnit,
-                target,
-                Math.max(1f, data.getMaxGuideHeadAngle()),
-                Math.max(0f, data.getMaxLockOnRange()),
-                data.getLockMinHeight()
-        );
+        RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
+        return isTargetWithinRangedLimits(
+                weaponUnit, target, null,
+                launch.maxOffAxisLockAngle(), launch.targetDistanceRange(), launch.altitudeRange());
     }
 
     /**
@@ -80,19 +62,10 @@ public final class RVP_IrLockHelper {
      * that grace period extend range, altitude, or line-of-sight validity.
      */
     public static boolean isTargetWithinHoldEnvelope(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
-        if (usesNewLaunchData(data)) {
-            RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
-            return isTargetWithinRangedLimits(
-                    weaponUnit, target, null, 180f,
-                    launch.targetDistanceRange(), launch.altitudeRange());
-        }
-        return isTargetWithinLimits(
-                weaponUnit,
-                target,
-                180f,
-                Math.max(0f, data.getMaxLockOnRange()),
-                data.getLockMinHeight()
-        );
+        RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
+        return isTargetWithinRangedLimits(
+                weaponUnit, target, null, 180f,
+                launch.targetDistanceRange(), launch.altitudeRange());
     }
 
     public static boolean isTargetWithinLimits(
@@ -149,9 +122,6 @@ public final class RVP_IrLockHelper {
             RVP_WeaponData data,
             @Nullable Vec3 referenceDir
     ) {
-        if (!usesNewLaunchData(data)) {
-            return isTargetWithinAcquireLimits(weaponUnit, target, data);
-        }
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         return isTargetWithinRangedLimits(
                 weaponUnit, target, referenceDir, launch.maxLockHalfAngle(),
@@ -162,20 +132,11 @@ public final class RVP_IrLockHelper {
         if (data == null || target == null || !target.isAlive()) {
             return false;
         }
-        if (!usesNewLaunchData(data)) {
-            return RVP_GuidanceMath.isTargetPassAltFilter(target, data.getLockMinHeight());
-        }
         return containsAltitude(RVP_GuidanceModelResolver.resolveLaunch(data).altitudeRange(), target);
     }
 
     public static RVP_Range<Float> getLaunchAltitudeRange(RVP_WeaponData data) {
-        return usesNewLaunchData(data)
-                ? RVP_GuidanceModelResolver.resolveLaunch(data).altitudeRange()
-                : null;
-    }
-
-    private static boolean usesNewLaunchData(RVP_WeaponData data) {
-        return data != null && data.getGuidanceData().getStages().isEmpty();
+        return data == null ? null : RVP_GuidanceModelResolver.resolveLaunch(data).altitudeRange();
     }
 
     private static boolean isTargetWithinRangedLimits(

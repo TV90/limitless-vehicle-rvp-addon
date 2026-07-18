@@ -9,7 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.guidance.source.RVP_MclosGuidanceSource;
+import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -91,14 +91,14 @@ public final class RVP_SaclosDesignation {
     @Nullable
     public static WeaponUnit resolveOperatorAimUnit(RVP_BaseBullet projectile) {
         WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();
-        WeaponUnit aimUnit = RVP_MclosGuidanceSource.resolveOperatorAimUnit(shooterUnit);
+        WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);
         if (aimUnit != null) {
             return aimUnit;
         }
         AbstractVehicle vehicle = projectile.getShooterVehicle();
         if (vehicle != null && projectile.getOwner() instanceof LivingEntity operator) {
             if (vehicle.getOwnOperatorUnit(operator) instanceof WeaponUnit operatorUnit) {
-                return RVP_MclosGuidanceSource.resolveOperatorAimUnit(operatorUnit);
+                return RVP_CommandGuidanceAim.resolveOperatorAimUnit(operatorUnit);
             }
         }
         return shooterUnit;

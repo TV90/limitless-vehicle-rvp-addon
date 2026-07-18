@@ -10,6 +10,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.ext.MissileEntityArmExt;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.mixin.accessor.MissileEntityAccessor;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -239,45 +243,28 @@ public abstract class MissileEntityMixin implements MissileEntityArmExt {
             return;
         }
 
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) {
+        RVP_GuidanceActiveConfig guidance = RVP_GuidanceModelResolver.resolveActive(
+                rvpData, RVP_GuidancePhase.MAIN);
+        if (guidance.guidanceType() != RVP_EnumGuidanceType.ARM) {
             return;
         }
+        ywzj_rvp$armSeekerFov = guidance.maxLockHalfAngle();
+        ywzj_rvp$armSeekRange = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
+                guidance.targetDistanceRange());
+        ywzj_rvp$armScanIntervalTick = guidance.scanIntervalTick() == null
+                ? 2 : guidance.scanIntervalTick();
+        ywzj_rvp$armMemoryTick = guidance.armMemoryTick();
+        ywzj_rvp$armPulseMemoryTick = guidance.radiationPulseMemoryTick();
+        ywzj_rvp$armLockedBonus = guidance.armLockedEmitterBonus();
 
-        for (var stage : stages) {
-            var sources = stage.getSources();
-            if (sources == null) {
-                continue;
-            }
-            for (var source : sources) {
-                if (source.getType() != RVP_EnumGuidanceType.ARM) {
-                    continue;
-                }
-                ywzj_rvp$armSeekerFov = stage.getSeeker().getFov();
-                ywzj_rvp$armSeekRange = stage.getSeeker().getRange();
-
-                var params = source.getParams();
-                if (params != null) {
-                    ywzj_rvp$armScanIntervalTick = params.scanIntervalTick(2);
-                    ywzj_rvp$armMemoryTick = params.memoryTick(120);
-                    ywzj_rvp$armPulseMemoryTick = params.radiationPulseMemoryTick(25);
-                    ywzj_rvp$armLockedBonus = params.lockedBonus(0.5f);
-                }
-
-                // Copy preselected target from the ROOT weapon unit (preselect is stored on root)
-                WeaponUnit rootWu = weaponUnit.getRootParentWeaponUnit();
-                if (rootWu instanceof WeaponUnitArmExt armExt) {
-                    ywzj_rvp$armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
-                    ywzj_rvp$armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
-                    // Also set the running target vehicle ID so the missile remembers
-                    if (ywzj_rvp$armPreselectVehicleId >= 0) {
-                        ywzj_rvp$armTargetVehicleId = ywzj_rvp$armPreselectVehicleId;
-                    }
-                }
-
-                ywzj_rvp$armParamsInitialized = true;
-                return;
+        WeaponUnit rootWu = weaponUnit.getRootParentWeaponUnit();
+        if (rootWu instanceof WeaponUnitArmExt armExt) {
+            ywzj_rvp$armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
+            ywzj_rvp$armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
+            if (ywzj_rvp$armPreselectVehicleId >= 0) {
+                ywzj_rvp$armTargetVehicleId = ywzj_rvp$armPreselectVehicleId;
             }
         }
+        ywzj_rvp$armParamsInitialized = true;
     }
 }

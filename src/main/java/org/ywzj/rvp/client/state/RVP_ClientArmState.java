@@ -6,6 +6,10 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.network.C2SSetArmPreselect;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
@@ -96,25 +100,12 @@ public class RVP_ClientArmState {
         int pulseMemoryTick = 25;
         float lockedBonus = 0.5f;
 
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages != null) {
-            for (var stage : stages) {
-                var sources = stage.getSources();
-                if (sources == null) continue;
-                for (var source : sources) {
-                    if (source.getType() == org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARM) {
-                        seekerFov = stage.getSeeker().getFov();
-                        seekRange = stage.getSeeker().getRange();
-                        var params = source.getParams();
-                        if (params != null) {
-                            pulseMemoryTick = params.radiationPulseMemoryTick(25);
-                            lockedBonus = params.lockedBonus(0.5f);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+        RVP_GuidanceActiveConfig guidance = RVP_GuidanceModelResolver.resolveActive(
+                rvpData, RVP_GuidancePhase.MAIN);
+        seekerFov = guidance.maxLockHalfAngle();
+        seekRange = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(guidance.targetDistanceRange());
+        pulseMemoryTick = guidance.radiationPulseMemoryTick();
+        lockedBonus = guidance.armLockedEmitterBonus();
 
         // Use weapon mount pivot position + rotation (same as old approach)
         Vec3 seekerPos = root.worldPivotPosition();

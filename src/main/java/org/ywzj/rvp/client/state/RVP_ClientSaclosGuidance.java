@@ -9,8 +9,6 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
-import org.ywzj.rvp.weapon.data.RVP_GuidanceActivationData;
-import org.ywzj.rvp.weapon.data.RVP_GuidanceStageData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 
@@ -60,35 +58,13 @@ public final class RVP_ClientSaclosGuidance {
         if (data == null) {
             return false;
         }
-        if (data.getGuidanceData().getStages().isEmpty()) {
-            RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
-                    data, bullet.getGuidancePhaseState().phase());
-            if (config.tickRange() != null && !config.tickRange().contains(bullet.tickCount)) {
-                return false;
-            }
-            RVP_EnumGuidanceType active = config.guidanceType();
-            return active == RVP_EnumGuidanceType.LH || active == RVP_EnumGuidanceType.SALH;
-        }
-        if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
+        RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
+                data, bullet.getGuidancePhaseState().phase());
+        if (config.tickRange() != null && !config.tickRange().contains(bullet.tickCount)) {
             return false;
         }
-        int tick = bullet.tickCount;
-        for (RVP_GuidanceStageData stage : data.getGuidanceData().getStages()) {
-            boolean saclos = stage.getSources().stream()
-                    .anyMatch(source -> source.getType() == RVP_EnumGuidanceType.SACLOS);
-            if (!saclos) {
-                continue;
-            }
-            RVP_GuidanceActivationData activation = stage.getActivation();
-            if (tick < activation.getStartTick()) {
-                continue;
-            }
-            if (activation.getEndTick() >= 0 && tick > activation.getEndTick()) {
-                continue;
-            }
-            return true;
-        }
-        return false;
+        RVP_EnumGuidanceType active = config.guidanceType();
+        return active == RVP_EnumGuidanceType.LH || active == RVP_EnumGuidanceType.SALH;
     }
 
     private static boolean isOperatorProjectile(RVP_BaseBullet bullet, LocalPlayer player) {

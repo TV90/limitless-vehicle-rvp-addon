@@ -257,12 +257,9 @@ public class RVP_ClientHmdState {
                 seekerFov = data.getMaxLockOnAngle();
                 seekerRange = data.getMaxLockOnRange();
                 guideHeadMaxAngle = data.getMaxGuideHeadAngle();
-                lockMinHeight = data.getLockMinHeight();
-                usesNewLaunchData = data.getGuidanceData().getStages().isEmpty();
+                usesNewLaunchData = true;
                 nextLaunchWeapon = data;
-                nextHudProfile = usesNewLaunchData
-                        ? RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data))
-                        : lockMinHeight < 0f ? RVP_IrHudProfile.GROUND : RVP_IrHudProfile.AIR;
+                nextHudProfile = RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data));
             }
         }
 
@@ -527,9 +524,6 @@ public class RVP_ClientHmdState {
             double angle = Math.toDegrees(Math.acos(
                     Math.max(-1.0, Math.min(1.0, scanDir.dot(dir)))));
             if (angle > scanHalfAngle) {
-                continue;
-            }
-            if (!irUsesNewLaunchData && !RVP_GuidanceMath.isTargetPassAltFilter(entity, irLockMinHeight)) {
                 continue;
             }
             double score = angle * 0.7 + dist * 0.0003;

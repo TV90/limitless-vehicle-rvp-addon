@@ -3,10 +3,10 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.annotations.JsonAdapter;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.guidance.RVP_GuidanceConfigResolver;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
@@ -77,12 +77,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
      */
-    @SerializedName("require_lock")
-    private boolean requireLock = true;
-
-    @SerializedName(value = "enableHMS", alternate = {"enable_hms"})
-    private boolean enableHms = true;
-
     @SerializedName("rvp_fire_control_sensor_mode")
     private String fireControlSensorMode = "";
 
@@ -150,14 +144,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     /** 发射前 UI 用；飞行中优先当前激活阶段。 */
-    public RVP_GuidanceSteeringData getGuidanceSteeringData() {
-        return getGuidanceSteeringData(null);
-    }
-
-    public RVP_GuidanceSteeringData getGuidanceSteeringData(@Nullable RVP_BaseBullet projectile) {
-        return RVP_GuidanceConfigResolver.resolveSteering(this, projectile);
-    }
-
     public RVP_LaserData getLaserData() {
         return laserData == null ? new RVP_LaserData() : laserData;
     }
@@ -203,10 +189,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isRequireLock() {
-        if (getGuidanceData().getStages().isEmpty()) {
-            return getFireData().isRequireLock();
-        }
-        return requireLock;
+        return getFireData().isRequireLock();
     }
 
     /** Legacy alias retained while stage-based weapon data is still supported. */
@@ -215,10 +198,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isEnableIrHmd() {
-        if (getGuidanceData().getStages().isEmpty()) {
-            return getGuidanceData().isEnableIrHmd();
-        }
-        return enableHms;
+        return getGuidanceData().isEnableIrHmd();
     }
 
     public String getFireControlSensorMode() {
@@ -324,14 +304,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return getCollisionData().getDamageDecayRules();
     }
 
-    public int getRigidityTime() {
-        return getGuidanceSteeringData().getRigidityTime();
-    }
-
-    public double getTurningFactor() {
-        return getGuidanceSteeringData().getTurningFactor();
-    }
-
     public float getGravity() {
         return getProjectileData().getGravity();
     }
@@ -367,46 +339,22 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     /** 发射前锁定 UI 用；飞行中优先当前激活阶段的导引头。 */
-    public RVP_GuidanceSeekerData resolveLaunchSeeker() {
-        return resolveLaunchSeeker(null);
-    }
-
-    public RVP_GuidanceSeekerData resolveLaunchSeeker(@Nullable RVP_BaseBullet projectile) {
-        return RVP_GuidanceConfigResolver.resolveSeeker(this, projectile);
-    }
-
     public int getScanInterval() {
-        return resolveLaunchSeeker().getScanIntervalTick();
+        Integer interval = getGuidanceData().getScanIntervalTick();
+        return interval == null ? 2 : interval;
     }
 
     public float getMaxLockOnRange() {
-        if (getGuidanceData().getStages().isEmpty()) {
-            return (float) org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry.resolveScanRadius(
-                    org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).targetDistanceRange());
-        }
-        return resolveLaunchSeeker().getRange();
+        return (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
+                RVP_GuidanceModelResolver.resolveLaunch(this).targetDistanceRange());
     }
 
     public float getMaxLockOnAngle() {
-        if (getGuidanceData().getStages().isEmpty()) {
-            return org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).maxLockAngle();
-        }
-        return resolveLaunchSeeker().getFov();
-    }
-
-    public float getMaxDegreeOfMissile() {
-        return getGuidanceSteeringData().getMaxDegreeOfMissile();
-    }
-
-    public float getLockMinHeight() {
-        return resolveLaunchSeeker().getLockMinHeight();
+        return RVP_GuidanceModelResolver.resolveLaunch(this).maxLockAngle();
     }
 
     public float getMaxGuideHeadAngle() {
-        if (getGuidanceData().getStages().isEmpty()) {
-            return org.ywzj.rvp.guidance.RVP_GuidanceModelResolver.resolveLaunch(this).maxOffAxisLockAngle();
-        }
-        return resolveLaunchSeeker().getGuideHeadMaxAngle();
+        return RVP_GuidanceModelResolver.resolveLaunch(this).maxOffAxisLockAngle();
     }
 
     /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */
@@ -415,14 +363,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
             return getLaserData().getRange();
         }
         return 8192f;
-    }
-
-    public boolean isPredictTargetPos() {
-        return getGuidanceSteeringData().isPredictTargetPos();
-    }
-
-    public int getTickEndHoming() {
-        return getGuidanceSteeringData().getTickEndHoming();
     }
 
     public boolean isGpsMissile() {
@@ -538,25 +478,18 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     /** Laser-spot weapons that need the vehicle laser-designation client state. */
     public boolean isVehicleLaserGuided() {
         RVP_GuidanceData guidance = getGuidanceData();
-        if (!guidance.getStages().isEmpty()) {
-            return usesGuidanceType(RVP_EnumGuidanceType.SACLOS) && !isSaclosTvGuided();
-        }
         return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
     }
 
     public boolean isHitlClosTvGuided() {
         RVP_GuidanceData guidance = getGuidanceData();
-        return guidance.getStages().isEmpty()
-                && guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
     }
 
     /** New SACLOS is an operator line-of-sight command, not a laser seeker. */
     public boolean isCommandGuided() {
         RVP_GuidanceData guidance = getGuidanceData();
-        if (!guidance.getStages().isEmpty()) {
-            return usesGuidanceType(RVP_EnumGuidanceType.MCLOS);
-        }
         return guidance.getGuidanceType() == RVP_EnumGuidanceType.SACLOS
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
     }

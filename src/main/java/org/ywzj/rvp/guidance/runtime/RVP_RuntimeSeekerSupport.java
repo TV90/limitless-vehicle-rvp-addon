@@ -9,7 +9,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
-import org.ywzj.rvp.util.RVP_RadarContactHelper;
+import org.ywzj.rvp.guidance.RVP_GuidanceTargetUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
@@ -84,7 +84,7 @@ final class RVP_RuntimeSeekerSupport {
                 continue;
             }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(projectile.position());
-            double angle = org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil.angleBetween(
+            double angle = RVP_GuidanceTargetUtil.angleBetween(
                     projectile.getLookAngle(), toTarget);
             double score = angle * 4.0 + projectile.distanceTo(entity) / Math.max(range, 1.0);
             if (score < bestScore) {
@@ -110,7 +110,7 @@ final class RVP_RuntimeSeekerSupport {
                 continue;
             }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(projectile.position());
-            double angle = org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil.angleBetween(
+            double angle = RVP_GuidanceTargetUtil.angleBetween(
                     projectile.getLookAngle(), toTarget);
             double score = angle / Math.max(config.maxLockHalfAngle(), 1.0)
                     + projectile.distanceTo(entity) / Math.max(range, 1.0);
@@ -123,7 +123,6 @@ final class RVP_RuntimeSeekerSupport {
     }
 
     private static boolean isRadarScannable(Entity entity) {
-        return entity instanceof AbstractVehicle && entity.isAlive()
-                || RVP_RadarContactHelper.isHbmMissile(entity);
+        return RVP_GuidanceTargetUtil.isRadarScannableTarget(entity);
     }
 }

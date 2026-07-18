@@ -32,10 +32,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.guidance.RVP_GuidanceConfigMerger;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
-import org.ywzj.rvp.guidance.RVP_GuidancePhaseSelector;
-import org.ywzj.rvp.guidance.RVP_GuidanceRigidityUtil;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
@@ -54,7 +51,6 @@ import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
-import org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
@@ -387,40 +383,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return airburstDist;
     }
 
-    /**
-     * True when every currently active stage has passed its per-stage {@code rigidity_time} window.
-     */
-    public boolean rvp$isPastRigidityTime() {
-        RVP_WeaponData data = resolveWeaponConfig();
-        if (data == null) {
-            return true;
-        }
-        return !RVP_GuidanceRigidityUtil.isAnyActiveStageRigid(this, data);
-    }
-
-    /** True while an active guidance stage includes SACLOS. */
+    /** True while the active guidance phase uses live laser or HITL designation. */
     public boolean rvp$isInSaclosGuidanceStage() {
         RVP_WeaponData data = resolveWeaponConfig();
         if (data == null) {
             return false;
         }
-        if (data.getGuidanceData().getStages().isEmpty()) {
-            RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
-                    data, guidancePhaseState.phase());
-            if (config.tickRange() != null && !config.tickRange().contains(tickCount)) {
-                return false;
-            }
-            RVP_EnumGuidanceType active = config.guidanceType();
-            return active == RVP_EnumGuidanceType.LH
-                    || active == RVP_EnumGuidanceType.SALH
-                    || active == RVP_EnumGuidanceType.HITL_TV;
-        }
-        if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
+        RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
+                data, guidancePhaseState.phase());
+        if (config.tickRange() != null && !config.tickRange().contains(tickCount)) {
             return false;
         }
-        return RVP_GuidancePhaseSelector.selectActive(this, data).stream()
-                .anyMatch(selection -> selection.stage().getSources().stream()
-                        .anyMatch(source -> source.getType() == RVP_EnumGuidanceType.SACLOS));
+        RVP_EnumGuidanceType active = config.guidanceType();
+        return active == RVP_EnumGuidanceType.LH
+                || active == RVP_EnumGuidanceType.SALH
+                || active == RVP_EnumGuidanceType.HITL_TV;
     }
 
     /** Live spawn config, or reload from the weapon index when {@link #rvpData} was not kept. */
@@ -483,9 +460,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
             return false;
         }
-        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
-            return rvpData.getProjectileData().usesGpsCruiseProfile();
-        }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
         return active.guidanceType() == RVP_EnumGuidanceType.GPS
                 && active.cruiseStartTick() != null;
@@ -494,10 +468,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public boolean isGpsCruisePhaseActive() {
         if (!usesGpsCruiseProfile() || targetPos == null) {
             return false;
-        }
-        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
-            return tickCount >= rvpData.getProjectileData().getGpsCruiseStartTick()
-                    && horizontalDistanceTo(targetPos) > rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
         return tickCount >= active.cruiseStartTick()
@@ -508,20 +478,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!usesGpsCruiseProfile() || targetPos == null) {
             return false;
         }
-        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
-            return tickCount >= rvpData.getProjectileData().getGpsCruiseStartTick()
-                    && horizontalDistanceTo(targetPos) <= rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
-        }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
         return tickCount >= active.cruiseStartTick()
                 && horizontalDistanceTo(targetPos) <= active.cruiseEndHorizontalDist();
     }
 
     public float getGpsCruiseGravityScale() {
-        if (rvpData == null || !rvpData.getGuidanceData().getStages().isEmpty()) {
-            return rvpData != null ? rvpData.getProjectileData().getGpsCruiseGravityScale() : 1f;
-        }
-        return resolveActiveGuidanceConfig().cruiseGravityScale();
+        return rvpData == null ? 1f : resolveActiveGuidanceConfig().cruiseGravityScale();
     }
 
     private RVP_GuidanceActiveConfig resolveActiveGuidanceConfig() {
@@ -703,11 +666,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData == null) {
             return 0f;
         }
-        if (rvpData.getGuidanceData().getStages().isEmpty()
-                && rvpData.getGuidanceData() instanceof RVP_GuidanceDataGPS gps) {
-            return gps.getGpsSpreadRadius();
-        }
-        return rvpData.getProjectileData().getGpsCep();
+        return resolveActiveGuidanceConfig().gpsSpreadRadius();
     }
 
     private static Vec3 sampleGpsCepOffset(RandomSource random, float cep) {

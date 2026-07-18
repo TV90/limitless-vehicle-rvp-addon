@@ -9,6 +9,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_IrHudProfile;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -33,7 +35,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (!(rawData instanceof RVP_WeaponData data)) return;
         if (!data.isHomingProjectile()) return;
         if (!data.usesGuidanceType(RVP_EnumGuidanceType.IR)) return;
-        if (data.getLockMinHeight() <= 0) return;
+        if (RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data)) == RVP_IrHudProfile.GROUND) return;
 
         float fov = data.getMaxGuideHeadAngle();
         if (fov < 5f) return;
