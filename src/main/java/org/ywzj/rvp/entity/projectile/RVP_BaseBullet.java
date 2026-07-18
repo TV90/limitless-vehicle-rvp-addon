@@ -236,6 +236,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (weaponId != null) {
             data.putString("weaponId", weaponId.toString());
         }
+        data.putString("weaponKind", getWeaponKind().name());
         if (getOwner() != null) {
             data.putInt("ownerId", getOwner().getId());
         }
@@ -258,6 +259,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             ResourceLocation weaponId = ResourceLocation.tryParse(data.getString("weaponId"));
             if (weaponId != null) {
                 remoteWeaponId = weaponId;
+            }
+        }
+        if (data.contains("weaponKind")) {
+            try {
+                this.weaponKind = RVP_EnumWeaponKind.valueOf(data.getString("weaponKind"));
+            } catch (IllegalArgumentException ignored) {
+                this.weaponKind = RVP_EnumWeaponKind.ROCKET;
             }
         }
         remoteOwnerId = data.contains("ownerId") ? data.getInt("ownerId") : -1;
@@ -452,6 +460,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public RVP_EnumWeaponKind getWeaponKind() {
+        if (rvpData != null) {
+            return rvpData.getWeaponKind();
+        }
+        if (remoteWeaponId != null || super.getWeaponId() != null) {
+            RVP_WeaponData config = resolveWeaponConfig();
+            if (config != null) {
+                this.weaponKind = config.getWeaponKind();
+            }
+        }
         return weaponKind;
     }
 
@@ -2271,6 +2288,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     @Override
     public void writeSpawnData(FriendlyByteBuf buffer) {
         super.writeSpawnData(buffer);
+        buffer.writeEnum(getWeaponKind());
         buffer.writeFloat(getXRot());
         buffer.writeFloat(getYRot());
         buffer.writeDouble(getDeltaMovement().x);
@@ -2304,6 +2322,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     @Override
     public void readSpawnData(FriendlyByteBuf buffer) {
         super.readSpawnData(buffer);
+        this.weaponKind = buffer.readEnum(RVP_EnumWeaponKind.class);
         setXRot(buffer.readFloat());
         setYRot(buffer.readFloat());
         setDeltaMovement(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());

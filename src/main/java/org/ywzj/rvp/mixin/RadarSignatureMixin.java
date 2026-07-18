@@ -4,9 +4,16 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 修改 Radar 类的 {@code getBoundingBox().getSize() < 1} 过滤，
@@ -21,6 +28,20 @@ import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
  */
 @Mixin(value = Radar.class, remap = false)
 public class RadarSignatureMixin {
+
+    @Inject(method = "scanTargets", at = @At("RETURN"), cancellable = true, require = 0)
+    private static void ywzj_rvp$filterScanTargets(Entity radarOwner, net.minecraft.world.phys.Vec3 worldRadarPosition,
+                                                   double maxScanDistance, java.util.function.Function<net.minecraft.world.phys.Vec3, Boolean> check,
+                                                   CallbackInfoReturnable<List<Entity>> cir) {
+        cir.setReturnValue(ywzj_rvp$filterBulletTargets(cir.getReturnValue()));
+    }
+
+    @Inject(method = "detectTargets", at = @At("RETURN"), cancellable = true, require = 0)
+    private static void ywzj_rvp$filterDetectTargets(Entity radarOwner, net.minecraft.world.phys.Vec3 worldRadarPosition,
+                                                     double maxScanDistance, java.util.function.Function<net.minecraft.world.phys.Vec3, Boolean> check,
+                                                     CallbackInfoReturnable<List<Entity>> cir) {
+        cir.setReturnValue(ywzj_rvp$filterBulletTargets(cir.getReturnValue()));
+    }
 
     /**
      * scanTargets() 中的 entity.getBoundingBox() 替换。
@@ -92,5 +113,16 @@ public class RadarSignatureMixin {
                     pos.x + half, pos.y + half, pos.z + half);
         }
         return entity.getBoundingBox();
+    }
+
+    private static List<Entity> ywzj_rvp$filterBulletTargets(List<Entity> source) {
+        if (source == null || source.isEmpty()) {
+            return source;
+        }
+        List<Entity> filtered = new ArrayList<>(source);
+        filtered.removeIf(entity -> entity instanceof BulletEntity
+                || entity instanceof RVP_BulletEntity
+                || entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
+        return filtered;
     }
 }

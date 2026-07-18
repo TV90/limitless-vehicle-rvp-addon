@@ -340,7 +340,8 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isActiveRadar() {
-        return usesGuidanceType(RVP_EnumGuidanceType.ARH);
+        return usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || usesGuidanceType(RVP_EnumGuidanceType.AIR);
     }
 
     public boolean isSemiActiveRadar() {

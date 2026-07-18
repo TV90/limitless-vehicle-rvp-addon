@@ -15,7 +15,7 @@ import java.util.Optional;
  * 判断当前武器是否有寻的头，以及寻的头类型（用于决定在 HUD 上画哪种导引头圈）。
  * <ul>
  *   <li>IR → 红外大圈</li>
- *   <li>SARH / ARH / ARM → 雷达小双圈</li>
+ *   <li>SARH / ARH / AIR / ARM → 雷达小双圈</li>
  *   <li>无寻的头（SACLOS / MCLOS / IOG / GPS 等）→ 不画圈</li>
  * </ul>
  */
@@ -25,7 +25,7 @@ public class RVP_SeekerHelper {
     public enum SeekerType {
         /** 红外导引头 → 大圈 */
         INFRARED,
-        /** 雷达导引头（SARH/ARH）或反辐射（ARM）→ 小双圈 */
+        /** 雷达导引头（SARH/ARH/AIR）或反辐射（ARM）→ 小双圈 */
         RADAR,
         /** 无寻的头，不画圈 */
         NONE
