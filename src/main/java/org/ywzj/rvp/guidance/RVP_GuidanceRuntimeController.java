@@ -34,7 +34,7 @@ public final class RVP_GuidanceRuntimeController {
         }
 
         RVP_RuntimeGuidanceSource source = RVP_RuntimeGuidanceSourceRegistry.get(active.guidanceType());
-        if (source == null || active.guidanceType() == RVP_EnumGuidanceType.NONE) {
+        if (source == null) {
             return false;
         }
 
