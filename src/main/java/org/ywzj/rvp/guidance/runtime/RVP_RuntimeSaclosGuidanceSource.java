@@ -1,7 +1,6 @@
 package org.ywzj.rvp.guidance.runtime;
 
 import net.minecraft.world.phys.Vec3;
-import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
@@ -27,12 +26,7 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(
                 context.active().targetDistanceRange());
         Vec3 point = context.projectile().position().add(direction.normalize().scale(range));
-        RVP_CountermeasureState.Result result = RVP_CountermeasureState.queryPoint(
-                context.projectile(), point, RVP_EnumGuidanceType.SACLOS, context.active());
-        if (result.isDenied()) {
-            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);
-        }
         context.projectile().setTargetPos(point);
-        return RVP_GuidanceIntent.point(point, false, 1.0, RVP_EnumGuidanceType.SACLOS);
+        return RVP_GuidanceIntent.point(point, true, 1.0, RVP_EnumGuidanceType.SACLOS);
     }
 }
