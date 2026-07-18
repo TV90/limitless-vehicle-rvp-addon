@@ -1060,10 +1060,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected boolean shouldSuppressAheadAirburstAt(Vec3 detonatePos) {
-        if (rvpData == null || !rvpData.isAheadEnabled()) {
+        if (rvpData == null || !rvpData.getFuseData().isAheadEnabled()) {
             return false;
         }
-        float minGroundClearance = rvpData.getAheadMinGroundClearance();
+        float minGroundClearance = rvpData.getFuseData().getAheadMinGroundClearance();
         if (minGroundClearance <= 0f) {
             return false;
         }

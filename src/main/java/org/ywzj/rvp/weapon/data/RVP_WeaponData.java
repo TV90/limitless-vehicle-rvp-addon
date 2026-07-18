@@ -73,10 +73,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("laser_data")
     private RVP_LaserData laserData = new RVP_LaserData();
 
-    /** `rvp:machinegun` 的 AHEAD 自动编程参数，见 {@link RVP_AheadData}。 */
-    @SerializedName("ahead_data")
-    private RVP_AheadData aheadData = new RVP_AheadData();
-
     /**
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
@@ -96,21 +92,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      */
     @SerializedName("fire_control_sensor_type_override")
     private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
-
-    /** 兼容旧 JSON：顶层 `ahead_enabled`，优先级低于 `ahead_data.enabled`。 */
-    @Deprecated
-    @SerializedName("ahead_enabled")
-    private Boolean legacyAheadEnabled;
-
-    /** 兼容旧 JSON：顶层 `ahead_burst_offset_meters`，优先级低于 `ahead_data.burst_offset_meters`。 */
-    @Deprecated
-    @SerializedName("ahead_burst_offset_meters")
-    private Float legacyAheadBurstOffsetMeters;
-
-    /** 兼容旧 JSON：顶层 `ahead_require_lock`，优先级低于 `ahead_data.require_lock`。 */
-    @Deprecated
-    @SerializedName("ahead_require_lock")
-    private Boolean legacyAheadRequireLock;
 
     public RVP_EnumWeaponKind getWeaponKind() {
         return weaponKind;
@@ -181,10 +162,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return laserData == null ? new RVP_LaserData() : laserData;
     }
 
-    public RVP_AheadData getAheadData() {
-        return aheadData == null ? new RVP_AheadData() : aheadData;
-    }
-
     public RVP_Explosion getExplosionData() {
         return getDetonateData().getExplosionData();
     }
@@ -251,35 +228,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @Nullable
     public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
         return fireControlSensorTypeOverride;
-    }
-
-    public boolean isAheadEnabled() {
-        Boolean configured = getAheadData().getEnabledOverride();
-        if (configured != null) {
-            return configured;
-        }
-        return legacyAheadEnabled != null && legacyAheadEnabled;
-    }
-
-    public float getAheadBurstOffsetMeters() {
-        Float configured = getAheadData().getBurstOffsetMetersOverride();
-        if (configured != null) {
-            return Math.max(configured, 0f);
-        }
-        return legacyAheadBurstOffsetMeters == null ? 3.0f : Math.max(legacyAheadBurstOffsetMeters, 0f);
-    }
-
-    public boolean isAheadRequireLock() {
-        Boolean configured = getAheadData().getRequireLockOverride();
-        if (configured != null) {
-            return configured;
-        }
-        return legacyAheadRequireLock == null || legacyAheadRequireLock;
-    }
-
-    public float getAheadMinGroundClearance() {
-        Float configured = getAheadData().getMinGroundClearanceOverride();
-        return configured == null ? 0f : Math.max(configured, 0f);
     }
 
     public float getProjectileVelocity() {

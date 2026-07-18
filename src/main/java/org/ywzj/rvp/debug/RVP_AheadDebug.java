@@ -37,7 +37,7 @@ public final class RVP_AheadDebug {
     }
 
     public static void logProgram(RVP_WeaponData data, RVP_AheadSolution solution) {
-        if (!isEnabled() || data == null || !data.isAheadEnabled()) {
+        if (!isEnabled() || data == null || !data.getFuseData().isAheadEnabled()) {
             return;
         }
         ResourceLocation weaponId = data.getWeaponId();
@@ -73,7 +73,7 @@ public final class RVP_AheadDebug {
             return;
         }
         RVP_WeaponData data = parent.getRvpData();
-        if (data == null || !data.isAheadEnabled()) {
+        if (data == null || !data.getFuseData().isAheadEnabled()) {
             return;
         }
         int configuredPerEvent = 0;

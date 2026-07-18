@@ -21,7 +21,7 @@ public final class RVP_AheadProgrammer {
     public static boolean isAheadWeapon(@Nullable RVP_WeaponData data) {
         return data != null
                 && data.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN
-                && data.isAheadEnabled()
+                && data.getFuseData().isAheadEnabled()
                 && data.getFuseData().isProgrammableAirburst();
     }
 
@@ -48,7 +48,7 @@ public final class RVP_AheadProgrammer {
             }
         }
 
-        if (data.isAheadRequireLock()) {
+        if (data.getFuseData().isAheadRequireLock()) {
             return RVP_AheadSolution.invalid("lock_required");
         }
 
@@ -73,7 +73,7 @@ public final class RVP_AheadProgrammer {
     private static RVP_AheadSolution fromReference(RVP_WeaponData data, Vec3 referenceWorldPos, Vec3 muzzle,
                                                    boolean usedLeadSolution) {
         double referenceDistance = muzzle.distanceTo(referenceWorldPos);
-        int programmedDistance = Mth.floor(referenceDistance - data.getAheadBurstOffsetMeters() + 0.5D);
+        int programmedDistance = Mth.floor(referenceDistance - data.getFuseData().getAheadBurstOffsetMeters() + 0.5D);
         int min = data.getFuseData().getAirburstMeasureMin();
         int max = data.getFuseData().getAirburstMeasureMax();
         if (programmedDistance <= min || programmedDistance >= max) {
