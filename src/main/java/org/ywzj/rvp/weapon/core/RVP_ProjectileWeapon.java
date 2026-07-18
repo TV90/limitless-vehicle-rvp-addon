@@ -260,7 +260,9 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (getVehicle().level().isClientSide() || !(shooter instanceof net.minecraft.server.level.ServerPlayer player)) {
             return;
         }
-        RVP_EnumHitlControlMode mode = data.getGuidanceData().getHumanInTheLoop().resolveControlMode(data.getGuidanceData());
+        RVP_EnumHitlControlMode mode = data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV
+                ? RVP_EnumHitlControlMode.MOUSE
+                : RVP_EnumHitlControlMode.DESIGNATE;
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                 S2CEnterHitlView.of(projectile.getId(), mode));
     }

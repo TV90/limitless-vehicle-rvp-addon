@@ -26,7 +26,6 @@ import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
-import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -36,7 +35,6 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-import org.ywzj.rvp.weapon.data.RVP_HumanInTheLoopData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -77,7 +75,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private float hitlSteeringYaw;
     private float hitlSteeringPitch;
     private int hitlInputSeq = Integer.MIN_VALUE;
-    private RVP_HumanInTheLoopData.SignalSource hitlSignalSource = RVP_HumanInTheLoopData.SignalSource.RADIO;
+    private HitlSignalSource hitlSignalSource = HitlSignalSource.RADIO;
     private boolean hitlLinkBlocked;
     private boolean hitlLinkSevered;
     private int hitlLinkBlockedTicks;
@@ -103,29 +101,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        if (data == null || !data.hasHumanInTheLoop()) {
+        if (data == null || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
             return;
         }
-        if (data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl) {
-            initNewSchemaHitl(data, hitl, aim);
-            return;
-        }
-        RVP_HumanInTheLoopData hitl = data.getGuidanceData().getHumanInTheLoop();
-        this.hitlControlRange = hitl.controlRange(2000f);
-        this.hitlTimeoutTick = hitl.timeoutTick(200);
-        this.hitlLife = this.hitlTimeoutTick;
-        this.hitlVideoModeMask = hitl.videoModeMask();
-        this.hitlDefaultVideoMode = hitl.defaultVideoMode();
-        this.hitlControlMode = hitl.resolveControlMode(data.getGuidanceData());
-        this.hitlMaxTurnDegPerTick = hitl.maxTurnDegPerTick();
-        this.hitlMaxLookOffsetDeg = hitl.maxLookOffsetDeg(RVP_HitlSeekerUtil.saclosSeekerHalfFov(data));
-        this.hitlSignalSource = hitl.signalSource();
-        this.hitlEnabled = true;
-        this.hitlEnterViewResendTicks = 5;
-        this.hitlInputYaw = aim.yRot();
-        this.hitlInputPitch = aim.xRot();
-        this.hitlSteeringYaw = aim.yRot();
-        this.hitlSteeringPitch = aim.xRot();
+        initNewSchemaHitl(data, hitl, aim);
     }
 
     private void initNewSchemaHitl(RVP_WeaponData data, RVP_GuidanceDataHITL hitl, AimRot aim) {
@@ -142,8 +121,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlMaxTurnDegPerTick = Math.max(hitl.getHitlMaxTurnDegPerTick(), 0.05f);
         this.hitlMaxLookOffsetDeg = Math.max(hitl.getHitlMaxLookOffset(), 1);
         this.hitlSignalSource = "FIBER".equals(hitl.getSignalSource())
-                ? RVP_HumanInTheLoopData.SignalSource.FIBER
-                : RVP_HumanInTheLoopData.SignalSource.RADIO;
+                ? HitlSignalSource.FIBER
+                : HitlSignalSource.RADIO;
         this.hitlEnabled = true;
         this.hitlEnterViewResendTicks = 5;
         this.hitlInputYaw = aim.yRot();
@@ -740,7 +719,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected void tickMotion() {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO
+        if (hitlSignalSource == HitlSignalSource.RADIO
                 && (hitlLinkBlocked || hitlLinkSevered)
                 && hitlControlMode == RVP_EnumHitlControlMode.MOUSE) {
             RVP_ProjectileMotion.tickHitlTvMove(this);
@@ -779,7 +758,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (rvpData == null || !rvpData.hasHumanInTheLoop() || !hitlEnabled) {
             return;
         }
-        if (hitlSignalSource != RVP_HumanInTheLoopData.SignalSource.RADIO) {
+        if (hitlSignalSource != HitlSignalSource.RADIO) {
             return;
         }
         if (hitlLinkSevered) {
@@ -871,7 +850,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlSteeringInput(float yaw, float pitch, int seq) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.MOUSE || seq <= hitlInputSeq) {
@@ -883,7 +862,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
@@ -894,7 +873,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$clearHitlDesignation() {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) {
@@ -904,7 +883,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
@@ -956,11 +935,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlMaxLookOffsetDeg = buffer.readFloat();
     }
         if (buffer.readableBytes() >= 1) {
-            this.hitlSignalSource = buffer.readEnum(RVP_HumanInTheLoopData.SignalSource.class);
+            this.hitlSignalSource = buffer.readEnum(HitlSignalSource.class);
         }
         this.hitlSteeringYaw = getYRot();
         this.hitlSteeringPitch = getXRot();
         this.hitlInputYaw = hitlSteeringYaw;
         this.hitlInputPitch = hitlSteeringPitch;
+    }
+
+    private enum HitlSignalSource {
+        FIBER,
+        RADIO
     }
 }

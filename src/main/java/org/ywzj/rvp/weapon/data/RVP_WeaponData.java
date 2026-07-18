@@ -526,22 +526,15 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean hasHumanInTheLoop() {
         RVP_GuidanceData guidance = getGuidanceData();
-        return guidance.isHumanInTheLoopEnabled()
-                || guidance instanceof RVP_GuidanceDataHITL
+        return guidance instanceof RVP_GuidanceDataHITL
                 && (guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV);
     }
 
     public boolean isSaclosTvGuided() {
         RVP_GuidanceData guidance = getGuidanceData();
-        if (guidance.getStages().isEmpty()) {
-            return guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV;
-        }
-        if (!usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || !guidance.isHumanInTheLoopEnabled()) {
-            return false;
-        }
-        return guidance.getHumanInTheLoop().resolveControlMode(guidance)
-                == RVP_EnumHitlControlMode.DESIGNATE;
+        return guidance instanceof RVP_GuidanceDataHITL
+                && guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV;
     }
 
     /** Laser-spot weapons that need the vehicle laser-designation client state. */

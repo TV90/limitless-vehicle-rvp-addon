@@ -1,6 +1,6 @@
 package org.ywzj.rvp.guidance;
 
-import org.ywzj.rvp.weapon.data.RVP_GuidanceStageData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /**
@@ -14,28 +14,15 @@ public final class RVP_HitlSeekerUtil {
         if (data == null) {
             return 20f;
         }
-        if (data.getGuidanceData().getStages().isEmpty()) {
-            return data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
-                    ? Math.max(data.getGuidanceData().getMaxLockHalfAngle(), 1f)
-                    : 20f;
-        }
-        float half = 0f;
-        for (RVP_GuidanceStageData stage : data.getGuidanceData().getStages()) {
-            boolean saclos = stage.getSources().stream()
-                    .anyMatch(source -> source.getType() == RVP_EnumGuidanceType.SACLOS);
-            if (!saclos) {
-                continue;
-            }
-            half = Math.max(half, stage.getSeeker().getFov() * 0.5f);
-        }
-        return half > 0f ? half : 20f;
+        return data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
+                ? Math.max(data.getGuidanceData().getMaxLockHalfAngle(), 1f)
+                : 20f;
     }
 
     public static float resolveMaxLookOffsetDeg(RVP_WeaponData data) {
-        if (data == null || !data.hasHumanInTheLoop()) {
+        if (data == null || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
             return 20f;
         }
-        return data.getGuidanceData().getHumanInTheLoop()
-                .maxLookOffsetDeg(saclosSeekerHalfFov(data));
+        return Math.max(hitl.getHitlMaxLookOffset(), 1f);
     }
 }

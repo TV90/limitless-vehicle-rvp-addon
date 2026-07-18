@@ -124,10 +124,6 @@ public class RVP_GuidanceData {
     @SerializedName(value = "stages", alternate = {"phases"})
     private List<RVP_GuidanceStageData> stages = Collections.emptyList();
 
-    /** 人在回路弹载视角；与 MCLOS/SACLOS 等制导源组合使用。 */
-    @SerializedName("human_in_the_loop")
-    private RVP_HumanInTheLoopData humanInTheLoop;
-
     public RVP_EnumGuidanceType getGuidanceType() {
         return guidanceType == null ? RVP_EnumGuidanceType.NONE : guidanceType;
     }
@@ -267,14 +263,6 @@ public class RVP_GuidanceData {
 
     public List<RVP_GuidanceStageData> getStages() {
         return stages == null ? Collections.emptyList() : stages;
-    }
-
-    public RVP_HumanInTheLoopData getHumanInTheLoop() {
-        return humanInTheLoop != null ? humanInTheLoop : RVP_HumanInTheLoopData.DISABLED;
-    }
-
-    public boolean isHumanInTheLoopEnabled() {
-        return humanInTheLoop != null && humanInTheLoop.isEnabled();
     }
 
     public boolean hasSourceType(RVP_EnumGuidanceType type) {

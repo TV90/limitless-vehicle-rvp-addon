@@ -7,7 +7,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
  * Per-source optional parameters for {@link RVP_GuidanceData.Source#params}.
  *
  * <p>通用字段（IOG/GPS/雷达弹等）与 {@link RVP_EnumGuidanceType#ARM} 专用字段均写在本对象内，
- * 按 source 类型取用。人在回路参数见 {@link RVP_HumanInTheLoopData}。</p>
+ * 按 source 类型取用。HITL 参数位于 {@link RVP_GuidanceDataHITL}。</p>
  */
 public class RVP_GuidanceSourceParamsData {
 
