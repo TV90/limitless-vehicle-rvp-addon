@@ -32,6 +32,8 @@ public final class RVP_GuidanceRuntimeMath {
 
         projectile.rememberGuidancePos(target);
         projectile.setTargetPos(target);
+        Vec3 steeringTarget = resolveTopAttackAimPoint(
+                projectile.position(), target, context.active().topAttackHeight());
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
@@ -41,7 +43,7 @@ public final class RVP_GuidanceRuntimeMath {
         float factor = resolveTurningFactor(context);
         if (intent.directMotion()) {
             RVP_WireGuidanceSteering.applyFromDirection(
-                    projectile, target.subtract(projectile.position()), factor);
+                    projectile, steeringTarget.subtract(projectile.position()), factor);
             return true;
         }
         Vec3 next;
@@ -49,13 +51,13 @@ public final class RVP_GuidanceRuntimeMath {
             next = steerProportional(
                     projectile.position(),
                     current,
-                    target,
+                    steeringTarget,
                     entity.getDeltaMovement(),
                     speed,
                     factor
             );
         } else {
-            next = steerPursuit(current, target.subtract(projectile.position()), speed, factor);
+            next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
@@ -63,6 +65,18 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
+    }
+
+    static Vec3 resolveTopAttackAimPoint(Vec3 projectilePos, Vec3 target, Float topAttackHeight) {
+        if (projectilePos == null || target == null || topAttackHeight == null
+                || Math.abs(topAttackHeight) <= 1.0E-6f) {
+            return target;
+        }
+        double horizontalDistance = Math.sqrt(
+                projectilePos.distanceToSqr(target.x, projectilePos.y, target.z));
+        double height = Math.copySign(
+                Math.min(Math.abs(topAttackHeight), horizontalDistance), topAttackHeight);
+        return target.add(0, height, 0);
     }
 
     public static Vec3 steerPursuit(Vec3 current, Vec3 toTarget, double speed, float turningFactor) {

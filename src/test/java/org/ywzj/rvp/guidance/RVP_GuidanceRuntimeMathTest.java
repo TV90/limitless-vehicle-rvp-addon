@@ -68,6 +68,30 @@ class RVP_GuidanceRuntimeMathTest {
         assertEquals(false, RVP_GuidanceRuntimeGeometry.withinAngle(axis, fortyFiveDegrees, 44.9));
     }
 
+    @Test
+    void topAttackUsesConfiguredHeightAtLongRange() {
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                Vec3.ZERO, new Vec3(200, 10, 0), 80f);
+
+        assertVectorEquals(new Vec3(200, 90, 0), aim);
+    }
+
+    @Test
+    void topAttackContinuouslyConvergesToTargetAtCloseRange() {
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                Vec3.ZERO, new Vec3(20, 10, 0), 80f);
+
+        assertVectorEquals(new Vec3(20, 30, 0), aim);
+    }
+
+    @Test
+    void negativeTopAttackHeightCreatesADescendingApproach() {
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                Vec3.ZERO, new Vec3(20, 10, 0), -80f);
+
+        assertVectorEquals(new Vec3(20, -10, 0), aim);
+    }
+
     private static void assertVectorEquals(Vec3 expected, Vec3 actual) {
         assertEquals(expected.x, actual.x, EPSILON);
         assertEquals(expected.y, actual.y, EPSILON);
