@@ -4,6 +4,7 @@ import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 
@@ -18,6 +19,23 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         RVP_BaseBullet projectile = context.projectile();
         Entity target = projectile.getTargetEntity();
+        if (target == null
+                && context.active().phase() == RVP_GuidancePhase.TERMINAL
+                && !projectile.hasTerminalIrTargetAcquired()) {
+            int interval = context.active().scanIntervalTick() != null
+                    ? context.active().scanIntervalTick()
+                    : 2;
+            if (projectile.tickCount % interval == 0) {
+                target = RVP_RuntimeSeekerSupport.scanInfraredTarget(projectile, context.active());
+                if (target != null) {
+                    projectile.setTargetEntity(target);
+                    projectile.markTerminalIrTargetAcquired();
+                }
+            }
+        }
+        if (target != null && context.active().phase() == RVP_GuidancePhase.TERMINAL) {
+            projectile.markTerminalIrTargetAcquired();
+        }
         if (target != null && target.isAlive()) {
             Entity valid = RVP_RuntimeSeekerSupport.validateEntity(
                     projectile, target, RVP_EnumGuidanceType.IR, context.active());

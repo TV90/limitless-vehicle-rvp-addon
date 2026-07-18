@@ -92,6 +92,36 @@ class RVP_GuidanceRuntimeMathTest {
         assertVectorEquals(new Vec3(20, -10, 0), aim);
     }
 
+    @Test
+    void gpsCruiseSteersHorizontallyAndLevelsPositiveClimb() {
+        Vec3 guided = RVP_GuidanceRuntimeMath.steerGpsCruise(
+                new Vec3(1, 1, 0),
+                new Vec3(0, -20, 100),
+                1.5,
+                0.5f,
+                0.25f,
+                false
+        );
+
+        assertEquals(0.5, guided.x, EPSILON);
+        assertEquals(0.75, guided.y, EPSILON);
+        assertEquals(0.5, guided.z, EPSILON);
+    }
+
+    @Test
+    void gpsCruiseResetsVerticalVelocityOnlyOnEntry() {
+        Vec3 guided = RVP_GuidanceRuntimeMath.steerGpsCruise(
+                new Vec3(1, -0.4, 0),
+                new Vec3(100, -20, 0),
+                1.0,
+                0.2f,
+                0.25f,
+                true
+        );
+
+        assertEquals(0.0, guided.y, EPSILON);
+    }
+
     private static void assertVectorEquals(Vec3 expected, Vec3 actual) {
         assertEquals(expected.x, actual.x, EPSILON);
         assertEquals(expected.y, actual.y, EPSILON);

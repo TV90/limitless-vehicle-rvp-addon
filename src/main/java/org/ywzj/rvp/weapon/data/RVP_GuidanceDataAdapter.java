@@ -38,7 +38,8 @@ public final class RVP_GuidanceDataAdapter
             RVP_EnumGuidanceType.ATV,
             RVP_EnumGuidanceType.AIR,
             RVP_EnumGuidanceType.ARH,
-            RVP_EnumGuidanceType.ARM
+            RVP_EnumGuidanceType.ARM,
+            RVP_EnumGuidanceType.IR
     );
 
     @Override

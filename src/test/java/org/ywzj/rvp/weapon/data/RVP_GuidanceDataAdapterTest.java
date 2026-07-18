@@ -127,6 +127,25 @@ class RVP_GuidanceDataAdapterTest {
     }
 
     @Test
+    void allowsInfraredTerminalGuidanceAfterGpsMidcourse() {
+        RVP_GuidanceData guidance = parseGuidance("""
+                {
+                  "guidance_type":"GPS",
+                  "terminal_guidance":{
+                    "guidance_type":"IR",
+                    "guidance_start_dist":100,
+                    "max_lock_angle":40,
+                    "guidance_target_distance_range":"[[0,80]]"
+                  }
+                }
+                """);
+
+        assertEquals(RVP_EnumGuidanceType.GPS, guidance.getGuidanceType());
+        assertEquals(RVP_EnumGuidanceType.IR, guidance.getTerminalGuidance().getGuidanceType());
+        assertEquals(20f, guidance.getTerminalGuidance().getMaxLockHalfAngle());
+    }
+
+    @Test
     void rejectsSubtypeFieldsThatDoNotMatchGuidanceType() {
         assertThrows(JsonParseException.class, () -> parseGuidance("""
                 {"guidance_type":"IR","gps_spread_radius":4}

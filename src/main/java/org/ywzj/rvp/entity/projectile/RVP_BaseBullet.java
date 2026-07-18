@@ -47,12 +47,14 @@ import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
 import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
@@ -157,6 +159,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** IR seeker temporary retain window for brief off-axis loss. */
     protected int irSeekerGraceUntilTick = Integer.MIN_VALUE;
     private boolean irSeekerLossGraceStarted;
+    private boolean terminalIrTargetAcquired;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
@@ -244,6 +247,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         writeRemoteVec3(data, "coldLaunchVelocity", coldLaunchVelocity);
         data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
         data.putInt("irSeekerGraceUntilTick", irSeekerGraceUntilTick);
+        data.putBoolean("terminalIrTargetAcquired", terminalIrTargetAcquired);
     }
 
     @Override
@@ -265,6 +269,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         gpsTargetOffsetResolved = gpsTargetOffset != null;
         launchTargetSnapshot = data.getBoolean("launchTargetSnapshot");
         irSeekerGraceUntilTick = data.contains("irSeekerGraceUntilTick") ? data.getInt("irSeekerGraceUntilTick") : Integer.MIN_VALUE;
+        terminalIrTargetAcquired = data.getBoolean("terminalIrTargetAcquired");
         resolveRemoteRefs();
     }
 
@@ -470,30 +475,53 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean usesGpsCruiseProfile() {
-        return weaponKind == RVP_EnumWeaponKind.BOMB
-                && rvpData != null
-                && rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                && rvpData.getProjectileData().usesGpsCruiseProfile();
+        if (weaponKind != RVP_EnumWeaponKind.BOMB || rvpData == null
+                || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
+            return false;
+        }
+        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
+            return rvpData.getProjectileData().usesGpsCruiseProfile();
+        }
+        RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
+        return active.guidanceType() == RVP_EnumGuidanceType.GPS
+                && active.cruiseStartTick() != null;
     }
 
     public boolean isGpsCruisePhaseActive() {
         if (!usesGpsCruiseProfile() || targetPos == null) {
             return false;
         }
-        if (tickCount < rvpData.getProjectileData().getGpsCruiseStartTick()) {
-            return false;
+        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
+            return tickCount >= rvpData.getProjectileData().getGpsCruiseStartTick()
+                    && horizontalDistanceTo(targetPos) > rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
         }
-        return horizontalDistanceTo(targetPos) > rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
+        RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
+        return tickCount >= active.cruiseStartTick()
+                && horizontalDistanceTo(targetPos) > active.cruiseEndHorizontalDist();
     }
 
     public boolean isGpsCruiseTerminalPhaseActive() {
         if (!usesGpsCruiseProfile() || targetPos == null) {
             return false;
         }
-        if (tickCount < rvpData.getProjectileData().getGpsCruiseStartTick()) {
-            return false;
+        if (!rvpData.getGuidanceData().getStages().isEmpty()) {
+            return tickCount >= rvpData.getProjectileData().getGpsCruiseStartTick()
+                    && horizontalDistanceTo(targetPos) <= rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
         }
-        return horizontalDistanceTo(targetPos) <= rvpData.getProjectileData().getGpsCruiseTerminalCylinderRadius();
+        RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
+        return tickCount >= active.cruiseStartTick()
+                && horizontalDistanceTo(targetPos) <= active.cruiseEndHorizontalDist();
+    }
+
+    public float getGpsCruiseGravityScale() {
+        if (rvpData == null || !rvpData.getGuidanceData().getStages().isEmpty()) {
+            return rvpData != null ? rvpData.getProjectileData().getGpsCruiseGravityScale() : 1f;
+        }
+        return resolveActiveGuidanceConfig().cruiseGravityScale();
+    }
+
+    private RVP_GuidanceActiveConfig resolveActiveGuidanceConfig() {
+        return RVP_GuidanceModelResolver.resolveActive(rvpData, guidancePhaseState.phase());
     }
 
     public double horizontalDistanceTo(Vec3 pos) {
@@ -563,6 +591,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
+    public void setGuidanceTargetPos(@Nullable Vec3 targetPos) {
+        this.targetPos = targetPos;
+        if (targetPos != null) {
+            this.lastGuidancePos = targetPos;
+        }
+    }
+
     @Nullable
     public Vec3 getLastGuidancePos() {
         return lastGuidancePos;
@@ -604,6 +639,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         irSeekerLossGraceStarted = false;
     }
 
+    public boolean hasTerminalIrTargetAcquired() {
+        return terminalIrTargetAcquired;
+    }
+
+    public void markTerminalIrTargetAcquired() {
+        terminalIrTargetAcquired = true;
+    }
+
     public boolean consumeGpsCruiseVerticalResetPending() {
         if (gpsCruiseVerticalResetApplied) {
             return false;
@@ -631,7 +674,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return weaponKind == RVP_EnumWeaponKind.BOMB
                 && rvpData != null
                 && rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                && rvpData.getProjectileData().getGpsCep() > 0f;
+                && resolveGpsSpreadRadius() > 0f;
     }
 
     @Nullable
@@ -643,13 +686,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return gpsTargetOffset;
         }
         gpsTargetOffsetResolved = true;
-        float cep = rvpData.getProjectileData().getGpsCep();
+        float cep = resolveGpsSpreadRadius();
         if (cep <= 0f) {
             gpsTargetOffset = null;
             return null;
         }
         gpsTargetOffset = sampleGpsCepOffset(level().random, cep);
         return gpsTargetOffset;
+    }
+
+    private float resolveGpsSpreadRadius() {
+        if (rvpData == null) {
+            return 0f;
+        }
+        if (rvpData.getGuidanceData().getStages().isEmpty()
+                && rvpData.getGuidanceData() instanceof RVP_GuidanceDataGPS gps) {
+            return gps.getGpsSpreadRadius();
+        }
+        return rvpData.getProjectileData().getGpsCep();
     }
 
     private static Vec3 sampleGpsCepOffset(RandomSource random, float cep) {
@@ -965,7 +1019,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             float gravity = rvpData.getGravity();
             if (isGpsCruisePhaseActive()) {
-                gravity *= rvpData.getProjectileData().getGpsCruiseGravityScale();
+                gravity *= getGpsCruiseGravityScale();
             }
             velocity = velocity.add(0, gravity, 0);
             velocity = applyMchHorizontalDrag(velocity, dragInAir);

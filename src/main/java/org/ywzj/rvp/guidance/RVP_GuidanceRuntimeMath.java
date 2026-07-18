@@ -31,7 +31,7 @@ public final class RVP_GuidanceRuntimeMath {
         }
 
         projectile.rememberGuidancePos(target);
-        projectile.setTargetPos(target);
+        projectile.setGuidanceTargetPos(target);
         Vec3 steeringTarget = resolveTopAttackAimPoint(
                 projectile.position(), target, context.active().topAttackHeight());
 
@@ -47,7 +47,16 @@ public final class RVP_GuidanceRuntimeMath {
             return true;
         }
         Vec3 next;
-        if (entity != null && context.active().predictTargetPos()) {
+        if (isGpsCruiseActive(context, steeringTarget)) {
+            next = steerGpsCruise(
+                    current,
+                    steeringTarget.subtract(projectile.position()),
+                    speed,
+                    factor,
+                    context.active().cruiseLevelingFactor(),
+                    projectile.consumeGpsCruiseVerticalResetPending()
+            );
+        } else if (entity != null && context.active().predictTargetPos()) {
             next = steerProportional(
                     projectile.position(),
                     current,
@@ -77,6 +86,43 @@ public final class RVP_GuidanceRuntimeMath {
         double height = Math.copySign(
                 Math.min(Math.abs(topAttackHeight), horizontalDistance), topAttackHeight);
         return target.add(0, height, 0);
+    }
+
+    static Vec3 steerGpsCruise(
+            Vec3 current,
+            Vec3 toTarget,
+            double speed,
+            float turningFactor,
+            float levelingFactor,
+            boolean resetVertical
+    ) {
+        Vec3 horizontal = new Vec3(toTarget.x, 0, toTarget.z);
+        double horizontalDistance = horizontal.length();
+        if (horizontalDistance <= 1.0E-8) {
+            return steerPursuit(current, toTarget, speed, turningFactor);
+        }
+        double currentHorizontalSpeed = Math.sqrt(current.x * current.x + current.z * current.z);
+        double desiredHorizontalSpeed = Math.max(currentHorizontalSpeed, speed * 0.01);
+        Vec3 desired = horizontal.scale(desiredHorizontalSpeed / horizontalDistance);
+        float factor = Math.max(0f, Math.min(1f, turningFactor));
+        double nextY = resetVertical ? 0.0 : current.y;
+        if (!resetVertical && nextY > 0.0) {
+            nextY += (0.0 - nextY) * Math.max(0f, Math.min(1f, levelingFactor));
+        }
+        return new Vec3(
+                current.x + (desired.x - current.x) * factor,
+                nextY,
+                current.z + (desired.z - current.z) * factor
+        );
+    }
+
+    private static boolean isGpsCruiseActive(RVP_GuidanceRuntimeContext context, Vec3 target) {
+        Integer startTick = context.active().cruiseStartTick();
+        return context.active().guidanceType() == RVP_EnumGuidanceType.GPS
+                && startTick != null
+                && context.projectile().tickCount >= startTick
+                && context.projectile().horizontalDistanceTo(target)
+                > context.active().cruiseEndHorizontalDist();
     }
 
     public static Vec3 steerPursuit(Vec3 current, Vec3 toTarget, double speed, float turningFactor) {
