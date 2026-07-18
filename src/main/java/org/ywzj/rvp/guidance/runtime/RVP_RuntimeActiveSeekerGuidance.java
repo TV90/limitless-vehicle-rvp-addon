@@ -25,10 +25,10 @@ final class RVP_RuntimeActiveSeekerGuidance {
 
         if (!missile.isAutonomousSeekerOn()) {
             if (!freeAcquire && designated != null) {
-                Vec3 point = designated.getBoundingBox().getCenter();
                 missile.setTargetEntity(designated);
+                Vec3 point = designated.getBoundingBox().getCenter();
                 missile.setTargetPos(point);
-                return RVP_GuidanceIntent.point(point, false, 1.0, type);
+                return RVP_GuidanceIntent.entity(designated, false, 1.0, type);
             }
             Vec3 memory = missile.getTargetPos() != null
                     ? missile.getTargetPos()
@@ -67,7 +67,7 @@ final class RVP_RuntimeActiveSeekerGuidance {
             return RVP_GuidanceIntent.failed(type);
         }
 
-        Entity scanned = type == RVP_EnumGuidanceType.ARH
+        Entity scanned = (type == RVP_EnumGuidanceType.ARH || type == RVP_EnumGuidanceType.AIR)
                 ? RVP_RuntimeSeekerSupport.scanRadarTarget(missile, context.active())
                 : RVP_RuntimeSeekerSupport.scanInfraredTarget(missile, context.active());
         if (scanned == null) {

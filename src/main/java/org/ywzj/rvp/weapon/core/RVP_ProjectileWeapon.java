@@ -149,9 +149,11 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
+        Vec3 armPreselectPos = null;
         if (data.isAntiRadiationMissile() && rootUnit instanceof WeaponUnitArmExt armExt) {
             armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
             armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
+            armPreselectPos = armExt.ywzj_rvp$getArmPreselectedPos();
         }
 
         for (AimContext aim : aimContexts) {
@@ -159,7 +161,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 shootCanister(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale);
             } else {
                 shootProjectiles(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale,
-                        armPreselectVehicleId, armPreselectRadarIndex);
+                        armPreselectVehicleId, armPreselectRadarIndex, armPreselectPos);
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
@@ -167,7 +169,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     private void shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
                                   Entity lock, WeaponUnit rootUnit, WeaponUnit launchUnit, float chargeScale,
-                                  int armPreselectVehicleId, int armPreselectRadarIndex) {
+                                  int armPreselectVehicleId, int armPreselectRadarIndex, Vec3 armPreselectPos) {
         int totalProjectiles = data.getFireData().getCanisterCount() * data.getFireData().getCanisterBurstCount();
         if (RVP_AheadProgrammer.isAheadWeapon(data)) {
             RVP_AheadProgrammer.programForShot(getVehicle(), rootUnit, getIndex(), data, aim, 1.0f);
@@ -178,6 +180,11 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                     rootUnit, launchUnit, chargeScale, 0f, true);
             if (armPreselectVehicleId >= 0 && projectile != null) {
                 projectile.setPreselectedTarget(armPreselectVehicleId, armPreselectRadarIndex);
+                if (armPreselectPos != null) {
+                    projectile.setAntiRadiationSignalAcquired(false);
+                    projectile.setTargetPos(armPreselectPos);
+                    projectile.rememberGuidancePos(armPreselectPos);
+                }
             }
             maybeEnterHitlView(data, shooter, projectile, i);
         }

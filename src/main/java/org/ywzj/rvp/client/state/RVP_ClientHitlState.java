@@ -24,17 +24,22 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 public class RVP_ClientHitlState {
 
     private static final int ENTITY_WAIT_TICKS = 80;
+    private static final int VEHICLE_WAIT_TICKS = 8;
+    private static final int EXIT_CLICK_GUARD_TICKS = 4;
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
     public static final double DESIGNATE_AIM_RANGE = 1200.0;
 
     private static int activeMissileId = -1;
     private static RVP_EnumHitlControlMode controlMode = RVP_EnumHitlControlMode.VIEW;
     private static int entityWaitTicks;
+    private static int vehicleWaitTicks;
+    private static int exitClickGuardTicks;
     private static boolean missileEntitySeen;
     private static int controlSeq;
     private static boolean viewTypeCaptured;
     private static LocalVehiclePlayer.ViewType prevViewType;
     private static RVP_EnumVideoMode videoMode = RVP_EnumVideoMode.COLOR;
+    private static boolean videoModeUserSelected;
     private static float hitlYaw;
     private static float hitlPitch;
     private static float lookOffsetYaw;
@@ -148,6 +153,7 @@ public class RVP_ClientHitlState {
     }
 
     public static void enter(int missileEntityId, RVP_EnumHitlControlMode mode) {
+        boolean missileChanged = activeMissileId != missileEntityId;
         RVP_ClientHitlCamera.reset();
         if (activeMissileId < 0 && missileEntityId >= 0 && !viewTypeCaptured) {
             viewTypeCaptured = true;
@@ -156,6 +162,8 @@ public class RVP_ClientHitlState {
         activeMissileId = missileEntityId;
         controlMode = mode != null ? mode : RVP_EnumHitlControlMode.VIEW;
         entityWaitTicks = 0;
+        vehicleWaitTicks = 0;
+        exitClickGuardTicks = EXIT_CLICK_GUARD_TICKS;
         missileEntitySeen = false;
         controlSeq = 0;
         hitlYaw = 0f;
@@ -171,6 +179,13 @@ public class RVP_ClientHitlState {
         hitlLinkSevered = false;
         clientAimPoint = null;
         clearParticleSuppressCache();
+        if (missileChanged) {
+            videoMode = RVP_EnumVideoMode.COLOR;
+            videoModeUserSelected = false;
+        }
+        while (RVP_Keys.HITL_EXIT.consumeClick()) {
+            // Drain the fire-click residue when TV enter is bound to the same mouse button as exit.
+        }
     }
 
     public static void clear() {
@@ -178,9 +193,12 @@ public class RVP_ClientHitlState {
         activeMissileId = -1;
         controlMode = RVP_EnumHitlControlMode.VIEW;
         entityWaitTicks = 0;
+        vehicleWaitTicks = 0;
+        exitClickGuardTicks = 0;
         missileEntitySeen = false;
         controlSeq = 0;
         videoMode = RVP_EnumVideoMode.COLOR;
+        videoModeUserSelected = false;
         TVMissileVideoPostHandler.setActive(false);
         LocalVehiclePlayer.instance.thermalImaging = false;
         hitlYaw = 0f;
@@ -215,8 +233,12 @@ public class RVP_ClientHitlState {
             return;
         }
         if (!(player.getVehicle() instanceof AbstractVehicle)) {
-            clear();
-            return;
+            if (++vehicleWaitTicks > VEHICLE_WAIT_TICKS) {
+                clear();
+                return;
+            }
+        } else {
+            vehicleWaitTicks = 0;
         }
 
         Entity e = mc.level.getEntity(activeMissileId);
@@ -231,13 +253,18 @@ public class RVP_ClientHitlState {
                 hitlPitch = missile.getXRot();
                 RVP_ClientHitlCamera.onMissileAcquired(missile);
                 missileEntitySeen = true;
+                if (!videoModeUserSelected) {
+                    videoMode = resolveInitialVideoMode(missile);
+                }
                 if (isDesignateMode()) {
                     redesignateTargetAtCrosshair(mc, missile);
                     initialDesignateSent = true;
                 }
             }
             entityWaitTicks = 0;
-            videoMode = normalizeVideoMode(missile, videoMode);
+            videoMode = videoModeUserSelected
+                    ? normalizeVideoMode(missile, videoMode)
+                    : resolveInitialVideoMode(missile);
             updateParticleSuppressCache(missile);
         } else if (missileEntitySeen) {
             clear();
@@ -387,6 +414,13 @@ public class RVP_ClientHitlState {
     }
 
     private static boolean tickExitClick(Minecraft mc) {
+        if (exitClickGuardTicks > 0) {
+            exitClickGuardTicks--;
+            while (RVP_Keys.HITL_EXIT.consumeClick()) {
+                // Swallow delayed clicks from the launch press during the short post-enter guard window.
+            }
+            return false;
+        }
         return RVP_Keys.HITL_EXIT.consumeClick();
     }
 
@@ -399,12 +433,17 @@ public class RVP_ClientHitlState {
             return;
         }
         videoMode = nextVideoMode(missile, videoMode);
+        videoModeUserSelected = true;
     }
 
     private static RVP_EnumVideoMode normalizeVideoMode(RVP_MissileEntity missile, RVP_EnumVideoMode preferred) {
         if (isModeAllowed(missile, preferred)) {
             return preferred;
         }
+        return resolveInitialVideoMode(missile);
+    }
+
+    private static RVP_EnumVideoMode resolveInitialVideoMode(RVP_MissileEntity missile) {
         int defaultMode = missile.rvp$getDefaultHitlVideoMode();
         if ((defaultMode & RVP_MissileEntity.HITL_MODE_COLOR) != 0 && isModeAllowed(missile, RVP_EnumVideoMode.COLOR)) {
             return RVP_EnumVideoMode.COLOR;

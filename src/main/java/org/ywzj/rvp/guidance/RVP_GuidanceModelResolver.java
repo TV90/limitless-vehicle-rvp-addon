@@ -1,6 +1,7 @@
 package org.ywzj.rvp.guidance;
 
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataARM;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_TerminalGuidanceData;
@@ -51,6 +52,7 @@ public final class RVP_GuidanceModelResolver {
     private static RVP_GuidanceActiveConfig resolveMain(RVP_GuidanceData data) {
         RVP_GuidanceDataGPS gps = data instanceof RVP_GuidanceDataGPS value ? value : null;
         RVP_GuidanceDataHITL hitl = data instanceof RVP_GuidanceDataHITL value ? value : null;
+        RVP_GuidanceDataARM arm = data instanceof RVP_GuidanceDataARM value ? value : null;
         return new RVP_GuidanceActiveConfig(
                 RVP_GuidancePhase.MAIN,
                 data.getGuidanceType(),
@@ -70,15 +72,15 @@ public final class RVP_GuidanceModelResolver {
                 data.getAngleGateLockOutTick(),
                 data.getActiveRadarActivationRange(),
                 data.isEnableInertialGuidance(),
-                data.isIgnoreFlares(),
-                data.isIgnoreChaff(),
-                data.getJamResistance(),
-                data.getDircmResistance(),
-                data.isHomeOnJam(),
-                data.getDecoyFilter(),
-                data.getRadiationPulseMemoryTick(),
-                data.getArmMemoryTick(),
-                data.getArmLockedEmitterBonus(),
+                false,
+                false,
+                0f,
+                0f,
+                false,
+                0f,
+                arm == null ? 0 : arm.getRadiationPulseMemoryTick(),
+                arm == null ? 0 : arm.getArmMemoryTick(),
+                arm == null ? 0f : arm.getArmLockedEmitterBonus(),
                 gps == null ? 0f : gps.getGpsSpreadRadius(),
                 hitl == null ? 0 : hitl.getHitlMaxTurnDegPerTick(),
                 hitl == null ? "RADIO" : hitl.getSignalSource(),
@@ -93,6 +95,7 @@ public final class RVP_GuidanceModelResolver {
             RVP_GuidanceData main,
             RVP_TerminalGuidanceData terminal
     ) {
+        RVP_GuidanceDataARM arm = main instanceof RVP_GuidanceDataARM value ? value : null;
         return new RVP_GuidanceActiveConfig(
                 RVP_GuidancePhase.TERMINAL,
                 terminal.getGuidanceType(),
@@ -112,15 +115,15 @@ public final class RVP_GuidanceModelResolver {
                 terminal.getAngleGateLockOutTick(),
                 terminal.getActiveRadarActivationRange(),
                 terminal.isEnableInertialGuidance(),
-                main.isIgnoreFlares(),
-                main.isIgnoreChaff(),
-                main.getJamResistance(),
-                main.getDircmResistance(),
-                main.isHomeOnJam(),
-                main.getDecoyFilter(),
-                main.getRadiationPulseMemoryTick(),
-                main.getArmMemoryTick(),
-                main.getArmLockedEmitterBonus(),
+                false,
+                false,
+                0f,
+                0f,
+                false,
+                0f,
+                arm == null ? 0 : arm.getRadiationPulseMemoryTick(),
+                arm == null ? 0 : arm.getArmMemoryTick(),
+                arm == null ? 0f : arm.getArmLockedEmitterBonus(),
                 0f,
                 0,
                 "RADIO",

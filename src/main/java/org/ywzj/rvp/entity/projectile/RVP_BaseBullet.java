@@ -80,6 +80,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -99,6 +100,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
     static final EntityDataAccessor<Integer> DATA_SECOND_PULSE_BURN_TIME_TICK =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
+    static final EntityDataAccessor<Boolean> DATA_ACTIVE_RADAR_ON =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
+    static final EntityDataAccessor<Boolean> DATA_ACTIVE_RADAR_CATCH =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
 
     protected RVP_WeaponData rvpData;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
@@ -160,6 +165,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
+    protected boolean antiRadiationSignalAcquired;
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
@@ -279,6 +285,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         super.defineSynchedData();
         this.entityData.define(DATA_SECOND_PULSE_START_TICK, -1);
         this.entityData.define(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
+        this.entityData.define(DATA_ACTIVE_RADAR_ON, false);
+        this.entityData.define(DATA_ACTIVE_RADAR_CATCH, false);
     }
 
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
@@ -299,7 +307,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.set(DATA_SECOND_PULSE_START_TICK, -1);
         this.entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.showMslIndicator = data.isShowMslIndicator();
-        this.signatureSize = data.getProjectileData().getSignatureSize();
+        this.signatureSize = data.resolveSignalIntensityFactorOnRadar(0f);
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
@@ -455,7 +463,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return getDeltaMovement().length();
     }
 
-    public boolean usesGpsCruiseProfile() {
+    private boolean usesGpsCruiseGuidance() {
         if (weaponKind != RVP_EnumWeaponKind.BOMB || rvpData == null
                 || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
             return false;
@@ -466,7 +474,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean isGpsCruisePhaseActive() {
-        if (!usesGpsCruiseProfile() || targetPos == null) {
+        if (!usesGpsCruiseGuidance() || targetPos == null) {
             return false;
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
@@ -475,7 +483,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean isGpsCruiseTerminalPhaseActive() {
-        if (!usesGpsCruiseProfile() || targetPos == null) {
+        if (!usesGpsCruiseGuidance() || targetPos == null) {
             return false;
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
@@ -483,7 +491,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && horizontalDistanceTo(targetPos) <= active.cruiseEndHorizontalDist();
     }
 
-    public float getGpsCruiseGravityScale() {
+    private float resolveGpsCruiseGravityScale() {
         return rvpData == null ? 1f : resolveActiveGuidanceConfig().cruiseGravityScale();
     }
 
@@ -630,48 +638,48 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     @Nullable
     private Vec3 applyGpsTargetDispersion(@Nullable Vec3 targetPos) {
-        if (targetPos == null || !usesGpsCep()) {
+        if (targetPos == null || !usesGpsTargetSpread()) {
             return targetPos;
         }
         Vec3 offset = ensureGpsTargetOffset();
         return offset == null ? targetPos : targetPos.add(offset);
     }
 
-    private boolean usesGpsCep() {
+    private boolean usesGpsTargetSpread() {
         return weaponKind == RVP_EnumWeaponKind.BOMB
                 && rvpData != null
                 && rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                && resolveGpsSpreadRadius() > 0f;
+                && resolveGpsTargetSpreadRadius() > 0f;
     }
 
     @Nullable
     private Vec3 ensureGpsTargetOffset() {
-        if (!usesGpsCep()) {
+        if (!usesGpsTargetSpread()) {
             return null;
         }
         if (gpsTargetOffsetResolved) {
             return gpsTargetOffset;
         }
         gpsTargetOffsetResolved = true;
-        float cep = resolveGpsSpreadRadius();
-        if (cep <= 0f) {
+        float spreadRadius = resolveGpsTargetSpreadRadius();
+        if (spreadRadius <= 0f) {
             gpsTargetOffset = null;
             return null;
         }
-        gpsTargetOffset = sampleGpsCepOffset(level().random, cep);
+        gpsTargetOffset = sampleGpsTargetOffset(level().random, spreadRadius);
         return gpsTargetOffset;
     }
 
-    private float resolveGpsSpreadRadius() {
+    private float resolveGpsTargetSpreadRadius() {
         if (rvpData == null) {
             return 0f;
         }
         return resolveActiveGuidanceConfig().gpsSpreadRadius();
     }
 
-    private static Vec3 sampleGpsCepOffset(RandomSource random, float cep) {
+    private static Vec3 sampleGpsTargetOffset(RandomSource random, float spreadRadius) {
         // 2D isotropic Gaussian: radius enclosing 50% impacts equals sigma * sqrt(2 ln 2).
-        double sigma = cep / Math.sqrt(2.0D * Math.log(2.0D));
+        double sigma = spreadRadius / Math.sqrt(2.0D * Math.log(2.0D));
         double dx = random.nextGaussian() * sigma;
         double dz = random.nextGaussian() * sigma;
         return new Vec3(dx, 0.0D, dz);
@@ -713,6 +721,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.antiRadiationLostPermanent = lostPermanent;
     }
 
+    public boolean hasAntiRadiationSignalAcquired() {
+        return antiRadiationSignalAcquired;
+    }
+
+    public void setAntiRadiationSignalAcquired(boolean acquired) {
+        this.antiRadiationSignalAcquired = acquired;
+    }
+
     public int getPreselectedVehicleId() {
         return preselectedVehicleId;
     }
@@ -729,23 +745,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     // ===== ARH 主动雷达 getters/setters =====
 
     public boolean isActiveRadarOn() {
-        return activeRadarOn;
+        return this.entityData.get(DATA_ACTIVE_RADAR_ON);
     }
 
     public boolean isAutonomousSeekerOn() {
-        return activeRadarOn;
+        return isActiveRadarOn();
     }
 
     public void setAutonomousSeekerOn(boolean enabled) {
         this.activeRadarOn = enabled;
+        this.entityData.set(DATA_ACTIVE_RADAR_ON, enabled);
     }
 
     public boolean hasAutonomousSeekerCatch() {
-        return activeRadarCatch;
+        return this.entityData.get(DATA_ACTIVE_RADAR_CATCH);
     }
 
     public void markAutonomousSeekerCatch() {
         this.activeRadarCatch = true;
+        this.entityData.set(DATA_ACTIVE_RADAR_CATCH, true);
         this.activeRadarLostTargetTick = 0;
     }
 
@@ -758,7 +776,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean isActiveRadarCatch() {
-        return activeRadarCatch;
+        return hasAutonomousSeekerCatch();
     }
 
     public int getActiveRadarLostTargetTick() {
@@ -982,7 +1000,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             float gravity = rvpData.getGravity();
             if (isGpsCruisePhaseActive()) {
-                gravity *= getGpsCruiseGravityScale();
+                gravity *= resolveGpsCruiseGravityScale();
             }
             velocity = velocity.add(0, gravity, 0);
             velocity = applyMchHorizontalDrag(velocity, dragInAir);
@@ -1105,7 +1123,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         int fuseHeight = fuse.getProximityFuseHeight();
         if (targetEntity != null && targetEntity.isAlive()
                 && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
-                && distanceToSqr(targetEntity) < radius * radius) {
+                && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
             return;
         }
@@ -1170,8 +1188,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
 
-        if (!entityCollisionSafetyActive && explosion != null && explosion.proximityFuze && tickCount > 5 && entityResult == null) {
-            if (tryAmmoProximityFuze()) {
+        if (!entityCollisionSafetyActive && tickCount > 5 && entityResult == null) {
+            if (tryAmmoProximityFuze(startVec, endVec)) {
                 return;
             }
         }
@@ -1242,24 +1260,60 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /** {@link AmmoEntity#tickHit()} proximity branch; explosion uses {@link #resolveImpactDetonation}. */
-    protected boolean tryAmmoProximityFuze() {
-        if (explosion == null || !explosion.proximityFuze || vehicle == null) {
+    protected boolean tryAmmoProximityFuze(Vec3 startVec, Vec3 endVec) {
+        if (rvpData == null) {
             return false;
         }
-        AABB detectionBox = getBoundingBox().inflate(explosion.proximityRadius)
-                .move(getLookAngle().normalize().scale(-explosion.proximityRadius));
-        int fuseHeight = rvpData != null ? rvpData.getFuseData().getProximityFuseHeight() : 20;
+        float radius = rvpData.getProximityFuseDist();
+        if (radius <= 0f && explosion != null && explosion.proximityFuze && explosion.proximityRadius > 0f) {
+            radius = explosion.proximityRadius;
+        }
+        if (radius <= 0f) {
+            return false;
+        }
+        int fuseHeight = rvpData.getFuseData().getProximityFuseHeight();
+        Entity target = findProximityTargetOnSegment(startVec, endVec, radius, fuseHeight);
+        if (target == null) {
+            return false;
+        }
+        detonateFuseAt(position(), FuseDetonation.PROXIMITY, target);
+        return true;
+    }
+
+    @Nullable
+    protected Entity findProximityTargetOnSegment(Vec3 startVec, Vec3 endVec, float radius, int fuseHeight) {
+        Vec3 step = endVec.subtract(startVec);
+        if (step.lengthSqr() < 1.0E-12 || radius <= 0f) {
+            return null;
+        }
+        AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
                 entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight));
-        if (nearbyEntities.isEmpty()) {
-            return false;
+        Entity closest = null;
+        double closestDistance = Double.MAX_VALUE;
+        for (Entity entity : nearbyEntities) {
+            AABB inflated = entity.getBoundingBox().inflate(radius);
+            Vec3 hitPoint = null;
+            if (inflated.contains(startVec)) {
+                hitPoint = startVec;
+            } else if (inflated.contains(endVec)) {
+                hitPoint = endVec;
+            } else {
+                Optional<Vec3> clip = inflated.clip(startVec, endVec);
+                if (clip.isPresent()) {
+                    hitPoint = clip.get();
+                }
+            }
+            if (hitPoint == null) {
+                continue;
+            }
+            double hitDistance = startVec.distanceToSqr(hitPoint);
+            if (hitDistance < closestDistance) {
+                closestDistance = hitDistance;
+                closest = entity;
+            }
         }
-        resolveImpactDetonation(position(), null, false);
-        if (explosion.explode) {
-            triggerExplosion(position());
-        }
-        discard();
-        return true;
+        return closest;
     }
 
     protected void onAmmoBlockHit(BlockHitResult result) {
@@ -1797,8 +1851,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             discard();
             return;
         }
+        Entity resolvedProximityTarget = kind == FuseDetonation.PROXIMITY
+                ? ywzj_rvp$resolveProximityDamageTarget(proximityTarget)
+                : proximityTarget;
         boolean hadGuaranteedDamage = false;
-        if (kind == FuseDetonation.PROXIMITY && proximityTarget != null && rvpData != null) {
+        if (kind == FuseDetonation.PROXIMITY && resolvedProximityTarget != null && rvpData != null) {
             // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 VehicleExplosion 距离衰减（修复高速目标炸不到的 bug）
             float guaranteed = rvpData.getProximityFuseDirectDamage();
             if (guaranteed <= 0f) {
@@ -1807,18 +1864,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (guaranteed <= 0f && explosion != null) {
                 guaranteed = explosion.damage;
             }
-            if (RVP_RadarContactHelper.triggerHbmMissileFuze(proximityTarget, pos)) {
+            if (RVP_RadarContactHelper.triggerHbmMissileFuze(resolvedProximityTarget, pos)) {
                 hadGuaranteedDamage = true;
             } else if (guaranteed > 0f) {
-                guaranteed = RVP_DamageApplier.applyScaled(guaranteed, proximityTarget, rvpData);
+                guaranteed = RVP_DamageApplier.applyScaled(guaranteed, resolvedProximityTarget, rvpData);
                 DamageSource source = AllDamageTypes.Sources.explosion(
                         level().registryAccess(), this, getOwner(), pos);
-                proximityTarget.hurt(source, guaranteed);
+                resolvedProximityTarget.hurt(source, guaranteed);
                 hadGuaranteedDamage = true;
             }
         }
         // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害
-        Entity exclude = hadGuaranteedDamage ? proximityTarget : null;
+        Entity exclude = hadGuaranteedDamage ? resolvedProximityTarget : null;
         if (rvpData == null) {
             triggerExplosion(pos, FuseDetonation.NORMAL, exclude);
             discard();
@@ -1840,6 +1897,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             applyDetonateAt(pos, null, false);
         }
         discard();
+    }
+
+    @Nullable
+    private Entity ywzj_rvp$resolveProximityDamageTarget(@Nullable Entity target) {
+        Entity resolved = ywzj_rvp$resolveCollisionRoot(target);
+        if (resolved == null || !resolved.isAlive()) {
+            return null;
+        }
+        return canDamageEntity(resolved) ? resolved : null;
     }
 
     protected void explodeAndDiscard(Vec3 pos) {

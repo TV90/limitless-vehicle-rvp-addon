@@ -21,6 +21,23 @@ public final class RVP_GuidanceRuntimeGeometry {
         if (projectile == null || target == null || config == null) {
             return false;
         }
+        if (!passesTrackEnvelope(projectile, target, config)) {
+            return false;
+        }
+        return withinAngle(
+                resolveTrackAxis(projectile),
+                target.subtract(projectile.position()),
+                config.maxGuidanceAngle());
+    }
+
+    public static boolean passesTrackEnvelope(
+            RVP_BaseBullet projectile,
+            Vec3 target,
+            RVP_GuidanceActiveConfig config
+    ) {
+        if (projectile == null || target == null || config == null) {
+            return false;
+        }
         double distance = projectile.position().distanceTo(target);
         if (!contains(config.targetDistanceRange(), distance)) {
             return false;
@@ -28,8 +45,7 @@ public final class RVP_GuidanceRuntimeGeometry {
         if (!contains(config.altitudeRange(), altitudeAgl(projectile, target))) {
             return false;
         }
-        return withinAngle(projectile.getLookAngle(), target.subtract(projectile.position()),
-                config.maxGuidanceAngle());
+        return true;
     }
 
     public static boolean passesTrackLimits(
@@ -39,6 +55,15 @@ public final class RVP_GuidanceRuntimeGeometry {
     ) {
         return target != null && target.isAlive()
                 && passesTrackLimits(projectile, target.getBoundingBox().getCenter(), config);
+    }
+
+    public static boolean passesTrackEnvelope(
+            RVP_BaseBullet projectile,
+            Entity target,
+            RVP_GuidanceActiveConfig config
+    ) {
+        return target != null && target.isAlive()
+                && passesTrackEnvelope(projectile, target.getBoundingBox().getCenter(), config);
     }
 
     public static boolean passesAcquireLimits(
@@ -81,6 +106,17 @@ public final class RVP_GuidanceRuntimeGeometry {
         }
         double dot = Mth.clamp(axis.normalize().dot(toTarget.normalize()), -1.0, 1.0);
         return Math.toDegrees(Math.acos(dot)) <= Math.max(maxAngle, 0.0) + 1.0E-6;
+    }
+
+    private static Vec3 resolveTrackAxis(RVP_BaseBullet projectile) {
+        if (projectile == null) {
+            return Vec3.ZERO;
+        }
+        Vec3 motion = projectile.getDeltaMovement();
+        if (motion != null && motion.lengthSqr() > 1.0E-8) {
+            return motion;
+        }
+        return projectile.getLookAngle();
     }
 
     private static boolean contains(RVP_Range<Float> range, double value) {

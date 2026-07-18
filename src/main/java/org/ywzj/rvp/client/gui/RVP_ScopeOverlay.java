@@ -657,11 +657,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return "HELI";
         }
         if (entity instanceof RVP_BaseBullet bullet) {
-            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.MISSILE) {
-                return "MSL";
-            }
-            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.BOMB) {
-                return "BOMB";
+            String label = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (label != null && !label.isBlank()) {
+                return label;
             }
         }
         return "?";
@@ -676,6 +674,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }
         if (entity instanceof RVP_BaseBullet bullet) {
+            String radarLabel = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (radarLabel != null && !radarLabel.isBlank()) {
+                return radarLabel;
+            }
             ResourceLocation weaponId = bullet.getWeaponId();
             if (weaponId != null) {
                 String display = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)

@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.config.WeaponBayManualOverrideManager;
+import org.ywzj.rvp.ext.WeaponUnitWeaponBayOverrideExt;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.message.ClientVehicleAction;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -49,12 +49,12 @@ public abstract class ClientVehicleActionWeaponBayOverrideMixin {
         if (owner == null) {
             return;
         }
-        WeaponBayManualOverrideManager.markManualOverride(
-                vehicle.getId(),
-                owner.getIndex(),
+        if (owner instanceof WeaponUnitWeaponBayOverrideExt ext) {
+            ext.ywzj_rvp$markWeaponBayManualOverride(
                 owner.getCurrentWeaponIndex(),
                 owner.getCurrentSecondaryWeaponIndex()
-        );
+            );
+        }
     }
 
     @Unique

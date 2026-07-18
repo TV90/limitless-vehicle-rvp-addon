@@ -32,7 +32,7 @@ public class RVP_ChargeBarOverlay implements IGuiOverlay {
         if (!(weapon instanceof RVP_WeaponBase rvp)) {
             return;
         }
-        int cap = rvp.getData().getFireData().getChargeTime();
+        int cap = rvp.getData().getFireData().getChargeTick();
         if (cap <= 0) {
             return;
         }

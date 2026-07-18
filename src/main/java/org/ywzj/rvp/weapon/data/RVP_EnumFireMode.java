@@ -19,7 +19,7 @@ public enum RVP_EnumFireMode {
     BURST,
     /**
      * 长按蓄力；蓄满自动发射一轮并立即重新蓄力（无需松开鼠标）。
-     * 使用 {@link RVP_FireData#getChargeTime()} 作为蓄满 tick 数。
+     * 使用 {@link RVP_FireData#getChargeTick()} 作为蓄满 tick 数。
      */
     @SerializedName("CHARGE")
     CHARGE,
@@ -31,7 +31,7 @@ public enum RVP_EnumFireMode {
     MINIGUN,
     /**
      * 单击开始蓄力；蓄力期间再次点击无效；蓄满后自动发射且不可打断。
-     * 使用 {@link RVP_FireData#getChargeTime()} 作为蓄力时长。
+     * 使用 {@link RVP_FireData#getChargeTick()} 作为蓄力时长。
      */
     @SerializedName("RAILGUN")
     RAILGUN;

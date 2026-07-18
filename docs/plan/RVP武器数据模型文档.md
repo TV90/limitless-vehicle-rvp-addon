@@ -58,6 +58,16 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 
 
 
+## RVP_GuidanceDataARM
+
+| RVP_GuidanceDataARM特有字段 | 解释                                                         | 类型  | 默认值 |
+| --------------------------- | ------------------------------------------------------------ | ----- | ------ |
+| radiationPulseMemoryTick    | 导弹对雷达辐射脉冲的短时记忆 tick。即便辐射源瞬间停机或脉冲间歇，仍允许导弹在该时长内继续认为“最近一次辐射源有效”。用于避免 ARM 因脉冲雷达间歇发射而瞬时丢失引导。 | int   | 30     |
+| armMemoryTick               | 导弹在彻底失去辐射源后，对最后一个有效辐射源位置/目标的持续记忆 tick。该阶段允许导弹继续朝最后记忆点飞行并尝试重新捕获。 | int   | 60     |
+| armLockedEmitterBonus       | 对“已经被火控锁定/预选的辐射源”附加的优先级加权系数。值越高，ARM 越倾向继续攻击当前主目标，而不是被视场内新的辐射源轻易抢走。 | float | 1      |
+
+
+
 ## RVP_TerminalGuidanceData
 
 末端制导数据模型
@@ -105,6 +115,8 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | canisterBurstCount | 子弹丸分几批抛撒 | int | 1 |
 | maxOffAxisShootAngle | 弹药离轴发射的最大角度，对于带有炮塔的载具而言，轴为炮塔指向位置，对于飞机和直升机而言，轴为载机指向位置，null为允许任何角度的离轴发射，如参数为20时，只允许离轴20度角发射 | Integer | null |
 | requireLock | 是否需要锁定才能发射 | boolean | false |
+|                        |                                                              |                            |           |
+|                        |                                                              |                            |           |
 
 
 

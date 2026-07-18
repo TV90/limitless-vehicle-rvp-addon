@@ -47,7 +47,7 @@ final class RVP_RuntimeSeekerSupport {
     ) {
         boolean withinLimits = acquire
                 ? RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, target, config)
-                : RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, config);
+                : RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, config);
         if (!withinLimits) {
             return null;
         }

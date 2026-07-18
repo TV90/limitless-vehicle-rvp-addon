@@ -6,6 +6,7 @@ import com.google.gson.annotations.SerializedName;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataAdapter;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataARM;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -49,18 +50,15 @@ class RVP_GuidanceModelResolverTest {
     void activeResolverSelectsExactlyOnePhase() {
         RVP_GuidanceData guidance = parse("""
                 {
-                  "guidance_type":"GPS",
-                  "gps_spread_radius":4,
+                  "guidance_type":"ARM",
+                  "radiation_pulse_memory_tick":80,
+                  "arm_memory_tick":160,
+                  "arm_locked_emitter_bonus":0.75,
                   "guidance_tick_range":"[[0,100]]",
                   "guidance_target_distance_range":"[[100,inf]]",
                   "max_lock_angle":8,
                   "max_guidance_angle":50,
                   "predict_target_pos":false,
-                  "ignore_chaff":true,
-                  "jam_resistance":0.4,
-                  "radiation_pulse_memory_tick":80,
-                  "arm_memory_tick":160,
-                  "arm_locked_emitter_bonus":0.75,
                   "terminal_guidance":{
                     "guidance_type":"ARH",
                     "guidance_target_distance_range":"[[0,100]]",
@@ -79,11 +77,11 @@ class RVP_GuidanceModelResolverTest {
                 RVP_GuidancePhase.MAIN
         );
         assertEquals(RVP_GuidancePhase.MAIN, main.phase());
-        assertEquals(RVP_EnumGuidanceType.GPS, main.guidanceType());
+        assertEquals(RVP_EnumGuidanceType.ARM, main.guidanceType());
         assertTrue(main.tickRange().contains(100));
         assertTrue(main.targetDistanceRange().contains(500f));
         assertEquals(4f, main.maxLockHalfAngle());
-        assertEquals(4f, main.gpsSpreadRadius());
+        assertEquals(0f, main.gpsSpreadRadius());
         assertFalse(main.predictTargetPos());
 
         RVP_GuidanceActiveConfig terminal = RVP_GuidanceModelResolver.resolveActive(
@@ -100,12 +98,27 @@ class RVP_GuidanceModelResolverTest {
         assertTrue(terminal.predictTargetPos());
         assertEquals(32, terminal.activeRadarActivationRange());
         assertTrue(terminal.enableInertialGuidance());
-        assertTrue(terminal.ignoreChaff());
-        assertEquals(0.4f, terminal.jamResistance());
         assertEquals(80, terminal.radiationPulseMemoryTick());
         assertEquals(160, terminal.armMemoryTick());
         assertEquals(0.75f, terminal.armLockedEmitterBonus());
         assertEquals(0f, terminal.gpsSpreadRadius());
+    }
+
+    @Test
+    void armSubtypeCarriesMemoryValues() {
+        RVP_GuidanceData guidance = parse("""
+                {
+                  "guidance_type":"ARM",
+                  "radiation_pulse_memory_tick":45,
+                  "arm_memory_tick":90,
+                  "arm_locked_emitter_bonus":1.25
+                }
+                """);
+
+        RVP_GuidanceDataARM arm = (RVP_GuidanceDataARM) guidance;
+        assertEquals(45, arm.getRadiationPulseMemoryTick());
+        assertEquals(90, arm.getArmMemoryTick());
+        assertEquals(1.25f, arm.getArmLockedEmitterBonus());
     }
 
     @Test

@@ -1,6 +1,6 @@
 package org.ywzj.rvp.mixin;
 
-import org.ywzj.rvp.config.WeaponBayManualOverrideManager;
+import org.ywzj.rvp.ext.WeaponUnitWeaponBayOverrideExt;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,13 +15,22 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
  * 使用 tick 注入确保所有切换路径都生效。
  */
 @Mixin(value = WeaponUnit.class, remap = false)
-public abstract class WeaponUnitSetWeaponMixin {
+public abstract class WeaponUnitSetWeaponMixin implements WeaponUnitWeaponBayOverrideExt {
 
     @Unique
     private int rvp$lastPrimaryWeaponIndex = -2;
 
     @Unique
     private int rvp$lastSecondaryWeaponIndex = -2;
+
+    @Unique
+    private boolean rvp$weaponBayManualOverrideActive;
+
+    @Unique
+    private int rvp$weaponBayManualOverridePrimaryIndex = Integer.MIN_VALUE;
+
+    @Unique
+    private int rvp$weaponBayManualOverrideSecondaryIndex = Integer.MIN_VALUE;
 
     @Inject(method = "tick", at = @At("TAIL"), remap = false)
     private void rvp$onTick(CallbackInfo ci) {
@@ -30,8 +39,7 @@ public abstract class WeaponUnitSetWeaponMixin {
 
         int curPrimaryIdx = self.getCurrentWeaponIndex();
         int curSecondaryIdx = self.getCurrentSecondaryWeaponIndex();
-        if (WeaponBayManualOverrideManager.isOverrideActive(
-                self.getVehicle().getId(), self.getIndex(), curPrimaryIdx, curSecondaryIdx)) {
+        if (ywzj_rvp$isWeaponBayManualOverrideActive(curPrimaryIdx, curSecondaryIdx)) {
             return;
         }
 
@@ -64,5 +72,32 @@ public abstract class WeaponUnitSetWeaponMixin {
             targetBay = self.weaponBayUnits.get(self.secondaryWeapons.get(curSecondaryIdx));
         }
         return targetBay;
+    }
+
+    @Override
+    public void ywzj_rvp$markWeaponBayManualOverride(int primaryIndex, int secondaryIndex) {
+        rvp$weaponBayManualOverrideActive = true;
+        rvp$weaponBayManualOverridePrimaryIndex = primaryIndex;
+        rvp$weaponBayManualOverrideSecondaryIndex = secondaryIndex;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isWeaponBayManualOverrideActive(int primaryIndex, int secondaryIndex) {
+        if (!rvp$weaponBayManualOverrideActive) {
+            return false;
+        }
+        if (rvp$weaponBayManualOverridePrimaryIndex == primaryIndex
+                && rvp$weaponBayManualOverrideSecondaryIndex == secondaryIndex) {
+            return true;
+        }
+        ywzj_rvp$clearWeaponBayManualOverride();
+        return false;
+    }
+
+    @Override
+    public void ywzj_rvp$clearWeaponBayManualOverride() {
+        rvp$weaponBayManualOverrideActive = false;
+        rvp$weaponBayManualOverridePrimaryIndex = Integer.MIN_VALUE;
+        rvp$weaponBayManualOverrideSecondaryIndex = Integer.MIN_VALUE;
     }
 }

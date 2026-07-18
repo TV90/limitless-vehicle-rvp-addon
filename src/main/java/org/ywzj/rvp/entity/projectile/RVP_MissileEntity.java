@@ -1,6 +1,7 @@
 package org.ywzj.rvp.entity.projectile;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -92,8 +93,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
         if (data == null
-                || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)
-                || !hitl.isHitlEnabled()) {
+                || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
             return;
         }
         initNewSchemaHitl(data, hitl, aim);
@@ -219,13 +219,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             }
         }
 
-        if (!activeRadarOn && tickCount >= 20) {
+        if (!activeRadarOn) {
             Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
             boolean withinActivationRange = activeRadarActivationRange <= 0
                     || activationReference != null
                     && activationReference.distanceTo(position()) <= activeRadarActivationRange;
             if (withinActivationRange || !hasDesignation) {
-                activeRadarOn = true;
+                setAutonomousSeekerOn(true);
+                notifyActiveSeekerOnline(type);
             }
         }
 
@@ -234,6 +235,20 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             if (activeRadarLostTargetTick >= 60) {
                 life = 0;
             }
+        }
+    }
+
+    private void notifyActiveSeekerOnline(RVP_EnumGuidanceType type) {
+        if (!(getOwner() instanceof ServerPlayer player)) {
+            return;
+        }
+        String message = switch (type) {
+            case AIR -> "主动红外导引头开机";
+            case ARH -> "主动雷达导引头开机";
+            default -> null;
+        };
+        if (message != null) {
+            player.displayClientMessage(Component.literal(message), true);
         }
     }
 

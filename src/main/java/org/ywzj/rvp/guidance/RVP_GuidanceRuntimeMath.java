@@ -4,11 +4,10 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /** New-schema steering math. It never reads legacy steering_data. */
 public final class RVP_GuidanceRuntimeMath {
-
-    private static final double PN_GAIN = 3.0;
 
     private RVP_GuidanceRuntimeMath() {}
 
@@ -21,6 +20,9 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 target = entity != null && entity.isAlive()
                 ? entity.getBoundingBox().getCenter()
                 : intent.aimPoint();
+        if (entity != null && entity.isAlive() && target != null) {
+            projectile.rememberGuidancePos(target);
+        }
         boolean trackLimitsPassed = target != null
                 && RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, context.active());
         boolean irGrace = entity != null
@@ -57,14 +59,17 @@ public final class RVP_GuidanceRuntimeMath {
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
         } else if (entity != null && context.active().predictTargetPos()) {
-            next = steerProportional(
-                    projectile.position(),
+            next = steerInterceptLikeNative(
+                    projectile,
                     current,
                     steeringTarget,
                     entity.getDeltaMovement(),
                     speed,
                     factor
             );
+            if (next == null || next.lengthSqr() <= 1.0E-8) {
+                next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
+            }
         } else {
             next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
         }
@@ -141,28 +146,57 @@ public final class RVP_GuidanceRuntimeMath {
             double speed,
             float turningFactor
     ) {
-        if (missilePos == null || missileVelocity == null || targetPos == null
-                || targetVelocity == null || speed <= 1.0E-8 || missileVelocity.lengthSqr() <= 1.0E-8) {
-            return missileVelocity;
+        return steerPursuit(
+                missileVelocity,
+                targetPos == null || missilePos == null ? null : targetPos.subtract(missilePos),
+                speed,
+                turningFactor
+        );
+    }
+
+    public static Vec3 steerInterceptLikeNative(
+            RVP_BaseBullet projectile,
+            Vec3 current,
+            Vec3 targetPos,
+            Vec3 targetVelocity,
+            double speed,
+            float turningFactor
+    ) {
+        if (projectile == null || current == null || targetPos == null || targetVelocity == null || speed <= 1.0E-8) {
+            return null;
         }
-        Vec3 relativePosition = targetPos.subtract(missilePos);
-        double distanceSqr = relativePosition.lengthSqr();
-        if (distanceSqr <= 1.0E-8) {
-            return missileVelocity;
-        }
-        Vec3 relativeVelocity = targetVelocity.subtract(missileVelocity);
-        Vec3 lineOfSight = relativePosition.normalize();
-        double closingVelocity = -relativeVelocity.dot(lineOfSight);
-        if (closingVelocity <= 0.0) {
-            return missileVelocity.normalize().scale(speed);
+        RVP_InterceptSolver.Solution solution = RVP_InterceptSolver.solve(
+                projectile.position(),
+                current,
+                speed,
+                targetPos,
+                targetVelocity
+        );
+        Vec3 interceptPos = solution.interceptPos() != null ? solution.interceptPos() : targetPos;
+        Vec3 toIntercept = interceptPos.subtract(projectile.position());
+        if (toIntercept.lengthSqr() <= 1.0E-8) {
+            return null;
         }
 
-        Vec3 velocityDirection = missileVelocity.normalize();
-        Vec3 lineOfSightRate = relativePosition.cross(relativeVelocity).scale(1.0 / distanceSqr);
-        Vec3 lateralCommand = lineOfSightRate.cross(velocityDirection).scale(PN_GAIN * closingVelocity);
-        lateralCommand = lateralCommand.subtract(velocityDirection.scale(lateralCommand.dot(velocityDirection)));
-        Vec3 commanded = missileVelocity.add(lateralCommand);
-        return blendDirection(missileVelocity, commanded, speed, turningFactor);
+        Vec3 targetDir = toIntercept.normalize();
+        double acceleration = resolveGuidanceAcceleration(projectile);
+        Vec3 desiredDir;
+        if (acceleration > 1.0E-8) {
+            double dot = current.dot(targetDir);
+            double magSq = current.lengthSqr();
+            double discriminant = dot * dot - (magSq - acceleration * acceleration);
+            if (discriminant < 0.0) {
+                desiredDir = targetDir.scale(dot * PhysicsEngine.MAGIC_NUMBER * 4.0).subtract(current);
+            } else {
+                desiredDir = targetDir.scale(dot + Math.sqrt(discriminant)).subtract(current);
+            }
+        } else {
+            desiredDir = toIntercept;
+        }
+        if (desiredDir.lengthSqr() <= 1.0E-8) {
+            desiredDir = toIntercept;
+        }
+        return blendDirection(current, desiredDir, speed, turningFactor);
     }
 
     private static Vec3 blendDirection(Vec3 current, Vec3 desired, double speed, float turningFactor) {
@@ -183,5 +217,20 @@ public final class RVP_GuidanceRuntimeMath {
     private static float resolveTurningFactor(RVP_GuidanceRuntimeContext context) {
         Float configured = context.data().getProjectileData().resolveTurningFactor(context.projectile().tickCount);
         return configured != null ? configured : 0.5f;
+    }
+
+    private static double resolveGuidanceAcceleration(RVP_BaseBullet projectile) {
+        if (projectile == null || projectile.getRvpData() == null) {
+            return 0.0;
+        }
+        if (!projectile.getRvpData().usesPropulsion()) {
+            return 0.0;
+        }
+        float mass = Math.max(projectile.getRvpData().getResolvedMass(), 1.0E-6f);
+        float thrust = projectile.getRvpData().getResolvedThrust();
+        if (thrust <= 0f) {
+            return 0.0;
+        }
+        return thrust / mass;
     }
 }

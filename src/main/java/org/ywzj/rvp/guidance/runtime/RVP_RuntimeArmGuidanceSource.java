@@ -7,6 +7,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
+import org.ywzj.rvp.guidance.RVP_InterceptSolver;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -29,9 +30,12 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
 
         AntiRadiationSeekerHelper.AntiRadiationEmitter best = null;
         int interval = context.active().scanIntervalTick() != null ? context.active().scanIntervalTick() : 2;
+        if (!projectile.hasAntiRadiationSignalAcquired() && projectile.getPreselectedVehicleId() >= 0) {
+            interval = 1;
+        }
         if (projectile.tickCount >= projectile.getAntiRadiationNextScanTick()) {
             projectile.setAntiRadiationNextScanTick(projectile.tickCount + interval);
-            float fov = Math.max(context.active().maxLockHalfAngle(), 0.5f);
+            float fov = resolveArmScanHalfAngle(context);
             float range = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
                     context.active().targetDistanceRange());
             List<AntiRadiationSeekerHelper.AntiRadiationEmitter> emitters =
@@ -51,13 +55,23 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
 
         if (best != null) {
             projectile.setAntiRadiationLostPermanent(false);
+            projectile.setAntiRadiationSignalAcquired(true);
             int memory = context.active().armMemoryTick() > 0
                     ? context.active().armMemoryTick()
                     : AntiRadiationSeekerHelper.getDefaultMemoryTick(best.radarUnit());
             projectile.setAntiRadiationMemoryLeftTick(memory);
-            projectile.setTargetPos(best.position());
-            projectile.rememberGuidancePos(best.position());
-            return RVP_GuidanceIntent.point(best.position(), false, 1.0, RVP_EnumGuidanceType.ARM);
+            Vec3 aimPoint = resolveEmitterAimPoint(projectile, best, context.active().predictTargetPos());
+            projectile.setTargetPos(aimPoint);
+            projectile.rememberGuidancePos(aimPoint);
+            return RVP_GuidanceIntent.point(aimPoint, false, 1.0, RVP_EnumGuidanceType.ARM);
+        }
+
+        if (!projectile.hasAntiRadiationSignalAcquired()
+                && projectile.getPreselectedVehicleId() >= 0
+                && projectile.getLastGuidancePos() != null) {
+            Vec3 snapshot = projectile.getLastGuidancePos();
+            projectile.setTargetPos(snapshot);
+            return RVP_GuidanceIntent.point(snapshot, false, 1.0, RVP_EnumGuidanceType.ARM);
         }
 
         if (projectile.getAntiRadiationMemoryLeftTick() > 0 && projectile.getLastGuidancePos() != null) {
@@ -68,6 +82,33 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         }
         projectile.clearTarget();
         return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARM);
+    }
+
+    private static float resolveArmScanHalfAngle(RVP_GuidanceRuntimeContext context) {
+        return Math.max(
+                Math.max(context.active().maxLockHalfAngle(), context.active().maxGuidanceAngle()),
+                0.5f
+        );
+    }
+
+    private static Vec3 resolveEmitterAimPoint(
+            RVP_BaseBullet projectile,
+            AntiRadiationSeekerHelper.AntiRadiationEmitter emitter,
+            boolean predictTargetPos
+    ) {
+        Vec3 currentEmitterPos = emitter.position();
+        if (!predictTargetPos || emitter.vehicle() == null) {
+            return currentEmitterPos;
+        }
+        double missileSpeed = Math.max(projectile.getFlightSpeed(), projectile.getDeltaMovement().length());
+        RVP_InterceptSolver.Solution solution = RVP_InterceptSolver.solve(
+                projectile.position(),
+                projectile.getDeltaMovement(),
+                missileSpeed,
+                currentEmitterPos,
+                emitter.vehicle().getDeltaMovement()
+        );
+        return solution.interceptPos() != null ? solution.interceptPos() : currentEmitterPos;
     }
 
     private static AntiRadiationSeekerHelper.AntiRadiationEmitter selectEmitter(
@@ -121,6 +162,7 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         projectile.setPreselectedTarget(vehicleId, radarIndex);
         Vec3 position = arm.ywzj_rvp$getArmPreselectedPos();
         if (vehicleId >= 0 && position != null) {
+            projectile.setAntiRadiationSignalAcquired(false);
             projectile.setTargetPos(position);
             projectile.rememberGuidancePos(position);
         }

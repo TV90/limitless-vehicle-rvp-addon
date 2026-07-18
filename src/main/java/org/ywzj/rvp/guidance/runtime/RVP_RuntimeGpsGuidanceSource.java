@@ -19,11 +19,6 @@ public final class RVP_RuntimeGpsGuidanceSource implements RVP_RuntimeGuidanceSo
         if (target == null) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.GPS);
         }
-        float cancelDistance = context.data().getProjectileData().getGpsGuidanceCancelDistance();
-        if (cancelDistance > 0f && context.projectile().position().distanceTo(target) <= cancelDistance) {
-            context.projectile().clearTarget();
-            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.GPS);
-        }
         return RVP_GuidanceIntent.point(target, false, 1.0, RVP_EnumGuidanceType.GPS);
     }
 }

@@ -2516,7 +2516,7 @@ public class RVP_TacticalMapScreen extends Screen {
         WeaponUnit rootWeaponUnit = weaponUnit.getRootParentWeaponUnit();
         Vec3 origin = rootWeaponUnit.aimContext().from;
         Vec3 targetCenter = target.getBoundingBox().getCenter();
-        double maxRange = Math.max(1.0, data.getMaxLockOnRange());
+        double maxRange = Math.max(1.0, data.resolveLaunchLockRange());
         if (origin.distanceToSqr(targetCenter) > maxRange * maxRange) {
             return false;
         }
@@ -2526,7 +2526,7 @@ public class RVP_TacticalMapScreen extends Screen {
             return true;
         }
         double angle = Math.toDegrees(VectorUtil.angleBetween(look.normalize(), toTarget.normalize()));
-        double seekerAngle = Math.max(1.0, data.getMaxGuideHeadAngle());
+        double seekerAngle = Math.max(1.0, data.resolveLaunchOffAxisLockAngle());
         return angle <= seekerAngle;
     }
 
@@ -2729,11 +2729,9 @@ public class RVP_TacticalMapScreen extends Screen {
             return "HELI";
         }
         if (entity instanceof RVP_BaseBullet bullet) {
-            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.MISSILE) {
-                return "MSL";
-            }
-            if (bullet.getWeaponKind() == RVP_EnumWeaponKind.BOMB) {
-                return "BOMB";
+            String label = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (label != null && !label.isBlank()) {
+                return label;
             }
         }
         return "?";
@@ -2748,6 +2746,10 @@ public class RVP_TacticalMapScreen extends Screen {
             return VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }
         if (entity instanceof RVP_BaseBullet bullet) {
+            String radarLabel = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (radarLabel != null && !radarLabel.isBlank()) {
+                return radarLabel;
+            }
             ResourceLocation weaponId = bullet.getWeaponId();
             if (weaponId != null) {
                 return CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)

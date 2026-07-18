@@ -19,8 +19,12 @@ public final class RVP_GuidanceDataAdapter
         implements JsonDeserializer<RVP_GuidanceData>, JsonSerializer<RVP_GuidanceData> {
 
     private static final Set<String> GPS_FIELDS = Set.of("gps_spread_radius");
+    private static final Set<String> ARM_FIELDS = Set.of(
+            "radiation_pulse_memory_tick",
+            "arm_memory_tick",
+            "arm_locked_emitter_bonus"
+    );
     private static final Set<String> HITL_FIELDS = Set.of(
-            "hitl_enabled",
             "hitl_max_turn_deg_per_tick",
             "signal_source",
             "hitl_max_control_dist",
@@ -66,14 +70,12 @@ public final class RVP_GuidanceDataAdapter
             throw new JsonParseException("IOG is not a public guidance_type in the new schema");
         }
         object.addProperty("guidance_type", type.name());
-        if (HITL_TYPES.contains(type) && !object.has("hitl_enabled")) {
-            object.addProperty("hitl_enabled", true);
-        }
         normalizeTerminalType(object);
         boolean hasHitlFields = containsAny(object, HITL_FIELDS);
+        boolean hasArmFields = containsAny(object, ARM_FIELDS);
         validateSubtypeFields(object, type);
 
-        Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields);
+        Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields, hasArmFields);
         return context.deserialize(object, targetClass);
     }
 
@@ -88,19 +90,22 @@ public final class RVP_GuidanceDataAdapter
         }
         RVP_EnumGuidanceType type = source.getGuidanceType();
         boolean hitlSubtype = source instanceof RVP_GuidanceDataHITL;
-        Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype);
+        boolean armSubtype = source instanceof RVP_GuidanceDataARM;
+        Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype, armSubtype);
         if (expected != RVP_GuidanceData.class && !expected.isInstance(source)) {
             throw new JsonParseException(type + " guidance requires " + expected.getSimpleName());
         }
         if (expected == RVP_GuidanceData.class
-                && (source instanceof RVP_GuidanceDataGPS || source instanceof RVP_GuidanceDataHITL)) {
+                && (source instanceof RVP_GuidanceDataGPS
+                || source instanceof RVP_GuidanceDataHITL
+                || source instanceof RVP_GuidanceDataARM)) {
             throw new JsonParseException(source.getClass().getSimpleName() + " does not match " + type);
         }
         return context.serialize(source, source.getClass());
     }
 
     private static void rejectSubtypeFieldsWithoutType(JsonObject object) {
-        if (containsAny(object, GPS_FIELDS) || containsAny(object, HITL_FIELDS)) {
+        if (containsAny(object, GPS_FIELDS) || containsAny(object, HITL_FIELDS) || containsAny(object, ARM_FIELDS)) {
             throw new JsonParseException("Guidance subtype fields require guidance_type");
         }
     }
@@ -111,6 +116,12 @@ public final class RVP_GuidanceDataAdapter
     ) {
         if (type != RVP_EnumGuidanceType.GPS && containsAny(object, GPS_FIELDS)) {
             throw new JsonParseException("gps_spread_radius requires guidance_type GPS");
+        }
+        if (type != RVP_EnumGuidanceType.ARM && containsAny(object, ARM_FIELDS)) {
+            throw new JsonParseException("ARM subtype fields require guidance_type ARM");
+        }
+        if (!HITL_TYPES.contains(type) && containsAny(object, HITL_FIELDS)) {
+            throw new JsonParseException("HITL subtype fields require a HITL guidance_type");
         }
     }
 
@@ -125,10 +136,14 @@ public final class RVP_GuidanceDataAdapter
 
     private static Class<? extends RVP_GuidanceData> targetClass(
             RVP_EnumGuidanceType type,
-            boolean hasHitlFields
+            boolean hasHitlFields,
+            boolean hasArmFields
     ) {
         if (type == RVP_EnumGuidanceType.GPS) {
             return RVP_GuidanceDataGPS.class;
+        }
+        if (type == RVP_EnumGuidanceType.ARM || hasArmFields) {
+            return RVP_GuidanceDataARM.class;
         }
         if (hasHitlFields || HITL_TYPES.contains(type)) {
             return RVP_GuidanceDataHITL.class;

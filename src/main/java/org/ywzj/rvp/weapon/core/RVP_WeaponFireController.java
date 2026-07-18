@@ -82,18 +82,13 @@ public final class RVP_WeaponFireController {
         }
         if (mode() == RVP_EnumFireMode.RAILGUN && lastReleased) {
             railgunCharging = false;
-            railgunChargeTick = 0;
-            weapon.setChargeTick(0);
-        }
-        if (mode() == RVP_EnumFireMode.CHARGE && lastReleased) {
-            weapon.setChargeTick(0);
         }
         if (mode() == RVP_EnumFireMode.CHARGE && lastPressed) {
             playChargeSound();
         }
 
         tickSpinClient(fireDown);
-        int chargeCap = fire.getChargeTime();
+        int chargeCap = fire.getChargeTick();
         if (chargeCap <= 0) {
             return;
         }
@@ -139,9 +134,9 @@ public final class RVP_WeaponFireController {
             case FULL_AUTO -> lastFireDown && !weapon.isCoolingDown();
             case SEMI_AUTO -> lastPressed && !weapon.isCoolingDown();
             case BURST -> shouldAttemptBurstClientShot(fire);
-            case CHARGE -> lastFireDown && weapon.getChargeTick() >= fire.getChargeTime() && !weapon.isCoolingDown();
-            case MINIGUN -> lastFireDown && spinTick >= fire.getChargeTime() && !weapon.isCoolingDown();
-            case RAILGUN -> railgunCharging && railgunChargeTick >= fire.getChargeTime() && !weapon.isCoolingDown();
+            case CHARGE -> lastFireDown && weapon.getChargeTick() >= fire.getChargeTick() && !weapon.isCoolingDown();
+            case MINIGUN -> lastFireDown && spinTick >= fire.getChargeTick() && !weapon.isCoolingDown();
+            case RAILGUN -> railgunCharging && railgunChargeTick >= fire.getChargeTick() && !weapon.isCoolingDown();
         };
     }
 
@@ -238,26 +233,31 @@ public final class RVP_WeaponFireController {
         }
 
         if (mode() == RVP_EnumFireMode.RAILGUN && railgunCharging && fireDown) {
-            railgunChargeTick = Math.min(railgunChargeTick + 1, fire.getChargeTime());
+            railgunChargeTick = Math.min(railgunChargeTick + 1, fire.getChargeTick());
             weapon.setChargeTick(railgunChargeTick);
         } else if (mode() == RVP_EnumFireMode.RAILGUN && !fireDown) {
             railgunCharging = false;
-            railgunChargeTick = 0;
-            weapon.setChargeTick(0);
         }
 
-        int chargeCap = fire.getChargeTime();
+        int chargeCap = fire.getChargeTick();
         if (chargeCap <= 0) {
             return;
         }
         if (mode() == RVP_EnumFireMode.CHARGE && fireDown) {
             weapon.setChargeTick(Math.min(weapon.getChargeTick() + 1, chargeCap));
         } else if (mode() == RVP_EnumFireMode.CHARGE && !fireDown) {
-            weapon.setChargeTick(0);
+            weapon.setChargeTick(decayCharge(weapon.getChargeTick(), fire));
         }
         if (mode() == RVP_EnumFireMode.MINIGUN && fireDown) {
             spinTick = Math.min(spinTick + 1, chargeCap);
             weapon.setChargeTick(spinTick);
+        } else if (mode() == RVP_EnumFireMode.MINIGUN && !fireDown) {
+            spinTick = decayCharge(spinTick, fire);
+            weapon.setChargeTick(spinTick);
+        }
+        if (mode() == RVP_EnumFireMode.RAILGUN && !fireDown) {
+            railgunChargeTick = decayCharge(railgunChargeTick, fire);
+            weapon.setChargeTick(railgunChargeTick);
         }
     }
 
@@ -266,8 +266,8 @@ public final class RVP_WeaponFireController {
             return;
         }
         RVP_FireData fire = weapon.getData().getFireData();
-        int cap = Math.max(fire.getChargeTime(), 1);
-        int decay = Math.max(fire.getMinigunSpinDecayTick(), 1);
+        int cap = Math.max(fire.getChargeTick(), 1);
+        int decay = resolveChargeDecayStep(fire);
         if (fireDown) {
             spinTick = Math.min(spinTick + 1, cap);
         } else {
@@ -282,8 +282,12 @@ public final class RVP_WeaponFireController {
         }
         if (fireDown) {
             RVP_FireData fire = weapon.getData().getFireData();
-            int cap = Math.max(fire.getChargeTime(), 1);
+            int cap = Math.max(fire.getChargeTick(), 1);
             spinTick = Math.min(spinTick + 1, cap);
+            weapon.setChargeTick(spinTick);
+        } else {
+            RVP_FireData fire = weapon.getData().getFireData();
+            spinTick = decayCharge(spinTick, fire);
             weapon.setChargeTick(spinTick);
         }
     }
@@ -298,7 +302,7 @@ public final class RVP_WeaponFireController {
 
     private boolean canShootNow(boolean afterPrime) {
         RVP_FireData fire = weapon.getData().getFireData();
-        int chargeCap = fire.getChargeTime();
+        int chargeCap = fire.getChargeTick();
         return switch (mode()) {
             case FULL_AUTO, SEMI_AUTO -> true;
             case BURST -> canStartBurstRound(fire);
@@ -341,7 +345,7 @@ public final class RVP_WeaponFireController {
 
     public float chargeRatio() {
         RVP_FireData fire = weapon.getData().getFireData();
-        int cap = fire.getChargeTime();
+        int cap = fire.getChargeTick();
         if (cap <= 0) {
             return 1f;
         }
@@ -360,7 +364,7 @@ public final class RVP_WeaponFireController {
 
     public void primeServerShot() {
         RVP_FireData fire = weapon.getData().getFireData();
-        int cap = fire.getChargeTime();
+        int cap = fire.getChargeTick();
         if (cap <= 0) {
             return;
         }
@@ -377,6 +381,19 @@ public final class RVP_WeaponFireController {
             }
             default -> { }
         }
+    }
+
+    private int decayCharge(int current, RVP_FireData fire) {
+        if (current <= 0) {
+            return 0;
+        }
+        return Math.max(current - resolveChargeDecayStep(fire), 0);
+    }
+
+    private int resolveChargeDecayStep(RVP_FireData fire) {
+        int cap = Math.max(fire.getChargeTick(), 1);
+        int decayDuration = Math.max(fire.getChargeDecayTick(), 1);
+        return Math.max((cap + decayDuration - 1) / decayDuration, 1);
     }
 
     @OnlyIn(Dist.CLIENT)

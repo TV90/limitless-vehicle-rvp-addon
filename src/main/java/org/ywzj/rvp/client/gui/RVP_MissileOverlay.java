@@ -37,7 +37,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (!data.usesGuidanceType(RVP_EnumGuidanceType.IR)) return;
         if (RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data)) == RVP_IrHudProfile.GROUND) return;
 
-        float fov = data.getMaxGuideHeadAngle();
+        float fov = data.resolveLaunchOffAxisLockAngle();
         if (fov < 5f) return;
 
         double x = VehicleAimAtOverlay.getScreenAimX();
@@ -66,7 +66,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         int aimCircleColor = (Color.WHITE & 0x00FFFFFF) | ((int) (alpha * 255) << 24);
 
         // 导引头大圈 — 精确复刻 VehicleAimAtOverlay
-        if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableHms()) {
+        if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableIrHmd()) {
             GuiHelper.drawCircle(poseStack, 0, 0, 15, aimCircleColor, 0.03f, 0, 0);
         }
         Vec2 rot = weaponUnit.worldRot();

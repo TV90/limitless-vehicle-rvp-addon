@@ -254,9 +254,9 @@ public class RVP_ClientHmdState {
                     && data.isEnableIrHmd()
                     && weaponUnit.isSeekerOn()) {
                 shouldBeActive = true;
-                seekerFov = data.getMaxLockOnAngle();
-                seekerRange = data.getMaxLockOnRange();
-                guideHeadMaxAngle = data.getMaxGuideHeadAngle();
+                seekerFov = data.resolveLaunchSeekerFullFov();
+                seekerRange = data.resolveLaunchLockRange();
+                guideHeadMaxAngle = data.resolveLaunchOffAxisLockAngle();
                 usesNewLaunchData = true;
                 nextLaunchWeapon = data;
                 nextHudProfile = RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data));

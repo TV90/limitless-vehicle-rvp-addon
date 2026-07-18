@@ -124,7 +124,7 @@ public final class RVP_ProjectileSpawner {
             if (kind == RVP_EnumWeaponKind.MISSILE && data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
                 projectile.setTargetPos(lockTarget.getBoundingBox().getCenter());
                 projectile.markLaunchTargetSnapshot();
-                projectile.beginIrSeekerGrace(Math.max(6, data.getScanInterval() * 2));
+                projectile.beginIrSeekerGrace(Math.max(6, data.resolveGuidanceScanIntervalTick() * 2));
             }
         }
 

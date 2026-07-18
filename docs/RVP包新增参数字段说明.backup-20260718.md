@@ -208,13 +208,12 @@ RVP 扩展武器数据包路径：
   "reload": { "time": 80, "ammo": "ywzj_vehicle:ammo_missile" },
   "fire_data": { "spread": 0 },
   "projectile_data": { "velocity": 2.5 },
-  "misc_data": {},
   "fuse_data": {},
   "collision_data": { "direct_damage": 80 },
   "effects_data": {},
   "detonate_data": { "explosion_data": {} },
   "submunition_data": {},
-  "guidance_data": { "guidance_type": "NONE" }
+  "guidance_data": { "stages": [] }
 }
 ```
 
@@ -227,7 +226,7 @@ RVP 扩展武器数据包路径：
 | `show_msl_indicator` | 是否在 HUD 中显示导弹指示器（菱形框 + 距离）；默认 `false`。仅对需要在 HUD 上额外标示的导弹有意义。 |
 | `ahead_data` | `rvp:machinegun` 的 AHEAD 自动编程配置分组。要求同时启用 `fuse_data.programmable_airburst`；Java 侧只负责把空爆距离自动编到预瞄点附近，开花后的子弹药细节仍由 `submunition_data` 和子弹药自身 JSON 决定。旧顶层 `ahead_*` 仍兼容读取，但已不推荐继续使用。 |
 | `sub_type` | 可选子类型标记，仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
-| `require_lock` | 旧顶层写法，已不推荐继续使用。请改写到 `fire_data.require_lock`。 |
+| `require_lock` | 是否要求发射前已有锁定。GPS、ARM、TV、MCLOS 等通常可设为 `false`。 |
 | `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
 
 **破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
@@ -265,22 +264,10 @@ RVP 扩展武器数据包路径：
 
 | 字段 | 说明 |
 | --- | --- |
-| `require_lock` | 是否要求发射前已有锁定。默认 `true`。GPS、ARM、TV、MCLOS 等通常会手动设为 `false`。 |
-| `fire_mode` | 开火模式枚举 `RVP_EnumFireMode`。JSON 须写枚举名，如 `FULL_AUTO`，大小写不敏感；无法识别时默认为 `FULL_AUTO`。 |
-| `spread` | 发射角度散布（度）。为空时回退使用武器顶层 `spread`。 |
-| `burst_count` | 点射模式每轮发射数量。默认 `1`。 |
-| `burst_delay` | 点射模式轮间间隔（毫秒）。默认 `0`。 |
-| `charge_tick` | `CHARGE`/`RAILGUN` 的蓄满时间，或 `MINIGUN` 的转速爬升时间（tick）。默认 `10`。旧写法 `charge_time` 已废弃。 |
-| `charge_decay_tick` | 从满蓄力/满转速衰减回零所需时间（tick）。默认 `2`。旧的 `minigun_spin_decay_tick` 已并入此字段。 |
+| `fire_mode` | 开火模式枚举 {@link org.ywzj.rvp.weapon.data.RVP_EnumFireMode}（JSON 须写枚举名，如 `FULL_AUTO`，大小写不敏感；无法识别时默认为 `FULL_AUTO`）。 |
+| `charge_time` | `CHARGE`/`RAILGUN`：蓄满所需 tick；`MINIGUN`：转速爬满 tick。 |
 | `charge_power_scale` | 按蓄力/转速比例线性放大伤害或初速（`1` = 不放大）。 |
-| `max_off_axis_shoot_angle` | 最大离轴发射角（度）。为空时保持旧版“任意角度均可发射”的行为。 |
-| `canister_count` | 单次开火的子弹丸数量。`<= 0` 时按 `1` 处理。 |
-| `canister_type` | 多弹丸散布类型：`0` 位置散布，`1` 角度散布，`2` 角度散布并沿弹道前向错位以模拟时间散布。 |
-| `canister_distribution` | 多弹丸分布方式，默认 `uniform`。 |
-| `canister_shape` | 多弹丸散布形状，默认 `circle`。 |
-| `canister_diff` | 多弹丸散布半径/角度强度。默认 `0.3`。 |
-| `canister_burst_delay_time` | 子弹丸分批抛撒的延时 tick。默认 `0`。 |
-| `canister_burst_count` | 子弹丸分几批抛撒。默认 `1`。 |
+| `minigun_spin_decay_tick` | 仅 `MINIGUN`：松开后每 tick 转速衰减量；默认 `max(charge_time/4, 1)`。 |
 
 ### `fire_mode` 开火模式
 
@@ -298,11 +285,23 @@ RVP 扩展武器数据包路径：
 ```json
 "fire_data": {
   "fire_mode": "CHARGE",
-  "charge_tick": 10,
-  "charge_decay_tick": 2,
+  "charge_time": 10,
   "charge_power_scale": 2.0
 }
 ```
+
+| 字段 | 说明 |
+| --- | --- |
+| `canister_count` | 单次开火弹丸数量；未写或 ≤0 时视为 1。 |
+| `spread` | **发射角度散布（度）**（勿在顶层写 `inaccuracy`）。单发：每枚弹丸随机偏移；霰弹（`canister_count > 1`）：每轮齐射采样一次**束心**偏移，各弹丸再按 `canister_diff` / 网格散布相对束心展开。 |
+| `canister_type` | 多弹丸散布：`0` 位置，`1` 角度，`2` 角度 + 前向错位模拟时间散布（`canister_count > 1` 时生效）。 |
+| `canister_distribution` | 圆盘散布（`circle`）时控制随机密度；矩形网格（`square`）时决定在网格上优先占用哪些格（`normal` 靠中心、`ring` 靠方环等）。 |
+| `canister_shape` | `circle`（默认，随机圆盘）或 `square`（矩形网格排布：16 弹→4×4，12 弹→4×3；格心映射到 `canister_diff` 角度/位置偏移）。 |
+| `canister_diff` | 散布强度；type=1/2 时为角度散布，推荐 &gt; 0.5。 |
+| `canister_burst_delay_time` | type=2 时沿弹道前向弹丸间距（方块），推荐 &gt; 3。 |
+| `canister_burst_count` | 单次 `shoot()` 内齐射轮数（每轮 `canister_count` 枚，同 tick）。 |
+| `burst_count` | 仅 `fire_mode: BURST`：每轮点射弹数。 |
+| `burst_delay` | 仅 `fire_mode: BURST`：两轮点射间隔（毫秒）。 |
 
 多弹丸散布示例：
 
@@ -340,45 +339,97 @@ RVP 扩展武器数据包路径：
 | `rotate_to_motion` | 是否让实体朝向跟随运动方向。 |
 | `max_speed` | 最大速度限制，0 表示不限制。 |
 | `min_speed` | 最小速度限制，0 表示不限制。 |
-| `turning_factor` | 旧版 MCHR 风格过载参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 tick 区间，value 为该区间的转向因子。为空时不启用。 |
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
 | `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
 | `thrust` | 发动机推力。 |
 | `motor_burn_time` | 发动机燃烧时间（tick）。 |
-| `second_pulse` | 是否启用双脉冲推进（第二段推力）。旧写法 `dual_pulse` 已废弃。 |
+| `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
+| `drag_coefficient` | 速度平方阻力系数。 |
+| `altitude_drag_factor_enabled` | 是否启用按高度变化的阻力倍率。仅 `rvp:missile` 生效；关闭时固定按原始 `drag_coefficient` / `drag` 计算。默认 `true`。 |
+| `altitude_drag_low_y` | 低空锚点高度；`y <= low_y` 时取 `altitude_drag_low_factor`。默认 `-64`。 |
+| `altitude_drag_low_factor` | 低空阻力倍率。默认 `2.0`。 |
+| `altitude_drag_base_y` | 标准高度锚点；在该高度取 `altitude_drag_base_factor`。默认 `384`。 |
+| `altitude_drag_base_factor` | 标准高度阻力倍率。默认 `1.0`。 |
+| `altitude_drag_thin_y` | 稀薄空气锚点高度。默认 `500`。 |
+| `altitude_drag_thin_factor` | 稀薄空气阻力倍率。默认 `0.6`。 |
+| `altitude_drag_high_y` | 高空锚点高度。默认 `1000`。 |
+| `altitude_drag_high_factor` | 高空阻力倍率。默认 `0.34`。 |
+| `gps_cruise_start_tick` | GPS 炸弹巡航段开始 tick；`-1` 或不写表示关闭该弹道。仅 `rvp:bomb + GPS` 生效。 |
+| `gps_cruise_terminal_cylinder_radius` | 末端俯冲触发的水平圆柱半径；进入以目标点为中心、半径为该值的无限高圆柱后，退出巡航并改为直扑目标点。 |
+| `gps_cruise_gravity_scale` | 巡航段重力系数；`1` = 原始 `gravity`，`0.5` = 巡航段下落减半。仅巡航段生效。 |
+| `gps_cruise_leveling_factor` | 巡航段自动改平强度；每 tick 把“向上”的竖直速度按该比例拉向 `0`，用于消掉抛投后的上仰。范围建议 `0~1`。 |
+| `gps_cep` | GPS 炸弹 CEP（米/格）；定义为“50% 落点落在该半径内”的圆概率误差。每枚弹只随机一次水平偏差，`Y` 不偏移。仅 `rvp:bomb + GPS` 生效。 |
+| `gps_guidance_cancel_distance` | GPS 弹药接近目标点后自动脱导的阈值距离（米/格）；`0` 表示不启用。用于避免空中 GPS 点附近来回穿梭。 |
+| `dual_pulse` | 是否启用双脉冲推进（第二段推力）。仅对 `rvp:missile` 且制导源包含 `IR/ARH/SARH/ARM` 的导弹生效。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
-| `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
-| `drag_coefficient` | 速度平方阻力系数。仅火箭发动机分支读取。 |
-| `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。旧的 `altitude_drag_*` 分层字段已全部废弃。 |
+| `signature_size` | 信号尺寸（签名大小）：定义弹体在雷达/红外探测系统中的等效尺寸。`0`（默认）：该弹体不可被雷达/红外探测，保持原有行为；`> 0`：替代 `getBoundingBox().getSize()` 用于扫描/探测/锁定过滤，并作为 RCS（雷达截面积）倍率参与探测距离缩放。 |
 
-`altitude_drag_factor` 的运行规则：
+`altitude_drag_*` 的运行规则：
 
-- 为空或未命中任何区间时，回退倍率 `1.0`。
-- `y` 采样的是**世界坐标**，不是离地高度。
+- 仅对 `rvp:missile` 生效；其它类型忽略这组字段。
+- 阻力倍率按四个高度锚点做三段平滑插值（smoothstep），而不是生硬分段跳变。
 - 推力弹道会把倍率乘到 `drag_coefficient`；简化弹道会把倍率乘到 `drag`。
 
-示例：
+### GPS 炸弹巡航滑翔（Cruise Glide）
+
+- 仅对 `rvp:bomb` 且当前激活制导源为 `GPS` 生效；其它弹种、其它制导源忽略。
+- `gps_cruise_start_tick` 到达前，仍按普通 GPS 直扑目标点。
+- 进入巡航后：
+  - 制导只修正水平 `X/Z`，不再为了追目标主动修正 `Y`。
+  - 进入巡航的首 tick 会清零历史 `motionY`；后续 `Y` 方向只由重力重新累积，实际使用的重力为 `gravity * gps_cruise_gravity_scale`。
+  - 若当前仍在上抛，`gps_cruise_leveling_factor` 会逐 tick 把向上的 `motionY` 拉向 `0`，实现“先改平再滑翔”。
+- 当水平距离 `<= gps_cruise_terminal_cylinder_radius` 时，进入末端段并恢复普通 GPS 直扑逻辑，开始向目标点俯冲。
+
+### GPS CEP（圆概率误差）
+
+- 仅对 `rvp:bomb` 且当前激活制导源为 `GPS` 生效。
+- `gps_cep = 1` 表示：该弹采用二维高斯散布后，有约 50% 的落点会落在目标点周围半径 1 米的圆内。
+- 每枚弹在发射后只采样一次固定的水平偏差，因此整段飞行都会朝“带误差的目标点”飞，不会每 tick 抖动。
+- 当前实现只在水平面 `X/Z` 施加误差，`Y` 不做 CEP 偏移。
+
+### GPS 接近后脱导
+
+- `gps_guidance_cancel_distance > 0` 时，弹体与目标点的三维距离小于等于该阈值后，会立刻清除 GPS 目标点并退出 GPS 制导。
+- 典型用途是防止空中 GPS 点或高空引导点附近出现“穿过目标点后又掉头回来”的来回穿梭。
+
+### 双脉冲推进（Dual Pulse）
+
+- 第一段推力：由 `thrust + motor_burn_time` 控制，结束后进入减速段。
+- 第二段推力：必须在第一段结束后才允许启动；触发条件为 `低速阈值 OR 近距阈值`，且只触发一次。
+- 禁用条件：`dual_pulse=false`，或第二段推力/燃烧时间无效，或速度阈值与距离阈值都为 0。
+
+### 信号尺寸 signature_size
+
+RVP 弹体实体注册时使用 `sized(0.0625, 0.0625)`（约 1/16 格），而本体雷达/红外导引头在 `scanTargets()`、`detectTargets()`、`findTarget()` 中硬编码了 `getBoundingBox().getSize() < 1` 过滤小实体，导致默认状态下 RVP 弹体无法被任何雷达或红外导引头扫描到。
+
+`signature_size` 解决此问题：为弹体指定一个等效信号尺寸，使其在雷达/红外探测中拥有与该尺寸匹配的可探测性。
+
+**运行规则：**
+
+- `0`（默认）：该弹体不可被雷达/红外探测，行为与未添加该字段完全一致。
+- `> 0`：RVP 通过 Mixin 向雷达/红外过滤逻辑注入虚拟碰撞箱，使 `getSize()` 返回 `signature_size` 而非物理碰撞箱尺寸，从而绕过 `getSize() < 1` 的过滤。
+- 该字段**不影响物理碰撞检测**，仅修改雷达/红外探测系统对弹体的可见性。
+- 在服务端雷达扫描（`RadarUnitMixin.appendRvpAmmoTargets`）中，`signatureSize > 0` 的 `rvp:missile`/`rvp:bomb` 才会被纳入雷达目标列表，且有效探测距离按 `maxScanDistanceSqr × signatureSize²` 缩放（等效 RCS 倍率）。
+- 对所有 `rvp:*` 武器类型均生效，但通常只有 `rvp:missile` 和 `rvp:bomb` 需要设置该值。
+
+**典型值参考：**
+
+| 弹药类型 | 推荐 `signature_size` | 说明 |
+| --- | --- | --- |
+| 大型中距弹（AMRAAM/PL-15） | 1.0 ~ 2.0 | RCS 较大，远距可被雷达探测 |
+| 格斗弹（PL-9/AIM-9） | 0.5 ~ 1.0 | 中等信号 |
+| 炸弹/布撒器 | 0.3 ~ 0.8 | 下落时有一定 RCS |
+| 火箭弹/机枪弹 | `0`（不设置） | 不需要被雷达/红外探测 |
+
+**示例：**
 
 ```json
 "projectile_data": {
   "velocity": 3.2,
-  "has_rocket_engine": true,
-  "mass": 84,
-  "thrust": 7.5,
-  "motor_burn_time": 90,
-  "second_pulse": true,
-  "second_pulse_trigger_distance": 120,
-  "second_pulse_thrust": 5.2,
-  "second_pulse_burn_time": 24,
-  "altitude_drag_factor": {
-    "[[-64,300]]": 0.98,
-    "[[300,500]]": 1.0,
-    "[[500,1000]]": 1.02,
-    "[[1000,inf]]": 1.05
-  }
+  "signature_size": 1.5
 }
 ```
 
@@ -409,14 +460,6 @@ RVP 扩展武器数据包路径：
 - `projectile.drag`：映射为线性摩擦 `friction`（默认 **0.01**）。
 
 `projectile.max_speed`、`min_speed`、`constant_speed` 对机枪**不生效**（机枪只用 `projectile.velocity` + `gravity` + `drag`）。
-
-## `misc_data` 杂项显示/信号
-
-| 字段 | 说明 |
-| --- | --- |
-| `missile_name_on_hud` | 不同距离下在 HUD 上显示的字符串映射。类型为 `Map<RVP_Range<Float>, String>`；value 为 `null` 时表示该距离段不显示。默认近距显示 `MSL`。 |
-| `missile_name_on_radar` | 不同距离下在雷达 HUD 上显示的字符串映射。默认 `20` 格外显示 `MSL`。 |
-| `signal_intensity_factor_on_radar` | 不同距离下弹药雷达信号强度倍率。类型为 `Map<RVP_Range<Float>, Float>`，默认 `{"[[0,inf]]": 1.0}`。旧字段 `signature_size` 已废弃，请改用本字段表达雷达可探测性。 |
 
 ## `fuse_data` 引信
 
@@ -503,7 +546,7 @@ RVP 扩展武器数据包路径：
 - 弹体初速：写在 `projectile_data.velocity`；见「机枪与官方机炮弹速」。
 - 近炸半径：`fuse_data.proximity_radius` 优先，否则可读 `detonate_data.explosion_data.proximity_radius`。
 - 顶层 `damage` 为默认直击数值；覆盖用 `collision_data.direct_damage`。
-- 历史兼容加载仍可能识别少量旧键，但新配置请统一按本文档的 `*_data` 新写法编写，不要再依赖旧 schema 自动迁移。
+- 加载时顶层 `explosion` / `explosion_data` 会迁入 `detonate_data`；`guidance_data` 为数组时，顶层 `rigidity_time` 等会迁入 `steering_data`。
 
 ## `effects_data` 特效
 
@@ -797,210 +840,449 @@ RVP 扩展武器数据包路径：
 | `test_disp_edge` | `cluster_edge`，金块外缘 |
 | `test_disp_cube` | `cube` 满密度，铁块（非 surface_only） |
 
-## `guidance_data` 制导数据模型
+## `guidance_data` 分段/复合制导
 
-`guidance_data` 现已改为**直接对应数据模型**的写法，不再使用旧的 `stages[]`、`sources[]`、`seeker_data`、`steering_data`、`human_in_the_loop` 那一整套分段/复合 schema。
+导引头参数写在各制导阶段的 `seeker` 内；激光/瞄准吊舱射程用 `laser_data.range`。人在回路（弹载视角）用 `human_in_the_loop`。
 
-本文档以下表格中的字段名使用 **JSON 写法**（全小写 + 下划线）。Java 类中的对应模型分别为：
+`guidance_data` 可为对象 `{ "phase_resolve_policy": "...", "stages": [...] }`，或直接写 **stages 数组**（加载器会包成对象）。兼容旧键 `phases` / `stage_policy`；加载时会把顶层 `steering_data` / `seeker_data` 下沉合并到各阶段（`seeker_data` 优先合并到首个含 IR/ARH/SARH/ARM 源的阶段）。
 
-- `RVP_GuidanceData`
-- `RVP_GuidanceDataHITL`
-- `RVP_GuidanceDataGPS`
-- `RVP_GuidanceDataARM`
-- `RVP_TerminalGuidanceData`
+运行时：`RVP_GuidancePhaseSelector` 按 **activation**（AND）求值 → 多阶段重叠时按 `phase_resolve_policy` 消解 → 单阶段内按 `composite_mode` 合成 → 跨阶段按 `composite_weight` 混合 → `RVP_GuidanceMath` 转向。
 
-**角度约定：**
+### 顶层字段
 
-- `max_lock_angle` 是**完整 FOV**，运行时会自动除以二，转换为单侧半角。
-- `max_guidance_angle` 和 `max_off_axis_lock_angle` 是相对轴线的**单侧角度**，运行时不再除以二。
+| 字段 | 说明 |
+| --- | --- |
+| `phase_resolve_policy` | 多阶段**同时激活**时的消解策略（已实现）：`highest_specificity`（默认，按 activation 特异性 + 兼容矩阵保留可复合阶段）、`first_phase`（保留 `stages` 数组中第一个激活阶段）、`sticky`（首次消解后记住胜出阶段，直至其不再激活）。 |
+| `human_in_the_loop` | 弹载视角 / HITL；`enabled: true` 才开启。参数见下文。 |
+| `stages` | 制导阶段列表（每阶段见 `RVP_GuidanceStageData`）。 |
 
-### `RVP_GuidanceData` 公用字段
+#### `human_in_the_loop`（人在回路）
 
-| 字段 | 说明 | 类型 | 默认值 |
-| --- | --- | --- | --- |
-| `guidance_type` | 主制导类型。支持 `NONE/MCLOS/SALH/SACLOS/LBR/LOSBR/LH/TV/HITL_TV/HITL_CLOS_TV/ATV/IR/AIR/SARH/ARH/GPS/ARM`。 | `RVP_EnumGuidanceType` | `NONE` |
-| `guidance_tick_range` | 制导时间范围；`null` 表示立即开始且永不结束。 | `RVP_Range<Integer>` | `null` |
-| `guidance_target_distance_range` | 弹药跟踪时，与制导目标点/记忆点的距离范围（格）。 | `RVP_Range<Float>` | `null` |
-| `guidance_altitude_range` | 弹药跟踪时，与制导目标点/记忆点的离地高度范围（格）。支持并集区间。 | `RVP_Range<Float>` | `null` |
-| `lock_target_distance_range` | 载具火控锁定时，与制导目标点/记忆点的距离范围（格）。 | `RVP_Range<Float>` | `null` |
-| `lock_altitude_range` | 载具火控锁定时，与制导目标点/记忆点的离地高度范围（格）。支持并集区间。 | `RVP_Range<Float>` | `null` |
-| `enable_ir_hmd` | 是否启用红外弹头瞄。当前仅红外系弹药使用。 | `boolean` | `true` |
-| `max_guidance_angle` | 发射后导引头最大跟踪角（单侧角度，度）。 | `int` | `60` |
-| `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
-| `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
-| `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。旧 `guide_head_max_angle` 的功能已并入此字段。 | `int` | `60` |
-| `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
-| `top_attack_height` | 攻顶最大高度；`null` 为不启用，可填负数（如潜射武器）。 | `Float` | `null` |
-| `cruise_start_tick` | 多少 tick 后进入巡航段。激光架束、人在回路、指令线类通常不使用。 | `Integer` | `null` |
-| `cruise_end_horizontal_dist` | 距目标水平距离小于该值后退出巡航，进入末端。 | `float` | `10` |
-| `cruise_gravity_scale` | 巡航段重力系数。 | `float` | `1.0` |
-| `cruise_leveling_factor` | 巡航段自动改平强度。 | `float` | `0.15` |
-| `lock_angle_gate` | 火控锁定角度门。key 为载机距目标距离区间，value 为允许的目标运动方向夹角区间。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
-| `guidance_angle_gate` | 弹药跟踪角度门。key 为弹药距目标距离区间，value 为允许的目标运动方向夹角区间。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
-| `angle_gate_lock_out_tick` | 超出角度门后，经过多少 tick 才真正脱锁。 | `int` | `20` |
-| `active_radar_activation_range` | 主动类导引头开机距离。适用于 `ARH/AIR/ARM`。 | `int` | `256` |
-| `enable_inertial_guidance` | 是否启用惯性制导。脱锁后仍朝最后记忆点前进。 | `boolean` | `false` |
-| `terminal_guidance` | 末端制导配置。`null` 表示不启用。 | `RVP_TerminalGuidanceData` | `null` |
+| 字段 | 说明 |
+| --- | --- |
+| `enabled` | **必须显式 `true` 才开启**；省略或为 `false` 均关闭。 |
+| `control_mode` | `MOUSE`（MCLOS 鼠标驾控）/ `DESIGNATE`（SACLOS 屏幕点选）/ `VIEW`（仅观察）。省略时按制导源自动推断。 |
+| `signal_source` | 信号来源：`radio`（无线电，默认）或 `fiber`（光纤）。无线电模式下：每 tick 检测“导弹 ↔ 发射载机”连线是否被**方块**遮挡（空气/水不算）；遮挡时雪花屏且不可操控、导弹惯性飞行；遮挡消失立即恢复；若连续遮挡 ≥ 2 秒（40 tick）则永久断链并强制退出弹载视角。 |
+| `control_range` | 玩家可保持弹载视角的最大距离（格）。 |
+| `timeout_tick` | 人在回路会话超时（tick）。 |
+| `max_turn_deg_per_tick` | MOUSE 模式每 tick 最大转向角（度）；用于限速更新弹体 `hitlSteeringYaw/Pitch`（方向机/高低机手感）。 |
+| `max_look_offset_deg` | DESIGNATE 模式鼠标视角偏移上限（度）；省略时取 SACLOS 阶段 `seeker.fov` 的一半。 |
+| `video_modes` | `COLOR` / `BW` / `THERMAL` 等可用画面列表。 |
 
-### 高度范围与头瞄 HUD 的约定
+### 阶段 `stages[]`（`RVP_GuidanceStageData`）
 
-- `guidance_altitude_range` / `lock_altitude_range` 使用 `RVP_Range<Float>`，支持并集区间。
-- 旧版“正值代表对空、负值代表对地”的 `lock_min_height` 思路，已由范围表达式接管。
-- 当前 HUD 判定依然保留“低空/地面目标”与“空中目标”的区分习惯：
-  - 类似 `[[30,inf]]` 的范围可视为空对空导引头逻辑。
-  - 类似 `[[inf,10]]` 或低空区间可视为空对地/近地导引头逻辑。
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 阶段名称（调试/HUD）。 |
+| `activation` | 激活条件对象（各维度 AND，见下表）。 |
+| `seeker` | **本阶段**导引头参数（`fov`/`range`/`scan_interval_tick`/`lock_min_height`/抗干扰等）。 |
+| `steering_data` | 本阶段转向参数（见下表）。 |
+| `composite_weight` | 跨阶段重叠复合时的默认权重，默认 1.0。 |
+| `sources` | 本阶段制导源列表。 |
 
-### `RVP_GuidanceDataHITL`
+#### `steering_data` 转向参数
 
-用于 `TV`、`HITL_TV`、`HITL_CLOS_TV` 等人在回路弹药，对应 Java 类 `RVP_GuidanceDataHITL`。
+| 字段 | 说明 |
+| --- | --- |
+| `rigidity_time` | **本阶段进入后**的刚性段 tick（从阶段首次激活的 tick 起算）；此期间本阶段制导源不转向。HITL 鼠标驾控同样受此约束。 |
+| `turning_factor` | 每 tick 速度向目标插值比例。 |
+| `max_degree_of_missile` | 单 tick 最大转向角（度）。 |
+| `predict_target_pos` | 是否按弹速预测目标位置。 |
+| `tick_end_homing` | 寿命末 N tick 内加大转向力度；0 表示全程一致。 |
+| `proportional_navigation_gain` | 比例导引增益。 |
+| `max_lateral_accel` | 最大横向过载（格/tick²），与 `max_degree_of_missile` 取更严。 |
+| `terminal_dive_angle` | 攻顶弹道俯冲角（度）。>0 时导弹向目标上方偏移以指定角度俯冲攻击，典型值 30–60。0/未写=不启用。 |
 
-| 字段 | 说明 | 类型 | 默认值 |
-| --- | --- | --- | --- |
-| `hitl_max_turn_deg_per_tick` | 导引头每 tick 最大转动角度，类似方向机速度。 | `int` | `2` |
-| `signal_source` | 制导信号源，支持 `FIBER` / `RADIO`。无线电可被方块遮挡。 | `String` | `RADIO` |
-| `hitl_max_control_dist` | 最大控制距离（格）。 | `int` | `600` |
-| `hitl_max_control_tick` | 最大控制时长（tick）。 | `int` | `200` |
-| `hitl_max_look_offset` | HITL 视角最大偏转角度。 | `int` | `30` |
-| `hitl_video_modes` | 可用画面模式，如 `COLOR`、`MONO`、`THERMAL`。 | `List<String>` | `["MONO"]` |
+#### `seeker` 阶段导引头
 
-### `RVP_GuidanceDataGPS`
+| 字段 | 说明 |
+| --- | --- |
+| `fov` | 搜索/锁定视场角（度）。 |
+| `guide_head_max_angle` | 导引头最大离轴角（度）。仅用于锁定维持的范围限制（大圈），不参与扫描搜索。省略时默认等于 `fov`。 |
+| `range` | 搜索/锁定距离（格）。 |
+| `scan_interval_tick` | IR/ARH/SARH 弹载搜索间隔 tick（**不是** ARM 的 `params.scan_interval_tick`）。 |
+| `lock_min_height` | 离地高度锁定过滤（格）。正数：只锁离地 ≥ 此值的目标（空中）；负数：只锁离地 ≤ |此值| 的目标（近地）；0：不限制。默认 4（仅锁空中）。 |
+| `ignore_flares` / `ignore_chaff` | 是否忽略热焰/箔条。 |
+| `jam_resistance` / `dircm_resistance` / `decoy_filter` | 抗干扰预留。 |
+| `home_on_jam` | 雷达弹干扰源归向。 |
 
-用于 `GPS` 类武器，对应 Java 类 `RVP_GuidanceDataGPS`。
+#### `activation` 激活条件（策略模式，AND 关系）
 
-| 字段 | 说明 | 类型 | 默认值 |
-| --- | --- | --- | --- |
-| `gps_spread_radius` | GPS 打击散布半径（格），使用正态分布。旧字段 `gps_cep` 已改由本字段表达。 | `float` | `0` |
+| 字段 | 策略 | 说明 |
+| --- | --- | --- |
+| `start_tick` / `end_tick` | tick 窗 | `end_tick < 0` 不限制结束；未写表示该维度不限制。 |
+| `min_target_distance` / `max_target_distance` | 目标点距离 | 与制导目标点/记忆点的距离（格）。 |
+| `min_entity_distance` / `max_entity_distance` | 实体距离 | 与锁定实体中心的距离（格）；无实体时不满足。 |
+| `min_altitude_agl` / `max_altitude_agl` | 离地高度 | 弹体离地高度（格）。 |
+| `require_target` | 目标存在 | 无目标点且无实体时不激活。 |
+| `require_entity_target` | 实体目标 | 无锁定实体时不激活。 |
+| `require_illumination` | 照射 | 半主动雷达需平台照射。 |
+| `enter_once` | 粘性 | 一旦进入本阶段，后续 tick 保持激活（即使条件不再满足）。 |
 
-### `RVP_GuidanceDataARM`
+**多阶段同时激活 = 跨阶段复合制导**。阶段内先按 `composite_mode` 合成一个方向，再按 `composite_weight` 与其他阶段混合。不兼容组合由 `RVP_GuidanceCompositeCompatibility` 与 `phase_resolve_policy` 消解。
 
-用于 `ARM` 反辐射导弹，对应 Java 类 `RVP_GuidanceDataARM`。
+### 易混 / 重复字段说明（含示例）
 
-| 字段 | 说明 | 类型 | 默认值 |
-| --- | --- | --- | --- |
-| `radiation_pulse_memory_tick` | 对雷达辐射脉冲的短时记忆时长。 | `int` | `30` |
-| `arm_memory_tick` | 完全失去辐射源后，对最后有效辐射源的持续记忆时长。 | `int` | `60` |
-| `arm_locked_emitter_bonus` | 对已被火控锁定/预选辐射源的优先级加权。值越高，越不容易被视场内其他辐射源抢走目标。 | `float` | `1.0` |
+#### 1. `activation.require_illumination` vs `sources[].params.require_illumination`（SARH）
 
-### `terminal_guidance`（`RVP_TerminalGuidanceData`）
+| 写法 | 作用 |
+| --- | --- |
+| 仅 `activation` | 无照射时**阶段不激活**（弹可能只靠 IOG 备份或惯性）。 |
+| 仅 `params`（默认 `true`） | 阶段可激活，但 SARH 源每 tick 检查照射，掉照射则该源失败。 |
+| **两处都写 `true`（推荐）** | 阶段与源行为一致。 |
 
-末端制导数据写在 `guidance_data.terminal_guidance` 中，对应 Java 类 `RVP_TerminalGuidanceData`。
+```json
+{
+  "name": "midcourse_sarh",
+  "activation": {
+    "start_tick": 40,
+    "require_illumination": true
+  },
+  "sources": [
+    {
+      "type": "SARH",
+      "params": { "require_illumination": true }
+    },
+    { "type": "IOG", "priority": 10 }
+  ]
+}
+```
 
-| 字段 | 说明 | 类型 | 默认值 |
-| --- | --- | --- | --- |
-| `guidance_type` | 末端制导类型。通常用于 `ATV/AIR/ARH/ARM` 等末端自主导引。 | `RVP_EnumGuidanceType` | `NONE` |
-| `active_radar_activation_range` | 末端主动类导引头开机距离。 | `int` | `256` |
-| `max_lock_angle` | 末端导引头搜索视场角（完整 FOV）。 | `int` | `5` |
-| `guidance_target_distance_range` | 末端制导目标距离范围。 | `RVP_Range<Float>` | `null` |
-| `guidance_start_tick` | 多少 tick 后切入末端制导。 | `Integer` | `null` |
-| `guidance_start_dist` | 距目标多少格后切入末端制导。 | `Float` | `null` |
-| `guidance_start_horizontal_dist` | 距目标水平距离多少格后切入末端制导。 | `Float` | `null` |
-| `guidance_altitude_range` | 末端制导目标离地高度范围。 | `RVP_Range<Float>` | `null` |
-| `max_guidance_angle` | 末端导引头最大跟踪角（单侧角度）。 | `int` | `60` |
-| `scan_interval_tick` | 末端导引头扫描间隔。 | `Integer` | `null` |
-| `predict_target_pos` | 末端是否启用比例制导/预测拦截。 | `boolean` | `false` |
-| `top_attack_height` | 末端攻顶高度。 | `Float` | `null` |
-| `guidance_angle_gate` | 末端跟踪角度门。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
-| `angle_gate_lock_out_tick` | 末端超角度门后延迟脱锁 tick。 | `int` | `20` |
-| `enable_inertial_guidance` | 末端是否允许惯性制导。 | `boolean` | `false` |
+#### 2. `seeker.scan_interval_tick` vs `params.scan_interval_tick`
 
-### 当前支持的 `guidance_type`
+| 字段位置 | 用于 |
+| --- | --- |
+| `stage.seeker.scan_interval_tick` | 红外/主动雷达/半主动雷达的**实体搜索**间隔。 |
+| `sources[].params.scan_interval_tick` | **ARM 反辐射**扫描辐射源的间隔。 |
 
-| 枚举值 | 说明 |
+```json
+{
+  "name": "arm",
+  "seeker": { "fov": 35, "range": 1024, "scan_interval_tick": 2 },
+  "sources": [
+    {
+      "type": "ARM",
+      "params": {
+        "scan_interval_tick": 5,
+        "memory_tick": 40
+      }
+    }
+  ]
+}
+```
+
+上例中 `seeker.scan_interval_tick: 2` 对 ARM **无效**；辐射扫描只看 `params.scan_interval_tick: 5`。几何（FOV/距离）仍用 `seeker`。
+
+#### 3. `stage.seeker` vs `laser_data.range`
+
+| 字段 | 谁读 |
+| --- | --- |
+| `laser_data.range` | 载具瞄准吊舱 / SACLOS 激光指示射线长度。 |
+| `stage.seeker.range` | 弹载导引头（IR/ARH/SARH/ARM）锁定与搜索距离。 |
+
+SACLOS 阶段写 `seeker.range` **通常无效**（驾束跟的是指示点，不是弹载雷达头）：
+
+```json
+{
+  "name": "laser_saclos",
+  "seeker": { "range": 4800 },
+  "sources": [{ "type": "SACLOS" }]
+}
+```
+
+应把 4800 写在载具侧 `laser_data.range` 或武器 `laser_data`，而非 SACLOS 阶段的 `seeker`。
+
+#### 4. `priority` vs `weight` vs `composite_weight`
+
+| 字段 | 层级 | 作用 |
+| --- | --- | --- |
+| `sources[].priority` | 阶段内 | `primary`/`overlay`/`race` 的尝试顺序；也用于判定阶段的「主制导类型」（兼容矩阵）。 |
+| `sources[].weight` | 阶段内 | `blend`/`overlay` 时各源方向权重。 |
+| `stage.composite_weight` | 跨阶段 | 多阶段同时激活时，本阶段合成方向的权重。 |
+
+末段 IR+ARH 同阶段复合：
+
+```json
+"sources": [
+  { "type": "ARH", "composite_mode": "blend", "weight": 0.55, "priority": 100 },
+  { "type": "IR",  "composite_mode": "blend", "weight": 0.45, "priority": 90 }
+]
+```
+
+此处 `priority` 不影响 blend 比例（由 `weight` 决定），但 ARH 仍被视作主类型用于跨阶段兼容判断。
+
+#### 5. `require_target` vs `require_entity_target` vs 武器级 `require_lock`
+
+| 字段 | 时机 | 含义 |
+| --- | --- | --- |
+| `require_lock`（武器顶层） | **发射前** UI | 无火控锁时不让发射。 |
+| `activation.require_target` | **飞行中**阶段 | 无目标点且无实体时阶段不激活。 |
+| `activation.require_entity_target` | **飞行中**阶段 | 无锁定实体时阶段不激活（更严）。 |
+| `params.vehicle_only` | **飞行中**源 | IR 等只追车辆实体。 |
+
+#### 6. `steering_data` 两级覆盖
+
+阶段默认 + 源覆盖（后者优先）：
+
+```json
+{
+  "steering_data": { "turning_factor": 0.3 },
+  "sources": [
+    {
+      "type": "IR",
+      "steering_data": { "turning_factor": 0.5 }
+    }
+  ]
+}
+```
+
+IR 源激活时 `turning_factor` 为 0.5；IOG 备份仍为 0.3。`seeker` **没有** source 级覆盖，只在 `stage.seeker`。
+
+#### 7. `rigidity_time` 按阶段进入时刻计算
+
+```json
+"stages": [
+  {
+    "name": "boost",
+    "activation": { "start_tick": 0, "end_tick": 9 },
+    "steering_data": { "rigidity_time": 8 }
+  },
+  {
+    "name": "terminal",
+    "activation": { "start_tick": 10, "enter_once": true },
+    "steering_data": { "rigidity_time": 2 }
+  }
+]
+```
+
+- `boost`：tick 0–7 不转向（进入 tick 0 起 8 tick）。
+- `terminal`：tick 10–11 不转向（进入 tick 10 起 2 tick），**不是**全局 tick 10–11 与 boost 的 8 混用。
+
+#### 8. `enter_once` vs `phase_resolve_policy: sticky`
+
+| 机制 | 作用 |
+| --- | --- |
+| `activation.enter_once` | 本阶段一旦激活，**即使**距离/照射条件失效也保持激活。 |
+| `phase_resolve_policy: sticky` | 多阶段冲突时，**记住第一次胜出的阶段**，直到其不再激活。 |
+
+二者独立，常组合用于末段制导「粘住」IR 窗口。
+
+#### 复合制导兼容性（不可复合 ❌）
+
+| 类型 A | 类型 B | 说明 |
+| --- | --- | --- |
+| TV / MCLOS | 任意自主导引 | 人在回路不能与弹载导引头并行 |
+| ARM | IR / ARH / SARH | 反辐射与目标追踪导引头逻辑冲突 |
+| SARH | ARH | 需照射与主动雷达并行无意义 |
+| SARH | IR | 照射链路 vs 红外成像 |
+| GPS | SACLOS | 坐标制导 vs 驾束 |
+
+**可复合 ✅**：任意类型 + `IOG`（备份）；`ARH` + `IR`；`GPS` + `IR`；同类型多阶段权重混合等。
+
+### 制导源 `sources[]`
+
+| 字段 | 说明 |
+| --- | --- |
+| `type` | 制导源类型（见下表）。 |
+| `priority` | `primary`/`overlay`/`race` 模式下的尝试顺序。 |
+| `composite_mode` | `primary`（默认）/ `blend` / `overlay` / `race` / `disabled`。 |
+| `weight` | `blend`/`overlay` 权重，默认 1.0。 |
+| `fallback_on_jammed` | 被干扰时是否尝试下一 source。 |
+| `take_over_motion` | 直接对齐速度方向（TV/MCLOS）。 |
+| `steering_data` | source 级转向参数覆盖（导引头仅在 phase.seeker）。 |
+| `params` | 类型专用参数（见 `RVP_GuidanceSourceParamsData`）；**ARM/TV 专用字段也写在此**，不再使用顶层 `arm_data` / `tv_missile_data`。 |
+
+`params` 常用字段（按 source 类型取用）：
+
+| 字段 | 适用 | 说明 |
+| --- | --- | --- |
+| `scan_interval_tick` | ARM | 辐射源扫描间隔（tick）。 |
+| `memory_tick` | ARM / IOG 等 | 丢失目标后的记忆制导 tick。 |
+| `radiation_pulse_memory_tick` | ARM | 雷达脉冲记忆窗口。 |
+| `reacquire` | ARM / 雷达弹 | ARM：丢失后是否允许再捕获。 |
+| `locked_bonus` | ARM | 正在锁定目标的辐射源评分加成。 |
+| `active_radar_activation_range` | ARH | 主动雷达开机距离（格）。目标距离 ≤ 该值后，弹载主动雷达开机并开始自行搜索/维持目标；默认 `1024`。 |
+| `require_illumination` | SARH | 源运行时是否检查平台照射（默认 `true`）；与 `activation.require_illumination` 配合使用，见上文易混说明。 |
+| `vehicle_only` | IR 等 | 只追踪载具实体。 |
+| `reacquire` | ARM / IR | 丢失目标后是否允许再搜索。 |
+| `use_target_pos` / `use_last_guidance` | GPS / IOG | 坐标/记忆点制导开关。 |
+| `use_weapon_unit_aim` / `use_owner_look` | MCLOS | 线导参考炮塔瞄准或玩家视角。 |
+
+**预留（JSON 可写，运行时未接入）**：`break_on_smoke`、`use_launch_heading`。
+
+| `composite_mode` | 行为 |
+| --- | --- |
+| `primary` | 按 priority 依次尝试，第一个成功即采用。 |
+| `blend` | 所有可用 source 方向按 weight 加权平均。 |
+| `overlay` | 最高 priority 为主航向，其余为修正。 |
+| `race` | 选与当前朝向角差最小的 source。 |
+
+### 支持的制导源
+
+| 类型 | 说明 |
 | --- | --- |
 | `NONE` | 无制导。 |
-| `MCLOS` | 人工指令线制导。 |
-| `SALH` | 半主动激光制导。 |
-| `SACLOS` | 当前实际链路更接近激光/指令跟踪写法，后续若拆分真正 SACLOS / MLOS / 激光架束，会在本枚举体系内继续演进。 |
-| `LBR` | 预留。 |
-| `LOSBR` | 激光架束制导。 |
-| `LH` | 激光点制导。 |
-| `TV` | 电视寻的。 |
-| `HITL_TV` | 人在回路电视制导。 |
-| `HITL_CLOS_TV` | 人在回路指令线电视制导。 |
-| `ATV` | 主动电视制导。 |
-| `IR` | 红外制导。 |
-| `AIR` | 主动红外制导。 |
-| `SARH` | 半主动雷达制导。 |
-| `ARH` | 主动雷达制导。 |
-| `GPS` | GPS/坐标制导。 |
-| `ARM` | 反辐射制导。 |
+| `IOG` | 惯性制导，飞向记忆点/目标点。 |
+| `MCLOS` | 线导，跟随炮塔或玩家视线。 |
+| `SACLOS` | 激光驾束/标记点。 |
+| `GPS` | GPS 目标点。 |
+| `IR` | 红外 seeker。 |
+| `ARH` | 主动雷达（仅 `rvp:missile`）。 |
+| `SARH` | 半主动雷达，需平台照射。 |
+| `ARM` | 反辐射；`params` 写扫描/记忆/再捕获（见上表），探测几何用阶段 `seeker`。 |
 
-### 迁移说明
+弹载电视 / 人在回路：使用 `human_in_the_loop` + `MCLOS` 或 `SACLOS`，**无**独立 `TV` 制导源类型。
 
-以下旧写法已不再作为当前推荐配置入口：
-
-| 旧写法 | 新写法 |
-| --- | --- |
-| `stages[]` / `sources[]` / `phase_resolve_policy` | 直接写 `guidance_data` 主模型字段 |
-| `human_in_the_loop` | 使用 `RVP_GuidanceDataHITL` 对应字段 |
-| `guide_head_max_angle` | 改为 `max_off_axis_lock_angle` |
-| `seek.fov` | 改为 `max_lock_angle` |
-| `seek.range` / `lock_min_height` 等旧 seeker 写法 | 改为 `lock_*_range` / `guidance_*_range` 系列 |
-| `gps_cep` | 改为 `gps_spread_radius` |
-| `terminal_ir_*` / `terminal_*` 散字段 | 统一并入 `terminal_guidance` |
-
-### 示例
-
-GPS 滑翔炸弹 + 末端红外：
+### GPS 滑翔 + 末端 IR 示例（替代 `terminal_ir_*`）
 
 ```json
 "guidance_data": {
-  "guidance_type": "GPS",
-  "guidance_tick_range": "[[0,inf]]",
-  "gps_spread_radius": 1.0,
-  "cruise_start_tick": 20,
-  "cruise_end_horizontal_dist": 80,
-  "cruise_gravity_scale": 0.5,
-  "cruise_leveling_factor": 0.15,
-  "terminal_guidance": {
-    "guidance_type": "IR",
-    "guidance_start_dist": 100,
-    "max_lock_angle": 40,
-    "max_guidance_angle": 60,
-    "scan_interval_tick": 2
+  "phase_resolve_policy": "highest_specificity",
+  "stages": [
+    {
+      "name": "gps_midcourse",
+      "activation": { "start_tick": 0 },
+      "sources": [
+        { "type": "GPS", "priority": 100 },
+        { "type": "IOG", "priority": 10 }
+      ]
+    },
+    {
+      "name": "terminal_ir",
+      "activation": { "max_target_distance": 100, "enter_once": true },
+      "seeker": { "fov": 40, "range": 80, "scan_interval_tick": 2 },
+      "sources": [
+        {
+          "type": "IR",
+          "priority": 100,
+          "params": { "vehicle_only": true, "reacquire": false },
+          "fallback_on_jammed": true
+        },
+        { "type": "GPS", "priority": 50 },
+        { "type": "IOG", "priority": 10 }
+      ]
+    }
+  ]
+}
+```
+
+AIM-120 分段示例：
+
+```json
+"guidance_data": {
+  "stages": [
+    {
+      "name": "boost_iog",
+      "activation": { "start_tick": 0, "end_tick": 9 },
+      "steering_data": { "rigidity_time": 8, "turning_factor": 0.35 },
+      "sources": [{ "type": "IOG", "priority": 100 }]
+    },
+    {
+      "name": "terminal_arh",
+      "activation": { "start_tick": 10, "enter_once": true },
+      "steering_data": { "rigidity_time": 8, "turning_factor": 0.35 },
+      "seeker": { "range": 256, "fov": 30, "scan_interval_tick": 15 },
+      "sources": [
+        { "type": "ARH", "priority": 100, "fallback_on_jammed": true },
+        { "type": "IOG", "priority": 10 }
+      ]
+    }
+  ]
+}
+```
+
+## HITL / ARM 示例
+
+人在回路（电视 + 线导）：
+
+```json
+{
+  "type": "rvp:missile",
+  "guidance_data": {
+    "human_in_the_loop": {
+      "enabled": true,
+      "control_mode": "MOUSE",
+      "control_range": 2000,
+      "timeout_tick": 400,
+      "video_modes": ["COLOR", "BW", "THERMAL"]
+    },
+    "stages": [
+      {
+        "name": "mclos",
+        "sources": [
+          {
+            "type": "MCLOS",
+            "priority": 100,
+            "take_over_motion": true
+          }
+        ]
+      }
+    ]
   }
 }
 ```
 
-人在回路 TV 导弹：
+`video_modes`：`COLOR` 彩色；`BW` / `MONO` 黑白；`THERMAL` / `IR` 热成像。
+
+反辐射（`isAntiRadiationMissile()` 由是否含 `ARM` source 判定）：
 
 ```json
-"guidance_data": {
-  "guidance_type": "HITL_CLOS_TV",
-  "hitl_max_turn_deg_per_tick": 2,
-  "signal_source": "RADIO",
-  "hitl_max_control_dist": 1200,
-  "hitl_max_control_tick": 400,
-  "hitl_max_look_offset": 30,
-  "hitl_video_modes": ["MONO", "THERMAL"]
+{
+  "type": "rvp:missile",
+  "guidance_data": {
+    "stages": [
+      {
+        "name": "arm",
+        "seeker": { "range": 1024, "fov": 35, "scan_interval_tick": 2 },
+        "sources": [
+          {
+            "type": "ARM",
+            "priority": 100,
+            "params": {
+              "scan_interval_tick": 2,
+              "memory_tick": 40,
+              "radiation_pulse_memory_tick": 25,
+              "reacquire": true,
+              "locked_bonus": 0.5
+            }
+          },
+          { "type": "IOG", "priority": 10 }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-反辐射导弹：
+## ARM 与 PDW
 
-```json
-"guidance_data": {
-  "guidance_type": "ARM",
-  "max_lock_angle": 35,
-  "max_guidance_angle": 60,
-  "scan_interval_tick": 2,
-  "active_radar_activation_range": 256,
-  "radiation_pulse_memory_tick": 30,
-  "arm_memory_tick": 60,
-  "arm_locked_emitter_bonus": 1.0
-}
-```
+ARM seeker 会把雷达观测抽象为 PDW：
+
+| PDW 字段 | 说明 |
+| --- | --- |
+| `timeOfArrivalTick` | 脉冲到达 tick。 |
+| `pulseWidthMicroseconds` | 脉冲宽度。 |
+| `angleOfArrivalDegrees` | 到达角。 |
+| `carrierFrequencyMhz` | 载频。 |
+| `amplitude` | 脉冲幅度。 |
+| `emitterVehicleId` / `emitterRadarIndex` | 辐射源身份。 |
+| `emitterPosition` | 辐射源位置。 |
+| `lockedEmission` | 该雷达是否正在锁定目标。 |
+
+当前评分偏好：到达角更小、距离更近、幅度更强、正在锁定的辐射源。
 
 ## 旧类型迁移对照
 
 | 旧类型 | 新写法 |
 | --- | --- |
-| `ywzj_rvp:gps_bomb` | `rvp:bomb` + `guidance_data.guidance_type = GPS` |
-| `ywzj_rvp:tv_missile` | `rvp:missile` + `guidance_type = HITL_TV/HITL_CLOS_TV/TV` |
-| `ywzj_rvp:anti_radiation_missile` | `rvp:missile` + `guidance_type = ARM` |
-| `ywzj_rvp:active_radar_missile` | `rvp:missile` + `guidance_type = ARH` |
-| `ywzj_rvp:semi_active_radar_missile` | `rvp:missile` + `guidance_type = SARH` |
-| `ywzj_rvp:manual_guidance_missile` | `rvp:missile` + `guidance_type = MCLOS` |
+| `ywzj_rvp:gps_bomb` | `rvp:bomb` + `GPS`，可加 `IOG`/`IR` 分段。 |
+| `ywzj_rvp:tv_missile` | `rvp:missile` + `human_in_the_loop` + `MCLOS`/`SACLOS`。 |
+| `ywzj_rvp:anti_radiation_missile` | `rvp:missile` + `ARM` source（`params` 写反辐射参数）。 |
+| `ywzj_rvp:active_radar_missile` | `rvp:missile` + `ARH`。 |
+| `ywzj_rvp:semi_active_radar_missile` | `rvp:missile` + `SARH`。 |
+| `ywzj_rvp:manual_guidance_missile` | `rvp:missile` + `MCLOS`；需弹载视角时加 `human_in_the_loop`。 |
+
+当前运行时只注册七个 `rvp:*` 公开类型。新内容应只依赖 `RVP_` schema。
 
 ---
 

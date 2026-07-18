@@ -7,9 +7,6 @@ import java.util.Locale;
 
 public class RVP_GuidanceDataHITL extends RVP_GuidanceData {
 
-    @SerializedName("hitl_enabled")
-    private boolean hitlEnabled = false;
-
     @SerializedName("hitl_max_turn_deg_per_tick")
     private int hitlMaxTurnDegPerTick = 2;
 
@@ -27,10 +24,6 @@ public class RVP_GuidanceDataHITL extends RVP_GuidanceData {
 
     @SerializedName("hitl_video_modes")
     private List<String> hitlVideoModes = List.of("MONO");
-
-    public boolean isHitlEnabled() {
-        return hitlEnabled;
-    }
 
     public int getHitlMaxTurnDegPerTick() {
         return Math.max(hitlMaxTurnDegPerTick, 0);

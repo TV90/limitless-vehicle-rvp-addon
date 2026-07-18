@@ -5,7 +5,10 @@ import com.google.gson.annotations.JsonAdapter;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceLaunchConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
@@ -68,6 +71,9 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("guidance_data")
     @JsonAdapter(RVP_GuidanceDataAdapter.class)
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
+
+    @SerializedName("misc_data")
+    private RVP_MiscData miscData = new RVP_MiscData();
 
     /** {@code rvp:laser} 射程与光束外观，见 {@link RVP_LaserData}。 */
     @SerializedName("laser_data")
@@ -143,9 +149,27 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return guidanceData == null ? new RVP_GuidanceData() : guidanceData;
     }
 
+    public RVP_MiscData getMiscData() {
+        return miscData == null ? new RVP_MiscData() : miscData;
+    }
+
     /** 发射前 UI 用；飞行中优先当前激活阶段。 */
     public RVP_LaserData getLaserData() {
         return laserData == null ? new RVP_LaserData() : laserData;
+    }
+
+    @Nullable
+    public String resolveMissileNameOnHud(float distance) {
+        return getMiscData().resolveMissileNameOnHud(distance);
+    }
+
+    @Nullable
+    public String resolveMissileNameOnRadar(float distance) {
+        return getMiscData().resolveMissileNameOnRadar(distance);
+    }
+
+    public float resolveSignalIntensityFactorOnRadar(float distance) {
+        return getMiscData().resolveSignalIntensityFactorOnRadar(distance);
     }
 
     public RVP_Explosion getExplosionData() {
@@ -190,11 +214,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean isRequireLock() {
         return getFireData().isRequireLock();
-    }
-
-    /** Legacy alias retained while stage-based weapon data is still supported. */
-    public boolean isEnableHms() {
-        return isEnableIrHmd();
     }
 
     public boolean isEnableIrHmd() {
@@ -339,22 +358,30 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     /** 发射前锁定 UI 用；飞行中优先当前激活阶段的导引头。 */
-    public int getScanInterval() {
+    public RVP_GuidanceLaunchConfig resolveLaunchGuidanceConfig() {
+        return RVP_GuidanceModelResolver.resolveLaunch(this);
+    }
+
+    public RVP_GuidanceActiveConfig resolveActiveGuidanceConfig(RVP_GuidancePhase phase) {
+        return RVP_GuidanceModelResolver.resolveActive(this, phase);
+    }
+
+    public int resolveGuidanceScanIntervalTick() {
         Integer interval = getGuidanceData().getScanIntervalTick();
         return interval == null ? 2 : interval;
     }
 
-    public float getMaxLockOnRange() {
+    public float resolveLaunchLockRange() {
         return (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
-                RVP_GuidanceModelResolver.resolveLaunch(this).targetDistanceRange());
+                resolveLaunchGuidanceConfig().targetDistanceRange());
     }
 
-    public float getMaxLockOnAngle() {
-        return RVP_GuidanceModelResolver.resolveLaunch(this).maxLockAngle();
+    public float resolveLaunchSeekerFullFov() {
+        return resolveLaunchGuidanceConfig().maxLockAngle();
     }
 
-    public float getMaxGuideHeadAngle() {
-        return RVP_GuidanceModelResolver.resolveLaunch(this).maxOffAxisLockAngle();
+    public float resolveLaunchOffAxisLockAngle() {
+        return resolveLaunchGuidanceConfig().maxOffAxisLockAngle();
     }
 
     /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */
@@ -466,7 +493,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean hasHumanInTheLoop() {
         RVP_GuidanceData guidance = getGuidanceData();
-        return guidance instanceof RVP_GuidanceDataHITL hitl && hitl.isHitlEnabled();
+        return guidance instanceof RVP_GuidanceDataHITL;
     }
 
     public boolean isSaclosTvGuided() {

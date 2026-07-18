@@ -2,8 +2,10 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -14,6 +16,9 @@ import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -70,10 +75,20 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (!passesFireModeChargeGate()) {
             return false;
         }
+        if (!passesOffAxisShootGate()) {
+            return false;
+        }
         RVP_WeaponData data = getData();
+        WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
+        if (data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                && data.isAntiRadiationMissile()
+                && data.isRequireLock()
+                && !hasArmPreselectedTarget(unit)) {
+            LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
+            return false;
+        }
         boolean isIrLaunchWeapon = RVP_IrLockHelper.isIrLaunchWeapon(data);
         if (requiresEntityLock(data)) {
-            WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
             boolean isIrHmdManaged = data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                     && !data.isRadarHoming()
                     && !data.isAntiRadiationMissile()
@@ -147,7 +162,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean canShootOnServer() {
-        return fireController.canShootNowAfterPrime();
+        return fireController.canShootNowAfterPrime() && passesOffAxisShootGate();
     }
 
     @Override
@@ -179,7 +194,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean isCharged() {
-        if (getData().getFireData().getChargeTime() <= 0) {
+        if (getData().getFireData().getChargeTick() <= 0) {
             return true;
         }
         return fireController.canShootNow();
@@ -188,7 +203,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     protected float consumeChargeScale() {
         RVP_EnumFireMode mode = getData().getFireData().getFireMode();
         float scale = getData().getFireData().getChargePowerScale();
-        if (getData().getFireData().getChargeTime() <= 0 || scale <= 1f) {
+        if (getData().getFireData().getChargeTick() <= 0 || scale <= 1f) {
             return 1f;
         }
         float ratio = fireController.chargeRatio();
@@ -203,5 +218,54 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                 && data.isRequireLock()
                 && !data.isAntiRadiationMissile()
                 && !data.isGpsMissile();
+    }
+
+    protected boolean hasArmPreselectedTarget(WeaponUnit unit) {
+        if (!(unit instanceof WeaponUnitArmExt armExt)) {
+            return false;
+        }
+        return armExt.ywzj_rvp$getArmPreselectedVehicleId() >= 0;
+    }
+
+    protected boolean passesOffAxisShootGate() {
+        Integer maxOffAxisShootAngle = getData().getFireData().getMaxOffAxisShootAngle();
+        if (maxOffAxisShootAngle == null) {
+            return true;
+        }
+        Vec3 axis = resolveOffAxisReferenceDirection();
+        Vec3 launch = resolveCurrentLaunchDirection();
+        if (axis == null || launch == null || axis.lengthSqr() < 1.0E-6 || launch.lengthSqr() < 1.0E-6) {
+            return true;
+        }
+        double angleDeg = Math.toDegrees(VectorUtil.angleBetween(axis.normalize(), launch.normalize()));
+        return Double.isNaN(angleDeg) || angleDeg <= maxOffAxisShootAngle + 1.0E-4;
+    }
+
+    protected Vec3 resolveOffAxisReferenceDirection() {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle) {
+            return vehicle.getLookAngle();
+        }
+        WeaponUnit root = getWeaponUnit().getRootParentWeaponUnit();
+        if (root != null) {
+            Vec3 rootVec = root.worldVec();
+            if (rootVec.lengthSqr() >= 1.0E-6) {
+                return rootVec;
+            }
+        }
+        return vehicle.getLookAngle();
+    }
+
+    protected Vec3 resolveCurrentLaunchDirection() {
+        WeaponUnit launchUnit = getWeaponUnit();
+        Vec3 aimed = launchUnit.worldVec(launchUnit.getXAimRot(), launchUnit.getYAimRot());
+        if (aimed.lengthSqr() >= 1.0E-6) {
+            return aimed;
+        }
+        Vec3 current = launchUnit.worldVec();
+        if (current.lengthSqr() >= 1.0E-6) {
+            return current;
+        }
+        return getVehicle().getLookAngle();
     }
 }

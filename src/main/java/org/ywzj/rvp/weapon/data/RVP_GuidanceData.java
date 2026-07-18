@@ -82,33 +82,6 @@ public class RVP_GuidanceData {
     @SerializedName("enable_inertial_guidance")
     private boolean enableInertialGuidance = false;
 
-    @SerializedName("ignore_flares")
-    private boolean ignoreFlares = false;
-
-    @SerializedName("ignore_chaff")
-    private boolean ignoreChaff = false;
-
-    @SerializedName("jam_resistance")
-    private float jamResistance = 0f;
-
-    @SerializedName("dircm_resistance")
-    private float dircmResistance = 0f;
-
-    @SerializedName("home_on_jam")
-    private boolean homeOnJam = false;
-
-    @SerializedName("decoy_filter")
-    private float decoyFilter = 0f;
-
-    @SerializedName("radiation_pulse_memory_tick")
-    private int radiationPulseMemoryTick = 40;
-
-    @SerializedName("arm_memory_tick")
-    private int armMemoryTick = 120;
-
-    @SerializedName("arm_locked_emitter_bonus")
-    private float armLockedEmitterBonus = 0f;
-
     @SerializedName("terminal_guidance")
     private RVP_TerminalGuidanceData terminalGuidance;
 
@@ -203,42 +176,6 @@ public class RVP_GuidanceData {
 
     public boolean isEnableInertialGuidance() {
         return enableInertialGuidance;
-    }
-
-    public boolean isIgnoreFlares() {
-        return ignoreFlares;
-    }
-
-    public boolean isIgnoreChaff() {
-        return ignoreChaff;
-    }
-
-    public float getJamResistance() {
-        return Math.max(jamResistance, 0f);
-    }
-
-    public float getDircmResistance() {
-        return Math.max(dircmResistance, 0f);
-    }
-
-    public boolean isHomeOnJam() {
-        return homeOnJam;
-    }
-
-    public float getDecoyFilter() {
-        return Math.max(decoyFilter, 0f);
-    }
-
-    public int getRadiationPulseMemoryTick() {
-        return Math.max(radiationPulseMemoryTick, 0);
-    }
-
-    public int getArmMemoryTick() {
-        return Math.max(armMemoryTick, 0);
-    }
-
-    public float getArmLockedEmitterBonus() {
-        return armLockedEmitterBonus;
     }
 
     @Nullable

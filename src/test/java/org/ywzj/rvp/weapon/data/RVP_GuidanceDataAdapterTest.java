@@ -79,21 +79,14 @@ class RVP_GuidanceDataAdapterTest {
 
     @Test
     void loadsViewOnlyHitlAlongsideArhGuidance() {
-        RVP_GuidanceData guidance = parseGuidance("""
+        assertThrows(JsonParseException.class, () -> parseGuidance("""
                 {
                   "guidance_type": "ARH",
-                  "hitl_enabled": true,
                   "hitl_max_control_dist": 2000,
                   "hitl_max_control_tick": 300,
                   "hitl_video_modes": ["COLOR", "THERMAL"]
                 }
-                """);
-
-        RVP_GuidanceDataHITL hitl = assertInstanceOf(RVP_GuidanceDataHITL.class, guidance);
-        assertEquals(RVP_EnumGuidanceType.ARH, hitl.getGuidanceType());
-        assertTrue(hitl.isHitlEnabled());
-        assertEquals(2000, hitl.getHitlMaxControlDist());
-        assertEquals(300, hitl.getHitlMaxControlTick());
+                """));
     }
 
     @Test
@@ -157,33 +150,46 @@ class RVP_GuidanceDataAdapterTest {
     }
 
     @Test
-    void gpsCanCarryOptionalHitlViewDataWithoutEnablingItByDefault() {
+    void gpsRejectsHitlSubtypeFields() {
         RVP_GuidanceData plain = parseGuidance("""
                 {"guidance_type":"GPS","gps_spread_radius":4}
                 """);
         RVP_GuidanceDataGPS plainGps = assertInstanceOf(RVP_GuidanceDataGPS.class, plain);
-        assertFalse(plainGps.isHitlEnabled());
-
-        RVP_GuidanceData combined = parseGuidance("""
+        assertEquals(4f, plainGps.getGpsSpreadRadius());
+        assertThrows(JsonParseException.class, () -> parseGuidance("""
                 {
                   "guidance_type":"GPS",
                   "gps_spread_radius":4,
-                  "hitl_enabled":true,
                   "hitl_max_control_tick":200
                 }
-                """);
-        RVP_GuidanceDataGPS gpsHitl = assertInstanceOf(RVP_GuidanceDataGPS.class, combined);
-        assertTrue(gpsHitl.isHitlEnabled());
-        assertEquals(200, gpsHitl.getHitlMaxControlTick());
+                """));
     }
 
     @Test
-    void explicitHitlGuidanceTypesRemainEnabledByDefault() {
+    void explicitHitlGuidanceTypesRemainHitlSubtype() {
         RVP_GuidanceData guidance = parseGuidance("""
                 {"guidance_type":"HITL_CLOS_TV"}
                 """);
 
-        assertTrue(assertInstanceOf(RVP_GuidanceDataHITL.class, guidance).isHitlEnabled());
+        assertInstanceOf(RVP_GuidanceDataHITL.class, guidance);
+    }
+
+    @Test
+    void loadsArmSubtype() {
+        RVP_GuidanceData guidance = parseGuidance("""
+                {
+                  "guidance_type":"ARM",
+                  "radiation_pulse_memory_tick":80,
+                  "arm_memory_tick":160,
+                  "arm_locked_emitter_bonus":0.75
+                }
+                """);
+
+        RVP_GuidanceDataARM arm = assertInstanceOf(RVP_GuidanceDataARM.class, guidance);
+        assertEquals(RVP_EnumGuidanceType.ARM, arm.getGuidanceType());
+        assertEquals(80, arm.getRadiationPulseMemoryTick());
+        assertEquals(160, arm.getArmMemoryTick());
+        assertEquals(0.75f, arm.getArmLockedEmitterBonus());
     }
 
     @Test

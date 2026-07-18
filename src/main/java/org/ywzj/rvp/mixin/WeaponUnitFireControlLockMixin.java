@@ -43,7 +43,7 @@ public abstract class WeaponUnitFireControlLockMixin {
                 ci.cancel();
                 return;
             }
-            Entity target = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().getMaxLockOnAngle()));
+            Entity target = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(rvpWeapon.getData().resolveLaunchSeekerFullFov()));
             if (!RVP_IrLockHelper.isTargetWithinAcquireLimits(self, target, rvpWeapon.getData())) {
                 target = null;
             }

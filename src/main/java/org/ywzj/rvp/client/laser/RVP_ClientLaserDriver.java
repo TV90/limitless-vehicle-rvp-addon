@@ -96,7 +96,7 @@ public final class RVP_ClientLaserDriver {
         }
         RVP_WeaponData data = laser.getData();
         RVP_LaserVisualData visual = data.getLaserVisual();
-        int chargeTime = data.getFireData().getChargeTime();
+        int chargeTime = data.getFireData().getChargeTick();
         if (chargeTime > 0) {
             float ratio = Math.max(laser.getChargeTick() / (float) chargeTime, 0.12f);
             visual = visual.withChargeRatio(ratio);
