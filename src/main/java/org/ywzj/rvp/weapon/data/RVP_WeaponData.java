@@ -556,14 +556,48 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean hasHumanInTheLoop() {
-        return getGuidanceData().isHumanInTheLoopEnabled();
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.isHumanInTheLoopEnabled()
+                || guidance instanceof RVP_GuidanceDataHITL
+                && (guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV);
     }
 
     public boolean isSaclosTvGuided() {
-        if (!usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || !hasHumanInTheLoop()) {
+        RVP_GuidanceData guidance = getGuidanceData();
+        if (guidance.getStages().isEmpty()) {
+            return guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV;
+        }
+        if (!usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || !guidance.isHumanInTheLoopEnabled()) {
             return false;
         }
-        return getGuidanceData().getHumanInTheLoop().resolveControlMode(getGuidanceData())
+        return guidance.getHumanInTheLoop().resolveControlMode(guidance)
                 == RVP_EnumHitlControlMode.DESIGNATE;
+    }
+
+    /** Laser-spot weapons that need the vehicle laser-designation client state. */
+    public boolean isVehicleLaserGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        if (!guidance.getStages().isEmpty()) {
+            return usesGuidanceType(RVP_EnumGuidanceType.SACLOS) && !isSaclosTvGuided();
+        }
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
+    }
+
+    public boolean isHitlClosTvGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getStages().isEmpty()
+                && guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
+    }
+
+    /** New SACLOS is an operator line-of-sight command, not a laser seeker. */
+    public boolean isCommandGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        if (!guidance.getStages().isEmpty()) {
+            return usesGuidanceType(RVP_EnumGuidanceType.MCLOS);
+        }
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.SACLOS
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
     }
 }

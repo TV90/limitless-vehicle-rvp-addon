@@ -110,6 +110,7 @@ public final class RVP_CountermeasureState {
                 || type == RVP_EnumGuidanceType.LH
                 || type == RVP_EnumGuidanceType.SALH
                 || type == RVP_EnumGuidanceType.SACLOS
+                || type == RVP_EnumGuidanceType.HITL_TV
                 || type == RVP_EnumGuidanceType.LOSBR;
     }
 

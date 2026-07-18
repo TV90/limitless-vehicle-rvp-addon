@@ -141,7 +141,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
         Entity lock = null;
         if (data.isHomingProjectile()
-                && (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || data.isSaclosTvGuided())) {
+                && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
             lock = rootUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
                     ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                     : rootUnit.getLockedEntity();

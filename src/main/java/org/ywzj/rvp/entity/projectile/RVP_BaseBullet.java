@@ -48,6 +48,7 @@ import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -395,7 +396,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** True while an active guidance stage includes SACLOS. */
     public boolean rvp$isInSaclosGuidanceStage() {
         RVP_WeaponData data = resolveWeaponConfig();
-        if (data == null || !data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
+        if (data == null) {
+            return false;
+        }
+        if (data.getGuidanceData().getStages().isEmpty()) {
+            RVP_EnumGuidanceType active = RVP_GuidanceModelResolver.resolveActive(
+                    data, guidancePhaseState.phase()).guidanceType();
+            return active == RVP_EnumGuidanceType.LH
+                    || active == RVP_EnumGuidanceType.SALH
+                    || active == RVP_EnumGuidanceType.HITL_TV;
+        }
+        if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
             return false;
         }
         return RVP_GuidancePhaseSelector.selectActive(this, data).stream()
@@ -893,7 +904,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected void tickGuidance() {
         if (!level().isClientSide()) {
             boolean allowEntityTracking = rvpData == null
-                    || !rvpData.usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS)
+                    || !rvpData.isVehicleLaserGuided()
                     || rvpData.isSaclosTvGuided();
             if (!allowEntityTracking && targetEntity != null) {
                 targetEntity = null;

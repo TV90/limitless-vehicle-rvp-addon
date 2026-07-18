@@ -14,6 +14,11 @@ public final class RVP_HitlSeekerUtil {
         if (data == null) {
             return 20f;
         }
+        if (data.getGuidanceData().getStages().isEmpty()) {
+            return data.getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
+                    ? Math.max(data.getGuidanceData().getMaxLockHalfAngle(), 1f)
+                    : 20f;
+        }
         float half = 0f;
         for (RVP_GuidanceStageData stage : data.getGuidanceData().getStages()) {
             boolean saclos = stage.getSources().stream()

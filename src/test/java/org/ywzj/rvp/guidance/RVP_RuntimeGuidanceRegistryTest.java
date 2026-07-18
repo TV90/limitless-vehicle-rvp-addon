@@ -10,7 +10,6 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceDataAdapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_RuntimeGuidanceRegistryTest {
@@ -26,7 +25,20 @@ class RVP_RuntimeGuidanceRegistryTest {
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ARM));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.IR));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.AIR));
-        assertNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.SALH));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.LH));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.SALH));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.SACLOS));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.HITL_TV));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.HITL_CLOS_TV));
+    }
+
+    @Test
+    void declaredButUnimplementedGuidanceTypesUseExplicitPlaceholders() {
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.MCLOS));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.TV));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ATV));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.LOSBR));
+        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.LBR));
     }
 
     @Test
@@ -52,7 +64,17 @@ class RVP_RuntimeGuidanceRegistryTest {
                 RVP_EnumGuidanceType.ARH,
                 RVP_EnumGuidanceType.ARM,
                 RVP_EnumGuidanceType.IR,
-                RVP_EnumGuidanceType.AIR
+                RVP_EnumGuidanceType.AIR,
+                RVP_EnumGuidanceType.LH,
+                RVP_EnumGuidanceType.SALH,
+                RVP_EnumGuidanceType.SACLOS,
+                RVP_EnumGuidanceType.HITL_TV,
+                RVP_EnumGuidanceType.HITL_CLOS_TV,
+                RVP_EnumGuidanceType.MCLOS,
+                RVP_EnumGuidanceType.TV,
+                RVP_EnumGuidanceType.ATV,
+                RVP_EnumGuidanceType.LOSBR,
+                RVP_EnumGuidanceType.LBR
         }) {
             assertEquals(type, RVP_RuntimeGuidanceSourceRegistry.get(type).type());
         }

@@ -54,8 +54,11 @@ public final class RVP_SaclosDesignation {
     }
 
     private static boolean usesSaclosGuidance(RVP_BaseBullet projectile) {
-        return projectile.getRvpData() != null
-                && projectile.getRvpData().usesGuidanceType(org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SACLOS);
+        if (projectile.getRvpData() == null) {
+            return false;
+        }
+        var data = projectile.getRvpData();
+        return data.isVehicleLaserGuided() || data.isSaclosTvGuided();
     }
 
     @Nullable

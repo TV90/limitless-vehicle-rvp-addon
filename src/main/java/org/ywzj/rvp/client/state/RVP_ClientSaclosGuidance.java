@@ -55,7 +55,17 @@ public final class RVP_ClientSaclosGuidance {
 
     public static boolean isInSaclosPhase(RVP_BaseBullet bullet) {
         RVP_WeaponData data = resolveWeaponData(bullet);
-        if (data == null || !data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
+        if (data == null) {
+            return false;
+        }
+        if (data.getGuidanceData().getStages().isEmpty()) {
+            RVP_EnumGuidanceType active = bullet.getActiveSourceType();
+            if (active == null) {
+                active = data.getGuidanceData().getGuidanceType();
+            }
+            return active == RVP_EnumGuidanceType.LH || active == RVP_EnumGuidanceType.SALH;
+        }
+        if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
             return false;
         }
         int tick = bullet.tickCount;

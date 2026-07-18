@@ -39,6 +39,11 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         float factor = resolveTurningFactor(context);
+        if (intent.directMotion()) {
+            RVP_WireGuidanceSteering.applyFromDirection(
+                    projectile, target.subtract(projectile.position()), factor);
+            return true;
+        }
         Vec3 next;
         if (entity != null && context.active().predictTargetPos()) {
             next = steerProportional(

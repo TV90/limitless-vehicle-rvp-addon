@@ -73,10 +73,12 @@ public class RVP_HumanInTheLoopData {
         if (controlMode != null) {
             return controlMode;
         }
-        if (guidance.hasSourceType(RVP_EnumGuidanceType.MCLOS)) {
+        if (guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV
+                || guidance.hasSourceType(RVP_EnumGuidanceType.MCLOS)) {
             return RVP_EnumHitlControlMode.MOUSE;
         }
-        if (guidance.hasSourceType(RVP_EnumGuidanceType.SACLOS)) {
+        if (guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
+                || guidance.hasSourceType(RVP_EnumGuidanceType.SACLOS)) {
             return RVP_EnumHitlControlMode.DESIGNATE;
         }
         return RVP_EnumHitlControlMode.VIEW;

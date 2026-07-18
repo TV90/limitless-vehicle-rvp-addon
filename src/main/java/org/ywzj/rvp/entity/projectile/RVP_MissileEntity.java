@@ -37,6 +37,7 @@ import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_HumanInTheLoopData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -105,6 +106,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (data == null || !data.hasHumanInTheLoop()) {
             return;
         }
+        if (data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl) {
+            initNewSchemaHitl(data, hitl, aim);
+            return;
+        }
         RVP_HumanInTheLoopData hitl = data.getGuidanceData().getHumanInTheLoop();
         this.hitlControlRange = hitl.controlRange(2000f);
         this.hitlTimeoutTick = hitl.timeoutTick(200);
@@ -121,6 +126,48 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlInputPitch = aim.xRot();
         this.hitlSteeringYaw = aim.yRot();
         this.hitlSteeringPitch = aim.xRot();
+    }
+
+    private void initNewSchemaHitl(RVP_WeaponData data, RVP_GuidanceDataHITL hitl, AimRot aim) {
+        this.hitlControlRange = Math.max(hitl.getHitlMaxControlDist(), 1);
+        this.hitlTimeoutTick = Math.max(hitl.getHitlMaxControlTick(), 1);
+        this.hitlLife = this.hitlTimeoutTick;
+        this.hitlVideoModeMask = resolveVideoModeMask(hitl);
+        this.hitlDefaultVideoMode = resolveDefaultVideoMode(hitl);
+        this.hitlControlMode = switch (data.getGuidanceData().getGuidanceType()) {
+            case HITL_TV -> RVP_EnumHitlControlMode.DESIGNATE;
+            case HITL_CLOS_TV -> RVP_EnumHitlControlMode.MOUSE;
+            default -> RVP_EnumHitlControlMode.VIEW;
+        };
+        this.hitlMaxTurnDegPerTick = Math.max(hitl.getHitlMaxTurnDegPerTick(), 0.05f);
+        this.hitlMaxLookOffsetDeg = Math.max(hitl.getHitlMaxLookOffset(), 1);
+        this.hitlSignalSource = "FIBER".equals(hitl.getSignalSource())
+                ? RVP_HumanInTheLoopData.SignalSource.FIBER
+                : RVP_HumanInTheLoopData.SignalSource.RADIO;
+        this.hitlEnabled = true;
+        this.hitlEnterViewResendTicks = 5;
+        this.hitlInputYaw = aim.yRot();
+        this.hitlInputPitch = aim.xRot();
+        this.hitlSteeringYaw = aim.yRot();
+        this.hitlSteeringPitch = aim.xRot();
+    }
+
+    private static int resolveVideoModeMask(RVP_GuidanceDataHITL hitl) {
+        int mask = 0;
+        for (String mode : hitl.getHitlVideoModes()) {
+            mask |= RVP_TvVideoModeMask.parse(mode);
+        }
+        return mask != 0 ? mask : HITL_MODE_ALL;
+    }
+
+    private static int resolveDefaultVideoMode(RVP_GuidanceDataHITL hitl) {
+        for (String mode : hitl.getHitlVideoModes()) {
+            int parsed = RVP_TvVideoModeMask.parse(mode);
+            if (parsed != 0) {
+                return parsed;
+            }
+        }
+        return HITL_MODE_COLOR;
     }
 
     @Override
