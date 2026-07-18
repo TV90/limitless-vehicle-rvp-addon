@@ -77,6 +77,25 @@ class RVP_GuidanceDataAdapterTest {
     }
 
     @Test
+    void loadsViewOnlyHitlAlongsideArhGuidance() {
+        RVP_GuidanceData guidance = parseGuidance("""
+                {
+                  "guidance_type": "ARH",
+                  "hitl_enabled": true,
+                  "hitl_max_control_dist": 2000,
+                  "hitl_max_control_tick": 300,
+                  "hitl_video_modes": ["COLOR", "THERMAL"]
+                }
+                """);
+
+        RVP_GuidanceDataHITL hitl = assertInstanceOf(RVP_GuidanceDataHITL.class, guidance);
+        assertEquals(RVP_EnumGuidanceType.ARH, hitl.getGuidanceType());
+        assertTrue(hitl.isHitlEnabled());
+        assertEquals(2000, hitl.getHitlMaxControlDist());
+        assertEquals(300, hitl.getHitlMaxControlTick());
+    }
+
+    @Test
     void loadsTerminalGuidanceWithIndependentRanges() {
         RVP_GuidanceData guidance = parseGuidance("""
                 {

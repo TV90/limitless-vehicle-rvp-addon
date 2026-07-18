@@ -526,9 +526,7 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public boolean hasHumanInTheLoop() {
         RVP_GuidanceData guidance = getGuidanceData();
-        return guidance instanceof RVP_GuidanceDataHITL
-                && (guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV
-                || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV);
+        return guidance instanceof RVP_GuidanceDataHITL hitl && hitl.isHitlEnabled();
     }
 
     public boolean isSaclosTvGuided() {

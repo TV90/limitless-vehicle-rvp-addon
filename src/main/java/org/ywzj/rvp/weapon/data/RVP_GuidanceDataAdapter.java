@@ -20,6 +20,7 @@ public final class RVP_GuidanceDataAdapter
 
     private static final Set<String> GPS_FIELDS = Set.of("gps_spread_radius");
     private static final Set<String> HITL_FIELDS = Set.of(
+            "hitl_enabled",
             "hitl_max_turn_deg_per_tick",
             "signal_source",
             "hitl_max_control_dist",
@@ -65,9 +66,10 @@ public final class RVP_GuidanceDataAdapter
         }
         object.addProperty("guidance_type", type.name());
         normalizeTerminalType(object);
-        validateSubtypeFields(object, type);
+        boolean hasHitlFields = containsAny(object, HITL_FIELDS);
+        validateSubtypeFields(object, type, hasHitlFields);
 
-        Class<? extends RVP_GuidanceData> targetClass = targetClass(type);
+        Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields);
         return context.deserialize(object, targetClass);
     }
 
@@ -81,7 +83,8 @@ public final class RVP_GuidanceDataAdapter
             return null;
         }
         RVP_EnumGuidanceType type = source.getGuidanceType();
-        Class<? extends RVP_GuidanceData> expected = targetClass(type);
+        boolean hitlSubtype = source instanceof RVP_GuidanceDataHITL;
+        Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype);
         if (expected != RVP_GuidanceData.class && !expected.isInstance(source)) {
             throw new JsonParseException(type + " guidance requires " + expected.getSimpleName());
         }
@@ -98,12 +101,16 @@ public final class RVP_GuidanceDataAdapter
         }
     }
 
-    private static void validateSubtypeFields(JsonObject object, RVP_EnumGuidanceType type) {
+    private static void validateSubtypeFields(
+            JsonObject object,
+            RVP_EnumGuidanceType type,
+            boolean hasHitlFields
+    ) {
         if (type != RVP_EnumGuidanceType.GPS && containsAny(object, GPS_FIELDS)) {
             throw new JsonParseException("gps_spread_radius requires guidance_type GPS");
         }
-        if (!HITL_TYPES.contains(type) && containsAny(object, HITL_FIELDS)) {
-            throw new JsonParseException("HITL fields require guidance_type TV, HITL_TV, or HITL_CLOS_TV");
+        if (type == RVP_EnumGuidanceType.GPS && hasHitlFields) {
+            throw new JsonParseException("GPS and HITL subtype fields cannot share one guidance_data object");
         }
     }
 
@@ -116,11 +123,14 @@ public final class RVP_GuidanceDataAdapter
         return false;
     }
 
-    private static Class<? extends RVP_GuidanceData> targetClass(RVP_EnumGuidanceType type) {
+    private static Class<? extends RVP_GuidanceData> targetClass(
+            RVP_EnumGuidanceType type,
+            boolean hasHitlFields
+    ) {
         if (type == RVP_EnumGuidanceType.GPS) {
             return RVP_GuidanceDataGPS.class;
         }
-        if (HITL_TYPES.contains(type)) {
+        if (hasHitlFields || HITL_TYPES.contains(type)) {
             return RVP_GuidanceDataHITL.class;
         }
         return RVP_GuidanceData.class;
