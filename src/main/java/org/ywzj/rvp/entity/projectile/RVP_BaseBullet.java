@@ -405,8 +405,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return false;
         }
         if (data.getGuidanceData().getStages().isEmpty()) {
-            RVP_EnumGuidanceType active = RVP_GuidanceModelResolver.resolveActive(
-                    data, guidancePhaseState.phase()).guidanceType();
+            RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
+                    data, guidancePhaseState.phase());
+            if (config.tickRange() != null && !config.tickRange().contains(tickCount)) {
+                return false;
+            }
+            RVP_EnumGuidanceType active = config.guidanceType();
             return active == RVP_EnumGuidanceType.LH
                     || active == RVP_EnumGuidanceType.SALH
                     || active == RVP_EnumGuidanceType.HITL_TV;

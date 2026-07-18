@@ -7,6 +7,8 @@ import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceActivationData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceStageData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -59,10 +61,12 @@ public final class RVP_ClientSaclosGuidance {
             return false;
         }
         if (data.getGuidanceData().getStages().isEmpty()) {
-            RVP_EnumGuidanceType active = bullet.getActiveSourceType();
-            if (active == null) {
-                active = data.getGuidanceData().getGuidanceType();
+            RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
+                    data, bullet.getGuidancePhaseState().phase());
+            if (config.tickRange() != null && !config.tickRange().contains(bullet.tickCount)) {
+                return false;
             }
+            RVP_EnumGuidanceType active = config.guidanceType();
             return active == RVP_EnumGuidanceType.LH || active == RVP_EnumGuidanceType.SALH;
         }
         if (!data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)) {
