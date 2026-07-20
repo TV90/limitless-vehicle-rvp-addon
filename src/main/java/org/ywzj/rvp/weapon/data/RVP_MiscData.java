@@ -17,6 +17,9 @@ public class RVP_MiscData {
     @SerializedName("signal_intensity_factor_on_radar")
     private Map<RVP_Range<Float>, Float> signalIntensityFactorOnRadar = createDefaultSignalIntensityFactors();
 
+    @SerializedName("artillery_map")
+    private boolean artilleryMap;
+
     public Map<RVP_Range<Float>, String> getMissileNameOnHud() {
         return missileNameOnHud == null ? createDefaultHudNames() : missileNameOnHud;
     }
@@ -29,6 +32,10 @@ public class RVP_MiscData {
         return signalIntensityFactorOnRadar == null
                 ? createDefaultSignalIntensityFactors()
                 : signalIntensityFactorOnRadar;
+    }
+
+    public boolean isArtilleryMap() {
+        return artilleryMap;
     }
 
     @Nullable

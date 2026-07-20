@@ -1,25 +1,35 @@
 package org.ywzj.rvp.client.render;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
+import com.github.mcmodderanchor.simplebedrockmodel.v1.common.resource.pojo.BedrockModelPOJO;
 import com.maydaymemory.mae.basic.Pose;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
+import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleBedrockModel;
+import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.client.render.animation.util.PoseHelper;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
+import org.ywzj.vehicle.client.resource.DisplayManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.SpecialBoneEffect;
+import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
@@ -30,6 +40,7 @@ import net.minecraftforge.fml.loading.FMLPaths;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -40,6 +51,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -52,6 +64,7 @@ public final class RVP_CustomMountRenderLogic {
     private static final Map<PredictionKey, PredictedAmmo> PREDICTED_AMMO = new ConcurrentHashMap<>();
     private static final AtomicBoolean DEBUG_ENABLED = new AtomicBoolean(false);
     private static final Map<String, String> LAST_DEBUG_STATES = new ConcurrentHashMap<>();
+    private static final Map<String, Boolean> AUTO_TRACE_KEYS = new ConcurrentHashMap<>();
     private static final Path DEBUG_LOG_PATH = FMLPaths.GAMEDIR.get().resolve("logs").resolve("custommountdebug.log");
     private static final DateTimeFormatter DEBUG_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
@@ -59,6 +72,7 @@ public final class RVP_CustomMountRenderLogic {
 
     public static void clearModelCache() {
         MODEL_CACHE.clear();
+        AUTO_TRACE_KEYS.clear();
     }
 
     public static boolean isDebugEnabled() {
@@ -72,6 +86,7 @@ public final class RVP_CustomMountRenderLogic {
     public static void setDebugEnabled(boolean enabled) {
         DEBUG_ENABLED.set(enabled);
         LAST_DEBUG_STATES.clear();
+        AUTO_TRACE_KEYS.clear();
         if (!enabled) {
             PREDICTED_AMMO.clear();
         }
@@ -80,6 +95,7 @@ public final class RVP_CustomMountRenderLogic {
 
     public static void clearDebugLog() {
         LAST_DEBUG_STATES.clear();
+        AUTO_TRACE_KEYS.clear();
         try {
             Files.deleteIfExists(DEBUG_LOG_PATH);
         } catch (IOException e) {
@@ -148,23 +164,43 @@ public final class RVP_CustomMountRenderLogic {
             return;
         }
         List<ResolvedMount> resolvedMounts = resolveMounts(vehicle, configs);
+        autoTraceRuntimeState(vehicle, vehicleModel, configs, resolvedMounts);
         if (DEBUG_ENABLED.get()) {
             noteResolvedMountStates(vehicle, resolvedMounts);
         }
+        int actualLight = vehicle.isDestroyed() ? 64 : packedLight;
+        boolean localPlayerVehicle = vehicle == org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.getVehicle();
         for (RVP_CustomMountConfig config : configs) {
             ResolvedMount resolved = resolvedMounts.stream()
                     .filter(entry -> entry.config() == config)
                     .findFirst()
                     .orElse(null);
             if (resolved == null) {
+                if (DEBUG_ENABLED.get()) {
+                    appendDebugLog("render SKIP: unresolved vehicle=" + vehicle.getVehicleId()
+                            + " partUnit=" + config.partUnitId()
+                            + " attachPart=" + config.attachPartUnitId()
+                            + " weapon=" + config.weaponId());
+                }
                 continue;
             }
             VehicleBedrockModel attachmentModel = getAttachmentModel(config.model());
             if (attachmentModel == null) {
+                if (DEBUG_ENABLED.get()) {
+                    appendDebugLog("render SKIP: attachmentModel null vehicle=" + vehicle.getVehicleId()
+                            + " model=" + config.model()
+                            + " weapon=" + config.weaponId());
+                }
                 continue;
             }
             AttachmentTransform attachmentTransform = resolveAttachmentTransform(vehicle, vehicleModel, config);
             if (attachmentTransform == null) {
+                if (DEBUG_ENABLED.get()) {
+                    appendDebugLog("render SKIP: attachmentTransform null vehicle=" + vehicle.getVehicleId()
+                            + " partUnit=" + config.partUnitId()
+                            + " attachPart=" + config.attachPartUnitId()
+                            + " attachBone=" + config.attachBone());
+                }
                 continue;
             }
 
@@ -193,12 +229,7 @@ public final class RVP_CustomMountRenderLogic {
             }
             poseStack.pushPose();
             try {
-                if (attachmentTransform.bone() != null) {
-                    poseStack.mulPoseMatrix(getFullBoneTransform(attachmentTransform.bone()));
-                } else if (attachmentTransform.translation() != null) {
-                    Vec3 translate = attachmentTransform.translation();
-                    poseStack.translate(translate.x, translate.y, translate.z);
-                }
+                poseStack.mulPoseMatrix(attachmentTransform.transform());
                 RVP_CustomMountConfig.Vec3fConfig offset = config.offset();
                 poseStack.translate(offset.x(), offset.y(), offset.z());
                 RVP_CustomMountConfig.Vec3fConfig rotation = config.rotationDeg();
@@ -207,7 +238,14 @@ public final class RVP_CustomMountRenderLogic {
                 poseStack.mulPose(Axis.ZP.rotationDegrees(rotation.z()));
                 RVP_CustomMountConfig.Vec3fConfig scale = config.scale();
                 poseStack.scale(scale.x(), scale.y(), scale.z());
-                attachmentModel.renderToBuffer(poseStack, bufferSource, config.texture(), vehicle.isDestroyed() ? 64 : packedLight);
+                attachmentModel.renderToBuffer(poseStack, bufferSource, config.texture(), actualLight);
+                attachmentModel.renderSpecialBones(
+                        poseStack,
+                        bufferSource,
+                        actualLight,
+                        OverlayTexture.NO_OVERLAY,
+                        localPlayerVehicle
+                );
             } finally {
                 poseStack.popPose();
                 attachmentModel.applyPose(attachmentModel.getBindPose());
@@ -270,7 +308,7 @@ public final class RVP_CustomMountRenderLogic {
         }
         AbstractVehicleWeapon<?> currentWeapon = resolution.currentWeapon();
         for (ResolvedMount resolved : resolveMounts(weaponUnit.getVehicle(), RVP_CustomMountConfigCache.get(vehicleId))) {
-            if (weaponUnit.getId().equals(resolved.config().partUnitId())
+            if (matchesConfiguredPartUnit(weaponUnit, resolved.config().partUnitId())
                     && currentWeapon.getData().getWeaponId().equals(resolved.config().weaponId())) {
                 return resolved;
             }
@@ -288,15 +326,21 @@ public final class RVP_CustomMountRenderLogic {
             }
             VehicleCubeGroup xTurnGroup = ((WeaponUnitAccessor) mountUnit).getXTurnGroup();
             List<Bolt> bolts = mountUnit.getBolts();
-            if (xTurnGroup == null || bolts.isEmpty()) {
+            if (xTurnGroup == null) {
                 return null;
             }
-            Bolt bolt = bolts.get(0);
-            Vec3 translate = xTurnGroup.pivotOffset.add(bolt.offset).add(0.0, 0.0, bolt.barrelLength / 2.0);
-            return new AttachmentTransform(null, translate);
+            Vec3 translate;
+            if (bolts.isEmpty()) {
+                translate = xTurnGroup.pivotOffset;
+            } else {
+                Bolt bolt = bolts.get(0);
+                translate = xTurnGroup.pivotOffset.add(bolt.offset).add(0.0, 0.0, bolt.barrelLength / 2.0);
+            }
+            Matrix4f matrix = new Matrix4f().translation((float) translate.x, (float) translate.y, (float) translate.z);
+            return new AttachmentTransform(matrix);
         }
         BedrockBone attachBone = vehicleModel.getBone(config.attachBone());
-        return attachBone == null ? null : new AttachmentTransform(attachBone, null);
+        return attachBone == null ? null : new AttachmentTransform(getFullBoneTransform(attachBone));
     }
 
     @Nullable
@@ -318,12 +362,14 @@ public final class RVP_CustomMountRenderLogic {
     @Nullable
     private static WeaponResolution resolveCurrentWeaponForDisplay(WeaponUnit weaponUnit) {
         WeaponUnit displayWeaponUnit = weaponUnit;
-        AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon(displayWeaponUnit);
-        if (currentWeapon == null && displayWeaponUnit.getParentWeaponUnit() != null) {
+        while (displayWeaponUnit != null) {
+            AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon(displayWeaponUnit);
+            if (currentWeapon != null) {
+                return new WeaponResolution(displayWeaponUnit, currentWeapon);
+            }
             displayWeaponUnit = displayWeaponUnit.getParentWeaponUnit();
-            currentWeapon = resolveCurrentWeapon(displayWeaponUnit);
         }
-        return currentWeapon == null ? null : new WeaponResolution(displayWeaponUnit, currentWeapon);
+        return null;
     }
 
     private static VisibleAmmo resolveVisibleAmmo(AbstractVehicle vehicle,
@@ -348,24 +394,117 @@ public final class RVP_CustomMountRenderLogic {
     @Nullable
     private static VehicleBedrockModel getAttachmentModel(ResourceLocation modelId) {
         return MODEL_CACHE.computeIfAbsent(modelId, id -> {
-            // ClientAssetsManager clears raw model POJOs after the standard resource reload completes,
-            // so runtime lookups may miss even though displays were built successfully.
-            VehicleBedrockModel persistedDisplayModel = ClientAssetsManager.INSTANCE.getDecorationDisplay(id)
-                    .map(BaseDisplay::getModel)
-                    .orElse(null);
-            if (persistedDisplayModel != null) {
-                return persistedDisplayModel;
+            BaseDisplay persistedDisplay = resolveAttachmentDisplay(id);
+            if (persistedDisplay != null) {
+                VehicleBedrockModel rebuiltDisplayModel = rebuildAttachmentModelFromDisplay(persistedDisplay);
+                if (rebuiltDisplayModel != null) {
+                    return rebuiltDisplayModel;
+                }
+                if (persistedDisplay.getModel() != null) {
+                    return persistedDisplay.getModel();
+                }
             }
-            persistedDisplayModel = ClientAssetsManager.INSTANCE.getWeaponDisplay(id)
-                    .map(BaseDisplay::getModel)
-                    .orElse(null);
-            if (persistedDisplayModel != null) {
-                return persistedDisplayModel;
+            VehicleBedrockModel directModel = ClientAssetsManager.INSTANCE.getModel(id)
+                    .map(modelPojo -> RVP_VehicleModelFactory.createVehicleModel(
+                            modelPojo,
+                            List.of(),
+                            RVP_BedrockBackend.RVP
+                    ))
+                    .orElseGet(() -> loadAttachmentModelDirect(id, List.of()));
+            if (directModel != null) {
+                return directModel;
             }
-            return ClientAssetsManager.INSTANCE.getModel(id)
-                    .map(modelPojo -> new VehicleBedrockModel(modelPojo, List.of()))
-                    .orElse(null);
+            return null;
         });
+    }
+
+    @Nullable
+    private static BaseDisplay resolveAttachmentDisplay(ResourceLocation modelId) {
+        BaseDisplay byDecorationId = ClientAssetsManager.INSTANCE.getDecorationDisplay(modelId).orElse(null);
+        if (byDecorationId != null) {
+            return byDecorationId;
+        }
+        BaseDisplay byWeaponId = ClientAssetsManager.INSTANCE.getWeaponDisplay(modelId).orElse(null);
+        if (byWeaponId != null) {
+            return byWeaponId;
+        }
+        BaseDisplay byDecorationModelPath = ClientAssetsManager.INSTANCE.getDecorationDisplays().stream()
+                .filter(display -> modelId.equals(display.getModelPath()))
+                .findFirst()
+                .orElse(null);
+        if (byDecorationModelPath != null) {
+            return byDecorationModelPath;
+        }
+        return getWeaponDisplays().stream()
+                .filter(display -> modelId.equals(display.getModelPath()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static List<BaseDisplay> getWeaponDisplays() {
+        try {
+            Field field = ClientAssetsManager.class.getDeclaredField("weaponDisplayManager");
+            field.setAccessible(true);
+            Object value = field.get(ClientAssetsManager.INSTANCE);
+            if (value instanceof DisplayManager manager) {
+                return new ArrayList<>(manager.getDisplayMap().values());
+            }
+        } catch (ReflectiveOperationException exception) {
+            if (DEBUG_ENABLED.get()) {
+                appendDebugLog("weaponDisplay reflect FAIL reason=" + exception.getClass().getSimpleName());
+            }
+        }
+        return List.of();
+    }
+
+    @Nullable
+    private static VehicleBedrockModel rebuildAttachmentModelFromDisplay(BaseDisplay display) {
+        if (display.getModel() instanceof RVP_VehicleBedrockModel) {
+            return display.getModel();
+        }
+        ResourceLocation modelPath = display.getModelPath();
+        if (modelPath == null) {
+            return display.getModel();
+        }
+        List<SpecialBoneEffect> effects = display.getSpecialBoneEffects() == null
+                ? List.of()
+                : display.getSpecialBoneEffects();
+        VehicleBedrockModel directModel = ClientAssetsManager.INSTANCE.getModel(modelPath)
+                .map(modelPojo -> RVP_VehicleModelFactory.createVehicleModel(
+                        modelPojo,
+                        effects,
+                        RVP_BedrockBackend.RVP
+                ))
+                .orElseGet(() -> loadAttachmentModelDirect(modelPath, effects));
+        return directModel != null ? directModel : display.getModel();
+    }
+
+    @Nullable
+    private static VehicleBedrockModel loadAttachmentModelDirect(ResourceLocation modelId,
+                                                                 List<SpecialBoneEffect> effects) {
+        ResourceLocation resourcePath = new ResourceLocation(
+                modelId.getNamespace(),
+                "models/bedrock/" + modelId.getPath() + ".json"
+        );
+        try {
+            var resourceOptional = Minecraft.getInstance().getResourceManager().getResource(resourcePath);
+            if (resourceOptional.isEmpty()) {
+                return null;
+            }
+            try (Reader reader = resourceOptional.get().openAsReader()) {
+                BedrockModelPOJO pojo = GsonUtil.GSON.fromJson(reader, BedrockModelPOJO.class);
+                return pojo == null ? null : RVP_VehicleModelFactory.createVehicleModel(
+                        pojo,
+                        effects == null ? List.of() : effects,
+                        RVP_BedrockBackend.RVP
+                );
+            }
+        } catch (Exception exception) {
+            if (DEBUG_ENABLED.get()) {
+                appendDebugLog("attachmentModel direct-load FAIL model=" + modelId + " reason=" + exception.getClass().getSimpleName());
+            }
+            return null;
+        }
     }
 
     /**
@@ -491,6 +630,94 @@ public final class RVP_CustomMountRenderLogic {
         }
     }
 
+    private static void autoTraceRuntimeState(AbstractVehicle vehicle,
+                                              VehicleBedrockModel vehicleModel,
+                                              List<RVP_CustomMountConfig> configs,
+                                              List<ResolvedMount> resolvedMounts) {
+        if (configs.isEmpty()) {
+            return;
+        }
+        String currentWeaponId = "<none>";
+        WeaponUnit localWeaponUnit = org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance != null
+                ? org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        if (localWeaponUnit != null) {
+            WeaponResolution resolution = resolveCurrentWeaponForDisplay(localWeaponUnit);
+            if (resolution != null && resolution.currentWeapon() != null && resolution.currentWeapon().getData() != null
+                    && resolution.currentWeapon().getData().getWeaponId() != null) {
+                currentWeaponId = resolution.currentWeapon().getData().getWeaponId().toString();
+            }
+        }
+        String traceKey = vehicle.getId() + "|" + vehicle.getVehicleId() + "|" + currentWeaponId;
+        if (AUTO_TRACE_KEYS.putIfAbsent(traceKey, Boolean.TRUE) != null) {
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== AUTO TRACE ===\n");
+        sb.append("vehicle=").append(vehicle.getVehicleId()).append('\n');
+        sb.append("entityId=").append(vehicle.getId()).append('\n');
+        sb.append("currentWeapon=").append(currentWeaponId).append('\n');
+        sb.append("configCount=").append(configs.size()).append('\n');
+        sb.append("resolvedCount=").append(resolvedMounts.size()).append('\n');
+        sb.append("vehicleModelClass=").append(vehicleModel == null ? "<null>" : vehicleModel.getClass().getName()).append('\n');
+
+        for (RVP_CustomMountConfig config : configs) {
+            sb.append("-- config --\n");
+            sb.append("partUnit=").append(config.partUnitId()).append('\n');
+            sb.append("attachPart=").append(config.attachPartUnitId()).append('\n');
+            sb.append("attachBone=").append(config.attachBone()).append('\n');
+            sb.append("weaponId=").append(config.weaponId()).append('\n');
+            sb.append("model=").append(config.model()).append('\n');
+
+            PartUnit<?> partUnit = vehicle.getPartUnit(config.partUnitId()).orElse(null);
+            sb.append("partUnitClass=").append(partUnit == null ? "<null>" : partUnit.getClass().getName()).append('\n');
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                WeaponResolution resolution = resolveCurrentWeaponForDisplay(weaponUnit);
+                sb.append("partCurrentWeapon=")
+                        .append(resolution == null || resolution.currentWeapon() == null || resolution.currentWeapon().getData() == null
+                                || resolution.currentWeapon().getData().getWeaponId() == null
+                                ? "<null>"
+                                : resolution.currentWeapon().getData().getWeaponId())
+                        .append('\n');
+            }
+
+            PartUnit<?> attachPart = config.attachPartUnitId().isEmpty() ? null : vehicle.getPartUnit(config.attachPartUnitId()).orElse(null);
+            sb.append("attachPartClass=").append(attachPart == null ? "<null>" : attachPart.getClass().getName()).append('\n');
+            if (attachPart instanceof WeaponUnit attachWeaponUnit) {
+                sb.append("attachPartBolts=").append(attachWeaponUnit.getBolts().size()).append('\n');
+                sb.append("attachPartPivot=").append(attachWeaponUnit.getPivotOffset()).append('\n');
+            }
+
+            BaseDisplay display = resolveAttachmentDisplay(config.model());
+            sb.append("displayFound=").append(display != null).append('\n');
+            if (display != null) {
+                sb.append("displayClass=").append(display.getClass().getName()).append('\n');
+                sb.append("displayModelClass=").append(display.getModel() == null ? "<null>" : display.getModel().getClass().getName()).append('\n');
+                sb.append("displayModelPath=").append(display.getModelPath()).append('\n');
+            }
+
+            VehicleBedrockModel attachmentModel = getAttachmentModel(config.model());
+            sb.append("attachmentModelClass=").append(attachmentModel == null ? "<null>" : attachmentModel.getClass().getName()).append('\n');
+
+            AttachmentTransform transform = resolveAttachmentTransform(vehicle, vehicleModel, config);
+            sb.append("attachmentTransform=").append(transform == null ? "<null>" : transform.transform()).append('\n');
+
+            ResolvedMount resolvedMount = resolvedMounts.stream()
+                    .filter(entry -> entry.config() == config)
+                    .findFirst()
+                    .orElse(null);
+            sb.append("resolvedMount=").append(resolvedMount != null).append('\n');
+            if (resolvedMount != null) {
+                sb.append("visibleAmmo=").append(resolvedMount.visibleAmmo()).append('\n');
+                sb.append("visibleMissileCount=").append(resolvedMount.visibleMissileCount()).append('\n');
+                sb.append("hideMissile=").append(resolvedMount.shouldHideMissile()).append('\n');
+            }
+        }
+
+        appendTraceLog(sb.toString().trim());
+    }
+
     private static void noteRenderPose(AbstractVehicle vehicle, ResolvedMount mount) {
         String key = debugKey(vehicle, mount) + "|pose";
         String hiddenBones;
@@ -522,6 +749,30 @@ public final class RVP_CustomMountRenderLogic {
                 + "|" + mount.config().weaponId() + "|" + mount.ammoSlot();
     }
 
+    private static boolean matchesConfiguredPartUnit(WeaponUnit queryUnit, String configuredPartUnitId) {
+        WeaponUnit current = queryUnit;
+        while (current != null) {
+            if (configuredPartUnitId.equals(current.getId())) {
+                return true;
+            }
+            current = current.getParentWeaponUnit();
+        }
+        if (queryUnit.getVehicle() == null) {
+            return false;
+        }
+        if (!(queryUnit.getVehicle().getPartUnit(configuredPartUnitId).orElse(null) instanceof WeaponUnit configuredUnit)) {
+            return false;
+        }
+        current = configuredUnit.getParentWeaponUnit();
+        while (current != null) {
+            if (current == queryUnit) {
+                return true;
+            }
+            current = current.getParentWeaponUnit();
+        }
+        return false;
+    }
+
     private static String formatResolvedMountState(AbstractVehicle vehicle, ResolvedMount mount) {
         return "vehicle=" + vehicle.getVehicleId()
                 + " entityId=" + vehicle.getId()
@@ -541,6 +792,14 @@ public final class RVP_CustomMountRenderLogic {
         if (!DEBUG_ENABLED.get() && !message.startsWith("toggle")) {
             return;
         }
+        appendLogInternal(message);
+    }
+
+    private static synchronized void appendTraceLog(String message) {
+        appendLogInternal(message);
+    }
+
+    private static void appendLogInternal(String message) {
         try {
             Files.createDirectories(DEBUG_LOG_PATH.getParent());
             String line = "[" + LocalDateTime.now().format(DEBUG_TIME_FORMAT) + "] " + message + System.lineSeparator();
@@ -576,7 +835,7 @@ public final class RVP_CustomMountRenderLogic {
 
     private record VisibleAmmo(int syncedAmmo, int visibleAmmo, @Nullable Integer predictedAmmo) {}
 
-    private record AttachmentTransform(@Nullable BedrockBone bone, @Nullable Vec3 translation) {}
+    private record AttachmentTransform(Matrix4f transform) {}
 
     private record PredictionKey(int vehicleEntityId, String partUnitId, ResourceLocation weaponId) {}
 

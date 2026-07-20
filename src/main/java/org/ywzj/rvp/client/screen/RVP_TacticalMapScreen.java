@@ -40,6 +40,8 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
+import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
@@ -50,7 +52,9 @@ import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.client.render.util.Color;
+import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 import org.ywzj.vehicle.custom.vehicle.FixedWingVehicleData;
@@ -83,6 +87,11 @@ import java.util.Optional;
 import java.lang.reflect.Method;
 
 public class RVP_TacticalMapScreen extends Screen {
+
+    public enum MapMode {
+        TACTICAL,
+        ARTILLERY
+    }
 
     private static final int MAP_MIN_SIZE = 120;
     private static final String ICON_TEXTURE_ROOT = "textures/gui/map_icon/";
@@ -209,6 +218,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private TerminalButton clearButton;
     private TerminalButton centerButton;
     private TerminalButton followButton;
+    private TerminalButton trajectoryModeButton;
     private TerminalButton weaponDropdownButton;
     private TerminalButton radarPanelButton;
     private TerminalButton gpsPanelButton;
@@ -229,6 +239,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private double viewWorldX;
     private double viewWorldZ;
     private double blocksPerPixel = 2.5;
+    private final Set<ResourceLocation> filteredMapIcons = new HashSet<>();
     private boolean followPlayer = true;
     private boolean draggingMap;
     private boolean sidebarVisible;
@@ -270,18 +281,38 @@ public class RVP_TacticalMapScreen extends Screen {
     private boolean pendingQuickFireEverRadarLocked;
     private boolean pendingQuickFireEverWeaponLocked;
     private boolean pendingQuickFireEverSeekerReady;
+    private final MapMode mapMode;
 
     private static ResourceLocation mapIcon(String fileName) {
         return ResourceLocation.fromNamespaceAndPath("ywzj_rvp", ICON_TEXTURE_ROOT + fileName);
     }
 
     public RVP_TacticalMapScreen() {
-        super(Component.translatable("gui.ywzj_rvp.tactical_map.title"));
+        this(MapMode.TACTICAL);
+    }
+
+    public RVP_TacticalMapScreen(MapMode mapMode) {
+        super(mapMode == MapMode.ARTILLERY
+                ? Component.literal("Artillery Map")
+                : Component.translatable("gui.ywzj_rvp.tactical_map.title"));
+        this.mapMode = mapMode == null ? MapMode.TACTICAL : mapMode;
+    }
+
+    public boolean allowsVehicleInputPassthrough() {
+        return mapMode == MapMode.ARTILLERY;
+    }
+
+    public boolean isArtilleryMode() {
+        return mapMode == MapMode.ARTILLERY;
     }
 
     @Override
     protected void init() {
         syncViewToPlayer(true);
+        if (isArtilleryMode()) {
+            sidebarVisible = false;
+            sidebarMode = SidebarMode.NONE;
+        }
         int boxWidth = 68;
         int boxHeight = 16;
         int compactToolbarHeight = 14;
@@ -331,6 +362,14 @@ public class RVP_TacticalMapScreen extends Screen {
                 },
                 () -> followPlayer,
                 () -> OWN_ICON_COLOR
+        ));
+        trajectoryModeButton = addRenderableWidget(new TerminalButton(
+                0, 0, 58, compactToolbarHeight,
+                artilleryTrajectoryLabel(),
+                RVP_ArtilleryFireControlState::toggleTrajectoryMode,
+                () -> RVP_ArtilleryFireControlState.getTrajectoryMode()
+                        == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH,
+                () -> GPS_ICON_COLOR
         ));
         weaponDropdownButton = addRenderableWidget(new TerminalButton(
                 0, 0, 92, compactToolbarHeight,
@@ -402,6 +441,11 @@ public class RVP_TacticalMapScreen extends Screen {
                 : Component.translatable("gui.ywzj_rvp.tactical_map.follow_off");
     }
 
+    private Component artilleryTrajectoryLabel() {
+        return Component.literal(RVP_ArtilleryFireControlState.getTrajectoryMode()
+                == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH ? "高弹道" : "低弹道");
+    }
+
     private Component gpsPanelLabel() {
         return sidebarVisible && sidebarMode == SidebarMode.GPS
                 ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_panel_hide")
@@ -446,6 +490,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void toggleSidebar(SidebarMode mode) {
+        if (isArtilleryMode()) {
+            return;
+        }
         if (sidebarVisible && sidebarMode == mode) {
             sidebarVisible = false;
             sidebarMode = SidebarMode.NONE;
@@ -475,7 +522,8 @@ public class RVP_TacticalMapScreen extends Screen {
         this.mapTop = margin;
         this.mapBottom = this.height - margin;
 
-        if (sidebarVisible) {
+        boolean effectiveSidebarVisible = sidebarVisible && !isArtilleryMode();
+        if (effectiveSidebarVisible) {
             this.sideRight = this.width - margin;
             this.sideLeft = Math.max(this.sideRight - sidebarWidth(), this.mapLeft + MAP_MIN_SIZE);
             this.mapRight = Math.max(this.sideLeft - 8, this.mapLeft + MAP_MIN_SIZE);
@@ -488,16 +536,24 @@ public class RVP_TacticalMapScreen extends Screen {
         int buttonHeight = toolbarButtonHeight();
         int buttonGap = 3;
         int buttonY = mapTop + 6;
-        int buttonX = mapRight - gpsPanelButton.getWidth();
-        gpsPanelButton.setPosition(buttonX, buttonY);
-        radarPanelButton.setPosition(buttonX - buttonGap - radarPanelButton.getWidth(), buttonY);
-        followButton.setPosition(radarPanelButton.getX() - buttonGap - followButton.getWidth(), buttonY);
-        centerButton.setPosition(followButton.getX() - buttonGap - centerButton.getWidth(), buttonY);
-        gpsModeButton.setPosition(centerButton.getX() - buttonGap - gpsModeButton.getWidth(), buttonY);
-        gpsQuickMarkButton.setPosition(gpsModeButton.getX() - buttonGap - gpsQuickMarkButton.getWidth(), buttonY);
-        gpsClearAllButton.setPosition(gpsQuickMarkButton.getX() - buttonGap - gpsClearAllButton.getWidth(), buttonY);
-        int weaponButtonY = mapTop + (gpsQuickMarkMode ? 44 : 32);
-        weaponDropdownButton.setPosition(mapLeft + 8, weaponButtonY);
+        if (isArtilleryMode()) {
+            int buttonX = mapRight - followButton.getWidth();
+            followButton.setPosition(buttonX, buttonY);
+            centerButton.setPosition(buttonX - buttonGap - centerButton.getWidth(), buttonY);
+            trajectoryModeButton.setPosition(
+                    centerButton.getX() - buttonGap - trajectoryModeButton.getWidth(), buttonY);
+        } else {
+            int buttonX = mapRight - gpsPanelButton.getWidth();
+            gpsPanelButton.setPosition(buttonX, buttonY);
+            radarPanelButton.setPosition(buttonX - buttonGap - radarPanelButton.getWidth(), buttonY);
+            followButton.setPosition(radarPanelButton.getX() - buttonGap - followButton.getWidth(), buttonY);
+            centerButton.setPosition(followButton.getX() - buttonGap - centerButton.getWidth(), buttonY);
+            gpsModeButton.setPosition(centerButton.getX() - buttonGap - gpsModeButton.getWidth(), buttonY);
+            gpsQuickMarkButton.setPosition(gpsModeButton.getX() - buttonGap - gpsQuickMarkButton.getWidth(), buttonY);
+            gpsClearAllButton.setPosition(gpsQuickMarkButton.getX() - buttonGap - gpsClearAllButton.getWidth(), buttonY);
+            int weaponButtonY = mapTop + (gpsQuickMarkMode ? 44 : 32);
+            weaponDropdownButton.setPosition(mapLeft + 8, weaponButtonY);
+        }
 
         if (xBox == null) {
             return;
@@ -529,6 +585,41 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void refreshSidebarWidgets() {
+        if (isArtilleryMode()) {
+            xBox.visible = false;
+            yBox.visible = false;
+            zBox.visible = false;
+            xBox.setEditable(false);
+            yBox.setEditable(false);
+            zBox.setEditable(false);
+            bindButton.visible = false;
+            bindButton.active = false;
+            clearButton.visible = false;
+            clearButton.active = false;
+            gpsPanelButton.visible = false;
+            gpsPanelButton.active = false;
+            radarPanelButton.visible = false;
+            radarPanelButton.active = false;
+            gpsModeButton.visible = false;
+            gpsModeButton.active = false;
+            gpsClearAllButton.visible = false;
+            gpsClearAllButton.active = false;
+            gpsQuickMarkButton.visible = false;
+            gpsQuickMarkButton.active = false;
+            radarHideFriendlyButton.visible = false;
+            radarHideFriendlyButton.active = false;
+            weaponDropdownButton.visible = false;
+            weaponDropdownButton.active = false;
+            centerButton.visible = true;
+            centerButton.active = true;
+            followButton.visible = true;
+            followButton.active = true;
+            trajectoryModeButton.visible = true;
+            trajectoryModeButton.active = true;
+            return;
+        }
+        trajectoryModeButton.visible = false;
+        trajectoryModeButton.active = false;
         boolean showGpsSidebar = sidebarVisible && sidebarMode == SidebarMode.GPS;
         boolean showRadarSidebar = sidebarVisible && sidebarMode == SidebarMode.RADAR;
         xBox.visible = showGpsSidebar;
@@ -559,6 +650,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void openSidebar(SidebarMode mode) {
+        if (isArtilleryMode()) {
+            return;
+        }
         sidebarVisible = true;
         sidebarMode = mode;
         refreshLayout();
@@ -648,6 +742,7 @@ public class RVP_TacticalMapScreen extends Screen {
         tickPendingRadarActions();
         tickImpactCrosses();
         if (followButton != null) followButton.setMessage(followLabel());
+        if (trajectoryModeButton != null) trajectoryModeButton.setMessage(artilleryTrajectoryLabel());
         if (weaponDropdownButton != null) weaponDropdownButton.setMessage(weaponDropdownLabel());
         if (gpsPanelButton != null) gpsPanelButton.setMessage(gpsPanelLabel());
         if (radarPanelButton != null) radarPanelButton.setMessage(radarPanelLabel());
@@ -658,6 +753,24 @@ public class RVP_TacticalMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (isArtilleryMode()) {
+            if (isOverToolbarButton(mouseX, mouseY)) {
+                closeTransientMenus();
+                return super.mouseClicked(mouseX, mouseY, button);
+            }
+            if (isOverMap(mouseX, mouseY) && button == 0) {
+                draggingMap = false;
+                closeTransientMenus();
+                return true;
+            }
+            if (isOverMap(mouseX, mouseY) && (button == 1 || button == 2)) {
+                draggingMap = true;
+                followPlayer = false;
+                closeTransientMenus();
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (isOverToolbarButton(mouseX, mouseY)) {
             closeTransientMenus();
             return super.mouseClicked(mouseX, mouseY, button);
@@ -752,15 +865,16 @@ public class RVP_TacticalMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0) {
+        if ((button == 1 || button == 2) && draggingMap) {
             draggingMap = false;
+            return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (draggingMap && button == 0 && isOverMap(mouseX, mouseY)) {
+        if (draggingMap && (button == 1 || button == 2) && isOverMap(mouseX, mouseY)) {
             closeTransientMenus();
             viewWorldX -= dragX * blocksPerPixel;
             viewWorldZ -= dragY * blocksPerPixel;
@@ -856,25 +970,36 @@ public class RVP_TacticalMapScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         refreshLayout();
+        updateArtilleryHoverTarget(mouseX, mouseY);
         renderBackground(guiGraphics);
         drawFrame(guiGraphics);
         renderMap(guiGraphics, mouseX, mouseY, partialTick);
-        if (sidebarVisible) {
+        if (sidebarVisible && !isArtilleryMode()) {
             renderSidePanel(guiGraphics);
         }
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        if (weaponDropdownOpen) {
+        if (weaponDropdownOpen && !isArtilleryMode()) {
             renderWeaponDropdown(guiGraphics, mouseX, mouseY);
         }
-        if (entityContextMenuVisible && entityContextTarget != null) {
+        if (!isArtilleryMode() && entityContextMenuVisible && entityContextTarget != null) {
             if (entityContextTarget.entity != null && entityContextTarget.entity.isRemoved()) {
                 closeEntityContextMenu();
             } else {
                 renderEntityContextMenu(guiGraphics, mouseX, mouseY);
             }
         }
-        if (mapContextMenuVisible && mapContextTarget != null) {
+        if (!isArtilleryMode() && mapContextMenuVisible && mapContextTarget != null) {
             renderMapContextMenu(guiGraphics, mouseX, mouseY);
+        }
+    }
+
+    private void updateArtilleryHoverTarget(int mouseX, int mouseY) {
+        if (!isArtilleryMode() || draggingMap || !isOverMap(mouseX, mouseY)) {
+            return;
+        }
+        Vec3 picked = pickMapPoint(mouseX, mouseY);
+        if (picked != null) {
+            RVP_ArtilleryFireControlState.designate(picked);
         }
     }
 
@@ -935,8 +1060,10 @@ public class RVP_TacticalMapScreen extends Screen {
         renderTerrainTiles(guiGraphics);
         renderGrid(guiGraphics);
         renderRadarCoverage(guiGraphics, partialTick);
-        renderGpsAmmoLinks(guiGraphics);
-        renderArhAmmoLinks(guiGraphics);
+        if (!isArtilleryMode()) {
+            renderGpsAmmoLinks(guiGraphics);
+            renderArhAmmoLinks(guiGraphics);
+        }
         renderLocalProjectiles(guiGraphics);
         renderRemoteAmmoCache(guiGraphics);
         renderRemoteHbmMissiles(guiGraphics);
@@ -946,6 +1073,7 @@ public class RVP_TacticalMapScreen extends Screen {
         renderRemoteEntities(guiGraphics);
         renderVehicleAndPlayer(guiGraphics);
         renderGpsMarker(guiGraphics);
+        renderArtilleryCcipMarker(guiGraphics);
         renderRecentImpactCrosses(guiGraphics);
         syncSelectedMarkerHit();
         renderSelectedMarkerHighlight(guiGraphics);
@@ -1387,6 +1515,7 @@ public class RVP_TacticalMapScreen extends Screen {
         for (S2CExternalRadarSnapshot.Entry entry : currentExternalRadarEntries()) {
             tacticalRadarVisibleIds.add(entry.entityId());
         }
+        tacticalRadarVisibleIds.addAll(RVP_ClientTacticalRevealState.getVisibleIds(currentLevelDimension()));
     }
 
     private void renderRadarCoverage(GuiGraphics guiGraphics, float partialTick) {
@@ -1508,7 +1637,7 @@ public class RVP_TacticalMapScreen extends Screen {
                 entry.x(),
                 entry.z(),
                 entry.yaw(),
-                10,
+                16,
                 relationColorForAffiliation(entry.affiliation()),
                 true);
     }
@@ -1556,7 +1685,7 @@ public class RVP_TacticalMapScreen extends Screen {
             if (i == activeGlobalIndex) {
                 drawTargetMarker(guiGraphics, sx, sy, GPS_ICON_COLOR);
             } else {
-                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, GPS_ICON_COLOR, false, 0.0f, 1.0f);
+                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
             }
             String label = "GPS " + (i + 1);
             int w = this.font.width(label);
@@ -1568,10 +1697,54 @@ public class RVP_TacticalMapScreen extends Screen {
         }
     }
 
+    private void renderArtilleryCcipMarker(GuiGraphics guiGraphics) {
+        if (!isArtilleryMode()) {
+            return;
+        }
+        RVP_ArtilleryFireControlState.Snapshot snapshot = RVP_ArtilleryFireControlState.snapshot();
+        Vec3 target = snapshot.target();
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance != null
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        Vec3 hitPos = weaponUnit != null ? weaponUnit.weaponHitPos : null;
+
+        int targetX = target != null ? Mth.floor(worldToScreenX(target.x)) : Integer.MIN_VALUE;
+        int targetY = target != null ? Mth.floor(worldToScreenY(target.z)) : Integer.MIN_VALUE;
+        int hitX = hitPos != null ? Mth.floor(worldToScreenX(hitPos.x)) : Integer.MIN_VALUE;
+        int hitY = hitPos != null ? Mth.floor(worldToScreenY(hitPos.z)) : Integer.MIN_VALUE;
+        boolean aligned = target != null && hitPos != null
+                && Math.hypot(targetX - hitX, targetY - hitY) <= 6.0D;
+
+        if (target != null && isMarkerVisible(targetX, targetY, 8)) {
+            int circleColor = !snapshot.exact()
+                    ? 0xFFFF4A4A
+                    : aligned ? 0xFF62F58A : GPS_ICON_COLOR;
+            GuiHelper.drawCircle(guiGraphics.pose(), targetX, targetY, 6.0F,
+                    circleColor, 0.08F, 0.0F, 0.0F);
+        }
+        if (hitPos != null && isMarkerVisible(hitX, hitY, 6)) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle) {
+                drawDashedWorldLine(guiGraphics,
+                        vehicle.getX(), vehicle.getZ(), hitPos.x, hitPos.z,
+                        6, 4, withAlpha(GPS_ICON_COLOR, 0xA8));
+            }
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(hitX, hitY, 0.0D);
+            RenderHelper.drawCross(guiGraphics, 0, 0, 5, 0xFFFFFFFF);
+            guiGraphics.pose().popPose();
+        }
+    }
+
     private void renderMapHud(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         guiGraphics.drawString(this.font, this.title, mapLeft + 8, mapTop + 8, 0xFFFFFFFF, false);
-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.hint"), mapLeft + 8, mapTop + 20, 0xFF9CA9B8, false);
-        if (gpsQuickMarkMode) {
+        if (isArtilleryMode()) {
+            renderArtilleryStatus(guiGraphics);
+        } else {
+            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.hint"),
+                    mapLeft + 8, mapTop + 20, 0xFF9CA9B8, false);
+        }
+        if (!isArtilleryMode() && gpsQuickMarkMode) {
             guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_quick_mark_status"), mapLeft + 8, mapTop + 32, GPS_ICON_COLOR, false);
         }
         guiGraphics.drawString(this.font,
@@ -1588,6 +1761,38 @@ public class RVP_TacticalMapScreen extends Screen {
             }
         }
         renderSelectedMarkerInfo(guiGraphics);
+    }
+
+    private void renderArtilleryStatus(GuiGraphics guiGraphics) {
+        RVP_ArtilleryFireControlState.Snapshot snapshot = RVP_ArtilleryFireControlState.snapshot();
+        Vec3 target = snapshot.target();
+        Minecraft mc = Minecraft.getInstance();
+        AbstractVehicle vehicle = mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle value
+                ? value : null;
+        double distance = target != null && vehicle != null
+                ? horizontalDistance(vehicle.position(), target) : Double.NaN;
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance != null
+                ? LocalVehiclePlayer.instance.getWeaponUnit() : null;
+        AbstractVehicleWeapon<?> weapon = weaponUnit != null
+                ? weaponUnit.getCurrentWeapon().orElse(null) : null;
+        int remainAmmo = weapon != null ? weapon.getRemainAmmo() : 0;
+        int maxAmmo = weapon != null ? weapon.getMaxCapacity() : 0;
+
+        String elevationText = snapshot.hasSolution()
+                ? String.format(Locale.ROOT, "%.1f°", snapshot.elevationDeg()) : "--";
+        String distanceText = Double.isFinite(distance)
+                ? String.format(Locale.ROOT, "%.0fm", distance) : "--";
+        String line1 = "仰角 " + elevationText + "  落点距离 " + distanceText;
+        String hitText = snapshot.exact() ? "可命中" : "无解";
+        int hitColor = snapshot.exact() ? 0xFF62F58A : 0xFFFF5B5B;
+        String ammoText = maxAmmo > 0 ? remainAmmo + "/" + maxAmmo : Integer.toString(remainAmmo);
+
+        guiGraphics.drawString(this.font, line1, mapLeft + 8, mapTop + 20, 0xFFE5EDF6, false);
+        guiGraphics.drawString(this.font, "解算 ", mapLeft + 8, mapTop + 30, 0xFF9CA9B8, false);
+        int statusX = mapLeft + 8 + this.font.width("解算 ");
+        guiGraphics.drawString(this.font, hitText, statusX, mapTop + 30, hitColor, false);
+        guiGraphics.drawString(this.font, "  残弹 " + ammoText,
+                statusX + this.font.width(hitText), mapTop + 30, 0xFFE5EDF6, false);
     }
 
     private void renderSelectedMarkerInfo(GuiGraphics guiGraphics) {
@@ -2808,22 +3013,22 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
-            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
             return;
         }
-        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 16, color, true, true);
     }
 
     private void drawVehicleMarker(GuiGraphics guiGraphics, AbstractVehicle vehicle, int color) {
-        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 12, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 18, color, true, true);
     }
 
     private void drawPlayerMarker(GuiGraphics guiGraphics, Player player, int color) {
-        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 11, color, false, true);
+        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 16, color, false, true);
     }
 
     private void drawMissileMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 10, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 16, color, true, true);
     }
 
     private float resolveMarkerYaw(Entity entity) {
@@ -2840,7 +3045,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private void drawTargetMarker(GuiGraphics guiGraphics, int sx, int sy, int color) {
         long millis = System.currentTimeMillis();
         float pulse = 1.0f + ((millis % 900L) / 900.0f) * 0.16f;
-        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, color, false, 0.0f, pulse, true);
+        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, color, false, 0.0f, pulse, true);
     }
 
     private void drawMarkerIcon(GuiGraphics guiGraphics, ResourceLocation icon, double worldX, double worldZ, float yaw, int size, int color, boolean rotate) {
@@ -2875,6 +3080,9 @@ public class RVP_TacticalMapScreen extends Screen {
     private void drawIconLayer(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, float actualSize,
                                int color, boolean rotate, float yaw, boolean tint) {
         float half = actualSize * 0.5f;
+        if (filteredMapIcons.add(icon)) {
+            Minecraft.getInstance().getTextureManager().getTexture(icon).setFilter(true, false);
+        }
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         if (tint) {
             RenderSystem.setShaderColor(red(color), green(color), blue(color), alpha(color));
@@ -2903,7 +3111,6 @@ public class RVP_TacticalMapScreen extends Screen {
         int x1 = centerX + Mth.floor((float) Math.sin(rad) * end);
         int y1 = centerY - Mth.floor((float) Math.cos(rad) * end);
         drawGuiLine(guiGraphics, x0, y0, x1, y1, 1.2f, withAlpha(color, 0xEE));
-        guiGraphics.fill(x1 - 1, y1 - 1, x1 + 1, y1 + 1, 0xFFFFFFFF);
     }
 
     private int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
@@ -2979,7 +3186,10 @@ public class RVP_TacticalMapScreen extends Screen {
         if (isRealtimeVisibleRelation(relationColor)) {
             return true;
         }
-        return tacticalRadarVisibleIds.contains(entity.getId());
+        if (tacticalRadarVisibleIds.contains(entity.getId())) {
+            return true;
+        }
+        return RVP_ClientTacticalRevealState.isVisible(currentLevelDimension(), entity.getId());
     }
 
     private boolean shouldShowRemoteAmmoOnTacticalMap(S2CRemoteAmmoSnapshot.Entry entry) {
@@ -2988,6 +3198,12 @@ public class RVP_TacticalMapScreen extends Screen {
             return true;
         }
         return tacticalRadarVisibleIds.contains(entry.entityId());
+    }
+
+    @Nullable
+    private ResourceLocation currentLevelDimension() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level != null ? mc.level.dimension().location() : null;
     }
 
     private boolean isRealtimeVisibleRelation(int relationColor) {
@@ -3057,6 +3273,9 @@ public class RVP_TacticalMapScreen extends Screen {
             return CRUISE_MISSILE_ICON;
         }
         if (entity instanceof RVP_BaseBullet bullet) {
+            if (resolveProjectileKind(bullet) == RVP_EnumWeaponKind.ROCKET) {
+                return MISSILE_ICON;
+            }
             ResourceLocation weaponId = bullet.getWeaponId();
             if (weaponId != null) {
                 ResourceLocation weaponIcon = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
@@ -3077,6 +3296,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private ResourceLocation resolveRemoteAmmoIcon(S2CRemoteAmmoSnapshot.Entry entry) {
+        if (entry.weaponKind() == RVP_EnumWeaponKind.ROCKET) {
+            return MISSILE_ICON;
+        }
         if (entry.weaponId() != null) {
             ResourceLocation weaponIcon = CommonAssetsManager.vehicleWeaponManager().getIndex(entry.weaponId())
                     .map(index -> index.data())
@@ -3092,6 +3314,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private ResourceLocation resolveWeaponIcon(RVP_WeaponData weaponData) {
+        if (weaponData.getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
+            return MISSILE_ICON;
+        }
         ResourceLocation configured = resolveConfiguredIcon(weaponData.getTacticalMapIcon());
         if (configured != null) {
             return configured;
@@ -3107,7 +3332,9 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private boolean shouldRenderProjectileMarker(RVP_BaseBullet bullet) {
         RVP_EnumWeaponKind kind = resolveProjectileKind(bullet);
-        return kind == RVP_EnumWeaponKind.MISSILE || kind == RVP_EnumWeaponKind.BOMB;
+        return kind == RVP_EnumWeaponKind.MISSILE
+                || kind == RVP_EnumWeaponKind.ROCKET
+                || kind == RVP_EnumWeaponKind.BOMB;
     }
 
     private void beginTrackedAmmoFrame() {
@@ -3131,7 +3358,9 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private void trackAmmoPosition(int entityId, Vec3 pos, @Nullable RVP_EnumWeaponKind weaponKind) {
-        if (weaponKind != RVP_EnumWeaponKind.MISSILE && weaponKind != RVP_EnumWeaponKind.BOMB) {
+        if (weaponKind != RVP_EnumWeaponKind.MISSILE
+                && weaponKind != RVP_EnumWeaponKind.ROCKET
+                && weaponKind != RVP_EnumWeaponKind.BOMB) {
             return;
         }
         visibleTrackedAmmoIds.add(entityId);
@@ -3621,35 +3850,33 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private void drawDashedWorldLine(GuiGraphics guiGraphics, double worldX0, double worldZ0, double worldX1, double worldZ1,
                                      int dashLength, int gapLength, int color) {
-        int x0 = Mth.floor(worldToScreenX(worldX0));
-        int y0 = Mth.floor(worldToScreenY(worldZ0));
-        int x1 = Mth.floor(worldToScreenX(worldX1));
-        int y1 = Mth.floor(worldToScreenY(worldZ1));
+        float x0 = (float) worldToScreenX(worldX0);
+        float y0 = (float) worldToScreenY(worldZ0);
+        float x1 = (float) worldToScreenX(worldX1);
+        float y1 = (float) worldToScreenY(worldZ1);
         drawDashedLine(guiGraphics, x0, y0, x1, y1, dashLength, gapLength, color);
     }
 
-    private void drawDashedLine(GuiGraphics guiGraphics, int x0, int y0, int x1, int y1, int dashLength, int gapLength, int color) {
+    private void drawDashedLine(GuiGraphics guiGraphics, float x0, float y0, float x1, float y1,
+                                int dashLength, int gapLength, int color) {
         double dx = x1 - x0;
         double dy = y1 - y0;
         double totalLength = Math.hypot(dx, dy);
         if (totalLength <= 0.5) {
-            plot(guiGraphics, x0, y0, color);
+            plot(guiGraphics, Mth.floor(x0), Mth.floor(y0), color);
             return;
         }
-        double pattern = Math.max(1.0, dashLength + gapLength);
-        double drawn = 0.0;
-        while (drawn < totalLength) {
-            double dashStart = drawn;
-            double dashEnd = Math.min(totalLength, drawn + Math.max(1, dashLength));
-            double startRatio = dashStart / totalLength;
-            double endRatio = dashEnd / totalLength;
-            int sx = Mth.floor(Mth.lerp(startRatio, x0, x1));
-            int sy = Mth.floor(Mth.lerp(startRatio, y0, y1));
-            int ex = Mth.floor(Mth.lerp(endRatio, x0, x1));
-            int ey = Mth.floor(Mth.lerp(endRatio, y0, y1));
-            drawLine(guiGraphics, sx, sy, ex, ey, color);
-            drawn += pattern;
-        }
+        var pose = guiGraphics.pose();
+        pose.pushPose();
+        pose.translate(x0, y0, 0.0F);
+        RenderHelper.drawLine(pose, new Vec3(dx, 0.0D, dy), 1.0F, color,
+                Math.max(1, dashLength), Math.max(0, gapLength));
+        pose.popPose();
+        double capLength = Math.min(Math.max(1.0D, dashLength), totalLength);
+        double capStartRatio = (totalLength - capLength) / totalLength;
+        float capX = (float) Mth.lerp(capStartRatio, x0, x1);
+        float capY = (float) Mth.lerp(capStartRatio, y0, y1);
+        drawGuiLine(guiGraphics, capX, capY, x1, y1, 1.0F, color);
     }
 
     private void plot(GuiGraphics guiGraphics, int x, int y, int color) {
@@ -3660,14 +3887,19 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private boolean isOverToolbarButton(double mouseX, double mouseY) {
-        return centerButton != null && centerButton.isMouseOver(mouseX, mouseY)
-                || followButton != null && followButton.isMouseOver(mouseX, mouseY)
-                || weaponDropdownButton != null && weaponDropdownButton.isMouseOver(mouseX, mouseY)
-                || radarPanelButton != null && radarPanelButton.isMouseOver(mouseX, mouseY)
-                || gpsPanelButton != null && gpsPanelButton.isMouseOver(mouseX, mouseY)
-                || gpsModeButton != null && gpsModeButton.isMouseOver(mouseX, mouseY)
-                || gpsClearAllButton != null && gpsClearAllButton.isMouseOver(mouseX, mouseY)
-                || gpsQuickMarkButton != null && gpsQuickMarkButton.isMouseOver(mouseX, mouseY);
+        return isToolbarHit(centerButton, mouseX, mouseY)
+                || isToolbarHit(followButton, mouseX, mouseY)
+                || isToolbarHit(trajectoryModeButton, mouseX, mouseY)
+                || isToolbarHit(weaponDropdownButton, mouseX, mouseY)
+                || isToolbarHit(radarPanelButton, mouseX, mouseY)
+                || isToolbarHit(gpsPanelButton, mouseX, mouseY)
+                || isToolbarHit(gpsModeButton, mouseX, mouseY)
+                || isToolbarHit(gpsClearAllButton, mouseX, mouseY)
+                || isToolbarHit(gpsQuickMarkButton, mouseX, mouseY);
+    }
+
+    private static boolean isToolbarHit(@Nullable AbstractWidget widget, double mouseX, double mouseY) {
+        return widget != null && widget.visible && widget.isMouseOver(mouseX, mouseY);
     }
 
     private boolean handleWeaponDropdownClick(double mouseX, double mouseY, int button) {

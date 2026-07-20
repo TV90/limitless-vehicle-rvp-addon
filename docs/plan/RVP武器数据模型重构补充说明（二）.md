@@ -238,6 +238,72 @@
 
 也就是说，解决方式不是把公共基类拆碎，而是为“手操型制导”明确一份字段适用范围。
 
+### 6.5 比例导引（PN）补充结论
+
+当前口径调整为：
+
+- `use_proportional_navigation` 可以删除
+- 删除 `predictTargetPos` 原有的“预测截获点”语义
+- `predictTargetPos` 这个字段本身保留，但语义改为“是否启用比例导引”
+- `predictTargetPos=false` 表示不启用 PN
+- `predictTargetPos=true` 表示启用 PN
+- 当前方案目标是“真正的比例导引”，不是“预测截获点追踪”
+
+换句话说，后续 `predictTargetPos` 不再表示“要不要算截获点”，而是直接表示“要不要走 PN”。
+原先那套 `RVP_InterceptSolver` 预测截获点追踪逻辑，应当从主制导链中移除，而不是继续保留一个旧功能再额外挂一个 PN 开关。
+
+#### 6.5.1 建议补充到正式文档的字段
+
+| 字段 | 解释 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `predictTargetPos` | 字段保留但重定义。原“预测截获点”功能删除后，该字段改为“是否启用比例导引”。为 `false` 时不走 PN；为 `true` 时走 PN。 | `boolean` | `false` |
+| `predictTargetPosGain` | 比例导引增益系数。值越大，导弹对 LOS 转率和闭合速度的响应越积极。仅在 `predictTargetPos=true` 时生效。 | `float` | 代码默认值 |
+| `maxLateralAccel` | PN 横向修正的限幅值。用于限制单 tick 横向修正过强导致的大幅甩尾、绕大弯、撞地或乱飞。仅在 `predictTargetPos=true` 时生效。 | `float` | 代码默认值 |
+| `predictTargetPosStartTick` | 发射后从第多少 tick 开始施加 PN 修正。用于避免导弹低速、离架、刚点火阶段就被 PN 拉出过大偏转。仅在 `predictTargetPos=true` 时生效。 | `int` | 代码默认值 |
+
+#### 6.5.2 放置位置建议
+
+主制导段：
+- `guidance_data.predict_target_pos`
+- `guidance_data.predict_target_pos_gain`
+- `guidance_data.max_lateral_accel`
+- `guidance_data.predict_target_pos_start_tick`
+
+末端制导段：
+- `guidance_data.terminal_guidance.predict_target_pos`
+- `guidance_data.terminal_guidance.predict_target_pos_gain`
+- `guidance_data.terminal_guidance.max_lateral_accel`
+- `guidance_data.terminal_guidance.predict_target_pos_start_tick`
+
+#### 6.5.3 与现有字段的关系
+
+- `predictTargetPos`：保留字段名，但重定义为“是否启用比例导引”
+- `turningFactor`：继续表示基础转向插值强度，不等价于 PN
+- `maxGuidanceAngle`：继续表示发射后导引保持角限制，不等价于 PN 限幅
+
+因此：
+
+1. `use_proportional_navigation` 不再保留
+2. `predictTargetPos` 直接承担 PN 开关语义
+3. 预测截获点功能整体删除，不再作为独立能力存在
+
+#### 6.5.4 迁移风险备注
+
+如果只把 `predictTargetPos` 改成 PN 开关，但不补 `maxLateralAccel` 和 `predictTargetPosStartTick`，在当前 RVP 物理下很容易出现以下问题：
+
+- 发射初段就猛拐
+- 超级大弯
+- 低空撞地
+- 近距离乱飞
+- 高机动目标下过冲严重
+
+所以这轮文档里，PN 最少应视为“一个布尔开关 + 两到三个调参项”：
+
+- `predictTargetPos`
+- `predictTargetPosGain`
+- `maxLateralAccel`
+- `predictTargetPosStartTick`
+
 ## 7. 本轮建议的文档动作
 
 1. 在正式文档中新增 `RVP_GuidanceDataARM` 章节。  
@@ -246,4 +312,3 @@
 4. 将高空阻力方案暂时从“单 Map”改回“分层阻力 + 平滑插值”。  
 5. 在文档中明确：`RVP_GuidanceData` 是“多数非手操制导的公共模型”，不是“所有制导一视同仁的参数垃圾桶”。  
 6. 在文档附注中声明：`SACLOS / LOSBR` 对 seeker 类字段按运行时忽略处理。
-

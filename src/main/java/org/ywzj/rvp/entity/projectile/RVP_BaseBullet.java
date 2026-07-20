@@ -41,7 +41,7 @@ import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
-import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
@@ -123,6 +123,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int airburstDist;
     protected double airburstTravelled;
     protected boolean airburstTriggered;
+    /** Segment used by this tick's hit-scan before motion; programmable airburst must use the same segment. */
+    protected Vec3 programmableAirburstSegmentStart = Vec3.ZERO;
+    protected Vec3 programmableAirburstSegmentEnd = Vec3.ZERO;
   @Nullable
     protected RVP_SubmunitionRunner submunitionRunner;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
@@ -207,6 +210,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 gpsTargetOffset;
     private boolean gpsTargetOffsetResolved;
     private boolean gpsCruiseVerticalResetApplied;
+    @Nullable
+    private Vec3 topAttackLaunchPos;
+    @Nullable
+    private Vec3 topAttackInitialTargetPos;
+    @Nullable
+    private Vec3 topAttackApexPos;
+    private boolean topAttackApexReached;
 
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
@@ -246,6 +256,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         writeRemoteVec3(data, "targetPos", targetPos);
         writeRemoteVec3(data, "lastGuidancePos", lastGuidancePos);
         writeRemoteVec3(data, "gpsTargetOffset", gpsTargetOffset);
+        writeRemoteVec3(data, "topAttackLaunchPos", topAttackLaunchPos);
+        writeRemoteVec3(data, "topAttackInitialTargetPos", topAttackInitialTargetPos);
+        writeRemoteVec3(data, "topAttackApexPos", topAttackApexPos);
+        data.putBoolean("topAttackApexReached", topAttackApexReached);
         data.putInt("coldLaunchTimeTick", coldLaunchTimeTick);
         writeRemoteVec3(data, "coldLaunchVelocity", coldLaunchVelocity);
         data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
@@ -273,6 +287,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         targetPos = readRemoteVec3(data, "targetPos");
         lastGuidancePos = readRemoteVec3(data, "lastGuidancePos");
         gpsTargetOffset = readRemoteVec3(data, "gpsTargetOffset");
+        topAttackLaunchPos = readRemoteVec3(data, "topAttackLaunchPos");
+        topAttackInitialTargetPos = readRemoteVec3(data, "topAttackInitialTargetPos");
+        topAttackApexPos = readRemoteVec3(data, "topAttackApexPos");
+        topAttackApexReached = data.getBoolean("topAttackApexReached");
         coldLaunchTimeTick = Math.max(data.getInt("coldLaunchTimeTick"), 0);
         Vec3 readColdLaunchVelocity = readRemoteVec3(data, "coldLaunchVelocity");
         coldLaunchVelocity = readColdLaunchVelocity != null ? readColdLaunchVelocity : new Vec3(0, -1, 0);
@@ -481,8 +499,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     private boolean usesGpsCruiseGuidance() {
-        if (weaponKind != RVP_EnumWeaponKind.BOMB || rvpData == null
-                || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
+        if (rvpData == null || !rvpData.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
             return false;
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
@@ -651,6 +668,39 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (pos != null) {
             this.lastGuidancePos = pos;
         }
+    }
+
+    public void initializeTopAttackProfile(Vec3 launchPos, Vec3 initialTargetPos, Vec3 apexPos) {
+        if (topAttackApexPos != null || launchPos == null || initialTargetPos == null || apexPos == null) {
+            return;
+        }
+        topAttackLaunchPos = launchPos;
+        topAttackInitialTargetPos = initialTargetPos;
+        topAttackApexPos = apexPos;
+        topAttackApexReached = false;
+    }
+
+    @Nullable
+    public Vec3 getTopAttackLaunchPos() {
+        return topAttackLaunchPos;
+    }
+
+    @Nullable
+    public Vec3 getTopAttackInitialTargetPos() {
+        return topAttackInitialTargetPos;
+    }
+
+    @Nullable
+    public Vec3 getTopAttackApexPos() {
+        return topAttackApexPos;
+    }
+
+    public boolean hasReachedTopAttackApex() {
+        return topAttackApexReached;
+    }
+
+    public void markTopAttackApexReached() {
+        topAttackApexReached = true;
     }
 
     @Nullable
@@ -1088,7 +1138,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         double targetDist = measured + fuse.getAirburstOffset();
-        Vec3 motion = getDeltaMovement();
+        Vec3 segmentStart = programmableAirburstSegmentStart;
+        Vec3 segmentEnd = programmableAirburstSegmentEnd;
+        Vec3 motion = segmentEnd.subtract(segmentStart);
         double segLen = motion.length();
         if (segLen <= 0.0D) {
             return;
@@ -1097,7 +1149,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (newTravel >= targetDist) {
             double remain = targetDist - airburstTravelled;
             double t = remain / segLen;
-            Vec3 detonatePos = position().add(motion.scale(t));
+            Vec3 detonatePos = segmentStart.add(motion.scale(t));
             if (shouldSuppressAheadAirburstAt(detonatePos)) {
                 airburstTriggered = true;
                 airburstTravelled = 0.0D;
@@ -1189,6 +1241,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void performAmmoEntityTickHit(Vec3 startVec, Vec3 endVec) {
+        programmableAirburstSegmentStart = startVec;
+        programmableAirburstSegmentEnd = endVec;
         Vec3 step = endVec.subtract(startVec);
         if (step.lengthSqr() < 1.0E-12) {
             return;
@@ -1472,11 +1526,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     hitboxRes == null ? null : hitboxRes.hitBoneName());
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
-        RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();
-        try {
+        if (entity instanceof AbstractVehicle targetVehicleForHurt
+                && targetVehicleForHurt instanceof RVP_VehicleHitboxRuntimeAccess access) {
+            access.rvp$pushSkipGlobalVehicleHurtScaling();
+            try {
+                EntityUtil.hurt(source, entity, finalDamage);
+            } finally {
+                access.rvp$popSkipGlobalVehicleHurtScaling();
+            }
+        } else {
             EntityUtil.hurt(source, entity, finalDamage);
-        } finally {
-            RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击

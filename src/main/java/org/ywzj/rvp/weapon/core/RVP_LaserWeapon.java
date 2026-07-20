@@ -3,7 +3,7 @@ package org.ywzj.rvp.weapon.core;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
-import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
@@ -77,11 +77,16 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                         );
                     }
                 }
-                RVP_HitboxDamageContext.pushSkipGlobalVehicleHurtScaling();
-                try {
+                if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt
+                        && targetVehicleForHurt instanceof RVP_VehicleHitboxRuntimeAccess access) {
+                    access.rvp$pushSkipGlobalVehicleHurtScaling();
+                    try {
+                        EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
+                    } finally {
+                        access.rvp$popSkipGlobalVehicleHurtScaling();
+                    }
+                } else {
                     EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
-                } finally {
-                    RVP_HitboxDamageContext.popSkipGlobalVehicleHurtScaling();
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
                     RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, hitDamageBeforeHitbox);

@@ -52,6 +52,15 @@ public class RVP_GuidanceData {
     @SerializedName("predict_target_pos")
     private boolean predictTargetPos = false;
 
+    @SerializedName("predict_target_pos_gain")
+    private float predictTargetPosGain = 3.0f;
+
+    @SerializedName("max_lateral_accel")
+    private float maxLateralAccel = 0f;
+
+    @SerializedName("predict_target_pos_start_tick")
+    private int predictTargetPosStartTick = 10;
+
     @SerializedName("top_attack_height")
     private Float topAttackHeight;
 
@@ -136,6 +145,18 @@ public class RVP_GuidanceData {
 
     public boolean isPredictTargetPos() {
         return predictTargetPos;
+    }
+
+    public float getPredictTargetPosGain() {
+        return Math.max(predictTargetPosGain, 0f);
+    }
+
+    public float getMaxLateralAccel() {
+        return Math.max(maxLateralAccel, 0f);
+    }
+
+    public int getPredictTargetPosStartTick() {
+        return Math.max(predictTargetPosStartTick, 0);
     }
 
     public Float getTopAttackHeight() {

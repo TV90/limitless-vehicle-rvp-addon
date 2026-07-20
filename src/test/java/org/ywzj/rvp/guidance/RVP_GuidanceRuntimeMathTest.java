@@ -24,26 +24,6 @@ class RVP_GuidanceRuntimeMathTest {
     }
 
     @Test
-    void proportionalNavigationPreservesSpeedWithoutInterceptPrediction() {
-        Vec3 missilePos = Vec3.ZERO;
-        Vec3 missileVelocity = new Vec3(1, 0, 0);
-        Vec3 targetPos = new Vec3(10, 0, 10);
-        Vec3 targetVelocity = new Vec3(0, 0, 0.2);
-
-        Vec3 guided = RVP_GuidanceRuntimeMath.steerProportional(
-                missilePos,
-                missileVelocity,
-                targetPos,
-                targetVelocity,
-                1.0,
-                1f
-        );
-
-        assertEquals(1.0, guided.length(), EPSILON);
-        assertNotEquals(missileVelocity, guided);
-    }
-
-    @Test
     void scanRadiusUsesFiniteEnvelopeOrBoundedFallback() {
         RVP_Range<Float> finite = RVP_Range.of(
                 RVP_Range.interval(0f, 100f),
@@ -69,27 +49,62 @@ class RVP_GuidanceRuntimeMathTest {
     }
 
     @Test
-    void topAttackUsesConfiguredHeightAtLongRange() {
-        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+    void topAttackApexUsesConfiguredHeightAtStraightPathMidpoint() {
+        Vec3 aim = RVP_GuidanceRuntimeMath.computeTopAttackApex(
                 Vec3.ZERO, new Vec3(200, 10, 0), 80f);
 
-        assertVectorEquals(new Vec3(200, 90, 0), aim);
+        assertVectorEquals(new Vec3(100, 90, 0), aim);
     }
 
     @Test
-    void topAttackContinuouslyConvergesToTargetAtCloseRange() {
-        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
-                Vec3.ZERO, new Vec3(20, 10, 0), 80f);
+    void topAttackMidpointUsesInitialStraightPathNotTravelledPath() {
+        Vec3 launch = new Vec3(0, 20, 0);
+        Vec3 target = new Vec3(200, 10, 0);
 
-        assertVectorEquals(new Vec3(20, 30, 0), aim);
+        assertEquals(false, RVP_GuidanceRuntimeMath.hasPassedTopAttackMidpoint(
+                new Vec3(99, 300, 80), launch, target));
+        assertEquals(true, RVP_GuidanceRuntimeMath.hasPassedTopAttackMidpoint(
+                new Vec3(101, 5, -80), launch, target));
     }
 
     @Test
-    void negativeTopAttackHeightCreatesADescendingApproach() {
-        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
-                Vec3.ZERO, new Vec3(20, 10, 0), -80f);
+    void topAttackApexIsNotCappedByLaunchDistance() {
+        Vec3 aim = RVP_GuidanceRuntimeMath.computeTopAttackApex(
+                Vec3.ZERO, new Vec3(20, 10, 0), 1000f);
 
-        assertVectorEquals(new Vec3(20, -10, 0), aim);
+        assertVectorEquals(new Vec3(10, 1010, 0), aim);
+    }
+
+    @Test
+    void topAttackShortRangeEntersTerminalBeforeOvershooting() {
+        assertEquals(true, RVP_GuidanceRuntimeMath.shouldEnterTopAttackTerminal(
+                new Vec3(40, 120, 0),
+                new Vec3(100, 0, 0),
+                Vec3.ZERO,
+                new Vec3(100, 0, 0),
+                new Vec3(8, 6, 0),
+                0.15f
+        ));
+    }
+
+    @Test
+    void topAttackLongRangeKeepsClimbingOutsideTurnInDistance() {
+        assertEquals(false, RVP_GuidanceRuntimeMath.shouldEnterTopAttackTerminal(
+                new Vec3(200, 300, 0),
+                new Vec3(1000, 0, 0),
+                Vec3.ZERO,
+                new Vec3(1000, 0, 0),
+                new Vec3(8, 6, 0),
+                0.15f
+        ));
+    }
+
+    @Test
+    void topAttackTurnInDistanceGrowsForSlowTurningMissiles() {
+        double agile = RVP_GuidanceRuntimeMath.resolveTopAttackTurnInDistance(10.0D, 0.5f);
+        double sluggish = RVP_GuidanceRuntimeMath.resolveTopAttackTurnInDistance(10.0D, 0.15f);
+
+        assertEquals(true, sluggish > agile);
     }
 
     @Test

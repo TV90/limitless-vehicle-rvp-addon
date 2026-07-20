@@ -1,52 +1,92 @@
-package org.ywzj.rvp.mixin;
+package org.ywzj.rvp.client.resource.vehicle;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
+import com.github.mcmodderanchor.simplebedrockmodel.v1.common.resource.pojo.BedrockModelPOJO;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
-import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
 import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderer;
 import org.ywzj.rvp.client.render.RVP_RenderTypes;
+import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
 import org.ywzj.vehicle.client.render.ModRenderTypes;
 import org.ywzj.vehicle.client.resource.vehicle.SpecialBoneEffect;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 import javax.annotation.ParametersAreNonnullByDefault;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-@Mixin(value = VehicleBedrockModel.class, remap = false)
-public abstract class VehicleBedrockModelCockpitRenderMixin {
+public class RVP_VehicleBedrockModel extends VehicleBedrockModel {
 
-    @Shadow(remap = false)
-    private List<VehicleBedrockModel.SpecialBoneEntry> specialBoneEntries;
+    public record RvpSpecialBoneEntry(BedrockBone bone, SpecialBoneEffect effect) {}
 
-    @Shadow(remap = false)
-    public abstract void setSpecialBoneVisible(boolean visible);
+    private final Map<String, SpecialBoneEffect> rvpSpecialBoneMap = new HashMap<>();
+    private final List<RvpSpecialBoneEntry> rvpSpecialBoneEntries = new ArrayList<>();
 
-    /**
-     * @author Codex
-     * @reason Keep cockpit glass depth-tested but stop it from writing depth so cockpit occupants are not culled behind a single translucent shell.
-     */
-    @Overwrite(remap = false)
+    public RVP_VehicleBedrockModel(BedrockModelPOJO pojo, List<SpecialBoneEffect> specialBoneEffects) {
+        super(pojo, List.of());
+        if (specialBoneEffects != null) {
+            for (SpecialBoneEffect effect : specialBoneEffects) {
+                if (effect == null || !effect.isValid()) {
+                    continue;
+                }
+                rvpSpecialBoneMap.put(effect.bone, effect);
+                BedrockBone bone = getBone(effect.bone);
+                if (bone != null) {
+                    rvpSpecialBoneEntries.add(new RvpSpecialBoneEntry(bone, effect));
+                }
+            }
+        }
+    }
+
+    @Override
+    public void setSpecialBoneVisible(boolean visible) {
+        for (RvpSpecialBoneEntry entry : rvpSpecialBoneEntries) {
+            entry.bone().visible = visible;
+        }
+    }
+
+    @Override
+    public Map<String, SpecialBoneEffect> getSpecialBoneMap() {
+        return rvpSpecialBoneMap;
+    }
+
+    @Override
+    @OnlyIn(Dist.CLIENT)
+    @ParametersAreNonnullByDefault
+    public void renderToBuffer(PoseStack poseStack, MultiBufferSource bufferSource, ResourceLocation texture, int packedLight) {
+        setSpecialBoneVisible(false);
+        super.renderToBuffer(
+                poseStack,
+                bufferSource,
+                RenderType.entityCutout(texture),
+                RVP_RenderTypes.polyMeshCutout(texture),
+                packedLight,
+                OverlayTexture.pack(0f, false)
+        );
+    }
+
+    @Override
     @OnlyIn(Dist.CLIENT)
     @ParametersAreNonnullByDefault
     public void renderSpecialBones(PoseStack poseStack, MultiBufferSource source, int packedLight, int packedOverlay, boolean isLocalPlayerVehicle) {
-        if (specialBoneEntries.isEmpty()) {
+        if (rvpSpecialBoneEntries.isEmpty()) {
             return;
         }
-        VehicleBedrockModel self = (VehicleBedrockModel) (Object) this;
         setSpecialBoneVisible(true);
-        RVP_CockpitPassengerRenderer.renderLocalPassengerBeforeCockpit(self, poseStack, source, packedLight);
-        for (var entry : specialBoneEntries) {
+        RVP_CockpitPassengerRenderer.renderLocalPassengerBeforeCockpit(this, poseStack, source, packedLight);
+        for (RvpSpecialBoneEntry entry : rvpSpecialBoneEntries) {
             BedrockBone bone = entry.bone();
             SpecialBoneEffect effect = entry.effect();
-            boolean cockpitDepthFix = RVP_DisplayTransparentModeManager.INSTANCE.isCockpitDepthFix(self, effect.bone);
+            boolean cockpitDepthFix = RVP_DisplayTransparentModeManager.INSTANCE.isCockpitDepthFix(this, effect.bone);
             VertexConsumer buffer;
             if (bone.hasCubesInTree()) {
                 switch (effect.type) {
@@ -55,7 +95,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                     case TRANSPARENT ->
                             buffer = source.getBuffer(cockpitDepthFix
                                     ? RVP_RenderTypes.cubeCockpitTransparent(effect.texture)
-                                    : ModRenderTypes.cubeTransparent(effect.texture));
+                                    : RVP_RenderTypes.cubeTransparent(effect.texture));
                     case COCKPIT -> {
                         if (isLocalPlayerVehicle && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.OPERATOR) {
                             continue;
@@ -77,7 +117,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                     case TRANSPARENT ->
                             buffer = source.getBuffer(cockpitDepthFix
                                     ? RVP_RenderTypes.polyMeshCockpitTransparent(effect.texture)
-                                    : ModRenderTypes.polyMeshTransparent(effect.texture));
+                                    : RVP_RenderTypes.polyMeshTransparent(effect.texture));
                     case COCKPIT -> {
                         if (isLocalPlayerVehicle && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.OPERATOR) {
                             continue;

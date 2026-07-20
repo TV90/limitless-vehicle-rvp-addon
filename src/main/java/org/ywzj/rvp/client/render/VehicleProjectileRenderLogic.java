@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.render;
 
-import com.github.mcmodderanchor.simplebedrockmodel.v1.client.renderer.BedrockModelRenderTypes;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -94,9 +93,9 @@ final class VehicleProjectileRenderLogic {
             runner.tick();
             model.applyPose(BLENDER.blend(model.getBindPose(), runner.evaluate()));
         }
-        model.renderToBuffer(poseStack, bufferSource,
+            model.renderToBuffer(poseStack, bufferSource,
                 RenderType.entityCutout(texture),
-                BedrockModelRenderTypes.polyMeshCutout(texture),
+                RVP_RenderTypes.polyMeshCutout(texture),
                 packedLight,
                 OverlayTexture.pack(0f, false));
         model.applyPose(model.getBindPose());

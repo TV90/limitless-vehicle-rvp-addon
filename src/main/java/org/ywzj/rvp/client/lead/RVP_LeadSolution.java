@@ -8,6 +8,7 @@ public record RVP_LeadSolution(
         Vec3 targetWorldPos,
         Vec3 leadWorldPos,
         double timeToImpact,
-        double missDistance
+        double missDistance,
+        double projectileTravelDistanceMeters
 ) {
 }

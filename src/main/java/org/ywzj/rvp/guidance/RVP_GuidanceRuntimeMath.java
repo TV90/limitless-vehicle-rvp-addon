@@ -1,10 +1,11 @@
 package org.ywzj.rvp.guidance;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
-import org.ywzj.vehicle.vehicle.PhysicsEngine;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
 public final class RVP_GuidanceRuntimeMath {
@@ -34,15 +35,15 @@ public final class RVP_GuidanceRuntimeMath {
 
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
+        float factor = resolveTurningFactor(context);
         Vec3 steeringTarget = resolveTopAttackAimPoint(
-                projectile.position(), target, context.active().topAttackHeight());
+                projectile, target, context.active().topAttackHeight(), factor);
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
         if (speed <= 1.0E-6) {
             return false;
         }
-        float factor = resolveTurningFactor(context);
         if (intent.directMotion()) {
             RVP_WireGuidanceSteering.applyFromDirection(
                     projectile, steeringTarget.subtract(projectile.position()), factor);
@@ -58,14 +59,17 @@ public final class RVP_GuidanceRuntimeMath {
                     context.active().cruiseLevelingFactor(),
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
-        } else if (entity != null && context.active().predictTargetPos()) {
-            next = steerInterceptLikeNative(
+        } else if (entity != null && shouldUseProportionalNavigation(context)) {
+            next = steerProportional(
                     projectile,
+                    projectile.position(),
                     current,
                     steeringTarget,
+                    target,
                     entity.getDeltaMovement(),
                     speed,
-                    factor
+                    factor,
+                    context.active()
             );
             if (next == null || next.lengthSqr() <= 1.0E-8) {
                 next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
@@ -81,11 +85,142 @@ public final class RVP_GuidanceRuntimeMath {
         return true;
     }
 
-    static Vec3 resolveTopAttackAimPoint(Vec3 projectilePos, Vec3 target, Float topAttackHeight) {
-        if (projectilePos == null || target == null || topAttackHeight == null
+    static Vec3 resolveTopAttackAimPoint(
+            RVP_BaseBullet projectile,
+            Vec3 target,
+            Float topAttackHeight,
+            float turningFactor
+    ) {
+        if (projectile == null || target == null || topAttackHeight == null
                 || Math.abs(topAttackHeight) <= 1.0E-6f) {
             return target;
         }
+        if (topAttackHeight < 0f) {
+            return resolveDescendingApproachAimPoint(projectile.position(), target, topAttackHeight);
+        }
+
+        Vec3 apex = projectile.getTopAttackApexPos();
+        if (apex == null) {
+            Vec3 launch = projectile.position();
+            apex = computeTopAttackApex(launch, target, topAttackHeight);
+            projectile.initializeTopAttackProfile(launch, target, apex);
+        }
+        if (projectile.hasReachedTopAttackApex()) {
+            return target;
+        }
+
+        Vec3 launch = projectile.getTopAttackLaunchPos();
+        Vec3 initialTarget = projectile.getTopAttackInitialTargetPos();
+        if (shouldEnterTopAttackTerminal(
+                projectile.position(), target, launch, initialTarget,
+                projectile.getDeltaMovement(), turningFactor)) {
+            projectile.markTopAttackApexReached();
+            return target;
+        }
+        boolean passedMidpoint = hasPassedTopAttackMidpoint(projectile.position(), launch, initialTarget);
+        double speed = Math.max(projectile.getFlightSpeed(), projectile.getDeltaMovement().length());
+        double altitudeTolerance = Mth.clamp(speed * 1.5D, 4.0D, 24.0D);
+        if (passedMidpoint && projectile.getY() >= apex.y - altitudeTolerance) {
+            projectile.markTopAttackApexReached();
+            return target;
+        }
+        if (!passedMidpoint) {
+            return apex;
+        }
+
+        Vec3 horizontalAxis = horizontalDirection(launch, initialTarget);
+        if (horizontalAxis.lengthSqr() <= 1.0E-8D) {
+            return apex;
+        }
+        double forwardLook = Mth.clamp(speed * 3.0D, 12.0D, 64.0D);
+        double remainingAlongAxis = remainingDistanceAlongAxis(projectile.position(), launch, initialTarget);
+        double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
+        forwardLook = Math.min(forwardLook, Math.max(remainingAlongAxis - turnInDistance, 0.0D));
+        return new Vec3(
+                projectile.getX() + horizontalAxis.x * forwardLook,
+                apex.y,
+                projectile.getZ() + horizontalAxis.z * forwardLook
+        );
+    }
+
+    static Vec3 computeTopAttackApex(Vec3 launch, Vec3 target, float topAttackHeight) {
+        if (launch == null || target == null) {
+            return target;
+        }
+        return new Vec3(
+                (launch.x + target.x) * 0.5D,
+                target.y + Math.max(topAttackHeight, 0f),
+                (launch.z + target.z) * 0.5D
+        );
+    }
+
+    static boolean hasPassedTopAttackMidpoint(Vec3 projectilePos, Vec3 launch, Vec3 initialTarget) {
+        if (projectilePos == null || launch == null || initialTarget == null) {
+            return false;
+        }
+        Vec3 axis = new Vec3(initialTarget.x - launch.x, 0.0D, initialTarget.z - launch.z);
+        double axisLengthSqr = axis.lengthSqr();
+        if (axisLengthSqr <= 1.0E-8D) {
+            return true;
+        }
+        Vec3 fromLaunch = new Vec3(projectilePos.x - launch.x, 0.0D, projectilePos.z - launch.z);
+        return fromLaunch.dot(axis) >= axisLengthSqr * 0.5D;
+    }
+
+    static boolean shouldEnterTopAttackTerminal(
+            Vec3 projectilePos,
+            Vec3 target,
+            Vec3 launch,
+            Vec3 initialTarget,
+            Vec3 velocity,
+            float turningFactor
+    ) {
+        if (projectilePos == null || target == null || launch == null || initialTarget == null) {
+            return true;
+        }
+        double horizontalDistance = horizontalDistance(projectilePos, target);
+        double speed = velocity != null ? velocity.length() : 0.0D;
+        double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
+        if (horizontalDistance <= turnInDistance) {
+            return true;
+        }
+        return remainingDistanceAlongAxis(projectilePos, launch, initialTarget) <= 0.0D;
+    }
+
+    static double resolveTopAttackTurnInDistance(double speed, float turningFactor) {
+        double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
+        double responseTicks = Mth.clamp(1.0D / effectiveFactor, 2.0D, 12.0D);
+        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 12.0D, 160.0D);
+    }
+
+    private static double remainingDistanceAlongAxis(Vec3 projectilePos, Vec3 launch, Vec3 initialTarget) {
+        if (projectilePos == null || launch == null || initialTarget == null) {
+            return 0.0D;
+        }
+        Vec3 axis = new Vec3(initialTarget.x - launch.x, 0.0D, initialTarget.z - launch.z);
+        double axisLength = axis.length();
+        if (axisLength <= 1.0E-8D) {
+            return 0.0D;
+        }
+        Vec3 fromLaunch = new Vec3(projectilePos.x - launch.x, 0.0D, projectilePos.z - launch.z);
+        return axisLength - fromLaunch.dot(axis.scale(1.0D / axisLength));
+    }
+
+    private static double horizontalDistance(Vec3 from, Vec3 to) {
+        double dx = to.x - from.x;
+        double dz = to.z - from.z;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static Vec3 horizontalDirection(Vec3 launch, Vec3 target) {
+        if (launch == null || target == null) {
+            return Vec3.ZERO;
+        }
+        Vec3 axis = new Vec3(target.x - launch.x, 0.0D, target.z - launch.z);
+        return axis.lengthSqr() > 1.0E-8D ? axis.normalize() : Vec3.ZERO;
+    }
+
+    private static Vec3 resolveDescendingApproachAimPoint(Vec3 projectilePos, Vec3 target, float topAttackHeight) {
         double horizontalDistance = Math.sqrt(
                 projectilePos.distanceToSqr(target.x, projectilePos.y, target.z));
         double height = Math.copySign(
@@ -139,64 +274,36 @@ public final class RVP_GuidanceRuntimeMath {
     }
 
     public static Vec3 steerProportional(
+            RVP_BaseBullet projectile,
             Vec3 missilePos,
             Vec3 missileVelocity,
+            Vec3 aimPoint,
             Vec3 targetPos,
             Vec3 targetVelocity,
             double speed,
-            float turningFactor
+            float turningFactor,
+            RVP_GuidanceActiveConfig config
     ) {
-        return steerPursuit(
+        if (projectile == null || missilePos == null || missileVelocity == null
+                || aimPoint == null || targetPos == null || targetVelocity == null
+                || speed <= 1.0E-8 || config == null) {
+            return null;
+        }
+        Vec3 base = steerPursuit(missileVelocity, aimPoint.subtract(missilePos), speed, turningFactor);
+        Vec3 pnDelta = proportionalNavigationDelta(
+                projectile,
                 missileVelocity,
-                targetPos == null || missilePos == null ? null : targetPos.subtract(missilePos),
-                speed,
+                targetPos,
+                targetVelocity,
+                config.predictTargetPosGain(),
+                config.maxLateralAccel(),
                 turningFactor
         );
-    }
-
-    public static Vec3 steerInterceptLikeNative(
-            RVP_BaseBullet projectile,
-            Vec3 current,
-            Vec3 targetPos,
-            Vec3 targetVelocity,
-            double speed,
-            float turningFactor
-    ) {
-        if (projectile == null || current == null || targetPos == null || targetVelocity == null || speed <= 1.0E-8) {
-            return null;
+        Vec3 next = base.add(pnDelta);
+        if (next.lengthSqr() <= 1.0E-8) {
+            return base;
         }
-        RVP_InterceptSolver.Solution solution = RVP_InterceptSolver.solve(
-                projectile.position(),
-                current,
-                speed,
-                targetPos,
-                targetVelocity
-        );
-        Vec3 interceptPos = solution.interceptPos() != null ? solution.interceptPos() : targetPos;
-        Vec3 toIntercept = interceptPos.subtract(projectile.position());
-        if (toIntercept.lengthSqr() <= 1.0E-8) {
-            return null;
-        }
-
-        Vec3 targetDir = toIntercept.normalize();
-        double acceleration = resolveGuidanceAcceleration(projectile);
-        Vec3 desiredDir;
-        if (acceleration > 1.0E-8) {
-            double dot = current.dot(targetDir);
-            double magSq = current.lengthSqr();
-            double discriminant = dot * dot - (magSq - acceleration * acceleration);
-            if (discriminant < 0.0) {
-                desiredDir = targetDir.scale(dot * PhysicsEngine.MAGIC_NUMBER * 4.0).subtract(current);
-            } else {
-                desiredDir = targetDir.scale(dot + Math.sqrt(discriminant)).subtract(current);
-            }
-        } else {
-            desiredDir = toIntercept;
-        }
-        if (desiredDir.lengthSqr() <= 1.0E-8) {
-            desiredDir = toIntercept;
-        }
-        return blendDirection(current, desiredDir, speed, turningFactor);
+        return next.normalize().scale(speed);
     }
 
     private static Vec3 blendDirection(Vec3 current, Vec3 desired, double speed, float turningFactor) {
@@ -219,18 +326,79 @@ public final class RVP_GuidanceRuntimeMath {
         return configured != null ? configured : 0.5f;
     }
 
-    private static double resolveGuidanceAcceleration(RVP_BaseBullet projectile) {
-        if (projectile == null || projectile.getRvpData() == null) {
-            return 0.0;
+    private static boolean shouldUseProportionalNavigation(RVP_GuidanceRuntimeContext context) {
+        if (context == null || !context.active().predictTargetPos()) {
+            return false;
         }
-        if (!projectile.getRvpData().usesPropulsion()) {
-            return 0.0;
+        RVP_BaseBullet projectile = context.projectile();
+        if (projectile == null || projectile.tickCount < context.active().predictTargetPosStartTick()) {
+            return false;
         }
-        float mass = Math.max(projectile.getRvpData().getResolvedMass(), 1.0E-6f);
-        float thrust = projectile.getRvpData().getResolvedThrust();
-        if (thrust <= 0f) {
-            return 0.0;
+        return !isWaitingForSecondPulse(projectile);
+    }
+
+    private static boolean isWaitingForSecondPulse(RVP_BaseBullet projectile) {
+        if (projectile == null || !projectile.isMissile()) {
+            return false;
         }
-        return thrust / mass;
+        RVP_WeaponData data = projectile.getRvpData();
+        if (data == null || !data.getProjectileData().usesSecondPulse()) {
+            return false;
+        }
+        int ignition = data.getResolvedIgnitionDelayTick();
+        int motorTick = projectile.tickCount - ignition;
+        if (motorTick <= data.getResolvedMotorBurnTime()) {
+            return false;
+        }
+        return projectile.getSecondPulseStartTick() < 0;
+    }
+
+    private static Vec3 proportionalNavigationDelta(
+            RVP_BaseBullet projectile,
+            Vec3 missileVelocity,
+            Vec3 targetPos,
+            Vec3 targetVelocity,
+            double gain,
+            double maxLateralAccel,
+            float turningFactor
+    ) {
+        if (projectile == null || missileVelocity == null || targetPos == null || targetVelocity == null || gain <= 0.0) {
+            return Vec3.ZERO;
+        }
+        double speed = missileVelocity.length();
+        if (speed <= 1.0E-6) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 relPos = targetPos.subtract(projectile.position());
+        double relPosLenSqr = relPos.lengthSqr();
+        if (relPosLenSqr <= 1.0E-6) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 relVel = targetVelocity.subtract(missileVelocity);
+        Vec3 los = relPos.normalize();
+        double closingVelocity = -relVel.dot(los);
+        if (closingVelocity <= 0.0) {
+            return Vec3.ZERO;
+        }
+
+        Vec3 vHat = missileVelocity.normalize();
+        Vec3 omega = relPos.cross(relVel).scale(1.0 / relPosLenSqr);
+        Vec3 lateralAccel = omega.cross(vHat).scale(gain * closingVelocity);
+        double parallel = lateralAccel.dot(vHat);
+        if (Math.abs(parallel) > 1.0E-9) {
+            lateralAccel = lateralAccel.subtract(vHat.scale(parallel));
+        }
+
+        double lateralLen = lateralAccel.length();
+        if (maxLateralAccel > 0.0 && lateralLen > maxLateralAccel) {
+            lateralAccel = lateralAccel.scale(maxLateralAccel / lateralLen);
+        }
+
+        if (turningFactor <= 0.0f) {
+            return Vec3.ZERO;
+        }
+        return lateralAccel.scale(Math.max(0f, Math.min(1f, turningFactor)));
     }
 }

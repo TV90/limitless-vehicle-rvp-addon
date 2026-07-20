@@ -60,7 +60,9 @@ public final class RVP_RemoteAmmoSyncService {
 
     private static boolean shouldSync(RVP_BaseBullet bullet) {
         RVP_EnumWeaponKind kind = bullet.getWeaponKind();
-        return kind == RVP_EnumWeaponKind.MISSILE || kind == RVP_EnumWeaponKind.BOMB;
+        return kind == RVP_EnumWeaponKind.MISSILE
+                || kind == RVP_EnumWeaponKind.ROCKET
+                || kind == RVP_EnumWeaponKind.BOMB;
     }
 
     private static S2CRemoteAmmoSnapshot.Entry toEntry(ServerPlayer player, RVP_BaseBullet bullet) {

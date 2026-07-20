@@ -17,6 +17,9 @@ public record RVP_GuidanceActiveConfig(
         int maxGuidanceAngle,
         Integer scanIntervalTick,
         boolean predictTargetPos,
+        float predictTargetPosGain,
+        float maxLateralAccel,
+        int predictTargetPosStartTick,
         Float topAttackHeight,
         Integer cruiseStartTick,
         float cruiseEndHorizontalDist,
@@ -49,6 +52,9 @@ public record RVP_GuidanceActiveConfig(
         maxLockAngle = Math.max(maxLockAngle, 0);
         maxGuidanceAngle = Math.max(maxGuidanceAngle, 0);
         scanIntervalTick = scanIntervalTick == null ? null : Math.max(scanIntervalTick, 1);
+        predictTargetPosGain = Math.max(predictTargetPosGain, 0f);
+        maxLateralAccel = Math.max(maxLateralAccel, 0f);
+        predictTargetPosStartTick = Math.max(predictTargetPosStartTick, 0);
         cruiseStartTick = cruiseStartTick == null ? null : Math.max(cruiseStartTick, 0);
         cruiseEndHorizontalDist = Math.max(cruiseEndHorizontalDist, 0f);
         cruiseLevelingFactor = Math.max(cruiseLevelingFactor, 0f);

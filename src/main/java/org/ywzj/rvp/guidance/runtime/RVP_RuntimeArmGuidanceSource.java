@@ -7,7 +7,6 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
-import org.ywzj.rvp.guidance.RVP_InterceptSolver;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -60,7 +59,7 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
                     ? context.active().armMemoryTick()
                     : AntiRadiationSeekerHelper.getDefaultMemoryTick(best.radarUnit());
             projectile.setAntiRadiationMemoryLeftTick(memory);
-            Vec3 aimPoint = resolveEmitterAimPoint(projectile, best, context.active().predictTargetPos());
+            Vec3 aimPoint = resolveEmitterAimPoint(best);
             projectile.setTargetPos(aimPoint);
             projectile.rememberGuidancePos(aimPoint);
             return RVP_GuidanceIntent.point(aimPoint, false, 1.0, RVP_EnumGuidanceType.ARM);
@@ -91,24 +90,8 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         );
     }
 
-    private static Vec3 resolveEmitterAimPoint(
-            RVP_BaseBullet projectile,
-            AntiRadiationSeekerHelper.AntiRadiationEmitter emitter,
-            boolean predictTargetPos
-    ) {
-        Vec3 currentEmitterPos = emitter.position();
-        if (!predictTargetPos || emitter.vehicle() == null) {
-            return currentEmitterPos;
-        }
-        double missileSpeed = Math.max(projectile.getFlightSpeed(), projectile.getDeltaMovement().length());
-        RVP_InterceptSolver.Solution solution = RVP_InterceptSolver.solve(
-                projectile.position(),
-                projectile.getDeltaMovement(),
-                missileSpeed,
-                currentEmitterPos,
-                emitter.vehicle().getDeltaMovement()
-        );
-        return solution.interceptPos() != null ? solution.interceptPos() : currentEmitterPos;
+    private static Vec3 resolveEmitterAimPoint(AntiRadiationSeekerHelper.AntiRadiationEmitter emitter) {
+        return emitter.position();
     }
 
     private static AntiRadiationSeekerHelper.AntiRadiationEmitter selectEmitter(

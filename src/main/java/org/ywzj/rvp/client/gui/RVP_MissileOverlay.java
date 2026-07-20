@@ -12,7 +12,6 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_IrHudProfile;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
-import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -40,8 +39,8 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         float fov = data.resolveLaunchOffAxisLockAngle();
         if (fov < 5f) return;
 
-        double x = VehicleAimAtOverlay.getScreenAimX();
-        double y = VehicleAimAtOverlay.getScreenAimY();
+        double x = screenWidth * 0.5D;
+        double y = screenHeight * 0.5D;
         Vec3 weaponHitPosO = weaponUnit.weaponHitPosO;
         Vec3 weaponHitPos = weaponUnit.weaponHitPos;
         if (weaponHitPos != null) {

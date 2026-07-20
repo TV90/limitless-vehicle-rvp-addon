@@ -7,6 +7,9 @@
 
 | RVP_GuidanceData公用字段 | 解释 | 类型 | 默认值 |
 | :----------------------- | ------------------------------------------------------------ | -------------------------------------- | ------ |
+| `predictTargetPosGain` | 比例导引增益系数。值越大，导弹对 LOS 转率和闭合速度的响应越积极。仅在 `predictTargetPos=true` 时生效。 | `float` | 3.0 |
+| `maxLateralAccel` | PN 横向修正的限幅值。用于限制单 tick 横向修正过强导致的大幅甩尾、绕大弯、撞地或乱飞。仅在 `predictTargetPos=true` 时生效。 | `float` | 0 |
+| `predictTargetPosStartTick` | 发射后从第多少 tick 开始施加 PN 修正。用于避免导弹低速、离架、刚点火阶段就被 PN 拉出过大偏转。仅在 `predictTargetPos=true` 时生效。 | `int` | 10 |
 | guidanceType | 制导类型NONE/MCLOS/SALH/SACLOS/LBR/LOSBR/LH/TV/HITL_TV/HITL_CLOS_TV/ATV/IR/AIR/SARH/ARH/GPS/ARM | RVP_EnumGuidanceType | NONE |
 | guidanceTickRange | 制导时间范围，null表示立即开始，永不结束 | RVP_Range<Integer> | null |
 | guidanceTargetDistanceRange | 导弹跟踪时与制导目标点/记忆点的距离范围(格)，null表示不进行判断 | RVP_Range<Float> | null |
@@ -161,6 +164,7 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | missileNameOnHud | 不同距离下在屏幕hud上显示的字符串，null不显示 | Map<RVP_Range<Float>,String> | {"[[0,500]]": "MSL", "[[500,inf]]": null} |
 | missileNameOnRadar | 不同距离下在雷达hud上显示的字符串，null不显示 | Map<RVP_Range<Float>,String> | {"[[20,inf]]": "MSL"} |
 | signalIntensityFactorOnRadar | 不同距离下弹药的雷达信号强度倍率，null不显示<br /><br />signature_size删除，转用这个替代signature_size | Map<RVP_Range<Float>,Float> | {"[[0,inf]]": "1.0"} |
+| ArtilleryMap | 使用炮兵地图替代战术地图 | boolean | false |
 
 
 

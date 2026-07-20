@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -26,6 +27,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -39,6 +41,8 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
+import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
+import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
@@ -63,6 +67,7 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,6 +77,7 @@ public class RVP_ClientEvents {
 
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
+    private static boolean ywzj_rvp$artilleryFireKeyDown;
 
     private record VehicleMarker(int vehicleId, int argb) {}
 
@@ -90,6 +96,7 @@ public class RVP_ClientEvents {
         RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
+        RVP_ClientTacticalRevealState.clientTick();
 
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
@@ -137,12 +144,31 @@ public class RVP_ClientEvents {
 
         ywzj_rvp$applyScopeOverrides();
 
-        if (mc.screen != null) {
+        boolean artilleryMapPassthrough = mc.screen instanceof RVP_TacticalMapScreen screen
+                && screen.allowsVehicleInputPassthrough();
+        if (mc.screen != null && !artilleryMapPassthrough) {
             return;
         }
+        RVP_ArtilleryFireControlState.tick(mc);
+        boolean artilleryFireKeyDown = mc.screen instanceof RVP_TacticalMapScreen artilleryScreen
+                && artilleryScreen.isArtilleryMode()
+                && InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_KEY_SPACE);
+        if (artilleryFireKeyDown && !ywzj_rvp$artilleryFireKeyDown
+                && LocalVehiclePlayer.instance != null) {
+            WeaponUnit artilleryUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+            if (artilleryUnit != null) {
+                artilleryUnit.getCurrentWeapon().ifPresent(currentWeapon -> {
+                    if (currentWeapon instanceof RVP_WeaponBase rvpWeapon) {
+                        rvpWeapon.queueProgrammaticShot();
+                    }
+                    currentWeapon.doClientShoot();
+                });
+            }
+        }
+        ywzj_rvp$artilleryFireKeyDown = artilleryFireKeyDown;
 
         while (RVP_Keys.OPEN_GPS_PANEL.consumeClick()) {
-            mc.setScreen(new RVP_TacticalMapScreen());
+            mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
         }
         while (RVP_Keys.DEPLOY_DEPLOYABLE_UAV.consumeClick()) {
             RVP_Network.CHANNEL.sendToServer(new C2SDeployDeployableUav());
@@ -187,6 +213,20 @@ public class RVP_ClientEvents {
         if (LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
             RVP_ClientSaclosState.tick(mc, player);
         }
+    }
+
+    private static RVP_TacticalMapScreen.MapMode ywzj_rvp$resolveMapMode() {
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance != null ? LocalVehiclePlayer.instance.getWeaponUnit() : null;
+        if (weaponUnit == null) {
+            return RVP_TacticalMapScreen.MapMode.TACTICAL;
+        }
+        AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().orElse(null);
+        if (!(RVP_LaserWeapons.unwrap(currentWeapon) instanceof RVP_WeaponBase weapon)) {
+            return RVP_TacticalMapScreen.MapMode.TACTICAL;
+        }
+        return weapon.getData().getMiscData().isArtilleryMap()
+                ? RVP_TacticalMapScreen.MapMode.ARTILLERY
+                : RVP_TacticalMapScreen.MapMode.TACTICAL;
     }
 
     private static void ywzj_rvp$applyScopeOverrides() {
@@ -359,6 +399,9 @@ public class RVP_ClientEvents {
     public static void onVehicleFirePost(VehicleFireEvent.Post event) {
         if (!event.isClientSide()) {
             return;
+        }
+        if (event.getWeapon() != null && event.getWeapon().getWeaponUnit() != null) {
+            RVP_CustomMountRenderLogic.noteClientFire(event.getWeapon().getWeaponUnit());
         }
         int operatorId = event.getOperator() != null ? event.getOperator().getId() : -1;
         RVP_ClientLaserDriver.pulseFromFireEvent(
