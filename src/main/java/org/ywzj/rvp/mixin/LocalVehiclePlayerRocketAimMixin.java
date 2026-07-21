@@ -3,6 +3,7 @@ package org.ywzj.rvp.mixin;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.resources.ResourceLocation;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
+import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -86,12 +87,16 @@ public class LocalVehiclePlayerRocketAimMixin {
             weaponId = rocket.getData().getWeaponId();
         } else if (currentWeapon instanceof RVP_ProjectileWeapon weapon
                 && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
-            int predictionTick = weapon.getData().getMiscData().isArtilleryMap()
-                    ? RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK
-                    : RVP_RocketBallistics.DEFAULT_PREDICTION_TICK;
-            rawHit = RVP_RocketBallistics.computeWeaponImpact(
-                    vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(), vehicle,
-                    predictionTick);
+            Vec3 artilleryTarget = RVP_ArtilleryFireControlState.getDesignatedTarget();
+            if (weapon.getData().getMiscData().isArtilleryMap() && artilleryTarget != null) {
+                rawHit = RVP_RocketBallistics.computeArtilleryWeaponImpact(
+                        vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(), vehicle,
+                        artilleryTarget.y, RVP_TacticalMapCache::getCachedHeight);
+            } else {
+                rawHit = RVP_RocketBallistics.computeWeaponImpact(
+                        vehicle.level(), rocketWeaponUnit, vehicle.getDeltaMovement(), weapon.getData(), vehicle,
+                        RVP_RocketBallistics.DEFAULT_PREDICTION_TICK);
+            }
             weaponId = weapon.getData().getWeaponId();
         }
         if (weaponId == null) {

@@ -68,11 +68,11 @@ class RVP_GuidanceRuntimeMathTest {
     }
 
     @Test
-    void topAttackApexIsNotCappedByLaunchDistance() {
+    void topAttackApexIsCappedForShortRangeTargets() {
         Vec3 aim = RVP_GuidanceRuntimeMath.computeTopAttackApex(
                 Vec3.ZERO, new Vec3(20, 10, 0), 1000f);
 
-        assertVectorEquals(new Vec3(10, 1010, 0), aim);
+        assertVectorEquals(new Vec3(10, 30, 0), aim);
     }
 
     @Test
@@ -105,6 +105,14 @@ class RVP_GuidanceRuntimeMathTest {
         double sluggish = RVP_GuidanceRuntimeMath.resolveTopAttackTurnInDistance(10.0D, 0.15f);
 
         assertEquals(true, sluggish > agile);
+    }
+
+    @Test
+    void topAttackTerminalBoostsTurningAtShortRange() {
+        float factor = RVP_GuidanceRuntimeMath.resolveTopAttackTerminalTurningFactor(
+                Vec3.ZERO, new Vec3(50, 0, 0), new Vec3(10, 0, 0), 0.15f);
+
+        assertEquals(true, factor > 0.35f);
     }
 
     @Test

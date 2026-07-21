@@ -34,6 +34,7 @@ import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.accessor.AbstractVehicleGunnerDataAccessor;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
+import org.ywzj.rvp.client.render.RVP_ExtendedAirEntityRenderer;
 import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
@@ -1122,6 +1123,9 @@ public class RVP_TacticalMapScreen extends Screen {
             if (!(serverEntity.entity instanceof RVP_BaseBullet bullet)) {
                 continue;
             }
+            if (RVP_ExtendedAirEntityRenderer.isVisualOnlyRvpAmmo(bullet)) {
+                continue;
+            }
             if (renderedIds.contains(bullet.getId())) {
                 continue;
             }
@@ -1357,6 +1361,9 @@ public class RVP_TacticalMapScreen extends Screen {
                 continue;
             }
             if (mc.level != null && mc.level.getEntity(entity.getId()) != null) {
+                continue;
+            }
+            if (RVP_ExtendedAirEntityRenderer.isVisualOnlyRvpAmmo(entity)) {
                 continue;
             }
             if (!shouldShowEntityOnTacticalMap(player, playerVehicle, entity)) {
@@ -1612,7 +1619,9 @@ public class RVP_TacticalMapScreen extends Screen {
             return true;
         }
         for (LocalVehiclePlayer.ServerEntity serverEntity : LocalVehiclePlayer.instance.serverEntities.values()) {
-            if (serverEntity.entity != null && serverEntity.entity.getId() == entityId) {
+            if (serverEntity.entity != null
+                    && serverEntity.entity.getId() == entityId
+                    && !RVP_ExtendedAirEntityRenderer.isVisualOnlyRvpAmmo(serverEntity.entity)) {
                 return true;
             }
         }

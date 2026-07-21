@@ -3,6 +3,7 @@ package org.ywzj.rvp.weapon.effects;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CNuclearVisualEffect;
@@ -26,6 +27,8 @@ public final class RVP_HbmVisualService {
         S2CNuclearVisualEffect message = new S2CNuclearVisualEffect(
                 preset,
                 pos.x, pos.y, pos.z,
+                level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        net.minecraft.util.Mth.floor(pos.x), net.minecraft.util.Mth.floor(pos.z)),
                 Math.max(1.0F, spec.getEffectYield()),
                 spec.getVisualScale(),
                 spec.getVisualDensity(),

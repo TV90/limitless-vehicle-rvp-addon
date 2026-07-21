@@ -7,6 +7,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
+import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
@@ -295,9 +296,10 @@ public final class RVP_ArtilleryFireControlState {
         }
         Vec3 impact = context.kind() == RVP_EnumWeaponKind.BOMB
                 ? RVP_CcipUtil.computeBombImpact(context.vehicle().level(), muzzle, velocity, context.data())
-                : RVP_RocketBallistics.computeImpact(context.vehicle().level(), muzzle, velocity,
+                : RVP_RocketBallistics.computeArtilleryImpact(context.vehicle().level(), muzzle, velocity,
                         direction, context.data(), context.vehicle(),
-                        RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK);
+                        RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK, target.y,
+                        RVP_TacticalMapCache::getCachedHeight);
         if (impact == null) {
             return null;
         }
@@ -345,6 +347,22 @@ public final class RVP_ArtilleryFireControlState {
             if (anyExact != null) {
                 return anyExact;
             }
+        }
+        boolean allShort = candidates.stream().allMatch(sample -> sample.rangeResidual() < 0.0D);
+        if (allShort) {
+            return candidates.stream()
+                    .max(Comparator.comparingDouble(Sample::rangeResidual)
+                            .thenComparingDouble(Sample::elevationDeg))
+                    .orElse(null);
+        }
+        boolean allLong = candidates.stream().allMatch(sample -> sample.rangeResidual() > 0.0D);
+        if (allLong) {
+            return candidates.stream()
+                    .min(Comparator.comparingDouble(Sample::rangeResidual)
+                            .thenComparing(mode == TrajectoryMode.HIGH
+                                    ? Comparator.comparingDouble(Sample::elevationDeg).reversed()
+                                    : Comparator.comparingDouble(Sample::elevationDeg)))
+                    .orElse(null);
         }
         return candidates.stream().min(byMissThenHigher).orElse(null);
     }

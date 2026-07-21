@@ -38,6 +38,12 @@ public final class RVP_GuidanceRuntimeMath {
         float factor = resolveTurningFactor(context);
         Vec3 steeringTarget = resolveTopAttackAimPoint(
                 projectile, target, context.active().topAttackHeight(), factor);
+        if (context.active().topAttackHeight() != null
+                && context.active().topAttackHeight() > 0f
+                && projectile.hasReachedTopAttackApex()) {
+            factor = resolveTopAttackTerminalTurningFactor(
+                    projectile.position(), target, projectile.getDeltaMovement(), factor);
+        }
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
@@ -147,9 +153,11 @@ public final class RVP_GuidanceRuntimeMath {
         if (launch == null || target == null) {
             return target;
         }
+        double horizontalDistance = horizontalDistance(launch, target);
+        double effectiveHeight = Math.min(Math.max(topAttackHeight, 0f), horizontalDistance);
         return new Vec3(
                 (launch.x + target.x) * 0.5D,
-                target.y + Math.max(topAttackHeight, 0f),
+                target.y + effectiveHeight,
                 (launch.z + target.z) * 0.5D
         );
     }
@@ -191,6 +199,19 @@ public final class RVP_GuidanceRuntimeMath {
         double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
         double responseTicks = Mth.clamp(1.0D / effectiveFactor, 2.0D, 12.0D);
         return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 12.0D, 160.0D);
+    }
+
+    static float resolveTopAttackTerminalTurningFactor(
+            Vec3 projectilePos, Vec3 target, Vec3 velocity, float turningFactor) {
+        if (projectilePos == null || target == null) {
+            return turningFactor;
+        }
+        double speed = velocity != null ? velocity.length() : 0.0D;
+        double distance = horizontalDistance(projectilePos, target);
+        double responseWindow = Mth.clamp(speed * 12.0D, 48.0D, 240.0D);
+        double urgency = 1.0D - Mth.clamp(distance / responseWindow, 0.0D, 1.0D);
+        float terminalFloor = (float) Mth.lerp(urgency, 0.35D, 0.60D);
+        return Math.max(turningFactor, terminalFloor);
     }
 
     private static double remainingDistanceAlongAxis(Vec3 projectilePos, Vec3 launch, Vec3 initialTarget) {

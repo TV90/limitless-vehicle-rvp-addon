@@ -132,6 +132,11 @@ public class RVP_Network {
                 .decoder(S2CTacticalRevealSnapshot::decode)
                 .consumerMainThread(S2CTacticalRevealSnapshot::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CExtendedAirVisualSnapshot.class, id++)
+                .encoder(S2CExtendedAirVisualSnapshot::encode)
+                .decoder(S2CExtendedAirVisualSnapshot::decode)
+                .consumerMainThread(S2CExtendedAirVisualSnapshot::handle)
+                .add();
         CHANNEL.messageBuilder(S2CNuclearVisualEffect.class, id++)
                 .encoder(S2CNuclearVisualEffect::encode)
                 .decoder(S2CNuclearVisualEffect::decode)

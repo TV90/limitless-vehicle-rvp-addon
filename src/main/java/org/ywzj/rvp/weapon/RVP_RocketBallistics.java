@@ -1,6 +1,7 @@
 package org.ywzj.rvp.weapon;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -37,6 +38,11 @@ public final class RVP_RocketBallistics {
 
     public record Params(double velocity, double gravity, double drag, int predictionTick) {}
     private record RvpState(Vec3 velocity, Vec3 lookDir, double flightSpeed, double secondPulseStartTick) {}
+
+    @FunctionalInterface
+    public interface TerrainHeightResolver {
+        @Nullable Integer resolve(int worldX, int worldZ);
+    }
 
     @Nullable
     public static Params resolve(ResourceLocation weaponId) {
@@ -81,6 +87,24 @@ public final class RVP_RocketBallistics {
     @Nullable
     public static Vec3 computeWeaponImpact(Level level, WeaponUnit weaponUnit, Vec3 vehicleVelocity,
                                            RVP_WeaponData data, @Nullable Entity clipEntity, int predictionTick) {
+        return computeWeaponImpact(level, weaponUnit, vehicleVelocity, data, clipEntity, predictionTick,
+                null, null);
+    }
+
+    @Nullable
+    public static Vec3 computeArtilleryWeaponImpact(Level level, WeaponUnit weaponUnit, Vec3 vehicleVelocity,
+                                                    RVP_WeaponData data, @Nullable Entity clipEntity,
+                                                    double targetGroundY,
+                                                    @Nullable TerrainHeightResolver terrainHeightResolver) {
+        return computeWeaponImpact(level, weaponUnit, vehicleVelocity, data, clipEntity,
+                ARTILLERY_PREDICTION_TICK, targetGroundY, terrainHeightResolver);
+    }
+
+    @Nullable
+    private static Vec3 computeWeaponImpact(Level level, WeaponUnit weaponUnit, Vec3 vehicleVelocity,
+                                            RVP_WeaponData data, @Nullable Entity clipEntity,
+                                            int predictionTick, @Nullable Double fallbackGroundY,
+                                            @Nullable TerrainHeightResolver terrainHeightResolver) {
         List<AimContext> contexts = weaponUnit.aimContexts();
         if (contexts.isEmpty()) {
             contexts = List.of(weaponUnit.aimContext());
@@ -90,14 +114,16 @@ public final class RVP_RocketBallistics {
         }
         int nextIndex = resolveCurrentBoltIndex(weaponUnit, contexts.size());
         Vec3 selected = computeAimContextImpact(
-                level, contexts.get(nextIndex), vehicleVelocity, data, clipEntity, predictionTick);
+                level, contexts.get(nextIndex), vehicleVelocity, data, clipEntity, predictionTick,
+                fallbackGroundY, terrainHeightResolver);
         if (selected != null || contexts.size() == 1) {
             return selected;
         }
         List<Vec3> impacts = new ArrayList<>();
         for (AimContext context : contexts) {
             Vec3 impact = computeAimContextImpact(
-                    level, context, vehicleVelocity, data, clipEntity, predictionTick);
+                    level, context, vehicleVelocity, data, clipEntity, predictionTick,
+                    fallbackGroundY, terrainHeightResolver);
             if (impact != null) {
                 impacts.add(impact);
             }
@@ -161,6 +187,37 @@ public final class RVP_RocketBallistics {
     @Nullable
     public static Vec3 computeImpact(Level level, Vec3 startPos, Vec3 startVelocity, Vec3 startLookDir,
                                      RVP_WeaponData data, @Nullable Entity clipEntity, int predictionTick) {
+        return computeImpact(level, startPos, startVelocity, startLookDir, data, clipEntity,
+                predictionTick, null);
+    }
+
+    /**
+     * Artillery prediction must keep working beyond the client's loaded chunks. Loaded terrain still
+     * wins, while the designated ground height provides a flat-plane fallback for unloaded terrain.
+     */
+    @Nullable
+    public static Vec3 computeArtilleryImpact(Level level, Vec3 startPos, Vec3 startVelocity,
+                                              Vec3 startLookDir, RVP_WeaponData data,
+                                              @Nullable Entity clipEntity, int predictionTick,
+                                              double targetGroundY,
+                                              @Nullable TerrainHeightResolver terrainHeightResolver) {
+        return computeImpact(level, startPos, startVelocity, startLookDir, data, clipEntity,
+                predictionTick, targetGroundY, terrainHeightResolver);
+    }
+
+    @Nullable
+    private static Vec3 computeImpact(Level level, Vec3 startPos, Vec3 startVelocity, Vec3 startLookDir,
+                                      RVP_WeaponData data, @Nullable Entity clipEntity, int predictionTick,
+                                      @Nullable Double fallbackGroundY) {
+        return computeImpact(level, startPos, startVelocity, startLookDir, data, clipEntity,
+                predictionTick, fallbackGroundY, null);
+    }
+
+    @Nullable
+    private static Vec3 computeImpact(Level level, Vec3 startPos, Vec3 startVelocity, Vec3 startLookDir,
+                                      RVP_WeaponData data, @Nullable Entity clipEntity, int predictionTick,
+                                      @Nullable Double fallbackGroundY,
+                                      @Nullable TerrainHeightResolver terrainHeightResolver) {
         Vec3 pos = startPos;
         Vec3 lookDir = startLookDir.lengthSqr() > 1.0E-6 ? startLookDir.normalize() : Vec3.ZERO;
         RvpState state = new RvpState(startVelocity, lookDir, Math.max(startVelocity.length(), 0.01), -1.0D);
@@ -172,6 +229,14 @@ public final class RVP_RocketBallistics {
             if (hit.getType() == HitResult.Type.BLOCK) {
                 return hit.getLocation();
             }
+            Vec3 cachedTerrainImpact = intersectCachedTerrain(pos, segmentEnd, terrainHeightResolver);
+            if (cachedTerrainImpact != null) {
+                return cachedTerrainImpact;
+            }
+            Vec3 fallbackImpact = intersectDescendingGroundPlane(pos, segmentEnd, fallbackGroundY);
+            if (fallbackImpact != null) {
+                return fallbackImpact;
+            }
             state = stepVelocity(state, data, tick + 1.0D, 1.0D);
             pos = pos.add(state.velocity());
             if (pos.y < level.getMinBuildHeight() - 16) {
@@ -179,6 +244,53 @@ public final class RVP_RocketBallistics {
             }
         }
         return null;
+    }
+
+    @Nullable
+    static Vec3 intersectCachedTerrain(Vec3 from, Vec3 to,
+                                       @Nullable TerrainHeightResolver terrainHeightResolver) {
+        if (from == null || to == null || terrainHeightResolver == null || to.y >= from.y) {
+            return null;
+        }
+        double horizontalLength = Math.hypot(to.x - from.x, to.z - from.z);
+        int steps = Mth.clamp((int) Math.ceil(horizontalLength / 2.0D), 1, MAX_SUBSTEP);
+        Vec3 previous = from;
+        Integer previousHeight = terrainHeightResolver.resolve(Mth.floor(from.x), Mth.floor(from.z));
+        for (int step = 1; step <= steps; step++) {
+            double t = step / (double) steps;
+            Vec3 current = from.add(to.subtract(from).scale(t));
+            Integer currentHeight = terrainHeightResolver.resolve(Mth.floor(current.x), Mth.floor(current.z));
+            if (currentHeight != null && current.y <= currentHeight) {
+                if (previousHeight != null && previous.y > previousHeight) {
+                    double previousClearance = previous.y - previousHeight;
+                    double currentClearance = current.y - currentHeight;
+                    double denominator = previousClearance - currentClearance;
+                    double hitT = denominator > 1.0E-9D
+                            ? Mth.clamp(previousClearance / denominator, 0.0D, 1.0D)
+                            : 1.0D;
+                    Vec3 interpolated = previous.add(current.subtract(previous).scale(hitT));
+                    return new Vec3(interpolated.x, Mth.lerp(hitT, previousHeight, currentHeight), interpolated.z);
+                }
+                return new Vec3(current.x, currentHeight, current.z);
+            }
+            previous = current;
+            previousHeight = currentHeight;
+        }
+        return null;
+    }
+
+    @Nullable
+    static Vec3 intersectDescendingGroundPlane(Vec3 from, Vec3 to, @Nullable Double groundY) {
+        if (groundY == null || from == null || to == null || to.y >= from.y
+                || from.y < groundY || to.y > groundY) {
+            return null;
+        }
+        double dy = to.y - from.y;
+        if (Math.abs(dy) <= 1.0E-9D) {
+            return null;
+        }
+        double t = Mth.clamp((groundY - from.y) / dy, 0.0D, 1.0D);
+        return from.add(to.subtract(from).scale(t));
     }
 
     public static Vec3 stepVelocity(Vec3 velocity, Params params) {
@@ -216,6 +328,15 @@ public final class RVP_RocketBallistics {
     private static Vec3 computeAimContextImpact(Level level, AimContext aimContext, Vec3 vehicleVelocity,
                                                 RVP_WeaponData data, @Nullable Entity clipEntity,
                                                 int predictionTick) {
+        return computeAimContextImpact(level, aimContext, vehicleVelocity, data, clipEntity,
+                predictionTick, null, null);
+    }
+
+    @Nullable
+    private static Vec3 computeAimContextImpact(Level level, AimContext aimContext, Vec3 vehicleVelocity,
+                                                RVP_WeaponData data, @Nullable Entity clipEntity,
+                                                int predictionTick, @Nullable Double fallbackGroundY,
+                                                @Nullable TerrainHeightResolver terrainHeightResolver) {
         Vec2 direction = aimContext.direction;
         Vec3 lookDir = VectorUtil.rotToVec(direction.x, direction.y).normalize();
         Vec3 launchVelocity = lookDir.scale(data.resolveMuzzleSpeed(RVP_EnumWeaponKind.ROCKET));
@@ -223,7 +344,7 @@ public final class RVP_RocketBallistics {
             launchVelocity = launchVelocity.add(vehicleVelocity);
         }
         return computeImpact(level, RVP_AimContexts.muzzle(aimContext), launchVelocity, lookDir,
-                data, clipEntity, predictionTick);
+                data, clipEntity, predictionTick, fallbackGroundY, terrainHeightResolver);
     }
 
     private static int resolveCurrentBoltIndex(WeaponUnit weaponUnit, int size) {
