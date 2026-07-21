@@ -20,6 +20,8 @@ public final class RVP_MachinegunLeadSolver {
     private static final double LONG_RANGE_BIAS_MAX_TICKS = 3.5;
     private static final double LONG_RANGE_BIAS_PER_TICK = 0.06;
 
+    private record BulletSimResult(Vec3 position, double travelledDistance) {}
+
     private RVP_MachinegunLeadSolver() {}
 
     public static boolean isCurrentRvpMachinegun(WeaponUnit weaponUnit) {
@@ -96,7 +98,7 @@ public final class RVP_MachinegunLeadSolver {
                 if (aimDir.lengthSqr() < 1.0E-6) {
                     break;
                 }
-                Vec3 bulletPos = simulateBulletPosition(
+                BulletSimResult bulletState = simulateBulletPosition(
                         muzzle,
                         aimDir.normalize(),
                         inheritedVelocity,
@@ -105,7 +107,7 @@ public final class RVP_MachinegunLeadSolver {
                         friction,
                         timeTicks
                 );
-                Vec3 error = futureTargetPos.subtract(bulletPos);
+                Vec3 error = futureTargetPos.subtract(bulletState.position());
                 aimPoint = aimPoint.add(error);
                 if (error.lengthSqr() < 1.0E-3) {
                     break;
@@ -116,7 +118,7 @@ public final class RVP_MachinegunLeadSolver {
             if (finalAimDir.lengthSqr() < 1.0E-6) {
                 continue;
             }
-            Vec3 finalBulletPos = simulateBulletPosition(
+            BulletSimResult finalBulletState = simulateBulletPosition(
                     muzzle,
                     finalAimDir.normalize(),
                     inheritedVelocity,
@@ -125,30 +127,40 @@ public final class RVP_MachinegunLeadSolver {
                     friction,
                     timeTicks
             );
-            double missDistance = finalBulletPos.distanceTo(futureTargetPos);
+            double missDistance = finalBulletState.position().distanceTo(futureTargetPos);
             if (best == null || missDistance < best.missDistance()) {
-                best = new RVP_LeadSolution(target, targetPos, aimPoint, timeTicks, missDistance);
+                best = new RVP_LeadSolution(
+                        target,
+                        targetPos,
+                        aimPoint,
+                        timeTicks,
+                        missDistance,
+                        finalBulletState.travelledDistance()
+                );
             }
         }
         return best;
     }
 
-    private static Vec3 simulateBulletPosition(Vec3 muzzle, Vec3 aimDir, Vec3 inheritedVelocity,
-                                               double muzzleSpeed, double gravity, double friction,
-                                               double timeTicks) {
+    private static BulletSimResult simulateBulletPosition(Vec3 muzzle, Vec3 aimDir, Vec3 inheritedVelocity,
+                                                          double muzzleSpeed, double gravity, double friction,
+                                                          double timeTicks) {
         Vec3 position = muzzle;
         Vec3 velocity = aimDir.scale(muzzleSpeed).add(inheritedVelocity);
+        double travelledDistance = 0.0D;
         int fullTicks = Mth.floor(timeTicks);
         double partialTick = timeTicks - fullTicks;
 
         for (int tick = 0; tick < fullTicks; tick++) {
             position = position.add(velocity);
+            travelledDistance += velocity.length();
             velocity = velocity.scale(1.0 - friction).add(0.0, -gravity, 0.0);
         }
         if (partialTick > 1.0E-6) {
             position = position.add(velocity.scale(partialTick));
+            travelledDistance += velocity.length() * partialTick;
         }
-        return position;
+        return new BulletSimResult(position, travelledDistance);
     }
 
     @Nullable

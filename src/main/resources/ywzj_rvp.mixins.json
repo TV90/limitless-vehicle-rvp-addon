@@ -50,37 +50,28 @@
     "RadarSignatureMixin"
   ],
   "client": [
-    "ClientAssetsManagerCustomMountMixin",
     "ClientLevelHitlTrailParticleMixin",
     "InfraredMixin",
     "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",
     "InputHandlerRfStabilizerMixin",
-    "BedrockModelRenderTypesMixin",
-    "VehicleBedrockModelCockpitRenderMixin",
     "CameraTVMissileMixin",
     "LocalVehiclePlayerMachinegunLeadTurnMixin",
     "LocalVehiclePlayerTVMissileTurnMixin",
     "LocalVehiclePlayerRocketAimMixin",
-    "ModRenderTypesMixin",
     "VehicleMultiWeaponsChargeGateMixin",
-    "VehicleRenderCustomMountMixin",
     "VehicleScopeOverlayHeadingFixMixin",
     "VehicleScopeOverlayWeaponUnitsMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleRadarOverlayMixin",
-    "VehicleDisplayMixin",
     "VehicleExplosionClientVisualMixin",
     "RadarRemoteHbmEntitiesMixin",
-    "VehicleRenderCockpitPassengerContextMixin",
     "WeaponUnitBombCcipMixin",
-    "WeaponUnitCustomMountSuppressMixin",
     "WeaponUnitGetSeekerFovMixin",
     "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
-    "WeaponUnitToggleCurrentWeaponBayMixin",
-    "SwitchableRunnerLoopMixin"
+    "WeaponUnitToggleCurrentWeaponBayMixin"
   ],
   "injectors": {
     "defaultRequire": 1

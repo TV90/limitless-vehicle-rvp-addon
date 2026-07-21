@@ -152,7 +152,7 @@ public abstract class WeaponUnitTickFireControlMixin {
                 )) {
             return ywzj_rvp$lastIrLockedEntity;
         }
-        Entity found = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(data.getMaxLockOnAngle()));
+        Entity found = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(data.resolveLaunchSeekerFullFov()));
         if (found != null && RVP_IrLockHelper.isTargetWithinAcquireLimits(self, found, data)) {
             ywzj_rvp$lastIrLockedEntity = found;
             ywzj_rvp$lastIrLockTick = self.getVehicle().tickCount;

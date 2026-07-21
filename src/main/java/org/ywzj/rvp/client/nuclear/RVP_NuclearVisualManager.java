@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -469,8 +470,7 @@ public final class RVP_NuclearVisualManager {
             visualDensity = Mth.clamp(message.visualDensity(), 0.1F, 1.0F);
             cloudScale = legacyCloudScale(effectYield * visualScale);
             maxAge = Math.max(1, Math.round(45.0F * 20.0F * cloudScale));
-            groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                    Mth.floor(center.x), Mth.floor(center.z));
+            groundY = message.groundY();
             soundEnabled = message.sound();
             shakeEnabled = message.shake();
             double distance = player == null ? 0.0D : player.position().distanceTo(center);
@@ -570,8 +570,11 @@ public final class RVP_NuclearVisualManager {
                 double radial = (age * 1.5D + random.nextDouble()) * 1.5D;
                 double x = center.x + radial * Mth.cos(angle);
                 double z = center.z - radial * Mth.sin(angle);
-                double y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                        Mth.floor(x), Mth.floor(z));
+                int blockX = Mth.floor(x);
+                int blockZ = Mth.floor(z);
+                double y = level.hasChunkAt(new BlockPos(blockX, Mth.floor(center.y), blockZ))
+                        ? level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ)
+                        : groundY;
                 Cloud cloud = new Cloud(x, y, z, angle, lifetime, CloudType.SHOCK,
                         5.5F * compensation, 1.6F * compensation, random);
                 cloud.motionMult = age > 15 ? 0.75D : 0.0D;

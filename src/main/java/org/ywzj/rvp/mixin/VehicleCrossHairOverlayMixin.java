@@ -2,7 +2,6 @@ package org.ywzj.rvp.mixin;
 
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
@@ -28,10 +27,8 @@ public class VehicleCrossHairOverlayMixin {
             return;
         }
         Vec3 hitPos = RVP_RocketCcipOverlay.getCurrentScreenHitPos();
-        if (hitPos == null || hitPos.z < 0) {
-            return;
-        }
-        if (!Double.isFinite(hitPos.x) || !Double.isFinite(hitPos.y) || !Double.isFinite(hitPos.z)) {
+        if (hitPos == null || hitPos.z < 0
+                || !Double.isFinite(hitPos.x) || !Double.isFinite(hitPos.y) || !Double.isFinite(hitPos.z)) {
             return;
         }
         double x = Math.max(0.0, Math.min(screenWidth, hitPos.x));
@@ -61,7 +58,6 @@ public class VehicleCrossHairOverlayMixin {
             LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
         }
         if (replace) {
-            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
             return;
         }
         RenderHelper.drawCross(guiGraphics, x, y, size, color);
@@ -89,7 +85,6 @@ public class VehicleCrossHairOverlayMixin {
             LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
         }
         if (replace) {
-            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
             return;
         }
         RenderHelper.drawSquare(guiGraphics, x, y, size, color);
@@ -118,7 +113,6 @@ public class VehicleCrossHairOverlayMixin {
             LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
         }
         if (replace) {
-            RVP_RocketCcipOverlay.draw(guiGraphics, Minecraft.getInstance().getFrameTime());
             return;
         }
         RenderHelper.drawCrossDiagonal(guiGraphics, x, y, size, thickness, color);

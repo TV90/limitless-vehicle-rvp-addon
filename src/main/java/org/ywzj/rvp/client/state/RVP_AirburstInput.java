@@ -30,7 +30,7 @@ public final class RVP_AirburstInput {
         if (!(current instanceof RVP_WeaponBase weapon)) {
             return false;
         }
-        if (weapon.getData().isAheadEnabled()) {
+        if (weapon.getData().getFuseData().isAheadEnabled()) {
             return false;
         }
         RVP_FuseData fuse = weapon.getData().getFuseData();

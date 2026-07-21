@@ -9,8 +9,9 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.RVP_IrHudProfile;
+import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
-import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -33,13 +34,13 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (!(rawData instanceof RVP_WeaponData data)) return;
         if (!data.isHomingProjectile()) return;
         if (!data.usesGuidanceType(RVP_EnumGuidanceType.IR)) return;
-        if (data.getLockMinHeight() <= 0) return;
+        if (RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data)) == RVP_IrHudProfile.GROUND) return;
 
-        float fov = data.getMaxGuideHeadAngle();
+        float fov = data.resolveLaunchOffAxisLockAngle();
         if (fov < 5f) return;
 
-        double x = VehicleAimAtOverlay.getScreenAimX();
-        double y = VehicleAimAtOverlay.getScreenAimY();
+        double x = screenWidth * 0.5D;
+        double y = screenHeight * 0.5D;
         Vec3 weaponHitPosO = weaponUnit.weaponHitPosO;
         Vec3 weaponHitPos = weaponUnit.weaponHitPos;
         if (weaponHitPos != null) {
@@ -64,7 +65,7 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         int aimCircleColor = (Color.WHITE & 0x00FFFFFF) | ((int) (alpha * 255) << 24);
 
         // 导引头大圈 — 精确复刻 VehicleAimAtOverlay
-        if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableHms()) {
+        if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableIrHmd()) {
             GuiHelper.drawCircle(poseStack, 0, 0, 15, aimCircleColor, 0.03f, 0, 0);
         }
         Vec2 rot = weaponUnit.worldRot();

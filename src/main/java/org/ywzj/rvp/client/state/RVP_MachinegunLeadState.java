@@ -58,6 +58,8 @@ public final class RVP_MachinegunLeadState {
             state.currTime = raw.timeToImpact();
             state.prevMiss = raw.missDistance();
             state.currMiss = raw.missDistance();
+            state.prevTravel = raw.projectileTravelDistanceMeters();
+            state.currTravel = raw.projectileTravelDistanceMeters();
             state.weaponKey = weaponKey;
             state.targetId = targetId;
             state.target = raw.target();
@@ -67,6 +69,7 @@ public final class RVP_MachinegunLeadState {
             state.prevTarget = state.currTarget;
             state.prevTime = state.currTime;
             state.prevMiss = state.currMiss;
+            state.prevTravel = state.currTravel;
 
             double leadErr = state.currLead.distanceTo(raw.leadWorldPos());
             double targetErr = state.currTarget.distanceTo(raw.targetWorldPos());
@@ -85,6 +88,7 @@ public final class RVP_MachinegunLeadState {
             state.currTarget = state.currTarget.lerp(raw.targetWorldPos(), targetAlpha);
             state.currTime += (raw.timeToImpact() - state.currTime) * leadAlpha;
             state.currMiss += (raw.missDistance() - state.currMiss) * leadAlpha;
+            state.currTravel += (raw.projectileTravelDistanceMeters() - state.currTravel) * leadAlpha;
             state.target = raw.target();
         }
         state.lastSeenTick = nowTick;
@@ -132,7 +136,8 @@ public final class RVP_MachinegunLeadState {
         renderTarget = renderTarget.add(targetVelocity.scale(TARGET_FORWARD_COMPENSATION));
         double renderTime = Mth.lerp(clampedPartial, (float) state.prevTime, (float) state.currTime);
         double renderMiss = Mth.lerp(clampedPartial, (float) state.prevMiss, (float) state.currMiss);
-        return new RVP_LeadSolution(target, renderTarget, renderLead, renderTime, renderMiss);
+        double renderTravel = Mth.lerp(clampedPartial, (float) state.prevTravel, (float) state.currTravel);
+        return new RVP_LeadSolution(target, renderTarget, renderLead, renderTime, renderMiss, renderTravel);
     }
 
     private static final class State {
@@ -146,6 +151,8 @@ public final class RVP_MachinegunLeadState {
         double currTime;
         double prevMiss;
         double currMiss;
+        double prevTravel;
+        double currTravel;
         int lastSeenTick;
         int targetId = -1;
         String weaponKey = "";

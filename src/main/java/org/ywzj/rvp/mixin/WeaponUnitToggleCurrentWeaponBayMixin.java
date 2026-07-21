@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.config.WeaponBayManualOverrideManager;
+import org.ywzj.rvp.ext.WeaponUnitWeaponBayOverrideExt;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientVehicleAction;
 import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
@@ -24,12 +24,12 @@ public abstract class WeaponUnitToggleCurrentWeaponBayMixin {
         if (weaponBayUnit == null) {
             return;
         }
-        WeaponBayManualOverrideManager.markManualOverride(
-                self.getVehicle().getId(),
-                self.getIndex(),
+        if (self instanceof WeaponUnitWeaponBayOverrideExt ext) {
+            ext.ywzj_rvp$markWeaponBayManualOverride(
                 self.getCurrentWeaponIndex(),
                 self.getCurrentSecondaryWeaponIndex()
-        );
+            );
+        }
         ClientVehicleAction action = new ClientVehicleAction();
         action.vehicleEntityId = self.getVehicle().getId();
         action.partUnitIndex = weaponBayUnit.getIndex();

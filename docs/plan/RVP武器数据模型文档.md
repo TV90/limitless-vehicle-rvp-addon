@@ -7,6 +7,9 @@
 
 | RVP_GuidanceData公用字段 | 解释 | 类型 | 默认值 |
 | :----------------------- | ------------------------------------------------------------ | -------------------------------------- | ------ |
+| `predictTargetPosGain` | 比例导引增益系数。值越大，导弹对 LOS 转率和闭合速度的响应越积极。仅在 `predictTargetPos=true` 时生效。 | `float` | 3.0 |
+| `maxLateralAccel` | PN 横向修正的限幅值。用于限制单 tick 横向修正过强导致的大幅甩尾、绕大弯、撞地或乱飞。仅在 `predictTargetPos=true` 时生效。 | `float` | 0 |
+| `predictTargetPosStartTick` | 发射后从第多少 tick 开始施加 PN 修正。用于避免导弹低速、离架、刚点火阶段就被 PN 拉出过大偏转。仅在 `predictTargetPos=true` 时生效。 | `int` | 10 |
 | guidanceType | 制导类型NONE/MCLOS/SALH/SACLOS/LBR/LOSBR/LH/TV/HITL_TV/HITL_CLOS_TV/ATV/IR/AIR/SARH/ARH/GPS/ARM | RVP_EnumGuidanceType | NONE |
 | guidanceTickRange | 制导时间范围，null表示立即开始，永不结束 | RVP_Range<Integer> | null |
 | guidanceTargetDistanceRange | 导弹跟踪时与制导目标点/记忆点的距离范围(格)，null表示不进行判断 | RVP_Range<Float> | null |
@@ -58,6 +61,16 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 
 
 
+## RVP_GuidanceDataARM
+
+| RVP_GuidanceDataARM特有字段 | 解释                                                         | 类型  | 默认值 |
+| --------------------------- | ------------------------------------------------------------ | ----- | ------ |
+| radiationPulseMemoryTick    | 导弹对雷达辐射脉冲的短时记忆 tick。即便辐射源瞬间停机或脉冲间歇，仍允许导弹在该时长内继续认为“最近一次辐射源有效”。用于避免 ARM 因脉冲雷达间歇发射而瞬时丢失引导。 | int   | 30     |
+| armMemoryTick               | 导弹在彻底失去辐射源后，对最后一个有效辐射源位置/目标的持续记忆 tick。该阶段允许导弹继续朝最后记忆点飞行并尝试重新捕获。 | int   | 60     |
+| armLockedEmitterBonus       | 对“已经被火控锁定/预选的辐射源”附加的优先级加权系数。值越高，ARM 越倾向继续攻击当前主目标，而不是被视场内新的辐射源轻易抢走。 | float | 1      |
+
+
+
 ## RVP_TerminalGuidanceData
 
 末端制导数据模型
@@ -105,6 +118,8 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | canisterBurstCount | 子弹丸分几批抛撒 | int | 1 |
 | maxOffAxisShootAngle | 弹药离轴发射的最大角度，对于带有炮塔的载具而言，轴为炮塔指向位置，对于飞机和直升机而言，轴为载机指向位置，null为允许任何角度的离轴发射，如参数为20时，只允许离轴20度角发射 | Integer | null |
 | requireLock | 是否需要锁定才能发射 | boolean | false |
+|                        |                                                              |                            |           |
+|                        |                                                              |                            |           |
 
 
 
@@ -149,6 +164,7 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | missileNameOnHud | 不同距离下在屏幕hud上显示的字符串，null不显示 | Map<RVP_Range<Float>,String> | {"[[0,500]]": "MSL", "[[500,inf]]": null} |
 | missileNameOnRadar | 不同距离下在雷达hud上显示的字符串，null不显示 | Map<RVP_Range<Float>,String> | {"[[20,inf]]": "MSL"} |
 | signalIntensityFactorOnRadar | 不同距离下弹药的雷达信号强度倍率，null不显示<br /><br />signature_size删除，转用这个替代signature_size | Map<RVP_Range<Float>,Float> | {"[[0,inf]]": "1.0"} |
+| ArtilleryMap | 使用炮兵地图替代战术地图 | boolean | false |
 
 
 

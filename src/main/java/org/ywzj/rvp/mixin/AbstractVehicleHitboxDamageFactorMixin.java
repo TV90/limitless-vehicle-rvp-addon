@@ -11,14 +11,14 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.ywzj.rvp.weapon.damage.RVP_HitboxDamageContext;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
 @Mixin(AbstractVehicle.class)
-public class AbstractVehicleHitboxDamageFactorMixin {
+public class AbstractVehicleHitboxDamageFactorMixin implements RVP_VehicleHitboxRuntimeAccess {
 
     @Unique
     private float rvp$hitboxHealthBefore;
@@ -41,10 +41,16 @@ public class AbstractVehicleHitboxDamageFactorMixin {
     @Unique
     private float rvp$predictedBaseDamage;
 
+    @Unique
+    private int rvp$skipGlobalVehicleHurtScalingDepth;
+
+    @Unique
+    private float rvp$pendingVehicleHitDisplayDamage = Float.NaN;
+
     @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("HEAD"))
     private void rvp$hbxCapture(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
-        RVP_HitboxDamageContext.clearVehicleHitDisplayDamage();
+        rvp$clearPendingVehicleHitDisplayDamage();
         rvp$hitboxArmed = false;
         rvp$hitboxRes = null;
         rvp$hitboxHealthBefore = self.getHealth();
@@ -54,7 +60,7 @@ public class AbstractVehicleHitboxDamageFactorMixin {
         rvp$predictedBaseDamage = 0f;
         if (amount <= 0f) return;
         if (self.level() != null && self.level().isClientSide()) return;
-        rvp$skipHitboxScaling = RVP_HitboxDamageContext.shouldSkipHitboxScaling();
+        rvp$skipHitboxScaling = rvp$shouldSkipGlobalVehicleHurtScaling();
 
         Entity direct = source.getDirectEntity();
         Entity attacker = source.getEntity();
@@ -142,7 +148,7 @@ public class AbstractVehicleHitboxDamageFactorMixin {
             float hitboxMult = hitboxEnabled ? rvp$hitboxRes.factor() : 1f;
             float displayDamage = rvp$applyDisplayDamageScaling(rvp$predictedBaseDamage, hitboxMult);
             if (displayDamage > 0f && Float.isFinite(displayDamage)) {
-                RVP_HitboxDamageContext.setVehicleHitDisplayDamage(displayDamage);
+                rvp$setPendingVehicleHitDisplayDamage(displayDamage);
             }
         }
     }
@@ -224,7 +230,43 @@ public class AbstractVehicleHitboxDamageFactorMixin {
 
     @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("RETURN"))
     private void rvp$hbxCleanup(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
-        RVP_HitboxDamageContext.clearVehicleHitDisplayDamage();
+        rvp$clearPendingVehicleHitDisplayDamage();
+    }
+
+    @Override
+    public void rvp$pushSkipGlobalVehicleHurtScaling() {
+        rvp$skipGlobalVehicleHurtScalingDepth++;
+    }
+
+    @Override
+    public void rvp$popSkipGlobalVehicleHurtScaling() {
+        if (rvp$skipGlobalVehicleHurtScalingDepth > 0) {
+            rvp$skipGlobalVehicleHurtScalingDepth--;
+        }
+    }
+
+    @Override
+    public boolean rvp$shouldSkipGlobalVehicleHurtScaling() {
+        return rvp$skipGlobalVehicleHurtScalingDepth > 0;
+    }
+
+    @Override
+    public void rvp$setPendingVehicleHitDisplayDamage(float damage) {
+        if (!Float.isFinite(damage)) {
+            rvp$clearPendingVehicleHitDisplayDamage();
+            return;
+        }
+        rvp$pendingVehicleHitDisplayDamage = damage;
+    }
+
+    @Override
+    public float rvp$getPendingVehicleHitDisplayDamage() {
+        return rvp$pendingVehicleHitDisplayDamage;
+    }
+
+    @Override
+    public void rvp$clearPendingVehicleHitDisplayDamage() {
+        rvp$pendingVehicleHitDisplayDamage = Float.NaN;
     }
 
     @Unique

@@ -14,6 +14,8 @@ import org.lwjgl.opengl.GL11;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.mixin.accessor.BaseBulletAccessor;
+import org.ywzj.rvp.util.RVP_RadarContactHelper;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 
@@ -65,6 +67,11 @@ public class RVP_MslOverlay {
 
             double dist = mc.player.position().distanceTo(targetPos);
             String distStr = String.format("%.0fm", dist);
+            RVP_WeaponData weaponData = RVP_RadarContactHelper.resolveBulletWeaponData(missile);
+            String hudLabel = weaponData == null ? null : weaponData.resolveMissileNameOnHud((float) dist);
+            if (hudLabel == null || hudLabel.isBlank()) {
+                hudLabel = "MSL";
+            }
 
             int screenX = (int) screenPos.x;
             int screenY = (int) screenPos.y;
@@ -78,7 +85,7 @@ public class RVP_MslOverlay {
 
             // 菱形框下方显示 MSL 和距离（两行，居中对齐）
             int textX = screenX;
-            String mslText = "MSL  " + distStr;
+            String mslText = hudLabel + "  " + distStr;
             int textWidth = mc.font.width(mslText);
             guiGraphics.drawString(mc.font, mslText, textX - textWidth / 2, screenY + DIAMOND_SIZE + 2, LINE_COLOR);
         }

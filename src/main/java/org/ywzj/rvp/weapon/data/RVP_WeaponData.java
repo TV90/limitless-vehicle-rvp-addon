@@ -1,11 +1,15 @@
 package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
+import com.google.gson.annotations.JsonAdapter;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.guidance.RVP_GuidanceConfigResolver;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceLaunchConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidancePhase;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
@@ -65,26 +69,20 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     /** 分段制导阶段与源（含 ARM/TV 专用参数），见 {@link RVP_GuidanceData}。 */
     @SerializedName("guidance_data")
+    @JsonAdapter(RVP_GuidanceDataAdapter.class)
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
+
+    @SerializedName("misc_data")
+    private RVP_MiscData miscData = new RVP_MiscData();
 
     /** {@code rvp:laser} 射程与光束外观，见 {@link RVP_LaserData}。 */
     @SerializedName("laser_data")
     private RVP_LaserData laserData = new RVP_LaserData();
 
-    /** `rvp:machinegun` 的 AHEAD 自动编程参数，见 {@link RVP_AheadData}。 */
-    @SerializedName("ahead_data")
-    private RVP_AheadData aheadData = new RVP_AheadData();
-
     /**
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
      */
-    @SerializedName("require_lock")
-    private boolean requireLock = true;
-
-    @SerializedName(value = "enableHMS", alternate = {"enable_hms"})
-    private boolean enableHms = true;
-
     @SerializedName("rvp_fire_control_sensor_mode")
     private String fireControlSensorMode = "";
 
@@ -94,21 +92,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      */
     @SerializedName("fire_control_sensor_type_override")
     private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
-
-    /** 兼容旧 JSON：顶层 `ahead_enabled`，优先级低于 `ahead_data.enabled`。 */
-    @Deprecated
-    @SerializedName("ahead_enabled")
-    private Boolean legacyAheadEnabled;
-
-    /** 兼容旧 JSON：顶层 `ahead_burst_offset_meters`，优先级低于 `ahead_data.burst_offset_meters`。 */
-    @Deprecated
-    @SerializedName("ahead_burst_offset_meters")
-    private Float legacyAheadBurstOffsetMeters;
-
-    /** 兼容旧 JSON：顶层 `ahead_require_lock`，优先级低于 `ahead_data.require_lock`。 */
-    @Deprecated
-    @SerializedName("ahead_require_lock")
-    private Boolean legacyAheadRequireLock;
 
     public RVP_EnumWeaponKind getWeaponKind() {
         return weaponKind;
@@ -166,21 +149,27 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return guidanceData == null ? new RVP_GuidanceData() : guidanceData;
     }
 
+    public RVP_MiscData getMiscData() {
+        return miscData == null ? new RVP_MiscData() : miscData;
+    }
+
     /** 发射前 UI 用；飞行中优先当前激活阶段。 */
-    public RVP_GuidanceSteeringData getGuidanceSteeringData() {
-        return getGuidanceSteeringData(null);
-    }
-
-    public RVP_GuidanceSteeringData getGuidanceSteeringData(@Nullable RVP_BaseBullet projectile) {
-        return RVP_GuidanceConfigResolver.resolveSteering(this, projectile);
-    }
-
     public RVP_LaserData getLaserData() {
         return laserData == null ? new RVP_LaserData() : laserData;
     }
 
-    public RVP_AheadData getAheadData() {
-        return aheadData == null ? new RVP_AheadData() : aheadData;
+    @Nullable
+    public String resolveMissileNameOnHud(float distance) {
+        return getMiscData().resolveMissileNameOnHud(distance);
+    }
+
+    @Nullable
+    public String resolveMissileNameOnRadar(float distance) {
+        return getMiscData().resolveMissileNameOnRadar(distance);
+    }
+
+    public float resolveSignalIntensityFactorOnRadar(float distance) {
+        return getMiscData().resolveSignalIntensityFactorOnRadar(distance);
     }
 
     public RVP_Explosion getExplosionData() {
@@ -224,11 +213,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isRequireLock() {
-        return requireLock;
+        return getFireData().isRequireLock();
     }
 
-    public boolean isEnableHms() {
-        return enableHms;
+    public boolean isEnableIrHmd() {
+        return getGuidanceData().isEnableIrHmd();
     }
 
     public String getFireControlSensorMode() {
@@ -238,35 +227,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @Nullable
     public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
         return fireControlSensorTypeOverride;
-    }
-
-    public boolean isAheadEnabled() {
-        Boolean configured = getAheadData().getEnabledOverride();
-        if (configured != null) {
-            return configured;
-        }
-        return legacyAheadEnabled != null && legacyAheadEnabled;
-    }
-
-    public float getAheadBurstOffsetMeters() {
-        Float configured = getAheadData().getBurstOffsetMetersOverride();
-        if (configured != null) {
-            return Math.max(configured, 0f);
-        }
-        return legacyAheadBurstOffsetMeters == null ? 3.0f : Math.max(legacyAheadBurstOffsetMeters, 0f);
-    }
-
-    public boolean isAheadRequireLock() {
-        Boolean configured = getAheadData().getRequireLockOverride();
-        if (configured != null) {
-            return configured;
-        }
-        return legacyAheadRequireLock == null || legacyAheadRequireLock;
-    }
-
-    public float getAheadMinGroundClearance() {
-        Float configured = getAheadData().getMinGroundClearanceOverride();
-        return configured == null ? 0f : Math.max(configured, 0f);
     }
 
     public float getProjectileVelocity() {
@@ -363,14 +323,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return getCollisionData().getDamageDecayRules();
     }
 
-    public int getRigidityTime() {
-        return getGuidanceSteeringData().getRigidityTime();
-    }
-
-    public double getTurningFactor() {
-        return getGuidanceSteeringData().getTurningFactor();
-    }
-
     public float getGravity() {
         return getProjectileData().getGravity();
     }
@@ -388,7 +340,8 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean isActiveRadar() {
-        return usesGuidanceType(RVP_EnumGuidanceType.ARH);
+        return usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || usesGuidanceType(RVP_EnumGuidanceType.AIR);
     }
 
     public boolean isSemiActiveRadar() {
@@ -406,36 +359,30 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     /** 发射前锁定 UI 用；飞行中优先当前激活阶段的导引头。 */
-    public RVP_GuidanceSeekerData resolveLaunchSeeker() {
-        return resolveLaunchSeeker(null);
+    public RVP_GuidanceLaunchConfig resolveLaunchGuidanceConfig() {
+        return RVP_GuidanceModelResolver.resolveLaunch(this);
     }
 
-    public RVP_GuidanceSeekerData resolveLaunchSeeker(@Nullable RVP_BaseBullet projectile) {
-        return RVP_GuidanceConfigResolver.resolveSeeker(this, projectile);
+    public RVP_GuidanceActiveConfig resolveActiveGuidanceConfig(RVP_GuidancePhase phase) {
+        return RVP_GuidanceModelResolver.resolveActive(this, phase);
     }
 
-    public int getScanInterval() {
-        return resolveLaunchSeeker().getScanIntervalTick();
+    public int resolveGuidanceScanIntervalTick() {
+        Integer interval = getGuidanceData().getScanIntervalTick();
+        return interval == null ? 2 : interval;
     }
 
-    public float getMaxLockOnRange() {
-        return resolveLaunchSeeker().getRange();
+    public float resolveLaunchLockRange() {
+        return (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
+                resolveLaunchGuidanceConfig().targetDistanceRange());
     }
 
-    public float getMaxLockOnAngle() {
-        return resolveLaunchSeeker().getFov();
+    public float resolveLaunchSeekerFullFov() {
+        return resolveLaunchGuidanceConfig().maxLockAngle();
     }
 
-    public float getMaxDegreeOfMissile() {
-        return getGuidanceSteeringData().getMaxDegreeOfMissile();
-    }
-
-    public float getLockMinHeight() {
-        return resolveLaunchSeeker().getLockMinHeight();
-    }
-
-    public float getMaxGuideHeadAngle() {
-        return resolveLaunchSeeker().getGuideHeadMaxAngle();
+    public float resolveLaunchOffAxisLockAngle() {
+        return resolveLaunchGuidanceConfig().maxOffAxisLockAngle();
     }
 
     /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */
@@ -444,14 +391,6 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
             return getLaserData().getRange();
         }
         return 8192f;
-    }
-
-    public boolean isPredictTargetPos() {
-        return getGuidanceSteeringData().isPredictTargetPos();
-    }
-
-    public int getTickEndHoming() {
-        return getGuidanceSteeringData().getTickEndHoming();
     }
 
     public boolean isGpsMissile() {
@@ -550,21 +489,36 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     public boolean usesGuidanceType(RVP_EnumGuidanceType type) {
-        if (type == null) {
-            return false;
-        }
-        return getGuidanceData().hasSourceType(type);
+        return getGuidanceData().usesGuidanceType(type);
     }
 
     public boolean hasHumanInTheLoop() {
-        return getGuidanceData().isHumanInTheLoopEnabled();
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance instanceof RVP_GuidanceDataHITL;
     }
 
     public boolean isSaclosTvGuided() {
-        if (!usesGuidanceType(RVP_EnumGuidanceType.SACLOS) || !hasHumanInTheLoop()) {
-            return false;
-        }
-        return getGuidanceData().getHumanInTheLoop().resolveControlMode(getGuidanceData())
-                == RVP_EnumHitlControlMode.DESIGNATE;
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance instanceof RVP_GuidanceDataHITL
+                && guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_TV;
+    }
+
+    /** Laser-spot weapons that need the vehicle laser-designation client state. */
+    public boolean isVehicleLaserGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
+    }
+
+    public boolean isHitlClosTvGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
+    }
+
+    /** New SACLOS is an operator line-of-sight command, not a laser seeker. */
+    public boolean isCommandGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.SACLOS
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
     }
 }

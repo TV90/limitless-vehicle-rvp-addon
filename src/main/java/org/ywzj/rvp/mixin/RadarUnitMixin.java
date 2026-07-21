@@ -15,8 +15,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
+import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientRadarAction;
@@ -146,6 +148,16 @@ public class RadarUnitMixin {
         }
     }
 
+    @Unique
+    private void ywzj_rvp$filterUndetectableRvpAmmo(List<Entity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return;
+        }
+        entities.removeIf(entity -> entity instanceof BulletEntity
+                || entity instanceof RVP_BulletEntity
+                || entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
+    }
+
     @Inject(
             method = "tick",
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/RadarUnit;tickTargets()V", shift = At.Shift.BEFORE),
@@ -183,6 +195,7 @@ public class RadarUnitMixin {
             }
             return !(Math.abs(aimRot.x - self.getXRot()) > self.getScanSectorAngle() / 2.0f);
         });
+        ywzj_rvp$filterUndetectableRvpAmmo(entities);
         ywzj_rvp$appendRvpAmmoTargets(self, entities, yRotSpeed > 0f);
         for (Entity entity : entities) {
             self.detect(entity);
@@ -230,6 +243,12 @@ public class RadarUnitMixin {
                 return true;
             }
             Entity targetEntity = detectedObject.entity;
+            if (targetEntity instanceof BulletEntity || targetEntity instanceof RVP_BulletEntity) {
+                return true;
+            }
+            if (targetEntity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo()) {
+                return true;
+            }
             if (targetEntity != null && targetEntity.isAlive()) {
                 AABB aabb = targetEntity.getBoundingBox();
                 detectedObject.detectedPosition = aabb.getCenter();
@@ -270,9 +289,7 @@ public class RadarUnitMixin {
     private void ywzj_rvp$tickDetect(CallbackInfo ci) {
         RadarUnit self = (RadarUnit) (Object) this;
         RadarUnitData data = ywzj_rvp$getRadarData(self);
-        if (!(data instanceof RadarUnitDataExt ext)) {
-            return;
-        }
+        RadarUnitDataExt ext = data instanceof RadarUnitDataExt radarExt ? radarExt : null;
 
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
@@ -284,7 +301,7 @@ public class RadarUnitMixin {
             return;
         }
 
-        boolean phaseMode = "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
+        boolean phaseMode = ext != null && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
         if (phaseMode && ywzj_rvp$shouldSkipScan(self)) {
             ci.cancel();
             return;
@@ -309,6 +326,7 @@ public class RadarUnitMixin {
                             && !(Math.abs(aimRot.y - self.getYRot()) > self.getYRotSpeed() / 2.0f)
                             && !(Math.abs(aimRot.x - self.getXRot()) > self.getScanSectorAngle() / 2.0f);
                 });
+        ywzj_rvp$filterUndetectableRvpAmmo(entities);
         ywzj_rvp$appendRvpAmmoTargets(self, entities, !phaseMode);
         entities.forEach(self::detect);
 

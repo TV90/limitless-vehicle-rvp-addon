@@ -687,7 +687,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     ) {
     }
 
-    private record ResolvedObb(OBB obb, String source) {
+    private static final class ResolvedObb {
+        private final OBB obb;
+        private final String source;
+
+        private ResolvedObb(OBB obb, String source) {
+            this.obb = obb;
+            this.source = source;
+        }
+
+        private OBB obb() {
+            return obb;
+        }
+
+        private String source() {
+            return source;
+        }
     }
 
     private record EraConfig(float damageFactor, float minTriggerDamage, float explosion) {

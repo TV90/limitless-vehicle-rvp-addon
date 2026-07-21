@@ -14,6 +14,7 @@ public record S2CNuclearVisualEffect(
         double x,
         double y,
         double z,
+        int groundY,
         float effectYield,
         float visualScale,
         float visualDensity,
@@ -29,6 +30,7 @@ public record S2CNuclearVisualEffect(
         buf.writeDouble(msg.x);
         buf.writeDouble(msg.y);
         buf.writeDouble(msg.z);
+        buf.writeInt(msg.groundY);
         buf.writeFloat(msg.effectYield);
         buf.writeFloat(msg.visualScale);
         buf.writeFloat(msg.visualDensity);
@@ -43,6 +45,7 @@ public record S2CNuclearVisualEffect(
         return new S2CNuclearVisualEffect(
                 buf.readUtf(16),
                 buf.readDouble(), buf.readDouble(), buf.readDouble(),
+                buf.readInt(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
                 buf.readLong(), buf.readLong(),
                 buf.readBoolean(), buf.readBoolean(), buf.readBoolean());

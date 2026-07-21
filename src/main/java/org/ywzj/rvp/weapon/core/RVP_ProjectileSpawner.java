@@ -115,13 +115,16 @@ public final class RVP_ProjectileSpawner {
 
         if (lockTarget != null) {
             projectile.setTargetEntity(lockTarget);
-            if (projectile instanceof RVP_MissileEntity missile && data.isActiveRadar()) {
-                missile.rvp$setArhDesignatedTarget(lockTarget);
+            if (projectile instanceof RVP_MissileEntity missile
+                    && (data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.AIR))) {
+                missile.rvp$setActiveSeekerDesignatedTarget(lockTarget);
+                projectile.setTargetPos(lockTarget.getBoundingBox().getCenter());
             }
             if (kind == RVP_EnumWeaponKind.MISSILE && data.usesGuidanceType(RVP_EnumGuidanceType.IR)) {
                 projectile.setTargetPos(lockTarget.getBoundingBox().getCenter());
                 projectile.markLaunchTargetSnapshot();
-                projectile.beginIrSeekerGrace(Math.max(6, data.getScanInterval() * 2));
+                projectile.beginIrSeekerGrace(Math.max(6, data.resolveGuidanceScanIntervalTick() * 2));
             }
         }
 

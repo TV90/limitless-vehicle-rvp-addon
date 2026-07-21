@@ -58,7 +58,7 @@ public class WeaponUnitGetSeekerFovMixin {
             if (kind != RVP_EnumWeaponKind.MISSILE) {
                 return;
             }
-            float fov = (float) data.getClass().getMethod("getMaxGuideHeadAngle").invoke(data);
+            float fov = (float) data.getClass().getMethod("resolveLaunchOffAxisLockAngle").invoke(data);
             if (fov > 0) cir.setReturnValue(fov);
         } catch (Exception ignored) {
         }

@@ -19,28 +19,23 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
-import org.ywzj.rvp.guidance.RVP_GuidanceSeekerUtil;
-import org.ywzj.rvp.guidance.RVP_GuidanceMath;
-import org.ywzj.rvp.guidance.RVP_HitlSeekerUtil;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
-import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-import org.ywzj.rvp.weapon.data.RVP_HumanInTheLoopData;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.VectorUtil;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
-import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
-import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -71,15 +66,15 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private float hitlSteeringYaw;
     private float hitlSteeringPitch;
     private int hitlInputSeq = Integer.MIN_VALUE;
-    private RVP_HumanInTheLoopData.SignalSource hitlSignalSource = RVP_HumanInTheLoopData.SignalSource.RADIO;
+    private HitlSignalSource hitlSignalSource = HitlSignalSource.RADIO;
     private boolean hitlLinkBlocked;
     private boolean hitlLinkSevered;
     private int hitlLinkBlockedTicks;
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
     private int hitlEnterViewResendTicks;
-    private int arhDesignatedTargetId = Integer.MIN_VALUE;
-    private boolean arhSupportReleased;
+    private int activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
+    private boolean activeSeekerSupportReleased;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -97,25 +92,53 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        if (data == null || !data.hasHumanInTheLoop()) {
+        if (data == null
+                || !(data.getGuidanceData() instanceof RVP_GuidanceDataHITL hitl)) {
             return;
         }
-        RVP_HumanInTheLoopData hitl = data.getGuidanceData().getHumanInTheLoop();
-        this.hitlControlRange = hitl.controlRange(2000f);
-        this.hitlTimeoutTick = hitl.timeoutTick(200);
+        initNewSchemaHitl(data, hitl, aim);
+    }
+
+    private void initNewSchemaHitl(RVP_WeaponData data, RVP_GuidanceDataHITL hitl, AimRot aim) {
+        this.hitlControlRange = Math.max(hitl.getHitlMaxControlDist(), 1);
+        this.hitlTimeoutTick = Math.max(hitl.getHitlMaxControlTick(), 1);
         this.hitlLife = this.hitlTimeoutTick;
-        this.hitlVideoModeMask = hitl.videoModeMask();
-        this.hitlDefaultVideoMode = hitl.defaultVideoMode();
-        this.hitlControlMode = hitl.resolveControlMode(data.getGuidanceData());
-        this.hitlMaxTurnDegPerTick = hitl.maxTurnDegPerTick();
-        this.hitlMaxLookOffsetDeg = hitl.maxLookOffsetDeg(RVP_HitlSeekerUtil.saclosSeekerHalfFov(data));
-        this.hitlSignalSource = hitl.signalSource();
+        this.hitlVideoModeMask = resolveVideoModeMask(hitl);
+        this.hitlDefaultVideoMode = resolveDefaultVideoMode(hitl);
+        this.hitlControlMode = switch (data.getGuidanceData().getGuidanceType()) {
+            case HITL_TV -> RVP_EnumHitlControlMode.DESIGNATE;
+            case HITL_CLOS_TV -> RVP_EnumHitlControlMode.MOUSE;
+            default -> RVP_EnumHitlControlMode.VIEW;
+        };
+        this.hitlMaxTurnDegPerTick = Math.max(hitl.getHitlMaxTurnDegPerTick(), 0.05f);
+        this.hitlMaxLookOffsetDeg = Math.max(hitl.getHitlMaxLookOffset(), 1);
+        this.hitlSignalSource = "FIBER".equals(hitl.getSignalSource())
+                ? HitlSignalSource.FIBER
+                : HitlSignalSource.RADIO;
         this.hitlEnabled = true;
         this.hitlEnterViewResendTicks = 5;
         this.hitlInputYaw = aim.yRot();
         this.hitlInputPitch = aim.xRot();
         this.hitlSteeringYaw = aim.yRot();
         this.hitlSteeringPitch = aim.xRot();
+    }
+
+    private static int resolveVideoModeMask(RVP_GuidanceDataHITL hitl) {
+        int mask = 0;
+        for (String mode : hitl.getHitlVideoModes()) {
+            mask |= RVP_TvVideoModeMask.parse(mode);
+        }
+        return mask != 0 ? mask : HITL_MODE_ALL;
+    }
+
+    private static int resolveDefaultVideoMode(RVP_GuidanceDataHITL hitl) {
+        for (String mode : hitl.getHitlVideoModes()) {
+            int parsed = RVP_TvVideoModeMask.parse(mode);
+            if (parsed != 0) {
+                return parsed;
+            }
+        }
+        return HITL_MODE_COLOR;
     }
 
     @Override
@@ -133,15 +156,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
 
-        // ===== ARM 反辐射弹：独立制导，不经过 stage 系统（对标本体 SeadMissileEntity） =====
-        if (isArmMissile()) {
-            tickArmGuidance();
-            return;
-        }
+        getGuidancePhaseState().update(
+                rvpData.getGuidanceData().getTerminalGuidance(),
+                RVP_GuidanceTransitionContext.from(this)
+        );
 
-        // ===== ARH 主动雷达弹：目标管理嵌入，转向走 stage 系统 =====
-        if (isArhMissile()) {
-            tickArhTargetManagement();
+        RVP_EnumGuidanceType activeType = resolveNewActiveSeekerType();
+        if (activeType == RVP_EnumGuidanceType.ARH || activeType == RVP_EnumGuidanceType.AIR) {
+            tickActiveSeekerTargetManagement(activeType);
         }
 
         super.tickGuidance();
@@ -164,101 +186,71 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         hitlEnterViewResendTicks--;
     }
 
-    /**
-     * 判断当前弹体是否为主动雷达制导（ARH）导弹。
-     */
-    private boolean isArhMissile() {
-        return rvpData != null
-                && rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                && rvpData.isActiveRadar();
+    private RVP_EnumGuidanceType resolveNewActiveSeekerType() {
+        if (rvpData == null) {
+            return RVP_EnumGuidanceType.NONE;
+        }
+        return RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(),
+                getGuidancePhaseState().phase()
+        ).guidanceType();
     }
 
-    /**
-     * 判断当前弹体是否为反辐射导弹（ARM）。
-     */
-    private boolean isArmMissile() {
-        return rvpData != null
-                && rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                && rvpData.isAntiRadiationMissile();
-    }
+    private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
+        RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
+        if (config == null || config.guidanceType() != type) {
+            return;
+        }
+        activeRadarActivationRange = config.activeRadarActivationRange();
 
-    /**
-     * ARM 独立制导逻辑。
-     * 绕过 stage 系统直接管理 targetPos（对标本体 SeadMissileEntity.tickSeadTrack()）。
-     */
-    private void tickArmGuidance() {
-        if (tickCount == 0) {
-            initArmParams();
+        Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
+        boolean hasDesignation = rvp$hasActiveSeekerDesignation();
+        boolean supportAvailable = designated != null && rvp$hasActiveSeekerSupportForDesignatedTarget();
+        if (hasDesignation && !supportAvailable) {
+            activeSeekerSupportReleased = true;
         }
 
-        boolean canScan = !isAntiRadiationLostPermanent() || armAllowReacquire;
-        AntiRadiationSeekerHelper.AntiRadiationEmitter best = null;
-
-        if (canScan && tickCount >= getAntiRadiationNextScanTick()) {
-            setAntiRadiationNextScanTick(tickCount + armScanIntervalTick);
-            List<AntiRadiationSeekerHelper.AntiRadiationEmitter> emitters =
-                    AntiRadiationSeekerHelper.scanVisibleEmitters(
-                            level(), position(), getLookAngle(),
-                            armSeekerFov, armSeekRange, getShooterVehicle(),
-                            tickCount, getRadiationPulseTickMap(), armPulseMemoryTick);
-
-            // STEP 1: 预选目标优先
-            int preselectVid = getPreselectedVehicleId();
-            int preselectRid = getPreselectedRadarIndex();
-            if (preselectVid >= 0) {
-                for (var emitter : emitters) {
-                    if (emitter.vehicleId() == preselectVid
-                            && (preselectRid < 0 || emitter.radarIndex() == preselectRid)) {
-                        best = emitter;
-                        break;
-                    }
-                }
-            }
-
-            // STEP 2: 无预选则按评分选最佳
-            if (best == null) {
-                double bestScore = Double.MAX_VALUE;
-                for (var emitter : emitters) {
-                    double score = AntiRadiationSeekerHelper.score(
-                            position(), getLookAngle(),
-                            armSeekerFov, armSeekRange, emitter.pdw(), armLockedBonus);
-                    if (score < bestScore) {
-                        bestScore = score;
-                        best = emitter;
-                    }
-                }
+        if (!activeRadarCatch) {
+            if (designated != null && !activeSeekerSupportReleased && supportAvailable) {
+                setTargetEntity(designated);
+                setTargetPos(designated.getBoundingBox().getCenter());
+            } else if (activeSeekerSupportReleased) {
+                setTargetEntity(null);
             }
         }
 
-        if (best != null) {
-            setAntiRadiationLostPermanent(false);
-            int memory = armMemoryTick > 0 ? armMemoryTick
-                    : AntiRadiationSeekerHelper.getDefaultMemoryTick(best.radarUnit());
-            setAntiRadiationMemoryLeftTick(memory);
-            setTargetPos(best.position());
-            rememberGuidancePos(best.position());
-            // 直接调用转向（不走 stage 系统）
-            RVP_GuidanceMath.guidanceToPos(this, best.position());
-        } else if (getAntiRadiationMemoryLeftTick() > 0 && getLastGuidancePos() != null) {
-            setAntiRadiationMemoryLeftTick(getAntiRadiationMemoryLeftTick() - 1);
-            Vec3 memory = getLastGuidancePos();
-            setTargetPos(memory);
-            RVP_GuidanceMath.guidanceToPos(this, memory);
-        } else {
-            clearTarget();
-            if (!armAllowReacquire) {
-                setAntiRadiationLostPermanent(true);
+        if (!activeRadarOn) {
+            Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
+            boolean withinActivationRange = activeRadarActivationRange <= 0
+                    || activationReference != null
+                    && activationReference.distanceTo(position()) <= activeRadarActivationRange;
+            if (withinActivationRange || !hasDesignation) {
+                setAutonomousSeekerOn(true);
+                notifyActiveSeekerOnline(type);
+            }
+        }
+
+        if (activeRadarOn && targetEntity == null) {
+            activeRadarLostTargetTick++;
+            if (activeRadarLostTargetTick >= 60) {
+                life = 0;
             }
         }
     }
 
-    private boolean armAllowReacquire = true;
-    private float armSeekerFov = 70f;
-    private float armSeekRange = 2048f;
-    private int armScanIntervalTick = 2;
-    private int armMemoryTick = 120;
-    private int armPulseMemoryTick = 80;
-    private float armLockedBonus = 0.5f;
+    private void notifyActiveSeekerOnline(RVP_EnumGuidanceType type) {
+        if (!(getOwner() instanceof ServerPlayer player)) {
+            return;
+        }
+        String message = switch (type) {
+            case AIR -> "主动红外导引头开机";
+            case ARH -> "主动雷达导引头开机";
+            default -> null;
+        };
+        if (message != null) {
+            player.displayClientMessage(Component.literal(message), true);
+        }
+    }
 
     /**
      * 所有 RVP 导弹统一使用燃料尾焰模式（对标本体 MissileEntity.tickParticle）。
@@ -287,160 +279,58 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         return super.isMotorBurning();
     }
 
-    private void initArmParams() {
-        if (rvpData == null) return;
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) return;
-        for (var stage : stages) {
-            var sources = stage.getSources();
-            if (sources == null) continue;
-            for (var source : sources) {
-                if (source.getType() != RVP_EnumGuidanceType.ARM) continue;
-                var params = source.getParams();
-                if (params != null) {
-                    armAllowReacquire = params.reacquire(true);
-                    armSeekerFov = stage.getSeeker().getFov();
-                    armSeekRange = stage.getSeeker().getRange();
-                    armScanIntervalTick = params.scanIntervalTick(2);
-                    armMemoryTick = params.memoryTick(120);
-                    armPulseMemoryTick = params.radiationPulseMemoryTick(80);
-                    armLockedBonus = params.lockedBonus(0.5f);
-                }
-
-                // 从武器挂点复制 HUD 预选目标（对标本体 MissileEntityMixin.initArmParameters）
-                WeaponUnit wu = getShooterWeaponUnit();
-                if (wu != null) {
-                    WeaponUnit rootWu = wu.getRootParentWeaponUnit();
-                    if (rootWu instanceof WeaponUnitArmExt armExt) {
-                        int preselectVid = armExt.ywzj_rvp$getArmPreselectedVehicleId();
-                        int preselectRid = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
-                        setPreselectedTarget(preselectVid, preselectRid);
-                        // 写入预选目标的坐标作为初始 IOG 记忆点，使导弹立刻朝该点飞行（解决大离轴发射时扫描间隔内丢目标的问题）
-                        if (preselectVid >= 0) {
-                            Vec3 preselectPos = armExt.ywzj_rvp$getArmPreselectedPos();
-                            if (preselectPos != null) {
-                                setTargetPos(preselectPos);
-                                rememberGuidancePos(preselectPos);
-                                setAntiRadiationMemoryLeftTick(armMemoryTick > 0 ? armMemoryTick : 60);
-                            }
-                        }
-                    }
-                }
-                return;
-            }
-        }
-    }
-
-    /**
-     * ARH 目标管理：载机雷达锁续标 → 实时追踪 → 距离触发弹载雷达开机 → 丢锁自毁。
-     * 不取代 stage 系统的转向，只维护 targetEntity/targetPos 状态。
-     */
-    private void tickArhTargetManagement() {
-        if (tickCount == 0) {
-            initArhParams();
-        }
-
-        // 主动雷达截获前：载机雷达必须持续锁定目标（不同于本体仅检测）
-        Entity designatedTarget = rvp$getArhDesignatedTargetEntity();
-        boolean hasDesignatedTarget = designatedTarget != null && designatedTarget.isAlive();
-        boolean supportAvailable = rvp$hasArhSupportForDesignatedTarget();
-
-        if (hasDesignatedTarget && !supportAvailable) {
-            arhSupportReleased = true;
-        }
-
-        if (!activeRadarCatch && hasDesignatedTarget && !arhSupportReleased) {
-            if (targetEntity != designatedTarget) {
-                targetEntity = designatedTarget;
-            }
-        } else if (!activeRadarCatch && targetEntity != null && !targetEntity.isAlive()) {
-            targetEntity = null;
-        }
-
-        // tickGuidance() HOMING 段：实时追踪 + 主动雷达开机距离检测
-        if (tickCount >= 20 && targetEntity != null && targetEntity.isAlive()) {
-            boolean canRefreshFromLiveTrack = activeRadarCatch
-                    || (hasDesignatedTarget && !arhSupportReleased && supportAvailable);
-            if (canRefreshFromLiveTrack) {
-                targetPos = targetEntity.position().add(0, targetEntity.getBbHeight() * 0.5, 0);
-                lastGuidancePos = targetPos;
-            }
-
-            Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
-            if (!activeRadarOn && activationReference != null
-                    && activationReference.distanceTo(position()) <= activeRadarActivationRange) {
-                activeRadarOn = true;
-                // 开机提示（action bar 不干扰聊天）
-                if (getOwner() instanceof ServerPlayer player) {
-                    player.displayClientMessage(Component.literal("主动雷达导引头开机"), true);
-                }
-            }
-        }
-
-        // tickTrack() ACTIVE_RADAR 段：弹载雷达扫描截获
-        if (activeRadarOn) {
-            List<Entity> detectedEntities = scanArhTargets();
-            Entity activeRadarTarget = null;
-
-            if (targetEntity != null) {
-                activeRadarTarget = Radar.checkTarget(this, detectedEntities, targetEntity);
-                if (activeRadarTarget == targetEntity) {
-                    activeRadarCatch = true;
-                    activeRadarLostTargetTick = 0;
-                }
-            }
-
-            if (activeRadarTarget == null && rvp$canArhFreeAcquire() && !detectedEntities.isEmpty()) {
-                targetEntity = detectedEntities.get(0);
-                activeRadarCatch = true;
-                activeRadarLostTargetTick = 0;
-            }
-        }
-
-        // 主动雷达丢锁倒计时
-        if (activeRadarOn && targetEntity == null) {
-            activeRadarLostTargetTick++;
-            if (activeRadarLostTargetTick >= 60) {
-                life = 0;
-            }
-        }
-    }
-
-    /**
-     * 从武器数据的 guidance stage 中读取 ARH 参数（activeRadarActivationRange、seekerFov 等）。
-     */
-    public void rvp$setArhDesignatedTarget(@Nullable Entity target) {
+    /** Captures the launch-designated target shared by the new ARH/AIR runtime. */
+    public void rvp$setActiveSeekerDesignatedTarget(@Nullable Entity target) {
         if (target == null) {
-            this.arhDesignatedTargetId = Integer.MIN_VALUE;
-            this.arhSupportReleased = true;
+            this.activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
+            this.activeSeekerSupportReleased = true;
             return;
         }
-        this.arhDesignatedTargetId = target.getId();
-        this.arhSupportReleased = false;
+        this.activeSeekerDesignatedTargetId = target.getId();
+        this.activeSeekerSupportReleased = false;
         if (this.targetEntity == null) {
             this.targetEntity = target;
         }
         this.lastGuidancePos = target.position().add(0, target.getBbHeight() * 0.5, 0);
     }
 
+    public void rvp$setArhDesignatedTarget(@Nullable Entity target) {
+        rvp$setActiveSeekerDesignatedTarget(target);
+    }
+
     @Nullable
-    public Entity rvp$getArhDesignatedTargetEntity() {
-        if (arhDesignatedTargetId == Integer.MIN_VALUE) {
+    public Entity rvp$getActiveSeekerDesignatedTargetEntity() {
+        if (activeSeekerDesignatedTargetId == Integer.MIN_VALUE) {
             return null;
         }
-        Entity entity = level().getEntity(arhDesignatedTargetId);
+        Entity entity = level().getEntity(activeSeekerDesignatedTargetId);
         if (entity == null || !entity.isAlive()) {
             return null;
         }
         return entity;
     }
 
-    public boolean rvp$canArhFreeAcquire() {
-        return arhDesignatedTargetId == Integer.MIN_VALUE || arhSupportReleased;
+    @Nullable
+    public Entity rvp$getArhDesignatedTargetEntity() {
+        return rvp$getActiveSeekerDesignatedTargetEntity();
     }
 
-    public boolean rvp$hasArhSupportForDesignatedTarget() {
-        Entity designatedTarget = rvp$getArhDesignatedTargetEntity();
+    public boolean rvp$hasActiveSeekerDesignation() {
+        return activeSeekerDesignatedTargetId != Integer.MIN_VALUE;
+    }
+
+    public boolean rvp$canActiveSeekerFreeAcquire() {
+        return activeRadarCatch
+                || activeSeekerDesignatedTargetId == Integer.MIN_VALUE
+                || activeSeekerSupportReleased;
+    }
+
+    public boolean rvp$canArhFreeAcquire() {
+        return rvp$canActiveSeekerFreeAcquire();
+    }
+
+    public boolean rvp$hasActiveSeekerSupportForDesignatedTarget() {
+        Entity designatedTarget = rvp$getActiveSeekerDesignatedTargetEntity();
         if (designatedTarget == null) {
             return false;
         }
@@ -481,92 +371,24 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         return anyRadarOn && targetEntity == designatedTarget && targetEntity.isAlive() && activeRadarCatch;
     }
 
-    private void initArhParams() {
-        if (rvpData == null) return;
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) return;
-
-        for (var stage : stages) {
-            var sources = stage.getSources();
-            if (sources == null) continue;
-            for (var source : sources) {
-                if (source.getType() != RVP_EnumGuidanceType.ARH) continue;
-                var params = source.getParams();
-                if (params != null) {
-                    activeRadarActivationRange = params.activeRadarActivationRange(1024f);
-                }
-                return;
-            }
-        }
-        // 兜底默认值
-        activeRadarActivationRange = 1024f;
+    public boolean rvp$hasArhSupportForDesignatedTarget() {
+        return rvp$hasActiveSeekerSupportForDesignatedTarget();
     }
 
-    /**
-     * 弹载雷达扫描目标（对标本体 MissileEntity.scanTargets()）。
-     */
-    private List<Entity> scanArhTargets() {
-        float fov = 60f;
-        // 从 guidance 数据读 seeker FOV
-        if (rvpData != null && !rvpData.getGuidanceData().getStages().isEmpty()) {
-            fov = rvpData.getGuidanceData().getStages().get(0).getSeeker().getFov();
-        }
-        final float seekFov = getArhSeekerFov();
-        final double seekRange = getArhSeekerRange();
-        return Radar.scanTargets(this, this.position(), seekRange,
-                entityPos -> Math.toDegrees(VectorUtil.angleBetween(this.getLookAngle(),
-                        entityPos.subtract(this.position()))) <= seekFov).stream()
-                .filter(RVP_GuidanceSeekerUtil::isRadarScannableTarget)
-                .toList();
-    }
-
-    private float getArhSeekerFov() {
+    @Nullable
+    private RVP_GuidanceActiveConfig resolveNewActiveConfig() {
         if (rvpData == null) {
-            return 60f;
+            return null;
         }
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) {
-            return 60f;
-        }
-        for (var stage : stages) {
-            var sources = stage.getSources();
-            if (sources == null) {
-                continue;
-            }
-            for (var source : sources) {
-                if (source.getType() == RVP_EnumGuidanceType.ARH) {
-                    return stage.getSeeker().resolvedFov();
-                }
-            }
-        }
-        return stages.get(0).getSeeker().resolvedFov();
-    }
-
-    private double getArhSeekerRange() {
-        if (rvpData == null) {
-            return activeRadarActivationRange;
-        }
-        var stages = rvpData.getGuidanceData().getStages();
-        if (stages == null || stages.isEmpty()) {
-            return activeRadarActivationRange;
-        }
-        for (var stage : stages) {
-            var sources = stage.getSources();
-            if (sources == null) {
-                continue;
-            }
-            for (var source : sources) {
-                if (source.getType() == RVP_EnumGuidanceType.ARH) {
-                    return stage.getSeeker().resolvedRange();
-                }
-            }
-        }
-        return stages.get(0).getSeeker().resolvedRange();
+        return RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(),
+                getGuidancePhaseState().phase()
+        );
     }
 
     @Override
     protected void tickMotion() {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO
+        if (hitlSignalSource == HitlSignalSource.RADIO
                 && (hitlLinkBlocked || hitlLinkSevered)
                 && hitlControlMode == RVP_EnumHitlControlMode.MOUSE) {
             RVP_ProjectileMotion.tickHitlTvMove(this);
@@ -605,7 +427,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (rvpData == null || !rvpData.hasHumanInTheLoop() || !hitlEnabled) {
             return;
         }
-        if (hitlSignalSource != RVP_HumanInTheLoopData.SignalSource.RADIO) {
+        if (hitlSignalSource != HitlSignalSource.RADIO) {
             return;
         }
         if (hitlLinkSevered) {
@@ -650,11 +472,6 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (!rvp$isHitlMouseSteering() || !rvp$isHitlActive()) {
             return;
         }
-        if (!rvp$isPastRigidityTime()) {
-            hitlSteeringYaw = getYRot();
-            hitlSteeringPitch = getXRot();
-            return;
-        }
         float max = Math.max(hitlMaxTurnDegPerTick, 0.05f);
         hitlSteeringYaw = RVP_HitlSteeringMath.stepYawToward(hitlSteeringYaw, hitlInputYaw, max);
         hitlSteeringPitch = RVP_HitlSteeringMath.stepPitchToward(hitlSteeringPitch, hitlInputPitch, max);
@@ -697,7 +514,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlSteeringInput(float yaw, float pitch, int seq) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.MOUSE || seq <= hitlInputSeq) {
@@ -709,7 +526,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
@@ -720,7 +537,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$clearHitlDesignation() {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE) {
@@ -730,7 +547,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
-        if (hitlSignalSource == RVP_HumanInTheLoopData.SignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+        if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
@@ -782,11 +599,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlMaxLookOffsetDeg = buffer.readFloat();
     }
         if (buffer.readableBytes() >= 1) {
-            this.hitlSignalSource = buffer.readEnum(RVP_HumanInTheLoopData.SignalSource.class);
+            this.hitlSignalSource = buffer.readEnum(HitlSignalSource.class);
         }
         this.hitlSteeringYaw = getYRot();
         this.hitlSteeringPitch = getXRot();
         this.hitlInputYaw = hitlSteeringYaw;
         this.hitlInputPitch = hitlSteeringPitch;
+    }
+
+    private enum HitlSignalSource {
+        FIBER,
+        RADIO
     }
 }

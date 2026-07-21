@@ -5,6 +5,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -38,7 +39,9 @@ public final class RVP_ClientRadarLockState {
     public void tick() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
-        if (player == null || mc.level == null || mc.screen != null) {
+        boolean artilleryMapPassthrough = mc.screen instanceof RVP_TacticalMapScreen screen
+                && screen.allowsVehicleInputPassthrough();
+        if (player == null || mc.level == null || (mc.screen != null && !artilleryMapPassthrough)) {
             clear();
             return;
         }

@@ -6,7 +6,6 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.guidance.source.RVP_MclosGuidanceSource;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -14,8 +13,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import java.util.Optional;
 
 /**
- * MCH 拖线指令解析与瞬时运动对齐，供 {@link org.ywzj.rvp.guidance.source.RVP_MclosGuidanceSource}
- * 与 {@link RVP_GuidanceMath}（{@code take_over_motion}）在分段制导架构内调用。
+ * MCH 拖线指令解析与瞬时运动对齐，供 HITL 和 SACLOS runtime 共用。
  */
 public final class RVP_WireGuidanceSteering {
 
@@ -32,11 +30,11 @@ public final class RVP_WireGuidanceSteering {
     }
 
     private static Optional<Vec2> resolveCockpitCommand(RVP_BaseBullet projectile) {
-        Vec3 dir = RVP_MclosGuidanceSource.operatorAimDirection(projectile.getShooterWeaponUnit());
+        Vec3 dir = RVP_CommandGuidanceAim.operatorAimDirection(projectile.getShooterWeaponUnit());
         AbstractVehicle vehicle = projectile.getShooterVehicle();
         if (dir == null && vehicle != null && projectile.getOwner() instanceof LivingEntity operator
                 && vehicle.getOwnOperatorUnit(operator) instanceof WeaponUnit operatorUnit) {
-            dir = RVP_MclosGuidanceSource.operatorAimDirection(operatorUnit);
+            dir = RVP_CommandGuidanceAim.operatorAimDirection(operatorUnit);
         }
         if (dir == null) {
             return Optional.empty();
@@ -45,8 +43,7 @@ public final class RVP_WireGuidanceSteering {
     }
 
     /**
-     * MCH {@code setMotion + setRotation} — invoked from {@link RVP_GuidanceMath#directToPos}
-     * when MCLOS {@code take_over_motion} is active.
+     * MCH {@code setMotion + setRotation} for direct command steering.
      */
     public static void applyFromDirection(RVP_BaseBullet projectile, Vec3 direction) {
         applyFromDirection(projectile, direction, 1.0);

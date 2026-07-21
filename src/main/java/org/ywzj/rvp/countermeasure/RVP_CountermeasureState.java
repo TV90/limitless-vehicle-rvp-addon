@@ -6,7 +6,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.weapon.data.RVP_GuidanceSeekerData;
+import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.vehicle.api.entity.SightObstruction;
 import org.ywzj.vehicle.api.entity.TargetObstruction;
 import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
@@ -25,40 +25,56 @@ public final class RVP_CountermeasureState {
 
     private RVP_CountermeasureState() {}
 
-    public static Result query(Entity seeker, Entity target, RVP_EnumGuidanceType guidanceType, RVP_GuidanceSeekerData seekerData) {
+    public static Result query(
+            Entity seeker,
+            Entity target,
+            RVP_EnumGuidanceType guidanceType,
+            RVP_GuidanceActiveConfig config
+    ) {
         if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
             return new Result(false, false, false, true);
         }
-        if (target == null || seekerData == null) {
+        if (target == null || config == null) {
             return Result.CLEAR;
         }
-        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.MCLOS || guidanceType == RVP_EnumGuidanceType.IR) {
-            if (hasSightObstruction(seeker, target)) {
-                return new Result(true, true, false, false);
-            }
+        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, target)) {
+            return new Result(true, true, false, false);
         }
-        if ((guidanceType == RVP_EnumGuidanceType.IR && !seekerData.isIgnoreFlares())
-                || ((guidanceType == RVP_EnumGuidanceType.ARH || guidanceType == RVP_EnumGuidanceType.SARH) && !seekerData.isIgnoreChaff())) {
-            if (hasTargetObstructionNear(target, 16.0)) {
-                return new Result(false, true, true, false);
-            }
+        boolean flareSensitive = guidanceType == RVP_EnumGuidanceType.IR && !config.ignoreFlares();
+        boolean chaffSensitive = (guidanceType == RVP_EnumGuidanceType.ARH
+                || guidanceType == RVP_EnumGuidanceType.SARH) && !config.ignoreChaff();
+        if ((flareSensitive || chaffSensitive) && hasTargetObstructionNear(target, 16.0)) {
+            return new Result(false, true, true, false);
         }
         return Result.CLEAR;
     }
 
-    public static Result queryPoint(Entity seeker, Vec3 targetPos, RVP_EnumGuidanceType guidanceType, RVP_GuidanceSeekerData seekerData) {
+    public static Result queryPoint(
+            Entity seeker,
+            Vec3 targetPos,
+            RVP_EnumGuidanceType guidanceType,
+            RVP_GuidanceActiveConfig config
+    ) {
         if (seeker != null && hasInterceptorNear(seeker, 8.0)) {
             return new Result(false, false, false, true);
         }
-        if (seeker == null || targetPos == null || seekerData == null) {
+        if (seeker == null || targetPos == null || config == null) {
             return Result.CLEAR;
         }
-        if (guidanceType == RVP_EnumGuidanceType.SACLOS || guidanceType == RVP_EnumGuidanceType.MCLOS || guidanceType == RVP_EnumGuidanceType.IR) {
-            if (hasSightObstruction(seeker, targetPos)) {
-                return new Result(true, true, false, false);
-            }
+        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, targetPos)) {
+            return new Result(true, true, false, false);
         }
         return Result.CLEAR;
+    }
+
+    private static boolean usesOpticalLineOfSight(RVP_EnumGuidanceType type) {
+        return type == RVP_EnumGuidanceType.IR
+                || type == RVP_EnumGuidanceType.AIR
+                || type == RVP_EnumGuidanceType.LH
+                || type == RVP_EnumGuidanceType.SALH
+                || type == RVP_EnumGuidanceType.SACLOS
+                || type == RVP_EnumGuidanceType.HITL_TV
+                || type == RVP_EnumGuidanceType.LOSBR;
     }
 
     public static Optional<Entity> findDecoyTarget(Entity target, double radius) {

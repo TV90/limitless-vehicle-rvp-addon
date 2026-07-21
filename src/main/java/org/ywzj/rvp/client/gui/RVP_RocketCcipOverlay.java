@@ -18,8 +18,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
+import org.ywzj.rvp.client.state.RVP_RocketCcipScreenState;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -160,44 +160,31 @@ public final class RVP_RocketCcipOverlay {
         if (context == null) {
             return null;
         }
-        Vec3 rawHit = ywzj_rvp$computeImpact(context);
-        if (rawHit == null) {
-            return null;
+        Minecraft mc = Minecraft.getInstance();
+        float partialTick = mc.getFrameTime();
+        Vec3 prevHit = context.weaponUnit().weaponHitPosO;
+        Vec3 currHit = context.weaponUnit().weaponHitPos;
+        Vec3 hitPos = currHit;
+        if (prevHit != null && currHit != null) {
+            hitPos = prevHit.lerp(currHit, Mth.clamp(partialTick, 0.0f, 1.0f));
         }
-        Vec3 hitPos = RVP_RocketCcipState.smooth(
-                context.vehicle().getId(),
-                ywzj_rvp$getWeaponId(context.weapon()),
-                context.vehicle().tickCount,
-                rawHit
-        );
         if (hitPos == null) {
             return null;
         }
-        return VectorUtil.worldToScreen(hitPos);
-    }
-
-    private static Vec3 ywzj_rvp$computeImpact(ActiveRocketContext context) {
-        AbstractVehicleWeapon<?> weapon = context.weapon();
-        if (weapon instanceof VehicleRocket rocket) {
-            return RVP_RocketBallistics.computeWeaponImpact(
-                    context.vehicle().level(),
-                    context.weaponUnit(),
-                    context.vehicle().getDeltaMovement(),
-                    rocket.getData(),
-                    context.vehicle()
-            );
+        Vec3 screenPos = VectorUtil.worldToScreen(hitPos);
+        if (screenPos == null) {
+            return null;
         }
-        if (weapon instanceof RVP_ProjectileWeapon rvpWeapon
-                && rvpWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
-            return RVP_RocketBallistics.computeWeaponImpact(
-                    context.vehicle().level(),
-                    context.weaponUnit(),
-                    context.vehicle().getDeltaMovement(),
-                    rvpWeapon.getData(),
-                    context.vehicle()
-            );
-        }
-        return null;
+        ResourceLocation weaponId = ywzj_rvp$getWeaponId(context.weapon());
+        double hitDistanceMeters = Math.sqrt(context.vehicle().position().distanceToSqr(hitPos));
+        Vec3 smoothed = RVP_RocketCcipScreenState.smooth(
+                context.vehicle().getId(),
+                weaponId,
+                context.vehicle().tickCount,
+                screenPos,
+                hitDistanceMeters
+        );
+        return smoothed != null ? smoothed : screenPos;
     }
 
     private static ResourceLocation ywzj_rvp$getWeaponId(AbstractVehicleWeapon<?> weapon) {

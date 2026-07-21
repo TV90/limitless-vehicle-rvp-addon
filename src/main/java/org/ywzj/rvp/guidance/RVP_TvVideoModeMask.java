@@ -3,7 +3,7 @@ package org.ywzj.rvp.guidance;
 import java.util.Locale;
 
 /**
- * TV 制导画面模式位掩码，供 {@link org.ywzj.rvp.weapon.data.RVP_GuidanceSourceParamsData} 与弹体共用。
+ * TV 制导画面模式位掩码，供 HITL 数据模型与弹体共用。
  */
 public final class RVP_TvVideoModeMask {
 

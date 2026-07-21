@@ -266,6 +266,7 @@ public final class RVP_ExternalRadarSyncService {
                 pos -> isWithinRelayRadarVolume(radarUnit, pos, true))
                 : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(),
                 pos -> isWithinRelayRadarVolume(radarUnit, pos, false));
+        targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
         appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);
         return targets;
     }
@@ -476,11 +477,10 @@ public final class RVP_ExternalRadarSyncService {
             return "HELI";
         }
         if (entity instanceof RVP_BaseBullet bullet) {
-            return switch (bullet.getWeaponKind()) {
-                case MISSILE -> "MSL";
-                case BOMB -> "BOMB";
-                default -> "?";
-            };
+            String label = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (label != null && !label.isBlank()) {
+                return label;
+            }
         }
         return "?";
     }
@@ -494,6 +494,10 @@ public final class RVP_ExternalRadarSyncService {
             return org.ywzj.rvp.config.VehicleUIPresetCache.getNctrName(vehicle.getVehicleId());
         }
         if (entity instanceof RVP_BaseBullet bullet && bullet.getWeaponId() != null) {
+            String radarLabel = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
+            if (radarLabel != null && !radarLabel.isBlank()) {
+                return radarLabel;
+            }
             ResourceLocation weaponId = bullet.getWeaponId();
             return org.ywzj.vehicle.custom.CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
                     .map(index -> index.data().getName())

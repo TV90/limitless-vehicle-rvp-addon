@@ -21,7 +21,7 @@ public final class RVP_AheadProgrammer {
     public static boolean isAheadWeapon(@Nullable RVP_WeaponData data) {
         return data != null
                 && data.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN
-                && data.isAheadEnabled()
+                && data.getFuseData().isAheadEnabled()
                 && data.getFuseData().isProgrammableAirburst();
     }
 
@@ -44,11 +44,17 @@ public final class RVP_AheadProgrammer {
                     weaponUnit, data, muzzle, target, partialTick
             );
             if (lead != null && lead.leadWorldPos() != null) {
-                return fromReference(data, lead.leadWorldPos(), muzzle, true);
+                return fromReference(
+                        data,
+                        lead.leadWorldPos(),
+                        muzzle,
+                        true,
+                        lead.projectileTravelDistanceMeters()
+                );
             }
         }
 
-        if (data.isAheadRequireLock()) {
+        if (data.getFuseData().isAheadRequireLock()) {
             return RVP_AheadSolution.invalid("lock_required");
         }
 
@@ -56,7 +62,7 @@ public final class RVP_AheadProgrammer {
         if (impact == null) {
             return RVP_AheadSolution.invalid("missing_impact_point");
         }
-        return fromReference(data, impact, muzzle, false);
+        return fromReference(data, impact, muzzle, false, 0.0D);
     }
 
     public static RVP_AheadSolution programForShot(AbstractVehicle vehicle, WeaponUnit weaponUnit, int weaponIndex,
@@ -71,9 +77,10 @@ public final class RVP_AheadProgrammer {
     }
 
     private static RVP_AheadSolution fromReference(RVP_WeaponData data, Vec3 referenceWorldPos, Vec3 muzzle,
-                                                   boolean usedLeadSolution) {
+                                                   boolean usedLeadSolution, double projectileTravelDistance) {
         double referenceDistance = muzzle.distanceTo(referenceWorldPos);
-        int programmedDistance = Mth.floor(referenceDistance - data.getAheadBurstOffsetMeters() + 0.5D);
+        double baseDistance = projectileTravelDistance > 0.0D ? projectileTravelDistance : referenceDistance;
+        int programmedDistance = Mth.floor(baseDistance - data.getFuseData().getAheadBurstOffsetMeters() + 0.5D);
         int min = data.getFuseData().getAirburstMeasureMin();
         int max = data.getFuseData().getAirburstMeasureMax();
         if (programmedDistance <= min || programmedDistance >= max) {

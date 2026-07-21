@@ -15,6 +15,19 @@ public class RVP_FuseData {
     @SerializedName("programmable_airburst")
     private boolean programmableAirburst = false;
 
+    /** Enables automatic AHEAD programming. This remains independent from manual programmable airburst. */
+    @SerializedName("ahead_enabled")
+    private boolean aheadEnabled = false;
+
+    @SerializedName("ahead_burst_offset_meters")
+    private float aheadBurstOffsetMeters = 3f;
+
+    @SerializedName("ahead_require_lock")
+    private boolean aheadRequireLock = true;
+
+    @SerializedName("ahead_min_ground_clearance")
+    private float aheadMinGroundClearance = 0f;
+
     @SerializedName("airburst_offset")
     private float airburstOffset = 3f;
 
@@ -74,6 +87,22 @@ public class RVP_FuseData {
 
     public boolean isProgrammableAirburst() {
         return programmableAirburst;
+    }
+
+    public boolean isAheadEnabled() {
+        return aheadEnabled;
+    }
+
+    public float getAheadBurstOffsetMeters() {
+        return Math.max(aheadBurstOffsetMeters, 0f);
+    }
+
+    public boolean isAheadRequireLock() {
+        return aheadRequireLock;
+    }
+
+    public float getAheadMinGroundClearance() {
+        return Math.max(aheadMinGroundClearance, 0f);
     }
 
     public float getAirburstOffset() {

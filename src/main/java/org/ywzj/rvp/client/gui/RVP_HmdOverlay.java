@@ -33,6 +33,8 @@ public class RVP_HmdOverlay {
             renderRadarHmd(guiGraphics, mc, state);
         } else if (state.isGroundIr()) {
             renderGroundIr(guiGraphics, mc, state);
+        } else if (state.isMixedIr()) {
+            renderMixedIr(guiGraphics, mc, state);
         } else {
             renderAirIr(guiGraphics, mc, state);
         }
@@ -191,6 +193,11 @@ public class RVP_HmdOverlay {
         RenderSystem.defaultBlendFunc();
         GuiHelper.drawArc(guiGraphics, hx, hy, 15, 0.5f, 0f, 1f, color);
         RenderSystem.disableBlend();
+    }
+
+    /** A mixed altitude envelope has no preferred air/ground presentation before acquisition. */
+    private static void renderMixedIr(GuiGraphics guiGraphics, Minecraft mc, RVP_ClientHmdState state) {
+        renderAirIr(guiGraphics, mc, state);
     }
 
     // ==================== 通用 ====================

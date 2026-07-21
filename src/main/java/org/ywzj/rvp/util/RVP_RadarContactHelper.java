@@ -16,8 +16,12 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.network.S2CHbmMissileSnapshot;
 import org.ywzj.rvp.radar.RVP_HbmRadarContact;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.custom.CommonAssetsManager;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -205,6 +209,37 @@ public final class RVP_RadarContactHelper {
             return true;
         }
         return neutralizeHbmMissile(resolved);
+    }
+
+    @Nullable
+    public static RVP_WeaponData resolveBulletWeaponData(@Nullable RVP_BaseBullet bullet) {
+        if (bullet == null || bullet.getWeaponId() == null) {
+            return null;
+        }
+        return CommonAssetsManager.vehicleWeaponManager().getIndex(bullet.getWeaponId())
+                .map(index -> index.data() instanceof RVP_WeaponData weaponData ? weaponData : null)
+                .orElse(null);
+    }
+
+    @Nullable
+    public static String resolveBulletRadarLabel(@Nullable RVP_BaseBullet bullet, float distance) {
+        RVP_WeaponData weaponData = resolveBulletWeaponData(bullet);
+        if (weaponData != null) {
+            String label = weaponData.resolveMissileNameOnRadar(distance);
+            if (label != null && !label.isBlank()) {
+                return label;
+            }
+        }
+        if (bullet == null) {
+            return null;
+        }
+        if (bullet.getWeaponKind() == RVP_EnumWeaponKind.MISSILE) {
+            return "MSL";
+        }
+        if (bullet.getWeaponKind() == RVP_EnumWeaponKind.BOMB) {
+            return "BOMB";
+        }
+        return null;
     }
 
     private static void ensureHbmResolved() {

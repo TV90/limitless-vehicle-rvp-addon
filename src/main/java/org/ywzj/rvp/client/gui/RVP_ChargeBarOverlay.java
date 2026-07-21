@@ -2,12 +2,14 @@ package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
-import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -32,7 +34,7 @@ public class RVP_ChargeBarOverlay implements IGuiOverlay {
         if (!(weapon instanceof RVP_WeaponBase rvp)) {
             return;
         }
-        int cap = rvp.getData().getFireData().getChargeTime();
+        int cap = rvp.getData().getFireData().getChargeTick();
         if (cap <= 0) {
             return;
         }
@@ -46,8 +48,23 @@ public class RVP_ChargeBarOverlay implements IGuiOverlay {
         }
         float ratio = Math.min(tick / (float) cap, 1.0f);
 
-        double x = VehicleAimAtOverlay.getScreenAimX();
-        double y = VehicleAimAtOverlay.getScreenAimY();
+        double x = screenWidth * 0.5D;
+        double y = screenHeight * 0.5D;
+        Vec3 hit = weaponUnit.weaponHitPos;
+        if (hit != null) {
+            Vec3 screenHit = VectorUtil.worldToScreen(hit);
+            if (screenHit != null && screenHit.z >= 0.0D) {
+                Vec3 previousHit = weaponUnit.weaponHitPosO;
+                Vec3 previousScreenHit = previousHit != null ? VectorUtil.worldToScreen(previousHit) : null;
+                if (previousScreenHit != null && previousScreenHit.z >= 0.0D) {
+                    x = Mth.lerp(partialTick, previousScreenHit.x, screenHit.x);
+                    y = Mth.lerp(partialTick, previousScreenHit.y, screenHit.y);
+                } else {
+                    x = screenHit.x;
+                    y = screenHit.y;
+                }
+            }
+        }
 
         int barW = 44;
         int barH = 4;

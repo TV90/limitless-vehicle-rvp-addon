@@ -6,8 +6,10 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.all.RVP_DisplayTypes;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
@@ -36,12 +38,16 @@ public class RVP_MOD {
         RVP_VehiclePackInstaller.ensureInstalled();
         IEventBus modBus = context.getModEventBus();
         RVP_Entities.register(modBus);
+        RVP_DisplayTypes.register(modBus);
         RVP_Items.register(modBus);
         RVP_Sounds.register(modBus);
         RVP_WeaponTypes.register(modBus);
         modBus.addListener(this::onCommonSetup);
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onClientSetup));
+                {
+                    modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onClientSetup);
+                    modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onLoadComplete);
+                });
     }
 
     private void onCommonSetup(FMLCommonSetupEvent event) {

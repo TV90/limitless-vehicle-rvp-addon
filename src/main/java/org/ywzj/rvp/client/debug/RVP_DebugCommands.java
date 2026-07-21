@@ -199,6 +199,35 @@ public class RVP_DebugCommands {
                                     return 1;
                                 }))
                         )
+                        .then(Commands.literal("sbmprobe")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_SbmProbeDebug.clearLog();
+                                    RVP_SbmProbeDebug.setEnabled(true);
+                                    RVP_SbmProbeDebug.dumpCurrentVehicleState("command-on");
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 sbmprobe: " + RVP_SbmProbeDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_SbmProbeDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 sbmprobe: " + RVP_SbmProbeDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_SbmProbeDebug.isEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] sbmprobe=" + enabled + " path=" + RVP_SbmProbeDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    RVP_SbmProbeDebug.dumpCurrentVehicleState("command-dump");
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + RVP_SbmProbeDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_SbmProbeDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已清空 sbmprobe 日志: " + RVP_SbmProbeDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                        )
                         .then(Commands.literal("ui").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
                             StringBuilder sb = new StringBuilder();
