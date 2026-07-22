@@ -45,6 +45,15 @@ public class RVP_FireData {
     @SerializedName("charge_power_scale")
     private float chargePowerScale = 1f;
 
+    @SerializedName("heat_count")
+    private int heatCount = 0;
+
+    @SerializedName("max_heat_count")
+    private int maxHeatCount = 0;
+
+    @SerializedName("overheat_extra_heat")
+    private int overheatExtraHeat = 30;
+
     /**
      * Maximum off-axis launch angle in degrees.
      * {@code null} keeps legacy unrestricted firing.
@@ -91,6 +100,18 @@ public class RVP_FireData {
 
     public int getChargeDecayTick() {
         return Math.max(chargeDecayTick, 1);
+    }
+
+    public int getHeatCount() {
+        return Math.max(heatCount, 0);
+    }
+
+    public int getMaxHeatCount() {
+        return Math.max(maxHeatCount, 0);
+    }
+
+    public int getOverheatExtraHeat() {
+        return Math.max(overheatExtraHeat, 0);
     }
 
     public Integer getMaxOffAxisShootAngle() {

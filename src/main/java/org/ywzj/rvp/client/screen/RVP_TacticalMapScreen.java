@@ -282,6 +282,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private boolean pendingQuickFireEverRadarLocked;
     private boolean pendingQuickFireEverWeaponLocked;
     private boolean pendingQuickFireEverSeekerReady;
+    private boolean pendingQuickFireEverSeekerReadyChecked;
     private final MapMode mapMode;
 
     private static ResourceLocation mapIcon(String fileName) {
@@ -2555,9 +2556,8 @@ public class RVP_TacticalMapScreen extends Screen {
         }
         AbstractVehicleWeapon<?> currentWeapon = weaponOptional.get();
         if (!(currentWeapon.getData() instanceof RVP_WeaponData data)
-                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE
-                || !data.isActiveRadar()) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_arh"), true);
+                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_missile"), true);
             return false;
         }
         if (!tryLockRadarTarget(target)) {
@@ -2618,32 +2618,60 @@ public class RVP_TacticalMapScreen extends Screen {
         AbstractVehicleWeapon<?> currentWeapon = weaponOptional.get();
         if (!(currentWeapon instanceof org.ywzj.rvp.weapon.core.RVP_WeaponBase rvpWeapon)
                 || !(currentWeapon.getData() instanceof RVP_WeaponData data)
-                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE
-                || !data.isActiveRadar()) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_arh"), true);
+                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_missile"), true);
             clearPendingQuickFire();
             return;
         }
         Entity target = findTrackedEntityById(pendingQuickFireEntityId);
         RadarUnit mainRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
         if (target != null && target.isAlive()) {
-            if (!weaponUnit.isSeekerOn()) {
-                weaponUnit.toggleSeeker(true);
+            boolean hasSeeker = data.hasSeeker();
+            boolean isIr = data.isInfrared();
+
+            // Seeker-equipped missiles: auto-enable seeker and assist lock
+            if (hasSeeker) {
+                if (!weaponUnit.isSeekerOn()) {
+                    weaponUnit.toggleSeeker(true);
+                }
+                boolean externalVisible = hasExternalRadarContact(target.getId());
+                if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
+                    RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
+                } else if (mainRadar != null) {
+                    RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
+                }
             }
-            boolean externalVisible = hasExternalRadarContact(target.getId());
-            if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
-                RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
-            } else if (mainRadar != null) {
-                RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
-            }
+
             boolean radarLocked = (mainRadar != null && entityMatches(mainRadar.getLockedEntity(), pendingQuickFireEntityId))
                     || isExternalRadarLockedEntity(target);
             boolean weaponLocked = entityMatches(weaponUnit.getLockedEntity(), pendingQuickFireEntityId);
-            boolean seekerReady = isTargetInQuickFireSeekerEnvelope(weaponUnit, data, target);
+            boolean seekerReady = hasSeeker && isTargetInQuickFireSeekerEnvelope(weaponUnit, data, target);
             pendingQuickFireEverRadarLocked |= radarLocked;
             pendingQuickFireEverWeaponLocked |= weaponLocked;
-            pendingQuickFireEverSeekerReady |= seekerReady;
-            if (radarLocked && weaponLocked && seekerReady) {
+            if (hasSeeker) {
+                pendingQuickFireEverSeekerReady |= seekerReady;
+                pendingQuickFireEverSeekerReadyChecked = true;
+            }
+
+            // IR missiles: must acquire target via seeker, otherwise fail
+            if (isIr && !seekerReady && pendingQuickFireEverSeekerReady) {
+                // Seeker was ready at some point but lost the target — IR can't re-acquire
+                player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_seeker"), true);
+                clearPendingQuickFire();
+                return;
+            }
+
+            // Determine fire readiness based on guidance type
+            boolean readyToFire;
+            if (hasSeeker) {
+                // Seeker missiles: need radar lock + weapon lock + seeker ready
+                readyToFire = radarLocked && weaponLocked && seekerReady;
+            } else {
+                // Non-seeker missiles (GPS, LBR, etc.): only need radar lock + weapon lock
+                readyToFire = radarLocked && weaponLocked;
+            }
+
+            if (readyToFire) {
                 pendingQuickFireLockStableTicks++;
             } else {
                 pendingQuickFireLockStableTicks = 0;
@@ -2688,6 +2716,7 @@ public class RVP_TacticalMapScreen extends Screen {
         pendingQuickFireEverRadarLocked = false;
         pendingQuickFireEverWeaponLocked = false;
         pendingQuickFireEverSeekerReady = false;
+        pendingQuickFireEverSeekerReadyChecked = false;
     }
 
     private void beginRadarLockAssist(int entityId, int ticks) {
@@ -2717,7 +2746,7 @@ public class RVP_TacticalMapScreen extends Screen {
         if (!pendingQuickFireEverWeaponLocked) {
             return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_turret");
         }
-        if (!pendingQuickFireEverSeekerReady) {
+        if (pendingQuickFireEverSeekerReadyChecked && !pendingQuickFireEverSeekerReady) {
             return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_seeker");
         }
         return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_launch");

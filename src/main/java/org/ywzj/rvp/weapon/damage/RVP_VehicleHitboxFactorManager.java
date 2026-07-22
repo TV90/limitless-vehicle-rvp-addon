@@ -175,7 +175,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         lastDebugAtMsByPlayer.put(id, now);
 
-        String bone = result.hitBoneName() == null ? "default" : result.hitBoneName();
+        String bone = resolveHitboxDisplayName(vehicle, result.hitBoneName());
         if (result.era()) {
             bone += " ERA";
         }
@@ -191,6 +191,20 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                         + (result.missingConfigBones() > 0 ? " missing=" + result.missingConfigBones() : "")
         );
         player.displayClientMessage(msg, true);
+    }
+
+    public String resolveHitboxDisplayName(AbstractVehicle vehicle, @Nullable String boneName) {
+        if (boneName == null || boneName.isBlank()) {
+            return "default";
+        }
+        if (vehicle == null) {
+            return boneName;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.aliasByBoneName == null || cfg.aliasByBoneName.isEmpty()) {
+            return boneName;
+        }
+        return cfg.aliasByBoneName.getOrDefault(boneName, boneName);
     }
 
     private void sanitizeEraState(AbstractVehicle vehicle, VehicleHitboxConfig cfg) {
@@ -362,6 +376,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         for (var entry : cfg.factorByBoneName.entrySet()) {
             sb.append("factor[").append(entry.getKey()).append("]=").append(entry.getValue()).append('\n');
         }
+        for (var entry : cfg.aliasByBoneName.entrySet()) {
+            sb.append("alias[").append(entry.getKey()).append("]=").append(entry.getValue()).append('\n');
+        }
         BedrockModel model = cfg.structureModel == null
                 ? null
                 : CommonAssetsManager.structureModelManager().getStructureModel(cfg.structureModel).orElse(null);
@@ -383,6 +400,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             String source = resolvedObbs.isEmpty() ? "missing" : resolvedObbs.get(0).source();
             sb.append("bone=").append(boneName)
                     .append(" source=").append(source)
+                    .append(" alias=").append(resolveHitboxDisplayName(vehicle, boneName))
                     .append(" resolvedObbs=").append(resolvedObbs.size())
                     .append(" partUnitPresent=").append(partUnitOptional.isPresent())
                     .append(" partUnitObbs=").append(partUnitObbCount)
@@ -481,11 +499,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float defaultFactor,
             Map<String, Float> factorByBoneName,
             Map<String, EraConfig> eraByBoneName,
+            Map<String, String> aliasByBoneName,
             float coreDistanceScaleMultiplier
     ) {
         boolean isEnabled() {
             return defaultFactor != 1f
                     || (factorByBoneName != null && !factorByBoneName.isEmpty())
+                    || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
                     || (eraByBoneName != null && !eraByBoneName.isEmpty());
         }
 
@@ -585,8 +605,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float def = GsonHelper.getAsFloat(obj, "hitbox_damage_factor_default", 1f);
             Map<String, Float> map = parseFactorMap(obj.get("hitbox_damage_factor"));
             Map<String, EraConfig> eraMap = parseEraMap(obj.get("hitbox_era"));
+            Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
-            if ((map == null || map.isEmpty()) && (eraMap == null || eraMap.isEmpty()) && def == 1f && coreM == 1f) {
+            if ((map == null || map.isEmpty())
+                    && (eraMap == null || eraMap.isEmpty())
+                    && (aliasMap == null || aliasMap.isEmpty())
+                    && def == 1f
+                    && coreM == 1f) {
                 return null;
             }
             return new VehicleHitboxConfig(
@@ -594,6 +619,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     def,
                     map == null ? Map.of() : Map.copyOf(map),
                     eraMap == null ? Map.of() : Map.copyOf(eraMap),
+                    aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
                     coreM
             );
         }
@@ -623,6 +649,32 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 Optional<Float> val = tryFloat(entry.getValue());
                 if (val.isPresent()) {
                     map.put(key, val.get());
+                }
+            }
+            return map;
+        }
+
+        private static @Nullable Map<String, String> parseAliasMap(@Nullable JsonElement element) {
+            if (element == null || !element.isJsonObject()) {
+                return null;
+            }
+            JsonObject obj = element.getAsJsonObject();
+            Map<String, String> map = new HashMap<>();
+            for (var entry : obj.entrySet()) {
+                String key = normalizeBone(entry.getKey());
+                if (key == null) {
+                    continue;
+                }
+                if (entry.getValue() == null || !entry.getValue().isJsonPrimitive()) {
+                    continue;
+                }
+                String alias = entry.getValue().getAsString();
+                if (alias == null) {
+                    continue;
+                }
+                alias = alias.trim();
+                if (!alias.isEmpty()) {
+                    map.put(key, alias);
                 }
             }
             return map;

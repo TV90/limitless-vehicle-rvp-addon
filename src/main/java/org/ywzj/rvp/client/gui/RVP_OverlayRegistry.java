@@ -22,6 +22,7 @@ public class RVP_OverlayRegistry {
         event.registerAboveAll("rvp_missile", new RVP_MissileOverlay());
         event.registerAboveAll("rvp_machinegun_lead", new RVP_MachinegunLeadOverlay());
         event.registerAboveAll("rvp_charge_bar", new RVP_ChargeBarOverlay());
+        event.registerAboveAll("rvp_heat_hud", new RVP_HeatHudOverlay());
         event.registerAboveAll("rvp_aps_hud", new RVP_ApsHudOverlay());
     }
 }

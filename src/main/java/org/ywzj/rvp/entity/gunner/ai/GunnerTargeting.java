@@ -35,7 +35,9 @@ public final class GunnerTargeting {
         AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
-        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile));
+        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
+                isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
+                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
         List<Entity> rvpMissiles = entities.stream()
                 .filter(GunnerTargeting::isRvpMissile)
                 .toList();
@@ -158,12 +160,12 @@ public final class GunnerTargeting {
             }
         }
         if (entity instanceof Player player) {
-            if (player.isSpectator()) {
+            if (isProtectedCreativePlayer(vehicle, player)) {
                 return false;
             }
-            if (player.isCreative() && vehicle.level().getDifficulty() != Difficulty.HARD) {
-                return false;
-            }
+        }
+        if (entity instanceof AbstractVehicle targetVehicle && hasProtectedCreativePassenger(vehicle, targetVehicle)) {
+            return false;
         }
         TargetMatch match = matchProfileTarget(gunner, vehicle, entity, profile);
         if (!match.allowed) {
@@ -178,6 +180,22 @@ public final class GunnerTargeting {
             return false;
         }
         return true;
+    }
+
+    private static boolean isProtectedCreativePlayer(AbstractVehicle sourceVehicle, Player player) {
+        if (player.isSpectator()) {
+            return true;
+        }
+        return player.isCreative() && sourceVehicle.level().getDifficulty() != Difficulty.HARD;
+    }
+
+    private static boolean hasProtectedCreativePassenger(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {
+        for (Entity passenger : targetVehicle.getPassengers()) {
+            if (passenger instanceof Player player && isProtectedCreativePlayer(sourceVehicle, player)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean shouldApplyTeamFilter(Entity entity, RVP_EnumGunnerFaction faction) {

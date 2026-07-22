@@ -12,6 +12,7 @@ import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.mixin.GunnerWeaponAccessorMixin;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
@@ -21,6 +22,7 @@ import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
@@ -42,7 +44,7 @@ public final class GunnerBrain {
     private static final double ROTARY_INITIAL_DISENGAGE_SCALE = 0.2;
     private static final double ROTARY_DISENGAGE_SCALE = 0.35;
     private static final double ROTARY_ATTACK_SCALE = 1.15;
-    private static final Map<AbstractVehicleWeapon<?>, Long> SINGLE_SHOT_READY_TIME = new WeakHashMap<>();
+    private static final Map<AbstractVehicleWeapon<?>, Long> DRIVER_AMMO_READY_TIME = new WeakHashMap<>();
 
     public static void tick(GunnerEntity gunner, AbstractVehicle vehicle) {
         gunner.tickCooldowns();
@@ -54,20 +56,26 @@ public final class GunnerBrain {
         WeaponUnit weaponUnit = resolveWeaponUnit(vehicle, seatUnit, driver);
         Entity target = tickTargeting(gunner, vehicle, weaponUnit, profile);
 
-        tickCountermeasure(gunner, vehicle, profile);
-        tickRadarLock(gunner, vehicle, weaponUnit, target, profile);
-
-        boolean allowFire = true;
-        if (driver && profile.isAllowDrive()) {
+        boolean driverAi = driver && profile.isAllowDrive();
+        if (driverAi) {
             refillDriverVehicle(gunner, vehicle);
-            sustainDriverSingleShotWeapons(vehicle);
-            allowFire = tickDriving(gunner, vehicle, target, profile);
+            sustainDriverInfiniteAmmo(vehicle);
         } else {
-            clearDriverSingleShotWeaponTimers(vehicle);
+            clearDriverInfiniteAmmoTimers(vehicle);
             if (vehicle.getDriver() == gunner) {
                 vehicle.controlUnit.reset();
             }
             gunner.clearDriverRideState();
+        }
+
+        tickCountermeasure(gunner, vehicle, profile);
+        tickRadarLock(gunner, vehicle, weaponUnit, target, profile);
+        GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);
+        GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);
+
+        boolean allowFire = true;
+        if (driverAi) {
+            allowFire = tickDriving(gunner, vehicle, target, profile);
         }
 
         if (weaponUnit != null && target != null && allowFire) {
@@ -84,7 +92,11 @@ public final class GunnerBrain {
         if (profile.getFaction() != RVP_EnumGunnerFaction.ENEMY) {
             return;
         }
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF || weaponUnit.getMainRadarUnit() == null) {
+        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+            return;
+        }
+        RadarUnit radar = prepareGunnerLockRadar(weaponUnit);
+        if (radar == null) {
             return;
         }
 
@@ -99,38 +111,54 @@ public final class GunnerBrain {
             lockTarget = targetVehicle;
         }
 
-        var radar = weaponUnit.getMainRadarUnit();
         if (lockTarget == null || !lockTarget.isAlive()) {
-            if (radar.getLockedEntity() != null) {
-                radar.setLockedEntity(null);
-            }
+            clearGunnerRadarLock(weaponUnit, radar);
             return;
         }
 
         double maxRange = radar.getMaxScanDistance();
         if (radar.worldRadarPosition().distanceToSqr(lockTarget.position()) > maxRange * maxRange) {
-            if (radar.getLockedEntity() != null) {
-                radar.setLockedEntity(null);
-            }
+            clearGunnerRadarLock(weaponUnit, radar);
             return;
         }
 
         Vec2 aimRot = radar.aimRot(lockTarget.position());
         if (aimRot.y < radar.getYRotMin() || aimRot.y > radar.getYRotMax()) {
-            if (radar.getLockedEntity() != null) {
-                radar.setLockedEntity(null);
-            }
+            clearGunnerRadarLock(weaponUnit, radar);
             return;
         }
-        if (Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f) {
-            if (radar.getLockedEntity() != null) {
-                radar.setLockedEntity(null);
-            }
+        if (aimRot.x < radar.getXRotMin() || aimRot.x > radar.getXRotMax()) {
+            clearGunnerRadarLock(weaponUnit, radar);
             return;
         }
 
+        radar.detect(lockTarget);
         if (radar.getLockedEntity() != lockTarget) {
             radar.setLockedEntity(lockTarget);
+        }
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        if (root.getLockedEntity() != lockTarget) {
+            root.setLockedEntity(lockTarget);
+        }
+    }
+
+    @Nullable
+    private static RadarUnit prepareGunnerLockRadar(WeaponUnit weaponUnit) {
+        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+            if (!radarUnit.isOn()) {
+                radarUnit.toggle(true);
+            }
+        }
+        return RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
+    }
+
+    private static void clearGunnerRadarLock(WeaponUnit weaponUnit, RadarUnit radar) {
+        if (radar.getLockedEntity() != null) {
+            radar.setLockedEntity(null);
+        }
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        if (root.getLockedEntity() != null) {
+            root.setLockedEntity(null);
         }
     }
 
@@ -156,7 +184,7 @@ public final class GunnerBrain {
                 .add(target.getDeltaMovement().scale(Math.max(0.0, profile.getLeadScale() - 1.0)));
         weaponUnit.aim(aimPoint);
 
-        int weaponIndex = selectWeaponIndex(weaponUnit);
+        int weaponIndex = selectWeaponIndex(weaponUnit, target);
         if (weaponIndex < 0) {
             gunner.setControlledWeaponIndex(-1);
             return;
@@ -170,6 +198,11 @@ public final class GunnerBrain {
         float xErr = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
         float yErr = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
         if (xErr <= profile.getFireWindowDeg() && yErr <= profile.getFireWindowDeg()) {
+            AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
+            if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, weapon, target)) {
+                return;
+            }
+            GunnerGuidedWeaponController.prepareForLaunch(gunner, weaponUnit.getVehicle(), weaponUnit, weapon, target);
             weaponUnit.shoot(weaponIndex, weaponUnit.aimContexts(), gunner);
             gunner.onBurstShot(profile.getBurstFireTick(), profile.getBurstRestTick());
         }
@@ -666,7 +699,7 @@ public final class GunnerBrain {
         }
     }
 
-    private static void sustainDriverSingleShotWeapons(AbstractVehicle vehicle) {
+    private static void sustainDriverInfiniteAmmo(AbstractVehicle vehicle) {
         long now = System.currentTimeMillis();
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {
@@ -674,23 +707,18 @@ public final class GunnerBrain {
             }
             for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
                 if (weapon.getData().getWeaponId() == null) {
-                    SINGLE_SHOT_READY_TIME.remove(weapon);
+                    DRIVER_AMMO_READY_TIME.remove(weapon);
                     continue;
                 }
-                if (weapon.getMaxCapacity() > 1) {
-                    SINGLE_SHOT_READY_TIME.remove(weapon);
+                if (weapon.getRemainAmmo() > 0) {
+                    DRIVER_AMMO_READY_TIME.remove(weapon);
                     continue;
                 }
 
-                Long readyTime = SINGLE_SHOT_READY_TIME.get(weapon);
-                if (weapon.getRemainAmmo() <= 0 && readyTime == null) {
-                    readyTime = now + getSingleShotDriverIntervalMs(weapon);
-                    SINGLE_SHOT_READY_TIME.put(weapon, readyTime);
-                }
-
+                Long readyTime = DRIVER_AMMO_READY_TIME.get(weapon);
                 if (readyTime == null) {
-                    ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
-                    continue;
+                    readyTime = now + getDriverInfiniteAmmoReloadMs(weapon);
+                    DRIVER_AMMO_READY_TIME.put(weapon, readyTime);
                 }
 
                 long remainMs = Math.max(0L, readyTime - now);
@@ -701,41 +729,49 @@ public final class GunnerBrain {
 
                 weapon.setRemainAmmo(Math.max(1, weapon.getMaxCapacity()));
                 ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
-                SINGLE_SHOT_READY_TIME.remove(weapon);
+                DRIVER_AMMO_READY_TIME.remove(weapon);
             }
         }
     }
 
-    private static void clearDriverSingleShotWeaponTimers(AbstractVehicle vehicle) {
+    private static void clearDriverInfiniteAmmoTimers(AbstractVehicle vehicle) {
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {
                 continue;
             }
             for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
                 if (weapon.getData().getWeaponId() == null) {
-                    SINGLE_SHOT_READY_TIME.remove(weapon);
+                    DRIVER_AMMO_READY_TIME.remove(weapon);
                     continue;
                 }
-                SINGLE_SHOT_READY_TIME.remove(weapon);
+                DRIVER_AMMO_READY_TIME.remove(weapon);
                 ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
             }
         }
     }
 
-    private static long getSingleShotDriverIntervalMs(AbstractVehicleWeapon<?> weapon) {
+    private static long getDriverInfiniteAmmoReloadMs(AbstractVehicleWeapon<?> weapon) {
         long reloadMs = Math.max(0, weapon.getData().getReload().getTime()) * 50L;
         long cooldownMs = Math.max(0L, weapon.getShootInterval());
-        return reloadMs + cooldownMs;
+        if (weapon.getMaxCapacity() <= 1) {
+            return reloadMs + cooldownMs;
+        }
+        return reloadMs;
     }
 
     private static int msToTicks(long ms) {
         return Math.max(1, (int) ((ms + 49L) / 50L));
     }
 
-    private static int selectWeaponIndex(WeaponUnit weaponUnit) {
+    private static int selectWeaponIndex(WeaponUnit weaponUnit, Entity target) {
         for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
             AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-            if (weapon.hasAmmo() && !weapon.isCoolingDown() && !weapon.isReloading() && !isCountermeasureWeapon(weapon)) {
+            AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
+            if (proxyWeapon.hasAmmo()
+                    && !proxyWeapon.isCoolingDown()
+                    && !proxyWeapon.isReloading()
+                    && !isCountermeasureWeapon(proxyWeapon)
+                    && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
                 return index;
             }
         }

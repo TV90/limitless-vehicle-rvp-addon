@@ -62,6 +62,11 @@ public class RVP_Network {
                 .decoder(C2SSetAirburstRange::decode)
                 .consumerMainThread(C2SSetAirburstRange::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SSelectModdingSubWeapon.class, id++)
+                .encoder(C2SSelectModdingSubWeapon::encode)
+                .decoder(C2SSelectModdingSubWeapon::decode)
+                .consumerMainThread(C2SSelectModdingSubWeapon::handle)
+                .add();
         CHANNEL.messageBuilder(C2SDeployDeployableUav.class, id++)
                 .encoder(C2SDeployDeployableUav::encode)
                 .decoder(C2SDeployDeployableUav::decode)

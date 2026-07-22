@@ -10,7 +10,6 @@ public enum RVP_EnumGuidanceType {
     SALH,
     SACLOS,
     LBR,
-    LOSBR,
     LH,
     TV,
     HITL_TV,

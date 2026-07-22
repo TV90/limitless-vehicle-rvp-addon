@@ -5,7 +5,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
@@ -33,6 +35,13 @@ public final class RVP_DeployableUavService {
         if (!(player.getVehicle() instanceof AbstractVehicle parent)) {
             return DeployResult.NO_PARENT_VEHICLE;
         }
+        return deployLinkedUav(parent, player);
+    }
+
+    public static DeployResult deployLinkedUav(AbstractVehicle parent, @Nullable LivingEntity operator) {
+        if (parent == null) {
+            return DeployResult.NO_PARENT_VEHICLE;
+        }
         RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
         if (!config.isConfigured()) {
             return DeployResult.NO_CONFIG;
@@ -57,13 +66,13 @@ public final class RVP_DeployableUavService {
             return DeployResult.INVALID_TEMPLATE;
         }
 
-        float spawnYaw = resolveSpawnYaw(parent, player, config);
+        float spawnYaw = resolveSpawnYaw(parent, operator, config);
         Vec3 spawnPos = resolveSpawnPos(parent, config.spawnOffset(), spawnYaw);
         AbstractVehicle child = childData.construct(serverLevel, spawnPos, 0.0f, spawnYaw);
         if (child == null) {
             return DeployResult.SPAWN_FAILED;
         }
-        configureLink(parent, child, player, config);
+        configureLink(parent, child, operator, config);
         serverLevel.addFreshEntity(child);
         return DeployResult.SUCCESS;
     }
@@ -175,7 +184,7 @@ public final class RVP_DeployableUavService {
         RVP_DeployableUavLinkRegistry.clearByChild(child.getUUID());
     }
 
-    private static void configureLink(AbstractVehicle parent, AbstractVehicle child, ServerPlayer player, RVP_DeployableUavConfig config) {
+    private static void configureLink(AbstractVehicle parent, AbstractVehicle child, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
         if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
             parentExt.ywzj_rvp$setLinkedChildVehicleUuid(child.getUUID());
         }
@@ -184,25 +193,28 @@ public final class RVP_DeployableUavService {
             childExt.ywzj_rvp$setDeployableUavInstance(true);
             childExt.ywzj_rvp$setLinkedParentVehicleUuid(parent.getUUID());
             childExt.ywzj_rvp$setLinkedLauncherVehicleUuid(config.autoLinkDatalink() ? parent.getUUID() : null);
-            childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, player));
+            childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, operator));
             childExt.ywzj_rvp$setDeployableUavRole(config.role());
             childExt.ywzj_rvp$setDatalinkRole(config.autoLinkDatalink() ? config.role() : "none");
             childExt.ywzj_rvp$setDeployableUavControlSwitchAllowed(config.allowControlSwitch());
         }
     }
 
-    private static int findSeatIndex(AbstractVehicle vehicle, ServerPlayer player) {
+    private static int findSeatIndex(AbstractVehicle vehicle, @Nullable LivingEntity operator) {
+        if (operator == null) {
+            return 0;
+        }
         for (AbstractVehicle.Seat seat : vehicle.seats) {
-            if (seat.passengerId != null && seat.passengerId == player.getId()) {
+            if (seat.passengerId != null && seat.passengerId == operator.getId()) {
                 return seat.seatIndex;
             }
         }
         return 0;
     }
 
-    private static float resolveSpawnYaw(AbstractVehicle parent, ServerPlayer player, RVP_DeployableUavConfig config) {
+    private static float resolveSpawnYaw(AbstractVehicle parent, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
         return switch (config.spawnYawMode().toLowerCase()) {
-            case "operator_look" -> player.getYRot();
+            case "operator_look" -> operator != null ? operator.getYRot() : parent.getYRot();
             default -> parent.getYRot();
         };
     }

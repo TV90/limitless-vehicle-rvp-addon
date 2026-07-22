@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -124,9 +125,8 @@ public abstract class WeaponUnitFireControlLockMixin {
         }
 
         // 只对 RVP 武器生效
-        Optional<?> weaponOpt = self.getCurrentWeapon();
-        if (weaponOpt.isEmpty()) return;
-        if (!(weaponOpt.get() instanceof RVP_WeaponBase rvpWeapon)) return;
+        RVP_WeaponBase rvpWeapon = RVP_WeaponResolveHelper.currentPrimaryRvp(self);
+        if (rvpWeapon == null) return;
 
         // ARM 反辐射导弹：即使无锁也开启导引头，用于预选扫描
         if (rvpWeapon.getData().isAntiRadiationMissile()) {

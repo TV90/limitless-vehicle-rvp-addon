@@ -24,20 +24,33 @@ public final class RVP_GuidanceRuntimeMath {
         if (entity != null && entity.isAlive() && target != null) {
             projectile.rememberGuidancePos(target);
         }
-        boolean trackLimitsPassed = target != null
-                && RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, context.active());
+        if (target == null) {
+            return false;
+        }
+        boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
         boolean irGrace = entity != null
                 && context.active().guidanceType() == RVP_EnumGuidanceType.IR
                 && projectile.hasIrSeekerGrace();
-        if (target == null || (!trackLimitsPassed && !irGrace)) {
+        if (!trackEnvelopePassed && !irGrace) {
             return false;
         }
 
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
         float factor = resolveTurningFactor(context);
-        Vec3 steeringTarget = resolveTopAttackAimPoint(
-                projectile, target, context.active().topAttackHeight(), factor);
+        // 进入目标 20 格半径圆柱内，直接俯冲并大幅提升转向能力
+        double horizontalDistToTarget = horizontalDistance(projectile.position(), target);
+        boolean inTerminalDiveCylinder = context.active().topAttackHeight() != null
+                && context.active().topAttackHeight() > 0f
+                && horizontalDistToTarget <= 20.0D;
+        Vec3 steeringTarget;
+        if (inTerminalDiveCylinder) {
+            steeringTarget = target;
+            factor = Math.max(factor, 0.8f);
+        } else {
+            steeringTarget = resolveTopAttackAimPoint(
+                    projectile, target, context.active().topAttackHeight(), factor);
+        }
         if (context.active().topAttackHeight() != null
                 && context.active().topAttackHeight() > 0f
                 && projectile.hasReachedTopAttackApex()) {
@@ -48,6 +61,9 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
         if (speed <= 1.0E-6) {
+            return false;
+        }
+        if (!passesGuidanceAngle(projectile, steeringTarget, context.active()) && !irGrace) {
             return false;
         }
         if (intent.directMotion()) {
@@ -101,6 +117,11 @@ public final class RVP_GuidanceRuntimeMath {
                 || Math.abs(topAttackHeight) <= 1.0E-6f) {
             return target;
         }
+        // 极近距离直接俯冲，跳过攻顶弹道
+        double distToTarget = horizontalDistance(projectile.position(), target);
+        if (topAttackHeight > 0f && distToTarget < 8.0D) {
+            return target;
+        }
         if (topAttackHeight < 0f) {
             return resolveDescendingApproachAimPoint(projectile.position(), target, topAttackHeight);
         }
@@ -138,7 +159,7 @@ public final class RVP_GuidanceRuntimeMath {
         if (horizontalAxis.lengthSqr() <= 1.0E-8D) {
             return apex;
         }
-        double forwardLook = Mth.clamp(speed * 3.0D, 12.0D, 64.0D);
+        double forwardLook = Mth.clamp(speed * 3.0D, 4.0D, 64.0D);
         double remainingAlongAxis = remainingDistanceAlongAxis(projectile.position(), launch, initialTarget);
         double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
         forwardLook = Math.min(forwardLook, Math.max(remainingAlongAxis - turnInDistance, 0.0D));
@@ -154,11 +175,13 @@ public final class RVP_GuidanceRuntimeMath {
             return target;
         }
         double horizontalDistance = horizontalDistance(launch, target);
+        // 近距离时按比例缩减顶点高度，避免导弹冲过目标
         double effectiveHeight = Math.min(Math.max(topAttackHeight, 0f), horizontalDistance);
+        double apexRatio = 0.5D;
         return new Vec3(
-                (launch.x + target.x) * 0.5D,
+                launch.x + (target.x - launch.x) * apexRatio,
                 target.y + effectiveHeight,
-                (launch.z + target.z) * 0.5D
+                launch.z + (target.z - launch.z) * apexRatio
         );
     }
 
@@ -198,7 +221,8 @@ public final class RVP_GuidanceRuntimeMath {
     static double resolveTopAttackTurnInDistance(double speed, float turningFactor) {
         double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
         double responseTicks = Mth.clamp(1.0D / effectiveFactor, 2.0D, 12.0D);
-        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 12.0D, 160.0D);
+        // 近距离时降低下限，让导弹更早进入俯冲
+        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 4.0D, 160.0D);
     }
 
     static float resolveTopAttackTerminalTurningFactor(
@@ -239,6 +263,25 @@ public final class RVP_GuidanceRuntimeMath {
         }
         Vec3 axis = new Vec3(target.x - launch.x, 0.0D, target.z - launch.z);
         return axis.lengthSqr() > 1.0E-8D ? axis.normalize() : Vec3.ZERO;
+    }
+
+    private static boolean passesGuidanceAngle(
+            RVP_BaseBullet projectile,
+            Vec3 steeringTarget,
+            RVP_GuidanceActiveConfig config
+    ) {
+        if (projectile == null || steeringTarget == null || config == null) {
+            return false;
+        }
+        Vec3 axis = projectile.getDeltaMovement();
+        if (axis == null || axis.lengthSqr() <= 1.0E-8D) {
+            axis = projectile.getLookAngle();
+        }
+        return RVP_GuidanceRuntimeGeometry.withinAngle(
+                axis,
+                steeringTarget.subtract(projectile.position()),
+                config.maxGuidanceAngle()
+        );
     }
 
     private static Vec3 resolveDescendingApproachAimPoint(Vec3 projectilePos, Vec3 target, float topAttackHeight) {

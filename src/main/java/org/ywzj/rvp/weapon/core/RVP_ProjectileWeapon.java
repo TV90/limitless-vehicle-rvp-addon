@@ -73,11 +73,14 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (fire.getFireMode() == RVP_EnumFireMode.BURST) {
             return shootBurstRound(aimContexts, shooter, fire);
         }
-        if (isCoolingDown() || !consumeAmmo(aimContexts)) {
+        if (isCoolingDown() || !getFireController().canShootHeat()) {
             return false;
         }
         getFireController().primeServerShot();
         if (!canShootOnServer()) {
+            return false;
+        }
+        if (!consumeAmmo(aimContexts)) {
             return false;
         }
         this.lastShootTime = System.currentTimeMillis();
@@ -97,11 +100,14 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (isCoolingDown()) {
             return false;
         }
-        if (!consumeAmmo(aimContexts)) {
+        if (!controller.canShootHeat()) {
             return false;
         }
         controller.primeServerShot();
         if (!canShootOnServer()) {
+            return false;
+        }
+        if (!consumeAmmo(aimContexts)) {
             return false;
         }
 
@@ -111,6 +117,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
         float chargeScale = consumeChargeScale();
         dispatchShots(aimContexts, shooter, chargeScale);
+        controller.recordHeatForShot();
 
         int burstCount = fire.getBurstCount();
         if (burstCount > 1) {

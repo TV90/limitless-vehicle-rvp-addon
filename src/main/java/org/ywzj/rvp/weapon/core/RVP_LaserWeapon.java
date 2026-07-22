@@ -37,11 +37,14 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
         if (!check(aimContexts, shooter)) {
             return false;
         }
-        if (isCoolingDown() || isReloading() || !consumeAmmo(aimContexts)) {
+        if (isCoolingDown() || isReloading() || !getFireController().canShootHeat()) {
             return false;
         }
         getFireController().primeServerShot();
         if (!canShootOnServer()) {
+            return false;
+        }
+        if (!consumeAmmo(aimContexts)) {
             return false;
         }
         this.lastShootTime = System.currentTimeMillis();

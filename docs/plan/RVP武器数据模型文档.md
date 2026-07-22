@@ -10,7 +10,7 @@
 | `predictTargetPosGain` | 比例导引增益系数。值越大，导弹对 LOS 转率和闭合速度的响应越积极。仅在 `predictTargetPos=true` 时生效。 | `float` | 3.0 |
 | `maxLateralAccel` | PN 横向修正的限幅值。用于限制单 tick 横向修正过强导致的大幅甩尾、绕大弯、撞地或乱飞。仅在 `predictTargetPos=true` 时生效。 | `float` | 0 |
 | `predictTargetPosStartTick` | 发射后从第多少 tick 开始施加 PN 修正。用于避免导弹低速、离架、刚点火阶段就被 PN 拉出过大偏转。仅在 `predictTargetPos=true` 时生效。 | `int` | 10 |
-| guidanceType | 制导类型NONE/MCLOS/SALH/SACLOS/LBR/LOSBR/LH/TV/HITL_TV/HITL_CLOS_TV/ATV/IR/AIR/SARH/ARH/GPS/ARM | RVP_EnumGuidanceType | NONE |
+| guidanceType | 制导类型NONE/MCLOS/SALH/SACLOS/LBR/LBR/LH/TV/HITL_TV/HITL_CLOS_TV/ATV/IR/AIR/SARH/ARH/GPS/ARM | RVP_EnumGuidanceType | NONE |
 | guidanceTickRange | 制导时间范围，null表示立即开始，永不结束 | RVP_Range<Integer> | null |
 | guidanceTargetDistanceRange | 导弹跟踪时与制导目标点/记忆点的距离范围(格)，null表示不进行判断 | RVP_Range<Float> | null |
 | guidanceAltitudeRange | 导弹跟踪时与制导目标点/记忆点离地高度下限(格)，null表示不进行判断，如参数为[[20,100]]时，只有离地高度高于20且低于100的才会被跟踪，参数为[[inf,10]]表示可跟踪离地10格以内目标的对地弹，参数为[[30,inf]]表示可跟踪高于地面30格目标的对空弹 | RVP_Range<Float> | null |
@@ -102,6 +102,10 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 
 | RVP_FireData公用字段 | 解释 | 类型 | 默认值 |
 | -------------------- | ------------------------------------------------------------ | ------- | ------ |
+|                        |                                                              |                            |           |
+| heatCount              | 单次成功开火增加的热量。仅当 `maxHeatCount > 0` 时生效。对应 JSON 写法为 `heat_count`。 | int                        | 0         |
+| maxHeatCount           | 最大热量上限。大于 0 时启用过热机制；当前热量达到或超过该值后禁止继续开火，直到冷却到上限以下。对应 JSON 写法为 `max_heat_count`。 | int                        | 0         |
+| overheatExtraHeat      | 达到过热上限时额外追加的惩罚热量，用于模拟 MCHR 中“过热后需要更久冷却”的锁死区。对应 JSON 写法为 `overheat_extra_heat`。 | int                        | 30        |
 | fireMode | 开火模式，支持FULL_AUTO/SEMI_AUTO/BURST/CHARGE/MINIGUN/RAILGUN | RVP_EnumFireMode | FULL_AUTO |
 | spread | 发射角度散布，为null时使用RVP_WeaponData父类的spread | Float | null      |
 | burstCount | 点射模式每轮发射数量 | int | 3 |

@@ -348,6 +348,18 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return usesGuidanceType(RVP_EnumGuidanceType.SARH);
     }
 
+    public boolean isInfrared() {
+        return usesGuidanceType(RVP_EnumGuidanceType.IR);
+    }
+
+    /** Whether the missile carries a seeker head that can acquire a target autonomously. */
+    public boolean hasSeeker() {
+        return isActiveRadar()
+                || isSemiActiveRadar()
+                || isInfrared()
+                || isAntiRadiationMissile();
+    }
+
     public boolean isRadarHoming() {
         return isActiveRadar() || isSemiActiveRadar();
     }
@@ -508,6 +520,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         RVP_GuidanceData guidance = getGuidanceData();
         return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
+    }
+
+    /** Weapons that require continuous operator involvement (laser spot or beam riding). */
+    public boolean isOperatorGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.LBR;
     }
 
     public boolean isHitlClosTvGuided() {

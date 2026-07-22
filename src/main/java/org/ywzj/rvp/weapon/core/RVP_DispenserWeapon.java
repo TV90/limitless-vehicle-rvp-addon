@@ -31,7 +31,14 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
         if (!check(aimContexts, shooter)) {
             return false;
         }
-        if (isCoolingDown() || isReloading() || !consumeAmmo(aimContexts)) {
+        if (isCoolingDown() || isReloading() || !getFireController().canShootHeat()) {
+            return false;
+        }
+        getFireController().primeServerShot();
+        if (!canShootOnServer()) {
+            return false;
+        }
+        if (!consumeAmmo(aimContexts)) {
             return false;
         }
         this.lastShootTime = System.currentTimeMillis();
@@ -46,6 +53,7 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
+        getFireController().onShotFired();
         return true;
     }
 }

@@ -19,6 +19,8 @@ import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfigCache;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
@@ -46,6 +48,7 @@ public class VehicleDataManagerMixin {
                                           CallbackInfo ci) {
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
         Map<ResourceLocation, AutoLandingGearCache.AutoLandingGearConfig> autoGearByVehicle = new HashMap<>();
+        Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>> weaponHeatByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
         RVP_LauncherDeployConfigCache.clear();
         for (var entry : resources.entrySet()) {
@@ -87,11 +90,17 @@ public class VehicleDataManagerMixin {
                 if (customMounts != null) {
                     customMountsByVehicle.put(vehicleId, customMounts);
                 }
+                Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig> heatConfigs =
+                        RVP_VehicleWeaponHeatConfigCache.parseVehicle(obj);
+                if (!heatConfigs.isEmpty()) {
+                    weaponHeatByVehicle.put(vehicleId, heatConfigs);
+                }
             } catch (Exception ignored) {
                 // JSON 解析错误，跳过
             }
         }
         RVP_CustomMountConfigCache.replace(customMountsByVehicle);
+        RVP_VehicleWeaponHeatConfigCache.replace(weaponHeatByVehicle);
         AutoLandingGearCache.replace(autoGearByVehicle);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);

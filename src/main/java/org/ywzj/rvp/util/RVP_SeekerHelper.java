@@ -34,10 +34,8 @@ public class RVP_SeekerHelper {
     public static SeekerType resolveSeekerType(WeaponUnit weaponUnit) {
         if (!weaponUnit.isSeekerOn()) return SeekerType.NONE;
 
-        Optional<AbstractVehicleWeapon<?>> currentOpt = weaponUnit.getCurrentWeapon();
-        if (!currentOpt.isPresent()) return SeekerType.NONE;
-
-        AbstractVehicleWeapon<?> weapon = currentOpt.get();
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(weaponUnit);
+        if (weapon == null) return SeekerType.NONE;
 
         // === rvp:missile (RVP_WeaponBase) ===
         if (weapon instanceof RVP_WeaponBase) {

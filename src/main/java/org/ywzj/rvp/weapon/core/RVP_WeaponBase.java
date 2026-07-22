@@ -31,6 +31,7 @@ import java.util.Optional;
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
 
     protected int chargeTick;
+    private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
     private final RVP_WeaponFireController fireController = new RVP_WeaponFireController(this);
 
     protected RVP_WeaponBase(AbstractVehicle vehicle, WeaponUnit weaponUnit, int index, RVP_WeaponData data, String serializeId) {
@@ -39,6 +40,10 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     public RVP_WeaponFireController getFireController() {
         return fireController;
+    }
+
+    RVP_WeaponHeatManager.HeatState getLocalHeatState() {
+        return localHeatState;
     }
 
     protected int getChargeTick() {
@@ -144,10 +149,16 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             }
         }
         boolean fired = super.doClientShoot();
-        if (fired) {
+        return fired;
+    }
+
+    @Override
+    @OnlyIn(Dist.CLIENT)
+    public void onClientFire() {
+        if (LocalVehiclePlayer.instance.getPlayer() == getWeaponUnit().getOwner()) {
             fireController.onShotFired();
         }
-        return fired;
+        super.onClientFire();
     }
 
     protected boolean passesFireModeChargeGate() {
