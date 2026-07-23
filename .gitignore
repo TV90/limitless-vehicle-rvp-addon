@@ -23,10 +23,18 @@ libs/**/*.class
 build_log*.txt
 build_err*.txt
 build_out*.txt
+build_loiter_check*.txt
 build_status.txt
 build_time.txt
 gradle_out.txt
 trae_build_exit.txt
+
+# runtime logs / crash / temp
+logs/
+crash-*.txt
+debug-*.md
+.codex_tmp_*/
+[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*.png
 
 # other
 eclipse

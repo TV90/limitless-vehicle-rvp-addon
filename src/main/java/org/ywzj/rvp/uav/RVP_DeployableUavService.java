@@ -10,10 +10,14 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
+import org.ywzj.rvp.config.RVP_LoiterConfig;
+import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
+import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -74,6 +78,8 @@ public final class RVP_DeployableUavService {
         }
         configureLink(parent, child, operator, config);
         serverLevel.addFreshEntity(child);
+        applyInitialSpeed(child, spawnYaw, config.initialSpeed());
+        applyTakeoffBehavior(child, parent);
         return DeployResult.SUCCESS;
     }
 
@@ -97,6 +103,8 @@ public final class RVP_DeployableUavService {
         if (!child.seats.isEmpty() && child.seats.get(0).passengerId != player.getId()) {
             child.changeSeat(player, 0);
         }
+        // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
+        // 玩家可按 F 键手动切换盘旋开/关
         return true;
     }
 
@@ -123,6 +131,24 @@ public final class RVP_DeployableUavService {
             AbstractVehicle.Seat seat = parent.seats.get(returnSeatIndex);
             if (seat.passengerId == -1 && parent.getOwnOperatorUnit(player) != seat.partUnit) {
                 parent.changeSeat(player, returnSeatIndex);
+            }
+        }
+        // 切回母车 → 自动激活盘旋
+        RVP_DeployableUavConfig uavConfig = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
+        if (uavConfig.isConfigured() && uavConfig.autoLoiterOnSwitchBack()) {
+            // 盘旋参数从通用 LoiterConfig 读取（优先母车，其次子载具自身）
+            RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
+            if (!loiterConfig.isConfigured()) {
+                loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
+            }
+            if (loiterConfig.isConfigured()) {
+                RVP_UavLoiterManager.enableFollowParent(
+                        child.getUUID(),
+                        parent.getUUID(),
+                        loiterConfig.loiterRadius(),
+                        loiterConfig.loiterAltitudeOffset(),
+                        parent.getX(), parent.getY(), parent.getZ()
+                );
             }
         }
         return true;
@@ -168,6 +194,8 @@ public final class RVP_DeployableUavService {
         if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavInstance()) {
             return;
         }
+        // 清除盘旋状态
+        RVP_UavLoiterManager.remove(child.getUUID());
         AbstractVehicle parent = resolveVehicleByUuid(child.level(), childExt.ywzj_rvp$getLinkedParentVehicleUuid());
         if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
             if (parentExt.ywzj_rvp$getLinkedChildVehicleUuid() != null
@@ -230,6 +258,45 @@ public final class RVP_DeployableUavService {
         );
         Vec3 basePos = parent.position().add(rotated);
         return new Vec3(basePos.x, basePos.y + 0.1, basePos.z);
+    }
+
+    /**
+     * 释放子载具后沿生成朝向赋予水平初速度。
+     *
+     * @param child        生成的子载具
+     * @param spawnYaw     生成朝向（度）
+     * @param initialSpeed 初速度大小（blocks/tick）；≤0 时不赋予
+     */
+    private static void applyInitialSpeed(AbstractVehicle child, float spawnYaw, float initialSpeed) {
+        if (initialSpeed <= 0f) {
+            return;
+        }
+        Vec3 forward = Vec3.directionFromRotation(0f, spawnYaw).scale(initialSpeed);
+        child.setDeltaMovement(forward);
+    }
+
+    /**
+     * 释放子载具后根据 LoiterConfig 配置起飞行为：自动进入盘旋、自动满节流阀。
+     */
+    private static void applyTakeoffBehavior(AbstractVehicle child, AbstractVehicle parent) {
+        RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
+        if (!loiterConfig.isConfigured()) {
+            return;
+        }
+        if (loiterConfig.autoLoiterOnTakeoff()) {
+            RVP_UavLoiterManager.enableFollowParent(
+                    child.getUUID(),
+                    parent.getUUID(),
+                    loiterConfig.loiterRadius(),
+                    loiterConfig.loiterAltitudeOffset(),
+                    parent.getX(), parent.getY(), parent.getZ()
+            );
+        }
+        if (loiterConfig.autoFullThrottleOnTakeoff() && child instanceof FixedWingVehicle fw) {
+            fw.toggleEngine(true);
+            fw.setPower(100f);
+            fw.setThrottleLevel(100f);
+        }
     }
 
     private static AbstractVehicle resolveVehicleByUuid(net.minecraft.world.level.Level level, UUID uuid) {

@@ -41,12 +41,17 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
+import org.ywzj.rvp.client.state.RVP_ClientMarkedBlockState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
+import org.ywzj.rvp.network.S2CMarkedBlockSync;
+import org.ywzj.rvp.network.C2SSetLoiterCenter;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CRemoteAmmoSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -102,6 +107,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final int NEUTRAL_ICON_COLOR = 0xFFF5F7FA;
     private static final int UNMANNED_VEHICLE_ICON_COLOR = 0xFFF5F7FA;
     private static final int GPS_ICON_COLOR = 0xFFFFF08A;
+    private static final int LOITER_ICON_COLOR = 0xFF00E5FF;
     private static final ResourceLocation PLAYER_ICON = mapIcon("player.png");
     private static final ResourceLocation HELI_ICON = mapIcon("atkheli.png");
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
@@ -1075,6 +1081,8 @@ public class RVP_TacticalMapScreen extends Screen {
         renderRemoteEntities(guiGraphics);
         renderVehicleAndPlayer(guiGraphics);
         renderGpsMarker(guiGraphics);
+        renderMarkedBlocks(guiGraphics);
+        renderLoiterCenter(guiGraphics);
         renderArtilleryCcipMarker(guiGraphics);
         renderRecentImpactCrosses(guiGraphics);
         syncSelectedMarkerHit();
@@ -1697,12 +1705,84 @@ public class RVP_TacticalMapScreen extends Screen {
             } else {
                 drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
             }
-            String label = "GPS " + (i + 1);
+            // 炮兵地图模式下不显示 GPS 文案，仅保留图标标记
+            if (!isArtilleryMode()) {
+                String label = "GPS " + (i + 1);
+                int w = this.font.width(label);
+                int tx = sx - w / 2;
+                int ty = sy + 11;
+                if (ty + 8 <= mapBottom - 2) {
+                    guiGraphics.drawString(this.font, label, tx, ty, GPS_ICON_COLOR, false);
+                }
+            }
+        }
+    }
+
+    /**
+     * 绘制吊舱方块标记。目标指示吊舱在 {@code block} 模式下打下的标记点
+     * 通过 {@link RVP_ClientMarkedBlockState} 同步到客户端，这里在战术地图上
+     * 使用 GPS_ICON + GPS_ICON_COLOR 渲染，并以 "TGT" 标签与普通 GPS 航点区分。
+     */
+    private void renderMarkedBlocks(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return;
+        }
+        ResourceLocation dim = mc.level.dimension().location();
+        List<S2CMarkedBlockSync.MarkedBlockEntry> blocks = RVP_ClientMarkedBlockState.getMarkedBlocks(dim);
+        if (blocks.isEmpty()) {
+            return;
+        }
+        for (S2CMarkedBlockSync.MarkedBlockEntry block : blocks) {
+            int sx = Mth.floor(worldToScreenX(block.x()));
+            int sy = Mth.floor(worldToScreenY(block.z()));
+            if (sx < mapLeft || sx > mapRight || sy < mapTop || sy > mapBottom) {
+                continue;
+            }
+            drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
+            String label = "TGT";
             int w = this.font.width(label);
             int tx = sx - w / 2;
             int ty = sy + 11;
             if (ty + 8 <= mapBottom - 2) {
                 guiGraphics.drawString(this.font, label, tx, ty, GPS_ICON_COLOR, false);
+            }
+        }
+    }
+
+    /**
+     * 绘制盘旋圆心标记。从 {@link RVP_ClientLoiterState} 读取服务端同步的盘旋圆，
+     * 在战术地图上绘制圆心和盘旋半径圆环，风格与 GPS 标记一致。
+     */
+    private void renderLoiterCenter(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return;
+        }
+        ResourceLocation dim = mc.level.dimension().location();
+        List<RVP_ClientLoiterState.LoiterCircle> circles = RVP_ClientLoiterState.getCircles(dim);
+        if (circles.isEmpty()) {
+            return;
+        }
+        for (RVP_ClientLoiterState.LoiterCircle circle : circles) {
+            int sx = Mth.floor(worldToScreenX(circle.centerX()));
+            int sy = Mth.floor(worldToScreenY(circle.centerZ()));
+            // 绘制盘旋半径圆环
+            float screenRadius = (float) (circle.radius() / blocksPerPixel);
+            if (screenRadius > 2f && isMarkerVisible(sx, sy, (int) screenRadius + 2)) {
+                GuiHelper.drawCircle(guiGraphics.pose(), sx, sy, screenRadius,
+                        LOITER_ICON_COLOR, 0.06F, 0.0F, 0.0F);
+            }
+            // 绘制圆心图标
+            if (sx >= mapLeft && sx <= mapRight && sy >= mapTop && sy <= mapBottom) {
+                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, LOITER_ICON_COLOR, false, 0.0f, 1.0f);
+                String label = "LOITER";
+                int w = this.font.width(label);
+                int tx = sx - w / 2;
+                int ty = sy + 11;
+                if (ty + 8 <= mapBottom - 2) {
+                    guiGraphics.drawString(this.font, label, tx, ty, LOITER_ICON_COLOR, false);
+                }
             }
         }
     }
@@ -2024,6 +2104,10 @@ public class RVP_TacticalMapScreen extends Screen {
             openSidebar(SidebarMode.GPS);
         } else if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
             clearGps();
+        } else {
+            // 最后一项：设为盘旋圆心
+            RVP_Network.CHANNEL.sendToServer(new C2SSetLoiterCenter(
+                    mapContextTarget.x, mapContextTarget.y, mapContextTarget.z));
         }
         closeMapContextMenu();
         return true;
@@ -3711,7 +3795,13 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private int contextMenuItemCount() {
-        return RVP_ClientGPSState.isActive() ? 3 : 2;
+        int count = RVP_ClientGPSState.isActive() ? 3 : 2;
+        // 玩家在载具中时增加"设为盘旋圆心"选项
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.player.getVehicle() != null) {
+            count++;
+        }
+        return count;
     }
 
     private int contextMenuItemHeight() {
@@ -3757,7 +3847,11 @@ public class RVP_TacticalMapScreen extends Screen {
         if (itemIndex == 1) {
             return Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_gps_panel");
         }
-        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps");
+        if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
+            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps");
+        }
+        // 最后一项：设为盘旋圆心
+        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_set_loiter_center");
     }
 
     private int entityContextMenuItemCount() {

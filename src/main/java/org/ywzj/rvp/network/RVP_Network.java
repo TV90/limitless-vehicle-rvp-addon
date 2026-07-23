@@ -147,5 +147,25 @@ public class RVP_Network {
                 .decoder(S2CNuclearVisualEffect::decode)
                 .consumerMainThread(S2CNuclearVisualEffect::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CMarkedBlockSync.class, id++)
+                .encoder(S2CMarkedBlockSync::encode)
+                .decoder(S2CMarkedBlockSync::decode)
+                .consumerMainThread(S2CMarkedBlockSync::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SToggleUavLoiter.class, id++)
+                .encoder(C2SToggleUavLoiter::encode)
+                .decoder(C2SToggleUavLoiter::decode)
+                .consumerMainThread(C2SToggleUavLoiter::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SSetLoiterCenter.class, id++)
+                .encoder(C2SSetLoiterCenter::encode)
+                .decoder(C2SSetLoiterCenter::decode)
+                .consumerMainThread(C2SSetLoiterCenter::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CLoiterStateSync.class, id++)
+                .encoder(S2CLoiterStateSync::encode)
+                .decoder(S2CLoiterStateSync::decode)
+                .consumerMainThread(S2CLoiterStateSync::handle)
+                .add();
     }
 }

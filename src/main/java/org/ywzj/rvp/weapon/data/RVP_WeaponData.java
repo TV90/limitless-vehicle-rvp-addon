@@ -79,6 +79,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("laser_data")
     private RVP_LaserData laserData = new RVP_LaserData();
 
+    /** 目标指示吊舱参数，见 {@link RVP_TargetingPodData}。 */
+    @SerializedName("targeting_pod_data")
+    private RVP_TargetingPodData targetingPodData = new RVP_TargetingPodData();
+
     /**
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
@@ -156,6 +160,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     /** 发射前 UI 用；飞行中优先当前激活阶段。 */
     public RVP_LaserData getLaserData() {
         return laserData == null ? new RVP_LaserData() : laserData;
+    }
+
+    /** 目标指示吊舱参数。 */
+    public RVP_TargetingPodData getTargetingPodData() {
+        return targetingPodData == null ? new RVP_TargetingPodData() : targetingPodData;
     }
 
     @Nullable

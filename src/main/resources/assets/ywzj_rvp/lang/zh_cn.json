@@ -57,6 +57,7 @@
   "gui.ywzj_rvp.tactical_map.menu_bind_here": "直接绑定为 GPS 目标",
   "gui.ywzj_rvp.tactical_map.menu_open_gps_panel": "填入并打开 GPS 面板",
   "gui.ywzj_rvp.tactical_map.menu_clear_gps": "清空 GPS 点",
+  "gui.ywzj_rvp.tactical_map.menu_set_loiter_center": "设为盘旋圆心",
   "gui.ywzj_rvp.tactical_map.menu_player": "玩家",
   "gui.ywzj_rvp.tactical_map.menu_center_target": "视图居中到该目标",
   "gui.ywzj_rvp.tactical_map.menu_open_entity_gps_panel": "将该位置填入 GPS 面板",
@@ -164,6 +165,7 @@
   "key.ywzj_rvp.clear_gps.desc": "清除 GPS 目标点",
   "key.ywzj_rvp.deploy_deployable_uav.desc": "放飞分体式雷达车",
   "key.ywzj_rvp.switch_deployable_uav.desc": "切换分体式雷达车 / 母车",
+  "key.ywzj_rvp.toggle_uav_loiter.desc": "切换无人机自动盘旋",
   "key.ywzj_rvp.hmd_toggle.desc": "头盔瞄准具 / 格斗模式切换",
   "key.ywzj_rvp.fire_control_stabilizer.desc": "火控模式切换",
   "key.ywzj_rvp.toggle_laser_designation.desc": "切换激光照射",
@@ -203,5 +205,15 @@
   "message.ywzj_rvp.uav.switch_to_child_success": "已切换到雷达车",
   "message.ywzj_rvp.uav.switch_to_child_failed": "切换到雷达车失败",
   "message.ywzj_rvp.uav.switch_back_success": "已返回母车",
-  "message.ywzj_rvp.uav.switch_back_failed": "返回母车失败"
+  "message.ywzj_rvp.uav.switch_back_failed": "返回母车失败",
+  "message.ywzj_rvp.uav_loiter.not_in_vehicle": "未在载具中",
+  "message.ywzj_rvp.uav_loiter.no_uav": "未找到关联的无人机",
+  "message.ywzj_rvp.uav_loiter.no_config": "无人机未配置盘旋参数",
+  "message.ywzj_rvp.uav_loiter.enabled": "自动盘旋已开启",
+  "message.ywzj_rvp.uav_loiter.disabled": "自动盘旋已关闭",
+  "message.ywzj_rvp.uav_loiter.center_set": "已设为盘旋圆心",
+  "message.ywzj_rvp.targeting_pod.marked_both": "已标记 %s 个目标，坐标 %s",
+  "message.ywzj_rvp.targeting_pod.marked_entity": "已标记 %s 个目标",
+  "message.ywzj_rvp.targeting_pod.marked_block": "已标记坐标 %s",
+  "message.ywzj_rvp.targeting_pod.no_target": "未发现可标记目标"
 }

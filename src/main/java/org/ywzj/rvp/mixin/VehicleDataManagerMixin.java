@@ -7,6 +7,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -17,6 +18,8 @@ import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
+import org.ywzj.rvp.config.RVP_LoiterConfig;
+import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
@@ -71,6 +74,11 @@ public class VehicleDataManagerMixin {
                 RVP_DeployableUavConfig deployableUavConfig = ywzj_rvp$parseDeployableUavConfig(obj);
                 if (deployableUavConfig.isConfigured()) {
                     RVP_DeployableUavConfigCache.put(vehicleId, deployableUavConfig);
+                }
+
+                RVP_LoiterConfig loiterConfig = ywzj_rvp$parseLoiterConfig(obj);
+                if (loiterConfig.isConfigured()) {
+                    RVP_LoiterConfigCache.put(vehicleId, loiterConfig);
                 }
 
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
@@ -202,7 +210,35 @@ public class VehicleDataManagerMixin {
                 singleInstance,
                 allowControlSwitch,
                 autoLinkDatalink,
-                redeployCooldownTick
+                redeployCooldownTick,
+                GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_loiter_on_switch_back", true),
+                (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0)
+        );
+    }
+
+    @Unique
+    private static RVP_LoiterConfig ywzj_rvp$parseLoiterConfig(JsonObject vehicleObj) {
+        boolean enabled = GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_enabled", false);
+        if (!enabled) {
+            return RVP_LoiterConfig.DISABLED;
+        }
+        return new RVP_LoiterConfig(
+                true,
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_radius", 120.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_altitude_offset", 40.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_terrain_clearance", 30.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_min_safe_altitude", 80.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_fixed_wing_min_bank", 30.0),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_sign_flip_threshold", 3),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_radius_expand_factor", 1.1),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_climb_timeout", 200),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_transit_timeout", 1200),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_approach_timeout", 400),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_terrain_sample_interval", 40),
+                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_terrain_sample_range", 60),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_approach_tolerance", 15.0),
+                GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false),
+                GsonHelper.getAsBoolean(vehicleObj, "rvp_auto_full_throttle_on_takeoff", false)
         );
     }
 }

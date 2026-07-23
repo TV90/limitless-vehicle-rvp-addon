@@ -6,7 +6,6 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -25,17 +24,16 @@ public class VehicleRenderCustomMountMixin {
             remap = false
     )
     private void ywzj_rvp$renderCustomMounts(AbstractVehicle vehicle,
-                                             float pEntityYaw,
-                                             float pPartialTick,
-                                             PoseStack pPoseStack,
-                                             MultiBufferSource bufferSource,
-                                             int pPackedLight,
-                                             CallbackInfo ci) {
+                                            float pEntityYaw,
+                                            float pPartialTick,
+                                            PoseStack pPoseStack,
+                                            MultiBufferSource bufferSource,
+                                            int pPackedLight,
+                                            CallbackInfo ci) {
         VehicleBedrockModel model = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId())
                 .map(display -> display.getModel())
                 .orElse(null);
-        RVP_SbmProbeDebug.noteVehicleRenderMixin(vehicle, model);
-        if (model == null || !model.hasBakedModel()) {
+        if (model == null) {
             return;
         }
         RVP_CustomMountRenderLogic.render(vehicle, model, pPoseStack, bufferSource, pPackedLight);

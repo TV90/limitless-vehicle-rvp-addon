@@ -1,5 +1,6 @@
 package org.ywzj.rvp.network;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
@@ -8,6 +9,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.targeting.RVP_MarkedTargetManager;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
@@ -50,6 +52,12 @@ public final class RVP_TacticalRevealSyncService {
         }
         long gameTime = event.getServer().overworld().getGameTime();
         pruneExpired(gameTime);
+        // 清理过期的吊舱标记；方块标记发生变化时广播给客户端，避免客户端残留过期标记
+        for (ServerLevel level : event.getServer().getAllLevels()) {
+            if (RVP_MarkedTargetManager.tick(level)) {
+                broadcastMarkedBlocks(level);
+            }
+        }
         if (event.getServer().getTickCount() % SYNC_INTERVAL_TICKS != 0) {
             return;
         }
@@ -86,7 +94,7 @@ public final class RVP_TacticalRevealSyncService {
             fireRevealIds.add(vehicle.getId());
         }
         msg.fireRevealIds = fireRevealIds;
-        msg.markedRevealIds = List.of();
+        msg.markedRevealIds = RVP_MarkedTargetManager.getMarkedEntityIds();
         return msg;
     }
 
@@ -102,5 +110,17 @@ public final class RVP_TacticalRevealSyncService {
 
     private static boolean isGroundVehicle(Entity entity) {
         return entity instanceof WheeledVehicle || entity instanceof TrackedVehicle;
+    }
+
+    /** 广播某维度的方块标记快照给所有客户端（清理过期条目后触发，防止客户端残留）。 */
+    private static void broadcastMarkedBlocks(ServerLevel level) {
+        S2CMarkedBlockSync msg = new S2CMarkedBlockSync();
+        msg.dimension = level.dimension().location();
+        msg.blocks = RVP_MarkedTargetManager.getMarkedBlocks(level.dimension().location())
+                .stream()
+                .map(b -> new S2CMarkedBlockSync.MarkedBlockEntry(
+                        (float) b.pos().x, (float) b.pos().y, (float) b.pos().z))
+                .toList();
+        RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), msg);
     }
 }

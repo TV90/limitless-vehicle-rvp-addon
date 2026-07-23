@@ -52,6 +52,7 @@ import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
+import org.ywzj.rvp.network.C2SToggleUavLoiter;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -175,6 +176,9 @@ public class RVP_ClientEvents {
         }
         while (RVP_Keys.SWITCH_DEPLOYABLE_UAV.consumeClick()) {
             RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
+        }
+        while (RVP_Keys.TOGGLE_UAV_LOITER.consumeClick()) {
+            RVP_Network.CHANNEL.sendToServer(new C2SToggleUavLoiter());
         }
 
         RVP_ClientHitlState.tick(mc, player);

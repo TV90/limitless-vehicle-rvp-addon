@@ -1178,6 +1178,77 @@ function updateBones(context) {
 }
 ```
 
+### `rvp_loiter_*` 自动盘旋（载具 JSON 顶层）
+
+写在载具 JSON 顶层；用于为任意飞行器（无人机、空中炮艇等）启用自动盘旋功能。
+
+盘旋采用四阶段状态机：**CLIMB**（爬升到安全高度）→ **TRANSIT**（朝盘旋圆周直飞）→ **APPROACH**（减速对齐切线）→ **LOITER**（圆周盘旋）。制导算法参考 SBW 两阶段航向（切线航向 + 径向航向混合），适配 ywzj_vehicle `ControlUnit` 模型，直接写入 `forward`/`up`/`down`/`leftYaw`/`rightYaw`/`yRot` 字段复用物理引擎。
+
+#### 通用盘旋参数（`rvp_loiter_*`）
+
+适用于所有飞行器。可部署 UAV 可将参数配在母车 JSON 中，子载具自动继承；AC130 等通用飞行器配在自身 JSON 中。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `rvp_loiter_enabled` | boolean | `false` | 是否启用盘旋功能（总开关）。 |
+| `rvp_loiter_radius` | double | `120.0` | 盘旋半径（格）。运行时按载具类型做最小半径 clamp：旋翼机下限 30 格，固定翼按 `V²/(g·tan(bank))` 动态计算，硬下限 80 格。 |
+| `rvp_loiter_altitude_offset` | double | `40.0` | 高于盘旋圆心的高度（格）。目标高度取三重基准最大值：圆心+偏移 / 地形+间隙 / 绝对最低。 |
+| `rvp_loiter_terrain_clearance` | double | `30.0` | 高于地表的最小间隙（格），用于地形规避。 |
+| `rvp_loiter_min_safe_altitude` | double | `80.0` | 绝对最低安全高度（海平面以上，格）。 |
+| `rvp_loiter_fixed_wing_min_bank` | double | `30.0` | 固定翼最大坡度（度），用于计算最小转弯半径 `R = V²/(g·tan(bank))`。 |
+| `rvp_loiter_sign_flip_threshold` | int | `3` | yaw 误差符号翻转次数阈值，超过则判定为震荡，自动扩大半径。 |
+| `rvp_loiter_radius_expand_factor` | double | `1.1` | 震荡时半径扩大倍率。 |
+| `rvp_loiter_climb_timeout` | int | `200` | CLIMB 阶段超时（tick，10 秒 = 200），超时后强制进入 TRANSIT。 |
+| `rvp_loiter_transit_timeout` | int | `1200` | TRANSIT 阶段超时（tick，60 秒 = 1200），超时后直接进入 LOITER。 |
+| `rvp_loiter_approach_timeout` | int | `400` | APPROACH 阶段超时（tick，20 秒 = 400），超时后进入 LOITER。 |
+| `rvp_loiter_terrain_sample_interval` | int | `40` | 前方地形采样间隔（tick，2 秒 = 40）。 |
+| `rvp_loiter_terrain_sample_range` | int | `60` | 前方地形采样范围（格），每 10 格采样一次最高地表。 |
+| `rvp_loiter_approach_tolerance` | double | `15.0` | 进入盘旋段的距离容差（格），水平距离 ∈ [radius ± tolerance] 时切入 LOITER。 |
+
+#### 可部署 UAV 专用触发开关
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `deployable_uav_auto_loiter_on_switch_back` | boolean | `true` | 玩家从无人机切回母车时自动激活盘旋。仅对配置了 `deployable_uav_*` 的母车生效。 |
+
+#### 配置查找优先级
+
+盘旋参数按以下顺序查找：
+
+1. 母车 JSON 的 `rvp_loiter_*`（可部署 UAV 场景，子载具继承母车配置）
+2. 载具自身 JSON 的 `rvp_loiter_*`（AC130 等通用场景）
+
+#### 控制方式
+
+- **旋翼机**：设置 `controlUnit.yRot`（analog 平滑追踪）+ `up/down`（高度）+ `forward`（前倾推进，pulse 调制）
+- **固定翼**：`leftYaw/rightYaw`（离散偏航）+ `forward`（油门维持）+ `up/down`（俯仰高度）
+- 玩家进入载具时自动关闭盘旋；J 键可手动切换
+
+#### AC130 示例（通用飞行器，配在自身 JSON）
+
+```json
+{
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 200,
+  "rvp_loiter_altitude_offset": 60,
+  "rvp_loiter_terrain_clearance": 40,
+  "rvp_loiter_min_safe_altitude": 100
+}
+```
+
+#### 多管火箭炮母车示例（可部署 UAV 场景，盘旋参数配在母车 JSON）
+
+```json
+{
+  "deployable_uav_enabled": true,
+  "deployable_uav_vehicle_id": "rvp:recon_uav",
+  "deployable_uav_auto_loiter_on_switch_back": true,
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 120,
+  "rvp_loiter_altitude_offset": 40
+}
+```
+
 ### 本体火箭 CCIP 扩展（本体 `VehicleRocket` / `VehicleRocketWeaponData`）
 
 以下字段写在**本体火箭武器 JSON** 上，作用对象是 `ywzj_vehicle` 原生火箭，不是 `rvp:rocket`。
