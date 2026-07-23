@@ -111,11 +111,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         if (!cfg.isGroupedSlotCarrier(weaponUnit.getId(), weaponIndex)) {
             return topMulti;
         }
-        if (topMulti.getSubWeapons().isEmpty()) {
-            return null;
-        }
-        AbstractVehicleWeapon<?> first = topMulti.getSubWeapons().get(0);
-        return first instanceof VehicleMultiWeapons inner ? inner : null;
+        VehicleMultiWeapons nestedCarrier = findNestedModdingCarrier(topMulti);
+        return nestedCarrier != null ? nestedCarrier : topMulti;
     }
 
     public List<ModdingMultiEntry> getModdingOnlyEntries(AbstractVehicle vehicle) {
@@ -131,13 +128,20 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     private static VehicleExtendedConfig parseVehicle(JsonObject obj) {
         Set<String> groundContactPartIds = parseGroundContactPartIds(obj);
+        ResourceLocation structureModel = parseStructureModel(obj);
+        Set<String> physicsOnlyBones = parsePhysicsOnlyBones(obj);
         Map<String, Set<Integer>> moddingOnlyMulti = parseModdingOnlyMulti(obj);
         Map<String, Set<Integer>> mergeIntoPreviousSlots = parseMergeIntoPreviousSlots(obj);
-        if (groundContactPartIds.isEmpty() && moddingOnlyMulti.isEmpty() && mergeIntoPreviousSlots.isEmpty()) {
+        if (groundContactPartIds.isEmpty()
+                && physicsOnlyBones.isEmpty()
+                && moddingOnlyMulti.isEmpty()
+                && mergeIntoPreviousSlots.isEmpty()) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
                 Set.copyOf(groundContactPartIds),
+                structureModel,
+                Set.copyOf(physicsOnlyBones),
                 immutableIndexMap(moddingOnlyMulti),
                 immutableIndexMap(mergeIntoPreviousSlots)
         );
@@ -163,6 +167,41 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             }
         }
         return ids;
+    }
+
+    private static ResourceLocation parseStructureModel(JsonObject obj) {
+        String structureModel = GsonHelper.getAsString(obj, "structure_model", "").trim();
+        if (structureModel.isEmpty()) {
+            return null;
+        }
+        return ResourceLocation.tryParse(structureModel);
+    }
+
+    private static Set<String> parsePhysicsOnlyBones(JsonObject obj) {
+        if (!obj.has("physics_info") || !obj.get("physics_info").isJsonObject()) {
+            return Set.of();
+        }
+        JsonObject physicsObj = obj.getAsJsonObject("physics_info");
+        Set<String> bones = new LinkedHashSet<>();
+        if (physicsObj.has("physics_only_bone") && physicsObj.get("physics_only_bone").isJsonPrimitive()) {
+            String bone = physicsObj.get("physics_only_bone").getAsString().trim();
+            if (!bone.isEmpty()) {
+                bones.add(bone);
+            }
+        }
+        if (physicsObj.has("physics_only_bones") && physicsObj.get("physics_only_bones").isJsonArray()) {
+            JsonArray array = physicsObj.getAsJsonArray("physics_only_bones");
+            for (JsonElement element : array) {
+                if (element == null || !element.isJsonPrimitive()) {
+                    continue;
+                }
+                String bone = element.getAsString().trim();
+                if (!bone.isEmpty()) {
+                    bones.add(bone);
+                }
+            }
+        }
+        return bones;
     }
 
     private static Map<String, Set<Integer>> parseModdingOnlyMulti(JsonObject obj) {
@@ -250,19 +289,35 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return Map.copyOf(copy);
     }
 
+    private static VehicleMultiWeapons findNestedModdingCarrier(VehicleMultiWeapons topMulti) {
+        for (AbstractVehicleWeapon<?> subWeapon : topMulti.getSubWeapons()) {
+            if (subWeapon instanceof VehicleMultiWeapons nested) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
     public record ModdingMultiEntry(String partId, int weaponIndex) {}
 
     public record VehicleExtendedConfig(
             Set<String> groundContactPartIds,
+            ResourceLocation structureModel,
+            Set<String> physicsOnlyBones,
             Map<String, Set<Integer>> moddingOnlyMultiByPartId,
             Map<String, Set<Integer>> mergeIntoPreviousSlotsByPartId
     ) {
-        public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(Set.of(), Map.of(), Map.of());
+        public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(Set.of(), null, Set.of(), Map.of(), Map.of());
 
         public boolean isEnabled() {
             return !groundContactPartIds.isEmpty()
+                    || !physicsOnlyBones.isEmpty()
                     || !moddingOnlyMultiByPartId.isEmpty()
                     || !mergeIntoPreviousSlotsByPartId.isEmpty();
+        }
+
+        public boolean hasPhysicsOnlyBones() {
+            return structureModel != null && !physicsOnlyBones.isEmpty();
         }
 
         public boolean isModdingOnlyMulti(String partId, int weaponIndex) {

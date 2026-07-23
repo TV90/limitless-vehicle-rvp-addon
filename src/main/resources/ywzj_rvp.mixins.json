@@ -9,6 +9,7 @@
     "AbstractVehicleEraStateMixin",
     "AbstractVehicleGunnerChunkLoadMixin",
     "AbstractVehicleGunnerDataMixin",
+    "AbstractVehiclePhysicsOnlyCollisionMixin",
     "AbstractVehicleLinkedUavMixin",
     "AbstractVehicleLauncherDeployMixin",
     "AbstractVehicleHitboxDamageFactorMixin",
@@ -49,10 +50,12 @@
     "ClientVehicleActionWeaponBayOverrideMixin",
     "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
-    "RadarSignatureMixin"
+    "RadarSignatureMixin",
+    "VectorUtilPhysicsOnlyHitFilterMixin"
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
+    "ClientAssetsManagerCustomMountMixin",
     "InfraredMixin",
     "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",
@@ -74,7 +77,11 @@
     "WeaponUnitSoftRfMixin",
     "WeaponUnitTickFireControlMixin",
     "WeaponUnitFireControlLockMixin",
-    "WeaponUnitToggleCurrentWeaponBayMixin"
+    "WeaponUnitToggleCurrentWeaponBayMixin",
+    "WeaponUnitCustomMountSuppressMixin",
+    "VehicleBedrockModelCockpitRenderMixin",
+    "VehicleRenderCockpitPassengerContextMixin",
+    "VehicleRenderCustomMountMixin"
   ],
   "injectors": {
     "defaultRequire": 1

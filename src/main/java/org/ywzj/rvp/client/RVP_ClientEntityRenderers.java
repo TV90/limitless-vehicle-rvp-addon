@@ -8,6 +8,13 @@ import org.ywzj.rvp.client.render.RVP_BulletEntityRenderer;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.vehicle.YwzjVehicle;
+import org.ywzj.vehicle.all.AllEntities;
+import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
+import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
+import org.ywzj.vehicle.entity.weapon.FragGrenadeEntity;
+import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.entity.weapon.RocketEntity;
+import org.ywzj.vehicle.entity.weapon.SmokeGrenadeEntity;
 
 /**
  * RVP projectile {@link net.minecraft.client.renderer.entity.EntityRenderer}s (typed for RVP entities).
@@ -27,6 +34,10 @@ public final class RVP_ClientEntityRenderers {
             YwzjVehicle.modLocation("entity/aerial_bomb");
     private static final ResourceLocation FALLBACK_BOMB_TEXTURE =
             YwzjVehicle.modLocation("textures/entity/aerial_bomb.png");
+    private static final ResourceLocation FALLBACK_GRENADE_MODEL =
+            YwzjVehicle.modLocation("entity/grenade_40mm");
+    private static final ResourceLocation FALLBACK_GRENADE_TEXTURE =
+            YwzjVehicle.modLocation("textures/entity/grenade_40mm.png");
 
     private RVP_ClientEntityRenderers() {}
 
@@ -40,5 +51,17 @@ public final class RVP_ClientEntityRenderers {
                 new RVP_BedrockProjectileEntityRenderer<RVP_BombEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_DISPENSED.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RVP_DispensedEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
+        EntityRenderers.register(AllEntities.ROCKET.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<RocketEntity>(ctx, FALLBACK_ROCKET_MODEL, FALLBACK_ROCKET_TEXTURE));
+        EntityRenderers.register(AllEntities.AERIAL_BOMB.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<AerialBombEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
+        EntityRenderers.register(AllEntities.MISSILE.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<MissileEntity>(ctx, FALLBACK_MISSILE_MODEL, FALLBACK_MISSILE_TEXTURE));
+        EntityRenderers.register(AllEntities.SMOKE_GRENADE.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<SmokeGrenadeEntity>(ctx, FALLBACK_GRENADE_MODEL, FALLBACK_GRENADE_TEXTURE));
+        EntityRenderers.register(AllEntities.APS_GRENADE.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<ActiveProtectionGrenadeEntity>(ctx, FALLBACK_GRENADE_MODEL, FALLBACK_GRENADE_TEXTURE));
+        EntityRenderers.register(AllEntities.FRAG_GRENADE.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<FragGrenadeEntity>(ctx, FALLBACK_GRENADE_MODEL, FALLBACK_GRENADE_TEXTURE));
     }
 }

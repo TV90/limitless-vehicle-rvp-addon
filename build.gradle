@@ -108,8 +108,8 @@ dependencies {
     // 本体
     implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.7-all")
     // SBM
-    jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.3.2-forge-mc1.20.1"))) {
-        jarJar.ranged(it, "[2.3.2,)")
+    jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.5.0-forge-mc1.20.1"))) {
+        jarJar.ranged(it, "[2.5.0,)")
     }
     compileOnly("com.maydaymemory:mae:1.1.2") {
         exclude group: 'com.google.code.findbugs', module: 'jsr305'

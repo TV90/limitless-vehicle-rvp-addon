@@ -26,6 +26,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.RVPEraStateAccess;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CVehicleEraState;
+import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -513,6 +514,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if ((factorByBoneName == null || factorByBoneName.isEmpty())
                     && (eraByBoneName == null || eraByBoneName.isEmpty())) {
                 return HitboxDamageResult.defaulted(defaultFactor, structureModel, 0, Double.NaN);
+            }
+            if (!RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(vehicle).isEmpty()
+                    && RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(vehicle, segmentStart, segmentEnd) == null
+                    && RVP_PhysicsOnlyCollisionHelper.closestPhysicsOnlyHitPosition(vehicle, segmentStart, segmentEnd) != null) {
+                return HitboxDamageResult.disabled();
             }
             Vector3f from = segmentStart.toVector3f();
             Vector3f to = segmentEnd.toVector3f();

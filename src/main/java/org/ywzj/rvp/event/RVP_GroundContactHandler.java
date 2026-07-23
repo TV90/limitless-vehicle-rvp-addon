@@ -8,6 +8,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.vehicle.api.event.VehicleCollectCollisionEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -24,7 +25,7 @@ public final class RVP_GroundContactHandler {
     public static void onVehicleCollectCollision(VehicleCollectCollisionEvent event) {
         AbstractVehicle vehicle = event.getVehicle();
         var cfg = RVP_VehicleExtendedConfigManager.INSTANCE.get(vehicle);
-        if (cfg.groundContactPartIds().isEmpty()) {
+        if (cfg.groundContactPartIds().isEmpty() && !cfg.hasPhysicsOnlyBones()) {
             return;
         }
 
@@ -38,6 +39,9 @@ public final class RVP_GroundContactHandler {
             for (VehicleCubeOBB cube : partUnit.getPartCubeOBBs()) {
                 appendCubeContacts(event, mainCube, axes, cube);
             }
+        }
+        for (VehicleCubeOBB cube : RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(vehicle)) {
+            appendPhysicsOnlyCubeContacts(event, mainCube, axes, cube);
         }
     }
 
@@ -72,5 +76,24 @@ public final class RVP_GroundContactHandler {
         point.cubePointContext.setBlockPos(Vec3.atBottomCenterOf(blockPos));
         point.cubePointContext.setBlockState(blockState);
         event.getTouchPoints().add(point);
+    }
+
+    private static void appendPhysicsOnlyCubeContacts(VehicleCollectCollisionEvent event, VehicleCubeOBB mainCube,
+                                                      Vector3f[] mainAxes, VehicleCubeOBB physicsCube) {
+        Vector3f[] cubeAxes = physicsCube.obb().getAxes();
+        for (VehicleCubeOBB.CubePoint cubePoint : physicsCube.cubePoints()) {
+            Vec3 worldPos = new Vec3(cubePoint.worldPos(cubeAxes));
+            BlockPos blockPos = BlockPos.containing(worldPos);
+            BlockState blockState = event.getVehicle().level().getBlockState(blockPos);
+            if (!blockState.isSolid()) {
+                continue;
+            }
+            Vector3f mainLocal = mainCube.obb().worldToLocal(worldPos.toVector3f(), mainAxes);
+            VehicleCubeOBB.CubePoint bridgedPoint = new VehicleCubeOBB.CubePoint(mainCube, mainLocal, cubePoint.cubeFace());
+            bridgedPoint.worldPos(mainAxes);
+            bridgedPoint.cubePointContext.setBlockPos(Vec3.atBottomCenterOf(blockPos));
+            bridgedPoint.cubePointContext.setBlockState(blockState);
+            event.getTouchPoints().add(bridgedPoint);
+        }
     }
 }

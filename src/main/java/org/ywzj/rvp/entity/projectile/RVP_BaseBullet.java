@@ -39,6 +39,7 @@ import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
 import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
+import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
@@ -1318,6 +1319,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (normalizedResult == null) {
                     continue;
                 }
+                if (normalizedResult.getEntity() instanceof AbstractVehicle targetVehicle) {
+                    Vec3 nonPhysicsHit = RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(targetVehicle, startVec, endVec);
+                    if (nonPhysicsHit == null) {
+                        continue;
+                    }
+                    normalizedResult = new BulletHitResult(targetVehicle, nonPhysicsHit, normalizedResult.isHeadshot());
+                }
                 double hitDistance = startVec.distanceToSqr(normalizedResult.getLocation());
                 if (hitDistance < closestDistance) {
                     closestDistance = hitDistance;
@@ -1457,10 +1465,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     private void handleEntityImpact(BulletHitResult result) {
+        Entity entity = result.getEntity();
+        if (entity instanceof AbstractVehicle targetVehicle
+                && ywzj_rvp$isOnlyPhysicsOnlyVehicleHit(targetVehicle, collisionSegmentStart(), collisionSegmentEnd())) {
+            setPos(RVP_WallPenetrationUtil.positionPastEntityHit(result.getLocation(), getDeltaMovement()));
+            return;
+        }
         if (tryBounceFromEntityHit(result)) {
             return;
         }
-        Entity entity = result.getEntity();
         Vec3 velocity = getDeltaMovement();
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
@@ -1739,6 +1752,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return null;
         }
         return new BulletHitResult(rootEntity, result.getLocation(), result.isHeadshot());
+    }
+
+    private boolean ywzj_rvp$isOnlyPhysicsOnlyVehicleHit(AbstractVehicle targetVehicle, Vec3 startVec, Vec3 endVec) {
+        return !RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(targetVehicle).isEmpty()
+                && RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(targetVehicle, startVec, endVec) == null
+                && RVP_PhysicsOnlyCollisionHelper.closestPhysicsOnlyHitPosition(targetVehicle, startVec, endVec) != null;
     }
 
     @Nullable

@@ -47,8 +47,11 @@ public class RVP_SimpleVehicleDisplay extends SimpleVehicleDisplay {
 
         if (pojo.animations != null) {
             var animationPojo = ClientAssetsManager.INSTANCE.getAnimation(pojo.animations);
+            var animationIndexProvider = getAnimationIndexProvider();
             var loadedAnimations = animationPojo
-                    .map(animationPOJO -> BedrockAnimation.createAnimation(animationPOJO, model))
+                    .map(animationPOJO -> animationIndexProvider == null
+                            ? List.<BedrockAnimation>of()
+                            : BedrockAnimation.createAnimation(animationPOJO, animationIndexProvider))
                     .orElse(List.of());
             var map = new HashMap<String, BedrockAnimation>();
             for (var anim : loadedAnimations) {
@@ -93,5 +96,9 @@ public class RVP_SimpleVehicleDisplay extends SimpleVehicleDisplay {
             });
         }
         return result;
+    }
+
+    public RVP_BedrockBackend getBedrockBackend() {
+        return bedrockBackend;
     }
 }
