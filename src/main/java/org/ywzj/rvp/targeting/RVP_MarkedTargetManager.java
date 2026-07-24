@@ -5,7 +5,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,47 +15,41 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class RVP_MarkedTargetManager {
 
-    /** 实体标记：entityId → 过期 gameTime */
+    /** 实体标记：entityId → 过期 gameTime（覆盖式，仅保留最新一条） */
     private static final Map<Integer, Long> MARKED_ENTITIES = new ConcurrentHashMap<>();
 
-    /** 方块标记：维度 → [(坐标, 过期时间)] */
-    private static final Map<ResourceLocation, List<MarkedBlock>> MARKED_BLOCKS = new ConcurrentHashMap<>();
+    /** 方块标记：维度 → [(坐标, 过期时间)]（覆盖式，每维度仅保留最新一条） */
+    private static final Map<ResourceLocation, MarkedBlock> MARKED_BLOCKS = new ConcurrentHashMap<>();
 
     private RVP_MarkedTargetManager() {}
 
+    /** 标记实体（覆盖式：先清空旧标记，再写入新标记） */
     public static void markEntity(int entityId, long expireTick) {
+        MARKED_ENTITIES.clear();
         MARKED_ENTITIES.put(entityId, expireTick);
     }
 
+    /** 标记方块（覆盖式：该维度仅保留最新一条） */
     public static void markBlock(ResourceLocation dimension, Vec3 pos, long expireTick) {
-        MARKED_BLOCKS.computeIfAbsent(dimension, k -> new ArrayList<>())
-                .add(new MarkedBlock(pos, expireTick));
+        MARKED_BLOCKS.put(dimension, new MarkedBlock(pos, expireTick));
     }
 
     /**
      * 清理过期标记。
      *
      * @param level 当前维度
-     * @return 该维度方块标记是否发生变化（有条目被移除），用于触发客户端同步
+     * @return 方块标记是否被清理，用于触发客户端同步
      */
     public static boolean tick(ServerLevel level) {
         long gameTime = level.getGameTime();
-        // 清理过期实体标记（全局，按当前维度 gameTime）
+        // 清理过期实体标记
         MARKED_ENTITIES.entrySet().removeIf(e -> e.getValue() <= gameTime);
-        // 清理过期方块标记（按维度）
+        // 清理过期方块标记（每维度最多一条）
         boolean blockChanged = false;
-        List<MarkedBlock> blocks = MARKED_BLOCKS.get(level.dimension().location());
-        if (blocks != null) {
-            Iterator<MarkedBlock> it = blocks.iterator();
-            while (it.hasNext()) {
-                if (it.next().expireTick <= gameTime) {
-                    it.remove();
-                    blockChanged = true;
-                }
-            }
-            if (blocks.isEmpty()) {
-                MARKED_BLOCKS.remove(level.dimension().location());
-            }
+        MarkedBlock block = MARKED_BLOCKS.get(level.dimension().location());
+        if (block != null && block.expireTick <= gameTime) {
+            MARKED_BLOCKS.remove(level.dimension().location());
+            blockChanged = true;
         }
         return blockChanged;
     }
@@ -65,9 +58,10 @@ public final class RVP_MarkedTargetManager {
         return new ArrayList<>(MARKED_ENTITIES.keySet());
     }
 
+    /** 获取指定维度的方块标记列表（兼容旧接口，最多返回一条） */
     public static List<MarkedBlock> getMarkedBlocks(ResourceLocation dimension) {
-        List<MarkedBlock> blocks = MARKED_BLOCKS.get(dimension);
-        return blocks == null ? List.of() : new ArrayList<>(blocks);
+        MarkedBlock block = MARKED_BLOCKS.get(dimension);
+        return block == null ? List.of() : List.of(block);
     }
 
     public static void clearAll() {
