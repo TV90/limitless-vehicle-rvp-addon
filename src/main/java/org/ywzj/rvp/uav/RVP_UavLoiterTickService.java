@@ -113,7 +113,7 @@ public final class RVP_UavLoiterTickService {
             }
             ResourceLocation dim = uav.level().dimension().location();
             circles.add(new RVP_ClientLoiterState.LoiterCircle(
-                    dim, state.centerX, state.centerZ, state.radius, state.active));
+                    dim, state.centerX, state.centerZ, state.radius, state.active, uav.getId()));
         }
         S2CLoiterStateSync msg = new S2CLoiterStateSync();
         msg.circles = circles;
@@ -137,11 +137,11 @@ public final class RVP_UavLoiterTickService {
             case CLIMB -> RVP_UavLoiterGuidance.computeClimb(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
-                    targetAltitude, config.loiterMinSafeAltitude(), isRotaryWing);
+                    targetAltitude, config.loiterMinSafeAltitude(), isRotaryWing, tickCount);
             case TRANSIT -> RVP_UavLoiterGuidance.computeTransit(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
-                    radius, targetAltitude, isRotaryWing);
+                    radius, targetAltitude, isRotaryWing, tickCount);
             case APPROACH -> RVP_UavLoiterGuidance.computeApproach(
                     uavX, uavY, uavZ, uavYaw,
                     state.centerX, state.centerY, state.centerZ,
@@ -151,7 +151,8 @@ public final class RVP_UavLoiterTickService {
                     state.centerX, state.centerY, state.centerZ,
                     radius, targetAltitude, isRotaryWing, tickCount,
                     state.snapshot(),
-                    uav.getZRot());
+                    uav.getZRot(),
+                    config.loiterBank(), config.loiterDirection());
         };
     }
 
@@ -159,6 +160,7 @@ public final class RVP_UavLoiterTickService {
     private static void applyControlUnit(AbstractVehicle uav, GuidanceOutput out, boolean isRotaryWing) {
         uav.controlUnit.reset();
         uav.controlUnit.forward = out.forward();
+        uav.controlUnit.backward = out.backward();
         uav.controlUnit.up = out.up();
         uav.controlUnit.down = out.down();
         uav.controlUnit.left = out.left();

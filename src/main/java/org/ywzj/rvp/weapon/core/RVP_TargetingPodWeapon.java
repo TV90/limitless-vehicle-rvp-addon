@@ -21,6 +21,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 
 import java.util.List;
+import net.minecraft.world.entity.player.Player;
 
 /**
  * 目标指示吊舱武器。按下发射键时执行一次标记扫描，支持实体标记和方块标记。
@@ -139,7 +140,8 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
                 continue;
             }
             // 标记
-            RVP_MarkedTargetManager.markEntity(entity.getId(), expireTick);
+            int iffType = classifyIff(player, entity);
+            RVP_MarkedTargetManager.markEntity(entity.getId(), expireTick, iffType);
             marked++;
         }
         return marked;
@@ -167,7 +169,7 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
 
         // 写入方块标记
         RVP_MarkedTargetManager.markBlock(
-                player.level().dimension().location(), target, expireTick);
+                player.level().dimension().location(), target, expireTick, player.getGameProfile().getName());
 
         // 广播方块标记给客户端
         S2CMarkedBlockSync msg = new S2CMarkedBlockSync();
@@ -175,7 +177,8 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
         msg.blocks = RVP_MarkedTargetManager.getMarkedBlocks(player.level().dimension().location())
                 .stream()
                 .map(b -> new S2CMarkedBlockSync.MarkedBlockEntry(
-                        (float) b.pos().x, (float) b.pos().y, (float) b.pos().z))
+                        (float) b.pos().x, (float) b.pos().y, (float) b.pos().z,
+                        b.markerName()))
                 .toList();
         RVP_Network.CHANNEL.send(
                 net.minecraftforge.network.PacketDistributor.ALL.noArg(), msg);
@@ -215,5 +218,45 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
             return false;
         }
         return observerTeam.isAlliedTo(target.getTeam());
+    }
+
+    /**
+     * IFF 分类：
+     * <ul>
+     *   <li>敌对怪物 + 不同阵营玩家及其驾驶载具 → HOSTILE（红）</li>
+     *   <li>中立生物 + 无主载具 → NEUTRAL（白）</li>
+     *   <li>同阵营玩家 → FRIENDLY（蓝）</li>
+     * </ul>
+     */
+    private int classifyIff(ServerPlayer observer, Entity target) {
+        var observerTeam = observer.getTeam();
+        // 载具：检查驾驶员阵营
+        if (target instanceof AbstractVehicle vehicle) {
+            Entity driver = vehicle.getDriver();
+            if (driver instanceof Player driverPlayer) {
+                if (observerTeam != null && observerTeam.isAlliedTo(driverPlayer.getTeam())) {
+                    return RVP_MarkedTargetManager.IFF_FRIENDLY;
+                }
+                return RVP_MarkedTargetManager.IFF_HOSTILE;
+            }
+            // 无主载具
+            return RVP_MarkedTargetManager.IFF_NEUTRAL;
+        }
+        // 玩家
+        if (target instanceof Player targetPlayer) {
+            if (observerTeam != null && observerTeam.isAlliedTo(targetPlayer.getTeam())) {
+                return RVP_MarkedTargetManager.IFF_FRIENDLY;
+            }
+            return RVP_MarkedTargetManager.IFF_HOSTILE;
+        }
+        // 敌对怪物
+        if (target instanceof net.minecraft.world.entity.monster.Enemy) {
+            return RVP_MarkedTargetManager.IFF_HOSTILE;
+        }
+        // 其他生物（中立）
+        if (target instanceof LivingEntity) {
+            return RVP_MarkedTargetManager.IFF_NEUTRAL;
+        }
+        return RVP_MarkedTargetManager.IFF_NEUTRAL;
     }
 }

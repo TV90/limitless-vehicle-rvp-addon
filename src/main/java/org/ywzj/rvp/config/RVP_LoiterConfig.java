@@ -20,7 +20,9 @@ public record RVP_LoiterConfig(
         int loiterTerrainSampleRange,
         double loiterApproachTolerance,
         boolean autoLoiterOnTakeoff,
-        boolean autoFullThrottleOnTakeoff
+        boolean autoFullThrottleOnTakeoff,
+        double loiterBank,
+        int loiterDirection
 ) {
     public static final RVP_LoiterConfig DISABLED = new RVP_LoiterConfig(
             false,
@@ -38,7 +40,9 @@ public record RVP_LoiterConfig(
             60,
             15.0,
             false,
-            false
+            false,
+            25.0,
+            1
     );
 
     public boolean isConfigured() {

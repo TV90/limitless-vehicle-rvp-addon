@@ -82,7 +82,8 @@
     "WeaponUnitCustomMountSuppressMixin",
     "VehicleBedrockModelCockpitRenderMixin",
     "VehicleRenderCockpitPassengerContextMixin",
-    "VehicleRenderCustomMountMixin"
+    "VehicleRenderCustomMountMixin",
+    "BedrockModelRenderTypesMixin"
   ],
   "injectors": {
     "defaultRequire": 1

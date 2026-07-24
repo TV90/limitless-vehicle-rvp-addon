@@ -57,18 +57,20 @@ public class C2SToggleUavLoiter {
                     return;
                 }
                 // 确定圆心：有母车则跟随母车，否则用当前位置
+                // 高度维持无人机当前高度，避免自动爬升
+                double loiterAlt = uav.getY();
                 AbstractVehicle parent = resolveParent(vehicle, uav);
                 if (parent != null) {
                     RVP_UavLoiterManager.enableFollowParent(
                             uavUuid, parent.getUUID(),
-                            config.loiterRadius(), config.loiterAltitudeOffset(),
+                            config.loiterRadius(), loiterAlt,
                             parent.getX(), parent.getY(), parent.getZ()
                     );
                 } else {
                     // 无母车：以当前位置为固定圆心（AC130 等场景）
                     RVP_UavLoiterManager.enableMarkedCenter(
                             uavUuid, uav.position(),
-                            config.loiterRadius(), uav.getY() + config.loiterAltitudeOffset()
+                            config.loiterRadius(), loiterAlt
                     );
                 }
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.enabled"), true);
@@ -77,17 +79,25 @@ public class C2SToggleUavLoiter {
         ctx.setPacketHandled(true);
     }
 
-    /** 解析目标无人机：当前驾驶的是无人机则返回它，否则查关联的子无人机。 */
+    /** 解析目标盘旋载具：无人机实例 → 自身有盘旋配置的载具 → 关联子无人机。 */
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
         if (vehicle instanceof AbstractVehicleLinkedUavExt ext && ext.ywzj_rvp$isDeployableUavInstance()) {
+            return vehicle;
+        }
+        // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
+        RVP_LoiterConfig selfConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
+        if (selfConfig.isConfigured()) {
             return vehicle;
         }
         Optional<AbstractVehicle> child = RVP_DeployableUavService.getLinkedChild(vehicle);
         return child.orElse(null);
     }
 
-    /** 解析母车：当前驾驶的是母车则返回它，否则查关联的母车。 */
+    /** 解析母车：目标就是当前载具自身时无母车，否则按原逻辑。 */
     private static AbstractVehicle resolveParent(AbstractVehicle vehicle, AbstractVehicle uav) {
+        if (vehicle == uav) {
+            return null;
+        }
         if (vehicle instanceof AbstractVehicleLinkedUavExt ext && !ext.ywzj_rvp$isDeployableUavInstance()) {
             return vehicle;
         }

@@ -138,14 +138,10 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
             return;
         }
         RVP_DeployableUavService.handleDeployableUavRemoved(self);
-        if (getDriver() instanceof ServerPlayer serverPlayer && fakeOperator != null) {
+        if (getDriver() instanceof ServerPlayer serverPlayer && fakeOperatorPosition != null) {
             onLeaveVehicle(serverPlayer);
             serverPlayer.unRide();
-            Vec3 backPosition = fakeOperator.position();
-            serverPlayer.teleportTo(backPosition.x, backPosition.y, backPosition.z);
-            serverPlayer.setYRot(fakeOperator.getYRot());
-            serverPlayer.setYBodyRot(fakeOperator.yBodyRot);
-            serverPlayer.setXRot(fakeOperator.getXRot());
+            serverPlayer.teleportTo(fakeOperatorPosition.x, fakeOperatorPosition.y, fakeOperatorPosition.z);
             fakeOperatorPosition = null;
         }
     }
@@ -157,11 +153,8 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
             return;
         }
         if (livingEntity instanceof ServerPlayer serverPlayer && self.tickCount != 0) {
+            // 只保存玩家原位置，不生成假玩家实体（避免母车旁出现玩家模型）
             fakeOperatorPosition = livingEntity.position();
-            fakeOperator = new FakePlayer(AllEntities.FAKE_PLAYER.get(), self.level());
-            fakeOperator.spawn(serverPlayer);
-            fakeOperator.setPos(fakeOperatorPosition);
-            self.level().addFreshEntity(fakeOperator);
             livingEntity.teleportTo(self.position().x, self.position().y, self.position().z);
         }
     }
@@ -178,14 +171,7 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
         if (!ywzj_rvp$isInstanceUavOnly()) {
             return;
         }
-        if (fakeOperator != null) {
-            Vec3 position = fakeOperator.position();
-            fakeOperatorPosition = null;
-            passenger.setYRot(fakeOperator.getYRot());
-            passenger.setYBodyRot(fakeOperator.yBodyRot);
-            passenger.setXRot(fakeOperator.getXRot());
-            cir.setReturnValue(position);
-        } else if (fakeOperatorPosition != null) {
+        if (fakeOperatorPosition != null) {
             cir.setReturnValue(fakeOperatorPosition);
         }
     }

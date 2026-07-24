@@ -58,7 +58,7 @@ public final class RVP_DeployableUavService {
         }
         if (config.singleInstance()) {
             AbstractVehicle existing = getLinkedChild(parent).orElse(null);
-            if (existing != null && existing.isAlive() && !existing.isRemoved()) {
+            if (existing != null && existing.isAlive() && !existing.isRemoved() && !existing.isDestroyed()) {
                 return DeployResult.ALREADY_DEPLOYED;
             }
             clearLinkedChild(parent);
@@ -88,7 +88,7 @@ public final class RVP_DeployableUavService {
             return false;
         }
         AbstractVehicle child = getLinkedChild(parent).orElse(null);
-        if (child == null || child.isRemoved() || !child.isAlive()) {
+        if (child == null || child.isRemoved() || !child.isAlive() || child.isDestroyed()) {
             clearLinkedChild(parent);
             return false;
         }

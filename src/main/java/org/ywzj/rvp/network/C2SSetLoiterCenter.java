@@ -70,7 +70,8 @@ public class C2SSetLoiterCenter {
             }
 
             Vec3 center = new Vec3(msg.x, msg.y, msg.z);
-            double altitude = msg.y + config.loiterAltitudeOffset();
+            // 目标高度：切换盘旋时维持当前高度，避免自动爬升
+            double altitude = uav.getY();
             UUID uavUuid = uav.getUUID();
 
             if (RVP_UavLoiterManager.isLoitering(uavUuid)) {
@@ -89,11 +90,19 @@ public class C2SSetLoiterCenter {
         if (vehicle instanceof AbstractVehicleLinkedUavExt ext && ext.ywzj_rvp$isDeployableUavInstance()) {
             return vehicle;
         }
+        // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
+        RVP_LoiterConfig selfConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
+        if (selfConfig.isConfigured()) {
+            return vehicle;
+        }
         Optional<AbstractVehicle> child = RVP_DeployableUavService.getLinkedChild(vehicle);
         return child.orElse(null);
     }
 
     private static RVP_LoiterConfig resolveLoiterConfig(AbstractVehicle vehicle, AbstractVehicle uav) {
+        if (vehicle == uav) {
+            return RVP_LoiterConfigCache.get(uav.getVehicleId());
+        }
         if (vehicle instanceof AbstractVehicleLinkedUavExt ext && !ext.ywzj_rvp$isDeployableUavInstance()) {
             RVP_LoiterConfig parentConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
             if (parentConfig.isConfigured()) {

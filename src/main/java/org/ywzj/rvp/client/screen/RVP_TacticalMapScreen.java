@@ -113,6 +113,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
     private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
+    private static final ResourceLocation NORMAL_ICON = mapIcon("normal.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
     private static final ResourceLocation CRUISE_MISSILE_ICON = mapIcon("cruise_msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
@@ -3138,6 +3139,10 @@ public class RVP_TacticalMapScreen extends Screen {
             drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
             return;
         }
+        if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
+            drawMarkerIcon(guiGraphics, NORMAL_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
+            return;
+        }
         drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 16, color, true, true);
     }
 
@@ -3562,6 +3567,9 @@ public class RVP_TacticalMapScreen extends Screen {
         }
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
             return MONSTER_ICON;
+        }
+        if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
+            return NORMAL_ICON;
         }
         if (entity instanceof AbstractVehicle vehicle) {
             return resolveVehicleIcon(vehicle);

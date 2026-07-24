@@ -12,14 +12,14 @@ import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * S2C 方块标记同步包。同步当前维度内所有有效方块标记的坐标。
+ * S2C 方块标记同步包。同步当前维度内所有有效方块标记的坐标和标记者。
  */
 public class S2CMarkedBlockSync {
 
     public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
     public List<MarkedBlockEntry> blocks = List.of();
 
-    public record MarkedBlockEntry(float x, float y, float z) {}
+    public record MarkedBlockEntry(float x, float y, float z, String markerName) {}
 
     public static void encode(S2CMarkedBlockSync msg, FriendlyByteBuf buf) {
         buf.writeResourceLocation(msg.dimension);
@@ -28,6 +28,7 @@ public class S2CMarkedBlockSync {
             buf.writeFloat(entry.x);
             buf.writeFloat(entry.y);
             buf.writeFloat(entry.z);
+            buf.writeUtf(entry.markerName);
         }
     }
 
@@ -37,7 +38,9 @@ public class S2CMarkedBlockSync {
         int size = buf.readVarInt();
         List<MarkedBlockEntry> blocks = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
-            blocks.add(new MarkedBlockEntry(buf.readFloat(), buf.readFloat(), buf.readFloat()));
+            blocks.add(new MarkedBlockEntry(
+                    buf.readFloat(), buf.readFloat(), buf.readFloat(),
+                    buf.readUtf(64)));
         }
         msg.blocks = blocks;
         return msg;

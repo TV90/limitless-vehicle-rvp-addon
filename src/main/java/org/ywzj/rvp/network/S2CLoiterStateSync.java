@@ -26,6 +26,7 @@ public class S2CLoiterStateSync {
             buf.writeDouble(c.centerZ());
             buf.writeDouble(c.radius());
             buf.writeBoolean(c.active());
+            buf.writeInt(c.vehicleEntityId());
         }
     }
 
@@ -39,7 +40,8 @@ public class S2CLoiterStateSync {
             double cz = buf.readDouble();
             double r = buf.readDouble();
             boolean active = buf.readBoolean();
-            list.add(new RVP_ClientLoiterState.LoiterCircle(dim, cx, cz, r, active));
+            int vehicleId = buf.readInt();
+            list.add(new RVP_ClientLoiterState.LoiterCircle(dim, cx, cz, r, active, vehicleId));
         }
         msg.circles = list;
         return msg;

@@ -238,7 +238,9 @@ public class VehicleDataManagerMixin {
                 GsonHelper.getAsInt(vehicleObj, "rvp_loiter_terrain_sample_range", 60),
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_approach_tolerance", 15.0),
                 GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false),
-                GsonHelper.getAsBoolean(vehicleObj, "rvp_auto_full_throttle_on_takeoff", false)
+                GsonHelper.getAsBoolean(vehicleObj, "rvp_auto_full_throttle_on_takeoff", false),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_bank", 25.0),
+                "left".equalsIgnoreCase(GsonHelper.getAsString(vehicleObj, "rvp_loiter_direction", "right")) ? -1 : 1
         );
     }
 }

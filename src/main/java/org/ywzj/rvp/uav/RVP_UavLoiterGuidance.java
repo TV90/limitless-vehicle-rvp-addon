@@ -1,11 +1,14 @@
 package org.ywzj.rvp.uav;
 
 import net.minecraft.util.Mth;
-import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager.LoiterPhase;
 
 /**
- * 无人机盘旋制导算法。参考 SBW 两阶段航向，适配 ywzj_vehicle ControlUnit 模型。
+ * 无人机盘旋制导算法。
+ * <p>核心设计：固定翼不直接按 left/right（累加式，持续按下会导致滚转输入失控）。
+ * 通过设置 controlUnit.yRot 为目标航向 + 偏移角，利用本体 FixedWingVehicle 的自动改平逻辑
+ * （偏差>5°时朝目标方向滚转）产生适度滚转来实现转弯。偏航由自动改平逻辑协调。</p>
+ * <p>节流阀自动调节：高度过高时脉冲式 backward 减油门，过低时脉冲式 forward 加油门。</p>
  * <p>非 Mixin 工具类，遵循 rvp-avoid-mixin 原则。</p>
  */
 public final class RVP_UavLoiterGuidance {
@@ -15,6 +18,7 @@ public final class RVP_UavLoiterGuidance {
     /** 制导输出，描述要写入 ControlUnit 的字段值。 */
     public record GuidanceOutput(
             boolean forward,
+            boolean backward,
             boolean up,
             boolean down,
             boolean left,
@@ -28,13 +32,9 @@ public final class RVP_UavLoiterGuidance {
 
     /**
      * 计算固定翼最小转弯半径。R = V² / (g·tan(bank))。
-     *
-     * @param horizontalSpeedBlocksPerTick 水平速度（格/tick）
-     * @param maxBankDegrees 最大坡度（度）
-     * @return 最小转弯半径（格），硬下限 80
      */
     public static double resolveFixedWingMinRadius(double horizontalSpeedBlocksPerTick, double maxBankDegrees) {
-        double speedMs = horizontalSpeedBlocksPerTick * 20.0; // tick → 秒
+        double speedMs = horizontalSpeedBlocksPerTick * 20.0;
         double g = 9.8;
         double maxBankRad = Math.toRadians(maxBankDegrees);
         double minR = (speedMs * speedMs) / (g * Math.tan(maxBankRad));
@@ -42,28 +42,63 @@ public final class RVP_UavLoiterGuidance {
     }
 
     /**
+     * 固定翼脉冲式高度控制。
+     * <p>本体飞控的 up/down 是累加式的，持续按下会导致俯仰输入不断增大直到后空翻。
+     * 改为脉冲式：每 10 tick 周期中只按 N tick，其余 tick 不按让自动改平逻辑恢复俯仰。</p>
+     */
+    private static boolean pulseAltitudeControl(double altError, int tickCount) {
+        double absErr = Math.abs(altError);
+        if (absErr < 3) {
+            return false;
+        }
+        int period = 10;
+        int duty;
+        if (absErr > 20) {
+            duty = 3;
+        } else if (absErr > 10) {
+            duty = 2;
+        } else {
+            duty = 1;
+        }
+        return (tickCount % period) < duty;
+    }
+
+    /**
+     * 固定翼脉冲式节流阀控制。
+     * <p>本体飞控的 forward/backward 是累加式的（每tick油门±5）。
+     * 脉冲式控制避免油门持续变化。</p>
+     */
+    private static boolean pulseThrottle(int tickCount, int duty) {
+        return (tickCount % 10) < duty;
+    }
+
+    // ===== 固定翼核心策略 =====
+    // 不按 left/right/leftYaw/rightYaw，只设置 controlUnit.yRot
+    // 本体 FixedWingVehicle 在 left/right 均未按下时，自动改平逻辑会根据 controlUnit.yRot
+    // 与当前航向的偏差产生滚转（偏差>5°时朝目标方向滚转，偏差≤5°时滚转回正）
+    // 通过设置 yRot = 切线方向 + 偏移角(由盘旋坡度和方向决定)，让自动改平逻辑产生滚转
+
+    /**
      * CLIMB 阶段：爬升到安全高度。
      */
     public static GuidanceOutput computeClimb(double uavX, double uavY, double uavZ, float uavYaw,
                                               double centerX, double centerY, double centerZ,
                                               double targetAltitude, double minSafeAltitude,
-                                              boolean isRotaryWing) {
+                                              boolean isRotaryWing, int tickCount) {
         double altError = targetAltitude - uavY;
-        boolean needClimb = uavY < minSafeAltitude || altError > 30;
+        boolean needClimb = uavY < minSafeAltitude || altError > 20;
 
-        // 朝圆心方向转向（固定翼需要前进爬升）
         double dx = centerX - uavX;
         double dz = centerZ - uavZ;
         double targetYaw = Math.toDegrees(Math.atan2(dx, -dz));
 
         if (isRotaryWing) {
-            // 旋翼机：原地爬升，不前进
-            return new GuidanceOutput(false, true, false, false, false, false, false,
+            return new GuidanceOutput(false, false, true, false, false, false, false, false,
                     uavYaw, true, needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
         } else {
-            // 固定翼：前进爬升 + 朝圆心转向
-            boolean up = altError > 0;
-            return new GuidanceOutput(true, up, !up && altError < -5, false, false, false, false,
+            boolean up = altError > 3 && pulseAltitudeControl(altError, tickCount);
+            boolean down = altError < -3 && pulseAltitudeControl(altError, tickCount);
+            return new GuidanceOutput(true, false, up, down, false, false, false, false,
                     (float) targetYaw, false, needClimb ? LoiterPhase.CLIMB : LoiterPhase.TRANSIT);
         }
     }
@@ -74,42 +109,35 @@ public final class RVP_UavLoiterGuidance {
     public static GuidanceOutput computeTransit(double uavX, double uavY, double uavZ, float uavYaw,
                                                 double centerX, double centerY, double centerZ,
                                                 double radius, double targetAltitude,
-                                                boolean isRotaryWing) {
+                                                boolean isRotaryWing, int tickCount) {
         double dx = centerX - uavX;
         double dz = centerZ - uavZ;
         double dist = Math.sqrt(dx * dx + dz * dz);
         if (dist < 0.001) {
             dist = 0.001;
         }
-        // 圆周接入点 = 圆心方向上距离 = radius 的点
         double approachX = centerX - (dx / dist) * radius;
         double approachZ = centerZ - (dz / dist) * radius;
-
-        // 航向：指向接入点
         double targetYaw = Math.toDegrees(Math.atan2(approachX - uavX, -(approachZ - uavZ)));
 
-        // 高度控制
         double altError = targetAltitude - uavY;
-        boolean up = altError > 5;
-        boolean down = altError < -5;
-
-        // 阶段切换：接近圆周
         LoiterPhase nextPhase = dist < radius * 1.5 ? LoiterPhase.APPROACH : LoiterPhase.TRANSIT;
 
         if (isRotaryWing) {
-            return new GuidanceOutput(true, up, down, false, false, false, false,
+            boolean up = altError > 5;
+            boolean down = altError < -5;
+            return new GuidanceOutput(true, false, up, down, false, false, false, false,
                     (float) targetYaw, true, nextPhase);
         } else {
-            float yawError = Mth.wrapDegrees((float) (targetYaw - uavYaw));
-            boolean leftYaw = yawError > 3;
-            boolean rightYaw = yawError < -3;
-            return new GuidanceOutput(true, up, down, false, false, leftYaw, rightYaw,
+            boolean up = altError > 3 && pulseAltitudeControl(altError, tickCount);
+            boolean down = altError < -3 && pulseAltitudeControl(altError, tickCount);
+            return new GuidanceOutput(true, false, up, down, false, false, false, false,
                     (float) targetYaw, false, nextPhase);
         }
     }
 
     /**
-     * APPROACH 阶段：减速 + 对齐切线。
+     * APPROACH 阶段：对齐切线，准备进入盘旋。
      */
     public static GuidanceOutput computeApproach(double uavX, double uavY, double uavZ, float uavYaw,
                                                  double centerX, double centerY, double centerZ,
@@ -122,48 +150,46 @@ public final class RVP_UavLoiterGuidance {
             dist = 0.001;
         }
 
-        // 切线航向（左舷朝圆心）
         double tangentYaw = Math.toDegrees(Math.atan2(-dz, -dx));
-        // 径向航向（指向圆心）
         double toCenterYaw = Math.toDegrees(Math.atan2(dx, -dz));
-        // 混合：远 → 径向，近 → 切线
         double blend = Mth.clamp((float) ((dist - radius) / (radius * 0.5)), 0f, 1f);
         double targetYaw = lerpAngle(tangentYaw, toCenterYaw, blend);
 
-        // 高度控制
         double altError = targetAltitude - uavY;
-        boolean up = altError > 5;
-        boolean down = altError < -5;
+        boolean up = altError > 3 && pulseAltitudeControl(altError, tickCount);
+        boolean down = altError < -3 && pulseAltitudeControl(altError, tickCount);
 
-        // 阶段切换：进入圆周 ±15 格
-        LoiterPhase nextPhase = Math.abs(dist - radius) < 15 ? LoiterPhase.LOITER : LoiterPhase.APPROACH;
+        LoiterPhase nextPhase = Math.abs(dist - radius) < 25 ? LoiterPhase.LOITER : LoiterPhase.APPROACH;
 
         if (isRotaryWing) {
-            // 减速：pulse 调制 forward
             int duty = (int) (4 * blend + 1);
             boolean forward = (tickCount % 5) < duty;
-            return new GuidanceOutput(forward, up, down, false, false, false, false,
+            return new GuidanceOutput(forward, false, up, down, false, false, false, false,
                     (float) targetYaw, true, nextPhase);
         } else {
-            float yawError = Mth.wrapDegrees((float) (targetYaw - uavYaw));
-            boolean leftYaw = yawError > 3;
-            boolean rightYaw = yawError < -3;
-            return new GuidanceOutput(true, up, down, false, false, leftYaw, rightYaw,
+            return new GuidanceOutput(true, false, up, down, false, false, false, false,
                     (float) targetYaw, false, nextPhase);
         }
     }
 
     /**
-     * LOITER 阶段：两阶段制导（切线航向 + 径向航向混合）。
+     * LOITER 阶段：盘旋。
+     * <p>固定翼核心策略：
+     * 1. 设置 controlUnit.yRot = 切线方向 + 偏移角(由 loiterBank 和 loiterDirection 决定)
+     * 2. 节流阀自动调节：高度过高减油门，过低加油门
+     * 3. 不按 left/right/leftYaw/rightYaw，让自动改平逻辑协调滚转和偏航</p>
      *
-     * @param uavZRot 载具当前 Z 旋转（坡度，度），固定翼用于升力损失补偿
+     * @param loiterBank 目标坡度（度），从 JSON rvp_loiter_bank 读取
+     * @param loiterDirection 盘旋方向：1=右盘旋, -1=左盘旋，从 JSON rvp_loiter_direction 读取
+     * @param uavZRot 载具当前 Z 旋转（坡度），用于升力损失补偿
      */
     public static GuidanceOutput computeLoiter(double uavX, double uavY, double uavZ, float uavYaw,
                                                double centerX, double centerY, double centerZ,
                                                double radius, double targetAltitude,
                                                boolean isRotaryWing, int tickCount,
                                                RVP_UavLoiterManager.LoiterState state,
-                                               float uavZRot) {
+                                               float uavZRot,
+                                               double loiterBank, int loiterDirection) {
         double dx = uavX - centerX;
         double dz = uavZ - centerZ;
         double horizontalDist = Math.sqrt(dx * dx + dz * dz);
@@ -172,27 +198,8 @@ public final class RVP_UavLoiterGuidance {
         }
         double radialError = horizontalDist - radius;
 
-        // 切线航向（盘旋阶段）：左舷朝向圆心
+        // 切线航向（顺时针盘旋方向）
         double tangentYaw = Math.toDegrees(Math.atan2(-dz, -dx));
-        float errorTangent = Mth.wrapDegrees((float) (tangentYaw - uavYaw));
-
-        // 径向航向（拦截阶段）
-        double toCenterYaw = Math.toDegrees(Math.atan2(dx, -dz));
-        float errorToCenter = Mth.wrapDegrees((float) (toCenterYaw - uavYaw));
-        float errorOutward = Mth.wrapDegrees((float) (toCenterYaw + 180.0 - uavYaw));
-        float radialYaw = radialError < 0 ? errorOutward : errorToCenter;
-
-        // 混合权重：远 → 径向，近 → 切线
-        double distFromOrbit = Math.abs(radialError);
-        double blend = Mth.clamp((float) (1.0 - distFromOrbit / radius), 0f, 0.8f);
-        double blendZone = 20.0;
-        double blendFactor = Mth.clamp((float) ((distFromOrbit - blendZone) / blendZone), 0f, 1f);
-        double effectiveRadial = (1.0 - blend) * blendFactor;
-        float yawError = (float) (errorTangent * (1.0 - effectiveRadial)
-                + radialYaw * effectiveRadial);
-
-        // 径向位置精修
-        yawError += Mth.clamp((float) radialError * 0.12f, -35f, 35f);
 
         // 高度控制
         double altError = targetAltitude - uavY;
@@ -201,7 +208,6 @@ public final class RVP_UavLoiterGuidance {
         if (isRotaryWing) {
             up = altError > 2;
             down = altError < -2;
-            // 小误差 pulse 调制防震荡
             if (Math.abs(altError) < 8) {
                 int duty = (int) Mth.clamp((float) (Math.abs(altError) / 2), 1f, 4f);
                 boolean pulse = (tickCount % 5) < duty;
@@ -209,46 +215,38 @@ public final class RVP_UavLoiterGuidance {
                 down = altError < -2 && pulse;
             }
         } else {
-            // 固定翼：坡度升力损失补偿 + 缩小死区 + pulse 调制
-            // 升力垂直分量 = L·cos(bank)，坡度越大垂直升力越少，越容易掉高度
             double bankDeg = Math.abs(Mth.wrapDegrees(uavZRot));
-            // 坡度损失等效高度补偿：30° 坡度约补偿 0.54 格，45° 约 1.17 格
-            double bankLossComp = (1.0 - Math.cos(Math.toRadians(bankDeg))) * 4.0;
+            double bankLossComp = (1.0 - Math.cos(Math.toRadians(bankDeg))) * 12.0;
             double effectiveAltError = altError + bankLossComp;
-            if (effectiveAltError > 1.5) {
-                up = true;
-                down = false;
-            } else if (effectiveAltError < -3.0) {
-                up = false;
-                down = true;
-            } else {
-                // 死区内：有坡度时 pulse 抬头补偿升力损失，防止缓慢掉高
-                up = bankDeg > 12.0 && (tickCount % 4) < 2;
-                down = false;
-            }
+            up = effectiveAltError > 3 && pulseAltitudeControl(effectiveAltError, tickCount);
+            down = effectiveAltError < -3 && pulseAltitudeControl(effectiveAltError, tickCount);
         }
 
-        // 旋翼机前倾推进；固定翼持续推力维持速度（存能基础）
-        boolean forward = isRotaryWing
-                ? (radialError > 5 || horizontalDist < radius * 0.5)
-                : true;
-
         if (isRotaryWing) {
+            boolean forward = (radialError > 5 || horizontalDist < radius * 0.5);
+            double toCenterYaw = Math.toDegrees(Math.atan2(centerX - uavX, -(centerZ - uavZ)));
+            float yawError = Mth.wrapDegrees((float) (tangentYaw - uavYaw));
+            yawError += Mth.clamp((float) radialError * 0.12f, -35f, 35f);
             float targetYRot = Mth.wrapDegrees(uavYaw + yawError);
-            return new GuidanceOutput(forward, up, down, false, false, false, false,
+            return new GuidanceOutput(forward, false, up, down, false, false, false, false,
                     targetYRot, true, LoiterPhase.LOITER);
         } else {
-            // 固定翼盘旋：主动滚转建立坡度（主要转弯手段）+ 偏航协调
-            // 目标坡度 ~22°，坡度未到时给滚转输入，到目标后靠气动力维持
-            double targetBank = 22.0;
-            double bankDeg = Math.abs(Mth.wrapDegrees(uavZRot));
-            boolean left = yawError > 3 && bankDeg < targetBank;
-            boolean right = yawError < -3 && bankDeg < targetBank;
-            // 偏航协调：仅大偏差时抵消侧滑
-            boolean leftYaw = yawError > 12;
-            boolean rightYaw = yawError < -12;
-            float targetYRot = Mth.wrapDegrees((float) tangentYaw);
-            return new GuidanceOutput(forward, up, down, left, right, leftYaw, rightYaw,
+            // 固定翼盘旋核心逻辑：
+            // offset = loiterBank * loiterDirection
+            // 右盘旋(direction=1): offset > 0 → 目标航向在切线右侧 → 右滚转
+            // 左盘旋(direction=-1): offset < 0 → 目标航向在切线左侧 → 左滚转
+            float radialCorrection = Mth.clamp((float) (radialError * 0.2f), -10f, 10f);
+            float offset = (float) (loiterBank * loiterDirection) + radialCorrection * loiterDirection;
+            float targetYRot = Mth.wrapDegrees((float) (tangentYaw + offset));
+
+            // 节流阀自动调节：根据高度误差脉冲式 forward/backward
+            // 高度太高(altError < -5)：减油门
+            // 高度太低(altError > 5)：加油门
+            // 高度适中：不调节
+            boolean forward = altError > 5 && pulseThrottle(tickCount, 2);
+            boolean backward = altError < -5 && pulseThrottle(tickCount, 2);
+
+            return new GuidanceOutput(forward, backward, up, down, false, false, false, false,
                     targetYRot, false, LoiterPhase.LOITER);
         }
     }

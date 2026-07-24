@@ -74,7 +74,7 @@ public final class RVP_TacticalRevealSyncService {
         msg.dimension = player.serverLevel().dimension().location();
         if (!(player.getVehicle() instanceof AbstractVehicle viewerVehicle)) {
             msg.fireRevealIds = List.of();
-            msg.markedRevealIds = List.of();
+            msg.markedEntries = List.of();
             return msg;
         }
         AABB rangeBox = viewerVehicle.getBoundingBox().inflate(FIRE_REVEAL_RANGE);
@@ -94,7 +94,9 @@ public final class RVP_TacticalRevealSyncService {
             fireRevealIds.add(vehicle.getId());
         }
         msg.fireRevealIds = fireRevealIds;
-        msg.markedRevealIds = RVP_MarkedTargetManager.getMarkedEntityIds();
+        msg.markedEntries = RVP_MarkedTargetManager.getMarkedEntityEntries().stream()
+                .map(e -> new S2CTacticalRevealSnapshot.MarkedEntry(e.entityId(), e.iffType()))
+                .toList();
         return msg;
     }
 
@@ -119,7 +121,8 @@ public final class RVP_TacticalRevealSyncService {
         msg.blocks = RVP_MarkedTargetManager.getMarkedBlocks(level.dimension().location())
                 .stream()
                 .map(b -> new S2CMarkedBlockSync.MarkedBlockEntry(
-                        (float) b.pos().x, (float) b.pos().y, (float) b.pos().z))
+                        (float) b.pos().x, (float) b.pos().y, (float) b.pos().z,
+                        b.markerName()))
                 .toList();
         RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), msg);
     }

@@ -4,6 +4,8 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 客户端盘旋状态缓存，存储从服务端同步的盘旋圆信息供战术地图渲染。
@@ -11,7 +13,7 @@ import java.util.List;
 public final class RVP_ClientLoiterState {
 
     public record LoiterCircle(ResourceLocation dimension, double centerX, double centerZ,
-                                double radius, boolean active) {}
+                                double radius, boolean active, int vehicleEntityId) {}
 
     private static List<LoiterCircle> circles = List.of();
 
@@ -26,5 +28,10 @@ public final class RVP_ClientLoiterState {
             return List.of();
         }
         return circles.stream().filter(c -> currentDimension.equals(c.dimension())).toList();
+    }
+
+    /** 当前载具是否在盘旋 */
+    public static boolean isVehicleLoitering(int vehicleEntityId) {
+        return circles.stream().anyMatch(c -> c.active && c.vehicleEntityId == vehicleEntityId);
     }
 }

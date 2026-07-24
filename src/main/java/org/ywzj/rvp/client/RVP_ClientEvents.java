@@ -34,6 +34,7 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
@@ -422,6 +423,38 @@ public class RVP_ClientEvents {
     public static void onRenderGuiOverlayPost(RenderGuiOverlayEvent.Post event) {
         if (RVP_ClientHmdState.getInstance().isHmdMode()) {
             RVP_HmdOverlay.render(event.getGuiGraphics());
+        }
+    }
+
+    /**
+     * 盘旋屏蔽：在 ClientTickEvent.START 阶段（LOWEST 优先级，在 InputHandler 之后执行）
+     * 覆盖本地 controlUnit 的运动字段，防止鼠标指向干扰自动盘旋制导。
+     * InputHandler (NORMAL 优先级) 会先执行并写入 controlUnit，
+     * 然后本处理器清零运动字段 + 设 yRotKeep=true，
+     * FixedWingVehicle.tick() 在 START 和 END 之间执行，读到的是清零后的值。
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onClientTickLoiterSuppress(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) {
+            return;
+        }
+        if (player.getVehicle() instanceof AbstractVehicle vehicle
+                && RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId())) {
+            var cu = vehicle.controlUnit;
+            cu.forward = false;
+            cu.backward = false;
+            cu.left = false;
+            cu.right = false;
+            cu.up = false;
+            cu.down = false;
+            cu.leftYaw = false;
+            cu.rightYaw = false;
+            cu.yRotKeep = true;
         }
     }
 }
