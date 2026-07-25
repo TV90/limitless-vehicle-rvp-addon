@@ -105,10 +105,10 @@ public class RVP_ClientEvents {
             RVP_TacticalMapCache.uploadDirtyTextures();
         }
 
-        while (RVP_Keys.WEAPON_TEST_OVERLAY.consumeClick()) {
-            boolean on = org.ywzj.rvp.client.RVP_WeaponTestMode.toggle();
+        while (RVP_Keys.DEBUG_OVERLAY.consumeClick()) {
+            boolean on = org.ywzj.rvp.client.RVP_DebugOverlayState.toggle();
             player.displayClientMessage(
-                    Component.translatable(on ? "message.ywzj_rvp.weapon_test.on" : "message.ywzj_rvp.weapon_test.off"),
+                    Component.translatable(on ? "message.ywzj_rvp.debug_overlay.on" : "message.ywzj_rvp.debug_overlay.off"),
                     true);
         }
 

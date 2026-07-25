@@ -61,6 +61,10 @@ public final class GunnerWeaponSuitability {
         if (data.isGpsMissile() && isAirTarget(target)) {
             return false;
         }
+        if ((data.isHomingProjectile() || data.usesGuidanceType(RVP_EnumGuidanceType.AIR))
+                && !isAirTarget(target) && isAirOnlyMissile(data)) {
+            return false;
+        }
         if (data.isAntiRadiationMissile()) {
             return resolveArmPreselect(rootUnit, target, data, false);
         }
@@ -411,5 +415,22 @@ public final class GunnerWeaponSuitability {
             return altitudeAgl(target) > 25.0;
         }
         return false;
+    }
+
+    /**
+     * 判断导弹是否为纯对空导弹
+     * 有lock_altitude_range时：下限不为-inf即为对空
+     * 没有lock_altitude_range时：ARH/SARH/AIR/IR默认视为对空导弹
+     */
+    private static boolean isAirOnlyMissile(RVP_WeaponData data) {
+        RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
+        if (launch == null || launch.altitudeRange() == null) {
+            return data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.IR);
+        }
+        List<RVP_Range.Interval<Float>> intervals = launch.altitudeRange().intervals();
+        return !intervals.isEmpty() && intervals.get(0).lower() != null;
     }
 }

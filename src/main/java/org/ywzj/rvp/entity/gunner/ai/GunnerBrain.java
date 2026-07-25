@@ -11,8 +11,11 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.mixin.GunnerWeaponAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
@@ -168,6 +171,14 @@ public final class GunnerBrain {
             gunner.setTrackedTarget(null);
             return null;
         }
+
+        // CIWS: prioritize intercepting missiles/bombs (ammo must be above 50m AGL)
+        AmmoEntity ciwsTarget = GunnerTargeting.findCiwsTarget(gunner, vehicle);
+        if (ciwsTarget != null) {
+            gunner.setTrackedTarget(ciwsTarget);
+            return ciwsTarget;
+        }
+
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
             gunner.setTrackedTarget(GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile));
         }
@@ -177,6 +188,14 @@ public final class GunnerBrain {
             return null;
         }
         return tracked;
+    }
+
+    private static boolean isCiwsAltitudeMet(AbstractVehicle vehicle) {
+        double agl = vehicle.getY() - vehicle.level().getHeight(
+                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                net.minecraft.util.Mth.floor(vehicle.getX()),
+                net.minecraft.util.Mth.floor(vehicle.getZ()));
+        return agl >= 50.0;
     }
 
     private static void tickCombat(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target, GunnerProfile profile) {
@@ -191,6 +210,13 @@ public final class GunnerBrain {
         }
         gunner.setControlledWeaponIndex(weaponIndex);
 
+        AbstractVehicleWeapon<?> selectedWeapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
+        boolean isRvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
+
+        if (isRvpMissile && gunner.getMissileCooldown() > 0) {
+            return;
+        }
+
         if (!gunner.isBurstWindowOpen()) {
             return;
         }
@@ -198,14 +224,25 @@ public final class GunnerBrain {
         float xErr = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
         float yErr = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
         if (xErr <= profile.getFireWindowDeg() && yErr <= profile.getFireWindowDeg()) {
-            AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
-            if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, weapon, target)) {
+            if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)) {
                 return;
             }
-            GunnerGuidedWeaponController.prepareForLaunch(gunner, weaponUnit.getVehicle(), weaponUnit, weapon, target);
+            GunnerGuidedWeaponController.prepareForLaunch(gunner, weaponUnit.getVehicle(), weaponUnit, selectedWeapon, target);
             weaponUnit.shoot(weaponIndex, weaponUnit.aimContexts(), gunner);
             gunner.onBurstShot(profile.getBurstFireTick(), profile.getBurstRestTick());
+            if (isRvpMissile) {
+                gunner.setMissileCooldown(60);
+            }
         }
+    }
+
+    private static boolean isRvpHomingMissile(WeaponUnit weaponUnit, AbstractVehicleWeapon<?> rawWeapon) {
+        AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        RVP_WeaponData data = rvpWeapon.getData();
+        return data != null && (data.isHomingProjectile() || data.usesGuidanceType(RVP_EnumGuidanceType.AIR));
     }
 
     private static boolean tickDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
@@ -764,6 +801,44 @@ public final class GunnerBrain {
     }
 
     private static int selectWeaponIndex(WeaponUnit weaponUnit, Entity target) {
+        Vec3 weaponPos = weaponUnit.worldPivotPosition();
+        double dist = weaponPos.distanceTo(target.getBoundingBox().getCenter());
+        boolean targetIsAmmo = target instanceof AmmoEntity;
+        boolean targetHighAlt = altitudeAgl(target) >= 200.0;
+
+        // CIWS拦截弹药：200米外优先导弹，200米内优先机炮
+        // 攻击高空目标(≥200m)：优先导弹
+        boolean preferMissile = (targetIsAmmo && dist > 200.0) || (!targetIsAmmo && targetHighAlt);
+        boolean preferGun = targetIsAmmo && dist <= 200.0;
+
+        if (preferMissile) {
+            for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
+                AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
+                AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
+                if (proxyWeapon.hasAmmo()
+                        && !proxyWeapon.isCoolingDown()
+                        && !proxyWeapon.isReloading()
+                        && !isCountermeasureWeapon(proxyWeapon)
+                        && isCiwsPreferredMissile(proxyWeapon)
+                        && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
+                    return index;
+                }
+            }
+        }
+        if (preferGun) {
+            for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
+                AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
+                AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
+                if (proxyWeapon.hasAmmo()
+                        && !proxyWeapon.isCoolingDown()
+                        && !proxyWeapon.isReloading()
+                        && !isCountermeasureWeapon(proxyWeapon)
+                        && !isRvpHomingMissile(weaponUnit, weapon)
+                        && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
+                    return index;
+                }
+            }
+        }
         for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
             AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
             AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
@@ -776,6 +851,28 @@ public final class GunnerBrain {
             }
         }
         return -1;
+    }
+
+    private static double altitudeAgl(Entity entity) {
+        int groundY = entity.level().getHeight(
+                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                net.minecraft.util.Mth.floor(entity.getX()),
+                net.minecraft.util.Mth.floor(entity.getZ()));
+        return entity.getY() - groundY;
+    }
+
+    private static boolean isCiwsPreferredMissile(AbstractVehicleWeapon<?> weapon) {
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        RVP_WeaponData data = rvpWeapon.getData();
+        if (data == null) {
+            return false;
+        }
+        return data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR);
     }
 
     private static boolean isCountermeasureWeapon(AbstractVehicleWeapon<?> weapon) {

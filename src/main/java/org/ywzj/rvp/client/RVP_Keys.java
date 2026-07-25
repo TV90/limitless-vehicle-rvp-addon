@@ -27,8 +27,8 @@ public class RVP_Keys {
 
     public static final KeyMapping OPEN_GPS_PANEL = key("open_gps_panel", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K);
 
-    /** Toggle RVP weapon JSON test overlay (MCH test mode style). */
-    public static final KeyMapping WEAPON_TEST_OVERLAY = key("weapon_test", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F10);
+    /** Toggle debug overlay (hit debug HUD). */
+    public static final KeyMapping DEBUG_OVERLAY = key("debug_overlay", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F10);
 
     /** ARM target selection (previous). */
     public static final KeyMapping ARM_SELECT_PREV = key("arm_select_prev", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET);
@@ -57,7 +57,7 @@ public class RVP_Keys {
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
-        event.register(WEAPON_TEST_OVERLAY);
+        event.register(DEBUG_OVERLAY);
         event.register(ARM_SELECT_PREV);
         event.register(ARM_SELECT_NEXT);
         event.register(SET_GPS_TARGET);

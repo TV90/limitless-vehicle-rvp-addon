@@ -13,10 +13,15 @@ public final class RVP_RuntimeGpsGuidanceSource implements RVP_RuntimeGuidanceSo
         return RVP_EnumGuidanceType.GPS;
     }
 
+    private static final double INERTIAL_RANGE = 5.0;
+
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         Vec3 target = context.projectile().getTargetPos();
         if (target == null) {
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.GPS);
+        }
+        if (context.projectile().position().distanceToSqr(target) <= INERTIAL_RANGE * INERTIAL_RANGE) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.GPS);
         }
         return RVP_GuidanceIntent.point(target, false, 1.0, RVP_EnumGuidanceType.GPS);
