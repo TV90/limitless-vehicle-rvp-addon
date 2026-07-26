@@ -96,7 +96,7 @@ final class VehicleProjectileRenderLogic {
                 runner.tick();
                 modelInstance.applyPose(BLENDER.blend(modelInstance.getBindPose(), runner.evaluate()));
             }
-            ammoModel.renderToBufferBaked(modelInstance, poseStack, bufferSource, texture, packedLight);
+            ammoModel.renderToBuffer(modelInstance, poseStack, bufferSource, texture, packedLight);
         } else {
             // fallback: v1 路径（无烘焙模型时，如 fallbackModel）
             BedrockModel model = ammoModel != null ? ammoModel : BedrockModelLoader.getModel(fallbackModel);

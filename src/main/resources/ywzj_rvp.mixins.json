@@ -56,7 +56,6 @@
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
-    "AmmoEntityRendererMixin",
     "ClientAssetsManagerCustomMountMixin",
     "InfraredMixin",
     "InfraredSignatureMixin",
@@ -84,7 +83,8 @@
     "VehicleBedrockModelCockpitRenderMixin",
     "VehicleRenderCockpitPassengerContextMixin",
     "VehicleRenderCustomMountMixin",
-    "BedrockModelRenderTypesMixin"
+    "BedrockModelRenderTypesMixin",
+    "AbstractVehicleWeaponSoundMixin"
   ],
   "injectors": {
     "defaultRequire": 1

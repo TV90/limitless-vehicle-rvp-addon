@@ -37,7 +37,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
      */
     @Overwrite(remap = false)
     @OnlyIn(Dist.CLIENT)
-    public void renderSpecialBonesBaked(BakedModelInstance instance,
+    public void renderSpecialBones(BakedModelInstance instance,
                                         PoseStack poseStack,
                                         MultiBufferSource source,
                                         int packedLight,
@@ -101,23 +101,8 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                     continue;
                 }
             }
-            BoneState bone = instance.getBone(entry.boneIndex());
-            if (bone == null) {
-                continue;
-            }
-            int parentIndex = bone.parentIndex();
-            poseStack.pushPose();
-            try {
-                if (parentIndex >= 0) {
-                    poseStack.mulPoseMatrix(instance.getGlobalTransform(parentIndex));
-                }
-                bakedModel.renderBone(instance, entry.boneIndex(), poseStack, source.getBuffer(quadType), packedLight,
-                        packedOverlay, 1.0F, 1.0F, 1.0F, 1.0F, true);
-                bakedModel.renderBone(instance, entry.boneIndex(), poseStack, source.getBuffer(meshType), packedLight,
-                        packedOverlay, 1.0F, 1.0F, 1.0F, 1.0F, false);
-            } finally {
-                poseStack.popPose();
-            }
+            instance.renderSingleBone(poseStack, entry.boneIndex(), source, quadType, meshType, packedLight,
+                    packedOverlay, 1.0F, 1.0F, 1.0F, 1.0F, false);
         }
     }
 }

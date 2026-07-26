@@ -235,8 +235,8 @@ public final class RVP_CustomMountRenderLogic {
                 poseStack.mulPose(Axis.ZP.rotationDegrees(rotation.z()));
                 RVP_CustomMountConfig.Vec3fConfig scale = config.scale();
                 poseStack.scale(scale.x(), scale.y(), scale.z());
-                attachmentModel.renderToBufferBaked(attachmentInstance, poseStack, bufferSource, config.texture(), actualLight);
-                attachmentModel.renderSpecialBonesBaked(
+                attachmentModel.renderToBuffer(attachmentInstance, poseStack, bufferSource, config.texture(), actualLight);
+                attachmentModel.renderSpecialBones(
                         attachmentInstance,
                         poseStack,
                         bufferSource,

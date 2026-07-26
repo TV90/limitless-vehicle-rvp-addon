@@ -17,7 +17,7 @@ public abstract class RotaryWingAutoLandingGearOverrideMixin {
             method = "onClientVehicleAction",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/vehicle/part/SwitchableUnit;setOn(Z)V",
+                    target = "Lorg/ywzj/vehicle/vehicle/part/LandingGearUnit;setOn(Z)V",
                     remap = false
             ),
             remap = false

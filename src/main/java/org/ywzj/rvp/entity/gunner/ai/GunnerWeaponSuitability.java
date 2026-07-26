@@ -22,6 +22,7 @@ import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -408,13 +409,7 @@ public final class GunnerWeaponSuitability {
     }
 
     private static boolean isAirTarget(Entity target) {
-        if (target instanceof FixedWingVehicle || target instanceof RotaryWingVehicle) {
-            return true;
-        }
-        if (target instanceof AbstractVehicle) {
-            return altitudeAgl(target) > 25.0;
-        }
-        return false;
+        return altitudeAgl(target) > 25.0;
     }
 
     /**

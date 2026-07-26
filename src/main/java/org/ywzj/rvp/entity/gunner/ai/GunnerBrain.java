@@ -212,6 +212,7 @@ public final class GunnerBrain {
 
         AbstractVehicleWeapon<?> selectedWeapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
         boolean isRvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
+        boolean isSelfGuided = isSelfGuidedMissile(weaponUnit, selectedWeapon);
 
         if (isRvpMissile && gunner.getMissileCooldown() > 0) {
             return;
@@ -231,18 +232,55 @@ public final class GunnerBrain {
             weaponUnit.shoot(weaponIndex, weaponUnit.aimContexts(), gunner);
             gunner.onBurstShot(profile.getBurstFireTick(), profile.getBurstRestTick());
             if (isRvpMissile) {
-                gunner.setMissileCooldown(60);
+                gunner.setMissileCooldown(30);
+            }
+            if (isSelfGuided && target instanceof AmmoEntity) {
+                gunner.setCiwsTargetCooldown(target, 100);
             }
         }
     }
 
+    /**
+     * 判断是否为 RVP 导弹类武器（包括所有具备防空拦截能力的制导类型）。
+     * 用于施加 60tick 射速限制以及在 missile/gun 分类中使用。
+     */
     private static boolean isRvpHomingMissile(WeaponUnit weaponUnit, AbstractVehicleWeapon<?> rawWeapon) {
         AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
         if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
             return false;
         }
         RVP_WeaponData data = rvpWeapon.getData();
-        return data != null && (data.isHomingProjectile() || data.usesGuidanceType(RVP_EnumGuidanceType.AIR));
+        if (data == null) {
+            return false;
+        }
+        return data.isHomingProjectile()
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SALH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.LBR);
+    }
+
+    /**
+     * 判断是否为"射后不管/半射后不管"的自导导弹（IR/ARH/SARH/AIR）。
+     * 这类导弹发射后不需要 gunner 持续瞄准目标，gunner 可以立即转向下一发来袭弹药。
+     */
+    private static boolean isSelfGuidedMissile(WeaponUnit weaponUnit, AbstractVehicleWeapon<?> rawWeapon) {
+        AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        RVP_WeaponData data = rvpWeapon.getData();
+        if (data == null) {
+            return false;
+        }
+        return data.isHomingProjectile()
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR);
     }
 
     private static boolean tickDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
@@ -872,7 +910,10 @@ public final class GunnerBrain {
         return data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR);
+                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.SALH)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.LBR);
     }
 
     private static boolean isCountermeasureWeapon(AbstractVehicleWeapon<?> weapon) {

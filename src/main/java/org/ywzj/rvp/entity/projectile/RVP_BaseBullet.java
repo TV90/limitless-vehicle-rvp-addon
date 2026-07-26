@@ -1734,6 +1734,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (ywzj_rvp$isEntityAttachedToShooterVehicle(entity)) {
             return false;
         }
+        // 同一载具发射的其它弹药不互伤（含近炸和直击）
+        if (entity instanceof AmmoEntity otherAmmo && otherAmmo.vehicle != null && otherAmmo.vehicle == vehicle) {
+            return false;
+        }
         Entity rootEntity = ywzj_rvp$resolveCollisionRoot(entity);
         return vehicle == null || rootEntity == null || !vehicle.getPassengers().contains(rootEntity);
     }
@@ -1967,6 +1971,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         level().registryAccess(), this, getOwner(), pos);
                 resolvedProximityTarget.hurt(source, guaranteed);
                 hadGuaranteedDamage = true;
+            }
+            // 近炸触发后，如果触发实体也是弹药（如拦截弹击中敌方导弹），强制将其引爆/销毁
+            if (resolvedProximityTarget instanceof RVP_BaseBullet targetBullet) {
+                targetBullet.rvp$detonateByAps();
+            } else if (resolvedProximityTarget instanceof AmmoEntity targetAmmo) {
+                targetAmmo.discard();
             }
         }
         // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害

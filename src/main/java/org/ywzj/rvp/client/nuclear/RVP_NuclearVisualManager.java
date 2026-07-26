@@ -2,17 +2,20 @@ package org.ywzj.rvp.client.nuclear;
 
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
+import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundSource;
@@ -25,13 +28,9 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Sounds;
-import org.ywzj.rvp.client.render.RVP_RenderTypes;
 import org.ywzj.rvp.network.S2CNuclearVisualEffect;
 
 import java.util.ArrayList;
@@ -55,10 +54,7 @@ public final class RVP_NuclearVisualManager {
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
     private static final ResourceLocation FLARE_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/flare.png");
-    private static final RenderType CLOUD_RENDER_TYPE =
-            RVP_RenderTypes.texturedTranslucentNoDepthWrite(CLOUD_TEXTURE);
-    private static final RenderType FLARE_RENDER_TYPE =
-            RVP_RenderTypes.texturedAdditiveNoDepthWrite(FLARE_TEXTURE);
+    private static final double FAR_PLANE = 10000.0D;
 
     private static final int PARALLEL_THRESHOLD = 4_096;
     private static final int PARALLEL_CHUNK_SIZE = 2_048;
@@ -203,29 +199,62 @@ public final class RVP_NuclearVisualManager {
             cachedCameraPos = cameraPos;
             renderCacheDirty = false;
         }
+        if (RENDER_CLOUDS.isEmpty() && EFFECTS.isEmpty()) {
+            return;
+        }
 
-        PoseStack poseStack = event.getPoseStack();
-        poseStack.pushPose();
-        poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        Matrix4f pose = poseStack.last().pose();
-        Matrix3f normal = poseStack.last().normal();
-        Quaternionf cameraRotation = camera.rotation();
-        Vector3f right = new Vector3f(1.0F, 0.0F, 0.0F).rotate(cameraRotation);
-        Vector3f up = new Vector3f(0.0F, 1.0F, 0.0F).rotate(cameraRotation);
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        // Extend projection matrix far plane so effects are visible from thousands of blocks away
+        RenderSystem.backupProjectionMatrix();
+        double fov = minecraft.options.fov().get();
+        Matrix4f extendedProjection = new Matrix4f().perspective(
+                (float) Math.toRadians(fov),
+                (float) minecraft.getWindow().getWidth() / minecraft.getWindow().getHeight(),
+                0.05F,
+                (float) FAR_PLANE
+        );
+        RenderSystem.setProjectionMatrix(extendedProjection, VertexSorting.DISTANCE_TO_ORIGIN);
 
-        VertexConsumer cloudConsumer = buffers.getBuffer(CLOUD_RENDER_TYPE);
+        // Model-view with camera rotation only (matching RVP_NuclearShockwaveRenderer approach)
+        PoseStack modelView = RenderSystem.getModelViewStack();
+        modelView.pushPose();
+        modelView.setIdentity();
+        modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
+        modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
+        RenderSystem.applyModelViewMatrix();
+
+        RenderSystem.enableBlend();
+        RenderSystem.depthMask(false);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+
+        // Clouds (translucent)
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        RenderSystem.setShaderTexture(0, CLOUD_TEXTURE);
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (RenderCloud renderCloud : RENDER_CLOUDS) {
-            renderCloudBillboard(cloudConsumer, pose, normal, right, up, renderCloud, event.getPartialTick());
+            renderCloudTess(builder, renderCloud, cameraPos, event.getPartialTick());
         }
-        buffers.endBatch(CLOUD_RENDER_TYPE);
+        BufferUploader.drawWithShader(builder.end());
 
-        VertexConsumer flareConsumer = buffers.getBuffer(FLARE_RENDER_TYPE);
+        // Flares (additive)
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        RenderSystem.setShaderTexture(0, FLARE_TEXTURE);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (Effect effect : EFFECTS) {
-            renderFlare(flareConsumer, pose, normal, right, up, effect, event.getPartialTick());
+            renderFlareTess(builder, effect, cameraPos, event.getPartialTick());
         }
-        buffers.endBatch(FLARE_RENDER_TYPE);
-        poseStack.popPose();
+        BufferUploader.drawWithShader(builder.end());
+
+        // Restore state
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.defaultBlendFunc();
+        modelView.popPose();
+        RenderSystem.applyModelViewMatrix();
+        RenderSystem.restoreProjectionMatrix();
     }
 
     private static void rebuildRenderCache(Vec3 cameraPos, float partialTick) {
@@ -280,8 +309,8 @@ public final class RVP_NuclearVisualManager {
         }
     }
 
-    private static void renderCloudBillboard(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            Vector3f right, Vector3f up, RenderCloud renderCloud, float partialTick) {
+    private static void renderCloudTess(BufferBuilder builder, RenderCloud renderCloud,
+            Vec3 cameraPos, float partialTick) {
         Effect effect = renderCloud.effect();
         Cloud cloud = renderCloud.cloud();
         float alpha = cloud.alpha(effect);
@@ -289,16 +318,20 @@ public final class RVP_NuclearVisualManager {
             return;
         }
         float scale = cloud.scale(effect) * renderCloud.scaleMultiplier;
-        float x = (float) cloud.renderX(effect, partialTick);
-        float y = (float) cloud.renderY(effect, partialTick);
-        float z = (float) cloud.renderZ(effect, partialTick);
+        float wx = (float) cloud.renderX(effect, partialTick);
+        float wy = (float) cloud.renderY(effect, partialTick);
+        float wz = (float) cloud.renderZ(effect, partialTick);
+        // Convert to camera-relative coordinates; model-view matrix handles rotation
+        float x = wx - (float) cameraPos.x;
+        float y = wy - (float) cameraPos.y;
+        float z = wz - (float) cameraPos.z;
         cloud.writeColor(effect, partialTick, COLOR_SCRATCH);
-        billboard(consumer, pose, normal, right, up, x, y, z, scale,
+        billboardTess(builder, x, y, z, scale,
                 COLOR_SCRATCH[0], COLOR_SCRATCH[1], COLOR_SCRATCH[2], alpha);
     }
 
-    private static void renderFlare(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            Vector3f right, Vector3f up, Effect effect, float partialTick) {
+    private static void renderFlareTess(BufferBuilder builder, Effect effect,
+            Vec3 cameraPos, float partialTick) {
         if (effect.age >= 100) {
             return;
         }
@@ -306,44 +339,81 @@ public final class RVP_NuclearVisualManager {
         float alpha = 1.0F - progress;
         float scale = (float) (25.0D * effect.rollerSize);
         for (int i = 0; i < effect.flareOffsets.length; i++) {
-            float x = (float) effect.center.x + effect.flareOffsets[i][0] * (float) effect.rollerSize;
-            float y = (float) (effect.center.y + effect.coreHeight)
+            float wx = (float) effect.center.x + effect.flareOffsets[i][0] * (float) effect.rollerSize;
+            float wy = (float) (effect.center.y + effect.coreHeight)
                     + effect.flareOffsets[i][1] * (float) effect.rollerSize;
-            float z = (float) effect.center.z + effect.flareOffsets[i][2] * (float) effect.rollerSize;
-            billboard(consumer, pose, normal, right, up, x, y, z, scale,
-                    1.0F, 1.0F, 1.0F, alpha);
+            float wz = (float) effect.center.z + effect.flareOffsets[i][2] * (float) effect.rollerSize;
+            // Convert to camera-relative coordinates
+            float x = wx - (float) cameraPos.x;
+            float y = wy - (float) cameraPos.y;
+            float z = wz - (float) cameraPos.z;
+            billboardTess(builder, x, y, z, scale, 1.0F, 1.0F, 1.0F, alpha);
         }
     }
 
-    private static void billboard(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            Vector3f right, Vector3f up, float x, float y, float z, float halfSize,
+    /**
+     * True camera-facing billboard in camera-relative pre-rotation space.
+     * Each billboard faces the camera individually by computing its orientation
+     * from the vector directed toward the camera (origin in camera-relative space).
+     * This prevents the flat-looking artifacts that occur when a fixed XY-plane
+     * quad is viewed from oblique angles.
+     */
+    private static void billboardTess(BufferBuilder builder,
+            float x, float y, float z, float halfSize,
             float red, float green, float blue, float alpha) {
-        float rx = right.x() * halfSize;
-        float ry = right.y() * halfSize;
-        float rz = right.z() * halfSize;
-        float ux = up.x() * halfSize;
-        float uy = up.y() * halfSize;
-        float uz = up.z() * halfSize;
-        vertex(consumer, pose, normal, x - rx - ux, y - ry - uy, z - rz - uz,
-                0.0F, 1.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x + rx - ux, y + ry - uy, z + rz - uz,
-                1.0F, 1.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x + rx + ux, y + ry + uy, z + rz + uz,
-                1.0F, 0.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x - rx + ux, y - ry + uy, z - rz + uz,
-                0.0F, 0.0F, red, green, blue, alpha);
-    }
+        // Look direction from billboard center toward camera (origin in camera-relative space).
+        float lx = -x;
+        float ly = -y;
+        float lz = -z;
+        float len = (float) Math.sqrt(lx * lx + ly * ly + lz * lz);
+        if (len < 1.0E-4F) {
+            builder.vertex(x - halfSize, y - halfSize, z).uv(0, 1).color(red, green, blue, alpha).endVertex();
+            builder.vertex(x + halfSize, y - halfSize, z).uv(1, 1).color(red, green, blue, alpha).endVertex();
+            builder.vertex(x + halfSize, y + halfSize, z).uv(1, 0).color(red, green, blue, alpha).endVertex();
+            builder.vertex(x - halfSize, y + halfSize, z).uv(0, 0).color(red, green, blue, alpha).endVertex();
+            return;
+        }
+        lx /= len;
+        ly /= len;
+        lz /= len;
 
-    private static void vertex(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            float x, float y, float z, float u, float v,
-            float red, float green, float blue, float alpha) {
-        consumer.vertex(pose, x, y, z)
-                .color(red, green, blue, alpha)
-                .uv(u, v)
-                .overlayCoords(OverlayTexture.NO_OVERLAY)
-                .uv2(LightTexture.FULL_BRIGHT)
-                .normal(normal, 0.0F, 1.0F, 0.0F)
-                .endVertex();
+        // Right = cross(look, world_up) where world_up = (0, 1, 0)
+        float rx = -lz;
+        float rz = lx;
+        float rLen = (float) Math.sqrt(rx * rx + rz * rz);
+        if (rLen < 1.0E-4F) {
+            // Looking straight up/down, right degenerates to zero; use world right
+            rx = 1.0F;
+            rz = 0.0F;
+            rLen = 1.0F;
+        }
+        rx /= rLen;
+        rz /= rLen;
+
+        // Up = cross(right, look)
+        // right = (rx, 0, rz), look = (lx, ly, lz)
+        // cross((rx,0,rz), (lx,ly,lz)) = (0*lz - rz*ly, rz*lx - rx*lz, rx*ly - 0*lx)
+        float ux = -rz * ly;
+        float uy = rz * lx - rx * lz;
+        float uz = rx * ly;
+
+        // Scale right and up by halfSize
+        float rhx = rx * halfSize;
+        float rhz = rz * halfSize;
+        float uhx = ux * halfSize;
+        float uhy = uy * halfSize;
+        float uhz = uz * halfSize;
+
+        int a = Mth.clamp((int) (alpha * 255.0F), 0, 255);
+        int r = Mth.clamp((int) (red * 255.0F), 0, 255);
+        int g = Mth.clamp((int) (green * 255.0F), 0, 255);
+        int b = Mth.clamp((int) (blue * 255.0F), 0, 255);
+
+        // CW winding: BL→TL→TR→BR so that normal = cross(up, right) faces the camera.
+        builder.vertex(x - rhx - uhx, y - uhy, z - rhz - uhz).uv(0, 1).color(r, g, b, a).endVertex();
+        builder.vertex(x - rhx + uhx, y + uhy, z - rhz + uhz).uv(0, 0).color(r, g, b, a).endVertex();
+        builder.vertex(x + rhx + uhx, y + uhy, z + rhz + uhz).uv(1, 0).color(r, g, b, a).endVertex();
+        builder.vertex(x + rhx - uhx, y - uhy, z + rhz - uhz).uv(1, 1).color(r, g, b, a).endVertex();
     }
 
     private static void updateClouds(Effect effect, UpdateContext context) {
