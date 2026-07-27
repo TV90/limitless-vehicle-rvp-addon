@@ -73,6 +73,8 @@ import org.ywzj.vehicle.particle.BulletHoleOption;
 import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.slf4j.Logger;
 
 import java.util.Collections;
@@ -225,6 +227,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int guidanceOverlapResolveIndex = -1;
     protected final java.util.Set<Integer> guidanceStickyPhaseIndices = new java.util.HashSet<>();
     protected final RVP_GuidancePhaseState guidancePhaseState = new RVP_GuidancePhaseState();
+
+    /** ===== SACLOS 半自动修正状态（世界坐标 3D 向量，避免 perp 基旋转导致画圆） ===== */
+    public Vec3 saclosOffsetVec = Vec3.ZERO;
+    public Vec3 saclosVelVec = Vec3.ZERO;
+    public Vec3 saclosLastPhysVec = Vec3.ZERO;
+
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
     @Nullable
@@ -1193,6 +1201,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         int fuseHeight = fuse.getProximityFuseHeight();
         if (targetEntity != null && targetEntity.isAlive()
                 && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
+                && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
             return;
@@ -1201,7 +1210,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 backward = getLookAngle().normalize().scale(-radius);
         AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
         for (Entity entity : level().getEntities(this, detectionBox,
-                e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight))) {
+                e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
+                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e)))) {
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
             return;
         }
@@ -1210,6 +1220,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
     protected boolean isProximityFuseTargetTooLow(Entity entity, int fuseHeight) {
         return RVP_GuidanceMath.isEntityNearGroundBlocks(entity, fuseHeight);
+    }
+
+    /**
+     * ARM 导弹近炸引信只对有活跃雷达的目标生效。
+     * 检查目标实体是否为载具且拥有至少一个开启的雷达单元。
+     */
+    private static boolean hasActiveRadar(Entity entity) {
+        if (!(entity instanceof AbstractVehicle vehicle)) {
+            return false;
+        }
+        if (vehicle.isDestroyed()) {
+            return false;
+        }
+        for (PartUnit<?> part : vehicle.getPartUnits()) {
+            if (part instanceof RadarUnit radar && radar.isOn()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected void tickSubmunition() {
@@ -1266,10 +1295,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
         }
 
-        BlockHitResult blockResult = level().clip(
-                new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
-        if (blockResult.getType() != HitResult.Type.MISS) {
-            onAmmoBlockHit(blockResult);
+        if (!isBlockCollisionSafetyActive()) {
+            BlockHitResult blockResult = level().clip(
+                    new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+            if (blockResult.getType() != HitResult.Type.MISS) {
+                onAmmoBlockHit(blockResult);
+            }
         }
     }
 
@@ -1282,11 +1313,30 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (config != null && config.getFuseData().hasEntityCollisionSafeTickOverride()) {
             return config.getFuseData().getEntityCollisionSafeTick();
         }
+        // Gunner 垂发载具：前 10 tick 跳过实体碰撞，避免导弹撞到自身载具
+        if (getOwner() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity && shooterVehicle != null
+                && org.ywzj.rvp.entity.gunner.ai.GunnerBrain.hasLauncherDeployConfig(shooterVehicle)) {
+            return Math.max(10, this instanceof RVP_BombEntity ? 20 : 3);
+        }
         if (this instanceof RVP_MissileEntity) {
             return 3;
         }
         if (this instanceof RVP_BombEntity) {
             return 20;
+        }
+        return 0;
+    }
+
+    /** 方块碰撞安全期：生效 tick 内跳过方块碰撞检测。 */
+    protected boolean isBlockCollisionSafetyActive() {
+        return tickCount < resolveBlockCollisionSafeTick();
+    }
+
+    protected int resolveBlockCollisionSafeTick() {
+        // Gunner 垂发载具：前 10 tick 跳过方块碰撞，防止导弹刚发射就撞到地面/载具
+        if (getOwner() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity && shooterVehicle != null
+                && org.ywzj.rvp.entity.gunner.ai.GunnerBrain.hasLauncherDeployConfig(shooterVehicle)) {
+            return 10;
         }
         return 0;
     }
@@ -1367,7 +1417,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
-                entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight));
+                entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
+                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity)));
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;
         for (Entity entity : nearbyEntities) {
@@ -1796,9 +1847,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (shooterVehicle == null && getOwner() == null) {
             return false;
         }
-        if (shooterVehicle != null && !shooterVehicle.isAlive()) {
-            return false;
-        }
+        // 注意：不再检查 shooterVehicle.isAlive()，允许弹药在发射者载具被摧毁后继续飞行
         Entity shooter = getOwner() != null ? getOwner() : shooterVehicle;
         if (shooter == null) {
             return true;

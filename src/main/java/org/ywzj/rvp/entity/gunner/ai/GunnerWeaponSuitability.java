@@ -13,6 +13,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceLaunchConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.AntiRadiationSeekerHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -96,6 +97,15 @@ public final class GunnerWeaponSuitability {
         if (usesGunnerControlSource(data)) {
             return true;
         }
+        // RF 制导武器必须有可用的雷达（载具自带或外置中继），否则不能发射
+        if (data.isHomingProjectile() && !data.isVehicleLaserGuided() && !data.isCommandGuided()) {
+            WeaponUnit root = rootUnit.getRootParentWeaponUnit();
+            if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
+                if (!hasUsableRadar(rootUnit, target)) {
+                    return false;
+                }
+            }
+        }
         if (!data.isRequireLock()) {
             if (data.isHomingProjectile() && canAcquireLockTarget(rvpWeapon.getWeaponUnit(), target, data)) {
                 applyEntityLock(rootUnit, target);
@@ -161,6 +171,10 @@ public final class GunnerWeaponSuitability {
         if (!canWeaponReachTargetEnvelope(weaponUnit, target, data)) {
             return false;
         }
+        // 发射架/垂发车辆：跳过锁定锥角检查，导弹垂直发射后自行转向目标
+        if (isLauncherVehicle(weaponUnit)) {
+            return true;
+        }
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         Vec3 origin = weaponUnit.worldPivotPosition();
         Vec3 targetCenter = target.getBoundingBox().getCenter();
@@ -170,6 +184,10 @@ public final class GunnerWeaponSuitability {
     private static boolean canHoldLockTarget(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
         if (!canWeaponReachTargetEnvelope(weaponUnit, target, data)) {
             return false;
+        }
+        // 发射架/垂发车辆：跳过锁定保持锥角检查
+        if (isLauncherVehicle(weaponUnit)) {
+            return true;
         }
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         Vec3 origin = weaponUnit.worldPivotPosition();
@@ -184,7 +202,10 @@ public final class GunnerWeaponSuitability {
                                            boolean allowFreshRfFallback) {
         WeaponUnit root = rootUnit.getRootParentWeaponUnit();
         Entity locked;
-        if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
+        if (isLauncherVehicle(launchUnit)) {
+            // 发射架/垂发车辆：跳过严格 RF 锁定检查，直接用 root 的 locked entity
+            locked = root.getLockedEntity();
+        } else if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
             locked = getStrictRfLockedEntity(root, target);
         } else {
             locked = root.getLockedEntity();
@@ -194,6 +215,11 @@ public final class GunnerWeaponSuitability {
         }
         return RVP_RadarRoleHelper.entityMatches(locked, target.getId())
                 && canHoldLockTarget(launchUnit, target, data);
+    }
+
+    private static boolean isLauncherVehicle(WeaponUnit weaponUnit) {
+        AbstractVehicle vehicle = weaponUnit.getVehicle();
+        return vehicle != null && GunnerBrain.hasLauncherDeployConfig(vehicle);
     }
 
     private static boolean resolveArmPreselect(WeaponUnit rootUnit,
@@ -319,10 +345,39 @@ public final class GunnerWeaponSuitability {
         WeaponUnit root = rootUnit.getRootParentWeaponUnit();
         if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
             RVP_RadarRoleHelper.applyRequestedLock(root, target);
+            // 直接设置雷达锁定，不依赖雷达是否已探测到目标
+            // 确保 FRIENDLY/TEAM gunner（不经过 tickRadarLock）也能让雷达锁定
+            for (RadarUnit radar : root.getRadarUnits()) {
+                if (radar.isOn() && RVP_RadarRoleHelper.canLock(radar)) {
+                    radar.detect(target);
+                    if (radar.getLockedEntity() != target) {
+                        radar.setLockedEntity(target);
+                    }
+                }
+            }
         }
         if (!RVP_RadarRoleHelper.entityMatches(root.getLockedEntity(), target.getId())) {
             root.setLockedEntity(target);
         }
+    }
+
+    /**
+     * 检查是否有可用的雷达锁定目标（载具自带雷达或外置中继雷达）
+     */
+    private static boolean hasUsableRadar(WeaponUnit weaponUnit, Entity target) {
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        for (RadarUnit radar : root.getRadarUnits()) {
+            if (radar.isOn() && RVP_RadarRoleHelper.canLock(radar)) {
+                return true;
+            }
+        }
+        AbstractVehicle vehicle = root.getVehicle();
+        if (vehicle == null) {
+            return false;
+        }
+        return RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(vehicle)
+                .map(relay -> RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relay) != null)
+                .orElse(false);
     }
 
     @Nullable

@@ -63,7 +63,7 @@ public final class RVP_ExternalRadarSyncService {
             return msg;
         }
         AbstractVehicle relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
-        if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive()) {
+        if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive() || relayVehicle.isDestroyed()) {
             return msg;
         }
         msg.launcherVehicleUuid = launcher.getUUID();

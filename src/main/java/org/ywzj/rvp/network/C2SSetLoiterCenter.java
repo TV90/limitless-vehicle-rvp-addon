@@ -58,7 +58,6 @@ public class C2SSetLoiterCenter {
             // 解析目标无人机：当前驾驶的是无人机则返回它，否则查关联的子无人机
             AbstractVehicle uav = resolveTargetUav(vehicle);
             if (uav == null) {
-                player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.no_uav"), true);
                 return;
             }
 

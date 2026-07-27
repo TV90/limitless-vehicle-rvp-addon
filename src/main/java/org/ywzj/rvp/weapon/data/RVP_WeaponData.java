@@ -173,6 +173,11 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     @Nullable
+    public String resolveMissileNameOnHudWithFallback(float distance) {
+        return getMiscData().resolveMissileNameOnHudWithFallback(distance);
+    }
+
+    @Nullable
     public String resolveMissileNameOnRadar(float distance) {
         return getMiscData().resolveMissileNameOnRadar(distance);
     }

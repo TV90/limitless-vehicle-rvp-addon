@@ -19,6 +19,7 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -37,6 +38,7 @@ public final class GunnerTargeting {
         AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
+        boolean launcher = GunnerBrain.hasLauncherDeployConfig(vehicle);
         List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
                 isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
@@ -45,7 +47,7 @@ public final class GunnerTargeting {
                 .toList();
         if (!rvpAmmo.isEmpty()) {
             return rvpAmmo.stream()
-                    .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+                    .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                     .orElse(null);
         }
         List<Entity> hostileGunnerVehicles = entities.stream()
@@ -53,7 +55,7 @@ public final class GunnerTargeting {
                 .toList();
         List<Entity> preferred = hostileGunnerVehicles.isEmpty() ? entities : hostileGunnerVehicles;
         return preferred.stream()
-                .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+                .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);
     }
 
@@ -119,6 +121,9 @@ public final class GunnerTargeting {
             return true;
         }
         if (ammo instanceof AerialBombEntity) {
+            return true;
+        }
+        if (ammo instanceof RocketEntity) {
             return true;
         }
         if (ammo.getWeaponId() == null) {
@@ -281,7 +286,7 @@ public final class GunnerTargeting {
     }
 
     private static boolean isRvpMissile(Entity entity) {
-        return entity instanceof RVP_MissileEntity;
+        return entity instanceof RVP_MissileEntity || entity instanceof MissileEntity;
     }
 
     private static boolean isRvpBomb(Entity entity) {
@@ -289,7 +294,7 @@ public final class GunnerTargeting {
     }
 
     private static boolean isRvpRocket(Entity entity) {
-        return entity instanceof RVP_RocketEntity;
+        return entity instanceof RVP_RocketEntity || entity instanceof RocketEntity;
     }
 
     private static boolean isInterceptableRvpProjectile(Entity entity) {
@@ -307,7 +312,7 @@ public final class GunnerTargeting {
         Team gunnerTeam = gunner.getTeam();
         List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
                 isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
-                        && (isRvpMissile(entity) || isRvpBomb(entity))
+                        && (isRvpMissile(entity) || isRvpBomb(entity) || isRvpRocket(entity))
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
         if (entities.isEmpty()) {
             return null;
@@ -324,7 +329,7 @@ public final class GunnerTargeting {
     @Nullable
     public static AmmoEntity findCiwsTarget(GunnerEntity gunner, AbstractVehicle vehicle) {
         final double ciwsRange = 1000.0;
-        final double minAgl = 50.0;
+        final double minAgl = GunnerBrain.hasLauncherDeployConfig(vehicle) ? 0.0 : 50.0;
         AABB box = vehicle.getBoundingBox().inflate(ciwsRange);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
@@ -477,9 +482,16 @@ public final class GunnerTargeting {
     }
 
     private static double score(AbstractVehicle vehicle, WeaponUnit weaponUnit, Entity entity) {
+        return score(vehicle, weaponUnit, entity, false);
+    }
+
+    private static double score(AbstractVehicle vehicle, WeaponUnit weaponUnit, Entity entity, boolean noAnglePenalty) {
         Vec3 toTarget = entity.position().add(0, entity.getBbHeight() * 0.5, 0)
                 .subtract(weaponUnit.worldPivotPosition());
         double distance = toTarget.length();
+        if (noAnglePenalty) {
+            return distance;
+        }
         Vec3 forward = weaponUnit.worldVec();
         if (forward.lengthSqr() < 1.0E-4) {
             forward = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());

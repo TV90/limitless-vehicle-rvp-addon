@@ -44,7 +44,11 @@ public record RVP_GuidanceActiveConfig(
         int hitlMaxControlDist,
         int hitlMaxControlTick,
         int hitlMaxLookOffset,
-        List<String> hitlVideoModes
+        List<String> hitlVideoModes,
+        boolean semiCorrectionEnabled,
+        float semiCorrectionStiffness,
+        float semiCorrectionDamping,
+        float semiCorrectionWobble
 ) {
     public RVP_GuidanceActiveConfig {
         phase = phase == null ? RVP_GuidancePhase.MAIN : phase;
@@ -73,6 +77,9 @@ public record RVP_GuidanceActiveConfig(
         hitlMaxControlTick = Math.max(hitlMaxControlTick, 0);
         hitlMaxLookOffset = Math.max(hitlMaxLookOffset, 0);
         hitlVideoModes = hitlVideoModes == null ? List.of() : List.copyOf(hitlVideoModes);
+        semiCorrectionStiffness = Math.max(semiCorrectionStiffness, 0f);
+        semiCorrectionDamping = Math.max(semiCorrectionDamping, 0f);
+        semiCorrectionWobble = Math.max(semiCorrectionWobble, 0f);
     }
 
     public float maxLockHalfAngle() {

@@ -39,12 +39,12 @@ public final class GunnerExternalRadarController {
         }
 
         AbstractVehicle relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
-        if ((relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive())
+        if ((relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive() || relayVehicle.isDestroyed())
                 && gunner.tickCount % 20 == 0) {
             RVP_DeployableUavService.deployLinkedUav(launcher, gunner);
             relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
         }
-        if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive()) {
+        if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive() || relayVehicle.isDestroyed()) {
             clearExternalLock(root, ext, null);
             return;
         }
@@ -74,6 +74,9 @@ public final class GunnerExternalRadarController {
     }
 
     private static void turnOnRelayRadars(AbstractVehicle relayVehicle) {
+        if (relayVehicle.isDestroyed()) {
+            return;
+        }
         for (PartUnit<?> partUnit : relayVehicle.getPartUnits()) {
             if (partUnit instanceof RadarUnit radarUnit && !radarUnit.isOn()) {
                 radarUnit.toggle(true);

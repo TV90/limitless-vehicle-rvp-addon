@@ -44,12 +44,15 @@ public final class RVP_ExternalRadarLinkHelper {
             return Optional.empty();
         }
         Entity entity = serverLevel.getEntity(childUuid);
-        return entity instanceof AbstractVehicle vehicle ? Optional.of(vehicle) : Optional.empty();
+        if (entity instanceof AbstractVehicle vehicle && !vehicle.isDestroyed()) {
+            return Optional.of(vehicle);
+        }
+        return Optional.empty();
     }
 
     @Nullable
     public static RadarUnit getPreferredRelayLockRadar(@Nullable AbstractVehicle relayVehicle) {
-        if (relayVehicle == null) {
+        if (relayVehicle == null || relayVehicle.isDestroyed()) {
             return null;
         }
         RadarUnit firstLockCapable = null;

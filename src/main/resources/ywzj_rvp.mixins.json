@@ -69,6 +69,7 @@
     "VehicleScopeOverlayHeadingFixMixin",
     "VehicleScopeOverlayWeaponUnitsMixin",
     "VehicleCrossHairOverlayMixin",
+    "VehicleWeaponOverlayMixin",
     "VehicleRadarOverlayMixin",
     "VehicleExplosionClientVisualMixin",
     "accessor.VehicleModdingToolScreenAccessor",

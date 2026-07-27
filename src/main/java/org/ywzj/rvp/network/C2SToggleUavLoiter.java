@@ -42,7 +42,6 @@ public class C2SToggleUavLoiter {
 
             AbstractVehicle uav = resolveTargetUav(vehicle);
             if (uav == null) {
-                player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.no_uav"), true);
                 return;
             }
 
