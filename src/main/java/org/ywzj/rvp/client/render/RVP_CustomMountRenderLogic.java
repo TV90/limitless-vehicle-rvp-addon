@@ -125,26 +125,21 @@ public final class RVP_CustomMountRenderLogic {
                 || resolution.displayWeaponUnit().getVehicle() == null) {
             return;
         }
-        int ammoCost = resolution.displayWeaponUnit().getFiringMode() == WeaponUnitData.FiringMode.SALVO
-                ? Math.max(1, resolution.displayWeaponUnit().aimContexts().size())
-                : 1;
         PredictionKey key = new PredictionKey(
                 resolution.displayWeaponUnit().getVehicle().getId(),
                 resolution.displayWeaponUnit().getId(),
                 resolution.currentWeapon().getData().getWeaponId()
         );
-        int syncedAmmo = Math.max(0, resolution.currentWeapon().getRemainAmmo());
-        PredictedAmmo currentPrediction = PREDICTED_AMMO.get(key);
-        int baseAmmo = currentPrediction == null ? syncedAmmo : Math.min(syncedAmmo, currentPrediction.ammo());
-        int predictedAmmo = Math.max(0, baseAmmo - ammoCost);
+        // consumeAmmo() 已在 shoot() 中本地扣减 remainAmmo，
+        // 预测值直接取当前 remainAmmo 即可，不再额外扣减。
+        int predictedAmmo = Math.max(0, resolution.currentWeapon().getRemainAmmo());
         PREDICTED_AMMO.put(key, new PredictedAmmo(predictedAmmo, System.currentTimeMillis()));
         if (DEBUG_ENABLED.get()) {
             appendDebugLog("clientFire vehicle=" + resolution.displayWeaponUnit().getVehicle().getVehicleId()
                     + " entityId=" + resolution.displayWeaponUnit().getVehicle().getId()
                     + " partUnit=" + resolution.displayWeaponUnit().getId()
                     + " weapon=" + resolution.currentWeapon().getData().getWeaponId()
-                    + " syncedAmmo=" + syncedAmmo
-                    + " ammoCost=" + ammoCost
+                    + " remainAmmo=" + predictedAmmo
                     + " predictedAmmo=" + predictedAmmo
                     + " sourceUnit=" + weaponUnit.getId());
         }

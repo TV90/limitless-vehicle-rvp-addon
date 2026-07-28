@@ -250,6 +250,13 @@ public class RVP_TacticalMapScreen extends Screen {
     private final Set<ResourceLocation> filteredMapIcons = new HashSet<>();
     private boolean followPlayer = true;
     private boolean draggingMap;
+    // 右键拖动优化：记录右键按下时间和初始位置，松开时再判断是否弹出菜单
+    private long rightButtonPressGameTime = -1L;
+    private double rightButtonPressX;
+    private double rightButtonPressY;
+    private boolean rightButtonDragged;
+    private static final long RIGHT_CLICK_DRAG_THRESHOLD_TICKS = 60L;
+    private static final double RIGHT_CLICK_DRAG_THRESHOLD_PIXELS = 5.0;
     private boolean sidebarVisible;
     private SidebarMode sidebarMode = SidebarMode.NONE;
     private boolean mapContextMenuVisible;
@@ -835,37 +842,16 @@ public class RVP_TacticalMapScreen extends Screen {
                 draggingMap = true;
                 followPlayer = false;
             } else if (button == 1) {
-                if (gpsQuickMarkMode) {
-                    closeTransientMenus();
-                    MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
-                    Vec3 picked = markerHit != null ? markerHit.focusPos : pickMapPoint(mouseX, mouseY);
-                    if (picked != null) {
-                        Minecraft mc = Minecraft.getInstance();
-                        if (mc.player != null) {
-                            ResourceLocation dim = mc.player.level().dimension().location();
-                            setGpsFields(picked);
-                            RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, picked);
-                        }
-                    }
-                    return true;
-                }
-                MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
-                if (markerHit != null) {
-                    selectMarker(markerHit);
-                    rememberMarkerClick(markerHit, false);
-                    if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
-                        return true;
-                    }
-                    if (markerHit.entity == null) {
-                        return true;
-                    }
-                    openEntityContextMenu(mouseX, mouseY, markerHit);
-                    return true;
-                }
-                Vec3 picked = pickMapPoint(mouseX, mouseY);
-                if (picked != null) {
-                    openMapContextMenu(mouseX, mouseY, picked);
-                }
+                // 右键按下时不立即弹出菜单，先进入拖动模式并记录时间
+                // 松开时若持续 < 60 tick 且未拖动，才弹出 GPS/实体菜单
+                Minecraft mc = Minecraft.getInstance();
+                rightButtonPressGameTime = mc.level != null ? mc.level.getGameTime() : 0L;
+                rightButtonPressX = mouseX;
+                rightButtonPressY = mouseY;
+                rightButtonDragged = false;
+                draggingMap = true;
+                followPlayer = false;
+                closeTransientMenus();
                 return true;
             }
         }
@@ -874,6 +860,28 @@ public class RVP_TacticalMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 1 && draggingMap && rightButtonPressGameTime >= 0) {
+            draggingMap = false;
+            long pressDuration = 0L;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                pressDuration = mc.level.getGameTime() - rightButtonPressGameTime;
+            }
+            // 判断是否发生了显著拖动
+            double dx = mouseX - rightButtonPressX;
+            double dy = mouseY - rightButtonPressY;
+            boolean significantDrag = rightButtonDragged
+                    || (dx * dx + dy * dy) > RIGHT_CLICK_DRAG_THRESHOLD_PIXELS * RIGHT_CLICK_DRAG_THRESHOLD_PIXELS;
+            // 清理状态
+            rightButtonPressGameTime = -1L;
+            rightButtonDragged = false;
+            // 持续时间 >= 60 tick 或发生拖动 → 视为拖动操作，不弹出菜单
+            if (pressDuration >= RIGHT_CLICK_DRAG_THRESHOLD_TICKS || significantDrag) {
+                return true;
+            }
+            // 短按未拖动 → 执行原右键逻辑（快速标记 / 实体菜单 / 地图菜单）
+            return handleRightClickRelease(mouseX, mouseY);
+        }
         if ((button == 1 || button == 2) && draggingMap) {
             draggingMap = false;
             return true;
@@ -881,9 +889,53 @@ public class RVP_TacticalMapScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    /**
+     * 右键短按释放时执行的菜单弹出逻辑（从 mouseClicked 迁移）。
+     */
+    private boolean handleRightClickRelease(double mouseX, double mouseY) {
+        if (!isOverMap(mouseX, mouseY)) {
+            return true;
+        }
+        if (gpsQuickMarkMode) {
+            closeTransientMenus();
+            MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
+            Vec3 picked = markerHit != null ? markerHit.focusPos : pickMapPoint(mouseX, mouseY);
+            if (picked != null) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    ResourceLocation dim = mc.player.level().dimension().location();
+                    setGpsFields(picked);
+                    RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, picked);
+                }
+            }
+            return true;
+        }
+        MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
+        if (markerHit != null) {
+            selectMarker(markerHit);
+            rememberMarkerClick(markerHit, false);
+            if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
+                return true;
+            }
+            if (markerHit.entity == null) {
+                return true;
+            }
+            openEntityContextMenu(mouseX, mouseY, markerHit);
+            return true;
+        }
+        Vec3 picked = pickMapPoint(mouseX, mouseY);
+        if (picked != null) {
+            openMapContextMenu(mouseX, mouseY, picked);
+        }
+        return true;
+    }
+
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (draggingMap && (button == 1 || button == 2) && isOverMap(mouseX, mouseY)) {
+            if (button == 1) {
+                rightButtonDragged = true;
+            }
             closeTransientMenus();
             viewWorldX -= dragX * blocksPerPixel;
             viewWorldZ -= dragY * blocksPerPixel;
