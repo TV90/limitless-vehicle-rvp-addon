@@ -126,7 +126,7 @@ public class RVP_ClientGPSUtil {
         if (player == null) {
             return null;
         }
-        Vec3 start = new Vec3(LocalVehiclePlayer.instance.cameraX, LocalVehiclePlayer.instance.cameraY, LocalVehiclePlayer.instance.cameraZ);
+        Vec3 start = mc.gameRenderer.getMainCamera().getPosition();
         Quaternionf rotation = new Quaternionf();
         rotation.rotateYXZ(
                 (float) -Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotY),

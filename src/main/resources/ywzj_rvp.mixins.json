@@ -82,6 +82,7 @@
     "WeaponUnitToggleCurrentWeaponBayMixin",
     "WeaponUnitCustomMountSuppressMixin",
     "VehicleBedrockModelCockpitRenderMixin",
+    "VehicleBedrockModelNoCullRenderMixin",
     "VehicleRenderCockpitPassengerContextMixin",
     "VehicleRenderCustomMountMixin",
     "BedrockModelRenderTypesMixin",

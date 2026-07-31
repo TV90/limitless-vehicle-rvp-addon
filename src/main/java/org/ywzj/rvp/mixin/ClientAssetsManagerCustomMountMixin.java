@@ -15,6 +15,8 @@ public class ClientAssetsManagerCustomMountMixin {
     @Inject(method = "reload", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$clearRenderCaches(ResourceManager resourceManager, CallbackInfo ci) {
         RVP_CustomMountRenderLogic.clearModelCache();
-        RVP_DisplayBackendUtil.clearCache();
+        // 全部 display 构建完成后重建 backend / no-cull 骨骼绑定缓存，
+        // 保证渲染热路径只做纯缓存读取（不触发遍历/反射）。
+        RVP_DisplayBackendUtil.rebindAll();
     }
 }
