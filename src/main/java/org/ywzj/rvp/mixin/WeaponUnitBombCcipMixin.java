@@ -25,7 +25,6 @@ public abstract class WeaponUnitBombCcipMixin {
     @Shadow(remap = false) public abstract WeaponUnitData.FireControlSensorType getFireControlSensorType();
     @Shadow(remap = false) public abstract boolean isParentWeaponUnitAim();
     @Shadow(remap = false) public abstract WeaponUnit getRootParentWeaponUnit();
-    @Shadow(remap = false) public abstract Vec3 worldPivotPosition();
 
     @Inject(method = "currentWeaponHitPosition", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$computeRvpBombCcip(CallbackInfoReturnable<Vec3> cir) {

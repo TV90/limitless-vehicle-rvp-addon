@@ -22,6 +22,8 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
 
     protected final RVP_BedrockBackend bedrockBackend;
 
+    protected final List<String> noCullBones;
+
     private final TrackConfig trackConfig;
     private BedrockAnimation leftTrackAnimation;
     private BedrockAnimation rightTrackAnimation;
@@ -29,6 +31,7 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
     public RVP_TrackedVehicleDisplay(RVP_TrackedVehicleDisplayPojo pojo) {
         super(pojo);
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
+        this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         if (bedrockBackend == RVP_BedrockBackend.RVP) {
             rebuildDisplayBackend(pojo);
         }
@@ -130,5 +133,9 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
 
     public RVP_BedrockBackend getBedrockBackend() {
         return bedrockBackend;
+    }
+
+    public List<String> getNoCullBones() {
+        return noCullBones;
     }
 }

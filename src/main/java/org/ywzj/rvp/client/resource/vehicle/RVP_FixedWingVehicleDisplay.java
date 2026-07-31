@@ -22,6 +22,8 @@ public class RVP_FixedWingVehicleDisplay extends FixedWingVehicleDisplay {
 
     protected final RVP_BedrockBackend bedrockBackend;
 
+    protected final List<String> noCullBones;
+
     private final VehicleBedrockModel afterburnerModel;
     private final ResourceLocation afterburnerTexture;
     private final Map<String, BedrockAnimation> afterburnerAnimations;
@@ -29,6 +31,7 @@ public class RVP_FixedWingVehicleDisplay extends FixedWingVehicleDisplay {
     public RVP_FixedWingVehicleDisplay(RVP_FixedWingVehicleDisplayPojo pojo) {
         super(pojo);
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
+        this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         if (bedrockBackend == RVP_BedrockBackend.RVP) {
             rebuildDisplayBackend(pojo);
         }
@@ -146,5 +149,9 @@ public class RVP_FixedWingVehicleDisplay extends FixedWingVehicleDisplay {
 
     public RVP_BedrockBackend getBedrockBackend() {
         return bedrockBackend;
+    }
+
+    public List<String> getNoCullBones() {
+        return noCullBones;
     }
 }

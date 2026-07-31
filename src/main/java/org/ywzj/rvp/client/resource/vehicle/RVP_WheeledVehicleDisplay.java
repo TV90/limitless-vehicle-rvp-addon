@@ -20,9 +20,12 @@ public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
 
     protected final RVP_BedrockBackend bedrockBackend;
 
+    protected final List<String> noCullBones;
+
     public RVP_WheeledVehicleDisplay(RVP_BaseDisplayPojo pojo) {
         super(pojo);
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
+        this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         if (bedrockBackend == RVP_BedrockBackend.RVP) {
             rebuildDisplayBackend(pojo);
         }
@@ -100,5 +103,9 @@ public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
 
     public RVP_BedrockBackend getBedrockBackend() {
         return bedrockBackend;
+    }
+
+    public List<String> getNoCullBones() {
+        return noCullBones;
     }
 }
