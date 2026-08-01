@@ -28,6 +28,15 @@ public final class RVP_DisplayBackendUtil {
         MODEL_NO_CULL_BONES.clear();
     }
 
+    /**
+     * 资源 reload 完成后重建全部 display 的 backend / no-cull 骨骼缓存，
+     * 使渲染热路径（getBackend / getNoCullBones）之后只做纯缓存读取。
+     */
+    public static void rebindAll() {
+        clearCache();
+        bindKnownDisplays();
+    }
+
     public static boolean isRvpBackend(@Nullable VehicleBedrockModel model) {
         return getBackend(model) == RVP_BedrockBackend.RVP;
     }
@@ -46,17 +55,15 @@ public final class RVP_DisplayBackendUtil {
 
     /**
      * 该模型声明为不启用单面剔除（NO_CULL）的骨骼名集合；未配置时返回空集合。
+     * <p>
+     * 渲染热路径调用：只做缓存读取，miss 直接返回空集，绝不触发遍历/反射。
      */
     public static Set<String> getNoCullBones(@Nullable VehicleBedrockModel model) {
         if (model == null) {
             return Set.of();
         }
         Set<String> noCull = MODEL_NO_CULL_BONES.get(model);
-        if (noCull != null) {
-            return noCull;
-        }
-        bindKnownDisplays();
-        return MODEL_NO_CULL_BONES.getOrDefault(model, Set.of());
+        return noCull != null ? noCull : Set.of();
     }
 
     private static void bindKnownDisplays() {

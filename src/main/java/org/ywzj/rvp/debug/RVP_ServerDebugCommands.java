@@ -69,6 +69,31 @@ public final class RVP_ServerDebugCommands {
                                             Component.literal("[RVP] 已清空 dualpulse 调试日志: " + RVP_DualPulseDebug.getLogPath()), false);
                                     return 1;
                                 })))
+                        .then(Commands.literal("bonehide")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_BoneHideDebug.setEnabled(true);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已开启 bonehide 调试: " + RVP_BoneHideDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_BoneHideDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已关闭 bonehide 调试: " + RVP_BoneHideDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_BoneHideDebug.isEnabled();
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] bonehide=" + enabled + " path=" + RVP_BoneHideDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_BoneHideDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已清空 bonehide 调试日志: " + RVP_BoneHideDebug.getLogPath()), false);
+                                    return 1;
+                                })))
                         .then(Commands.literal("uav")
                                 .then(Commands.literal("deploy").executes(ctx -> {
                                     ServerPlayer player = ctx.getSource().getPlayer();
