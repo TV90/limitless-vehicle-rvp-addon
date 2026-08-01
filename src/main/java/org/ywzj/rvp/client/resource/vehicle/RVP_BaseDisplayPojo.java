@@ -12,4 +12,13 @@ public class RVP_BaseDisplayPojo extends BaseDisplayPojo {
 
     @SerializedName("no_cull_bones")
     public List<String> noCullBones = List.of();
+
+    @SerializedName("state_hidden_bones")
+    public List<RVP_StateHiddenBone.Pojo> stateHiddenBones = List.of();
+
+    @SerializedName("distance_hidden_bones")
+    public List<RVP_DistanceHiddenBone.Pojo> distanceHiddenBones = List.of();
+
+    @SerializedName("lod_models")
+    public List<RVP_LodModel.Pojo> lodModels = List.of();
 }

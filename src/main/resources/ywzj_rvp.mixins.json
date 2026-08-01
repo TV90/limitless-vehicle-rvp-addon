@@ -83,10 +83,15 @@
     "WeaponUnitCustomMountSuppressMixin",
     "VehicleBedrockModelCockpitRenderMixin",
     "VehicleBedrockModelNoCullRenderMixin",
+    "BoneTreeInstanceInvisibleBoneMixin",
     "VehicleRenderCockpitPassengerContextMixin",
     "VehicleRenderCustomMountMixin",
+    "VehicleRenderStateHiddenBoneMixin",
+    "VehicleRenderLodMixin",
+    "MinecraftReloadResourcePacksMixin",
     "BedrockModelRenderTypesMixin",
-    "AbstractVehicleWeaponSoundMixin"
+    "AbstractVehicleWeaponSoundMixin",
+    "AbstractVehicleUavClientSwitchMixin"
   ],
   "injectors": {
     "defaultRequire": 1

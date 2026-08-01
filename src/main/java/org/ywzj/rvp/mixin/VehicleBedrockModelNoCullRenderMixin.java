@@ -26,6 +26,8 @@ import java.util.Set;
  * display JSON 中配置 {@code "no_cull_bones": ["boneName", ...]} 后：
  * 主体仍用带剔除（CULL）的渲染类型正常绘制，随后用 NO_CULL 变体单独补画这些骨骼，
  * 使其薄片/垂尾等内侧面不再被剔除（可解决一侧黑、一侧被剔除的问题）。
+ * <p>
+ * 无配置的模型在 HEAD 快速返回，热路径只读取缓存，不触发任何遍历/反射。
  */
 @OnlyIn(Dist.CLIENT)
 @Mixin(value = VehicleBedrockModel.class, remap = false)
