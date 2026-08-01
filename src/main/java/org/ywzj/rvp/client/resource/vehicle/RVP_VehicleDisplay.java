@@ -21,9 +21,12 @@ public class RVP_VehicleDisplay<E extends AbstractVehicle, CTX extends VehicleCo
 
     protected final RVP_BedrockBackend bedrockBackend;
 
+    protected final List<RVP_LodModel> lodModels;
+
     public RVP_VehicleDisplay(RVP_BaseDisplayPojo pojo) {
         super(pojo);
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
+        this.lodModels = RVP_LodModel.parse(pojo.lodModels);
         if (bedrockBackend == RVP_BedrockBackend.RVP) {
             rebuildDisplayBackend(pojo);
         }
@@ -32,6 +35,7 @@ public class RVP_VehicleDisplay<E extends AbstractVehicle, CTX extends VehicleCo
     protected RVP_VehicleDisplay(BaseDisplayPojo pojo, RVP_BedrockBackend backend) {
         super(pojo);
         this.bedrockBackend = backend == null ? RVP_BedrockBackend.VEHICLE : backend;
+        this.lodModels = pojo instanceof RVP_BaseDisplayPojo rvpPojo ? RVP_LodModel.parse(rvpPojo.lodModels) : List.of();
         if (bedrockBackend == RVP_BedrockBackend.RVP && pojo instanceof RVP_BaseDisplayPojo rvpPojo) {
             rebuildDisplayBackend(rvpPojo);
         }
@@ -74,6 +78,10 @@ public class RVP_VehicleDisplay<E extends AbstractVehicle, CTX extends VehicleCo
 
     public RVP_BedrockBackend getBedrockBackend() {
         return bedrockBackend;
+    }
+
+    public List<RVP_LodModel> getLodModels() {
+        return lodModels;
     }
 
     @Override

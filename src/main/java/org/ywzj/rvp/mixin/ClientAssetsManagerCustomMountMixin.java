@@ -6,6 +6,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
+import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
+import org.ywzj.rvp.client.render.RVP_LodModelManager;
+import org.ywzj.rvp.client.render.RVP_StateBoneHider;
 import org.ywzj.rvp.client.resource.vehicle.RVP_DisplayBackendUtil;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 
@@ -18,5 +21,11 @@ public class ClientAssetsManagerCustomMountMixin {
         // 全部 display 构建完成后重建 backend / no-cull 骨骼绑定缓存，
         // 保证渲染热路径只做纯缓存读取（不触发遍历/反射）。
         RVP_DisplayBackendUtil.rebindAll();
+        // 重建状态机隐藏骨骼规则缓存
+        RVP_StateBoneHider.rebindAll();
+        // 重建距离 LOD 隐藏骨骼规则缓存
+        RVP_DistanceBoneHider.rebindAll();
+        // 重建整模型 LOD 规则缓存（烘焙 LOD 模型 + 注册 LOD 贴图）
+        RVP_LodModelManager.rebindAll();
     }
 }

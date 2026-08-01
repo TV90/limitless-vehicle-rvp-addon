@@ -176,6 +176,23 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
         }
     }
 
+    @Inject(method = "onLeaveVehicle", at = @At("HEAD"), remap = false)
+    private void ywzj_rvp$teleportOperatorBackWhenUavLeave(LivingEntity passenger, CallbackInfo ci) {
+        AbstractVehicle self = (AbstractVehicle) (Object) this;
+        // 注意不能用 isInstanceUavOnly()（= deployableUavInstance && !uav）：
+        // 实际部署无人机 rvp:suav 的模板自带 "uav": true，该条件恒为 false，
+        // 导致被击毁踢下车时玩家被留在无人机残骸处。这里只按「是否 RVP 部署实例」判断。
+        if (!ywzj_rvp$deployableUavInstance || self.level().isClientSide()) {
+            return;
+        }
+        if (passenger instanceof ServerPlayer serverPlayer && fakeOperatorPosition != null) {
+            // 无人机被击毁时本体会在 hurt() 里强制 stopRiding 把玩家当场踢下车
+            // （此时既不走 onRemovedFromWorld，也不走 getDismountLocationForPassenger），
+            // 导致玩家原地留在无人机处。这里统一在离机时把操作员传送回上车位置（母车旁）。
+            serverPlayer.teleportTo(fakeOperatorPosition.x, fakeOperatorPosition.y, fakeOperatorPosition.z);
+        }
+    }
+
     @Unique
     private boolean ywzj_rvp$isInstanceUavOnly() {
         return ywzj_rvp$deployableUavInstance && !uav;
