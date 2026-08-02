@@ -31,6 +31,14 @@ public abstract class VehicleAutoLandingGearMixin {
             return;
         }
 
+        // 手动收放优先级最高：一旦玩家手动操作过起落架，自动收放逻辑永久关闭（直到载具销毁）
+        if (AutoLandingGearManualOverrideManager.isManualOverride(vehicle.getId())) {
+            if (vehicle.isRemoved()) {
+                AutoLandingGearManualOverrideManager.clearOverride(vehicle.getId());
+            }
+            return;
+        }
+
         LandingGearUnit gear = null;
         if (vehicle instanceof FixedWingVehicle fw) {
             gear = fw.landingGear;
@@ -41,21 +49,14 @@ public abstract class VehicleAutoLandingGearMixin {
             return;
         }
 
-        Long overrideUntil = AutoLandingGearManualOverrideManager.getOverrideUntil(vehicle.getId());
-        if (overrideUntil != null) {
-            if (vehicle.level().getGameTime() < overrideUntil) {
-                return;
-            }
-            AutoLandingGearManualOverrideManager.removeOverride(vehicle.getId());
-        }
-
         double speed = vehicle.getDeltaMovement().length() * 20.0 * 3.6;
         double groundHeight = vehicle.getY() - vehicle.level().getHeightmapPos(
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                 vehicle.blockPosition()
         ).getY();
 
-        if (speed > config.retractSpeed && !gear.isOn()) {
+        // 自动收起：速度超限且离地高于 retractHeight 才收起（防止低空误收）
+        if (speed > config.retractSpeed && groundHeight > config.retractHeight && !gear.isOn()) {
             gear.setOn(true);
         } else if (speed < config.deploySpeed && groundHeight < config.deployHeight && gear.isOn()) {
             gear.setOn(false);

@@ -4,6 +4,7 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bake
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import net.minecraft.client.Minecraft;
 import org.ywzj.rvp.client.resource.vehicle.RVP_DistanceHiddenBone;
+import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.rvp.debug.RVP_BoneHideDebug;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -104,9 +105,11 @@ public final class RVP_DistanceBoneHider {
             return;
         }
         double dist = distanceToPlayer(vehicle);
+        // 缩放过滤：缩放中视场载具少、压力低，隐藏距离阈值放大（更远才隐藏骨骼）
+        double factor = RVP_ClientZoomState.lodDistanceMultiplier();
         Set<String> hidden = null;
         for (RVP_DistanceHiddenBone rule : rules) {
-            if (dist > rule.distance) {
+            if (dist > rule.distance * factor) {
                 if (hidden == null) {
                     hidden = new HashSet<>();
                 }

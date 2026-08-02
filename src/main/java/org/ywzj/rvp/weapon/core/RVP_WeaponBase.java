@@ -54,6 +54,14 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         this.chargeTick = Math.max(chargeTick, 0);
     }
 
+    /**
+     * 取消当前装填倒计时。
+     * 供载具生成时“瞬间补满弹药”使用：直接清零 reloadTime，避免残留装填状态。
+     */
+    public void ywzj_rvp$clearReloadState() {
+        setReloadTime(0);
+    }
+
     public int getChargeTickValue() {
         return chargeTick;
     }

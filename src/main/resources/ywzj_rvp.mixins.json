@@ -90,6 +90,7 @@
     "VehicleRenderLodMixin",
     "MinecraftReloadResourcePacksMixin",
     "BedrockModelRenderTypesMixin",
+    "EntityRenderDispatcherPhysicsOnlyMixin",
     "AbstractVehicleWeaponSoundMixin",
     "AbstractVehicleUavClientSwitchMixin"
   ],

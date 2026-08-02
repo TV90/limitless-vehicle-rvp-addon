@@ -276,7 +276,7 @@ public final class RVP_DeployableUavService {
     }
 
     /**
-     * 释放子载具后根据 LoiterConfig 配置起飞行为：自动进入盘旋、自动满节流阀。
+     * 释放子载具后根据 LoiterConfig 配置起飞行为：自动进入盘旋（固定翼同时启动引擎并满油门）。
      */
     private static void applyTakeoffBehavior(AbstractVehicle child, AbstractVehicle parent) {
         RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
@@ -291,11 +291,11 @@ public final class RVP_DeployableUavService {
                     loiterConfig.loiterAltitudeOffset(),
                     parent.getX(), parent.getY(), parent.getZ()
             );
-        }
-        if (loiterConfig.autoFullThrottleOnTakeoff() && child instanceof FixedWingVehicle fw) {
-            fw.toggleEngine(true);
-            fw.setPower(100f);
-            fw.setThrottleLevel(100f);
+            if (child instanceof FixedWingVehicle fw) {
+                fw.toggleEngine(true);
+                fw.setPower(100f);
+                fw.setThrottleLevel(100f);
+            }
         }
     }
 

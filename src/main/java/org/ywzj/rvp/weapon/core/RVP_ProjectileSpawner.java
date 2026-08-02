@@ -107,6 +107,7 @@ public final class RVP_ProjectileSpawner {
                 new RVP_BaseBullet.AimRot(xRot, yRot), motion);
         projectile.setShooterWeaponUnit(weaponUnit);
         projectile.initColdLaunch(launchUnit);
+        projectile.setWireLaunchUnit(launchUnit, aim);
         projectile.name = Component.translatable(data.getName());
         if (weaponUnit != null) {
             int weaponIndex = weaponUnit.getCurrentWeapon().map(AbstractVehicleWeapon::getIndex).orElse(0);

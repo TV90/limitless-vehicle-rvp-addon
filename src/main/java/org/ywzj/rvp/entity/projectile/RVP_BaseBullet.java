@@ -75,6 +75,7 @@ import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.slf4j.Logger;
 
 import java.util.Collections;
@@ -108,12 +109,30 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     static final EntityDataAccessor<Boolean> DATA_ACTIVE_RADAR_CATCH =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
 
+    /** 线导视觉线（effects_data.wire_link_enabled）同步字段，客户端渲染器读取。 */
+    public static final EntityDataAccessor<Boolean> DATA_WIRE_ENABLED =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_X =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_Y =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_Z =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Boolean> DATA_WIRE_ACTIVE =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
+
     protected RVP_WeaponData rvpData;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
     protected RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
     protected AbstractVehicle shooterVehicle;
     protected WeaponUnit shooterWeaponUnit;
+    /** 实际发射单元（导弹所在的武器站部件），线导起点跟随其出膛管口。 */
+    protected WeaponUnit launchWeaponUnit;
+    /** 发射时所用的 bolt 索引（-1 表示未匹配），线缆固定在该发射管口，避免轮射后跳到另一管。 */
+    protected int wireBoltIndex = -1;
+    /** 线导视觉线的发射枢轴世界坐标（服务端每 tick 更新，随武器站枢轴移动）。 */
+    protected Vec3 wirePivot = Vec3.ZERO;
     protected int coldLaunchTimeTick;
     protected Vec3 coldLaunchVelocity = new Vec3(0, -1, 0);
     protected double flightSpeed;
@@ -322,6 +341,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.define(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.entityData.define(DATA_ACTIVE_RADAR_ON, false);
         this.entityData.define(DATA_ACTIVE_RADAR_CATCH, false);
+        this.entityData.define(DATA_WIRE_ENABLED, false);
+        this.entityData.define(DATA_WIRE_PIVOT_X, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_Y, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_Z, 0.0f);
+        this.entityData.define(DATA_WIRE_ACTIVE, false);
     }
 
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
@@ -342,6 +366,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.set(DATA_SECOND_PULSE_START_TICK, -1);
         this.entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.showMslIndicator = data.isShowMslIndicator();
+        boolean wireEnabled = data.getEffectsData().isWireLinkEnabled();
+        this.entityData.set(DATA_WIRE_ENABLED, wireEnabled);
+        if (wireEnabled) {
+            this.wirePivot = spawnPos;
+            this.entityData.set(DATA_WIRE_PIVOT_X, (float) spawnPos.x);
+            this.entityData.set(DATA_WIRE_PIVOT_Y, (float) spawnPos.y);
+            this.entityData.set(DATA_WIRE_PIVOT_Z, (float) spawnPos.z);
+            this.entityData.set(DATA_WIRE_ACTIVE, false);
+        }
         this.signatureSize = data.resolveSignalIntensityFactorOnRadar(0f);
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
@@ -564,6 +597,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void initColdLaunch(@Nullable WeaponUnit weaponUnit) {
+        this.launchWeaponUnit = weaponUnit;
         if (weaponUnit == null) {
             return;
         }
@@ -577,6 +611,36 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public int getColdLaunchTimeTick() {
         return coldLaunchTimeTick;
+    }
+
+    /**
+     * 绑定线导的发射单元与发射时所用的 bolt：线缆固定在该 bolt 的管口，
+     * 后续轮射切换 currentBolt 时不会跳管，起点始终是这发导弹实际出膛的那根管口。
+     */
+    public void setWireLaunchUnit(@Nullable WeaponUnit unit, @Nullable AimContext launchAim) {
+        this.launchWeaponUnit = unit;
+        this.wireBoltIndex = -1;
+        if (unit == null || launchAim == null) {
+            return;
+        }
+        // 客户端发送前会把 from 加上车辆速度作为预测提前量，先减掉以对齐服务器坐标；
+        // 双管相对位置不变，取最近管口即可稳定锁定实际发射的那根（不依赖绝对阈值）。
+        Vec3 vehicleDelta = unit.getVehicle() == null ? Vec3.ZERO : unit.getVehicle().getDeltaMovement();
+        Vec3 launchFrom = launchAim.from.subtract(vehicleDelta);
+        List<AimContext> aims = unit.aimContexts();
+        int best = -1;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < aims.size(); i++) {
+            double d = aims.get(i).from.distanceToSqr(launchFrom);
+            if (d < bestDist) {
+                bestDist = d;
+                best = i;
+            }
+        }
+        // 仅当最近管口在 1 格内才可信，否则退回当前 bolt
+        if (best >= 0 && bestDist < 1.0) {
+            wireBoltIndex = best;
+        }
     }
 
     public Vec3 getColdLaunchVelocity() {
@@ -1002,6 +1066,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         broadcastTrailParticles();
+        tickWireLink();
         life--;
         if (life < 0) {
             if (rvpData.getFuseData().isDetonateOnLifeEnd()) {
@@ -1010,6 +1075,65 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 discard();
             }
         }
+    }
+
+    /**
+     * 线导视觉线服务端逻辑：更新发射枢轴世界坐标（随武器站枢轴移动）并同步线缆激活状态到实体数据。
+     */
+    protected void tickWireLink() {
+        if (!entityData.get(DATA_WIRE_ENABLED)) {
+            if (entityData.get(DATA_WIRE_ACTIVE)) {
+                entityData.set(DATA_WIRE_ACTIVE, false);
+            }
+            return;
+        }
+        if (launchWeaponUnit != null) {
+            // 起点固定在这发导弹实际出膛的那根管口（bolt 索引），并随武器站旋转/移动而更新
+            Vec3 pivot = null;
+            if (wireBoltIndex >= 0) {
+                List<AimContext> aims = launchWeaponUnit.aimContexts();
+                if (wireBoltIndex < aims.size()) {
+                    pivot = aims.get(wireBoltIndex).from;
+                }
+            }
+            if (pivot == null) {
+                AimContext aim = launchWeaponUnit.aimContext();
+                pivot = aim != null ? aim.from : launchWeaponUnit.worldPivotPosition();
+            }
+            if (pivot != null) {
+                wirePivot = pivot;
+            }
+        } else if (shooterWeaponUnit != null) {
+            // 起点跟随当前 bolt 的出膛位置（管口），随武器站旋转/移动而更新
+            AimContext aim = shooterWeaponUnit.aimContext();
+            Vec3 pivot = aim != null ? aim.from : shooterWeaponUnit.worldPivotPosition();
+            if (pivot != null) {
+                wirePivot = pivot;
+            }
+        }
+        boolean active = rvp$isWireActive();
+        entityData.set(DATA_WIRE_PIVOT_X, (float) wirePivot.x);
+        entityData.set(DATA_WIRE_PIVOT_Y, (float) wirePivot.y);
+        entityData.set(DATA_WIRE_PIVOT_Z, (float) wirePivot.z);
+        entityData.set(DATA_WIRE_ACTIVE, active);
+    }
+
+    /** 线缆当前是否应显示（服务端判定后经 {@link #DATA_WIRE_ACTIVE} 同步给客户端）。 */
+    public boolean rvp$isWireActive() {
+        if (!entityData.get(DATA_WIRE_ENABLED)) {
+            return false;
+        }
+        return rvp$computeWireActive();
+    }
+
+    /** 制导有效判定：仍处于激活引导段（引导源非 NONE）。HITL/MCLOS 线导可重写。 */
+    protected boolean rvp$computeWireActive() {
+        if (rvpData == null) {
+            return true;
+        }
+        RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(), getGuidancePhaseState().phase());
+        return active != null && active.guidanceType() != RVP_EnumGuidanceType.NONE;
     }
 
     protected void tickGuidance() {

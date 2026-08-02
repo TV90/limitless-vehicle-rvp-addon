@@ -49,6 +49,14 @@ public final class RVP_UavLoiterTickService {
     private static final int TERRAIN_SAMPLE_STEP = 10;
     /** 客户端同步间隔（tick）。 */
     private static final int SYNC_INTERVAL_TICKS = 10;
+    /** 阶段超时（tick）。 */
+    private static final int CLIMB_TIMEOUT_TICKS = 200;
+    private static final int TRANSIT_TIMEOUT_TICKS = 1200;
+    private static final int APPROACH_TIMEOUT_TICKS = 400;
+    /** 震荡检测：yaw 误差符号翻转阈值。 */
+    private static final int OSCILLATION_SIGN_FLIP_THRESHOLD = 3;
+    /** 震荡时盘旋半径扩张系数。 */
+    private static final double OSCILLATION_RADIUS_EXPAND_FACTOR = 1.1;
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
@@ -85,7 +93,7 @@ public final class RVP_UavLoiterTickService {
             // 写入 ControlUnit
             applyControlUnit(uav, out, isRotaryWing);
             // 阶段切换
-            updatePhase(state, out, tickCount, config);
+            updatePhase(state, out, tickCount);
             // 震荡检测
             updateOscillation(state, out);
             // 区块加载保持
@@ -180,20 +188,20 @@ public final class RVP_UavLoiterTickService {
     }
 
     /** 阶段切换 + 超时降级。 */
-    private static void updatePhase(MutableState state, GuidanceOutput out, int tickCount, RVP_LoiterConfig config) {
+    private static void updatePhase(MutableState state, GuidanceOutput out, int tickCount) {
         LoiterPhase current = state.phase;
         LoiterPhase next = out.nextPhase();
         if (next != current) {
             state.phase = next;
             state.phaseTickCounter = 0;
-            state.phaseTimeout = resolvePhaseTimeout(next, config);
+            state.phaseTimeout = resolvePhaseTimeout(next);
         } else {
             state.phaseTickCounter++;
             // 超时降级
             if (state.phaseTickCounter > state.phaseTimeout) {
                 state.phase = nextPhase(current);
                 state.phaseTickCounter = 0;
-                state.phaseTimeout = resolvePhaseTimeout(state.phase, config);
+                state.phaseTimeout = resolvePhaseTimeout(state.phase);
             }
         }
     }
@@ -220,8 +228,8 @@ public final class RVP_UavLoiterTickService {
         }
         state.lastYawError = Mth.wrapDegrees(out.targetYRot());
         // 震荡时扩大半径
-        if (state.signFlipCounter > 3) {
-            state.radius *= 1.1;
+        if (state.signFlipCounter > OSCILLATION_SIGN_FLIP_THRESHOLD) {
+            state.radius *= OSCILLATION_RADIUS_EXPAND_FACTOR;
             state.signFlipCounter = 0;
         }
     }
@@ -268,11 +276,11 @@ public final class RVP_UavLoiterTickService {
     }
 
     /** 阶段超时阈值。 */
-    private static int resolvePhaseTimeout(LoiterPhase phase, RVP_LoiterConfig config) {
+    private static int resolvePhaseTimeout(LoiterPhase phase) {
         return switch (phase) {
-            case CLIMB -> config.loiterClimbTimeout();
-            case TRANSIT -> config.loiterTransitTimeout();
-            case APPROACH -> config.loiterApproachTimeout();
+            case CLIMB -> CLIMB_TIMEOUT_TICKS;
+            case TRANSIT -> TRANSIT_TIMEOUT_TICKS;
+            case APPROACH -> APPROACH_TIMEOUT_TICKS;
             case LOITER -> Integer.MAX_VALUE; // 盘旋不超时
         };
     }

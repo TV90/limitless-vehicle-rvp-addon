@@ -30,6 +30,6 @@ public abstract class RotaryWingAutoLandingGearOverrideMixin {
         if (!AutoLandingGearCache.isEnabled(self.getVehicleId())) {
             return;
         }
-        AutoLandingGearManualOverrideManager.markManualOverride(self.getId(), self.level().getGameTime());
+        AutoLandingGearManualOverrideManager.markManualOverride(self.getId());
     }
 }

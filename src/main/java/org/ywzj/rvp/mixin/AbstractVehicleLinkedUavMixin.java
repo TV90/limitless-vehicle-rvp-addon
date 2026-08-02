@@ -1,9 +1,11 @@
 package org.ywzj.rvp.mixin;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
@@ -185,12 +187,34 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
         if (!ywzj_rvp$deployableUavInstance || self.level().isClientSide()) {
             return;
         }
-        if (passenger instanceof ServerPlayer serverPlayer && fakeOperatorPosition != null) {
-            // 无人机被击毁时本体会在 hurt() 里强制 stopRiding 把玩家当场踢下车
-            // （此时既不走 onRemovedFromWorld，也不走 getDismountLocationForPassenger），
-            // 导致玩家原地留在无人机处。这里统一在离机时把操作员传送回上车位置（母车旁）。
-            serverPlayer.teleportTo(fakeOperatorPosition.x, fakeOperatorPosition.y, fakeOperatorPosition.z);
+        if (!(passenger instanceof ServerPlayer serverPlayer)) {
+            return;
         }
+        // 无人机被击毁时本体会在 hurt() 里强制 stopRiding 把玩家当场踢下车
+        // （此时既不走 onRemovedFromWorld，也不走 getDismountLocationForPassenger），
+        // 导致玩家原地留在无人机处。这里统一在离机时把操作员传送回母车旁边。
+        Vec3 target = ywzj_rvp$resolveReturnPosition(self, serverPlayer);
+        if (target != null) {
+            serverPlayer.teleportTo(target.x, target.y, target.z);
+        }
+    }
+
+    @Unique
+    private Vec3 ywzj_rvp$resolveReturnPosition(AbstractVehicle uav, ServerPlayer player) {
+        // 优先传回母车（父车）当前的位置：linkedParentVehicleUuid 指向发射母车。
+        // 不依赖 fakeOperatorPosition 这个快照——它在无人机出生同 tick 切入时为 null
+        // （本体 onEnterVehicle 带 tickCount != 0 条件），且母车移动后会变成旧位置。
+        if (ywzj_rvp$linkedParentVehicleUuid != null && uav.level() instanceof ServerLevel serverLevel) {
+            Entity parent = serverLevel.getEntity(ywzj_rvp$linkedParentVehicleUuid);
+            if (parent instanceof AbstractVehicle parentVehicle) {
+                // 与本体 removePassenger 的下车点计算一致：母车右侧外沿，避免落在车体内
+                return parentVehicle.relativeRotPos(
+                        parentVehicle.position().add(parentVehicle.getMainCubeOBB().obb().extents().x + 1, 1, 0),
+                        false);
+            }
+        }
+        // 母车找不到时兜底用上车时记录的位置
+        return fakeOperatorPosition;
     }
 
     @Unique

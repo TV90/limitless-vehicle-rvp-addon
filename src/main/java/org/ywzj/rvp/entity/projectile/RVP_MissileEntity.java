@@ -565,6 +565,24 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         return hitlEnabled && hitlLife > 0;
     }
 
+    /**
+     * 线导视觉线激活判定（重写基类）：有人制导（HITL）时链路被切断/被方块遮挡即视为失去制导；
+     * 非 HITL（如 MCLOS/SACLOS）沿用基类的引导段判定。
+     */
+    @Override
+    protected boolean rvp$computeWireActive() {
+        if (hitlEnabled) {
+            if (hitlLinkSevered) {
+                return false;
+            }
+            if (hitlSignalSource == HitlSignalSource.RADIO && hitlLinkBlocked) {
+                return false;
+            }
+            return hitlLife > 0;
+        }
+        return super.rvp$computeWireActive();
+    }
+
     public boolean rvp$isHitlMouseSteering() {
         return hitlEnabled && hitlControlMode == RVP_EnumHitlControlMode.MOUSE;
     }

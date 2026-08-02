@@ -85,6 +85,29 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return cfg.shouldBlockRuntimeMultiCycle(weaponUnit.getId(), weaponIndex);
     }
 
+    /**
+     * 判断 F 键多弹种循环是否应被拦截。
+     * 除了当前武器索引本身，还需检查代理展开后的多武器：炮塔武器栏里放导弹代理时，
+     * F 键在炮塔上展开的是 missile 部件的 multi，若只按炮塔索引判定会漏拦，
+     * 因此按该 multi 真实所属部件的配置复核。
+     */
+    public boolean shouldBlockCurrentMultiCycle(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return false;
+        }
+        if (shouldBlockRuntimeMultiCycle(weaponUnit, weaponUnit.getCurrentWeaponIndex())) {
+            return true;
+        }
+        AbstractVehicleWeapon<?> current = weaponUnit.getCurrentWeapon().orElse(null);
+        if (current instanceof VehicleMultiWeapons multi) {
+            WeaponUnit owner = multi.getWeaponUnit();
+            if (owner != null && owner != weaponUnit) {
+                return shouldBlockRuntimeMultiCycle(owner, owner.getCurrentWeaponIndex());
+            }
+        }
+        return false;
+    }
+
     public boolean hasGroupedWeaponSlots(AbstractVehicle vehicle, String partId) {
         if (vehicle == null || partId == null || partId.isBlank()) {
             return false;

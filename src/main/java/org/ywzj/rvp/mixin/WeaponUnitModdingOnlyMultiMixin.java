@@ -13,8 +13,7 @@ public class WeaponUnitModdingOnlyMultiMixin {
     @Inject(method = "cycleMultiWeapon", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$blockRuntimeMultiCycle(boolean next, CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
-        int weaponIndex = self.getCurrentWeaponIndex();
-        if (!RVP_VehicleExtendedConfigManager.INSTANCE.shouldBlockRuntimeMultiCycle(self, weaponIndex)) {
+        if (!RVP_VehicleExtendedConfigManager.INSTANCE.shouldBlockCurrentMultiCycle(self)) {
             return;
         }
         ci.cancel();

@@ -3,6 +3,8 @@ package org.ywzj.rvp.config;
 /**
  * 通用载具自动盘旋配置。任何飞行器（无人机、空中炮艇等）均可通过载具 JSON 的
  * {@code rvp_loiter_*} 字段配置，独立于可部署 UAV 系统。
+ * <p>仅保留核心行为参数；采样/超时等内部算法参数由盘旋服务固定为常量（见
+ * {@code RVP_UavLoiterTickService}）。</p>
  */
 public record RVP_LoiterConfig(
         boolean enabled,
@@ -11,16 +13,7 @@ public record RVP_LoiterConfig(
         double loiterTerrainClearance,
         double loiterMinSafeAltitude,
         double loiterFixedWingMinBank,
-        int loiterSignFlipThreshold,
-        double loiterRadiusExpandFactor,
-        int loiterClimbTimeout,
-        int loiterTransitTimeout,
-        int loiterApproachTimeout,
-        int loiterTerrainSampleInterval,
-        int loiterTerrainSampleRange,
-        double loiterApproachTolerance,
         boolean autoLoiterOnTakeoff,
-        boolean autoFullThrottleOnTakeoff,
         double loiterBank,
         int loiterDirection
 ) {
@@ -31,15 +24,6 @@ public record RVP_LoiterConfig(
             30.0,
             80.0,
             30.0,
-            3,
-            1.1,
-            200,
-            1200,
-            400,
-            40,
-            60,
-            15.0,
-            false,
             false,
             25.0,
             1

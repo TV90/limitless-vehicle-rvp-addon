@@ -91,8 +91,9 @@ public class VehicleDataManagerMixin {
                     double retractSpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_speed", 100);
                     double deploySpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_speed", 50);
                     double deployHeight = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_height", 25);
+                    double retractHeight = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_height", 50);
                     autoGearByVehicle.put(vehicleId, new AutoLandingGearCache.AutoLandingGearConfig(
-                            true, retractSpeed, deploySpeed, deployHeight));
+                            true, retractSpeed, deploySpeed, deployHeight, retractHeight));
                 }
                 List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
                 if (customMounts != null) {
@@ -229,16 +230,7 @@ public class VehicleDataManagerMixin {
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_terrain_clearance", 30.0),
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_min_safe_altitude", 80.0),
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_fixed_wing_min_bank", 30.0),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_sign_flip_threshold", 3),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_radius_expand_factor", 1.1),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_climb_timeout", 200),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_transit_timeout", 1200),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_approach_timeout", 400),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_terrain_sample_interval", 40),
-                GsonHelper.getAsInt(vehicleObj, "rvp_loiter_terrain_sample_range", 60),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_approach_tolerance", 15.0),
                 GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false),
-                GsonHelper.getAsBoolean(vehicleObj, "rvp_auto_full_throttle_on_takeoff", false),
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_bank", 25.0),
                 "left".equalsIgnoreCase(GsonHelper.getAsString(vehicleObj, "rvp_loiter_direction", "right")) ? -1 : 1
         );

@@ -61,6 +61,10 @@ public class RVP_EffectsData {
     @SerializedName("tracer_b")
     private Float tracerB;
 
+    /** 线导视觉线：导弹与发射枢轴间绘制原版钓鱼线风格线缆。 */
+    @SerializedName("wire_link_enabled")
+    private Boolean wireLinkEnabled;
+
     public String getTrajectoryParticle() {
         return trajectoryParticle == null ? "" : trajectoryParticle;
     }
@@ -154,6 +158,11 @@ public class RVP_EffectsData {
 
     public float getTracerB() {
         return tracerB != null ? tracerB : 0.2f;
+    }
+
+    /** 线导视觉线开关（effects_data.wire_link_enabled）。 */
+    public boolean isWireLinkEnabled() {
+        return wireLinkEnabled != null && wireLinkEnabled;
     }
 
     public boolean isImpactDisabled() {

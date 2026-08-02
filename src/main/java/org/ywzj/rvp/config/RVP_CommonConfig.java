@@ -17,7 +17,9 @@ public class RVP_CommonConfig {
         spawnVehicleWithCreativeAmmo = builder
                 .comment(
                         "When placing a vehicle with the spawn item, automatically add a stack of creative ammo",
-                        "to the vehicle's inventory so it can be used immediately.",
+                        "to the vehicle's inventory so it can be used immediately, and instantly refill ALL weapons",
+                        "to full ammo once at the moment the vehicle spawns (skipping long reload times).",
+                        "This refill is a one-time operation at spawn only and will not repeat as ammo is consumed.",
                         "Default: false"
                 )
                 .define("spawnVehicleWithCreativeAmmo", false);

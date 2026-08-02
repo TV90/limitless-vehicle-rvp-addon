@@ -9,6 +9,7 @@ import net.minecraft.client.renderer.texture.SimpleTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.levelgen.Heightmap;
 import org.ywzj.rvp.client.resource.vehicle.RVP_LodModel;
+import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -261,8 +262,18 @@ public final class RVP_LodModelManager {
 
     /** 从最远级向最近级选择：激活中的级用退回阈值（T×0.85）保持，未激活的级用进入阈值（T）。 */
     private static int selectLevel(List<RVP_LodModel> rules, boolean air, double dist, int currentLevel) {
+        // 缩放过滤：缩放中视场载具少、压力低，阈值放大（更远才替换 LOD 模型）；
+        // 某级配置了显式缩放阈值（zoom_distance/zoom_air_distance）则优先使用
+        boolean zoomed = RVP_ClientZoomState.isZoomed();
+        double factor = RVP_ClientZoomState.lodDistanceMultiplier();
         for (int i = rules.size() - 1; i >= 0; i--) {
-            double threshold = rules.get(i).threshold(air);
+            RVP_LodModel rule = rules.get(i);
+            double threshold;
+            if (zoomed && rule.hasZoomDistance(air)) {
+                threshold = rule.zoomThreshold(air);
+            } else {
+                threshold = rule.threshold(air) * factor;
+            }
             if (i == currentLevel) {
                 if (dist > threshold * HYSTERESIS_RETREAT) {
                     return i;
