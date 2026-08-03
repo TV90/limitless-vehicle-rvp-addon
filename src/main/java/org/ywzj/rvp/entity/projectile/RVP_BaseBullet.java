@@ -31,6 +31,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
@@ -118,6 +119,28 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
     public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_Z =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_PREV_X =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_PREV_Y =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_PREV_Z =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    /** 线导锚点所在载具的实体 ID（客户端据此找到渲染中的载具，重建锚点消除相位差抖动）。 */
+    public static final EntityDataAccessor<Integer> DATA_WIRE_VEHICLE_ID =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
+    /** 线导锚点在载具本地坐标系的偏移（当前/上一 tick），客户端配合载具渲染变换重建世界锚点。 */
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_X =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_Y =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_Z =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_PREV_X =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_PREV_Y =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
+    public static final EntityDataAccessor<Float> DATA_WIRE_PIVOT_LOCAL_PREV_Z =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.FLOAT);
     public static final EntityDataAccessor<Boolean> DATA_WIRE_ACTIVE =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
 
@@ -133,6 +156,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int wireBoltIndex = -1;
     /** 线导视觉线的发射枢轴世界坐标（服务端每 tick 更新，随武器站枢轴移动）。 */
     protected Vec3 wirePivot = Vec3.ZERO;
+    /** 线导视觉线上一 tick 的发射枢轴世界坐标（客户端渲染 partialTick 插值用，消除 20Hz 同步的跳变抖动）。 */
+    protected Vec3 wirePivotPrev = Vec3.ZERO;
+    /**
+     * 匹配失败时的兜底：发射时刻出膛管口相对武器站枢轴的局部偏移。
+     * 每 tick 用 枢轴 + 该偏移 跟随武器站，保证线起点稳定在这发导弹实际出膛的管口附近，
+     * 绝不跳到另一根管（避免双线/扇面跳变）。
+     */
+    protected Vec3 wirePivotBase = Vec3.ZERO;
+    /** 线导锚点在载具本地坐标系的偏移（服务端每 tick 更新），客户端配合渲染中的载具变换重建锚点，消除运动相位差抖动。 */
+    protected Vec3 wirePivotLocal = Vec3.ZERO;
+    /** 线导锚点本地偏移上一 tick 值（客户端 partialTick 插值用）。 */
+    protected Vec3 wirePivotLocalPrev = Vec3.ZERO;
     protected int coldLaunchTimeTick;
     protected Vec3 coldLaunchVelocity = new Vec3(0, -1, 0);
     protected double flightSpeed;
@@ -345,6 +380,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.define(DATA_WIRE_PIVOT_X, 0.0f);
         this.entityData.define(DATA_WIRE_PIVOT_Y, 0.0f);
         this.entityData.define(DATA_WIRE_PIVOT_Z, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_PREV_X, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_PREV_Y, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_PREV_Z, 0.0f);
+        this.entityData.define(DATA_WIRE_VEHICLE_ID, -1);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_X, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_Y, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_Z, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_PREV_X, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_PREV_Y, 0.0f);
+        this.entityData.define(DATA_WIRE_PIVOT_LOCAL_PREV_Z, 0.0f);
         this.entityData.define(DATA_WIRE_ACTIVE, false);
     }
 
@@ -370,10 +415,31 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.set(DATA_WIRE_ENABLED, wireEnabled);
         if (wireEnabled) {
             this.wirePivot = spawnPos;
+            this.wirePivotPrev = spawnPos;
             this.entityData.set(DATA_WIRE_PIVOT_X, (float) spawnPos.x);
             this.entityData.set(DATA_WIRE_PIVOT_Y, (float) spawnPos.y);
             this.entityData.set(DATA_WIRE_PIVOT_Z, (float) spawnPos.z);
+            this.entityData.set(DATA_WIRE_PIVOT_PREV_X, (float) spawnPos.x);
+            this.entityData.set(DATA_WIRE_PIVOT_PREV_Y, (float) spawnPos.y);
+            this.entityData.set(DATA_WIRE_PIVOT_PREV_Z, (float) spawnPos.z);
             this.entityData.set(DATA_WIRE_ACTIVE, false);
+            if (vehicle != null) {
+                // 初始化本地坐标系偏移：客户端据此配合渲染中的载具变换重建锚点
+                this.entityData.set(DATA_WIRE_VEHICLE_ID, vehicle.getId());
+                Vector3f local = new Vector3f(
+                        (float) (spawnPos.x - vehicle.position().x),
+                        (float) (spawnPos.y - vehicle.position().y),
+                        (float) (spawnPos.z - vehicle.position().z));
+                vehicle.rotYXZ().invert().transform(local);
+                this.wirePivotLocal = new Vec3(local.x, local.y, local.z);
+                this.wirePivotLocalPrev = this.wirePivotLocal;
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_X, local.x);
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_Y, local.y);
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_Z, local.z);
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_X, local.x);
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_Y, local.y);
+                this.entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_Z, local.z);
+            }
         }
         this.signatureSize = data.resolveSignalIntensityFactorOnRadar(0f);
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
@@ -620,25 +686,35 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public void setWireLaunchUnit(@Nullable WeaponUnit unit, @Nullable AimContext launchAim) {
         this.launchWeaponUnit = unit;
         this.wireBoltIndex = -1;
+        this.wirePivotBase = Vec3.ZERO;
         if (unit == null || launchAim == null) {
             return;
         }
-        // 客户端发送前会把 from 加上车辆速度作为预测提前量，先减掉以对齐服务器坐标；
-        // 双管相对位置不变，取最近管口即可稳定锁定实际发射的那根（不依赖绝对阈值）。
+        // 客户端发送前会把 from 加上车辆速度作为预测提前量，先减掉以对齐服务器坐标。
         Vec3 vehicleDelta = unit.getVehicle() == null ? Vec3.ZERO : unit.getVehicle().getDeltaMovement();
         Vec3 launchFrom = launchAim.from.subtract(vehicleDelta);
+        Vec3 pivotNow = unit.worldPivotPosition();
+        Vec3 launchOffset = launchFrom.subtract(pivotNow);
+        // 兜底基准始终用这发导弹实际出膛点（预测修正后）相对枢轴的偏移，而不是"最近管口"：
+        // 客户端预测残差（clientDelta - serverDelta）在车辆机动/网络延迟下可能落在管口间距的
+        // 模糊带内，若兜底取最近管口就可能落到错误管口，造成"右边出弹、线从左边拉"。
+        // 从真实出膛点拉线，残差再大也只停留在正确管口附近，绝不会跳到另一根管。
+        wirePivotBase = launchOffset;
         List<AimContext> aims = unit.aimContexts();
         int best = -1;
         double bestDist = Double.MAX_VALUE;
         for (int i = 0; i < aims.size(); i++) {
-            double d = aims.get(i).from.distanceToSqr(launchFrom);
+            Vec3 aimOffset = aims.get(i).from.subtract(pivotNow);
+            double d = aimOffset.distanceToSqr(launchOffset);
             if (d < bestDist) {
                 bestDist = d;
                 best = i;
             }
         }
-        // 仅当最近管口在 1 格内才可信，否则退回当前 bolt
-        if (best >= 0 && bestDist < 1.0) {
+        // 仅当残差充分小（远小于管口间距的一半）才锁定该管口：锁定时每 tick 从 aimContexts
+        // 取最新管口位置，随武器站旋转精确跟随；残差落在模糊带内则放弃锁定，靠上面的兜底
+        // 从真实出膛点拉线，避免把起点锁到错误管口（残差略大时最近管口可能并不是本弹管口）。
+        if (best >= 0 && bestDist < 0.0625) {
             wireBoltIndex = best;
         }
     }
@@ -1066,7 +1142,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         broadcastTrailParticles();
-        tickWireLink();
+        // 线导枢轴只由服务端更新并同步，客户端实体不执行（launchWeaponUnit 为 null，
+        // 若执行会以本地出膛点覆盖服务端同步的管口坐标，导致起点跳变/双点）
+        if (!level().isClientSide()) {
+            tickWireLink();
+        }
         life--;
         if (life < 0) {
             if (rvpData.getFuseData().isDetonateOnLifeEnd()) {
@@ -1087,6 +1167,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             return;
         }
+        // 保存上一 tick 的枢轴，供客户端渲染 partialTick 插值，消除 20Hz 同步的跳变抖动
+        wirePivotPrev = wirePivot;
+        wirePivotLocalPrev = wirePivotLocal;
         if (launchWeaponUnit != null) {
             // 起点固定在这发导弹实际出膛的那根管口（bolt 索引），并随武器站旋转/移动而更新
             Vec3 pivot = null;
@@ -1097,8 +1180,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 }
             }
             if (pivot == null) {
-                AimContext aim = launchWeaponUnit.aimContext();
-                pivot = aim != null ? aim.from : launchWeaponUnit.worldPivotPosition();
+                // 兜底：枢轴 + 发射时刻记录的管口局部偏移（不跳管，避免双线/扇面）。
+                // 绝不能 fallback 到 aimContext()：服务端 currentBolt 恒为 0，轮射时会把
+                // 起点跳到另一根管，客户端插值后看起来像"一根导弹接两根线"。
+                pivot = launchWeaponUnit.worldPivotPosition().add(wirePivotBase);
             }
             if (pivot != null) {
                 wirePivot = pivot;
@@ -1111,10 +1196,34 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 wirePivot = pivot;
             }
         }
+        // 同步锚点在载具本地坐标系的偏移：客户端用"渲染中的载具变换"重建锚点，
+        // 锚点始终贴住玩家看到的管口，消除客户端载具速度外推/网络延迟与服务端枢轴之间的相位差（运动抖动）。
+        AbstractVehicle wireVehicle = launchWeaponUnit != null ? launchWeaponUnit.getVehicle()
+                : shooterWeaponUnit != null ? shooterWeaponUnit.getVehicle() : null;
+        if (wireVehicle != null) {
+            Vector3f local = new Vector3f(
+                    (float) (wirePivot.x - wireVehicle.position().x),
+                    (float) (wirePivot.y - wireVehicle.position().y),
+                    (float) (wirePivot.z - wireVehicle.position().z));
+            wireVehicle.rotYXZ().invert().transform(local);
+            wirePivotLocal = new Vec3(local.x, local.y, local.z);
+            entityData.set(DATA_WIRE_VEHICLE_ID, wireVehicle.getId());
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_X, local.x);
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_Y, local.y);
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_Z, local.z);
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_X, (float) wirePivotLocalPrev.x);
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_Y, (float) wirePivotLocalPrev.y);
+            entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_Z, (float) wirePivotLocalPrev.z);
+        } else {
+            entityData.set(DATA_WIRE_VEHICLE_ID, -1);
+        }
         boolean active = rvp$isWireActive();
         entityData.set(DATA_WIRE_PIVOT_X, (float) wirePivot.x);
         entityData.set(DATA_WIRE_PIVOT_Y, (float) wirePivot.y);
         entityData.set(DATA_WIRE_PIVOT_Z, (float) wirePivot.z);
+        entityData.set(DATA_WIRE_PIVOT_PREV_X, (float) wirePivotPrev.x);
+        entityData.set(DATA_WIRE_PIVOT_PREV_Y, (float) wirePivotPrev.y);
+        entityData.set(DATA_WIRE_PIVOT_PREV_Z, (float) wirePivotPrev.z);
         entityData.set(DATA_WIRE_ACTIVE, active);
     }
 

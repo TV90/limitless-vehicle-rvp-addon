@@ -16,8 +16,10 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,10 +29,12 @@ import java.util.Set;
 /**
  * 线导导弹视觉线缆（原版钓鱼线风格黑色细线）。
  *
- * <p>服务端经 {@link RVP_BaseBullet#DATA_WIRE_ENABLED}/{@code DATA_WIRE_PIVOT_*}/{@code DATA_WIRE_ACTIVE}
- * 同步线缆状态：线从导弹当前位置连到发射武器站枢轴世界坐标。导弹失去制导
- * （{@code DATA_WIRE_ACTIVE=false}）时线立即消失；导弹实体消失（爆炸/销毁）后线缆
- * 保留最后位置并做 20 tick 渐隐后消失。</p>
+ * <p>服务端经 {@link RVP_BaseBullet#DATA_WIRE_ENABLED}/{@code DATA_WIRE_ACTIVE}
+ * 同步线缆状态：线从导弹当前位置连到发射武器站枢轴。枢轴优先用"载具本地偏移
+ * （{@code DATA_WIRE_PIVOT_LOCAL_*}）＋渲染中的载具变换"在客户端重建，锚点始终
+ * 贴住玩家看到的管口，避免运动相位差抖动；载具不可用时回退服务端世界坐标插值。
+ * 导弹失去制导（{@code DATA_WIRE_ACTIVE=false}）时线立即消失；导弹实体消失（爆炸/销毁）
+ * 后线缆保留最后位置并做 20 tick 渐隐后消失。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_WireLinkRenderer {
@@ -75,10 +79,36 @@ public final class RVP_WireLinkRenderer {
             }
             present.add(entity.getId());
             boolean active = bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_ACTIVE);
-            Vec3 pivot = new Vec3(
-                    bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_X),
-                    bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_Y),
-                    bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_Z));
+            // 客户端锚点重建：优先用"本地偏移（PREV→CUR 插值）+ 渲染中的载具变换"，
+            // 锚点始终贴住玩家看到的管口，消除载具客户端速度外推与服务端 20Hz 枢轴之间的
+            // 运动相位差（开车时线缆抖出残影、一根导弹像连着多根线）。
+            Vec3 pivot;
+            int wireVehicleId = bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_VEHICLE_ID);
+            Entity wireVehicle = wireVehicleId >= 0 ? level.getEntity(wireVehicleId) : null;
+            if (wireVehicle instanceof AbstractVehicle vehicle) {
+                Vector3f localPrev = new Vector3f(
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_PREV_X),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_PREV_Y),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_PREV_Z));
+                Vector3f localCur = new Vector3f(
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_X),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_Y),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_LOCAL_Z));
+                Vector3f local = localPrev.lerp(localCur, (float) partialTick, new Vector3f());
+                vehicle.rotYXZ(partialTick).transform(local);
+                pivot = vehicle.position(partialTick).add(local.x, local.y, local.z);
+            } else {
+                // 找不到载具（已销毁/未加载）：回退到服务端世界坐标 PREV→CUR 插值
+                Vec3 pivotPrev = new Vec3(
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_PREV_X),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_PREV_Y),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_PREV_Z));
+                Vec3 pivotCur = new Vec3(
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_X),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_Y),
+                        bullet.getEntityData().get(RVP_BaseBullet.DATA_WIRE_PIVOT_Z));
+                pivot = pivotPrev.lerp(pivotCur, partialTick);
+            }
             Vec3 missilePos = entity.getPosition(partialTick);
             if (active) {
                 // 线缆激活：保存最新端点并重置渐隐计时

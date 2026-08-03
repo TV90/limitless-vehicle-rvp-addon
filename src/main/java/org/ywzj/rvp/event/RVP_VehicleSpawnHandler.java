@@ -1,6 +1,7 @@
 package org.ywzj.rvp.event;
 
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -59,6 +60,17 @@ public class RVP_VehicleSpawnHandler {
 
         // 2. 瞬间补满所有武器的所有弹药（仅生成时刻的一次性操作）
         refillAllWeapons(vehicle);
+
+        // 3. 延迟到服务端下一 tick 再补一次：
+        //    EntityJoinLevelEvent 触发时含代理部件（如 {"part_unit_id":"missile"}）的载具
+        //    武器站可能尚未完成展开初始化，此时遍历会漏掉导弹等武器，导致"自动装弹失效"。
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            serverLevel.getServer().execute(() -> {
+                if (vehicle.isAlive() && vehicle.level() == serverLevel) {
+                    refillAllWeapons(vehicle);
+                }
+            });
+        }
     }
 
     /**
