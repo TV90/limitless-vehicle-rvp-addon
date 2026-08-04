@@ -1,12 +1,14 @@
 package org.ywzj.rvp.ext;
 
-import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
-
 import java.util.UUID;
 
 /**
  * 为载具实例附加 deployable UAV 主从关系与实例级 UAV 状态。
+ *
+ * <p>注意：本接口只保留经 mixin 注入稳定的旧方法。
+ * 后续新增状态（母车最后位置、母车座位锁）改由 {@link org.ywzj.rvp.uav.RVP_DeployableUavService}
+ * 的静态注册表持有——在实体上新增接口方法存在运行时 AbstractMethodError 风险
+ * （Sinytra Connector + mixin 环境下接口方法未注入实体类层次）。</p>
  */
 public interface AbstractVehicleLinkedUavExt {
     UUID ywzj_rvp$getLinkedParentVehicleUuid();
@@ -32,20 +34,4 @@ public interface AbstractVehicleLinkedUavExt {
 
     String ywzj_rvp$getDatalinkRole();
     void ywzj_rvp$setDatalinkRole(String role);
-
-    /** 无人机最近同步到的母车（父车）世界位置；母车实体卸载（离开视距）时仍可用来传送回母车旁。 */
-    @Nullable
-    Vec3 ywzj_rvp$getLinkedParentLastPosition();
-
-    void ywzj_rvp$setLinkedParentLastPosition(@Nullable Vec3 position);
-
-    /** 玩家驾驶无人机期间被锁定的母车座位索引（-1 = 无锁）。 */
-    int ywzj_rvp$getSeatLockSeatIndex();
-
-    void ywzj_rvp$setSeatLockSeatIndex(int seatIndex);
-
-    /** 座位锁的持有玩家实体 ID（仅该玩家可坐回被锁座位）。 */
-    int ywzj_rvp$getSeatLockOwnerPlayerId();
-
-    void ywzj_rvp$setSeatLockOwnerPlayerId(int playerId);
 }

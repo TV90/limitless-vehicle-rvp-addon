@@ -73,6 +73,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
     private int hitlEnterViewResendTicks;
+    /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
+    private boolean hitlRightClickDetonate;
     private int activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
     private boolean activeSeekerSupportReleased;
 
@@ -115,6 +117,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlSignalSource = "FIBER".equals(hitl.getSignalSource())
                 ? HitlSignalSource.FIBER
                 : HitlSignalSource.RADIO;
+        this.hitlRightClickDetonate = hitl.isHitlRightClickDetonate();
         this.hitlEnabled = true;
         this.hitlEnterViewResendTicks = 5;
         this.hitlInputYaw = aim.yRot();
@@ -561,6 +564,20 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlEnabled = false;
     }
 
+    /** 该导弹配置为"右键提前引爆"模式且 HITL 制导仍激活（客户端据此决定右键动作）。 */
+    public boolean rvp$isHitlRightClickDetonate() {
+        return hitlEnabled && hitlRightClickDetonate;
+    }
+
+    /** 人在回路模式下玩家右键提前引爆（仅服务端）：在导弹当前位置走正常爆炸链。 */
+    public void rvp$hitlDetonate() {
+        if (level().isClientSide() || !hitlEnabled) {
+            return;
+        }
+        hitlEnabled = false;
+        explodeAndDiscard(position());
+    }
+
     public boolean rvp$isHitlActive() {
         return hitlEnabled && hitlLife > 0;
     }
@@ -600,6 +617,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         buffer.writeFloat(hitlMaxTurnDegPerTick);
         buffer.writeFloat(hitlMaxLookOffsetDeg);
         buffer.writeEnum(hitlSignalSource);
+        buffer.writeBoolean(hitlRightClickDetonate);
     }
 
     @Override
@@ -618,6 +636,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
         if (buffer.readableBytes() >= 1) {
             this.hitlSignalSource = buffer.readEnum(HitlSignalSource.class);
+        }
+        if (buffer.readableBytes() >= 1) {
+            this.hitlRightClickDetonate = buffer.readBoolean();
         }
         this.hitlSteeringYaw = getYRot();
         this.hitlSteeringPitch = getXRot();

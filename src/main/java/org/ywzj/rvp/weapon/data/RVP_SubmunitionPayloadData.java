@@ -42,6 +42,28 @@ public class RVP_SubmunitionPayloadData {
     @SerializedName("velocity_scale")
     private float velocityScale = 1f;
 
+    /** 发射方向 yaw（度），与弹体 yRot 同约定（0=南 +Z，顺时针为正，-90=东、90=西）；默认 0 = 沿母弹弹轴。 */
+    @SerializedName("launch_yaw")
+    private float launchYaw = 0f;
+
+    /** 发射方向 pitch（度），与弹体 xRot 同约定（90=正下、-90=正上）；默认 0 = 沿母弹弹轴。 */
+    @SerializedName("launch_pitch")
+    private float launchPitch = 0f;
+
+    /**
+     * 发射角度基准：{@code relative} = 相对母弹当前姿态叠加（随弹体俯仰/偏航变化）；
+     * {@code absolute} = 世界系固定角度。默认 {@code relative}。
+     */
+    @SerializedName("launch_angle_mode")
+    private String launchAngleMode = "relative";
+
+    /**
+     * 发射初速；0 = 沿用 {@link #inheritParentVelocity} × {@link #velocityScale} 的长度，仅替换方向。
+     * 与 {@link #launchYaw} / {@link #launchPitch} 三者至少一个非默认值时才启用发射角度逻辑。
+     */
+    @SerializedName("launch_speed")
+    private float launchSpeed = 0f;
+
     /** Passed to {@link org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner} for RVP weapons. */
     @SerializedName("power_scale")
     private float powerScale = 1f;
@@ -101,6 +123,28 @@ public class RVP_SubmunitionPayloadData {
 
     public float getVelocityScale() {
         return Math.max(velocityScale, 0.01f);
+    }
+
+    public float getLaunchYaw() {
+        return launchYaw;
+    }
+
+    public float getLaunchPitch() {
+        return launchPitch;
+    }
+
+    /** 是否启用发射角度逻辑：yaw / pitch / speed 至少一个非默认值。 */
+    public boolean isLaunchAnglesEnabled() {
+        return launchYaw != 0f || launchPitch != 0f || launchSpeed > 0f;
+    }
+
+    /** 发射角度是否为世界系绝对角度；false 时以母弹当前姿态为基准叠加。 */
+    public boolean isLaunchAngleAbsolute() {
+        return "absolute".equalsIgnoreCase(launchAngleMode);
+    }
+
+    public float getLaunchSpeed() {
+        return Math.max(launchSpeed, 0f);
     }
 
     public float getPowerScale() {

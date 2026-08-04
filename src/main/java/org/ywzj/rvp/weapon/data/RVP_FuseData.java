@@ -62,6 +62,29 @@ public class RVP_FuseData {
     @SerializedName("proximity_radius")
     private float proximityRadius = 0f;
 
+    /**
+     * 攻顶引信：检测弹体正下方（世界系绝对 -Y 轴，不随弹体姿态变化）半锥角区域内的实体。
+     * 命中后触发引信（复用近炸全额伤害与 {@code on_fuse} 子母弹链路）。
+     */
+    @SerializedName("top_attack_fuse_enabled")
+    private boolean topAttackFuseEnabled = false;
+
+    /** 攻顶引信从弹体向正下方的最大检测距离（米）。 */
+    @SerializedName("top_attack_fuse_distance")
+    private float topAttackFuseDistance = 6f;
+
+    /** 攻顶引信检测半锥角（度）：实体与正下方方向的偏移角上限。 */
+    @SerializedName("top_attack_fuse_fov")
+    private float topAttackFuseFov = 25f;
+
+    /** 攻顶引信探测到目标后延时起爆的 tick 数；0 = 立即触发。 */
+    @SerializedName("top_attack_fuse_delay_tick")
+    private int topAttackFuseDelayTick = 0;
+
+    /** 攻顶引信解保 tick：出生后至少经过该 tick 才启用；0 = 不限制（默认）。 */
+    @SerializedName("top_attack_fuse_arm_tick")
+    private int topAttackFuseArmTick = 0;
+
     /** 近炸对命中实体的直接伤害（MCH {@code ProximityFuseDamage}）；未写为 0。 */
     @SerializedName("proximity_fuse_damage")
     private Float proximityFuseDamage;
@@ -135,6 +158,26 @@ public class RVP_FuseData {
 
     public int getProximityFuseTick() {
         return proximityFuseTick;
+    }
+
+    public boolean isTopAttackFuseEnabled() {
+        return topAttackFuseEnabled;
+    }
+
+    public float getTopAttackFuseDistance() {
+        return Math.max(topAttackFuseDistance, 0f);
+    }
+
+    public float getTopAttackFuseFov() {
+        return Math.max(topAttackFuseFov, 0f);
+    }
+
+    public int getTopAttackFuseDelayTick() {
+        return Math.max(topAttackFuseDelayTick, 0);
+    }
+
+    public int getTopAttackFuseArmTick() {
+        return Math.max(topAttackFuseArmTick, 0);
     }
 
     public int getProximityFuseHeight() {

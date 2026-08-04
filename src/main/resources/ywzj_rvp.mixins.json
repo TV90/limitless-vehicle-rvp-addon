@@ -60,6 +60,7 @@
     "InfraredMixin",
     "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",
+    "InputHandlerMagnificationGuardMixin",
     "InputHandlerRfStabilizerMixin",
     "CameraTVMissileMixin",
     "LocalVehiclePlayerMachinegunLeadTurnMixin",

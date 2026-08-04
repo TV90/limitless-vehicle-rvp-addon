@@ -14,6 +14,7 @@ import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.C2SExitHitlView;
 import org.ywzj.rvp.network.C2SHitlDesignate;
+import org.ywzj.rvp.network.C2SHitlDetonate;
 import org.ywzj.rvp.network.C2SHitlSteeringInput;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -26,6 +27,8 @@ public class RVP_ClientHitlState {
     private static final int ENTITY_WAIT_TICKS = 80;
     private static final int VEHICLE_WAIT_TICKS = 8;
     private static final int EXIT_CLICK_GUARD_TICKS = 4;
+    /** 右键被 RVP 消费（空爆引爆/退出视角）后的抑制窗口 tick，期间拦截本体右键放大。 */
+    private static int rightClickGuardUntilTick = Integer.MIN_VALUE;
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
     public static final double DESIGNATE_AIM_RANGE = 1200.0;
 
@@ -63,6 +66,14 @@ public class RVP_ClientHitlState {
 
     public static boolean isActive() {
         return activeMissileId >= 0;
+    }
+
+    public static void markRightClickConsumed(long gameTime) {
+        rightClickGuardUntilTick = (int) Math.max(rightClickGuardUntilTick, gameTime + 2);
+    }
+
+    public static boolean isRightClickGuardActive(long gameTime) {
+        return gameTime <= rightClickGuardUntilTick;
     }
 
     public static boolean isMouseSteering() {
@@ -282,7 +293,17 @@ public class RVP_ClientHitlState {
         LocalVehiclePlayer.instance.thermalImaging = (videoMode == RVP_EnumVideoMode.THERMAL);
 
         if (tickExitClick(mc)) {
-            RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
+            if (mc.level != null) {
+                markRightClickConsumed(mc.level.getGameTime());
+            }
+            // 右键：默认退出视角；武器配置 hitl_right_click_detonate 时改为提前引爆
+            Entity hitlMissile = mc.level == null ? null : mc.level.getEntity(activeMissileId);
+            if (hitlMissile instanceof RVP_MissileEntity rvpMissile
+                    && rvpMissile.rvp$isHitlRightClickDetonate()) {
+                RVP_Network.CHANNEL.sendToServer(C2SHitlDetonate.of(activeMissileId));
+            } else {
+                RVP_Network.CHANNEL.sendToServer(C2SExitHitlView.of(activeMissileId));
+            }
             clear();
             return;
         }

@@ -9,7 +9,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -57,10 +56,6 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     private static final String TAG_PARENT_LAST_POS_Y = "ywzj_rvp_linkedParentLastPositionY";
     @Unique
     private static final String TAG_PARENT_LAST_POS_Z = "ywzj_rvp_linkedParentLastPositionZ";
-    @Unique
-    private static final String TAG_SEAT_LOCK_SEAT_INDEX = "ywzj_rvp_seatLockSeatIndex";
-    @Unique
-    private static final String TAG_SEAT_LOCK_OWNER_ID = "ywzj_rvp_seatLockOwnerPlayerId";
 
     /** 母车距无人机超过此区块数时不再强载母车区块（避免无限制远距离强载）。96 区块 = 1536 格。 */
     @Unique
@@ -91,15 +86,6 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     private String ywzj_rvp$deployableUavRole = "none";
     @Unique
     private String ywzj_rvp$datalinkRole = "none";
-    /** 无人机最近同步到的母车（父车）世界位置；母车实体卸载后传送仍可据此回母车旁。 */
-    @Unique
-    private Vec3 ywzj_rvp$linkedParentLastPosition;
-    /** 玩家驾驶无人机期间，母车被锁定的座位索引（-1 = 无锁）。 */
-    @Unique
-    private int ywzj_rvp$seatLockSeatIndex = -1;
-    /** 座位锁的持有玩家实体 ID（仅该玩家可坐回被锁座位）。 */
-    @Unique
-    private int ywzj_rvp$seatLockOwnerPlayerId = -1;
 
     @Inject(method = "addAdditionalSaveData", at = @At("TAIL"))
     private void ywzj_rvp$saveLinkedUavState(CompoundTag compound, CallbackInfo ci) {
@@ -126,14 +112,11 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
             compound.putDouble(TAG_FAKE_POS_Y, fakeOperatorPosition.y);
             compound.putDouble(TAG_FAKE_POS_Z, fakeOperatorPosition.z);
         }
-        if (ywzj_rvp$linkedParentLastPosition != null) {
-            compound.putDouble(TAG_PARENT_LAST_POS_X, ywzj_rvp$linkedParentLastPosition.x);
-            compound.putDouble(TAG_PARENT_LAST_POS_Y, ywzj_rvp$linkedParentLastPosition.y);
-            compound.putDouble(TAG_PARENT_LAST_POS_Z, ywzj_rvp$linkedParentLastPosition.z);
-        }
-        if (ywzj_rvp$seatLockSeatIndex >= 0) {
-            compound.putInt(TAG_SEAT_LOCK_SEAT_INDEX, ywzj_rvp$seatLockSeatIndex);
-            compound.putInt(TAG_SEAT_LOCK_OWNER_ID, ywzj_rvp$seatLockOwnerPlayerId);
+        Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(((AbstractVehicle) (Object) this).getUUID());
+        if (lastParentPos != null) {
+            compound.putDouble(TAG_PARENT_LAST_POS_X, lastParentPos.x);
+            compound.putDouble(TAG_PARENT_LAST_POS_Y, lastParentPos.y);
+            compound.putDouble(TAG_PARENT_LAST_POS_Z, lastParentPos.z);
         }
     }
 
@@ -155,16 +138,12 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
             );
         }
         if (compound.contains(TAG_PARENT_LAST_POS_X)) {
-            ywzj_rvp$linkedParentLastPosition = new Vec3(
+            RVP_DeployableUavService.setLinkedParentLastPosition(((AbstractVehicle) (Object) this).getUUID(), new Vec3(
                     compound.getDouble(TAG_PARENT_LAST_POS_X),
                     compound.getDouble(TAG_PARENT_LAST_POS_Y),
                     compound.getDouble(TAG_PARENT_LAST_POS_Z)
-            );
+            ));
         }
-        ywzj_rvp$seatLockSeatIndex = compound.contains(TAG_SEAT_LOCK_SEAT_INDEX)
-                ? compound.getInt(TAG_SEAT_LOCK_SEAT_INDEX) : -1;
-        ywzj_rvp$seatLockOwnerPlayerId = compound.contains(TAG_SEAT_LOCK_OWNER_ID)
-                ? compound.getInt(TAG_SEAT_LOCK_OWNER_ID) : -1;
     }
 
     /** 残骸遗留时间（毫秒）：本体硬编码 60 秒，RVP 缩短为 10 秒。 */
@@ -230,7 +209,7 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     /**
      * 每 tick 同步母车（父车）最新位置并（在距离上限内）强载母车区块。
      * 母车离开无人机视距后仍可能被服务端卸载，此时实时位置取不到；
-     * 同步到 {@link #ywzj_rvp$linkedParentLastPosition} 的位置用于被击毁传送回母车旁的兜底。
+     * 同步到静态注册表的位置用于被击毁传送回母车旁的兜底。
      */
     @Unique
     private void ywzj_rvp$refreshParentPosition(AbstractVehicle self) {
@@ -239,7 +218,7 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
         }
         Entity parent = serverLevel.getEntity(ywzj_rvp$linkedParentVehicleUuid);
         if (parent instanceof AbstractVehicle parentVehicle) {
-            ywzj_rvp$linkedParentLastPosition = parentVehicle.position();
+            RVP_DeployableUavService.setLinkedParentLastPosition(self.getUUID(), parentVehicle.position());
             if (ywzj_rvp$isWithinChunkDistance(self, parentVehicle)) {
                 EntityUtil.keepChunkLoaded(self, parentVehicle.position());
             }
@@ -256,10 +235,17 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     @Inject(method = "onRemovedFromWorld", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$restoreOperatorWhenInstanceUavRemoved(CallbackInfo ci) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
+        if (self.level().isClientSide()) {
+            return;
+        }
+        // 实体移除时清理其在座位锁注册表中的条目（母车被毁/卸载时解除锁定）
+        RVP_DeployableUavService.cleanupSeatLock(self);
+        // 无人机移除时清理其母车位置快照
+        RVP_DeployableUavService.clearLinkedParentLastPosition(self.getUUID());
         // 注意不能用 isInstanceUavOnly()（= deployableUavInstance && !uav）：
         // rvp 部署无人机（suav）模板自带 "uav": true，该条件恒为 false，
         // 直接移除（未走 stopRiding）时玩家会被留在无人机处。
-        if (!ywzj_rvp$deployableUavInstance || self.level().isClientSide()) {
+        if (!ywzj_rvp$deployableUavInstance) {
             return;
         }
         RVP_DeployableUavService.handleDeployableUavRemoved(self);
@@ -334,23 +320,24 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     @Inject(method = "onEnterVehicle", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$redirectLockedSeatPassenger(LivingEntity passenger, CallbackInfo ci) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
-        if (self.level().isClientSide() || ywzj_rvp$seatLockSeatIndex < 0) {
+        RVP_DeployableUavService.SeatLockInfo lock = RVP_DeployableUavService.getSeatLock(self);
+        if (self.level().isClientSide() || lock == null) {
             return;
         }
         if (!(passenger instanceof ServerPlayer serverPlayer)) {
             return;
         }
-        if (serverPlayer.getId() == ywzj_rvp$seatLockOwnerPlayerId) {
+        if (serverPlayer.getId() == lock.ownerPlayerId()) {
             return; // 锁的持有者放行（自动上车/切回母车）
         }
         Optional<AbstractVehicle.Seat> lockedSeat = self.seats.stream()
-                .filter(seat -> seat.seatIndex == ywzj_rvp$seatLockSeatIndex)
+                .filter(seat -> seat.seatIndex == lock.seatIndex())
                 .findFirst();
         if (lockedSeat.isEmpty() || lockedSeat.get().passengerId != passenger.getId()) {
             return; // 未被分到被锁座位，正常乘坐
         }
         Optional<AbstractVehicle.Seat> emptySeat = self.seats.stream()
-                .filter(seat -> seat.passengerId == -1 && seat.seatIndex != ywzj_rvp$seatLockSeatIndex)
+                .filter(seat -> seat.passengerId == -1 && seat.seatIndex != lock.seatIndex())
                 .findFirst();
         if (emptySeat.isPresent()) {
             self.changeSeat(serverPlayer, emptySeat.get().seatIndex);
@@ -365,10 +352,11 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     @Inject(method = "changeSeat", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$blockChangeSeatToLockedSeat(LivingEntity passenger, int toSeatIndex, CallbackInfoReturnable<Boolean> cir) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
-        if (self.level().isClientSide() || ywzj_rvp$seatLockSeatIndex < 0 || toSeatIndex != ywzj_rvp$seatLockSeatIndex) {
+        RVP_DeployableUavService.SeatLockInfo lock = RVP_DeployableUavService.getSeatLock(self);
+        if (self.level().isClientSide() || lock == null || toSeatIndex != lock.seatIndex()) {
             return;
         }
-        if (passenger instanceof ServerPlayer serverPlayer && serverPlayer.getId() == ywzj_rvp$seatLockOwnerPlayerId) {
+        if (passenger instanceof ServerPlayer serverPlayer && serverPlayer.getId() == lock.ownerPlayerId()) {
             return; // 持有者换回被锁座位放行
         }
         cir.setReturnValue(false);
@@ -389,8 +377,9 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
             }
             // 母车实体已卸载（离开无人机视距，区块卸载）：用无人机最近同步到的母车位置兜底，
             // 该位置由 ywzj_rvp$refreshParentPosition 每 tick 更新，远优于上机时的旧快照。
-            if (ywzj_rvp$linkedParentLastPosition != null) {
-                return ywzj_rvp$linkedParentLastPosition.add(0, 1, 0);
+            Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
+            if (lastParentPos != null) {
+                return lastParentPos.add(0, 1, 0);
             }
         }
         // 母车找不到时兜底用上车时记录的位置
@@ -480,15 +469,5 @@ public abstract class AbstractVehicleLinkedUavMixin implements AbstractVehicleLi
     @Override
     public void ywzj_rvp$setDatalinkRole(String role) {
         ywzj_rvp$datalinkRole = role == null ? "none" : role;
-    }
-
-    @Override
-    public Vec3 ywzj_rvp$getLinkedParentLastPosition() {
-        return ywzj_rvp$linkedParentLastPosition;
-    }
-
-    @Override
-    public void ywzj_rvp$setLinkedParentLastPosition(@Nullable Vec3 position) {
-        ywzj_rvp$linkedParentLastPosition = position;
     }
 }
