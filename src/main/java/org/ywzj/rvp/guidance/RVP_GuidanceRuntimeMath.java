@@ -322,7 +322,7 @@ public final class RVP_GuidanceRuntimeMath {
         Integer startTick = context.active().cruiseStartTick();
         return context.active().guidanceType() == RVP_EnumGuidanceType.GPS
                 && startTick != null
-                && context.projectile().tickCount >= startTick
+                && context.projectile().getFlightTickCount() >= startTick
                 && context.projectile().horizontalDistanceTo(target)
                 > context.active().cruiseEndHorizontalDist();
     }
@@ -425,7 +425,7 @@ public final class RVP_GuidanceRuntimeMath {
     }
 
     private static float resolveTurningFactor(RVP_GuidanceRuntimeContext context) {
-        Float configured = context.data().getProjectileData().resolveTurningFactor(context.projectile().tickCount);
+        Float configured = context.data().getProjectileData().resolveTurningFactor(context.projectile().getFlightTickCount());
         return configured != null ? configured : 0.5f;
     }
 
@@ -434,7 +434,7 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         RVP_BaseBullet projectile = context.projectile();
-        if (projectile == null || projectile.tickCount < context.active().predictTargetPosStartTick()) {
+        if (projectile == null || projectile.getFlightTickCount() < context.active().predictTargetPosStartTick()) {
             return false;
         }
         return !isWaitingForSecondPulse(projectile);
@@ -449,7 +449,7 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         int ignition = data.getResolvedIgnitionDelayTick();
-        int motorTick = projectile.tickCount - ignition;
+        int motorTick = projectile.getFlightTickCount() - ignition;
         if (motorTick <= data.getResolvedMotorBurnTime()) {
             return false;
         }

@@ -101,6 +101,12 @@ public final class RVP_ProjectileLifecycleDebug {
         CONFIG_MISSING,
         /** 发射者或发射载具校验失败。 */
         SHOOTER_INVALID,
+        /** 本 Tick 运动路径尚未全部进入 entity-ticking，弹体开始原地等待。 */
+        WAITING_FOR_CHUNK,
+        /** 等待中的运动路径已经就绪，弹体恢复飞行。 */
+        CHUNK_READY_RESUME,
+        /** 区块等待达到安全上限，弹体无爆炸地丢弃。 */
+        CHUNK_WAIT_TIMEOUT,
         /** 子弹药触发、释放或生成。 */
         SUBMUNITION_TRIGGER,
         /** 弹体命中方块。 */

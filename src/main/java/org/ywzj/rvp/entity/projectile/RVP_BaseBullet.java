@@ -66,6 +66,8 @@ import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
+import org.ywzj.rvp.util.RVP_ChunkPathLoader;
+import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -101,6 +103,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final double PARTICLE_VIEW_DISTANCE = 512.0D;
     private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
     private static final Logger LOGGER = LogUtils.getLogger();
+    /** 弹体每 Tick 请求的未来路径窗口。 */
+    private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 5;
+    /** 区块持续无法进入 entity-ticking 时的安全等待上限。 */
+    private static final int MAX_PROJECTILE_CHUNK_WAIT_TICKS = 200;
 
     static final EntityDataAccessor<Integer> DATA_SECOND_PULSE_START_TICK =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
@@ -110,6 +116,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
     static final EntityDataAccessor<Boolean> DATA_ACTIVE_RADAR_CATCH =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
+    /** 服务端区块等待状态；同步给客户端以暂停尾迹和飞行时钟。 */
+    static final EntityDataAccessor<Boolean> DATA_CHUNK_WAITING =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
+    /** 已暂停的飞行 Tick 总数；原生 tickCount 仍随世界 Tick 增长。 */
+    static final EntityDataAccessor<Integer> DATA_CHUNK_WAIT_TOTAL =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
 
     /** 线导视觉线（effects_data.wire_link_enabled）同步字段，客户端渲染器读取。 */
     public static final EntityDataAccessor<Boolean> DATA_WIRE_ENABLED =
@@ -294,10 +306,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected String activeStageName;
     /** Set when MCLOS {@code take_over_motion} applied wire-direct steering this tick. */
     private boolean guidanceWireDirectApplied;
+    /** 当前一次连续区块等待已经实际暂停的 Tick 数。 */
+    private int chunkWaitTicks;
 
     public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level, ResourceLocation weaponId) {
         super(type, level, weaponId);
-        this.keepChunkLoaded = true;
+        this.keepChunkLoaded = false;
     }
 
     public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level) {
@@ -377,6 +391,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.define(DATA_SECOND_PULSE_BURN_TIME_TICK, 0);
         this.entityData.define(DATA_ACTIVE_RADAR_ON, false);
         this.entityData.define(DATA_ACTIVE_RADAR_CATCH, false);
+        this.entityData.define(DATA_CHUNK_WAITING, false);
+        this.entityData.define(DATA_CHUNK_WAIT_TOTAL, 0);
         this.entityData.define(DATA_WIRE_ENABLED, false);
         this.entityData.define(DATA_WIRE_PIVOT_X, 0.0f);
         this.entityData.define(DATA_WIRE_PIVOT_Y, 0.0f);
@@ -544,7 +560,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
                 data, guidancePhaseState.phase());
-        if (config.tickRange() != null && !config.tickRange().contains(tickCount)) {
+        if (config.tickRange() != null && !config.tickRange().contains(getFlightTickCount())) {
             return false;
         }
         RVP_EnumGuidanceType active = config.guidanceType();
@@ -631,7 +647,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return false;
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
-        return tickCount >= active.cruiseStartTick()
+        return getFlightTickCount() >= active.cruiseStartTick()
                 && horizontalDistanceTo(targetPos) > active.cruiseEndHorizontalDist();
     }
 
@@ -640,7 +656,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return false;
         }
         RVP_GuidanceActiveConfig active = resolveActiveGuidanceConfig();
-        return tickCount >= active.cruiseStartTick()
+        return getFlightTickCount() >= active.cruiseStartTick()
                 && horizontalDistanceTo(targetPos) <= active.cruiseEndHorizontalDist();
     }
 
@@ -788,7 +804,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void beginIrSeekerGrace(int ticks) {
-        irSeekerGraceUntilTick = Math.max(irSeekerGraceUntilTick, tickCount + Math.max(ticks, 0));
+        irSeekerGraceUntilTick = Math.max(irSeekerGraceUntilTick, getFlightTickCount() + Math.max(ticks, 0));
     }
 
     public void beginIrSeekerLossGrace(int ticks) {
@@ -800,7 +816,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean hasIrSeekerGrace() {
-        return tickCount <= irSeekerGraceUntilTick;
+        return getFlightTickCount() <= irSeekerGraceUntilTick;
     }
 
     public void resetIrSeekerGrace() {
@@ -1128,7 +1144,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             // Match {@link org.ywzj.vehicle.entity.weapon.MissileEntity}: motion server-only; client uses synced rot + AmmoEntity lerp.
             if (level().isClientSide()) {
-                spawnTrailParticles();
+                if (!isWaitingForChunk()) {
+                    spawnTrailParticles();
+                }
                 return;
             }
 
@@ -1140,10 +1158,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 return;
             }
 
-            updateCount++;
-            if (tickDelayFuse()) {
-                return;
-            }
             if (!checkShooterValid()) {
                 RVP_ProjectileLifecycleDebug.noteEvent(this,
                         RVP_ProjectileLifecycleDebug.Event.SHOOTER_INVALID,
@@ -1154,12 +1168,47 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 return;
             }
 
+            // 等待态必须先复查同一条运动路径；未就绪时不推进任何飞行状态。
+            if (tickChunkWaitGate()) {
+                return;
+            }
+
+            // 先用上一 Tick 已确定的速度执行就绪门，避免在明确不可移动时推进引信、制导和发动机时钟。
+            RVP_ChunkPathLoader.PathLoadResult preGuidancePath = requestDynamicChunkPath(
+                    RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+            if (!preGuidancePath.currentTickPathReady()) {
+                enterChunkWait(preGuidancePath, false);
+                return;
+            }
+
+            updateCount++;
+            if (tickDelayFuse()) {
+                return;
+            }
+
             tickSubmunition();
+            if (!isAlive()) {
+                return;
+            }
             guidanceWireDirectApplied = false;
             tickGuidance();
+            RVP_ChunkPathLoader.PathLoadResult pathLoadResult = requestDynamicChunkPath(
+                    RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+            if (!pathLoadResult.currentTickPathReady()) {
+                enterChunkWait(pathLoadResult, true);
+                return;
+            }
             // 先碰撞检测再运动（对标本体 BulletEntity 顺序，修复直接命中丢失的 bug）
             tickHit();
+            if (!isAlive()) {
+                return;
+            }
             tickMotion();
+            if (!isAlive()) {
+                return;
+            }
+            // 从运动后的新位置刷新滚动窗口，为下一 Tick 的管理器预算分配提前提交路径。
+            requestDynamicChunkPath(RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
             tickProgrammableAirburst();
             tickProximityFuse();
             if (tickBounceFuse()) {
@@ -1193,8 +1242,109 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     @Override
     public void remove(Entity.RemovalReason reason) {
+        RVP_ChunkPathLoadManager.releaseEntity(this);
         RVP_ProjectileLifecycleDebug.noteRemoved(this, reason);
         super.remove(reason);
+    }
+
+    /**
+     * 是否为该 RVP 弹体启用动态区块路径保护。
+     * 普通 Bullet 覆盖为 false；按实体类型分流，不读取武器 ID。
+     */
+    protected boolean shouldKeepDynamicChunkPathLoaded() {
+        return true;
+    }
+
+    /**
+     * 弹体成功加入世界后提交首个路径窗口；Ticket 仍由下一 ServerTick START 统一分配。
+     */
+    public final void primeDynamicChunkPath() {
+        if (!level().isClientSide() && isAlive() && shouldKeepDynamicChunkPathLoaded()) {
+            requestDynamicChunkPath(RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+        }
+    }
+
+    /** @return 扣除区块等待暂停时间后的飞行 Tick。 */
+    public final int getFlightTickCount() {
+        return Math.max(0, tickCount - entityData.get(DATA_CHUNK_WAIT_TOTAL));
+    }
+
+    /** @return 当前是否因运动路径尚未就绪而等待。 */
+    public final boolean isWaitingForChunk() {
+        return entityData.get(DATA_CHUNK_WAITING);
+    }
+
+    /** 等待态优先刷新路径并复查；返回 true 表示本 Tick 必须保持当前位置。 */
+    private boolean tickChunkWaitGate() {
+        if (!isWaitingForChunk()) {
+            return false;
+        }
+        RVP_ChunkPathLoader.PathLoadResult result = requestDynamicChunkPath(
+                RVP_ChunkPathLoadManager.RequestPriority.WAITING_PROJECTILE);
+        if (result.currentTickPathReady()) {
+            int waited = chunkWaitTicks;
+            chunkWaitTicks = 0;
+            entityData.set(DATA_CHUNK_WAITING, false);
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.CHUNK_READY_RESUME,
+                    () -> formatChunkPathState(result, waited));
+            return false;
+        }
+
+        chunkWaitTicks++;
+        entityData.set(DATA_CHUNK_WAIT_TOTAL, entityData.get(DATA_CHUNK_WAIT_TOTAL) + 1);
+        if (chunkWaitTicks >= MAX_PROJECTILE_CHUNK_WAIT_TICKS) {
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.CHUNK_WAIT_TIMEOUT,
+                    () -> formatChunkPathState(result, chunkWaitTicks) + " action=discard");
+            RVP_ChunkPathLoadManager.releaseEntity(this);
+            discard();
+        }
+        return true;
+    }
+
+    /** 从活动飞行切换为等待；仅在尚未推进飞行状态时把转换 Tick 计入暂停时钟。 */
+    private void enterChunkWait(
+            RVP_ChunkPathLoader.PathLoadResult result,
+            boolean flightStateAdvanced) {
+        if (isWaitingForChunk()) {
+            return;
+        }
+        chunkWaitTicks = flightStateAdvanced ? 0 : 1;
+        if (!flightStateAdvanced) {
+            entityData.set(DATA_CHUNK_WAIT_TOTAL, entityData.get(DATA_CHUNK_WAIT_TOTAL) + 1);
+        }
+        entityData.set(DATA_CHUNK_WAITING, true);
+        RVP_ProjectileLifecycleDebug.noteEvent(this,
+                RVP_ProjectileLifecycleDebug.Event.WAITING_FOR_CHUNK,
+                () -> formatChunkPathState(result, chunkWaitTicks));
+    }
+
+    /** 向纯路径加载器提交当前速度窗口。 */
+    private RVP_ChunkPathLoader.PathLoadResult requestDynamicChunkPath(
+            RVP_ChunkPathLoadManager.RequestPriority priority) {
+        if (!shouldKeepDynamicChunkPathLoaded()) {
+            return new RVP_ChunkPathLoader.PathLoadResult(
+                    0, 0, 0, null, RVP_ChunkPathLoader.ChunkReadiness.READY,
+                    false, false, true);
+        }
+        return RVP_ChunkPathLoader.requestProjectedPath(
+                this, position(), getDeltaMovement(), PROJECTILE_CHUNK_HORIZON_TICKS, priority);
+    }
+
+    /** 生命周期转换日志的统一字段，便于直接定位预算、截断或区块就绪问题。 */
+    private static String formatChunkPathState(RVP_ChunkPathLoader.PathLoadResult result, int waitTicks) {
+        String first = result.firstUnreadyChunk() == null
+                ? "<null>"
+                : "(" + result.firstUnreadyChunk().x + "," + result.firstUnreadyChunk().z + ")";
+        return "plannedChunkCount=" + result.plannedChunkCount()
+                + " requestedChunkCount=" + result.requestedChunkCount()
+                + " readyChunkCount=" + result.readyChunkCount()
+                + " firstUnreadyChunk=" + first
+                + " firstUnreadyState=" + result.firstUnreadyState()
+                + " chunkWaitTicks=" + waitTicks
+                + " budgetExhausted=" + result.budgetExhausted()
+                + " projectedPathTruncated=" + result.projectedPathTruncated();
     }
 
     /**
@@ -1589,7 +1739,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
 
-        if (!entityCollisionSafetyActive && tickCount > 5 && entityResult == null) {
+        if (!entityCollisionSafetyActive && getFlightTickCount() > 5 && entityResult == null) {
             if (tryAmmoProximityFuze(startVec, endVec)) {
                 return;
             }
@@ -1605,7 +1755,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected boolean isEntityCollisionSafetyActive() {
-        return tickCount < resolveEntityCollisionSafeTick();
+        return getFlightTickCount() < resolveEntityCollisionSafeTick();
     }
 
     protected int resolveEntityCollisionSafeTick() {
@@ -1629,7 +1779,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 方块碰撞安全期：生效 tick 内跳过方块碰撞检测。 */
     protected boolean isBlockCollisionSafetyActive() {
-        return tickCount < resolveBlockCollisionSafeTick();
+        return getFlightTickCount() < resolveBlockCollisionSafeTick();
     }
 
     protected int resolveBlockCollisionSafeTick() {
@@ -2599,7 +2749,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
         boolean heavy = isHeavyProjectile();
         Vec3 pos = this.position().add(this.getLookAngle().scale(-3));
-        if (!trailMotorBurningO || trailParticleTickO != tickCount - 1) {
+        if (!trailMotorBurningO || trailParticleTickO != getFlightTickCount() - 1) {
             particlePosO = pos;
         } else if (particlePosO == null) {
             particlePosO = pos;
@@ -2619,7 +2769,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         0.0D, 0.0D, 0.0D);
             }
         }
-        if (isMotorPropulsion() && tickCount % 2 == 0) {
+        if (isMotorPropulsion() && getFlightTickCount() % 2 == 0) {
             level().addParticle(ParticleTypes.FLAME, true,
                     getX(), getY(), getZ(),
                     -getDeltaMovement().x * 0.02, -getDeltaMovement().y * 0.02, -getDeltaMovement().z * 0.02);
@@ -2628,13 +2778,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     -getDeltaMovement().x * 0.01, 0.05, -getDeltaMovement().z * 0.01);
         }
         particlePosO = pos;
-        trailParticleTickO = tickCount;
+        trailParticleTickO = getFlightTickCount();
         trailMotorBurningO = true;
     }
 
     private void spawnMissileNativeTrailParticles(RVP_EffectsData effects) {
         Vec3 pos = this.position().add(this.getLookAngle().scale(-effects.getMissileNativeTrailOffset()));
-        if (!trailMotorBurningO || trailParticleTickO != tickCount - 1 || particlePosO == null) {
+        if (!trailMotorBurningO || trailParticleTickO != getFlightTickCount() - 1 || particlePosO == null) {
             particlePosO = pos;
         }
         ParticleOptions primary = resolveParticle(
@@ -2642,7 +2792,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 ParticleTypes.CAMPFIRE_SIGNAL_SMOKE
         );
         int spawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
-        if (primary != null && tickCount % spawnInterval == 0) {
+        if (primary != null && getFlightTickCount() % spawnInterval == 0) {
             Vec3 posO = particlePosO == null ? pos : particlePosO;
             Vec3 step = pos.subtract(posO);
             double dist = step.length();
@@ -2662,7 +2812,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
         }
         particlePosO = pos;
-        trailParticleTickO = tickCount;
+        trailParticleTickO = getFlightTickCount();
         trailMotorBurningO = true;
     }
 
@@ -2681,13 +2831,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected boolean isMotorBurning() {
         // 客户端 rvpData 为 null，用生成数据包同步的 motorBurnEndTick
         if (rvpData == null) {
-            if (tickCount <= motorBurnEndTick) {
+            if (getFlightTickCount() <= motorBurnEndTick) {
                 return true;
             }
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
             int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
             if (start >= 0 && burn > 0) {
-                int t2 = tickCount - start;
+                int t2 = getFlightTickCount() - start;
                 return t2 >= 0 && t2 <= burn;
             }
             return false;
@@ -2698,13 +2848,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData.getProjectileData().usesSecondPulse() && isMissile()) {
             int ignition = rvpData.getResolvedIgnitionDelayTick();
             float burnTime = rvpData.getResolvedMotorBurnTime();
-            int motorTick = tickCount - ignition;
+            int motorTick = getFlightTickCount() - ignition;
             if (motorTick >= 0 && motorTick <= burnTime) {
                 return true;
             }
             int start = secondPulseStartTick;
             if (start >= 0) {
-                int t2 = tickCount - start;
+                int t2 = getFlightTickCount() - start;
                 float burn2 = rvpData.getProjectileData().getResolvedSecondPulseBurnTime();
                 return t2 >= 0 && t2 <= burn2;
             }
@@ -2712,7 +2862,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         int ignition = rvpData.getResolvedIgnitionDelayTick();
         float burnTime = rvpData.getResolvedMotorBurnTime();
-        int motorTick = tickCount - ignition;
+        int motorTick = getFlightTickCount() - ignition;
         return motorTick >= 0 && motorTick <= burnTime;
     }
 
