@@ -35,6 +35,7 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
@@ -103,7 +104,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final double PARTICLE_VIEW_DISTANCE = 512.0D;
     private static final double PARTICLE_VIEW_DISTANCE_SQ = PARTICLE_VIEW_DISTANCE * PARTICLE_VIEW_DISTANCE;
     private static final Logger LOGGER = LogUtils.getLogger();
-    /** 弹体每 Tick 请求的未来路径窗口。 */
+    /** 弹体每 Tick 请求的未来路径窗口。
+     * distance = sqrt(motion.x² + motion.z²) * PROJECTILE_CHUNK_HORIZON_TICKS */
     private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 5;
     /** 区块持续无法进入 entity-ticking 时的安全等待上限。 */
     private static final int MAX_PROJECTILE_CHUNK_WAIT_TICKS = 200;
@@ -1190,7 +1192,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
 
             tickSubmunition();
-            if (!isAlive()) {
+            if (RVP_ProjectileLifecycleDebug.noteNotAliveTickExit(
+                    this,
+                    RVP_ProjectileLifecycleDebug.NotAliveCheckpoint.AFTER_SUBMUNITION)) {
                 return;
             }
             guidanceWireDirectApplied = false;
@@ -1203,11 +1207,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             // 先碰撞检测再运动（对标本体 BulletEntity 顺序，修复直接命中丢失的 bug）
             tickHit();
-            if (!isAlive()) {
+            if (RVP_ProjectileLifecycleDebug.noteNotAliveTickExit(
+                    this,
+                    RVP_ProjectileLifecycleDebug.NotAliveCheckpoint.AFTER_HIT)) {
                 return;
             }
             tickMotion();
-            if (!isAlive()) {
+            if (RVP_ProjectileLifecycleDebug.noteNotAliveTickExit(
+                    this,
+                    RVP_ProjectileLifecycleDebug.NotAliveCheckpoint.AFTER_MOTION)) {
                 return;
             }
             // 从运动后的新位置刷新滚动窗口，为下一 Tick 的管理器预算分配提前提交路径。

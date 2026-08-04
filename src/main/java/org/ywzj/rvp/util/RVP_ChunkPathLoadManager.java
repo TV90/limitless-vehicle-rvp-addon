@@ -30,18 +30,20 @@ import java.util.UUID;
  *
  * <p>实体 Tick 只提交下一 Tick 所需路径；管理器在 ServerTick START 统一刷新已有 Ticket，并按
  * “等待弹体 → 活动弹体 → 固定翼”的优先级和同级轮转顺序分配新增预算。所有 Ticket 都是本体
- * 同参数的临时 {@link TicketType#POST_TELEPORT} Ticket，路径滚走或实体停止提交后自然过期。</p>
+ * 同参数的临时 {@link TicketType#POST_TELEPORT} Ticket，路径滚走或实体停止提交后自然过期。
+ * { addExactTicket }为实际向 Minecraft 请求区块chunk加载的方法。
+ * </p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ChunkPathLoadManager {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 每个服务器 Tick 最多新增的路径中心 Ticket 数。 */
-    public static final int GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK = 32;
+    public static final int GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK = 64;
     /** 单实体单次提交允许的最大连续路径区块数。 */
     public static final int MAX_CHUNKS_PER_ENTITY_TICK = 128;
-    /** 与本体 EntityUtil.keepChunkLoaded(...) 保持一致的 Ticket 距离参数。 */
-    private static final int POST_TELEPORT_TICKET_LEVEL = 3;
+    /** 与本体 EntityUtil.keepChunkLoaded(...) 保持一致的 Ticket - 1 距离参数。 */
+    private static final int POST_TELEPORT_TICKET_LEVEL = 2;
     /** 汇总统计日志周期，单位为服务器 Tick。 */
     private static final int STATS_LOG_INTERVAL_TICKS = 200;
 
@@ -199,6 +201,7 @@ public final class RVP_ChunkPathLoadManager {
             }
             // 对连续获票前缀逐块精确刷新；不调用会附带额外前方票的本体 EntityUtil。
             for (ChunkPos chunk : output.grantedChunks()) {
+                //实际执行请求chunk方法
                 addExactTicket(request.level(), request.entityId(), chunk);
                 state.intervalRequestedChunkCount++;
             }
@@ -211,7 +214,7 @@ public final class RVP_ChunkPathLoadManager {
         }
     }
 
-    /** 只为指定 ChunkPos 添加一个与本体参数一致的临时 Ticket，不产生额外前方请求。 */
+    /** 实际执行请求chunk方法，只为指定 ChunkPos 添加一个与本体参数一致的临时 Ticket，不产生额外前方请求。 */
     private static void addExactTicket(ServerLevel level, int entityId, ChunkPos chunkPos) {
         level.getChunkSource().addRegionTicket(
                 TicketType.POST_TELEPORT,

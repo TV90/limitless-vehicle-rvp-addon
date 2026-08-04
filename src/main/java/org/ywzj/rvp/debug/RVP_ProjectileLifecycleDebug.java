@@ -105,6 +105,10 @@ public final class RVP_ProjectileLifecycleDebug {
             {"traveledDistance", "已飞行距离"}, {"remainingDistance", "剩余距离"},
             {"actualElapsedSeconds", "实际经过时间秒"},
             {"averageSpeedBlocksPerSecond", "已飞行段平均速度格每秒"},
+            {"checkpoint", "检查点"}, {"completedBehavior", "刚完成行为"},
+            {"skippedBehavior", "跳过后续行为"}, {"chunkWaiting", "正在等待区块"},
+            {"lifecycleCause", "生命周期原因"}, {"causeConfidence", "原因判定类型"},
+            {"levelAvailable", "维度可访问"},
             {"reason", "原因"}, {"action", "处理"}, {"owner", "所有者"},
             {"shooterVehicle", "发射载具"}, {"loaded", "区块已加载"},
             {"entityTicking", "允许实体Tick"}, {"chunk", "区块"},
@@ -136,6 +140,43 @@ public final class RVP_ProjectileLifecycleDebug {
         EN_US
     }
 
+    /** tick 内发现弹体已不存活时的语义化检查点及其后续跳过范围。 */
+    public enum NotAliveCheckpoint {
+        AFTER_SUBMUNITION(
+                "tickSubmunition",
+                "guidance_path_gate_hit_motion_fuses_trail_wire_life"),
+        AFTER_HIT(
+                "tickHit",
+                "motion_path_refresh_fuses_trail_wire_life"),
+        AFTER_MOTION(
+                "tickMotion",
+                "path_refresh_fuses_trail_wire_life");
+
+        private final String completedBehavior;
+        private final String skippedBehavior;
+
+        NotAliveCheckpoint(String completedBehavior, String skippedBehavior) {
+            this.completedBehavior = completedBehavior;
+            this.skippedBehavior = skippedBehavior;
+        }
+    }
+
+    /** 日志使用的稳定原因代码；权威移除和区块状态推断由 causeConfidence 明确区分。 */
+    private enum LifecycleCause {
+        EXPLICITLY_DISCARDED,
+        KILLED,
+        CHUNK_UNLOADED,
+        UNLOADED_WITH_PLAYER,
+        DIMENSION_CHANGED,
+        OTHER_REMOVAL_REASON,
+        REMOVAL_REQUESTED_BUT_NOT_TERMINATED,
+        CHUNK_NOT_LOADED,
+        CHUNK_NOT_ENTITY_TICKING,
+        DIMENSION_UNAVAILABLE,
+        TRACKING_ENDED_WITHOUT_REMOVAL,
+        TICK_STALLED_WHILE_ENTITY_TICKING
+    }
+
     /** 生命周期日志中可出现的事件类型。 */
     public enum Event {
         /** 已根据武器数据完成弹体初始化。 */
@@ -144,6 +185,8 @@ public final class RVP_ProjectileLifecycleDebug {
         SPAWN_READY,
         /** 一次仍处于活动状态的服务端弹体 tick 已完成。 */
         TICK,
+        /** tick 阶段检查发现弹体已不存活，因此记录当前检查点和后续早退范围。 */
+        NOT_ALIVE_TICK_EXIT,
         /** 弹体运行配置缺失。 */
         CONFIG_MISSING,
         /** 发射者或发射载具校验失败。 */
@@ -394,6 +437,37 @@ public final class RVP_ProjectileLifecycleDebug {
     }
 
     /**
+     * 检查 tick 阶段后的存活状态；已不存活时记录语义化早退上下文并返回 true。
+     * 即使监测器关闭也保持纯判断语义，不会改变原有控制流。
+     *
+     * @param projectile 当前弹体
+     * @param checkpoint 刚完成的 tick 阶段
+     * @return 弹体当前是否已不存活
+     */
+    public static boolean noteNotAliveTickExit(
+            RVP_BaseBullet projectile,
+            NotAliveCheckpoint checkpoint) {
+        if (projectile == null || projectile.isAlive()) {
+            return false;
+        }
+        NotAliveCheckpoint resolved = checkpoint == null
+                ? NotAliveCheckpoint.AFTER_MOTION
+                : checkpoint;
+        noteEvent(projectile, Event.NOT_ALIVE_TICK_EXIT,
+                () -> "checkpoint=" + resolved.name()
+                        + " completedBehavior=" + resolved.completedBehavior
+                        + " skippedBehavior=" + resolved.skippedBehavior
+                        + " removalReason=" + formatRemovalReason(projectile.getRemovalReason())
+                        + " alive=" + projectile.isAlive()
+                        + " removed=" + projectile.isRemoved()
+                        + " life=" + projectile.life
+                        + " position=" + formatVec(projectile.position())
+                        + " velocity=" + formatVec(projectile.getDeltaMovement())
+                        + " chunkWaiting=" + projectile.isWaitingForChunk());
+        return true;
+    }
+
+    /**
      * 记录命中、引信、爆炸等离散事件；details 仅在监测启用时求值。
      *
      * @param projectile 事件所属弹体
@@ -434,6 +508,8 @@ public final class RVP_ProjectileLifecycleDebug {
         // REMOVED 只表示“请求”，真正终止必须等待携带 reason 的 LEFT_LEVEL。
         record(trace, projectile, Event.REMOVED,
                 "reason=" + reason
+                        + " lifecycleCause=" + removalCause(reason)
+                        + " causeConfidence=AUTHORITATIVE"
                         + " aliveBeforeRemove=" + projectile.isAlive()
                         + " life=" + projectile.life
                         + " position=" + formatVec(projectile.position())
@@ -467,8 +543,13 @@ public final class RVP_ProjectileLifecycleDebug {
                 return;
             }
             // 立即记录 TRACKING_END，无需等待 40 tick watchdog 才解释日志停止。
+            LifecycleCause cause = !snapshot.removalRequested() && loaded && entityTicking
+                    ? LifecycleCause.TRACKING_ENDED_WITHOUT_REMOVAL
+                    : nonRemovalCause(true, loaded, entityTicking, snapshot.removalRequested());
             recordTrace(trace, now, Event.TRACKING_END,
                     "reason=<null>"
+                            + " lifecycleCause=" + cause
+                            + " causeConfidence=STATE_INFERENCE"
                             + " removalRequested=" + snapshot.removalRequested()
                             + " stalled=true"
                             + " trackingEnded=true"
@@ -491,6 +572,8 @@ public final class RVP_ProjectileLifecycleDebug {
         // LEFT_LEVEL 保留 nullable 之外的实际 reason、区块状态和距最后 tick 时长。
         recordTrace(trace, now, Event.LEFT_LEVEL,
                 "reason=" + formatRemovalReason(reason)
+                        + " lifecycleCause=" + removalCause(reason)
+                        + " causeConfidence=AUTHORITATIVE"
                         + " removalRequested=" + snapshot.removalRequested()
                         + " stalled=" + snapshot.stalled()
                         + " trackingEnded=" + snapshot.trackingEnded()
@@ -537,9 +620,14 @@ public final class RVP_ProjectileLifecycleDebug {
             ServerLevel level = server.getLevel(snapshot.dimension());
             boolean loaded = level != null && level.hasChunkAt(snapshot.lastBlockPos());
             boolean entityTicking = level != null && level.isPositionEntityTicking(snapshot.lastBlockPos());
+            LifecycleCause cause = nonRemovalCause(
+                    level != null, loaded, entityTicking, snapshot.removalRequested());
             // 状态只转换一次，因此 watchdog 不会每次扫描重复写同一条停滞日志。
             recordTrace(trace, now, Event.TICK_STALLED,
-                    "lastTickGameTime=" + snapshot.lastTickGameTime()
+                    "lifecycleCause=" + cause
+                            + " causeConfidence=STATE_INFERENCE"
+                            + " levelAvailable=" + (level != null)
+                            + " lastTickGameTime=" + snapshot.lastTickGameTime()
                             + " elapsed=" + elapsed(now, snapshot.lastTickGameTime())
                             + " lastTick=" + snapshot.lastTickCount()
                             + " lastPosition=" + formatBlockPos(snapshot.lastBlockPos())
@@ -827,6 +915,35 @@ public final class RVP_ProjectileLifecycleDebug {
                 .replace("=KILLED", "=已击杀")
                 .replace("=UNLOADED_TO_CHUNK", "=随区块卸载")
                 .replace("=UNLOADED_WITH_PLAYER", "=随玩家卸载")
+                .replace("检查点=AFTER_SUBMUNITION", "检查点=子弹药处理后")
+                .replace("检查点=AFTER_HIT", "检查点=碰撞处理后")
+                .replace("检查点=AFTER_MOTION", "检查点=运动处理后")
+                .replace("刚完成行为=tickSubmunition", "刚完成行为=子弹药处理")
+                .replace("刚完成行为=tickHit", "刚完成行为=碰撞处理")
+                .replace("刚完成行为=tickMotion", "刚完成行为=运动处理")
+                .replace("跳过后续行为=guidance_path_gate_hit_motion_fuses_trail_wire_life",
+                        "跳过后续行为=制导、路径门、碰撞、运动、引信、尾迹、线导、寿命推进")
+                .replace("跳过后续行为=motion_path_refresh_fuses_trail_wire_life",
+                        "跳过后续行为=运动、路径刷新、引信、尾迹、线导、寿命推进")
+                .replace("跳过后续行为=path_refresh_fuses_trail_wire_life",
+                        "跳过后续行为=路径刷新、引信、尾迹、线导、寿命推进")
+                .replace("原因判定类型=AUTHORITATIVE", "原因判定类型=权威RemovalReason")
+                .replace("原因判定类型=STATE_INFERENCE", "原因判定类型=状态推断")
+                .replace("生命周期原因=EXPLICITLY_DISCARDED", "生命周期原因=代码明确丢弃")
+                .replace("生命周期原因=KILLED", "生命周期原因=被击杀")
+                .replace("生命周期原因=CHUNK_UNLOADED", "生命周期原因=区块卸载")
+                .replace("生命周期原因=UNLOADED_WITH_PLAYER", "生命周期原因=随玩家卸载")
+                .replace("生命周期原因=DIMENSION_CHANGED", "生命周期原因=切换维度")
+                .replace("生命周期原因=OTHER_REMOVAL_REASON", "生命周期原因=其他权威移除原因")
+                .replace("生命周期原因=REMOVAL_REQUESTED_BUT_NOT_TERMINATED",
+                        "生命周期原因=已请求移除但尚未终止")
+                .replace("生命周期原因=CHUNK_NOT_LOADED", "生命周期原因=所在区块未加载")
+                .replace("生命周期原因=CHUNK_NOT_ENTITY_TICKING", "生命周期原因=所在区块未进入实体Tick")
+                .replace("生命周期原因=DIMENSION_UNAVAILABLE", "生命周期原因=所在维度不可访问")
+                .replace("生命周期原因=TRACKING_ENDED_WITHOUT_REMOVAL",
+                        "生命周期原因=未移除但追踪结束")
+                .replace("生命周期原因=TICK_STALLED_WHILE_ENTITY_TICKING",
+                        "生命周期原因=区块可Tick但实体仍停滞")
                 .replace("snapshot_begin", "快照开始")
                 .replace("snapshot_end", "快照结束")
                 .replace("snapshot ", "快照 ")
@@ -843,6 +960,7 @@ public final class RVP_ProjectileLifecycleDebug {
             case TICK_STALLED -> "Tick停滞";
             case TICK_RESUMED -> "Tick恢复";
             case TICK -> "逐Tick状态";
+            case NOT_ALIVE_TICK_EXIT -> "弹体非存活早退";
             case CONFIG_MISSING -> "配置缺失";
             case SHOOTER_INVALID -> "发射者无效";
             case WAITING_FOR_CHUNK -> "等待区块";
@@ -874,6 +992,44 @@ public final class RVP_ProjectileLifecycleDebug {
     /** 将可空移除原因转为日志文本；null 是 TRACKING_END 的重要语义，不能省略。 */
     private static String formatRemovalReason(@Nullable Entity.RemovalReason reason) {
         return reason == null ? "<null>" : reason.name();
+    }
+
+    /** 将非空 RemovalReason 转为权威终止原因，不依赖易变化的枚举 switch 穷举。 */
+    private static LifecycleCause removalCause(@Nullable Entity.RemovalReason reason) {
+        if (reason == null) {
+            return LifecycleCause.TRACKING_ENDED_WITHOUT_REMOVAL;
+        }
+        return switch (reason.name()) {
+            case "DISCARDED" -> LifecycleCause.EXPLICITLY_DISCARDED;
+            case "KILLED" -> LifecycleCause.KILLED;
+            case "UNLOADED_TO_CHUNK" -> LifecycleCause.CHUNK_UNLOADED;
+            case "UNLOADED_WITH_PLAYER" -> LifecycleCause.UNLOADED_WITH_PLAYER;
+            case "CHANGED_DIMENSION" -> LifecycleCause.DIMENSION_CHANGED;
+            default -> LifecycleCause.OTHER_REMOVAL_REASON;
+        };
+    }
+
+    /**
+     * 无 RemovalReason 时只能依据观测状态分类，不能把推断伪装成权威 discard 原因。
+     */
+    private static LifecycleCause nonRemovalCause(
+            boolean levelAvailable,
+            boolean loaded,
+            boolean entityTicking,
+            boolean removalRequested) {
+        if (removalRequested) {
+            return LifecycleCause.REMOVAL_REQUESTED_BUT_NOT_TERMINATED;
+        }
+        if (!levelAvailable) {
+            return LifecycleCause.DIMENSION_UNAVAILABLE;
+        }
+        if (!loaded) {
+            return LifecycleCause.CHUNK_NOT_LOADED;
+        }
+        if (!entityTicking) {
+            return LifecycleCause.CHUNK_NOT_ENTITY_TICKING;
+        }
+        return LifecycleCause.TICK_STALLED_WHILE_ENTITY_TICKING;
     }
 
     /** 将可空区块坐标格式化为“(x,z)”。 */
