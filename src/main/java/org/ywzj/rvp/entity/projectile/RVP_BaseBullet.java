@@ -191,6 +191,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int livingPenetrationLeft;
     protected int wallPenetrationLeft;
     protected final Set<Integer> piercedLivingIds = new HashSet<>();
+    /** 直击命中的目标 ID（近炸与直击互斥：同一目标二选一，避免双倍伤害）。 */
+    protected final Set<Integer> directHitIds = new HashSet<>();
+    /** 已吃近炸全额伤害的目标 ID（近炸触发即全额，即使目标已逃出范围；且不重复触发/叠加）。 */
+    protected final Set<Integer> proximityDamagedIds = new HashSet<>();
     /** Completed penetrations (living or solid wall); drives stacked damage decay. */
     protected int penetrationEventCount;
     protected float penetrationDamageMultiplier = 1f;
@@ -1489,6 +1493,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (targetEntity != null && targetEntity.isAlive()
                 && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
+                && !isProximityDamageImmune(targetEntity)
                 && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
@@ -1503,7 +1508,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
         for (Entity entity : level().getEntities(this, detectionBox,
                 e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
-                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e)))) {
+                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
+                        && !isProximityDamageImmune(e))) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
                     () -> "type=PROXIMITY_POST_MOTION source=detection_box radius="
@@ -1517,6 +1523,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
     protected boolean isProximityFuseTargetTooLow(Entity entity, int fuseHeight) {
         return RVP_GuidanceMath.isEntityNearGroundBlocks(entity, fuseHeight);
+    }
+
+    /** 目标已直击或已吃近炸全额伤害时，近炸不再对其触发/叠加（直击与近炸互斥）。 */
+    private boolean isProximityDamageImmune(Entity entity) {
+        Entity root = ywzj_rvp$resolveCollisionRoot(entity);
+        if (root == null) {
+            return false;
+        }
+        return directHitIds.contains(root.getId()) || proximityDamagedIds.contains(root.getId());
     }
 
     /**
@@ -1726,7 +1741,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
                 entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
-                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity)));
+                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
+                        && !isProximityDamageImmune(entity));
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;
         for (Entity entity : nearbyEntities) {
@@ -1890,6 +1906,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void applyEntityHitDamage(Entity entity, BulletHitResult result) {
+        Entity hitRoot = ywzj_rvp$resolveCollisionRoot(entity);
+        if (hitRoot != null) {
+            if (proximityDamagedIds.contains(hitRoot.getId())) {
+                // 该目标已吃近炸全额伤害：直击不再叠加（互斥）
+                return;
+            }
+            directHitIds.add(hitRoot.getId());
+        }
         Entity owner = getOwner();
         boolean headshot = result.isHeadshot();
         float distanceMult = distanceDecayFactor();
@@ -2384,28 +2408,35 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 : proximityTarget;
         boolean hadGuaranteedDamage = false;
         if (kind == FuseDetonation.PROXIMITY && resolvedProximityTarget != null && rvpData != null) {
-            // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 VehicleExplosion 距离衰减（修复高速目标炸不到的 bug）
-            float guaranteed = rvpData.getProximityFuseDirectDamage();
-            if (guaranteed <= 0f) {
-                guaranteed = rvpData.resolveProximityFuseExplosionDamage();
-            }
-            if (guaranteed <= 0f && explosion != null) {
-                guaranteed = explosion.damage;
-            }
-            if (RVP_RadarContactHelper.triggerHbmMissileFuze(resolvedProximityTarget, pos)) {
-                hadGuaranteedDamage = true;
-            } else if (guaranteed > 0f) {
-                guaranteed = RVP_DamageApplier.applyScaled(guaranteed, resolvedProximityTarget, rvpData);
-                DamageSource source = AllDamageTypes.Sources.explosion(
-                        level().registryAccess(), this, getOwner(), pos);
-                resolvedProximityTarget.hurt(source, guaranteed);
-                hadGuaranteedDamage = true;
-            }
-            // 近炸触发后，如果触发实体也是弹药（如拦截弹击中敌方导弹），强制将其引爆/销毁
-            if (resolvedProximityTarget instanceof RVP_BaseBullet targetBullet) {
-                targetBullet.rvp$detonateByAps();
-            } else if (resolvedProximityTarget instanceof AmmoEntity targetAmmo) {
-                targetAmmo.discard();
+            if (resolvedProximityTarget instanceof AmmoEntity) {
+                // 弹药实体逻辑不变：近炸触发后强制将其引爆/销毁（防空拦截敌方导弹）
+                if (resolvedProximityTarget instanceof RVP_BaseBullet targetBullet) {
+                    targetBullet.rvp$detonateByAps();
+                } else if (resolvedProximityTarget instanceof AmmoEntity targetAmmo) {
+                    targetAmmo.discard();
+                }
+            } else if (!directHitIds.contains(resolvedProximityTarget.getId())
+                    && !proximityDamagedIds.contains(resolvedProximityTarget.getId())) {
+                // 非弹药实体：直击与近炸互斥，同一目标不叠加第二次伤害。
+                // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 VehicleExplosion 距离衰减
+                // （修复高速目标炸不到的 bug）；触发即全额，目标随后逃出范围也照样扣满。
+                float guaranteed = rvpData.getProximityFuseDirectDamage();
+                if (guaranteed <= 0f) {
+                    guaranteed = rvpData.resolveProximityFuseExplosionDamage();
+                }
+                if (guaranteed <= 0f && explosion != null) {
+                    guaranteed = explosion.damage;
+                }
+                if (RVP_RadarContactHelper.triggerHbmMissileFuze(resolvedProximityTarget, pos)) {
+                    hadGuaranteedDamage = true;
+                } else if (guaranteed > 0f) {
+                    guaranteed = RVP_DamageApplier.applyScaled(guaranteed, resolvedProximityTarget, rvpData);
+                    DamageSource source = AllDamageTypes.Sources.explosion(
+                            level().registryAccess(), this, getOwner(), pos);
+                    resolvedProximityTarget.hurt(source, guaranteed);
+                    proximityDamagedIds.add(resolvedProximityTarget.getId());
+                    hadGuaranteedDamage = true;
+                }
             }
         }
         // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害
