@@ -106,6 +106,8 @@ class RVP_ChunkPathLoaderTest {
 
         assertEquals(chunks(chunk(0, 0), chunk(1, 0), chunk(2, 0), chunk(3, 0)), result);
         assertFalse(result.contains(chunk(125, 0)));
+        assertFalse(RVP_ChunkPathLoader.reachesProjectedEnd(
+                new Vec3(1, 0, 1), new Vec3(2000, 0, 0), 1, result));
     }
 
     /** 验证上限为零时仍保留起点区块，避免返回可被误解为空安全路径的结果。 */
@@ -114,6 +116,16 @@ class RVP_ChunkPathLoaderTest {
         assertEquals(
                 chunks(chunk(0, 0)),
                 plan(new Vec3(1, 0, 1), new Vec3(100, 0, 0), 1, 0));
+    }
+
+    /** 验证未截断路径能够明确确认已覆盖预测终点。 */
+    @Test
+    void completePathReportsProjectedEndReached() {
+        Vec3 start = new Vec3(1, 0, 1);
+        Vec3 motion = new Vec3(40, 0, 0);
+        List<ChunkPos> result = plan(start, motion, 1, 64);
+
+        assertTrue(RVP_ChunkPathLoader.reachesProjectedEnd(start, motion, 1, result));
     }
 
     /** 使用第三次实测数据验证 15 格位移仍会从 Z=617 跨入 Z=618。 */
@@ -176,6 +188,22 @@ class RVP_ChunkPathLoaderTest {
         assertEquals(1, readiness.readyChunkCount());
         assertEquals(path.get(1), readiness.firstUnreadyChunk());
         assertEquals(RVP_ChunkPathLoader.ChunkReadiness.NOT_ENTITY_TICKING, readiness.firstUnreadyState());
+    }
+
+    /** 验证尚未获得全局预算授权的区块与未加载状态保持独立。 */
+    @Test
+    void readinessDistinguishesNotRequested() {
+        List<ChunkPos> path = chunks(chunk(0, 0), chunk(1, 0));
+
+        RVP_ChunkPathLoader.PathReadiness readiness = RVP_ChunkPathLoader.checkPathReadiness(
+                path, chunk -> chunk.equals(path.get(0))
+                        ? RVP_ChunkPathLoader.ChunkReadiness.READY
+                        : RVP_ChunkPathLoader.ChunkReadiness.NOT_REQUESTED);
+
+        assertFalse(readiness.pathReady());
+        assertEquals(1, readiness.readyChunkCount());
+        assertEquals(path.get(1), readiness.firstUnreadyChunk());
+        assertEquals(RVP_ChunkPathLoader.ChunkReadiness.NOT_REQUESTED, readiness.firstUnreadyState());
     }
 
     /** 验证空路径被明确拒绝，不能按“零个区块全部就绪”放行移动。 */

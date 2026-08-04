@@ -3,6 +3,7 @@ package org.ywzj.rvp.util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -35,7 +36,8 @@ public final class RVP_ChunkPathLoader {
      * supercover corner handling. If {@code maxChunks} is reached, the result remains a continuous
      * prefix; it never samples the endpoint while leaving gaps in the middle.</p>
      *
-     * <p>枚举预测水平线段触及的所有区块。结果按运动方向排序、无重复；精确穿过角点时同时
+     * <p>使用二维 Amanatides-Woo DDA（supercover voxel traversal）枚举 X/Z 线段经过的区块：
+     * 枚举预测水平线段触及的所有区块。结果按运动方向排序、无重复；精确穿过角点时同时
      * 包含两个侧邻区块和对角区块。达到上限时只保留连续前缀，绝不抽样终点而遗漏中间区块。</p>
      */
     static List<ChunkPos> collectSupercoverChunks(
@@ -128,6 +130,85 @@ public final class RVP_ChunkPathLoader {
     }
 
     /**
+     * 规划并提交未来水平路径，由服务器级管理器在下一 Tick 开始阶段按全局预算精确加票。
+     *
+     * <p>本方法同时检查本 Tick（horizon=1）路径。只有当前路径中的区块已经获得 Ticket，且均已
+     * 加载并进入 entity-ticking，{@link PathLoadResult#currentTickPathReady()} 才会为 true。</p>
+     *
+     * @param entity 申请路径的服务端实体
+     * @param start 预测起点
+     * @param motion 每 Tick 速度向量
+     * @param horizonTicks 前探 Tick 数
+     * @param priority 全局预算分配优先级
+     * @return 本次提交和当前移动路径的状态快照
+     */
+    public static PathLoadResult requestProjectedPath(
+            @Nullable Entity entity,
+            @Nullable Vec3 start,
+            @Nullable Vec3 motion,
+            int horizonTicks,
+            RVP_ChunkPathLoadManager.RequestPriority priority) {
+        if (entity == null || !(entity.level() instanceof ServerLevel serverLevel)) {
+            return PathLoadResult.invalidPath();
+        }
+
+        // 完整窗口只负责提前请求；本 Tick 窗口单独用于移动许可判定。
+        List<ChunkPos> projectedChunks = collectSupercoverChunks(
+                start, motion, horizonTicks, RVP_ChunkPathLoadManager.MAX_CHUNKS_PER_ENTITY_TICK);
+        List<ChunkPos> currentTickChunks = collectSupercoverChunks(
+                start, motion, 1, RVP_ChunkPathLoadManager.MAX_CHUNKS_PER_ENTITY_TICK);
+        if (projectedChunks.isEmpty() || currentTickChunks.isEmpty()) {
+            return PathLoadResult.invalidPath();
+        }
+        boolean projectedPathTruncated = !reachesProjectedEnd(start, motion, horizonTicks, projectedChunks);
+        boolean currentTickPathTruncated = !reachesProjectedEnd(start, motion, 1, currentTickChunks);
+
+        // 提交会覆盖同一实体本 Tick 较早的计划；实际新增 Ticket 在下一 ServerTick START 统一分配。
+        RVP_ChunkPathLoadManager.PathRequestSnapshot request =
+                RVP_ChunkPathLoadManager.submitPathRequest(entity, projectedChunks, priority);
+
+        // 未获管理器授权的区块先返回 NOT_REQUESTED，不能仅凭当前已加载状态绕过全局预算。
+        PathReadiness readiness = checkPathReadiness(currentTickChunks, chunkPos -> {
+            if (!request.grantedChunks().contains(chunkPos)) {
+                return ChunkReadiness.NOT_REQUESTED;
+            }
+            return queryChunkReadiness(serverLevel, chunkPos, Mth.floor(start.y));
+        });
+        // 即使已返回的连续前缀全部就绪，实际终点未被规划覆盖时也必须拒绝移动。
+        if (readiness.pathReady() && currentTickPathTruncated) {
+            readiness = new PathReadiness(
+                    false,
+                    readiness.readyChunkCount(),
+                    null,
+                    ChunkReadiness.PATH_TRUNCATED);
+        }
+        RVP_ChunkPathLoadManager.recordPathObservation(entity, readiness, priority);
+        return new PathLoadResult(
+                projectedChunks.size(),
+                request.requestedChunkCount(),
+                readiness.readyChunkCount(),
+                readiness.firstUnreadyChunk(),
+                readiness.firstUnreadyState(),
+                request.budgetExhausted(),
+                projectedPathTruncated,
+                readiness.pathReady());
+    }
+
+    /** 使用普通活动弹体优先级提交路径，供不需要显式区分状态的调用方使用。 */
+    public static PathLoadResult requestProjectedPath(
+            @Nullable Entity entity,
+            @Nullable Vec3 start,
+            @Nullable Vec3 motion,
+            int horizonTicks) {
+        return requestProjectedPath(
+                entity,
+                start,
+                motion,
+                horizonTicks,
+                RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+    }
+
+    /**
      * Checks a path using queries that do not synchronously load or generate chunks.
      *
      * <p>仅使用无同步加载副作用的查询检查路径；返回首个未加载或未进入实体 Tick 的区块。</p>
@@ -140,21 +221,42 @@ public final class RVP_ChunkPathLoader {
             return PathReadiness.invalidPath();
         }
         // 统一委托给纯判定器，使生产查询和单元测试共享相同的顺序及短路语义。
-        return checkPathReadiness(chunks, chunkPos -> {
-            // 区块中心仅作为状态查询坐标；Y 不影响 ChunkPos，但保留调用方当前高度便于阅读和调试。
-            BlockPos probe = new BlockPos(
-                    chunkPos.getMinBlockX() + CHUNK_SIZE / 2,
-                    blockY,
-                    chunkPos.getMinBlockZ() + CHUNK_SIZE / 2);
-            // hasChunkAt 不会像 getChunk(...) 一样同步加载或生成目标区块。
-            if (!level.hasChunkAt(probe)) {
-                return ChunkReadiness.NOT_LOADED;
-            }
-            // 已加载不等于可执行实体 Tick，必须继续检查 entity-ticking 状态。
-            return level.isPositionEntityTicking(probe)
-                    ? ChunkReadiness.READY
-                    : ChunkReadiness.NOT_ENTITY_TICKING;
-        });
+        return checkPathReadiness(chunks, chunkPos -> queryChunkReadiness(level, chunkPos, blockY));
+    }
+
+    /** 使用区块中心执行无加载副作用的加载及 entity-ticking 两阶段检查。 */
+    private static ChunkReadiness queryChunkReadiness(ServerLevel level, ChunkPos chunkPos, int blockY) {
+        // 区块中心仅作为状态查询坐标；Y 不影响 ChunkPos，但保留调用方当前高度便于阅读和调试。
+        BlockPos probe = new BlockPos(
+                chunkPos.getMinBlockX() + CHUNK_SIZE / 2,
+                blockY,
+                chunkPos.getMinBlockZ() + CHUNK_SIZE / 2);
+        // hasChunkAt 不会像 getChunk(...) 一样同步加载或生成目标区块。
+        if (!level.hasChunkAt(probe)) {
+            return ChunkReadiness.NOT_LOADED;
+        }
+        // 已加载不等于可执行实体 Tick，必须继续检查 entity-ticking 状态。
+        return level.isPositionEntityTicking(probe)
+                ? ChunkReadiness.READY
+                : ChunkReadiness.NOT_ENTITY_TICKING;
+    }
+
+    /** 判断连续规划结果是否真正覆盖预测终点；用于识别达到上限后的截断路径。 */
+    static boolean reachesProjectedEnd(
+            @Nullable Vec3 start,
+            @Nullable Vec3 motion,
+            int horizonTicks,
+            @Nullable List<ChunkPos> chunks) {
+        if (!isFinite(start) || !isFinite(motion) || chunks == null || chunks.isEmpty()) {
+            return false;
+        }
+        int horizon = Math.max(1, horizonTicks);
+        double endX = start.x + motion.x * horizon;
+        double endZ = start.z + motion.z * horizon;
+        if (!Double.isFinite(endX) || !Double.isFinite(endZ)) {
+            return false;
+        }
+        return chunks.get(chunks.size() - 1).equals(chunkAt(endX, endZ));
     }
 
     /**
@@ -236,6 +338,10 @@ public final class RVP_ChunkPathLoader {
         NOT_LOADED,
         /** 区块已加载，但尚未晋级到 entity-ticking。 */
         NOT_ENTITY_TICKING,
+        /** 路径已提交，但该区块尚未获得全局预算授权的 Ticket。 */
+        NOT_REQUESTED,
+        /** 路径达到单实体区块上限，连续前缀尚未覆盖实际预测终点。 */
+        PATH_TRUNCATED,
         /** 路径本身为空或服务器世界无效。 */
         INVALID_PATH
     }
@@ -256,6 +362,34 @@ public final class RVP_ChunkPathLoader {
         /** 构造拒绝移动的无效路径结果。 */
         private static PathReadiness invalidPath() {
             return new PathReadiness(false, 0, null, ChunkReadiness.INVALID_PATH);
+        }
+    }
+
+    /**
+     * 路径提交和本 Tick 移动许可的合并结果。
+     *
+     * @param plannedChunkCount 完整前探窗口规划的区块数
+     * @param requestedChunkCount 当前已获得 Ticket 的连续路径前缀长度
+     * @param readyChunkCount 本 Tick 路径从起点开始连续就绪的区块数
+     * @param firstUnreadyChunk 本 Tick 路径中的首个未就绪区块
+     * @param firstUnreadyState 首个未就绪区块的原因
+     * @param budgetExhausted 上一次全局分配是否因预算不足留下未授权区块
+     * @param projectedPathTruncated 完整前探窗口是否因单实体上限而截断
+     * @param currentTickPathReady 本 Tick 路径是否已全部获得 Ticket 并进入 entity-ticking
+     */
+    public record PathLoadResult(
+            int plannedChunkCount,
+            int requestedChunkCount,
+            int readyChunkCount,
+            @Nullable ChunkPos firstUnreadyChunk,
+            ChunkReadiness firstUnreadyState,
+            boolean budgetExhausted,
+            boolean projectedPathTruncated,
+            boolean currentTickPathReady) {
+        /** 构造拒绝移动的无效路径结果。 */
+        private static PathLoadResult invalidPath() {
+            return new PathLoadResult(
+                    0, 0, 0, null, ChunkReadiness.INVALID_PATH, false, false, false);
         }
     }
 }
