@@ -103,7 +103,7 @@ public class C2SSetGPSTarget {
                 RVP_Network.CHANNEL.sendTo(S2CGpsStateSync.of(snapshot), player.connection.connection, net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT);
                 return;
             }
-            double maxDist = 4096.0;
+            double maxDist = 65535.0;
             Vec3 target = new Vec3(msg.x, msg.y, msg.z);
             if (player.position().distanceToSqr(target) > maxDist * maxDist) {
                 snapshot = GPSTargetManager.snapshot(player);
