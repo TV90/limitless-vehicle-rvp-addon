@@ -175,6 +175,7 @@
   "message.ywzj_rvp.uav.redeploy_cooldown": "Radar vehicle redeploy cooling down, %s s remaining",
   "message.ywzj_rvp.uav.spawn_failed": "Failed to deploy radar vehicle",
   "message.ywzj_rvp.uav.deploy_success": "Radar vehicle deployed and control switched",
+  "message.ywzj_rvp.uav.seat_not_allowed": "Only the driver seat can deploy the UAV",
   "message.ywzj_rvp.uav.switch_to_child_success": "Switched to radar vehicle",
   "message.ywzj_rvp.uav.switch_to_child_failed": "Failed to switch to radar vehicle",
   "message.ywzj_rvp.uav.switch_back_success": "Returned to parent vehicle",

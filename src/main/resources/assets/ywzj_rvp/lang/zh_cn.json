@@ -196,6 +196,7 @@
   "message.ywzj_rvp.uav.redeploy_cooldown": "雷达车重新放飞冷却中，剩余 %s 秒",
   "message.ywzj_rvp.uav.spawn_failed": "放飞雷达车失败",
   "message.ywzj_rvp.uav.deploy_success": "已放飞雷达车并切换控制",
+  "message.ywzj_rvp.uav.seat_not_allowed": "仅驾驶位可放飞无人机",
   "message.ywzj_rvp.uav.switch_to_child_success": "已切换到雷达车",
   "message.ywzj_rvp.uav.switch_to_child_failed": "切换到雷达车失败",
   "message.ywzj_rvp.uav.switch_back_success": "已返回母车",

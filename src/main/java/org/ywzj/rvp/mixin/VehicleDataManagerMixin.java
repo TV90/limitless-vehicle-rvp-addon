@@ -213,8 +213,29 @@ public class VehicleDataManagerMixin {
                 autoLinkDatalink,
                 redeployCooldownTick,
                 GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_loiter_on_switch_back", true),
-                (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0)
+                (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0),
+                ywzj_rvp$parseAllowedSeatIndexes(vehicleObj)
         );
+    }
+
+    /**
+     * 解析 {@code deployable_uav_allowed_seat_indexes} 座位索引列表。
+     * 缺省/空数组返回空列表，表示仅驾驶位（座位 0）可部署。
+     */
+    private static java.util.List<Integer> ywzj_rvp$parseAllowedSeatIndexes(JsonObject vehicleObj) {
+        java.util.List<Integer> result = new java.util.ArrayList<>();
+        if (vehicleObj.has("deployable_uav_allowed_seat_indexes")
+                && vehicleObj.get("deployable_uav_allowed_seat_indexes").isJsonArray()) {
+            for (JsonElement element : vehicleObj.get("deployable_uav_allowed_seat_indexes").getAsJsonArray()) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    int seatIndex = element.getAsInt();
+                    if (seatIndex >= 0 && !result.contains(seatIndex)) {
+                        result.add(seatIndex);
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     @Unique
