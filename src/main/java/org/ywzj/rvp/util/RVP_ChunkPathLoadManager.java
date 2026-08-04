@@ -39,7 +39,7 @@ public final class RVP_ChunkPathLoadManager {
     /** 每个服务器 Tick 最多新增的路径中心 Ticket 数。 */
     public static final int GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK = 32;
     /** 单实体单次提交允许的最大连续路径区块数。 */
-    public static final int MAX_CHUNKS_PER_ENTITY_TICK = 64;
+    public static final int MAX_CHUNKS_PER_ENTITY_TICK = 128;
     /** 与本体 EntityUtil.keepChunkLoaded(...) 保持一致的 Ticket 距离参数。 */
     private static final int POST_TELEPORT_TICKET_LEVEL = 3;
     /** 汇总统计日志周期，单位为服务器 Tick。 */

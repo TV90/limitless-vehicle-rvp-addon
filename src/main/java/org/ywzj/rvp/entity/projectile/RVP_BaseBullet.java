@@ -1135,8 +1135,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     @Override
     public void tick() {
-        super.tick();
         boolean traceLifecycle = RVP_ProjectileLifecycleDebug.isEnabled() && !level().isClientSide();
+        long tickStartNanos = traceLifecycle ? System.nanoTime() : 0L;
+        super.tick();
+        long superTickNanos = traceLifecycle ? System.nanoTime() - tickStartNanos : 0L;
+        long rvpTickStartNanos = traceLifecycle ? System.nanoTime() : 0L;
         try {
             if (this instanceof RVP_BulletEntity bullet) {
                 bullet.tickBullet();
@@ -1235,10 +1238,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
         } finally {
             if (traceLifecycle) {
-                RVP_ProjectileLifecycleDebug.noteTick(this);
+                long rvpTickNanos = System.nanoTime() - rvpTickStartNanos;
+                RVP_ProjectileLifecycleDebug.noteTick(
+                        this,
+                        superTickNanos,
+                        rvpTickNanos,
+                        superTickNanos + rvpTickNanos);
             }
         }
     }
+
+    /* ============新弹体chunk路径规划============ */
 
     @Override
     public void remove(Entity.RemovalReason reason) {
@@ -1346,6 +1356,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 + " budgetExhausted=" + result.budgetExhausted()
                 + " projectedPathTruncated=" + result.projectedPathTruncated();
     }
+
+    /* ============新弹体chunk路径规划 END============ */
 
     /**
      * 线导视觉线服务端逻辑：更新发射枢轴世界坐标（随武器站枢轴移动）并同步线缆激活状态到实体数据。
