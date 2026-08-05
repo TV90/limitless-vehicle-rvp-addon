@@ -13,7 +13,9 @@ import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -46,6 +48,8 @@ public final class RVP_ChunkPathLoadManager {
     private static final int POST_TELEPORT_TICKET_LEVEL = 2;
     /** 汇总统计日志周期，单位为服务器 Tick。 */
     private static final int STATS_LOG_INTERVAL_TICKS = 200;
+    /** 实体漏 Tick 后继续保护最后驻留区块的短租约长度。 */
+    static final int RESIDENCY_LEASE_TICKS = 30;
 
     /** 以服务器实例隔离预算和实体状态；ServerStoppedEvent 会主动清理。 */
     private static final Map<MinecraftServer, ServerState> SERVER_STATES = new IdentityHashMap<>();
@@ -64,6 +68,7 @@ public final class RVP_ChunkPathLoadManager {
     public static PathRequestSnapshot submitPathRequest(
             @Nullable Entity entity,
             @Nullable List<ChunkPos> plannedChunks,
+            @Nullable ChunkPos currentTickEndChunk,
             @Nullable RequestPriority priority) {
         if (entity == null || !(entity.level() instanceof ServerLevel level)
                 || plannedChunks == null || plannedChunks.isEmpty()) {
@@ -85,6 +90,18 @@ public final class RVP_ChunkPathLoadManager {
         }
         serverState.pendingRequests.put(key, new PendingRequest(
                 key, level, entity.getId(), normalizedPath, resolvedPriority));
+        long gameTime = level.getGameTime();
+        serverState.leases.compute(key, (ignored, lease) -> {
+            if (lease == null || lease.entityId != entity.getId() || lease.level != level) {
+                return new ResidencyLease(
+                        level, entity, entity.getId(), gameTime, entity.chunkPosition(),
+                        currentTickEndChunk == null ? normalizedPath.get(0) : currentTickEndChunk);
+            }
+            lease.noteSubmission(
+                    entity, gameTime, entity.chunkPosition(),
+                    currentTickEndChunk == null ? normalizedPath.get(0) : currentTickEndChunk);
+            return lease;
+        });
 
         EntityTicketState ticketState = serverState.entityStates.get(key);
         if (ticketState == null) {
@@ -99,6 +116,30 @@ public final class RVP_ChunkPathLoadManager {
                 ticketState.lastNewRequestCount(),
                 ticketState.lastBudgetExhausted(),
                 Set.copyOf(grantedPrefix));
+    }
+
+    /**
+     * 记录弹体完成移动后的驻留状态，供下一次 ServerTick START 与管理器查找/续票结果关联。
+     * 查询只读取现有区块状态，不会同步加载或生成区块。
+     */
+    public static void recordPostMoveObservation(@Nullable Entity entity) {
+        if (entity == null || !(entity.level() instanceof ServerLevel level)) {
+            return;
+        }
+        ServerState state = SERVER_STATES.computeIfAbsent(level.getServer(), ignored -> new ServerState());
+        RequestKey key = new RequestKey(level.dimension().location().toString(), entity.getUUID());
+        ChunkPos chunk = entity.chunkPosition();
+        boolean loaded = level.hasChunkAt(entity.blockPosition());
+        boolean entityTicking = level.isPositionEntityTicking(entity.blockPosition());
+        state.postMoveObservations.put(key, new PostMoveObservation(
+                chunk,
+                loaded,
+                entityTicking,
+                state.pendingRequests.containsKey(key)));
+        ResidencyLease lease = state.leases.get(key);
+        if (lease != null && loaded && entityTicking) {
+            lease.lastSuccessfulTicketOrReadyGameTime = level.getGameTime();
+        }
     }
 
     /** 记录路径就绪结果，供服务器级周期统计汇总；同实体同 Tick 的后一次观察覆盖前一次。 */
@@ -130,6 +171,8 @@ public final class RVP_ChunkPathLoadManager {
         state.pendingRequests.remove(key);
         state.entityStates.remove(key);
         state.observations.remove(key);
+        state.leases.remove(key);
+        state.postMoveObservations.remove(key);
     }
 
     /** 返回当前统计周期快照，主要供调试命令和测试读取。 */
@@ -169,41 +212,46 @@ public final class RVP_ChunkPathLoadManager {
         state.aggregateObservations();
         state.maybeLogStatistics(server.getTickCount());
 
+        Map<RequestKey, Boolean> lookupResults = new LinkedHashMap<>();
         List<PendingRequest> validRequests = new ArrayList<>();
         for (PendingRequest request : state.pendingRequests.values()) {
             Entity entity = request.level().getEntity(request.key().entityUuid());
             // UUID 和实体 ID 同时校验，避免实体 ID 复用后刷新旧实体路径。
-            if (entity != null && entity.getId() == request.entityId()) {
+            boolean lookupSucceeded = entity != null && entity.getId() == request.entityId();
+            lookupResults.put(request.key(), lookupSucceeded);
+            if (lookupSucceeded) {
                 validRequests.add(request);
             }
         }
         state.pendingRequests.clear();
 
-        Set<RequestKey> activeKeys = new LinkedHashSet<>();
         List<AllocationInput> inputs = new ArrayList<>(validRequests.size());
         for (PendingRequest request : validRequests) {
-            activeKeys.add(request.key());
             EntityTicketState previous = state.entityStates.get(request.key());
             Set<ChunkPos> previousChunks = previous == null ? Set.of() : previous.grantedChunks();
             inputs.add(new AllocationInput(
                     request.key(), request.priority(), request.path(), previousChunks));
         }
-        // 未在上一 Tick 继续提交的实体停止刷新，其临时 Ticket 将由原版超时机制回收。
-        state.entityStates.keySet().retainAll(activeKeys);
-
         AllocationCycle allocation = allocateRequests(
                 inputs, GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK, state.rotationCursors);
         state.remainingBudget = allocation.remainingBudget();
+        Set<RequestKey> processedRequestKeys = new LinkedHashSet<>();
         for (PendingRequest request : validRequests) {
             AllocationOutput output = allocation.outputs().get(request.key());
             if (output == null) {
                 continue;
             }
+            processedRequestKeys.add(request.key());
             // 对连续获票前缀逐块精确刷新；不调用会附带额外前方票的本体 EntityUtil。
             for (ChunkPos chunk : output.grantedChunks()) {
                 //实际执行请求chunk方法
                 addExactTicket(request.level(), request.entityId(), chunk);
                 state.intervalRequestedChunkCount++;
+            }
+            long gameTime = request.level().getGameTime();
+            ResidencyLease lease = state.leases.get(request.key());
+            if (lease != null && !output.grantedChunks().isEmpty()) {
+                lease.noteTicketRefresh(output.grantedChunks().get(output.grantedChunks().size() - 1), gameTime);
             }
             state.intervalNewRequestedChunkCount += output.newChunks().size();
             if (output.budgetExhausted()) {
@@ -211,6 +259,76 @@ public final class RVP_ChunkPathLoadManager {
             }
             state.entityStates.put(request.key(), new EntityTicketState(
                     output.grantedChunks(), output.newChunks().size(), output.budgetExhausted()));
+        }
+        refreshResidencyLeases(state, lookupResults, processedRequestKeys);
+    }
+
+    /** 独立刷新漏 Tick 实体的最后位置与单 Tick 终点，并在租约/生命周期边界清理状态。 */
+    private static void refreshResidencyLeases(
+            ServerState state,
+            Map<RequestKey, Boolean> lookupResults,
+            Set<RequestKey> processedRequestKeys) {
+        var iterator = state.leases.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<RequestKey, ResidencyLease> entry = iterator.next();
+            RequestKey key = entry.getKey();
+            ResidencyLease lease = entry.getValue();
+            long gameTime = lease.level.getGameTime();
+            boolean submitted = lease.lastSubmissionProcessedGameTime != lease.lastSubmissionGameTime;
+            if (submitted) {
+                lease.lastSubmissionProcessedGameTime = lease.lastSubmissionGameTime;
+                lease.missedSubmissionTicks = 0;
+            } else {
+                lease.missedSubmissionTicks++;
+            }
+
+            Entity tracked = lease.entityReference.get();
+            boolean lifecycleEnded = tracked != null
+                    && (tracked.isRemoved() || tracked.level() != lease.level);
+            boolean expired = gameTime - lease.lastSubmissionGameTime > RESIDENCY_LEASE_TICKS
+                    || lease.missedSubmissionTicks > RESIDENCY_LEASE_TICKS;
+            if (lifecycleEnded || expired) {
+                iterator.remove();
+                state.entityStates.remove(key);
+                state.postMoveObservations.remove(key);
+                continue;
+            }
+
+            boolean lookupSucceeded = lookupResults.computeIfAbsent(key, ignored -> {
+                Entity found = lease.level.getEntity(key.entityUuid());
+                return found != null && found.getId() == lease.entityId;
+            });
+            boolean endpointRefreshed = false;
+            // 有效请求的完整授权路径已在上方刷新；漏提交或查找失败时由租约独立续两处驻留票。
+            if (!processedRequestKeys.contains(key)) {
+                addExactTicket(lease.level, lease.entityId, lease.lastPositionChunk);
+                state.intervalRequestedChunkCount++;
+                if (!lease.currentTickEndChunk.equals(lease.lastPositionChunk)) {
+                    addExactTicket(lease.level, lease.entityId, lease.currentTickEndChunk);
+                    state.intervalRequestedChunkCount++;
+                }
+                endpointRefreshed = true;
+                lease.noteTicketRefresh(lease.currentTickEndChunk, gameTime);
+            } else {
+                EntityTicketState ticketState = state.entityStates.get(key);
+                endpointRefreshed = ticketState != null
+                        && ticketState.grantedChunks().contains(lease.currentTickEndChunk);
+            }
+
+            PostMoveObservation postMove = state.postMoveObservations.remove(key);
+            if (postMove != null && RVP_ProjectileLifecycleDebug.isEnabled()) {
+                LOGGER.info(
+                        "[RVP][ChunkPath][PostMove] entityUuid={} entityId={} postMoveChunk={} "
+                                + "postMoveLoaded={} postMoveEntityTicking={} lastGrantedChunk={} "
+                                + "lastTicketRefreshGameTime={} lastSuccessfulTicketOrReadyGameTime={} "
+                                + "pendingRequestAccepted={} "
+                                + "managerEntityLookupSucceeded={} endpointRefreshed={} missedSubmissionTicks={}",
+                        key.entityUuid(), lease.entityId, postMove.chunk(), postMove.loaded(),
+                        postMove.entityTicking(), lease.lastGrantedChunk, lease.lastTicketRefreshGameTime,
+                        lease.lastSuccessfulTicketOrReadyGameTime, postMove.pendingRequestAccepted(),
+                        lookupSucceeded, endpointRefreshed,
+                        lease.missedSubmissionTicks);
+            }
         }
     }
 
@@ -392,6 +510,58 @@ public final class RVP_ChunkPathLoadManager {
             RequestPriority priority) {
     }
 
+    /** 弹体运动结束时立即采集、下一管理器 Tick 消费的驻留诊断。 */
+    private record PostMoveObservation(
+            ChunkPos chunk,
+            boolean loaded,
+            boolean entityTicking,
+            boolean pendingRequestAccepted) {
+    }
+
+    /** 最后驻留区块的服务器级短租约；弱引用仅用于确认实体生命周期，不维持实体存活。 */
+    private static final class ResidencyLease {
+        private final ServerLevel level;
+        private final int entityId;
+        private WeakReference<Entity> entityReference;
+        private long lastSubmissionGameTime;
+        private long lastSubmissionProcessedGameTime = Long.MIN_VALUE;
+        private ChunkPos lastPositionChunk;
+        private ChunkPos currentTickEndChunk;
+        private long lastSuccessfulTicketOrReadyGameTime = Long.MIN_VALUE;
+        private int missedSubmissionTicks;
+        private ChunkPos lastGrantedChunk;
+        private long lastTicketRefreshGameTime = Long.MIN_VALUE;
+
+        private ResidencyLease(
+                ServerLevel level,
+                Entity entity,
+                int entityId,
+                long gameTime,
+                ChunkPos lastPositionChunk,
+                ChunkPos currentTickEndChunk) {
+            this.level = level;
+            this.entityId = entityId;
+            this.entityReference = new WeakReference<>(entity);
+            this.lastSubmissionGameTime = gameTime;
+            this.lastPositionChunk = lastPositionChunk;
+            this.currentTickEndChunk = currentTickEndChunk;
+        }
+
+        private void noteSubmission(
+                Entity entity, long gameTime, ChunkPos lastPositionChunk, ChunkPos currentTickEndChunk) {
+            this.entityReference = new WeakReference<>(entity);
+            this.lastSubmissionGameTime = gameTime;
+            this.lastPositionChunk = lastPositionChunk;
+            this.currentTickEndChunk = currentTickEndChunk;
+        }
+
+        private void noteTicketRefresh(ChunkPos grantedChunk, long gameTime) {
+            this.lastGrantedChunk = grantedChunk;
+            this.lastTicketRefreshGameTime = gameTime;
+            this.lastSuccessfulTicketOrReadyGameTime = gameTime;
+        }
+    }
+
     /** 纯分配算法内部使用的可变累加器。 */
     private static final class MutableAllocation {
         private final AllocationInput input;
@@ -409,6 +579,8 @@ public final class RVP_ChunkPathLoadManager {
         private final Map<RequestKey, PendingRequest> pendingRequests = new LinkedHashMap<>();
         private final Map<RequestKey, EntityTicketState> entityStates = new LinkedHashMap<>();
         private final Map<RequestKey, PathObservation> observations = new LinkedHashMap<>();
+        private final Map<RequestKey, ResidencyLease> leases = new LinkedHashMap<>();
+        private final Map<RequestKey, PostMoveObservation> postMoveObservations = new LinkedHashMap<>();
         private final EnumMap<RequestPriority, Integer> rotationCursors = new EnumMap<>(RequestPriority.class);
         private int remainingBudget = GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK;
         private long intervalRequestedChunkCount;
@@ -431,7 +603,13 @@ public final class RVP_ChunkPathLoadManager {
 
         /** 每 200 Tick 且确有活动时输出一条聚合日志，避免逐区块刷屏。 */
         private void maybeLogStatistics(int serverTickCount) {
-            if (!statisticsLoggingEnabled
+//            if (!statisticsLoggingEnabled
+//                    || serverTickCount <= 0
+//                    || serverTickCount % STATS_LOG_INTERVAL_TICKS != 0) {
+//                return;
+//            }
+            // RVP_ProjectileLifecycleDebug 开启门控
+            if (!RVP_ProjectileLifecycleDebug.isEnabled()
                     || serverTickCount <= 0
                     || serverTickCount % STATS_LOG_INTERVAL_TICKS != 0) {
                 return;
@@ -441,7 +619,7 @@ public final class RVP_ChunkPathLoadManager {
                 return;
             }
             LOGGER.info(
-                    "[RVP][ChunkPath] requestedChunkCount={} newRequestedChunkCount={} readyChunkCount={} "
+                    "[RVP][ChunkPath][ChunkReqInfo] requestedChunkCount={} newRequestedChunkCount={} readyChunkCount={} "
                             + "waitingProjectileCount={} budgetExhaustedCount={} activeEntityCount={} pendingEntityCount={}",
                     intervalRequestedChunkCount,
                     intervalNewRequestedChunkCount,

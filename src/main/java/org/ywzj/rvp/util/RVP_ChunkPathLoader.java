@@ -165,7 +165,11 @@ public final class RVP_ChunkPathLoader {
 
         // 提交会覆盖同一实体本 Tick 较早的计划；实际新增 Ticket 在下一 ServerTick START 统一分配。
         RVP_ChunkPathLoadManager.PathRequestSnapshot request =
-                RVP_ChunkPathLoadManager.submitPathRequest(entity, projectedChunks, priority);
+                RVP_ChunkPathLoadManager.submitPathRequest(
+                        entity,
+                        projectedChunks,
+                        currentTickChunks.get(currentTickChunks.size() - 1),
+                        priority);
 
         // 未获管理器授权的区块先返回 NOT_REQUESTED，不能仅凭当前已加载状态绕过全局预算。
         PathReadiness readiness = checkPathReadiness(currentTickChunks, chunkPos -> {

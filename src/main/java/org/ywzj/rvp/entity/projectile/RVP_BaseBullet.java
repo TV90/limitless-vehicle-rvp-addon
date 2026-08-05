@@ -1220,6 +1220,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             // 从运动后的新位置刷新滚动窗口，为下一 Tick 的管理器预算分配提前提交路径。
             requestDynamicChunkPath(RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+            //弹体完成移动后的驻留状态
+            RVP_ChunkPathLoadManager.recordPostMoveObservation(this);
             tickProgrammableAirburst();
             tickProximityFuse();
             if (tickBounceFuse()) {
