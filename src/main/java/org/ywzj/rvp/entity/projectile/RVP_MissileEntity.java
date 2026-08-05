@@ -263,13 +263,13 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     protected boolean isMotorBurning() {
         // 客户端 rvpData 可能为 null，需要同时支持双脉冲第二段的同步燃烧期判断。
         if (rvpData == null) {
-            if (tickCount <= motorBurnEndTick) {
+            if (getFlightTickCount() <= motorBurnEndTick) {
                 return true;
             }
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
             int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
             if (start >= 0 && burn > 0) {
-                int t2 = tickCount - start;
+                int t2 = getFlightTickCount() - start;
                 return t2 >= 0 && t2 <= burn;
             }
             return false;
@@ -277,7 +277,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (!isMotorPropulsion()) {
             // 无发动机配置的导弹：默认燃烧期取一半寿命
             int defaultBurn = Math.max(life / 2, 20);
-            return tickCount <= defaultBurn;
+            return getFlightTickCount() <= defaultBurn;
         }
         return super.isMotorBurning();
     }

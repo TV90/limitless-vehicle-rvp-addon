@@ -25,7 +25,7 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
             int interval = context.active().scanIntervalTick() != null
                     ? context.active().scanIntervalTick()
                     : 2;
-            if (projectile.tickCount % interval == 0) {
+            if (projectile.getFlightTickCount() % interval == 0) {
                 target = RVP_RuntimeSeekerSupport.scanInfraredTarget(projectile, context.active());
                 if (target != null) {
                     projectile.setTargetEntity(target);

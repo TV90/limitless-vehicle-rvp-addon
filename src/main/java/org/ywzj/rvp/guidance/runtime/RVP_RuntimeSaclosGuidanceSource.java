@@ -96,7 +96,7 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
 
         // Noise for steady-state wobble (random direction in world space)
         Vec3 noise = Vec3.ZERO;
-        if (wobble > 0.0 && projectile.tickCount % NOISE_INTERVAL == 0) {
+        if (wobble > 0.0 && projectile.getFlightTickCount() % NOISE_INTERVAL == 0) {
             noise = randomPerpVector(dir, projectile, wobble);
         }
 
