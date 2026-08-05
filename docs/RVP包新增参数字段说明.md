@@ -435,6 +435,11 @@ RVP 扩展武器数据包路径：
 | `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
+| `top_attack_fuse_enabled` | **攻顶引信**开关：检测弹体**正下方（世界系绝对 -Y 轴，不随弹体姿态变化）**半锥角区域内的实体，探测到后触发引信（复用近炸全额伤害与 `submunition_data` 的 `on_fuse` 链路）；不写=关闭。 |
+| `top_attack_fuse_distance` | 攻顶引信从弹体向正下方的最大检测距离（米），默认 **6**。 |
+| `top_attack_fuse_fov` | 攻顶引信检测**半锥角**（度）：实体中心与正下方方向的偏移角 ≤ 该值才命中，默认 **25**。 |
+| `top_attack_fuse_delay_tick` | 攻顶引信探测到目标后延时起爆的 tick 数，默认 **0** 立即触发；用于让导弹飞过头顶一定距离再炸（延时期间目标离开锥内也按时起爆）。 |
+| `top_attack_fuse_arm_tick` | 攻顶引信解保 tick：发射后经过该 tick 才启用检测，默认 **0** 不限制；防贴地发射误触发。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 | `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
 
@@ -520,6 +525,7 @@ RVP 扩展武器数据包路径：
 | `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
 | `caliber` | **仅 `rvp:machinegun`**：口径（毫米），曳光条宽度与弹孔粒子大小。默认 `7.62`。 |
 | `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
+| `impact_trail_particles` | 命中瞬间补渲轨迹粒子（服务端）。弹体飞行时间过短、从未广播过轨迹粒子就命中死亡时（如 1 tick 落地的下坠破片，pre-motion 命中死亡导致轨迹广播永不执行），在命中点沿来袭方向补渲一段 `trajectory_particle` 粒子簇；只要此前广播过轨迹粒子就不再补渲。默认 `false`。 |
 
 机枪飞行曳光与本体相同：固定 `ywzj_vehicle:entity/basic_bullet` + `textures/entity/basic_bullet.png`（`effects_data` 仅控制口径与 `tracer_*` 颜色）。导弹/炸弹飞行模型见 `assets/rvp/display/weapon/<id>.json`。
 
@@ -639,6 +645,11 @@ RVP 扩展武器数据包路径：
 | `allow_submunition` | 写在**本层 `payloads` 条目**上：为 `true` 时，被生成的弹体可执行**其自身武器 JSON** 的 `submunition_data`（多级火箭、链式战斗部**必须**为 `true`）；默认 `false` 防止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md)。 |
 | `damage_multiplier` | 仅 RVP 弹体：直击伤害倍率（可选）。 |
 | `suppress_explosion` | 仅 RVP 弹体：关闭爆炸。 |
+| `launch_yaw` / `launch_pitch` | **发射角度**（度）：决定子弹丸初速方向而非沿母弹弹轴。yaw 与弹体 yRot 同约定（0=南 +Z，顺时针为正）；pitch 与弹体 xRot 同约定（**90=正下**、-90=正上）。默认 0。 |
+| `launch_angle_mode` | 发射角度基准：`relative`（默认）= 相对母弹当前姿态叠加，随弹体俯仰/偏航变化；`absolute` = 世界系固定角度（配合 `launch_pitch: 90` 即可实现"向下喷射"）。 |
+| `launch_speed` | 发射初速；`0` = 沿用 `inherit_parent_velocity` × `velocity_scale` 的长度，仅替换方向。与 `launch_yaw` / `launch_pitch` 三者至少一个非默认值时才启用发射角度逻辑。 |
+
+> 发射角度 + 攻顶引信组合实现 TOW-2B 自锻破片攻顶战斗部的完整设计与 JSON 示例见 [TOW-2B攻顶战斗部实现方案.md](./plan/TOW-2B攻顶战斗部实现方案.md)。
 
 ### `payloads[].spread` 散布
 
@@ -865,6 +876,7 @@ RVP 扩展武器数据包路径：
 | `hitl_max_control_tick` | 最大控制时长（tick）。 | `int` | `200` |
 | `hitl_max_look_offset` | HITL 视角最大偏转角度。 | `int` | `30` |
 | `hitl_video_modes` | 可用画面模式，如 `COLOR`、`MONO`、`THERMAL`。 | `List<String>` | `["MONO"]` |
+| `hitl_right_click_detonate` | 为 `true` 时 HITL 视角下鼠标右键从"退出视角"变为"提前引爆导弹"（服务端在导弹当前位置走正常爆炸链，视角同步退出）。默认 `false`（右键退出视角）。 | `boolean` | `false` |
 
 ### `RVP_GuidanceDataGPS`
 

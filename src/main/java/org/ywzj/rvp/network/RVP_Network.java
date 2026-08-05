@@ -52,6 +52,11 @@ public class RVP_Network {
                 .decoder(C2SExitHitlView::decode)
                 .consumerMainThread(C2SExitHitlView::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SHitlDetonate.class, id++)
+                .encoder(C2SHitlDetonate::encode)
+                .decoder(C2SHitlDetonate::decode)
+                .consumerMainThread(C2SHitlDetonate::handle)
+                .add();
         CHANNEL.messageBuilder(S2CHitlLinkState.class, id++)
                 .encoder(S2CHitlLinkState::encode)
                 .decoder(S2CHitlLinkState::decode)

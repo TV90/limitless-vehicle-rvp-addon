@@ -35,6 +35,7 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
+import org.ywzj.rvp.debug.RVP_TopAttackDebug;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.vehicle.util.VehicleExplosion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
@@ -177,6 +178,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** Official cannon-style positive-down gravity per tick (machinegun only). */
     protected float cannonGravity;
     protected int updateCount;
+    /** 攻顶引信已探测到目标并进入延时的 tick（updateCount）；-1 = 未触发。 */
+    protected int topAttackTriggerTick = -1;
+    /** 攻顶引信触发的子母弹生成位置覆盖（目标正上方，探测时刻导弹高度）；null = 用导弹当前位置。 */
+    @Nullable
+    protected Vec3 topAttackSpawnPosition;
     /** 可编程空爆测距（米），来自 MCH {@code airburstDist}。 */
     protected int airburstDist;
     protected double airburstTravelled;
@@ -249,6 +255,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected Vec3 particlePosO;
     protected int trailParticleTickO = Integer.MIN_VALUE;
     protected boolean trailMotorBurningO;
+
+    /** 本弹体已广播过轨迹粒子的次数（命中补渲开关判断是否从未出过轨迹）。 */
+    protected int trailBroadcastCount;
 
     /** ARM preselect target vehicle ID (from HUD selection). -1 = none. */
     protected int preselectedVehicleId = -1;
@@ -501,9 +510,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     protected boolean trySubmunitionTrigger(RVP_EnumSubmunitionTrigger trigger) {
         if (submunitionRunner == null || level().isClientSide()) {
+            RVP_TopAttackDebug.noteSpawn(this, "SUBMUN skip runner=nullOrClient runner="
+                    + (submunitionRunner != null) + " trigger=" + trigger);
             return false;
         }
         boolean fired = submunitionRunner.fireTrigger(this, trigger);
+        RVP_TopAttackDebug.noteSpawn(this, "SUBMUN trigger=" + trigger + " fired=" + fired);
         if (fired) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.SUBMUNITION_TRIGGER,
@@ -1166,6 +1178,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             tickMotion();
             tickProgrammableAirburst();
             tickProximityFuse();
+            tickTopAttackFuse();
             if (tickBounceFuse()) {
                 return;
             }
@@ -1520,6 +1533,83 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
+    /**
+     * 攻顶引信：检测弹体正下方（世界系绝对 -Y 轴，不随弹体姿态变化）半锥角内的实体。
+     * 探测到后触发引信（复用近炸全额伤害与 {@code on_fuse} 子母弹链路）；可配延时起爆。
+     */
+    protected void tickTopAttackFuse() {
+        if (rvpData == null || level().isClientSide()) {
+            return;
+        }
+        RVP_FuseData fuse = rvpData.getFuseData();
+        RVP_TopAttackDebug.noteTick(this, "enter enabled=" + fuse.isTopAttackFuseEnabled()
+                + " dist=" + fuse.getTopAttackFuseDistance()
+                + " fov=" + fuse.getTopAttackFuseFov()
+                + " delay=" + fuse.getTopAttackFuseDelayTick()
+                + " arm=" + fuse.getTopAttackFuseArmTick()
+                + " triggerTick=" + topAttackTriggerTick
+                + " delta=" + RVP_ProjectileLifecycleDebug.formatVec(getDeltaMovement()));
+        if (!fuse.isTopAttackFuseEnabled()) {
+            return;
+        }
+        int armTick = fuse.getTopAttackFuseArmTick();
+        if (armTick > 0 && updateCount <= armTick) {
+            return;
+        }
+        // 已探测到目标：倒计时延时起爆（到点后无论目标是否仍在锥内都炸）
+        if (topAttackTriggerTick >= 0) {
+            if (updateCount - topAttackTriggerTick >= fuse.getTopAttackFuseDelayTick()) {
+                RVP_TopAttackDebug.noteTick(this, "DETONATE delayed armedAt=" + topAttackTriggerTick
+                        + " now=" + updateCount + " delay=" + fuse.getTopAttackFuseDelayTick());
+                RVP_ProjectileLifecycleDebug.noteEvent(this,
+                        RVP_ProjectileLifecycleDebug.Event.FUSE,
+                        () -> "type=TOP_ATTACK source=delayed position="
+                                + RVP_ProjectileLifecycleDebug.formatVec(position()));
+                topAttackTriggerTick = -1;
+                detonateFuseAt(position(), FuseDetonation.PROXIMITY, null);
+            }
+            return;
+        }
+        float distance = fuse.getTopAttackFuseDistance();
+        float fov = fuse.getTopAttackFuseFov();
+        if (distance <= 0f) {
+            return;
+        }
+        Vec3 pos = position();
+        // 粗筛：覆盖锥形可达范围（水平 ±distance，向下 distance）
+        AABB detectionBox = getBoundingBox().expandTowards(0, -distance, 0).inflate(distance);
+        double cosLimit = Math.cos(Math.toRadians(fov));
+        Vec3 down = new Vec3(0, -1, 0);
+        for (Entity entity : level().getEntities(this, detectionBox, this::canDamageEntity)) {
+            // 精筛：目标包围盒中心点须位于导弹正下方的锥形内
+            Vec3 offset = entity.getBoundingBox().getCenter().subtract(pos);
+            if (offset.y >= 0 || offset.lengthSqr() > (double) distance * distance) {
+                continue;
+            }
+            if (offset.normalize().dot(down) < cosLimit) {
+                continue;
+            }
+            RVP_TopAttackDebug.noteTick(this, "DETECT below_cone dist="
+                    + RVP_ProjectileLifecycleDebug.decimal(offset.length())
+                    + " fov=" + fov
+                    + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity)
+                    + " entities=" + RVP_ProjectileLifecycleDebug.formatVec(pos));
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.FUSE,
+                    () -> "type=TOP_ATTACK source=below_cone distance="
+                            + RVP_ProjectileLifecycleDebug.decimal(offset.length())
+                            + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity));
+            int delay = fuse.getTopAttackFuseDelayTick();
+            if (delay <= 0) {
+                RVP_TopAttackDebug.noteTick(this, "DETONATE immediate delay=" + delay);
+                detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
+                return;
+            }
+            topAttackTriggerTick = updateCount;
+            return;
+        }
+    }
+
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
     protected boolean isProximityFuseTargetTooLow(Entity entity, int fuseHeight) {
         return RVP_GuidanceMath.isEntityNearGroundBlocks(entity, fuseHeight);
@@ -1836,15 +1926,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         rememberImpactIncidence(getDeltaMovement(), Vec3.atLowerCornerOf(result.getDirection().getNormal()));
         if (dispenserOnlyImpact()) {
             applyDispenserAt(hit, result);
+            compensateImpactTrail(hit);
             discard();
             return true;
         }
         if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT)
                 || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT)) {
+            compensateImpactTrail(hit);
             discard();
             return true;
         }
         resolveImpactDetonation(hit, result, true);
+        compensateImpactTrail(hit);
         discard();
         return true;
     }
@@ -1894,14 +1987,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 hitPos = result.getLocation();
         if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT)
                 || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT)) {
+            compensateImpactTrail(hitPos);
             discard();
             return;
         }
         resolveImpactDetonation(hitPos, null, false, hbmFuseTriggered ? entity : null);
         if (explosion != null && explosion.explode) {
+            compensateImpactTrail(hitPos);
             discard();
             return;
         }
+        compensateImpactTrail(hitPos);
         discard();
     }
 
@@ -2771,14 +2867,68 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             ParticleOptions primary = resolveParticle(configured,
                     heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
             if (primary != null) {
-                double spread = heavy ? 0.1 : 0.05;
-                int count = heavy ? 3 : 1;
+                // 轻弹（机炮/破片）：count 2、spread 0.1 —— 让短命的下坠破片也有可辨识尾迹
+                double spread = 0.1;
+                int count = heavy ? 3 : 2;
                 serverLevel.sendParticles(primary, getX(), getY(), getZ(), count, spread, spread, spread, 0.01);
+                trailBroadcastCount++;
+                if (RVP_TopAttackDebug.isEnabled()) {
+                    RVP_TopAttackDebug.noteTick(this, "TRAIL particle="
+                            + (configured == null ? ("fallback:" + primary) : configured)
+                            + " count=" + count + " heavy=" + heavy
+                            + " motorBurn=" + motorBurning + " motorProp=" + isMotorPropulsion()
+                            + " pos=(" + String.format("%.1f,%.1f,%.1f", getX(), getY(), getZ()) + ")");
+                }
             }
         }
         // 尾焰：仅推进类弹体燃烧期
         if (heavy && isMotorPropulsion() && motorBurning) {
             serverLevel.sendParticles(ParticleTypes.FLAME, getX(), getY(), getZ(), 1, 0.03, 0.03, 0.03, 0.002);
+        }
+    }
+
+    /**
+     * 命中瞬间补渲轨迹粒子（effects_data.impact_trail_particles）。
+     *
+     * <p>当弹体飞行时间过短（从未广播过轨迹粒子就命中死亡，如 1 tick 落地的下坠破片，
+     * pre-motion 命中死亡导致 post-motion 的 {@link #broadcastTrailParticles()} 永不执行）
+     * 且配置开启本开关时，在命中点沿来袭方向补渲一段轨迹粒子簇，避免"看不见弹道"。</p>
+     */
+    protected void compensateImpactTrail(Vec3 hitPos) {
+        if (!(level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        // 只要此前广播过轨迹粒子（飞行过一段时间），就不再补渲
+        if (trailBroadcastCount > 0) {
+            return;
+        }
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config == null || !config.getEffectsData().isImpactTrailParticles()) {
+            return;
+        }
+        String configured = config.getEffectsData().getTrajectoryParticle();
+        boolean heavy = isHeavyProjectile();
+        ParticleOptions primary = resolveParticle(configured,
+                heavy ? ParticleTypes.LARGE_SMOKE : ParticleTypes.SMOKE);
+        if (primary == null) {
+            return;
+        }
+        // 沿来袭方向补渲一段尾迹（从命中点向后约 1.5 米）
+        Vec3 delta = getDeltaMovement();
+        double len = delta.length();
+        Vec3 back = len > 1.0E-4 ? delta.scale(-1.0 / len) : new Vec3(0, 1, 0);
+        Vec3 tailStart = hitPos.add(back.scale(1.5));
+        double step = 0.3;
+        for (double d = 0; d <= 1.5 + 0.001; d += step) {
+            Vec3 p = tailStart.subtract(back.scale(d));
+            serverLevel.sendParticles(primary, p.x, p.y, p.z, 1, 0.06, 0.06, 0.06, 0.01);
+        }
+        // 命中点处补一簇粒子强调落点
+        serverLevel.sendParticles(primary, hitPos.x, hitPos.y, hitPos.z, 4, 0.15, 0.15, 0.15, 0.02);
+        if (RVP_TopAttackDebug.isEnabled()) {
+            RVP_TopAttackDebug.noteTick(this, "COMPENSATE_TRAIL particle="
+                    + (configured == null ? ("fallback:" + primary) : configured)
+                    + " hit=(" + String.format("%.1f,%.1f,%.1f", hitPos.x, hitPos.y, hitPos.z) + ")");
         }
     }
 

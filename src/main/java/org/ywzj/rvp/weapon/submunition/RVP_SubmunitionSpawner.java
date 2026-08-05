@@ -22,6 +22,7 @@ import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
+import org.ywzj.rvp.debug.RVP_TopAttackDebug;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionPayloadKind;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_Explosion;
@@ -45,9 +46,11 @@ public final class RVP_SubmunitionSpawner {
 
     public static int spawnReleaseWave(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release, int eventsThisTick) {
         if (parent.level().isClientSide() || parent.getRvpData() == null) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN skip clientOrRvpDataNull events=" + eventsThisTick);
             return 0;
         }
         if (parent.getSubmunitionDepth() >= MAX_DEPTH) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN skip depth=" + parent.getSubmunitionDepth());
             return 0;
         }
         int spawned = 0;
@@ -79,32 +82,38 @@ public final class RVP_SubmunitionSpawner {
         ResourceLocation parentId = parent.getWeaponId();
         ResourceLocation childId = payload.resolveWeaponId(parentId);
         if (childId == null) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail childId=null");
             return false;
         }
         RVP_WeaponData childData = loadWeaponData(childId);
         if (childData == null) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail childData=null childId=" + childId
+                    + " (子武器 JSON 未加载：检查 weapons/" + childId.getPath() + ".json 的 ammo 字段等)");
             return false;
         }
         RVP_EnumWeaponKind kind = childData.getWeaponKind();
         EntityType<? extends Projectile> entityType = entityTypeFor(kind);
         if (entityType == null) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail entityType=null kind=" + kind + " childId=" + childId);
             return false;
         }
         Level level = parent.level();
         RVP_BaseBullet child = createProjectile(kind, entityType, level, childData);
         if (child == null) {
+            RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail createProjectile=null kind=" + kind + " childId=" + childId);
             return false;
         }
         LivingEntity shooter = parent.getOwner() instanceof LivingEntity living ? living : null;
         AbstractVehicle vehicle = parent.getShooterVehicle();
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
+        RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), refAim.xRot(), refAim.yRot(),
+                parent.position(), launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount, refAim);
+        Vec3 velocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
-                refAim, velocity);
+                launchAim, velocity);
         child.setShooterWeaponUnit(parent.getShooterWeaponUnit());
         child.name = Component.translatable(childData.getName());
         // allow_submunition on the *spawn payload*: child may run its own weapon submunition_data (multi-stage).
@@ -122,6 +131,8 @@ public final class RVP_SubmunitionSpawner {
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
         RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
         level.addFreshEntity(child);
+        RVP_TopAttackDebug.noteSpawn(parent, "SPAWN ok child=" + childId + " kind=" + kind
+                + " pos=(" + String.format("%.1f,%.1f,%.1f", pos.x, pos.y, pos.z) + ")");
         return true;
     }
 
@@ -141,12 +152,13 @@ public final class RVP_SubmunitionSpawner {
             return false;
         }
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
+        RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), refAim.xRot(), refAim.yRot(),
+                parent.position(), launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        entity.moveTo(pos.x, pos.y, pos.z, refAim.yRot(), refAim.xRot());
+        entity.moveTo(pos.x, pos.y, pos.z, launchAim.yRot(), launchAim.xRot());
         applyEntityNbt(entity, payload.getEntityNbt());
-        Vec3 velocity = buildVelocity(parent, payload, pelletIndex, pelletCount, refAim);
+        Vec3 velocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
         entity.setDeltaMovement(velocity);
         if (entity instanceof Projectile projectile) {
             projectile.setOwner(parent.getOwner());
@@ -156,7 +168,18 @@ public final class RVP_SubmunitionSpawner {
     }
 
     private static Vec3 buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
-                                      int pelletIndex, int pelletCount, RVP_BaseBullet.AimRot refAim) {
+                                      RVP_BaseBullet.AimRot launchAim, RVP_BaseBullet.AimRot baseRefAim,
+                                      int pelletIndex, int pelletCount) {
+        if (payload.isLaunchAnglesEnabled()) {
+            // 发射角度模式：方向固定为 launchAim（绝对或相对基准），速度取 launch_speed 或父弹速度长度 × scale
+            float speed = payload.getLaunchSpeed() > 0f
+                    ? payload.getLaunchSpeed()
+                    : (float) parent.getDeltaMovement().length() * payload.getVelocityScale();
+            Vec3 velocity = VectorUtil.rotToVec(launchAim.xRot(), launchAim.yRot()).normalize().scale(speed);
+            return RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
+                    velocity, launchAim.xRot(), launchAim.yRot(),
+                    payload.getSpread(), pelletIndex, pelletCount, parent.level().getRandom());
+        }
         Vec3 velocity = Vec3.ZERO;
         if (payload.isInheritParentVelocity()) {
             velocity = parent.getDeltaMovement();
@@ -172,8 +195,27 @@ public final class RVP_SubmunitionSpawner {
             velocity = parent.getDeltaMovement().normalize().scale(0.5);
         }
         return RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
-                velocity, refAim.xRot(), refAim.yRot(),
+                velocity, baseRefAim.xRot(), baseRefAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, parent.level().getRandom());
+    }
+
+    /**
+     * 解析发射基准角：payload 启用发射角度时，
+     * {@code absolute} = 世界系固定角度 {@code (launch_pitch, launch_yaw)}；
+     * {@code relative} = 母弹当前姿态（baseRefAim）叠加 {@code (launch_pitch, launch_yaw)}；
+     * 未启用时原样返回母弹弹轴方向。
+     */
+    private static RVP_BaseBullet.AimRot resolveLaunchAim(RVP_SubmunitionPayloadData payload,
+                                                          RVP_BaseBullet.AimRot baseRefAim) {
+        if (!payload.isLaunchAnglesEnabled()) {
+            return baseRefAim;
+        }
+        if (payload.isLaunchAngleAbsolute()) {
+            return new RVP_BaseBullet.AimRot(payload.getLaunchPitch(), payload.getLaunchYaw());
+        }
+        return new RVP_BaseBullet.AimRot(
+                baseRefAim.xRot() + payload.getLaunchPitch(),
+                baseRefAim.yRot() + payload.getLaunchYaw());
     }
 
     private static RVP_BaseBullet.AimRot referenceAim(RVP_BaseBullet parent) {

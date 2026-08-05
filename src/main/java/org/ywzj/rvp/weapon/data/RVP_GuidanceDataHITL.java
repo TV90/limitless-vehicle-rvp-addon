@@ -25,6 +25,14 @@ public class RVP_GuidanceDataHITL extends RVP_GuidanceData {
     @SerializedName("hitl_video_modes")
     private List<String> hitlVideoModes = List.of("MONO");
 
+    /** 开启后人在回路视角下鼠标右键从"退出视角"变为"提前引爆导弹"。 */
+    @SerializedName("hitl_right_click_detonate")
+    private boolean hitlRightClickDetonate;
+
+    public boolean isHitlRightClickDetonate() {
+        return hitlRightClickDetonate;
+    }
+
     public int getHitlMaxTurnDegPerTick() {
         return Math.max(hitlMaxTurnDegPerTick, 0);
     }

@@ -40,6 +40,10 @@ public class RVP_EffectsData {
     @SerializedName("explosion_particle")
     private String explosionParticle = "";
 
+    /** 弹体命中瞬间即死亡（飞行时间过短、从未广播过轨迹粒子）时，在命中点补渲轨迹粒子簇。 */
+    @SerializedName("impact_trail_particles")
+    private Boolean impactTrailParticles;
+
     @SerializedName("flak_particles_crack")
     private int flakParticlesCrack = 10;
 
@@ -163,6 +167,11 @@ public class RVP_EffectsData {
     /** 线导视觉线开关（effects_data.wire_link_enabled）。 */
     public boolean isWireLinkEnabled() {
         return wireLinkEnabled != null && wireLinkEnabled;
+    }
+
+    /** 命中瞬间补渲轨迹粒子开关（effects_data.impact_trail_particles）。 */
+    public boolean isImpactTrailParticles() {
+        return impactTrailParticles != null && impactTrailParticles;
     }
 
     public boolean isImpactDisabled() {

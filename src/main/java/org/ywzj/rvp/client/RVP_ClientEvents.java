@@ -94,6 +94,8 @@ public class RVP_ClientEvents {
             return;
         }
 
+        ywzj_rvp$syncLocalVehiclePlayerSeat();
+
         RVP_ClientBulletHitDebugState.clientTick();
         RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
@@ -218,6 +220,35 @@ public class RVP_ClientEvents {
         if (LocalVehiclePlayer.instance.onVehicle() || RVP_ClientHitlState.isDesignateMode()) {
             RVP_ClientSaclosState.tick(mc, player);
         }
+    }
+
+    /**
+     * 无人机被击毁传送回母车后，客户端 LocalVehiclePlayer 可能未同步到母车：
+     * 座位变更包在母车区块尚未加载时到达会被丢弃，或残留指向被击毁的无人机，
+     * 导致能驾驶/开火（vanilla 骑乘 + controlUnit operator 已同步）但载具 UI 与相机失效。
+     * 这里按实际骑乘状态自愈：玩家骑乘在载具上但 LocalVehiclePlayer 未指向该载具时，
+     * 用该载具当前座位重新 toSeat，恢复载具 UI 与相机。
+     */
+    private static void ywzj_rvp$syncLocalVehiclePlayerSeat() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.getPlayer() == null) {
+            return;
+        }
+        if (!(lvp.getPlayer().getVehicle() instanceof AbstractVehicle vehicle)) {
+            return;
+        }
+        if (lvp.getVehicle() == vehicle && lvp.seat != null) {
+            return; // 已同步，无需修复
+        }
+        AbstractVehicle.Seat seat = vehicle.seats.stream()
+                .filter(s -> s.passengerId == lvp.getPlayer().getId())
+                .findFirst()
+                .orElse(null);
+        if (seat == null) {
+            return;
+        }
+        lvp.toSeat(seat, vehicle);
+        lvp.toLeave = false;
     }
 
     private static RVP_TacticalMapScreen.MapMode ywzj_rvp$resolveMapMode() {

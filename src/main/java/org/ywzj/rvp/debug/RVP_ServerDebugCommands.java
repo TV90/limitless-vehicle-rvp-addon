@@ -176,6 +176,38 @@ public final class RVP_ServerDebugCommands {
                                             Component.literal("[RVP] 已写入 external radar 调试日志: " + path), false);
                                     return 1;
                                 })))
+                        .then(Commands.literal("topattack")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_TopAttackDebug.clearLog();
+                                    RVP_TopAttackDebug.setEnabled(true);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已开启攻顶引信逐tick日志: "
+                                                    + RVP_TopAttackDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_TopAttackDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已关闭攻顶引信逐tick日志: "
+                                                    + RVP_TopAttackDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal(RVP_TopAttackDebug.buildStatus(
+                                                    new net.minecraft.resources.ResourceLocation("rvp", "lav25_tow2b"))), false);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal(RVP_TopAttackDebug.buildStatus(
+                                                    new net.minecraft.resources.ResourceLocation("rvp", "lav25_tow2b_efp"))), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    RVP_TopAttackDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已清空攻顶引信调试日志: "
+                                                    + RVP_TopAttackDebug.getLogPath()), false);
+                                    return 1;
+                                })))
         );
     }
 

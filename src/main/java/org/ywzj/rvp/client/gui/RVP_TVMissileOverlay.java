@@ -16,6 +16,7 @@ import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.vehicle.client.render.util.Color;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_TVMissileOverlay {
@@ -37,12 +38,12 @@ public class RVP_TVMissileOverlay {
             return;
         }
         Entity e = mc.level.getEntity(RVP_ClientHitlState.getActiveMissileId());
-        if (!(e instanceof RVP_MissileEntity) || e.isRemoved()) {
+        if (!(e instanceof RVP_MissileEntity missile) || e.isRemoved()) {
             reset();
             return;
         }
 
-        updateRate(e);
+        updateRate(missile);
 
         GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
@@ -76,6 +77,32 @@ public class RVP_TVMissileOverlay {
                         x, y + 30, Color.GREEN, true);
             }
         }
+
+        // 指令线人在回路（MOUSE 驾控）：准星固定在屏幕中央，样式与电视人在回路（CRT 武器准星）一致
+        if (RVP_ClientHitlState.getControlMode() == RVP_EnumHitlControlMode.MOUSE) {
+            drawCenterCrosshair(gg, font);
+        }
+        // 右键空爆弹头提示
+        if (missile.rvp$isHitlRightClickDetonate()) {
+            Component hint = Component.translatable("overlay.ywzj_rvp.hitl.airburst_hint");
+            gg.drawString(font, hint, gg.guiWidth() - font.width(hint) - 6, 6, Color.RED, true);
+        }
+    }
+
+    /** 屏幕中央 CRT 样式准星（指令线弹：弹头指向即准星，固定屏幕中央）。 */
+    private static void drawCenterCrosshair(GuiGraphics gg, Font font) {
+        int cx = gg.guiWidth() / 2;
+        int cy = gg.guiHeight() / 2;
+        int color = Color.GREEN;
+        // 中央空心方块（5px，与电视弹 CRT 准星一致）
+        // 上下左右延伸线（样式对齐 RVP_ScopeOverlay CRT 准星分支）
+        gg.fill(cx - 1, cy - 32, cx + 1, cy - 8, color);
+        gg.fill(cx - 1, cy + 8, cx + 1, cy + 32, color);
+        gg.fill(cx - 32, cy - 1, cx - 8, cy + 1, color);
+        gg.fill(cx + 8, cy - 1, cx + 32, cy + 1, color);
+        // 距离
+        double dist = LocalVehiclePlayer.instance.aimLocationDistance;
+        gg.drawCenteredString(font, Component.literal((int) dist + " m"), cx, cy + 40, color);
     }
 
     private static void drawSnow(GuiGraphics gg, Level level) {

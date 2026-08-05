@@ -47,6 +47,15 @@ public final class RVP_DeployableUavService {
     /** 待自动上车队列（key = 玩家 UUID）：玩家离开无人机后，母车实体不可用时延迟重试。 */
     private static final Map<UUID, PendingAutoRide> PENDING_AUTO_RIDE = new HashMap<>();
 
+    /** 母车座位锁信息（玩家驾驶无人机期间锁定母车座位）。 */
+    public record SeatLockInfo(int seatIndex, int ownerPlayerId) {}
+
+    /** 母车座位锁注册表（key = 母车实体 UUID）。 */
+    private static final Map<UUID, SeatLockInfo> PARENT_SEAT_LOCKS = new HashMap<>();
+
+    /** 母车（父车）最近一次同步到的位置快照（key = 无人机实体 UUID）：母车区块卸载后被击毁仍能据此回传。 */
+    private static final Map<UUID, Vec3> PARENT_LAST_POSITIONS = new HashMap<>();
+
     public static DeployResult deployLinkedUav(ServerPlayer player) {
         if (!(player.getVehicle() instanceof AbstractVehicle parent)) {
             return DeployResult.NO_PARENT_VEHICLE;
@@ -120,10 +129,8 @@ public final class RVP_DeployableUavService {
         }
         // 锁定母车上玩家离开前的座位（通常为驾驶位），防止他人占用/开走母车。
         // 玩家切回母车或自动上车成功时由 clearSeatLock 解除。
-        if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
-            parentExt.ywzj_rvp$setSeatLockSeatIndex(childExt.ywzj_rvp$getReturnSeatIndex());
-            parentExt.ywzj_rvp$setSeatLockOwnerPlayerId(player.getId());
-        }
+        // 锁状态存于静态注册表（不在实体上新增接口方法，避免 mixin 接口注入风险）。
+        setSeatLock(parent, childExt.ywzj_rvp$getReturnSeatIndex(), player.getId());
         // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
         // 玩家可按 F 键手动切换盘旋开/关
         return true;
@@ -375,24 +382,66 @@ public final class RVP_DeployableUavService {
 
     /** 清除母车上属于该玩家的座位锁（玩家已回到母车）。 */
     public static void clearSeatLock(AbstractVehicle parent, ServerPlayer owner) {
-        if (parent instanceof AbstractVehicleLinkedUavExt ext
-                && ext.ywzj_rvp$getSeatLockOwnerPlayerId() == owner.getId()) {
-            ext.ywzj_rvp$setSeatLockSeatIndex(-1);
-            ext.ywzj_rvp$setSeatLockOwnerPlayerId(-1);
+        SeatLockInfo lock = PARENT_SEAT_LOCKS.get(parent.getUUID());
+        if (lock != null && lock.ownerPlayerId() == owner.getId()) {
+            PARENT_SEAT_LOCKS.remove(parent.getUUID());
+        }
+    }
+
+    /** 设置母车座位锁（玩家切至无人机期间，防止他人占用/开走母车）。 */
+    public static void setSeatLock(AbstractVehicle parent, int seatIndex, int ownerPlayerId) {
+        if (parent == null || seatIndex < 0) {
+            return;
+        }
+        PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId));
+    }
+
+    /** 读取母车座位锁；无锁返回 null。 */
+    @Nullable
+    public static SeatLockInfo getSeatLock(AbstractVehicle parent) {
+        if (parent == null) {
+            return null;
+        }
+        return PARENT_SEAT_LOCKS.get(parent.getUUID());
+    }
+
+    /** 母车实体移除时清理其座位锁。 */
+    public static void cleanupSeatLock(AbstractVehicle parent) {
+        if (parent != null) {
+            PARENT_SEAT_LOCKS.remove(parent.getUUID());
         }
     }
 
     /** 玩家重生/离开时解锁其锁定的所有母车座位（防止座位被永久锁死）。 */
     public static void unlockSeatForPlayer(Level level, int playerId) {
-        if (!(level instanceof ServerLevel serverLevel)) {
+        PARENT_SEAT_LOCKS.entrySet().removeIf(entry -> entry.getValue().ownerPlayerId() == playerId);
+    }
+
+    /** 记录母车（父车）最新位置快照（key = 无人机实体 UUID）；position 为 null 时清除。 */
+    public static void setLinkedParentLastPosition(UUID uavUuid, @Nullable Vec3 position) {
+        if (uavUuid == null) {
             return;
         }
-        for (Entity entity : serverLevel.getAllEntities()) {
-            if (entity instanceof AbstractVehicleLinkedUavExt ext
-                    && ext.ywzj_rvp$getSeatLockOwnerPlayerId() == playerId) {
-                ext.ywzj_rvp$setSeatLockSeatIndex(-1);
-                ext.ywzj_rvp$setSeatLockOwnerPlayerId(-1);
-            }
+        if (position == null) {
+            PARENT_LAST_POSITIONS.remove(uavUuid);
+        } else {
+            PARENT_LAST_POSITIONS.put(uavUuid, position);
+        }
+    }
+
+    /** 读取母车（父车）位置快照；无记录返回 null。 */
+    @Nullable
+    public static Vec3 getLinkedParentLastPosition(UUID uavUuid) {
+        if (uavUuid == null) {
+            return null;
+        }
+        return PARENT_LAST_POSITIONS.get(uavUuid);
+    }
+
+    /** 无人机实体移除时清理其母车位置快照。 */
+    public static void clearLinkedParentLastPosition(UUID uavUuid) {
+        if (uavUuid != null) {
+            PARENT_LAST_POSITIONS.remove(uavUuid);
         }
     }
 
