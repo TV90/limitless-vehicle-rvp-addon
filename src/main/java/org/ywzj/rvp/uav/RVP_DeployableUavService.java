@@ -5,14 +5,23 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
+import org.ywzj.rvp.config.RVP_LoiterConfig;
+import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
+import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,18 +33,37 @@ public final class RVP_DeployableUavService {
         INVALID_TEMPLATE,
         ALREADY_DEPLOYED,
         COOLDOWN,
-        SPAWN_FAILED
+        SPAWN_FAILED,
+        SEAT_NOT_ALLOWED
     }
 
     private RVP_DeployableUavService() {}
+
+    /** 母车实体不可用（被卸载/已销毁）时自动上车的最大重试 tick 数，3 秒。 */
+    private static final int AUTO_RIDE_MAX_RETRY = 60;
+
+    private record PendingAutoRide(UUID parentUuid, int seatIndex, int retryLeft) {}
+
+    /** 待自动上车队列（key = 玩家 UUID）：玩家离开无人机后，母车实体不可用时延迟重试。 */
+    private static final Map<UUID, PendingAutoRide> PENDING_AUTO_RIDE = new HashMap<>();
 
     public static DeployResult deployLinkedUav(ServerPlayer player) {
         if (!(player.getVehicle() instanceof AbstractVehicle parent)) {
             return DeployResult.NO_PARENT_VEHICLE;
         }
+        return deployLinkedUav(parent, player);
+    }
+
+    public static DeployResult deployLinkedUav(AbstractVehicle parent, @Nullable LivingEntity operator) {
+        if (parent == null) {
+            return DeployResult.NO_PARENT_VEHICLE;
+        }
         RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
         if (!config.isConfigured()) {
             return DeployResult.NO_CONFIG;
+        }
+        if (operator instanceof ServerPlayer serverPlayer && !config.isSeatAllowed(findSeatIndex(parent, serverPlayer))) {
+            return DeployResult.SEAT_NOT_ALLOWED;
         }
         if (!(parent.level() instanceof ServerLevel serverLevel)) {
             return DeployResult.SPAWN_FAILED;
@@ -45,7 +73,7 @@ public final class RVP_DeployableUavService {
         }
         if (config.singleInstance()) {
             AbstractVehicle existing = getLinkedChild(parent).orElse(null);
-            if (existing != null && existing.isAlive() && !existing.isRemoved()) {
+            if (existing != null && existing.isAlive() && !existing.isRemoved() && !existing.isDestroyed()) {
                 return DeployResult.ALREADY_DEPLOYED;
             }
             clearLinkedChild(parent);
@@ -57,14 +85,16 @@ public final class RVP_DeployableUavService {
             return DeployResult.INVALID_TEMPLATE;
         }
 
-        float spawnYaw = resolveSpawnYaw(parent, player, config);
+        float spawnYaw = resolveSpawnYaw(parent, operator, config);
         Vec3 spawnPos = resolveSpawnPos(parent, config.spawnOffset(), spawnYaw);
         AbstractVehicle child = childData.construct(serverLevel, spawnPos, 0.0f, spawnYaw);
         if (child == null) {
             return DeployResult.SPAWN_FAILED;
         }
-        configureLink(parent, child, player, config);
+        configureLink(parent, child, operator, config);
         serverLevel.addFreshEntity(child);
+        applyInitialSpeed(child, spawnYaw, config.initialSpeed());
+        applyTakeoffBehavior(child, parent);
         return DeployResult.SUCCESS;
     }
 
@@ -73,7 +103,7 @@ public final class RVP_DeployableUavService {
             return false;
         }
         AbstractVehicle child = getLinkedChild(parent).orElse(null);
-        if (child == null || child.isRemoved() || !child.isAlive()) {
+        if (child == null || child.isRemoved() || !child.isAlive() || child.isDestroyed()) {
             clearLinkedChild(parent);
             return false;
         }
@@ -88,6 +118,14 @@ public final class RVP_DeployableUavService {
         if (!child.seats.isEmpty() && child.seats.get(0).passengerId != player.getId()) {
             child.changeSeat(player, 0);
         }
+        // 锁定母车上玩家离开前的座位（通常为驾驶位），防止他人占用/开走母车。
+        // 玩家切回母车或自动上车成功时由 clearSeatLock 解除。
+        if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
+            parentExt.ywzj_rvp$setSeatLockSeatIndex(childExt.ywzj_rvp$getReturnSeatIndex());
+            parentExt.ywzj_rvp$setSeatLockOwnerPlayerId(player.getId());
+        }
+        // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
+        // 玩家可按 F 键手动切换盘旋开/关
         return true;
     }
 
@@ -114,6 +152,24 @@ public final class RVP_DeployableUavService {
             AbstractVehicle.Seat seat = parent.seats.get(returnSeatIndex);
             if (seat.passengerId == -1 && parent.getOwnOperatorUnit(player) != seat.partUnit) {
                 parent.changeSeat(player, returnSeatIndex);
+            }
+        }
+        // 切回母车 → 自动激活盘旋
+        RVP_DeployableUavConfig uavConfig = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
+        if (uavConfig.isConfigured() && uavConfig.autoLoiterOnSwitchBack()) {
+            // 盘旋参数从通用 LoiterConfig 读取（优先母车，其次子载具自身）
+            RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
+            if (!loiterConfig.isConfigured()) {
+                loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
+            }
+            if (loiterConfig.isConfigured()) {
+                RVP_UavLoiterManager.enableFollowParent(
+                        child.getUUID(),
+                        parent.getUUID(),
+                        loiterConfig.loiterRadius(),
+                        loiterConfig.loiterAltitudeOffset(),
+                        parent.getX(), parent.getY(), parent.getZ()
+                );
             }
         }
         return true;
@@ -159,6 +215,8 @@ public final class RVP_DeployableUavService {
         if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavInstance()) {
             return;
         }
+        // 清除盘旋状态
+        RVP_UavLoiterManager.remove(child.getUUID());
         AbstractVehicle parent = resolveVehicleByUuid(child.level(), childExt.ywzj_rvp$getLinkedParentVehicleUuid());
         if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
             if (parentExt.ywzj_rvp$getLinkedChildVehicleUuid() != null
@@ -175,7 +233,7 @@ public final class RVP_DeployableUavService {
         RVP_DeployableUavLinkRegistry.clearByChild(child.getUUID());
     }
 
-    private static void configureLink(AbstractVehicle parent, AbstractVehicle child, ServerPlayer player, RVP_DeployableUavConfig config) {
+    private static void configureLink(AbstractVehicle parent, AbstractVehicle child, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
         if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
             parentExt.ywzj_rvp$setLinkedChildVehicleUuid(child.getUUID());
         }
@@ -184,25 +242,28 @@ public final class RVP_DeployableUavService {
             childExt.ywzj_rvp$setDeployableUavInstance(true);
             childExt.ywzj_rvp$setLinkedParentVehicleUuid(parent.getUUID());
             childExt.ywzj_rvp$setLinkedLauncherVehicleUuid(config.autoLinkDatalink() ? parent.getUUID() : null);
-            childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, player));
+            childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, operator));
             childExt.ywzj_rvp$setDeployableUavRole(config.role());
             childExt.ywzj_rvp$setDatalinkRole(config.autoLinkDatalink() ? config.role() : "none");
             childExt.ywzj_rvp$setDeployableUavControlSwitchAllowed(config.allowControlSwitch());
         }
     }
 
-    private static int findSeatIndex(AbstractVehicle vehicle, ServerPlayer player) {
+    private static int findSeatIndex(AbstractVehicle vehicle, @Nullable LivingEntity operator) {
+        if (operator == null) {
+            return 0;
+        }
         for (AbstractVehicle.Seat seat : vehicle.seats) {
-            if (seat.passengerId != null && seat.passengerId == player.getId()) {
+            if (seat.passengerId != null && seat.passengerId == operator.getId()) {
                 return seat.seatIndex;
             }
         }
         return 0;
     }
 
-    private static float resolveSpawnYaw(AbstractVehicle parent, ServerPlayer player, RVP_DeployableUavConfig config) {
+    private static float resolveSpawnYaw(AbstractVehicle parent, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
         return switch (config.spawnYawMode().toLowerCase()) {
-            case "operator_look" -> player.getYRot();
+            case "operator_look" -> operator != null ? operator.getYRot() : parent.getYRot();
             default -> parent.getYRot();
         };
     }
@@ -220,11 +281,152 @@ public final class RVP_DeployableUavService {
         return new Vec3(basePos.x, basePos.y + 0.1, basePos.z);
     }
 
+    /**
+     * 释放子载具后沿生成朝向赋予水平初速度。
+     *
+     * @param child        生成的子载具
+     * @param spawnYaw     生成朝向（度）
+     * @param initialSpeed 初速度大小（blocks/tick）；≤0 时不赋予
+     */
+    private static void applyInitialSpeed(AbstractVehicle child, float spawnYaw, float initialSpeed) {
+        if (initialSpeed <= 0f) {
+            return;
+        }
+        Vec3 forward = Vec3.directionFromRotation(0f, spawnYaw).scale(initialSpeed);
+        child.setDeltaMovement(forward);
+    }
+
+    /**
+     * 释放子载具后根据 LoiterConfig 配置起飞行为：自动进入盘旋（固定翼同时启动引擎并满油门）。
+     */
+    private static void applyTakeoffBehavior(AbstractVehicle child, AbstractVehicle parent) {
+        RVP_LoiterConfig loiterConfig = RVP_LoiterConfigCache.get(child.getVehicleId());
+        if (!loiterConfig.isConfigured()) {
+            return;
+        }
+        if (loiterConfig.autoLoiterOnTakeoff()) {
+            RVP_UavLoiterManager.enableFollowParent(
+                    child.getUUID(),
+                    parent.getUUID(),
+                    loiterConfig.loiterRadius(),
+                    loiterConfig.loiterAltitudeOffset(),
+                    parent.getX(), parent.getY(), parent.getZ()
+            );
+            if (child instanceof FixedWingVehicle fw) {
+                fw.toggleEngine(true);
+                fw.setPower(100f);
+                fw.setThrottleLevel(100f);
+            }
+        }
+    }
+
     private static AbstractVehicle resolveVehicleByUuid(net.minecraft.world.level.Level level, UUID uuid) {
         if (uuid == null || !(level instanceof ServerLevel serverLevel)) {
             return null;
         }
         Entity entity = serverLevel.getEntity(uuid);
         return entity instanceof AbstractVehicle vehicle ? vehicle : null;
+    }
+
+    // ==================== 自动上车 + 母车座位锁 ====================
+
+    /**
+     * 玩家离开无人机（被击毁/主动切回）后：传送回母车旁并自动坐上母车座位。
+     * 母车实体不可用（区块卸载）时进入延迟重试队列，等待母车重新加载后自动上车。
+     */
+    public static void tryAutoRideParent(ServerPlayer player, AbstractVehicle uav) {
+        if (player == null || uav == null || player.level().isClientSide()) {
+            return;
+        }
+        if (!(uav instanceof AbstractVehicleLinkedUavExt uavExt) || !uavExt.ywzj_rvp$isDeployableUavInstance()) {
+            return;
+        }
+        UUID parentUuid = uavExt.ywzj_rvp$getLinkedParentVehicleUuid();
+        if (parentUuid == null) {
+            return;
+        }
+        int seatIndex = Math.max(0, uavExt.ywzj_rvp$getReturnSeatIndex());
+        AbstractVehicle parent = resolveVehicleByUuid(uav.level(), parentUuid);
+        if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
+            scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+            return;
+        }
+        if (player.getVehicle() == parent) {
+            // 已回到母车（主动切回时 onLeaveVehicle 先于 startRiding 触发）
+            restoreSeatAndUnlock(player, parent, seatIndex);
+            return;
+        }
+        if (player.startRiding(parent)) {
+            restoreSeatAndUnlock(player, parent, seatIndex);
+        } else {
+            scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+        }
+    }
+
+    private static void restoreSeatAndUnlock(ServerPlayer player, AbstractVehicle parent, int seatIndex) {
+        if (seatIndex < parent.seats.size()) {
+            AbstractVehicle.Seat seat = parent.seats.get(seatIndex);
+            if (seat.passengerId == -1) {
+                parent.changeSeat(player, seatIndex);
+            }
+        }
+        clearSeatLock(parent, player);
+    }
+
+    /** 清除母车上属于该玩家的座位锁（玩家已回到母车）。 */
+    public static void clearSeatLock(AbstractVehicle parent, ServerPlayer owner) {
+        if (parent instanceof AbstractVehicleLinkedUavExt ext
+                && ext.ywzj_rvp$getSeatLockOwnerPlayerId() == owner.getId()) {
+            ext.ywzj_rvp$setSeatLockSeatIndex(-1);
+            ext.ywzj_rvp$setSeatLockOwnerPlayerId(-1);
+        }
+    }
+
+    /** 玩家重生/离开时解锁其锁定的所有母车座位（防止座位被永久锁死）。 */
+    public static void unlockSeatForPlayer(Level level, int playerId) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        for (Entity entity : serverLevel.getAllEntities()) {
+            if (entity instanceof AbstractVehicleLinkedUavExt ext
+                    && ext.ywzj_rvp$getSeatLockOwnerPlayerId() == playerId) {
+                ext.ywzj_rvp$setSeatLockSeatIndex(-1);
+                ext.ywzj_rvp$setSeatLockOwnerPlayerId(-1);
+            }
+        }
+    }
+
+    private static void scheduleAutoRide(UUID playerUuid, UUID parentUuid, int seatIndex) {
+        if (playerUuid == null || parentUuid == null) {
+            return;
+        }
+        PENDING_AUTO_RIDE.put(playerUuid, new PendingAutoRide(parentUuid, seatIndex, AUTO_RIDE_MAX_RETRY));
+    }
+
+    /** 服务端每 tick 驱动自动上车重试（由 {@link org.ywzj.rvp.event.RVP_UavSeatLockEventHandler} 调用）。 */
+    public static void onServerTick(ServerLevel serverLevel) {
+        if (PENDING_AUTO_RIDE.isEmpty()) {
+            return;
+        }
+        PENDING_AUTO_RIDE.entrySet().removeIf(entry -> {
+            UUID playerUuid = entry.getKey();
+            PendingAutoRide pending = entry.getValue();
+            ServerPlayer player = serverLevel.getServer().getPlayerList().getPlayer(playerUuid);
+            if (player == null || player.isRemoved()) {
+                return true; // 玩家离线/移除，放弃重试
+            }
+            if (player.getVehicle() != null) {
+                return true; // 已骑乘（手动上车/切回），不再处理
+            }
+            AbstractVehicle parent = resolveVehicleByUuid(serverLevel, pending.parentUuid());
+            if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
+                return pending.retryLeft() <= 1;
+            }
+            if (player.startRiding(parent)) {
+                restoreSeatAndUnlock(player, parent, pending.seatIndex());
+                return true;
+            }
+            return pending.retryLeft() <= 1;
+        });
     }
 }

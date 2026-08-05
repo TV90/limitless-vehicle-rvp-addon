@@ -4,6 +4,7 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataARM;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceDataSACLOS;
 import org.ywzj.rvp.weapon.data.RVP_TerminalGuidanceData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
@@ -53,6 +54,7 @@ public final class RVP_GuidanceModelResolver {
         RVP_GuidanceDataGPS gps = data instanceof RVP_GuidanceDataGPS value ? value : null;
         RVP_GuidanceDataHITL hitl = data instanceof RVP_GuidanceDataHITL value ? value : null;
         RVP_GuidanceDataARM arm = data instanceof RVP_GuidanceDataARM value ? value : null;
+        RVP_GuidanceDataSACLOS saclos = data instanceof RVP_GuidanceDataSACLOS value ? value : null;
         return new RVP_GuidanceActiveConfig(
                 RVP_GuidancePhase.MAIN,
                 data.getGuidanceType(),
@@ -90,7 +92,11 @@ public final class RVP_GuidanceModelResolver {
                 hitl == null ? 0 : hitl.getHitlMaxControlDist(),
                 hitl == null ? 0 : hitl.getHitlMaxControlTick(),
                 hitl == null ? 0 : hitl.getHitlMaxLookOffset(),
-                hitl == null ? List.of() : hitl.getHitlVideoModes()
+                hitl == null ? List.of() : hitl.getHitlVideoModes(),
+                saclos != null && saclos.isSemiCorrectionEnabled(),
+                saclos == null ? 0.05f : saclos.getSemiCorrectionStiffness(),
+                saclos == null ? 0.05f : saclos.getSemiCorrectionDamping(),
+                saclos == null ? 0.5f : saclos.getSemiCorrectionWobble()
         );
     }
 
@@ -136,7 +142,11 @@ public final class RVP_GuidanceModelResolver {
                 0,
                 0,
                 0,
-                List.of()
+                List.of(),
+                false,
+                0.05f,
+                0.05f,
+                0.5f
         );
     }
 }

@@ -1,17 +1,20 @@
 package org.ywzj.rvp.client.nuclear;
 
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexSorting;
+import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
@@ -27,13 +30,9 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Sounds;
-import org.ywzj.rvp.client.render.RVP_RenderTypes;
 import org.ywzj.rvp.network.S2CNuclearVisualEffect;
 
 import java.util.ArrayList;
@@ -53,10 +52,6 @@ public final class RVP_ExplosionVisualManager {
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
     private static final ResourceLocation WAVE_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/shockwave.png");
-    private static final RenderType CLOUD_RENDER_TYPE =
-            RVP_RenderTypes.texturedTranslucentNoDepthWrite(CLOUD_TEXTURE);
-    private static final RenderType WAVE_RENDER_TYPE =
-            RVP_RenderTypes.texturedAdditiveNoDepthWrite(WAVE_TEXTURE);
     private static final double LEGACY_SPEED_OF_SOUND = 17.15D * 0.5D;
     private static final double FAR_PLANE = 10000.0D;
     private static final double LOD_DISTANCE_SQ = 512.0D * 512.0D;
@@ -132,9 +127,8 @@ public final class RVP_ExplosionVisualManager {
     private static void render(RenderLevelStageEvent event, Minecraft minecraft) {
         Camera camera = event.getCamera();
         Vec3 cameraPos = camera.getPosition();
-        PoseStack poseStack = event.getPoseStack();
 
-        // Extend projection matrix far plane so clouds are visible from thousands of blocks away
+        // Extend projection matrix far plane so effects are visible from thousands of blocks away
         RenderSystem.backupProjectionMatrix();
         double fov = minecraft.options.fov().get();
         Matrix4f extendedProjection = new Matrix4f().perspective(
@@ -145,31 +139,47 @@ public final class RVP_ExplosionVisualManager {
         );
         RenderSystem.setProjectionMatrix(extendedProjection, VertexSorting.DISTANCE_TO_ORIGIN);
 
-        poseStack.pushPose();
-        poseStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z);
-        Matrix4f pose = poseStack.last().pose();
-        Matrix3f normal = poseStack.last().normal();
-        Quaternionf cameraRotation = camera.rotation();
-        Vector3f right = new Vector3f(1.0F, 0.0F, 0.0F).rotate(cameraRotation);
-        Vector3f up = new Vector3f(0.0F, 1.0F, 0.0F).rotate(cameraRotation);
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        // Model-view with camera rotation only (matching RVP_NuclearShockwaveRenderer approach)
+        PoseStack modelView = RenderSystem.getModelViewStack();
+        modelView.pushPose();
+        modelView.setIdentity();
+        modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
+        modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
+        RenderSystem.applyModelViewMatrix();
 
+        RenderSystem.enableBlend();
+        RenderSystem.depthMask(false);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+
+        // Clouds (translucent)
         rebuildRenderCache(cameraPos);
-        VertexConsumer cloudConsumer = buffers.getBuffer(CLOUD_RENDER_TYPE);
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        RenderSystem.setShaderTexture(0, CLOUD_TEXTURE);
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (RenderCloud renderCloud : RENDER_CLOUDS) {
-            renderCloud(cloudConsumer, pose, normal, right, up,
-                    renderCloud.cloud(), event.getPartialTick(), renderCloud.distanceSq());
+            renderCloudTess(builder, renderCloud.cloud(), cameraPos, event.getPartialTick(), renderCloud.distanceSq());
         }
-        buffers.endBatch(CLOUD_RENDER_TYPE);
+        BufferUploader.drawWithShader(builder.end());
 
-        VertexConsumer waveConsumer = buffers.getBuffer(WAVE_RENDER_TYPE);
+        // Waves (additive) - only for BOMB preset
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        RenderSystem.setShaderTexture(0, WAVE_TEXTURE);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (ExplosionEffect effect : EFFECTS) {
-            renderWave(waveConsumer, pose, normal, effect, event.getPartialTick());
+            renderWaveTess(builder, effect, cameraPos, event.getPartialTick());
         }
-        buffers.endBatch(WAVE_RENDER_TYPE);
-        poseStack.popPose();
+        BufferUploader.drawWithShader(builder.end());
 
-        // Restore original projection matrix
+        // Restore state
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.defaultBlendFunc();
+        modelView.popPose();
+        RenderSystem.applyModelViewMatrix();
         RenderSystem.restoreProjectionMatrix();
     }
 
@@ -188,15 +198,18 @@ public final class RVP_ExplosionVisualManager {
         }
     }
 
-    private static void renderCloud(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            Vector3f right, Vector3f up, BlastCloud cloud, float partialTick, double distanceSq) {
+    private static void renderCloudTess(BufferBuilder builder, BlastCloud cloud,
+            Vec3 cameraPos, float partialTick, double distanceSq) {
         float progress = cloud.progress(partialTick);
         if (progress >= 1.0F) {
             return;
         }
-        double x = Mth.lerp(partialTick, cloud.previousX, cloud.x);
-        double y = Mth.lerp(partialTick, cloud.previousY, cloud.y);
-        double z = Mth.lerp(partialTick, cloud.previousZ, cloud.z);
+        double wx = Mth.lerp(partialTick, cloud.previousX, cloud.x);
+        double wy = Mth.lerp(partialTick, cloud.previousY, cloud.y);
+        double wz = Mth.lerp(partialTick, cloud.previousZ, cloud.z);
+        float x = (float) (wx - cameraPos.x);
+        float y = (float) (wy - cameraPos.y);
+        float z = (float) (wz - cameraPos.z);
         boolean lod = distanceSq > LOD_DISTANCE_SQ;
         if (cloud.preset == Preset.SHELL) {
             int rgb = Mth.hsvToRgb(cloud.hue / 255.0F,
@@ -209,15 +222,13 @@ public final class RVP_ExplosionVisualManager {
             float size = (float) (0.25D + 1.0D - Math.pow(1.0D - progress, 4.0D)
                     + progress * cloud.lifetime * 0.02D) * cloud.baseScale;
             if (lod) size *= 1.5F;
-            billboard(consumer, pose, normal, right, up, (float) x, (float) y, (float) z,
-                    size, red, green, blue, alpha);
+            billboardTess(builder, x, y, z, size, red, green, blue, alpha);
             return;
         }
 
         float dark = 1.0F - Math.min(progress * 4.0F, 1.0F);
         float alpha = (float) Math.pow(1.0F - progress, 0.5D) * 0.75F;
         float spread = ((float) Math.pow(progress * 4.0F, 1.5D) + 1.0F) * cloud.baseScale;
-        // LOD: at long distance, only render every 3rd layer with enlarged size
         int layerStep = lod ? 3 : 1;
         float lodSizeBoost = lod ? 2.0F : 1.0F;
         for (int i = 0; i < cloud.layerAdd.length; i += layerStep) {
@@ -226,16 +237,15 @@ public final class RVP_ExplosionVisualManager {
             float green = Mth.clamp(0.6F * dark + add, 0.0F, 1.0F);
             float blue = Mth.clamp(add, 0.0F, 1.0F);
             float size = (cloud.layerScale[i] * 0.5F + 0.1F + progress * 2.0F) * cloud.baseScale * lodSizeBoost;
-            billboard(consumer, pose, normal, right, up,
-                    (float) x + cloud.layerOffsetX[i] * spread,
-                    (float) y + cloud.layerOffsetY[i] * spread,
-                    (float) z + cloud.layerOffsetZ[i] * spread,
-                    size, red, green, blue, alpha);
+            float bx = x + cloud.layerOffsetX[i] * spread;
+            float by = y + cloud.layerOffsetY[i] * spread;
+            float bz = z + cloud.layerOffsetZ[i] * spread;
+            billboardTess(builder, bx, by, bz, size, red, green, blue, alpha);
         }
     }
 
-    private static void renderWave(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            ExplosionEffect effect, float partialTick) {
+    private static void renderWaveTess(BufferBuilder builder, ExplosionEffect effect,
+            Vec3 cameraPos, float partialTick) {
         if (effect.preset != Preset.BOMB) {
             return;
         }
@@ -245,49 +255,79 @@ public final class RVP_ExplosionVisualManager {
             return;
         }
         float scale = (float) (1.0D - Math.exp(visualAge * -0.125D)) * effect.waveScale;
-        float x = (float) effect.center.x;
-        float y = (float) effect.center.y + 1.75F;
-        float z = (float) effect.center.z;
-        vertex(consumer, pose, normal, x - scale, y, z - scale, 1.0F, 1.0F, alpha);
-        vertex(consumer, pose, normal, x - scale, y, z + scale, 1.0F, 0.0F, alpha);
-        vertex(consumer, pose, normal, x + scale, y, z + scale, 0.0F, 0.0F, alpha);
-        vertex(consumer, pose, normal, x + scale, y, z - scale, 0.0F, 1.0F, alpha);
+        float cx = (float) effect.center.x - (float) cameraPos.x;
+        float cy = (float) effect.center.y + 1.75F - (float) cameraPos.y;
+        float cz = (float) effect.center.z - (float) cameraPos.z;
+        int a = Mth.clamp((int) (alpha * 255.0F), 0, 255);
+        builder.vertex(cx - scale, cy, cz - scale).uv(1.0F, 1.0F).color(255, 255, 255, a).endVertex();
+        builder.vertex(cx - scale, cy, cz + scale).uv(1.0F, 0.0F).color(255, 255, 255, a).endVertex();
+        builder.vertex(cx + scale, cy, cz + scale).uv(0.0F, 0.0F).color(255, 255, 255, a).endVertex();
+        builder.vertex(cx + scale, cy, cz - scale).uv(0.0F, 1.0F).color(255, 255, 255, a).endVertex();
     }
 
-    private static void billboard(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            Vector3f right, Vector3f up, float x, float y, float z, float halfSize,
+    /**
+     * True camera-facing billboard in camera-relative pre-rotation space.
+     * Each billboard faces the camera individually by computing its orientation
+     * from the vector directed toward the camera (origin in camera-relative space).
+     * This prevents the flat-looking artifacts that occur when a fixed XY-plane
+     * quad is viewed from oblique angles.
+     */
+    private static void billboardTess(BufferBuilder builder,
+            float x, float y, float z, float halfSize,
             float red, float green, float blue, float alpha) {
-        float rx = right.x() * halfSize;
-        float ry = right.y() * halfSize;
-        float rz = right.z() * halfSize;
-        float ux = up.x() * halfSize;
-        float uy = up.y() * halfSize;
-        float uz = up.z() * halfSize;
-        vertex(consumer, pose, normal, x - rx - ux, y - ry - uy, z - rz - uz,
-                0.0F, 1.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x + rx - ux, y + ry - uy, z + rz - uz,
-                1.0F, 1.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x + rx + ux, y + ry + uy, z + rz + uz,
-                1.0F, 0.0F, red, green, blue, alpha);
-        vertex(consumer, pose, normal, x - rx + ux, y - ry + uy, z - rz + uz,
-                0.0F, 0.0F, red, green, blue, alpha);
-    }
+        // Look direction from billboard center toward camera (origin in camera-relative space).
+        float lx = -x;
+        float ly = -y;
+        float lz = -z;
+        float len = (float) Math.sqrt(lx * lx + ly * ly + lz * lz);
+        if (len < 1.0E-4F) {
+            int a0 = Mth.clamp((int) (alpha * 255.0F), 0, 255);
+            int r0 = Mth.clamp((int) (red * 255.0F), 0, 255);
+            int g0 = Mth.clamp((int) (green * 255.0F), 0, 255);
+            int b0 = Mth.clamp((int) (blue * 255.0F), 0, 255);
+            builder.vertex(x - halfSize, y - halfSize, z).uv(0, 1).color(r0, g0, b0, a0).endVertex();
+            builder.vertex(x + halfSize, y - halfSize, z).uv(1, 1).color(r0, g0, b0, a0).endVertex();
+            builder.vertex(x + halfSize, y + halfSize, z).uv(1, 0).color(r0, g0, b0, a0).endVertex();
+            builder.vertex(x - halfSize, y + halfSize, z).uv(0, 0).color(r0, g0, b0, a0).endVertex();
+            return;
+        }
+        lx /= len;
+        ly /= len;
+        lz /= len;
 
-    private static void vertex(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            float x, float y, float z, float u, float v, float alpha) {
-        vertex(consumer, pose, normal, x, y, z, u, v, 1.0F, 1.0F, 1.0F, alpha);
-    }
+        // Right = cross(look, world_up) where world_up = (0, 1, 0)
+        float rx = -lz;
+        float rz = lx;
+        float rLen = (float) Math.sqrt(rx * rx + rz * rz);
+        if (rLen < 1.0E-4F) {
+            rx = 1.0F;
+            rz = 0.0F;
+            rLen = 1.0F;
+        }
+        rx /= rLen;
+        rz /= rLen;
 
-    private static void vertex(VertexConsumer consumer, Matrix4f pose, Matrix3f normal,
-            float x, float y, float z, float u, float v,
-            float red, float green, float blue, float alpha) {
-        consumer.vertex(pose, x, y, z)
-                .color(red, green, blue, alpha)
-                .uv(u, v)
-                .overlayCoords(OverlayTexture.NO_OVERLAY)
-                .uv2(LightTexture.FULL_BRIGHT)
-                .normal(normal, 0.0F, 1.0F, 0.0F)
-                .endVertex();
+        // Up = cross(right, look)
+        float ux = -rz * ly;
+        float uy = rz * lx - rx * lz;
+        float uz = rx * ly;
+
+        float rhx = rx * halfSize;
+        float rhz = rz * halfSize;
+        float uhx = ux * halfSize;
+        float uhy = uy * halfSize;
+        float uhz = uz * halfSize;
+
+        int a = Mth.clamp((int) (alpha * 255.0F), 0, 255);
+        int r = Mth.clamp((int) (red * 255.0F), 0, 255);
+        int g = Mth.clamp((int) (green * 255.0F), 0, 255);
+        int b = Mth.clamp((int) (blue * 255.0F), 0, 255);
+
+        // CW winding: BL→TL→TR→BR so that normal = cross(up, right) faces the camera.
+        builder.vertex(x - rhx - uhx, y - uhy, z - rhz - uhz).uv(0, 1).color(r, g, b, a).endVertex();
+        builder.vertex(x - rhx + uhx, y + uhy, z - rhz + uhz).uv(0, 0).color(r, g, b, a).endVertex();
+        builder.vertex(x + rhx + uhx, y + uhy, z + rhz + uhz).uv(1, 0).color(r, g, b, a).endVertex();
+        builder.vertex(x + rhx - uhx, y - uhy, z + rhz - uhz).uv(1, 1).color(r, g, b, a).endVertex();
     }
 
     private enum Preset {

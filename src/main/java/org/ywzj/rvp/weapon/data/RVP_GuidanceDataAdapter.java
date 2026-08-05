@@ -32,6 +32,12 @@ public final class RVP_GuidanceDataAdapter
             "hitl_max_look_offset",
             "hitl_video_modes"
     );
+    private static final Set<String> SACLOS_FIELDS = Set.of(
+            "semi_correction_enabled",
+            "semi_correction_stiffness",
+            "semi_correction_damping",
+            "semi_correction_wobble"
+    );
     private static final EnumSet<RVP_EnumGuidanceType> HITL_TYPES = EnumSet.of(
             RVP_EnumGuidanceType.TV,
             RVP_EnumGuidanceType.HITL_TV,
@@ -75,7 +81,8 @@ public final class RVP_GuidanceDataAdapter
         boolean hasArmFields = containsAny(object, ARM_FIELDS);
         validateSubtypeFields(object, type);
 
-        Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields, hasArmFields);
+        boolean hasSaclosFields = containsAny(object, SACLOS_FIELDS);
+        Class<? extends RVP_GuidanceData> targetClass = targetClass(type, hasHitlFields, hasArmFields, hasSaclosFields);
         return context.deserialize(object, targetClass);
     }
 
@@ -91,21 +98,24 @@ public final class RVP_GuidanceDataAdapter
         RVP_EnumGuidanceType type = source.getGuidanceType();
         boolean hitlSubtype = source instanceof RVP_GuidanceDataHITL;
         boolean armSubtype = source instanceof RVP_GuidanceDataARM;
-        Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype, armSubtype);
+        boolean saclosSubtype = source instanceof RVP_GuidanceDataSACLOS;
+        Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype, armSubtype, saclosSubtype);
         if (expected != RVP_GuidanceData.class && !expected.isInstance(source)) {
             throw new JsonParseException(type + " guidance requires " + expected.getSimpleName());
         }
         if (expected == RVP_GuidanceData.class
                 && (source instanceof RVP_GuidanceDataGPS
                 || source instanceof RVP_GuidanceDataHITL
-                || source instanceof RVP_GuidanceDataARM)) {
+                || source instanceof RVP_GuidanceDataARM
+                || source instanceof RVP_GuidanceDataSACLOS)) {
             throw new JsonParseException(source.getClass().getSimpleName() + " does not match " + type);
         }
         return context.serialize(source, source.getClass());
     }
 
     private static void rejectSubtypeFieldsWithoutType(JsonObject object) {
-        if (containsAny(object, GPS_FIELDS) || containsAny(object, HITL_FIELDS) || containsAny(object, ARM_FIELDS)) {
+        if (containsAny(object, GPS_FIELDS) || containsAny(object, HITL_FIELDS)
+                || containsAny(object, ARM_FIELDS) || containsAny(object, SACLOS_FIELDS)) {
             throw new JsonParseException("Guidance subtype fields require guidance_type");
         }
     }
@@ -123,6 +133,9 @@ public final class RVP_GuidanceDataAdapter
         if (!HITL_TYPES.contains(type) && containsAny(object, HITL_FIELDS)) {
             throw new JsonParseException("HITL subtype fields require a HITL guidance_type");
         }
+        if (type != RVP_EnumGuidanceType.SACLOS && containsAny(object, SACLOS_FIELDS)) {
+            throw new JsonParseException("SACLOS subtype fields require guidance_type SACLOS");
+        }
     }
 
     private static boolean containsAny(JsonObject object, Set<String> fields) {
@@ -137,7 +150,8 @@ public final class RVP_GuidanceDataAdapter
     private static Class<? extends RVP_GuidanceData> targetClass(
             RVP_EnumGuidanceType type,
             boolean hasHitlFields,
-            boolean hasArmFields
+            boolean hasArmFields,
+            boolean hasSaclosFields
     ) {
         if (type == RVP_EnumGuidanceType.GPS) {
             return RVP_GuidanceDataGPS.class;
@@ -147,6 +161,9 @@ public final class RVP_GuidanceDataAdapter
         }
         if (hasHitlFields || HITL_TYPES.contains(type)) {
             return RVP_GuidanceDataHITL.class;
+        }
+        if (type == RVP_EnumGuidanceType.SACLOS || hasSaclosFields) {
+            return RVP_GuidanceDataSACLOS.class;
         }
         return RVP_GuidanceData.class;
     }

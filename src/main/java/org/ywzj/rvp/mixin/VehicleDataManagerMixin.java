@@ -7,6 +7,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -17,8 +18,12 @@ import org.ywzj.rvp.config.RVP_ApsConfig;
 import org.ywzj.rvp.config.RVP_ApsConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
+import org.ywzj.rvp.config.RVP_LoiterConfig;
+import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfigCache;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
@@ -46,6 +51,7 @@ public class VehicleDataManagerMixin {
                                           CallbackInfo ci) {
         Map<ResourceLocation, List<RVP_CustomMountConfig>> customMountsByVehicle = new HashMap<>();
         Map<ResourceLocation, AutoLandingGearCache.AutoLandingGearConfig> autoGearByVehicle = new HashMap<>();
+        Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>> weaponHeatByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
         RVP_LauncherDeployConfigCache.clear();
         for (var entry : resources.entrySet()) {
@@ -70,6 +76,11 @@ public class VehicleDataManagerMixin {
                     RVP_DeployableUavConfigCache.put(vehicleId, deployableUavConfig);
                 }
 
+                RVP_LoiterConfig loiterConfig = ywzj_rvp$parseLoiterConfig(obj);
+                if (loiterConfig.isConfigured()) {
+                    RVP_LoiterConfigCache.put(vehicleId, loiterConfig);
+                }
+
                 RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
                 List<RVP_LauncherDeployConfig> launcherDeployConfigs = RVP_LauncherDeployConfig.parseList(obj);
                 if (!launcherDeployConfigs.isEmpty()) {
@@ -80,18 +91,25 @@ public class VehicleDataManagerMixin {
                     double retractSpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_speed", 100);
                     double deploySpeed = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_speed", 50);
                     double deployHeight = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_deploy_height", 25);
+                    double retractHeight = GsonHelper.getAsDouble(obj, "rvp_auto_landing_gear_retract_height", 50);
                     autoGearByVehicle.put(vehicleId, new AutoLandingGearCache.AutoLandingGearConfig(
-                            true, retractSpeed, deploySpeed, deployHeight));
+                            true, retractSpeed, deploySpeed, deployHeight, retractHeight));
                 }
                 List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
                 if (customMounts != null) {
                     customMountsByVehicle.put(vehicleId, customMounts);
+                }
+                Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig> heatConfigs =
+                        RVP_VehicleWeaponHeatConfigCache.parseVehicle(obj);
+                if (!heatConfigs.isEmpty()) {
+                    weaponHeatByVehicle.put(vehicleId, heatConfigs);
                 }
             } catch (Exception ignored) {
                 // JSON 解析错误，跳过
             }
         }
         RVP_CustomMountConfigCache.replace(customMountsByVehicle);
+        RVP_VehicleWeaponHeatConfigCache.replace(weaponHeatByVehicle);
         AutoLandingGearCache.replace(autoGearByVehicle);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);
@@ -193,7 +211,49 @@ public class VehicleDataManagerMixin {
                 singleInstance,
                 allowControlSwitch,
                 autoLinkDatalink,
-                redeployCooldownTick
+                redeployCooldownTick,
+                GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_loiter_on_switch_back", true),
+                (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0),
+                ywzj_rvp$parseAllowedSeatIndexes(vehicleObj)
+        );
+    }
+
+    /**
+     * 解析 {@code deployable_uav_allowed_seat_indexes} 座位索引列表。
+     * 缺省/空数组返回空列表，表示仅驾驶位（座位 0）可部署。
+     */
+    private static java.util.List<Integer> ywzj_rvp$parseAllowedSeatIndexes(JsonObject vehicleObj) {
+        java.util.List<Integer> result = new java.util.ArrayList<>();
+        if (vehicleObj.has("deployable_uav_allowed_seat_indexes")
+                && vehicleObj.get("deployable_uav_allowed_seat_indexes").isJsonArray()) {
+            for (JsonElement element : vehicleObj.get("deployable_uav_allowed_seat_indexes").getAsJsonArray()) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    int seatIndex = element.getAsInt();
+                    if (seatIndex >= 0 && !result.contains(seatIndex)) {
+                        result.add(seatIndex);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    @Unique
+    private static RVP_LoiterConfig ywzj_rvp$parseLoiterConfig(JsonObject vehicleObj) {
+        boolean enabled = GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_enabled", false);
+        if (!enabled) {
+            return RVP_LoiterConfig.DISABLED;
+        }
+        return new RVP_LoiterConfig(
+                true,
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_radius", 120.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_altitude_offset", 40.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_terrain_clearance", 30.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_min_safe_altitude", 80.0),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_fixed_wing_min_bank", 30.0),
+                GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false),
+                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_bank", 25.0),
+                "left".equalsIgnoreCase(GsonHelper.getAsString(vehicleObj, "rvp_loiter_direction", "right")) ? -1 : 1
         );
     }
 }

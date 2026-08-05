@@ -74,7 +74,7 @@ public final class RVP_CountermeasureState {
                 || type == RVP_EnumGuidanceType.SALH
                 || type == RVP_EnumGuidanceType.SACLOS
                 || type == RVP_EnumGuidanceType.HITL_TV
-                || type == RVP_EnumGuidanceType.LOSBR;
+                || type == RVP_EnumGuidanceType.LBR;
     }
 
     public static Optional<Entity> findDecoyTarget(Entity target, double radius) {

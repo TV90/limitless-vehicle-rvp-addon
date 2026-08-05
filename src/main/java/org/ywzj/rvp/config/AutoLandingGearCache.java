@@ -14,7 +14,7 @@ import java.util.Map;
 public final class AutoLandingGearCache {
 
     /** 禁用配置（默认） */
-    public static final AutoLandingGearConfig DISABLED = new AutoLandingGearConfig(false, 100, 50, 25);
+    public static final AutoLandingGearConfig DISABLED = new AutoLandingGearConfig(false, 100, 50, 25, 50);
 
     private static Map<ResourceLocation, AutoLandingGearConfig> CONFIGS = Map.of();
 
@@ -44,18 +44,21 @@ public final class AutoLandingGearCache {
      */
     public static final class AutoLandingGearConfig {
         public final boolean enabled;
-        /** 速度超过此值 (km/h) → 收起起落架 */
+        /** 速度超过此值 (km/h) 且离地高于 retractHeight → 收起起落架 */
         public final double retractSpeed;
         /** 速度低于此值 (km/h) 且离地低于 deployHeight → 放下起落架 */
         public final double deploySpeed;
         /** 离地高度低于此值 (m) 且速度低于 deploySpeed → 放下起落架 */
         public final double deployHeight;
+        /** 离地高度高于此值 (m) 且速度超过 retractSpeed → 自动收起起落架 */
+        public final double retractHeight;
 
-        public AutoLandingGearConfig(boolean enabled, double retractSpeed, double deploySpeed, double deployHeight) {
+        public AutoLandingGearConfig(boolean enabled, double retractSpeed, double deploySpeed, double deployHeight, double retractHeight) {
             this.enabled = enabled;
             this.retractSpeed = retractSpeed;
             this.deploySpeed = deploySpeed;
             this.deployHeight = deployHeight;
+            this.retractHeight = retractHeight;
         }
     }
 }

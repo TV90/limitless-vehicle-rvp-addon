@@ -42,6 +42,7 @@ public class C2SDeployDeployableUav {
                 case ALREADY_DEPLOYED -> "message.ywzj_rvp.uav.already_deployed";
                 case COOLDOWN -> "message.ywzj_rvp.uav.redeploy_cooldown";
                 case SPAWN_FAILED -> "message.ywzj_rvp.uav.spawn_failed";
+                case SEAT_NOT_ALLOWED -> "message.ywzj_rvp.uav.seat_not_allowed";
             }), true);
         });
         ctx.setPacketHandled(true);

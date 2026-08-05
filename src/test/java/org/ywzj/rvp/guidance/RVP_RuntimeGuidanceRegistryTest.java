@@ -37,8 +37,6 @@ class RVP_RuntimeGuidanceRegistryTest {
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.MCLOS));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.TV));
         assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.ATV));
-        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.LOSBR));
-        assertNotNull(RVP_RuntimeGuidanceSourceRegistry.get(RVP_EnumGuidanceType.LBR));
     }
 
     @Test
@@ -73,7 +71,6 @@ class RVP_RuntimeGuidanceRegistryTest {
                 RVP_EnumGuidanceType.MCLOS,
                 RVP_EnumGuidanceType.TV,
                 RVP_EnumGuidanceType.ATV,
-                RVP_EnumGuidanceType.LOSBR,
                 RVP_EnumGuidanceType.LBR
         }) {
             assertEquals(type, RVP_RuntimeGuidanceSourceRegistry.get(type).type());

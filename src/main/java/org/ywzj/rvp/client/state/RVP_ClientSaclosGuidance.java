@@ -64,7 +64,9 @@ public final class RVP_ClientSaclosGuidance {
             return false;
         }
         RVP_EnumGuidanceType active = config.guidanceType();
-        return active == RVP_EnumGuidanceType.LH || active == RVP_EnumGuidanceType.SALH;
+        return active == RVP_EnumGuidanceType.LH
+                || active == RVP_EnumGuidanceType.SALH
+                || active == RVP_EnumGuidanceType.LBR;
     }
 
     private static boolean isOperatorProjectile(RVP_BaseBullet bullet, LocalPlayer player) {

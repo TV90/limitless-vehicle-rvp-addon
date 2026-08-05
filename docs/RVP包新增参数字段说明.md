@@ -273,6 +273,9 @@ RVP 扩展武器数据包路径：
 | `charge_tick` | `CHARGE`/`RAILGUN` 的蓄满时间，或 `MINIGUN` 的转速爬升时间（tick）。默认 `10`。旧写法 `charge_time` 已废弃。 |
 | `charge_decay_tick` | 从满蓄力/满转速衰减回零所需时间（tick）。默认 `2`。旧的 `minigun_spin_decay_tick` 已并入此字段。 |
 | `charge_power_scale` | 按蓄力/转速比例线性放大伤害或初速（`1` = 不放大）。 |
+| `heat_count` | 武器级过热：每次成功开火增加的热量。仅当 `max_heat_count > 0` 时生效，默认 `0`。 |
+| `max_heat_count` | 武器级过热上限。大于 `0` 时启用过热；当前热量达到或超过该值后禁止继续开火，直到冷却到上限以下。默认 `0`，表示关闭武器级过热。 |
+| `overheat_extra_heat` | 武器级过热惩罚热量。开火后达到或超过 `max_heat_count` 时额外追加，用于模拟过热锁死后需要更久冷却。默认 `30`。 |
 | `max_off_axis_shoot_angle` | 最大离轴发射角（度）。为空时保持旧版“任意角度均可发射”的行为。 |
 | `canister_count` | 单次开火的子弹丸数量。`<= 0` 时按 `1` 处理。 |
 | `canister_type` | 多弹丸散布类型：`0` 位置散布，`1` 角度散布，`2` 角度散布并沿弹道前向错位以模拟时间散布。 |
@@ -1017,6 +1020,35 @@ GPS 滑翔炸弹 + 末端红外：
 | `nctr_name` | 载具在 `MODERN` NCTR 模式下显示的识别名称，默认 `?`。例如 `F-16V`、`AH-64D`、`Z-10`。 |
 | `hide_passenger` | `bool`，默认 `false`。`true` 时坐进该载具的玩家在第三人称/旁观模式下不显示（`RenderPlayerEvent.Pre` + `RenderLivingEvent.Pre` 取消渲染）。 |
 
+### 载具侧武器栏过热
+
+以下字段写在载具 JSON 的 `parts[].weapons[]` 条目里，用于让过热状态按“武器栏”保存，而不是按具体武器/弹药保存。典型场景是坦克主炮同一个武器栏内用 `F` 切换多种弹药：切弹后热量继续保留；滚轮切到另一个武器栏时不共享热量。
+
+载具级过热优先级高于武器级过热：当当前武器栏配置了 `vehicle_max_heat_count > 0` 时，RVP 会完全使用载具侧武器栏过热，并忽略当前武器 `fire_data.heat_count` / `fire_data.max_heat_count` / `fire_data.overheat_extra_heat`。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `vehicle_heat_count` | `int` | `0` | 当前武器栏每次成功开火增加的热量。 |
+| `vehicle_max_heat_count` | `int` | `0` | 当前武器栏最大热量上限。大于 `0` 时启用载具级过热；等于 `0` 时关闭载具级过热并回退到武器自身 `fire_data` 过热。 |
+| `vehicle_overheat_extra_heat` | `int` | `30` | 当前武器栏达到过热上限时额外追加的惩罚热量，用于让过热后需要更久冷却。 |
+
+纯数组多弹种写法如果需要载具级过热，需要改成对象写法，并把原来的武器列表放进 `ids`：
+
+```json
+{
+  "id": "main_gun",
+  "type": "ywzj_vehicle:weapon",
+  "weapons": [
+    {
+      "ids": ["rvp:abramsx_xm829a5", "rvp:abramsx_xm1127"],
+      "vehicle_heat_count": 12,
+      "vehicle_max_heat_count": 100,
+      "vehicle_overheat_extra_heat": 30
+    }
+  ]
+}
+```
+
 ### 碰撞箱受击倍率
 
 | 字段 | 说明 |
@@ -1024,6 +1056,7 @@ GPS 滑翔炸弹 + 末端红外：
 | `structure_model` | 可选，结构模型资源 ID（如 `rvp:vehicle/abramsx.structure`）。写了 `hitbox_damage_factor` / `hitbox_era` 时，RVP 会优先按该结构模型的骨骼名匹配受击倍率与 ERA；不写时回退本体当前结构模型。 |
 | `hitbox_damage_factor_default` | 未在 `hitbox_damage_factor` 中配置的骨骼的默认倍率；不写时 = 1。 |
 | `hitbox_damage_factor` | `Map<String, Float>`：结构模型骨骼名 → 直击该骨骼时的伤害倍率。 |
+| `hitbox_display_name` | `Map<String, String>`：结构模型骨骼名 → 命中调试显示别名。仅影响 RVP 命中 debug、诊断输出等显示文本，不影响实际受击倍率、ERA 判定或伤害结算。 |
 | `core_distance_scale_multiplier` | 控制本体“命中点离核心越远伤害越低”的衰减强度（0 = 完全关闭衰减，按直击伤害计算；1 = 本体原值）。 |
 | `hitbox_era` | 爆炸反应装甲（ERA）配置，见下表。 |
 
@@ -1033,6 +1066,11 @@ GPS 滑翔炸弹 + 末端红外：
   "Upper_front": 0.4,
   "Lower_front": 0.8,
   "turret": 0.6
+},
+"hitbox_display_name": {
+  "Upper_front": "首上",
+  "Lower_front": "首下",
+  "turret": "炮塔"
 },
 "core_distance_scale_multiplier": 0.0,
 "hitbox_era": {
@@ -1137,6 +1175,77 @@ function updateBones(context) {
   "animation_part_ids": ["aps_left", "aps_right"],
   "spawn_part_id": "aps_left",
   "exclude_owner_projectile": true
+}
+```
+
+### `rvp_loiter_*` 自动盘旋（载具 JSON 顶层）
+
+写在载具 JSON 顶层；用于为任意飞行器（无人机、空中炮艇等）启用自动盘旋功能。
+
+盘旋采用四阶段状态机：**CLIMB**（爬升到安全高度）→ **TRANSIT**（朝盘旋圆周直飞）→ **APPROACH**（减速对齐切线）→ **LOITER**（圆周盘旋）。制导算法参考 SBW 两阶段航向（切线航向 + 径向航向混合），适配 ywzj_vehicle `ControlUnit` 模型，直接写入 `forward`/`up`/`down`/`leftYaw`/`rightYaw`/`yRot` 字段复用物理引擎。
+
+#### 通用盘旋参数（`rvp_loiter_*`）
+
+适用于所有飞行器。可部署 UAV 可将参数配在母车 JSON 中，子载具自动继承；AC130 等通用飞行器配在自身 JSON 中。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `rvp_loiter_enabled` | boolean | `false` | 是否启用盘旋功能（总开关）。 |
+| `rvp_loiter_radius` | double | `120.0` | 盘旋半径（格）。运行时按载具类型做最小半径 clamp：旋翼机下限 30 格，固定翼按 `V²/(g·tan(bank))` 动态计算，硬下限 80 格。 |
+| `rvp_loiter_altitude_offset` | double | `40.0` | 高于盘旋圆心的高度（格）。目标高度取三重基准最大值：圆心+偏移 / 地形+间隙 / 绝对最低。 |
+| `rvp_loiter_terrain_clearance` | double | `30.0` | 高于地表的最小间隙（格），用于地形规避。 |
+| `rvp_loiter_min_safe_altitude` | double | `80.0` | 绝对最低安全高度（海平面以上，格）。 |
+| `rvp_loiter_fixed_wing_min_bank` | double | `30.0` | 固定翼最大坡度（度），用于计算最小转弯半径 `R = V²/(g·tan(bank))`。 |
+| `rvp_loiter_sign_flip_threshold` | int | `3` | yaw 误差符号翻转次数阈值，超过则判定为震荡，自动扩大半径。 |
+| `rvp_loiter_radius_expand_factor` | double | `1.1` | 震荡时半径扩大倍率。 |
+| `rvp_loiter_climb_timeout` | int | `200` | CLIMB 阶段超时（tick，10 秒 = 200），超时后强制进入 TRANSIT。 |
+| `rvp_loiter_transit_timeout` | int | `1200` | TRANSIT 阶段超时（tick，60 秒 = 1200），超时后直接进入 LOITER。 |
+| `rvp_loiter_approach_timeout` | int | `400` | APPROACH 阶段超时（tick，20 秒 = 400），超时后进入 LOITER。 |
+| `rvp_loiter_terrain_sample_interval` | int | `40` | 前方地形采样间隔（tick，2 秒 = 40）。 |
+| `rvp_loiter_terrain_sample_range` | int | `60` | 前方地形采样范围（格），每 10 格采样一次最高地表。 |
+| `rvp_loiter_approach_tolerance` | double | `15.0` | 进入盘旋段的距离容差（格），水平距离 ∈ [radius ± tolerance] 时切入 LOITER。 |
+
+#### 可部署 UAV 专用触发开关
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `deployable_uav_auto_loiter_on_switch_back` | boolean | `true` | 玩家从无人机切回母车时自动激活盘旋。仅对配置了 `deployable_uav_*` 的母车生效。 |
+
+#### 配置查找优先级
+
+盘旋参数按以下顺序查找：
+
+1. 母车 JSON 的 `rvp_loiter_*`（可部署 UAV 场景，子载具继承母车配置）
+2. 载具自身 JSON 的 `rvp_loiter_*`（AC130 等通用场景）
+
+#### 控制方式
+
+- **旋翼机**：设置 `controlUnit.yRot`（analog 平滑追踪）+ `up/down`（高度）+ `forward`（前倾推进，pulse 调制）
+- **固定翼**：`leftYaw/rightYaw`（离散偏航）+ `forward`（油门维持）+ `up/down`（俯仰高度）
+- 玩家进入载具时自动关闭盘旋；J 键可手动切换
+
+#### AC130 示例（通用飞行器，配在自身 JSON）
+
+```json
+{
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 200,
+  "rvp_loiter_altitude_offset": 60,
+  "rvp_loiter_terrain_clearance": 40,
+  "rvp_loiter_min_safe_altitude": 100
+}
+```
+
+#### 多管火箭炮母车示例（可部署 UAV 场景，盘旋参数配在母车 JSON）
+
+```json
+{
+  "deployable_uav_enabled": true,
+  "deployable_uav_vehicle_id": "rvp:recon_uav",
+  "deployable_uav_auto_loiter_on_switch_back": true,
+  "rvp_loiter_enabled": true,
+  "rvp_loiter_radius": 120,
+  "rvp_loiter_altitude_offset": 40
 }
 ```
 

@@ -31,6 +31,7 @@ import java.util.Optional;
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
 
     protected int chargeTick;
+    private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
     private final RVP_WeaponFireController fireController = new RVP_WeaponFireController(this);
 
     protected RVP_WeaponBase(AbstractVehicle vehicle, WeaponUnit weaponUnit, int index, RVP_WeaponData data, String serializeId) {
@@ -41,12 +42,24 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         return fireController;
     }
 
+    RVP_WeaponHeatManager.HeatState getLocalHeatState() {
+        return localHeatState;
+    }
+
     protected int getChargeTick() {
         return chargeTick;
     }
 
     protected void setChargeTick(int chargeTick) {
         this.chargeTick = Math.max(chargeTick, 0);
+    }
+
+    /**
+     * 取消当前装填倒计时。
+     * 供载具生成时“瞬间补满弹药”使用：直接清零 reloadTime，避免残留装填状态。
+     */
+    public void ywzj_rvp$clearReloadState() {
+        setReloadTime(0);
     }
 
     public int getChargeTickValue() {
@@ -144,10 +157,16 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             }
         }
         boolean fired = super.doClientShoot();
-        if (fired) {
+        return fired;
+    }
+
+    @Override
+    @OnlyIn(Dist.CLIENT)
+    public void onClientFire() {
+        if (LocalVehiclePlayer.instance.getPlayer() == getWeaponUnit().getOwner()) {
             fireController.onShotFired();
         }
-        return fired;
+        super.onClientFire();
     }
 
     protected boolean passesFireModeChargeGate() {

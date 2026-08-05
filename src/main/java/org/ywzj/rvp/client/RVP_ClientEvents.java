@@ -34,6 +34,7 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
@@ -52,6 +53,7 @@ import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
+import org.ywzj.rvp.network.C2SToggleUavLoiter;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -103,10 +105,10 @@ public class RVP_ClientEvents {
             RVP_TacticalMapCache.uploadDirtyTextures();
         }
 
-        while (RVP_Keys.WEAPON_TEST_OVERLAY.consumeClick()) {
-            boolean on = org.ywzj.rvp.client.RVP_WeaponTestMode.toggle();
+        while (RVP_Keys.DEBUG_OVERLAY.consumeClick()) {
+            boolean on = org.ywzj.rvp.client.RVP_DebugOverlayState.toggle();
             player.displayClientMessage(
-                    Component.translatable(on ? "message.ywzj_rvp.weapon_test.on" : "message.ywzj_rvp.weapon_test.off"),
+                    Component.translatable(on ? "message.ywzj_rvp.debug_overlay.on" : "message.ywzj_rvp.debug_overlay.off"),
                     true);
         }
 
@@ -175,6 +177,9 @@ public class RVP_ClientEvents {
         }
         while (RVP_Keys.SWITCH_DEPLOYABLE_UAV.consumeClick()) {
             RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
+        }
+        while (RVP_Keys.TOGGLE_UAV_LOITER.consumeClick()) {
+            RVP_Network.CHANNEL.sendToServer(new C2SToggleUavLoiter());
         }
 
         RVP_ClientHitlState.tick(mc, player);
@@ -418,6 +423,38 @@ public class RVP_ClientEvents {
     public static void onRenderGuiOverlayPost(RenderGuiOverlayEvent.Post event) {
         if (RVP_ClientHmdState.getInstance().isHmdMode()) {
             RVP_HmdOverlay.render(event.getGuiGraphics());
+        }
+    }
+
+    /**
+     * 盘旋屏蔽：在 ClientTickEvent.START 阶段（LOWEST 优先级，在 InputHandler 之后执行）
+     * 覆盖本地 controlUnit 的运动字段，防止鼠标指向干扰自动盘旋制导。
+     * InputHandler (NORMAL 优先级) 会先执行并写入 controlUnit，
+     * 然后本处理器清零运动字段 + 设 yRotKeep=true，
+     * FixedWingVehicle.tick() 在 START 和 END 之间执行，读到的是清零后的值。
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onClientTickLoiterSuppress(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) {
+            return;
+        }
+        if (player.getVehicle() instanceof AbstractVehicle vehicle
+                && RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId())) {
+            var cu = vehicle.controlUnit;
+            cu.forward = false;
+            cu.backward = false;
+            cu.left = false;
+            cu.right = false;
+            cu.up = false;
+            cu.down = false;
+            cu.leftYaw = false;
+            cu.rightYaw = false;
+            cu.yRotKeep = true;
         }
     }
 }

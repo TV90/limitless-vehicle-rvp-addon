@@ -35,6 +35,12 @@ public class GPSTargetManager {
         return state.snapshot();
     }
 
+    public static Snapshot set(Entity entity, ResourceLocation dimension, Vec3 pos) {
+        PlayerState state = state(entity.getUUID());
+        state.setSingle(new GPSTarget(dimension, pos));
+        return state.snapshot();
+    }
+
     public static Snapshot add(ServerPlayer player, ResourceLocation dimension, Vec3 pos) {
         PlayerState state = state(player.getUUID());
         state.addPoint(new GPSTarget(dimension, pos));

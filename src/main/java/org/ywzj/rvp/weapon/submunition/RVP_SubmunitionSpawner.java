@@ -21,6 +21,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionPayloadKind;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_Explosion;
@@ -119,6 +120,7 @@ public final class RVP_SubmunitionSpawner {
         }
         child.setDeltaMovement(velocity);
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
+        RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
         level.addFreshEntity(child);
         return true;
     }

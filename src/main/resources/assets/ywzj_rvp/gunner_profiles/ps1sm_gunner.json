@@ -1,6 +1,6 @@
 {
   "name": "ps1sm_gunner",
-  "faction": "friendly",
+  "faction": "enemy",
   "allow_drive": true,
   "fixedwing_combat_radius_min": 40,
   "fixedwing_combat_radius_max": 550,

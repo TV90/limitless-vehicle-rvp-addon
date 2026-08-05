@@ -16,6 +16,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -142,6 +143,9 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
 
     private boolean tickBulletServerPreMotion() {
         if (resolveWeaponConfig() == null) {
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.CONFIG_MISSING,
+                    () -> "action=discard path=machinegun");
             discard();
             return false;
         }
@@ -150,6 +154,11 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             return false;
         }
         if (!checkShooterValid()) {
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.SHOOTER_INVALID,
+                    () -> "owner=" + RVP_ProjectileLifecycleDebug.formatEntity(getOwner())
+                            + " shooterVehicle=" + RVP_ProjectileLifecycleDebug.formatEntity(shooterVehicle)
+                            + " action=discard path=machinegun");
             discard();
             return false;
         }
@@ -169,7 +178,12 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         broadcastTrailParticles();
         life--;
         if (life < 0) {
-            if (rvpData.getFuseData().isDetonateOnLifeEnd()) {
+            boolean detonate = rvpData.getFuseData().isDetonateOnLifeEnd();
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.LIFE_END,
+                    () -> "detonate=" + detonate + " path=machinegun position="
+                            + RVP_ProjectileLifecycleDebug.formatVec(position()));
+            if (detonate) {
                 explodeAndDiscard(position());
             } else {
                 discard();

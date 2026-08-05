@@ -23,4 +23,9 @@ public final class RVP_CustomMountConfigCache {
         }
         return CONFIGS.getOrDefault(vehicleId, List.of());
     }
+
+    @NotNull
+    public static Map<ResourceLocation, List<RVP_CustomMountConfig>> all() {
+        return CONFIGS;
+    }
 }

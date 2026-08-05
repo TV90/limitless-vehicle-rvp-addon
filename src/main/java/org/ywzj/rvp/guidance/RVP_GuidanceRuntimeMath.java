@@ -24,20 +24,33 @@ public final class RVP_GuidanceRuntimeMath {
         if (entity != null && entity.isAlive() && target != null) {
             projectile.rememberGuidancePos(target);
         }
-        boolean trackLimitsPassed = target != null
-                && RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, context.active());
+        if (target == null) {
+            return false;
+        }
+        boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
         boolean irGrace = entity != null
                 && context.active().guidanceType() == RVP_EnumGuidanceType.IR
                 && projectile.hasIrSeekerGrace();
-        if (target == null || (!trackLimitsPassed && !irGrace)) {
+        if (!trackEnvelopePassed && !irGrace) {
             return false;
         }
 
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
         float factor = resolveTurningFactor(context);
-        Vec3 steeringTarget = resolveTopAttackAimPoint(
-                projectile, target, context.active().topAttackHeight(), factor);
+        // 进入目标 20 格半径圆柱内，直接俯冲并大幅提升转向能力
+        double horizontalDistToTarget = horizontalDistance(projectile.position(), target);
+        boolean inTerminalDiveCylinder = context.active().topAttackHeight() != null
+                && context.active().topAttackHeight() > 0f
+                && horizontalDistToTarget <= 20.0D;
+        Vec3 steeringTarget;
+        if (inTerminalDiveCylinder) {
+            steeringTarget = target;
+            factor = Math.max(factor, 0.8f);
+        } else {
+            steeringTarget = resolveTopAttackAimPoint(
+                    projectile, target, context.active().topAttackHeight(), factor);
+        }
         if (context.active().topAttackHeight() != null
                 && context.active().topAttackHeight() > 0f
                 && projectile.hasReachedTopAttackApex()) {
@@ -48,6 +61,9 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
         if (speed <= 1.0E-6) {
+            return false;
+        }
+        if (!passesGuidanceAngle(projectile, steeringTarget, context.active()) && !irGrace) {
             return false;
         }
         if (intent.directMotion()) {
@@ -66,16 +82,14 @@ public final class RVP_GuidanceRuntimeMath {
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
         } else if (entity != null && shouldUseProportionalNavigation(context)) {
-            next = steerProportional(
+            next = steerPredictiveIntercept(
                     projectile,
                     projectile.position(),
                     current,
-                    steeringTarget,
                     target,
                     entity.getDeltaMovement(),
                     speed,
-                    factor,
-                    context.active()
+                    factor
             );
             if (next == null || next.lengthSqr() <= 1.0E-8) {
                 next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
@@ -99,6 +113,11 @@ public final class RVP_GuidanceRuntimeMath {
     ) {
         if (projectile == null || target == null || topAttackHeight == null
                 || Math.abs(topAttackHeight) <= 1.0E-6f) {
+            return target;
+        }
+        // 极近距离直接俯冲，跳过攻顶弹道
+        double distToTarget = horizontalDistance(projectile.position(), target);
+        if (topAttackHeight > 0f && distToTarget < 8.0D) {
             return target;
         }
         if (topAttackHeight < 0f) {
@@ -138,7 +157,7 @@ public final class RVP_GuidanceRuntimeMath {
         if (horizontalAxis.lengthSqr() <= 1.0E-8D) {
             return apex;
         }
-        double forwardLook = Mth.clamp(speed * 3.0D, 12.0D, 64.0D);
+        double forwardLook = Mth.clamp(speed * 3.0D, 4.0D, 64.0D);
         double remainingAlongAxis = remainingDistanceAlongAxis(projectile.position(), launch, initialTarget);
         double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
         forwardLook = Math.min(forwardLook, Math.max(remainingAlongAxis - turnInDistance, 0.0D));
@@ -154,11 +173,13 @@ public final class RVP_GuidanceRuntimeMath {
             return target;
         }
         double horizontalDistance = horizontalDistance(launch, target);
+        // 近距离时按比例缩减顶点高度，避免导弹冲过目标
         double effectiveHeight = Math.min(Math.max(topAttackHeight, 0f), horizontalDistance);
+        double apexRatio = 0.5D;
         return new Vec3(
-                (launch.x + target.x) * 0.5D,
+                launch.x + (target.x - launch.x) * apexRatio,
                 target.y + effectiveHeight,
-                (launch.z + target.z) * 0.5D
+                launch.z + (target.z - launch.z) * apexRatio
         );
     }
 
@@ -198,7 +219,8 @@ public final class RVP_GuidanceRuntimeMath {
     static double resolveTopAttackTurnInDistance(double speed, float turningFactor) {
         double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
         double responseTicks = Mth.clamp(1.0D / effectiveFactor, 2.0D, 12.0D);
-        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 12.0D, 160.0D);
+        // 近距离时降低下限，让导弹更早进入俯冲
+        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 4.0D, 160.0D);
     }
 
     static float resolveTopAttackTerminalTurningFactor(
@@ -239,6 +261,25 @@ public final class RVP_GuidanceRuntimeMath {
         }
         Vec3 axis = new Vec3(target.x - launch.x, 0.0D, target.z - launch.z);
         return axis.lengthSqr() > 1.0E-8D ? axis.normalize() : Vec3.ZERO;
+    }
+
+    private static boolean passesGuidanceAngle(
+            RVP_BaseBullet projectile,
+            Vec3 steeringTarget,
+            RVP_GuidanceActiveConfig config
+    ) {
+        if (projectile == null || steeringTarget == null || config == null) {
+            return false;
+        }
+        Vec3 axis = projectile.getDeltaMovement();
+        if (axis == null || axis.lengthSqr() <= 1.0E-8D) {
+            axis = projectile.getLookAngle();
+        }
+        return RVP_GuidanceRuntimeGeometry.withinAngle(
+                axis,
+                steeringTarget.subtract(projectile.position()),
+                config.maxGuidanceAngle()
+        );
     }
 
     private static Vec3 resolveDescendingApproachAimPoint(Vec3 projectilePos, Vec3 target, float topAttackHeight) {
@@ -294,37 +335,78 @@ public final class RVP_GuidanceRuntimeMath {
         return blendDirection(current, desired, speed, turningFactor);
     }
 
-    public static Vec3 steerProportional(
+    /**
+     * 预测拦截点制导（Predictive Intercept Point, PIP）：
+     * 解算弹目相遇时间 t，计算目标未来位置 interceptPos = targetPos + targetVel * t，
+     * 然后转向该拦截点。对本体的 intercept() 方法做 RVP 适配。
+     *
+     * <p>RVP 适配差异：
+     * <ul>
+     *   <li>无 maxG/dynamicPressure — 用 RVP 的 turningFactor 做速度 blend</li>
+     *   <li>无 thrust/mass — 直接用当前 speed</li>
+     *   <li>无 MAGIC_NUMBER 降级 — 用 closing-speed 近似做 fallback</li>
+     * </ul>
+     */
+    public static Vec3 steerPredictiveIntercept(
             RVP_BaseBullet projectile,
             Vec3 missilePos,
             Vec3 missileVelocity,
-            Vec3 aimPoint,
             Vec3 targetPos,
             Vec3 targetVelocity,
             double speed,
-            float turningFactor,
-            RVP_GuidanceActiveConfig config
+            float turningFactor
     ) {
-        if (projectile == null || missilePos == null || missileVelocity == null
-                || aimPoint == null || targetPos == null || targetVelocity == null
-                || speed <= 1.0E-8 || config == null) {
+        if (missilePos == null || missileVelocity == null
+                || targetPos == null || targetVelocity == null || speed <= 1.0E-8) {
             return null;
         }
-        Vec3 base = steerPursuit(missileVelocity, aimPoint.subtract(missilePos), speed, turningFactor);
-        Vec3 pnDelta = proportionalNavigationDelta(
-                projectile,
-                missileVelocity,
-                targetPos,
-                targetVelocity,
-                config.predictTargetPosGain(),
-                config.maxLateralAccel(),
-                turningFactor
-        );
-        Vec3 next = base.add(pnDelta);
-        if (next.lengthSqr() <= 1.0E-8) {
-            return base;
+
+        double missileSpeed = missileVelocity.length();
+        if (missileSpeed <= 1.0E-8) {
+            return null;
         }
-        return next.normalize().scale(speed);
+
+        Vec3 relPos = targetPos.subtract(missilePos);
+        double targetSpeedSq = targetVelocity.lengthSqr();
+
+        // 解一元二次方程 a*t² + b*t + c = 0 求相遇时间 t
+        double a = targetSpeedSq - (missileSpeed * missileSpeed);
+        double b = 2.0 * relPos.dot(targetVelocity);
+        double c = relPos.lengthSqr();
+
+        double t = -1.0;
+        if (Math.abs(a) < 1.0E-8) {
+            // 速度相近：线性退化
+            if (b < 0) {
+                t = -c / b;
+            }
+        } else {
+            double discriminant = b * b - 4.0 * a * c;
+            if (discriminant >= 0.0) {
+                double sqrtD = Math.sqrt(discriminant);
+                double t1 = (-b + sqrtD) / (2.0 * a);
+                double t2 = (-b - sqrtD) / (2.0 * a);
+                if (t1 > 0.0 && t2 > 0.0) {
+                    t = Math.min(t1, t2);
+                } else {
+                    t = Math.max(t1, t2);
+                }
+            }
+        }
+
+        // Fallback：closing-speed 近似
+        if (t <= 0.0) {
+            Vec3 relVel = targetVelocity.subtract(missileVelocity);
+            double closingSpeed = missileSpeed - relVel.dot(relPos.normalize());
+            t = relPos.length() / Math.max(closingSpeed, 0.1);
+        }
+
+        // 计算预测拦截点
+        Vec3 interceptPos = targetPos.add(targetVelocity.scale(t));
+
+        // 转向拦截点（RVP 的 blend 模型）
+        Vec3 desired = interceptPos.subtract(missilePos).normalize().scale(speed);
+        return blendDirection(missileVelocity, desired, speed, turningFactor);
     }
 
     private static Vec3 blendDirection(Vec3 current, Vec3 desired, double speed, float turningFactor) {
@@ -372,54 +454,5 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         return projectile.getSecondPulseStartTick() < 0;
-    }
-
-    private static Vec3 proportionalNavigationDelta(
-            RVP_BaseBullet projectile,
-            Vec3 missileVelocity,
-            Vec3 targetPos,
-            Vec3 targetVelocity,
-            double gain,
-            double maxLateralAccel,
-            float turningFactor
-    ) {
-        if (projectile == null || missileVelocity == null || targetPos == null || targetVelocity == null || gain <= 0.0) {
-            return Vec3.ZERO;
-        }
-        double speed = missileVelocity.length();
-        if (speed <= 1.0E-6) {
-            return Vec3.ZERO;
-        }
-
-        Vec3 relPos = targetPos.subtract(projectile.position());
-        double relPosLenSqr = relPos.lengthSqr();
-        if (relPosLenSqr <= 1.0E-6) {
-            return Vec3.ZERO;
-        }
-
-        Vec3 relVel = targetVelocity.subtract(missileVelocity);
-        Vec3 los = relPos.normalize();
-        double closingVelocity = -relVel.dot(los);
-        if (closingVelocity <= 0.0) {
-            return Vec3.ZERO;
-        }
-
-        Vec3 vHat = missileVelocity.normalize();
-        Vec3 omega = relPos.cross(relVel).scale(1.0 / relPosLenSqr);
-        Vec3 lateralAccel = omega.cross(vHat).scale(gain * closingVelocity);
-        double parallel = lateralAccel.dot(vHat);
-        if (Math.abs(parallel) > 1.0E-9) {
-            lateralAccel = lateralAccel.subtract(vHat.scale(parallel));
-        }
-
-        double lateralLen = lateralAccel.length();
-        if (maxLateralAccel > 0.0 && lateralLen > maxLateralAccel) {
-            lateralAccel = lateralAccel.scale(maxLateralAccel / lateralLen);
-        }
-
-        if (turningFactor <= 0.0f) {
-            return Vec3.ZERO;
-        }
-        return lateralAccel.scale(Math.max(0f, Math.min(1f, turningFactor)));
     }
 }

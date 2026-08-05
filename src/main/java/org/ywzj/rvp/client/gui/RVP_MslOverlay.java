@@ -31,6 +31,8 @@ public class RVP_MslOverlay {
 
     private static final int DIAMOND_SIZE = 10;
     private static final int LINE_COLOR = 0xFFCC0000; // 红色
+    /** 自己的导弹动力段烧完后，最远渲染距离（格）。 */
+    private static final double OWN_MAX_RENDER_DIST = 4096.0;
 
     @SubscribeEvent
     public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Post event) {
@@ -47,6 +49,23 @@ public class RVP_MslOverlay {
                 RVP_BaseBullet.class,
                 mc.player.getBoundingBox().inflate(8192));
 
+        // 找出自己发射且动力段已烧完的导弹中最晚发射的那一枚
+        RVP_BaseBullet latestBurnedOutOwn = null;
+        for (RVP_BaseBullet missile : missiles) {
+            if (missile.isRemoved() || !missile.isAlive()) continue;
+            BaseBulletAccessor acc = (BaseBulletAccessor) missile;
+            if (!acc.isShowMslIndicator()) continue;
+
+            AbstractVehicle shooterVehicle = missile.getShooterVehicle();
+            boolean isOwn = (shooterVehicle == playerVehicle);
+            if (!isOwn) continue;
+            if (missile.isMotorBurningNow()) continue; // 只看烧完的
+
+            if (latestBurnedOutOwn == null || missile.tickCount > latestBurnedOutOwn.tickCount) {
+                latestBurnedOutOwn = missile;
+            }
+        }
+
         for (RVP_BaseBullet missile : missiles) {
             if (missile.isRemoved() || !missile.isAlive()) continue;
 
@@ -57,8 +76,19 @@ public class RVP_MslOverlay {
             AbstractVehicle shooterVehicle = missile.getShooterVehicle();
             boolean isOwn = (shooterVehicle == playerVehicle);
 
-            // 所有人（包括自己）的导弹都只在燃烧动力段内渲染（含双脉冲第二段）
-            if (!missile.isMotorBurningNow()) continue;
+            if (isOwn) {
+                // 自己的导弹：动力段燃烧时始终渲染
+                // 动力段烧完：只渲染最晚发射的那一枚
+                if (!missile.isMotorBurningNow()) {
+                    if (missile != latestBurnedOutOwn) continue;
+                    // 烧完后最远渲染距离限制
+                    double dist = mc.player.position().distanceTo(missile.position());
+                    if (dist > OWN_MAX_RENDER_DIST) continue;
+                }
+            } else {
+                // 他人的导弹：只在燃烧动力段内渲染
+                if (!missile.isMotorBurningNow()) continue;
+            }
 
             // 投影到屏幕
             Vec3 targetPos = missile.position();
@@ -68,7 +98,12 @@ public class RVP_MslOverlay {
             double dist = mc.player.position().distanceTo(targetPos);
             String distStr = String.format("%.0fm", dist);
             RVP_WeaponData weaponData = RVP_RadarContactHelper.resolveBulletWeaponData(missile);
-            String hudLabel = weaponData == null ? null : weaponData.resolveMissileNameOnHud((float) dist);
+            // 最晚发射的自己烧完的导弹：超出配置范围时回退至上一个非 null 区间的文案
+            boolean useFallback = (missile == latestBurnedOutOwn);
+            String hudLabel = weaponData == null ? null
+                    : (useFallback
+                        ? weaponData.resolveMissileNameOnHudWithFallback((float) dist)
+                        : weaponData.resolveMissileNameOnHud((float) dist));
             if (hudLabel == null || hudLabel.isBlank()) {
                 hudLabel = "MSL";
             }

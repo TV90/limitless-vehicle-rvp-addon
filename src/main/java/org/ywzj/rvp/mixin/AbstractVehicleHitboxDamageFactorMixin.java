@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -47,7 +48,7 @@ public class AbstractVehicleHitboxDamageFactorMixin implements RVP_VehicleHitbox
     @Unique
     private float rvp$pendingVehicleHitDisplayDamage = Float.NaN;
 
-    @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("HEAD"))
+    @Inject(method = "hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z", at = @At("HEAD"), cancellable = true)
     private void rvp$hbxCapture(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         AbstractVehicle self = (AbstractVehicle) (Object) this;
         rvp$clearPendingVehicleHitDisplayDamage();
@@ -114,6 +115,14 @@ public class AbstractVehicleHitboxDamageFactorMixin implements RVP_VehicleHitbox
         if (segmentStart == null || segmentEnd == null) return;
 
         boolean explosion = "ywzj_vehicle.explosion".equals(source.getMsgId());
+        if (!explosion
+                && direct instanceof Projectile
+                && !RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(self).isEmpty()
+                && RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(self, segmentStart, segmentEnd) == null
+                && RVP_PhysicsOnlyCollisionHelper.closestPhysicsOnlyHitPosition(self, segmentStart, segmentEnd) != null) {
+            cir.setReturnValue(false);
+            return;
+        }
         rvp$coreDistanceScaleMultiplier = RVP_VehicleHitboxFactorManager.INSTANCE.resolveCoreDistanceScaleMultiplier(self);
         if (!rvp$skipHitboxScaling && !explosion) {
             rvp$hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(self, segmentStart, segmentEnd);

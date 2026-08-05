@@ -164,7 +164,7 @@ public final class RVP_ClientSaclosState {
                 continue;
             }
             RVP_WeaponData data = RVP_ClientSaclosGuidance.resolveWeaponData(bullet);
-            if (data == null || !data.isVehicleLaserGuided()) {
+            if (data == null || !data.isOperatorGuided()) {
                 continue;
             }
             Entity owner = bullet.getOwner();
@@ -251,7 +251,7 @@ public final class RVP_ClientSaclosState {
 
     public static boolean isSaclosWeapon(AbstractVehicleWeapon<?> weapon) {
         return weapon instanceof RVP_WeaponBase rvp
-                && rvp.getData().isVehicleLaserGuided();
+                && rvp.getData().isOperatorGuided();
     }
 
     private static void updateVehicleContext(@Nullable Entity vehicle) {
@@ -291,8 +291,7 @@ public final class RVP_ClientSaclosState {
         if (!(weapon instanceof RVP_WeaponBase rvp)) {
             return false;
         }
-        RVP_WeaponData data = rvp.getData();
-        return data.isVehicleLaserGuided();
+        return rvp.getData().isOperatorGuided();
     }
 
     private static boolean canUseVehicleLaserToggle(@Nullable AbstractVehicleWeapon<?> weapon) {
@@ -300,7 +299,7 @@ public final class RVP_ClientSaclosState {
             return false;
         }
         RVP_WeaponData data = rvp.getData();
-        if (!data.isVehicleLaserGuided()) {
+        if (!data.isOperatorGuided()) {
             return false;
         }
         return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE

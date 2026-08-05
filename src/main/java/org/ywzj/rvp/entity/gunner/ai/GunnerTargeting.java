@@ -9,7 +9,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
+import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -17,6 +19,7 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -35,13 +38,16 @@ public final class GunnerTargeting {
         AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
-        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile));
-        List<Entity> rvpMissiles = entities.stream()
-                .filter(GunnerTargeting::isRvpMissile)
+        boolean launcher = GunnerBrain.hasLauncherDeployConfig(vehicle);
+        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
+                isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
+                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
+        List<Entity> rvpAmmo = entities.stream()
+                .filter(entity -> isInterceptableRvpProjectile(entity))
                 .toList();
-        if (!rvpMissiles.isEmpty()) {
-            return rvpMissiles.stream()
-                    .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+        if (!rvpAmmo.isEmpty()) {
+            return rvpAmmo.stream()
+                    .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                     .orElse(null);
         }
         List<Entity> hostileGunnerVehicles = entities.stream()
@@ -49,7 +55,7 @@ public final class GunnerTargeting {
                 .toList();
         List<Entity> preferred = hostileGunnerVehicles.isEmpty() ? entities : hostileGunnerVehicles;
         return preferred.stream()
-                .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+                .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);
     }
 
@@ -70,10 +76,7 @@ public final class GunnerTargeting {
         List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity -> entity instanceof AmmoEntity ammo
                 && ammo.isAlive()
                 && ammo.vehicle != vehicle
-                && !vehicle.getPassengers().contains(ammo.getOwner())
-                && !(ammo.getOwner() != null && gunner.isOwnedBy(ammo.getOwner()))
-                && !isAllied(ammo.getOwner(), vehicleTeam)
-                && !isAllied(ammo.getOwner(), gunnerTeam));
+                && !isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner()));
         Vec3 vehiclePos = vehicle.position();
         AmmoEntity best = null;
         double bestDistSqr = Double.MAX_VALUE;
@@ -120,6 +123,9 @@ public final class GunnerTargeting {
         if (ammo instanceof AerialBombEntity) {
             return true;
         }
+        if (ammo instanceof RocketEntity) {
+            return true;
+        }
         if (ammo.getWeaponId() == null) {
             return false;
         }
@@ -144,32 +150,24 @@ public final class GunnerTargeting {
             if (ammo.vehicle == vehicle) {
                 return false;
             }
-            Entity owner = ammo.getOwner();
-            if (owner != null) {
-                if (vehicle.getPassengers().contains(owner)) {
-                    return false;
-                }
-                if (gunner.isOwnedBy(owner)) {
-                    return false;
-                }
-                if (isAllied(owner, vehicleTeam) || isAllied(owner, gunnerTeam)) {
-                    return false;
-                }
+            if (isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner())) {
+                return false;
             }
         }
         if (entity instanceof Player player) {
-            if (player.isSpectator()) {
+            if (isProtectedCreativePlayer(vehicle, player)) {
                 return false;
             }
-            if (player.isCreative() && vehicle.level().getDifficulty() != Difficulty.HARD) {
-                return false;
-            }
+        }
+        if (entity instanceof AbstractVehicle targetVehicle && hasProtectedCreativePassenger(vehicle, targetVehicle)) {
+            return false;
         }
         TargetMatch match = matchProfileTarget(gunner, vehicle, entity, profile);
         if (!match.allowed) {
             return false;
         }
-        if (gunner.isOwnedBy(entity)) {
+        // ENEMY faction 无差别攻击所有人，包括放置者自己
+        if (gunner.getProfileFaction() != RVP_EnumGunnerFaction.ENEMY && gunner.isOwnedBy(entity)) {
             return false;
         }
         if (shouldApplyTeamFilter(entity, profile.getFaction())
@@ -178,6 +176,22 @@ public final class GunnerTargeting {
             return false;
         }
         return true;
+    }
+
+    private static boolean isProtectedCreativePlayer(AbstractVehicle sourceVehicle, Player player) {
+        if (player.isSpectator()) {
+            return true;
+        }
+        return player.isCreative() && sourceVehicle.level().getDifficulty() != Difficulty.HARD;
+    }
+
+    private static boolean hasProtectedCreativePassenger(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {
+        for (Entity passenger : targetVehicle.getPassengers()) {
+            if (passenger instanceof Player player && isProtectedCreativePlayer(sourceVehicle, player)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean shouldApplyTeamFilter(Entity entity, RVP_EnumGunnerFaction faction) {
@@ -195,6 +209,34 @@ public final class GunnerTargeting {
         return alliedTeam != null && targetTeam != null && targetTeam.isAlliedTo(alliedTeam);
     }
 
+    /**
+     * 统一判断弹药owner是否对当前gunner友方（不拦截）
+     * - owner == gunner：自己发射的弹药
+     * - owner是GunnerEntity：同faction视为友方（敌对gunner之间无team但同faction应互视为友方）
+     * - owner是Player或其他：走原有的载具乘客/放置者/team联盟判断
+     */
+    private static boolean isFriendlyAmmoOwner(GunnerEntity gunner, AbstractVehicle vehicle,
+                                               @Nullable Team vehicleTeam, @Nullable Team gunnerTeam,
+                                               @Nullable Entity owner) {
+        if (owner == null) {
+            return false;
+        }
+        if (owner == gunner) {
+            return true;
+        }
+        if (owner instanceof GunnerEntity ownerGunner) {
+            return ownerGunner.getProfileFaction() == gunner.getProfileFaction();
+        }
+        if (vehicle.getPassengers().contains(owner)) {
+            return true;
+        }
+        // ENEMY faction 无差别攻击所有人，包括放置者自己
+        if (gunner.getProfileFaction() != RVP_EnumGunnerFaction.ENEMY && gunner.isOwnedBy(owner)) {
+            return true;
+        }
+        return isAllied(owner, vehicleTeam) || isAllied(owner, gunnerTeam);
+    }
+
     private static TargetMatch matchProfileTarget(GunnerEntity gunner, AbstractVehicle vehicle, Entity entity, GunnerProfile profile) {
         List<String> targetTypes = profile.getTargetTypes();
         if (targetTypes == null || targetTypes.isEmpty()) {
@@ -206,7 +248,7 @@ public final class GunnerTargeting {
                 continue;
             }
             String type = raw.toLowerCase(Locale.ROOT).trim();
-            if ("rvp:missile".equals(type) && isRvpMissile(entity)) {
+            if ("rvp:missile".equals(type) && isInterceptableRvpProjectile(entity)) {
                 return TargetMatch.allowed(false);
             }
             if ("monster".equals(type) && isMonster(entity)) {
@@ -244,7 +286,92 @@ public final class GunnerTargeting {
     }
 
     private static boolean isRvpMissile(Entity entity) {
-        return entity instanceof RVP_MissileEntity;
+        return entity instanceof RVP_MissileEntity || entity instanceof MissileEntity;
+    }
+
+    private static boolean isRvpBomb(Entity entity) {
+        return entity instanceof AerialBombEntity || entity instanceof RVP_BombEntity;
+    }
+
+    private static boolean isRvpRocket(Entity entity) {
+        return entity instanceof RVP_RocketEntity || entity instanceof RocketEntity;
+    }
+
+    private static boolean isInterceptableRvpProjectile(Entity entity) {
+        return isRvpMissile(entity) || isRvpBomb(entity) || isRvpRocket(entity);
+    }
+
+    /**
+     * 搜索普通搜索范围内的RVP弹药（导弹/炸弹），无高度限制，每tick调用
+     */
+    @Nullable
+    public static AmmoEntity findNearbyAmmoTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
+        double radius = getTargetSearchRadius(vehicle, profile);
+        AABB box = vehicle.getBoundingBox().inflate(radius);
+        Team vehicleTeam = vehicle.getTeam();
+        Team gunnerTeam = gunner.getTeam();
+        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
+                isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
+                        && (isRvpMissile(entity) || isRvpBomb(entity) || isRvpRocket(entity))
+                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
+        if (entities.isEmpty()) {
+            return null;
+        }
+        return (AmmoEntity) entities.stream()
+                .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity)))
+                .orElse(null);
+    }
+
+    /**
+     * CIWS target search: find the closest non-allied RVP missile or bomb
+     * within 1000m that is above 50m AGL.
+     */
+    @Nullable
+    public static AmmoEntity findCiwsTarget(GunnerEntity gunner, AbstractVehicle vehicle) {
+        final double ciwsRange = 1000.0;
+        final double minAgl = GunnerBrain.hasLauncherDeployConfig(vehicle) ? 0.0 : 50.0;
+        AABB box = vehicle.getBoundingBox().inflate(ciwsRange);
+        Team vehicleTeam = vehicle.getTeam();
+        Team gunnerTeam = gunner.getTeam();
+        List<Entity> candidates = vehicle.level().getEntities(vehicle, box, entity -> {
+            if (!(entity instanceof AmmoEntity ammo)) {
+                return false;
+            }
+            if (!ammo.isAlive()) {
+                return false;
+            }
+            if (ammo.vehicle == vehicle) {
+                return false;
+            }
+            if (isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner())) {
+                return false;
+            }
+            if (!isInterceptableRvpProjectile(entity)) {
+                return false;
+            }
+            if (gunner.isCiwsTargetOnCooldown(entity)) {
+                return false;
+            }
+            double ammoAgl = entity.getY() - entity.level().getHeight(
+                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                    net.minecraft.util.Mth.floor(entity.getX()),
+                    net.minecraft.util.Mth.floor(entity.getZ()));
+            return ammoAgl >= minAgl;
+        });
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        Vec3 gunnerPos = gunner.position();
+        Entity best = null;
+        double bestDistSqr = Double.MAX_VALUE;
+        for (Entity entity : candidates) {
+            double distSqr = gunnerPos.distanceToSqr(entity.position());
+            if (distSqr < bestDistSqr) {
+                bestDistSqr = distSqr;
+                best = entity;
+            }
+        }
+        return (AmmoEntity) best;
     }
 
     private static final class TargetMatch {
@@ -355,9 +482,16 @@ public final class GunnerTargeting {
     }
 
     private static double score(AbstractVehicle vehicle, WeaponUnit weaponUnit, Entity entity) {
+        return score(vehicle, weaponUnit, entity, false);
+    }
+
+    private static double score(AbstractVehicle vehicle, WeaponUnit weaponUnit, Entity entity, boolean noAnglePenalty) {
         Vec3 toTarget = entity.position().add(0, entity.getBbHeight() * 0.5, 0)
                 .subtract(weaponUnit.worldPivotPosition());
         double distance = toTarget.length();
+        if (noAnglePenalty) {
+            return distance;
+        }
         Vec3 forward = weaponUnit.worldVec();
         if (forward.lengthSqr() < 1.0E-4) {
             forward = VectorUtil.rotToVec(vehicle.getXRot(), vehicle.getYRot());

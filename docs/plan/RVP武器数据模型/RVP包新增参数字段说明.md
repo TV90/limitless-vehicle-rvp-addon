@@ -1,0 +1,1472 @@
+# RVP 包新增参数字段说明
+
+本文档面向扩展包开发者，说明 RVP 新武器系统的全部 JSON / toml 可配置项，并按模块组织：
+
+- **武器配置**：`data/rvp/weapons/<id>.json`
+- **武器显示配置**：`assets/rvp/display/weapon/<id>.json`（模型/贴图，格式沿用本体武器显示）
+- **载具显示配置**：`assets/<namespace>/display/vehicle/<id>.json`（RVP 独有扩展：LOD 模型、隐藏骨骼、透明模式等，见 §2.11）
+- **载具配置**：`data/<namespace>/vehicles/<id>.json`（顶层扩展 + `parts[]` 内部件扩展）
+- **Gunner 配置**：`data/<namespace>/gunner_profiles/<id>.json`
+- **UI 预设**：`data/<namespace>/ui_presets/<name>.json`
+- **Forge 配置**：`config/ywzj_rvp-server.toml` / `ywzj_rvp-common.toml` / `ywzj_rvp-client.toml`
+
+JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.weapon.data.RVP_*Data` 类中的中文注释为准。
+
+**延伸阅读（更易读的分主题文档）**
+
+| 文档 | 内容 |
+| --- | --- |
+| [README.md](./README.md) | 文档索引、路径约定、代码入口 |
+| [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | `projectile_data` 三条弹道分支、本体对照、调试 |
+| [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | `direct_damage_factor`、爆炸伤害 |
+| [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | `submunition_data` 链式战斗部 |
+
+运行时路径约定：
+
+- 开发载具包：`limitless-vehicle-rvp-addon/run/client_1/limitless_vehicle/rvp/`
+- 运行时载具包目录：`.minecraft/limitless_vehicle/rvp/`
+- 武器 JSON：`data/rvp/weapons/<id>.json`（资源 ID 为 `rvp:<id>`）
+- 显示配置：`assets/rvp/display/weapon/<id>.json`
+
+---
+
+## 0. 通用写法约定
+
+- **`*_data` 分组**：弹道、引信、制导、落点/爆炸等一律写在 `*_data` 分组字段内（`fire_data` / `projectile_data` / `fuse_data` / `collision_data` / `effects_data` / `detonate_data` / `submunition_data` / `dispenser_data` / `guidance_data` / `misc_data` / `laser_data` / `targeting_pod_data`）。
+- **顶层旧键尽量迁移**：`damage` 用 `collision_data.direct_damage` 取代；`velocity` 若写在顶层，加载期会自动补入 `projectile_data`。顶层 `inaccuracy` 仍被读取，作为 `fire_data.spread` 未设置时的回退散布（`fire_data.spread` 优先）。
+- **区间写法（`RVP_Range`）**：形如 `"[[0,500]]"` 或 `[[0,500]]`，可含并集（`"[[0,100],[200,300]]"`）；边界可为数字、`null`（开区间/正负无穷）、`inf`。用于 `turning_factor`、`altitude_drag_factor`、`missile_name_on_hud`、`lock_angle_gate`、`guidance_*_range` 等 Map 键。
+- **枚举大小写不敏感**：如 `fire_mode: "full_auto"`、`guidance_type: "arh"` 均可解析。
+
+---
+
+## 1. 武器配置（`data/rvp/weapons/<id>.json`）
+
+### 1.1 公开武器类型
+
+新内容应只使用以下 7 个公开类型：
+
+| 类型 | 用途 |
+| --- | --- |
+| `rvp:missile` | 导弹类弹体。通过 `guidance_data.guidance_type` 组合 TV、ARH、ARM、GPS、IR、SARH、SACLOS、MCLOS、LH/SALH、NONE；TV/ARH/AIR/ARM 等末端自主导引写 `terminal_guidance`。 |
+| `rvp:rocket` | 火箭弹类弹体。 |
+| `rvp:machinegun` | 机枪、机炮、霰弹、鸭弹等弹丸。 |
+| `rvp:bomb` | 重力炸弹、GPS 滑翔弹、集束弹。 |
+| `rvp:laser` | 瞬时射线武器。 |
+| `rvp:dispenser` | 投放器/布撒器载荷（配置了 `dispenser_data.item` 时仅布撒、不走路径爆炸链）。 |
+| `rvp:targetingpod` | 目标指示吊舱，用于写入 GPS/SACLOS 目标点。 |
+
+旧公开类型 `ywzj_rvp:gps_bomb`、`ywzj_rvp:tv_missile`、`ywzj_rvp:anti_radiation_missile`、`ywzj_rvp:active_radar_missile`、`ywzj_rvp:semi_active_radar_missile`、`ywzj_rvp:manual_guidance_missile` 已不再作为配置入口，写法见「7. 旧写法迁移对照」。
+
+### 1.2 基本结构
+
+```json
+{
+  "type": "rvp:missile",
+  "name": "Example",
+  "shoot_interval": 500,
+  "reload": { "time": 80, "ammo": "ywzj_vehicle:ammo_missile" },
+  "fire_data": { "spread": 0 },
+  "projectile_data": { "velocity": 2.5 },
+  "misc_data": {},
+  "fuse_data": {},
+  "collision_data": { "direct_damage": 80 },
+  "effects_data": {},
+  "detonate_data": { "explosion_data": {} },
+  "submunition_data": {},
+  "guidance_data": { "guidance_type": "NONE" }
+}
+```
+
+### 1.3 顶层 RVP 字段（武器级）
+
+| 字段 | 说明 |
+| --- | --- |
+| `show_msl_indicator` | 是否在 HUD 中显示导弹指示器（菱形框 + 距离）；默认 `false`。 |
+| `tactical_map_icon` | 战术地图上该武器弹药显示的自定义图标名（如 `rvp:textures/...` 或短名）；空字符串表示使用默认。 |
+| `sub_type` | 可选子类型标记（如 `incendiary`），仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
+| `rvp_fire_control_sensor_mode` | 武器自身的火控传感器模式标记（字符串）。可选值：空（默认，不覆盖）/ `eo_ccip`（强制按电光传感器做 CCIP 弹道求解，常用于对地机炮）。 |
+| `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `loc` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
+
+**破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
+
+### 1.4 `fire_data` 开火参数
+
+| 字段 | 说明 |
+| --- | --- |
+| `require_lock` | 是否要求发射前已有锁定。默认 `true`。GPS、ARM、TV、MCLOS 等通常会手动设为 `false`。 |
+| `fire_mode` | 开火模式枚举 `RVP_EnumFireMode`。JSON 须写枚举名，如 `FULL_AUTO`，大小写不敏感；无法识别时默认为 `FULL_AUTO`。 |
+| `spread` | 发射角度散布（度）。为空时回退使用武器顶层 `inaccuracy`（经 `RVP_WeaponData#getInaccuracy()` 读取）。 |
+| `burst_count` | 点射模式每轮发射数量。默认 `1`。 |
+| `burst_delay` | 点射模式轮间间隔（毫秒）。默认 `0`。 |
+| `charge_tick` | `CHARGE`/`RAILGUN` 的蓄满时间，或 `MINIGUN` 的转速爬升时间（tick）。默认 `10`。 |
+| `charge_decay_tick` | 从满蓄力/满转速衰减回零所需时间（tick）。默认 `2`。 |
+| `charge_power_scale` | 按蓄力/转速比例线性放大伤害或初速（`1` = 不放大）。 |
+| `heat_count` | 武器级过热：每次成功开火增加的热量。仅当 `max_heat_count > 0` 时生效，默认 `0`。 |
+| `max_heat_count` | 武器级过热上限。大于 `0` 时启用过热；当前热量达到或超过该值后禁止继续开火，直到冷却到上限以下。默认 `0`，表示关闭武器级过热。 |
+| `overheat_extra_heat` | 武器级过热惩罚热量。开火后达到或超过 `max_heat_count` 时额外追加，用于模拟过热锁死后需要更久冷却。默认 `30`。 |
+| `max_off_axis_shoot_angle` | 最大离轴发射角（度）。为空时保持旧版“任意角度均可发射”的行为。 |
+| `canister_count` | 单次开火的子弹丸数量。`<= 0` 时按 `1` 处理。 |
+| `canister_type` | 多弹丸散布类型：`0` 位置散布，`1` 角度散布，`2` 角度散布并沿弹道前向错位以模拟时间散布。 |
+| `canister_distribution` | 多弹丸分布方式：`uniform`（默认）/ `normal`（中心聚集）/ `cluster_center`（强中心聚集）/ `cluster_edge`（外缘优先）/ `ring`（环带）。 |
+| `canister_shape` | 多弹丸散布形状：仅 `circle`（默认）/ `square` 有效。 |
+| `canister_diff` | 多弹丸散布半径/角度强度。默认 `0.3`。 |
+| `canister_burst_delay_time` | 子弹丸分批抛撒的延时 tick。默认 `0`。 |
+| `canister_burst_count` | 子弹丸分几批抛撒。默认 `1`。 |
+
+#### `fire_mode` 开火模式
+
+| 值 | 行为 |
+| --- | --- |
+| `FULL_AUTO` | 按住开火键，按 `shoot_interval` 连射（机炮/导弹默认）。 |
+| `SEMI_AUTO` | 每次按下开火键发射一轮；按住不连射。 |
+| `BURST` | 按下后锁定连射；每轮点射发射 `burst_count` 发（间隔仍受 `shoot_interval` 约束），轮与轮之间间隔 `burst_delay`（毫秒）；松开停止。 |
+| `CHARGE` | 长按蓄力，蓄满自动发射并立即重新蓄力，无需松开鼠标。 |
+| `MINIGUN` | 长按提升转速，足够转速后连射；松开转速缓慢下降，不必每次满转速。 |
+| `RAILGUN` | 单击开始蓄力，蓄力中再按无效；蓄满自动发射且不可打断。 |
+
+蓄力激光示例：
+
+```json
+"fire_data": {
+  "fire_mode": "CHARGE",
+  "charge_tick": 10,
+  "charge_decay_tick": 2,
+  "charge_power_scale": 2.0
+}
+```
+
+多弹丸散布示例：
+
+```json
+"fire_data": {
+  "fire_mode": "FULL_AUTO",
+  "canister_count": 12,
+  "canister_type": 1,
+  "canister_diff": 1.5,
+  "canister_burst_delay_time": 0
+}
+```
+
+### 1.5 `projectile_data` 弹体运动学
+
+运行时按武器 `type` 与 `has_rocket_engine` 进入**一条**弹道分支（详见 [弹体运动学开发与测试.md §2](./弹体运动学开发与测试.md#2-运行时走哪条弹道)）：
+
+| 分支 | 条件 | 本体参考 |
+| --- | --- | --- |
+| 机炮积分 | `rvp:machinegun` | `BulletEntity` |
+| 推力积分 | `has_rocket_engine` 且 mass/thrust/燃烧时间有效 | `MissileEntity#tickMove` |
+| 简化弹道 | 其余 | gravity + drag（+ 可选 constant_speed） |
+
+#### 字段一览
+
+| 字段 | 说明 |
+| --- | --- |
+| `velocity` | 弹体初速/飞行速度（覆盖武器顶层 `velocity`）；为空时使用顶层 `velocity`。 |
+| `gravity` | 空中每 tick 垂直加速度，负数向下。 |
+| `gravity_in_water` | 水中每 tick 垂直加速度。 |
+| `drag` | 空中水平阻力（MCH `DragInAir`）：每 tick 从 `motionX`/`motionZ` 减去 `(分量/|v|)*drag`，不改 `motionY`。 |
+| `drag_in_water` | 水中水平阻力，公式同 `drag`（MCH 水中默认无 `DragInAir`；RVP 用本字段可选开启）。 |
+| `inherit_vehicle_velocity` | 发射时是否继承载具当前速度。 |
+| `constant_speed` | 是否保持恒定速度，仅改变方向。适合导弹、火箭。 |
+| `rotate_to_motion` | 是否让实体朝向跟随运动方向。默认 `true`。 |
+| `max_speed` | 最大速度限制，0 表示不限制。 |
+| `min_speed` | 最小速度限制，0 表示不限制。 |
+| `turning_factor` | 旧版 MCHR 风格过载参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 tick 区间，value 为该区间的转向因子。为空时不启用。 |
+| `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
+| `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
+| `thrust` | 发动机推力。 |
+| `motor_burn_time` | 发动机燃烧时间（tick）。 |
+| `second_pulse` | 是否启用双脉冲推进（第二段推力）。 |
+| `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
+| `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
+| `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
+| `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
+| `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
+| `drag_coefficient` | 速度平方阻力系数。仅火箭发动机分支读取。 |
+| `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
+
+`altitude_drag_factor` 的运行规则：
+
+- 为空或未命中任何区间时，回退倍率 `1.0`。
+- `y` 采样的是**世界坐标**，不是离地高度。
+- 推力弹道会把倍率乘到 `drag_coefficient`；简化弹道会把倍率乘到 `drag`。
+
+示例：
+
+```json
+"projectile_data": {
+  "velocity": 3.2,
+  "has_rocket_engine": true,
+  "mass": 84,
+  "thrust": 7.5,
+  "motor_burn_time": 90,
+  "second_pulse": true,
+  "second_pulse_trigger_distance": 120,
+  "second_pulse_thrust": 5.2,
+  "second_pulse_burn_time": 24,
+  "altitude_drag_factor": {
+    "[[-64,300]]": 0.98,
+    "[[300,500]]": 1.0,
+    "[[500,1000]]": 1.02,
+    "[[1000,inf]]": 1.05
+  }
+}
+```
+
+#### 火箭发动机与推进回退
+
+**何时启用推力：** `has_rocket_engine: true`，且解析后 `mass > 0`、`thrust > 0`、`motor_burn_time > 0`。否则打日志并退回简化弹道。
+
+**参数写在哪儿：**
+
+1. 推荐全部写在 `projectile_data`。
+2. 若弹体内**未写**某键，加载时 `resolvePropulsionFallback` 从武器 JSON **顶层**补全（字段名与本体 `VehicleMissileWeaponData` 相同）。
+3. 弹体内**写了**的键一律以弹体为准（含写 `0` 的情况）。
+
+`has_rocket_engine` 为 **false** 时，不跑推力积分；仍可用 `gravity` / `drag` / `constant_speed` 等简化弹道。
+
+**推力有效时的每 tick 近似：** `Δv += lookDir * (thrust/mass)`（燃烧期内）→ 二次阻力 `-drag_coefficient * |v|²` → 重力（默认 `PhysicsEngine.G`，或 `projectile_data.gravity`）。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
+
+**加载期归一化：** 顶层或弹体出现 `mass`/`thrust`/`motor_burn_time` 时会自动补 `has_rocket_engine: true`（若未显式配置）。
+
+#### `rvp:machinegun` 与官方机炮弹速
+
+`rvp:machinegun` **不走** 导弹/火箭那套推进逻辑，而是与官方 `ywzj_vehicle:cannon` 的 `BulletEntity` 一致：
+
+- **RVP 包内请只写** `projectile_data.velocity` 作为炮口初速（与官方 `auto_cannon` 顶层 `velocity: 16` 同量级，常用 **16**）。
+- 未写时，加载期会从顶层 `velocity` 自动补入 `projectile_data.velocity`；两者都未写时机枪默认 **16**，不做倍率换算。
+- 每 tick：`位置 += 速度`；`速度 *= (1 - friction)`；`速度.y -= gravity`。
+- `projectile_data.gravity`：取绝对值作为向下重力（与 `BulletEntity.gravity` 同号约定）。
+- `projectile_data.drag`：映射为线性摩擦 `friction`（默认 **0.01**）。
+
+`projectile_data.max_speed`、`min_speed`、`constant_speed` 对机枪**不生效**（机枪只用 `velocity` + `gravity` + `drag`）。
+
+### 1.6 `fuse_data` 引信
+
+| 字段 | 说明 |
+| --- | --- |
+| `delay_tick` | 定时引信：飞行 tick ≥ 该值时引爆；0 表示不启用。 |
+| `programmable_airburst` | 可编程空爆（MCH）：按 **R（火控锁定键）** 对**弹道落点**（瞄准镜绿框处，非屏幕中心射线）测距，弹体沿弹道飞行 **测距 + `airburst_offset` 米** 时引爆；未测距或测距无效（≤`airburst_measure_min` 或 ≥`airburst_measure_max`）不触发。 |
+| `airburst_offset` | 可编程空爆附加距离（米），默认 **3**（对齐 MCH「测距 + 3m」）。 |
+| `airburst_measure_min` / `airburst_measure_max` | 有效测距范围（米），默认 **5** / **300**。 |
+| `airburst_explosion_damage` / `airburst_explosion_radius` | 可编程空爆触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
+| `proximity_radius` | 近炸引信检测半径（米），0 表示不启用。未写时可读 `detonate_data.explosion_data.proximity_radius`。 |
+| `proximity_fuse_tick` | 近炸解保 tick：出生后至少经过该 tick 才启用；**-1** 表示不限制。 |
+| `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
+| `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
+| `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
+| `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
+| `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
+
+#### AHEAD 自动可编程空爆（`rvp:machinegun` 等）
+
+AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_offset_meters`”解出空爆距离，到点后母弹自毁并释放子弹药（开花细节由 `submunition_data` 与子弹药自身 JSON 决定）。**不在**顶层写 `ahead_data`，全部写在 `fuse_data`：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `ahead_enabled` | 是否启用 AHEAD 自动编程逻辑。 | `false` |
+| `ahead_burst_offset_meters` | 相对预瞄点提前多少米开花；实际编程公式为 `programmedDistance = leadDistance - ahead_burst_offset_meters`。 | `3` |
+| `ahead_require_lock` | 是否要求必须存在锁定目标且能解出预瞄圈；为 `false` 时，无法解出预瞄圈会回退到当前 `AimContext.position` 的瞄点距离。 | `true` |
+| `ahead_min_ground_clearance` | 可编程空爆点的最低离地高度（米）；低于该值时取消 AHEAD 空爆，让母弹继续飞行/撞击，避免对地过强。`0` 表示不限制。 | `0` |
+
+### 1.7 `collision_data` 直击、衰减与碰撞
+
+| 字段 | 说明 |
+| --- | --- |
+| `direct_damage` | **直接命中伤害**；未写时使用武器顶层 `damage`。 |
+| `direct_damage_factor` | 按目标类别缩放直击、激光与近炸直伤；见 [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md)。 |
+| `damage_decay` | 伤害衰减规则数组（见下表）；`domain=distance` 相乘，`domain=angle` 分段互斥，再相乘。 |
+| `living_penetration` | 可穿透的 **生物**（`LivingEntity`）数量：每穿过一只仍造成一次伤害；`0` 表示命中生物后立即引信/消失。`N` 表示除首次命中外还可再穿透 `N` 只生物（共可伤害 `N+1` 只）。 |
+| `wall_penetration` | 飞行途中可 **摧毁并穿过** 的实心方块最大数量（参考本体航空炸弹逐格破块；装饰性方块如树叶/玻璃可穿过且不扣次数）；`0` 表示命中实心方块后立即结算。不可破坏方块（如基岩）会阻挡穿透。 |
+| `penetration_damage_multiplier` | 每完成一次穿透后，后续命中伤害的连乘倍率（如 `0.9`：第 1 次命中满伤，穿透 1 次后第 2 次 ×0.9，再穿透 ×0.9²）。默认 `1` 不衰减。 |
+| `penetration_speed_multiplier` | 每完成一次穿透后弹速的连乘倍率（如 `0.9` 表示该次穿透后速度变为原来的 0.9）。默认 `1`。 |
+| `bounce` | 弹跳次数，0 表示不跳弹。 |
+| `bounce_strength` | 每次弹跳后速度保留比例（如 `0.8` = 反射速度 ×0.8）。未写且 `bounce > 0` 时默认 `0.6`。 |
+| `bounce_fuse_tick` | 第一次弹跳后多少 tick 自动引信（引爆或消失，取决于 `detonate_data.explosion_data.explode`）；`0` 不启用。 |
+| `bounce_incidence_angle` | 入射角阈值（度）：速度方向与撞击面法线夹角 **≥** 该值时才跳弹（如 `50` = 掠射跳弹、近垂直击中不跳）；`0` 表示不限制角度。 |
+| `bounce_on_vehicle` | 击中载具（`AbstractVehicle`）时是否跳弹；默认 `false`（仅对方块等地形跳弹）。 |
+| `bounce_min_block_hardness` | 方块跳弹硬度下限：仅当方块 `getDestroySpeed` **严格大于** 该值时才跳弹；默认 `2.1`（如石头约 1.5 不跳、铁块约 5 可跳）。不影响载具跳弹。 |
+
+#### `direct_damage_factor` 子字段
+
+| 字段 | 说明 |
+| --- | --- |
+| `player` | 对玩家倍率，默认 `1` |
+| `living` | 对非玩家生物倍率，默认 `1` |
+| `vehicle_default` | 对未单独列出的 `AbstractVehicle` 倍率，默认 `1` |
+| `vehicles` | 对象：键为实体类型 ID（如 `ywzj_vehicle:rotary_wing_vehicle`），值为倍率 |
+
+#### `damage_decay` 规则
+
+| `domain` | 说明 |
+| --- | --- |
+| `distance`（默认） | 已飞行距离（米）；多条**相乘**。 |
+| `angle` | 入射角（度）；多条**分段互斥**。 |
+
+| `type` | 参数 | 说明 |
+| --- | --- | --- |
+| `constant` | `start_distance`, `end_distance`, `start_factor` | 区间内固定系数。 |
+| `segmented` | `segments`: `[[起点, 系数], ...]` | 取满足 `起点 <= 采样值` 的**最后一段**系数（常用于**距离**）。 |
+| `linear` | `start_distance`, `end_distance`, `start_factor`, `end_factor` | 区间内线性插值；距离衰减未写 `start_factor` 时起点为 `1`。 |
+| `exponential` / `exp` | `rate`, `min_factor` | `exp(-rate × 距离)`（**距离**）。 |
+| `curve` / `polynomial` | `start_distance`, `end_distance`, `start_factor`, `end_factor`, `power` | 在 `[start,end]` 上按 `t^power` 插值（**入射角**常用）。 |
+
+30mm 低速榴弹示例（距离 + 入射角 + 跳弹）：
+
+```json
+"collision_data": {
+  "direct_damage": 30,
+  "damage_decay": [
+    { "domain": "distance", "type": "segmented", "segments": [[100, 0.9], [200, 0.8]] },
+    { "domain": "angle", "type": "constant", "start_distance": 50, "end_distance": 60, "start_factor": 0.9 },
+    { "domain": "angle", "type": "linear", "start_distance": 60, "end_distance": 70, "start_factor": 0.9, "end_factor": 0.8 },
+    { "domain": "angle", "type": "curve", "start_distance": 70, "end_distance": 80, "start_factor": 0.8, "end_factor": 0.5, "power": 2 }
+  ],
+  "bounce": 2,
+  "bounce_incidence_angle": 80
+}
+```
+
+最终系数 = 距离衰减 × 入射角衰减 × 穿透衰减（若有）。爆炸参数写在 `detonate_data.explosion_data`（与 `direct_damage` **无关**）。
+
+### 1.8 `effects_data` 特效
+
+| 字段 | 说明 |
+| --- | --- |
+| `trajectory_particle` | 飞行轨迹粒子；默认 `minecraft:cloud`，写 `none` 可关闭。 |
+| `impact_particle` | 命中粒子。空或 `minecraft:block` = MCH 默认：方块破碎粒子 + 白烟（`CLOUD`）；`none` 关闭。分布与 MCH `spawnBlockPar` 一致（破碎：`flak_particles_*`；白烟：命中点 ±1 格高斯偏移、速度 `gaussian/200`）。激光命中走 `MCH_WeaponLaser#spawnBlockPar`（无破碎，仅 cloud/smoke/flame）。 |
+| `explosion_particle` | 爆炸粒子。空或 `minecraft:explosion` / `explosion_emitter` = 原版 `EXPLOSION_EMITTER` + `EXPLOSION`；`none` 仅关闭额外粒子（`VehicleExplosion` 音效/烟雾仍由本体处理）。 |
+| `flak_particles_crack` | MCH `FlakParticlesCrack`：方块破碎粒子基数（实际 +0~2），默认 10。 |
+| `num_particles_flak` | MCH `NumParticlesFlak`：白烟数量，默认 3。 |
+| `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
+| `caliber` | **仅 `rvp:machinegun`**：口径（毫米），曳光条宽度与弹孔粒子大小。默认 `7.62`。 |
+| `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
+| `wire_link_enabled` | **线导视觉线**（导弹类弹体）：导弹与发射武器站枢轴间绘制一根原版钓鱼线风格的黑色细线（客户端世界渲染，正常游戏视角可见，非实体碰撞）。默认 `false` 关闭。线缆**中段受重力下垂呈曲线**（二次贝塞尔，下垂量随线长自动增大，约线长的 8%，钳制 0.4~12 格），端点精确连接导弹与发射枢轴并实时更新。导弹失去制导时线缆**立即消失**（失制导情形包括：HITL 链路切断 `hitlLinkSevered`、RADIO 信号源链路被遮挡 `hitlLinkBlocked`、`hitlLife` 耗尽，以及引导段结束 `guidance_type` 回到 `NONE`）；导弹消失（爆炸/自毁/生命周期结束）后，残留线缆将在 **20 tick** 内渐隐消失。 |
+
+#### 导弹原生尾焰（`missile_native_trail_*`）
+
+导弹/火箭类弹体飞行时由本体粒子发射器生成的尾焰，可用以下字段覆盖（全部可选）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `missile_native_trail_enabled` | 是否启用原生尾焰。 | `true` |
+| `missile_native_trail_particle` | 覆盖尾焰粒子 ID（空 = 保持本体默认）。 | `""` |
+| `missile_native_trail_step` | 尾焰沿弹道采样步长（格）。 | `0.5` |
+| `missile_native_trail_spawn_interval_tick` | 粒子生成间隔（tick）。 | `1` |
+| `missile_native_trail_density_scale` | 粒子密度倍率。 | `1` |
+| `missile_native_trail_offset` | 粒子相对弹体尾部的偏移距离（格）。 | `3` |
+| `missile_native_trail_extra_flame` | 是否追加火焰粒子。 | `true` |
+| `missile_native_trail_extra_smoke` | 是否追加烟尘粒子。 | `true` |
+
+机枪飞行曳光与本体相同：固定 `ywzj_vehicle:entity/basic_bullet` + `textures/entity/basic_bullet.png`（`effects_data` 仅控制口径与 `tracer_*` 颜色）。导弹/炸弹飞行模型见 `assets/rvp/display/weapon/<id>.json`。
+
+机枪曳光示例：
+
+```json
+"effects_data": {
+  "trajectory_particle": "none",
+  "impact_particle": "minecraft:block",
+  "caliber": 30,
+  "tracer_r": 1.0,
+  "tracer_g": 0.5,
+  "tracer_b": 0.1
+}
+```
+
+常用短名：`none`、`smoke`、`flame`、`cloud`、`block`、`explosion`、`explosion_emitter`。也可写完整粒子 ID。
+
+### 1.9 `detonate_data` 落点效果与爆炸
+
+弹体在**方块命中、实体命中、引信/近炸/空爆结束**时，于落点执行爆炸与下列自定义效果（服务端）。
+
+| 字段 | 说明 |
+| --- | --- |
+| `effects_before_explosion` | 为 `true`（默认）时先执行下方自定义效果再爆炸；为 `false` 时先爆炸再自定义效果。 |
+| `explosion_data` | 爆炸参数（`RVP_Explosion`，继承本体 `Explosion` POJO 字段）。与 `collision_data.direct_damage` 无关。 |
+| `fire_data` | 点燃空气格。`radius`：水平扩散格数（0=仅命中面邻格）；`chance`：每格概率 0–1；`soul_fire`；`on_block` / `on_entity` 是否在方块/实体命中时触发。 |
+| `potion_cloud_data` | 生成原版药水云。`effect`（如 `slowness` / `minecraft:poison`）、`amplifier`、`duration_ticks`（作用于实体）、`cloud_duration_ticks`、`radius`、`radius_per_tick`、`targets`。 |
+| `potion_effect_data` | 对范围内实体**直接**上 buff，不生成云；字段同上（忽略 `cloud_duration_ticks`）。 |
+| `place_block_data` | 放置方块。`block`、`radius`、`chance`、`replace_mode`：`air_only` / `replaceable` / `always`。 |
+| `lightning_data` | 召唤闪电。`damage`：是否造成伤害（false 为纯特效）。 |
+| `ignite_entity_data` | `radius`、`seconds`（着火秒数）、`targets`。 |
+| `knockback_data` | `radius`、`strength`、`targets`。 |
+| `clear_plants_data` | `radius`：清除草、花、树叶等可替换植物。 |
+| `hbm_effect_data` | 大威力爆炸视觉/特效（见下）。 |
+
+`targets`（范围类效果共用）：`living`（默认）、`players`、`hostile`、`non_allied`（排除 owner 与发射载具乘员）、`all`。
+
+#### `detonate_data.explosion_data`
+
+| 字段 | 说明 |
+| --- | --- |
+| `explode` | 是否产生爆炸效果。 |
+| `damage` | 爆炸伤害。 |
+| `radius` | 爆炸半径。 |
+| `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
+| `destroy_block` | 是否破坏方块。 |
+
+#### `detonate_data.hbm_effect_data` 大威力爆炸特效
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 总开关。 | `false` |
+| `real_explosion` | 真实爆炸预设：`none`（默认）/ `vnt`（HBM 标准爆炸，自带视觉特效）/ `nuclear`（核爆）。 | `none` |
+| `visual_preset` | 视觉特效预设：`none`（默认）/ `nuclear`（或 `nuke`，蘑菇云）/ `shell`（小规模爆炸）/ `bomb`（大规模爆炸）。 | `none` |
+| `visual_scale` | 视觉规模倍率（≥0.1）。 | `1.0` |
+| `visual_density` | 粒子密度（0.1–1.0）。 | `1.0` |
+| `visual_backend` | 视觉后端：`auto` / `hbm` / `rvp`。 | `auto` |
+| `visual_sound` | 是否播放视觉特效音效。 | `true` |
+| `suppress_native_explosion_effect` | 是否抑制原版爆炸特效。 | `true` |
+| `nuclear_sound` / `nuclear_flash` / `nuclear_shake` | 核爆音效 / 闪光 / 屏幕震动。 | `true` |
+| `effect_yield` | 当量（≥0）。 | `0.0` |
+| `spawn_frag` | 是否抛撒破片。 | `false` |
+| `white_phosphorus` | 白磷燃烧效果。 | `false` |
+| `chlorine_yield` | 氯气当量（>0 启用）。 | `0.0` |
+| `destroy_block` | 是否破坏方块。 | `true` |
+
+燃烧弹示例（先点火再小爆炸）：
+
+```json
+"detonate_data": {
+  "effects_before_explosion": true,
+  "explosion_data": {
+    "explode": true,
+    "damage": 8,
+    "radius": 0.8,
+    "destroy_block": false
+  },
+  "fire_data": { "radius": 2, "chance": 0.85 },
+  "ignite_entity_data": { "radius": 2.5, "seconds": 6, "targets": "living" }
+}
+```
+
+### 1.10 `submunition_data` 子母弹 / 空中布撒
+
+飞行中或撞击/引信时生成**弹体实体**或**任意注册实体**（对应 MCH `spawnBulletInAir` 等能力）。
+
+与 `dispenser_data`（**落点**方块/物品布撒）不同：本分组在**飞行过程**或**撞击/引信**时生成载荷。
+
+#### 顶层
+
+| 字段 | 说明 |
+| --- | --- |
+| `releases` | 释放方案数组；见下表。为空则关闭子母弹。 |
+
+#### `releases[]` 单条释放方案
+
+| 字段 | 说明 |
+| --- | --- |
+| `triggers` | 触发器列表，见下表。默认 `["in_flight"]`。 |
+| `delay_tick` | `in_flight`：首波前倒计时 tick。 |
+| `interval_tick` | `in_flight`：波次间隔；0 = 剩余次数同一 tick 打完。 |
+| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时取各 payload `count` 之和。 |
+| `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。 |
+| `payloads` | 本波要生成的弹药列表，见下表。 |
+| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`。 |
+
+##### `triggers` 取值
+
+| 值 | 说明 |
+| --- | --- |
+| `in_flight` | 飞行中按 `delay_tick` / `interval_tick` 释放。 |
+| `on_impact` | 致死撞击（方块或实体，穿透耗尽后）。 |
+| `on_block_hit` | 仅方块撞击。 |
+| `on_entity_hit` | 仅实体撞击。 |
+| `on_fuse` | 定时/近炸/空爆等引信引爆前（在爆炸链之前）。 |
+
+#### `releases[].payloads[]` 单种载荷
+
+| 字段 | 说明 |
+| --- | --- |
+| `kind` | `rvp_weapon`（默认）或 `entity`。 |
+| `weapon_id` | RVP 武器 id（`rvp:xxx` 或短名 `xxx`）；空 = 克隆母弹武器。 |
+| `entity_type` | `kind: entity` 时实体类型，如 `minecraft:arrow`。 |
+| `entity_nbt` | 可选 SNBT，生成后 `Entity#load`。 |
+| `count` | 每波生成数量，默认 1。 |
+| `spread` | 散布，见下表。 |
+| `inherit_parent_velocity` | 是否叠加母弹速度，默认 true。 |
+| `inherit_vehicle_velocity` | 是否叠加发射载具速度，默认 false。 |
+| `velocity_scale` | 速度倍率，默认 1。 |
+| `power_scale` | RVP 武器伤害/初速蓄力倍率，默认 1。 |
+| `allow_submunition` | 写在**本层 `payloads` 条目**上：为 `true` 时，被生成的弹体可执行**其自身武器 JSON** 的 `submunition_data`（多级火箭、链式战斗部**必须**为 `true`）；默认 `false` 防止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md)。 |
+| `damage_multiplier` | 仅 RVP 弹体：直击伤害倍率（可选）。 |
+| `suppress_explosion` | 仅 RVP 弹体：关闭爆炸。 |
+
+#### `payloads[].spread` 散布
+
+| 字段 | 说明 |
+| --- | --- |
+| `mode` | `box`（默认，随机立方）或 `canister`（复用机枪霰弹逻辑）。 |
+| `box_spread` | `box` 模式速度扰动幅度（MCH `BombletDiff`）。 |
+| `canister_type` | `0` 位置、`1` 角度、`2` 角度+前向错位（同 `fire_data.canister_type`）。 |
+| `canister_diff` | 散布强度（度或格）。 |
+| `canister_distribution` / `canister_shape` | 同 `fire_data` / `dispenser_data` 的 `distribution`、`shape`。 |
+
+#### 示例场景
+
+| 场景 | 配置要点 |
+| --- | --- |
+| 子母火箭 / 集束炸弹 | `triggers: ["in_flight"]`，多 `payloads` 指向子战斗部 `weapon_id`，`parent_action: discard_after_release`。 |
+| 多级火箭 | 多段 `releases`，不同 `delay_tick`，`parent_action: continue`。 |
+| 星光导弹分弹头 | 一条 `in_flight`，`release_events: 3`，`payloads` 指向 `rvp:starstreak_dart`，`canister` 散布。 |
+| APFSDS 弹托 | `in_flight` + `entity` 载荷（装饰实体）+ `rvp_weapon` 穿甲杆，`discard_on_first_spawn` 仅脱托。 |
+| 撞击抛洒 | `triggers: ["on_impact"]`，`release_events: 1`。 |
+
+```json
+"submunition_data": {
+  "releases": [
+    {
+      "triggers": ["in_flight"],
+      "delay_tick": 20,
+      "interval_tick": 0,
+      "release_events": 8,
+      "parent_action": "discard_after_release",
+      "payloads": [
+        {
+          "kind": "rvp_weapon",
+          "weapon_id": "rvp:cluster_bomblet",
+          "count": 1,
+          "spread": { "mode": "canister", "canister_diff": 2.5, "canister_distribution": "cluster_center" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 1.11 `dispenser_data` 落点布撒物品（任意武器类型）
+
+对应 MCH `DispenseItem` / `DispenseRange`。**导弹、炸弹、火箭、机枪弹等**均可配置；弹体命中或引信引爆时在落点按**形状 + 密集度 + 分布**采样若干格，对有效方块尝试原版 `useOn` / `use`（骨粉、火把、TNT、萤石等），顺序与 `detonate_data.effects_before_explosion` 一致（相对爆炸先后）。`rvp:dispenser` 类型在配置了 `item` 时仅布撒、不走路径爆炸链。可与 `submunition` 组合：母弹飞行中抛洒多枚子弹药，每枚弹体各自执行一次布撒采样。
+
+| 字段 | 说明 |
+| --- | --- |
+| `item` | 物品 ID，如 `minecraft:bone_meal`。 |
+| `damage` | 物品损伤值（可选）。 |
+| `place_radius` | 布撒半径（格），默认 1，最大 24。别名：`radius`、`spread_radius`。 |
+| `y_radius` | 竖直半高（格）。未写时：`circle`/`square` 为 0（单层）；`cylinder` 为与 `place_radius` 相同；`sphere`/`cube`/`diamond` 使用 `place_radius` 作为竖直范围。 |
+| `density` | 密集度 **1–100**。100 = 形状内每个候选格都尝试放置；1 = 仅尝试 **1** 格；中间值为 `round(候选格数 × density/100)`，至少 1 格。 |
+| `shape` | 布撒范围形状（见下表）。 |
+| `distribution` | 当 `density` &lt; 100 时，从候选格中**选哪些格**的分布（见下表）。`density` = 100 时忽略，全部候选格都会尝试。 |
+| `place_on_impact` | 为 `true` 时启用布撒逻辑（默认 `true`）。 |
+| `surface_only` | 为 `true` 时仅对**顶面**（上方为空气）的方块尝试放置，适合骨粉/火把/TNT；为 `false` 时对形状内任意非空气格尝试（适合圆柱全高度布灯等）。 |
+
+#### `shape` 形状
+
+| 值 | 说明 |
+| --- | --- |
+| `circle` | 水平圆盘：`x² + z² ≤ r²`，竖直范围 `|y| ≤ y_radius`。 |
+| `square` | 水平正方形：`|x|,|z| ≤ r`，竖直 `|y| ≤ y_radius`。 |
+| `sphere` | 球体：`x² + y² + z² ≤ r²`。 |
+| `cube` | 轴对齐立方体：`|x|,|y|,|z| ≤ r`。 |
+| `cylinder` | 水平圆盘 + 竖直柱：`x² + z² ≤ r²`，`|y| ≤ y_radius`（未写 `y_radius` 时等于 `r`）。 |
+| `diamond` | 八面体（曼哈顿距离）：`|x|+|y|+|z| ≤ r`。 |
+
+#### `distribution` 分布（`density` &lt; 100）
+
+| 值 | 说明 |
+| --- | --- |
+| `uniform` | 在候选格中均匀随机抽取；圆/柱 footprint 为圆盘均匀；`square` footprint 为轴对齐矩形内均匀。 |
+| `normal` | 优先靠近落点中心的格（按到原点距离升序取前 N 个）。 |
+| `cluster_center` | 同 `normal`，更强中心聚集。 |
+| `cluster_edge` | 优先形状外缘的格。 |
+| `ring` | 偏好水平半径约 70% 处的环带（适合 `circle`/`cylinder`/`square`）。 |
+
+#### 换弹与物品
+
+`reload.ammo` 写对应物品 ID；载具储物舱需备弹。任意原版/模组物品均可，实际效果取决于该物品的 `useOn` 实现。
+
+#### 示例
+
+**满密度球形骨粉（MI-28 默认绿化）：**
+
+```json
+"dispenser_data": {
+  "item": "minecraft:bone_meal",
+  "place_radius": 4,
+  "y_radius": 1,
+  "density": 85,
+  "shape": "sphere",
+  "distribution": "uniform",
+  "place_on_impact": true,
+  "surface_only": true
+}
+```
+
+**单点测试（密集度 1）：**
+
+```json
+"dispenser_data": {
+  "item": "minecraft:glowstone",
+  "place_radius": 6,
+  "density": 1,
+  "shape": "circle",
+  "distribution": "uniform",
+  "surface_only": true
+}
+```
+
+**环带分布：**
+
+```json
+"dispenser_data": {
+  "item": "minecraft:redstone_block",
+  "place_radius": 5,
+  "density": 35,
+  "shape": "circle",
+  "distribution": "ring",
+  "surface_only": true
+}
+```
+
+布撒武器请关闭爆炸：`"detonate_data": { "explosion_data": { "explode": false } }`。引信建议 `"detonate_on_life_end": true`，以便空中引信到期也能布撒。
+
+**落点解析（0.5.21+）**：引信在空中到期时，会先向下射线/柱扫描找到地表锚点，再按水平偏移 + `surface_only` 逐列找可放置顶面；火把/打火石/方块类物品在 `useOn` 失败时会走直接放置回退。`surface_only: true` 时形状自动投影为水平 footprint（不再在弹体高度的一层空气上采样）。
+
+### 1.12 `misc_data` 杂项
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `missile_name_on_hud` | 导弹在 HUD 上显示的名称，按距目标距离区间映射（距离单位：米）。 | `Map<RVP_Range<Float>, String>` | `{"[[0,500]]":"MSL","[[500,inf]]":null}` |
+| `missile_name_on_radar` | 导弹在雷达上的显示名称，按距离区间映射。 | `Map<RVP_Range<Float>, String>` | `{"[[20,inf]]":"MSL"}` |
+| `signal_intensity_factor_on_radar` | 导弹在雷达上的信号强度倍率，按距离区间映射；未命中区间或非法值按 `1.0`。 | `Map<RVP_Range<Float>, Float>` | `{"[[0,inf]]":1.0}` |
+| `artillery_map` | 是否作为火炮地图弹药（在战术地图上绘制弹道/落点）。 | `boolean` | `false` |
+
+```json
+"misc_data": {
+  "missile_name_on_hud": {
+    "[[0,500]]": "MSL",
+    "[[500,inf]]": null
+  },
+  "missile_name_on_radar": {
+    "[[20,inf]]": "MSL"
+  },
+  "signal_intensity_factor_on_radar": {
+    "[[0,inf]]": 1.0
+  },
+  "artillery_map": false
+}
+```
+
+### 1.13 `guidance_data` 制导数据模型
+
+`guidance_data` 采用**直接对应数据模型**的写法，不再使用旧的 `stages[]`、`sources[]`、`seeker_data`、`steering_data`、`human_in_the_loop` 那一整套分段/复合 schema（旧写法仅在加载期被归一化接受，见「7. 旧写法迁移对照」）。
+
+本文档以下表格中的字段名使用 **JSON 写法**（全小写 + 下划线）。Java 类中的对应模型分别为：
+
+- `RVP_GuidanceData`（主模型）
+- `RVP_GuidanceDataSACLOS`（`guidance_type: SACLOS`）
+- `RVP_GuidanceDataHITL`（TV / HITL_TV / HITL_CLOS_TV）
+- `RVP_GuidanceDataGPS`（`guidance_type: GPS`）
+- `RVP_GuidanceDataARM`（`guidance_type: ARM`）
+- `RVP_TerminalGuidanceData`（`terminal_guidance`）
+
+**角度约定：**
+
+- `max_lock_angle` 是**完整 FOV**，运行时会自动除以二，转换为单侧半角。
+- `max_guidance_angle` 和 `max_off_axis_lock_angle` 是相对轴线的**单侧角度**，运行时不再除以二。
+
+#### `guidance_data` 公用字段
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `guidance_type` | 主制导类型。公开值见下方表格。 | `RVP_EnumGuidanceType` | `NONE` |
+| `guidance_tick_range` | 制导时间范围；`null` 表示立即开始且永不结束。 | `RVP_Range<Integer>` | `null` |
+| `guidance_target_distance_range` | 弹药跟踪时，与制导目标点/记忆点的距离范围（格）。 | `RVP_Range<Float>` | `null` |
+| `guidance_altitude_range` | 弹药跟踪时，与制导目标点/记忆点的离地高度范围（格）。支持并集区间。 | `RVP_Range<Float>` | `null` |
+| `lock_target_distance_range` | 载具火控锁定时，与制导目标点/记忆点的距离范围（格）。 | `RVP_Range<Float>` | `null` |
+| `lock_altitude_range` | 载具火控锁定时，与制导目标点/记忆点的离地高度范围（格）。支持并集区间。 | `RVP_Range<Float>` | `null` |
+| `enable_ir_hmd` | 是否启用红外弹头瞄。当前仅红外系弹药使用。 | `boolean` | `true` |
+| `max_guidance_angle` | 发射后导引头最大跟踪角（单侧角度，度）。 | `int` | `60` |
+| `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
+| `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
+| `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
+| `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
+| `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
+| `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
+| `max_lateral_accel` | 最大横向加速度限制（度/秒² 量级）；`0` 表示不限制。 | `float` | `0` |
+| `top_attack_height` | 攻顶最大高度；`null` 为不启用，可填负数（如潜射武器）。 | `Float` | `null` |
+| `cruise_start_tick` | 多少 tick 后进入巡航段。激光架束、人在回路、指令线类通常不使用。 | `Integer` | `null` |
+| `cruise_end_horizontal_dist` | 距目标水平距离小于该值后退出巡航，进入末端。 | `float` | `10` |
+| `cruise_gravity_scale` | 巡航段重力系数。 | `float` | `1.0` |
+| `cruise_leveling_factor` | 巡航段自动改平强度。 | `float` | `0.15` |
+| `lock_angle_gate` | 火控锁定角度门。key 为载机距目标距离区间，value 为允许的目标运动方向夹角区间。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
+| `guidance_angle_gate` | 弹药跟踪角度门。key 为弹药距目标距离区间，value 为允许的目标运动方向夹角区间。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
+| `angle_gate_lock_out_tick` | 超出角度门后，经过多少 tick 才真正脱锁。 | `int` | `20` |
+| `active_radar_activation_range` | 主动类导引头开机距离。适用于 `ARH/AIR/ARM`。 | `int` | `256` |
+| `enable_inertial_guidance` | 是否启用惯性制导。脱锁后仍朝最后记忆点前进。 | `boolean` | `false` |
+| `terminal_guidance` | 末端制导配置。`null` 表示不启用。 | `RVP_TerminalGuidanceData` | `null` |
+
+**子类型字段约束**（由 `RVP_GuidanceDataAdapter` 校验）：
+
+- `gps_spread_radius` 仅 `GPS` 可用。
+- `radiation_pulse_memory_tick` / `arm_memory_tick` / `arm_locked_emitter_bonus` 仅 `ARM` 可用。
+- `hitl_*` / `signal_source` 仅 TV / HITL_TV / HITL_CLOS_TV 可用。
+- `semi_correction_*` 仅 `SACLOS` 可用。
+- 写了以上子类型字段但未写 `guidance_type`（或类型不匹配）会在加载时报错。
+
+#### 高度范围与头瞄 HUD 的约定
+
+- `guidance_altitude_range` / `lock_altitude_range` 使用 `RVP_Range<Float>`，支持并集区间。
+- 旧版“正值代表对空、负值代表对地”的 `lock_min_height` 思路，已由范围表达式接管。
+- 当前 HUD 判定依然保留“低空/地面目标”与“空中目标”的区分习惯：
+  - 类似 `[[30,inf]]` 的范围可视为空对空导引头逻辑。
+  - 类似 `[[inf,10]]` 或低空区间可视为空对地/近地导引头逻辑。
+
+#### `guidance_type` 公开值
+
+| 枚举值 | 说明 |
+| --- | --- |
+| `NONE` | 无制导。 |
+| `MCLOS` | 人工指令线制导。 |
+| `SALH` | 半主动激光制导（照射点跟踪）。 |
+| `SACLOS` | 视线指令制导。启用 `semi_correction_*` 后为“半自动修正”模型（模拟射手遥测 + 弹性修正），见下方 SACLOS 小节。 |
+| `LBR` | 预留。 |
+| `LH` | 激光点制导（载具照射点）。 |
+| `TV` | 电视寻的（人在回路）。 |
+| `HITL_TV` | 人在回路电视制导。 |
+| `HITL_CLOS_TV` | 人在回路指令线电视制导。 |
+| `ATV` | 主动电视制导（末端）。 |
+| `IR` | 红外制导。 |
+| `AIR` | 主动红外制导（末端）。 |
+| `SARH` | 半主动雷达制导。 |
+| `ARH` | 主动雷达制导。 |
+| `GPS` | GPS/坐标制导。 |
+| `ARM` | 反辐射制导。 |
+
+> `IOG` 是历史枚举值，**新 schema 不公开**，`guidance_type: IOG` 会在加载时报错。
+
+#### `RVP_GuidanceDataSACLOS`（`SACLOS`）
+
+SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性修正：
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `semi_correction_enabled` | 是否启用半自动修正（模拟射手遥测修正的平滑追踪）。 | `boolean` | `false` |
+| `semi_correction_stiffness` | 修正刚度：越大弹体越快地压向瞄准线。 | `float` | `0.05` |
+| `semi_correction_damping` | 修正阻尼：抑制震荡。 | `float` | `0.05` |
+| `semi_correction_wobble` | 弹体抖动幅度（模拟指令噪声/摆动）。 | `float` | `0.5` |
+
+#### `RVP_GuidanceDataHITL`（TV / HITL_TV / HITL_CLOS_TV）
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `hitl_max_turn_deg_per_tick` | 导引头每 tick 最大转动角度，类似方向机速度。 | `int` | `2` |
+| `signal_source` | 制导信号源：`FIBER` / `RADIO`。仅这两个值有效，非 `FIBER` 一律按 `RADIO` 处理。无线电可被方块遮挡，光纤不可。 | `String` | `RADIO` |
+| `hitl_max_control_dist` | 最大控制距离（格）。 | `int` | `600` |
+| `hitl_max_control_tick` | 最大控制时长（tick）。 | `int` | `200` |
+| `hitl_max_look_offset` | HITL 视角最大偏转角度。 | `int` | `30` |
+| `hitl_video_modes` | 可用画面模式（可写多个，玩家可循环切换）：`COLOR` / `MONO`（或 `BW`、`BLACK_WHITE`、`BLACKWHITE`、`MONOCHROME`）/ `THERMAL`（或 `IR`）。列表第一个有效模式为初始画面；无法识别的值被忽略，全部无效时回退为彩色画面。 | `List<String>` | `["MONO"]` |
+
+#### `RVP_GuidanceDataGPS`（`GPS`）
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `gps_spread_radius` | GPS 打击散布半径（格），使用正态分布。 | `float` | `0` |
+
+#### `RVP_GuidanceDataARM`（`ARM`）
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `radiation_pulse_memory_tick` | 对雷达辐射脉冲的短时记忆时长。 | `int` | `30` |
+| `arm_memory_tick` | 完全失去辐射源后，对最后有效辐射源的持续记忆时长。 | `int` | `60` |
+| `arm_locked_emitter_bonus` | 对已被火控锁定/预选辐射源的优先级加权。值越高，越不容易被视场内其他辐射源抢走目标。 | `float` | `1.0` |
+
+#### `terminal_guidance`（`RVP_TerminalGuidanceData`）
+
+末端制导数据写在 `guidance_data.terminal_guidance` 中。
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `guidance_type` | 末端制导类型。只允许 `NONE/ATV/AIR/ARH/ARM/IR`。 | `RVP_EnumGuidanceType` | `NONE` |
+| `active_radar_activation_range` | 末端主动类导引头开机距离。 | `int` | `256` |
+| `max_lock_angle` | 末端导引头搜索视场角（完整 FOV）。 | `int` | `5` |
+| `guidance_target_distance_range` | 末端制导目标距离范围。 | `RVP_Range<Float>` | `null` |
+| `guidance_start_tick` | 多少 tick 后切入末端制导。 | `Integer` | `null` |
+| `guidance_start_dist` | 距目标多少格后切入末端制导。 | `Float` | `null` |
+| `guidance_start_horizontal_dist` | 距目标水平距离多少格后切入末端制导。 | `Float` | `null` |
+| `guidance_altitude_range` | 末端制导目标离地高度范围。 | `RVP_Range<Float>` | `null` |
+| `max_guidance_angle` | 末端导引头最大跟踪角（单侧角度）。 | `int` | `60` |
+| `scan_interval_tick` | 末端导引头扫描间隔。 | `Integer` | `null` |
+| `predict_target_pos` | 末端是否启用比例制导/预测拦截。 | `boolean` | `false` |
+| `top_attack_height` | 末端攻顶高度。 | `Float` | `null` |
+| `guidance_angle_gate` | 末端跟踪角度门。 | `Map<RVP_Range<Float>, RVP_Range<Float>>` | `null` |
+| `angle_gate_lock_out_tick` | 末端超角度门后延迟脱锁 tick。 | `int` | `20` |
+| `enable_inertial_guidance` | 末端是否允许惯性制导。 | `boolean` | `false` |
+
+#### 示例
+
+GPS 滑翔炸弹 + 末端红外：
+
+```json
+"guidance_data": {
+  "guidance_type": "GPS",
+  "guidance_tick_range": "[[0,inf]]",
+  "gps_spread_radius": 1.0,
+  "cruise_start_tick": 20,
+  "cruise_end_horizontal_dist": 80,
+  "cruise_gravity_scale": 0.5,
+  "cruise_leveling_factor": 0.15,
+  "terminal_guidance": {
+    "guidance_type": "IR",
+    "guidance_start_dist": 100,
+    "max_lock_angle": 40,
+    "max_guidance_angle": 60,
+    "scan_interval_tick": 2
+  }
+}
+```
+
+SACLOS 反坦克导弹（半自动修正）：
+
+```json
+"guidance_data": {
+  "guidance_type": "SACLOS",
+  "semi_correction_enabled": true,
+  "semi_correction_stiffness": 0.06,
+  "semi_correction_damping": 0.04,
+  "semi_correction_wobble": 0.3,
+  "max_guidance_angle": 30,
+  "max_off_axis_lock_angle": 45
+}
+```
+
+人在回路 TV 导弹：
+
+```json
+"guidance_data": {
+  "guidance_type": "HITL_CLOS_TV",
+  "hitl_max_turn_deg_per_tick": 2,
+  "signal_source": "RADIO",
+  "hitl_max_control_dist": 1200,
+  "hitl_max_control_tick": 400,
+  "hitl_max_look_offset": 30,
+  "hitl_video_modes": ["MONO", "THERMAL"]
+}
+```
+
+反辐射导弹：
+
+```json
+"guidance_data": {
+  "guidance_type": "ARM",
+  "max_lock_angle": 35,
+  "max_guidance_angle": 60,
+  "scan_interval_tick": 2,
+  "active_radar_activation_range": 256,
+  "radiation_pulse_memory_tick": 30,
+  "arm_memory_tick": 60,
+  "arm_locked_emitter_bonus": 1.0
+}
+```
+
+### 1.14 `laser_data`（`rvp:laser`）
+
+| 字段 | 说明 |
+| --- | --- |
+| `range` | 激光有效射程（格），默认 `512`；亦用作目标指示吊舱的方块标记射线长度。 |
+| `visual_data` | 客户端光束外观（见下表）。 |
+
+#### `laser_data.visual_data` 激光光束（客户端）
+
+| 字段 | 说明 |
+| --- | --- |
+| `color` | RGBA 0–255。 |
+| `width` | 光束宽度（格），默认 `0.2`。 |
+| `duration_tick` | 停火后残留 tick；连发时每次 pulse 刷新。默认 `20`。 |
+| `pulsate` | 是否脉动宽度。默认 `true`。 |
+| `render_start_distance` | 炮口沿瞄准方向外推最小距离（与几何裁剪配合，避免穿机体）。 |
+| `segment_length` | 分段渲染段长（格），最长合并为 64 段。默认 `0.4`。 |
+
+光束终点由射线检测决定，不穿墙；观察者视角通过深度测试遮挡。
+
+### 1.15 `targeting_pod_data`（`rvp:targetingpod`）
+
+目标指示吊舱：对实体/方块打标记，可写入 GPS 目标点供 GPS/SACLOS 类武器使用。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `mode` | 标记模式：`entity`（仅实体）、`block`（仅方块）、`both`。 | `entity` |
+| `spot_range` | 实体标记扫描距离（格）。 | `200` |
+| `spot_angle` | 实体标记锥形半角（度）。 | `15` |
+| `mark_duration` | 标记持续时间（tick）。 | `600` |
+| `target_filter` | 实体标记的目标类型过滤，可含 `vehicle` / `player` / `living`。 | `["vehicle"]` |
+| `block_range` | 方块标记射线最大距离（格）；`null` 时使用 `laser_data.range`。 | `null` |
+| `write_gps_target` | 方块标记命中时是否同时写入 GPS 目标点（供 GPS/SACLOS 武器接引）。 | `true` |
+| `team_share` | 标记是否共享给同队玩家。 | `true` |
+
+实体标记沿瞄准方向扫描锥形区域（`spot_range` × `spot_angle` 半角）；方块标记走直线射线，命中后生成标记点并（可选）写入 GPS 目标。
+
+#### `rvp:targetingpod` 示例
+
+```json
+{
+  "type": "rvp:targetingpod",
+  "laser_data": { "range": 512 },
+  "targeting_pod_data": {
+    "mode": "both",
+    "spot_range": 200,
+    "spot_angle": 15,
+    "mark_duration": 600,
+    "target_filter": ["vehicle", "player"],
+    "block_range": 400,
+    "write_gps_target": true,
+    "team_share": true
+  }
+}
+```
+
+---
+
+## 2 载具 JSON 扩展字段
+
+以下字段直接写在**载具 JSON 顶层**（与 `parts`、`weapons` 等同级），由 RVP 的 `VehicleDataManagerMixin` 等读取。多数为客户端/服务端独立读取，未在列表特别说明时均属于可选字段。
+
+### 2.1 显示与命名
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `ui_preset` | UI 预设 ID（字符串），指向 UI 预设文件里的预设名；决定载具 HUD 布局与样式。详见 §4。 | 空 |
+| `nctr_name` | NCTR（敌我识别）显示名称字符串。 | `?` |
+| `show_skeleton` | 观瞄时是否显示骨骼俯视图。 | `true` |
+| `hide_passenger` | 是否隐藏乘客渲染（由 `RVP_VehicleHitboxFactorManager` 读取）。 | `false` |
+
+### 2.2 武器槽位过热（写在武器条目内）
+
+过热字段**不是**写在载具顶层，而是写在 `parts[].weapons[]` 的**武器对象条目**内（与 `id`、`secondary` 等同级），按「部件 id + 主/副通道 + 槽位索引」匹配（解析见 `RVP_VehicleWeaponHeatConfigCache`）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `vehicle_max_heat_count` | 该武器槽位的过热上限；`> 0` 时启用该槽位过热，热量达到上限后禁止继续开火，直到冷却到上限以下。 | `0` |
+| `vehicle_heat_count` | 初始热量值。 | `0` |
+| `vehicle_overheat_extra_heat` | 过热惩罚热量：开火后达到或超过上限时额外追加，模拟过热锁死后需要更久冷却。 | `30` |
+
+```json
+"weapons": [
+  {
+    "id": "rvp:machinegun",
+    "vehicle_max_heat_count": 100,
+    "vehicle_heat_count": 0,
+    "vehicle_overheat_extra_heat": 30
+  }
+]
+```
+
+> 注意：这是**武器槽位级**过热，与武器 JSON 内 `fire_data.heat_count` / `max_heat_count`（武器自身过热）相互独立；武器射速由本体字段 `shoot_interval`（武器 JSON 顶层）控制。
+
+### 2.3 碰撞箱受击倍率与 ERA（`hitbox_*`）
+
+由 `RVP_VehicleHitboxFactorManager` 读取。基于 `structure_model` 的骨骼 OBB 做射线命中判定，对命中骨骼应用伤害倍率或 ERA 规则：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `structure_model` | 结构模型资源 id（与 §2.8 物理/结构共用同一键）。未配置时退化为仅用默认倍率。 | `null` |
+| `hitbox_damage_factor_default` | 未命中任何已配置骨骼时的默认受击倍率。 | `1.0` |
+| `hitbox_damage_factor` | 对象：`骨骼名 → 倍率`。命中该骨骼时使用对应倍率。 | 空对象 |
+| `hitbox_era` | 对象：`骨骼名 → 数字或对象`。数字为伤害倍率（简化）；对象见下表。 | 空对象 |
+| `hitbox_display_name` | 对象：`骨骼名 → 显示名`，用于命中调试消息（HBX）。 | 空对象 |
+| `core_distance_scale_multiplier` | 核心距离缩放倍率。 | `1.0` |
+
+#### `hitbox_era` 值对象
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `damage_factor` | 命中该 ERA 骨骼时的伤害倍率。 | `1.0` |
+| `min_trigger_damage` | 单次伤害需**大于**该值才触发 ERA 阻挡（消耗该骨骼并播放特效）。 | `inf`（不触发） |
+| `explosion` | 触发时的爆炸特效规模系数（影响粒子/音效强度）。 | `0` |
+
+```json
+"structure_model": "ywzj_rvp:models/vehicle/apc.obj",
+"hitbox_damage_factor_default": 1.0,
+"hitbox_damage_factor": {
+  "turret": 1.2,
+  "engine": 1.5
+},
+"hitbox_era": {
+  "hull_front": 0.25,
+  "turret_side": { "damage_factor": 0.4, "min_trigger_damage": 20, "explosion": 1.2 }
+},
+"hitbox_display_name": {
+  "hull_front": "首上装甲"
+}
+```
+
+> 机制说明：直击命中 ERA 骨骼且伤害超过 `min_trigger_damage` 时消耗该骨骼（同骨骼冷却期内不再触发）并播放松散特效；附近爆炸（非直击）按爆炸半径阈值表按百分比破坏 ERA（≤5 格不破坏、5–8 格 10%、8–12 格 25%、12–18 格 50%、>18 格全毁，直击至少 1 块保底）。配置过 `physics_info.physics_only_bone(s)` 时，若命中只落在“仅物理”碰撞体上则本次伤害判定被禁用。
+
+### 2.4 主动防护系统（`rvp_aps`）
+
+载具顶层 `rvp_aps` 对象，启用后自动探测并拦截来袭射弹。**启用条件**：`enabled: true` 且 `ammo_max > 0` 且 `spawn_part_id` 非空。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 总开关。 | `false` |
+| `ammo_max` | 拦截弹药上限（消耗车体弹药计数）。 | `0` |
+| `reload_one_tick` | 每发拦截弹药补充耗时（tick）。 | `600` |
+| `cooldown_tick` | 连续拦截之间的冷却（tick）。 | `20` |
+| `intercept_delay_tick` | 探测到目标到实际拦截的延迟（tick）。 | `10` |
+| `scan_interval_tick` | 探测扫描间隔（tick）。 | `1` |
+| `detect_radius` | 探测半径（格）。 | `32.0` |
+| `intercept_radius` | 拦截生效半径（格）。 | `8.0` |
+| `projectile_speed_min` | 可拦截射弹最小速度。 | `1.0` |
+| `projectile_speed_max` | 可拦截射弹最大速度。 | `80.0` |
+| `animation_part_ids` | 拦截动画部件 id 列表（旋转/开盖动画）。 | `[]` |
+| `spawn_part_id` | 拦截弹生成部件 id（必填；缺省时取 `animation_part_ids[0]`）。 | `""` |
+| `exclude_owner_projectile` | 是否不拦截本车自己发射的射弹。 | `true` |
+
+```json
+"rvp_aps": {
+  "enabled": true,
+  "ammo_max": 8,
+  "reload_one_tick": 600,
+  "cooldown_tick": 20,
+  "intercept_delay_tick": 10,
+  "scan_interval_tick": 1,
+  "detect_radius": 32.0,
+  "intercept_radius": 8.0,
+  "projectile_speed_min": 1.0,
+  "projectile_speed_max": 80.0,
+  "animation_part_ids": ["aps_turret"],
+  "spawn_part_id": "aps_muzzle",
+  "exclude_owner_projectile": true
+}
+```
+
+### 2.5 自动盘旋（`rvp_loiter_*`）
+
+通用载具自动盘旋配置（任何飞行器可用，独立于可部署 UAV 系统）。`rvp_loiter_enabled: true` 即启用，其余全部可选：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_loiter_enabled` | 总开关。 | `false` |
+| `rvp_loiter_radius` | 盘旋半径（格）。 | `120.0` |
+| `rvp_loiter_altitude_offset` | 盘旋高度相对初始高度偏移（格）。 | `40.0` |
+| `rvp_loiter_terrain_clearance` | 距地形最低安全高度（格）。 | `30.0` |
+| `rvp_loiter_min_safe_altitude` | 全局最低安全高度（格）。 | `80.0` |
+| `rvp_loiter_fixed_wing_min_bank` | 固定翼最小坡度（度），决定固定翼最小盘旋半径。 | `30.0` |
+| `rvp_loiter_auto_on_takeoff` | 起飞后自动进入盘旋（固定翼同时自动启动引擎并满油门）。 | `false` |
+| `rvp_loiter_bank` | 盘旋坡度（度）。 | `25.0` |
+| `rvp_loiter_direction` | 盘旋方向：`right`（默认）或 `left`。 | `right` |
+
+> 爬升/转场/进场的阶段超时、地形采样间隔与范围、震荡半径扩张等**内部算法参数**已固化为常量（见源码 `RVP_UavLoiterTickService`），不再暴露为 JSON 可配置项。
+
+### 2.6 可部署 UAV（`deployable_uav_*`）
+
+把指定载具作为“可部署 UAV”从本车释放（需要 `deployable_uav_vehicle_id` 指向实际载具 id）。`deployable_uav_enabled: true` 且 `deployable_uav_vehicle_id` 有效才启用：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `deployable_uav_enabled` | 总开关。 | `false` |
+| `deployable_uav_vehicle_id` | 被部署的 UAV 载具资源 id（必填）。 | 空 |
+| `deployable_uav_role` | UAV 角色标记：任意字符串（无固定枚举），仅作标记/调试显示，默认 `uav`。 | `uav` |
+| `deployable_uav_spawn_offset` | 生成位置偏移：对象 `{x,y,z}` 或 `[x,y,z]`。 | `[0,0,0]` |
+| `deployable_uav_spawn_yaw_mode` | 生成朝向模式：`parent`（默认，朝母机当前朝向）/ `operator_look`（朝操作员视线方向）。 | `parent` |
+| `deployable_uav_single_instance` | 是否同时只允许一架。 | `true` |
+| `deployable_uav_allow_control_switch` | 是否允许切换到 UAV 控制视角。 | `true` |
+| `deployable_uav_auto_link_datalink` | 自动建立数据链。 | `true` |
+| `deployable_uav_redeploy_cooldown_tick` | 回收后再次部署的冷却（tick）。 | `0` |
+| `deployable_uav_auto_loiter_on_switch_back` | 切回本车时 UAV 自动进入盘旋。 | `true` |
+| `deployable_uav_initial_speed` | 部署初始速度。 | `0.0` |
+
+### 2.7 起落架自动收放（`rvp_auto_landing_gear*`）
+
+顶层 `rvp_auto_landing_gear: true` 即启用：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_auto_landing_gear` | 总开关。 | `false` |
+| `rvp_auto_landing_gear_retract_speed` | 收起速度阈值（km/h）：速度超限且离地高于 `retract_height` 时自动收起。 | `100` |
+| `rvp_auto_landing_gear_deploy_speed` | 放下速度阈值（km/h）。 | `50` |
+| `rvp_auto_landing_gear_deploy_height` | 放下判定高度（格）：速度低于 `deploy_speed` 且离地低于该高度时自动放下。 | `25` |
+| `rvp_auto_landing_gear_retract_height` | 收起判定高度（格）：离地高于该高度才允许自动收起，防止低空误收。 | `50` |
+
+**手动收放覆盖**：玩家一旦手动操作起落架（收放按键），该载具即进入**手动覆盖模式**，自动收放逻辑完全停用（覆盖式，最高优先级），直到该载具销毁。
+
+### 2.8 物理与结构扩展
+
+由 `RVP_VehicleExtendedConfigManager` 读取：
+
+```json
+"physics_info": {
+  "ground_contact_part_ids": ["wheel_l", "wheel_r"],
+  "physics_only_bone": "main_body",
+  "physics_only_bones": ["b1", "b2"]
+},
+"structure_model": "yourmod:models/vehicle/fighter.obj"
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `physics_info.ground_contact_part_ids` | 视为“地面接触”的部件 id 列表（用于离地判定）。 |
+| `physics_info.physics_only_bone` | 单根“仅物理”骨骼名（与 `physics_only_bones` 合并读取）。 |
+| `physics_info.physics_only_bones` | 多根“仅物理”骨骼列表。配置后命中只落在这些骨骼上时，受击伤害判定被禁用（见 §2.3）。这些骨骼的碰撞盒会被移出 `vehicleCubeOBBs`，因此不显示在碰撞箱俯视图 UI 中；F3+B 调试渲染中会以**灰色线框**单独标出。 |
+| `structure_model` | 结构模型资源 id，同时被物理系统与 hitbox/ERA（§2.3）使用。 |
+
+#### 武器槽位分组（写在武器条目内）
+
+以下两个字段写在 `parts[].weapons[]` 的武器对象条目内，用于把多个槽位组合成一组（同一挂点多武器）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `modding_only_multi` | `true` 时该槽位为“仅 mod 使用”的多联挂架槽；要求条目内 `ids` 数组至少 2 个武器。 |
+| `merge_into_previous_slot` | `true` 时该槽位合并到上一槽位（不占独立循环位）。 |
+
+```json
+"weapons": [
+  {
+    "ids": ["rvp:missile", "rvp:missile"],
+    "modding_only_multi": true
+  },
+  {
+    "ids": ["rvp:rocket"],
+    "merge_into_previous_slot": true
+  }
+]
+```
+
+> 联动规则：若槽位 A 为 `modding_only_multi` 且槽位 B（A 的下一个索引）为 `merge_into_previous_slot`，则 A、B 构成“分组槽位”（共享武器循环）；仅 A 为 modding 而 B 未合并时，A 在运行时武器循环中被跳过。
+
+### 2.9 自定义挂架（`rvp_custom_mounts`）
+
+客户端渲染自定义挂架/导弹模型，数组形式，见源码 `RVP_CustomMountConfig`：
+
+```json
+"rvp_custom_mounts": [
+  {
+    "part_unit_id": "wing_hardpoint_1",
+    "attach_bone": "hardpoint_1",
+    "weapon_id": "rvp:missile",
+    "model": "yourmod:models/ammo/aim120.obj",
+    "texture": "yourmod:textures/models/aim120.png",
+    "rack_bones": ["rack_1"],
+    "missile_bones": ["msl_1"],
+    "replace_weapon_display": true,
+    "ammo_slot": 0,
+    "offset": [0, -0.2, 0],
+    "rotation_deg": [0, 0, 0],
+    "scale": [1, 1, 1]
+  }
+]
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `part_unit_id` | 挂点所在部件 id（必填）。 |
+| `attach_bone` | 挂点骨骼名；与 `attach_part_unit_id` 二选一（必填其一）。 |
+| `attach_part_unit_id` | 直接挂在某部件 id 上（替代骨骼）。 |
+| `weapon_id` | 绑定的武器类型 id（必填）。 |
+| `model` / `texture` | 自定义显示模型/贴图资源 id（必填）。 |
+| `rack_bones` / `missile_bones` | 挂架骨骼列表 / 导弹骨骼列表。 |
+| `replace_weapon_display` | 是否替换原武器显示模型。默认 `true`。 |
+| `ammo_slot` | 弹药槽位索引。默认 `0`。 |
+| `offset` / `rotation_deg` / `scale` | 位置偏移 / 旋转（度）/ 缩放，均为 3 元数组。 |
+
+### 2.10 发射器部署（`rvp_launcher_deploy`）
+
+把武器站定义为“发射器部署”（可展开/收纳并带动俯仰）结构，支持单个对象或数组（多条配置），完整字段见源码 `RVP_LauncherDeployConfig`：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 本条配置开关（`false` 时忽略）。 | `true` |
+| `id` | 配置 id；缺省时用 `part_unit_id` 或 `launcher_N`。 | — |
+| `part_unit_id` | 所属部件 id（与 `weapon_unit_ids` 至少填一个）。 | 空 |
+| `weapon_unit_ids` | 关联武器站 id 列表（字符串或数组）。 | `[]` |
+| `pitch_part_unit_id` | 俯仰部件 id；缺省取 `weapon_unit_ids[0]` 或 `part_unit_id`。 | — |
+| `pitch_group` | 俯仰分组：结构骨骼名（如 `launcher`）或 `<骨骼名>_barrel`（指向该部件的炮管 xTurn 分组）；不匹配任何骨骼时回退 xTurn 分组。缺省自动取部件 xTurn 分组。 | 空 |
+| `deploy_speed_max` | 展开最大速度。 | `2.0` |
+| `retract_speed_min` | 收纳最小速度（默认 `deploy_speed_max + 0.5`）。 | — |
+| `deploy_time_tick` | 展开耗时（tick）。 | `60` |
+| `retract_time_tick` | 收纳耗时（tick）。 | `40` |
+| `require_player_present` | 需要乘员在位才允许展开。 | `true` |
+| `auto_deploy` | 开火时自动展开。 | `true` |
+| `auto_retract` | 停止开火/闲置自动收纳。 | `true` |
+| `block_fire_when_closed` | 未展开时禁止开火。 | `true` |
+| `block_fire_when_deploying` | 展开过程中禁止开火。 | `true` |
+| `block_fire_when_retracting` | 收纳过程中禁止开火。 | `true` |
+| `block_fire_when_speeding` | 高速移动时禁止开火。 | `true` |
+| `apply_pitch_after_weapon_tick` | 在武器 tick 之后应用俯仰。 | `false` |
+| `stowed_pitch` | 收纳俯仰角（度）。 | `0.0` |
+| `deployed_pitch` | 展开俯仰角（度）。 | `88.0` |
+
+```json
+"rvp_launcher_deploy": {
+  "part_unit_id": "launcher_unit",
+  "weapon_unit_ids": ["launcher_unit"],
+  "deploy_time_tick": 60,
+  "retract_time_tick": 40,
+  "auto_deploy": true,
+  "auto_retract": true,
+  "block_fire_when_closed": true,
+  "stowed_pitch": 0,
+  "deployed_pitch": 88
+}
+```
+
+### 2.11 载具显示配置（`display/vehicle`）
+
+载具模型/贴图与渲染行为配置文件：`assets/<namespace>/display/vehicle/<id>.json`。本体 `BaseDisplayPojo` 的字段（`model`、`texture`、`animations`、`special_bone_effects` 等）全部可用；RVP 通过 `RVP_BaseDisplayPojo` 扩展以下独有字段：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `bedrock_backend` | Bedrock 模型渲染后端：`vehicle`（默认，本体后端）/ `rvp`（RVP 增强后端）。 | `vehicle` |
+| `no_cull_bones` | 骨骼名列表：渲染时对这些骨骼**不做面剔除**（半透明/镂空模型防误剔）。 | `[]` |
+| `state_hidden_bones` | 状态机隐藏骨骼规则数组（见下）。 | `[]` |
+| `distance_hidden_bones` | 距离 LOD 隐藏骨骼规则数组（见下）。 | `[]` |
+| `lod_models` | 整模型 LOD 规则数组：距离/离地达到阈值时用低面数模型整体替换渲染（见下）。 | `[]` |
+
+#### `state_hidden_bones[]`（`RVP_StateHiddenBone`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `state` | 触发状态。目前支持 `landing_gear_up`（起落架收起）。 | — |
+| `bones` | 该状态下隐藏（不渲染）的骨骼名列表。 | `[]` |
+| `delay_ticks` | 进入状态后延时多少 tick 才隐藏（保证收起动作动画完整播放）；状态退出立即恢复渲染。 | `0` |
+
+#### `distance_hidden_bones[]`（`RVP_DistanceHiddenBone`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `distance` | 玩家与载具距离超过该值（方块）时隐藏对应骨骼。 | `50` |
+| `bones` | 隐藏的骨骼名列表。 | `[]` |
+
+#### `lod_models[]` 整模型 LOD（`RVP_LodModel`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `model` | LOD 低模资源 ID（**必填**，如 `yourmod:models/bedrock/fighter_lod2.json`）。 | — |
+| `model_air` | 离地（飞行）状态使用的 LOD 模型 ID；缺省与地面共用 `model`。 | — |
+| `texture` | LOD 贴图资源 ID；缺省沿用原贴图。 | — |
+| `distance` | 地面状态下的进入阈值（方块）。 | `32` |
+| `air_distance` | 离地状态下的进入阈值（方块），通常小于 `distance`——飞行时 LOD 更早生效。 | `16` |
+| `air_height` | 离地判定高度（方块）：载具相对地面高于该值视为离地。 | `10` |
+| `zoom_distance` / `zoom_air_distance` | 缩放中（载具镜/RVP 武器缩放/原版望远镜）的显式进入阈值（方块）；缺省沿用 `distance × 全局缩放系数`（系数见 §6.3 `lod.lodZoom*`）。`-1` 表示未配置。 | `-1` |
+
+> LOD 切换带滞后防抖：进入某级使用配置阈值，退回使用 `0.85 × 阈值`，避免边界抖动。
+
+#### `special_bone_effects[]` 内 RVP 透明模式扩展
+
+`special_bone_effects` 为本体字段，RVP 在其条目中扩展透明渲染模式：
+
+| 字段 | 说明 |
+| --- | --- |
+| `ywzj_rvp_transparent_mode` | 透明渲染模式：`cockpit_depth_fix`（配合同条目的 `bone` 字段，修复半透明座舱盖等特殊骨骼的深度渲染问题）。 |
+
+```json
+{
+  "model": "yourmod:models/vehicle/fighter.json",
+  "texture": "yourmod:textures/vehicle/fighter.png",
+  "bedrock_backend": "rvp",
+  "no_cull_bones": ["canopy_glass"],
+  "state_hidden_bones": [
+    { "state": "landing_gear_up", "bones": ["gear_front", "gear_rear"], "delay_ticks": 20 }
+  ],
+  "distance_hidden_bones": [
+    { "distance": 80, "bones": ["antenna"] }
+  ],
+  "lod_models": [
+    { "model": "yourmod:models/bedrock/fighter_lod2.json", "distance": 120, "air_distance": 60 }
+  ],
+  "special_bone_effects": [
+    { "bone": "canopy_glass", "ywzj_rvp_transparent_mode": "cockpit_depth_fix" }
+  ]
+}
+```
+
+---
+
+## 3 部件 JSON 扩展
+
+### 3.1 武器站部件扩展
+
+以下字段写在武器站**部件 JSON**内（`parts` 数组某部件的同级字段，由 `WeaponUnitPojoMixin` 注入）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）或 `rvp_rf`（启用 RF 软火控/瞄准辅助，配合 `rvp_rf_off_axis_deg` 限制离轴角度）。 | `""` |
+| `rvp_rf_off_axis_deg` | 雷达（RF）制导离轴限制（度）。 | `10.0` |
+| `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
+| `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
+
+### 3.2 雷达部件扩展
+
+以下字段写在雷达部件 JSON 内（由 `RadarUnitPojoMixin` 注入）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `radar_role` | 雷达角色：`all`（默认，可搜索可锁定）/ `search`（仅搜索，不可锁定）/ `fire_control`（火控雷达，多雷达时锁定优先）。 | `all` |
+| `scan_animation_mode` | 扫描动画模式：`mechanical`（默认，机械扫描线）/ `phase`（相位阵列扫描）。 | `mechanical` |
+| `nctr_mode` | NCTR 非合作目标识别模式：`NONE`（默认，关闭）/ `EARLY`（早期简化识别）/ `MODERN`（现代识别，写任意非 `NONE`/`EARLY` 值均可）。 | `NONE` |
+| `scan_period_tick` | 扫描周期（tick）。 | `0` |
+| `scan_line_when_locked` | 锁定时是否显示扫描线。 | `false` |
+| `contact_hold_tick` | 脱锁后目标保持显示的 tick。 | `0` |
+| `enable_hms` | 头盔瞄准具（HMS）开关：`false` / `true` / `onlyACM`（仅格斗模式）。未写时视为 `FULL`（启用）。 | 未写 |
+| `scan_min_height` | 扫描最小高度（格）。 | `25` |
+| `scan_max_height` | 扫描最大高度（格）。 | `10000` |
+
+> `enable_hms` 为 `JsonElement`：写布尔或字符串均可；`false`/`off`/`none` 表示关闭，`onlyACM`/`only_acm`/`acm` 表示仅空战模式启用，其余值视为完整启用。
+
+---
+
+## 4 UI 预设文件（`ui_presets`）
+
+UI 预设决定载具 HUD 布局。加载来源（`UIPresetManager`）：
+
+1. 数据包：`data/*/ui_presets/<name>.json`（数据包同名预设**优先**）；
+2. 配置目录：`config/limitless_vehicle/ui_presets/*.json`（回退）；
+3. 两者都为空时自动生成默认 `default.json`。
+
+载具 JSON 顶层通过 `"ui_preset": "<name>"` 引用预设。
+
+### 预设文件结构
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 预设名（缺省用文件名）。 |
+| `radar` | 雷达窗口位置。 |
+| `external_radar` | 外部雷达（地图屏）位置。 |
+| `rwr` | 雷达告警接收机位置。 |
+| `vehicle_bones` | 骨骼俯视图位置。 |
+| `scope_envelope` | 瞄准镜包络位置。 |
+| `radars` | 多雷达独立位置：对象，key 为雷达部件 id（如 `scan_radar`），value 为位置对象。 |
+
+### 位置对象（`UIPosition`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `anchor` | 锚点：`center` / `top_left` / `left` / `right` / `right_bottom`。 | `right` |
+| `offset_x` | 水平偏移（px）。 | `0` |
+| `offset_y` | 垂直偏移（px），按 1080p 参考高度等比缩放（`offset_y × 实际高度/1080`）。 | `0` |
+| `scale` | 缩放倍率。 | `1.0` |
+
+```json
+{
+  "name": "default",
+  "radar": { "anchor": "right", "offset_x": 128, "offset_y": -80, "scale": 1.0 },
+  "external_radar": { "anchor": "top_left", "offset_x": 80, "offset_y": 300, "scale": 1.0 },
+  "rwr": { "anchor": "right", "offset_x": 128, "offset_y": -180, "scale": 1.0 },
+  "vehicle_bones": { "anchor": "right_bottom", "offset_x": 116, "offset_y": 80, "scale": 1.0 },
+  "radars": {
+    "scan_radar": { "anchor": "top_left", "offset_x": 100, "offset_y": 200, "scale": 1.0 }
+  }
+}
+```
+
+> 热更新：`/ywzj_vehicle reload` 会重新加载数据包与 config 中的预设文件。
+
+---
+
+## 5 Gunner 配置文件（`gunner_profiles`）
+
+Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `name` | 配置名（缺省用文件名）。 | `default` |
+| `faction` | 阵营：`friendly` / `enemy`（或 `hostile`）/ `team`（或 `faction`）。 | `friendly` |
+| `target_types` | 目标类型过滤：`vehicle` / `player` / `monster` / `living` / `rvp:missile`。 | `["rvp:missile","vehicle","monster","player"]` |
+| `search_radius` | 索敌半径（格）。 | `96.0` |
+| `scan_interval_tick` | 目标扫描间隔（tick）。 | `10` |
+| `fire_window_deg` | 开火窗口角（度）：目标进入该角锥内才开火。 | `6.0` |
+| `lead_scale` | 提前量补偿系数。 | `1.0` |
+| `burst_fire_tick` | 单次点射持续（tick）。 | `6` |
+| `burst_rest_tick` | 点射间隔（tick）。 | `10` |
+| `countermeasure_range` | 应对来袭导弹的告警/规避半径（格）。 | `36.0` |
+| `countermeasure_cooldown_tick` | 反制动作冷却（tick）。 | `80` |
+| `allow_drive` | 是否允许 AI 驾驶本车。 | `true` |
+| `drive_pursuit_distance` | 追击目标距离（格）。 | `64.0` |
+| `drive_stop_distance` | 停车距离（格）。 | `12.0` |
+| `drive_stuck_check_tick` | 卡住检测间隔（tick）。 | `20` |
+| `drive_stuck_distance` | 卡住判定位移（格）。 | `1.0` |
+| `drive_recovery_tick` | 脱困倒车时长（tick）。 | `20` |
+| `rotary_cruise_altitude_min` | 旋翼机巡航高度下限（格）。 | `28.0` |
+| `rotary_cruise_altitude_max` | 旋翼机巡航高度上限（格）。 | `60.0` |
+| `fixedwing_cruise_altitude_min` | 固定翼巡航高度下限（格）。 | `150.0` |
+| `fixedwing_cruise_altitude_max` | 固定翼巡航高度上限（格）。 | `500.0` |
+| `fixedwing_combat_radius_min` | 固定翼作战半径下限（格）。 | `40.0` |
+| `fixedwing_combat_radius_max` | 固定翼作战半径上限（格）。 | `550.0` |
+| `ground_wander_enabled` | 地面 AI 是否允许漫游。 | `true` |
+| `ground_big_turn_interval_tick_min` | 地面大转弯间隔下限（tick）。 | `300` |
+| `ground_big_turn_interval_tick_max` | 地面大转弯间隔上限（tick）。 | `600` |
+| `ground_big_turn_angle_deg_min` | 地面大转弯角度下限（度）。 | `120.0` |
+| `ground_big_turn_angle_deg_max` | 地面大转弯角度上限（度）。 | `180.0` |
+| `ground_big_turn_duration_tick` | 地面大转弯持续（tick）。 | `40` |
+| `air_attack_phase_tick` | 空中攻击阶段持续（tick）。 | `200` |
+| `air_disengage_phase_tick` | 空中脱离阶段持续（tick）。 | `200` |
+| `air_initial_disengage_tick_min` | 首次脱离延迟下限（tick）。 | `300` |
+| `air_initial_disengage_tick_max` | 首次脱离延迟上限（tick）。 | `400` |
+
+---
+
+## 6 Forge 配置（config 文件）
+
+RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.toml`、`ywzj_rvp-client.toml`。
+
+### 6.1 `ywzj_rvp-server.toml`（服务端）
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `explosion.craterDepthRules` | 爆炸坑深度规则：每个条目格式 `"maxRadius:maxDepth"`（maxRadius = 爆炸半径阈值格数，maxDepth = 爆炸中心 Y 以下最多破坏层数，`0` = 仅地表）。加载时按 maxRadius 自动升序排序，半径超过最后一条时沿用最后一条深度。**空列表 = 无限制（原版行为）**。 | `["5:0","15:1","35:2","65:3","100:4","9999:5"]` |
+
+### 6.2 `ywzj_rvp-common.toml`（通用）
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `spawning.spawnVehicleWithCreativeAmmo` | 用生成物品放置载具时，是否自动往载具库存塞一组创造弹药以便立即使用；同时**在载具生成的瞬间一次性补满所有武器的所有弹药**（跳过装填时间，避免换弹时间长的载具放置后还要等待）。该补满是仅生成时刻的一次性操作，不随后续消耗弹药重复触发。 | `false` |
+
+### 6.3 `ywzj_rvp-client.toml`（客户端）
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `lod.lodZoomEnabled` | 缩放中（载具镜/RVP 武器缩放/原版望远镜）启用 LOD 增强：视场内载具少、渲染压力低，可将 LOD 距离阈值放大、更晚替换低模。 | `true` |
+| `lod.lodZoomFovRatio` | “缩放中”判定阈值：当前渲染 FOV 低于基础 FOV 的该比例时视为缩放中。范围 `0.1–0.99`。 | `0.75` |
+| `lod.lodZoomDistanceMultiplier` | 缩放中 LOD 距离阈值倍率（`1.0` = 不变，`>1` = 缩放中 LOD 更晚生效）。范围 `1.0–10.0`。 | `1.5` |
+
+---
+
+## 7 旧写法迁移对照
+
+> 此表帮助从旧版本 JSON 迁移到当前 schema。**当前版本不再解析旧键**（仅大小写与少量字段补全，不做全量键迁移），旧 JSON 需手工改写成新写法。
+
+### 7.1 武器类型迁移
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `type: "ywzj_rvp:gps_bomb"` | `type: "rvp:bomb"` + `guidance_data.guidance_type: "GPS"` |
+| `type: "ywzj_rvp:tv_missile"` | `type: "rvp:missile"` + `guidance_data.guidance_type: "HITL_TV"` 等 |
+| `type: "ywzj_rvp:anti_radiation_missile"` | `type: "rvp:missile"` + `guidance_data.guidance_type: "ARM"` |
+| `type: "ywzj_rvp:active_radar_missile"` | `type: "rvp:missile"` + `guidance_data.guidance_type: "ARH"` |
+| `type: "ywzj_rvp:semi_active_radar_missile"` | `type: "rvp:missile"` + `guidance_data.guidance_type: "SARH"` |
+| `type: "ywzj_rvp:manual_guidance_missile"` | `type: "rvp:missile"` + `guidance_data.guidance_type: "MCLOS"` |
+| 顶层 `velocity` | 移入 `projectile_data.velocity`（顶层写法仍被自动归一化补入） |
+| 无 `has_rocket_engine` 但有 `mass`/`thrust`/`motor_burn_time` | 归一化层自动补 `has_rocket_engine: true` |
+
+### 7.2 旧键 → 新键
+
+| 旧键 | 新键 |
+| --- | --- |
+| 顶层 `ahead_data{...}` | `fuse_data.ahead_enabled` / `ahead_burst_offset_meters` / `ahead_require_lock` / `ahead_min_ground_clearance` |
+| `guidance_data.phases[]` | `guidance_data.stages[]`（归一化层自动重命名） |
+| `guidance_data.stage_policy` | `guidance_data.phase_resolve_policy`（自动重命名） |
+| `seeker_data`（顶层或阶段内） | 阶段内 `seeker{}`（自动合并） |
+| 顶层 `steering_data` | 各阶段 `steering_data`（自动复制到缺省阶段） |
+| `charge_time`（旧蓄力字段） | 由 `fire_data.fire_mode: "CHARGE"` + `fire_data` 蓄力参数取代 |
+| `minigun_spin_decay_tick` | 由 `fire_data.fire_mode: "MINIGUN"` 相关参数取代 |
+| `dual_pulse` | `projectile_data.second_pulse` / `second_pulse_trigger_speed` / `second_pulse_trigger_distance` / `second_pulse_thrust` / `second_pulse_burn_time` |
+| `altitude_drag_*` | `projectile_data.altitude_drag_factor` |
+| `gps_cep` | `guidance_data.gps_spread_radius` |
+| `signature_size` | `misc_data.signal_intensity_factor_on_radar` |
+| `guide_head_max_angle` | `guidance_data.max_off_axis_lock_angle` |
+| `seek.fov` | `guidance_data.max_lock_angle`（注意后者为完整 FOV，运行时减半） |
+| `terminal_ir_*` | 并入 `guidance_data.terminal_guidance`（仅 `NONE`/`ATV`/`AIR`/`ARH`/`ARM`/`IR`） |
+| 顶层 `spread` | 由 `submunition_data` / `dispenser_data` 控制；弹道散布回退顶层 `inaccuracy` |
+
+---
+
+## 8 参考
+
+- 弹体运动学：`docs/plan/RVP武器数据模型/弹体运动学与爆炸伤害.md`
+- 伤害倍率与爆炸：`docs/plan/RVP武器数据模型/RVP伤害倍率与爆炸.md`
+- 子母弹系统：`docs/plan/RVP武器数据模型/子母弹系统.md`
+- 源码目录：`src/main/java/org/ywzj/rvp/`（数据模型在 `weapon/data/`，载具扩展在 `mixin/`，配置在 `config/`）
+
+---
+
+> 本文档为 RVP 包新增参数字段的完整说明。若源码出现新的可配置项，请同步更新本文档。

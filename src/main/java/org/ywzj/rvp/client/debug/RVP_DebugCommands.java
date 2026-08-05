@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.debug;
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -19,6 +20,16 @@ import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+import org.ywzj.vehicle.entity.weapon.AmmoEntity;
+import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.ai.GunnerTargeting;
+import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
+import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
+import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerDebugMonitor;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -228,6 +239,43 @@ public class RVP_DebugCommands {
                                     return 1;
                                 }))
                         )
+                        .then(Commands.literal("gunner")
+                                .executes(ctx -> {
+                                    // one-shot dump to chat + file
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+                                    if (vehicle == null) {
+                                        ctx.getSource().sendSuccess(() -> Component.literal("§c[Gunner] 未乘坐载具"), false);
+                                        return 0;
+                                    }
+                                    GunnerEntity gunner = null;
+                                    for (var p : vehicle.getPassengers()) {
+                                        if (p instanceof GunnerEntity g) { gunner = g; break; }
+                                    }
+                                    if (gunner == null) {
+                                        ctx.getSource().sendSuccess(() -> Component.literal("§c[Gunner] 载具上没有 gunner"), false);
+                                        return 0;
+                                    }
+                                    String dump = buildGunnerDump(gunner, vehicle);
+                                    ctx.getSource().sendSuccess(() -> Component.literal(dump), false);
+                                    // also write to log file
+                                    java.io.PrintWriter pw = RVP_GunnerDebugMonitor.getOneShotWriter();
+                                    if (pw != null) {
+                                        pw.println(java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " [Gunner] " + dump.replace("\n", " | "));
+                                        pw.flush();
+                                    }
+                                    return 1;
+                                })
+                                .then(Commands.literal("monitor").executes(ctx -> {
+                                    // 全局监控，不要求玩家在载具上
+                                    // 实际数据来自 GunnerBrain.tick() 中每个 gunner 的 onTick() 调用
+                                    RVP_GunnerDebugMonitor.start();
+                                    return 1;
+                                }))
+                                .then(Commands.literal("stop").executes(ctx -> {
+                                    RVP_GunnerDebugMonitor.stop();
+                                    return 1;
+                                }))
+                        )
                         .then(Commands.literal("ui").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
                             StringBuilder sb = new StringBuilder();
@@ -381,6 +429,60 @@ public class RVP_DebugCommands {
                             return 1;
                         }))
         );
+    }
+
+    private static String buildGunnerDump(GunnerEntity gunner, AbstractVehicle vehicle) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("§e=== Gunner Debug ===\n");
+        sb.append("§eProfileId: §f").append(gunner.getProfileId()).append("\n");
+        ResourceLocation normId = GunnerProfileManager.INSTANCE.normalizeProfileId(gunner.getProfileId());
+        GunnerProfile profile = GunnerProfileManager.INSTANCE.getProfile(normId);
+        sb.append("§eProfile: §f").append(profile != null ? profile.getName() : "null").append("\n");
+        sb.append("§eFaction: §f").append(profile != null ? profile.getFaction() : "null").append("\n");
+        boolean driver = vehicle.getDriver() == gunner;
+        sb.append("§eIsDriver: §f").append(driver).append("\n");
+        sb.append("§eLauncherConfig: §f").append(GunnerBrain.hasLauncherDeployConfig(vehicle)).append("\n");
+        sb.append("§eVehicleId: §f").append(vehicle.getVehicleId()).append("\n");
+
+        // ammo
+        boolean hasAny = false;
+        for (var pu : vehicle.getPartUnits()) {
+            if (!(pu instanceof WeaponUnit wu)) continue;
+            for (AbstractVehicleWeapon<?> w : wu.getIndexedWeapons()) {
+                var proxy = wu.proxyWeapon(w);
+                sb.append("§eWeapon: §f").append(w.getData() != null ? w.getData().getWeaponId() : "null")
+                        .append(" remain=").append(proxy.getRemainAmmo())
+                        .append("/").append(proxy.getMaxCapacity())
+                        .append(" cd=").append(proxy.isCoolingDown())
+                        .append(" reload=").append(proxy.isReloading())
+                        .append(" hasAmmo=").append(proxy.hasAmmo())
+                        .append("\n");
+                if (proxy.hasAmmo()) hasAny = true;
+            }
+        }
+        sb.append("§ehasAnyAmmo: §f").append(hasAny).append("\n");
+
+        // target
+        var target = gunner.getTrackedTarget();
+        if (target != null && target.isAlive()) {
+            sb.append("§eTarget: §f").append(target.getType().toString())
+                    .append(" pos=").append(String.format("%.1f,%.1f,%.1f", target.getX(), target.getY(), target.getZ()))
+                    .append(" dist=").append(String.format("%.1f", vehicle.position().distanceTo(target.position())))
+                    .append("\n");
+            if (target instanceof AmmoEntity ammo) {
+                sb.append("§e  (ammo) owner=").append(ammo.getOwner()).append("\n");
+            }
+        } else {
+            sb.append("§eTarget: §cnone (null/dead)\n");
+        }
+
+        sb.append("§eMissileCooldown: §f").append(gunner.getMissileCooldown()).append("\n");
+        sb.append("§eBurstWindowOpen: §f").append(gunner.isBurstWindowOpen()).append("\n");
+        sb.append("§eWeaponIdx: §f").append(gunner.getControlledWeaponIndex()).append("\n");
+
+        AmmoEntity ciws = GunnerTargeting.findCiwsTarget(gunner, vehicle);
+        sb.append("§eCIWS target: §f").append(ciws != null ? ciws.getType().toString() : "none").append("\n");
+        return sb.toString();
     }
 
     private static void writeLog(Path path, String content) {

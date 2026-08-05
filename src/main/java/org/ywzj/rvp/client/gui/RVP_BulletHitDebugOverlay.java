@@ -25,6 +25,9 @@ public final class RVP_BulletHitDebugOverlay {
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
+        if (!org.ywzj.rvp.client.RVP_DebugOverlayState.isEnabled()) {
+            return;
+        }
         if (!RVP_ClientBulletHitDebugState.isActive()) {
             return;
         }

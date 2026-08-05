@@ -1,8 +1,7 @@
 package org.ywzj.rvp.client.render;
 
-import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.resource.pojo.BedrockModelPOJO;
-import com.maydaymemory.mae.basic.Pose;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -14,12 +13,10 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
-import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleBedrockModel;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
-import org.ywzj.vehicle.client.render.animation.util.PoseHelper;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.DisplayManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -51,11 +48,10 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import static org.ywzj.vehicle.client.render.animation.util.PoseBlenders.BLENDER;
 
 public final class RVP_CustomMountRenderLogic {
 
@@ -129,26 +125,21 @@ public final class RVP_CustomMountRenderLogic {
                 || resolution.displayWeaponUnit().getVehicle() == null) {
             return;
         }
-        int ammoCost = resolution.displayWeaponUnit().getFiringMode() == WeaponUnitData.FiringMode.SALVO
-                ? Math.max(1, resolution.displayWeaponUnit().aimContexts().size())
-                : 1;
         PredictionKey key = new PredictionKey(
                 resolution.displayWeaponUnit().getVehicle().getId(),
                 resolution.displayWeaponUnit().getId(),
                 resolution.currentWeapon().getData().getWeaponId()
         );
-        int syncedAmmo = Math.max(0, resolution.currentWeapon().getRemainAmmo());
-        PredictedAmmo currentPrediction = PREDICTED_AMMO.get(key);
-        int baseAmmo = currentPrediction == null ? syncedAmmo : Math.min(syncedAmmo, currentPrediction.ammo());
-        int predictedAmmo = Math.max(0, baseAmmo - ammoCost);
+        // consumeAmmo() 已在 shoot() 中本地扣减 remainAmmo，
+        // 预测值直接取当前 remainAmmo 即可，不再额外扣减。
+        int predictedAmmo = Math.max(0, resolution.currentWeapon().getRemainAmmo());
         PREDICTED_AMMO.put(key, new PredictedAmmo(predictedAmmo, System.currentTimeMillis()));
         if (DEBUG_ENABLED.get()) {
             appendDebugLog("clientFire vehicle=" + resolution.displayWeaponUnit().getVehicle().getVehicleId()
                     + " entityId=" + resolution.displayWeaponUnit().getVehicle().getId()
                     + " partUnit=" + resolution.displayWeaponUnit().getId()
                     + " weapon=" + resolution.currentWeapon().getData().getWeaponId()
-                    + " syncedAmmo=" + syncedAmmo
-                    + " ammoCost=" + ammoCost
+                    + " remainAmmo=" + predictedAmmo
                     + " predictedAmmo=" + predictedAmmo
                     + " sourceUnit=" + weaponUnit.getId());
         }
@@ -185,7 +176,7 @@ public final class RVP_CustomMountRenderLogic {
                 continue;
             }
             VehicleBedrockModel attachmentModel = getAttachmentModel(config.model());
-            if (attachmentModel == null) {
+            if (attachmentModel == null || !attachmentModel.hasBakedModel()) {
                 if (DEBUG_ENABLED.get()) {
                     appendDebugLog("render SKIP: attachmentModel null vehicle=" + vehicle.getVehicleId()
                             + " model=" + config.model()
@@ -223,7 +214,8 @@ public final class RVP_CustomMountRenderLogic {
                     hiddenRackBones.addAll(config.missileBones());
                 }
             }
-            applyAttachmentPose(attachmentModel, hiddenRackBones, partiallyHiddenMissiles);
+            BakedModelInstance attachmentInstance = attachmentModel.createBakedInstance();
+            applyAttachmentPose(attachmentInstance, hiddenRackBones, partiallyHiddenMissiles);
             if (DEBUG_ENABLED.get()) {
                 noteRenderPose(vehicle, resolved);
             }
@@ -238,8 +230,9 @@ public final class RVP_CustomMountRenderLogic {
                 poseStack.mulPose(Axis.ZP.rotationDegrees(rotation.z()));
                 RVP_CustomMountConfig.Vec3fConfig scale = config.scale();
                 poseStack.scale(scale.x(), scale.y(), scale.z());
-                attachmentModel.renderToBuffer(poseStack, bufferSource, config.texture(), actualLight);
+                attachmentModel.renderToBuffer(attachmentInstance, poseStack, bufferSource, config.texture(), actualLight);
                 attachmentModel.renderSpecialBones(
+                        attachmentInstance,
                         poseStack,
                         bufferSource,
                         actualLight,
@@ -248,7 +241,6 @@ public final class RVP_CustomMountRenderLogic {
                 );
             } finally {
                 poseStack.popPose();
-                attachmentModel.applyPose(attachmentModel.getBindPose());
             }
         }
     }
@@ -339,8 +331,12 @@ public final class RVP_CustomMountRenderLogic {
             Matrix4f matrix = new Matrix4f().translation((float) translate.x, (float) translate.y, (float) translate.z);
             return new AttachmentTransform(matrix);
         }
-        BedrockBone attachBone = vehicleModel.getBone(config.attachBone());
-        return attachBone == null ? null : new AttachmentTransform(getFullBoneTransform(attachBone));
+        BakedModelInstance vehicleModelInstance = vehicle.getModelInstance();
+        int attachBoneIndex = vehicleModelInstance.getIndex(config.attachBone());
+        if (attachBoneIndex < 0 || vehicleModelInstance.getBone(attachBoneIndex) == null) {
+            return null;
+        }
+        return new AttachmentTransform(vehicleModelInstance.getGlobalTransform(attachBoneIndex));
     }
 
     @Nullable
@@ -396,7 +392,7 @@ public final class RVP_CustomMountRenderLogic {
         return MODEL_CACHE.computeIfAbsent(modelId, id -> {
             BaseDisplay persistedDisplay = resolveAttachmentDisplay(id);
             if (persistedDisplay != null) {
-                VehicleBedrockModel rebuiltDisplayModel = rebuildAttachmentModelFromDisplay(persistedDisplay);
+                VehicleBedrockModel rebuiltDisplayModel = rebuildAttachmentModelFromDisplay(id, persistedDisplay);
                 if (rebuiltDisplayModel != null) {
                     return rebuiltDisplayModel;
                 }
@@ -404,13 +400,15 @@ public final class RVP_CustomMountRenderLogic {
                     return persistedDisplay.getModel();
                 }
             }
+            Set<String> preservedBones = collectCustomMountPreservedBones(id);
             VehicleBedrockModel directModel = ClientAssetsManager.INSTANCE.getModel(id)
                     .map(modelPojo -> RVP_VehicleModelFactory.createVehicleModel(
                             modelPojo,
                             List.of(),
-                            RVP_BedrockBackend.RVP
+                            RVP_BedrockBackend.RVP,
+                            preservedBones
                     ))
-                    .orElseGet(() -> loadAttachmentModelDirect(id, List.of()));
+                    .orElseGet(() -> loadAttachmentModelDirect(id, List.of(), preservedBones));
             if (directModel != null) {
                 return directModel;
             }
@@ -458,8 +456,10 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     @Nullable
-    private static VehicleBedrockModel rebuildAttachmentModelFromDisplay(BaseDisplay display) {
-        if (display.getModel() instanceof RVP_VehicleBedrockModel) {
+    private static VehicleBedrockModel rebuildAttachmentModelFromDisplay(ResourceLocation modelId,
+                                                                         BaseDisplay display) {
+        Set<String> preservedBones = collectCustomMountPreservedBones(modelId);
+        if (preservedBones.isEmpty() && display.getModel() != null && display.getModel().hasBakedModel()) {
             return display.getModel();
         }
         ResourceLocation modelPath = display.getModelPath();
@@ -473,15 +473,17 @@ public final class RVP_CustomMountRenderLogic {
                 .map(modelPojo -> RVP_VehicleModelFactory.createVehicleModel(
                         modelPojo,
                         effects,
-                        RVP_BedrockBackend.RVP
+                        RVP_BedrockBackend.RVP,
+                        preservedBones
                 ))
-                .orElseGet(() -> loadAttachmentModelDirect(modelPath, effects));
+                .orElseGet(() -> loadAttachmentModelDirect(modelPath, effects, preservedBones));
         return directModel != null ? directModel : display.getModel();
     }
 
     @Nullable
     private static VehicleBedrockModel loadAttachmentModelDirect(ResourceLocation modelId,
-                                                                 List<SpecialBoneEffect> effects) {
+                                                                 List<SpecialBoneEffect> effects,
+                                                                 Set<String> preservedBones) {
         ResourceLocation resourcePath = new ResourceLocation(
                 modelId.getNamespace(),
                 "models/bedrock/" + modelId.getPath() + ".json"
@@ -496,7 +498,8 @@ public final class RVP_CustomMountRenderLogic {
                 return pojo == null ? null : RVP_VehicleModelFactory.createVehicleModel(
                         pojo,
                         effects == null ? List.of() : effects,
-                        RVP_BedrockBackend.RVP
+                        RVP_BedrockBackend.RVP,
+                        preservedBones
                 );
             }
         } catch (Exception exception) {
@@ -515,37 +518,47 @@ public final class RVP_CustomMountRenderLogic {
      * @param partiallyHiddenBones 需要逐枚隐藏的导弹骨骼及其可见数量；
      *                            为 null 或空时使用 hiddenBones 的全显/全隐逻辑
      */
-    private static void applyAttachmentPose(VehicleBedrockModel model,
+    private static void applyAttachmentPose(BakedModelInstance instance,
                                             List<String> hiddenBones,
                                             @Nullable List<PartiallyHiddenBone> partiallyHiddenBones) {
-        if (hiddenBones.isEmpty() && (partiallyHiddenBones == null || partiallyHiddenBones.isEmpty())) {
-            model.applyPose(model.getBindPose());
-            return;
-        }
-        PoseHelper helper = new PoseHelper(model);
         for (String boneName : hiddenBones) {
-            helper.hideBone(boneName);
+            setBoneVisible(instance, boneName, false);
         }
         if (partiallyHiddenBones != null) {
             for (PartiallyHiddenBone phb : partiallyHiddenBones) {
                 if (!phb.visible()) {
-                    helper.hideBone(phb.boneName());
+                    setBoneVisible(instance, phb.boneName(), false);
                 }
             }
         }
-        Pose pose = BLENDER.blend(model.getBindPose(), helper.build());
-        model.applyPose(pose);
+    }
+
+    private static Set<String> collectCustomMountPreservedBones(ResourceLocation modelId) {
+        Set<String> preservedBones = new java.util.LinkedHashSet<>();
+        for (List<RVP_CustomMountConfig> configs : RVP_CustomMountConfigCache.all().values()) {
+            for (RVP_CustomMountConfig config : configs) {
+                if (!modelId.equals(config.model())) {
+                    continue;
+                }
+                preservedBones.addAll(config.rackBones());
+                preservedBones.addAll(config.missileBones());
+            }
+        }
+        return preservedBones;
     }
 
     /** 单枚导弹骨骼的可见性记录。 */
     private record PartiallyHiddenBone(String boneName, boolean visible) {}
 
-    private static Matrix4f getFullBoneTransform(BedrockBone targetBone) {
-        Matrix4f matrix = VehicleBedrockModel.getGlobalTransform(targetBone);
-        matrix.scaleLocal(targetBone.xScale, targetBone.yScale, targetBone.zScale);
-        matrix.rotateLocal(targetBone.rotation);
-        matrix.translateLocal(targetBone.x / 16.0F, targetBone.y / 16.0F, targetBone.z / 16.0F);
-        return matrix;
+    private static void setBoneVisible(BakedModelInstance instance, String boneName, boolean visible) {
+        int boneIndex = instance.getIndex(boneName);
+        if (boneIndex < 0) {
+            return;
+        }
+        var bone = instance.getBone(boneIndex);
+        if (bone != null) {
+            bone.visible = visible;
+        }
     }
 
     /**
@@ -589,14 +602,7 @@ public final class RVP_CustomMountRenderLogic {
             } else {
                 // 多枚导弹模式：计算该挂架上可见导弹数量
                 int visibleOnThisPylon;
-                if (mount.firingMode() == WeaponUnitData.FiringMode.RIPPLE && mounts.size() > 1) {
-                    int totalDisplayCapacity = mounts.stream()
-                            .mapToInt(entry -> entry.config().missileBones().size())
-                            .sum();
-                    int spentAmmo = Math.max(0, totalDisplayCapacity - mount.visibleAmmo());
-                    int spentOnThisPylon = roundRobinSpentForIndex(spentAmmo, i, mounts.size(), missileCount);
-                    visibleOnThisPylon = Math.max(0, missileCount - spentOnThisPylon);
-                } else if (mount.firingMode() == WeaponUnitData.FiringMode.SALVO && mounts.size() > 1) {
+                if (mount.firingMode() == WeaponUnitData.FiringMode.SALVO && mounts.size() > 1) {
                     int available = mount.visibleAmmo() - (slot - 1);
                     visibleOnThisPylon = available <= 0 ? 0
                             : Math.min(missileCount, (available + mounts.size() - 1) / mounts.size());
@@ -609,14 +615,6 @@ public final class RVP_CustomMountRenderLogic {
                         mount.predictedAmmo(), slot, hideMissile, visibleOnThisPylon, mount.firingMode()));
             }
         }
-    }
-
-    private static int roundRobinSpentForIndex(int spentAmmo, int mountIndex, int mountCount, int mountCapacity) {
-        if (spentAmmo <= mountIndex) {
-            return 0;
-        }
-        int spent = 1 + (spentAmmo - 1 - mountIndex) / mountCount;
-        return Math.min(spent, mountCapacity);
     }
 
     private static void noteResolvedMountStates(AbstractVehicle vehicle, List<ResolvedMount> mounts) {

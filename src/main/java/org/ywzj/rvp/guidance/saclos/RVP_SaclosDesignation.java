@@ -3,7 +3,6 @@ package org.ywzj.rvp.guidance.saclos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -71,7 +70,7 @@ public final class RVP_SaclosDesignation {
             return projectile.getTargetPos();
         }
 
-        if (projectile.getOwner() instanceof Player operator) {
+        if (projectile.getOwner() instanceof LivingEntity operator) {
             Vec3 sessionPoint = RVP_SaclosOperatorSession.getDesignationPoint(operator.getUUID());
             if (sessionPoint != null) {
                 return sessionPoint;

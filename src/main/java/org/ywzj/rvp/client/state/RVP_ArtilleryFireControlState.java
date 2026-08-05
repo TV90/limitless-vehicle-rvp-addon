@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.state;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -122,7 +123,13 @@ public final class RVP_ArtilleryFireControlState {
         }
         Context context = resolveContext(LocalVehiclePlayer.instance);
         if (context == null) {
+            // 无有效上下文时重置缓存，防止切回炮兵载具时 contextChanged 误判为 false
             solution = null;
+            designatedVehicleId = Integer.MIN_VALUE;
+            designatedWeaponId = null;
+            lastResolveTick = Integer.MIN_VALUE;
+            lastSolveVehiclePos = null;
+            lastSolveVehicleVelocity = null;
             return;
         }
         boolean contextChanged = context.vehicle().getId() != designatedVehicleId
@@ -131,14 +138,18 @@ public final class RVP_ArtilleryFireControlState {
                 || lastSolveVehiclePos.distanceToSqr(context.vehicle().position()) > 0.0625D
                 || lastSolveVehicleVelocity == null
                 || lastSolveVehicleVelocity.distanceToSqr(context.vehicle().getDeltaMovement()) > 0.0025D;
-        if (!contextChanged && solution == null && lastResolveTick != Integer.MIN_VALUE
+        // "无解"的 Solution（missDistance == POSITIVE_INFINITY）不应被节流逻辑跳过，
+        // 否则从无人机切回火箭炮时第一次解算失败后会卡在"无解"状态。
+        boolean hasValidSolution = solution != null
+                && solution.missDistance() < Double.POSITIVE_INFINITY;
+        if (!contextChanged && !hasValidSolution && lastResolveTick != Integer.MIN_VALUE
                 && context.vehicle().tickCount - lastResolveTick < HOVER_RESOLVE_INTERVAL_TICK) {
             return;
         }
-        if (!contextChanged && solution != null && !sourceMoved) {
+        if (!contextChanged && hasValidSolution && !sourceMoved) {
             return;
         }
-        if (!contextChanged && solution != null && sourceMoved
+        if (!contextChanged && hasValidSolution && sourceMoved
                 && context.vehicle().tickCount - lastResolveTick < RESOLVE_INTERVAL_TICK) {
             return;
         }
@@ -299,7 +310,14 @@ public final class RVP_ArtilleryFireControlState {
                 : RVP_RocketBallistics.computeArtilleryImpact(context.vehicle().level(), muzzle, velocity,
                         direction, context.data(), context.vehicle(),
                         RVP_RocketBallistics.ARTILLERY_PREDICTION_TICK, target.y,
-                        RVP_TacticalMapCache::getCachedHeight);
+                        (x, z) -> {
+                            Integer cached = RVP_TacticalMapCache.getCachedHeight(x, z);
+                            if (cached != null) {
+                                return cached;
+                            }
+                            // 后备：缓存缺失时（如从视距外无人机切回）从已加载chunk实时获取
+                            return context.vehicle().level().getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+                        });
         if (impact == null) {
             return null;
         }

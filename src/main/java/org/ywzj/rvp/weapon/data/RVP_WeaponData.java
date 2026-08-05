@@ -79,6 +79,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("laser_data")
     private RVP_LaserData laserData = new RVP_LaserData();
 
+    /** 目标指示吊舱参数，见 {@link RVP_TargetingPodData}。 */
+    @SerializedName("targeting_pod_data")
+    private RVP_TargetingPodData targetingPodData = new RVP_TargetingPodData();
+
     /**
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
@@ -158,9 +162,19 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return laserData == null ? new RVP_LaserData() : laserData;
     }
 
+    /** 目标指示吊舱参数。 */
+    public RVP_TargetingPodData getTargetingPodData() {
+        return targetingPodData == null ? new RVP_TargetingPodData() : targetingPodData;
+    }
+
     @Nullable
     public String resolveMissileNameOnHud(float distance) {
         return getMiscData().resolveMissileNameOnHud(distance);
+    }
+
+    @Nullable
+    public String resolveMissileNameOnHudWithFallback(float distance) {
+        return getMiscData().resolveMissileNameOnHudWithFallback(distance);
     }
 
     @Nullable
@@ -348,6 +362,18 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return usesGuidanceType(RVP_EnumGuidanceType.SARH);
     }
 
+    public boolean isInfrared() {
+        return usesGuidanceType(RVP_EnumGuidanceType.IR);
+    }
+
+    /** Whether the missile carries a seeker head that can acquire a target autonomously. */
+    public boolean hasSeeker() {
+        return isActiveRadar()
+                || isSemiActiveRadar()
+                || isInfrared()
+                || isAntiRadiationMissile();
+    }
+
     public boolean isRadarHoming() {
         return isActiveRadar() || isSemiActiveRadar();
     }
@@ -508,6 +534,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         RVP_GuidanceData guidance = getGuidanceData();
         return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
+    }
+
+    /** Weapons that require continuous operator involvement (laser spot or beam riding). */
+    public boolean isOperatorGuided() {
+        RVP_GuidanceData guidance = getGuidanceData();
+        return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH
+                || guidance.getGuidanceType() == RVP_EnumGuidanceType.LBR;
     }
 
     public boolean isHitlClosTvGuided() {

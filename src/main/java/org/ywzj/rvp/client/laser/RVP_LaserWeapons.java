@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.laser;
 
 import org.ywzj.rvp.client.laser.RVP_ClientLaserState.LaserBeamKey;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_LaserWeapon;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -22,16 +23,7 @@ public final class RVP_LaserWeapons {
     private RVP_LaserWeapons() {}
 
     public static AbstractVehicleWeapon<?> unwrap(AbstractVehicleWeapon<?> weapon) {
-        if (weapon == null) {
-            return null;
-        }
-        if (weapon instanceof VehicleWeaponAgent) {
-            return weapon.getWeaponUnit().getCurrentWeapon().orElse(null);
-        }
-        if (weapon instanceof VehicleMultiWeapons multi) {
-            return multi.getSelectedWeapon();
-        }
-        return weapon;
+        return RVP_WeaponResolveHelper.unwrap(weapon);
     }
 
     public static RVP_LaserWeapon asLaser(AbstractVehicleWeapon<?> weapon) {

@@ -96,6 +96,27 @@ public final class RVP_RadarContactHelper {
         return isBossThreat(resolved) || resolved.getType().getCategory() == MobCategory.MONSTER;
     }
 
+    /** 中立生物（动物、村民、 ambient 等）使用 normal.png 图标。 */
+    public static boolean usesNeutralIcon(@Nullable Entity entity) {
+        Entity resolved = resolveRadarIdentity(entity);
+        if (resolved == null) {
+            return false;
+        }
+        if (!(resolved instanceof LivingEntity)) {
+            return false;
+        }
+        // 已经被 monster icon 覆盖的不重复
+        if (usesMonsterIcon(resolved)) {
+            return false;
+        }
+        MobCategory category = resolved.getType().getCategory();
+        return category == MobCategory.CREATURE
+                || category == MobCategory.AMBIENT
+                || category == MobCategory.WATER_CREATURE
+                || category == MobCategory.UNDERGROUND_WATER_CREATURE
+                || category == MobCategory.WATER_AMBIENT;
+    }
+
     public static boolean forceHostileIff(@Nullable Entity entity) {
         Entity resolved = resolveRadarIdentity(entity);
         if (resolved instanceof RVP_HbmRadarContact contact) {

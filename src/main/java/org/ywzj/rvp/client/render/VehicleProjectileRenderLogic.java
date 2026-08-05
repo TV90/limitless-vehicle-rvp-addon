@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.render;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
@@ -14,6 +15,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.vehicle.client.render.entity.weapon.BulletEntityRenderer;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.resource.BedrockModelLoader;
 
@@ -67,38 +69,49 @@ final class VehicleProjectileRenderLogic {
         poseStack.rotateAround(Axis.XP.rotationDegrees(sample.pitch()),
                 (float) root.x, (float) root.y, (float) root.z);
 
-        BedrockModel model = null;
         ResourceLocation texture = null;
         ResourceLocation weaponId = ammo.getWeaponId();
+        VehicleBedrockModel ammoModel = null;
         if (weaponId != null) {
             Optional<BaseDisplay> weaponDisplayOptional = ClientAssetsManager.INSTANCE.getWeaponDisplay(weaponId);
             if (weaponDisplayOptional.isPresent()) {
                 BaseDisplay weaponDisplay = weaponDisplayOptional.get();
                 if (weaponDisplay.getModel() != null) {
-                    model = weaponDisplay.getModel();
+                    ammoModel = weaponDisplay.getModel();
                 }
                 if (weaponDisplay.getTexture() != null) {
                     texture = weaponDisplay.getTexture();
                 }
             }
         }
-        if (model == null) {
-            model = BedrockModelLoader.getModel(fallbackModel);
-        }
         if (texture == null) {
             texture = fallbackTexture;
         }
-        var runner = ammo.getAnimationRunner();
-        if (runner != null) {
-            runner.tick();
-            model.applyPose(BLENDER.blend(model.getBindPose(), runner.evaluate()));
-        }
+
+        // v2 烘焙路径（sbmv2）：与 AmmoEntityRenderer.render() 一致
+        BakedModelInstance modelInstance = ammo.getModelInstance();
+        if (ammoModel != null && ammoModel.hasBakedModel() && modelInstance != null) {
+            var runner = ammo.getAnimationRunner();
+            if (runner != null) {
+                runner.tick();
+                modelInstance.applyPose(BLENDER.blend(modelInstance.getBindPose(), runner.evaluate()));
+            }
+            ammoModel.renderToBuffer(modelInstance, poseStack, bufferSource, texture, packedLight);
+        } else {
+            // fallback: v1 路径（无烘焙模型时，如 fallbackModel）
+            BedrockModel model = ammoModel != null ? ammoModel : BedrockModelLoader.getModel(fallbackModel);
+            var runner = ammo.getAnimationRunner();
+            if (runner != null) {
+                runner.tick();
+                model.applyPose(BLENDER.blend(model.getBindPose(), runner.evaluate()));
+            }
             model.renderToBuffer(poseStack, bufferSource,
-                RenderType.entityCutout(texture),
-                RVP_RenderTypes.polyMeshCutout(texture),
-                packedLight,
-                OverlayTexture.pack(0f, false));
-        model.applyPose(model.getBindPose());
+                    RenderType.entityCutout(texture),
+                    RVP_RenderTypes.polyMeshCutout(texture),
+                    packedLight,
+                    OverlayTexture.pack(0f, false));
+            model.applyPose(model.getBindPose());
+        }
         poseStack.popPose();
     }
 

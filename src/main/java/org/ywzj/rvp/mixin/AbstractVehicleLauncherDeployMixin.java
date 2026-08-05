@@ -4,6 +4,7 @@ import com.mojang.math.Axis;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.player.Player;
+import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -86,7 +87,8 @@ public abstract class AbstractVehicleLauncherDeployMixin {
         rvp$launcherDeployStates.keySet().removeIf(id -> configs.stream().noneMatch(config -> config.id().equals(id)));
 
         double speedKph = vehicle.getDeltaMovement().length() * 20.0 * 3.6;
-        boolean hasPlayer = vehicle.getPassengers().stream().anyMatch(Player.class::isInstance);
+        boolean hasPlayer = vehicle.getPassengers().stream()
+                .anyMatch(p -> p instanceof Player || p instanceof GunnerEntity);
 
         for (RVP_LauncherDeployConfig config : configs) {
             LauncherDeployLocalState state = rvp$launcherDeployStates.computeIfAbsent(

@@ -27,6 +27,8 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import net.minecraft.resources.ResourceLocation;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 public class GunnerEntity extends Mob {
@@ -47,6 +49,8 @@ public class GunnerEntity extends Mob {
     private int burstRestTicks;
     private int pendingBurstRestTicks;
     private int countermeasureCooldown;
+    private int missileCooldown;
+    private final Map<Integer, Integer> ciwsTargetCooldowns = new HashMap<>();
     private double lastDriveCheckX;
     private double lastDriveCheckZ;
     private int recoveryTicks;
@@ -311,6 +315,22 @@ public class GunnerEntity extends Mob {
         this.countermeasureCooldown = countermeasureCooldown;
     }
 
+    public int getMissileCooldown() {
+        return missileCooldown;
+    }
+
+    public void setMissileCooldown(int missileCooldown) {
+        this.missileCooldown = missileCooldown;
+    }
+
+    public boolean isCiwsTargetOnCooldown(Entity target) {
+        return ciwsTargetCooldowns.containsKey(target.getId());
+    }
+
+    public void setCiwsTargetCooldown(Entity target, int ticks) {
+        ciwsTargetCooldowns.put(target.getId(), ticks);
+    }
+
     public void tickCooldowns() {
         if (burstFireTicks > 0) {
             burstFireTicks--;
@@ -324,6 +344,11 @@ public class GunnerEntity extends Mob {
         if (countermeasureCooldown > 0) {
             countermeasureCooldown--;
         }
+        if (missileCooldown > 0) {
+            missileCooldown--;
+        }
+        ciwsTargetCooldowns.values().removeIf(v -> v <= 1);
+        ciwsTargetCooldowns.replaceAll((k, v) -> v - 1);
         if (recoveryTicks > 0) {
             recoveryTicks--;
         }

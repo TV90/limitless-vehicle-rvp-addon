@@ -99,11 +99,16 @@ public final class RVP_HbmEffectBridge {
     }
 
     private static boolean realExplosionAlreadyIncludesVisual(RVP_HbmEffectData spec) {
-        if (!"nuclear".equalsIgnoreCase(spec.getRealExplosion())) {
-            return false;
+        String real = spec.getRealExplosion();
+        // VNT标准爆炸自带视觉效果，叠加视觉预设会导致双份特效错位
+        if ("vnt".equalsIgnoreCase(real)) {
+            return true;
         }
-        String preset = spec.getVisualPreset();
-        return "nuclear".equalsIgnoreCase(preset) || "nuke".equalsIgnoreCase(preset);
+        if ("nuclear".equalsIgnoreCase(real)) {
+            String preset = spec.getVisualPreset();
+            return "nuclear".equalsIgnoreCase(preset) || "nuke".equalsIgnoreCase(preset);
+        }
+        return false;
     }
 
     private static boolean applyRealExplosion(ServerLevel level, Vec3 pos, RVP_HbmEffectData spec,

@@ -15,7 +15,16 @@ public class S2CTacticalRevealSnapshot {
 
     public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
     public List<Integer> fireRevealIds = List.of();
-    public List<Integer> markedRevealIds = List.of();
+    /** 吊舱标记的实体（含 IFF 类型） */
+    public List<MarkedEntry> markedEntries = List.of();
+
+    /** 标记实体条目：entityId + IFF 类型 (0=友方蓝, 1=敌方红, 2=中立白) */
+    public record MarkedEntry(int entityId, int iffType) {
+        /** iff 常量 */
+        public static final int IFF_FRIENDLY = 0;
+        public static final int IFF_HOSTILE = 1;
+        public static final int IFF_NEUTRAL = 2;
+    }
 
     public static void encode(S2CTacticalRevealSnapshot msg, FriendlyByteBuf buf) {
         buf.writeResourceLocation(msg.dimension);
@@ -23,9 +32,10 @@ public class S2CTacticalRevealSnapshot {
         for (Integer entityId : msg.fireRevealIds) {
             buf.writeInt(entityId == null ? Integer.MIN_VALUE : entityId);
         }
-        buf.writeVarInt(msg.markedRevealIds.size());
-        for (Integer entityId : msg.markedRevealIds) {
-            buf.writeInt(entityId == null ? Integer.MIN_VALUE : entityId);
+        buf.writeVarInt(msg.markedEntries.size());
+        for (MarkedEntry entry : msg.markedEntries) {
+            buf.writeInt(entry.entityId());
+            buf.writeByte(entry.iffType());
         }
     }
 
@@ -38,12 +48,12 @@ public class S2CTacticalRevealSnapshot {
             fireIds.add(buf.readInt());
         }
         int markedSize = buf.readVarInt();
-        List<Integer> markedIds = new ArrayList<>(markedSize);
+        List<MarkedEntry> entries = new ArrayList<>(markedSize);
         for (int i = 0; i < markedSize; i++) {
-            markedIds.add(buf.readInt());
+            entries.add(new MarkedEntry(buf.readInt(), buf.readByte()));
         }
         msg.fireRevealIds = fireIds;
-        msg.markedRevealIds = markedIds;
+        msg.markedEntries = entries;
         return msg;
     }
 

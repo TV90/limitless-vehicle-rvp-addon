@@ -127,16 +127,16 @@ public final class RVP_WeaponFireController {
         }
         if (programmaticShotQueued) {
             programmaticShotQueued = false;
-            return !weapon.isCoolingDown();
+            return !weapon.isCoolingDown() && canShootHeat();
         }
         RVP_FireData fire = weapon.getData().getFireData();
         return switch (mode()) {
-            case FULL_AUTO -> lastFireDown && !weapon.isCoolingDown();
-            case SEMI_AUTO -> lastPressed && !weapon.isCoolingDown();
+            case FULL_AUTO -> lastFireDown && !weapon.isCoolingDown() && canShootHeat();
+            case SEMI_AUTO -> lastPressed && !weapon.isCoolingDown() && canShootHeat();
             case BURST -> shouldAttemptBurstClientShot(fire);
-            case CHARGE -> lastFireDown && weapon.getChargeTick() >= fire.getChargeTick() && !weapon.isCoolingDown();
-            case MINIGUN -> lastFireDown && spinTick >= fire.getChargeTick() && !weapon.isCoolingDown();
-            case RAILGUN -> railgunCharging && railgunChargeTick >= fire.getChargeTick() && !weapon.isCoolingDown();
+            case CHARGE -> lastFireDown && weapon.getChargeTick() >= fire.getChargeTick() && !weapon.isCoolingDown() && canShootHeat();
+            case MINIGUN -> lastFireDown && spinTick >= fire.getChargeTick() && !weapon.isCoolingDown() && canShootHeat();
+            case RAILGUN -> railgunCharging && railgunChargeTick >= fire.getChargeTick() && !weapon.isCoolingDown() && canShootHeat();
         };
     }
 
@@ -162,7 +162,7 @@ public final class RVP_WeaponFireController {
         if (!canStartBurstRound(fire)) {
             return false;
         }
-        return !weapon.isCoolingDown();
+        return !weapon.isCoolingDown() && canShootHeat();
     }
 
     /** 是否可开始新一轮点射（轮间 {@code burst_delay} 已结束）。 */
@@ -174,7 +174,7 @@ public final class RVP_WeaponFireController {
         if (burstPauseUntilMs > 0L) {
             burstPauseUntilMs = 0L;
         }
-        return burstVolleyShotsRemaining <= 0;
+        return burstVolleyShotsRemaining <= 0 && canShootHeat();
     }
 
     public void completeBurstRound(RVP_FireData fire) {
@@ -211,11 +211,12 @@ public final class RVP_WeaponFireController {
             burstVolleyCooldownTicks--;
             return false;
         }
-        if (weapon.isReloading() || !weapon.hasAmmo()) {
+        if (weapon.isReloading() || !weapon.hasAmmo() || !canShootHeat()) {
             completeBurstRound(weapon.getData().getFireData());
             return false;
         }
         fireShot.run();
+        recordHeatForShot();
         burstVolleyShotsRemaining--;
         burstVolleyCooldownTicks = burstVolleyIntervalTicks;
         if (burstVolleyShotsRemaining <= 0) {
@@ -226,6 +227,7 @@ public final class RVP_WeaponFireController {
 
     public void tick(boolean fireDown) {
         RVP_FireData fire = weapon.getData().getFireData();
+        RVP_WeaponHeatManager.tick(weapon, weapon.getLocalHeatState());
         tickSpinServer(fireDown);
         if (weapon.isReloading() || !weapon.hasAmmo()) {
             clearChargeState();
@@ -303,7 +305,7 @@ public final class RVP_WeaponFireController {
     private boolean canShootNow(boolean afterPrime) {
         RVP_FireData fire = weapon.getData().getFireData();
         int chargeCap = fire.getChargeTick();
-        return switch (mode()) {
+        return canShootHeat() && switch (mode()) {
             case FULL_AUTO, SEMI_AUTO -> true;
             case BURST -> canStartBurstRound(fire);
             case CHARGE -> chargeCap <= 0 || afterPrime || weapon.getChargeTick() >= chargeCap;
@@ -314,6 +316,7 @@ public final class RVP_WeaponFireController {
     }
 
     public void onShotFired() {
+        recordHeatForShot();
         switch (mode()) {
             case CHARGE -> weapon.setChargeTick(0);
             case RAILGUN -> {
@@ -325,6 +328,34 @@ public final class RVP_WeaponFireController {
             case MINIGUN -> { }
             default -> { }
         }
+    }
+
+    public void recordHeatForShot() {
+        RVP_WeaponHeatManager.onShotFired(weapon, weapon.getLocalHeatState());
+    }
+
+    public boolean canShootHeat() {
+        return RVP_WeaponHeatManager.canShoot(weapon, weapon.getLocalHeatState());
+    }
+
+    public boolean hasHeat() {
+        return RVP_WeaponHeatManager.hasHeat(weapon, weapon.getLocalHeatState());
+    }
+
+    public boolean isOverheated() {
+        return RVP_WeaponHeatManager.isOverheated(weapon, weapon.getLocalHeatState());
+    }
+
+    public int getCurrentHeat() {
+        return RVP_WeaponHeatManager.currentHeat(weapon, weapon.getLocalHeatState());
+    }
+
+    public int getMaxHeatCount() {
+        return RVP_WeaponHeatManager.maxHeat(weapon, weapon.getLocalHeatState());
+    }
+
+    public float heatRatio() {
+        return RVP_WeaponHeatManager.heatRatio(weapon, weapon.getLocalHeatState());
     }
 
     private void clearChargeState() {

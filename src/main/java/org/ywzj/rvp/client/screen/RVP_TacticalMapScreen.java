@@ -41,12 +41,17 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
+import org.ywzj.rvp.client.state.RVP_ClientMarkedBlockState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
+import org.ywzj.rvp.network.S2CMarkedBlockSync;
+import org.ywzj.rvp.network.C2SSetLoiterCenter;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CRemoteAmmoSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -102,11 +107,13 @@ public class RVP_TacticalMapScreen extends Screen {
     private static final int NEUTRAL_ICON_COLOR = 0xFFF5F7FA;
     private static final int UNMANNED_VEHICLE_ICON_COLOR = 0xFFF5F7FA;
     private static final int GPS_ICON_COLOR = 0xFFFFF08A;
+    private static final int LOITER_ICON_COLOR = 0xFF00E5FF;
     private static final ResourceLocation PLAYER_ICON = mapIcon("player.png");
     private static final ResourceLocation HELI_ICON = mapIcon("atkheli.png");
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
     private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
+    private static final ResourceLocation NORMAL_ICON = mapIcon("normal.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
     private static final ResourceLocation CRUISE_MISSILE_ICON = mapIcon("cruise_msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
@@ -243,6 +250,13 @@ public class RVP_TacticalMapScreen extends Screen {
     private final Set<ResourceLocation> filteredMapIcons = new HashSet<>();
     private boolean followPlayer = true;
     private boolean draggingMap;
+    // 右键拖动优化：记录右键按下时间和初始位置，松开时再判断是否弹出菜单
+    private long rightButtonPressGameTime = -1L;
+    private double rightButtonPressX;
+    private double rightButtonPressY;
+    private boolean rightButtonDragged;
+    private static final long RIGHT_CLICK_DRAG_THRESHOLD_TICKS = 60L;
+    private static final double RIGHT_CLICK_DRAG_THRESHOLD_PIXELS = 5.0;
     private boolean sidebarVisible;
     private SidebarMode sidebarMode = SidebarMode.NONE;
     private boolean mapContextMenuVisible;
@@ -282,6 +296,7 @@ public class RVP_TacticalMapScreen extends Screen {
     private boolean pendingQuickFireEverRadarLocked;
     private boolean pendingQuickFireEverWeaponLocked;
     private boolean pendingQuickFireEverSeekerReady;
+    private boolean pendingQuickFireEverSeekerReadyChecked;
     private final MapMode mapMode;
 
     private static ResourceLocation mapIcon(String fileName) {
@@ -827,37 +842,16 @@ public class RVP_TacticalMapScreen extends Screen {
                 draggingMap = true;
                 followPlayer = false;
             } else if (button == 1) {
-                if (gpsQuickMarkMode) {
-                    closeTransientMenus();
-                    MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
-                    Vec3 picked = markerHit != null ? markerHit.focusPos : pickMapPoint(mouseX, mouseY);
-                    if (picked != null) {
-                        Minecraft mc = Minecraft.getInstance();
-                        if (mc.player != null) {
-                            ResourceLocation dim = mc.player.level().dimension().location();
-                            setGpsFields(picked);
-                            RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, picked);
-                        }
-                    }
-                    return true;
-                }
-                MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
-                if (markerHit != null) {
-                    selectMarker(markerHit);
-                    rememberMarkerClick(markerHit, false);
-                    if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
-                        return true;
-                    }
-                    if (markerHit.entity == null) {
-                        return true;
-                    }
-                    openEntityContextMenu(mouseX, mouseY, markerHit);
-                    return true;
-                }
-                Vec3 picked = pickMapPoint(mouseX, mouseY);
-                if (picked != null) {
-                    openMapContextMenu(mouseX, mouseY, picked);
-                }
+                // 右键按下时不立即弹出菜单，先进入拖动模式并记录时间
+                // 松开时若持续 < 60 tick 且未拖动，才弹出 GPS/实体菜单
+                Minecraft mc = Minecraft.getInstance();
+                rightButtonPressGameTime = mc.level != null ? mc.level.getGameTime() : 0L;
+                rightButtonPressX = mouseX;
+                rightButtonPressY = mouseY;
+                rightButtonDragged = false;
+                draggingMap = true;
+                followPlayer = false;
+                closeTransientMenus();
                 return true;
             }
         }
@@ -866,6 +860,28 @@ public class RVP_TacticalMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 1 && draggingMap && rightButtonPressGameTime >= 0) {
+            draggingMap = false;
+            long pressDuration = 0L;
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                pressDuration = mc.level.getGameTime() - rightButtonPressGameTime;
+            }
+            // 判断是否发生了显著拖动
+            double dx = mouseX - rightButtonPressX;
+            double dy = mouseY - rightButtonPressY;
+            boolean significantDrag = rightButtonDragged
+                    || (dx * dx + dy * dy) > RIGHT_CLICK_DRAG_THRESHOLD_PIXELS * RIGHT_CLICK_DRAG_THRESHOLD_PIXELS;
+            // 清理状态
+            rightButtonPressGameTime = -1L;
+            rightButtonDragged = false;
+            // 持续时间 >= 60 tick 或发生拖动 → 视为拖动操作，不弹出菜单
+            if (pressDuration >= RIGHT_CLICK_DRAG_THRESHOLD_TICKS || significantDrag) {
+                return true;
+            }
+            // 短按未拖动 → 执行原右键逻辑（快速标记 / 实体菜单 / 地图菜单）
+            return handleRightClickRelease(mouseX, mouseY);
+        }
         if ((button == 1 || button == 2) && draggingMap) {
             draggingMap = false;
             return true;
@@ -873,9 +889,53 @@ public class RVP_TacticalMapScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
+    /**
+     * 右键短按释放时执行的菜单弹出逻辑（从 mouseClicked 迁移）。
+     */
+    private boolean handleRightClickRelease(double mouseX, double mouseY) {
+        if (!isOverMap(mouseX, mouseY)) {
+            return true;
+        }
+        if (gpsQuickMarkMode) {
+            closeTransientMenus();
+            MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
+            Vec3 picked = markerHit != null ? markerHit.focusPos : pickMapPoint(mouseX, mouseY);
+            if (picked != null) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    ResourceLocation dim = mc.player.level().dimension().location();
+                    setGpsFields(picked);
+                    RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, picked);
+                }
+            }
+            return true;
+        }
+        MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
+        if (markerHit != null) {
+            selectMarker(markerHit);
+            rememberMarkerClick(markerHit, false);
+            if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
+                return true;
+            }
+            if (markerHit.entity == null) {
+                return true;
+            }
+            openEntityContextMenu(mouseX, mouseY, markerHit);
+            return true;
+        }
+        Vec3 picked = pickMapPoint(mouseX, mouseY);
+        if (picked != null) {
+            openMapContextMenu(mouseX, mouseY, picked);
+        }
+        return true;
+    }
+
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (draggingMap && (button == 1 || button == 2) && isOverMap(mouseX, mouseY)) {
+            if (button == 1) {
+                rightButtonDragged = true;
+            }
             closeTransientMenus();
             viewWorldX -= dragX * blocksPerPixel;
             viewWorldZ -= dragY * blocksPerPixel;
@@ -1074,6 +1134,8 @@ public class RVP_TacticalMapScreen extends Screen {
         renderRemoteEntities(guiGraphics);
         renderVehicleAndPlayer(guiGraphics);
         renderGpsMarker(guiGraphics);
+        renderMarkedBlocks(guiGraphics);
+        renderLoiterCenter(guiGraphics);
         renderArtilleryCcipMarker(guiGraphics);
         renderRecentImpactCrosses(guiGraphics);
         syncSelectedMarkerHit();
@@ -1696,12 +1758,84 @@ public class RVP_TacticalMapScreen extends Screen {
             } else {
                 drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
             }
-            String label = "GPS " + (i + 1);
+            // 炮兵地图模式下不显示 GPS 文案，仅保留图标标记
+            if (!isArtilleryMode()) {
+                String label = "GPS " + (i + 1);
+                int w = this.font.width(label);
+                int tx = sx - w / 2;
+                int ty = sy + 11;
+                if (ty + 8 <= mapBottom - 2) {
+                    guiGraphics.drawString(this.font, label, tx, ty, GPS_ICON_COLOR, false);
+                }
+            }
+        }
+    }
+
+    /**
+     * 绘制吊舱方块标记。目标指示吊舱在 {@code block} 模式下打下的标记点
+     * 通过 {@link RVP_ClientMarkedBlockState} 同步到客户端，这里在战术地图上
+     * 使用 GPS_ICON + GPS_ICON_COLOR 渲染，并以 "TGT" 标签与普通 GPS 航点区分。
+     */
+    private void renderMarkedBlocks(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return;
+        }
+        ResourceLocation dim = mc.level.dimension().location();
+        List<S2CMarkedBlockSync.MarkedBlockEntry> blocks = RVP_ClientMarkedBlockState.getMarkedBlocks(dim);
+        if (blocks.isEmpty()) {
+            return;
+        }
+        for (S2CMarkedBlockSync.MarkedBlockEntry block : blocks) {
+            int sx = Mth.floor(worldToScreenX(block.x()));
+            int sy = Mth.floor(worldToScreenY(block.z()));
+            if (sx < mapLeft || sx > mapRight || sy < mapTop || sy > mapBottom) {
+                continue;
+            }
+            drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
+            String label = "TGT";
             int w = this.font.width(label);
             int tx = sx - w / 2;
             int ty = sy + 11;
             if (ty + 8 <= mapBottom - 2) {
                 guiGraphics.drawString(this.font, label, tx, ty, GPS_ICON_COLOR, false);
+            }
+        }
+    }
+
+    /**
+     * 绘制盘旋圆心标记。从 {@link RVP_ClientLoiterState} 读取服务端同步的盘旋圆，
+     * 在战术地图上绘制圆心和盘旋半径圆环，风格与 GPS 标记一致。
+     */
+    private void renderLoiterCenter(GuiGraphics guiGraphics) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return;
+        }
+        ResourceLocation dim = mc.level.dimension().location();
+        List<RVP_ClientLoiterState.LoiterCircle> circles = RVP_ClientLoiterState.getCircles(dim);
+        if (circles.isEmpty()) {
+            return;
+        }
+        for (RVP_ClientLoiterState.LoiterCircle circle : circles) {
+            int sx = Mth.floor(worldToScreenX(circle.centerX()));
+            int sy = Mth.floor(worldToScreenY(circle.centerZ()));
+            // 绘制盘旋半径圆环
+            float screenRadius = (float) (circle.radius() / blocksPerPixel);
+            if (screenRadius > 2f && isMarkerVisible(sx, sy, (int) screenRadius + 2)) {
+                GuiHelper.drawCircle(guiGraphics.pose(), sx, sy, screenRadius,
+                        LOITER_ICON_COLOR, 0.06F, 0.0F, 0.0F);
+            }
+            // 绘制圆心图标
+            if (sx >= mapLeft && sx <= mapRight && sy >= mapTop && sy <= mapBottom) {
+                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, LOITER_ICON_COLOR, false, 0.0f, 1.0f);
+                String label = "LOITER";
+                int w = this.font.width(label);
+                int tx = sx - w / 2;
+                int ty = sy + 11;
+                if (ty + 8 <= mapBottom - 2) {
+                    guiGraphics.drawString(this.font, label, tx, ty, LOITER_ICON_COLOR, false);
+                }
             }
         }
     }
@@ -2023,6 +2157,10 @@ public class RVP_TacticalMapScreen extends Screen {
             openSidebar(SidebarMode.GPS);
         } else if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
             clearGps();
+        } else {
+            // 最后一项：设为盘旋圆心
+            RVP_Network.CHANNEL.sendToServer(new C2SSetLoiterCenter(
+                    mapContextTarget.x, mapContextTarget.y, mapContextTarget.z));
         }
         closeMapContextMenu();
         return true;
@@ -2555,9 +2693,8 @@ public class RVP_TacticalMapScreen extends Screen {
         }
         AbstractVehicleWeapon<?> currentWeapon = weaponOptional.get();
         if (!(currentWeapon.getData() instanceof RVP_WeaponData data)
-                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE
-                || !data.isActiveRadar()) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_arh"), true);
+                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_missile"), true);
             return false;
         }
         if (!tryLockRadarTarget(target)) {
@@ -2618,32 +2755,60 @@ public class RVP_TacticalMapScreen extends Screen {
         AbstractVehicleWeapon<?> currentWeapon = weaponOptional.get();
         if (!(currentWeapon instanceof org.ywzj.rvp.weapon.core.RVP_WeaponBase rvpWeapon)
                 || !(currentWeapon.getData() instanceof RVP_WeaponData data)
-                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE
-                || !data.isActiveRadar()) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_arh"), true);
+                || data.getWeaponKind() != RVP_EnumWeaponKind.MISSILE) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_need_missile"), true);
             clearPendingQuickFire();
             return;
         }
         Entity target = findTrackedEntityById(pendingQuickFireEntityId);
         RadarUnit mainRadar = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
         if (target != null && target.isAlive()) {
-            if (!weaponUnit.isSeekerOn()) {
-                weaponUnit.toggleSeeker(true);
+            boolean hasSeeker = data.hasSeeker();
+            boolean isIr = data.isInfrared();
+
+            // Seeker-equipped missiles: auto-enable seeker and assist lock
+            if (hasSeeker) {
+                if (!weaponUnit.isSeekerOn()) {
+                    weaponUnit.toggleSeeker(true);
+                }
+                boolean externalVisible = hasExternalRadarContact(target.getId());
+                if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
+                    RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
+                } else if (mainRadar != null) {
+                    RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
+                }
             }
-            boolean externalVisible = hasExternalRadarContact(target.getId());
-            if (externalVisible && (mainRadar == null || !RVP_RadarRoleHelper.radarCurrentlyDetects(mainRadar, target))) {
-                RVP_ExternalRadarLinkHelper.applyClientLockRequest(weaponUnit, target);
-            } else if (mainRadar != null) {
-                RVP_RadarRoleHelper.applyRequestedLock(weaponUnit, target);
-            }
+
             boolean radarLocked = (mainRadar != null && entityMatches(mainRadar.getLockedEntity(), pendingQuickFireEntityId))
                     || isExternalRadarLockedEntity(target);
             boolean weaponLocked = entityMatches(weaponUnit.getLockedEntity(), pendingQuickFireEntityId);
-            boolean seekerReady = isTargetInQuickFireSeekerEnvelope(weaponUnit, data, target);
+            boolean seekerReady = hasSeeker && isTargetInQuickFireSeekerEnvelope(weaponUnit, data, target);
             pendingQuickFireEverRadarLocked |= radarLocked;
             pendingQuickFireEverWeaponLocked |= weaponLocked;
-            pendingQuickFireEverSeekerReady |= seekerReady;
-            if (radarLocked && weaponLocked && seekerReady) {
+            if (hasSeeker) {
+                pendingQuickFireEverSeekerReady |= seekerReady;
+                pendingQuickFireEverSeekerReadyChecked = true;
+            }
+
+            // IR missiles: must acquire target via seeker, otherwise fail
+            if (isIr && !seekerReady && pendingQuickFireEverSeekerReady) {
+                // Seeker was ready at some point but lost the target — IR can't re-acquire
+                player.displayClientMessage(Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_seeker"), true);
+                clearPendingQuickFire();
+                return;
+            }
+
+            // Determine fire readiness based on guidance type
+            boolean readyToFire;
+            if (hasSeeker) {
+                // Seeker missiles: need radar lock + weapon lock + seeker ready
+                readyToFire = radarLocked && weaponLocked && seekerReady;
+            } else {
+                // Non-seeker missiles (GPS, LBR, etc.): only need radar lock + weapon lock
+                readyToFire = radarLocked && weaponLocked;
+            }
+
+            if (readyToFire) {
                 pendingQuickFireLockStableTicks++;
             } else {
                 pendingQuickFireLockStableTicks = 0;
@@ -2688,6 +2853,7 @@ public class RVP_TacticalMapScreen extends Screen {
         pendingQuickFireEverRadarLocked = false;
         pendingQuickFireEverWeaponLocked = false;
         pendingQuickFireEverSeekerReady = false;
+        pendingQuickFireEverSeekerReadyChecked = false;
     }
 
     private void beginRadarLockAssist(int entityId, int ticks) {
@@ -2717,7 +2883,7 @@ public class RVP_TacticalMapScreen extends Screen {
         if (!pendingQuickFireEverWeaponLocked) {
             return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_turret");
         }
-        if (!pendingQuickFireEverSeekerReady) {
+        if (pendingQuickFireEverSeekerReadyChecked && !pendingQuickFireEverSeekerReady) {
             return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_seeker");
         }
         return Component.translatable("message.ywzj_rvp.tactical_map.radar_fire_timeout_launch");
@@ -3023,6 +3189,10 @@ public class RVP_TacticalMapScreen extends Screen {
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
             drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
+            return;
+        }
+        if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
+            drawMarkerIcon(guiGraphics, NORMAL_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
             return;
         }
         drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 16, color, true, true);
@@ -3450,6 +3620,9 @@ public class RVP_TacticalMapScreen extends Screen {
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
             return MONSTER_ICON;
         }
+        if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
+            return NORMAL_ICON;
+        }
         if (entity instanceof AbstractVehicle vehicle) {
             return resolveVehicleIcon(vehicle);
         }
@@ -3682,7 +3855,13 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private int contextMenuItemCount() {
-        return RVP_ClientGPSState.isActive() ? 3 : 2;
+        int count = RVP_ClientGPSState.isActive() ? 3 : 2;
+        // 玩家在载具中时增加"设为盘旋圆心"选项
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.player.getVehicle() != null) {
+            count++;
+        }
+        return count;
     }
 
     private int contextMenuItemHeight() {
@@ -3728,7 +3907,11 @@ public class RVP_TacticalMapScreen extends Screen {
         if (itemIndex == 1) {
             return Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_gps_panel");
         }
-        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps");
+        if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
+            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps");
+        }
+        // 最后一项：设为盘旋圆心
+        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_set_loiter_center");
     }
 
     private int entityContextMenuItemCount() {

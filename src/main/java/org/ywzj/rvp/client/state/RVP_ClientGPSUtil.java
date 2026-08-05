@@ -15,7 +15,9 @@ import org.ywzj.rvp.network.C2SSetGPSTarget;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 public class RVP_ClientGPSUtil {
@@ -126,7 +128,18 @@ public class RVP_ClientGPSUtil {
         if (player == null) {
             return null;
         }
-        Vec3 start = new Vec3(LocalVehiclePlayer.instance.cameraX, LocalVehiclePlayer.instance.cameraY, LocalVehiclePlayer.instance.cameraZ);
+        // 用载具当前视图的摄像机位置（含武器站光瞄/操作员视角），
+        // 而非原版主摄像机（开镜瞄准时它指向玩家实体而非光瞄镜头）。
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        PartUnit<?> operatorUnit = vehicle == null
+                ? null
+                : vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer());
+        Vec3 start;
+        if (operatorUnit != null) {
+            start = LocalVehiclePlayer.instance.cameraPosition(operatorUnit, 1.0F);
+        } else {
+            start = mc.gameRenderer.getMainCamera().getPosition();
+        }
         Quaternionf rotation = new Quaternionf();
         rotation.rotateYXZ(
                 (float) -Math.toRadians(LocalVehiclePlayer.instance.cameraAimRotY),

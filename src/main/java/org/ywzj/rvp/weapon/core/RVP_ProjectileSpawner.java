@@ -15,6 +15,7 @@ import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CGpsStateSync;
@@ -107,6 +108,7 @@ public final class RVP_ProjectileSpawner {
                 new RVP_BaseBullet.AimRot(xRot, yRot), motion);
         projectile.setShooterWeaponUnit(weaponUnit);
         projectile.initColdLaunch(launchUnit);
+        projectile.setWireLaunchUnit(launchUnit, aim);
         projectile.name = Component.translatable(data.getName());
         if (weaponUnit != null) {
             int weaponIndex = weaponUnit.getCurrentWeapon().map(AbstractVehicleWeapon::getIndex).orElse(0);
@@ -154,6 +156,7 @@ public final class RVP_ProjectileSpawner {
         }
         projectile.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(xRot, yRot));
 
+        RVP_ProjectileLifecycleDebug.noteSpawnReady(projectile, null);
         level.addFreshEntity(projectile);
         return projectile;
     }
