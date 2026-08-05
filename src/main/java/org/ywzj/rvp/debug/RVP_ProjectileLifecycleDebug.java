@@ -15,6 +15,7 @@ import net.minecraftforge.fml.loading.FMLPaths;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -95,6 +96,7 @@ public final class RVP_ProjectileLifecycleDebug {
             {"tick", "原生Tick"}, {"event", "事件"}, {"update", "更新序号"},
             {"alive", "存活"}, {"removed", "已移除"}, {"life", "剩余寿命"},
             {"position", "位置"}, {"velocity", "速度向量"}, {"speed", "速度"},
+            {"turnAngleDegPerTick", "单Tick转向角度"}, {"overloadG", "过载G值"},
             {"rotation", "旋转"}, {"targetEntity", "目标实体"}, {"targetPos", "目标位置"},
             {"lastGuidancePos", "上次制导位置"}, {"phase", "制导相位"},
             {"source", "制导源"}, {"stage", "制导阶段"}, {"radarOn", "雷达开启"},
@@ -390,6 +392,7 @@ public final class RVP_ProjectileLifecycleDebug {
         boolean motorBurning = projectile.isMotorBurningNow();
 
         // 先读取旧 stalled/trackingEnded 状态，再原子更新最后 tick 快照。
+        ManeuverMetrics maneuverMetrics = trace.sampleManeuverMetrics(projectile);
         ResumeSnapshot resumed = trace.updateTickSnapshot(projectile);
         FlightMetrics flightMetrics = trace.flightMetrics();
         double remainingDistance = resolveRemainingDistance(projectile);
@@ -411,6 +414,8 @@ public final class RVP_ProjectileLifecycleDebug {
                 + " position=" + formatVec(projectile.position())
                 + " velocity=" + formatVec(projectile.getDeltaMovement())
                 + " speed=" + decimal(projectile.getCurrentSpeed())
+                + " turnAngleDegPerTick=" + decimalOrNull(maneuverMetrics.turnAngleDegPerTick())
+                + " overloadG=" + decimalOrNull(maneuverMetrics.overloadG())
                 + " traveledDistance=" + decimal(flightMetrics.traveledDistance())
                 + " remainingDistance=" + decimalOrNull(remainingDistance)
                 + " actualElapsedSeconds=" + decimal(flightMetrics.actualElapsedSeconds())
@@ -1070,6 +1075,11 @@ public final class RVP_ProjectileLifecycleDebug {
         private Vec3 lastExactPosition;
         /** 从 trace 建立起累计的实际飞行路径长度，单位为格。 */
         private double traveledDistance;
+        /** 上一个连续服务端 tick 的速度，用于计算本 tick 的方向变化。 */
+        @Nullable
+        private Vec3 lastTickVelocity;
+        /** 上一次速度采样对应的服务器 gameTime；仅相邻 tick 可生成机动指标。 */
+        private long lastVelocitySampleGameTime;
         /** 有界内存日志历史，dump 命令从此处读取。 */
         private final Deque<String> history = new ArrayDeque<>();
         /** 最近一次观察到的维度，用于 watchdog 查找 ServerLevel。 */
@@ -1123,8 +1133,42 @@ public final class RVP_ProjectileLifecycleDebug {
             this.weaponId = safeId(projectile.getWeaponId());
             this.weaponKind = projectile.getWeaponKind().name();
             this.entityClass = projectile.getClass().getSimpleName();
+            this.lastTickVelocity = projectile.getDeltaMovement();
+            this.lastVelocitySampleGameTime = projectile.level().getGameTime();
             // 构造时立即初始化 watchdog 所需字段，避免生成后尚未首 tick 就无法判定状态。
             updateIdentitySnapshot(projectile);
+        }
+
+        /**
+         * 以相邻服务端 tick 的速度方向夹角计算单 tick 转向角和横向过载。
+         * 过载采用本体导弹机动限制相同的 {@code a = v * omega} 口径，并以
+         * {@link PhysicsEngine#G}（格/tick²）折算为 G。首样本、跨 tick 样本、近零或非有限
+         * 速度均返回不可用，避免把缺少基线误记成零机动。
+         */
+        private synchronized ManeuverMetrics sampleManeuverMetrics(RVP_BaseBullet projectile) {
+            Vec3 currentVelocity = projectile.getDeltaMovement();
+            long currentGameTime = projectile.level().getGameTime();
+            Vec3 previousVelocity = lastTickVelocity;
+            long elapsedTicks = elapsed(currentGameTime, lastVelocitySampleGameTime);
+
+            lastTickVelocity = currentVelocity;
+            lastVelocitySampleGameTime = currentGameTime;
+
+            if (elapsedTicks != 1L || previousVelocity == null
+                    || !isFinite(previousVelocity) || !isFinite(currentVelocity)) {
+                return ManeuverMetrics.UNAVAILABLE;
+            }
+            double previousSpeed = previousVelocity.length();
+            double currentSpeed = currentVelocity.length();
+            if (previousSpeed <= 1.0E-9D || currentSpeed <= 1.0E-9D) {
+                return ManeuverMetrics.UNAVAILABLE;
+            }
+
+            double cosine = previousVelocity.dot(currentVelocity) / (previousSpeed * currentSpeed);
+            double turnAngleRadians = Math.acos(Math.max(-1.0D, Math.min(1.0D, cosine)));
+            double gravity = PhysicsEngine.G;
+            double overloadG = gravity > 0.0D ? currentSpeed * turnAngleRadians / gravity : Double.NaN;
+            return new ManeuverMetrics(Math.toDegrees(turnAngleRadians), overloadG);
         }
 
         /**
@@ -1334,6 +1378,13 @@ public final class RVP_ProjectileLifecycleDebug {
             /* trace 建立后累计经过的路径长度，单位为格。 */ double traveledDistance,
             /* trace 建立后真实经过的时间，单位为秒。 */ double actualElapsedSeconds,
             /* 路径长度除以真实耗时，单位为格/秒。 */ double averageSpeedBlocksPerSecond) {}
+
+    /** 每条连续 TICK 日志使用的速度方向变化和对应横向过载快照。 */
+    private record ManeuverMetrics(
+            /* 相邻速度方向的三维夹角，单位为度/tick。 */ double turnAngleDegPerTick,
+            /* 按 a = v * omega 折算的横向过载，单位为标准重力 G。 */ double overloadG) {
+        private static final ManeuverMetrics UNAVAILABLE = new ManeuverMetrics(Double.NaN, Double.NaN);
+    }
 
     /** stalled 恢复时保留的旧时长、旧区块和旧停止追踪状态。 */
     private record ResumeSnapshot(

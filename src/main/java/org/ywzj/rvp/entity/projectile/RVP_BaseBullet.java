@@ -1497,6 +1497,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 targetEntity = null;
             }
         }
+        // 服务器弹体位置积分调用
         RVP_GuidanceController.tick(this);
     }
 
