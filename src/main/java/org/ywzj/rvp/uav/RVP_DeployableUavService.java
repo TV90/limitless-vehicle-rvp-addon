@@ -364,6 +364,14 @@ public final class RVP_DeployableUavService {
             restoreSeatAndUnlock(player, parent, seatIndex);
             return;
         }
+        if (player.getVehicle() != null) {
+            // 防递归：玩家仍骑在旧坐骑（如正在被 startRiding 内部 stopRiding 移除的无人机）上。
+            // 此时再 startRiding(parent) 会再次触发 stopRiding → dismount 事件 → 回到本方法，形成无限递归。
+            // 直接放弃本次自动上车，由最外层显式 startRiding（switchBackToParent）完成骑乘。
+            LOGGER.info("[RVP-UAV] tryAutoRideParent 跳过：玩家仍骑在 {} 上，等待切换完成",
+                    player.getVehicle().getClass().getSimpleName());
+            return;
+        }
         if (player.startRiding(parent)) {
             restoreSeatAndUnlock(player, parent, seatIndex);
         } else {

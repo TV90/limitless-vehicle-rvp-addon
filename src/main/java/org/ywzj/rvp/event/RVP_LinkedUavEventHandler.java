@@ -178,6 +178,10 @@ public class RVP_LinkedUavEventHandler {
         if (!(event.getEntity() instanceof AbstractVehicle vehicle) || vehicle.level().isClientSide()) {
             return;
         }
+        LOGGER.info("[RVP-UAV-DIAG] onEntityLeaveWorld: vehicle={} isUav={} driver={} removed={}",
+                vehicle.getVehicleId(), vehicle.uav,
+                vehicle.getDriver() instanceof ServerPlayer sp ? sp.getName().getString() : "null",
+                vehicle.isRemoved());
         DESTROYED_SINCE.remove(vehicle.getUUID());
         RVP_DeployableUavService.cleanupSeatLock(vehicle);
         RVP_DeployableUavService.clearLinkedParentLastPosition(vehicle.getUUID());
@@ -222,6 +226,8 @@ public class RVP_LinkedUavEventHandler {
             return;
         }
         if (passenger instanceof ServerPlayer serverPlayer && vehicle.tickCount != 0) {
+            LOGGER.info("[RVP-UAV-DIAG] handleMount: vehicle={} tickCount={} player={}",
+                    vehicle.getVehicleId(), vehicle.tickCount, serverPlayer.getName().getString());
             // 只保存玩家原位置，不生成假玩家实体（避免母车旁出现玩家模型）
             RVP_LinkedUavStateTable.setFakeOperatorPosition(vehicle, passenger.position());
             serverPlayer.teleportTo(vehicle.getX(), vehicle.getY(), vehicle.getZ());
