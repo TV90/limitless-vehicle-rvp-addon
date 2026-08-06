@@ -34,6 +34,7 @@ trae_build_exit.txt
 
 # runtime logs / crash / temp
 logs/
+*_console*.log
 crash-*.txt
 debug-*.md
 .codex_tmp_*/
