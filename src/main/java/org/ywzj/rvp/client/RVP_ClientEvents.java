@@ -43,6 +43,7 @@ import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
+import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
@@ -102,6 +103,7 @@ public class RVP_ClientEvents {
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
+        RVP_ClientGunnerVehicleState.clientTick();
 
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);

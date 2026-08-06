@@ -172,5 +172,10 @@ public class RVP_Network {
                 .decoder(S2CLoiterStateSync::decode)
                 .consumerMainThread(S2CLoiterStateSync::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CGunnerVehicleSync.class, id++)
+                .encoder(S2CGunnerVehicleSync::encode)
+                .decoder(S2CGunnerVehicleSync::decode)
+                .consumerMainThread(S2CGunnerVehicleSync::handle)
+                .add();
     }
 }

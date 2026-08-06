@@ -73,6 +73,15 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         setReloadTime(0);
     }
 
+    /**
+     * 设置装填倒计时（tick）。
+     * 替代被删 {@code GunnerWeaponAccessorMixin} 的 setReloadTime invoker：炮手 AI
+     * 对 RVP 武器直接调用本方法，本体武器仍由 {@code GunnerBrain} 反射兜底。
+     */
+    public void ywzj_rvp$setReloadTime(int reloadTime) {
+        setReloadTime(Math.max(reloadTime, 0));
+    }
+
     public int getChargeTickValue() {
         return chargeTick;
     }

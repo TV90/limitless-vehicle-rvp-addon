@@ -932,14 +932,18 @@ public final class GunnerBrain {
     }
 
     /**
-     * [RVP] accessor 已移除：无公共 setReloadTime()，改用 ObfuscationReflectionHelper 反射调用
-     * （正确处理开发/发布映射），失败时仅功能降级，不崩溃。
+     * [RVP] accessor 已移除：RVP 武器走公共方法直调（{@code RVP_WeaponBase#ywzj_rvp$setReloadTime}），
+     * 本体武器用 ObfuscationReflectionHelper 反射调用（正确处理开发/发布映射），失败时仅功能降级，不崩溃。
      */
     @Nullable
     private static Method SET_RELOAD_TIME_METHOD;
 
     private static void forceSetReloadTime(AbstractVehicleWeapon<?> weapon, int ticks) {
         if (weapon == null) {
+            return;
+        }
+        if (weapon instanceof RVP_WeaponBase rvpWeapon) {
+            rvpWeapon.ywzj_rvp$setReloadTime(ticks);
             return;
         }
         if (SET_RELOAD_TIME_METHOD == null) {
