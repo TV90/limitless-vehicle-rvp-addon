@@ -211,6 +211,11 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     public void tick() {
         super.tick();
+        // [B2] 替代被删 WeaponUnitSetWeaponMixin / WeaponUnitSwitchWeaponMixin /
+        // WeaponUnitFollowParentRotationMixin：武器 tick 在本体 super.tick()（含 updateRot）之后执行
+        WeaponUnit unit = getWeaponUnit();
+        RVP_WeaponSwitchSyncHelper.tick(unit);
+        RVP_FollowParentRotationHelper.tick(unit);
         boolean fireDown = !getVehicle().level().isClientSide() && isServerOperatorFiring();
         fireController.tick(fireDown);
     }
