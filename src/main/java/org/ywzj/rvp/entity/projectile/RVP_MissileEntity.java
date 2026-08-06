@@ -32,6 +32,7 @@ import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -88,6 +89,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     public RVP_MissileEntity(PlayMessages.SpawnEntity msg, Level level) {
         super(RVP_Entities.RVP_MISSILE.get(), level);
+    }
+
+    @Override
+    protected boolean tryEnterVirtualMidcourse() {
+        return RVP_VirtualMissileManager.tryVirtualize(this);
     }
 
     @Override

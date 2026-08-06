@@ -72,6 +72,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @JsonAdapter(RVP_GuidanceDataAdapter.class)
     private RVP_GuidanceData guidanceData = new RVP_GuidanceData();
 
+    /** 服务器固定 GPS 目标虚拟中段参数，默认关闭，见 {@link RVP_VirtualMidcourseData}。 */
+    @SerializedName("virtual_midcourse_data")
+    private RVP_VirtualMidcourseData virtualMidcourseData = new RVP_VirtualMidcourseData();
+
     @SerializedName("misc_data")
     private RVP_MiscData miscData = new RVP_MiscData();
 
@@ -151,6 +155,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public RVP_GuidanceData getGuidanceData() {
         return guidanceData == null ? new RVP_GuidanceData() : guidanceData;
+    }
+
+    public RVP_VirtualMidcourseData getVirtualMidcourseData() {
+        return virtualMidcourseData == null ? new RVP_VirtualMidcourseData() : virtualMidcourseData;
     }
 
     public RVP_MiscData getMiscData() {

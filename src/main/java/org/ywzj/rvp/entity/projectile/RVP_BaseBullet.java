@@ -70,6 +70,7 @@ import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
+import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -161,6 +162,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
 
     protected RVP_WeaponData rvpData;
+    /** 发射点快照，仅供服务器阶段 A 虚拟中段准入判断。 */
+    private Vec3 virtualMidcourseLaunchPosition = Vec3.ZERO;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
     protected RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
@@ -506,6 +509,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         this.setPos(spawnPos);
         this.setDeltaMovement(spawnMotion);
+        this.virtualMidcourseLaunchPosition = spawnPos;
         RVP_ProjectileLifecycleDebug.noteInitialized(this);
     }
 
@@ -1263,6 +1267,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     discard();
                 }
             }
+            if (isAlive() && tryEnterVirtualMidcourse()) {
+                return;
+            }
         } finally {
             if (traceLifecycle) {
                 long rvpTickNanos = System.nanoTime() - rvpTickStartNanos;
@@ -1273,6 +1280,41 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         superTickNanos + rvpTickNanos);
             }
         }
+    }
+
+    /** 仅导弹覆盖；在完整实体 Tick 结束后把控制权交给服务器虚拟中段管理器。 */
+    protected boolean tryEnterVirtualMidcourse() {
+        return false;
+    }
+
+    public final Vec3 getVirtualMidcourseLaunchPosition() {
+        return virtualMidcourseLaunchPosition;
+    }
+
+    public final RVP_VirtualTrajectoryState createVirtualTrajectoryState() {
+        return new RVP_VirtualTrajectoryState(position(), getDeltaMovement(), getXRot(), getYRot(),
+                flightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick);
+    }
+
+    /** 恢复阶段 A 内存快照；不再次应用 GPS 散布。 */
+    public final void restoreVirtualTrajectoryState(RVP_VirtualTrajectoryState state, Vec3 fixedTarget,
+                                                     Vec3 launchPosition) {
+        setPos(state.position());
+        setDeltaMovement(state.velocity());
+        setXRot(state.xRot());
+        setYRot(state.yRot());
+        xRotO = state.xRot();
+        yRotO = state.yRot();
+        flightSpeed = (float) state.peakFlightSpeed();
+        flightDistance = state.flightDistance();
+        life = state.remainingLife();
+        tickCount = Math.max(state.flightTick(), 0);
+        secondPulseStartTick = state.secondPulseStartTick();
+        entityData.set(DATA_SECOND_PULSE_START_TICK, secondPulseStartTick);
+        entityData.set(DATA_CHUNK_WAITING, false);
+        entityData.set(DATA_CHUNK_WAIT_TOTAL, 0);
+        virtualMidcourseLaunchPosition = launchPosition;
+        setGuidanceTargetPos(fixedTarget);
     }
 
     /* ============新弹体chunk路径规划============ */
