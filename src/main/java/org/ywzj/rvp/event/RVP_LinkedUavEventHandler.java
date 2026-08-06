@@ -1,5 +1,6 @@
 package org.ywzj.rvp.event;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -12,6 +13,7 @@ import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.server.ServerLifecycleHooks;
+import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
@@ -46,6 +48,8 @@ public class RVP_LinkedUavEventHandler {
 
     /** 载具被击毁时间戳（key = 实体 UUID），替代本体私有字段 {@code destroyedTime}。 */
     private static final Map<UUID, Long> DESTROYED_SINCE = new HashMap<>();
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
@@ -139,13 +143,27 @@ public class RVP_LinkedUavEventHandler {
             if (isWithinChunkDistance(uav, parentVehicle.position())) {
                 EntityUtil.keepChunkLoaded(uav, parentVehicle.position());
             }
+            if (uav.tickCount % 100 == 0) {
+                LOGGER.info("[RVP-UAV] refreshParent: uav={} parent={} 母车实体存在，强载@{}",
+                        uav.getVehicleId(), parentVehicle.getVehicleId(), parentVehicle.blockPosition());
+            }
             return;
         }
-        // 母车实体已被服务端卸载（离开视距）：按最近同步到的位置继续强载区块，
+        // 母车实体已被服务端卸载（离开视距）：按最近同步到的位置强载区块，
         // 等待区块重新加载后母车实体恢复，switchBackToParent / tryAutoRideParent 才能成功。
+        // 注意：addRegionTicket 每 tick 调用会让 DistanceManager 反复重排远处区块（开销大，
+        // 曾导致"切换后一切冻结"），这里每 40 tick 刷新一次（POST_TELEPORT ticket 有效期 300 tick 足够）。
         Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
-        if (lastParentPos != null && isWithinChunkDistance(uav, lastParentPos)) {
+        if (lastParentPos != null && isWithinChunkDistance(uav, lastParentPos) && (uav.tickCount & 39) == 0) {
             EntityUtil.keepChunkLoaded(uav, lastParentPos);
+        }
+        if (uav.tickCount % 100 == 0) {
+            LOGGER.info("[RVP-UAV] refreshParent: uav={} parentUuid={} 母车实体不可用！lastPos={} 距{}区块强载",
+                    uav.getVehicleId(), parentUuid,
+                    lastParentPos == null ? "null" : lastParentPos.toString(),
+                    lastParentPos == null ? "-" :
+                            Math.max(Math.abs(uav.blockPosition().getX() - (int) Math.floor(lastParentPos.x)) >> 4,
+                                    Math.abs(uav.blockPosition().getZ() - (int) Math.floor(lastParentPos.z)) >> 4));
         }
     }
 
@@ -222,6 +240,9 @@ public class RVP_LinkedUavEventHandler {
         if (target != null) {
             serverPlayer.teleportTo(target.x, target.y, target.z);
         }
+        LOGGER.info("[RVP-UAV] {} 离机: uav={} 回传位置={} parentUuid={}",
+                serverPlayer.getName().getString(), vehicle.getVehicleId(), target,
+                RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(vehicle));
         RVP_DeployableUavService.tryAutoRideParent(serverPlayer, vehicle);
     }
 

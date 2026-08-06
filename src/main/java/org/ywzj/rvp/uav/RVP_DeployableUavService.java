@@ -1,5 +1,6 @@
 package org.ywzj.rvp.uav;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -9,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
@@ -37,6 +39,8 @@ public final class RVP_DeployableUavService {
     }
 
     private RVP_DeployableUavService() {}
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 母车实体不可用（被卸载/已销毁）时自动上车的最大重试 tick 数，3 秒。 */
     private static final int AUTO_RIDE_MAX_RETRY = 60;
@@ -137,20 +141,30 @@ public final class RVP_DeployableUavService {
 
     public static boolean switchBackToParent(ServerPlayer player) {
         if (!(player.getVehicle() instanceof AbstractVehicle child)) {
+            LOGGER.info("[RVP-UAV] 切回失败：玩家不在载具上 vehicle={}", player.getVehicle());
             return false;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(child)) {
+            LOGGER.info("[RVP-UAV] 切回失败：{} 非可部署UAV实例", child.getVehicleId());
             return false;
         }
-        AbstractVehicle parent = resolveVehicleByUuid(child.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child));
+        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child);
+        AbstractVehicle parent = resolveVehicleByUuid(child.level(), parentUuid);
         if (parent == null || parent.isRemoved() || !parent.isAlive()) {
+            LOGGER.info("[RVP-UAV] 切回失败：母车不可用 parentUuid={} parent={} removed={} alive={}",
+                    parentUuid,
+                    parent == null ? "null" : parent.getVehicleId(),
+                    parent != null && parent.isRemoved(),
+                    parent != null && parent.isAlive());
             return false;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
+            LOGGER.info("[RVP-UAV] 切回失败：控制切换被禁用 child={}", child.getVehicleId());
             return false;
         }
         boolean riding = player.startRiding(parent);
         if (!riding) {
+            LOGGER.info("[RVP-UAV] 切回失败：startRiding返回false parent={}", parent.getVehicleId());
             return false;
         }
         int returnSeatIndex = RVP_LinkedUavStateTable.getReturnSeatIndex(child);
