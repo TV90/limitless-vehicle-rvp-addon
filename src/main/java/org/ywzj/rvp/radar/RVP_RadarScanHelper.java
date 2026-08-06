@@ -1,0 +1,130 @@
+package org.ywzj.rvp.radar;
+
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.vehicle.custom.part.data.RadarUnitData;
+import org.ywzj.vehicle.entity.weapon.BulletEntity;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * 雷达探测公共工具（RVP_RadarScanService 服务端扫描与
+ * RVP_ClientRadarTickHandler 客户端玩家探测共用，保持过滤/补入逻辑一致）。
+ *
+ * <p>逻辑与被删 {@code RadarUnitMixin} 中同名私有方法一致：RVP 弹体按
+ * "最大探测距离 × 信号尺寸"缩放补入雷达探测表，本体弹体与不可探测弹体被过滤。</p>
+ */
+public final class RVP_RadarScanHelper {
+
+    private RVP_RadarScanHelper() {
+    }
+
+    public static boolean isWithinScanHeight(RadarUnit radar, Vec3 targetPos) {
+        float minHeight = 25f;
+        float maxHeight = 10000f;
+        RadarUnitData data = radar.getData();
+        if (data instanceof RadarUnitDataExt ext) {
+            minHeight = ext.ywzj_rvp$getScanMinHeight();
+            maxHeight = ext.ywzj_rvp$getScanMaxHeight();
+        }
+        if (maxHeight < minHeight) {
+            float t = minHeight;
+            minHeight = maxHeight;
+            maxHeight = t;
+        }
+        double groundY = radar.getVehicle().level().getHeight(Heightmap.Types.MOTION_BLOCKING,
+                (int) Math.floor(targetPos.x), (int) Math.floor(targetPos.z));
+        double heightAboveGround = targetPos.y - groundY;
+        return heightAboveGround >= minHeight && heightAboveGround <= maxHeight;
+    }
+
+    public static float normalizeYawForLimits(float yaw, float yMin, float yMax) {
+        if (yMax - yMin >= 360.0f) {
+            return yaw;
+        }
+        boolean prefer360Space = yMin >= 0.0f && yMax > 180.0f;
+        if (prefer360Space && yaw < 0.0f) {
+            return yaw + 360.0f;
+        }
+        return yaw;
+    }
+
+    public static boolean isYawWithin(float yaw, float yMin, float yMax) {
+        if (yMax - yMin >= 360.0f) {
+            return true;
+        }
+        return yaw >= yMin && yaw <= yMax;
+    }
+
+    /**
+     * 过滤不可被雷达探测的弹体：本体弹体（{@link BulletEntity} / {@link RVP_BulletEntity}）
+     * 以及信号特征为 0 或机枪弹的 {@link RVP_BaseBullet}。
+     */
+    public static void filterUndetectableRvpAmmo(List<Entity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return;
+        }
+        entities.removeIf(entity -> entity instanceof BulletEntity
+                || entity instanceof RVP_BulletEntity
+                || entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
+    }
+
+    /**
+     * 把超过本体 {@code Radar.scanTargets}/{@code detectTargets} 体积阈值
+     * （{@code getSize() < 1}）的 RVP 弹体按"最大探测距离 × 信号尺寸"缩放补入目标表。
+     */
+    public static void appendRvpAmmoTargets(RadarUnit radar, List<Entity> entities, boolean requireTrackingLine) {
+        Vec3 radarPos = radar.worldRadarPosition();
+        double maxScanDistance = radar.getMaxScanDistance();
+        double maxScanDistanceSqr = maxScanDistance * maxScanDistance;
+        AABB scanBox = new AABB(radarPos.subtract(maxScanDistance, maxScanDistance, maxScanDistance),
+                radarPos.add(maxScanDistance, maxScanDistance, maxScanDistance));
+        Set<Integer> existingIds = new HashSet<>();
+        for (Entity entity : entities) {
+            existingIds.add(entity.getId());
+        }
+        List<RVP_BaseBullet> bullets = radar.getVehicle().level().getEntitiesOfClass(RVP_BaseBullet.class, scanBox, bullet -> {
+            if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
+                return false;
+            }
+            if (!bullet.isRadarDetectableAmmo()) {
+                return false;
+            }
+            float sig = bullet.getSignatureSize();
+            double effectiveMaxSqr = maxScanDistanceSqr * sig * sig;
+            Vec3 targetPos = bullet.getBoundingBox().getCenter();
+            if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {
+                return false;
+            }
+            if (!isWithinScanHeight(radar, targetPos)) {
+                return false;
+            }
+            Vec2 aimRot = radar.aimRot(targetPos);
+            float yMin = radar.getYRotMin();
+            float yMax = radar.getYRotMax();
+            float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            if (!isYawWithin(y, yMin, yMax)) {
+                return false;
+            }
+            if (requireTrackingLine && radar.getYRotSpeed() > 0f
+                    && Math.abs(y - radar.getYRot()) > radar.getYRotSpeed() / 2.0f) {
+                return false;
+            }
+            return !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
+        });
+        for (RVP_BaseBullet bullet : bullets) {
+            if (existingIds.add(bullet.getId())) {
+                entities.add(bullet);
+            }
+        }
+    }
+}

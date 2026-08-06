@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.debug;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
@@ -30,6 +31,8 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerDebugMonitor;
+import org.ywzj.rvp.network.C2SDebugSpawnVehicle;
+import org.ywzj.rvp.network.RVP_Network;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -428,6 +431,15 @@ public class RVP_DebugCommands {
                             ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + LOG_PATH), false);
                             return 1;
                         }))
+                        .then(Commands.literal("spawn")
+                                .then(Commands.argument("vehicleId", ResourceLocationArgument.id())
+                                        .executes(ctx -> {
+                                            ResourceLocation vehicleId = ResourceLocationArgument.getId(ctx, "vehicleId");
+                                            RVP_Network.CHANNEL.sendToServer(new C2SDebugSpawnVehicle(vehicleId.toString()));
+                                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已请求在面前生成载具: " + vehicleId), false);
+                                            return 1;
+                                        }))
+                        )
         );
     }
 
