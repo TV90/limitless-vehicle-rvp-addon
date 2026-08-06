@@ -10,7 +10,6 @@ import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.RVP_Network;
@@ -158,10 +157,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
         Vec3 armPreselectPos = null;
-        if (data.isAntiRadiationMissile() && rootUnit instanceof WeaponUnitArmExt armExt) {
-            armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
-            armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
-            armPreselectPos = armExt.ywzj_rvp$getArmPreselectedPos();
+        if (data.isAntiRadiationMissile() && rootUnit != null) {
+            armPreselectVehicleId = RVP_WeaponLockStateTable.getArmPreselectedVehicleId(rootUnit);
+            armPreselectRadarIndex = RVP_WeaponLockStateTable.getArmPreselectedRadarIndex(rootUnit);
+            armPreselectPos = RVP_WeaponLockStateTable.getArmPreselectedPos(rootUnit);
         }
 
         for (AimContext aim : aimContexts) {

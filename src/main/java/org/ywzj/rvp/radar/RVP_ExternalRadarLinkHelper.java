@@ -9,7 +9,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.network.C2SClearExternalRadarLock;
 import org.ywzj.rvp.network.C2SRequestExternalRadarLock;
 import org.ywzj.rvp.network.RVP_Network;
@@ -194,7 +194,7 @@ public final class RVP_ExternalRadarLinkHelper {
             return false;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitExternalRadarLockExt ext)) {
+        if (root == null) {
             return false;
         }
         RVP_RadarRoleHelper.clearAllRadarLocks(root);
@@ -204,8 +204,8 @@ public final class RVP_ExternalRadarLinkHelper {
         } else if (root.getLockedEntity() != null && root.getLockedEntity().getId() != targetEntityId) {
             root.setLockedEntity(null);
         }
-        ext.ywzj_rvp$setExternalRadarRequestedEntityId(targetEntityId);
-        ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId(root, targetEntityId);
+        RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         RVP_Network.CHANNEL.sendToServer(new C2SRequestExternalRadarLock(targetEntityId));
         return true;
     }
@@ -215,9 +215,9 @@ public final class RVP_ExternalRadarLinkHelper {
             return;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-            ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-            ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        if (root != null) {
+            RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+            RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         }
         RVP_RadarRoleHelper.clearAllRadarLocks(root);
         if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {

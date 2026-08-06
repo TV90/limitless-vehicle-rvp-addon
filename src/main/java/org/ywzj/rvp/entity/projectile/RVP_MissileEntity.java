@@ -32,8 +32,8 @@ import org.ywzj.rvp.network.S2CHitlLinkState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import java.util.function.Function;
@@ -358,14 +358,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             }
         }
 
-        if (root instanceof WeaponUnitExternalRadarLockExt ext && shooterVehicle != null) {
+        if (root != null && shooterVehicle != null) {
             AbstractVehicle relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(shooterVehicle).orElse(null);
             RadarUnit relayRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
             if (relayRadar != null && relayRadar.isOn()) {
                 anyRadarOn = true;
                 if (RVP_RadarRoleHelper.radarCurrentlyDetects(relayRadar, designatedTarget)
                         || relayRadar.getLockedEntity() == designatedTarget
-                        || ext.ywzj_rvp$getExternalRadarLockedEntityId() == designatedTarget.getId()) {
+                        || RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == designatedTarget.getId()) {
                     return true;
                 }
             }

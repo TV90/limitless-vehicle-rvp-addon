@@ -1,12 +1,15 @@
 package org.ywzj.rvp.weapon.core;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,6 +40,10 @@ public final class RVP_WeaponSwitchSyncHelper {
     private static final Map<WeaponUnit, int[]> LAST_INDEX = new HashMap<>();
     /** unit -> 手动覆盖激活时的 [primaryIndex, secondaryIndex]（匹配时跳过自动同步）。 */
     private static final Map<WeaponUnit, int[]> MANUAL_OVERRIDE = new HashMap<>();
+
+    /** B3：切换武器时关闭导引头的私有字段（无公共 setter，`toggleSeeker` 为 @OnlyIn(CLIENT)）。 */
+    private static final Field SEEKER_ON_FIELD =
+            ObfuscationReflectionHelper.findField(WeaponUnit.class, "seekerOn");
 
     public static void tick(WeaponUnit unit) {
         if (unit == null || unit.getVehicle() == null) {
@@ -73,8 +80,30 @@ public final class RVP_WeaponSwitchSyncHelper {
 
         LAST_INDEX.put(unit, new int[]{primary, secondary});
         MANUAL_OVERRIDE.remove(unit);
+        syncSeekerOn(unit, primary, secondary);
         syncBays(unit, primary, secondary);
         restoreRadarLock(unit);
+    }
+
+    /**
+     * B3：替代被删 WeaponUnitSwitchWeaponMixin 的 seekerOn 复位。
+     * 切换武器后，若当前主/副武器没有寻的器，自动关闭导引头（防止 SARH/IR 切到 SACLOS 时状态残留）。
+     */
+    private static void syncSeekerOn(WeaponUnit unit, int primary, int secondary) {
+        try {
+            AbstractVehicleWeapon<?> primaryWeapon = primary >= 0 && primary < unit.weapons.size()
+                    ? unit.weapons.get(primary) : null;
+            if (primaryWeapon != null && !primaryWeapon.withSeeker()) {
+                SEEKER_ON_FIELD.setBoolean(unit, false);
+            }
+            AbstractVehicleWeapon<?> secondaryWeapon = secondary >= 0 && secondary < unit.secondaryWeapons.size()
+                    ? unit.secondaryWeapons.get(secondary) : null;
+            if (secondaryWeapon != null && !secondaryWeapon.withSeeker()) {
+                SEEKER_ON_FIELD.setBoolean(unit, false);
+            }
+        } catch (IllegalAccessException e) {
+            // 反射失败：seekerOn 保持原状（极罕见，字段访问已 setAccessible）
+        }
     }
 
     private static void syncBays(WeaponUnit unit, int primary, int secondary) {

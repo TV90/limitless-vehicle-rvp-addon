@@ -11,7 +11,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
@@ -247,10 +247,8 @@ public final class RVP_ServerDebugCommands {
                     .append(" sensor=").append(weaponUnit.getFireControlSensorType())
                     .append(" localLocked=").append(describeEntity(weaponUnit.getLockedEntity()))
                     .append(" radarUnits=").append(weaponUnit.getRadarUnits().size());
-            if (weaponUnit instanceof WeaponUnitExternalRadarLockExt ext) {
-                sb.append(" requested=").append(ext.ywzj_rvp$getExternalRadarRequestedEntityId())
-                        .append(" externalLocked=").append(ext.ywzj_rvp$getExternalRadarLockedEntityId());
-            }
+            sb.append(" requested=").append(RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(weaponUnit))
+                    .append(" externalLocked=").append(RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(weaponUnit));
             RadarUnit preferred = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
             sb.append(" preferredLocalRadar=").append(preferred == null ? "null" : preferred.getId());
         }

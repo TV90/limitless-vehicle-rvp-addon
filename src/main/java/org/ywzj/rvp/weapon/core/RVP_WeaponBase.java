@@ -7,7 +7,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -257,10 +256,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean hasArmPreselectedTarget(WeaponUnit unit) {
-        if (!(unit instanceof WeaponUnitArmExt armExt)) {
-            return false;
-        }
-        return armExt.ywzj_rvp$getArmPreselectedVehicleId() >= 0;
+        return unit != null && RVP_WeaponLockStateTable.getArmPreselectedVehicleId(unit) >= 0;
     }
 
     protected boolean passesOffAxisShootGate() {

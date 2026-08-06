@@ -5,10 +5,9 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.ext.WeaponUnitPendingRadarLockExt;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -102,13 +101,11 @@ public final class RVP_RadarRoleHelper {
                 return radarLocked;
             }
         }
-        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-            int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
-            if (externalLockedId != Integer.MIN_VALUE) {
-                Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
-                if (externalLocked != null && externalLocked.isAlive()) {
-                    return externalLocked;
-                }
+        int externalLockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
+        if (externalLockedId != Integer.MIN_VALUE) {
+            Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+            if (externalLocked != null && externalLocked.isAlive()) {
+                return externalLocked;
             }
         }
         Entity localLocked = root.getLockedEntity();
@@ -152,21 +149,18 @@ public final class RVP_RadarRoleHelper {
     }
 
     public static void tickPendingRadarLock(WeaponUnit weaponUnit) {
-        if (!(weaponUnit instanceof WeaponUnitPendingRadarLockExt ext)) {
-            return;
-        }
-        int pendingId = ext.ywzj_rvp$getPendingRadarLockEntityId();
+        int pendingId = RVP_WeaponLockStateTable.getPendingRadarLockEntityId(weaponUnit);
         if (pendingId == Integer.MIN_VALUE) {
             return;
         }
         RadarUnit lockRadar = getPreferredLockRadar(weaponUnit);
         if (lockRadar == null) {
-            ext.ywzj_rvp$clearPendingRadarLockEntityId();
+            RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
             return;
         }
         Entity target = weaponUnit.getVehicle().level().getEntity(pendingId);
         if (target == null || !target.isAlive()) {
-            ext.ywzj_rvp$clearPendingRadarLockEntityId();
+            RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
             if (entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
                 weaponUnit.setLockedEntity(null);
             }
@@ -180,7 +174,7 @@ public final class RVP_RadarRoleHelper {
             if (!entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
                 weaponUnit.setLockedEntity(target);
             }
-            ext.ywzj_rvp$clearPendingRadarLockEntityId();
+            RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
             return;
         }
         if (!entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
@@ -266,14 +260,14 @@ public final class RVP_RadarRoleHelper {
     }
 
     public static void setPendingRadarLock(WeaponUnit weaponUnit, int entityId) {
-        if (weaponUnit instanceof WeaponUnitPendingRadarLockExt ext) {
-            ext.ywzj_rvp$setPendingRadarLockEntityId(entityId);
+        if (weaponUnit != null) {
+            RVP_WeaponLockStateTable.setPendingRadarLockEntityId(weaponUnit, entityId);
         }
     }
 
     public static void clearPendingRadarLock(WeaponUnit weaponUnit) {
-        if (weaponUnit instanceof WeaponUnitPendingRadarLockExt ext) {
-            ext.ywzj_rvp$clearPendingRadarLockEntityId();
+        if (weaponUnit != null) {
+            RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
         }
     }
 

@@ -7,7 +7,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -148,11 +148,9 @@ public final class RVP_ClientRadarLockState {
             if (requestedId != Integer.MIN_VALUE) {
                 return requestedId;
             }
-            if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-                int serverLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
-                if (serverLockedId != Integer.MIN_VALUE) {
-                    return serverLockedId;
-                }
+            int serverLockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
+            if (serverLockedId != Integer.MIN_VALUE) {
+                return serverLockedId;
             }
             return Integer.MIN_VALUE;
         }
