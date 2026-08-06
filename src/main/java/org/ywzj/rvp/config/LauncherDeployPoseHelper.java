@@ -4,7 +4,6 @@ import com.mojang.math.Axis;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.custom.part.data.PartUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -56,7 +55,9 @@ public final class LauncherDeployPoseHelper {
             return;
         }
 
-        if (partUnit instanceof WeaponUnit weaponUnit && targetGroup == ((WeaponUnitAccessor) weaponUnit).getXTurnGroup()) {
+        // [RVP] accessor 已移除：无公共 getXTurnGroup()；targetGroup 非整机组时视为武器站俯仰组，驱动 xRot
+        if (partUnit instanceof WeaponUnit weaponUnit && targetGroup != null
+                && targetGroup != weaponUnit.getStructureGroup()) {
             weaponUnit.xRotO = weaponUnit.getXRot();
             weaponUnit.setXAimRot(pitch);
             weaponUnit.setXRot(pitch);
@@ -70,7 +71,8 @@ public final class LauncherDeployPoseHelper {
     @Nullable
     public static VehicleCubeGroup resolvePitchGroup(PartUnit<?> partUnit, String pitchGroupName) {
         if (partUnit instanceof WeaponUnit weaponUnit) {
-            VehicleCubeGroup xTurnGroup = ((WeaponUnitAccessor) weaponUnit).getXTurnGroup();
+            // [RVP] accessor 已移除：无公共 getXTurnGroup()，用 structureGroup 近似
+            VehicleCubeGroup xTurnGroup = weaponUnit.getStructureGroup();
             if (pitchGroupName == null || pitchGroupName.isBlank()) {
                 return xTurnGroup != null ? xTurnGroup : partUnit.getStructureGroup();
             }

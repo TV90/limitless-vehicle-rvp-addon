@@ -16,7 +16,6 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.DisplayManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -316,7 +315,8 @@ public final class RVP_CustomMountRenderLogic {
             if (!(vehicle.getPartUnit(config.attachPartUnitId()).orElse(null) instanceof WeaponUnit mountUnit)) {
                 return null;
             }
-            VehicleCubeGroup xTurnGroup = ((WeaponUnitAccessor) mountUnit).getXTurnGroup();
+            // [RVP] accessor 已移除：无公共 getXTurnGroup()，用 structureGroup 近似
+            VehicleCubeGroup xTurnGroup = mountUnit.getStructureGroup();
             List<Bolt> bolts = mountUnit.getBolts();
             if (xTurnGroup == null) {
                 return null;

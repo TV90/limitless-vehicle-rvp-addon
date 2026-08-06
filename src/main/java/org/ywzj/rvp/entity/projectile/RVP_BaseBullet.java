@@ -45,8 +45,8 @@ import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
-import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
@@ -2056,13 +2056,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     hitboxRes == null ? null : hitboxRes.hitBoneName());
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
-        if (entity instanceof AbstractVehicle targetVehicleForHurt
-                && targetVehicleForHurt instanceof RVP_VehicleHitboxRuntimeAccess access) {
-            access.rvp$pushSkipGlobalVehicleHurtScaling();
+        if (entity instanceof AbstractVehicle targetVehicleForHurt) {
+            RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
             try {
                 EntityUtil.hurt(source, entity, finalDamage);
             } finally {
-                access.rvp$popSkipGlobalVehicleHurtScaling();
+                RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
             }
         } else {
             EntityUtil.hurt(source, entity, finalDamage);

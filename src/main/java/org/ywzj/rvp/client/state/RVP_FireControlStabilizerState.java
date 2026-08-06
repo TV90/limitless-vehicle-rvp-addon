@@ -7,6 +7,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -71,7 +72,7 @@ public final class RVP_FireControlStabilizerState {
                 || weapon.getData().getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
             return false;
         }
-        if (unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(unit) != WeaponUnitData.FireControlSensorType.RF) {
             return false;
         }
         if (!(unit.getData() instanceof WeaponUnitDataExt ext)) {

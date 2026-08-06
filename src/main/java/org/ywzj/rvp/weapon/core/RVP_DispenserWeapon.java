@@ -28,6 +28,7 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;
         }

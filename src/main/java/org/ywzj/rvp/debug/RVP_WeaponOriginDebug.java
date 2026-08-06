@@ -10,7 +10,6 @@ import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -229,7 +228,8 @@ public final class RVP_WeaponOriginDebug {
         VehicleCubeGroup rawStructureGroup = data.getRawStructureGroup();
         VehicleCubeGroup rawXTurnGroup = data.getRawXTurnGroup();
         VehicleCubeGroup instanceStructureGroup = weaponUnit.getStructureGroup();
-        VehicleCubeGroup instanceXTurnGroup = ((WeaponUnitAccessor) weaponUnit).getXTurnGroup();
+        // [RVP] accessor 已移除：无公共 getXTurnGroup()，用 data 级 rawXTurnGroup 近似（仅调试展示）
+        VehicleCubeGroup instanceXTurnGroup = data.getRawXTurnGroup();
         String structureBone = data.getStructureBone();
         String expectedBarrelBone = structureBone == null ? "<null>" : structureBone + "_barrel";
         WeaponUnit parent = weaponUnit.getParentWeaponUnit();
@@ -269,7 +269,7 @@ public final class RVP_WeaponOriginDebug {
         sb.append(prefix).append(".currentWeapon=").append(currentWeapon == null ? "<null>" : currentWeapon.getDisplayName().getString()).append('\n');
         sb.append(prefix).append(".currentWeaponClass=").append(currentWeapon == null ? "<null>" : currentWeapon.getClass().getName()).append('\n');
         sb.append(prefix).append(".currentWeaponIndex=").append(currentWeapon == null ? "<null>" : currentWeapon.getIndex()).append('\n');
-        sb.append(prefix).append(".weaponUnitCurrentWeaponIndex=").append(((WeaponUnitAccessor) weaponUnit).getCurrentWeaponIndex()).append('\n');
+        sb.append(prefix).append(".weaponUnitCurrentWeaponIndex=").append(weaponUnit.getCurrentWeaponIndex()).append('\n');
 
         if (data instanceof WeaponUnitDataExt ext) {
             sb.append(prefix).append(".ext.followParentOnlyIds=").append(ext.ywzj_rvp$getFollowParentOnlyPartUnitIds()).append('\n');

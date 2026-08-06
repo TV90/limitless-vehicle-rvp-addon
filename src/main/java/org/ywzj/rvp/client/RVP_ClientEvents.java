@@ -58,6 +58,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
@@ -304,7 +305,7 @@ public class RVP_ClientEvents {
 
     private static void ywzj_rvp$updateBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
                                                 RVP_WeaponBase weapon) {
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) != WeaponUnitData.FireControlSensorType.CCIP) {
             return;
         }
         if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {

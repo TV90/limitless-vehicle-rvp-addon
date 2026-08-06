@@ -1,17 +1,19 @@
 package org.ywzj.rvp.entity.gunner.ai;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.mixin.GunnerWeaponAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -30,6 +32,7 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +41,7 @@ import java.util.WeakHashMap;
 public final class GunnerBrain {
 
     private GunnerBrain() {}
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final int AIR_PHASE_ATTACK = 0;
     private static final int AIR_PHASE_DISENGAGE = 1;
     private static final int GROUND_TACTICAL_HOLD_TICK = 100;
@@ -870,7 +874,7 @@ public final class GunnerBrain {
                         continue;
                     }
                     weapon.setRemainAmmo(weapon.getMaxCapacity());
-                    ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
+                    forceSetReloadTime(weapon, 0);
                 }
             }
         }
@@ -900,12 +904,12 @@ public final class GunnerBrain {
 
                 long remainMs = Math.max(0L, readyTime - now);
                 if (remainMs > 0L) {
-                    ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(msToTicks(remainMs));
+                    forceSetReloadTime(weapon, msToTicks(remainMs));
                     continue;
                 }
 
                 weapon.setRemainAmmo(Math.max(1, weapon.getMaxCapacity()));
-                ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
+                forceSetReloadTime(weapon, 0);
                 DRIVER_AMMO_READY_TIME.remove(weapon);
             }
         }
@@ -922,8 +926,36 @@ public final class GunnerBrain {
                     continue;
                 }
                 DRIVER_AMMO_READY_TIME.remove(weapon);
-                ((GunnerWeaponAccessorMixin) (Object) weapon).ywzj_rvp$setReloadTime(0);
+                forceSetReloadTime(weapon, 0);
             }
+        }
+    }
+
+    /**
+     * [RVP] accessor 已移除：无公共 setReloadTime()，改用 ObfuscationReflectionHelper 反射调用
+     * （正确处理开发/发布映射），失败时仅功能降级，不崩溃。
+     */
+    @Nullable
+    private static Method SET_RELOAD_TIME_METHOD;
+
+    private static void forceSetReloadTime(AbstractVehicleWeapon<?> weapon, int ticks) {
+        if (weapon == null) {
+            return;
+        }
+        if (SET_RELOAD_TIME_METHOD == null) {
+            try {
+                SET_RELOAD_TIME_METHOD = ObfuscationReflectionHelper.findMethod(
+                        AbstractVehicleWeapon.class, "setReloadTime", int.class);
+                SET_RELOAD_TIME_METHOD.setAccessible(true);
+            } catch (Throwable t) {
+                LOGGER.warn("[GunnerBrain] 无法解析 setReloadTime 反射方法，无限弹药 reload 强制归零将失效", t);
+                return;
+            }
+        }
+        try {
+            SET_RELOAD_TIME_METHOD.invoke(weapon, ticks);
+        } catch (Throwable t) {
+            LOGGER.debug("[GunnerBrain] setReloadTime 反射调用失败", t);
         }
     }
 

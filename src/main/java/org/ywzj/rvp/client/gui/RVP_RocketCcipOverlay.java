@@ -22,6 +22,7 @@ import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
 import org.ywzj.rvp.client.state.RVP_RocketCcipScreenState;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -66,7 +67,7 @@ public final class RVP_RocketCcipOverlay {
         if (weapon == null || activeWeaponUnit == null) {
             return false;
         }
-        if (activeWeaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(activeWeaponUnit) != WeaponUnitData.FireControlSensorType.CCIP) {
             return false;
         }
         if (weapon instanceof VehicleRocket rocket) {

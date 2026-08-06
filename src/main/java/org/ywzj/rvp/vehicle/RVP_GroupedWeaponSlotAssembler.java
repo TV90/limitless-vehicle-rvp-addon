@@ -3,7 +3,6 @@ package org.ywzj.rvp.vehicle;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -35,7 +34,7 @@ public final class RVP_GroupedWeaponSlotAssembler {
         weaponUnit.secondaryWeapons.clear();
         weaponUnit.independentWeapons.clear();
         weaponUnit.indexedWeapons.clear();
-        ((WeaponUnitAccessor) weaponUnit).getWeaponBayUnits().clear();
+        weaponUnit.weaponBayUnits.clear();
 
         linkSubParts(weaponUnit, partUnitsView);
 
@@ -56,7 +55,7 @@ public final class RVP_GroupedWeaponSlotAssembler {
             }
             weaponUnit.indexedWeapons.add(built.weapon());
             if (built.weaponBayUnit() != null) {
-                ((WeaponUnitAccessor) weaponUnit).getWeaponBayUnits().put(built.weapon(), built.weaponBayUnit());
+                weaponUnit.weaponBayUnits.put(built.weapon(), built.weaponBayUnit());
             }
             topLevelIndex++;
         }

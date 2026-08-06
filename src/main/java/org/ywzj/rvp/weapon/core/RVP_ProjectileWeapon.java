@@ -63,6 +63,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;
         }
@@ -149,7 +150,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         Entity lock = null;
         if (data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
-            lock = rootUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+            lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
                     ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                     : rootUnit.getLockedEntity();
         }

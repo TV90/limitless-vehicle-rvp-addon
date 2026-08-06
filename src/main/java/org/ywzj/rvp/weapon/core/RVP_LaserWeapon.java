@@ -3,8 +3,8 @@ package org.ywzj.rvp.weapon.core;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
-import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
 import org.ywzj.rvp.weapon.laser.RVP_LaserBeam;
@@ -34,6 +34,7 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;
         }
@@ -80,13 +81,12 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                         );
                     }
                 }
-                if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt
-                        && targetVehicleForHurt instanceof RVP_VehicleHitboxRuntimeAccess access) {
-                    access.rvp$pushSkipGlobalVehicleHurtScaling();
+                if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt) {
+                    RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
                     try {
                         EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
                     } finally {
-                        access.rvp$popSkipGlobalVehicleHurtScaling();
+                        RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
                     }
                 } else {
                     EntityUtil.hurt(source, beam.hitEntity(), hitDamage);

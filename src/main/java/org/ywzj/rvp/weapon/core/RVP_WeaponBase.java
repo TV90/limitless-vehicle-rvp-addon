@@ -2,9 +2,11 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
@@ -21,8 +23,10 @@ import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,6 +44,14 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     public RVP_WeaponFireController getFireController() {
         return fireController;
+    }
+
+    /**
+     * 服务端射击调试追踪（替代被删 {@code WeaponUnitShootDebugMixin}）。
+     * 各具体武器在 {@code shoot()} 入口调用一次，记录本次射击请求的上下文。
+     */
+    protected void noteServerShootInvocation(List<AimContext> aimContexts, LivingEntity shooter) {
+        RVP_WeaponOriginDebug.noteShootInvocation(getWeaponUnit(), getIndex(), this, aimContexts, shooter);
     }
 
     RVP_WeaponHeatManager.HeatState getLocalHeatState() {
@@ -111,7 +123,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             Entity externalLocked = null;
             int externalLockedId = Integer.MIN_VALUE;
             if (!isIrHmdManaged
-                    && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    && RVP_WeaponSensorHelper.effectiveSensorType(unit) == WeaponUnitData.FireControlSensorType.RF
                     && net.minecraft.client.Minecraft.getInstance().level != null) {
                 externalLockedId = RVP_ExternalRadarLinkHelper.getClientLockedEntityId(
                         unit.getVehicle(),
@@ -138,7 +150,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             if (!hasLock) {
                 boolean eoExempt = !isIrHmdManaged
                         && !isIrLaunchWeapon
-                        && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO;
+                        && RVP_WeaponSensorHelper.effectiveSensorType(unit) == WeaponUnitData.FireControlSensorType.EO;
                 if (!eoExempt) {
                     LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
                     return false;

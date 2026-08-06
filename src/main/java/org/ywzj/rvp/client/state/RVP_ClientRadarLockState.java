@@ -11,6 +11,7 @@ import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -50,7 +51,7 @@ public final class RVP_ClientRadarLockState {
             clear();
             return;
         }
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) != WeaponUnitData.FireControlSensorType.RF) {
             clear();
             return;
         }

@@ -44,6 +44,7 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (isCoolingDown() || isReloading() || aimContexts.isEmpty()) {
             return false;
         }
