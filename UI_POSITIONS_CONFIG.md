@@ -1,5 +1,9 @@
 # UI 组件位置配文件化 — 设计文档与实施计划
 
+> **状态（2026-08-07）**：本文为早期设计方案。所提 `VehicleRadarOverlayPositionMixin` 实施路径已停用并删除
+> （`6df021a` 起未注册，B8 复查清理时删除文件），当前 RVP 的雷达/UI 位置由 `UIPresetManager` +
+> `VehicleUIPresetCache`（config preset）驱动、`RVP_RadarOverlay` 渲染。下文 mixin 方案仅作历史参考。
+
 ## 1. 概述
 
 ### 目标
