@@ -136,15 +136,22 @@ public class RVP_LinkedUavEventHandler {
         Entity parent = serverLevel.getEntity(parentUuid);
         if (parent instanceof AbstractVehicle parentVehicle) {
             RVP_DeployableUavService.setLinkedParentLastPosition(uav.getUUID(), parentVehicle.position());
-            if (isWithinChunkDistance(uav, parentVehicle)) {
+            if (isWithinChunkDistance(uav, parentVehicle.position())) {
                 EntityUtil.keepChunkLoaded(uav, parentVehicle.position());
             }
+            return;
+        }
+        // 母车实体已被服务端卸载（离开视距）：按最近同步到的位置继续强载区块，
+        // 等待区块重新加载后母车实体恢复，switchBackToParent / tryAutoRideParent 才能成功。
+        Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
+        if (lastParentPos != null && isWithinChunkDistance(uav, lastParentPos)) {
+            EntityUtil.keepChunkLoaded(uav, lastParentPos);
         }
     }
 
-    private static boolean isWithinChunkDistance(AbstractVehicle a, AbstractVehicle b) {
-        int dx = Math.abs(a.blockPosition().getX() - b.blockPosition().getX()) >> 4;
-        int dz = Math.abs(a.blockPosition().getZ() - b.blockPosition().getZ()) >> 4;
+    private static boolean isWithinChunkDistance(AbstractVehicle a, Vec3 pos) {
+        int dx = Math.abs(a.blockPosition().getX() - (int) Math.floor(pos.x)) >> 4;
+        int dz = Math.abs(a.blockPosition().getZ() - (int) Math.floor(pos.z)) >> 4;
         return dx <= MAX_PARENT_CHUNK_DISTANCE && dz <= MAX_PARENT_CHUNK_DISTANCE;
     }
 
