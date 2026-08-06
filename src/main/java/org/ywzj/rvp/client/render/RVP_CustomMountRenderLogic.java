@@ -33,6 +33,7 @@ import org.ywzj.vehicle.vehicle.weapon.VehicleWeaponAgent;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 import org.slf4j.Logger;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -308,6 +309,37 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     @Nullable
+    private static Field X_TURN_GROUP_FIELD;
+
+    /**
+     * [RVP] 挂架锚点骨组。B1 移除了 WeaponUnitAccessor（getXTurnGroup），当时用 getStructureGroup() 近似；
+     * 但结构模型中仅存在 structure_bone + "_barrel" 骨（如 variable_aam_1_barrel），无 structure_bone 本体骨，
+     * 导致 structureGroup 恒为 null、挂架整体不渲染。此处用反射读取实例 xTurnGroup 恢复原行为，
+     * 反射不可用时回退 structureGroup（仅功能降级，不崩溃）。
+     */
+    @Nullable
+    private static VehicleCubeGroup resolveMountAnchorGroup(WeaponUnit mountUnit) {
+        if (X_TURN_GROUP_FIELD == null) {
+            try {
+                X_TURN_GROUP_FIELD = ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
+                X_TURN_GROUP_FIELD.setAccessible(true);
+            } catch (Throwable t) {
+                LOGGER.warn("[RVP] 无法解析 WeaponUnit.xTurnGroup 字段，挂架锚点退化为 structureGroup", t);
+                return mountUnit.getStructureGroup();
+            }
+        }
+        try {
+            VehicleCubeGroup group = (VehicleCubeGroup) X_TURN_GROUP_FIELD.get(mountUnit);
+            if (group != null) {
+                return group;
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("[RVP] 读取 WeaponUnit.xTurnGroup 失败，退化为 structureGroup", t);
+        }
+        return mountUnit.getStructureGroup();
+    }
+
+    @Nullable
     private static AttachmentTransform resolveAttachmentTransform(AbstractVehicle vehicle,
                                                                  VehicleBedrockModel vehicleModel,
                                                                  RVP_CustomMountConfig config) {
@@ -315,8 +347,8 @@ public final class RVP_CustomMountRenderLogic {
             if (!(vehicle.getPartUnit(config.attachPartUnitId()).orElse(null) instanceof WeaponUnit mountUnit)) {
                 return null;
             }
-            // [RVP] accessor 已移除：无公共 getXTurnGroup()，用 structureGroup 近似
-            VehicleCubeGroup xTurnGroup = mountUnit.getStructureGroup();
+            // [RVP] accessor 已移除：优先反射读实例 xTurnGroup（= structure_bone + "_barrel" 骨组，挂架锚点），失败退化为 structureGroup
+            VehicleCubeGroup xTurnGroup = resolveMountAnchorGroup(mountUnit);
             List<Bolt> bolts = mountUnit.getBolts();
             if (xTurnGroup == null) {
                 return null;
