@@ -51,14 +51,22 @@ public final class RVP_PhysicsOnlyCollisionHelper {
     }
 
     public static void rebuildPhysicsOnlyCubes(AbstractVehicle vehicle) {
-        List<VehicleCubeOBB> cubes = buildPhysicsOnlyCubes(vehicle);
-        stripPhysicsOnlyBodyCubes(vehicle, cubes);
-        if (cubes.isEmpty()) {
+        try {
+            List<VehicleCubeOBB> cubes = buildPhysicsOnlyCubes(vehicle);
+            stripPhysicsOnlyBodyCubes(vehicle, cubes);
+            if (cubes.isEmpty()) {
+                PHYSICS_ONLY_CUBES.remove(vehicle);
+            } else {
+                PHYSICS_ONLY_CUBES.put(vehicle, cubes);
+            }
+            updatePhysicsOnlyCubes(vehicle);
+            LOGGER.info("[RVP-PhysicsOnly] {} 重建完成: physicsOnlyCubes={} bodyCubes剩余={}", vehicle.getVehicleId(),
+                    cubes.size(), vehicle.getVehicleCubeOBBs().size());
+        } catch (Throwable t) {
+            // 防御：任何异常都不允许破坏载具本体（已从车体剔除的 cube 无法回滚，仅影响碰撞盒精度）。
+            LOGGER.error("[RVP-PhysicsOnly] {} rebuildPhysicsOnlyCubes 异常（已忽略）", vehicle.getVehicleId(), t);
             PHYSICS_ONLY_CUBES.remove(vehicle);
-        } else {
-            PHYSICS_ONLY_CUBES.put(vehicle, cubes);
         }
-        updatePhysicsOnlyCubes(vehicle);
     }
 
     public static void updatePhysicsOnlyCubes(AbstractVehicle vehicle) {
@@ -195,6 +203,8 @@ public final class RVP_PhysicsOnlyCollisionHelper {
     private static List<VehicleCubeOBB> buildPhysicsOnlyCubes(AbstractVehicle vehicle) {
         var cfg = RVP_VehicleExtendedConfigManager.INSTANCE.get(vehicle);
         if (!cfg.hasPhysicsOnlyBones()) {
+            LOGGER.info("[RVP-PhysicsOnly] {} 无 physics-only 配置（structureModel={} bones={}）",
+                    vehicle.getVehicleId(), cfg.structureModel(), cfg.physicsOnlyBones());
             return List.of();
         }
         BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(cfg.structureModel()).orElse(null);
@@ -216,6 +226,8 @@ public final class RVP_PhysicsOnlyCollisionHelper {
             VehicleCubeGroup group = buildGroupChain(bone);
             collectRecursive(bone, group, cubes);
         }
+        LOGGER.info("[RVP-PhysicsOnly] {} 模型 {} 加载成功，physics_only_bone 提取 cubes={}", vehicle.getVehicleId(),
+                cfg.structureModel(), cubes.size());
         return cubes;
     }
 

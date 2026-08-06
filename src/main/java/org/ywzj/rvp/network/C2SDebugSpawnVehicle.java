@@ -1,5 +1,6 @@
 package org.ywzj.rvp.network;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -9,6 +10,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
+import org.slf4j.Logger;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 
@@ -23,6 +25,8 @@ import java.util.function.Supplier;
  * 仅限创造模式或 OP（等级 2）使用。vehicleId 无命名空间时默认补 {@code rvp:}。</p>
  */
 public class C2SDebugSpawnVehicle {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public String vehicleId;
 
@@ -49,11 +53,12 @@ public class C2SDebugSpawnVehicle {
             if (player == null) {
                 return;
             }
+            String rawId = msg.vehicleId == null ? "" : msg.vehicleId.trim();
+            LOGGER.info("[RVP-Debug] 收到放载具请求: rawId={} 玩家={}", rawId, player.getName().getString());
             if (!player.isCreative() && !player.hasPermissions(2)) {
                 player.displayClientMessage(Component.literal("§c[RVP] 放载具命令需要创造模式或 OP"), false);
                 return;
             }
-            String rawId = msg.vehicleId == null ? "" : msg.vehicleId.trim();
             if (rawId.isEmpty()) {
                 player.displayClientMessage(Component.literal("§c[RVP] 载具 ID 为空"), false);
                 return;
@@ -74,20 +79,33 @@ public class C2SDebugSpawnVehicle {
                 }
             }
             if (vehicleDataOptional.isEmpty()) {
+                LOGGER.warn("[RVP-Debug] 未找到载具数据: {}（车辆数据管理器中共 {} 条）", vehicleId,
+                        CommonAssetsManager.vehicleDataManager().getVehicleData().size());
                 player.displayClientMessage(Component.literal("§c[RVP] 未找到载具: " + rawId), false);
                 return;
             }
+            LOGGER.info("[RVP-Debug] 载具数据存在: {} class={}", vehicleId,
+                    vehicleDataOptional.get().getClass().getName());
             ServerLevel serverLevel = (ServerLevel) player.level();
             Vec3 look = player.getLookAngle();
             Vec3 pos = player.position().add(look.x * 4.0, 1.0, look.z * 4.0);
             int x = (int) Math.floor(pos.x);
             int z = (int) Math.floor(pos.z);
             int y = serverLevel.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-            Entity vehicle = vehicleDataOptional.get().construct(serverLevel,
-                    new Vec3(pos.x, y + 1, pos.z), 0, player.getYRot());
-            serverLevel.addFreshEntity(vehicle);
-            player.displayClientMessage(Component.literal("§a[RVP] 已生成载具: " + vehicleId
-                    + " @ " + (int) pos.x + "," + (y + 1) + "," + (int) pos.z), false);
+            try {
+                Entity vehicle = vehicleDataOptional.get().construct(serverLevel,
+                        new Vec3(pos.x, y + 1, pos.z), 0, player.getYRot());
+                LOGGER.info("[RVP-Debug] construct 成功: {} entityClass={}", vehicleId,
+                        vehicle == null ? "null" : vehicle.getClass().getName());
+                serverLevel.addFreshEntity(vehicle);
+                LOGGER.info("[RVP-Debug] addFreshEntity 成功: {} @{}", vehicleId, vehicle.blockPosition());
+                player.displayClientMessage(Component.literal("§a[RVP] 已生成载具: " + vehicleId
+                        + " @ " + (int) pos.x + "," + (y + 1) + "," + (int) pos.z), false);
+            } catch (Exception e) {
+                LOGGER.error("[RVP-Debug] 生成载具异常: {}", vehicleId, e);
+                player.displayClientMessage(Component.literal("§c[RVP] 生成载具异常: " + vehicleId
+                        + " 详情见 latest.log"), false);
+            }
         });
     }
 }

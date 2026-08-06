@@ -12,6 +12,8 @@ import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.server.ServerLifecycleHooks;
+import org.slf4j.Logger;
+import com.mojang.logging.LogUtils;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -27,12 +29,21 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_PhysicsOnlyCollisionEventHandler {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {
             return;
         }
-        RVP_PhysicsOnlyCollisionHelper.rebuildPhysicsOnlyCubes(vehicle);
+        try {
+            RVP_PhysicsOnlyCollisionHelper.rebuildPhysicsOnlyCubes(vehicle);
+            LOGGER.info("[RVP-PhysicsOnly] 载具加入世界: {} 重建 physics-only 盒完成 cubes={}",
+                    vehicle.getVehicleId(), RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(vehicle).size());
+        } catch (Throwable t) {
+            // 防御：physics-only 初始化失败不允许阻断实体加入世界，否则带 physics_only_bone 的载具会“放不出来”。
+            LOGGER.error("[RVP-PhysicsOnly] 载具 {} 重建 physics-only 盒异常（已忽略，不阻断生成）", vehicle.getVehicleId(), t);
+        }
     }
 
     @SubscribeEvent
