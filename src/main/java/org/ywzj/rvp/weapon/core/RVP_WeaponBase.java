@@ -1,11 +1,17 @@
 package org.ywzj.rvp.weapon.core;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
@@ -25,8 +31,10 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Shared runtime base for the seven public RVP weapon types.
@@ -201,7 +209,105 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean canShootOnServer() {
-        return fireController.canShootNowAfterPrime() && passesOffAxisShootGate();
+        return canShootOnServer(null);
+    }
+
+    /**
+     * 服务端射击最终门控：发热 / 离轴 + 发射架部署门控。
+     *
+     * <p>发射架门控替代被删 {@code WeaponUnitLauncherDeployGateMixin}：按
+     * {@link LauncherDeployRuntimeManager} 快照判定展开状态与车速，不满足时拒绝射击
+     * 并向操作者提示（{@code operator} 为空时回退到载具乘客中的玩家）。</p>
+     */
+    protected boolean canShootOnServer(@Nullable LivingEntity operator) {
+        if (!fireController.canShootNowAfterPrime() || !passesOffAxisShootGate()) {
+            return false;
+        }
+        return passesLauncherDeployGate(operator);
+    }
+
+    private boolean passesLauncherDeployGate(@Nullable LivingEntity operator) {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return true;
+        }
+        RVP_LauncherDeployConfig config = findLauncherDeployConfig();
+        if (config == null) {
+            return true;
+        }
+        LauncherDeployRuntimeManager.Snapshot snapshot = LauncherDeployRuntimeManager.get(vehicle.getId(), config.id());
+        LauncherDeployRuntimeManager.State state = snapshot == null
+                ? LauncherDeployRuntimeManager.State.CLOSED
+                : snapshot.state();
+        double speedKph = snapshot == null
+                ? vehicle.getDeltaMovement().length() * 20.0 * 3.6
+                : snapshot.speedKph();
+
+        if (state == LauncherDeployRuntimeManager.State.CLOSED && config.blockFireWhenClosed()) {
+            denyLauncherDeployFire(operator, "发射架未展开");
+            return false;
+        }
+        if (state == LauncherDeployRuntimeManager.State.DEPLOYING && config.blockFireWhenDeploying()) {
+            denyLauncherDeployFire(operator, "发射架展开中");
+            return false;
+        }
+        if (state == LauncherDeployRuntimeManager.State.RETRACTING && config.blockFireWhenRetracting()) {
+            denyLauncherDeployFire(operator, "发射架收回中");
+            return false;
+        }
+        if (config.blockFireWhenSpeeding() && speedKph >= config.retractSpeedMin()) {
+            denyLauncherDeployFire(operator, "车速过高，无法发射");
+            return false;
+        }
+        return true;
+    }
+
+    @Nullable
+    private RVP_LauncherDeployConfig findLauncherDeployConfig() {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || vehicle.getVehicleId() == null) {
+            return null;
+        }
+        Set<String> candidateUnitIds = new LinkedHashSet<>();
+        collectWeaponUnitIds(candidateUnitIds, getWeaponUnit());
+        for (RVP_LauncherDeployConfig config : RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            if (candidateUnitIds.stream().anyMatch(config::appliesToWeaponUnit)
+                    || candidateUnitIds.contains(config.pitchPartUnitId())) {
+                return config;
+            }
+        }
+        return null;
+    }
+
+    private static void collectWeaponUnitIds(Set<String> out, @Nullable WeaponUnit weaponUnit) {
+        WeaponUnit current = weaponUnit;
+        while (current != null) {
+            out.add(current.getId());
+            current = current.getParentWeaponUnit();
+        }
+        if (weaponUnit != null) {
+            for (WeaponUnit sub : weaponUnit.getSubWeaponUnits()) {
+                out.add(sub.getId());
+            }
+        }
+    }
+
+    private void denyLauncherDeployFire(@Nullable LivingEntity operator, String message) {
+        Player player = operator instanceof Player p ? p : null;
+        if (player == null) {
+            AbstractVehicle vehicle = getVehicle();
+            if (vehicle != null) {
+                for (Entity passenger : vehicle.getPassengers()) {
+                    if (passenger instanceof Player p) {
+                        player = p;
+                        break;
+                    }
+                }
+            }
+        }
+        if (player != null) {
+            player.displayClientMessage(Component.literal(message), true);
+        }
     }
 
     @Override

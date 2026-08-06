@@ -23,10 +23,10 @@ import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.ext.RVPEraStateAccess;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CVehicleEraState;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.vehicle.RVP_EraStateTable;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -123,8 +123,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     public boolean isEraActive(AbstractVehicle vehicle, @Nullable String boneName) {
-        RVPEraStateAccess access = eraAccess(vehicle);
-        return access == null || access.rvp_isEraActive(boneName);
+        return RVP_EraStateTable.isEraActive(vehicle.getUUID(), boneName);
     }
 
     public boolean tryTriggerEra(AbstractVehicle vehicle, @Nullable HitboxDamageResult result, float triggerDamage) {
@@ -138,11 +137,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (boneName == null || !result.shouldTriggerEra(triggerDamage)) {
             return false;
         }
-        RVPEraStateAccess access = eraAccess(vehicle);
-        if (access == null || !access.rvp$consumeEra(boneName)) {
+        if (!RVP_EraStateTable.consumeEra(vehicle.getUUID(), boneName)) {
             return false;
         }
-        syncEraState(vehicle, access);
+        syncEraState(vehicle);
         Vec3 hitPoint = result.hitPoint() != null ? result.hitPoint() : vehicle.getBoundingBox().getCenter();
         float explosionScale = result.eraExplosion() > 0f ? result.eraExplosion() : 1f;
         serverLevel.sendParticles(ParticleTypes.EXPLOSION, hitPoint.x, hitPoint.y, hitPoint.z,
@@ -209,19 +207,16 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     private void sanitizeEraState(AbstractVehicle vehicle, VehicleHitboxConfig cfg) {
-        RVPEraStateAccess access = eraAccess(vehicle);
-        if (access == null) {
-            return;
-        }
-        if (access.rvp$retainEraBones(cfg.eraByBoneName.keySet()) && vehicle.level() instanceof ServerLevel) {
-            syncEraState(vehicle, access);
+        if (RVP_EraStateTable.retainEraBones(vehicle.getUUID(), cfg.eraByBoneName.keySet())
+                && vehicle.level() instanceof ServerLevel) {
+            syncEraState(vehicle);
         }
     }
 
-    private void syncEraState(AbstractVehicle vehicle, RVPEraStateAccess access) {
+    private void syncEraState(AbstractVehicle vehicle) {
         RVP_Network.CHANNEL.send(
                 PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> vehicle),
-                S2CVehicleEraState.create(vehicle, access.rvp$getInactiveEraBones())
+                S2CVehicleEraState.create(vehicle, RVP_EraStateTable.getInactiveEraBones(vehicle.getUUID()))
         );
     }
 
@@ -250,13 +245,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (cfg == null || cfg.eraByBoneName == null || cfg.eraByBoneName.isEmpty()) {
             return;
         }
-        if (!(vehicle instanceof RVPEraStateAccess access)) {
-            return;
-        }
+        UUID vehicleId = vehicle.getUUID();
         // 过滤活跃的 ERA bone
         List<String> activeBones = new ArrayList<>();
         for (String boneName : cfg.eraByBoneName.keySet()) {
-            if (access.rvp_isEraActive(boneName)) {
+            if (RVP_EraStateTable.isEraActive(vehicleId, boneName)) {
                 activeBones.add(boneName);
             }
         }
@@ -285,7 +278,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         int destroyed = 0;
         for (int i = 0; i < Math.min(destroyCount, sorted.size()); i++) {
             String boneName = sorted.get(i);
-            if (access.rvp$consumeEra(boneName)) {
+            if (RVP_EraStateTable.consumeEra(vehicleId, boneName)) {
                 EraConfig eCfg = cfg.eraByBoneName.get(boneName);
                 float explosionScale = (eCfg != null && eCfg.explosion() > 0f) ? eCfg.explosion() : 1f;
                 spawnEraEffect(serverLevel, vehicle, boneName, explosionScale);
@@ -293,7 +286,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
         }
         if (destroyed > 0) {
-            INSTANCE.syncEraState(vehicle, access);
+            INSTANCE.syncEraState(vehicle);
         }
     }
 
@@ -452,10 +445,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         serverLevel.playSound(null, pos.x, pos.y, pos.z,
                 SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
                 Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
-    }
-
-    private static @Nullable RVPEraStateAccess eraAccess(AbstractVehicle vehicle) {
-        return vehicle instanceof RVPEraStateAccess access ? access : null;
     }
 
     private static String fmt(float v) {

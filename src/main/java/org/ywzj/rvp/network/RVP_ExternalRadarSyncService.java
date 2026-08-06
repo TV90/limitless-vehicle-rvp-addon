@@ -15,7 +15,6 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;

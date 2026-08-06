@@ -4,8 +4,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.function.Supplier;
@@ -30,7 +30,7 @@ public class C2SSwitchDeployableUav {
                 return;
             }
 
-            if (vehicle instanceof AbstractVehicleLinkedUavExt ext && ext.ywzj_rvp$isDeployableUavInstance()) {
+            if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
                 boolean ok = RVP_DeployableUavService.switchBackToParent(player);
                 player.displayClientMessage(Component.translatable(
                         ok ? "message.ywzj_rvp.uav.switch_back_success" : "message.ywzj_rvp.uav.switch_back_failed"

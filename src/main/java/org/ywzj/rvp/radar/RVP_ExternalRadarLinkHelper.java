@@ -8,13 +8,13 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.network.C2SClearExternalRadarLock;
 import org.ywzj.rvp.network.C2SRequestExternalRadarLock;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -35,10 +35,7 @@ public final class RVP_ExternalRadarLinkHelper {
     private RVP_ExternalRadarLinkHelper() {}
 
     public static Optional<AbstractVehicle> getLinkedRelayVehicle(AbstractVehicle launcher) {
-        UUID childUuid = null;
-        if (launcher instanceof AbstractVehicleLinkedUavExt ext) {
-            childUuid = ext.ywzj_rvp$getLinkedChildVehicleUuid();
-        }
+        UUID childUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(launcher);
         if (childUuid == null) {
             childUuid = RVP_DeployableUavLinkRegistry.getChildUuid(launcher.getUUID());
         }

@@ -22,6 +22,7 @@
     "WeaponUnitPojoMixin",
     "WeaponUnitDataMixin",
     "ClientVehicleActionWeaponBayOverrideMixin",
+    "AutoLandingGearManualOverrideMixin",
     "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
     "VectorUtilPhysicsOnlyHitFilterMixin"

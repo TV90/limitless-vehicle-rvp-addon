@@ -36,7 +36,7 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
             return false;
         }
         getFireController().primeServerShot();
-        if (!canShootOnServer()) {
+        if (!canShootOnServer(shooter)) {
             return false;
         }
         if (!consumeAmmo(aimContexts)) {

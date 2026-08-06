@@ -4,12 +4,15 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockCube;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
-import org.ywzj.rvp.ext.RVPPhysicsOnlyCollisionAccess;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.OBB;
@@ -20,29 +23,41 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
+/**
+ * 纯物理碰撞体积（physics-only）管理。
+ *
+ * <p>“仅物理”碰撞盒按载具实例存于弱引用侧表，替代被删
+ * {@code AbstractVehiclePhysicsOnlyCollisionMixin} 注入的 {@code rvp$physicsOnlyCubes}
+ * 字段；重建/每 tick 更新由 {@code RVP_PhysicsOnlyCollisionEventHandler} 驱动
+ * （载具加入世界重建、每 tick 更新、离开世界清理）。</p>
+ */
 public final class RVP_PhysicsOnlyCollisionHelper {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final double EPSILON = 1.0E-6;
 
+    private static final Map<AbstractVehicle, List<VehicleCubeOBB>> PHYSICS_ONLY_CUBES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
     private RVP_PhysicsOnlyCollisionHelper() {}
 
     public static List<VehicleCubeOBB> getPhysicsOnlyCubes(AbstractVehicle vehicle) {
-        if (vehicle instanceof RVPPhysicsOnlyCollisionAccess access) {
-            return access.rvp$getPhysicsOnlyCubes();
-        }
-        return List.of();
+        List<VehicleCubeOBB> cubes = PHYSICS_ONLY_CUBES.get(vehicle);
+        return cubes == null ? List.of() : cubes;
     }
 
     public static void rebuildPhysicsOnlyCubes(AbstractVehicle vehicle) {
-        if (!(vehicle instanceof RVPPhysicsOnlyCollisionAccess access)) {
-            return;
-        }
         List<VehicleCubeOBB> cubes = buildPhysicsOnlyCubes(vehicle);
         stripPhysicsOnlyBodyCubes(vehicle, cubes);
-        access.rvp$setPhysicsOnlyCubes(cubes);
+        if (cubes.isEmpty()) {
+            PHYSICS_ONLY_CUBES.remove(vehicle);
+        } else {
+            PHYSICS_ONLY_CUBES.put(vehicle, cubes);
+        }
         updatePhysicsOnlyCubes(vehicle);
     }
 
@@ -50,6 +65,36 @@ public final class RVP_PhysicsOnlyCollisionHelper {
         for (VehicleCubeOBB cube : getPhysicsOnlyCubes(vehicle)) {
             cube.update(vehicle);
         }
+    }
+
+    /** 每 tick 更新所有已登记载具的 physics-only 盒（服务端，由事件处理器调用）。 */
+    public static void tickVehicles(ServerLevel level) {
+        if (PHYSICS_ONLY_CUBES.isEmpty()) {
+            return;
+        }
+        for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof AbstractVehicle vehicle) {
+                updatePhysicsOnlyCubes(vehicle);
+            }
+        }
+    }
+
+    /** 每 tick 更新所有已登记载具的 physics-only 盒（客户端，由事件处理器调用）。 */
+    @OnlyIn(Dist.CLIENT)
+    public static void tickClientVehicles(ClientLevel level) {
+        if (PHYSICS_ONLY_CUBES.isEmpty()) {
+            return;
+        }
+        for (net.minecraft.world.entity.Entity entity : level.entitiesForRendering()) {
+            if (entity instanceof AbstractVehicle vehicle) {
+                updatePhysicsOnlyCubes(vehicle);
+            }
+        }
+    }
+
+    /** 载具离开世界：清理弱引用侧表条目。 */
+    public static void onVehicleLeave(AbstractVehicle vehicle) {
+        PHYSICS_ONLY_CUBES.remove(vehicle);
     }
 
     public static Vec3 closestNonPhysicsOnlyHitPosition(AbstractVehicle vehicle, Vec3 start, Vec3 end) {

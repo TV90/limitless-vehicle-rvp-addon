@@ -13,7 +13,6 @@ import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
@@ -116,10 +115,10 @@ public final class RVP_DeployableUavService {
             clearLinkedChild(parent);
             return false;
         }
-        if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavControlSwitchAllowed()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
             return false;
         }
-        childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, player));
+        RVP_LinkedUavStateTable.setReturnSeatIndex(child, findSeatIndex(parent, player));
         boolean riding = player.startRiding(child);
         if (!riding) {
             return false;
@@ -130,7 +129,7 @@ public final class RVP_DeployableUavService {
         // 锁定母车上玩家离开前的座位（通常为驾驶位），防止他人占用/开走母车。
         // 玩家切回母车或自动上车成功时由 clearSeatLock 解除。
         // 锁状态存于静态注册表（不在实体上新增接口方法，避免 mixin 接口注入风险）。
-        setSeatLock(parent, childExt.ywzj_rvp$getReturnSeatIndex(), player.getId());
+        setSeatLock(parent, RVP_LinkedUavStateTable.getReturnSeatIndex(child), player.getId());
         // 玩家进入无人机后盘旋继续（运动输入由 ControlUnitMixin 屏蔽）；
         // 玩家可按 F 键手动切换盘旋开/关
         return true;
@@ -140,21 +139,21 @@ public final class RVP_DeployableUavService {
         if (!(player.getVehicle() instanceof AbstractVehicle child)) {
             return false;
         }
-        if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavInstance()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(child)) {
             return false;
         }
-        AbstractVehicle parent = resolveVehicleByUuid(child.level(), childExt.ywzj_rvp$getLinkedParentVehicleUuid());
+        AbstractVehicle parent = resolveVehicleByUuid(child.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child));
         if (parent == null || parent.isRemoved() || !parent.isAlive()) {
             return false;
         }
-        if (!childExt.ywzj_rvp$isDeployableUavControlSwitchAllowed()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
             return false;
         }
         boolean riding = player.startRiding(parent);
         if (!riding) {
             return false;
         }
-        int returnSeatIndex = childExt.ywzj_rvp$getReturnSeatIndex();
+        int returnSeatIndex = RVP_LinkedUavStateTable.getReturnSeatIndex(child);
         if (returnSeatIndex >= 0 && returnSeatIndex < parent.seats.size()) {
             AbstractVehicle.Seat seat = parent.seats.get(returnSeatIndex);
             if (seat.passengerId == -1 && parent.getOwnOperatorUnit(player) != seat.partUnit) {
@@ -183,10 +182,7 @@ public final class RVP_DeployableUavService {
     }
 
     public static Optional<AbstractVehicle> getLinkedChild(AbstractVehicle parent) {
-        UUID uuid = null;
-        if (parent instanceof AbstractVehicleLinkedUavExt ext) {
-            uuid = ext.ywzj_rvp$getLinkedChildVehicleUuid();
-        }
+        UUID uuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(parent);
         if (uuid == null) {
             uuid = RVP_DeployableUavLinkRegistry.getChildUuid(parent.getUUID());
         }
@@ -194,10 +190,7 @@ public final class RVP_DeployableUavService {
     }
 
     public static Optional<AbstractVehicle> getLinkedParent(AbstractVehicle child) {
-        UUID uuid = null;
-        if (child instanceof AbstractVehicleLinkedUavExt ext) {
-            uuid = ext.ywzj_rvp$getLinkedParentVehicleUuid();
-        }
+        UUID uuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child);
         if (uuid == null) {
             uuid = RVP_DeployableUavLinkRegistry.getParentUuid(child.getUUID());
         }
@@ -205,9 +198,7 @@ public final class RVP_DeployableUavService {
     }
 
     public static void clearLinkedChild(AbstractVehicle parent) {
-        if (parent instanceof AbstractVehicleLinkedUavExt ext) {
-            ext.ywzj_rvp$setLinkedChildVehicleUuid(null);
-        }
+        RVP_LinkedUavStateTable.setLinkedChildVehicleUuid(parent, null);
         RVP_DeployableUavLinkRegistry.clearByParent(parent.getUUID());
     }
 
@@ -219,16 +210,16 @@ public final class RVP_DeployableUavService {
     }
 
     public static void handleDeployableUavRemoved(AbstractVehicle child) {
-        if (!(child instanceof AbstractVehicleLinkedUavExt childExt) || !childExt.ywzj_rvp$isDeployableUavInstance()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(child)) {
             return;
         }
         // 清除盘旋状态
         RVP_UavLoiterManager.remove(child.getUUID());
-        AbstractVehicle parent = resolveVehicleByUuid(child.level(), childExt.ywzj_rvp$getLinkedParentVehicleUuid());
-        if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
-            if (parentExt.ywzj_rvp$getLinkedChildVehicleUuid() != null
-                    && parentExt.ywzj_rvp$getLinkedChildVehicleUuid().equals(child.getUUID())) {
-                parentExt.ywzj_rvp$setLinkedChildVehicleUuid(null);
+        AbstractVehicle parent = resolveVehicleByUuid(child.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child));
+        if (parent != null) {
+            UUID linkedChildUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(parent);
+            if (linkedChildUuid != null && linkedChildUuid.equals(child.getUUID())) {
+                RVP_LinkedUavStateTable.setLinkedChildVehicleUuid(parent, null);
             }
             if (parent.level() instanceof ServerLevel serverLevel) {
                 RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
@@ -241,19 +232,15 @@ public final class RVP_DeployableUavService {
     }
 
     private static void configureLink(AbstractVehicle parent, AbstractVehicle child, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {
-        if (parent instanceof AbstractVehicleLinkedUavExt parentExt) {
-            parentExt.ywzj_rvp$setLinkedChildVehicleUuid(child.getUUID());
-        }
+        RVP_LinkedUavStateTable.setLinkedChildVehicleUuid(parent, child.getUUID());
         RVP_DeployableUavLinkRegistry.link(parent.getUUID(), child.getUUID());
-        if (child instanceof AbstractVehicleLinkedUavExt childExt) {
-            childExt.ywzj_rvp$setDeployableUavInstance(true);
-            childExt.ywzj_rvp$setLinkedParentVehicleUuid(parent.getUUID());
-            childExt.ywzj_rvp$setLinkedLauncherVehicleUuid(config.autoLinkDatalink() ? parent.getUUID() : null);
-            childExt.ywzj_rvp$setReturnSeatIndex(findSeatIndex(parent, operator));
-            childExt.ywzj_rvp$setDeployableUavRole(config.role());
-            childExt.ywzj_rvp$setDatalinkRole(config.autoLinkDatalink() ? config.role() : "none");
-            childExt.ywzj_rvp$setDeployableUavControlSwitchAllowed(config.allowControlSwitch());
-        }
+        RVP_LinkedUavStateTable.setDeployableUavInstance(child, true);
+        RVP_LinkedUavStateTable.setLinkedParentVehicleUuid(child, parent.getUUID());
+        RVP_LinkedUavStateTable.setLinkedLauncherVehicleUuid(child, config.autoLinkDatalink() ? parent.getUUID() : null);
+        RVP_LinkedUavStateTable.setReturnSeatIndex(child, findSeatIndex(parent, operator));
+        RVP_LinkedUavStateTable.setDeployableUavRole(child, config.role());
+        RVP_LinkedUavStateTable.setDatalinkRole(child, config.autoLinkDatalink() ? config.role() : "none");
+        RVP_LinkedUavStateTable.setDeployableUavControlSwitchAllowed(child, config.allowControlSwitch());
     }
 
     private static int findSeatIndex(AbstractVehicle vehicle, @Nullable LivingEntity operator) {
@@ -345,14 +332,14 @@ public final class RVP_DeployableUavService {
         if (player == null || uav == null || player.level().isClientSide()) {
             return;
         }
-        if (!(uav instanceof AbstractVehicleLinkedUavExt uavExt) || !uavExt.ywzj_rvp$isDeployableUavInstance()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
             return;
         }
-        UUID parentUuid = uavExt.ywzj_rvp$getLinkedParentVehicleUuid();
+        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
         if (parentUuid == null) {
             return;
         }
-        int seatIndex = Math.max(0, uavExt.ywzj_rvp$getReturnSeatIndex());
+        int seatIndex = Math.max(0, RVP_LinkedUavStateTable.getReturnSeatIndex(uav));
         AbstractVehicle parent = resolveVehicleByUuid(uav.level(), parentUuid);
         if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
             scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
@@ -415,6 +402,44 @@ public final class RVP_DeployableUavService {
     /** 玩家重生/离开时解锁其锁定的所有母车座位（防止座位被永久锁死）。 */
     public static void unlockSeatForPlayer(Level level, int playerId) {
         PARENT_SEAT_LOCKS.entrySet().removeIf(entry -> entry.getValue().ownerPlayerId() == playerId);
+    }
+
+    /** 服务端每 tick 强制母车座位锁（替代被删 mixin 的 onEnterVehicle/changeSeat 注入）： */
+    public static void enforceSeatLocks(ServerLevel serverLevel) {
+        if (PARENT_SEAT_LOCKS.isEmpty()) {
+            return;
+        }
+        java.util.List<UUID> stale = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<UUID, SeatLockInfo> entry : PARENT_SEAT_LOCKS.entrySet()) {
+            SeatLockInfo lock = entry.getValue();
+            if (!(serverLevel.getEntity(entry.getKey()) instanceof AbstractVehicle parent)) {
+                stale.add(entry.getKey()); // 母车已卸载/移除：清理锁
+                continue;
+            }
+            Optional<AbstractVehicle.Seat> lockedSeat = parent.seats.stream()
+                    .filter(seat -> seat.seatIndex == lock.seatIndex())
+                    .findFirst();
+            if (lockedSeat.isEmpty() || lockedSeat.get().passengerId == -1) {
+                continue;
+            }
+            if (lockedSeat.get().passengerId == lock.ownerPlayerId()) {
+                continue; // 持有者放行
+            }
+            if (!(parent.level().getEntity(lockedSeat.get().passengerId) instanceof ServerPlayer serverPlayer)) {
+                continue;
+            }
+            Optional<AbstractVehicle.Seat> emptySeat = parent.seats.stream()
+                    .filter(seat -> seat.passengerId == -1 && seat.seatIndex != lock.seatIndex())
+                    .findFirst();
+            if (emptySeat.isPresent()) {
+                parent.changeSeat(serverPlayer, emptySeat.get().seatIndex);
+            } else {
+                serverPlayer.stopRiding();
+            }
+        }
+        for (UUID uuid : stale) {
+            PARENT_SEAT_LOCKS.remove(uuid);
+        }
     }
 
     /** 记录母车（父车）最新位置快照（key = 无人机实体 UUID）；position 为 null 时清除。 */
