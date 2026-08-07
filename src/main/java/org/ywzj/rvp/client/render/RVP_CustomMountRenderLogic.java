@@ -739,9 +739,28 @@ public final class RVP_CustomMountRenderLogic {
                     .orElse(null);
             sb.append("resolvedMount=").append(resolvedMount != null).append('\n');
             if (resolvedMount != null) {
+                sb.append("syncedAmmo=").append(resolvedMount.syncedAmmo()).append('\n');
                 sb.append("visibleAmmo=").append(resolvedMount.visibleAmmo()).append('\n');
                 sb.append("visibleMissileCount=").append(resolvedMount.visibleMissileCount()).append('\n');
                 sb.append("hideMissile=").append(resolvedMount.shouldHideMissile()).append('\n');
+            }
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                WeaponResolution resolution = resolveCurrentWeaponForDisplay(weaponUnit);
+                sb.append("currentWeaponClass=")
+                        .append(resolution == null || resolution.currentWeapon() == null
+                                ? "<null>"
+                                : resolution.currentWeapon().getClass().getName())
+                        .append('\n');
+                if (resolution != null && resolution.currentWeapon() instanceof VehicleMultiWeapons multi) {
+                    sb.append("multiSelectedIndex=").append(multi.getSelectedIndex()).append('\n');
+                    sb.append("multiSelectedWeapon=")
+                            .append(multi.getSelectedWeapon().getData() == null
+                                    || multi.getSelectedWeapon().getData().getWeaponId() == null
+                                    ? "<null>"
+                                    : multi.getSelectedWeapon().getData().getWeaponId())
+                            .append('\n');
+                    sb.append("multiSelectedRemain=").append(multi.getSelectedWeapon().getRemainAmmo()).append('\n');
+                }
             }
         }
 

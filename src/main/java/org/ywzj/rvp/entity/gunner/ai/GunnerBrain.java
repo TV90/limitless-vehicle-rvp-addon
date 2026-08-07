@@ -7,6 +7,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -94,8 +96,11 @@ public final class GunnerBrain {
             gunner.setControlledWeaponIndex(-1);
         }
 
-        // 周期监控（仅客户端有效）
-        RVP_GunnerDebugMonitor.onTick(gunner, vehicle, weaponUnit, target);
+        // 周期监控（仅客户端有效）。必须按 dist 隔离调用：该类引用了 Minecraft/LocalPlayer 等
+        // 客户端专属类，服务端若加载该类会在类加载验证阶段连带解析这些类并被 RuntimeDistCleaner 拦截崩溃。
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            RVP_GunnerDebugMonitor.onTick(gunner, vehicle, weaponUnit, target);
+        }
     }
 
     private static void tickRadarLock(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, @Nullable Entity target, GunnerProfile profile) {

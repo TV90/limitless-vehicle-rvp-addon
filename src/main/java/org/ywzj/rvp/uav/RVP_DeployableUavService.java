@@ -150,13 +150,19 @@ public final class RVP_DeployableUavService {
         }
         UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child);
         AbstractVehicle parent = resolveVehicleByUuid(child.level(), parentUuid);
-        if (parent == null || parent.isRemoved() || !parent.isAlive()) {
-            LOGGER.info("[RVP-UAV] 切回失败：母车不可用 parentUuid={} parent={} removed={} alive={}",
+        if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
+            // 母车实体暂不可用（区块卸载/已被移除）：直接下车，由 handleDismount 回传母车旁并
+            // 进入延迟自动上车队列（母车区块重载后自动骑乘），避免玩家卡在无人机上。
+            LOGGER.info("[RVP-UAV] 母车暂不可用，下车回传: uav={} parentUuid={} parent={} removed={} alive={}",
+                    child.getVehicleId(),
                     parentUuid,
                     parent == null ? "null" : parent.getVehicleId(),
                     parent != null && parent.isRemoved(),
                     parent != null && parent.isAlive());
-            return false;
+            if (player.getVehicle() == child) {
+                player.stopRiding();
+            }
+            return true;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
             LOGGER.info("[RVP-UAV] 切回失败：控制切换被禁用 child={}", child.getVehicleId());
@@ -174,6 +180,10 @@ public final class RVP_DeployableUavService {
                 parent.changeSeat(player, returnSeatIndex);
             }
         }
+        // 清理母车座位锁：tryAutoRideParent 在 dismount 事件期间改为延迟到下一 tick 自动上车，
+        // 该延迟任务会因玩家已骑乘（player.getVehicle()!=null）被丢弃，restoreSeatAndUnlock
+        // 不再执行，因此这里必须显式解锁，避免座位锁残留导致他人无法占用母车。
+        clearSeatLock(parent, player);
         // 切回母车 → 自动激活盘旋
         RVP_DeployableUavConfig uavConfig = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
         if (uavConfig.isConfigured() && uavConfig.autoLoiterOnSwitchBack()) {
@@ -339,6 +349,20 @@ public final class RVP_DeployableUavService {
     // ==================== 自动上车 + 母车座位锁 ====================
 
     /**
+     * tryAutoRideParent 重入保护（服务端单线程，静态标志足够）。
+     *
+     * <p>Forge 的 {@code Entity#removeVehicle()}（即 stopRiding）在置空 vehicle 字段<strong>之前</strong>
+     * 就触发 dismount 事件（canMountEntity），因此 dismount 事件处理时 {@code player.getVehicle()} 仍是
+     * 旧坐骑（非 null）。本方法内部的 {@code player.startRiding(parent)} 会触发旧坐骑 stopRiding → 再触发
+     * dismount 事件 → 再回到本方法，形成递归链。</p>
+     *
+     * <p>旧守卫（{@code player.getVehicle() != null} 时跳过）虽能拦截递归，但同样误伤无人机被击毁/移除的
+     * 死亡离机场景（该场景 dismount 事件同样发生在 vehicle 置空前），导致只传回母车旁、自动上车失效。
+     * 改为统一的重入保护：递归链由最外层调用完成自动上车。</p>
+     */
+    private static boolean autoRideInProgress = false;
+
+    /**
      * 玩家离开无人机（被击毁/主动切回）后：传送回母车旁并自动坐上母车座位。
      * 母车实体不可用（区块卸载）时进入延迟重试队列，等待母车重新加载后自动上车。
      */
@@ -349,33 +373,44 @@ public final class RVP_DeployableUavService {
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
             return;
         }
+        if (autoRideInProgress) {
+            // 重入：本方法内部 startRiding → 旧坐骑 stopRiding → dismount 事件 再触发本方法。
+            // 交给最外层调用完成自动上车，避免无限递归。
+            return;
+        }
         UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
         if (parentUuid == null) {
             return;
         }
         int seatIndex = Math.max(0, RVP_LinkedUavStateTable.getReturnSeatIndex(uav));
-        AbstractVehicle parent = resolveVehicleByUuid(uav.level(), parentUuid);
-        if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
-            scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
-            return;
-        }
-        if (player.getVehicle() == parent) {
-            // 已回到母车（主动切回时 onLeaveVehicle 先于 startRiding 触发）
-            restoreSeatAndUnlock(player, parent, seatIndex);
-            return;
-        }
-        if (player.getVehicle() != null) {
-            // 防递归：玩家仍骑在旧坐骑（如正在被 startRiding 内部 stopRiding 移除的无人机）上。
-            // 此时再 startRiding(parent) 会再次触发 stopRiding → dismount 事件 → 回到本方法，形成无限递归。
-            // 直接放弃本次自动上车，由最外层显式 startRiding（switchBackToParent）完成骑乘。
-            LOGGER.info("[RVP-UAV] tryAutoRideParent 跳过：玩家仍骑在 {} 上，等待切换完成",
-                    player.getVehicle().getClass().getSimpleName());
-            return;
-        }
-        if (player.startRiding(parent)) {
-            restoreSeatAndUnlock(player, parent, seatIndex);
-        } else {
-            scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+        autoRideInProgress = true;
+        try {
+            AbstractVehicle parent = resolveVehicleByUuid(uav.level(), parentUuid);
+            if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
+                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+                return;
+            }
+            if (player.getVehicle() == parent) {
+                // 已回到母车（主动切回时 onLeaveVehicle 先于 startRiding 触发）
+                restoreSeatAndUnlock(player, parent, seatIndex);
+                return;
+            }
+            if (player.getVehicle() == uav) {
+                // dismount 事件尚未完成移除（vehicle 字段仍指向无人机）时同步 startRiding 母车，
+                // 会嵌套触发旧坐骑 stopRiding → 再次 dismount 事件 → 递归返回后外层 stopRiding 因
+                // getVehicle()!=this 守卫失败，留下：① 母车 onEnterVehicle 二次执行占两个座位
+                // （两个座位栏目显示同一玩家）；② 无人机乘客列表残留幻影乘客。
+                // 改为延迟到下一 tick（removePassenger 完成后 player.getVehicle()==null）再自动上车。
+                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+                return;
+            }
+            if (player.startRiding(parent)) {
+                restoreSeatAndUnlock(player, parent, seatIndex);
+            } else {
+                scheduleAutoRide(player.getUUID(), parentUuid, seatIndex);
+            }
+        } finally {
+            autoRideInProgress = false;
         }
     }
 
