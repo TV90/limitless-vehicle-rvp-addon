@@ -10,16 +10,15 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 /**
  * 拦截 F 键多弹种循环（MULTI_WEAPON_SWITCH）。
  * <p>
- * T90M / LAV25 等载具的 {@code modding_only_multi} 弹种槽只能通过改装工具（{@code C2SSelectModdingSubWeapon}）切换，
+ * 普通 {@code modding_only_multi} 弹种槽（如 LAV25 / ZBL08A）只能通过改装工具（{@code C2SSelectModdingSubWeapon}）切换，
  * 本体 F 键发送 {@code ClientVehicleSwitchWeapon(MULTI)} 后服务端调用 {@code cycleMultiWeapon}，
- * 该路径会绕过改装工具验证，需在此拦截。
- * </p>
- * <p>
- * 改装工具切换走 {@code VehicleMultiWeapons.cycleSubWeapon}（不经 {@code cycleMultiWeapon}），不受影响。
+ * 该路径会绕过改装工具验证，需在此拦截并取消。
  * </p>
  * <p>
  * grouped slot carrier（如 T90M 主炮：AP 弹种组 modding_only_multi + HE 弹种 merge_into_previous_slot）：
- * 拦截 MULTI 后重定向为武器槽切换（PRIMARY），使 F 键在 AP ↔ HE 大组间切换，组内子武器仍由改装工具选择。
+ * 由 {@link RVP_VehicleExtendedConfigManager#shouldBlockCurrentMultiCycle} 判定为放行，
+ * 不拦截，让本体 {@code cycleMultiWeapon} → 外层 {@code VehicleMultiWeapons.cycleSubWeapon} 完成 AP ↔ HE 大组切换；
+ * 组内子武器仍由改装工具切换（改装工具走 {@code VehicleMultiWeapons.cycleSubWeapon}，不经 {@code cycleMultiWeapon}）。
  * </p>
  */
 @Mixin(value = WeaponUnit.class, remap = false)
@@ -32,8 +31,5 @@ public class WeaponUnitMultiWeaponSwitchBlockMixin {
             return;
         }
         ci.cancel();
-        if (RVP_VehicleExtendedConfigManager.INSTANCE.shouldRedirectCurrentMultiCycle(self)) {
-            self.switchWeapon(false, next, false);
-        }
     }
 }

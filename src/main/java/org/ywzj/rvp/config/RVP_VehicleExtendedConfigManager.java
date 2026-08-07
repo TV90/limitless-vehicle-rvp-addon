@@ -45,6 +45,11 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> map, ResourceManager resourceManager, ProfilerFiller profiler) {
+        // 客户端单机时 AddReloadListenerEvent（数据仓库）可能扫不到 rvp 包（VehiclePackLoader 以资源包注册），
+        // 空 map 不覆盖，避免清空客户端资源重载 / 服务端同步已填充的配置。
+        if (map == null || map.isEmpty()) {
+            return;
+        }
         rawVehicleJson = Map.copyOf(map);
         Map<ResourceLocation, VehicleExtendedConfig> loaded = new HashMap<>();
         map.forEach((vehicleId, json) -> {
@@ -109,12 +114,23 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     /**
      * 判断 F 键多弹种循环是否应被拦截。
+     * <p>
+     * 普通 {@code modding_only_multi} 槽（如 LAV25 / ZBL08A）：F 键一律拦截，组内子武器只能由改装工具切换。
+     * grouped slot carrier（如 T90M 的 AP 组 + HE 组 {@code merge_into_previous_slot}）：装配器已把 AP/HE 合并为
+     * 外层 {@code VehicleMultiWeapons}，此处直接放行，由本体 {@code cycleMultiWeapon} → 外层 multi 的
+     * {@code cycleSubWeapon} 完成 AP ↔ HE 大组切换；组内子武器仍由改装工具选择。
+     * </p>
+     * <p>
      * 除了当前武器索引本身，还需检查代理展开后的多武器：炮塔武器栏里放导弹代理时，
      * F 键在炮塔上展开的是 missile 部件的 multi，若只按炮塔索引判定会漏拦，
      * 因此按该 multi 真实所属部件的配置复核。
+     * </p>
      */
     public boolean shouldBlockCurrentMultiCycle(WeaponUnit weaponUnit) {
         if (weaponUnit == null) {
+            return false;
+        }
+        if (isGroupedSlotCarrier(weaponUnit.getVehicle(), weaponUnit.getId(), weaponUnit.getCurrentWeaponIndex())) {
             return false;
         }
         if (shouldBlockRuntimeMultiCycle(weaponUnit, weaponUnit.getCurrentWeaponIndex())) {
@@ -124,6 +140,9 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         if (current instanceof VehicleMultiWeapons multi) {
             WeaponUnit owner = multi.getWeaponUnit();
             if (owner != null && owner != weaponUnit) {
+                if (isGroupedSlotCarrier(owner.getVehicle(), owner.getId(), owner.getCurrentWeaponIndex())) {
+                    return false;
+                }
                 return shouldBlockRuntimeMultiCycle(owner, owner.getCurrentWeaponIndex());
             }
         }
@@ -142,28 +161,6 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             return false;
         }
         return get(vehicle).isGroupedSlotCarrier(partId, weaponIndex);
-    }
-
-    /**
-     * 是否应将 F 键 MULTI 循环请求重定向为武器槽切换（PRIMARY）。
-     * grouped slot carrier（modding_only_multi 且下一槽 merge_into_previous_slot）的弹种组，
-     * F 键应在大组间（如 T90M 的 AP 组 ↔ HE 组）切换，而非在组内子武器间循环。
-     */
-    public boolean shouldRedirectCurrentMultiCycle(WeaponUnit weaponUnit) {
-        if (weaponUnit == null) {
-            return false;
-        }
-        if (isGroupedSlotCarrier(weaponUnit.getVehicle(), weaponUnit.getId(), weaponUnit.getCurrentWeaponIndex())) {
-            return true;
-        }
-        AbstractVehicleWeapon<?> current = weaponUnit.getCurrentWeapon().orElse(null);
-        if (current instanceof VehicleMultiWeapons multi) {
-            WeaponUnit owner = multi.getWeaponUnit();
-            if (owner != null && owner != weaponUnit) {
-                return isGroupedSlotCarrier(owner.getVehicle(), owner.getId(), owner.getCurrentWeaponIndex());
-            }
-        }
-        return false;
     }
 
     public boolean isMergeIntoPreviousSlot(AbstractVehicle vehicle, String partId, int weaponIndex) {

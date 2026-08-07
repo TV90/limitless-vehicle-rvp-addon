@@ -61,6 +61,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> map, ResourceManager resourceManager, ProfilerFiller profiler) {
+        // 客户端单机时 AddReloadListenerEvent（数据仓库）可能扫不到 rvp 包（VehiclePackLoader 以资源包注册），
+        // 空 map 不覆盖，避免清空客户端资源重载 / 服务端同步已填充的配置。
+        if (map == null || map.isEmpty()) {
+            return;
+        }
         Map<ResourceLocation, VehicleHitboxConfig> loaded = new HashMap<>();
         Set<ResourceLocation> hideSet = new HashSet<>();
         map.forEach((vehicleId, json) -> {
