@@ -2056,15 +2056,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     hitboxRes == null ? null : hitboxRes.hitBoneName());
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
+        float hurtAmount = finalDamage;
         if (entity instanceof AbstractVehicle targetVehicleForHurt) {
+            // 弹体已自行结算命中箱系数（pushSkip 跳过全局缩放），但 hurt 仍会走本体
+            // DamageSystem.hurt 的核心距离衰减；按 core_distance_scale_multiplier 预补偿，
+            // 使衰减后恰好等于期望伤害（0 = 命中点无关伤害，1 = 本体原值）。
+            hurtAmount = RVP_VehicleHurtScalingHandler.compensateCoreDistanceFalloff(
+                    targetVehicleForHurt,
+                    finalDamage,
+                    RVP_VehicleHurtScalingHandler.resolveBaseFalloffScale(targetVehicleForHurt, this));
             RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
             try {
-                EntityUtil.hurt(source, entity, finalDamage);
+                EntityUtil.hurt(source, entity, hurtAmount);
             } finally {
                 RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
             }
         } else {
-            EntityUtil.hurt(source, entity, finalDamage);
+            EntityUtil.hurt(source, entity, hurtAmount);
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
@@ -2081,7 +2089,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
             RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                    player, targetVehicle, preHitboxDamage, finalDamage, hitboxRes,
+                    player, targetVehicle, preHitboxDamage, hurtAmount, hitboxRes,
                     Float.NaN, 1f
             );
         }

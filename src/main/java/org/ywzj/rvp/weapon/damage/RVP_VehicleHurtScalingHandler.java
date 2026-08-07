@@ -264,6 +264,65 @@ public final class RVP_VehicleHurtScalingHandler {
         return Double.isFinite(s) ? (float) s : Float.NaN;
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // RVP 弹体/激光预补偿（pushSkip 跳过全局缩放时，本体 DamageSystem 衰减仍生效）
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * 计算本体 {@link org.ywzj.vehicle.vehicle.DamageSystem#hurt} 会对投射物应用的核心距离衰减系数，
+     * 算法与其完全一致（closestHitObbPosition 命中点 → 与主 OBB 核心的距离比例）。
+     * 供 RVP 弹体在已自行结算命中箱系数时预补偿；无法计算（无速度/无主OBB）返回 NaN。
+     */
+    public static float resolveBaseFalloffScale(AbstractVehicle vehicle, Projectile projectile) {
+        Vec3 pos = projectile.position();
+        Vec3 hitVec = projectile.getDeltaMovement();
+        if (hitVec.lengthSqr() <= 1.0E-8) {
+            return Float.NaN;
+        }
+        Vec3 hitPos = VectorUtil.closestHitObbPosition(vehicle, pos, pos.add(hitVec));
+        if (hitPos == null) {
+            return 0.2f; // 本体 hitPos==null 分支 scale=0.2
+        }
+        OBB obb = vehicle.getMainCubeOBB().obb();
+        Vec3 corePos = vehicle.relativeRotPos(new Vec3(obb.center()), false);
+        Vec3 diff = corePos.subtract(hitPos);
+        Vec3 cross = diff.cross(hitVec);
+        double distanceToCore = cross.length() / hitVec.length();
+        double distanceMax = obb.extents().get(obb.extents().maxComponent()) * 2;
+        if (!Double.isFinite(distanceMax) || distanceMax == 0d) {
+            return Float.NaN;
+        }
+        double s = (distanceMax - distanceToCore) / distanceMax;
+        return Double.isFinite(s) ? (float) s : Float.NaN;
+    }
+
+    /**
+     * 按核心距离衰减倍率预补偿传入伤害量，使本体 DamageSystem 再次应用衰减后恰好等于期望值：
+     * <pre>
+     *   amount' = amount / falloff * (1 + (falloff - 1) * coreMult)
+     * </pre>
+     * coreMult=0 → amount' = amount / falloff（完全抵消衰减，命中点无关伤害）；
+     * coreMult=1 → amount' = amount（保持本体原衰减）。
+     * 低于 damageThreshold 时本体走 0.1 下限分支不应用衰减，原样返回。
+     */
+    public static float compensateCoreDistanceFalloff(AbstractVehicle vehicle, float amount, float falloffScale) {
+        if (amount < 0.1f || amount < vehicle.defenseStats.damageThreshold) {
+            return amount;
+        }
+        if (!Float.isFinite(falloffScale) || falloffScale <= 1.0E-6f) {
+            return amount;
+        }
+        float coreMult = RVP_VehicleHitboxFactorManager.INSTANCE.resolveCoreDistanceScaleMultiplier(vehicle);
+        if (coreMult == 1f) {
+            return amount;
+        }
+        float effectiveScale = 1f + (falloffScale - 1f) * coreMult;
+        if (!Float.isFinite(effectiveScale) || effectiveScale <= 1.0E-6f) {
+            return amount;
+        }
+        return amount / falloffScale * effectiveScale;
+    }
+
     /** 预测本体 DamageSystem 对原始伤害量的结算结果（复刻原 mixin rvp$predictBaseDamage）。 */
     private static float predictBaseDamage(AbstractVehicle self, DamageSource source, float amount) {
         float effectiveAmount = amount;

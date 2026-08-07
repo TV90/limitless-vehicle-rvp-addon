@@ -82,9 +82,13 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     }
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt) {
+                    // 激光伤害来源 direct=射手（非投射物），本体 DamageSystem 走 hitPos==null →
+                    // scale=0.2 分支；按 core_distance_scale_multiplier 预补偿 0.2。
+                    float hurtAmount = RVP_VehicleHurtScalingHandler.compensateCoreDistanceFalloff(
+                            targetVehicleForHurt, hitDamage, 0.2f);
                     RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
                     try {
-                        EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
+                        EntityUtil.hurt(source, beam.hitEntity(), hurtAmount);
                     } finally {
                         RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
                     }
