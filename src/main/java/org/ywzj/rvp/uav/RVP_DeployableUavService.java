@@ -429,15 +429,21 @@ public final class RVP_DeployableUavService {
         SeatLockInfo lock = PARENT_SEAT_LOCKS.get(parent.getUUID());
         if (lock != null && lock.ownerPlayerId() == owner.getId()) {
             PARENT_SEAT_LOCKS.remove(parent.getUUID());
+            LOGGER.info("[RVP-UAV-LOCK] 解锁母车 {} seat={} owner={}",
+                    parent.getVehicleId(), lock.seatIndex(), lock.ownerPlayerId());
         }
     }
 
     /** 设置母车座位锁（玩家切至无人机期间，防止他人占用/开走母车）。 */
     public static void setSeatLock(AbstractVehicle parent, int seatIndex, int ownerPlayerId) {
         if (parent == null || seatIndex < 0) {
+            LOGGER.info("[RVP-UAV-LOCK] setSeatLock 跳过 parent={} seatIndex={}",
+                    parent == null ? "null" : parent.getVehicleId(), seatIndex);
             return;
         }
         PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId));
+        LOGGER.info("[RVP-UAV-LOCK] 锁母车 {} seat={} owner={}",
+                parent.getVehicleId(), seatIndex, ownerPlayerId);
     }
 
     /**
@@ -470,7 +476,13 @@ public final class RVP_DeployableUavService {
         if (lock == null) {
             return false;
         }
-        return passenger == null || passenger.getId() != lock.ownerPlayerId();
+        boolean reject = passenger == null || passenger.getId() != lock.ownerPlayerId();
+        if (reject) {
+            LOGGER.info("[RVP-UAV-LOCK] 拒绝 {} 上母车 {}（锁 owner={} seat={}）",
+                    passenger == null ? "null" : passenger.getName().getString(),
+                    vehicle.getVehicleId(), lock.ownerPlayerId(), lock.seatIndex());
+        }
+        return reject;
     }
 
     /** 读取母车座位锁；无锁返回 null。 */
@@ -499,11 +511,13 @@ public final class RVP_DeployableUavService {
         if (PARENT_SEAT_LOCKS.isEmpty()) {
             return;
         }
-        java.util.List<UUID> stale = new java.util.ArrayList<>();
         for (java.util.Map.Entry<UUID, SeatLockInfo> entry : PARENT_SEAT_LOCKS.entrySet()) {
             SeatLockInfo lock = entry.getValue();
+            // 注意：ServerLevel.getEntity 只返回本维度内的实体。母车不在本维度时直接跳过，
+            // 绝不能当 stale 清理——否则多维度世界（overworld/nether/end 每个维度都会执行本方法）
+            // 会在母车所在维度之外的维度把锁误删，导致"锁刚设置就被清除"。
+            // 母车实体真正移除/卸载时由 RVP_LinkedUavEventHandler.onEntityLeaveWorld -> cleanupSeatLock 清理。
             if (!(serverLevel.getEntity(entry.getKey()) instanceof AbstractVehicle parent)) {
-                stale.add(entry.getKey()); // 母车已卸载/移除：清理锁
                 continue;
             }
             Optional<AbstractVehicle.Seat> lockedSeat = parent.seats.stream()
@@ -520,10 +534,10 @@ public final class RVP_DeployableUavService {
             }
             // 直接踢出而非换座：母车锁定的语义是"锁住母车"，入侵者不应留在母车任意座位上
             // （配合 onMount 上车事件拦截，此处的每 tick 强制定位为兜底）。
+            LOGGER.info("[RVP-UAV-LOCK] 每tick兜底踢出 {}（母车 {} 锁 seat={} owner={}）",
+                    serverPlayer.getName().getString(), parent.getVehicleId(),
+                    lock.seatIndex(), lock.ownerPlayerId());
             serverPlayer.stopRiding();
-        }
-        for (UUID uuid : stale) {
-            PARENT_SEAT_LOCKS.remove(uuid);
         }
     }
 

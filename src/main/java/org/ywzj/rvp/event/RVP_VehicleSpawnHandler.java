@@ -103,13 +103,9 @@ public class RVP_VehicleSpawnHandler {
             if (!visited.add(weapon)) {
                 continue;
             }
-            // 多弹种武器：内部每个弹种子武器各自补满
+            // 多弹种武器：内部每个弹种子武器各自补满（子武器可能仍是多弹组，需递归）
             if (weapon instanceof VehicleMultiWeapons multi) {
-                for (AbstractVehicleWeapon<?> sub : multi.getSubWeapons()) {
-                    if (visited.add(sub)) {
-                        refillDirect(sub);
-                    }
-                }
+                refillMulti(multi, visited);
                 continue;
             }
             // 武器代理：真实弹药由代理目标武器站自身的遍历补满
@@ -117,6 +113,21 @@ public class RVP_VehicleSpawnHandler {
                 continue;
             }
             refillDirect(weapon);
+        }
+    }
+
+    private static void refillMulti(VehicleMultiWeapons multi, Set<AbstractVehicleWeapon<?>> visited) {
+        for (AbstractVehicleWeapon<?> sub : multi.getSubWeapons()) {
+            if (!visited.add(sub)) {
+                continue;
+            }
+            if (sub instanceof VehicleMultiWeapons nested) {
+                refillMulti(nested, visited);
+            } else if (!(sub instanceof VehicleWeaponAgent)) {
+                // 直接对 multi 调 setRemainAmmo 无效：VehicleMultiWeapons.getRemainAmmo()
+                // 委托给当前选中子武器，set 写入的字段不被读取 → 必须补到叶子武器上
+                refillDirect(sub);
+            }
         }
     }
 

@@ -216,6 +216,8 @@ public class RVP_LinkedUavEventHandler {
         }
         if (event.isMounting()) {
             // 母车座位锁：无人机在飞、锁未解除时，非持有者禁止登上母车任意座位（防止把母车开走）。
+            LOGGER.info("[RVP-UAV-LOCK] mount尝试: {} -> {}",
+                    passenger.getName().getString(), vehicle.getVehicleId());
             if (RVP_DeployableUavService.shouldRejectMount(vehicle, passenger)) {
                 event.setCanceled(true);
                 if (passenger instanceof ServerPlayer serverPlayer) {
