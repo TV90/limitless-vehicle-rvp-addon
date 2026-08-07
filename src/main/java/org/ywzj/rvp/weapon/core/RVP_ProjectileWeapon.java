@@ -140,6 +140,12 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         dispatchShots(burstVolleyAimContexts, burstVolleyShooter, consumeChargeScale());
     }
 
+    /**
+     * Ahead 引信：锁定目标仅是装订空爆引信（增强空爆弹幕效果），并非发射前提。
+     * 未锁定/未装订时弹丸照常发射，像普通机炮一样直射（命中目标造成直击伤害），
+     * 装订距离由 {@link RVP_AheadProgrammer#programForShot} 在 {@code dispatchShots} 内解算存储，
+     * 弹丸生成时经 {@code bindProgrammableAirburstRange} 读取后于飞行中空爆释放弹幕。
+     */
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
         WeaponUnit launchUnit = getWeaponUnit();

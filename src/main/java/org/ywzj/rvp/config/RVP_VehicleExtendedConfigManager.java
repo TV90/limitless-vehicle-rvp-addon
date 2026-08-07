@@ -33,6 +33,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     public static final RVP_VehicleExtendedConfigManager INSTANCE = new RVP_VehicleExtendedConfigManager();
 
     private Map<ResourceLocation, VehicleExtendedConfig> configs = Map.of();
+    /** 原始载具 JSON（含 rvp_custom_mounts / modding_only_multi 等 RVP 扩展字段），供服务端向客户端同步。 */
+    private Map<ResourceLocation, JsonElement> rawVehicleJson = Map.of();
 
     private RVP_VehicleExtendedConfigManager() {}
 
@@ -43,6 +45,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> map, ResourceManager resourceManager, ProfilerFiller profiler) {
+        rawVehicleJson = Map.copyOf(map);
         Map<ResourceLocation, VehicleExtendedConfig> loaded = new HashMap<>();
         map.forEach((vehicleId, json) -> {
             if (!json.isJsonObject()) {
@@ -59,6 +62,25 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     @SubscribeEvent
     public static void onAddReloadListener(AddReloadListenerEvent event) {
         event.addListener(INSTANCE);
+    }
+
+    /**
+     * 供客户端在收到服务端同步的配置包（{@code S2CVehicleRvpConfig}）后填充配置。
+     * 专用服务器下客户端不触发 {@link AddReloadListenerEvent}，改装工具/挂架等功能依赖该配置，
+     * 故必须复用同一套解析逻辑。
+     */
+    public void applyFromJsonMap(Map<ResourceLocation, JsonElement> jsonMap) {
+        apply(jsonMap, null, null);
+    }
+
+    /** 服务端用于向客户端同步的原始载具 JSON（仅服务端有完整数据）。 */
+    public Map<ResourceLocation, JsonElement> getRawVehicleJson() {
+        return rawVehicleJson;
+    }
+
+    /** 已配置（非 EMPTY）的载具 id 集合，服务端同步时据此过滤载荷。 */
+    public Set<ResourceLocation> getConfiguredVehicleIds() {
+        return configs.keySet();
     }
 
     public VehicleExtendedConfig get(AbstractVehicle vehicle) {
@@ -113,6 +135,35 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             return false;
         }
         return get(vehicle).hasGroupedWeaponSlots(partId);
+    }
+
+    public boolean isGroupedSlotCarrier(AbstractVehicle vehicle, String partId, int weaponIndex) {
+        if (vehicle == null || partId == null || partId.isBlank() || weaponIndex < 0) {
+            return false;
+        }
+        return get(vehicle).isGroupedSlotCarrier(partId, weaponIndex);
+    }
+
+    /**
+     * 是否应将 F 键 MULTI 循环请求重定向为武器槽切换（PRIMARY）。
+     * grouped slot carrier（modding_only_multi 且下一槽 merge_into_previous_slot）的弹种组，
+     * F 键应在大组间（如 T90M 的 AP 组 ↔ HE 组）切换，而非在组内子武器间循环。
+     */
+    public boolean shouldRedirectCurrentMultiCycle(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return false;
+        }
+        if (isGroupedSlotCarrier(weaponUnit.getVehicle(), weaponUnit.getId(), weaponUnit.getCurrentWeaponIndex())) {
+            return true;
+        }
+        AbstractVehicleWeapon<?> current = weaponUnit.getCurrentWeapon().orElse(null);
+        if (current instanceof VehicleMultiWeapons multi) {
+            WeaponUnit owner = multi.getWeaponUnit();
+            if (owner != null && owner != weaponUnit) {
+                return isGroupedSlotCarrier(owner.getVehicle(), owner.getId(), owner.getCurrentWeaponIndex());
+            }
+        }
+        return false;
     }
 
     public boolean isMergeIntoPreviousSlot(AbstractVehicle vehicle, String partId, int weaponIndex) {
@@ -357,8 +408,12 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             return isModdingOnlyMulti(partId, weaponIndex) && isMergeIntoPreviousSlot(partId, weaponIndex + 1);
         }
 
+        /**
+         * modding_only_multi 槽一律拦截 F 键 MULTI 循环（组内子武器只能由改装工具切换）。
+         * grouped slot carrier（如 T90M 的 AP 组）拦截后由调用方重定向为武器槽切换（AP ↔ HE）。
+         */
         public boolean shouldBlockRuntimeMultiCycle(String partId, int weaponIndex) {
-            return isModdingOnlyMulti(partId, weaponIndex) && !isGroupedSlotCarrier(partId, weaponIndex);
+            return isModdingOnlyMulti(partId, weaponIndex);
         }
 
         public boolean hasGroupedWeaponSlots(String partId) {

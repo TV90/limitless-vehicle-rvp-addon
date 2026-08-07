@@ -25,7 +25,8 @@
     "AutoLandingGearManualOverrideMixin",
     "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
-    "VectorUtilPhysicsOnlyHitFilterMixin"
+    "VectorUtilPhysicsOnlyHitFilterMixin",
+    "WeaponUnitMultiWeaponSwitchBlockMixin"
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",

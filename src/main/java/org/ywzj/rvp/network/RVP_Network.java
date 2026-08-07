@@ -182,5 +182,10 @@ public class RVP_Network {
                 .decoder(C2SDebugSpawnVehicle::decode)
                 .consumerMainThread(C2SDebugSpawnVehicle::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CVehicleRvpConfig.class, id++)
+                .encoder(S2CVehicleRvpConfig::encode)
+                .decoder(S2CVehicleRvpConfig::decode)
+                .consumerMainThread(S2CVehicleRvpConfig::handle)
+                .add();
     }
 }

@@ -1,7 +1,10 @@
 package org.ywzj.rvp.weapon.core;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -41,9 +44,29 @@ public final class RVP_WeaponSwitchSyncHelper {
     /** unit -> 手动覆盖激活时的 [primaryIndex, secondaryIndex]（匹配时跳过自动同步）。 */
     private static final Map<WeaponUnit, int[]> MANUAL_OVERRIDE = new HashMap<>();
 
-    /** B3：切换武器时关闭导引头的私有字段（无公共 setter，`toggleSeeker` 为 @OnlyIn(CLIENT)）。 */
-    private static final Field SEEKER_ON_FIELD =
-            ObfuscationReflectionHelper.findField(WeaponUnit.class, "seekerOn");
+    /** B3：切换武器时关闭导引头的私有字段（无公共 setter，`toggleSeeker` 为 @OnlyIn(CLIENT)）。
+     * 服务端不调用 toggleSeeker、seekerOn 恒为 false，无需反射；且服务端 WeaponUnit 含客户端专属字段类型
+     * （{@code VehicleSound}），反射 WeaponUnit 会连带加载该类而被 RuntimeDistCleaner 拦截，
+     * 每次失败后字段缓存为 null 导致每 tick 重试，造成日志刷屏与性能损耗。 */
+    @Nullable
+    private static volatile Field seekerOnField;
+
+    @Nullable
+    private static Field seekerOnField() {
+        if (FMLEnvironment.dist != Dist.CLIENT) {
+            return null;
+        }
+        Field field = seekerOnField;
+        if (field == null) {
+            try {
+                field = ObfuscationReflectionHelper.findField(WeaponUnit.class, "seekerOn");
+            } catch (RuntimeException ignored) {
+                // 反射不可用时降级（seekerOn 保持原状）
+            }
+            seekerOnField = field;
+        }
+        return field;
+    }
 
     public static void tick(WeaponUnit unit) {
         if (unit == null || unit.getVehicle() == null) {
@@ -57,6 +80,8 @@ public final class RVP_WeaponSwitchSyncHelper {
         LAST_TICK.put(unit, tickCount);
 
         if (unit.weaponBayUnits.isEmpty()) {
+            // 无弹舱的武器站仍需复位导引头（如 cssa5：HQ13 导弹切到机炮后 seekerOn 残留）
+            syncSeekerOn(unit, unit.getCurrentWeaponIndex(), unit.getCurrentSecondaryWeaponIndex());
             return;
         }
 
@@ -90,16 +115,20 @@ public final class RVP_WeaponSwitchSyncHelper {
      * 切换武器后，若当前主/副武器没有寻的器，自动关闭导引头（防止 SARH/IR 切到 SACLOS 时状态残留）。
      */
     private static void syncSeekerOn(WeaponUnit unit, int primary, int secondary) {
+        Field seekerField = seekerOnField();
+        if (seekerField == null) {
+            return;
+        }
         try {
             AbstractVehicleWeapon<?> primaryWeapon = primary >= 0 && primary < unit.weapons.size()
                     ? unit.weapons.get(primary) : null;
             if (primaryWeapon != null && !primaryWeapon.withSeeker()) {
-                SEEKER_ON_FIELD.setBoolean(unit, false);
+                seekerField.setBoolean(unit, false);
             }
             AbstractVehicleWeapon<?> secondaryWeapon = secondary >= 0 && secondary < unit.secondaryWeapons.size()
                     ? unit.secondaryWeapons.get(secondary) : null;
             if (secondaryWeapon != null && !secondaryWeapon.withSeeker()) {
-                SEEKER_ON_FIELD.setBoolean(unit, false);
+                seekerField.setBoolean(unit, false);
             }
         } catch (IllegalAccessException e) {
             // 反射失败：seekerOn 保持原状（极罕见，字段访问已 setAccessible）

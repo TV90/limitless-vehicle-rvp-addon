@@ -12,6 +12,7 @@ import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 
@@ -38,7 +39,7 @@ public final class RVP_AheadProgrammer {
             return RVP_AheadSolution.invalid("missing_muzzle");
         }
 
-        Entity target = RVP_MachinegunLeadSolver.resolveTrackedTarget(weaponUnit);
+        Entity target = resolveTrackedTargetServerSafe(weaponUnit);
         if (target != null) {
             RVP_LeadSolution lead = RVP_MachinegunLeadSolver.solveForTarget(
                     weaponUnit, data, muzzle, target, partialTick
@@ -63,6 +64,33 @@ public final class RVP_AheadProgrammer {
             return RVP_AheadSolution.invalid("missing_impact_point");
         }
         return fromReference(data, impact, muzzle, false, 0.0D);
+    }
+
+    /**
+     * 服务端安全的锁定目标解析：仅查询载具武器站/雷达的锁定状态（双端通用 API）。
+     *
+     * <p>不能使用 {@link RVP_MachinegunLeadSolver#resolveTrackedTarget}——其引用
+     * {@code LocalVehiclePlayer}/{@code Minecraft} 等客户端专属类，专用服务器执行到该分支会抛
+     * {@code Attempted to load class ... for invalid dist DEDICATED_SERVER}，导致 ahead 武器服务端无法发射。
+     * 客户端 lead 提示仍走客户端版 {@code resolveTrackedTarget}（含本地外雷达锁定增强），互不影响。</p>
+     */
+    @Nullable
+    private static Entity resolveTrackedTargetServerSafe(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return null;
+        }
+        Entity target = weaponUnit.getLockedEntity();
+        if (target != null && target.isAlive()) {
+            return target;
+        }
+        RadarUnit radar = weaponUnit.getMainRadarUnit();
+        if (radar != null) {
+            Entity radarTarget = radar.getLockedEntity();
+            if (radarTarget != null && radarTarget.isAlive()) {
+                return radarTarget;
+            }
+        }
+        return null;
     }
 
     public static RVP_AheadSolution programForShot(AbstractVehicle vehicle, WeaponUnit weaponUnit, int weaponIndex,
