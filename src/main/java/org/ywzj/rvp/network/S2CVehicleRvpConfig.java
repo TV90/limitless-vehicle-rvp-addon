@@ -9,6 +9,7 @@ import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 
 import java.io.ByteArrayInputStream;
@@ -89,6 +90,8 @@ public class S2CVehicleRvpConfig {
             return;
         }
         RVP_VehicleExtendedConfigManager.INSTANCE.applyFromJsonMap(jsonMap);
+        // hide_passenger 等命中箱/乘员显示配置同样只在服务端有完整数据，客户端需同步填充
+        RVP_VehicleHitboxFactorManager.INSTANCE.applyFromJsonMap(jsonMap);
         Map<ResourceLocation, List<RVP_CustomMountConfig>> mounts = new HashMap<>();
         for (ResourceLocation id : order) {
             JsonElement element = jsonMap.get(id);

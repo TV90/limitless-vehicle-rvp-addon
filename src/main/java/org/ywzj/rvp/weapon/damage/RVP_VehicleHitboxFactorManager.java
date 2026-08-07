@@ -80,6 +80,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         hidePassengerVehicles = Set.copyOf(hideSet);
     }
 
+    /**
+     * 供客户端在收到服务端同步的配置包（{@code S2CVehicleRvpConfig}）后填充配置。
+     * 专用服务器下客户端不触发 {@link AddReloadListenerEvent}，隐藏乘员（hide_passenger）
+     * 依赖该配置，故必须复用同一套解析逻辑。
+     */
+    public void applyFromJsonMap(Map<ResourceLocation, JsonElement> jsonMap) {
+        apply(jsonMap, null, null);
+    }
+
     public boolean isHidePassenger(ResourceLocation vehicleId) {
         return hidePassengerVehicles.contains(vehicleId);
     }
