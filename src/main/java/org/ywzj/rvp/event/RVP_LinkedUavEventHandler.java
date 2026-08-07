@@ -1,6 +1,7 @@
 package org.ywzj.rvp.event;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -214,23 +215,40 @@ public class RVP_LinkedUavEventHandler {
             return;
         }
         if (event.isMounting()) {
+            // 母车座位锁：无人机在飞、锁未解除时，非持有者禁止登上母车任意座位（防止把母车开走）。
+            if (RVP_DeployableUavService.shouldRejectMount(vehicle, passenger)) {
+                event.setCanceled(true);
+                if (passenger instanceof ServerPlayer serverPlayer) {
+                    serverPlayer.displayClientMessage(
+                            Component.translatable("message.ywzj_rvp.uav.parent_locked"), true);
+                }
+                return;
+            }
             handleMount(vehicle, passenger);
         } else if (event.isDismounting()) {
             handleDismount(vehicle, passenger);
         }
     }
 
-    /** 非 UAV 模板部署实例（deployableUavInstance && !uav）：上车时记录操作员原位置并传送到无人机处。 */
+    /**
+     * 部署实例上车：非 UAV 模板部署实例（deployableUavInstance && !uav）记录操作员原位置并传送到部署实例处；
+     * 无论哪种部署实例，玩家上车即锁定母车座位（防止他人占用/开走母车）。
+     */
     private static void handleMount(AbstractVehicle vehicle, LivingEntity passenger) {
-        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle) || vehicle.uav) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return;
         }
         if (passenger instanceof ServerPlayer serverPlayer && vehicle.tickCount != 0) {
             LOGGER.info("[RVP-UAV-DIAG] handleMount: vehicle={} tickCount={} player={}",
                     vehicle.getVehicleId(), vehicle.tickCount, serverPlayer.getName().getString());
-            // 只保存玩家原位置，不生成假玩家实体（避免母车旁出现玩家模型）
-            RVP_LinkedUavStateTable.setFakeOperatorPosition(vehicle, passenger.position());
-            serverPlayer.teleportTo(vehicle.getX(), vehicle.getY(), vehicle.getZ());
+            if (!vehicle.uav) {
+                // 只保存玩家原位置，不生成假玩家实体（避免母车旁出现玩家模型）
+                RVP_LinkedUavStateTable.setFakeOperatorPosition(vehicle, passenger.position());
+                serverPlayer.teleportTo(vehicle.getX(), vehicle.getY(), vehicle.getZ());
+            }
+            // 玩家登上部署实例（M 键切换或右键直接上车）→ 锁定母车座位
+            RVP_DeployableUavService.getLinkedParent(vehicle).ifPresent(parent ->
+                    RVP_DeployableUavService.lockParentSeat(parent, serverPlayer, vehicle));
         }
     }
 

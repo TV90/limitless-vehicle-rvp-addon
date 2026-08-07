@@ -440,6 +440,39 @@ public final class RVP_DeployableUavService {
         PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId));
     }
 
+    /**
+     * 玩家离开母车进入无人机后锁定母车座位（防止他人占用/开走母车）。
+     * 优先取玩家在母车上的实际座位，找不到时用部署时记录的返回座位兜底。
+     */
+    public static void lockParentSeat(AbstractVehicle parent, @Nullable ServerPlayer operator, @Nullable AbstractVehicle uav) {
+        if (parent == null || operator == null) {
+            return;
+        }
+        int seatIndex = findSeatIndex(parent, operator);
+        if (seatIndex < 0 && uav != null) {
+            seatIndex = RVP_LinkedUavStateTable.getReturnSeatIndex(uav);
+        }
+        if (seatIndex < 0) {
+            seatIndex = 0;
+        }
+        setSeatLock(parent, seatIndex, operator.getId());
+    }
+
+    /**
+     * 母车座位锁是否应拒绝该乘客上车。
+     * <p>无人机在飞、锁未解除期间，非锁持有者一律禁止登上母车任意座位（防止他人占用驾驶位把母车开走）。</p>
+     */
+    public static boolean shouldRejectMount(AbstractVehicle vehicle, @Nullable LivingEntity passenger) {
+        if (vehicle == null) {
+            return false;
+        }
+        SeatLockInfo lock = PARENT_SEAT_LOCKS.get(vehicle.getUUID());
+        if (lock == null) {
+            return false;
+        }
+        return passenger == null || passenger.getId() != lock.ownerPlayerId();
+    }
+
     /** 读取母车座位锁；无锁返回 null。 */
     @Nullable
     public static SeatLockInfo getSeatLock(AbstractVehicle parent) {
@@ -485,14 +518,9 @@ public final class RVP_DeployableUavService {
             if (!(parent.level().getEntity(lockedSeat.get().passengerId) instanceof ServerPlayer serverPlayer)) {
                 continue;
             }
-            Optional<AbstractVehicle.Seat> emptySeat = parent.seats.stream()
-                    .filter(seat -> seat.passengerId == -1 && seat.seatIndex != lock.seatIndex())
-                    .findFirst();
-            if (emptySeat.isPresent()) {
-                parent.changeSeat(serverPlayer, emptySeat.get().seatIndex);
-            } else {
-                serverPlayer.stopRiding();
-            }
+            // 直接踢出而非换座：母车锁定的语义是"锁住母车"，入侵者不应留在母车任意座位上
+            // （配合 onMount 上车事件拦截，此处的每 tick 强制定位为兜底）。
+            serverPlayer.stopRiding();
         }
         for (UUID uuid : stale) {
             PARENT_SEAT_LOCKS.remove(uuid);

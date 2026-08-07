@@ -83,8 +83,10 @@ public class RVP_VehicleSpawnHandler {
     /**
      * 遍历载具所有武器站的武器并瞬间补满弹药，跳过装填时间。
      * 直接设置剩余弹药 = 容量上限，不消耗库存弹药、不触发 reload。
+     * public：{@link RVP_GroupedSlotSpawnHandler} 在分组装配（merge_into_previous_slot 合并）替换武器对象后
+     * 需要重新补满一次，否则合并后的新武器实例弹药为 0。
      */
-    private static void refillAllWeapons(AbstractVehicle vehicle) {
+    public static void refillAllWeapons(AbstractVehicle vehicle) {
         Set<AbstractVehicleWeapon<?>> visited = new HashSet<>();
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {

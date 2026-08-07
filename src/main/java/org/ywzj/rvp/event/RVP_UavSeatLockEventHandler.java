@@ -42,4 +42,11 @@ public class RVP_UavSeatLockEventHandler {
             RVP_DeployableUavService.unlockSeatForPlayer(serverPlayer.level(), serverPlayer.getId());
         }
     }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            RVP_DeployableUavService.unlockSeatForPlayer(serverPlayer.level(), serverPlayer.getId());
+        }
+    }
 }

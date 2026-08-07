@@ -7,13 +7,10 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 服务端：在 {@code OnDatapackSyncEvent}（玩家加入 / 数据包重载）时，把含 RVP 扩展字段的载具 JSON
@@ -32,18 +29,13 @@ public class RVP_VehicleConfigSyncHandler {
         if (raw.isEmpty()) {
             return;
         }
-        Set<ResourceLocation> needed = new LinkedHashSet<>();
-        needed.addAll(RVP_CustomMountConfigCache.all().keySet());
-        needed.addAll(RVP_VehicleExtendedConfigManager.INSTANCE.getConfiguredVehicleIds());
-        if (needed.isEmpty()) {
-            return;
-        }
+        // 全量下发所有载具原始 JSON，而非只下发"扩展配置非 EMPTY"的载具：
+        // hide_passenger / hitbox_damage_factor / hitbox_era / core_distance_scale_multiplier 等字段
+        // 与 physics_only_bone / modding_only_multi 相互独立，按扩展配置过滤会漏掉只配置了
+        // hide_passenger / hitbox 的载具（如 m142，无 physics_only_bone，扩展配置为 EMPTY）。
         Map<ResourceLocation, String> payload = new LinkedHashMap<>();
-        for (ResourceLocation id : needed) {
-            JsonElement json = raw.get(id);
-            if (json != null) {
-                payload.put(id, json.toString());
-            }
+        for (Map.Entry<ResourceLocation, JsonElement> entry : raw.entrySet()) {
+            payload.put(entry.getKey(), entry.getValue().toString());
         }
         if (payload.isEmpty()) {
             return;

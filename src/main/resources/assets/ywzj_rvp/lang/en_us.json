@@ -181,6 +181,7 @@
   "message.ywzj_rvp.uav.switch_to_child_failed": "Failed to switch to radar vehicle",
   "message.ywzj_rvp.uav.switch_back_success": "Returned to parent vehicle",
   "message.ywzj_rvp.uav.switch_back_failed": "Failed to return to parent vehicle",
+  "message.ywzj_rvp.uav.parent_locked": "Parent vehicle locked: not rideable while the drone operator is away",
   "message.ywzj_rvp.uav_loiter.not_in_vehicle": "Not in a vehicle",
   "message.ywzj_rvp.uav_loiter.no_uav": "No linked UAV found",
   "message.ywzj_rvp.uav_loiter.no_config": "UAV loiter not configured",
