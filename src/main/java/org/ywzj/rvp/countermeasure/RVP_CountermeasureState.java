@@ -1,10 +1,14 @@
 package org.ywzj.rvp.countermeasure;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.vehicle.api.entity.SightObstruction;
@@ -90,8 +94,7 @@ public final class RVP_CountermeasureState {
         if (target instanceof SightObstruction) {
             return true;
         }
-        if (seeker.level().clip(new ClipContext(seeker.position(), target.getBoundingBox().getCenter(),
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker)).getType() != HitResult.Type.MISS) {
+        if (isLineOfSightBlocked(seeker, target.getBoundingBox().getCenter())) {
             return true;
         }
         AABB box = new AABB(seeker.position(), target.position()).inflate(2.0);
@@ -100,13 +103,63 @@ public final class RVP_CountermeasureState {
     }
 
     private static boolean hasSightObstruction(Entity seeker, Vec3 targetPos) {
-        if (seeker.level().clip(new ClipContext(seeker.position(), targetPos,
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker)).getType() != HitResult.Type.MISS) {
+        if (isLineOfSightBlocked(seeker, targetPos)) {
             return true;
         }
         AABB box = new AABB(seeker.position(), targetPos).inflate(2.0);
         return seeker.level().getEntities(seeker, box, entity -> entity instanceof SightObstruction).stream()
                 .anyMatch(entity -> distanceToSegment(entity.position(), seeker.position(), targetPos) < 12.0);
+    }
+
+    /**
+     * 弹目间方块视线检测，但绝不进入未加载区块。
+     *
+     * <p>原版 {@code Level.clip} 每一步都走 {@code Level.getBlockState}，服务端实现内部调用
+     * {@code getChunk(..., allowLoading=true)}：射线一旦进入未加载区块就会同步加载该区块，
+     * 单人游戏里会因此冻结游戏整个区块生成时长（例如在视距外以 1200 格射线指定目标点）。
+     * 因此先按已加载区块边界裁剪射线再 clip；射线起点即未加载时视为视线通畅。</p>
+     */
+    private static boolean isLineOfSightBlocked(Entity seeker, Vec3 targetPos) {
+        Level level = seeker.level();
+        Vec3 clampEnd = clampRayToLoadedChunks(level, seeker.position(), targetPos);
+        if (clampEnd == null) {
+            return false;
+        }
+        return level.clip(new ClipContext(seeker.position(), clampEnd,
+                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, seeker)).getType() != HitResult.Type.MISS;
+    }
+
+    /** 把射线终点回退到最后一个已加载区块内；起点即未加载时返回 null（不做方块遮挡判定）。 */
+    @Nullable
+    private static Vec3 clampRayToLoadedChunks(Level level, Vec3 start, Vec3 end) {
+        Vec3 dir = end.subtract(start);
+        double dist = dir.length();
+        if (dist <= 1.0E-4) {
+            return null;
+        }
+        Vec3 unit = dir.scale(1.0D / dist);
+        int lastCx = Integer.MIN_VALUE;
+        int lastCz = Integer.MIN_VALUE;
+        double lastLoaded = -1.0D;
+        double d = 0.0D;
+        while (d <= dist) {
+            Vec3 p = start.add(unit.scale(d));
+            int cx = Mth.floor(p.x) >> 4;
+            int cz = Mth.floor(p.z) >> 4;
+            if (cx != lastCx || cz != lastCz) {
+                lastCx = cx;
+                lastCz = cz;
+                if (!level.isLoaded(BlockPos.containing(p))) {
+                    break;
+                }
+            }
+            lastLoaded = d;
+            d += 1.0D;
+        }
+        if (lastLoaded < 0.0D) {
+            return null;
+        }
+        return lastLoaded >= dist ? end : start.add(unit.scale(lastLoaded));
     }
 
     private static boolean hasTargetObstructionNear(Entity target, double radius) {
