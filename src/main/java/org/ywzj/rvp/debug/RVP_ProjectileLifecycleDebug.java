@@ -514,6 +514,7 @@ public final class RVP_ProjectileLifecycleDebug {
         record(trace, projectile, Event.REMOVED,
                 "reason=" + reason
                         + " lifecycleCause=" + removalCause(reason)
+                        + " virtualizingMidcourse=" + projectile.isVirtualizingMidcourse()
                         + " causeConfidence=AUTHORITATIVE"
                         + " aliveBeforeRemove=" + projectile.isAlive()
                         + " life=" + projectile.life

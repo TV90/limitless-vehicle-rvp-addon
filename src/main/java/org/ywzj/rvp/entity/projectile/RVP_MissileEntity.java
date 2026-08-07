@@ -93,6 +93,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     @Override
     protected boolean tryEnterVirtualMidcourse() {
+        // 调用阶段 B 服务端管理器；管理器完成资格、快照、SavedData 注册后才移除本实体。
         return RVP_VirtualMissileManager.tryVirtualize(this);
     }
 

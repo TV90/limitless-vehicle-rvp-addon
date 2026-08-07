@@ -71,6 +71,7 @@ import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
 import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileSnapshot;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -164,6 +165,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected RVP_WeaponData rvpData;
     /** 发射点快照，仅供服务器阶段 A 虚拟中段准入判断。 */
     private Vec3 virtualMidcourseLaunchPosition = Vec3.ZERO;
+    /** 专用转换移除标志，使 remove/debug/HITL 清理可区分普通 discard。 */
+    private boolean virtualizingMidcourse;
+    private boolean virtualEligibilityRejectionLogged;
     /** Snapshot of {@code collision_data.damage_decay} at spawn (decoupled from shared weapon index data). */
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
     protected RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
@@ -1267,6 +1271,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     discard();
                 }
             }
+            // 真实弹体 Tick 末尾的虚拟化扩展点
             if (isAlive() && tryEnterVirtualMidcourse()) {
                 return;
             }
@@ -1282,21 +1287,70 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
-    /** 仅导弹覆盖；在完整实体 Tick 结束后把控制权交给服务器虚拟中段管理器。 */
+    /*=======================虚拟中段弹体=======================*/
+
+    /**
+     * 真实弹体 Tick 末尾的虚拟化扩展点；仅 {@link RVP_MissileEntity} 覆盖并调用管理器。
+     *
+     * @return 子类成功把实体转为虚拟记录时为 true
+     */
     protected boolean tryEnterVirtualMidcourse() {
         return false;
     }
 
+    /** @return 准入距离检查和完整状态持久化使用的发射点快照。 */
     public final Vec3 getVirtualMidcourseLaunchPosition() {
         return virtualMidcourseLaunchPosition;
     }
 
+    /**
+     * 提取纯积分器所需的最小运动状态，不包含世界或实体引用。
+     */
     public final RVP_VirtualTrajectoryState createVirtualTrajectoryState() {
         return new RVP_VirtualTrajectoryState(position(), getDeltaMovement(), getXRot(), getYRot(),
                 flightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick);
     }
 
-    /** 恢复阶段 A 内存快照；不再次应用 GPS 散布。 */
+    /** 在 discard 前标记“真实转虚拟”专用移除语义。 */
+    public final void beginVirtualMidcourseRemoval() {
+        virtualizingMidcourse = true;
+    }
+
+    /** @return 当前 remove 是否由成功虚拟化触发。 */
+    public final boolean isVirtualizingMidcourse() {
+        return virtualizingMidcourse;
+    }
+
+    /** @return true 仅一次，供调试模式抑制逐 Tick 重复资格拒绝日志。 */
+    public final boolean markVirtualEligibilityRejectionLogged() {
+        if (virtualEligibilityRejectionLogged) return false;
+        virtualEligibilityRejectionLogged = true;
+        return true;
+    }
+
+    /**
+     * 创建虚拟化所需的完整不可变快照，避免管理器直接读取大量 protected 字段。
+     *
+     * @return 运动、目标、发动机、制导、雷达、GPS 和 Top Attack 状态快照
+     */
+    public final RVP_VirtualMissileSnapshot createVirtualMidcourseSnapshot() {
+        // 调用最小轨迹快照方法，作为完整状态的第一个组合部分。
+        return new RVP_VirtualMissileSnapshot(
+                createVirtualTrajectoryState(), targetPos, lastGuidancePos,
+                targetEntity == null ? null : targetEntity.getUUID(),
+                targetEntity == null ? Vec3.ZERO : targetEntity.getDeltaMovement(), guidancePhaseState.phase(),
+                motorBurnEndTick, entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK),
+                activeRadarOn, activeRadarCatch, activeRadarLostTargetTick,
+                gpsCruiseVerticalResetApplied, gpsTargetOffset, gpsTargetOffsetResolved,
+                topAttackLaunchPos, topAttackInitialTargetPos,
+                topAttackApexPos, topAttackApexReached, topAttackTriggerTick,
+                irSeekerGraceUntilTick, irSeekerLossGraceStarted);
+    }
+
+    /**
+     * 恢复运动学基础状态；阶段 B 完整恢复会先调用本方法再写回其他子系统。
+     * 使用 {@link #setGuidanceTargetPos(Vec3)} 避免再次应用 GPS 散布。
+     */
     public final void restoreVirtualTrajectoryState(RVP_VirtualTrajectoryState state, Vec3 fixedTarget,
                                                      Vec3 launchPosition) {
         setPos(state.position());
@@ -1305,7 +1359,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setYRot(state.yRot());
         xRotO = state.xRot();
         yRotO = state.yRot();
-        flightSpeed = (float) state.peakFlightSpeed();
+        // flightSpeed 是实体制导继续使用的当前速率基准，禁止用虚拟段历史峰值制造恢复加速。
+        flightSpeed = Math.max(state.velocity().length(), 0.01);
         flightDistance = state.flightDistance();
         life = state.remainingLife();
         tickCount = Math.max(state.flightTick(), 0);
@@ -1314,8 +1369,54 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         entityData.set(DATA_CHUNK_WAITING, false);
         entityData.set(DATA_CHUNK_WAIT_TOTAL, 0);
         virtualMidcourseLaunchPosition = launchPosition;
+        // 调用无散布的内部目标写入方法，保持进入虚拟态前的目标点完全一致。
         setGuidanceTargetPos(fixedTarget);
     }
+
+    /**
+     * 从阶段 B 完整快照恢复全部实体运行状态。
+     *
+     * <p>目标实体对象不保存在快照中，由管理器在同维度按 UUID 重新绑定。</p>
+     */
+    public final void restoreFromVirtualMidcourseSnapshot(RVP_VirtualMissileSnapshot snapshot,
+                                                           Vec3 launchPosition) {
+        // 先调用基础恢复建立位置、速度、寿命、飞行 Tick 和目标点。
+        restoreVirtualTrajectoryState(snapshot.trajectory(), snapshot.targetPosition(), launchPosition);
+        lastGuidancePos = snapshot.lastGuidancePosition();
+        // 调用制导相位状态对象的专用恢复入口，避免重新跑阶段转换条件。
+        guidancePhaseState.restore(snapshot.guidancePhase());
+        motorBurnEndTick = snapshot.motorBurnEndTick();
+        entityData.set(DATA_SECOND_PULSE_BURN_TIME_TICK, snapshot.secondPulseBurnTimeTick());
+        activeRadarOn = snapshot.activeRadarOn();
+        activeRadarCatch = snapshot.activeRadarCatch();
+        activeRadarLostTargetTick = snapshot.activeRadarLostTargetTick();
+        entityData.set(DATA_ACTIVE_RADAR_ON, activeRadarOn);
+        entityData.set(DATA_ACTIVE_RADAR_CATCH, activeRadarCatch);
+        gpsCruiseVerticalResetApplied = snapshot.gpsCruiseVerticalResetApplied();
+        gpsTargetOffset = snapshot.gpsTargetOffset();
+        gpsTargetOffsetResolved = snapshot.gpsTargetOffsetResolved();
+        topAttackLaunchPos = snapshot.topAttackLaunchPosition();
+        topAttackInitialTargetPos = snapshot.topAttackInitialTargetPosition();
+        topAttackApexPos = snapshot.topAttackApexPosition();
+        topAttackApexReached = snapshot.topAttackApexReached();
+        topAttackTriggerTick = snapshot.topAttackTriggerTick();
+        irSeekerGraceUntilTick = snapshot.irSeekerGraceUntilTick();
+        irSeekerLossGraceStarted = snapshot.irSeekerLossGraceStarted();
+    }
+
+    /**
+     * 在完整快照恢复后按权威速度校正弹体视线，并同步上一帧姿态供出生包与插值器使用。
+     */
+    public final void alignVirtualRestoredAttitudeToVelocity() {
+        Vec3 velocity = getDeltaMovement();
+        if (velocity.lengthSqr() <= 1.0E-8) return;
+        // 调用实体制导共用的旋转换算，保证恢复姿态与正常制导姿态语义一致。
+        RVP_ProjectileMotion.applyGuidanceFacing(this, velocity);
+        xRotO = getXRot();
+        yRotO = getYRot();
+    }
+
+    /*=======================虚拟中段弹体 END=======================*/
 
     /* ============新弹体chunk路径规划============ */
 

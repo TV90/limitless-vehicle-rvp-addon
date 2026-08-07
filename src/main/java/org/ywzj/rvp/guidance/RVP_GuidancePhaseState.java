@@ -15,6 +15,15 @@ public final class RVP_GuidancePhaseState {
         return phase == RVP_GuidancePhase.TERMINAL;
     }
 
+    /**
+     * 直接恢复持久化的 MAIN/TERMINAL 状态，不重新计算转换条件。
+     *
+     * @param restoredPhase SavedData 中保存的相位；null 安全回退 MAIN
+     */
+    public void restore(RVP_GuidancePhase restoredPhase) {
+        phase = restoredPhase == null ? RVP_GuidancePhase.MAIN : restoredPhase;
+    }
+
     public boolean update(
             RVP_TerminalGuidanceData terminal,
             RVP_GuidanceTransitionContext context

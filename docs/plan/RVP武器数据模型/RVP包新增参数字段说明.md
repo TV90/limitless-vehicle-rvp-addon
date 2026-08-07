@@ -1270,6 +1270,60 @@ SACLOS 反坦克导弹（半自动修正）：
 }
 ```
 
+### 2.12 虚拟中段弹道
+
+```json
+{
+  "virtual_midcourse_data": {
+    "enabled": true,
+    "entry_min_flight_tick": 100,
+    "entry_min_distance_from_launch": 800.0,
+    "entry_min_target_distance": 1600.0,
+    "restore_target_distance": 768.0,
+    "restore_lead_tick": 60,
+    "restore_ticket_radius": 1,
+    "restore_wait_timeout_tick": 200,
+    "virtual_update_interval_tick": 1,
+    "max_virtual_flight_tick": 12000,
+    "virtual_midcourse_maxg": 18.0,
+    "cruise_altitude": 320.0,
+    "target_update_mode": "FIXED_SNAPSHOT",
+    "on_restore_timeout": "DISCARD"
+  }
+}
+```
+
+字段如下。每个 `@SerializedName` 字段按项目约束编写与 `RVP_WeaponData` 同级的 JavaDoc，说明单位、默认值和生效条件。
+
+| 字段 | 类型 | 单位/默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | 是否允许该武器进入虚拟中段；必须显式开启 |
+| `entry_min_flight_tick` | int | tick，`0` | 达到该有效飞行 Tick 后才允许虚拟化；区块等待 Tick 不计入 |
+| `entry_min_distance_from_launch` | float | 格，`800` | 离发射点足够远后才进入虚拟态，保留可观察的真实助推段 |
+| `entry_min_target_distance` | float | 格，`1600` | 距目标仍足够远时才值得虚拟化，防止短程导弹频繁切换 |
+| `restore_target_distance` | float | 格，`768` | 距末段目标小于该值时开始恢复准备 |
+| `restore_lead_tick` | int | tick，`2` | 根据当前速度提前计算恢复点的时间余量 |
+| `restore_ticket_radius` | int | 区块半径，`1` | 恢复点周围 Ticket 半径，建议限制为 0～2 |
+| `restore_wait_timeout_tick` | int | tick，`200` | 恢复区块长期无法 ready 时的最大等待时间 |
+| `virtual_update_interval_tick` | int | tick，`1` | 虚拟积分间隔；第一版固定钳制为 1，后续才允许批量积分 |
+| `max_virtual_flight_tick` | int | tick，`12000` | 单次虚拟态最长持续时间，不得超过弹体剩余 `life` |
+| `virtual_midcourse_maxg` | double | G，`18` | 虚拟中段独立的最大法向过载；只约束虚拟积分，不改变实体阶段 |
+| `cruise_altitude` | double/null | 世界 Y，`null` | 可选虚拟巡航高度；配置后在目标仍可达的前提下由高度闭环跟踪，不可达时取沿命中路线能够接近的高度，为空时以当前虚拟高度为闭环基准 |
+| `target_update_mode` | enum | `FIXED_SNAPSHOT` | `FIXED_SNAPSHOT` 或第二阶段的 `DATALINK` |
+| `on_restore_timeout` | enum | `DISCARD` | 第一版只建议 `DISCARD`；不得在未加载目标处直接爆炸 |
+
+校验规则：
+
+- `restore_target_distance` 必须小于 `entry_min_target_distance`，建议至少留出 256 格迟滞区间。
+- `restore_lead_tick × 当前水平速度` 与 `restore_target_distance` 取较大值作为实际恢复触发距离。
+- `restore_ticket_radius` 最大为 2，避免单枚导弹恢复时请求过多区块。
+- `max_virtual_flight_tick <= weapon life`；运行时最终使用两者较小值。
+- `virtual_midcourse_maxg` 必须为非负有限值；非法值回退为默认 18 G，0 G 表示保持当前方向。
+- 虚拟积分不读取 `projectile_data.turning_factor`，也不使用 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
+- 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
+
+`virtual_midcourse_maxg` 是虚拟积分器的明确参数契约，不是本体 `max_g` 的别名。实体态仍按当前 RVP 实体逻辑飞行，虚拟态则用独立最大 G 值保证单 Tick 机动上限可解释、可测试。以后替换积分方法时，新实现必须显式声明参数和状态版本，不静默改变在途记录语义。
+
 ---
 
 ## 3 部件 JSON 扩展
