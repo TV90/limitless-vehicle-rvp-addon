@@ -85,6 +85,26 @@ public class RVP_FuseData {
     @SerializedName("top_attack_fuse_arm_tick")
     private int topAttackFuseArmTick = 0;
 
+    /**
+     * 智能引信模式（默认开启）：攻顶探测命中后不立即引爆，而是记录检测点（目标 AABB 中心），
+     * 解除当前制导并改飞向「检测点正上方 ±{@code top_attack_smart_target_radius} 圆内、
+     * 高度为触发时刻导弹高度」的目标点，到达后再引爆，缓解 fov 圈过大导致的偏爆。
+     */
+    @SerializedName("top_attack_smart_enabled")
+    private boolean topAttackSmartEnabled = true;
+
+    /** 智能引信目标点水平随机半径（米）。 */
+    @SerializedName("top_attack_smart_target_radius")
+    private float topAttackSmartTargetRadius = 0.5f;
+
+    /** 智能引信到达判定：水平距离 ≤ 该值（米）且垂直高度差 ≤ {@code arrive_vertical} 时引爆。 */
+    @SerializedName("top_attack_smart_arrive_horizontal")
+    private float topAttackSmartArriveHorizontal = 0.5f;
+
+    /** 智能引信到达判定：垂直高度差 ≤ 该值（米）。 */
+    @SerializedName("top_attack_smart_arrive_vertical")
+    private float topAttackSmartArriveVertical = 1.0f;
+
     /** 近炸对命中实体的直接伤害（MCH {@code ProximityFuseDamage}）；未写为 0。 */
     @SerializedName("proximity_fuse_damage")
     private Float proximityFuseDamage;
@@ -178,6 +198,22 @@ public class RVP_FuseData {
 
     public int getTopAttackFuseArmTick() {
         return Math.max(topAttackFuseArmTick, 0);
+    }
+
+    public boolean isTopAttackSmartEnabled() {
+        return topAttackSmartEnabled;
+    }
+
+    public float getTopAttackSmartTargetRadius() {
+        return Math.max(topAttackSmartTargetRadius, 0f);
+    }
+
+    public float getTopAttackSmartArriveHorizontal() {
+        return Math.max(topAttackSmartArriveHorizontal, 0f);
+    }
+
+    public float getTopAttackSmartArriveVertical() {
+        return Math.max(topAttackSmartArriveVertical, 0f);
     }
 
     public int getProximityFuseHeight() {

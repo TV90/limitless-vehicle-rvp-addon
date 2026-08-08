@@ -9,6 +9,8 @@ import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
+import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfigCache;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 
@@ -92,6 +94,26 @@ public class S2CVehicleRvpConfig {
         RVP_VehicleExtendedConfigManager.INSTANCE.applyFromJsonMap(jsonMap);
         // hide_passenger 等命中箱/乘员显示配置同样只在服务端有完整数据，客户端需同步填充
         RVP_VehicleHitboxFactorManager.INSTANCE.applyFromJsonMap(jsonMap);
+        // 过热配置（vehicle_heat_count 等）同样只在服务端数据中有，客户端需同步填充，
+        // 否则专用服连接模式下客户端热系统 resolve 永远 MISS（无热）
+        Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>> heatByVehicle = new HashMap<>();
+        for (ResourceLocation id : order) {
+            JsonElement element = jsonMap.get(id);
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            try {
+                Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig> heat =
+                        RVP_VehicleWeaponHeatConfigCache.parseVehicle(element.getAsJsonObject());
+                if (!heat.isEmpty()) {
+                    heatByVehicle.put(id, heat);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (!heatByVehicle.isEmpty()) {
+            RVP_VehicleWeaponHeatConfigCache.replace(heatByVehicle);
+        }
         Map<ResourceLocation, List<RVP_CustomMountConfig>> mounts = new HashMap<>();
         for (ResourceLocation id : order) {
             JsonElement element = jsonMap.get(id);

@@ -88,10 +88,8 @@ public class RVP_ClientGPSUtil {
                         : "message.ywzj_rvp.gps.mode_single"), true);
     }
 
-    public static boolean tryHandleModeToggleKey(int key, int scanCode) {
-        if (!org.ywzj.rvp.client.RVP_Keys.FIRE_CONTROL_STABILIZER.matches(key, scanCode)) {
-            return false;
-        }
+    /** 火控稳定器键按下时切换 GPS 单点/多点模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
+    public static boolean tryHandleModeToggleKey() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null || !isGPSBombSelected()) {

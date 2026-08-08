@@ -67,6 +67,11 @@ public final class RVP_ClientRadarTickHandler {
         if (LocalVehiclePlayer.instance == null) {
             return;
         }
+        // 退出世界/回到主菜单时玩家实体被清空，getWeaponUnit() 内部会调用
+        // getPlayer().getVehicle()，缺少此防护会 NPE 崩溃
+        if (LocalVehiclePlayer.instance.getPlayer() == null) {
+            return;
+        }
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
         if (vehicle == null || vehicle.level().isClientSide() == false) {
             return;
