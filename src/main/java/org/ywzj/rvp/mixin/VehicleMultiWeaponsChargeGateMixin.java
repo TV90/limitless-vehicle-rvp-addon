@@ -37,7 +37,9 @@ public abstract class VehicleMultiWeaponsChargeGateMixin {
         }
         AbstractVehicleWeapon<?> selected = getSelectedWeapon();
         if (selected instanceof RVP_WeaponBase rvp) {
-            rvp.getFireController().onShotFired();
+            // 仅重置蓄力/点射状态，不在此计热：热量由服务器回包（VehicleFireEvent.Post → onClientFire）统一记录，
+            // 避免单发被计热两次导致过热过快。
+            rvp.getFireController().resetStateAfterShot();
         }
     }
 }

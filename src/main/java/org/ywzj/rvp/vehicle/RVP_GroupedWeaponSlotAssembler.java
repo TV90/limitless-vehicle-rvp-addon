@@ -132,7 +132,7 @@ public final class RVP_GroupedWeaponSlotAssembler {
         }
 
         String outerSaveId = normalizedSaveId(slot.primary().saveId, "weapon_slot_" + topLevelIndex) + "_slot";
-        VehicleMultiWeapons outer = new VehicleMultiWeapons(
+        VehicleMultiWeapons outer = new RVP_VehicleMultiWeapons(
                 vehicle,
                 root,
                 topLevelIndex,
@@ -170,7 +170,7 @@ public final class RVP_GroupedWeaponSlotAssembler {
             if (subWeapons.isEmpty()) {
                 return null;
             }
-            VehicleMultiWeapons multi = new VehicleMultiWeapons(
+            VehicleMultiWeapons multi = new RVP_VehicleMultiWeapons(
                     vehicle,
                     mountUnit,
                     index,

@@ -1,5 +1,6 @@
 package org.ywzj.rvp.weapon.core;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
@@ -9,6 +10,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
@@ -40,6 +42,8 @@ import java.util.Set;
  * Shared runtime base for the seven public RVP weapon types.
  */
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     protected int chargeTick;
     private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
@@ -191,7 +195,18 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     @OnlyIn(Dist.CLIENT)
     public void onClientFire() {
-        if (LocalVehiclePlayer.instance.getPlayer() == getWeaponUnit().getOwner()) {
+        // 客户端实体上 PartUnit.ownerId 不同步（仅服务端在乘客变更事件中设置），
+        // 此处 owner 检查在客户端恒为 false，会拦截服务器回包（VehicleFireEvent.Post）
+        // 的加热回调，导致热系统完全不工作。移除检查：热状态仅为本端模拟，无跨端副作用。
+        // 单机（integrated server）时，服务端武器与本端武器是同一对象、共享同一热状态：
+        // 服务端 shoot() 已计热一次，回包路径再计热会导致每发双倍（2x）。
+        // 仅在连接独立服务器/局域网时由回包计热，驱动客户端 HUD 显示。
+        boolean singlePlayer = net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer();
+        LOGGER.info("[RVP][HEAT] onClientFire weapon={} caller={} singlePlayer={}",
+                getData().getWeaponId(),
+                Thread.currentThread().getStackTrace()[2].getMethodName(),
+                singlePlayer);
+        if (!singlePlayer) {
             fireController.onShotFired();
         }
         super.onClientFire();
