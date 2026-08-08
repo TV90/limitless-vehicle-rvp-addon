@@ -915,7 +915,7 @@ SACLOS 反坦克导弹（半自动修正）：
 }
 ```
 
-### 2.12 `virtual_midcourse_data` 虚拟中段弹道
+### 1.16 `virtual_midcourse_data` 虚拟中段弹道
 
 ```json
 {
