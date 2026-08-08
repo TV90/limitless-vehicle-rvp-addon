@@ -5,7 +5,12 @@ import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
+import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
+import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
 import org.ywzj.rvp.client.render.GunnerRenderer;
+import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
+import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
+import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
 import org.ywzj.vehicle.all.AllEntities;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 
@@ -18,6 +23,16 @@ public final class RVP_ClientBootstrap {
 
     public static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
+            // 客户端初始化时安装通用视觉消费端，避免公共网络消息直接加载客户端渲染类。
+            RVP_VisualEffectEndpoint.install(RVP_ClientVisualEffectDispatcher::accept);
+            // 客户端初始化时安装既有核爆视觉消费端，保持旧 HBM 视觉行为并隔离物理侧。
+            RVP_NuclearVisualEndpoint.install(message -> {
+                if ("nuclear".equalsIgnoreCase(message.preset()) || "nuke".equalsIgnoreCase(message.preset())) {
+                    RVP_NuclearVisualManager.spawn(message);
+                } else {
+                    RVP_ExplosionVisualManager.spawn(message);
+                }
+            });
             RVP_ClientEntityRenderers.register();
             EntityRenderers.register(RVP_Entities.GUNNER.get(), GunnerRenderer::new);
             registerVehicleRenderers();

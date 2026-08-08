@@ -392,6 +392,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `knockback_data` | `radius`、`strength`、`targets`。 |
 | `clear_plants_data` | `radius`：清除草、花、树叶等可替换植物。 |
 | `hbm_effect_data` | 大威力爆炸视觉/特效（见下）。 |
+| `visual_effect_data` | 当前 schema 的通用爆炸视觉配置数组；默认空，不改变旧武器行为。阶段 A 已提供公共事件与专服安全网络契约，具体效果工厂由后续阶段注册。 |
 
 `targets`（范围类效果共用）：`living`（默认）、`players`、`hostile`、`non_allied`（排除 owner 与发射载具乘员）、`all`。
 
@@ -423,6 +424,23 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `white_phosphorus` | 白磷燃烧效果。 | `false` |
 | `chlorine_yield` | 氯气当量（>0 启用）。 | `0.0` |
 | `destroy_block` | 是否破坏方块。 | `true` |
+
+#### `detonate_data.visual_effect_data[]` 通用爆炸视觉
+
+该数组只选择视觉算法和表现参数，不改变 `explosion_data` 的伤害、最终半径或方块破坏。不得使用武器 ID 判断效果类型。单项 `preset_data` 规范化后的 UTF-8 载荷不得超过 8 KiB；非法或超限配置会放弃自定义视觉并保留本体普通爆炸视觉。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `enabled` | 启用该项；还要求 `effect_type` 是合法资源 ID。 | `false` |
+| `effect_type` | 客户端效果工厂类型，如 `rvp:thermobaric`。 | 空 |
+| `preset` | 客户端预设资源 ID；工厂不识别时由工厂回退。 | `rvp:default` |
+| `scale` | 视觉尺寸倍率，钳制到 `0.1–8.0`。 | `1.0` |
+| `density` | 服务端允许的最大视觉密度，钳制到 `0.05–1.0`。 | `1.0` |
+| `duration_ticks` | 持续时间覆盖（tick）；`-1` 使用预设，正数最多 `600`。 | `-1` |
+| `broadcast_range` | 同维度网络广播距离（格），钳制到 `32–2048`。 | `768.0` |
+| `sound` / `flash` / `shake` | 是否允许声音、闪光、镜头震动；客户端设置仍可进一步关闭。 | `true` |
+| `suppress_native_explosion_effect` | 视觉事件成功发布后是否屏蔽本体普通爆炸视觉；不影响伤害与方块破坏。 | `true` |
+| `preset_data` | 与 `preset` 相同 schema 的稀疏 JSON 覆盖；由对应客户端工厂类型化校验。 | `{}` |
 
 燃烧弹示例（先点火再小爆炸）：
 

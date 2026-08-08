@@ -1,11 +1,7 @@
 package org.ywzj.rvp.network;
 
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
-import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
 
 import java.util.function.Supplier;
 
@@ -54,13 +50,7 @@ public record S2CNuclearVisualEffect(
     public static void handle(S2CNuclearVisualEffect msg, Supplier<NetworkEvent.Context> ctxSupplier) {
         NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.setPacketHandled(true);
-        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
-                () -> () -> {
-                    if ("nuclear".equalsIgnoreCase(msg.preset()) || "nuke".equalsIgnoreCase(msg.preset())) {
-                        RVP_NuclearVisualManager.spawn(msg);
-                    } else {
-                        RVP_ExplosionVisualManager.spawn(msg);
-                    }
-                }));
+        // 调用公共消费门面，避免网络消息在专服类链接阶段解析客户端视觉管理器。
+        ctx.enqueueWork(() -> RVP_NuclearVisualEndpoint.accept(msg));
     }
 }

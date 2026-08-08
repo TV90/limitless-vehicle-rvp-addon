@@ -2,6 +2,7 @@ package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.util.Mth;
+import java.util.List;
 /**
  * 弹体落点效果：爆炸与自定义落点逻辑。JSON 键 {@code detonate_data}。
  *
@@ -55,6 +56,12 @@ public class RVP_DetonateData {
 
     @SerializedName("hbm_effect_data")
     private RVP_HbmEffectData hbmEffectData;
+
+    /**
+     * 爆炸视觉配置列表；默认空列表。每项仅在启用且效果类型合法时发布，不改变伤害、半径与方块破坏。
+     */
+    @SerializedName("visual_effect_data")
+    private List<RVP_VisualEffectData> visualEffectData = List.of();
 
     public boolean isEffectsBeforeExplosion() {
         return effectsBeforeExplosion;
@@ -145,6 +152,14 @@ public class RVP_DetonateData {
 
     public RVP_HbmEffectData getHbmEffectData() {
         return hbmEffectData == null ? new RVP_HbmEffectData() : hbmEffectData;
+    }
+
+    /** 返回非空的只读快照，避免运行时修改反序列化后的武器配置。 */
+    public List<RVP_VisualEffectData> getVisualEffectData() {
+        if (visualEffectData == null || visualEffectData.isEmpty()) {
+            return List.of();
+        }
+        return visualEffectData.stream().filter(java.util.Objects::nonNull).toList();
     }
 
     public static class FireEffectData {

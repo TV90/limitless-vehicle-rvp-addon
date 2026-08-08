@@ -66,6 +66,9 @@ import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
+import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
+import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
+import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
@@ -2869,7 +2872,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         float resolvedDamage = damage;
         float resolvedRadius = radius;
-        boolean resolvedSuppressNative = suppressNativeExplosionEffect;
+        RVP_VisualPublishResult visualResult = RVP_VisualPublishResult.NONE;
+        if (detonateData != null && level() instanceof ServerLevel serverLevel) {
+            Entity owner = getOwner();
+            RVP_DetonationVisualContext visualContext = new RVP_DetonationVisualContext(
+                    serverLevel,
+                    pos,
+                    radius,
+                    kind.name(),
+                    owner == null ? null : owner.getUUID(),
+                    owner == null ? -1 : owner.getId(),
+                    serverLevel.getGameTime());
+            // 调用 RVP 视觉协调器，把服务端权威爆心和最终半径发布为一次性客户端视觉事件。
+            visualResult = RVP_VisualEffects.publishDetonation(
+                    visualContext,
+                    detonateData.getVisualEffectData());
+        }
+        boolean resolvedSuppressNative = suppressNativeExplosionEffect
+                || visualResult.shouldSuppressNativeExplosionEffect();
         RVP_ProjectileLifecycleDebug.noteEvent(this,
                 RVP_ProjectileLifecycleDebug.Event.EXPLOSION,
                 () -> "kind=" + kind
@@ -2894,12 +2914,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Runnable explosionAction = !excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
                 : ex::explode;
-        if (suppressNativeExplosionEffect) {
+        // 调用 RVP 现有爆炸视觉抑制门面，仅在视觉成功发布且配置要求替换本体视觉时屏蔽本体视觉包。
+        if (resolvedSuppressNative) {
             RVP_ExplosionVisualSuppression.run(explosionAction);
         } else {
             explosionAction.run();
         }
-        if (!suppressNativeExplosionEffect && level() instanceof ServerLevel serverLevel && rvpData != null) {
+        if (!resolvedSuppressNative && level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(
                     serverLevel, pos, rvpData.getEffectsData(), radius);
         }
