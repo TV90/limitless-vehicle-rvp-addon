@@ -12,6 +12,8 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.network.C2SRadarPowerToggle;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.BulletEntity;
@@ -55,6 +57,8 @@ public final class RVP_ClientRadarTickHandler {
 
     private static final Map<String, Integer> SCAN_SKIP_COUNTER = new HashMap<>();
     private static int lastVehicleId = Integer.MIN_VALUE;
+    /** 雷达开关状态快照：key = 车辆ID + ":" + 雷达ID，value = isOn()。 */
+    private static final Map<String, Boolean> RADAR_POWER_SNAPSHOT = new HashMap<>();
 
     private RVP_ClientRadarTickHandler() {
     }
@@ -86,6 +90,7 @@ public final class RVP_ClientRadarTickHandler {
         if (vehicle.getId() != lastVehicleId) {
             lastVehicleId = vehicle.getId();
             SCAN_SKIP_COUNTER.clear();
+            RADAR_POWER_SNAPSHOT.clear();
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
@@ -94,6 +99,9 @@ public final class RVP_ClientRadarTickHandler {
         if (LocalVehiclePlayer.instance.getPlayer() != weaponUnit.getOwner()) {
             return;
         }
+        // 雷达开关状态同步：客户端 toggle 是本地方法，服务端 isOn() 恒为 true，需把
+        // 实际开关状态补发给服务端（外置雷达共享、RADAR_SEARCH 告警等随开关停用）
+        syncRadarPowerStates(vehicle);
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
                 continue;
@@ -192,5 +200,29 @@ public final class RVP_ClientRadarTickHandler {
         }
         SCAN_SKIP_COUNTER.put(key, 0);
         return false;
+    }
+
+    /**
+     * 将客户端雷达实际开关状态同步到服务端。
+     *
+     * <p>本体 {@link RadarUnit#toggle(Boolean)} 是纯客户端本地方法（只改客户端 {@code on} 字段，
+     * 不发网络包），服务端 {@code isOn()} 恒为 true：关闭雷达后服务端仍认为雷达在扫描，
+     * 外置雷达共享、RADAR_SEARCH 告警等链路不会随开关停用。此处每 tick 比对快照，状态
+     * 变化时补发 {@link C2SRadarPowerToggle}，服务端对对应雷达执行同样的开关。非 mixin
+     * 实现：不触碰本体字节码，覆盖所有客户端 toggle 入口（TOGGLE_RADAR 键、HMD 雷达模式等）。</p>
+     */
+    private static void syncRadarPowerStates(AbstractVehicle vehicle) {
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof RadarUnit radar)) {
+                continue;
+            }
+            String key = vehicle.getId() + ":" + radar.getId();
+            boolean on = radar.isOn();
+            Boolean cached = RADAR_POWER_SNAPSHOT.put(key, on);
+            if (cached == null || cached == on) {
+                continue;
+            }
+            RVP_Network.CHANNEL.sendToServer(new C2SRadarPowerToggle(vehicle.getId(), radar.getId(), on));
+        }
     }
 }
