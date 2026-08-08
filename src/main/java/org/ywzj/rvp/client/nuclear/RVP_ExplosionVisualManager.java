@@ -128,12 +128,19 @@ public final class RVP_ExplosionVisualManager {
         Camera camera = event.getCamera();
         Vec3 cameraPos = camera.getPosition();
 
-        // Extend projection matrix far plane so effects are visible from thousands of blocks away
+        // Extend projection matrix far plane so effects are visible from thousands of blocks away.
+        // FOV 从当前投影矩阵提取（含玩家缩放视角/瞄准镜的动态 FOV），保证特效随视角缩放正确变化。
+        Matrix4f currentProjection = new Matrix4f(RenderSystem.getProjectionMatrix());
         RenderSystem.backupProjectionMatrix();
-        double fov = minecraft.options.fov().get();
+        float f = currentProjection.m11(); // 透视矩阵 m11 = 1/tan(fovY/2)
+        if (f <= 1.0E-4F) {
+            f = (float) (1.0D / Math.tan(Math.toRadians(minecraft.options.fov().get()) / 2.0D));
+        }
+        float fovY = 2.0F * (float) Math.atan(1.0F / f);
+        float aspect = f / currentProjection.m00();
         Matrix4f extendedProjection = new Matrix4f().perspective(
-                (float) (fov * Math.PI / 180.0),
-                (float) minecraft.getWindow().getWidth() / minecraft.getWindow().getHeight(),
+                fovY,
+                aspect,
                 0.05F,
                 (float) FAR_PLANE
         );

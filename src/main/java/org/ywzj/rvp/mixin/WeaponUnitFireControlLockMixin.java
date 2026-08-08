@@ -13,6 +13,7 @@ import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -35,10 +36,12 @@ public abstract class WeaponUnitFireControlLockMixin {
         AbstractVehicleWeapon<?> currentWeapon = weaponOpt.isPresent() && weaponOpt.get() instanceof AbstractVehicleWeapon<?> weapon
                 ? weapon
                 : null;
-        if (self.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO
+        // 动态传感器判断（eo_ccip/override），恢复传感器覆盖 mixin 被删前的行为
+        WeaponUnitData.FireControlSensorType sensorType = RVP_WeaponSensorHelper.effectiveSensorType(self);
+        if (sensorType == WeaponUnitData.FireControlSensorType.EO
                 && weaponOpt.isPresent()
                 && RVP_LaserWeapons.unwrap(currentWeapon) instanceof RVP_WeaponBase rvpWeapon
-                && RVP_IrLockHelper.usesIrAcquireOnEo(self.getFireControlSensorType(), rvpWeapon.getData())) {
+                && RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
             if (self.getLockedEntity() != null) {
                 self.setLockedEntity(null);
                 ci.cancel();
@@ -57,7 +60,7 @@ public abstract class WeaponUnitFireControlLockMixin {
             ci.cancel();
             return;
         }
-        if (self.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+        if (sensorType != WeaponUnitData.FireControlSensorType.RF) {
             return;
         }
 
