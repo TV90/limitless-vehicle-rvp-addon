@@ -5,6 +5,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.mixin.accessor.SwitchableUnitAccessor;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -25,9 +26,9 @@ import java.util.Map;
  *
  * <p>与原 mixin 的行为差异（已记录功能丢失表）：</p>
  * <ul>
- *   <li>原实现通过 {@code setOnField} 直接写字段绕过 {@code WeaponBayUnit.setOn} 的
- *       {@code hasPower} 检查与驾驶员 chat 提示；本实现使用公共 {@code setOn}，
- *       载具无电源时弹舱不会自动开关，且同步时驾驶员会收到弹舱开/关提示。</li>
+ *   <li>自动开关弹舱通过 {@code setOnField} 直接写状态字段，绕过 {@code WeaponBayUnit.setOn}
+ *       的驾驶员"弹舱：开启/关闭"提示（仅手动 toggle 弹舱时显示文案），
+ *       并保留无电源不开关弹舱的语义。</li>
  *   <li>手动覆盖（玩家手动 toggle 弹舱后自动同步暂停）由原 mixin 注入的字段维护；
  *       本实现通过“索引未变但弹舱状态与期望不符”自动推断，语义一致。</li>
  *   <li>seekerOn 复位随 B3（反射卡点），不在本批次。</li>
@@ -140,7 +141,13 @@ public final class RVP_WeaponSwitchSyncHelper {
         for (WeaponBayUnit bay : unit.weaponBayUnits.values()) {
             boolean shouldBeOn = (bay == target);
             if (bay.isOn() != shouldBeOn) {
-                bay.setOn(shouldBeOn);
+                // 自动开关弹舱直接写状态字段，绕过本体 WeaponBayUnit.setOn 的
+                // "弹舱：开启/关闭"驾驶员提示（仅手动 toggle 弹舱时显示文案）；
+                // 同时保留无电源不开关弹舱的语义（等价于本体 setOn 的 hasPower 检查）。
+                if (!bay.getVehicle().hasPower()) {
+                    continue;
+                }
+                ((SwitchableUnitAccessor) bay).setOnField(shouldBeOn);
             }
         }
     }
