@@ -23,7 +23,7 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         RVP_BaseBullet projectile = context.projectile();
-        if (projectile.tickCount == 0) {
+        if (projectile.getFlightTickCount() == 0) {
             copyPreselectedEmitter(projectile);
         }
 
@@ -32,8 +32,8 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         if (!projectile.hasAntiRadiationSignalAcquired() && projectile.getPreselectedVehicleId() >= 0) {
             interval = 1;
         }
-        if (projectile.tickCount >= projectile.getAntiRadiationNextScanTick()) {
-            projectile.setAntiRadiationNextScanTick(projectile.tickCount + interval);
+        if (projectile.getFlightTickCount() >= projectile.getAntiRadiationNextScanTick()) {
+            projectile.setAntiRadiationNextScanTick(projectile.getFlightTickCount() + interval);
             float fov = resolveArmScanHalfAngle(context);
             float range = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(
                     context.active().targetDistanceRange());
@@ -45,7 +45,7 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
                             fov,
                             range,
                             projectile.getShooterVehicle(),
-                            projectile.tickCount,
+                            projectile.getFlightTickCount(),
                             projectile.getRadiationPulseTickMap(),
                             context.active().radiationPulseMemoryTick()
                     );

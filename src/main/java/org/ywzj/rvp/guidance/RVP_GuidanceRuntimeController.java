@@ -29,7 +29,7 @@ public final class RVP_GuidanceRuntimeController {
         projectile.setActiveSourceType(active.guidanceType());
 
         RVP_Range<Integer> tickRange = active.tickRange();
-        if (tickRange != null && !tickRange.contains(projectile.tickCount)) {
+        if (tickRange != null && !tickRange.contains(projectile.getFlightTickCount())) {
             return false;
         }
 

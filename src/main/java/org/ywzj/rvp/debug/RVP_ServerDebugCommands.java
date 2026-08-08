@@ -99,37 +99,69 @@ public final class RVP_ServerDebugCommands {
                                     RVP_ProjectileLifecycleDebug.clearLog();
                                     RVP_ProjectileLifecycleDebug.setEnabled(true);
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("[RVP] 已开启弹体全生命周期监控: "
-                                                    + RVP_ProjectileLifecycleDebug.getLogPath()), false);
+                                            Component.literal(RVP_ProjectileLifecycleDebug.isChineseOutput()
+                                                    ? "[RVP] 已开启弹体全生命周期监控: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()
+                                                    : "[RVP] Projectile lifecycle monitor enabled: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()), false);
                                     return 1;
                                 }))
                                 .then(Commands.literal("off").executes(ctx -> {
                                     RVP_ProjectileLifecycleDebug.setEnabled(false);
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("[RVP] 已关闭弹体全生命周期监控: "
-                                                    + RVP_ProjectileLifecycleDebug.getLogPath()), false);
+                                            Component.literal(RVP_ProjectileLifecycleDebug.isChineseOutput()
+                                                    ? "[RVP] 已关闭弹体全生命周期监控: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()
+                                                    : "[RVP] Projectile lifecycle monitor disabled: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()), false);
                                     return 1;
                                 }))
                                 .then(Commands.literal("status").executes(ctx -> {
                                     boolean enabled = RVP_ProjectileLifecycleDebug.isEnabled();
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("[RVP] projectilelife=" + enabled
-                                                    + " path=" + RVP_ProjectileLifecycleDebug.getLogPath()), false);
+                                            Component.literal(RVP_ProjectileLifecycleDebug.isChineseOutput()
+                                                    ? "[RVP] 弹体生命周期监控=" + (enabled ? "已开启" : "已关闭")
+                                                            + " 语言=" + RVP_ProjectileLifecycleDebug.getOutputLanguageCode()
+                                                            + " 路径=" + RVP_ProjectileLifecycleDebug.getLogPath()
+                                                    : "[RVP] projectilelife=" + enabled
+                                                            + " language=" + RVP_ProjectileLifecycleDebug.getOutputLanguageCode()
+                                                            + " path=" + RVP_ProjectileLifecycleDebug.getLogPath()), false);
                                     return enabled ? 1 : 0;
                                 }))
+                                .then(Commands.literal("language")
+                                        .then(Commands.literal("zh_cn").executes(ctx -> {
+                                            RVP_ProjectileLifecycleDebug.setOutputLanguage(
+                                                    RVP_ProjectileLifecycleDebug.OutputLanguage.ZH_CN);
+                                            ctx.getSource().sendSuccess(() ->
+                                                    Component.literal("[RVP] 弹体生命周期日志已切换为中文输出"), false);
+                                            return 1;
+                                        }))
+                                        .then(Commands.literal("en_us").executes(ctx -> {
+                                            RVP_ProjectileLifecycleDebug.setOutputLanguage(
+                                                    RVP_ProjectileLifecycleDebug.OutputLanguage.EN_US);
+                                            ctx.getSource().sendSuccess(() ->
+                                                    Component.literal("[RVP] Projectile lifecycle log switched to English"), false);
+                                            return 1;
+                                        })))
                                 .then(Commands.literal("dump").executes(ctx -> {
                                     ServerPlayer player = ctx.getSource().getPlayer();
                                     RVP_ProjectileLifecycleDebug.appendSnapshot(player);
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("[RVP] 已追加弹体生命周期快照: "
-                                                    + RVP_ProjectileLifecycleDebug.getLogPath()), false);
+                                            Component.literal(RVP_ProjectileLifecycleDebug.isChineseOutput()
+                                                    ? "[RVP] 已追加弹体生命周期快照: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()
+                                                    : "[RVP] Projectile lifecycle snapshot appended: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()), false);
                                     return 1;
                                 }))
                                 .then(Commands.literal("clear").executes(ctx -> {
                                     RVP_ProjectileLifecycleDebug.clearLog();
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("[RVP] 已清空弹体生命周期日志: "
-                                                    + RVP_ProjectileLifecycleDebug.getLogPath()), false);
+                                            Component.literal(RVP_ProjectileLifecycleDebug.isChineseOutput()
+                                                    ? "[RVP] 已清空弹体生命周期日志: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()
+                                                    : "[RVP] Projectile lifecycle log cleared: "
+                                                            + RVP_ProjectileLifecycleDebug.getLogPath()), false);
                                     return 1;
                                 })))
                         .then(Commands.literal("uav")

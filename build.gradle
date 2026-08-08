@@ -116,6 +116,8 @@ repositories {
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    // 手动虚拟飞行测试使用 XChart 按 Tick 绘制实时轨迹，不进入模组运行时依赖。
+    testImplementation 'org.knowm.xchart:xchart:3.8.8'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
     implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.8-all")
@@ -207,5 +209,25 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.named('test', Test).configure {
-    useJUnitPlatform()
+    // 带窗口的长航程仿真只通过 manualTrajectoryTest 显式运行。
+    useJUnitPlatform {
+        excludeTags 'manual'
+    }
+}
+
+tasks.register('manualTrajectoryTest', Test) {
+    description = '运行带 XChart 实时轨迹窗口的手动虚拟飞行测试。'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    // 手动可视化任务每次调用都必须重新执行，不能被 Gradle 的 UP-TO-DATE 跳过。
+    outputs.upToDateWhen { false }
+    useJUnitPlatform {
+        includeTags 'manual'
+    }
+    // 每 Tick 留出少量绘制时间，并在结束后短暂停留以便观察最终轨迹。
+    systemProperty 'rvp.trajectoryChart.tickDelayMillis',
+            System.getProperty('rvp.trajectoryChart.tickDelayMillis', '1')
+    systemProperty 'rvp.trajectoryChart.finalHoldMillis',
+            System.getProperty('rvp.trajectoryChart.finalHoldMillis', '10000')
 }

@@ -63,7 +63,7 @@ final class RVP_RuntimeActiveSeekerGuidance {
         int interval = context.active().scanIntervalTick() != null
                 ? context.active().scanIntervalTick()
                 : 2;
-        if (!freeAcquire || missile.tickCount % interval != 0) {
+        if (!freeAcquire || missile.getFlightTickCount() % interval != 0) {
             return RVP_GuidanceIntent.failed(type);
         }
 

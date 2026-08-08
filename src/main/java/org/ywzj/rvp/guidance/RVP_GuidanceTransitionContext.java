@@ -12,11 +12,11 @@ public record RVP_GuidanceTransitionContext(
     public static RVP_GuidanceTransitionContext from(RVP_BaseBullet projectile) {
         Vec3 target = resolveTarget(projectile);
         if (target == null) {
-            return new RVP_GuidanceTransitionContext(projectile.tickCount, -1, -1);
+            return new RVP_GuidanceTransitionContext(projectile.getFlightTickCount(), -1, -1);
         }
         Vec3 offset = target.subtract(projectile.position());
         return new RVP_GuidanceTransitionContext(
-                projectile.tickCount,
+                projectile.getFlightTickCount(),
                 offset.length(),
                 Math.sqrt(offset.x * offset.x + offset.z * offset.z)
         );

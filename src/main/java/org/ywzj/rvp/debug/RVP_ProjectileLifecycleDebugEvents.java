@@ -22,7 +22,8 @@ public final class RVP_ProjectileLifecycleDebugEvents {
     /**
      * 接收实体停止服务端追踪事件。
      *
-     * <p>RemovalReason 为空时只是非终止 TRACKING_END；非空时才由监测器记录终止 LEFT_LEVEL。</p>
+     * <p>RemovalReason 非空时可权威判断 discard/kill/卸载等终止原因；为空时只能确认没有权威移除，
+     * 监测器会再结合区块 loaded/entity-ticking 状态给出明确标注为 STATE_INFERENCE 的冻结原因。</p>
      *
      * @param event Forge 实体离开世界/停止追踪事件
      */
