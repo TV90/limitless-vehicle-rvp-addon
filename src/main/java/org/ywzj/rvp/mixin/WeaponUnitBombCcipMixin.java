@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -22,13 +23,15 @@ import java.util.Optional;
 public abstract class WeaponUnitBombCcipMixin {
 
     @Shadow(remap = false) public abstract Optional<AbstractVehicleWeapon<?>> getCurrentWeapon();
-    @Shadow(remap = false) public abstract WeaponUnitData.FireControlSensorType getFireControlSensorType();
     @Shadow(remap = false) public abstract boolean isParentWeaponUnitAim();
     @Shadow(remap = false) public abstract WeaponUnit getRootParentWeaponUnit();
 
     @Inject(method = "currentWeaponHitPosition", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$computeRvpBombCcip(CallbackInfoReturnable<Vec3> cir) {
-        if (getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+        // 用 RVP_WeaponSensorHelper 判断动态传感器（eo_ccip 模式：非瞄准视角为 CCIP、
+        // 瞄准视角为 EO），替代本体静态 getFireControlSensorType()，恢复传感器覆盖 mixin 被删前的行为。
+        if (RVP_WeaponSensorHelper.effectiveSensorType((WeaponUnit) (Object) this)
+                != WeaponUnitData.FireControlSensorType.CCIP) {
             return;
         }
         Optional<AbstractVehicleWeapon<?>> vehicleWeaponOptional = getCurrentWeapon();

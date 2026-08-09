@@ -203,12 +203,19 @@ public final class RVP_NuclearVisualManager {
             return;
         }
 
-        // Extend projection matrix far plane so effects are visible from thousands of blocks away
+        // Extend projection matrix far plane so effects are visible from thousands of blocks away.
+        // FOV 从当前投影矩阵提取（含玩家缩放视角/瞄准镜的动态 FOV），保证特效随视角缩放正确变化。
+        Matrix4f currentProjection = new Matrix4f(RenderSystem.getProjectionMatrix());
         RenderSystem.backupProjectionMatrix();
-        double fov = minecraft.options.fov().get();
+        float f = currentProjection.m11(); // 透视矩阵 m11 = 1/tan(fovY/2)
+        if (f <= 1.0E-4F) {
+            f = (float) (1.0D / Math.tan(Math.toRadians(minecraft.options.fov().get()) / 2.0D));
+        }
+        float fovY = 2.0F * (float) Math.atan(1.0F / f);
+        float aspect = f / currentProjection.m00();
         Matrix4f extendedProjection = new Matrix4f().perspective(
-                (float) Math.toRadians(fov),
-                (float) minecraft.getWindow().getWidth() / minecraft.getWindow().getHeight(),
+                fovY,
+                aspect,
                 0.05F,
                 (float) FAR_PLANE
         );
@@ -538,7 +545,9 @@ public final class RVP_NuclearVisualManager {
             effectYield = Math.max(1.0F, message.effectYield());
             visualScale = Math.max(0.1F, message.visualScale());
             visualDensity = Mth.clamp(message.visualDensity(), 0.1F, 1.0F);
-            cloudScale = legacyCloudScale(effectYield * visualScale);
+            // legacyCloudScale 对低半径有 0.5 下界且动态范围小，直接乘 visual_scale 会被 clamp 抹平。
+            // 改为：yield 决定基准缩放，visual_scale 作为整体线性乘数，默认(1.0)时与原行为一致。
+            cloudScale = Mth.clamp(legacyCloudScale(effectYield), 0.5F, 5.0F) * Mth.clamp(visualScale, 0.1F, 2.0F);
             maxAge = Math.max(1, Math.round(45.0F * 20.0F * cloudScale));
             groundY = message.groundY();
             soundEnabled = message.sound();

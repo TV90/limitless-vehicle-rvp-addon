@@ -25,6 +25,7 @@
     "AutoLandingGearManualOverrideMixin",
     "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
+    "WeaponUnitMainRadarUnitMixin",
     "VectorUtilPhysicsOnlyHitFilterMixin",
     "WeaponUnitGroupedSlotMixin",
     "WeaponUnitMultiWeaponSwitchBlockMixin"

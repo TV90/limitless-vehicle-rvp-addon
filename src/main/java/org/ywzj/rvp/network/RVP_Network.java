@@ -189,6 +189,11 @@ public class RVP_Network {
                 .decoder(S2CVehicleRvpConfig::decode)
                 .consumerMainThread(S2CVehicleRvpConfig::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SRadarPowerToggle.class, id++)
+                .encoder(C2SRadarPowerToggle::encode)
+                .decoder(C2SRadarPowerToggle::decode)
+                .consumerMainThread(C2SRadarPowerToggle::handle)
+                .add();
         CHANNEL.messageBuilder(S2CVisualEffectEvent.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(S2CVisualEffectEvent::encode)
                 .decoder(S2CVisualEffectEvent::decode)
