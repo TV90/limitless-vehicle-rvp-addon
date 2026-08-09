@@ -1,6 +1,7 @@
 package org.ywzj.rvp.mixin;
 
 import com.google.gson.annotations.SerializedName;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
@@ -30,6 +31,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private List<String> ywzj_rvp$structureBoltBones = List.of();
 
+    @SerializedName("rvp_optical_sight_pivot")
+    @Unique
+    private Vec3 ywzj_rvp$opticalSightPivot;
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
@@ -53,5 +58,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public List<String> ywzj_rvp$getStructureBoltBones() {
         return ywzj_rvp$structureBoltBones;
+    }
+
+    @Override
+    public Vec3 ywzj_rvp$getOpticalSightPivot() {
+        return ywzj_rvp$opticalSightPivot;
     }
 }

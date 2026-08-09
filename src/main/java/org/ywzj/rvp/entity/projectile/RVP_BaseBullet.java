@@ -310,6 +310,32 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public Vec3 saclosVelVec = Vec3.ZERO;
     public Vec3 saclosLastPhysVec = Vec3.ZERO;
 
+    /** ===== 干扰机干扰状态（服务端 SACLOS 制导评估写入，供瞄准点偏移） ===== */
+    /** 干扰缓存到期 tick（{@code tickCount < jammingExpireTick} 时沿用缓存结果）。 */
+    public int jammingExpireTick = Integer.MIN_VALUE;
+    /** 下次干扰扫描 tick（未命中时避免每 tick 全量扫描）。 */
+    public int jammingNextScanTick = Integer.MIN_VALUE;
+    /** 干扰机载具实体 id（-1 = 未被干扰）。 */
+    public int jammingSourceVehicleId = -1;
+    /** 当前干扰强度（0 = 未被干扰）。 */
+    public double jammingStrength = 0.0;
+    /** 干扰机左右侧符号（+1 = 左侧干扰机 / -1 = 右侧干扰机，0 = 未被干扰）：决定定向偏航方向。 */
+    public double jammingSideSign = 0.0;
+    /** 被干扰期间每 tick 直接旋转水平速度方向的角度（度）×强度（由干扰机配置写入）。 */
+    public double jammingHeadingRate = 2.0;
+    /** 干扰瞄准点横向偏移角度（度）：远距离按 tan(θ)×瞄准距离放大（由干扰机配置写入）。 */
+    public double jammingOffsetAngleDeg = 8.0;
+    /** 干扰瞄准点横向偏移兜底（格）：近距离最小偏移量（由干扰机配置写入）。 */
+    public double jammingOffsetBaseBlocks = 20.0;
+    /** 干扰瞄准点向下偏移分量（格）×强度：与横向偏移合成「左下/右下」斜向拉偏（由干扰机配置写入）。 */
+    public double jammingOffsetDownBlocks = 12.0;
+    /** 干扰瞄准点偏移方向（单位向量，服务端低频刷新，方向稳定期间导弹持续偏航）。 */
+    public Vec3 jammingOffsetDir = Vec3.ZERO;
+    /** 干扰偏移方向下次刷新 tick。 */
+    public int jammingOffsetRefreshTick = Integer.MIN_VALUE;
+    /** 干扰滞留到期 tick：导弹离开干扰锥后仍保持被干扰状态的宽限窗口（命中时刷新为 tick+10）。 */
+    public int jammingGraceExpireTick = Integer.MIN_VALUE;
+
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
     @Nullable
@@ -1312,8 +1338,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void tickGuidance() {
-        // 智能引信：已接管制导后直接飞向目标点，不再走正常制导/线导逻辑
-        if (smartFuseActive && smartFuseTargetPos != null) {
+        // 智能引信：已接管制导后直接飞向目标点，不再走正常制导/线导逻辑。
+        // 被干扰期间不执行：光电干扰已切断导弹引导，禁止智能引信追踪接管（避免残留追踪效果）。
+        if (jammingStrength <= 0.0 && smartFuseActive && smartFuseTargetPos != null) {
             if (!level().isClientSide()) {
                 tickSmartFuseGuidance();
             }
@@ -1411,7 +1438,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 智能引信已接管制导：不再走发动机推进/弹道积分，速度完全由
         // tickSmartFuseGuidance 按剩余距离缩放控制（单调收敛，避免高速
         // 穿越目标点导致绕圈乱晃），这里只做位置平移。
-        if (smartFuseActive) {
+        // 被干扰期间接管已被取消（tickTopAttackFuse），保持与 tickGuidance 一致。
+        if (smartFuseActive && jammingStrength <= 0.0) {
             setPos(position().add(getDeltaMovement()));
             return;
         }
@@ -1621,6 +1649,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 + " triggerTick=" + topAttackTriggerTick
                 + " delta=" + RVP_ProjectileLifecycleDebug.formatVec(getDeltaMovement()));
         if (!fuse.isTopAttackFuseEnabled()) {
+            return;
+        }
+        // 被干扰期间攻顶引信不触发：导弹已被光电干扰，禁止智能引信追踪接管（含已接管取消）
+        // 与攻顶探测/引爆，干扰结束后自动恢复。
+        if (jammingStrength > 0.0) {
+            if (smartFuseActive) {
+                smartFuseActive = false;
+                smartFuseTargetPos = null;
+                smartFuseDetectEntity = null;
+            }
             return;
         }
         int armTick = fuse.getTopAttackFuseArmTick();
@@ -2180,11 +2218,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // 区分 HE 弹与 AP 弹的 ERA 破坏路径
             if (explosion != null && explosion.explode && explosion.radius > 5f) {
                 // HE 弹（爆炸半径 > 5）→ 机制二A（百分比破坏，按直击位置排序，至少 1 块保底）
-                RVP_VehicleHitboxFactorManager.destroyEraByExplosionRadius(
+                RVP_VehicleHitboxFactorManager.destroyModulesByExplosionRadius(
                         targetVehicle, explosion.radius, result.getLocation(), true);
             } else {
                 // AP 弹或小爆炸弹 → 机制一（OBB 单块）
-                RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, preHitboxDamage);
+                RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, preHitboxDamage);
             }
         }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
@@ -2597,7 +2635,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (v.isDestroyed() || directHitVehicleIds.contains(v.getId())) {
                     continue;
                 }
-                RVP_VehicleHitboxFactorManager.destroyEraByExplosionRadius(
+                RVP_VehicleHitboxFactorManager.destroyModulesByExplosionRadius(
                         v, radius, pos, false);
             }
             directHitVehicleIds.clear();

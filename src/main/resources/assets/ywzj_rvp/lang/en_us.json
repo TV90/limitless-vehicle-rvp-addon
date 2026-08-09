@@ -212,5 +212,7 @@
   "message.ywzj_rvp.targeting_pod.marked_both": "Marked %s target(s), pos %s",
   "message.ywzj_rvp.targeting_pod.marked_entity": "Marked %s target(s)",
   "message.ywzj_rvp.targeting_pod.marked_block": "Marked position %s",
-  "message.ywzj_rvp.targeting_pod.no_target": "No target found to mark"
+  "message.ywzj_rvp.targeting_pod.no_target": "No target found to mark",
+  "message.ywzj_rvp.saclos_jammed": "Missile is being optically jammed",
+  "message.ywzj_rvp.jam_success": "Enemy missile successfully jammed"
 }

@@ -176,9 +176,9 @@ public final class RVP_VehicleHurtScalingHandler {
             REAPPLY_GUARD.remove(self.getId());
         }
 
-        // ERA 触发 + 调试消息（与原 mixin 一致）
+        // 骨骼模块消耗（ERA 等）+ 调试消息（与原 mixin 一致）
         if (res != null) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(self, res, predicted);
+            RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(self, res, predicted);
         }
         Player debugPlayer = resolveDebugPlayer(attacker);
         if (debugPlayer != null) {

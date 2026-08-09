@@ -46,6 +46,8 @@ public final class RVP_ExtendedAirEntityRenderer {
     private static final double EXTENDED_RANGE_SQ = EXTENDED_RANGE * EXTENDED_RANGE;
     private static final double MAX_EXTRAPOLATION_TICK = 5.0D;
     private static final double MAX_TRAIL_LINK_DISTANCE_SQ = 64.0D * 64.0D;
+    /** 是否渲染载具（飞机）超视距；与广播服务端开关保持一致，当前需求为关闭车辆、保留弹药超视距。 */
+    private static final boolean ENABLE_AIR_VEHICLE_RENDER = false;
     private static final Map<Integer, TrailState> TRAIL_STATES = new HashMap<>();
     private static ResourceLocation trailDimension;
 
@@ -139,7 +141,7 @@ public final class RVP_ExtendedAirEntityRenderer {
     }
 
     private static boolean isSupported(Entity entity) {
-        return entity instanceof AbstractVehicle
+        return (ENABLE_AIR_VEHICLE_RENDER && entity instanceof AbstractVehicle)
                 || entity instanceof MissileEntity
                 || entity instanceof RocketEntity
                 || entity instanceof RVP_BulletEntity

@@ -56,7 +56,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
                                org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle,
                                LivingEntity shooter, Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        this.keepChunkLoaded = false;
+        // keepChunkLoaded 保持基类 RVP_BaseBullet 构造器的 true：机炮子弹随飞强载区块，
+        // 避免飞出玩家视距后因区块卸载而停飞/丢失（不要设回 false）。
         this.startPos = spawnPos;
         RVP_EffectsData effects = data.getEffectsData();
         this.caliber = effects.getCaliber();

@@ -1,6 +1,7 @@
 package org.ywzj.rvp.guidance.runtime;
 
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.countermeasure.RVP_JammingRuntime;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -59,11 +60,26 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         }
         Vec3 dir = direction.normalize();
 
+        // 被干扰期间：切断玩家手动制导——导弹不再跟随操作手视线。
+        // 制导目标改为「最后记忆点 + 朝远离干扰机一侧的大幅横向偏移」：
+        // 每 tick 制导都会把导弹拉向该偏移点（而非拉回原方向），实现持续大幅横向偏航。
+        double jamStrength = RVP_JammingRuntime.tickAndResolve(projectile);
+        if (jamStrength > 0.0) {
+            Vec3 memory = projectile.getLastGuidancePos();
+            if (memory != null) {
+                Vec3 jamTarget = applyJamming(projectile, dir, memory, jamStrength);
+                projectile.setTargetPos(jamTarget);
+                return RVP_GuidanceIntent.point(jamTarget, false, 1.0, RVP_EnumGuidanceType.SACLOS);
+            }
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);
+        }
+
         // Original SACLOS behavior when semi-correction is disabled
         if (!active.semiCorrectionEnabled()) {
             double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(
                     active.targetDistanceRange());
             Vec3 point = projectile.position().add(dir.scale(range));
+            point = applyJamming(projectile, dir, point, jamStrength);
             projectile.setTargetPos(point);
             return RVP_GuidanceIntent.point(point, true, 1.0, RVP_EnumGuidanceType.SACLOS);
         }
@@ -121,6 +137,7 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
 
         // Final target: LBR base + oscillation offset (world space, no perp basis rotation)
         Vec3 finalTarget = baseTarget.add(projectile.saclosOffsetVec);
+        finalTarget = applyJamming(projectile, dir, finalTarget, jamStrength);
 
         projectile.setTargetPos(finalTarget);
         return RVP_GuidanceIntent.point(finalTarget, true, 1.0, RVP_EnumGuidanceType.SACLOS);
@@ -130,6 +147,84 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         projectile.saclosOffsetVec = Vec3.ZERO;
         projectile.saclosVelVec = Vec3.ZERO;
         projectile.saclosLastPhysVec = Vec3.ZERO;
+    }
+
+    /** 速度旋转单 tick 转角上限（度）×强度，防止配置异常时导弹瞬间翻飞。 */
+    private static final double JAM_HEADING_MAX_DEG = 80.0;
+
+    /**
+     * 叠加干扰错误分量（干扰强度由 {@link #evaluate} 传入，被干扰时 evaluate 已切断手动制导，
+     * 此处不再调用 {@code tickAndResolve}）。
+     *
+     * <p>偏移方向**由干扰机相对弹体飞行线的左右侧决定**（{@code jammingSideSign}）：
+     * 干扰机在导弹左侧 → 把导弹推向导弹右侧（远离干扰机）；在右侧 → 推向左。
+     * 始终把导弹引向**远离干扰机自身**的一侧，避免偏移方向朝向干扰机而把导弹吸向车体。</p>
+     *
+     * <p>偏移幅度 = 兜底基准（{@code jammingOffsetBaseBlocks}）与
+     * 瞄准点距离×tan(干扰角)（{@code jammingOffsetAngleDeg}）中的较大值 × 干扰强度，
+     * 均由干扰机 JSON 配置（{@code offset_base} / {@code offset_angle}）。</p>
+     * 服务端执行（SACLOS 制导评估仅在服务端运行）。
+     */
+    private static Vec3 applyJamming(RVP_BaseBullet projectile, Vec3 dir, Vec3 point, double strength) {
+        if (strength <= 0.0) {
+            projectile.jammingOffsetDir = Vec3.ZERO;
+            return point;
+        }
+        double distToPoint = projectile.position().distanceTo(point);
+        double angular = distToPoint * Math.tan(Math.toRadians(projectile.jammingOffsetAngleDeg));
+        double wobble = Math.max(projectile.jammingOffsetBaseBlocks, angular) * strength;
+        // 直接修改速度方向分量（远离干扰机一侧），与切断制导分支共用同一偏转。
+        applyVelocityRotation(projectile, dir, strength);
+        double side = projectile.jammingSideSign;
+        if (side == 0.0) {
+            side = 1.0;
+        }
+        Vec3 horizontal = buildHorizontalPerp(dir).scale(side).scale(wobble);
+        // 叠加向下的偏移分量，与横向偏移合成「左下/右下」斜向拉偏（朝远离干扰机 + 下坠）。
+        Vec3 down = new Vec3(0.0, -projectile.jammingOffsetDownBlocks * strength, 0.0);
+        Vec3 offset = horizontal.add(down);
+        projectile.jammingOffsetDir = offset;
+        return point.add(offset);
+    }
+
+    /**
+     * 直接修改速度方向分量：被干扰期间每 tick 把导弹水平速度方向向「远离干扰机」一侧
+     * 旋转 {@code projectile.jammingHeadingRate}×强度 度（由干扰机 JSON 配置 {@code heading_rate}，
+     * 默认 2°/tick ≈ 40°/秒）。该修改发生在 applyIntent 读取当前速度（blend 基准）之前，
+     * 制导的平滑转向（blend factor）单 tick 无法抵消，导弹持续横向偏航。
+     * 保持水平速度大小与垂直分量不变。
+     */
+    private static void applyVelocityRotation(RVP_BaseBullet projectile, Vec3 dir, double strength) {
+        if (strength <= 0.0) {
+            return;
+        }
+        double side = projectile.jammingSideSign;
+        if (side == 0.0) {
+            side = 1.0;
+        }
+        Vec3 vel = projectile.getDeltaMovement();
+        double hSpeed = Math.hypot(vel.x, vel.z);
+        if (hSpeed > 1.0E-6) {
+            Vec3 hDir = new Vec3(vel.x, 0.0, vel.z).normalize();
+            Vec3 away = buildHorizontalPerp(dir).scale(side).normalize();
+            double theta = Math.toRadians(Math.min(projectile.jammingHeadingRate * strength, JAM_HEADING_MAX_DEG));
+            Vec3 hNew = hDir.scale(Math.cos(theta)).add(away.scale(Math.sin(theta)));
+            if (hNew.lengthSqr() > 1.0E-8) {
+                hNew = hNew.normalize().scale(hSpeed);
+                projectile.setDeltaMovement(hNew.x, vel.y, hNew.z);
+            }
+        }
+    }
+
+    /** 生成与 {@code dir} 垂直的水平方向单位向量（dir 竖直时退化为正 x 方向）。 */
+    private static Vec3 buildHorizontalPerp(Vec3 dir) {
+        Vec3 horizontalDir = new Vec3(dir.x, 0.0, dir.z);
+        if (horizontalDir.lengthSqr() <= 1.0E-8) {
+            return new Vec3(1.0, 0.0, 0.0);
+        }
+        Vec3 up = new Vec3(0.0, 1.0, 0.0);
+        Vec3 perp = horizontalDir.normalize().cross(up);
+        return perp.lengthSqr() <= 1.0E-8 ? new Vec3(1.0, 0.0, 0.0) : perp.normalize();
     }
 
     /**

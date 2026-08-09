@@ -46,6 +46,9 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private List<String> ywzj_rvp$structureBoltBones = List.of();
 
+    @Unique
+    private Vec3 ywzj_rvp$opticalSightPivot;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/WeaponUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(WeaponUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof WeaponUnitPojoExt ext) {
@@ -54,6 +57,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$disableCrtEffect = ext.ywzj_rvp$disableCrtEffect();
             this.ywzj_rvp$followParentOnlyPartUnitIds = ywzj_rvp$safeCopy(ext.ywzj_rvp$getFollowParentOnlyPartUnitIds());
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
+            this.ywzj_rvp$opticalSightPivot = ext.ywzj_rvp$getOpticalSightPivot();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
     }
@@ -158,5 +162,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public List<String> ywzj_rvp$getStructureBoltBones() {
         return ywzj_rvp$structureBoltBones;
+    }
+
+    @Override
+    public Vec3 ywzj_rvp$getOpticalSightPivot() {
+        return ywzj_rvp$opticalSightPivot;
     }
 }

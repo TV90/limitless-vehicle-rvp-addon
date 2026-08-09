@@ -1,6 +1,5 @@
 package org.ywzj.rvp.weapon.core;
 
-import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
@@ -10,7 +9,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
 import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
@@ -42,8 +40,6 @@ import java.util.Set;
  * Shared runtime base for the seven public RVP weapon types.
  */
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     protected int chargeTick;
     private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
@@ -202,10 +198,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         // 服务端 shoot() 已计热一次，回包路径再计热会导致每发双倍（2x）。
         // 仅在连接独立服务器/局域网时由回包计热，驱动客户端 HUD 显示。
         boolean singlePlayer = net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer();
-        LOGGER.info("[RVP][HEAT] onClientFire weapon={} caller={} singlePlayer={}",
-                getData().getWeaponId(),
-                Thread.currentThread().getStackTrace()[2].getMethodName(),
-                singlePlayer);
         if (!singlePlayer) {
             fireController.onShotFired();
         }

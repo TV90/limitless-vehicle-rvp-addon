@@ -1070,7 +1070,8 @@ GPS 滑翔炸弹 + 末端红外：
 | `hitbox_damage_factor` | `Map<String, Float>`：结构模型骨骼名 → 直击该骨骼时的伤害倍率。 |
 | `hitbox_display_name` | `Map<String, String>`：结构模型骨骼名 → 命中调试显示别名。仅影响 RVP 命中 debug、诊断输出等显示文本，不影响实际受击倍率、ERA 判定或伤害结算。 |
 | `core_distance_scale_multiplier` | 控制本体“命中点离核心越远伤害越低”的衰减强度（0 = 完全关闭衰减，按直击伤害计算；1 = 本体原值）。 |
-| `hitbox_era` | 爆炸反应装甲（ERA）配置，见下表。 |
+| `hitbox_era` | 爆炸反应装甲（ERA）配置，见下表。**旧格式**，新配置请改用 `bone_modules`（见下）。 |
+| `bone_modules` | 骨骼多属性模块配置（新格式，替代 `hitbox_era`），见下。一个骨块可叠加多个独立失效的属性模块（如 ERA + 干扰机）。 |
 
 ```json
 "hitbox_damage_factor_default": 1.0,
@@ -1101,6 +1102,43 @@ GPS 滑翔炸弹 + 末端红外：
 
 ERA 以“特殊碰撞箱”思路实现：命中列表按距离排序，已失效的 ERA 碰撞箱跳过，继续检查后方普通碰撞箱。ERA 的 `damage_factor` 与普通 `hitbox_damage_factor` 互斥（ERA 命中时优先使用 ERA 的系数）。
 
+### `bone_modules` 骨骼多属性模块（新格式，替代 `hitbox_era`）
+
+一个骨块可叠加**多个独立属性模块**（ERA、干扰机等），各属性按模块名独立失效，互不影响。旧 `hitbox_era` 对象格式仍兼容读取，会自动映射为 `modules: ["era"]`。
+
+| 字段 | 说明 |
+| --- | --- |
+| `damage_factor` | 命中该骨块时的伤害系数。 |
+| `min_damage` | 触发骨块模块消耗所需的最小基础伤害；低于此值不触发、不消耗（防止机枪清空爆反）。旧字段名 `min_trigger_damage` 仍兼容。 |
+| `modules` | 该骨块挂载的模块类型列表。公开值：`era`（被击毁后不再阻拦后续弹药）、`jammer`（干扰机设备，见下）。同一骨块可写多个，如 `["era", "jammer"]`。 |
+| `jammer` | 可选，干扰机设备配置（见下表）。存在时该骨块挂载一台干扰机。 |
+
+```json
+"bone_modules": {
+  "ERA0": { "damage_factor": 0.35, "min_damage": 12.0, "modules": ["era"] },
+  "ERA1": {
+    "damage_factor": 0.35,
+    "min_damage": 12.0,
+    "modules": ["era", "jammer"],
+    "jammer": { "type": "optical", "fov": 90, "range": 2000, "strength": 1.0,
+                "facing_part": "turret", "facing_yaw": 0.0 }
+  }
+}
+```
+
+#### `bone_modules[].jammer` 干扰机设备
+
+干扰机按**骨块 × 模块**独立失效（`RVP_BoneModuleStateTable`）：只击毁一侧干扰机骨块时，另一侧照常工作；左右干扰锥各自偏转时可实现“部分损失功能”（击毁一侧 → 该侧扇区失去覆盖，总干扰范围变小）。
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `type` | `optical` | 干扰器类型，大小写不敏感。`optical` = 干扰 SACLOS 制导；`electronic` = 电磁干扰机（预留，干扰 ARH/SARH）。未知值回退 `optical`。 |
+| `fov` | 90 | 前方锥形**全角**（度），半角 = fov/2 用于命中判定。 |
+| `range` | 2000 | 检测距离（格/方块）。 |
+| `strength` | 1.0 | 干扰强度倍率，作用于注入的随机错误操纵分量幅度（远大于射手输入）。 |
+| `facing_part` | 无（车体朝向） | 探测方向跟随的部件 id（如 `"turret"`），干扰锥随该部件旋转（取 `WeaponUnit.worldVec()`）；未配置或部件不存在时退回车体朝向。适合干扰机挂在炮塔骨块上的车辆。 |
+| `facing_yaw` | 0.0 | 在 `facing_part`/车体朝向基础上叠加的水平偏置角（度，正值向左）。用于左右分布式干扰机：两侧锥覆盖不同扇区，一侧被击毁后该扇区失去覆盖、总干扰范围变小。 |
+
 ### 客户端模型渲染联动
 
 ERA 触发失效后，JS 脚本可通过 `ctx.getEntity().rvp_isEraActive("ERA0")` 查询状态并隐藏对应骨骼：
@@ -1116,6 +1154,17 @@ function updateBones(context) {
 ```
 
 需要在 `animation_controllers/<vehicle>_controller.json` 的 `graph.base.inputs` 中加入 `{ "type": "script", "function": "updateBones" }`。
+
+**多属性查询（`bone_modules` 新格式）：** 脚本调用点已改为 `context.rvp_isModuleActive(bone, type)`，按「骨块 × 模块类型」独立查询。`type` 取 `era` / `jammer` 等模块名（与 `BoneModuleType` 一致）：
+
+```js
+function updateBones(context) {
+  const pose = createPoseBuilder();
+  if (!context.rvp_isModuleActive("ERA1", "era")) pose.hideBone("$ERA1");      // 爆反被打没
+  if (!context.rvp_isModuleActive("ERA1", "jammer")) pose.hideBone("$ERA1");   // 干扰机被打没
+  return pose;
+}
+```
 
 ---
 

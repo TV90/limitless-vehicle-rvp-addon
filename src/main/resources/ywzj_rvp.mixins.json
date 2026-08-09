@@ -21,6 +21,7 @@
     "RotaryWingAutoLandingGearOverrideMixin",
     "WeaponUnitPojoMixin",
     "WeaponUnitDataMixin",
+    "WeaponUnitOpticalSightPivotMixin",
     "ClientVehicleActionWeaponBayOverrideMixin",
     "AutoLandingGearManualOverrideMixin",
     "VehicleDataManagerMixin",

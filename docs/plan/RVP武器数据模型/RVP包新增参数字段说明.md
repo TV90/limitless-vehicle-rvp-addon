@@ -1284,6 +1284,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `rvp_rf_off_axis_deg` | 雷达（RF）制导离轴限制（度）。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
+| `rvp_optical_sight_pivot` | 观瞄基准枢轴（`[x, y, z]`，**渲染模型骨块 pivot 像素值**，内部 `/16` 转方块单位）。默认观瞄位置 = `结构骨枢轴 + opticalSightOffset`；配置本字段后改为 `渲染骨枢轴/16 + opticalSightOffset`，用于“观瞄点相对某个渲染骨骼（如机枪观瞄镜）而非武器站结构骨枢轴”的场景（T84BM 机枪观瞄即以 `guanmiao` 骨骼为基准）。未配置时为 `null`（不生效）。 | `null` |
 
 ### 3.2 雷达部件扩展
 

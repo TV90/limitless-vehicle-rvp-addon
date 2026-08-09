@@ -96,7 +96,7 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
-                    RVP_VehicleHitboxFactorManager.INSTANCE.tryTriggerEra(targetVehicle, hitboxRes, hitDamageBeforeHitbox);
+                    RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, hitDamageBeforeHitbox);
                 }
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());

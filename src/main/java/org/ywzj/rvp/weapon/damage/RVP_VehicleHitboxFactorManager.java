@@ -24,9 +24,11 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.network.RVP_Network;
-import org.ywzj.rvp.network.S2CVehicleEraState;
+import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
-import org.ywzj.rvp.vehicle.RVP_EraStateTable;
+import org.ywzj.rvp.vehicle.BoneJammerConfig;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -124,7 +126,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (cfg == null || !cfg.isEnabled()) {
             return HitboxDamageResult.disabled();
         }
-        sanitizeEraState(vehicle, cfg);
+        sanitizeModuleState(vehicle, cfg);
         ResourceLocation structureModelId = cfg.structureModel;
         if (structureModelId == null) {
             return HitboxDamageResult.defaulted(cfg.defaultFactor, null, 0, Double.NaN);
@@ -137,34 +139,90 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     public boolean isEraActive(AbstractVehicle vehicle, @Nullable String boneName) {
-        return RVP_EraStateTable.isEraActive(vehicle.getUUID(), boneName);
+        return RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), boneName, BoneModuleType.ERA);
     }
 
-    public boolean tryTriggerEra(AbstractVehicle vehicle, @Nullable HitboxDamageResult result, float triggerDamage) {
-        if (vehicle == null || result == null || !result.era()) {
+    /** 骨块的某模块是否已失效（供候选穿透判定与叠加骨块多属性查询）。 */
+    public boolean isModuleDestroyed(UUID vehicleId, @Nullable String boneName, BoneModuleType type) {
+        return RVP_BoneModuleStateTable.isModuleDestroyed(vehicleId, boneName, type);
+    }
+
+    /**
+     * 返回车辆所有声明了干扰机设备（{@code jammer} 子对象）的骨块配置（骨块名 → 配置）。
+     * 设备是否存活（对应 JAMMER 骨块被击毁）由调用方通过
+     * {@link RVP_BoneModuleStateTable#isModuleActive} 判定；未配置干扰机的车辆返回 null。
+     */
+    public @Nullable Map<String, BoneJammerConfig> resolveJammerDevices(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneJammerConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneJammerConfig jammer = entry.getValue() == null ? null : entry.getValue().jammer();
+            if (jammer != null) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), jammer);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 直击消耗骨块上全部"可被弹药击毁"的模块（机制一：OBB 单发命中）。
+     *
+     * <p>泛化了原 {@code tryTriggerEra}：命中骨块若挂多个模块（如 ERA + JAMMER 叠加），
+     * 触发阈值判定通过后一次性全部置失效，各模块独立写状态、独立同步。
+     * 仅当其中包含 ERA 模块时播放爆炸粒子/音效（ERA 专属观感）。</p>
+     *
+     * @param vehicle        目标载具
+     * @param result         命中判定结果（必须携带骨块模块信息）
+     * @param triggerDamage  触发判定用伤害值（低于 {@code minTriggerDamage} 不消耗）
+     * @return 是否消耗了至少一个模块
+     */
+    public boolean tryDestroyBoneModules(AbstractVehicle vehicle, @Nullable HitboxDamageResult result, float triggerDamage) {
+        if (vehicle == null || result == null || result.modules().isEmpty()) {
             return false;
         }
         if (!(vehicle.level() instanceof ServerLevel serverLevel)) {
             return false;
         }
         String boneName = result.hitBoneName();
-        if (boneName == null || !result.shouldTriggerEra(triggerDamage)) {
+        if (boneName == null || !result.shouldTriggerModules(triggerDamage)) {
             return false;
         }
-        if (!RVP_EraStateTable.consumeEra(vehicle.getUUID(), boneName)) {
+        UUID vehicleId = vehicle.getUUID();
+        boolean destroyedEra = false;
+        boolean anyDestroyed = false;
+        for (BoneModuleType type : result.modules()) {
+            if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
+                anyDestroyed = true;
+                if (type == BoneModuleType.ERA) {
+                    destroyedEra = true;
+                }
+            }
+        }
+        if (!anyDestroyed) {
             return false;
         }
-        syncEraState(vehicle);
-        Vec3 hitPoint = result.hitPoint() != null ? result.hitPoint() : vehicle.getBoundingBox().getCenter();
-        float explosionScale = result.eraExplosion() > 0f ? result.eraExplosion() : 1f;
-        serverLevel.sendParticles(ParticleTypes.EXPLOSION, hitPoint.x, hitPoint.y, hitPoint.z,
-                1, 0.02, 0.02, 0.02, 0.0);
-        serverLevel.sendParticles(ParticleTypes.SMOKE, hitPoint.x, hitPoint.y, hitPoint.z,
-                Math.max(6, Math.round(8f * explosionScale)),
-                0.18 * explosionScale, 0.12 * explosionScale, 0.18 * explosionScale, 0.01);
-        serverLevel.playSound(null, hitPoint.x, hitPoint.y, hitPoint.z,
-                SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
-                Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
+        syncBoneModuleState(vehicle);
+        if (destroyedEra) {
+            Vec3 hitPoint = result.hitPoint() != null ? result.hitPoint() : vehicle.getBoundingBox().getCenter();
+            float explosionScale = result.explosion() > 0f ? result.explosion() : 1f;
+            serverLevel.sendParticles(ParticleTypes.EXPLOSION, hitPoint.x, hitPoint.y, hitPoint.z,
+                    1, 0.02, 0.02, 0.02, 0.0);
+            serverLevel.sendParticles(ParticleTypes.SMOKE, hitPoint.x, hitPoint.y, hitPoint.z,
+                    Math.max(6, Math.round(8f * explosionScale)),
+                    0.18 * explosionScale, 0.12 * explosionScale, 0.18 * explosionScale, 0.01);
+            serverLevel.playSound(null, hitPoint.x, hitPoint.y, hitPoint.z,
+                    SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
+                    Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
+        }
         return true;
     }
 
@@ -189,8 +247,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         lastDebugAtMsByPlayer.put(id, now);
 
         String bone = resolveHitboxDisplayName(vehicle, result.hitBoneName());
-        if (result.era()) {
-            bone += " ERA";
+        if (!result.modules().isEmpty()) {
+            bone += " " + result.modules();
         }
         String coreInfo = "";
         if (Float.isFinite(coreFalloffScale) && Float.isFinite(coreFalloffMultiplier) && coreFalloffMultiplier != 1f) {
@@ -220,17 +278,17 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return cfg.aliasByBoneName.getOrDefault(boneName, boneName);
     }
 
-    private void sanitizeEraState(AbstractVehicle vehicle, VehicleHitboxConfig cfg) {
-        if (RVP_EraStateTable.retainEraBones(vehicle.getUUID(), cfg.eraByBoneName.keySet())
+    private void sanitizeModuleState(AbstractVehicle vehicle, VehicleHitboxConfig cfg) {
+        if (RVP_BoneModuleStateTable.retainValidBones(vehicle.getUUID(), cfg.moduleByBoneName.keySet())
                 && vehicle.level() instanceof ServerLevel) {
-            syncEraState(vehicle);
+            syncBoneModuleState(vehicle);
         }
     }
 
-    private void syncEraState(AbstractVehicle vehicle) {
+    private void syncBoneModuleState(AbstractVehicle vehicle) {
         RVP_Network.CHANNEL.send(
                 PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> vehicle),
-                S2CVehicleEraState.create(vehicle, RVP_EraStateTable.getInactiveEraBones(vehicle.getUUID()))
+                S2CBoneModuleState.create(vehicle, RVP_BoneModuleStateTable.getInactiveModules(vehicle.getUUID()))
         );
     }
 
@@ -239,14 +297,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * 按爆炸半径查阈值表，百分比破坏载具的 ERA。
+     * 按爆炸半径查阈值表，百分比破坏载具骨块上的"参与爆炸破坏"的模块（默认仅 ERA；
+     * 叠加骨块如 ERA+JAMMER 只破坏 ERA，保留 JAMMER 功能）。
      *
      * @param vehicle          目标载具
      * @param explosionRadius  爆炸配置半径
      * @param hitPos           直击命中位（非直击传 null）
      * @param isDirectHit      true = 直击（有至少1块保底），false = 附近爆炸（无保底/距离衰减）
      */
-    public static void destroyEraByExplosionRadius(
+    public static void destroyModulesByExplosionRadius(
             AbstractVehicle vehicle,
             float explosionRadius,
             @Nullable Vec3 hitPos,
@@ -256,14 +315,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return;
         }
         VehicleHitboxConfig cfg = INSTANCE.configs.get(vehicle.getVehicleId());
-        if (cfg == null || cfg.eraByBoneName == null || cfg.eraByBoneName.isEmpty()) {
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
             return;
         }
         UUID vehicleId = vehicle.getUUID();
-        // 过滤活跃的 ERA bone
+        // 收集"参与爆炸破坏"的候选骨块（骨块 → 其中参与爆炸破坏且仍激活的模块）
         List<String> activeBones = new ArrayList<>();
-        for (String boneName : cfg.eraByBoneName.keySet()) {
-            if (RVP_EraStateTable.isEraActive(vehicleId, boneName)) {
+        for (String boneName : cfg.moduleByBoneName.keySet()) {
+            boolean anyBlastActive = false;
+            for (BoneModuleType type : cfg.moduleByBoneName.get(boneName).modules()) {
+                if (type.participatesInBlastDestruction()
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, type)) {
+                    anyBlastActive = true;
+                    break;
+                }
+            }
+            if (anyBlastActive) {
                 activeBones.add(boneName);
             }
         }
@@ -292,15 +359,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         int destroyed = 0;
         for (int i = 0; i < Math.min(destroyCount, sorted.size()); i++) {
             String boneName = sorted.get(i);
-            if (RVP_EraStateTable.consumeEra(vehicleId, boneName)) {
-                EraConfig eCfg = cfg.eraByBoneName.get(boneName);
+            BoneModuleConfig eCfg = cfg.moduleByBoneName.get(boneName);
+            boolean destroyedAny = false;
+            for (BoneModuleType type : cfg.moduleByBoneName.get(boneName).modules()) {
+                if (type.participatesInBlastDestruction()
+                        && RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
+                    destroyedAny = true;
+                }
+            }
+            if (destroyedAny) {
                 float explosionScale = (eCfg != null && eCfg.explosion() > 0f) ? eCfg.explosion() : 1f;
                 spawnEraEffect(serverLevel, vehicle, boneName, explosionScale);
                 destroyed++;
             }
         }
         if (destroyed > 0) {
-            INSTANCE.syncEraState(vehicle);
+            INSTANCE.syncBoneModuleState(vehicle);
         }
     }
 
@@ -398,7 +472,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
         Set<String> allConfigBones = new LinkedHashSet<>();
         allConfigBones.addAll(cfg.factorByBoneName.keySet());
-        allConfigBones.addAll(cfg.eraByBoneName.keySet());
+        allConfigBones.addAll(cfg.moduleByBoneName.keySet());
         for (String boneName : allConfigBones) {
             Optional<PartUnit<?>> partUnitOptional = vehicle.getPartUnit(boneName);
             int partUnitObbCount = partUnitOptional.map(partUnit -> partUnit.getOBBs().size()).orElse(0);
@@ -477,24 +551,49 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             int missingConfigBones,
             double hitDistance,
             @Nullable Vec3 hitPoint,
-            boolean era,
-            float eraMinTriggerDamage,
-            float eraExplosion
+            Set<BoneModuleType> modules,
+            Set<BoneModuleType> destroyedModules,
+            float minTriggerDamage,
+            float explosion
     ) {
         public static HitboxDamageResult disabled() {
             return new HitboxDamageResult(false, 1f, 1f, null, null, 0, Double.NaN,
-                    null, false, Float.POSITIVE_INFINITY, 0f);
+                    null, Set.of(), Set.of(), Float.POSITIVE_INFINITY, 0f);
         }
 
         public static HitboxDamageResult defaulted(float defaultFactor, @Nullable ResourceLocation structureModel,
                                                    int missingBones, double hitDistance) {
             float def = Float.isFinite(defaultFactor) ? defaultFactor : 1f;
             return new HitboxDamageResult(true, Math.max(0f, def), def, null, structureModel,
-                    missingBones, hitDistance, null, false, Float.POSITIVE_INFINITY, 0f);
+                    missingBones, hitDistance, null, Set.of(), Set.of(), Float.POSITIVE_INFINITY, 0f);
         }
 
-        public boolean shouldTriggerEra(float triggerDamage) {
-            return era && Float.isFinite(triggerDamage) && triggerDamage > eraMinTriggerDamage;
+        /** 命中骨块是否挂有模块（ERA/TRACK/JAMMER 等）。 */
+        public boolean hasModules() {
+            return !modules.isEmpty();
+        }
+
+        /** 命中骨块是否仍存在"可被弹药击毁"的激活模块。 */
+        public boolean hasActiveModules() {
+            return modules.size() > destroyedModules.size();
+        }
+
+        /**
+         * 骨块是否已失去对后续弹药的阻挡（ERA 模块失效 → 穿透）。
+         * 由 resolve 候选循环用 passThrough() 判定，其余模块失效不穿透。
+         */
+        public boolean passThrough() {
+            return destroyedModules.contains(BoneModuleType.ERA);
+        }
+
+        /** 兼容旧语义：该骨块是否包含 ERA 模块。 */
+        public boolean era() {
+            return modules.contains(BoneModuleType.ERA);
+        }
+
+        /** 触发阈值判定：有可击毁的激活模块且伤害超过阈值。 */
+        public boolean shouldTriggerModules(float triggerDamage) {
+            return hasActiveModules() && Float.isFinite(triggerDamage) && triggerDamage > minTriggerDamage;
         }
     }
 
@@ -502,7 +601,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable ResourceLocation structureModel,
             float defaultFactor,
             Map<String, Float> factorByBoneName,
-            Map<String, EraConfig> eraByBoneName,
+            Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
             float coreDistanceScaleMultiplier
     ) {
@@ -510,12 +609,12 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return defaultFactor != 1f
                     || (factorByBoneName != null && !factorByBoneName.isEmpty())
                     || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
-                    || (eraByBoneName != null && !eraByBoneName.isEmpty());
+                    || (moduleByBoneName != null && !moduleByBoneName.isEmpty());
         }
 
         HitboxDamageResult resolve(BedrockModel model, AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
             if ((factorByBoneName == null || factorByBoneName.isEmpty())
-                    && (eraByBoneName == null || eraByBoneName.isEmpty())) {
+                    && (moduleByBoneName == null || moduleByBoneName.isEmpty())) {
                 return HitboxDamageResult.defaulted(defaultFactor, structureModel, 0, Double.NaN);
             }
             if (!RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(vehicle).isEmpty()
@@ -532,12 +631,12 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             List<HitCandidate> candidates = new ArrayList<>();
             Set<String> allConfigBones = new LinkedHashSet<>();
             allConfigBones.addAll(factorByBoneName.keySet());
-            allConfigBones.addAll(eraByBoneName.keySet());
+            allConfigBones.addAll(moduleByBoneName.keySet());
 
             for (String boneName : allConfigBones) {
-                EraConfig eraConfig = eraByBoneName.get(boneName);
-                float factor = eraConfig != null
-                        ? eraConfig.damageFactor()
+                BoneModuleConfig moduleConfig = moduleByBoneName.get(boneName);
+                float factor = moduleConfig != null
+                        ? moduleConfig.damageFactor()
                         : factorByBoneName.getOrDefault(boneName, defaultFactor);
                 List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
                 if (resolvedObbs.isEmpty()) {
@@ -546,8 +645,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     }
                     continue;
                 }
-                boolean era = eraConfig != null;
-                boolean eraActive = !era || INSTANCE.isEraActive(vehicle, boneName);
                 for (ResolvedObb resolvedObb : resolvedObbs) {
                     Vector3f hit = resolvedObb.obb().clip(from, to).orElse(null);
                     if (hit == null) {
@@ -560,9 +657,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                             hitPoint,
                             boneName,
                             factor,
-                            era,
-                            eraActive,
-                            eraConfig
+                            moduleConfig,
+                            vehicle.getUUID()
                     ));
                 }
             }
@@ -572,12 +668,14 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             candidates.sort(Comparator.comparingDouble(HitCandidate::distance));
             for (HitCandidate candidate : candidates) {
-                if (candidate.era() && !candidate.eraActive()) {
+                if (candidate.passThrough()) {
+                    // ERA 模块失效 → 该骨块不再阻拦弹药（穿透）；其余模块失效不穿透
                     continue;
                 }
                 float factor = Float.isFinite(candidate.factor()) ? candidate.factor() : defaultFactor;
-                if (candidate.era()) {
-                    EraConfig eraConfig = candidate.eraConfig();
+                BoneModuleConfig moduleConfig = candidate.moduleConfig();
+                if (moduleConfig != null && moduleConfig.hasModules()) {
+                    Set<BoneModuleType> destroyed = candidate.destroyedModules();
                     return new HitboxDamageResult(
                             true,
                             Math.max(0f, factor),
@@ -587,9 +685,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                             missingBones,
                             candidate.distance(),
                             candidate.hitPoint(),
-                            true,
-                            eraConfig == null ? Float.POSITIVE_INFINITY : eraConfig.minTriggerDamage(),
-                            eraConfig == null ? 0f : eraConfig.explosion()
+                            moduleConfig.modules(),
+                            destroyed,
+                            moduleConfig.minTriggerDamage(),
+                            moduleConfig.explosion()
                     );
                 }
                 return new HitboxDamageResult(
@@ -601,7 +700,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                         missingBones,
                         candidate.distance(),
                         candidate.hitPoint(),
-                        false,
+                        Set.of(),
+                        Set.of(),
                         Float.POSITIVE_INFINITY,
                         0f
                 );
@@ -613,11 +713,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             ResourceLocation structure = parseId(GsonHelper.getAsString(obj, "structure_model", null));
             float def = GsonHelper.getAsFloat(obj, "hitbox_damage_factor_default", 1f);
             Map<String, Float> map = parseFactorMap(obj.get("hitbox_damage_factor"));
-            Map<String, EraConfig> eraMap = parseEraMap(obj.get("hitbox_era"));
+            // 新配置 bone_modules 优先；旧配置 hitbox_era 兼容为仅 ERA 模块，两者按骨块合并
+            Map<String, BoneModuleConfig> moduleMap = parseBoneModuleMap(obj.get("bone_modules"));
+            Map<String, BoneModuleConfig> eraCompatMap = parseEraCompatMap(obj.get("hitbox_era"));
+            if (eraCompatMap != null) {
+                if (moduleMap == null) {
+                    moduleMap = new HashMap<>();
+                }
+                moduleMap.putAll(eraCompatMap);
+            }
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             if ((map == null || map.isEmpty())
-                    && (eraMap == null || eraMap.isEmpty())
+                    && (moduleMap == null || moduleMap.isEmpty())
                     && (aliasMap == null || aliasMap.isEmpty())
                     && def == 1f
                     && coreM == 1f) {
@@ -627,7 +735,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     structure,
                     def,
                     map == null ? Map.of() : Map.copyOf(map),
-                    eraMap == null ? Map.of() : Map.copyOf(eraMap),
+                    moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
                     coreM
             );
@@ -689,23 +797,44 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return map;
         }
 
-        private static @Nullable Map<String, EraConfig> parseEraMap(@Nullable JsonElement element) {
+        /** 解析新配置 {@code bone_modules}：每个骨块可挂多个模块（era/track/jammer 叠加）。 */
+        private static @Nullable Map<String, BoneModuleConfig> parseBoneModuleMap(@Nullable JsonElement element) {
             if (element == null || !element.isJsonObject()) {
                 return null;
             }
             JsonObject obj = element.getAsJsonObject();
-            Map<String, EraConfig> map = new HashMap<>();
+            Map<String, BoneModuleConfig> map = new HashMap<>();
             for (var entry : obj.entrySet()) {
                 String key = normalizeBone(entry.getKey());
                 if (key == null) {
                     continue;
                 }
-                EraConfig config = EraConfig.parse(entry.getValue());
+                BoneModuleConfig config = BoneModuleConfig.parse(entry.getValue());
+                if (config != null && config.hasModules()) {
+                    map.put(key, config);
+                }
+            }
+            return map.isEmpty() ? null : map;
+        }
+
+        /** 兼容旧配置 {@code hitbox_era}：映射为仅 ERA 模块的骨块。 */
+        private static @Nullable Map<String, BoneModuleConfig> parseEraCompatMap(@Nullable JsonElement element) {
+            if (element == null || !element.isJsonObject()) {
+                return null;
+            }
+            JsonObject obj = element.getAsJsonObject();
+            Map<String, BoneModuleConfig> map = new HashMap<>();
+            for (var entry : obj.entrySet()) {
+                String key = normalizeBone(entry.getKey());
+                if (key == null) {
+                    continue;
+                }
+                BoneModuleConfig config = BoneModuleConfig.parseEraCompat(entry.getValue());
                 if (config != null) {
                     map.put(key, config);
                 }
             }
-            return map;
+            return map.isEmpty() ? null : map;
         }
 
         private static @Nullable String normalizeBone(@Nullable String raw) {
@@ -742,10 +871,125 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Vec3 hitPoint,
             String boneName,
             float factor,
-            boolean era,
-            boolean eraActive,
-            @Nullable EraConfig eraConfig
+            @Nullable BoneModuleConfig moduleConfig,
+            UUID vehicleId
     ) {
+        /** 骨块是否已失去对后续弹药的阻挡（ERA 模块失效 → 穿透）。 */
+        boolean passThrough() {
+            return moduleConfig != null
+                    && moduleConfig.modules().contains(BoneModuleType.ERA)
+                    && INSTANCE.isModuleDestroyed(vehicleId, boneName, BoneModuleType.ERA);
+        }
+
+        /** 该骨块已失效的模块集合（用于结果携带，供 tryDestroyBoneModules 判定剩余激活模块）。 */
+        Set<BoneModuleType> destroyedModules() {
+            if (moduleConfig == null) {
+                return Set.of();
+            }
+            Set<BoneModuleType> destroyed = java.util.EnumSet.noneOf(BoneModuleType.class);
+            for (BoneModuleType type : moduleConfig.modules()) {
+                if (INSTANCE.isModuleDestroyed(vehicleId, boneName, type)) {
+                    destroyed.add(type);
+                }
+            }
+            return destroyed;
+        }
+    }
+
+    /**
+     * 单块骨块的模块配置：伤害倍率 + 触发阈值 + ERA 特效 + 模块集合。
+     * 一个骨块可挂多个模块（如 {@code ["era","jammer"]} 叠加），各模块独立失效。
+     */
+    private record BoneModuleConfig(
+            float damageFactor,
+            float minTriggerDamage,
+            float explosion,
+            Set<BoneModuleType> modules,
+            @Nullable BoneJammerConfig jammer
+    ) {
+        boolean hasModules() {
+            return modules != null && !modules.isEmpty();
+        }
+
+        /** 新配置 {@code bone_modules} 条目：显式 modules 数组，缺省视为 [ERA]。 */
+        static @Nullable BoneModuleConfig parse(@Nullable JsonElement element) {
+            if (element == null || !element.isJsonObject()) {
+                return null;
+            }
+            JsonObject obj = element.getAsJsonObject();
+            float damageFactor = GsonHelper.getAsFloat(obj, "damage_factor", 1f);
+            float minTriggerDamage = parseMinTriggerDamage(obj);
+            float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
+            Set<BoneModuleType> modules = parseModules(obj.get("modules"));
+            if (modules == null || modules.isEmpty()) {
+                modules = java.util.EnumSet.noneOf(BoneModuleType.class);
+                modules.add(BoneModuleType.ERA);
+            }
+            if (!Float.isFinite(minTriggerDamage) || minTriggerDamage < 0f) {
+                minTriggerDamage = Float.POSITIVE_INFINITY;
+            }
+            if (!Float.isFinite(explosion) || explosion < 0f) {
+                explosion = 0f;
+            }
+            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules,
+                    BoneJammerConfig.parse(obj.get("jammer")));
+        }
+
+        /** 兼容旧配置 {@code hitbox_era} 条目：始终仅 ERA 模块。 */
+        static @Nullable BoneModuleConfig parseEraCompat(@Nullable JsonElement element) {
+            if (element == null) {
+                return null;
+            }
+            if (element.isJsonPrimitive()) {
+                Optional<Float> factor = VehicleHitboxConfig.tryFloat(element);
+                return factor.map(value -> {
+                    Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
+                    modules.add(BoneModuleType.ERA);
+                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null);
+                }).orElse(null);
+            }
+            if (!element.isJsonObject()) {
+                return null;
+            }
+            JsonObject obj = element.getAsJsonObject();
+            float damageFactor = GsonHelper.getAsFloat(obj, "damage_factor", 1f);
+            float minTriggerDamage = parseMinTriggerDamage(obj);
+            float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
+            if (!Float.isFinite(minTriggerDamage) || minTriggerDamage < 0f) {
+                minTriggerDamage = Float.POSITIVE_INFINITY;
+            }
+            if (!Float.isFinite(explosion) || explosion < 0f) {
+                explosion = 0f;
+            }
+            Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
+            modules.add(BoneModuleType.ERA);
+            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null);
+        }
+
+        /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */
+        private static float parseMinTriggerDamage(JsonObject obj) {
+            if (obj.has("min_damage")) {
+                return GsonHelper.getAsFloat(obj, "min_damage", Float.POSITIVE_INFINITY);
+            }
+            return GsonHelper.getAsFloat(obj, "min_trigger_damage", Float.POSITIVE_INFINITY);
+        }
+
+        private static @Nullable Set<BoneModuleType> parseModules(@Nullable JsonElement element) {
+            if (element == null || !element.isJsonArray()) {
+                return null;
+            }
+            Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
+            for (JsonElement item : element.getAsJsonArray()) {
+                if (item == null || !item.isJsonPrimitive()) {
+                    continue;
+                }
+                BoneModuleType type = BoneModuleType.byName(item.getAsString());
+                if (type != null) {
+                    modules.add(type);
+                }
+            }
+            return modules;
+        }
     }
 
     private static final class ResolvedObb {
@@ -763,32 +1007,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
         private String source() {
             return source;
-        }
-    }
-
-    private record EraConfig(float damageFactor, float minTriggerDamage, float explosion) {
-        static @Nullable EraConfig parse(@Nullable JsonElement element) {
-            if (element == null) {
-                return null;
-            }
-            if (element.isJsonPrimitive()) {
-                Optional<Float> factor = VehicleHitboxConfig.tryFloat(element);
-                return factor.map(value -> new EraConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f)).orElse(null);
-            }
-            if (!element.isJsonObject()) {
-                return null;
-            }
-            JsonObject obj = element.getAsJsonObject();
-            float damageFactor = GsonHelper.getAsFloat(obj, "damage_factor", 1f);
-            float minTriggerDamage = GsonHelper.getAsFloat(obj, "min_trigger_damage", Float.POSITIVE_INFINITY);
-            float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
-            if (!Float.isFinite(minTriggerDamage) || minTriggerDamage < 0f) {
-                minTriggerDamage = Float.POSITIVE_INFINITY;
-            }
-            if (!Float.isFinite(explosion) || explosion < 0f) {
-                explosion = 0f;
-            }
-            return new EraConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion);
         }
     }
 }

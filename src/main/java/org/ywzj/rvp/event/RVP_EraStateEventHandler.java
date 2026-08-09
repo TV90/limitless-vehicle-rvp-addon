@@ -6,17 +6,18 @@ import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_EraStateSavedData;
-import org.ywzj.rvp.vehicle.RVP_EraStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * ERA 状态侧表与独立存档的桥接：
+ * 骨骼模块状态侧表与独立存档的桥接：
  * <ul>
- *   <li>载具加入世界 → 从 {@link RVP_EraStateSavedData} 恢复失效骨块集合进内存侧表；</li>
+ *   <li>载具加入世界 → 从 {@link RVP_EraStateSavedData} 恢复失效模块集合进内存侧表；</li>
  *   <li>载具离开世界 → 把内存侧表写回存档并清理内存条目。</li>
  * </ul>
  */
@@ -34,9 +35,10 @@ public class RVP_EraStateEventHandler {
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
             return;
         }
-        List<String> saved = RVP_EraStateSavedData.get(serverLevel).readEntry(vehicle.getUUID());
+        Map<String, Set<BoneModuleType>> saved =
+                RVP_EraStateSavedData.get(serverLevel).readEntry(vehicle.getUUID());
         if (saved != null && !saved.isEmpty()) {
-            RVP_EraStateTable.setInactiveEraBones(vehicle.getUUID(), saved);
+            RVP_BoneModuleStateTable.setInactiveModules(vehicle.getUUID(), saved);
         }
     }
 
@@ -51,10 +53,11 @@ public class RVP_EraStateEventHandler {
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) {
             return;
         }
-        Set<String> bones = RVP_EraStateTable.getInactiveEraBones(vehicle.getUUID());
-        if (!bones.isEmpty()) {
-            RVP_EraStateSavedData.get(serverLevel).writeEntry(vehicle.getUUID(), bones);
+        Map<String, Set<BoneModuleType>> modules =
+                RVP_BoneModuleStateTable.getInactiveModules(vehicle.getUUID());
+        if (!modules.isEmpty()) {
+            RVP_EraStateSavedData.get(serverLevel).writeEntry(vehicle.getUUID(), modules);
         }
-        RVP_EraStateTable.onVehicleLeave(vehicle.getUUID());
+        RVP_BoneModuleStateTable.onVehicleLeave(vehicle.getUUID());
     }
 }

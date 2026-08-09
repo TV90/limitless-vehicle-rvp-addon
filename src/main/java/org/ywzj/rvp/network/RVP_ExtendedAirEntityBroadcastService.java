@@ -39,6 +39,8 @@ import java.util.HashSet;
 public final class RVP_ExtendedAirEntityBroadcastService {
 
     private static final int SYNC_INTERVAL_TICK = 5;
+    /** 是否广播载具（飞机）超视距渲染数据；当前需求为关闭车辆、保留弹药超视距渲染。 */
+    private static final boolean ENABLE_AIR_VEHICLE_RENDER = false;
     private static final double BASE_RANGE = 32.0D * 16.0D;
     private static final double UNCONDITIONAL_RANGE = 64.0D * 16.0D;
     private static final double EXTENDED_RANGE = 256.0D * 16.0D;
@@ -140,7 +142,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
     }
 
     private static boolean isSupportedType(Entity entity) {
-        return entity instanceof AbstractVehicle
+        return (ENABLE_AIR_VEHICLE_RENDER && entity instanceof AbstractVehicle)
                 || entity instanceof MissileEntity
                 || isSupplementalType(entity);
     }

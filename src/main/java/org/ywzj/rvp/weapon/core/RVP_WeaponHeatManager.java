@@ -1,8 +1,5 @@
 package org.ywzj.rvp.weapon.core;
 
-import com.mojang.logging.LogUtils;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
 import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfigCache;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
@@ -14,7 +11,6 @@ import java.util.WeakHashMap;
 
 public final class RVP_WeaponHeatManager {
 
-    private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<AbstractVehicle, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, HeatState>> VEHICLE_HEAT = new WeakHashMap<>();
 
     private RVP_WeaponHeatManager() {}
@@ -48,15 +44,6 @@ public final class RVP_WeaponHeatManager {
         if (state.currentHeat >= spec.maxHeatCount()) {
             state.currentHeat += spec.overheatExtraHeat();
         }
-        // [RVP][HEAT] 临时诊断：一发命中确认客户端/服务端各计热几次及基数
-        StackTraceElement caller = Thread.currentThread().getStackTrace()[3];
-        LOGGER.info("[RVP][HEAT] onShotFired weapon={} side={} +{} -> {}/{} caller={}.{} tick={} vehId={}",
-                weapon.getData().getWeaponId(),
-                weapon.getVehicle().level().isClientSide() ? "CLIENT" : "SERVER",
-                spec.heatCount(), state.currentHeat, spec.maxHeatCount(),
-                caller.getClassName(), caller.getMethodName(),
-                weapon.getVehicle().tickCount,
-                System.identityHashCode(weapon.getVehicle()));
     }
 
     public static int currentHeat(RVP_WeaponBase weapon, HeatState weaponState) {
@@ -65,8 +52,9 @@ public final class RVP_WeaponHeatManager {
             return 0;
         }
         HeatState state = spec.state();
-        // 只读：冷却仅由武器 tick（每游戏 tick 一次）驱动，避免 HUD 每帧读取触发 tickState
-        // 导致 lastTick 被高频刷新、elapsed 被放大（冷却速度异常加快）。
+        // 读取时按车辆 tickCount 推进冷却：恒定速率下同一游戏 tick 内多次读取 elapsed=0，
+        // 不会加速冷却。保证客户端 HUD 在没有射击事件驱动时也能实时反映冷却进度。
+        tickState(state, weapon.getVehicle().tickCount);
         return Math.max(state.currentHeat, 0);
     }
 
@@ -115,13 +103,7 @@ public final class RVP_WeaponHeatManager {
         state.lastTick = tickCount;
         if (elapsed > 0) {
             // 恒定冷却速率：每 tick 固定减 1，避免旧算法（cooldownSpeed 累积加速）导致越冷越快。
-            int before = state.currentHeat;
             state.currentHeat = Math.max(0, state.currentHeat - elapsed);
-            if (elapsed > 1) {
-                // [RVP][HEAT] 临时诊断：elapsed>1 表示本次冷却跨了多个游戏 tick，检查 tickCount 是否跳跃
-                LOGGER.info("[RVP][HEAT] tickState elapsed={} tick={} heat={}->{}",
-                        elapsed, tickCount, before, state.currentHeat);
-            }
         }
     }
 
