@@ -317,6 +317,17 @@ public final class RVP_WeaponFireController {
 
     public void onShotFired() {
         recordHeatForShot();
+        resetStateAfterShot();
+    }
+
+    /**
+     * 仅重置模式射击后状态，不记录热量。
+     *
+     * <p>客户端多弹种槽（{@code VehicleMultiWeapons}）发包成功后调用本方法：热量统一由
+     * 服务器回包（{@code ServerVehicleFire} → {@code VehicleFireEvent.Post} → {@code onClientFire}）
+     * 记录，避免单发在客户端被计热两次（发包即时计热 + 回包计热）导致过热过快。</p>
+     */
+    public void resetStateAfterShot() {
         switch (mode()) {
             case CHARGE -> weapon.setChargeTick(0);
             case RAILGUN -> {

@@ -10,7 +10,6 @@ import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.RVP_Network;
@@ -63,6 +62,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;
         }
@@ -77,7 +77,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return false;
         }
         getFireController().primeServerShot();
-        if (!canShootOnServer()) {
+        if (!canShootOnServer(shooter)) {
             return false;
         }
         if (!consumeAmmo(aimContexts)) {
@@ -104,7 +104,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return false;
         }
         controller.primeServerShot();
-        if (!canShootOnServer()) {
+        if (!canShootOnServer(shooter)) {
             return false;
         }
         if (!consumeAmmo(aimContexts)) {
@@ -140,6 +140,12 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         dispatchShots(burstVolleyAimContexts, burstVolleyShooter, consumeChargeScale());
     }
 
+    /**
+     * Ahead 引信：锁定目标仅是装订空爆引信（增强空爆弹幕效果），并非发射前提。
+     * 未锁定/未装订时弹丸照常发射，像普通机炮一样直射（命中目标造成直击伤害），
+     * 装订距离由 {@link RVP_AheadProgrammer#programForShot} 在 {@code dispatchShots} 内解算存储，
+     * 弹丸生成时经 {@code bindProgrammableAirburstRange} 读取后于飞行中空爆释放弹幕。
+     */
     private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
         RVP_WeaponData data = getData();
         WeaponUnit launchUnit = getWeaponUnit();
@@ -149,7 +155,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         Entity lock = null;
         if (data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
-            lock = rootUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+            lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
                     ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                     : rootUnit.getLockedEntity();
         }
@@ -157,10 +163,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
         Vec3 armPreselectPos = null;
-        if (data.isAntiRadiationMissile() && rootUnit instanceof WeaponUnitArmExt armExt) {
-            armPreselectVehicleId = armExt.ywzj_rvp$getArmPreselectedVehicleId();
-            armPreselectRadarIndex = armExt.ywzj_rvp$getArmPreselectedRadarIndex();
-            armPreselectPos = armExt.ywzj_rvp$getArmPreselectedPos();
+        if (data.isAntiRadiationMissile() && rootUnit != null) {
+            armPreselectVehicleId = RVP_WeaponLockStateTable.getArmPreselectedVehicleId(rootUnit);
+            armPreselectRadarIndex = RVP_WeaponLockStateTable.getArmPreselectedRadarIndex(rootUnit);
+            armPreselectPos = RVP_WeaponLockStateTable.getArmPreselectedPos(rootUnit);
         }
 
         for (AimContext aim : aimContexts) {

@@ -3,7 +3,7 @@ package org.ywzj.rvp.network;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -28,9 +28,9 @@ public class C2SClearExternalRadarLock {
                 return;
             }
             WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-            if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-                ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-                ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+            if (root != null) {
+                RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+                RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             }
             RVP_RadarRoleHelper.clearAllRadarLocks(root);
             root.setLockedEntity(null);

@@ -15,9 +15,8 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
@@ -92,24 +91,24 @@ public final class RVP_ExternalRadarSyncService {
             return;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitExternalRadarLockExt ext)
+        if (root == null
                 || root.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
             clearRelayLock(relayVehicle);
             return;
         }
 
-        int requestedId = ext.ywzj_rvp$getExternalRadarRequestedEntityId();
+        int requestedId = RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(root);
         msg.requestedEntityId = requestedId;
         if (requestedId == Integer.MIN_VALUE) {
-            ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+            RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             clearRelayLock(relayVehicle);
             return;
         }
 
         Entity target = launcher.level().getEntity(requestedId);
         if (target == null || !target.isAlive()) {
-            ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-            ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+            RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+            RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             clearRelayLock(relayVehicle);
             if (RVP_RadarRoleHelper.entityMatches(root.getLockedEntity(), requestedId)) {
                 root.setLockedEntity(null);
@@ -124,7 +123,7 @@ public final class RVP_ExternalRadarSyncService {
 
         RadarUnit relayLockRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
         if (relayLockRadar == null) {
-            ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+            RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             return;
         }
 
@@ -132,7 +131,7 @@ public final class RVP_ExternalRadarSyncService {
             if (!RVP_RadarRoleHelper.entityMatches(relayLockRadar.getLockedEntity(), requestedId)) {
                 relayLockRadar.setLockedEntity(target);
             }
-            ext.ywzj_rvp$setExternalRadarLockedEntityId(requestedId);
+            RVP_WeaponLockStateTable.setExternalRadarLockedEntityId(root, requestedId);
             msg.lockedEntityId = requestedId;
             return;
         }
@@ -140,7 +139,7 @@ public final class RVP_ExternalRadarSyncService {
         if (relayLockRadar.getLockedEntity() != null) {
             relayLockRadar.setLockedEntity(null);
         }
-        ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
     }
 
     @Nullable
@@ -178,13 +177,13 @@ public final class RVP_ExternalRadarSyncService {
         WeaponUnit weaponUnit = resolveCurrentWeaponUnit(player, launcher);
         if (weaponUnit != null) {
             WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-            if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-                int requestedId = ext.ywzj_rvp$getExternalRadarRequestedEntityId();
+            if (root != null) {
+                int requestedId = RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(root);
                 if (RVP_RadarRoleHelper.entityMatches(root.getLockedEntity(), requestedId)) {
                     root.setLockedEntity(null);
                 }
-                ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-                ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+                RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+                RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             }
         }
 

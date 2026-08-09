@@ -19,6 +19,9 @@ build
 libs/*.jar
 libs/**/*.class
 
+# 阶段构建产物存档（每批次完成后手动/自动复制，不进入 git）
+stage-jars/
+
 # build logs
 build_log*.txt
 build_err*.txt
@@ -31,6 +34,7 @@ trae_build_exit.txt
 
 # runtime logs / crash / temp
 logs/
+*_console*.log
 crash-*.txt
 debug-*.md
 .codex_tmp_*/

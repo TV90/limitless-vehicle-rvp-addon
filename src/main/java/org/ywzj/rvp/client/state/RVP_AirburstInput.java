@@ -30,6 +30,8 @@ public final class RVP_AirburstInput {
         if (!(current instanceof RVP_WeaponBase weapon)) {
             return false;
         }
+        // ahead 武器的装订方式是锁定目标（R 键走 fireControlLock，由 programForShot 解算引信距离），
+        // 不走测距装订；未锁定时弹丸照常直射（像普通机炮）
         if (weapon.getData().getFuseData().isAheadEnabled()) {
             return false;
         }

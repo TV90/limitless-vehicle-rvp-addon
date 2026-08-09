@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -125,10 +125,10 @@ public abstract class WeaponUnitTickFireControlMixin {
         }
         RVP_RadarRoleHelper.tickPendingRadarLock(self);
         WeaponUnit root = self.getRootParentWeaponUnit();
-        if (root != self || self.getLockedEntity() != null || !(root instanceof WeaponUnitExternalRadarLockExt ext)) {
+        if (root != self || self.getLockedEntity() != null) {
             return;
         }
-        int externalLockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
+        int externalLockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
         if (externalLockedId == Integer.MIN_VALUE) {
             return;
         }

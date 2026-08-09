@@ -28,6 +28,7 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
+        noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;
         }
@@ -35,7 +36,7 @@ public class RVP_DispenserWeapon extends RVP_WeaponBase {
             return false;
         }
         getFireController().primeServerShot();
-        if (!canShootOnServer()) {
+        if (!canShootOnServer(shooter)) {
             return false;
         }
         if (!consumeAmmo(aimContexts)) {

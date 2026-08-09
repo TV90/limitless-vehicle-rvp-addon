@@ -9,7 +9,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
@@ -33,8 +33,7 @@ public final class GunnerExternalRadarController {
             return;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (root.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF
-                || !(root instanceof WeaponUnitExternalRadarLockExt ext)) {
+        if (root.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
             return;
         }
 
@@ -45,20 +44,20 @@ public final class GunnerExternalRadarController {
             relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
         }
         if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive() || relayVehicle.isDestroyed()) {
-            clearExternalLock(root, ext, null);
+            clearExternalLock(root, null);
             return;
         }
 
         turnOnRelayRadars(relayVehicle);
         RadarUnit lockRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
         if (lockRadar == null) {
-            clearExternalLock(root, ext, relayVehicle);
+            clearExternalLock(root, relayVehicle);
             return;
         }
 
         Entity lockTarget = normalizeTarget(target);
         if (lockTarget == null || !lockTarget.isAlive() || !isWithinRelayLockVolume(lockRadar, lockTarget)) {
-            clearExternalLock(root, ext, relayVehicle);
+            clearExternalLock(root, relayVehicle);
             return;
         }
 
@@ -69,8 +68,8 @@ public final class GunnerExternalRadarController {
         if (!RVP_RadarRoleHelper.entityMatches(root.getLockedEntity(), lockTarget.getId())) {
             root.setLockedEntity(lockTarget);
         }
-        ext.ywzj_rvp$setExternalRadarRequestedEntityId(lockTarget.getId());
-        ext.ywzj_rvp$setExternalRadarLockedEntityId(lockTarget.getId());
+        RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId(root, lockTarget.getId());
+        RVP_WeaponLockStateTable.setExternalRadarLockedEntityId(root, lockTarget.getId());
     }
 
     private static void turnOnRelayRadars(AbstractVehicle relayVehicle) {
@@ -152,10 +151,9 @@ public final class GunnerExternalRadarController {
     }
 
     private static void clearExternalLock(WeaponUnit root,
-                                          WeaponUnitExternalRadarLockExt ext,
                                           @Nullable AbstractVehicle relayVehicle) {
-        int requestedId = ext.ywzj_rvp$getExternalRadarRequestedEntityId();
-        int lockedId = ext.ywzj_rvp$getExternalRadarLockedEntityId();
+        int requestedId = RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(root);
+        int lockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
         Entity localRadarLocked = RVP_RadarRoleHelper.getLockedRadarEntity(root);
         boolean localRadarKeepsLock = RVP_RadarRoleHelper.entityMatches(localRadarLocked, requestedId)
                 || RVP_RadarRoleHelper.entityMatches(localRadarLocked, lockedId);
@@ -164,8 +162,8 @@ public final class GunnerExternalRadarController {
                 || RVP_RadarRoleHelper.entityMatches(root.getLockedEntity(), lockedId))) {
             root.setLockedEntity(null);
         }
-        ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-        ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+        RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         if (relayVehicle == null) {
             return;
         }

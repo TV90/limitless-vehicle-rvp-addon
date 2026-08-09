@@ -1,11 +1,20 @@
 package org.ywzj.rvp.weapon.core;
 
+import com.mojang.logging.LogUtils;
+import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -21,14 +30,20 @@ import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Shared runtime base for the seven public RVP weapon types.
  */
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     protected int chargeTick;
     private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
@@ -40,6 +55,14 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     public RVP_WeaponFireController getFireController() {
         return fireController;
+    }
+
+    /**
+     * 服务端射击调试追踪（替代被删 {@code WeaponUnitShootDebugMixin}）。
+     * 各具体武器在 {@code shoot()} 入口调用一次，记录本次射击请求的上下文。
+     */
+    protected void noteServerShootInvocation(List<AimContext> aimContexts, LivingEntity shooter) {
+        RVP_WeaponOriginDebug.noteShootInvocation(getWeaponUnit(), getIndex(), this, aimContexts, shooter);
     }
 
     RVP_WeaponHeatManager.HeatState getLocalHeatState() {
@@ -60,6 +83,15 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
      */
     public void ywzj_rvp$clearReloadState() {
         setReloadTime(0);
+    }
+
+    /**
+     * 设置装填倒计时（tick）。
+     * 替代被删 {@code GunnerWeaponAccessorMixin} 的 setReloadTime invoker：炮手 AI
+     * 对 RVP 武器直接调用本方法，本体武器仍由 {@code GunnerBrain} 反射兜底。
+     */
+    public void ywzj_rvp$setReloadTime(int reloadTime) {
+        setReloadTime(Math.max(reloadTime, 0));
     }
 
     public int getChargeTickValue() {
@@ -111,7 +143,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             Entity externalLocked = null;
             int externalLockedId = Integer.MIN_VALUE;
             if (!isIrHmdManaged
-                    && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    && RVP_WeaponSensorHelper.effectiveSensorType(unit) == WeaponUnitData.FireControlSensorType.RF
                     && net.minecraft.client.Minecraft.getInstance().level != null) {
                 externalLockedId = RVP_ExternalRadarLinkHelper.getClientLockedEntityId(
                         unit.getVehicle(),
@@ -138,7 +170,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             if (!hasLock) {
                 boolean eoExempt = !isIrHmdManaged
                         && !isIrLaunchWeapon
-                        && unit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.EO;
+                        && RVP_WeaponSensorHelper.effectiveSensorType(unit) == WeaponUnitData.FireControlSensorType.EO;
                 if (!eoExempt) {
                     LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
                     return false;
@@ -163,7 +195,18 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     @OnlyIn(Dist.CLIENT)
     public void onClientFire() {
-        if (LocalVehiclePlayer.instance.getPlayer() == getWeaponUnit().getOwner()) {
+        // 客户端实体上 PartUnit.ownerId 不同步（仅服务端在乘客变更事件中设置），
+        // 此处 owner 检查在客户端恒为 false，会拦截服务器回包（VehicleFireEvent.Post）
+        // 的加热回调，导致热系统完全不工作。移除检查：热状态仅为本端模拟，无跨端副作用。
+        // 单机（integrated server）时，服务端武器与本端武器是同一对象、共享同一热状态：
+        // 服务端 shoot() 已计热一次，回包路径再计热会导致每发双倍（2x）。
+        // 仅在连接独立服务器/局域网时由回包计热，驱动客户端 HUD 显示。
+        boolean singlePlayer = net.minecraft.client.Minecraft.getInstance().hasSingleplayerServer();
+        LOGGER.info("[RVP][HEAT] onClientFire weapon={} caller={} singlePlayer={}",
+                getData().getWeaponId(),
+                Thread.currentThread().getStackTrace()[2].getMethodName(),
+                singlePlayer);
+        if (!singlePlayer) {
             fireController.onShotFired();
         }
         super.onClientFire();
@@ -181,7 +224,105 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean canShootOnServer() {
-        return fireController.canShootNowAfterPrime() && passesOffAxisShootGate();
+        return canShootOnServer(null);
+    }
+
+    /**
+     * 服务端射击最终门控：发热 / 离轴 + 发射架部署门控。
+     *
+     * <p>发射架门控替代被删 {@code WeaponUnitLauncherDeployGateMixin}：按
+     * {@link LauncherDeployRuntimeManager} 快照判定展开状态与车速，不满足时拒绝射击
+     * 并向操作者提示（{@code operator} 为空时回退到载具乘客中的玩家）。</p>
+     */
+    protected boolean canShootOnServer(@Nullable LivingEntity operator) {
+        if (!fireController.canShootNowAfterPrime() || !passesOffAxisShootGate()) {
+            return false;
+        }
+        return passesLauncherDeployGate(operator);
+    }
+
+    private boolean passesLauncherDeployGate(@Nullable LivingEntity operator) {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return true;
+        }
+        RVP_LauncherDeployConfig config = findLauncherDeployConfig();
+        if (config == null) {
+            return true;
+        }
+        LauncherDeployRuntimeManager.Snapshot snapshot = LauncherDeployRuntimeManager.get(vehicle.getId(), config.id());
+        LauncherDeployRuntimeManager.State state = snapshot == null
+                ? LauncherDeployRuntimeManager.State.CLOSED
+                : snapshot.state();
+        double speedKph = snapshot == null
+                ? vehicle.getDeltaMovement().length() * 20.0 * 3.6
+                : snapshot.speedKph();
+
+        if (state == LauncherDeployRuntimeManager.State.CLOSED && config.blockFireWhenClosed()) {
+            denyLauncherDeployFire(operator, "发射架未展开");
+            return false;
+        }
+        if (state == LauncherDeployRuntimeManager.State.DEPLOYING && config.blockFireWhenDeploying()) {
+            denyLauncherDeployFire(operator, "发射架展开中");
+            return false;
+        }
+        if (state == LauncherDeployRuntimeManager.State.RETRACTING && config.blockFireWhenRetracting()) {
+            denyLauncherDeployFire(operator, "发射架收回中");
+            return false;
+        }
+        if (config.blockFireWhenSpeeding() && speedKph >= config.retractSpeedMin()) {
+            denyLauncherDeployFire(operator, "车速过高，无法发射");
+            return false;
+        }
+        return true;
+    }
+
+    @Nullable
+    private RVP_LauncherDeployConfig findLauncherDeployConfig() {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || vehicle.getVehicleId() == null) {
+            return null;
+        }
+        Set<String> candidateUnitIds = new LinkedHashSet<>();
+        collectWeaponUnitIds(candidateUnitIds, getWeaponUnit());
+        for (RVP_LauncherDeployConfig config : RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            if (candidateUnitIds.stream().anyMatch(config::appliesToWeaponUnit)
+                    || candidateUnitIds.contains(config.pitchPartUnitId())) {
+                return config;
+            }
+        }
+        return null;
+    }
+
+    private static void collectWeaponUnitIds(Set<String> out, @Nullable WeaponUnit weaponUnit) {
+        WeaponUnit current = weaponUnit;
+        while (current != null) {
+            out.add(current.getId());
+            current = current.getParentWeaponUnit();
+        }
+        if (weaponUnit != null) {
+            for (WeaponUnit sub : weaponUnit.getSubWeaponUnits()) {
+                out.add(sub.getId());
+            }
+        }
+    }
+
+    private void denyLauncherDeployFire(@Nullable LivingEntity operator, String message) {
+        Player player = operator instanceof Player p ? p : null;
+        if (player == null) {
+            AbstractVehicle vehicle = getVehicle();
+            if (vehicle != null) {
+                for (Entity passenger : vehicle.getPassengers()) {
+                    if (passenger instanceof Player p) {
+                        player = p;
+                        break;
+                    }
+                }
+            }
+        }
+        if (player != null) {
+            player.displayClientMessage(Component.literal(message), true);
+        }
     }
 
     @Override
@@ -199,6 +340,11 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     public void tick() {
         super.tick();
+        // [B2] 替代被删 WeaponUnitSetWeaponMixin / WeaponUnitSwitchWeaponMixin /
+        // WeaponUnitFollowParentRotationMixin：武器 tick 在本体 super.tick()（含 updateRot）之后执行
+        WeaponUnit unit = getWeaponUnit();
+        RVP_WeaponSwitchSyncHelper.tick(unit);
+        RVP_FollowParentRotationHelper.tick(unit);
         boolean fireDown = !getVehicle().level().isClientSide() && isServerOperatorFiring();
         fireController.tick(fireDown);
     }
@@ -240,10 +386,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean hasArmPreselectedTarget(WeaponUnit unit) {
-        if (!(unit instanceof WeaponUnitArmExt armExt)) {
-            return false;
-        }
-        return armExt.ywzj_rvp$getArmPreselectedVehicleId() >= 0;
+        return unit != null && RVP_WeaponLockStateTable.getArmPreselectedVehicleId(unit) >= 0;
     }
 
     protected boolean passesOffAxisShootGate() {

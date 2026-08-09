@@ -5,9 +5,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceLaunchConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
@@ -227,13 +226,13 @@ public final class GunnerWeaponSuitability {
                                                RVP_WeaponData data,
                                                boolean writeSelection) {
         WeaponUnit root = rootUnit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitArmExt armExt)) {
+        if (root == null) {
             return false;
         }
         Entity normalizedTarget = normalizeTarget(target);
         if (!(normalizedTarget instanceof AbstractVehicle targetVehicle) || !targetVehicle.isAlive()) {
             if (writeSelection) {
-                armExt.ywzj_rvp$setArmPreselected(-1, -1, null);
+                RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
             return false;
         }
@@ -245,7 +244,7 @@ public final class GunnerWeaponSuitability {
         if (!contains(launch.targetDistanceRange(), targetDistance)
                 || !contains(launch.altitudeRange(), altitudeAgl(targetVehicle))) {
             if (writeSelection) {
-                armExt.ywzj_rvp$setArmPreselected(-1, -1, null);
+                RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
             return false;
         }
@@ -256,7 +255,7 @@ public final class GunnerWeaponSuitability {
         Vec3 seekerLook = resolveLockAxis(root);
         if (!withinAxisAngle(seekerLook, targetCenter.subtract(seekerPos), seekHalfAngle)) {
             if (writeSelection) {
-                armExt.ywzj_rvp$setArmPreselected(-1, -1, null);
+                RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
             return false;
         }
@@ -273,13 +272,13 @@ public final class GunnerWeaponSuitability {
         );
         if (emitter == null) {
             if (writeSelection) {
-                armExt.ywzj_rvp$setArmPreselected(-1, -1, null);
+                RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
             return false;
         }
 
         if (writeSelection) {
-            armExt.ywzj_rvp$setArmPreselected(emitter.vehicleId(), emitter.radarIndex(), emitter.position());
+            RVP_WeaponLockStateTable.setArmPreselected(root, emitter.vehicleId(), emitter.radarIndex(), emitter.position());
         }
         return true;
     }
@@ -334,8 +333,8 @@ public final class GunnerWeaponSuitability {
         if (radar != null && RVP_RadarRoleHelper.entityMatches(radar.getLockedEntity(), target.getId())) {
             return radar.getLockedEntity();
         }
-        if (root instanceof WeaponUnitExternalRadarLockExt ext
-                && ext.ywzj_rvp$getExternalRadarLockedEntityId() == target.getId()) {
+        if (root != null
+                && RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == target.getId()) {
             return target;
         }
         return null;

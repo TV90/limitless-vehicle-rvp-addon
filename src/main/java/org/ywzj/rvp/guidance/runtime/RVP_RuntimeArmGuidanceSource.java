@@ -2,7 +2,7 @@ package org.ywzj.rvp.guidance.runtime;
 
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
@@ -137,13 +137,13 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
             return;
         }
         WeaponUnit root = unit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitArmExt arm)) {
+        if (root == null) {
             return;
         }
-        int vehicleId = arm.ywzj_rvp$getArmPreselectedVehicleId();
-        int radarIndex = arm.ywzj_rvp$getArmPreselectedRadarIndex();
+        int vehicleId = RVP_WeaponLockStateTable.getArmPreselectedVehicleId(root);
+        int radarIndex = RVP_WeaponLockStateTable.getArmPreselectedRadarIndex(root);
         projectile.setPreselectedTarget(vehicleId, radarIndex);
-        Vec3 position = arm.ywzj_rvp$getArmPreselectedPos();
+        Vec3 position = RVP_WeaponLockStateTable.getArmPreselectedPos(root);
         if (vehicleId >= 0 && position != null) {
             projectile.setAntiRadiationSignalAcquired(false);
             projectile.setTargetPos(position);

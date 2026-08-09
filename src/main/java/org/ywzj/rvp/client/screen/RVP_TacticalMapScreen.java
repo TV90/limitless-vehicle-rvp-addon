@@ -31,12 +31,12 @@ import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
-import org.ywzj.rvp.accessor.AbstractVehicleGunnerDataAccessor;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.render.RVP_ExtendedAirEntityRenderer;
 import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
+import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
@@ -3313,15 +3313,13 @@ public class RVP_TacticalMapScreen extends Screen {
         if (driver != null) {
             return relationColorForEntity(player, driver);
         }
-        // driver 为 null 时，检查远程实体的 rvpRemoteFaction 缓存
-        if (vehicle instanceof AbstractVehicleGunnerDataAccessor ext) {
-            RVP_EnumGunnerFaction faction = ext.ywzj_rvp$getRemoteFaction();
-            if (faction == RVP_EnumGunnerFaction.ENEMY) {
-                return HOSTILE_ICON_COLOR;
-            }
-            if (faction == RVP_EnumGunnerFaction.FRIENDLY) {
-                return FRIEND_ICON_COLOR;
-            }
+        // driver 为 null 时，检查客户端侧表的远程 Gunner 阵营（替代被删 GunnerDataMixin 的 rvpRemoteFaction）
+        RVP_EnumGunnerFaction faction = RVP_ClientGunnerVehicleState.getFaction(vehicle);
+        if (faction == RVP_EnumGunnerFaction.ENEMY) {
+            return HOSTILE_ICON_COLOR;
+        }
+        if (faction == RVP_EnumGunnerFaction.FRIENDLY) {
+            return FRIEND_ICON_COLOR;
         }
         // fallback：检查外部雷达的 affiliation 判定
         S2CExternalRadarSnapshot.Affiliation affiliation = RVP_ExternalRadarLinkHelper.getAffiliation(vehicle);

@@ -311,15 +311,13 @@ public final class RVP_UavLoiterTickService {
 
     /** 获取盘旋配置。优先查母车配置（可部署 UAV 场景），其次查载具自身配置（AC130 等通用场景）。 */
     private static RVP_LoiterConfig resolveConfig(AbstractVehicle uav) {
-        if (uav instanceof org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt ext) {
-            UUID parentUuid = ext.ywzj_rvp$getLinkedParentVehicleUuid();
-            if (parentUuid != null) {
-                AbstractVehicle parent = resolveVehicle(uav.getServer(), parentUuid);
-                if (parent != null) {
-                    RVP_LoiterConfig parentConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
-                    if (parentConfig.isConfigured()) {
-                        return parentConfig;
-                    }
+        UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav);
+        if (parentUuid != null) {
+            AbstractVehicle parent = resolveVehicle(uav.getServer(), parentUuid);
+            if (parent != null) {
+                RVP_LoiterConfig parentConfig = RVP_LoiterConfigCache.get(parent.getVehicleId());
+                if (parentConfig.isConfigured()) {
+                    return parentConfig;
                 }
             }
         }

@@ -4,9 +4,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -42,10 +42,8 @@ public final class RVP_FireControlStabilizerState {
         return MODES.getOrDefault(unit, Mode.SEMI_AUTO);
     }
 
-    public static boolean tryHandleToggleKey(@Nullable WeaponUnit unit, int key, int scanCode) {
-        if (!RVP_Keys.FIRE_CONTROL_STABILIZER.matches(key, scanCode)) {
-            return false;
-        }
+    /** 火控稳定器键按下时切换稳定模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
+    public static boolean tryHandleToggleKey(@Nullable WeaponUnit unit) {
         if (unit == null || !isEligible(unit)) {
             return false;
         }
@@ -71,7 +69,7 @@ public final class RVP_FireControlStabilizerState {
                 || weapon.getData().getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
             return false;
         }
-        if (unit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(unit) != WeaponUnitData.FireControlSensorType.RF) {
             return false;
         }
         if (!(unit.getData() instanceof WeaponUnitDataExt ext)) {

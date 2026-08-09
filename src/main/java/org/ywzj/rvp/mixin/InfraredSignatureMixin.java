@@ -12,7 +12,8 @@ import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
  * 修改 Infrared 类的 {@code getBoundingBox().getSize() < 1} 过滤，
  * 使设置了 {@code signatureSize > 0} 的 RVP 弹体能够被红外导引头探测和锁定。
  *
- * <p>策略同 {@link RadarSignatureMixin}：对 Infrared 类中
+ * <p>策略同 {@code RadarSignatureMixin}（已删除，虚拟箱已内联到
+ * {@link RVP_BaseBullet#getBoundingBox()}）：对 Infrared 类中
  * {@code entity.getBoundingBox()} 调用进行 Redirect，
  * 当 entity 是 {@link RVP_BaseBullet} 且 {@code signatureSize > 0} 时，
  * 返回基于 signatureSize 的虚拟碰撞箱。</p>

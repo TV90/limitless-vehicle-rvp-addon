@@ -27,6 +27,7 @@ import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -79,7 +80,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         WeaponUnit currentWeaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
             if (currentWeaponUnit != null
-                    && currentWeaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    && RVP_WeaponSensorHelper.effectiveSensorType(currentWeaponUnit) == WeaponUnitData.FireControlSensorType.RF
                     && currentWeaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE) {
                 renderAimLockTarget(guiGraphics, partialTick);
             }
@@ -92,7 +93,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (presetName == null || presetName.isEmpty()) return;
         // 准心（IR 寻的器模式跳过，HMD cueing 由雷达 overlay 提供）
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (weaponUnit == null || !(weaponUnit.isSeekerOn() && weaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.IR)) {
+        if (weaponUnit == null || !(weaponUnit.isSeekerOn() && RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) == WeaponUnitData.FireControlSensorType.IR)) {
             renderCrosshair(guiGraphics, partialTick, vehicle);
         }
         // 射界
@@ -310,7 +311,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (weaponUnit == null) {
             return;
         }
-        WeaponUnitData.FireControlSensorType sensorType = weaponUnit.getFireControlSensorType();
+        WeaponUnitData.FireControlSensorType sensorType = RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit);
         // 武器站锁定目标
         if (weaponUnit.getLockedEntity() != null) {
             Entity entity = weaponUnit.getLockedEntity();
@@ -326,9 +327,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 {
                     poseStack.translate(screenPos.x, screenPos.y, 0);
                     if (weaponUnit.isSeekerOn()) {
-                        if (weaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.IR) {
+                        if (sensorType == WeaponUnitData.FireControlSensorType.IR) {
                             GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 15, Color.RED, 0.03f, 0, 0);
-                        } else if (weaponUnit.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
+                        } else if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
                             GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 5, Color.RED, 0.05f, 0, 0);
                             GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 4, Color.RED, 0.06f, 0, 0);
                         }

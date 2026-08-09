@@ -7,6 +7,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
@@ -37,7 +38,10 @@ import java.util.Date;
  * Gunner 调试监控器。
  * 输入 /rvpdebug gunner monitor 启动，每隔 20 tick 将 gunner 状态写入 logs/rvp_gunner_debug.log 和聊天栏。
  * 输入 /rvpdebug gunner stop 停止监控。
+ * 纯客户端调试工具：引用 Minecraft/LocalPlayer 等客户端专属类，服务端严禁加载本类
+ * （GunnerBrain 已按 dist 隔离调用）。
  */
+@OnlyIn(Dist.CLIENT)
 public final class RVP_GunnerDebugMonitor {
 
     private static final SimpleDateFormat FMT = new SimpleDateFormat("HH:mm:ss.SSS");

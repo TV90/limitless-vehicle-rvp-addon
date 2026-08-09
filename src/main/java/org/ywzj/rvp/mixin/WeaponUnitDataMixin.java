@@ -15,6 +15,7 @@ import org.ywzj.rvp.debug.RVP_HitboxDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.rvp.mixin.accessor.PartUnitDataAccessor;
+import org.ywzj.vehicle.custom.part.data.PartUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
@@ -61,15 +62,72 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     private void ywzj_rvp$initExtraBoltBones(BedrockModel model,
                                              Map<BedrockBone, VehicleCubeGroup> vehiclePartGroups,
                                              CallbackInfo ci) {
-        return;
+        if (model == null || ywzj_rvp$structureBoltBones == null || ywzj_rvp$structureBoltBones.isEmpty()) {
+            return;
+        }
+        Vec3 pivot = this.xTurnGroup != null ? this.xTurnGroup.globalTransform().offset() : Vec3.ZERO;
+        // structureBone 定义在父类 PartUnitData，Mixin 无法 @Shadow 继承字段/方法，直接 cast 调用公共 getter
+        String mainBoneName = ((PartUnitData) (Object) this).getStructureBone() == null ? ""
+                : ((PartUnitData) (Object) this).getStructureBone() + "_barrel";
+        List<Bolt> extra = new ArrayList<>();
+        for (String boneName : ywzj_rvp$structureBoltBones) {
+            if (boneName == null || boneName.isBlank() || boneName.equals(mainBoneName)) {
+                // 主炮闩骨骼（structureBone + "_barrel"）已由本体 buildBolts 处理，跳过避免重复
+                continue;
+            }
+            BedrockBone bone = model.getBoneMap().get(boneName);
+            if (bone == null) {
+                continue;
+            }
+            Vec3 groupDelta = Vec3.ZERO;
+            VehicleCubeGroup group = vehiclePartGroups.get(bone);
+            if (group != null) {
+                // 额外发射骨骼相对主炮闩组原点的模型空间偏移（格单位）
+                groupDelta = group.globalTransform().offset().subtract(pivot);
+            }
+            ywzj_rvp$appendBoltsFromBone(bone, groupDelta, extra);
+        }
+        if (extra.isEmpty()) {
+            return;
+        }
+        List<Bolt> base = this.bolts == null ? List.of() : this.bolts;
+        boolean baseIsDefaultFallback = base.size() == 1
+                && Vec3.ZERO.equals(base.get(0).offset)
+                && base.get(0).barrelLength == 0.0f;
+        if (baseIsDefaultFallback) {
+            // 本体只有"未配置炮闩"的兜底 bolt，直接以 rvp_structure_bolt_bones 重建
+            this.bolts = extra;
+        } else {
+            List<Bolt> merged = new ArrayList<>(base);
+            merged.addAll(extra);
+            this.bolts = merged;
+        }
     }
 
+    /**
+     * 与本体 {@code buildBolts} 等价：把发射骨骼的每个 Cube 视为一个炮管生成 bolt。
+     * {@code childOffset} 为相对主炮闩组原点的初始偏移（格单位），子骨骼平移按像素/16 累加。
+     */
     @Unique
     private void ywzj_rvp$appendBoltsFromBone(BedrockBone bone,
                                               Vec3 childOffset,
-                                              Vec3 groupOffset,
                                               List<Bolt> out) {
-        return;
+        for (BedrockCube cube : bone.cubes) {
+            float x = cube.x() + cube.width() / 2;
+            float y = cube.y() + cube.height() / 2;
+            float z = cube.z();
+            Vec3 boltOffset = new Vec3(bone.rotation.transform(new Vector3f(x, y, z)));
+            boltOffset = boltOffset.add(childOffset);
+            float barrelLength = cube.depth();
+            Vector3f selfRot = new Vector3f();
+            bone.rotation.getEulerAnglesYXZ(selfRot);
+            out.add(new Bolt(boltOffset, barrelLength,
+                    (float) Math.toDegrees(selfRot.x), (float) Math.toDegrees(-selfRot.y)));
+        }
+        for (BedrockBone child : bone.getChildren()) {
+            ywzj_rvp$appendBoltsFromBone(child,
+                    childOffset.add(child.x / 16, child.y / 16, child.z / 16), out);
+        }
     }
 
     @Unique

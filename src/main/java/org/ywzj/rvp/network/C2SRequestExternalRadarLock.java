@@ -4,7 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -44,9 +44,9 @@ public class C2SRequestExternalRadarLock {
             }
             WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
             RVP_RadarRoleHelper.clearAllRadarLocks(root);
-            if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-                ext.ywzj_rvp$setExternalRadarRequestedEntityId(target.getId());
-                ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+            if (root != null) {
+                RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId(root, target.getId());
+                RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
             }
             root.setFocusLockPos(null);
             root.setLockedEntity(target);

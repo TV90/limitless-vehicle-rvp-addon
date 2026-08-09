@@ -172,5 +172,25 @@ public class RVP_Network {
                 .decoder(S2CLoiterStateSync::decode)
                 .consumerMainThread(S2CLoiterStateSync::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CGunnerVehicleSync.class, id++)
+                .encoder(S2CGunnerVehicleSync::encode)
+                .decoder(S2CGunnerVehicleSync::decode)
+                .consumerMainThread(S2CGunnerVehicleSync::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SDebugSpawnVehicle.class, id++)
+                .encoder(C2SDebugSpawnVehicle::encode)
+                .decoder(C2SDebugSpawnVehicle::decode)
+                .consumerMainThread(C2SDebugSpawnVehicle::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CVehicleRvpConfig.class, id++)
+                .encoder(S2CVehicleRvpConfig::encode)
+                .decoder(S2CVehicleRvpConfig::decode)
+                .consumerMainThread(S2CVehicleRvpConfig::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SRadarPowerToggle.class, id++)
+                .encoder(C2SRadarPowerToggle::encode)
+                .decoder(C2SRadarPowerToggle::decode)
+                .consumerMainThread(C2SRadarPowerToggle::handle)
+                .add();
     }
 }

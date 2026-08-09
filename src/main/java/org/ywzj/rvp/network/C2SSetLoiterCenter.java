@@ -7,8 +7,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -86,7 +86,7 @@ public class C2SSetLoiterCenter {
     }
 
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
-        if (vehicle instanceof AbstractVehicleLinkedUavExt ext && ext.ywzj_rvp$isDeployableUavInstance()) {
+        if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return vehicle;
         }
         // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
@@ -102,7 +102,7 @@ public class C2SSetLoiterCenter {
         if (vehicle == uav) {
             return RVP_LoiterConfigCache.get(uav.getVehicleId());
         }
-        if (vehicle instanceof AbstractVehicleLinkedUavExt ext && !ext.ywzj_rvp$isDeployableUavInstance()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             RVP_LoiterConfig parentConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
             if (parentConfig.isConfigured()) {
                 return parentConfig;

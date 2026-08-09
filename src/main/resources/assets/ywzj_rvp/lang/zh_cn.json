@@ -202,6 +202,7 @@
   "message.ywzj_rvp.uav.switch_to_child_failed": "切换到雷达车失败",
   "message.ywzj_rvp.uav.switch_back_success": "已返回母车",
   "message.ywzj_rvp.uav.switch_back_failed": "返回母车失败",
+  "message.ywzj_rvp.uav.parent_locked": "母车已锁定：无人机操控者离开期间不可乘坐",
   "message.ywzj_rvp.uav_loiter.not_in_vehicle": "未在载具中",
   "message.ywzj_rvp.uav_loiter.no_uav": "未找到关联的无人机",
   "message.ywzj_rvp.uav_loiter.no_config": "无人机未配置盘旋参数",

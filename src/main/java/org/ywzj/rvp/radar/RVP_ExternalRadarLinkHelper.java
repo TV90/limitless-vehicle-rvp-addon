@@ -4,15 +4,17 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.network.C2SClearExternalRadarLock;
 import org.ywzj.rvp.network.C2SRequestExternalRadarLock;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -33,10 +35,7 @@ public final class RVP_ExternalRadarLinkHelper {
     private RVP_ExternalRadarLinkHelper() {}
 
     public static Optional<AbstractVehicle> getLinkedRelayVehicle(AbstractVehicle launcher) {
-        UUID childUuid = null;
-        if (launcher instanceof AbstractVehicleLinkedUavExt ext) {
-            childUuid = ext.ywzj_rvp$getLinkedChildVehicleUuid();
-        }
+        UUID childUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(launcher);
         if (childUuid == null) {
             childUuid = RVP_DeployableUavLinkRegistry.getChildUuid(launcher.getUUID());
         }
@@ -144,6 +143,7 @@ public final class RVP_ExternalRadarLinkHelper {
         return collectManualClientLockCandidateData(weaponUnit, RVP_RadarRoleHelper.resolveManualLockAimVec(weaponUnit));
     }
 
+    @OnlyIn(Dist.CLIENT)
     public static List<ClientLockCandidate> collectManualClientLockCandidateData(@Nullable WeaponUnit weaponUnit,
                                                                                   @Nullable Vec3 aimVecOverride) {
         AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
@@ -191,7 +191,7 @@ public final class RVP_ExternalRadarLinkHelper {
             return false;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitExternalRadarLockExt ext)) {
+        if (root == null) {
             return false;
         }
         RVP_RadarRoleHelper.clearAllRadarLocks(root);
@@ -201,8 +201,8 @@ public final class RVP_ExternalRadarLinkHelper {
         } else if (root.getLockedEntity() != null && root.getLockedEntity().getId() != targetEntityId) {
             root.setLockedEntity(null);
         }
-        ext.ywzj_rvp$setExternalRadarRequestedEntityId(targetEntityId);
-        ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId(root, targetEntityId);
+        RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         RVP_Network.CHANNEL.sendToServer(new C2SRequestExternalRadarLock(targetEntityId));
         return true;
     }
@@ -212,9 +212,9 @@ public final class RVP_ExternalRadarLinkHelper {
             return;
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (root instanceof WeaponUnitExternalRadarLockExt ext) {
-            ext.ywzj_rvp$clearExternalRadarRequestedEntityId();
-            ext.ywzj_rvp$clearExternalRadarLockedEntityId();
+        if (root != null) {
+            RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+            RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         }
         RVP_RadarRoleHelper.clearAllRadarLocks(root);
         if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
@@ -224,6 +224,7 @@ public final class RVP_ExternalRadarLinkHelper {
     }
 
     @Nullable
+    @OnlyIn(Dist.CLIENT)
     public static Entity resolveClientEntity(int entityId) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null) {
@@ -260,6 +261,7 @@ public final class RVP_ExternalRadarLinkHelper {
      * @return affiliation 如果该实体在外部雷达条目中；否则 null
      */
     @Nullable
+    @OnlyIn(Dist.CLIENT)
     public static S2CExternalRadarSnapshot.Affiliation getAffiliation(@Nullable Entity entity) {
         if (entity == null) return null;
         Minecraft mc = Minecraft.getInstance();

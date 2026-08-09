@@ -40,9 +40,11 @@ import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
+import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
+import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
@@ -58,6 +60,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
@@ -101,6 +104,7 @@ public class RVP_ClientEvents {
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
+        RVP_ClientGunnerVehicleState.clientTick();
 
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
@@ -144,6 +148,24 @@ public class RVP_ClientEvents {
         }
         while (RVP_Keys.TOGGLE_LASER_DESIGNATION.consumeClick()) {
             RVP_ClientSaclosState.toggleVehicleLaser(player);
+        }
+
+        // 火控稳定器切换（T 键）：RF 机枪火控稳定模式（STABLE/SEMI_AUTO/OFF）+ GPS 单点/多点
+        // 模式。T 键为本体未占用的键，无需拦截本体处理，故以 ClientTick 轮询公共 API 实现，
+        // 替代原 InputHandler.handleVehicleAction mixin 注入。
+        while (RVP_Keys.FIRE_CONTROL_STABILIZER.consumeClick()) {
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            if (lvp == null || lvp.getPlayer() == null || !lvp.onVehicle()) {
+                continue;
+            }
+            WeaponUnit weaponUnit = lvp.getWeaponUnit();
+            if (weaponUnit == null) {
+                continue;
+            }
+            if (RVP_ClientGPSUtil.tryHandleModeToggleKey()) {
+                continue;
+            }
+            RVP_FireControlStabilizerState.tryHandleToggleKey(weaponUnit);
         }
 
         ywzj_rvp$applyScopeOverrides();
@@ -304,7 +326,7 @@ public class RVP_ClientEvents {
 
     private static void ywzj_rvp$updateBombCcip(AbstractVehicle vehicle, WeaponUnit weaponUnit,
                                                 RVP_WeaponBase weapon) {
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.CCIP) {
+        if (RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) != WeaponUnitData.FireControlSensorType.CCIP) {
             return;
         }
         if (weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS) && RVP_ClientGPSState.isActive()) {

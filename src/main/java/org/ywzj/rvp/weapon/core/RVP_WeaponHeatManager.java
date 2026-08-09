@@ -1,6 +1,8 @@
 package org.ywzj.rvp.weapon.core;
 
+import com.mojang.logging.LogUtils;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfig;
 import org.ywzj.rvp.config.RVP_VehicleWeaponHeatConfigCache;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
@@ -12,6 +14,7 @@ import java.util.WeakHashMap;
 
 public final class RVP_WeaponHeatManager {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<AbstractVehicle, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, HeatState>> VEHICLE_HEAT = new WeakHashMap<>();
 
     private RVP_WeaponHeatManager() {}
@@ -21,7 +24,7 @@ public final class RVP_WeaponHeatManager {
         if (!spec.enabled()) {
             return;
         }
-        tickState(spec.state(), spec.maxHeatCount(), weapon.getVehicle().tickCount);
+        tickState(spec.state(), weapon.getVehicle().tickCount);
     }
 
     public static boolean canShoot(RVP_WeaponBase weapon, HeatState weaponState) {
@@ -30,7 +33,7 @@ public final class RVP_WeaponHeatManager {
             return true;
         }
         HeatState state = spec.state();
-        tickState(state, spec.maxHeatCount(), weapon.getVehicle().tickCount);
+        tickState(state, weapon.getVehicle().tickCount);
         return state.currentHeat < spec.maxHeatCount();
     }
 
@@ -40,12 +43,20 @@ public final class RVP_WeaponHeatManager {
             return;
         }
         HeatState state = spec.state();
-        tickState(state, spec.maxHeatCount(), weapon.getVehicle().tickCount);
-        state.cooldownSpeed = 1;
+        tickState(state, weapon.getVehicle().tickCount);
         state.currentHeat += spec.heatCount();
         if (state.currentHeat >= spec.maxHeatCount()) {
             state.currentHeat += spec.overheatExtraHeat();
         }
+        // [RVP][HEAT] 临时诊断：一发命中确认客户端/服务端各计热几次及基数
+        StackTraceElement caller = Thread.currentThread().getStackTrace()[3];
+        LOGGER.info("[RVP][HEAT] onShotFired weapon={} side={} +{} -> {}/{} caller={}.{} tick={} vehId={}",
+                weapon.getData().getWeaponId(),
+                weapon.getVehicle().level().isClientSide() ? "CLIENT" : "SERVER",
+                spec.heatCount(), state.currentHeat, spec.maxHeatCount(),
+                caller.getClassName(), caller.getMethodName(),
+                weapon.getVehicle().tickCount,
+                System.identityHashCode(weapon.getVehicle()));
     }
 
     public static int currentHeat(RVP_WeaponBase weapon, HeatState weaponState) {
@@ -54,7 +65,8 @@ public final class RVP_WeaponHeatManager {
             return 0;
         }
         HeatState state = spec.state();
-        tickState(state, spec.maxHeatCount(), weapon.getVehicle().tickCount);
+        // 只读：冷却仅由武器 tick（每游戏 tick 一次）驱动，避免 HUD 每帧读取触发 tickState
+        // 导致 lastTick 被高频刷新、elapsed 被放大（冷却速度异常加快）。
         return Math.max(state.currentHeat, 0);
     }
 
@@ -94,27 +106,27 @@ public final class RVP_WeaponHeatManager {
         return new HeatSpec(weapon.getLocalHeatState(), fire.getHeatCount(), fire.getMaxHeatCount(), fire.getOverheatExtraHeat());
     }
 
-    private static void tickState(HeatState state, int maxHeatCount, int tickCount) {
+    private static void tickState(HeatState state, int tickCount) {
         if (state.lastTick == Integer.MIN_VALUE) {
             state.lastTick = tickCount;
             return;
         }
         int elapsed = Math.max(0, tickCount - state.lastTick);
         state.lastTick = tickCount;
-        for (int i = 0; i < elapsed && state.currentHeat > 0; i++) {
-            if (state.currentHeat < maxHeatCount) {
-                state.cooldownSpeed++;
-            }
-            state.currentHeat -= state.cooldownSpeed / 20 + 1;
-            if (state.currentHeat < 0) {
-                state.currentHeat = 0;
+        if (elapsed > 0) {
+            // 恒定冷却速率：每 tick 固定减 1，避免旧算法（cooldownSpeed 累积加速）导致越冷越快。
+            int before = state.currentHeat;
+            state.currentHeat = Math.max(0, state.currentHeat - elapsed);
+            if (elapsed > 1) {
+                // [RVP][HEAT] 临时诊断：elapsed>1 表示本次冷却跨了多个游戏 tick，检查 tickCount 是否跳跃
+                LOGGER.info("[RVP][HEAT] tickState elapsed={} tick={} heat={}->{}",
+                        elapsed, tickCount, before, state.currentHeat);
             }
         }
     }
 
     public static final class HeatState {
         private int currentHeat;
-        private int cooldownSpeed = 1;
         private int lastTick = Integer.MIN_VALUE;
     }
 

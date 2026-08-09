@@ -45,12 +45,13 @@ import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
-import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxRuntimeAccess;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeMath;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -183,6 +184,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 攻顶引信触发的子母弹生成位置覆盖（目标正上方，探测时刻导弹高度）；null = 用导弹当前位置。 */
     @Nullable
     protected Vec3 topAttackSpawnPosition;
+    /** 智能引信已触发并接管制导（true 时不再重复攻顶探测，改由 {@link #tickSmartFuseGuidance()} 飞向目标点）。 */
+    protected boolean smartFuseActive;
+    /** 智能引信目标点：检测点正上方 ±随机半径圆内，y = 触发时刻导弹高度。 */
+    @Nullable
+    protected Vec3 smartFuseTargetPos;
+    /** 智能引信触发时的检测目标（用于近炸全额伤害）。 */
+    @Nullable
+    protected Entity smartFuseDetectEntity;
     /** 可编程空爆测距（米），来自 MCH {@code airburstDist}。 */
     protected int airburstDist;
     protected double airburstTravelled;
@@ -1303,6 +1312,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void tickGuidance() {
+        // 智能引信：已接管制导后直接飞向目标点，不再走正常制导/线导逻辑
+        if (smartFuseActive && smartFuseTargetPos != null) {
+            if (!level().isClientSide()) {
+                tickSmartFuseGuidance();
+            }
+            return;
+        }
         if (!level().isClientSide()) {
             boolean allowEntityTracking = rvpData == null
                     || !rvpData.isVehicleLaserGuided()
@@ -1328,6 +1344,54 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         RVP_GuidanceController.tick(this);
     }
 
+    /**
+     * 智能引信制导：导弹飞向触发时刻计算的目标点（检测点正上方 ±随机半径圆内、触发时刻导弹高度），
+     * 到达判定（水平 ≤ arrive_horizontal 且 垂直 ≤ arrive_vertical）后引爆。
+     * 仅服务端执行；客户端导弹依赖服务端位置同步，不自行制导。
+     */
+    private void tickSmartFuseGuidance() {
+        if (smartFuseTargetPos == null) {
+            return;
+        }
+        RVP_FuseData fuse = rvpData == null ? null : rvpData.getFuseData();
+        float arriveH = fuse == null ? 0.5f : fuse.getTopAttackSmartArriveHorizontal();
+        float arriveV = fuse == null ? 1.0f : fuse.getTopAttackSmartArriveVertical();
+        Vec3 pos = position();
+        double dx = smartFuseTargetPos.x - pos.x;
+        double dz = smartFuseTargetPos.z - pos.z;
+        double dy = Math.abs(smartFuseTargetPos.y - pos.y);
+        if (Math.sqrt(dx * dx + dz * dz) <= arriveH && dy <= arriveV) {
+            RVP_TopAttackDebug.noteTick(this, "SMART DETONATE target="
+                    + RVP_ProjectileLifecycleDebug.formatVec(smartFuseTargetPos)
+                    + " from=" + RVP_ProjectileLifecycleDebug.formatVec(pos));
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.FUSE,
+                    () -> "type=TOP_ATTACK_SMART source=arrive position="
+                            + RVP_ProjectileLifecycleDebug.formatVec(smartFuseTargetPos));
+            smartFuseActive = false;
+            // 到达容差内吸附到目标点，保证子母弹从目标点正上方精确生成
+            setPos(smartFuseTargetPos);
+            detonateFuseAt(smartFuseTargetPos, FuseDetonation.PROXIMITY, smartFuseDetectEntity);
+            return;
+        }
+        Vec3 current = getDeltaMovement();
+        double base = Math.max(getFlightSpeed(), current.length());
+        if (base <= 1.0E-6) {
+            return;
+        }
+        Vec3 toTarget = smartFuseTargetPos.subtract(pos);
+        double dist = toTarget.length();
+        // 按剩余距离缩放速度：速度 ≤ 距离 × 0.9，单调收敛，保证单 tick 位移不会
+        // 跨越目标点（否则高速导弹每 tick 穿越 3.5 格，永远落不进到达判定圆而绕圈乱晃）。
+        double speed = Math.min(base, dist * 0.9);
+        if (speed <= 1.0E-6) {
+            return;
+        }
+        Vec3 next = toTarget.normalize().scale(speed);
+        setDeltaMovement(next);
+        RVP_ProjectileMotion.applyGuidanceFacing(this, next);
+    }
+
     protected static boolean usesCannonBallistics(RVP_EnumWeaponKind kind) {
         return kind == RVP_EnumWeaponKind.MACHINEGUN;
     }
@@ -1342,6 +1406,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected void tickMotion() {
         if (usesCannonBallistics()) {
+            return;
+        }
+        // 智能引信已接管制导：不再走发动机推进/弹道积分，速度完全由
+        // tickSmartFuseGuidance 按剩余距离缩放控制（单调收敛，避免高速
+        // 穿越目标点导致绕圈乱晃），这里只做位置平移。
+        if (smartFuseActive) {
+            setPos(position().add(getDeltaMovement()));
             return;
         }
         if (rvpData != null && rvpData.usesPropulsion()) {
@@ -1556,6 +1627,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (armTick > 0 && updateCount <= armTick) {
             return;
         }
+        // 智能引信已接管制导：不再重复探测/重算目标点，由 tickSmartFuseGuidance 负责飞抵引爆
+        if (smartFuseActive) {
+            return;
+        }
         // 已探测到目标：倒计时延时起爆（到点后无论目标是否仍在锥内都炸）
         if (topAttackTriggerTick >= 0) {
             if (updateCount - topAttackTriggerTick >= fuse.getTopAttackFuseDelayTick()) {
@@ -1580,7 +1655,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         AABB detectionBox = getBoundingBox().expandTowards(0, -distance, 0).inflate(distance);
         double cosLimit = Math.cos(Math.toRadians(fov));
         Vec3 down = new Vec3(0, -1, 0);
-        for (Entity entity : level().getEntities(this, detectionBox, this::canDamageEntity)) {
+        for (Entity entity : level().getEntities(this, detectionBox, this::isTopAttackTarget)) {
             // 精筛：目标包围盒中心点须位于导弹正下方的锥形内
             Vec3 offset = entity.getBoundingBox().getCenter().subtract(pos);
             if (offset.y >= 0 || offset.lengthSqr() > (double) distance * distance) {
@@ -1599,6 +1674,31 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     () -> "type=TOP_ATTACK source=below_cone distance="
                             + RVP_ProjectileLifecycleDebug.decimal(offset.length())
                             + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity));
+            if (fuse.isTopAttackSmartEnabled()) {
+                // 智能引信：不立即/延时引爆，记录检测点（目标 AABB 中心）与触发时刻导弹高度，
+                // 目标点 = 检测点正上方 ±随机半径圆内、y = 触发高度；解除原制导后飞抵该点再引爆
+                Vec3 detect = entity.getBoundingBox().getCenter();
+                double radius = fuse.getTopAttackSmartTargetRadius();
+                double angle = level().random.nextDouble() * 2.0 * Math.PI;
+                double rad = level().random.nextDouble() * radius;
+                smartFuseTargetPos = new Vec3(
+                        detect.x + Math.cos(angle) * rad,
+                        pos.y,
+                        detect.z + Math.sin(angle) * rad);
+                smartFuseDetectEntity = entity;
+                smartFuseActive = true;
+                targetEntity = null;
+                targetPos = null;
+                RVP_TopAttackDebug.noteTick(this, "SMART ARM detect="
+                        + RVP_ProjectileLifecycleDebug.formatVec(detect)
+                        + " triggerY=" + RVP_ProjectileLifecycleDebug.decimal(pos.y)
+                        + " target=" + RVP_ProjectileLifecycleDebug.formatVec(smartFuseTargetPos));
+                RVP_ProjectileLifecycleDebug.noteEvent(this,
+                        RVP_ProjectileLifecycleDebug.Event.FUSE,
+                        () -> "type=TOP_ATTACK_SMART source=below_cone target="
+                                + RVP_ProjectileLifecycleDebug.formatVec(smartFuseTargetPos));
+                return;
+            }
             int delay = fuse.getTopAttackFuseDelayTick();
             if (delay <= 0) {
                 RVP_TopAttackDebug.noteTick(this, "DETONATE immediate delay=" + delay);
@@ -2056,16 +2156,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     hitboxRes == null ? null : hitboxRes.hitBoneName());
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
-        if (entity instanceof AbstractVehicle targetVehicleForHurt
-                && targetVehicleForHurt instanceof RVP_VehicleHitboxRuntimeAccess access) {
-            access.rvp$pushSkipGlobalVehicleHurtScaling();
+        float hurtAmount = finalDamage;
+        if (entity instanceof AbstractVehicle targetVehicleForHurt) {
+            // 弹体已自行结算命中箱系数（pushSkip 跳过全局缩放），但 hurt 仍会走本体
+            // DamageSystem.hurt 的核心距离衰减；按 core_distance_scale_multiplier 预补偿，
+            // 使衰减后恰好等于期望伤害（0 = 命中点无关伤害，1 = 本体原值）。
+            hurtAmount = RVP_VehicleHurtScalingHandler.compensateCoreDistanceFalloff(
+                    targetVehicleForHurt,
+                    finalDamage,
+                    RVP_VehicleHurtScalingHandler.resolveBaseFalloffScale(targetVehicleForHurt, this));
+            RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
             try {
-                EntityUtil.hurt(source, entity, finalDamage);
+                EntityUtil.hurt(source, entity, hurtAmount);
             } finally {
-                access.rvp$popSkipGlobalVehicleHurtScaling();
+                RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
             }
         } else {
-            EntityUtil.hurt(source, entity, finalDamage);
+            EntityUtil.hurt(source, entity, hurtAmount);
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
@@ -2082,7 +2189,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
             RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                    player, targetVehicle, preHitboxDamage, finalDamage, hitboxRes,
+                    player, targetVehicle, preHitboxDamage, hurtAmount, hitboxRes,
                     Float.NaN, 1f
             );
         }
@@ -2268,6 +2375,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         Entity rootEntity = ywzj_rvp$resolveCollisionRoot(entity);
         return vehicle == null || rootEntity == null || !vehicle.getPassengers().contains(rootEntity);
+    }
+
+    /**
+     * 攻顶引信目标白名单：仅载具与生物可触发，排除掉落物/经验球/弹射物等
+     * 无生命实体（它们也能通过 {@link #canDamageEntity}，但不应引爆攻顶导弹）。
+     */
+    private boolean isTopAttackTarget(Entity entity) {
+        if (!canDamageEntity(entity)) {
+            return false;
+        }
+        Entity rootEntity = ywzj_rvp$resolveCollisionRoot(entity);
+        return rootEntity instanceof AbstractVehicle || rootEntity instanceof LivingEntity;
     }
 
     @Nullable
@@ -2757,6 +2876,36 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         particlePosO = pos;
         trailParticleTickO = tickCount;
         trailMotorBurningO = true;
+    }
+
+    /**
+     * 客户端本地补渲轨迹粒子：用 force=true 绕过原版 LevelRenderer 对非强制粒子的
+     * 1024²（32格）距离裁剪，使显式配置了 trajectory_particle 的子弹（如 TOW-2B EFP 的
+     * minecraft:flame）在远距离也可见。
+     *
+     * <p>仅当 effects_data.trajectory_particle 显式配置时生效，避免改变未配置轨迹粒子的
+     * 普通机炮/机枪弹的既有视觉。节奏与量级对齐服务端 {@link #broadcastTrailParticles()}。</p>
+     */
+    protected void spawnClientLocalTrailParticles() {
+        if (!level().isClientSide()) {
+            return;
+        }
+        RVP_WeaponData config = resolveWeaponConfig();
+        if (config == null) {
+            return;
+        }
+        String configured = config.getEffectsData().getTrajectoryParticle();
+        ParticleOptions primary = resolveParticle(configured, null);
+        if (primary == null) {
+            return;
+        }
+        for (int i = 0; i < 2; i++) {
+            level().addParticle(primary, true,
+                    getX(), getY(), getZ(),
+                    level().random.nextGaussian() * 0.1D,
+                    level().random.nextGaussian() * 0.1D,
+                    level().random.nextGaussian() * 0.1D);
+        }
     }
 
     private void spawnMissileNativeTrailParticles(RVP_EffectsData effects) {

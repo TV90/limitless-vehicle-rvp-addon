@@ -80,6 +80,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         tickSegmentStart = position();
         if (level().isClientSide()) {
             predictBounceBeforeMotion();
+            // 客户端本地补渲轨迹粒子（force=true 绕过原版 32 格粒子裁剪，见基类注释）
+            spawnClientLocalTrailParticles();
         } else if (!tickBulletServerPreMotion()) {
             return;
         }

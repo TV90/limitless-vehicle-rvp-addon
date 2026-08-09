@@ -16,7 +16,6 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.DisplayManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -34,6 +33,7 @@ import org.ywzj.vehicle.vehicle.weapon.VehicleWeaponAgent;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 import org.slf4j.Logger;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -309,6 +309,37 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     @Nullable
+    private static Field X_TURN_GROUP_FIELD;
+
+    /**
+     * [RVP] 挂架锚点骨组。B1 移除了 WeaponUnitAccessor（getXTurnGroup），当时用 getStructureGroup() 近似；
+     * 但结构模型中仅存在 structure_bone + "_barrel" 骨（如 variable_aam_1_barrel），无 structure_bone 本体骨，
+     * 导致 structureGroup 恒为 null、挂架整体不渲染。此处用反射读取实例 xTurnGroup 恢复原行为，
+     * 反射不可用时回退 structureGroup（仅功能降级，不崩溃）。
+     */
+    @Nullable
+    private static VehicleCubeGroup resolveMountAnchorGroup(WeaponUnit mountUnit) {
+        if (X_TURN_GROUP_FIELD == null) {
+            try {
+                X_TURN_GROUP_FIELD = ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
+                X_TURN_GROUP_FIELD.setAccessible(true);
+            } catch (Throwable t) {
+                LOGGER.warn("[RVP] 无法解析 WeaponUnit.xTurnGroup 字段，挂架锚点退化为 structureGroup", t);
+                return mountUnit.getStructureGroup();
+            }
+        }
+        try {
+            VehicleCubeGroup group = (VehicleCubeGroup) X_TURN_GROUP_FIELD.get(mountUnit);
+            if (group != null) {
+                return group;
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("[RVP] 读取 WeaponUnit.xTurnGroup 失败，退化为 structureGroup", t);
+        }
+        return mountUnit.getStructureGroup();
+    }
+
+    @Nullable
     private static AttachmentTransform resolveAttachmentTransform(AbstractVehicle vehicle,
                                                                  VehicleBedrockModel vehicleModel,
                                                                  RVP_CustomMountConfig config) {
@@ -316,7 +347,8 @@ public final class RVP_CustomMountRenderLogic {
             if (!(vehicle.getPartUnit(config.attachPartUnitId()).orElse(null) instanceof WeaponUnit mountUnit)) {
                 return null;
             }
-            VehicleCubeGroup xTurnGroup = ((WeaponUnitAccessor) mountUnit).getXTurnGroup();
+            // [RVP] accessor 已移除：优先反射读实例 xTurnGroup（= structure_bone + "_barrel" 骨组，挂架锚点），失败退化为 structureGroup
+            VehicleCubeGroup xTurnGroup = resolveMountAnchorGroup(mountUnit);
             List<Bolt> bolts = mountUnit.getBolts();
             if (xTurnGroup == null) {
                 return null;
@@ -707,9 +739,28 @@ public final class RVP_CustomMountRenderLogic {
                     .orElse(null);
             sb.append("resolvedMount=").append(resolvedMount != null).append('\n');
             if (resolvedMount != null) {
+                sb.append("syncedAmmo=").append(resolvedMount.syncedAmmo()).append('\n');
                 sb.append("visibleAmmo=").append(resolvedMount.visibleAmmo()).append('\n');
                 sb.append("visibleMissileCount=").append(resolvedMount.visibleMissileCount()).append('\n');
                 sb.append("hideMissile=").append(resolvedMount.shouldHideMissile()).append('\n');
+            }
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                WeaponResolution resolution = resolveCurrentWeaponForDisplay(weaponUnit);
+                sb.append("currentWeaponClass=")
+                        .append(resolution == null || resolution.currentWeapon() == null
+                                ? "<null>"
+                                : resolution.currentWeapon().getClass().getName())
+                        .append('\n');
+                if (resolution != null && resolution.currentWeapon() instanceof VehicleMultiWeapons multi) {
+                    sb.append("multiSelectedIndex=").append(multi.getSelectedIndex()).append('\n');
+                    sb.append("multiSelectedWeapon=")
+                            .append(multi.getSelectedWeapon().getData() == null
+                                    || multi.getSelectedWeapon().getData().getWeaponId() == null
+                                    ? "<null>"
+                                    : multi.getSelectedWeapon().getData().getWeaponId())
+                            .append('\n');
+                    sb.append("multiSelectedRemain=").append(multi.getSelectedWeapon().getRemainAmmo()).append('\n');
+                }
             }
         }
 

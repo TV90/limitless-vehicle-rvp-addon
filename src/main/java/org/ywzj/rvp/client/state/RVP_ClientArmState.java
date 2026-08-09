@@ -5,7 +5,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
@@ -90,7 +90,7 @@ public class RVP_ClientArmState {
         }
 
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (!(root instanceof WeaponUnitArmExt ext)) {
+        if (root == null) {
             clear();
             return;
         }
@@ -136,10 +136,10 @@ public class RVP_ClientArmState {
             }
             if (lockedIndex >= 0) {
                 cursorIndex = lockedIndex;
-                ensureLocked(contacts.get(cursorIndex), ext);
+                ensureLocked(contacts.get(cursorIndex), root);
             } else {
                 cursorIndex = 0;
-                ensureLocked(contacts.get(0), ext);
+                ensureLocked(contacts.get(0), root);
             }
         } else {
             // 无 contact 时不清理预设——脉冲间歇期保持目标，等下次脉冲回来继续用
@@ -152,9 +152,9 @@ public class RVP_ClientArmState {
             return;
         }
         cursorIndex = (cursorIndex - 1 + contacts.size()) % contacts.size();
-        WeaponUnitArmExt ext = getExt();
-        if (ext != null) {
-            ensureLocked(contacts.get(cursorIndex), ext);
+        WeaponUnit root = getRoot();
+        if (root != null) {
+            ensureLocked(contacts.get(cursorIndex), root);
         }
     }
 
@@ -163,9 +163,9 @@ public class RVP_ClientArmState {
             return;
         }
         cursorIndex = (cursorIndex + 1) % contacts.size();
-        WeaponUnitArmExt ext = getExt();
-        if (ext != null) {
-            ensureLocked(contacts.get(cursorIndex), ext);
+        WeaponUnit root = getRoot();
+        if (root != null) {
+            ensureLocked(contacts.get(cursorIndex), root);
         }
     }
 
@@ -178,15 +178,15 @@ public class RVP_ClientArmState {
             lockedVehicleId = -1;
             lockedRadarIndex = -1;
             lockedKeySent = Long.MIN_VALUE;
-            WeaponUnitArmExt ext = getExt();
-            if (ext != null) {
-                ext.ywzj_rvp$setArmPreselected(-1, -1, null);
+            WeaponUnit root = getRoot();
+            if (root != null) {
+                RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
             RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.clear());
         }
     }
 
-    private void ensureLocked(Contact c, WeaponUnitArmExt ext) {
+    private void ensureLocked(Contact c, WeaponUnit root) {
         if (c.vehicleId() == lockedVehicleId && c.radarIndex() == lockedRadarIndex) {
             return;
         }
@@ -195,7 +195,7 @@ public class RVP_ClientArmState {
         long key = AntiRadiationSeekerHelper.emitterKey(c.vehicleId(), c.radarIndex());
         if (key != lockedKeySent) {
             lockedKeySent = key;
-            ext.ywzj_rvp$setArmPreselected(lockedVehicleId, lockedRadarIndex, c.position());
+            RVP_WeaponLockStateTable.setArmPreselected(root, lockedVehicleId, lockedRadarIndex, c.position());
             RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.set(lockedVehicleId, lockedRadarIndex, c.position()));
         }
     }
@@ -279,11 +279,10 @@ public class RVP_ClientArmState {
         return !(Math.abs(aimRot.x - radarUnit.getXRot()) > radarUnit.getScanSectorAngle() / 2.0f);
     }
 
-    private static WeaponUnitArmExt getExt() {
+    private static WeaponUnit getRoot() {
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) return null;
-        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        return root instanceof WeaponUnitArmExt ext ? ext : null;
+        return weaponUnit.getRootParentWeaponUnit();
     }
 
     public boolean isActive() {

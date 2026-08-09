@@ -142,16 +142,25 @@ public final class RVP_ArtilleryFireControlState {
         // 否则从无人机切回火箭炮时第一次解算失败后会卡在"无解"状态。
         boolean hasValidSolution = solution != null
                 && solution.missDistance() < Double.POSITIVE_INFINITY;
-        if (!contextChanged && !hasValidSolution && lastResolveTick != Integer.MIN_VALUE
-                && context.vehicle().tickCount - lastResolveTick < HOVER_RESOLVE_INTERVAL_TICK) {
-            return;
-        }
-        if (!contextChanged && hasValidSolution && !sourceMoved) {
-            return;
-        }
-        if (!contextChanged && hasValidSolution && sourceMoved
-                && context.vehicle().tickCount - lastResolveTick < RESOLVE_INTERVAL_TICK) {
-            return;
+        // 有解但不精确（如炮口状态未同步导致 yaw 暂不可达、exact=false）同样需要重试：
+        // 专用服务器下网络同步慢，第一次解算常得到非精确解，若当作有效解节流会永久"无解"，
+        // 必须切换弹道才强制重解；此处按慢节奏持续重解，待同步完成后自然收敛为精确解。
+        boolean hasExactSolution = solution != null && solution.exact();
+        if (!contextChanged && lastResolveTick != Integer.MIN_VALUE) {
+            int sinceResolve = context.vehicle().tickCount - lastResolveTick;
+            if (!hasValidSolution) {
+                if (sinceResolve < HOVER_RESOLVE_INTERVAL_TICK) {
+                    return;
+                }
+            } else if (!hasExactSolution) {
+                if (sinceResolve < RESOLVE_INTERVAL_TICK) {
+                    return;
+                }
+            } else if (!sourceMoved) {
+                return;
+            } else if (sinceResolve < RESOLVE_INTERVAL_TICK) {
+                return;
+            }
         }
         solution = solve(context, designatedTarget);
         designatedVehicleId = context.vehicle().getId();

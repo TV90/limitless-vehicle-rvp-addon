@@ -9,13 +9,13 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
-import org.ywzj.rvp.ext.WeaponUnitExternalRadarLockExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -215,17 +215,14 @@ public final class RVP_ServerDebugCommands {
         if (!(player.getVehicle() instanceof AbstractVehicle current)) {
             return "[RVP] 当前未在载具内";
         }
-        if (!(current instanceof AbstractVehicleLinkedUavExt ext)) {
-            return "[RVP] 当前载具无 linked_uav 运行时状态";
-        }
         return "[RVP] current=" + current.getVehicleId()
-                + " parent=" + ext.ywzj_rvp$getLinkedParentVehicleUuid()
-                + " child=" + ext.ywzj_rvp$getLinkedChildVehicleUuid()
-                + " launcher=" + ext.ywzj_rvp$getLinkedLauncherVehicleUuid()
-                + " deployable=" + ext.ywzj_rvp$isDeployableUavInstance()
-                + " role=" + ext.ywzj_rvp$getDeployableUavRole()
-                + " datalink=" + ext.ywzj_rvp$getDatalinkRole()
-                + " returnSeat=" + ext.ywzj_rvp$getReturnSeatIndex();
+                + " parent=" + RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(current)
+                + " child=" + RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(current)
+                + " launcher=" + RVP_LinkedUavStateTable.getLinkedLauncherVehicleUuid(current)
+                + " deployable=" + RVP_LinkedUavStateTable.isDeployableUavInstance(current)
+                + " role=" + RVP_LinkedUavStateTable.getDeployableUavRole(current)
+                + " datalink=" + RVP_LinkedUavStateTable.getDatalinkRole(current)
+                + " returnSeat=" + RVP_LinkedUavStateTable.getReturnSeatIndex(current);
     }
 
     private static String buildExternalRadarStatus(ServerPlayer player) {
@@ -247,18 +244,13 @@ public final class RVP_ServerDebugCommands {
                     .append(" sensor=").append(weaponUnit.getFireControlSensorType())
                     .append(" localLocked=").append(describeEntity(weaponUnit.getLockedEntity()))
                     .append(" radarUnits=").append(weaponUnit.getRadarUnits().size());
-            if (weaponUnit instanceof WeaponUnitExternalRadarLockExt ext) {
-                sb.append(" requested=").append(ext.ywzj_rvp$getExternalRadarRequestedEntityId())
-                        .append(" externalLocked=").append(ext.ywzj_rvp$getExternalRadarLockedEntityId());
-            }
+            sb.append(" requested=").append(RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(weaponUnit))
+                    .append(" externalLocked=").append(RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(weaponUnit));
             RadarUnit preferred = RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
             sb.append(" preferredLocalRadar=").append(preferred == null ? "null" : preferred.getId());
         }
 
-        java.util.UUID childUuid = null;
-        if (launcher instanceof AbstractVehicleLinkedUavExt ext) {
-            childUuid = ext.ywzj_rvp$getLinkedChildVehicleUuid();
-        }
+        java.util.UUID childUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(launcher);
         if (childUuid == null) {
             childUuid = RVP_DeployableUavLinkRegistry.getChildUuid(launcher.getUUID());
         }

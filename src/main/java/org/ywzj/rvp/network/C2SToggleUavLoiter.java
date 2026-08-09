@@ -6,8 +6,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
-import org.ywzj.rvp.ext.AbstractVehicleLinkedUavExt;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
+import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -80,7 +80,7 @@ public class C2SToggleUavLoiter {
 
     /** 解析目标盘旋载具：无人机实例 → 自身有盘旋配置的载具 → 关联子无人机。 */
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
-        if (vehicle instanceof AbstractVehicleLinkedUavExt ext && ext.ywzj_rvp$isDeployableUavInstance()) {
+        if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return vehicle;
         }
         // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
@@ -97,7 +97,7 @@ public class C2SToggleUavLoiter {
         if (vehicle == uav) {
             return null;
         }
-        if (vehicle instanceof AbstractVehicleLinkedUavExt ext && !ext.ywzj_rvp$isDeployableUavInstance()) {
+        if (!RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
             return vehicle;
         }
         Optional<AbstractVehicle> parent = RVP_DeployableUavService.getLinkedParent(uav);

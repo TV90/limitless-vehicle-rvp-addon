@@ -5,7 +5,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.ext.WeaponUnitArmExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -83,9 +83,9 @@ public class C2SSetArmPreselect {
                     continue;
                 }
                 WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-                if (root instanceof WeaponUnitArmExt ext) {
+                if (root != null) {
                     @Nullable Vec3 pos = msg.hasTargetPos ? new Vec3(msg.targetPosX, msg.targetPosY, msg.targetPosZ) : null;
-                    ext.ywzj_rvp$setArmPreselected(msg.targetVehicleId, msg.targetRadarIndex, pos);
+                    RVP_WeaponLockStateTable.setArmPreselected(root, msg.targetVehicleId, msg.targetRadarIndex, pos);
                 }
                 return;
             }

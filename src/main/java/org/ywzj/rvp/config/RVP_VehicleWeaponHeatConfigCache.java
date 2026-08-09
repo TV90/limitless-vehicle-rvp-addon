@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.GsonHelper;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.mixin.accessor.WeaponUnitAccessor;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -100,14 +99,13 @@ public final class RVP_VehicleWeaponHeatConfigCache {
         if (partId == null || partId.isEmpty()) {
             return null;
         }
-        WeaponUnitAccessor accessor = (WeaponUnitAccessor) root;
         AbstractVehicleWeapon<?> primary = root.getCurrentWeapon().orElse(null);
         if (unwrap(primary) == weapon) {
-            return new SlotKey(partId, Channel.PRIMARY, accessor.getCurrentWeaponIndex());
+            return new SlotKey(partId, Channel.PRIMARY, root.getCurrentWeaponIndex());
         }
         AbstractVehicleWeapon<?> secondary = root.getCurrentSecondaryWeapon().orElse(null);
         if (unwrap(secondary) == weapon) {
-            return new SlotKey(partId, Channel.SECONDARY, accessor.getCurrentSecondaryWeaponIndex());
+            return new SlotKey(partId, Channel.SECONDARY, root.getCurrentSecondaryWeaponIndex());
         }
         return null;
     }

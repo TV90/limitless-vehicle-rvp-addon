@@ -1,11 +1,13 @@
 package org.ywzj.rvp.event;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -33,6 +35,8 @@ import java.util.Set;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_VehicleSpawnHandler {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) {
@@ -41,6 +45,9 @@ public class RVP_VehicleSpawnHandler {
         if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {
             return;
         }
+        LOGGER.info("[RVP][SpawnAmmo] entityJoin vehicle={} entityId={} config={} partUnits={}",
+                vehicle.getVehicleId(), vehicle.getId(),
+                RVP_CommonConfig.isSpawnVehicleWithCreativeAmmo(), vehicle.getPartUnits().size());
         if (!RVP_CommonConfig.isSpawnVehicleWithCreativeAmmo()) {
             return;
         }
@@ -76,6 +83,9 @@ public class RVP_VehicleSpawnHandler {
     /**
      * 遍历载具所有武器站的武器并瞬间补满弹药，跳过装填时间。
      * 直接设置剩余弹药 = 容量上限，不消耗库存弹药、不触发 reload。
+     * <p>分组弹种（{@code merge_into_previous_slot} 合并）装配由
+     * {@code WeaponUnitGroupedSlotMixin} 在 {@code WeaponUnit.combineAndInit} 阶段完成，
+     * 早于本事件，此处补满的即装配后的新武器实例。</p>
      */
     private static void refillAllWeapons(AbstractVehicle vehicle) {
         Set<AbstractVehicleWeapon<?>> visited = new HashSet<>();
@@ -94,13 +104,9 @@ public class RVP_VehicleSpawnHandler {
             if (!visited.add(weapon)) {
                 continue;
             }
-            // 多弹种武器：内部每个弹种子武器各自补满
+            // 多弹种武器：内部每个弹种子武器各自补满（子武器可能仍是多弹组，需递归）
             if (weapon instanceof VehicleMultiWeapons multi) {
-                for (AbstractVehicleWeapon<?> sub : multi.getSubWeapons()) {
-                    if (visited.add(sub)) {
-                        refillDirect(sub);
-                    }
-                }
+                refillMulti(multi, visited);
                 continue;
             }
             // 武器代理：真实弹药由代理目标武器站自身的遍历补满
@@ -111,11 +117,34 @@ public class RVP_VehicleSpawnHandler {
         }
     }
 
+    private static void refillMulti(VehicleMultiWeapons multi, Set<AbstractVehicleWeapon<?>> visited) {
+        for (AbstractVehicleWeapon<?> sub : multi.getSubWeapons()) {
+            if (!visited.add(sub)) {
+                continue;
+            }
+            if (sub instanceof VehicleMultiWeapons nested) {
+                refillMulti(nested, visited);
+            } else if (!(sub instanceof VehicleWeaponAgent)) {
+                // 直接对 multi 调 setRemainAmmo 无效：VehicleMultiWeapons.getRemainAmmo()
+                // 委托给当前选中子武器，set 写入的字段不被读取 → 必须补到叶子武器上
+                refillDirect(sub);
+            }
+        }
+    }
+
     private static void refillDirect(AbstractVehicleWeapon<?> weapon) {
-        weapon.setRemainAmmo(weapon.getMaxCapacity());
+        int before = weapon.getRemainAmmo();
+        int max = weapon.getMaxCapacity();
+        weapon.setRemainAmmo(max);
         if (weapon instanceof RVP_WeaponBase rvpWeapon) {
             // 防御性清零装填倒计时（生成瞬间本应为 0，避免任何残留装填状态）
             rvpWeapon.ywzj_rvp$clearReloadState();
+        }
+        if (weapon.getVehicle() != null) {
+            LOGGER.info("[RVP][SpawnAmmo] refill weapon={} before={} max={} after={}",
+                    weapon.getData() == null || weapon.getData().getWeaponId() == null
+                            ? "<null>" : weapon.getData().getWeaponId(),
+                    before, max, weapon.getRemainAmmo());
         }
     }
 }
