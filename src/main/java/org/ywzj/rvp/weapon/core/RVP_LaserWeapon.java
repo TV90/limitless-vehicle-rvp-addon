@@ -74,12 +74,6 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                             targetVehicle, start, beam.impactPoint());
                     hitDamageBeforeHitbox = hitDamage;
                     hitDamage *= hitboxRes.factor();
-                    if (shooter instanceof net.minecraft.world.entity.player.Player player) {
-                        RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                                player, targetVehicle, hitDamageBeforeHitbox, hitDamage, hitboxRes,
-                                Float.NaN, 1f
-                        );
-                    }
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt) {
                     // 激光伤害来源 direct=射手（非投射物），本体 DamageSystem 走 hitPos==null →

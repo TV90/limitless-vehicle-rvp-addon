@@ -53,6 +53,7 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
+import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
 import org.ywzj.rvp.network.C2SToggleUavLoiter;
@@ -100,6 +101,7 @@ public class RVP_ClientEvents {
         ywzj_rvp$syncLocalVehiclePlayerSeat();
 
         RVP_ClientBulletHitDebugState.clientTick();
+        RVP_ClientHitIndicatorState.clientTick();
         RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();

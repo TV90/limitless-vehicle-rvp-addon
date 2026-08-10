@@ -5,7 +5,6 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -14,7 +13,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -26,6 +24,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.vehicle.BoneApsConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
@@ -54,7 +53,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     private Map<ResourceLocation, VehicleHitboxConfig> configs = Map.of();
     private Set<ResourceLocation> hidePassengerVehicles = Set.of();
-    private final Map<UUID, Long> lastDebugAtMsByPlayer = new HashMap<>();
 
     @Override
     protected Map<ResourceLocation, JsonElement> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
@@ -174,6 +172,32 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
+     * 返回车辆所有声明了主动防护发射器（{@code aps} 子对象）的骨块配置（骨块名 → 配置）。
+     * 设备是否存活（对应 APS 骨块被击毁）由调用方通过
+     * {@link RVP_BoneModuleStateTable#isModuleActive} 判定；未配置 APS 的车辆返回 null。
+     */
+    public @Nullable Map<String, BoneApsConfig> resolveApsDevices(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneApsConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneApsConfig aps = entry.getValue() == null ? null : entry.getValue().aps();
+            if (aps != null && aps.isEnabled()) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), aps);
+            }
+        }
+        return out;
+    }
+
+    /**
      * 直击消耗骨块上全部"可被弹药击毁"的模块（机制一：OBB 单发命中）。
      *
      * <p>泛化了原 {@code tryTriggerEra}：命中骨块若挂多个模块（如 ERA + JAMMER 叠加），
@@ -226,44 +250,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return true;
     }
 
-    public void maybeSendHitboxDebug(
-            Player player,
-            AbstractVehicle vehicle,
-            float damageBefore,
-            float damageAfter,
-            HitboxDamageResult result,
-            float coreFalloffScale,
-            float coreFalloffMultiplier
-    ) {
-        if (player == null || vehicle == null || result == null || !result.enabled()) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        UUID id = player.getUUID();
-        Long last = lastDebugAtMsByPlayer.get(id);
-        if (last != null && now - last < 250) {
-            return;
-        }
-        lastDebugAtMsByPlayer.put(id, now);
-
-        String bone = resolveHitboxDisplayName(vehicle, result.hitBoneName());
-        if (!result.modules().isEmpty()) {
-            bone += " " + result.modules();
-        }
-        String coreInfo = "";
-        if (Float.isFinite(coreFalloffScale) && Float.isFinite(coreFalloffMultiplier) && coreFalloffMultiplier != 1f) {
-            coreInfo = " core=" + fmt(coreFalloffScale) + " m=" + fmt(coreFalloffMultiplier);
-        }
-        Component msg = Component.literal(
-                "HBX " + bone
-                        + " x" + fmt(result.factor())
-                        + " (" + fmt(damageBefore) + " -> " + fmt(damageAfter) + ")"
-                        + coreInfo
-                        + (result.missingConfigBones() > 0 ? " missing=" + result.missingConfigBones() : "")
-        );
-        player.displayClientMessage(msg, true);
-    }
-
     public String resolveHitboxDisplayName(AbstractVehicle vehicle, @Nullable String boneName) {
         if (boneName == null || boneName.isBlank()) {
             return "default";
@@ -276,6 +262,12 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return boneName;
         }
         return cfg.aliasByBoneName.getOrDefault(boneName, boneName);
+    }
+
+    /** 载具 JSON 顶层 {@code hit_indicator_rvp}（默认 true）：是否对命中该载具显示 RVP 命中提示。 */
+    public boolean isHitIndicatorRvpEnabled(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        return cfg == null || cfg.hitIndicatorRvp();
     }
 
     private void sanitizeModuleState(AbstractVehicle vehicle, VehicleHitboxConfig cfg) {
@@ -603,7 +595,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Map<String, Float> factorByBoneName,
             Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
-            float coreDistanceScaleMultiplier
+            float coreDistanceScaleMultiplier,
+            boolean hitIndicatorRvp
     ) {
         boolean isEnabled() {
             return defaultFactor != 1f
@@ -724,11 +717,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
+            boolean hitIndicatorRvp = GsonHelper.getAsBoolean(obj, "hit_indicator_rvp", true);
             if ((map == null || map.isEmpty())
                     && (moduleMap == null || moduleMap.isEmpty())
                     && (aliasMap == null || aliasMap.isEmpty())
                     && def == 1f
-                    && coreM == 1f) {
+                    && coreM == 1f
+                    && hitIndicatorRvp) {
                 return null;
             }
             return new VehicleHitboxConfig(
@@ -737,7 +732,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     map == null ? Map.of() : Map.copyOf(map),
                     moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
-                    coreM
+                    coreM,
+                    hitIndicatorRvp
             );
         }
 
@@ -905,7 +901,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float minTriggerDamage,
             float explosion,
             Set<BoneModuleType> modules,
-            @Nullable BoneJammerConfig jammer
+            @Nullable BoneJammerConfig jammer,
+            @Nullable BoneApsConfig aps
     ) {
         boolean hasModules() {
             return modules != null && !modules.isEmpty();
@@ -932,7 +929,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 explosion = 0f;
             }
             return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules,
-                    BoneJammerConfig.parse(obj.get("jammer")));
+                    BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")));
         }
 
         /** 兼容旧配置 {@code hitbox_era} 条目：始终仅 ERA 模块。 */
@@ -945,7 +942,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 return factor.map(value -> {
                     Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
                     modules.add(BoneModuleType.ERA);
-                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null);
+                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null);
                 }).orElse(null);
             }
             if (!element.isJsonObject()) {
@@ -963,7 +960,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
             modules.add(BoneModuleType.ERA);
-            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null);
+            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null);
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */

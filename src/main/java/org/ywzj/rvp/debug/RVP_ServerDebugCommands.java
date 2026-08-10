@@ -208,6 +208,26 @@ public final class RVP_ServerDebugCommands {
                                                     + RVP_TopAttackDebug.getLogPath()), false);
                                     return 1;
                                 })))
+                        .then(Commands.literal("scanviz")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_CoverageDebug.setEnabled(ctx.getSource().getPlayerOrException().getUUID(), true);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已开启探测范围可视化（干扰机=黄色锥体，APS=蓝色锥体）"), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_CoverageDebug.setEnabled(ctx.getSource().getPlayerOrException().getUUID(), false);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已关闭探测范围可视化"), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_CoverageDebug.isEnabled(ctx.getSource().getPlayerOrException().getUUID());
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] scanviz=" + enabled
+                                                    + " enabledPlayers=" + RVP_CoverageDebug.enabledCount()), false);
+                                    return enabled ? 1 : 0;
+                                })))
         );
     }
 

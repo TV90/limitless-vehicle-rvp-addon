@@ -30,6 +30,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
+import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -42,6 +43,8 @@ import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
 import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CRvpHitIndicator;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
@@ -2212,6 +2215,36 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         } else {
             EntityUtil.hurt(source, entity, hurtAmount);
         }
+        // RVP 命中提示：仅向射手本人推送（右上角展板 UI）；载具 JSON 配置 hit_indicator_rvp=false 时走本体。
+        // 必须在本体 DamageSystem.hurt（内部发送 ServerHitVehicleEvent 到附近玩家）之后再发包，
+        // 使客户端收到的最后一个命中包是 RVP 包，随后清空本体 events 实现二选一。
+        if (owner instanceof ServerPlayer shooter && entity instanceof AbstractVehicle targetVehicle
+                && !level().isClientSide()
+                && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(targetVehicle)) {
+            String boneDisp = hitboxRes == null ? null
+                    : RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(
+                            targetVehicle, hitboxRes.hitBoneName());
+            String ammoKey = config != null ? config.getName() : "";
+            ResourceLocation weaponId = getWeaponId();
+            // 来袭方向直接用弹体当前速度方向（getDeltaMovement）：位移方向在命中 tick 可能
+            // 因 setPos/反弹而指向乱，实测会连累红线与弹体方向一起错。
+            Vec3 vel = getDeltaMovement();
+            // TODO 临时调试日志（定位方向问题后删除）
+            LOGGER.info("[RVP-HitUI-send] hit={} vel={} weapon={}",
+                    result.getLocation(),
+                    String.format("%.2f,%.2f,%.2f", vel.x, vel.y, vel.z),
+                    weaponId);
+            RVP_Network.CHANNEL.send(
+                    PacketDistributor.PLAYER.with(() -> shooter),
+                    S2CRvpHitIndicator.create(
+                            targetVehicle.getId(),
+                            result.getLocation(),
+                            vel.lengthSqr() > 1.0E-6 ? vel.normalize() : Vec3.ZERO,
+                            finalDamage,
+                            boneDisp,
+                            ammoKey,
+                            weaponId == null ? null : weaponId.toString()));
+        }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
             directHitVehicleIds.add(targetVehicle.getId());
@@ -2224,12 +2257,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // AP 弹或小爆炸弹 → 机制一（OBB 单块）
                 RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, preHitboxDamage);
             }
-        }
-        if (hitboxRes != null && owner instanceof net.minecraft.world.entity.player.Player player && entity instanceof AbstractVehicle targetVehicle) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                    player, targetVehicle, preHitboxDamage, hurtAmount, hitboxRes,
-                    Float.NaN, 1f
-            );
         }
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.invulnerableTime = 0;
@@ -2639,6 +2666,43 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         v, radius, pos, false);
             }
             directHitVehicleIds.clear();
+        }
+        // RVP 爆炸命中提示：爆炸对范围内所有载具按距离衰减补发命中包（含直击载具的爆炸额外伤害，
+        // 客户端把直击与爆炸伤害短时间累积；骨骼名为空 → 显示“爆炸 -x%”）
+        if (!level().isClientSide() && explosion != null && explosion.explode
+                && getOwner() instanceof ServerPlayer shooter) {
+            double half = radius;
+            AABB hitBox = new AABB(
+                    pos.x - half, pos.y - half, pos.z - half,
+                    pos.x + half, pos.y + half, pos.z + half);
+            for (AbstractVehicle v : level().getEntitiesOfClass(AbstractVehicle.class, hitBox)) {
+                if (v.isDestroyed()
+                        || !RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(v)) {
+                    continue;
+                }
+                double dist = v.position().distanceTo(pos);
+                if (dist > radius) {
+                    continue;
+                }
+                float boomDamage = (float) (resolvedDamage * (1.0 - 0.5 * dist / radius));
+                if (!(boomDamage > 0f)) {
+                    continue;
+                }
+                // 冲击波方向（爆炸点 → 载具）：作为命中向量，客户端红线沿其反方向指向爆炸点
+                Vec3 boomVec = v.position().subtract(pos);
+                Vec3 hitVector = boomVec.lengthSqr() > 1.0E-6 ? boomVec.normalize() : Vec3.ZERO;
+                ResourceLocation weaponId = getWeaponId();
+                RVP_Network.CHANNEL.send(
+                        PacketDistributor.PLAYER.with(() -> shooter),
+                        S2CRvpHitIndicator.create(
+                                v.getId(),
+                                v.position(),
+                                hitVector,
+                                boomDamage,
+                                "",
+                                "",
+                                weaponId == null ? null : weaponId.toString()));
+            }
         }
     }
 

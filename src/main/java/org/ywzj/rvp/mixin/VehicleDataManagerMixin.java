@@ -14,8 +14,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.config.AutoLandingGearCache;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
-import org.ywzj.rvp.config.RVP_ApsConfig;
-import org.ywzj.rvp.config.RVP_ApsConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
@@ -29,7 +27,6 @@ import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,7 +78,6 @@ public class VehicleDataManagerMixin {
                     RVP_LoiterConfigCache.put(vehicleId, loiterConfig);
                 }
 
-                RVP_ApsConfigCache.put(vehicleId, ywzj_rvp$parseApsConfig(obj));
                 List<RVP_LauncherDeployConfig> launcherDeployConfigs = RVP_LauncherDeployConfig.parseList(obj);
                 if (!launcherDeployConfigs.isEmpty()) {
                     RVP_LauncherDeployConfigCache.put(vehicleId, launcherDeployConfigs);
@@ -113,54 +109,6 @@ public class VehicleDataManagerMixin {
         AutoLandingGearCache.replace(autoGearByVehicle);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);
-    }
-
-    private static RVP_ApsConfig ywzj_rvp$parseApsConfig(JsonObject vehicleObj) {
-        if (!vehicleObj.has("rvp_aps") || !vehicleObj.get("rvp_aps").isJsonObject()) {
-            return RVP_ApsConfig.DISABLED;
-        }
-
-        JsonObject apsObj = vehicleObj.getAsJsonObject("rvp_aps");
-        boolean enabled = GsonHelper.getAsBoolean(apsObj, "enabled", false);
-        if (!enabled) {
-            return RVP_ApsConfig.DISABLED;
-        }
-
-        List<String> animationPartIds = new ArrayList<>();
-        if (apsObj.has("animation_part_ids") && apsObj.get("animation_part_ids").isJsonArray()) {
-            for (JsonElement element : apsObj.getAsJsonArray("animation_part_ids")) {
-                if (element != null && element.isJsonPrimitive()) {
-                    String id = element.getAsString().trim();
-                    if (!id.isEmpty()) {
-                        animationPartIds.add(id);
-                    }
-                }
-            }
-        }
-
-        String spawnPartId = GsonHelper.getAsString(apsObj, "spawn_part_id", "");
-        if (spawnPartId.isBlank() && !animationPartIds.isEmpty()) {
-            spawnPartId = animationPartIds.get(0);
-        }
-
-        double speedMin = Math.max(0.0, GsonHelper.getAsDouble(apsObj, "projectile_speed_min", 1.0));
-        double speedMax = Math.max(speedMin, GsonHelper.getAsDouble(apsObj, "projectile_speed_max", 80.0));
-
-        return new RVP_ApsConfig(
-                true,
-                Math.max(0, GsonHelper.getAsInt(apsObj, "ammo_max", 0)),
-                Math.max(1, GsonHelper.getAsInt(apsObj, "reload_one_tick", 600)),
-                Math.max(1, GsonHelper.getAsInt(apsObj, "cooldown_tick", 20)),
-                Math.max(0, GsonHelper.getAsInt(apsObj, "intercept_delay_tick", 10)),
-                Math.max(1, GsonHelper.getAsInt(apsObj, "scan_interval_tick", 1)),
-                Math.max(0.0, GsonHelper.getAsDouble(apsObj, "detect_radius", 32.0)),
-                Math.max(0.1, GsonHelper.getAsDouble(apsObj, "intercept_radius", 8.0)),
-                speedMin,
-                speedMax,
-                animationPartIds,
-                spawnPartId,
-                GsonHelper.getAsBoolean(apsObj, "exclude_owner_projectile", true)
-        );
     }
 
     private static RVP_DeployableUavConfig ywzj_rvp$parseDeployableUavConfig(JsonObject vehicleObj) {

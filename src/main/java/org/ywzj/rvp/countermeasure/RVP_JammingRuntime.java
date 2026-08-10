@@ -233,7 +233,7 @@ public final class RVP_JammingRuntime {
      * 否则退回车体朝向；再叠加 {@code facing_yaw} 水平偏置角（正值向左），
      * 使左右分布式干扰机各覆盖不同扇区。
      */
-    private static Vec3 resolveFacing(AbstractVehicle vehicle, @Nullable String facingPart, double facingYawDeg) {
+    public static Vec3 resolveFacing(AbstractVehicle vehicle, @Nullable String facingPart, double facingYawDeg) {
         Vec3 base;
         if (facingPart != null && !facingPart.isBlank()) {
             PartUnit<?> partUnit = vehicle.getPartUnit(facingPart).orElse(null);

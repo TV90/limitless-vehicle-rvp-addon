@@ -3,7 +3,6 @@ package org.ywzj.rvp.weapon.damage;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -176,17 +175,9 @@ public final class RVP_VehicleHurtScalingHandler {
             REAPPLY_GUARD.remove(self.getId());
         }
 
-        // 骨骼模块消耗（ERA 等）+ 调试消息（与原 mixin 一致）
+        // 骨骼模块消耗（ERA 等）
         if (res != null) {
             RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(self, res, predicted);
-        }
-        Player debugPlayer = resolveDebugPlayer(attacker);
-        if (debugPlayer != null) {
-            RVP_VehicleHitboxFactorManager.HitboxDamageResult dbgRes = hitboxEnabled
-                    ? res
-                    : RVP_VehicleHitboxFactorManager.HitboxDamageResult.defaulted(1f, null, 0, Double.NaN);
-            RVP_VehicleHitboxFactorManager.INSTANCE.maybeSendHitboxDebug(
-                    debugPlayer, self, predicted, desiredFinal, dbgRes, coreFalloff, coreMult);
         }
     }
 
@@ -361,15 +352,5 @@ public final class RVP_VehicleHurtScalingHandler {
             }
         }
         return effectiveAmount * (float) scale;
-    }
-
-    private static Player resolveDebugPlayer(Entity attacker) {
-        if (attacker instanceof Player player) {
-            return player;
-        }
-        if (attacker instanceof AbstractVehicle attackerVehicle && attackerVehicle.getDriver() instanceof Player player) {
-            return player;
-        }
-        return null;
     }
 }

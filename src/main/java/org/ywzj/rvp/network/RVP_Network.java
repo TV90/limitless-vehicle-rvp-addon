@@ -6,7 +6,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
 
 public class RVP_Network {
-    private static final String PROTOCOL = "1";
+    private static final String PROTOCOL = "2";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -191,6 +191,11 @@ public class RVP_Network {
                 .encoder(C2SRadarPowerToggle::encode)
                 .decoder(C2SRadarPowerToggle::decode)
                 .consumerMainThread(C2SRadarPowerToggle::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CRvpHitIndicator.class, id++)
+                .encoder(S2CRvpHitIndicator::encode)
+                .decoder(S2CRvpHitIndicator::decode)
+                .consumerMainThread(S2CRvpHitIndicator::handle)
                 .add();
     }
 }
