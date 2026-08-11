@@ -76,6 +76,42 @@ public class RVP_GuidanceData {
     @SerializedName("cruise_leveling_factor")
     private float cruiseLevelingFactor = 0.15f;
 
+    /** 弹道导弹巡航高度（相对发射点Y）；{@code > 0} 启用 PRESET 三段式弹道，默认 0 禁用。 */
+    @SerializedName("preset_cruise_altitude")
+    private float presetCruiseAltitude = 0f;
+
+    /** 上升段前伸量上限，实际取 {@code min(值, 25%×水平距离)}。 */
+    @SerializedName("preset_max_ascent_lead")
+    private float presetMaxAscentLead = 64f;
+
+    /** 上升段完成判定半径。 */
+    @SerializedName("preset_ascent_radius")
+    private float presetAscentRadius = 24f;
+
+    /** 俯冲段最小启动水平距离。 */
+    @SerializedName("preset_dive_radius")
+    private float presetDiveRadius = 24f;
+
+    /** 俯冲距离 = 高度差 × 因子。 */
+    @SerializedName("preset_dive_altitude_factor")
+    private float presetDiveAltitudeFactor = 0.75f;
+
+    /** 俯冲距离 = 近似转弯半径 × 因子。 */
+    @SerializedName("preset_dive_lead_factor")
+    private float presetDiveLeadFactor = 1.5f;
+
+    /** 高度闭环 P 增益。 */
+    @SerializedName("preset_cruise_altitude_gain")
+    private float presetCruiseAltitudeGain = 0.002f;
+
+    /** 高度闭环 D 阻尼。 */
+    @SerializedName("preset_cruise_vertical_damping")
+    private float presetCruiseVerticalDamping = 0.05f;
+
+    /** 垂直分量占速率比例上限。 */
+    @SerializedName("preset_cruise_max_vertical_component")
+    private float presetCruiseMaxVerticalComponent = 0.5f;
+
     @SerializedName("lock_angle_gate")
     private Map<RVP_Range<Float>, RVP_Range<Float>> lockAngleGate;
 
@@ -177,6 +213,43 @@ public class RVP_GuidanceData {
 
     public float getCruiseLevelingFactor() {
         return Math.max(cruiseLevelingFactor, 0f);
+    }
+
+    /** @return 弹道导弹巡航高度（相对发射点Y）；{@code > 0} 启用 PRESET 三段式弹道。 */
+    public float getPresetCruiseAltitude() {
+        return Math.max(presetCruiseAltitude, 0f);
+    }
+
+    public float getPresetMaxAscentLead() {
+        return Math.max(presetMaxAscentLead, 0f);
+    }
+
+    public float getPresetAscentRadius() {
+        return Math.max(presetAscentRadius, 0f);
+    }
+
+    public float getPresetDiveRadius() {
+        return Math.max(presetDiveRadius, 0f);
+    }
+
+    public float getPresetDiveAltitudeFactor() {
+        return Math.max(presetDiveAltitudeFactor, 0f);
+    }
+
+    public float getPresetDiveLeadFactor() {
+        return Math.max(presetDiveLeadFactor, 0f);
+    }
+
+    public float getPresetCruiseAltitudeGain() {
+        return Math.max(presetCruiseAltitudeGain, 0f);
+    }
+
+    public float getPresetCruiseVerticalDamping() {
+        return Math.max(presetCruiseVerticalDamping, 0f);
+    }
+
+    public float getPresetCruiseMaxVerticalComponent() {
+        return Math.max(presetCruiseMaxVerticalComponent, 0f);
     }
 
     public Map<RVP_Range<Float>, RVP_Range<Float>> getLockAngleGate() {

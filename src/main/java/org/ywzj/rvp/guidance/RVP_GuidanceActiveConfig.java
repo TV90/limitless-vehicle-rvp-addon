@@ -48,7 +48,8 @@ public record RVP_GuidanceActiveConfig(
         boolean semiCorrectionEnabled,
         float semiCorrectionStiffness,
         float semiCorrectionDamping,
-        float semiCorrectionWobble
+        float semiCorrectionWobble,
+        RVP_PresetBallisticProfile presetBallistic
 ) {
     public RVP_GuidanceActiveConfig {
         phase = phase == null ? RVP_GuidancePhase.MAIN : phase;
@@ -80,6 +81,7 @@ public record RVP_GuidanceActiveConfig(
         semiCorrectionStiffness = Math.max(semiCorrectionStiffness, 0f);
         semiCorrectionDamping = Math.max(semiCorrectionDamping, 0f);
         semiCorrectionWobble = Math.max(semiCorrectionWobble, 0f);
+        presetBallistic = presetBallistic == null ? RVP_PresetBallisticProfile.inactive() : presetBallistic;
     }
 
     public float maxLockHalfAngle() {

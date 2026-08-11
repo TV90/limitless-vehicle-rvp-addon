@@ -326,6 +326,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 topAttackApexPos;
     private boolean topAttackApexReached;
 
+    /** ===== 弹道导弹（PRESET 三段式）轨迹参考点 ===== */
+    @Nullable
+    private Vec3 presetLaunchPos;
+    @Nullable
+    private Vec3 presetAscentPos;
+    @Nullable
+    private Vec3 presetOverheadPos;
+    private boolean presetInitialized;
+
     protected int guidanceStageIndex = -1;
     protected int guidanceStageEnteredTick;
     protected final java.util.Map<Integer, Integer> guidanceStageEnteredTicks = new java.util.HashMap<>();
@@ -402,6 +411,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         writeRemoteVec3(data, "topAttackInitialTargetPos", topAttackInitialTargetPos);
         writeRemoteVec3(data, "topAttackApexPos", topAttackApexPos);
         data.putBoolean("topAttackApexReached", topAttackApexReached);
+        writeRemoteVec3(data, "presetLaunchPos", presetLaunchPos);
+        writeRemoteVec3(data, "presetAscentPos", presetAscentPos);
+        writeRemoteVec3(data, "presetOverheadPos", presetOverheadPos);
+        data.putBoolean("presetInitialized", presetInitialized);
         data.putInt("coldLaunchTimeTick", coldLaunchTimeTick);
         writeRemoteVec3(data, "coldLaunchVelocity", coldLaunchVelocity);
         data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
@@ -433,6 +446,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         topAttackInitialTargetPos = readRemoteVec3(data, "topAttackInitialTargetPos");
         topAttackApexPos = readRemoteVec3(data, "topAttackApexPos");
         topAttackApexReached = data.getBoolean("topAttackApexReached");
+        presetLaunchPos = readRemoteVec3(data, "presetLaunchPos");
+        presetAscentPos = readRemoteVec3(data, "presetAscentPos");
+        presetOverheadPos = readRemoteVec3(data, "presetOverheadPos");
+        presetInitialized = data.getBoolean("presetInitialized");
         coldLaunchTimeTick = Math.max(data.getInt("coldLaunchTimeTick"), 0);
         Vec3 readColdLaunchVelocity = readRemoteVec3(data, "coldLaunchVelocity");
         coldLaunchVelocity = readColdLaunchVelocity != null ? readColdLaunchVelocity : new Vec3(0, -1, 0);
@@ -945,6 +962,42 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public void markTopAttackApexReached() {
         topAttackApexReached = true;
+    }
+
+    /**
+     * 初始化弹道导弹（PRESET 三段式）轨迹参考点；仅首次调用生效。
+     *
+     * @param launchPos 弹道参考发射点（发射位置；虚拟中段恢复后为虚拟记录保存的发射位置）
+     * @param ascentPos 上升段终点（水平前伸 + 巡航高度）
+     * @param overheadPos 巡航段水平目标（目标头顶正上方，高度 = 巡航高度）
+     */
+    public void initializePresetProfile(Vec3 launchPos, Vec3 ascentPos, Vec3 overheadPos) {
+        if (presetInitialized || launchPos == null || ascentPos == null || overheadPos == null) {
+            return;
+        }
+        presetLaunchPos = launchPos;
+        presetAscentPos = ascentPos;
+        presetOverheadPos = overheadPos;
+        presetInitialized = true;
+    }
+
+    @Nullable
+    public Vec3 getPresetLaunchPos() {
+        return presetLaunchPos;
+    }
+
+    @Nullable
+    public Vec3 getPresetAscentPos() {
+        return presetAscentPos;
+    }
+
+    @Nullable
+    public Vec3 getPresetOverheadPos() {
+        return presetOverheadPos;
+    }
+
+    public boolean hasPresetProfileInitialized() {
+        return presetInitialized;
     }
 
     @Nullable

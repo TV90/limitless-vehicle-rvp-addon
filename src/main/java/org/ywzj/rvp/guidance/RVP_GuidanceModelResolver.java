@@ -96,7 +96,8 @@ public final class RVP_GuidanceModelResolver {
                 saclos != null && saclos.isSemiCorrectionEnabled(),
                 saclos == null ? 0.05f : saclos.getSemiCorrectionStiffness(),
                 saclos == null ? 0.05f : saclos.getSemiCorrectionDamping(),
-                saclos == null ? 0.5f : saclos.getSemiCorrectionWobble()
+                saclos == null ? 0.5f : saclos.getSemiCorrectionWobble(),
+                RVP_PresetBallisticProfile.of(data)
         );
     }
 
@@ -146,7 +147,8 @@ public final class RVP_GuidanceModelResolver {
                 false,
                 0.05f,
                 0.05f,
-                0.5f
+                0.5f,
+                RVP_PresetBallisticProfile.inactive()
         );
     }
 }

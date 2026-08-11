@@ -27,6 +27,13 @@ public final class RVP_GuidanceRuntimeMath {
         if (target == null) {
             return false;
         }
+        // 弹道导弹（PRESET 三段式）分支：GPS 制导 + preset_cruise_altitude > 0 时接管全程制导。
+        // 与本体 PRESET 一致，不参与 track envelope / guidance angle 门限检查。
+        RVP_PresetBallisticProfile preset = context.active().presetBallistic();
+        if (preset != null && preset.active()
+                && context.active().guidanceType() == RVP_EnumGuidanceType.GPS) {
+            return applyPresetBallistic(context, target, preset);
+        }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
         boolean irGrace = entity != null
                 && context.active().guidanceType() == RVP_EnumGuidanceType.IR
@@ -103,6 +110,220 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
+    }
+
+    /**
+     * 弹道导弹（PRESET 三段式）全程制导：按上升/巡航/俯冲段生成转向速度。
+     *
+     * <p>阶段判定无记忆，由几何直接推断（与本体显式 phase 状态机等价）：未到上升段终点
+     * 视为上升，否则按本体俯冲判据决定是否俯冲，两者皆否进入高度闭环巡航。</p>
+     */
+    private static boolean applyPresetBallistic(
+            RVP_GuidanceRuntimeContext context,
+            Vec3 target,
+            RVP_PresetBallisticProfile preset
+    ) {
+        RVP_BaseBullet projectile = context.projectile();
+        if (projectile == null || target == null) {
+            return false;
+        }
+        projectile.rememberGuidancePos(target);
+        projectile.setGuidanceTargetPos(target);
+
+        if (!projectile.hasPresetProfileInitialized()) {
+            Vec3 launch = projectile.getVirtualMidcourseLaunchPosition();
+            Vec3 ascentPos = computePresetAscentPos(projectile.position(), target, launch, preset);
+            Vec3 overheadPos = new Vec3(target.x, launch.y + preset.cruiseAltitude(), target.z);
+            projectile.initializePresetProfile(launch, ascentPos, overheadPos);
+        }
+        Vec3 ascentPos = projectile.getPresetAscentPos();
+        Vec3 overheadPos = projectile.getPresetOverheadPos();
+        Vec3 launchPos = projectile.getPresetLaunchPos();
+        if (ascentPos == null || overheadPos == null) {
+            return false;
+        }
+
+        Vec3 current = projectile.getDeltaMovement();
+        double speed = Math.max(projectile.getFlightSpeed(), current.length());
+        if (speed <= 1.0E-6) {
+            return false;
+        }
+        float factor = resolveTurningFactor(context);
+        Vec3 next;
+        if (isPresetAscentPhase(projectile.position(), ascentPos, launchPos, preset)) {
+            next = steerPursuit(current, ascentPos.subtract(projectile.position()), speed, factor);
+        } else if (shouldBeginPresetDive(projectile.position(), target, launchPos, current, preset, factor)) {
+            next = steerPresetTerminal(current, projectile.position(), target, speed, factor);
+        } else {
+            next = steerPresetCruise(current, projectile.position(), target, overheadPos.y, speed, factor, preset);
+        }
+        if (next == null || next.lengthSqr() <= 1.0E-8) {
+            return false;
+        }
+        projectile.setDeltaMovement(next);
+        RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
+        return true;
+    }
+
+    /**
+     * 终端俯冲段转向：未过顶时正常指向目标；一旦已越过目标或极度接近，
+     * 锁定当前水平方向、全力下压坠落，禁止 pure pursuit 翻转掉头导致的绕圈。
+     *
+     * <p>锁定后导弹不再水平追目标，靠下坠碰撞命中；水平偏差受锁定时刻的
+     * 距离阈值（{@code speed*0.5}）约束，配合近炸/碰撞引信在目标附近引爆。</p>
+     */
+    static Vec3 steerPresetTerminal(
+            Vec3 current,
+            Vec3 position,
+            Vec3 target,
+            double speed,
+            float turningFactor
+    ) {
+        if (target == null || speed <= 1.0E-8) {
+            return current;
+        }
+        Vec3 toTarget = target.subtract(position);
+        double horizontalSqr = toTarget.x * toTarget.x + toTarget.z * toTarget.z;
+        Vec3 velocityHorizontal = new Vec3(current.x, 0, current.z);
+        double velocityHorizontalSqr = velocityHorizontal.lengthSqr();
+        boolean overshoot = horizontalSqr > 1.0E-8 && velocityHorizontalSqr > 1.0E-8
+                && velocityHorizontal.dot(toTarget) < 0.0;
+        boolean veryClose = horizontalSqr <= Math.max(1.0, speed * speed * 0.25);
+        if (overshoot || veryClose) {
+            // 终端锁定：保留当前水平方向分量（禁止 180° 翻转），垂直全力下压。
+            Vec3 desired = velocityHorizontalSqr > 1.0E-8
+                    ? velocityHorizontal.scale(0.25 / Math.sqrt(velocityHorizontalSqr)).add(0, -1, 0)
+                    : new Vec3(0, -1, 0);
+            return blendDirection(current, desired.normalize().scale(speed), speed,
+                    Math.max(turningFactor, 0.5F));
+        }
+        return blendDirection(current, toTarget.normalize().scale(speed), speed, turningFactor);
+    }
+
+    /** 计算上升段终点：水平前伸 {@code min(maxAscentLead, 25%×水平距离)}，高度 = 发射点Y + 巡航高度。 */
+    static Vec3 computePresetAscentPos(
+            Vec3 projectilePos,
+            Vec3 target,
+            Vec3 launch,
+            RVP_PresetBallisticProfile preset
+    ) {
+        if (target == null || launch == null || preset == null) {
+            return null;
+        }
+        Vec3 horizontalToTarget = new Vec3(target.x - launch.x, 0, target.z - launch.z);
+        double horizontalDistance = horizontalToTarget.length();
+        Vec3 forward = horizontalDistance > 1.0E-6
+                ? horizontalToTarget.scale(1.0D / horizontalDistance)
+                : new Vec3(projectilePos == null ? 0 : 0, 0, 0);
+        if (forward.lengthSqr() <= 1.0E-8) {
+            forward = new Vec3(0, 0, 1);
+        }
+        double ascentLead = Math.min(preset.maxAscentLead(), horizontalDistance * 0.25);
+        double cruiseY = launch.y + preset.cruiseAltitude();
+        return new Vec3(
+                launch.x + forward.x * ascentLead,
+                cruiseY,
+                launch.z + forward.z * ascentLead
+        );
+    }
+
+    /**
+     * 上升段判定：仅当导弹尚未越过上升段终点的水平投影且高度未达巡航高度时成立。
+     *
+     * <p>必须检查水平投影：否则导弹进入俯冲、高度低于巡航高度后会被误判回上升段，
+     * 制导会强制把它拉回高空（"突然拉起"）并与俯冲判据反复拉扯形成绕圈。</p>
+     */
+    private static boolean isPresetAscentPhase(
+            Vec3 position,
+            Vec3 ascentPos,
+            Vec3 launch,
+            RVP_PresetBallisticProfile preset
+    ) {
+        double radius = preset.ascentRadius();
+        if (position.y >= ascentPos.y - radius) {
+            return false;
+        }
+        if (launch != null) {
+            Vec3 route = new Vec3(ascentPos.x - launch.x, 0, ascentPos.z - launch.z);
+            Vec3 remaining = new Vec3(position.x - launch.x, 0, position.z - launch.z);
+            double routeSqr = route.lengthSqr();
+            if (routeSqr > 1.0E-8 && remaining.dot(route) >= routeSqr) {
+                return false;
+            }
+        }
+        return position.distanceToSqr(ascentPos) > radius * radius;
+    }
+
+    /** 俯冲段判据（本体公式 + RVP 近似转弯半径）：水平距离 ≤ 俯冲距离，或已越过目标。 */
+    static boolean shouldBeginPresetDive(
+            Vec3 projectilePos,
+            Vec3 target,
+            Vec3 launch,
+            Vec3 velocity,
+            RVP_PresetBallisticProfile preset,
+            float turningFactor
+    ) {
+        if (projectilePos == null || target == null || preset == null) {
+            return true;
+        }
+        double dx = projectilePos.x - target.x;
+        double dz = projectilePos.z - target.z;
+        double horizontalDistanceSqr = dx * dx + dz * dz;
+        double verticalDistance = Math.max(0.0, projectilePos.y - target.y);
+        double speed = velocity != null ? velocity.length() : 0.0;
+        double turnRadius = resolvePresetTurnRadius(speed, turningFactor);
+        double diveDistance = Math.max(preset.diveRadius(), Math.max(
+                verticalDistance * preset.diveAltitudeFactor(),
+                turnRadius * preset.diveLeadFactor()));
+        if (horizontalDistanceSqr <= diveDistance * diveDistance) {
+            return true;
+        }
+        if (launch == null) {
+            return false;
+        }
+        Vec3 route = new Vec3(target.x - launch.x, 0, target.z - launch.z);
+        Vec3 remaining = new Vec3(target.x - projectilePos.x, 0, target.z - projectilePos.z);
+        return remaining.dot(route) <= 0.0;
+    }
+
+    /** RVP 无 G 钳制转向，转弯半径用 {@code speed/turningFactor} 一阶近似并钳制范围。 */
+    private static double resolvePresetTurnRadius(double speed, float turningFactor) {
+        double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
+        return Mth.clamp(speed / effectiveFactor, 8.0, 200.0);
+    }
+
+    /**
+     * 巡航段高度闭环（本体 guidePresetCruise 的 RVP 适配）：
+     * 垂直分量 = 高度误差×P − vy×D，钳制 ±速率×上限；水平分量 = √(1−(垂直分量/速率)²)。
+     * RVP 重力为配置值且推力沿速度方向，本体公式中的 {@code G/推力} 补偿项无等价含义，故省略。
+     */
+    static Vec3 steerPresetCruise(
+            Vec3 current,
+            Vec3 position,
+            Vec3 target,
+            double cruiseY,
+            double speed,
+            float turningFactor,
+            RVP_PresetBallisticProfile preset
+    ) {
+        if (target == null || preset == null) {
+            return steerPursuit(current, target == null ? Vec3.ZERO : target, speed, turningFactor);
+        }
+        Vec3 horizontal = new Vec3(target.x - position.x, 0, target.z - position.z);
+        double horizontalDistance = horizontal.length();
+        if (horizontalDistance <= 1.0E-8) {
+            return steerPursuit(current, new Vec3(target.x, cruiseY, target.z).subtract(position), speed, turningFactor);
+        }
+        double altitudeError = cruiseY - position.y;
+        double verticalCommand = altitudeError * preset.cruiseAltitudeGain()
+                - current.y * preset.cruiseVerticalDamping();
+        double maxVertical = speed * preset.cruiseMaxVerticalComponent();
+        verticalCommand = Mth.clamp(verticalCommand, -maxVertical, maxVertical);
+        double verticalRatio = verticalCommand / speed;
+        double horizontalComponent = Math.sqrt(Math.max(0.0, 1.0 - verticalRatio * verticalRatio));
+        Vec3 desiredDir = horizontal.normalize().scale(horizontalComponent)
+                .add(0, verticalRatio, 0);
+        return blendDirection(current, desiredDir.normalize().scale(speed), speed, turningFactor);
     }
 
     static Vec3 resolveTopAttackAimPoint(

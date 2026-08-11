@@ -1,0 +1,105 @@
+{
+  "type": "rvp:missile",
+  "name": "M12 ATACMS 弹道导弹（PRESET 三段式 + 虚拟中段）",
+  "shoot_interval": 500,
+  "max_capacity": 1,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": true
+  },
+  "projectile_data": {
+    "has_rocket_engine": true,
+    "velocity": 2.5,
+    "rotate_to_motion": true,
+    "max_speed": 20.0,
+    "min_speed": 4.0,
+    "mass": 0.015,
+    "thrust": 0.04,
+    "motor_burn_time": 3000,
+    "ignition_delay_tick": 20,
+    "drag_coefficient": 0.0045,
+    "inherit_vehicle_velocity": true,
+    "gravity": -0.02,
+    "altitude_drag_factor": {
+      "[[0,80]]": 1.0,
+      "[[80,200]]": 0.35,
+      "[[200,inf]]": 0.12
+    },
+    "turning_factor": {
+      "[[5,inf]]": 0.15
+    }
+  },
+  "guidance_data": {
+    "guidance_type": "GPS",
+    "guidance_tick_range": "[[5,inf]]",
+    "max_guidance_angle": 120,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "gps_spread_radius": 5,
+    "guidance_target_distance_range": "[[1,inf]]",
+    "preset_cruise_altitude": 300.0,
+    "preset_max_ascent_lead": 160.0,
+    "preset_ascent_radius": 24.0,
+    "preset_dive_radius": 40.0,
+    "preset_dive_altitude_factor": 0.8,
+    "preset_dive_lead_factor": 1.5,
+    "preset_cruise_altitude_gain": 0.002,
+    "preset_cruise_vertical_damping": 0.05,
+    "preset_cruise_max_vertical_component": 0.5
+  },
+  "virtual_midcourse_data": {
+    "enabled": true,
+    "entry_min_flight_tick": 60,
+    "entry_min_distance_from_launch": 800.0,
+    "entry_min_target_distance": 1600.0,
+    "restore_target_distance": 768.0,
+    "restore_lead_tick": 60,
+    "restore_ticket_radius": 1,
+    "restore_wait_timeout_tick": 200,
+    "max_virtual_flight_tick": 12000,
+    "virtual_midcourse_maxg": 10.0,
+    "target_update_mode": "FIXED_SNAPSHOT",
+    "on_restore_timeout": "DISCARD"
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 3,
+    "detonate_on_life_end": false
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "hbm_effect_data": {
+      "enabled": true,
+      "real_explosion": "none",
+      "visual_preset": "nuclear",
+      "effect_yield": 100,
+      "visual_scale": 1.0,
+      "visual_density": 0.5,
+      "destroy_block": false
+    },
+    "explosion_data": {
+      "explode": true,
+      "damage": 1200,
+      "radius": 18,
+      "proximity_fuze": false,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80
+  },
+  "misc_data": {
+    "signal_intensity_factor_on_radar": {
+      "[[0,inf]]": 6
+    }
+  }
+}
