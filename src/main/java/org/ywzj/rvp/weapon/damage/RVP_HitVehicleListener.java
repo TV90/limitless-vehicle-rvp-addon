@@ -81,13 +81,14 @@ public final class RVP_HitVehicleListener {
         }
         Vec3 hv = event.hitVector;
         Vec3 dir = hv != null && hv.lengthSqr() > 1.0E-6 ? hv.normalize() : Vec3.ZERO;
-        // 从本体 OBB 表面命中点反推 RVP 命中箱骨骼（用命中点两侧 0.75 米短线段跨过骨骼 OBB 表面）
+        // 从本体 OBB 表面命中点反推 RVP 命中箱骨骼（用命中点两侧 0.75 米短线段跨过骨骼 OBB 表面）；
+        // 未配置命中箱骨块（倍率骨骼）时 hitBoneName 为 null，resolveHitboxDisplayName 回退为载具名。
         String boneDisp = "";
         if (dir != Vec3.ZERO) {
             RVP_VehicleHitboxFactorManager.HitboxDamageResult res =
                     RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
                             vehicle, hitPos.subtract(dir.scale(0.75)), hitPos.add(dir.scale(0.75)));
-            if (res != null && res.hitBoneName() != null) {
+            if (res != null) {
                 boneDisp = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(
                         vehicle, res.hitBoneName());
             }

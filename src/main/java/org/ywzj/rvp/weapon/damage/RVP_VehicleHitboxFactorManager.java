@@ -252,7 +252,14 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     public String resolveHitboxDisplayName(AbstractVehicle vehicle, @Nullable String boneName) {
         if (boneName == null || boneName.isBlank()) {
-            return "default";
+            // 载具未配置 RVP 命中箱骨块（倍率骨骼）时，显示载具名称的翻译 key
+            // （如 entity.rvp.t90m → 客户端渲染为 "T-90M 突破3"），取代原 "default"。
+            // 非直击爆炸不经过本方法（boneDisplayName 为空串，客户端显示"爆炸"）。
+            if (vehicle == null || vehicle.getVehicleId() == null) {
+                return "default";
+            }
+            ResourceLocation id = vehicle.getVehicleId();
+            return "entity." + id.getNamespace() + "." + id.getPath();
         }
         if (vehicle == null) {
             return boneName;

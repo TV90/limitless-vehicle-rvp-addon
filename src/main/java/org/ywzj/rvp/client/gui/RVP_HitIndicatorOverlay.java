@@ -264,10 +264,13 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         int damageColor = damagePercent >= 50f ? COLOR_DAMAGE_CRITICAL
                 : damagePercent >= 25f ? COLOR_DAMAGE_HURT : COLOR_DAMAGE_HIT;
         String bone = RVP_ClientHitIndicatorState.getBoneDisplayName();
-        // 文案：直击命中显示“命中XX骨骼 -x%”；非直击爆炸（骨骼名为空）显示“爆炸 -x%”
+        // 服务端对未配置命中箱骨块（倍率骨骼）的载具下发的是载具名翻译 key（entity.<ns>.<path>），
+        // 这里翻译成可读载具名（如 "T-90M 突破3"）；骨骼显示别名等普通文本原样显示。
+        String boneText = bone.startsWith("entity.") ? Component.translatable(bone).getString() : bone;
+        // 文案：直击命中显示“命中XX骨骼 -x%”（未配倍率骨骼时为载具名）；非直击爆炸（骨骼名为空）显示“爆炸 -x%”
         String title = bone.isEmpty()
                 ? String.format("爆炸 -%.1f%%", damagePercent)
-                : String.format("命中%s -%.1f%%", bone, damagePercent);
+                : String.format("命中%s -%.1f%%", boneText, damagePercent);
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
         gg.pose().pushPose();
         // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）
