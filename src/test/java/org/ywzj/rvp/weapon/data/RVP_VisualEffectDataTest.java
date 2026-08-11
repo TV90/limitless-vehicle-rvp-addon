@@ -34,7 +34,7 @@ class RVP_VisualEffectDataTest {
     }
 
     @Test
-    void valuesAreClampedAndInvalidLocationsAreRejected() {
+    void nonNegativeValuesHaveNoArtificialUpperClampAndInvalidLocationsAreRejected() {
         RVP_VisualEffectData data = GSON.fromJson("""
                 {
                   "enabled": true,
@@ -50,10 +50,10 @@ class RVP_VisualEffectDataTest {
         assertTrue(data.isEnabled());
         assertTrue(data.getEffectType().isEmpty());
         assertEquals(ResourceLocation.fromNamespaceAndPath("rvp", "default"), data.getPreset());
-        assertEquals(8.0F, data.getScale());
-        assertEquals(0.05F, data.getDensity());
-        assertEquals(600, data.getDurationTicks());
-        assertEquals(32.0D, data.getBroadcastRange());
+        assertEquals(99.0F, data.getScale());
+        assertEquals(0.0F, data.getDensity());
+        assertEquals(9999, data.getDurationTicks());
+        assertEquals(1.0D, data.getBroadcastRange());
     }
 
     @Test

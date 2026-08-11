@@ -57,8 +57,10 @@ public record RVP_VisualEffectEvent(
             throw new IllegalArgumentException("preset_data exceeds 8 KiB");
         }
         if (!positionIsFinite(position) || !Float.isFinite(baseExplosionRadius) || baseExplosionRadius < 0.0F
-                || !Float.isFinite(scale) || !Float.isFinite(density)
-                || !Double.isFinite(broadcastRange)) {
+                || !Float.isFinite(scale) || scale < 0.0F
+                || !Float.isFinite(density) || density < 0.0F
+                || (durationTicks != -1 && durationTicks < 0)
+                || !Double.isFinite(broadcastRange) || broadcastRange < 0.0D) {
             throw new IllegalArgumentException("visual event contains non-finite or negative values");
         }
     }

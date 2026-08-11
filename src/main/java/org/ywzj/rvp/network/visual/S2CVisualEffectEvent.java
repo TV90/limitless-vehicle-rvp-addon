@@ -5,7 +5,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
@@ -133,10 +132,10 @@ public record S2CVisualEffectEvent(
                 dimension,
                 position,
                 radius,
-                Mth.clamp(scale, 0.1F, 8.0F),
-                Mth.clamp(density, 0.05F, 1.0F),
-                durationTicks < 0 ? -1 : Mth.clamp(durationTicks, 1, 600),
-                Mth.clamp(broadcastRange, 32.0D, 2048.0D),
+                scale,
+                density,
+                durationTicks,
+                broadcastRange,
                 seed,
                 startGameTime,
                 (flags & FLAG_SOUND) != 0,
@@ -168,10 +167,11 @@ public record S2CVisualEffectEvent(
             int durationTicks,
             double broadcastRange) {
         boolean valid = Double.isFinite(position.x) && Double.isFinite(position.y) && Double.isFinite(position.z)
-                && Float.isFinite(radius) && radius >= 0.0F && radius <= 2048.0F
-                && Float.isFinite(scale) && Float.isFinite(density)
-                && (durationTicks == -1 || durationTicks > 0)
-                && Double.isFinite(broadcastRange) && broadcastRange > 0.0D;
+                && Float.isFinite(radius) && radius >= 0.0F
+                && Float.isFinite(scale) && scale >= 0.0F
+                && Float.isFinite(density) && density >= 0.0F
+                && (durationTicks == -1 || durationTicks >= 0)
+                && Double.isFinite(broadcastRange) && broadcastRange >= 0.0D;
         if (!valid) {
             throw new DecoderException("Invalid numeric value in RVP visual effect event");
         }

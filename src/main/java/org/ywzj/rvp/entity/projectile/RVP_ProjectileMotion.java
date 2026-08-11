@@ -104,6 +104,7 @@ public final class RVP_ProjectileMotion {
         if (projectile.getFlightTickCount() < ignition) {
             velocity = applyPreIgnitionVelocity(projectile, velocity, ignition);
         } else {
+            // 施加沿y轴向下的PhysicsEngine.G 武器配置里面gravity设置为0也不能避免
             velocity = applyPropulsionGravity(projectile, velocity, data);
         }
 
@@ -350,10 +351,11 @@ public final class RVP_ProjectileMotion {
             return velocity.subtract(0, PhysicsEngine.G * 0.6f, 0);
         }
         float gravity = data.getGravity();
-        if (gravity != 0f) {
-            return velocity.add(0, gravity, 0);
-        }
-        return velocity.subtract(0, PhysicsEngine.G, 0);
+//        if (gravity != 0f) {
+        // 不再对rvp:missile导弹默认施加 - PhysicsEngine.G
+        return velocity.add(0, gravity, 0);
+//        }
+//        return velocity.subtract(0, PhysicsEngine.G, 0);
     }
 
     static float resolveMissileAltitudeDragFactor(RVP_BaseBullet projectile, RVP_WeaponData data) {

@@ -20,10 +20,10 @@ class S2CVisualEffectEventTest {
                 ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
                 new Vec3(12.5D, 64.0D, -7.25D),
                 8.0F,
-                1.25F,
-                0.8F,
-                100,
-                768.0D,
+                25.0F,
+                4.0F,
+                5000,
+                50_000.0D,
                 1234L,
                 5678L,
                 true,
@@ -46,6 +46,34 @@ class S2CVisualEffectEventTest {
             buffer.writeByte(S2CVisualEffectEvent.SCHEMA_VERSION + 1);
 
             assertThrows(DecoderException.class, () -> S2CVisualEffectEvent.decode(buffer));
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
+    void zeroValuesAreAcceptedWithoutBeingRaisedToFormerMinimums() {
+        S2CVisualEffectEvent message = new S2CVisualEffectEvent(
+                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_standard"),
+                "{}",
+                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+                Vec3.ZERO,
+                0.0F,
+                0.0F,
+                0.0F,
+                0,
+                0.0D,
+                1L,
+                2L,
+                false,
+                false,
+                false);
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            S2CVisualEffectEvent.encode(message, buffer);
+
+            assertEquals(message, S2CVisualEffectEvent.decode(buffer));
         } finally {
             buffer.release();
         }

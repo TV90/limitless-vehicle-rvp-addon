@@ -392,7 +392,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `knockback_data` | `radius`、`strength`、`targets`。 |
 | `clear_plants_data` | `radius`：清除草、花、树叶等可替换植物。 |
 | `hbm_effect_data` | 大威力爆炸视觉/特效（见下）。 |
-| `visual_effect_data` | 当前 schema 的通用爆炸视觉配置数组；默认空，不改变旧武器行为。阶段 A 已提供公共事件与专服安全网络契约，具体效果工厂由后续阶段注册。 |
+| `visual_effect_data` | 当前 schema 的通用爆炸视觉配置数组；默认空，不改变旧武器行为。已注册 `rvp:thermobaric` 最小视觉工厂，支持火球、压力波、尘环和烟云。 |
 
 `targets`（范围类效果共用）：`living`（默认）、`players`、`hostile`、`non_allied`（排除 owner 与发射载具乘员）、`all`。
 
@@ -405,6 +405,22 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `radius` | 爆炸半径。 |
 | `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
 | `destroy_block` | 是否破坏方块。 |
+
+燃烧弹示例（先点火再小爆炸）：
+
+```json
+"detonate_data": {
+  "effects_before_explosion": true,
+  "explosion_data": {
+    "explode": true,
+    "damage": 8,
+    "radius": 0.8,
+    "destroy_block": false
+  },
+  "fire_data": { "radius": 2, "chance": 0.85 },
+  "ignite_entity_data": { "radius": 2.5, "seconds": 6, "targets": "living" }
+}
+```
 
 #### `detonate_data.hbm_effect_data` 大威力爆炸特效
 
@@ -434,27 +450,99 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `enabled` | 启用该项；还要求 `effect_type` 是合法资源 ID。 | `false` |
 | `effect_type` | 客户端效果工厂类型，如 `rvp:thermobaric`。 | 空 |
 | `preset` | 客户端预设资源 ID；工厂不识别时由工厂回退。 | `rvp:default` |
-| `scale` | 视觉尺寸倍率，钳制到 `0.1–8.0`。 | `1.0` |
-| `density` | 服务端允许的最大视觉密度，钳制到 `0.05–1.0`。 | `1.0` |
-| `duration_ticks` | 持续时间覆盖（tick）；`-1` 使用预设，正数最多 `600`。 | `-1` |
-| `broadcast_range` | 同维度网络广播距离（格），钳制到 `32–2048`。 | `768.0` |
+| `scale` | 视觉尺寸倍率；接受非负有限值，不设业务上限。 | `1.0` |
+| `density` | 服务端视觉密度倍率；接受非负有限值，不设业务上限，具体温压粒子数量仍不会突破对应 `max_*` 配置。 | `1.0` |
+| `duration_ticks` | 整个视觉实例的结束时间/总寿命覆盖（tick，从事件起点计）；`-1` 使用预设中最晚的阶段结束时间，非负整数直接覆盖，`0` 表示不创建可见实例。 | `-1` |
+| `broadcast_range` | 同维度网络广播距离（格）；接受非负有限值，不设业务上限。 | `768.0` |
 | `sound` / `flash` / `shake` | 是否允许声音、闪光、镜头震动；客户端设置仍可进一步关闭。 | `true` |
 | `suppress_native_explosion_effect` | 视觉事件成功发布后是否屏蔽本体普通爆炸视觉；不影响伤害与方块破坏。 | `true` |
 | `preset_data` | 与 `preset` 相同 schema 的稀疏 JSON 覆盖；由对应客户端工厂类型化校验。 | `{}` |
 
-燃烧弹示例（先点火再小爆炸）：
+##### `rvp:thermobaric` / `rvp:thermobaric_standard` 温压预设字段
 
+阶段 B 使用内建固定标准预设；`preset_data` 可稀疏覆盖下列字段。未知字段或类型、范围错误的字段会单独回退，不影响同一对象内其他合法覆盖。顶层 `scale`、`density`、`duration_ticks` 仍拥有更高优先级。
+
+| 字段 | 说明 | 内建默认值                                                                   |
+| --- | --- |-------------------------------------------------------------------------|
+| `core_color` / `flame_color` / `smoke_color` | 点火核心、主火球/早期云团、后期烟云的 `#RRGGBB` 颜色。 | `#FFD2A0` / `#FF7A24` / `#3A302D`                                       |
+| `show_core` / `show_dust_ring` / `show_cloud` | 分别控制主火球、贴地尘环和后燃烟云是否显示；每项均独立生效。 | 均为 `true`                                                               |
+| `show_pressure_wave` | 是否显示压力波光学球壳。 | `false`                                                                 |
+| `show_condensation_cloud` | 是否显示使用 `WHITE_TEXTURE` 双层球壳实现的凝结云墙；与粒子凝结云独立。 | `false`                                                                 |
+| `show_condensation_cloud_particles` | 是否显示仅使用 `PARTICLE_TEXTURE` billboard 实现的粒子凝结云；与球壳凝结云独立。 | `true`                                                                  |
+| `condensation_cloud_particle_max_count` | 完整视觉密度下粒子凝结云允许显示的最大粒子数量；接受非负整数、不设业务上限，实际数量还会乘以顶层 `density` 并受距离 LOD 下调。 | `1024`                                                                  |
+| `condensation_cloud_particle_scale` | 粒子凝结云的贴图尺寸缩放倍率；接受非负有限值，不设业务上限。 | `8.0`                                                                   |
+| `max_clouds` | 完整视觉密度下三层基础后燃烟云允许生成的最大云团数量；接受非负整数，不设业务上限。为保证爆心覆盖层与中心上升层连续，客户端可基于固定锚点派生额外连接粒子，派生数量最多为基础烟云数的四分之一且绝不超过 64，不计入本字段。 | `200`                                                                   |
+| `max_fireball_clouds` | 完整视觉密度下温压火球允许生成的最大团状云数量；接受非负整数，不设业务上限。 | `240`                                                                   |
+| `max_dust_segments` | 完整视觉密度下贴地尘环允许生成的最大环段数量；接受非负整数，不设业务上限。 | `128`                                                                   |
+| `dust_ground_radial_samples` | 尘环沿扩散半径预采样的地表层数；接受非负整数，不设业务上限，`0` 关闭地表采样。 | `9`                                                                     |
+| `pressure_rings` / `pressure_segments` | 压力波及凝结云球壳的纬向/经向细分数；接受非负整数，不设业务上限，任一为 `0` 时不提交球壳。 | `16` / `32`                                                             |
+| `core_start_tick` / `core_full_tick` / `core_fade_duration_ticks` | 主火球的绝对开始时刻、完整成形时刻、完整成形后到消失的持续时间（tick）；均接受非负整数，不设业务上限。 | `0` / `4` / `10`                                                        |
+| `pressure_wave_start_tick` / `pressure_wave_full_tick` / `pressure_wave_fade_duration_ticks` | 球形压力波、粒子凝结云与可选凝结云球壳的绝对开始时刻、完整成形时刻、完整成形后到消失的持续时间（tick）；均接受非负整数、不设业务上限。两种凝结云从开始时最厚、最白线性变薄到完整成形，随后从 Y 轴最高点向下连续裁切；压力波光学球壳则继续向外扩张并线性变淡。 | `2` / `8` / `12`                                                        |
+| `dust_ring_start_tick` / `dust_ring_full_tick` | 贴地尘环的绝对开始时刻，以及到达 `dust_radius_factor` 配置半径并立即开始消散的时刻（tick）；均接受非负整数、不设业务上限。尘环从开始到 full tick 匀速扩张，之后以相同径向速度继续外扩并线性变淡；消散时长自动等于成形时长，结束时半径为 full tick 半径的两倍。地面高度按各环段采样，空爆也会投影到可见地表。 | `3` / `36`                                                       |
+| `cloud_start_tick` / `cloud_full_tick` / `cloud_fade_duration_ticks` | 后燃烟云的绝对开始时刻、开始消散时刻、开始消散后到消失的持续时间（tick）；大型云团从 `cloud_start_tick` 到 `cloud_full_tick + cloud_fade_duration_ticks` 共用一条连续动画时钟，持续上升、翻滚、卷吸和平流。`cloud_full_tick` 仅启动独立淡出进度：稳定径向层级最外侧的云团先向外扩散和变淡，随后逐层向内，淡出结束时全部消失。均接受非负整数、不设业务上限，顶层 `duration_ticks>=0` 可覆盖实例寿命。 | `0` / `35` / `65`                                                       |
+| `cloud_color_change_start_tick` / `cloud_color_change_end_tick` | 后燃烟云从 `flame_color` 向 `smoke_color` 线性变色的绝对开始、结束时刻（tick）；开始前保持火焰色，结束后保持烟色。均接受非负整数、不设业务上限；结束早于开始时钳制为开始时刻并立即变色。 | `8` / `35` |
+| `pressure_radius_factor` | 压力波最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。 | `3.5`                                                                   |
+| `dust_radius_factor` | 尘环最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。 | `2.4`                                                                   |
+| `cloud_radius_factor` | 烟云横向半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。高倍率造成爆心覆盖层与中心上升层实际分离时，客户端按几何间隙自动生成粒子连接链，不按武器 ID 或固定倍率阈值分支。 | `1.5`                                                                   |
+| `cloud_rise_factor` | 后燃烟云最终最高升起高度相对最终爆炸半径的直接倍率；接受非负有限值、不设业务上限，配置值本身不钳制到 `0..1`。实际高度为最终爆炸半径乘该字段，再乘独立且限制在 `0..1` 的内部完成度；例如 `5.0` 表示最高五倍半径。高倍率下中心上升层仍必须通过自动派生粒子与爆心覆盖层保持连续。 | `1.2`                                                                   |
+| `cloud_rise_speed_factor` | 后燃烟云竖直基础升起速度的无量纲倍率；接受非负有限值、不设业务上限。大于 `1.0` 时更早到达高度上限，小于 `1.0` 时可能在消失前未到顶，`0` 停止基础升起；不改变淡出、变色或寿命。 | `1.0` |
+| `cloud_roll_speed_factor` | 后燃烟云翻滚、卷吸、连续湍流及水平平流速度的无量纲倍率；接受非负有限值、不设业务上限。空间包络完整后周期相位仍继续推进，`0` 冻结对应运动；不改变基础升起、淡出、变色或寿命。 | `1.0` |
+| `near_sound` / `far_sound` / `tail_sound` | 近音、远音、尾音资源 ID；阶段 B 仅校验并保留，阶段 C 启用播放。 | `rvp:thermobaric_near` / `rvp:thermobaric_far` / `rvp:thermobaric_tail` |
+
+主火球、压力波和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。贴地尘环没有专用淡出时长，其结束时刻为 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`；`dust_ring_full_tick <= dust_ring_start_tick` 时没有有效移动周期，不绘制尘环。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
+
+主火球在 `core_full_tick` 后由外向内线性变灰、轻微内敛收缩并线性降低透明度；贴地尘环为白色，从生成到消失持续线性变细，并在 `dust_ring_full_tick` 后立即以原速度继续外扩和线性变淡，不使用随机径向加速。压力波光学球壳在 `pressure_wave_full_tick` 后继续使用服务端同步种子生成的稳定随机漂移参数。后燃烟云从开始到消失持续上升、翻滚、卷吸和平流，并分别使用 `cloud_rise_speed_factor` 与 `cloud_roll_speed_factor` 缩放两类运动时钟；`cloud_full_tick` 只启动按稳定径向层级从外向内传播的淡出，每团在自己的剩余时段内向外扩散并降低透明度。粒子凝结云与可选球壳凝结云先于其它温压子效果提交，避免近距离观察时外层透明云错误覆盖其它特效，同时仍遵守世界几何的深度遮挡。
+
+爆心覆盖层与中心上升层会从基础云团中按角度、径向距离和原始索引确定一对跨帧固定锚点。若锚点当前 billboard 已重叠则不追加粒子；若存在实际三维间隙，则沿中心线派生连接粒子，并在达到内部数量上限时扩大粒子尺寸以维持连续覆盖。该行为没有新增 JSON 字段，不改变伤害、寿命、颜色或原三层运动曲线。
+
+温压弹配置示例
 ```json
 "detonate_data": {
-  "effects_before_explosion": true,
-  "explosion_data": {
-    "explode": true,
-    "damage": 8,
-    "radius": 0.8,
-    "destroy_block": false
-  },
-  "fire_data": { "radius": 2, "chance": 0.85 },
-  "ignite_entity_data": { "radius": 2.5, "seconds": 6, "targets": "living" }
+        
+  "visual_effect_data": [
+  {
+    "enabled": true,
+    "effect_type": "rvp:thermobaric",
+    "preset": "rvp:thermobaric_standard",
+    "scale": 1.0,
+    "density": 1.0,
+    "duration_ticks": -1,
+    "broadcast_range": 768.0,
+    "sound": false,
+    "flash": false,
+    "shake": false,
+    "suppress_native_explosion_effect": true,
+      "preset_data": {
+        "core_color": "#FFE0B0",
+        "flame_color": "#FF6820",
+        "smoke_color": "#332A27",
+        "max_fireball_clouds": 240,
+        "max_clouds": 1024,
+        "condensation_cloud_particle_max_count": 1024,
+        "condensation_cloud_particle_scale": 4.0,
+        "core_start_tick": 0,
+        "core_full_tick": 20,
+        "core_fade_duration_ticks": 40,
+        "cloud_color_change_start_tick": 30,
+        "cloud_color_change_end_tick": 85,
+        "pressure_wave_start_tick": 10,
+        "pressure_wave_full_tick": 30,
+        "pressure_wave_fade_duration_ticks": 20,
+        "dust_ring_start_tick": 10,
+        "dust_ring_full_tick": 20,
+        "max_dust_segments": 512,
+        "cloud_start_tick": 0,
+        "cloud_full_tick": 120,
+        "cloud_fade_duration_ticks": 240,
+        "pressure_radius_factor": 3.5,
+        "dust_radius_factor": 5,
+        "cloud_radius_factor": 1.5,
+        "cloud_rise_factor": 1.2,
+        "cloud_rise_speed_factor": 10.0,
+        "cloud_roll_speed_factor": 1.2
+      }
+    }
+  ]
 }
 ```
 

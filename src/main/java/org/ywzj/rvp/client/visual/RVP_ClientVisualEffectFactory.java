@@ -1,10 +1,13 @@
 package org.ywzj.rvp.client.visual;
 
+import net.minecraft.client.multiplayer.ClientLevel;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
-/** 客户端视觉实例工厂；阶段 B 将注册温压实现。 */
+import java.util.Optional;
+
+/** 客户端视觉实例工厂；每种效果类型独立解析自己的类型化预设。 */
 @FunctionalInterface
 public interface RVP_ClientVisualEffectFactory {
-    /** 根据不可变事件创建客户端效果实例。 */
-    void create(RVP_VisualEffectEvent event);
+    /** 根据当前客户端世界和不可变领域事件创建视觉实例。 */
+    Optional<RVP_ClientVisualEffect> create(ClientLevel level, RVP_VisualEffectEvent event);
 }

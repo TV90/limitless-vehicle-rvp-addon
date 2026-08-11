@@ -20,7 +20,7 @@ public final class RVP_DefaultDetonationVisualResolver implements RVP_Detonation
             RVP_DetonationVisualContext context,
             RVP_VisualEffectData data) {
         if (!supports(data) || context == null || !Float.isFinite(context.baseExplosionRadius())
-                || context.baseExplosionRadius() < 0.0F || context.baseExplosionRadius() > 2048.0F) {
+                || context.baseExplosionRadius() < 0.0F) {
             return Optional.empty();
         }
         Optional<String> canonicalPresetData = RVP_VisualPresetDataCodec.canonicalize(data.copyPresetData());

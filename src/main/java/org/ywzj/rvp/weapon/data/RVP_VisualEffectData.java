@@ -3,7 +3,6 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.JsonObject;
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 
 import java.util.Optional;
 
@@ -24,19 +23,19 @@ public final class RVP_VisualEffectData {
     @SerializedName("preset")
     private String preset = "rvp:default";
 
-    /** 视觉尺寸倍率；默认 {@code 1.0}，生效时钳制到 {@code 0.1~8.0}，不改变爆炸伤害与半径。 */
+    /** 视觉尺寸倍率；默认 {@code 1.0}，接受大于等于 {@code 0} 的有限值，不改变爆炸伤害与半径。 */
     @SerializedName("scale")
     private float scale = 1.0F;
 
-    /** 服务端允许的最大视觉密度比例；默认 {@code 1.0}，生效时钳制到 {@code 0.05~1.0}。 */
+    /** 服务端允许的视觉密度倍率；默认 {@code 1.0}，接受大于等于 {@code 0} 的有限值。 */
     @SerializedName("density")
     private float density = 1.0F;
 
-    /** 持续时间（tick）；默认 {@code -1} 使用预设，正数覆盖预设并钳制到最多 {@code 600} tick。 */
+    /** 持续时间（tick）；默认 {@code -1} 使用预设，非负值直接覆盖预设且不设人为上限。 */
     @SerializedName("duration_ticks")
     private int durationTicks = -1;
 
-    /** 服务端广播距离（格）；默认 {@code 768}，生效时钳制到 {@code 32~2048}，不影响伤害范围。 */
+    /** 服务端广播距离（格）；默认 {@code 768}，接受大于等于 {@code 0} 的有限值，不影响伤害范围。 */
     @SerializedName("broadcast_range")
     private double broadcastRange = 768.0D;
 
@@ -77,20 +76,20 @@ public final class RVP_VisualEffectData {
     }
 
     public float getScale() {
-        return Mth.clamp(Float.isFinite(scale) ? scale : 1.0F, 0.1F, 8.0F);
+        return Float.isFinite(scale) ? Math.max(0.0F, scale) : 1.0F;
     }
 
     public float getDensity() {
-        return Mth.clamp(Float.isFinite(density) ? density : 1.0F, 0.05F, 1.0F);
+        return Float.isFinite(density) ? Math.max(0.0F, density) : 1.0F;
     }
 
     public int getDurationTicks() {
-        return durationTicks < 0 ? -1 : Mth.clamp(durationTicks, 1, 600);
+        return durationTicks < 0 ? -1 : durationTicks;
     }
 
     public double getBroadcastRange() {
         double finiteRange = Double.isFinite(broadcastRange) ? broadcastRange : 768.0D;
-        return Mth.clamp(finiteRange, 32.0D, 2048.0D);
+        return Math.max(0.0D, finiteRange);
     }
 
     public boolean isSound() {
