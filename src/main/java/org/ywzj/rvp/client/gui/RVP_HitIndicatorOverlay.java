@@ -1,7 +1,5 @@
 package org.ywzj.rvp.client.gui;
 
-import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
-import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -18,15 +16,17 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.client.gui.overlay.ForgeGui;
-import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import org.ywzj.rvp.RVP_MOD;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -34,7 +34,6 @@ import org.joml.Vector4f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
-import org.ywzj.vehicle.client.render.ModRenderTypes;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -55,7 +54,8 @@ import java.util.Optional;
  * <p>展板与模型尺寸均按屏幕实际分辨率（像素）计算，再换算回 GUI 坐标 —— 不受“界面尺寸”
  * （GUI 缩放）影响，只随分辨率自适应。</p>
  */
-public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
+@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+public final class RVP_HitIndicatorOverlay {
 
     /** 展板宽/高占屏幕实际分辨率的比例 */
     private static final double PANEL_W_FRAC = 0.32;
@@ -90,6 +90,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
     private static final float EXPLOSION_RING_MAX_MULTIPLIER = 5f;
     /** 爆炸半径达到该值时扩散圈最大（方块/米），随爆炸半径线性插值 */
     private static final float EXPLOSION_RING_MAX_RADIUS = 20f;
+    /**
+     * 展板模型"状态回放延迟"（毫秒）：展板渲染时动画脚本的爆反状态查询回到 1 秒前，
+     * 刚被摧毁的爆反骨块在展板里晚 1 秒消失；世界渲染仍实时（立即消失）。
+     */
+    private static final long RENDER_DELAY_MS = 1000L;
 
     /**
      * 爆点小圆球（GUI 空间实心圆盘，永远面向屏幕）：
@@ -115,15 +120,15 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                     .createCompositeState(true));
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    /** 爆反燃烧动画节流日志时间戳：避免每帧重复打日志刷屏 */
-    private static long lastEraBurnLog = Long.MIN_VALUE;
     /** 爆反动画时序检查节流日志时间戳 */
     private static long lastEraBurnCheck = Long.MIN_VALUE;
     /** onRenderGui 入口节流日志时间戳 */
     private static long lastGuiEventLog = Long.MIN_VALUE;
 
-    @Override
-    public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+    @SubscribeEvent
+    public static void onRenderGui(RenderGuiEvent.Post event) {
+        GuiGraphics guiGraphics = event.getGuiGraphics();
+        float partialTick = event.getPartialTick();
         long now = System.currentTimeMillis();
         if (now - lastGuiEventLog > 2000) {
             lastGuiEventLog = now;
@@ -269,8 +274,15 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             Entity finalEntity = entity;
             RenderSystem.runAsFancy(() -> {
                 try {
-                    dispatcher.render(finalEntity, 0, 0, 0, 0, 1.0F,
-                            gg.pose(), gg.bufferSource(), 15728880);
+                    // 展板"状态回放延迟"：渲染期间动画脚本的爆反状态查询回到 0.5 秒前，
+                    // 刚被摧毁的爆反骨块在展板里晚 0.5 秒消失；渲染结束立即清除，世界渲染不受影响。
+                    RVP_ClientBoneModuleState.setRenderDelay(RENDER_DELAY_MS);
+                    try {
+                        dispatcher.render(finalEntity, 0, 0, 0, 0, 1.0F,
+                                gg.pose(), gg.bufferSource(), 15728880);
+                    } finally {
+                        RVP_ClientBoneModuleState.clearRenderDelay();
+                    }
                     renderHitAnimation(gg, finalEntity, scale,
                             RVP_ClientHitIndicatorState.getEvents());
                 } catch (Exception e) {
@@ -403,9 +415,20 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                 renderDirectAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale);
             }
         }
-        // 爆反（ERA）被摧毁动画：必须等命中圈动画（飞行 + 爆点 + 破片）播完后才开始，
-        // 把被摧毁的爆反骨骼染色为 亮红 → 深黑红 → 透明（约 1.5 秒）。
-        renderEraBurnAnimations(gg, entity, events);
+    }
+
+    /**
+     * 该次命中是否击毁了爆反：任一被摧毁爆反骨块的销毁时刻与命中时刻相近（同一服务器 tick
+     * 发出的状态包与命中包到达客户端时间接近）即视为本次命中击毁爆反。
+     */
+    private static boolean destroyedEraAtHit(int entityId, long hitTime) {
+        for (String boneName : RVP_ClientBoneModuleState.getInactiveEraBones(entityId)) {
+            long destroyTime = RVP_ClientBoneModuleState.getEraDestroyTime(entityId, boneName);
+            if (destroyTime >= 0 && Math.abs(destroyTime - hitTime) <= 1500L) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 直击命中动画：飞行段（弹体/曳光飞向命中点）→ 小爆点 → 红线 */
@@ -425,24 +448,28 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             // 爆点段：命中点小圆球颜色/半径随时间变化（投影到屏幕的实心圆盘）
             float t = (float) (elapsed - RVP_ClientHitIndicatorState.FLY_MS)
                     / (float) RVP_ClientHitIndicatorState.BURST_MS;
+            // 击毁爆反的命中：命中球比平时更大且发黑（模拟爆反爆炸的黑红冲击）
+            boolean eraHit = destroyedEraAtHit(event.entityId, event.hitTime);
+            float sizeMul = eraHit ? 1.5f : 1f;
+            float dark = eraHit ? 0.3f : 1f;
             float radius;
             float cr, cg, cb;
             float r0 = 0.2f;   // 爆点圆盘半径（米）：×scale 约 2.4px，实心可见又不挡模型
             if (t < 0.3f) {
-                radius = r0;
-                cr = 1f; cg = 0.25f; cb = 0.1f;                          // 亮红
+                radius = r0 * sizeMul;
+                cr = 1f * dark; cg = 0.25f * dark; cb = 0.1f;                          // 亮红
             } else if (t < 0.5f) {
                 float k = (t - 0.3f) / 0.2f;
-                radius = r0 * (1 + 0.5f * k);                            // 扩张至 1.5 倍
-                cr = 1f; cg = 0.25f + 0.5f * k; cb = 0.1f + 0.05f * k;  // 红 → 亮橙金，变化明显
+                radius = r0 * sizeMul * (1 + 0.5f * k);                            // 扩张至 1.5 倍
+                cr = 1f * dark; cg = (0.25f + 0.5f * k) * dark; cb = (0.1f + 0.05f * k) * dark; // 红 → 亮橙金
             } else if (t < 0.7f) {
                 float k = (t - 0.5f) / 0.2f;
-                radius = r0 * (1.5f - 0.5f * k);                        // 缩回原大小
-                cr = 1f - 0.15f * k; cg = 0.75f - 0.5f * k; cb = 0.15f - 0.05f * k; // 橙金 → 回红
+                radius = r0 * sizeMul * (1.5f - 0.5f * k);                        // 缩回原大小
+                cr = (1f - 0.15f * k) * dark; cg = (0.75f - 0.5f * k) * dark; cb = (0.15f - 0.05f * k) * dark; // 橙金 → 回红
             } else {
                 float k = (t - 0.7f) / 0.3f;
-                radius = r0 * (1 - k);                                  // 淡出
-                cr = 0.85f + 0.15f * k; cg = 0.25f - 0.15f * k; cb = 0.1f; // 转亮淡红后整体变淡
+                radius = r0 * sizeMul * (1 - k);                                  // 淡出
+                cr = (0.85f + 0.15f * k) * dark; cg = (0.25f - 0.15f * k) * dark; cb = 0.1f; // 转亮淡红后整体变淡
             }
             fillCircle(gg, matrix, hitModel, radius * scale, cr, cg, cb, 0.9f * (1 - 0.5f * t));
         } else {
@@ -529,159 +556,6 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         float cr = 1f, cg = 0.55f - 0.25f * t, cb = 0.1f;
         float alpha = 0.7f * (1f - t);
         fillCircle(gg, matrix, center, radius * scale, cr, cg, cb, alpha);
-    }
-
-    /**
-     * 爆反（ERA）被摧毁燃烧动画：把被摧毁的爆反骨骼（实际渲染模型网格，非线框）染色渲染，
-     * 颜色随时间 亮红 → 深黑红 → 透明（约 1.5 秒）。
-     * <p>复用载具渲染当前帧已应用动画姿态的 {@link BakedModelInstance}，对爆反骨块调用
-     * {@code renderSingleBone} 单独染色渲染 —— 骨骼位置/旋转/动画姿态与展板内模型完全一致。</p>
-     * <p>时序：以"命中事件时间 + 命中圈动画总时长"（{@code HIT_ANIM_END_MS} = 飞行 + 爆点 + 破片）
-     * 为动画起点 —— 保证爆反动画必须在命中圈动画播完后才开始。命中包与骨块状态包到达顺序
-     * 可能不同（先收到摧毁、后收到命中提示），因此锚定命中事件时间而非摧毁时间，避免错位；
-     * 摧毁发生在本次命中窗口之前（容差 250ms）的旧爆反不重复播放。</p>
-     * <p>数据源与 JS 脚本一致（{@link RVP_ClientBoneModuleState} 客户端侧表，
-     * JS 经 {@code context.rvp_isEraActive} 查询同一份状态隐藏爆反），无需直接读脚本。</p>
-     */
-    private static void renderEraBurnAnimations(GuiGraphics gg, Entity entity,
-                                                List<RVP_ClientHitIndicatorState.HitEvent> events) {
-        if (!(entity instanceof AbstractVehicle vehicle)) {
-            return;
-        }
-        if (events.isEmpty()) {
-            return;
-        }
-        int entityId = vehicle.getId();
-        long now = System.currentTimeMillis();
-        List<String> eraBones = RVP_ClientBoneModuleState.getInactiveEraBones(entityId);
-        if (eraBones.isEmpty()) {
-            if (now - lastEraBurnCheck > 1000) {
-                lastEraBurnCheck = now;
-                LOGGER.info("[RVP-HitUI] ERA bones empty: entity={} events={} firstHitRel={}",
-                        entityId, events.size(),
-                        events.get(0).hitTime > 0 ? now - events.get(0).hitTime : -1);
-            }
-            return;
-        }
-        // 命中圈动画锚点：第一条命中事件的时间。爆反动画等命中圈动画播完（HIT_ANIM_END_MS）后开始
-        long firstHit = events.get(0).hitTime;
-
-        // 载具显示模型 + 当前帧已应用动画姿态的骨骼实例（与 dispatcher.render 同一实例）
-        BaseDisplay display = ClientAssetsManager.INSTANCE
-                .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
-        if (display == null || display.getModel() == null || display.getTexture() == null) {
-            if (now - lastEraBurnLog > 2000) {
-                lastEraBurnLog = now;
-                LOGGER.warn("[RVP-HitUI] ERA burn skip: display/model/texture missing vehicle={}",
-                        vehicle.getDisplayId());
-            }
-            return;
-        }
-        VehicleBedrockModel model = display.getModel();
-        if (!model.hasBakedModel()) {
-            if (now - lastEraBurnLog > 2000) {
-                lastEraBurnLog = now;
-                LOGGER.warn("[RVP-HitUI] ERA burn skip: no baked model vehicle={}", vehicle.getDisplayId());
-            }
-            return;
-        }
-        BakedModelInstance instance = vehicle.getModelInstance();
-        if (instance == null) {
-            instance = model.getDefaultModelInstance();
-        }
-        if (instance == null) {
-            return;
-        }
-
-        // 先冲掉不透明模型，保证半透明烧灼骨骼渲染在不透明模型之上
-        gg.flush();
-
-        RenderType quadType = ModRenderTypes.cubeTransparent(display.getTexture());
-        RenderType meshType = ModRenderTypes.polyMeshTransparent(display.getTexture());
-        PoseStack pose = gg.pose();
-        for (String boneName : eraBones) {
-            long destroyTime = RVP_ClientBoneModuleState.getEraDestroyTime(entityId, boneName);
-            if (destroyTime < 0) {
-                continue;
-            }
-            // 时序：爆反动画必须等命中圈动画播完（HIT_ANIM_END_MS）后才开始。
-            // 命中包与骨块状态包到达顺序可能不同（先收到摧毁、后收到命中提示），
-            // 以命中事件时间为锚，起点 = max(摧毁时间, 命中时间) + HIT_ANIM_END_MS，避免动画起点错位。
-            // 摧毁发生在本次命中窗口之前（250ms 容差）的旧爆反是上次命中摧毁的，已播过动画，跳过。
-            if (destroyTime + 250L < firstHit) {
-                if (now - lastEraBurnCheck > 1000) {
-                    lastEraBurnCheck = now;
-                    LOGGER.info("[RVP-HitUI] ERA old destroy skip: bone={} destroyRel={} firstHitRel={}",
-                            boneName, now - destroyTime, now - firstHit);
-                }
-                continue;
-            }
-            long animStart = Math.max(destroyTime, firstHit) + RVP_ClientHitIndicatorState.HIT_ANIM_END_MS;
-            long elapsed = now - animStart;
-            if (elapsed < 0 || elapsed > RVP_ClientHitIndicatorState.ERA_ANIM_MS) {
-                if (now - lastEraBurnCheck > 1000) {
-                    lastEraBurnCheck = now;
-                    LOGGER.info("[RVP-HitUI] ERA wait/end: bone={} destroyRel={} firstHitRel={} elapsed={}",
-                            boneName, now - destroyTime, now - firstHit, elapsed);
-                }
-                continue;
-            }
-            float t = (float) elapsed / (float) RVP_ClientHitIndicatorState.ERA_ANIM_MS;
-            // 前半（0~0.5）：亮红 → 深黑红；后半（0.5~1）：深黑红 → 渐透明
-            float cr, alpha;
-            if (t < 0.5f) {
-                float k = t / 0.5f;
-                cr = 1f - 0.85f * k;   // 1.0 → 0.15
-                alpha = 1f;
-            } else {
-                float k = (t - 0.5f) / 0.5f;
-                cr = 0.15f * (1f - k);  // 0.15 → 0
-                alpha = 1f - k;         // 1 → 0
-            }
-            int boneIndex = instance.getIndex(boneName);
-            if (boneIndex < 0) {
-                if (now - lastEraBurnLog > 2000) {
-                    lastEraBurnLog = now;
-                    LOGGER.warn("[RVP-HitUI] ERA burn skip: bone {} not in baked instance vehicle={}",
-                            boneName, vehicle.getDisplayId());
-                }
-                continue;
-            }
-            BoneState bone = instance.getBone(boneIndex);
-            if (bone == null) {
-                continue;
-            }
-            // 被摧毁的爆反骨骼在 JS 隐藏中整体变换被清零（平移/旋转/缩放=0，visible=false），
-            // 若直接渲染会几何塌缩不可见。渲染前临时还原绑定姿态（位置/旋转/缩放=1），用后还原。
-            boolean savedVisible = bone.visible;
-            float sx = bone.xScale, sy = bone.yScale, sz = bone.zScale;
-            float bx = bone.x, by = bone.y, bz = bone.z;
-            Quaternionf bRot = new Quaternionf(bone.rotation);
-            Vector3f bEuler = new Vector3f(bone.rotationInEuler);
-            bone.reset();
-            bone.visible = true;
-            try {
-                instance.renderSingleBone(pose, boneIndex, gg.bufferSource(),
-                        quadType, meshType, 15728880, OverlayTexture.NO_OVERLAY,
-                        cr, 0f, 0f, alpha, false);
-                if (now - lastEraBurnLog > 1000) {
-                    lastEraBurnLog = now;
-                    LOGGER.info("[RVP-HitUI] ERA burn anim: bone={} t={} cr={} alpha={}",
-                            boneName, t, cr, alpha);
-                }
-            } finally {
-                bone.visible = savedVisible;
-                bone.x = bx;
-                bone.y = by;
-                bone.z = bz;
-                bone.rotation.set(bRot);
-                bone.rotationInEuler.set(bEuler);
-                bone.xScale = sx;
-                bone.yScale = sy;
-                bone.zScale = sz;
-            }
-        }
-        gg.flush();
     }
 
     /**

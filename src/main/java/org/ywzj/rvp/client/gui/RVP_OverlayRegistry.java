@@ -1,9 +1,11 @@
 package org.ywzj.rvp.client.gui;
 
+import com.mojang.logging.LogUtils;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 
 /**
@@ -15,8 +17,11 @@ import org.ywzj.rvp.RVP_MOD;
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class RVP_OverlayRegistry {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     @SubscribeEvent
     public static void onRegisterHud(RegisterGuiOverlaysEvent event) {
+        LOGGER.info("[RVP-Hud] onRegisterHud fired");
         event.registerAboveAll("rvp_radar", new RVP_RadarOverlay());
         event.registerAboveAll("rvp_scope", new RVP_ScopeOverlay());
         event.registerAboveAll("rvp_missile", new RVP_MissileOverlay());
@@ -24,6 +29,5 @@ public class RVP_OverlayRegistry {
         event.registerAboveAll("rvp_charge_bar", new RVP_ChargeBarOverlay());
         event.registerAboveAll("rvp_heat_hud", new RVP_HeatHudOverlay());
         event.registerAboveAll("rvp_aps_hud", new RVP_ApsHudOverlay());
-        event.registerAboveAll("rvp_hit_indicator", new RVP_HitIndicatorOverlay());
     }
 }

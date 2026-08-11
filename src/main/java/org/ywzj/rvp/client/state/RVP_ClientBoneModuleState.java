@@ -26,6 +26,12 @@ public final class RVP_ClientBoneModuleState {
      * 因此已播放过的爆反动画不会在后续命中时重复播放。
      */
     private static final Map<Integer, Map<String, Long>> ERA_DESTROY_TIMES = new HashMap<>();
+    /**
+     * 展板渲染期间生效的"状态回放延迟"（毫秒）：0 表示不延迟。
+     * 展板命中提示渲染载具模型时临时设置，让 JS 动画脚本的爆反状态查询回到 0.5 秒前，
+     * 使刚被摧毁的爆反骨块在展板里晚 0.5 秒消失；世界渲染不受影响（立即消失）。
+     */
+    private static long renderDelayMs = 0L;
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_ClientBoneModuleState() {
@@ -56,7 +62,28 @@ public final class RVP_ClientBoneModuleState {
             return true;
         }
         Set<BoneModuleType> types = boneMap.get(boneName);
-        return types == null || !types.contains(type);
+        if (types == null || !types.contains(type)) {
+            return true;
+        }
+        // 展板"状态回放延迟"：ERA 骨块刚被摧毁（摧毁时间落在延迟窗口内）时，
+        // 展板渲染仍按"延迟前"的激活状态处理，让骨块在展板里晚 0.5 秒消失。
+        if (renderDelayMs > 0L && type == BoneModuleType.ERA) {
+            long destroyTime = getEraDestroyTime(entityId, boneName);
+            if (destroyTime > 0L && destroyTime > System.currentTimeMillis() - renderDelayMs) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 设置展板渲染期间的"状态回放延迟"（毫秒），渲染结束必须调用 {@link #clearRenderDelay()}。 */
+    public static void setRenderDelay(long ms) {
+        renderDelayMs = ms;
+    }
+
+    /** 清除展板渲染期间的状态回放延迟，恢复正常实时状态查询。 */
+    public static void clearRenderDelay() {
+        renderDelayMs = 0L;
     }
 
     /** 兼容旧调用：骨块的 ERA 模块是否仍激活。 */
