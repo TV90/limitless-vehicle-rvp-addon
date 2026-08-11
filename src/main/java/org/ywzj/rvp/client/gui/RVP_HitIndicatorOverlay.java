@@ -22,11 +22,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import org.ywzj.rvp.RVP_MOD;
+import net.minecraftforge.client.gui.overlay.ForgeGui;
+import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -53,9 +50,11 @@ import java.util.Optional;
  * 控制，与服务端发包一致（未启用时走本体命中提示，二选一）。
  * <p>展板与模型尺寸均按屏幕实际分辨率（像素）计算，再换算回 GUI 坐标 —— 不受“界面尺寸”
  * （GUI 缩放）影响，只随分辨率自适应。</p>
+ * <p>渲染通道：实现 {@link IGuiOverlay} 并注册在雷达 overlay 之后（{@link RVP_OverlayRegistry}），
+ * 与雷达/RWR 走同一条已验证的 overlay 渲染管线；不依赖 {@code RenderGuiEvent.Post}
+ * （当前环境该 Forge 事件不派发，旧实现导致展板完全不渲染）。</p>
  */
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public final class RVP_HitIndicatorOverlay {
+public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
 
     /** 展板宽/高占屏幕实际分辨率的比例 */
     private static final double PANEL_W_FRAC = 0.32;
@@ -90,10 +89,11 @@ public final class RVP_HitIndicatorOverlay {
     private static final float EXPLOSION_RING_MAX_MULTIPLIER = 5f;
     /** 爆炸半径达到该值时扩散圈最大（方块/米），随爆炸半径线性插值 */
     private static final float EXPLOSION_RING_MAX_RADIUS = 20f;
-    /**
-     * 展板模型"状态回放延迟"（毫秒）：展板渲染时动画脚本的爆反状态查询回到 1 秒前，
-     * 刚被摧毁的爆反骨块在展板里晚 1 秒消失；世界渲染仍实时（立即消失）。
-     */
+    /** 弹药模型后拉距离回退值（米）：优先读烘焙模型弹头最前点自动计算；读不到/异常时用此固定值 */
+    private static final float PROJECTILE_BACK_FALLBACK = 3.0f;
+
+    /** 展板模型"状态回放延迟"（毫秒）：展板渲染时动画脚本的爆反状态查询回到 1 秒前，
+     *  刚被摧毁的爆反骨块在展板里晚 1 秒消失；世界渲染仍实时（立即消失）。 */
     private static final long RENDER_DELAY_MS = 1000L;
 
     /**
@@ -119,26 +119,59 @@ public final class RVP_HitIndicatorOverlay {
                     .setDepthTestState(new RenderStateShard.DepthTestStateShard("rvp_hit_circle_no_depth", 519))
                     .createCompositeState(true));
 
+    /**
+     * 展板底色/边框填充：GL_ALWAYS 深度测试 + 写深度。
+     * 命中展板绘制时，任何先前已画到帧缓冲的内容（雷达/RWR 的 XX°、XX m 文字等）
+     * 都会被底色彻底盖住；展板内标题文字与模型在填充之后绘制，正常显示在底色之上。
+     */
+    private static final RenderType PANEL_BG = RenderType.create("rvp_panel_bg",
+            DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.QUADS,
+            512, false, false,
+            RenderType.CompositeState.builder()
+                    .setShaderState(new RenderStateShard.ShaderStateShard(
+                            GameRenderer::getPositionColorShader))
+                    .setTransparencyState(new RenderStateShard.TransparencyStateShard(
+                            "rvp_panel_bg_transparency",
+                            () -> {
+                                RenderSystem.enableBlend();
+                                RenderSystem.defaultBlendFunc();
+                            },
+                            RenderSystem::disableBlend))
+                    .setCullState(new RenderStateShard.CullStateShard(false))
+                    // 519 = GL_ALWAYS：底色永远通过深度测试，盖住之前绘制的内容
+                    .setDepthTestState(new RenderStateShard.DepthTestStateShard("rvp_panel_bg_always", 519))
+                    .setWriteMaskState(new RenderStateShard.WriteMaskStateShard(true, true))
+                    .createCompositeState(true));
+
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 爆反动画时序检查节流日志时间戳 */
     private static long lastEraBurnCheck = Long.MIN_VALUE;
-    /** onRenderGui 入口节流日志时间戳 */
-    private static long lastGuiEventLog = Long.MIN_VALUE;
+    /** 渲染入口节流日志时间戳 */
+    private static long lastEntryLog = Long.MIN_VALUE;
+    /** 实际绘制节流日志时间戳 */
+    private static long lastDrawLog = Long.MIN_VALUE;
 
-    @SubscribeEvent
-    public static void onRenderGui(RenderGuiEvent.Post event) {
-        GuiGraphics guiGraphics = event.getGuiGraphics();
-        float partialTick = event.getPartialTick();
+    /**
+     * IGuiOverlay 渲染入口：与雷达/RWR 同一条注册通道（{@link RVP_OverlayRegistry} 注册于
+     * RegisterGuiOverlaysEvent，已验证稳定触发）。Forge 总线的 {@code RenderGuiEvent.Post} /
+     * {@code ScreenEvent.Render.Post} 在当前环境不派发，故不再依赖事件，改用 overlay 直调。
+     */
+    @Override
+    public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick,
+                       int screenWidth, int screenHeight) {
         long now = System.currentTimeMillis();
-        if (now - lastGuiEventLog > 2000) {
-            lastGuiEventLog = now;
-            LOGGER.info("[RVP-HitUI] gui event fired: active={} events={} player={} hideGui={} level={}",
+        if (now - lastEntryLog > 2000) {
+            lastEntryLog = now;
+            LOGGER.info("[RVP-HitUI] OVERLAY render fired: active={} events={} screen={}",
                     RVP_ClientHitIndicatorState.isActive(),
                     RVP_ClientHitIndicatorState.getEvents().size(),
-                    Minecraft.getInstance().player != null,
-                    Minecraft.getInstance().options.hideGui,
-                    Minecraft.getInstance().level != null);
+                    Minecraft.getInstance().screen != null
+                            ? Minecraft.getInstance().screen.getClass().getSimpleName() : "null");
         }
+        renderGui(guiGraphics, partialTick);
+    }
+
+    private static void renderGui(GuiGraphics guiGraphics, float partialTick) {
         if (!RVP_ClientHitIndicatorState.isActive()) {
             return;
         }
@@ -150,19 +183,32 @@ public final class RVP_HitIndicatorOverlay {
         if (mc.player == null || mc.options.hideGui || mc.level == null) {
             return;
         }
+        long now = System.currentTimeMillis();
         if (now - lastEraBurnCheck > 1000) {
             lastEraBurnCheck = now;
             LOGGER.info("[RVP-HitUI] render active: entity={} events={}",
                     RVP_ClientHitIndicatorState.getEntityId(),
                     RVP_ClientHitIndicatorState.getEvents().size());
         }
-        render(guiGraphics, mc, partialTick);
+        // 先把所有延迟缓冲的 HUD 内容（雷达/RWR 的 XX°、XX m 文字等）落进帧缓冲，
+        // 再绘制展板：展板随后绘制时自然盖在它们之上。否则这些文字会因 MultiBufferSource
+        // 按 RenderType 分桶、文字缓冲排在填充缓冲之后，而画在展板底色之上。
+        guiGraphics.flush();
+        renderPanel(guiGraphics, mc, partialTick);
     }
 
-    private static void render(GuiGraphics gg, Minecraft mc, float partialTick) {
+    private static void renderPanel(GuiGraphics gg, Minecraft mc, float partialTick) {
         Entity entity = resolveEntity(mc);
         if (entity == null) {
             return;
+        }
+        long dbgNow = System.currentTimeMillis();
+        if (dbgNow - lastDrawLog > 2000) {
+            lastDrawLog = dbgNow;
+            LOGGER.info("[RVP-HitUI] DRAW panel: entity={} type={} events={}",
+                    entity.getId(),
+                    entity.getType().toString(),
+                    RVP_ClientHitIndicatorState.getEvents().size());
         }
 
         // 渲染基准临时对齐到命中时刻位置：超视距克隆实体/高速移动目标的当前客户端位置与
@@ -196,13 +242,17 @@ public final class RVP_HitIndicatorOverlay {
         // GuiGraphics.enableScissor 会把 GUI 坐标换算成物理像素，3D 模型缓冲提交时同样生效。
         gg.enableScissor(x0, y0, x1, y1);
         try {
-        // 展板：灰色 80% 不透明度底 + 黑边框
-        gg.fill(x0, y0, x1, y1, COLOR_BACKGROUND);
+        // 展板：灰色不透明底 + 黑边框（GL_ALWAYS 填充，盖住先前绘制的 HUD 文字）
+        fillBg(gg, x0, y0, x1, y1, COLOR_BACKGROUND);
         int border = Math.max(1, (int) (BORDER_PX / guiScale));
-        gg.fill(x0, y0, x1, y0 + border, COLOR_BORDER);
-        gg.fill(x0, y1 - border, x1, y1, COLOR_BORDER);
-        gg.fill(x0, y0, x0 + border, y1, COLOR_BORDER);
-        gg.fill(x1 - border, y0, x1, y1, COLOR_BORDER);
+        fillBg(gg, x0, y0, x1, y0 + border, COLOR_BORDER);
+        fillBg(gg, x0, y1 - border, x1, y1, COLOR_BORDER);
+        fillBg(gg, x0, y0, x0 + border, y1, COLOR_BORDER);
+        fillBg(gg, x1 - border, y0, x1, y1, COLOR_BORDER);
+        // 展板底先单独落帧缓冲：GL_ALWAYS 底色盖住先前已绘制的 HUD 文字（雷达/RWR 的 XX°、XX m 等）。
+        // 不能等帧末统一 flush —— MultiBufferSource 各 RenderType 分桶刷新顺序不保证，
+        // 底色/文字/模型若同一批刷新，模型可能先于底色落帧而被 GL_ALWAYS 底色盖住（模型消失）。
+        gg.flush();
 
         // 文字区（展板顶部）：按固定像素字号绘制，物理大小不受界面尺寸影响
         Font font = mc.font;
@@ -226,6 +276,8 @@ public final class RVP_HitIndicatorOverlay {
         int lineY = 0;
         gg.drawCenteredString(font, Component.literal(title), 0, lineY, damageColor);
         gg.pose().popPose();
+        // 标题文字单独落帧缓冲：盖在展板底色之上（层级：雷达文字 < 展板底 < 标题文字 < 模型）
+        gg.flush();
         int textBlockGui = (int) Math.ceil((lineY + 9) * textScale);
 
         // 模型区：文字区下方，锚点居中
@@ -450,7 +502,7 @@ public final class RVP_HitIndicatorOverlay {
                     / (float) RVP_ClientHitIndicatorState.BURST_MS;
             // 击毁爆反的命中：命中球比平时更大且发黑（模拟爆反爆炸的黑红冲击）
             boolean eraHit = destroyedEraAtHit(event.entityId, event.hitTime);
-            float sizeMul = eraHit ? 1.5f : 1f;
+            float sizeMul = eraHit ? 2.0f : 1f;
             float dark = eraHit ? 0.3f : 1f;
             float radius;
             float cr, cg, cb;
@@ -630,6 +682,20 @@ public final class RVP_HitIndicatorOverlay {
                 .color(1.0f, 1.0f, 1.0f, 1.0f).normal(0, 1, -100).endVertex();
     }
 
+    /** 展板底色/边框：用 {@link #PANEL_BG}（GL_ALWAYS）绘制实心四边形，必盖住先前内容 */
+    private static void fillBg(GuiGraphics gg, int x0, int y0, int x1, int y1, int color) {
+        Matrix4f m = gg.pose().last().pose();
+        VertexConsumer vc = gg.bufferSource().getBuffer(PANEL_BG);
+        float a = (float) (color >> 24 & 255) / 255.0F;
+        float r = (float) (color >> 16 & 255) / 255.0F;
+        float g = (float) (color >> 8 & 255) / 255.0F;
+        float b = (float) (color & 255) / 255.0F;
+        vc.vertex(m, (float) x0, (float) y0, 0.0F).color(r, g, b, a).endVertex();
+        vc.vertex(m, (float) x0, (float) y1, 0.0F).color(r, g, b, a).endVertex();
+        vc.vertex(m, (float) x1, (float) y1, 0.0F).color(r, g, b, a).endVertex();
+        vc.vertex(m, (float) x1, (float) y0, 0.0F).color(r, g, b, a).endVertex();
+    }
+
     /**
      * GUI 空间实心圆盘（永远面向屏幕）：把模型坐标经当前矩阵投影到 GUI 坐标，再画三角扇圆。
      * 半径单位为像素（调用方已用 scale 换算）。
@@ -669,6 +735,9 @@ public final class RVP_HitIndicatorOverlay {
             dirV.normalize();
             // 链内 z 是镜像（scale z=-1），取反使模型前端朝飞行方向
             pose.mulPose(new Quaternionf().rotateTo(new Vector3f(0, 0, -1), dirV));
+            // 弹头一般不在模型原点：旋转后沿模型局部 +Z（= 飞行反方向）后拉弹头前点距离，
+            // 让弹头指向命中点，避免命中瞬间弹药模型整体"穿模"进命中点/载具。
+            pose.translate(0, 0, cachedBackOffset);
         }
         VehicleBedrockModel model = projectileModel(eventCacheWeaponId);
         ResourceLocation tex = projectileTexture(eventCacheWeaponId);
@@ -681,6 +750,8 @@ public final class RVP_HitIndicatorOverlay {
     private static String eventCacheWeaponId;
     private static VehicleBedrockModel cachedModel;
     private static ResourceLocation cachedTexture;
+    /** 当前缓存弹药的弹头前点后拉距离（米） */
+    private static float cachedBackOffset = PROJECTILE_BACK_FALLBACK;
 
     private static VehicleBedrockModel projectileModel(String weaponId) {
         resolveProjectileCache(weaponId);
@@ -692,7 +763,7 @@ public final class RVP_HitIndicatorOverlay {
         return cachedTexture;
     }
 
-    /** 查询武器 display：有模型则缓存模型+纹理 */
+    /** 查询武器 display：有模型则缓存模型+纹理+弹头后拉距离 */
     private static void resolveProjectileCache(String weaponId) {
         if (weaponId != null && weaponId.equals(eventCacheWeaponId)) {
             return;
@@ -700,6 +771,7 @@ public final class RVP_HitIndicatorOverlay {
         eventCacheWeaponId = weaponId;
         cachedModel = null;
         cachedTexture = null;
+        cachedBackOffset = PROJECTILE_BACK_FALLBACK;
         if (weaponId == null || weaponId.isEmpty()) {
             return;
         }
@@ -711,10 +783,33 @@ public final class RVP_HitIndicatorOverlay {
                 if (m != null && m.hasBakedModel()) {
                     cachedModel = m;
                     cachedTexture = display.get().getTexture();
+                    cachedBackOffset = computeProjectileBackOffset(m);
                 }
             }
         } catch (Exception ignored) {
         }
+    }
+
+    /**
+     * 计算弹药模型弹头最前点距模型原点的距离（米）：模型局部 -Z 方向即飞行前向
+     * （渲染时 rotateTo 把局部 -Z 对齐来袭方向），弹头即包围盒最小 Z；渲染时沿
+     * 飞行反方向后拉该距离，让弹头贴住命中点。读作者声明的渲染包围盒
+     * （{@link com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.baked.BakedBedrockModel#getRenderBoundingBox}），
+     * 读不到/异常回退 {@link #PROJECTILE_BACK_FALLBACK}。
+     */
+    private static float computeProjectileBackOffset(VehicleBedrockModel model) {
+        if (model == null || !model.hasBakedModel()) {
+            return PROJECTILE_BACK_FALLBACK;
+        }
+        try {
+            AABB bounds = model.getBakedModel().getRenderBoundingBox();
+            double nose = -bounds.minZ;
+            if (nose > 0 && nose < 128) {
+                return (float) nose;
+            }
+        } catch (Exception ignored) {
+        }
+        return PROJECTILE_BACK_FALLBACK;
     }
 
     /** 该命中事件对应弹药是否有模型 */
