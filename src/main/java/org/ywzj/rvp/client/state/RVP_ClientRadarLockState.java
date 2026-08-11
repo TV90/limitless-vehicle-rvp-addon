@@ -138,7 +138,7 @@ public final class RVP_ClientRadarLockState {
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
         if (externalContacts) {
             Minecraft mc = Minecraft.getInstance();
-            AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+            AbstractVehicle launcher = LocalVehiclePlayer.instance.vehicle;
             ResourceLocation dimension = mc.level != null ? mc.level.dimension().location() : null;
             int lockedId = RVP_ExternalRadarLinkHelper.getClientLockedEntityId(launcher, dimension);
             if (lockedId != Integer.MIN_VALUE) {

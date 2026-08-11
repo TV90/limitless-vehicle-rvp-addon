@@ -33,10 +33,10 @@ public class VehicleScopeOverlayHeadingFixMixin {
             int color,
             CallbackInfo ci
     ) {
-        if (LocalVehiclePlayer.instance == null || LocalVehiclePlayer.instance.getVehicle() == null) {
+        if (LocalVehiclePlayer.instance == null || LocalVehiclePlayer.instance.vehicle == null) {
             return;
         }
-        ResourceLocation vehicleId = LocalVehiclePlayer.instance.getVehicle().getVehicleId();
+        ResourceLocation vehicleId = LocalVehiclePlayer.instance.vehicle.getVehicleId();
         if (vehicleId == null || !"rvp".equals(vehicleId.getNamespace())) {
             return;
         }

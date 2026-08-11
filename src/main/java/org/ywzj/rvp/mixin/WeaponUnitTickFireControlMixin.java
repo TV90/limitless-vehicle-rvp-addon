@@ -173,7 +173,7 @@ public abstract class WeaponUnitTickFireControlMixin {
         if (root != self || self.getLockedEntity() != null) {
             return;
         }
-        if (LocalVehiclePlayer.instance.getVehicle() != self.getVehicle()) {
+        if (LocalVehiclePlayer.instance.vehicle != self.getVehicle()) {
             return;
         }
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();

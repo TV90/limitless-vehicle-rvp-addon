@@ -41,6 +41,6 @@ public abstract class EntityRenderDispatcherPhysicsOnlyMixin {
         List<OBB> obbs = physicsOnlyCubes.stream().map(VehicleCubeOBB::obb).toList();
         // 灰色线框，区别于本体的绿色车体盒 / 红色武器盒
         OBBRenderer.INSTANCE.render(entity.position(), obbs, matrixStack, buffer,
-                0.5f, 0.5f, 0.5f, 1.0f, partialTicks);
+                0.5f, 0.5f, 0.5f, 1.0f);
     }
 }

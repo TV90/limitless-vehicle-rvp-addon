@@ -33,7 +33,7 @@ public class RVP_HeatHudOverlay implements IGuiOverlay {
             return;
         }
 
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
             return;
         }

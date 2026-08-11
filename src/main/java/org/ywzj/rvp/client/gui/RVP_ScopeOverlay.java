@@ -86,7 +86,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             }
             return;
         }
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         // [RVP] 仅在有 ui_preset 时渲染
         if (vehicle.getVehicleId() == null) return;
         String presetName = VehicleUIPresetCache.get(vehicle.getVehicleId());
@@ -342,7 +342,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             }
         }
         RadarUnit mainRadarUnit = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         Entity externalLockedEntity = null;
         S2CExternalRadarSnapshot.Entry externalLockedEntry = null;
@@ -429,7 +429,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     private static void renderExternalRadarContacts(GuiGraphics guiGraphics, WeaponUnit weaponUnit,
                                                     @Nullable RadarUnit mainRadarUnit,
                                                     int externalLockedEntityId) {
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         if (vehicle == null || mc.level == null) {
             return;
@@ -463,7 +463,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
     }
     private static void radarInfo(GuiGraphics guiGraphics, PoseStack poseStack, RadarUnit.DetectedObject detectedObject) {
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
             return;
         }

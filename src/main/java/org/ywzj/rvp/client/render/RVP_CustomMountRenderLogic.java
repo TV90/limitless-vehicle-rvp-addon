@@ -160,7 +160,7 @@ public final class RVP_CustomMountRenderLogic {
             noteResolvedMountStates(vehicle, resolvedMounts);
         }
         int actualLight = vehicle.isDestroyed() ? 64 : packedLight;
-        boolean localPlayerVehicle = vehicle == org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.getVehicle();
+        boolean localPlayerVehicle = vehicle == org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.vehicle;
         for (RVP_CustomMountConfig config : configs) {
             ResolvedMount resolved = resolvedMounts.stream()
                     .filter(entry -> entry.config() == config)
@@ -237,6 +237,7 @@ public final class RVP_CustomMountRenderLogic {
                         bufferSource,
                         actualLight,
                         OverlayTexture.NO_OVERLAY,
+                        null,
                         localPlayerVehicle
                 );
             } finally {
@@ -516,7 +517,7 @@ public final class RVP_CustomMountRenderLogic {
     private static VehicleBedrockModel loadAttachmentModelDirect(ResourceLocation modelId,
                                                                  List<SpecialBoneEffect> effects,
                                                                  Set<String> preservedBones) {
-        ResourceLocation resourcePath = new ResourceLocation(
+        ResourceLocation resourcePath = ResourceLocation.fromNamespaceAndPath(
                 modelId.getNamespace(),
                 "models/bedrock/" + modelId.getPath() + ".json"
         );

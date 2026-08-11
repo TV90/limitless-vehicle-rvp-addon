@@ -146,7 +146,7 @@ public final class RVP_ExternalRadarLinkHelper {
     @OnlyIn(Dist.CLIENT)
     public static List<ClientLockCandidate> collectManualClientLockCandidateData(@Nullable WeaponUnit weaponUnit,
                                                                                   @Nullable Vec3 aimVecOverride) {
-        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         if (weaponUnit == null || launcher == null || mc.level == null) {
             return List.of();
@@ -265,7 +265,7 @@ public final class RVP_ExternalRadarLinkHelper {
     public static S2CExternalRadarSnapshot.Affiliation getAffiliation(@Nullable Entity entity) {
         if (entity == null) return null;
         Minecraft mc = Minecraft.getInstance();
-        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.vehicle;
         if (mc.level == null || launcher == null) return null;
         S2CExternalRadarSnapshot.Entry entry = getClientEntry(launcher, mc.level.dimension().location(), entity.getId());
         return entry != null ? entry.affiliation() : null;

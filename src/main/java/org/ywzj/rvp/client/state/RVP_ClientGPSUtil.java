@@ -128,7 +128,7 @@ public class RVP_ClientGPSUtil {
         }
         // 用载具当前视图的摄像机位置（含武器站光瞄/操作员视角），
         // 而非原版主摄像机（开镜瞄准时它指向玩家实体而非光瞄镜头）。
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         PartUnit<?> operatorUnit = vehicle == null
                 ? null
                 : vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer());

@@ -49,7 +49,7 @@ public final class RVP_ClientVehicleViewGuard {
         if (instance == null) {
             return;
         }
-        AbstractVehicle cached = instance.getVehicle();
+        AbstractVehicle cached = instance.vehicle;
         if (cached == null) {
             mismatchTick = 0;
             return;

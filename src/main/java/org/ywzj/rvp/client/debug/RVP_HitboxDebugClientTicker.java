@@ -23,7 +23,7 @@ public final class RVP_HitboxDebugClientTicker {
         if (mc.player == null || mc.player.tickCount % RVP_HitboxDebug.getIntervalTicks() != 0) {
             return;
         }
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
         RVP_HitboxDebug.dumpVehicleSnapshot("periodic", vehicle);
     }
 }

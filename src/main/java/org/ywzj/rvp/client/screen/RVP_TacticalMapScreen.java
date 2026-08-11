@@ -2410,7 +2410,7 @@ public class RVP_TacticalMapScreen extends Screen {
                 ));
             }
         }
-        AbstractVehicle currentVehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle currentVehicle = LocalVehiclePlayer.instance.vehicle;
         Vec3 referencePos = currentVehicle != null ? currentVehicle.position() : player.position();
         for (S2CExternalRadarSnapshot.Entry entry : externalEntries) {
             if (!seen.add(entry.entityId())) {
@@ -3060,7 +3060,7 @@ public class RVP_TacticalMapScreen extends Screen {
 
     @Nullable
     private Entity getExternalRadarLockedEntity() {
-        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         if (launcher == null || mc.level == null) {
             return null;
@@ -3074,7 +3074,7 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private boolean hasExternalRadarContact(int entityId) {
-        AbstractVehicle launcher = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle launcher = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         if (launcher == null || mc.level == null) {
             return false;
@@ -3600,7 +3600,7 @@ public class RVP_TacticalMapScreen extends Screen {
 
     private List<S2CExternalRadarSnapshot.Entry> currentExternalRadarEntries() {
         Minecraft mc = Minecraft.getInstance();
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (mc.level == null || vehicle == null) {
             return List.of();
         }

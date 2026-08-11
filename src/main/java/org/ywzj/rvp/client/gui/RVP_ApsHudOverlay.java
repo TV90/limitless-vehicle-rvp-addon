@@ -15,7 +15,7 @@ public class RVP_ApsHudOverlay implements IGuiOverlay {
         if (LocalVehiclePlayer.instance == null || !LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }
-        var vehicle = LocalVehiclePlayer.instance.getVehicle();
+        var vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
             return;
         }

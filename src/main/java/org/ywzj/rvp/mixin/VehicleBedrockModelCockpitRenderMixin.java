@@ -43,6 +43,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                                         MultiBufferSource source,
                                         int packedLight,
                                         int packedOverlay,
+                                        List<BoneState> invisibleBones,
                                         boolean isLocalPlayerVehicle) {
         BakedBedrockModel bakedModel = getBakedModel();
         if (bakedModel == null || bakedSpecialBoneEntries.isEmpty()) {
@@ -56,6 +57,9 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
             if (bone != null) {
                 bone.visible = true;
             }
+        }
+        if (invisibleBones != null) {
+            invisibleBones.forEach(invisibleBone -> invisibleBone.visible = false);
         }
         if (hasCockpitDepthFix) {
             RVP_CockpitPassengerRenderer.renderLocalPassengerBeforeCockpit(self, poseStack, source, packedLight);

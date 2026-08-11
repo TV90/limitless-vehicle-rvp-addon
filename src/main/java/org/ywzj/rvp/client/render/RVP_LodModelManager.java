@@ -154,7 +154,7 @@ public final class RVP_LodModelManager {
      * 直接按文件路径读取不受影响。
      */
     private static VehicleBedrockModel buildLodModel(ResourceLocation modelId) {
-        ResourceLocation fileRl = new ResourceLocation(modelId.getNamespace(),
+        ResourceLocation fileRl = ResourceLocation.fromNamespaceAndPath(modelId.getNamespace(),
                 "models/bedrock/" + modelId.getPath() + ".json");
         var rm = Minecraft.getInstance().getResourceManager();
         var resourceOpt = rm.getResource(fileRl);

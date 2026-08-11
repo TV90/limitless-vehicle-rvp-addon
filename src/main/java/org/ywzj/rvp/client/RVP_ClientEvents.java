@@ -137,7 +137,7 @@ public class RVP_ClientEvents {
                         RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
                         weaponUnit.setLockedEntity(null);
                     }
-                    if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.getVehicle(),
+                    if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.vehicle,
                             mc.level != null ? mc.level.dimension().location() : null)) {
                         RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
                     }
@@ -261,7 +261,7 @@ public class RVP_ClientEvents {
         if (!(lvp.getPlayer().getVehicle() instanceof AbstractVehicle vehicle)) {
             return;
         }
-        if (lvp.getVehicle() == vehicle && lvp.seat != null) {
+        if (lvp.vehicle == vehicle && lvp.seat != null) {
             return; // 已同步，无需修复
         }
         AbstractVehicle.Seat seat = vehicle.seats.stream()

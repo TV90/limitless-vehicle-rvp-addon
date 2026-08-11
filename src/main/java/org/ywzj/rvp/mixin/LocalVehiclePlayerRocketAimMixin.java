@@ -57,28 +57,28 @@ public class LocalVehiclePlayerRocketAimMixin {
         }
         if (weaponUnit == null || weaponUnit.getCurrentWeapon().isEmpty()) {
             if (self.onVehicle()) {
-                ywzj_rvp$clearRocketCcip(self.getVehicle().getId());
+                ywzj_rvp$clearRocketCcip(self.vehicle.getId());
             }
             return;
         }
         AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().get();
         if (!RVP_RocketCcipOverlay.isBallisticRocketWeapon(currentWeapon, weaponUnit)) {
             if (self.onVehicle()) {
-                ywzj_rvp$clearRocketCcip(self.getVehicle().getId());
+                ywzj_rvp$clearRocketCcip(self.vehicle.getId());
             }
             return;
         }
         WeaponUnit rocketWeaponUnit = currentWeapon.getWeaponUnit();
         if (rocketWeaponUnit == null) {
             if (self.onVehicle()) {
-                ywzj_rvp$clearRocketCcip(self.getVehicle().getId());
+                ywzj_rvp$clearRocketCcip(self.vehicle.getId());
             }
             return;
         }
         if (!self.onVehicle()) {
             return;
         }
-        AbstractVehicle vehicle = self.getVehicle();
+        AbstractVehicle vehicle = self.vehicle;
         Vec3 rawHit = null;
         ResourceLocation weaponId = null;
         if (currentWeapon instanceof VehicleRocket rocket) {

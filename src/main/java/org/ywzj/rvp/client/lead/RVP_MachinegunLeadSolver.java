@@ -181,7 +181,7 @@ public final class RVP_MachinegunLeadSolver {
         if (target != null && target.isAlive()) {
             return target;
         }
-        var vehicle = org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.getVehicle();
+        var vehicle = org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.vehicle;
         var mc = net.minecraft.client.Minecraft.getInstance();
         if (vehicle != null && mc.level != null) {
             Entity externalLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(vehicle, mc.level.dimension().location());

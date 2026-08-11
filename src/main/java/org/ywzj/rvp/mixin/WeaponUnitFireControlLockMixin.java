@@ -71,7 +71,7 @@ public abstract class WeaponUnitFireControlLockMixin {
             ci.cancel();
             return;
         }
-        if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.getVehicle(),
+        if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.vehicle,
                 net.minecraft.client.Minecraft.getInstance().level != null
                         ? net.minecraft.client.Minecraft.getInstance().level.dimension().location()
                         : null)) {

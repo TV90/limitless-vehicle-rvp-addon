@@ -24,8 +24,8 @@ public class RVP_OverlayCancelHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static long lastProbeLog = Long.MIN_VALUE;
-    private static final ResourceLocation VEHICLE_RADAR = new ResourceLocation("ywzj_vehicle", "vehicle_radar");
-    private static final ResourceLocation VEHICLE_SCOPE = new ResourceLocation("ywzj_vehicle", "vehicle_scope");
+    private static final ResourceLocation VEHICLE_RADAR = ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "vehicle_radar");
+    private static final ResourceLocation VEHICLE_SCOPE = ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "vehicle_scope");
 
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Pre event) {
@@ -48,7 +48,7 @@ public class RVP_OverlayCancelHandler {
         if (!id.equals(VEHICLE_RADAR) && !id.equals(VEHICLE_SCOPE)) {
             return;
         }
-        var vehicle = LocalVehiclePlayer.instance.getVehicle();
+        var vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null || vehicle.getVehicleId() == null) {
             if (id.equals(VEHICLE_RADAR)) {
                 event.setCanceled(true);

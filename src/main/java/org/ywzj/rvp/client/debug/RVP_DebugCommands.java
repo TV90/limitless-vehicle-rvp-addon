@@ -97,7 +97,7 @@ public class RVP_DebugCommands {
                                 .then(Commands.literal("on").executes(ctx -> {
                                     RVP_HitboxDebug.clearLog();
                                     RVP_HitboxDebug.setEnabled(true);
-                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-on", LocalVehiclePlayer.instance.getVehicle());
+                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-on", LocalVehiclePlayer.instance.vehicle);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
                                     return 1;
                                 }))
@@ -112,7 +112,7 @@ public class RVP_DebugCommands {
                                     return enabled ? 1 : 0;
                                 }))
                                 .then(Commands.literal("dump").executes(ctx -> {
-                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-dump", LocalVehiclePlayer.instance.getVehicle());
+                                    RVP_HitboxDebug.dumpVehicleSnapshot("command-dump", LocalVehiclePlayer.instance.vehicle);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已立即写入 hitboxlog: " + RVP_HitboxDebug.getLogPath()), false);
                                     return 1;
                                 }))
@@ -124,7 +124,7 @@ public class RVP_DebugCommands {
                         )
                         .then(Commands.literal("hitboxresolve")
                                 .then(Commands.literal("dump").executes(ctx -> {
-                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
                                     String content = RVP_VehicleHitboxFactorManager.INSTANCE.dumpResolveDebug(vehicle);
                                     writeLog(HITBOX_RESOLVE_LOG_PATH, content);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + HITBOX_RESOLVE_LOG_PATH), false);
@@ -161,7 +161,7 @@ public class RVP_DebugCommands {
                                         }))
                                 )
                                 .then(Commands.literal("dump").executes(ctx -> {
-                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
                                     RVP_WeaponOriginDebug.dumpVehicleSnapshot("command-dump", vehicle);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 weaponorigin 调试日志: " + RVP_WeaponOriginDebug.getLogPath()), false);
                                     return vehicle == null ? 0 : 1;
@@ -182,7 +182,7 @@ public class RVP_DebugCommands {
                                 .then(Commands.literal("on").executes(ctx -> {
                                     RVP_CustomMountRenderLogic.clearDebugLog();
                                     RVP_CustomMountRenderLogic.setDebugEnabled(true);
-                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
                                     if (vehicle != null) {
                                         writeLog(RVP_CustomMountRenderLogic.getDebugLogPath(),
                                                 RVP_CustomMountRenderLogic.dumpDebugSnapshot(vehicle));
@@ -201,7 +201,7 @@ public class RVP_DebugCommands {
                                     return enabled ? 1 : 0;
                                 }))
                                 .then(Commands.literal("dump").executes(ctx -> {
-                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
                                     String content = RVP_CustomMountRenderLogic.dumpDebugSnapshot(vehicle);
                                     writeLog(RVP_CustomMountRenderLogic.getDebugLogPath(), content);
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已写入 " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
@@ -245,7 +245,7 @@ public class RVP_DebugCommands {
                         .then(Commands.literal("gunner")
                                 .executes(ctx -> {
                                     // one-shot dump to chat + file
-                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
                                     if (vehicle == null) {
                                         ctx.getSource().sendSuccess(() -> Component.literal("§c[Gunner] 未乘坐载具"), false);
                                         return 0;
@@ -280,7 +280,7 @@ public class RVP_DebugCommands {
                                 }))
                         )
                         .then(Commands.literal("ui").executes(ctx -> {
-                            AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+                            AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
                             StringBuilder sb = new StringBuilder();
                             String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                             sb.append("=== RVP UI Debug ").append(ts).append(" ===\n");

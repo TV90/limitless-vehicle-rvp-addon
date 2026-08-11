@@ -3,6 +3,7 @@ package org.ywzj.rvp.debug;
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -227,10 +228,10 @@ public final class RVP_ServerDebugCommands {
                                 .then(Commands.literal("status").executes(ctx -> {
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal(RVP_TopAttackDebug.buildStatus(
-                                                    new net.minecraft.resources.ResourceLocation("rvp", "lav25_tow2b"))), false);
+                                                    ResourceLocation.fromNamespaceAndPath("rvp", "lav25_tow2b"))), false);
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal(RVP_TopAttackDebug.buildStatus(
-                                                    new net.minecraft.resources.ResourceLocation("rvp", "lav25_tow2b_efp"))), false);
+                                                    ResourceLocation.fromNamespaceAndPath("rvp", "lav25_tow2b_efp"))), false);
                                     return 1;
                                 }))
                                 .then(Commands.literal("clear").executes(ctx -> {

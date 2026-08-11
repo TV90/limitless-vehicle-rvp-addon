@@ -119,7 +119,7 @@ public final class AntiRadiationSeekerHelper {
         long key = emitterKey(vehicle.getId(), radarUnit.getIndex());
         double carrierFrequencyMhz = 8000.0 + Math.floorMod(key, 4000);
         double pulseWidthMicroseconds = locked ? 4.0 : 1.2;
-        double rcs = Math.max(vehicle.physicsEngine.radarCrossSection, 0.1f);
+        double rcs = Math.max(vehicle.physicsEngine.physicsInfo.radarCrossSection, 0.1f);
         double amplitude = (locked ? 2.0 : 1.0) * rcs / (distance * distance);
         return new RVP_RadarPulseDescriptor(tickCount, pulseWidthMicroseconds, angle,
                 carrierFrequencyMhz, amplitude, vehicle.getId(), radarUnit.getIndex(), radarPos, locked);

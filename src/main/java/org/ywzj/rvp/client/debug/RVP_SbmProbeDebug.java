@@ -63,7 +63,7 @@ public final class RVP_SbmProbeDebug {
     }
 
     public static void dumpCurrentVehicleState(String reason) {
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
         StringBuilder sb = new StringBuilder();
         sb.append("=== SBM PROBE DUMP ===\n");
         sb.append("reason=").append(reason).append('\n');

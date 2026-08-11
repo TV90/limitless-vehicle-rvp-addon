@@ -213,7 +213,7 @@ public final class RVP_ArtilleryFireControlState {
         if (launchUnit == null || weaponId == null) {
             return null;
         }
-        return new Context(player.getVehicle(), operatorUnit, launchUnit, weapon, data, kind, weaponId);
+        return new Context(player.vehicle, operatorUnit, launchUnit, weapon, data, kind, weaponId);
     }
 
     private static Solution solve(Context context, Vec3 target) {

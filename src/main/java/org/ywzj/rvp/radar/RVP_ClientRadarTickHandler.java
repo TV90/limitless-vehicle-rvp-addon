@@ -76,7 +76,7 @@ public final class RVP_ClientRadarTickHandler {
         if (LocalVehiclePlayer.instance.getPlayer() == null) {
             return;
         }
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null || vehicle.level().isClientSide() == false) {
             return;
         }

@@ -44,7 +44,7 @@ public final class RVP_AirburstInput {
         if (mc.player == null) {
             return false;
         }
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.getVehicle();
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
             return false;
         }
