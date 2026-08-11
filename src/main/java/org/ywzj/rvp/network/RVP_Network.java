@@ -2,8 +2,10 @@ package org.ywzj.rvp.network;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkRegistry;
+import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
     private static final String PROTOCOL = "2";
@@ -196,6 +198,11 @@ public class RVP_Network {
                 .encoder(S2CRvpHitIndicator::encode)
                 .decoder(S2CRvpHitIndicator::decode)
                 .consumerMainThread(S2CRvpHitIndicator::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CVisualEffectEvent.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CVisualEffectEvent::encode)
+                .decoder(S2CVisualEffectEvent::decode)
+                .consumerMainThread(S2CVisualEffectEvent::handle)
                 .add();
     }
 }

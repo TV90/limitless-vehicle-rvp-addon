@@ -130,10 +130,14 @@ public final class RVP_SubmunitionSpawner {
         child.setDeltaMovement(velocity);
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
         RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
-        level.addFreshEntity(child);
+        // 子弹药同样在成功入世后预热，避免其首 Tick 缺少动态路径 Ticket。
+        boolean added = level.addFreshEntity(child);
         RVP_TopAttackDebug.noteSpawn(parent, "SPAWN ok child=" + childId + " kind=" + kind
                 + " pos=(" + String.format("%.1f,%.1f,%.1f", pos.x, pos.y, pos.z) + ")");
-        return true;
+        if (added) {
+            child.primeDynamicChunkPath();
+        }
+        return added;
     }
 
     private static boolean spawnEntity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,

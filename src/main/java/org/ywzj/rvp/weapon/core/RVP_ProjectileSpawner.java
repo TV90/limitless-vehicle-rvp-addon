@@ -157,7 +157,10 @@ public final class RVP_ProjectileSpawner {
         projectile.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(xRot, yRot));
 
         RVP_ProjectileLifecycleDebug.noteSpawnReady(projectile, null);
-        level.addFreshEntity(projectile);
+        // 最终速度确定且成功加入世界后，立即提交首个 5 Tick 路径窗口。
+        if (level.addFreshEntity(projectile)) {
+            projectile.primeDynamicChunkPath();
+        }
         return projectile;
     }
 

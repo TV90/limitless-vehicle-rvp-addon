@@ -1,0 +1,910 @@
+package org.ywzj.rvp.client.visual.thermobaric;
+
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.math.Axis;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import org.ywzj.rvp.RVP_MOD;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+/** 只负责绘制温压火球、压力波、凝结云、贴地尘环和后燃烟云。 */
+public final class RVP_ThermobaricRenderer {
+    /** 复用 RVP 爆炸特效的 16×16 类原版方块团粒子贴图。 */
+    private static final ResourceLocation PARTICLE_TEXTURE =
+            RVP_MOD.modLocation("textures/nuclear/particle_base.png");
+    /** 纯白贴图用作球壳 */
+    private static final ResourceLocation WHITE_TEXTURE =
+            RVP_MOD.modLocation("textures/white/white.png");
+
+    /** 凝结云墙球壳数量。 */
+    private static final int PRESSURE_SHELL_LAYERS = 2;
+    /** 凝结云墙各层在墙体总厚度内的归一化径向偏移。 */
+    private static final float[] PRESSURE_SHELL_OFFSETS = {-0.5F, 0.5F};
+    /** 凝结云墙各层基础透明度。 */
+    private static final float[] PRESSURE_SHELL_ALPHAS = {0.85F, 0.85F};
+
+    /** 半透明云团绘制时使用的临时排序表。 */
+    private static final List<RenderCloud> SORTED_CLOUDS = new ArrayList<>();
+    /** 半透明云团绘制数据对象池，避免压力波存续期间每帧产生数百个短命对象。 */
+    private static final List<RenderCloud> RENDER_CLOUD_POOL = new ArrayList<>();
+    /** 半透明云团按相机距离由远到近排序。 */
+    private static final Comparator<RenderCloud> FAR_TO_NEAR =
+            Comparator.comparingDouble(RenderCloud::distanceSquared).reversed();
+    /** 当前批次已经从对象池取用的绘制数据数量。 */
+    private static int renderCloudPoolIndex;
+
+    private RVP_ThermobaricRenderer() {
+    }
+
+    /** 在世界半透明阶段提交一个温压实例的四层几何。 */
+    public static void render(RVP_ThermobaricEffectInstance effect, RenderLevelStageEvent event) {
+        float visualAge = effect.age() + event.getPartialTick();
+        if (visualAge >= effect.duration()) {
+            return;
+        }
+        Camera camera = event.getCamera();
+        Vec3 cameraPosition = camera.getPosition();
+        PoseStack modelView = RenderSystem.getModelViewStack();
+        modelView.pushPose();
+        modelView.setIdentity();
+        modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
+        modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
+        RenderSystem.applyModelViewMatrix();
+
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
+        RenderSystem.enableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        // 凝结云使用标准透明混合并最先提交，避免近爆心观察时位于外层的透明云片覆盖后续火球等特效。
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        if (effect.preset().showCondensationCloud()
+                || effect.preset().showCondensationCloudParticles()) {
+            renderCondensationCloud(effect, visualAge, cameraPosition);
+        }
+
+        // 压力波、尘环和烟云使用标准透明混合，保持与世界几何的深度关系。
+        if (effect.preset().showPressureWave()) {
+            renderPressureWave(effect, visualAge, cameraPosition);
+        }
+        if (effect.preset().showDustRing()) {
+            renderDustRing(effect, visualAge, cameraPosition);
+        }
+        if (effect.preset().showCloud()) {
+            renderClouds(effect, visualAge, cameraPosition);
+        }
+
+        // 主火球使用加色混合，让多团火焰云共同形成短时白橙色高亮核心。
+        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+        if (effect.preset().showCore()) {
+            renderFireball(effect, visualAge, cameraPosition);
+        }
+
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableBlend();
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        modelView.popPose();
+        RenderSystem.applyModelViewMatrix();
+    }
+
+    private static void renderFireball(RVP_ThermobaricEffectInstance effect, float age, Vec3 camera) {
+        StageWindow window = resolveStageWindow(
+                effect.preset().coreStartTick(), effect.preset().coreFullTick(),
+                effect.preset().coreFadeDurationTicks(), effect.duration());
+        if (!window.contains(age)) {
+            return;
+        }
+        float formationProgress = window.formationProgress(age);
+        float fadeProgress = window.fadeProgress(age);
+        float expansion = easeOutCubic(formationProgress);
+        float alpha = Mth.clamp(formationProgress * 1.8F, 0.0F, 1.0F) * window.fadeAlpha(age);
+        // 【世界坐标生成位置·温压火球】以服务端爆心为基准，仅向上偏移视觉半径的 0.12 倍。
+        Vec3 center = effect.center().add(0.0D, effect.visualRadius() * 0.12D, 0.0D);
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+
+        for (RVP_ThermobaricEffectInstance.FireballCloud cloud : effect.fireballClouds()) {
+            float cloudStart = window.startTick()
+                    + cloud.phase() * window.formationDuration() * 0.38F;
+            if (age < cloudStart) {
+                continue;
+            }
+            float localProgress = Mth.clamp((age - cloudStart)
+                    / Math.max(1.0F, window.fullTick() - cloudStart), 0.0F, 1.0F);
+            float localExpansion = easeOutCubic(localProgress);
+            float contraction = 1.0F - fadeProgress * 0.12F;
+            float offsetScale = effect.visualRadius() * (0.18F + localExpansion * 0.72F)
+                    * contraction;
+            float x = (float) (center.x + cloud.offsetX() * offsetScale - camera.x);
+            float y = (float) (center.y + cloud.offsetY() * offsetScale - camera.y);
+            float z = (float) (center.z + cloud.offsetZ() * offsetScale - camera.z);
+            float size = effect.visualRadius() * cloud.sizeFactor()
+                    * (0.9F + localExpansion * 1.35F) * (1.0F - fadeProgress * 0.08F);
+            int color = mixColor(effect.preset().coreColor(), effect.preset().flameColor(),
+                    Mth.clamp(localProgress * 1.25F, 0.0F, 1.0F));
+            float radialFactor = Mth.sqrt(cloud.offsetX() * cloud.offsetX()
+                    + cloud.offsetY() * cloud.offsetY() + cloud.offsetZ() * cloud.offsetZ());
+            float grayProgress = outerToInnerGrayProgress(fadeProgress, radialFactor);
+            color = mixColor(color, grayscaleColor(color), grayProgress);
+            writeParticleBillboard(builder, x, y, z, size, cloud.rotation(), color,
+                    alpha * Mth.clamp(localProgress * 2.0F, 0.0F, 1.0F)
+                            * (0.58F + cloud.sizeFactor()));
+        }
+
+        float centerX = (float) (center.x - camera.x);
+        float centerY = (float) (center.y - camera.y);
+        float centerZ = (float) (center.z - camera.z);
+        float coreRadius = effect.visualRadius() * (0.28F + expansion * 0.86F)
+                * (1.0F - fadeProgress * 0.08F);
+        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius, 0.0F,
+                fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F), alpha * 0.72F);
+        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.62F, 0.7F,
+                fadeToGray(effect.preset().coreColor(), fadeProgress, 0.55F), alpha);
+        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.28F, 1.4F,
+                fadeToGray(0xFFF5DC, fadeProgress, 0.15F), alpha);
+        BufferUploader.drawWithShader(builder.end());
+    }
+
+    private static void renderPressureWave(RVP_ThermobaricEffectInstance effect,
+                                           float age, Vec3 camera) {
+        StageWindow window = resolveStageWindow(effect.preset().pressureWaveStartTick(),
+                effect.preset().pressureWaveFullTick(),
+                effect.preset().pressureWaveFadeDurationTicks(), effect.duration());
+        if (!window.contains(age)) return;
+
+        float formationProgress = window.formationProgress(age);
+        float fadeProgress = window.fadeProgress(age);
+        float fadeAlpha = window.fadeAlpha(age);
+        float radius = effect.visualRadius() * effect.preset().pressureRadiusFactor()
+                * (easeOutCubic(formationProgress)
+                + effect.pressureWaveFadeSpread() * fadeProgress);
+        if (radius <= 0.0F || effect.preset().pressureRings() <= 0
+                || effect.preset().pressureSegments() <= 0) {
+            return;
+        }
+
+        // 【世界坐标生成位置·压力波】球壳严格以服务端权威爆心为球心。
+        Vec3 center = effect.center();
+        float cx = (float)(center.x - camera.x);
+        float cy = (float)(center.y - camera.y);
+        float cz = (float)(center.z - camera.z);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+
+        // 光学压力波在 full_tick 后继续随机幅度地向外扩张，并按 fade_duration_ticks 线性变淡。
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        writeSphere(builder, cx, cy, cz, radius, 0xFFF8EA, fadeAlpha * 0.08F,
+                effect.preset().pressureRings(), effect.preset().pressureSegments());
+        BufferUploader.drawWithShader(builder.end());
+    }
+
+    /**
+     * 绘制独立于光学压力波的凝结云墙。
+     * 云墙在 start_tick 最厚且最白，到 full_tick 线性变薄；之后不整体淡出，
+     * 而是从球体 Y 轴最高点向下线性裁切，直到 fade_duration_ticks 结束时消失。
+     */
+    private static void renderCondensationCloud(RVP_ThermobaricEffectInstance effect,
+            float age, Vec3 camera) {
+        StageWindow window = resolveStageWindow(effect.preset().pressureWaveStartTick(),
+                effect.preset().pressureWaveFullTick(),
+                effect.preset().pressureWaveFadeDurationTicks(), effect.duration());
+        if (!window.contains(age)) {
+            return;
+        }
+
+        float formationProgress = window.formationProgress(age);
+        float fadeProgress = window.fadeProgress(age);
+        float radius = effect.visualRadius() * effect.preset().pressureRadiusFactor()
+                * easeOutCubic(formationProgress);
+        float wallThickness = effect.visualRadius()
+                * Mth.lerp(formationProgress, 1.25F, 0.12F);
+        int cloudColor = mixColor(0xFFFFFF, 0xD8DEE1, formationProgress);
+
+        // 【世界坐标生成位置·凝结云】球壳和粒子共用服务端权威爆心及压力波半径。
+        Vec3 center = effect.center();
+        float cx = (float) (center.x - camera.x);
+        float cy = (float) (center.y - camera.y);
+        float cz = (float) (center.z - camera.z);
+        float highestY = (float) center.y + radius + wallThickness * 0.5F;
+        float lowestY = (float) center.y - radius - wallThickness * 0.5F;
+        float maximumVisibleY = Mth.lerp(fadeProgress, highestY, lowestY);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+
+        if (effect.preset().showCondensationCloud()
+                && effect.preset().pressureRings() > 0
+                && effect.preset().pressureSegments() > 0) {
+            // 两层纯白贴图球壳随 wallThickness 靠拢，直接表达凝结云墙厚度的线性收缩。
+            RenderSystem.setShaderTexture(0, WHITE_TEXTURE);
+            RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+            builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+            for (int layer = 0; layer < PRESSURE_SHELL_LAYERS; layer++) {
+                float shellRadius = Math.max(0.01F,
+                        radius + PRESSURE_SHELL_OFFSETS[layer] * wallThickness);
+                writeTexturedSphereBelow(builder, cx, cy, cz, shellRadius,
+                        maximumVisibleY - (float) camera.y, cloudColor,
+                        PRESSURE_SHELL_ALPHAS[layer], effect.preset().pressureRings(),
+                        effect.preset().pressureSegments());
+            }
+            BufferUploader.drawWithShader(builder.end());
+        }
+
+        if (!effect.preset().showCondensationCloudParticles()) {
+            return;
+        }
+
+        // 粒子凝结云与可选球壳共用自顶向下裁切边界，不做随机外扩或整体淡出。
+        float halfThickness = wallThickness * 0.5F;
+        beginSortedParticleClouds();
+        List<RVP_ThermobaricEffectInstance.PressureSmoke> smokes = effect.pressureSmokeParticles();
+        int renderCount = RVP_ThermobaricPressureSmokeLod.resolveRenderCount(
+                smokes.size(), center.distanceToSqr(camera));
+        for (int i = 0; i < renderCount; i++) {
+            RVP_ThermobaricEffectInstance.PressureSmoke smoke = smokes.get(i);
+            float pr = Math.max(0.0f, radius + smoke.radialOffset() * halfThickness);
+            double x = center.x + smoke.directionX() * pr;
+            double y = center.y + smoke.directionY() * pr;
+            double z = center.z + smoke.directionZ() * pr;
+            if (y > maximumVisibleY) {
+                continue;
+            }
+            float size = effect.visualRadius() * smoke.sizeFactor()
+                    * (1.1F + formationProgress * 1.6F)
+                    * effect.preset().condensationCloudParticleScale();
+            float particleAlpha = 0.42F + formationProgress * 0.15F;
+            addSortedParticleCloud(x, y, z, size, smoke.rotation(), cloudColor, particleAlpha,
+                    camera.distanceToSqr(x, y, z));
+        }
+        renderSortedParticleClouds(camera);
+    }
+
+    private static void renderDustRing(RVP_ThermobaricEffectInstance effect,
+            float age, Vec3 camera) {
+        int startTick = effect.preset().dustRingStartTick();
+        int fullTick = effect.preset().dustRingFullTick();
+        float endTick = Math.min(effect.preset().dustRingEndTick(), effect.duration());
+        if (fullTick <= startTick || age < startTick || age >= endTick) {
+            return;
+        }
+        float formationProgress = Mth.clamp((age - startTick) / (fullTick - startTick),
+                0.0F, 1.0F);
+        float radialProgress = resolveDustRadialProgress(age, startTick, fullTick);
+        float maximumRadius = effect.visualRadius() * effect.preset().dustRadiusFactor();
+        float radius = maximumRadius * radialProgress;
+        float alpha = Mth.clamp(formationProgress * 2.0F, 0.0F, 1.0F)
+                * resolveDustFadeAlpha(age, fullTick, endTick) * 0.82F;
+        float lifetimeProgress = Mth.clamp((age - startTick)
+                / Math.max(1.0F, endTick - startTick), 0.0F, 1.0F);
+        // 尘环从生成的第一帧起线性变细，以持续收窄的白色环带表现能量衰减。
+        float size = effect.visualRadius() * resolveDustThicknessFactor(lifetimeProgress);
+        float sampledMaximumRadius = RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
+                effect.visualRadius(), effect.preset().dustRadiusFactor());
+        int segmentCount = effect.dustSegmentCount();
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        for (int index = 0; index < segmentCount; index++) {
+            float angle = Mth.TWO_PI * index / segmentCount;
+            for (int band = -1; band <= 1; band++) {
+                float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
+                float groundProgress = sampledMaximumRadius <= 1.0E-4F
+                        ? 0.0F : bandRadius / sampledMaximumRadius;
+                float groundHeight = effect.dustGroundHeight(index, groundProgress);
+                if (!Float.isFinite(groundHeight)) {
+                    continue;
+                }
+                // 【世界坐标生成位置·贴地尘环】X/Z 由爆心水平投影和当前环半径决定，Y 来自地表碰撞面采样。
+                float x = (float) (effect.center().x + Mth.cos(angle) * bandRadius - camera.x);
+                // 方块团粒子的中心至少抬高一个半尺寸，保证其下缘不会进入地表。
+                float y = groundHeight - (float) camera.y
+                        + size * (1.05F + Math.abs(band) * 0.08F);
+                float z = (float) (effect.center().z + Mth.sin(angle) * bandRadius - camera.z);
+                int color = band == 0 ? 0xFFFFFF : (band < 0 ? 0xE8ECEF : 0xF7F5EE);
+                float bandAlpha = alpha * (band == 0 ? 1.0F : 0.68F);
+                writeParticleBillboard(builder, x, y, z,
+                        size * (band == 0 ? 1.25F : 1.0F), angle + band * 0.47F,
+                        color, bandAlpha);
+            }
+        }
+        BufferUploader.drawWithShader(builder.end());
+    }
+
+    /**
+     * 绘制单个温压实例的后期云团。
+     *
+     * @param effect 提供爆心、尺寸、预设和确定性云团参数的温压实例
+     * @param age 当前实例的插值后视觉年龄（tick）
+     * @param camera 当前相机的世界坐标，用于透明排序与相机相对坐标换算
+     */
+    private static void renderClouds(RVP_ThermobaricEffectInstance effect,
+            float age, Vec3 camera) {
+        // window：限定后期云团从开始、开始消散到淡出结束的有效时间窗。
+        StageWindow window = resolveStageWindow(effect.preset().cloudStartTick(),
+                effect.preset().cloudFullTick(), effect.preset().cloudFadeDurationTicks(),
+                effect.duration());
+        if (!window.contains(age)) {
+            return;
+        }
+        // animationProgress：从 cloud_start_tick 到淡出结束持续推进，只驱动上升、翻滚、卷吸与平流。
+        float animationProgress = window.lifetimeProgress(age);
+        // fadeProgress：只从 cloud_full_tick 开始推进，用于控制烟云扩散与透明度消散。
+        float fadeProgress = window.fadeProgress(age);
+        // 缓出函数映射，让云团在开始消散时维持体量，末期快速消失。
+        float shapedFade = 1 - (1 - fadeProgress) * (1 - fadeProgress);
+        // colorChangeProgress：按预设的绝对变色时段统一控制全部后期云团由火焰色过渡到烟色。
+        float colorChangeProgress = resolveColorTransitionProgress(age,
+                effect.preset().cloudColorChangeStartTick(),
+                effect.preset().cloudColorChangeEndTick());
+        // 调用温压渲染批次初始化方法，清空上帧排序结果并复用已有云片对象。
+        beginSortedParticleClouds();
+        RVP_ThermobaricCloudLink.AnchorPair cloudLink = effect.cloudLink();
+        CloudRenderState centerLinkState = null;
+        CloudRenderState updraftLinkState = null;
+        List<RVP_ThermobaricEffectInstance.Cloud> clouds = effect.clouds();
+        // cloudIndex：保持实例生成时的原始索引，供固定连接锚点取回同一云团。
+        for (int cloudIndex = 0; cloudIndex < clouds.size(); cloudIndex++) {
+            RVP_ThermobaricEffectInstance.Cloud cloud = clouds.get(cloudIndex);
+            // 调用共享云团姿态计算，确保基础云团和派生连接链读取完全相同的运动与贴地结果。
+            CloudRenderState state = resolveCloudRenderState(effect, cloud,
+                    animationProgress, shapedFade, colorChangeProgress, camera);
+            // 调用统一云片收集方法，把本团参数放入对象池并留待排序后批量绘制。
+            addSortedParticleCloud(state.x(), state.y(), state.z(), state.size(),
+                    state.rotation(), state.color(), state.alpha(), state.distanceSquared());
+            if (cloudLink != null && cloudIndex == cloudLink.centerIndex()) {
+                centerLinkState = state;
+            }
+            if (cloudLink != null && cloudIndex == cloudLink.updraftIndex()) {
+                updraftLinkState = state;
+            }
+        }
+        if (cloudLink != null && centerLinkState != null && updraftLinkState != null) {
+            // 调用温压连接链生成逻辑，用当前帧真实端点间隙补齐高倍率下可能出现的视觉断层。
+            addCloudLink(effect, cloudLink, centerLinkState, updraftLinkState,
+                    animationProgress, shapedFade, colorChangeProgress, camera);
+        }
+        // 调用统一云片提交方法，完成距离排序并一次性绘制本实例的所有后期云团。
+        renderSortedParticleClouds(camera);
+    }
+
+    /**
+     * 计算一个基础后燃云团的当前只读世界姿态；本方法不推进实例时间，也不提交 GPU 数据。
+     */
+    private static CloudRenderState resolveCloudRenderState(RVP_ThermobaricEffectInstance effect,
+            RVP_ThermobaricEffectInstance.Cloud cloud, float animationProgress,
+            float shapedFade, float colorChangeProgress, Vec3 camera) {
+        // 调用温压自有云团运动曲线，以完整生命周期时钟连续推进短时低矮翻滚轨迹。
+        // cloud_full_tick 不传入运动曲线，确保它只决定淡出开始时刻。
+        RVP_ThermobaricCloudMotion.Motion motion = RVP_ThermobaricCloudMotion.resolve(
+                cloud, animationProgress, effect.preset().cloudRiseSpeedFactor(),
+                effect.preset().cloudRollSpeedFactor());
+        float particleFadeProgress = resolveOuterToInnerCloudFadeProgress(
+                shapedFade, cloud.radialFactor());
+        float curledAngle = cloud.angle() + motion.angleOffset();
+        float diffusionDistance = effect.visualRadius()
+                * (0.10F + cloud.radialNoiseFactor() * 2.20F) * particleFadeProgress;
+        float horizontalRadius = effect.visualRadius() * effect.preset().cloudRadiusFactor()
+                * motion.radialFactor() + diffusionDistance;
+        float outwardX = Mth.cos(curledAngle);
+        float outwardZ = Mth.sin(curledAngle);
+        float driftProgress = Mth.clamp(animationProgress
+                * effect.preset().cloudRollSpeedFactor(), 0.0F, 1.0F);
+        float driftScale = effect.visualRadius() * driftProgress;
+        double x = effect.center().x + outwardX * horizontalRadius
+                + (outwardX * cloud.outwardDrift() - outwardZ * cloud.tangentialDrift())
+                * driftScale;
+        float size = effect.visualRadius() * cloud.sizeFactor()
+                * (0.72F + animationProgress * 1.38F)
+                * motion.scaleMultiplier()
+                * (1.0F + particleFadeProgress * 0.72F);
+        float riseHeight = resolveCloudRiseHeight(effect.visualRadius(),
+                effect.preset().cloudRiseFactor(), motion.riseFactor());
+        float verticalOffset = effect.visualRadius() * cloud.spawnHeightFactor() + riseHeight;
+        double y = effect.cloudOriginY() + verticalOffset;
+        if (effect.cloudGroundAnchored()) {
+            double groundSafeY = effect.cloudOriginY() + size * 0.95F;
+            y = Math.max(y + size * 0.95F, groundSafeY);
+        }
+        double z = effect.center().z + outwardZ * horizontalRadius
+                + (outwardZ * cloud.outwardDrift() + outwardX * cloud.tangentialDrift())
+                * driftScale;
+        float alpha = Mth.clamp(animationProgress * 8.0F, 0.0F, 1.0F)
+                * (1.0F - particleFadeProgress) * 0.72F;
+        int color = mixColor(effect.preset().flameColor(), effect.preset().smokeColor(),
+                colorChangeProgress);
+        color = scaleColor(color, cloud.brightnessFactor());
+        return new CloudRenderState(x, y, z, size, cloud.rotation(), color, alpha,
+                camera.distanceToSqr(x, y, z));
+    }
+
+    /** 把爆心覆盖层与中心上升层之间的实际间隙补为一条连续的派生粒子链。 */
+    private static void addCloudLink(RVP_ThermobaricEffectInstance effect,
+            RVP_ThermobaricCloudLink.AnchorPair cloudLink, CloudRenderState start,
+            CloudRenderState end, float animationProgress, float shapedFade,
+            float colorChangeProgress, Vec3 camera) {
+        double deltaX = end.x() - start.x();
+        double deltaY = end.y() - start.y();
+        double deltaZ = end.z() - start.z();
+        double distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+        // 调用连接粒子预算计算，额外粒子最多占基础烟云数的四分之一且绝不超过 64 个。
+        int particleLimit = RVP_ThermobaricCloudLink.resolveParticleLimit(
+                effect.clouds().size());
+        // 调用连接布局计算，根据真实端点间隙决定粒子数量与保证连续覆盖所需的尺寸。
+        RVP_ThermobaricCloudLink.Layout layout = RVP_ThermobaricCloudLink.resolveLayout(
+                distance, start.size(), end.size(), effect.visualRadius(), particleLimit);
+        if (layout.particleCount() == 0) {
+            return;
+        }
+        float linkFadeProgress = resolveOuterToInnerCloudFadeProgress(shapedFade, 0.0F);
+        float alpha = Mth.clamp(animationProgress * 8.0F, 0.0F, 1.0F)
+                * (1.0F - linkFadeProgress) * 0.72F;
+        int baseColor = mixColor(effect.preset().flameColor(), effect.preset().smokeColor(),
+                colorChangeProgress);
+        for (int particleIndex = 0; particleIndex < layout.particleCount(); particleIndex++) {
+            double progress = layout.progress(particleIndex);
+            double x = start.x() + deltaX * progress;
+            double y = start.y() + deltaY * progress;
+            double z = start.z() + deltaZ * progress;
+            // 调用连接粒子稳定随机函数，只扰动贴图旋转与亮度，不改变保证连续性的空间位置。
+            float rotation = RVP_ThermobaricCloudLink.resolveRotation(
+                    cloudLink.visualSeed(), particleIndex);
+            int color = scaleColor(baseColor, RVP_ThermobaricCloudLink.resolveBrightness(
+                    cloudLink.visualSeed(), particleIndex));
+            addSortedParticleCloud(x, y, z, layout.halfSize(particleIndex), rotation,
+                    color, alpha, camera.distanceToSqr(x, y, z));
+        }
+    }
+
+    /** 开始一个新的半透明云片批次并从对象池头部重新取用绘制数据。 */
+    private static void beginSortedParticleClouds() {
+        SORTED_CLOUDS.clear();
+        renderCloudPoolIndex = 0;
+    }
+
+    /** 把一个云片写入可复用对象池，供当前批次统一排序和提交。 */
+    private static void addSortedParticleCloud(double x, double y, double z, float size,
+            float rotation, int color, float alpha, double distanceSquared) {
+        RenderCloud cloud;
+        if (renderCloudPoolIndex < RENDER_CLOUD_POOL.size()) {
+            cloud = RENDER_CLOUD_POOL.get(renderCloudPoolIndex);
+        } else {
+            cloud = new RenderCloud();
+            RENDER_CLOUD_POOL.add(cloud);
+        }
+        cloud.set(x, y, z, size, rotation, color, alpha, distanceSquared);
+        SORTED_CLOUDS.add(cloud);
+        renderCloudPoolIndex++;
+    }
+
+    private static void renderSortedParticleClouds(Vec3 camera) {
+        if (SORTED_CLOUDS.isEmpty()) {
+            return;
+        }
+        SORTED_CLOUDS.sort(FAR_TO_NEAR);
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder builder = tesselator.getBuilder();
+        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        for (RenderCloud cloud : SORTED_CLOUDS) {
+            writeParticleBillboard(builder,
+                    (float) (cloud.x() - camera.x),
+                    (float) (cloud.y() - camera.y),
+                    (float) (cloud.z() - camera.z),
+                    cloud.size(), cloud.rotation(), cloud.color(), cloud.alpha());
+        }
+        BufferUploader.drawWithShader(builder.end());
+    }
+
+    private static StageWindow resolveStageWindow(int configuredStartTick,
+            int configuredFullTick, int configuredFadeDurationTicks, int effectEndTick) {
+        int normalizedFullTick = Math.max(configuredStartTick, configuredFullTick);
+        float startTick = Mth.clamp(configuredStartTick, 0, Math.max(0, effectEndTick));
+        float fullTick = Mth.clamp(normalizedFullTick,
+                0, Math.max(0, effectEndTick));
+        float endTick = Math.min((long) normalizedFullTick + configuredFadeDurationTicks,
+                Math.max(0, effectEndTick));
+        return new StageWindow(startTick, fullTick, endTick);
+    }
+
+    private static void writeSphere(BufferBuilder builder, float centerX, float centerY, float centerZ,
+            float radius, int color, float alpha, int ringCount, int segmentCount) {
+        if (radius <= 0.0F || ringCount <= 0 || segmentCount <= 0) {
+            return;
+        }
+        for (int ring = 0; ring < ringCount; ring++) {
+            float theta0 = Mth.PI * ring / ringCount;
+            float theta1 = Mth.PI * (ring + 1) / ringCount;
+            for (int segment = 0; segment < segmentCount; segment++) {
+                float phi0 = Mth.TWO_PI * segment / segmentCount;
+                float phi1 = Mth.TWO_PI * (segment + 1) / segmentCount;
+                writeSphereVertex(builder, centerX, centerY, centerZ, radius, theta0, phi0, color, alpha);
+                writeSphereVertex(builder, centerX, centerY, centerZ, radius, theta1, phi0, color, alpha);
+                writeSphereVertex(builder, centerX, centerY, centerZ, radius, theta1, phi1, color, alpha);
+                writeSphereVertex(builder, centerX, centerY, centerZ, radius, theta0, phi1, color, alpha);
+            }
+        }
+    }
+
+    private static void writeSphereVertex(BufferBuilder builder, float centerX, float centerY, float centerZ,
+            float radius, float theta, float phi, int color, float alpha) {
+        float sinTheta = Mth.sin(theta);
+        builder.vertex(
+                        centerX + sinTheta * Mth.cos(phi) * radius,
+                        centerY + Mth.cos(theta) * radius,
+                        centerZ + sinTheta * Mth.sin(phi) * radius)
+                .color(red(color), green(color), blue(color), alpha)
+                .endVertex();
+    }
+
+    /**
+     * 使用球面 UV 写入裁切线以下的一层四边形球壳。
+     * 裁切线从球顶向球底下降时，剩余几何会连续缩短，避免用整圈跳变模拟凝结云消失。
+     */
+    private static void writeTexturedSphereBelow(BufferBuilder builder, float centerX, float centerY,
+            float centerZ, float radius, float maximumVisibleY, int color, float alpha,
+            int ringCount, int segmentCount) {
+        if (radius <= 0.0F || ringCount <= 0 || segmentCount <= 0) {
+            return;
+        }
+        float normalizedCutoff = Mth.clamp((maximumVisibleY - centerY) / radius, -1.0F, 1.0F);
+        float minimumTheta = (float) Math.acos(normalizedCutoff);
+        for (int ring = 0; ring < ringCount; ring++) {
+            float theta0 = Mth.lerp(ring / (float) ringCount, minimumTheta, Mth.PI);
+            float theta1 = Mth.lerp((ring + 1) / (float) ringCount, minimumTheta, Mth.PI);
+            float v0 = 0.1F + 0.8F * theta0 / Mth.PI;
+            float v1 = 0.1F + 0.8F * theta1 / Mth.PI;
+            for (int segment = 0; segment < segmentCount; segment++) {
+                float phi0 = Mth.TWO_PI * segment / segmentCount;
+                float phi1 = Mth.TWO_PI * (segment + 1) / segmentCount;
+                float u0 = 0.1F + 0.8F * segment / (float) segmentCount;
+                float u1 = 0.1F + 0.8F * (segment + 1) / (float) segmentCount;
+                writeTexturedSphereVertex(builder, centerX, centerY, centerZ, radius,
+                        theta0, phi0, u0, v0, color, alpha);
+                writeTexturedSphereVertex(builder, centerX, centerY, centerZ, radius,
+                        theta1, phi0, u0, v1, color, alpha);
+                writeTexturedSphereVertex(builder, centerX, centerY, centerZ, radius,
+                        theta1, phi1, u1, v1, color, alpha);
+                writeTexturedSphereVertex(builder, centerX, centerY, centerZ, radius,
+                        theta0, phi1, u1, v0, color, alpha);
+            }
+        }
+    }
+
+    /** 按球面坐标和 UV 坐标写入一个纹理球壳顶点。 */
+    private static void writeTexturedSphereVertex(BufferBuilder builder, float centerX,
+            float centerY, float centerZ, float radius, float theta, float phi,
+            float u, float v, int color, float alpha) {
+        float sinTheta = Mth.sin(theta);
+        builder.vertex(
+                        centerX + sinTheta * Mth.cos(phi) * radius,
+                        centerY + Mth.cos(theta) * radius,
+                        centerZ + sinTheta * Mth.sin(phi) * radius)
+                .uv(u, v)
+                .color(red(color), green(color), blue(color), alpha)
+                .endVertex();
+    }
+
+    /** 写入一个始终面向相机、可在相机平面内旋转的方块团粒子。 */
+    private static void writeParticleBillboard(BufferBuilder builder, float x, float y, float z,
+            float halfSize, float rotation, int color, float alpha) {
+        float lookX = -x;
+        float lookY = -y;
+        float lookZ = -z;
+        float length = Mth.sqrt(lookX * lookX + lookY * lookY + lookZ * lookZ);
+        if (length < 1.0E-4F) {
+            lookX = 0.0F;
+            lookY = 0.0F;
+            lookZ = 1.0F;
+        } else {
+            lookX /= length;
+            lookY /= length;
+            lookZ /= length;
+        }
+        float rightX = -lookZ;
+        float rightZ = lookX;
+        float rightLength = Mth.sqrt(rightX * rightX + rightZ * rightZ);
+        if (rightLength < 1.0E-4F) {
+            rightX = 1.0F;
+            rightZ = 0.0F;
+        } else {
+            rightX /= rightLength;
+            rightZ /= rightLength;
+        }
+        float upX = -rightZ * lookY;
+        float upY = rightZ * lookX - rightX * lookZ;
+        float upZ = rightX * lookY;
+        float cosine = Mth.cos(rotation);
+        float sine = Mth.sin(rotation);
+        float rotatedRightX = rightX * cosine + upX * sine;
+        float rotatedRightY = upY * sine;
+        float rotatedRightZ = rightZ * cosine + upZ * sine;
+        float rotatedUpX = upX * cosine - rightX * sine;
+        float rotatedUpY = upY * cosine;
+        float rotatedUpZ = upZ * cosine - rightZ * sine;
+        float rightHalfX = rotatedRightX * halfSize;
+        float rightHalfY = rotatedRightY * halfSize;
+        float rightHalfZ = rotatedRightZ * halfSize;
+        float upHalfX = rotatedUpX * halfSize;
+        float upHalfY = rotatedUpY * halfSize;
+        float upHalfZ = rotatedUpZ * halfSize;
+        float red = red(color);
+        float green = green(color);
+        float blue = blue(color);
+        builder.vertex(x - rightHalfX - upHalfX, y - rightHalfY - upHalfY,
+                        z - rightHalfZ - upHalfZ)
+                .uv(0.0F, 1.0F).color(red, green, blue, alpha).endVertex();
+        builder.vertex(x - rightHalfX + upHalfX, y - rightHalfY + upHalfY,
+                        z - rightHalfZ + upHalfZ)
+                .uv(0.0F, 0.0F).color(red, green, blue, alpha).endVertex();
+        builder.vertex(x + rightHalfX + upHalfX, y + rightHalfY + upHalfY,
+                        z + rightHalfZ + upHalfZ)
+                .uv(1.0F, 0.0F).color(red, green, blue, alpha).endVertex();
+        builder.vertex(x + rightHalfX - upHalfX, y + rightHalfY - upHalfY,
+                        z + rightHalfZ - upHalfZ)
+                .uv(1.0F, 1.0F).color(red, green, blue, alpha).endVertex();
+    }
+
+    private static float easeOutCubic(float value) {
+        float inverse = 1.0F - value;
+        return 1.0F - inverse * inverse * inverse;
+    }
+
+    /** 按两个绝对 tick 计算颜色过渡；相同时从该 tick 起立即使用结束颜色。 */
+    static float resolveColorTransitionProgress(float age, int startTick, int endTick) {
+        if (age < startTick) {
+            return 0.0F;
+        }
+        if (endTick <= startTick) {
+            return 1.0F;
+        }
+        return Mth.clamp((age - startTick) / (endTick - startTick), 0.0F, 1.0F);
+    }
+
+    /**
+     * 把归一化上升进度按 {@code cloud_rise_factor} 换算为世界高度；
+     * 配置倍率本身不做上限钳制，因此 {@code 5.0} 严格表示最高五倍视觉半径。
+     */
+    static float resolveCloudRiseHeight(float visualRadius, float cloudRiseFactor,
+            float riseFactor) {
+        double height = (double) visualRadius * Math.max(0.0F, cloudRiseFactor)
+                * Mth.clamp(riseFactor, 0.0F, 1.0F);
+        return height >= Float.MAX_VALUE ? Float.MAX_VALUE : (float) height;
+    }
+
+    /**
+     * 按稳定径向层级计算淡出进度：最外层从淡出期起点开始，越靠内开始得越晚，
+     * 每个云团从自己的开始点到淡出结束都保持线性扩散和变淡。
+     */
+    static float resolveOuterToInnerCloudFadeProgress(float fadeProgress, float radialFactor) {
+        float normalizedFade = Mth.clamp(fadeProgress, 0.0F, 1.0F);
+        float outerRank = Mth.clamp(radialFactor / 1.10F, 0.0F, 1.0F);
+        float startProgress = (1.0F - outerRank) * 0.72F;
+        return Mth.clamp((normalizedFade - startProgress)
+                / Math.max(1.0E-4F, 1.0F - startProgress), 0.0F, 1.0F);
+    }
+
+    private static int mixColor(int from, int to, float progress) {
+        int red = Math.round(Mth.lerp(progress, (from >> 16) & 0xFF, (to >> 16) & 0xFF));
+        int green = Math.round(Mth.lerp(progress, (from >> 8) & 0xFF, (to >> 8) & 0xFF));
+        int blue = Math.round(Mth.lerp(progress, from & 0xFF, to & 0xFF));
+        return (red << 16) | (green << 8) | blue;
+    }
+
+    /** 按随机倍率调整 RGB 亮度，并保持每个分量在合法范围内。 */
+    private static int scaleColor(int color, float factor) {
+        int scaledRed = Mth.clamp(Math.round(((color >> 16) & 0xFF) * factor), 0, 255);
+        int scaledGreen = Mth.clamp(Math.round(((color >> 8) & 0xFF) * factor), 0, 255);
+        int scaledBlue = Mth.clamp(Math.round((color & 0xFF) * factor), 0, 255);
+        return (scaledRed << 16) | (scaledGreen << 8) | scaledBlue;
+    }
+
+    /**
+     * 计算火球淡出时某一径向层的灰化进度：外层立即开始，越靠近中心开始得越晚，
+     * 所有层都在淡出结束时完成线性灰化。
+     */
+    static float outerToInnerGrayProgress(float fadeProgress, float radialFactor) {
+        float normalizedFade = Mth.clamp(fadeProgress, 0.0F, 1.0F);
+        float normalizedRadius = Mth.clamp(radialFactor, 0.0F, 1.0F);
+        float startProgress = (1.0F - normalizedRadius) * 0.65F;
+        return Mth.clamp((normalizedFade - startProgress)
+                / Math.max(1.0E-4F, 1.0F - startProgress), 0.0F, 1.0F);
+    }
+
+    /** 按径向层把原火焰颜色线性过渡为等亮度灰色。 */
+    private static int fadeToGray(int color, float fadeProgress, float radialFactor) {
+        return mixColor(color, grayscaleColor(color),
+                outerToInnerGrayProgress(fadeProgress, radialFactor));
+    }
+
+    /** 把 RGB 颜色转换为保持感知亮度的中性灰色。 */
+    private static int grayscaleColor(int color) {
+        int gray = Mth.clamp(Math.round(((color >> 16) & 0xFF) * 0.2126F
+                + ((color >> 8) & 0xFF) * 0.7152F
+                + (color & 0xFF) * 0.0722F), 0, 255);
+        return (gray << 16) | (gray << 8) | gray;
+    }
+
+    /** 返回尘环从生成到消失期间线性递减的半宽倍率。 */
+    static float resolveDustThicknessFactor(float lifetimeProgress) {
+        return Mth.lerp(Mth.clamp(lifetimeProgress, 0.0F, 1.0F), 0.29F, 0.055F);
+    }
+
+    /**
+     * 把尘环年龄换算为不分段的线性径向进度；full tick 为 {@code 1}，派生结束 tick 为 {@code 2}。
+     */
+    static float resolveDustRadialProgress(float age, int startTick, int fullTick) {
+        if (fullTick <= startTick) {
+            return 0.0F;
+        }
+        return Mth.clamp((age - startTick) / (fullTick - startTick), 0.0F, 2.0F);
+    }
+
+    /** full tick 后立即开始线性淡出；显式总寿命可提前截断淡出窗口。 */
+    static float resolveDustFadeAlpha(float age, float fullTick, float endTick) {
+        if (age <= fullTick) {
+            return 1.0F;
+        }
+        if (endTick <= fullTick) {
+            return 0.0F;
+        }
+        return 1.0F - Mth.clamp((age - fullTick) / (endTick - fullTick), 0.0F, 1.0F);
+    }
+
+    private static float red(int color) {
+        return ((color >> 16) & 0xFF) / 255.0F;
+    }
+
+    private static float green(int color) {
+        return ((color >> 8) & 0xFF) / 255.0F;
+    }
+
+    private static float blue(int color) {
+        return (color & 0xFF) / 255.0F;
+    }
+
+    /**
+     * 一个阶段的“开始、到达阶段切换点、消失”时间窗。
+     *
+     * @param startTick 相对整个效果起点的绝对开始 tick
+     * @param fullTick 相对整个效果起点的绝对阶段切换 tick；对后燃烟云仅表示开始消散
+     * @param endTick 阶段切换后经过淡出持续时间得到的绝对结束 tick
+     */
+    private record StageWindow(float startTick, float fullTick, float endTick) {
+        private boolean contains(float age) {
+            return endTick > startTick && age >= startTick && age < endTick;
+        }
+
+        private float formationProgress(float age) {
+            return Mth.clamp((age - startTick) / Math.max(1.0F, fullTick - startTick),
+                    0.0F, 1.0F);
+        }
+
+        private float fadeAlpha(float age) {
+            if (age <= fullTick) {
+                return 1.0F;
+            }
+            return 1.0F - Mth.clamp((age - fullTick) / Math.max(1.0F, endTick - fullTick),
+                    0.0F, 1.0F);
+        }
+
+        private float fadeProgress(float age) {
+            return 1.0F - fadeAlpha(age);
+        }
+
+        private float lifetimeProgress(float age) {
+            return Mth.clamp((age - startTick) / Math.max(1.0F, endTick - startTick),
+                    0.0F, 1.0F);
+        }
+
+        private float formationDuration() {
+            return Math.max(0.0F, fullTick - startTick);
+        }
+
+    }
+
+    /**
+     * 单个基础后燃云团在当前渲染帧的只读姿态。
+     *
+     * @param x 云团中心世界 X 坐标
+     * @param y 云团中心世界 Y 坐标
+     * @param z 云团中心世界 Z 坐标
+     * @param size billboard 半边长
+     * @param rotation billboard 在相机平面内的旋转弧度
+     * @param color 当前 RGB 颜色
+     * @param alpha 当前透明度
+     * @param distanceSquared 到相机的距离平方
+     */
+    private record CloudRenderState(double x, double y, double z, float size,
+                                    float rotation, int color, float alpha,
+                                    double distanceSquared) {
+    }
+
+    /** 单帧半透明云团的可复用绘制数据。 */
+    private static final class RenderCloud {
+        /** 云片世界 X 坐标。 */
+        private double x;
+        /** 云片世界 Y 坐标。 */
+        private double y;
+        /** 云片世界 Z 坐标。 */
+        private double z;
+        /** 云片半边长。 */
+        private float size;
+        /** 云片在相机平面内的旋转弧度。 */
+        private float rotation;
+        /** 云片 RGB 颜色。 */
+        private int color;
+        /** 云片透明度。 */
+        private float alpha;
+        /** 云片到相机的距离平方。 */
+        private double distanceSquared;
+
+        private void set(double x, double y, double z, float size, float rotation,
+                int color, float alpha, double distanceSquared) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.size = size;
+            this.rotation = rotation;
+            this.color = color;
+            this.alpha = alpha;
+            this.distanceSquared = distanceSquared;
+        }
+
+        private double x() {
+            return x;
+        }
+
+        private double y() {
+            return y;
+        }
+
+        private double z() {
+            return z;
+        }
+
+        private float size() {
+            return size;
+        }
+
+        private float rotation() {
+            return rotation;
+        }
+
+        private int color() {
+            return color;
+        }
+
+        private float alpha() {
+            return alpha;
+        }
+
+        private double distanceSquared() {
+            return distanceSquared;
+        }
+    }
+}

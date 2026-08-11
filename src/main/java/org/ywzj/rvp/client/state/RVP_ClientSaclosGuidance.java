@@ -60,7 +60,7 @@ public final class RVP_ClientSaclosGuidance {
         }
         RVP_GuidanceActiveConfig config = RVP_GuidanceModelResolver.resolveActive(
                 data, bullet.getGuidancePhaseState().phase());
-        if (config.tickRange() != null && !config.tickRange().contains(bullet.tickCount)) {
+        if (config.tickRange() != null && !config.tickRange().contains(bullet.getFlightTickCount())) {
             return false;
         }
         RVP_EnumGuidanceType active = config.guidanceType();

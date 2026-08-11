@@ -51,6 +51,12 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         super(RVP_Entities.RVP_BULLET.get(), level);
     }
 
+    /** 机枪 Bullet 保持既有行为，不参与动态区块强加载。 */
+    @Override
+    protected boolean shouldKeepDynamicChunkPathLoaded() {
+        return false;
+    }
+
     @Override
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind,
                                org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle,

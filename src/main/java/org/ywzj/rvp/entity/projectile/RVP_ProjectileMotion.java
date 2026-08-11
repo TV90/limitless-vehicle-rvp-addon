@@ -61,12 +61,12 @@ public final class RVP_ProjectileMotion {
         Vec3 velocity = projectile.getDeltaMovement();
         int ignition = resolveMotorIgnitionTick(projectile, data);
 
-        if (projectile.tickCount >= ignition) {
+        if (projectile.getFlightTickCount() >= ignition) {
             if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
                 applyMissileCoastFacing(projectile, velocity, 1.0F);
             }
             Vec3 lookDir = projectile.getLookAngle();
-            int motorTick = projectile.tickCount - ignition;
+            int motorTick = projectile.getFlightTickCount() - ignition;
             float burn1 = data.getResolvedMotorBurnTime();
             boolean burning1 = motorTick <= burn1;
             boolean burning2 = false;
@@ -75,7 +75,7 @@ public final class RVP_ProjectileMotion {
                     && data.getProjectileData().usesSecondPulse()
                     && isDualPulseSupportedMissile(data)) {
                 if (projectile.secondPulseStartTick < 0 && shouldStartSecondPulse(projectile, data, velocity)) {
-                    projectile.secondPulseStartTick = projectile.tickCount;
+                    projectile.secondPulseStartTick = projectile.getFlightTickCount();
                     projectile.getEntityData().set(RVP_BaseBullet.DATA_SECOND_PULSE_START_TICK, projectile.secondPulseStartTick);
                     projectile.getEntityData().set(
                             RVP_BaseBullet.DATA_SECOND_PULSE_BURN_TIME_TICK,
@@ -84,7 +84,7 @@ public final class RVP_ProjectileMotion {
                     RVP_DualPulseDebug.noteSecondPulseStarted(projectile, data);
                 }
                 if (projectile.secondPulseStartTick >= 0) {
-                    int t2 = projectile.tickCount - projectile.secondPulseStartTick;
+                    int t2 = projectile.getFlightTickCount() - projectile.secondPulseStartTick;
                     burning2 = t2 >= 0 && t2 <= data.getProjectileData().getResolvedSecondPulseBurnTime();
                 }
             }
@@ -101,9 +101,10 @@ public final class RVP_ProjectileMotion {
             }
         }
 
-        if (projectile.tickCount < ignition) {
+        if (projectile.getFlightTickCount() < ignition) {
             velocity = applyPreIgnitionVelocity(projectile, velocity, ignition);
         } else {
+            // 施加沿y轴向下的PhysicsEngine.G 武器配置里面gravity设置为0也不能避免
             velocity = applyPropulsionGravity(projectile, velocity, data);
         }
 
@@ -113,11 +114,11 @@ public final class RVP_ProjectileMotion {
         projectile.flightDistance += velocity.length();
         projectile.flightSpeed = (float) Math.max(projectile.flightSpeed, velocity.length());
 
-        if (projectile.tickCount >= ignition) {
-            int motorTick = projectile.tickCount - ignition;
+        if (projectile.getFlightTickCount() >= ignition) {
+            int motorTick = projectile.getFlightTickCount() - ignition;
             boolean coasting = motorTick > data.getResolvedMotorBurnTime()
                     && (projectile.secondPulseStartTick < 0
-                        || projectile.tickCount - projectile.secondPulseStartTick > data.getProjectileData().getResolvedSecondPulseBurnTime())
+                        || projectile.getFlightTickCount() - projectile.secondPulseStartTick > data.getProjectileData().getResolvedSecondPulseBurnTime())
                     && projectile.getTargetEntity() == null
                     && projectile.getTargetPos() == null;
             if (data.getProjectileData().isRotateToMotion()) {
@@ -141,7 +142,7 @@ public final class RVP_ProjectileMotion {
 
     private static boolean shouldStartSecondPulse(RVP_BaseBullet projectile, RVP_WeaponData data, Vec3 velocity) {
         int ignition = resolveMotorIgnitionTick(projectile, data);
-        int motorTick = projectile.tickCount - ignition;
+        int motorTick = projectile.getFlightTickCount() - ignition;
         if (motorTick <= data.getResolvedMotorBurnTime()) {
             return false;
         }
@@ -281,11 +282,11 @@ public final class RVP_ProjectileMotion {
         Vec3 lookDir = missile.getLookAngle();
         int ignition = resolveMotorIgnitionTick(missile, data);
 
-        if (missile.tickCount < ignition) {
+        if (missile.getFlightTickCount() < ignition) {
             velocity = applyPreIgnitionVelocity(missile, velocity, ignition);
         } else {
             double speed = Math.max(velocity.length(), Math.max(missile.flightSpeed, data.getProjectileVelocity()));
-            int motorTick = missile.tickCount - ignition;
+            int motorTick = missile.getFlightTickCount() - ignition;
             if (motorTick <= data.getResolvedMotorBurnTime()) {
                 float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
                 speed += data.getResolvedThrust() / mass;
@@ -323,7 +324,7 @@ public final class RVP_ProjectileMotion {
         }
         int coldLaunchTick = projectile.getColdLaunchTimeTick();
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
-        if (coldLaunchTick > 0 && projectile.tickCount < coldLaunchTick) {
+        if (coldLaunchTick > 0 && projectile.getFlightTickCount() < coldLaunchTick) {
             Vec3 configured = projectile.getColdLaunchVelocity();
             Vec3 launchVelocity = new Vec3(axes[0]).scale(configured.x)
                     .add(new Vec3(axes[1]).scale(configured.y))
@@ -333,7 +334,7 @@ public final class RVP_ProjectileMotion {
         Vec3 eject = new Vec3(axes[1].negate());
         float muzzle = projectile.rvpData.getProjectileVelocity();
         if (muzzle > 1.0E-4f) {
-            if (projectile.tickCount == 0) {
+            if (projectile.getFlightTickCount() == 0) {
                 return velocity.add(eject);
             }
             return velocity;
@@ -350,10 +351,11 @@ public final class RVP_ProjectileMotion {
             return velocity.subtract(0, PhysicsEngine.G * 0.6f, 0);
         }
         float gravity = data.getGravity();
-        if (gravity != 0f) {
-            return velocity.add(0, gravity, 0);
-        }
-        return velocity.subtract(0, PhysicsEngine.G, 0);
+//        if (gravity != 0f) {
+        // 不再对rvp:missile导弹默认施加 - PhysicsEngine.G
+        return velocity.add(0, gravity, 0);
+//        }
+//        return velocity.subtract(0, PhysicsEngine.G, 0);
     }
 
     static float resolveMissileAltitudeDragFactor(RVP_BaseBullet projectile, RVP_WeaponData data) {

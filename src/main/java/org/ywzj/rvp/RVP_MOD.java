@@ -19,6 +19,8 @@ import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.resource.RVP_VehiclePackInstaller;
+import org.ywzj.rvp.server.visual.RVP_NetworkVisualEventPublisher;
+import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 
 @Mod(RVP_MOD.MOD_ID)
 public class RVP_MOD {
@@ -53,6 +55,10 @@ public class RVP_MOD {
     }
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
-        event.enqueueWork(RVP_Network::init);
+        event.enqueueWork(() -> {
+            RVP_Network.init();
+            // 安装 RVP 网络视觉发布端，使弹体业务只依赖公共发布接口，不直接读取网络通道。
+            RVP_VisualEffects.installPublisher(new RVP_NetworkVisualEventPublisher());
+        });
     }
 }
