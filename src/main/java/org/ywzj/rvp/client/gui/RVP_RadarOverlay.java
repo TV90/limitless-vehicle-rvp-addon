@@ -220,6 +220,12 @@ public class RVP_RadarOverlay implements IGuiOverlay {
             }
             poseStack.popPose();
         }
+
+        // 立即刷新本 overlay 的延迟文字缓冲：GuiGraphics 文字走 MultiBufferSource，
+        // flush 时按 RenderType 分桶绘制，文字(text)缓冲排在填充(gui)缓冲之后，导致
+        // 雷达/RWR 的 XX°/XX m 文字画在命中展板底色之上（但仍在模型之下）。
+        // 这里提前 flush，让雷达文字先落入帧缓冲，命中展板底色之后绘制时自然盖住文字。
+        guiGraphics.flush();
     }
 
     private void renderExternalRadar(GuiGraphics guiGraphics,
