@@ -48,6 +48,7 @@ import org.ywzj.rvp.network.S2CRvpHitIndicator;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DecayContext;
+import org.ywzj.rvp.weapon.damage.RVP_HitVehicleListener;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
@@ -2207,9 +2208,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     finalDamage,
                     RVP_VehicleHurtScalingHandler.resolveBaseFalloffScale(targetVehicleForHurt, this));
             RVP_VehicleHurtScalingHandler.pushSkip(targetVehicleForHurt);
+            // 标记 RVP 弹体伤害结算窗口：本体 DamageSystem.hurt 会 post HitVehicleEvent，
+            // RVP_HitVehicleListener 在窗口内跳过，避免与下方的 RVP 命中包发送重复。
+            RVP_HitVehicleListener.enterRvpDamage();
             try {
                 EntityUtil.hurt(source, entity, hurtAmount);
             } finally {
+                RVP_HitVehicleListener.exitRvpDamage();
                 RVP_VehicleHurtScalingHandler.popSkip(targetVehicleForHurt);
             }
         } else {
@@ -2226,14 +2231,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             targetVehicle, hitboxRes.hitBoneName());
             String ammoKey = config != null ? config.getName() : "";
             ResourceLocation weaponId = getWeaponId();
+            // 直击 HE 等带爆炸的弹药：附带爆炸半径，客户端据此渲染随爆炸范围扩大的扩散圈
+            float explosionRadius = explosion != null && explosion.explode ? explosion.radius : 0f;
             // 来袭方向直接用弹体当前速度方向（getDeltaMovement）：位移方向在命中 tick 可能
             // 因 setPos/反弹而指向乱，实测会连累红线与弹体方向一起错。
             Vec3 vel = getDeltaMovement();
-            // TODO 临时调试日志（定位方向问题后删除）
-            LOGGER.info("[RVP-HitUI-send] hit={} vel={} weapon={}",
-                    result.getLocation(),
-                    String.format("%.2f,%.2f,%.2f", vel.x, vel.y, vel.z),
-                    weaponId);
             RVP_Network.CHANNEL.send(
                     PacketDistributor.PLAYER.with(() -> shooter),
                     S2CRvpHitIndicator.create(
@@ -2243,7 +2245,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             finalDamage,
                             boneDisp,
                             ammoKey,
-                            weaponId == null ? null : weaponId.toString()));
+                            weaponId == null ? null : weaponId.toString(),
+                            targetVehicle.position(),
+                            targetVehicle.getDisplayId() == null ? null
+                                    : targetVehicle.getDisplayId().toString(),
+                            explosionRadius));
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击
@@ -2643,10 +2649,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Runnable explosionAction = !excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
                 : ex::explode;
-        if (suppressNativeExplosionEffect) {
-            RVP_ExplosionVisualSuppression.run(explosionAction);
-        } else {
-            explosionAction.run();
+        // 标记 RVP 弹体爆炸结算窗口：VehicleExplosion 内每辆载具的伤害都会走本体
+        // DamageSystem.hurt 并 post HitVehicleEvent，监听器窗口内跳过，避免与下方
+        // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
+        RVP_HitVehicleListener.enterRvpDamage();
+        try {
+            if (suppressNativeExplosionEffect) {
+                RVP_ExplosionVisualSuppression.run(explosionAction);
+            } else {
+                explosionAction.run();
+            }
+        } finally {
+            RVP_HitVehicleListener.exitRvpDamage();
         }
         if (!suppressNativeExplosionEffect && level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(
@@ -2688,22 +2702,40 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (!(boomDamage > 0f)) {
                     continue;
                 }
-                // 冲击波方向（爆炸点 → 载具）：作为命中向量，客户端红线沿其反方向指向爆炸点
-                Vec3 boomVec = v.position().subtract(pos);
-                Vec3 hitVector = boomVec.lengthSqr() > 1.0E-6 ? boomVec.normalize() : Vec3.ZERO;
-                ResourceLocation weaponId = getWeaponId();
-                RVP_Network.CHANNEL.send(
-                        PacketDistributor.PLAYER.with(() -> shooter),
-                        S2CRvpHitIndicator.create(
-                                v.getId(),
-                                v.position(),
-                                hitVector,
-                                boomDamage,
-                                "",
-                                "",
-                                weaponId == null ? null : weaponId.toString()));
+                // 命中位置用爆炸中心 pos：客户端在“离车体一定距离”的爆炸中心渲染弹体/红圈/破片
+                sendHitIndicator(v, pos, boomDamage,
+                        explosion != null && explosion.explode ? explosion.radius : 0f);
             }
         }
+    }
+
+    /**
+     * 向射手本人发送 RVP 命中提示包（直击/近炸/爆炸波及统一出口）。
+     * 命中位置用爆炸中心 pos：客户端在“离车体一定距离”的爆炸中心渲染弹体/红圈/破片，
+     * 命中向量为冲击波方向（爆炸点 → 载具），客户端红线沿其反方向指向爆炸点。
+     */
+    private void sendHitIndicator(Entity target, Vec3 pos, float damage, float explosionRadius) {
+        if (target == null || target.level().isClientSide() || !(damage > 0f)) {
+            return;
+        }
+        if (!(getOwner() instanceof ServerPlayer shooter)) {
+            return;
+        }
+        if (target instanceof AbstractVehicle v
+                && !RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(v)) {
+            return;
+        }
+        Vec3 boomVec = target.position().subtract(pos);
+        Vec3 hitVector = boomVec.lengthSqr() > 1.0E-6 ? boomVec.normalize() : Vec3.ZERO;
+        ResourceLocation weaponId = getWeaponId();
+        RVP_Network.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> shooter),
+                S2CRvpHitIndicator.create(target.getId(), pos, hitVector, damage, "", "",
+                        weaponId == null ? null : weaponId.toString(),
+                        target.position(),
+                        target instanceof AbstractVehicle tv && tv.getDisplayId() != null
+                                ? tv.getDisplayId().toString() : null,
+                        explosionRadius));
     }
 
     protected void detonateFuseAt(Vec3 pos, FuseDetonation kind) {
@@ -2750,9 +2782,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     guaranteed = RVP_DamageApplier.applyScaled(guaranteed, resolvedProximityTarget, rvpData);
                     DamageSource source = AllDamageTypes.Sources.explosion(
                             level().registryAccess(), this, getOwner(), pos);
-                    resolvedProximityTarget.hurt(source, guaranteed);
+                    // 标记近炸伤害结算窗口：resolvedProximityTarget.hurt 会走本体 DamageSystem.hurt
+                    // post HitVehicleEvent，监听器窗口内跳过，避免与下方 sendHitIndicator 重复。
+                    RVP_HitVehicleListener.enterRvpDamage();
+                    try {
+                        resolvedProximityTarget.hurt(source, guaranteed);
+                    } finally {
+                        RVP_HitVehicleListener.exitRvpDamage();
+                    }
                     proximityDamagedIds.add(resolvedProximityTarget.getId());
                     hadGuaranteedDamage = true;
+                    // RVP 命中提示：近炸目标独立补发爆炸命中包。
+                    // 近炸触发距离可能超过爆炸半径，爆炸波及循环会跳过它，否则客户端
+                    // 只收到本体命中包（DamageSystem 触发）而“退化成原版命中”。
+                    sendHitIndicator(resolvedProximityTarget, pos, guaranteed,
+                            explosion != null && explosion.explode ? explosion.radius : 0f);
                 }
             }
         }

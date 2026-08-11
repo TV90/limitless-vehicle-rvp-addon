@@ -24,5 +24,6 @@ public class RVP_OverlayRegistry {
         event.registerAboveAll("rvp_charge_bar", new RVP_ChargeBarOverlay());
         event.registerAboveAll("rvp_heat_hud", new RVP_HeatHudOverlay());
         event.registerAboveAll("rvp_aps_hud", new RVP_ApsHudOverlay());
+        event.registerAboveAll("rvp_hit_indicator", new RVP_HitIndicatorOverlay());
     }
 }

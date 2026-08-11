@@ -1,5 +1,7 @@
 package org.ywzj.rvp.client.gui;
 
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -16,23 +18,23 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.client.gui.overlay.ForgeGui;
+import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.slf4j.Logger;
-import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
+import org.ywzj.vehicle.client.render.ModRenderTypes;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -53,8 +55,7 @@ import java.util.Optional;
  * <p>展板与模型尺寸均按屏幕实际分辨率（像素）计算，再换算回 GUI 坐标 —— 不受“界面尺寸”
  * （GUI 缩放）影响，只随分辨率自适应。</p>
  */
-@Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public final class RVP_HitIndicatorOverlay {
+public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
 
     /** 展板宽/高占屏幕实际分辨率的比例 */
     private static final double PANEL_W_FRAC = 0.32;
@@ -81,6 +82,14 @@ public final class RVP_HitIndicatorOverlay {
     private static final int COLOR_DAMAGE_CRITICAL = 0xFFFF5555;
     private static final int COLOR_DAMAGE_HURT = 0xFFFFD060;
     private static final int COLOR_DAMAGE_HIT = 0xFFFFFFFF;
+    /** 爆炸基础红圈末段半径（米）：r0 × (0.5 + 1.6)，爆炸扩散圈以此为起点继续外扩 */
+    private static final float EXPLOSION_BURST_END_RADIUS = 0.7f * (0.5f + 1.6f);
+    /** 直击爆点末段半径（米）：r0=0.2 扩张到 1.5 倍，带爆炸的直击命中扩散圈以此为起点 */
+    private static final float DIRECT_BURST_END_RADIUS = 0.2f * 1.5f;
+    /** 爆炸圈最大倍率：扩散圈至多为基础圈末半径的 5 倍 */
+    private static final float EXPLOSION_RING_MAX_MULTIPLIER = 5f;
+    /** 爆炸半径达到该值时扩散圈最大（方块/米），随爆炸半径线性插值 */
+    private static final float EXPLOSION_RING_MAX_RADIUS = 20f;
 
     /**
      * 爆点小圆球（GUI 空间实心圆盘，永远面向屏幕）：
@@ -106,19 +115,43 @@ public final class RVP_HitIndicatorOverlay {
                     .createCompositeState(true));
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    /** 爆反燃烧动画节流日志时间戳：避免每帧重复打日志刷屏 */
+    private static long lastEraBurnLog = Long.MIN_VALUE;
+    /** 爆反动画时序检查节流日志时间戳 */
+    private static long lastEraBurnCheck = Long.MIN_VALUE;
+    /** onRenderGui 入口节流日志时间戳 */
+    private static long lastGuiEventLog = Long.MIN_VALUE;
 
-    private RVP_HitIndicatorOverlay() {}
-
-    @SubscribeEvent
-    public static void onRenderGui(RenderGuiEvent.Post event) {
+    @Override
+    public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
+        long now = System.currentTimeMillis();
+        if (now - lastGuiEventLog > 2000) {
+            lastGuiEventLog = now;
+            LOGGER.info("[RVP-HitUI] gui event fired: active={} events={} player={} hideGui={} level={}",
+                    RVP_ClientHitIndicatorState.isActive(),
+                    RVP_ClientHitIndicatorState.getEvents().size(),
+                    Minecraft.getInstance().player != null,
+                    Minecraft.getInstance().options.hideGui,
+                    Minecraft.getInstance().level != null);
+        }
         if (!RVP_ClientHitIndicatorState.isActive()) {
             return;
         }
+        // RVP 命中提示活动期间持续压制本体命中提示（兜底）：
+        // 本体 ServerHitVehicleEvent 由 DamageSystem 在服务端发送，若因顺序/延迟晚于 RVP 包
+        // 到达客户端，本体事件源会残留导致“退化成原版命中”，这里每帧清空一次。
+        org.ywzj.vehicle.client.gui.VehicleHitIndicatorOverlay.events.clear();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.options.hideGui || mc.level == null) {
             return;
         }
-        render(event.getGuiGraphics(), mc, event.getPartialTick());
+        if (now - lastEraBurnCheck > 1000) {
+            lastEraBurnCheck = now;
+            LOGGER.info("[RVP-HitUI] render active: entity={} events={}",
+                    RVP_ClientHitIndicatorState.getEntityId(),
+                    RVP_ClientHitIndicatorState.getEvents().size());
+        }
+        render(guiGraphics, mc, partialTick);
     }
 
     private static void render(GuiGraphics gg, Minecraft mc, float partialTick) {
@@ -126,6 +159,19 @@ public final class RVP_HitIndicatorOverlay {
         if (entity == null) {
             return;
         }
+
+        // 渲染基准临时对齐到命中时刻位置：超视距克隆实体/高速移动目标的当前客户端位置与
+        // 命中时刻位置有偏差，渲染期间平移到 atHit，避免命中特效相对模型偏移出展示框。
+        Vec3 savedEntityPos = null;
+        List<RVP_ClientHitIndicatorState.HitEvent> evts = RVP_ClientHitIndicatorState.getEvents();
+        if (!evts.isEmpty()) {
+            Vec3 atHit = evts.get(0).entityPosAtHit;
+            if (atHit != null && atHit.distanceToSqr(entity.position()) > 1.0E-6) {
+                savedEntityPos = entity.position();
+                entity.setPos(atHit);
+            }
+        }
+        try {
         var window = mc.getWindow();
         double guiScale = window.getGuiScale();
         int guiW = window.getGuiScaledWidth();
@@ -169,10 +215,11 @@ public final class RVP_HitIndicatorOverlay {
                 : String.format("命中%s -%.1f%%", bone, damagePercent);
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
         gg.pose().pushPose();
-        gg.pose().translate(x0 + (int) (6 / guiScale), y0 + (int) (3 / guiScale), 0);
+        // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）
+        gg.pose().translate(x0 + (float) panelW / 2, y0 + (int) (3 / guiScale), 0);
         gg.pose().scale(textScale, textScale, 1.0F);
         int lineY = 0;
-        gg.drawString(font, Component.literal(title), 0, lineY, damageColor, true);
+        gg.drawCenteredString(font, Component.literal(title), 0, lineY, damageColor);
         gg.pose().popPose();
         int textBlockGui = (int) Math.ceil((lineY + 9) * textScale);
 
@@ -190,35 +237,22 @@ public final class RVP_HitIndicatorOverlay {
         // 打任何部位都是同一正常姿态（接近平视、略看到车顶），避免动态 pitch 造成的夸张俯视/仰视。
         float pitch = (float) DISPLAY_PITCH;
 
-        // 恒定缩放：与受击角度、部件（炮塔/枪管）旋转都无关 —— 采用本体思路，
-        // 按结构参考长度固定缩放并留出余量，任何姿态都不会超出面板（修复“越界 + 忽大忽小”）。
-        // 本体公式：scale = 8 / structureLength * 10，这里按模型区宽度换算并留 15% 边距。
-        // 超出面板的内容（弹体飞行、曳光、红线）由上方 enableScissor 统一裁剪。
-        double[] ext = modelExtents(entity);
-        double len;
-        if (entity instanceof AbstractVehicle vehicle) {
-            len = Math.max(vehicle.getStructureLength(), 0.5);
-        } else {
-            AABB bb = entity.getBoundingBox();
-            len = Math.max(Math.max(bb.getXsize(), bb.getZsize()), 0.5);
+        // 恒定缩放：与受击角度、部件（炮塔/枪管）旋转都无关 —— 按模型实际包围盒适配面板，
+        // 细长载具（长度长但宽高小）与短粗载具（长度短但宽高占比大）统一完整显示，
+        // 不再出现短粗载具被放大到超框的情况。水平取长/宽较大半轴、垂直取全高，各留 30% 边距。
+        double[] ext = modelExtents(entity, partialTick);
+        double halfH = Math.max(ext[0], ext[2]);          // 水平方向较大半轴（长或宽）
+        double fullV = Math.max(ext[1] * 2, 0.5);         // 垂直全高（含保底）
+        if (halfH <= 0) {
+            halfH = 0.25;
         }
-        float scale = (float) (modelAreaW / (len * 1.15));
+        float scaleW = (float) (modelAreaW / (halfH * 2 * 1.3));
+        float scaleH = (float) (modelAreaH / (fullV * 1.3));
+        float scale = Math.max(0.1f, Math.min(scaleW, scaleH));
 
-        // TODO 临时调试日志（定位后删除）
-        if (entity.tickCount % 40 == 0) {
-            RVP_ClientHitIndicatorState.HitEvent ev0 = RVP_ClientHitIndicatorState.getEvents().isEmpty()
-                    ? null : RVP_ClientHitIndicatorState.getEvents().get(0);
-            String inc = ev0 == null ? "n/a" : String.format("%.2f,%.2f,%.2f",
-                    ev0.incomingDir.x, ev0.incomingDir.y, ev0.incomingDir.z);
-            String view = String.format("%.2f,%.2f,%.2f", viewVec.x, viewVec.y, viewVec.z);
-            LOGGER.info(String.format("[RVP-HitUI] entity=%d guiScale=%.1f gui=%dx%d area=%dx%d modelXY=(%.0f,%.0f) "
-                    + "center=(%.2f,%.2f,%.2f) len=%.2f scale=%.3f pitch=%.1f yaw=%.1f incoming=%s viewVec=%s",
-                    entity.getId(), guiScale, guiW, guiH, modelAreaW, modelAreaH, modelX, modelY,
-                    ext[3], ext[4], ext[5], len, scale, pitch, yaw, inc, view));
-        }
-
-        // 几何中心（ext[3..5]）已由 position() 计算，天然含载具朝向与部件旋转，
-        // 直接把它拉到原点再旋转/缩放即严格居中于面板中心。
+        // 几何中心（ext[3..5]）直接把它拉到原点再旋转/缩放即居中于面板中心。
+        // modelExtents 已用与位置无关的静态几何（offset + 当前朝向）计算，任何距离、
+        // 任何实体类型（本地 tick / 广播克隆）都不会被滞后的世界坐标污染。
         double cx = ext[3], cy = ext[4], cz = ext[5];
 
         gg.pose().pushPose();
@@ -234,10 +268,14 @@ public final class RVP_HitIndicatorOverlay {
             dispatcher.setRenderShadow(false);
             Entity finalEntity = entity;
             RenderSystem.runAsFancy(() -> {
-                dispatcher.render(finalEntity, 0, 0, 0, 0, 1.0F,
-                        gg.pose(), gg.bufferSource(), 15728880);
-                renderHitAnimation(gg, finalEntity, scale,
-                        RVP_ClientHitIndicatorState.getEvents());
+                try {
+                    dispatcher.render(finalEntity, 0, 0, 0, 0, 1.0F,
+                            gg.pose(), gg.bufferSource(), 15728880);
+                    renderHitAnimation(gg, finalEntity, scale,
+                            RVP_ClientHitIndicatorState.getEvents());
+                } catch (Exception e) {
+                    LOGGER.error("[RVP-HitUI] model render error entity={} err={}", finalEntity, e.toString());
+                }
             });
             gg.flush();
             dispatcher.setRenderShadow(true);
@@ -245,6 +283,11 @@ public final class RVP_HitIndicatorOverlay {
         gg.pose().popPose();
         } finally {
             gg.disableScissor();
+        }
+        } finally {
+            if (savedEntityPos != null) {
+                entity.setPos(savedEntityPos);
+            }
         }
         Lighting.setupFor3DItems();
     }
@@ -263,35 +306,40 @@ public final class RVP_HitIndicatorOverlay {
     }
 
     /**
-     * 模型包围：半宽/半高/半深 + 几何中心（相对实体位置，方块）。
-     * <p>用每个结构块的 {@code position()}（世界坐标，由 update() 每 tick 计算，
-     * 已包含载具自身朝向与部件旋转）减去实体位置，得到相对实体的当前姿态块位置。
-     * 车体块与部件块同源同基准，几何中心天然跟随载具朝向，渲染时只需把该中心拉到原点即可严格居中。</p>
+     * 模型包围：半宽/半高/半深 + 几何中心（方块）。
+     * <p>一律使用结构块静态局部坐标 {@code offset()}（与实体位置无关），再绕
+     * {@code centerOffset} 应用载具当前朝向 {@code rotYXZ}，得到与命中动画同一基准的
+     * 模型空间点 —— 不再依赖 {@code cube.position}（每 tick 由 update() 刷新的世界坐标）：
+     * 广播克隆体（超视距）不参与 tick，其 {@code position()} 是创建时的陈旧世界坐标，
+     * 用它算居中会把滞后的世界位置污染进平移量（实测数百方块），把模型推出展示框
+     * （超距不渲染的根因）。任何距离 / 任何实体类型（本地 tick / 广播克隆）都稳定。</p>
      */
-    private static double[] modelExtents(Entity entity) {
+    private static double[] modelExtents(Entity entity, float partialTick) {
         if (entity instanceof AbstractVehicle vehicle) {
             List<VehicleCubeOBB> cubes = new ArrayList<>(vehicle.getVehicleCubeOBBs());
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
                 cubes.addAll(partUnit.getPartCubeOBBs());
             }
             if (!cubes.isEmpty()) {
-                Vec3 origin = vehicle.position();
+                Vec3 centerOffset = vehicle.centerOffset == null ? Vec3.ZERO : vehicle.centerOffset;
+                Quaternionf rot = vehicle.rotYXZ(partialTick);
                 double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE;
                 double minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
                 double minZ = Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
                 for (VehicleCubeOBB cube : cubes) {
-                    Vec3 pos = cube.position; // 字段：世界坐标（update() 每 tick 计算）
-                    if (pos == null) {
-                        pos = cube.offset(); // 兜底：静态模型坐标
-                    }
-                    Vec3 p = pos.subtract(origin);
+                    Vec3 off = cube.offset() == null ? Vec3.ZERO : cube.offset();
+                    Vector3f rel = off.subtract(centerOffset).toVector3f();
+                    rot.transform(rel);
+                    double px = centerOffset.x + rel.x;
+                    double py = centerOffset.y + rel.y;
+                    double pz = centerOffset.z + rel.z;
                     double hw = cube.width / 2.0, hh = cube.height / 2.0, hd = cube.depth / 2.0;
-                    minX = Math.min(minX, p.x - hw);
-                    maxX = Math.max(maxX, p.x + hw);
-                    minY = Math.min(minY, p.y - hh);
-                    maxY = Math.max(maxY, p.y + hh);
-                    minZ = Math.min(minZ, p.z - hd);
-                    maxZ = Math.max(maxZ, p.z + hd);
+                    minX = Math.min(minX, px - hw);
+                    maxX = Math.max(maxX, px + hw);
+                    minY = Math.min(minY, py - hh);
+                    maxY = Math.max(maxY, py + hh);
+                    minZ = Math.min(minZ, pz - hd);
+                    maxZ = Math.max(maxZ, pz + hd);
                 }
                 double cx = (minX + maxX) / 2.0, cy = (minY + maxY) / 2.0, cz = (minZ + maxZ) / 2.0;
                 return new double[]{
@@ -321,63 +369,357 @@ public final class RVP_HitIndicatorOverlay {
      * 直接穿过当前面板变换矩阵 —— 与本体命中红线完全一致，任何入射角度方向都正确。
      * 注意：不能在此处再叠加载具自身旋转（rotYXZ），该旋转由 VehicleRender 渲染模型时
      * 在内部 push/pop 应用，这里的矩阵里并不包含它。</p>
+     * <p>直击事件（骨骼名非空）与爆炸事件（骨骼名为空）走不同动画：
      * <ol>
-     *   <li>飞行段（0~1s）：来袭弹体从命中点沿来袭方向 4 米外飞向命中点。
-     *       有模型渲染武器模型，无模型渲染暖黄曳光。</li>
-     *   <li>爆点段（1s~1.8s）：命中点小圆球，红 → 暗红（扩张 1.5 倍）→ 红 → 淡出消失。</li>
-     *   <li>红线段：爆点消失后才留下红色细线（本体式 3D 红线），整条事件在命中 3s 后清空。</li>
-     * </ol>
+     *   <li>直击：弹体/曳光飞向命中点 → 小爆点 → 本体式 3D 红线。</li>
+     *   <li>爆炸：弹体/曳光飞向离车体一定距离的爆炸中心（同一载具已有直击时不重复渲染弹体）
+     *       → 爆炸中心大扩散红圈 → 破片飞溅到车体。</li>
+     * </ol></p>
      */
     private static void renderHitAnimation(GuiGraphics gg, Entity entity, float scale,
                                           List<RVP_ClientHitIndicatorState.HitEvent> events) {
         PoseStack pose = gg.pose();
         Matrix4f matrix = pose.last().pose();
         long now = System.currentTimeMillis();
+        // 该载具是否有直击事件：有直击时爆炸事件不再渲染弹体模型（直击+爆炸只渲染直击那一次）
+        boolean hasDirectHit = false;
+        for (RVP_ClientHitIndicatorState.HitEvent e : events) {
+            if (!e.boneDisplayName.isEmpty()) {
+                hasDirectHit = true;
+                break;
+            }
+        }
         for (RVP_ClientHitIndicatorState.HitEvent event : events) {
             long elapsed = now - event.hitTime;
             if (elapsed < 0) {
                 continue;
             }
-            // 命中点（模型空间 = 相对实体位置，与模型几何同一基准，穿过矩阵即落在模型表面）
+            // 命中点/爆炸中心（模型空间 = 相对实体位置，与模型几何同一基准）
             Vec3 hitModel = event.hitPosition.subtract(entity.position());
             Vec3 incoming = event.incomingDir;
-            if (elapsed < RVP_ClientHitIndicatorState.FLY_MS) {
-                // 飞行段：弹体从命中点沿来袭方向 4 米外飞向命中点
-                float t = (float) elapsed / (float) RVP_ClientHitIndicatorState.FLY_MS;
-                Vec3 curModel = hitModel.add(incoming.scale(RVP_ClientHitIndicatorState.START_DIST * (1 - t)));
-                if (hasProjectileModel(event)) {
-                    renderProjectileModel(gg, curModel, incoming);
-                } else {
-                    renderTracer(gg, matrix, curModel, incoming);
-                }
-            } else if (elapsed < RVP_ClientHitIndicatorState.FLY_MS + RVP_ClientHitIndicatorState.BURST_MS) {
-                // 爆点段：命中点小圆球颜色/半径随时间变化（投影到屏幕的实心圆盘）
-                float t = (float) (elapsed - RVP_ClientHitIndicatorState.FLY_MS)
-                        / (float) RVP_ClientHitIndicatorState.BURST_MS;
-                float radius;
-                float cr, cg, cb;
-                float r0 = 0.2f;   // 爆点圆盘半径（米）：×scale 约 2.4px，实心可见又不挡模型
-                if (t < 0.3f) {
-                    radius = r0;
-                    cr = 1f; cg = 0.25f; cb = 0.1f;                          // 亮红
-                } else if (t < 0.5f) {
-                    float k = (t - 0.3f) / 0.2f;
-                    radius = r0 * (1 + 0.5f * k);                            // 扩张至 1.5 倍
-                    cr = 1f; cg = 0.25f + 0.5f * k; cb = 0.1f + 0.05f * k;  // 红 → 亮橙金，变化明显
-                } else if (t < 0.7f) {
-                    float k = (t - 0.5f) / 0.2f;
-                    radius = r0 * (1.5f - 0.5f * k);                        // 缩回原大小
-                    cr = 1f - 0.15f * k; cg = 0.75f - 0.5f * k; cb = 0.15f - 0.05f * k; // 橙金 → 回红
-                } else {
-                    float k = (t - 0.7f) / 0.3f;
-                    radius = r0 * (1 - k);                                  // 淡出
-                    cr = 0.85f + 0.15f * k; cg = 0.25f - 0.15f * k; cb = 0.1f; // 转亮淡红后整体变淡
-                }
-                fillCircle(gg, matrix, hitModel, radius * scale, cr, cg, cb, 0.9f * (1 - 0.5f * t));
+            if (event.boneDisplayName.isEmpty()) {
+                renderExplosionAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale, hasDirectHit);
             } else {
-                // 红线段：本体式 3D 红线，从命中点沿来袭方向延伸 3 米
-                renderRedLine(gg, hitModel, hitModel.add(incoming.scale(3)));
+                renderDirectAnimation(gg, matrix, event, hitModel, incoming, elapsed, scale);
             }
+        }
+        // 爆反（ERA）被摧毁动画：必须等命中圈动画（飞行 + 爆点 + 破片）播完后才开始，
+        // 把被摧毁的爆反骨骼染色为 亮红 → 深黑红 → 透明（约 1.5 秒）。
+        renderEraBurnAnimations(gg, entity, events);
+    }
+
+    /** 直击命中动画：飞行段（弹体/曳光飞向命中点）→ 小爆点 → 红线 */
+    private static void renderDirectAnimation(GuiGraphics gg, Matrix4f matrix,
+                                              RVP_ClientHitIndicatorState.HitEvent event,
+                                              Vec3 hitModel, Vec3 incoming, long elapsed, float scale) {
+        if (elapsed < RVP_ClientHitIndicatorState.FLY_MS) {
+            // 飞行段：弹体从命中点沿来袭方向 4 米外飞向命中点
+            float t = (float) elapsed / (float) RVP_ClientHitIndicatorState.FLY_MS;
+            Vec3 curModel = hitModel.add(incoming.scale(RVP_ClientHitIndicatorState.START_DIST * (1 - t)));
+            if (hasProjectileModel(event)) {
+                renderProjectileModel(gg, curModel, incoming);
+            } else {
+                renderTracer(gg, matrix, curModel, incoming);
+            }
+        } else if (elapsed < RVP_ClientHitIndicatorState.FLY_MS + RVP_ClientHitIndicatorState.BURST_MS) {
+            // 爆点段：命中点小圆球颜色/半径随时间变化（投影到屏幕的实心圆盘）
+            float t = (float) (elapsed - RVP_ClientHitIndicatorState.FLY_MS)
+                    / (float) RVP_ClientHitIndicatorState.BURST_MS;
+            float radius;
+            float cr, cg, cb;
+            float r0 = 0.2f;   // 爆点圆盘半径（米）：×scale 约 2.4px，实心可见又不挡模型
+            if (t < 0.3f) {
+                radius = r0;
+                cr = 1f; cg = 0.25f; cb = 0.1f;                          // 亮红
+            } else if (t < 0.5f) {
+                float k = (t - 0.3f) / 0.2f;
+                radius = r0 * (1 + 0.5f * k);                            // 扩张至 1.5 倍
+                cr = 1f; cg = 0.25f + 0.5f * k; cb = 0.1f + 0.05f * k;  // 红 → 亮橙金，变化明显
+            } else if (t < 0.7f) {
+                float k = (t - 0.5f) / 0.2f;
+                radius = r0 * (1.5f - 0.5f * k);                        // 缩回原大小
+                cr = 1f - 0.15f * k; cg = 0.75f - 0.5f * k; cb = 0.15f - 0.05f * k; // 橙金 → 回红
+            } else {
+                float k = (t - 0.7f) / 0.3f;
+                radius = r0 * (1 - k);                                  // 淡出
+                cr = 0.85f + 0.15f * k; cg = 0.25f - 0.15f * k; cb = 0.1f; // 转亮淡红后整体变淡
+            }
+            fillCircle(gg, matrix, hitModel, radius * scale, cr, cg, cb, 0.9f * (1 - 0.5f * t));
+        } else {
+            // 红线段：本体式 3D 红线，从命中点沿来袭方向延伸 3 米
+            renderRedLine(gg, hitModel, hitModel.add(incoming.scale(3)));
+            // 直击 HE 等带爆炸的弹药：命中点处同样扩散爆炸圈（随爆炸半径扩大，最多 5 倍）
+            if (event.explosionRadius > 0f) {
+                long fragStart = RVP_ClientHitIndicatorState.FLY_MS + RVP_ClientHitIndicatorState.BURST_MS;
+                long fragEnd = fragStart + RVP_ClientHitIndicatorState.FRAG_MS;
+                if (elapsed >= fragStart && elapsed < fragEnd) {
+                    renderExplosionDiffusionRing(gg, matrix, hitModel, elapsed - fragStart, scale,
+                            event.explosionRadius, DIRECT_BURST_END_RADIUS);
+                }
+            }
+        }
+    }
+
+    /**
+     * 爆炸命中动画（非直击）：
+     * <ol>
+     *   <li>飞行段：弹体/曳光飞向爆炸中心（爆炸中心离车体一定距离，不在车体上）；
+     *       同一载具已有直击事件时不重复渲染弹体模型。</li>
+     *   <li>爆点段：爆炸中心处较大的扩散红圈（明显大于直击爆点），迅速扩张并淡出。</li>
+     *   <li>破片段：从爆炸中心飞溅几条破片到车体方向，随推进淡出。</li>
+     * </ol>
+     */
+    private static void renderExplosionAnimation(GuiGraphics gg, Matrix4f matrix,
+                                                 RVP_ClientHitIndicatorState.HitEvent event,
+                                                 Vec3 boomCenter, Vec3 incoming, long elapsed, float scale,
+                                                 boolean hasDirectHit) {
+        long flyEnd = RVP_ClientHitIndicatorState.FLY_MS;
+        long burstEnd = flyEnd + RVP_ClientHitIndicatorState.BURST_MS;
+        if (elapsed < flyEnd) {
+            // 飞行段：弹体从爆炸中心沿来袭方向 4 米外飞向爆炸中心
+            if (!hasDirectHit) {
+                float t = (float) elapsed / (float) flyEnd;
+                Vec3 cur = boomCenter.add(incoming.scale(RVP_ClientHitIndicatorState.START_DIST * (1 - t)));
+                if (hasProjectileModel(event)) {
+                    renderProjectileModel(gg, cur, incoming);
+                } else {
+                    renderTracer(gg, matrix, cur, incoming);
+                }
+            }
+        } else if (elapsed < burstEnd) {
+            // 爆点段：爆炸中心较大的扩散红圈
+            float t = (float) (elapsed - flyEnd) / (float) RVP_ClientHitIndicatorState.BURST_MS;
+            float r0 = 0.7f;                           // 爆炸红圈基础半径（米）：×scale 约 8px，扩张到约 18px，醒目
+            float radius = r0 * (0.5f + 1.6f * t);     // 由小迅速扩张
+            float cr = 1f, cg = 0.85f - 0.5f * t, cb = 0.15f - 0.1f * t; // 红 → 亮橙 → 变淡
+            fillCircle(gg, matrix, boomCenter, radius * scale, cr, cg, cb, 0.95f * (1f - t));
+        } else {
+            // 破片段：从爆炸中心飞溅破片到车体
+            long fragEnd = burstEnd + RVP_ClientHitIndicatorState.FRAG_MS;
+            if (elapsed < fragEnd) {
+                renderFragments(gg, matrix, boomCenter, incoming, elapsed - burstEnd);
+                // 爆炸扩散圈：基础红圈结束后继续向外扩散，最大为基础圈末半径的 5 倍（爆炸半径 20 封顶）
+                renderExplosionDiffusionRing(gg, matrix, boomCenter, elapsed - burstEnd, scale,
+                        event.explosionRadius, EXPLOSION_BURST_END_RADIUS);
+            }
+        }
+    }
+
+    /**
+     * 爆炸扩散圈：基础爆炸圈结束后继续向外扩散并淡出（冲击波持续扩散效果）。
+     * <p>最大半径 = 起点半径 ×5（爆炸半径 20 封顶，随爆炸半径线性插值）：
+     * 爆炸范围越大扩散圈越大；{@code explosionRadius <= 0}（无爆炸语义）时跳过。</p>
+     */
+    private static void renderExplosionDiffusionRing(GuiGraphics gg, Matrix4f matrix, Vec3 center,
+                                                     long diffuseElapsed, float scale,
+                                                     float explosionRadius, float startRadius) {
+        if (explosionRadius <= 0f) {
+            return;
+        }
+        float t = (float) diffuseElapsed / (float) RVP_ClientHitIndicatorState.FRAG_MS;
+        if (t < 0f || t > 1f) {
+            return;
+        }
+        // 爆炸范围 0 → 20 线性放大，达到 20 时扩散圈最大（起点半径 ×5）
+        float diffFactor = Math.min(1f, explosionRadius / EXPLOSION_RING_MAX_RADIUS);
+        float maxRadius = startRadius * (1f + (EXPLOSION_RING_MAX_MULTIPLIER - 1f) * diffFactor);
+        // 缓出扩张：先快后慢，视觉上像冲击波持续扩散
+        float ease = 1f - (1f - t) * (1f - t);
+        float radius = startRadius + (maxRadius - startRadius) * ease;
+        float cr = 1f, cg = 0.55f - 0.25f * t, cb = 0.1f;
+        float alpha = 0.7f * (1f - t);
+        fillCircle(gg, matrix, center, radius * scale, cr, cg, cb, alpha);
+    }
+
+    /**
+     * 爆反（ERA）被摧毁燃烧动画：把被摧毁的爆反骨骼（实际渲染模型网格，非线框）染色渲染，
+     * 颜色随时间 亮红 → 深黑红 → 透明（约 1.5 秒）。
+     * <p>复用载具渲染当前帧已应用动画姿态的 {@link BakedModelInstance}，对爆反骨块调用
+     * {@code renderSingleBone} 单独染色渲染 —— 骨骼位置/旋转/动画姿态与展板内模型完全一致。</p>
+     * <p>时序：以"命中事件时间 + 命中圈动画总时长"（{@code HIT_ANIM_END_MS} = 飞行 + 爆点 + 破片）
+     * 为动画起点 —— 保证爆反动画必须在命中圈动画播完后才开始。命中包与骨块状态包到达顺序
+     * 可能不同（先收到摧毁、后收到命中提示），因此锚定命中事件时间而非摧毁时间，避免错位；
+     * 摧毁发生在本次命中窗口之前（容差 250ms）的旧爆反不重复播放。</p>
+     * <p>数据源与 JS 脚本一致（{@link RVP_ClientBoneModuleState} 客户端侧表，
+     * JS 经 {@code context.rvp_isEraActive} 查询同一份状态隐藏爆反），无需直接读脚本。</p>
+     */
+    private static void renderEraBurnAnimations(GuiGraphics gg, Entity entity,
+                                                List<RVP_ClientHitIndicatorState.HitEvent> events) {
+        if (!(entity instanceof AbstractVehicle vehicle)) {
+            return;
+        }
+        if (events.isEmpty()) {
+            return;
+        }
+        int entityId = vehicle.getId();
+        long now = System.currentTimeMillis();
+        List<String> eraBones = RVP_ClientBoneModuleState.getInactiveEraBones(entityId);
+        if (eraBones.isEmpty()) {
+            if (now - lastEraBurnCheck > 1000) {
+                lastEraBurnCheck = now;
+                LOGGER.info("[RVP-HitUI] ERA bones empty: entity={} events={} firstHitRel={}",
+                        entityId, events.size(),
+                        events.get(0).hitTime > 0 ? now - events.get(0).hitTime : -1);
+            }
+            return;
+        }
+        // 命中圈动画锚点：第一条命中事件的时间。爆反动画等命中圈动画播完（HIT_ANIM_END_MS）后开始
+        long firstHit = events.get(0).hitTime;
+
+        // 载具显示模型 + 当前帧已应用动画姿态的骨骼实例（与 dispatcher.render 同一实例）
+        BaseDisplay display = ClientAssetsManager.INSTANCE
+                .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        if (display == null || display.getModel() == null || display.getTexture() == null) {
+            if (now - lastEraBurnLog > 2000) {
+                lastEraBurnLog = now;
+                LOGGER.warn("[RVP-HitUI] ERA burn skip: display/model/texture missing vehicle={}",
+                        vehicle.getDisplayId());
+            }
+            return;
+        }
+        VehicleBedrockModel model = display.getModel();
+        if (!model.hasBakedModel()) {
+            if (now - lastEraBurnLog > 2000) {
+                lastEraBurnLog = now;
+                LOGGER.warn("[RVP-HitUI] ERA burn skip: no baked model vehicle={}", vehicle.getDisplayId());
+            }
+            return;
+        }
+        BakedModelInstance instance = vehicle.getModelInstance();
+        if (instance == null) {
+            instance = model.getDefaultModelInstance();
+        }
+        if (instance == null) {
+            return;
+        }
+
+        // 先冲掉不透明模型，保证半透明烧灼骨骼渲染在不透明模型之上
+        gg.flush();
+
+        RenderType quadType = ModRenderTypes.cubeTransparent(display.getTexture());
+        RenderType meshType = ModRenderTypes.polyMeshTransparent(display.getTexture());
+        PoseStack pose = gg.pose();
+        for (String boneName : eraBones) {
+            long destroyTime = RVP_ClientBoneModuleState.getEraDestroyTime(entityId, boneName);
+            if (destroyTime < 0) {
+                continue;
+            }
+            // 时序：爆反动画必须等命中圈动画播完（HIT_ANIM_END_MS）后才开始。
+            // 命中包与骨块状态包到达顺序可能不同（先收到摧毁、后收到命中提示），
+            // 以命中事件时间为锚，起点 = max(摧毁时间, 命中时间) + HIT_ANIM_END_MS，避免动画起点错位。
+            // 摧毁发生在本次命中窗口之前（250ms 容差）的旧爆反是上次命中摧毁的，已播过动画，跳过。
+            if (destroyTime + 250L < firstHit) {
+                if (now - lastEraBurnCheck > 1000) {
+                    lastEraBurnCheck = now;
+                    LOGGER.info("[RVP-HitUI] ERA old destroy skip: bone={} destroyRel={} firstHitRel={}",
+                            boneName, now - destroyTime, now - firstHit);
+                }
+                continue;
+            }
+            long animStart = Math.max(destroyTime, firstHit) + RVP_ClientHitIndicatorState.HIT_ANIM_END_MS;
+            long elapsed = now - animStart;
+            if (elapsed < 0 || elapsed > RVP_ClientHitIndicatorState.ERA_ANIM_MS) {
+                if (now - lastEraBurnCheck > 1000) {
+                    lastEraBurnCheck = now;
+                    LOGGER.info("[RVP-HitUI] ERA wait/end: bone={} destroyRel={} firstHitRel={} elapsed={}",
+                            boneName, now - destroyTime, now - firstHit, elapsed);
+                }
+                continue;
+            }
+            float t = (float) elapsed / (float) RVP_ClientHitIndicatorState.ERA_ANIM_MS;
+            // 前半（0~0.5）：亮红 → 深黑红；后半（0.5~1）：深黑红 → 渐透明
+            float cr, alpha;
+            if (t < 0.5f) {
+                float k = t / 0.5f;
+                cr = 1f - 0.85f * k;   // 1.0 → 0.15
+                alpha = 1f;
+            } else {
+                float k = (t - 0.5f) / 0.5f;
+                cr = 0.15f * (1f - k);  // 0.15 → 0
+                alpha = 1f - k;         // 1 → 0
+            }
+            int boneIndex = instance.getIndex(boneName);
+            if (boneIndex < 0) {
+                if (now - lastEraBurnLog > 2000) {
+                    lastEraBurnLog = now;
+                    LOGGER.warn("[RVP-HitUI] ERA burn skip: bone {} not in baked instance vehicle={}",
+                            boneName, vehicle.getDisplayId());
+                }
+                continue;
+            }
+            BoneState bone = instance.getBone(boneIndex);
+            if (bone == null) {
+                continue;
+            }
+            // 被摧毁的爆反骨骼在 JS 隐藏中整体变换被清零（平移/旋转/缩放=0，visible=false），
+            // 若直接渲染会几何塌缩不可见。渲染前临时还原绑定姿态（位置/旋转/缩放=1），用后还原。
+            boolean savedVisible = bone.visible;
+            float sx = bone.xScale, sy = bone.yScale, sz = bone.zScale;
+            float bx = bone.x, by = bone.y, bz = bone.z;
+            Quaternionf bRot = new Quaternionf(bone.rotation);
+            Vector3f bEuler = new Vector3f(bone.rotationInEuler);
+            bone.reset();
+            bone.visible = true;
+            try {
+                instance.renderSingleBone(pose, boneIndex, gg.bufferSource(),
+                        quadType, meshType, 15728880, OverlayTexture.NO_OVERLAY,
+                        cr, 0f, 0f, alpha, false);
+                if (now - lastEraBurnLog > 1000) {
+                    lastEraBurnLog = now;
+                    LOGGER.info("[RVP-HitUI] ERA burn anim: bone={} t={} cr={} alpha={}",
+                            boneName, t, cr, alpha);
+                }
+            } finally {
+                bone.visible = savedVisible;
+                bone.x = bx;
+                bone.y = by;
+                bone.z = bz;
+                bone.rotation.set(bRot);
+                bone.rotationInEuler.set(bEuler);
+                bone.xScale = sx;
+                bone.yScale = sy;
+                bone.zScale = sz;
+            }
+        }
+        gg.flush();
+    }
+
+    /**
+     * 破片飞溅：5 条从爆炸中心射向车体中心方向（带小偏角）的短线，随时间推进并淡出。
+     * 车体中心近似模型空间原点；破片射程按“爆炸中心到车体距离 ×1.1”计算，最终落在车体附近。
+     */
+    private static void renderFragments(GuiGraphics gg, Matrix4f matrix, Vec3 boomCenter, Vec3 incoming,
+                                        long fragElapsed) {
+        float t = (float) fragElapsed / (float) RVP_ClientHitIndicatorState.FRAG_MS;
+        if (t < 0f || t > 1f) {
+            return;
+        }
+        // 指向车体中心（模型空间原点）的方向 = 来袭方向的相反方向
+        Vec3 toCar = incoming.scale(-1);
+        if (toCar.lengthSqr() < 1.0E-6) {
+            toCar = new Vec3(0, 0, 1);
+        }
+        Vec3 dirBase = toCar.normalize();
+        float range = (float) Math.max(boomCenter.length() * 1.1, 0.6);
+        // 5 条破片：水平/垂直各带小偏角，模拟飞溅散布
+        float[] offYaw = {-0.26f, 0.26f, -0.10f, 0.10f, 0.0f};
+        float[] offPitch = {0.12f, -0.14f, 0.32f, -0.34f, 0.02f};
+        VertexConsumer vc = gg.bufferSource().getBuffer(RenderType.lines());
+        for (int i = 0; i < 5; i++) {
+            Vector3f d = new Vector3f((float) dirBase.x, (float) dirBase.y, (float) dirBase.z);
+            d.rotate(new Quaternionf().rotateY(offYaw[i]).rotateX(offPitch[i]));
+            Vec3 fragPos = boomCenter.add(new Vec3(d.x, d.y, d.z).scale(t * range));
+            // 飞行轨迹线（爆炸中心 → 当前破片位置，暗橙）
+            vc.vertex(matrix, (float) boomCenter.x, (float) boomCenter.y, (float) boomCenter.z)
+                    .color(1.0f, 0.55f, 0.15f, 0.55f).normal(0, 1, -100).endVertex();
+            vc.vertex(matrix, (float) fragPos.x, (float) fragPos.y, (float) fragPos.z)
+                    .color(1.0f, 0.55f, 0.15f, 0.55f).normal(0, 1, -100).endVertex();
+            // 破片本体（短亮线）
+            vc.vertex(matrix, (float) fragPos.x, (float) fragPos.y, (float) fragPos.z)
+                    .color(1.0f, 0.75f, 0.25f, 1f).normal(0, 1, -100).endVertex();
+            vc.vertex(matrix, (float) (fragPos.x + d.x * 0.45f), (float) (fragPos.y + d.y * 0.45f),
+                    (float) (fragPos.z + d.z * 0.45f))
+                    .color(1.0f, 0.75f, 0.25f, 1f).normal(0, 1, -100).endVertex();
         }
     }
 
@@ -496,16 +838,8 @@ public final class RVP_HitIndicatorOverlay {
                     cachedModel = m;
                     cachedTexture = display.get().getTexture();
                 }
-                // TODO 临时调试日志（定位后删除）
-                LOGGER.info("[RVP-HitUI-proj] weapon={} found=true model={} baked={} tex={}",
-                        weaponId, m != null, m != null && m.hasBakedModel(), cachedTexture);
-            } else {
-                // TODO 临时调试日志（定位后删除）
-                LOGGER.info("[RVP-HitUI-proj] weapon={} found=false", weaponId);
             }
-        } catch (Exception e) {
-            // TODO 临时调试日志（定位后删除）
-            LOGGER.info("[RVP-HitUI-proj] weapon={} error={}", weaponId, e.toString());
+        } catch (Exception ignored) {
         }
     }
 

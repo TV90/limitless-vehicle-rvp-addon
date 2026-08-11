@@ -1,9 +1,13 @@
 package org.ywzj.rvp.client.state;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,14 +20,31 @@ import java.util.Set;
 public final class RVP_ClientBoneModuleState {
 
     private static final Map<Integer, Map<String, Set<BoneModuleType>>> INACTIVE_MODULES = new HashMap<>();
+    /**
+     * ERA 骨块被摧毁的时间戳（entityId → boneName → 摧毁时刻毫秒）。
+     * 命中提示 UI 据此在"命中圈动画播完后"播放爆反燃烧动画；同一骨块只记首次摧毁时间，
+     * 因此已播放过的爆反动画不会在后续命中时重复播放。
+     */
+    private static final Map<Integer, Map<String, Long>> ERA_DESTROY_TIMES = new HashMap<>();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_ClientBoneModuleState() {
     }
 
     public static void apply(S2CBoneModuleState msg) {
+        LOGGER.info("[RVP-ERA-STATE] apply entityId={} inactive={}",
+                msg.entityId, msg.inactiveModules.keySet());
         if (msg.inactiveModules.isEmpty()) {
             INACTIVE_MODULES.remove(msg.entityId);
+            ERA_DESTROY_TIMES.remove(msg.entityId);
         } else {
+            Map<String, Long> times = ERA_DESTROY_TIMES.computeIfAbsent(msg.entityId, k -> new HashMap<>());
+            long now = System.currentTimeMillis();
+            for (Map.Entry<String, Set<BoneModuleType>> entry : msg.inactiveModules.entrySet()) {
+                if (entry.getValue() != null && entry.getValue().contains(BoneModuleType.ERA)) {
+                    times.computeIfAbsent(entry.getKey(), k -> now);
+                }
+            }
             INACTIVE_MODULES.put(msg.entityId, msg.inactiveModules);
         }
     }
@@ -43,7 +64,35 @@ public final class RVP_ClientBoneModuleState {
         return isModuleActive(entityId, boneName, BoneModuleType.ERA);
     }
 
+    /**
+     * 该载具所有"ERA 模块已失效"的骨块名列表（被摧毁的爆反）。
+     * 供命中提示 UI 在爆反骨块位置渲染"红色 → 深黑红 → 透明"的燃烧动画。
+     */
+    public static List<String> getInactiveEraBones(int entityId) {
+        Map<String, Set<BoneModuleType>> boneMap = INACTIVE_MODULES.get(entityId);
+        if (boneMap == null || boneMap.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = null;
+        for (Map.Entry<String, Set<BoneModuleType>> entry : boneMap.entrySet()) {
+            if (entry.getValue() != null && entry.getValue().contains(BoneModuleType.ERA)) {
+                if (out == null) {
+                    out = new ArrayList<>();
+                }
+                out.add(entry.getKey());
+            }
+        }
+        return out == null ? List.of() : out;
+    }
+
+    /** 骨块 ERA 被摧毁的时间戳（毫秒）；该骨块从未被摧毁/无记录时返回 -1。 */
+    public static long getEraDestroyTime(int entityId, String boneName) {
+        Map<String, Long> times = ERA_DESTROY_TIMES.get(entityId);
+        return times == null ? -1L : times.getOrDefault(boneName, -1L);
+    }
+
     public static void clear() {
         INACTIVE_MODULES.clear();
+        ERA_DESTROY_TIMES.clear();
     }
 }
