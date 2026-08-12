@@ -181,6 +181,55 @@ desiredDir  = normalize(horizDir.x, verticalCmd/speed, horizDir.z);
 
 使用者通常只写 `preset_cruise_altitude` 一个字段（其余用默认），**零配置即等于本体 df_41 默认弹道**。
 
+### 4.1.1 参数通俗解释（配 9M723 实例）
+
+三段式弹道整体形态（侧视）：
+
+```text
+            巡航段（最高点平飞，高度闭环维持）
+  上升段   ↗  ─────────────────────→  ↘  俯冲段
+发射点 ────┘                             ↘
+发射点                                        目标（地面）
+```
+
+| 参数 | 一句话含义 | 计算方式 / 生效位置 | 调大的效果 | 调小的效果 |
+| --- | --- | --- | --- | --- |
+| `preset_cruise_altitude` | **弹道最高点**（巡航高度），相对发射点 Y | 巡航段平飞高度 = `launchY + 值`；`> 0` 才启用三段式 | 飞得更高更远；但俯冲提前量同步变大（见 altitude_factor），巡航段可能被压缩 | 更低更近；俯冲更晚更陡 |
+| `preset_max_ascent_lead` | **上升段终点的水平前伸量上限** | 实际前伸 = `min(值, 25%×发射水平距离)`；上升终点 = 发射点前伸该距离 + 爬升到巡航高度 | 爬升更倾斜、上升→巡航过渡平滑 | 近乎垂直爬升、到顶急转水平（**折角**） |
+| `preset_ascent_radius` | **上升段完成判定半径** | 距上升终点 ≤ 值 **或** 高度 ≥ 巡航高度 − 值 → 上升结束 | 更早结束上升、提前切巡航 | 更晚结束上升 |
+| `preset_dive_radius` | **俯冲最小启动水平距离（兜底）** | 水平距离 ≤ 值 → 无条件进入俯冲 | 近距离也强制早俯冲 | 俯冲更晚 |
+| `preset_dive_altitude_factor` | **高空俯冲提前量：高度差 × 因子** | `俯冲距离(高度部分) = 高度差 × 值`；高空不提前下压末端拉不住 | 俯冲更早（弹道更平滑） | 俯冲更晚更陡（末端要能转过弯） |
+| `preset_dive_lead_factor` | **转弯提前量：转弯半径 × 因子** | `俯冲距离(转弯部分) = 转弯半径 × 值`；给末端转弯留余量 | 更早开始转 | 更晚开始转 |
+| `preset_cruise_altitude_gain` | 巡航高度闭环 **P 增益** | 垂直指令 `+= 高度误差 × 值` | 高度恢复更快，易过冲振荡 | 更平缓 |
+| `preset_cruise_vertical_damping` | 巡航高度闭环 **D 阻尼** | 垂直指令 `−= 垂直速度 × 值` | 抑制高度振荡 | 易振荡 |
+| `preset_cruise_max_vertical_component` | **垂直分量占速率比例上限** | 垂直指令钳制 `±速率 × 值` | 爬升/下压更快 | 更慢更平 |
+
+**俯冲启动距离（三者取最大，进入俯冲段的判定）：**
+
+```text
+diveDistance = max( preset_dive_radius,
+                    高度差 × preset_dive_altitude_factor,
+                    转弯半径 × preset_dive_lead_factor )
+距目标水平距离 ≤ diveDistance → 进入俯冲段
+```
+
+**实例**（9M723：巡航 400 / 前伸 140 / altitude_factor 0.4 / lead_factor 1.5，发射水平距离 800 格）：
+
+| 阶段 | 过程 | 距目标水平距离 |
+| --- | --- | --- |
+| 上升 | 前伸 `min(140, 800×25%=200)` = 140 格，爬升到 400 高 | 800 → 660 |
+| 巡航 | 400 高平飞（高度闭环） | 660 → 160 |
+| 俯冲 | `diveDistance = max(24, 400×0.4=160, 转弯半径×1.5≈120)` ≈ 160，下压命中 | 160 → 0 |
+
+**常见现象 → 调参速查：**
+
+| 现象 | 原因 | 调法 |
+| --- | --- | --- |
+| 巡航段消失，上升完直接俯冲 | 俯冲距离 ≥ 剩余航程：巡航高度过高或 `dive_altitude_factor` 过大（如 600×0.75=450） | 降 `preset_cruise_altitude` / 减 `preset_dive_altitude_factor` |
+| 上升→巡航折角 | `preset_max_ascent_lead` 太小，几乎垂直爬升 | 调大前伸量（如 64 → 140） |
+| 巡航高度过冲振荡 | 高度闭环增益过大/阻尼不足 | 增 `preset_cruise_vertical_damping`、减 `preset_cruise_altitude_gain` |
+| 末端拉不住画大弧 | 俯冲太晚或转向不足 | 增 `preset_dive_altitude_factor` / 增末端 `turning_factor` |
+
 ### 4.2 复用既有字段（不新增）
 
 | 来源 | 字段 | 弹道导弹中的用途 |

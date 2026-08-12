@@ -54,6 +54,18 @@ public final class GunnerTargeting {
                 .filter(entity -> isRelativeHostileGunnerVehicle(gunner, entity))
                 .toList();
         List<Entity> preferred = hostileGunnerVehicles.isEmpty() ? entities : hostileGunnerVehicles;
+        // GPS 武器优先设定：启用时若有可用 GPS 武器能打击的目标，优先选择索敌范围内最远的
+        // GPS 可打击目标（GPS 为远程点打击武器，应优先远程目标，避免浪费在近距离目标上）
+        if (profile.isGpsPreferFarthest()) {
+            List<Entity> gpsTargets = preferred.stream()
+                    .filter(entity -> GunnerWeaponSuitability.hasUsableGpsWeaponForTarget(weaponUnit, entity))
+                    .toList();
+            if (!gpsTargets.isEmpty()) {
+                return gpsTargets.stream()
+                        .max(Comparator.comparingDouble(entity -> vehicle.position().distanceToSqr(entity.position())))
+                        .orElse(null);
+            }
+        }
         return preferred.stream()
                 .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);

@@ -19,6 +19,7 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
  * @param cruiseAltitudeGain 高度闭环 P 增益
  * @param cruiseVerticalDamping 高度闭环 D 阻尼
  * @param cruiseMaxVerticalComponent 垂直分量占速率比例上限
+ * @param tacticalManeuverAmplitude 弹道中段战术机动（横向蛇形规避摆动）幅度，格；0 = 关闭
  */
 public record RVP_VirtualPresetGuidance(
         Vec3 launchPosition,
@@ -30,7 +31,8 @@ public record RVP_VirtualPresetGuidance(
         double diveLeadFactor,
         double cruiseAltitudeGain,
         double cruiseVerticalDamping,
-        double cruiseMaxVerticalComponent
+        double cruiseMaxVerticalComponent,
+        double tacticalManeuverAmplitude
 ) {
 
     /** 从武器配置冻结弹道导弹输入；未启用 preset 时返回 null。 */
@@ -50,7 +52,8 @@ public record RVP_VirtualPresetGuidance(
                 guidance.getPresetDiveLeadFactor(),
                 guidance.getPresetCruiseAltitudeGain(),
                 guidance.getPresetCruiseVerticalDamping(),
-                guidance.getPresetCruiseMaxVerticalComponent()
+                guidance.getPresetCruiseMaxVerticalComponent(),
+                guidance.getPresetTacticalManeuverAmplitude()
         );
     }
 }

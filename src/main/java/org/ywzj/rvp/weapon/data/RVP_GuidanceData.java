@@ -112,6 +112,10 @@ public class RVP_GuidanceData {
     @SerializedName("preset_cruise_max_vertical_component")
     private float presetCruiseMaxVerticalComponent = 0.5f;
 
+    /** 弹道中段战术机动（横向蛇形规避摆动）幅度，格；0 = 关闭。 */
+    @SerializedName("preset_tactical_maneuver_amplitude")
+    private float presetTacticalManeuverAmplitude = 0f;
+
     @SerializedName("lock_angle_gate")
     private Map<RVP_Range<Float>, RVP_Range<Float>> lockAngleGate;
 
@@ -250,6 +254,10 @@ public class RVP_GuidanceData {
 
     public float getPresetCruiseMaxVerticalComponent() {
         return Math.max(presetCruiseMaxVerticalComponent, 0f);
+    }
+
+    public float getPresetTacticalManeuverAmplitude() {
+        return Math.max(presetTacticalManeuverAmplitude, 0f);
     }
 
     public Map<RVP_Range<Float>, RVP_Range<Float>> getLockAngleGate() {

@@ -94,6 +94,7 @@ import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -3038,6 +3039,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Runnable explosionAction = !excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
                 : ex::explode;
+        // RVP 爆炸命中提示：载具集合必须在爆炸伤害结算前快照 —— AbstractVehicle.hurt
+        // 会把被炸死的载具同步 setDestroyed()（已在销毁状态的直接 discard），若结算后再
+        // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体
+        // ServerHitVehicleEvent 到达 → 命中提示回退到本体（大范围秒杀爆炸的回退根因）。
+        List<AbstractVehicle> blastTargets = new ArrayList<>();
+        if (!level().isClientSide() && explosion != null && explosion.explode
+                && getOwner() instanceof ServerPlayer) {
+            double half = radius;
+            AABB hitBox = new AABB(
+                    pos.x - half, pos.y - half, pos.z - half,
+                    pos.x + half, pos.y + half, pos.z + half);
+            for (AbstractVehicle v : level().getEntitiesOfClass(AbstractVehicle.class, hitBox)) {
+                if (!v.isDestroyed()
+                        && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(v)) {
+                    blastTargets.add(v);
+                }
+            }
+        }
         // 标记 RVP 弹体爆炸结算窗口：VehicleExplosion 内每辆载具的伤害都会走本体
         // DamageSystem.hurt 并 post HitVehicleEvent，监听器窗口内跳过，避免与下方
         // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
@@ -3071,19 +3090,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             directHitVehicleIds.clear();
         }
-        // RVP 爆炸命中提示：爆炸对范围内所有载具按距离衰减补发命中包（含直击载具的爆炸额外伤害，
-        // 客户端把直击与爆炸伤害短时间累积；骨骼名为空 → 显示“爆炸 -x%”）
-        if (!level().isClientSide() && explosion != null && explosion.explode
-                && getOwner() instanceof ServerPlayer shooter) {
-            double half = radius;
-            AABB hitBox = new AABB(
-                    pos.x - half, pos.y - half, pos.z - half,
-                    pos.x + half, pos.y + half, pos.z + half);
-            for (AbstractVehicle v : level().getEntitiesOfClass(AbstractVehicle.class, hitBox)) {
-                if (v.isDestroyed()
-                        || !RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(v)) {
-                    continue;
-                }
+        // 爆炸波及命中包补发：blastTargets 已在爆炸结算前快照（含被本爆秒杀的载具），
+        // 结算后一律按距离衰减补发（客户端把直击与爆炸伤害短时间累积）。
+        if (!blastTargets.isEmpty()) {
+            for (AbstractVehicle v : blastTargets) {
                 double dist = v.position().distanceTo(pos);
                 if (dist > radius) {
                     continue;
@@ -3093,8 +3103,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     continue;
                 }
                 // 命中位置用爆炸中心 pos：客户端在“离车体一定距离”的爆炸中心渲染弹体/红圈/破片
-                sendHitIndicator(v, pos, boomDamage,
-                        explosion != null && explosion.explode ? explosion.radius : 0f);
+                sendHitIndicator(v, pos, boomDamage, explosion.radius);
             }
         }
     }

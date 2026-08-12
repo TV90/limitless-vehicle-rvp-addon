@@ -13,7 +13,7 @@ import org.ywzj.vehicle.vehicle.PhysicsEngine;
  */
 public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryIntegrator {
     public static final String ID = "rvp_current";
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
     /** 世界 Y 高度误差转换为垂直速度指令的比例增益。比例项（P项） */
     private static final double CRUISE_ALTITUDE_GAIN = 0.015;
     /** 当前垂直速度的阻尼系数，抑制巡航高度附近的振荡。阻尼项（D项） */
@@ -186,22 +186,6 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
             return velocity;
         }
         Vec3 launch = preset.launchPosition();
-        Vec3 ascentPos = presetAscentPos(launch, target, preset);
-        double cruiseY = launch.y + preset.cruiseAltitude();
-
-        // 上升段：未到达上升段终点且高度未达巡航高度；已越过终点水平投影后不再判定，
-        // 否则俯冲中高度低于巡航高度会被误判回上升段拉回高空（实体端 isPresetAscentPhase 同式）。
-        double radius = preset.ascentRadius();
-        boolean ascending = position.distanceToSqr(ascentPos) > radius * radius
-                && position.y < ascentPos.y - radius;
-        if (ascending) {
-            Vec3 route = new Vec3(ascentPos.x - launch.x, 0, ascentPos.z - launch.z);
-            Vec3 remaining = new Vec3(position.x - launch.x, 0, position.z - launch.z);
-            double routeSqr = route.lengthSqr();
-            if (routeSqr > 1.0E-8 && remaining.dot(route) >= routeSqr) {
-                ascending = false;
-            }
-        }
 
         // 俯冲段：水平距离进入俯冲距离或已越过目标（实体端 shouldBeginPresetDive 同式）。
         double turnRadius = resolveTurnRadius(speed, maxGs);
@@ -217,9 +201,6 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
             diving = remaining.dot(route) <= 0.0;
         }
 
-        if (ascending) {
-            return applySteering(velocity, ascentPos.subtract(position), maxGs);
-        }
         if (diving) {
             // 终端俯冲：未过顶时指向目标；已过顶或极度接近时锁定水平方向全力下压，
             // 禁止 pure pursuit 翻转掉头绕圈（实体端 steerPresetTerminal 同式）。
@@ -240,44 +221,60 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
             }
             return applySteering(velocity, desired, maxGs);
         }
-        // 巡航段：高度闭环 PD（实体端 steerPresetCruise 同式），水平分量补足单位速率。
-        Vec3 horizontal = new Vec3(target.x - position.x, 0, target.z - position.z);
-        double horizontalDistance = horizontal.length();
-        if (horizontalDistance <= 1.0E-8) {
-            return applySteering(velocity, new Vec3(target.x, cruiseY, target.z).subtract(position), maxGs);
+        // 弹道导弹抛物线弧制导（实体端 steerPresetBallisticArc 的 G 钳制版）：
+        // 弹道为对称抛物线，最高点（apogee）位于弹道水平中段，apogee 按射程自适应
+        // （min(配置巡航高度, 水平射程×0.35)），爬升/下降角保持平缓；追“目标方向前方
+        // lookAhead + 抛物线高度”的点，取代旧的“陡直线爬升 → 尖顶 → 高度闭环平飞”三段式。
+        Vec3 toTargetH = new Vec3(target.x - position.x, 0, target.z - position.z);
+        double hDist = toTargetH.length();
+        if (hDist > 1.0E-8) {
+            Vec3 forwardH = toTargetH.normalize();
+            double totalH = hDist;
+            double dtx = target.x - launch.x;
+            double dtz = target.z - launch.z;
+            double totalSqr = dtx * dtx + dtz * dtz;
+            if (totalSqr > 1.0E-8) {
+                totalH = Math.sqrt(totalSqr);
+            }
+            double p = Mth.clamp(1.0 - hDist / totalH, 0.0, 1.0);
+            double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.35);
+            // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：无硬切换跳变，
+            // 避免竖直发射后“压-拉-压”的蛇形振荡（实体端同式）
+            double base = Math.min(40.0, apogee * 0.3);
+            double targetY = launch.y + base + (apogee - base) * 4.0 * p * (1.0 - p);
+            double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
+            Vec3 targetPoint = new Vec3(
+                    position.x + forwardH.x * lookAhead,
+                    targetY,
+                    position.z + forwardH.z * lookAhead);
+            // 弹道中段战术机动（实体端同式）：水平横向正弦蛇形规避摆动，
+            // 仅中段（p 0.15~0.85）、两端渐入渐出，相位基于水平进度 p 保证虚拟/实体一致
+            double maneuverAmp = preset.tacticalManeuverAmplitude();
+            if (maneuverAmp > 0.0) {
+                double fadeIn = Mth.clamp((p - 0.15) / 0.05, 0.0, 1.0);
+                double fadeOut = Mth.clamp((0.85 - p) / 0.05, 0.0, 1.0);
+                double weight = fadeIn * fadeOut;
+                if (weight > 1.0E-4) {
+                    double phase = Math.PI * 2.0 * p * 5.0;
+                    Vec3 lateral = new Vec3(-forwardH.z, 0, forwardH.x);
+                    targetPoint = targetPoint.add(lateral.scale(maneuverAmp * Math.sin(phase) * weight));
+                }
+            }
+            return applySteering(velocity, targetPoint.subtract(position), maxGs);
         }
-        double altitudeError = cruiseY - position.y;
-        double verticalCommand = altitudeError * preset.cruiseAltitudeGain()
-                - velocity.y * preset.cruiseVerticalDamping();
-        double maxVertical = speed * preset.cruiseMaxVerticalComponent();
-        verticalCommand = Mth.clamp(verticalCommand, -maxVertical, maxVertical);
-        double verticalRatio = verticalCommand / speed;
-        double horizontalComponent = Math.sqrt(Math.max(0.0, 1.0 - verticalRatio * verticalRatio));
-        Vec3 desiredDir = horizontal.normalize().scale(horizontalComponent).add(0, verticalRatio, 0);
-        return applySteering(velocity, desiredDir, maxGs);
-    }
-
-    /** 上升段终点：水平前伸 {@code min(maxAscentLead, 25%×水平距离)}，高度 = 发射点Y + 巡航高度。 */
-    private static Vec3 presetAscentPos(Vec3 launch, Vec3 target, RVP_VirtualPresetGuidance preset) {
-        Vec3 horizontalToTarget = new Vec3(target.x - launch.x, 0, target.z - launch.z);
-        double horizontalDistance = horizontalToTarget.length();
-        Vec3 forward = horizontalDistance > 1.0E-6
-                ? horizontalToTarget.scale(1.0D / horizontalDistance)
-                : new Vec3(0, 0, 1);
-        double ascentLead = Math.min(preset.maxAscentLead(), horizontalDistance * 0.25);
-        double cruiseY = launch.y + preset.cruiseAltitude();
-        return new Vec3(launch.x + forward.x * ascentLead, cruiseY, launch.z + forward.z * ascentLead);
+        return applySteering(velocity, target.subtract(position), maxGs);
     }
 
     /**
      * 由 G 值钳制推导的最小转弯半径：{@code radius = speed² / (maxGs × G)}。
-     * 与实体端 turningFactor 一阶近似的 8～200 格范围保持一致。
+     * 与实体端 turningFactor 一阶近似的 8～80 格范围保持一致（上限同步收窄，
+     * 避免俯冲启动距离过大吃掉巡航段）。
      */
     private static double resolveTurnRadius(double speed, double maxGs) {
         if (!Double.isFinite(maxGs) || maxGs <= 0.0) return 8.0;
         double maxDeltaV = maxGs * PhysicsEngine.G;
         if (maxDeltaV >= 2.0 * speed) return 8.0;
-        return Mth.clamp(speed * speed / maxDeltaV, 8.0, 200.0);
+        return Mth.clamp(speed * speed / maxDeltaV, 8.0, 80.0);
     }
 
     /**

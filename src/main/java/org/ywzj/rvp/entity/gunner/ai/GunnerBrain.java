@@ -219,7 +219,7 @@ public final class GunnerBrain {
             weaponUnit.aim(aimPoint);
         }
 
-        int weaponIndex = selectWeaponIndex(weaponUnit, target);
+        int weaponIndex = selectWeaponIndex(weaponUnit, target, profile);
         if (weaponIndex < 0) {
             gunner.setControlledWeaponIndex(-1);
             return;
@@ -981,11 +981,28 @@ public final class GunnerBrain {
         return Math.max(1, (int) ((ms + 49L) / 50L));
     }
 
-    private static int selectWeaponIndex(WeaponUnit weaponUnit, Entity target) {
+    private static int selectWeaponIndex(WeaponUnit weaponUnit, Entity target, @Nullable GunnerProfile profile) {
         Vec3 weaponPos = weaponUnit.worldPivotPosition();
         double dist = weaponPos.distanceTo(target.getBoundingBox().getCenter());
         boolean targetIsAmmo = target instanceof AmmoEntity;
         boolean targetHighAlt = altitudeAgl(target) >= 200.0;
+
+        // GPS 武器优先：profile 启用 gps_prefer_farthest 时，索敌阶段已选中最远的 GPS 可打击目标，
+        // 这里优先选定 GPS 武器发射，避免被武器索引顺序中更靠前的其它可用武器抢占
+        if (profile != null && profile.isGpsPreferFarthest()) {
+            for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
+                AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
+                AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
+                if (proxyWeapon.hasAmmo()
+                        && !proxyWeapon.isCoolingDown()
+                        && !proxyWeapon.isReloading()
+                        && !isCountermeasureWeapon(proxyWeapon)
+                        && isGpsWeapon(proxyWeapon)
+                        && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
+                    return index;
+                }
+            }
+        }
 
         // CIWS拦截弹药：200米外优先导弹，200米内优先机炮
         // 攻击高空目标(≥200m)：优先导弹
@@ -1068,12 +1085,21 @@ public final class GunnerBrain {
         return path.contains("decoy_flare") || path.contains("smoke_grenade") || path.contains("aps_grenade");
     }
 
+    /** 判断是否为 GPS 制导武器（GPS 为远程点打击武器，gunner 优先发射）。 */
+    private static boolean isGpsWeapon(AbstractVehicleWeapon<?> weapon) {
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        RVP_WeaponData data = rvpWeapon.getData();
+        return data != null && data.isGpsMissile();
+    }
+
     /**
      * 供 RVP_GunnerDebugMonitor 使用，返回 selectWeaponIndex 的结果。
      * 仅在监控 dump 中指示是否有可用武器，不产生实际开火副作用。
      */
     static int findWeaponIndexForDump(WeaponUnit weaponUnit, Entity target) {
-        return selectWeaponIndex(weaponUnit, target);
+        return selectWeaponIndex(weaponUnit, target, null);
     }
 
     private static boolean isDriver(AbstractVehicle vehicle, GunnerEntity gunner) {

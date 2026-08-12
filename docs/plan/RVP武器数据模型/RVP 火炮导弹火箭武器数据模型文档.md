@@ -40,6 +40,23 @@
 
 TV、HITL_TV、HITL_CLOS_TV模式下定义了RVP_GuidanceDataHITL数据模型，继承自RVP_GuidanceData
 
+
+
+## RVP_InterferenceData
+
+| RVP_InterferenceData | 解释                                                         | 类型 | 默认值 |
+| -------------------- | ------------------------------------------------------------ | ---- | ------ |
+| SeekerJamLimit       | 导弹导引头视场内的极限干扰物数量，超过这个数量后导弹会脱锁并转向最近的干扰物 | int  | 16     |
+|                      |                                                              |      |        |
+
+
+
+
+
+
+
+
+
 ## RVP_GuidanceDataHITL
 
 | RVP_GuidanceDataHITL特有字段 | 解释 | 类型 | 默认值 |

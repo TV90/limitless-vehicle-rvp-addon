@@ -150,12 +150,13 @@ public final class RVP_GuidanceRuntimeMath {
         }
         float factor = resolveTurningFactor(context);
         Vec3 next;
-        if (isPresetAscentPhase(projectile.position(), ascentPos, launchPos, preset)) {
-            next = steerPursuit(current, ascentPos.subtract(projectile.position()), speed, factor);
-        } else if (shouldBeginPresetDive(projectile.position(), target, launchPos, current, preset, factor)) {
+        if (shouldBeginPresetDive(projectile.position(), target, launchPos, current, preset, factor)) {
             next = steerPresetTerminal(current, projectile.position(), target, speed, factor);
         } else {
-            next = steerPresetCruise(current, projectile.position(), target, overheadPos.y, speed, factor, preset);
+            // 弹道导弹抛物线制导：上升+中段合一。整条弹道是一条对称抛物线弧，
+            // 最高点（apogee）位于弹道水平中段，爬升/下降角按射程自适应保持平缓，
+            // 无陡直线爬升、尖顶与平飞段（弹道导弹形态而非巡航导弹形态）。
+            next = steerPresetBallisticArc(current, projectile.position(), target, launchPos, preset, speed, factor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
@@ -227,33 +228,6 @@ public final class RVP_GuidanceRuntimeMath {
         );
     }
 
-    /**
-     * 上升段判定：仅当导弹尚未越过上升段终点的水平投影且高度未达巡航高度时成立。
-     *
-     * <p>必须检查水平投影：否则导弹进入俯冲、高度低于巡航高度后会被误判回上升段，
-     * 制导会强制把它拉回高空（"突然拉起"）并与俯冲判据反复拉扯形成绕圈。</p>
-     */
-    private static boolean isPresetAscentPhase(
-            Vec3 position,
-            Vec3 ascentPos,
-            Vec3 launch,
-            RVP_PresetBallisticProfile preset
-    ) {
-        double radius = preset.ascentRadius();
-        if (position.y >= ascentPos.y - radius) {
-            return false;
-        }
-        if (launch != null) {
-            Vec3 route = new Vec3(ascentPos.x - launch.x, 0, ascentPos.z - launch.z);
-            Vec3 remaining = new Vec3(position.x - launch.x, 0, position.z - launch.z);
-            double routeSqr = route.lengthSqr();
-            if (routeSqr > 1.0E-8 && remaining.dot(route) >= routeSqr) {
-                return false;
-            }
-        }
-        return position.distanceToSqr(ascentPos) > radius * radius;
-    }
-
     /** 俯冲段判据（本体公式 + RVP 近似转弯半径）：水平距离 ≤ 俯冲距离，或已越过目标。 */
     static boolean shouldBeginPresetDive(
             Vec3 projectilePos,
@@ -286,44 +260,84 @@ public final class RVP_GuidanceRuntimeMath {
         return remaining.dot(route) <= 0.0;
     }
 
-    /** RVP 无 G 钳制转向，转弯半径用 {@code speed/turningFactor} 一阶近似并钳制范围。 */
+    /**
+     * RVP 无 G 钳制转向，转弯半径用 {@code speed/turningFactor} 一阶近似并钳制范围。
+     * <p>上限从 200 收窄到 80：turning_factor 是方向混合比例而非真实 G，speed/factor 在
+     * 高速（speed≥30、factor=0.15）时顶到 200，乘上 dive_lead_factor 后俯冲启动距离
+     * 高达 300+ 格，把巡航段整个吃掉（近距离发射"上升完直接俯冲"）。</p>
+     */
     private static double resolvePresetTurnRadius(double speed, float turningFactor) {
         double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
-        return Mth.clamp(speed / effectiveFactor, 8.0, 200.0);
+        return Mth.clamp(speed / effectiveFactor, 8.0, 80.0);
     }
 
     /**
-     * 巡航段高度闭环（本体 guidePresetCruise 的 RVP 适配）：
-     * 垂直分量 = 高度误差×P − vy×D，钳制 ±速率×上限；水平分量 = √(1−(垂直分量/速率)²)。
-     * RVP 重力为配置值且推力沿速度方向，本体公式中的 {@code G/推力} 补偿项无等价含义，故省略。
+     * 弹道导弹抛物线制导（上升+中段合一）：追“目标方向前方 lookAhead + 抛物线高度”的点。
+     *
+     * <p>弹道为对称抛物线：高度 = {@code launch.y + max(8, apogee×4p(1-p))}，p 为水平进度
+     * （0 发射点 → 1 目标），最高点（apogee）在弹道水平中段。apogee 自适应为
+     * {@code min(配置巡航高度, 水平射程×0.35)}，保证任意射程下爬升/下降角约 35°，
+     * 短射程不会因配置的巡航高度过高而形成 60°+ 陡尖弧。取代旧的“追 ascentPos 陡直线
+     * 爬升 → 尖顶 → 高度闭环平飞”巡航式三段制导。</p>
      */
-    static Vec3 steerPresetCruise(
+    static Vec3 steerPresetBallisticArc(
             Vec3 current,
             Vec3 position,
             Vec3 target,
-            double cruiseY,
+            Vec3 launch,
+            RVP_PresetBallisticProfile preset,
             double speed,
-            float turningFactor,
-            RVP_PresetBallisticProfile preset
+            float turningFactor
     ) {
         if (target == null || preset == null) {
             return steerPursuit(current, target == null ? Vec3.ZERO : target, speed, turningFactor);
         }
-        Vec3 horizontal = new Vec3(target.x - position.x, 0, target.z - position.z);
-        double horizontalDistance = horizontal.length();
-        if (horizontalDistance <= 1.0E-8) {
-            return steerPursuit(current, new Vec3(target.x, cruiseY, target.z).subtract(position), speed, turningFactor);
+        Vec3 toTargetH = new Vec3(target.x - position.x, 0, target.z - position.z);
+        double hDist = toTargetH.length();
+        if (hDist <= 1.0E-8) {
+            return steerPursuit(current, target.subtract(position), speed, turningFactor);
         }
-        double altitudeError = cruiseY - position.y;
-        double verticalCommand = altitudeError * preset.cruiseAltitudeGain()
-                - current.y * preset.cruiseVerticalDamping();
-        double maxVertical = speed * preset.cruiseMaxVerticalComponent();
-        verticalCommand = Mth.clamp(verticalCommand, -maxVertical, maxVertical);
-        double verticalRatio = verticalCommand / speed;
-        double horizontalComponent = Math.sqrt(Math.max(0.0, 1.0 - verticalRatio * verticalRatio));
-        Vec3 desiredDir = horizontal.normalize().scale(horizontalComponent)
-                .add(0, verticalRatio, 0);
-        return blendDirection(current, desiredDir.normalize().scale(speed), speed, turningFactor);
+        Vec3 forwardH = toTargetH.scale(1.0 / hDist);
+        double totalH = hDist;
+        if (launch != null) {
+            double dx = target.x - launch.x;
+            double dz = target.z - launch.z;
+            double totalSqr = dx * dx + dz * dz;
+            if (totalSqr > 1.0E-8) {
+                totalH = Math.sqrt(totalSqr);
+            }
+        }
+        double p = Mth.clamp(1.0 - hDist / totalH, 0.0, 1.0);
+        // 自适应弹道顶点：过高 apogee 在短射程下会形成陡尖弧（60°+ 爬升）
+        double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.35);
+        // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：全程单调平滑、无
+        // 硬切换，竖直发射后追点自然略高于自身平滑转上爬，不会“压-拉-压”的蛇形振荡
+        double base = Math.min(40.0, apogee * 0.3);
+        double targetY = launch == null ? position.y + 8.0
+                : launch.y + base + (apogee - base) * 4.0 * p * (1.0 - p);
+        // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
+        double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
+        Vec3 targetPoint = new Vec3(
+                position.x + forwardH.x * lookAhead,
+                targetY,
+                position.z + forwardH.z * lookAhead);
+        // 弹道中段战术机动：水平横向正弦蛇形规避摆动（如 Iskander 末端规避）。
+        // 仅中段（p 0.15~0.85）生效、两端渐入渐出，相位基于水平进度 p（与虚拟端一致），
+        // 不影响发射初期与俯冲末段，横向偏移 ≤ 幅度，不导致脱靶。
+        float maneuverAmp = preset.tacticalManeuverAmplitude();
+        if (maneuverAmp > 0f) {
+            double fadeIn = Mth.clamp((p - 0.15) / 0.05, 0.0, 1.0);
+            double fadeOut = Mth.clamp((0.85 - p) / 0.05, 0.0, 1.0);
+            double weight = fadeIn * fadeOut;
+            if (weight > 1.0E-4) {
+                double phase = Math.PI * 2.0 * p * 5.0; // 每 0.2 进度一个完整周期
+                // 目标方向水平法向（发射→目标连线垂直方向），左右交替
+                Vec3 lateral = new Vec3(-forwardH.z, 0, forwardH.x);
+                double offset = maneuverAmp * Math.sin(phase) * weight;
+                targetPoint = targetPoint.add(lateral.scale(offset));
+            }
+        }
+        return steerPursuit(current, targetPoint.subtract(position), speed, turningFactor);
     }
 
     static Vec3 resolveTopAttackAimPoint(

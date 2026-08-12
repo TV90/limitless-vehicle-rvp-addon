@@ -35,8 +35,11 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileManager;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.network.Channel;
+import org.ywzj.vehicle.network.message.ServerVehicleWarn;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import java.util.function.Function;
 
 /**
@@ -174,6 +177,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         RVP_EnumGuidanceType activeType = resolveNewActiveSeekerType();
         if (activeType == RVP_EnumGuidanceType.ARH || activeType == RVP_EnumGuidanceType.AIR) {
             tickActiveSeekerTargetManagement(activeType);
+            // 主动导引头开机/锁定时向目标播报本体 RWR 告警（对标本体 MissileEntity.tickTrack）
+            tickRwrMissileLaunchWarn(activeType);
         }
 
         super.tickGuidance();
@@ -245,6 +250,36 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             if (activeRadarLostTargetTick >= 60) {
                 life = 0;
             }
+        }
+    }
+
+    /**
+     * 主动雷达(ARH)/主动红外(AIR)导弹弹载导引头开机并锁定目标时，向目标播报本体 RWR 的
+     * MISSILE_LAUNCH 告警（"MSL"）。对标本体 {@code MissileEntity.tickTrack()} 每 2 tick
+     * 发送一次，保证目标 WarningReceiver 500ms 告警窗口不中断，RWR 显示"导弹来袭"。
+     *
+     * @param activeType 当前已解析的主动导引头类型（ARH/AIR）
+     */
+    private void tickRwrMissileLaunchWarn(RVP_EnumGuidanceType activeType) {
+        // 只从服务端发告警；告警目标过滤（必须是本地驾驶的载具、俯仰角 ≤45°）由本体
+        // WarningReceiver.handle 客户端处理。
+        if (level().isClientSide()) {
+            return;
+        }
+        // 防御性校验：仅主动雷达/主动红外导引头类型才播报告警（调用点已过滤，此处兜底）。
+        if (activeType != RVP_EnumGuidanceType.ARH && activeType != RVP_EnumGuidanceType.AIR) {
+            return;
+        }
+        // 仅导引头开机且有存活目标时才告警（对标本体 radar=true 分支）。
+        if (!activeRadarOn || targetEntity == null || !targetEntity.isAlive()) {
+            return;
+        }
+        // 对标本体 MissileEntity.java:400：每 2 tick 广播一次 MISSILE_LAUNCH 给跟踪目标的玩家。
+        if (tickCount % 2 == 0) {
+            ServerVehicleWarn packet = new ServerVehicleWarn(
+                    this.getId(), targetEntity.getId(), WarnType.MISSILE_LAUNCH, "MSL");
+            // 调用本体网络通道，向所有跟踪目标实体的玩家广播告警包。
+            Channel.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> targetEntity), packet);
         }
     }
 

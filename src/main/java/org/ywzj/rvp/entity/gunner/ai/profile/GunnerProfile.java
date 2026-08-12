@@ -21,6 +21,10 @@ public class GunnerProfile {
     @SerializedName("target_types")
     private List<String> targetTypes = new ArrayList<>(List.of("rvp:missile", "vehicle", "monster", "player"));
 
+    /** 是否优先使用 GPS 武器打击索敌范围内最远的目标（GPS 为远程点打击武器）。 */
+    @SerializedName("gps_prefer_farthest")
+    private boolean gpsPreferFarthest = true;
+
     @SerializedName("search_radius")
     private double searchRadius = 96.0;
 
@@ -179,6 +183,10 @@ public class GunnerProfile {
 
     public List<String> getTargetTypes() {
         return targetTypes;
+    }
+
+    public boolean isGpsPreferFarthest() {
+        return gpsPreferFarthest;
     }
 
     public double getSearchRadius() {

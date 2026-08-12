@@ -17,6 +17,7 @@ import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
  * @param cruiseAltitudeGain 高度闭环 P 增益
  * @param cruiseVerticalDamping 高度闭环 D 阻尼
  * @param cruiseMaxVerticalComponent 垂直分量占速率比例上限
+ * @param tacticalManeuverAmplitude 弹道中段战术机动（横向蛇形规避摆动）幅度，格；0 = 关闭
  */
 public record RVP_PresetBallisticProfile(
         float cruiseAltitude,
@@ -27,7 +28,8 @@ public record RVP_PresetBallisticProfile(
         float diveLeadFactor,
         float cruiseAltitudeGain,
         float cruiseVerticalDamping,
-        float cruiseMaxVerticalComponent
+        float cruiseMaxVerticalComponent,
+        float tacticalManeuverAmplitude
 ) {
 
     /** @return 是否启用弹道导弹三段式弹道。 */
@@ -37,7 +39,7 @@ public record RVP_PresetBallisticProfile(
 
     /** @return 未激活的默认剖面（不启用弹道导弹）。 */
     public static RVP_PresetBallisticProfile inactive() {
-        return new RVP_PresetBallisticProfile(0f, 64f, 24f, 24f, 0.75f, 1.5f, 0.002f, 0.05f, 0.5f);
+        return new RVP_PresetBallisticProfile(0f, 64f, 24f, 24f, 0.75f, 1.5f, 0.002f, 0.05f, 0.5f, 0f);
     }
 
     /** 从 {@code guidance_data} 平铺配置构造；空数据使用未激活默认剖面。 */
@@ -54,7 +56,8 @@ public record RVP_PresetBallisticProfile(
                 data.getPresetDiveLeadFactor(),
                 data.getPresetCruiseAltitudeGain(),
                 data.getPresetCruiseVerticalDamping(),
-                data.getPresetCruiseMaxVerticalComponent()
+                data.getPresetCruiseMaxVerticalComponent(),
+                data.getPresetTacticalManeuverAmplitude()
         );
     }
 }

@@ -50,6 +50,34 @@ public final class GunnerWeaponSuitability {
         return false;
     }
 
+    /**
+     * 判断武器组内是否有可用的 GPS 武器能打击目标。
+     * 供索敌阶段使用：启用 gps_prefer_farthest 时 gunner 优先用 GPS 导弹打击最远目标。
+     *
+     * @param rootUnit 载具武器组（内部会取代理武器）
+     * @param target   候选目标
+     * @return 存在有弹药、非冷却/装填、且能打击该目标的 GPS 武器时为 true
+     */
+    public static boolean hasUsableGpsWeaponForTarget(WeaponUnit rootUnit, Entity target) {
+        for (AbstractVehicleWeapon<?> weapon : rootUnit.getIndexedWeapons()) {
+            AbstractVehicleWeapon<?> proxyWeapon = rootUnit.proxyWeapon(weapon);
+            if (proxyWeapon == null || proxyWeapon.getData() == null || proxyWeapon.getData().getWeaponId() == null) {
+                continue;
+            }
+            // 可用性：有弹药且不在冷却/装填中
+            if (!proxyWeapon.hasAmmo() || proxyWeapon.isCoolingDown() || proxyWeapon.isReloading()) {
+                continue;
+            }
+            if (proxyWeapon instanceof RVP_WeaponBase rvpWeapon
+                    && rvpWeapon.getData() != null
+                    && rvpWeapon.getData().isGpsMissile()
+                    && canSelectForTarget(rootUnit, weapon, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean canSelectForTarget(WeaponUnit rootUnit, AbstractVehicleWeapon<?> rawWeapon, Entity target) {
         AbstractVehicleWeapon<?> weapon = rootUnit.proxyWeapon(rawWeapon);
         if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
