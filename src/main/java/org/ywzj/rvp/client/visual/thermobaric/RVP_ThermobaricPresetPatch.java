@@ -20,12 +20,15 @@ public final class RVP_ThermobaricPresetPatch {
             "show_core", "show_pressure_wave", "show_condensation_cloud",
             "show_condensation_cloud_particles", "condensation_cloud_particle_max_count",
             "condensation_cloud_particle_scale",
+            "condensation_cloud_particle_spawn_thickness_factor",
+            "condensation_cloud_cut_speed_factor", "thermobaric_lod",
             "show_dust_ring", "show_cloud",
             "max_clouds", "max_fireball_clouds", "max_dust_segments",
             "dust_ground_radial_samples",
             "pressure_rings", "pressure_segments",
             "core_start_tick", "core_full_tick", "core_fade_duration_ticks",
-            "pressure_wave_start_tick", "pressure_wave_full_tick", "pressure_wave_fade_duration_ticks",
+            "pressure_wave_start_tick", "pressure_wave_full_tick",
+            "pressure_wave_fade_speed_factor",
             "dust_ring_start_tick", "dust_ring_full_tick",
             "cloud_start_tick", "cloud_full_tick", "cloud_fade_duration_ticks",
             "cloud_color_change_start_tick", "cloud_color_change_end_tick",
@@ -53,6 +56,12 @@ public final class RVP_ThermobaricPresetPatch {
     private final Integer condensationCloudParticleMaxCount;
     /** 粒子凝结云贴图尺寸缩放倍率覆盖。 */
     private final Float condensationCloudParticleScale;
+    /** 粒子凝结云在 start tick 的墙体厚度倍率覆盖；非负有限值，full tick 后不再影响厚度。 */
+    private final Float condensationCloudParticleSpawnThicknessFactor;
+    /** 凝结云完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率覆盖；非负有限值，0 关闭裁切。 */
+    private final Float condensationCloudCutSpeedFactor;
+    /** 火球、粒子凝结云、尘环和后燃烟云共用的嵌套四档 LOD 覆盖。 */
+    private final ThermobaricLodPatch thermobaricLod;
     /** 贴地尘环显示开关覆盖。 */
     private final Boolean showDustRing;
     /** 后燃烟云显示开关覆盖。 */
@@ -79,8 +88,8 @@ public final class RVP_ThermobaricPresetPatch {
     private final Integer pressureWaveStartTick;
     /** 压力波到达最大半径 tick 覆盖。 */
     private final Integer pressureWaveFullTick;
-    /** 压力波到达最大半径后消失持续 tick 覆盖。 */
-    private final Integer pressureWaveFadeDurationTicks;
+    /** 压力波与两种凝结云在派生阶段的线性淡出速度倍率覆盖；非负有限值，0 关闭线性淡出。 */
+    private final Float pressureWaveFadeSpeedFactor;
     /** 尘环开始 tick 覆盖。 */
     private final Integer dustRingStartTick;
     /** 尘环到达最大半径 tick 覆盖。 */
@@ -126,6 +135,11 @@ public final class RVP_ThermobaricPresetPatch {
                 "condensation_cloud_particle_max_count");
         condensationCloudParticleScale = readFloat(object,
                 "condensation_cloud_particle_scale");
+        condensationCloudParticleSpawnThicknessFactor = readFloat(object,
+                "condensation_cloud_particle_spawn_thickness_factor");
+        condensationCloudCutSpeedFactor = readFloat(object,
+                "condensation_cloud_cut_speed_factor");
+        thermobaricLod = ThermobaricLodPatch.read(object);
         showDustRing = readBoolean(object, "show_dust_ring");
         showCloud = readBoolean(object, "show_cloud");
         maxClouds = readInteger(object, "max_clouds");
@@ -139,7 +153,7 @@ public final class RVP_ThermobaricPresetPatch {
         coreFadeDurationTicks = readInteger(object, "core_fade_duration_ticks");
         pressureWaveStartTick = readInteger(object, "pressure_wave_start_tick");
         pressureWaveFullTick = readInteger(object, "pressure_wave_full_tick");
-        pressureWaveFadeDurationTicks = readInteger(object, "pressure_wave_fade_duration_ticks");
+        pressureWaveFadeSpeedFactor = readFloat(object, "pressure_wave_fade_speed_factor");
         dustRingStartTick = readInteger(object, "dust_ring_start_tick");
         dustRingFullTick = readInteger(object, "dust_ring_full_tick");
         cloudStartTick = readInteger(object, "cloud_start_tick");
@@ -197,6 +211,11 @@ public final class RVP_ThermobaricPresetPatch {
                 value(condensationCloudParticleMaxCount,
                         base.condensationCloudParticleMaxCount()),
                 value(condensationCloudParticleScale, base.condensationCloudParticleScale()),
+                value(condensationCloudParticleSpawnThicknessFactor,
+                        base.condensationCloudParticleSpawnThicknessFactor()),
+                value(condensationCloudCutSpeedFactor, base.condensationCloudCutSpeedFactor()),
+                thermobaricLod == null ? base.thermobaricLod()
+                        : thermobaricLod.apply(base.thermobaricLod()),
                 value(showDustRing, base.showDustRing()),
                 value(showCloud, base.showCloud()),
                 value(maxClouds, base.maxClouds()),
@@ -210,7 +229,7 @@ public final class RVP_ThermobaricPresetPatch {
                 value(coreFadeDurationTicks, base.coreFadeDurationTicks()),
                 mergedPressureStartTick,
                 Math.max(mergedPressureStartTick, value(pressureWaveFullTick, base.pressureWaveFullTick())),
-                value(pressureWaveFadeDurationTicks, base.pressureWaveFadeDurationTicks()),
+                value(pressureWaveFadeSpeedFactor, base.pressureWaveFadeSpeedFactor()),
                 mergedDustStartTick,
                 Math.max(mergedDustStartTick, value(dustRingFullTick, base.dustRingFullTick())),
                 mergedCloudStartTick,
@@ -228,6 +247,114 @@ public final class RVP_ThermobaricPresetPatch {
                 value(nearSound, base.nearSound()),
                 value(farSound, base.farSound()),
                 value(tailSound, base.tailSound()));
+    }
+
+    /** {@code thermobaric_lod} 的类型化稀疏覆盖；各档缺失时继续继承基础预设。 */
+    private static final class ThermobaricLodPatch {
+        /** 合法的四档名称。 */
+        private static final Set<String> KNOWN_TIERS = Set.of(
+                "near", "medium", "far", "beyond");
+        /** 有上界档位允许的字段。 */
+        private static final Set<String> BOUNDED_TIER_FIELDS = Set.of(
+                "max_distance", "particle_ratio");
+        /** 无上界档位只允许配置粒子比例。 */
+        private static final Set<String> BEYOND_TIER_FIELDS = Set.of("particle_ratio");
+
+        /** 近距离档稀疏覆盖。 */
+        private final LodTierPatch near;
+        /** 中距离档稀疏覆盖。 */
+        private final LodTierPatch medium;
+        /** 远距离档稀疏覆盖。 */
+        private final LodTierPatch far;
+        /** 超远距离档稀疏覆盖。 */
+        private final LodTierPatch beyond;
+
+        private ThermobaricLodPatch(JsonObject object) {
+            near = LodTierPatch.read(object, "near", true);
+            medium = LodTierPatch.read(object, "medium", true);
+            far = LodTierPatch.read(object, "far", true);
+            beyond = LodTierPatch.read(object, "beyond", false);
+            for (String field : object.keySet()) {
+                if (!KNOWN_TIERS.contains(field)) {
+                    String path = "thermobaric_lod." + field;
+                    warnOnce(path, "温压视觉字段 {} 未知，已忽略", path);
+                }
+            }
+        }
+
+        /** 从预设根对象读取可选的 {@code thermobaric_lod} 对象。 */
+        private static ThermobaricLodPatch read(JsonObject root) {
+            JsonElement element = root.get("thermobaric_lod");
+            if (element == null) {
+                return null;
+            }
+            if (!element.isJsonObject()) {
+                warnOnce("thermobaric_lod", "温压视觉字段 {} 类型错误，已回退",
+                        "thermobaric_lod");
+                return null;
+            }
+            return new ThermobaricLodPatch(element.getAsJsonObject());
+        }
+
+        /** 把嵌套稀疏覆盖逐子字段合并到基础 LOD，并由不可变类型统一规范化档位顺序。 */
+        private RVP_ThermobaricLod apply(RVP_ThermobaricLod base) {
+            return new RVP_ThermobaricLod(
+                    tierDistance(near, base.nearMaxDistance()),
+                    tierRatio(near, base.nearParticleRatio()),
+                    tierDistance(medium, base.mediumMaxDistance()),
+                    tierRatio(medium, base.mediumParticleRatio()),
+                    tierDistance(far, base.farMaxDistance()),
+                    tierRatio(far, base.farParticleRatio()),
+                    tierRatio(beyond, base.beyondParticleRatio()));
+        }
+
+        /** 返回档位覆盖距离；档位或字段缺失时继承基础值。 */
+        private static float tierDistance(LodTierPatch tier, float fallback) {
+            return tier == null || tier.maxDistance == null ? fallback : tier.maxDistance;
+        }
+
+        /** 返回档位覆盖比例；档位或字段缺失时继承基础值。 */
+        private static float tierRatio(LodTierPatch tier, float fallback) {
+            return tier == null || tier.particleRatio == null ? fallback : tier.particleRatio;
+        }
+
+        /** 单个 LOD 档位的可空子字段。 */
+        private static final class LodTierPatch {
+            /** 该档最大距离覆盖；超远档恒为 {@code null}。 */
+            private final Float maxDistance;
+            /** 该档粒子保留比例覆盖。 */
+            private final Float particleRatio;
+
+            private LodTierPatch(JsonObject object, String tierName, boolean bounded) {
+                String path = "thermobaric_lod." + tierName;
+                maxDistance = bounded
+                        ? readFloat(object, "max_distance", path + ".max_distance") : null;
+                particleRatio = readRatio(object, "particle_ratio",
+                        path + ".particle_ratio");
+                Set<String> knownFields = bounded ? BOUNDED_TIER_FIELDS : BEYOND_TIER_FIELDS;
+                for (String field : object.keySet()) {
+                    if (!knownFields.contains(field)) {
+                        String unknownPath = path + "." + field;
+                        warnOnce(unknownPath, "温压视觉字段 {} 未知，已忽略", unknownPath);
+                    }
+                }
+            }
+
+            /** 读取一个可选档位对象；错误档位只回退自身，不影响其它档位。 */
+            private static LodTierPatch read(JsonObject lodObject, String tierName,
+                    boolean bounded) {
+                JsonElement element = lodObject.get(tierName);
+                if (element == null) {
+                    return null;
+                }
+                String path = "thermobaric_lod." + tierName;
+                if (!element.isJsonObject()) {
+                    warnOnce(path, "温压视觉字段 {} 类型错误，已回退", path);
+                    return null;
+                }
+                return new LodTierPatch(element.getAsJsonObject(), tierName, bounded);
+            }
+        }
     }
 
     private static Integer readColor(JsonObject object, String field) {
@@ -262,6 +389,11 @@ public final class RVP_ThermobaricPresetPatch {
     }
 
     private static Float readFloat(JsonObject object, String field) {
+        return readFloat(object, field, field);
+    }
+
+    /** 读取非负有限浮点数，并允许嵌套字段使用完整路径作为独立警告键。 */
+    private static Float readFloat(JsonObject object, String field, String warningKey) {
         JsonElement element = object.get(field);
         if (element == null) {
             return null;
@@ -274,9 +406,22 @@ public final class RVP_ThermobaricPresetPatch {
             }
             return value;
         } catch (RuntimeException exception) {
-            warnOnce(field, "温压视觉字段 {} 类型错误或越界，已回退", field);
+            warnOnce(warningKey, "温压视觉字段 {} 类型错误或越界，已回退", warningKey);
             return null;
         }
+    }
+
+    /** 读取范围为 {@code 0..1} 的粒子保留比例。 */
+    private static Float readRatio(JsonObject object, String field, String warningKey) {
+        Float value = readFloat(object, field, warningKey);
+        if (value == null) {
+            return null;
+        }
+        if (value > 1.0F) {
+            warnOnce(warningKey, "温压视觉字段 {} 超出 0..1，已回退", warningKey);
+            return null;
+        }
+        return value;
     }
 
     private static Boolean readBoolean(JsonObject object, String field) {

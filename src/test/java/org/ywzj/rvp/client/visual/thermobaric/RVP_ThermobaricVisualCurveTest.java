@@ -101,6 +101,104 @@ class RVP_ThermobaricVisualCurveTest {
     }
 
     @Test
+    void pressureWaveKeepsSameRadialSpeedAcrossFullTick() {
+        float earlyStep = RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(18.0F, 10, 30)
+                - RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(17.0F, 10, 30);
+        float beforeFullStep = RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(30.0F, 10, 30)
+                - RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(29.0F, 10, 30);
+        float afterFullStep = RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(31.0F, 10, 30)
+                - RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(30.0F, 10, 30);
+        float lateStep = RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(49.0F, 10, 30)
+                - RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(48.0F, 10, 30);
+
+        assertEquals(earlyStep, beforeFullStep, 1.0E-6F);
+        assertEquals(earlyStep, afterFullStep, 1.0E-6F);
+        assertEquals(earlyStep, lateStep, 1.0E-6F);
+        assertEquals(1.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(30.0F, 10, 30));
+        assertEquals(2.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(50.0F, 10, 30));
+        assertEquals(0.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(40.0F, 40, 40));
+    }
+
+    @Test
+    void condensationParticleSpawnThicknessConvergesToOriginalFullThickness() {
+        float visualRadius = 10.0F;
+
+        assertEquals(12.5F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 0.0F, 1.0F), 1.0E-6F);
+        assertEquals(25.0F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 0.0F, 2.0F), 1.0E-6F);
+        assertEquals(0.0F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 0.0F, 0.0F), 1.0E-6F);
+        assertEquals(1.2F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 1.0F, 0.0F), 1.0E-6F);
+        assertEquals(1.2F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 1.0F, 1.0F), 1.0E-6F);
+        assertEquals(1.2F,
+                RVP_ThermobaricRenderer.resolveCondensationParticleWallThickness(
+                        visualRadius, 2.0F, 8.0F), 1.0E-6F);
+    }
+
+    @Test
+    void pressureWaveFadeSpeedFactorControlsLinearFade() {
+        assertEquals(1.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        40.0F, 30.0F, 50.0F, 0.0F));
+        assertEquals(1.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        50.0F, 30.0F, 50.0F, 0.0F));
+        assertEquals(0.5F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        40.0F, 30.0F, 50.0F, 1.0F));
+        assertEquals(0.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        40.0F, 30.0F, 50.0F, 2.0F));
+        assertEquals(0.0F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        50.0F, 30.0F, 50.0F, 1.0F));
+        assertEquals(0.75F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        40.0F, 30.0F, 50.0F, 0.5F));
+    }
+
+    @Test
+    void condensationCutSpeedOnlyScalesCutProgress() {
+        assertEquals(0.0F,
+                RVP_ThermobaricRenderer.resolveCondensationCutProgress(40.0F, 30.0F, 50.0F, 0.0F));
+        assertEquals(0.25F,
+                RVP_ThermobaricRenderer.resolveCondensationCutProgress(40.0F, 30.0F, 50.0F, 0.5F));
+        assertEquals(0.5F,
+                RVP_ThermobaricRenderer.resolveCondensationCutProgress(40.0F, 30.0F, 50.0F, 1.0F));
+        assertEquals(1.0F,
+                RVP_ThermobaricRenderer.resolveCondensationCutProgress(40.0F, 30.0F, 50.0F, 2.0F));
+        assertEquals(1.5F,
+                RVP_ThermobaricRenderer.resolvePressureWaveRadialProgress(40.0F, 10, 30));
+        assertEquals(0.5F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        40.0F, 30.0F, 50.0F, 1.0F));
+    }
+
+    @Test
+    void earlyEffectEndDoesNotRescalePressureCurves() {
+        float age = 35.0F;
+        float naturalEndTick = 50.0F;
+
+        assertEquals(0.75F,
+                RVP_ThermobaricRenderer.resolvePressureWaveFadeAlpha(
+                        age, 30.0F, naturalEndTick, 1.0F));
+        assertEquals(0.25F,
+                RVP_ThermobaricRenderer.resolveCondensationCutProgress(
+                        age, 30.0F, naturalEndTick, 1.0F));
+    }
+
+    @Test
     void dustRingStartsFadingAtFullTickAndHonorsEarlyEffectEnd() {
         assertEquals(1.0F, RVP_ThermobaricRenderer.resolveDustFadeAlpha(36.0F, 36.0F, 69.0F));
         assertTrue(RVP_ThermobaricRenderer.resolveDustFadeAlpha(37.0F, 36.0F, 69.0F) < 1.0F);

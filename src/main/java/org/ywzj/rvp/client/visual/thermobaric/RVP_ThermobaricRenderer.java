@@ -58,6 +58,9 @@ public final class RVP_ThermobaricRenderer {
         }
         Camera camera = event.getCamera();
         Vec3 cameraPosition = camera.getPosition();
+        // 调用温压预设的类型化 LOD，以爆心到相机距离一次性解析本实例当前帧的粒子保留比例。
+        float particleRatio = effect.preset().thermobaricLod().resolveParticleRatio(
+                effect.center().distanceToSqr(cameraPosition));
         PoseStack modelView = RenderSystem.getModelViewStack();
         modelView.pushPose();
         modelView.setIdentity();
@@ -76,7 +79,7 @@ public final class RVP_ThermobaricRenderer {
                 GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         if (effect.preset().showCondensationCloud()
                 || effect.preset().showCondensationCloudParticles()) {
-            renderCondensationCloud(effect, visualAge, cameraPosition);
+            renderCondensationCloud(effect, visualAge, cameraPosition, particleRatio);
         }
 
         // 压力波、尘环和烟云使用标准透明混合，保持与世界几何的深度关系。
@@ -84,16 +87,16 @@ public final class RVP_ThermobaricRenderer {
             renderPressureWave(effect, visualAge, cameraPosition);
         }
         if (effect.preset().showDustRing()) {
-            renderDustRing(effect, visualAge, cameraPosition);
+            renderDustRing(effect, visualAge, cameraPosition, particleRatio);
         }
         if (effect.preset().showCloud()) {
-            renderClouds(effect, visualAge, cameraPosition);
+            renderClouds(effect, visualAge, cameraPosition, particleRatio);
         }
 
         // 主火球使用加色混合，让多团火焰云共同形成短时白橙色高亮核心。
         RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
         if (effect.preset().showCore()) {
-            renderFireball(effect, visualAge, cameraPosition);
+            renderFireball(effect, visualAge, cameraPosition, particleRatio);
         }
 
         RenderSystem.defaultBlendFunc();
@@ -104,11 +107,18 @@ public final class RVP_ThermobaricRenderer {
         RenderSystem.applyModelViewMatrix();
     }
 
-    private static void renderFireball(RVP_ThermobaricEffectInstance effect, float age, Vec3 camera) {
+    private static void renderFireball(RVP_ThermobaricEffectInstance effect, float age,
+            Vec3 camera, float particleRatio) {
         StageWindow window = resolveStageWindow(
                 effect.preset().coreStartTick(), effect.preset().coreFullTick(),
                 effect.preset().coreFadeDurationTicks(), effect.duration());
         if (!window.contains(age)) {
+            return;
+        }
+        int fireballCloudCount = RVP_ThermobaricParticleLod.resolveRenderCount(
+                effect.fireballClouds().size(), particleRatio);
+        int coreLayerCount = RVP_ThermobaricParticleLod.resolveCoreLayerCount(particleRatio);
+        if (fireballCloudCount <= 0 && coreLayerCount <= 0) {
             return;
         }
         float formationProgress = window.formationProgress(age);
@@ -123,7 +133,10 @@ public final class RVP_ThermobaricRenderer {
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
 
-        for (RVP_ThermobaricEffectInstance.FireballCloud cloud : effect.fireballClouds()) {
+        for (int cloudIndex = 0; cloudIndex < fireballCloudCount; cloudIndex++) {
+            // 使用事件种子生成列表的稳定前缀，切换 LOD 时只增减确定的火球云团。
+            RVP_ThermobaricEffectInstance.FireballCloud cloud =
+                    effect.fireballClouds().get(cloudIndex);
             float cloudStart = window.startTick()
                     + cloud.phase() * window.formationDuration() * 0.38F;
             if (age < cloudStart) {
@@ -156,12 +169,18 @@ public final class RVP_ThermobaricRenderer {
         float centerZ = (float) (center.z - camera.z);
         float coreRadius = effect.visualRadius() * (0.28F + expansion * 0.86F)
                 * (1.0F - fadeProgress * 0.08F);
-        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius, 0.0F,
-                fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F), alpha * 0.72F);
-        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.62F, 0.7F,
-                fadeToGray(effect.preset().coreColor(), fadeProgress, 0.55F), alpha);
-        writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.28F, 1.4F,
-                fadeToGray(0xFFF5DC, fadeProgress, 0.15F), alpha);
+        if (coreLayerCount >= 1) {
+            writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius, 0.0F,
+                    fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F), alpha * 0.72F);
+        }
+        if (coreLayerCount >= 2) {
+            writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.62F, 0.7F,
+                    fadeToGray(effect.preset().coreColor(), fadeProgress, 0.55F), alpha);
+        }
+        if (coreLayerCount >= 3) {
+            writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.28F, 1.4F,
+                    fadeToGray(0xFFF5DC, fadeProgress, 0.15F), alpha);
+        }
         BufferUploader.drawWithShader(builder.end());
     }
 
@@ -169,12 +188,15 @@ public final class RVP_ThermobaricRenderer {
                                            float age, Vec3 camera) {
         StageWindow window = resolveStageWindow(effect.preset().pressureWaveStartTick(),
                 effect.preset().pressureWaveFullTick(),
-                effect.preset().pressureWaveFadeDurationTicks(), effect.duration());
+                effect.preset().pressureWaveEndTick()
+                        - effect.preset().pressureWaveFullTick(), effect.duration());
         if (!window.contains(age)) return;
 
         float formationProgress = window.formationProgress(age);
         float fadeProgress = window.fadeProgress(age);
-        float fadeAlpha = window.fadeAlpha(age);
+        float fadeAlpha = resolvePressureWaveFadeAlpha(age, window.fullTick(),
+                effect.preset().pressureWaveEndTick(),
+                effect.preset().pressureWaveFadeSpeedFactor());
         float radius = effect.visualRadius() * effect.preset().pressureRadiusFactor()
                 * (easeOutCubic(formationProgress)
                 + effect.pressureWaveFadeSpread() * fadeProgress);
@@ -192,7 +214,7 @@ public final class RVP_ThermobaricRenderer {
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
 
-        // 光学压力波在 full_tick 后继续随机幅度地向外扩张，并按 fade_duration_ticks 线性变淡。
+        // 光学压力波在 full_tick 后继续随机幅度地向外扩张，并按预设倍率决定是否线性变淡。
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
         writeSphere(builder, cx, cy, cz, radius, 0xFFF8EA, fadeAlpha * 0.08F,
@@ -202,24 +224,36 @@ public final class RVP_ThermobaricRenderer {
 
     /**
      * 绘制独立于光学压力波的凝结云墙。
-     * 云墙在 start_tick 最厚且最白，到 full_tick 线性变薄；之后不整体淡出，
-     * 而是从球体 Y 轴最高点向下线性裁切，直到 fade_duration_ticks 结束时消失。
+     * 云墙从 start_tick 到 full_tick 匀速扩张，之后保持相同径向速度继续外扩并按配置倍率线性变淡；
+     * 同时按配置倍率从球体 Y 轴最高点向下连续裁切，派生阶段结束时半径为完整成形半径两倍。
      */
     private static void renderCondensationCloud(RVP_ThermobaricEffectInstance effect,
-            float age, Vec3 camera) {
+            float age, Vec3 camera, float particleRatio) {
         StageWindow window = resolveStageWindow(effect.preset().pressureWaveStartTick(),
                 effect.preset().pressureWaveFullTick(),
-                effect.preset().pressureWaveFadeDurationTicks(), effect.duration());
+                effect.preset().pressureWaveEndTick()
+                        - effect.preset().pressureWaveFullTick(), effect.duration());
         if (!window.contains(age)) {
             return;
         }
 
         float formationProgress = window.formationProgress(age);
-        float fadeProgress = window.fadeProgress(age);
+        float radialProgress = resolvePressureWaveRadialProgress(age,
+                effect.preset().pressureWaveStartTick(),
+                effect.preset().pressureWaveFullTick());
+        float fadeAlpha = resolvePressureWaveFadeAlpha(age, window.fullTick(),
+                effect.preset().pressureWaveEndTick(),
+                effect.preset().pressureWaveFadeSpeedFactor());
+        float cutProgress = resolveCondensationCutProgress(age,
+                effect.preset().pressureWaveFullTick(), effect.preset().pressureWaveEndTick(),
+                effect.preset().condensationCloudCutSpeedFactor());
         float radius = effect.visualRadius() * effect.preset().pressureRadiusFactor()
-                * easeOutCubic(formationProgress);
+                * radialProgress;
         float wallThickness = effect.visualRadius()
                 * Mth.lerp(formationProgress, 1.25F, 0.12F);
+        float particleWallThickness = resolveCondensationParticleWallThickness(
+                effect.visualRadius(), formationProgress,
+                effect.preset().condensationCloudParticleSpawnThicknessFactor());
         int cloudColor = mixColor(0xFFFFFF, 0xD8DEE1, formationProgress);
 
         // 【世界坐标生成位置·凝结云】球壳和粒子共用服务端权威爆心及压力波半径。
@@ -229,7 +263,11 @@ public final class RVP_ThermobaricRenderer {
         float cz = (float) (center.z - camera.z);
         float highestY = (float) center.y + radius + wallThickness * 0.5F;
         float lowestY = (float) center.y - radius - wallThickness * 0.5F;
-        float maximumVisibleY = Mth.lerp(fadeProgress, highestY, lowestY);
+        float maximumVisibleY = Mth.lerp(cutProgress, highestY, lowestY);
+        float particleHighestY = (float) center.y + radius + particleWallThickness * 0.5F;
+        float particleLowestY = (float) center.y - radius - particleWallThickness * 0.5F;
+        float particleMaximumVisibleY = Mth.lerp(
+                cutProgress, particleHighestY, particleLowestY);
 
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
@@ -246,43 +284,45 @@ public final class RVP_ThermobaricRenderer {
                         radius + PRESSURE_SHELL_OFFSETS[layer] * wallThickness);
                 writeTexturedSphereBelow(builder, cx, cy, cz, shellRadius,
                         maximumVisibleY - (float) camera.y, cloudColor,
-                        PRESSURE_SHELL_ALPHAS[layer], effect.preset().pressureRings(),
+                        PRESSURE_SHELL_ALPHAS[layer] * fadeAlpha,
+                        effect.preset().pressureRings(),
                         effect.preset().pressureSegments());
             }
             BufferUploader.drawWithShader(builder.end());
         }
 
-        if (!effect.preset().showCondensationCloudParticles()) {
+        if (!effect.preset().showCondensationCloudParticles() || particleRatio <= 0.0F) {
             return;
         }
 
-        // 粒子凝结云与可选球壳共用自顶向下裁切边界，不做随机外扩或整体淡出。
-        float halfThickness = wallThickness * 0.5F;
+        // 粒子凝结云与可选球壳共用径向曲线、淡出速度倍率和自顶向下裁切边界。
+        float halfThickness = particleWallThickness * 0.5F;
         beginSortedParticleClouds();
         List<RVP_ThermobaricEffectInstance.PressureSmoke> smokes = effect.pressureSmokeParticles();
-        int renderCount = RVP_ThermobaricPressureSmokeLod.resolveRenderCount(
-                smokes.size(), center.distanceToSqr(camera));
+        int renderCount = RVP_ThermobaricParticleLod.resolveRenderCount(
+                smokes.size(), particleRatio);
         for (int i = 0; i < renderCount; i++) {
             RVP_ThermobaricEffectInstance.PressureSmoke smoke = smokes.get(i);
             float pr = Math.max(0.0f, radius + smoke.radialOffset() * halfThickness);
             double x = center.x + smoke.directionX() * pr;
             double y = center.y + smoke.directionY() * pr;
             double z = center.z + smoke.directionZ() * pr;
-            if (y > maximumVisibleY) {
+            if (y > particleMaximumVisibleY) {
                 continue;
             }
             float size = effect.visualRadius() * smoke.sizeFactor()
                     * (1.1F + formationProgress * 1.6F)
                     * effect.preset().condensationCloudParticleScale();
             float particleAlpha = 0.42F + formationProgress * 0.15F;
-            addSortedParticleCloud(x, y, z, size, smoke.rotation(), cloudColor, particleAlpha,
+            addSortedParticleCloud(x, y, z, size, smoke.rotation(), cloudColor,
+                    particleAlpha * fadeAlpha,
                     camera.distanceToSqr(x, y, z));
         }
         renderSortedParticleClouds(camera);
     }
 
     private static void renderDustRing(RVP_ThermobaricEffectInstance effect,
-            float age, Vec3 camera) {
+            float age, Vec3 camera, float particleRatio) {
         int startTick = effect.preset().dustRingStartTick();
         int fullTick = effect.preset().dustRingFullTick();
         float endTick = Math.min(effect.preset().dustRingEndTick(), effect.duration());
@@ -303,12 +343,20 @@ public final class RVP_ThermobaricRenderer {
         float sampledMaximumRadius = RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
                 effect.visualRadius(), effect.preset().dustRadiusFactor());
         int segmentCount = effect.dustSegmentCount();
+        int renderSegmentCount = RVP_ThermobaricParticleLod.resolveRenderCount(
+                segmentCount, particleRatio);
+        if (renderSegmentCount <= 0) {
+            return;
+        }
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
         RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-        for (int index = 0; index < segmentCount; index++) {
+        for (int renderIndex = 0; renderIndex < renderSegmentCount; renderIndex++) {
+            // 调用均匀环段选择器，使任意自定义 LOD 比例下仍覆盖完整圆周而非连续局部圆弧。
+            int index = RVP_ThermobaricParticleLod.resolveEvenlySpacedIndex(
+                    renderIndex, renderSegmentCount, segmentCount);
             float angle = Mth.TWO_PI * index / segmentCount;
             for (int band = -1; band <= 1; band++) {
                 float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
@@ -342,13 +390,24 @@ public final class RVP_ThermobaricRenderer {
      * @param camera 当前相机的世界坐标，用于透明排序与相机相对坐标换算
      */
     private static void renderClouds(RVP_ThermobaricEffectInstance effect,
-            float age, Vec3 camera) {
+            float age, Vec3 camera, float particleRatio) {
         // window：限定后期云团从开始、开始消散到淡出结束的有效时间窗。
         StageWindow window = resolveStageWindow(effect.preset().cloudStartTick(),
                 effect.preset().cloudFullTick(), effect.preset().cloudFadeDurationTicks(),
                 effect.duration());
         if (!window.contains(age)) {
             return;
+        }
+        List<RVP_ThermobaricEffectInstance.Cloud> clouds = effect.clouds();
+        int renderCloudCount = RVP_ThermobaricParticleLod.resolveRenderCount(
+                clouds.size(), particleRatio);
+        RVP_ThermobaricCloudLink.AnchorPair cloudLink = effect.cloudLink();
+        if (renderCloudCount <= 0) {
+            return;
+        }
+        if (cloudLink != null) {
+            // 有连接关系时至少保留中心与上升层两个固定锚点，避免低比例 LOD 破坏权威连续性要求。
+            renderCloudCount = Math.min(clouds.size(), Math.max(2, renderCloudCount));
         }
         // animationProgress：从 cloud_start_tick 到淡出结束持续推进，只驱动上升、翻滚、卷吸与平流。
         float animationProgress = window.lifetimeProgress(age);
@@ -362,12 +421,13 @@ public final class RVP_ThermobaricRenderer {
                 effect.preset().cloudColorChangeEndTick());
         // 调用温压渲染批次初始化方法，清空上帧排序结果并复用已有云片对象。
         beginSortedParticleClouds();
-        RVP_ThermobaricCloudLink.AnchorPair cloudLink = effect.cloudLink();
         CloudRenderState centerLinkState = null;
         CloudRenderState updraftLinkState = null;
-        List<RVP_ThermobaricEffectInstance.Cloud> clouds = effect.clouds();
         // cloudIndex：保持实例生成时的原始索引，供固定连接锚点取回同一云团。
         for (int cloudIndex = 0; cloudIndex < clouds.size(); cloudIndex++) {
+            if (!isCloudIndexSelected(cloudIndex, renderCloudCount, clouds.size(), cloudLink)) {
+                continue;
+            }
             RVP_ThermobaricEffectInstance.Cloud cloud = clouds.get(cloudIndex);
             // 调用共享云团姿态计算，确保基础云团和派生连接链读取完全相同的运动与贴地结果。
             CloudRenderState state = resolveCloudRenderState(effect, cloud,
@@ -385,7 +445,8 @@ public final class RVP_ThermobaricRenderer {
         if (cloudLink != null && centerLinkState != null && updraftLinkState != null) {
             // 调用温压连接链生成逻辑，用当前帧真实端点间隙补齐高倍率下可能出现的视觉断层。
             addCloudLink(effect, cloudLink, centerLinkState, updraftLinkState,
-                    animationProgress, shapedFade, colorChangeProgress, camera);
+                    animationProgress, shapedFade, colorChangeProgress, camera,
+                    renderCloudCount);
         }
         // 调用统一云片提交方法，完成距离排序并一次性绘制本实例的所有后期云团。
         renderSortedParticleClouds(camera);
@@ -445,14 +506,14 @@ public final class RVP_ThermobaricRenderer {
     private static void addCloudLink(RVP_ThermobaricEffectInstance effect,
             RVP_ThermobaricCloudLink.AnchorPair cloudLink, CloudRenderState start,
             CloudRenderState end, float animationProgress, float shapedFade,
-            float colorChangeProgress, Vec3 camera) {
+            float colorChangeProgress, Vec3 camera, int renderedBaseCloudCount) {
         double deltaX = end.x() - start.x();
         double deltaY = end.y() - start.y();
         double deltaZ = end.z() - start.z();
         double distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
         // 调用连接粒子预算计算，额外粒子最多占基础烟云数的四分之一且绝不超过 64 个。
         int particleLimit = RVP_ThermobaricCloudLink.resolveParticleLimit(
-                effect.clouds().size());
+                renderedBaseCloudCount);
         // 调用连接布局计算，根据真实端点间隙决定粒子数量与保证连续覆盖所需的尺寸。
         RVP_ThermobaricCloudLink.Layout layout = RVP_ThermobaricCloudLink.resolveLayout(
                 distance, start.size(), end.size(), effect.visualRadius(), particleLimit);
@@ -477,6 +538,32 @@ public final class RVP_ThermobaricRenderer {
             addSortedParticleCloud(x, y, z, layout.halfSize(particleIndex), rotation,
                     color, alpha, camera.distanceToSqr(x, y, z));
         }
+    }
+
+    /**
+     * 选择后燃基础云团的稳定前缀，并以固定锚点替换前缀尾部候选，保证数量不超预算且连接端点可见。
+     */
+    static boolean isCloudIndexSelected(int cloudIndex, int renderCount, int generatedCount,
+            RVP_ThermobaricCloudLink.AnchorPair cloudLink) {
+        if (cloudIndex < 0 || cloudIndex >= generatedCount || renderCount <= 0) {
+            return false;
+        }
+        if (renderCount >= generatedCount || cloudLink == null) {
+            return cloudIndex < renderCount;
+        }
+        int centerIndex = cloudLink.centerIndex();
+        int updraftIndex = cloudLink.updraftIndex();
+        if (cloudIndex == centerIndex || cloudIndex == updraftIndex) {
+            return renderCount >= 2;
+        }
+        int rankWithoutAnchors = cloudIndex;
+        if (centerIndex < cloudIndex) {
+            rankWithoutAnchors--;
+        }
+        if (updraftIndex < cloudIndex) {
+            rankWithoutAnchors--;
+        }
+        return rankWithoutAnchors < Math.max(0, renderCount - 2);
     }
 
     /** 开始一个新的半透明云片批次并从对象池头部重新取用绘制数据。 */
@@ -773,6 +860,67 @@ public final class RVP_ThermobaricRenderer {
             return 0.0F;
         }
         return 1.0F - Mth.clamp((age - fullTick) / (endTick - fullTick), 0.0F, 1.0F);
+    }
+
+    /**
+     * 把压力波年龄换算为不分段的线性径向进度；full tick 为 {@code 1}，派生结束 tick 为 {@code 2}。
+     */
+    static float resolvePressureWaveRadialProgress(float age, int startTick, int fullTick) {
+        if (fullTick <= startTick) {
+            return 0.0F;
+        }
+        return Mth.clamp((age - startTick) / (fullTick - startTick), 0.0F, 2.0F);
+    }
+
+    /**
+     * 计算粒子凝结云墙厚度：配置倍率只缩放 start tick 厚度，full tick 收敛回原有厚度。
+     */
+    static float resolveCondensationParticleWallThickness(float visualRadius,
+            float formationProgress, float spawnThicknessFactor) {
+        if (!Float.isFinite(visualRadius) || visualRadius <= 0.0F
+                || !Float.isFinite(spawnThicknessFactor) || spawnThicknessFactor < 0.0F) {
+            return 0.0F;
+        }
+        float progress = Mth.clamp(formationProgress, 0.0F, 1.0F);
+        if (progress <= 0.0F) {
+            return visualRadius * 1.25F * spawnThicknessFactor;
+        }
+        if (progress >= 1.0F) {
+            // full tick 直接返回原有端点，避免 lerp 浮点消差留下倍率相关的微小误差。
+            return visualRadius * 0.12F;
+        }
+        return visualRadius * Mth.lerp(progress,
+                1.25F * spawnThicknessFactor, 0.12F);
+    }
+
+    /**
+     * 计算压力波与凝结云的派生阶段透明度；速度倍率为 0 时不启用线性淡出。
+     */
+    static float resolvePressureWaveFadeAlpha(float age, float fullTick, float endTick,
+            float fadeSpeedFactor) {
+        if (age <= fullTick || !Float.isFinite(fadeSpeedFactor) || fadeSpeedFactor <= 0.0F) {
+            return 1.0F;
+        }
+        if (endTick <= fullTick) {
+            return 0.0F;
+        }
+        float postFullProgress = Mth.clamp((age - fullTick) / (endTick - fullTick),
+                0.0F, 1.0F);
+        return 1.0F - Mth.clamp(postFullProgress * fadeSpeedFactor, 0.0F, 1.0F);
+    }
+
+    /**
+     * 计算凝结云在完整成形后的自顶向下裁切进度；倍率只改变裁切速度，不改变生命周期。
+     */
+    static float resolveCondensationCutProgress(float age, float fullTick, float endTick,
+            float cutSpeedFactor) {
+        if (age <= fullTick || endTick <= fullTick || !Float.isFinite(cutSpeedFactor)
+                || cutSpeedFactor <= 0.0F) {
+            return 0.0F;
+        }
+        float postFullProgress = Mth.clamp((age - fullTick) / (endTick - fullTick),
+                0.0F, 1.0F);
+        return Mth.clamp(postFullProgress * cutSpeedFactor, 0.0F, 1.0F);
     }
 
     private static float red(int color) {

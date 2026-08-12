@@ -469,19 +469,23 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `show_pressure_wave` | 是否显示压力波光学球壳。 | `false`                                                                 |
 | `show_condensation_cloud` | 是否显示使用 `WHITE_TEXTURE` 双层球壳实现的凝结云墙；与粒子凝结云独立。 | `false`                                                                 |
 | `show_condensation_cloud_particles` | 是否显示仅使用 `PARTICLE_TEXTURE` billboard 实现的粒子凝结云；与球壳凝结云独立。 | `true`                                                                  |
-| `condensation_cloud_particle_max_count` | 完整视觉密度下粒子凝结云允许显示的最大粒子数量；接受非负整数、不设业务上限，实际数量还会乘以顶层 `density` 并受距离 LOD 下调。 | `1024`                                                                  |
+| `condensation_cloud_particle_max_count` | 完整视觉密度下粒子凝结云允许显示的最大粒子数量；接受非负整数、不设业务上限，实际数量还会乘以顶层 `density` 并受 `thermobaric_lod` 下调。 | `1024`                                                                  |
 | `condensation_cloud_particle_scale` | 粒子凝结云的贴图尺寸缩放倍率；接受非负有限值，不设业务上限。 | `8.0`                                                                   |
+| `condensation_cloud_particle_spawn_thickness_factor` | 粒子凝结云在 start tick 的墙体厚度倍率；接受非负有限值、不设业务上限。厚度按 `visualRadius × lerp(formationProgress, 1.25 × factor, 0.12)` 计算，只改变起始厚度，full tick 及以后恢复原有厚度；不影响数量、贴图尺寸、扩张、裁切、淡出、寿命或可选凝结云球壳。 | `1.0` |
+| `thermobaric_lod` | 温压火球、粒子凝结云、贴地尘环、后燃基础云团和连接粒子共用的嵌套四档距离 LOD；结构见下表。压力波和可选白色凝结云球壳不受其影响。 | 见下表 |
+| `condensation_cloud_cut_speed_factor` | 粒子凝结云与可选凝结云球壳在 full tick 后从当前球体 Y 轴最高点向下连续裁切的速度倍率；接受非负有限值、不设业务上限。`0` 关闭裁切，`1.0` 恰好在派生阶段结束时裁切至最低点；只改变裁切进度，不改变径向速度、淡出或寿命。 | `1.0` |
+| `pressure_wave_fade_speed_factor` | 压力波光学球壳、粒子凝结云与可选凝结云球壳从 full tick 到派生结束 tick 的线性淡出速度倍率；接受非负有限值、不设业务上限。`0` 不启用线性淡出，`1.0` 恰在派生结束 tick 淡至透明，大于 `1.0` 提前淡完，`0..1` 只完成部分淡出；不改变径向速度、裁切或寿命。 | `0.0` |
 | `max_clouds` | 完整视觉密度下三层基础后燃烟云允许生成的最大云团数量；接受非负整数，不设业务上限。为保证爆心覆盖层与中心上升层连续，客户端可基于固定锚点派生额外连接粒子，派生数量最多为基础烟云数的四分之一且绝不超过 64，不计入本字段。 | `200`                                                                   |
 | `max_fireball_clouds` | 完整视觉密度下温压火球允许生成的最大团状云数量；接受非负整数，不设业务上限。 | `240`                                                                   |
 | `max_dust_segments` | 完整视觉密度下贴地尘环允许生成的最大环段数量；接受非负整数，不设业务上限。 | `128`                                                                   |
 | `dust_ground_radial_samples` | 尘环沿扩散半径预采样的地表层数；接受非负整数，不设业务上限，`0` 关闭地表采样。 | `9`                                                                     |
 | `pressure_rings` / `pressure_segments` | 压力波及凝结云球壳的纬向/经向细分数；接受非负整数，不设业务上限，任一为 `0` 时不提交球壳。 | `16` / `32`                                                             |
 | `core_start_tick` / `core_full_tick` / `core_fade_duration_ticks` | 主火球的绝对开始时刻、完整成形时刻、完整成形后到消失的持续时间（tick）；均接受非负整数，不设业务上限。 | `0` / `4` / `10`                                                        |
-| `pressure_wave_start_tick` / `pressure_wave_full_tick` / `pressure_wave_fade_duration_ticks` | 球形压力波、粒子凝结云与可选凝结云球壳的绝对开始时刻、完整成形时刻、完整成形后到消失的持续时间（tick）；均接受非负整数、不设业务上限。两种凝结云从开始时最厚、最白线性变薄到完整成形，随后从 Y 轴最高点向下连续裁切；压力波光学球壳则继续向外扩张并线性变淡。 | `2` / `8` / `12`                                                        |
+| `pressure_wave_start_tick` / `pressure_wave_full_tick` | 球形压力波、粒子凝结云与可选凝结云球壳的绝对开始、完整成形时刻（tick）；均接受非负整数、不设业务上限。派生阶段时长自动等于成形时长，结束 tick 为 `full + (full - start)`。两种凝结云从开始到 full tick 匀速扩张，随后保持相同径向速度继续外扩，结束半径为 full tick 半径两倍；压力波光学球壳共用派生寿命并保留其独立扩张表现。是否线性变淡由 `pressure_wave_fade_speed_factor` 控制。 | `2` / `8` |
 | `dust_ring_start_tick` / `dust_ring_full_tick` | 贴地尘环的绝对开始时刻，以及到达 `dust_radius_factor` 配置半径并立即开始消散的时刻（tick）；均接受非负整数、不设业务上限。尘环从开始到 full tick 匀速扩张，之后以相同径向速度继续外扩并线性变淡；消散时长自动等于成形时长，结束时半径为 full tick 半径的两倍。地面高度按各环段采样，空爆也会投影到可见地表。 | `3` / `36`                                                       |
 | `cloud_start_tick` / `cloud_full_tick` / `cloud_fade_duration_ticks` | 后燃烟云的绝对开始时刻、开始消散时刻、开始消散后到消失的持续时间（tick）；大型云团从 `cloud_start_tick` 到 `cloud_full_tick + cloud_fade_duration_ticks` 共用一条连续动画时钟，持续上升、翻滚、卷吸和平流。`cloud_full_tick` 仅启动独立淡出进度：稳定径向层级最外侧的云团先向外扩散和变淡，随后逐层向内，淡出结束时全部消失。均接受非负整数、不设业务上限，顶层 `duration_ticks>=0` 可覆盖实例寿命。 | `0` / `35` / `65`                                                       |
 | `cloud_color_change_start_tick` / `cloud_color_change_end_tick` | 后燃烟云从 `flame_color` 向 `smoke_color` 线性变色的绝对开始、结束时刻（tick）；开始前保持火焰色，结束后保持烟色。均接受非负整数、不设业务上限；结束早于开始时钳制为开始时刻并立即变色。 | `8` / `35` |
-| `pressure_radius_factor` | 压力波最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。 | `3.5`                                                                   |
+| `pressure_radius_factor` | 压力波与凝结云在 `pressure_wave_full_tick` 时相对最终爆炸半径的半径倍率；接受非负有限值，不设业务上限。凝结云派生结束时半径为该半径的两倍。 | `3.5`                                                                   |
 | `dust_radius_factor` | 尘环最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。 | `2.4`                                                                   |
 | `cloud_radius_factor` | 烟云横向半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。高倍率造成爆心覆盖层与中心上升层实际分离时，客户端按几何间隙自动生成粒子连接链，不按武器 ID 或固定倍率阈值分支。 | `1.5`                                                                   |
 | `cloud_rise_factor` | 后燃烟云最终最高升起高度相对最终爆炸半径的直接倍率；接受非负有限值、不设业务上限，配置值本身不钳制到 `0..1`。实际高度为最终爆炸半径乘该字段，再乘独立且限制在 `0..1` 的内部完成度；例如 `5.0` 表示最高五倍半径。高倍率下中心上升层仍必须通过自动派生粒子与爆心覆盖层保持连续。 | `1.2`                                                                   |
@@ -489,9 +493,23 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `cloud_roll_speed_factor` | 后燃烟云翻滚、卷吸、连续湍流及水平平流速度的无量纲倍率；接受非负有限值、不设业务上限。空间包络完整后周期相位仍继续推进，`0` 冻结对应运动；不改变基础升起、淡出、变色或寿命。 | `1.0` |
 | `near_sound` / `far_sound` / `tail_sound` | 近音、远音、尾音资源 ID；阶段 B 仅校验并保留，阶段 C 启用播放。 | `rvp:thermobaric_near` / `rvp:thermobaric_far` / `rvp:thermobaric_tail` |
 
-主火球、压力波和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。贴地尘环没有专用淡出时长，其结束时刻为 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`；`dust_ring_full_tick <= dust_ring_start_tick` 时没有有效移动周期，不绘制尘环。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
+`thermobaric_lod` 使用以下嵌套结构：
 
-主火球在 `core_full_tick` 后由外向内线性变灰、轻微内敛收缩并线性降低透明度；贴地尘环为白色，从生成到消失持续线性变细，并在 `dust_ring_full_tick` 后立即以原速度继续外扩和线性变淡，不使用随机径向加速。压力波光学球壳在 `pressure_wave_full_tick` 后继续使用服务端同步种子生成的稳定随机漂移参数。后燃烟云从开始到消失持续上升、翻滚、卷吸和平流，并分别使用 `cloud_rise_speed_factor` 与 `cloud_roll_speed_factor` 缩放两类运动时钟；`cloud_full_tick` 只启动按稳定径向层级从外向内传播的淡出，每团在自己的剩余时段内向外扩散并降低透明度。粒子凝结云与可选球壳凝结云先于其它温压子效果提交，避免近距离观察时外层透明云错误覆盖其它特效，同时仍遵守世界几何的深度遮挡。
+| 路径 | 说明 | 默认值 |
+| --- | --- | --- |
+| `near.max_distance` | 近档最大爆心距离（格），接受非负有限值；边界距离属于近档。 | `128.0` |
+| `near.particle_ratio` | 近档粒子保留比例，范围 `0..1`。 | `1.0` |
+| `medium.max_distance` | 中档最大爆心距离（格），接受非负有限值；边界距离属于中档。 | `256.0` |
+| `medium.particle_ratio` | 中档粒子保留比例，范围 `0..1`。 | `0.5` |
+| `far.max_distance` | 远档最大爆心距离（格），接受非负有限值；边界距离属于远档。 | `512.0` |
+| `far.particle_ratio` | 远档粒子保留比例，范围 `0..1`。 | `0.25` |
+| `beyond.particle_ratio` | 超过 `far.max_distance` 后无上界档位的粒子保留比例，范围 `0..1`。 | `0.0` |
+
+`preset_data` 可以只覆盖一个档位或一个子字段；其余值继续继承所选 preset。合并后距离自动规范化为 `near <= medium <= far`，粒子比例自动规范化为 `near >= medium >= far >= beyond`。未知档位、未知子字段、错误类型或非法范围只回退对应局部字段，不影响同对象内其它合法值。各粒子组按完整数量乘当前档比例计算目标数量，正比例且原数量非零时至少保留一个；LOD 在粒子姿态计算、透明排序和顶点提交前生效。
+
+主火球和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。压力波与两种凝结云的结束时刻为 `pressure_wave_full_tick + (pressure_wave_full_tick - pressure_wave_start_tick)`；贴地尘环同样使用 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`。对应 `full_tick <= start_tick` 时没有有效移动周期，不绘制该阶段。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
+
+主火球在 `core_full_tick` 后由外向内线性变灰、轻微内敛收缩并线性降低透明度；贴地尘环为白色，从生成到消失持续线性变细，并在 `dust_ring_full_tick` 后立即以原速度继续外扩和线性变淡，不使用随机径向加速。压力波光学球壳在 `pressure_wave_full_tick` 后继续使用服务端同步种子生成的稳定随机漂移参数。粒子凝结云与可选球壳在 full tick 前后保持同一径向速度；三者共同按 `pressure_wave_fade_speed_factor` 决定是否及多快线性淡出，默认 `0` 时保持透明度，并按 `condensation_cloud_cut_speed_factor` 共用自顶向下裁切边界。后燃烟云从开始到消失持续上升、翻滚、卷吸和平流，并分别使用 `cloud_rise_speed_factor` 与 `cloud_roll_speed_factor` 缩放两类运动时钟；`cloud_full_tick` 只启动按稳定径向层级从外向内传播的淡出，每团在自己的剩余时段内向外扩散并降低透明度。凝结云先于其它温压子效果提交，避免近距离观察时外层透明云错误覆盖其它特效，同时仍遵守世界几何的深度遮挡。
 
 爆心覆盖层与中心上升层会从基础云团中按角度、径向距离和原始索引确定一对跨帧固定锚点。若锚点当前 billboard 已重叠则不追加粒子；若存在实际三维间隙，则沿中心线派生连接粒子，并在达到内部数量上限时扩大粒子尺寸以维持连续覆盖。该行为没有新增 JSON 字段，不改变伤害、寿命、颜色或原三层运动曲线。
 
@@ -520,6 +538,25 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
         "max_clouds": 1024,
         "condensation_cloud_particle_max_count": 1024,
         "condensation_cloud_particle_scale": 4.0,
+        "condensation_cloud_particle_spawn_thickness_factor": 1.0,
+        "thermobaric_lod": {
+          "near": {
+            "max_distance": 128.0,
+            "particle_ratio": 1.0
+          },
+          "medium": {
+            "max_distance": 256.0,
+            "particle_ratio": 0.5
+          },
+          "far": {
+            "max_distance": 512.0,
+            "particle_ratio": 0.25
+          },
+          "beyond": {
+            "particle_ratio": 0.0
+          }
+        },
+        "condensation_cloud_cut_speed_factor": 1.0,
         "core_start_tick": 0,
         "core_full_tick": 20,
         "core_fade_duration_ticks": 40,
@@ -527,7 +564,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
         "cloud_color_change_end_tick": 85,
         "pressure_wave_start_tick": 10,
         "pressure_wave_full_tick": 30,
-        "pressure_wave_fade_duration_ticks": 20,
+        "pressure_wave_fade_speed_factor": 0.0,
         "dust_ring_start_tick": 10,
         "dust_ring_full_tick": 20,
         "max_dust_segments": 512,

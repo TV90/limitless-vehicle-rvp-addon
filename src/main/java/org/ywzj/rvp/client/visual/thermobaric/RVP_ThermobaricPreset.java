@@ -14,6 +14,11 @@ import net.minecraft.resources.ResourceLocation;
  * @param showCondensationCloudParticles 是否显示仅使用方块团粒子贴图实现的压力波凝结云
  * @param condensationCloudParticleMaxCount 粒子凝结云在完整视觉密度下允许显示的最大粒子数量
  * @param condensationCloudParticleScale 粒子凝结云的贴图尺寸缩放倍率
+ * @param condensationCloudParticleSpawnThicknessFactor 粒子凝结云在 start tick 的墙体厚度倍率，默认 1.0；
+ *                                                        只影响生成阶段起始厚度，full tick 后恢复原曲线
+ * @param condensationCloudCutSpeedFactor 凝结云在完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率，默认 1.0；
+ *                                          接受非负有限值，0 关闭裁切，只在凝结云显示时生效且不改变径向速度、淡出或寿命
+ * @param thermobaricLod 火球、粒子凝结云、尘环与后燃烟云共用的四档距离 LOD
  * @param showDustRing 是否显示贴地尘环
  * @param showCloud 是否显示后燃烟云
  * @param maxClouds 完整视觉密度下后燃烟云允许生成的最大云团数量
@@ -27,7 +32,8 @@ import net.minecraft.resources.ResourceLocation;
  * @param coreFadeDurationTicks 主火球完整成形后到完全消失的持续 tick
  * @param pressureWaveStartTick 压力波相对整个效果起点的绝对开始 tick
  * @param pressureWaveFullTick 压力波到达最大半径的绝对 tick
- * @param pressureWaveFadeDurationTicks 压力波到达最大半径后到完全消失的持续 tick
+ * @param pressureWaveFadeSpeedFactor 压力波与两种凝结云从 full tick 到派生结束 tick 的线性淡出速度倍率，默认 0；
+ *                                        接受非负有限值，0 关闭线性淡出，且不改变径向速度、裁切或寿命
  * @param dustRingStartTick 贴地尘环相对整个效果起点的绝对开始 tick
  * @param dustRingFullTick 贴地尘环到达配置半径并立即开始匀速外扩消散的绝对 tick
  * @param cloudStartTick 后燃烟云相对整个效果起点的绝对开始 tick
@@ -35,7 +41,7 @@ import net.minecraft.resources.ResourceLocation;
  * @param cloudFadeDurationTicks 后燃烟云开始消散后到完全消失的持续 tick
  * @param cloudColorChangeStartTick 后燃烟云从火焰色向烟色变化的绝对开始 tick
  * @param cloudColorChangeEndTick 后燃烟云完全变为烟色的绝对结束 tick
- * @param pressureRadiusFactor 压力波相对基础爆炸半径的倍率
+ * @param pressureRadiusFactor 压力波与凝结云在 full tick 时相对基础爆炸半径的半径倍率
  * @param dustRadiusFactor 尘环相对基础爆炸半径的倍率
  * @param cloudRadiusFactor 烟云横向相对基础爆炸半径的倍率
  * @param cloudRiseFactor 烟云最终最高升起高度相对基础爆炸半径的倍率，默认 1.2 且不设上限
@@ -55,6 +61,9 @@ public record RVP_ThermobaricPreset(
         boolean showCondensationCloudParticles,
         int condensationCloudParticleMaxCount,
         float condensationCloudParticleScale,
+        float condensationCloudParticleSpawnThicknessFactor,
+        float condensationCloudCutSpeedFactor,
+        RVP_ThermobaricLod thermobaricLod,
         boolean showDustRing,
         boolean showCloud,
         int maxClouds,
@@ -68,7 +77,7 @@ public record RVP_ThermobaricPreset(
         int coreFadeDurationTicks,
         int pressureWaveStartTick,
         int pressureWaveFullTick,
-        int pressureWaveFadeDurationTicks,
+        float pressureWaveFadeSpeedFactor,
         int dustRingStartTick,
         int dustRingFullTick,
         int cloudStartTick,
@@ -97,6 +106,9 @@ public record RVP_ThermobaricPreset(
             true,
             1024,
             8.0F,
+            1.0F,
+            1.0F,
+            RVP_ThermobaricLod.DEFAULT,
             true,
             true,
             200,
@@ -110,7 +122,7 @@ public record RVP_ThermobaricPreset(
             10,
             2,
             8,
-            12,
+            0.0F,
             3,
             36,
             0,
@@ -130,6 +142,17 @@ public record RVP_ThermobaricPreset(
     );
 
     /**
+     * 返回压力波与凝结云的派生结束 tick；消散时长与成形时长相同，保证径向速度连续。
+     */
+    public int pressureWaveEndTick() {
+        if (pressureWaveFullTick <= pressureWaveStartTick) {
+            return pressureWaveStartTick;
+        }
+        return saturatedAdd(pressureWaveFullTick,
+                pressureWaveFullTick - pressureWaveStartTick);
+    }
+
+    /**
      * 返回尘环的派生结束 tick；淡出时长与成形时长相同，保证 full tick 前后径向速度一致。
      */
     public int dustRingEndTick() {
@@ -142,7 +165,7 @@ public record RVP_ThermobaricPreset(
     /** 返回所有子效果的最晚结束 tick，作为默认实例结束时间。 */
     public int effectEndTick() {
         return Math.max(Math.max(saturatedAdd(coreFullTick, coreFadeDurationTicks),
-                        saturatedAdd(pressureWaveFullTick, pressureWaveFadeDurationTicks)),
+                        pressureWaveEndTick()),
                 Math.max(dustRingEndTick(),
                         saturatedAdd(cloudFullTick, cloudFadeDurationTicks)));
     }
