@@ -26,6 +26,7 @@ import java.util.Objects;
  * @param sound 是否允许声音
  * @param flash 是否允许闪光
  * @param shake 是否允许镜头震动
+ * @param experimentalDynamicParticleBudget 是否启用由具体视觉类型解释的实验性动态粒子预算
  */
 public record RVP_VisualEffectEvent(
         ResourceLocation effectType,
@@ -42,7 +43,8 @@ public record RVP_VisualEffectEvent(
         long startGameTime,
         boolean sound,
         boolean flash,
-        boolean shake
+        boolean shake,
+        boolean experimentalDynamicParticleBudget
 ) {
     /** 单个预设覆盖允许的最大 UTF-8 字节数。 */
     public static final int MAX_PRESET_DATA_BYTES = 8 * 1024;

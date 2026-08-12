@@ -21,6 +21,8 @@ import java.util.Random;
 public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffect {
     /** 客户端区块包会同步的尘环地表候选高度图类型。 */
     private static final Heightmap.Types DUST_GROUND_HEIGHTMAP = Heightmap.Types.MOTION_BLOCKING;
+    /** 实验关闭时复用的空尘环渐进顺序。 */
+    private static final int[] NO_PROGRESSIVE_DUST_SEGMENTS = new int[0];
     /** 效果所属的客户端世界。 */
     private final ClientLevel level;
     /** 服务端权威爆心。 */
@@ -31,6 +33,10 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     private final RVP_ThermobaricPreset preset;
     /** 当前实例持续时间（tick）。 */
     private final int duration;
+    /** 本实例是否启用实验性动态粒子预算；创建后保持不变。 */
+    private final boolean dynamicParticleBudgetEnabled;
+    /** 动态预算启用时经事件密度钳制的固定火球核心层容量。 */
+    private final int dynamicCoreLayerCapacity;
     /** 确定性烟云参数列表。 */
     private final List<Cloud> clouds;
     /** 爆心覆盖层到中心上升层之间使用的稳定粒子连接锚点。 */
@@ -43,6 +49,8 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     private final float pressureWaveFadeSpread;
     /** 尘环各径向层、各环段预采样得到的地表高度。 */
     private final float[][] dustGroundHeights;
+    /** 仅实验模式使用的尘环渐进稳定环段顺序。 */
+    private final int[] progressiveDustSegmentOrder;
     /** 后燃烟云的竖直生成基准；贴地爆炸使用地表，空爆使用爆心。 */
     private final float cloudOriginY;
     /** 后燃烟云是否需要让粒子底边贴住地面。 */
@@ -57,6 +65,9 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         visualRadius = multiplyNonNegative(event.baseExplosionRadius(), event.scale());
         this.preset = preset;
         this.duration = duration;
+        dynamicParticleBudgetEnabled = event.experimentalDynamicParticleBudget();
+        dynamicCoreLayerCapacity = dynamicParticleBudgetEnabled
+                ? resolveDensityLimitedCount(3, event.density()) : 3;
         age = initialAge;
         int cloudCount = resolveDensityLimitedCount(preset.maxClouds(), event.density());
         clouds = createClouds(event.seed(), cloudCount);
@@ -77,6 +88,10 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         int dustSegmentCount = resolveDensityLimitedCount(
                 preset.maxDustSegments(), event.density());
         dustGroundHeights = sampleGround(dustSegmentCount);
+        // 仅在实验开关开启时创建渐进顺序，确保默认关闭不增加旧路径的数组分配和选段变化。
+        progressiveDustSegmentOrder = dynamicParticleBudgetEnabled
+                ? RVP_ThermobaricParticleBudget.createProgressiveSegmentOrder(dustSegmentCount)
+                : NO_PROGRESSIVE_DUST_SEGMENTS;
         float centerGroundHeight = sampleGroundSurfaceHeight(Mth.floor(center.x), Mth.floor(center.z));
         float groundAnchorDistance = Math.max(2.0F, visualRadius * 0.25F);
         cloudGroundAnchored = Float.isFinite(centerGroundHeight)
@@ -126,6 +141,14 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         return duration;
     }
 
+    boolean dynamicParticleBudgetEnabled() {
+        return dynamicParticleBudgetEnabled;
+    }
+
+    int dynamicCoreLayerCapacity() {
+        return dynamicCoreLayerCapacity;
+    }
+
     int age() {
         return age;
     }
@@ -160,6 +183,14 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     int dustSegmentCount() {
         return dustGroundHeights.length == 0 ? 0 : dustGroundHeights[0].length;
+    }
+
+    /** 返回实验渐进顺序中的原始尘环环段索引；无效请求返回 {@code -1}。 */
+    int progressiveDustSegmentIndex(int renderIndex) {
+        if (renderIndex < 0 || renderIndex >= progressiveDustSegmentOrder.length) {
+            return -1;
+        }
+        return progressiveDustSegmentOrder[renderIndex];
     }
 
     /** 按尘环当前径向进度在预采样地表层之间插值，避免扩散途中悬空或埋地。 */

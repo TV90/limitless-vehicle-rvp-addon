@@ -8,7 +8,9 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class S2CVisualEffectEventTest {
     @Test
@@ -28,12 +30,15 @@ class S2CVisualEffectEventTest {
                 5678L,
                 true,
                 false,
+                true,
                 true);
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             S2CVisualEffectEvent.encode(message, buffer);
 
-            assertEquals(message, S2CVisualEffectEvent.decode(buffer));
+            S2CVisualEffectEvent decoded = S2CVisualEffectEvent.decode(buffer);
+            assertEquals(message, decoded);
+            assertTrue(decoded.experimentalDynamicParticleBudget());
         } finally {
             buffer.release();
         }
@@ -68,12 +73,15 @@ class S2CVisualEffectEventTest {
                 2L,
                 false,
                 false,
+                false,
                 false);
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
             S2CVisualEffectEvent.encode(message, buffer);
 
-            assertEquals(message, S2CVisualEffectEvent.decode(buffer));
+            S2CVisualEffectEvent decoded = S2CVisualEffectEvent.decode(buffer);
+            assertEquals(message, decoded);
+            assertFalse(decoded.experimentalDynamicParticleBudget());
         } finally {
             buffer.release();
         }

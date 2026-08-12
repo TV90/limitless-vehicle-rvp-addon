@@ -33,6 +33,7 @@ import java.util.function.Supplier;
  * @param sound 是否允许声音
  * @param flash 是否允许闪光
  * @param shake 是否允许镜头震动
+ * @param experimentalDynamicParticleBudget 是否启用实验性动态粒子预算
  */
 public record S2CVisualEffectEvent(
         ResourceLocation effectType,
@@ -49,7 +50,8 @@ public record S2CVisualEffectEvent(
         long startGameTime,
         boolean sound,
         boolean flash,
-        boolean shake
+        boolean shake,
+        boolean experimentalDynamicParticleBudget
 ) {
     /** 当前消息载荷 schema 版本。 */
     public static final int SCHEMA_VERSION = 1;
@@ -59,6 +61,8 @@ public record S2CVisualEffectEvent(
     private static final int FLAG_FLASH = 1 << 1;
     /** 震动开关位。 */
     private static final int FLAG_SHAKE = 1 << 2;
+    /** 实验性动态粒子预算开关位。 */
+    private static final int FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET = 1 << 3;
 
     public S2CVisualEffectEvent {
         Objects.requireNonNull(effectType, "effectType");
@@ -72,7 +76,8 @@ public record S2CVisualEffectEvent(
     public S2CVisualEffectEvent(RVP_VisualEffectEvent event) {
         this(event.effectType(), event.preset(), event.canonicalPresetDataJson(), event.dimension().location(),
                 event.position(), event.baseExplosionRadius(), event.scale(), event.density(), event.durationTicks(),
-                event.broadcastRange(), event.seed(), event.startGameTime(), event.sound(), event.flash(), event.shake());
+                event.broadcastRange(), event.seed(), event.startGameTime(), event.sound(), event.flash(), event.shake(),
+                event.experimentalDynamicParticleBudget());
     }
 
     public static void encode(S2CVisualEffectEvent message, FriendlyByteBuf buffer) {
@@ -98,7 +103,9 @@ public record S2CVisualEffectEvent(
         buffer.writeLong(message.startGameTime);
         int flags = (message.sound ? FLAG_SOUND : 0)
                 | (message.flash ? FLAG_FLASH : 0)
-                | (message.shake ? FLAG_SHAKE : 0);
+                | (message.shake ? FLAG_SHAKE : 0)
+                | (message.experimentalDynamicParticleBudget
+                        ? FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET : 0);
         buffer.writeByte(flags);
     }
 
@@ -140,7 +147,8 @@ public record S2CVisualEffectEvent(
                 startGameTime,
                 (flags & FLAG_SOUND) != 0,
                 (flags & FLAG_FLASH) != 0,
-                (flags & FLAG_SHAKE) != 0);
+                (flags & FLAG_SHAKE) != 0,
+                (flags & FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET) != 0);
     }
 
     public static void handle(S2CVisualEffectEvent message, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -156,7 +164,8 @@ public record S2CVisualEffectEvent(
         ResourceKey<Level> dimensionKey = ResourceKey.create(Registries.DIMENSION, dimension);
         return new RVP_VisualEffectEvent(
                 effectType, preset, canonicalPresetDataJson, dimensionKey, position, baseExplosionRadius,
-                scale, density, durationTicks, broadcastRange, seed, startGameTime, sound, flash, shake);
+                scale, density, durationTicks, broadcastRange, seed, startGameTime, sound, flash, shake,
+                experimentalDynamicParticleBudget);
     }
 
     private static void validateNumbers(

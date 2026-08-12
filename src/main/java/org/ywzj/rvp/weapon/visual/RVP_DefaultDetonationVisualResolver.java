@@ -43,6 +43,7 @@ public final class RVP_DefaultDetonationVisualResolver implements RVP_Detonation
                 context.startGameTime(),
                 data.isSound(),
                 data.isFlash(),
-                data.isShake()));
+                data.isShake(),
+                data.isExperimentalDynamicParticleBudget()));
     }
 }

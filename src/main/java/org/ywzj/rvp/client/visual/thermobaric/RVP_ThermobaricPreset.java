@@ -37,7 +37,8 @@ import net.minecraft.resources.ResourceLocation;
  * @param dustRingStartTick 贴地尘环相对整个效果起点的绝对开始 tick
  * @param dustRingFullTick 贴地尘环到达配置半径并立即开始匀速外扩消散的绝对 tick
  * @param cloudStartTick 后燃烟云相对整个效果起点的绝对开始 tick
- * @param cloudFullTick 后燃烟云开始消散的绝对 tick，仅控制淡出起点，不切换运动曲线
+ * @param cloudFullTick 后燃烟云开始消散的绝对 tick，不切换运动曲线；实验性动态预算开启时，
+ *                      同时表示基础烟云粒子数达到完整容量
  * @param cloudFadeDurationTicks 后燃烟云开始消散后到完全消失的持续 tick
  * @param cloudColorChangeStartTick 后燃烟云从火焰色向烟色变化的绝对开始 tick
  * @param cloudColorChangeEndTick 后燃烟云完全变为烟色的绝对结束 tick

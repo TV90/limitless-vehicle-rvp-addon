@@ -1,0 +1,123 @@
+{
+    "type": "rvp:missile",
+    "name": "9M120F 电视线导温压导弹",
+    "shoot_interval": 1000,
+    "max_capacity": 2,
+    "reload": {
+        "time": 100,
+        "ammo": "ywzj_vehicle:ammo_missile"
+    },
+    "fire_data": {
+        "spread": 0,
+        "fire_mode": "FULL_AUTO",
+        "require_lock": false
+    },
+    "projectile_data": {
+        "velocity": 2.2,
+        "has_rocket_engine": true,
+        "mass": 0.015,
+        "thrust": 0.006,
+        "motor_burn_time": 60,
+        "drag_coefficient": 0.005,
+        "rotate_to_motion": true,
+        "max_speed": 3.0,
+        "turning_factor": {
+            "[[11,inf]]": 0.24
+        }
+    },
+    "fuse_data": {
+        "delay_tick": 0,
+        "proximity_radius": 2.0,
+        "detonate_on_life_end": false
+    },
+    "guidance_data": {
+        "guidance_type": "LBR",
+        "guidance_tick_range": "[[11,inf]]",
+        "max_guidance_angle": 50,
+        "predict_target_pos": true,
+        "enable_inertial_guidance": true,
+        "guidance_target_distance_range": "[[0,4500]]"
+    },
+    "effects_data": {
+        "trajectory_particle": "minecraft:campfire_signal_smoke",
+        "impact_particle": "minecraft:block",
+        "explosion_particle": "none"
+    },
+    "detonate_data": {
+        "explosion_data": {
+            "explode": true,
+            "damage": 800,
+            "radius": 8,
+            "proximity_fuze": true,
+            "proximity_radius": 2.0,
+            "destroy_block": true
+        },
+        "visual_effect_data": [
+            {
+                "enabled": true,
+                "effect_type": "rvp:thermobaric",
+                "preset": "rvp:thermobaric_standard",
+                "scale": 1.0,
+                "density": 1.0,
+                "duration_ticks": -1,
+                "broadcast_range": 1536.0,
+                "sound": false,
+                "flash": false,
+                "shake": false,
+                "suppress_native_explosion_effect": true,
+                "experimental": {
+                    "dynamic_particle_budget": false
+                },
+                "preset_data": {
+                    "core_color": "#FFE0B0",
+                    "flame_color": "#FF6820",
+                    "smoke_color": "#332A27",
+                    "max_fireball_clouds": 150,
+                    "max_clouds": 1024,
+                    "condensation_cloud_particle_max_count": 768,
+                    "condensation_cloud_particle_scale": 6.0,
+                    "condensation_cloud_cut_speed_factor": 0.75,
+                    "thermobaric_lod": {
+                        "near": {
+                            "max_distance": 512.0,
+                            "particle_ratio": 1.0
+                        },
+                        "medium": {
+                            "max_distance": 756.0,
+                            "particle_ratio": 0.7
+                        },
+                        "far": {
+                            "max_distance": 1024.0,
+                            "particle_ratio": 0.35
+                        },
+                        "beyond": {
+                            "particle_ratio": 0.0
+                        }
+                    },
+                    "core_start_tick": 0,
+                    "core_full_tick": 20,
+                    "core_fade_duration_ticks": 40,
+                    "cloud_color_change_start_tick": 30,
+                    "cloud_color_change_end_tick": 85,
+                    "pressure_wave_start_tick": 10,
+                    "pressure_wave_full_tick": 25,
+                    "dust_ring_start_tick": 10,
+                    "dust_ring_full_tick": 25,
+                    "max_dust_segments": 425,
+                    "cloud_start_tick": 0,
+                    "cloud_full_tick": 90,
+                    "cloud_fade_duration_ticks": 140,
+                    "pressure_radius_factor": 3.5,
+                    "dust_radius_factor": 5,
+                    "cloud_radius_factor": 1.7,
+                    "cloud_rise_factor": 1.6,
+                    "cloud_rise_speed_factor": 12.0,
+                    "cloud_roll_speed_factor": 1.0
+                }
+            }
+        ]
+    },
+    "collision_data": {
+        "direct_damage": 10
+    }
+}

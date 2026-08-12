@@ -58,6 +58,14 @@ public final class RVP_VisualEffectData {
     private boolean suppressNativeExplosionEffect = true;
 
     /**
+     * 当前 schema 的实验性视觉行为配置；默认所有实验均关闭。仅显式配置的当前字段生效，
+     * 为 {@code null} 或缺失时必须保持既有视觉行为。
+     */
+    @SerializedName("experimental")
+    private RVP_VisualEffectExperimentalData experimental =
+            new RVP_VisualEffectExperimentalData();
+
+    /**
      * 与 {@link #preset} 所指预设使用相同 schema 的稀疏覆盖对象；默认空对象，仅由对应客户端工厂类型化校验。
      */
     @SerializedName("preset_data")
@@ -106,6 +114,11 @@ public final class RVP_VisualEffectData {
 
     public boolean isSuppressNativeExplosionEffect() {
         return suppressNativeExplosionEffect;
+    }
+
+    /** 返回动态粒子预算实验开关；实验对象缺失或为 {@code null} 时安全回退为关闭。 */
+    public boolean isExperimentalDynamicParticleBudget() {
+        return experimental != null && experimental.isDynamicParticleBudget();
     }
 
     /** 返回独立副本，避免调用方修改武器数据模型中保存的 JSON 对象。 */

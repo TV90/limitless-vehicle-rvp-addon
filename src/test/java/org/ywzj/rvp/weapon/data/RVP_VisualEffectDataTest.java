@@ -30,7 +30,33 @@ class RVP_VisualEffectDataTest {
         assertEquals(1.0F, data.getDensity());
         assertEquals(-1, data.getDurationTicks());
         assertEquals(768.0D, data.getBroadcastRange());
+        assertFalse(data.isExperimentalDynamicParticleBudget());
         assertEquals("{}", data.copyPresetData().toString());
+    }
+
+    @Test
+    void experimentalDynamicParticleBudgetDefaultsOffAndOnlyExplicitTrueEnablesIt() {
+        RVP_VisualEffectData missing = GSON.fromJson("{}", RVP_VisualEffectData.class);
+        RVP_VisualEffectData empty = GSON.fromJson(
+                "{\"experimental\":{}}", RVP_VisualEffectData.class);
+        RVP_VisualEffectData nullObject = GSON.fromJson(
+                "{\"experimental\":null}", RVP_VisualEffectData.class);
+        RVP_VisualEffectData disabled = GSON.fromJson(
+                "{\"experimental\":{\"dynamic_particle_budget\":false}}",
+                RVP_VisualEffectData.class);
+        RVP_VisualEffectData enabled = GSON.fromJson(
+                "{\"experimental\":{\"dynamic_particle_budget\":true}}",
+                RVP_VisualEffectData.class);
+        RVP_VisualEffectData unknown = GSON.fromJson(
+                "{\"experimental\":{\"unknown_experiment\":true}}",
+                RVP_VisualEffectData.class);
+
+        assertFalse(missing.isExperimentalDynamicParticleBudget());
+        assertFalse(empty.isExperimentalDynamicParticleBudget());
+        assertFalse(nullObject.isExperimentalDynamicParticleBudget());
+        assertFalse(disabled.isExperimentalDynamicParticleBudget());
+        assertTrue(enabled.isExperimentalDynamicParticleBudget());
+        assertFalse(unknown.isExperimentalDynamicParticleBudget());
     }
 
     @Test

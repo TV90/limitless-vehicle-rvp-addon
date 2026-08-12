@@ -23,9 +23,6 @@ import java.util.List;
 
 /** 只负责绘制温压火球、压力波、凝结云、贴地尘环和后燃烟云。 */
 public final class RVP_ThermobaricRenderer {
-    /** 复用 RVP 爆炸特效的 16×16 类原版方块团粒子贴图。 */
-    private static final ResourceLocation PARTICLE_TEXTURE =
-            RVP_MOD.modLocation("textures/nuclear/particle_base.png");
     /** 纯白贴图用作球壳 */
     private static final ResourceLocation WHITE_TEXTURE =
             RVP_MOD.modLocation("textures/white/white.png");
@@ -115,9 +112,33 @@ public final class RVP_ThermobaricRenderer {
         if (!window.contains(age)) {
             return;
         }
-        int fireballCloudCount = RVP_ThermobaricParticleLod.resolveRenderCount(
-                effect.fireballClouds().size(), particleRatio);
-        int coreLayerCount = RVP_ThermobaricParticleLod.resolveCoreLayerCount(particleRatio);
+        boolean dynamicBudget = effect.dynamicParticleBudgetEnabled();
+        int coverageLimitedCount = effect.fireballClouds().size();
+        if (dynamicBudget) {
+            // 火球在 full tick 后冻结面积需求，避免淡出阶段为了补偿扩散而生成新粒子。
+            float budgetAge = RVP_ThermobaricParticleBudget.resolveFrozenBudgetAge(
+                    age, window.fullTick());
+            float budgetFormationProgress = window.formationProgress(budgetAge);
+            float budgetCoreRadius = resolveFireballCoreRadius(effect.visualRadius(),
+                    budgetFormationProgress, 0.0F);
+            double geometryArea = RVP_ThermobaricParticleBudget.resolveSphereArea(
+                    budgetCoreRadius, 1.0F);
+            float textureCoverage = RVP_ThermobaricParticleCoverage.effectiveCoverage();
+            coverageLimitedCount = RVP_ThermobaricParticleBudget.resolveCoverageLimitedCount(
+                    effect.fireballClouds().size(), geometryArea,
+                    RVP_ThermobaricParticleBudget.FIREBALL_OVERLAP_FACTOR,
+                    index -> RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
+                            resolveFireballCloudHalfSize(effect, window,
+                                    effect.fireballClouds().get(index), budgetAge),
+                            textureCoverage));
+        }
+        // 调用实验预算门面；关闭时门面严格复用既有完整列表 LOD 数量算法。
+        int fireballCloudCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
+                dynamicBudget, effect.fireballClouds().size(), particleRatio,
+                coverageLimitedCount);
+        int coreLayerCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
+                dynamicBudget, effect.dynamicCoreLayerCapacity(), particleRatio,
+                effect.dynamicCoreLayerCapacity());
         if (fireballCloudCount <= 0 && coreLayerCount <= 0) {
             return;
         }
@@ -129,7 +150,7 @@ public final class RVP_ThermobaricRenderer {
         Vec3 center = effect.center().add(0.0D, effect.visualRadius() * 0.12D, 0.0D);
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
-        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShaderTexture(0, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
 
@@ -167,8 +188,8 @@ public final class RVP_ThermobaricRenderer {
         float centerX = (float) (center.x - camera.x);
         float centerY = (float) (center.y - camera.y);
         float centerZ = (float) (center.z - camera.z);
-        float coreRadius = effect.visualRadius() * (0.28F + expansion * 0.86F)
-                * (1.0F - fadeProgress * 0.08F);
+        float coreRadius = resolveFireballCoreRadius(effect.visualRadius(),
+                formationProgress, fadeProgress);
         if (coreLayerCount >= 1) {
             writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius, 0.0F,
                     fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F), alpha * 0.72F);
@@ -182,6 +203,30 @@ public final class RVP_ThermobaricRenderer {
                     fadeToGray(0xFFF5DC, fadeProgress, 0.15F), alpha);
         }
         BufferUploader.drawWithShader(builder.end());
+    }
+
+    /** 返回火球核心在指定成形和淡出进度下的实际外包络半径。 */
+    static float resolveFireballCoreRadius(float visualRadius, float formationProgress,
+            float fadeProgress) {
+        float expansion = easeOutCubic(Mth.clamp(formationProgress, 0.0F, 1.0F));
+        return visualRadius * (0.28F + expansion * 0.86F)
+                * (1.0F - Mth.clamp(fadeProgress, 0.0F, 1.0F) * 0.08F);
+    }
+
+    /** 返回火球候选云团在预算采样时刻的实际 billboard 半边长。 */
+    private static float resolveFireballCloudHalfSize(RVP_ThermobaricEffectInstance effect,
+            StageWindow window, RVP_ThermobaricEffectInstance.FireballCloud cloud,
+            float budgetAge) {
+        float cloudStart = window.startTick()
+                + cloud.phase() * window.formationDuration() * 0.38F;
+        if (budgetAge < cloudStart) {
+            return 0.0F;
+        }
+        float localProgress = Mth.clamp((budgetAge - cloudStart)
+                / Math.max(1.0F, window.fullTick() - cloudStart), 0.0F, 1.0F);
+        float localExpansion = easeOutCubic(localProgress);
+        return effect.visualRadius() * cloud.sizeFactor()
+                * (0.9F + localExpansion * 1.35F);
     }
 
     private static void renderPressureWave(RVP_ThermobaricEffectInstance effect,
@@ -299,8 +344,22 @@ public final class RVP_ThermobaricRenderer {
         float halfThickness = particleWallThickness * 0.5F;
         beginSortedParticleClouds();
         List<RVP_ThermobaricEffectInstance.PressureSmoke> smokes = effect.pressureSmokeParticles();
-        int renderCount = RVP_ThermobaricParticleLod.resolveRenderCount(
-                smokes.size(), particleRatio);
+        boolean dynamicBudget = effect.dynamicParticleBudgetEnabled();
+        int coverageLimitedCount = smokes.size();
+        if (dynamicBudget) {
+            // 粒子凝结云按当前未被自顶向下裁掉的球面面积持续重算，full tick 后仍跟随外扩。
+            double geometryArea = RVP_ThermobaricParticleBudget.resolveSphereArea(radius,
+                    1.0F - cutProgress);
+            float textureCoverage = RVP_ThermobaricParticleCoverage.effectiveCoverage();
+            coverageLimitedCount = RVP_ThermobaricParticleBudget.resolveCoverageLimitedCount(
+                    smokes.size(), geometryArea,
+                    RVP_ThermobaricParticleBudget.CONDENSATION_OVERLAP_FACTOR,
+                    index -> resolveCondensationParticleEffectiveArea(effect,
+                            smokes.get(index), formationProgress, radius, halfThickness,
+                            particleMaximumVisibleY, textureCoverage));
+        }
+        int renderCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
+                dynamicBudget, smokes.size(), particleRatio, coverageLimitedCount);
         for (int i = 0; i < renderCount; i++) {
             RVP_ThermobaricEffectInstance.PressureSmoke smoke = smokes.get(i);
             float pr = Math.max(0.0f, radius + smoke.radialOffset() * halfThickness);
@@ -319,6 +378,60 @@ public final class RVP_ThermobaricRenderer {
                     camera.distanceToSqr(x, y, z));
         }
         renderSortedParticleClouds(camera);
+    }
+
+    /** 返回一个凝结云候选粒子在当前球面和裁切边界下的实际有效面积。 */
+    private static double resolveCondensationParticleEffectiveArea(
+            RVP_ThermobaricEffectInstance effect,
+            RVP_ThermobaricEffectInstance.PressureSmoke smoke,
+            float formationProgress, float radius, float halfThickness,
+            float maximumVisibleY, float textureCoverage) {
+        float particleRadius = Math.max(0.0F,
+                radius + smoke.radialOffset() * halfThickness);
+        double particleY = effect.center().y + smoke.directionY() * particleRadius;
+        if (particleY > maximumVisibleY) {
+            return 0.0D;
+        }
+        float halfSize = effect.visualRadius() * smoke.sizeFactor()
+                * (1.1F + formationProgress * 1.6F)
+                * effect.preset().condensationCloudParticleScale();
+        return RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
+                halfSize, textureCoverage);
+    }
+
+    /** 返回三个尘环带在当前帧需要覆盖的总环带面积。 */
+    static double resolveDustGeometryArea(float radius, float size) {
+        double area = 0.0D;
+        for (int band = -1; band <= 1; band++) {
+            float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
+            float halfSize = size * (band == 0 ? 1.25F : 1.0F);
+            area += RVP_ThermobaricParticleBudget.resolveRingBandArea(
+                    bandRadius, halfSize);
+        }
+        return area;
+    }
+
+    /** 返回一个尘环环段实际绘制的三张 billboard 的有效面积总和。 */
+    private static double resolveDustSegmentEffectiveArea(
+            RVP_ThermobaricEffectInstance effect, int segmentIndex,
+            float radius, float size, float sampledMaximumRadius,
+            float textureCoverage) {
+        if (segmentIndex < 0) {
+            return 0.0D;
+        }
+        double effectiveArea = 0.0D;
+        for (int band = -1; band <= 1; band++) {
+            float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
+            float groundProgress = sampledMaximumRadius <= 1.0E-4F
+                    ? 0.0F : bandRadius / sampledMaximumRadius;
+            if (!Float.isFinite(effect.dustGroundHeight(segmentIndex, groundProgress))) {
+                continue;
+            }
+            float halfSize = size * (band == 0 ? 1.25F : 1.0F);
+            effectiveArea += RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
+                    halfSize, textureCoverage);
+        }
+        return effectiveArea;
     }
 
     private static void renderDustRing(RVP_ThermobaricEffectInstance effect,
@@ -343,20 +456,35 @@ public final class RVP_ThermobaricRenderer {
         float sampledMaximumRadius = RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
                 effect.visualRadius(), effect.preset().dustRadiusFactor());
         int segmentCount = effect.dustSegmentCount();
-        int renderSegmentCount = RVP_ThermobaricParticleLod.resolveRenderCount(
-                segmentCount, particleRatio);
+        boolean dynamicBudget = effect.dynamicParticleBudgetEnabled();
+        int coverageLimitedCount = segmentCount;
+        if (dynamicBudget) {
+            // 三条环带分别计算圆周展开面积，full tick 后继续使用实际外扩半径与收窄尺寸。
+            double geometryArea = resolveDustGeometryArea(radius, size);
+            float textureCoverage = RVP_ThermobaricParticleCoverage.effectiveCoverage();
+            coverageLimitedCount = RVP_ThermobaricParticleBudget.resolveCoverageLimitedCount(
+                    segmentCount, geometryArea,
+                    RVP_ThermobaricParticleBudget.DUST_OVERLAP_FACTOR,
+                    renderIndex -> resolveDustSegmentEffectiveArea(effect,
+                            effect.progressiveDustSegmentIndex(renderIndex), radius, size,
+                            sampledMaximumRadius, textureCoverage));
+        }
+        int renderSegmentCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
+                dynamicBudget, segmentCount, particleRatio, coverageLimitedCount);
         if (renderSegmentCount <= 0) {
             return;
         }
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
-        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShaderTexture(0, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (int renderIndex = 0; renderIndex < renderSegmentCount; renderIndex++) {
-            // 调用均匀环段选择器，使任意自定义 LOD 比例下仍覆盖完整圆周而非连续局部圆弧。
-            int index = RVP_ThermobaricParticleLod.resolveEvenlySpacedIndex(
-                    renderIndex, renderSegmentCount, segmentCount);
+            // 实验开启时读取实例的稳定渐进顺序；关闭时继续调用原有均匀选段算法。
+            int index = dynamicBudget
+                    ? effect.progressiveDustSegmentIndex(renderIndex)
+                    : RVP_ThermobaricParticleLod.resolveEvenlySpacedIndex(
+                            renderIndex, renderSegmentCount, segmentCount);
             float angle = Mth.TWO_PI * index / segmentCount;
             for (int band = -1; band <= 1; band++) {
                 float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
@@ -399,9 +527,16 @@ public final class RVP_ThermobaricRenderer {
             return;
         }
         List<RVP_ThermobaricEffectInstance.Cloud> clouds = effect.clouds();
-        int renderCloudCount = RVP_ThermobaricParticleLod.resolveRenderCount(
-                clouds.size(), particleRatio);
+        boolean dynamicBudget = effect.dynamicParticleBudgetEnabled();
         RVP_ThermobaricCloudLink.AnchorPair cloudLink = effect.cloudLink();
+        int coverageLimitedCount = clouds.size();
+        if (dynamicBudget) {
+            // 后燃云在 full tick 采样其最大视向轮廓并冻结需求，淡出期仍继续原有运动与扩散。
+            coverageLimitedCount = resolveCloudCoverageLimitedCount(effect, window, age,
+                    camera, clouds, cloudLink);
+        }
+        int renderCloudCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
+                dynamicBudget, clouds.size(), particleRatio, coverageLimitedCount);
         if (renderCloudCount <= 0) {
             return;
         }
@@ -450,6 +585,55 @@ public final class RVP_ThermobaricRenderer {
         }
         // 调用统一云片提交方法，完成距离排序并一次性绘制本实例的所有后期云团。
         renderSortedParticleClouds(camera);
+    }
+
+    /** 按 full tick 之前的实际三层云团包络计算覆盖面积受限数量。 */
+    private static int resolveCloudCoverageLimitedCount(
+            RVP_ThermobaricEffectInstance effect, StageWindow window, float age,
+            Vec3 camera, List<RVP_ThermobaricEffectInstance.Cloud> clouds,
+            RVP_ThermobaricCloudLink.AnchorPair cloudLink) {
+        if (clouds.isEmpty()) {
+            return 0;
+        }
+        float budgetAge = RVP_ThermobaricParticleBudget.resolveFrozenBudgetAge(
+                age, window.fullTick());
+        float animationProgress = window.lifetimeProgress(budgetAge);
+        float colorChangeProgress = resolveColorTransitionProgress(budgetAge,
+                effect.preset().cloudColorChangeStartTick(),
+                effect.preset().cloudColorChangeEndTick());
+        List<CloudRenderState> budgetStates = new ArrayList<>(clouds.size());
+        double horizontalRadius = 0.0D;
+        double minimumY = Double.POSITIVE_INFINITY;
+        double maximumY = Double.NEGATIVE_INFINITY;
+        for (RVP_ThermobaricEffectInstance.Cloud cloud : clouds) {
+            // 调用共享姿态计算，以预算采样时刻的真实尺寸和运动位置建立云团包络。
+            CloudRenderState state = resolveCloudRenderState(effect, cloud,
+                    animationProgress, 0.0F, colorChangeProgress, camera);
+            budgetStates.add(state);
+            double offsetX = state.x() - effect.center().x;
+            double offsetZ = state.z() - effect.center().z;
+            horizontalRadius = Math.max(horizontalRadius,
+                    Math.sqrt(offsetX * offsetX + offsetZ * offsetZ) + state.size());
+            minimumY = Math.min(minimumY, state.y() - state.size());
+            maximumY = Math.max(maximumY, state.y() + state.size());
+        }
+        double verticalHalfExtent = (maximumY - minimumY) * 0.5D;
+        double geometryArea = RVP_ThermobaricParticleBudget.resolveCloudSilhouetteArea(
+                horizontalRadius, verticalHalfExtent);
+        float textureCoverage = RVP_ThermobaricParticleCoverage.effectiveCoverage();
+        if (cloudLink == null) {
+            return RVP_ThermobaricParticleBudget.resolveCoverageLimitedCount(
+                    clouds.size(), geometryArea,
+                    RVP_ThermobaricParticleBudget.CLOUD_OVERLAP_FACTOR,
+                    index -> RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
+                            budgetStates.get(index).size(), textureCoverage));
+        }
+        return RVP_ThermobaricParticleBudget.resolveAnchoredCoverageLimitedCount(
+                clouds.size(), geometryArea,
+                RVP_ThermobaricParticleBudget.CLOUD_OVERLAP_FACTOR,
+                cloudLink.centerIndex(), cloudLink.updraftIndex(),
+                index -> RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
+                        budgetStates.get(index).size(), textureCoverage));
     }
 
     /**
@@ -594,7 +778,7 @@ public final class RVP_ThermobaricRenderer {
         SORTED_CLOUDS.sort(FAR_TO_NEAR);
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
-        RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
+        RenderSystem.setShaderTexture(0, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
         RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
         for (RenderCloud cloud : SORTED_CLOUDS) {
@@ -939,7 +1123,8 @@ public final class RVP_ThermobaricRenderer {
      * 一个阶段的“开始、到达阶段切换点、消失”时间窗。
      *
      * @param startTick 相对整个效果起点的绝对开始 tick
-     * @param fullTick 相对整个效果起点的绝对阶段切换 tick；对后燃烟云仅表示开始消散
+     * @param fullTick 相对整个效果起点的绝对阶段切换 tick；对后燃烟云始终表示开始消散，
+     *                 实验预算开启时还表示基础粒子数达到完整容量
      * @param endTick 阶段切换后经过淡出持续时间得到的绝对结束 tick
      */
     private record StageWindow(float startTick, float fullTick, float endTick) {
