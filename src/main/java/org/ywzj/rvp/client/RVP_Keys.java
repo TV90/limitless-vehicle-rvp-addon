@@ -55,7 +55,7 @@ public class RVP_Keys {
     public static final KeyMapping HITL_EXIT = key("hitl_exit", InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT);
 
     /** 发射热焰弹（干扰 IR/AIR）。 */
-    public static final KeyMapping FIRE_FLARE = key("fire_flare", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G);
+    public static final KeyMapping FIRE_FLARE = key("fire_flare", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H);
 
     /** 发射箔条（干扰 SARH/ARH 与雷达锁定），对齐本体干扰弹键位（LEFT_ALT）。 */
     public static final KeyMapping FIRE_CHAFF = key("fire_chaff", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_ALT);
