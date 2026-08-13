@@ -1,6 +1,7 @@
 package org.ywzj.rvp.countermeasure;
 
 import com.google.gson.JsonElement;
+import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
@@ -9,6 +10,7 @@ import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.util.ResourceScanner;
@@ -26,6 +28,8 @@ import java.util.Map;
 public final class RVP_CountermeasureConfigManager extends SimplePreparableReloadListener<Map<ResourceLocation, JsonElement>> {
 
     public static final RVP_CountermeasureConfigManager INSTANCE = new RVP_CountermeasureConfigManager();
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private Map<ResourceLocation, RVP_CountermeasureData> configs = Map.of();
 
@@ -47,6 +51,9 @@ public final class RVP_CountermeasureConfigManager extends SimplePreparableReloa
             }
         });
         configs = Map.copyOf(loaded);
+        if (!loaded.isEmpty()) {
+            LOGGER.info("[RVP-CM] 已加载 {} 台载具的干扰物配置: {}", loaded.size(), loaded.keySet());
+        }
     }
 
     /** 客户端在收到服务端同步配置包后填充（复用同一解析逻辑）。 */

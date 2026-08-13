@@ -1,5 +1,6 @@
 package org.ywzj.rvp.countermeasure.server;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
@@ -7,6 +8,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamHelper;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager;
@@ -42,12 +44,15 @@ import java.util.UUID;
  */
 public final class RVP_CountermeasureRuntimeManager {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     /** 单载具干扰物状态（两套独立状态机）。 */
     public static final class VehicleCountermeasureState {
         public RVP_CountermeasureStateMachine flare;
         public RVP_CountermeasureStateMachine chaff;
         public boolean initialized;
-        public int lastHudSyncTick = Integer.MIN_VALUE;
+        /** HUD 上次推送 tick（避免 Integer.MIN_VALUE 相减溢出，初始用 -999999）。 */
+        public int lastHudSyncTick = -999999;
     }
 
     private static final Map<UUID, VehicleCountermeasureState> STATES = new HashMap<>();
@@ -176,6 +181,7 @@ public final class RVP_CountermeasureRuntimeManager {
                 vehicle.getId(),
                 state.flare != null ? state.flare.getRemaining() : 0, flareTotal, flareReload,
                 state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload);
+        LOGGER.info("[RVP-CM] HUD 同步 载具={} flare={}/{} chaff={}/{}", vehicle.getId(), flareTotal, flareReload, chaffTotal, chaffReload);
         // 直接发给载具乘客（驾驶员），保证本地 HUD 一定收到；再向跟踪载具的其它玩家广播
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof ServerPlayer serverPlayer) {
@@ -216,6 +222,7 @@ public final class RVP_CountermeasureRuntimeManager {
         if (soundPos != null) {
             vehicle.level().playSound(null, soundPos.x, soundPos.y, soundPos.z,
                     AllSounds.DECOY_FLARE_LAUNCH.get(), SoundSource.NEUTRAL, 1.0F, 1.0F);
+            LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
         }
     }
 
