@@ -54,17 +54,17 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         if (total <= 0) {
             return;
         }
-        // 对齐本体纵向 HUD：正常绿字，耗尽红字
+        // 对齐本体纵向 HUD：正常绿字，耗尽红字，带阴影（同本体 drawString 默认样式）
         int color = remain <= 0 ? Color.RED : Color.GREEN;
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
-            guiGraphics.drawString(font, label + "：装填 " + seconds + "秒", x, y, color, false);
+            guiGraphics.drawString(font, label + "：装填 " + seconds + "秒", x, y, color);
         } else {
             // 数量/总数 + 键位
             String keyName = key.getTranslatedKeyMessage().getString();
             guiGraphics.drawString(font, label + ":" + remain + "/" + total + " [" + keyName + "]",
-                    x, y, color, false);
+                    x, y, color);
         }
     }
 }
