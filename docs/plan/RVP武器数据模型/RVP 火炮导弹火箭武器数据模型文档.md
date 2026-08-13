@@ -42,12 +42,13 @@ TV、HITL_TV、HITL_CLOS_TV模式下定义了RVP_GuidanceDataHITL数据模型，
 
 
 
-## RVP_InterferenceData
+## RVP_InterferenceData（只对IR,AIR,SARH和ARH导弹生效）（计划中）
 
-| RVP_InterferenceData | 解释                                                         | 类型 | 默认值 |
-| -------------------- | ------------------------------------------------------------ | ---- | ------ |
-| SeekerJamLimit       | 导弹导引头视场内的极限干扰物数量，超过这个数量后导弹会脱锁并转向最近的干扰物 | int  | 16     |
-|                      |                                                              |      |        |
+| RVP_InterferenceData  | 解释                                                         | 类型    | 默认值 |
+| --------------------- | ------------------------------------------------------------ | ------- | ------ |
+| seekerJamLimit        | 导弹导引头（fov）视场内的极限干扰物数量，超过这个数量后导弹会脱锁并转向最近的干扰物 | int     | 8      |
+| seekerFovShrinkFactor | 导弹导引头跟踪目标时的fov倍率，小于1时，导弹在制导跟踪途中会收缩fov，降低视场内的干扰物，实际fov值等于maxLockAngle\*seekerFovShrinkFactor。即导弹跟踪时，会跟踪maxGuidanceAngle范围内的目标，跟踪期间，会检测以弹体对被跟踪目标的指向为方向，maxLockAngle\*seekerFovShrinkFactor为fov，guidanceTargetDistanceRange为距离内的所有对应干扰物（IR和AIR检测热焰弹，SARH和ARH检测箔条），当视场内干扰物超过seekerJamLimit数量时，导弹脱锁并飞向最近的干扰物。AIR和ARH导弹只有在主动导引头开机时会进行干扰物检测（使用雷达引导制导段不会进行干扰物检测） | float   | 1      |
+| seekerShutOffTime     | 导引头关闭时间，在导弹失去制导后，导引头关闭一段时间，即seekerShutOffTime tick后，导引头会重启，并主动搜寻以弹体指向为方向，maxLockAngle\*seekerFovShrinkFactor为fov，guidanceTargetDistanceRange为距离内的所有目标或干扰物，进行导弹复锁或继续被干扰。<br />AIR导弹，ARH导弹和SARH导弹在该阶段还可以重新接受雷达引导，追踪雷达锁定的目标。（注意，AIR导弹和ARH导弹在发射时可以不用雷达锁定目标，只需要导引头选中目标，只要目标在雷达扫描范围内就可以进行中段引导（目前该功能已实现），但是在被干扰后重启导引头的复锁阶段，只能接受雷达锁定目标的中段制导） | Integer | null   |
 
 
 
