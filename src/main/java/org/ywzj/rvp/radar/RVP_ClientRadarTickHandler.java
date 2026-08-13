@@ -8,6 +8,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamHelper;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
@@ -123,6 +124,11 @@ public final class RVP_ClientRadarTickHandler {
                 for (Entity entity : entities) {
                     radar.detect(entity);
                 }
+            }
+            // 雷达箔条判定（客户端）：锁定目标周围箔条超阈值 → 脱锁 + 目标禁锁期
+            Entity locked = radar.getLockedEntity();
+            if (locked != null && locked.isAlive()) {
+                RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, vehicle.level().getGameTime());
             }
         }
     }

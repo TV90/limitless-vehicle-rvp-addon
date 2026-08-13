@@ -5,6 +5,7 @@ import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.countermeasure.network.C2SFireCountermeasure;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
@@ -203,6 +204,11 @@ public class RVP_Network {
                 .encoder(S2CVisualEffectEvent::encode)
                 .decoder(S2CVisualEffectEvent::decode)
                 .consumerMainThread(S2CVisualEffectEvent::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SFireCountermeasure.class, id++)
+                .encoder(C2SFireCountermeasure::encode)
+                .decoder(C2SFireCountermeasure::decode)
+                .consumerMainThread(C2SFireCountermeasure::handle)
                 .add();
     }
 }

@@ -43,6 +43,21 @@ public final class RVP_CountermeasureStateMachine {
     }
 
     /**
+     * 持久化恢复（载具重进世界）：恢复剩余与装填进度，终止进行中的齐射。
+     *
+     * @param remaining      剩余数量
+     * @param reloadProgress 装填进度（>0 表示装填中）
+     */
+    public void restore(int remaining, int reloadProgress) {
+        this.remaining = Math.max(0, Math.min(total, remaining));
+        this.reloadProgress = Math.max(0, reloadProgress);
+        this.reloading = this.remaining < total;
+        this.firing = false;
+        this.roundsLeft = 0;
+        this.roundTimer = 0;
+    }
+
+    /**
      * 玩家按下发射键：开始一次齐射。
      * 剩余充足 → {@code burstRounds} 轮；不足 → {@code ceil(remaining/perRound)} 轮耗尽全部剩余。
      */

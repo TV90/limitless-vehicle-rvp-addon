@@ -18,6 +18,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 
 public class RVP_Entities {
 
@@ -51,6 +52,22 @@ public class RVP_Entities {
 
     public static final RegistryObject<EntityType<RVP_DispensedEntity>> RVP_DISPENSED =
             registerRvpProjectile("rvp_dispensed", RVP_DispensedEntity::new, RVP_DispensedEntity::new);
+
+    /**
+     * 干扰物实体（热焰弹 / 箔条共用）。双端：服务端生成并运动，客户端渲染；
+     * 不参与碰撞 / 不可拾取，小碰撞箱仅供导引头 / 雷达按类型统计。
+     */
+    public static final RegistryObject<EntityType<RVP_DecoyEntity>> RVP_DECOY =
+            ENTITIES.register("rvp_decoy", () -> EntityType.Builder.<RVP_DecoyEntity>of(RVP_DecoyEntity::new, MobCategory.MISC)
+                    .noSummon()
+                    .noSave()
+                    .fireImmune()
+                    .sized(0.2F, 0.2F)
+                    .clientTrackingRange(64)
+                    .updateInterval(2)
+                    .setShouldReceiveVelocityUpdates(false)
+                    .setCustomClientFactory(RVP_DecoyEntity::new)
+                    .build("rvp_decoy"));
 
     private static <T extends net.minecraft.world.entity.Entity> RegistryObject<EntityType<T>> registerRvpProjectile(
             String id,

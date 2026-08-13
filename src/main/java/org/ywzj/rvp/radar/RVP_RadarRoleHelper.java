@@ -5,6 +5,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
@@ -161,6 +162,11 @@ public final class RVP_RadarRoleHelper {
         if (weaponUnit == null || target == null || !target.isAlive()) {
             return false;
         }
+        // 箔条禁锁期：目标被箔条干扰脱锁后的短时间内不可被选中 / 锁定（仍可被扫描）
+        if (weaponUnit.getVehicle() != null
+                && RVP_ChaffJamState.isInCooldown(target.getUUID(), weaponUnit.getVehicle().level().getGameTime())) {
+            return false;
+        }
         RadarUnit lockRadar = resolveLockRadarForTarget(weaponUnit, target);
         if (lockRadar == null) {
             return false;
@@ -189,6 +195,14 @@ public final class RVP_RadarRoleHelper {
         }
         Entity target = weaponUnit.getVehicle().level().getEntity(pendingId);
         if (target == null || !target.isAlive()) {
+            RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
+            if (entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
+                weaponUnit.setLockedEntity(null);
+            }
+            return;
+        }
+        // 箔条禁锁期：清 pending，不落锁（目标仍可被扫描）
+        if (RVP_ChaffJamState.isInCooldown(target.getUUID(), weaponUnit.getVehicle().level().getGameTime())) {
             RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
             if (entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
                 weaponUnit.setLockedEntity(null);
@@ -256,6 +270,7 @@ public final class RVP_RadarRoleHelper {
         List<ManualLockCandidate> candidates = new ArrayList<>();
         Vec3 aimVec = resolveManualLockAimVec(weaponUnit);
         Vec3 origin = weaponUnit.worldPivotPosition();
+        long gameTime = weaponUnit.getVehicle() == null ? 0 : weaponUnit.getVehicle().level().getGameTime();
         for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
             if (!canSearch(radarUnit) || !radarUnit.isOn()) {
                 continue;
@@ -263,6 +278,10 @@ public final class RVP_RadarRoleHelper {
             for (RadarUnit.DetectedObject detectedObject : radarUnit.getDetectedEntities().values()) {
                 Entity entity = detectedObject.entity;
                 if (entity == null || !entity.isAlive() || !seen.add(entity.getId())) {
+                    continue;
+                }
+                // 箔条禁锁期：不可被手动选中 / 锁定
+                if (RVP_ChaffJamState.isInCooldown(entity.getUUID(), gameTime)) {
                     continue;
                 }
                 Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(origin);
