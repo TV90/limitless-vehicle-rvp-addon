@@ -22,9 +22,9 @@ public record RVP_ThermobaricLod(
 ) {
     /** 内建温压预设使用的默认四档粒子 LOD。 */
     public static final RVP_ThermobaricLod DEFAULT = new RVP_ThermobaricLod(
-            128.0F, 1.0F,
-            256.0F, 0.5F,
-            512.0F, 0.25F,
+            512.0F, 1.0F,
+            756.0F, 0.7F,
+            1024.0F, 0.35F,
             0.0F);
 
     /**

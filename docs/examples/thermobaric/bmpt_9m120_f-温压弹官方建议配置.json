@@ -61,9 +61,9 @@
                 "density": 1.0,
                 "duration_ticks": -1,
                 "broadcast_range": 1536.0,
-                "sound": false,
-                "flash": false,
-                "shake": false,
+                "sound": true,
+                "flash": true,
+                "shake": true,
                 "suppress_native_explosion_effect": true,
                 "experimental": {
                     "dynamic_particle_budget": false
@@ -110,7 +110,7 @@
                     "pressure_radius_factor": 3.5,
                     "dust_radius_factor": 5,
                     "cloud_radius_factor": 1.7,
-                    "cloud_rise_factor": 1.6,
+                    "cloud_rise_factor": 1.5,
                     "cloud_rise_speed_factor": 12.0,
                     "cloud_roll_speed_factor": 1.0
                 }

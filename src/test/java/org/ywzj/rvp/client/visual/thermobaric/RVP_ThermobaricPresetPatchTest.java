@@ -8,6 +8,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_ThermobaricPresetPatchTest {
     @Test
+    void emptyWeaponPatchKeepsSelectedPresetWithoutHiddenOverrides() {
+        RVP_ThermobaricPreset selectedPreset = RVP_ThermobaricPresetPatch.parse("""
+                {
+                  "core_color": "#010203",
+                  "max_clouds": 42,
+                  "thermobaric_lod": {
+                    "medium": {"particle_ratio": 0.6}
+                  }
+                }
+                """).apply(RVP_ThermobaricPreset.DEFAULT);
+
+        RVP_ThermobaricPreset resolved = RVP_ThermobaricPresetPatch
+                .parse("{}")
+                .apply(selectedPreset);
+
+        assertEquals(selectedPreset, resolved);
+    }
+
+    @Test
     void sparsePatchOverridesOnlyExplicitFields() {
         RVP_ThermobaricPreset patched = RVP_ThermobaricPresetPatch.parse("""
                 {
@@ -56,7 +75,7 @@ class RVP_ThermobaricPresetPatchTest {
         assertEquals(5000, patched.condensationCloudParticleMaxCount());
         assertEquals(17.5F, patched.condensationCloudParticleScale());
         assertEquals(2.75F, patched.condensationCloudParticleSpawnThicknessFactor());
-        assertEquals(128.0F, patched.thermobaricLod().nearMaxDistance());
+        assertEquals(512.0F, patched.thermobaricLod().nearMaxDistance());
         assertEquals(0.4F, patched.thermobaricLod().mediumParticleRatio());
         assertEquals(0.1F, patched.thermobaricLod().beyondParticleRatio());
         assertEquals(1200, patched.maxClouds());
@@ -66,7 +85,7 @@ class RVP_ThermobaricPresetPatchTest {
         assertEquals(64, patched.pressureRings());
         assertEquals(128, patched.pressureSegments());
         assertFalse(patched.showPressureWave());
-        assertEquals(65, patched.cloudFadeDurationTicks());
+        assertEquals(140, patched.cloudFadeDurationTicks());
         assertEquals(RVP_ThermobaricPreset.DEFAULT.coreColor(), patched.coreColor());
         assertEquals(RVP_ThermobaricPreset.DEFAULT.dustRadiusFactor(), patched.dustRadiusFactor());
     }
@@ -113,28 +132,28 @@ class RVP_ThermobaricPresetPatchTest {
         assertEquals(6, patched.coreStartTick());
         assertEquals(30, patched.coreFullTick());
         assertEquals(8, patched.coreFadeDurationTicks());
-        assertEquals(100, RVP_ThermobaricPreset.DEFAULT.effectEndTick());
-        assertEquals(1.0F, RVP_ThermobaricPreset.DEFAULT.condensationCloudCutSpeedFactor());
+        assertEquals(230, RVP_ThermobaricPreset.DEFAULT.effectEndTick());
+        assertEquals(0.75F, RVP_ThermobaricPreset.DEFAULT.condensationCloudCutSpeedFactor());
         assertEquals(0.0F, RVP_ThermobaricPreset.DEFAULT.pressureWaveFadeSpeedFactor());
-        assertEquals(14, RVP_ThermobaricPreset.DEFAULT.pressureWaveEndTick());
+        assertEquals(40, RVP_ThermobaricPreset.DEFAULT.pressureWaveEndTick());
         assertFalse(RVP_ThermobaricPreset.DEFAULT.showCondensationCloud());
         assertFalse(RVP_ThermobaricPreset.DEFAULT.showPressureWave());
         assertTrue(RVP_ThermobaricPreset.DEFAULT.showCondensationCloudParticles());
-        assertEquals(1024, RVP_ThermobaricPreset.DEFAULT.condensationCloudParticleMaxCount());
-        assertEquals(8.0F, RVP_ThermobaricPreset.DEFAULT.condensationCloudParticleScale());
+        assertEquals(768, RVP_ThermobaricPreset.DEFAULT.condensationCloudParticleMaxCount());
+        assertEquals(6.0F, RVP_ThermobaricPreset.DEFAULT.condensationCloudParticleScale());
         assertEquals(1.0F,
                 RVP_ThermobaricPreset.DEFAULT.condensationCloudParticleSpawnThicknessFactor());
         assertEquals(RVP_ThermobaricLod.DEFAULT,
                 RVP_ThermobaricPreset.DEFAULT.thermobaricLod());
-        assertEquals(200, RVP_ThermobaricPreset.DEFAULT.maxClouds());
-        assertEquals(240, RVP_ThermobaricPreset.DEFAULT.maxFireballClouds());
-        assertEquals(128, RVP_ThermobaricPreset.DEFAULT.maxDustSegments());
+        assertEquals(1024, RVP_ThermobaricPreset.DEFAULT.maxClouds());
+        assertEquals(150, RVP_ThermobaricPreset.DEFAULT.maxFireballClouds());
+        assertEquals(425, RVP_ThermobaricPreset.DEFAULT.maxDustSegments());
         assertEquals(9, RVP_ThermobaricPreset.DEFAULT.dustGroundRadialSamples());
         assertEquals(16, RVP_ThermobaricPreset.DEFAULT.pressureRings());
         assertEquals(32, RVP_ThermobaricPreset.DEFAULT.pressureSegments());
-        assertEquals(1.0F, RVP_ThermobaricPreset.DEFAULT.cloudRiseSpeedFactor());
+        assertEquals(12.0F, RVP_ThermobaricPreset.DEFAULT.cloudRiseSpeedFactor());
         assertEquals(1.0F, RVP_ThermobaricPreset.DEFAULT.cloudRollSpeedFactor());
-        assertEquals(69, RVP_ThermobaricPreset.DEFAULT.dustRingEndTick());
+        assertEquals(40, RVP_ThermobaricPreset.DEFAULT.dustRingEndTick());
     }
 
     @Test
@@ -234,9 +253,9 @@ class RVP_ThermobaricPresetPatchTest {
                 {"condensation_cloud_cut_speed_factor": 0.0}
                 """).apply(RVP_ThermobaricPreset.DEFAULT);
 
-        assertEquals(1.0F, negative.condensationCloudCutSpeedFactor());
-        assertEquals(1.0F, text.condensationCloudCutSpeedFactor());
-        assertEquals(1.0F, nonFinite.condensationCloudCutSpeedFactor());
+        assertEquals(0.75F, negative.condensationCloudCutSpeedFactor());
+        assertEquals(0.75F, text.condensationCloudCutSpeedFactor());
+        assertEquals(0.75F, nonFinite.condensationCloudCutSpeedFactor());
         assertEquals(0.0F, zero.condensationCloudCutSpeedFactor());
     }
 
@@ -266,7 +285,7 @@ class RVP_ThermobaricPresetPatchTest {
                       "max_distance": 96.0
                     },
                     "far": {
-                      "max_distance": 640.0,
+                      "max_distance": 900.0,
                       "particle_ratio": 0.2
                     },
                     "beyond": {
@@ -278,9 +297,9 @@ class RVP_ThermobaricPresetPatchTest {
 
         assertEquals(96.0F, patched.thermobaricLod().nearMaxDistance());
         assertEquals(1.0F, patched.thermobaricLod().nearParticleRatio());
-        assertEquals(256.0F, patched.thermobaricLod().mediumMaxDistance());
-        assertEquals(0.5F, patched.thermobaricLod().mediumParticleRatio());
-        assertEquals(640.0F, patched.thermobaricLod().farMaxDistance());
+        assertEquals(756.0F, patched.thermobaricLod().mediumMaxDistance());
+        assertEquals(0.7F, patched.thermobaricLod().mediumParticleRatio());
+        assertEquals(900.0F, patched.thermobaricLod().farMaxDistance());
         assertEquals(0.2F, patched.thermobaricLod().farParticleRatio());
         assertEquals(0.05F, patched.thermobaricLod().beyondParticleRatio());
     }
@@ -297,7 +316,7 @@ class RVP_ThermobaricPresetPatchTest {
                     },
                     "medium": "medium",
                     "far": {
-                      "max_distance": 600.0,
+                      "max_distance": 900.0,
                       "particle_ratio": 0.1
                     },
                     "beyond": {
@@ -310,11 +329,11 @@ class RVP_ThermobaricPresetPatchTest {
                 """).apply(RVP_ThermobaricPreset.DEFAULT);
 
         assertEquals(1.0F, patched.condensationCloudParticleSpawnThicknessFactor());
-        assertEquals(128.0F, patched.thermobaricLod().nearMaxDistance());
+        assertEquals(512.0F, patched.thermobaricLod().nearMaxDistance());
         assertEquals(1.0F, patched.thermobaricLod().nearParticleRatio());
-        assertEquals(256.0F, patched.thermobaricLod().mediumMaxDistance());
-        assertEquals(0.5F, patched.thermobaricLod().mediumParticleRatio());
-        assertEquals(600.0F, patched.thermobaricLod().farMaxDistance());
+        assertEquals(756.0F, patched.thermobaricLod().mediumMaxDistance());
+        assertEquals(0.7F, patched.thermobaricLod().mediumParticleRatio());
+        assertEquals(900.0F, patched.thermobaricLod().farMaxDistance());
         assertEquals(0.1F, patched.thermobaricLod().farParticleRatio());
         assertEquals(0.05F, patched.thermobaricLod().beyondParticleRatio());
     }

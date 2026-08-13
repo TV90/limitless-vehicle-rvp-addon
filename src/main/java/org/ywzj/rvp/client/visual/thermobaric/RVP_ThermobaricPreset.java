@@ -16,7 +16,7 @@ import net.minecraft.resources.ResourceLocation;
  * @param condensationCloudParticleScale 粒子凝结云的贴图尺寸缩放倍率
  * @param condensationCloudParticleSpawnThicknessFactor 粒子凝结云在 start tick 的墙体厚度倍率，默认 1.0；
  *                                                        只影响生成阶段起始厚度，full tick 后恢复原曲线
- * @param condensationCloudCutSpeedFactor 凝结云在完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率，默认 1.0；
+ * @param condensationCloudCutSpeedFactor 凝结云在完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率，默认 0.75；
  *                                          接受非负有限值，0 关闭裁切，只在凝结云显示时生效且不改变径向速度、淡出或寿命
  * @param thermobaricLod 火球、粒子凝结云、尘环与后燃烟云共用的四档距离 LOD
  * @param showDustRing 是否显示贴地尘环
@@ -45,8 +45,8 @@ import net.minecraft.resources.ResourceLocation;
  * @param pressureRadiusFactor 压力波与凝结云在 full tick 时相对基础爆炸半径的半径倍率
  * @param dustRadiusFactor 尘环相对基础爆炸半径的倍率
  * @param cloudRadiusFactor 烟云横向相对基础爆炸半径的倍率
- * @param cloudRiseFactor 烟云最终最高升起高度相对基础爆炸半径的倍率，默认 1.2 且不设上限
- * @param cloudRiseSpeedFactor 烟云竖直升起速度的无量纲倍率，默认 1.0，零值停止基础升起
+ * @param cloudRiseFactor 烟云最终最高升起高度相对基础爆炸半径的倍率，默认 1.5 且不设上限
+ * @param cloudRiseSpeedFactor 烟云竖直升起速度的无量纲倍率，默认 12.0，零值停止基础升起
  * @param cloudRollSpeedFactor 烟云翻滚、卷吸、湍流与水平平流速度的无量纲倍率，默认 1.0，零值冻结对应运动
  * @param nearSound 近距离音效资源 ID，阶段 C 启用
  * @param farSound 远距离音效资源 ID，阶段 C 启用
@@ -98,44 +98,44 @@ public record RVP_ThermobaricPreset(
 ) {
     /** 温压资源缺失、非法或未知时使用的内建安全默认预设。 */
     public static final RVP_ThermobaricPreset DEFAULT = new RVP_ThermobaricPreset(
-            0xFFD2A0,
-            0xFF7A24,
-            0x3A302D,
+            0xFFE0B0,
+            0xFF6820,
+            0x332A27,
             true,
             false,
             false,
             true,
-            1024,
-            8.0F,
+            768,
+            6.0F,
             1.0F,
-            1.0F,
+            0.75F,
             RVP_ThermobaricLod.DEFAULT,
             true,
             true,
-            200,
-            240,
-            128,
+            1024,
+            150,
+            425,
             9,
             16,
             32,
             0,
-            4,
+            20,
+            40,
             10,
-            2,
-            8,
+            25,
             0.0F,
-            3,
-            36,
+            10,
+            25,
             0,
-            35,
-            65,
-            8,
-            35,
+            90,
+            140,
+            30,
+            85,
             3.5F,
-            2.4F,
+            5.0F,
+            1.7F,
             1.5F,
-            1.2F,
-            1.0F,
+            12.0F,
             1.0F,
             ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_near"),
             ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_far"),

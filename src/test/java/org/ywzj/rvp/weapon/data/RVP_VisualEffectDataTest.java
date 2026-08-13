@@ -29,7 +29,11 @@ class RVP_VisualEffectDataTest {
         assertEquals(1.0F, data.getScale());
         assertEquals(1.0F, data.getDensity());
         assertEquals(-1, data.getDurationTicks());
-        assertEquals(768.0D, data.getBroadcastRange());
+        assertEquals(1536.0D, data.getBroadcastRange());
+        assertTrue(data.isSound());
+        assertTrue(data.isFlash());
+        assertTrue(data.isShake());
+        assertTrue(data.isSuppressNativeExplosionEffect());
         assertFalse(data.isExperimentalDynamicParticleBudget());
         assertEquals("{}", data.copyPresetData().toString());
     }

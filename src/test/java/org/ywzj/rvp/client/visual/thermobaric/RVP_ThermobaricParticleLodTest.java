@@ -14,12 +14,12 @@ class RVP_ThermobaricParticleLodTest {
     void defaultLodUsesInclusiveDistanceBoundaries() {
         RVP_ThermobaricLod lod = RVP_ThermobaricLod.DEFAULT;
 
-        assertEquals(1.0F, lod.resolveParticleRatio(128.0D * 128.0D));
-        assertEquals(0.5F, lod.resolveParticleRatio(129.0D * 129.0D));
-        assertEquals(0.5F, lod.resolveParticleRatio(256.0D * 256.0D));
-        assertEquals(0.25F, lod.resolveParticleRatio(257.0D * 257.0D));
-        assertEquals(0.25F, lod.resolveParticleRatio(512.0D * 512.0D));
-        assertEquals(0.0F, lod.resolveParticleRatio(513.0D * 513.0D));
+        assertEquals(1.0F, lod.resolveParticleRatio(512.0D * 512.0D));
+        assertEquals(0.7F, lod.resolveParticleRatio(513.0D * 513.0D));
+        assertEquals(0.7F, lod.resolveParticleRatio(756.0D * 756.0D));
+        assertEquals(0.35F, lod.resolveParticleRatio(757.0D * 757.0D));
+        assertEquals(0.35F, lod.resolveParticleRatio(1024.0D * 1024.0D));
+        assertEquals(0.0F, lod.resolveParticleRatio(1025.0D * 1025.0D));
     }
 
     @Test

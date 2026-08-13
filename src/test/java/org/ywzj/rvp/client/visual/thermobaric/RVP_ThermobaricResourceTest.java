@@ -24,6 +24,12 @@ class RVP_ThermobaricResourceTest {
 
         JsonObject preset = JsonParser.parseString(Files.readString(presetPath)).getAsJsonObject();
         JsonObject sounds = JsonParser.parseString(Files.readString(soundsPath)).getAsJsonObject();
+        // 调用温压类型化 patch，确保打包资源预设与 Java 内建安全默认始终保持同一有效配置。
+        RVP_ThermobaricPreset resourcePreset = RVP_ThermobaricPresetPatch
+                .parse(preset.toString())
+                .apply(RVP_ThermobaricPreset.DEFAULT);
+        assertEquals(RVP_ThermobaricPreset.DEFAULT, resourcePreset);
+        assertEquals(230, resourcePreset.effectEndTick());
         assertEquals("rvp:thermobaric_near", preset.get("near_sound").getAsString());
         assertTrue(sounds.has("thermobaric_near"));
         assertTrue(sounds.has("thermobaric_far"));
