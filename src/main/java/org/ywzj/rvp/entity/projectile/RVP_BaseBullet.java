@@ -890,10 +890,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /**
      * 被干扰失锁：若丢失的目标是干扰物实体，按 {@code interference_data.seeker_shut_off_time}
-     * 启动导引头关闭期（期间不重新搜索，之后重启复锁）。
+     * 启动导引头关闭期（期间不重新搜索，之后重启复锁）；并复位红外"已获取"标记，
+     * 使 IR 在关闭期结束后能像 AIR 一样主动扫描索敌复锁。
      */
     private void noteDecoyTargetLost() {
         if (targetEntity instanceof RVP_Decoy) {
+            this.terminalIrTargetAcquired = false;
             beginSeekerShutOffFromConfig();
         }
     }

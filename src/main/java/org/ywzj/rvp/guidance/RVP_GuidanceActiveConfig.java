@@ -52,7 +52,8 @@ public record RVP_GuidanceActiveConfig(
         RVP_PresetBallisticProfile presetBallistic,
         int seekerJamLimit,
         float seekerFovShrinkFactor,
-        Integer seekerShutOffTime
+        Integer seekerShutOffTime,
+        float chaffResistance
 ) {
     public RVP_GuidanceActiveConfig {
         phase = phase == null ? RVP_GuidancePhase.MAIN : phase;
@@ -88,6 +89,7 @@ public record RVP_GuidanceActiveConfig(
         seekerJamLimit = Math.max(1, seekerJamLimit);
         seekerFovShrinkFactor = Float.isFinite(seekerFovShrinkFactor) ? Math.max(0.1f, seekerFovShrinkFactor) : 1.0f;
         seekerShutOffTime = seekerShutOffTime == null ? null : Math.max(0, seekerShutOffTime);
+        chaffResistance = Float.isFinite(chaffResistance) ? Math.max(0f, chaffResistance) : 0f;
     }
 
     public float maxLockHalfAngle() {

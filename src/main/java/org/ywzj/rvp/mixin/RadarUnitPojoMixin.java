@@ -46,6 +46,11 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Unique
     public float ywzj_rvp$scanMaxHeight = 10000f;
 
+    /** 雷达对箔条目标的锁定抗性 0~1：箔条可作为雷达锁定目标，但按此值施加优先级罚分（越大越难被选中，非完全不可锁）。 */
+    @SerializedName("chaff_resistance")
+    @Unique
+    public float ywzj_rvp$chaffResistance = 0f;
+
     @Override
     public String ywzj_rvp$getRadarRole() {
         return ywzj_rvp$radarRole;
@@ -89,5 +94,10 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Override
     public float ywzj_rvp$getScanMaxHeight() {
         return ywzj_rvp$scanMaxHeight;
+    }
+
+    @Override
+    public float ywzj_rvp$getChaffResistance() {
+        return Float.isFinite(ywzj_rvp$chaffResistance) ? Math.max(0f, ywzj_rvp$chaffResistance) : 0f;
     }
 }

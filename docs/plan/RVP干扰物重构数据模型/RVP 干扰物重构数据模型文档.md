@@ -173,6 +173,19 @@ onTick:
 > RVP 弹体侧检测必须**按类型过滤**（IR/AIR 只查 `FLARE`，SARH/ARH 只查 `CHAFF`），
 > 不能用本体无类型的 `TargetObstruction` 一概判定。
 
+## 雷达/导引头箔条抗性与锁定行为（补充）
+
+| 行为 | 说明 |
+| --- | --- |
+| 雷达箔条抗性 | 载具雷达部件 JSON 新增 `chaff_resistance`（默认 `0`）：**箔条可作为雷达锁定目标**（不排除），但在手动/自动锁定候选评分中按抗性施加优先级惩罚（越大越难被选中，非完全不可锁） |
+| 导弹箔条抗性 | 武器 `guidance_data.interference_data.chaff_resistance`（默认 `0`）：**ARH / AIR 开启导引头后可锁箔条**，扫描评分按抗性对箔条施加优先级惩罚（越大越难被选为锁定目标，非完全不可锁） |
+| IR 可锁热焰弹 | **红外弹开启导引头阶段把热焰弹当作锁定目标**（扫描候选含 FLARE 实体，无抗性） |
+| IR 关机后复锁 | IR 弹被干扰失锁、导引头关闭期结束后，**可像 AIR 一样主动扫描索敌复锁** |
+
+- 雷达部件 JSON 写法：`"scan_animation_mode": "phase", "chaff_resistance": 0.5`（0~1，0=无惩罚）。
+- 武器 JSON 写法：`"guidance_data": { ..., "interference_data": { "chaff_resistance": 0.5 } }`。
+- 抗性只降低**优先级**，不禁止锁定：作为评分罚分（`score + chaff_resistance * 罚分基准`），候选排序靠后但若分数最优仍可锁定。
+
 ## 雷达侧干扰联动（箔条 vs 雷达）
 
 雷达只受**箔条（CHAFF）**影响；热焰弹对雷达无效且不可被雷达扫描。设计从简，**不做**探测遮蔽、

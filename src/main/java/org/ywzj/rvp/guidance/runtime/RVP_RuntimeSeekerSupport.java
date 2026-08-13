@@ -5,6 +5,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
+import org.ywzj.rvp.countermeasure.RVP_Decoy;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
@@ -94,6 +96,24 @@ final class RVP_RuntimeSeekerSupport {
                 best = entity;
             }
         }
+        // ARH/AIR 开启导引头后可锁箔条：扫描候选含 CHAFF 实体，按 chaffResistance 施加优先级罚分
+        // （越大越难被选为锁定目标，但非完全不可锁）
+        AABB scanBox = projectile.getBoundingBox().inflate(range);
+        for (Entity entity : projectile.level().getEntities(projectile, scanBox,
+                candidate -> candidate instanceof RVP_Decoy decoy
+                        && decoy.rvp$decoyType() == RVP_EnumCountermeasureType.CHAFF && candidate.isAlive())) {
+            if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
+                continue;
+            }
+            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(projectile.position());
+            double angle = RVP_GuidanceTargetUtil.angleBetween(projectile.getLookAngle(), toTarget);
+            double score = angle * 4.0 + projectile.distanceTo(entity) / Math.max(range, 1.0)
+                    + config.chaffResistance() * 30.0;
+            if (score < bestScore) {
+                bestScore = score;
+                best = entity;
+            }
+        }
         return best;
     }
 
@@ -106,7 +126,11 @@ final class RVP_RuntimeSeekerSupport {
         for (Entity entity : projectile.level().getEntities(
                 projectile,
                 box,
-                candidate -> candidate instanceof AbstractVehicle && candidate.isAlive())) {
+                candidate -> candidate.isAlive()
+                        && (candidate instanceof AbstractVehicle
+                        // IR 开启导引头阶段把热焰弹也当作锁定目标（无抗性）
+                        || candidate instanceof RVP_Decoy decoy
+                        && decoy.rvp$decoyType() == RVP_EnumCountermeasureType.FLARE))) {
             if (entity == projectile.getShooterVehicle()
                     || !RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
                 continue;

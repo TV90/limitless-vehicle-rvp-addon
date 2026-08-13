@@ -51,6 +51,18 @@ public final class RVP_RadarRoleHelper {
         return radarUnit != null && !ROLE_SEARCH.equalsIgnoreCase(getRadarRole(radarUnit));
     }
 
+    /** 雷达对箔条目标的锁定抗性（0~1）：越大，箔条作为锁定候选的优先级越低（非完全不可锁）。 */
+    public static float getRadarChaffResistance(RadarUnit radarUnit) {
+        if (radarUnit == null) {
+            return 0f;
+        }
+        RadarUnitData data = (RadarUnitData) ((PartUnitAccessorMixin) (Object) radarUnit).ywzj_rvp$getData();
+        if (data instanceof RadarUnitDataExt ext) {
+            return ext.ywzj_rvp$getChaffResistance();
+        }
+        return 0f;
+    }
+
     public static RadarUnit getPreferredLockRadar(WeaponUnit weaponUnit) {
         if (weaponUnit == null) {
             return null;
@@ -275,6 +287,8 @@ public final class RVP_RadarRoleHelper {
             if (!canSearch(radarUnit) || !radarUnit.isOn()) {
                 continue;
             }
+            // 雷达箔条抗性：对本雷达检测到的箔条候选施加评分罚分（越大优先级越低，非完全不可锁）
+            float chaffResistance = getRadarChaffResistance(radarUnit);
             for (RadarUnit.DetectedObject detectedObject : radarUnit.getDetectedEntities().values()) {
                 Entity entity = detectedObject.entity;
                 if (entity == null || !entity.isAlive() || !seen.add(entity.getId())) {
@@ -290,6 +304,10 @@ public final class RVP_RadarRoleHelper {
                 }
                 Vec3 targetPos = entity.getBoundingBox().getCenter();
                 double score = scoreManualLockCandidate(origin, aimVec, targetPos);
+                if (entity instanceof org.ywzj.rvp.countermeasure.RVP_Decoy decoy
+                        && decoy.rvp$decoyType() == org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType.CHAFF) {
+                    score += chaffResistance * 30.0;
+                }
                 if (!Double.isFinite(score)) {
                     continue;
                 }
