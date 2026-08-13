@@ -57,6 +57,14 @@ public final class RVP_CountermeasureSystemData {
     @SerializedName("radar_jam_cooldown_tick")
     private int radarJamCooldownTick = 60;
 
+    /**
+     * 关联的 {@code bone_modules} 骨块名列表：非空时，对应骨块的 COUNTERMEASURE 模块<b>全部被击毁</b>
+     * 则本系统失去抛洒功能；为空时不联动骨块（始终可用）。骨块需在载具 JSON 的
+     * {@code bone_modules.<bone>.modules} 中声明 {@code "countermeasure"}。
+     */
+    @SerializedName("bone_modules")
+    private List<String> boneModules = new ArrayList<>();
+
     public String getRawType() {
         return type;
     }
@@ -105,6 +113,10 @@ public final class RVP_CountermeasureSystemData {
 
     public int getRadarJamCooldownTick() {
         return Math.max(1, radarJamCooldownTick);
+    }
+
+    public List<String> getBoneModules() {
+        return boneModules == null ? List.of() : List.copyOf(boneModules);
     }
 
     /** 系统是否启用：总数为正且至少有一个发射装置部件。 */

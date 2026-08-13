@@ -16,6 +16,8 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
@@ -93,7 +95,7 @@ public final class RVP_CountermeasureRuntimeManager {
             return;
         }
         RVP_CountermeasureSystemData system = resolveSystem(vehicle, type);
-        if (system == null) {
+        if (system == null || !isSystemActive(vehicle, system)) {
             return;
         }
         VehicleCountermeasureState state = getOrCreate(vehicle.getUUID());
@@ -121,11 +123,14 @@ public final class RVP_CountermeasureRuntimeManager {
 
     private static void tickSystem(AbstractVehicle vehicle, RVP_CountermeasureData config,
                                    RVP_EnumCountermeasureType type, RVP_CountermeasureStateMachine machine) {
+        RVP_CountermeasureSystemData system = config.system(type);
+        if (system == null || !isSystemActive(vehicle, system)) {
+            return;
+        }
         int fireCount = machine.onTick();
         if (fireCount <= 0) {
             return;
         }
-        RVP_CountermeasureSystemData system = config.system(type);
         spawnRound(vehicle, system, fireCount, type);
     }
 
@@ -240,6 +245,27 @@ public final class RVP_CountermeasureRuntimeManager {
         }
         RVP_CountermeasureSystemData system = config.system(type);
         return system != null && system.isEnabled() ? system : null;
+    }
+
+    /**
+     * 系统是否当前可用：配置启用，且若配置了 {@code bone_modules}，对应骨块的
+     * COUNTERMEASURE 模块必须仍有存活（全部被击毁则失去抛洒功能）。
+     */
+    private static boolean isSystemActive(AbstractVehicle vehicle, RVP_CountermeasureSystemData system) {
+        if (system == null || !system.isEnabled()) {
+            return false;
+        }
+        java.util.List<String> bones = system.getBoneModules();
+        if (bones.isEmpty()) {
+            return true;
+        }
+        java.util.UUID vehicleId = vehicle.getUUID();
+        for (String bone : bones) {
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicleId, bone, BoneModuleType.COUNTERMEASURE)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void ensureState(VehicleCountermeasureState state, @Nullable RVP_CountermeasureData config) {

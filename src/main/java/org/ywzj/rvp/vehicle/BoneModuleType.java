@@ -14,13 +14,16 @@ import java.util.Locale;
  *   <li>{@link #TRACK}：失效后仍参与碰撞，仅动力损失。</li>
  *   <li>{@link #JAMMER}：干扰设备（消费点 {@code RVP_JammingRuntime}），失效后失去干扰能力。</li>
  *   <li>{@link #APS}：主动防护发射器（消费点 {@code RVP_ApsRuntimeManager}），失效后该侧扇区失去拦截能力。</li>
+ *   <li>{@link #COUNTERMEASURE}：干扰物发射装置（消费点 {@code RVP_CountermeasureRuntimeManager}），
+ *       载具干扰物配置的 {@code bone_modules} 全部失效后失去抛洒功能。</li>
  * </ul>
  */
 public enum BoneModuleType {
     ERA,
     TRACK,
     JAMMER,
-    APS;
+    APS,
+    COUNTERMEASURE;
 
     private static final BoneModuleType[] VALUES = values();
 
