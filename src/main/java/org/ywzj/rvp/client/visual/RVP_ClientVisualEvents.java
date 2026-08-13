@@ -3,16 +3,22 @@ package org.ywzj.rvp.client.visual;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricScreenFeedback;
 
 /** 通用客户端视觉效果的 Tick、渲染和世界清理事件入口。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ClientVisualEvents {
+    /** 声音去重与屏幕反馈当前所属的客户端世界。 */
+    private static ClientLevel feedbackLevel;
+
     private RVP_ClientVisualEvents() {
     }
 
@@ -25,7 +31,12 @@ public final class RVP_ClientVisualEvents {
         if (level == null) {
             // 调用 RVP 客户端视觉分派器，清除退出世界后遗留的实例。
             RVP_ClientVisualEffectDispatcher.clear();
+            clearThermobaricFeedback();
             return;
+        }
+        if (feedbackLevel != level) {
+            clearThermobaricFeedback();
+            feedbackLevel = level;
         }
         // 调用 RVP 客户端视觉分派器，统一推进当前世界的效果实例。
         RVP_ClientVisualEffectDispatcher.tick(level);
@@ -40,10 +51,29 @@ public final class RVP_ClientVisualEvents {
     }
 
     @SubscribeEvent
+    public static void onRenderGui(RenderGuiEvent.Post event) {
+        // 调用温压屏幕反馈服务，在 GUI 最后阶段绘制当前最强闪光。
+        RVP_ThermobaricScreenFeedback.renderFlash(event);
+    }
+
+    @SubscribeEvent
+    public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        // 调用温压屏幕反馈服务，通过 Forge 相机事件叠加声波到达后的适度震动。
+        RVP_ThermobaricScreenFeedback.applyCameraShake(event);
+    }
+
+    @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel().isClientSide()) {
             // 调用 RVP 客户端视觉分派器，确保切换维度时实例不会跨世界复用。
             RVP_ClientVisualEffectDispatcher.clear();
+            clearThermobaricFeedback();
         }
+    }
+
+    /** 同时清理温压声音去重表与屏幕反馈脉冲。 */
+    private static void clearThermobaricFeedback() {
+        RVP_ThermobaricScreenFeedback.clearAll();
+        feedbackLevel = null;
     }
 }

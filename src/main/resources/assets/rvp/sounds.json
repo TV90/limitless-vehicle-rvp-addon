@@ -1,0 +1,20 @@
+{
+  "thermobaric_near": {
+    "subtitle": "subtitles.rvp.thermobaric_explosion",
+    "sounds": [
+      "rvp:thermobaric/near"
+    ]
+  },
+  "thermobaric_far": {
+    "subtitle": "subtitles.rvp.thermobaric_explosion",
+    "sounds": [
+      "rvp:thermobaric/far"
+    ]
+  },
+  "thermobaric_tail": {
+    "subtitle": "subtitles.rvp.thermobaric_tail",
+    "sounds": [
+      "rvp:thermobaric/tail"
+    ]
+  }
+}

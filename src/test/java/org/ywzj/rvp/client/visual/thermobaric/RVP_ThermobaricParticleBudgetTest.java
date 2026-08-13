@@ -78,10 +78,10 @@ class RVP_ThermobaricParticleBudgetTest {
 
     @Test
     void overlapFactorsRemainIndependentPerGeometryModel() {
-        assertEquals(1.35D, RVP_ThermobaricParticleBudget.CONDENSATION_OVERLAP_FACTOR);
+        assertEquals(2.50D, RVP_ThermobaricParticleBudget.CONDENSATION_OVERLAP_FACTOR);
         assertEquals(1.20D, RVP_ThermobaricParticleBudget.DUST_OVERLAP_FACTOR);
         assertEquals(1.50D, RVP_ThermobaricParticleBudget.FIREBALL_OVERLAP_FACTOR);
-        assertEquals(1.35D, RVP_ThermobaricParticleBudget.CLOUD_OVERLAP_FACTOR);
+        assertEquals(3.00D, RVP_ThermobaricParticleBudget.CLOUD_OVERLAP_FACTOR);
     }
 
     @Test

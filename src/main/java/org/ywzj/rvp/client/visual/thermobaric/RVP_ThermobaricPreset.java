@@ -96,7 +96,7 @@ public record RVP_ThermobaricPreset(
         ResourceLocation farSound,
         ResourceLocation tailSound
 ) {
-    /** 阶段 B 使用的内建安全默认预设。 */
+    /** 温压资源缺失、非法或未知时使用的内建安全默认预设。 */
     public static final RVP_ThermobaricPreset DEFAULT = new RVP_ThermobaricPreset(
             0xFFD2A0,
             0xFF7A24,

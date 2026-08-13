@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.visual.thermobaric;
 
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -10,6 +11,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffect;
+import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 import java.util.ArrayList;
@@ -57,6 +59,8 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     private final boolean cloudGroundAnchored;
     /** 当前效果年龄（tick），创建时已按服务端时间补帧。 */
     private int age;
+    /** 当前实例的声速延迟、近远音与尾音控制器。 */
+    private final RVP_ThermobaricSoundController soundController;
 
     RVP_ThermobaricEffectInstance(ClientLevel level, RVP_VisualEffectEvent event,
             RVP_ThermobaricPreset preset, int duration, int initialAge) {
@@ -66,27 +70,30 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         this.preset = preset;
         this.duration = duration;
         dynamicParticleBudgetEnabled = event.experimentalDynamicParticleBudget();
+        // 调用客户端配置读取质量上限，只在实例创建时下调作者给出的粒子密度。
+        float effectiveDensity = resolveClientLimitedDensity(
+                event.density(), RVP_ClientConfig.getThermobaricQualityDensity());
         dynamicCoreLayerCapacity = dynamicParticleBudgetEnabled
-                ? resolveDensityLimitedCount(3, event.density()) : 3;
+                ? resolveDensityLimitedCount(3, effectiveDensity) : 3;
         age = initialAge;
-        int cloudCount = resolveDensityLimitedCount(preset.maxClouds(), event.density());
+        int cloudCount = resolveDensityLimitedCount(preset.maxClouds(), effectiveDensity);
         clouds = createClouds(event.seed(), cloudCount);
         // 调用温压连接锚点选择器，为高横向或高升起倍率预先固定跨帧不变的层间连接端点。
         cloudLink = RVP_ThermobaricCloudLink.selectAnchors(clouds, event.seed());
         int fireballCloudCount = resolveDensityLimitedCount(
-                preset.maxFireballClouds(), event.density());
+                preset.maxFireballClouds(), effectiveDensity);
         fireballClouds = createFireballClouds(event.seed() ^ 0x54A2D91C6E8B37F1L, fireballCloudCount);
         // 按预设硬上限和事件视觉密度生成粒子凝结云，确保配置的最大显示数量不会被突破。
         int pressureSmokeMaximum = preset.showCondensationCloudParticles()
                 ? preset.condensationCloudParticleMaxCount() : 0;
         int pressureSmokeCount = resolveDensityLimitedCount(
-                pressureSmokeMaximum, event.density());
+                pressureSmokeMaximum, effectiveDensity);
         pressureSmokeParticles = createPressureSmoke(
                 event.seed() ^ 0x19C7E04AB53D826FL, pressureSmokeCount);
         Random fadeRandom = new Random(event.seed() ^ 0x6D2B79F5A4C381E7L);
         pressureWaveFadeSpread = 0.18F + fadeRandom.nextFloat() * 0.16F;
         int dustSegmentCount = resolveDensityLimitedCount(
-                preset.maxDustSegments(), event.density());
+                preset.maxDustSegments(), effectiveDensity);
         dustGroundHeights = sampleGround(dustSegmentCount);
         // 仅在实验开关开启时创建渐进顺序，确保默认关闭不增加旧路径的数组分配和选段变化。
         progressiveDustSegmentOrder = dynamicParticleBudgetEnabled
@@ -98,11 +105,22 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
                 && center.y >= centerGroundHeight - 1.0D
                 && center.y - centerGroundHeight <= groundAnchorDistance;
         cloudOriginY = cloudGroundAnchored ? centerGroundHeight : (float) center.y;
+        LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
+        double listenerDistance = player == null ? 0.0D : player.position().distanceTo(center);
+        soundController = new RVP_ThermobaricSoundController(
+                level, event, preset, visualRadius, listenerDistance, initialAge);
+        if (soundController.accepted() && event.flash()) {
+            // 调用独立温压反馈服务，让闪光遵循光学即时到达并扣除网络补帧年龄。
+            RVP_ThermobaricScreenFeedback.triggerFlash(
+                    soundController.eventKey(), level, initialAge, listenerDistance, visualRadius);
+        }
     }
 
     @Override
     public void tick() {
         age++;
+        // 调用温压声音控制器推进主音、尾音和声波到达震动。
+        soundController.tick(age);
     }
 
     @Override
@@ -118,7 +136,8 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     @Override
     public void close() {
-        // 阶段 B 的实例不持有 GPU 或声音句柄；保留显式生命周期供后续阶段安全扩展。
+        // 调用温压声音控制器，取消实例关闭后尚未到达的声音与屏幕反馈。
+        soundController.close();
     }
 
     ClientLevel level() {
@@ -418,6 +437,16 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
             return maximumCount;
         }
         return Math.max(0, (int) Math.round(scaledCount));
+    }
+
+    /** 客户端质量只能下调服务端作者密度，不能把事件密度增强到更高值。 */
+    static float resolveClientLimitedDensity(float serverDensity, float clientQualityDensity) {
+        float normalizedServer = Float.isFinite(serverDensity)
+                ? Math.max(0.0F, serverDensity) : 0.0F;
+        float normalizedClient = Float.isFinite(clientQualityDensity)
+                ? Mth.clamp(clientQualityDensity, 0.0F, 1.0F) : 1.0F;
+        double product = (double) normalizedServer * normalizedClient;
+        return product >= Float.MAX_VALUE ? Float.MAX_VALUE : (float) product;
     }
 
     /** 对两个非负有限 float 做饱和乘法，避免自由倍率计算产生无穷值。 */

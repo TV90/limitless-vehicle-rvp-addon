@@ -10,14 +10,49 @@ import org.apache.commons.lang3.tuple.Pair;
  * <p>
  * 目前包含 LOD 缩放过滤：缩放中（载具镜/RVP 武器缩放/原版望远镜）视场内载具少、
  * 渲染压力低，可将 LOD 距离阈值放大、更晚才替换低模。
+ * 以及温压粒子质量、音量、闪光和震动的客户端上限。
  */
 public class RVP_ClientConfig {
 
+    /** 客户端温压粒子质量档位。 */
+    public enum ThermobaricQuality {
+        /** 低质量：保留作者粒子密度的 50%。 */
+        LOW(0.50F),
+        /** 中质量：保留作者粒子密度的 75%。 */
+        MEDIUM(0.75F),
+        /** 高质量：完整保留作者粒子密度。 */
+        HIGH(1.00F);
+
+        /** 当前质量档位对应的粒子密度上限倍率。 */
+        private final float densityMultiplier;
+
+        ThermobaricQuality(float densityMultiplier) {
+            this.densityMultiplier = densityMultiplier;
+        }
+
+        /** 返回只会下调作者粒子密度的倍率。 */
+        public float densityMultiplier() {
+            return densityMultiplier;
+        }
+    }
+
+    /** 已注册的客户端配置实例。 */
     private static RVP_ClientConfig INSTANCE;
 
+    /** 缩放观察时是否延后载具 LOD 切换。 */
     private final ForgeConfigSpec.BooleanValue lodZoomEnabled;
+    /** 判定进入缩放观察状态的视场角比例。 */
     private final ForgeConfigSpec.DoubleValue lodZoomFovRatio;
+    /** 缩放观察时使用的载具 LOD 距离倍率。 */
     private final ForgeConfigSpec.DoubleValue lodZoomDistanceMultiplier;
+    /** 温压效果的客户端粒子质量档位。 */
+    private final ForgeConfigSpec.EnumValue<ThermobaricQuality> thermobaricQuality;
+    /** 温压音效的客户端音量倍率。 */
+    private final ForgeConfigSpec.DoubleValue thermobaricSoundVolume;
+    /** 温压闪光的客户端强度倍率。 */
+    private final ForgeConfigSpec.DoubleValue thermobaricFlashIntensity;
+    /** 温压镜头震动的客户端强度倍率。 */
+    private final ForgeConfigSpec.DoubleValue thermobaricShakeIntensity;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
         builder.push("lod");
@@ -48,6 +83,39 @@ public class RVP_ClientConfig {
                 .defineInRange("lodZoomDistanceMultiplier", 1.5, 1.0, 10.0);
 
         builder.pop();
+
+        builder.push("thermobaric");
+
+        thermobaricQuality = builder
+                .comment(
+                        "Thermobaric particle quality. LOW/MEDIUM/HIGH keep 50%/75%/100%",
+                        "of the particle density allowed by the weapon author.",
+                        "Default: HIGH"
+                )
+                .defineEnum("thermobaricQuality", ThermobaricQuality.HIGH);
+
+        thermobaricSoundVolume = builder
+                .comment(
+                        "Thermobaric sound volume multiplier. 0 disables thermobaric audio.",
+                        "Default: 1.0"
+                )
+                .defineInRange("thermobaricSoundVolume", 1.0D, 0.0D, 1.0D);
+
+        thermobaricFlashIntensity = builder
+                .comment(
+                        "Thermobaric screen flash intensity multiplier. 0 disables the flash.",
+                        "Default: 1.0"
+                )
+                .defineInRange("thermobaricFlashIntensity", 1.0D, 0.0D, 1.0D);
+
+        thermobaricShakeIntensity = builder
+                .comment(
+                        "Thermobaric camera shake intensity multiplier. 0 disables camera shake.",
+                        "Default: 1.0"
+                )
+                .defineInRange("thermobaricShakeIntensity", 1.0D, 0.0D, 1.0D);
+
+        builder.pop();
     }
 
     public static boolean isLodZoomEnabled() {
@@ -60,6 +128,28 @@ public class RVP_ClientConfig {
 
     public static double getLodZoomDistanceMultiplier() {
         return INSTANCE != null ? INSTANCE.lodZoomDistanceMultiplier.get() : 1.5;
+    }
+
+    /** 返回温压粒子质量倍率；配置尚未注册时使用高质量默认值。 */
+    public static float getThermobaricQualityDensity() {
+        return INSTANCE != null
+                ? INSTANCE.thermobaricQuality.get().densityMultiplier()
+                : ThermobaricQuality.HIGH.densityMultiplier();
+    }
+
+    /** 返回温压音效音量倍率，范围为 {@code 0..1}。 */
+    public static float getThermobaricSoundVolume() {
+        return INSTANCE != null ? INSTANCE.thermobaricSoundVolume.get().floatValue() : 1.0F;
+    }
+
+    /** 返回温压闪光强度倍率，范围为 {@code 0..1}。 */
+    public static float getThermobaricFlashIntensity() {
+        return INSTANCE != null ? INSTANCE.thermobaricFlashIntensity.get().floatValue() : 1.0F;
+    }
+
+    /** 返回温压镜头震动强度倍率，范围为 {@code 0..1}。 */
+    public static float getThermobaricShakeIntensity() {
+        return INSTANCE != null ? INSTANCE.thermobaricShakeIntensity.get().floatValue() : 1.0F;
     }
 
     /** Register the client config. Must be called from mod constructor. */

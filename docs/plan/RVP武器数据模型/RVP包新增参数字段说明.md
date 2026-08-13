@@ -467,7 +467,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 ##### `rvp:thermobaric` / `rvp:thermobaric_standard` 温压预设字段
 
-阶段 B 使用内建固定标准预设；`preset_data` 可稀疏覆盖下列字段。未知字段或类型、范围错误的字段会单独回退，不影响同一对象内其他合法覆盖。顶层 `scale`、`density`、`duration_ticks` 仍拥有更高优先级。
+ 使用内建固定标准预设；`preset_data` 可稀疏覆盖下列字段。未知字段或类型、范围错误的字段会单独回退，不影响同一对象内其他合法覆盖。顶层 `scale`、`density`、`duration_ticks` 仍拥有更高优先级。
 
 | 字段 | 说明 | 内建默认值                                                                   |
 | --- | --- |-------------------------------------------------------------------------|
@@ -498,7 +498,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `cloud_rise_factor` | 后燃烟云最终最高升起高度相对最终爆炸半径的直接倍率；接受非负有限值、不设业务上限，配置值本身不钳制到 `0..1`。实际高度为最终爆炸半径乘该字段，再乘独立且限制在 `0..1` 的内部完成度；例如 `5.0` 表示最高五倍半径。高倍率下中心上升层仍必须通过自动派生粒子与爆心覆盖层保持连续。 | `1.2`                                                                   |
 | `cloud_rise_speed_factor` | 后燃烟云竖直基础升起速度的无量纲倍率；接受非负有限值、不设业务上限。大于 `1.0` 时更早到达高度上限，小于 `1.0` 时可能在消失前未到顶，`0` 停止基础升起；不改变淡出、变色或寿命。 | `1.0` |
 | `cloud_roll_speed_factor` | 后燃烟云翻滚、卷吸、连续湍流及水平平流速度的无量纲倍率；接受非负有限值、不设业务上限。空间包络完整后周期相位仍继续推进，`0` 冻结对应运动；不改变基础升起、淡出、变色或寿命。 | `1.0` |
-| `near_sound` / `far_sound` / `tail_sound` | 近音、远音、尾音资源 ID；阶段 B 仅校验并保留，阶段 C 启用播放。 | `rvp:thermobaric_near` / `rvp:thermobaric_far` / `rvp:thermobaric_tail` |
+| `near_sound` / `far_sound` / `tail_sound` | 近音、远音、尾音资源 ID。24 格内主音立即播放，更远按 `ceil(distance / 17.15)` tick 延迟；`distance <= max(24, 4 × visualRadius)` 选择近音，否则选择远音。尾音从主音实际播放起按事件 seed 确定性延迟 3–6 tick。声音使用动态可变范围事件，因此资源包可直接覆盖或提供自定义 ID。 | `rvp:thermobaric_near` / `rvp:thermobaric_far` / `rvp:thermobaric_tail` |
 
 `thermobaric_lod` 使用以下嵌套结构：
 
@@ -516,7 +516,18 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 `experimental.dynamic_particle_budget` 默认为 `false`，关闭时严格使用上述原有完整数量与 LOD 逻辑，固定三层火球核心和尘环均匀选段也不变。显式开启后先按 `capacity = min(max_*, round(max_* × density))` 得到容量。客户端资源重载时从实际 `particle_base.png` 按 `Σ(alpha / 255) / pixelCount` 计算贴图有效覆盖率；当前内置贴图为 `116 / 256 = 0.453125`，读取失败回退该值。单个 billboard 的有效面积为 `(2 × halfSize)² × textureCoverage`；实现按稳定候选顺序累计实际有效面积，取满足 `geometryArea × overlapFactor` 的最短前缀，再依次受容量和距离 LOD 钳制。运行时透明度不进入覆盖面积，避免淡出期补生粒子；固定核心以 `3` 为容量且仅在实验开启时应用 `density`。
 
-四类几何模型分别为：粒子凝结云使用未裁切可见球面 `4πr² × (1 - cutProgress)`，重叠系数 `1.35`，粒子实际尺寸包含 `condensation_cloud_particle_scale`；贴地尘环把三个径向带分别展开为 `2π × bandRadius × 2 × halfSize`，每个环段的覆盖量为三张 billboard 有效面积之和，重叠系数 `1.20`；火球以实际核心外包半径计算 `4πr²`，重叠系数 `1.50`；后燃云以最大水平包络半径 `a` 与垂直半包络 `b` 计算 `π × a × max(a,b)`，重叠系数 `1.35`。凝结云和尘环在 full tick 后继续随外扩、裁切和收窄几何重算；火球与后燃云冻结 full tick 的面积需求。尘环仅在实验开启时使用稳定渐进环段顺序；后燃云仍优先保留连接锚点，派生连接粒子不计入 `max_clouds`。
+四类几何模型分别为：粒子凝结云使用未裁切可见球面 `4πr² × (1 - cutProgress)`，重叠系数 `2.50`，粒子实际尺寸包含 `condensation_cloud_particle_scale`；贴地尘环把三个径向带分别展开为 `2π × bandRadius × 2 × halfSize`，每个环段的覆盖量为三张 billboard 有效面积之和，重叠系数 `1.20`；火球以实际核心外包半径计算 `4πr²`，重叠系数 `1.50`；后燃云以最大水平包络半径 `a` 与垂直半包络 `b` 计算 `π × a × max(a,b)`，重叠系数 `3.00`。凝结云和尘环在 full tick 后继续随外扩、裁切和收窄几何重算；火球与后燃云冻结 full tick 的面积需求。尘环仅在实验开启时使用稳定渐进环段顺序；后燃云仍优先保留连接锚点，派生连接粒子不计入 `max_clouds`。
+
+阶段 C 客户端资源与反馈规则：客户端资源包可在 `assets/<namespace>/visual_effects/*.json` 提供稀疏预设，例如 `rvp:thermobaric_standard` 对应 `assets/rvp/visual_effects/thermobaric_standard.json`。字段按“内建安全默认值 < 资源预设 < 武器 `preset_data` < 顶层 `sound`/`flash`/`shake` 开关 < 客户端性能与无障碍上限”合并；F3+T 重载后只影响新建实例，已有实例继续持有旧快照。未知、缺失或完整解析失败的预设回退内建标准值，单个非法字段只回退该字段。
+
+`ywzj_rvp-client.toml` 的 `[thermobaric]` 配置如下。质量只影响创建实例时生成的粒子列表，压力波与球壳不受影响；活动实例不会因运行中改档而重建。声音与反馈倍率在触发或渲染时读取，三项互相独立，`0` 即关闭。
+
+| 客户端配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `thermobaricQuality` | `LOW` / `MEDIUM` / `HIGH` 分别将作者粒子密度乘以 `0.50` / `0.75` / `1.00`；不会增强作者预算。 | `HIGH` |
+| `thermobaricSoundVolume` | 温压声音音量倍率，范围 `0..1`。 | `1.0` |
+| `thermobaricFlashIntensity` | 立即闪光强度倍率，范围 `0..1`。 | `1.0` |
+| `thermobaricShakeIntensity` | 声波抵达后镜头震动强度倍率，范围 `0..1`。 | `1.0` |
 
 主火球和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。压力波与两种凝结云的结束时刻为 `pressure_wave_full_tick + (pressure_wave_full_tick - pressure_wave_start_tick)`；贴地尘环同样使用 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`。对应 `full_tick <= start_tick` 时没有有效移动周期，不绘制该阶段。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
 

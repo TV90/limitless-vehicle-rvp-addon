@@ -8,6 +8,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.resource.RVP_CustomMountReloadListener;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricParticleCoverage;
+import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricPresetManager;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 
@@ -22,6 +23,8 @@ public final class RVP_ClientReloadListeners {
         event.registerReloadListener(RVP_CustomMountReloadListener.INSTANCE);
         // 注册温压粒子贴图覆盖率扫描，使资源包替换贴图后动态预算仍读取真实 alpha 面积。
         event.registerReloadListener(RVP_ThermobaricParticleCoverage.INSTANCE);
+        // 注册温压预设资源重载器，使 F3+T 后新爆炸使用最新的类型化预设快照。
+        event.registerReloadListener(RVP_ThermobaricPresetManager.INSTANCE);
         // rvp 载具包在客户端以资源包（CLIENT_RESOURCES）注册，AddReloadListenerEvent（数据仓库）扫不到
         // data/rvp/vehicles，故额外注册到客户端资源重载，保证单机 / 联机客户端的隐藏乘员、
         // 命中箱系数等配置可用。
