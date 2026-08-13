@@ -15,8 +15,9 @@ import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
- * 干扰物 HUD：在本体固定翼/直升机纵向 HUD（燃料/速度/高度列）下方再开两列——
- * 热焰弹列 / 铝箔条列，显示「数量/总数 [键位]」，装填时显示「装填 X 秒」倒计时。
+ * 干扰物 HUD：在本体固定翼/直升机纵向 HUD（燃料/速度/高度列）下方叠两行——
+ * 热焰弹行 / 铝箔条行，显示「数量/总数 [键位]」，装填时显示「装填 X 秒」倒计时。
+ * 样式对齐本体（绿字，耗尽红字）。
  */
 public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
 
@@ -39,22 +40,22 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         var font = Minecraft.getInstance().font;
         // 本体列：leftX = centerX - 120，leftY = centerY - 21，行 +12/+24/+36/+48（油门/速度/高度/燃料）
-        // 干扰物两列放在其下方
+        // 干扰物两行叠放在其下方，样式对齐本体（绿字）
         int leftX = screenWidth / 2 - 120;
         int y = screenHeight / 2 - 21 + 60;
-        int columnGap = 92;
-        drawColumn(guiGraphics, font, "热焰弹", state.flareRemain(), state.flareTotal(),
+        drawRow(guiGraphics, font, "热焰弹", state.flareRemain(), state.flareTotal(),
                 state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
-        drawColumn(guiGraphics, font, "铝箔条", state.chaffRemain(), state.chaffTotal(),
-                state.chaffReloadRemain(), leftX + columnGap, y, RVP_Keys.FIRE_CHAFF);
+        drawRow(guiGraphics, font, "铝箔条", state.chaffRemain(), state.chaffTotal(),
+                state.chaffReloadRemain(), leftX, y + 12, RVP_Keys.FIRE_CHAFF);
     }
 
-    private static void drawColumn(GuiGraphics guiGraphics, Font font, String label,
-                                   int remain, int total, int reloadRemain, int x, int y, KeyMapping key) {
+    private static void drawRow(GuiGraphics guiGraphics, Font font, String label,
+                                int remain, int total, int reloadRemain, int x, int y, KeyMapping key) {
         if (total <= 0) {
             return;
         }
-        int color = remain <= 0 ? Color.RED : Color.WHITE;
+        // 对齐本体纵向 HUD：正常绿字，耗尽红字
+        int color = remain <= 0 ? Color.RED : Color.GREEN;
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
