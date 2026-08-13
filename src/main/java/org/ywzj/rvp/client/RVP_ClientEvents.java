@@ -54,6 +54,8 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserDriver;
 import org.ywzj.rvp.client.state.RVP_ClientBulletHitDebugState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.countermeasure.network.C2SFireCountermeasure;
 import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
 import org.ywzj.rvp.network.C2SToggleUavLoiter;
@@ -118,6 +120,14 @@ public class RVP_ClientEvents {
             player.displayClientMessage(
                     Component.translatable(on ? "message.ywzj_rvp.debug_overlay.on" : "message.ywzj_rvp.debug_overlay.off"),
                     true);
+        }
+
+        // 干扰物发射（G 热焰弹 / H 箔条）：向服务端发送齐射请求
+        while (RVP_Keys.FIRE_FLARE.consumeClick()) {
+            ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.FLARE);
+        }
+        while (RVP_Keys.FIRE_CHAFF.consumeClick()) {
+            ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.CHAFF);
         }
 
         // HMD 模式切换：STT 状态下按 5 键先取消 STT 再进入 HMD
@@ -273,6 +283,16 @@ public class RVP_ClientEvents {
         }
         lvp.toSeat(seat, vehicle);
         lvp.toLeave = false;
+    }
+
+    /** 干扰物发射键：当前驾驶载具时向服务端发送一次齐射请求（flare / chaff 分键）。 */
+    private static void ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType type) {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            return;
+        }
+        // 调用 RVP 公共网络通道，发送 C2SFireCountermeasure 触发服务端状态机
+        RVP_Network.CHANNEL.sendToServer(new C2SFireCountermeasure(lvp.vehicle.getId(), type));
     }
 
     private static RVP_TacticalMapScreen.MapMode ywzj_rvp$resolveMapMode() {

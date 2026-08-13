@@ -54,6 +54,12 @@ public class RVP_Keys {
     public static final KeyMapping HITL_SWITCH_VIDEO_MODE = key("hitl_switch_video_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_4);
     public static final KeyMapping HITL_EXIT = key("hitl_exit", InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT);
 
+    /** 发射热焰弹（干扰 IR/AIR）。 */
+    public static final KeyMapping FIRE_FLARE = key("fire_flare", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G);
+
+    /** 发射箔条（干扰 SARH/ARH 与雷达锁定）。 */
+    public static final KeyMapping FIRE_CHAFF = key("fire_chaff", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H);
+
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
@@ -71,5 +77,7 @@ public class RVP_Keys {
         event.register(HITL_REDESIGNATE);
         event.register(HITL_SWITCH_VIDEO_MODE);
         event.register(HITL_EXIT);
+        event.register(FIRE_FLARE);
+        event.register(FIRE_CHAFF);
     }
 }

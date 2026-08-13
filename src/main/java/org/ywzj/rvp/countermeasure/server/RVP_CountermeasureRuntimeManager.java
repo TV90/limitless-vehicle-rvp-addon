@@ -15,6 +15,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureStateMachine;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
@@ -42,6 +43,7 @@ public final class RVP_CountermeasureRuntimeManager {
         public RVP_CountermeasureStateMachine flare;
         public RVP_CountermeasureStateMachine chaff;
         public boolean initialized;
+        public int lastHudSyncTick = Integer.MIN_VALUE;
     }
 
     private static final Map<UUID, VehicleCountermeasureState> STATES = new HashMap<>();
@@ -113,6 +115,7 @@ public final class RVP_CountermeasureRuntimeManager {
         ensureState(state, config);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.FLARE, state.flare);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.CHAFF, state.chaff);
+        maybeSyncHud(vehicle, state);
         tickRadarChaffJam(vehicle);
     }
 
@@ -142,6 +145,28 @@ public final class RVP_CountermeasureRuntimeManager {
             }
             RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, gameTime);
         }
+    }
+
+    /** HUD 状态节流推送（每 10 tick），向跟踪载具的玩家广播剩余 / 装填。 */
+    private static void maybeSyncHud(AbstractVehicle vehicle, VehicleCountermeasureState state) {
+        int now = vehicle.tickCount;
+        if (now - state.lastHudSyncTick < 10) {
+            return;
+        }
+        state.lastHudSyncTick = now;
+        int flareTotal = state.flare != null ? state.flare.getTotal() : 0;
+        int chaffTotal = state.chaff != null ? state.chaff.getTotal() : 0;
+        int flareReload = state.flare != null && state.flare.isReloading()
+                ? Math.max(0, state.flare.getReloadTick() - state.flare.getReloadProgress()) : 0;
+        int chaffReload = state.chaff != null && state.chaff.isReloading()
+                ? Math.max(0, state.chaff.getReloadTick() - state.chaff.getReloadProgress()) : 0;
+        S2CCountermeasureHudSync packet = new S2CCountermeasureHudSync(
+                vehicle.getId(),
+                state.flare != null ? state.flare.getRemaining() : 0, flareTotal, flareReload,
+                state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload);
+        // 调用 RVP 公共网络通道，向所有跟踪该载具的玩家广播 HUD 状态
+        org.ywzj.rvp.network.RVP_Network.CHANNEL.send(
+                PacketDistributor.TRACKING_ENTITY.with(() -> vehicle), packet);
     }
 
     /* ==================== 发射 ==================== */
