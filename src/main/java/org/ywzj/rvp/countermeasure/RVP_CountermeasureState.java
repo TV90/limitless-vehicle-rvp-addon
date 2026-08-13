@@ -12,7 +12,6 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.vehicle.api.entity.SightObstruction;
-import org.ywzj.vehicle.api.entity.TargetObstruction;
 import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
 
 import java.util.Comparator;
@@ -44,10 +43,13 @@ public final class RVP_CountermeasureState {
         if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, target)) {
             return new Result(true, true, false, false);
         }
-        boolean flareSensitive = guidanceType == RVP_EnumGuidanceType.IR && !config.ignoreFlares();
+        boolean flareSensitive = (guidanceType == RVP_EnumGuidanceType.IR
+                || guidanceType == RVP_EnumGuidanceType.AIR) && !config.ignoreFlares();
         boolean chaffSensitive = (guidanceType == RVP_EnumGuidanceType.ARH
                 || guidanceType == RVP_EnumGuidanceType.SARH) && !config.ignoreChaff();
-        if ((flareSensitive || chaffSensitive) && hasTargetObstructionNear(target, 16.0)) {
+        RVP_EnumCountermeasureType decoyType = flareSensitive ? RVP_EnumCountermeasureType.FLARE
+                : chaffSensitive ? RVP_EnumCountermeasureType.CHAFF : null;
+        if (decoyType != null && hasDecoyNear(target, 16.0, decoyType)) {
             return new Result(false, true, true, false);
         }
         return Result.CLEAR;
@@ -81,12 +83,25 @@ public final class RVP_CountermeasureState {
                 || type == RVP_EnumGuidanceType.LBR;
     }
 
-    public static Optional<Entity> findDecoyTarget(Entity target, double radius) {
-        if (target == null) {
+    /** 按制导类型返回其对应干扰物类型（IR/AIR → 热焰弹，SARH/ARH → 箔条）。 */
+    public static RVP_EnumCountermeasureType decoyTypeFor(RVP_EnumGuidanceType guidanceType) {
+        if (guidanceType == RVP_EnumGuidanceType.IR || guidanceType == RVP_EnumGuidanceType.AIR) {
+            return RVP_EnumCountermeasureType.FLARE;
+        }
+        if (guidanceType == RVP_EnumGuidanceType.ARH || guidanceType == RVP_EnumGuidanceType.SARH) {
+            return RVP_EnumCountermeasureType.CHAFF;
+        }
+        return null;
+    }
+
+    /** 返回目标周围指定类型最近的一个干扰物实体（供脱锁后转锁诱饵）。 */
+    public static Optional<Entity> findDecoyTarget(Entity target, double radius, RVP_EnumCountermeasureType decoyType) {
+        if (target == null || decoyType == null) {
             return Optional.empty();
         }
         AABB box = target.getBoundingBox().inflate(radius);
-        return target.level().getEntities(target, box, entity -> entity instanceof TargetObstruction).stream()
+        return target.level().getEntities(target, box, entity -> entity instanceof RVP_Decoy decoy
+                && decoy.rvp$decoyType() == decoyType).stream()
                 .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(target)));
     }
 
@@ -162,9 +177,10 @@ public final class RVP_CountermeasureState {
         return lastLoaded >= dist ? end : start.add(unit.scale(lastLoaded));
     }
 
-    private static boolean hasTargetObstructionNear(Entity target, double radius) {
+    private static boolean hasDecoyNear(Entity target, double radius, RVP_EnumCountermeasureType decoyType) {
         AABB box = target.getBoundingBox().inflate(radius);
-        return target.level().getEntities(target, box, entity -> entity instanceof TargetObstruction).stream()
+        return target.level().getEntities(target, box, entity -> entity instanceof RVP_Decoy decoy
+                && decoy.rvp$decoyType() == decoyType).stream()
                 .anyMatch(entity -> entity.distanceTo(target) < radius);
     }
 

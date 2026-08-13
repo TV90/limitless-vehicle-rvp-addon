@@ -5,6 +5,9 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.countermeasure.RVP_Decoy;
+import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
@@ -124,6 +127,61 @@ public final class RVP_RadarScanHelper {
         for (RVP_BaseBullet bullet : bullets) {
             if (existingIds.add(bullet.getId())) {
                 entities.add(bullet);
+            }
+        }
+    }
+
+    /**
+     * 过滤不可被雷达扫描的干扰物：热焰弹（FLARE）不可被雷达扫描。
+     * 箔条（CHAFF）保留（可被雷达扫描显示为接触）。
+     */
+    public static void filterRadarInvisibleDecoys(List<Entity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return;
+        }
+        entities.removeIf(entity -> entity instanceof RVP_Decoy decoy
+                && decoy.rvp$decoyType() == RVP_EnumCountermeasureType.FLARE);
+    }
+
+    /**
+     * 把箔条干扰物（CHAFF）补入雷达目标表（可被扫描显示，不产生锁定）。
+     * 干扰物碰撞箱小于本体扫描体积阈值，需按扫描包络（高度/方位/扇区）显式补入。
+     */
+    public static void appendRadarVisibleChaffDecoys(RadarUnit radar, List<Entity> entities) {
+        Vec3 radarPos = radar.worldRadarPosition();
+        double maxScanDistance = radar.getMaxScanDistance();
+        double maxScanDistanceSqr = maxScanDistance * maxScanDistance;
+        AABB scanBox = new AABB(radarPos.subtract(maxScanDistance, maxScanDistance, maxScanDistance),
+                radarPos.add(maxScanDistance, maxScanDistance, maxScanDistance));
+        Set<Integer> existingIds = new HashSet<>();
+        for (Entity entity : entities) {
+            existingIds.add(entity.getId());
+        }
+        List<RVP_DecoyEntity> decoys = radar.getVehicle().level().getEntitiesOfClass(
+                RVP_DecoyEntity.class, scanBox, decoy -> {
+            if (decoy == null || !decoy.isAlive()
+                    || decoy.rvp$decoyType() != RVP_EnumCountermeasureType.CHAFF) {
+                return false;
+            }
+            Vec3 targetPos = decoy.getBoundingBox().getCenter();
+            if (targetPos.distanceToSqr(radarPos) > maxScanDistanceSqr) {
+                return false;
+            }
+            if (!isWithinScanHeight(radar, targetPos)) {
+                return false;
+            }
+            Vec2 aimRot = radar.aimRot(targetPos);
+            float yMin = radar.getYRotMin();
+            float yMax = radar.getYRotMax();
+            float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            if (!isYawWithin(y, yMin, yMax)) {
+                return false;
+            }
+            return !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
+        });
+        for (RVP_DecoyEntity decoy : decoys) {
+            if (existingIds.add(decoy.getId())) {
+                entities.add(decoy);
             }
         }
     }

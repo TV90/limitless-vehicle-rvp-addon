@@ -57,7 +57,9 @@ final class RVP_RuntimeSeekerSupport {
             return null;
         }
         if (result.decoyed()) {
-            Entity decoy = RVP_CountermeasureState.findDecoyTarget(target, 16.0).orElse(null);
+            // 按制导类型找对应干扰物（IR/AIR→热焰弹，SARH/ARH→箔条），转锁最近诱饵
+            Entity decoy = RVP_CountermeasureState.findDecoyTarget(
+                    target, 16.0, RVP_CountermeasureState.decoyTypeFor(type)).orElse(null);
             if (decoy == null) {
                 return null;
             }

@@ -102,6 +102,9 @@ public final class RVP_RadarScanService {
             });
             RVP_RadarScanHelper.filterUndetectableRvpAmmo(targets);
             RVP_RadarScanHelper.appendRvpAmmoTargets(radar, targets, yRotSpeed > 0f);
+            // 干扰物雷达可扫描性：热焰弹不入表、箔条入表（可被扫描显示）
+            RVP_RadarScanHelper.filterRadarInvisibleDecoys(targets);
+            RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, targets);
             for (Entity target : targets) {
                 radar.detect(target);
             }

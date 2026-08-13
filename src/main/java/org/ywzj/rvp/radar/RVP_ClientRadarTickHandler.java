@@ -121,6 +121,8 @@ public final class RVP_ClientRadarTickHandler {
                 // 非 phase：本体 tickDetect 已用 detectTargets 处理常规目标，这里只补 RVP 弹体（带跟踪线）
                 List<Entity> entities = new ArrayList<>();
                 RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, true);
+                RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
+                RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities);
                 for (Entity entity : entities) {
                     radar.detect(entity);
                 }
@@ -187,6 +189,9 @@ public final class RVP_ClientRadarTickHandler {
         });
         RVP_RadarScanHelper.filterUndetectableRvpAmmo(entities);
         RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, false);
+        // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
+        RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
+        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities);
         for (Entity entity : entities) {
             radar.detect(entity);
         }

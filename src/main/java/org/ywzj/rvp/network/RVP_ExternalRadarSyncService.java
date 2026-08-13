@@ -19,6 +19,7 @@ import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.radar.RVP_RadarScanHelper;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -267,6 +268,9 @@ public final class RVP_ExternalRadarSyncService {
                 pos -> isWithinRelayRadarVolume(radarUnit, pos, false));
         targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
         appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);
+        // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
+        RVP_RadarScanHelper.filterRadarInvisibleDecoys(targets);
+        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radarUnit, targets);
         return targets;
     }
 
