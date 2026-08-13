@@ -2018,6 +2018,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && !isProximityDamageImmune(targetEntity)
+                && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
                 && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,

@@ -2,6 +2,7 @@ package org.ywzj.rvp.countermeasure.server;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
@@ -18,6 +19,7 @@ import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.vehicle.all.AllSounds;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
@@ -174,7 +176,13 @@ public final class RVP_CountermeasureRuntimeManager {
                 vehicle.getId(),
                 state.flare != null ? state.flare.getRemaining() : 0, flareTotal, flareReload,
                 state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload);
-        // 调用 RVP 公共网络通道，向所有跟踪该载具的玩家广播 HUD 状态
+        // 直接发给载具乘客（驾驶员），保证本地 HUD 一定收到；再向跟踪载具的其它玩家广播
+        for (Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof ServerPlayer serverPlayer) {
+                org.ywzj.rvp.network.RVP_Network.CHANNEL.send(
+                        PacketDistributor.PLAYER.with(() -> serverPlayer), packet);
+            }
+        }
         org.ywzj.rvp.network.RVP_Network.CHANNEL.send(
                 PacketDistributor.TRACKING_ENTITY.with(() -> vehicle), packet);
     }
@@ -189,16 +197,25 @@ public final class RVP_CountermeasureRuntimeManager {
             return;
         }
         Vec3 vehicleVelocity = vehicle.getDeltaMovement();
+        Vec3 soundPos = null;
         for (int i = 0; i < fireCount; i++) {
             WeaponUnit launcher = resolveLauncher(vehicle, launcherParts.get(i % launcherParts.size()));
             if (launcher == null) {
                 continue;
+            }
+            if (soundPos == null) {
+                soundPos = launcher.worldCurrentBoltPosition();
             }
             spawnOne(vehicle, launcher, decoy, type, vehicleVelocity);
             // 每轮只在第一个发射装置上广播一次动画，避免刷包
             if (i == 0) {
                 broadcastFireAnimation(vehicle, launcher);
             }
+        }
+        // 每轮投射播放一次本体干扰弹发射音效（服务端广播给附近玩家）
+        if (soundPos != null) {
+            vehicle.level().playSound(null, soundPos.x, soundPos.y, soundPos.z,
+                    AllSounds.DECOY_FLARE_LAUNCH.get(), SoundSource.NEUTRAL, 1.0F, 1.0F);
         }
     }
 
