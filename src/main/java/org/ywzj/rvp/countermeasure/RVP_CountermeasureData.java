@@ -44,16 +44,26 @@ public final class RVP_CountermeasureData {
     }
 
     /**
-     * 从 JSON 解析载具干扰物配置；非对象或解析失败返回 null。
-     * 使用与本体武器数据一致的 {@link GsonUtil#GSON}（默认值由字段初值决定）。
+     * 从载具 JSON 解析干扰物配置；非对象或解析失败返回 null。
+     *
+     * <p>支持两种入参：<b>整个载具 JSON</b>（顶层 {@code countermeasure} 键，本仓库实际用法）
+     * 或<b>直接传入 countermeasure 对象</b>（含 {@code flare}/{@code chaff}）。
+     * 使用与本体武器数据一致的 {@link GsonUtil#GSON}（默认值由字段初值决定）。</p>
      */
     @Nullable
     public static RVP_CountermeasureData parse(@Nullable JsonElement element) {
         if (element == null || !element.isJsonObject()) {
             return null;
         }
+        JsonElement target = element.getAsJsonObject().get("countermeasure");
+        if (target == null) {
+            target = element;
+        }
+        if (target == null || !target.isJsonObject()) {
+            return null;
+        }
         try {
-            RVP_CountermeasureData data = GsonUtil.GSON.fromJson(element, RVP_CountermeasureData.class);
+            RVP_CountermeasureData data = GsonUtil.GSON.fromJson(target, RVP_CountermeasureData.class);
             if (data == null || !data.isEnabled()) {
                 return null;
             }

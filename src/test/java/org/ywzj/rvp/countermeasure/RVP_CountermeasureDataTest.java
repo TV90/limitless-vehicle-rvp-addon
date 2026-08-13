@@ -126,4 +126,43 @@ class RVP_CountermeasureDataTest {
         assertEquals(8, flare.getBurstRounds());
         assertEquals(200, flare.getReloadTick());
     }
+
+    /** 实际用法：传入整个载具 JSON（顶层 countermeasure 键），应正确提取子对象。 */
+    @Test
+    void parseVehicleJsonWithCountermeasureKey() {
+        String json = """
+                {
+                  "type": "ywzj_vehicle:fixed_wing_vehicle",
+                  "countermeasure": {
+                    "flare": {
+                      "launcher_parts": ["decoy_flare_barrel"],
+                      "total": 32,
+                      "per_round": 4,
+                      "burst_rounds": 8,
+                      "launch_interval_tick": 4,
+                      "reload_tick": 200,
+                      "decoy": { "glow_color": 16711680 }
+                    },
+                    "chaff": {
+                      "launcher_parts": ["decoy_flare_barrel"],
+                      "total": 32,
+                      "per_round": 4,
+                      "burst_rounds": 8,
+                      "launch_interval_tick": 4,
+                      "reload_tick": 200,
+                      "radar_jam_radius": 8,
+                      "radar_jam_count": 3,
+                      "radar_jam_cooldown_tick": 60
+                    }
+                  },
+                  "attributes": { "thrust": 0.025 }
+                }
+                """;
+        RVP_CountermeasureData data = RVP_CountermeasureData.parse(JsonParser.parseString(json));
+        assertNotNull(data);
+        assertTrue(data.isEnabled());
+        assertEquals("decoy_flare_barrel", data.getFlare().getLauncherParts().get(0));
+        assertEquals(16711680, data.getFlare().getDecoy().getGlowColor());
+        assertEquals(60, data.getChaff().getRadarJamCooldownTick());
+    }
 }
