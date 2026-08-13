@@ -59,11 +59,11 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
-            guiGraphics.drawString(font, label + "： 装填 " + seconds + "秒", x, y, color);
+            guiGraphics.drawString(font, label + ":装填 " + seconds + "秒", x, y, color);
         } else {
-            // 当前数量 + 键位（冒号后带空格）
+            // 当前数量 + 键位（英文冒号，无空格）
             String keyName = key.getTranslatedKeyMessage().getString();
-            guiGraphics.drawString(font, label + "： " + remain + " [" + keyName + "]",
+            guiGraphics.drawString(font, label + ":" + remain + " [" + keyName + "]",
                     x, y, color);
         }
     }
