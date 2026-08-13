@@ -134,6 +134,10 @@ public class RVP_GuidanceData {
     @SerializedName("terminal_guidance")
     private RVP_TerminalGuidanceData terminalGuidance;
 
+    /** 干扰物干扰数据（仅对 IR/AIR/SARH/ARH 生效）；null 表示不启用（按默认简化语义）。 */
+    @SerializedName("interference_data")
+    private RVP_InterferenceData interferenceData;
+
     /** 多阶段重叠且制导类型不兼容时的消解策略。 */
     public RVP_EnumGuidanceType getGuidanceType() {
         return guidanceType == null ? RVP_EnumGuidanceType.NONE : guidanceType;
@@ -283,6 +287,11 @@ public class RVP_GuidanceData {
     @Nullable
     public RVP_TerminalGuidanceData getTerminalGuidance() {
         return terminalGuidance;
+    }
+
+    @Nullable
+    public RVP_InterferenceData getInterferenceData() {
+        return interferenceData;
     }
 
     public boolean usesGuidanceType(RVP_EnumGuidanceType type) {

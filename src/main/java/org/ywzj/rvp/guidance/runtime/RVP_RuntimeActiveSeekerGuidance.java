@@ -63,7 +63,9 @@ final class RVP_RuntimeActiveSeekerGuidance {
         int interval = context.active().scanIntervalTick() != null
                 ? context.active().scanIntervalTick()
                 : 2;
-        if (!freeAcquire || missile.getFlightTickCount() % interval != 0) {
+        // 导引头关闭期（被干扰失锁后 seekerShutOffTime 内）不主动扫描复锁
+        if (missile.isSeekerShutOff()
+                || !freeAcquire || missile.getFlightTickCount() % interval != 0) {
             return RVP_GuidanceIntent.failed(type);
         }
 

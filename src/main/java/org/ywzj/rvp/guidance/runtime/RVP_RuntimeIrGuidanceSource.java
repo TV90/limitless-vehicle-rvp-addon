@@ -21,7 +21,8 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
         Entity target = projectile.getTargetEntity();
         if (target == null
                 && context.active().phase() == RVP_GuidancePhase.TERMINAL
-                && !projectile.hasTerminalIrTargetAcquired()) {
+                && !projectile.hasTerminalIrTargetAcquired()
+                && !projectile.isSeekerShutOff()) {
             int interval = context.active().scanIntervalTick() != null
                     ? context.active().scanIntervalTick()
                     : 2;

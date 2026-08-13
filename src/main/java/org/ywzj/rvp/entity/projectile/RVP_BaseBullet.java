@@ -271,6 +271,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int irSeekerGraceUntilTick = Integer.MIN_VALUE;
     private boolean irSeekerLossGraceStarted;
     private boolean terminalIrTargetAcquired;
+    /** 导引头关闭期截止 tick（被干扰失锁后 seekerShutOffTime 内不重新搜索）；MIN_VALUE = 未关闭。 */
+    protected int seekerShutOffUntilTick = Integer.MIN_VALUE;
     protected final Map<Long, Integer> radiationPulseTickMap = new HashMap<>();
     protected int antiRadiationNextScanTick;
     protected int antiRadiationMemoryLeftTick;
@@ -843,6 +845,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void setTargetEntity(@Nullable Entity target) {
+        if (target == null) {
+            noteDecoyTargetLost();
+        }
         this.targetEntity = target;
         if (target != null) {
             this.lastGuidancePos = aimPoint(target);
@@ -876,10 +881,37 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public void clearTarget() {
+        noteDecoyTargetLost();
         this.targetEntity = null;
         this.targetPos = null;
         this.gpsCruiseVerticalResetApplied = false;
         resetIrSeekerGrace();
+    }
+
+    /**
+     * 被干扰失锁：若丢失的目标是干扰物实体，按 {@code interference_data.seeker_shut_off_time}
+     * 启动导引头关闭期（期间不重新搜索，之后重启复锁）。
+     */
+    private void noteDecoyTargetLost() {
+        if (targetEntity instanceof RVP_Decoy) {
+            beginSeekerShutOffFromConfig();
+        }
+    }
+
+    /** 导引头是否处于关闭期（被干扰失锁后 seekerShutOffTime tick 内不重新搜索）。 */
+    public boolean isSeekerShutOff() {
+        return seekerShutOffUntilTick != Integer.MIN_VALUE && tickCount < seekerShutOffUntilTick;
+    }
+
+    private void beginSeekerShutOffFromConfig() {
+        if (rvpData == null || rvpData.getGuidanceData() == null
+                || rvpData.getGuidanceData().getInterferenceData() == null) {
+            return;
+        }
+        Integer ticks = rvpData.getGuidanceData().getInterferenceData().getSeekerShutOffTime();
+        if (ticks != null && ticks > 0) {
+            this.seekerShutOffUntilTick = tickCount + ticks;
+        }
     }
 
     public void markLaunchTargetSnapshot() {

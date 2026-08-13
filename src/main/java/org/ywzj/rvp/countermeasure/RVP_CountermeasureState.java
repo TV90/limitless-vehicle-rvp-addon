@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
+import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.vehicle.api.entity.SightObstruction;
 import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
 
@@ -49,7 +50,9 @@ public final class RVP_CountermeasureState {
                 || guidanceType == RVP_EnumGuidanceType.SARH) && !config.ignoreChaff();
         RVP_EnumCountermeasureType decoyType = flareSensitive ? RVP_EnumCountermeasureType.FLARE
                 : chaffSensitive ? RVP_EnumCountermeasureType.CHAFF : null;
-        if (decoyType != null && hasDecoyNear(target, 16.0, decoyType)) {
+        // 按 RVP_InterferenceData：跟踪期间以弹体指向为轴、maxLockAngle*seekerFovShrinkFactor 为 FOV、
+        // guidanceTargetDistanceRange 为距离检测对应干扰物；视场内干扰物数超过 seekerJamLimit 时脱锁
+        if (decoyType != null && hasJamInSeekerCone(seeker, target, decoyType, config)) {
             return new Result(false, true, true, false);
         }
         return Result.CLEAR;
@@ -94,15 +97,84 @@ public final class RVP_CountermeasureState {
         return null;
     }
 
-    /** 返回目标周围指定类型最近的一个干扰物实体（供脱锁后转锁诱饵）。 */
-    public static Optional<Entity> findDecoyTarget(Entity target, double radius, RVP_EnumCountermeasureType decoyType) {
-        if (target == null || decoyType == null) {
+    /**
+     * 返回弹体导引头视场（锥）内指定类型最近的干扰物实体（供脱锁后转锁诱饵）。
+     * 锥轴 = 弹体→目标指向；半角 = maxLockAngle * seekerFovShrinkFactor / 2；距离上限 = guidanceTargetDistanceRange。
+     */
+    public static Optional<Entity> findDecoyInSeekerCone(
+            Entity seeker, Entity target, RVP_EnumCountermeasureType decoyType, RVP_GuidanceActiveConfig config) {
+        if (seeker == null || target == null || decoyType == null) {
             return Optional.empty();
         }
-        AABB box = target.getBoundingBox().inflate(radius);
-        return target.level().getEntities(target, box, entity -> entity instanceof RVP_Decoy decoy
-                && decoy.rvp$decoyType() == decoyType).stream()
-                .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(target)));
+        double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
+        double maxDist = resolveDecoyScanRadius(config);
+        Vec3 seekerPos = seeker.position();
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        Vec3 axis = targetCenter.subtract(seekerPos);
+        double axisLen = axis.length();
+        if (axisLen <= 1.0E-6) {
+            return Optional.empty();
+        }
+        Vec3 unitAxis = axis.scale(1.0 / axisLen);
+        AABB box = new AABB(
+                seekerPos.subtract(maxDist, maxDist, maxDist),
+                seekerPos.add(maxDist, maxDist, maxDist));
+        return seeker.level().getEntities(seeker, box, entity -> entity instanceof RVP_Decoy decoy
+                && decoy.rvp$decoyType() == decoyType && entity.isAlive()).stream()
+                .filter(entity -> inSeekerCone(seekerPos, unitAxis, halfAngle, maxDist, entity))
+                .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(seeker)));
+    }
+
+    /**
+     * 导引头视场（锥）内对应干扰物数量是否超过 seekerJamLimit。
+     * 锥轴 = 弹体→目标指向；半角 = maxLockAngle * seekerFovShrinkFactor / 2；距离上限 = guidanceTargetDistanceRange。
+     */
+    private static boolean hasJamInSeekerCone(
+            Entity seeker, Entity target, RVP_EnumCountermeasureType decoyType, RVP_GuidanceActiveConfig config) {
+        if (seeker == null || target == null) {
+            return false;
+        }
+        double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
+        double maxDist = resolveDecoyScanRadius(config);
+        Vec3 seekerPos = seeker.position();
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        Vec3 axis = targetCenter.subtract(seekerPos);
+        double axisLen = axis.length();
+        if (axisLen <= 1.0E-6) {
+            return false;
+        }
+        axis = axis.scale(1.0 / axisLen);
+        AABB box = new AABB(
+                seekerPos.subtract(maxDist, maxDist, maxDist),
+                seekerPos.add(maxDist, maxDist, maxDist));
+        int count = 0;
+        for (Entity entity : seeker.level().getEntities(seeker, box, e -> e instanceof RVP_Decoy decoy
+                && decoy.rvp$decoyType() == decoyType && e.isAlive())) {
+            if (inSeekerCone(seekerPos, axis, halfAngle, maxDist, entity)) {
+                count++;
+                if (count > config.seekerJamLimit()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 干扰物扫描距离上限：guidanceTargetDistanceRange 上界；未配置用大默认。 */
+    private static double resolveDecoyScanRadius(RVP_GuidanceActiveConfig config) {
+        if (config.targetDistanceRange() == null) {
+            return 512.0;
+        }
+        return RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+    }
+
+    /** 目标是否落在导引头锥内（角度 ≤ halfAngle 且距离 ≤ maxDist）。 */
+    private static boolean inSeekerCone(Vec3 seekerPos, Vec3 axis, double halfAngle, double maxDist, Entity entity) {
+        Vec3 toDecoy = entity.getBoundingBox().getCenter().subtract(seekerPos);
+        if (toDecoy.lengthSqr() <= 1.0E-6 || toDecoy.length() > maxDist) {
+            return false;
+        }
+        return RVP_GuidanceRuntimeGeometry.withinAngle(axis, toDecoy, halfAngle);
     }
 
     private static boolean hasSightObstruction(Entity seeker, Entity target) {
@@ -175,13 +247,6 @@ public final class RVP_CountermeasureState {
             return null;
         }
         return lastLoaded >= dist ? end : start.add(unit.scale(lastLoaded));
-    }
-
-    private static boolean hasDecoyNear(Entity target, double radius, RVP_EnumCountermeasureType decoyType) {
-        AABB box = target.getBoundingBox().inflate(radius);
-        return target.level().getEntities(target, box, entity -> entity instanceof RVP_Decoy decoy
-                && decoy.rvp$decoyType() == decoyType).stream()
-                .anyMatch(entity -> entity.distanceTo(target) < radius);
     }
 
     private static boolean hasInterceptorNear(Entity seeker, double radius) {
