@@ -43,9 +43,9 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         // 干扰物两行叠放在其下方，样式对齐本体（绿字）
         int leftX = screenWidth / 2 - 120;
         int y = screenHeight / 2 - 21 + 60;
-        drawRow(guiGraphics, font, "热焰弹", state.flareRemain(), state.flareTotal(),
+        drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
                 state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
-        drawRow(guiGraphics, font, "铝箔条", state.chaffRemain(), state.chaffTotal(),
+        drawRow(guiGraphics, font, "箔条", state.chaffRemain(), state.chaffTotal(),
                 state.chaffReloadRemain(), leftX, y + 12, RVP_Keys.FIRE_CHAFF);
     }
 
@@ -59,11 +59,11 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
-            guiGraphics.drawString(font, label + "：装填 " + seconds + "秒", x, y, color);
+            guiGraphics.drawString(font, label + "： 装填 " + seconds + "秒", x, y, color);
         } else {
-            // 数量/总数 + 键位
+            // 当前数量 + 键位（冒号后带空格）
             String keyName = key.getTranslatedKeyMessage().getString();
-            guiGraphics.drawString(font, label + ":" + remain + "/" + total + " [" + keyName + "]",
+            guiGraphics.drawString(font, label + "： " + remain + " [" + keyName + "]",
                     x, y, color);
         }
     }
