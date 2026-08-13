@@ -33,6 +33,7 @@ import net.minecraftforge.entity.PartEntity;
 import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
+import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
@@ -2808,6 +2809,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     protected boolean canDamageEntity(Entity entity) {
         if (entity == null || !entity.isAlive()) {
+            return false;
+        }
+        // 干扰物（热焰弹/箔条）不触发近炸、不与弹药碰撞：不参与任何伤害/命中判定
+        if (entity instanceof RVP_Decoy) {
             return false;
         }
         if (ywzj_rvp$isEntityAttachedToShooterVehicle(entity)) {
