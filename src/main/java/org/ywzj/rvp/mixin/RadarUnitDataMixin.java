@@ -41,7 +41,7 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     private float ywzj_rvp$scanMaxHeight = 10000f;
 
     @Unique
-    private float ywzj_rvp$chaffResistance = 0f;
+    private float ywzj_rvp$chaffResistance = 0.5f;
 
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/RadarUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(RadarUnitPojo pojo, CallbackInfo ci) {

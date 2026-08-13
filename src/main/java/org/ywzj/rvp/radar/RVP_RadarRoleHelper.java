@@ -60,7 +60,7 @@ public final class RVP_RadarRoleHelper {
         if (data instanceof RadarUnitDataExt ext) {
             return ext.ywzj_rvp$getChaffResistance();
         }
-        return 0f;
+        return 0.5f;
     }
 
     public static RadarUnit getPreferredLockRadar(WeaponUnit weaponUnit) {

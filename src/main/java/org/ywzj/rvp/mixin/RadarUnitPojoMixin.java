@@ -49,7 +49,7 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     /** 雷达对箔条目标的锁定抗性 0~1：箔条可作为雷达锁定目标，但按此值施加优先级罚分（越大越难被选中，非完全不可锁）。 */
     @SerializedName("chaff_resistance")
     @Unique
-    public float ywzj_rvp$chaffResistance = 0f;
+    public float ywzj_rvp$chaffResistance = 0.5f;
 
     @Override
     public String ywzj_rvp$getRadarRole() {

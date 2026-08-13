@@ -31,10 +31,10 @@ public final class RVP_InterferenceData {
 
     /**
      * 导引头对箔条目标的锁定抗性 0~1：ARH / AIR 开启导引头后<b>可锁箔条</b>（扫描候选含 CHAFF 实体），
-     * 但按此值对箔条施加评分罚分（越大优先级越低，非完全不可锁）；0 = 无惩罚。
+     * 但按此值对箔条施加评分罚分（越大优先级越低，非完全不可锁）；默认 0.5，具备相当的抗箔条能力。
      */
     @SerializedName("chaff_resistance")
-    private float chaffResistance = 0F;
+    private float chaffResistance = 0.5F;
 
     public int getSeekerJamLimit() {
         return Math.max(1, seekerJamLimit);

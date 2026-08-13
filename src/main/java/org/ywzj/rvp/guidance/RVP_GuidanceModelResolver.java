@@ -101,7 +101,7 @@ public final class RVP_GuidanceModelResolver {
                 data.getInterferenceData() == null ? 8 : data.getInterferenceData().getSeekerJamLimit(),
                 data.getInterferenceData() == null ? 1.0f : data.getInterferenceData().getSeekerFovShrinkFactor(),
                 data.getInterferenceData() == null ? null : data.getInterferenceData().getSeekerShutOffTime(),
-                data.getInterferenceData() == null ? 0f : data.getInterferenceData().getChaffResistance()
+                data.getInterferenceData() == null ? 0.5f : data.getInterferenceData().getChaffResistance()
         );
     }
 
@@ -156,7 +156,7 @@ public final class RVP_GuidanceModelResolver {
                 main.getInterferenceData() == null ? 8 : main.getInterferenceData().getSeekerJamLimit(),
                 main.getInterferenceData() == null ? 1.0f : main.getInterferenceData().getSeekerFovShrinkFactor(),
                 main.getInterferenceData() == null ? null : main.getInterferenceData().getSeekerShutOffTime(),
-                main.getInterferenceData() == null ? 0f : main.getInterferenceData().getChaffResistance()
+                main.getInterferenceData() == null ? 0.5f : main.getInterferenceData().getChaffResistance()
         );
     }
 }

@@ -61,7 +61,7 @@ public final class RVP_CountermeasureRuntimeManager {
             return;
         }
         VehicleCountermeasureState state = getOrCreate(vehicle.getUUID());
-        ensureState(state, config);
+        ensureState(vehicle, state, config);
         int[] saved = RVP_CountermeasureStateSavedData.get(level).readEntry(vehicle.getUUID());
         if (saved != null) {
             if (state.flare != null) {
@@ -91,7 +91,12 @@ public final class RVP_CountermeasureRuntimeManager {
     /* ==================== C2S 触发 ==================== */
 
     public static void onFire(ServerPlayer player, AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
-        if (vehicle.level().isClientSide() || vehicle.isDestroyed() || !vehicle.hasPower()) {
+        fire(vehicle, type);
+    }
+
+    /** 触发一次齐射（玩家按键或 gunner 自动响应复用同一入口）。 */
+    public static void fire(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        if (vehicle == null || vehicle.level().isClientSide() || vehicle.isDestroyed() || !vehicle.hasPower()) {
             return;
         }
         RVP_CountermeasureSystemData system = resolveSystem(vehicle, type);
@@ -99,7 +104,7 @@ public final class RVP_CountermeasureRuntimeManager {
             return;
         }
         VehicleCountermeasureState state = getOrCreate(vehicle.getUUID());
-        ensureState(state, resolveConfig(vehicle));
+        ensureState(vehicle, state, resolveConfig(vehicle));
         machineFor(state, type).onKeyPress();
     }
 
@@ -114,7 +119,7 @@ public final class RVP_CountermeasureRuntimeManager {
             return;
         }
         VehicleCountermeasureState state = getOrCreate(vehicle.getUUID());
-        ensureState(state, config);
+        ensureState(vehicle, state, config);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.FLARE, state.flare);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.CHAFF, state.chaff);
         maybeSyncHud(vehicle, state);
@@ -268,21 +273,23 @@ public final class RVP_CountermeasureRuntimeManager {
         return false;
     }
 
-    private static void ensureState(VehicleCountermeasureState state, @Nullable RVP_CountermeasureData config) {
+    private static void ensureState(AbstractVehicle vehicle, VehicleCountermeasureState state, @Nullable RVP_CountermeasureData config) {
         if (config == null) {
             return;
         }
+        // gunner 驾驶的载具装填时间为玩家的两倍（自动干扰响应更慢补弹）
+        int reloadFactor = vehicle.getDriver() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity ? 2 : 1;
         if (state.flare == null) {
             RVP_CountermeasureSystemData flare = config.getFlare();
             state.flare = flare == null || !flare.isEnabled() ? null
                     : new RVP_CountermeasureStateMachine(flare.getTotal(), flare.getPerRound(),
-                    flare.getBurstRounds(), flare.getLaunchIntervalTick(), flare.getReloadTick());
+                    flare.getBurstRounds(), flare.getLaunchIntervalTick(), flare.getReloadTick() * reloadFactor);
         }
         if (state.chaff == null) {
             RVP_CountermeasureSystemData chaff = config.getChaff();
             state.chaff = chaff == null || !chaff.isEnabled() ? null
                     : new RVP_CountermeasureStateMachine(chaff.getTotal(), chaff.getPerRound(),
-                    chaff.getBurstRounds(), chaff.getLaunchIntervalTick(), chaff.getReloadTick());
+                    chaff.getBurstRounds(), chaff.getLaunchIntervalTick(), chaff.getReloadTick() * reloadFactor);
         }
     }
 

@@ -961,6 +961,17 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | `angle_gate_lock_out_tick` | 末端超角度门后延迟脱锁 tick。 | `int` | `20` |
 | `enable_inertial_guidance` | 末端是否允许惯性制导。 | `boolean` | `false` |
 
+#### `interference_data`（`RVP_InterferenceData`，仅对 IR/AIR/SARH/ARH 生效）
+
+干扰物干扰数据写在 `guidance_data.interference_data` 中。
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `seeker_jam_limit` | 导引头视场内极限干扰物数量，超过后导弹脱锁并飞向最近干扰物。 | `int` | `8` |
+| `seeker_fov_shrink_factor` | 跟踪时导引头 fov 倍率，检测 fov = `max_lock_angle × 此值`（完整 FOV）。 | `float` | `1.0` |
+| `seeker_shut_off_time` | 失去制导后导引头关闭时长（tick），关闭结束后重启主动搜索复锁；`null` 表示失锁后立即恢复搜索。 | `Integer` | `null` |
+| `chaff_resistance` | 导引头对箔条目标的锁定抗性（0~1）：ARH/AIR 开启导引头后可锁箔条，但按此值施加评分罚分（越大优先级越低，非完全不可锁）。默认 `0.5`，具备相当的抗箔条能力。 | `float` | `0.5` |
+
 #### 示例
 
 GPS 滑翔炸弹 + 末端红外：
@@ -1523,6 +1534,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `enable_hms` | 头盔瞄准具（HMS）开关：`false` / `true` / `onlyACM`（仅格斗模式）。未写时视为 `FULL`（启用）。 | 未写 |
 | `scan_min_height` | 扫描最小高度（格）。 | `25` |
 | `scan_max_height` | 扫描最大高度（格）。 | `10000` |
+| `chaff_resistance` | 雷达对箔条目标的锁定抗性（0~1）：箔条可作为雷达锁定目标，但按此值对箔条施加锁定候选评分罚分（越大优先级越低，非完全不可锁）。默认 `0.5`，具备相当的抗箔条能力。 | `0.5` |
 
 > `enable_hms` 为 `JsonElement`：写布尔或字符串均可；`false`/`off`/`none` 表示关闭，`onlyACM`/`only_acm`/`acm` 表示仅空战模式启用，其余值视为完整启用。
 
