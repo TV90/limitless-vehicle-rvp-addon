@@ -1,8 +1,10 @@
 package org.ywzj.rvp.countermeasure;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -16,6 +18,8 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
  * 雷达脱锁，目标进入 `radarJamCooldownTick` 禁锁期（可被扫描、不可被选中/锁定）。</p>
  */
 public final class RVP_ChaffJamHelper {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_ChaffJamHelper() {
     }
@@ -64,6 +68,8 @@ public final class RVP_ChaffJamHelper {
         if (count < chaff.getRadarJamCount()) {
             return false;
         }
+        LOGGER.info("[RVP-ChaffJam] 雷达={} 锁定目标={} 箔条数={} 触发脱锁（禁锁{}tick）",
+                radar.getId(), locked.getId(), count, chaff.getRadarJamCooldownTick());
         breakLock(radarOwnerVehicle, radar, locked);
         RVP_ChaffJamState.setCooldown(locked.getUUID(), gameTime, chaff.getRadarJamCooldownTick());
         return true;

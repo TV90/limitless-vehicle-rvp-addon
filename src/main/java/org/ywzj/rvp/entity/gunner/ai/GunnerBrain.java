@@ -153,6 +153,8 @@ public final class GunnerBrain {
         radar.detect(lockTarget);
         if (radar.getLockedEntity() != lockTarget) {
             radar.setLockedEntity(lockTarget);
+            LOGGER.info("[RVP-GunnerLock] 载具={} weaponUnit={} radar={} 锁定 target={}",
+                    vehicle.getVehicleId(), weaponUnit.getId(), radar.getId(), lockTarget.getId());
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
         if (root.getLockedEntity() != lockTarget) {
@@ -272,9 +274,11 @@ public final class GunnerBrain {
         GunnerGuidedWeaponController.prepareForLaunch(gunner, weaponUnit.getVehicle(), weaponUnit, selectedWeapon, target);
         // 使用实际发射武器站的 aimContexts（对 VehicleWeaponAgent 而言是目标武器站，如 launcher_weapon）
         WeaponUnit aimSource = selectedWeapon.getWeaponUnit();
-        // 垂发车辆只传 1 个瞄准上下文，避免一次发射全部弹药
-        // （手动发射在 RIPPLE 模式下也只用 1 个上下文，gunner 必须保持一致）
-        weaponUnit.shoot(weaponIndex, launcher ? Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts(), gunner);
+        // 与手动发射保持一致：RIPPLE（轮射）只传当前管位 1 个瞄准上下文，SALVO（齐射）才一次全部发射。
+        // 此前非垂发车辆一律传 aimSource.aimContexts()，多管发射架（如 cssa5/ps1sm 的 missile_barrel 有 2 根管）
+        // 会一次把多管全打出去；垂发车辆也保留单上下文特判。
+        boolean singleContext = launcher || aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE;
+        weaponUnit.shoot(weaponIndex, singleContext ? Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts(), gunner);
         gunner.onBurstShot(launcher ? 1 : profile.getBurstFireTick(), profile.getBurstRestTick());
         if (isRvpMissile) {
             gunner.setMissileCooldown(30);
