@@ -18,13 +18,13 @@ import org.ywzj.rvp.vehicle.LauncherDeployStateMachine;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /**
- * 发射架部署状态机的驱动（替代被删的 {@code AbstractVehicleLauncherDeployMixin} tick 注入
- * 与 {@code WeaponUnitLauncherDeployPoseBypassMixin} 姿态旁路）。
+ * 发射架部署状态机的驱动。
  *
- * <p>服务端与客户端各跑一份确定性状态机：每 tick 对所有载具推进
- * {@link LauncherDeployStateMachine#tick}（状态推进 / Switchable 同步 / 俯仰角应用），
- * 随后调用 {@link LauncherDeployStateMachine#applyWeaponUnitPose} 在所有武器 tick 之后
- * 应用发射架俯仰（姿态旁路），保证武器自身旋转逻辑不会覆盖部署姿态。</p>
+ * <p>服务端与客户端各跑一份确定性状态机：每 tick 对所有载具调用
+ * {@link LauncherDeployStateMachine#tick}（状态推进 / Switchable 同步 / 快照写入 /
+ * 驱动发射架部件 {@code xRot/xAimRot}）。俯仰以本体风格（htf5980 同款：驱动部件
+ * xRot → 本体 updateRot 旋转结构骨 launcher_pitch_barrel）实现，OBB 双端跟随，
+ * 无 Mixin。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_LauncherDeployEventHandler {
@@ -65,9 +65,9 @@ public class RVP_LauncherDeployEventHandler {
     }
 
     /**
-     * 渲染帧前（世界 tick 之后、层级渲染之前）再应用一次发射架姿态：
-     * 本体武器 tick 的 updateRot 会在实体 tick 阶段重置 structureGroup.rotation，
-     * 仅靠 ClientTickEvent 应用在个别帧序下会被覆盖，这里兜底保证姿态进入渲染。
+     * 渲染帧前诊断发射架武器站实际旋转角（每 30 tick）：
+     * 实际姿态由状态机驱动部件 {@code xRot} 经本体 {@code updateRot} 写结构骨实现，
+     * 这里仅保留日志便于验证 OBB / 渲染是否跟随。
      */
     @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
@@ -80,9 +80,24 @@ public class RVP_LauncherDeployEventHandler {
             return;
         }
         for (net.minecraft.world.entity.Entity entity : level.entitiesForRendering()) {
-            if (entity instanceof AbstractVehicle vehicle) {
-                LauncherDeployStateMachine.applyWeaponUnitPose(vehicle);
+            if (entity instanceof AbstractVehicle vehicle && vehicle.tickCount % 30 == 0) {
+                diagnoseLauncherAngle(vehicle);
             }
+        }
+    }
+
+    /** 渲染时刻诊断：打印发射架武器站 xTurnGroup 实际旋转角（每 30 tick）。 */
+    @OnlyIn(Dist.CLIENT)
+    private static void diagnoseLauncherAngle(AbstractVehicle vehicle) {
+        for (org.ywzj.rvp.config.RVP_LauncherDeployConfig config :
+                org.ywzj.rvp.config.RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            org.ywzj.vehicle.vehicle.part.PartUnit<?> part = vehicle.getPartUnit(config.pitchPartUnitId()).orElse(null);
+            if (!(part instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit wu)) {
+                continue;
+            }
+            LOGGER.info("[RVP-LaunchDeploy] 渲染时刻 载具={} part={} xRot={} xTurnGroup角度={}",
+                    vehicle.getVehicleId(), part.getId(), wu.getXRot(),
+                    org.ywzj.rvp.config.LauncherDeployPoseHelper.getXTurnGroupAngleDeg(wu));
         }
     }
 
@@ -90,7 +105,6 @@ public class RVP_LauncherDeployEventHandler {
         for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
             if (entity instanceof AbstractVehicle vehicle) {
                 LauncherDeployStateMachine.tick(vehicle);
-                LauncherDeployStateMachine.applyWeaponUnitPose(vehicle);
             }
         }
     }
@@ -100,7 +114,6 @@ public class RVP_LauncherDeployEventHandler {
         for (net.minecraft.world.entity.Entity entity : level.entitiesForRendering()) {
             if (entity instanceof AbstractVehicle vehicle) {
                 LauncherDeployStateMachine.tick(vehicle);
-                LauncherDeployStateMachine.applyWeaponUnitPose(vehicle);
             }
         }
     }

@@ -12,6 +12,7 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.mixin.accessor.SwitchableUnitAccessor;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.RotatableUnit;
 import org.ywzj.vehicle.vehicle.part.SwitchableUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -71,7 +72,7 @@ public final class LauncherDeployStateMachine {
             syncSwitchable(vehicle, config, state.state);
 
             float currentPitch = resolveCurrentPitch(config, state);
-            applyPitch(vehicle, config, currentPitch);
+            driveLauncherPitch(vehicle, config, currentPitch);
 
             // 节流日志：每 100 tick 记录一次状态/俯仰，便于确认部署是否推进
             long gameTime = vehicle.level().getGameTime();
@@ -94,13 +95,45 @@ public final class LauncherDeployStateMachine {
         }
     }
 
-    /** 每 tick 应用“武器站 tick 后姿态旁路”（替代被删 WeaponUnitLauncherDeployPoseBypassMixin）。 */
-    public static void applyWeaponUnitPose(AbstractVehicle vehicle) {
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (partUnit instanceof WeaponUnit weaponUnit) {
-                LauncherDeployPoseHelper.applyRuntimePitchForWeaponUnit(weaponUnit);
-            }
+    /**
+     * 以本体风格驱动发射架部件俯仰（双端）。
+     *
+     * <p>与本体官方 htf5980 起竖同机制：本体在 {@code HTF5980.tick()} 里对导弹部件调用
+     * {@code missile.setXAimRot(pipe.isOn() ? -90 : 0)}，由部件自身的 {@code tickRot()} 把
+     * {@code xRot} 转到目标角，随后本体的 {@code updateRot()} 把 {@code xTurnGroup}
+     *（9k720 即 launcher_pitch_barrel，含发射管 cube OBB）旋转 → 结构 OBB 跟随。</p>
+     *
+     * <p>这里在状态机每 tick（服务端/客户端各一份）把发射架部件的 {@code xRot/xAimRot}
+     * 直接设为目标俯仰，并放开俯仰角范围 / 关闭跟随瞄准（rotByAim），保证本体 updateRot
+     * 写出正确的结构骨旋转。全程使用本体公共 API，无需 Mixin。</p>
+     */
+    public static void driveLauncherPitch(AbstractVehicle vehicle, RVP_LauncherDeployConfig config, float pitch) {
+        if (vehicle == null || config == null || config.pitchPartUnitId() == null
+                || config.pitchPartUnitId().isBlank()) {
+            return;
         }
+        vehicle.getPartUnit(config.pitchPartUnitId()).ifPresent(partUnit -> {
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                // 关闭瞄准跟随，避免父级武器站瞄准覆盖部署俯仰
+                weaponUnit.rotByAim = false;
+            }
+            if (partUnit instanceof RotatableUnit<?> rotatable) {
+                driveRotatable(rotatable, config, pitch);
+            }
+        });
+    }
+
+    private static void driveRotatable(RotatableUnit<?> rotatable, RVP_LauncherDeployConfig config, float pitch) {
+        // 俯仰角范围锚定 [0, stowed, deployed]，并放宽 ±45 容差（覆盖 xSelfRot 等偏移），
+        // 避免本体 tickRot 的 x_rot_max/min 钳制把发射架俯仰拉回 0
+        float lo = Math.min(Math.min(config.stowedPitch(), config.deployedPitch()), 0f);
+        float hi = Math.max(Math.max(config.stowedPitch(), config.deployedPitch()), 0f);
+        rotatable.setXRotMin(lo - 45);
+        rotatable.setXRotMax(hi + 45);
+        // 旋转速度由部署时长推算（本处每 tick 直接写 xRot，速度仅作兜底）
+        rotatable.setXRotSpeed(Math.max(0.1f, (hi - lo) / Math.max(1, config.deployTimeTick())));
+        rotatable.setXAimRot(pitch);
+        rotatable.setXRot(pitch);
     }
 
     public static void clear(int vehicleId) {
@@ -192,17 +225,6 @@ public final class LauncherDeployStateMachine {
                     config.retractTimeTick() <= 0 ? 1.0f : (float) state.progressTick / config.retractTimeTick()
             );
         };
-    }
-
-    private static void applyPitch(AbstractVehicle vehicle, RVP_LauncherDeployConfig config, float pitch) {
-        if (config.pitchPartUnitId().isBlank()) {
-            return;
-        }
-        PartUnit<?> partUnit = vehicle.getPartUnit(config.pitchPartUnitId()).orElse(null);
-        if (partUnit == null) {
-            return;
-        }
-        LauncherDeployPoseHelper.applyPitch(partUnit, config, pitch);
     }
 
     private static float lerp(float start, float end, float progress) {
