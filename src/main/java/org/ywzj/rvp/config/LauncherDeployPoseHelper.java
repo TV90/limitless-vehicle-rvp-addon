@@ -1,9 +1,11 @@
 package org.ywzj.rvp.config;
 
+import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
+import org.slf4j.Logger;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.vehicle.custom.part.data.PartUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -23,8 +25,11 @@ import java.lang.reflect.Field;
  */
 public final class LauncherDeployPoseHelper {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private static Field X_TURN_GROUP_FIELD;
     private static boolean X_TURN_GROUP_RESOLVED;
+    private static boolean X_TURN_GROUP_OK_LOGGED;
 
     private LauncherDeployPoseHelper() {}
 
@@ -66,12 +71,16 @@ public final class LauncherDeployPoseHelper {
 
         VehicleCubeGroup targetGroup = resolvePitchGroup(partUnit, config.pitchGroup());
         if (targetGroup == null) {
+            LOGGER.info("[RVP-LaunchDeploy] applyPitch 未解析到分组 part={} pitchGroup={} pitch={}",
+                    partUnit.getId(), config.pitchGroup(), pitch);
             return;
         }
 
         // 命中发射架俯仰旋转组（xTurnGroup）：通过武器站 xRot 驱动，确保骨骼起竖/旋转
         if (partUnit instanceof WeaponUnit weaponUnit
                 && targetGroup == resolveXTurnGroup(weaponUnit)) {
+            LOGGER.info("[RVP-LaunchDeploy] 驱动 xRot part={} pitch={} xTurnGroup={}",
+                    partUnit.getId(), pitch, targetGroup);
             weaponUnit.xRotO = weaponUnit.getXRot();
             weaponUnit.setXAimRot(pitch);
             weaponUnit.setXRot(pitch);
@@ -79,6 +88,8 @@ public final class LauncherDeployPoseHelper {
             return;
         }
 
+        LOGGER.info("[RVP-LaunchDeploy] 直接写分组 rotation part={} group={} pitch={}",
+                partUnit.getId(), targetGroup, pitch);
         targetGroup.rotation = new Quaternionf(targetGroup.baseRotation).mul(Axis.XP.rotationDegrees(pitch));
     }
 
@@ -120,7 +131,9 @@ public final class LauncherDeployPoseHelper {
             try {
                 X_TURN_GROUP_FIELD = ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
                 X_TURN_GROUP_FIELD.setAccessible(true);
+                LOGGER.info("[RVP-LaunchDeploy] xTurnGroup 反射字段解析成功: {}", X_TURN_GROUP_FIELD);
             } catch (Throwable t) {
+                LOGGER.warn("[RVP-LaunchDeploy] xTurnGroup 反射字段解析失败: {}", t.toString());
                 X_TURN_GROUP_FIELD = null;
             }
         }
@@ -130,6 +143,7 @@ public final class LauncherDeployPoseHelper {
         try {
             return (VehicleCubeGroup) X_TURN_GROUP_FIELD.get(weaponUnit);
         } catch (Throwable t) {
+            LOGGER.debug("[RVP-LaunchDeploy] 读取 xTurnGroup 失败", t);
             return null;
         }
     }

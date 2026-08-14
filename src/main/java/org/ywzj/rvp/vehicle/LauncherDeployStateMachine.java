@@ -1,6 +1,8 @@
 package org.ywzj.rvp.vehicle;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.player.Player;
+import org.slf4j.Logger;
 import org.ywzj.rvp.config.LauncherDeployLocalState;
 import org.ywzj.rvp.config.LauncherDeployPoseHelper;
 import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
@@ -28,7 +30,10 @@ import java.util.Map;
  */
 public final class LauncherDeployStateMachine {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private static final Map<Integer, Map<String, LauncherDeployLocalState>> STATES = new HashMap<>();
+    private static final Map<String, Long> TRANSITION_LOG_THROTTLE = new HashMap<>();
 
     private LauncherDeployStateMachine() {
     }
@@ -40,6 +45,7 @@ public final class LauncherDeployStateMachine {
         }
         List<RVP_LauncherDeployConfig> configs = RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId());
         if (configs.isEmpty()) {
+            LOGGER.info("[RVP-LaunchDeploy] 载具 {} 无发射架配置（缓存为空）", vehicle.getVehicleId());
             clear(vehicle.getId());
             return;
         }
@@ -63,6 +69,16 @@ public final class LauncherDeployStateMachine {
 
             float currentPitch = resolveCurrentPitch(config, state);
             applyPitch(vehicle, config, currentPitch);
+
+            // 节流日志：每 100 tick 记录一次状态/俯仰，便于确认部署是否推进
+            long gameTime = vehicle.level().getGameTime();
+            String key = vehicle.getId() + ":" + config.id();
+            Long lastLog = TRANSITION_LOG_THROTTLE.get(key);
+            if (lastLog == null || gameTime - lastLog >= 100) {
+                TRANSITION_LOG_THROTTLE.put(key, gameTime);
+                LOGGER.info("[RVP-LaunchDeploy] 载具={} config={} state={} progress={} pitch={} speedKph={}",
+                        vehicle.getVehicleId(), config.id(), state.state, state.progressTick, currentPitch, speedKph);
+            }
 
             LauncherDeployRuntimeManager.put(
                     vehicle.getId(),
