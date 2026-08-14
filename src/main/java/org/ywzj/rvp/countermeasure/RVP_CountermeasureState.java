@@ -8,7 +8,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import com.mojang.logging.LogUtils;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
@@ -26,6 +28,8 @@ import java.util.Optional;
  * depending on specific aircraft/tank classes.</p>
  */
 public final class RVP_CountermeasureState {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_CountermeasureState() {}
 
@@ -53,6 +57,9 @@ public final class RVP_CountermeasureState {
         // 按 RVP_InterferenceData：跟踪期间以弹体指向为轴、maxLockAngle*seekerFovShrinkFactor 为 FOV、
         // guidanceTargetDistanceRange 为距离检测对应干扰物；视场内干扰物数超过 seekerJamLimit 时脱锁
         if (decoyType != null && hasJamInSeekerCone(seeker, target, decoyType, config)) {
+            LOGGER.info("[RVP-Interf] 干扰触发 弹体={} 制导={} 目标={} 干扰物={}",
+                    seeker.getClass().getSimpleName(), guidanceType,
+                    target == null ? "null" : target.getClass().getSimpleName(), decoyType);
             return new Result(false, true, true, false);
         }
         return Result.CLEAR;
@@ -109,13 +116,10 @@ public final class RVP_CountermeasureState {
         double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
         double maxDist = resolveDecoyScanRadius(config);
         Vec3 seekerPos = seeker.position();
-        Vec3 targetCenter = target.getBoundingBox().getCenter();
-        Vec3 axis = targetCenter.subtract(seekerPos);
-        double axisLen = axis.length();
-        if (axisLen <= 1.0E-6) {
+        Vec3 unitAxis = resolveConeAxis(seeker, target);
+        if (unitAxis.lengthSqr() <= 1.0E-6) {
             return Optional.empty();
         }
-        Vec3 unitAxis = axis.scale(1.0 / axisLen);
         AABB box = new AABB(
                 seekerPos.subtract(maxDist, maxDist, maxDist),
                 seekerPos.add(maxDist, maxDist, maxDist));
@@ -137,13 +141,10 @@ public final class RVP_CountermeasureState {
         double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
         double maxDist = resolveDecoyScanRadius(config);
         Vec3 seekerPos = seeker.position();
-        Vec3 targetCenter = target.getBoundingBox().getCenter();
-        Vec3 axis = targetCenter.subtract(seekerPos);
-        double axisLen = axis.length();
-        if (axisLen <= 1.0E-6) {
+        Vec3 axis = resolveConeAxis(seeker, target);
+        if (axis.lengthSqr() <= 1.0E-6) {
             return false;
         }
-        axis = axis.scale(1.0 / axisLen);
         AABB box = new AABB(
                 seekerPos.subtract(maxDist, maxDist, maxDist),
                 seekerPos.add(maxDist, maxDist, maxDist));
@@ -158,6 +159,21 @@ public final class RVP_CountermeasureState {
             }
         }
         return false;
+    }
+
+    /** 导引头视场锥轴：优先弹体航向（getLookAngle），退化时退回弹体→目标指向。 */
+    private static Vec3 resolveConeAxis(Entity seeker, Entity target) {
+        Vec3 look = seeker.getLookAngle();
+        if (look.lengthSqr() > 1.0E-6) {
+            return look.normalize();
+        }
+        if (target != null) {
+            Vec3 axis = target.getBoundingBox().getCenter().subtract(seeker.position());
+            if (axis.lengthSqr() > 1.0E-6) {
+                return axis.normalize();
+            }
+        }
+        return Vec3.ZERO;
     }
 
     /** 干扰物扫描距离上限：guidanceTargetDistanceRange 上界；未配置用大默认。 */
