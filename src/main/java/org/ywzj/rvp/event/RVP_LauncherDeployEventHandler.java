@@ -60,6 +60,28 @@ public class RVP_LauncherDeployEventHandler {
         }
     }
 
+    /**
+     * 渲染帧前（世界 tick 之后、层级渲染之前）再应用一次发射架姿态：
+     * 本体武器 tick 的 updateRot 会在实体 tick 阶段重置 structureGroup.rotation，
+     * 仅靠 ClientTickEvent 应用在个别帧序下会被覆盖，这里兜底保证姿态进入渲染。
+     */
+    @OnlyIn(Dist.CLIENT)
+    @SubscribeEvent
+    public static void onRenderTick(TickEvent.RenderTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        for (net.minecraft.world.entity.Entity entity : level.entitiesForRendering()) {
+            if (entity instanceof AbstractVehicle vehicle) {
+                LauncherDeployStateMachine.applyWeaponUnitPose(vehicle);
+            }
+        }
+    }
+
     private static void tickVehicles(ServerLevel level) {
         for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
             if (entity instanceof AbstractVehicle vehicle) {
