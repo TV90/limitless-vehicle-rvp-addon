@@ -9,6 +9,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamHelper;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
+import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
@@ -133,6 +136,33 @@ public final class RVP_ClientRadarTickHandler {
                 RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, vehicle.level().getGameTime());
             }
         }
+        // 外置雷达（中继雷达）锁定箔条干扰：外置锁定的目标被箔条遮蔽时清除外置锁定
+        tickExternalLockChaffJam(vehicle, weaponUnit);
+    }
+
+    /** 外置雷达锁定箔条判定（客户端）：外置锁定目标周围箔条超阈值 → 清除外置锁定请求并同步服务端。 */
+    private static void tickExternalLockChaffJam(AbstractVehicle vehicle, WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return;
+        }
+        Entity extLocked = RVP_ExternalRadarLinkHelper.getClientLockedEntity(
+                vehicle, vehicle.level().dimension().location());
+        if (extLocked == null || !extLocked.isAlive()) {
+            return;
+        }
+        RVP_CountermeasureSystemData chaff = RVP_ChaffJamHelper.resolveChaffConfig(extLocked);
+        if (chaff == null) {
+            return;
+        }
+        int count = RVP_ChaffJamHelper.countDecoysNear(
+                extLocked, chaff.getRadarJamRadius(), org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType.CHAFF);
+        if (count < chaff.getRadarJamCount()) {
+            return;
+        }
+        // 清除客户端外置锁定请求与本地侧表，并发送 C2SClearExternalRadarLock 让服务端清除
+        RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
+        org.ywzj.rvp.countermeasure.RVP_ChaffJamState.setCooldown(
+                extLocked.getUUID(), vehicle.level().getGameTime(), chaff.getRadarJamCooldownTick());
     }
 
     /**

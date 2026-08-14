@@ -69,6 +69,35 @@ public final class RVP_ChaffJamHelper {
         return true;
     }
 
+    /**
+     * 箔条干扰<b>外置雷达（中继雷达）</b>锁定：目标周围箔条超阈值时清除外置锁定并写禁锁期。
+     * 外置锁定存于 {@link RVP_WeaponLockStateTable}（非本地 RadarUnit），SARH/ARH 中继引导读取它。
+     *
+     * @param radarOwnerVehicle 拥有外置雷达链路的载具
+     * @param root              根武器站（外置锁定挂载处）
+     * @param locked            被外置雷达锁定的目标
+     * @param gameTime          当前游戏 tick
+     * @return 是否发生了干扰脱锁
+     */
+    public static boolean tryJamExternalLock(Entity radarOwnerVehicle, WeaponUnit root, Entity locked, long gameTime) {
+        if (root == null || locked == null || !locked.isAlive()) {
+            return false;
+        }
+        RVP_CountermeasureSystemData chaff = resolveChaffConfig(locked);
+        if (chaff == null) {
+            return false;
+        }
+        int count = countDecoysNear(locked, chaff.getRadarJamRadius(), RVP_EnumCountermeasureType.CHAFF);
+        if (count < chaff.getRadarJamCount()) {
+            return false;
+        }
+        // 清除外置雷达锁定与请求（服务端权威状态），并写目标禁锁期
+        RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
+        RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);
+        RVP_ChaffJamState.setCooldown(locked.getUUID(), gameTime, chaff.getRadarJamCooldownTick());
+        return true;
+    }
+
     /** 清除指向目标的所有雷达/武器锁定与 pending/外部锁定。 */
     private static void breakLock(Entity radarOwnerVehicle, RadarUnit radar, Entity target) {
         radar.setLockedEntity(null);

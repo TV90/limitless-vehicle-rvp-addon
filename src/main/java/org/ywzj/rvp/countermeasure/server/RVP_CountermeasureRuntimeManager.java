@@ -121,6 +121,9 @@ public final class RVP_CountermeasureRuntimeManager {
         if (vehicle.level().isClientSide() || vehicle.isRemoved() || vehicle.isDestroyed()) {
             return;
         }
+        // 雷达箔条判定对【所有】载具执行（含无干扰物配置的中继雷达载具）：
+        // 任何锁定到被箔条遮蔽目标的雷达都应脱锁
+        tickRadarChaffJam(vehicle);
         RVP_CountermeasureData config = resolveConfig(vehicle);
         if (config == null) {
             return;
@@ -130,7 +133,6 @@ public final class RVP_CountermeasureRuntimeManager {
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.FLARE, state.flare);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.CHAFF, state.chaff);
         maybeSyncHud(vehicle, state);
-        tickRadarChaffJam(vehicle);
     }
 
     private static void tickSystem(AbstractVehicle vehicle, RVP_CountermeasureData config,
@@ -146,21 +148,35 @@ public final class RVP_CountermeasureRuntimeManager {
         spawnRound(vehicle, system, fireCount, type);
     }
 
-    /** 雷达箔条判定：对每台有锁定目标的雷达做脱锁 + 禁锁（节流，仅在有锁时查询）。 */
+    /** 雷达箔条判定：对每台有锁定目标的雷达/外置雷达锁定做脱锁 + 禁锁（节流）。 */
     private static void tickRadarChaffJam(AbstractVehicle vehicle) {
         if (vehicle.tickCount % 4 != 0) {
             return;
         }
         long gameTime = vehicle.level().getGameTime();
+        java.util.Set<WeaponUnit> seenRoots = new java.util.HashSet<>();
         for (PartUnit<?> part : vehicle.getPartUnits()) {
-            if (!(part instanceof RadarUnit radar) || !radar.isOn()) {
-                continue;
+            // 本地雷达锁定
+            if (part instanceof RadarUnit radar && radar.isOn()) {
+                Entity locked = radar.getLockedEntity();
+                if (locked != null && locked.isAlive()) {
+                    RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, gameTime);
+                }
             }
-            Entity locked = radar.getLockedEntity();
-            if (locked == null || !locked.isAlive()) {
-                continue;
+            // 外置雷达（中继雷达）锁定：挂在根武器站的 RVP_WeaponLockStateTable
+            if (part instanceof WeaponUnit weaponUnit) {
+                WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+                if (root == null || !seenRoots.add(root)) {
+                    continue;
+                }
+                int extId = org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
+                if (extId != Integer.MIN_VALUE) {
+                    Entity ext = vehicle.level().getEntity(extId);
+                    if (ext != null && ext.isAlive()) {
+                        RVP_ChaffJamHelper.tryJamExternalLock(vehicle, root, ext, gameTime);
+                    }
+                }
             }
-            RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, gameTime);
         }
     }
 
