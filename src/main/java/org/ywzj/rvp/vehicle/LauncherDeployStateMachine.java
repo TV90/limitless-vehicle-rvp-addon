@@ -45,7 +45,6 @@ public final class LauncherDeployStateMachine {
         }
         List<RVP_LauncherDeployConfig> configs = RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId());
         if (configs.isEmpty()) {
-            LOGGER.info("[RVP-LaunchDeploy] 载具 {} 无发射架配置（缓存为空）", vehicle.getVehicleId());
             clear(vehicle.getId());
             return;
         }
