@@ -7,6 +7,7 @@ import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.mixin.accessor.SwitchableUnitAccessor;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
@@ -114,6 +115,9 @@ public final class RVP_WeaponSwitchSyncHelper {
     /**
      * B3：替代被删 WeaponUnitSwitchWeaponMixin 的 seekerOn 复位。
      * 切换武器后，若当前主/副武器没有寻的器，自动关闭导引头（防止 SARH/IR 切到 SACLOS 时状态残留）。
+     * <p>武器判定须先解开 agent / 多弹种包装（{@link RVP_WeaponResolveHelper#unwrap}）：
+     * 否则 agent 包装（如 J15 的 variable_aam）的 {@code withSeeker()} 恒为 false，无弹舱载具
+     * 每 tick 走本方法时会把已开启的导引头反复复位关闭。</p>
      */
     private static void syncSeekerOn(WeaponUnit unit, int primary, int secondary) {
         Field seekerField = seekerOnField();
@@ -123,17 +127,23 @@ public final class RVP_WeaponSwitchSyncHelper {
         try {
             AbstractVehicleWeapon<?> primaryWeapon = primary >= 0 && primary < unit.weapons.size()
                     ? unit.weapons.get(primary) : null;
-            if (primaryWeapon != null && !primaryWeapon.withSeeker()) {
+            if (primaryWeapon != null && !hasResolvedSeeker(primaryWeapon)) {
                 seekerField.setBoolean(unit, false);
             }
             AbstractVehicleWeapon<?> secondaryWeapon = secondary >= 0 && secondary < unit.secondaryWeapons.size()
                     ? unit.secondaryWeapons.get(secondary) : null;
-            if (secondaryWeapon != null && !secondaryWeapon.withSeeker()) {
+            if (secondaryWeapon != null && !hasResolvedSeeker(secondaryWeapon)) {
                 seekerField.setBoolean(unit, false);
             }
         } catch (IllegalAccessException e) {
             // 反射失败：seekerOn 保持原状（极罕见，字段访问已 setAccessible）
         }
+    }
+
+    /** 解开 agent / 多弹种包装后判断是否带寻的器。 */
+    private static boolean hasResolvedSeeker(AbstractVehicleWeapon<?> weapon) {
+        AbstractVehicleWeapon<?> resolved = RVP_WeaponResolveHelper.unwrap(weapon);
+        return resolved != null && resolved.withSeeker();
     }
 
     private static void syncBays(WeaponUnit unit, int primary, int secondary) {
