@@ -82,24 +82,7 @@ public class RVP_LauncherDeployEventHandler {
         for (net.minecraft.world.entity.Entity entity : level.entitiesForRendering()) {
             if (entity instanceof AbstractVehicle vehicle) {
                 LauncherDeployStateMachine.applyWeaponUnitPose(vehicle);
-                if (vehicle.tickCount % 30 == 0) {
-                    diagnoseLauncherPose(vehicle);
-                }
             }
-        }
-    }
-
-    /** 渲染时刻诊断：打印发射架武器站 xRot / xAimRot（每 30 tick）。 */
-    @OnlyIn(Dist.CLIENT)
-    private static void diagnoseLauncherPose(AbstractVehicle vehicle) {
-        for (org.ywzj.rvp.config.RVP_LauncherDeployConfig config :
-                org.ywzj.rvp.config.RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
-            org.ywzj.vehicle.vehicle.part.PartUnit<?> part = vehicle.getPartUnit(config.pitchPartUnitId()).orElse(null);
-            if (!(part instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit wu)) {
-                continue;
-            }
-            LOGGER.info("[RVP-LaunchDeploy] 渲染时刻 载具={} part={} xRot={} xAimRot={}",
-                    vehicle.getVehicleId(), part.getId(), wu.getXRot(), wu.getXAimRot());
         }
     }
 

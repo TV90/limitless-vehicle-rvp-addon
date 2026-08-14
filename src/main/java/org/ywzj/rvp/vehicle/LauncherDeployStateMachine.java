@@ -54,7 +54,11 @@ public final class LauncherDeployStateMachine {
         localStates.keySet().removeIf(id -> configs.stream().noneMatch(config -> config.id().equals(id)));
 
         double speedKph = vehicle.getDeltaMovement().length() * 20.0 * 3.6;
-        boolean hasPlayer = vehicle.getPassengers().stream()
+        // hasPlayer：驾驶员（本地玩家/炮手）也算有人——单机下客户端实体 getPassengers() 可能不含本地玩家，
+        // 若只查乘客会让 requirePlayerPresent 的载具在客户端恒判定"无人"→ 刚展开就被 retract、后续再展不开
+        net.minecraft.world.entity.Entity driver = vehicle.getDriver();
+        boolean hasPlayer = driver instanceof Player || driver instanceof GunnerEntity
+                || vehicle.getPassengers().stream()
                 .anyMatch(p -> p instanceof Player || p instanceof GunnerEntity);
 
         for (RVP_LauncherDeployConfig config : configs) {
