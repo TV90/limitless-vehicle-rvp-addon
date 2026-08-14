@@ -39,6 +39,7 @@ public class RVP_DecoyEntity extends Entity implements RVP_Decoy {
 
     public RVP_DecoyEntity(EntityType<?> type, Level level) {
         super(type, level);
+        // 区块强载由每 tick EntityUtil.keepChunkLoaded 承担（对本实体保持当前+漂移方向区块加载）
     }
 
     /** 客户端生成工厂（spawn 数据经 SynchedEntityData 随包同步）。 */
@@ -82,6 +83,8 @@ public class RVP_DecoyEntity extends Entity implements RVP_Decoy {
             tickParticle();
             return;
         }
+        // 区块强载：持续保持自身（及漂移方向）区块加载，避免飞出视距后区块卸载导致实体冻结不消失
+        org.ywzj.vehicle.util.EntityUtil.keepChunkLoaded(this, this.position());
         // 存活期到期销毁
         if (tickCount >= getLifetimeTick()) {
             this.discard();
