@@ -76,20 +76,23 @@ public final class LauncherDeployPoseHelper {
             return;
         }
 
-        // 命中发射架俯仰旋转组（xTurnGroup）：通过武器站 xRot 驱动，确保骨骼起竖/旋转
-        if (partUnit instanceof WeaponUnit weaponUnit
-                && targetGroup == resolveXTurnGroup(weaponUnit)) {
-            LOGGER.info("[RVP-LaunchDeploy] 驱动 xRot part={} pitch={} xTurnGroup={}",
-                    partUnit.getId(), pitch, targetGroup);
+        // 发射架武器站：始终驱动 xRot 让 xTurnGroup（发射架臂/导弹渲染组）旋转，
+        // 并直接写 structureGroup.rotation（防止本体 updateRot 把臂重置为 baseRotation）。
+        // 旧代码靠 WeaponUnitLauncherDeployPoseBypassMixin（weapon tick TAIL）保证姿态不被覆盖，
+        // 非 mixin 下这里双管齐下覆盖两种渲染路径（PartUnit 武器模型 + 载具 body 模型骨）。
+        if (partUnit instanceof WeaponUnit weaponUnit) {
+            LOGGER.info("[RVP-LaunchDeploy] 驱动 xRot + 写 structureGroup part={} pitch={} xTurnGroup={}",
+                    partUnit.getId(), pitch, resolveXTurnGroup(weaponUnit));
             weaponUnit.xRotO = weaponUnit.getXRot();
             weaponUnit.setXAimRot(pitch);
             weaponUnit.setXRot(pitch);
             weaponUnit.updateRot();
+            if (targetGroup == weaponUnit.getStructureGroup()) {
+                targetGroup.rotation = new Quaternionf(targetGroup.baseRotation).mul(Axis.XP.rotationDegrees(pitch));
+            }
             return;
         }
 
-        LOGGER.info("[RVP-LaunchDeploy] 直接写分组 rotation part={} group={} pitch={}",
-                partUnit.getId(), targetGroup, pitch);
         targetGroup.rotation = new Quaternionf(targetGroup.baseRotation).mul(Axis.XP.rotationDegrees(pitch));
     }
 
