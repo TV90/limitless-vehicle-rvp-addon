@@ -79,8 +79,11 @@ public final class LauncherDeployStateMachine {
             Long lastLog = TRANSITION_LOG_THROTTLE.get(key);
             if (lastLog == null || gameTime - lastLog >= 100) {
                 TRANSITION_LOG_THROTTLE.put(key, gameTime);
-                LOGGER.info("[RVP-LaunchDeploy] 载具={} config={} state={} progress={} pitch={} speedKph={}",
-                        vehicle.getVehicleId(), config.id(), state.state, state.progressTick, currentPitch, speedKph);
+                net.minecraft.world.entity.Entity drv = vehicle.getDriver();
+                LOGGER.info("[RVP-LaunchDeploy] 载具={} config={} state={} progress={} pitch={} speedKph={} hasPlayer={} driver={} passengers={}",
+                        vehicle.getVehicleId(), config.id(), state.state, state.progressTick, currentPitch, speedKph,
+                        hasPlayer, drv == null ? "null" : drv.getClass().getSimpleName(),
+                        vehicle.getPassengers().size());
             }
 
             LauncherDeployRuntimeManager.put(
