@@ -107,7 +107,10 @@ public final class GunnerBrain {
         if (weaponUnit == null || target == null || !target.isAlive()) {
             return;
         }
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+        // 武器站传感器未写 rf 时，只要武器组内有能打击该目标的雷达制导武器（ARH/SARH）也应雷达锁定，
+        // 否则枪手导弹无实体锁 → 无 targetEntity → 干扰检测不生效
+        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF
+                && !hasRadarHomingWeaponForTarget(weaponUnit, target)) {
             return;
         }
         RadarUnit radar = prepareGunnerLockRadar(weaponUnit);
@@ -175,6 +178,24 @@ public final class GunnerBrain {
         if (root.getLockedEntity() != null) {
             root.setLockedEntity(null);
         }
+    }
+
+    /** 武器组内是否有能打击目标的雷达制导（ARH/SARH）武器（有则枪手应雷达锁定目标）。 */
+    private static boolean hasRadarHomingWeaponForTarget(WeaponUnit weaponUnit, Entity target) {
+        for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
+            AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
+            if (!(proxyWeapon instanceof RVP_WeaponBase rvpWeapon)) {
+                continue;
+            }
+            RVP_WeaponData data = rvpWeapon.getData();
+            if (data == null || !data.isRadarHoming()) {
+                continue;
+            }
+            if (GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Nullable

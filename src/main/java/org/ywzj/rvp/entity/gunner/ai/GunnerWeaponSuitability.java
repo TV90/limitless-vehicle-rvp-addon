@@ -124,13 +124,14 @@ public final class GunnerWeaponSuitability {
         if (usesGunnerControlSource(data)) {
             return true;
         }
-        // RF 制导武器必须有可用的雷达（载具自带或外置中继），否则不能发射
+        // RF 制导武器必须有可用的雷达（载具自带或外置中继），否则不能发射；
+        // 武器站传感器未写 rf 时，雷达制导（ARH/SARH）武器同样要求有可用雷达
         if (data.isHomingProjectile() && !data.isVehicleLaserGuided() && !data.isCommandGuided()) {
             WeaponUnit root = rootUnit.getRootParentWeaponUnit();
-            if (root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF) {
-                if (!hasUsableRadar(rootUnit, target)) {
-                    return false;
-                }
+            boolean requiresRadar = root.getFireControlSensorType() == WeaponUnitData.FireControlSensorType.RF
+                    || data.isRadarHoming();
+            if (requiresRadar && !hasUsableRadar(rootUnit, target)) {
+                return false;
             }
         }
         if (!data.isRequireLock()) {
