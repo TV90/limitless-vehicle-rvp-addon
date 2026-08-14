@@ -69,30 +69,21 @@ public final class LauncherDeployPoseHelper {
             return;
         }
 
-        VehicleCubeGroup targetGroup = resolvePitchGroup(partUnit, config.pitchGroup());
-        if (targetGroup == null) {
-            LOGGER.info("[RVP-LaunchDeploy] applyPitch 未解析到分组 part={} pitchGroup={} pitch={}",
-                    partUnit.getId(), config.pitchGroup(), pitch);
-            return;
-        }
-
-        // 发射架武器站：始终驱动 xRot 让 xTurnGroup（发射架臂/导弹渲染组）旋转，
-        // 并直接写 structureGroup.rotation（防止本体 updateRot 把臂重置为 baseRotation）。
-        // 旧代码靠 WeaponUnitLauncherDeployPoseBypassMixin（weapon tick TAIL）保证姿态不被覆盖，
-        // 非 mixin 下这里双管齐下覆盖两种渲染路径（PartUnit 武器模型 + 载具 body 模型骨）。
+        // 发射架武器站：只驱动 xRot 让 xTurnGroup（发射架臂/导弹渲染组）旋转。
+        // 武器模型用 xTurnGroup.rotation 渲染、出膛点用 xTurnGroup 全局变换，只需驱动 xRot；
+        // 绝不能同时直接写父组 structureGroup——它是 xTurnGroup 的父组，两者都设 pitch 会叠加成双倍旋转。
         if (partUnit instanceof WeaponUnit weaponUnit) {
-            LOGGER.info("[RVP-LaunchDeploy] 驱动 xRot + 写 structureGroup part={} pitch={} xTurnGroup={}",
-                    partUnit.getId(), pitch, resolveXTurnGroup(weaponUnit));
             weaponUnit.xRotO = weaponUnit.getXRot();
             weaponUnit.setXAimRot(pitch);
             weaponUnit.setXRot(pitch);
             weaponUnit.updateRot();
-            if (targetGroup == weaponUnit.getStructureGroup()) {
-                targetGroup.rotation = new Quaternionf(targetGroup.baseRotation).mul(Axis.XP.rotationDegrees(pitch));
-            }
             return;
         }
 
+        VehicleCubeGroup targetGroup = resolvePitchGroup(partUnit, config.pitchGroup());
+        if (targetGroup == null) {
+            return;
+        }
         targetGroup.rotation = new Quaternionf(targetGroup.baseRotation).mul(Axis.XP.rotationDegrees(pitch));
     }
 
