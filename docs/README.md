@@ -6,7 +6,7 @@
 
 | 文档 | 适合谁 | 内容 |
 | --- | --- | --- |
-| [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
+| [RVP包新增参数字段说明.md](./plan/RVP武器数据模型/RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
 | [无人机_TV弹_区块加载功能调研.md](./无人机_TV弹_区块加载功能调研.md) | 系统调研 / 接手开发 | 可部署 UAV、TV/HITL 导弹、区块加载器当前实现与风险 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
@@ -35,7 +35,7 @@
 - **不要改** `ywzj_vehicle` 本体源码；新逻辑写在 `limitless-vehicle-rvp-addon`。
 - 新武器 `type` 只用 7 个公开类型：`rvp:missile` / `rocket` / `machinegun` / `bomb` / `laser` / `dispenser` / `targetingpod`。
 - TV、ARH 制导仅挂在 `rvp:missile` 的 `guidance_data` 中。
-- 改 JSON 字段时同步更新 [RVP包新增参数字段说明.md](./RVP包新增参数字段说明.md)。
+- 改 JSON 字段时同步更新 [RVP包新增参数字段说明.md](./plan/RVP武器数据模型/RVP包新增参数字段说明.md)。
 - **禁止在 Java 中按武器资源 ID / 路径名分支**（例如 `if (weaponId.equals("mi28_2a42_canister"))`）。行为差异用武器 JSON（`fire_data`、`collision_data` 等）表达。
 - **弹体渲染**：RVP 实体须注册 RVP 专用 `EntityRenderer`（`RVP_BulletEntityRenderer`、`RVP_BedrockProjectileEntityRenderer`），绘制规则与本体一致；模型来自 `assets/rvp/display/weapon/<id>.json`，缺省回退本体 `missile_akd10` / `rocket_57mm` / `aerial_bomb` / `basic_bullet`。
 
