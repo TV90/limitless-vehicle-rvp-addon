@@ -1,4 +1,10 @@
 {
   "subtitles.rvp.thermobaric_explosion": "温压爆炸",
-  "subtitles.rvp.thermobaric_tail": "温压爆炸余响"
+  "subtitles.rvp.thermobaric_tail": "温压爆炸余响",
+  "subtitles.rvp.countermeasure_flare": "热焰弹抛洒",
+  "subtitles.rvp.countermeasure_chaff": "箔条抛洒",
+  "subtitles.rvp.ir_alert": "红外导弹追踪",
+  "rvp.lock_warning.radar": "战机被雷达锁定，按[%s]键释放箔条规避",
+  "rvp.lock_warning.arh": "战机被雷达制导导弹锁定，按[%s]键释放箔条规避",
+  "rvp.lock_warning.ir": "战机被红外导弹锁定，按[%s]键释放热焰弹规避"
 }

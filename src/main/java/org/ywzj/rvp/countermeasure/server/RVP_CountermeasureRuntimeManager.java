@@ -16,12 +16,12 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureData;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureDecoyData;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureStateMachine;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
+import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
-import org.ywzj.vehicle.all.AllSounds;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
@@ -234,10 +234,13 @@ public final class RVP_CountermeasureRuntimeManager {
                 broadcastFireAnimation(vehicle, launcher);
             }
         }
-        // 每轮投射播放一次本体干扰弹发射音效（服务端广播给附近玩家）
+        // 每轮投射播放一次对应干扰物类型的发射音效（热焰弹/箔条各自独立，服务端广播给附近玩家）
         if (soundPos != null) {
+            net.minecraft.sounds.SoundEvent sound = type == RVP_EnumCountermeasureType.FLARE
+                    ? org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_FLARE.get()
+                    : org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_CHAFF.get();
             vehicle.level().playSound(null, soundPos.x, soundPos.y, soundPos.z,
-                    AllSounds.DECOY_FLARE_LAUNCH.get(), SoundSource.NEUTRAL, 1.0F, 1.0F);
+                    sound, SoundSource.NEUTRAL, 1.0F, 1.0F);
             LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
         }
     }

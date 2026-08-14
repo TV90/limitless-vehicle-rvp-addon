@@ -33,5 +33,6 @@ public class RVP_OverlayRegistry {
         // 命中展板注册在最后：overlay 按注册顺序绘制，展板最后绘制即为最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
         event.registerAboveAll("rvp_hit_indicator", new RVP_HitIndicatorOverlay());
+        event.registerAboveAll("rvp_lock_warning", new RVP_LockWarningOverlay());
     }
 }

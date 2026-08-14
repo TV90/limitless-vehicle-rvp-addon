@@ -18,9 +18,9 @@ public final class RVP_CountermeasureDecoyData {
     @SerializedName("speed")
     private float speed = 0.5F;
 
-    /** 下落加速度（热焰弹建议 0.05；箔条建议 0 悬浮）。 */
+    /** 下落加速度（热焰弹建议 0.02 漂浮更久；箔条建议 0 悬浮）。 */
     @SerializedName("gravity")
-    private float gravity = 0.05F;
+    private float gravity = 0.02F;
 
     /** 空气阻力系数，速度按 {@code velocity *= (1 - drag)} 衰减。 */
     @SerializedName("drag")
@@ -47,7 +47,7 @@ public final class RVP_CountermeasureDecoyData {
     }
 
     public float getGravity() {
-        return Float.isFinite(gravity) ? gravity : 0.05F;
+        return Float.isFinite(gravity) ? gravity : 0.02F;
     }
 
     public float getDrag() {

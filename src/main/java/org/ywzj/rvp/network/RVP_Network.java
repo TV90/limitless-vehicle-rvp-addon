@@ -216,5 +216,10 @@ public class RVP_Network {
                 .decoder(S2CCountermeasureHudSync::decode)
                 .consumerMainThread(S2CCountermeasureHudSync::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CMissileTrackAlert.class, id++)
+                .encoder(S2CMissileTrackAlert::encode)
+                .decoder(S2CMissileTrackAlert::decode)
+                .consumerMainThread(S2CMissileTrackAlert::handle)
+                .add();
     }
 }

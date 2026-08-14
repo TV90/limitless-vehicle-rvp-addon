@@ -21,6 +21,13 @@ public final class RVP_Sounds {
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_NEAR = register("explosion_small_near");
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_FAR = register("explosion_small_far");
 
+    /** 热焰弹抛洒音效（assets/rvp/sounds/misc/flare.ogg）。 */
+    public static final RegistryObject<SoundEvent> COUNTERMEASURE_FLARE = register("countermeasure_flare");
+    /** 箔条抛洒音效（assets/rvp/sounds/misc/chaff.ogg）。 */
+    public static final RegistryObject<SoundEvent> COUNTERMEASURE_CHAFF = register("countermeasure_chaff");
+    /** IR/AIR 导弹追踪告警音效（assets/rvp/sounds/misc/ir_alert.ogg）。 */
+    public static final RegistryObject<SoundEvent> IR_ALERT = register("ir_alert");
+
     private RVP_Sounds() {}
 
     public static void register(IEventBus eventBus) {

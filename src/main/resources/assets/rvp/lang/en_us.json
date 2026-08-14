@@ -1,4 +1,10 @@
 {
   "subtitles.rvp.thermobaric_explosion": "Thermobaric explosion",
-  "subtitles.rvp.thermobaric_tail": "Thermobaric explosion reverberates"
+  "subtitles.rvp.thermobaric_tail": "Thermobaric explosion reverberates",
+  "subtitles.rvp.countermeasure_flare": "Flare deployed",
+  "subtitles.rvp.countermeasure_chaff": "Chaff deployed",
+  "subtitles.rvp.ir_alert": "IR missile tracking",
+  "rvp.lock_warning.radar": "Radar locked, press [%s] to release chaff",
+  "rvp.lock_warning.arh": "Locked by radar-guided missile, press [%s] to release chaff",
+  "rvp.lock_warning.ir": "Locked by IR missile, press [%s] to release flares"
 }

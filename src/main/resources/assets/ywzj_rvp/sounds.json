@@ -40,5 +40,23 @@
       "ywzj_rvp:nuclear/explosion_small_far1",
       "ywzj_rvp:nuclear/explosion_small_far2"
     ]
+  },
+  "countermeasure_flare": {
+    "subtitle": "subtitles.rvp.countermeasure_flare",
+    "sounds": [
+      "ywzj_rvp:misc/flare"
+    ]
+  },
+  "countermeasure_chaff": {
+    "subtitle": "subtitles.rvp.countermeasure_chaff",
+    "sounds": [
+      "ywzj_rvp:misc/chaff"
+    ]
+  },
+  "ir_alert": {
+    "subtitle": "subtitles.rvp.ir_alert",
+    "sounds": [
+      "ywzj_rvp:misc/ir_alert"
+    ]
   }
 }

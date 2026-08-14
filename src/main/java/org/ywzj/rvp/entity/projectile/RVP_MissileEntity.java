@@ -29,6 +29,7 @@ import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
+import org.ywzj.rvp.network.S2CMissileTrackAlert;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceDataHITL;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -180,6 +181,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             // 主动导引头开机/锁定时向目标播报本体 RWR 告警（对标本体 MissileEntity.tickTrack）
             tickRwrMissileLaunchWarn(activeType);
         }
+        // ARH / AIR / IR（含红外家族导引头）锁定目标时向目标播报 RVP 专用追踪告警
+        tickMissileTrackAlert(activeType);
 
         super.tickGuidance();
     }
@@ -281,6 +284,50 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             // 调用本体网络通道，向所有跟踪目标实体的玩家广播告警包。
             Channel.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> targetEntity), packet);
         }
+    }
+
+    /**
+     * 弹载导引头锁定目标时，向目标周期发送 {@link S2CMissileTrackAlert}（驱动血条上方提示
+     * 文案与 IR/AIR 告警音效）。覆盖 ARH（箔条规避提示）与 IR/AIR（热焰弹规避提示），
+     * 约每 0.5s 一次，形成持续追踪提示。
+     *
+     * <p>注意走 RVP 自己的频道 {@link RVP_Network#CHANNEL}（RVP 包不能进本体
+     * {@code Channel} 频道，否则 Forge 报 Invalid message）。</p>
+     */
+    private void tickMissileTrackAlert(RVP_EnumGuidanceType activeType) {
+        if (level().isClientSide()) {
+            return;
+        }
+        byte typeCode = switch (activeType) {
+            case ARH -> S2CMissileTrackAlert.TYPE_ARH;
+            case AIR -> S2CMissileTrackAlert.TYPE_AIR;
+            case IR -> S2CMissileTrackAlert.TYPE_IR;
+            default -> 0;
+        };
+        if (typeCode == 0 || !isSeekerTracking(activeType)) {
+            return;
+        }
+        if (tickCount % 10 != 0) {
+            return;
+        }
+        Entity target = getTargetEntity();
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        RVP_Network.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> target),
+                new S2CMissileTrackAlert(getId(), target.getId(), typeCode));
+    }
+
+    /** 导引头是否正在追踪存活目标（ARH/AIR 用自主导引头截获态，IR 用红外捕获宽限期）。 */
+    private boolean isSeekerTracking(RVP_EnumGuidanceType activeType) {
+        if (activeType == RVP_EnumGuidanceType.ARH || activeType == RVP_EnumGuidanceType.AIR) {
+            return isAutonomousSeekerOn() && hasAutonomousSeekerCatch()
+                    && getTargetEntity() != null && getTargetEntity().isAlive();
+        }
+        if (activeType == RVP_EnumGuidanceType.IR) {
+            return hasIrSeekerGrace() && getTargetEntity() != null && getTargetEntity().isAlive();
+        }
+        return false;
     }
 
     private void notifyActiveSeekerOnline(RVP_EnumGuidanceType type) {
