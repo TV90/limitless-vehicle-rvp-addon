@@ -17,7 +17,17 @@ import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
 final class RVP_RuntimeSeekerSupport {
 
+    /** 重锁/搜索扫描半径封顶（格）：避免按 guidanceTargetDistanceRange（可达上千格）做超大
+     * getEntities 箱子扫描导致 TPS 掉刻；干扰物/目标在末段导弹附近，256 格足够覆盖重锁场景。 */
+    private static final double ACQUIRE_SCAN_RADIUS = 256.0;
+
     private RVP_RuntimeSeekerSupport() {}
+
+    /** 重锁/搜索扫描半径：取配置距离范围与封顶的较小值。 */
+    private static double acquireScanRadius(RVP_GuidanceActiveConfig config) {
+        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+        return Math.min(range, ACQUIRE_SCAN_RADIUS);
+    }
 
     @Nullable
     static Entity validateEntity(
@@ -73,7 +83,7 @@ final class RVP_RuntimeSeekerSupport {
 
     @Nullable
     static Entity scanRadarTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
-        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+        double range = acquireScanRadius(config);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;
         for (Entity entity : Radar.scanTargets(projectile, projectile.position(), range,
@@ -119,7 +129,7 @@ final class RVP_RuntimeSeekerSupport {
 
     @Nullable
     static Entity scanInfraredTarget(RVP_BaseBullet projectile, RVP_GuidanceActiveConfig config) {
-        double range = RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+        double range = acquireScanRadius(config);
         AABB box = projectile.getBoundingBox().inflate(range);
         Entity best = null;
         double bestScore = Double.MAX_VALUE;

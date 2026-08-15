@@ -905,6 +905,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return seekerShutOffUntilTick != Integer.MIN_VALUE && tickCount < seekerShutOffUntilTick;
     }
 
+    /** 是否处于被干扰（诱饵欺骗）状态：当前锁定目标是干扰物实体，或导引头处于干扰失锁后的关闭期。
+     * 干扰期间导弹应关闭近炸引信，避免追诱饵飞掠玩家附近时仍被近炸引爆命中玩家。 */
+    public boolean isJammedByDecoy() {
+        return targetEntity instanceof RVP_Decoy || isSeekerShutOff();
+    }
+
     private void beginSeekerShutOffFromConfig() {
         if (rvpData == null || rvpData.getGuidanceData() == null
                 || rvpData.getGuidanceData().getInterferenceData() == null) {
@@ -2002,6 +2008,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     protected void tickProximityFuse() {
         if (rvpData == null) {
+            return;
+        }
+        // 干扰期间关闭近炸引信：导弹被诱饵欺骗（目标为干扰物或导引头失锁关闭期）时不引爆近炸，
+        // 避免导弹追诱饵飞掠玩家附近时仍被近炸引爆命中玩家
+        if (isJammedByDecoy()) {
             return;
         }
         RVP_FuseData fuse = rvpData.getFuseData();

@@ -1,7 +1,5 @@
 package org.ywzj.rvp.mixin;
 
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -25,16 +23,11 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 @Mixin(value = WeaponUnit.class, remap = false)
 public abstract class WeaponUnitMainRadarUnitMixin {
 
-    private static final Logger LOGGER = LogUtils.getLogger();
-
     @Inject(method = "getMainRadarUnit", at = @At("HEAD"), cancellable = true, remap = false)
     private void rvp$preferLockRadarAsMainRadar(CallbackInfoReturnable<RadarUnit> cir) {
         WeaponUnit self = (WeaponUnit) (Object) this;
         RadarUnit locked = RVP_RadarRoleHelper.getLockedRadar(self);
         if (locked != null && locked.getLockedEntity() != null) {
-            LOGGER.info("[RVP-MainRadar] 载具={} weaponUnit={} 主雷达重定向=lockRadar={} 锁定目标={}",
-                    self.getVehicle() == null ? "?" : self.getVehicle().getVehicleId(),
-                    self.getId(), locked.getId(), locked.getLockedEntity().getId());
             cir.setReturnValue(locked);
             return;
         }

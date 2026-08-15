@@ -12,6 +12,7 @@ import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
@@ -151,10 +152,14 @@ public final class GunnerBrain {
         }
 
         radar.detect(lockTarget);
+        // 箔条禁锁期：目标被箔条干扰脱锁后短时间内不可被选中/锁定（仍可被扫描），
+        // 否则炮手 AI 每 tick 重锁会令脱锁瞬间被还原，雷达看起来"怎么都脱不了锁"
+        if (RVP_ChaffJamState.isInCooldown(lockTarget.getUUID(), vehicle.level().getGameTime())) {
+            clearGunnerRadarLock(weaponUnit, radar);
+            return;
+        }
         if (radar.getLockedEntity() != lockTarget) {
             radar.setLockedEntity(lockTarget);
-            LOGGER.info("[RVP-GunnerLock] 载具={} weaponUnit={} radar={} 锁定 target={}",
-                    vehicle.getVehicleId(), weaponUnit.getId(), radar.getId(), lockTarget.getId());
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
         if (root.getLockedEntity() != lockTarget) {
@@ -253,6 +258,22 @@ public final class GunnerBrain {
         boolean isRvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
         boolean isSelfGuided = isSelfGuidedMissile(weaponUnit, selectedWeapon);
 
+        // 对空导弹纪律：目标是飞机时，必须持锁满 5 秒（100 tick）才能发射；
+        // 发射后 5 秒内不再对同一目标发射（目标切换时计时重置）
+        boolean isAircraftTarget = target instanceof FixedWingVehicle || target instanceof RotaryWingVehicle;
+        if (isRvpMissile && isAircraftTarget) {
+            int now = gunner.tickCount;
+            if (gunner.getAirLockStartTick() == 0) {
+                gunner.setAirLockStartTick(now);
+            }
+            if (now - gunner.getAirLockStartTick() < 100) {
+                return;
+            }
+            if (gunner.getLastAirMissileFireTick() != 0 && now - gunner.getLastAirMissileFireTick() < 100) {
+                return;
+            }
+        }
+
         if (isRvpMissile && gunner.getMissileCooldown() > 0) {
             return;
         }
@@ -282,6 +303,9 @@ public final class GunnerBrain {
         gunner.onBurstShot(launcher ? 1 : profile.getBurstFireTick(), profile.getBurstRestTick());
         if (isRvpMissile) {
             gunner.setMissileCooldown(30);
+            if (isAircraftTarget) {
+                gunner.setLastAirMissileFireTick(gunner.tickCount);
+            }
         }
         if (isSelfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);

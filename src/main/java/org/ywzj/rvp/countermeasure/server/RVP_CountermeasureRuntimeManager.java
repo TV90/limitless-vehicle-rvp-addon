@@ -150,9 +150,6 @@ public final class RVP_CountermeasureRuntimeManager {
 
     /** 雷达箔条判定：对每台有锁定目标的雷达/外置雷达锁定做脱锁 + 禁锁（节流）。 */
     private static void tickRadarChaffJam(AbstractVehicle vehicle) {
-        if (vehicle.tickCount % 4 != 0) {
-            return;
-        }
         long gameTime = vehicle.level().getGameTime();
         java.util.Set<WeaponUnit> seenRoots = new java.util.HashSet<>();
         for (PartUnit<?> part : vehicle.getPartUnits()) {
@@ -197,7 +194,6 @@ public final class RVP_CountermeasureRuntimeManager {
                 vehicle.getId(),
                 state.flare != null ? state.flare.getRemaining() : 0, flareTotal, flareReload,
                 state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload);
-        LOGGER.info("[RVP-CM] HUD 同步 载具={} flare={}/{} chaff={}/{}", vehicle.getId(), flareTotal, flareReload, chaffTotal, chaffReload);
         // 直接发给载具乘客（驾驶员），保证本地 HUD 一定收到；再向跟踪载具的其它玩家广播
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof ServerPlayer serverPlayer) {

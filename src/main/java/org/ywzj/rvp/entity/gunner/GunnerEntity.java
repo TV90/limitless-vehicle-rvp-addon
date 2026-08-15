@@ -50,6 +50,12 @@ public class GunnerEntity extends Mob {
     private int pendingBurstRestTicks;
     private int countermeasureCooldown;
     private int missileCooldown;
+    /** 对空导弹：开始锁定当前目标时的 tick（目标切换时重置；0=未开始）。 */
+    private int airLockStartTick;
+    /** 对空导弹：最后一次对当前目标发射导弹的 tick（目标切换时重置；0=未发射）。 */
+    private int lastAirMissileFireTick;
+    /** 对空导弹：最近一个有效目标 id（用于判定是否切换到不同目标）。 */
+    private int lastAirEngagedTargetId = -1;
     private final Map<Integer, Integer> ciwsTargetCooldowns = new HashMap<>();
     private double lastDriveCheckX;
     private double lastDriveCheckZ;
@@ -242,7 +248,15 @@ public class GunnerEntity extends Mob {
     }
 
     public void setTrackedTarget(@Nullable Entity target) {
-        trackedTargetId = target == null ? -1 : target.getId();
+        int newId = target == null ? -1 : target.getId();
+        if (newId != -1 && newId != lastAirEngagedTargetId) {
+            // 切换到不同的有效目标才重置对空导弹计时；目标短暂消失再回来同一目标不重置，
+            // 否则扫描间隔内 findBestTarget 偶尔返回 null 会让 5 秒持锁计时反复清零
+            this.airLockStartTick = 0;
+            this.lastAirMissileFireTick = 0;
+            this.lastAirEngagedTargetId = newId;
+        }
+        trackedTargetId = newId;
         this.entityData.set(TRACKED_TARGET_ID, trackedTargetId);
     }
 
@@ -321,6 +335,24 @@ public class GunnerEntity extends Mob {
 
     public void setMissileCooldown(int missileCooldown) {
         this.missileCooldown = missileCooldown;
+    }
+
+    /** 对空导弹：开始锁定当前目标时的 tick（目标切换时重置）。 */
+    public int getAirLockStartTick() {
+        return airLockStartTick;
+    }
+
+    public void setAirLockStartTick(int airLockStartTick) {
+        this.airLockStartTick = airLockStartTick;
+    }
+
+    /** 对空导弹：最后一次对当前目标发射导弹的 tick（目标切换时重置）。 */
+    public int getLastAirMissileFireTick() {
+        return lastAirMissileFireTick;
+    }
+
+    public void setLastAirMissileFireTick(int lastAirMissileFireTick) {
+        this.lastAirMissileFireTick = lastAirMissileFireTick;
     }
 
     public boolean isCiwsTargetOnCooldown(Entity target) {

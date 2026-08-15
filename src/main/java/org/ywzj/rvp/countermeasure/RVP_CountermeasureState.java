@@ -1,5 +1,6 @@
 package org.ywzj.rvp.countermeasure;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -8,7 +9,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import com.mojang.logging.LogUtils;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -18,7 +18,9 @@ import org.ywzj.vehicle.api.entity.SightObstruction;
 import org.ywzj.vehicle.entity.weapon.ActiveProtectionGrenadeEntity;
 
 import java.util.Comparator;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Read-only view of target countermeasures for seeker and guidance decisions.
@@ -30,6 +32,27 @@ import java.util.Optional;
 public final class RVP_CountermeasureState {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** 干扰检测日志节流间隔（tick）：检测每 tick 跑，只在有干扰物计数或触发脱锁时按该间隔输出，避免刷屏。 */
+    private static final int JAM_LOG_INTERVAL_TICKS = 20;
+
+    /** 导引头视场内干扰物 2 秒记忆：seekerId → (decoyId → 最近一次进入视场的 tick)。
+     * 服务端导弹制导与客户端导弹制导都会读写，须线程安全。 */
+    private static final Map<Integer, Map<Integer, Integer>> SEEK_DECOY_MEMORY = new ConcurrentHashMap<>();
+    private static final int DECOY_MEMORY_TICKS = 40; // 2 秒
+
+    /** 干扰物扫描弹道走廊半宽（格）：干扰物由目标抛撒、拖在弹目连线附近（导弹追尾时在弹体
+     * 前方、目标后方），必须以弹体→目标连线为轴做走廊扫描，而非只在目标附近扫——否则高速目标
+     * 抛撒的干扰物会快速脱离目标周边箱子，导致几乎无法干扰。 */
+    private static final double DECOY_SCAN_RADIUS = 64.0;
+    /** 干扰物扫描距离上限（格）：封顶走廊长度，避免按 guidanceTargetDistanceRange（可达上千格）
+     * 做超大 getEntities 箱子扫描导致 TPS 掉刻；干扰物/导弹交战集中在末段，256 格足够覆盖。 */
+    private static final double DECOY_SCAN_MAX_DIST = 256.0;
+
+    /** 以目标（机体）为中心的检测圆半径（格）：与导引头锥形检测取并集——干扰物由目标抛撒、
+     * 拖在机体附近，快速/机动目标抛撒的干扰物会偏离导引头窄锥（预测制导的弹头指向目标前方），
+     * 但仍在机体周围，靠该圆兜住，避免快速目标几乎无法干扰。 */
+    private static final double TARGET_DECOY_RADIUS = 40.0;
 
     private RVP_CountermeasureState() {}
 
@@ -57,9 +80,6 @@ public final class RVP_CountermeasureState {
         // 按 RVP_InterferenceData：跟踪期间以弹体指向为轴、maxLockAngle*seekerFovShrinkFactor 为 FOV、
         // guidanceTargetDistanceRange 为距离检测对应干扰物；视场内干扰物数超过 seekerJamLimit 时脱锁
         if (decoyType != null && hasJamInSeekerCone(seeker, target, decoyType, config)) {
-            LOGGER.info("[RVP-Interf] 干扰触发 弹体={} 制导={} 目标={} 干扰物={}",
-                    seeker.getClass().getSimpleName(), guidanceType,
-                    target == null ? "null" : target.getClass().getSimpleName(), decoyType);
             return new Result(false, true, true, false);
         }
         return Result.CLEAR;
@@ -105,75 +125,161 @@ public final class RVP_CountermeasureState {
     }
 
     /**
-     * 返回弹体导引头视场（锥）内指定类型最近的干扰物实体（供脱锁后转锁诱饵）。
-     * 锥轴 = 弹体→目标指向；半角 = maxLockAngle * seekerFovShrinkFactor / 2；距离上限 = guidanceTargetDistanceRange。
+     * 返回弹体导引头检测区域内指定类型最近的干扰物实体（供脱锁后转锁诱饵）。
+     * 检测区域 = 导引头锥（锥轴=弹体→目标指向，半角 = maxLockAngle * seekerFovShrinkFactor / 2）
+     * ∪ 目标中心 TARGET_DECOY_RADIUS 圆；距离上限 = guidanceTargetDistanceRange（封顶 DECOY_SCAN_MAX_DIST）。
      */
     public static Optional<Entity> findDecoyInSeekerCone(
             Entity seeker, Entity target, RVP_EnumCountermeasureType decoyType, RVP_GuidanceActiveConfig config) {
         if (seeker == null || target == null || decoyType == null) {
             return Optional.empty();
         }
-        double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
-        double maxDist = resolveDecoyScanRadius(config);
+        double halfAngle = decoyConeHalfAngle(config);
+        double maxDist = decoyScanMaxDist(config);
         Vec3 seekerPos = seeker.position();
         Vec3 unitAxis = resolveConeAxis(seeker, target);
         if (unitAxis.lengthSqr() <= 1.0E-6) {
             return Optional.empty();
         }
-        AABB box = new AABB(
-                seekerPos.subtract(maxDist, maxDist, maxDist),
-                seekerPos.add(maxDist, maxDist, maxDist));
-        return seeker.level().getEntities(seeker, box, entity -> entity instanceof RVP_Decoy decoy
+        // 检测区域 = 导引头锥 ∪ 目标中心 40 格圆：箱子（走廊箱 ∪ 目标箱）并集
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        AABB box = decoyScanBox(seekerPos, unitAxis, maxDist, targetCenter);
+        // 追"记忆力最久"的干扰物：取记忆里最近一次进入检测区域时间最早的干扰物（最先抛撒、
+        // 漂移最久、离玩家最远），而非最近的干扰物——最近的那枚通常刚抛出、就在玩家脚下，
+        // 导弹追它仍会砸向玩家
+        Map<Integer, Integer> mem = SEEK_DECOY_MEMORY.get(seeker.getId());
+        Comparator<Entity> byMemoryAge = Comparator.comparingInt(
+                e -> mem == null ? Integer.MAX_VALUE : mem.getOrDefault(e.getId(), Integer.MAX_VALUE));
+        Optional<Entity> found = seeker.level().getEntities(seeker, box, entity -> entity instanceof RVP_Decoy decoy
                 && decoy.rvp$decoyType() == decoyType && entity.isAlive()).stream()
-                .filter(entity -> inSeekerCone(seekerPos, unitAxis, halfAngle, maxDist, entity))
-                .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(seeker)));
+                .filter(entity -> inDecoyRegion(seekerPos, unitAxis, halfAngle, maxDist, targetCenter, entity))
+                .min(byMemoryAge.thenComparingDouble(entity -> entity.distanceToSqr(seeker)));
+        // 转锁诱饵日志（脱锁期间每 tick 调用，节流输出）：脱锁后是否找到可转锁的干扰物
+        // （找到 → 导弹转锁诱饵；找不到 → 导弹失去目标）
+        if (seeker.tickCount % JAM_LOG_INTERVAL_TICKS == 0) {
+            LOGGER.info("[RVP-Jam] 转锁诱饵 seeker={} 类型={} 结果={}",
+                    seeker.getId(), decoyType,
+                    found.map(e -> "找到 id=" + e.getId() + " 距离=" + Math.round(seeker.distanceTo(e) * 10) / 10.0)
+                            .orElse("未找到"));
+        }
+        return found;
     }
 
     /**
      * 导引头视场（锥）内对应干扰物数量是否超过 seekerJamLimit。
-     * 锥轴 = 弹体→目标指向；半角 = maxLockAngle * seekerFovShrinkFactor / 2；距离上限 = guidanceTargetDistanceRange。
+     * 检测区域 = 导引头锥（锥轴=弹体→目标指向，半角 = maxLockAngle * seekerFovShrinkFactor / 2）
+     * ∪ 目标中心 TARGET_DECOY_RADIUS 圆：快速/机动目标拖在机体附近的干扰物即使偏离窄锥也被圆兜住；
+     * 距离上限 = guidanceTargetDistanceRange（封顶 DECOY_SCAN_MAX_DIST）。
      */
     private static boolean hasJamInSeekerCone(
             Entity seeker, Entity target, RVP_EnumCountermeasureType decoyType, RVP_GuidanceActiveConfig config) {
         if (seeker == null || target == null) {
             return false;
         }
-        double halfAngle = config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
-        double maxDist = resolveDecoyScanRadius(config);
+        if (seeker.isRemoved() || !seeker.isAlive()) {
+            SEEK_DECOY_MEMORY.remove(seeker.getId());
+            return false;
+        }
+        // 周期性清理：回收已消失/失效弹体的记忆条目，防止静态表长期增长
+        if (SEEK_DECOY_MEMORY.size() > 128) {
+            SEEK_DECOY_MEMORY.entrySet().removeIf(e -> {
+                Entity s = seeker.level().getEntity(e.getKey());
+                return s == null || !s.isAlive() || e.getValue().isEmpty();
+            });
+        }
+        double halfAngle = decoyConeHalfAngle(config);
+        double maxDist = decoyScanMaxDist(config);
         Vec3 seekerPos = seeker.position();
         Vec3 axis = resolveConeAxis(seeker, target);
         if (axis.lengthSqr() <= 1.0E-6) {
             return false;
         }
-        AABB box = new AABB(
-                seekerPos.subtract(maxDist, maxDist, maxDist),
-                seekerPos.add(maxDist, maxDist, maxDist));
-        int count = 0;
+        int now = seeker.tickCount;
+        // 检测区域 = 导引头锥 ∪ 目标中心 40 格圆：箱子（走廊箱 ∪ 目标箱）并集。
+        // 干扰物拖在弹目连线附近/机体周围，必须扫并集区域；每 tick 全量扫描（配合 40 tick
+        // 视场记忆持续累计），避免节流导致快速通过干扰物区域的导弹漏判、干扰时灵时不灵
+        Vec3 targetCenter = target.getBoundingBox().getCenter();
+        AABB box = decoyScanBox(seekerPos, axis, maxDist, targetCenter);
+        // 记忆累计：目标机速过快时干扰物会快速离开视场锥，单帧锥内数量不足以触发干扰。
+        // 记录每枚干扰物最近一次进入检测区域的时间，2 秒（40 tick）内被"看到过"的干扰物持续计入，
+        // 即使下一时刻已脱离检测区域，也会在记忆窗口内累计干扰物数量。
+        Map<Integer, Integer> memory = SEEK_DECOY_MEMORY.computeIfAbsent(seeker.getId(), k -> new ConcurrentHashMap<>());
+        int coneCount = 0;
+        int nearCount = 0;
         for (Entity entity : seeker.level().getEntities(seeker, box, e -> e instanceof RVP_Decoy decoy
                 && decoy.rvp$decoyType() == decoyType && e.isAlive())) {
-            if (inSeekerCone(seekerPos, axis, halfAngle, maxDist, entity)) {
-                count++;
-                if (count > config.seekerJamLimit()) {
-                    return true;
-                }
+            if (!inDecoyRegion(seekerPos, axis, halfAngle, maxDist, targetCenter, entity)) {
+                continue;
             }
+            memory.put(entity.getId(), now);
+            if (inSeekerCone(seekerPos, axis, halfAngle, maxDist, entity)) {
+                coneCount++;
+            } else {
+                nearCount++;
+            }
+        }
+        // 清理过期记忆（超 2 秒未再进入视场）
+        memory.entrySet().removeIf(e -> now - e.getValue() >= DECOY_MEMORY_TICKS);
+        int count = memory.size();
+        boolean jam = count > config.seekerJamLimit();
+        // 干扰检测节流日志：有干扰物计数或触发脱锁时按间隔输出（锥内 / 机体附近 / 记忆累计 / 阈值 / 是否脱锁）
+        if ((coneCount > 0 || nearCount > 0 || jam) && (now % JAM_LOG_INTERVAL_TICKS == 0 || jam)) {
+            LOGGER.info("[RVP-Jam] seeker={} target={} type={} 锥内={} 机体40格内={} 记忆累计={} 阈值={} 脱锁={}",
+                    seeker.getId(), target.getId(), decoyType, coneCount, nearCount, count,
+                    config.seekerJamLimit(), jam);
+        }
+        if (jam) {
+            return true;
+        }
+        if (memory.isEmpty()) {
+            SEEK_DECOY_MEMORY.remove(seeker.getId());
         }
         return false;
     }
 
-    /** 导引头视场锥轴：优先弹体航向（getLookAngle），退化时退回弹体→目标指向。 */
+    /** 导引头视场锥轴：优先弹体→目标指向（干扰物由目标抛撒、拖在目标后方，必须围绕目标来检测，
+     * 而非弹体航向——预测制导（predict_target_pos）的弹体会指向目标前方，快速目标会因此把拖在
+     * 后方的干扰物全部排除在锥外，记忆里记不到干扰物，看起来"记忆失效"）；仅弹目共位时退化用航向。 */
     private static Vec3 resolveConeAxis(Entity seeker, Entity target) {
-        Vec3 look = seeker.getLookAngle();
-        if (look.lengthSqr() > 1.0E-6) {
-            return look.normalize();
-        }
         if (target != null) {
             Vec3 axis = target.getBoundingBox().getCenter().subtract(seeker.position());
             if (axis.lengthSqr() > 1.0E-6) {
                 return axis.normalize();
             }
         }
+        Vec3 look = seeker.getLookAngle();
+        if (look.lengthSqr() > 1.0E-6) {
+            return look.normalize();
+        }
         return Vec3.ZERO;
+    }
+
+    /** 导引头视场锥半角（度）：原始检测 fov = maxLockAngle * seekerFovShrinkFactor / 2（全角折半）。
+     * 干扰物检测区域 = 该锥形 ∪ 目标中心 40 格圆（见 {@link #inDecoyRegion}）。 */
+    private static double decoyConeHalfAngle(RVP_GuidanceActiveConfig config) {
+        return config.maxLockAngle() * config.seekerFovShrinkFactor() * 0.5;
+    }
+
+    /** 干扰物是否落入检测区域：导引头锥内，或距目标中心 ≤ TARGET_DECOY_RADIUS。
+     * 后者兜住快速/机动目标拖在机体附近的干扰物，避免窄锥漏检。 */
+    private static boolean inDecoyRegion(Vec3 seekerPos, Vec3 axis, double halfAngle, double maxDist,
+                                         Vec3 targetCenter, Entity entity) {
+        if (inSeekerCone(seekerPos, axis, halfAngle, maxDist, entity)) {
+            return true;
+        }
+        Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(targetCenter);
+        return toTarget.lengthSqr() <= TARGET_DECOY_RADIUS * TARGET_DECOY_RADIUS;
+    }
+
+    /** 检测区域扫描箱子：导引头走廊箱 ∪ 目标中心 40 格箱的并集（getEntities 需覆盖两片区域）。 */
+    private static AABB decoyScanBox(Vec3 seekerPos, Vec3 axis, double maxDist, Vec3 targetCenter) {
+        double dist = seekerPos.distanceTo(targetCenter);
+        Vec3 scanEnd = dist <= maxDist ? targetCenter : seekerPos.add(axis.scale(maxDist));
+        AABB corridor = new AABB(seekerPos, scanEnd).inflate(DECOY_SCAN_RADIUS);
+        AABB targetBox = new AABB(
+                targetCenter.subtract(TARGET_DECOY_RADIUS, TARGET_DECOY_RADIUS, TARGET_DECOY_RADIUS),
+                targetCenter.add(TARGET_DECOY_RADIUS, TARGET_DECOY_RADIUS, TARGET_DECOY_RADIUS));
+        return corridor.minmax(targetBox);
     }
 
     /** 干扰物扫描距离上限：guidanceTargetDistanceRange 上界；未配置用大默认。 */
@@ -182,6 +288,11 @@ public final class RVP_CountermeasureState {
             return 512.0;
         }
         return RVP_GuidanceRuntimeGeometry.resolveScanRadius(config.targetDistanceRange());
+    }
+
+    /** 干扰物判定有效距离：配置距离范围与封顶 DECOY_SCAN_MAX_DIST 的较小值（锥内距离与扫描走廊共用）。 */
+    private static double decoyScanMaxDist(RVP_GuidanceActiveConfig config) {
+        return Math.min(resolveDecoyScanRadius(config), DECOY_SCAN_MAX_DIST);
     }
 
     /** 目标是否落在导引头锥内（角度 ≤ halfAngle 且距离 ≤ maxDist）。 */

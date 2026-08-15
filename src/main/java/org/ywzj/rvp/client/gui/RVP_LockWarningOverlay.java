@@ -49,8 +49,8 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         int color = blinkRed();
         int centerX = screenWidth / 2;
         // 本体健康条：renderBaseInfo 平移 (screenWidth/2, screenHeight+16) 后画在 (0,-20,120,5)，
-        // 顶边在 screenHeight-9；提示文案从其上方的固定偏移起逐行向下排布。
-        int y = screenHeight - 32;
+        // 顶边在 screenHeight-9；提示文案从其上方更高的固定偏移起逐行向下排布。
+        int y = screenHeight - 64;
         if (irTrack) {
             drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.ir",
                     RVP_Keys.FIRE_FLARE.getTranslatedKeyMessage()), centerX, y, color);

@@ -16,12 +16,14 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.Comparator;
@@ -34,7 +36,7 @@ public final class GunnerTargeting {
 
     @Nullable
     public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
-        double radius = getTargetSearchRadius(vehicle, profile);
+        double radius = resolveSearchRadius(vehicle, weaponUnit, profile);
         AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
@@ -71,6 +73,7 @@ public final class GunnerTargeting {
                 .orElse(null);
     }
 
+    /** 基础搜索半径（不含雷达扩展）。 */
     private static double getTargetSearchRadius(AbstractVehicle vehicle, GunnerProfile profile) {
         double base = profile.getSearchRadius();
         if (vehicle instanceof org.ywzj.vehicle.entity.vehicle.FixedWingVehicle
@@ -78,6 +81,34 @@ public final class GunnerTargeting {
             return base * 2.0;
         }
         return base;
+    }
+
+    /**
+     * 索敌半径：基础为 profile 搜索半径；若载具带雷达（自身或外置中继），
+     * 扩展为雷达最大扫描距离——gunner 对空攻击范围覆盖雷达扫描到的所有目标。
+     */
+    private static double resolveSearchRadius(AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, GunnerProfile profile) {
+        double base = getTargetSearchRadius(vehicle, profile);
+        double radarRange = resolveRadarScanRange(vehicle, weaponUnit);
+        return Math.max(base, radarRange);
+    }
+
+    /** 有雷达（自身或外置中继）时返回最大扫描距离，否则 0。 */
+    private static double resolveRadarScanRange(AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit) {
+        double best = 0;
+        if (weaponUnit != null) {
+            for (RadarUnit radar : weaponUnit.getRadarUnits()) {
+                best = Math.max(best, radar.getMaxScanDistance());
+            }
+        }
+        AbstractVehicle relay = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(vehicle).orElse(null);
+        if (relay != null) {
+            RadarUnit relayRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relay);
+            if (relayRadar != null) {
+                best = Math.max(best, relayRadar.getMaxScanDistance());
+            }
+        }
+        return best;
     }
 
     @Nullable

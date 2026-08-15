@@ -68,10 +68,15 @@ public class RVP_LinkedUavEventHandler {
     }
 
     private static void tickVehicles(ServerLevel level) {
+        // 先快照载具列表：遍历中会对残骸 discard()（变更活列表），若直接遍历
+        // level.getEntities().getAll() 会漏项/破坏迭代
+        java.util.List<AbstractVehicle> vehicles = new java.util.ArrayList<>();
         for (Entity entity : level.getEntities().getAll()) {
-            if (!(entity instanceof AbstractVehicle vehicle)) {
-                continue;
+            if (entity instanceof AbstractVehicle vehicle) {
+                vehicles.add(vehicle);
             }
+        }
+        for (AbstractVehicle vehicle : vehicles) {
             expireWreckEarly(vehicle);
             if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
                 EntityUtil.keepChunkLoaded(vehicle, vehicle.position());

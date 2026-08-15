@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.ywzj.rvp.all.RVP_Sounds;
@@ -33,10 +32,9 @@ public final class RVP_ClientMissileTrackAlert {
         }
         if (guidanceType == S2CMissileTrackAlert.TYPE_AIR || guidanceType == S2CMissileTrackAlert.TYPE_IR) {
             RVP_ClientLockWarningState.markIrTrack();
-            // 驾驶舱 RWR 提示音：本地播放，保证任何距离都能清晰听到
-            mc.level.playLocalSound(
-                    mc.player.getX(), mc.player.getY(), mc.player.getZ(),
-                    RVP_Sounds.IR_ALERT.get(), SoundSource.NEUTRAL, 1.0F, 1.0F, false);
+            // 驾驶舱 RWR 提示音：本地播放（对齐本体 WarningReceiver 的 VehicleSound 一次性播放）
+            new org.ywzj.vehicle.audio.VehicleSound(
+                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
         }
     }
 

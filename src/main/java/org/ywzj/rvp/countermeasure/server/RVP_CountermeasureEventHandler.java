@@ -61,10 +61,17 @@ public final class RVP_CountermeasureEventHandler {
         long gameTime = 0;
         for (ServerLevel level : server.getAllLevels()) {
             gameTime = level.getGameTime();
+            // 先快照载具列表再 tick：level.getEntities().getAll() 返回活列表，
+            // 若在遍历它的同时经 tick() 抛洒干扰物实体（addFreshEntity）会令其持续增长，
+            // 遍历永不终止 → 服务端 tick 卡死（ModernFix 看门狗报 40s~160s/tick）
+            java.util.List<AbstractVehicle> vehicles = new java.util.ArrayList<>();
             for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
                 if (entity instanceof AbstractVehicle vehicle) {
-                    RVP_CountermeasureRuntimeManager.tick(vehicle);
+                    vehicles.add(vehicle);
                 }
+            }
+            for (AbstractVehicle vehicle : vehicles) {
+                RVP_CountermeasureRuntimeManager.tick(vehicle);
             }
         }
         RVP_ChaffJamState.onServerTick(gameTime);
