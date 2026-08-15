@@ -14,6 +14,8 @@
 
 **Bedrock 模型**：只在载具包 `assets/rvp/models/bedrock/` 与 display JSON 的 `model` 配置；禁止在 Java 里维护模型 ID 白名单（已删除 `RVP_BedrockModels`）。
 
+**结构模型修改铁律（2026-08-16 事故后订立）**：任何对载具**结构模型**（`data/rvp/models/bedrock/vehicle/*.structure.json`，含骨层级 / 骨枢轴 pivot / cube 几何 / 父级关系）的修改，**必须先向用户请示，获确认后才可动手；且动手前必须先备份原文件**（复制为 `*.structure.json.bak` 或 `*.structure.原始时间戳.json`），改动完成后再核对。禁止擅自重构骨层级、移动骨枢轴或批量改写 cube——结构模型是资产，牵一发动全身，误改会导致整车模型/发射点/受击盒全乱。宁可只做 JSON 配置层/Java 代码层方案，也不要直接动结构模型骨结构。
+
 **`RVP_*Data` JavaDoc**：每个 `@SerializedName` 字段须有与 `RVP_FireData` 同级的说明（单位、默认、生效条件）；规范见仓库 `.cursor/skills/mcheli-rvp-port/data-class-javadoc.md`。
 
 **Mixin 使用纪律（非必要禁止，默认拒绝）**：

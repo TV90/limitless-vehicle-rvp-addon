@@ -19,6 +19,7 @@ import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
+import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 
 public class RVP_Entities {
 
@@ -68,6 +69,22 @@ public class RVP_Entities {
                     .setShouldReceiveVelocityUpdates(false)
                     .setCustomClientFactory(RVP_DecoyEntity::new)
                     .build("rvp_decoy"));
+
+    /**
+     * 烟雾云实体（地面载具干扰物）。大 AABB（半径随时间膨胀，禁视区），跟踪范围放宽
+     * 以便远处玩家看到烟幕；存活/目标半径经 SynchedEntityData 随生成包同步。
+     */
+    public static final RegistryObject<EntityType<RVP_SmokeEntity>> RVP_SMOKE =
+            ENTITIES.register("rvp_smoke", () -> EntityType.Builder.<RVP_SmokeEntity>of(RVP_SmokeEntity::new, MobCategory.MISC)
+                    .noSummon()
+                    .noSave()
+                    .fireImmune()
+                    .sized(1.0F, 1.0F)
+                    .clientTrackingRange(256)
+                    .updateInterval(2)
+                    .setShouldReceiveVelocityUpdates(false)
+                    .setCustomClientFactory(RVP_SmokeEntity::new)
+                    .build("rvp_smoke"));
 
     private static <T extends net.minecraft.world.entity.Entity> RegistryObject<EntityType<T>> registerRvpProjectile(
             String id,

@@ -214,6 +214,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         ).guidanceType();
     }
 
+    /** 当前生效的主动导引头/制导类型（供 gunner 等外部判断威胁类型，如 IR/AIR 红外族）。 */
+    public RVP_EnumGuidanceType getActiveGuidanceType() {
+        return resolveNewActiveSeekerType();
+    }
+
     private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
         RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
         if (config == null || config.guidanceType() != type) {
@@ -257,11 +262,12 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     /**
-     * 主动雷达(ARH)/主动红外(AIR)导弹弹载导引头开机并锁定目标时，向目标播报本体 RWR 的
+     * 主动雷达(ARH)导弹弹载导引头开机并锁定目标时，向目标播报本体 RWR 的
      * MISSILE_LAUNCH 告警（"MSL"）。对标本体 {@code MissileEntity.tickTrack()} 每 2 tick
      * 发送一次，保证目标 WarningReceiver 500ms 告警窗口不中断，RWR 显示"导弹来袭"。
+     * AIR（主动红外）不播报此告警——RWR 只响应雷达威胁，AIR 的来袭提示由 IR 告警承担。
      *
-     * @param activeType 当前已解析的主动导引头类型（ARH/AIR）
+     * @param activeType 当前已解析的主动导引头类型（仅 ARH 生效）
      */
     private void tickRwrMissileLaunchWarn(RVP_EnumGuidanceType activeType) {
         // 只从服务端发告警；告警目标过滤（必须是本地驾驶的载具、俯仰角 ≤45°）由本体
@@ -269,8 +275,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (level().isClientSide()) {
             return;
         }
-        // 防御性校验：仅主动雷达/主动红外导引头类型才播报告警（调用点已过滤，此处兜底）。
-        if (activeType != RVP_EnumGuidanceType.ARH && activeType != RVP_EnumGuidanceType.AIR) {
+        // 防御性校验：仅主动雷达(ARH)导引头才向目标播报 RWR MISSILE_LAUNCH 告警。
+        // AIR 是红外型导引头，RWR（雷达告警接收机）不响应红外威胁，其来袭由 RVP 的 IR 告警
+        // 音效/血条提示承担——否则 AIR 会同时响起"导弹发射告警"与"IR 告警"双响。
+        if (activeType != RVP_EnumGuidanceType.ARH) {
             return;
         }
         // 仅导引头开机且有存活目标时才告警（对标本体 radar=true 分支）。

@@ -68,7 +68,8 @@ public final class RVP_CountermeasureState {
         if (target == null || config == null) {
             return Result.CLEAR;
         }
-        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, target)) {
+        if (usesOpticalLineOfSight(guidanceType)
+                && (hasSightObstruction(seeker, target) || isTargetInsideSmoke(target))) {
             return new Result(true, true, false, false);
         }
         boolean flareSensitive = (guidanceType == RVP_EnumGuidanceType.IR
@@ -97,7 +98,8 @@ public final class RVP_CountermeasureState {
         if (seeker == null || targetPos == null || config == null) {
             return Result.CLEAR;
         }
-        if (usesOpticalLineOfSight(guidanceType) && hasSightObstruction(seeker, targetPos)) {
+        if (usesOpticalLineOfSight(guidanceType)
+                && (hasSightObstruction(seeker, targetPos) || isPointInsideSmoke(targetPos, seeker))) {
             return new Result(true, true, false, false);
         }
         return Result.CLEAR;
@@ -304,6 +306,22 @@ public final class RVP_CountermeasureState {
         return RVP_GuidanceRuntimeGeometry.withinAngle(axis, toDecoy, halfAngle);
     }
 
+    /** 目标是否处于任一存活烟雾云的 AABB（禁视区）内（按目标中心点判定）→ IR/AIR 脱锁进惯导。 */
+    private static boolean isTargetInsideSmoke(Entity target) {
+        return target != null && isPointInsideSmoke(target.getBoundingBox().getCenter(), target);
+    }
+
+    /** 位置是否处于任一存活烟雾云的 AABB（禁视区）内。 */
+    private static boolean isPointInsideSmoke(Vec3 point, @Nullable Entity near) {
+        if (point == null || near == null) {
+            return false;
+        }
+        Level level = near.level();
+        AABB probe = new AABB(point, point).inflate(1.0);
+        return level.getEntities(near, probe, e -> e instanceof RVP_SmokeEntity && e.isAlive()).stream()
+                .anyMatch(e -> e.getBoundingBox().contains(point));
+    }
+
     private static boolean hasSightObstruction(Entity seeker, Entity target) {
         if (target instanceof SightObstruction) {
             return true;
@@ -311,9 +329,10 @@ public final class RVP_CountermeasureState {
         if (isLineOfSightBlocked(seeker, target.getBoundingBox().getCenter())) {
             return true;
         }
+        // 弹目视线走廊：任一 SightObstruction（含大体积烟雾云）的 AABB 与之相交即视为遮挡
         AABB box = new AABB(seeker.position(), target.position()).inflate(2.0);
         return seeker.level().getEntities(seeker, box, entity -> entity instanceof SightObstruction).stream()
-                .anyMatch(entity -> entity.distanceTo(target) < 12.0);
+                .anyMatch(entity -> entity.getBoundingBox().intersects(box));
     }
 
     private static boolean hasSightObstruction(Entity seeker, Vec3 targetPos) {
@@ -322,7 +341,7 @@ public final class RVP_CountermeasureState {
         }
         AABB box = new AABB(seeker.position(), targetPos).inflate(2.0);
         return seeker.level().getEntities(seeker, box, entity -> entity instanceof SightObstruction).stream()
-                .anyMatch(entity -> distanceToSegment(entity.position(), seeker.position(), targetPos) < 12.0);
+                .anyMatch(entity -> entity.getBoundingBox().intersects(box));
     }
 
     /**
@@ -380,16 +399,6 @@ public final class RVP_CountermeasureState {
         AABB box = seeker.getBoundingBox().inflate(radius);
         return seeker.level().getEntities(seeker, box, entity -> entity instanceof ActiveProtectionGrenadeEntity).stream()
                 .anyMatch(entity -> entity.distanceTo(seeker) < radius);
-    }
-
-    private static double distanceToSegment(Vec3 point, Vec3 a, Vec3 b) {
-        Vec3 ab = b.subtract(a);
-        double lenSqr = ab.lengthSqr();
-        if (lenSqr <= 1.0E-6) {
-            return point.distanceTo(a);
-        }
-        double t = Math.max(0.0, Math.min(1.0, point.subtract(a).dot(ab) / lenSqr));
-        return point.distanceTo(a.add(ab.scale(t)));
     }
 
     public record Result(boolean lockBlocked, boolean jammedInFlight, boolean decoyed, boolean intercepted) {

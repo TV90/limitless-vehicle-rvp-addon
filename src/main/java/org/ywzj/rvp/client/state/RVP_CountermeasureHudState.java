@@ -11,20 +11,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RVP_CountermeasureHudState {
 
     public record Snapshot(int flareRemain, int flareTotal, int flareReloadRemain,
-                           int chaffRemain, int chaffTotal, int chaffReloadRemain) {
+                           int chaffRemain, int chaffTotal, int chaffReloadRemain,
+                           int smokeRemain, int smokeTotal, int smokeReloadRemain) {
     }
 
     private static final Map<Integer, Snapshot> STATES = new ConcurrentHashMap<>();
 
     public static void update(int vehicleEntityId,
                               int flareRemain, int flareTotal, int flareReloadRemain,
-                              int chaffRemain, int chaffTotal, int chaffReloadRemain) {
+                              int chaffRemain, int chaffTotal, int chaffReloadRemain,
+                              int smokeRemain, int smokeTotal, int smokeReloadRemain) {
         if (vehicleEntityId <= 0) {
             return;
         }
         STATES.put(vehicleEntityId, new Snapshot(
                 Math.max(0, flareRemain), Math.max(0, flareTotal), Math.max(0, flareReloadRemain),
-                Math.max(0, chaffRemain), Math.max(0, chaffTotal), Math.max(0, chaffReloadRemain)
+                Math.max(0, chaffRemain), Math.max(0, chaffTotal), Math.max(0, chaffReloadRemain),
+                Math.max(0, smokeRemain), Math.max(0, smokeTotal), Math.max(0, smokeReloadRemain)
         ));
     }
 

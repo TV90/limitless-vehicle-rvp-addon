@@ -65,6 +65,8 @@ public class GunnerEntity extends Mob {
     private int tacticalHoldTicks;
     private int tacticalEvadeTicks;
     private float tacticalEvadeYawBias;
+    /** 烟雾躲避停车剩余 tick：被红外锁定抛烟雾后开进烟雾停车，直到烟雾消散。 */
+    private int smokeHoldTicks;
     private int controlledWeaponIndex = -1;
     private int groundBigTurnCooldown;
     private int groundBigTurnTicks;
@@ -281,6 +283,7 @@ public class GunnerEntity extends Mob {
         tacticalHoldTicks = 0;
         tacticalEvadeTicks = 0;
         tacticalEvadeYawBias = 0.0F;
+        smokeHoldTicks = 0;
         homePosSet = false;
     }
 
@@ -393,6 +396,21 @@ public class GunnerEntity extends Mob {
         if (tacticalEvadeTicks > 0) {
             tacticalEvadeTicks--;
         }
+        if (smokeHoldTicks > 0) {
+            smokeHoldTicks--;
+        }
+    }
+
+    public boolean hasSmokeHoldTicks() {
+        return smokeHoldTicks > 0;
+    }
+
+    public int getSmokeHoldTicks() {
+        return smokeHoldTicks;
+    }
+
+    public void setSmokeHoldTicks(int smokeHoldTicks) {
+        this.smokeHoldTicks = Math.max(0, smokeHoldTicks);
     }
 
     public boolean isInBurstRest() {

@@ -143,9 +143,14 @@ public final class RVP_RadarScanHelper {
                 && decoy.rvp$decoyType() == RVP_EnumCountermeasureType.FLARE);
     }
 
+    /** 单次补入雷达目标表的箔条数量上限：箔条云一次可几十枚，超视距框全显示太晃眼，
+     * 只保留离雷达最近的该数量（其余本帧不显示，下一帧重新筛）。 */
+    private static final int MAX_DISPLAYED_CHAFF = 8;
+
     /**
      * 把箔条干扰物（CHAFF）补入雷达目标表（可被扫描显示，不产生锁定）。
      * 干扰物碰撞箱小于本体扫描体积阈值，需按扫描包络（高度/方位/扇区）显式补入。
+     * 数量超 {@link #MAX_DISPLAYED_CHAFF} 时只补最近的该数量，避免雷达界面被箔条云刷屏。
      */
     public static void appendRadarVisibleChaffDecoys(RadarUnit radar, List<Entity> entities) {
         Vec3 radarPos = radar.worldRadarPosition();
@@ -179,9 +184,31 @@ public final class RVP_RadarScanHelper {
             }
             return !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
         });
-        for (RVP_DecoyEntity decoy : decoys) {
-            if (existingIds.add(decoy.getId())) {
-                entities.add(decoy);
+        // 均匀分布采样：把 [0, maxScanDistance] 按距离分成 MAX_DISPLAYED_CHAFF 个区间，
+        // 每个区间取离雷达最近的一枚——保证雷达界面在近/中/远都显示箔条，而不是取"最近的 N 枚"
+        // （相近轮次的箔条挤在一起，取最近必然扎堆成一团）
+        int bins = MAX_DISPLAYED_CHAFF;
+        int added = 0;
+        for (int b = 0; b < bins && added < bins; b++) {
+            double binMin = maxScanDistance * b / bins;
+            double binMax = maxScanDistance * (b + 1) / bins;
+            RVP_DecoyEntity best = null;
+            double bestDistSqr = Double.MAX_VALUE;
+            for (RVP_DecoyEntity decoy : decoys) {
+                if (existingIds.contains(decoy.getId())) {
+                    continue;
+                }
+                double distSqr = decoy.getBoundingBox().getCenter().distanceToSqr(radarPos);
+                double dist = Math.sqrt(distSqr);
+                if (dist >= binMin && (b == bins - 1 ? dist <= binMax : dist < binMax)
+                        && distSqr < bestDistSqr) {
+                    best = decoy;
+                    bestDistSqr = distSqr;
+                }
+            }
+            if (best != null && existingIds.add(best.getId())) {
+                entities.add(best);
+                added++;
             }
         }
     }

@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -13,9 +14,13 @@ import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
+import org.ywzj.rvp.countermeasure.server.RVP_CountermeasureRuntimeManager;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -24,6 +29,8 @@ import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
+import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle.Seat;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.EntityUtil;
@@ -50,6 +57,12 @@ public final class GunnerBrain {
     private static final int GROUND_TACTICAL_HOLD_TICK = 100;
     private static final int GROUND_TACTICAL_EVADE_MIN_TICK = 140;
     private static final int GROUND_TACTICAL_EVADE_MAX_TICK = 280;
+    /** 红外威胁检测半径（格）：扫描跟踪本载具的红外族导弹。 */
+    private static final double INFRARED_THREAT_RADIUS = 200.0;
+    /** 烟雾躲避停车时长（tick）：略大于烟雾存活（默认 240）。 */
+    private static final int SMOKE_HOLD_TICKS = 260;
+    /** 烟雾查找半径（格）：寻找最近的烟雾云开进并停车。 */
+    private static final double SMOKE_LOOK_RADIUS = 48.0;
     private static final double FIXEDWING_ATTACK_ENTRY_MIN_AGL = 175.0;
     private static final double FIXEDWING_INITIAL_DISENGAGE_SCALE = 0.45;
     private static final double FIXEDWING_DISENGAGE_SCALE = 0.55;
@@ -82,6 +95,10 @@ public final class GunnerBrain {
         }
 
         tickCountermeasure(gunner, vehicle, profile);
+        // 地面载具被红外导弹锁定：抛烟雾并开进烟雾停车（仅司机 AI）
+        if (driverAi) {
+            tickSmokeEvasion(gunner, vehicle);
+        }
         tickRadarLock(gunner, vehicle, weaponUnit, target, profile);
         GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);
         GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);
@@ -459,6 +476,11 @@ public final class GunnerBrain {
     }
 
     private static void tickGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, Entity target, GunnerProfile profile) {
+        // 烟雾躲避停车：开进烟雾停车直到烟雾消散（优先于正常驾驶）
+        if (gunner.hasSmokeHoldTicks()) {
+            tickSmokeHoldDrive(gunner, vehicle);
+            return;
+        }
         if (target == null) {
             gunner.clearTacticalEvade();
             tickGroundWander(gunner, vehicle, profile);
@@ -553,6 +575,96 @@ public final class GunnerBrain {
                 vehicle.controlUnit.left = true;
             }
         }
+    }
+
+    /**
+     * 红外威胁烟雾规避：地面载具（司机 AI）被红外族导弹锁定跟踪时，抛洒 RVP 烟雾弹
+     * 并进入"开进烟雾停车"状态（时长略大于烟雾存活）。
+     */
+    private static void tickSmokeEvasion(GunnerEntity gunner, AbstractVehicle vehicle) {
+        if (vehicle.level().isClientSide()) {
+            return;
+        }
+        if (!(vehicle instanceof TrackedVehicle) && !(vehicle instanceof WheeledVehicle)) {
+            return;
+        }
+        // 已在停车中，由 tickGroundDriving 的 smoke-hold 分支处理
+        if (gunner.hasSmokeHoldTicks()) {
+            return;
+        }
+        // 节流扫描红外威胁（每 10 tick）
+        if (gunner.tickCount % 10 != 0) {
+            return;
+        }
+        RVP_MissileEntity threat = findInfraredMissileThreat(gunner, vehicle);
+        if (threat == null || !RVP_CountermeasureRuntimeManager.hasSystem(vehicle, RVP_EnumCountermeasureType.SMOKE)) {
+            return;
+        }
+        RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);
+        LOGGER.info("[RVP-Gunner] 载具={} 被红外导弹{}锁定，抛烟雾并停车", vehicle.getVehicleId(), threat.getId());
+    }
+
+    /** 找正在跟踪本载具的红外族（IR/AIR）导弹。 */
+    @Nullable
+    private static RVP_MissileEntity findInfraredMissileThreat(GunnerEntity gunner, AbstractVehicle vehicle) {
+        AABB box = vehicle.getBoundingBox().inflate(INFRARED_THREAT_RADIUS);
+        for (Entity entity : vehicle.level().getEntities(vehicle, box,
+                e -> e instanceof RVP_MissileEntity && e.isAlive())) {
+            RVP_MissileEntity missile = (RVP_MissileEntity) entity;
+            if (missile.getTargetEntity() != vehicle) {
+                continue;
+            }
+            RVP_EnumGuidanceType type = missile.getActiveGuidanceType();
+            if (type == RVP_EnumGuidanceType.IR || type == RVP_EnumGuidanceType.AIR) {
+                return missile;
+            }
+        }
+        return null;
+    }
+
+    /** 烟雾躲避驾驶：向最近的烟雾云开进，进入云内即停车（无控制输入）；烟雾消散则提前结束。 */
+    private static void tickSmokeHoldDrive(GunnerEntity gunner, AbstractVehicle vehicle) {
+        RVP_SmokeEntity smoke = findNearbySmoke(vehicle, SMOKE_LOOK_RADIUS);
+        if (smoke == null) {
+            // 烟雾已散，提前结束停车
+            gunner.setSmokeHoldTicks(0);
+            return;
+        }
+        Vec3 toSmoke = smoke.position().subtract(vehicle.position());
+        double dist = Math.sqrt(toSmoke.x * toSmoke.x + toSmoke.z * toSmoke.z);
+        double radius = Math.max(1.0, smoke.getCurrentRadius());
+        if (dist > radius * 0.6) {
+            // 未进云：转向烟雾并前进
+            Vec2 rot = VectorUtil.vecToRot(new Vec3(toSmoke.x, 0, toSmoke.z));
+            float yawDelta = Mth.wrapDegrees(rot.y - vehicle.getYRot());
+            if (yawDelta > 8.0F) {
+                vehicle.controlUnit.right = true;
+            } else if (yawDelta < -8.0F) {
+                vehicle.controlUnit.left = true;
+            }
+            if (Math.abs(yawDelta) < 80.0F) {
+                vehicle.controlUnit.forward = true;
+            }
+        }
+        // 已进云（dist <= radius*0.6）：无控制输入 = 停车
+    }
+
+    /** 查找最近的存活烟雾云实体。 */
+    @Nullable
+    private static RVP_SmokeEntity findNearbySmoke(AbstractVehicle vehicle, double radius) {
+        AABB box = vehicle.getBoundingBox().inflate(radius);
+        RVP_SmokeEntity best = null;
+        double bestSqr = Double.MAX_VALUE;
+        for (Entity entity : vehicle.level().getEntities(vehicle, box,
+                e -> e instanceof RVP_SmokeEntity && e.isAlive())) {
+            double d = entity.distanceToSqr(vehicle);
+            if (d < bestSqr) {
+                bestSqr = d;
+                best = (RVP_SmokeEntity) entity;
+            }
+        }
+        return best;
     }
 
     private static boolean tickFixedWingDriving(GunnerEntity gunner, FixedWingVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
@@ -1131,7 +1243,9 @@ public final class GunnerBrain {
             return false;
         }
         String path = weaponId.getPath();
-        return path.contains("decoy_flare") || path.contains("smoke_grenade") || path.contains("aps_grenade");
+        // 排除本体烟雾弹武器（launcher_smoke_grenade）：地面载具烟雾由 RVP countermeasure.smoke 承担，
+        // 避免 gunner 同时放本体烟雾 + RVP 烟雾双份
+        return path.contains("decoy_flare") || path.contains("aps_grenade");
     }
 
     /** 判断是否为 GPS 制导武器（GPS 为远程点打击武器，gunner 优先发射）。 */

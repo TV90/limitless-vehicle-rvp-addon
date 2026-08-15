@@ -122,12 +122,15 @@ public class RVP_ClientEvents {
                     true);
         }
 
-        // 干扰物发射（G 热焰弹 / H 箔条）：向服务端发送齐射请求
+        // 干扰物发射（H 热焰弹/烟雾 / LeftAlt 箔条）：向服务端发送齐射请求
         while (RVP_Keys.FIRE_FLARE.consumeClick()) {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.FLARE);
         }
         while (RVP_Keys.FIRE_CHAFF.consumeClick()) {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.CHAFF);
+        }
+        while (RVP_Keys.FIRE_SMOKE.consumeClick()) {
+            ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.SMOKE);
         }
 
         // HMD 模式切换：STT 状态下按 5 键先取消 STT 再进入 HMD

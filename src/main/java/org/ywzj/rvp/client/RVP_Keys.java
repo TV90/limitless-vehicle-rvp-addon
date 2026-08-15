@@ -60,6 +60,12 @@ public class RVP_Keys {
     /** 发射箔条（干扰 SARH/ARH 与雷达锁定），对齐本体干扰弹键位（LEFT_ALT）。 */
     public static final KeyMapping FIRE_CHAFF = key("fire_chaff", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_ALT);
 
+    /**
+     * 发射烟雾弹（地面载具干扰物，遮蔽光学制导）。默认 H，与热焰弹/本体 SMOKE_GRENADE_LAUNCH
+     * 同键位：地面载具不配热焰弹，飞行器不配烟雾，服务端按各自 countermeasure 配置过滤。
+     */
+    public static final KeyMapping FIRE_SMOKE = key("fire_smoke", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H);
+
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
@@ -79,5 +85,6 @@ public class RVP_Keys {
         event.register(HITL_EXIT);
         event.register(FIRE_FLARE);
         event.register(FIRE_CHAFF);
+        event.register(FIRE_SMOKE);
     }
 }

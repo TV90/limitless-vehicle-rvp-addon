@@ -22,6 +22,10 @@ public final class RVP_CountermeasureData {
     @SerializedName("chaff")
     private RVP_CountermeasureSystemData chaff;
 
+    /** 烟雾弹子系统配置（地面载具）；null 或 total=0 时禁用。 */
+    @SerializedName("smoke")
+    private RVP_CountermeasureSystemData smoke;
+
     @Nullable
     public RVP_CountermeasureSystemData getFlare() {
         return flare;
@@ -32,15 +36,26 @@ public final class RVP_CountermeasureData {
         return chaff;
     }
 
+    @Nullable
+    public RVP_CountermeasureSystemData getSmoke() {
+        return smoke;
+    }
+
     /** 按类型取子系统；无配置返回 null。 */
     @Nullable
     public RVP_CountermeasureSystemData system(RVP_EnumCountermeasureType type) {
-        return type == RVP_EnumCountermeasureType.FLARE ? flare : chaff;
+        return switch (type) {
+            case FLARE -> flare;
+            case CHAFF -> chaff;
+            case SMOKE -> smoke;
+        };
     }
 
     /** 是否存在任一启用子系统。 */
     public boolean isEnabled() {
-        return (flare != null && flare.isEnabled()) || (chaff != null && chaff.isEnabled());
+        return (flare != null && flare.isEnabled())
+                || (chaff != null && chaff.isEnabled())
+                || (smoke != null && smoke.isEnabled());
     }
 
     /**

@@ -6,6 +6,7 @@ import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.client.render.RVP_BedrockProjectileEntityRenderer;
 import org.ywzj.rvp.client.render.RVP_BulletEntityRenderer;
 import org.ywzj.rvp.countermeasure.client.RVP_DecoyRenderer;
+import org.ywzj.rvp.countermeasure.client.RVP_SmokeRenderer;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
 import org.ywzj.vehicle.YwzjVehicle;
@@ -53,6 +54,7 @@ public final class RVP_ClientEntityRenderers {
         EntityRenderers.register(RVP_Entities.RVP_DISPENSED.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RVP_DispensedEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_DECOY.get(), RVP_DecoyRenderer::new);
+        EntityRenderers.register(RVP_Entities.RVP_SMOKE.get(), RVP_SmokeRenderer::new);
         EntityRenderers.register(AllEntities.ROCKET.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RocketEntity>(ctx, FALLBACK_ROCKET_MODEL, FALLBACK_ROCKET_TEXTURE));
         EntityRenderers.register(AllEntities.AERIAL_BOMB.get(), ctx ->

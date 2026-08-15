@@ -19,6 +19,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
@@ -46,10 +47,11 @@ public final class RVP_CountermeasureRuntimeManager {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    /** 单载具干扰物状态（两套独立状态机）。 */
+    /** 单载具干扰物状态（三套独立状态机：热焰弹 / 箔条 / 烟雾）。 */
     public static final class VehicleCountermeasureState {
         public RVP_CountermeasureStateMachine flare;
         public RVP_CountermeasureStateMachine chaff;
+        public RVP_CountermeasureStateMachine smoke;
         public boolean initialized;
         /** HUD 上次推送 tick（避免 Integer.MIN_VALUE 相减溢出，初始用 -999999）。 */
         public int lastHudSyncTick = -999999;
@@ -71,11 +73,14 @@ public final class RVP_CountermeasureRuntimeManager {
         ensureState(vehicle, state, config);
         int[] saved = RVP_CountermeasureStateSavedData.get(level).readEntry(vehicle.getUUID());
         if (saved != null) {
-            if (state.flare != null) {
+            if (state.flare != null && saved.length > 1) {
                 state.flare.restore(saved[0], saved[1]);
             }
-            if (state.chaff != null) {
+            if (state.chaff != null && saved.length > 3) {
                 state.chaff.restore(saved[2], saved[3]);
+            }
+            if (state.smoke != null && saved.length > 5) {
+                state.smoke.restore(saved[4], saved[5]);
             }
         }
         state.initialized = true;
@@ -88,7 +93,9 @@ public final class RVP_CountermeasureRuntimeManager {
                     state.flare != null ? state.flare.getRemaining() : 0,
                     state.flare != null && state.flare.isReloading() ? state.flare.getReloadProgress() : 0,
                     state.chaff != null ? state.chaff.getRemaining() : 0,
-                    state.chaff != null && state.chaff.isReloading() ? state.chaff.getReloadProgress() : 0
+                    state.chaff != null && state.chaff.isReloading() ? state.chaff.getReloadProgress() : 0,
+                    state.smoke != null ? state.smoke.getRemaining() : 0,
+                    state.smoke != null && state.smoke.isReloading() ? state.smoke.getReloadProgress() : 0
             });
         } else {
             RVP_CountermeasureStateSavedData.get(level).writeEntry(vehicle.getUUID(), null);
@@ -132,6 +139,7 @@ public final class RVP_CountermeasureRuntimeManager {
         ensureState(vehicle, state, config);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.FLARE, state.flare);
         tickSystem(vehicle, config, RVP_EnumCountermeasureType.CHAFF, state.chaff);
+        tickSystem(vehicle, config, RVP_EnumCountermeasureType.SMOKE, state.smoke);
         maybeSyncHud(vehicle, state);
     }
 
@@ -186,14 +194,18 @@ public final class RVP_CountermeasureRuntimeManager {
         state.lastHudSyncTick = now;
         int flareTotal = state.flare != null ? state.flare.getTotal() : 0;
         int chaffTotal = state.chaff != null ? state.chaff.getTotal() : 0;
+        int smokeTotal = state.smoke != null ? state.smoke.getTotal() : 0;
         int flareReload = state.flare != null && state.flare.isReloading()
                 ? Math.max(0, state.flare.getReloadTick() - state.flare.getReloadProgress()) : 0;
         int chaffReload = state.chaff != null && state.chaff.isReloading()
                 ? Math.max(0, state.chaff.getReloadTick() - state.chaff.getReloadProgress()) : 0;
+        int smokeReload = state.smoke != null && state.smoke.isReloading()
+                ? Math.max(0, state.smoke.getReloadTick() - state.smoke.getReloadProgress()) : 0;
         S2CCountermeasureHudSync packet = new S2CCountermeasureHudSync(
                 vehicle.getId(),
                 state.flare != null ? state.flare.getRemaining() : 0, flareTotal, flareReload,
-                state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload);
+                state.chaff != null ? state.chaff.getRemaining() : 0, chaffTotal, chaffReload,
+                state.smoke != null ? state.smoke.getRemaining() : 0, smokeTotal, smokeReload);
         // 直接发给载具乘客（驾驶员），保证本地 HUD 一定收到；再向跟踪载具的其它玩家广播
         for (Entity passenger : vehicle.getPassengers()) {
             if (passenger instanceof ServerPlayer serverPlayer) {
@@ -209,7 +221,6 @@ public final class RVP_CountermeasureRuntimeManager {
 
     private static void spawnRound(AbstractVehicle vehicle, RVP_CountermeasureSystemData system,
                                    int fireCount, RVP_EnumCountermeasureType type) {
-        RVP_CountermeasureDecoyData decoy = system.getDecoy();
         List<String> launcherParts = system.getLauncherParts();
         if (launcherParts.isEmpty()) {
             return;
@@ -224,27 +235,49 @@ public final class RVP_CountermeasureRuntimeManager {
             if (soundPos == null) {
                 soundPos = launcher.worldCurrentBoltPosition();
             }
-            spawnOne(vehicle, launcher, decoy, type, vehicleVelocity);
+            spawnOne(vehicle, launcher, system, type, vehicleVelocity);
             // 每轮只在第一个发射装置上广播一次动画，避免刷包
             if (i == 0) {
                 broadcastFireAnimation(vehicle, launcher);
             }
         }
-        // 每轮投射播放一次对应干扰物类型的发射音效（热焰弹/箔条各自独立，服务端广播给附近玩家）
+        // 每轮投射播放一次对应干扰物类型的发射音效（热焰弹/箔条各自独立，服务端广播给附近玩家）；
+        // 烟雾弹播放本体 smoke_grenade_launch 发射音效
         if (soundPos != null) {
-            net.minecraft.sounds.SoundEvent sound = type == RVP_EnumCountermeasureType.FLARE
-                    ? org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_FLARE.get()
-                    : org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_CHAFF.get();
+            net.minecraft.sounds.SoundEvent sound;
+            if (type == RVP_EnumCountermeasureType.FLARE) {
+                sound = org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_FLARE.get();
+            } else if (type == RVP_EnumCountermeasureType.CHAFF) {
+                sound = org.ywzj.rvp.all.RVP_Sounds.COUNTERMEASURE_CHAFF.get();
+            } else {
+                sound = org.ywzj.vehicle.all.AllSounds.SMOKE_GRENADE_LAUNCH.get();
+            }
             vehicle.level().playSound(null, soundPos.x, soundPos.y, soundPos.z,
                     sound, SoundSource.NEUTRAL, 1.0F, 1.0F);
-            LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
         }
+        LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
     }
 
     private static void spawnOne(AbstractVehicle vehicle, WeaponUnit launcher,
-                                 RVP_CountermeasureDecoyData decoy,
+                                 RVP_CountermeasureSystemData system,
                                  RVP_EnumCountermeasureType type, Vec3 vehicleVelocity) {
         Vec3 spawnPos = launcher.worldCurrentBoltPosition();
+        // 烟雾：生成烟雾弹实体，沿发射装置指向（含仰角）以 speed 初速弹道发射，explodeTick 后爆炸成云
+        if (type == RVP_EnumCountermeasureType.SMOKE) {
+            RVP_SmokeEntity smokeEntity = new RVP_SmokeEntity(RVP_Entities.RVP_SMOKE.get(), vehicle.level());
+            smokeEntity.initSmoke(system.getSmokeData());
+            smokeEntity.setPos(spawnPos);
+            // 出膛方向：跟随【炮塔】朝向（水平）+ 上仰。烟雾骨是顶层骨（父=车体根），
+            // worldVec() 不含炮塔 yaw；改取 turret 部件（本体主武器）的水平朝向，炮塔转动时烟雾跟随。
+            Vec3 dir = resolveSmokeLaunchDir(vehicle);
+            smokeEntity.setDeltaMovement(dir.scale(system.getSmokeData().getSpeed()));
+            vehicle.level().addFreshEntity(smokeEntity);
+            LOGGER.info("[RVP-CM] 烟雾出膛 launcher={} bolts={} 位置={} 方向={} 车位置={}",
+                    launcher.getId(), launcher.getBolts().size(), spawnPos,
+                    new java.text.DecimalFormat("#.##").format(dir.y), vehicle.position());
+            return;
+        }
+        RVP_CountermeasureDecoyData decoy = system.getDecoy();
         // 散布随机偏移
         double spread = decoy.getSpread();
         Vec3 spreadOffset = new Vec3(
@@ -291,6 +324,11 @@ public final class RVP_CountermeasureRuntimeManager {
         return system != null && system.isEnabled() ? system : null;
     }
 
+    /** 载具是否配置并启用了指定干扰物子系统（供 gunner 等外部逻辑判断可用性）。 */
+    public static boolean hasSystem(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        return vehicle != null && !vehicle.level().isClientSide() && resolveSystem(vehicle, type) != null;
+    }
+
     /**
      * 系统是否当前可用：配置启用，且若配置了 {@code bone_modules}，对应骨块的
      * COUNTERMEASURE 模块必须仍有存活（全部被击毁则失去抛洒功能）。
@@ -330,11 +368,21 @@ public final class RVP_CountermeasureRuntimeManager {
                     : new RVP_CountermeasureStateMachine(chaff.getTotal(), chaff.getPerRound(),
                     chaff.getBurstRounds(), chaff.getLaunchIntervalTick(), chaff.getReloadTick() * reloadFactor);
         }
+        if (state.smoke == null) {
+            RVP_CountermeasureSystemData smoke = config.getSmoke();
+            state.smoke = smoke == null || !smoke.isEnabled() ? null
+                    : new RVP_CountermeasureStateMachine(smoke.getTotal(), smoke.getPerRound(),
+                    smoke.getBurstRounds(), smoke.getLaunchIntervalTick(), smoke.getReloadTick() * reloadFactor);
+        }
     }
 
     @Nullable
     private static RVP_CountermeasureStateMachine machineFor(VehicleCountermeasureState state, RVP_EnumCountermeasureType type) {
-        return type == RVP_EnumCountermeasureType.FLARE ? state.flare : state.chaff;
+        return switch (type) {
+            case FLARE -> state.flare;
+            case CHAFF -> state.chaff;
+            case SMOKE -> state.smoke;
+        };
     }
 
     @Nullable
@@ -344,6 +392,33 @@ public final class RVP_CountermeasureRuntimeManager {
         }
         PartUnit<?> partUnit = vehicle.getPartUnit(partId).orElse(null);
         return partUnit instanceof WeaponUnit weaponUnit ? weaponUnit : null;
+    }
+
+    /**
+     * 烟雾弹出膛方向：跟随炮塔水平朝向 + 上仰。
+     * 烟雾发射骨是顶层骨（父组=车体根），{@code worldVec()} 不含炮塔 yaw；
+     * 取本体主炮塔部件（{@code turret}）的 {@code worldVec()} 水平分量作为炮塔朝向，
+     * 炮塔转动时烟雾随炮塔转向。取不到炮塔时退回车体朝向。
+     */
+    private static Vec3 resolveSmokeLaunchDir(AbstractVehicle vehicle) {
+        Vec3 horizontal = null;
+        PartUnit<?> turretPart = vehicle.getPartUnit("turret").orElse(null);
+        if (turretPart instanceof WeaponUnit turret) {
+            Vec3 turretDir = turret.worldVec();
+            if (turretDir.lengthSqr() > 1.0E-6) {
+                Vec3 h = new Vec3(turretDir.x, 0, turretDir.z);
+                if (h.lengthSqr() > 1.0E-6) {
+                    horizontal = h.normalize();
+                }
+            }
+        }
+        if (horizontal == null) {
+            Vec3 look = vehicle.getLookAngle();
+            Vec3 h = new Vec3(look.x, 0, look.z);
+            horizontal = h.lengthSqr() > 1.0E-6 ? h.normalize() : new Vec3(0, 0, 1);
+        }
+        // 上仰 ~20°（发射筒上仰，避免平射被重力拉进地底）
+        return new Vec3(horizontal.x, 0.35F, horizontal.z).normalize();
     }
 
     private static VehicleCountermeasureState getOrCreate(UUID vehicleId) {

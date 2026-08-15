@@ -45,6 +45,10 @@ public final class RVP_CountermeasureSystemData {
     @SerializedName("decoy")
     private RVP_CountermeasureDecoyData decoy = new RVP_CountermeasureDecoyData();
 
+    /** 烟雾云属性（仅 SMOKE 生效）。 */
+    @SerializedName("smoke")
+    private RVP_CountermeasureSmokeData smoke = new RVP_CountermeasureSmokeData();
+
     /** 箔条对雷达锁定的干扰判定半径（格），仅对 CHAFF 生效。 */
     @SerializedName("radar_jam_radius")
     private float radarJamRadius = 8F;
@@ -101,6 +105,10 @@ public final class RVP_CountermeasureSystemData {
 
     public RVP_CountermeasureDecoyData getDecoy() {
         return decoy == null ? new RVP_CountermeasureDecoyData() : decoy;
+    }
+
+    public RVP_CountermeasureSmokeData getSmokeData() {
+        return smoke == null ? new RVP_CountermeasureSmokeData() : smoke;
     }
 
     public float getRadarJamRadius() {

@@ -9,6 +9,8 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientLockWarningState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.passenger.WarningReceiver;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
@@ -16,12 +18,15 @@ import org.ywzj.vehicle.vehicle.pojo.WarnType;
 /**
  * 锁定告警提示文案（血条上方，红色闪烁，居中显示）。
  *
- * <p>显示三种提示，按优先级（IR/AIR &gt; ARH &gt; 雷达锁定）自下而上叠放：
+ * <p>本告警为<b>飞行器专用</b>（热焰弹/箔条规避提示），仅固定翼/旋翼载具显示：
+ * 按优先级（IR/AIR &gt; ARH &gt; 雷达锁定）自下而上叠放：
  * <ul>
  *   <li>被 IR / AIR 导弹追踪：提示按热焰弹键释放热焰弹规避；</li>
  *   <li>被 ARH 导弹追踪：提示按箔条键释放箔条规避；</li>
  *   <li>被雷达锁定：提示按箔条键释放箔条规避。</li>
  * </ul>
+ * 地面载具不显示本告警（坦克的烟雾/ECM 告警走独立分支，见
+ * {@code docs/plan/RVP干扰物重构数据模型/RVP告警系统方案_20260816.md}）。
  * IR/AIR/ARH 追踪状态由 {@code S2CMissileTrackAlert} 写入 {@link RVP_ClientLockWarningState}，
  * 雷达锁定由本体 {@link WarningReceiver} 的 RADAR_LOCK 告警判定。位置/字号固定，按屏幕
  * 分辨率（GUI 像素）自适应。</p>
@@ -36,6 +41,10 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         }
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null || vehicle.level() == null) {
+            return;
+        }
+        // 本告警为飞行器专用（热焰弹/箔条规避提示）；地面载具走坦克告警分支（烟雾/ECM）
+        if (!isAircraft(vehicle)) {
             return;
         }
         boolean irTrack = RVP_ClientLockWarningState.isIrTrack();
@@ -74,6 +83,11 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         }
         return receiver.targets.values().stream()
                 .anyMatch(target -> target.warnType() == WarnType.RADAR_LOCK);
+    }
+
+    /** 是否飞行器（固定翼 / 旋翼）：热焰弹/箔条告警仅对飞行器显示。 */
+    private static boolean isAircraft(AbstractVehicle vehicle) {
+        return vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle;
     }
 
     /** 红色闪烁：透明度按正弦在 0.45~1.0 间波动。 */
