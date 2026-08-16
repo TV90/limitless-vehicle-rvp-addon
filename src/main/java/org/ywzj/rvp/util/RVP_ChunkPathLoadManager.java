@@ -43,13 +43,13 @@ public final class RVP_ChunkPathLoadManager {
     /** 每个服务器 Tick 最多新增的路径中心 Ticket 数。 */
     public static final int GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK = 64;
     /** 单实体单次提交允许的最大连续路径区块数。 */
-    public static final int MAX_CHUNKS_PER_ENTITY_TICK = 128;
+    public static final int MAX_CHUNKS_PER_ENTITY_TICK = 64;
     /** 与本体 EntityUtil.keepChunkLoaded(...) 保持一致的 Ticket - 1 距离参数。 */
     private static final int POST_TELEPORT_TICKET_LEVEL = 2;
     /** 汇总统计日志周期，单位为服务器 Tick。 */
     private static final int STATS_LOG_INTERVAL_TICKS = 200;
     /** 实体漏 Tick 后继续保护最后驻留区块的短租约长度。 */
-    static final int RESIDENCY_LEASE_TICKS = 30;
+    static final int RESIDENCY_LEASE_TICKS = 15;
 
     /** 以服务器实例隔离预算和实体状态；ServerStoppedEvent 会主动清理。 */
     private static final Map<MinecraftServer, ServerState> SERVER_STATES = new IdentityHashMap<>();

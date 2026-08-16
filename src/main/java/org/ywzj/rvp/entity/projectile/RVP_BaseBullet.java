@@ -119,7 +119,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 弹体每 Tick 请求的未来路径窗口。
      * distance = sqrt(motion.x² + motion.z²) * PROJECTILE_CHUNK_HORIZON_TICKS */
-    private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 5;
+    private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 1;
     /** 区块持续无法进入 entity-ticking 时的安全等待上限。 */
     private static final int MAX_PROJECTILE_CHUNK_WAIT_TICKS = 200;
 
