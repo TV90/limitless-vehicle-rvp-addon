@@ -3,7 +3,6 @@ package org.ywzj.rvp.network;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -45,11 +44,20 @@ public final class RVP_HbmMissileSyncService {
 
     private static S2CHbmMissileSnapshot buildSnapshot(ServerPlayer player) {
         S2CHbmMissileSnapshot msg = new S2CHbmMissileSnapshot();
-        msg.dimension = player.serverLevel().dimension().location();
-        AABB rangeBox = player.getBoundingBox().inflate(SYNC_RANGE);
+        net.minecraft.server.level.ServerLevel serverLevel = player.serverLevel();
+        msg.dimension = serverLevel.dimension().location();
         List<S2CHbmMissileSnapshot.Entry> entries = new ArrayList<>();
-        for (Entity entity : player.serverLevel().getEntities(player, rangeBox,
-                entity -> !entity.isRemoved() && entity.isAlive() && RVP_RadarContactHelper.isHbmMissile(entity))) {
+        Vec3 playerPos = player.position();
+        double rangeSqr = SYNC_RANGE * SYNC_RANGE;
+        // O(实体) 遍历已加载实体，替代 ±SYNC_RANGE(6144) 立方体 getEntities（12288³，
+        // 每玩家每 tick 的 section 索引遍历灾难级 TPS）
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (entity.isRemoved() || !entity.isAlive() || !RVP_RadarContactHelper.isHbmMissile(entity)) {
+                continue;
+            }
+            if (entity.position().distanceToSqr(playerPos) > rangeSqr) {
+                continue;
+            }
             entries.add(toEntry(player, entity));
         }
         msg.entries = entries;

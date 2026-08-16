@@ -261,16 +261,19 @@ public final class RVP_ExternalRadarSyncService {
         RadarUnitData data = radarUnit.getData();
         boolean phaseMode = data instanceof RadarUnitDataExt ext
                 && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
+        Iterable<Entity> allEntities = relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel sl
+                ? sl.getEntities().getAll() : List.of();
+        // phase 模式改 O(实体) 扫描（避免 ±maxScanDistance 大箱子）；非 phase 保留本体 detectTargets
         List<Entity> targets = phaseMode
-                ? Radar.scanTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(),
-                pos -> isWithinRelayRadarVolume(radarUnit, pos, true))
+                ? RVP_RadarScanHelper.scanRadarArea(allEntities, relayVehicle, radarUnit.worldRadarPosition(),
+                radarUnit.getMaxScanDistance(), pos -> isWithinRelayRadarVolume(radarUnit, pos, true))
                 : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(),
                 pos -> isWithinRelayRadarVolume(radarUnit, pos, false));
         targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
         appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);
         // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
         RVP_RadarScanHelper.filterRadarInvisibleDecoys(targets);
-        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radarUnit, targets);
+        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radarUnit, targets, allEntities);
         return targets;
     }
 
@@ -335,40 +338,41 @@ public final class RVP_ExternalRadarSyncService {
         Vec3 radarPos = radarUnit.worldRadarPosition();
         double maxDistance = radarUnit.getMaxScanDistance();
         double maxDistanceSqr = maxDistance * maxDistance;
-        net.minecraft.world.phys.AABB scanBox = new net.minecraft.world.phys.AABB(
-                radarPos.subtract(maxDistance, maxDistance, maxDistance),
-                radarPos.add(maxDistance, maxDistance, maxDistance)
-        );
         java.util.Set<Integer> existingIds = new java.util.HashSet<>();
         for (Entity target : targets) {
             existingIds.add(target.getId());
         }
-        for (RVP_BaseBullet bullet : relayVehicle.level().getEntitiesOfClass(RVP_BaseBullet.class, scanBox, bullet -> {
-            if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
-                return false;
+        if (!(relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        // O(实体) 遍历已加载实体，替代 ±maxDistance（可达数千格）立方体 getEntitiesOfClass（服务端掉 TPS）
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof RVP_BaseBullet bullet)) {
+                continue;
             }
-            if (!bullet.isRadarDetectableAmmo()) {
-                return false;
+            if (!bullet.isAlive() || bullet.getVehicle() != null || !bullet.isRadarDetectableAmmo()) {
+                continue;
             }
             Vec3 pos = bullet.getBoundingBox().getCenter();
             if (pos.distanceToSqr(radarPos) > maxDistanceSqr) {
-                return false;
+                continue;
             }
             if (!isWithinScanHeight(radarUnit, pos)) {
-                return false;
+                continue;
             }
             Vec2 aimRot = radarUnit.aimRot(pos);
             float yMin = radarUnit.getYRotMin();
             float yMax = radarUnit.getYRotMax();
             float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
             if (!isYawWithin(y, yMin, yMax)) {
-                return false;
+                continue;
             }
             if (requireTrackingLine && radarUnit.getYRotSpeed() > 0f && Math.abs(y - radarUnit.getYRot()) > radarUnit.getYRotSpeed() / 2.0f) {
-                return false;
+                continue;
             }
-            return Math.abs(aimRot.x - radarUnit.getXRot()) <= radarUnit.getScanSectorAngle() / 2.0f;
-        })) {
+            if (Math.abs(aimRot.x - radarUnit.getXRot()) > radarUnit.getScanSectorAngle() / 2.0f) {
+                continue;
+            }
             if (existingIds.add(bullet.getId())) {
                 targets.add(bullet);
             }

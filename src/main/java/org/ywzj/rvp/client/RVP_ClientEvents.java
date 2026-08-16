@@ -380,10 +380,15 @@ public class RVP_ClientEvents {
             return;
         }
         ywzj_rvp$vehicleMarkers.clear();
+        // O(实体) 遍历已加载载具，替代 ±512 立方体 getEntitiesOfClass（1024³，客户端标记刷新）
         double range = 512.0;
         AABB box = player.getBoundingBox().inflate(range);
-        List<AbstractVehicle> vehicles = mc.level.getEntitiesOfClass(AbstractVehicle.class, box, v -> v.getDriver() instanceof GunnerEntity);
-        for (AbstractVehicle vehicle : vehicles) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof AbstractVehicle vehicle)
+                    || !(vehicle.getDriver() instanceof GunnerEntity)
+                    || !entity.getBoundingBox().intersects(box)) {
+                continue;
+            }
             GunnerEntity gunner = null;
             Entity driver = vehicle.getDriver();
             if (driver instanceof GunnerEntity g) {

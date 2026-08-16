@@ -63,8 +63,10 @@ final class RVP_RuntimeActiveSeekerGuidance {
         int interval = context.active().scanIntervalTick() != null
                 ? context.active().scanIntervalTick()
                 : 2;
-        // 导引头关闭期（被干扰失锁后 seekerShutOffTime 内）不主动扫描复锁
+        // 导引头关闭期（被干扰失锁后 seekerShutOffTime 内）不主动扫描复锁；
+        // 干扰保持期（脱锁判定成立但未重锁）内同样不重扫——避免刚被干扰脱锁就立即重锁机体直击玩家
         if (missile.isSeekerShutOff()
+                || missile.isJamGracePeriodActive()
                 || !freeAcquire || missile.getFlightTickCount() % interval != 0) {
             return RVP_GuidanceIntent.failed(type);
         }

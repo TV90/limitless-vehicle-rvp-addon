@@ -6,7 +6,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -82,15 +81,18 @@ public final class RVP_ExtendedAirEntityBroadcastService {
                 .ifPresent(relay -> radarDetectedIds.addAll(collectRadarDetectedIds(relay)));
 
         Map<Integer, Entity> candidates = new LinkedHashMap<>();
-        AABB nearBox = player.getBoundingBox().inflate(UNCONDITIONAL_RANGE);
-        level.getEntities(player, nearBox, RVP_ExtendedAirEntityBroadcastService::isSupportedType)
-                .forEach(entity -> candidates.put(entity.getId(), entity));
 
+        // 不再用 ±UNCONDITIONAL_RANGE(1024) 立方体 getEntities（服务端掉 TPS），改在 O(实体) 循环内
+        // 保留 box 交集语义：距离(512,1024] 内未雷达识别/非己方的弹体也要无条件加入候选，
+        // 由 isEligible 的 distanceSq<=UNCONDITIONAL_RANGE_SQ 闸门放行（原 nearBox 查询的职责）。
+        net.minecraft.world.phys.AABB nearBox = player.getBoundingBox().inflate(UNCONDITIONAL_RANGE);
         for (Entity entity : level.getAllEntities()) {
             if (!isSupportedType(entity)) {
                 continue;
             }
-            if (radarDetectedIds.contains(entity.getId()) || isOwnAmmo(player, entity)) {
+            if (radarDetectedIds.contains(entity.getId())
+                    || isOwnAmmo(player, entity)
+                    || entity.getBoundingBox().intersects(nearBox)) {
                 candidates.put(entity.getId(), entity);
             }
         }

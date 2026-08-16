@@ -37,12 +37,12 @@ public final class GunnerTargeting {
     @Nullable
     public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
         double radius = resolveSearchRadius(vehicle, weaponUnit, profile);
-        AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
         boolean launcher = GunnerBrain.hasLauncherDeployConfig(vehicle);
-        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
-                isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
+        // O(实体) 遍历已加载实体，替代 ±radius（带雷达时可达数千格）立方体 getEntities（服务端掉 TPS）
+        List<Entity> entities = collectTargetEntities(vehicle, radius,
+                entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
         List<Entity> rvpAmmo = entities.stream()
                 .filter(entity -> isInterceptableRvpProjectile(entity))
@@ -113,10 +113,10 @@ public final class GunnerTargeting {
 
     @Nullable
     public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double radius) {
-        AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
-        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity -> entity instanceof AmmoEntity ammo
+        // O(实体) 遍历已加载实体，替代 ±radius 立方体 getEntities
+        List<Entity> entities = collectTargetEntities(vehicle, radius, entity -> entity instanceof AmmoEntity ammo
                 && ammo.isAlive()
                 && ammo.vehicle != vehicle
                 && !isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner()));
@@ -350,10 +350,9 @@ public final class GunnerTargeting {
     @Nullable
     public static AmmoEntity findNearbyAmmoTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
         double radius = getTargetSearchRadius(vehicle, profile);
-        AABB box = vehicle.getBoundingBox().inflate(radius);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
-        List<Entity> entities = vehicle.level().getEntities(vehicle, box, entity ->
+        List<Entity> entities = collectTargetEntities(vehicle, radius, entity ->
                 isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
                         && (isRvpMissile(entity) || isRvpBomb(entity) || isRvpRocket(entity))
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
@@ -373,10 +372,10 @@ public final class GunnerTargeting {
     public static AmmoEntity findCiwsTarget(GunnerEntity gunner, AbstractVehicle vehicle) {
         final double ciwsRange = 1000.0;
         final double minAgl = GunnerBrain.hasLauncherDeployConfig(vehicle) ? 0.0 : 50.0;
-        AABB box = vehicle.getBoundingBox().inflate(ciwsRange);
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
-        List<Entity> candidates = vehicle.level().getEntities(vehicle, box, entity -> {
+        // O(实体) 遍历已加载实体，替代 ±1000 立方体 getEntities（2000³，服务端掉 TPS）
+        List<Entity> candidates = collectTargetEntities(vehicle, ciwsRange, entity -> {
             if (!(entity instanceof AmmoEntity ammo)) {
                 return false;
             }
@@ -415,6 +414,25 @@ public final class GunnerTargeting {
             }
         }
         return (AmmoEntity) best;
+    }
+
+    /** O(实体) 索敌：遍历已加载实体并保留原 getEntities(±radius 立方体) 的 bbox 交集语义，
+     *  但避免超大立方体 section 索引遍历（服务端掉 TPS）。 */
+    private static List<Entity> collectTargetEntities(AbstractVehicle vehicle, double radius, java.util.function.Predicate<Entity> filter) {
+        List<Entity> result = new java.util.ArrayList<>();
+        if (radius <= 0 || !(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return result;
+        }
+        AABB box = vehicle.getBoundingBox().inflate(radius);
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (entity == vehicle || !entity.isAlive() || !entity.getBoundingBox().intersects(box)) {
+                continue;
+            }
+            if (filter.test(entity)) {
+                result.add(entity);
+            }
+        }
+        return result;
     }
 
     private static final class TargetMatch {

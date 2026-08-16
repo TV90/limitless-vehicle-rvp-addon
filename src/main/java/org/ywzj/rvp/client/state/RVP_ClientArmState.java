@@ -2,7 +2,6 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
@@ -204,8 +203,16 @@ public class RVP_ClientArmState {
         List<AbstractVehicle> candidates = new ArrayList<>();
         HashSet<Integer> ids = new HashSet<>();
         double range = Math.max(seekRange, 1f);
-        AABB searchBox = AABB.ofSize(seekerPos, range * 2.0, range * 2.0, range * 2.0);
-        for (AbstractVehicle v : player.level().getEntitiesOfClass(AbstractVehicle.class, searchBox, entity -> entity != excludeVehicle)) {
+        double rangeSqr = range * range;
+        // O(实体) 遍历已加载载具，替代 ±seekRange（反辐射导弹索敌可达数千格）立方体 getEntitiesOfClass
+        for (net.minecraft.world.entity.Entity entity
+                : ((net.minecraft.client.multiplayer.ClientLevel) player.level()).entitiesForRendering()) {
+            if (!(entity instanceof AbstractVehicle v) || v == excludeVehicle) {
+                continue;
+            }
+            if (entity.getBoundingBox().getCenter().distanceToSqr(seekerPos) > rangeSqr) {
+                continue;
+            }
             if (ids.add(v.getId())) {
                 candidates.add(v);
             }

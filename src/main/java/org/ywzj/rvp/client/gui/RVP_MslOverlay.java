@@ -44,10 +44,15 @@ public class RVP_MslOverlay {
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
 
-        // 获取世界中的所有 RVP 导弹（使用较大搜索半径覆盖全射程）
-        List<? extends RVP_BaseBullet> missiles = mc.level.getEntitiesOfClass(
-                RVP_BaseBullet.class,
-                mc.player.getBoundingBox().inflate(8192));
+        // 获取世界中的所有 RVP 导弹（覆盖全射程；O(实体) 遍历，替代 ±8192 立方体 getEntitiesOfClass，
+        // 客户端每帧渲染路径，16384³ 的 section 索引遍历灾难级）
+        List<RVP_BaseBullet> missiles = new java.util.ArrayList<>();
+        for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof RVP_BaseBullet bullet
+                    && bullet.position().distanceToSqr(mc.player.position()) <= 8192.0 * 8192.0) {
+                missiles.add(bullet);
+            }
+        }
 
         // 找出自己发射且动力段已烧完的导弹中最晚发射的那一枚
         RVP_BaseBullet latestBurnedOutOwn = null;

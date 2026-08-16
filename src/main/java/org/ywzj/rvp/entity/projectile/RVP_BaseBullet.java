@@ -376,6 +376,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public int jammingOffsetRefreshTick = Integer.MIN_VALUE;
     /** 干扰滞留到期 tick：导弹离开干扰锥后仍保持被干扰状态的宽限窗口（命中时刷新为 tick+10）。 */
     public int jammingGraceExpireTick = Integer.MIN_VALUE;
+    /** 诱饵（干扰物）追踪期间不与载具碰撞的到期 tick：每次转锁诱饵刷新为 tick+60，
+     * 避免导弹追诱饵沿玩家航线直击（近炸抑制只挡近炸、挡不住机体碰撞）。
+     * 窗口取 60 tick（3 秒）：覆盖干扰物脱锁判定的记忆保留期与转锁后 coast 滑行末段，
+     * 防止导弹在干扰失效瞬间恢复机体碰撞直击玩家。 */
+    private int jamVehicleNoCollisionUntilTick = Integer.MIN_VALUE;
+    /** 诱饵期不碰撞载具的宽限窗口（tick）。 */
+    private static final int JAM_VEHICLE_COLLISION_GRACE_TICKS = 60;
+    /** 干扰保持期截止 tick：脱锁判定成立（干扰物计数超阈值或光学被挡/入烟）但未找到可重锁干扰物、
+     * 进入 coast 滑行期间，仍保持「干扰期」语义（近炸抑制 + 不碰撞载具），
+     * 避免导弹失目标滑行末段恢复活弹直击玩家。每 tick 干扰判定成立时刷新为 tick+JAM_VEHICLE_COLLISION_GRACE_TICKS。 */
+    private int jamGracePeriodUntilTick = Integer.MIN_VALUE;
 
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
@@ -848,10 +859,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (target == null) {
             noteDecoyTargetLost();
         }
+        // 转锁诱饵（干扰物）时开启 30 tick 载具碰撞免疫：追诱饵期间不与载具机体相撞
+        if (target instanceof RVP_Decoy) {
+            this.jamVehicleNoCollisionUntilTick = tickCount + JAM_VEHICLE_COLLISION_GRACE_TICKS;
+        }
         this.targetEntity = target;
         if (target != null) {
             this.lastGuidancePos = aimPoint(target);
         }
+    }
+
+    /** 诱饵追踪期是否处于"不碰撞载具"宽限窗口（追诱饵沿玩家航线时避免直击）。
+     * 干扰保持期内同样不碰撞（见 {@link #markJamGracePeriod()}），覆盖脱锁后 coast 滑行。 */
+    public boolean isJamVehicleCollisionImmune() {
+        return tickCount < jamVehicleNoCollisionUntilTick;
     }
 
     @Nullable
@@ -905,10 +926,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return seekerShutOffUntilTick != Integer.MIN_VALUE && tickCount < seekerShutOffUntilTick;
     }
 
-    /** 是否处于被干扰（诱饵欺骗）状态：当前锁定目标是干扰物实体，或导引头处于干扰失锁后的关闭期。
-     * 干扰期间导弹应关闭近炸引信，避免追诱饵飞掠玩家附近时仍被近炸引爆命中玩家。 */
+    /** 是否处于被干扰（诱饵欺骗）状态：当前锁定目标是干扰物实体，或导引头处于干扰失锁后的关闭期，
+     * 或处于脱锁后未重锁的干扰保持期。干扰期间导弹应关闭近炸引信，避免追诱饵/滑行飞掠玩家附近时
+     * 仍被近炸引爆命中玩家。 */
     public boolean isJammedByDecoy() {
-        return targetEntity instanceof RVP_Decoy || isSeekerShutOff();
+        return targetEntity instanceof RVP_Decoy || isSeekerShutOff() || isJamGracePeriodActive();
+    }
+
+    /** 是否处于干扰保持期：脱锁判定成立（干扰物超阈值/光学被挡/入烟）但尚未重锁诱饵的 coast 期间。 */
+    public boolean isJamGracePeriodActive() {
+        return tickCount < jamGracePeriodUntilTick;
+    }
+
+    /** 标记干扰保持期：导引头脱锁判定成立但未重锁诱饵时调用，刷新为 tick+JAM_VEHICLE_COLLISION_GRACE_TICKS，
+     * 期间保持近炸抑制与载具碰撞免疫，防止 coast 滑行末段恢复活弹直击玩家。 */
+    public void markJamGracePeriod() {
+        this.jamGracePeriodUntilTick = tickCount + JAM_VEHICLE_COLLISION_GRACE_TICKS;
+        // 同步撑住载具碰撞免疫：记忆尾迹/无诱饵可锁的 coast 滑行全程不得撞上机体
+        this.jamVehicleNoCollisionUntilTick = tickCount + JAM_VEHICLE_COLLISION_GRACE_TICKS;
     }
 
     private void beginSeekerShutOffFromConfig() {
@@ -1330,6 +1365,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         () -> "owner=" + RVP_ProjectileLifecycleDebug.formatEntity(getOwner())
                                 + " shooterVehicle=" + RVP_ProjectileLifecycleDebug.formatEntity(shooterVehicle)
                                 + " action=discard");
+                discard();
+                return;
+            }
+
+            // 下一位置进入未加载区块 → 直接丢弃：区块卸载后实体不再 tick，若继续飞行会在未加载
+            // 区块冻结挂起；在还处于已加载区块时提前丢弃（覆盖所有弹体，含机炮弹）。
+            Vec3 nextPos = position().add(getDeltaMovement());
+            if (!level().hasChunkAt(new BlockPos(
+                    Mth.floor(nextPos.x), Mth.floor(nextPos.y), Mth.floor(nextPos.z)))) {
                 discard();
                 return;
             }
@@ -2013,6 +2057,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 干扰期间关闭近炸引信：导弹被诱饵欺骗（目标为干扰物或导引头失锁关闭期）时不引爆近炸，
         // 避免导弹追诱饵飞掠玩家附近时仍被近炸引爆命中玩家
         if (isJammedByDecoy()) {
+            // [RVP-DBG] 临时诊断：近炸被干扰抑制
+            if (updateCount % 20 == 0) {
+                System.out.println("[RVP-DBG][FuseSuppress] seeker=" + getId()
+                        + " jammed=true targetEntity=" + (targetEntity == null ? "null" : targetEntity.getClass().getSimpleName()));
+            }
             return;
         }
         RVP_FuseData fuse = rvpData.getFuseData();
@@ -2046,6 +2095,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
                         && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
                         && !isProximityDamageImmune(e))) {
+            // [RVP-DBG] 临时诊断：近炸(探测盒)起爆时的干扰状态
+            System.out.println("[RVP-DBG][FuseDetonate] seeker=" + getId()
+                    + " source=detection_box target=" + entity.getClass().getSimpleName()
+                    + " jammed=" + isJammedByDecoy()
+                    + " targetEntity=" + (targetEntity == null ? "null" : targetEntity.getClass().getSimpleName())
+                    + " seekerShutOff=" + isSeekerShutOff());
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
                     () -> "type=PROXIMITY_POST_MOTION source=detection_box radius="
@@ -2248,7 +2303,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean entityCollisionSafetyActive = isEntityCollisionSafetyActive();
         BulletHitResult entityResult = entityCollisionSafetyActive ? null : findEntityOnPathForSegment(startVec, endVec, step);
 
-        if (entityResult != null
+        // 诱饵（干扰物）追踪期/干扰保持期不与载具或玩家本体碰撞：追诱饵沿玩家航线时跳过载具机体直击，
+        // 也跳过骑乘在机体上、hitbox 可能探出机体的玩家本体直击，避免"干扰已脱锁仍被插死"
+        boolean jamVehicleImmune = isJamVehicleCollisionImmune() && entityResult != null
+                && (entityResult.getEntity() instanceof AbstractVehicle
+                || entityResult.getEntity() instanceof ServerPlayer);
+        if (!jamVehicleImmune && entityResult != null
                 && entityResult.getEntity() != vehicle
                 && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
                 && !piercedLivingIds.contains(entityResult.getEntity().getId())) {
@@ -2355,8 +2415,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
-    /** {@link AmmoEntity#tickHit()} proximity branch; explosion uses {@link #resolveImpactDetonation}. */
+    /** {@link AmmoEntity#tickHit()} proximity branch; explosion uses {@link #resolveImpactDetonation}.
+     * 干扰期间关闭该 swept 近炸：与 {@link #tickProximityFuse} 一致，导弹被诱饵欺骗/干扰保持期
+     * 不因探测盒扫到玩家机体而引爆（追 7 格内诱饵贴脸时直击免疫拦不住探测盒近炸）。 */
     protected boolean tryAmmoProximityFuze(Vec3 startVec, Vec3 endVec) {
+        if (isJammedByDecoy()) {
+            return false;
+        }
         if (rvpData == null) {
             return false;
         }

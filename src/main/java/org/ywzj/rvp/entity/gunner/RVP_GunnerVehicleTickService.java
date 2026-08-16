@@ -62,7 +62,7 @@ public final class RVP_GunnerVehicleTickService {
 
     /** 自动干扰响应节流：同一次威胁期间每多少 tick 至多自动抛洒一次。 */
     private static final long AUTO_CM_INTERVAL_TICK = 100L;
-    /** 导弹威胁检测半径（格）。 */
+    /** 导弹威胁检测半径（格），自动干扰的锁定威胁距离闸门。 */
     private static final double MISSILE_THREAT_RANGE = 256.0;
     /** 雷达锁定检测半径（格）。 */
     private static final double RADAR_LOCK_THREAT_RANGE = 1024.0;
@@ -187,10 +187,20 @@ public final class RVP_GunnerVehicleTickService {
 
     /** 解析当前威胁类型：优先导弹锁定（按制导类型），其次雷达锁定。 */
     private static RVP_EnumCountermeasureType resolveThreat(AbstractVehicle vehicle) {
+        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return null;
+        }
+        // O(实体) 遍历已加载实体，替代 ±MISSILE_THREAT_RANGE / ±RADAR_LOCK_THREAT_RANGE 立方体
+        // getEntitiesOfClass（512³~2048³，服务端 gunner 掉 TPS）；距离闸门还原原 box 范围
+        net.minecraft.world.phys.AABB missileBox = vehicle.getBoundingBox().inflate(MISSILE_THREAT_RANGE);
+        net.minecraft.world.phys.AABB radarBox = vehicle.getBoundingBox().inflate(RADAR_LOCK_THREAT_RANGE);
         // 导弹锁定：RVP 弹体
-        for (RVP_BaseBullet bullet : vehicle.level().getEntitiesOfClass(RVP_BaseBullet.class,
-                vehicle.getBoundingBox().inflate(MISSILE_THREAT_RANGE),
-                b -> b.isAlive() && b.getTargetEntity() == vehicle)) {
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof RVP_BaseBullet bullet)
+                    || !bullet.isAlive() || bullet.getTargetEntity() != vehicle
+                    || !bullet.getBoundingBox().intersects(missileBox)) {
+                continue;
+            }
             RVP_WeaponData data = bullet.getRvpData();
             if (data == null) {
                 continue;
@@ -205,9 +215,12 @@ public final class RVP_GunnerVehicleTickService {
             }
         }
         // 导弹锁定：本体导弹（按其制导模式区分红外/雷达）
-        for (MissileEntity missile : vehicle.level().getEntitiesOfClass(MissileEntity.class,
-                vehicle.getBoundingBox().inflate(MISSILE_THREAT_RANGE),
-                m -> m.isAlive() && m.targetEntity == vehicle)) {
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof MissileEntity missile)
+                    || !missile.isAlive() || missile.targetEntity != vehicle
+                    || !missile.getBoundingBox().intersects(missileBox)) {
+                continue;
+            }
             VehicleMissileWeaponData.HomingMode mode = resolveBaseHomingMode(missile);
             return (mode == VehicleMissileWeaponData.HomingMode.SEMI_ACTIVE_RADAR
                     || mode == VehicleMissileWeaponData.HomingMode.ACTIVE_RADAR)
@@ -215,9 +228,11 @@ public final class RVP_GunnerVehicleTickService {
                     : RVP_EnumCountermeasureType.FLARE;
         }
         // 雷达锁定：扫描附近敌方载具雷达是否锁定本车
-        for (AbstractVehicle enemy : vehicle.level().getEntitiesOfClass(AbstractVehicle.class,
-                vehicle.getBoundingBox().inflate(RADAR_LOCK_THREAT_RANGE),
-                e -> e != vehicle && e.isAlive())) {
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof AbstractVehicle enemy) || enemy == vehicle || !enemy.isAlive()
+                    || !enemy.getBoundingBox().intersects(radarBox)) {
+                continue;
+            }
             for (PartUnit<?> part : enemy.getPartUnits()) {
                 if (part instanceof RadarUnit radar && radar.isOn() && radar.getLockedEntity() == vehicle) {
                     return RVP_EnumCountermeasureType.CHAFF;

@@ -77,6 +77,10 @@ public final class RVP_RadarScanService {
     }
 
     private static void scanGunnerRadars(AbstractVehicle vehicle) {
+        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        Iterable<Entity> allEntities = serverLevel.getEntities().getAll();
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
                 continue;
@@ -86,7 +90,7 @@ public final class RVP_RadarScanService {
             float sectorHalf = radar.getScanSectorAngle() / 2.0f;
             float yMin = radar.getYRotMin();
             float yMax = radar.getYRotMax();
-            List<Entity> targets = Radar.scanTargets(vehicle, radarPos, radar.getMaxScanDistance(), entityPos -> {
+            List<Entity> targets = RVP_RadarScanHelper.scanRadarArea(allEntities, vehicle, radarPos, radar.getMaxScanDistance(), entityPos -> {
                 if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entityPos)) {
                     return false;
                 }
@@ -101,10 +105,10 @@ public final class RVP_RadarScanService {
                 return !(Math.abs(aimRot.x - radar.getXRot()) > sectorHalf);
             });
             RVP_RadarScanHelper.filterUndetectableRvpAmmo(targets);
-            RVP_RadarScanHelper.appendRvpAmmoTargets(radar, targets, yRotSpeed > 0f);
+            RVP_RadarScanHelper.appendRvpAmmoTargets(radar, targets, allEntities, yRotSpeed > 0f);
             // 干扰物雷达可扫描性：热焰弹不入表、箔条入表（可被扫描显示）
             RVP_RadarScanHelper.filterRadarInvisibleDecoys(targets);
-            RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, targets);
+            RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, targets, allEntities);
             for (Entity target : targets) {
                 radar.detect(target);
             }

@@ -672,6 +672,11 @@ public final class RVP_GuidanceRuntimeMath {
         if (projectile == null || projectile.getFlightTickCount() < context.active().predictTargetPosStartTick()) {
             return false;
         }
+        // 脱锁/诱饵期关闭提前量预测（比例引导 PIP）：追踪干扰物时用纯追踪指向当前位置，
+        // 避免比例引导前飞提前量、沿玩家航线追诱饵直击玩家
+        if (projectile.isJammedByDecoy()) {
+            return false;
+        }
         return !isWaitingForSecondPulse(projectile);
     }
 

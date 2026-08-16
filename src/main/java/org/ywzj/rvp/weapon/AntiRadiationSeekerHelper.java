@@ -63,9 +63,16 @@ public final class AntiRadiationSeekerHelper {
     }
 
     public static List<RVP_RadarPulseDescriptor> collectPulseDescriptors(net.minecraft.world.level.Level level, Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange, @Nullable AbstractVehicle excludeVehicle, int tickCount, Map<Long, Integer> pulseTickMap, int pulseMemoryTick) {
-        AABB searchBox = AABB.ofSize(seekerPos, seekRange * 2.0, seekRange * 2.0, seekRange * 2.0);
+        // O(实体) 遍历已加载载具，替代 getEntitiesOfClass(±seekRange 立方体) 的 O(箱子截面) 扫描
+        // （ARM 射程可达上千格，大箱子每次遍历百万级截面，严重掉 TPS）。ARM 导引头只在服务端跑。
+        if (!(level instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return new ArrayList<>();
+        }
         List<RVP_RadarPulseDescriptor> out = new ArrayList<>();
-        for (AbstractVehicle vehicle : level.getEntitiesOfClass(AbstractVehicle.class, searchBox, entity -> excludeVehicle == null || entity != excludeVehicle)) {
+        for (net.minecraft.world.entity.Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof AbstractVehicle vehicle) || entity == excludeVehicle) {
+                continue;
+            }
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
                 if (!(partUnit instanceof RadarUnit radarUnit)) {
                     continue;

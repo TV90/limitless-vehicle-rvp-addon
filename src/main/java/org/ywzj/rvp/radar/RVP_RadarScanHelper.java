@@ -1,8 +1,8 @@
 package org.ywzj.rvp.radar;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
@@ -15,9 +15,11 @@ import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * 雷达探测公共工具（RVP_RadarScanService 服务端扫描与
@@ -85,46 +87,46 @@ public final class RVP_RadarScanHelper {
      * 把超过本体 {@code Radar.scanTargets}/{@code detectTargets} 体积阈值
      * （{@code getSize() < 1}）的 RVP 弹体按"最大探测距离 × 信号尺寸"缩放补入目标表。
      */
-    public static void appendRvpAmmoTargets(RadarUnit radar, List<Entity> entities, boolean requireTrackingLine) {
+    public static void appendRvpAmmoTargets(RadarUnit radar, List<Entity> entities,
+                                            Iterable<Entity> allEntities, boolean requireTrackingLine) {
         Vec3 radarPos = radar.worldRadarPosition();
         double maxScanDistance = radar.getMaxScanDistance();
         double maxScanDistanceSqr = maxScanDistance * maxScanDistance;
-        AABB scanBox = new AABB(radarPos.subtract(maxScanDistance, maxScanDistance, maxScanDistance),
-                radarPos.add(maxScanDistance, maxScanDistance, maxScanDistance));
         Set<Integer> existingIds = new HashSet<>();
         for (Entity entity : entities) {
             existingIds.add(entity.getId());
         }
-        List<RVP_BaseBullet> bullets = radar.getVehicle().level().getEntitiesOfClass(RVP_BaseBullet.class, scanBox, bullet -> {
-            if (bullet == null || !bullet.isAlive() || bullet.getVehicle() != null) {
-                return false;
-            }
-            if (!bullet.isRadarDetectableAmmo()) {
-                return false;
+        // O(实体) 遍历已加载实体，替代 ±maxScanDistance 立方体 getEntitiesOfClass（O(箱子截面)，
+        // 长程雷达 1000+ 格单次上百万截面，服务端/客户端掉 TPS）
+        for (Entity entity : allEntities) {
+            if (!(entity instanceof RVP_BaseBullet bullet)
+                    || !bullet.isAlive() || bullet.getVehicle() != null
+                    || !bullet.isRadarDetectableAmmo()) {
+                continue;
             }
             float sig = bullet.getSignatureSize();
             double effectiveMaxSqr = maxScanDistanceSqr * sig * sig;
             Vec3 targetPos = bullet.getBoundingBox().getCenter();
             if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {
-                return false;
+                continue;
             }
             if (!isWithinScanHeight(radar, targetPos)) {
-                return false;
+                continue;
             }
             Vec2 aimRot = radar.aimRot(targetPos);
             float yMin = radar.getYRotMin();
             float yMax = radar.getYRotMax();
             float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
             if (!isYawWithin(y, yMin, yMax)) {
-                return false;
+                continue;
             }
             if (requireTrackingLine && radar.getYRotSpeed() > 0f
                     && Math.abs(y - radar.getYRot()) > radar.getYRotSpeed() / 2.0f) {
-                return false;
+                continue;
             }
-            return !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
-        });
-        for (RVP_BaseBullet bullet : bullets) {
+            if (Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f) {
+                continue;
+            }
             if (existingIds.add(bullet.getId())) {
                 entities.add(bullet);
             }
@@ -148,42 +150,72 @@ public final class RVP_RadarScanHelper {
     private static final int MAX_DISPLAYED_CHAFF = 8;
 
     /**
+     * 按已加载实体列表做雷达区域扫描（O(实体)）。替代本体 {@code Radar.scanTargets} 的
+     * ±maxScanDistance 立方体 {@code getEntities}（O(箱子截面)，长程雷达 1024+ 单次数百万截面，
+     * 服务端/客户端严重掉 TPS）。过滤规则与本体的 `scanTargets` 保持一致。
+     *
+     * @param allEntities 已加载实体清单（调用方从 ServerLevel / ClientLevel 的 getEntities().getAll() 取）
+     */
+    public static List<Entity> scanRadarArea(Iterable<Entity> allEntities, Entity radarOwner, Vec3 radarPos,
+                                             double maxScanDistance, Function<Vec3, Boolean> check) {
+        List<Entity> out = new ArrayList<>();
+        double maxSqr = maxScanDistance * maxScanDistance;
+        for (Entity entity : allEntities) {
+            if (entity == radarOwner
+                    || entity.getVehicle() != null
+                    || !entity.isAlive()
+                    || entity instanceof net.minecraftforge.entity.PartEntity<?>
+                    || entity.getBoundingBox().getSize() < 1
+                    || entity.distanceToSqr(radarOwner) > maxSqr) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(check.apply(entity.getBoundingBox().getCenter()))) {
+                out.add(entity);
+            }
+        }
+        return out;
+    }
+
+    /**
      * 把箔条干扰物（CHAFF）补入雷达目标表（可被扫描显示，不产生锁定）。
      * 干扰物碰撞箱小于本体扫描体积阈值，需按扫描包络（高度/方位/扇区）显式补入。
      * 数量超 {@link #MAX_DISPLAYED_CHAFF} 时只补最近的该数量，避免雷达界面被箔条云刷屏。
      */
-    public static void appendRadarVisibleChaffDecoys(RadarUnit radar, List<Entity> entities) {
+    public static void appendRadarVisibleChaffDecoys(RadarUnit radar, List<Entity> entities,
+                                                     Iterable<Entity> allEntities) {
         Vec3 radarPos = radar.worldRadarPosition();
         double maxScanDistance = radar.getMaxScanDistance();
         double maxScanDistanceSqr = maxScanDistance * maxScanDistance;
-        AABB scanBox = new AABB(radarPos.subtract(maxScanDistance, maxScanDistance, maxScanDistance),
-                radarPos.add(maxScanDistance, maxScanDistance, maxScanDistance));
         Set<Integer> existingIds = new HashSet<>();
         for (Entity entity : entities) {
             existingIds.add(entity.getId());
         }
-        List<RVP_DecoyEntity> decoys = radar.getVehicle().level().getEntitiesOfClass(
-                RVP_DecoyEntity.class, scanBox, decoy -> {
-            if (decoy == null || !decoy.isAlive()
+        // 遍历已加载实体（O(实体)）而非 ±maxScanDistance 大箱子 getEntitiesOfClass（O(箱子截面)）
+        List<RVP_DecoyEntity> decoys = new ArrayList<>();
+        for (Entity e : allEntities) {
+            if (!(e instanceof RVP_DecoyEntity decoy) || !decoy.isAlive()
                     || decoy.rvp$decoyType() != RVP_EnumCountermeasureType.CHAFF) {
-                return false;
+                continue;
             }
             Vec3 targetPos = decoy.getBoundingBox().getCenter();
             if (targetPos.distanceToSqr(radarPos) > maxScanDistanceSqr) {
-                return false;
+                continue;
             }
             if (!isWithinScanHeight(radar, targetPos)) {
-                return false;
+                continue;
             }
             Vec2 aimRot = radar.aimRot(targetPos);
             float yMin = radar.getYRotMin();
             float yMax = radar.getYRotMax();
             float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
             if (!isYawWithin(y, yMin, yMax)) {
-                return false;
+                continue;
             }
-            return !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
-        });
+            if (Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f) {
+                continue;
+            }
+            decoys.add(decoy);
+        }
         // 均匀分布采样：把 [0, maxScanDistance] 按距离分成 MAX_DISPLAYED_CHAFF 个区间，
         // 每个区间取离雷达最近的一枚——保证雷达界面在近/中/远都显示箔条，而不是取"最近的 N 枚"
         // （相近轮次的箔条挤在一起，取最近必然扎堆成一团）

@@ -4,7 +4,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
@@ -115,12 +114,16 @@ public final class GunnerExternalRadarController {
             return null;
         }
         Vec3 radarPos = lockRadar.worldRadarPosition();
-        AABB box = new AABB(radarPos.subtract(maxRange, maxRange, maxRange),
-                radarPos.add(maxRange, maxRange, maxRange));
+        if (!(relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return null;
+        }
+        // O(实体) 遍历已加载载具，替代 ±maxRange（可达数千格）立方体 getEntities（O(箱子截面)）
         Entity best = null;
         double bestDistSqr = Double.MAX_VALUE;
-        for (Entity entity : relayVehicle.level().getEntities(relayVehicle, box,
-                e -> e instanceof AbstractVehicle vehicle && vehicle.isAlive() && !vehicle.isDestroyed())) {
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof AbstractVehicle vehicle) || !vehicle.isAlive() || vehicle.isDestroyed()) {
+                continue;
+            }
             if (entity == launcher || entity == relayVehicle) {
                 continue;
             }

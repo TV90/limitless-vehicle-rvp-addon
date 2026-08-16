@@ -1,6 +1,7 @@
 package org.ywzj.rvp.entity.gunner.ai;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -20,6 +21,7 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 public final class GunnerGuidedWeaponController {
 
+    /** HITL 导弹搜索范围（格），作为 O(实体) 遍历的距离闸门，与原 ±4096 立方体语义一致。 */
     private static final double HITL_CONTROL_SEARCH_RANGE = 4096.0D;
 
     private GunnerGuidedWeaponController() {}
@@ -95,15 +97,22 @@ public final class GunnerGuidedWeaponController {
         if (targetPoint == null || target == null || !target.isAlive()) {
             return;
         }
-        double range = HITL_CONTROL_SEARCH_RANGE;
-        for (RVP_MissileEntity missile : vehicle.level().getEntitiesOfClass(
-                RVP_MissileEntity.class,
-                vehicle.getBoundingBox().inflate(range),
-                missile -> missile.isAlive()
-                        && missile.getOwner() == gunner
-                        && missile.getRvpData() != null
-                        && missile.getRvpData().hasHumanInTheLoop()
-                        && missile.rvp$isHitlActive())) {
+        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        // O(实体) 遍历已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，灾难级）；
+        // 距离闸门还原原 box 范围，避免纳入 4096 格外的弹体
+        AABB searchBox = vehicle.getBoundingBox().inflate(HITL_CONTROL_SEARCH_RANGE);
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof RVP_MissileEntity missile)
+                    || !missile.isAlive()
+                    || missile.getOwner() != gunner
+                    || missile.getRvpData() == null
+                    || !missile.getRvpData().hasHumanInTheLoop()
+                    || !missile.rvp$isHitlActive()
+                    || !missile.getBoundingBox().intersects(searchBox)) {
+                continue;
+            }
             RVP_EnumHitlControlMode mode = missile.rvp$getHitlControlMode();
             if (mode == RVP_EnumHitlControlMode.DESIGNATE) {
                 missile.rvp$setHitlDesignatedEntity(target);
@@ -132,15 +141,21 @@ public final class GunnerGuidedWeaponController {
     }
 
     private static boolean hasInFlightDesignationWeapon(GunnerEntity gunner, AbstractVehicle vehicle) {
-        double range = HITL_CONTROL_SEARCH_RANGE;
-        for (RVP_BaseBullet projectile : vehicle.level().getEntitiesOfClass(
-                RVP_BaseBullet.class,
-                vehicle.getBoundingBox().inflate(range),
-                projectile -> projectile.isAlive()
-                        && projectile.getOwner() == gunner
-                        && projectile.getRvpData() != null
-                        && needsDesignation(projectile.getRvpData()))) {
-            return true;
+        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return false;
+        }
+        // O(实体) 遍历已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，灾难级）；
+        // 距离闸门还原原 box 范围，避免把 4096 格外的弹判为空射依据
+        AABB searchBox = vehicle.getBoundingBox().inflate(HITL_CONTROL_SEARCH_RANGE);
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (entity instanceof RVP_BaseBullet projectile
+                    && projectile.isAlive()
+                    && projectile.getOwner() == gunner
+                    && projectile.getRvpData() != null
+                    && needsDesignation(projectile.getRvpData())
+                    && projectile.getBoundingBox().intersects(searchBox)) {
+                return true;
+            }
         }
         return false;
     }

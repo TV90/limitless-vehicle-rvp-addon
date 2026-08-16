@@ -503,13 +503,13 @@ public class RVP_ClientHmdState {
 
         Entity bestTarget = null;
         double bestScore = Double.MAX_VALUE;
-        var entities = mc.level.getEntities(
-                vehicle,
-                vehicle.getBoundingBox().inflate(maxRange),
-                e -> e.isAlive() && e != mc.player && !(e instanceof AbstractVehicle v && v.isDestroyed())
-        );
-
-        for (Entity entity : entities) {
+        // O(实体) 遍历已加载实体，替代 ±maxRange（雷达扫描距离可达数千格）立方体 getEntities
+        // （客户端 HMD IR 扫描掉帧）；maxRange 距离闸门保留在下方循环内
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity == vehicle || !entity.isAlive() || entity == mc.player
+                    || (entity instanceof AbstractVehicle v && v.isDestroyed())) {
+                continue;
+            }
             if (irUsesNewLaunchData && irLaunchWeapon != null
                     && !RVP_IrLockHelper.isTargetWithinAcquireLimits(
                     weaponUnit, entity, irLaunchWeapon, scanDir)) {

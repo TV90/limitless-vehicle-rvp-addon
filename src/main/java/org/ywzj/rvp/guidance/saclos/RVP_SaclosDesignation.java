@@ -1,5 +1,6 @@
 package org.ywzj.rvp.guidance.saclos;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -104,14 +105,18 @@ public final class RVP_SaclosDesignation {
     }
 
     public static boolean operatorHasSaclosMissileInGuidance(ServerPlayer player) {
-        if (player.level() == null) {
+        if (player.level() == null || !(player.level() instanceof ServerLevel serverLevel)) {
             return false;
         }
-        for (RVP_BaseBullet bullet : player.level().getEntitiesOfClass(
-                RVP_BaseBullet.class, player.getBoundingBox().inflate(4096))) {
-            if (bullet.isAlive()
+        // O(实体) 遍历已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，灾难级）；
+        // 距离闸门还原原 box 范围
+        net.minecraft.world.phys.AABB searchBox = player.getBoundingBox().inflate(4096.0D);
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (entity instanceof RVP_BaseBullet bullet
+                    && bullet.isAlive()
                     && bullet.getOwner() == player
-                    && isInSaclosGuidanceStage(bullet)) {
+                    && isInSaclosGuidanceStage(bullet)
+                    && bullet.getBoundingBox().intersects(searchBox)) {
                 return true;
             }
         }

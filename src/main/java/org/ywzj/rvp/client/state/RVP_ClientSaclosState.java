@@ -158,9 +158,15 @@ public final class RVP_ClientSaclosState {
         RVP_BaseBullet best = null;
         int youngestTick = Integer.MAX_VALUE;
         Entity vehicle = player.getVehicle();
-        for (RVP_BaseBullet bullet : level.getEntitiesOfClass(
-                RVP_BaseBullet.class, player.getBoundingBox().inflate(256))) {
-            if (!bullet.isAlive()) {
+        double rangeSqr = 256.0 * 256.0;
+        if (!(level instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)) {
+            return;
+        }
+        // O(实体) 遍历客户端已加载实体，替代 ±256 立方体 getEntitiesOfClass（512³，客户端每tick掉帧）
+        for (net.minecraft.world.entity.Entity entity : clientLevel.entitiesForRendering()) {
+            if (!(entity instanceof RVP_BaseBullet bullet)
+                    || !bullet.isAlive()
+                    || bullet.position().distanceToSqr(player.position()) > rangeSqr) {
                 continue;
             }
             RVP_WeaponData data = RVP_ClientSaclosGuidance.resolveWeaponData(bullet);

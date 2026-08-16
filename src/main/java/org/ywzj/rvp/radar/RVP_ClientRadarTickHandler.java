@@ -122,10 +122,12 @@ public final class RVP_ClientRadarTickHandler {
                 scanPhaseRadar(radar);
             } else {
                 // 非 phase：本体 tickDetect 已用 detectTargets 处理常规目标，这里只补 RVP 弹体（带跟踪线）
+                Iterable<Entity> allEntities = vehicle.level() instanceof net.minecraft.client.multiplayer.ClientLevel cl
+                        ? cl.entitiesForRendering() : List.of();
                 List<Entity> entities = new ArrayList<>();
-                RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, true);
+                RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, true);
                 RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
-                RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities);
+                RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
                 for (Entity entity : entities) {
                     radar.detect(entity);
                 }
@@ -208,8 +210,15 @@ public final class RVP_ClientRadarTickHandler {
 
     /** phase 雷达全扇区扫描（替代原 mixin phase 分支，scanTargets 不要求跟踪线）。 */
     private static void scanPhaseRadar(RadarUnit radar) {
+        if (!(radar.getVehicle().level() instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)) {
+            return;
+        }
+        // 与本体 Radar.getClientLevelEntities 一致：客户端扫描必须合并 serverEntities（超视距远程实体），
+        // 否则 entitiesForRendering() 只含本地跟踪实体，视距外目标扫不到 → 雷达点/锁框消失
+        Iterable<Entity> allEntities = mergedClientEntities(clientLevel);
         Vec3 radarPos = radar.worldRadarPosition();
-        List<Entity> entities = Radar.scanTargets(radar.getVehicle(), radarPos, radar.getMaxScanDistance(), entityPos -> {
+        List<Entity> entities = RVP_RadarScanHelper.scanRadarArea(allEntities, radar.getVehicle(), radarPos,
+                radar.getMaxScanDistance(), entityPos -> {
             if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entityPos)) {
                 return false;
             }
@@ -218,13 +227,30 @@ public final class RVP_ClientRadarTickHandler {
                     && !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
         });
         RVP_RadarScanHelper.filterUndetectableRvpAmmo(entities);
-        RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, false);
+        RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, false);
         // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
         RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
-        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities);
+        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
         for (Entity entity : entities) {
             radar.detect(entity);
         }
+    }
+
+    /** 客户端已加载实体 = 本地跟踪实体 ∪ serverEntities（去重），复刻本体 getClientLevelEntities 语义。 */
+    private static Iterable<Entity> mergedClientEntities(net.minecraft.client.multiplayer.ClientLevel clientLevel) {
+        List<Entity> merged = new ArrayList<>();
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
+        for (Entity entity : clientLevel.entitiesForRendering()) {
+            merged.add(entity);
+            ids.add(entity.getId());
+        }
+        for (LocalVehiclePlayer.ServerEntity serverEntity : LocalVehiclePlayer.instance.serverEntities.values()) {
+            if (serverEntity == null || serverEntity.entity == null || !ids.add(serverEntity.entity.getId())) {
+                continue;
+            }
+            merged.add(serverEntity.entity);
+        }
+        return merged;
     }
 
     /** 复刻原 mixin {@code shouldSkipScan}：phase 雷达按 scanPeriodTick 节流扫描。 */

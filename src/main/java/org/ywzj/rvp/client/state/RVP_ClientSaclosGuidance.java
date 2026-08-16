@@ -21,15 +21,17 @@ public final class RVP_ClientSaclosGuidance {
     private RVP_ClientSaclosGuidance() {}
 
     public static boolean isOperatorGuiding(LocalPlayer player, Level level) {
-        if (player == null || level == null) {
+        if (player == null || level == null || !(level instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)) {
             return false;
         }
-        for (RVP_BaseBullet bullet : level.getEntitiesOfClass(
-                RVP_BaseBullet.class, player.getBoundingBox().inflate(4096))) {
-            if (!bullet.isAlive() || !isOperatorProjectile(bullet, player)) {
+        // O(实体) 遍历客户端已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，客户端掉帧）
+        for (Entity entity : clientLevel.entitiesForRendering()) {
+            if (!(entity instanceof RVP_BaseBullet bullet)
+                    || !bullet.isAlive()
+                    || bullet.position().distanceToSqr(player.position()) > 4096.0 * 4096.0) {
                 continue;
             }
-            if (isInSaclosPhase(bullet)) {
+            if (isOperatorProjectile(bullet, player) && isInSaclosPhase(bullet)) {
                 return true;
             }
         }
@@ -38,15 +40,17 @@ public final class RVP_ClientSaclosGuidance {
 
     @Nullable
     public static RVP_BaseBullet findGuidingMissile(LocalPlayer player, Level level) {
-        if (player == null || level == null) {
+        if (player == null || level == null || !(level instanceof net.minecraft.client.multiplayer.ClientLevel clientLevel)) {
             return null;
         }
-        for (RVP_BaseBullet bullet : level.getEntitiesOfClass(
-                RVP_BaseBullet.class, player.getBoundingBox().inflate(4096))) {
-            if (!bullet.isAlive() || !isOperatorProjectile(bullet, player)) {
+        // O(实体) 遍历客户端已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，客户端掉帧）
+        for (Entity entity : clientLevel.entitiesForRendering()) {
+            if (!(entity instanceof RVP_BaseBullet bullet)
+                    || !bullet.isAlive()
+                    || bullet.position().distanceToSqr(player.position()) > 4096.0 * 4096.0) {
                 continue;
             }
-            if (isInSaclosPhase(bullet)) {
+            if (isOperatorProjectile(bullet, player) && isInSaclosPhase(bullet)) {
                 return bullet;
             }
         }

@@ -123,10 +123,9 @@ public final class RVP_JammingRuntime {
      * 制导源据此把导弹推向**远离干扰机**的一侧（干扰机在左→推右，在右→推左），不再随机。</p>
      */
     private static ActiveJammer scan(RVP_BaseBullet projectile) {
-        if (!(projectile.level() instanceof ServerLevel)) {
+        if (!(projectile.level() instanceof ServerLevel serverLevel)) {
             return null;
         }
-        AABB box = projectile.getBoundingBox().inflate(SCAN_RANGE);
         Vec3 missilePos = projectile.position();
         int lockedId = projectile.jammingSourceVehicleId;
         if (lockedId != -1) {
@@ -140,9 +139,15 @@ public final class RVP_JammingRuntime {
             // 已锁源失效（脱离范围 / 被击毁）：此处不清零，由 tickAndResolve 的
             // 干扰滞留宽限（JAM_GRACE_TICKS）统一处理，期间保持被干扰状态。
         }
-        for (Entity entity : projectile.level().getEntities(projectile, box, e -> e instanceof AbstractVehicle)) {
-            AbstractVehicle vehicle = (AbstractVehicle) entity;
+        // O(实体) 遍历已加载载具，替代 ±SCAN_RANGE(4096) 立方体 getEntities（8192³，灾难级 TPS 掉刻）
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (!(entity instanceof AbstractVehicle vehicle)) {
+                continue;
+            }
             if (isSelfMissile(vehicle, projectile)) {
+                continue;
+            }
+            if (vehicle.position().distanceToSqr(missilePos) > SCAN_RANGE * SCAN_RANGE) {
                 continue;
             }
             ActiveJammer hit = checkVehicle(projectile, vehicle, missilePos);

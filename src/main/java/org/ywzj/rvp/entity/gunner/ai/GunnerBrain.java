@@ -608,10 +608,16 @@ public final class GunnerBrain {
     /** 找正在跟踪本载具的红外族（IR/AIR）导弹。 */
     @Nullable
     private static RVP_MissileEntity findInfraredMissileThreat(GunnerEntity gunner, AbstractVehicle vehicle) {
+        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return null;
+        }
         AABB box = vehicle.getBoundingBox().inflate(INFRARED_THREAT_RADIUS);
-        for (Entity entity : vehicle.level().getEntities(vehicle, box,
-                e -> e instanceof RVP_MissileEntity && e.isAlive())) {
-            RVP_MissileEntity missile = (RVP_MissileEntity) entity;
+        // O(实体) 遍历已加载实体，替代 ±200 立方体 getEntities（服务端 gunner 掉 TPS）
+        for (Entity entity : serverLevel.getEntities().getAll()) {
+            if (entity == vehicle || !(entity instanceof RVP_MissileEntity missile)
+                    || !missile.isAlive() || !missile.getBoundingBox().intersects(box)) {
+                continue;
+            }
             if (missile.getTargetEntity() != vehicle) {
                 continue;
             }
