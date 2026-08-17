@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_VisualArchitectureTest {
     /** 需要保持物理侧安全的新公共/服务端源码根目录。 */
@@ -119,6 +120,12 @@ class RVP_VisualArchitectureTest {
                         || rendererText.contains("applyMotionFacing")
                         || rendererText.contains("FULL_BRIGHT"),
                 "remote vehicles must use the independent static body path with controlled lighting");
+        assertFalse(rendererText.contains("event.getFrustum().isVisible")
+                        || rendererText.contains("minecraft.renderBuffers().bufferSource()"),
+                "remote vehicles must not use the old world far plane or shared world buffers");
+        assertTrue(rendererText.contains("RVP_RemoteVehicleRenderScope.open")
+                        && rendererText.contains("REMOTE_BUFFERS.endBatch()"),
+                "remote vehicle vertices must be submitted inside the scoped projection and fog pass");
     }
 
     @Test

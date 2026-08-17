@@ -1,12 +1,15 @@
 package org.ywzj.rvp.client.render.remotevisibility;
 
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
@@ -18,6 +21,8 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.FarPlaneDemand;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
@@ -25,6 +30,8 @@ import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.joml.Matrix4f;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -41,6 +48,15 @@ public final class RVP_RemoteVehicleVisualRenderer {
             NATIVE_TRACKING_BOUNDARY * NATIVE_TRACKING_BOUNDARY;
     /** 客户端没有目标区块时使用的受控中性光照。 */
     private static final int UNLOADED_CHUNK_LIGHT = LightTexture.pack(8, 10);
+    /** 远距载具独立批次的初始缓冲容量，缓冲不足时会由 BufferBuilder 自动扩容。 */
+    private static final int REMOTE_BUFFER_INITIAL_CAPACITY = 256;
+    /** 远距载具专用缓冲，防止切换投影时提交其他世界渲染器遗留的顶点。 */
+    private static final MultiBufferSource.BufferSource REMOTE_BUFFERS =
+            MultiBufferSource.immediate(new BufferBuilder(REMOTE_BUFFER_INITIAL_CAPACITY));
+    /** 客户端受控诊断日志。 */
+    private static final Logger LOGGER = LogUtils.getLogger();
+    /** 是否已经报告过当前运行期不受支持的投影，避免逐帧刷日志。 */
+    private static boolean warnedUnsupportedProjection;
 
     private RVP_RemoteVehicleVisualRenderer() {
     }
@@ -58,8 +74,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
 
         Vec3 cameraPosition = event.getCamera().getPosition();
-        Map<Integer, CandidateContext> contexts = new HashMap<>();
-        List<RVP_RemoteVehicleRenderBudget.Candidate> budgetCandidates = new ArrayList<>();
+        List<CandidateContext> preCandidates = new ArrayList<>();
+        List<FarPlaneDemand> farPlaneDemands = new ArrayList<>();
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
                 : RVP_ClientRemoteVehicleVisualState.renderEntries(level, event.getPartialTick())) {
             if (level.getEntity(entry.entityId()) != null) {
@@ -74,19 +90,53 @@ public final class RVP_RemoteVehicleVisualRenderer {
             if (!Double.isFinite(distanceSquared)) {
                 continue;
             }
-            double structureSize = Math.max(1.0D, entry.proxy().getStructureLength());
-            AABB cullingBox = AABB.ofSize(entry.position(), structureSize, structureSize, structureSize);
-            if (!event.getFrustum().isVisible(cullingBox)) {
+            double rawStructureSize = entry.proxy().getStructureLength();
+            if (!Double.isFinite(rawStructureSize)) {
                 continue;
             }
-
+            double structureSize = Math.max(1.0D, rawStructureSize);
+            double cullRadius = Math.sqrt(3.0D) * structureSize * 0.5D;
+            if (!Double.isFinite(cullRadius)
+                    || cullRadius > RVP_RemoteVehicleProjection.MAX_CULL_RADIUS) {
+                continue;
+            }
+            AABB cullingBox = AABB.ofSize(entry.position(), structureSize, structureSize, structureSize);
             boolean fallbackHighModel = !RVP_LodModelManager.hasRemoteLod(entry.proxy());
             double contribution = structureSize * structureSize / Math.max(1.0D, distanceSquared);
-            RVP_RemoteVehicleRenderBudget.Candidate candidate =
-                    new RVP_RemoteVehicleRenderBudget.Candidate(entry.entityId(), distanceSquared,
-                            contribution, fallbackHighModel);
-            budgetCandidates.add(candidate);
-            contexts.put(entry.entityId(), new CandidateContext(entry, Math.sqrt(distanceSquared)));
+            double cameraDistance = Math.sqrt(distanceSquared);
+            preCandidates.add(new CandidateContext(entry, cameraDistance, cullingBox,
+                    contribution, fallbackHighModel));
+            farPlaneDemands.add(new FarPlaneDemand(cameraDistance, cullRadius));
+        }
+        if (preCandidates.isEmpty()) {
+            return;
+        }
+
+        // 调用 RVP 投影辅助，按本帧实际授权预候选计算受硬上限保护的动态远平面。
+        ProjectionPlan projectionPlan = RVP_RemoteVehicleProjection
+                .plan(event.getProjectionMatrix(), farPlaneDemands).orElse(null);
+        Frustum remoteFrustum = event.getFrustum();
+        if (projectionPlan != null && projectionPlan.extended()) {
+            Matrix4f viewMatrix = new Matrix4f(event.getPoseStack().last().pose());
+            remoteFrustum = new Frustum(viewMatrix, projectionPlan.projection());
+            remoteFrustum.prepare(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+        } else if (projectionPlan == null && !warnedUnsupportedProjection) {
+            warnedUnsupportedProjection = true;
+            LOGGER.warn("RVP 远距载具无法安全扩展当前非标准投影，已回退原世界投影与 Frustum；"
+                    + "这通常表示光影模组替换了透视矩阵");
+        }
+
+        Map<Integer, CandidateContext> contexts = new HashMap<>();
+        List<RVP_RemoteVehicleRenderBudget.Candidate> budgetCandidates = new ArrayList<>();
+        for (CandidateContext context : preCandidates) {
+            if (!remoteFrustum.isVisible(context.cullingBox())) {
+                continue;
+            }
+            RVP_ClientRemoteVehicleVisualState.RenderEntry entry = context.entry();
+            budgetCandidates.add(new RVP_RemoteVehicleRenderBudget.Candidate(
+                    entry.entityId(), context.cameraDistance() * context.cameraDistance(),
+                    context.screenContribution(), context.fallbackHighModel()));
+            contexts.put(entry.entityId(), context);
         }
 
         List<RVP_RemoteVehicleRenderBudget.Candidate> selected = RVP_RemoteVehicleRenderBudget.select(
@@ -97,17 +147,32 @@ public final class RVP_RemoteVehicleVisualRenderer {
             return;
         }
 
-        PoseStack poseStack = event.getPoseStack();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        boolean rendered = false;
-        for (RVP_RemoteVehicleRenderBudget.Candidate candidate : selected) {
-            CandidateContext context = contexts.get(candidate.entityId());
-            if (context != null && renderVehicle(level, context, cameraPosition, poseStack, buffers)) {
-                rendered = true;
-            }
+        if (projectionPlan == null) {
+            renderSelected(level, selected, contexts, cameraPosition, event.getPoseStack());
+            return;
         }
-        if (rendered) {
-            buffers.endBatch();
+        // 调用 RVP 渲染作用域，在隔离批次期间临时应用并最终恢复投影与完整雾状态。
+        try (RVP_RemoteVehicleRenderScope ignored =
+                     RVP_RemoteVehicleRenderScope.open(projectionPlan, event.getCamera())) {
+            renderSelected(level, selected, contexts, cameraPosition, event.getPoseStack());
+        }
+    }
+
+    /** 在当前投影和雾状态下写入并提交隔离的远距载具批次。 */
+    private static void renderSelected(ClientLevel level,
+                                       List<RVP_RemoteVehicleRenderBudget.Candidate> selected,
+                                       Map<Integer, CandidateContext> contexts,
+                                       Vec3 cameraPosition, PoseStack poseStack) {
+        try {
+            for (RVP_RemoteVehicleRenderBudget.Candidate candidate : selected) {
+                CandidateContext context = contexts.get(candidate.entityId());
+                if (context != null) {
+                    renderVehicle(level, context, cameraPosition, poseStack, REMOTE_BUFFERS);
+                }
+            }
+        } finally {
+            // 调用本体模型写入所使用的 RVP 隔离缓冲提交入口，确保扩展状态恢复前完成 GPU 绘制。
+            REMOTE_BUFFERS.endBatch();
         }
     }
 
@@ -205,9 +270,13 @@ public final class RVP_RemoteVehicleVisualRenderer {
      *
      * @param entry 插值后的代理条目
      * @param cameraDistance 相机到代理的三维距离，单位格
+     * @param cullingBox 覆盖静态主体的世界坐标裁剪包围盒
+     * @param screenContribution 结构尺寸相对距离得到的屏幕贡献分数
+     * @param fallbackHighModel 是否没有整模型 LOD、需要使用静态原模型回退
      */
     private record CandidateContext(RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
-                                    double cameraDistance) {
+                                    double cameraDistance, AABB cullingBox,
+                                    double screenContribution, boolean fallbackHighModel) {
     }
 
     /** 渲染临时改写前的代理位置与三轴姿态。 */

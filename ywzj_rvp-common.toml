@@ -4,3 +4,41 @@
     #to the vehicle's inventory so it can be used immediately.
     #Default: false
     spawnVehicleWithCreativeAmmo = true
+
+[remoteVehicleRendering]
+    #是否启用服务端权威的载具超视距视觉同步。默认：true
+    enabled = true
+    #是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。
+    #仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true
+    removeTerrainFog = true
+    #载具超视距授权模式：OFF、RADAR_DETECTED、VEHICLE_OCCUPANTS、ALL_PLAYERS。
+    #默认：VEHICLE_OCCUPANTS
+    #Allowed Values: OFF, RADAR_DETECTED, VEHICLE_OCCUPANTS, ALL_PLAYERS
+    visibilityMode = "VEHICLE_OCCUPANTS"
+    #载具超视距同步最大水平距离，单位格。范围：512..65536，默认：4096
+    #Range: 512.0 ~ 65536.0
+    maxDistance = 4096
+    #载具视觉完整集合同步周期，单位 tick。范围：1..200，默认：5
+    #Range: 1 ~ 200
+    syncIntervalTicks = 5
+    #单个玩家每份快照允许的最大载具目标数。范围：0..1024，默认：32
+    #Range: 0 ~ 1024
+    maxTargetsPerPlayer = 32
+    #远距载具区块租约模式：OFF、AI_UAV_ONLY、VISIBLE_TARGETS。
+    #默认：VISIBLE_TARGETS
+    #Allowed Values: OFF, AI_UAV_ONLY, VISIBLE_TARGETS
+    chunkLoadingMode = "VISIBLE_TARGETS"
+    #单个维度允许保持区块加载的最大远距载具数。范围：0..1024，默认：32
+    #Range: 0 ~ 1024
+    maxChunkLoadedVehiclesPerDimension = 32
+    #按载具速度规划区块前探路径的 tick 数。范围：0..200，默认：5
+    #Range: 0 ~ 200
+    chunkLookAheadTicks = 5
+
+    [remoteVehicleRendering.visibilityByObserverVehicleType]
+        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        helicopter = ["helicopter", "aircraft", "ground_vehicles"]
+        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        aircraft = ["helicopter", "aircraft", "ground_vehicles"]
+        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        ground_vehicles = ["helicopter", "aircraft"]

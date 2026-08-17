@@ -55,6 +55,8 @@ public class RVP_CommonConfig {
     private final ForgeConfigSpec.BooleanValue spawnVehicleWithCreativeAmmo;
     /** 是否启用服务端权威的载具超视距同步。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
+    /** 客户端是否剔除普通空气环境的地形雾。 */
+    private final ForgeConfigSpec.BooleanValue remoteVehicleRemoveTerrainFog;
     /** 服务端采用的载具超视距授权模式。 */
     private final ForgeConfigSpec.EnumValue<VisibilityMode> remoteVehicleVisibilityMode;
     /** 载具超视距同步最大水平距离，单位格。 */
@@ -97,6 +99,10 @@ public class RVP_CommonConfig {
         remoteVehicleRenderingEnabled = builder
                 .comment("是否启用服务端权威的载具超视距视觉同步。默认：true")
                 .define("enabled", true);
+        remoteVehicleRemoveTerrainFog = builder
+                .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。",
+                        "仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true")
+                .define("removeTerrainFog", true);
         remoteVehicleVisibilityMode = builder
                 .comment("载具超视距授权模式：OFF、RADAR_DETECTED、VEHICLE_OCCUPANTS、ALL_PLAYERS。",
                         "默认：VEHICLE_OCCUPANTS")
@@ -148,6 +154,11 @@ public class RVP_CommonConfig {
     /** 返回服务端是否启用载具超视距同步。 */
     public static boolean isRemoteVehicleRenderingEnabled() {
         return INSTANCE != null && INSTANCE.remoteVehicleRenderingEnabled.get();
+    }
+
+    /** 返回客户端是否应在载具超视距渲染启用时剔除普通地形雾。 */
+    public static boolean shouldRemoveRemoteVehicleTerrainFog() {
+        return INSTANCE == null || INSTANCE.remoteVehicleRemoveTerrainFog.get();
     }
 
     /** 返回服务端权威的载具超视距授权模式。 */
