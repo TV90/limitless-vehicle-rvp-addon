@@ -7,6 +7,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.resource.RVP_CustomMountReloadListener;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
+import org.ywzj.rvp.client.resource.remotevisibility.RVP_RemoteVehicleVisualReloadListener;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricParticleCoverage;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricPresetManager;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
@@ -21,6 +22,8 @@ public final class RVP_ClientReloadListeners {
     public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
         event.registerReloadListener(RVP_DisplayTransparentModeManager.INSTANCE);
         event.registerReloadListener(RVP_CustomMountReloadListener.INSTANCE);
+        // 注册远距载具代理清理器，资源重载后由后续权威快照按新 display/模型重建。
+        event.registerReloadListener(RVP_RemoteVehicleVisualReloadListener.INSTANCE);
         // 注册温压粒子贴图覆盖率扫描，使资源包替换贴图后动态预算仍读取真实 alpha 面积。
         event.registerReloadListener(RVP_ThermobaricParticleCoverage.INSTANCE);
         // 注册温压预设资源重载器，使 F3+T 后新爆炸使用最新的类型化预设快照。

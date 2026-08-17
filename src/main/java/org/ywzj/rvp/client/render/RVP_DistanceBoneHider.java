@@ -55,6 +55,7 @@ public final class RVP_DistanceBoneHider {
 
     public static void rebindAll() {
         MODEL_RULES.clear();
+        HIDDEN_BONE_INDEXES.clear();
         Map<?, BaseDisplay> vehicleDisplays = ClientAssetsManager.INSTANCE.getVehicleDisplays();
         if (vehicleDisplays != null) {
             bindDisplays(vehicleDisplays.values());
@@ -93,6 +94,14 @@ public final class RVP_DistanceBoneHider {
 
     /** 在载具主体渲染前调用：依据当前玩家与载具的距离设置配置骨骼的可见性。 */
     public static void apply(AbstractVehicle vehicle, BakedModelInstance instance) {
+        apply(vehicle, instance, distanceToPlayer(vehicle));
+    }
+
+    /**
+     * 在远距载具静态原模型渲染前调用，使用显式相机距离应用既有骨骼规则。
+     * 此入口不会读取本地玩家位置，适用于不加入客户端世界的代理。
+     */
+    public static void apply(AbstractVehicle vehicle, BakedModelInstance instance, double cameraDistance) {
         ensureBound();
         long tick = currentTick();
         boolean dbg = RVP_BoneHideDebug.isEnabled() && debugTick(tick);
@@ -104,7 +113,7 @@ public final class RVP_DistanceBoneHider {
         if (rules.isEmpty()) {
             return;
         }
-        double dist = distanceToPlayer(vehicle);
+        double dist = Math.max(0.0D, cameraDistance);
         // 缩放过滤：缩放中视场载具少、压力低，隐藏距离阈值放大（更远才隐藏骨骼）
         double factor = RVP_ClientZoomState.lodDistanceMultiplier();
         Set<String> hidden = null;

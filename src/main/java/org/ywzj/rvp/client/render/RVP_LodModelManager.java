@@ -58,6 +58,10 @@ public final class RVP_LodModelManager {
     private static final Map<AbstractVehicle, VehicleLodState> VEHICLE_STATES =
             Collections.synchronizedMap(new WeakHashMap<>());
 
+    /** 载具 → 最近一次 LOD 评估 Tick；用于远端代理首次立即评估并统一 20 Tick 节流。 */
+    private static final Map<AbstractVehicle, Long> LAST_EVALUATION_TICKS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
     private static final int EVALUATE_INTERVAL = 20;
     private static final double HYSTERESIS_RETREAT = 0.85;
 
@@ -89,6 +93,7 @@ public final class RVP_LodModelManager {
         DISPLAY_RULES.clear();
         MODEL_CACHE.clear();
         VEHICLE_STATES.clear();
+        LAST_EVALUATION_TICKS.clear();
         Map<?, BaseDisplay> vehicleDisplays = ClientAssetsManager.INSTANCE.getVehicleDisplays();
         if (vehicleDisplays != null) {
             bindDisplays(vehicleDisplays.values());
@@ -209,9 +214,50 @@ public final class RVP_LodModelManager {
     public static VehicleLodState resolve(AbstractVehicle vehicle) {
         ensureBound();
         long tick = currentTick();
-        if (tick % EVALUATE_INTERVAL == 0) {
-            evaluate(vehicle);
+        if (shouldEvaluate(vehicle, tick, false)) {
+            evaluate(vehicle, distanceToPlayer(vehicle), null);
         }
+        return validState(vehicle);
+    }
+
+    /**
+     * 为非世界远距代理解析 LOD。
+     *
+     * @param vehicle 非世界载具代理
+     * @param cameraDistance 当前渲染相机到代理的三维距离，单位格
+     * @param heightAboveGround 服务端权威离地高度，单位格
+     * @return 当前激活的静态 LOD 状态；未达到阈值或未配置时返回 {@code null}
+     */
+    public static VehicleLodState resolveRemote(AbstractVehicle vehicle, double cameraDistance,
+                                                double heightAboveGround) {
+        ensureBound();
+        long tick = currentTick();
+        if (shouldEvaluate(vehicle, tick, true)) {
+            evaluate(vehicle, Math.max(0.0D, cameraDistance), Math.max(0.0D, heightAboveGround));
+        }
+        return validState(vehicle);
+    }
+
+    /**
+     * 仅查询代理 display 是否具有已成功烘焙的 LOD 规则，不创建每车模型实例。
+     * 预算器用它在 LOD 解析前区分静态低模与原模型回退。
+     */
+    public static boolean hasRemoteLod(AbstractVehicle vehicle) {
+        ensureBound();
+        BaseDisplay display = ClientAssetsManager.INSTANCE
+                .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        List<RVP_LodModel> rules = display == null ? null : DISPLAY_RULES.get(display);
+        return rules != null && !rules.isEmpty();
+    }
+
+    /** 删除指定远端代理的选级和节流状态，供完整快照移除与资源重载清理。 */
+    public static void forgetVehicle(AbstractVehicle vehicle) {
+        VEHICLE_STATES.remove(vehicle);
+        LAST_EVALUATION_TICKS.remove(vehicle);
+    }
+
+    /** 返回仍然绑定有效模型与实例的当前状态。 */
+    private static VehicleLodState validState(AbstractVehicle vehicle) {
         VehicleLodState state = VEHICLE_STATES.get(vehicle);
         if (state == null) {
             return null;
@@ -224,7 +270,26 @@ public final class RVP_LodModelManager {
         return state;
     }
 
-    private static void evaluate(AbstractVehicle vehicle) {
+    /** 判断本 Tick 是否需要评估；远端代理无历史记录时必须立即评估。 */
+    private static boolean shouldEvaluate(AbstractVehicle vehicle, long tick, boolean immediateFirst) {
+        Long lastTick = LAST_EVALUATION_TICKS.get(vehicle);
+        if (!shouldEvaluate(tick, lastTick, immediateFirst)) {
+            return false;
+        }
+        LAST_EVALUATION_TICKS.put(vehicle, tick);
+        return true;
+    }
+
+    /** 可单元测试的首次评估与 20 Tick 节流判定。 */
+    static boolean shouldEvaluate(long tick, Long lastTick, boolean immediateFirst) {
+        if (lastTick == null) {
+            return immediateFirst || tick % EVALUATE_INTERVAL == 0L;
+        }
+        return tick - lastTick >= EVALUATE_INTERVAL;
+    }
+
+    /** 使用显式距离及可选服务端 AGL 刷新选择结果。 */
+    private static void evaluate(AbstractVehicle vehicle, double distance, Double explicitHeightAboveGround) {
         BaseDisplay display = ClientAssetsManager.INSTANCE
                 .getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
         if (display == null) {
@@ -236,11 +301,13 @@ public final class RVP_LodModelManager {
             VEHICLE_STATES.remove(vehicle);
             return;
         }
-        boolean air = isAirborne(vehicle, rules);
-        double dist = distanceToPlayer(vehicle);
         VehicleLodState current = VEHICLE_STATES.get(vehicle);
         int currentLevel = current != null ? current.levelIndex : -1;
-        int target = selectLevel(rules, air, dist, currentLevel);
+        double heightAboveGround = explicitHeightAboveGround != null
+                ? explicitHeightAboveGround
+                : heightAboveGroundFromWorld(vehicle);
+        boolean air = isAirborne(rules, currentLevel, heightAboveGround);
+        int target = selectLevel(rules, air, distance, currentLevel);
         // 级别与离地状态都无变化时才保持（离地切换可能导致地面/空中模型不同）
         if (target == currentLevel && current != null && current.air == air) {
             return; // 选择结果无变化
@@ -266,6 +333,12 @@ public final class RVP_LodModelManager {
         // 某级配置了显式缩放阈值（zoom_distance/zoom_air_distance）则优先使用
         boolean zoomed = RVP_ClientZoomState.isZoomed();
         double factor = RVP_ClientZoomState.lodDistanceMultiplier();
+        return selectLevel(rules, air, dist, currentLevel, zoomed, factor);
+    }
+
+    /** 可单元测试的纯选级逻辑。 */
+    static int selectLevel(List<RVP_LodModel> rules, boolean air, double dist, int currentLevel,
+                           boolean zoomed, double factor) {
         for (int i = rules.size() - 1; i >= 0; i--) {
             RVP_LodModel rule = rules.get(i);
             double threshold;
@@ -286,19 +359,24 @@ public final class RVP_LodModelManager {
         return -1;
     }
 
-    private static boolean isAirborne(AbstractVehicle vehicle, List<RVP_LodModel> rules) {
+    /** 按当前激活级或首级的 air_height 判断服务端 AGL 是否属于离地状态。 */
+    static boolean isAirborne(List<RVP_LodModel> rules, int currentLevel, double heightAboveGround) {
         double airHeight;
-        VehicleLodState current = VEHICLE_STATES.get(vehicle);
-        if (current != null && current.levelIndex >= 0 && current.levelIndex < rules.size()) {
-            airHeight = rules.get(current.levelIndex).airHeight;
+        if (currentLevel >= 0 && currentLevel < rules.size()) {
+            airHeight = rules.get(currentLevel).airHeight;
         } else {
             airHeight = rules.get(0).airHeight;
         }
+        return heightAboveGround >= airHeight;
+    }
+
+    /** 正常世界载具沿用现有高度图离地高度计算。 */
+    private static double heightAboveGroundFromWorld(AbstractVehicle vehicle) {
         var level = vehicle.level();
         int x = vehicle.getBlockX();
         int z = vehicle.getBlockZ();
         double ground = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
-        return vehicle.getY() - ground >= airHeight;
+        return Math.max(0.0D, vehicle.getY() - ground);
     }
 
     private static double distanceToPlayer(AbstractVehicle vehicle) {

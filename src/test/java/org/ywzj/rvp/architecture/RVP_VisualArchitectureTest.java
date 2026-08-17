@@ -104,6 +104,24 @@ class RVP_VisualArchitectureTest {
     }
 
     @Test
+    void remoteVehicleProxyAndRendererStayOnTheIndependentStaticPath() throws IOException {
+        Path state = Path.of("src/main/java/org/ywzj/rvp/client/state/remotevisibility/"
+                + "RVP_ClientRemoteVehicleVisualState.java");
+        Path renderer = Path.of("src/main/java/org/ywzj/rvp/client/render/remotevisibility/"
+                + "RVP_RemoteVehicleVisualRenderer.java");
+        String stateText = Files.readString(state);
+        String rendererText = Files.readString(renderer);
+
+        assertFalse(stateText.contains(".addEntity("),
+                "remote vehicle proxies must never join ClientLevel");
+        assertFalse(rendererText.contains("EntityRenderDispatcher")
+                        || rendererText.contains("LocalVehiclePlayer")
+                        || rendererText.contains("applyMotionFacing")
+                        || rendererText.contains("FULL_BRIGHT"),
+                "remote vehicles must use the independent static body path with controlled lighting");
+    }
+
+    @Test
     void entityAndRendererCodeDoesNotUseWeaponIdForThermobaricDispatch() throws IOException {
         for (Path root : List.of(
                 Path.of("src/main/java/org/ywzj/rvp/entity"),

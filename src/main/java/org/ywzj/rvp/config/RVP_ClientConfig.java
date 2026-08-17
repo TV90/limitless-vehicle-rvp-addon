@@ -136,8 +136,9 @@ public class RVP_ClientConfig {
                 .defineInRange("maxFallbackHighModels", 8, 0, 1024);
 
         remoteVehicleMaxExtrapolationTicks = builder
-                .comment("客户端远距载具样本允许的最大外推时间，单位 tick。范围：0..100，默认：5")
-                .defineInRange("maxExtrapolationTicks", 5, 0, 100);
+                .comment("客户端远距载具样本允许的最大外推时间，单位 tick。范围：0..5，默认：5",
+                        "该值只能缩短协议规定的五 tick 上限。")
+                .defineInRange("maxExtrapolationTicks", 5, 0, 5);
 
         builder.pop();
     }
@@ -192,7 +193,7 @@ public class RVP_ClientConfig {
 
     /** 返回客户端远距载具样本允许的最大外推 tick 数。 */
     public static int getRemoteVehicleMaxExtrapolationTicks() {
-        return INSTANCE != null ? INSTANCE.remoteVehicleMaxExtrapolationTicks.get() : 5;
+        return INSTANCE != null ? Math.min(INSTANCE.remoteVehicleMaxExtrapolationTicks.get(), 5) : 5;
     }
 
     /** Register the client config. Must be called from mod constructor. */

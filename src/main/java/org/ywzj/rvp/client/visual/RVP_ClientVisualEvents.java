@@ -13,6 +13,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricScreenFeedback;
 
 /** 通用客户端视觉效果的 Tick、渲染和世界清理事件入口。 */
@@ -35,6 +36,8 @@ public final class RVP_ClientVisualEvents {
             RVP_ClientVisualEffectDispatcher.clear();
             // 调用 RVP 弹药视觉状态与渲染器，清除退出世界后遗留的授权集合和尾迹。
             clearRemoteAmmoVisuals();
+            // 调用 RVP 载具视觉状态，清除退出世界后遗留的非世界代理。
+            RVP_ClientRemoteVehicleVisualState.clear();
             clearThermobaricFeedback();
             return;
         }
@@ -44,6 +47,8 @@ public final class RVP_ClientVisualEvents {
         }
         // 调用 RVP 客户端视觉分派器，统一推进当前世界的效果实例。
         RVP_ClientVisualEffectDispatcher.tick(level);
+        // 调用 RVP 载具视觉状态，执行维度互斥与 25 Tick 代理超时清理。
+        RVP_ClientRemoteVehicleVisualState.tick(level);
     }
 
     @SubscribeEvent
@@ -73,6 +78,8 @@ public final class RVP_ClientVisualEvents {
             RVP_ClientVisualEffectDispatcher.clear();
             // 调用 RVP 弹药视觉状态与渲染器，确保切换维度后不保留旧世界集合和尾迹。
             clearRemoteAmmoVisuals();
+            // 调用 RVP 载具视觉状态，确保换维度后不复用旧世界代理与样本。
+            RVP_ClientRemoteVehicleVisualState.clear();
             clearThermobaricFeedback();
         }
     }
