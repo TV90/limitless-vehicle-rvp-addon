@@ -122,6 +122,24 @@ class RVP_VisualArchitectureTest {
     }
 
     @Test
+    void gunnerAndUavSelfPathsUseTheAuthoritativeLeaseService() throws IOException {
+        Path gunner = Path.of("src/main/java/org/ywzj/rvp/entity/gunner/RVP_GunnerVehicleTickService.java");
+        Path linkedUav = Path.of("src/main/java/org/ywzj/rvp/event/RVP_LinkedUavEventHandler.java");
+        Path loiterUav = Path.of("src/main/java/org/ywzj/rvp/uav/RVP_UavLoiterTickService.java");
+        String gunnerText = Files.readString(gunner).replaceAll("\\s+", "");
+        String linkedUavText = Files.readString(linkedUav).replaceAll("\\s+", "");
+        String loiterUavText = Files.readString(loiterUav).replaceAll("\\s+", "");
+
+        assertFalse(gunnerText.contains("keepChunkLoaded("),
+                "Gunner vehicle self paths must only be submitted by the remote vehicle lease service");
+        assertFalse(linkedUavText.contains("keepChunkLoaded(vehicle,vehicle.position())")
+                        || linkedUavText.contains("vehicle.position().add(vehicle.getLookAngle()"),
+                "deployable UAV self paths must not duplicate the authoritative lease service");
+        assertFalse(loiterUavText.contains("keepChunkLoaded(uav,uav.position())"),
+                "loiter UAV self paths must not duplicate the authoritative lease service");
+    }
+
+    @Test
     void entityAndRendererCodeDoesNotUseWeaponIdForThermobaricDispatch() throws IOException {
         for (Path root : List.of(
                 Path.of("src/main/java/org/ywzj/rvp/entity"),

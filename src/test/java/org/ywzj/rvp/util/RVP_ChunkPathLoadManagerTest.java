@@ -60,12 +60,12 @@ class RVP_ChunkPathLoadManagerTest {
         assertEquals(List.of(chunk(10)), cycle.outputs().get(second.key()).grantedChunks());
     }
 
-    /** 等待弹体优先于活动弹体和固定翼获得新增预算。 */
+    /** 等待弹体优先于活动弹体和远距载具获得新增预算。 */
     @Test
     void waitingProjectileConsumesBudgetBeforeLowerPriorities() {
-        RVP_ChunkPathLoadManager.AllocationInput fixedWing = input(
+        RVP_ChunkPathLoadManager.AllocationInput remoteVehicle = input(
                 1,
-                RVP_ChunkPathLoadManager.RequestPriority.FIXED_WING,
+                RVP_ChunkPathLoadManager.RequestPriority.REMOTE_VEHICLE,
                 List.of(chunk(20), chunk(21)),
                 Set.of());
         RVP_ChunkPathLoadManager.AllocationInput active = input(
@@ -80,13 +80,35 @@ class RVP_ChunkPathLoadManagerTest {
                 Set.of());
 
         RVP_ChunkPathLoadManager.AllocationCycle cycle = allocate(
-                List.of(fixedWing, active, waiting), 2, cursors());
+                List.of(remoteVehicle, active, waiting), 2, cursors());
 
         assertEquals(List.of(chunk(0), chunk(1)), cycle.outputs().get(waiting.key()).grantedChunks());
         assertTrue(cycle.outputs().get(active.key()).grantedChunks().isEmpty());
-        assertTrue(cycle.outputs().get(fixedWing.key()).grantedChunks().isEmpty());
+        assertTrue(cycle.outputs().get(remoteVehicle.key()).grantedChunks().isEmpty());
         assertTrue(cycle.outputs().get(active.key()).budgetExhausted());
-        assertTrue(cycle.outputs().get(fixedWing.key()).budgetExhausted());
+        assertTrue(cycle.outputs().get(remoteVehicle.key()).budgetExhausted());
+    }
+
+    /** 活动弹体耗尽新增预算时，最低优先级远距载具不能抢占移动安全预算。 */
+    @Test
+    void activeProjectileConsumesBudgetBeforeRemoteVehicle() {
+        RVP_ChunkPathLoadManager.AllocationInput active = input(
+                1,
+                RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE,
+                List.of(chunk(0), chunk(1)),
+                Set.of());
+        RVP_ChunkPathLoadManager.AllocationInput remoteVehicle = input(
+                2,
+                RVP_ChunkPathLoadManager.RequestPriority.REMOTE_VEHICLE,
+                List.of(chunk(10), chunk(11)),
+                Set.of());
+
+        RVP_ChunkPathLoadManager.AllocationCycle cycle = allocate(
+                List.of(remoteVehicle, active), 2, cursors());
+
+        assertEquals(List.of(chunk(0), chunk(1)), cycle.outputs().get(active.key()).grantedChunks());
+        assertTrue(cycle.outputs().get(remoteVehicle.key()).grantedChunks().isEmpty());
+        assertTrue(cycle.outputs().get(remoteVehicle.key()).budgetExhausted());
     }
 
     /** 同优先级首个服务实体会逐 Tick 轮换，预算不足时不会固定饿死后序实体。 */

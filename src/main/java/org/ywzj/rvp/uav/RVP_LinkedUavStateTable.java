@@ -57,7 +57,7 @@ public final class RVP_LinkedUavStateTable {
     }
 
     public static UUID getLinkedChildVehicleUuid(AbstractVehicle vehicle) {
-        State state = of(vehicle);
+        State state = vehicle == null ? null : STATES.get(vehicle.getUUID());
         return state == null ? null : state.linkedChildVehicleUuid;
     }
 
@@ -81,7 +81,7 @@ public final class RVP_LinkedUavStateTable {
     }
 
     public static boolean isDeployableUavInstance(AbstractVehicle vehicle) {
-        State state = of(vehicle);
+        State state = vehicle == null ? null : STATES.get(vehicle.getUUID());
         return state != null && state.deployableUavInstance;
     }
 

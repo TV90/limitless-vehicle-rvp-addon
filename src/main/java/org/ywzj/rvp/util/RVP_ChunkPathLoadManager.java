@@ -31,7 +31,7 @@ import java.util.UUID;
  * 服务器级动态路径 Ticket 管理器。
  *
  * <p>实体 Tick 只提交下一 Tick 所需路径；管理器在 ServerTick START 统一刷新已有 Ticket，并按
- * “等待弹体 → 活动弹体 → 固定翼”的优先级和同级轮转顺序分配新增预算。所有 Ticket 都是本体
+ * “等待弹体 → 活动弹体 → 远距载具”的优先级和同级轮转顺序分配新增预算。所有 Ticket 都是本体
  * 同参数的临时 {@link TicketType#POST_TELEPORT} Ticket，路径滚走或实体停止提交后自然过期。
  * { addExactTicket }为实际向 Minecraft 请求区块chunk加载的方法。
  * </p>
@@ -431,7 +431,7 @@ public final class RVP_ChunkPathLoadManager {
     public enum RequestPriority {
         WAITING_PROJECTILE,
         ACTIVE_PROJECTILE,
-        FIXED_WING
+        REMOTE_VEHICLE
     }
 
     /** 当前实体路径提交后可见的授权快照。 */
@@ -593,7 +593,7 @@ public final class RVP_ChunkPathLoadManager {
         private void aggregateObservations() {
             for (PathObservation observation : observations.values()) {
                 intervalReadyChunkCount += observation.readiness().readyChunkCount();
-                if (observation.priority() != RequestPriority.FIXED_WING
+                if (observation.priority() != RequestPriority.REMOTE_VEHICLE
                         && !observation.readiness().pathReady()) {
                     intervalWaitingProjectileCount++;
                 }

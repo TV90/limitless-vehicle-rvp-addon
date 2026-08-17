@@ -26,7 +26,6 @@ import org.ywzj.rvp.uav.RVP_UavLoiterGuidance.GuidanceOutput;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
-import org.ywzj.vehicle.util.EntityUtil;
 
 import java.util.List;
 import java.util.Map;
@@ -96,8 +95,7 @@ public final class RVP_UavLoiterTickService {
             updatePhase(state, out, tickCount);
             // 震荡检测
             updateOscillation(state, out);
-            // 区块加载保持
-            EntityUtil.keepChunkLoaded(uav, uav.position());
+            // UAV 自身当前与速度前探区块由 RVP 远距载具租约服务统一提交，避免盘旋服务重复加票。
         }
 
         // 定期同步盘旋状态到客户端

@@ -23,7 +23,6 @@ import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.data.VehicleMissileWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
-import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 
@@ -34,13 +33,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Gunner 载具服务端 tick：区块加载 + 阵营/航向同步。
+ * Gunner 载具服务端 tick：自动干扰响应与阵营/航向同步。
  *
  * <p>替代被删的两个公共数组 mixin：</p>
  * <ul>
- *   <li>{@code AbstractVehicleGunnerChunkLoadMixin}：Gunner 驾驶的载具保持区块加载
- *       （{@code EntityUtil.keepChunkLoaded} + 前方预加载），距离所有玩家超过
- *       {@value #MAX_CHUNK_DISTANCE} 区块时失效；</li>
  *   <li>{@code AbstractVehicleGunnerDataMixin} 的服务端侧：向客户端推送 Gunner 阵营与航向
  *       （客户端侧表 {@code RVP_ClientGunnerVehicleState} 存储）。</li>
  * </ul>
@@ -52,10 +48,6 @@ import java.util.UUID;
 public final class RVP_GunnerVehicleTickService {
 
     private static final int TICK_INTERVAL = 5;
-    /** 距离玩家超过此区块数后，区块强载器失效。96 区块 = 1536 格。 */
-    private static final int MAX_CHUNK_DISTANCE = 96;
-    /** 前方预加载距离（格），与本体 UAV 一致。 */
-    private static final double LOOK_AHEAD_DISTANCE = 16.0;
     /** 阵营/航向同步距离（与本体远程实体广播的扩展距离一致）。 */
     private static final double SYNC_RANGE = 256.0D * 16.0D;
     private static final double SYNC_RANGE_SQ = SYNC_RANGE * SYNC_RANGE;
@@ -80,7 +72,6 @@ public final class RVP_GunnerVehicleTickService {
         for (ServerLevel level : event.getServer().getAllLevels()) {
             List<AbstractVehicle> gunnerVehicles = collectGunnerVehicles(level);
             for (AbstractVehicle vehicle : gunnerVehicles) {
-                tickChunkLoad(level, vehicle);
                 tickAutoCountermeasure(vehicle);
             }
             syncFactionToPlayers(event.getServer(), level, gunnerVehicles);
@@ -102,28 +93,6 @@ public final class RVP_GunnerVehicleTickService {
             return false;
         }
         return vehicle.getDriver() instanceof GunnerEntity;
-    }
-
-    private static void tickChunkLoad(ServerLevel level, AbstractVehicle vehicle) {
-        if (isTooFarFromAnyPlayer(level, vehicle)) {
-            return;
-        }
-        EntityUtil.keepChunkLoaded(vehicle, vehicle.position());
-        EntityUtil.keepChunkLoaded(vehicle, vehicle.position().add(
-                vehicle.getLookAngle().normalize().scale(LOOK_AHEAD_DISTANCE)));
-    }
-
-    private static boolean isTooFarFromAnyPlayer(ServerLevel level, AbstractVehicle vehicle) {
-        int vehicleChunkX = vehicle.blockPosition().getX() >> 4;
-        int vehicleChunkZ = vehicle.blockPosition().getZ() >> 4;
-        for (ServerPlayer player : level.players()) {
-            int dx = Math.abs(vehicleChunkX - (player.blockPosition().getX() >> 4));
-            int dz = Math.abs(vehicleChunkZ - (player.blockPosition().getZ() >> 4));
-            if (dx <= MAX_CHUNK_DISTANCE && dz <= MAX_CHUNK_DISTANCE) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static void syncFactionToPlayers(MinecraftServer server, ServerLevel level,

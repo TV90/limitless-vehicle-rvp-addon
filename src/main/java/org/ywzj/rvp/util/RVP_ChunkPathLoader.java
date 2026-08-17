@@ -130,6 +130,32 @@ public final class RVP_ChunkPathLoader {
     }
 
     /**
+     * 为不参与移动许可判定的低优先级租约规划连续水平路径。
+     *
+     * <p>本方法只执行数值计算，不查询、加载或生成区块。前探为 0 时严格只返回当前位置区块；
+     * 正数前探复用弹体相同的 supercover 算法和单实体区块上限。</p>
+     *
+     * @param start 规划起点
+     * @param motion 每 Tick 速度
+     * @param horizonTicks 前探 Tick 数；0 表示只保留当前区块
+     * @return 按运动方向排列的连续去重区块路径
+     */
+    public static List<ChunkPos> planLeasePath(
+            @Nullable Vec3 start,
+            @Nullable Vec3 motion,
+            int horizonTicks) {
+        if (horizonTicks <= 0) {
+            return collectSupercoverChunks(
+                    start, Vec3.ZERO, 1, RVP_ChunkPathLoadManager.MAX_CHUNKS_PER_ENTITY_TICK);
+        }
+        return collectSupercoverChunks(
+                start,
+                motion,
+                horizonTicks,
+                RVP_ChunkPathLoadManager.MAX_CHUNKS_PER_ENTITY_TICK);
+    }
+
+    /**
      * 规划并提交未来水平路径，由服务器级管理器在下一 Tick 开始阶段按全局预算精确加票。
      *
      * <p>本方法同时检查本 Tick（horizon=1）路径。只有当前路径中的区块已经获得 Ticket，且均已

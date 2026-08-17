@@ -79,10 +79,9 @@ public class RVP_LinkedUavEventHandler {
         for (AbstractVehicle vehicle : vehicles) {
             expireWreckEarly(vehicle);
             if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
-                EntityUtil.keepChunkLoaded(vehicle, vehicle.position());
-                EntityUtil.keepChunkLoaded(vehicle, vehicle.position().add(vehicle.getLookAngle().normalize().scale(16)));
                 Vec3 fakePos = RVP_LinkedUavStateTable.getFakeOperatorPosition(vehicle);
                 if (fakePos != null) {
+                    // 调用本体临时 Ticket，仅保护 UAV 假操作员位置；UAV 自身路径由 RVP 远距载具租约服务统一负责。
                     EntityUtil.keepChunkLoaded(vehicle, fakePos);
                 }
                 refreshParentPosition(vehicle);
@@ -147,6 +146,7 @@ public class RVP_LinkedUavEventHandler {
         if (parent instanceof AbstractVehicle parentVehicle) {
             RVP_DeployableUavService.setLinkedParentLastPosition(uav.getUUID(), parentVehicle.position());
             if (isWithinChunkDistance(uav, parentVehicle.position())) {
+                // 调用本体临时 Ticket 保护母车回收位置；这不是 UAV 自身视觉路径租约。
                 EntityUtil.keepChunkLoaded(uav, parentVehicle.position());
             }
             if (uav.tickCount % 100 == 0) {
@@ -161,6 +161,7 @@ public class RVP_LinkedUavEventHandler {
         // 曾导致"切换后一切冻结"），这里每 40 tick 刷新一次（POST_TELEPORT ticket 有效期 300 tick 足够）。
         Vec3 lastParentPos = RVP_DeployableUavService.getLinkedParentLastPosition(uav.getUUID());
         if (lastParentPos != null && isWithinChunkDistance(uav, lastParentPos) && (uav.tickCount & 39) == 0) {
+            // 调用本体临时 Ticket 保护母车最后位置，等待母车实体重新加载以完成控制切回。
             EntityUtil.keepChunkLoaded(uav, lastParentPos);
         }
         if (uav.tickCount % 100 == 0) {

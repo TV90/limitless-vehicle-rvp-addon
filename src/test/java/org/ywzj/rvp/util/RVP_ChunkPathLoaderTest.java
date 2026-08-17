@@ -85,6 +85,24 @@ class RVP_ChunkPathLoaderTest {
         assertEquals(expected, plan(new Vec3(1, 0, 1), new Vec3(20, 0, 0), -10, 64));
     }
 
+    /** 载具租约前探为零时严格只保护当前区块，不沿速度隐式扩展一 Tick。 */
+    @Test
+    void leasePathWithZeroLookAheadOnlyKeepsCurrentChunk() {
+        assertEquals(
+                chunks(chunk(0, 0)),
+                RVP_ChunkPathLoader.planLeasePath(
+                        new Vec3(1, 70, 1), new Vec3(100, 0, 0), 0));
+    }
+
+    /** 载具正数前探复用 supercover 路径并保持连续顺序。 */
+    @Test
+    void leasePathUsesSupercoverForPositiveLookAhead() {
+        assertEquals(
+                chunks(chunk(0, 0), chunk(1, 0), chunk(2, 0), chunk(3, 0), chunk(4, 0)),
+                RVP_ChunkPathLoader.planLeasePath(
+                        new Vec3(1, 70, 1), new Vec3(15, 0, 0), 5));
+    }
+
     /** 验证 null、NaN 和 Infinity 不会进入 DDA 遍历。 */
     @Test
     void invalidInputDoesNotTraverse() {
