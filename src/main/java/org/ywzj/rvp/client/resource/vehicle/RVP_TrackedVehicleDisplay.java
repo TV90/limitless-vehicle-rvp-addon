@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.resource.vehicle;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.TrackedVehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -96,14 +96,14 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
     }
 
     @Override
-    public IAnimationInstance<TrackedVehicleContext> createAnimationInstance(TrackedVehicle entity) {
-        IAnimationInstance<TrackedVehicleContext> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<TrackedVehicleContext> createAnimationInstance(TrackedVehicle entity) {
+        VehicleAnimationInstance<TrackedVehicleContext> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         TrackedVehicleContext context = result.getContext();
-        AnimationController<TrackedVehicleContext> controller = getAnimationController();
+        AnimationController<TrackedVehicleContext> controller = animationController;
         if (controller == null) {
             return result;
         }

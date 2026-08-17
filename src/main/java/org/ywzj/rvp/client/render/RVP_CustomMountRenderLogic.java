@@ -235,6 +235,7 @@ public final class RVP_CustomMountRenderLogic {
                         attachmentInstance,
                         poseStack,
                         bufferSource,
+                        config.texture(),
                         actualLight,
                         OverlayTexture.NO_OVERLAY,
                         null,
@@ -364,7 +365,7 @@ public final class RVP_CustomMountRenderLogic {
             Matrix4f matrix = new Matrix4f().translation((float) translate.x, (float) translate.y, (float) translate.z);
             return new AttachmentTransform(matrix);
         }
-        BakedModelInstance vehicleModelInstance = vehicle.getModelInstance();
+        BakedModelInstance vehicleModelInstance = vehicle.getVehicleModelInstance();
         int attachBoneIndex = vehicleModelInstance.getIndex(config.attachBone());
         if (attachBoneIndex < 0 || vehicleModelInstance.getBone(attachBoneIndex) == null) {
             return null;

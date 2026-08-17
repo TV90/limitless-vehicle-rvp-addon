@@ -21,7 +21,7 @@ import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 public class RVP_SmokeRenderer extends EntityRenderer<RVP_SmokeEntity> {
 
     private static final ResourceLocation SMOKE_TEXTURE =
-            new ResourceLocation("ywzj_vehicle", "textures/particle/smoke/smoke_8.png");
+            ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "textures/particle/smoke/smoke_8.png");
 
     public RVP_SmokeRenderer(EntityRendererProvider.Context context) {
         super(context);

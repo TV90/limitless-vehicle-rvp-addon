@@ -6,6 +6,7 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bone
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.spongepowered.asm.mixin.Mixin;
@@ -41,6 +42,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
     public void renderSpecialBones(BakedModelInstance instance,
                                         PoseStack poseStack,
                                         MultiBufferSource source,
+                                        ResourceLocation texture,
                                         int packedLight,
                                         int packedOverlay,
                                         List<BoneState> invisibleBones,

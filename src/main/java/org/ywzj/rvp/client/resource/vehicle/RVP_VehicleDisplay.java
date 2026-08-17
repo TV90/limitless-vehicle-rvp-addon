@@ -3,12 +3,11 @@ package org.ywzj.rvp.client.resource.vehicle;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.VehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
-import org.ywzj.vehicle.client.render.animation.context.VehicleContext;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplayPojo;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplayPojo;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -32,7 +31,7 @@ public class RVP_VehicleDisplay<E extends AbstractVehicle, CTX extends VehicleCo
         }
     }
 
-    protected RVP_VehicleDisplay(BaseDisplayPojo pojo, RVP_BedrockBackend backend) {
+    protected RVP_VehicleDisplay(VehicleDisplayPojo pojo, RVP_BedrockBackend backend) {
         super(pojo);
         this.bedrockBackend = backend == null ? RVP_BedrockBackend.VEHICLE : backend;
         this.lodModels = pojo instanceof RVP_BaseDisplayPojo rvpPojo ? RVP_LodModel.parse(rvpPojo.lodModels) : List.of();
@@ -85,14 +84,14 @@ public class RVP_VehicleDisplay<E extends AbstractVehicle, CTX extends VehicleCo
     }
 
     @Override
-    public IAnimationInstance<CTX> createAnimationInstance(E entity) {
-        IAnimationInstance<CTX> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<CTX> createAnimationInstance(E entity) {
+        VehicleAnimationInstance<CTX> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         CTX context = result.getContext();
-        AnimationController<CTX> controller = getAnimationController();
+        AnimationController<CTX> controller = animationController;
         if (controller == null) {
             return result;
         }

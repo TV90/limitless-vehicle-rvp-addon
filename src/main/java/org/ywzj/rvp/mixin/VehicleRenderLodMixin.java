@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -52,11 +52,11 @@ public abstract class VehicleRenderLodMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/client/resource/vehicle/BaseDisplay;getModel()Lorg/ywzj/vehicle/client/resource/vehicle/VehicleBedrockModel;"
+                    target = "Lorg/ywzj/vehicle/client/resource/vehicle/VehicleDisplay;getModel()Lorg/ywzj/vehicle/client/resource/vehicle/VehicleBedrockModel;"
             ),
             remap = false
     )
-    private VehicleBedrockModel ywzj_rvp$lodModel(BaseDisplay display) {
+    private VehicleBedrockModel ywzj_rvp$lodModel(VehicleDisplay<?, ?> display) {
         RVP_LodModelManager.VehicleLodState state = ywzj_rvp$lodState;
         return state != null ? state.model : display.getModel();
     }
@@ -65,24 +65,24 @@ public abstract class VehicleRenderLodMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/entity/vehicle/AbstractVehicle;getModelInstance()Lcom/github/mcmodderanchor/simplebedrockmodel/v2/common/model/runtime/BakedModelInstance;"
+                    target = "Lorg/ywzj/vehicle/entity/vehicle/AbstractVehicle;getVehicleModelInstance()Lcom/github/mcmodderanchor/simplebedrockmodel/v2/common/model/runtime/BakedModelInstance;"
             ),
             remap = false
     )
     private BakedModelInstance ywzj_rvp$lodInstance(AbstractVehicle vehicle) {
         RVP_LodModelManager.VehicleLodState state = ywzj_rvp$lodState;
-        return state != null ? state.instance : vehicle.getModelInstance();
+        return state != null ? state.instance : vehicle.getVehicleModelInstance();
     }
 
     @Redirect(
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/client/resource/vehicle/BaseDisplay;getTexture()Lnet/minecraft/resources/ResourceLocation;"
+                    target = "Lorg/ywzj/vehicle/client/resource/vehicle/VehicleDisplay;getTexture()Lnet/minecraft/resources/ResourceLocation;"
             ),
             remap = false
     )
-    private ResourceLocation ywzj_rvp$lodTexture(BaseDisplay display) {
+    private ResourceLocation ywzj_rvp$lodTexture(VehicleDisplay<?, ?> display) {
         RVP_LodModelManager.VehicleLodState state = ywzj_rvp$lodState;
         return state != null && state.texture != null ? state.texture : display.getTexture();
     }
@@ -91,15 +91,16 @@ public abstract class VehicleRenderLodMixin {
             method = "render",
             at = @At(
                     value = "INVOKE",
-                    target = "Lorg/ywzj/vehicle/client/render/entity/vehicle/VehicleRender;applyAnimationPose(Lorg/ywzj/vehicle/entity/vehicle/AbstractVehicle;FLcom/github/mcmodderanchor/simplebedrockmodel/v2/common/model/runtime/BakedModelInstance;)V"
+                    target = "Lorg/ywzj/vehicle/client/render/entity/vehicle/VehicleRender;applyAnimationPose(Lorg/ywzj/vehicle/entity/vehicle/AbstractVehicle;FLcom/github/mcmodderanchor/simplebedrockmodel/v2/common/model/runtime/BakedModelInstance;Z)V"
             ),
             remap = false
     )
     private void ywzj_rvp$skipLodAnimation(AbstractVehicle vehicle,
                                            float pPartialTick,
-                                           BakedModelInstance modelInstance) {
+                                           BakedModelInstance modelInstance,
+                                           boolean isCabinView) {
         if (ywzj_rvp$lodState == null) {
-            VehicleRender.applyAnimationPose(vehicle, pPartialTick, modelInstance);
+            VehicleRender.applyAnimationPose(vehicle, pPartialTick, modelInstance, isCabinView);
         }
     }
 }

@@ -23,7 +23,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.vehicle.entity.weapon.RocketEntity;
@@ -151,15 +151,15 @@ public final class RVP_ExtendedAirEntityRenderer {
     }
 
     private static boolean ensureVehicleDisplayInitialized(AbstractVehicle vehicle) {
-        if (vehicle.getModelInstance() != null) {
+        if (vehicle.getVehicleModelInstance() != null) {
             return true;
         }
-        BaseDisplay display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        VehicleDisplay<?, ?> display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
         if (display == null || display.getModel() == null || display.getTexture() == null) {
             return false;
         }
         vehicle.initDisplayData(display);
-        return vehicle.getModelInstance() != null;
+        return vehicle.getVehicleModelInstance() != null;
     }
 
     private static Vec3 extrapolatedPosition(Minecraft mc, LocalVehiclePlayer.ServerEntity remote,
