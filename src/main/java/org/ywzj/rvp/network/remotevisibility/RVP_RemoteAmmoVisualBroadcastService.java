@@ -1,4 +1,4 @@
-package org.ywzj.rvp.network;
+package org.ywzj.rvp.network.remotevisibility;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -16,11 +16,12 @@ import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
+import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerBroadcastEntities;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -28,28 +29,36 @@ import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 
+/** 负责弹药超视距视觉授权、燃烧状态同步和本体远程弹药克隆补充。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
-public final class RVP_ExtendedAirEntityBroadcastService {
-
+public final class RVP_RemoteAmmoVisualBroadcastService {
+    /** 弹药视觉完整集合的同步周期，单位 tick。 */
     private static final int SYNC_INTERVAL_TICK = 5;
-    /** 是否广播载具（飞机）超视距渲染数据；当前需求为关闭车辆、保留弹药超视距渲染。 */
-    private static final boolean ENABLE_AIR_VEHICLE_RENDER = false;
+    /** 原生实体追踪接管边界，单位格。 */
     private static final double BASE_RANGE = 32.0D * 16.0D;
+    /** 无条件弹药可视边界，单位格。 */
     private static final double UNCONDITIONAL_RANGE = 64.0D * 16.0D;
+    /** 弹药超视距视觉最远边界，单位格。 */
     private static final double EXTENDED_RANGE = 256.0D * 16.0D;
+    /** 原生实体追踪接管边界平方。 */
     private static final double BASE_RANGE_SQ = BASE_RANGE * BASE_RANGE;
+    /** 无条件弹药可视边界平方。 */
     private static final double UNCONDITIONAL_RANGE_SQ = UNCONDITIONAL_RANGE * UNCONDITIONAL_RANGE;
+    /** 弹药超视距视觉最远边界平方。 */
     private static final double EXTENDED_RANGE_SQ = EXTENDED_RANGE * EXTENDED_RANGE;
+    /** 弹药进入超视距视觉所需的最低离地高度，单位格。 */
     private static final double MIN_AGL = 100.0D;
 
-    private RVP_ExtendedAirEntityBroadcastService() {}
+    private RVP_RemoteAmmoVisualBroadcastService() {
+    }
 
+    /** 在服务端 Tick 末尾向乘载具玩家发送弹药视觉完整集合。 */
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END
@@ -61,30 +70,32 @@ public final class RVP_ExtendedAirEntityBroadcastService {
                 continue;
             }
             List<Entity> eligible = collectEligible(player);
+            // 调用 RVP 网络通道，向当前玩家发送服务端权威的弹药视觉完整集合。
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                    new S2CExtendedAirVisualSnapshot(player.serverLevel().dimension().location(),
+                    new S2CRemoteAmmoVisualSnapshot(player.serverLevel().dimension().location(),
                             eligible.stream().map(Entity::getId).collect(java.util.stream.Collectors.toSet()),
-                            eligible.stream().filter(RVP_ExtendedAirEntityBroadcastService::isMotorBurning)
+                            eligible.stream().filter(RVP_RemoteAmmoVisualBroadcastService::isMotorBurning)
                                     .map(Entity::getId).collect(java.util.stream.Collectors.toSet())));
             ServerBroadcastEntities packet = buildPacket(eligible);
             if (!packet.entities.isEmpty()) {
+                // 调用本体网络通道，补充创建客户端尚未追踪的远程弹药克隆。
                 Channel.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
             }
         }
     }
 
+    /** 收集保留既有授权语义的远程弹药候选。 */
     private static List<Entity> collectEligible(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         AbstractVehicle playerVehicle = (AbstractVehicle) player.getVehicle();
         Set<Integer> radarDetectedIds = collectRadarDetectedIds(playerVehicle);
+        // 调用 RVP 外部雷达链路，把授权中继载具的雷达发现并入当前观察者。
         RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(playerVehicle)
                 .ifPresent(relay -> radarDetectedIds.addAll(collectRadarDetectedIds(relay)));
 
         Map<Integer, Entity> candidates = new LinkedHashMap<>();
 
-        // 不再用 ±UNCONDITIONAL_RANGE(1024) 立方体 getEntities（服务端掉 TPS），改在 O(实体) 循环内
-        // 保留 box 交集语义：距离(512,1024] 内未雷达识别/非己方的弹体也要无条件加入候选，
-        // 由 isEligible 的 distanceSq<=UNCONDITIONAL_RANGE_SQ 闸门放行（原 nearBox 查询的职责）。
+        // 不再用大立方体查询；在已加载实体循环中保留 1024 格内无条件候选的既有语义。
         net.minecraft.world.phys.AABB nearBox = player.getBoundingBox().inflate(UNCONDITIONAL_RANGE);
         for (Entity entity : level.getAllEntities()) {
             if (!isSupportedType(entity)) {
@@ -100,6 +111,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
         return new ArrayList<>(candidates.values());
     }
 
+    /** 收集指定载具所有已开启雷达当前发现的实体 ID。 */
     private static Set<Integer> collectRadarDetectedIds(AbstractVehicle radarVehicle) {
         Set<Integer> detectedIds = new HashSet<>();
         for (PartUnit<?> partUnit : radarVehicle.getPartUnits()) {
@@ -107,6 +119,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
                 continue;
             }
             detectedIds.addAll(radarUnit.getDetectedEntities().keySet());
+            // 调用本体雷达扫描，补齐雷达当前扇区内尚未写入缓存的弹药目标。
             Radar.scanTargets(radarVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(), pos -> {
                 net.minecraft.world.phys.Vec2 aimRot = radarUnit.aimRot(pos);
                 return aimRot.y >= radarUnit.getYRotMin() && aimRot.y <= radarUnit.getYRotMax();
@@ -115,6 +128,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
         return detectedIds;
     }
 
+    /** 构造本体远程实体接收器所需的弹药克隆数据。 */
     private static ServerBroadcastEntities buildPacket(List<Entity> eligible) {
         List<ServerBroadcastEntities.BroadcastEntity> entries = new ArrayList<>();
         for (Entity entity : eligible) {
@@ -124,6 +138,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
             CompoundTag data = new CompoundTag();
             entity.saveWithoutId(data);
             if (entity instanceof RemoteTickEntity remoteTickEntity) {
+                // 调用本体远程 Tick 数据接口，保留弹药客户端外推所需的扩展状态。
                 remoteTickEntity.writeData(data);
             }
             entries.add(new ServerBroadcastEntities.BroadcastEntity(
@@ -135,6 +150,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
         return packet;
     }
 
+    /** 判断实体是否需要通过本体远程接收器补充克隆。 */
     private static boolean isSupplementalType(Entity entity) {
         return entity instanceof RocketEntity
                 || entity instanceof RVP_BulletEntity
@@ -143,12 +159,12 @@ public final class RVP_ExtendedAirEntityBroadcastService {
                 || entity instanceof RVP_BombEntity;
     }
 
+    /** 判断实体是否属于弹药超视距视觉支持类型。 */
     private static boolean isSupportedType(Entity entity) {
-        return (ENABLE_AIR_VEHICLE_RENDER && entity instanceof AbstractVehicle)
-                || entity instanceof MissileEntity
-                || isSupplementalType(entity);
+        return entity instanceof MissileEntity || isSupplementalType(entity);
     }
 
+    /** 判断导弹或火箭发动机在当前服务端 tick 是否仍在燃烧。 */
     private static boolean isMotorBurning(Entity entity) {
         if (entity instanceof RVP_BaseBullet bullet) {
             return bullet.isMotorBurningNow();
@@ -163,6 +179,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
         return false;
     }
 
+    /** 应用既有弹药距离、离地高度、所有权和雷达授权规则。 */
     private static boolean isEligible(ServerPlayer player, ServerLevel level, Entity entity,
                                       Set<Integer> radarDetectedIds) {
         if (!entity.isAlive()) {
@@ -187,6 +204,7 @@ public final class RVP_ExtendedAirEntityBroadcastService {
                 || radarDetectedIds.contains(entity.getId());
     }
 
+    /** 判断弹药是否由当前玩家或其所乘载具发射。 */
     private static boolean isOwnAmmo(ServerPlayer player, Entity entity) {
         if (!(entity instanceof net.minecraft.world.entity.projectile.Projectile projectile)) {
             return false;

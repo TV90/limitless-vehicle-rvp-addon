@@ -11,6 +11,8 @@ import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricScreenFeedback;
 
 /** 通用客户端视觉效果的 Tick、渲染和世界清理事件入口。 */
@@ -31,6 +33,8 @@ public final class RVP_ClientVisualEvents {
         if (level == null) {
             // 调用 RVP 客户端视觉分派器，清除退出世界后遗留的实例。
             RVP_ClientVisualEffectDispatcher.clear();
+            // 调用 RVP 弹药视觉状态与渲染器，清除退出世界后遗留的授权集合和尾迹。
+            clearRemoteAmmoVisuals();
             clearThermobaricFeedback();
             return;
         }
@@ -67,8 +71,16 @@ public final class RVP_ClientVisualEvents {
         if (event.getLevel().isClientSide()) {
             // 调用 RVP 客户端视觉分派器，确保切换维度时实例不会跨世界复用。
             RVP_ClientVisualEffectDispatcher.clear();
+            // 调用 RVP 弹药视觉状态与渲染器，确保切换维度后不保留旧世界集合和尾迹。
+            clearRemoteAmmoVisuals();
             clearThermobaricFeedback();
         }
+    }
+
+    /** 同时清理弹药视觉授权集合与远程尾迹状态。 */
+    private static void clearRemoteAmmoVisuals() {
+        RVP_ClientRemoteAmmoVisualState.clear();
+        RVP_RemoteAmmoVisualRenderer.clear();
     }
 
     /** 同时清理温压声音去重表与屏幕反馈脉冲。 */

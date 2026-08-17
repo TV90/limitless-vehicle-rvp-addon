@@ -7,10 +7,12 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.network.C2SFireCountermeasure;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoVisualSnapshot;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
-    private static final String PROTOCOL = "2";
+    private static final String PROTOCOL = "3";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -146,10 +148,15 @@ public class RVP_Network {
                 .decoder(S2CTacticalRevealSnapshot::decode)
                 .consumerMainThread(S2CTacticalRevealSnapshot::handle)
                 .add();
-        CHANNEL.messageBuilder(S2CExtendedAirVisualSnapshot.class, id++)
-                .encoder(S2CExtendedAirVisualSnapshot::encode)
-                .decoder(S2CExtendedAirVisualSnapshot::decode)
-                .consumerMainThread(S2CExtendedAirVisualSnapshot::handle)
+        CHANNEL.messageBuilder(S2CRemoteAmmoVisualSnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CRemoteAmmoVisualSnapshot::encode)
+                .decoder(S2CRemoteAmmoVisualSnapshot::decode)
+                .consumerMainThread(S2CRemoteAmmoVisualSnapshot::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CRemoteVehicleVisualSnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CRemoteVehicleVisualSnapshot::encode)
+                .decoder(S2CRemoteVehicleVisualSnapshot::decode)
+                .consumerMainThread(S2CRemoteVehicleVisualSnapshot::handle)
                 .add();
         CHANNEL.messageBuilder(S2CNuclearVisualEffect.class, id++)
                 .encoder(S2CNuclearVisualEffect::encode)

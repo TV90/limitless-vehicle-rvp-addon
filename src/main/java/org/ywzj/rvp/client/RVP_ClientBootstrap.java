@@ -8,9 +8,11 @@ import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
 import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
 import org.ywzj.rvp.client.render.GunnerRenderer;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
+import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoVisualEndpoint;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
 import org.ywzj.vehicle.all.AllEntities;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
@@ -37,6 +39,9 @@ public final class RVP_ClientBootstrap {
                     RVP_ExplosionVisualManager.spawn(message);
                 }
             });
+            // 安装 RVP 弹药视觉公共消费端，把完整集合写入客户端弹药视觉状态表。
+            RVP_RemoteAmmoVisualEndpoint.install(message -> RVP_ClientRemoteAmmoVisualState.replace(
+                    message.dimension(), message.entityIds(), message.motorBurningEntityIds()));
             RVP_ClientEntityRenderers.register();
             EntityRenderers.register(RVP_Entities.GUNNER.get(), GunnerRenderer::new);
             registerVehicleRenderers();

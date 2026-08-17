@@ -17,14 +17,15 @@ class RVP_VisualArchitectureTest {
     /** 需要保持物理侧安全的新公共/服务端源码根目录。 */
     private static final List<Path> SIDE_SAFE_ROOTS = List.of(
             Path.of("src/main/java/org/ywzj/rvp/server/visual"),
+            Path.of("src/main/java/org/ywzj/rvp/server/remotevisibility"),
             Path.of("src/main/java/org/ywzj/rvp/network/visual"),
+            Path.of("src/main/java/org/ywzj/rvp/network/remotevisibility"),
             Path.of("src/main/java/org/ywzj/rvp/weapon/visual/api"));
     /** 阶段 A 前已经存在的网络物理侧债务；本功能不得扩大该集合。 */
     private static final Set<String> LEGACY_NETWORK_CLIENT_IMPORTS = Set.of(
             "C2SSetGPSTarget.java",
             "S2CApsFlameLink.java",
             "S2CApsHudSync.java",
-            "S2CExtendedAirVisualSnapshot.java",
             "S2CExternalRadarSnapshot.java",
             "S2CGpsStateSync.java",
             "S2CGunnerVehicleSync.java",
@@ -66,6 +67,39 @@ class RVP_VisualArchitectureTest {
             String text = Files.readString(source);
             assertFalse(text.contains("RVP_VisualEffect") || text.toLowerCase().contains("thermobaric"),
                     source + " must not contain thermobaric visual feature logic");
+            assertFalse(text.contains("RemoteVehicleVisual") || text.contains("RemoteAmmoVisual"),
+                    source + " must not contain remote visibility feature logic");
+        }
+    }
+
+    @Test
+    void legacyExtendedAirClassesWereRemovedWithoutCompatibilityWrappers() {
+        Path mainRoot = Path.of("src/main/java/org/ywzj/rvp");
+        List<String> removedNames = List.of(
+                "RVP_" + "ExtendedAirEntityBroadcastService.java",
+                "S2C" + "ExtendedAirVisualSnapshot.java",
+                "RVP_Client" + "ExtendedAirVisualState.java",
+                "RVP_" + "ExtendedAirEntityRenderer.java");
+        for (String removedName : removedNames) {
+            assertFalse(javaSourcesUnchecked(mainRoot).stream()
+                            .anyMatch(path -> path.getFileName().toString().equals(removedName)),
+                    removedName + " must not remain as a compatibility wrapper");
+        }
+    }
+
+    @Test
+    void remoteVisibilityCodeDoesNotBranchOnConcreteResourceIds() throws IOException {
+        for (Path root : List.of(
+                Path.of("src/main/java/org/ywzj/rvp/server/remotevisibility"),
+                Path.of("src/main/java/org/ywzj/rvp/client/render/remotevisibility"))) {
+            for (Path source : javaSources(root)) {
+                String compact = Files.readString(source).replaceAll("\\s+", "").toLowerCase();
+                boolean forbidden = compact.contains("getvehicleid().getpath().equals(")
+                        || compact.contains("getdisplayid().getpath().equals(")
+                        || compact.contains("weaponid.getpath().equals(")
+                        || compact.contains("modelid.getpath().equals(");
+                assertFalse(forbidden, source + " hard-codes a vehicle, display, weapon, or model resource ID");
+            }
         }
     }
 
@@ -86,6 +120,14 @@ class RVP_VisualArchitectureTest {
     private static List<Path> javaSources(Path root) throws IOException {
         try (Stream<Path> files = Files.walk(root)) {
             return files.filter(path -> path.toString().endsWith(".java")).toList();
+        }
+    }
+
+    private static List<Path> javaSourcesUnchecked(Path root) {
+        try {
+            return javaSources(root);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to scan Java sources under " + root, exception);
         }
     }
 }

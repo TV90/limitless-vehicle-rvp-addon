@@ -53,6 +53,12 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.DoubleValue thermobaricFlashIntensity;
     /** 温压镜头震动的客户端强度倍率。 */
     private final ForgeConfigSpec.DoubleValue thermobaricShakeIntensity;
+    /** 客户端每帧允许绘制的最大远距载具数。 */
+    private final ForgeConfigSpec.IntValue remoteVehicleMaxRenderedVehicles;
+    /** 客户端每帧允许绘制的最大无 LOD 高模载具数。 */
+    private final ForgeConfigSpec.IntValue remoteVehicleMaxFallbackHighModels;
+    /** 客户端远距载具样本允许的最大外推 tick 数。 */
+    private final ForgeConfigSpec.IntValue remoteVehicleMaxExtrapolationTicks;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
         builder.push("lod");
@@ -116,6 +122,24 @@ public class RVP_ClientConfig {
                 .defineInRange("thermobaricShakeIntensity", 1.0D, 0.0D, 1.0D);
 
         builder.pop();
+
+        builder.push("remoteVehicleRendering");
+
+        remoteVehicleMaxRenderedVehicles = builder
+                .comment("客户端每帧允许绘制的最大远距载具数。范围：0..1024，默认：32",
+                        "该值只能缩小服务端授权集合，不能扩大服务端可见范围。")
+                .defineInRange("maxRenderedVehicles", 32, 0, 1024);
+
+        remoteVehicleMaxFallbackHighModels = builder
+                .comment("客户端每帧允许绘制的最大无 LOD 高模载具数。范围：0..1024，默认：8",
+                        "实际返回值不会超过 maxRenderedVehicles。")
+                .defineInRange("maxFallbackHighModels", 8, 0, 1024);
+
+        remoteVehicleMaxExtrapolationTicks = builder
+                .comment("客户端远距载具样本允许的最大外推时间，单位 tick。范围：0..100，默认：5")
+                .defineInRange("maxExtrapolationTicks", 5, 0, 100);
+
+        builder.pop();
     }
 
     public static boolean isLodZoomEnabled() {
@@ -150,6 +174,25 @@ public class RVP_ClientConfig {
     /** 返回温压镜头震动强度倍率，范围为 {@code 0..1}。 */
     public static float getThermobaricShakeIntensity() {
         return INSTANCE != null ? INSTANCE.thermobaricShakeIntensity.get().floatValue() : 1.0F;
+    }
+
+    /** 返回客户端每帧允许绘制的最大远距载具数。 */
+    public static int getRemoteVehicleMaxRenderedVehicles() {
+        return INSTANCE != null ? INSTANCE.remoteVehicleMaxRenderedVehicles.get() : 32;
+    }
+
+    /** 返回客户端每帧允许绘制的最大无 LOD 高模载具数，且不超过总渲染上限。 */
+    public static int getRemoteVehicleMaxFallbackHighModels() {
+        if (INSTANCE == null) {
+            return 8;
+        }
+        return Math.min(INSTANCE.remoteVehicleMaxFallbackHighModels.get(),
+                INSTANCE.remoteVehicleMaxRenderedVehicles.get());
+    }
+
+    /** 返回客户端远距载具样本允许的最大外推 tick 数。 */
+    public static int getRemoteVehicleMaxExtrapolationTicks() {
+        return INSTANCE != null ? INSTANCE.remoteVehicleMaxExtrapolationTicks.get() : 5;
     }
 
     /** Register the client config. Must be called from mod constructor. */
