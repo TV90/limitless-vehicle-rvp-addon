@@ -199,7 +199,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
             texture = lodState.texture;
         } else {
             model = display.getModel();
-            instance = proxy.getModelInstance();
+            // 调用本体载具模型实例访问器，为无远距 LOD 的代理载具复用其独立静态模型实例。
+            instance = proxy.getVehicleModelInstance();
             texture = display.getTexture();
             if (!model.hasBakedModel() || instance == null) {
                 return false;
