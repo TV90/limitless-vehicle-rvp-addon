@@ -21,6 +21,9 @@ import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.vehicle.client.resource.ClientAssetsManager;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -156,11 +159,23 @@ public final class RVP_RemoteAmmoVisualRenderer {
                 || entity instanceof RVP_BombEntity;
     }
 
+    private static boolean ensureVehicleDisplayInitialized(AbstractVehicle vehicle) {
+        if (vehicle.getVehicleModelInstance() != null) {
+            return true;
+        }
+        VehicleDisplay<?, ?> display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        if (display == null || display.getModel() == null || display.getTexture() == null) {
+            return false;
+        }
+        vehicle.initDisplayData(display);
+        return vehicle.getVehicleModelInstance() != null;
+    }
+
     /** 根据本体远程克隆更新时间进行最多五 tick 的短时外推。 */
-    private static Vec3 extrapolatedPosition(Minecraft minecraft, LocalVehiclePlayer.ServerEntity remote,
+    private static Vec3 extrapolatedPosition(Minecraft mc, LocalVehiclePlayer.ServerEntity remote,
                                              Entity entity, float partialTick) {
-        int updateTick = remote.updateTick == null ? minecraft.player.tickCount : remote.updateTick;
-        double age = Mth.clamp(minecraft.player.tickCount - updateTick + partialTick,
+        int updateTick = remote.updateTick == null ? mc.player.tickCount : remote.updateTick;
+        double age = Mth.clamp(mc.player.tickCount - updateTick + partialTick,
                 0.0D, MAX_EXTRAPOLATION_TICK);
         return entity.position().add(entity.getDeltaMovement().scale(age));
     }

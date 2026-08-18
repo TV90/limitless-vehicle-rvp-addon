@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.resource.vehicle;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.RotaryWingVehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -85,14 +85,14 @@ public class RVP_RotaryWingVehicleDisplay extends RotaryWingVehicleDisplay {
     }
 
     @Override
-    public IAnimationInstance<RotaryWingVehicleContext> createAnimationInstance(RotaryWingVehicle entity) {
-        IAnimationInstance<RotaryWingVehicleContext> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<RotaryWingVehicleContext> createAnimationInstance(RotaryWingVehicle entity) {
+        VehicleAnimationInstance<RotaryWingVehicleContext> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         RotaryWingVehicleContext context = result.getContext();
-        AnimationController<RotaryWingVehicleContext> controller = getAnimationController();
+        AnimationController<RotaryWingVehicleContext> controller = animationController;
         if (controller == null) {
             return result;
         }

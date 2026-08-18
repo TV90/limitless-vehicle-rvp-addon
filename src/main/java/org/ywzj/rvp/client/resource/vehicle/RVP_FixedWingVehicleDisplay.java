@@ -4,7 +4,7 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockA
 import net.minecraft.resources.ResourceLocation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.FixedWingVehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -119,14 +119,14 @@ public class RVP_FixedWingVehicleDisplay extends FixedWingVehicleDisplay {
     }
 
     @Override
-    public IAnimationInstance<FixedWingVehicleContext> createAnimationInstance(FixedWingVehicle entity) {
-        IAnimationInstance<FixedWingVehicleContext> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<FixedWingVehicleContext> createAnimationInstance(FixedWingVehicle entity) {
+        VehicleAnimationInstance<FixedWingVehicleContext> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         FixedWingVehicleContext context = result.getContext();
-        AnimationController<FixedWingVehicleContext> controller = getAnimationController();
+        AnimationController<FixedWingVehicleContext> controller = animationController;
         if (controller == null) {
             return result;
         }

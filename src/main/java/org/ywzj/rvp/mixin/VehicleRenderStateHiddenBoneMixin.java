@@ -15,7 +15,7 @@ import org.ywzj.rvp.client.render.RVP_StateBoneHider;
 import org.ywzj.rvp.debug.RVP_BoneHideDebug;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -54,13 +54,13 @@ public abstract class VehicleRenderStateHiddenBoneMixin {
         if (dbg) {
             lastDebugTick = tick;
         }
-        BakedModelInstance instance = vehicle.getModelInstance();
+        BakedModelInstance instance = vehicle.getVehicleModelInstance();
         if (instance == null) {
             // 与 VehicleRender.render 相同的兜底：未绑定实例时使用模型默认实例渲染。
             // 必须与渲染用的实例一致，否则骨骼可见性设置在另一个实例上不生效。
             VehicleBedrockModel model = ClientAssetsManager.INSTANCE
                     .getVehicleDisplay(vehicle.getDisplayId())
-                    .map(BaseDisplay::getModel)
+                    .map(VehicleDisplay::getModel)
                     .orElse(null);
             if (model != null && model.hasBakedModel()) {
                 instance = model.getDefaultModelInstance();
@@ -68,7 +68,7 @@ public abstract class VehicleRenderStateHiddenBoneMixin {
         }
         if (dbg) {
             RVP_BoneHideDebug.log("渲染注入触发：vehicle=" + vehicle + " displayId=" + vehicle.getDisplayId()
-                    + " getModelInstance=" + vehicle.getModelInstance() + " 使用实例=" + instance);
+                    + " getVehicleModelInstance=" + vehicle.getVehicleModelInstance() + " 使用实例=" + instance);
         }
         if (instance != null) {
             RVP_StateBoneHider.apply(vehicle, instance);

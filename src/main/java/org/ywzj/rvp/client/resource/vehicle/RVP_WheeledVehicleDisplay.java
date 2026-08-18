@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.resource.vehicle;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.WheeledVehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -85,14 +85,14 @@ public class RVP_WheeledVehicleDisplay extends WheeledVehicleDisplay {
     }
 
     @Override
-    public IAnimationInstance<WheeledVehicleContext> createAnimationInstance(WheeledVehicle entity) {
-        IAnimationInstance<WheeledVehicleContext> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<WheeledVehicleContext> createAnimationInstance(WheeledVehicle entity) {
+        VehicleAnimationInstance<WheeledVehicleContext> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         WheeledVehicleContext context = result.getContext();
-        AnimationController<WheeledVehicleContext> controller = getAnimationController();
+        AnimationController<WheeledVehicleContext> controller = animationController;
         if (controller == null) {
             return result;
         }

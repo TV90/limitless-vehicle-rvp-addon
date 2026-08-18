@@ -1,11 +1,11 @@
 package org.ywzj.rvp.client.resource.vehicle;
 
 import com.google.gson.annotations.SerializedName;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplayPojo;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplayPojo;
 
 import java.util.List;
 
-public class RVP_BaseDisplayPojo extends BaseDisplayPojo {
+public class RVP_BaseDisplayPojo extends VehicleDisplayPojo {
 
     @SerializedName("bedrock_backend")
     public String bedrockBackend = "vehicle";

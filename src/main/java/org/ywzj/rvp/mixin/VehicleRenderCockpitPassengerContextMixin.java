@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderContext;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
-import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
+import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -47,14 +47,14 @@ public abstract class VehicleRenderCockpitPassengerContextMixin<T extends Abstra
     }
 
     private static boolean ywzj_rvp$ensureModelInstance(AbstractVehicle vehicle) {
-        if (vehicle.getModelInstance() != null) {
+        if (vehicle.getVehicleModelInstance() != null) {
             return true;
         }
-        BaseDisplay display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
+        VehicleDisplay<?, ?> display = ClientAssetsManager.INSTANCE.getVehicleDisplay(vehicle.getDisplayId()).orElse(null);
         if (display == null || display.getModel() == null || display.getTexture() == null) {
             return false;
         }
         vehicle.initDisplayData(display);
-        return vehicle.getModelInstance() != null;
+        return vehicle.getVehicleModelInstance() != null;
     }
 }

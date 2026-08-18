@@ -3,7 +3,7 @@ package org.ywzj.rvp.client.resource.vehicle;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
 import org.ywzj.rvp.client.render.animation.runner.RVP_SwitchableRunnerFactory;
 import org.ywzj.rvp.util.RadarUnitSwitchableAdapter;
-import org.ywzj.vehicle.api.animation.IAnimationInstance;
+import org.ywzj.vehicle.client.render.animation.VehicleAnimationInstance;
 import org.ywzj.vehicle.client.render.animation.context.VehicleContext;
 import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -85,14 +85,14 @@ public class RVP_SimpleVehicleDisplay extends SimpleVehicleDisplay {
     }
 
     @Override
-    public IAnimationInstance<VehicleContext<AbstractVehicle>> createAnimationInstance(AbstractVehicle entity) {
-        IAnimationInstance<VehicleContext<AbstractVehicle>> result = super.createAnimationInstance(entity);
+    public VehicleAnimationInstance<VehicleContext<AbstractVehicle>> createAnimationInstance(AbstractVehicle entity) {
+        VehicleAnimationInstance<VehicleContext<AbstractVehicle>> result = super.createAnimationInstance(entity);
         if (result == null) {
             return null;
         }
 
         VehicleContext<AbstractVehicle> context = result.getContext();
-        AnimationController<VehicleContext<AbstractVehicle>> controller = getAnimationController();
+        AnimationController<VehicleContext<AbstractVehicle>> controller = animationController;
         if (controller == null) {
             return result;
         }
