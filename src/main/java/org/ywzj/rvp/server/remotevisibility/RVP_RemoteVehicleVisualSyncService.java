@@ -311,7 +311,14 @@ public final class RVP_RemoteVehicleVisualSyncService {
             long sequence,
             List<S2CRemoteVehicleVisualSnapshot.Entry> entries) {
         S2CRemoteVehicleVisualSnapshot snapshot = new S2CRemoteVehicleVisualSnapshot(
-                dimension, serverGameTime, sequence, entries);
+                dimension,
+                serverGameTime,
+                sequence,
+                RVP_CommonConfig.isRemoteVehicleAggressiveLodBillboardEnabled(),
+                RVP_CommonConfig.isRemoteVehicleForceAllVehicleBillboardEnabled(),
+                RVP_CommonConfig.getRemoteVehicleBillboardSource(),
+                RVP_CommonConfig.getRemoteVehicleDynamicSnapshotWarmupMode(),
+                entries);
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), snapshot);
     }
 

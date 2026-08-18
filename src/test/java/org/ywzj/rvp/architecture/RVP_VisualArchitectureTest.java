@@ -110,8 +110,11 @@ class RVP_VisualArchitectureTest {
                 + "RVP_ClientRemoteVehicleVisualState.java");
         Path renderer = Path.of("src/main/java/org/ywzj/rvp/client/render/remotevisibility/"
                 + "RVP_RemoteVehicleVisualRenderer.java");
+        Path billboardManager = Path.of("src/main/java/org/ywzj/rvp/client/render/remotevisibility/"
+                + "RVP_RemoteVehicleBillboardManager.java");
         String stateText = Files.readString(state);
         String rendererText = Files.readString(renderer);
+        String billboardManagerText = Files.readString(billboardManager);
 
         assertFalse(stateText.contains(".addEntity("),
                 "remote vehicle proxies must never join ClientLevel");
@@ -126,6 +129,12 @@ class RVP_VisualArchitectureTest {
         assertTrue(rendererText.contains("RVP_RemoteVehicleRenderScope.open")
                         && rendererText.contains("REMOTE_BUFFERS.endBatch()"),
                 "remote vehicle vertices must be submitted inside the scoped projection and fog pass");
+        assertFalse(billboardManagerText.contains("EntityRenderDispatcher")
+                        || billboardManagerText.contains("LocalVehiclePlayer"),
+                "remote vehicle billboards must stay on the independent static body path");
+        assertTrue(rendererText.indexOf("prepareOneSnapshot")
+                        < rendererText.indexOf("RVP_RemoteVehicleRenderScope.open"),
+                "dynamic snapshots must be prepared before entering the remote projection scope");
     }
 
     @Test

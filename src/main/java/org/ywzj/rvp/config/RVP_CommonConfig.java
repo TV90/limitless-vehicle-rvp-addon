@@ -51,12 +51,38 @@ public class RVP_CommonConfig {
         VISIBLE_TARGETS
     }
 
+    /** 超视距载具 Billboard 使用的图像来源。 */
+    public enum RemoteVehicleBillboardSource {
+        /** 复用 display JSON 已配置的透明槽位缩略图。 */
+        SLOT_TEXTURE,
+        /** 从基础静态高模按观察者相对视角生成并缓存透明快照。 */
+        DYNAMIC_SNAPSHOT
+    }
+
+    /** 动态 3D 快照尚未生成时采用的临时显示方式。 */
+    public enum RemoteVehicleSnapshotWarmupMode {
+        /** 暂不绘制目标，等待受限速保护的快照生成完成。 */
+        HIDE,
+        /** 有槽位缩略图时临时显示缩略图；缺图时暂不绘制。 */
+        SLOT_TEXTURE,
+        /** 临时绘制基础静态高模，并继续受客户端高模预算限制。 */
+        MODEL
+    }
+
     /** 放置载具时是否自动补充创造弹药。 */
     private final ForgeConfigSpec.BooleanValue spawnVehicleWithCreativeAmmo;
     /** 是否启用服务端权威的载具超视距同步。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
     /** 客户端是否剔除普通空气环境的地形雾。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRemoveTerrainFog;
+    /** 是否把没有任何有效整模型 LOD 的超视距载具改为 Billboard。 */
+    private final ForgeConfigSpec.BooleanValue remoteVehicleAggressiveLodBillboard;
+    /** 是否强制所有超视距载具使用 Billboard。 */
+    private final ForgeConfigSpec.BooleanValue remoteVehicleForceAllVehicleBillboard;
+    /** 超视距载具 Billboard 使用的服务端权威图像来源。 */
+    private final ForgeConfigSpec.EnumValue<RemoteVehicleBillboardSource> remoteVehicleBillboardSource;
+    /** 动态 3D 快照预热期间使用的服务端权威显示方式。 */
+    private final ForgeConfigSpec.EnumValue<RemoteVehicleSnapshotWarmupMode> remoteVehicleDynamicSnapshotWarmupMode;
     /** 服务端采用的载具超视距授权模式。 */
     private final ForgeConfigSpec.EnumValue<VisibilityMode> remoteVehicleVisibilityMode;
     /** 载具超视距同步最大水平距离，单位格。 */
@@ -103,6 +129,22 @@ public class RVP_CommonConfig {
                 .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。",
                         "仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true")
                 .define("removeTerrainFog", true);
+        remoteVehicleAggressiveLodBillboard = builder
+                .comment("是否把没有任何成功烘焙 LOD 规则的超视距载具改为 Billboard。",
+                        "该值由服务端随远距载具完整快照强制同步。默认：true")
+                .define("aggressiveLodBillboard", true);
+        remoteVehicleForceAllVehicleBillboard = builder
+                .comment("是否强制所有超视距载具使用 Billboard；启用后覆盖 aggressiveLodBillboard。",
+                        "该值由服务端随远距载具完整快照强制同步。默认：false")
+                .define("forceAllVehicleBillboard", false);
+        remoteVehicleBillboardSource = builder
+                .comment("Billboard 图像来源：SLOT_TEXTURE 或 DYNAMIC_SNAPSHOT。",
+                        "该值由服务端随远距载具完整快照强制同步。默认：DYNAMIC_SNAPSHOT")
+                .defineEnum("billboardSource", RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
+        remoteVehicleDynamicSnapshotWarmupMode = builder
+                .comment("动态快照尚未生成时的显示方式：HIDE、SLOT_TEXTURE 或 MODEL。",
+                        "MODEL 会绘制基础静态高模并受客户端高模预算限制。默认：HIDE")
+                .defineEnum("dynamicSnapshotWarmupMode", RemoteVehicleSnapshotWarmupMode.HIDE);
         remoteVehicleVisibilityMode = builder
                 .comment("载具超视距授权模式：OFF、RADAR_DETECTED、VEHICLE_OCCUPANTS、ALL_PLAYERS。",
                         "默认：VEHICLE_OCCUPANTS")
@@ -159,6 +201,30 @@ public class RVP_CommonConfig {
     /** 返回客户端是否应在载具超视距渲染启用时剔除普通地形雾。 */
     public static boolean shouldRemoveRemoteVehicleTerrainFog() {
         return INSTANCE == null || INSTANCE.remoteVehicleRemoveTerrainFog.get();
+    }
+
+    /** 返回服务端是否要求无有效 LOD 的超视距载具使用 Billboard。 */
+    public static boolean isRemoteVehicleAggressiveLodBillboardEnabled() {
+        return INSTANCE == null || INSTANCE.remoteVehicleAggressiveLodBillboard.get();
+    }
+
+    /** 返回服务端是否强制所有超视距载具使用 Billboard。 */
+    public static boolean isRemoteVehicleForceAllVehicleBillboardEnabled() {
+        return INSTANCE != null && INSTANCE.remoteVehicleForceAllVehicleBillboard.get();
+    }
+
+    /** 返回服务端权威的超视距载具 Billboard 图像来源。 */
+    public static RemoteVehicleBillboardSource getRemoteVehicleBillboardSource() {
+        return INSTANCE != null
+                ? INSTANCE.remoteVehicleBillboardSource.get()
+                : RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT;
+    }
+
+    /** 返回服务端权威的动态 3D 快照预热显示方式。 */
+    public static RemoteVehicleSnapshotWarmupMode getRemoteVehicleDynamicSnapshotWarmupMode() {
+        return INSTANCE != null
+                ? INSTANCE.remoteVehicleDynamicSnapshotWarmupMode.get()
+                : RemoteVehicleSnapshotWarmupMode.HIDE;
     }
 
     /** 返回服务端权威的载具超视距授权模式。 */

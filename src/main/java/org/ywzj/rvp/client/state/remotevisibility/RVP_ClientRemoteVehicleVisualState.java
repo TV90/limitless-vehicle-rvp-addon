@@ -10,6 +10,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.config.RVP_ClientConfig;
+import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
+import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -35,6 +37,8 @@ public final class RVP_ClientRemoteVehicleVisualState {
     private static long lastSequence = -1L;
     /** 按服务端实体 ID 保存的非世界代理与时间线。 */
     private static final Map<Integer, ProxyState> PROXIES = new HashMap<>();
+    /** 最近一份有效完整快照携带的服务端权威 Billboard 策略。 */
+    private static RenderPolicy renderPolicy = RenderPolicy.DEFAULT;
 
     private RVP_ClientRemoteVehicleVisualState() {
     }
@@ -55,6 +59,11 @@ public final class RVP_ClientRemoteVehicleVisualState {
             return;
         }
         lastSequence = message.sequence();
+        renderPolicy = new RenderPolicy(
+                message.aggressiveLodBillboard(),
+                message.forceAllVehicleBillboard(),
+                message.billboardSource(),
+                message.dynamicSnapshotWarmupMode());
 
         long clientTick = level.getGameTime();
         Set<Integer> retainedIds = new HashSet<>();
@@ -133,6 +142,12 @@ public final class RVP_ClientRemoteVehicleVisualState {
         PROXIES.clear();
         dimension = null;
         lastSequence = -1L;
+        renderPolicy = RenderPolicy.DEFAULT;
+    }
+
+    /** 返回最近一份有效服务端快照携带的只读 Billboard 策略。 */
+    public static RenderPolicy renderPolicy() {
+        return renderPolicy;
     }
 
     /** 返回当前保存的代理数量，供测试和调试统计使用。 */
@@ -166,6 +181,31 @@ public final class RVP_ClientRemoteVehicleVisualState {
     /** 判断完整快照序号是否严格晚于客户端已接受序号。 */
     static boolean isNewerSequence(long sequence, long acceptedSequence) {
         return sequence > acceptedSequence;
+    }
+
+    /**
+     * 服务端权威的远距载具 Billboard 策略。
+     *
+     * @param aggressiveLodBillboard 是否把没有有效 LOD 的目标改为 Billboard
+     * @param forceAllVehicleBillboard 是否强制所有目标使用 Billboard
+     * @param billboardSource Billboard 图像来源
+     * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
+     */
+    public record RenderPolicy(boolean aggressiveLodBillboard,
+                               boolean forceAllVehicleBillboard,
+                               RemoteVehicleBillboardSource billboardSource,
+                               RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode) {
+        /** 尚未收到服务端快照时使用的协议默认策略。 */
+        public static final RenderPolicy DEFAULT = new RenderPolicy(
+                true,
+                false,
+                RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
+                RemoteVehicleSnapshotWarmupMode.HIDE);
+
+        public RenderPolicy {
+            java.util.Objects.requireNonNull(billboardSource, "billboardSource");
+            java.util.Objects.requireNonNull(dynamicSnapshotWarmupMode, "dynamicSnapshotWarmupMode");
+        }
     }
 
     /** 使用最短环绕角差插值角度，正确处理 {@code 179 -> -179}。 */

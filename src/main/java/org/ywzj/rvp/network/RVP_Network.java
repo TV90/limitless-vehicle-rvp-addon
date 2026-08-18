@@ -12,7 +12,7 @@ import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
-    private static final String PROTOCOL = "3";
+    private static final String PROTOCOL = "4";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

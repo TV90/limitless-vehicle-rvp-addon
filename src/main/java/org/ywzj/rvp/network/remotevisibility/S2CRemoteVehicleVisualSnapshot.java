@@ -5,6 +5,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
+import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
+import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
 
 import java.util.List;
 import java.util.Objects;
@@ -16,12 +18,20 @@ import java.util.function.Supplier;
  * @param dimension 快照所属维度
  * @param serverGameTime 服务端生成快照时的世界时间，单位 tick
  * @param sequence 当前玩家连接内单调递增且非负的快照序号
+ * @param aggressiveLodBillboard 是否把没有有效 LOD 的目标改为 Billboard
+ * @param forceAllVehicleBillboard 是否强制所有目标使用 Billboard
+ * @param billboardSource Billboard 图像来源
+ * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
  * @param entries 当前服务端授权的完整载具视觉条目集合
  */
 public record S2CRemoteVehicleVisualSnapshot(
         ResourceLocation dimension,
         long serverGameTime,
         long sequence,
+        boolean aggressiveLodBillboard,
+        boolean forceAllVehicleBillboard,
+        RemoteVehicleBillboardSource billboardSource,
+        RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode,
         List<Entry> entries) {
     /** 单份载具视觉快照允许的最大条目数。 */
     public static final int MAX_ENTRIES = 1024;
@@ -35,6 +45,8 @@ public record S2CRemoteVehicleVisualSnapshot(
         if (sequence < 0L) {
             throw new IllegalArgumentException("RVP remote vehicle sequence must be non-negative");
         }
+        Objects.requireNonNull(billboardSource, "billboardSource");
+        Objects.requireNonNull(dynamicSnapshotWarmupMode, "dynamicSnapshotWarmupMode");
         Objects.requireNonNull(entries, "entries");
         if (entries.size() > MAX_ENTRIES) {
             throw new IllegalArgumentException("RVP remote vehicle entry count exceeds 1024");
@@ -50,6 +62,10 @@ public record S2CRemoteVehicleVisualSnapshot(
         buffer.writeResourceLocation(message.dimension);
         buffer.writeLong(message.serverGameTime);
         buffer.writeLong(message.sequence);
+        buffer.writeBoolean(message.aggressiveLodBillboard);
+        buffer.writeBoolean(message.forceAllVehicleBillboard);
+        buffer.writeEnum(message.billboardSource);
+        buffer.writeEnum(message.dynamicSnapshotWarmupMode);
         buffer.writeVarInt(message.entries.size());
         for (Entry entry : message.entries) {
             writeEntry(buffer, entry);
@@ -65,6 +81,11 @@ public record S2CRemoteVehicleVisualSnapshot(
             if (sequence < 0L) {
                 throw new DecoderException("RVP remote vehicle sequence must be non-negative");
             }
+            boolean aggressiveLodBillboard = buffer.readBoolean();
+            boolean forceAllVehicleBillboard = buffer.readBoolean();
+            RemoteVehicleBillboardSource billboardSource = buffer.readEnum(RemoteVehicleBillboardSource.class);
+            RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode =
+                    buffer.readEnum(RemoteVehicleSnapshotWarmupMode.class);
             int entryCount = buffer.readVarInt();
             if (entryCount < 0 || entryCount > MAX_ENTRIES) {
                 throw new DecoderException("RVP remote vehicle entry count exceeds 1024");
@@ -73,7 +94,10 @@ public record S2CRemoteVehicleVisualSnapshot(
             for (int index = 0; index < entryCount; index++) {
                 entries.add(readEntry(buffer));
             }
-            return new S2CRemoteVehicleVisualSnapshot(dimension, serverGameTime, sequence, entries);
+            return new S2CRemoteVehicleVisualSnapshot(
+                    dimension, serverGameTime, sequence,
+                    aggressiveLodBillboard, forceAllVehicleBillboard,
+                    billboardSource, dynamicSnapshotWarmupMode, entries);
         } catch (DecoderException exception) {
             throw exception;
         } catch (RuntimeException exception) {

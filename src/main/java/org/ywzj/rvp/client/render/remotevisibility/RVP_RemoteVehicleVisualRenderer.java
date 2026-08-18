@@ -21,6 +21,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.FarPlaneDemand;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
@@ -101,11 +102,32 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 continue;
             }
             AABB cullingBox = AABB.ofSize(entry.position(), structureSize, structureSize, structureSize);
-            boolean fallbackHighModel = !RVP_LodModelManager.hasRemoteLod(entry.proxy());
+            BaseDisplay display = ClientAssetsManager.INSTANCE
+                    .getVehicleDisplay(entry.proxy().getDisplayId()).orElse(null);
+            if (display == null) {
+                continue;
+            }
+            boolean hasValidLod = RVP_LodModelManager.hasRemoteLod(entry.proxy());
+            // 调用独立 Billboard 管理器，依据已校验的服务端策略建立候选渲染计划。
+            BillboardPlan billboardPlan = RVP_RemoteVehicleBillboardManager.plan(
+                    RVP_ClientRemoteVehicleVisualState.renderPolicy(),
+                    entry.proxy(),
+                    display,
+                    entry.position(),
+                    entry.xRot(),
+                    entry.yRot(),
+                    entry.zRot(),
+                    structureSize,
+                    cameraPosition,
+                    hasValidLod);
+            boolean fallbackHighModel = RVP_RemoteVehicleBillboardManager
+                    .usesHighModelBudget(billboardPlan)
+                    || (RVP_RemoteVehicleBillboardManager.usesNormalModelPath(billboardPlan)
+                    && !hasValidLod);
             double contribution = structureSize * structureSize / Math.max(1.0D, distanceSquared);
             double cameraDistance = Math.sqrt(distanceSquared);
             preCandidates.add(new CandidateContext(entry, cameraDistance, cullingBox,
-                    contribution, fallbackHighModel));
+                    contribution, fallbackHighModel, billboardPlan));
             farPlaneDemands.add(new FarPlaneDemand(cameraDistance, cullRadius));
         }
         if (preCandidates.isEmpty()) {
@@ -147,14 +169,24 @@ public final class RVP_RemoteVehicleVisualRenderer {
             return;
         }
 
+        List<BillboardPlan> selectedBillboardPlans = selected.stream()
+                .map(candidate -> contexts.get(candidate.entityId()))
+                .filter(java.util.Objects::nonNull)
+                .map(CandidateContext::billboardPlan)
+                .toList();
+        // 调用独立 Billboard 管理器，在切换远距投影前按预算优先级预热至多一张动态快照。
+        RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(selectedBillboardPlans);
+
         if (projectionPlan == null) {
-            renderSelected(level, selected, contexts, cameraPosition, event.getPoseStack());
+            renderSelected(level, selected, contexts, cameraPosition,
+                    event.getCamera().rotation(), event.getPoseStack());
             return;
         }
         // 调用 RVP 渲染作用域，在隔离批次期间临时应用并最终恢复投影与完整雾状态。
         try (RVP_RemoteVehicleRenderScope ignored =
                      RVP_RemoteVehicleRenderScope.open(projectionPlan, event.getCamera())) {
-            renderSelected(level, selected, contexts, cameraPosition, event.getPoseStack());
+            renderSelected(level, selected, contexts, cameraPosition,
+                    event.getCamera().rotation(), event.getPoseStack());
         }
     }
 
@@ -162,12 +194,15 @@ public final class RVP_RemoteVehicleVisualRenderer {
     private static void renderSelected(ClientLevel level,
                                        List<RVP_RemoteVehicleRenderBudget.Candidate> selected,
                                        Map<Integer, CandidateContext> contexts,
-                                       Vec3 cameraPosition, PoseStack poseStack) {
+                                       Vec3 cameraPosition,
+                                       org.joml.Quaternionf cameraOrientation,
+                                       PoseStack poseStack) {
         try {
             for (RVP_RemoteVehicleRenderBudget.Candidate candidate : selected) {
                 CandidateContext context = contexts.get(candidate.entityId());
                 if (context != null) {
-                    renderVehicle(level, context, cameraPosition, poseStack, REMOTE_BUFFERS);
+                    renderVehicle(level, context, cameraPosition, cameraOrientation,
+                            poseStack, REMOTE_BUFFERS);
                 }
             }
         } finally {
@@ -178,14 +213,29 @@ public final class RVP_RemoteVehicleVisualRenderer {
 
     /** 直接绘制 LOD 或静态原模型主体，不进入本体完整 EntityRenderer。 */
     private static boolean renderVehicle(ClientLevel level, CandidateContext context, Vec3 cameraPosition,
+                                         org.joml.Quaternionf cameraOrientation,
                                          PoseStack poseStack, MultiBufferSource.BufferSource buffers) {
         RVP_ClientRemoteVehicleVisualState.RenderEntry entry = context.entry;
         AbstractVehicle proxy = entry.proxy();
         BaseDisplay display = ClientAssetsManager.INSTANCE
                 .getVehicleDisplay(proxy.getDisplayId()).orElse(null);
-        if (display == null || display.getModel() == null || display.getTexture() == null
-                || proxy.centerOffset == null) {
+        if (display == null || proxy.centerOffset == null) {
             return false;
+        }
+
+        int packedLight = packedLight(level, entry.position(), entry.destroyed());
+        BillboardPlan billboardPlan = context.billboardPlan;
+        if (!RVP_RemoteVehicleBillboardManager.usesNormalModelPath(billboardPlan)) {
+            // 调用独立 Billboard 管理器，提交槽位缩略图或已缓存动态快照的世界四边形。
+            if (RVP_RemoteVehicleBillboardManager.renderBillboard(
+                    billboardPlan, poseStack, buffers, cameraPosition, cameraOrientation, packedLight)) {
+                return true;
+            }
+            if (!RVP_RemoteVehicleBillboardManager.usesHighModelBudget(billboardPlan)) {
+                return false;
+            }
+            return renderBaseHighModel(display, proxy, entry, context.cameraDistance,
+                    cameraPosition, poseStack, buffers, packedLight);
         }
 
         RVP_LodModelManager.VehicleLodState lodState = RVP_LodModelManager.resolveRemote(
@@ -212,7 +262,6 @@ public final class RVP_RemoteVehicleVisualRenderer {
             return false;
         }
 
-        int packedLight = packedLight(level, entry.position(), entry.destroyed());
         ProxyPose oldPose = ProxyPose.capture(proxy);
         applyRenderPose(proxy, entry);
         poseStack.pushPose();
@@ -221,6 +270,40 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     entry.position().y - cameraPosition.y,
                     entry.position().z - cameraPosition.z);
             // 调用本体公开旋转辅助，以与正常载具保持完全一致的 Y-X-Z 枢轴旋转顺序。
+            VehicleRender.applyVehicleRotation(proxy, 1.0F, poseStack);
+            model.renderToBuffer(instance, poseStack, buffers, texture, packedLight);
+            return true;
+        } finally {
+            poseStack.popPose();
+            oldPose.restore(proxy);
+        }
+    }
+
+    /** 绘制 Billboard 缺图、失败或 MODEL 预热模式要求的基础静态高模。 */
+    private static boolean renderBaseHighModel(BaseDisplay display,
+                                               AbstractVehicle proxy,
+                                               RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
+                                               double cameraDistance,
+                                               Vec3 cameraPosition,
+                                               PoseStack poseStack,
+                                               MultiBufferSource.BufferSource buffers,
+                                               int packedLight) {
+        VehicleBedrockModel model = display.getModel();
+        BakedModelInstance instance = proxy.getVehicleModelInstance();
+        ResourceLocation texture = display.getTexture();
+        if (model == null || !model.hasBakedModel() || instance == null || texture == null) {
+            return false;
+        }
+        // 调用 RVP 显式距离骨骼入口，保持高模降级仍可消费 display 的既有隐藏规则。
+        RVP_DistanceBoneHider.apply(proxy, instance, cameraDistance);
+        ProxyPose oldPose = ProxyPose.capture(proxy);
+        applyRenderPose(proxy, entry);
+        poseStack.pushPose();
+        try {
+            poseStack.translate(entry.position().x - cameraPosition.x,
+                    entry.position().y - cameraPosition.y,
+                    entry.position().z - cameraPosition.z);
+            // 调用本体公开旋转辅助，使基础高模降级保持正常载具的 Y-X-Z 枢轴顺序。
             VehicleRender.applyVehicleRotation(proxy, 1.0F, poseStack);
             model.renderToBuffer(instance, poseStack, buffers, texture, packedLight);
             return true;
@@ -274,10 +357,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
      * @param cullingBox 覆盖静态主体的世界坐标裁剪包围盒
      * @param screenContribution 结构尺寸相对距离得到的屏幕贡献分数
      * @param fallbackHighModel 是否没有整模型 LOD、需要使用静态原模型回退
+     * @param billboardPlan 服务端策略和本地资源共同生成的 Billboard 计划
      */
     private record CandidateContext(RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
                                     double cameraDistance, AABB cullingBox,
-                                    double screenContribution, boolean fallbackHighModel) {
+                                    double screenContribution, boolean fallbackHighModel,
+                                    BillboardPlan billboardPlan) {
     }
 
     /** 渲染临时改写前的代理位置与三轴姿态。 */

@@ -12,6 +12,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
+import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricScreenFeedback;
@@ -38,6 +39,8 @@ public final class RVP_ClientVisualEvents {
             clearRemoteAmmoVisuals();
             // 调用 RVP 载具视觉状态，清除退出世界后遗留的非世界代理。
             RVP_ClientRemoteVehicleVisualState.clear();
+            // 调用 RVP Billboard 管理器，释放退出世界后遗留的动态纹理与 RenderTarget。
+            RVP_RemoteVehicleBillboardManager.clear();
             clearThermobaricFeedback();
             return;
         }
@@ -80,6 +83,8 @@ public final class RVP_ClientVisualEvents {
             clearRemoteAmmoVisuals();
             // 调用 RVP 载具视觉状态，确保换维度后不复用旧世界代理与样本。
             RVP_ClientRemoteVehicleVisualState.clear();
+            // 调用 RVP Billboard 管理器，确保换维度后不复用旧世界的离屏快照。
+            RVP_RemoteVehicleBillboardManager.clear();
             clearThermobaricFeedback();
         }
     }
