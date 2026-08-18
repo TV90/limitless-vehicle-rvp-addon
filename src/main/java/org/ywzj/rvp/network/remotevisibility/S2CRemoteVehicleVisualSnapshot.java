@@ -105,7 +105,7 @@ public record S2CRemoteVehicleVisualSnapshot(
         }
     }
 
-    /** 通过公共 NOOP 端口分发快照，阶段 B 再安装真实客户端状态消费者。 */
+    /** 通过公共端口分发快照；物理客户端启动时安装真实状态消费者，未安装时保持 NOOP。 */
     public static void handle(S2CRemoteVehicleVisualSnapshot message,
                               Supplier<NetworkEvent.Context> contextSupplier) {
         NetworkEvent.Context context = contextSupplier.get();

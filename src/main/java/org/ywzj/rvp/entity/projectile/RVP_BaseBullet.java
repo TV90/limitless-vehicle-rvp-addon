@@ -1340,6 +1340,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         long rvpTickStartNanos = traceLifecycle ? System.nanoTime() : 0L;
         try {
             if (this instanceof RVP_BulletEntity bullet) {
+                // 调用机枪 Bullet 的专用 Tick，执行既有碰撞、运动、引信与寿命链路。
                 bullet.tickBullet();
                 return;
             }
@@ -1365,15 +1366,6 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         () -> "owner=" + RVP_ProjectileLifecycleDebug.formatEntity(getOwner())
                                 + " shooterVehicle=" + RVP_ProjectileLifecycleDebug.formatEntity(shooterVehicle)
                                 + " action=discard");
-                discard();
-                return;
-            }
-
-            // 下一位置进入未加载区块 → 直接丢弃：区块卸载后实体不再 tick，若继续飞行会在未加载
-            // 区块冻结挂起；在还处于已加载区块时提前丢弃（覆盖所有弹体，含机炮弹）。
-            Vec3 nextPos = position().add(getDeltaMovement());
-            if (!level().hasChunkAt(new BlockPos(
-                    Mth.floor(nextPos.x), Mth.floor(nextPos.y), Mth.floor(nextPos.z)))) {
                 discard();
                 return;
             }

@@ -1,8 +1,10 @@
 package org.ywzj.rvp.entity.projectile;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.EntityType;
@@ -62,8 +64,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
                                org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle,
                                LivingEntity shooter, Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         super.initFromWeapon(data, kind, vehicle, shooter, spawnPos, aim, initialMotion);
-        // keepChunkLoaded 保持基类 RVP_BaseBullet 构造器的 true：机炮子弹随飞强载区块，
-        // 避免飞出玩家视距后因区块卸载而停飞/丢失（不要设回 false）。
+        // keepChunkLoaded 保持基类 RVP_BaseBullet 构造器的 false。
         this.startPos = spawnPos;
         RVP_EffectsData effects = data.getEffectsData();
         this.caliber = effects.getCaliber();
@@ -93,7 +94,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             return;
         }
         tickBulletMotionAndFacing();
-        if (!level().isClientSide()) {
+        if (!level().isClientSide() && isAlive()) {
             tickBulletServerPostMotion();
         }
     }
@@ -221,6 +222,13 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         double nextPosX = getX() + x;
         double nextPosY = getY() + y;
         double nextPosZ = getZ() + z;
+        // 调用服务端实体 Tick 就绪查询，在移动前确认目标区块不仅已加载且允许实体 Tick；
+        // 机枪 Bullet 不强加载区块，目标区块未就绪时直接丢弃，避免跨入后冻结残留。
+        if (level() instanceof ServerLevel serverLevel
+                && !serverLevel.isPositionEntityTicking(BlockPos.containing(nextPosX, nextPosY, nextPosZ))) {
+            discard();
+            return;
+        }
         setPos(nextPosX, nextPosY, nextPosZ);
         flightDistance += movement.length();
 
