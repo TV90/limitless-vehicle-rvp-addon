@@ -116,6 +116,13 @@ public final class RVP_ProjectileSpawner {
         }
 
         if (lockTarget != null) {
+            // 兜底归一：若锁定的目标是坐在载具内的乘员（如 GunnerEntity 炮手 AI），
+            // 统一归一为所属载具本体，避免导弹 targetEntity 指向乘员导致
+            // gunner 反制判定（要求 targetEntity==载具本体）永不成立。
+            Entity lockVehicle = lockTarget.getVehicle();
+            if (lockVehicle instanceof AbstractVehicle) {
+                lockTarget = lockVehicle;
+            }
             projectile.setTargetEntity(lockTarget);
             if (projectile instanceof RVP_MissileEntity missile
                     && (data.usesGuidanceType(RVP_EnumGuidanceType.ARH)

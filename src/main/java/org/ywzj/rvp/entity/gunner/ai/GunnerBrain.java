@@ -597,7 +597,14 @@ public final class GunnerBrain {
             return;
         }
         RVP_MissileEntity threat = findInfraredMissileThreat(gunner, vehicle);
-        if (threat == null || !RVP_CountermeasureRuntimeManager.hasSystem(vehicle, RVP_EnumCountermeasureType.SMOKE)) {
+        boolean hasSmoke = RVP_CountermeasureRuntimeManager.hasSystem(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        if (gunner.tickCount % 100 == 0) {
+            LOGGER.info("[RVP-Gunner-DEBUG] 载具={} tick={} smoke扫描: threat={}({}) hasSmoke={}",
+                    vehicle.getVehicleId(), gunner.tickCount,
+                    threat == null ? "null" : threat.getId(),
+                    threat == null ? "null" : threat.getActiveGuidanceType(), hasSmoke);
+        }
+        if (threat == null || !hasSmoke) {
             return;
         }
         RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.SMOKE);

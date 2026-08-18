@@ -507,7 +507,11 @@ public class RVP_ClientHmdState {
         // （客户端 HMD IR 扫描掉帧）；maxRange 距离闸门保留在下方循环内
         for (Entity entity : mc.level.entitiesForRendering()) {
             if (entity == vehicle || !entity.isAlive() || entity == mc.player
-                    || (entity instanceof AbstractVehicle v && v.isDestroyed())) {
+                    || (entity instanceof AbstractVehicle v && v.isDestroyed())
+                    // 排除乘员/炮手等坐在载具内的实体：导引头应锁定载具本体而非车内小人，
+                    // 否则导弹 targetEntity 指向乘员（如 GunnerEntity），gunner 反制判定
+                    // （要求 targetEntity==载具本体）永不成立，导致不抛烟/不规避。
+                    || entity.getVehicle() != null) {
                 continue;
             }
             if (irUsesNewLaunchData && irLaunchWeapon != null

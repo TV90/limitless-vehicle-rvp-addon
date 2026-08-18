@@ -292,6 +292,18 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                     this.getId(), targetEntity.getId(), WarnType.MISSILE_LAUNCH, "MSL");
             // 调用本体网络通道，向所有跟踪目标实体的玩家广播告警包。
             Channel.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> targetEntity), packet);
+            // RVP 无钳制补发：直接向目标载具乘客发 RVP 告警包，客户端写入 targets 后
+            // 即使目标相对本机俯仰角超 ±45°（本体 WarningReceiver 会丢弃）也能告警。
+            if (targetEntity instanceof AbstractVehicle target) {
+                for (Entity passenger : target.getPassengers()) {
+                    // 仅向服务端玩家乘客补发（RVP 包不能进本体 Channel，走自有频道）
+                    if (passenger instanceof ServerPlayer player) {
+                        RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                                new org.ywzj.rvp.network.S2CRvpWarn(
+                                        this.getId(), target.getId(), WarnType.MISSILE_LAUNCH, "MSL"));
+                    }
+                }
+            }
         }
     }
 
