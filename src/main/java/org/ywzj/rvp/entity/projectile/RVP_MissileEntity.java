@@ -3,6 +3,7 @@ package org.ywzj.rvp.entity.projectile;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -538,6 +539,21 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         Vec3 start = shooterVehicle.getBoundingBox().getCenter();
         Vec3 end = getBoundingBox().getCenter();
+        // 视距门控：无线链路只在玩家可见视距内维持，超出视距的导弹已离开发射者可视范围，
+        // 不执行 level().clip 否则超长射线会逐 tick 同步加载射线沿途未加载区块，导致服务端
+        // 区块生成风暴和严重 TPS 掉刻（目标点在视距外时与经验现象完全吻合）。
+        double viewRange = resolveRadioLinkViewDistance();
+        if (start.distanceToSqr(end) > viewRange * viewRange) {
+            hitlLinkBlocked = true;
+            hitlLinkBlockedTicks++;
+            if (hitlLinkBlockedTicks >= 40) {
+                hitlLinkSevered = true;
+                hitlEnabled = false;
+                clearTarget();
+            }
+            maybeSyncHitlLinkState();
+            return;
+        }
         BlockHitResult hit = level().clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, this));
         boolean blockedNow = hit.getType() == HitResult.Type.BLOCK;
 
@@ -554,6 +570,21 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             clearTarget();
         }
         maybeSyncHitlLinkState();
+    }
+
+    /**
+     * 解析无线链路维持的最大直线距离（玩家可见视距）。
+     * 服务端为权威：取玩家列表视距（区块数）×16 换算成格数，保证射线始终落在已加载
+     * 区块内，杜绝 level().clip 逐 tick 同步加载视距外区块。任何异常回退 128 格安全值。
+     */
+    private double resolveRadioLinkViewDistance() {
+        if (level() instanceof ServerLevel serverLevel) {
+            int viewDistanceBlocks = serverLevel.getServer().getPlayerList().getViewDistance() * 16;
+            if (viewDistanceBlocks > 0) {
+                return viewDistanceBlocks;
+            }
+        }
+        return 128.0D;
     }
 
     private void maybeSyncHitlLinkState() {
