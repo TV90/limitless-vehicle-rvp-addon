@@ -544,12 +544,17 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
     }
 
-    /** Weapons that require continuous operator involvement (laser spot or beam riding). */
+    /** 需要操作手持续提供世界瞄准点的制导类型（激光点、驾束或视线指令）。 */
     public boolean isOperatorGuided() {
-        RVP_GuidanceData guidance = getGuidanceData();
-        return guidance.getGuidanceType() == RVP_EnumGuidanceType.LH
-                || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH
-                || guidance.getGuidanceType() == RVP_EnumGuidanceType.LBR;
+        return isOperatorGuidanceType(getGuidanceData().getGuidanceType());
+    }
+
+    /** 判断制导类型是否需要客户端或 AI 持续同步世界瞄准点。 */
+    static boolean isOperatorGuidanceType(@Nullable RVP_EnumGuidanceType guidanceType) {
+        return guidanceType == RVP_EnumGuidanceType.LH
+                || guidanceType == RVP_EnumGuidanceType.SALH
+                || guidanceType == RVP_EnumGuidanceType.LBR
+                || guidanceType == RVP_EnumGuidanceType.SACLOS;
     }
 
     public boolean isHitlClosTvGuided() {

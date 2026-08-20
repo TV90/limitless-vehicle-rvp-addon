@@ -95,6 +95,21 @@ public final class RVP_SaclosDesignation {
         return projectile.getTargetPos();
     }
 
+    /**
+     * 获取操作手客户端或 AI 已同步到服务端的实时世界瞄准点。
+     *
+     * <p>这里只返回会话中的权威输入，不回退服务端武器站射线或弹体旧目标点，
+     * 避免车体局部角瞬态和上一 tick 制导目标重新混入 LBR/SACLOS 光束。</p>
+     */
+    @Nullable
+    public static Vec3 resolveSynchronizedOperatorPoint(RVP_BaseBullet projectile) {
+        if (!(projectile.getOwner() instanceof LivingEntity operator)) {
+            return null;
+        }
+        // 调用本项目操作手会话，读取现有 C2SSaclosDesignation 或 Gunner AI 写入的世界瞄准点。
+        return RVP_SaclosOperatorSession.getDesignationPoint(operator.getUUID());
+    }
+
     @Nullable
     public static WeaponUnit resolveOperatorAimUnit(RVP_BaseBullet projectile) {
         WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();

@@ -6,6 +6,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
+import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -30,13 +31,17 @@ public final class RVP_RuntimeLbrGuidanceSource implements RVP_RuntimeGuidanceSo
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
         WeaponUnit shooterUnit = context.projectile().getShooterWeaponUnit();
-        Vec3 beamDir = RVP_CommandGuidanceAim.operatorAimDirection(shooterUnit);
+        // 调用本项目武器站解析，确保 parent_weapon_unit_aim 子站使用根炮塔作为驾束起点。
+        WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);
+        Vec3 beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
+        // 调用本项目同步瞄准会话，以不含车体局部角瞬态的世界点建立 LBR 驾束。
+        Vec3 synchronizedAimPoint = RVP_SaclosDesignation.resolveSynchronizedOperatorPoint(
+                context.projectile());
+        Vec3 beamDir = RVP_CommandGuidanceAim.operatorAimDirection(
+                shooterUnit, beamOrigin, synchronizedAimPoint);
         if (beamDir == null || beamDir.lengthSqr() <= 1.0E-6) {
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.LBR);
         }
-
-        // Beam origin: the weapon station's world pivot position
-        Vec3 beamOrigin = shooterUnit != null ? shooterUnit.worldPivotPosition() : Vec3.ZERO;
 
         // Compute the foot of perpendicular from missile to beam axis
         Vec3 missilePos = context.projectile().position();

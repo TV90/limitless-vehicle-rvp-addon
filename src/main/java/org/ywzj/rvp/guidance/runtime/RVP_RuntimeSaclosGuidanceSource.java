@@ -10,6 +10,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceIntent;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
+import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -52,8 +53,14 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         RVP_BaseBullet projectile = context.projectile();
         RVP_GuidanceActiveConfig active = context.active();
 
+        WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();
+        // 调用本项目武器站解析，保证世界瞄准点始终从真正承载操作手视轴的根炮塔发出。
+        WeaponUnit aimUnit = RVP_CommandGuidanceAim.resolveOperatorAimUnit(shooterUnit);
+        Vec3 beamOrigin = aimUnit != null ? aimUnit.worldPivotPosition() : Vec3.ZERO;
+        // 调用本项目同步瞄准会话，避免服务端稳定器放弃补偿时把车体 yaw 混入 SACLOS 指令。
+        Vec3 synchronizedAimPoint = RVP_SaclosDesignation.resolveSynchronizedOperatorPoint(projectile);
         Vec3 direction = RVP_CommandGuidanceAim.operatorAimDirection(
-                projectile.getShooterWeaponUnit());
+                shooterUnit, beamOrigin, synchronizedAimPoint);
         if (direction == null || direction.lengthSqr() <= 1.0E-6) {
             resetSaclosState(projectile);
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);
@@ -87,8 +94,6 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
         // === Semi-correction enabled: LBR base + spring-damper oscillator ===
 
         // -- LBR base logic (copied from RVP_RuntimeLbrGuidanceSource) --
-        WeaponUnit shooterUnit = projectile.getShooterWeaponUnit();
-        Vec3 beamOrigin = shooterUnit != null ? shooterUnit.worldPivotPosition() : Vec3.ZERO;
         Vec3 missilePos = projectile.position();
 
         // Foot of perpendicular from missile to LOS ray
