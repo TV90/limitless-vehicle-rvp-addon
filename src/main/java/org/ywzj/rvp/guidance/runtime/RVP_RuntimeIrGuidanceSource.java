@@ -22,7 +22,8 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
         if (target == null
                 && context.active().phase() == RVP_GuidancePhase.TERMINAL
                 && !projectile.hasTerminalIrTargetAcquired()
-                && !projectile.isSeekerShutOff()) {
+                && !projectile.isSeekerShutOff()
+                && !projectile.hasSmokeBreakLock()) {
             int interval = context.active().scanIntervalTick() != null
                     ? context.active().scanIntervalTick()
                     : 2;
@@ -54,9 +55,15 @@ public final class RVP_RuntimeIrGuidanceSource implements RVP_RuntimeGuidanceSou
     }
 
     private RVP_GuidanceIntent inertialOrFailed(RVP_GuidanceRuntimeContext context) {
-        if (context.active().enableInertialGuidance() && context.projectile().getLastGuidancePos() != null) {
+        RVP_BaseBullet projectile = context.projectile();
+        // 烟雾脱锁：朝脱锁瞬间算定的固定落点（烟雾 AABB 内、远离最后目标）惯性飞行
+        if (projectile.hasSmokeBreakLock() && projectile.getSmokeInertialPoint() != null) {
             return RVP_GuidanceIntent.point(
-                    context.projectile().getLastGuidancePos(), false, 1.0, RVP_EnumGuidanceType.IR);
+                    projectile.getSmokeInertialPoint(), false, 1.0, RVP_EnumGuidanceType.IR);
+        }
+        if (context.active().enableInertialGuidance() && projectile.getLastGuidancePos() != null) {
+            return RVP_GuidanceIntent.point(
+                    projectile.getLastGuidancePos(), false, 1.0, RVP_EnumGuidanceType.IR);
         }
         return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.IR);
     }

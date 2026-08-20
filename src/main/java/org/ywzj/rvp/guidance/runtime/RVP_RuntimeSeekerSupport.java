@@ -5,6 +5,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
+import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -97,7 +98,12 @@ final class RVP_RuntimeSeekerSupport {
             return decoy;
         }
         if (result.isDenied()) {
-            // 光学被挡/入烟等锁定阻断：同样进入干扰保持期，保持近炸抑制与碰撞免疫直到脱离干扰
+            // 光学被挡/入烟等锁定阻断：捕获具体烟雾实体，记录脱锁瞬间算定的固定惯导落点，
+            // 并标记烟雾脱锁（永久阻止复锁，与诱饵转锁分隔），进入干扰保持期
+            RVP_SmokeEntity smoke = RVP_CountermeasureState.findSmokeContaining(target);
+            Vec3 smokePoint = smoke != null
+                    ? RVP_CountermeasureState.computeSmokeInertialPoint(smoke, target) : null;
+            projectile.markSmokeBreakLock(smokePoint);
             projectile.markJamGracePeriod();
             return null;
         }

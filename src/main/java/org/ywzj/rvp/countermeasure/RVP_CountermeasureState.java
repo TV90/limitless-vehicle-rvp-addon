@@ -6,6 +6,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -380,6 +382,53 @@ public final class RVP_CountermeasureState {
         AABB probe = new AABB(point, point).inflate(1.0);
         return level.getEntities(near, probe, e -> e instanceof RVP_SmokeEntity && e.isAlive()).stream()
                 .anyMatch(e -> e.getBoundingBox().contains(point));
+    }
+
+    /** 返回包含目标中心点的存活烟雾云实体（用于烟雾脱锁时记录 AABB 供惯导落点计算）；无则 null。 */
+    @Nullable
+    public static RVP_SmokeEntity findSmokeContaining(Entity target) {
+        if (target == null) {
+            return null;
+        }
+        Vec3 center = target.getBoundingBox().getCenter();
+        Level level = target.level();
+        AABB probe = new AABB(center, center).inflate(1.0);
+        for (Entity e : level.getEntities(target, probe, x -> x instanceof RVP_SmokeEntity && x.isAlive())) {
+            if (e.getBoundingBox().contains(center)) {
+                return (RVP_SmokeEntity) e;
+            }
+        }
+        return null;
+    }
+
+    /** 烟雾脱锁时的固定惯导落点：Y 取最后目标高度（同水平面），X/Z 在烟雾 AABB 内随机且远离最后目标。
+     * 脱锁瞬间算一次，之后导弹朝该固定点惯性飞行；烟雾/目标无效则返回 null（回退 lastGuidancePos）。 */
+    @Nullable
+    public static Vec3 computeSmokeInertialPoint(RVP_SmokeEntity smoke, Entity lastTarget) {
+        if (smoke == null || lastTarget == null || !smoke.isAlive()) {
+            return null;
+        }
+        AABB box = smoke.getBoundingBox();
+        double xSize = box.getXsize();
+        double zSize = box.getZsize();
+        if (xSize <= 0.0 || zSize <= 0.0) {
+            return null;
+        }
+        double cx = (box.minX + box.maxX) * 0.5; // 烟雾 AABB 中心 X
+        double cz = (box.minZ + box.maxZ) * 0.5; // 烟雾 AABB 中心 Z
+        double cy = lastTarget.getBoundingBox().getCenter().y; // 与最后目标同水平面高度
+        // 最后目标相对烟雾中心的偏移；落点取相反方向并随机扰动，保证远离目标且仍在 AABB 内
+        double ox = lastTarget.getX() - cx;
+        double oz = lastTarget.getZ() - cz;
+        double baseAng = Math.atan2(oz, ox) + Math.PI; // 反方向（远离目标）
+        double ang = baseAng + (RandomSource.create().nextDouble() - 0.5) * Math.PI * 0.8;
+        double rMax = Math.min(xSize, zSize) * 0.5 * 0.9; // 限制半径，确保落点在 AABB 内
+        double rad = rMax * (0.6 + 0.4 * RandomSource.create().nextDouble());
+        double px = cx + Math.cos(ang) * rad;
+        double pz = cz + Math.sin(ang) * rad;
+        px = Mth.clamp(px, box.minX + 0.1, box.maxX - 0.1);
+        pz = Mth.clamp(pz, box.minZ + 0.1, box.maxZ - 0.1);
+        return new Vec3(px, cy, pz);
     }
 
     private static boolean hasSightObstruction(Entity seeker, Entity target) {
