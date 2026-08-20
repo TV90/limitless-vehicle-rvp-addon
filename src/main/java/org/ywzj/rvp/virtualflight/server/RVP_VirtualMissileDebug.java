@@ -6,8 +6,8 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightReason;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryParameters;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryResult;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryResult;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /**

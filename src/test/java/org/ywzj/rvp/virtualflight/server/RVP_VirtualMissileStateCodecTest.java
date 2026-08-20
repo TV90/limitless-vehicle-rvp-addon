@@ -6,8 +6,8 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_RvpTrajectoryIntegrator;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_RvpTrajectoryIntegrator;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 
 import java.util.UUID;
 

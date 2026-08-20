@@ -3,7 +3,7 @@ package org.ywzj.rvp.virtualflight.server;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 
 import java.util.UUID;
 

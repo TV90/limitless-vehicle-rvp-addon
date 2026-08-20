@@ -1,7 +1,7 @@
-package org.ywzj.rvp.virtualflight.trajectory;
+package org.ywzj.rvp.guidance.trajectorymath.virtualguidance;
 
 import net.minecraft.world.phys.Vec3;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryProfile;
 
 /**
  * 弹道导弹（PRESET 三段式）的虚拟中段纯输入。
@@ -33,27 +33,5 @@ public record RVP_VirtualPresetGuidance(
         double cruiseVerticalDamping,
         double cruiseMaxVerticalComponent,
         double tacticalManeuverAmplitude
-) {
-
-    /** 从武器配置冻结弹道导弹输入；未启用 preset 时返回 null。 */
-    public static RVP_VirtualPresetGuidance from(RVP_WeaponData data, Vec3 launchPosition) {
-        if (data == null || data.getGuidanceData() == null
-                || data.getGuidanceData().getPresetCruiseAltitude() <= 0f) {
-            return null;
-        }
-        var guidance = data.getGuidanceData();
-        return new RVP_VirtualPresetGuidance(
-                launchPosition,
-                guidance.getPresetCruiseAltitude(),
-                guidance.getPresetMaxAscentLead(),
-                guidance.getPresetAscentRadius(),
-                guidance.getPresetDiveRadius(),
-                guidance.getPresetDiveAltitudeFactor(),
-                guidance.getPresetDiveLeadFactor(),
-                guidance.getPresetCruiseAltitudeGain(),
-                guidance.getPresetCruiseVerticalDamping(),
-                guidance.getPresetCruiseMaxVerticalComponent(),
-                guidance.getPresetTacticalManeuverAmplitude()
-        );
-    }
+) implements RVP_BallisticTrajectoryProfile {
 }

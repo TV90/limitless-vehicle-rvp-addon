@@ -1,4 +1,4 @@
-package org.ywzj.rvp.virtualflight.trajectory;
+package org.ywzj.rvp.guidance.trajectorymath.virtualguidance;
 
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
@@ -10,6 +10,7 @@ import org.knowm.xchart.XYChartBuilder;
 import org.knowm.xchart.XYSeries;
 import org.knowm.xchart.style.Styler;
 import org.knowm.xchart.style.markers.SeriesMarkers;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 import javax.swing.JFrame;
@@ -24,7 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link RVP_RvpTrajectoryIntegrator} 的纯数学单元测试与手动长航程仿真测试。
+ * {@link RVP_RvpTrajectoryIntegrator} 与 {@link RVP_BallisticTrajectoryMath}
+ * 的纯数学单元测试及手动长航程仿真测试。
  *
  * <p>本类不构造 Minecraft 世界或实体，所有用例只向积分器传入不可变状态、制导输入和
  * 参数，以便把方向钳制、高度闭环和单 Tick 状态推进问题与区块、碰撞、网络等外部系统
@@ -49,7 +51,8 @@ class RVP_RvpTrajectoryIntegratorTest {
     void applySteeringPreservesSpeedAndClampsVelocityDeltaByGs() {
         Vec3 current = new Vec3(10, 0, 0);
         double maxGs = 18.0;
-        Vec3 steered = RVP_RvpTrajectoryIntegrator.applySteering(current, new Vec3(0, 0, 1), maxGs);
+        Vec3 steered = RVP_BallisticTrajectoryMath.applySteering(
+                current, new Vec3(0, 0, 1), maxGs);
 
         assertEquals(current.length(), steered.length(), EPSILON);
         assertEquals(maxGs * PhysicsEngine.G, steered.subtract(current).length(), EPSILON);
@@ -71,8 +74,8 @@ class RVP_RvpTrajectoryIntegratorTest {
         Vec3 current = new Vec3(1, 0, 0);
         Vec3 desired = new Vec3(0, 0, 1);
 
-        assertEquals(current, RVP_RvpTrajectoryIntegrator.applySteering(current, desired, 0.0));
-        Vec3 fullySteered = RVP_RvpTrajectoryIntegrator.applySteering(current, desired, 100.0);
+        assertEquals(current, RVP_BallisticTrajectoryMath.applySteering(current, desired, 0.0));
+        Vec3 fullySteered = RVP_BallisticTrajectoryMath.applySteering(current, desired, 100.0);
         assertEquals(0.0, fullySteered.x, EPSILON);
         assertEquals(1.0, fullySteered.z, EPSILON);
         assertEquals(current.length(), fullySteered.length(), EPSILON);
@@ -91,7 +94,8 @@ class RVP_RvpTrajectoryIntegratorTest {
     @Test
     void applySteeringHandlesOppositeDirectionWithoutNonFiniteComponents() {
         Vec3 current = new Vec3(2, 0, 0);
-        Vec3 steered = RVP_RvpTrajectoryIntegrator.applySteering(current, new Vec3(-1, 0, 0), 18.0);
+        Vec3 steered = RVP_BallisticTrajectoryMath.applySteering(
+                current, new Vec3(-1, 0, 0), 18.0);
 
         assertTrue(Double.isFinite(steered.x));
         assertTrue(Double.isFinite(steered.y));
@@ -116,8 +120,10 @@ class RVP_RvpTrajectoryIntegratorTest {
         Vec3 velocity = new Vec3(1, 0, 0);
         Vec3 target = new Vec3(1000, 100, 0);
 
-        Vec3 holding = RVP_RvpTrajectoryIntegrator.steerGpsCruise(position, velocity, target, null, 18.0, 0.01);
-        Vec3 climbing = RVP_RvpTrajectoryIntegrator.steerGpsCruise(position, velocity, target, 300.0, 18.0, 0.01);
+        Vec3 holding = RVP_BallisticTrajectoryMath.steerGpsCruise(
+                position, velocity, target, null, 18.0);
+        Vec3 climbing = RVP_BallisticTrajectoryMath.steerGpsCruise(
+                position, velocity, target, 300.0, 18.0);
 
         assertEquals(0.0, holding.y, EPSILON);
         assertTrue(climbing.y > 0.0);
@@ -136,10 +142,10 @@ class RVP_RvpTrajectoryIntegratorTest {
         Vec3 position = new Vec3(0, 50, 0);
         Vec3 velocity = new Vec3(5, 0, 0);
 
-        Vec3 farCommand = RVP_RvpTrajectoryIntegrator.steerGpsCruise(
-                position, velocity, new Vec3(300, 0, 0), 50.0, 10.0, 0.01);
-        Vec3 nearCommand = RVP_RvpTrajectoryIntegrator.steerGpsCruise(
-                position, velocity, new Vec3(80, 0, 0), 50.0, 10.0, 0.01);
+        Vec3 farCommand = RVP_BallisticTrajectoryMath.steerGpsCruise(
+                position, velocity, new Vec3(300, 0, 0), 50.0, 10.0);
+        Vec3 nearCommand = RVP_BallisticTrajectoryMath.steerGpsCruise(
+                position, velocity, new Vec3(80, 0, 0), 50.0, 10.0);
 
         assertEquals(0.0, farCommand.y, EPSILON);
         assertTrue(nearCommand.y < 0.0, "near target must switch to terminal descent");
@@ -162,8 +168,8 @@ class RVP_RvpTrajectoryIntegratorTest {
         double closestDistance = position.distanceTo(target);
 
         for (int tick = 0; tick < 120; tick++) {
-            velocity = RVP_RvpTrajectoryIntegrator.steerGpsCruise(
-                    position, velocity, target, 500.0, 2.0, 0.01);
+            velocity = RVP_BallisticTrajectoryMath.steerGpsCruise(
+                    position, velocity, target, 500.0, 2.0);
             position = position.add(velocity);
             peakAltitude = Math.max(peakAltitude, position.y);
             closestDistance = Math.min(closestDistance, position.distanceTo(target));

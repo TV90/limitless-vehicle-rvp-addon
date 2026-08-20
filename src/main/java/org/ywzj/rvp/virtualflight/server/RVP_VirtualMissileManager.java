@@ -20,12 +20,11 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightReason;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_RvpTrajectoryIntegrator;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualGuidanceInput;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualPresetGuidance;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryIntegrator;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryParameters;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryResult;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_RvpTrajectoryIntegrator;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualGuidanceInput;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryIntegrator;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryResult;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_VirtualMidcourseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -222,7 +221,7 @@ public final class RVP_VirtualMissileManager {
         }
         long start = System.nanoTime();
         // 从当前武器数据生成纯参数，随后只把不可变状态/输入交给积分器。
-        RVP_VirtualTrajectoryParameters parameters = RVP_VirtualTrajectoryParameters.from(
+        RVP_VirtualTrajectoryParameters parameters = RVP_VirtualTrajectoryInputFactory.createParameters(
                 data, state.coldLaunchTimeTick, state.trajectory().position().y);
         RVP_VirtualMissileDebug.Vec3Before before = new RVP_VirtualMissileDebug.Vec3Before(
                 state.trajectory().position(), state.trajectory().velocity());
@@ -230,7 +229,7 @@ public final class RVP_VirtualMissileManager {
         // PRESET 弹道导弹的纯输入从当前武器配置与固定发射点冻结，未启用时为 null。
         RVP_VirtualTrajectoryResult result = integrator.step(state.trajectory(),
                 new RVP_VirtualGuidanceInput(state.snapshot.targetPosition(),
-                        RVP_VirtualPresetGuidance.from(data, state.launchPosition)),
+                        RVP_VirtualTrajectoryInputFactory.createPresetGuidance(data, state.launchPosition)),
                 parameters);
         RVP_VirtualMissileDebug.noteIntegrationNanos(System.nanoTime() - start);
         // 将不可变积分结果替换回完整快照，同时保留制导/雷达/GPS/Top Attack 状态。

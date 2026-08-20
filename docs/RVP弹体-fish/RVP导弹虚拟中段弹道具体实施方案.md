@@ -93,20 +93,26 @@ org.ywzj.rvp.virtualflight.server
 ├─ RVP_VirtualMissileRestoreService   恢复区块预热与实体重建
 ├─ RVP_VirtualMissileTicketManager    恢复区块临时 Ticket 管理
 ├─ RVP_VirtualMissileSyncService      生成并分发只读客户端快照
-└─ RVP_VirtualMissileDebug            状态转换、失败原因与统计日志
+├─ RVP_VirtualMissileDebug            状态转换、失败原因与统计日志
+└─ RVP_VirtualTrajectoryInputFactory  把武器配置冻结为纯数学输入
 
 org.ywzj.rvp.virtualflight.common
 ├─ RVP_VirtualMissileContact          网络与 UI 使用的不可变只读 DTO
 ├─ RVP_VirtualFlightPhase             稳定的协议阶段枚举
 └─ RVP_VirtualFlightReason            稳定的状态转换原因码
 
-org.ywzj.rvp.virtualflight.trajectory
+org.ywzj.rvp.guidance.trajectorymath.virtualguidance
 ├─ RVP_VirtualTrajectoryIntegrator    可替换的虚拟弹道积分接口
-├─ RVP_RvpTrajectoryIntegrator        当前 rvp_current/VERSION=3 纯积分实现
+├─ RVP_RvpTrajectoryIntegrator        当前 rvp_current/VERSION=6 Tick 编排器
 ├─ RVP_VirtualTrajectoryState         积分器所需的最小运动/发动机状态
-├─ RVP_VirtualGuidanceInput           当前仅承载固定 GPS 目标点
-├─ RVP_VirtualTrajectoryParameters    从武器配置解析的冻结积分参数
+├─ RVP_VirtualGuidanceInput           固定 GPS 目标点与可选 PRESET 参数
+├─ RVP_VirtualPresetGuidance          PRESET 弹道的不可变纯数学输入
+├─ RVP_VirtualTrajectoryParameters    与武器数据模型解耦的冻结积分参数
 └─ RVP_VirtualTrajectoryResult        单逻辑 Tick 的不可变计算结果
+
+org.ywzj.rvp.guidance.trajectorymath.util
+├─ RVP_BallisticTrajectoryProfile     PRESET 数学工具的最小只读参数契约
+└─ RVP_BallisticTrajectoryMath        可复用的无状态弹道轨迹计算工具
 
 org.ywzj.rvp.weapon.data
 └─ RVP_VirtualMidcourseData           当前 schema 的 JSON 数据模型
@@ -452,7 +458,7 @@ isAlive
 
 ### 7.1 第一阶段决策：复制 RVP 运动积分、独立 G 值转向并用接口隔离
 
-第一阶段不改造真实实体弹体的运行链，也不尝试把实体态和虚拟态立即合并为一个共享内核。实现方式是：把当前 RVP 虚拟中段需要的运动积分方法复制到 `org.ywzj.rvp.virtualflight.trajectory` 包，移除其中对 `Entity`、`Level`、同步数据和世界查询的依赖；制导侧改为“生成期望方向 + 独立最大 G 值钳制”，然后由 `RVP_RvpTrajectoryIntegrator` 实现稳定的 `RVP_VirtualTrajectoryIntegrator` 接口。
+第一阶段不改造真实实体弹体的运行链，也不尝试把实体态和虚拟态立即合并为一个共享内核。实现方式是：把虚拟弹道状态与 Tick 编排集中到 `org.ywzj.rvp.guidance.trajectorymath.virtualguidance`，把无状态计算集中到可复用的 `org.ywzj.rvp.guidance.trajectorymath.util`，移除其中对 `Entity`、`Level`、同步数据、世界查询和武器数据模型的依赖；虚拟飞行业务侧通过 `RVP_VirtualTrajectoryInputFactory` 冻结输入，`RVP_RvpTrajectoryIntegrator` 实现稳定的 `RVP_VirtualTrajectoryIntegrator` 接口并调用 `RVP_BallisticTrajectoryMath` 完成具体计算。
 
 ```text
 当前真实 RVP Missile
@@ -566,11 +572,11 @@ reachable = forward >= minForward + reserveTicks × speed
 
 `canReachTarget(...)` 的边界行为也与代码一致：目标已在一个 Tick 航程内时直接视为可达；目标不在当前速度前方时视为不可达；`maxGs` 非正或非有限时，只有正前方且基本共线的目标才可达；当 `maxGs × G >= 2 × speed` 时，前方目标直接视为可达。
 
-当前 `step(...)` 每 Tick 都调用 `steerGpsCruise(...)`，没有使用 `cruiseStartTick` 或 `cruiseEndHorizontalDistance` 切换巡航阶段。`max_guidance_angle`、`projectile_data.turning_factor`、`guidance_data.cruise_leveling_factor` 和本体 `max_g` 均不参与虚拟积分。`steerGpsCruise(...)` 当前仍接收 `mass`，但质量补偿项已被注释，该参数不影响高度控制结果。
+当前 `step(...)` 在未启用 PRESET 时每 Tick 都调用 `RVP_BallisticTrajectoryMath.steerGpsCruise(...)`，没有使用 `cruiseStartTick` 或 `cruiseEndHorizontalDistance` 切换巡航阶段。`max_guidance_angle`、`projectile_data.turning_factor`、`guidance_data.cruise_leveling_factor` 和本体 `max_g` 均不参与虚拟积分。质量只由 `integrateForces(...)` 的推力加速度计算消费，GPS 高度闭环不再接收无效的质量参数。
 
-### 7.4 复制的运动积分范围
+### 7.4 弹道数学工具覆盖的运动积分范围
 
-`RVP_RvpTrajectoryIntegrator` 当前实装的动力学范围为：
+`RVP_BallisticTrajectoryMath` 当前实装的动力学范围为：
 
 - `tick = flightTick + 1`，仅在 `tick >= ignitionTick` 时执行推力、阻力和重力分支；
 - 当 `propulsion == true` 且 `tick - ignitionTick <= motorBurnTime` 时，以 `thrust / max(mass, 1.0E-6)` 作为加速度，沿当前速度单位方向施加主推力；零速时使用世界 `+Y` 方向兜底；
@@ -581,7 +587,7 @@ reachable = forward >= minForward + reserveTicks × speed
 - `peakFlightSpeed = max(oldPeakFlightSpeed, speed)`、`flightDistance += speed`、`flightTick = tick`、`remainingLife -= 1`；
 - 输出位置、速度、旋转值、峰值速度或累计航程中任一出现 NaN/Infinity 时设置 `invalid = true`。
 
-当前尚未实装第二脉冲、GPS 专用重力缩放或按速度更新 `xRot/yRot`。`secondPulseStartTick` 仅原样写入下一状态，`rotateToMotion` 当前未读取。高度阻力因子由管理器在每 Tick 构造参数时按当前高度重新解析，积分器本身只消费该冻结值。
+当前尚未实装第二脉冲或 GPS 专用重力缩放。`secondPulseStartTick` 仅原样写入下一状态，`rotateToMotion` 当前未读取；非零速度会通过工具方法派生 `xRot/yRot`。高度阻力因子由管理器在每 Tick 构造参数时按当前高度重新解析，积分器本身只消费该冻结值。
 
 不得复制或调用以下世界相关行为：
 
@@ -598,15 +604,15 @@ reachable = forward >= minForward + reserveTicks × speed
 
 ```text
 1. 令 `tick = state.flightTick + 1`，读取当前速度
-2. 若已达点火 Tick，在主发动机包含结束 Tick 的燃烧窗口内沿当前速度方向施加推力
+2. 调用 `integrateForces(...)`；若已达点火 Tick，在主发动机包含结束 Tick 的燃烧窗口内沿当前速度方向施加推力
 3. 仍在已点火分支内，先应用二次阻力，再应用配置重力或默认重力
-4. 以动力学处理后的速度进入 `steerGpsCruise(...)`
+4. 以动力学处理后的速度进入 PRESET 弹道或 `steerGpsCruise(...)`
 5. 近目标或水平目标差为零时，直接对三维目标方向执行 `applySteering`
 6. 否则由水平目标方向和高度 PD 闭环生成巡航候选，执行一次 `applySteering`
 7. 用候选位置、候选速度和 `maxGs` 评估目标可达性；不可达时改为从同一动力学后速度直接转向目标
 8. 记录动力学后速度与制导后速度的夹角 `turnAngleRadians`
-9. `xRot` 和 `yRot` 原样保留，不按制导方向更新
-10. 钳制最低/最高速度；若 `maxSpeed > 0 && minSpeed > maxSpeed`，则先把最低速度视为 0
+9. 钳制最低/最高速度；若 `maxSpeed > 0 && minSpeed > maxSpeed`，则先把最低速度视为 0
+10. 速度非零时由最终权威速度派生 `xRot` 和 `yRot`
 11. `position += velocity`，更新峰值速度、累计航程、飞行 Tick 和剩余寿命
 12. 原样透传 `secondPulseStartTick`，检查输出状态有限性并返回 `RVP_VirtualTrajectoryResult`
 ```

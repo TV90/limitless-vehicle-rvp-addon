@@ -79,7 +79,7 @@ import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileSnapshot;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;

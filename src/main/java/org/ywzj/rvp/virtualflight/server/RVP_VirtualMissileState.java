@@ -8,7 +8,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.RVP_GuidancePhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
-import org.ywzj.rvp.virtualflight.trajectory.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
 
 import java.util.LinkedHashSet;
 import java.util.Optional;
