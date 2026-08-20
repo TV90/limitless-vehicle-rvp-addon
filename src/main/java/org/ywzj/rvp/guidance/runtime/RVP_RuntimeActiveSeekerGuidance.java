@@ -30,6 +30,10 @@ final class RVP_RuntimeActiveSeekerGuidance {
                 missile.setTargetPos(point);
                 return RVP_GuidanceIntent.entity(designated, false, 1.0, type);
             }
+            // 烟雾脱锁：朝固定落点惯性飞行（优先于记忆点）
+            if (missile.hasSmokeBreakLock() && missile.getSmokeInertialPoint() != null) {
+                return RVP_GuidanceIntent.point(missile.getSmokeInertialPoint(), false, 1.0, type);
+            }
             Vec3 memory = missile.getTargetPos() != null
                     ? missile.getTargetPos()
                     : missile.getLastGuidancePos();
@@ -67,7 +71,12 @@ final class RVP_RuntimeActiveSeekerGuidance {
         // 干扰保持期（脱锁判定成立但未重锁）内同样不重扫——避免刚被干扰脱锁就立即重锁机体直击玩家
         if (missile.isSeekerShutOff()
                 || missile.isJamGracePeriodActive()
+                || missile.hasSmokeBreakLock()
                 || !freeAcquire || missile.getFlightTickCount() % interval != 0) {
+            // 烟雾脱锁：朝固定落点惯性飞行；否则失败
+            if (missile.hasSmokeBreakLock() && missile.getSmokeInertialPoint() != null) {
+                return RVP_GuidanceIntent.point(missile.getSmokeInertialPoint(), false, 1.0, type);
+            }
             return RVP_GuidanceIntent.failed(type);
         }
 

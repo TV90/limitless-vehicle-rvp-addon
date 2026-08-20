@@ -388,6 +388,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * 避免导弹失目标滑行末段恢复活弹直击玩家。每 tick 干扰判定成立时刷新为 tick+JAM_VEHICLE_COLLISION_GRACE_TICKS。 */
     private int jamGracePeriodUntilTick = Integer.MIN_VALUE;
 
+    /** 因烟雾/光学视线被挡导致脱锁的永久标记：一旦置位，导弹不再进入任何复锁扫描流程（与诱饵转锁分隔）。 */
+    private boolean smokeBreakLock = false;
+
+    /** 烟雾脱锁后的固定惯导落点（脱锁瞬间算一次）：Y 取最后目标高度、X/Z 在烟雾 AABB 内且远离最后目标；无则回退 lastGuidancePos。 */
+    @Nullable
+    private Vec3 smokeInertialPoint = null;
+
     @Nullable
     protected RVP_EnumGuidanceType activeSourceType;
     @Nullable
@@ -871,8 +878,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 诱饵追踪期是否处于"不碰撞载具"宽限窗口（追诱饵沿玩家航线时避免直击）。
      * 干扰保持期内同样不碰撞（见 {@link #markJamGracePeriod()}），覆盖脱锁后 coast 滑行。 */
+    // [临时] 恢复干扰期间的直击碰炸：暂时关闭载具碰撞免疫（诱饵转锁与烟雾脱锁保持期均不再免疫碰撞）；
+    // 近炸抑制（isJammedByDecoy）不受影响。需恢复时把下行改回 tickCount < jamVehicleNoCollisionUntilTick。
     public boolean isJamVehicleCollisionImmune() {
-        return tickCount < jamVehicleNoCollisionUntilTick;
+        return false;
     }
 
     @Nullable
@@ -944,6 +953,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.jamGracePeriodUntilTick = tickCount + JAM_VEHICLE_COLLISION_GRACE_TICKS;
         // 同步撑住载具碰撞免疫：记忆尾迹/无诱饵可锁的 coast 滑行全程不得撞上机体
         this.jamVehicleNoCollisionUntilTick = tickCount + JAM_VEHICLE_COLLISION_GRACE_TICKS;
+    }
+
+    /** 标记因烟雾/光学视线被挡脱锁：记录惯导落点并永久阻止后续复锁流程（与诱饵转锁分隔）。
+     * @param smokeInertialPoint 烟雾 AABB 内、远离最后目标的固定落点；null 时惯导回退 lastGuidancePos。 */
+    public void markSmokeBreakLock(@Nullable Vec3 smokeInertialPoint) {
+        this.smokeBreakLock = true;
+        this.smokeInertialPoint = smokeInertialPoint;
+    }
+
+    /** 烟雾脱锁后的固定惯导落点（脱锁瞬间算一次），无则 null（回退 lastGuidancePos）。 */
+    @Nullable
+    public Vec3 getSmokeInertialPoint() {
+        return smokeInertialPoint;
+    }
+
+    /** 是否因烟雾/光学视线被挡而脱锁（一旦置位不再复锁）。 */
+    public boolean hasSmokeBreakLock() {
+        return smokeBreakLock;
     }
 
     private void beginSeekerShutOffFromConfig() {
