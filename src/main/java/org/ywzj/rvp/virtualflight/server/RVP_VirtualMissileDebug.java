@@ -81,9 +81,7 @@ public final class RVP_VirtualMissileDebug {
                 state.trajectoryImplementationId, state.trajectoryStateVersion, detail);
     }
 
-    /**
-     * 输出单 Tick 转换连续性数据：前后位置/速度、最大 G、实际 G、实际 θ 和航程。
-     */
+    /** 输出单 Tick 转换连续性数据，包括当前转向模式、配置上限、实际 G、转角和航程。 */
     public static void trajectoryTick(RVP_VirtualMissileState state, Vec3Before before,
                                       RVP_VirtualTrajectoryParameters parameters,
                                       RVP_VirtualTrajectoryResult result) {
@@ -92,10 +90,13 @@ public final class RVP_VirtualMissileDebug {
         double actualGs = PhysicsEngine.G <= 0.0 || speedBefore <= 1.0E-8 ? 0.0
                 : 2.0 * speedBefore * Math.sin(result.turnAngleRadians() * 0.5) / PhysicsEngine.G;
         LOGGER.info("[RVP][VirtualFlight][Trajectory] uuid={} flightTick={} beforePos={} afterPos={} "
-                        + "beforeVelocity={} afterVelocity={} speed={} maxGs={} actualGs={} thetaRad={} travelled={}",
+                        + "beforeVelocity={} afterVelocity={} speed={} steeringMode={} rvpMaxGs={} "
+                        + "turningFactor={} actualGs={} thetaRad={} travelled={}",
                 state.flightUuid, result.state().flightTick(), before.position(), result.state().position(),
                 before.velocity(), result.state().velocity(), result.state().velocity().length(),
-                parameters.maxGs(), actualGs, result.turnAngleRadians(), result.state().flightDistance());
+                parameters.rvpMaxGs() != null ? "RVP_MAX_G" : "TURNING_FACTOR",
+                parameters.rvpMaxGs(), parameters.turningFactor(), actualGs,
+                result.turnAngleRadians(), result.state().flightDistance());
     }
 
     /** 积分前位置与速度的不可变日志快照，避免更新 state 后丢失前值。 */

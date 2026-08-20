@@ -143,7 +143,8 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | rotateToMotion | 是否让实体朝向跟随速度方向 | boolean | true |
 | maxSpeed | 最大速度限制，`0`表示不限制 | float | 0 |
 | minSpeed | 最小速度限制，`0`表示不限制 | float | 0 |
-| turningFactor | 弹药过载，不为null时使用旧版MCHR的过载算法（0-1之间，推荐值0.05-0.2之间，1为无过载，弹药可锐角机动），该值为null时，启动max_g参数相关的过载算法。在map中，key为tick，value为过载参数，如{"[[0,20],[100,inf]]": 0.05, "[[20,100]]": 0.15}，表示在射出后20tick内和100tick之后过载值为0.05，其余时间内过载值为0.15 | Map<RVP_Range<Integer>,Float> | null |
+| turningFactor | JSON 键 `turning_factor`。不为null时使用旧版MCHR的过载算法。按飞行 Tick 区间配置 0～1 的方向插值强度(推荐值0.05-0.2之间，1为无过载，弹药可锐角机动)(在map中，key为tick，value为过载参数，如{"[[0,20],[100,inf]]": 0.05, "[[20,100]]": 0.15}，表示在射出后20tick内和100tick之后过载值为0.05，其余时间内过载值为0.15)；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5 | Map<RVP_Range<Integer>,Float> | null |
+| rvpMaxG | JSON 键 `rvp_maxg`。RVP 最大法向过载，单位 G；显式配置后实体与虚拟制导均调用 `applySteering`，并优先于 `turning_factor`。0 表示禁止转向 | Double | null |
 | hasRocketEngine | 是否启用火箭发动机推力模型 | boolean | false |
 | mass | 弹体质量 | float | 0 |
 | dragCoefficient | 二次方阻力模型系数，每 tick下 Δv -= drag_coefficient * \|v\|² | float | 0 |

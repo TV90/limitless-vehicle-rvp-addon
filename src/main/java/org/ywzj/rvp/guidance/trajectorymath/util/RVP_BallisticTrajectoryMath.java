@@ -102,6 +102,29 @@ public final class RVP_BallisticTrajectoryMath {
     }
 
     /**
+     * 按弹体配置选择唯一的转向钳制算法。
+     *
+     * <p>{@code rvpMaxGs} 非 null 时必须调用 G 值 {@link #applySteering(Vec3, Vec3, double)}，
+     * 并忽略同时存在的 {@code turningFactor}；未配置 G 值时调用从实体制导链复制出的
+     * {@link RVP_TrajectorySteeringMath#applyTurningFactor(Vec3, Vec3, double, float)}。</p>
+     *
+     * @param velocity 当前速度，单位格/Tick
+     * @param desiredDirection 期望方向；允许传入未归一化向量
+     * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；null 表示未配置
+     * @param turningFactor 未配置 RVP 最大法向过载时使用的方向插值强度
+     * @return 经过选定算法钳制、且保持输入速率的新速度
+     */
+    public static Vec3 applyConfiguredSteering(Vec3 velocity, Vec3 desiredDirection,
+                                                Double rvpMaxGs, float turningFactor) {
+        if (rvpMaxGs != null) {
+            return applySteering(velocity, desiredDirection, rvpMaxGs);
+        }
+        double speed = velocity == null ? 0.0 : velocity.length();
+        return RVP_TrajectorySteeringMath.applyTurningFactor(
+                velocity, desiredDirection, speed, turningFactor);
+    }
+
+    /**
      * 为 GPS 巡航生成“水平指向目标 + 高度闭环”的候选速度，并检查末端是否可达。
      *
      * <p>只有候选巡航路线仍能以当前最大 G 值接入目标时才保持高度，否则立即退化为直接
@@ -116,18 +139,38 @@ public final class RVP_BallisticTrajectoryMath {
      */
     public static Vec3 steerGpsCruise(Vec3 position, Vec3 velocity, Vec3 target,
                                       Double configuredCruiseAltitude, double maxGs) {
+        return steerGpsCruise(
+                position, velocity, target, configuredCruiseAltitude, maxGs, 0.5F);
+    }
+
+    /**
+     * 为 GPS 巡航生成候选速度，并按弹体配置选择 G 值或方向插值转向约束。
+     *
+     * @param position 当前世界坐标
+     * @param velocity 当前速度，单位格/Tick
+     * @param target 固定 GPS 目标世界坐标
+     * @param configuredCruiseAltitude 可选世界 Y 巡航高度
+     * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；非 null 时优先
+     * @param turningFactor 未配置 RVP 最大法向过载时使用的方向插值强度
+     * @return 保持当前速率并受选定转向算法约束的新速度
+     */
+    public static Vec3 steerGpsCruise(Vec3 position, Vec3 velocity, Vec3 target,
+                                      Double configuredCruiseAltitude, Double rvpMaxGs,
+                                      float turningFactor) {
         double speed = velocity.length();
         if (speed <= 1.0E-8) {
             return velocity;
         }
         Vec3 directTargetDelta = target.subtract(position);
         if (directTargetDelta.length() <= speed * (TERMINAL_RESERVE_TICKS + 1.0)) {
-            return applySteering(velocity, directTargetDelta, maxGs);
+            return applyConfiguredSteering(
+                    velocity, directTargetDelta, rvpMaxGs, turningFactor);
         }
 
         Vec3 horizontalDelta = new Vec3(target.x - position.x, 0.0, target.z - position.z);
         if (horizontalDelta.lengthSqr() <= 1.0E-12) {
-            return applySteering(velocity, target.subtract(position), maxGs);
+            return applyConfiguredSteering(
+                    velocity, target.subtract(position), rvpMaxGs, turningFactor);
         }
         Vec3 horizontalDesired = horizontalDelta.normalize();
         double cruiseAltitude = configuredCruiseAltitude == null
@@ -144,13 +187,16 @@ public final class RVP_BallisticTrajectoryMath {
                 horizontalDesired.x,
                 verticalCommand / speed,
                 horizontalDesired.z).normalize();
-        Vec3 cruiseVelocity = applySteering(velocity, desired, maxGs);
+        Vec3 cruiseVelocity = applyConfiguredSteering(
+                velocity, desired, rvpMaxGs, turningFactor);
         Vec3 candidatePosition = position.add(cruiseVelocity);
         if (canReachTarget(
-                candidatePosition, cruiseVelocity, target, maxGs, TERMINAL_RESERVE_TICKS)) {
+                candidatePosition, cruiseVelocity, target,
+                rvpMaxGs, turningFactor, TERMINAL_RESERVE_TICKS)) {
             return cruiseVelocity;
         }
-        return applySteering(velocity, directTargetDelta, maxGs);
+        return applyConfiguredSteering(
+                velocity, directTargetDelta, rvpMaxGs, turningFactor);
     }
 
     /**
@@ -168,6 +214,23 @@ public final class RVP_BallisticTrajectoryMath {
      */
     public static Vec3 steerPresetBallistic(Vec3 position, Vec3 velocity, Vec3 target,
                                             RVP_BallisticTrajectoryProfile preset, double maxGs) {
+        return steerPresetBallistic(position, velocity, target, preset, maxGs, 0.5F);
+    }
+
+    /**
+     * 为 PRESET 弹道生成受弹体 G 值或方向插值参数约束的新速度。
+     *
+     * @param position 当前世界坐标
+     * @param velocity 当前速度，单位格/Tick
+     * @param target 固定目标世界坐标
+     * @param preset PRESET 弹道冻结参数
+     * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；非 null 时优先
+     * @param turningFactor 未配置 RVP 最大法向过载时使用的方向插值强度
+     * @return 保持当前速率并受选定转向算法约束的新速度
+     */
+    public static Vec3 steerPresetBallistic(Vec3 position, Vec3 velocity, Vec3 target,
+                                            RVP_BallisticTrajectoryProfile preset,
+                                            Double rvpMaxGs, float turningFactor) {
         double speed = velocity.length();
         if (speed <= 1.0E-8 || target == null || preset == null
                 || preset.launchPosition() == null) {
@@ -176,7 +239,7 @@ public final class RVP_BallisticTrajectoryMath {
         // 通过通用只读参数契约取得纯几何计算所需的冻结值，不依赖虚拟飞行业务类型。
         Vec3 launch = preset.launchPosition();
 
-        double turnRadius = resolveTurnRadius(speed, maxGs);
+        double turnRadius = resolveTurnRadius(speed, rvpMaxGs, turningFactor);
         double diveDistance = Math.max(preset.diveRadius(), Math.max(
                 Math.max(0.0, position.y - target.y) * preset.diveAltitudeFactor(),
                 turnRadius * preset.diveLeadFactor()));
@@ -206,14 +269,15 @@ public final class RVP_BallisticTrajectoryMath {
             } else {
                 desired = toTarget;
             }
-            return applySteering(velocity, desired, maxGs);
+            return applyConfiguredSteering(velocity, desired, rvpMaxGs, turningFactor);
         }
 
         Vec3 toTargetHorizontal = new Vec3(
                 target.x - position.x, 0.0, target.z - position.z);
         double horizontalDistance = toTargetHorizontal.length();
         if (horizontalDistance <= 1.0E-8) {
-            return applySteering(velocity, target.subtract(position), maxGs);
+            return applyConfiguredSteering(
+                    velocity, target.subtract(position), rvpMaxGs, turningFactor);
         }
 
         Vec3 forwardHorizontal = toTargetHorizontal.normalize();
@@ -249,7 +313,8 @@ public final class RVP_BallisticTrajectoryMath {
                         lateral.scale(maneuverAmplitude * Math.sin(phase) * weight));
             }
         }
-        return applySteering(velocity, targetPoint.subtract(position), maxGs);
+        return applyConfiguredSteering(
+                velocity, targetPoint.subtract(position), rvpMaxGs, turningFactor);
     }
 
     /**
@@ -271,6 +336,26 @@ public final class RVP_BallisticTrajectoryMath {
     }
 
     /**
+     * 按实际启用的转向算法估算最小转弯半径，供虚拟路线可达性判定使用。
+     *
+     * @param speed 当前速率，单位格/Tick
+     * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；非 null 时优先
+     * @param turningFactor 未配置 RVP 最大法向过载时使用的方向插值强度
+     * @return 钳制在 8～80 格内的近似转弯半径；完全禁止转向时返回正无穷
+     */
+    public static double resolveTurnRadius(double speed, Double rvpMaxGs,
+                                           float turningFactor) {
+        if (rvpMaxGs != null) {
+            return resolveTurnRadius(speed, rvpMaxGs.doubleValue());
+        }
+        double factor = Mth.clamp(turningFactor, 0.0F, 1.0F);
+        if (factor <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return Mth.clamp(speed / factor, 8.0, 80.0);
+    }
+
+    /**
      * 评估当前姿态能否在最大 G 值限制下、不绕回目标后方地接入目标点。
      *
      * @param position 评估起点的世界坐标
@@ -282,6 +367,23 @@ public final class RVP_BallisticTrajectoryMath {
      */
     public static boolean canReachTarget(Vec3 position, Vec3 velocity, Vec3 target,
                                          double maxGs, double reserveTicks) {
+        return canReachTarget(position, velocity, target, maxGs, 0.5F, reserveTicks);
+    }
+
+    /**
+     * 评估采用当前弹体转向配置时能否从候选路线接入目标点。
+     *
+     * @param position 评估起点的世界坐标
+     * @param velocity 评估起点的速度，单位格/Tick
+     * @param target 固定目标世界坐标
+     * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；非 null 时优先
+     * @param turningFactor 未配置 RVP 最大法向过载时使用的方向插值强度
+     * @param reserveTicks 额外保留的直线飞行 Tick
+     * @return 目标位于当前转向能力的可接入区域时返回 true
+     */
+    public static boolean canReachTarget(Vec3 position, Vec3 velocity, Vec3 target,
+                                         Double rvpMaxGs, float turningFactor,
+                                         double reserveTicks) {
         if (!isFinite(position) || !isFinite(velocity) || !isFinite(target)) {
             return false;
         }
@@ -294,16 +396,23 @@ public final class RVP_BallisticTrajectoryMath {
 
         Vec3 forward = velocity.scale(1.0 / speed);
         double forwardDistance = targetDelta.dot(forward);
-        if (forwardDistance <= 0.0 || !Double.isFinite(maxGs) || maxGs <= 0.0) {
+        boolean steeringDisabled = rvpMaxGs != null
+                ? !Double.isFinite(rvpMaxGs) || rvpMaxGs <= 0.0
+                : !Float.isFinite(turningFactor) || turningFactor <= 0.0F;
+        if (forwardDistance <= 0.0 || steeringDisabled) {
             return forwardDistance > 0.0
                     && angleBetween(velocity, targetDelta) <= 1.0E-9;
         }
 
-        double maxDeltaVelocity = maxGs * PhysicsEngine.G;
-        if (maxDeltaVelocity >= 2.0 * speed) {
+        if (rvpMaxGs != null && rvpMaxGs * PhysicsEngine.G >= 2.0 * speed) {
             return true;
         }
-        double radius = speed * speed / maxDeltaVelocity;
+        if (rvpMaxGs == null && turningFactor >= 1.0F) {
+            return true;
+        }
+        double radius = rvpMaxGs != null
+                ? speed * speed / (rvpMaxGs * PhysicsEngine.G)
+                : resolveTurnRadius(speed, null, turningFactor);
         double lateralDistanceSqr = Math.max(
                 targetDelta.lengthSqr() - forwardDistance * forwardDistance, 0.0);
         double lateralDistance = Math.sqrt(lateralDistanceSqr);

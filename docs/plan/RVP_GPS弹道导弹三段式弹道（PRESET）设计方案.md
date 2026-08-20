@@ -40,10 +40,10 @@
 **制导链**：`RVP_RuntimeGpsGuidanceSource`（`point(targetPos)`）→ `RVP_GuidanceRuntimeController` → `RVP_GuidanceRuntimeMath.applyIntent`：
 - GPS 巡航：`isGpsCruiseActive` + `steerGpsCruise`（水平指向 + 垂直向 0 收敛，`cruise_leveling_factor` 控制收敛速度）；
 - 攻顶：`resolveTopAttackAimPoint`（apex = 中点上方 `top_attack_height`，过半程/20 格圆柱内进入俯冲）；
-- 转向：实体端 `blendDirection`（`turning_factor` 速度混合，无 G 概念）。
+- 转向：`projectile_data.rvp_maxg` 已配置时实体端调用 `applySteering`；否则调用共享 `turningFactor` 速度方向插值。
 
 **虚拟中段**（超视距）：
-- `RVP_VirtualMidcourseData` + `RVP_RvpTrajectoryIntegrator`（`rvp_current` / `VERSION=4`）：GPS 高度闭环（常量 `CRUISE_ALTITUDE_GAIN=0.015`、`CRUISE_VERTICAL_DAMPING=0.05`、`CRUISE_MAX_VERTICAL_COMPONENT=0.5`）+ `applySteering`（`virtual_midcourse_maxg` 球面插值钳制）+ `canReachTarget` 最小转弯半径可达性检查；
+- `RVP_VirtualMidcourseData` + `RVP_RvpTrajectoryIntegrator`（`rvp_current` / `VERSION=7`）：GPS 高度闭环（常量 `CRUISE_ALTITUDE_GAIN=0.015`、`CRUISE_VERTICAL_DAMPING=0.05`、`CRUISE_MAX_VERTICAL_COMPONENT=0.5`）+ `rvp_maxg` 优先/否则 `turningFactor` 的共享转向选择 + `canReachTarget` 最小转弯半径可达性检查；
 - 资格检查 `RVP_VirtualMissileEligibility`：**`top_attack_height ≠ 0` 直接拒绝虚拟化**（`INELIGIBLE_TOP_ATTACK`），积分器尚无攻顶/高抛轨迹。
 
 ### 2.3 本体 vs RVP 物理差异（影响弹道设计的点）
@@ -53,8 +53,8 @@
 | 重力 | 固定 `-PhysicsEngine.G`（0.0245/tick²） | 配置 `gravity`，默认 0，可任意（含上抛） |
 | 推力方向 | 始终沿 lookAngle | `rotate_to_motion` 时先对齐速度再推力 |
 | 速度限制 | 无 min/max 钳制 | `min_speed`/`max_speed` 钳制 |
-| 转向 | `maxG`×动压因子，角速度限幅 | 实体端 `turning_factor` 速度 blend（无 G）；虚拟端 `virtual_midcourse_maxg` G 钳制 |
-| 转弯半径概念 | 有（v²/a） | 实体端无直接概念；虚拟端 `canReachTarget` 有 |
+| 转向 | `maxG`×动压因子，角速度限幅 | 实体/虚拟统一按 `rvp_maxg` 优先，否则 `turning_factor` |
+| 转弯半径概念 | 有（v²/a） | `rvp_maxg` 用 v²/a；`turning_factor` 用 speed/factor 一阶近似 |
 | 阻力 | 固定系数 | 系数 × 可选高度阻力因子 |
 
 ## 3. 设计方案
@@ -69,8 +69,8 @@
     -> 复用现有 steerPursuit/applyIntent 转向
   物理（RVP_ProjectileMotion）不变
 
-虚拟端（RVP_RvpTrajectoryIntegrator VERSION=5）
-  同样的三段式决策 + 现有 applySteering/canReachTarget 复用
+虚拟端（RVP_RvpTrajectoryIntegrator VERSION=7）
+  同样的三段式决策 + rvp_maxg/turningFactor 选择器 + canReachTarget 复用
   资格检查：preset_ballistic 启用时允许虚拟化（替代 INELIGIBLE_TOP_ATTACK）
 ```
 
@@ -239,8 +239,8 @@ diveDistance = max( preset_dive_radius,
 | `projectile_data` | `gravity` | 俯冲驱动力；默认 0 时高度闭环会自行把导弹压向目标高度，但**建议配置负值**（如 −0.02）加速俯冲、贴近真实弹道 |
 | `projectile_data` | `altitude_drag_factor` | 高空稀薄 → 阻力小 → 高速；弹道导弹必配 |
 | `projectile_data` | `max_speed`/`min_speed` | 高空速度上限与末端速度下限 |
-| `projectile_data` | `turning_factor` | 实体端转向速率 |
-| `virtual_midcourse_data` | `virtual_midcourse_maxg` | 虚拟端转向钳制；建议与实体 `turning_factor` 等效标定（如 8~12 G） |
+| `projectile_data` | `turning_factor` | 未配置 `rvp_maxg` 时，按飞行 Tick 约束实体与虚拟转向 |
+| `projectile_data` | `rvp_maxg` | 可选最大法向过载（G）；配置后在实体与虚拟链中均优先于 `turning_factor` |
 | `virtual_midcourse_data` | `entry_*`/`restore_*` | 虚拟中段进出条件（弹道导弹射程远，必配） |
 | `guidance_data` | `max_guidance_angle` | 制导角限制（弹道导弹建议放宽到 ≥ 90，否则上升段被拒） |
 
@@ -267,7 +267,8 @@ diveDistance = max( preset_dive_radius,
       "[[80,200]]": 0.35,
       "[[200,inf]]": 0.12
     },
-    "turning_factor": { "[[5,inf]]": 0.15 }
+    "turning_factor": { "[[5,inf]]": 0.15 },
+    "rvp_maxg": 10.0
   },
   "guidance_data": {
     "guidance_type": "GPS",
@@ -291,7 +292,6 @@ diveDistance = max( preset_dive_radius,
     "restore_ticket_radius": 1,
     "restore_wait_timeout_tick": 200,
     "max_virtual_flight_tick": 12000,
-    "virtual_midcourse_maxg": 10.0,
     "cruise_altitude": null,
     "target_update_mode": "FIXED_SNAPSHOT",
     "on_restore_timeout": "DISCARD"
@@ -313,7 +313,7 @@ diveDistance = max( preset_dive_radius,
 | 巡航段高度过冲振荡 | 增大 `preset_cruise_vertical_damping`（0.05→0.1），减小 `preset_cruise_altitude_gain` |
 | 巡航段拉不起来/到不了高度 | 检查 `motor_burn_time` 是否足够、`max_speed` 是否过低、`thrust/mass` 是否小于 `gravity` 需要 |
 | 俯冲太早/太平 | 减小 `preset_dive_altitude_factor`、`preset_dive_radius`；增大 `preset_dive_lead_factor` 相反 |
-| 末端俯冲拉不住、画大弧 | 增大末端 `turning_factor`（实体）或 `virtual_midcourse_maxg`（虚拟）；`min_speed` 钳制末端速度 |
+| 末端俯冲拉不住、画大弧 | 使用 `turning_factor` 时增大末端区间值；使用 `rvp_maxg` 时增大 G 值；`min_speed` 钳制末端速度 |
 | 高空速度异常快 | 配 `altitude_drag_factor` 高空低值 + `max_speed` 兜底 |
 | 恢复实体瞬间轨迹折线 | 检查虚拟段 phase 快照/恢复（3.4 节）、恢复前姿态对齐（3.5 节） |
 
@@ -321,7 +321,7 @@ diveDistance = max( preset_dive_radius,
 
 1. 数据模型：`RVP_GuidanceData` 加 9 个 `preset_*` 字段（默认值同本体，`presetCruiseAltitude=0` 禁用）；`RVP_GuidanceActiveConfig` 透传；默认值不改变现有 GPS 行为。
 2. 实体端：`RVP_BaseBullet` 加 phase 状态与初始化；`RVP_GuidanceRuntimeMath` 加弹道导弹分支（仅 GPS + `presetCruiseAltitude > 0`）。
-3. 虚拟端：`RVP_RvpTrajectoryIntegrator` VERSION 5 三段式；`RVP_VirtualMissileEligibility` 放开 preset；快照/恢复加 phase 字段。
+3. 虚拟端：`RVP_RvpTrajectoryIntegrator` VERSION 7 三段式与共享转向参数；`RVP_VirtualMissileEligibility` 放开 preset；快照/恢复加 phase 字段。
 4. 验证：
    - 单测：三段式 phase 推进、高度闭环收敛、俯冲判定、实体/虚拟同参轨迹数值一致（黄金输入对照）；
    - 游戏内：ATACMS 发射 → 上升 → 高空平飞 → 俯冲命中；开启虚拟中段后全程弹道连续；恢复点轨迹无折线；
@@ -331,7 +331,7 @@ diveDistance = max( preset_dive_radius,
 
 | 风险 | 说明 | 对策 |
 | --- | --- | --- |
-| 实体/虚拟弹道漂移 | 实体用 `turning_factor` blend，虚拟用 `maxG` 钳制，两套转向模型天然不等价 | 虚拟段侧重"弹道形状一致"而非逐 tick 相等；PD 字段（gain/damping）实体/虚拟读同一份配置，禁止双份默认值 |
+| 实体/虚拟弹道漂移 | 两态若解析到不同 Tick 或重复施加转向会产生交接折线 | 两态按有效飞行 Tick 读取同一 `rvp_maxg` / `turning_factor`，每 Tick 只执行一种钳制算法 |
 | `gravity=0` 的既有导弹误开 preset | 无重力时俯冲全靠高度闭环，轨迹偏"巡航滑翔"而非"弹道下砸" | 文档与校验：preset 建议配负 gravity；不强制（闭环可兜底） |
 | 旧攻顶导弹兼容 | `top_attack_height` 仍被虚拟中段拒绝 | preset 与 top_attack 互斥，显式校验并在加载日志提示 |
 | 虚拟中段积分器版本 | VERSION 4 → 5 变更在途记录语义 | 按既有治理规则：只在 `lastKnownActiveCount == 0` 时替换；SavedData 保存 implementationId/version |

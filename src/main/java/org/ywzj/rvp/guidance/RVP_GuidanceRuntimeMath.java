@@ -5,6 +5,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TrajectorySteeringMath;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
@@ -74,17 +76,21 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         if (intent.directMotion()) {
+            // 调用本项目直控转向入口；入口内部同样按 rvp_maxg 优先规则选择钳制算法。
             RVP_WireGuidanceSteering.applyFromDirection(
                     projectile, steeringTarget.subtract(projectile.position()), factor);
             return true;
         }
+        // 调用本项目弹体数据访问器；配置 rvp_maxg 时先生成完整期望方向，再统一施加 G 钳制。
+        Double rvpMaxGs = context.data().getProjectileData().getRvpMaxG();
+        float steeringFactor = rvpMaxGs != null ? 1.0F : factor;
         Vec3 next;
         if (isGpsCruiseActive(context, steeringTarget)) {
             next = steerGpsCruise(
                     current,
                     steeringTarget.subtract(projectile.position()),
                     speed,
-                    factor,
+                    steeringFactor,
                     context.active().cruiseLevelingFactor(),
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
@@ -96,16 +102,22 @@ public final class RVP_GuidanceRuntimeMath {
                     target,
                     entity.getDeltaMovement(),
                     speed,
-                    factor
+                    steeringFactor
             );
             if (next == null || next.lengthSqr() <= 1.0E-8) {
-                next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
+                next = steerPursuit(
+                        current, steeringTarget.subtract(projectile.position()), speed, steeringFactor);
             }
         } else {
-            next = steerPursuit(current, steeringTarget.subtract(projectile.position()), speed, factor);
+            next = steerPursuit(
+                    current, steeringTarget.subtract(projectile.position()), speed, steeringFactor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
+        }
+        if (rvpMaxGs != null) {
+            // 调用本项目共享 G 值转向工具，使实体态优先按 rvp_maxg 钳制本 Tick 方向变化。
+            next = RVP_BallisticTrajectoryMath.applySteering(current, next, rvpMaxGs);
         }
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
@@ -149,17 +161,26 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         float factor = resolveTurningFactor(context);
+        // 调用本项目弹体数据访问器；PRESET 实体链也遵守 rvp_maxg 高于 turning_factor。
+        Double rvpMaxGs = context.data().getProjectileData().getRvpMaxG();
+        float steeringFactor = rvpMaxGs != null ? 1.0F : factor;
         Vec3 next;
         if (shouldBeginPresetDive(projectile.position(), target, launchPos, current, preset, factor)) {
-            next = steerPresetTerminal(current, projectile.position(), target, speed, factor);
+            next = steerPresetTerminal(
+                    current, projectile.position(), target, speed, steeringFactor);
         } else {
             // 弹道导弹抛物线制导：上升+中段合一。整条弹道是一条对称抛物线弧，
             // 最高点（apogee）位于弹道水平中段，爬升/下降角按射程自适应保持平缓，
             // 无陡直线爬升、尖顶与平飞段（弹道导弹形态而非巡航导弹形态）。
-            next = steerPresetBallisticArc(current, projectile.position(), target, launchPos, preset, speed, factor);
+            next = steerPresetBallisticArc(
+                    current, projectile.position(), target, launchPos, preset, speed, steeringFactor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
+        }
+        if (rvpMaxGs != null) {
+            // 调用本项目共享 G 值转向工具，限制 PRESET 实体弹道的实际转向而非路线几何。
+            next = RVP_BallisticTrajectoryMath.applySteering(current, next, rvpMaxGs);
         }
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
@@ -645,18 +666,9 @@ public final class RVP_GuidanceRuntimeMath {
     }
 
     private static Vec3 blendDirection(Vec3 current, Vec3 desired, double speed, float turningFactor) {
-        if (desired == null || desired.lengthSqr() <= 1.0E-8) {
-            return current;
-        }
-        float factor = Math.max(0f, Math.min(1f, turningFactor));
-        if (current == null || current.lengthSqr() <= 1.0E-8) {
-            return desired.normalize().scale(speed);
-        }
-        Vec3 blended = current.normalize().scale(1.0 - factor).add(desired.normalize().scale(factor));
-        if (blended.lengthSqr() <= 1.0E-8) {
-            return current.normalize().scale(speed);
-        }
-        return blended.normalize().scale(speed);
+        // 调用本项目纯数学工具，让实体链与虚拟链共用完全相同的 turningFactor 算法。
+        return RVP_TrajectorySteeringMath.applyTurningFactor(
+                current, desired, speed, turningFactor);
     }
 
     private static float resolveTurningFactor(RVP_GuidanceRuntimeContext context) {

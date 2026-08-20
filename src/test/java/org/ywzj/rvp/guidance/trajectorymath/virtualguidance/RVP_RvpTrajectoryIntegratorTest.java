@@ -104,6 +104,36 @@ class RVP_RvpTrajectoryIntegratorTest {
         assertTrue(steered.subtract(current).length() <= 18.0 * PhysicsEngine.G + EPSILON);
     }
 
+    /** 未配置 rvp_maxg 时，虚拟链必须执行与实体链相同的 turningFactor 方向插值。 */
+    @Test
+    void configuredSteeringFallsBackToTurningFactorWhenRvpMaxGIsAbsent() {
+        Vec3 current = new Vec3(10.0, 0.0, 0.0);
+        Vec3 desired = new Vec3(0.0, 0.0, 1.0);
+
+        Vec3 steered = RVP_BallisticTrajectoryMath.applyConfiguredSteering(
+                current, desired, null, 0.25F);
+        Vec3 expected = new Vec3(0.75, 0.0, 0.25).normalize().scale(current.length());
+
+        assertEquals(expected.x, steered.x, EPSILON);
+        assertEquals(expected.y, steered.y, EPSILON);
+        assertEquals(expected.z, steered.z, EPSILON);
+    }
+
+    /** 同时配置两个参数时，rvp_maxg 必须覆盖 turningFactor 并限制速度向量变化量。 */
+    @Test
+    void configuredSteeringPrioritizesRvpMaxGOverTurningFactor() {
+        Vec3 current = new Vec3(10.0, 0.0, 0.0);
+        Vec3 desired = new Vec3(0.0, 0.0, 1.0);
+        double rvpMaxGs = 1.0;
+
+        Vec3 steered = RVP_BallisticTrajectoryMath.applyConfiguredSteering(
+                current, desired, rvpMaxGs, 1.0F);
+
+        assertEquals(rvpMaxGs * PhysicsEngine.G,
+                steered.subtract(current).length(), EPSILON);
+        assertTrue(theta(current, steered) < Math.PI / 2.0);
+    }
+
     /**
      * 验证 GPS 巡航高度配置会进入高度闭环，并生成方向正确的垂直速度指令。
      *
@@ -198,7 +228,7 @@ class RVP_RvpTrajectoryIntegratorTest {
         RVP_VirtualTrajectoryState initial = new RVP_VirtualTrajectoryState(
                 Vec3.ZERO, new Vec3(4, 0, 0), 0, -90, 4, 12, 100, 50, -1);
         RVP_VirtualTrajectoryParameters parameters = new RVP_VirtualTrajectoryParameters(
-                18.0, null, true, false, 1, 11, 1000, 0, 0, 1, 0,
+                18.0, 0.5F, null, true, false, 1, 11, 1000, 0, 0, 1, 0,
                 0, 340);
         RVP_VirtualTrajectoryResult result = new RVP_RvpTrajectoryIntegrator().step(
                 initial, new RVP_VirtualGuidanceInput(new Vec3(100000, 0, 100000)), parameters);
@@ -268,7 +298,7 @@ class RVP_RvpTrajectoryIntegratorTest {
                 new Vec3(0.0, StartPY, 0.0), new Vec3(cruiseSpeed, 0.0, 0.0),
                 xRot, yRot, cruiseSpeed, 0.0, 0, simulationTimeoutTick + 100, -1);
         RVP_VirtualTrajectoryParameters parameters = new RVP_VirtualTrajectoryParameters(
-                10.0, cruiseAltitude, true, propulsion,
+                10.0, 0.5F, cruiseAltitude, true, propulsion,
                 690.0f, 50800f, motorBurnTime, 0,
                 0.00045f, 1.0f, -PhysicsEngine.G,
                 (float) minSpeed, (float) maxSpeed);

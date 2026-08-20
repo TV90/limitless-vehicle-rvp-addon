@@ -7,72 +7,105 @@ import java.util.Map;
 
 public class RVP_ProjectileData {
 
+    /** 可选弹体初速覆盖，单位格/Tick，默认 null；未配置时继承武器顶层速度。 */
     @SerializedName("velocity")
     private Float velocity;
 
+    /** 空中每 Tick 的 Y 轴速度增量，单位格/Tick²，默认 0；实体和虚拟弹道均生效。 */
     @SerializedName("gravity")
     private float gravity = 0f;
 
+    /** 水中每 Tick 的 Y 轴速度增量，单位格/Tick²，默认 0；仅水中实体弹道生效。 */
     @SerializedName("gravity_in_water")
     private float gravityInWater = 0f;
 
+    /** 空中线性阻力系数，默认 0；仅未启用火箭发动机动力学的实体弹道生效。 */
     @SerializedName("drag")
     private float drag = 0f;
 
+    /** 水中线性阻力系数，默认 0；仅水中实体弹道生效。 */
     @SerializedName("drag_in_water")
     private float dragInWater = 0f;
 
+    /** 是否在发射初速中叠加载具速度，默认 false；仅弹体生成时生效。 */
     @SerializedName("inherit_vehicle_velocity")
     private boolean inheritVehicleVelocity = false;
 
+    /** 是否在运动更新后恢复配置速率，默认 false；实体弹道和相关预测均生效。 */
     @SerializedName("constant_speed")
     private boolean constantSpeed = false;
 
+    /** 是否让弹体姿态跟随速度方向，默认 true；实体态及虚拟态恢复姿态时生效。 */
     @SerializedName("rotate_to_motion")
     private boolean rotateToMotion = true;
 
+    /** 最高速率，单位格/Tick，默认 0；非正值表示不限制。 */
     @SerializedName("max_speed")
     private float maxSpeed = 0f;
 
+    /** 最低速率，单位格/Tick，默认 0；非正值表示不限制。 */
     @SerializedName("min_speed")
     private float minSpeed = 0f;
 
+    /**
+     * 按飞行 Tick 配置的方向插值强度，范围 0～1，默认 null；未配置 {@code rvp_maxg}
+     * 时约束实体与虚拟制导转向，区间未命中时使用运行时默认值 0.5。
+     */
     @SerializedName("turning_factor")
     private Map<RVP_Range<Integer>, Float> turningFactor;
 
+    /**
+     * RVP 最大法向过载，单位 G，默认 null；显式配置时以非负值约束实体与虚拟制导的
+     * 单 Tick 转向，并优先于 {@code turning_factor}，0 表示不允许转向。
+     */
+    @SerializedName("rvp_maxg")
+    private Double rvpMaxG;
+
+    /** 是否启用火箭发动机动力学，默认 false；启用后质量、推力和燃烧时间参与运动计算。 */
     @SerializedName("has_rocket_engine")
     private boolean hasRocketEngine = false;
 
+    /** 弹体质量，单位沿用本体动力学，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("mass")
     private float mass = 0f;
 
+    /** 发动机推力，单位沿用本体动力学，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("thrust")
     private float thrust = 0f;
 
+    /** 主发动机燃烧时间，单位 Tick，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("motor_burn_time")
     private float motorBurnTime = 0f;
 
+    /** 是否启用第二脉冲发动机，默认 false；仅火箭发动机启用时生效。 */
     @SerializedName("second_pulse")
     private boolean secondPulse = false;
 
+    /** 第二脉冲速度触发阈值，单位格/Tick，默认 0；低于正阈值时允许点火。 */
     @SerializedName("second_pulse_trigger_speed")
     private float secondPulseTriggerSpeed = 0f;
 
+    /** 第二脉冲目标距离触发阈值，单位格，默认 0；低于正阈值时允许点火。 */
     @SerializedName("second_pulse_trigger_distance")
     private float secondPulseTriggerDistance = 0f;
 
+    /** 第二脉冲推力，单位沿用本体动力学，默认 0；第二脉冲启用后生效。 */
     @SerializedName("second_pulse_thrust")
     private float secondPulseThrust = 0f;
 
+    /** 第二脉冲燃烧时间，单位 Tick，默认 0；第二脉冲启用后生效。 */
     @SerializedName("second_pulse_burn_time")
     private float secondPulseBurnTime = 0f;
 
+    /** 发射后的点火延迟，单位 Tick，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
 
+    /** 速度平方阻力系数，默认 0；火箭发动机动力学按 Tick 施加。 */
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 
+    /** 按世界 Y 高度配置的阻力倍率，默认 null；未命中或非法值按 1.0 处理。 */
     @SerializedName("altitude_drag_factor")
     private Map<RVP_Range<Float>, Float> altitudeDragFactor;
 
@@ -183,6 +216,21 @@ public class RVP_ProjectileData {
             return Math.max(0f, Math.min(1f, value));
         }
         return null;
+    }
+
+    /** @return 是否显式配置了 {@code rvp_maxg}；配置 0 仍视为已配置。 */
+    public boolean hasRvpMaxG() {
+        return rvpMaxG != null;
+    }
+
+    /**
+     * @return 未配置时返回 null；已配置时返回非负有限 G 值，非法数值按 0 G 安全处理
+     */
+    public Double getRvpMaxG() {
+        if (rvpMaxG == null) {
+            return null;
+        }
+        return Double.isFinite(rvpMaxG) ? Math.max(rvpMaxG, 0.0) : 0.0;
     }
 
     public boolean hasRocketEngine() {

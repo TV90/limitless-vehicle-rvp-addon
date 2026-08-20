@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -67,16 +68,25 @@ public final class RVP_WireGuidanceSteering {
 
         Vec3 desired = dir.scale(speed);
         Vec3 velocity = desired;
-        double blend = Mth.clamp(turningFactor, 0.0, 1.0);
         Vec3 current = projectile.getDeltaMovement();
-        if (blend < 1.0 && current.lengthSqr() > 1.0E-6) {
-            velocity = new Vec3(
-                    current.x + (desired.x - current.x) * blend,
-                    current.y + (desired.y - current.y) * blend,
-                    current.z + (desired.z - current.z) * blend);
-            double blendedSpeed = velocity.length();
-            if (blendedSpeed > 1.0E-6) {
-                velocity = velocity.scale(speed / blendedSpeed);
+        // 调用本项目弹体数据访问器；直控制导也必须让显式 rvp_maxg 覆盖 turningFactor。
+        Double rvpMaxGs = projectile.getRvpData() == null
+                ? null
+                : projectile.getRvpData().getProjectileData().getRvpMaxG();
+        if (rvpMaxGs != null) {
+            // 调用本项目共享 G 值转向工具，严格限制直控指令造成的单 Tick 速度方向变化。
+            velocity = RVP_BallisticTrajectoryMath.applySteering(current, desired, rvpMaxGs);
+        } else {
+            double blend = Mth.clamp(turningFactor, 0.0, 1.0);
+            if (blend < 1.0 && current.lengthSqr() > 1.0E-6) {
+                velocity = new Vec3(
+                        current.x + (desired.x - current.x) * blend,
+                        current.y + (desired.y - current.y) * blend,
+                        current.z + (desired.z - current.z) * blend);
+                double blendedSpeed = velocity.length();
+                if (blendedSpeed > 1.0E-6) {
+                    velocity = velocity.scale(speed / blendedSpeed);
+                }
             }
         }
 

@@ -32,7 +32,8 @@
     },
     "turning_factor": {
       "[[5,inf]]": 0.15
-    }
+    },
+    "rvp_maxg": 10.0
   },
   "guidance_data": {
     "guidance_type": "GPS",
@@ -62,7 +63,6 @@
     "restore_ticket_radius": 1,
     "restore_wait_timeout_tick": 200,
     "max_virtual_flight_tick": 12000,
-    "virtual_midcourse_maxg": 10.0,
     "target_update_mode": "FIXED_SNAPSHOT",
     "on_restore_timeout": "DISCARD"
   },

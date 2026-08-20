@@ -61,5 +61,31 @@ class RVP_ProjectileDataTurningFactorTest {
 
         assertFalse(data.hasTurningFactor());
         assertNull(data.resolveTurningFactor(0));
+        assertFalse(data.hasRvpMaxG());
+        assertNull(data.getRvpMaxG());
+    }
+
+    @Test
+    void rvpMaxGRemainsDistinctAndCoexistsWithTurningFactor() {
+        RVP_ProjectileData data = gson.fromJson("""
+                {
+                  "rvp_maxg": 12.5,
+                  "turning_factor": {"[[0,inf]]": 0.2}
+                }
+                """, RVP_ProjectileData.class);
+
+        assertTrue(data.hasRvpMaxG());
+        assertEquals(12.5, data.getRvpMaxG());
+        assertEquals(0.2F, data.resolveTurningFactor(0));
+    }
+
+    @Test
+    void rvpMaxGClampsNegativeValuesWithoutBecomingAbsent() {
+        RVP_ProjectileData data = gson.fromJson("""
+                {"rvp_maxg":-3.0}
+                """, RVP_ProjectileData.class);
+
+        assertTrue(data.hasRvpMaxG());
+        assertEquals(0.0, data.getRvpMaxG());
     }
 }

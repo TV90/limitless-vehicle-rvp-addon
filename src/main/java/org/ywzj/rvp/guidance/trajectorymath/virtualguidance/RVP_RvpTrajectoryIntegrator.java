@@ -14,7 +14,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */
     public static final String ID = "rvp_current";
     /** 当前 RVP 纯数学弹道状态版本，用于阻止不兼容状态继续积分。 */
-    public static final int VERSION = 6;
+    public static final int VERSION = 7;
 
     /** {@inheritDoc} */
     @Override
@@ -51,13 +51,15 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
         Vec3 target = guidance.fixedTargetPosition();
         Vec3 steered;
         if (guidance.preset() != null && guidance.preset().cruiseAltitude() > 0.0) {
-            // 调用本项目弹道数学工具，为 PRESET 弹道生成受最大 G 值限制的新速度。
+            // 调用本项目弹道数学工具，为 PRESET 弹道按 rvp_maxg 优先规则生成受限新速度。
             steered = RVP_BallisticTrajectoryMath.steerPresetBallistic(
-                    state.position(), velocity, target, guidance.preset(), parameters.maxGs());
+                    state.position(), velocity, target, guidance.preset(),
+                    parameters.rvpMaxGs(), parameters.turningFactor());
         } else {
-            // 调用本项目弹道数学工具，为固定 GPS 目标生成高度闭环和末端可达的新速度。
+            // 调用本项目弹道数学工具，为固定 GPS 目标按同一转向优先级生成高度闭环速度。
             steered = RVP_BallisticTrajectoryMath.steerGpsCruise(
-                    state.position(), velocity, target, parameters.cruiseAltitude(), parameters.maxGs());
+                    state.position(), velocity, target, parameters.cruiseAltitude(),
+                    parameters.rvpMaxGs(), parameters.turningFactor());
         }
 
         // 调用本项目弹道数学工具，记录实际转角并执行最终速率上下限钳制。

@@ -23,15 +23,20 @@ final class RVP_VirtualTrajectoryInputFactory {
      * @param data 当前武器配置
      * @param coldLaunchTimeTick 冷发射至少延迟到的点火 Tick
      * @param altitude 当前弹体世界 Y 高度，用于解析高度阻力系数
+     * @param flightTick 当前即将积分的有效飞行 Tick，用于解析 turning_factor 区间
      * @return 与武器数据对象解耦的不可变积分参数
      */
     static RVP_VirtualTrajectoryParameters createParameters(RVP_WeaponData data,
                                                              int coldLaunchTimeTick,
-                                                             double altitude) {
+                                                             double altitude,
+                                                             int flightTick) {
         // 调用本项目武器数据访问器，集中冻结弹体物理配置，避免数学层持有可变配置对象。
         var projectile = data.getProjectileData();
+        // 调用本项目弹体数据解析器，按虚拟态连续飞行 Tick 取得与实体态相同的方向插值值。
+        Float configuredTurningFactor = projectile.resolveTurningFactor(flightTick);
         return new RVP_VirtualTrajectoryParameters(
-                data.getVirtualMidcourseData().getVirtualMidcourseMaxG(),
+                projectile.getRvpMaxG(),
+                configuredTurningFactor != null ? configuredTurningFactor : 0.5F,
                 data.getVirtualMidcourseData().getCruiseAltitude(),
                 projectile.isRotateToMotion(),
                 data.usesPropulsion(),

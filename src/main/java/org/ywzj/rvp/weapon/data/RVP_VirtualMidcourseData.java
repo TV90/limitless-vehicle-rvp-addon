@@ -5,8 +5,8 @@ import com.google.gson.annotations.SerializedName;
 /**
  * 固定 GPS 目标虚拟中段配置。
  *
- * <p>阶段 B 由服务器 SavedData 持久化运行状态；本类定义准入、恢复、安全上限以及
- * 虚拟积分器独立使用的最大法向过载，不复用实体态 {@code turning_factor}。</p>
+ * <p>阶段 B 由服务器 SavedData 持久化运行状态；本类只定义准入、恢复和安全上限。
+ * 转向约束统一读取 {@link RVP_ProjectileData}，避免真实态与虚拟态使用两套机动参数。</p>
  */
 public final class RVP_VirtualMidcourseData {
     /** 是否启用虚拟中段；默认 false，只有显式启用的武器生效。 */
@@ -29,11 +29,6 @@ public final class RVP_VirtualMidcourseData {
     @SerializedName("virtual_update_interval_tick") private int virtualUpdateIntervalTick = 1;
     /** 单枚导弹最大虚拟飞行时间，单位 tick，默认 12000；超过后丢弃。 */
     @SerializedName("max_virtual_flight_tick") private int maxVirtualFlightTick = 12000;
-    /**
-     * 虚拟中段最大法向过载，单位 G，默认 18；仅在 {@code enabled=true} 且导弹已进入
-     * 虚拟态时约束积分器的单 Tick 方向变化，不影响真实实体阶段。
-     */
-    @SerializedName("virtual_midcourse_maxg") private double virtualMidcourseMaxG = 18.0;
     /**
      * 可选虚拟巡航高度，单位世界 Y，默认 null；仅在 GPS 巡航阶段生效，配置后闭环跟踪
      * 该绝对高度，未配置时以当前虚拟位置高度为闭环基准。
@@ -64,10 +59,6 @@ public final class RVP_VirtualMidcourseData {
     public int getVirtualUpdateIntervalTick() { return 1; }
     /** @return 至少为 1 的单次虚拟飞行 Tick 上限。 */
     public int getMaxVirtualFlightTick() { return Math.max(maxVirtualFlightTick, 1); }
-    /** @return 钳制到非负有限值的虚拟中段最大法向过载，单位 G；非法值回退为默认 18 G。 */
-    public double getVirtualMidcourseMaxG() {
-        return Double.isFinite(virtualMidcourseMaxG) ? Math.max(virtualMidcourseMaxG, 0.0) : 18.0;
-    }
     /** @return 可选世界 Y 巡航高度；未配置或值非有限时为 null。 */
     public Double getCruiseAltitude() {
         return cruiseAltitude != null && Double.isFinite(cruiseAltitude) ? cruiseAltitude : null;

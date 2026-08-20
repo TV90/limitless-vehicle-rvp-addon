@@ -171,7 +171,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `rotate_to_motion` | 是否让实体朝向跟随运动方向。默认 `true`。 |
 | `max_speed` | 最大速度限制，0 表示不限制。 |
 | `min_speed` | 最小速度限制，0 表示不限制。 |
-| `turning_factor` | 旧版 MCHR 风格过载参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 tick 区间，value 为该区间的转向因子。为空时不启用。 |
+| `turning_factor` | 旧版 MCHR 风格方向插值参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 Tick 区间，value 为 0～1 的转向因子；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5。 |
+| `rvp_maxg` | 可选 RVP 最大法向过载，单位 G，默认不配置。显式配置后实体与虚拟制导均使用 `applySteering`，并覆盖同时存在的 `turning_factor`；负数和非有限值按 0 G 安全处理，0 表示不允许转向。 |
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
 | `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
 | `thrust` | 发动机推力。 |
@@ -1109,7 +1110,6 @@ SACLOS 反坦克导弹（半自动修正）：
     "restore_wait_timeout_tick": 200,
     "virtual_update_interval_tick": 1,
     "max_virtual_flight_tick": 12000,
-    "virtual_midcourse_maxg": 18.0,
     "cruise_altitude": 320.0,
     "target_update_mode": "FIXED_SNAPSHOT",
     "on_restore_timeout": "DISCARD"
@@ -1131,7 +1131,6 @@ SACLOS 反坦克导弹（半自动修正）：
 | `restore_wait_timeout_tick` | int | tick，`200` | 恢复区块长期无法 ready 时的最大等待时间 |
 | `virtual_update_interval_tick` | int | tick，`1` | 虚拟积分间隔；第一版固定钳制为 1，后续才允许批量积分 |
 | `max_virtual_flight_tick` | int | tick，`12000` | 单次虚拟态最长持续时间，不得超过弹体剩余 `life` |
-| `virtual_midcourse_maxg` | double | G，`18` | 虚拟中段独立的最大法向过载；只约束虚拟积分，不改变实体阶段 |
 | `cruise_altitude` | double/null | 世界 Y，`null` | 可选虚拟巡航高度；配置后在目标仍可达的前提下由高度闭环跟踪，不可达时取沿命中路线能够接近的高度，为空时以当前虚拟高度为闭环基准 |
 | `target_update_mode` | enum | `FIXED_SNAPSHOT` | `FIXED_SNAPSHOT` 或第二阶段的 `DATALINK` |
 | `on_restore_timeout` | enum | `DISCARD` | 第一版只建议 `DISCARD`；不得在未加载目标处直接爆炸 |
@@ -1142,11 +1141,11 @@ SACLOS 反坦克导弹（半自动修正）：
 - `restore_lead_tick × 当前水平速度` 与 `restore_target_distance` 取较大值作为实际恢复触发距离。
 - `restore_ticket_radius` 最大为 2，避免单枚导弹恢复时请求过多区块。
 - `max_virtual_flight_tick <= weapon life`；运行时最终使用两者较小值。
-- `virtual_midcourse_maxg` 必须为非负有限值；非法值回退为默认 18 G，0 G 表示保持当前方向。
-- 虚拟积分不读取 `projectile_data.turning_factor`，也不使用 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
+- 虚拟积分从 `projectile_data` 读取 `rvp_maxg` 与当前飞行 Tick 对应的 `turning_factor`；`rvp_maxg` 已配置时优先，未配置时使用 `turning_factor`，区间未命中回退 0.5。
+- 虚拟积分不读取 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
 - 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
 
-`virtual_midcourse_maxg` 是虚拟积分器的明确参数契约，不是本体 `max_g` 的别名。实体态仍按当前 RVP 实体逻辑飞行，虚拟态则用独立最大 G 值保证单 Tick 机动上限可解释、可测试。以后替换积分方法时，新实现必须显式声明参数和状态版本，不静默改变在途记录语义。
+`rvp_maxg` 与 `turning_factor` 是实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级与数学实现，避免虚拟化或恢复时出现转向能力跳变。以后替换积分方法时，新实现必须显式声明参数和状态版本，不静默改变在途记录语义。
 
 ---
 

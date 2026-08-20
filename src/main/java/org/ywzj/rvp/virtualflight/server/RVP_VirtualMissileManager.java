@@ -222,7 +222,8 @@ public final class RVP_VirtualMissileManager {
         long start = System.nanoTime();
         // 从当前武器数据生成纯参数，随后只把不可变状态/输入交给积分器。
         RVP_VirtualTrajectoryParameters parameters = RVP_VirtualTrajectoryInputFactory.createParameters(
-                data, state.coldLaunchTimeTick, state.trajectory().position().y);
+                data, state.coldLaunchTimeTick, state.trajectory().position().y,
+                state.trajectory().flightTick() + 1);
         RVP_VirtualMissileDebug.Vec3Before before = new RVP_VirtualMissileDebug.Vec3Before(
                 state.trajectory().position(), state.trajectory().velocity());
         // 核心调用：积分器不接触 Level、Entity、Ticket 或任何同步加载 API。

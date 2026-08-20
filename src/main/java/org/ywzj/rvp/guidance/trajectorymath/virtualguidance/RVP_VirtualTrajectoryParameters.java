@@ -3,7 +3,8 @@ package org.ywzj.rvp.guidance.trajectorymath.virtualguidance;
 /**
  * 单 Tick 纯轨迹积分参数。
  *
- * @param maxGs 最大法向过载，单位 G；非正值表示不允许转向
+ * @param rvpMaxGs 可选 RVP 最大法向过载，单位 G；非 null 时优先于 turningFactor
+ * @param turningFactor 未配置 rvpMaxGs 时使用的单 Tick 方向插值强度，范围 0～1
  * @param cruiseAltitude 可选世界 Y 巡航高度；{@code null} 表示以当前高度为闭环基准
  * @param rotateToMotion 是否让实体恢复后朝向运动方向；纯积分过程只负责携带该快照值
  * @param propulsion 是否启用发动机推力
@@ -18,7 +19,8 @@ package org.ywzj.rvp.guidance.trajectorymath.virtualguidance;
  * @param maxSpeed 最高速率，单位格/Tick；非正值表示不限制
  */
 public record RVP_VirtualTrajectoryParameters(
-        double maxGs,
+        Double rvpMaxGs,
+        float turningFactor,
         Double cruiseAltitude,
         boolean rotateToMotion,
         boolean propulsion,
