@@ -1,0 +1,95 @@
+{
+  "defense_stats": {
+    "damage_threshold": 15
+  },
+  "type": "ywzj_vehicle:wheeled_vehicle",
+  "show_skeleton": false,
+  "attributes": {
+    "brake_force": 0.025,
+    "forward_force": 0.014,
+    "backward_force": 0.018,
+    "max_speed_forward": 0.68,
+    "max_speed_backward": 0.4,
+    "turn_step": 0.18,
+    "max_turn": 1.1
+  },
+  "max_health": 500,
+  "view_info": {
+    "third_person_center_offset": [0, 3, 0],
+    "third_person_distance": 12,
+    "sound_distance": 7
+  },
+  "energy_info": {
+    "energy_capacity": 1,
+    "energy_consumption_per_tick": 0.00001
+  },
+  "physics_info": {
+    "can_destroy_block": true
+  },
+  "hide_passenger": true,
+  "structure_model": "rvp:vehicle/m142",
+  "core_distance_scale_multiplier": 0.0,
+  "deployable_uav_enabled": true,
+  "deployable_uav_vehicle_id": "rvp:suav",
+  "deployable_uav_role": "uav",
+  "deployable_uav_spawn_offset": [0.0, 100.0, 0.0],
+  "deployable_uav_spawn_yaw_mode": "parent",
+  "deployable_uav_single_instance": true,
+  "deployable_uav_allow_control_switch": true,
+  "deployable_uav_auto_link_datalink": true,
+  "deployable_uav_redeploy_cooldown_tick": 60,
+  "deployable_uav_auto_loiter_on_switch_back": true,
+  "deployable_uav_initial_speed": 1,
+  "parts": [
+    {
+      "id": "seat",
+      "name": "seat",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret",
+      "is_seat": true,
+      "seat_offset": [-0.0001, 2.9644, 1.6170],
+      "operator_view_offset": [-0.0001, 2.9644, 1.6170],
+      "operator_on_weapon_unit": false,
+      "optical_sight_type": "none",
+      "zoom_min": 1,
+      "zoom_max": 1,
+      "crosshair_style": "circle",
+      "weapons": [
+        {
+          "part_unit_id": "launcher"
+        }
+      ],
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 3.0,
+        "x_rot_max": 0,
+        "x_rot_min": 0
+      }
+    },
+    {
+      "id": "launcher",
+      "name": "launcher",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "turret_barrel",
+      "ammo_capacity": -1,
+      "is_seat": false,
+      "base": "seat",
+      "parent_weapon_unit_aim": true,
+      "fire_control_sensor_type": "ccip",
+      "crosshair_style": "cross",
+      "weapons": [
+        "rvp:m142_rocket",
+        "rvp:m142_m30",
+        "rvp:m142_atacms"
+      ],
+      "rot_info": {
+        "x_rot_speed": 2.5,
+        "y_rot_speed": 0,
+        "x_rot_max": 5,
+        "x_rot_min": -85,
+        "y_rot_max": 0,
+        "y_rot_min": 0
+      }
+    }
+  ]
+}

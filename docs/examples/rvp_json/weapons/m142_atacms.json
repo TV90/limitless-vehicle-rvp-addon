@@ -1,0 +1,94 @@
+{
+  "type": "rvp:missile",
+  "name": "MGM-140 ATACMS",
+  "shoot_interval": 500,
+  "life": 12000,
+  "max_capacity": 1,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": true
+  },
+  "projectile_data": {
+    "has_rocket_engine": true,
+    "velocity": 2.5,
+    "rotate_to_motion": true,
+    "max_speed": 20.0,
+    "mass": 0.0015,
+    "thrust": 0.1094,
+    "motor_burn_time": 300000,
+    "ignition_delay_tick": 20,
+    "drag_coefficient": 0.00045,
+    "cruise_end_horizontal_distance": 0.0,
+    "inherit_vehicle_velocity": true,
+    "turning_factor": {
+      "[[5,inf]]": 0.15
+    }
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "GPS",
+    "guidance_tick_range": "[[5,inf]]",
+    "max_guidance_angle": 120,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "gps_spread_radius": 5,
+    "guidance_target_distance_range": "[[1,inf]]",
+    "top_attack_height": null
+  },
+  "virtual_midcourse_data": {
+    "enabled": true,
+    "entry_min_flight_tick": 0,
+    "entry_min_distance_from_launch": 800.0,
+    "entry_min_target_distance": 1600.0,
+    "restore_target_distance": 1500.0,
+    "restore_lead_tick": 2,
+    "restore_ticket_radius": 1,
+    "restore_wait_timeout_tick": 200,
+    "virtual_update_interval_tick": 1,
+    "max_virtual_flight_tick": 12000,
+    "virtual_midcourse_maxg": 10.0,
+    "cruise_altitude": 320.0,
+    "target_update_mode": "FIXED_SNAPSHOT",
+    "on_restore_timeout": "DISCARD"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+   "hbm_effect_data": {
+            "enabled": true,
+            "real_explosion": "none",
+            "visual_preset": "nuclear",
+            "effect_yield": 100,
+            "visual_scale": 1.0,
+            "visual_density": 0.5,
+            "destroy_block": false
+        },
+    "explosion_data": {
+      "explode": true,
+      "damage": 1200,
+      "radius": 18,
+      "proximity_fuze": false,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80
+  },
+  "misc_data": {
+    "signal_intensity_factor_on_radar": {
+      "[[0,inf]]": 6
+    }
+  }
+}

@@ -60,6 +60,8 @@
 | `proximityFuseDamage` | 近炸直接命中伤害，null=无额外伤害 | Float | null |
 | `proximityFuseExplosionDamage` | 近炸专用爆炸伤害重写，null=使用 RVP_Explosion.damage | Float | null |
 | `proximityFuseExplosionRadius` | 近炸专用爆炸半径重写，null=使用 RVP_Explosion.radius | Float | null |
+| `groundProximityFuseDistance` | 世界系正下方近地引信高度（格），检测可碰撞方块并忽略流体；0=禁用 | float | 0 |
+| `groundProximityFuseArmTick` | 近地引信独立解保 tick，计时达到该值后启用 | int | 0 |
 | `detonateOnLifeEnd` | 生命周期结束时是否爆炸 | boolean | false |
 | `entityCollisionSafeTick` | 发射后多少 tick 内忽略与发射者碰撞 | Integer | null |
 
@@ -71,6 +73,8 @@
 
 ```
 RVP_BaseBullet tick()
+  ├─ 碰撞前 → 近地扫掠引信(groundProximityFuseDistance + groundProximityFuseArmTick)
+  │               → 还原准确离地起爆点 → on_fuse / 标准爆炸
   ├─ tick() → 近炸引信检测(proximityRadius + proximityFuseTick)
   │               → 命中实体 → detonateWithFuse()
   ├─ 与方块碰撞 → BlockHit → detonateImpact()

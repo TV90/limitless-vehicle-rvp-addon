@@ -63,6 +63,20 @@ public class RVP_FuseData {
     private float proximityRadius = 0f;
 
     /**
+     * 近地引信检测高度（格）：沿世界系绝对 {@code -Y} 检测可碰撞方块，忽略流体；
+     * {@code 0} 表示不启用。解保后，弹体当前位置或本 Tick 运动段达到该离地高度时触发。
+     */
+    @SerializedName("ground_proximity_fuse_distance")
+    private float groundProximityFuseDistance = 0f;
+
+    /**
+     * 近地引信解保时间（tick）：弹体 {@code updateCount} 达到该值后开始检测；
+     * 默认 {@code 0}，表示出生后立即允许检测，仅在 {@code ground_proximity_fuse_distance > 0} 时生效。
+     */
+    @SerializedName("ground_proximity_fuse_arm_tick")
+    private int groundProximityFuseArmTick = 0;
+
+    /**
      * 攻顶引信：检测弹体正下方（世界系绝对 -Y 轴，不随弹体姿态变化）半锥角区域内的实体。
      * 命中后触发引信（复用近炸全额伤害与 {@code on_fuse} 子母弹链路）。
      */
@@ -222,6 +236,16 @@ public class RVP_FuseData {
 
     public float getProximityRadius() {
         return Math.max(proximityRadius, 0f);
+    }
+
+    public float getGroundProximityFuseDistance() {
+        return Float.isFinite(groundProximityFuseDistance)
+                ? Math.max(groundProximityFuseDistance, 0f)
+                : 0f;
+    }
+
+    public int getGroundProximityFuseArmTick() {
+        return Math.max(groundProximityFuseArmTick, 0);
     }
 
     public Float getProximityFuseDamageOverride() {

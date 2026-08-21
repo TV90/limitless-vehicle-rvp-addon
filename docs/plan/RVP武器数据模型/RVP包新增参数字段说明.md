@@ -256,6 +256,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
 | `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
+| `ground_proximity_fuse_distance` | 近地引信高度（格），默认 `0` 表示禁用。沿世界系绝对 `-Y` 检测可碰撞方块并忽略流体；会扫掠本 Tick 完整运动段，使高速弹体在撞地前的准确高度触发。建筑和树叶等有碰撞体的方块同样算地面。 |
+| `ground_proximity_fuse_arm_tick` | 近地引信独立解保 tick，默认 `0`；弹体计时达到该值后才进行近地检测，不要求弹体必须下降。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 | `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
 
@@ -656,10 +658,37 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `inherit_parent_velocity` | 是否叠加母弹速度，默认 true。 |
 | `inherit_vehicle_velocity` | 是否叠加发射载具速度，默认 false。 |
 | `velocity_scale` | 速度倍率，默认 1。 |
+| `payloads_velocity` | 世界系附加速度向量 `[x,y,z]`（格/tick），默认 `[0,0,0]`；在速度继承、发射角与 `spread` 全部计算后叠加，例如 `[0,-3,0]` 使子弹药获得向下冲量。 |
+| `payloads_velocity_factor` | `payloads_velocity` 的随机浮动比例 `f`，范围 `0..1`，默认 `0`；每枚子弹药独立抽取 `[1-f,1+f]` 的共同倍率，保持 XYZ 方向比例。 |
 | `power_scale` | RVP 武器伤害/初速蓄力倍率，默认 1。 |
 | `allow_submunition` | 写在**本层 `payloads` 条目**上：为 `true` 时，被生成的弹体可执行**其自身武器 JSON** 的 `submunition_data`（多级火箭、链式战斗部**必须**为 `true`）；默认 `false` 防止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md)。 |
 | `damage_multiplier` | 仅 RVP 弹体：直击伤害倍率（可选）。 |
 | `suppress_explosion` | 仅 RVP 弹体：关闭爆炸。 |
+
+近地开舱并向下抛撒的典型配置：
+
+```json
+{
+  "fuse_data": {
+    "ground_proximity_fuse_distance": 20.0,
+    "ground_proximity_fuse_arm_tick": 10
+  },
+  "submunition_data": {
+    "enabled": true,
+    "releases": [{
+      "triggers": ["on_fuse"],
+      "parent_action": "discard_after_release",
+      "payloads": [{
+        "kind": "rvp_weapon",
+        "weapon_id": "rvp:cluster_bomblet",
+        "count": 12,
+        "payloads_velocity": [0.0, -3.0, 0.0],
+        "payloads_velocity_factor": 0.25
+      }]
+    }]
+  }
+}
+```
 
 #### `payloads[].spread` 散布
 

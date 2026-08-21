@@ -174,6 +174,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         }
         tickSubmunition();
         tickGuidance();
+        // 调用本项目近地引信扫掠：机炮弹同样必须在本 Tick 碰撞检测前于配置高度起爆。
+        if (tickGroundProximityFuse()) {
+            return false;
+        }
         // Hit test before motion (same as {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()}).
         tickHit();
         return isAlive();

@@ -1,0 +1,69 @@
+{
+  "type": "rvp:rocket",
+  "name": "M-31 火箭弹",
+  "shoot_interval": 200,
+  "max_capacity": 6,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0.2,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 6,
+    "gravity": -0.045,
+    "drag": 0,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 6
+  },
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+   "hbm_effect_data": {
+    "enabled": true,
+    "real_explosion": "vnt",
+    "visual_preset": "bomb",
+    "effect_yield": 1,
+    "spawn_frag": false,
+    "white_phosphorus": false,
+    "chlorine_yield": 1,
+    "visual_scale": 0.3,
+    "destroy_block": false
+        },
+    "explosion_data": {
+      "explode": true,
+      "damage": 1500,
+      "radius": 24,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0,
+    "direct_damage": 50,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 256,
+        "min_factor": 0.25
+      }
+    ]
+  },
+  "misc_data": {
+    "artillery_map": true
+  }
+}

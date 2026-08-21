@@ -2,6 +2,7 @@ package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * One payload type inside a {@link RVP_SubmunitionReleaseData} wave.
@@ -41,6 +42,20 @@ public class RVP_SubmunitionPayloadData {
     /** Scales inherited / aimed velocity. */
     @SerializedName("velocity_scale")
     private float velocityScale = 1f;
+
+    /**
+     * 子弹药世界系附加速度向量（格/tick），数组顺序为 {@code [x, y, z]}；
+     * 默认 {@code [0, 0, 0]}。在速度继承、发射角与散布计算完成后叠加，任意分量非有限或数组长度非 3 时忽略。
+     */
+    @SerializedName("payloads_velocity")
+    private double[] payloadsVelocity = new double[]{0.0D, 0.0D, 0.0D};
+
+    /**
+     * {@code payloads_velocity} 的随机浮动比例，范围 {@code [0, 1]}，默认 {@code 0}；
+     * 每枚子弹药独立抽取 {@code [1-factor, 1+factor]} 的共同倍率，保持配置向量方向不变。
+     */
+    @SerializedName("payloads_velocity_factor")
+    private float payloadsVelocityFactor = 0f;
 
     /** 发射方向 yaw（度），与弹体 yRot 同约定（0=南 +Z，顺时针为正，-90=东、90=西）；默认 0 = 沿母弹弹轴。 */
     @SerializedName("launch_yaw")
@@ -123,6 +138,23 @@ public class RVP_SubmunitionPayloadData {
 
     public float getVelocityScale() {
         return Math.max(velocityScale, 0.01f);
+    }
+
+    public Vec3 getPayloadsVelocity() {
+        if (payloadsVelocity == null || payloadsVelocity.length != 3
+                || !Double.isFinite(payloadsVelocity[0])
+                || !Double.isFinite(payloadsVelocity[1])
+                || !Double.isFinite(payloadsVelocity[2])) {
+            return Vec3.ZERO;
+        }
+        return new Vec3(payloadsVelocity[0], payloadsVelocity[1], payloadsVelocity[2]);
+    }
+
+    public float getPayloadsVelocityFactor() {
+        if (!Float.isFinite(payloadsVelocityFactor)) {
+            return 0f;
+        }
+        return Math.max(0f, Math.min(payloadsVelocityFactor, 1f));
     }
 
     public float getLaunchYaw() {

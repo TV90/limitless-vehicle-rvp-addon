@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -174,15 +175,18 @@ public final class RVP_SubmunitionSpawner {
     private static Vec3 buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
                                       RVP_BaseBullet.AimRot launchAim, RVP_BaseBullet.AimRot baseRefAim,
                                       int pelletIndex, int pelletCount) {
+        RandomSource random = parent.level().getRandom();
         if (payload.isLaunchAnglesEnabled()) {
             // 发射角度模式：方向固定为 launchAim（绝对或相对基准），速度取 launch_speed 或父弹速度长度 × scale
             float speed = payload.getLaunchSpeed() > 0f
                     ? payload.getLaunchSpeed()
                     : (float) parent.getDeltaMovement().length() * payload.getVelocityScale();
             Vec3 velocity = VectorUtil.rotToVec(launchAim.xRot(), launchAim.yRot()).normalize().scale(speed);
-            return RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
+            Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                     velocity, launchAim.xRot(), launchAim.yRot(),
-                    payload.getSpread(), pelletIndex, pelletCount, parent.level().getRandom());
+                    payload.getSpread(), pelletIndex, pelletCount, random);
+            // 调用本项目速度工具：在发射角与散布完成后叠加 payloads_velocity 世界系冲量。
+            return RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(spreadVelocity, payload, random);
         }
         Vec3 velocity = Vec3.ZERO;
         if (payload.isInheritParentVelocity()) {
@@ -198,9 +202,11 @@ public final class RVP_SubmunitionSpawner {
         if (velocity.lengthSqr() < 1.0E-8) {
             velocity = parent.getDeltaMovement().normalize().scale(0.5);
         }
-        return RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
+        Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                 velocity, baseRefAim.xRot(), baseRefAim.yRot(),
-                payload.getSpread(), pelletIndex, pelletCount, parent.level().getRandom());
+                payload.getSpread(), pelletIndex, pelletCount, random);
+        // 调用本项目速度工具：在继承速度与散布完成后叠加 payloads_velocity 世界系冲量。
+        return RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(spreadVelocity, payload, random);
     }
 
     /**

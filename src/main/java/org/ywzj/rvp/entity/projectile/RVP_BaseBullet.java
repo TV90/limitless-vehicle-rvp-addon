@@ -65,6 +65,7 @@ import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
+import org.ywzj.rvp.weapon.fuse.RVP_GroundProximityFuseMath;
 import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
@@ -1429,6 +1430,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 enterChunkWait(pathLoadResult, true);
                 return;
             }
+            // 调用本项目近地引信扫掠：在碰撞检测前找出运动段达到配置离地高度的位置，避免高速弹体先撞地。
+            if (tickGroundProximityFuse()) {
+                return;
+            }
             // 先碰撞检测再运动（对标本体 BulletEntity 顺序，修复直接命中丢失的 bug）
             tickHit();
             if (RVP_ProjectileLifecycleDebug.noteNotAliveTickExit(
@@ -2001,6 +2006,95 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return true;
         }
         return false;
+    }
+
+    /**
+     * 近地引信：检测当前位置正下方及本 Tick 完整运动段的世界系垂直离地高度。
+     *
+     * @return true 表示引信已经触发并结束当前弹体 Tick
+     */
+    protected boolean tickGroundProximityFuse() {
+        if (rvpData == null || level().isClientSide()) {
+            return false;
+        }
+        RVP_FuseData fuse = rvpData.getFuseData();
+        float clearance = fuse.getGroundProximityFuseDistance();
+        // 调用本项目近地引信数学判定：零距离禁用，且使用独立 arm_tick 控制解保。
+        if (!RVP_GroundProximityFuseMath.isArmed(
+                clearance, fuse.getGroundProximityFuseArmTick(), updateCount)) {
+            return false;
+        }
+
+        Vec3 segmentStart = collisionSegmentStart();
+        Vec3 segmentEnd = collisionSegmentEnd();
+        Vec3 downEnd = segmentStart.add(0.0D, -clearance, 0.0D);
+        BlockHitResult currentGroundHit = level().clip(new ClipContext(
+                segmentStart, downEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+        if (currentGroundHit.getType() != HitResult.Type.MISS) {
+            detonateGroundProximityFuse(segmentStart, clearance, "current_clearance");
+            return true;
+        }
+
+        Vec3 movement = segmentEnd.subtract(segmentStart);
+        if (movement.lengthSqr() <= 1.0E-12D) {
+            return false;
+        }
+        Vec3 shiftedStart = segmentStart.add(0.0D, -clearance, 0.0D);
+        Vec3 shiftedEnd = segmentEnd.add(0.0D, -clearance, 0.0D);
+        BlockHitResult sweptGroundHit = level().clip(new ClipContext(
+                shiftedStart, shiftedEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+        if (sweptGroundHit.getType() == HitResult.Type.MISS) {
+            return false;
+        }
+
+        // 调用本项目几何换算：将下移后的碰撞点恢复到弹体原运动段上的准确起爆位置。
+        Vec3 detonationPosition = RVP_GroundProximityFuseMath.restoreDetonationPosition(
+                segmentStart, segmentEnd, sweptGroundHit.getLocation(), clearance);
+        if (hasCollisionBeforeGroundFuse(segmentStart, segmentEnd, detonationPosition)) {
+            return false;
+        }
+        setPos(detonationPosition);
+        detonateGroundProximityFuse(detonationPosition, clearance, "swept_segment");
+        return true;
+    }
+
+    /**
+     * 检查原运动段是否在近地起爆点之前先撞到实体或方块，避免偏移射线让弹体越过墙体/目标后空爆。
+     */
+    private boolean hasCollisionBeforeGroundFuse(Vec3 segmentStart, Vec3 segmentEnd, Vec3 detonationPosition) {
+        double fuseDistanceSqr = segmentStart.distanceToSqr(detonationPosition);
+        Vec3 step = segmentEnd.subtract(segmentStart);
+        if (!isEntityCollisionSafetyActive()) {
+            // 调用本项目路径实体检测：保持与正式 tickHit 相同的实体碰撞优先级与过滤结果。
+            BulletHitResult entityHit = findEntityOnPathForSegment(segmentStart, segmentEnd, step);
+            boolean jamVehicleImmune = isJamVehicleCollisionImmune() && entityHit != null
+                    && (entityHit.getEntity() instanceof AbstractVehicle
+                    || entityHit.getEntity() instanceof ServerPlayer);
+            if (!jamVehicleImmune && entityHit != null
+                    && entityHit.getEntity() != vehicle
+                    && (vehicle == null || !vehicle.getPassengers().contains(entityHit.getEntity()))
+                    && !piercedLivingIds.contains(entityHit.getEntity().getId())
+                    && segmentStart.distanceToSqr(entityHit.getLocation()) < fuseDistanceSqr) {
+                return true;
+            }
+        }
+        if (!isBlockCollisionSafetyActive()) {
+            BlockHitResult blockHit = level().clip(new ClipContext(
+                    segmentStart, segmentEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+            return blockHit.getType() != HitResult.Type.MISS
+                    && segmentStart.distanceToSqr(blockHit.getLocation()) < fuseDistanceSqr;
+        }
+        return false;
+    }
+
+    /** 调用本项目统一引爆链，让近地引信同时支持标准爆炸与 {@code on_fuse} 子弹药释放。 */
+    private void detonateGroundProximityFuse(Vec3 position, float clearance, String source) {
+        RVP_ProjectileLifecycleDebug.noteEvent(this,
+                RVP_ProjectileLifecycleDebug.Event.FUSE,
+                () -> "type=GROUND_PROXIMITY source=" + source
+                        + " clearance=" + RVP_ProjectileLifecycleDebug.decimal(clearance)
+                        + " position=" + RVP_ProjectileLifecycleDebug.formatVec(position));
+        detonateFuseAt(position, FuseDetonation.GROUND_PROXIMITY);
     }
 
     /**
@@ -3080,7 +3174,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected enum FuseDetonation {
         NORMAL,
         AIRBURST,
-        PROXIMITY
+        PROXIMITY,
+        GROUND_PROXIMITY
     }
 
     protected void triggerExplosion(Vec3 pos) {
