@@ -1,0 +1,144 @@
+{
+    "type": "rvp:bomb",
+    "name": "GB-1000IR GPS/红外复合制导温压炸弹",
+    "recoil": 0,
+    "shoot_interval": 300,
+    "max_capacity": 2,
+    "reload": {
+        "time": 100,
+        "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+    },
+    "x_rot_max": 90,
+    "x_rot_min": -90,
+    "y_rot_max": 180,
+    "y_rot_min": -180,
+    "fuse_delay_tick": 0,
+    "gravity_scale": 0.35,
+    "projectile_data": {
+        "velocity": 3,
+        "gravity": -0.035,
+        "inherit_vehicle_velocity": true,
+        "rotate_to_motion": true,
+        "max_speed": 3
+    },
+    "guidance_data": {
+        "guidance_type": "GPS",
+        "guidance_tick_range": "[[0,inf]]",
+        "max_guidance_angle": 180,
+        "predict_target_pos": true,
+        "enable_inertial_guidance": true,
+        "terminal_guidance": {
+            "guidance_type": "IR",
+            "guidance_start_tick": 0,
+            "guidance_start_dist": 100,
+            "guidance_target_distance_range": "[[0,50]]",
+            "max_lock_angle": 40,
+            "max_guidance_angle": 180,
+            "scan_interval_tick": 2,
+            "predict_target_pos": true,
+            "enable_inertial_guidance": true
+        }
+    },
+    "effects_data": {
+        "trajectory_particle": "none",
+        "impact_particle": "minecraft:block",
+        "explosion_particle": "none"
+    },
+    "detonate_data": {
+        "effects_before_explosion": true,
+        "explosion_data": {
+            "explode": true,
+            "damage": 4399.0,
+            "radius": 20.0,
+            "destroy_block": true
+        },
+        "visual_effect_data": [
+            {
+                "enabled": true,
+                "effect_type": "rvp:thermobaric",
+                "preset": "rvp:thermobaric_standard",
+                "scale": 1.0,
+                "density": 1.0,
+                "duration_ticks": -1,
+                "broadcast_range": 768.0,
+                "sound": true,
+                "flash": true,
+                "shake": true,
+                "suppress_native_explosion_effect": true,
+                "experimental": {
+                    "dynamic_particle_budget": false
+                },
+                "preset_data": {
+                    "core_color": "#FFE0B0",
+                    "flame_color": "#FF6820",
+                    "smoke_color": "#332A27",
+                    "max_fireball_clouds": 150,
+                    "max_clouds": 1024,
+                    "condensation_cloud_particle_max_count": 768,
+                    "condensation_cloud_particle_scale": 6.0,
+                    "condensation_cloud_cut_speed_factor": 0.75,
+                    "thermobaric_lod": {
+                        "near": {
+                            "max_distance": 512.0,
+                            "particle_ratio": 1.0
+                        },
+                        "medium": {
+                            "max_distance": 756.0,
+                            "particle_ratio": 0.7
+                        },
+                        "far": {
+                            "max_distance": 1024.0,
+                            "particle_ratio": 0.35
+                        },
+                        "beyond": {
+                            "particle_ratio": 0.0
+                        }
+                    },
+                    "core_start_tick": 0,
+                    "core_full_tick": 20,
+                    "core_fade_duration_ticks": 40,
+                    "cloud_color_change_start_tick": 30,
+                    "cloud_color_change_end_tick": 85,
+                    "pressure_wave_start_tick": 10,
+                    "pressure_wave_full_tick": 25,
+                    "dust_ring_start_tick": 10,
+                    "dust_ring_full_tick": 25,
+                    "max_dust_segments": 425,
+                    "cloud_start_tick": 0,
+                    "cloud_full_tick": 90,
+                    "cloud_fade_duration_ticks": 140,
+                    "pressure_radius_factor": 3.5,
+                    "dust_radius_factor": 5,
+                    "cloud_radius_factor": 1.7,
+                    "cloud_rise_factor": 1.5,
+                    "cloud_rise_speed_factor": 12.0,
+                    "cloud_roll_speed_factor": 1.0
+                }
+            }
+        ],
+        "fire_data": {
+            "radius": 6,
+            "chance": 0.8,
+            "soul_fire": false,
+            "on_block": true,
+            "on_entity": true
+        },
+        "ignite_entity_data": {
+            "radius": 12.0,
+            "targets": "living",
+            "seconds": 6
+        },
+        "knockback_data": {
+            "radius": 14.0,
+            "targets": "living",
+            "strength": 1.8
+        }
+    },
+    "collision_data": {
+        "direct_damage": 4399
+    },
+    "fuse_data": {},
+    "fire_data": {
+        "require_lock": false
+    }
+}
