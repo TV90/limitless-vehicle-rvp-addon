@@ -40,6 +40,10 @@ import java.util.List;
 public final class RVP_RadarScanService {
 
     private static final int SCAN_INTERVAL_TICK = 4;
+    /** 服务端接触保活间隔（tick）：本体 tickTargets 对 phase 雷达（yRotSpeed=0）寿命仅
+     *  100ms（2 tick，除法溢出取 Math.max(...,100)），服务端任何超过 2 tick 的扫描间隔
+     *  都会导致探测表在两次扫描之间被清空 → 目标"扫描出来瞬间消失/扫不出"。 */
+    private static final int CONTACT_HOLD_INTERVAL_TICK = 2;
 
     private RVP_RadarScanService() {
     }
@@ -53,15 +57,87 @@ public final class RVP_RadarScanService {
         if (server == null) {
             return;
         }
-        if (server.getTickCount() % SCAN_INTERVAL_TICK != 0) {
-            return;
-        }
+        int tick = server.getTickCount();
         for (ServerLevel level : server.getAllLevels()) {
-            scanLevel(level);
+            // 接触保活：高频刷新已探测条目，防本体 100ms 寿命把服务端表清空
+            if (tick % CONTACT_HOLD_INTERVAL_TICK == 0) {
+                tickAllContactHold(level);
+            }
+            if (tick % SCAN_INTERVAL_TICK == 0) {
+                scanLevel(level);
+            }
         }
     }
 
+    /**
+     * 服务端接触保活：对所有载具开启的雷达，刷新仍在扫描体积内目标的接触时间戳
+     * （复刻客户端 {@link RVP_ClientRadarTickHandler#tickContactHold} 语义），
+     * 移除出高度/方位限位/扇区或死亡的目标——服务端探测表在低频扫描间隙不再瞬间清空。
+     * 只遍历各雷达已探测条目（每雷达条目数远小于全实体数），不触发新扫描，开销可忽略。
+     */
+    private static void tickAllContactHold(ServerLevel level) {
+        for (Entity entity : level.getEntities().getAll()) {
+            if (!(entity instanceof AbstractVehicle vehicle)
+                    || vehicle.isDestroyed() || !vehicle.hasPower()) {
+                continue;
+            }
+            for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+                if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
+                    continue;
+                }
+                tickRadarContactHold(radar);
+            }
+        }
+    }
+
+    /** 单颗雷达接触保活：保活扫描体积内目标、移除出体积/死亡目标（迭代器语义与客户端
+     *  {@link RVP_ClientRadarTickHandler#tickContactHold} 一致）。 */
+    private static void tickRadarContactHold(RadarUnit radar) {
+        float yMin = radar.getYRotMin();
+        float yMax = radar.getYRotMax();
+        float xRot = radar.getXRot();
+        float sectorHalf = radar.getScanSectorAngle() / 2.0f;
+        Vec3 radarPos = radar.worldRadarPosition();
+        double maxDistSq = radar.getMaxScanDistance() * radar.getMaxScanDistance();
+        java.util.Iterator<java.util.Map.Entry<Integer, RadarUnit.DetectedObject>> it =
+                radar.getDetectedEntities().entrySet().iterator();
+        while (it.hasNext()) {
+            java.util.Map.Entry<Integer, RadarUnit.DetectedObject> entry = it.next();
+            RadarUnit.DetectedObject detectedObject = entry.getValue();
+            Entity targetEntity = detectedObject.entity;
+            if (targetEntity == null || !targetEntity.isAlive()) {
+                it.remove();
+                continue;
+            }
+            detectedObject.detectedPosition = targetEntity.getBoundingBox().getCenter();
+            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, detectedObject.detectedPosition)) {
+                it.remove();
+                continue;
+            }
+            // 超出最大扫描距离：移除（防飞出雷达范围的敌机持续显示/保持锁定）
+            if (detectedObject.detectedPosition.distanceToSqr(radarPos) > maxDistSq) {
+                it.remove();
+                continue;
+            }
+            Vec2 aimRot = radar.aimRot(detectedObject.detectedPosition);
+            float y = RVP_RadarScanHelper.normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            if (!RVP_RadarScanHelper.isYawWithin(y, yMin, yMax)
+                    || Math.abs(aimRot.x - xRot) > sectorHalf) {
+                it.remove();
+                continue;
+            }
+            // 仍在扫描体积内：刷新接触时间戳保活（防本体 100ms 寿命清空）
+            radar.detect(targetEntity);
+        }
+    }
+
+    /** 玩家驾驶载具的服务端补扫间隔（tick）：1 秒一次，仅用于喂饱服务端探测表
+     * （远程可见性同步/制导校验等服务端链路读服务端表），显示仍由客户端自扫。
+     * 表内条目由 {@link #tickAllContactHold} 高频保活，补扫只负责发现新目标。 */
+    private static final int PLAYER_SCAN_INTERVAL_TICK = 20;
+
     private static void scanLevel(ServerLevel level) {
+        int serverTick = level.getServer().getTickCount();
         for (Entity entity : level.getEntities().getAll()) {
             if (!(entity instanceof AbstractVehicle vehicle)) {
                 continue;
@@ -69,10 +145,19 @@ public final class RVP_RadarScanService {
             if (vehicle.isDestroyed() || !vehicle.hasPower()) {
                 continue;
             }
-            if (!(vehicle.getDriver() instanceof GunnerEntity)) {
-                continue;
+            if (vehicle.getDriver() instanceof GunnerEntity) {
+                // 炮手驾驶：无客户端回写来源，服务端低频全量扫描（既有行为）
+                scanGunnerRadars(vehicle);
+            } else if (vehicle.getDriver() instanceof net.minecraft.server.level.ServerPlayer) {
+                // 玩家驾驶：客户端 DETECT 回写会把所有探测写进 getMainRadarUnit() 一颗雷达的表，
+                // 多雷达载具（如 ps1sm 搜索+跟踪双雷达）的搜索雷达服务端表恒空 →
+                // 远程可见性同步（读服务端表）在 >1024 格外漏掉搜索雷达独占的目标。
+                // 此处按载具错相节流补扫，把目标写回各自雷达的服务端探测表。
+                if ((serverTick + vehicle.getId()) % PLAYER_SCAN_INTERVAL_TICK != 0) {
+                    continue;
+                }
+                scanGunnerRadars(vehicle);
             }
-            scanGunnerRadars(vehicle);
         }
     }
 

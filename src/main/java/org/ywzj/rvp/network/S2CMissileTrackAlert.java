@@ -18,10 +18,13 @@ import java.util.function.Supplier;
  */
 public final class S2CMissileTrackAlert {
 
-    /** 制导类型码：1=ARH（箔条提示），2=AIR（红外提示），3=IR（红外提示）。 */
+    /** 制导类型码：1=ARH（箔条提示），2=AIR（红外提示），3=IR（红外提示），
+     *  4=HITL_TV（电视制导提示，音效同红外），5=LASER（激光照射提示）。 */
     public static final byte TYPE_ARH = 1;
     public static final byte TYPE_AIR = 2;
     public static final byte TYPE_IR = 3;
+    public static final byte TYPE_HITL_TV = 4;
+    public static final byte TYPE_LASER = 5;
 
     private final int missileEntityId;
     private final int targetEntityId;

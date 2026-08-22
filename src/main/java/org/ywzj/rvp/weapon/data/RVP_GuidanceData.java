@@ -45,9 +45,9 @@ public class RVP_GuidanceData {
     @SerializedName("max_lock_angle")
     private int maxLockAngle = 5;
 
-    /** Single-sided off-axis hold angle. */
+    /** Single-sided off-axis hold angle. null = 未配置，gunner 门控兜底用 max_guidance_angle。 */
     @SerializedName("max_off_axis_lock_angle")
-    private int maxOffAxisLockAngle = 60;
+    private Integer maxOffAxisLockAngle;
 
     @SerializedName("predict_target_pos")
     private boolean predictTargetPos = false;
@@ -183,8 +183,9 @@ public class RVP_GuidanceData {
         return getMaxLockAngle() * 0.5f;
     }
 
-    public int getMaxOffAxisLockAngle() {
-        return Math.max(maxOffAxisLockAngle, 0);
+    /** 未配置（null）时由解析层用 max_guidance_angle 兜底。 */
+    public Integer getMaxOffAxisLockAngle() {
+        return maxOffAxisLockAngle == null ? null : Math.max(maxOffAxisLockAngle, 0);
     }
 
     public boolean isPredictTargetPos() {

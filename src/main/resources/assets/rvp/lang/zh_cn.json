@@ -4,7 +4,13 @@
   "subtitles.rvp.countermeasure_flare": "热焰弹抛洒",
   "subtitles.rvp.countermeasure_chaff": "箔条抛洒",
   "subtitles.rvp.ir_alert": "红外导弹追踪",
+  "subtitles.rvp.laser_alert": "激光照射",
   "rvp.lock_warning.radar": "战机被雷达锁定，按[%s]键释放箔条规避",
   "rvp.lock_warning.arh": "战机被雷达制导导弹锁定，按[%s]键释放箔条规避",
-  "rvp.lock_warning.ir": "战机被红外导弹锁定，按[%s]键释放热焰弹规避"
+  "rvp.lock_warning.ir": "战机被红外导弹锁定，按[%s]键释放热焰弹规避",
+  "rvp.lock_warning.ir_ground": "载具被红外制导导弹锁定，按[%s]抛射烟雾弹规避",
+  "rvp.lock_warning.laser_air": "战机被激光照射，请机动规避",
+  "rvp.lock_warning.laser_ground": "载具被激光照射，按[%s]抛射烟雾弹规避",
+  "rvp.lock_warning.hitl_tv_air": "战机被人在回路电视制导导弹锁定，请机动规避",
+  "rvp.lock_warning.hitl_tv_ground": "载具被人在回路电视制导导弹锁定，按[%s]抛射烟雾弹规避"
 }

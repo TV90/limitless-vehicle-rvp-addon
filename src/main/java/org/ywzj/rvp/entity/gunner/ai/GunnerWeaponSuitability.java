@@ -36,6 +36,8 @@ public final class GunnerWeaponSuitability {
 
     private GunnerWeaponSuitability() {}
     private static final Map<WeaponUnit, Map<Long, Integer>> ARM_PULSE_TICK_MAP = new WeakHashMap<>();
+    /** GPS 制导可打击目标的最高离地高度（格）：GPS 只打离地 ≤5m 的贴地/地面目标。 */
+    private static final double GPS_MAX_TARGET_AGL = 5.0;
 
     public static boolean hasUsableWeaponForTarget(WeaponUnit rootUnit, Entity target) {
         for (AbstractVehicleWeapon<?> weapon : rootUnit.getIndexedWeapons()) {
@@ -87,7 +89,8 @@ public final class GunnerWeaponSuitability {
         if (data == null || target == null || !target.isAlive()) {
             return false;
         }
-        if (data.isGpsMissile() && isAirTarget(target)) {
+        // GPS 制导只打离地 ≤5m 的贴地/地面目标（远程点打击，不打升高/悬浮目标）
+        if (data.isGpsMissile() && altitudeAgl(target) > GPS_MAX_TARGET_AGL) {
             return false;
         }
         if ((data.isHomingProjectile() || data.usesGuidanceType(RVP_EnumGuidanceType.AIR))
@@ -206,7 +209,8 @@ public final class GunnerWeaponSuitability {
         RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
         Vec3 origin = weaponUnit.worldPivotPosition();
         Vec3 targetCenter = target.getBoundingBox().getCenter();
-        return withinAxisAngle(resolveLockAxis(weaponUnit), targetCenter.subtract(origin), launch.maxLockHalfAngle());
+        // 锁定锥角用 max_off_axis_lock_angle（默认 60°，单侧），而非窄的 seeker FOV 半角
+        return withinAxisAngle(resolveLockAxis(weaponUnit), targetCenter.subtract(origin), launch.maxOffAxisLockAngle());
     }
 
     private static boolean canHoldLockTarget(WeaponUnit weaponUnit, Entity target, RVP_WeaponData data) {
@@ -279,7 +283,7 @@ public final class GunnerWeaponSuitability {
         }
 
         RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(data, RVP_GuidancePhase.MAIN);
-        float seekHalfAngle = Math.max(active.maxLockHalfAngle(), 0.5f);
+        float seekHalfAngle = Math.max(launch.maxOffAxisLockAngle(), 0.5f);
         float seekRange = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(active.targetDistanceRange());
         Vec3 seekerLook = resolveLockAxis(root);
         if (!withinAxisAngle(seekerLook, targetCenter.subtract(seekerPos), seekHalfAngle)) {

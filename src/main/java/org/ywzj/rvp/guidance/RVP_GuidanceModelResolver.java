@@ -21,13 +21,16 @@ public final class RVP_GuidanceModelResolver {
 
     public static RVP_GuidanceLaunchConfig resolveLaunch(RVP_GuidanceData guidance) {
         RVP_GuidanceData data = guidance == null ? new RVP_GuidanceData() : guidance;
+        // 未配置 max_off_axis_lock_angle 的武器：门控兜底用 max_guidance_angle（单侧）
+        Integer offAxis = data.getMaxOffAxisLockAngle();
+        int resolvedOffAxis = offAxis != null ? offAxis : data.getMaxGuidanceAngle();
         return new RVP_GuidanceLaunchConfig(
                 data.getGuidanceType(),
                 data.getLockTargetDistanceRange(),
                 data.getLockAltitudeRange(),
                 data.isEnableIrHmd(),
                 data.getMaxLockAngle(),
-                data.getMaxOffAxisLockAngle(),
+                resolvedOffAxis,
                 data.getLockAngleGate()
         );
     }

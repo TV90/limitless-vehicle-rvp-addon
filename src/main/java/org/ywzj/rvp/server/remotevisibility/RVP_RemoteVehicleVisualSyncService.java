@@ -24,6 +24,7 @@ import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleChunkLeaseService.AuthorizedTarget;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleVisibilityPolicy.Candidate;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleVisibilityPolicy.VehicleCategory;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -235,11 +236,23 @@ public final class RVP_RemoteVehicleVisualSyncService {
             relayUuid = RVP_DeployableUavLinkRegistry.getChildUuid(observerVehicle.getUUID());
         }
         Entity relayEntity = relayUuid == null ? null : level.getEntity(relayUuid);
-        return relayEntity instanceof AbstractVehicle relayVehicle
+        if (relayEntity instanceof AbstractVehicle relayVehicle
                 && !relayVehicle.isRemoved()
                 && relayVehicle.isAlive()
                 && !relayVehicle.isDestroyed()
-                && vehicleRadarDetects(relayVehicle, target);
+                && vehicleRadarDetects(relayVehicle, target)) {
+            return true;
+        }
+        // 外置雷达链路中继车（如 BUKM3 挂接的 96L6 搜索雷达车）：其服务端探测表
+        // 同样应计入远程可见性，否则仅被外置搜索雷达发现的超距目标不会被同步，
+        // 客户端无实体 → 本车雷达也无法扫到 → 雷达框永远不显示。
+        AbstractVehicle externalRelay = RVP_ExternalRadarLinkHelper
+                .getLinkedRelayVehicle(observerVehicle).orElse(null);
+        return externalRelay != null
+                && !externalRelay.isRemoved()
+                && externalRelay.isAlive()
+                && !externalRelay.isDestroyed()
+                && vehicleRadarDetects(externalRelay, target);
     }
 
     /** 查询一辆载具任一已开启雷达的当前探测表是否包含目标。 */

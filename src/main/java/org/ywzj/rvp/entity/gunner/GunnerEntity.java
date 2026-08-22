@@ -78,6 +78,20 @@ public class GunnerEntity extends Mob {
     private double homePosX;
     private double homePosY;
     private double homePosZ;
+    /** SEAD 复仇阶段：0=未激活，1=FLY_AWAY，2=REVERSAL，3=LOCK_AND_FIRE。 */
+    private int seadMode;
+    /** SEAD 复仇当前子阶段剩余 tick。 */
+    private int seadTicks;
+    /** SEAD 复仇累计经过 tick（用于总超时保护）。 */
+    private int seadTotalTicks;
+    /** SEAD 复仇目标（锁定本机的雷达载具）实体 id。 */
+    private int seadRevengeTargetId = -1;
+    /** SEAD 触发瞬间是否已发射过"入口立即一发"。 */
+    private boolean seadImmediateFired;
+    /** SEAD 复仇阶段是否已发射过复仇一发。 */
+    private boolean seadRevengeFired;
+    /** SEAD 复仇结束后冷却 tick：期间不重新触发，避免被持续雷达锁定时陷入"飞离→复仇→再飞离"循环。 */
+    private int seadCooldownTicks;
 
     public GunnerEntity(EntityType<? extends Mob> entityType, Level level) {
         super(entityType, level);
@@ -285,6 +299,13 @@ public class GunnerEntity extends Mob {
         tacticalEvadeYawBias = 0.0F;
         smokeHoldTicks = 0;
         homePosSet = false;
+        seadMode = 0;
+        seadTicks = 0;
+        seadTotalTicks = 0;
+        seadRevengeTargetId = -1;
+        seadImmediateFired = false;
+        seadRevengeFired = false;
+        seadCooldownTicks = 0;
     }
 
     public String getProfileId() {
@@ -398,6 +419,9 @@ public class GunnerEntity extends Mob {
         }
         if (smokeHoldTicks > 0) {
             smokeHoldTicks--;
+        }
+        if (seadCooldownTicks > 0) {
+            seadCooldownTicks--;
         }
     }
 
@@ -568,6 +592,62 @@ public class GunnerEntity extends Mob {
 
     public void setAirPhaseInitialized(boolean airPhaseInitialized) {
         this.airPhaseInitialized = airPhaseInitialized;
+    }
+
+    public int getSeadMode() {
+        return seadMode;
+    }
+
+    public void setSeadMode(int seadMode) {
+        this.seadMode = seadMode;
+    }
+
+    public int getSeadTicks() {
+        return seadTicks;
+    }
+
+    public void setSeadTicks(int seadTicks) {
+        this.seadTicks = Math.max(0, seadTicks);
+    }
+
+    public int getSeadTotalTicks() {
+        return seadTotalTicks;
+    }
+
+    public void setSeadTotalTicks(int seadTotalTicks) {
+        this.seadTotalTicks = Math.max(0, seadTotalTicks);
+    }
+
+    public int getSeadRevengeTargetId() {
+        return seadRevengeTargetId;
+    }
+
+    public void setSeadRevengeTargetId(int seadRevengeTargetId) {
+        this.seadRevengeTargetId = seadRevengeTargetId;
+    }
+
+    public boolean isSeadImmediateFired() {
+        return seadImmediateFired;
+    }
+
+    public void setSeadImmediateFired(boolean seadImmediateFired) {
+        this.seadImmediateFired = seadImmediateFired;
+    }
+
+    public boolean isSeadRevengeFired() {
+        return seadRevengeFired;
+    }
+
+    public void setSeadRevengeFired(boolean seadRevengeFired) {
+        this.seadRevengeFired = seadRevengeFired;
+    }
+
+    public int getSeadCooldownTicks() {
+        return seadCooldownTicks;
+    }
+
+    public void setSeadCooldownTicks(int seadCooldownTicks) {
+        this.seadCooldownTicks = Math.max(0, seadCooldownTicks);
     }
 
     public void onBurstShot(int fireTicks, int restTicks) {

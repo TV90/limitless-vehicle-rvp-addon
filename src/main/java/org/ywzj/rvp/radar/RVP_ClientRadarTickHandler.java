@@ -177,6 +177,8 @@ public final class RVP_ClientRadarTickHandler {
         float yMax = radar.getYRotMax();
         float xRot = radar.getXRot();
         float sectorHalf = radar.getScanSectorAngle() / 2.0f;
+        Vec3 radarPos = radar.worldRadarPosition();
+        double maxDistSq = radar.getMaxScanDistance() * radar.getMaxScanDistance();
         Iterator<Map.Entry<Integer, RadarUnit.DetectedObject>> it = radar.getDetectedEntities().entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, RadarUnit.DetectedObject> entry = it.next();
@@ -193,6 +195,11 @@ public final class RVP_ClientRadarTickHandler {
             }
             detectedObject.detectedPosition = targetEntity.getBoundingBox().getCenter();
             if (!RVP_RadarScanHelper.isWithinScanHeight(radar, detectedObject.detectedPosition)) {
+                it.remove();
+                continue;
+            }
+            // 超出最大扫描距离：移除（否则保活会令飞出雷达范围的敌机持续显示/保持锁定）
+            if (detectedObject.detectedPosition.distanceToSqr(radarPos) > maxDistSq) {
                 it.remove();
                 continue;
             }
@@ -217,14 +224,21 @@ public final class RVP_ClientRadarTickHandler {
         // 否则 entitiesForRendering() 只含本地跟踪实体，视距外目标扫不到 → 雷达点/锁框消失
         Iterable<Entity> allEntities = mergedClientEntities(clientLevel);
         Vec3 radarPos = radar.worldRadarPosition();
+        float yMin = radar.getYRotMin();
+        float yMax = radar.getYRotMax();
+        float sectorHalf = radar.getScanSectorAngle() / 2.0f;
         List<Entity> entities = RVP_RadarScanHelper.scanRadarArea(allEntities, radar.getVehicle(), radarPos,
                 radar.getMaxScanDistance(), entityPos -> {
             if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entityPos)) {
                 return false;
             }
             Vec2 aimRot = radar.aimRot(entityPos);
-            return !(aimRot.y < radar.getYRotMin()) && !(aimRot.y > radar.getYRotMax())
-                    && !(Math.abs(aimRot.x - radar.getXRot()) > radar.getScanSectorAngle() / 2.0f);
+            // 方位角必须归一化后判定：vecToRot 的 yaw 是 [-180,180]，
+            // 搜索雷达常配 y_rot_min=0 / y_rot_max=360，原始负 yaw 会被误排（后半球丢失）。
+            // 与 tickContactHold / RVP_RadarScanService 服务端扫描保持同一归一化语义。
+            float y = RVP_RadarScanHelper.normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+            return RVP_RadarScanHelper.isYawWithin(y, yMin, yMax)
+                    && !(Math.abs(aimRot.x - radar.getXRot()) > sectorHalf);
         });
         RVP_RadarScanHelper.filterUndetectableRvpAmmo(entities);
         RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, false);

@@ -17,6 +17,8 @@ public final class RVP_ClientLockWarningState {
 
     private static long arhTrackAt = 0L;
     private static long irTrackAt = 0L;
+    private static long laserTrackAt = 0L;
+    private static long hitlTvTrackAt = 0L;
 
     private RVP_ClientLockWarningState() {}
 
@@ -28,11 +30,27 @@ public final class RVP_ClientLockWarningState {
         irTrackAt = System.currentTimeMillis();
     }
 
+    public static void markLaserTrack() {
+        laserTrackAt = System.currentTimeMillis();
+    }
+
+    public static void markHitlTvTrack() {
+        hitlTvTrackAt = System.currentTimeMillis();
+    }
+
     public static boolean isArhTrack() {
         return System.currentTimeMillis() - arhTrackAt < WINDOW_MS;
     }
 
     public static boolean isIrTrack() {
         return System.currentTimeMillis() - irTrackAt < WINDOW_MS;
+    }
+
+    public static boolean isLaserTrack() {
+        return System.currentTimeMillis() - laserTrackAt < WINDOW_MS;
+    }
+
+    public static boolean isHitlTvTrack() {
+        return System.currentTimeMillis() - hitlTvTrackAt < WINDOW_MS;
     }
 }

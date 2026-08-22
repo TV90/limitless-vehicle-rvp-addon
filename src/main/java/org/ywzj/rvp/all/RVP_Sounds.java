@@ -27,6 +27,7 @@ public final class RVP_Sounds {
     public static final RegistryObject<SoundEvent> COUNTERMEASURE_CHAFF = register("countermeasure_chaff");
     /** IR/AIR 导弹追踪告警音效（assets/rvp/sounds/misc/ir_alert.ogg）。 */
     public static final RegistryObject<SoundEvent> IR_ALERT = register("ir_alert");
+    public static final RegistryObject<SoundEvent> LASER_ALERT = register("laser_alert");
 
     private RVP_Sounds() {}
 

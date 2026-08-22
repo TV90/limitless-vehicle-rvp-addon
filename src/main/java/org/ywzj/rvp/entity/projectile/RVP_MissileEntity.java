@@ -323,12 +323,15 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             case ARH -> S2CMissileTrackAlert.TYPE_ARH;
             case AIR -> S2CMissileTrackAlert.TYPE_AIR;
             case IR -> S2CMissileTrackAlert.TYPE_IR;
+            case HITL_TV -> S2CMissileTrackAlert.TYPE_HITL_TV;
             default -> 0;
         };
         if (typeCode == 0 || !isSeekerTracking(activeType)) {
             return;
         }
-        if (tickCount % 10 != 0) {
+        // 发送频率必须小于 IR 红外捕获宽限期（max(6, scan_interval×2) ≥ 6 tick），
+        // 否则 IR 告警会在宽限期内（<10 tick）连一次发送都赶不上而永远不触发。
+        if (tickCount % 4 != 0) {
             return;
         }
         Entity target = getTargetEntity();
@@ -346,7 +349,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                     && getTargetEntity() != null && getTargetEntity().isAlive();
         }
         if (activeType == RVP_EnumGuidanceType.IR) {
-            return hasIrSeekerGrace() && getTargetEntity() != null && getTargetEntity().isAlive();
+            // 持续跟踪判定：目标存活且未因烟雾/光学遮挡脱锁即视为正在被跟踪（脱锁前持续告警）。
+            // 不能用 hasIrSeekerGrace：跟踪确认时 resetIrSeekerGrace 会把宽限禁用（MIN_VALUE），
+            // 宽限只在"刚锁定/脱锁缓冲"几 tick 为 true，用它判断会在持续跟踪期间漏报。
+            return getTargetEntity() != null && getTargetEntity().isAlive() && !hasSmokeBreakLock();
+        }
+        if (activeType == RVP_EnumGuidanceType.HITL_TV) {
+            // 人在回路电视制导：被指定（designate）锁定目标即视为正在追踪
+            return getTargetEntity() != null && getTargetEntity().isAlive();
         }
         return false;
     }

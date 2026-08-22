@@ -4,7 +4,13 @@
   "subtitles.rvp.countermeasure_flare": "Flare deployed",
   "subtitles.rvp.countermeasure_chaff": "Chaff deployed",
   "subtitles.rvp.ir_alert": "IR missile tracking",
+  "subtitles.rvp.laser_alert": "Laser illumination",
   "rvp.lock_warning.radar": "Radar locked, press [%s] to release chaff",
   "rvp.lock_warning.arh": "Locked by radar-guided missile, press [%s] to release chaff",
-  "rvp.lock_warning.ir": "Locked by IR missile, press [%s] to release flares"
+  "rvp.lock_warning.ir": "Locked by IR missile, press [%s] to release flares",
+  "rvp.lock_warning.ir_ground": "Vehicle locked by IR guided missile, press [%s] to launch smoke",
+  "rvp.lock_warning.laser_air": "Aircraft laser-illuminated, maneuver to evade",
+  "rvp.lock_warning.laser_ground": "Vehicle laser-illuminated, press [%s] to launch smoke",
+  "rvp.lock_warning.hitl_tv_air": "Aircraft locked by man-in-the-loop TV missile, maneuver to evade",
+  "rvp.lock_warning.hitl_tv_ground": "Vehicle locked by man-in-the-loop TV missile, press [%s] to launch smoke"
 }

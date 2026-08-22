@@ -34,6 +34,9 @@ public final class GunnerTargeting {
 
     private GunnerTargeting() {}
 
+    /** 飞机索敌半径倍率：大幅扩展 gunner 空对地（及空对空）索敌范围，供远程制导武器打击远处目标。 */
+    private static final double AIR_SEARCH_MULTIPLIER = 6.0;
+
     @Nullable
     public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
         double radius = resolveSearchRadius(vehicle, weaponUnit, profile);
@@ -55,11 +58,33 @@ public final class GunnerTargeting {
         List<Entity> hostileGunnerVehicles = entities.stream()
                 .filter(entity -> isRelativeHostileGunnerVehicle(gunner, entity))
                 .toList();
-        List<Entity> preferred = hostileGunnerVehicles.isEmpty() ? entities : hostileGunnerVehicles;
-        // GPS 武器优先设定：启用时若有可用 GPS 武器能打击的目标，优先选择索敌范围内最远的
-        // GPS 可打击目标（GPS 为远程点打击武器，应优先远程目标，避免浪费在近距离目标上）
+        if (!hostileGunnerVehicles.isEmpty()) {
+            // 优先级2：敌方 gunner 载具（高于玩家/其它）
+            return pickBestInTier(gunner, vehicle, weaponUnit, profile, hostileGunnerVehicles, launcher);
+        }
+        List<Entity> playerTargets = entities.stream()
+                .filter(GunnerTargeting::isPlayerTarget)
+                .toList();
+        if (!playerTargets.isEmpty()) {
+            // 优先级3：玩家（或玩家驾驶的载具）
+            return pickBestInTier(gunner, vehicle, weaponUnit, profile, playerTargets, launcher);
+        }
+        // 优先级4：其它有效目标
+        return pickBestInTier(gunner, vehicle, weaponUnit, profile, entities, launcher);
+    }
+
+    /**
+     * 在某一优先级层级内选最优目标：优先选最远的 GPS 可打击目标（gps_prefer_farthest 启用时），
+     * 否则按评分（距离 + 夹角×32，近的、正对机头的优先）。
+     */
+    @Nullable
+    private static Entity pickBestInTier(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                         GunnerProfile profile, List<Entity> tier, boolean launcher) {
+        if (tier.isEmpty()) {
+            return null;
+        }
         if (profile.isGpsPreferFarthest()) {
-            List<Entity> gpsTargets = preferred.stream()
+            List<Entity> gpsTargets = tier.stream()
                     .filter(entity -> GunnerWeaponSuitability.hasUsableGpsWeaponForTarget(weaponUnit, entity))
                     .toList();
             if (!gpsTargets.isEmpty()) {
@@ -68,9 +93,17 @@ public final class GunnerTargeting {
                         .orElse(null);
             }
         }
-        return preferred.stream()
+        return tier.stream()
                 .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);
+    }
+
+    /** 玩家目标：玩家本体，或由玩家驾驶的载具（已通过 isValidTarget 的敌我过滤，此处只需分类）。 */
+    private static boolean isPlayerTarget(Entity entity) {
+        if (entity instanceof Player) {
+            return true;
+        }
+        return entity instanceof AbstractVehicle vehicle && vehicle.getDriver() instanceof Player;
     }
 
     /** 基础搜索半径（不含雷达扩展）。 */
@@ -78,7 +111,10 @@ public final class GunnerTargeting {
         double base = profile.getSearchRadius();
         if (vehicle instanceof org.ywzj.vehicle.entity.vehicle.FixedWingVehicle
                 || vehicle instanceof org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle) {
-            return base * 2.0;
+            // 大幅扩展飞机索敌范围：让 gunner 能发现很远的地面目标（供远程制导武器打击）。
+            // 注：collectTargetEntities 本就 O(实体) 遍历，半径增大不增加遍历次数，仅扩大命中范围，
+            // 实际能否开火仍由武器 lock_target_distance_range 等门控决定。
+            return base * AIR_SEARCH_MULTIPLIER;
         }
         return base;
     }
@@ -257,8 +293,9 @@ public final class GunnerTargeting {
      * - owner == gunner：自己发射的弹药
      * - owner是GunnerEntity：同faction视为友方（敌对gunner之间无team但同faction应互视为友方）
      * - owner是Player或其他：走原有的载具乘客/放置者/team联盟判断
+     * 包内共享：CIWS 拦截判定与 GunnerBrain 烟雾规避的敌方导弹识别共用此语义。
      */
-    private static boolean isFriendlyAmmoOwner(GunnerEntity gunner, AbstractVehicle vehicle,
+    static boolean isFriendlyAmmoOwner(GunnerEntity gunner, AbstractVehicle vehicle,
                                                @Nullable Team vehicleTeam, @Nullable Team gunnerTeam,
                                                @Nullable Entity owner) {
         if (owner == null) {

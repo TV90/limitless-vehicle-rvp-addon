@@ -16,6 +16,11 @@ public final class RVP_ClientMissileTrackAlert {
 
     private RVP_ClientMissileTrackAlert() {}
 
+    /** 激光告警音效最小间隔（毫秒）：服务端每 5 tick 发一包，原逻辑每包都响 → 过于频繁。
+     *  此处对音效做节流，文字提示仍随每包刷新（保持常亮）。 */
+    private static final long LASER_SOUND_INTERVAL_MS = 500L;
+    private static long lastLaserSoundAt = 0L;
+
     public static void handle(int missileEntityId, int targetEntityId, byte guidanceType) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) {
@@ -31,10 +36,29 @@ public final class RVP_ClientMissileTrackAlert {
             return;
         }
         if (guidanceType == S2CMissileTrackAlert.TYPE_AIR || guidanceType == S2CMissileTrackAlert.TYPE_IR) {
-            RVP_ClientLockWarningState.markIrTrack();
             // 驾驶舱 RWR 提示音：本地播放（对齐本体 WarningReceiver 的 VehicleSound 一次性播放）
+            RVP_ClientLockWarningState.markIrTrack();
             new org.ywzj.vehicle.audio.VehicleSound(
                     RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+            return;
+        }
+        if (guidanceType == S2CMissileTrackAlert.TYPE_HITL_TV) {
+            // 人在回路电视制导：音效同红外告警
+            RVP_ClientLockWarningState.markHitlTvTrack();
+            new org.ywzj.vehicle.audio.VehicleSound(
+                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+            return;
+        }
+        if (guidanceType == S2CMissileTrackAlert.TYPE_LASER) {
+            // 激光照射：文字提示每次刷新，音效节流（避免每 0.25s 一响）
+            RVP_ClientLockWarningState.markLaserTrack();
+            long now = System.currentTimeMillis();
+            if (now - lastLaserSoundAt >= LASER_SOUND_INTERVAL_MS) {
+                lastLaserSoundAt = now;
+                new org.ywzj.vehicle.audio.VehicleSound(
+                        RVP_Sounds.LASER_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+            }
+            return;
         }
     }
 

@@ -58,5 +58,11 @@
     "sounds": [
       "ywzj_rvp:misc/ir_alert"
     ]
+  },
+  "laser_alert": {
+    "subtitle": "subtitles.rvp.laser_alert",
+    "sounds": [
+      "ywzj_rvp:misc/laser_alert"
+    ]
   }
 }

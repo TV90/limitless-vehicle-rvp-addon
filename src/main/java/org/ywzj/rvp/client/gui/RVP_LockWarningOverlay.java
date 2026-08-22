@@ -43,16 +43,16 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         if (vehicle == null || vehicle.level() == null) {
             return;
         }
-        // 本告警为飞行器专用（热焰弹/箔条规避提示）；地面载具走坦克告警分支（烟雾/ECM）
-        if (!isAircraft(vehicle)) {
-            return;
-        }
+        boolean laser = RVP_ClientLockWarningState.isLaserTrack();
+        boolean hitlTv = RVP_ClientLockWarningState.isHitlTvTrack();
         boolean irTrack = RVP_ClientLockWarningState.isIrTrack();
         boolean arhTrack = RVP_ClientLockWarningState.isArhTrack();
         boolean radarLock = hasRadarLock(vehicle);
-        if (!irTrack && !arhTrack && !radarLock) {
+        if (!laser && !hitlTv && !irTrack && !arhTrack && !radarLock) {
             return;
         }
+        // 地面载具仅显示烟雾弹规避类提示（IR/激光/电视制导）；雷达类锁定提示仅飞行器显示
+        boolean ground = !isAircraft(vehicle);
 
         Font font = Minecraft.getInstance().font;
         int color = blinkRed();
@@ -61,18 +61,34 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         // 顶边在 screenHeight-9；提示文案从其上方更高的固定偏移起逐行向下排布。
         int y = screenHeight - 64;
         if (irTrack) {
-            drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.ir",
-                    RVP_Keys.FIRE_FLARE.getTranslatedKeyMessage()), centerX, y, color);
+            Component text = ground
+                    ? Component.translatable("rvp.lock_warning.ir_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                    : Component.translatable("rvp.lock_warning.ir", RVP_Keys.FIRE_FLARE.getTranslatedKeyMessage());
+            drawCentered(guiGraphics, font, text, centerX, y, color);
             y += font.lineHeight;
         }
-        if (arhTrack) {
+        if (arhTrack && !ground) {
             drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.arh",
                     RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage()), centerX, y, color);
             y += font.lineHeight;
         }
-        if (radarLock) {
+        if (radarLock && !ground) {
             drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.radar",
                     RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage()), centerX, y, color);
+            y += font.lineHeight;
+        }
+        if (laser) {
+            Component text = ground
+                    ? Component.translatable("rvp.lock_warning.laser_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                    : Component.translatable("rvp.lock_warning.laser_air");
+            drawCentered(guiGraphics, font, text, centerX, y, color);
+            y += font.lineHeight;
+        }
+        if (hitlTv) {
+            Component text = ground
+                    ? Component.translatable("rvp.lock_warning.hitl_tv_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                    : Component.translatable("rvp.lock_warning.hitl_tv_air");
+            drawCentered(guiGraphics, font, text, centerX, y, color);
         }
     }
 
