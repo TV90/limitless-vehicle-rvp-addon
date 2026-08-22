@@ -633,7 +633,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时取各 payload `count` 之和。 |
 | `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。 |
 | `payloads` | 本波要生成的弹药列表，见下表。 |
-| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`。 |
+| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`、`explosion_after_release`。|
+
+`explosion_after_release` 在子体释放后执行母弹自身的完整 `detonate_data` / `explosion_data` 引爆链并移除母弹；不会再次触发 `on_fuse` 释放。
 
 ##### `triggers` 取值
 
@@ -647,23 +649,36 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 #### `releases[].payloads[]` 单种载荷
 
-| 字段 | 说明 |
-| --- | --- |
-| `kind` | `rvp_weapon`（默认）或 `entity`。 |
-| `weapon_id` | RVP 武器 id（`rvp:xxx` 或短名 `xxx`）；空 = 克隆母弹武器。 |
-| `entity_type` | `kind: entity` 时实体类型，如 `minecraft:arrow`。 |
-| `entity_nbt` | 可选 SNBT，生成后 `Entity#load`。 |
-| `count` | 每波生成数量，默认 1。 |
-| `spread` | 散布，见下表。 |
-| `inherit_parent_velocity` | 是否叠加母弹速度，默认 true。 |
-| `inherit_vehicle_velocity` | 是否叠加发射载具速度，默认 false。 |
-| `velocity_scale` | 速度倍率，默认 1。 |
-| `payloads_velocity` | 世界系附加速度向量 `[x,y,z]`（格/tick），默认 `[0,0,0]`；在速度继承、发射角与 `spread` 全部计算后叠加，例如 `[0,-3,0]` 使子弹药获得向下冲量。 |
-| `payloads_velocity_factor` | `payloads_velocity` 的随机浮动比例 `f`，范围 `0..1`，默认 `0`；每枚子弹药独立抽取 `[1-f,1+f]` 的共同倍率，保持 XYZ 方向比例。 |
-| `power_scale` | RVP 武器伤害/初速蓄力倍率，默认 1。 |
-| `allow_submunition` | 写在**本层 `payloads` 条目**上：为 `true` 时，被生成的弹体可执行**其自身武器 JSON** 的 `submunition_data`（多级火箭、链式战斗部**必须**为 `true`）；默认 `false` 防止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md)。 |
-| `damage_multiplier` | 仅 RVP 弹体：直击伤害倍率（可选）。 |
-| `suppress_explosion` | 仅 RVP 弹体：关闭爆炸。 |
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kind` | string | `rvp_weapon` | 载荷类型：`rvp_weapon` 生成 RVP 武器弹体，`entity` 生成已注册实体。空值或未知值按 `rvp_weapon` 处理。 |
+| `weapon_id` | string | `""` | 仅 `kind: rvp_weapon` 生效。RVP 武器 ID；完整 ID 如 `rvp:xxx`，短名自动使用 `rvp` 命名空间，空值克隆母弹武器 ID。 |
+| `entity_type` | string | `""` | 仅 `kind: entity` 生效。已注册实体类型 ID，如 `minecraft:arrow`；为空或无法解析时不生成。 |
+| `entity_nbt` | SNBT string | `""` | 仅 `kind: entity` 生效。实体创建并定位后通过 `Entity#load` 载入；为空或 SNBT 解析失败时忽略。 |
+| `count` | int | `1` | 每个释放事件为本载荷条目生成的实例数；小于 0 按 0 处理。 |
+| `spread` | object | 新建默认散布对象 | 位置/速度散布配置，见下表；JSON 为 `null` 时同样回退为默认对象。 |
+| `inherit_parent_velocity` | bool | `true` | 未启用发射角度逻辑时，是否把母弹当前速度作为基础速度。 |
+| `inherit_vehicle_velocity` | bool | `false` | 未启用发射角度逻辑时，是否在基础速度上叠加发射载具当前速度；母弹无发射载具时无效。 |
+| `velocity_scale` | float | `1` | 速度倍率，读取时最小为 `0.01`。普通模式会缩放已继承的合成速度；发射角度模式且 `launch_speed <= 0` 时，用它缩放母弹当前速率。 |
+| `payloads_velocity` | double[3] | `[0,0,0]` | 世界系附加速度 `[x,y,z]`，单位格/tick；在基础速度、发射角和 `spread` 计算完成后最后叠加。数组长度不是 3 或任一分量不是有限数时按零向量处理。 |
+| `payloads_velocity_factor` | float | `0` | `payloads_velocity` 的随机浮动比例；读取时限制到 `0..1`，非有限数按 0。每枚子体独立抽取 `[1-factor,1+factor]` 的共同倍率，因此不改变向量方向。 |
+| `launch_yaw` | float（度） | `0` | 发射 yaw；`0=南/+Z`，顺时针为正，`-90=东`、`90=西`。`relative` 模式相对母弹参考姿态叠加，`absolute` 模式使用世界系固定角。 |
+| `launch_pitch` | float（度） | `0` | 发射 pitch；`90=正下`、`-90=正上`。角度基准由 `launch_angle_mode` 决定。 |
+| `launch_angle_mode` | string | `relative` | 发射角度基准；仅精确值 `absolute`（忽略大小写）使用世界系绝对角度，其余值按 `relative`，即相对母弹参考姿态叠加。 |
+| `launch_speed` | float（格/tick） | `0` | 发射初速，读取时最小为 0。大于 0 时直接作为定向发射速率；为 0 时使用“母弹当前速率 × `velocity_scale`”。 |
+| `power_scale` | float | `1` | 数据字段读取时最小为 `0.01`；当前 `RVP_SubmunitionSpawner` 生成链未消费该值，现阶段不改变子体伤害或初速。 |
+| `allow_submunition` | bool | `false` | 仅 RVP 弹体生效。为 `true` 时，子体可执行**其自身武器 JSON** 的 `submunition_data`；多级火箭/链式战斗部必须在父级载荷条目开启。默认关闭以阻止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](../../子母弹系统与Mi28边界测试.md)。 |
+| `damage_multiplier` | float / null | `null` | 仅 RVP 弹体生效。非 `null` 时乘算子体初始化后的直击伤害，最终伤害最小为 `0.01`。 |
+| `suppress_explosion` | bool | `false` | 仅 RVP 弹体生效。为 `true` 且子体存在爆炸配置时，以禁用爆炸的配置替换它。 |
+
+发射角度逻辑的启用条件是 `launch_yaw != 0`、`launch_pitch != 0` 或 `launch_speed > 0` 中至少一项成立。启用后：
+
+- 子体方向取 `launch_yaw` / `launch_pitch` 解析结果，不再使用普通速度继承方向。
+- `inherit_parent_velocity` 和 `inherit_vehicle_velocity` 均不参与速度合成。
+- `launch_speed > 0` 时直接使用该速率；否则使用母弹当前速度长度乘 `velocity_scale`。
+- `spread` 以解析后的发射方向为中心应用，最后再叠加 `payloads_velocity`。
+
+未启用发射角度逻辑时，先按两个继承开关合成速度，再乘 `velocity_scale`、应用 `spread`，最后叠加 `payloads_velocity`。如果合成并缩放后的速度接近零，则回退为沿母弹运动方向的 `0.5` 格/tick 基础速度。
 
 近地开舱并向下抛撒的典型配置：
 
@@ -677,6 +692,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
     "enabled": true,
     "releases": [{
       "triggers": ["on_fuse"],
+      "release_events": 1,
       "parent_action": "discard_after_release",
       "payloads": [{
         "kind": "rvp_weapon",
@@ -692,19 +708,21 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 #### `payloads[].spread` 散布
 
-| 字段 | 说明 |
-| --- | --- |
-| `mode` | `box`（默认，随机立方）或 `canister`（复用机枪霰弹逻辑）。 |
-| `box_spread` | `box` 模式速度扰动幅度（MCH `BombletDiff`）。 |
-| `canister_type` | `0` 位置、`1` 角度、`2` 角度+前向错位（同 `fire_data.canister_type`）。 |
-| `canister_diff` | 散布强度（度或格）。 |
-| `canister_distribution` / `canister_shape` | 同 `fire_data` / `dispenser_data` 的 `distribution`、`shape`。 |
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `mode` | string | `box` | `box` 或 `canister`。注意当前实现只要 `mode: canister` **或** `canister_diff > 0` 就启用 canister；因此完整默认对象实际进入 canister。 |
+| `box_spread` | float | `0` | 非 canister 模式下的轴向速度随机扰动幅度，读取时最小为 0；Y 轴扰动为 X/Z 的一半。 |
+| `canister_type` | int | `1` | 读取时限制到 `0..2`：`0` 改变生成位置，`1` 和 `2` 在当前子弹药散布器中都执行角度散布。 |
+| `canister_diff` | float | `0.3` | canister 散布强度，读取时最小为 0；`type: 0` 时用于位置偏移，`type: 1/2` 时作为角度散布量。大于 0 会启用 canister，即使 `mode` 仍为 `box`。 |
+| `canister_distribution` | string | `uniform` | canister 采样分布；取值与 `fire_data` 的散布分布一致。 |
+| `canister_shape` | string | `circle` | canister 形状；由 `RVP_EnumSpreadShape.forCanister` 解析，方形时使用网格分配。 |
 
 #### 示例场景
 
 | 场景 | 配置要点 |
 | --- | --- |
 | 子母火箭 / 集束炸弹 | `triggers: ["in_flight"]`，多 `payloads` 指向子战斗部 `weapon_id`，`parent_action: discard_after_release`。 |
+| 释放并引爆母弹 | 需要子体释放后同时结算母弹战斗部时使用 `parent_action: explosion_after_release`；母弹需配置有效的 `detonate_data` / `explosion_data`。 |
 | 多级火箭 | 多段 `releases`，不同 `delay_tick`，`parent_action: continue`。 |
 | 星光导弹分弹头 | 一条 `in_flight`，`release_events: 3`，`payloads` 指向 `rvp:starstreak_dart`，`canister` 散布。 |
 | APFSDS 弹托 | `in_flight` + `entity` 载荷（装饰实体）+ `rvp_weapon` 穿甲杆，`discard_on_first_spawn` 仅脱托。 |

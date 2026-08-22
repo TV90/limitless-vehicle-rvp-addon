@@ -2,7 +2,7 @@
 
 > 需求：实现类似 TOW-2B 的攻顶战斗部——导弹**非攻顶弹道**（平飞），依靠弹上传感器在飞越目标**正上方**时触发引信，向下喷射大量自锻破片/霰弹攻击目标顶装甲。
 >
-> 关联总文档：[RVP包新增参数字段说明.md](../RVP包新增参数字段说明.md)。
+> 关联总文档：[RVP包新增参数字段说明.md](./RVP武器数据模型/RVP包新增参数字段说明.md)。
 
 ## 设计目标
 
@@ -36,11 +36,11 @@
 | `launch_yaw` | float(度) | `0` | 发射方向 yaw；与弹体 yRot 同约定（0=南 +Z，顺时针为正，-90=东、90=西）。 |
 | `launch_pitch` | float(度) | `0` | 发射方向 pitch；与弹体 xRot 同约定（**90=正下**、-90=正上）。 |
 | `launch_angle_mode` | string | `relative` | `relative`=以母弹当前姿态为基准叠加（随弹体俯仰/偏航变化）；`absolute`=世界系固定角度。 |
-| `launch_speed` | float | `0` | 发射初速；`0`=沿用 `inherit_parent_velocity` × `velocity_scale` 的长度，仅替换方向。 |
+| `launch_speed` | float | `0` | 发射初速（格/tick）；`> 0` 直接使用该速率，`0` 使用“母弹当前速率 × `velocity_scale`”。 |
 
 启用条件：`launch_yaw` / `launch_pitch` / `launch_speed` 至少一个非默认值。全部默认时行为与旧版完全一致（沿弹轴 + 原 spread）。
 
-canister / box spread 仍以解析后的发射方向为基准叠加，即"以发射方向为中心的锥形散布"。
+启用后不再合成 `inherit_parent_velocity` / `inherit_vehicle_velocity`；方向完全由解析后的发射角决定。canister / box spread 仍以该方向为基准叠加，之后才追加世界系 `payloads_velocity`。
 
 ### 3. JSON 示例（TOW-2B 攻顶导弹）
 
@@ -56,6 +56,7 @@ canister / box spread 仍以解析后的发射方向为基准叠加，即"以发
     "releases": [
       {
         "triggers": ["on_fuse"],
+        "release_events": 1,
         "payloads": [
           {
             "kind": "rvp_weapon",
@@ -82,7 +83,7 @@ canister / box spread 仍以解析后的发射方向为基准叠加，即"以发
 }
 ```
 
-链路：导弹平飞 → 正下方锥内探测到实体 → 延时 N tick → `detonateFuseAt` → `ON_FUSE` 子母弹按绝对方向向下喷 40 颗霰弹。`parent_action` 默认 `continue` 时还会继续走爆炸；要纯破片则在 detonate_data 不配爆炸或配 `suppress_explosion`。
+链路：导弹平飞 → 正下方锥内探测到实体 → 延时 N tick → `detonateFuseAt` → `ON_FUSE` 子母弹按绝对方向向下喷 40 颗霰弹。`parent_action: continue` 会让当前引信链继续结算爆炸；也可用 `explosion_after_release` 明确要求释放完成后执行母弹自身的完整引爆链。要纯破片则使用 `discard_after_release`，或不为母弹配置有效爆炸。
 
 ## 实现位置
 
@@ -90,7 +91,7 @@ canister / box spread 仍以解析后的发射方向为基准叠加，即"以发
 | --- | --- |
 | `org.ywzj.rvp.weapon.data.RVP_FuseData` | 新增 5 字段 + getter |
 | `org.ywzj.rvp.entity.projectile.RVP_BaseBullet` | 新增 `tickTopAttackFuse()`（服务端），tick() 中 `tickProximityFuse()` 之后调用；新增延时状态字段 `topAttackTriggerTick` |
-| `org.ywzj.rvp.weapon.data.RVP_SubmunitionPayloadData` | 新增 4 字段 + getter |
+| `org.ywzj.rvp.weapon.data.RVP_SubmunitionPayloadData` | 定义 `launch_yaw`、`launch_pitch`、`launch_angle_mode`、`launch_speed` 及 getter |
 | `org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner` | `resolveLaunchAim()` 解析发射基准角；`buildVelocity()` / spawn 朝向 / 位置偏移改用发射角 |
 
 ## 测试建议

@@ -172,7 +172,11 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             discard();
             return false;
         }
+        // 调用本项目子弹药调度逻辑；母弹可能因 parent_action 被移除或在释放后引爆。
         tickSubmunition();
+        if (!isAlive()) {
+            return false;
+        }
         tickGuidance();
         // 调用本项目近地引信扫掠：机炮弹同样必须在本 Tick 碰撞检测前于配置高度起爆。
         if (tickGroundProximityFuse()) {

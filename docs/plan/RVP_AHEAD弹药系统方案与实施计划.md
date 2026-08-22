@@ -75,7 +75,7 @@
 - `ahead_data.enabled = true` 时，武器必须同时满足：
   - `type = "rvp:machinegun"`
   - `fuse_data.programmable_airburst = true`
-  - `submunition_data.trigger = "on_fuse"`
+  - `submunition_data.releases[].triggers` 包含 `"on_fuse"`
 
 ### 子母弹配置约束
 
@@ -102,25 +102,35 @@
     "programmable_airburst": true
   },
   "submunition_data": {
-    "trigger": "on_fuse",
-    "parent_action": "discard_after_release",
-    "payload": {
-      "type": "rvp_weapon",
-      "weapon": "rvp:example_ahead_fragment"
-    },
-    "pattern": {
-      "type": "canister",
-      "count": 18,
-      "spread_deg": 4.0
-    }
+    "releases": [{
+      "triggers": ["on_fuse"],
+      "release_events": 1,
+      "parent_action": "explosion_after_release",
+      "payloads": [{
+        "kind": "rvp_weapon",
+        "weapon_id": "rvp:example_ahead_fragment",
+        "count": 18,
+        "inherit_parent_velocity": true,
+        "velocity_scale": 1.0,
+        "spread": {
+          "mode": "canister",
+          "canister_type": 1,
+          "canister_diff": 4.0,
+          "canister_distribution": "uniform",
+          "canister_shape": "circle"
+        }
+      }]
+    }]
   }
 }
 ```
 
 ### 子弹药配置原则
 
+示例使用 `explosion_after_release`：破片释放完成后，母弹立即按自身 `detonate_data` / `explosion_data` 引爆并移除；若只需释放破片后静默移除母弹，则改用 `discard_after_release`。
+
 - Java 侧不强行规定子弹药速度、数量、散布角。
-- 推荐做法是把这些全部留在 `submunition_data.pattern` 与子弹药武器 JSON 里管理。
+- 推荐做法是把这些全部留在 `submunition_data.releases[].payloads[]` 的 `count`、`velocity_scale`、`spread` 等字段与子弹药武器 JSON 里管理。
 - 如果想做更接近经典 AHEAD 的手感，可以在配置层把子弹药速度倍率配得接近母弹当前速度。
 - 如果想做别的变体，例如减速散布、燃烧破片、微型 HE，则同样只需要改配置，不需要再改 Java 逻辑。
 
@@ -307,7 +317,7 @@ programmedDistance = max(0, leadDistance - ahead_data.burst_offset_meters)
 ### 第 4 阶段：子母弹联动验证
 
 - 准备一枚 AHEAD 示例机炮弹
-- `submunition_data.trigger = on_fuse`
+- `submunition_data.releases[].triggers` 包含 `on_fuse`
 - 子弹药载荷使用 `rvp_weapon`
 - 子弹药速度与散布完全从配置层控制
 - 验证空爆后真实生成子弹药

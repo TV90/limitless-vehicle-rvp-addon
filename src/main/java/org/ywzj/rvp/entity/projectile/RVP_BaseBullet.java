@@ -76,6 +76,7 @@ import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
+import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionParentAction;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
@@ -232,6 +233,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected Vec3 programmableAirburstSegmentEnd = Vec3.ZERO;
   @Nullable
     protected RVP_SubmunitionRunner submunitionRunner;
+
+    /** 正在执行“释放后引爆”动作；用于避免母弹引爆链再次触发 {@code on_fuse} 子弹药方案。 */
+    private boolean explodingAfterSubmunitionRelease;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
     protected int submunitionDepth;
     protected int livingPenetrationLeft;
@@ -622,14 +626,39 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     + (submunitionRunner != null) + " trigger=" + trigger);
             return false;
         }
-        boolean fired = submunitionRunner.fireTrigger(this, trigger);
-        RVP_TopAttackDebug.noteSpawn(this, "SUBMUN trigger=" + trigger + " fired=" + fired);
-        if (fired) {
+        // 调用本项目子弹药调度器，执行当前触发器对应的载荷释放并取得母弹后续动作。
+        RVP_EnumSubmunitionParentAction parentAction = submunitionRunner.fireTrigger(this, trigger);
+        boolean terminal = applySubmunitionParentAction(parentAction);
+        RVP_TopAttackDebug.noteSpawn(this, "SUBMUN trigger=" + trigger + " parentAction=" + parentAction);
+        if (terminal) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.SUBMUNITION_TRIGGER,
-                    () -> "trigger=" + trigger + " action=parent_discard");
+                    () -> "trigger=" + trigger + " action=" + parentAction);
         }
-        return fired;
+        return terminal;
+    }
+
+    /**
+     * 执行子弹药方案返回的母弹动作。
+     *
+     * @return 动作是否已终止母弹后续飞行/碰撞处理
+     */
+    private boolean applySubmunitionParentAction(RVP_EnumSubmunitionParentAction parentAction) {
+        if (parentAction == RVP_EnumSubmunitionParentAction.CONTINUE) {
+            return false;
+        }
+        if (parentAction == RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE) {
+            explodingAfterSubmunitionRelease = true;
+            try {
+                // 调用本项目母弹引爆链，结算 detonate_data、爆炸效果并移除母弹。
+                detonateFuseAt(position(), FuseDetonation.NORMAL);
+            } finally {
+                explodingAfterSubmunitionRelease = false;
+            }
+            return true;
+        }
+        discard();
+        return true;
     }
 
     /** 从炮塔武器槽读取 R 键测距结果（发射前由 {@link RVP_ProjectileSpawner} 调用）。 */
@@ -2377,11 +2406,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (submunitionRunner == null) {
             return;
         }
-        if (submunitionRunner.tickInFlight(this)) {
+        // 调用本项目子弹药调度器，推进飞行中波次并取得完成后的母弹动作。
+        RVP_EnumSubmunitionParentAction parentAction = submunitionRunner.tickInFlight(this);
+        if (applySubmunitionParentAction(parentAction)) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.SUBMUNITION_TRIGGER,
-                    () -> "trigger=IN_FLIGHT action=parent_discard");
-            discard();
+                    () -> "trigger=IN_FLIGHT action=" + parentAction);
         }
     }
 
@@ -3377,7 +3407,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 () -> "type=" + kind
                         + " position=" + RVP_ProjectileLifecycleDebug.formatVec(pos)
                         + " proximityTarget=" + RVP_ProjectileLifecycleDebug.formatEntity(proximityTarget));
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE)) {
+        if (!explodingAfterSubmunitionRelease
+                && trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE)) {
             discard();
             return;
         }
