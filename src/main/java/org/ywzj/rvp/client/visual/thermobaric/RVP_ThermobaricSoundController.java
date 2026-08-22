@@ -107,6 +107,7 @@ final class RVP_ThermobaricSoundController {
             mainHandled = true;
             if (soundEnabled) {
                 // 调用动态声音播放入口，让资源包作者配置的任意合法声音 ID 都可直接使用。
+                // visualRadius内播放nearSound，外播放farSound
                 play(useNearSound ? nearSound : farSound, seed);
                 tailArrivalAge = saturatedAdd(age, resolveTailDelayTicks(seed));
             } else {

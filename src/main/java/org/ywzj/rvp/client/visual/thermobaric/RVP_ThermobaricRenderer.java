@@ -662,6 +662,7 @@ public final class RVP_ThermobaricRenderer {
         double x = effect.center().x + outwardX * horizontalRadius
                 + (outwardX * cloud.outwardDrift() - outwardZ * cloud.tangentialDrift())
                 * driftScale;
+        //粒子尺寸
         float size = effect.visualRadius() * cloud.sizeFactor()
                 * (0.72F + animationProgress * 1.38F)
                 * motion.scaleMultiplier()

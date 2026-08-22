@@ -137,6 +137,7 @@ public record RVP_ThermobaricPreset(
             1.5F,
             12.0F,
             1.0F,
+            // 默认温压弹音效读取目录
             ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_near"),
             ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_far"),
             ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_tail")
