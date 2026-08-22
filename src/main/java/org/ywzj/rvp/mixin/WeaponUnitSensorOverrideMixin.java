@@ -4,13 +4,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-
-import java.util.Optional;
 
 /**
  * 武器级传感器覆盖：当前 RVP 武器数据带 {@code fire_control_sensor_type_override} 时，
@@ -28,11 +27,10 @@ public class WeaponUnitSensorOverrideMixin {
     @Inject(method = "getFireControlSensorType", at = @At("HEAD"), cancellable = true, remap = false)
     private void ywzj_rvp$overrideSensorTypeByCurrentWeapon(CallbackInfoReturnable<WeaponUnitData.FireControlSensorType> cir) {
         WeaponUnit self = (WeaponUnit) (Object) this;
-        Optional<AbstractVehicleWeapon<?>> weaponOpt = self.getCurrentWeapon();
-        if (weaponOpt.isEmpty()) {
-            return;
-        }
-        AbstractVehicleWeapon<?> weapon = weaponOpt.get();
+        // 必须经 currentPrimary 解包：当前武器可能是 VehicleMultiWeapons（二选一组，
+        // 如 AH64 导弹站的 ir/arh 组）或 Agent 代理——二者均非 RVP_WeaponBase，
+        // 不解包会导致覆盖判定失败、站级静态值泄漏（表现为两种传感器并存）。
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(self);
         if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
             return;
         }
