@@ -75,6 +75,8 @@ public class RVP_CommonConfig {
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
     /** 客户端是否剔除普通空气环境的地形雾。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRemoveTerrainFog;
+    /** 客户端在载具观瞄缩放时是否优先使用 LOD/基础高模路径。 */
+    private final ForgeConfigSpec.BooleanValue remoteVehicleScopeZoomPreferModelRendering;
     /** 是否把没有任何有效整模型 LOD 的超视距载具改为 Billboard。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleAggressiveLodBillboard;
     /** 是否强制所有超视距载具使用 Billboard。 */
@@ -129,6 +131,11 @@ public class RVP_CommonConfig {
                 .comment("是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。",
                         "仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true")
                 .define("removeTerrainFog", true);
+        remoteVehicleScopeZoomPreferModelRendering = builder
+                .comment("玩家正在使用载具、进入 SCOPE 观瞄视角且最终 FOV 达到缩放阈值时，",
+                        "是否仅覆盖服务端 Billboard 策略，优先使用普通 LOD、无有效 LOD 时回退基础高模。",
+                        "该值只影响当前客户端，不随服务端远距载具快照同步。默认：true")
+                .define("scopeZoomPreferModelRendering", true);
         remoteVehicleAggressiveLodBillboard = builder
                 .comment("是否把没有任何成功烘焙 LOD 规则的超视距载具改为 Billboard。",
                         "该值由服务端随远距载具完整快照强制同步。默认：true")
@@ -201,6 +208,11 @@ public class RVP_CommonConfig {
     /** 返回客户端是否应在载具超视距渲染启用时剔除普通地形雾。 */
     public static boolean shouldRemoveRemoteVehicleTerrainFog() {
         return INSTANCE == null || INSTANCE.remoteVehicleRemoveTerrainFog.get();
+    }
+
+    /** 返回客户端在载具观瞄缩放时是否应优先使用普通模型渲染路径。 */
+    public static boolean shouldPreferRemoteVehicleModelRenderingInScopeZoom() {
+        return INSTANCE == null || INSTANCE.remoteVehicleScopeZoomPreferModelRendering.get();
     }
 
     /** 返回服务端是否要求无有效 LOD 的超视距载具使用 Billboard。 */

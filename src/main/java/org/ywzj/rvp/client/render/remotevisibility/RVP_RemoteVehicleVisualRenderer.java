@@ -24,6 +24,7 @@ import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.FarPlaneDemand;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
+import org.ywzj.rvp.client.state.RVP_ClientZoomState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.vehicle.client.render.entity.vehicle.VehicleRender;
@@ -75,6 +76,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
 
         Vec3 cameraPosition = event.getCamera().getPosition();
+        // 调用客户端缩放状态辅助，每帧只计算一次是否以本地观瞄选项覆盖服务端 Billboard 策略。
+        boolean preferModelRendering = RVP_ClientZoomState.shouldPreferRemoteVehicleModelRendering();
         List<CandidateContext> preCandidates = new ArrayList<>();
         List<FarPlaneDemand> farPlaneDemands = new ArrayList<>();
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
@@ -119,7 +122,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     entry.zRot(),
                     structureSize,
                     cameraPosition,
-                    hasValidLod);
+                    hasValidLod,
+                    preferModelRendering);
             boolean fallbackHighModel = RVP_RemoteVehicleBillboardManager
                     .usesHighModelBudget(billboardPlan)
                     || (RVP_RemoteVehicleBillboardManager.usesNormalModelPath(billboardPlan)

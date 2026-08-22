@@ -26,6 +26,19 @@ class RVP_RemoteVehicleBillboardManagerTest {
     }
 
     @Test
+    void scopeZoomModelPreferenceOnlyOverridesBillboardDecision() {
+        RenderPolicy aggressive = policy(true, false, RemoteVehicleSnapshotWarmupMode.HIDE);
+        RenderPolicy forceAll = policy(false, true, RemoteVehicleSnapshotWarmupMode.HIDE);
+
+        assertFalse(RVP_RemoteVehicleBillboardManager.shouldUseBillboard(
+                aggressive, false, true));
+        assertFalse(RVP_RemoteVehicleBillboardManager.shouldUseBillboard(
+                forceAll, true, true));
+        assertTrue(RVP_RemoteVehicleBillboardManager.shouldUseBillboard(
+                aggressive, false, false));
+    }
+
+    @Test
     void warmupModeHandlesSlotAvailabilityAndHighModelBudget() {
         assertEquals(RenderMode.DYNAMIC_PENDING_HIDE,
                 RVP_RemoteVehicleBillboardManager.decidePendingMode(

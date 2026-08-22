@@ -11,6 +11,8 @@
     #是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。
     #仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true
     removeTerrainFog = true
+    #客户端设置。使用载具进入 `SCOPE` 且最终 FOV 达到缩放阈值时跳过 Billboard，改走普通 LOD、无 LOD 回退基础高模
+    scopeZoomPreferModelRendering = true
     #是否把没有任何成功烘焙 LOD 规则的超视距载具改为 Billboard。
     #该值由服务端随远距载具完整快照强制同步。默认：true
     aggressiveLodBillboard = true

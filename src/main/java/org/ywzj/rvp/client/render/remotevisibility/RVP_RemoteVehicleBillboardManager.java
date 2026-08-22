@@ -95,6 +95,7 @@ public final class RVP_RemoteVehicleBillboardManager {
      * @param structureSize 载具结构尺寸
      * @param cameraPosition 当前相机世界位置
      * @param hasValidLod display 是否至少具有一条成功烘焙的 LOD 规则
+     * @param preferModelRendering 是否由客户端观瞄缩放选项覆盖 Billboard 策略
      */
     public static BillboardPlan plan(RenderPolicy policy,
                                      AbstractVehicle proxy,
@@ -105,8 +106,9 @@ public final class RVP_RemoteVehicleBillboardManager {
                                      float zRot,
                                      double structureSize,
                                      Vec3 cameraPosition,
-                                     boolean hasValidLod) {
-        if (!shouldUseBillboard(policy, hasValidLod)) {
+                                     boolean hasValidLod,
+                                     boolean preferModelRendering) {
+        if (!shouldUseBillboard(policy, hasValidLod, preferModelRendering)) {
             return BillboardPlan.normal();
         }
         Vec3 centerOffset = proxy.centerOffset;
@@ -151,8 +153,16 @@ public final class RVP_RemoteVehicleBillboardManager {
 
     /** 返回当前策略是否要求该候选使用 Billboard。 */
     static boolean shouldUseBillboard(RenderPolicy policy, boolean hasValidLod) {
-        return policy.forceAllVehicleBillboard()
-                || (policy.aggressiveLodBillboard() && !hasValidLod);
+        return shouldUseBillboard(policy, hasValidLod, false);
+    }
+
+    /** 返回客户端模型优先选项生效后，当前候选是否仍应使用 Billboard。 */
+    static boolean shouldUseBillboard(RenderPolicy policy,
+                                      boolean hasValidLod,
+                                      boolean preferModelRendering) {
+        return !preferModelRendering
+                && (policy.forceAllVehicleBillboard()
+                || (policy.aggressiveLodBillboard() && !hasValidLod));
     }
 
     /** 可单元测试的完整来源、资源和预热模式决策。 */
