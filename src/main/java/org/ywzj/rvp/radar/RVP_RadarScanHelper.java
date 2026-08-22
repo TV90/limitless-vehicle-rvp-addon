@@ -33,6 +33,16 @@ public final class RVP_RadarScanHelper {
     private RVP_RadarScanHelper() {
     }
 
+    /**
+     * 雷达是否配置为仅扫描/跟踪载具（雷达参数 {@code scan_vehicle_only=true}）。
+     * 为 true 时扫描与接触保活只保留 {@link org.ywzj.vehicle.entity.vehicle.AbstractVehicle}
+     * 目标，排除弹药、箔条干扰物等非载具实体。
+     */
+    public static boolean isVehicleOnly(RadarUnit radar) {
+        RadarUnitData data = radar.getData();
+        return data instanceof RadarUnitDataExt ext && ext.ywzj_rvp$isScanVehicleOnly();
+    }
+
     public static boolean isWithinScanHeight(RadarUnit radar, Vec3 targetPos) {
         float minHeight = 25f;
         float maxHeight = 10000f;

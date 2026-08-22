@@ -37,4 +37,17 @@ public final class RVP_WeaponResolveHelper {
         AbstractVehicleWeapon<?> weapon = currentPrimary(weaponUnit);
         return weapon instanceof RVP_WeaponBase rvp ? rvp : null;
     }
+
+    /**
+     * 解析武器级 {@code parent_weapon_unit_aim_override}：当前武器为 RVP 武器且配置了
+     * 覆盖时返回该值；否则返回 null（调用方回退到所属武器站的静态配置）。
+     * 传入武器建议先经 {@link #currentPrimary} 解包（Agent/Multi → 具体武器）。
+     */
+    @Nullable
+    public static Boolean resolveParentWeaponUnitAimOverride(@Nullable AbstractVehicleWeapon<?> weapon) {
+        if (weapon instanceof RVP_WeaponBase rvpWeapon) {
+            return rvpWeapon.getData().getParentWeaponUnitAimOverride();
+        }
+        return null;
+    }
 }

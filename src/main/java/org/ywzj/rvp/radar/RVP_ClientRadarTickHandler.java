@@ -193,6 +193,11 @@ public final class RVP_ClientRadarTickHandler {
                 it.remove();
                 continue;
             }
+            // scan_vehicle_only：非载具目标（弹药/干扰物等）不保活，立即移除
+            if (RVP_RadarScanHelper.isVehicleOnly(radar) && !(targetEntity instanceof AbstractVehicle)) {
+                it.remove();
+                continue;
+            }
             detectedObject.detectedPosition = targetEntity.getBoundingBox().getCenter();
             if (!RVP_RadarScanHelper.isWithinScanHeight(radar, detectedObject.detectedPosition)) {
                 it.remove();
@@ -241,10 +246,15 @@ public final class RVP_ClientRadarTickHandler {
                     && !(Math.abs(aimRot.x - radar.getXRot()) > sectorHalf);
         });
         RVP_RadarScanHelper.filterUndetectableRvpAmmo(entities);
-        RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, false);
-        // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
-        RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
-        RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
+        // scan_vehicle_only：仅保留载具目标，跳过弹药/干扰物补入（它们都不是载具）
+        if (RVP_RadarScanHelper.isVehicleOnly(radar)) {
+            entities.removeIf(entity -> !(entity instanceof AbstractVehicle));
+        } else {
+            RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, false);
+            // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
+            RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
+            RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
+        }
         for (Entity entity : entities) {
             radar.detect(entity);
         }

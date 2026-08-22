@@ -51,6 +51,11 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Unique
     public float ywzj_rvp$chaffResistance = 0.5f;
 
+    /** 仅扫描/跟踪载具：true 时扫描与锁定表只保留 AbstractVehicle 目标，排除弹药、干扰物等非载具实体。默认 false。 */
+    @SerializedName("scan_vehicle_only")
+    @Unique
+    public boolean ywzj_rvp$scanVehicleOnly = false;
+
     @Override
     public String ywzj_rvp$getRadarRole() {
         return ywzj_rvp$radarRole;
@@ -99,5 +104,10 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Override
     public float ywzj_rvp$getChaffResistance() {
         return Float.isFinite(ywzj_rvp$chaffResistance) ? Math.max(0f, ywzj_rvp$chaffResistance) : 0f;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isScanVehicleOnly() {
+        return ywzj_rvp$scanVehicleOnly;
     }
 }

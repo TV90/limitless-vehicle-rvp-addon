@@ -101,6 +101,26 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("fire_control_sensor_type_override")
     private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
 
+    /**
+     * 导引头圈 HUD 颜色覆盖（RGB 十六进制字符串，如 {@code "0x30FF30"} / {@code "#FFAA00"}）。
+     * 配置后该武器处于选中状态时，{@code VehicleAimAtOverlay} 的导引头圈（含大圈）
+     * 用此颜色绘制——未锁定显示该颜色，锁定时统一红色指示；未配置走本体机型基色
+     * （直升机绿 / 固定翼白，绿色无红通道会导致锁定后变黑）。仅客户端渲染消费。
+     */
+    @SerializedName("seeker_color")
+    private String seekerColor;
+
+    /** {@link #seekerColor} 的解析缓存：null=未解析；负值=解析失败按未配置处理。 */
+    private transient Integer seekerColorRgbCache;
+
+    /**
+     * 覆盖所属武器站的 {@code parent_weapon_unit_aim}：true=弹着点预测与准心锚定到母武器站，
+     * false=使用自身挂架位置；null（未配置）=继承站级静态配置。
+     * 消费点仅客户端（{@code WeaponUnit.currentWeaponHitPosition} 与 {@code VehicleAimAtOverlay}）。
+     */
+    @SerializedName("parent_weapon_unit_aim_override")
+    private Boolean parentWeaponUnitAimOverride;
+
     public RVP_EnumWeaponKind getWeaponKind() {
         return weaponKind;
     }
@@ -247,8 +267,46 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     }
 
     @Nullable
+    public Boolean getParentWeaponUnitAimOverride() {
+        return parentWeaponUnitAimOverride;
+    }
+
+    @Nullable
     public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
         return fireControlSensorTypeOverride;
+    }
+
+    /**
+     * 解析 {@code seeker_color} 为 RGB 整数（低 24 位）。
+     *
+     * @return 未配置或解析失败返回 null（按本体默认颜色处理）；支持 {@code 0xRRGGBB}、{@code #RRGGBB}、{@code RRGGBB}
+     */
+    @Nullable
+    public Integer getSeekerColorRgb() {
+        Integer cached = seekerColorRgbCache;
+        if (cached == null) {
+            cached = parseSeekerColor(seekerColor);
+            seekerColorRgbCache = cached;
+        }
+        return cached >= 0 ? cached : null;
+    }
+
+    /** 解析十六进制颜色串；未配置/非法返回 -1（调用方按未配置处理）。 */
+    private static int parseSeekerColor(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return -1;
+        }
+        String hex = raw.trim();
+        if (hex.startsWith("#")) {
+            hex = hex.substring(1);
+        } else if (hex.startsWith("0x") || hex.startsWith("0X")) {
+            hex = hex.substring(2);
+        }
+        try {
+            return Integer.parseInt(hex, 16) & 0xFFFFFF;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     public float getProjectileVelocity() {

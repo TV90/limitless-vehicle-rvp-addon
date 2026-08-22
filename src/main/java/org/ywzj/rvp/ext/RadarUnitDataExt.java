@@ -19,4 +19,5 @@ public interface RadarUnitDataExt {
     float ywzj_rvp$getScanMinHeight();
     float ywzj_rvp$getScanMaxHeight();
     float ywzj_rvp$getChaffResistance();
+    boolean ywzj_rvp$isScanVehicleOnly();
 }

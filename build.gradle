@@ -130,6 +130,8 @@ dependencies {
         exclude group: 'it.unimi.dsi', module: 'fastutil'
         exclude group: 'org.joml', module: 'joml'
     }
+    // MixinExtras 注解：运行时由 Forge 47 自带 0.3.6（无需打包进 jar），仅编译期引用
+    compileOnly("io.github.llamalad7:mixinextras-common:0.3.6")
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 

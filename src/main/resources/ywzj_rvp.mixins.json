@@ -29,11 +29,14 @@
     "WeaponUnitMainRadarUnitMixin",
     "VectorUtilPhysicsOnlyHitFilterMixin",
     "WeaponUnitGroupedSlotMixin",
-    "WeaponUnitMultiWeaponSwitchBlockMixin"
+    "WeaponUnitMultiWeaponSwitchBlockMixin",
+    "WeaponUnitSensorOverrideMixin",
+    "WeaponUnitParentAimOverrideMixin"
   ],
   "client": [
     "ClientLevelHitlTrailParticleMixin",
     "ClientAssetsManagerCustomMountMixin",
+    "VehicleAimAtOverlaySeekerColorMixin",
     "InfraredMixin",
     "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",
