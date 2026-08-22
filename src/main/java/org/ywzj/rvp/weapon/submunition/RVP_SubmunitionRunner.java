@@ -57,16 +57,12 @@ public final class RVP_SubmunitionRunner {
         return false;
     }
 
-    /**
-     * 推进飞行中释放方案。
-     *
-     * @return 本 tick 释放完成后需要执行的母弹动作
-     */
-    public RVP_EnumSubmunitionParentAction tickInFlight(RVP_BaseBullet parent) {
+    /** @return true if parent should be discarded this tick */
+    public boolean tickInFlight(RVP_BaseBullet parent) {
         if (globallyDisabled || parent.level().isClientSide()) {
-            return RVP_EnumSubmunitionParentAction.CONTINUE;
+            return false;
         }
-        RVP_EnumSubmunitionParentAction parentAction = RVP_EnumSubmunitionParentAction.CONTINUE;
+        boolean discardParent = false;
         for (WaveState wave : waves) {
             if (!wave.config.getTriggers().contains(RVP_EnumSubmunitionTrigger.IN_FLIGHT)) {
                 continue;
@@ -88,27 +84,25 @@ public final class RVP_SubmunitionRunner {
             RVP_AheadDebug.logFuseRelease(parent, wave.config, RVP_EnumSubmunitionTrigger.IN_FLIGHT, toFire, spawned);
             wave.eventsRemaining -= toFire;
             if (wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN) {
-                parentAction = mergeParentAction(parentAction, wave.config.getParentAction());
+                discardParent = true;
             }
             if (wave.eventsRemaining > 0) {
                 wave.sprinkleTimer = Math.max(interval, 1);
-            } else if (wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE
-                    || wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE) {
-                parentAction = mergeParentAction(parentAction, wave.config.getParentAction());
+            } else if (wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE) {
+                discardParent = true;
             }
         }
-        return parentAction;
+        return discardParent;
     }
 
     /**
-     * @return 本次触发释放后需要执行的母弹动作
+     * @return true if parent should be discarded immediately after this trigger
      */
-    public RVP_EnumSubmunitionParentAction fireTrigger(RVP_BaseBullet parent,
-                                                       RVP_EnumSubmunitionTrigger trigger) {
+    public boolean fireTrigger(RVP_BaseBullet parent, RVP_EnumSubmunitionTrigger trigger) {
         if (globallyDisabled || parent.level().isClientSide()) {
-            return RVP_EnumSubmunitionParentAction.CONTINUE;
+            return false;
         }
-        RVP_EnumSubmunitionParentAction parentAction = RVP_EnumSubmunitionParentAction.CONTINUE;
+        boolean discardParent = false;
         for (WaveState wave : waves) {
             if (!matches(wave.config.getTriggers(), trigger)) {
                 continue;
@@ -127,33 +121,11 @@ public final class RVP_SubmunitionRunner {
                 wave.oneShotFired = true;
             }
             if (wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN
-                    || wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE
-                    || wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE) {
-                parentAction = mergeParentAction(parentAction, wave.config.getParentAction());
+                    || wave.config.getParentAction() == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE) {
+                discardParent = true;
             }
         }
-        return parentAction;
-    }
-
-    /**
-     * 合并同一 tick 内多个释放方案的母弹动作；引爆优先于直接移除，直接移除优先于继续飞行。
-     */
-    private static RVP_EnumSubmunitionParentAction mergeParentAction(
-            RVP_EnumSubmunitionParentAction current,
-            RVP_EnumSubmunitionParentAction candidate) {
-        if (current == RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE
-                || candidate == RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE) {
-            return RVP_EnumSubmunitionParentAction.EXPLOSION_AFTER_RELEASE;
-        }
-        if (current == RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN
-                || candidate == RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN) {
-            return RVP_EnumSubmunitionParentAction.DISCARD_ON_FIRST_SPAWN;
-        }
-        if (current == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE
-                || candidate == RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE) {
-            return RVP_EnumSubmunitionParentAction.DISCARD_AFTER_RELEASE;
-        }
-        return RVP_EnumSubmunitionParentAction.CONTINUE;
+        return discardParent;
     }
 
     private static boolean matches(Set<RVP_EnumSubmunitionTrigger> configured, RVP_EnumSubmunitionTrigger fired) {

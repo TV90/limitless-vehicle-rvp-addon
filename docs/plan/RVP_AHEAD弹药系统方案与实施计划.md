@@ -105,7 +105,7 @@
     "releases": [{
       "triggers": ["on_fuse"],
       "release_events": 1,
-      "parent_action": "explosion_after_release",
+      "parent_action": "discard_after_release",
       "payloads": [{
         "kind": "rvp_weapon",
         "weapon_id": "rvp:example_ahead_fragment",
@@ -127,7 +127,7 @@
 
 ### 子弹药配置原则
 
-示例使用 `explosion_after_release`：破片释放完成后，母弹立即按自身 `detonate_data` / `explosion_data` 引爆并移除；若只需释放破片后静默移除母弹，则改用 `discard_after_release`。
+若只需释放破片后静默移除母弹，用 `discard_after_release`。
 
 - Java 侧不强行规定子弹药速度、数量、散布角。
 - 推荐做法是把这些全部留在 `submunition_data.releases[].payloads[]` 的 `count`、`velocity_scale`、`spread` 等字段与子弹药武器 JSON 里管理。

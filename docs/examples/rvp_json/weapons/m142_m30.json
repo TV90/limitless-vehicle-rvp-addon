@@ -61,7 +61,7 @@
           "on_fuse"
         ],
         "release_events": 1,
-        "parent_action": "explosion_after_release",
+        "parent_action": "continue",
         "payloads": [
           {
             "kind": "rvp_weapon",

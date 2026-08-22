@@ -625,17 +625,15 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 #### `releases[]` 单条释放方案
 
-| 字段 | 说明 |
-| --- | --- |
-| `triggers` | 触发器列表，见下表。默认 `["in_flight"]`。 |
-| `delay_tick` | `in_flight`：首波前倒计时 tick。 |
-| `interval_tick` | `in_flight`：波次间隔；0 = 剩余次数同一 tick 打完。 |
-| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时取各 payload `count` 之和。 |
-| `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。 |
-| `payloads` | 本波要生成的弹药列表，见下表。 |
-| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn`、`explosion_after_release`。|
-
-`explosion_after_release` 在子体释放后执行母弹自身的完整 `detonate_data` / `explosion_data` 引爆链并移除母弹；不会再次触发 `on_fuse` 释放。
+| 字段 | 说明                                                                        |
+| --- |---------------------------------------------------------------------------|
+| `triggers` | 触发器列表，见下表。默认 `["in_flight"]`。                                             |
+| `delay_tick` | `in_flight`：首波前倒计时 tick。                                                  |
+| `interval_tick` | `in_flight`：波次间隔；0 = 剩余次数同一 tick 打完。                                      |
+| `release_events` | 释放波次数（每波对每个 payload 各生成 `count` 枚）。为 0 时取各 payload `count` 之和。            |
+| `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。                             |
+| `payloads` | 本波要生成的弹药列表，见下表。                                                           |
+| `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn` |
 
 ##### `triggers` 取值
 
@@ -719,14 +717,14 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 #### 示例场景
 
-| 场景 | 配置要点 |
-| --- | --- |
+| 场景 | 配置要点                                                                                              |
+| --- |---------------------------------------------------------------------------------------------------|
 | 子母火箭 / 集束炸弹 | `triggers: ["in_flight"]`，多 `payloads` 指向子战斗部 `weapon_id`，`parent_action: discard_after_release`。 |
-| 释放并引爆母弹 | 需要子体释放后同时结算母弹战斗部时使用 `parent_action: explosion_after_release`；母弹需配置有效的 `detonate_data` / `explosion_data`。 |
-| 多级火箭 | 多段 `releases`，不同 `delay_tick`，`parent_action: continue`。 |
-| 星光导弹分弹头 | 一条 `in_flight`，`release_events: 3`，`payloads` 指向 `rvp:starstreak_dart`，`canister` 散布。 |
-| APFSDS 弹托 | `in_flight` + `entity` 载荷（装饰实体）+ `rvp_weapon` 穿甲杆，`discard_on_first_spawn` 仅脱托。 |
-| 撞击抛洒 | `triggers: ["on_impact"]`，`release_events: 1`。 |
+| 释放并引爆母弹 | 使用`continue`配合`on_fuse`即可，会继续走弹体引信结算爆炸链                                                           |
+| 多级火箭 | 多段 `releases`，不同 `delay_tick`，`parent_action: continue`。                                          |
+| 星光导弹分弹头 | 一条 `in_flight`，`release_events: 3`，`payloads` 指向 `rvp:starstreak_dart`，`canister` 散布。             |
+| APFSDS 弹托 | `in_flight` + `entity` 载荷（装饰实体）+ `rvp_weapon` 穿甲杆，`discard_on_first_spawn` 仅脱托。                   |
+| 撞击抛洒 | `triggers: ["on_impact"]`，`release_events: 1`。                                                    |
 
 ```json
 "submunition_data": {

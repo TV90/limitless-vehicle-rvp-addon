@@ -83,7 +83,7 @@
 }
 ```
 
-链路：导弹平飞 → 正下方锥内探测到实体 → 延时 N tick → `detonateFuseAt` → `ON_FUSE` 子母弹按绝对方向向下喷 40 颗霰弹。`parent_action: continue` 会让当前引信链继续结算爆炸；也可用 `explosion_after_release` 明确要求释放完成后执行母弹自身的完整引爆链。要纯破片则使用 `discard_after_release`，或不为母弹配置有效爆炸。
+链路：导弹平飞 → 正下方锥内探测到实体 → 延时 N tick → `detonateFuseAt` → `ON_FUSE` 子母弹按绝对方向向下喷 40 颗霰弹。`parent_action: continue` 会让当前引信链继续结算爆炸；要纯破片则使用 `discard_after_release`，或不为母弹配置有效爆炸。
 
 ## 实现位置
 
