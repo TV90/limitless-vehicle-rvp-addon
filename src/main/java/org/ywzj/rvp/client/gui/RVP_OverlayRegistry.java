@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.gui;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
@@ -13,6 +14,11 @@ import org.ywzj.rvp.RVP_MOD;
  * <p>
  * 取消原版 overlay 由 {@link RVP_OverlayCancelHandler} 在 Forge 总线上处理。
  * </p>
+ * <p>
+ * 全部与本体的载具 HUD 一样注册到 {@link VanillaGuiOverlay#CHAT_PANEL} 之下（即渲染于聊天框之前），
+ * 与本体燃油/速度等文字处于同一渲染层：被聊天框半透明背景覆盖时能正常透过 alpha 混合显示，
+ * 不会像 registerAboveAll 那样因渲染层/深度差异被聊天背景彻底遮死。相对层序仍按注册顺序保持。
+ * </p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class RVP_OverlayRegistry {
@@ -22,18 +28,18 @@ public class RVP_OverlayRegistry {
     @SubscribeEvent
     public static void onRegisterHud(RegisterGuiOverlaysEvent event) {
         LOGGER.info("[RVP-Hud] onRegisterHud fired");
-        event.registerAboveAll("rvp_radar", new RVP_RadarOverlay());
-        event.registerAboveAll("rvp_scope", new RVP_ScopeOverlay());
-        event.registerAboveAll("rvp_missile", new RVP_MissileOverlay());
-        event.registerAboveAll("rvp_machinegun_lead", new RVP_MachinegunLeadOverlay());
-        event.registerAboveAll("rvp_charge_bar", new RVP_ChargeBarOverlay());
-        event.registerAboveAll("rvp_heat_hud", new RVP_HeatHudOverlay());
-        event.registerAboveAll("rvp_aps_hud", new RVP_ApsHudOverlay());
-        event.registerAboveAll("rvp_dircm_hud", new RVP_DircmHudOverlay());
-        event.registerAboveAll("rvp_countermeasure_hud", new RVP_CountermeasureHudOverlay());
-        // 命中展板注册在最后：overlay 按注册顺序绘制，展板最后绘制即为最上层。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_radar", new RVP_RadarOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_scope", new RVP_ScopeOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_missile", new RVP_MissileOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_machinegun_lead", new RVP_MachinegunLeadOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_charge_bar", new RVP_ChargeBarOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_heat_hud", new RVP_HeatHudOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_aps_hud", new RVP_ApsHudOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_dircm_hud", new RVP_DircmHudOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_countermeasure_hud", new RVP_CountermeasureHudOverlay());
+        // 命中展板注册在最后：同锚点下按注册顺序绘制，展板最后绘制即为该层最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
-        event.registerAboveAll("rvp_hit_indicator", new RVP_HitIndicatorOverlay());
-        event.registerAboveAll("rvp_lock_warning", new RVP_LockWarningOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_lock_warning", new RVP_LockWarningOverlay());
     }
 }

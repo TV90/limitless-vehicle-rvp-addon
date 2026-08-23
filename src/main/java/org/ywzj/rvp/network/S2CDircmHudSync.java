@@ -18,13 +18,15 @@ public final class S2CDircmHudSync {
 
     private final int vehicleEntityId;
     private final List<String> boneNames;
+    private final List<String> displayNames;
     private final List<Integer> targetIds;
     private final List<Integer> chargeRemains;
 
-    public S2CDircmHudSync(int vehicleEntityId, List<String> boneNames,
+    public S2CDircmHudSync(int vehicleEntityId, List<String> boneNames, List<String> displayNames,
                            List<Integer> targetIds, List<Integer> chargeRemains) {
         this.vehicleEntityId = vehicleEntityId;
         this.boneNames = boneNames;
+        this.displayNames = displayNames;
         this.targetIds = targetIds;
         this.chargeRemains = chargeRemains;
     }
@@ -34,6 +36,7 @@ public final class S2CDircmHudSync {
         buf.writeVarInt(msg.boneNames.size());
         for (int i = 0; i < msg.boneNames.size(); i++) {
             buf.writeUtf(msg.boneNames.get(i));
+            buf.writeUtf(msg.displayNames.get(i));
             buf.writeVarInt(msg.targetIds.get(i));
             buf.writeVarInt(msg.chargeRemains.get(i));
         }
@@ -43,20 +46,23 @@ public final class S2CDircmHudSync {
         int vehicleEntityId = buf.readVarInt();
         int count = buf.readVarInt();
         List<String> bones = new ArrayList<>();
+        List<String> displays = new ArrayList<>();
         List<Integer> targets = new ArrayList<>();
         List<Integer> charges = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             bones.add(buf.readUtf(64));
+            displays.add(buf.readUtf(64));
             targets.add(buf.readVarInt());
             charges.add(buf.readVarInt());
         }
-        return new S2CDircmHudSync(vehicleEntityId, bones, targets, charges);
+        return new S2CDircmHudSync(vehicleEntityId, bones, displays, targets, charges);
     }
 
     public static void handle(S2CDircmHudSync msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
                 org.ywzj.rvp.client.state.RVP_DircmHudState.update(
-                        msg.vehicleEntityId, msg.boneNames, msg.targetIds, msg.chargeRemains)));
+                        msg.vehicleEntityId, msg.boneNames, msg.displayNames,
+                        msg.targetIds, msg.chargeRemains)));
         ctx.get().setPacketHandled(true);
     }
 }

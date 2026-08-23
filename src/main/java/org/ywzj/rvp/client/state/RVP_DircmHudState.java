@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RVP_DircmHudState {
 
     /** 单通道快照。 */
-    public record ChannelSnapshot(String boneName, int targetId, int chargeRemainTick) {
+    public record ChannelSnapshot(String boneName, String displayName, int targetId, int chargeRemainTick) {
         public boolean irradiating() {
             return targetId > 0;
         }
@@ -41,7 +41,7 @@ public final class RVP_DircmHudState {
 
     private static final Map<Integer, Snapshot> STATES = new ConcurrentHashMap<>();
 
-    public static void update(int vehicleEntityId, List<String> boneNames,
+    public static void update(int vehicleEntityId, List<String> boneNames, List<String> displayNames,
                               List<Integer> targetIds, List<Integer> chargeRemains) {
         if (vehicleEntityId <= 0 || boneNames == null) {
             return;
@@ -49,9 +49,10 @@ public final class RVP_DircmHudState {
         java.util.ArrayList<ChannelSnapshot> list = new java.util.ArrayList<>();
         for (int i = 0; i < boneNames.size(); i++) {
             String bone = boneNames.get(i);
+            String display = i < displayNames.size() ? displayNames.get(i) : bone;
             int targetId = i < targetIds.size() ? targetIds.get(i) : -1;
             int charge = i < chargeRemains.size() ? chargeRemains.get(i) : 0;
-            list.add(new ChannelSnapshot(bone, targetId, charge));
+            list.add(new ChannelSnapshot(bone, display, targetId, charge));
         }
         STATES.put(vehicleEntityId, new Snapshot(list));
     }

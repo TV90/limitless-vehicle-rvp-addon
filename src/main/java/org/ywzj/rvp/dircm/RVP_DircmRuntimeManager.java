@@ -54,6 +54,9 @@ public final class RVP_DircmRuntimeManager {
     /** DIRCM 干扰后禁止重新指定目标的时长（tick，硬编码 6 秒）：期间 HITL 弹强制对地面直飞。 */
     public static final int NO_REDESIGNATE_TICK = 120;
 
+    /** 永久干扰弹体（IR/AIR 等被致盲后无制导乱飞）的自毁时长（tick，10 秒，伴随爆炸移除）。 */
+    public static final int SELF_DESTRUCT_TICK = 200;
+
     /** 按弹体当前有效制导类型解析 HITL 干扰总时长（供客户端白闪进度计算）。 */
     public static int resolveHitlJamTotal(RVP_BaseBullet bullet) {
         if (bullet.resolveEffectiveGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV) {
@@ -316,12 +319,17 @@ public final class RVP_DircmRuntimeManager {
                 : hitl ? HITL_JAM_TICK : 0;
         // 干扰后 6 秒内禁止重新指定目标（强制对地面直飞，无法重新截获）
         target.dircmNoRedesignateTick = NO_REDESIGNATE_TICK;
+        // 永久干扰弹体（非 HITL）10 秒后伴随爆炸自毁，避免无制导弹体长期占用实体资源；
+        // HITL 弹恢复制导后正常飞行（命中/撞地/寿命自然结算），不设自毁。
+        target.dircmSelfDestructTick = hitl ? 0 : SELF_DESTRUCT_TICK;
         target.dircmDeflectStrength = 1.0;
 
-        // 复用 jamming* 字段族驱动强制偏转（DIRCM 复用光电干扰机参数体系）
+        // 复用 jamming* 字段族驱动强制偏转（复用光电干扰机参数体系）。
+        // heading_rate 过高（>4）会让弹体原地画小圈后撞地/寿终静默消失；
+        // 取 2.5°/tick（50°/秒）使弹体沿大弧线被甩离，表现自然。
         target.jammingStrength = 1.0;
         target.jammingSideSign = resolveSideSign(target, vehicle);
-        target.jammingHeadingRate = 6.0;
+        target.jammingHeadingRate = 2.5;
         target.jammingOffsetAngleDeg = 8.0;
         target.jammingOffsetBaseBlocks = 20.0;
         target.jammingOffsetDownBlocks = 12.0;
@@ -388,15 +396,27 @@ public final class RVP_DircmRuntimeManager {
         return dot >= 0.0 ? -1.0 : 1.0;
     }
 
-    /** 每 tick 递减 HITL 临时干扰恢复 + 禁止重指定倒计时（由弹体 tick 在服务端调用）。 */
-    public static void tickHitlJamRecovery(RVP_BaseBullet bullet) {
-        // 干扰后禁止重指定倒计时：独立于 dircmJammed，即使干扰结束也继续递减
+    /** 每 tick 推进被 DIRCM 干扰弹体的状态（由弹体 tick 在服务端调用）：
+     *  禁止重指定倒计时、HITL 临时干扰恢复、永久干扰弹自毁。 */
+    public static void tickJammedProjectile(RVP_BaseBullet bullet) {
+        // 禁止重指定倒计时：独立于 dircmJammed，即使干扰结束也继续递减
         if (bullet.dircmNoRedesignateTick > 0) {
             bullet.dircmNoRedesignateTick--;
         }
-        if (!bullet.dircmJammed || !bullet.dircmHitlTemporary) {
+        if (!bullet.dircmJammed) {
             return;
         }
+        // 永久干扰弹体（IR/AIR 等）：自毁倒计时，归零伴随爆炸移除
+        if (!bullet.dircmHitlTemporary) {
+            if (bullet.dircmSelfDestructTick > 0) {
+                bullet.dircmSelfDestructTick--;
+                if (bullet.dircmSelfDestructTick <= 0) {
+                    bullet.dircmSelfDestruct();
+                }
+            }
+            return;
+        }
+        // HITL 临时干扰：递减恢复
         if (bullet.dircmJamRemainTick > 0) {
             bullet.dircmJamRemainTick--;
         }
@@ -425,18 +445,22 @@ public final class RVP_DircmRuntimeManager {
             return;
         }
         List<String> boneNames = new ArrayList<>();
+        List<String> displayNames = new ArrayList<>();
         List<Integer> targetIds = new ArrayList<>();
         List<Integer> chargeRemains = new ArrayList<>();
         for (Map.Entry<String, BoneDircmConfig> entry : devices.entrySet()) {
             String bone = entry.getKey();
+            BoneDircmConfig config = entry.getValue();
             ChannelState ch = state.channels.get(bone);
             boneNames.add(bone);
+            // HUD 显示名：配置了 display_name 用之（如"左"/"右"），否则用骨块名
+            displayNames.add(config.displayName() != null ? config.displayName() : bone);
             targetIds.add(ch == null ? -1 : ch.busyTargetId);
             chargeRemains.add(ch == null ? 0 : ch.chargeRemainTick);
         }
         RVP_Network.CHANNEL.send(
                 net.minecraftforge.network.PacketDistributor.TRACKING_ENTITY.with(() -> vehicle),
-                new S2CDircmHudSync(vehicle.getId(), boneNames, targetIds, chargeRemains)
+                new S2CDircmHudSync(vehicle.getId(), boneNames, displayNames, targetIds, chargeRemains)
         );
     }
 

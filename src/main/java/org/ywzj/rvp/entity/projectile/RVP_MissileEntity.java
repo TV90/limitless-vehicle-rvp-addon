@@ -272,9 +272,15 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
 
         if (activeRadarOn && targetEntity == null) {
-            activeRadarLostTargetTick++;
-            if (activeRadarLostTargetTick >= 60) {
-                life = 0;
+            // 被 DIRCM 干扰期间不计入"丢目标自毁"：断锁是干扰的预期效果，
+            // 不应触发 life=0 的弹体自毁（否则被干扰弹转圈后凭空消失）。
+            if (dircmJammed) {
+                activeRadarLostTargetTick = 0;
+            } else {
+                activeRadarLostTargetTick++;
+                if (activeRadarLostTargetTick >= 60) {
+                    life = 0;
+                }
             }
         }
     }

@@ -72,8 +72,8 @@ public class RVP_DircmEventHandler {
             }
             // HITL 弹临时干扰恢复（服务端）
             for (net.minecraft.world.entity.Entity entity : level.getEntities().getAll()) {
-                if (entity instanceof RVP_BaseBullet bullet && bullet.dircmJammed && bullet.dircmHitlTemporary) {
-                    RVP_DircmRuntimeManager.tickHitlJamRecovery(bullet);
+                if (entity instanceof RVP_BaseBullet bullet && bullet.dircmJammed) {
+                    RVP_DircmRuntimeManager.tickJammedProjectile(bullet);
                 }
             }
         }

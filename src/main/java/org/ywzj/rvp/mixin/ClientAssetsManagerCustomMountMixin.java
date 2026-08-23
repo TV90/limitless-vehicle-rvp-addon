@@ -27,5 +27,8 @@ public class ClientAssetsManagerCustomMountMixin {
         RVP_DistanceBoneHider.rebindAll();
         // 重建整模型 LOD 规则缓存（烘焙 LOD 模型 + 注册 LOD 贴图）
         RVP_LodModelManager.rebindAll();
+        // 重载 UI 预设（配合 /ywzj_vehicle reload 客户端热更新；
+        // 服务端链路由 VehicleDataManagerMixin 的 apply TAIL 覆盖）
+        org.ywzj.rvp.config.UIPresetManager.load(resourceManager);
     }
 }

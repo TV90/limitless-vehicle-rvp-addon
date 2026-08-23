@@ -103,6 +103,12 @@ public class UIPresetManager {
         public UIPosition scopeEnvelope;
         /** 多雷达独立位置，key = sub_part_unit_id（如 "scan_radar"），value = 位置 */
         public Map<String, UIPosition> radars;
+        /** APS 状态 HUD 位置。 */
+        @SerializedName("aps_hud")
+        public UIPosition apsHud;
+        /** DIRCM 通道 HUD 位置。 */
+        @SerializedName("dircm_hud")
+        public UIPosition dircmHud;
     }
 
     /** 获取指定名称的预设，不存在返回 null */
@@ -161,6 +167,18 @@ public class UIPresetManager {
     public static UIPosition getVehicleBones(String presetName) {
         UIPreset preset = get(presetName);
         return preset == null ? null : preset.vehicleBones;
+    }
+
+    /** 获取 APS 状态 HUD 位置；预设未配置返回 null（overlay 用默认位置）。 */
+    public static UIPosition getApsHud(String presetName) {
+        UIPreset preset = get(presetName);
+        return preset == null ? null : preset.apsHud;
+    }
+
+    /** 获取 DIRCM 通道 HUD 位置；预设未配置返回 null（overlay 用默认位置）。 */
+    public static UIPosition getDircmHud(String presetName) {
+        UIPreset preset = get(presetName);
+        return preset == null ? null : preset.dircmHud;
     }
 
     /** 加载所有预设文件 */

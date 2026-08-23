@@ -370,6 +370,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** DIRCM 干扰后的"禁止重新指定目标"倒计时 tick：干扰开始置 6 秒（120），期间拒绝操作员重新指定
      *  目标（HITL 弹强制对地面直飞，无法重新截获）。 */
     public int dircmNoRedesignateTick;
+    /** DIRCM 永久干扰弹体的自毁倒计时 tick（归零时伴随爆炸移除，避免无制导弹体长期占用实体资源）。 */
+    public int dircmSelfDestructTick;
     /** 下次干扰扫描 tick（未命中时避免每 tick 全量扫描）。 */
     public int jammingNextScanTick = Integer.MIN_VALUE;
     /** 干扰机载具实体 id（-1 = 未被干扰）。 */
@@ -938,6 +940,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      *  沿保留的目标位置继续追踪原目标（避免"干扰结束后又向截获目标飞去"）。 */
     public void clearGuidanceMemory() {
         this.lastGuidancePos = null;
+    }
+
+    /** DIRCM 永久干扰弹体到时自毁：按武器 detonate_data 结算爆炸后移除（服务端调用）。 */
+    public void dircmSelfDestruct() {
+        if (level().isClientSide() || !isAlive()) {
+            return;
+        }
+        this.dircmJammed = false;
+        this.jammingStrength = 0.0;
+        explodeAndDiscard(position());
     }
 
     /**

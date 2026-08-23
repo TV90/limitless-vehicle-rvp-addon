@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
  * 普通炸弹）仅占通道不干扰。干扰效果为弹体级持久状态（HITL 弹 3 秒后恢复）。</p>
  *
  * @param laserPart         激光照射武器部件 id（如 {@code "dircm_l"}），必填；缺省视为未启用
+ * @param displayName       通道显示名（HUD 用，如 {@code "左"} / {@code "右"}）；缺省用骨块名
  * @param facingPart        探测扇区朝向跟随的部件 id（如 {@code "sighting_system"}），随部件旋转；
  *                          为 null 或空时跟随车体朝向
  * @param facingYawDeg      扇区朝向水平偏置角（度）。正值朝车头右侧（-X），负值朝左侧（+X）；
@@ -37,6 +38,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public record BoneDircmConfig(
         @Nullable String laserPart,
+        @Nullable String displayName,
         @Nullable String facingPart,
         double facingYawDeg,
         double scanFovDeg,
@@ -67,9 +69,13 @@ public record BoneDircmConfig(
             return null;
         }
         JsonObject obj = element.getAsJsonObject();
-        String laserPart = GsonHelper.getAsString(obj, "laser_part", null);
+                String laserPart = GsonHelper.getAsString(obj, "laser_part", null);
         if (laserPart != null && laserPart.isBlank()) {
             laserPart = null;
+        }
+        String displayName = GsonHelper.getAsString(obj, "display_name", null);
+        if (displayName != null && displayName.isBlank()) {
+            displayName = null;
         }
         String facingPart = GsonHelper.getAsString(obj, "facing_part", null);
         if (facingPart != null && facingPart.isBlank()) {
@@ -83,7 +89,7 @@ public record BoneDircmConfig(
         int chargeTick = Math.max(1, GsonHelper.getAsInt(obj, "charge_tick", 300));
         int scanIntervalTick = Math.max(1, GsonHelper.getAsInt(obj, "scan_interval_tick", 5));
         boolean excludeOwnerProjectile = GsonHelper.getAsBoolean(obj, "exclude_owner_projectile", true);
-        return new BoneDircmConfig(laserPart, facingPart, facingYawDeg,
+        return new BoneDircmConfig(laserPart, displayName, facingPart, facingYawDeg,
                 Math.max(0.0, scanFovDeg), Math.max(0.0, detectRadius),
                 Math.max(0.0, approachAngleDeg), beamTick, chargeTick,
                 scanIntervalTick, excludeOwnerProjectile);
