@@ -355,6 +355,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** ===== 干扰机干扰状态（服务端 SACLOS 制导评估写入，供瞄准点偏移） ===== */
     /** 干扰缓存到期 tick（{@code tickCount < jammingExpireTick} 时沿用缓存结果）。 */
     public int jammingExpireTick = Integer.MIN_VALUE;
+
+    /** ===== DIRCM 激光干扰状态（服务端 DIRCM 运行时写入，与光电干扰机 jamming* 字段族共用） ===== */
+    /** 是否被 DIRCM 干扰（激光照射命中瞬间置 true，普通弹永久/弹体级；HITL 弹 3 秒后复位）。 */
+    public boolean dircmJammed;
+    /** DIRCM 干扰源载具实体 id（-1 = 未被 DIRCM 干扰）。 */
+    public int dircmSourceVehicleId = -1;
+    /** DIRCM 干扰剩余 tick：HITL 弹干扰恢复倒计时；普通弹不递减（永久）。 */
+    public int dircmJamRemainTick;
+    /** DIRCM 是否属「人在回路临时干扰」（干扰结束后需恢复制导）。 */
+    public boolean dircmHitlTemporary;
+    /** DIRCM 干扰偏转强度倍率（写入 jammingStrength 用，DIRCM 复用光电干扰机参数体系）。 */
+    public double dircmDeflectStrength = 1.0;
+    /** DIRCM 干扰后的"禁止重新指定目标"倒计时 tick：干扰开始置 6 秒（120），期间拒绝操作员重新指定
+     *  目标（HITL 弹强制对地面直飞，无法重新截获）。 */
+    public int dircmNoRedesignateTick;
     /** 下次干扰扫描 tick（未命中时避免每 tick 全量扫描）。 */
     public int jammingNextScanTick = Integer.MIN_VALUE;
     /** 干扰机载具实体 id（-1 = 未被干扰）。 */
@@ -919,6 +934,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         resetIrSeekerGrace();
     }
 
+    /** 清除制导记忆点（lastGuidancePos）。DIRCM 干扰结束恢复时调用，防止惯性制导
+     *  沿保留的目标位置继续追踪原目标（避免"干扰结束后又向截获目标飞去"）。 */
+    public void clearGuidanceMemory() {
+        this.lastGuidancePos = null;
+    }
+
     /**
      * 被干扰失锁：若丢失的目标是干扰物实体，按 {@code interference_data.seeker_shut_off_time}
      * 启动导引头关闭期（期间不重新搜索，之后重启复锁）；并复位红外"已获取"标记，
@@ -1328,6 +1349,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public void setActiveStageName(@Nullable String activeStageName) {
         this.activeStageName = activeStageName;
+    }
+
+    /**
+     * 解析当前阶段（MAIN/TERMINAL）的<b>有效制导类型</b>（含阶段迁移），供外部判断威胁类型
+     * （如 DIRCM 判定目标是否可被干扰：IR/AIR/ARH/HITL 族）。纯数据解析，双端安全。
+     *
+     * @return 当前有效制导类型；无武器配置或解析失败返回 {@code NONE}
+     */
+    public RVP_EnumGuidanceType resolveEffectiveGuidanceType() {
+        if (rvpData == null) {
+            return RVP_EnumGuidanceType.NONE;
+        }
+        RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(
+                rvpData.getGuidanceData(), getGuidancePhaseState().phase());
+        return active == null ? RVP_EnumGuidanceType.NONE : active.guidanceType();
     }
 
     public java.util.Set<Integer> getGuidanceStickyPhaseIndices() {

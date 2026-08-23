@@ -56,6 +56,10 @@ public class RVP_ClientHitlState {
     private static int clientDesignatedEntityId = -1;
     private static boolean hitlLinkBlocked;
     private static boolean hitlLinkSevered;
+    /** DIRCM 对 HITL 弹的临时干扰状态（服务端 S2CHitlLinkState 同步，驱动白闪滤镜）。 */
+    private static boolean dircmJam;
+    private static int dircmJamRemainTick;
+    private static int dircmJamTotalTick;
     @Nullable
     private static Vec3 clientAimPoint;
     /** Updated once per client tick for hot-path particle suppression (no getEntity in particle spawn). */
@@ -133,6 +137,30 @@ public class RVP_ClientHitlState {
         }
     }
 
+    public static void onHitlDircmJam(int missileEntityId, boolean jam, int remainTick, int totalTick) {
+        if (missileEntityId != activeMissileId) {
+            return;
+        }
+        dircmJam = jam;
+        dircmJamRemainTick = jam ? Math.max(0, remainTick) : 0;
+        dircmJamTotalTick = jam ? Math.max(1, totalTick) : 0;
+    }
+
+    /** 是否正被 DIRCM 干扰（HITL 白闪滤镜驱动，与雪花互斥）。 */
+    public static boolean isDircmJammed() {
+        return dircmJam && !hitlLinkBlocked;
+    }
+
+    /** DIRCM 干扰剩余 tick（客户端白闪消退计时）。 */
+    public static int getDircmJamRemainTick() {
+        return dircmJamRemainTick;
+    }
+
+    /** DIRCM 干扰总时长 tick（白闪进度计算基准）。 */
+    public static int getDircmJamTotalTick() {
+        return dircmJamTotalTick;
+    }
+
     public static boolean shouldHideActiveMissileVfx(Entity entity) {
         return entity != null && isActive() && entity.getId() == activeMissileId;
     }
@@ -188,6 +216,9 @@ public class RVP_ClientHitlState {
         clientDesignatedEntityId = -1;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
+        dircmJam = false;
+        dircmJamRemainTick = 0;
+        dircmJamTotalTick = 0;
         clientAimPoint = null;
         clearParticleSuppressCache();
         if (missileChanged) {
@@ -223,6 +254,9 @@ public class RVP_ClientHitlState {
         clientDesignatedEntityId = -1;
         hitlLinkBlocked = false;
         hitlLinkSevered = false;
+        dircmJam = false;
+        dircmJamRemainTick = 0;
+        dircmJamTotalTick = 0;
         clientAimPoint = null;
         clearParticleSuppressCache();
         if (viewTypeCaptured) {

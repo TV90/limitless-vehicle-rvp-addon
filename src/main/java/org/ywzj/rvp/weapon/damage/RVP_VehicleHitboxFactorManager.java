@@ -25,6 +25,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
+import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
@@ -192,6 +193,32 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     out = new HashMap<>();
                 }
                 out.put(entry.getKey(), aps);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 解析载具上全部存活的 DIRCM 照射模块（{@code bone_modules} 的 {@code dircm} 子对象）。
+     * 返回 {@code Map<骨块名, 配置>}；无配置或全部禁用返回 null。
+     * 供 {@code RVP_DircmRuntimeManager} 按骨块名 + {@code RVP_BoneModuleStateTable} 判定通道可用性。
+     */
+    public @Nullable Map<String, BoneDircmConfig> resolveDircmDevices(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneDircmConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneDircmConfig dircm = entry.getValue() == null ? null : entry.getValue().dircm();
+            if (dircm != null && dircm.isEnabled()) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), dircm);
             }
         }
         return out;
@@ -909,7 +936,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float explosion,
             Set<BoneModuleType> modules,
             @Nullable BoneJammerConfig jammer,
-            @Nullable BoneApsConfig aps
+            @Nullable BoneApsConfig aps,
+            @Nullable BoneDircmConfig dircm
     ) {
         boolean hasModules() {
             return modules != null && !modules.isEmpty();
@@ -936,7 +964,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 explosion = 0f;
             }
             return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules,
-                    BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")));
+                    BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")),
+                    BoneDircmConfig.parse(obj.get("dircm")));
         }
 
         /** 兼容旧配置 {@code hitbox_era} 条目：始终仅 ERA 模块。 */
@@ -949,7 +978,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 return factor.map(value -> {
                     Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
                     modules.add(BoneModuleType.ERA);
-                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null);
+                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null, null);
                 }).orElse(null);
             }
             if (!element.isJsonObject()) {
@@ -967,7 +996,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
             modules.add(BoneModuleType.ERA);
-            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null);
+            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null, null);
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */

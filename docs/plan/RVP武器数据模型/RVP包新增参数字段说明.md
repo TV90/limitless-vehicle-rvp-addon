@@ -86,6 +86,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `sub_type` | 可选子类型标记（如 `incendiary`），仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
 | `rvp_fire_control_sensor_mode` | 武器自身的火控传感器模式标记（字符串）。可选值：空（默认，不覆盖）/ `eo_ccip`（强制按电光传感器做 CCIP 弹道求解，常用于对地机炮）。 |
 | `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `loc` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
+| `seeker_color` | 可选，导引头圈 HUD 颜色覆盖（RGB 十六进制字符串，如 `"0x30FF30"` / `"#FFAA00"`）。配置后该武器被选中时导引头圈用此颜色绘制，锁定时统一红色指示；未配置走本体机型基色（直升机绿 / 固定翼白）。仅客户端渲染消费。 |
+| `parent_weapon_unit_aim_override` | 可选布尔，覆盖所属武器站的 `parent_weapon_unit_aim`：`true`=弹着点预测与准心锚定到母武器站，`false`=使用自身挂架位置；未写=继承站级静态配置。仅客户端消费（弹着点预测与准心显示锚定方向）。 |
 
 **破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
 
@@ -1547,6 +1549,52 @@ SACLOS 反坦克导弹（半自动修正）：
 }
 ```
 
+### 2.12 骨骼模块定向红外对抗（DIRCM，`bone_modules.dircm`）
+
+写在 `bone_modules.<骨块名>` 条目的 `dircm` 子对象（`modules` 数组需含 `"dircm"`）。每个配置了 `dircm` 的骨骼拥有**一个火力通道**：同时只能照射一个目标；配多个骨骼即多通道（如左右各一，配合 `facing_yaw ±90` 分侧覆盖）。照射骨骼被击毁后该通道失效。
+
+**触发与干扰语义**：
+- 扇区+距离+来袭角内的所有 RVP 导弹/火箭/炸弹（`RVP_BaseBullet`，机炮弹除外）都会**触发**（占用通道并建立激光光束）；
+- 光束建立瞬间完成干扰判定——仅 **IR / AIR / HITL_TV / HITL_CLOS_TV** 制导的弹体被干扰（丢制导 + 清目标 + 强制偏转远离载具）；其余弹体不干扰但同样占通道、消耗充能；
+- 干扰时强制把截获目标改写为弹体正下方地面点，且 **6 秒内禁止重新指定目标**（HITL 弹对地直飞无法重新截获）；
+- HITL 弹为**临时干扰**：电视（HITL_TV）3 秒、指令线（HITL_CLOS_TV）6 秒后恢复制导能力（需操作员重新指定才重锁），期间其操作员视角叠加「中心→四周」白闪滤镜；
+- ARH/SARH 雷达导引头不受影响（DIRCM 是红外对抗，对雷达导引头无效）；不干扰同阵营与自己发射的弹药。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `laser_part` | 激光照射武器部件 id（`ywzj_vehicle:weapon` 型，兼作光束起点、失效锚点与动画联动锚点）。必填；缺省视为未启用。 | `null` |
+| `facing_part` | 探测扇区朝向跟随的部件 id（随该部件旋转）；缺省跟随车体朝向。直升机建议不填（不随观瞄站转动）。 | `null` |
+| `facing_yaw` | 扇区朝向水平偏置角（度）：正值朝车头右侧（-X）、负值朝左侧（+X）。左右双通道用 `±90`。 | `0.0` |
+| `scan_fov` | 探测扇区全角（度），半角 = 值/2。 | `120.0` |
+| `detect_radius` | 探测/照射距离（格），同时是光束断开阈值。 | `2000.0` |
+| `approach_angle` | 来袭角判定（度，半角）：弹体飞行方向与「弹→车」连线夹角超过该值不触发（只照朝本车飞来的威胁）。 | `60.0` |
+| `beam_tick` | 激光光束美术特效持续时长（tick）。干扰在光束建立瞬间即生效，本字段只控制特效跟踪时长。 | `20` |
+| `charge_tick` | 一次照射后的充能时长（tick），期间通道不可用。 | `300` |
+| `scan_interval_tick` | 扫描节流间隔（tick）。 | `5` |
+| `exclude_owner_projectile` | 是否忽略本车自己发射的弹体。 | `true` |
+
+```json
+"bone_modules": {
+  "dircm_l": {
+    "modules": ["dircm"],
+    "dircm": {
+      "laser_part": "dircm_l",
+      "facing_yaw": -90.0,
+      "scan_fov": 120,
+      "detect_radius": 192.0,
+      "approach_angle": 60,
+      "beam_tick": 20,
+      "charge_tick": 300,
+      "scan_interval_tick": 5,
+      "exclude_owner_projectile": true
+    }
+  },
+  "dircm_r": { "...": "同上，facing_yaw: 90.0" }
+}
+```
+
+> 配套：`laser_part` 引用的部件须为 `parts` 内的 `ywzj_vehicle:weapon` 型部件（`structure_bone` 指向结构模型对应骨骼）；动画脚本可用 `getPartXRot/getPartYRot(<laserPart>)` 让发射器随动。调试：`/rvpdebug scanviz` 会以白色粒子（END_ROD）勾勒 DIRCM 干扰锥。
+
 ---
 
 ## 3 部件 JSON 扩展
@@ -1579,6 +1627,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `scan_min_height` | 扫描最小高度（格）。 | `25` |
 | `scan_max_height` | 扫描最大高度（格）。 | `10000` |
 | `chaff_resistance` | 雷达对箔条目标的锁定抗性（0~1）：箔条可作为雷达锁定目标，但按此值对箔条施加锁定候选评分罚分（越大优先级越低，非完全不可锁）。默认 `0.5`，具备相当的抗箔条能力。 | `0.5` |
+| `scan_vehicle_only` | 仅扫描/跟踪载具：`true` 时扫描与锁定只保留载具目标，排除弹药、箔条等非载具实体（扫描与接触保活均过滤）。适合“对地补盲雷达”（如长弓桅顶雷达）。 | `false` |
 
 > `enable_hms` 为 `JsonElement`：写布尔或字符串均可；`false`/`off`/`none` 表示关闭，`onlyACM`/`only_acm`/`acm` 表示仅空战模式启用，其余值视为完整启用。
 

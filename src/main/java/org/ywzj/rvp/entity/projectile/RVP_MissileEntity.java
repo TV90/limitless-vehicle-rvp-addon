@@ -78,6 +78,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private int hitlLinkBlockedTicks;
     private boolean hitlLinkLastSentBlocked;
     private boolean hitlLinkLastSentSevered;
+    private boolean hitlLinkLastSentDircm;
+    private int hitlLinkLastSentDircmRemain;
     private int hitlEnterViewResendTicks;
     /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
     private boolean hitlRightClickDetonate;
@@ -186,6 +188,21 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         tickMissileTrackAlert(activeType);
 
         super.tickGuidance();
+
+        // 服务端：DIRCM 对 HITL 弹的临时干扰状态变化 → 同步客户端（白闪滤镜驱动）
+        if (!level().isClientSide()) {
+            maybeSyncHitlLinkState();
+        }
+
+        // [DIRCM DEBUG] 干扰期间若 targetEntity 仍被重建，打印来源（排查"干扰未取消截获"）
+        if (!level().isClientSide() && dircmJammed && (tickCount & 15) == 0) {
+            org.apache.logging.log4j.LogManager.getLogger("RVP_Dircm")
+                    .info("[DIRCM DEBUG] jammed hitlMissile={} remain={} targetEntity={} targetPos={}",
+                            getId(), dircmJamRemainTick,
+                            targetEntity == null ? "null" : targetEntity.getClass().getSimpleName(),
+                            targetPos == null ? "null" : String.format("%.1f,%.1f,%.1f",
+                                    targetPos.x, targetPos.y, targetPos.z));
+        }
     }
 
     private void maybeSyncEnterHitlView() {
@@ -610,14 +627,23 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     private void maybeSyncHitlLinkState() {
-        if (hitlLinkBlocked == hitlLinkLastSentBlocked && hitlLinkSevered == hitlLinkLastSentSevered) {
+        boolean dircm = dircmJammed && dircmHitlTemporary;
+        if (hitlLinkBlocked == hitlLinkLastSentBlocked
+                && hitlLinkSevered == hitlLinkLastSentSevered
+                && dircm == hitlLinkLastSentDircm
+                && (!dircm || dircmJamRemainTick == hitlLinkLastSentDircmRemain)) {
             return;
         }
         hitlLinkLastSentBlocked = hitlLinkBlocked;
         hitlLinkLastSentSevered = hitlLinkSevered;
+        hitlLinkLastSentDircm = dircm;
+        hitlLinkLastSentDircmRemain = dircm ? dircmJamRemainTick : 0;
         if (getOwner() instanceof net.minecraft.server.level.ServerPlayer player) {
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                    S2CHitlLinkState.of(getId(), hitlLinkBlocked, hitlLinkSevered));
+                    S2CHitlLinkState.of(getId(), hitlLinkBlocked, hitlLinkSevered,
+                            dircm, dircmJamRemainTick, dircmHitlTemporary
+                                    ? org.ywzj.rvp.dircm.RVP_DircmRuntimeManager.resolveHitlJamTotal(this)
+                                    : 0));
         }
     }
 
@@ -682,6 +708,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
             return;
         }
+        // 被 DIRCM 干扰期间/干扰后禁止重新指定期内：忽略操作员持续指定（保持断锁/对地直飞）
+        if (dircmJammed || dircmNoRedesignateTick > 0) {
+            return;
+        }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null) {
             return;
         }
@@ -701,6 +731,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
     public void rvp$setHitlDesignatedEntity(net.minecraft.world.entity.Entity target) {
         if (hitlSignalSource == HitlSignalSource.RADIO && (hitlLinkBlocked || hitlLinkSevered)) {
+            return;
+        }
+        // 被 DIRCM 干扰期间/干扰后禁止重新指定期内：忽略操作员持续指定目标实体（保持断锁）
+        if (dircmJammed || dircmNoRedesignateTick > 0) {
             return;
         }
         if (hitlControlMode != RVP_EnumHitlControlMode.DESIGNATE || target == null || !target.isAlive()) {
