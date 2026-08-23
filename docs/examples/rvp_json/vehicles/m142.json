@@ -80,6 +80,7 @@
       "weapons": [
         "rvp:m142_rocket",
         "rvp:m142_m30",
+        "rvp:m142_m30_wp",
         "rvp:m142_atacms"
       ],
       "rot_info": {

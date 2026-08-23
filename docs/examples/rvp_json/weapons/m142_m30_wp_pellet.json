@@ -1,0 +1,81 @@
+{
+  "type": "rvp:bomb",
+  "name": "M30 白磷子体",
+  "shoot_interval": 0,
+  "max_capacity": 1,
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 0.9,
+    "gravity": -0.045,
+    "drag": 0.008,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 3.0,
+    "wind_data": {
+      "enabled": true,
+      "direction_mode": "parent_facing_reverse",
+      "speed": 0.11,
+      "response": 0.035,
+      "vertical_factor": 0.0,
+      "turbulence": 0.006
+    }
+  },
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "none",
+    "explosion_particle": "none",
+    "impact_trail_particles": false,
+    "particle_projectile_data": {
+      "enabled": true,
+      "particle_type": "rvp:white_phosphorus",
+      "full_bright": true,
+      "body_scale": 0.42,
+      "body_lifetime_ticks": 3,
+      "body_color": "#FFC247",
+      "body_flicker": 0.08,
+      "trail_enabled": true,
+      "trail_spacing": 0.18,
+      "trail_lifetime_ticks": 26,
+      "trail_start_scale": 0.34,
+      "trail_end_scale": 0.03,
+      "trail_start_alpha": 0.90,
+      "trail_end_alpha": 0.0,
+      "trail_start_color": "#FFB52E",
+      "trail_end_color": "#7A3512"
+    }
+  },
+  "detonate_data": {
+    "effects_before_explosion": true,
+    "fire_data": {
+      "radius": 2,
+      "chance": 0.65,
+      "soul_fire": false,
+      "on_block": true,
+      "on_entity": true
+    },
+    "ignite_entity_data": {
+      "radius": 2.0,
+      "seconds": 10,
+      "targets": "non_allied"
+    }
+  },
+  "collision_data": {
+    "direct_damage": 3.0,
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0
+  }
+}

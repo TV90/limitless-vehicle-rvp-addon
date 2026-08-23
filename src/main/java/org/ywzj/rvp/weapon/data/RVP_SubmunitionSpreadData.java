@@ -19,24 +19,49 @@ public class RVP_SubmunitionSpreadData {
         this.boxSpread = boxSpread;
     }
 
-    /**
-     * {@code box} = {@link #boxSpread} random cube; {@code canister} = angle/position canister
-     * ({@link #canisterType}).
-     */
+    /** 散布模式，默认 {@code box}；接受 {@code box}/{@code canister}/{@code stratified_cone}。 */
     @SerializedName("mode")
     private String mode = "box";
 
+    /** canister 散布类型，默认 1；0 改位置，1/2 改速度方向，读取时限制为 0～2。 */
     @SerializedName("canister_type")
     private int canisterType = 1;
 
+    /** canister 位置或角度散布强度，默认 0.3；canister 模式下限制为非负。 */
     @SerializedName("canister_diff")
     private float canisterDiff = 0.3f;
 
+    /** canister 采样分布，默认 {@code uniform}；仅 canister 模式生效。 */
     @SerializedName("canister_distribution")
     private String canisterDistribution = RVP_EnumSpreadDistribution.UNIFORM.getSerializedName();
 
+    /** canister 采样形状，默认 {@code circle}；仅 canister 模式生效。 */
     @SerializedName("canister_shape")
     private String canisterShape = RVP_EnumSpreadShape.CIRCLE.getSerializedName();
+
+    /** 分层圆锥半角，单位度，默认 60；仅 {@code mode=stratified_cone} 时限制为 0～180。 */
+    @SerializedName("cone_half_angle")
+    private float coneHalfAngle = 60f;
+
+    /** 圆锥轴模式，默认 {@code world_down}；首版仅接受世界正下方向，未知值回退该值。 */
+    @SerializedName("cone_axis")
+    private String coneAxis = "world_down";
+
+    /** 径向采样模式，默认 {@code uniform_area}；首版未知值回退均匀立体角采样。 */
+    @SerializedName("radial_distribution")
+    private String radialDistribution = "uniform_area";
+
+    /** 方位角分层内随机扰动比例，范围 0～1，默认 0；仅分层圆锥模式生效。 */
+    @SerializedName("azimuth_jitter")
+    private float azimuthJitter = 0f;
+
+    /** 径向分层内随机扰动比例，范围 0～1，默认 0；仅分层圆锥模式生效。 */
+    @SerializedName("radial_jitter")
+    private float radialJitter = 0f;
+
+    public boolean usesStratifiedCone() {
+        return "stratified_cone".equalsIgnoreCase(mode);
+    }
 
     public boolean usesCanister() {
         return "canister".equalsIgnoreCase(mode) || canisterDiff > 0f;
@@ -60,5 +85,29 @@ public class RVP_SubmunitionSpreadData {
 
     public RVP_EnumSpreadShape getCanisterShape() {
         return RVP_EnumSpreadShape.forCanister(canisterShape);
+    }
+
+    public float getConeHalfAngle() {
+        return Float.isFinite(coneHalfAngle) ? Math.max(0f, Math.min(coneHalfAngle, 180f)) : 60f;
+    }
+
+    public String getConeAxis() {
+        return "world_down";
+    }
+
+    public String getRadialDistribution() {
+        return "uniform_area";
+    }
+
+    public float getAzimuthJitter() {
+        return clampJitter(azimuthJitter);
+    }
+
+    public float getRadialJitter() {
+        return clampJitter(radialJitter);
+    }
+
+    private static float clampJitter(float value) {
+        return Float.isFinite(value) ? Math.max(0f, Math.min(value, 1f)) : 0f;
     }
 }

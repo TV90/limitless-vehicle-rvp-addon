@@ -11,6 +11,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_DisplayTypes;
 import org.ywzj.rvp.all.RVP_Items;
+import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
 import org.ywzj.rvp.config.RVP_ClientConfig;
@@ -44,6 +45,7 @@ public class RVP_MOD {
         RVP_Entities.register(modBus);
         RVP_DisplayTypes.register(modBus);
         RVP_Items.register(modBus);
+        RVP_Particles.register(modBus);
         RVP_Sounds.register(modBus);
         RVP_WeaponTypes.register(modBus);
         modBus.addListener(this::onCommonSetup);
@@ -51,6 +53,7 @@ public class RVP_MOD {
                 {
                     modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onClientSetup);
                     modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onLoadComplete);
+                    modBus.addListener(org.ywzj.rvp.client.RVP_ClientBootstrap::onRegisterParticleProviders);
                 });
     }
 
