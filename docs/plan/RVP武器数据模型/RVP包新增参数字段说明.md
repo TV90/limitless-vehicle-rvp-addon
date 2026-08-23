@@ -187,6 +187,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
 | `drag_coefficient` | 速度平方阻力系数。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
+| `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
 
 `altitude_drag_factor` 的运行规则：
 
@@ -212,6 +213,36 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
     "[[300,500]]": 1.0,
     "[[500,1000]]": 1.02,
     "[[1000,inf]]": 1.05
+  }
+}
+```
+
+#### `wind_data` 子弹药风漂
+
+当前风向只在 RVP 子弹药生成时捕获：以**释放 Tick 母弹当前旋转朝向的反向**为基准并固化到子体，之后不会继续跟随母弹转向。服务器在重力、阻力和位置积分前修改子体速度；客户端只显示同步后的权威弹道，不自行计算风漂。普通首发弹体没有父弹可供捕获，因此仅配置本对象不会产生风向。
+
+| 字段 | 类型 | 缺省值 | 归一化与生效条件 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | 总开关；只有本字段为 `true`、方向模式有效、归一化后 `speed > 0` 且 `response > 0` 时，`RVP_WindData.isEnabled()` 才返回 true。 |
+| `direction_mode` | string | `parent_facing_reverse` | 当前 schema 仅接受 `parent_facing_reverse`（忽略大小写）；未知值不迁移、不回退为其他模式，而是令风漂禁用。 |
+| `speed` | float（格/tick） | `0.1` | 目标风速；有限值取 `max(value, 0)`，NaN/Infinity 按 `0`。它是速度收敛目标，不是每 Tick 直接追加的加速度。 |
+| `response` | float | `0.03` | 每 Tick 向目标风速收敛的比例，有限值钳制到 `0..1`，NaN/Infinity 按 `0`；`0` 禁用风漂，`1` 表示单 Tick 直接收敛。 |
+| `vertical_factor` | float | `0` | 捕获风向时保留母弹反向朝向 Y 分量的比例，有限值钳制到 `0..1`，NaN/Infinity 按 `0`。为 `0` 时只改变 X/Z，保留子体原有下坠 Y 速度。 |
+| `turbulence` | float（格/tick） | `0` | 每 Tick 追加到 X/Z 的确定性扰动幅度；有限值取 `max(value, 0)`，NaN/Infinity 按 `0`。扰动由实体 UUID 与飞行 Tick 派生，同一实体可复现。 |
+
+典型配置：
+
+```json
+"projectile_data": {
+  "gravity": -0.045,
+  "drag": 0.008,
+  "wind_data": {
+    "enabled": true,
+    "direction_mode": "parent_facing_reverse",
+    "speed": 0.11,
+    "response": 0.035,
+    "vertical_factor": 0.0,
+    "turbulence": 0.006
   }
 }
 ```
@@ -341,12 +372,65 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `trajectory_particle` | 飞行轨迹粒子；默认 `minecraft:cloud`，写 `none` 可关闭。 |
 | `impact_particle` | 命中粒子。空或 `minecraft:block` = MCH 默认：方块破碎粒子 + 白烟（`CLOUD`）；`none` 关闭。分布与 MCH `spawnBlockPar` 一致（破碎：`flak_particles_*`；白烟：命中点 ±1 格高斯偏移、速度 `gaussian/200`）。激光命中走 `MCH_WeaponLaser#spawnBlockPar`（无破碎，仅 cloud/smoke/flame）。 |
 | `explosion_particle` | 爆炸粒子。空或 `minecraft:explosion` / `explosion_emitter` = 原版 `EXPLOSION_EMITTER` + `EXPLOSION`；`none` 仅关闭额外粒子（`VehicleExplosion` 音效/烟雾仍由本体处理）。 |
+| `impact_trail_particles` | 命中瞬间补渲轨迹粒子开关，默认 `false`（字段缺省或 JSON 为 `null` 均按关闭）。弹体在命中 Tick 即死亡、飞行时间过短且从未广播过轨迹粒子时，为 true 才在命中点补一簇 `trajectory_particle`；不改变持续飞行轨迹、碰撞或伤害。 |
 | `flak_particles_crack` | MCH `FlakParticlesCrack`：方块破碎粒子基数（实际 +0~2），默认 10。 |
 | `num_particles_flak` | MCH `NumParticlesFlak`：白烟数量，默认 3。 |
 | `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
 | `caliber` | **仅 `rvp:machinegun`**：口径（毫米），曳光条宽度与弹孔粒子大小。默认 `7.62`。 |
 | `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
 | `wire_link_enabled` | **线导视觉线**（导弹类弹体）：导弹与发射武器站枢轴间绘制一根原版钓鱼线风格的黑色细线（客户端世界渲染，正常游戏视角可见，非实体碰撞）。默认 `false` 关闭。线缆**中段受重力下垂呈曲线**（二次贝塞尔，下垂量随线长自动增大，约线长的 8%，钳制 0.4~12 格），端点精确连接导弹与发射枢轴并实时更新。导弹失去制导时线缆**立即消失**（失制导情形包括：HITL 链路切断 `hitlLinkSevered`、RADIO 信号源链路被遮挡 `hitlLinkBlocked`、`hitlLife` 耗尽，以及引导段结束 `guidance_type` 回到 `NONE`）；导弹消失（爆炸/自毁/生命周期结束）后，残留线缆将在 **20 tick** 内渐隐消失。 |
+| `particle_projectile_data` | `RVP_ParticleProjectileData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。启用后 RVP 类型化 Renderer 跳过弹体模型，由客户端实体 Tick 生成主体和路径尾迹，字段见下表。 |
+
+#### `particle_projectile_data` 纯粒子弹体
+
+该对象只控制客户端视觉，不参与服务器碰撞、直击、点火或爆炸判定。`enabled: true` 会使类型化 Renderer 跳过 Bedrock/fallback 模型；因此 `particle_type` 未被专用发射器识别时会出现“模型隐藏但无粒子”。当前实现仅识别稳定数据 ID `rvp:white_phosphorus`，其贴图资产位于 `assets/ywzj_rvp/textures/nuclear/particle_base.png`；数据 ID 不随资产目录改变。
+
+| 字段 | 类型 | 缺省值 | 归一化与生效条件 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | 纯粒子弹体总开关；为 true 时隐藏模型，并仅在 `particle_type` 被客户端专用发射器识别时生成粒子。 |
+| `particle_type` | string | `""` | 粒子数据 ID；读取时去除首尾空白。当前必须写 `rvp:white_phosphorus`，空值或其他 ID 不生成主体和尾迹。 |
+| `full_bright` | boolean | `true` | 主体与尾迹是否使用全亮光照；为 false 时使用环境光。 |
+| `body_scale` | float | `0.4` | 主体尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.4`。 |
+| `body_lifetime_ticks` | int（tick） | `3` | 单个主体粒子寿命，读取时至少为 `1`。当前每个存活子体通常每 Tick 生成一个主体；距离超过 512 格时每 2 Tick 生成一次。 |
+| `body_color` | string（RGB） | `#FFC247` | 接受 `#RRGGBB` 或 `RRGGBB`；必须正好 6 位十六进制，不接受 8 位 ARGB，非法值回退 `#FFC247`。 |
+| `body_flicker` | float | `0.08` | 每次生成主体时的尺寸随机浮动比例，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.08`；不改变亮度。 |
+| `trail_enabled` | boolean | `true` | 是否沿客户端实体上一 Tick 到当前 Tick 的实际运动段生成路径尾迹。 |
+| `trail_spacing` | float（格） | `0.2` | 尾迹采样间距；非负有限值再取至少 `0.02`，NaN/Infinity 回退 `0.2`。距离 LOD 会把该间距乘以 `1.0/1.5/2.5`。 |
+| `trail_lifetime_ticks` | int（tick） | `24` | 单个尾迹粒子寿命，读取时至少为 `1`。 |
+| `trail_start_scale` | float | `0.32` | 尾迹出生尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.32`。 |
+| `trail_end_scale` | float | `0.02` | 尾迹消失尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.02`。 |
+| `trail_start_alpha` | float | `0.9` | 尾迹出生透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.9`。 |
+| `trail_end_alpha` | float | `0` | 尾迹消失透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0`。 |
+| `trail_start_color` | string（RGB） | `#FFFFFF` | 尾迹出生颜色；格式规则同 `body_color`，非法值回退白色。 |
+| `trail_end_color` | string（RGB） | `#FFFFFF` | 尾迹消失颜色；格式规则同 `body_color`，非法值回退白色。 |
+
+尾迹每个实体每 Tick 最多补 12 个采样点；玩家距离 `≤128`、`128..256`、`256..512` 格时，间距倍率分别为 `1.0`、`1.5`、`2.5`，超过 512 格不生成尾迹。主体保持给定尺寸和透明度；尾迹尺寸与透明度按平滑曲线过渡，颜色按年龄线性过渡。
+
+```json
+"effects_data": {
+  "trajectory_particle": "none",
+  "impact_particle": "none",
+  "explosion_particle": "none",
+  "particle_projectile_data": {
+    "enabled": true,
+    "particle_type": "rvp:white_phosphorus",
+    "full_bright": true,
+    "body_scale": 0.42,
+    "body_lifetime_ticks": 3,
+    "body_color": "#FFC247",
+    "body_flicker": 0.08,
+    "trail_enabled": true,
+    "trail_spacing": 0.18,
+    "trail_lifetime_ticks": 26,
+    "trail_start_scale": 0.34,
+    "trail_end_scale": 0.03,
+    "trail_start_alpha": 0.90,
+    "trail_end_alpha": 0.0,
+    "trail_start_color": "#FFB52E",
+    "trail_end_color": "#7A3512"
+  }
+}
+```
 
 #### 导弹原生尾焰（`missile_native_trail_*`）
 
@@ -710,12 +794,30 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `mode` | string | `box` | `box` 或 `canister`。注意当前实现只要 `mode: canister` **或** `canister_diff > 0` 就启用 canister；因此完整默认对象实际进入 canister。 |
+| `mode` | string | `box` | `box`、`canister` 或 `stratified_cone`。速度散布时 `stratified_cone` 优先于 canister；其他值不会自动迁移。注意完整默认对象的 `canister_diff=0.3`，所以 `mode=box` 但未把 `canister_diff` 设为 0 时，运行时仍会进入 canister 判定。 |
 | `box_spread` | float | `0` | 非 canister 模式下的轴向速度随机扰动幅度，读取时最小为 0；Y 轴扰动为 X/Z 的一半。 |
 | `canister_type` | int | `1` | 读取时限制到 `0..2`：`0` 改变生成位置，`1` 和 `2` 在当前子弹药散布器中都执行角度散布。 |
 | `canister_diff` | float | `0.3` | canister 散布强度，读取时最小为 0；`type: 0` 时用于位置偏移，`type: 1/2` 时作为角度散布量。大于 0 会启用 canister，即使 `mode` 仍为 `box`。 |
 | `canister_distribution` | string | `uniform` | canister 采样分布；取值与 `fire_data` 的散布分布一致。 |
 | `canister_shape` | string | `circle` | canister 形状；由 `RVP_EnumSpreadShape.forCanister` 解析，方形时使用网格分配。 |
+| `cone_half_angle` | float | `60` | `stratified_cone` 圆锥半角（度），限制 0～180。 |
+| `cone_axis` | string | `world_down` | 圆锥轴；当前 getter 对任何输入都返回 `world_down`，即世界 Y 负方向。 |
+| `radial_distribution` | string | `uniform_area` | 径向分布；当前 getter 对任何输入都返回 `uniform_area`，实现按圆锥内均匀立体角采样。 |
+| `azimuth_jitter` | float | `0` | 方位角分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`。扰动范围为单个方位角分层宽度乘该比例。 |
+| `radial_jitter` | float | `0` | 径向分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`，实际径向扰动还会除以子体总数。 |
+
+`stratified_cone` 使用黄金角推进方位角，并按 `pelletIndex/pelletCount` 分层，输出速度长度保持与输入基础速度相同。若同时配置 `canister_type: 0` 且 `canister_diff > 0`，位置阶段仍会应用 canister 偏移；只需要纯分层圆锥时应保持 `canister_type: 1`（默认）或显式把 `canister_diff` 设为 `0`。
+
+```json
+"spread": {
+  "mode": "stratified_cone",
+  "cone_half_angle": 72.0,
+  "cone_axis": "world_down",
+  "radial_distribution": "uniform_area",
+  "azimuth_jitter": 0.08,
+  "radial_jitter": 0.08
+}
+```
 
 #### 示例场景
 

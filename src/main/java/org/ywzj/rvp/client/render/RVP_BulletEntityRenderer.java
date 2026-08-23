@@ -22,6 +22,10 @@ public class RVP_BulletEntityRenderer extends EntityRenderer<RVP_BulletEntity> {
     @Override
     public void render(RVP_BulletEntity bullet, float entityYaw, float partialTicks, PoseStack poseStack,
                        MultiBufferSource bufferSource, int packedLight) {
+        if (bullet.isParticleProjectileVisual()) {
+            return;
+        }
+        // 调用本项目通用 Bullet 绘制逻辑：非粒子模式继续绘制既有曳光弹体。
         VehicleProjectileRenderLogic.renderBullet(bullet, partialTicks, poseStack, bufferSource, packedLight);
     }
 

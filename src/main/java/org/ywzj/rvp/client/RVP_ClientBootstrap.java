@@ -3,7 +3,10 @@ package org.ywzj.rvp.client;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
+import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.all.RVP_Particles;
+import org.ywzj.rvp.client.particle.RVP_WhitePhosphorusParticle;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
 import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
@@ -57,6 +60,11 @@ public final class RVP_ClientBootstrap {
             registerVehicleRenderers();
             RVP_SbmProbeDebug.dumpCurrentVehicleState("load-complete-reregister");
         });
+    }
+
+    /** 注册直接绑定权威贴图的白磷粒子 Provider，不依赖粒子 JSON 或图集追加文件。 */
+    public static void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
+        event.registerSpecial(RVP_Particles.WHITE_PHOSPHORUS.get(), new RVP_WhitePhosphorusParticle.Provider());
     }
 
     private static void registerVehicleRenderers() {

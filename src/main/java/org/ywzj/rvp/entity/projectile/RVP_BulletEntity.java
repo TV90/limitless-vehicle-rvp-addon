@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -88,6 +89,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         tickSegmentStart = position();
         if (level().isClientSide()) {
             predictBounceBeforeMotion();
+            // 调用本项目客户端桥：机枪类若启用纯粒子模式，同样按实体 Tick 生成主体与尾迹。
+            RVP_ClientActionsAccess.tickParticleProjectile(this);
             // 客户端本地补渲轨迹粒子（force=true 绕过原版 32 格粒子裁剪，见基类注释）
             spawnClientLocalTrailParticles();
         } else if (!tickBulletServerPreMotion()) {

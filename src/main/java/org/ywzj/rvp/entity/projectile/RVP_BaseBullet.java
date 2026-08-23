@@ -34,6 +34,7 @@ import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
@@ -61,6 +62,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeMath;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.data.RVP_ParticleProjectileData;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
@@ -77,6 +79,8 @@ import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
+import org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil;
+import org.ywzj.rvp.weapon.physics.RVP_WindDirectionUtil;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
@@ -138,6 +142,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 已暂停的飞行 Tick 总数；原生 tickCount 仍随世界 Tick 增长。 */
     static final EntityDataAccessor<Integer> DATA_CHUNK_WAIT_TOTAL =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
+    /** 纯粒子弹体视觉开关；随实体生成数据同步，避免客户端首帧绘制 fallback 模型。 */
+    public static final EntityDataAccessor<Boolean> DATA_PARTICLE_PROJECTILE =
+            SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.BOOLEAN);
 
     /** 线导视觉线（effects_data.wire_link_enabled）同步字段，客户端渲染器读取。 */
     public static final EntityDataAccessor<Boolean> DATA_WIRE_ENABLED =
@@ -234,6 +241,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected RVP_SubmunitionRunner submunitionRunner;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
     protected int submunitionDepth;
+    /** 子体释放时固化的风向单位向量；当前模式取空爆瞬间母弹当前旋转朝向的反向。 */
+    private Vec3 inheritedWindDirection = Vec3.ZERO;
     protected int livingPenetrationLeft;
     protected int wallPenetrationLeft;
     protected final Set<Integer> piercedLivingIds = new HashSet<>();
@@ -514,6 +523,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.entityData.define(DATA_ACTIVE_RADAR_CATCH, false);
         this.entityData.define(DATA_CHUNK_WAITING, false);
         this.entityData.define(DATA_CHUNK_WAIT_TOTAL, 0);
+        this.entityData.define(DATA_PARTICLE_PROJECTILE, false);
         this.entityData.define(DATA_WIRE_ENABLED, false);
         this.entityData.define(DATA_WIRE_PIVOT_X, 0.0f);
         this.entityData.define(DATA_WIRE_PIVOT_Y, 0.0f);
@@ -551,6 +561,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.showMslIndicator = data.isShowMslIndicator();
         boolean wireEnabled = data.getEffectsData().isWireLinkEnabled();
         this.entityData.set(DATA_WIRE_ENABLED, wireEnabled);
+        // 读取本项目粒子弹体数据并同步渲染开关，确保客户端配置解析前也不会闪现 fallback 模型。
+        this.entityData.set(DATA_PARTICLE_PROJECTILE,
+                data.getEffectsData().getParticleProjectileData().isEnabled());
         if (wireEnabled) {
             this.wirePivot = spawnPos;
             this.wirePivotPrev = spawnPos;
@@ -625,6 +638,41 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         RVP_ProjectileLifecycleDebug.noteEvent(this,
                 RVP_ProjectileLifecycleDebug.Event.SUBMUNITION_TRIGGER,
                 () -> "action=set_depth depth=" + submunitionDepth);
+    }
+
+    /**
+     * 子弹药生成时调用：读取母弹释放 Tick 的当前旋转朝向并取反，随后按子体风漂配置固化方向。
+     */
+    public void captureWindDirectionFromParent(RVP_BaseBullet parent) {
+        if (parent == null || rvpData == null) {
+            inheritedWindDirection = Vec3.ZERO;
+            return;
+        }
+        var wind = rvpData.getProjectileData().getWindData();
+        if (!wind.isEnabled() || !wind.isParentFacingReverse()) {
+            inheritedWindDirection = Vec3.ZERO;
+            return;
+        }
+        // 调用本项目风向解析工具：正常路径只认释放 Tick 当前旋转朝向，速度仅作垂直退化回退。
+        inheritedWindDirection = RVP_WindDirectionUtil.resolveParentFacingReverse(
+                parent.getLookAngle(), parent.getDeltaMovement(), wind.getVerticalFactor());
+    }
+
+    public Vec3 getInheritedWindDirection() {
+        return inheritedWindDirection;
+    }
+
+    /** 客户端 Renderer 与粒子桥读取的同步纯粒子模式开关。 */
+    public boolean isParticleProjectileVisual() {
+        return entityData.get(DATA_PARTICLE_PROJECTILE);
+    }
+
+    /** 客户端粒子发射器读取当前武器的通用粒子视觉参数，不按武器 ID 分支。 */
+    public RVP_ParticleProjectileData getParticleProjectileData() {
+        RVP_WeaponData config = resolveWeaponConfig();
+        return config == null
+                ? new RVP_ParticleProjectileData()
+                : config.getEffectsData().getParticleProjectileData();
     }
 
     public void disableSubmunitionReleases() {
@@ -1422,6 +1470,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
             // Match {@link org.ywzj.vehicle.entity.weapon.MissileEntity}: motion server-only; client uses synced rot + AmmoEntity lerp.
             if (level().isClientSide()) {
+                // 调用本项目客户端桥：按实体 Tick 生成纯粒子弹体主体和历史路径尾迹，服务端实现为 NOOP。
+                RVP_ClientActionsAccess.tickParticleProjectile(this);
                 if (!isWaitingForChunk()) {
                     spawnTrailParticles();
                 }
@@ -1977,11 +2027,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             setPos(position().add(getDeltaMovement()));
             return;
         }
+        // 调用本项目风漂工具：在重力、阻力和位置积分前让速度趋近释放时固化的目标风速。
+        applyWindDrift();
         if (rvpData != null && rvpData.usesPropulsion()) {
             RVP_ProjectileMotion.tickMissileMove(this);
             return;
         }
         tickBallisticMotion();
+    }
+
+    /** 仅服务器真实弹体执行风漂；客户端继续依赖实体位置同步。 */
+    private void applyWindDrift() {
+        if (level().isClientSide() || rvpData == null || inheritedWindDirection.lengthSqr() < 1.0E-10) {
+            return;
+        }
+        long seed = getUUID().getMostSignificantBits() ^ getUUID().getLeastSignificantBits();
+        setDeltaMovement(RVP_WindDriftUtil.apply(
+                getDeltaMovement(), inheritedWindDirection,
+                rvpData.getProjectileData().getWindData(), seed, getFlightTickCount()));
     }
 
     /** 发射后由 {@link org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner} 在叠加载机速度后调用。 */

@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 
 /**
@@ -34,6 +35,10 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
     @Override
     public void render(T ammo, float entityYaw, float partialTick, PoseStack poseStack,
                        MultiBufferSource bufferSource, int packedLight) {
+        if (ammo instanceof RVP_BaseBullet projectile && projectile.isParticleProjectileVisual()) {
+            return;
+        }
+        // 调用本项目通用弹体绘制逻辑：非粒子模式继续使用 display Bedrock 模型或类型 fallback。
         VehicleProjectileRenderLogic.renderBedrockProjectile(
                 ammo, entityYaw, partialTick, poseStack, bufferSource, packedLight, fallbackModel, fallbackTexture);
     }

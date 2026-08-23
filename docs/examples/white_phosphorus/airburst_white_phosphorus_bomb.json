@@ -1,0 +1,77 @@
+{
+  "type": "rvp:bomb",
+  "name": "Airburst White Phosphorus Bomb",
+  "shoot_interval": 300,
+  "max_capacity": 1,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+  },
+  "fire_data": {
+    "require_lock": false,
+    "spread": 0
+  },
+  "projectile_data": {
+    "velocity": 2.0,
+    "gravity": -0.035,
+    "drag": 0.002,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 5.0
+  },
+  "fuse_data": {
+    "ground_proximity_fuse_distance": 22.0,
+    "ground_proximity_fuse_arm_tick": 20,
+    "detonate_on_life_end": false
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "none",
+    "explosion_particle": "none"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 12.0,
+      "radius": 3.0,
+      "destroy_block": false
+    }
+  },
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": ["on_fuse"],
+        "release_events": 1,
+        "parent_action": "continue",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:white_phosphorus_pellet",
+            "count": 24,
+            "inherit_parent_velocity": false,
+            "inherit_vehicle_velocity": false,
+            "launch_speed": 0.9,
+            "payloads_velocity": [0.0, -0.15, 0.0],
+            "payloads_velocity_factor": 0.10,
+            "allow_submunition": false,
+            "spread": {
+              "mode": "stratified_cone",
+              "cone_half_angle": 72.0,
+              "cone_axis": "world_down",
+              "radial_distribution": "uniform_area",
+              "azimuth_jitter": 0.08,
+              "radial_jitter": 0.08
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "collision_data": {
+    "direct_damage": 6.0,
+    "bounce": 0
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  }
+}

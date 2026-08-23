@@ -13,6 +13,9 @@ import org.ywzj.vehicle.util.VectorUtil;
  */
 public final class RVP_SubmunitionSpreadApplicator {
 
+    /** 黄金角，单位弧度；用于让少量子体也能均匀覆盖圆锥方位角。 */
+    private static final double GOLDEN_ANGLE = Math.PI * (3.0D - Math.sqrt(5.0D));
+
     private RVP_SubmunitionSpreadApplicator() {}
 
     public static Vec3 applyVelocitySpread(Vec3 baseVelocity, float yawDeg, float pitchDeg,
@@ -20,6 +23,9 @@ public final class RVP_SubmunitionSpreadApplicator {
                                            RandomSource random) {
         if (spread == null) {
             return baseVelocity;
+        }
+        if (spread.usesStratifiedCone()) {
+            return sampleStratifiedCone(baseVelocity.length(), spread, pelletIndex, pelletCount, random);
         }
         if (spread.usesCanister() && spread.getCanisterType() >= 1) {
             float[] angular = new float[2];
@@ -68,5 +74,35 @@ public final class RVP_SubmunitionSpreadApplicator {
                     spread.getCanisterDiff(), offset);
         }
         return basePos.add(offset[0], offset[1], offset[2]);
+    }
+
+    /**
+     * 以世界正下方向为轴进行分层均匀立体角采样，避开垂直轴上的 yaw/pitch 欧拉角退化。
+     */
+    static Vec3 sampleStratifiedCone(double speed, RVP_SubmunitionSpreadData spread,
+                                     int pelletIndex, int pelletCount, RandomSource random) {
+        if (speed <= 1.0E-10 || pelletCount <= 0) {
+            return Vec3.ZERO;
+        }
+        int index = Math.floorMod(pelletIndex, pelletCount);
+        double radialOffset = (random.nextDouble() * 2.0D - 1.0D)
+                * spread.getRadialJitter() / pelletCount;
+        double u = Math.max(0.0D, Math.min(1.0D, (index + 0.5D) / pelletCount + radialOffset));
+        double halfAngle = Math.toRadians(spread.getConeHalfAngle());
+        double cosTheta = 1.0D + (Math.cos(halfAngle) - 1.0D) * u;
+        double sinTheta = Math.sqrt(Math.max(0.0D, 1.0D - cosTheta * cosTheta));
+        double azimuthCell = Math.PI * 2.0D / pelletCount;
+        double azimuth = index * GOLDEN_ANGLE
+                + (random.nextDouble() * 2.0D - 1.0D)
+                * azimuthCell * spread.getAzimuthJitter();
+
+        // 当前 schema 的 cone_axis 只接受 world_down；保留显式变量便于以后扩展新轴模式。
+        Vec3 axis = "world_down".equals(spread.getConeAxis()) ? new Vec3(0.0D, -1.0D, 0.0D) : new Vec3(0.0D, -1.0D, 0.0D);
+        Vec3 tangent = axis.cross(new Vec3(1.0D, 0.0D, 0.0D)).normalize();
+        Vec3 bitangent = axis.cross(tangent).normalize();
+        Vec3 direction = axis.scale(cosTheta)
+                .add(tangent.scale(Math.cos(azimuth) * sinTheta))
+                .add(bitangent.scale(Math.sin(azimuth) * sinTheta));
+        return direction.normalize().scale(speed);
     }
 }

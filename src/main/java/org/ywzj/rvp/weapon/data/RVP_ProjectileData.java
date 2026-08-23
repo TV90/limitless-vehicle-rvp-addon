@@ -109,6 +109,10 @@ public class RVP_ProjectileData {
     @SerializedName("altitude_drag_factor")
     private Map<RVP_Range<Float>, Float> altitudeDragFactor;
 
+    /** 服务器权威风漂配置，默认使用禁用配置；仅配置 {@code wind_data.enabled=true} 时生效。 */
+    @SerializedName("wind_data")
+    private RVP_WindData windData = new RVP_WindData();
+
     public void resolvePropulsionFallback(JsonObject weaponRoot, JsonObject projectileJson) {
         if (!hasRocketEngine || weaponRoot == null) {
             return;
@@ -289,6 +293,10 @@ public class RVP_ProjectileData {
 
     public Map<RVP_Range<Float>, Float> getAltitudeDragFactor() {
         return altitudeDragFactor;
+    }
+
+    public RVP_WindData getWindData() {
+        return windData == null ? new RVP_WindData() : windData;
     }
 
     public float resolveAltitudeDragFactor(double y) {
