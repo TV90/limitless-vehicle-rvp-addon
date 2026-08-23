@@ -35,6 +35,8 @@
   "message.ywzj_rvp.gunner.seat_switch_failed": "炮手未能切换到指定座位",
   "message.ywzj_rvp.saclos_jammed": "导弹已被光电干扰",
   "message.ywzj_rvp.jam_success": "已成功干扰敌方导弹",
+  "message.ywzj_rvp.dircm_jammed": "导弹已被 DIRCM 激光干扰",
+  "message.ywzj_rvp.dircm_irradiate": "DIRCM 正在照射来袭导弹",
   "gui.ywzj_rvp.gps.title": "GPS",
   "gui.ywzj_rvp.gps.coord.x": "X",
   "gui.ywzj_rvp.gps.coord.y": "Y",

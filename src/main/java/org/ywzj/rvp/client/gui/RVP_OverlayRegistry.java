@@ -29,6 +29,7 @@ public class RVP_OverlayRegistry {
         event.registerAboveAll("rvp_charge_bar", new RVP_ChargeBarOverlay());
         event.registerAboveAll("rvp_heat_hud", new RVP_HeatHudOverlay());
         event.registerAboveAll("rvp_aps_hud", new RVP_ApsHudOverlay());
+        event.registerAboveAll("rvp_dircm_hud", new RVP_DircmHudOverlay());
         event.registerAboveAll("rvp_countermeasure_hud", new RVP_CountermeasureHudOverlay());
         // 命中展板注册在最后：overlay 按注册顺序绘制，展板最后绘制即为最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。

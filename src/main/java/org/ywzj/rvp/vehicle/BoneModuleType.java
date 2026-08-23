@@ -16,6 +16,8 @@ import java.util.Locale;
  *   <li>{@link #APS}：主动防护发射器（消费点 {@code RVP_ApsRuntimeManager}），失效后该侧扇区失去拦截能力。</li>
  *   <li>{@link #COUNTERMEASURE}：干扰物发射装置（消费点 {@code RVP_CountermeasureRuntimeManager}），
  *       载具干扰物配置的 {@code bone_modules} 全部失效后失去抛洒功能。</li>
+ *   <li>{@link #DIRCM}：定向红外对抗照射设备（消费点 {@code RVP_DircmRuntimeManager}），
+ *       失效后该通道失去激光照射能力。</li>
  * </ul>
  */
 public enum BoneModuleType {
@@ -23,7 +25,8 @@ public enum BoneModuleType {
     TRACK,
     JAMMER,
     APS,
-    COUNTERMEASURE;
+    COUNTERMEASURE,
+    DIRCM;
 
     private static final BoneModuleType[] VALUES = values();
 

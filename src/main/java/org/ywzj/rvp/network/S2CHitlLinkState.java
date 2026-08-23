@@ -12,12 +12,22 @@ public class S2CHitlLinkState {
     public int missileEntityId;
     public boolean blocked;
     public boolean severed;
+    /** 是否被 DIRCM 干扰（HITL 临时干扰：白闪滤镜驱动，与雪花互斥）。 */
+    public boolean dircmJam;
+    /** DIRCM 干扰剩余 tick（客户端白闪消退计时）。 */
+    public int dircmJamRemainTick;
+    /** DIRCM 干扰总时长 tick（客户端白闪进度计算基准，TV=60 / CLOS_TV=120）。 */
+    public int dircmJamTotalTick;
 
-    public static S2CHitlLinkState of(int missileEntityId, boolean blocked, boolean severed) {
+    public static S2CHitlLinkState of(int missileEntityId, boolean blocked, boolean severed,
+                                      boolean dircmJam, int dircmJamRemainTick, int dircmJamTotalTick) {
         S2CHitlLinkState msg = new S2CHitlLinkState();
         msg.missileEntityId = missileEntityId;
         msg.blocked = blocked;
         msg.severed = severed;
+        msg.dircmJam = dircmJam;
+        msg.dircmJamRemainTick = dircmJamRemainTick;
+        msg.dircmJamTotalTick = dircmJamTotalTick;
         return msg;
     }
 
@@ -25,6 +35,9 @@ public class S2CHitlLinkState {
         buf.writeInt(msg.missileEntityId);
         buf.writeBoolean(msg.blocked);
         buf.writeBoolean(msg.severed);
+        buf.writeBoolean(msg.dircmJam);
+        buf.writeVarInt(msg.dircmJamRemainTick);
+        buf.writeVarInt(msg.dircmJamTotalTick);
     }
 
     public static S2CHitlLinkState decode(FriendlyByteBuf buf) {
@@ -32,14 +45,20 @@ public class S2CHitlLinkState {
         msg.missileEntityId = buf.readInt();
         msg.blocked = buf.readBoolean();
         msg.severed = buf.readBoolean();
+        msg.dircmJam = buf.readBoolean();
+        msg.dircmJamRemainTick = buf.readVarInt();
+        msg.dircmJamTotalTick = buf.readVarInt();
         return msg;
     }
 
     public static void handle(S2CHitlLinkState msg, Supplier<NetworkEvent.Context> ctxSupplier) {
         NetworkEvent.Context ctx = ctxSupplier.get();
         ctx.setPacketHandled(true);
-        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                org.ywzj.rvp.client.state.RVP_ClientHitlState.onHitlLinkState(
-                        msg.missileEntityId, msg.blocked, msg.severed)));
+        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            org.ywzj.rvp.client.state.RVP_ClientHitlState.onHitlLinkState(
+                    msg.missileEntityId, msg.blocked, msg.severed);
+            org.ywzj.rvp.client.state.RVP_ClientHitlState.onHitlDircmJam(
+                    msg.missileEntityId, msg.dircmJam, msg.dircmJamRemainTick, msg.dircmJamTotalTick);
+        }));
     }
 }

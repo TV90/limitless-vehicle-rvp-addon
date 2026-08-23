@@ -13,6 +13,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.RVP_JammingRuntime;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
+import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
@@ -35,6 +36,8 @@ import java.util.UUID;
  *       粒子类型 {@code FLAME}（黄色）；</li>
  *   <li>APS 扫描锥（{@link BoneApsConfig}）：{@code resolveFacing} 前向 + {@code scan_fov/2} 半角 + {@code detect_radius}，
  *       粒子类型 {@code SOUL_FIRE_FLAME}（蓝色）。</li>
+ *   <li>DIRCM 干扰锥（{@link BoneDircmConfig}）：{@code resolveFacing} 前向 + {@code scan_fov/2} 半角 + {@code detect_radius}，
+ *       粒子类型 {@code END_ROD}（激光白）。</li>
  * </ul>
  * 粒子直接以 {@link ClientboundLevelParticlesPacket} 发送给指定玩家，不广播。
  */
@@ -120,6 +123,19 @@ public final class RVP_CoverageDebug {
                 BoneApsConfig cfg = entry.getValue();
                 Vec3 facing = RVP_JammingRuntime.resolveFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
                 drawCone(level, player, origin, facing, cfg.halfAngleDeg(), cfg.detectRadius(), ParticleTypes.SOUL_FIRE_FLAME);
+            }
+        }
+
+        Map<String, BoneDircmConfig> dircm = RVP_VehicleHitboxFactorManager.INSTANCE.resolveDircmDevices(vehicle);
+        if (dircm != null) {
+            for (Map.Entry<String, BoneDircmConfig> entry : dircm.entrySet()) {
+                // 照射骨块被击毁（DIRCM 模块失效）后不再显示干扰锥
+                if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), entry.getKey(), BoneModuleType.DIRCM)) {
+                    continue;
+                }
+                BoneDircmConfig cfg = entry.getValue();
+                Vec3 facing = RVP_JammingRuntime.resolveFacing(vehicle, cfg.facingPart(), cfg.facingYawDeg());
+                drawCone(level, player, origin, facing, cfg.halfAngleDeg(), cfg.detectRadius(), ParticleTypes.END_ROD);
             }
         }
     }

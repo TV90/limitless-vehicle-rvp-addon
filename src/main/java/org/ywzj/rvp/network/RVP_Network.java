@@ -128,6 +128,11 @@ public class RVP_Network {
                 .decoder(S2CApsFlameLink::decode)
                 .consumerMainThread(S2CApsFlameLink::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CDircmHudSync.class, id++)
+                .encoder(S2CDircmHudSync::encode)
+                .decoder(S2CDircmHudSync::decode)
+                .consumerMainThread(S2CDircmHudSync::handle)
+                .add();
         CHANNEL.messageBuilder(S2CRemoteAmmoSnapshot.class, id++)
                 .encoder(S2CRemoteAmmoSnapshot::encode)
                 .decoder(S2CRemoteAmmoSnapshot::decode)
