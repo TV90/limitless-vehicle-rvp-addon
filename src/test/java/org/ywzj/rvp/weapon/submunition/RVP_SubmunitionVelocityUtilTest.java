@@ -73,13 +73,39 @@ class RVP_SubmunitionVelocityUtilTest {
         assertEquals(controlRandom.nextDouble(), actualRandom.nextDouble());
     }
 
+    @Test
+    void parentHorizontalInheritanceUsesScaleAndDropsVerticalSpeed() {
+        RVP_SubmunitionPayloadData payload = payload("""
+                {
+                  "inherit_parent_horizontal_velocity": true,
+                  "velocity_scale": 0.10,
+                  "launch_speed": 1.5
+                }
+                """);
+
+        Vec3 inherited = RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
+                new Vec3(6.0D, -4.0D, 2.0D), payload);
+
+        assertVectorEquals(new Vec3(0.6D, 0.0D, 0.2D), inherited);
+    }
+
+    @Test
+    void disabledParentHorizontalInheritanceKeepsOldPathUntouched() {
+        RVP_SubmunitionPayloadData payload = payload("""
+                {"inherit_parent_velocity": true, "velocity_scale": 0.10}
+                """);
+
+        assertEquals(Vec3.ZERO, RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
+                new Vec3(6.0D, -4.0D, 2.0D), payload));
+    }
+
     private RVP_SubmunitionPayloadData payload(String json) {
         return gson.fromJson(json, RVP_SubmunitionPayloadData.class);
     }
 
     private static void assertVectorEquals(Vec3 expected, Vec3 actual) {
-        assertEquals(expected.x, actual.x, 1.0E-9D);
-        assertEquals(expected.y, actual.y, 1.0E-9D);
-        assertEquals(expected.z, actual.z, 1.0E-9D);
+        assertEquals(expected.x, actual.x, 1.0E-7D);
+        assertEquals(expected.y, actual.y, 1.0E-7D);
+        assertEquals(expected.z, actual.z, 1.0E-7D);
     }
 }

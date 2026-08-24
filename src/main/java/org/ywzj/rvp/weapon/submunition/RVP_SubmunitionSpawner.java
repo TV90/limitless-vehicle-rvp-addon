@@ -111,11 +111,12 @@ public final class RVP_SubmunitionSpawner {
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
                 parent.position(), launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        Vec3 velocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
+        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
+        Vec3 velocity = spawnVelocity.totalVelocity();
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
                 launchAim, velocity);
-        // 调用本项目弹体上下文捕获：在释放 Tick 固化母弹当前旋转朝向的反向，供子体服务器风漂使用。
+        // 调用本项目弹体风向捕获：按子体配置固化世界风向或释放 Tick 母弹当前朝向的反向。
         child.captureWindDirectionFromParent(parent);
         child.setShooterWeaponUnit(parent.getShooterWeaponUnit());
         child.name = Component.translatable(childData.getName());
@@ -131,6 +132,8 @@ public final class RVP_SubmunitionSpawner {
             child.explosion = RVP_Explosion.disabled();
         }
         child.setDeltaMovement(velocity);
+        // 调用本项目部署运动初始化：只把圆锥与母弹水平继承形成的 X/Z 交给半衰期阻尼。
+        child.initializeSubmunitionDeploymentMotion(spawnVelocity.deploymentHorizontalVelocity());
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
         RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
         // 子弹药同样在成功入世后预热，避免其首 Tick 缺少动态路径 Ticket。
@@ -165,8 +168,8 @@ public final class RVP_SubmunitionSpawner {
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
         entity.moveTo(pos.x, pos.y, pos.z, launchAim.yRot(), launchAim.xRot());
         applyEntityNbt(entity, payload.getEntityNbt());
-        Vec3 velocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
-        entity.setDeltaMovement(velocity);
+        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
+        entity.setDeltaMovement(spawnVelocity.totalVelocity());
         if (entity instanceof Projectile projectile) {
             projectile.setOwner(parent.getOwner());
         }
@@ -174,9 +177,9 @@ public final class RVP_SubmunitionSpawner {
         return true;
     }
 
-    private static Vec3 buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
-                                      RVP_BaseBullet.AimRot launchAim, RVP_BaseBullet.AimRot baseRefAim,
-                                      int pelletIndex, int pelletCount) {
+    private static SpawnVelocity buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
+                                               RVP_BaseBullet.AimRot launchAim, RVP_BaseBullet.AimRot baseRefAim,
+                                               int pelletIndex, int pelletCount) {
         RandomSource random = parent.level().getRandom();
         if (payload.isLaunchAnglesEnabled()) {
             // 发射角度模式：方向固定为 launchAim（绝对或相对基准），速度取 launch_speed 或父弹速度长度 × scale
@@ -187,11 +190,19 @@ public final class RVP_SubmunitionSpawner {
             Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                     velocity, launchAim.xRot(), launchAim.yRot(),
                     payload.getSpread(), pelletIndex, pelletCount, random);
-            // 调用本项目速度工具：在发射角与散布完成后叠加 payloads_velocity 世界系冲量。
-            return RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(spreadVelocity, payload, random);
+            // 调用本项目水平继承工具：圆锥速度生成后只追加母弹 X/Z × velocity_scale，不继承 Y。
+            Vec3 parentHorizontal = RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
+                    parent.getDeltaMovement(), payload);
+            Vec3 deploymentHorizontal = new Vec3(
+                    spreadVelocity.x + parentHorizontal.x, 0.0D,
+                    spreadVelocity.z + parentHorizontal.z);
+            Vec3 baseVelocity = new Vec3(0.0D, spreadVelocity.y, 0.0D);
+            // 调用本项目速度工具：显式 payloads_velocity 属于基础弹道，不纳入部署半衰期。
+            baseVelocity = RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(baseVelocity, payload, random);
+            return new SpawnVelocity(baseVelocity.add(deploymentHorizontal), deploymentHorizontal);
         }
         Vec3 velocity = Vec3.ZERO;
-        if (payload.isInheritParentVelocity()) {
+        if (payload.isInheritParentVelocity() && !payload.isInheritParentHorizontalVelocity()) {
             velocity = parent.getDeltaMovement();
         }
         if (payload.isInheritVehicleVelocity() && parent.getShooterVehicle() != null) {
@@ -207,9 +218,20 @@ public final class RVP_SubmunitionSpawner {
         Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                 velocity, baseRefAim.xRot(), baseRefAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, random);
-        // 调用本项目速度工具：在继承速度与散布完成后叠加 payloads_velocity 世界系冲量。
-        return RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(spreadVelocity, payload, random);
+        // 调用本项目水平继承工具：显式水平模式覆盖完整父弹继承，且只在散布后追加一次。
+        Vec3 parentHorizontal = RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
+                parent.getDeltaMovement(), payload);
+        Vec3 deploymentHorizontal = new Vec3(
+                spreadVelocity.x + parentHorizontal.x, 0.0D,
+                spreadVelocity.z + parentHorizontal.z);
+        Vec3 baseVelocity = new Vec3(0.0D, spreadVelocity.y, 0.0D);
+        // 调用本项目速度工具：显式 payloads_velocity 属于基础弹道，不纳入部署半衰期。
+        baseVelocity = RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(baseVelocity, payload, random);
+        return new SpawnVelocity(baseVelocity.add(deploymentHorizontal), deploymentHorizontal);
     }
+
+    /** 子弹药生成速度及其中需要独立衰减的部署水平分量。 */
+    private record SpawnVelocity(Vec3 totalVelocity, Vec3 deploymentHorizontalVelocity) {}
 
     /**
      * 解析发射基准角：payload 启用发射角度时，

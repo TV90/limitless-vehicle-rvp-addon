@@ -43,6 +43,13 @@ public class RVP_SubmunitionSpreadData {
     @SerializedName("cone_half_angle")
     private float coneHalfAngle = 60f;
 
+    /**
+     * 分层圆锥最大径向展开速度，单位格/Tick，默认 null（沿用 {@code launch_speed}）；
+     * 仅 {@code mode=stratified_cone} 时生效，配置后允许低下落速度仍快速横向展开。
+     */
+    @SerializedName("cone_radial_speed")
+    private Float coneRadialSpeed;
+
     /** 圆锥轴模式，默认 {@code world_down}；首版仅接受世界正下方向，未知值回退该值。 */
     @SerializedName("cone_axis")
     private String coneAxis = "world_down";
@@ -89,6 +96,13 @@ public class RVP_SubmunitionSpreadData {
 
     public float getConeHalfAngle() {
         return Float.isFinite(coneHalfAngle) ? Math.max(0f, Math.min(coneHalfAngle, 180f)) : 60f;
+    }
+
+    public double resolveConeRadialSpeed(double fallbackSpeed) {
+        if (coneRadialSpeed == null || !Float.isFinite(coneRadialSpeed)) {
+            return Math.max(fallbackSpeed, 0.0D);
+        }
+        return Math.max(coneRadialSpeed, 0f);
     }
 
     public String getConeAxis() {

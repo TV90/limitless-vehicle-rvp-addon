@@ -12,19 +12,21 @@
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
-    "velocity": 0.9,
-    "gravity": -0.045,
-    "drag": 0.008,
+    "velocity": 0.2,
+    "gravity": -0.00045,
+    "drag": 0.0058,
     "constant_speed": false,
     "rotate_to_motion": true,
     "max_speed": 3.0,
+    "deployment_horizontal_half_life_ticks": 20,
     "wind_data": {
-      "enabled": true,
-      "direction_mode": "parent_facing_reverse",
-      "speed": 0.11,
-      "response": 0.035,
+      "enabled": false,
+      "direction_mode": "north:+90",
+      "speed": 0.08,
+      "response": 0.045,
       "vertical_factor": 0.0,
-      "turbulence": 0.006
+      "turbulence": 0.010,
+      "turbulence_frequency": 0.0
     }
   },
   "fuse_data": {
@@ -42,38 +44,42 @@
       "enabled": true,
       "particle_type": "rvp:white_phosphorus",
       "full_bright": true,
-      "body_scale": 0.42,
+      "body_scale": 0.62,
+      "body_start_scale": 0.08,
       "body_lifetime_ticks": 3,
-      "body_color": "#FFC247",
-      "body_flicker": 0.08,
+      "body_color": "#FF8A1F",
+      "body_end_color": "#FFAB5C",
+      "body_flicker": 0.8,
+      "body_horizontal_flicker": 1.0,
+      "body_flicker_interval_ticks": 1,
+      "body_sample_interval_ticks": 1,
       "trail_enabled": true,
-      "trail_spacing": 0.18,
-      "trail_lifetime_ticks": 26,
-      "trail_start_scale": 0.34,
+      "trail_lifetime_ticks": 300,
+      "trail_lifetime_start_on_landing": false,
       "trail_end_scale": 0.03,
       "trail_start_alpha": 0.90,
       "trail_end_alpha": 0.0,
-      "trail_start_color": "#FFB52E",
-      "trail_end_color": "#7A3512"
+      "trail_start_color": "#998E8A",
+      "trail_end_color": "#998E8A"
     }
   },
   "detonate_data": {
     "effects_before_explosion": true,
     "fire_data": {
-      "radius": 2,
+      "radius": 3,
       "chance": 0.65,
       "soul_fire": false,
       "on_block": true,
       "on_entity": true
     },
     "ignite_entity_data": {
-      "radius": 2.0,
-      "seconds": 10,
+      "radius": 6.0,
+      "seconds": 40,
       "targets": "non_allied"
     }
   },
   "collision_data": {
-    "direct_damage": 3.0,
+    "direct_damage": 11.0,
     "living_penetration": 0,
     "wall_penetration": 0,
     "bounce": 0

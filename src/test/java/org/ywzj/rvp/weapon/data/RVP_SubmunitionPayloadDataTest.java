@@ -5,6 +5,8 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_SubmunitionPayloadDataTest {
 
@@ -50,5 +52,20 @@ class RVP_SubmunitionPayloadDataTest {
         assertEquals(0f, negative.getPayloadsVelocityFactor());
         assertEquals(1f, excessive.getPayloadsVelocityFactor());
         assertEquals(0f, nonFinite.getPayloadsVelocityFactor());
+    }
+
+    @Test
+    void parentHorizontalInheritanceIsExplicitAndDefaultsOff() {
+        RVP_SubmunitionPayloadData defaults = gson.fromJson("{}", RVP_SubmunitionPayloadData.class);
+        RVP_SubmunitionPayloadData configured = gson.fromJson("""
+                {
+                  "inherit_parent_velocity": true,
+                  "inherit_parent_horizontal_velocity": true
+                }
+                """, RVP_SubmunitionPayloadData.class);
+
+        assertFalse(defaults.isInheritParentHorizontalVelocity());
+        assertTrue(configured.isInheritParentVelocity());
+        assertTrue(configured.isInheritParentHorizontalVelocity());
     }
 }

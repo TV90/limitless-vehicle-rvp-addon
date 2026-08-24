@@ -81,6 +81,7 @@ import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil;
 import org.ywzj.rvp.weapon.physics.RVP_WindDirectionUtil;
+import org.ywzj.rvp.weapon.physics.RVP_DeploymentMotionUtil;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
@@ -108,6 +109,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 /**
@@ -241,8 +243,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected RVP_SubmunitionRunner submunitionRunner;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
     protected int submunitionDepth;
-    /** 子体释放时固化的风向单位向量；当前模式取空爆瞬间母弹当前旋转朝向的反向。 */
+    /** 弹体初始化或子体释放时固化的风向单位向量；来源由 wind_data.direction_mode 决定。 */
     private Vec3 inheritedWindDirection = Vec3.ZERO;
+    /** 是否启用子弹药分量化部署运动；仅生成器显式初始化且半衰期为正时开启。 */
+    private boolean submunitionDeploymentMotionActive;
+    /** 不参与部署半衰期的基础弹道速度；负责 Y、显式冲量及后续外力。 */
+    private Vec3 deploymentBaseVelocity = Vec3.ZERO;
+    /** 圆锥散布与母弹水平继承形成的 X/Z 部署速度；Y 恒为 0。 */
+    private Vec3 deploymentHorizontalVelocity = Vec3.ZERO;
+    /** 从零独立收敛的风偏速度贡献；不会反向收敛基础弹道或部署速度。 */
+    private Vec3 deploymentWindVelocity = Vec3.ZERO;
+    /** 上一 Tick 由三个内部速度分量合成的总速度，用于识别碰撞、穿透等外部改速。 */
+    private Vec3 deploymentLastComposedVelocity = Vec3.ZERO;
     protected int livingPenetrationLeft;
     protected int wallPenetrationLeft;
     protected final Set<Integer> piercedLivingIds = new HashSet<>();
@@ -626,6 +638,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.setPos(spawnPos);
         this.setDeltaMovement(spawnMotion);
         this.virtualMidcourseLaunchPosition = spawnPos;
+        var wind = data.getProjectileData().getWindData();
+        var fixedWindAngle = wind.isEnabled()
+                ? wind.getFixedNorthAngleDegrees()
+                : OptionalDouble.empty();
+        if (fixedWindAngle.isPresent()) {
+            // 调用本项目固定风向解析工具：首发弹体及子弹药初始化时固化世界水平风向。
+            this.inheritedWindDirection = RVP_WindDirectionUtil.resolveFixedNorth(
+                    fixedWindAngle.getAsDouble());
+        } else {
+            this.inheritedWindDirection = Vec3.ZERO;
+        }
         RVP_ProjectileLifecycleDebug.noteInitialized(this);
     }
 
@@ -641,15 +664,26 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * 子弹药生成时调用：读取母弹释放 Tick 的当前旋转朝向并取反，随后按子体风漂配置固化方向。
+     * 子弹药生成时调用：按子体风漂配置固化固定世界风向，或读取母弹释放 Tick 的当前朝向反向。
      */
     public void captureWindDirectionFromParent(RVP_BaseBullet parent) {
-        if (parent == null || rvpData == null) {
+        if (rvpData == null) {
             inheritedWindDirection = Vec3.ZERO;
             return;
         }
         var wind = rvpData.getProjectileData().getWindData();
-        if (!wind.isEnabled() || !wind.isParentFacingReverse()) {
+        if (!wind.isEnabled()) {
+            inheritedWindDirection = Vec3.ZERO;
+            return;
+        }
+        var fixedWindAngle = wind.getFixedNorthAngleDegrees();
+        if (fixedWindAngle.isPresent()) {
+            // 调用本项目固定风向解析工具：固定模式不依赖母弹姿态，直接固化世界水平风向。
+            inheritedWindDirection = RVP_WindDirectionUtil.resolveFixedNorth(
+                    fixedWindAngle.getAsDouble());
+            return;
+        }
+        if (parent == null || !wind.isParentFacingReverse()) {
             inheritedWindDirection = Vec3.ZERO;
             return;
         }
@@ -660,6 +694,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public Vec3 getInheritedWindDirection() {
         return inheritedWindDirection;
+    }
+
+    /**
+     * 子弹药生成器在总初速写入后调用，拆分需要半衰期衰减的部署 X/Z 与其余基础速度。
+     * 未配置正半衰期或推进弹体保持原运动链路，不建立额外运行时状态。
+     */
+    public void initializeSubmunitionDeploymentMotion(Vec3 horizontalVelocity) {
+        if (rvpData == null || rvpData.usesPropulsion() || usesCannonBallistics()) {
+            return;
+        }
+        float halfLife = rvpData.getProjectileData().getDeploymentHorizontalHalfLifeTicks();
+        if (halfLife <= 0f || horizontalVelocity == null) {
+            return;
+        }
+        deploymentHorizontalVelocity = new Vec3(horizontalVelocity.x, 0.0D, horizontalVelocity.z);
+        deploymentBaseVelocity = getDeltaMovement().subtract(deploymentHorizontalVelocity);
+        deploymentWindVelocity = Vec3.ZERO;
+        deploymentLastComposedVelocity = getDeltaMovement();
+        submunitionDeploymentMotionActive = true;
     }
 
     /** 客户端 Renderer 与粒子桥读取的同步纯粒子模式开关。 */
@@ -2027,7 +2080,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             setPos(position().add(getDeltaMovement()));
             return;
         }
-        // 调用本项目风漂工具：在重力、阻力和位置积分前让速度趋近释放时固化的目标风速。
+        if (submunitionDeploymentMotionActive) {
+            // 调用本项目分量化部署积分：先衰减初始 X/Z，再独立叠加风偏，避免总速度被风场急刹。
+            tickDeploymentBallisticMotion();
+            return;
+        }
+        // 调用本项目风漂工具：未启用部署分量时保持既有总速度收敛语义和兼容行为。
         applyWindDrift();
         if (rvpData != null && rvpData.usesPropulsion()) {
             RVP_ProjectileMotion.tickMissileMove(this);
@@ -2045,6 +2103,85 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setDeltaMovement(RVP_WindDriftUtil.apply(
                 getDeltaMovement(), inheritedWindDirection,
                 rvpData.getProjectileData().getWindData(), seed, getFlightTickCount()));
+    }
+
+    /**
+     * 分量化子弹药简化弹道：基础弹道、指数衰减部署 X/Z 与独立风偏分别积分后再合成。
+     */
+    private void tickDeploymentBallisticMotion() {
+        Vec3 currentVelocity = getDeltaMovement();
+        Vec3 externalDelta = currentVelocity.subtract(deploymentLastComposedVelocity);
+        if (externalDelta.lengthSqr() > 1.0E-16D) {
+            // 碰撞、穿透和其他项目系统会直接改总速度；差值并入基础分量，防止下一 Tick 被旧分量覆盖。
+            deploymentBaseVelocity = RVP_DeploymentMotionUtil.absorbExternalDelta(
+                    deploymentBaseVelocity, currentVelocity, deploymentLastComposedVelocity);
+        }
+
+        float halfLife = rvpData.getProjectileData().getDeploymentHorizontalHalfLifeTicks();
+        // 调用本项目部署数学工具：按配置半衰期只衰减 X/Z，方向与 Y 均不突变。
+        deploymentHorizontalVelocity = RVP_DeploymentMotionUtil.decayHorizontal(
+                deploymentHorizontalVelocity, halfLife);
+
+        Vec3 baseVelocity = deploymentBaseVelocity;
+        if (!isInWater()) {
+            float dragInAir = rvpData.getDragInAir();
+            if (isMissile()) {
+                dragInAir *= RVP_ProjectileMotion.resolveMissileAltitudeDragFactor(this, rvpData);
+            }
+            float gravity = rvpData.getGravity();
+            if (isGpsCruisePhaseActive()) {
+                gravity *= resolveGpsCruiseGravityScale();
+            }
+            baseVelocity = baseVelocity.add(0.0D, gravity, 0.0D);
+            baseVelocity = applyMchHorizontalDrag(baseVelocity, dragInAir);
+        } else {
+            baseVelocity = baseVelocity.add(0.0D, rvpData.getGravityInWater(), 0.0D);
+            baseVelocity = applyMchHorizontalDrag(baseVelocity, rvpData.getDragInWater());
+        }
+        deploymentBaseVelocity = baseVelocity;
+
+        long seed = getUUID().getMostSignificantBits() ^ getUUID().getLeastSignificantBits();
+        // 调用本项目独立风偏积分：风速与扰动只更新风偏贡献，不收敛或阻尼其他两个速度分量。
+        deploymentWindVelocity = RVP_WindDriftUtil.updateContribution(
+                deploymentWindVelocity, inheritedWindDirection,
+                rvpData.getProjectileData().getWindData(), seed, getFlightTickCount());
+
+        Vec3 composed = deploymentBaseVelocity
+                .add(deploymentHorizontalVelocity)
+                .add(deploymentWindVelocity);
+        if (rvpData.getProjectileData().isConstantSpeed() && composed.lengthSqr() > 1.0E-6D) {
+            double targetSpeed = Math.max(flightSpeed, 0.01D);
+            scaleDeploymentComponents(targetSpeed / composed.length());
+            composed = deploymentBaseVelocity
+                    .add(deploymentHorizontalVelocity)
+                    .add(deploymentWindVelocity);
+        }
+        Vec3 clamped = clampSpeed(composed);
+        synchronizeDeploymentComponentsAfterClamp(composed, clamped);
+
+        setDeltaMovement(clamped);
+        setPos(position().add(clamped));
+        deploymentLastComposedVelocity = clamped;
+        flightSpeed = Math.max(clamped.length(), 0.01D);
+        flightDistance += clamped.length();
+        RVP_ProjectileMotion.applyRotationFromVelocity(this, clamped);
+    }
+
+    /** 总速率钳制后同比缩放三个内部速度分量，确保它们下一 Tick 仍精确重组为当前总速度。 */
+    private void synchronizeDeploymentComponentsAfterClamp(Vec3 beforeClamp, Vec3 afterClamp) {
+        double beforeSpeed = beforeClamp.length();
+        if (beforeSpeed <= 1.0E-10D || beforeClamp.distanceToSqr(afterClamp) <= 1.0E-16D) {
+            return;
+        }
+        double scale = afterClamp.length() / beforeSpeed;
+        scaleDeploymentComponents(scale);
+    }
+
+    /** 以同一倍率缩放全部内部速度分量，保持合成方向及各分量比例不变。 */
+    private void scaleDeploymentComponents(double scale) {
+        deploymentBaseVelocity = deploymentBaseVelocity.scale(scale);
+        deploymentHorizontalVelocity = deploymentHorizontalVelocity.scale(scale);
+        deploymentWindVelocity = deploymentWindVelocity.scale(scale);
     }
 
     /** 发射后由 {@link org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner} 在叠加载机速度后调用。 */
