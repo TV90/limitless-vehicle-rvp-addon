@@ -53,7 +53,7 @@
             "inherit_vehicle_velocity": false,
             "velocity_scale": 0.10,
             "launch_speed": 1.5,
-            "payloads_velocity": [0.0, -0.15, 0.0],
+            "payloads_velocity": [0.0, 0.30, 0.0],
             "payloads_velocity_factor": 0.10,
             "allow_submunition": false,
             "spread": {

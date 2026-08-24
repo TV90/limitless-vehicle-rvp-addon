@@ -116,7 +116,7 @@ public final class RVP_SubmunitionSpawner {
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
                 launchAim, velocity);
-        // 调用本项目弹体上下文捕获：在释放 Tick 固化母弹当前旋转朝向的反向，供子体服务器风漂使用。
+        // 调用本项目弹体风向捕获：按子体配置固化世界风向或释放 Tick 母弹当前朝向的反向。
         child.captureWindDirectionFromParent(parent);
         child.setShooterWeaponUnit(parent.getShooterWeaponUnit());
         child.name = Component.translatable(childData.getName());

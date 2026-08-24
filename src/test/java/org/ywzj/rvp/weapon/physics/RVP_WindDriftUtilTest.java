@@ -29,6 +29,29 @@ class RVP_WindDriftUtilTest {
     }
 
     @Test
+    void fixedNorthDirectionModesAreAcceptedAndInvalidModesStayDisabled() {
+        RVP_WindData east = GSON.fromJson(
+                "{\"enabled\":true,\"direction_mode\":\"north:+90\",\"speed\":0.1,\"response\":0.03}",
+                RVP_WindData.class);
+        RVP_WindData northWest = GSON.fromJson(
+                "{\"enabled\":true,\"direction_mode\":\"north:-50\",\"speed\":0.1,\"response\":0.03}",
+                RVP_WindData.class);
+        RVP_WindData invalidAngle = GSON.fromJson(
+                "{\"enabled\":true,\"direction_mode\":\"north:NaN\",\"speed\":0.1,\"response\":0.03}",
+                RVP_WindData.class);
+        RVP_WindData unknown = GSON.fromJson(
+                "{\"enabled\":true,\"direction_mode\":\"east:0\",\"speed\":0.1,\"response\":0.03}",
+                RVP_WindData.class);
+
+        assertTrue(east.isEnabled());
+        assertEquals(90.0D, east.getFixedNorthAngleDegrees().orElseThrow(), 1.0E-9D);
+        assertTrue(northWest.isEnabled());
+        assertEquals(-50.0D, northWest.getFixedNorthAngleDegrees().orElseThrow(), 1.0E-9D);
+        assertTrue(!invalidAngle.isEnabled());
+        assertTrue(!unknown.isEnabled());
+    }
+
+    @Test
     void velocityConvergesTowardCapturedWindDirection() {
         RVP_ProjectileData projectile = GSON.fromJson("""
                 {

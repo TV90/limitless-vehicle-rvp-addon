@@ -227,19 +227,19 @@ totalVelocity = baseVelocity + deploymentXZ(t) + windContribution
 }
 ```
 
-#### `wind_data` 子弹药风漂
+#### `wind_data` 弹体风漂
 
-当前风向只在 RVP 子弹药生成时捕获：以**释放 Tick 母弹当前旋转朝向的反向**为基准并固化到子体，之后不会继续跟随母弹转向。普通首发弹体没有父弹可供捕获，因此仅配置本对象不会产生风向。
+`parent_facing_reverse` 只在 RVP 子弹药生成时捕获风向：以**释放 Tick 母弹当前旋转朝向的反向**为基准并固化到子体，之后不会继续跟随母弹转向。`north:<角度>` 则在任意 RVP 弹体初始化时固化世界水平风向，因此首发弹体和子弹药均可使用。
 
 默认未启用部署半衰期时，风漂保持既有总速度收敛语义。配置正数 `deployment_horizontal_half_life_ticks` 后，服务器改为维护独立风偏贡献：基础弹道、部署 X/Z 与风偏分别积分，风偏从零向目标速度收敛后相加，不会把初始散布速度直接拉向风速。客户端只显示同步后的权威弹道，不自行计算。
 
 | 字段 | 类型 | 缺省值 | 归一化与生效条件 |
 | --- | --- | --- | --- |
 | `enabled` | boolean | `false` | 总开关；只有本字段为 `true`、方向模式有效、归一化后 `speed > 0` 且 `response > 0` 时，`RVP_WindData.isEnabled()` 才返回 true。 |
-| `direction_mode` | string | `parent_facing_reverse` | 当前 schema 仅接受 `parent_facing_reverse`（忽略大小写）；未知值不迁移、不回退为其他模式，而是令风漂禁用。 |
+| `direction_mode` | string | `parent_facing_reverse` | 接受 `parent_facing_reverse`（忽略大小写），或 `north:<有限角度>` 固定世界水平风向。固定角以北方 `-Z` 为 0°、顺时针为正：`north:+90` 为东 `+X`，`north:-90` 为西 `-X`，±180 为南 `+Z`；角度可超出 ±360 并按周期等价。未知前缀、缺失角度、NaN/Infinity 均令风漂禁用，不迁移、不回退。 |
 | `speed` | float（格/tick） | `0.1` | 目标风速；有限值取 `max(value, 0)`，NaN/Infinity 按 `0`。它是速度收敛目标，不是每 Tick 直接追加的加速度。 |
 | `response` | float | `0.03` | 每 Tick 向目标风速收敛的比例，有限值钳制到 `0..1`，NaN/Infinity 按 `0`；`0` 禁用风漂，`1` 表示单 Tick 直接收敛。 |
-| `vertical_factor` | float | `0` | 捕获风向时保留母弹反向朝向 Y 分量的比例，有限值钳制到 `0..1`，NaN/Infinity 按 `0`。为 `0` 时只改变 X/Z，保留子体原有下坠 Y 速度。 |
+| `vertical_factor` | float | `0` | `parent_facing_reverse` 捕获风向时保留母弹反向朝向 Y 分量的比例，有限值钳制到 `0..1`，NaN/Infinity 按 `0`。固定 `north:<角度>` 永远是水平风向，不使用本字段。 |
 | `turbulence` | float（格/tick） | `0` | 每 Tick 追加到 X/Z 速度的平滑确定性扰动幅度；有限值取 `max(value, 0)`，NaN/Infinity 按 `0`。扰动由实体 UUID 与飞行 Tick 派生，同一实体可复现。 |
 | `turbulence_frequency` | float（周期/tick） | `0.02` | 扰动方向的基础旋转频率；有限值钳制到 `0..0.5`，NaN/Infinity 回退 `0.02`，仅 `turbulence > 0` 时生效。实体种子会再施加 `0.85..1.15` 的稳定频率倍率，避免同批子体同步摆动。 |
 
@@ -249,6 +249,13 @@ totalVelocity = baseVelocity + deploymentXZ(t) + windContribution
 phase = seedPhase + 2π × turbulence_frequency × seedRateScale × flightTick
 turbulenceVelocity = turbulence × (cos(phase), 0, sin(phase))
 windTarget = capturedWind × speed + turbulenceVelocity
+```
+
+固定风向转换公式：
+
+```text
+angle = direction_mode 中 north: 后的顺时针角度
+fixedWind = normalize(sin(angle), 0, -cos(angle))
 ```
 
 典型配置：
@@ -267,6 +274,12 @@ windTarget = capturedWind × speed + turbulenceVelocity
     "turbulence_frequency": 0.02
   }
 }
+```
+
+固定东方风向只需把模式改为：
+
+```json
+"direction_mode": "north:+90"
 ```
 
 #### 火箭发动机与推进回退
@@ -413,18 +426,24 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `particle_type` | string | `""` | 粒子数据 ID；读取时去除首尾空白。当前必须写 `rvp:white_phosphorus`，空值或其他 ID 不生成主体和尾迹。 |
 | `full_bright` | boolean | `true` | 主体与尾迹是否使用全亮光照；为 false 时使用环境光。 |
 | `body_scale` | float | `0.4` | 主体尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.4`。 |
-| `body_lifetime_ticks` | int（tick） | `3` | 单个主体粒子寿命，读取时至少为 `1`。当前每个存活子体通常每 Tick 生成一个主体；距离超过 512 格时每 2 Tick 生成一次。 |
-| `body_color` | string（RGB） | `#FFC247` | 接受 `#RRGGBB` 或 `RRGGBB`；必须正好 6 位十六进制，不接受 8 位 ARGB，非法值回退 `#FFC247`。 |
-| `body_flicker` | float | `0.08` | 每次生成主体时的尺寸随机浮动比例，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.08`；不改变亮度。该 Tick 的实际主体尺寸会随位置状态保存，并成为下一 Tick 对应尾迹的出生尺寸。 |
+| `body_start_scale` | float | `0` | 主体出生尺寸倍率；0 表示关闭尺寸生长并直接使用本次 `body_flicker` 目标尺寸。正有限值取 `max(value, 0)`，实际出生尺寸为 `min(body_start_scale, 目标尺寸)`，避免反向缩小；仅在 `body_lifetime_ticks >= 2` 时生效。 |
+| `body_lifetime_ticks` | int（tick） | `3` | 单个主体粒子寿命，读取时至少为 `1`。寿命至少为 2 时，启用的 `body_start_scale` 会按平滑曲线增长并在最后一个可见 Tick 到达目标尺寸；主体生成频率由 `body_sample_interval_ticks` 决定，距离超过 512 格时有效采样间隔至少为 2。 |
+| `body_color` | string（RGB） | `#FFC247` | 主体出生颜色；接受 `#RRGGBB` 或 `RRGGBB`，必须正好 6 位十六进制，不接受 8 位 ARGB，非法值回退 `#FFC247`。 |
+| `body_end_color` | string（RGB） | `""` | 主体寿命末端颜色；空值或非法值沿用归一化后的 `body_color`，因此旧配置保持单色。有效时主体颜色按归一化年龄从 `body_color` 线性渐变至该值。 |
+| `body_flicker` | float | `0.08` | 随机样本中的主体尺寸浮动比例，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.08`；不改变亮度。实际主体尺寸会随位置状态保存，并成为下一 Tick 对应尾迹的出生尺寸。 |
+| `body_horizontal_flicker` | float（格） | `0` | 随机样本分别为 X、Z 生成 `[-value, +value]` 的独立均匀目标偏移，主体从上一实际偏移沿平滑步进曲线移动到目标；有限值取 `max(value, 0)`，NaN/Infinity 回退 0。只改变客户端粒子坐标，Y、实体弹道、碰撞、点火和伤害不变。 |
+| `body_flicker_interval_ticks` | int（tick） | `1` | 主体尺寸与 X/Z 随机目标点的刷新周期，读取时至少为 1；同时也是水平偏移从上一实际位置平滑到新目标的过渡时长。1 表示每 Tick 重抽并立即到达；增大后尺寸刷新更慢、位置移动更柔和。它不直接决定主体生成频率，颜色年龄渐变和尾迹出生率不受影响。 |
+| `body_sample_interval_ticks` | int（tick） | `1` | 主体粒子的生成采样间隔，读取时至少为 1。1 表示近距离每 Tick 生成；2 表示约每秒 10 次。只降低主体出生率，不改变随机样本刷新、颜色年龄曲线或近距离尾迹每 Tick 沉积。超过 512 格时有效间隔至少为 2。 |
 | `trail_enabled` | boolean | `true` | 是否在连续客户端 Tick 中把上一主体位置沉积为一个尾迹粒子；首 Tick、静止 Tick、追踪中断或距离超过 512 格时不生成。 |
 | `trail_lifetime_ticks` | int（tick） | `24` | 单个尾迹粒子寿命，读取时至少为 `1`。 |
+| `trail_lifetime_start_on_landing` | boolean | `false` | 是否把同一弹体所有尾迹的寿命起点推迟到对应主体落地。false 保持每个尾迹从出生 Tick 立即计时；true 时飞行期间冻结尾迹年龄，检测到弹体 `onGround`、碰撞结束、被移除或客户端追踪释放后统一从年龄 0 开始按 `trail_lifetime_ticks` 计时。只影响客户端粒子生命周期。 |
 | `trail_end_scale` | float | `0.02` | 尾迹消失尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.02`。 |
 | `trail_start_alpha` | float | `0.9` | 尾迹出生透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.9`。 |
 | `trail_end_alpha` | float | `0` | 尾迹消失透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0`。 |
 | `trail_start_color` | string（RGB） | `#FFFFFF` | 尾迹出生颜色；格式规则同 `body_color`，非法值回退白色。 |
 | `trail_end_color` | string（RGB） | `#FFFFFF` | 尾迹消失颜色；格式规则同 `body_color`，非法值回退白色。 |
 
-尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体每 Tick 最多在上一主体位置沉积一个尾迹粒子，超过 512 格不生成。尾迹出生尺寸精确继承该位置主体按 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)` 得到的实际尺寸，再平滑过渡到 `trail_end_scale`；透明度按平滑曲线过渡，颜色按年龄线性过渡。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
+主体尺寸与 X/Z 目标偏移组成一组随机样本。尺寸目标为 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)`；若 `body_start_scale > 0` 且寿命至少 2 Tick，单个主体从较小出生尺寸使用 `smoothstep(t)=t²(3-2t)` 长到该目标，否则直接以目标尺寸生成。X/Z 从上一实际偏移使用相同平滑曲线移动，并在 `body_flicker_interval_ticks` 周期末准确到达目标；下个周期从该实际位置继续移动，不发生目标刷新瞬间的坐标跳变。追踪 Tick 中断时从权威位置重新起步并重抽，避免复用过期位置。`body_sample_interval_ticks` 只决定哪些 Tick 真正创建主体粒子，不影响这组视觉状态的逐 Tick 更新。尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体每 Tick 最多在上一视觉状态的实际平滑位置沉积一个尾迹粒子，超过 512 格不生成，因此主体降采样不会让尾迹同步断续。移动判定始终比较连续 Tick 的权威弹体位置，避免静止弹体只因 `body_horizontal_flicker` 改变而堆积假尾迹。尾迹出生尺寸继承对应主体的随机目标尺寸，而非启用后的较小出生尺寸，再平滑过渡到 `trail_end_scale`；透明度按平滑曲线过渡，颜色按年龄线性过渡。启用 `trail_lifetime_start_on_landing` 后，同一弹体的尾迹共享一个只弱引用弹体的客户端计时门；飞行期间不推进粒子年龄，落地或实体结束后门永久打开并统一开始正常衰减，避免尾迹持有已移除实体。该模式不会增加每 Tick 出生率，但粒子峰值存量会额外包含全部可见飞行阶段尾迹。尺寸生长不增加粒子数量。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
 
 ```json
 "effects_data": {
@@ -436,11 +455,17 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
     "particle_type": "rvp:white_phosphorus",
     "full_bright": true,
     "body_scale": 0.42,
+    "body_start_scale": 0.08,
     "body_lifetime_ticks": 3,
-    "body_color": "#FFC247",
-    "body_flicker": 0.08,
+    "body_color": "#FF8A1F",
+    "body_end_color": "#FF2400",
+    "body_flicker": 0.8,
+    "body_horizontal_flicker": 0.15,
+    "body_flicker_interval_ticks": 4,
+    "body_sample_interval_ticks": 2,
     "trail_enabled": true,
     "trail_lifetime_ticks": 26,
+    "trail_lifetime_start_on_landing": true,
     "trail_end_scale": 0.03,
     "trail_start_alpha": 0.90,
     "trail_end_alpha": 0.0,

@@ -2,6 +2,8 @@ package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.annotations.SerializedName;
 
+import java.util.OptionalDouble;
+
 /**
  * {@code projectile_data.wind_data} 的服务器权威风漂配置。
  */
@@ -12,8 +14,8 @@ public class RVP_WindData {
     private boolean enabled = false;
 
     /**
-     * 风向来源，默认 {@code parent_facing_reverse}；该模式仅对子弹药生效，
-     * 在释放瞬间固化母弹当前旋转朝向的反向，未知值按禁用处理。
+     * 风向来源，默认 {@code parent_facing_reverse}；该模式仅对子弹药生效并在释放瞬间
+     * 固化母弹当前朝向的反向，也可写 {@code north:<角度>} 固定世界水平风向，未知值按禁用处理。
      */
     @SerializedName("direction_mode")
     private String directionMode = "parent_facing_reverse";
@@ -42,11 +44,41 @@ public class RVP_WindData {
     private float turbulenceFrequency = 0.02f;
 
     public boolean isEnabled() {
-        return enabled && isParentFacingReverse() && getSpeed() > 0f && getResponse() > 0f;
+        return enabled && isDirectionModeSupported() && getSpeed() > 0f && getResponse() > 0f;
     }
 
     public boolean isParentFacingReverse() {
         return "parent_facing_reverse".equalsIgnoreCase(directionMode);
+    }
+
+    public boolean isDirectionModeSupported() {
+        return isParentFacingReverse() || getFixedNorthAngleDegrees().isPresent();
+    }
+
+    /**
+     * 解析 {@code north:<角度>} 固定水平风向；正角从北方顺时针旋转，单位度。
+     *
+     * @return 合法有限角度；非固定模式或非法值返回空
+     */
+    public OptionalDouble getFixedNorthAngleDegrees() {
+        if (directionMode == null) {
+            return OptionalDouble.empty();
+        }
+        String normalized = directionMode.trim();
+        int separator = normalized.indexOf(':');
+        if (separator <= 0 || !"north".equalsIgnoreCase(normalized.substring(0, separator).trim())) {
+            return OptionalDouble.empty();
+        }
+        String angleText = normalized.substring(separator + 1).trim();
+        if (angleText.isEmpty()) {
+            return OptionalDouble.empty();
+        }
+        try {
+            double angle = Double.parseDouble(angleText);
+            return Double.isFinite(angle) ? OptionalDouble.of(angle) : OptionalDouble.empty();
+        } catch (NumberFormatException ignored) {
+            return OptionalDouble.empty();
+        }
     }
 
     public float getSpeed() {

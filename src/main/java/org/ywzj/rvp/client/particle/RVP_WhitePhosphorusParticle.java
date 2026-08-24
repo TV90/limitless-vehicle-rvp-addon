@@ -21,7 +21,7 @@ import org.ywzj.rvp.RVP_MOD;
 
 /**
  * 直接使用 {@code assets/ywzj_rvp/textures/nuclear/particle_base.png}，
- * 实现短寿命主体和沿年龄缩小、变淡的白磷尾迹，不依赖粒子图集追加文件。
+ * 实现沿年龄渐变的短寿命主体和缩小、变淡的白磷尾迹，不依赖粒子图集追加文件。
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
@@ -52,11 +52,11 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
         }
     };
 
-    /** 是否为保持尺寸稳定的主体粒子。 */
+    /** 是否为主体粒子；主体会在最后一个可见 Tick 到达目标尺寸和末端颜色。 */
     private final boolean body;
     /** 出生尺寸倍率。 */
     private final float startScale;
-    /** 消失尺寸倍率。 */
+    /** 寿命末端目标尺寸倍率。 */
     private final float endScale;
     /** 出生透明度。 */
     private final float startAlpha;
@@ -68,12 +68,15 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
     private final int endColor;
     /** 是否使用全亮光照。 */
     private final boolean fullBright;
+    /** 尾迹共用的落地寿命计时门；null 表示按出生 Tick 立即计时。 */
+    private final RVP_TrailLifetimeGate lifetimeGate;
 
     private RVP_WhitePhosphorusParticle(ClientLevel level, Vec3 position, boolean body,
                                         float startScale, float endScale,
                                         float startAlpha, float endAlpha,
                                         int startColor, int endColor,
-                                        int lifetime, boolean fullBright) {
+                                        int lifetime, boolean fullBright,
+                                        RVP_TrailLifetimeGate lifetimeGate) {
         super(level, position.x, position.y, position.z);
         this.body = body;
         this.startScale = startScale;
@@ -83,6 +86,7 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
         this.startColor = startColor;
         this.endColor = endColor;
         this.fullBright = fullBright;
+        this.lifetimeGate = lifetimeGate;
         this.lifetime = Math.max(lifetime, 1);
         this.hasPhysics = false;
         this.gravity = 0.0f;
@@ -92,34 +96,45 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
         applyCurve(0.0f);
     }
 
-    public static Particle createBody(ClientLevel level, Vec3 position, float scale, int color,
+    public static Particle createBody(ClientLevel level, Vec3 position,
+                                      float startScale, float targetScale,
+                                      int startColor, int endColor,
                                       int lifetime, boolean fullBright) {
         return new RVP_WhitePhosphorusParticle(
-                level, position, true, scale, scale, 1.0f, 1.0f,
-                color, color, lifetime, fullBright);
+                level, position, true, startScale, targetScale, 1.0f, 1.0f,
+                startColor, endColor, lifetime, fullBright, null);
     }
 
     public static Particle createTrail(ClientLevel level, Vec3 position,
                                        float startScale, float endScale,
                                        float startAlpha, float endAlpha,
                                        int startColor, int endColor,
-                                       int lifetime, boolean fullBright) {
+                                       int lifetime, boolean fullBright,
+                                       RVP_TrailLifetimeGate lifetimeGate) {
         return new RVP_WhitePhosphorusParticle(
                 level, position, false, startScale, endScale, startAlpha, endAlpha,
-                startColor, endColor, lifetime, fullBright);
+                startColor, endColor, lifetime, fullBright, lifetimeGate);
     }
 
     @Override
     public void tick() {
+        // 调用本项目尾迹寿命门：对应弹体飞行期间冻结尾迹年龄，落地或结束后恢复正常 Tick。
+        if (!body && lifetimeGate != null && lifetimeGate.shouldPauseLifetime()) {
+            xo = x;
+            yo = y;
+            zo = z;
+            return;
+        }
         super.tick();
         if (!removed) {
-            float progress = Mth.clamp((float) age / Math.max(lifetime, 1), 0.0f, 1.0f);
+            int curveDuration = body ? Math.max(lifetime - 1, 1) : Math.max(lifetime, 1);
+            float progress = Mth.clamp((float) age / curveDuration, 0.0f, 1.0f);
             applyCurve(progress);
         }
     }
 
     private void applyCurve(float progress) {
-        float curve = body ? 0.0f : progress * progress * (3.0f - 2.0f * progress);
+        float curve = progress * progress * (3.0f - 2.0f * progress);
         quadSize = Mth.lerp(curve, startScale, endScale);
         alpha = Mth.lerp(curve, startAlpha, endAlpha);
         rCol = Mth.lerp(progress, red(startColor), red(endColor));
@@ -177,7 +192,7 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
                                        double xSpeed, double ySpeed, double zSpeed) {
             return new RVP_WhitePhosphorusParticle(level, new Vec3(x, y, z), true,
                     0.4f, 0.4f, 1.0f, 1.0f,
-                    0xFFC247, 0xFFC247, 3, true);
+                    0xFFC247, 0xFFC247, 3, true, null);
         }
     }
 }

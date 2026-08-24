@@ -8,6 +8,20 @@ public final class RVP_WindDirectionUtil {
     private RVP_WindDirectionUtil() {}
 
     /**
+     * 把以世界北方为零、顺时针为正的罗盘角转换为 Minecraft 水平单位向量。
+     *
+     * @param clockwiseDegrees 从北方顺时针旋转的角度，单位度
+     * @return 世界水平单位向量；0 为北方 -Z，+90 为东方 +X
+     */
+    public static Vec3 resolveFixedNorth(double clockwiseDegrees) {
+        if (!Double.isFinite(clockwiseDegrees)) {
+            return Vec3.ZERO;
+        }
+        double radians = Math.toRadians(Math.IEEEremainder(clockwiseDegrees, 360.0D));
+        return new Vec3(Math.sin(radians), 0.0D, -Math.cos(radians)).normalize();
+    }
+
+    /**
      * 优先使用父弹当前旋转朝向的反向；仅水平投影退化时才回退父弹当前速度反向。
      *
      * @param parentCurrentFacing 释放 Tick 由父弹 yaw/pitch 得到的当前朝向单位向量

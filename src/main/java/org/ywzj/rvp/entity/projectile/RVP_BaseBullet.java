@@ -109,6 +109,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 /**
@@ -242,7 +243,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected RVP_SubmunitionRunner submunitionRunner;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
     protected int submunitionDepth;
-    /** 子体释放时固化的风向单位向量；当前模式取空爆瞬间母弹当前旋转朝向的反向。 */
+    /** 弹体初始化或子体释放时固化的风向单位向量；来源由 wind_data.direction_mode 决定。 */
     private Vec3 inheritedWindDirection = Vec3.ZERO;
     /** 是否启用子弹药分量化部署运动；仅生成器显式初始化且半衰期为正时开启。 */
     private boolean submunitionDeploymentMotionActive;
@@ -637,6 +638,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.setPos(spawnPos);
         this.setDeltaMovement(spawnMotion);
         this.virtualMidcourseLaunchPosition = spawnPos;
+        var wind = data.getProjectileData().getWindData();
+        var fixedWindAngle = wind.isEnabled()
+                ? wind.getFixedNorthAngleDegrees()
+                : OptionalDouble.empty();
+        if (fixedWindAngle.isPresent()) {
+            // 调用本项目固定风向解析工具：首发弹体及子弹药初始化时固化世界水平风向。
+            this.inheritedWindDirection = RVP_WindDirectionUtil.resolveFixedNorth(
+                    fixedWindAngle.getAsDouble());
+        } else {
+            this.inheritedWindDirection = Vec3.ZERO;
+        }
         RVP_ProjectileLifecycleDebug.noteInitialized(this);
     }
 
@@ -652,15 +664,26 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * 子弹药生成时调用：读取母弹释放 Tick 的当前旋转朝向并取反，随后按子体风漂配置固化方向。
+     * 子弹药生成时调用：按子体风漂配置固化固定世界风向，或读取母弹释放 Tick 的当前朝向反向。
      */
     public void captureWindDirectionFromParent(RVP_BaseBullet parent) {
-        if (parent == null || rvpData == null) {
+        if (rvpData == null) {
             inheritedWindDirection = Vec3.ZERO;
             return;
         }
         var wind = rvpData.getProjectileData().getWindData();
-        if (!wind.isEnabled() || !wind.isParentFacingReverse()) {
+        if (!wind.isEnabled()) {
+            inheritedWindDirection = Vec3.ZERO;
+            return;
+        }
+        var fixedWindAngle = wind.getFixedNorthAngleDegrees();
+        if (fixedWindAngle.isPresent()) {
+            // 调用本项目固定风向解析工具：固定模式不依赖母弹姿态，直接固化世界水平风向。
+            inheritedWindDirection = RVP_WindDirectionUtil.resolveFixedNorth(
+                    fixedWindAngle.getAsDouble());
+            return;
+        }
+        if (parent == null || !wind.isParentFacingReverse()) {
             inheritedWindDirection = Vec3.ZERO;
             return;
         }
