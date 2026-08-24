@@ -216,5 +216,10 @@
   "message.ywzj_rvp.targeting_pod.marked_both": "已标记 %s 个目标，坐标 %s",
   "message.ywzj_rvp.targeting_pod.marked_entity": "已标记 %s 个目标",
   "message.ywzj_rvp.targeting_pod.marked_block": "已标记坐标 %s",
-  "message.ywzj_rvp.targeting_pod.no_target": "未发现可标记目标"
+  "message.ywzj_rvp.targeting_pod.no_target": "未发现可标记目标",
+  "gui.ywzj_rvp.variants.title": "RVP 武器变体",
+  "gui.ywzj_rvp.variants.station": "武器站",
+  "gui.ywzj_rvp.variants.weapon": "武器",
+  "gui.ywzj_rvp.variants.no_station": "没有可用的二选一武器站",
+  "gui.ywzj_rvp.variants.no_weapon": "没有子武器"
 }

@@ -28,6 +28,12 @@ public abstract class VehicleMultiWeaponsChargeGateMixin {
         if (!rvp.getFireController().shouldAttemptClientShot()) {
             cir.setReturnValue(false);
         }
+        // 二选一武器组的锁定门控：本体 Multi.doClientShoot 不调用选中武器的
+        // doClientShoot（RVP_WeaponBase 的 require_lock 门控在其中），导致经 Multi
+        // 包装的 require_lock 武器无需锁定即可发射。此处解包后复用同一门控。
+        if (!rvp.passesShootLockGates()) {
+            cir.setReturnValue(false);
+        }
     }
 
     @Inject(method = "doClientShoot", at = @At("RETURN"), remap = false)

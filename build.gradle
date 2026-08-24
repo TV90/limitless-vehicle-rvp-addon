@@ -101,6 +101,12 @@ repositories {
         dir 'libs'
     }
     maven {
+        url = 'https://maven.sighs.cc/repository/maven-public/'
+        content {
+            includeGroup 'com.sighs'
+        }
+    }
+    maven {
         url = "https://repo.spongepowered.org/repository/maven-public/"
         content {
             includeGroupByRegex "org\\.spongepowered.*"
@@ -120,7 +126,9 @@ dependencies {
     testImplementation 'org.knowm.xchart:xchart:3.8.8'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
-    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.8.2-all")
+    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.9-all")
+    // ApricityUI（本体 AUI 适配后 VehicleModdingToolScreen 继承了 ApricityScreen，编译需要）
+    compileOnly 'com.sighs:ApricityUI-forge-1.20.1:1.2.2'
     // SBM
     jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.5.1-forge-mc1.20.1"))) {
         jarJar.ranged(it, "[2.5.1,)")

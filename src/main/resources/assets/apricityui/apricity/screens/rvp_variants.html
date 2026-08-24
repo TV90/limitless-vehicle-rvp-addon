@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="/apricityui/theme/ore/ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .rvp-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
+        .rvp-screen .navbar { min-height: 38px; padding: 6px 10px 10px; flex: 0 0 auto; }
+        .rvp-screen .navbar-brand { font-family: OreDisplay, "Microsoft YaHei"; font-size: 18px; line-height: 1.1; }
+        .rvp-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .rvp-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; flex: 1 1 0; }
+        .rvp-panel .card-header { min-height: 30px; padding: 8px 9px; font-size: 11px; flex: 0 0 auto; font-family: OreDisplay, "Microsoft YaHei"; }
+        .rvp-panel .card-body { min-height: 0; padding: 7px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+        .rvp-list { min-height: 0; overflow-y: auto; flex: 1 1 auto; }
+        .rvp-entry { min-height: 32px; padding: 6px 8px; box-sizing: border-box; border: 2px solid transparent; background: #363739; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 5px; font-size: 16px; }
+        .rvp-entry + .rvp-entry { margin-top: 3px; }
+        .rvp-entry:hover, .rvp-entry:focus { border-color: #85878b; background: #4a4b4e; }
+        .rvp-entry.active { border-color: var(--ore-gold); background: #514a35; }
+        .rvp-entry-name { min-width: 0; overflow: hidden; white-space: nowrap; }
+        .rvp-entry-count { color: var(--ore-ink-muted); flex: 0 0 auto; font-size: 12px; }
+        .rvp-entry-sub { min-height: 28px; padding: 4px 8px; border: 2px solid transparent; background: #363739; color: #fff; cursor: pointer; display: flex; align-items: center; gap: 5px; font-size: 14px; }
+        .rvp-entry-sub.active { border-color: var(--ore-gold); background: #514a35; }
+        .empty-state { padding: 9px 6px; color: var(--ore-ink-muted); font-size: 10px; text-align: center; }
+        .rvp-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
+    </style>
+</head>
+<body class="ore-theme rvp-screen">
+<div class="navbar">
+    <span class="navbar-brand"><translation>gui.ywzj_rvp.variants.title</translation></span>
+    <button id="close-button" class="close-button" type="button">&times;</button>
+</div>
+<div class="rvp-workspace">
+    <div class="rvp-panel" style="width: 30%; flex: 0 0 30%;">
+        <div class="card-header"><translation>gui.ywzj_rvp.variants.station</translation></div>
+        <div class="card-body">
+            <div id="station-list" class="rvp-list"></div>
+            <div id="station-empty" class="empty-state"><translation>gui.ywzj_rvp.variants.no_station</translation></div>
+        </div>
+    </div>
+    <div class="rvp-panel">
+        <div class="card-header"><translation>gui.ywzj_rvp.variants.weapon</translation></div>
+        <div class="card-body">
+            <div id="weapon-list" class="rvp-list"></div>
+            <div id="weapon-empty" class="empty-state"><translation>gui.ywzj_rvp.variants.no_weapon</translation></div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
