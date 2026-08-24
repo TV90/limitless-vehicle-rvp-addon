@@ -89,6 +89,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         // [RVP] 仅在有 ui_preset 时渲染
         if (vehicle.getVehicleId() == null) return;
+        // HITL 视角激活时不渲染 scope 准星：TV 弹由 RVP_TVMissileOverlay 提供专用准星，
+        // scope 的 CRT 落点框会与之重叠形成"双准星"
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) return;
         String presetName = VehicleUIPresetCache.get(vehicle.getVehicleId());
         if (presetName == null || presetName.isEmpty()) return;
         // 准心（IR 寻的器模式跳过，HMD cueing 由雷达 overlay 提供）

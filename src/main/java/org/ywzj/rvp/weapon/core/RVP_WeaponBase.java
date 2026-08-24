@@ -119,6 +119,23 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (!passesOffAxisShootGate()) {
             return false;
         }
+        if (!passesShootLockGates()) {
+            return false;
+        }
+        boolean fired = super.doClientShoot();
+        return fired;
+    }
+
+    /**
+     * 射击前锁定类门控（require_lock 语义）：ARM 预选、IR/HMD/外部雷达锁定检查与锁定传递。
+     * 从 {@link #doClientShoot()} 提取，供二选一武器组（{@code VehicleMultiWeapons}）等
+     * 本体发射路径复用——否则经 Multi 包装的武器会绕过锁定门控直接发射。
+     * 仅客户端调用。
+     *
+     * @return true = 允许继续射击流程
+     */
+    @OnlyIn(Dist.CLIENT)
+    public boolean passesShootLockGates() {
         RVP_WeaponData data = getData();
         WeaponUnit unit = getWeaponUnit().getRootParentWeaponUnit();
         if (data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
@@ -184,8 +201,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                 }
             }
         }
-        boolean fired = super.doClientShoot();
-        return fired;
+        return true;
     }
 
     @Override
