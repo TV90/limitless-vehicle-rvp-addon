@@ -60,7 +60,7 @@ public final class RVP_SubmunitionSpawner {
             for (RVP_SubmunitionPayloadData payload : release.getPayloads()) {
                 int count = payload.getCount();
                 for (int i = 0; i < count; i++) {
-                    if (spawnPayload(parent, payload, globalPellet, count)) {
+                    if (spawnPayload(parent, release, payload, globalPellet, count)) {
                         spawned++;
                     }
                     globalPellet++;
@@ -70,15 +70,17 @@ public final class RVP_SubmunitionSpawner {
         return spawned;
     }
 
-    private static boolean spawnPayload(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
+    private static boolean spawnPayload(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
+                                        RVP_SubmunitionPayloadData payload,
                                         int pelletIndex, int pelletCount) {
         return switch (payload.getKind()) {
-            case RVP_WEAPON -> spawnRvpWeapon(parent, payload, pelletIndex, pelletCount);
-            case ENTITY -> spawnEntity(parent, payload, pelletIndex, pelletCount);
+            case RVP_WEAPON -> spawnRvpWeapon(parent, release, payload, pelletIndex, pelletCount);
+            case ENTITY -> spawnEntity(parent, release, payload, pelletIndex, pelletCount);
         };
     }
 
-    private static boolean spawnRvpWeapon(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
+    private static boolean spawnRvpWeapon(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
+                                          RVP_SubmunitionPayloadData payload,
                                           int pelletIndex, int pelletCount) {
         ResourceLocation parentId = parent.getWeaponId();
         ResourceLocation childId = payload.resolveWeaponId(parentId);
@@ -108,10 +110,16 @@ public final class RVP_SubmunitionSpawner {
         AbstractVehicle vehicle = parent.getShooterVehicle();
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
+        // 调用本项目释放云采样工具：先把子体权威初始位置散布到 release 配置的球体积内。
+        Vec3 cloudPos = RVP_SubmunitionReleaseCloudUtil.samplePosition(
+                parent.position(), release, level.getRandom());
+        // 调用本项目 payload 位置散布器：在释放云位置之上继续叠加载荷自身的位置偏移。
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), launchAim.xRot(), launchAim.yRot(),
+                cloudPos, launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
-        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
+        // 调用本项目速度生成器：把最终出生点相对释放点的偏移传入，使云径向模式沿云心外向采样。
+        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim,
+                pos.subtract(parent.position()), pelletIndex, pelletCount);
         Vec3 velocity = spawnVelocity.totalVelocity();
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
@@ -132,7 +140,7 @@ public final class RVP_SubmunitionSpawner {
             child.explosion = RVP_Explosion.disabled();
         }
         child.setDeltaMovement(velocity);
-        // 调用本项目部署运动初始化：只把圆锥与母弹水平继承形成的 X/Z 交给半衰期阻尼。
+        // 调用本项目部署运动初始化：只把速度散布与母弹水平继承形成的 X/Z 交给半衰期阻尼。
         child.initializeSubmunitionDeploymentMotion(spawnVelocity.deploymentHorizontalVelocity());
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
         RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
@@ -146,7 +154,8 @@ public final class RVP_SubmunitionSpawner {
         return added;
     }
 
-    private static boolean spawnEntity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
+    private static boolean spawnEntity(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
+                                       RVP_SubmunitionPayloadData payload,
                                        int pelletIndex, int pelletCount) {
         ResourceLocation typeId = payload.resolveEntityType();
         if (typeId == null) {
@@ -163,12 +172,18 @@ public final class RVP_SubmunitionSpawner {
         }
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
+        // 调用本项目释放云采样工具：普通实体载荷与 RVP 弹体使用相同的权威球体积位置。
+        Vec3 cloudPos = RVP_SubmunitionReleaseCloudUtil.samplePosition(
+                parent.position(), release, level.getRandom());
+        // 调用本项目 payload 位置散布器：允许配置作者继续叠加载荷级位置散布。
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
-                parent.position(), launchAim.xRot(), launchAim.yRot(),
+                cloudPos, launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
         entity.moveTo(pos.x, pos.y, pos.z, launchAim.yRot(), launchAim.xRot());
         applyEntityNbt(entity, payload.getEntityNbt());
-        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim, pelletIndex, pelletCount);
+        // 调用本项目速度生成器：普通实体载荷也复用最终出生点对应的云心外向采样规则。
+        SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim,
+                pos.subtract(parent.position()), pelletIndex, pelletCount);
         entity.setDeltaMovement(spawnVelocity.totalVelocity());
         if (entity instanceof Projectile projectile) {
             projectile.setOwner(parent.getOwner());
@@ -179,6 +194,7 @@ public final class RVP_SubmunitionSpawner {
 
     private static SpawnVelocity buildVelocity(RVP_BaseBullet parent, RVP_SubmunitionPayloadData payload,
                                                RVP_BaseBullet.AimRot launchAim, RVP_BaseBullet.AimRot baseRefAim,
+                                               Vec3 spawnOffset,
                                                int pelletIndex, int pelletCount) {
         RandomSource random = parent.level().getRandom();
         if (payload.isLaunchAnglesEnabled()) {
@@ -189,8 +205,8 @@ public final class RVP_SubmunitionSpawner {
             Vec3 velocity = VectorUtil.rotToVec(launchAim.xRot(), launchAim.yRot()).normalize().scale(speed);
             Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                     velocity, launchAim.xRot(), launchAim.yRot(),
-                    payload.getSpread(), pelletIndex, pelletCount, random);
-            // 调用本项目水平继承工具：圆锥速度生成后只追加母弹 X/Z × velocity_scale，不继承 Y。
+                    payload.getSpread(), spawnOffset, pelletIndex, pelletCount, random);
+            // 调用本项目水平继承工具：速度散布生成后只追加母弹 X/Z × velocity_scale，不继承 Y。
             Vec3 parentHorizontal = RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
                     parent.getDeltaMovement(), payload);
             Vec3 deploymentHorizontal = new Vec3(
@@ -217,7 +233,7 @@ public final class RVP_SubmunitionSpawner {
         }
         Vec3 spreadVelocity = RVP_SubmunitionSpreadApplicator.applyVelocitySpread(
                 velocity, baseRefAim.xRot(), baseRefAim.yRot(),
-                payload.getSpread(), pelletIndex, pelletCount, random);
+                payload.getSpread(), spawnOffset, pelletIndex, pelletCount, random);
         // 调用本项目水平继承工具：显式水平模式覆盖完整父弹继承，且只在散布后追加一次。
         Vec3 parentHorizontal = RVP_SubmunitionVelocityUtil.resolveParentHorizontalVelocity(
                 parent.getDeltaMovement(), payload);

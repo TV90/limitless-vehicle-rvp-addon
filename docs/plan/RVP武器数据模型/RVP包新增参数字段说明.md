@@ -188,7 +188,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `drag_coefficient` | 速度平方阻力系数。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
-| `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的圆锥/父弹继承 X/Z 生效，Y、风偏和显式附加速度不参与该衰减。 |
+| `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布/父弹继承 X/Z 生效，包含分层圆锥径向与云心水平径向分量；Y、风偏和显式附加速度不参与该衰减。 |
 
 `altitude_drag_factor` 的运行规则：
 
@@ -763,6 +763,10 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `per_tick` | 每个间隔 tick 触发几波（MCH `spawnBulletPerNum`），默认 1。                             |
 | `payloads` | 本波要生成的弹药列表，见下表。                                                           |
 | `parent_action` | 本方案完成后母弹行为：`continue`（默认）、`discard_after_release`、`discard_on_first_spawn` |
+| `release_cloud_enabled` | 是否把本 release 生成的全部 payload 初始位置散布到三维椭球体积内；默认 `false`。释放云本身只改变服务端权威生成位置；若 payload 使用 `cloud_radial_horizontal`，该最终位置还会作为水平外散方向的输入。 |
+| `release_cloud_radius` | 释放云轴半径对象；必须使用当前 schema 的 `{"horizontal": 4.0, "vertical": 4.0}` 格式。`horizontal` 为 X/Z 共用半径，`vertical` 为 Y 半径，单位格，默认均为 `4.0`；仅开关为 true 时生效。每轴负值按 0，NaN/Infinity 回退 4.0。两轴均为 0 时保持母弹位置。 |
+
+释放云先使用均匀球面方向与 `cbrt(random)` 归一化半径在单位球体积采样，再令 X/Z 乘 `horizontal`、Y 乘 `vertical`，得到单位体积密度均匀的轴对齐椭球。生成顺序为“母弹当前位置 + release 云偏移 + payload 位置散布”，因此仍可与 `payloads[].spread` 的 `canister_type: 0` 叠加；释放云自身不增加速度，但 `cloud_radial_horizontal` 会读取叠加完成后的出生偏移并生成水平径向速度。关闭或两个轴半径都为 0 时不消耗额外的云位置随机数；单轴为 0 时只压扁该轴且仍采样。多波释放分别以当波发生时的母弹位置为中心，`rvp_weapon` 和 `entity` payload 行为一致。
 
 ##### `triggers` 取值
 
@@ -793,7 +797,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `launch_yaw` | float（度） | `0` | 发射 yaw；`0=南/+Z`，顺时针为正，`-90=东`、`90=西`。`relative` 模式相对母弹参考姿态叠加，`absolute` 模式使用世界系固定角。 |
 | `launch_pitch` | float（度） | `0` | 发射 pitch；`90=正下`、`-90=正上`。角度基准由 `launch_angle_mode` 决定。 |
 | `launch_angle_mode` | string | `relative` | 发射角度基准；仅精确值 `absolute`（忽略大小写）使用世界系绝对角度，其余值按 `relative`，即相对母弹参考姿态叠加。 |
-| `launch_speed` | float（格/tick） | `0` | 发射初速，读取时最小为 0。大于 0 时直接作为定向发射速率；为 0 时使用“母弹当前速率 × `velocity_scale`”。 |
+| `launch_speed` | float（格/tick） | `0` | 发射初速，读取时最小为 0。大于 0 时直接作为定向发射速率；为 0 时使用“母弹当前速率 × `velocity_scale`”。`cloud_radial_horizontal` 使用该基础速度的长度作为水平外散基速。 |
 | `power_scale` | float | `1` | 数据字段读取时最小为 `0.01`；当前 `RVP_SubmunitionSpawner` 生成链未消费该值，现阶段不改变子体伤害或初速。 |
 | `allow_submunition` | bool | `false` | 仅 RVP 弹体生效。为 `true` 时，子体可执行**其自身武器 JSON** 的 `submunition_data`；多级火箭/链式战斗部必须在父级载荷条目开启。默认关闭以阻止叶子弹继续开舱。详见 [子母弹系统与Mi28边界测试.md](../../子母弹系统与Mi28边界测试.md)。 |
 | `damage_multiplier` | float / null | `null` | 仅 RVP 弹体生效。非 `null` 时乘算子体初始化后的直击伤害，最终伤害最小为 `0.01`。 |
@@ -838,7 +842,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `mode` | string | `box` | `box`、`canister` 或 `stratified_cone`。速度散布时 `stratified_cone` 优先于 canister；其他值不会自动迁移。注意完整默认对象的 `canister_diff=0.3`，所以 `mode=box` 但未把 `canister_diff` 设为 0 时，运行时仍会进入 canister 判定。 |
+| `mode` | string | `box` | `box`、`canister`、`stratified_cone` 或 `cloud_radial_horizontal`。两个专用速度模式优先于 canister；其他值不会自动迁移。注意完整默认对象的 `canister_diff=0.3`，所以 `mode=box` 但未把 `canister_diff` 设为 0 时，运行时仍会进入 canister 判定。 |
 | `box_spread` | float | `0` | 非 canister 模式下的轴向速度随机扰动幅度，读取时最小为 0；Y 轴扰动为 X/Z 的一半。 |
 | `canister_type` | int | `1` | 读取时限制到 `0..2`：`0` 改变生成位置，`1` 和 `2` 在当前子弹药散布器中都执行角度散布。 |
 | `canister_diff` | float | `0.3` | canister 散布强度，读取时最小为 0；`type: 0` 时用于位置偏移，`type: 1/2` 时作为角度散布量。大于 0 会启用 canister，即使 `mode` 仍为 `box`。 |
@@ -850,6 +854,18 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `radial_distribution` | string | `uniform_area` | 径向分布；当前 getter 对任何输入都返回 `uniform_area`，实现按圆锥内均匀立体角采样。 |
 | `azimuth_jitter` | float | `0` | 方位角分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`。扰动范围为单个方位角分层宽度乘该比例。 |
 | `radial_jitter` | float | `0` | 径向分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`，实际径向扰动还会除以子体总数。 |
+| `cloud_direction_jitter` | float（度） | `0` | `cloud_radial_horizontal` 的水平外散方向扰动角；每枚子体在基础云心外向方位上独立抽取 `[-value,+value]`，有限值限制为 `0..90`，NaN/Infinity 按 0，因而不会反向指回云心。 |
+| `cloud_speed_jitter` | float | `0` | `cloud_radial_horizontal` 的速度随机比例；每枚子体把外散基速乘以 `[1-value,1+value]` 内的独立均匀随机倍率，有限值限制为 `0..1`，NaN/Infinity 按 0。 |
+
+`cloud_radial_horizontal` 在位置散布全部完成后，使用“最终出生位置 − 当波母弹释放位置”的 X/Z 投影作为基础外向方向，再应用方向与速度扰动。若投影长度接近 0、只有 Y 偏移或包含非有限值，会随机选择一个有限水平单位方向。该模式输出 Y 恒为 0；散布与父弹水平继承形成的 X/Z 会进入部署分量并受 `deployment_horizontal_half_life_ticks` 衰减，纵向运动由 `payloads_velocity`、重力和其他基础弹道外力负责。
+
+```json
+"spread": {
+  "mode": "cloud_radial_horizontal",
+  "cloud_direction_jitter": 15.0,
+  "cloud_speed_jitter": 0.25
+}
+```
 
 `stratified_cone` 使用黄金角推进方位角，并按 `pelletIndex/pelletCount` 分层。未配置 `cone_radial_speed` 时，径向和向下分量都使用输入基础速度，输出速度长度与旧行为一致；配置后按下式解耦：
 

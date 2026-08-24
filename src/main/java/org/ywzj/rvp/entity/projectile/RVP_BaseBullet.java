@@ -249,7 +249,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private boolean submunitionDeploymentMotionActive;
     /** 不参与部署半衰期的基础弹道速度；负责 Y、显式冲量及后续外力。 */
     private Vec3 deploymentBaseVelocity = Vec3.ZERO;
-    /** 圆锥散布与母弹水平继承形成的 X/Z 部署速度；Y 恒为 0。 */
+    /** 子弹药速度散布与母弹水平继承形成的 X/Z 部署速度；Y 恒为 0。 */
     private Vec3 deploymentHorizontalVelocity = Vec3.ZERO;
     /** 从零独立收敛的风偏速度贡献；不会反向收敛基础弹道或部署速度。 */
     private Vec3 deploymentWindVelocity = Vec3.ZERO;

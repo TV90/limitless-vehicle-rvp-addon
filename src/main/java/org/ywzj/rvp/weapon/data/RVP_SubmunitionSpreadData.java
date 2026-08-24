@@ -19,7 +19,11 @@ public class RVP_SubmunitionSpreadData {
         this.boxSpread = boxSpread;
     }
 
-    /** 散布模式，默认 {@code box}；接受 {@code box}/{@code canister}/{@code stratified_cone}。 */
+    /**
+     * 散布模式，默认 {@code box}；接受 {@code box}/{@code canister}/{@code stratified_cone}/
+     * {@code cloud_radial_horizontal}。其中云径向模式仅改变速度，使用子体最终出生位置相对释放点的
+     * 水平投影作为外散方向。
+     */
     @SerializedName("mode")
     private String mode = "box";
 
@@ -66,8 +70,29 @@ public class RVP_SubmunitionSpreadData {
     @SerializedName("radial_jitter")
     private float radialJitter = 0f;
 
+    /**
+     * 权威云水平径向方向扰动角，单位度，默认 {@code 0}；仅
+     * {@code mode=cloud_radial_horizontal} 时生效。有限值限制为 {@code 0..90}，
+     * 非有限值按 {@code 0}，确保扰动后的速度不会反向指回云心。
+     */
+    @SerializedName("cloud_direction_jitter")
+    private float cloudDirectionJitter = 0f;
+
+    /**
+     * 权威云水平径向速度随机比例，默认 {@code 0}；仅
+     * {@code mode=cloud_radial_horizontal} 时生效。每枚子体的 {@code launch_speed}
+     * 独立乘以 {@code [1-value, 1+value]} 内的均匀随机倍率；有限值限制为
+     * {@code 0..1}，非有限值按 {@code 0}。
+     */
+    @SerializedName("cloud_speed_jitter")
+    private float cloudSpeedJitter = 0f;
+
     public boolean usesStratifiedCone() {
         return "stratified_cone".equalsIgnoreCase(mode);
+    }
+
+    public boolean usesCloudRadialHorizontal() {
+        return "cloud_radial_horizontal".equalsIgnoreCase(mode);
     }
 
     public boolean usesCanister() {
@@ -119,6 +144,16 @@ public class RVP_SubmunitionSpreadData {
 
     public float getRadialJitter() {
         return clampJitter(radialJitter);
+    }
+
+    public float getCloudDirectionJitter() {
+        return Float.isFinite(cloudDirectionJitter)
+                ? Math.max(0f, Math.min(cloudDirectionJitter, 90f))
+                : 0f;
+    }
+
+    public float getCloudSpeedJitter() {
+        return clampJitter(cloudSpeedJitter);
     }
 
     private static float clampJitter(float value) {

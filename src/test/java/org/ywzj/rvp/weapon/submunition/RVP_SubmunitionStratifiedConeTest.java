@@ -82,4 +82,5 @@ class RVP_SubmunitionStratifiedConeTest {
 
         assertEquals(0.2D, spread.resolveConeRadialSpeed(0.2D), 1.0E-9D);
     }
+
 }

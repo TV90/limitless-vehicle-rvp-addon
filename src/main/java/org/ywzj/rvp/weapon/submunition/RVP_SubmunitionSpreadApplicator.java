@@ -21,8 +21,18 @@ public final class RVP_SubmunitionSpreadApplicator {
     public static Vec3 applyVelocitySpread(Vec3 baseVelocity, float yawDeg, float pitchDeg,
                                            RVP_SubmunitionSpreadData spread, int pelletIndex, int pelletCount,
                                            RandomSource random) {
+        return applyVelocitySpread(baseVelocity, yawDeg, pitchDeg, spread, Vec3.ZERO,
+                pelletIndex, pelletCount, random);
+    }
+
+    public static Vec3 applyVelocitySpread(Vec3 baseVelocity, float yawDeg, float pitchDeg,
+                                           RVP_SubmunitionSpreadData spread, Vec3 spawnOffset,
+                                           int pelletIndex, int pelletCount, RandomSource random) {
         if (spread == null) {
             return baseVelocity;
+        }
+        if (spread.usesCloudRadialHorizontal()) {
+            return sampleCloudRadialHorizontal(baseVelocity.length(), spawnOffset, spread, random);
         }
         if (spread.usesStratifiedCone()) {
             return sampleStratifiedCone(baseVelocity.length(), spread, pelletIndex, pelletCount, random);
@@ -74,6 +84,38 @@ public final class RVP_SubmunitionSpreadApplicator {
                     spread.getCanisterDiff(), offset);
         }
         return basePos.add(offset[0], offset[1], offset[2]);
+    }
+
+    /**
+     * 使用子体最终出生点相对释放点的水平投影采样云心外向速度；Y 恒为 0，交由子体重力积分。
+     */
+    static Vec3 sampleCloudRadialHorizontal(double speed, Vec3 spawnOffset,
+                                            RVP_SubmunitionSpreadData spread, RandomSource random) {
+        if (!Double.isFinite(speed) || speed <= 1.0E-10D) {
+            return Vec3.ZERO;
+        }
+        double offsetX = spawnOffset == null ? 0.0D : spawnOffset.x;
+        double offsetZ = spawnOffset == null ? 0.0D : spawnOffset.z;
+        double horizontalLengthSqr = offsetX * offsetX + offsetZ * offsetZ;
+        double azimuth;
+        if (Double.isFinite(horizontalLengthSqr) && horizontalLengthSqr > 1.0E-12D) {
+            azimuth = Math.atan2(offsetZ, offsetX);
+        } else {
+            // 云心、纯竖直偏移或非法偏移没有可用水平外向量时，随机选择稳定的水平兜底方向。
+            azimuth = random.nextDouble() * Math.PI * 2.0D;
+        }
+
+        double directionJitter = Math.toRadians(spread.getCloudDirectionJitter());
+        if (directionJitter > 0.0D) {
+            azimuth += (random.nextDouble() * 2.0D - 1.0D) * directionJitter;
+        }
+        double speedJitter = spread.getCloudSpeedJitter();
+        double sampledSpeed = speed;
+        if (speedJitter > 0.0D) {
+            sampledSpeed *= 1.0D + (random.nextDouble() * 2.0D - 1.0D) * speedJitter;
+        }
+        return new Vec3(Math.cos(azimuth) * sampledSpeed, 0.0D,
+                Math.sin(azimuth) * sampledSpeed);
     }
 
     /**
