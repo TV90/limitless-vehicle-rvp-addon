@@ -113,6 +113,13 @@ public class RVP_ProjectileData {
     @SerializedName("wind_data")
     private RVP_WindData windData = new RVP_WindData();
 
+    /**
+     * 子弹药部署水平速度的半衰期，单位 Tick，默认 0（禁用）；仅由本项目子弹药生成器
+     * 显式初始化的 X/Z 部署分量生效，正有限值按指数曲线衰减，Y、风偏和其他外力不参与该衰减。
+     */
+    @SerializedName("deployment_horizontal_half_life_ticks")
+    private float deploymentHorizontalHalfLifeTicks = 0f;
+
     public void resolvePropulsionFallback(JsonObject weaponRoot, JsonObject projectileJson) {
         if (!hasRocketEngine || weaponRoot == null) {
             return;
@@ -297,6 +304,12 @@ public class RVP_ProjectileData {
 
     public RVP_WindData getWindData() {
         return windData == null ? new RVP_WindData() : windData;
+    }
+
+    public float getDeploymentHorizontalHalfLifeTicks() {
+        return Float.isFinite(deploymentHorizontalHalfLifeTicks)
+                ? Math.max(deploymentHorizontalHalfLifeTicks, 0f)
+                : 0f;
     }
 
     public float resolveAltitudeDragFactor(double y) {

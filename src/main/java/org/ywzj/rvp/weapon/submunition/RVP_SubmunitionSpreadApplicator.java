@@ -77,11 +77,14 @@ public final class RVP_SubmunitionSpreadApplicator {
     }
 
     /**
-     * 以世界正下方向为轴进行分层均匀立体角采样，避开垂直轴上的 yaw/pitch 欧拉角退化。
+     * 以世界正下方向为轴进行分层均匀立体角采样，并独立缩放径向展开与向下速度，
+     * 避开垂直轴上的 yaw/pitch 欧拉角退化。
      */
     static Vec3 sampleStratifiedCone(double speed, RVP_SubmunitionSpreadData spread,
                                      int pelletIndex, int pelletCount, RandomSource random) {
-        if (speed <= 1.0E-10 || pelletCount <= 0) {
+        // 调用本项目散布数据归一化接口：未配置径向速度时沿用 launch_speed，保持既有武器行为。
+        double radialSpeed = spread.resolveConeRadialSpeed(speed);
+        if ((speed <= 1.0E-10 && radialSpeed <= 1.0E-10) || pelletCount <= 0) {
             return Vec3.ZERO;
         }
         int index = Math.floorMod(pelletIndex, pelletCount);
@@ -100,9 +103,9 @@ public final class RVP_SubmunitionSpreadApplicator {
         Vec3 axis = "world_down".equals(spread.getConeAxis()) ? new Vec3(0.0D, -1.0D, 0.0D) : new Vec3(0.0D, -1.0D, 0.0D);
         Vec3 tangent = axis.cross(new Vec3(1.0D, 0.0D, 0.0D)).normalize();
         Vec3 bitangent = axis.cross(tangent).normalize();
-        Vec3 direction = axis.scale(cosTheta)
-                .add(tangent.scale(Math.cos(azimuth) * sinTheta))
-                .add(bitangent.scale(Math.sin(azimuth) * sinTheta));
-        return direction.normalize().scale(speed);
+        Vec3 downwardVelocity = axis.scale(cosTheta * Math.max(speed, 0.0D));
+        Vec3 radialVelocity = tangent.scale(Math.cos(azimuth) * sinTheta * radialSpeed)
+                .add(bitangent.scale(Math.sin(azimuth) * sinTheta * radialSpeed));
+        return downwardVelocity.add(radialVelocity);
     }
 }

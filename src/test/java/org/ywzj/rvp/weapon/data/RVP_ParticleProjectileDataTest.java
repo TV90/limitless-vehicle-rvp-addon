@@ -4,7 +4,10 @@ import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.all.RVP_ParticleIds;
 
+import java.util.Arrays;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_ParticleProjectileDataTest {
@@ -21,7 +24,6 @@ class RVP_ParticleProjectileDataTest {
                     "particle_type": "rvp:white_phosphorus",
                     "body_scale": 0.42,
                     "body_color": "#FFC247",
-                    "trail_spacing": 0.18,
                     "trail_start_color": "#FFB52E",
                     "trail_end_color": "#7A3512"
                   }
@@ -33,7 +35,6 @@ class RVP_ParticleProjectileDataTest {
         assertEquals("rvp:white_phosphorus", data.getParticleType());
         assertEquals(0.42f, data.getBodyScale(), 1.0E-6f);
         assertEquals(0xFFC247, data.getBodyColorRgb());
-        assertEquals(0.18f, data.getTrailSpacing(), 1.0E-6f);
         assertEquals(0xFFB52E, data.getTrailStartColorRgb());
         assertEquals(0x7A3512, data.getTrailEndColorRgb());
     }
@@ -50,7 +51,6 @@ class RVP_ParticleProjectileDataTest {
                   "body_scale": "NaN",
                   "body_lifetime_ticks": 0,
                   "body_color": "invalid",
-                  "trail_spacing": 0,
                   "trail_start_alpha": 2,
                   "trail_end_alpha": -1
                 }
@@ -59,8 +59,15 @@ class RVP_ParticleProjectileDataTest {
         assertEquals(0.4f, data.getBodyScale(), 1.0E-6f);
         assertEquals(1, data.getBodyLifetimeTicks());
         assertEquals(0xFFC247, data.getBodyColorRgb());
-        assertEquals(0.02f, data.getTrailSpacing(), 1.0E-6f);
         assertEquals(1.0f, data.getTrailStartAlpha(), 1.0E-6f);
         assertEquals(0.0f, data.getTrailEndAlpha(), 1.0E-6f);
+    }
+
+    @Test
+    void removedIndependentTrailSamplingFieldsAreNotPartOfCurrentSchema() {
+        assertFalse(Arrays.stream(RVP_ParticleProjectileData.class.getDeclaredFields())
+                .anyMatch(field -> "trailSpacing".equals(field.getName())));
+        assertFalse(Arrays.stream(RVP_ParticleProjectileData.class.getDeclaredFields())
+                .anyMatch(field -> "trailStartScale".equals(field.getName())));
     }
 }

@@ -35,21 +35,13 @@ public class RVP_ParticleProjectileData {
     @SerializedName("body_flicker")
     private float bodyFlicker = 0.08f;
 
-    /** 是否生成路径尾迹，默认 true；纯粒子弹体启用时生效。 */
+    /** 是否把连续客户端 Tick 的上一主体位置沉积为尾迹，默认 true；纯粒子弹体启用时生效。 */
     @SerializedName("trail_enabled")
     private boolean trailEnabled = true;
-
-    /** 沿客户端实际运动段的尾迹采样间距，单位格，默认 0.2；最小限制为 0.02。 */
-    @SerializedName("trail_spacing")
-    private float trailSpacing = 0.2f;
 
     /** 单个尾迹粒子寿命，单位 Tick，默认 24；启用尾迹时至少为 1。 */
     @SerializedName("trail_lifetime_ticks")
     private int trailLifetimeTicks = 24;
-
-    /** 尾迹出生尺寸倍率，默认 0.32；启用尾迹时限制为非负有限值。 */
-    @SerializedName("trail_start_scale")
-    private float trailStartScale = 0.32f;
 
     /** 尾迹消失尺寸倍率，默认 0.02；启用尾迹时限制为非负有限值。 */
     @SerializedName("trail_end_scale")
@@ -103,16 +95,8 @@ public class RVP_ParticleProjectileData {
         return trailEnabled;
     }
 
-    public float getTrailSpacing() {
-        return Math.max(finiteNonNegative(trailSpacing, 0.2f), 0.02f);
-    }
-
     public int getTrailLifetimeTicks() {
         return Math.max(trailLifetimeTicks, 1);
-    }
-
-    public float getTrailStartScale() {
-        return finiteNonNegative(trailStartScale, 0.32f);
     }
 
     public float getTrailEndScale() {

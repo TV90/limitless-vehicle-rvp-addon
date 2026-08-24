@@ -20,8 +20,8 @@
     "max_speed": 6
   },
   "fuse_data": {
-    "ground_proximity_fuse_distance": 35.0,
-    "ground_proximity_fuse_arm_tick": 30,
+    "ground_proximity_fuse_distance": 50.0,
+    "ground_proximity_fuse_arm_tick": 40,
     "detonate_on_life_end": false
   },
   "guidance_data": {
@@ -68,10 +68,11 @@
             "weapon_id": "rvp:m142_m30_wp_pellet",
             "count": 24,
             "inherit_parent_velocity": false,
+            "inherit_parent_horizontal_velocity": true,
             "inherit_vehicle_velocity": false,
-            "launch_speed": 0.9,
-            "payloads_velocity": [0.0, 0, 0.0],
-            "payloads_velocity_factor": 0.10,
+            "velocity_scale": 0.10,
+            "launch_speed": 1.5,
+            "payloads_velocity": [0.0, 0.0, 0.0],
             "allow_submunition": false,
             "spread": {
               "mode": "stratified_cone",

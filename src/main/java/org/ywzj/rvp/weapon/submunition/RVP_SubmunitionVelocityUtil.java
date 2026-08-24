@@ -15,6 +15,19 @@ public final class RVP_SubmunitionVelocityUtil {
     private RVP_SubmunitionVelocityUtil() {}
 
     /**
+     * 解析子弹药显式请求的母弹水平继承速度。该分量在圆锥散布之后追加，
+     * {@code velocity_scale} 只缩放母弹 X/Z，不缩放子体 {@code launch_speed}。
+     */
+    public static Vec3 resolveParentHorizontalVelocity(Vec3 parentVelocity,
+                                                       RVP_SubmunitionPayloadData payload) {
+        if (parentVelocity == null || payload == null || !payload.isInheritParentHorizontalVelocity()) {
+            return Vec3.ZERO;
+        }
+        double scale = payload.getVelocityScale();
+        return new Vec3(parentVelocity.x * scale, 0.0D, parentVelocity.z * scale);
+    }
+
+    /**
      * 在已完成继承、发射角和散布计算的速度末端叠加配置冲量。
      * 零向量或零随机因子不会消费随机数，保证未使用新字段的旧武器散布序列不变。
      */

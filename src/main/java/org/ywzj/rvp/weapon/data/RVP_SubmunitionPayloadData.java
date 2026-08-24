@@ -35,6 +35,14 @@ public class RVP_SubmunitionPayloadData {
     @SerializedName("inherit_parent_velocity")
     private boolean inheritParentVelocity = true;
 
+    /**
+     * 是否仅继承母弹水平速度，默认 false；仅子弹药生成时生效。启用后覆盖
+     * {@code inherit_parent_velocity} 的父弹继承方式，只追加母弹 X/Z 速度乘
+     * {@code velocity_scale}，不继承母弹 Y 速度，也不缩放 {@code launch_speed}。
+     */
+    @SerializedName("inherit_parent_horizontal_velocity")
+    private boolean inheritParentHorizontalVelocity = false;
+
     /** Add shooter vehicle motion (like {@link RVP_ProjectileData#isInheritVehicleVelocity()}). */
     @SerializedName("inherit_vehicle_velocity")
     private boolean inheritVehicleVelocity = false;
@@ -130,6 +138,10 @@ public class RVP_SubmunitionPayloadData {
 
     public boolean isInheritParentVelocity() {
         return inheritParentVelocity;
+    }
+
+    public boolean isInheritParentHorizontalVelocity() {
+        return inheritParentHorizontalVelocity;
     }
 
     public boolean isInheritVehicleVelocity() {

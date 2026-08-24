@@ -11,6 +11,7 @@
     "velocity": 0.9,
     "gravity": -0.045,
     "drag": 0.008,
+    "deployment_horizontal_half_life_ticks": 20,
     "constant_speed": false,
     "rotate_to_motion": true,
     "max_speed": 3.0,
@@ -20,7 +21,8 @@
       "speed": 0.11,
       "response": 0.035,
       "vertical_factor": 0.0,
-      "turbulence": 0.006
+      "turbulence": 0.006,
+      "turbulence_frequency": 0.02
     }
   },
   "fuse_data": {
@@ -43,9 +45,7 @@
       "body_color": "#FFC247",
       "body_flicker": 0.08,
       "trail_enabled": true,
-      "trail_spacing": 0.18,
       "trail_lifetime_ticks": 26,
-      "trail_start_scale": 0.34,
       "trail_end_scale": 0.03,
       "trail_start_alpha": 0.90,
       "trail_end_alpha": 0.0,

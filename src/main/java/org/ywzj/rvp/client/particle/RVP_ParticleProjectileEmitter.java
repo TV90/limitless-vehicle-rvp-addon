@@ -19,9 +19,9 @@ import java.util.WeakHashMap;
 @OnlyIn(Dist.CLIENT)
 public final class RVP_ParticleProjectileEmitter {
 
-    /** 单实体单 Tick 最大尾迹补点数，避免高速瞬移制造粒子尖峰。 */
-    private static final int MAX_TRAIL_SAMPLES_PER_TICK = 12;
-    /** 每个客户端实体的上一有效采样点；弱引用保证实体移除后自动清理。 */
+    /** 判定主体是否确实移动的最小距离平方，避免静止位置反复堆积尾迹。 */
+    private static final double MIN_MOVEMENT_SQR = 1.0E-12D;
+    /** 每个客户端实体的上一主体位置；弱引用保证实体移除后自动清理。 */
     private static final Map<RVP_BaseBullet, TrailState> TRAIL_STATES = new WeakHashMap<>();
 
     private RVP_ParticleProjectileEmitter() {}
@@ -31,6 +31,7 @@ public final class RVP_ParticleProjectileEmitter {
                 || !projectile.isAlive() || !projectile.isParticleProjectileVisual()) {
             return;
         }
+        // 调用本项目弹体配置读取接口：取得当前武器的纯粒子主体与尾迹参数。
         RVP_ParticleProjectileData data = projectile.getParticleProjectileData();
         ResourceLocation particleType = ResourceLocation.tryParse(data.getParticleType());
         if (!data.isEnabled() || !RVP_ParticleIds.WHITE_PHOSPHORUS.equals(particleType)
@@ -40,45 +41,32 @@ public final class RVP_ParticleProjectileEmitter {
         Vec3 current = projectile.position();
         Player player = Minecraft.getInstance().player;
         double distance = player == null ? 0.0D : player.distanceTo(projectile);
+        float flicker = data.getBodyFlicker();
+        float bodyScale = Math.max(data.getBodyScale()
+                * (1.0f + (level.random.nextFloat() * 2.0f - 1.0f) * flicker), 0.0f);
+        boolean bodySpawned = distance <= 512.0D || projectile.tickCount % 2 == 0;
 
-        if (distance <= 512.0D || projectile.tickCount % 2 == 0) {
-            float flicker = data.getBodyFlicker();
-            float scale = data.getBodyScale()
-                    * (1.0f + (level.random.nextFloat() * 2.0f - 1.0f) * flicker);
-            add(RVP_WhitePhosphorusParticle.createBody(level, current, Math.max(scale, 0.0f),
+        if (bodySpawned) {
+            // 调用本项目白磷粒子工厂：在权威同步位置创建本 Tick 主体火点。
+            add(RVP_WhitePhosphorusParticle.createBody(level, current, bodyScale,
                     data.getBodyColorRgb(), data.getBodyLifetimeTicks(), data.isFullBright()));
         }
 
-        TrailState previous = TRAIL_STATES.put(projectile, new TrailState(current, projectile.tickCount));
+        TrailState previous = TRAIL_STATES.put(
+                projectile, new TrailState(current, projectile.tickCount, bodyScale, bodySpawned));
         if (!data.isTrailEnabled() || distance > 512.0D || previous == null
-                || previous.tick() != projectile.tickCount - 1) {
+                || previous.tick() != projectile.tickCount - 1 || !previous.bodySpawned()) {
             return;
         }
-        Vec3 segment = current.subtract(previous.position());
-        double length = segment.length();
-        if (length <= 1.0E-6D) {
+        if (current.distanceToSqr(previous.position()) <= MIN_MOVEMENT_SQR) {
             return;
         }
-        double spacing = data.getTrailSpacing() * lodSpacingMultiplier(distance);
-        int samples = Math.min(MAX_TRAIL_SAMPLES_PER_TICK, Math.max(1, (int) Math.ceil(length / spacing)));
-        for (int i = 1; i <= samples; i++) {
-            Vec3 sample = previous.position().add(segment.scale((double) i / samples));
-            add(RVP_WhitePhosphorusParticle.createTrail(level, sample,
-                    data.getTrailStartScale(), data.getTrailEndScale(),
-                    data.getTrailStartAlpha(), data.getTrailEndAlpha(),
-                    data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
-                    data.getTrailLifetimeTicks(), data.isFullBright()));
-        }
-    }
-
-    private static double lodSpacingMultiplier(double distance) {
-        if (distance > 256.0D) {
-            return 2.5D;
-        }
-        if (distance > 128.0D) {
-            return 1.5D;
-        }
-        return 1.0D;
+        // 调用本项目白磷粒子工厂：把上一 Tick 的主体位置沉积为唯一历史尾迹点。
+        add(RVP_WhitePhosphorusParticle.createTrail(level, previous.position(),
+                previous.bodyScale(), data.getTrailEndScale(),
+                data.getTrailStartAlpha(), data.getTrailEndAlpha(),
+                data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
+                data.getTrailLifetimeTicks(), data.isFullBright()));
     }
 
     private static void add(Particle particle) {
@@ -88,6 +76,6 @@ public final class RVP_ParticleProjectileEmitter {
         }
     }
 
-    /** 上一客户端 Tick 的路径采样状态。 */
-    private record TrailState(Vec3 position, int tick) {}
+    /** 上一客户端 Tick 的主体位置、实际出生尺寸和是否真正生成主体的采样状态。 */
+    private record TrailState(Vec3 position, int tick, float bodyScale, boolean bodySpawned) {}
 }

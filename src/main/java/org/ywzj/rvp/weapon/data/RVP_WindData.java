@@ -34,6 +34,13 @@ public class RVP_WindData {
     @SerializedName("turbulence")
     private float turbulence = 0f;
 
+    /**
+     * 水平扰动方向的基础旋转频率，单位周期/Tick，默认 0.02；仅风漂已启用且
+     * {@code turbulence > 0} 时生效，有限值限制为 0～0.5。
+     */
+    @SerializedName("turbulence_frequency")
+    private float turbulenceFrequency = 0.02f;
+
     public boolean isEnabled() {
         return enabled && isParentFacingReverse() && getSpeed() > 0f && getResponse() > 0f;
     }
@@ -56,5 +63,11 @@ public class RVP_WindData {
 
     public float getTurbulence() {
         return Float.isFinite(turbulence) ? Math.max(turbulence, 0f) : 0f;
+    }
+
+    public float getTurbulenceFrequency() {
+        return Float.isFinite(turbulenceFrequency)
+                ? Math.max(0f, Math.min(turbulenceFrequency, 0.5f))
+                : 0.02f;
     }
 }

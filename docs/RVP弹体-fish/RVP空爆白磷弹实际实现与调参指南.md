@@ -4,7 +4,7 @@
 >
 > 适用版本：Minecraft 1.20.1 Forge
 >
-> 实现基线：2026-08-23 当前代码与 M142 示例 JSON
+> 实现基线：2026-08-24 当前代码与 M142 示例 JSON
 >
 > 示例武器：`rvp:m142_m30_wp`、`rvp:m142_m30_wp_pellet`
 
@@ -19,24 +19,25 @@
 当前效果由三条相互解耦的链路组成：
 
 1. **服务端空爆与毁伤**：近地引信、子弹药释放、母弹爆炸、子体碰撞、点火和实体着火。
-2. **服务端子体运动**：分层圆锥散布、重力、阻力、基于母弹空爆时当前朝向的反向风漂。
-3. **客户端视觉**：隐藏子体模型，按子体真实路径生成全亮主体粒子和渐隐尾迹。
+2. **服务端子体运动**：向下分层圆锥散布、重力、阻力、反向风漂和实体种子驱动的平滑低频游移。
+3. **客户端视觉**：隐藏子体模型，在权威子体位置生成全亮主体，并把上一主体位置逐 Tick 沉积为渐隐尾迹。
 
 粒子不是毁伤判定，客户端粒子多少不会增加点火次数或伤害；服务器也不逐粒广播白磷粒子。
 
 ## 2. 当前基线效果
 
-M30 母弹以 `6 格/Tick` 飞行。武装 30 Tick 后，当下方地面进入 35 格近地引信范围时触发空爆：
+M30 母弹以 `6 格/Tick` 飞行。武装 40 Tick 后，当下方地面进入 50 格近地引信范围时触发空爆：
 
 ```text
 近地引信触发
   ├─ on_fuse 释放事件（只执行 1 次）
   │    └─ 24 枚白磷子体
-  │         ├─ 世界向下、72° 半角的分层圆锥
-  │         ├─ 初速度 0.9 格/Tick
+  │         ├─ 世界向下、72° 半角、模长 1.5 格/Tick 的分层圆锥
+  │         ├─ 额外继承母弹 10% 的 X/Z，不继承母弹 Y
+  │         ├─ 初始部署 X/Z 按 20 Tick 半衰期连续衰减
   │         ├─ 捕获母弹此刻朝向的反向作为风向
-  │         ├─ 服务端重力、阻力、碰撞、直击和点火
-  │         └─ 客户端主体火点和历史路径尾迹
+  │         ├─ 服务端平滑游移、重力、阻力、碰撞、直击和点火
+  │         └─ 客户端主体火点和上一主体位置尾迹
   └─ parent_action = continue
        └─ 母弹继续执行 80 伤害、4 格半径的普通爆炸
 ```
@@ -50,6 +51,7 @@ M30 母弹以 `6 格/Tick` 飞行。武装 30 Tick 后，当下方地面进入 3
 | 弹体总流程、同步标记、风漂调用、客户端视觉桥接 | `org.ywzj.rvp.entity.projectile.RVP_BaseBullet` |
 | 子弹药释放 | `org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner`、`RVP_SubmunitionSpawner` |
 | 分层圆锥算法 | `org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpreadApplicator` |
+| 部署水平半衰期 | `org.ywzj.rvp.weapon.physics.RVP_DeploymentMotionUtil` |
 | 风向配置 | `org.ywzj.rvp.weapon.data.RVP_WindData` |
 | 捕获空爆时反向朝向 | `org.ywzj.rvp.weapon.physics.RVP_WindDirectionUtil` |
 | 每 Tick 风漂速度收敛 | `org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil` |
@@ -71,8 +73,8 @@ M30 母弹以 `6 格/Tick` 飞行。武装 30 Tick 后，当下方地面进入 3
 
 ```json
 "fuse_data": {
-  "ground_proximity_fuse_distance": 35.0,
-  "ground_proximity_fuse_arm_tick": 30,
+  "ground_proximity_fuse_distance": 50.0,
+  "ground_proximity_fuse_arm_tick": 40,
   "detonate_on_life_end": false
 },
 "submunition_data": {
@@ -101,10 +103,11 @@ M30 母弹以 `6 格/Tick` 飞行。武装 30 Tick 后，当下方地面进入 3
   "weapon_id": "rvp:m142_m30_wp_pellet",
   "count": 24,
   "inherit_parent_velocity": false,
+  "inherit_parent_horizontal_velocity": true,
   "inherit_vehicle_velocity": false,
-  "launch_speed": 0.9,
+  "velocity_scale": 0.10,
+  "launch_speed": 1.5,
   "payloads_velocity": [0.0, 0, 0.0],
-  "payloads_velocity_factor": 0.10,
   "allow_submunition": false,
   "spread": {
     "mode": "stratified_cone",
@@ -130,7 +133,24 @@ cos(theta) = lerp(1, cos(cone_half_angle), u)
 - `cone_axis: "world_down"`
 - `radial_distribution: "uniform_area"`
 
-散布方向会乘以 `launch_speed`，所以每枚子体的初速度模长基本一致。当前母弹速度和载具速度均不继承，额外 `payloads_velocity` 也为零，因此撒布形状不会被母弹高速前冲整体拉偏。
+M142 不配置 `cone_radial_speed`，因此圆锥速度只用同一个 `launch_speed` 缩放，输出模长恒为 1.5：
+
+```text
+coneVelocity = (worldDown × cos(theta) + radialDirection × sin(theta)) × launch_speed
+parentHorizontal = (parentVelocity.x, 0, parentVelocity.z) × velocity_scale
+deploymentHorizontal₀ = coneVelocityXZ + parentHorizontal
+baseVelocity₀ = (0, coneVelocity.y, 0) + payloads_velocity
+```
+
+`72° < 90°` 保证所有样本从生成开始都斜向下；圆锥边缘的向下分量仍约为 `1.5 × cos(72°) ≈ 0.46 格/Tick`，不会再出现原先 `launch_speed=0.2` 与 `cone_radial_speed=1.5` 造成的近水平高速撒布。母弹约 6 格/Tick 时，10% 水平继承约为 0.6 格/Tick，只让弹幕保留合理前冲，不继承母弹俯冲或爬升的 Y 速度。
+
+生成器把圆锥 X/Z 与母弹水平继承保存为独立部署分量。配置 `deployment_horizontal_half_life_ticks: 20` 后：
+
+```text
+deploymentHorizontal(t) = deploymentHorizontal₀ × 2^(-t / 20)
+```
+
+因此 20、40、60 Tick 后分别剩余 50%、25%、12.5%。该阻尼不改变 Y，也不作用于显式 `payloads_velocity` 或之后产生的风偏。
 
 ### 4.3 风向：空爆时母弹当前朝向的反向
 
@@ -155,19 +175,20 @@ capturedWind = normalize(capturedWind)
 
 ### 4.4 风漂速度收敛
 
-子体每 Tick 先计算目标风速：
+启用部署半衰期的子体会维护独立风偏速度，并从零向目标风速收敛：
 
 ```text
 targetWindVelocity = capturedWind × speed
 ```
 
-再让当前速度的 X/Z 分量按 `response` 向目标风速收敛：
+再让风偏贡献按 `response` 收敛，而不是让子体总速度直接转向目标：
 
 ```text
-vNext = vCurrent + (vTarget - vCurrent) × response
+windNext = windCurrent + (windTarget - windCurrent) × response
+totalVelocity = baseVelocity + deploymentHorizontal + windNext
 ```
 
-当目标 Y 近似为零时，代码保留当前 Y 速度，不用水平风把下落速度拉回零；只有 `vertical_factor > 0` 且目标风向包含 Y 分量时，Y 才参与收敛。
+当 `vertical_factor = 0` 时，独立风偏贡献的 Y 恒为零，完全不参与基础下落速度；只有该值大于 0 且目标风向包含 Y 分量时，风偏贡献才含 Y。
 
 无扰动时，经过 `n` Tick 后单轴误差约为：
 
@@ -175,20 +196,30 @@ vNext = vCurrent + (vTarget - vCurrent) × response
 error(n) = error(0) × (1 - response)^n
 ```
 
-当前 `response = 0.035`：
+当前 `response = 0.045`：
 
-- 误差减半约需 19.5 Tick，约 0.98 秒；
-- 误差缩小到 10% 约需 64.6 Tick，约 3.23 秒。
+- 误差减半约需 15.1 Tick，约 0.76 秒；
+- 误差缩小到 10% 约需 50.0 Tick，约 2.50 秒。
 
-`turbulence` 会根据实体 UUID 和飞行 Tick 产生可复现的水平小扰动。它不是客户端随机抖动，因而不会改变服务端与客户端所看到的权威弹道关系。
+`turbulence` 与 `turbulence_frequency` 共同产生平滑游移。实体 UUID 派生出稳定初始相位和 `0.85..1.15` 的频率倍率：
+
+```text
+phase = seedPhase + 2π × turbulence_frequency × seedRateScale × flightTick
+windTarget = capturedWind × speed
+           + turbulence × (cos(phase), 0, sin(phase))
+```
+
+当前幅度为 `0.012 格/Tick`，基础频率为 `0`，因此每枚子体保持由自身种子派生的稳定目标偏移方向；把频率调到正数后，目标偏移才会按配置周期平滑旋转。扰动属于有界风速目标，不再作为每 Tick 无界追加的速度冲量。它仍由服务端计算，实际碰撞、点火和落点都会随轨迹改变，客户端只显示同步结果。
 
 对白磷子体使用的普通弹道分支，整体顺序可概括为：
 
 ```text
-风漂修正 → 重力 → 水平阻力 → 最大速度限制 → 移动与碰撞
+吸收碰撞等外部改速 → 部署 X/Z 半衰期阻尼
+→ 基础速度重力/阻力 → 独立风偏收敛 → 三分量合成
+→ 最大速度限制 → 移动与碰撞
 ```
 
-因此调风时必须与 `gravity`、`drag` 和初始 `launch_speed` 一起观察，不能只看 `speed`。
+基础 `drag` 不再阻尼部署 X/Z 或独立风偏，只处理基础弹道中的水平外力；初始水平收束速度由 `deployment_horizontal_half_life_ticks` 决定。三分量合成速度若超过 `max_speed`，会按同一倍率同步缩放，避免下一 Tick 内部状态反弹。
 
 ### 4.5 毁伤边界
 
@@ -198,7 +229,7 @@ error(n) = error(0) × (1 - response)^n
 | --- | --- |
 | 母弹 | 80 爆炸伤害、4 格半径、不破坏方块 |
 | 子体直击 | `direct_damage: 3.0` |
-| 子体落点 | 2 格半径内，以 0.65 概率按方块/实体命中条件点火 |
+| 子体落点 | 3 格半径内，以 0.65 概率按方块/实体命中条件点火 |
 | 子体实体着火 | 2 格半径、10 秒、目标为 `non_allied` |
 | 子体爆炸 | 无 `explosion_data`，不会产生 24 次小爆炸 |
 
@@ -236,6 +267,7 @@ error(n) = error(0) × (1 - response)^n
 - 固定使用配置的 `body_color`；
 - 尺寸以 `body_scale` 为基准；
 - `body_flicker` 只随机改变每次出生时的**尺寸**，不是亮度闪烁；
+- 每个主体的实际出生尺寸会随上一位置状态保存，作为对应尾迹的出生尺寸；
 - 单粒子存活 `body_lifetime_ticks`；
 - `full_bright: true` 时使用全亮光照。
 
@@ -243,36 +275,27 @@ error(n) = error(0) × (1 - response)^n
 
 ### 5.3 路径尾迹
 
-尾迹不根据速度向量向后凭空拉线，而是记录该客户端实体上一 Tick 的位置，并沿“上一位置 → 当前位置”的真实运动段补点。因此风漂、重力和碰撞前的弯曲轨迹会直接反映在尾迹上。
+尾迹不是根据速度向量向后拉线，也不再沿“上一位置 → 当前位置”的单 Tick 运动段插值补点。发射器每 Tick 先在当前位置生成主体，再把**上一 Tick 的主体位置**沉积为恰好一个尾迹粒子，因此显示的是主体实际走过的离散历史位置。
 
-补点数近似为：
+尾迹生成同时要求：
 
-```text
-samples = ceil(本 Tick 位移 / (trail_spacing × LOD倍率))
-samples 最大为 12
-```
+- 上一记录与当前实体 Tick 连续；
+- 主体位置确实发生移动；
+- `trail_enabled: true`；
+- 玩家距离不超过 512 格。
 
-距离 LOD：
-
-| 玩家距离 | 间距倍率 | 尾迹状态 |
-| --- | ---: | --- |
-| ≤ 128 格 | 1.0 | 完整密度 |
-| 128～256 格 | 1.5 | 降低密度 |
-| 256～512 格 | 2.5 | 进一步降低密度 |
-| > 512 格 | — | 不生成尾迹 |
-
-若客户端中间缺少连续实体 Tick，例如刚进入追踪范围，本 Tick 不连接旧位置，避免生成跨越远距离的错误长线。
+首 Tick、静止 Tick、刚进入追踪范围或中间缺少连续实体 Tick 时不生成尾迹，避免同点堆积和跨越远距离的错误连接。当前 schema 已删除 `trail_spacing`，也不再存在 128/256 格间距倍率或单 Tick 12 点补点上限；每枚子体每 Tick 最多生成一个尾迹。
 
 ### 5.4 粒子生命周期曲线
 
-主体在生命周期内保持给定颜色、透明度和基础尺寸。尾迹则按归一化年龄 `t` 变化：
+主体在生命周期内保持给定颜色、透明度和实际随机尺寸。尾迹则按归一化年龄 `t` 变化：
 
-- 尺寸：从 `trail_start_scale` 平滑过渡到 `trail_end_scale`；
+- 尺寸：从对应主体的实际尺寸平滑过渡到 `trail_end_scale`；
 - 透明度：从 `trail_start_alpha` 平滑过渡到 `trail_end_alpha`；
 - 颜色：从 `trail_start_color` 线性过渡到 `trail_end_color`；
 - 粒子自身无重力、无碰撞、无速度积分，出生后停留在采样点。
 
-尺寸和透明度使用平滑曲线，不会在线性生命周期末端突然硬切。当前颜色从亮橙色 `#FFB52E` 逐渐变为暗棕色 `#7A3512`。
+尺寸和透明度使用平滑曲线，不会在线性生命周期末端突然硬切。当前 M142 实机配置的尾迹起止颜色均为白色，主要通过尺寸和透明度表现消散；通用示例仍可配置暖色渐变。
 
 ## 6. 当前可复制基线
 
@@ -281,8 +304,9 @@ samples 最大为 12
 ```json
 "projectile_data": {
   "velocity": 0.9,
-  "gravity": -0.045,
-  "drag": 0.008,
+  "gravity": -0.0045,
+  "drag": 0.058,
+  "deployment_horizontal_half_life_ticks": 20,
   "constant_speed": false,
   "rotate_to_motion": true,
   "max_speed": 3.0,
@@ -290,9 +314,10 @@ samples 最大为 12
     "enabled": true,
     "direction_mode": "parent_facing_reverse",
     "speed": 0.11,
-    "response": 0.035,
+    "response": 0.045,
     "vertical_factor": 0.0,
-    "turbulence": 0.006
+    "turbulence": 0.012,
+    "turbulence_frequency": 0.0
   }
 },
 "effects_data": {
@@ -305,18 +330,16 @@ samples 最大为 12
     "particle_type": "rvp:white_phosphorus",
     "full_bright": true,
     "body_scale": 0.42,
-    "body_lifetime_ticks": 3,
+    "body_lifetime_ticks": 1,
     "body_color": "#FFC247",
-    "body_flicker": 0.08,
+    "body_flicker": 0.9,
     "trail_enabled": true,
-    "trail_spacing": 0.18,
-    "trail_lifetime_ticks": 26,
-    "trail_start_scale": 0.34,
+    "trail_lifetime_ticks": 200,
     "trail_end_scale": 0.03,
     "trail_start_alpha": 0.90,
     "trail_end_alpha": 0.0,
-    "trail_start_color": "#FFB52E",
-    "trail_end_color": "#7A3512"
+    "trail_start_color": "#FFFFFF",
+    "trail_end_color": "#998E8A"
   }
 }
 ```
@@ -329,26 +352,29 @@ samples 最大为 12
 
 | 字段 | 当前值 | 增大后的主要效果 | 建议起步范围 | 注意事项 |
 | --- | ---: | --- | ---: | --- |
-| `ground_proximity_fuse_distance` | 35 | 更早、更高空爆 | 20～50 | 不等于严格固定离地高度；受弹速和地形影响 |
-| `ground_proximity_fuse_arm_tick` | 30 | 更晚允许空爆 | 20～60 | 过小可能贴近发射车触发；过大可能错过近目标 |
+| `ground_proximity_fuse_distance` | 50 | 更早、更高空爆 | 20～60 | 不等于严格固定离地高度；受弹速和地形影响 |
+| `ground_proximity_fuse_arm_tick` | 40 | 更晚允许空爆 | 20～60 | 过小可能贴近发射车触发；过大可能错过近目标 |
 | `count` | 24 | 覆盖更密、服务端实体和客户端粒子更多 | 16～32 | 性能成本近似线性增加 |
-| `launch_speed` | 0.9 | 撒布展开更快、更远 | 0.6～1.2 | 会提高每 Tick 位移，尾迹可能触及 12 点上限 |
-| `cone_half_angle` | 72° | 覆盖更宽、中心更稀 | 50°～85° | 是半角，不是完整锥角 |
+| `launch_speed` | 1.5 | 整个圆锥初速模长更大，径向与向下分量同步提高 | 0.8～1.8 | M142 不配置独立径向速度，避免 X/Z 与 Y 尺度失配 |
+| `cone_half_angle` | 72° | 覆盖更宽、边缘下坠分量更小 | 55°～80° | 是半角；72° 边缘向下分量约为初速的 30.9% |
+| `inherit_parent_horizontal_velocity` | true | — | 按需求 | 只继承母弹 X/Z；开启后覆盖完整父弹继承方式 |
+| `velocity_scale` | 0.10 | 母弹前冲对整片弹幕的影响更强 | 0.05～0.20 | 水平继承模式下只缩放母弹 X/Z，不缩放 `launch_speed` |
 | `azimuth_jitter` | 0.08 | 方位更不规则 | 0～0.15 | 过大会削弱分层均匀性 |
 | `radial_jitter` | 0.08 | 径向层次更不规则 | 0～0.15 | 过大会出现局部疏密不均 |
-| `payloads_velocity_factor` | 0.10 | 只影响非零额外速度的缩放 | 视需求 | 当前额外速度为零，因此此值当前没有可见贡献 |
 
 ### 7.2 子体弹道与风漂
 
 | 字段 | 当前值 | 增大后的主要效果 | 建议起步范围 | 注意事项 |
 | --- | ---: | --- | ---: | --- |
-| `gravity` | -0.045 | 数值更接近 0 时下落更慢 | -0.03～-0.07 | 这是每 Tick 的速度改变量；符号应为负 |
-| `drag` | 0.008 | 水平初速衰减更快 | 0.003～0.015 | 与风速收敛竞争，需联调 |
-| `max_speed` | 3.0 | 放宽速度上限 | 1.5～3.0 | 当前初速和风速远低于上限，通常不敏感 |
+| `gravity` | -0.0045 | 数值更接近 0 时下落加速更慢 | -0.001～-0.01 | 只作用于基础弹道 Y，不改变部署水平阻尼 |
+| `drag` | 0.058 | 基础弹道中的水平外力衰减更快 | 0～0.10 | 不再阻尼部署 X/Z 或独立风偏贡献 |
+| `deployment_horizontal_half_life_ticks` | 20 | 数值越大，初始散布与母弹水平继承保留越久 | 10～40 | 20 Tick 减半；0 禁用分量化部署运动并保持旧链路 |
+| `max_speed` | 3.0 | 放宽三分量合成后的总速度上限 | 2.2～3.5 | 应高于圆锥 1.5 与约 0.6 水平继承的理论合成峰值 |
 | `wind_data.speed` | 0.11 | 最终尾后漂移速度更大 | 0.06～0.18 | 必须为正，否则风漂整体视为禁用 |
-| `wind_data.response` | 0.035 | 更快转向目标风速 | 0.02～0.08 | 0 禁用风漂；过高会像被瞬间拽走 |
+| `wind_data.response` | 0.045 | 更快转向目标风速 | 0.02～0.08 | 0 禁用风漂；过高会像被瞬间拽走 |
 | `wind_data.vertical_factor` | 0.0 | 更多保留母弹反向朝向中的 Y | 通常 0～0.2 | 0 会明确保留下坠 Y 速度；大值会改变升降趋势 |
-| `wind_data.turbulence` | 0.006 | 水平轨迹更抖、更散 | 0～0.015 | 过大会盖过分层散布和主风向 |
+| `wind_data.turbulence` | 0.012 | 平滑游移幅度更大、轨迹更弯 | 0～0.015 | 过大会盖过分层散布和主风向，并真实改变落点 |
+| `wind_data.turbulence_frequency` | 0.0 | 游移方向转动更快 | 0～0.05 | 单位周期/Tick；0 表示每枚子体保持各自稳定扰动方向，过高会产生高频机械抖动 |
 
 风漂启用需要同时满足：
 
@@ -366,23 +392,21 @@ response > 0
 | 字段 | 当前值 | 增大后的主要效果 | 建议起步范围 | 注意事项 |
 | --- | ---: | --- | ---: | --- |
 | `body_scale` | 0.42 | 火点更大 | 0.25～0.65 | 非负；0 会使主体不可见 |
-| `body_lifetime_ticks` | 3 | 同时存在的主体更多、更连续 | 2～5 | 至少为 1，成本约随寿命线性增加 |
+| `body_lifetime_ticks` | 2 | 同时存在的主体更多、更连续 | 1～5 | 至少为 1，成本约随寿命线性增加 |
 | `body_color` | `#FFC247` | — | 暖白至橙黄 | 仅 RGB；不是发光强度 |
-| `body_flicker` | 0.08 | 每个新主体的尺寸差异更大 | 0～0.2 | 限制在 0～1；不是亮度闪烁 |
+| `body_flicker` | 0.9 | 每个新主体及其对应尾迹的尺寸差异更大 | 0～1 | 限制在 0～1；不是亮度闪烁，尾迹会继承随机后的实际尺寸 |
 | `full_bright` | true | true 时不受环境光压暗 | 通常 true | false 更融入环境，但夜间不再强亮 |
 
 ### 7.4 尾迹粒子
 
 | 字段 | 当前值 | 增大后的主要效果 | 建议起步范围 | 注意事项 |
 | --- | ---: | --- | ---: | --- |
-| `trail_spacing` | 0.18 | 尾迹更稀、性能更好 | 0.15～0.35 | 代码最小值 0.02；高速时仍受每 Tick 12 点上限 |
-| `trail_lifetime_ticks` | 26 | 尾迹停留更久 | 16～36 | 最直接的粒子存量放大器之一 |
-| `trail_start_scale` | 0.34 | 新尾迹更粗 | 0.2～0.5 | 非负 |
+| `trail_lifetime_ticks` | 200 | 尾迹停留更久 | 80～240 | 最直接的粒子存量放大器；密度固定为每枚移动子体每 Tick 最多 1 个 |
 | `trail_end_scale` | 0.03 | 尾迹消失前仍较粗 | 0～0.08 | 想完全收尖可设 0 |
 | `trail_start_alpha` | 0.90 | 新尾迹更实 | 0.6～1.0 | 限制在 0～1 |
 | `trail_end_alpha` | 0.0 | 尾迹末端更不透明 | 通常 0～0.1 | 大于 0 时会在寿命结束瞬间消失 |
-| `trail_start_color` | `#FFB52E` | — | 黄色、橙色 | 与主体色共同决定热亮感 |
-| `trail_end_color` | `#7A3512` | — | 暗橙、棕褐 | 越暗越像冷却烟火残迹 |
+| `trail_start_color` | `#FFFFFF` | — | 白色、淡黄 | 与主体色共同决定热亮感 |
+| `trail_end_color` | `#998E8A` | — | 白色、浅灰 | 想表现冷却可改为更暗的暖灰或棕色 |
 
 ### 7.5 毁伤与点火
 
@@ -391,7 +415,7 @@ response > 0
 | 母弹 `explosion_data.damage` | 80 | 空爆中心伤害提高 | 与 24 枚子体叠加时要检查总伤害 |
 | 母弹 `explosion_data.radius` | 4 | 中心爆炸范围扩大 | 不是白磷覆盖半径 |
 | 子体 `direct_damage` | 3 | 单枚直击更痛 | 多枚命中同目标可能叠加 |
-| `fire_data.radius` | 2 | 单枚落点点火搜索更宽 | 服务器方块搜索成本和纵火范围增加 |
+| `fire_data.radius` | 3 | 单枚落点点火搜索更宽 | 服务器方块搜索成本和纵火范围增加 |
 | `fire_data.chance` | 0.65 | 可点燃位置成功率提高 | 仍受方块、空气、水和事件条件影响 |
 | `ignite_entity_data.radius` | 2 | 实体着火搜索更宽 | 24 枚区域可能大量重叠 |
 | `ignite_entity_data.seconds` | 10 | 着火更久 | 影响生物持续伤害，需与玩法平衡联调 |
@@ -406,16 +430,17 @@ response > 0
 
 ### 第二步：确定覆盖几何
 
-暂时保持风参数不变，调 `count`、`cone_half_angle` 和 `launch_speed`：
+暂时保持风参数不变，调 `count`、`launch_speed`、`cone_half_angle` 和水平半衰期：
 
 - 覆盖太窄：先增大 `cone_half_angle`；
-- 展开太慢、落点仍集中：再增大 `launch_speed`；
+- 整体展开和下落都太慢：增大 `launch_speed`；
+- 展开距离不足但初速合适：增大 `deployment_horizontal_half_life_ticks`；
 - 形状满意但密度不足：最后增加 `count`；
 - 局部过于规则：小幅增加两个 jitter，不要先用大扰动破坏分层。
 
 ### 第三步：确定滞空和落地时间
 
-调子体 `gravity` 和 `drag`。先用 `gravity` 决定总体下坠节奏，再用 `drag` 收敛水平初始撒布速度。
+先用 `launch_speed + cone_half_angle` 决定初始斜向下速度，再用 `gravity` 决定持续下坠加速度。部署 X/Z 的收束只调 `deployment_horizontal_half_life_ticks`，不要再用大 `drag` 急刹总速度。
 
 ### 第四步：确定尾后漂移
 
@@ -423,18 +448,19 @@ response > 0
 
 - 位移方向正确但不够远：增大 `speed`；
 - 开始漂得太慢：增大 `response`；
-- 方向太机械：小幅增加 `turbulence`；
+- 弯曲幅度不足：小幅增加 `turbulence`；
+- 摆动太慢或太快：调整 `turbulence_frequency`，优先保持在 `0.01～0.05`；
 - 下坠被明显干扰：把 `vertical_factor` 降回 0。
 
-不要用 `turbulence` 代替 `cone_half_angle` 扩大覆盖；前者持续扰动轨迹，后者控制初始撒布形状。
+不要用 `turbulence` 扩大覆盖；它只改变独立风偏目标。覆盖由圆锥初速、半角、母弹水平继承和部署半衰期共同决定。
 
 ### 第五步：调整火点辨识度
 
 先在白天和夜间各观察一次。用 `body_scale` 决定单枚子体是否容易识别，用 `body_lifetime_ticks` 决定主体是否连贯，再用 `body_flicker` 消除完全一致的机械感。
 
-### 第六步：调整尾迹长度与密度
+### 第六步：调整尾迹长度与外观
 
-先调 `trail_spacing`，再调 `trail_lifetime_ticks`，最后调尺寸、透明度和颜色。原因是间距和寿命直接决定粒子数量，先把预算控制住再做美术细节。
+尾迹密度固定为每枚移动子体每 Tick 最多一个。先调 `trail_lifetime_ticks` 控制长度和总量，再调尺寸、透明度和颜色；若仍超出预算，应减少子体数或关闭尾迹，而不是添加已删除的 `trail_spacing`。
 
 ### 第七步：最后平衡毁伤
 
@@ -450,19 +476,18 @@ response > 0
 
 ```json
 "count": 18,
-"launch_speed": 0.75,
+"launch_speed": 1.0,
 "cone_half_angle": 65.0
 ```
 
 ```json
 "body_lifetime_ticks": 2,
-"trail_spacing": 0.28,
-"trail_lifetime_ticks": 18
+"trail_lifetime_ticks": 80
 ```
 
 ### 9.2 当前均衡型
 
-直接使用示例：24 枚、72°、0.9 初速、0.11 风速、0.18 尾迹间距、26 Tick 尾迹寿命。它应作为对照基线。
+直接使用 M142 示例：24 枚、72°、1.5 圆锥初速、10% 母弹 X/Z 继承、20 Tick 水平半衰期、0.11 风速、0.012 游移幅度、200 Tick 尾迹寿命。它应作为实机对照基线。
 
 ### 9.3 宽幅展示型
 
@@ -470,24 +495,24 @@ response > 0
 
 ```json
 "count": 28,
-"launch_speed": 1.05,
-"cone_half_angle": 82.0
+"launch_speed": 1.6,
+"cone_half_angle": 78.0,
+"deployment_horizontal_half_life_ticks": 30
 ```
 
 ```json
 "speed": 0.14,
 "response": 0.045,
-"turbulence": 0.008
+"turbulence": 0.014,
+"turbulence_frequency": 0.018
 ```
 
 ```json
 "body_scale": 0.48,
-"trail_spacing": 0.22,
-"trail_lifetime_ticks": 30,
-"trail_start_scale": 0.40
+"trail_lifetime_ticks": 240
 ```
 
-宽幅型适当增大了尾迹间距，以抵消子体数量和寿命增加造成的一部分粒子成本。
+宽幅型增加了子体数量和尾迹尺寸，多发齐射前必须单独压测；尾迹出生率仍由“每枚移动子体每 Tick 一个”固定规则控制。
 
 ## 10. 性能预算
 
@@ -497,26 +522,25 @@ response > 0
 
 ```text
 主体存量 ≈ 子体数 × body_lifetime_ticks
-当前基线 ≈ 24 × 3 = 72
+当前基线 ≈ 24 × 1 = 24
 ```
 
 ### 10.2 尾迹粒子存量
 
-单枚子体每 Tick 最多补 12 个尾迹点。当前 24 枚子体的理论出生峰值为：
+单枚移动子体每 Tick 最多沉积 1 个尾迹点。当前 24 枚子体的理论出生峰值为：
 
 ```text
-24 × 12 = 288 个尾迹粒子/Tick
+24 × 1 = 24 个尾迹粒子/Tick
 ```
 
-若极端情况下持续达到上限，26 Tick 寿命对应约 `7,488` 个存活尾迹粒子。正常运行通常明显低于该上限，因为实际补点数取决于位移、间距、距离 LOD、实体存活时间和客户端粒子总量限制。
+若持续达到上限，实机 `200 Tick` 寿命对应约 `4,800` 个存活尾迹粒子。实际数量还会受到子体存活时间、静止 Tick、512 格距离限制和客户端粒子总量限制影响。
 
 调优优先级：
 
-1. 增大 `trail_spacing`；
-2. 减少 `trail_lifetime_ticks`；
-3. 减少 `count`；
-4. 必要时关闭 `trail_enabled`；
-5. 最后才缩短主体寿命，因为主体对识别弹体位置很重要。
+1. 减少 `trail_lifetime_ticks`；
+2. 减少 `count`；
+3. 必要时关闭 `trail_enabled`；
+4. 最后才缩短主体寿命，因为主体对识别弹体位置很重要。
 
 `full_bright`、颜色和尺寸通常不是数量级性能因素；数量、寿命和同时存在的弹体数才是主要因素。
 
@@ -531,14 +555,15 @@ response > 0
 | 风向仍像发射方向 | 检查实际运行包版本和 `direction_mode` | 当前代码应捕获空爆 Tick 的母弹旋转；用转向弹道复测 |
 | 垂直发射时风向异常固定 | 水平投影退化 | 会回退到当前速度反向水平分量，再退化则世界 `+Z` |
 | 下坠速度被风明显拉慢 | `vertical_factor` 非零 | 水平尾后漂移应设为 0 |
-| 子体都挤在中心 | `spread.mode`、半角、初速 | 必须为 `stratified_cone`；先增半角，再增初速 |
+| 子体都挤在中心 | `spread.mode`、圆锥初速、半角、部署半衰期 | 必须为 `stratified_cone`；先确认统一初速，再延长水平半衰期 |
+| 子体先横飞再急刹 | 独立径向速度或旧总速度风漂仍在使用 | M142 删除 `cone_radial_speed`，配置 20 Tick 部署半衰期，并确认新水平继承字段生效 |
 | 散布出现大片空洞 | jitter 过大或数量太少 | 降低两个 jitter 或适度提高 `count` |
 | 子体模型可见 | `particle_projectile_data.enabled`、客户端/服务端版本、类型化 Renderer | 不要在 Renderer 中按武器 ID 特判 |
 | 模型消失但完全无粒子 | `particle_type`、非 JSON Provider 注册、权威纹理、客户端数据包版本 | 当前发射器只识别已注册的 `rvp:white_phosphorus`；不要按贴图目录改成 `ywzj_rvp:white_phosphorus`，并确认客户端已注册 Provider 且权威 PNG 已打包 |
-| 尾迹出现断点 | 高速达到 12 点上限、距离 LOD、客户端 Tick 不连续 | 降低初速或适度增大间距；刚进入追踪范围的首 Tick 不连线是预期行为 |
+| 尾迹出现断点 | 主体静止、超过 512 格、客户端 Tick 不连续 | 这些场景不会沉积尾迹；刚进入追踪范围的首 Tick 不留旧位置是预期行为 |
 | 尾迹太短 | 寿命小、颜色/alpha 过早变暗 | 优先增寿命，再调整末端颜色和 alpha |
-| 尾迹太粗像实体管线 | 起始尺寸大、间距小、寿命长 | 降 `trail_start_scale` 或增 `trail_spacing` |
-| FPS 明显下降 | 子体数、尾迹间距、尾迹寿命、齐射数量 | 按性能预算顺序削减 |
+| 尾迹太粗像实体管线 | 主体尺寸/闪烁大、尾迹寿命长 | 降 `body_scale` 或 `body_flicker`，也可缩短 `trail_lifetime_ticks`；尾迹起始尺寸不能独立调整 |
+| FPS 明显下降 | 子体数、尾迹寿命、齐射数量 | 按性能预算顺序削减；不要重新添加已删除的 `trail_spacing` |
 | 子体落地发生大量爆炸 | 子体误加 `explosion_data` | 当前白磷子体只应点火、着火和直击 |
 | 没有点燃方块 | chance、on_block、落点环境 | 水、雨、不可放置火焰的位置或事件拦截都会影响结果 |
 | 敌方没有持续灼烧 | 目标类型、阵营、半径 | `targets: non_allied` 且主要面向可着火实体，不是通用车辆 DOT |
@@ -559,28 +584,33 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 重点测试包括：
 
 - `RVP_WindDirectionUtilTest`：当前朝向反向、垂直投影和退化回退；
-- `RVP_WindDriftUtilTest`：水平收敛、Y 速度保留、确定性扰动；
-- `RVP_ParticleProjectileDataTest`：字段默认、范围限制、颜色解析，以及 `rvp:white_phosphorus` 运行时 ID 稳定性；
+- `RVP_WindDriftUtilTest`：旧总速度风漂兼容、独立风偏收敛、Y 分量隔离及有界扰动；
+- `RVP_DeploymentMotionUtilTest`：20/40/60 Tick 半衰期精度、方向稳定和 Y 隔离；
+- `RVP_SubmunitionStratifiedConeTest`：72°、1.5 模长圆锥全部向下，边缘向下分量不低于约 0.46；
+- `RVP_ParticleProjectileDataTest`：字段默认、范围限制、颜色解析、已删除 `trail_spacing`/`trail_start_scale` 不再属于数据模型，以及 `rvp:white_phosphorus` 运行时 ID 稳定性；
 - `RVP_WhitePhosphorusResourceTest`：权威纹理位于 `assets/ywzj_rvp` 且资源有效，同时不存在旧粒子 JSON 和图集追加文件。
 
 ### 12.2 游戏内功能测试
 
 | 编号 | 场景 | 通过标准 |
 | --- | --- | --- |
-| A1 | 平地水平射击 | 约 35 格近地条件触发，不在发射车旁误爆 |
+| A1 | 平地水平射击 | 约 50 格近地条件触发，40 Tick 前不在发射车旁误爆 |
 | A2 | 母弹飞行中改变朝向后空爆 | 子体风漂使用空爆时朝向的反向，不沿最初发射方向 |
 | A3 | 朝东、南、西、北各射击 | 漂移方向随当前朝向连续变化，无固定世界轴偏差 |
 | A4 | 大俯角和近垂直弹道 | 无 NaN、停滞或失控速度；退化回退稳定 |
-| A5 | 观察撒布俯视形状 | 24 枚覆盖较均匀，无明显中心团和单侧空洞 |
-| A6 | 单人客户端昼夜观察 | 子体无模型闪现，主体与尾迹颜色、全亮正确 |
+| A5 | 观察撒布俯视形状 | 24 枚立即斜向下铺开；20/40 Tick 后初始 X/Z 约剩 50%/25%，无近水平悬停或急刹 |
+| A6 | 单人客户端逐帧观察 | 子体无模型闪现；尾迹只在上一主体位置出现，无线段补点和静止堆积 |
 | A7 | 专用服务端 + 客户端 | 服务端不加载客户端类，双方弹道与毁伤一致 |
-| A8 | 128、256、512 格附近观察 | LOD 逐级降低，越过阈值无严重粒子尖峰 |
+| A8 | 512 格边界及重新进入追踪范围 | 超过 512 格不生尾迹，重新进入时不连接旧位置或产生粒子尖峰 |
 | A9 | 子体落在可燃与不可燃环境 | 点火概率和环境限制符合预期，无子体小爆炸 |
 | A10 | 多发齐射 | TPS、客户端 FPS 和粒子存量可接受 |
 
 ### 12.3 回归检查
 
 - 未配置 `wind_data` 的旧武器弹道不应改变。
+- 未配置 `deployment_horizontal_half_life_ticks` 的旧子弹药继续使用原总速度积分。
+- 未配置 `inherit_parent_horizontal_velocity` 时保持原完整父弹继承规则。
+- 未配置 `cone_radial_speed` 的分层圆锥仍应使用原有等模长速度，不改变其他子母弹。
 - `wind_data.enabled: false` 时不应产生风漂。
 - 未配置 `particle_projectile_data` 的弹体仍使用原有模型和效果。
 - 非白磷粒子 ID 不应错误调用白磷专用发射器。
@@ -591,7 +621,7 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 1. `direction_mode` 当前实际支持 `parent_facing_reverse`；不存在其他风向模式的自动兼容。
 2. 分层圆锥当前实际面向 `world_down + uniform_area` 组合。
 3. 专用粒子发射器当前识别 `rvp:white_phosphorus`，不能只改字符串就获得任意新粒子弹体。
-4. 白磷尾迹是客户端视觉，不碰撞、不照明方块、不参与伤害。
+4. 白磷尾迹是客户端视觉，不碰撞、不照明方块、不参与伤害；主体与尾迹出生后均停留在各自采样坐标。
 5. 子体不提供独立白磷附着、持续区域灼烧或车辆通用 DOT 系统。
 6. 风向在释放瞬间固化，之后不会继续跟随母弹旋转，也不会随世界天气动态改变。
 7. RVP 弹体不保存到磁盘；服务器重启后不会恢复半空中的母弹、子体或其捕获风向。
@@ -600,12 +630,17 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 
 - [ ] 母弹 `release_events` 为 1，payload `count` 才是实际子体数。
 - [ ] 子体 `weapon_id` 与载具包中的文件名、命名空间一致。
+- [ ] 斜向下撒布使用统一 `launch_speed`，M142 不配置独立 `cone_radial_speed`。
+- [ ] `inherit_parent_horizontal_velocity=true` 且 `velocity_scale` 已限制母弹水平继承。
+- [ ] `deployment_horizontal_half_life_ticks` 已按覆盖距离验证，0 表示完全关闭新分量链路。
 - [ ] 风向模式为 `parent_facing_reverse`，并验证过空爆时转向场景。
+- [ ] `turbulence_frequency` 已按周期/Tick 配置，并确认不同子体不会同步摆动。
 - [ ] 水平漂移需求下 `vertical_factor` 为 0。
 - [ ] 子体未意外配置 `explosion_data`。
 - [ ] `particle_type` 为 `rvp:white_phosphorus`，并发布 `assets/ywzj_rvp/textures/nuclear/particle_base.png`；数据 ID 不随资产目录改变，包内不存在旧粒子 JSON 或图集追加文件。
 - [ ] 客户端与服务端使用同版本 addon 和载具包。
 - [ ] 多发齐射完成 FPS/TPS 压测。
+- [ ] 配置中不存在已删除的 `trail_spacing`、`trail_start_scale` 或未实现的粒子漂移实验字段。
 - [ ] 运行完整 `./gradlew build`。
 - [ ] 修改运行载具包后递增 `vehicle_pack.meta.json` 的 `version`。
 

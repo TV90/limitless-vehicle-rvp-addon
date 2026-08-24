@@ -13,8 +13,9 @@
   },
   "projectile_data": {
     "velocity": 0.9,
-    "gravity": -0.045,
-    "drag": 0.008,
+    "gravity": -0.0045,
+    "drag": 0.058,
+    "deployment_horizontal_half_life_ticks": 20,
     "constant_speed": false,
     "rotate_to_motion": true,
     "max_speed": 3.0,
@@ -22,9 +23,10 @@
       "enabled": true,
       "direction_mode": "parent_facing_reverse",
       "speed": 0.11,
-      "response": 0.035,
+      "response": 0.045,
       "vertical_factor": 0.0,
-      "turbulence": 0.006
+      "turbulence": 0.012,
+      "turbulence_frequency": 0.0
     }
   },
   "fuse_data": {
@@ -43,24 +45,22 @@
       "particle_type": "rvp:white_phosphorus",
       "full_bright": true,
       "body_scale": 0.42,
-      "body_lifetime_ticks": 3,
+      "body_lifetime_ticks": 2,
       "body_color": "#FFC247",
-      "body_flicker": 0.08,
+      "body_flicker": 0.9,
       "trail_enabled": true,
-      "trail_spacing": 0.18,
-      "trail_lifetime_ticks": 26,
-      "trail_start_scale": 0.34,
+      "trail_lifetime_ticks": 200,
       "trail_end_scale": 0.03,
       "trail_start_alpha": 0.90,
       "trail_end_alpha": 0.0,
-      "trail_start_color": "#FFB52E",
-      "trail_end_color": "#7A3512"
+      "trail_start_color": "#FFFFFF",
+      "trail_end_color": "#998E8A"
     }
   },
   "detonate_data": {
     "effects_before_explosion": true,
     "fire_data": {
-      "radius": 2,
+      "radius": 3,
       "chance": 0.65,
       "soul_fire": false,
       "on_block": true,
