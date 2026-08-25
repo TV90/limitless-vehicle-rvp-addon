@@ -62,6 +62,15 @@ final class RVP_RuntimeSeekerSupport {
         if (!withinLimits) {
             return null;
         }
+        // Phase 3 被动电子战：ARH/SARH 导引头截获时按距离档概率偏转到假目标
+        if (acquire && (type == RVP_EnumGuidanceType.ARH || type == RVP_EnumGuidanceType.SARH)) {
+            Entity diverted = org.ywzj.rvp.ecm.RVP_EcmPassiveManager.tryDivertSeeker(projectile, target, type);
+            if (diverted != null) {
+                projectile.setTargetEntity(diverted);
+                projectile.markJamGracePeriod();
+                return diverted;
+            }
+        }
         RVP_CountermeasureState.Result result = RVP_CountermeasureState.query(projectile, target, type, config);
         // [RVP-DBG] 临时诊断：每次脱锁判定的综合状态（节流），定位干扰延迟
         if (projectile.tickCount % 20 == 0) {

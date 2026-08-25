@@ -358,6 +358,57 @@ public final class RVP_EcmPassiveManager {
         return null;
     }
 
+    /**
+     * Phase 3：RVP 自家 ARH/SARH 导引头截获欺骗。
+     * 被照载体处于激活期时，按距离档基础概率 + 每枚假目标附加掷骰，成功则把截获目标改判到最近假目标。
+     */
+    @Nullable
+    public static Entity tryDivertSeeker(org.ywzj.rvp.entity.projectile.RVP_BaseBullet projectile,
+                                         Entity target, org.ywzj.rvp.guidance.RVP_EnumGuidanceType type) {
+        if (type != org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARH
+                && type != org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SARH) {
+            return null;
+        }
+        if (!(target instanceof AbstractVehicle av) || !av.isAlive()) {
+            return null;
+        }
+        if (!(av.level() instanceof ServerLevel sl)) {
+            return null;
+        }
+        RVP_EcmPassiveState state = STATES.get(av.getId());
+        if (state == null || !state.isActive() || state.isBurnThrough()) {
+            return null;
+        }
+        BoneEcmPassiveConfig cfg = resolveAliveConfig(av);
+        if (cfg == null) {
+            return null;
+        }
+        BoneEcmPassiveConfig.Band band = state.getAppliedBand();
+        if (band == null) {
+            return null;
+        }
+        List<RVP_EcmDecoyEntity> decoys = collectManagedDecoys(sl, av.getId());
+        if (decoys.isEmpty()) {
+            return null;
+        }
+        double chance = cfg.resolveDiversionChance(band, decoys.size());
+        if (sl.random.nextDouble() >= chance) {
+            return null;
+        }
+        // 选距真实目标最近的假目标（最可信的幻影）
+        Vec3 targetPos = av.position();
+        double best = Double.MAX_VALUE;
+        Entity bestDecoy = null;
+        for (RVP_EcmDecoyEntity d : decoys) {
+            double dsq = d.position().distanceToSqr(targetPos);
+            if (dsq < best) {
+                best = dsq;
+                bestDecoy = d;
+            }
+        }
+        return bestDecoy;
+    }
+
     @Nullable
     private static AbstractVehicle findVehicleById(ServerLevel level, int entityId) {
         return level.getEntity(entityId) instanceof AbstractVehicle vehicle ? vehicle : null;

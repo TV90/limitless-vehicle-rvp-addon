@@ -24,6 +24,12 @@ import java.util.List;
  * @param decoySpeedMax        假目标漂移速度上限（block/tick）（默认 1.5 ≈ 108 km/h）
  * @param bands                距离分档（按 max_distance 降序匹配：首个满足
  *                             {@code 水平距离 ≤ max_distance} 的档位生效；全部不满足为最远档）
+ * @param farDiversionChance     远档导引头偏转基础概率（默认 0.82）
+ * @param midFarDiversionChance  中远档基础概率（默认 0.65）
+ * @param midDiversionChance     中档基础概率（默认 0.48）
+ * @param nearDiversionChance    近档基础概率（默认 0.28）
+ * @param diversionCountBonusPerDecoy 每枚假目标附加概率（默认 0.03）
+ * @param diversionChanceMax     偏转概率上限（默认 0.92）
  */
 public record BoneEcmPassiveConfig(
         int activeDurationTicks,
@@ -32,7 +38,13 @@ public record BoneEcmPassiveConfig(
         List<String> nctrNames,
         double decoySpeedMin,
         double decoySpeedMax,
-        List<Band> bands
+        List<Band> bands,
+        double farDiversionChance,
+        double midFarDiversionChance,
+        double midDiversionChance,
+        double nearDiversionChance,
+        double diversionCountBonusPerDecoy,
+        double diversionChanceMax
 ) {
 
     /** 单个距离档：覆盖上限距离 + 假目标数量 + 散布半径。 */
@@ -54,6 +66,16 @@ public record BoneEcmPassiveConfig(
         decoySpeedMin = Math.max(0.0, decoySpeedMin);
         decoySpeedMax = Math.max(decoySpeedMin, decoySpeedMax);
         bands = bands == null || bands.isEmpty() ? defaultBands() : List.copyOf(bands);
+        farDiversionChance = clamp01(farDiversionChance);
+        midFarDiversionChance = clamp01(midFarDiversionChance);
+        midDiversionChance = clamp01(midDiversionChance);
+        nearDiversionChance = clamp01(nearDiversionChance);
+        diversionCountBonusPerDecoy = Math.max(0.0, diversionCountBonusPerDecoy);
+        diversionChanceMax = clamp01(diversionChanceMax);
+    }
+
+    private static double clamp01(double v) {
+        return Math.max(0.0, Math.min(1.0, v));
     }
 
     /** 默认分档（沿用旧版 EwVehicleConfig.defaults() 数值）。 */
@@ -87,6 +109,39 @@ public record BoneEcmPassiveConfig(
             }
         }
         return nearest == null && !bands.isEmpty() ? bands.get(0) : nearest;
+    }
+
+    /**
+     * 按距离档解析导引头偏转基础概率（对应旧版 far/midFar/mid/near 四档）。
+     * 档位由其在 bands 列表中的位置决定（0=远档、1=中远档、2=中档、3=近档）。
+     */
+    public double resolveBaseDiversionChance(@Nullable Band band) {
+        if (band == null) {
+            return 0.0;
+        }
+        int idx = bands.indexOf(band);
+        return switch (idx) {
+            case 0 -> farDiversionChance;
+            case 1 -> midFarDiversionChance;
+            case 2 -> midDiversionChance;
+            case 3 -> nearDiversionChance;
+            default -> {
+                // 非标准档位：回退为最近档近似（按 maxDistance 匹配）
+                if (band.maxDistance() <= 300.0) yield nearDiversionChance;
+                if (band.maxDistance() <= 600.0) yield midDiversionChance;
+                if (band.maxDistance() <= 1200.0) yield midFarDiversionChance;
+                yield farDiversionChance;
+            }
+        };
+    }
+
+    /**
+     * 计算导引头偏转概率：基础概率 + 每枚假目标附加，钳制到上限。
+     */
+    public double resolveDiversionChance(@Nullable Band band, int decoyCount) {
+        double base = resolveBaseDiversionChance(band);
+        double total = base + diversionCountBonusPerDecoy * Math.max(0, decoyCount);
+        return Math.min(total, diversionChanceMax);
     }
 
     public static @Nullable BoneEcmPassiveConfig parse(@Nullable JsonElement element) {
@@ -127,7 +182,14 @@ public record BoneEcmPassiveConfig(
                 }
             }
         }
+        double farChance = GsonHelper.getAsDouble(obj, "far_diversion_chance", 0.82);
+        double midFarChance = GsonHelper.getAsDouble(obj, "mid_far_diversion_chance", 0.65);
+        double midChance = GsonHelper.getAsDouble(obj, "mid_diversion_chance", 0.48);
+        double nearChance = GsonHelper.getAsDouble(obj, "near_diversion_chance", 0.28);
+        double bonus = GsonHelper.getAsDouble(obj, "diversion_count_bonus_per_decoy", 0.03);
+        double maxChance = GsonHelper.getAsDouble(obj, "diversion_chance_max", 0.92);
         return new BoneEcmPassiveConfig(activeTicks, cooldownTicks, burnThrough,
-                nctr, speedMin, speedMax, bands);
+                nctr, speedMin, speedMax, bands,
+                farChance, midFarChance, midChance, nearChance, bonus, maxChance);
     }
 }
