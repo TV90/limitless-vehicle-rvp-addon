@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>统一改装界面 - 预览 Mockup</title>
+<style>
+  :root { --ore-gold: #c8a84e; --ore-ink: #e6edf6; --ore-ink-muted:#93a6ba; --ore-canvas:#1e1f20; --ore-card:#2a2b2c; --ore-edge:#56585b; }
+  html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#1e1f20;color:var(--ore-ink);font-family:"Microsoft YaHei",sans-serif}
+  .weapon-screen{display:flex;flex-direction:column;height:100vh;background:var(--ore-canvas)}
+  .navbar{min-height:38px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center;background:#252628;border-bottom:2px solid var(--ore-edge)}
+  .navbar-brand{font-size:18px;font-weight:bold}
+  .close-button{width:30px;height:26px;background:#a33;color:#fff;border:none;cursor:pointer}
+  .weapon-workspace{display:flex;gap:7px;padding:7px;flex:1;min-height:0}
+  .weapon-panel{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--ore-card);border:1px solid var(--ore-edge);border-radius:4px;overflow:hidden}
+  .selection-panel{width:22%;flex:0 0 22%}
+  .weapon-list-panel{width:28%;flex:0 0 28%}
+  .weapon-detail-column{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
+  .preview-panel{flex:3}
+  .description-panel{flex:2;min-height:90px}
+  .card-header{min-height:30px;padding:8px 9px;font-size:11px;background:#343537;border-bottom:1px solid var(--ore-edge);font-weight:bold}
+  .card-body{padding:7px;display:flex;flex-direction:column;gap:6px;overflow:hidden;flex:1;min-height:0}
+  .weapon-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:3px}
+  .weapon-entry{min-height:32px;padding:6px 8px;border:2px solid transparent;background:#363739;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:13px}
+  .weapon-entry:hover{border-color:#85878b;background:#4a4b4e}
+  .weapon-entry.active{border-color:var(--ore-gold);background:#514a35}
+  .weapon-entry.active.ammo-active{border-color:#4caf50;background:#2e4a35}
+  .weapon-entry.active.pylon-active{border-color:var(--ore-gold);background:#514a35}
+  .weapon-entry-name{white-space:nowrap;overflow:hidden}
+  .weapon-entry-sub{font-size:11px;color:var(--ore-ink-muted);margin-top:2px}
+  .weapon-entry-count{color:var(--ore-ink-muted);font-size:11px;flex-shrink:0}
+  .empty-state{padding:9px;color:var(--ore-ink-muted);font-size:11px;text-align:center}
+  .preview-viewport{flex:1;background:#252628;border:2px solid var(--ore-edge);display:flex;align-items:center;justify-content:center;position:relative;min-height:120px}
+  .preview-placeholder{color:var(--ore-ink-muted);font-size:13px;text-align:center;line-height:1.6}
+  .preview-badge{position:absolute;top:6px;right:6px;background:#6a5acd;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px}
+  .desc-body{font-size:13px;line-height:1.5;color:var(--ore-ink-muted)}
+  .pill{display:inline-block;background:#3a3b3c;border:1px solid var(--ore-edge);padding:1px 5px;border-radius:3px;font-size:10px;margin-right:4px}
+  @media(max-width:700px){.selection-panel{width:26%}.weapon-list-panel{width:32%}}
+</style>
+</head>
+<body class="weapon-screen">
+<nav class="navbar"><div class="navbar-brand">改装工具 - J-15T (统一界面预览)</div><button class="close-button">×</button></nav>
+<main class="weapon-workspace">
+  <!-- 左：武器站（按你要求拆成上下两段，用颜色区分） -->
+  <aside class="weapon-panel selection-panel" style="display:flex;flex-direction:column">
+    <div class="card-header card-accent-green" style="flex:0 0 auto; background:#1e3a2e; border-left:3px solid #4caf50">自定义弹种</div>
+    <div class="card-body" style="flex:0 0 auto; min-height:90px; max-height:45%; border-bottom:1px solid var(--ore-edge); background:#1e2e22">
+      <div class="weapon-list" id="ammoStationList"></div>
+    </div>
+    <div class="card-header card-accent-gold" style="flex:0 0 auto; background:#3a3320; border-left:3px solid var(--ore-gold); border-top:1px solid var(--ore-edge)">自定义挂架</div>
+    <div class="card-body" style="flex:1 1 auto; min-height:90px; background:#2e2a1e">
+      <div class="weapon-list" id="pylonStationList"></div>
+    </div>
+  </aside>
+  <!-- 中：该站可选 -->
+  <aside class="weapon-panel weapon-list-panel">
+    <div class="card-header" id="midHeader">可选弹种 / 挂架</div>
+    <div class="card-body">
+      <div class="weapon-list" id="weaponList"></div>
+      <div class="empty-state" id="emptyState" style="display:none">无可用选项</div>
+    </div>
+  </aside>
+  <!-- 右：预览+说明 -->
+  <div class="weapon-detail-column">
+    <section class="weapon-panel preview-panel">
+      <div class="card-header">预览 <span style="float:right;background:#6a5acd;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px">3D</span></div>
+      <div class="card-body" style="padding:0">
+        <div class="preview-viewport">
+          <div class="preview-placeholder" id="previewText">选择左侧武器站<br>查看挂架与弹种预览</div>
+          <span class="preview-badge">3D 预览联动挂架模型</span>
+        </div>
+      </div>
+    </section>
+    <section class="weapon-panel description-panel">
+      <div class="card-header">说明</div>
+      <div class="card-body desc-body" id="descText">点击中间列表的某一行，右侧预览与说明会同步更新。混合站（多弹种+挂架）会同时切换弹道与外观。</div>
+    </section>
+  </div>
+</main>
+<script>
+const stations = [
+  { id: "w1", name: "1号武器栏", type: "multi", desc: "自定义弹种：AP / HE，F键已屏蔽，仅改装界面可切", variants: [
+    { name: "AP 穿甲弹", sub: "高速动能 · 适合硬目标", pylon: "无挂架" },
+    { name: "HE 高爆弹", sub: "大装药 · 适合软目标/面杀伤", pylon: "无挂架" },
+  ]},
+  { id: "pylonA", name: "挂架队A", type: "pylon", desc: "左/右翼重载挂架，AGM 系列", variants: [
+    { name: "AGM-A", sub: "挂架A-1 · 远距", pylon: "挂架A" },
+    { name: "AGM-B", sub: "挂架A-2 · 近距高爆", pylon: "挂架A" },
+  ]},
+  { id: "pylonB", name: "挂架队B", type: "pylon", desc: "翼尖轻载挂架，AAM 系列", variants: [
+    { name: "AAM-A", sub: "挂架B-1 · 红外弹", pylon: "挂架B" },
+    { name: "AAM-B", sub: "挂架B-2 · 主动雷达弹", pylon: "挂架B" },
+  ]},
+  // 混合示例：若某架飞机把“挂架队A的AGM-A”做成多弹种（AGM-A/AP 与 AGM-A/HE 共用同一挂架），则会显示为：
+  // { id:"mix", name:"左重载挂架(混合)", type:"mixed", variants:[{name:"AGM-A AP", pylon:"挂架A"}, {name:"AGM-A HE", pylon:"挂架A"}] }  —— 点击一行同时切弹道+外观
+];
+
+let selectedStation = 0;
+let selectedVariant = {}; // stationId -> variant index
+
+function renderStations(){
+  const ammoStations = stations.filter(s=>s.type==='multi');
+  const pylonStations = stations.filter(s=>s.type==='pylon');
+  const renderList = (list, containerId)=>{
+    const c = document.getElementById(containerId);
+    c.innerHTML='';
+    const isPylon = containerId==='pylonStationList';
+    list.forEach(s=>{
+      const globalIdx = stations.indexOf(s);
+      const d=document.createElement('div');
+      const typeClass = isPylon ? ' pylon-active' : ' ammo-active';
+      d.className='weapon-entry'+(globalIdx===selectedStation?' active'+typeClass:'');
+      d.innerHTML=`<span class="weapon-entry-name">${s.name}</span><span class="weapon-entry-count">${s.variants.length} 项</span>`;
+      d.onclick=()=>{selectedStation=globalIdx; renderStations(); renderWeapons();};
+      c.appendChild(d);
+    });
+  };
+  renderList(ammoStations, 'ammoStationList');
+  renderList(pylonStations, 'pylonStationList');
+}
+function renderWeapons(){
+  const s = stations[selectedStation];
+  document.getElementById('midHeader').textContent = s.name + " - 可选";
+  const c = document.getElementById('weaponList');
+  c.innerHTML='';
+  const sel = selectedVariant[s.id] ?? 0;
+  s.variants.forEach((v,i)=>{
+    const d=document.createElement('div');
+    d.className='weapon-entry'+(i===sel?' active':'');
+    d.innerHTML=`<div><div class="weapon-entry-name">${v.name}</div><div class="weapon-entry-sub"><span class="pill">${v.pylon}</span>${v.sub}</div></div><span class="weapon-entry-count">${i+1}/${s.variants.length}</span>`;
+    d.onclick=()=>{
+      selectedVariant[s.id]=i;
+      renderWeapons();
+      document.getElementById('previewText').innerHTML = `已选：<b>${s.name} → ${v.name}</b><br><span style="color:var(--ore-ink-muted)">挂架：${v.pylon} · 3D 模型已切换</span><br><br>说明：${s.desc}`;
+      document.getElementById('descText').innerHTML = `<b>${v.name}</b> — ${v.sub}<br>挂载：${v.pylon}<br><br>${s.desc}`;
+    };
+    c.appendChild(d);
+  });
+  // 默认选中态预览
+  const v = s.variants[sel];
+  if(v){
+    document.getElementById('previewText').innerHTML = `预览：<b>${s.name}</b><br>当前：${v.name} <span style="color:var(--ore-ink-muted)">(${v.pylon})</span>`;
+    document.getElementById('descText').textContent = s.desc;
+  }
+}
+renderStations(); renderWeapons();
+</script>
+</body>
+</html>

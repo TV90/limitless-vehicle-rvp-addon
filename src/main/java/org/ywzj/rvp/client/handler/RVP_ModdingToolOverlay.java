@@ -39,9 +39,19 @@ public final class RVP_ModdingToolOverlay {
             return;
         }
         AbstractVehicle vehicle = ((VehicleModdingToolScreenAccessor) screen).rvp$getVehicle();
-        if (vehicle == null
-                || RVP_VehicleExtendedConfigManager.INSTANCE.getModdingOnlyEntries(vehicle).isEmpty()) {
+        if (vehicle == null) {
             return;
+        }
+        boolean hasRvpMulti = !RVP_VehicleExtendedConfigManager.INSTANCE.getModdingOnlyEntries(vehicle).isEmpty();
+        // 检测本体自定义武器（任一 WeaponUnit 武器数>1 且可交互）：用于条件显隐
+        boolean hasBaseCustom = false;
+        for (var part : vehicle.getPartUnits()) {
+            if (part instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit wu) {
+                if (wu.isInteractive() && wu.weapons.size() > 1) {
+                    hasBaseCustom = true;
+                    break;
+                }
+            }
         }
         Document document = screen.getLinkedDocument();
         if (document == null) {
@@ -59,25 +69,33 @@ public final class RVP_ModdingToolOverlay {
         if (document.getElementById("rvp-variants-button") != null) {
             return;
         }
-        Element rvpButton = document.createElement("button");
-        rvpButton.setAttribute("id", "rvp-variants-button");
-        rvpButton.setClassName("button button-secondary");
-        rvpButton.setAttribute("type", "button");
-        rvpButton.setTextContent("更换弹种(RVP)");
-        rvpButton.addEventListener("click", ev -> {
-            // 点击时复检改装条件（速度 < 5 kph 且无玩家/gunner 乘员），不满足则提示并阻止打开
-            if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
-                Minecraft mc = Minecraft.getInstance();
-                if (mc.player != null) {
-                    mc.player.displayClientMessage(
-                            Component.translatable("message.ywzj_rvp.modding_blocked"), true);
+        // 条件显隐：有 RVP 内容→显示统一入口并藏本体按钮；纯本体→藏 RVP 保留本体；两者皆无→不显示 RVP
+        if (hasRvpMulti) {
+            // 统一入口：改名“改装武器”，藏本体“武器切换”（本体武器也由统一屏接管，避免割裂）
+            weaponButton.setAttribute("style", "display: none;");
+            Element rvpButton = document.createElement("button");
+            rvpButton.setAttribute("id", "rvp-variants-button");
+            rvpButton.setClassName("button button-secondary");
+            rvpButton.setAttribute("type", "button");
+            rvpButton.setTextContent("改装武器");
+            rvpButton.addEventListener("click", ev -> {
+                if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc.player != null) {
+                        mc.player.displayClientMessage(
+                                Component.translatable("message.ywzj_rvp.modding_blocked"), true);
+                    }
+                    return;
                 }
-                return;
-            }
-            Minecraft.getInstance().setScreen(new RVP_AuiVariantScreen(vehicle, screen));
-        });
-        // 插到「武器切换」按钮左侧（weapon-button 之前的兄弟位置，
-        // 不插其后——下方与特技烟雾区布局冲突）
-        parent.insertBefore(rvpButton, weaponButton);
+                Minecraft.getInstance().setScreen(new RVP_AuiVariantScreen(vehicle, screen));
+            });
+            parent.insertBefore(rvpButton, weaponButton);
+            return;
+        }
+        if (hasBaseCustom) {
+            // 纯本体改装：保留本体按钮，不显示 RVP
+            return;
+        }
+        // 两者皆无：不显示 RVP 按钮
     }
 }

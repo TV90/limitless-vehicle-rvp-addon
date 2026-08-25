@@ -36,24 +36,27 @@ public class RVP_EcmHudOverlay implements IGuiOverlay {
         int y = Math.max(screenHeight / 2 + Math.round(DEFAULT_Y_OFFSET * ((float) screenHeight / 1080)), 15);
 
         var font = Minecraft.getInstance().font;
+        // 聚合显示：不分骨骼，单行显示整车 ECM 状态（与 DIRCM 多通道不同，ECM 为整车共享状态）
+        int totalDecoys = 0;
+        int maxCharge = 0;
         for (RVP_EcmHudState.ChannelSnapshot channel : state.channels()) {
-            String name = channel.displayName() != null && !channel.displayName().isBlank()
-                    ? channel.displayName() : channel.boneName();
-            String line;
-            int color;
-            if (channel.jamming()) {
-                line = "ECM[" + name + "]:干扰中 (" + channel.decoyCount() + " 假目标)";
-                color = Color.GREEN;
-            } else if (channel.charging()) {
-                int seconds = (channel.chargeRemainTick() + 19) / 20;
-                line = "ECM[" + name + "]:充能 " + seconds + "s";
-                color = Color.GRAY;
-            } else {
-                line = "ECM[" + name + "]:就绪";
-                color = Color.GREEN;
-            }
-            guiGraphics.drawString(font, line, x, y, color, false);
-            y += 12;
+            totalDecoys += channel.decoyCount();
+            maxCharge = Math.max(maxCharge, channel.chargeRemainTick());
         }
+        String line;
+        int color;
+        if (totalDecoys > 0) {
+            line = "ECM:反制中 (" + totalDecoys + " 假目标)";
+            color = Color.GREEN;
+        } else if (maxCharge > 0) {
+            int seconds = (maxCharge + 19) / 20;
+            line = "ECM:充能 " + seconds + "s";
+            color = Color.GRAY;
+        } else {
+            line = "ECM:就绪";
+            color = Color.GREEN;
+        }
+        // TODO: 若需用 RVP 自定义 UI 组件绘制（如带背景/图标的 HUD 组件），可在此替换为对应组件的渲染调用
+        guiGraphics.drawString(font, line, x, y, color, false);
     }
 }
