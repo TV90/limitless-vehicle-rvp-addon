@@ -11,10 +11,11 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.vehicle.BoneEcmPassiveConfig;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
-import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -28,27 +29,28 @@ import java.util.Map;
 /**
  * 被动电子战防御措施（ECM_PASSIVE）服务端管理器。
  *
- * <p>对齐 {@code RVP_CountermeasureEventHandler} 的注册范式：{@code @Mod.EventBusSubscriber}
- * 总在 Forge 总线注册，处理逻辑全部基于 RVP 自有类与本体的既有 public API，
- * <b>零新增 Mixin</b>（历史教训红线：{@code RadarUnit} 在带毒黑名单，绝不打 mixin）。</p>
+ * <p><b>一次性脉冲模型（无激活期，用户批示）</b>：被敌对雷达照射时<b>立刻一次性</b>
+ * 撒出一波假目标（按距离分档决定数量与散布），随后直接进入充能冷却；冷却期间再次
+ * 被照射不生成。假目标是带独立寿命的普通实体——撒出后自主漂移、到期或被击落即消失，
+ * 期间不做任何补货（从根上杜绝"反复补货导致无限刷"）。</p>
  *
- * <p>职责：</p>
+ * <p>其余职责：</p>
  * <ul>
- *   <li><b>照射检测</b>：遍历各开启雷达的服务端探测表，命中装备 ECM_PASSIVE 的载具时
- *       经 {@link RVP_EcmIff#isHostileIllumination} 判定，敌对照射触发状态机；</li>
- *   <li><b>状态机</b>：空闲 → 激活（分档生成假目标）→ 充能 → 空闲；照射距离低于烧穿
- *       阈值直接清场进充能（用户批示：充能期内再次照射不生成）；</li>
- *   <li><b>假目标管理</b>：生成/重排/清理隐形诱饵实体（NCTR 名、随机漂移速度）；</li>
- *   <li><b>友方禁锁看门狗</b>：友方雷达锁定归属方假目标时立即清除锁定并短暂禁锁
- *       （复用箔条干扰的服务端清锁手法）；敌对方锁定不干预（欺骗目的）。</li>
+ *   <li><b>烧穿</b>：照射距离低于阈值时清除现存假目标并刷新充能；</li>
+ *   <li><b>友方禁锁看门狗</b>：友方雷达锁定归属方假目标 → 清锁 + 短暂禁锁；
+ *       敌对方锁定不干预（欺骗目的）；</li>
+ *   <li><b>导引头欺骗（Phase 3）</b>：{@link #tryDivertSeeker} 按 §9 公式掷骰偏转
+ *       RVP 自家 ARH/SARH 导引头的截获目标。</li>
  * </ul>
+ *
+ * <p>零新增 Mixin（历史教训红线：{@code RadarUnit} 带毒黑名单）。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_EcmPassiveManager {
 
-    /** 照射检测与状态机推进间隔（tick）：4 tick 对齐其它对抗系统的节流频率。 */
+    /** 主循环间隔（tick）：4 tick 对齐其它对抗系统的节流频率。 */
     private static final int TICK_INTERVAL = 4;
-    /** 空闲超时清理阈值（tick）：超时不被照射则清除残余假目标并移除状态（对齐旧版 200t）。 */
+    /** 空闲超时清理阈值（tick）：超时不被照射则清除残余假目标并移除状态。 */
     private static final long IDLE_CLEANUP_TICKS = 200L;
     /** 友方误锁假目标的禁锁时长（tick）。 */
     private static final int FRIENDLY_LOCK_COOLDOWN_TICKS = 40;
@@ -58,7 +60,7 @@ public final class RVP_EcmPassiveManager {
 
     /** 载具实体 id → 运行状态。 */
     private static final Map<Integer, RVP_EcmPassiveState> STATES = new HashMap<>();
-    /** 载具实体 id → 其管理的假目标实体 id 列表。 */
+    /** 载具实体 id → 本波脉冲的假目标实体 id 列表。 */
     private static final Map<Integer, List<Integer>> DECOY_IDS = new HashMap<>();
 
     @SubscribeEvent
@@ -82,13 +84,13 @@ public final class RVP_EcmPassiveManager {
                     vehicles.add(vehicle);
                 }
             }
-            // 收集本 tick 内所有敌对照射（按被照 EW 载具去重，取最近照射源距离，避免多雷达重复触发导致无限生成）
+            // 收集本 tick 内所有敌对照射（按被照 EW 载具去重，取最近照射源距离）
             Map<Integer, Illumination> illuminations = new HashMap<>();
             for (AbstractVehicle vehicle : vehicles) {
-                collectIlluminations(level, vehicle, illuminations);
+                collectIlluminations(vehicle, illuminations);
             }
             for (Illumination illum : illuminations.values()) {
-                onRadarIlluminated(level, illum.ewVehicle, illum.source, illum.distance);
+                onRadarIlluminated(level, illum.ewVehicle(), illum.source(), illum.distance());
             }
             // 友方禁锁看门狗需对每台雷达单独执行（不在去重 map 中）
             for (AbstractVehicle vehicle : vehicles) {
@@ -98,7 +100,7 @@ public final class RVP_EcmPassiveManager {
                     }
                 }
             }
-            tickStates(level, vehicles);
+            tickStates(level);
         }
     }
 
@@ -106,7 +108,7 @@ public final class RVP_EcmPassiveManager {
     private record Illumination(AbstractVehicle ewVehicle, AbstractVehicle source, double distance) {}
 
     /** 收集照射：遍历一台观察者载具的雷达探测表，命中敌对 ECM 载具时记入去重表（距离取最近）。 */
-    private static void collectIlluminations(ServerLevel level, AbstractVehicle observer,
+    private static void collectIlluminations(AbstractVehicle observer,
                                              Map<Integer, Illumination> out) {
         for (PartUnit<?> partUnit : observer.getPartUnits()) {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
@@ -128,14 +130,18 @@ public final class RVP_EcmPassiveManager {
                 }
                 double distance = ewVehicle.position().distanceTo(radarPos);
                 Illumination existing = out.get(ewVehicle.getId());
-                if (existing == null || distance < existing.distance) {
+                if (existing == null || distance < existing.distance()) {
                     out.put(ewVehicle.getId(), new Illumination(ewVehicle, observer, distance));
                 }
             }
         }
     }
 
-    /** 单次敌对照射入口：推进状态机（激活/刷新档位/烧穿清场/充能忽略）。 */
+    /**
+     * 单次敌对照射入口（一次性脉冲）：
+     * 烧穿距离内 → 清现存假目标 + 刷新充能；充能期 → 忽略；
+     * 否则立即撒一波假目标并进入充能。
+     */
     private static void onRadarIlluminated(ServerLevel level, AbstractVehicle ewVehicle,
                                            AbstractVehicle source, double distance) {
         BoneEcmPassiveConfig config = resolveAliveConfig(ewVehicle);
@@ -148,21 +154,15 @@ public final class RVP_EcmPassiveManager {
 
         double horizontalDistance = horizontalDistance(source.position(), ewVehicle.position());
 
-        // 烧穿：任何状态下低于烧穿距离都立即清场进充能
+        // 烧穿：低于烧穿距离的照射直接清掉现存幻影并刷新充能
         if (horizontalDistance < config.burnThroughDistance()) {
-            if (state.isActive() || !state.isBurnThrough()) {
-                clearDecoys(level, ewVehicle.getId());
-                state.setActive(false);
-                state.setActiveTicks(0);
-                state.setCooldownTicks(config.cooldownTicks());
-                state.setBurnThrough(true);
-            }
+            clearDecoys(level, ewVehicle.getId());
+            state.setCooldownTicks(config.cooldownTicks());
             return;
         }
-        state.setBurnThrough(false);
 
-        // 充能期：再次照射不生成（用户批示"进入重新充能期"）
-        if (!state.isActive() && state.getCooldownTicks() > 0) {
+        // 充能期：再次照射不生成（"一次性脉冲 + 直接进充能"，用户批示）
+        if (state.getCooldownTicks() > 0) {
             return;
         }
 
@@ -171,91 +171,34 @@ public final class RVP_EcmPassiveManager {
             return;
         }
         state.setAppliedBand(band);
-        if (!state.isActive()) {
-            // 空闲 → 激活
-            state.setActive(true);
-            state.setActiveTicks(config.activeDurationTicks());
-            spawnDecoys(level, ewVehicle, config, band);
-        } else if (bandChanged(state, band)) {
-            // 激活中档位变化 → 重排假目标分布（沿用旧版 bandChanged→reposition 语义）
-            clearDecoys(level, ewVehicle.getId());
-            spawnDecoys(level, ewVehicle, config, band);
-        }
+        spawnDecoys(level, ewVehicle, config, band);
+        // 撒完直接进充能：假目标寿命 ≈ 一个充能周期，衰减殆尽时恰好可以下一波
+        state.setCooldownTicks(config.cooldownTicks());
     }
 
-    private static boolean bandChanged(RVP_EcmPassiveState state, BoneEcmPassiveConfig.Band band) {
-        BoneEcmPassiveConfig.Band applied = state.getAppliedBand();
-        return applied == null
-                || applied.maxDistance() != band.maxDistance()
-                || applied.decoyCount() != band.decoyCount()
-                || applied.radius() != band.radius();
-    }
+    /* ==================== 状态推进 ==================== */
 
-    /* ==================== 状态机推进 ==================== */
-
-    private static void tickStates(ServerLevel level, List<AbstractVehicle> vehicles) {
+    private static void tickStates(ServerLevel level) {
         Iterator<Map.Entry<Integer, RVP_EcmPassiveState>> it = STATES.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, RVP_EcmPassiveState> entry = it.next();
             int ownerId = entry.getKey();
             AbstractVehicle owner = findVehicleById(level, ownerId);
-            if (owner == null || !owner.isAlive()) {
+            // 载具消亡 / 模块骨块全被打坏 → 清场移除
+            if (owner == null || !owner.isAlive() || resolveAliveConfig(owner) == null) {
                 clearDecoys(level, ownerId);
                 DECOY_IDS.remove(ownerId);
                 it.remove();
                 continue;
             }
             RVP_EcmPassiveState state = entry.getValue();
-            boolean referenced = false;
-            for (AbstractVehicle vehicle : vehicles) {
-                if (vehicle.getId() == ownerId) {
-                    referenced = true;
-                    break;
-                }
-            }
-            BoneEcmPassiveConfig config = resolveAliveConfig(owner);
-            if (config == null) {
-                // 模块骨块全被打坏：失去能力，清场进充能
-                clearDecoys(level, ownerId);
-                state.setActive(false);
-                state.setActiveTicks(0);
-                state.setCooldownTicks(config == null ? 100 : config.cooldownTicks());
-                continue;
-            }
-            if (state.isActive()) {
-                state.setActiveTicks(state.getActiveTicks() - TICK_INTERVAL);
-                if (state.getActiveTicks() <= 0) {
-                    state.setActive(false);
-                    state.setCooldownTicks(config.cooldownTicks());
-                }
-            } else if (state.getCooldownTicks() > 0) {
+            if (state.getCooldownTicks() > 0) {
                 state.setCooldownTicks(Math.max(0, state.getCooldownTicks() - TICK_INTERVAL));
             } else if (level.getGameTime() - state.getLastIlluminatedGameTime() > IDLE_CLEANUP_TICKS) {
-                // 长时间未被照射：清理残余假目标并移除状态
+                // 长时间未被照射且已可用：清理残余假目标并移除状态
                 clearDecoys(level, ownerId);
                 DECOY_IDS.remove(ownerId);
                 it.remove();
-                continue;
-            }
-            syncDecoys(level, owner, state, config);
-            if (!referenced) {
-                break; // 防御式：不应发生（owner 即从本 level 查得）
-            }
-        }
-    }
-
-    /** 激活期间维持假目标数量（补齐被击落的幻影，硬上限=档位数量，绝不超发）。 */
-    private static void syncDecoys(ServerLevel level, AbstractVehicle owner,
-                                   RVP_EcmPassiveState state, BoneEcmPassiveConfig config) {
-        if (!state.isActive() || state.isBurnThrough() || state.getAppliedBand() == null) {
-            clearDecoys(level, owner.getId());
-            return;
-        }
-        List<RVP_EcmDecoyEntity> alive = pruneAndCollectManagedDecoys(level, owner.getId());
-        int missing = state.getAppliedBand().decoyCount() - alive.size();
-        if (missing > 0) {
-            for (int i = 0; i < missing; i++) {
-                spawnOneDecoy(level, owner, config, state.getAppliedBand());
             }
         }
     }
@@ -264,18 +207,20 @@ public final class RVP_EcmPassiveManager {
 
     private static void spawnDecoys(ServerLevel level, AbstractVehicle owner,
                                     BoneEcmPassiveConfig config, BoneEcmPassiveConfig.Band band) {
+        // 一次性脉冲：先清上一波残余再撒本波（数量=档位上限，此后不再补货）
         clearDecoys(level, owner.getId());
+        List<Integer> ids = DECOY_IDS.computeIfAbsent(owner.getId(), k -> new ArrayList<>());
         for (int i = 0; i < band.decoyCount(); i++) {
-            spawnOneDecoy(level, owner, config, band);
+            spawnOneDecoy(level, owner, config, band, ids);
         }
     }
 
     private static void spawnOneDecoy(ServerLevel level, AbstractVehicle owner,
-                                      BoneEcmPassiveConfig config, BoneEcmPassiveConfig.Band band) {
+                                      BoneEcmPassiveConfig config, BoneEcmPassiveConfig.Band band,
+                                      List<Integer> idsOut) {
         var random = level.random;
-        // 在散布半径内随机取点（圆盘均匀采样），高度在载具上下浮动；
-        // 只允许落在【已加载区块】内——落在未加载区块的实体会被卸载，
-        // 管理器按编号找不到会误判死亡并反复补货（无限刷根因），采样失败则收半径重试
+        // 在散布半径内随机取点；只允许落在【已加载区块】内——落在未加载区块的实体会被卸载，
+        // 后续无法按编号解析（采样失败则收半径重试，兜底贴着载具本体生成）
         double angle = random.nextDouble() * Math.PI * 2.0D;
         double radius = band.radius();
         double x = owner.getX();
@@ -291,7 +236,6 @@ public final class RVP_EcmPassiveManager {
             if (level.hasChunkAt(net.minecraft.core.BlockPos.containing(x, y, z))) {
                 placed = true;
             } else {
-                // 收缩到一半再试（最多 8 次，最终兜底贴着载具本体生成——载具所在区块必然已加载）
                 radius = Math.max(8.0D, radius * 0.5D);
                 angle = random.nextDouble() * Math.PI * 2.0D;
             }
@@ -309,13 +253,11 @@ public final class RVP_EcmPassiveManager {
         double speed = config.decoySpeedMin()
                 + random.nextDouble() * Math.max(0.0D, config.decoySpeedMax() - config.decoySpeedMin());
         Vec3 drift = new Vec3(Math.sin(heading) * speed, 0.0D, Math.cos(heading) * speed);
+        // 寿命 ≈ 一个充能周期：衰减殆尽时恰好可触发下一波，节奏自然
         decoy.initDecoy(owner.getId(), config.randomNctrName(random),
-                config.activeDurationTicks() + 60, drift);
+                Math.max(config.activeDurationTicks(), config.cooldownTicks()), drift);
         level.addFreshEntity(decoy);
-        DECOY_IDS.computeIfAbsent(owner.getId(), k -> new ArrayList<>()).add(decoy.getId());
-
-        // 首照即时性：直接写进当前照射源雷达的探测表由 §7.1 的扫描循环自然 detect 完成
-        // （探测表条目由本体 detect(Entity) 维护位置引用，无需在此重复调用）
+        idsOut.add(decoy.getId());
     }
 
     private static void clearDecoys(ServerLevel level, int ownerVehicleId) {
@@ -337,25 +279,7 @@ public final class RVP_EcmPassiveManager {
         if (ids == null) {
             return out;
         }
-        for (int id : ids) {
-            Entity entity = level.getEntity(id);
-            if (entity instanceof RVP_EcmDecoyEntity decoy && decoy.isAlive()) {
-                out.add(decoy);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * 剪枝版收集：把名单里已无法解析（被卸载/已消亡）的编号直接从名单剔除，
-     * 避免"幽灵编号"让 alive 计数持续偏低 → 反复补货造成无限刷。
-     */
-    private static List<RVP_EcmDecoyEntity> pruneAndCollectManagedDecoys(ServerLevel level, int ownerVehicleId) {
-        List<Integer> ids = DECOY_IDS.get(ownerVehicleId);
-        if (ids == null) {
-            return new ArrayList<>();
-        }
-        List<RVP_EcmDecoyEntity> out = new ArrayList<>(ids.size());
+        // 顺带剪枝：被卸载/已消亡的"幽灵编号"直接从名单剔除，防止计数偏低
         Iterator<Integer> it = ids.iterator();
         while (it.hasNext()) {
             int id = it.next();
@@ -363,7 +287,7 @@ public final class RVP_EcmPassiveManager {
             if (entity instanceof RVP_EcmDecoyEntity decoy && decoy.isAlive()) {
                 out.add(decoy);
             } else {
-                it.remove(); // 幽灵编号：剪掉
+                it.remove();
             }
         }
         return out;
@@ -415,13 +339,13 @@ public final class RVP_EcmPassiveManager {
 
     /**
      * Phase 3：RVP 自家 ARH/SARH 导引头截获欺骗。
-     * 被照载体处于激活期时，按距离档基础概率 + 每枚假目标附加掷骰，成功则把截获目标改判到最近假目标。
+     * 目标载具存在本波存活假目标时，按距离档基础概率 + 每枚附加掷骰，
+     * 成功则把截获目标改判到距真实目标最近的假目标。
      */
     @Nullable
     public static Entity tryDivertSeeker(org.ywzj.rvp.entity.projectile.RVP_BaseBullet projectile,
-                                         Entity target, org.ywzj.rvp.guidance.RVP_EnumGuidanceType type) {
-        if (type != org.ywzj.rvp.guidance.RVP_EnumGuidanceType.ARH
-                && type != org.ywzj.rvp.guidance.RVP_EnumGuidanceType.SARH) {
+                                         Entity target, RVP_EnumGuidanceType type) {
+        if (type != RVP_EnumGuidanceType.ARH && type != RVP_EnumGuidanceType.SARH) {
             return null;
         }
         if (!(target instanceof AbstractVehicle av) || !av.isAlive()) {
@@ -431,7 +355,7 @@ public final class RVP_EcmPassiveManager {
             return null;
         }
         RVP_EcmPassiveState state = STATES.get(av.getId());
-        if (state == null || !state.isActive() || state.isBurnThrough()) {
+        if (state == null) {
             return null;
         }
         BoneEcmPassiveConfig cfg = resolveAliveConfig(av);
