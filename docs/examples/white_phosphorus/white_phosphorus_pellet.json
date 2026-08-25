@@ -9,7 +9,7 @@
   },
   "projectile_data": {
     "velocity": 0.9,
-    "gravity": -0.045,
+    "gravity": -0.002,
     "drag": 0.008,
     "deployment_horizontal_half_life_ticks": 20,
     "constant_speed": false,

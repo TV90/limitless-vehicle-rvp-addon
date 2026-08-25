@@ -3,11 +3,13 @@
 - `airburst_white_phosphorus_bomb.json` 放到载具包 `data/rvp/weapons/`，作为近地引信母弹。
 - `white_phosphorus_pellet.json` 同样放到 `data/rvp/weapons/`，资源 ID 必须与母弹的 `weapon_id` 一致。
 - 母弹不配置 `visual_effect_data`，只保留本体 `VehicleExplosion`；子体不启用 `explosion_data`。
+- 母弹 release 配置 `release_cloud_enabled: true` 与 `release_cloud_radius: {"horizontal": 4.0, "vertical": 4.0}` 后，子体会在服务端权威、水平/竖直半径各 4 格的均匀椭球体积内生成；这不是客户端一次性爆炸贴图。开关默认 false，两轴都为 0 时保持同点释放。
+- `spread.mode: cloud_radial_horizontal` 使用每枚子体最终出生点相对释放点的 X/Z 投影作为云心外向方向；`cloud_direction_jitter` 按度扰动方向，`cloud_speed_jitter` 按比例扰动 `launch_speed`。纯竖直或零水平偏移会随机选择有限的水平兜底方向，散布 Y 恒为 0。
 - `wind_data.direction_mode: parent_facing_reverse` 在释放瞬间读取母弹当前旋转朝向并取反，不使用母弹最初发射方向。
 - 固定世界水平风向可写成 `north:<角度>`：北方 `-Z` 为 0°、顺时针为正，因此 `north:+90` 向东 `+X`，`north:-50` 为北偏西 50°。固定模式对首发弹体和子弹药都有效。
-- 子体配置正数 `deployment_horizontal_half_life_ticks` 后，圆锥/母弹继承形成的初始 X/Z 按半衰期衰减，风偏作为独立速度贡献随后叠加；0 保持旧总速度链路。
-- 母弹 payload 可用 `inherit_parent_horizontal_velocity: true` 只继承母弹 X/Z，并由 `velocity_scale` 控制继承比例，不缩放圆锥 `launch_speed`。
-- 展开速度满意但下落过快时，可保持 `launch_speed` 和半角不变，用正 Y 的 `payloads_velocity` 抵消部分圆锥下坠分量；示例 `+0.30` 仍保证 72° 圆锥最外圈从生成开始向下。
+- 子体配置正数 `deployment_horizontal_half_life_ticks` 后，云径向/母弹继承形成的初始 X/Z 按半衰期衰减，风偏作为独立速度贡献随后叠加；0 保持旧总速度链路。
+- 母弹 payload 可用 `inherit_parent_horizontal_velocity: true` 只继承母弹 X/Z，并由 `velocity_scale` 控制继承比例，不缩放云径向 `launch_speed`。
+- 示例把 `payloads_velocity` 保持为 `[0, 0, 0]`，子体从释放后立即由自身 `gravity` 下落；不要用正 Y 补偿制造整片云上扬。
 - `wind_data.turbulence` 与 `turbulence_frequency` 分别控制服务端权威的平滑游移幅度和转向频率；客户端不另算弹道。
 - 尾迹每 Tick 只保留上一主体位置，不沿单 Tick 运动段插值补线；当前 schema 不再包含 `trail_spacing`。
 - 尾迹出生尺寸继承对应主体经 `body_flicker` 计算后的实际尺寸；当前 schema 不再包含独立的 `trail_start_scale`。

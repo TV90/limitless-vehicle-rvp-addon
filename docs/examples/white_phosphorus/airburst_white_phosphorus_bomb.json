@@ -43,6 +43,11 @@
         "triggers": ["on_fuse"],
         "release_events": 1,
         "parent_action": "continue",
+        "release_cloud_enabled": true,
+        "release_cloud_radius": {
+          "horizontal": 4.0,
+          "vertical": 4.0
+        },
         "payloads": [
           {
             "kind": "rvp_weapon",
@@ -52,17 +57,13 @@
             "inherit_parent_horizontal_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 0.10,
-            "launch_speed": 1.5,
-            "payloads_velocity": [0.0, 0.30, 0.0],
-            "payloads_velocity_factor": 0.10,
+            "launch_speed": 1.0,
+            "payloads_velocity": [0.0, 0.0, 0.0],
             "allow_submunition": false,
             "spread": {
-              "mode": "stratified_cone",
-              "cone_half_angle": 72.0,
-              "cone_axis": "world_down",
-              "radial_distribution": "uniform_area",
-              "azimuth_jitter": 0.08,
-              "radial_jitter": 0.08
+              "mode": "cloud_radial_horizontal",
+              "cloud_direction_jitter": 15.0,
+              "cloud_speed_jitter": 0.25
             }
           }
         ]
