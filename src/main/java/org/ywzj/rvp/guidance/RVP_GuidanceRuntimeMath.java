@@ -50,6 +50,8 @@ public final class RVP_GuidanceRuntimeMath {
         // 攻顶瞄准点：目标上空 min(|H|, 水平距离) 处，每 tick 重算（恢复 8c30656 无状态算法）
         Vec3 steeringTarget = resolveTopAttackAimPoint(
                 projectile.position(), target, context.active().topAttackHeight());
+        boolean isTopAttack = context.active().topAttackHeight() != null
+                && Math.abs(context.active().topAttackHeight()) > 1.0E-6f;
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
@@ -78,7 +80,7 @@ public final class RVP_GuidanceRuntimeMath {
                     context.active().cruiseLevelingFactor(),
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
-        } else if (entity != null && shouldUseProportionalNavigation(context)) {
+        } else if (!isTopAttack && entity != null && shouldUseProportionalNavigation(context)) {
             next = steerPredictiveIntercept(
                     projectile,
                     projectile.position(),

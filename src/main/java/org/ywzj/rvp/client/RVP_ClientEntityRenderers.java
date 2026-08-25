@@ -54,6 +54,7 @@ public final class RVP_ClientEntityRenderers {
         EntityRenderers.register(RVP_Entities.RVP_DISPENSED.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RVP_DispensedEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_DECOY.get(), RVP_DecoyRenderer::new);
+        EntityRenderers.register(RVP_Entities.RVP_ECM_DECOY.get(), org.ywzj.rvp.entity.ecm.RVP_EcmDecoyRenderer::new);
         EntityRenderers.register(RVP_Entities.RVP_SMOKE.get(), RVP_SmokeRenderer::new);
         EntityRenderers.register(AllEntities.ROCKET.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RocketEntity>(ctx, FALLBACK_ROCKET_MODEL, FALLBACK_ROCKET_TEXTURE));

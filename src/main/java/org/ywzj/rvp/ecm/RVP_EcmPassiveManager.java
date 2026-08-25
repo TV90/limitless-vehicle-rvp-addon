@@ -82,45 +82,56 @@ public final class RVP_EcmPassiveManager {
                     vehicles.add(vehicle);
                 }
             }
+            // 收集本 tick 内所有敌对照射（按被照 EW 载具去重，取最近照射源距离，避免多雷达重复触发导致无限生成）
+            Map<Integer, Illumination> illuminations = new HashMap<>();
             for (AbstractVehicle vehicle : vehicles) {
-                scanRadarsOf(level, vehicle);
+                collectIlluminations(level, vehicle, illuminations);
+            }
+            for (Illumination illum : illuminations.values()) {
+                onRadarIlluminated(level, illum.ewVehicle, illum.source, illum.distance);
+            }
+            // 友方禁锁看门狗需对每台雷达单独执行（不在去重 map 中）
+            for (AbstractVehicle vehicle : vehicles) {
+                for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+                    if (partUnit instanceof RadarUnit radar && radar.isOn()) {
+                        watchdogFriendlyLock(vehicle, radar);
+                    }
+                }
             }
             tickStates(level, vehicles);
         }
     }
 
-    /* ==================== 照射检测 ==================== */
+    /** 本 tick 内的单次照射记录（按被照载具去重后取最近源）。 */
+    private record Illumination(AbstractVehicle ewVehicle, AbstractVehicle source, double distance) {}
 
-    /** 遍历一台载具全部开启雷达的服务端探测表：命中装备 ECM_PASSIVE 的敌对目标即触发。 */
-    private static void scanRadarsOf(ServerLevel level, AbstractVehicle observer) {
+    /** 收集照射：遍历一台观察者载具的雷达探测表，命中敌对 ECM 载具时记入去重表（距离取最近）。 */
+    private static void collectIlluminations(ServerLevel level, AbstractVehicle observer,
+                                             Map<Integer, Illumination> out) {
         for (PartUnit<?> partUnit : observer.getPartUnits()) {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
                 continue;
             }
             Vec3 radarPos = radar.worldRadarPosition();
-            // 遍历该雷达服务端探测表（由客户端 DETECT 回写 + 补扫/炮手全量扫维护）
-            List<Entity> detectedList = new ArrayList<>();
             for (RadarUnit.DetectedObject detectedObject : radar.getDetectedEntities().values()) {
-                if (detectedObject != null && detectedObject.entity != null && detectedObject.entity.isAlive()) {
-                    detectedList.add(detectedObject.entity);
-                }
-            }
-            for (Entity detected : detectedList) {
-                if (!(detected instanceof AbstractVehicle ewVehicle) || !ewVehicle.isAlive()) {
+                if (detectedObject == null || detectedObject.entity == null || !detectedObject.entity.isAlive()) {
                     continue;
                 }
-                BoneEcmPassiveConfig config = resolveAliveConfig(ewVehicle);
-                if (config == null) {
+                if (!(detectedObject.entity instanceof AbstractVehicle ewVehicle) || !ewVehicle.isAlive()) {
+                    continue;
+                }
+                if (resolveAliveConfig(ewVehicle) == null) {
                     continue;
                 }
                 if (!RVP_EcmIff.isHostileIllumination(observer, ewVehicle)) {
                     continue;
                 }
                 double distance = ewVehicle.position().distanceTo(radarPos);
-                onRadarIlluminated(level, ewVehicle, observer, distance);
+                Illumination existing = out.get(ewVehicle.getId());
+                if (existing == null || distance < existing.distance) {
+                    out.put(ewVehicle.getId(), new Illumination(ewVehicle, observer, distance));
+                }
             }
-            // 友方禁锁看门狗：锁定目标是"对该雷达友方"的假目标 → 清除锁定 + 禁锁
-            watchdogFriendlyLock(observer, radar);
         }
     }
 
@@ -233,14 +244,14 @@ public final class RVP_EcmPassiveManager {
         }
     }
 
-    /** 激活期间维持假目标数量（补齐被击落/丢失的幻影）。 */
+    /** 激活期间维持假目标数量（补齐被击落的幻影，硬上限=档位数量，绝不超发）。 */
     private static void syncDecoys(ServerLevel level, AbstractVehicle owner,
                                    RVP_EcmPassiveState state, BoneEcmPassiveConfig config) {
         if (!state.isActive() || state.isBurnThrough() || state.getAppliedBand() == null) {
             clearDecoys(level, owner.getId());
             return;
         }
-        List<RVP_EcmDecoyEntity> alive = collectManagedDecoys(level, owner.getId());
+        List<RVP_EcmDecoyEntity> alive = pruneAndCollectManagedDecoys(level, owner.getId());
         int missing = state.getAppliedBand().decoyCount() - alive.size();
         if (missing > 0) {
             for (int i = 0; i < missing; i++) {
@@ -262,13 +273,34 @@ public final class RVP_EcmPassiveManager {
     private static void spawnOneDecoy(ServerLevel level, AbstractVehicle owner,
                                       BoneEcmPassiveConfig config, BoneEcmPassiveConfig.Band band) {
         var random = level.random;
-        // 在散布半径内随机取点（圆盘均匀采样），高度在载具上下 ±20 格内浮动
+        // 在散布半径内随机取点（圆盘均匀采样），高度在载具上下浮动；
+        // 只允许落在【已加载区块】内——落在未加载区块的实体会被卸载，
+        // 管理器按编号找不到会误判死亡并反复补货（无限刷根因），采样失败则收半径重试
         double angle = random.nextDouble() * Math.PI * 2.0D;
-        double radius = Math.sqrt(random.nextDouble()) * band.radius();
-        double x = owner.getX() + Math.cos(angle) * radius;
-        double z = owner.getZ() + Math.sin(angle) * radius;
-        double y = owner.getY() + (random.nextDouble() - 0.35D) * 30.0D;
-        y = Math.max(level.getMinBuildHeight() + 8.0D, Math.min(level.getMaxBuildHeight() - 16.0D, y));
+        double radius = band.radius();
+        double x = owner.getX();
+        double z = owner.getZ();
+        double y = owner.getY();
+        boolean placed = false;
+        for (int attempt = 0; attempt < 8 && !placed; attempt++) {
+            double r = radius * Math.sqrt(random.nextDouble());
+            x = owner.getX() + Math.cos(angle) * r;
+            z = owner.getZ() + Math.sin(angle) * r;
+            y = owner.getY() + (random.nextDouble() - 0.35D) * 30.0D;
+            y = Math.max(level.getMinBuildHeight() + 8.0D, Math.min(level.getMaxBuildHeight() - 16.0D, y));
+            if (level.hasChunkAt(net.minecraft.core.BlockPos.containing(x, y, z))) {
+                placed = true;
+            } else {
+                // 收缩到一半再试（最多 8 次，最终兜底贴着载具本体生成——载具所在区块必然已加载）
+                radius = Math.max(8.0D, radius * 0.5D);
+                angle = random.nextDouble() * Math.PI * 2.0D;
+            }
+        }
+        if (!placed) {
+            x = owner.getX();
+            y = owner.getY();
+            z = owner.getZ();
+        }
 
         RVP_EcmDecoyEntity decoy = new RVP_EcmDecoyEntity(RVP_Entities.RVP_ECM_DECOY.get(), level);
         decoy.setPos(x, y, z);
@@ -309,6 +341,29 @@ public final class RVP_EcmPassiveManager {
             Entity entity = level.getEntity(id);
             if (entity instanceof RVP_EcmDecoyEntity decoy && decoy.isAlive()) {
                 out.add(decoy);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 剪枝版收集：把名单里已无法解析（被卸载/已消亡）的编号直接从名单剔除，
+     * 避免"幽灵编号"让 alive 计数持续偏低 → 反复补货造成无限刷。
+     */
+    private static List<RVP_EcmDecoyEntity> pruneAndCollectManagedDecoys(ServerLevel level, int ownerVehicleId) {
+        List<Integer> ids = DECOY_IDS.get(ownerVehicleId);
+        if (ids == null) {
+            return new ArrayList<>();
+        }
+        List<RVP_EcmDecoyEntity> out = new ArrayList<>(ids.size());
+        Iterator<Integer> it = ids.iterator();
+        while (it.hasNext()) {
+            int id = it.next();
+            Entity entity = level.getEntity(id);
+            if (entity instanceof RVP_EcmDecoyEntity decoy && decoy.isAlive()) {
+                out.add(decoy);
+            } else {
+                it.remove(); // 幽灵编号：剪掉
             }
         }
         return out;

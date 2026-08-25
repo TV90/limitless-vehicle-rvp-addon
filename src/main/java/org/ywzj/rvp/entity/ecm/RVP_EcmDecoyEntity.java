@@ -92,8 +92,16 @@ public class RVP_EcmDecoyEntity extends Entity {
             double jitter = (this.random.nextDouble() - 0.5D) * 0.05D;
             v = v.add(jitter, 0.0D, jitter).normalize().scale(v.length());
         }
-        this.setDeltaMovement(v);
-        this.setPos(position().add(v));
+        // 防漂出加载区：下一位置所在区块未加载时不移动并反弹航向，
+        // 否则实体会被卸载 → 管理器按编号找不到 → 误判死亡反复补货（无限刷根因）
+        Vec3 nextPos = position().add(v);
+        if (level().hasChunkAt(net.minecraft.core.BlockPos.containing(nextPos))) {
+            this.setDeltaMovement(v);
+            this.setPos(nextPos);
+        } else {
+            // 反弹：水平航向反转，留在已加载区域内继续漂移
+            this.setDeltaMovement(-v.x, v.y, -v.z);
+        }
     }
 
     @Override
