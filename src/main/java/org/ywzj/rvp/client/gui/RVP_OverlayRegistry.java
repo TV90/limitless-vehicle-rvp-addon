@@ -36,6 +36,7 @@ public class RVP_OverlayRegistry {
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_heat_hud", new RVP_HeatHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_aps_hud", new RVP_ApsHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_dircm_hud", new RVP_DircmHudOverlay());
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_hud", new RVP_EcmHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_countermeasure_hud", new RVP_CountermeasureHudOverlay());
         // 命中展板注册在最后：同锚点下按注册顺序绘制，展板最后绘制即为该层最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。

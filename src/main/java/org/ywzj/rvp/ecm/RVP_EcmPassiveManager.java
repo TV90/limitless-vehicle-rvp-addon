@@ -7,15 +7,19 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Entities;
-import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.network.S2CEcmHudSync;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.vehicle.BoneEcmPassiveConfig;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -99,6 +103,10 @@ public final class RVP_EcmPassiveManager {
                         watchdogFriendlyLock(vehicle, radar);
                     }
                 }
+            }
+            // HUD 同步：为每台装备 ECM 的载具推送状态（就绪/干扰中/充能）
+            for (AbstractVehicle vehicle : vehicles) {
+                syncHud(vehicle);
             }
         }
         // 状态推进只在全部维度处理完后执行一次（跨维度解析归属载具）。
@@ -412,6 +420,51 @@ public final class RVP_EcmPassiveManager {
             }
         }
         return bestDecoy;
+    }
+
+    /** 服务端 → 客户端：推送 ECM 各通道 HUD 状态（就绪/干扰中/充能）。 */
+    private static void syncHud(AbstractVehicle vehicle) {
+        Map<String, BoneEcmPassiveConfig> devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+        RVP_EcmPassiveState state = STATES.get(vehicle.getId());
+        int decoyCount = 0;
+        int charge = 0;
+        BoneEcmPassiveConfig.Band band = null;
+        if (state != null) {
+            charge = state.getCooldownTicks();
+            band = state.getAppliedBand();
+            // 干扰中 = 有存活假目标（寿命期内）
+            if (vehicle.level() instanceof ServerLevel sl) {
+                decoyCount = collectManagedDecoys(sl, vehicle.getId()).size();
+            }
+        }
+        // 为每个 ECM 骨块推送一行（多骨块共享同一状态与假目标数）
+        java.util.ArrayList<String> boneNames = new java.util.ArrayList<>();
+        java.util.ArrayList<String> displayNames = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> decoyCounts = new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> charges = new java.util.ArrayList<>();
+        for (String boneName : devices.keySet()) {
+            if (!org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), boneName, org.ywzj.rvp.vehicle.BoneModuleType.ECM_PASSIVE)) {
+                continue;
+            }
+            boneNames.add(boneName);
+            displayNames.add(boneName);
+            decoyCounts.add(decoyCount);
+            charges.add(charge);
+        }
+        if (boneNames.isEmpty()) {
+            return;
+        }
+        S2CEcmHudSync msg = new S2CEcmHudSync(vehicle.getId(), boneNames, displayNames, decoyCounts, charges);
+        // 发给乘坐者与追踪者（与 DIRCM 同款分发）
+        for (net.minecraft.world.entity.Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof ServerPlayer sp) {
+                RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp), msg);
+            }
+        }
+        RVP_Network.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> vehicle), msg);
     }
 
     /** 跨维度按实体 id 解析载具（状态机全局只跑一次，避免被其它维度 pass 误删状态）。 */

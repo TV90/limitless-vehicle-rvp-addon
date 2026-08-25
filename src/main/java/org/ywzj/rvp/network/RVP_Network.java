@@ -133,6 +133,11 @@ public class RVP_Network {
                 .decoder(S2CDircmHudSync::decode)
                 .consumerMainThread(S2CDircmHudSync::handle)
                 .add();
+        CHANNEL.messageBuilder(S2CEcmHudSync.class, id++)
+                .encoder(S2CEcmHudSync::encode)
+                .decoder(S2CEcmHudSync::decode)
+                .consumerMainThread(S2CEcmHudSync::handle)
+                .add();
         CHANNEL.messageBuilder(S2CRemoteAmmoSnapshot.class, id++)
                 .encoder(S2CRemoteAmmoSnapshot::encode)
                 .decoder(S2CRemoteAmmoSnapshot::decode)
