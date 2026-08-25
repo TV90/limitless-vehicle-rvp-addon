@@ -14,6 +14,7 @@ import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.all.RVP_WeaponTypes;
+import org.ywzj.rvp.compat.RVP_SuperbWarfareCompat;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.config.RVP_Config;
@@ -58,6 +59,8 @@ public class RVP_MOD {
     }
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
+        // 探测 SBW 是否加载（联动兼容层：仅编译期引用 SBW，运行时可选、非强制依赖）
+        RVP_SuperbWarfareCompat.init();
         event.enqueueWork(() -> {
             RVP_Network.init();
             // 安装 RVP 网络视觉发布端，使弹体业务只依赖公共发布接口，不直接读取网络通道。

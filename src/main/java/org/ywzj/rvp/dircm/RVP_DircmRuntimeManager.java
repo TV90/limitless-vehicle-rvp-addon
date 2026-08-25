@@ -17,6 +17,7 @@ import org.ywzj.rvp.network.S2CDircmHudSync;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_DircmStateSavedData;
+import org.ywzj.rvp.compat.RVP_SuperbWarfareCompat;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -163,7 +164,21 @@ public final class RVP_DircmRuntimeManager {
         // 当前目标维护
         if (channel.busyTargetId >= 0) {
             Entity target = vehicle.level().getEntity(channel.busyTargetId);
-            if (!(target instanceof RVP_BaseBullet bullet) || !target.isAlive() || target.isRemoved()) {
+            // SBW 联动：被照射的 SBW 红外（guideType=0）导弹占用通道，光束期内持续偏转
+            if (RVP_SuperbWarfareCompat.isLoaded() && target != null && !target.isRemoved()
+                    && RVP_SuperbWarfareCompat.isSbwMissile(target)
+                    && RVP_SuperbWarfareCompat.getGuideType(target) == 0) {
+                if (channel.beamRemainTick <= 0 || !target.isAlive()
+                        || target.position().subtract(vehicle.position()).length() > config.detectRadius()) {
+                    // 光束结束/目标脱出范围：释放通道进入充能（冷却）
+                    channel.busyTargetId = -1;
+                    channel.chargeRemainTick = config.chargeTick();
+                    changed = true;
+                } else {
+                    channel.beamRemainTick--;
+                    RVP_SuperbWarfareCompat.deflectSbwMissile(target, vehicle);
+                }
+            } else if (!(target instanceof RVP_BaseBullet bullet) || !target.isAlive() || target.isRemoved()) {
                 // 目标消失/死亡：释放通道进入充能
                 channel.busyTargetId = -1;
                 channel.chargeRemainTick = config.chargeTick();
@@ -206,10 +221,68 @@ public final class RVP_DircmRuntimeManager {
                     // 干扰在光束建立瞬间即完成
                     applyJam(vehicle, target);
                     changed = true;
+                } else {
+                    // SBW 联动：无 RVP 导弹时，扫描 SBW 红外（guideType=0）导弹占用通道并偏转
+                    Entity sbw = findSbwTarget(vehicle, config);
+                    if (sbw != null) {
+                        channel.busyTargetId = sbw.getId();
+                        channel.beamRemainTick = config.beamTick();
+                        channel.chargeRemainTick = 0;
+                        RVP_SuperbWarfareCompat.deflectSbwMissile(sbw, vehicle);
+                        // SBW 联动：通知干扰者（DIRCM 司机）与被干扰方（SBW 导弹发射者）
+                        notifySbwJamAndVictim(vehicle, sbw);
+                        changed = true;
+                    }
                 }
             }
         }
         return changed;
+    }
+
+    /**
+     * SBW 联动：在 DIRCM 前方探测扇区内寻找最近的、可被照射的 SBW 红外（guideType=0）导弹。
+     *
+     * <p>仅当 SBW 加载时返回结果；否则直接返回 null，绝不触碰 SBW 类。命中后由调用方占用
+     * DIRCM 火力通道（busyTargetId）并在光束期内调用 deflectSbwMissile 持续偏转。</p>
+     */
+    @Nullable
+    private static Entity findSbwTarget(AbstractVehicle vehicle, BoneDircmConfig config) {
+        if (!RVP_SuperbWarfareCompat.isLoaded()) {
+            return null;
+        }
+        Vec3 front = RVP_JammingRuntime.resolveFacing(vehicle, config.facingPart(), config.facingYawDeg());
+        AABB box = vehicle.getBoundingBox().inflate(config.detectRadius());
+        double bestSqr = Double.MAX_VALUE;
+        Entity best = null;
+        for (Entity entity : vehicle.level().getEntities(vehicle, box, e -> true)) {
+            if (!RVP_SuperbWarfareCompat.isSbwMissile(entity)) {
+                continue;
+            }
+            // 仅干扰 SBW 红外制导（guideType=0）导弹；激光/指令制导（guideType=1）不受影响
+            if (RVP_SuperbWarfareCompat.getGuideType(entity) != 0) {
+                continue;
+            }
+            // 防重复干扰：已被 DIRCM 或烟雾致盲清空目标的导弹不再触发另一个 DIRCM
+            // （对齐 RVP_BaseBullet.dircmJammed 的防重复语义，但用 targetUUID=="none" 代替实体字段）
+            if ("none".equals(RVP_SuperbWarfareCompat.getTargetUuid(entity))) {
+                continue;
+            }
+            Vec3 toTarget = entity.position().subtract(vehicle.position());
+            double dist = toTarget.length();
+            if (dist > config.detectRadius() || dist < 1.0E-6) {
+                continue;
+            }
+            // 限定在前方探测扇区（与 RVP 导弹同款朝向过滤），避免照射载具背后的导弹
+            if (front.dot(toTarget.normalize()) <= 0) {
+                continue;
+            }
+            double sqr = toTarget.lengthSqr();
+            if (sqr < bestSqr) {
+                bestSqr = sqr;
+                best = entity;
+            }
+        }
+        return best;
     }
 
     /** 在扇区内寻找最近的可触发目标（所有 RVP 导弹/火箭/炸弹）。 */
@@ -370,6 +443,35 @@ public final class RVP_DircmRuntimeManager {
                     Component.translatable("message.ywzj_rvp.dircm_jammed"), true);
         }
         // 干扰者提示（节流）
+        long now = vehicle.level().getGameTime();
+        Long last = LAST_JAM_NOTIFY_BY_VEHICLE.get(vehicle.getId());
+        if (last != null && now - last < JAM_NOTIFY_INTERVAL) {
+            return;
+        }
+        LAST_JAM_NOTIFY_BY_VEHICLE.put(vehicle.getId(), now);
+        Entity driver = vehicle.getDriver();
+        if (driver instanceof ServerPlayer jammer) {
+            jammer.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.dircm_irradiate"), true);
+        }
+    }
+
+    /**
+     * SBW 联动：DIRCM 照射 SBW 导弹时通知双方，复用 RVP 导弹的同款提示文案。
+     * 被干扰方（SBW 导弹发射者，经 MC 原生 {@code Projectile.getOwner()} 获取）收到
+     * "导弹已被 DIRCM 激光干扰"；干扰者（DIRCM 载具司机）收到"DIRCM 正在照射来袭导弹"（节流）。
+     */
+    private static void notifySbwJamAndVictim(AbstractVehicle vehicle, Entity missile) {
+        if (vehicle.level().isClientSide()) {
+            return;
+        }
+        // 被干扰者提示（SBW 导弹发射者）：SBW 导弹继承 MC Projectile，转成 Projectile 取 getOwner()（MC 原生，不触碰 SBW 类）
+        Entity owner = missile instanceof net.minecraft.world.entity.projectile.Projectile proj ? proj.getOwner() : null;
+        if (owner instanceof ServerPlayer victim) {
+            victim.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.dircm_jammed"), true);
+        }
+        // 干扰者提示（节流，与 RVP 导弹同款）
         long now = vehicle.level().getGameTime();
         Long last = LAST_JAM_NOTIFY_BY_VEHICLE.get(vehicle.getId());
         if (last != null && now - last < JAM_NOTIFY_INTERVAL) {

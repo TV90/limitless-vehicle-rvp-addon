@@ -4,6 +4,7 @@ import com.sighs.apricityui.init.Document;
 import com.sighs.apricityui.init.Element;
 import com.sighs.apricityui.init.Node;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -16,12 +17,15 @@ import org.ywzj.vehicle.client.screen.VehicleModdingToolScreen;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /**
- * 改造工具屏幕扩展：在本体 AUI 改造工具屏幕的「武器切换」按钮下方动态插入
+ * 改造工具屏幕扩展：在本体 AUI 改造工具屏幕的「武器切换」按钮左侧动态插入
  * 「更换弹种(RVP)」按钮，点击打开 {@link RVP_AuiVariantScreen}。
  *
  * <p>本体改造工具已适配 ApricityUI（HTML 渲染），原版 Button 注入不可见，
  * 因此通过 AUI Document API 把按钮元素插入本体 HTML 的 {@code profile-actions}
- * 容器内、{@code weapon-button} 之后。</p>
+ * 容器内、{@code weapon-button} 之前。</p>
+ *
+ * <p>换弹限制：仅当载具速度低于 5 kph 且载具上无玩家或 gunner 时允许更换——
+ * 点击时复检（不满足给动作栏提示），服务端 {@code C2SSelectModdingSubWeapon} 权威校验兜底。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ModdingToolOverlay {
@@ -60,8 +64,18 @@ public final class RVP_ModdingToolOverlay {
         rvpButton.setClassName("button button-secondary");
         rvpButton.setAttribute("type", "button");
         rvpButton.setTextContent("更换弹种(RVP)");
-        rvpButton.addEventListener("click", ev -> Minecraft.getInstance()
-                .setScreen(new RVP_AuiVariantScreen(vehicle, screen)));
+        rvpButton.addEventListener("click", ev -> {
+            // 点击时复检改装条件（速度 < 5 kph 且无玩家/gunner 乘员），不满足则提示并阻止打开
+            if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    mc.player.displayClientMessage(
+                            Component.translatable("message.ywzj_rvp.modding_blocked"), true);
+                }
+                return;
+            }
+            Minecraft.getInstance().setScreen(new RVP_AuiVariantScreen(vehicle, screen));
+        });
         // 插到「武器切换」按钮左侧（weapon-button 之前的兄弟位置，
         // 不插其后——下方与特技烟雾区布局冲突）
         parent.insertBefore(rvpButton, weaponButton);

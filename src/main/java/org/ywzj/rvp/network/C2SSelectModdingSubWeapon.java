@@ -52,6 +52,10 @@ public record C2SSelectModdingSubWeapon(
             if (player.distanceToSqr(vehicle) > MAX_INTERACTION_DISTANCE_SQ) {
                 return;
             }
+            // 改装限制：仅当载具速度低于 5 kph 且车上无玩家或 gunner 时才允许更换武器（服务端权威校验）
+            if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
+                return;
+            }
             PartUnit<?> partUnit = vehicle.getPartUnit(msg.partId).orElse(null);
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {
                 return;

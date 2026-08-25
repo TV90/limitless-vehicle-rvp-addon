@@ -217,6 +217,7 @@
   "message.ywzj_rvp.jam_success": "Enemy missile successfully jammed",
   "message.ywzj_rvp.dircm_jammed": "Missile jammed by DIRCM laser",
   "message.ywzj_rvp.dircm_irradiate": "DIRCM irradiating inbound missile",
+  "message.ywzj_rvp.modding_blocked": "Vehicle moving or occupied, cannot switch weapons",
   "gui.ywzj_rvp.variants.title": "RVP Weapon Variants",
   "gui.ywzj_rvp.variants.station": "Station",
   "gui.ywzj_rvp.variants.weapon": "Weapon",

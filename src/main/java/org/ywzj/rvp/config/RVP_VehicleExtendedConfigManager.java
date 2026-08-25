@@ -96,6 +96,31 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return !get(vehicle).groundContactPartIds().isEmpty();
     }
 
+    /** 改装换弹允许的最大载具速度（km/h）：低于该值才可更换弹种。 */
+    public static final double MAX_MODDING_SPEED_KPH = 5.0;
+
+    /**
+     * 改装换弹条件校验：仅当载具速度低于 {@link #MAX_MODDING_SPEED_KPH} 且
+     * 载具上无玩家或 gunner 乘员时才允许更换武器（服务端权威校验 + 客户端按钮显隐共用）。
+     */
+    public boolean canModVehicle(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return false;
+        }
+        // block/tick -> km/h：1 block = 1 m，20 tick/s，×3.6 → ×72
+        double speedKph = vehicle.getDeltaMovement().length() * 72.0;
+        if (speedKph >= MAX_MODDING_SPEED_KPH) {
+            return false;
+        }
+        for (net.minecraft.world.entity.Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof net.minecraft.world.entity.player.Player
+                    || passenger instanceof org.ywzj.rvp.entity.gunner.GunnerEntity) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public boolean isModdingOnlyMulti(WeaponUnit weaponUnit, int weaponIndex) {
         if (weaponUnit == null || weaponIndex < 0) {
             return false;
