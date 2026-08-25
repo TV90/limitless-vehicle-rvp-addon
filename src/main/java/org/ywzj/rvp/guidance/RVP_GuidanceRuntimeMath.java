@@ -47,25 +47,9 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
         float factor = resolveTurningFactor(context);
-        // 进入目标 20 格半径圆柱内，直接俯冲并大幅提升转向能力
-        double horizontalDistToTarget = horizontalDistance(projectile.position(), target);
-        boolean inTerminalDiveCylinder = context.active().topAttackHeight() != null
-                && context.active().topAttackHeight() > 0f
-                && horizontalDistToTarget <= 20.0D;
-        Vec3 steeringTarget;
-        if (inTerminalDiveCylinder) {
-            steeringTarget = target;
-            factor = Math.max(factor, 0.8f);
-        } else {
-            steeringTarget = resolveTopAttackAimPoint(
-                    projectile, target, context.active().topAttackHeight(), factor);
-        }
-        if (context.active().topAttackHeight() != null
-                && context.active().topAttackHeight() > 0f
-                && projectile.hasReachedTopAttackApex()) {
-            factor = resolveTopAttackTerminalTurningFactor(
-                    projectile.position(), target, projectile.getDeltaMovement(), factor);
-        }
+        // 攻顶瞄准点：目标上空 min(|H|, 水平距离) 处，每 tick 重算（恢复 8c30656 无状态算法）
+        Vec3 steeringTarget = resolveTopAttackAimPoint(
+                projectile.position(), target, context.active().topAttackHeight());
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getFlightSpeed(), current.length());
@@ -361,162 +345,29 @@ public final class RVP_GuidanceRuntimeMath {
         return steerPursuit(current, targetPoint.subtract(position), speed, turningFactor);
     }
 
-    static Vec3 resolveTopAttackAimPoint(
-            RVP_BaseBullet projectile,
-            Vec3 target,
-            Float topAttackHeight,
-            float turningFactor
-    ) {
-        if (projectile == null || target == null || topAttackHeight == null
+    /**
+     * 攻顶瞄准点（无状态，恢复自 8c30656 算法）：目标正上方 min(|H|, 水平距离) 高度处，
+     * 每 tick 基于弹体当前位置重算。
+     *
+     * <p>水平距离大于 H 时瞄准点恒在目标上空 H 处 → 导弹持续爬升；
+     * 接近到水平距离小于 H 后瞄准点高度随距离线性收缩 → 自然圆滑地越顶俯冲，落角陡。
+     * 负 H 经 {@code copySign} 支持低空上升逼近。无任何剖面状态，对移动目标天然自适应。</p>
+     */
+    static Vec3 resolveTopAttackAimPoint(Vec3 projectilePos, Vec3 target, Float topAttackHeight) {
+        if (projectilePos == null || target == null || topAttackHeight == null
                 || Math.abs(topAttackHeight) <= 1.0E-6f) {
             return target;
         }
-        // 极近距离直接俯冲，跳过攻顶弹道
-        double distToTarget = horizontalDistance(projectile.position(), target);
-        if (topAttackHeight > 0f && distToTarget < 8.0D) {
-            return target;
-        }
-        if (topAttackHeight < 0f) {
-            return resolveDescendingApproachAimPoint(projectile.position(), target, topAttackHeight);
-        }
-
-        Vec3 apex = projectile.getTopAttackApexPos();
-        if (apex == null) {
-            Vec3 launch = projectile.position();
-            apex = computeTopAttackApex(launch, target, topAttackHeight);
-            projectile.initializeTopAttackProfile(launch, target, apex);
-        }
-        if (projectile.hasReachedTopAttackApex()) {
-            return target;
-        }
-
-        Vec3 launch = projectile.getTopAttackLaunchPos();
-        Vec3 initialTarget = projectile.getTopAttackInitialTargetPos();
-        if (shouldEnterTopAttackTerminal(
-                projectile.position(), target, launch, initialTarget,
-                projectile.getDeltaMovement(), turningFactor)) {
-            projectile.markTopAttackApexReached();
-            return target;
-        }
-        boolean passedMidpoint = hasPassedTopAttackMidpoint(projectile.position(), launch, initialTarget);
-        double speed = Math.max(projectile.getFlightSpeed(), projectile.getDeltaMovement().length());
-        double altitudeTolerance = Mth.clamp(speed * 1.5D, 4.0D, 24.0D);
-        if (passedMidpoint && projectile.getY() >= apex.y - altitudeTolerance) {
-            projectile.markTopAttackApexReached();
-            return target;
-        }
-        if (!passedMidpoint) {
-            return apex;
-        }
-
-        Vec3 horizontalAxis = horizontalDirection(launch, initialTarget);
-        if (horizontalAxis.lengthSqr() <= 1.0E-8D) {
-            return apex;
-        }
-        double forwardLook = Mth.clamp(speed * 3.0D, 4.0D, 64.0D);
-        double remainingAlongAxis = remainingDistanceAlongAxis(projectile.position(), launch, initialTarget);
-        double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
-        forwardLook = Math.min(forwardLook, Math.max(remainingAlongAxis - turnInDistance, 0.0D));
-        return new Vec3(
-                projectile.getX() + horizontalAxis.x * forwardLook,
-                apex.y,
-                projectile.getZ() + horizontalAxis.z * forwardLook
-        );
-    }
-
-    static Vec3 computeTopAttackApex(Vec3 launch, Vec3 target, float topAttackHeight) {
-        if (launch == null || target == null) {
-            return target;
-        }
-        double horizontalDistance = horizontalDistance(launch, target);
-        // 近距离时按比例缩减顶点高度，避免导弹冲过目标
-        double effectiveHeight = Math.min(Math.max(topAttackHeight, 0f), horizontalDistance);
-        double apexRatio = 0.5D;
-        return new Vec3(
-                launch.x + (target.x - launch.x) * apexRatio,
-                target.y + effectiveHeight,
-                launch.z + (target.z - launch.z) * apexRatio
-        );
-    }
-
-    static boolean hasPassedTopAttackMidpoint(Vec3 projectilePos, Vec3 launch, Vec3 initialTarget) {
-        if (projectilePos == null || launch == null || initialTarget == null) {
-            return false;
-        }
-        Vec3 axis = new Vec3(initialTarget.x - launch.x, 0.0D, initialTarget.z - launch.z);
-        double axisLengthSqr = axis.lengthSqr();
-        if (axisLengthSqr <= 1.0E-8D) {
-            return true;
-        }
-        Vec3 fromLaunch = new Vec3(projectilePos.x - launch.x, 0.0D, projectilePos.z - launch.z);
-        return fromLaunch.dot(axis) >= axisLengthSqr * 0.5D;
-    }
-
-    static boolean shouldEnterTopAttackTerminal(
-            Vec3 projectilePos,
-            Vec3 target,
-            Vec3 launch,
-            Vec3 initialTarget,
-            Vec3 velocity,
-            float turningFactor
-    ) {
-        if (projectilePos == null || target == null || launch == null || initialTarget == null) {
-            return true;
-        }
-        double horizontalDistance = horizontalDistance(projectilePos, target);
-        double speed = velocity != null ? velocity.length() : 0.0D;
-        double turnInDistance = resolveTopAttackTurnInDistance(speed, turningFactor);
-        if (horizontalDistance <= turnInDistance) {
-            return true;
-        }
-        return remainingDistanceAlongAxis(projectilePos, launch, initialTarget) <= 0.0D;
-    }
-
-    static double resolveTopAttackTurnInDistance(double speed, float turningFactor) {
-        double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
-        double responseTicks = Mth.clamp(1.0D / effectiveFactor, 2.0D, 12.0D);
-        // 近距离时降低下限，让导弹更早进入俯冲
-        return Mth.clamp(Math.max(speed, 0.0D) * responseTicks * 1.5D, 4.0D, 160.0D);
-    }
-
-    static float resolveTopAttackTerminalTurningFactor(
-            Vec3 projectilePos, Vec3 target, Vec3 velocity, float turningFactor) {
-        if (projectilePos == null || target == null) {
-            return turningFactor;
-        }
-        double speed = velocity != null ? velocity.length() : 0.0D;
-        double distance = horizontalDistance(projectilePos, target);
-        double responseWindow = Mth.clamp(speed * 12.0D, 48.0D, 240.0D);
-        double urgency = 1.0D - Mth.clamp(distance / responseWindow, 0.0D, 1.0D);
-        float terminalFloor = (float) Mth.lerp(urgency, 0.35D, 0.60D);
-        return Math.max(turningFactor, terminalFloor);
-    }
-
-    private static double remainingDistanceAlongAxis(Vec3 projectilePos, Vec3 launch, Vec3 initialTarget) {
-        if (projectilePos == null || launch == null || initialTarget == null) {
-            return 0.0D;
-        }
-        Vec3 axis = new Vec3(initialTarget.x - launch.x, 0.0D, initialTarget.z - launch.z);
-        double axisLength = axis.length();
-        if (axisLength <= 1.0E-8D) {
-            return 0.0D;
-        }
-        Vec3 fromLaunch = new Vec3(projectilePos.x - launch.x, 0.0D, projectilePos.z - launch.z);
-        return axisLength - fromLaunch.dot(axis.scale(1.0D / axisLength));
+        double dist = horizontalDistance(projectilePos, target);
+        double height = Math.copySign(
+                Math.min(Math.abs(topAttackHeight), dist), topAttackHeight);
+        return target.add(0, height, 0);
     }
 
     private static double horizontalDistance(Vec3 from, Vec3 to) {
         double dx = to.x - from.x;
         double dz = to.z - from.z;
         return Math.sqrt(dx * dx + dz * dz);
-    }
-
-    private static Vec3 horizontalDirection(Vec3 launch, Vec3 target) {
-        if (launch == null || target == null) {
-            return Vec3.ZERO;
-        }
-        Vec3 axis = new Vec3(target.x - launch.x, 0.0D, target.z - launch.z);
-        return axis.lengthSqr() > 1.0E-8D ? axis.normalize() : Vec3.ZERO;
     }
 
     private static boolean passesGuidanceAngle(
@@ -536,14 +387,6 @@ public final class RVP_GuidanceRuntimeMath {
                 steeringTarget.subtract(projectile.position()),
                 config.maxGuidanceAngle()
         );
-    }
-
-    private static Vec3 resolveDescendingApproachAimPoint(Vec3 projectilePos, Vec3 target, float topAttackHeight) {
-        double horizontalDistance = Math.sqrt(
-                projectilePos.distanceToSqr(target.x, projectilePos.y, target.z));
-        double height = Math.copySign(
-                Math.min(Math.abs(topAttackHeight), horizontalDistance), topAttackHeight);
-        return target.add(0, height, 0);
     }
 
     static Vec3 steerGpsCruise(

@@ -3612,6 +3612,10 @@ public class RVP_TacticalMapScreen extends Screen {
     }
 
     private ResourceLocation resolveFallbackEntityIcon(Entity entity) {
+        // 被动电子战假目标：以飞机 icon 呈现（用户批示），增强欺骗观感
+        if (entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity) {
+            return JET_ICON;
+        }
         if (entity instanceof Player) {
             return PLAYER_ICON;
         }

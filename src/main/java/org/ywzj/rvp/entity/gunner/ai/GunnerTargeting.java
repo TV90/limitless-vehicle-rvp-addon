@@ -55,6 +55,13 @@ public final class GunnerTargeting {
                     .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                     .orElse(null);
         }
+        // 优先级 1.5：敌方被动电子战假目标（仅次于导弹，用户批示"会，且优先级高"）
+        List<Entity> ewDecoys = entities.stream()
+                .filter(entity -> entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity)
+                .toList();
+        if (!ewDecoys.isEmpty()) {
+            return pickBestInTier(gunner, vehicle, weaponUnit, profile, ewDecoys, launcher);
+        }
         List<Entity> hostileGunnerVehicles = entities.stream()
                 .filter(entity -> isRelativeHostileGunnerVehicle(gunner, entity))
                 .toList();
@@ -240,6 +247,10 @@ public final class GunnerTargeting {
         }
         if (entity instanceof AbstractVehicle targetVehicle && hasProtectedCreativePassenger(vehicle, targetVehicle)) {
             return false;
+        }
+        // 被动电子战假目标：仅敌对方可攻击（归属方/友方不可见、不可锁、不可打，§7.3/§7.4）
+        if (entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity decoy) {
+            return org.ywzj.rvp.ecm.RVP_EcmIff.isDecoyHostileTo(decoy, vehicle);
         }
         TargetMatch match = matchProfileTarget(gunner, vehicle, entity, profile);
         if (!match.allowed) {

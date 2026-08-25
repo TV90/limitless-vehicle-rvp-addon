@@ -386,6 +386,11 @@ public final class RVP_ExternalRadarSyncService {
         if (entity == launcher || entity == relayVehicle) {
             return false;
         }
+        // 被动电子战假目标：归属方与其友方不可见（§7.3 过滤）；敌对方可见
+        if (entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity decoy
+                && !org.ywzj.rvp.ecm.RVP_EcmIff.isDecoyHostileTo(decoy, launcher)) {
+            return false;
+        }
         if (entity instanceof AbstractVehicle vehicle) {
             if (vehicle.getUUID().equals(launcher.getUUID()) || vehicle.getUUID().equals(relayVehicle.getUUID())) {
                 return false;

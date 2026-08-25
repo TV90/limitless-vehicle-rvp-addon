@@ -71,6 +71,22 @@ public class RVP_Entities {
                     .build("rvp_decoy"));
 
     /**
+     * 被动电子战假目标诱饵。隐形雷达幻影（世界内不渲染），AABB 按小型载具量级
+     * 以通过本体雷达扫描过滤；可被弹药命中（击落反馈）。
+     */
+    public static final RegistryObject<EntityType<org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity>> RVP_ECM_DECOY =
+            ENTITIES.register("rvp_ecm_decoy", () -> EntityType.Builder.<org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity>of(org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity::new, MobCategory.MISC)
+                    .noSummon()
+                    .noSave()
+                    .fireImmune()
+                    .sized(1.5F, 1.5F)
+                    .clientTrackingRange(128)
+                    .updateInterval(4)
+                    .setShouldReceiveVelocityUpdates(false)
+                    .setCustomClientFactory(org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity::new)
+                    .build("rvp_ecm_decoy"));
+
+    /**
      * 烟雾云实体（地面载具干扰物）。大 AABB（半径随时间膨胀，禁视区），跟踪范围放宽
      * 以便远处玩家看到烟幕；存活/目标半径经 SynchedEntityData 随生成包同步。
      */

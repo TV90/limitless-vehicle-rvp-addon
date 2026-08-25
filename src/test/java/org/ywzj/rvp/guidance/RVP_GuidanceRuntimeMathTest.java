@@ -49,70 +49,38 @@ class RVP_GuidanceRuntimeMathTest {
     }
 
     @Test
-    void topAttackApexUsesConfiguredHeightAtStraightPathMidpoint() {
-        Vec3 aim = RVP_GuidanceRuntimeMath.computeTopAttackApex(
-                Vec3.ZERO, new Vec3(200, 10, 0), 80f);
+    void topAttackAimSitsConfiguredHeightAboveTargetAtLongRange() {
+        // 水平距离 200 > H=80：瞄准点恒在目标上空 80 处，导弹持续爬升
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                new Vec3(0, 10, 0), new Vec3(200, 10, 0), 80f);
 
-        assertVectorEquals(new Vec3(100, 90, 0), aim);
+        assertVectorEquals(new Vec3(200, 90, 0), aim);
     }
 
     @Test
-    void topAttackMidpointUsesInitialStraightPathNotTravelledPath() {
-        Vec3 launch = new Vec3(0, 20, 0);
-        Vec3 target = new Vec3(200, 10, 0);
+    void topAttackAimHeightShrinksWithHorizontalDistanceWhenCloser() {
+        // 水平距离 30 < H=100：瞄准点高度收缩为 30，导弹自然越顶俯冲
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                new Vec3(0, 50, 0), new Vec3(30, 10, 0), 100f);
 
-        assertEquals(false, RVP_GuidanceRuntimeMath.hasPassedTopAttackMidpoint(
-                new Vec3(99, 300, 80), launch, target));
-        assertEquals(true, RVP_GuidanceRuntimeMath.hasPassedTopAttackMidpoint(
-                new Vec3(101, 5, -80), launch, target));
+        assertVectorEquals(new Vec3(30, 40, 0), aim);
     }
 
     @Test
-    void topAttackApexIsCappedForShortRangeTargets() {
-        Vec3 aim = RVP_GuidanceRuntimeMath.computeTopAttackApex(
-                Vec3.ZERO, new Vec3(20, 10, 0), 1000f);
+    void topAttackNegativeHeightAimsBelowTargetForLowApproach() {
+        // 负 H：瞄准点在目标下方，支持低空上升逼近
+        Vec3 aim = RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(
+                new Vec3(0, 10, 0), new Vec3(200, 60, 0), -40f);
 
-        assertVectorEquals(new Vec3(10, 30, 0), aim);
+        assertVectorEquals(new Vec3(200, 20, 0), aim);
     }
 
     @Test
-    void topAttackShortRangeEntersTerminalBeforeOvershooting() {
-        assertEquals(true, RVP_GuidanceRuntimeMath.shouldEnterTopAttackTerminal(
-                new Vec3(40, 120, 0),
-                new Vec3(100, 0, 0),
-                Vec3.ZERO,
-                new Vec3(100, 0, 0),
-                new Vec3(8, 6, 0),
-                0.15f
-        ));
-    }
-
-    @Test
-    void topAttackLongRangeKeepsClimbingOutsideTurnInDistance() {
-        assertEquals(false, RVP_GuidanceRuntimeMath.shouldEnterTopAttackTerminal(
-                new Vec3(200, 300, 0),
-                new Vec3(1000, 0, 0),
-                Vec3.ZERO,
-                new Vec3(1000, 0, 0),
-                new Vec3(8, 6, 0),
-                0.15f
-        ));
-    }
-
-    @Test
-    void topAttackTurnInDistanceGrowsForSlowTurningMissiles() {
-        double agile = RVP_GuidanceRuntimeMath.resolveTopAttackTurnInDistance(10.0D, 0.5f);
-        double sluggish = RVP_GuidanceRuntimeMath.resolveTopAttackTurnInDistance(10.0D, 0.15f);
-
-        assertEquals(true, sluggish > agile);
-    }
-
-    @Test
-    void topAttackTerminalBoostsTurningAtShortRange() {
-        float factor = RVP_GuidanceRuntimeMath.resolveTopAttackTerminalTurningFactor(
-                Vec3.ZERO, new Vec3(50, 0, 0), new Vec3(10, 0, 0), 0.15f);
-
-        assertEquals(true, factor > 0.35f);
+    void topAttackAimFallsBackToTargetForInvalidHeight() {
+        assertEquals(new Vec3(200, 10, 0),
+                RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(new Vec3(0, 10, 0), new Vec3(200, 10, 0), 0f));
+        assertEquals(new Vec3(200, 10, 0),
+                RVP_GuidanceRuntimeMath.resolveTopAttackAimPoint(new Vec3(0, 10, 0), new Vec3(200, 10, 0), null));
     }
 
     @Test

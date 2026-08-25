@@ -18,6 +18,8 @@ import java.util.Locale;
  *       载具干扰物配置的 {@code bone_modules} 全部失效后失去抛洒功能。</li>
  *   <li>{@link #DIRCM}：定向红外对抗照射设备（消费点 {@code RVP_DircmRuntimeManager}），
  *       失效后该通道失去激光照射能力。</li>
+ *   <li>{@link #ECM_PASSIVE}：被动电子战防御措施（消费点 {@code RVP_EcmPassiveManager}），
+ *       失效后不再在被敌对雷达照射时生成假目标。</li>
  * </ul>
  */
 public enum BoneModuleType {
@@ -26,7 +28,8 @@ public enum BoneModuleType {
     JAMMER,
     APS,
     COUNTERMEASURE,
-    DIRCM;
+    DIRCM,
+    ECM_PASSIVE;
 
     private static final BoneModuleType[] VALUES = values();
 

@@ -132,6 +132,11 @@ public final class RVP_RadarContactHelper {
         if (resolved == null) {
             return null;
         }
+        // 被动电子战假目标：返回其随机的 NCTR 机型名（欺骗用），优先级最高
+        if (resolved instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity decoy) {
+            String nctr = decoy.getNctrName();
+            return nctr == null || nctr.isBlank() ? null : nctr;
+        }
         if (resolved instanceof RVP_HbmRadarContact) {
             return "MSL";
         }
