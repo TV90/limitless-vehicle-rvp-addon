@@ -378,6 +378,16 @@ public final class RVP_EcmPassiveManager {
         if (cfg == null) {
             return null;
         }
+        // 烧穿门控（按观察者逐一判定）：导弹发射载具已进入归属烧穿距离 → 其导引头"看穿"了干扰，
+        // 不做偏转；其它更远的发射者不受牵连，继续被假目标欺骗
+        Entity shooterVehicle = projectile.getShooterVehicle();
+        if (shooterVehicle != null) {
+            double dx = shooterVehicle.getX() - av.getX();
+            double dz = shooterVehicle.getZ() - av.getZ();
+            if (Math.sqrt(dx * dx + dz * dz) < cfg.burnThroughDistance()) {
+                return null;
+            }
+        }
         BoneEcmPassiveConfig.Band band = state.getAppliedBand();
         if (band == null) {
             return null;

@@ -248,9 +248,11 @@ public final class GunnerTargeting {
         if (entity instanceof AbstractVehicle targetVehicle && hasProtectedCreativePassenger(vehicle, targetVehicle)) {
             return false;
         }
-        // 被动电子战假目标：仅敌对方可攻击（归属方/友方不可见、不可锁、不可打，§7.3/§7.4）
+        // 被动电子战假目标：仅敌对方可攻击（归属方/友方不可见、不可锁、不可打，§7.3/§7.4）；
+        // 且已"烧穿"该干扰的 gunner 载具不再攻击幻影（直接看穿、锁定真实目标）
         if (entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity decoy) {
-            return org.ywzj.rvp.ecm.RVP_EcmIff.isDecoyHostileTo(decoy, vehicle);
+            return org.ywzj.rvp.ecm.RVP_EcmIff.isDecoyHostileTo(decoy, vehicle)
+                    && !org.ywzj.rvp.ecm.RVP_EcmPassiveManager.isViewerBurnedThrough(decoy, vehicle);
         }
         TargetMatch match = matchProfileTarget(gunner, vehicle, entity, profile);
         if (!match.allowed) {
