@@ -100,8 +100,11 @@ public final class RVP_EcmPassiveManager {
                     }
                 }
             }
-            tickStates(level);
         }
+        // 状态推进只在全部维度处理完后执行一次（跨维度解析归属载具）。
+        // 此前放在维度循环内：其它维度的 pass 会因"本维度找不到载具"误删状态
+        // → 冷却丢失 → 每 4tick 重新撒波 = 无限刷（已修复的根因）
+        tickStates(server);
     }
 
     /** 本 tick 内的单次照射记录（按被照载具去重后取最近源）。 */
@@ -139,8 +142,8 @@ public final class RVP_EcmPassiveManager {
 
     /**
      * 单次敌对照射入口（一次性脉冲）：
-     * 烧穿距离内 → 清现存假目标 + 刷新充能；充能期 → 忽略；
-     * 否则立即撒一波假目标并进入充能。
+     * 充能完毕且距离命中某档 → 立即撒一波假目标并进入充能；
+     * 充能期 → 忽略；烧穿不再是"全局清场"，而是按观察者逐一判定效果（见 {@link #isViewerBurnedThrough}）。
      */
     private static void onRadarIlluminated(ServerLevel level, AbstractVehicle ewVehicle,
                                            AbstractVehicle source, double distance) {
@@ -152,21 +155,12 @@ public final class RVP_EcmPassiveManager {
         state.setLastIlluminatedGameTime(level.getGameTime());
         state.setLastSourceVehicleId(source.getId());
 
-        double horizontalDistance = horizontalDistance(source.position(), ewVehicle.position());
-
-        // 烧穿：低于烧穿距离的照射直接清掉现存幻影并刷新充能
-        if (horizontalDistance < config.burnThroughDistance()) {
-            clearDecoys(level, ewVehicle.getId());
-            state.setCooldownTicks(config.cooldownTicks());
-            return;
-        }
-
         // 充能期：再次照射不生成（"一次性脉冲 + 直接进充能"，用户批示）
         if (state.getCooldownTicks() > 0) {
             return;
         }
 
-        BoneEcmPassiveConfig.Band band = config.resolveBand(horizontalDistance);
+        BoneEcmPassiveConfig.Band band = config.resolveBand(distance);
         if (band == null) {
             return;
         }
@@ -176,17 +170,39 @@ public final class RVP_EcmPassiveManager {
         state.setCooldownTicks(config.cooldownTicks());
     }
 
+    /**
+     * 观察者是否已"烧穿"该假目标（对其实际位置与归属载具的水平距离 &lt; 归属烧穿距离）。
+     * 烧穿 = 对该观察者无欺骗效果：不可被其转锁/攻击判定选中；
+     * 但假目标本体仍在，不影响其它更远的敌对雷达继续被欺骗（多源互不牵连）。
+     */
+    public static boolean isViewerBurnedThrough(@Nullable RVP_EcmDecoyEntity decoy, @Nullable Entity viewer) {
+        if (decoy == null || viewer == null || !(viewer.level() instanceof ServerLevel sl)) {
+            return false;
+        }
+        Entity owner = sl.getEntity(decoy.getOwnerVehicleId());
+        if (!(owner instanceof AbstractVehicle ownerVehicle)) {
+            return false;
+        }
+        BoneEcmPassiveConfig cfg = resolveAliveConfig(ownerVehicle);
+        if (cfg == null) {
+            return false;
+        }
+        double dx = viewer.getX() - ownerVehicle.getX();
+        double dz = viewer.getZ() - ownerVehicle.getZ();
+        return Math.sqrt(dx * dx + dz * dz) < cfg.burnThroughDistance();
+    }
+
     /* ==================== 状态推进 ==================== */
 
-    private static void tickStates(ServerLevel level) {
+    private static void tickStates(MinecraftServer server) {
         Iterator<Map.Entry<Integer, RVP_EcmPassiveState>> it = STATES.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, RVP_EcmPassiveState> entry = it.next();
             int ownerId = entry.getKey();
-            AbstractVehicle owner = findVehicleById(level, ownerId);
-            // 载具消亡 / 模块骨块全被打坏 → 清场移除
+            AbstractVehicle owner = findVehicleAcrossLevels(server, ownerId);
+            // 载具消亡 / 模块骨块全被打坏 → 清场移除（用归属者所在维度清理）
             if (owner == null || !owner.isAlive() || resolveAliveConfig(owner) == null) {
-                clearDecoys(level, ownerId);
+                clearDecoysOf(owner, ownerId);
                 DECOY_IDS.remove(ownerId);
                 it.remove();
                 continue;
@@ -194,9 +210,9 @@ public final class RVP_EcmPassiveManager {
             RVP_EcmPassiveState state = entry.getValue();
             if (state.getCooldownTicks() > 0) {
                 state.setCooldownTicks(Math.max(0, state.getCooldownTicks() - TICK_INTERVAL));
-            } else if (level.getGameTime() - state.getLastIlluminatedGameTime() > IDLE_CLEANUP_TICKS) {
+            } else if (owner.level().getGameTime() - state.getLastIlluminatedGameTime() > IDLE_CLEANUP_TICKS) {
                 // 长时间未被照射且已可用：清理残余假目标并移除状态
-                clearDecoys(level, ownerId);
+                clearDecoysOf(owner, ownerId);
                 DECOY_IDS.remove(ownerId);
                 it.remove();
             }
@@ -386,6 +402,25 @@ public final class RVP_EcmPassiveManager {
             }
         }
         return bestDecoy;
+    }
+
+    /** 跨维度按实体 id 解析载具（状态机全局只跑一次，避免被其它维度 pass 误删状态）。 */
+    @Nullable
+    private static AbstractVehicle findVehicleAcrossLevels(MinecraftServer server, int entityId) {
+        for (ServerLevel level : server.getAllLevels()) {
+            AbstractVehicle vehicle = findVehicleById(level, entityId);
+            if (vehicle != null) {
+                return vehicle;
+            }
+        }
+        return null;
+    }
+
+    /** 用假目标归属者所在的维度清理其假目标。 */
+    private static void clearDecoysOf(@Nullable AbstractVehicle owner, int ownerVehicleId) {
+        if (owner != null && owner.level() instanceof ServerLevel sl) {
+            clearDecoys(sl, ownerVehicleId);
+        }
     }
 
     @Nullable
