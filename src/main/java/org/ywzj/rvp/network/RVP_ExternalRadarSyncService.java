@@ -267,7 +267,7 @@ public final class RVP_ExternalRadarSyncService {
         List<Entity> targets = phaseMode
                 ? RVP_RadarScanHelper.scanRadarArea(allEntities, relayVehicle, radarUnit.worldRadarPosition(),
                 radarUnit.getMaxScanDistance(), pos -> isWithinRelayRadarVolume(radarUnit, pos, true))
-                : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(),
+                : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(), radarUnit.isAntiGround(),
                 pos -> isWithinRelayRadarVolume(radarUnit, pos, false));
         targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
         appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);

@@ -128,7 +128,7 @@ dependencies {
     // 本体
     implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.9-all")
     // ApricityUI（本体 AUI 适配后 VehicleModdingToolScreen 继承了 ApricityScreen，编译需要）
-    compileOnly 'com.sighs:ApricityUI-forge-1.20.1:1.2.2'
+    compileOnly 'com.sighs:ApricityUI-forge-1.20.1:1.2.3'
     // sbw（联动兼容层：仅编译期引用，运行时由用户另行安装，不打包、不强制依赖。
     // 注：本体用 CurseMaven 的 modCompileOnly 接入，但 RVP 的 ForgeGradle 未注册该方法，
     // 故改用本地 libs 下 SBW jar + compileOnly fg.deobf 等价接入（SBW 同样不被嵌入、可选）。
