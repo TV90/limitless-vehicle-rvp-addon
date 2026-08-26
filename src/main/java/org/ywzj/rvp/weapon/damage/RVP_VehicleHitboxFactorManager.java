@@ -25,6 +25,7 @@ import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
+import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneEcmPassiveConfig;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
@@ -220,6 +221,34 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     out = new HashMap<>();
                 }
                 out.put(entry.getKey(), dircm);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 解析载具上全部存活的主动电子战（{@code ecm_active}）骨块配置。
+     *
+     * <p>返回 {@code Map<骨块名, 配置>}；无配置返回 null。
+     * 供 {@code RVP_EcmActiveManager} 判定载具是否具备主动ECM能力
+     * （结合 {@code RVP_BoneModuleStateTable} 的骨块存活状态）。</p>
+     */
+    public @Nullable Map<String, BoneEcmActiveConfig> resolveEcmActiveDevices(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneEcmActiveConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneEcmActiveConfig active = entry.getValue() == null ? null : entry.getValue().ecmActive();
+            if (active != null) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), active);
             }
         }
         return out;
@@ -781,6 +810,17 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             boolean hitIndicatorRvp = GsonHelper.getAsBoolean(obj, "hit_indicator_rvp", true);
+            // 顶层无骨骼的 ecm_active（无骨骼ECM）：直接挂到虚拟骨骼 __vehicle__，始终存活
+            BoneEcmActiveConfig vehicleEcmActive = BoneEcmActiveConfig.parse(obj.get("ecm_active"));
+            if (vehicleEcmActive != null) {
+                if (moduleMap == null) {
+                    moduleMap = new HashMap<>();
+                }
+                java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.ECM_ACTIVE);
+                BoneModuleConfig synthetic = new BoneModuleConfig(1f, Float.POSITIVE_INFINITY, 0f, modules,
+                        null, null, null, null, vehicleEcmActive);
+                moduleMap.put("__vehicle__", synthetic);
+            }
             if ((map == null || map.isEmpty())
                     && (moduleMap == null || moduleMap.isEmpty())
                     && (aliasMap == null || aliasMap.isEmpty())
@@ -967,7 +1007,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable BoneJammerConfig jammer,
             @Nullable BoneApsConfig aps,
             @Nullable BoneDircmConfig dircm,
-            @Nullable BoneEcmPassiveConfig ecmPassive
+            @Nullable BoneEcmPassiveConfig ecmPassive,
+            @Nullable BoneEcmActiveConfig ecmActive
     ) {
         boolean hasModules() {
             return modules != null && !modules.isEmpty();
@@ -996,7 +1037,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules,
                     BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")),
                     BoneDircmConfig.parse(obj.get("dircm")),
-                    BoneEcmPassiveConfig.parse(obj.get("ecm_passive")));
+                    BoneEcmPassiveConfig.parse(obj.get("ecm_passive")),
+                    BoneEcmActiveConfig.parse(obj.get("ecm_active")));
         }
 
         /** 兼容旧配置 {@code hitbox_era} 条目：始终仅 ERA 模块。 */
@@ -1009,7 +1051,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 return factor.map(value -> {
                     Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
                     modules.add(BoneModuleType.ERA);
-                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null, null, null);
+                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null, null, null, null);
                 }).orElse(null);
             }
             if (!element.isJsonObject()) {
@@ -1027,7 +1069,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
             modules.add(BoneModuleType.ERA);
-            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null, null, null);
+            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null, null, null, null);
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */

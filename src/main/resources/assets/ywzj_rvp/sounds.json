@@ -64,5 +64,11 @@
     "sounds": [
       "ywzj_rvp:misc/laser_alert"
     ]
+  },
+  "ecm_jammer": {
+    "subtitle": "subtitles.ywzj_rvp.ecm_jammer",
+    "sounds": [
+      "ywzj_rvp:misc/ecm_jammer"
+    ]
   }
 }

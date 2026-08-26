@@ -228,6 +228,21 @@ public class RVP_Network {
                 .decoder(C2SFireCountermeasure::decode)
                 .consumerMainThread(C2SFireCountermeasure::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SFireEcm.class, id++)
+                .encoder(C2SFireEcm::encode)
+                .decoder(C2SFireEcm::decode)
+                .consumerMainThread(C2SFireEcm::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CEcmActiveHudSync.class, id++)
+                .encoder(S2CEcmActiveHudSync::encode)
+                .decoder(S2CEcmActiveHudSync::decode)
+                .consumerMainThread(S2CEcmActiveHudSync::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CEcmFakeLock.class, id++)
+                .encoder(S2CEcmFakeLock::encode)
+                .decoder(S2CEcmFakeLock::decode)
+                .consumerMainThread(S2CEcmFakeLock::handle)
+                .add();
         CHANNEL.messageBuilder(S2CCountermeasureHudSync.class, id++)
                 .encoder(S2CCountermeasureHudSync::encode)
                 .decoder(S2CCountermeasureHudSync::decode)
@@ -242,6 +257,11 @@ public class RVP_Network {
                 .encoder(S2CRvpWarn::encode)
                 .decoder(S2CRvpWarn::decode)
                 .consumerMainThread(S2CRvpWarn::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CEcmDebug.class, id++)
+                .encoder(S2CEcmDebug::encode)
+                .decoder(S2CEcmDebug::decode)
+                .consumerMainThread(S2CEcmDebug::handle)
                 .add();
     }
 }

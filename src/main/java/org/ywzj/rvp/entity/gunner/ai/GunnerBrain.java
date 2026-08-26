@@ -19,6 +19,13 @@ import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.countermeasure.server.RVP_CountermeasureRuntimeManager;
+import org.ywzj.rvp.ecm.RVP_EcmActiveManager;
+import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.vehicle.vehicle.passenger.WarningReceiver;
+import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
@@ -132,6 +139,7 @@ public final class GunnerBrain {
         }
 
         tickCountermeasure(gunner, vehicle, profile);
+        tickEcmActive(gunner, vehicle);
         // 地面载具被红外导弹锁定：抛烟雾并开进烟雾停车（仅司机 AI）
         if (driverAi) {
             tickSmokeEvasion(gunner, vehicle);
@@ -1177,6 +1185,66 @@ public final class GunnerBrain {
                     return;
                 }
             }
+        }
+    }
+
+    /**
+     * 主动ECM 自动触发（Gunner AI）：被雷达锁定或导弹来袭时尝试释放。
+     *
+     * <p>触发条件：RWR 存在 RADAR_LOCK/MISSILE_LAUNCH 告警，或 {@code findAmmoThreat} 在 400 格内发现威胁；
+     * 可用性：载具存在存活的 ECM_ACTIVE 骨块；冷却由服务端 {@code RVP_EcmActiveManager} 判定。</p>
+     */
+    private static void tickEcmActive(GunnerEntity gunner, AbstractVehicle vehicle) {
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return;
+        }
+        // 是否装备主动ECM
+        var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+        boolean hasAlive = false;
+        for (String bone : devices.keySet()) {
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ECM_ACTIVE)) {
+                hasAlive = true;
+                break;
+            }
+        }
+        if (!hasAlive) {
+            return;
+        }
+        // 触发条件：被锁定或导弹来袭
+        boolean shouldFire = false;
+        // RWR 锁定检查
+        if (vehicle.warningReceiver != null) {
+            for (var entry : vehicle.warningReceiver.targets.entrySet()) {
+                WarnType wt = entry.getValue().warnType();
+                if (wt == WarnType.RADAR_LOCK || wt == WarnType.MISSILE_LAUNCH) {
+                    shouldFire = true;
+                    break;
+                }
+            }
+        }
+        // 导弹威胁检查：以主动ECM 的有效干扰半径作为触发距离（不再受箔条 32m 硬上限限制）
+        if (!shouldFire) {
+            // 取所有 ECM 设备中的最大干扰半径作为触发阈值（弹药/载具干扰半径与 200m 兜底）
+            double triggerRadius = 200.0;
+            for (BoneEcmActiveConfig cfg : devices.values()) {
+                triggerRadius = Math.max(triggerRadius, cfg.ammoJamRadius());
+                triggerRadius = Math.max(triggerRadius, cfg.vehicleJamRadius());
+            }
+            // closeRangeCap=触发半径，maxTimeToImpact 放大到 600 tick 以便来袭导弹一进入半径就释放
+            var threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, triggerRadius, triggerRadius, 600.0);
+            if (threat != null) {
+                shouldFire = true;
+            }
+        }
+        if (!shouldFire) {
+            return;
+        }
+        // 尝试释放（服务端校验冷却）
+        if (vehicle.level() instanceof ServerLevel) {
+            RVP_EcmActiveManager.tryFireForVehicle(vehicle);
         }
     }
 

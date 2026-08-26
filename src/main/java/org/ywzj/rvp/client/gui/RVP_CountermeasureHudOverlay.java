@@ -8,6 +8,10 @@ import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
+import org.ywzj.rvp.client.state.RVP_EcmActiveHudState;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
@@ -38,8 +42,11 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         // 取当前载具的干扰物余量同步状态
         RVP_CountermeasureHudState.Snapshot state = RVP_CountermeasureHudState.get(vehicle.getId());
-        if (state == null
-                || (state.flareTotal() <= 0 && state.chaffTotal() <= 0 && state.smokeTotal() <= 0)) {
+        boolean hasFlare = state != null && state.flareTotal() > 0;
+        boolean hasChaff = state != null && state.chaffTotal() > 0;
+        boolean hasSmoke = state != null && state.smokeTotal() > 0;
+        boolean hasEcm = isEcmAvailable(vehicle);
+        if (!hasFlare && !hasChaff && !hasSmoke && !hasEcm) {
             return;
         }
         var font = Minecraft.getInstance().font;
@@ -49,45 +56,86 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         boolean rotaryWing = vehicle instanceof RotaryWingVehicle;
         boolean airborne = rotaryWing || vehicle instanceof FixedWingVehicle;
         if (airborne) {
-            // 飞行器：热诱/箔条组起点紧贴本体信息列末行（旋翼末行 leftY+36 → 组起点 leftY+48；
-            // 固定翼末行 leftY+48 → 组起点 leftY+60），不再统一用固定翼偏移导致旋翼多隔一行空白
+            // 飞行器：热诱/箔条/ECM 组起点紧贴本体信息列末行（旋翼末行 leftY+36 → 组起点 leftY+48；
+            // 固定翼末行 leftY+48 → 组起点 leftY+60），三者在组内按 热诱→箔条→ECM 顺序紧凑排列，缺失则递补
             int y = centerY - 21 + (rotaryWing ? 48 : 60);
             boolean airDecoyDrawn = false;
-            if (state.flareTotal() > 0) {
+            if (hasFlare) {
                 drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
                         state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
                 y += 12;
                 airDecoyDrawn = true;
             }
-            if (state.chaffTotal() > 0) {
+            if (hasChaff) {
                 drawRow(guiGraphics, font, "箔条", state.chaffRemain(), state.chaffTotal(),
                         state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
                 y += 12;
                 airDecoyDrawn = true;
             }
-            if (state.smokeTotal() > 0) {
+            if (hasEcm) {
+                drawEcmRow(guiGraphics, font, vehicle, leftX, y);
+                y += 12;
+                airDecoyDrawn = true;
+            }
+            if (hasSmoke) {
                 // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
                 drawRow(guiGraphics, font, "烟雾", state.smokeRemain(), state.smokeTotal(),
                         state.smokeReloadRemain(), leftX, airDecoyDrawn ? y + 12 : y, RVP_Keys.FIRE_SMOKE);
             }
         } else {
-            // 地面载具：本体无左侧信息列，整块置于屏幕竖直中部（顶边 centerY-4 使文字视觉居中于中线）
+            // 地面载具：ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
             int y = centerY - 4;
-            if (state.flareTotal() > 0) {
+            if (hasFlare) {
                 drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
                         state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
                 y += 12;
             }
-            if (state.chaffTotal() > 0) {
+            if (hasChaff) {
                 drawRow(guiGraphics, font, "箔条", state.chaffRemain(), state.chaffTotal(),
                         state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
                 y += 12;
             }
-            if (state.smokeTotal() > 0) {
+            if (hasSmoke) {
                 drawRow(guiGraphics, font, "烟雾", state.smokeRemain(), state.smokeTotal(),
                         state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE);
+                y += 12;
+            }
+            if (hasEcm) {
+                drawEcmRow(guiGraphics, font, vehicle, leftX, y);
             }
         }
+    }
+
+    /** 是否装备主动ECM（任一骨块存活）。 */
+    private static boolean isEcmAvailable(AbstractVehicle vehicle) {
+        var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return false;
+        }
+        for (String bone : devices.keySet()) {
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ECM_ACTIVE)) {
+                return true;
+            }
+        }
+        // 无骨骼ECM（__vehicle__）始终可用
+        return devices.containsKey("__vehicle__");
+    }
+
+    /** 绘制 ECM 行（无“(主动)”后缀，样式对齐干扰物）。 */
+    private static void drawEcmRow(GuiGraphics guiGraphics, Font font, AbstractVehicle vehicle, int x, int y) {
+        var snapshot = RVP_EcmActiveHudState.get(vehicle.getId());
+        if (snapshot != null && snapshot.isActive()) {
+            int seconds = (snapshot.activeRemainTick() + 19) / 20;
+            guiGraphics.drawString(font, "ECM: 反制中 " + seconds + "s", x, y, Color.GREEN);
+            return;
+        }
+        if (snapshot != null && snapshot.isCoolingDown()) {
+            int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
+            guiGraphics.drawString(font, "ECM: 装填 " + seconds + "秒", x, y, Color.GREEN);
+            return;
+        }
+        String keyName = RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString();
+        guiGraphics.drawString(font, "ECM: 就绪 [" + keyName + "]", x, y, Color.GREEN);
     }
 
     private static void drawRow(GuiGraphics guiGraphics, Font font, String label,

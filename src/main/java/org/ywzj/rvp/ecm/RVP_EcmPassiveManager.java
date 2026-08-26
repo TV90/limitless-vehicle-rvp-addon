@@ -13,6 +13,7 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.ecm.RVP_EcmActiveManager;
 import org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEcmHudSync;
@@ -378,33 +379,44 @@ public final class RVP_EcmPassiveManager {
         if (!(av.level() instanceof ServerLevel sl)) {
             return null;
         }
-        RVP_EcmPassiveState state = STATES.get(av.getId());
-        if (state == null) {
-            return null;
-        }
-        BoneEcmPassiveConfig cfg = resolveAliveConfig(av);
-        if (cfg == null) {
-            return null;
-        }
-        // 烧穿门控（按观察者逐一判定）：导弹发射载具已进入归属烧穿距离 → 其导引头"看穿"了干扰，
-        // 不做偏转；其它更远的发射者不受牵连，继续被假目标欺骗
-        Entity shooterVehicle = projectile.getShooterVehicle();
-        if (shooterVehicle != null) {
-            double dx = shooterVehicle.getX() - av.getX();
-            double dz = shooterVehicle.getZ() - av.getZ();
-            if (Math.sqrt(dx * dx + dz * dz) < cfg.burnThroughDistance()) {
-                return null;
+        // 收集被动与主动假目标（主动假目标与被动行为一致，均可被导引头偏转命中）
+        List<RVP_EcmDecoyEntity> decoys = new ArrayList<>();
+        RVP_EcmPassiveState passiveState = STATES.get(av.getId());
+        BoneEcmPassiveConfig passiveCfg = resolveAliveConfig(av);
+        BoneEcmPassiveConfig.Band band = passiveState != null ? passiveState.getAppliedBand() : null;
+        boolean hasPassiveChance = false;
+        double passiveChance = 0.0;
+        if (passiveState != null && passiveCfg != null && band != null) {
+            // 烧穿门控（按观察者逐一判定）：导弹发射载具已进入归属烧穿距离 → 其导引头"看穿"了干扰
+            Entity shooterVehicle = projectile.getShooterVehicle();
+            boolean burnedThrough = false;
+            if (shooterVehicle != null) {
+                double dx = shooterVehicle.getX() - av.getX();
+                double dz = shooterVehicle.getZ() - av.getZ();
+                if (Math.sqrt(dx * dx + dz * dz) < passiveCfg.burnThroughDistance()) {
+                    burnedThrough = true;
+                }
+            }
+            if (!burnedThrough) {
+                decoys.addAll(collectManagedDecoys(sl, av.getId()));
+                hasPassiveChance = true;
+                // 先按被动配置计算基础概率（待合并主动假目标数量后再按总数重算）
+                passiveChance = passiveCfg.resolveDiversionChance(band, decoys.size());
             }
         }
-        BoneEcmPassiveConfig.Band band = state.getAppliedBand();
-        if (band == null) {
-            return null;
-        }
-        List<RVP_EcmDecoyEntity> decoys = collectManagedDecoys(sl, av.getId());
+        // 合并主动ECM的假目标（硬编码散布，即使无被动状态也生效）
+        decoys.addAll(RVP_EcmActiveManager.collectActiveDecoys(sl, av.getId()));
         if (decoys.isEmpty()) {
             return null;
         }
-        double chance = cfg.resolveDiversionChance(band, decoys.size());
+        double chance;
+        if (hasPassiveChance) {
+            // 有被动档位时按被动配置重算（含主动假目标数量）
+            chance = passiveCfg.resolveDiversionChance(band, decoys.size());
+        } else {
+            // 纯主动：固定高概率（主动假目标同样可信）
+            chance = 0.85;
+        }
         if (sl.random.nextDouble() >= chance) {
             return null;
         }

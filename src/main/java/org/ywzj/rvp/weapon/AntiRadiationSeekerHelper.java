@@ -47,6 +47,12 @@ public final class AntiRadiationSeekerHelper {
             if (!(level.getEntity(pulse.emitterVehicleId()) instanceof AbstractVehicle vehicle)) {
                 continue;
             }
+            // 主动ECM伪脉冲哨兵：radarIndex=-1 时跳过 radarUnit 解析，构造 radarUnit=null 的 emitter
+            if (pulse.emitterRadarIndex() < 0) {
+                out.add(new AntiRadiationEmitter(vehicle.getId(), pulse.emitterRadarIndex(), vehicle, null,
+                        pulse.emitterPosition(), pulse.lockedEmission(), pulse));
+                continue;
+            }
             RadarUnit radarUnit = null;
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
                 if (partUnit instanceof RadarUnit candidate && candidate.getIndex() == pulse.emitterRadarIndex()) {
@@ -60,6 +66,38 @@ public final class AntiRadiationSeekerHelper {
             }
         }
         return out;
+    }
+
+        /**
+     * 主动ECM伪脉冲可见窗口：仅在 ARM 专用管线内注入，天然只被 ARM 识别（RWR/雷达不经过此函数）。
+     * 哨兵 radarIndex=-1，跳过 radarUnit 解析。
+     */
+    private static void injectActiveEcmPseudoPulses(List<RVP_RadarPulseDescriptor> out, net.minecraft.world.level.Level level, Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange, @Nullable AbstractVehicle excludeVehicle, int tickCount) {
+        if (!(level instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        // 收集本维度内处于主动干扰状态的 ECM 载具
+        for (AbstractVehicle ecmVehicle : org.ywzj.rvp.ecm.RVP_EcmActiveManager.getActiveEcmVehicles(serverLevel)) {
+            if (ecmVehicle == excludeVehicle || !ecmVehicle.isAlive()) {
+                continue;
+            }
+            Vec3 jamPos = ecmVehicle.position();
+            double dist = jamPos.distanceTo(seekerPos);
+            if (dist > seekRange) {
+                continue;
+            }
+            Vec3 toJam = jamPos.subtract(seekerPos);
+            double angle = Math.toDegrees(VectorUtil.angleBetween(seekerLook, toJam));
+            if (angle > seekerFov) {
+                continue;
+            }
+            // 强辐射伪脉冲（锁定级，始终可见）
+            double rcs = Math.max(ecmVehicle.physicsEngine.physicsInfo.radarCrossSection, 0.1f);
+            double amplitude = 4.0 * rcs / (Math.max(dist, 1.0) * Math.max(dist, 1.0));
+            out.add(new RVP_RadarPulseDescriptor(
+                    tickCount, 4.0, angle, 9000.0 + Math.floorMod(ecmVehicle.getId(), 1000),
+                    amplitude, ecmVehicle.getId(), -1, jamPos, true));
+        }
     }
 
     public static List<RVP_RadarPulseDescriptor> collectPulseDescriptors(net.minecraft.world.level.Level level, Vec3 seekerPos, Vec3 seekerLook, float seekerFov, float seekRange, @Nullable AbstractVehicle excludeVehicle, int tickCount, Map<Long, Integer> pulseTickMap, int pulseMemoryTick) {
@@ -115,6 +153,8 @@ public final class AntiRadiationSeekerHelper {
                 out.add(createPdw(seekerPos, seekerLook, tickCount, vehicle, radarUnit, radarPos, locked));
             }
         }
+        // 主动ECM伪脉冲（ARM-only）：活动中的干扰机作为辐射源（哨兵 radarIndex=-1）
+        injectActiveEcmPseudoPulses(out, level, seekerPos, seekerLook, seekerFov, seekRange, excludeVehicle, tickCount);
         return out;
     }
 
@@ -189,7 +229,10 @@ public final class AntiRadiationSeekerHelper {
         return (((long) vehicleId) << 32) | (radarIndex & 0xffffffffL);
     }
 
-    public static int getDefaultMemoryTick(RadarUnit radarUnit) {
+    public static int getDefaultMemoryTick(@Nullable RadarUnit radarUnit) {
+        if (radarUnit == null) {
+            return 20;
+        }
         RadarUnitData data = (RadarUnitData) ((PartUnitAccessorMixin) (Object) radarUnit).ywzj_rvp$getData();
         if (data instanceof RadarUnitDataExt ext) {
             int contactHoldTick = ext.ywzj_rvp$getContactHoldTick();
@@ -208,7 +251,7 @@ public final class AntiRadiationSeekerHelper {
         return Math.max(scanCycleTick, 1);
     }
 
-    public record AntiRadiationEmitter(int vehicleId, int radarIndex, AbstractVehicle vehicle, RadarUnit radarUnit, Vec3 position, boolean locked, RVP_RadarPulseDescriptor pdw) {
+    public record AntiRadiationEmitter(int vehicleId, int radarIndex, AbstractVehicle vehicle, @Nullable RadarUnit radarUnit, Vec3 position, boolean locked, RVP_RadarPulseDescriptor pdw) {
     }
 
     public record AntiRadiationTarget(int vehicleId, int radarIndex, AbstractVehicle vehicle, Vec3 position, int defaultMemoryTick) {

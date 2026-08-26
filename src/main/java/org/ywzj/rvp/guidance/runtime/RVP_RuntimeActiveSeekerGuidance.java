@@ -42,6 +42,11 @@ final class RVP_RuntimeActiveSeekerGuidance {
                     : RVP_GuidanceIntent.point(memory, false, 1.0, type);
         }
 
+        // 主动ECM对ARH的禁止重获（批示：中继期被干扰后无法再接受雷达制导，即使导引头开机也不重扫）
+        if (missile.ecmActiveNoReacquire && type == RVP_EnumGuidanceType.ARH) {
+            return RVP_GuidanceIntent.failed(type);
+        }
+
         if (!missile.hasAutonomousSeekerCatch() && designated != null) {
             Entity acquired = RVP_RuntimeSeekerSupport.acquireEntity(
                     missile, designated, type, context.active());
@@ -56,6 +61,11 @@ final class RVP_RuntimeActiveSeekerGuidance {
         }
 
         if (target != null && target.isAlive() && missile.hasAutonomousSeekerCatch()) {
+            // 主动ECM末端干扰：ARH 导引头已开机跟踪中，若正被干扰则直接脱锁（200m 内也无法跟踪）
+            if (missile.ecmActiveJamRemainTick > 0 && type == RVP_EnumGuidanceType.ARH) {
+                missile.setTargetEntity(null);
+                return RVP_GuidanceIntent.failed(type);
+            }
             Entity tracked = RVP_RuntimeSeekerSupport.validateEntity(
                     missile, target, type, context.active());
             if (tracked != null) {

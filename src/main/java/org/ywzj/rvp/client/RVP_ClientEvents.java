@@ -129,6 +129,9 @@ public class RVP_ClientEvents {
         while (RVP_Keys.FIRE_CHAFF.consumeClick()) {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.CHAFF);
         }
+        while (RVP_Keys.FIRE_ECM.consumeClick()) {
+            ywzj_rvp$fireEcm();
+        }
         while (RVP_Keys.FIRE_SMOKE.consumeClick()) {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.SMOKE);
         }
@@ -296,6 +299,34 @@ public class RVP_ClientEvents {
         }
         // 调用 RVP 公共网络通道，发送 C2SFireCountermeasure 触发服务端状态机
         RVP_Network.CHANNEL.sendToServer(new C2SFireCountermeasure(lvp.vehicle.getId(), type));
+    }
+
+    /** 主动ECM 发射：按键命中且载具存在存活的 ECM_ACTIVE 骨块时向服务端发送请求。 */
+    private static void ywzj_rvp$fireEcm() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            return;
+        }
+        AbstractVehicle vehicle = lvp.vehicle;
+        // 检查载具是否存在存活的 ECM_ACTIVE 骨块（按设计文档 §5：存活校验）
+        var devices = org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+        boolean hasAlive = false;
+        for (String boneName : devices.keySet()) {
+            // 调用 RVP 骨块状态表判断该骨块的 ECM_ACTIVE 模块是否存活
+            if (org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable.isModuleActive(
+                    vehicle.getUUID(), boneName, org.ywzj.rvp.vehicle.BoneModuleType.ECM_ACTIVE)) {
+                hasAlive = true;
+                break;
+            }
+        }
+        if (!hasAlive) {
+            return;
+        }
+        // 发送 C2SFireEcm 到服务端，携带载具实体 id
+        RVP_Network.CHANNEL.sendToServer(new org.ywzj.rvp.network.C2SFireEcm(vehicle.getId()));
     }
 
     private static RVP_TacticalMapScreen.MapMode ywzj_rvp$resolveMapMode() {

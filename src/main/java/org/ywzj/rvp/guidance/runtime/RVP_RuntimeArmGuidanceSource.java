@@ -76,6 +76,16 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         if (projectile.getAntiRadiationMemoryLeftTick() > 0 && projectile.getLastGuidancePos() != null) {
             projectile.setAntiRadiationMemoryLeftTick(projectile.getAntiRadiationMemoryLeftTick() - 1);
             Vec3 memory = projectile.getLastGuidancePos();
+            // 主动ECM记忆抖动（R8）：被干扰期间每次记忆落点随机 ±7m 偏移（不污染 lastGuidancePos）
+            if (projectile.ecmActiveJamRemainTick > 0) {
+                double jitter = 7.0;
+                // 若能取到干扰源配置则用其 armMemoryJitterMeters，否则用默认 7
+                // 尝试从最近的活动 ECM 获取（简化：固定 7，P6 可细化为按干扰源配置）
+                double angle = projectile.level().random.nextDouble() * Math.PI * 2.0D;
+                double r = Math.sqrt(projectile.level().random.nextDouble()) * jitter;
+                Vec3 offset = new Vec3(Math.cos(angle) * r, 0.0D, Math.sin(angle) * r);
+                memory = memory.add(offset);
+            }
             projectile.setTargetPos(memory);
             return RVP_GuidanceIntent.point(memory, false, 1.0, RVP_EnumGuidanceType.ARM);
         }
@@ -101,6 +111,40 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
             float range,
             float lockedBonus
     ) {
+        // R8：ECM 优先级覆盖（5 秒内成为最高优先级，高于任何预选）
+        // 收集处于 arm_priority 窗口内的 ECM 伪脉冲/真实辐射源
+        AntiRadiationSeekerHelper.AntiRadiationEmitter priorityBest = null;
+        double priorityBestScore = Double.MAX_VALUE;
+        for (AntiRadiationSeekerHelper.AntiRadiationEmitter emitter : emitters) {
+            if (!org.ywzj.rvp.ecm.RVP_EcmActiveManager.isInArmPriority(emitter.vehicleId())) {
+                continue;
+            }
+            // 敌我过滤：不干扰自身/同阵营发射的导弹
+            net.minecraft.world.entity.Entity shooterVehicle = projectile.getShooterVehicle();
+            if (shooterVehicle != null && shooterVehicle == emitter.vehicle()) {
+                continue;
+            }
+            if (shooterVehicle instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle sv2
+                    && org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(emitter.vehicle(), sv2)) {
+                continue;
+            }
+            double score = AntiRadiationSeekerHelper.score(
+                    projectile.position(),
+                    projectile.getLookAngle(),
+                    fov,
+                    range,
+                    emitter.pdw(),
+                    lockedBonus
+            );
+            if (score < priorityBestScore) {
+                priorityBestScore = score;
+                priorityBest = emitter;
+            }
+        }
+        if (priorityBest != null) {
+            return priorityBest;
+        }
+
         int preselectedVehicle = projectile.getPreselectedVehicleId();
         int preselectedRadar = projectile.getPreselectedRadarIndex();
         if (preselectedVehicle >= 0) {

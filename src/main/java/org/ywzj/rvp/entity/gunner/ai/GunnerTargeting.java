@@ -156,10 +156,22 @@ public final class GunnerTargeting {
 
     @Nullable
     public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double radius) {
+        return findAmmoThreat(gunner, vehicle, radius, 32.0, 25.0);
+    }
+
+    /**
+     * 查找来袭弹药威胁（箔条/主动ECM 共用）。
+     *
+     * @param scanRadius       扫描半径（收集此范围内的弹药）
+     * @param closeRangeCap    视为"威胁"的最大距离（超出则不触发）；主动ECM 传其干扰半径以提前触发
+     * @param maxTimeToImpact  最大预计命中 tick（超出视为尚远、不紧急）；主动ECM 传大值以放宽
+     */
+    public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double scanRadius,
+                                            double closeRangeCap, double maxTimeToImpact) {
         Team vehicleTeam = vehicle.getTeam();
         Team gunnerTeam = gunner.getTeam();
         // O(实体) 遍历已加载实体，替代 ±radius 立方体 getEntities
-        List<Entity> entities = collectTargetEntities(vehicle, radius, entity -> entity instanceof AmmoEntity ammo
+        List<Entity> entities = collectTargetEntities(vehicle, scanRadius, entity -> entity instanceof AmmoEntity ammo
                 && ammo.isAlive()
                 && ammo.vehicle != vehicle
                 && !isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner()));
@@ -184,7 +196,7 @@ public final class GunnerTargeting {
                 continue;
             }
             double dist = Math.sqrt(distSqr);
-            if (dist > Math.min(radius, 32.0)) {
+            if (dist > Math.min(scanRadius, closeRangeCap)) {
                 continue;
             }
             Vec3 toVehicleDir = toVehicle.normalize();
@@ -193,7 +205,7 @@ public final class GunnerTargeting {
                 continue;
             }
             double timeToImpactTick = dist / closing * 20.0;
-            if (timeToImpactTick > 25.0) {
+            if (timeToImpactTick > maxTimeToImpact) {
                 continue;
             }
             best = ammo;

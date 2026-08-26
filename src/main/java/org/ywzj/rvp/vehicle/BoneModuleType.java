@@ -29,7 +29,9 @@ public enum BoneModuleType {
     APS,
     COUNTERMEASURE,
     DIRCM,
-    ECM_PASSIVE;
+    ECM_PASSIVE,
+    /** 主动电子战（ECM_ACTIVE）——按键触发的持续干扰设备（消费点 RVP_EcmActiveManager）。 */
+    ECM_ACTIVE;
 
     private static final BoneModuleType[] VALUES = values();
 

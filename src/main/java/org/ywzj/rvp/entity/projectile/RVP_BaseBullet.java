@@ -430,6 +430,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 因烟雾/光学视线被挡导致脱锁的永久标记：一旦置位，导弹不再进入任何复锁扫描流程（与诱饵转锁分隔）。 */
     private boolean smokeBreakLock = false;
 
+    /** ===== 主动ECM干扰状态（服务端 RVP_EcmActiveManager 写入） ===== */
+    /** 主动ECM干扰剩余 tick（>0 表示正被主动ECM干扰，需阻断中继/照射/链路）。 */
+    public int ecmActiveJamRemainTick;
+    /** 主动ECM对ARH的"禁止重新截获"标记（ARH 在中继期被干扰后即使导引头开机也不重扫）。 */
+    public boolean ecmActiveNoReacquire;
+    /** 主动ECM对GPS的落点偏移是否已施加（一次性，避免每 tick 累积抖动）。 */
+    public boolean ecmGpsOffsetApplied;
+
     /** 烟雾脱锁后的固定惯导落点（脱锁瞬间算一次）：Y 取最后目标高度、X/Z 在烟雾 AABB 内且远离最后目标；无则回退 lastGuidancePos。 */
     @Nullable
     private Vec3 smokeInertialPoint = null;
@@ -1072,9 +1080,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 是否处于被干扰（诱饵欺骗）状态：当前锁定目标是干扰物实体，或导引头处于干扰失锁后的关闭期，
      * 或处于脱锁后未重锁的干扰保持期。干扰期间导弹应关闭近炸引信，避免追诱饵/滑行飞掠玩家附近时
-     * 仍被近炸引爆命中玩家。 */
+     * 仍被近炸引爆命中玩家。主动ECM 干扰（{@code ecmActiveJamRemainTick}）同样纳入近炸抑制。 */
     public boolean isJammedByDecoy() {
-        return targetEntity instanceof RVP_Decoy || isSeekerShutOff() || isJamGracePeriodActive();
+        return targetEntity instanceof RVP_Decoy || isSeekerShutOff() || isJamGracePeriodActive()
+                || ecmActiveJamRemainTick > 0;
     }
 
     /** 是否处于干扰保持期：脱锁判定成立（干扰物超阈值/光学被挡/入烟）但尚未重锁诱饵的 coast 期间。 */
@@ -1563,6 +1572,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
 
             updateCount++;
+            // 主动ECM干扰倒计时递减（服务端写入后每 tick 自减，归零即恢复）
+            if (ecmActiveJamRemainTick > 0) {
+                ecmActiveJamRemainTick--;
+            }
             if (tickDelayFuse()) {
                 return;
             }

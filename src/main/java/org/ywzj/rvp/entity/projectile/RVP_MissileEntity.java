@@ -278,7 +278,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 activeRadarLostTargetTick = 0;
             } else {
                 activeRadarLostTargetTick++;
-                if (activeRadarLostTargetTick >= 60) {
+                // 主动ECM对ARH设为 200 tick 自毁（批示：60→200），且禁止重获后仍按 200 计
+                int threshold = ecmActiveNoReacquire ? 200 : 60;
+                if (activeRadarLostTargetTick >= threshold) {
                     life = 0;
                 }
             }
@@ -476,6 +478,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     }
 
     public boolean rvp$hasActiveSeekerSupportForDesignatedTarget() {
+        // 主动ECM干扰期间：阻断雷达中继支持（ARH/AIR 中继期均受影响）
+        if (ecmActiveJamRemainTick > 0) {
+            return false;
+        }
         Entity designatedTarget = rvp$getActiveSeekerDesignatedTargetEntity();
         if (designatedTarget == null) {
             return false;
@@ -574,6 +580,18 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
         if (hitlSignalSource != HitlSignalSource.RADIO) {
+            return;
+        }
+        // 主动ECM干扰：radio 链路强制阻断（仅 RADIO 源生效，与 §7.5 一致）
+        if (ecmActiveJamRemainTick > 0) {
+            hitlLinkBlocked = true;
+            hitlLinkBlockedTicks++;
+            if (hitlLinkBlockedTicks >= 40) {
+                hitlLinkSevered = true;
+                hitlEnabled = false;
+                clearTarget();
+            }
+            maybeSyncHitlLinkState();
             return;
         }
         if (hitlLinkSevered) {

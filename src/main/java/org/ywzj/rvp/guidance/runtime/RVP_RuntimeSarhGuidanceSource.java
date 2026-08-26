@@ -16,6 +16,11 @@ public final class RVP_RuntimeSarhGuidanceSource implements RVP_RuntimeGuidanceS
 
     @Override
     public RVP_GuidanceIntent evaluate(RVP_GuidanceRuntimeContext context) {
+        // 主动ECM干扰：阻断半主动雷达照射（SARH 需照射源，干扰期视为无照射）
+        if (context.projectile().ecmActiveJamRemainTick > 0) {
+            context.projectile().clearTarget();
+            return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SARH);
+        }
         Entity illuminated = RVP_GuidanceTargetUtil.getStrictRadarIlluminatedTarget(context.projectile());
         if (illuminated == null || !illuminated.isAlive()) {
             context.projectile().clearTarget();
