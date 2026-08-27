@@ -227,10 +227,9 @@ public final class RVP_EcmActiveManager {
                 tickActiveJamming(level, activeInfos);
                 // P4：载具干扰（雷达脱锁）与 RWR 伪造
                 tickVehicleJamming(level, activeInfos, vehicles);
-                // RWR 伪造每 10 tick 一次（与被动ECM的 500ms 窗口对齐，避免过密）
-                if (tick % 10 == 0) {
-                    tickRwrFake(level, activeInfos, vehicles);
-                }
+                // RWR 伪造每 4 tick（200ms）一次：本体 WarningReceiver 的告警 500ms 即过期，
+                // 若按旧 tick%10(20tick=1s) 发送会有 500ms 空窗导致 RWR 闪烁/看似失效
+                tickRwrFake(level, activeInfos, vehicles);
             } else if (DEBUG_ECM && tick % DEBUG_INTERVAL == 0) {
                 // 维度内无任何主动ECM活动时，打印一次载具总数以便排查（例如 gunner 载具是否装备 ECM）
                 int total = vehicles.size();
