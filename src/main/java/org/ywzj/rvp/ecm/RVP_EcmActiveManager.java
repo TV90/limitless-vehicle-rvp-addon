@@ -444,8 +444,7 @@ public final class RVP_EcmActiveManager {
             if (!cfg.radarUnlock()) {
                 continue;
             }
-            // 雷达脱锁半径：同样取载具/弹药干扰半径较大者，避免陆地车 vehicle_jam_radius=0 时完全失效
-            double radius = Math.max(cfg.vehicleJamRadius(), cfg.ammoJamRadius());
+            double radius = cfg.vehicleJamRadius();
             if (radius <= 0) {
                 continue;
             }
@@ -519,8 +518,8 @@ public final class RVP_EcmActiveManager {
         for (ActiveInfo info : activeInfos) {
             AbstractVehicle ecmVehicle = info.vehicle();
             BoneEcmActiveConfig cfg = info.config();
-            // RWR 伪造锁定半径：取载具干扰半径与弹药干扰半径较大者，避免陆地车 vehicle_jam_radius=0 时完全失效
-            double radius = Math.max(cfg.vehicleJamRadius(), cfg.ammoJamRadius());
+            // RWR 伪造锁定半径：沿用载具干扰半径语义（陆地车 vehicle_jam_radius=0 则不产生该效果）
+            double radius = cfg.vehicleJamRadius();
             if (radius <= 0) {
                 continue;
             }

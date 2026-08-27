@@ -61,6 +61,11 @@ public final class RVP_ClientEcmDebugState {
         latest = null;
     }
 
+    /** 供客户端 ECM 相关处理（如 RWR 伪造锁定注入）追加调试行到 rvp_ecm_debug.log。 */
+    public static void appendLog(String line) {
+        appendEvent(line);
+    }
+
     /** 把单行事件追加到日志文件。 */
     private static void appendEvent(String line) {
         appendRaw("[" + LocalTime.now().format(TIME_FMT) + "] " + line + "\n");

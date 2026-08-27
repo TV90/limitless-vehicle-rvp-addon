@@ -38,14 +38,20 @@ public final class RVP_ClientEcmFakeLockHandler {
         }
         Entity target = mc.level.getEntity(vehicleId);
         if (!(target instanceof AbstractVehicle vehicle)) {
+            org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
+                    "[FakeLock] vehicleId=" + vehicleId + " 客户端找不到该实体, 丢弃");
             return;
         }
         // 仅对本地驾驶载具注入（与 RVP_ClientWarnRelay 相同语义）
         if (!isLocalDrivenVehicle(mc.player, vehicle)) {
+            org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
+                    "[FakeLock] vehicle=" + vehicle.getId() + " 不是本地驾驶载具, 丢弃");
             return;
         }
         WarningReceiver receiver = vehicle.warningReceiver;
         if (receiver == null) {
+            org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
+                    "[FakeLock] vehicle=" + vehicle.getId() + " 无 warningReceiver(RWR), 丢弃");
             return;
         }
         long now = System.currentTimeMillis();
@@ -55,6 +61,9 @@ public final class RVP_ClientEcmFakeLockHandler {
             int fakeId = -(1000000 + Math.abs(vehicle.getId()) * 100 + i);
             receiver.targets.put(fakeId, new WarningReceiver.WarnTarget(WarnType.RADAR_LOCK, info, now));
         }
+        org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
+                "[FakeLock] vehicle=" + vehicle.getId() + " 注入 " + fakeRadarTypes.size()
+                        + " 条伪造RADAR_LOCK: " + fakeRadarTypes);
     }
 
     /** 目标载具是否就是本地玩家驾驶的载具（与 RVP_ClientWarnRelay 相同判定）。 */
