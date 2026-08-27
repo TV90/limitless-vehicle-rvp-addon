@@ -12,5 +12,12 @@
   "rvp.lock_warning.laser_air": "Aircraft laser-illuminated, maneuver to evade",
   "rvp.lock_warning.laser_ground": "Vehicle laser-illuminated, press [%s] to launch smoke",
   "rvp.lock_warning.hitl_tv_air": "Aircraft locked by man-in-the-loop TV missile, maneuver to evade",
-  "rvp.lock_warning.hitl_tv_ground": "Vehicle locked by man-in-the-loop TV missile, press [%s] to launch smoke"
+  "rvp.lock_warning.hitl_tv_ground": "Vehicle locked by man-in-the-loop TV missile, press [%s] to launch smoke",
+  "rvp.lock_warning.ir_none": "Locked by IR guided missile",
+  "rvp.lock_warning.arh_none": "Locked by radar-guided missile",
+  "rvp.lock_warning.arh_ecm": "Locked by radar-guided missile, press [%s] to deploy active ECM",
+  "rvp.lock_warning.radar_none": "Radar locked",
+  "rvp.lock_warning.radar_ecm": "Radar locked, press [%s] to deploy active ECM",
+  "rvp.lock_warning.laser_none": "Laser-illuminated",
+  "rvp.lock_warning.hitl_tv_none": "Locked by man-in-the-loop TV missile"
 }

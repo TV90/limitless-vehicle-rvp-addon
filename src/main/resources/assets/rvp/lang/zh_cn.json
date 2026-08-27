@@ -12,5 +12,12 @@
   "rvp.lock_warning.laser_air": "战机被激光照射，请机动规避",
   "rvp.lock_warning.laser_ground": "载具被激光照射，按[%s]抛射烟雾弹规避",
   "rvp.lock_warning.hitl_tv_air": "战机被人在回路电视制导导弹锁定，请机动规避",
-  "rvp.lock_warning.hitl_tv_ground": "载具被人在回路电视制导导弹锁定，按[%s]抛射烟雾弹规避"
+  "rvp.lock_warning.hitl_tv_ground": "载具被人在回路电视制导导弹锁定，按[%s]抛射烟雾弹规避",
+  "rvp.lock_warning.ir_none": "被红外制导导弹锁定",
+  "rvp.lock_warning.arh_none": "被雷达制导导弹锁定",
+  "rvp.lock_warning.arh_ecm": "被雷达制导导弹锁定，按[%s]释放主动ECM规避",
+  "rvp.lock_warning.radar_none": "被雷达锁定",
+  "rvp.lock_warning.radar_ecm": "被雷达锁定，按[%s]释放主动ECM规避",
+  "rvp.lock_warning.laser_none": "被激光照射",
+  "rvp.lock_warning.hitl_tv_none": "被人在回路电视制导导弹锁定"
 }

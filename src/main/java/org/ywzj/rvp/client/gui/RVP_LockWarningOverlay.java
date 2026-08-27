@@ -8,6 +8,11 @@ import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientLockWarningState;
+import org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager;
+import org.ywzj.rvp.countermeasure.RVP_CountermeasureData;
+import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
@@ -51,8 +56,12 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         if (!laser && !hitlTv && !irTrack && !arhTrack && !radarLock) {
             return;
         }
-        // 地面载具仅显示烟雾弹规避类提示（IR/激光/电视制导）；雷达类锁定提示仅飞行器显示
         boolean ground = !isAircraft(vehicle);
+        // 载具干扰物能力：用于决定提示是否附带"释放干扰物"建议
+        boolean hasFlare = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.FLARE);
+        boolean hasSmoke = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        boolean hasChaff = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF);
+        boolean hasEcm = hasActiveEcm(vehicle);
 
         Font font = Minecraft.getInstance().font;
         int color = blinkRed();
@@ -60,36 +69,92 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         // 本体健康条：renderBaseInfo 平移 (screenWidth/2, screenHeight+16) 后画在 (0,-20,120,5)，
         // 顶边在 screenHeight-9；提示文案从其上方更高的固定偏移起逐行向下排布。
         int y = screenHeight - 64;
+        // 红外锁定：有对应干扰物（飞行器=热焰弹，地面=烟雾）才给"抛洒"建议，否则只提示被锁定
         if (irTrack) {
-            Component text = ground
-                    ? Component.translatable("rvp.lock_warning.ir_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
-                    : Component.translatable("rvp.lock_warning.ir", RVP_Keys.FIRE_FLARE.getTranslatedKeyMessage());
+            Component text;
+            if (ground) {
+                text = hasSmoke
+                        ? Component.translatable("rvp.lock_warning.ir_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                        : Component.translatable("rvp.lock_warning.ir_none");
+            } else {
+                text = hasFlare
+                        ? Component.translatable("rvp.lock_warning.ir", RVP_Keys.FIRE_FLARE.getTranslatedKeyMessage())
+                        : Component.translatable("rvp.lock_warning.ir_none");
+            }
             drawCentered(guiGraphics, font, text, centerX, y, color);
             y += font.lineHeight;
         }
-        if (arhTrack && !ground) {
-            drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.arh",
-                    RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage()), centerX, y, color);
+        // 雷达制导导弹锁定：优先箔条，无箔条但有主动ECM 则提示释放 ECM，都没有只提示被锁定（地面载具同样提示）
+        if (arhTrack) {
+            Component text;
+            if (hasChaff) {
+                text = Component.translatable("rvp.lock_warning.arh", RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage());
+            } else if (hasEcm) {
+                text = Component.translatable("rvp.lock_warning.arh_ecm", RVP_Keys.FIRE_ECM.getTranslatedKeyMessage());
+            } else {
+                text = Component.translatable("rvp.lock_warning.arh_none");
+            }
+            drawCentered(guiGraphics, font, text, centerX, y, color);
             y += font.lineHeight;
         }
-        if (radarLock && !ground) {
-            drawCentered(guiGraphics, font, Component.translatable("rvp.lock_warning.radar",
-                    RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage()), centerX, y, color);
+        // 雷达锁定：同雷达弹逻辑（地面载具同样提示）
+        if (radarLock) {
+            Component text;
+            if (hasChaff) {
+                text = Component.translatable("rvp.lock_warning.radar", RVP_Keys.FIRE_CHAFF.getTranslatedKeyMessage());
+            } else if (hasEcm) {
+                text = Component.translatable("rvp.lock_warning.radar_ecm", RVP_Keys.FIRE_ECM.getTranslatedKeyMessage());
+            } else {
+                text = Component.translatable("rvp.lock_warning.radar_none");
+            }
+            drawCentered(guiGraphics, font, text, centerX, y, color);
             y += font.lineHeight;
         }
         if (laser) {
-            Component text = ground
-                    ? Component.translatable("rvp.lock_warning.laser_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
-                    : Component.translatable("rvp.lock_warning.laser_air");
+            Component text;
+            if (ground) {
+                text = hasSmoke
+                        ? Component.translatable("rvp.lock_warning.laser_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                        : Component.translatable("rvp.lock_warning.laser_none");
+            } else {
+                text = Component.translatable("rvp.lock_warning.laser_air");
+            }
             drawCentered(guiGraphics, font, text, centerX, y, color);
             y += font.lineHeight;
         }
         if (hitlTv) {
-            Component text = ground
-                    ? Component.translatable("rvp.lock_warning.hitl_tv_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
-                    : Component.translatable("rvp.lock_warning.hitl_tv_air");
+            Component text;
+            if (ground) {
+                text = hasSmoke
+                        ? Component.translatable("rvp.lock_warning.hitl_tv_ground", RVP_Keys.FIRE_SMOKE.getTranslatedKeyMessage())
+                        : Component.translatable("rvp.lock_warning.hitl_tv_none");
+            } else {
+                text = Component.translatable("rvp.lock_warning.hitl_tv_air");
+            }
             drawCentered(guiGraphics, font, text, centerX, y, color);
         }
+    }
+
+    /** 载具是否装备某类 RVP 干扰物（热焰弹/箔条/烟雾）。 */
+    private static boolean hasCountermeasure(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        RVP_CountermeasureData data = RVP_CountermeasureConfigManager.INSTANCE.resolve(vehicle.getVehicleId());
+        if (data == null) {
+            return false;
+        }
+        RVP_CountermeasureSystemData system;
+        switch (type) {
+            case FLARE -> system = data.getFlare();
+            case CHAFF -> system = data.getChaff();
+            case SMOKE -> system = data.getSmoke();
+            default -> system = null;
+        }
+        return system != null && system.isEnabled();
+    }
+
+    /** 载具是否装备主动ECM（可释放的 ECM 干扰）。 */
+    private static boolean hasActiveEcm(AbstractVehicle vehicle) {
+        var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        return devices != null && !devices.isEmpty();
     }
 
     private static boolean hasRadarLock(AbstractVehicle vehicle) {

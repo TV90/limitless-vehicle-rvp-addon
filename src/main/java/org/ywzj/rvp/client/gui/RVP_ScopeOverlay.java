@@ -72,6 +72,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     public static double fov;
     public static int color = Color.GREEN;
 
+    /** BVR 外置扫描框调试开关（默认关闭；排查外置雷达框不渲染时置 true）。 */
+    private static final boolean RVP_BVR_DEBUG = false;
+
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         if (!LocalVehiclePlayer.instance.onVehicle()) {
@@ -79,9 +82,14 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
         WeaponUnit currentWeaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
-            if (currentWeaponUnit != null
+            // 本机雷达目标框：RF 武器+无光学瞄准时渲染。
+            // 外置雷达接触框：只要有外置雷达条目也渲染（不再依赖传感器类型为 RF，
+            // 否则"外置雷达扫到但本机雷达没对准"的载具（如 bukm3+96l6 中继）不会出现 BVR 框）。
+            boolean rfAim = currentWeaponUnit != null
                     && RVP_WeaponSensorHelper.effectiveSensorType(currentWeaponUnit) == WeaponUnitData.FireControlSensorType.RF
-                    && currentWeaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE) {
+                    && currentWeaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE;
+            boolean extEntries = hasExternalRadarEntries();
+            if (rfAim || extEntries) {
                 renderAimLockTarget(guiGraphics, partialTick);
             }
             return;
@@ -310,6 +318,22 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
+        // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
+        if (RVP_BVR_DEBUG) {
+            AbstractVehicle dbgVehicle = LocalVehiclePlayer.instance.vehicle;
+            if (dbgVehicle != null && dbgVehicle.tickCount % 20 == 0) {
+                WeaponUnit dbgWu = LocalVehiclePlayer.instance.getWeaponUnit();
+                WeaponUnitData.FireControlSensorType dbgSt = dbgWu != null
+                        ? RVP_WeaponSensorHelper.effectiveSensorType(dbgWu) : null;
+                int extCount = dbgVehicle.level() != null
+                        ? RVP_ExternalRadarLinkHelper.getClientEntries(dbgVehicle, dbgVehicle.level().dimension().location()).size() : -1;
+                rvpBvrLog("renderAimLockTarget: viewType=" + LocalVehiclePlayer.instance.viewType
+                        + " weaponUnit=" + (dbgWu == null ? "null" : dbgWu.getId())
+                        + " sensorType=" + dbgSt
+                        + " 外置条目=" + extCount
+                        + " 车辆=" + dbgVehicle.getVehicleId());
+            }
+        }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
             return;
@@ -359,6 +383,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
 
         // 雷达锁定目标
+        // 本机雷达锁定：能解析出探测对象才画框（否则可能只是外置锁定被镜像进本机雷达的 lockedEntity，
+        // 目标并不在本机雷达探测表里——如 bukm3 这类"外置雷达车提供探测+发射车自带雷达"的载具）。
+        // 外置锁定作为兜底分支：本机锁画不出时再画外置锁，避免 BVR 框缺失。
+        boolean drewLockBox = false;
         if (mainRadarUnit != null && sensorType == WeaponUnitData.FireControlSensorType.RF && mainRadarUnit.getLockedEntity() != null) {
             RadarUnit.DetectedObject detectedObject = resolveDetectedObject(weaponUnit, mainRadarUnit, mainRadarUnit.getLockedEntity());
             if (detectedObject != null) {
@@ -374,9 +402,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                         radarInfo(guiGraphics, poseStack, detectedObject);
                     }
                     poseStack.popPose();
+                    drewLockBox = true;
                 }
             }
-        } else if (sensorType == WeaponUnitData.FireControlSensorType.RF
+        }
+        if (!drewLockBox && sensorType == WeaponUnitData.FireControlSensorType.RF
                 && externalLockedEntry != null
                 && vehicle != null) {
             Vec3 targetPos = externalLockedEntity != null
@@ -423,10 +453,20 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 poseStack.popPose();
             }
         }
-        if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
-            renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
-                    externalLockedEntityId);
+        // 外置雷达接触：不依赖传感器类型为 RF，有外置条目即渲染（本机雷达 loop 无传感器门控，
+        // 若这里也门控 RF，则"外置雷达扫到但本机雷达未对准"的载具不会画 BVR 框）
+        renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
+                externalLockedEntityId);
+    }
+
+    /** 本机是否有外置雷达条目（有外置雷达中继且探测到目标）。 */
+    private static boolean hasExternalRadarEntries() {
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (vehicle == null || mc.level == null) {
+            return false;
         }
+        return !RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()).isEmpty();
     }
 
     private static void renderExternalRadarContacts(GuiGraphics guiGraphics, WeaponUnit weaponUnit,
@@ -437,19 +477,27 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (vehicle == null || mc.level == null) {
             return;
         }
-        for (S2CExternalRadarSnapshot.Entry entry : RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location())) {
+        int dbgCount = 0, dbgInOwn = 0, dbgLockedSkip = 0, dbgBehind = 0, dbgDrawn = 0;
+        java.util.Collection<S2CExternalRadarSnapshot.Entry> entries =
+                RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location());
+        for (S2CExternalRadarSnapshot.Entry entry : entries) {
+            dbgCount++;
             if (mainRadarUnit != null && mainRadarUnit.getDetectedEntities().containsKey(entry.entityId())) {
+                dbgInOwn++;
                 continue;
             }
             if (entry.entityId() == externalLockedEntityId) {
+                dbgLockedSkip++;
                 continue;
             }
             Entity resolvedEntity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entry.entityId());
             Vec3 targetPos = resolvedEntity != null ? resolvedEntity.getBoundingBox().getCenter() : RVP_ExternalRadarLinkHelper.position(entry);
             Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
             if (screenPos.z < 0) {
+                dbgBehind++;
                 continue;
             }
+            dbgDrawn++;
             PoseStack poseStack = guiGraphics.pose();
             poseStack.pushPose();
             {
@@ -464,7 +512,34 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             }
             poseStack.popPose();
         }
+        // 调试（BVR 扫描框排查，默认关闭）：节流到每 20 tick 一次
+        if (RVP_BVR_DEBUG && vehicle.tickCount % 20 == 0 && dbgCount > 0) {
+            rvpBvrLog("ext扫描: 总数=" + dbgCount + " 已画=" + dbgDrawn
+                    + " 在本机雷达表=" + dbgInOwn + " 跳过锁定=" + dbgLockedSkip + " 屏后=" + dbgBehind
+                    + " | mainRadar=" + (mainRadarUnit == null ? "null" : mainRadarUnit.getId())
+                    + " 本机表size=" + (mainRadarUnit == null ? "-" : mainRadarUnit.getDetectedEntities().size())
+                    + " merged=" + weaponUnit.getRadarDetectedEntities().size());
+        }
     }
+
+    /** BVR 调试日志：写 gameDir/logs/rvp_radar_debug.log（客户端）。 */
+    private static void rvpBvrLog(String line) {
+        try {
+            java.nio.file.Path dir = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs");
+            java.nio.file.Files.createDirectories(dir);
+            java.nio.file.Path f = dir.resolve("rvp_radar_debug.log");
+            if (java.nio.file.Files.exists(f) && java.nio.file.Files.size(f) > 512 * 1024L) {
+                java.nio.file.Files.delete(f);
+            }
+            String full = "[" + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
+                    + "][RVP-BVR] " + line + "\n";
+            java.nio.file.Files.write(f, full.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // 调试日志写失败不影响游戏
+        }
+    }
+
     private static void radarInfo(GuiGraphics guiGraphics, PoseStack poseStack, RadarUnit.DetectedObject detectedObject) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
