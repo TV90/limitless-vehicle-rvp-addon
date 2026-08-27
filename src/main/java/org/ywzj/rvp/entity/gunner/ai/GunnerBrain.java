@@ -1294,7 +1294,9 @@ public final class GunnerBrain {
                 }
                 near++;
                 boolean friendly = GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), ammo.getOwner());
-                boolean danger = GunnerTargeting.isDangerousAmmo(ammo);
+                // 主动ECM 干扰对象：RVP 制导弹药（含 RVP_BaseBullet 派生的一切导弹/制导炸弹），
+                // 不依赖本体 isDangerousAmmo 的 MissileEntity 判定（RVP 导弹不继承本体该类）
+                boolean danger = ammo instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
                 if (sample == null) {
                     sample = ammo;
                 }
@@ -1316,7 +1318,7 @@ public final class GunnerBrain {
                     + " 敌对危险=" + hostileDanger
                     + (sample != null ? " 样本#" + sample.getId()
                         + " friendly=" + GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), sample.getOwner())
-                        + " danger=" + GunnerTargeting.isDangerousAmmo(sample) : "")
+                        + " danger=" + (sample instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet) : "")
                     + " threat=" + (threat != null ? "有#" + threat.getId() : "null"));
             if (threat != null) {
                 shouldFire = true;
