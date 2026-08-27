@@ -74,6 +74,27 @@ public final class RVP_EcmActiveManager {
     /** 调试日志节流：每 N tick 打印一次总览。 */
     private static final int DEBUG_INTERVAL = 20;
 
+    /** 主动ECM 通用调试日志：同时写 gameDir/logs/rvp_ecm_server.log（单客户端与服务端同目录）。 */
+    private static void rvpEcmServerLog(String line) {
+        if (!DEBUG_ECM) {
+            return;
+        }
+        String full = "[" + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
+                + "][RVP-ECM] " + line;
+        System.out.println(full);
+        try {
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs").toFile().mkdirs();
+            java.nio.file.Path f = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("logs/rvp_ecm_server.log");
+            if (java.nio.file.Files.exists(f) && java.nio.file.Files.size(f) > 256L * 1024L) {
+                java.nio.file.Files.delete(f);
+            }
+            java.nio.file.Files.write(f, (full + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // 调试日志写失败不影响游戏
+        }
+    }
+
     private RVP_EcmActiveManager() {
     }
 
@@ -423,7 +444,8 @@ public final class RVP_EcmActiveManager {
             if (!cfg.radarUnlock()) {
                 continue;
             }
-            double radius = cfg.vehicleJamRadius();
+            // 雷达脱锁半径：同样取载具/弹药干扰半径较大者，避免陆地车 vehicle_jam_radius=0 时完全失效
+            double radius = Math.max(cfg.vehicleJamRadius(), cfg.ammoJamRadius());
             if (radius <= 0) {
                 continue;
             }
@@ -497,7 +519,8 @@ public final class RVP_EcmActiveManager {
         for (ActiveInfo info : activeInfos) {
             AbstractVehicle ecmVehicle = info.vehicle();
             BoneEcmActiveConfig cfg = info.config();
-            double radius = cfg.vehicleJamRadius();
+            // RWR 伪造锁定半径：取载具干扰半径与弹药干扰半径较大者，避免陆地车 vehicle_jam_radius=0 时完全失效
+            double radius = Math.max(cfg.vehicleJamRadius(), cfg.ammoJamRadius());
             if (radius <= 0) {
                 continue;
             }
@@ -507,9 +530,17 @@ public final class RVP_EcmActiveManager {
                     continue;
                 }
                 if (RVP_EcmIff.isNeutralRadarVehicle(target)) {
+                    if (DEBUG_ECM) {
+                        rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
+                                + " 跳过 target=" + target.getId() + " (中立无主)");
+                    }
                     continue;
                 }
                 if (RVP_EcmIff.areVehiclesFriendly(ecmVehicle, target)) {
+                    if (DEBUG_ECM) {
+                        rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
+                                + " 跳过 target=" + target.getId() + " (友方)");
+                    }
                     continue;
                 }
                 double distSqr = ecmVehicle.position().distanceToSqr(target.position());
@@ -517,8 +548,8 @@ public final class RVP_EcmActiveManager {
                     continue;
                 }
                 if (DEBUG_ECM) {
-                    System.out.println("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
-                            + " 向 target=" + target.getId() + " 注入伪造锁定 vehR=" + radius);
+                    rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
+                            + " 向 target=" + target.getId() + " 注入伪造锁定 radius=" + (int) radius);
                 }
                 List<String> pool = cfg.fakeLockSources();
                 if (pool == null || pool.isEmpty()) {
