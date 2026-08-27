@@ -214,7 +214,7 @@ public final class GunnerTargeting {
         return best;
     }
 
-    private static boolean isDangerousAmmo(AmmoEntity ammo) {
+    public static boolean isDangerousAmmo(AmmoEntity ammo) {
         if (ammo instanceof MissileEntity) {
             return true;
         }
@@ -320,7 +320,7 @@ public final class GunnerTargeting {
      * - owner是Player或其他：走原有的载具乘客/放置者/team联盟判断
      * 包内共享：CIWS 拦截判定与 GunnerBrain 烟雾规避的敌方导弹识别共用此语义。
      */
-    static boolean isFriendlyAmmoOwner(GunnerEntity gunner, AbstractVehicle vehicle,
+    public static boolean isFriendlyAmmoOwner(GunnerEntity gunner, AbstractVehicle vehicle,
                                                @Nullable Team vehicleTeam, @Nullable Team gunnerTeam,
                                                @Nullable Entity owner) {
         if (owner == null) {
@@ -480,7 +480,7 @@ public final class GunnerTargeting {
 
     /** O(实体) 索敌：遍历已加载实体并保留原 getEntities(±radius 立方体) 的 bbox 交集语义，
      *  但避免超大立方体 section 索引遍历（服务端掉 TPS）。 */
-    private static List<Entity> collectTargetEntities(AbstractVehicle vehicle, double radius, java.util.function.Predicate<Entity> filter) {
+    public static List<Entity> collectTargetEntities(AbstractVehicle vehicle, double radius, java.util.function.Predicate<Entity> filter) {
         List<Entity> result = new java.util.ArrayList<>();
         if (radius <= 0 || !(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
             return result;

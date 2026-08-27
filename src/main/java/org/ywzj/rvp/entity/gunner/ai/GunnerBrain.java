@@ -11,6 +11,17 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLPaths;
+import org.ywzj.vehicle.entity.weapon.AmmoEntity;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
@@ -1194,6 +1205,39 @@ public final class GunnerBrain {
      * <p>触发条件：RWR 存在 RADAR_LOCK/MISSILE_LAUNCH 告警，或 {@code findAmmoThreat} 在 400 格内发现威胁；
      * 可用性：载具存在存活的 ECM_ACTIVE 骨块；冷却由服务端 {@code RVP_EcmActiveManager} 判定。</p>
      */
+    /** 主动ECM 调试日志节流（按载具 id）。 */
+    private static final Map<Integer, Long> GUNNER_ECM_DBG = new HashMap<>();
+    /** 主动ECM gunner 调试开关。 */
+    private static final boolean GUNNER_ECM_DBG_ON = true;
+
+    /** 记录 gunner 主动ECM 决策（控制台 + logs/rvp_ecm_server.log，单客户端同目录）。 */
+    private static void rvpEcmDbg(AbstractVehicle vehicle, String msg) {
+        if (!GUNNER_ECM_DBG_ON) {
+            return;
+        }
+        long now = vehicle.level().getGameTime();
+        Long last = GUNNER_ECM_DBG.get(vehicle.getId());
+        if (last != null && now - last < 10) {
+            return;
+        }
+        GUNNER_ECM_DBG.put(vehicle.getId(), now);
+        String line = "[" + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
+                + "][GunnerECM] veh=" + vehicle.getId() + " " + msg;
+        System.out.println(line);
+        try {
+            Path dir = FMLPaths.GAMEDIR.get().resolve("logs");
+            Files.createDirectories(dir);
+            Path f = dir.resolve("rvp_ecm_server.log");
+            if (Files.exists(f) && Files.size(f) > 256 * 1024L) {
+                Files.delete(f);
+            }
+            Files.write(f, (line + "\n").getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception ignored) {
+            // 调试日志写失败不影响游戏
+        }
+    }
+
     private static void tickEcmActive(GunnerEntity gunner, AbstractVehicle vehicle) {
         if (vehicle == null || vehicle.level().isClientSide()) {
             return;
@@ -1201,6 +1245,7 @@ public final class GunnerBrain {
         // 是否装备主动ECM
         var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
         if (devices == null || devices.isEmpty()) {
+            rvpEcmDbg(vehicle, "无主动ECM设备(devices为空)");
             return;
         }
         boolean hasAlive = false;
@@ -1211,6 +1256,7 @@ public final class GunnerBrain {
             }
         }
         if (!hasAlive) {
+            rvpEcmDbg(vehicle, "ECM模块未激活(已损毁或未通电)");
             return;
         }
         // 触发条件：被锁定或导弹来袭
@@ -1225,7 +1271,9 @@ public final class GunnerBrain {
                 }
             }
         }
-        // 导弹威胁检查：以主动ECM 的有效干扰半径作为触发距离（不再受箔条 32m 硬上限限制）
+        // 导弹威胁检查：以主动ECM 的有效干扰半径作为触发距离（不再受箔条 32m 硬上限限制）。
+        // 主动ECM 属纯自卫：只要是有威胁的来袭危险弹药即释放，不区分敌我（仅排除本机自身发射的导弹），
+        // 因此即便是玩家自己的 gunner 在单人测试中被自己导弹攻击也会触发——比箔条的"仅敌对"更合理。
         if (!shouldFire) {
             // 取所有 ECM 设备中的最大干扰半径作为触发阈值（弹药/载具干扰半径与 200m 兜底）
             double triggerRadius = 200.0;
@@ -1233,8 +1281,43 @@ public final class GunnerBrain {
                 triggerRadius = Math.max(triggerRadius, cfg.ammoJamRadius());
                 triggerRadius = Math.max(triggerRadius, cfg.vehicleJamRadius());
             }
-            // closeRangeCap=触发半径，maxTimeToImpact 放大到 600 tick 以便来袭导弹一进入半径就释放
-            var threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, triggerRadius, triggerRadius, 600.0);
+            // 调试：统计触发半径内危险弹药数量，定位"为何不触发"
+            int near = 0, hostileDanger = 0;
+            AmmoEntity sample = null;
+            AmmoEntity threat = null;
+            for (Entity e : GunnerTargeting.collectTargetEntities(vehicle, triggerRadius, ent -> ent instanceof AmmoEntity ammo
+                    && ammo.isAlive() && ammo.vehicle != vehicle)) {
+                AmmoEntity ammo = (AmmoEntity) e;
+                double d = ammo.position().distanceToSqr(vehicle.position());
+                if (d > triggerRadius * triggerRadius) {
+                    continue;
+                }
+                near++;
+                boolean friendly = GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), ammo.getOwner());
+                boolean danger = GunnerTargeting.isDangerousAmmo(ammo);
+                if (sample == null) {
+                    sample = ammo;
+                }
+                if (danger && !friendly) {
+                    hostileDanger++;
+                }
+                // ECM 触发判定：危险弹药且朝本机飞来（闭合速度为正），不要求敌我之分
+                if (threat == null && danger) {
+                    Vec3 vel = ammo.getDeltaMovement();
+                    if (vel.lengthSqr() >= 0.04) {
+                        Vec3 toV = vehicle.position().subtract(ammo.position());
+                        if (vel.dot(toV.normalize()) > 0.0) {
+                            threat = ammo;
+                        }
+                    }
+                }
+            }
+            rvpEcmDbg(vehicle, "扫描: tr=" + (int) triggerRadius + " 半径内弹药=" + near
+                    + " 敌对危险=" + hostileDanger
+                    + (sample != null ? " 样本#" + sample.getId()
+                        + " friendly=" + GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), sample.getOwner())
+                        + " danger=" + GunnerTargeting.isDangerousAmmo(sample) : "")
+                    + " threat=" + (threat != null ? "有#" + threat.getId() : "null"));
             if (threat != null) {
                 shouldFire = true;
             }
@@ -1242,6 +1325,7 @@ public final class GunnerBrain {
         if (!shouldFire) {
             return;
         }
+        rvpEcmDbg(vehicle, "触发释放主动ECM");
         // 尝试释放（服务端校验冷却）
         if (vehicle.level() instanceof ServerLevel) {
             RVP_EcmActiveManager.tryFireForVehicle(vehicle);
