@@ -215,6 +215,9 @@ public final class GunnerTargeting {
     }
 
     public static boolean isDangerousAmmo(AmmoEntity ammo) {
+        if (ammo instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet) {
+            return true;
+        }
         if (ammo instanceof MissileEntity) {
             return true;
         }

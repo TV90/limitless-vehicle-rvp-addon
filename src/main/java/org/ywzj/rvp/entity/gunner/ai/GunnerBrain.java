@@ -1272,8 +1272,8 @@ public final class GunnerBrain {
             }
         }
         // 导弹威胁检查：以主动ECM 的有效干扰半径作为触发距离（不再受箔条 32m 硬上限限制）。
-        // 主动ECM 属纯自卫：只要是有威胁的来袭危险弹药即释放，不区分敌我（仅排除本机自身发射的导弹），
-        // 因此即便是玩家自己的 gunner 在单人测试中被自己导弹攻击也会触发——比箔条的"仅敌对"更合理。
+        // 仍遵守敌我识别：只有"敌对"来袭导弹才触发（ENEMY gunner 不会被判为放置者的友方，
+        // 见 RVP_EcmIff.areVehiclesFriendly 的 faction 守卫），不会对所有导弹无差别触发。
         if (!shouldFire) {
             // 取所有 ECM 设备中的最大干扰半径作为触发阈值（弹药/载具干扰半径与 200m 兜底）
             double triggerRadius = 200.0;
@@ -1281,36 +1281,23 @@ public final class GunnerBrain {
                 triggerRadius = Math.max(triggerRadius, cfg.ammoJamRadius());
                 triggerRadius = Math.max(triggerRadius, cfg.vehicleJamRadius());
             }
-            // 调试：统计触发半径内危险弹药数量，定位"为何不触发"
+            // findAmmoThreat 内部用 isFriendlyAmmoOwner 判定敌我（RVP 导弹已纳入 isDangerousAmmo）
+            AmmoEntity threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, triggerRadius, triggerRadius, 600.0);
+            // 调试：统计触发半径内弹药/敌对危险数量，定位"为何不触发"
             int near = 0, hostileDanger = 0;
             AmmoEntity sample = null;
-            AmmoEntity threat = null;
             for (Entity e : GunnerTargeting.collectTargetEntities(vehicle, triggerRadius, ent -> ent instanceof AmmoEntity ammo
                     && ammo.isAlive() && ammo.vehicle != vehicle)) {
                 AmmoEntity ammo = (AmmoEntity) e;
-                double d = ammo.position().distanceToSqr(vehicle.position());
-                if (d > triggerRadius * triggerRadius) {
+                if (ammo.position().distanceToSqr(vehicle.position()) > triggerRadius * triggerRadius) {
                     continue;
                 }
                 near++;
-                boolean friendly = GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), ammo.getOwner());
-                // 主动ECM 干扰对象：RVP 制导弹药（含 RVP_BaseBullet 派生的一切导弹/制导炸弹），
-                // 不依赖本体 isDangerousAmmo 的 MissileEntity 判定（RVP 导弹不继承本体该类）
-                boolean danger = ammo instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-                if (sample == null) {
-                    sample = ammo;
-                }
-                if (danger && !friendly) {
+                if (!GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), ammo.getOwner())
+                        && GunnerTargeting.isDangerousAmmo(ammo)) {
                     hostileDanger++;
-                }
-                // ECM 触发判定：危险弹药且朝本机飞来（闭合速度为正），不要求敌我之分
-                if (threat == null && danger) {
-                    Vec3 vel = ammo.getDeltaMovement();
-                    if (vel.lengthSqr() >= 0.04) {
-                        Vec3 toV = vehicle.position().subtract(ammo.position());
-                        if (vel.dot(toV.normalize()) > 0.0) {
-                            threat = ammo;
-                        }
+                    if (sample == null) {
+                        sample = ammo;
                     }
                 }
             }
@@ -1318,8 +1305,8 @@ public final class GunnerBrain {
                     + " 敌对危险=" + hostileDanger
                     + (sample != null ? " 样本#" + sample.getId()
                         + " friendly=" + GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), sample.getOwner())
-                        + " danger=" + (sample instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet) : "")
-                    + " threat=" + (threat != null ? "有#" + threat.getId() : "null"));
+                        + " danger=" + GunnerTargeting.isDangerousAmmo(sample) : "")
+                    + " findAmmoThreat=" + (threat != null ? "有#" + threat.getId() : "null"));
             if (threat != null) {
                 shouldFire = true;
             }

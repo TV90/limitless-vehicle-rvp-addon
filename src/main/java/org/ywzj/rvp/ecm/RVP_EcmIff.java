@@ -67,13 +67,15 @@ public final class RVP_EcmIff {
                 && gb2.getProfileFaction() == RVP_EnumGunnerFaction.FRIENDLY) {
             return true;
         }
-        // gunner 放置者链：对方玩家是该 gunner 的放置者
-        if (da instanceof GunnerEntity ga3 && db instanceof Player ownerPlayer
-                && ga3.isOwnedBy(ownerPlayer)) {
+        // gunner 放置者链：对方玩家是该 gunner 的放置者。
+        // 仅 FRIENDLY/中立阵营 gunner 才与放置者互为友方；ENEMY 阵营 gunner 不与放置者结盟，
+        // 放置者对其而言是敌对目标（否则敌方 gunner 的 ECM/雷达不会对放置者生效）。
+        if (da instanceof GunnerEntity ga3 && ga3.getProfileFaction() != RVP_EnumGunnerFaction.ENEMY
+                && db instanceof Player ownerPlayer && ga3.isOwnedBy(ownerPlayer)) {
             return true;
         }
-        if (db instanceof GunnerEntity gb3 && da instanceof Player ownerPlayer2
-                && gb3.isOwnedBy(ownerPlayer2)) {
+        if (db instanceof GunnerEntity gb3 && gb3.getProfileFaction() != RVP_EnumGunnerFaction.ENEMY
+                && da instanceof Player ownerPlayer2 && gb3.isOwnedBy(ownerPlayer2)) {
             return true;
         }
         // 乘客关系：一方驾驶者是另一方的乘客
