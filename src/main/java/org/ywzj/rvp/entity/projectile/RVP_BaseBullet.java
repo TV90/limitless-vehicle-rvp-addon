@@ -251,9 +251,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 deploymentBaseVelocity = Vec3.ZERO;
     /** 子弹药速度散布与母弹水平继承形成的 X/Z 部署速度；Y 恒为 0。 */
     private Vec3 deploymentHorizontalVelocity = Vec3.ZERO;
+    /** 子弹药速度散布形成的 Y 部署速度；X/Z 恒为 0，重力和显式附加速度不进入该分量。 */
+    private Vec3 deploymentVerticalVelocity = Vec3.ZERO;
     /** 从零独立收敛的风偏速度贡献；不会反向收敛基础弹道或部署速度。 */
     private Vec3 deploymentWindVelocity = Vec3.ZERO;
-    /** 上一 Tick 由三个内部速度分量合成的总速度，用于识别碰撞、穿透等外部改速。 */
+    /** 上一 Tick 由四个内部速度分量合成的总速度，用于识别碰撞、穿透等外部改速。 */
     private Vec3 deploymentLastComposedVelocity = Vec3.ZERO;
     protected int livingPenetrationLeft;
     protected int wallPenetrationLeft;
@@ -705,19 +707,27 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * 子弹药生成器在总初速写入后调用，拆分需要半衰期衰减的部署 X/Z 与其余基础速度。
-     * 未配置正半衰期或推进弹体保持原运动链路，不建立额外运行时状态。
+     * 子弹药生成器在总初速写入后调用，按已启用的半衰期拆分部署 X/Z、散布 Y 与其余基础速度。
+     * 水平和纵向半衰期均未配置正数，或推进弹体保持原运动链路，不建立额外运行时状态。
      */
-    public void initializeSubmunitionDeploymentMotion(Vec3 horizontalVelocity) {
+    public void initializeSubmunitionDeploymentMotion(Vec3 deploymentVelocity) {
         if (rvpData == null || rvpData.usesPropulsion() || usesCannonBallistics()) {
             return;
         }
-        float halfLife = rvpData.getProjectileData().getDeploymentHorizontalHalfLifeTicks();
-        if (halfLife <= 0f || horizontalVelocity == null) {
+        float horizontalHalfLife = rvpData.getProjectileData().getDeploymentHorizontalHalfLifeTicks();
+        float verticalHalfLife = rvpData.getProjectileData().getDeploymentVerticalHalfLifeTicks();
+        if ((horizontalHalfLife <= 0f && verticalHalfLife <= 0f) || deploymentVelocity == null) {
             return;
         }
-        deploymentHorizontalVelocity = new Vec3(horizontalVelocity.x, 0.0D, horizontalVelocity.z);
-        deploymentBaseVelocity = getDeltaMovement().subtract(deploymentHorizontalVelocity);
+        deploymentHorizontalVelocity = horizontalHalfLife > 0f
+                ? new Vec3(deploymentVelocity.x, 0.0D, deploymentVelocity.z)
+                : Vec3.ZERO;
+        deploymentVerticalVelocity = verticalHalfLife > 0f
+                ? new Vec3(0.0D, deploymentVelocity.y, 0.0D)
+                : Vec3.ZERO;
+        deploymentBaseVelocity = getDeltaMovement()
+                .subtract(deploymentHorizontalVelocity)
+                .subtract(deploymentVerticalVelocity);
         deploymentWindVelocity = Vec3.ZERO;
         deploymentLastComposedVelocity = getDeltaMovement();
         submunitionDeploymentMotionActive = true;
@@ -2119,7 +2129,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * 分量化子弹药简化弹道：基础弹道、指数衰减部署 X/Z 与独立风偏分别积分后再合成。
+     * 分量化子弹药简化弹道：基础弹道、独立指数衰减的部署 X/Z 和散布 Y、风偏分别积分后再合成。
      */
     private void tickDeploymentBallisticMotion() {
         Vec3 currentVelocity = getDeltaMovement();
@@ -2134,6 +2144,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本项目部署数学工具：按配置半衰期只衰减 X/Z，方向与 Y 均不突变。
         deploymentHorizontalVelocity = RVP_DeploymentMotionUtil.decayHorizontal(
                 deploymentHorizontalVelocity, halfLife);
+        float verticalHalfLife = rvpData.getProjectileData().getDeploymentVerticalHalfLifeTicks();
+        // 调用本项目部署数学工具：按独立半衰期只衰减散布生成的 Y，重力和显式冲量仍留在基础分量。
+        deploymentVerticalVelocity = RVP_DeploymentMotionUtil.decayVertical(
+                deploymentVerticalVelocity, verticalHalfLife);
 
         Vec3 baseVelocity = deploymentBaseVelocity;
         if (!isInWater()) {
@@ -2161,12 +2175,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
         Vec3 composed = deploymentBaseVelocity
                 .add(deploymentHorizontalVelocity)
+                .add(deploymentVerticalVelocity)
                 .add(deploymentWindVelocity);
         if (rvpData.getProjectileData().isConstantSpeed() && composed.lengthSqr() > 1.0E-6D) {
             double targetSpeed = Math.max(flightSpeed, 0.01D);
             scaleDeploymentComponents(targetSpeed / composed.length());
             composed = deploymentBaseVelocity
                     .add(deploymentHorizontalVelocity)
+                    .add(deploymentVerticalVelocity)
                     .add(deploymentWindVelocity);
         }
         Vec3 clamped = clampSpeed(composed);
@@ -2180,7 +2196,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         RVP_ProjectileMotion.applyRotationFromVelocity(this, clamped);
     }
 
-    /** 总速率钳制后同比缩放三个内部速度分量，确保它们下一 Tick 仍精确重组为当前总速度。 */
+    /** 总速率钳制后同比缩放四个内部速度分量，确保它们下一 Tick 仍精确重组为当前总速度。 */
     private void synchronizeDeploymentComponentsAfterClamp(Vec3 beforeClamp, Vec3 afterClamp) {
         double beforeSpeed = beforeClamp.length();
         if (beforeSpeed <= 1.0E-10D || beforeClamp.distanceToSqr(afterClamp) <= 1.0E-16D) {
@@ -2194,6 +2210,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private void scaleDeploymentComponents(double scale) {
         deploymentBaseVelocity = deploymentBaseVelocity.scale(scale);
         deploymentHorizontalVelocity = deploymentHorizontalVelocity.scale(scale);
+        deploymentVerticalVelocity = deploymentVerticalVelocity.scale(scale);
         deploymentWindVelocity = deploymentWindVelocity.scale(scale);
     }
 

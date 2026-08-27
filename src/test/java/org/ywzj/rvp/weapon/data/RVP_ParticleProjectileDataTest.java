@@ -31,6 +31,8 @@ class RVP_ParticleProjectileDataTest {
                     "body_flicker_interval_ticks": 4,
                     "body_sample_interval_ticks": 2,
                     "trail_lifetime_start_on_landing": true,
+                    "trail_hot_phase_ticks": 4,
+                    "trail_hot_color": "#FFC247",
                     "trail_start_color": "#FFB52E",
                     "trail_end_color": "#7A3512"
                   }
@@ -49,6 +51,8 @@ class RVP_ParticleProjectileDataTest {
         assertEquals(4, data.getBodyFlickerIntervalTicks());
         assertEquals(2, data.getBodySampleIntervalTicks());
         assertTrue(data.isTrailLifetimeStartOnLanding());
+        assertEquals(4, data.getTrailHotPhaseTicks());
+        assertEquals(0xFFC247, data.getTrailHotColorRgb());
         assertEquals(0xFFB52E, data.getTrailStartColorRgb());
         assertEquals(0x7A3512, data.getTrailEndColorRgb());
     }
@@ -69,6 +73,8 @@ class RVP_ParticleProjectileDataTest {
                   "body_horizontal_flicker": -0.5,
                   "body_flicker_interval_ticks": 0,
                   "body_sample_interval_ticks": -3,
+                  "trail_hot_phase_ticks": -4,
+                  "trail_hot_color": "invalid",
                   "trail_start_alpha": 2,
                   "trail_end_alpha": -1
                 }
@@ -82,6 +88,8 @@ class RVP_ParticleProjectileDataTest {
         assertEquals(0.0f, data.getBodyHorizontalFlicker(), 1.0E-6f);
         assertEquals(1, data.getBodyFlickerIntervalTicks());
         assertEquals(1, data.getBodySampleIntervalTicks());
+        assertEquals(0, data.getTrailHotPhaseTicks());
+        assertEquals(0xFFC247, data.getTrailHotColorRgb());
         assertEquals(1.0f, data.getTrailStartAlpha(), 1.0E-6f);
         assertEquals(0.0f, data.getTrailEndAlpha(), 1.0E-6f);
     }
@@ -99,6 +107,8 @@ class RVP_ParticleProjectileDataTest {
         assertEquals(1, defaults.getBodyFlickerIntervalTicks());
         assertEquals(1, defaults.getBodySampleIntervalTicks());
         assertFalse(defaults.isTrailLifetimeStartOnLanding());
+        assertEquals(0, defaults.getTrailHotPhaseTicks());
+        assertEquals(0xFFC247, defaults.getTrailHotColorRgb());
         assertEquals(0.0f, nan.getBodyHorizontalFlicker(), 1.0E-6f);
         assertEquals(0.0f, infinity.getBodyHorizontalFlicker(), 1.0E-6f);
     }

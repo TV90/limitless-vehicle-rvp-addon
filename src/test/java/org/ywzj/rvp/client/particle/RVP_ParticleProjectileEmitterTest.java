@@ -42,4 +42,23 @@ class RVP_ParticleProjectileEmitterTest {
                 RVP_ParticleProjectileEmitter.resolveBodyStartScale(0.08f, 0.62f, 1),
                 1.0E-6f);
     }
+
+    @Test
+    void trailHotPhaseUsesSmoothFourTickVisualAgeAndCanBeDisabled() {
+        assertEquals(0.0f,
+                RVP_WhitePhosphorusParticle.resolveTrailHotBlendWeight(0, 0),
+                1.0E-6f);
+        assertEquals(1.0f,
+                RVP_WhitePhosphorusParticle.resolveTrailHotBlendWeight(0, 4),
+                1.0E-6f);
+        assertEquals(0.5f,
+                RVP_WhitePhosphorusParticle.resolveTrailHotBlendWeight(2, 4),
+                1.0E-6f);
+        assertEquals(0.0f,
+                RVP_WhitePhosphorusParticle.resolveTrailHotBlendWeight(4, 4),
+                1.0E-6f);
+        assertEquals(0.0f,
+                RVP_WhitePhosphorusParticle.resolveTrailHotBlendWeight(40, 4),
+                1.0E-6f);
+    }
 }

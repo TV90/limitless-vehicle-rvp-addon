@@ -189,6 +189,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
 | `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布/父弹继承 X/Z 生效，包含分层圆锥径向与云心水平径向分量；Y、风偏和显式附加速度不参与该衰减。 |
+| `deployment_vertical_half_life_ticks` | 子弹药部署纵向速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布 Y 生效；重力、`payloads_velocity[1]`、风偏和其他外力不参与该衰减。 |
 
 `altitude_drag_factor` 的运行规则：
 
@@ -200,10 +201,11 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 
 ```text
 deploymentXZ(t) = deploymentXZ(0) × 2^(-t / halfLifeTicks)
-totalVelocity = baseVelocity + deploymentXZ(t) + windContribution
+deploymentY(t) = deploymentY(0) × 2^(-t / verticalHalfLifeTicks)
+totalVelocity = baseVelocity + deploymentXZ(t) + deploymentY(t) + windContribution
 ```
 
-`deploymentXZ(0)` 由散布速度 X/Z 与可选母弹水平继承组成；`payloads_velocity` 属于基础速度。碰撞、穿透等外部改速会通过上一合成速度差并入基础速度。`max_speed`/`min_speed` 钳制时三个分量同比缩放，保持下一 Tick 重组连续。基础 `drag` 只处理基础速度中的水平分量，不阻尼部署 X/Z 或独立风偏。
+`deploymentXZ(0)` 由散布速度 X/Z 与可选母弹水平继承组成，`deploymentY(0)` 仅由散布速度 Y 组成；`gravity` 与 `payloads_velocity` 属于基础速度。碰撞、穿透等外部改速会通过上一合成速度差并入基础速度。`max_speed`/`min_speed` 钳制时四个分量同比缩放，保持下一 Tick 重组连续。基础 `drag` 只处理基础速度中的水平分量，不阻尼部署 X/Z、散布 Y 或独立风偏。
 
 示例：
 
@@ -231,7 +233,7 @@ totalVelocity = baseVelocity + deploymentXZ(t) + windContribution
 
 `parent_facing_reverse` 只在 RVP 子弹药生成时捕获风向：以**释放 Tick 母弹当前旋转朝向的反向**为基准并固化到子体，之后不会继续跟随母弹转向。`north:<角度>` 则在任意 RVP 弹体初始化时固化世界水平风向，因此首发弹体和子弹药均可使用。
 
-默认未启用部署半衰期时，风漂保持既有总速度收敛语义。配置正数 `deployment_horizontal_half_life_ticks` 后，服务器改为维护独立风偏贡献：基础弹道、部署 X/Z 与风偏分别积分，风偏从零向目标速度收敛后相加，不会把初始散布速度直接拉向风速。客户端只显示同步后的权威弹道，不自行计算。
+默认未启用任何部署半衰期时，风漂保持既有总速度收敛语义。配置任一正数部署半衰期后，服务器改为维护独立风偏贡献：基础弹道、部署 X/Z、散布 Y 与风偏分别积分，风偏从零向目标速度收敛后相加，不会把初始散布速度直接拉向风速。客户端只显示同步后的权威弹道，不自行计算。
 
 | 字段 | 类型 | 缺省值 | 归一化与生效条件 |
 | --- | --- | --- | --- |
@@ -437,13 +439,15 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `trail_enabled` | boolean | `true` | 是否在连续客户端 Tick 中把上一主体位置沉积为一个尾迹粒子；首 Tick、静止 Tick、追踪中断或距离超过 512 格时不生成。 |
 | `trail_lifetime_ticks` | int（tick） | `24` | 单个尾迹粒子寿命，读取时至少为 `1`。 |
 | `trail_lifetime_start_on_landing` | boolean | `false` | 是否把同一弹体所有尾迹的寿命起点推迟到对应主体落地。false 保持每个尾迹从出生 Tick 立即计时；true 时飞行期间冻结尾迹年龄，检测到弹体 `onGround`、碰撞结束、被移除或客户端追踪释放后统一从年龄 0 开始按 `trail_lifetime_ticks` 计时。只影响客户端粒子生命周期。 |
+| `trail_hot_phase_ticks` | int（tick） | `0` | 尾迹出生后的高温火光阶段时长；读取时取 `max(value, 0)`，0 禁用并完全沿用旧颜色曲线。正值启用时按独立视觉年龄把 `trail_hot_color` 平滑混合回既有尾迹颜色，不增加粒子数。 |
+| `trail_hot_color` | string（RGB） | `#FFC247` | 高温阶段出生颜色；格式规则同 `body_color`，非法值回退橙黄色 `#FFC247`。仅在 `trail_hot_phase_ticks > 0` 时可见。 |
 | `trail_end_scale` | float | `0.02` | 尾迹消失尺寸倍率；有限值取 `max(value, 0)`，NaN/Infinity 回退 `0.02`。 |
 | `trail_start_alpha` | float | `0.9` | 尾迹出生透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0.9`。 |
 | `trail_end_alpha` | float | `0` | 尾迹消失透明度，有限值钳制到 `0..1`，NaN/Infinity 回退 `0`。 |
 | `trail_start_color` | string（RGB） | `#FFFFFF` | 尾迹出生颜色；格式规则同 `body_color`，非法值回退白色。 |
 | `trail_end_color` | string（RGB） | `#FFFFFF` | 尾迹消失颜色；格式规则同 `body_color`，非法值回退白色。 |
 
-主体尺寸与 X/Z 目标偏移组成一组随机样本。尺寸目标为 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)`；若 `body_start_scale > 0` 且寿命至少 2 Tick，单个主体从较小出生尺寸使用 `smoothstep(t)=t²(3-2t)` 长到该目标，否则直接以目标尺寸生成。X/Z 从上一实际偏移使用相同平滑曲线移动，并在 `body_flicker_interval_ticks` 周期末准确到达目标；下个周期从该实际位置继续移动，不发生目标刷新瞬间的坐标跳变。追踪 Tick 中断时从权威位置重新起步并重抽，避免复用过期位置。`body_sample_interval_ticks` 只决定哪些 Tick 真正创建主体粒子，不影响这组视觉状态的逐 Tick 更新。尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体每 Tick 最多在上一视觉状态的实际平滑位置沉积一个尾迹粒子，超过 512 格不生成，因此主体降采样不会让尾迹同步断续。移动判定始终比较连续 Tick 的权威弹体位置，避免静止弹体只因 `body_horizontal_flicker` 改变而堆积假尾迹。尾迹出生尺寸继承对应主体的随机目标尺寸，而非启用后的较小出生尺寸，再平滑过渡到 `trail_end_scale`；透明度按平滑曲线过渡，颜色按年龄线性过渡。启用 `trail_lifetime_start_on_landing` 后，同一弹体的尾迹共享一个只弱引用弹体的客户端计时门；飞行期间不推进粒子年龄，落地或实体结束后门永久打开并统一开始正常衰减，避免尾迹持有已移除实体。该模式不会增加每 Tick 出生率，但粒子峰值存量会额外包含全部可见飞行阶段尾迹。尺寸生长不增加粒子数量。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
+主体尺寸与 X/Z 目标偏移组成一组随机样本。尺寸目标为 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)`；若 `body_start_scale > 0` 且寿命至少 2 Tick，单个主体从较小出生尺寸使用 `smoothstep(t)=t²(3-2t)` 长到该目标，否则直接以目标尺寸生成。X/Z 从上一实际偏移使用相同平滑曲线移动，并在 `body_flicker_interval_ticks` 周期末准确到达目标；下个周期从该实际位置继续移动，不发生目标刷新瞬间的坐标跳变。追踪 Tick 中断时从权威位置重新起步并重抽，避免复用过期位置。`body_sample_interval_ticks` 只决定哪些 Tick 真正创建主体粒子，不影响这组视觉状态的逐 Tick 更新。尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体每 Tick 最多在上一视觉状态的实际平滑位置沉积一个尾迹粒子，超过 512 格不生成，因此主体降采样不会让尾迹同步断续。移动判定始终比较连续 Tick 的权威弹体位置，避免静止弹体只因 `body_horizontal_flicker` 改变而堆积假尾迹。尾迹出生尺寸继承对应主体的随机目标尺寸，而非启用后的较小出生尺寸，再平滑过渡到 `trail_end_scale`；透明度按平滑曲线过渡，基础颜色按年龄从 `trail_start_color` 线性过渡到 `trail_end_color`。启用高温阶段后，同一个尾迹粒子在出生时使用 `trail_hot_color`，并在 `trail_hot_phase_ticks` 内按 smoothstep 降低热色权重、平滑回到当时的基础颜色，因此形成贴近主体的短火光段而不增加第二层粒子。高温阶段使用不受寿命门冻结的独立视觉年龄；启用 `trail_lifetime_start_on_landing` 后，飞行期间尺寸、透明度和基础冷却曲线仍冻结，但火色会按真实客户端 Tick 正常结束。同一弹体的尾迹共享一个只弱引用弹体的客户端计时门；落地或实体结束后门永久打开并统一开始正常衰减，避免尾迹持有已移除实体。该模式不会增加每 Tick 出生率，但粒子峰值存量会额外包含全部可见飞行阶段尾迹。尺寸生长和高温阶段均不增加粒子数量。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
 
 ```json
 "effects_data": {
@@ -466,6 +470,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
     "trail_enabled": true,
     "trail_lifetime_ticks": 26,
     "trail_lifetime_start_on_landing": true,
+    "trail_hot_phase_ticks": 4,
+    "trail_hot_color": "#FFC247",
     "trail_end_scale": 0.03,
     "trail_start_alpha": 0.90,
     "trail_end_alpha": 0.0,
@@ -852,6 +858,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `cone_radial_speed` | float/null（格/tick） | `null` | `stratified_cone` 的最大径向展开速度；null、NaN 或 Infinity 沿用 payload `launch_speed`，有限值取 `max(value, 0)`。配置后只缩放 X/Z 径向分量，向下分量仍由 `launch_speed` 控制，可实现“快速撒开、缓慢下落”。 |
 | `cone_axis` | string | `world_down` | 圆锥轴；当前 getter 对任何输入都返回 `world_down`，即世界 Y 负方向。 |
 | `radial_distribution` | string | `uniform_area` | 径向分布；当前 getter 对任何输入都返回 `uniform_area`，实现按圆锥内均匀立体角采样。 |
+| `cone_azimuth_mode` | string | `golden_angle` | `stratified_cone` 的水平方位来源。`golden_angle` 保持按子体序号推进黄金角的既有行为；`spawn_radial` 使用最终出生位置相对当波释放中心的 X/Z 外向方向。未知值或 null 回退 `golden_angle`，不提供旧键别名。 |
 | `azimuth_jitter` | float | `0` | 方位角分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`。扰动范围为单个方位角分层宽度乘该比例。 |
 | `radial_jitter` | float | `0` | 径向分层内扰动比例；有限值钳制到 `0..1`，NaN/Infinity 按 `0`，实际径向扰动还会除以子体总数。 |
 | `cloud_direction_jitter` | float（度） | `0` | `cloud_radial_horizontal` 的水平外散方向扰动角；每枚子体在基础云心外向方位上独立抽取 `[-value,+value]`，有限值限制为 `0..90`，NaN/Infinity 按 0，因而不会反向指回云心。 |
@@ -867,7 +874,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 }
 ```
 
-`stratified_cone` 使用黄金角推进方位角，并按 `pelletIndex/pelletCount` 分层。未配置 `cone_radial_speed` 时，径向和向下分量都使用输入基础速度，输出速度长度与旧行为一致；配置后按下式解耦：
+`stratified_cone` 始终按 `pelletIndex/pelletCount` 计算圆锥纵向层级；默认 `cone_azimuth_mode=golden_angle` 时继续用黄金角推进水平方位。显式使用 `spawn_radial` 时，改用“最终出生位置 − 当波母弹释放位置”的 X/Z 投影作为水平外向方向，release 云偏移和 payload 位置偏移都会纳入计算；投影接近零或含非有限值时按子体序号的黄金角稳定兜底。`azimuth_jitter` 在两种方位模式下都会继续作用于基础方位，配置为 0 可确保 `spawn_radial` 严格沿云心向外。未配置 `cone_radial_speed` 时，径向和向下分量都使用输入基础速度，输出速度长度与旧行为一致；配置后按下式解耦：
 
 ```text
 velocity = worldDown × cos(theta) × launch_speed
@@ -882,7 +889,8 @@ velocity = worldDown × cos(theta) × launch_speed
   "cone_half_angle": 72.0,
   "cone_axis": "world_down",
   "radial_distribution": "uniform_area",
-  "azimuth_jitter": 0.08,
+  "cone_azimuth_mode": "spawn_radial",
+  "azimuth_jitter": 0.0,
   "radial_jitter": 0.08
 }
 ```

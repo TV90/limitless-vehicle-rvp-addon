@@ -5,15 +5,18 @@
 - 母弹不配置 `visual_effect_data`，只保留本体 `VehicleExplosion`；子体不启用 `explosion_data`。
 - 母弹 release 配置 `release_cloud_enabled: true` 与 `release_cloud_radius: {"horizontal": 4.0, "vertical": 4.0}` 后，子体会在服务端权威、水平/竖直半径各 4 格的均匀椭球体积内生成；这不是客户端一次性爆炸贴图。开关默认 false，两轴都为 0 时保持同点释放。
 - `spread.mode: cloud_radial_horizontal` 使用每枚子体最终出生点相对释放点的 X/Z 投影作为云心外向方向；`cloud_direction_jitter` 按度扰动方向，`cloud_speed_jitter` 按比例扰动 `launch_speed`。纯竖直或零水平偏移会随机选择有限的水平兜底方向，散布 Y 恒为 0。
+- 需要保留向下分层圆锥时可继续使用 `spread.mode: stratified_cone`，并显式配置 `cone_azimuth_mode: spawn_radial`，让圆锥 X/Z 散布分量沿最终出生点相对释放中心向外；默认 `golden_angle` 保持旧武器。水平投影退化时按子体序号黄金角稳定兜底，`azimuth_jitter: 0` 可避免在外向方位上再次旋转。
 - `wind_data.direction_mode: parent_facing_reverse` 在释放瞬间读取母弹当前旋转朝向并取反，不使用母弹最初发射方向。
 - 固定世界水平风向可写成 `north:<角度>`：北方 `-Z` 为 0°、顺时针为正，因此 `north:+90` 向东 `+X`，`north:-50` 为北偏西 50°。固定模式对首发弹体和子弹药都有效。
 - 子体配置正数 `deployment_horizontal_half_life_ticks` 后，云径向/母弹继承形成的初始 X/Z 按半衰期衰减，风偏作为独立速度贡献随后叠加；0 保持旧总速度链路。
+- 子体配置正数 `deployment_vertical_half_life_ticks` 后，仅速度散布生成的初始 Y 按半衰期衰减；`gravity`、`payloads_velocity[1]` 与碰撞改速仍属于基础速度，0 保持旧 Y 运动。
 - 母弹 payload 可用 `inherit_parent_horizontal_velocity: true` 只继承母弹 X/Z，并由 `velocity_scale` 控制继承比例，不缩放云径向 `launch_speed`。
 - 示例把 `payloads_velocity` 保持为 `[0, 0, 0]`，子体从释放后立即由自身 `gravity` 下落；不要用正 Y 补偿制造整片云上扬。
 - `wind_data.turbulence` 与 `turbulence_frequency` 分别控制服务端权威的平滑游移幅度和转向频率；客户端不另算弹道。
 - 尾迹每 Tick 只保留上一主体位置，不沿单 Tick 运动段插值补线；当前 schema 不再包含 `trail_spacing`。
 - 尾迹出生尺寸继承对应主体经 `body_flicker` 计算后的实际尺寸；当前 schema 不再包含独立的 `trail_start_scale`。
 - `trail_lifetime_start_on_landing` 默认 false，尾迹按原行为从出生 Tick 立即消耗 `trail_lifetime_ticks`。设为 true 后，同一子体的尾迹在飞行阶段冻结年龄，子体落地、碰撞结束、被移除或客户端停止追踪后才统一开始计时；该模式不提高出生率，但会保留整段飞行尾迹并提高峰值粒子存量。
+- `trail_hot_phase_ticks` 默认 0，表示关闭短火光段并保持旧尾迹颜色曲线；正值会让同一个尾迹粒子从 `trail_hot_color` 按 smoothstep 快速冷却回原有尾迹颜色。热色使用独立视觉年龄，即使开启落地后计时也会在飞行中按时冷却，不会额外生成第二层粒子。示例使用 4 Tick 与 `#FFC247`。
 - 主体颜色在自身寿命内从 `body_color` 线性渐变到 `body_end_color`；示例使用橙色 `#FF8A1F` 到红色 `#FF2400`，再叠加 `body_flicker` 按配置间隔更新的随机尺寸差异形成红橙闪烁。未配置末端颜色时保持原有单色主体。
 - `body_start_scale` 控制主体的较小出生尺寸，默认 0 表示关闭并直接使用本次 `body_flicker` 目标尺寸。正值会在主体寿命内沿平滑曲线长到目标，实际出生值不会超过目标；寿命为 1 Tick 时自动关闭生长，至少 2 Tick 才能看到变化。该字段不增加粒子数量，尾迹仍继承目标尺寸。
 - `body_horizontal_flicker` 以格为单位，在 X、Z 两轴分别生成 `[-value, +value]` 的独立随机目标偏移；主体从上一实际偏移沿平滑曲线移动到目标，尾迹继承逐 Tick 的实际平滑位置。该视觉字段不改变 Y、服务端弹道或毁伤，静止判定仍使用权威弹体位置。

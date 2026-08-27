@@ -120,6 +120,13 @@ public class RVP_ProjectileData {
     @SerializedName("deployment_horizontal_half_life_ticks")
     private float deploymentHorizontalHalfLifeTicks = 0f;
 
+    /**
+     * 子弹药部署纵向速度的半衰期，单位 Tick，默认 0（禁用）；仅由本项目子弹药生成器
+     * 显式初始化的散布 Y 分量生效，正有限值按指数曲线衰减，重力、显式附加速度和其他外力不参与该衰减。
+     */
+    @SerializedName("deployment_vertical_half_life_ticks")
+    private float deploymentVerticalHalfLifeTicks = 0f;
+
     public void resolvePropulsionFallback(JsonObject weaponRoot, JsonObject projectileJson) {
         if (!hasRocketEngine || weaponRoot == null) {
             return;
@@ -309,6 +316,12 @@ public class RVP_ProjectileData {
     public float getDeploymentHorizontalHalfLifeTicks() {
         return Float.isFinite(deploymentHorizontalHalfLifeTicks)
                 ? Math.max(deploymentHorizontalHalfLifeTicks, 0f)
+                : 0f;
+    }
+
+    public float getDeploymentVerticalHalfLifeTicks() {
+        return Float.isFinite(deploymentVerticalHalfLifeTicks)
+                ? Math.max(deploymentVerticalHalfLifeTicks, 0f)
                 : 0f;
     }
 

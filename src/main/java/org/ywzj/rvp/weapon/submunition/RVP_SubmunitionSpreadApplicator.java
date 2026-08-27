@@ -35,7 +35,8 @@ public final class RVP_SubmunitionSpreadApplicator {
             return sampleCloudRadialHorizontal(baseVelocity.length(), spawnOffset, spread, random);
         }
         if (spread.usesStratifiedCone()) {
-            return sampleStratifiedCone(baseVelocity.length(), spread, pelletIndex, pelletCount, random);
+            return sampleStratifiedCone(baseVelocity.length(), spread, spawnOffset,
+                    pelletIndex, pelletCount, random);
         }
         if (spread.usesCanister() && spread.getCanisterType() >= 1) {
             float[] angular = new float[2];
@@ -124,6 +125,14 @@ public final class RVP_SubmunitionSpreadApplicator {
      */
     static Vec3 sampleStratifiedCone(double speed, RVP_SubmunitionSpreadData spread,
                                      int pelletIndex, int pelletCount, RandomSource random) {
+        return sampleStratifiedCone(speed, spread, Vec3.ZERO, pelletIndex, pelletCount, random);
+    }
+
+    /**
+     * 以世界正下方向为轴采样分层圆锥；可按子体序号或最终出生点的水平外向量选择方位。
+     */
+    static Vec3 sampleStratifiedCone(double speed, RVP_SubmunitionSpreadData spread, Vec3 spawnOffset,
+                                     int pelletIndex, int pelletCount, RandomSource random) {
         // 调用本项目散布数据归一化接口：未配置径向速度时沿用 launch_speed，保持既有武器行为。
         double radialSpeed = spread.resolveConeRadialSpeed(speed);
         if ((speed <= 1.0E-10 && radialSpeed <= 1.0E-10) || pelletCount <= 0) {
@@ -137,17 +146,47 @@ public final class RVP_SubmunitionSpreadApplicator {
         double cosTheta = 1.0D + (Math.cos(halfAngle) - 1.0D) * u;
         double sinTheta = Math.sqrt(Math.max(0.0D, 1.0D - cosTheta * cosTheta));
         double azimuthCell = Math.PI * 2.0D / pelletCount;
-        double azimuth = index * GOLDEN_ANGLE
-                + (random.nextDouble() * 2.0D - 1.0D)
+        double azimuthJitter = (random.nextDouble() * 2.0D - 1.0D)
                 * azimuthCell * spread.getAzimuthJitter();
 
         // 当前 schema 的 cone_axis 只接受 world_down；保留显式变量便于以后扩展新轴模式。
         Vec3 axis = "world_down".equals(spread.getConeAxis()) ? new Vec3(0.0D, -1.0D, 0.0D) : new Vec3(0.0D, -1.0D, 0.0D);
+        // 调用本项目散布数据访问器：显式 spawn_radial 才让圆锥方位跟随最终出生点，默认保持黄金角旧行为。
+        Vec3 radialDirection = "spawn_radial".equals(spread.getConeAzimuthMode())
+                ? resolveSpawnRadialDirection(spawnOffset, index, azimuthJitter)
+                : resolveGoldenAngleDirection(axis, index, azimuthJitter);
+        Vec3 downwardVelocity = axis.scale(cosTheta * Math.max(speed, 0.0D));
+        Vec3 radialVelocity = radialDirection.scale(sinTheta * radialSpeed);
+        return downwardVelocity.add(radialVelocity);
+    }
+
+    /** 使用既有圆锥切平面坐标计算黄金角方位，保持未配置新字段时的速度序列。 */
+    private static Vec3 resolveGoldenAngleDirection(Vec3 axis, int pelletIndex, double azimuthJitter) {
+        double azimuth = pelletIndex * GOLDEN_ANGLE + azimuthJitter;
         Vec3 tangent = axis.cross(new Vec3(1.0D, 0.0D, 0.0D)).normalize();
         Vec3 bitangent = axis.cross(tangent).normalize();
-        Vec3 downwardVelocity = axis.scale(cosTheta * Math.max(speed, 0.0D));
-        Vec3 radialVelocity = tangent.scale(Math.cos(azimuth) * sinTheta * radialSpeed)
-                .add(bitangent.scale(Math.sin(azimuth) * sinTheta * radialSpeed));
-        return downwardVelocity.add(radialVelocity);
+        return tangent.scale(Math.cos(azimuth)).add(bitangent.scale(Math.sin(azimuth)));
+    }
+
+    /**
+     * 将最终出生偏移的 X/Z 投影归一化为云心外向方位；退化点使用子体序号的黄金角稳定兜底。
+     */
+    private static Vec3 resolveSpawnRadialDirection(Vec3 spawnOffset, int pelletIndex, double azimuthJitter) {
+        double offsetX = spawnOffset == null ? 0.0D : spawnOffset.x;
+        double offsetZ = spawnOffset == null ? 0.0D : spawnOffset.z;
+        double horizontalLengthSqr = offsetX * offsetX + offsetZ * offsetZ;
+        if (!Double.isFinite(horizontalLengthSqr) || horizontalLengthSqr <= 1.0E-12D) {
+            return resolveGoldenAngleDirection(new Vec3(0.0D, -1.0D, 0.0D), pelletIndex, azimuthJitter);
+        }
+
+        double inverseLength = 1.0D / Math.sqrt(horizontalLengthSqr);
+        double radialX = offsetX * inverseLength;
+        double radialZ = offsetZ * inverseLength;
+        double cosJitter = Math.cos(azimuthJitter);
+        double sinJitter = Math.sin(azimuthJitter);
+        return new Vec3(
+                radialX * cosJitter - radialZ * sinJitter,
+                0.0D,
+                radialX * sinJitter + radialZ * cosJitter);
     }
 }

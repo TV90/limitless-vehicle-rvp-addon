@@ -62,6 +62,14 @@ public class RVP_SubmunitionSpreadData {
     @SerializedName("radial_distribution")
     private String radialDistribution = "uniform_area";
 
+    /**
+     * 分层圆锥水平方位来源，默认 {@code golden_angle}；仅 {@code mode=stratified_cone} 时生效。
+     * {@code golden_angle} 按子体序号使用黄金角分层，{@code spawn_radial} 使用子体最终出生位置
+     * 相对当波释放中心的 X/Z 外向方向。未知值或 null 回退 {@code golden_angle}。
+     */
+    @SerializedName("cone_azimuth_mode")
+    private String coneAzimuthMode = "golden_angle";
+
     /** 方位角分层内随机扰动比例，范围 0～1，默认 0；仅分层圆锥模式生效。 */
     @SerializedName("azimuth_jitter")
     private float azimuthJitter = 0f;
@@ -136,6 +144,10 @@ public class RVP_SubmunitionSpreadData {
 
     public String getRadialDistribution() {
         return "uniform_area";
+    }
+
+    public String getConeAzimuthMode() {
+        return "spawn_radial".equalsIgnoreCase(coneAzimuthMode) ? "spawn_radial" : "golden_angle";
     }
 
     public float getAzimuthJitter() {

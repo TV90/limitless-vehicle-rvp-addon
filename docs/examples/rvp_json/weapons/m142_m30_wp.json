@@ -20,7 +20,7 @@
     "max_speed": 6
   },
   "fuse_data": {
-    "ground_proximity_fuse_distance": 70.0,
+    "ground_proximity_fuse_distance": 50.0,
     "ground_proximity_fuse_arm_tick": 40,
     "detonate_on_life_end": false
   },
@@ -65,27 +65,28 @@
         "release_cloud_enabled": true,
         "release_cloud_radius": {
           "horizontal": 7.0,
-          "vertical": 7.0
+          "vertical": 3.0
         },
         "payloads": [
           {
             "kind": "rvp_weapon",
             "weapon_id": "rvp:m142_m30_wp_pellet",
-            "count": 38,
+            "count": 34,
             "inherit_parent_velocity": false,
             "inherit_vehicle_velocity": false,
             "inherit_parent_horizontal_velocity": true,
-            "velocity_scale": 0.40,
-            "launch_speed": 0.0,
+            "velocity_scale": 0.2,
+            "launch_speed": 0.5,
             "payloads_velocity": [0.0, 0.0, 0.0],
             "allow_submunition": false,
             "spread": {
               "mode": "stratified_cone",
-              "cone_half_angle": 48.0,
-              "cone_radial_speed": 0.7,
+              "cone_half_angle": 42.0,
+              "cone_radial_speed": 0.9,
               "cone_axis": "world_down",
               "radial_distribution": "uniform_area",
-              "azimuth_jitter": 0.08,
+              "cone_azimuth_mode": "spawn_radial",
+              "azimuth_jitter": 0.0,
               "radial_jitter": 0.08
             }
           }

@@ -101,6 +101,7 @@ public final class RVP_ParticleProjectileEmitter {
                 previous.bodyScale(), data.getTrailEndScale(),
                 data.getTrailStartAlpha(), data.getTrailEndAlpha(),
                 data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
+                data.getTrailHotPhaseTicks(), data.getTrailHotColorRgb(),
                 data.getTrailLifetimeTicks(), data.isFullBright(), trailLifetimeGate));
     }
 

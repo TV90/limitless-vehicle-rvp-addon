@@ -67,6 +67,14 @@ public class RVP_ParticleProjectileData {
     @SerializedName("trail_lifetime_start_on_landing")
     private boolean trailLifetimeStartOnLanding = false;
 
+    /** 尾迹出生后的高温火光阶段时长，单位 Tick，默认 0（禁用）；启用尾迹时取非负值。 */
+    @SerializedName("trail_hot_phase_ticks")
+    private int trailHotPhaseTicks = 0;
+
+    /** 尾迹高温阶段出生 RGB 十六进制颜色，默认 {@code #FFC247}；高温阶段大于 0 时生效。 */
+    @SerializedName("trail_hot_color")
+    private String trailHotColor = "#FFC247";
+
     /** 尾迹消失尺寸倍率，默认 0.02；启用尾迹时限制为非负有限值。 */
     @SerializedName("trail_end_scale")
     private float trailEndScale = 0.02f;
@@ -147,6 +155,14 @@ public class RVP_ParticleProjectileData {
 
     public boolean isTrailLifetimeStartOnLanding() {
         return trailLifetimeStartOnLanding;
+    }
+
+    public int getTrailHotPhaseTicks() {
+        return Math.max(trailHotPhaseTicks, 0);
+    }
+
+    public int getTrailHotColorRgb() {
+        return parseRgb(trailHotColor, 0xFFC247);
     }
 
     public float getTrailEndScale() {

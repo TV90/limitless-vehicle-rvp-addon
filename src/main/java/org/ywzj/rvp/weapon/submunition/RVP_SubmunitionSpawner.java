@@ -140,8 +140,8 @@ public final class RVP_SubmunitionSpawner {
             child.explosion = RVP_Explosion.disabled();
         }
         child.setDeltaMovement(velocity);
-        // 调用本项目部署运动初始化：只把速度散布与母弹水平继承形成的 X/Z 交给半衰期阻尼。
-        child.initializeSubmunitionDeploymentMotion(spawnVelocity.deploymentHorizontalVelocity());
+        // 调用本项目部署运动初始化：把散布速度及母弹水平继承交给各轴独立半衰期，显式冲量保持基础弹道语义。
+        child.initializeSubmunitionDeploymentMotion(spawnVelocity.deploymentVelocity());
         child.finalizeSpawnOrientation(new RVP_BaseBullet.AimRot(child.getXRot(), child.getYRot()));
         RVP_ProjectileLifecycleDebug.noteSpawnReady(child, parent);
         // 子弹药同样在成功入世后预热，避免其首 Tick 缺少动态路径 Ticket。
@@ -212,10 +212,11 @@ public final class RVP_SubmunitionSpawner {
             Vec3 deploymentHorizontal = new Vec3(
                     spreadVelocity.x + parentHorizontal.x, 0.0D,
                     spreadVelocity.z + parentHorizontal.z);
-            Vec3 baseVelocity = new Vec3(0.0D, spreadVelocity.y, 0.0D);
+            Vec3 baseVelocity = Vec3.ZERO;
             // 调用本项目速度工具：显式 payloads_velocity 属于基础弹道，不纳入部署半衰期。
             baseVelocity = RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(baseVelocity, payload, random);
-            return new SpawnVelocity(baseVelocity.add(deploymentHorizontal), deploymentHorizontal);
+            Vec3 deploymentVelocity = deploymentHorizontal.add(0.0D, spreadVelocity.y, 0.0D);
+            return new SpawnVelocity(baseVelocity.add(deploymentVelocity), deploymentVelocity);
         }
         Vec3 velocity = Vec3.ZERO;
         if (payload.isInheritParentVelocity() && !payload.isInheritParentHorizontalVelocity()) {
@@ -240,14 +241,15 @@ public final class RVP_SubmunitionSpawner {
         Vec3 deploymentHorizontal = new Vec3(
                 spreadVelocity.x + parentHorizontal.x, 0.0D,
                 spreadVelocity.z + parentHorizontal.z);
-        Vec3 baseVelocity = new Vec3(0.0D, spreadVelocity.y, 0.0D);
+        Vec3 baseVelocity = Vec3.ZERO;
         // 调用本项目速度工具：显式 payloads_velocity 属于基础弹道，不纳入部署半衰期。
         baseVelocity = RVP_SubmunitionVelocityUtil.applyConfiguredImpulse(baseVelocity, payload, random);
-        return new SpawnVelocity(baseVelocity.add(deploymentHorizontal), deploymentHorizontal);
+        Vec3 deploymentVelocity = deploymentHorizontal.add(0.0D, spreadVelocity.y, 0.0D);
+        return new SpawnVelocity(baseVelocity.add(deploymentVelocity), deploymentVelocity);
     }
 
-    /** 子弹药生成速度及其中需要独立衰减的部署水平分量。 */
-    private record SpawnVelocity(Vec3 totalVelocity, Vec3 deploymentHorizontalVelocity) {}
+    /** 子弹药生成总速度及其中可由水平、纵向半衰期分别衰减的部署分量。 */
+    private record SpawnVelocity(Vec3 totalVelocity, Vec3 deploymentVelocity) {}
 
     /**
      * 解析发射基准角：payload 启用发射角度时，

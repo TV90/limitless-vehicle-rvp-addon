@@ -52,6 +52,8 @@
       "trail_enabled": true,
       "trail_lifetime_ticks": 26,
       "trail_lifetime_start_on_landing": true,
+      "trail_hot_phase_ticks": 4,
+      "trail_hot_color": "#FFC247",
       "trail_end_scale": 0.03,
       "trail_start_alpha": 0.90,
       "trail_end_alpha": 0.0,

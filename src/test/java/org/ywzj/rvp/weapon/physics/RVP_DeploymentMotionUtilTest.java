@@ -40,6 +40,23 @@ class RVP_DeploymentMotionUtilTest {
     }
 
     @Test
+    void thirtyFiveTickVerticalHalfLifeOnlyDecaysY() {
+        Vec3 initial = new Vec3(8.0D, -0.7D, -4.0D);
+        Vec3 velocity = initial;
+        for (int tick = 1; tick <= 70; tick++) {
+            // 调用本项目部署数学工具：验证白磷子体散布 Y 按独立半衰期衰减，不泄漏 X/Z。
+            velocity = RVP_DeploymentMotionUtil.decayVertical(velocity, 35f);
+            assertEquals(0.0D, velocity.x, 1.0E-12D);
+            assertEquals(0.0D, velocity.z, 1.0E-12D);
+            if (tick == 35) {
+                assertEquals(-0.35D, velocity.y, 1.0E-9D);
+            } else if (tick == 70) {
+                assertEquals(-0.175D, velocity.y, 1.0E-9D);
+            }
+        }
+    }
+
+    @Test
     void externalVelocityChangesAreAbsorbedIntoBaseComponent() {
         Vec3 base = new Vec3(0.0D, -0.5D, 0.0D);
         Vec3 previousComposed = new Vec3(1.2D, -0.5D, 0.4D);
