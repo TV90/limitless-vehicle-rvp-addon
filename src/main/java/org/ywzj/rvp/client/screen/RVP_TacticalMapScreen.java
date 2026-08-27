@@ -1052,6 +1052,9 @@ public class RVP_TacticalMapScreen extends Screen {
         if (!isArtilleryMode() && mapContextMenuVisible && mapContextTarget != null) {
             renderMapContextMenu(guiGraphics, mouseX, mouseY);
         }
+        // 命中展板兜底：Screen 打开时 HUD overlay 不渲染，这里在 map 之上再画一次展板，
+        // 避免全屏战术地图盖住命中提示（保持"展板在最上层"的层序）。
+        org.ywzj.rvp.client.gui.RVP_HitIndicatorOverlay.renderGui(guiGraphics, partialTick);
     }
 
     private void updateArtilleryHoverTarget(int mouseX, int mouseY) {

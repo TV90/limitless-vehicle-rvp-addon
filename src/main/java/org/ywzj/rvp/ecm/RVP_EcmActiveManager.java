@@ -61,6 +61,12 @@ public final class RVP_EcmActiveManager {
     /** 主动ECM 假目标登记：载具实体 id → 假目标实体 id 列表（与被动 ECM 共享语义，tryDivertSeeker 会合并两者）。 */
     private static final Map<Integer, List<Integer>> ACTIVE_DECOY_IDS = new HashMap<>();
 
+    /**
+     * 待生成假目标队列：载具实体 id → 剩余待生成数量。
+     * 释放瞬间只登记数量，每 tick 生成一只，避免一次性 addFreshEntity × N 造成掉帧。
+     */
+    private static final Map<Integer, Integer> PENDING_DECOYS = new HashMap<>();
+
     /** 活动中的 ECM 信息（载具 + 配置 + 状态），供 tick 干扰循环使用。 */
     private record ActiveInfo(AbstractVehicle vehicle, BoneEcmActiveConfig config, RVP_EcmActiveState state) {}
 
@@ -245,6 +251,8 @@ public final class RVP_EcmActiveManager {
                 }
             }
             // P5 的 ARM 优先级将在后续里程碑实现，此处先占位
+            // 分 tick 生成假目标（跨 tick 摊开实体生成开销，避免释放瞬间掉帧）
+            tickPendingDecoys(level);
         }
         tickStates(server);
     }
@@ -586,15 +594,51 @@ public final class RVP_EcmActiveManager {
     // ===== 假目标生成（P2：与被动ECM相同机制，硬编码散布半径） =====
 
     /**
-     * 生成主动ECM假目标（一次性按配置数量，硬编码半径）。
+     * 生成主动ECM假目标：分 tick 展开，避免一次性 addFreshEntity × N 造成掉帧。
+     * 释放瞬间清理上一波并登记待生成数量，后续由 {@link #tickPendingDecoys} 每 tick 生成一只。
      */
     private static void spawnDecoys(ServerLevel level, AbstractVehicle owner, BoneEcmActiveConfig config) {
         // 先清理上一波残余
         clearActiveDecoys(level, owner.getId());
-        List<Integer> ids = ACTIVE_DECOY_IDS.computeIfAbsent(owner.getId(), k -> new ArrayList<>());
-        for (int i = 0; i < config.decoyCount(); i++) {
-            spawnOneDecoy(level, owner, config, ids);
+        PENDING_DECOYS.put(owner.getId(), Math.max(1, config.decoyCount()));
+    }
+
+    /**
+     * 每主循环 tick 处理待生成队列：每 tick 至多生成一只假目标（跨 tick 摊开实体生成开销）。
+     */
+    private static void tickPendingDecoys(ServerLevel level) {
+        if (PENDING_DECOYS.isEmpty()) {
+            return;
         }
+        Iterator<Map.Entry<Integer, Integer>> it = PENDING_DECOYS.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Integer, Integer> entry = it.next();
+            int ownerId = entry.getKey();
+            AbstractVehicle owner = findVehicleById(level, ownerId);
+            if (owner == null || !owner.isAlive()) {
+                it.remove();
+                continue;
+            }
+            BoneEcmActiveConfig config = resolveAliveConfig(owner);
+            if (config == null) {
+                it.remove();
+                continue;
+            }
+            List<Integer> ids = ACTIVE_DECOY_IDS.computeIfAbsent(ownerId, k -> new ArrayList<>());
+            spawnOneDecoy(level, owner, config, ids);
+            int left = entry.getValue() - 1;
+            if (left <= 0) {
+                it.remove();
+            } else {
+                entry.setValue(left);
+            }
+        }
+    }
+
+    /** 按实体 id 在本维度查找载具（主动ECM 假目标仅在释放者所在维度生成）。 */
+    private static AbstractVehicle findVehicleById(ServerLevel level, int entityId) {
+        Entity e = level.getEntity(entityId);
+        return e instanceof AbstractVehicle v ? v : null;
     }
 
     /**

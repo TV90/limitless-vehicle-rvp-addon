@@ -80,8 +80,11 @@ public class RVP_EcmDecoyEntity extends Entity {
             // 隐形实体：客户端无粒子无渲染，仅随服务端位置包移动
             return;
         }
-        // 区块强载：保持自身与漂移方向区块加载（漂移远离玩家也不冻结）
-        org.ywzj.vehicle.util.EntityUtil.keepChunkLoaded(this, this.position());
+        // 区块强载：保持自身与漂移方向区块加载（漂移远离玩家也不冻结）。
+        // 节流到每 20 tick 一次，降低假目标对服务器区块加载的压力（释放多只时尤甚）
+        if (tickCount % 20 == 0) {
+            org.ywzj.vehicle.util.EntityUtil.keepChunkLoaded(this, this.position());
+        }
         if (tickCount >= getLifetimeTick()) {
             this.discard();
             return;

@@ -171,7 +171,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         renderGui(guiGraphics, partialTick);
     }
 
-    private static void renderGui(GuiGraphics guiGraphics, float partialTick) {
+    /**
+     * 公开渲染入口：供战术地图 Screen 在自身 render 末尾再次调用，
+     * 使命中展板绘制在全屏战术地图之上（Screen 打开时 HUD overlay 不渲染，需在此兜底）。
+     */
+    public static void renderGui(GuiGraphics guiGraphics, float partialTick) {
         if (!RVP_ClientHitIndicatorState.isActive()) {
             return;
         }

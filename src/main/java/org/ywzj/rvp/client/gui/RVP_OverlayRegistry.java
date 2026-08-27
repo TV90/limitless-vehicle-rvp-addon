@@ -38,6 +38,11 @@ public class RVP_OverlayRegistry {
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_dircm_hud", new RVP_DircmHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_hud", new RVP_EcmHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_countermeasure_hud", new RVP_CountermeasureHudOverlay());
+        // 主动ECM 伪造锁定 blip：注册在 CHAT_PANEL 之下、与其他 RVP overlay 同层。
+        // Forge 禁止对其他 mod 的 overlay 排序，这里靠注册顺序（RVP 在本体之后注册）
+        // 让本覆盖层在本体 vehicle_radar 之后绘制，落在 RWR 表盘之上。
+        // 必须排在命中展板(rvp_hit_indicator)之前：展板最后注册=最上层，blip 不能盖住命中提示栏。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_fake_rwr", new RVP_EcmFakeRwrOverlay());
         // 命中展板注册在最后：同锚点下按注册顺序绘制，展板最后绘制即为该层最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());

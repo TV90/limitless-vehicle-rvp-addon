@@ -66,6 +66,13 @@ public final class RVP_ClientEcmDebugState {
         appendEvent(line);
     }
 
+    /** 客户端 ECM 调试开关（默认开，排查完置 false 即可关闭探针等输出）。 */
+    private static boolean debugOn = true;
+
+    public static boolean isDebugOn() {
+        return debugOn;
+    }
+
     /** 把单行事件追加到日志文件。 */
     private static void appendEvent(String line) {
         appendRaw("[" + LocalTime.now().format(TIME_FMT) + "] " + line + "\n");

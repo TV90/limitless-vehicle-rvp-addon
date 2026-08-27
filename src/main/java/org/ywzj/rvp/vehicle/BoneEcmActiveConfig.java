@@ -17,7 +17,7 @@ import java.util.List;
  *
  * @param activeDurationTicks      主动干扰持续时长（tick）（默认 200 = 10 秒）
  * @param cooldownTicks            冷却时长（tick）（默认 600 = 30 秒）
- * @param decoyCount               释放时生成的假目标数量（默认 6）
+ * @param decoyCount               释放时生成的假目标数量（默认 4，降低实体生成负担）
  * @param decoyLifetimeTicks       假目标存活时长（tick）（默认 200 = 10 秒）
  * @param ammoJamRadius            弹药干扰半径（格）（默认 300）
  * @param vehicleJamRadius         载具干扰半径（格）（默认 400）
@@ -98,7 +98,7 @@ public record BoneEcmActiveConfig(
         JsonObject obj = element.getAsJsonObject();
         int activeTicks = GsonHelper.getAsInt(obj, "active_duration_ticks", 200);
         int cooldownTicks = GsonHelper.getAsInt(obj, "cooldown_ticks", 600);
-        int decoyCount = GsonHelper.getAsInt(obj, "decoy_count", 6);
+        int decoyCount = GsonHelper.getAsInt(obj, "decoy_count", 4);
         int decoyLifetime = GsonHelper.getAsInt(obj, "decoy_lifetime_ticks", 200);
         double ammoRadius = GsonHelper.getAsDouble(obj, "ammo_jam_radius", 300.0);
         double vehicleRadius = GsonHelper.getAsDouble(obj, "vehicle_jam_radius", 400.0);

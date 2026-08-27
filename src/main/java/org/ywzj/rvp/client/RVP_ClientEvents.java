@@ -110,6 +110,13 @@ public class RVP_ClientEvents {
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
 
+        // 调试：确认本体 RWR 覆盖层读取的 warningReceiver.targets 里是否有伪造 RADAR_LOCK
+        if (org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.isDebugOn()
+                && player.tickCount % 20 == 0) {
+            org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
+                    org.ywzj.rvp.client.RVP_ClientRwrProbe.probe());
+        }
+
         if (mc.level != null) {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
             RVP_TacticalMapCache.uploadDirtyTextures();

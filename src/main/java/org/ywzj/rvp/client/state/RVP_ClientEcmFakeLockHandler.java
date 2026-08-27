@@ -61,6 +61,8 @@ public final class RVP_ClientEcmFakeLockHandler {
             int fakeId = -(1000000 + Math.abs(vehicle.getId()) * 100 + i);
             receiver.targets.put(fakeId, new WarningReceiver.WarnTarget(WarnType.RADAR_LOCK, info, now));
         }
+        // 打点给客户端覆盖层（本体 RWR 对无实体伪造锁定画不出 blip，RVP 覆盖层兜底）
+        RVP_ClientEcmVictimState.markLocked(fakeRadarTypes);
         org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.appendLog(
                 "[FakeLock] vehicle=" + vehicle.getId() + " 注入 " + fakeRadarTypes.size()
                         + " 条伪造RADAR_LOCK: " + fakeRadarTypes);
