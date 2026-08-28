@@ -30,6 +30,9 @@ class RVP_ParticleProjectileDataTest {
                     "body_horizontal_flicker": 0.15,
                     "body_flicker_interval_ticks": 4,
                     "body_sample_interval_ticks": 2,
+                    "trail_initial_extra_count": 4,
+                    "trail_initial_extra_ticks": 10,
+                    "trail_initial_spread": 0.8,
                     "trail_lifetime_start_on_landing": true,
                     "trail_hot_phase_ticks": 4,
                     "trail_hot_color": "#FFC247",
@@ -50,6 +53,9 @@ class RVP_ParticleProjectileDataTest {
         assertEquals(0.15f, data.getBodyHorizontalFlicker(), 1.0E-6f);
         assertEquals(4, data.getBodyFlickerIntervalTicks());
         assertEquals(2, data.getBodySampleIntervalTicks());
+        assertEquals(4, data.getTrailInitialExtraCount());
+        assertEquals(10, data.getTrailInitialExtraTicks());
+        assertEquals(0.8f, data.getTrailInitialSpread(), 1.0E-6f);
         assertTrue(data.isTrailLifetimeStartOnLanding());
         assertEquals(4, data.getTrailHotPhaseTicks());
         assertEquals(0xFFC247, data.getTrailHotColorRgb());
@@ -122,6 +128,41 @@ class RVP_ParticleProjectileDataTest {
 
         assertEquals(0.0f, nan.getBodyStartScale(), 1.0E-6f);
         assertEquals(0.0f, infinity.getBodyStartScale(), 1.0E-6f);
+    }
+
+    @Test
+    void trailInitialDensityDefaultsClampAndRejectsNonFiniteSpread() {
+        RVP_ParticleProjectileData defaults = new RVP_ParticleProjectileData();
+        RVP_ParticleProjectileData negativeAndHigh = GSON.fromJson("""
+                {
+                  "trail_initial_extra_count": -1,
+                  "trail_initial_extra_ticks": 101,
+                  "trail_initial_spread": 99
+                }
+                """, RVP_ParticleProjectileData.class);
+        RVP_ParticleProjectileData highAndNegative = GSON.fromJson("""
+                {
+                  "trail_initial_extra_count": 99,
+                  "trail_initial_extra_ticks": -1,
+                  "trail_initial_spread": -0.5
+                }
+                """, RVP_ParticleProjectileData.class);
+        RVP_ParticleProjectileData nan = GSON.fromJson(
+                "{\"trail_initial_spread\":\"NaN\"}", RVP_ParticleProjectileData.class);
+        RVP_ParticleProjectileData infinity = GSON.fromJson(
+                "{\"trail_initial_spread\":\"Infinity\"}", RVP_ParticleProjectileData.class);
+
+        assertEquals(0, defaults.getTrailInitialExtraCount());
+        assertEquals(0, defaults.getTrailInitialExtraTicks());
+        assertEquals(0.0f, defaults.getTrailInitialSpread(), 1.0E-6f);
+        assertEquals(0, negativeAndHigh.getTrailInitialExtraCount());
+        assertEquals(100, negativeAndHigh.getTrailInitialExtraTicks());
+        assertEquals(16.0f, negativeAndHigh.getTrailInitialSpread(), 1.0E-6f);
+        assertEquals(16, highAndNegative.getTrailInitialExtraCount());
+        assertEquals(0, highAndNegative.getTrailInitialExtraTicks());
+        assertEquals(0.0f, highAndNegative.getTrailInitialSpread(), 1.0E-6f);
+        assertEquals(0.0f, nan.getTrailInitialSpread(), 1.0E-6f);
+        assertEquals(0.0f, infinity.getTrailInitialSpread(), 1.0E-6f);
     }
 
     @Test

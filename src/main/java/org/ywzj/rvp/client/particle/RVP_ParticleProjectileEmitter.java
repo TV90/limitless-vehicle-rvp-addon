@@ -14,6 +14,7 @@ import org.ywzj.rvp.weapon.data.RVP_ParticleProjectileData;
 
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.function.DoubleSupplier;
 
 /** 客户端按实体 Tick 生成纯粒子弹体主体和实际历史路径尾迹。 */
 @OnlyIn(Dist.CLIENT)
@@ -87,8 +88,10 @@ public final class RVP_ParticleProjectileEmitter {
         }
 
         boolean trailEligible = distance <= 512.0D;
+        int successfulTrailTicks = previous == null ? 0 : previous.successfulTrailTicks();
         TRAIL_STATES.put(projectile, new TrailState(projectilePosition, bodyPosition,
-                projectile.tickCount, sample.bodyScale(), trailEligible, sample, trailLifetimeGate));
+                projectile.tickCount, sample.bodyScale(), trailEligible, sample,
+                trailLifetimeGate, successfulTrailTicks));
         if (!data.isTrailEnabled() || distance > 512.0D || previous == null
                 || previous.tick() != projectile.tickCount - 1 || !previous.trailEligible()) {
             return;
@@ -96,13 +99,20 @@ public final class RVP_ParticleProjectileEmitter {
         if (projectilePosition.distanceToSqr(previous.projectilePosition()) <= MIN_MOVEMENT_SQR) {
             return;
         }
-        // 调用本项目白磷粒子工厂：把上一 Tick 的实际平滑主体位置沉积为唯一历史尾迹点。
-        add(RVP_WhitePhosphorusParticle.createTrail(level, previous.bodyPosition(),
-                previous.bodyScale(), data.getTrailEndScale(),
-                data.getTrailStartAlpha(), data.getTrailEndAlpha(),
-                data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
-                data.getTrailHotPhaseTicks(), data.getTrailHotColorRgb(),
-                data.getTrailLifetimeTicks(), data.isFullBright(), trailLifetimeGate));
+        // 调用本项目白磷粒子工厂：把上一 Tick 的实际平滑主体位置沉积为原始历史尾迹点。
+        spawnTrail(level, previous.bodyPosition(), previous.bodyScale(), data, trailLifetimeGate);
+        float initialSpread = data.getTrailInitialSpread();
+        int initialExtraCount = resolveInitialExtraCount(data.getTrailInitialExtraCount(),
+                data.getTrailInitialExtraTicks(), initialSpread, successfulTrailTicks);
+        for (int index = 0; index < initialExtraCount; index++) {
+            Vec3 offset = sampleUniformSphereOffset(initialSpread, level.random::nextDouble);
+            // 调用本项目白磷粒子工厂：附加点完整复用原尾迹的外观、寿命、全亮与落地寿命门。
+            spawnTrail(level, previous.bodyPosition().add(offset), previous.bodyScale(),
+                    data, trailLifetimeGate);
+        }
+        TRAIL_STATES.put(projectile, new TrailState(projectilePosition, bodyPosition,
+                projectile.tickCount, sample.bodyScale(), trailEligible, sample,
+                trailLifetimeGate, nextSuccessfulTrailTicks(successfulTrailTicks, true)));
     }
 
     /** 按当前配置生成一组可跨 Tick 保持的主体尺寸与水平目标点随机样本。 */
@@ -156,6 +166,70 @@ public final class RVP_ParticleProjectileEmitter {
         return Math.min(configuredStartScale, targetScale);
     }
 
+    /**
+     * 解析当前成功尾迹 Tick 应追加的粒子数；计数用尽或任一启用条件关闭时保持旧行为。
+     *
+     * @param configuredExtraCount 每个初段成功尾迹 Tick 的附加粒子数
+     * @param configuredExtraTicks 初段增密持续的成功尾迹 Tick 数
+     * @param configuredSpread 附加点的球体积散布半径，单位格
+     * @param successfulTrailTicks 当前实体此前已经成功沉积尾迹的 Tick 数
+     * @return 当前 Tick 应追加的尾迹粒子数
+     */
+    static int resolveInitialExtraCount(int configuredExtraCount, int configuredExtraTicks,
+                                        double configuredSpread, int successfulTrailTicks) {
+        if (configuredExtraCount <= 0 || configuredExtraTicks <= 0
+                || !(configuredSpread > 0.0D) || !Double.isFinite(configuredSpread)
+                || successfulTrailTicks < 0 || successfulTrailTicks >= configuredExtraTicks) {
+            return 0;
+        }
+        return configuredExtraCount;
+    }
+
+    /**
+     * 仅在确实沉积原始尾迹时推进初段计数，静止、断续追踪和超距 Tick 均不消耗配额。
+     *
+     * @param successfulTrailTicks 当前累计成功尾迹 Tick 数
+     * @param trailDeposited 当前 Tick 是否成功沉积原始尾迹
+     * @return 更新后的成功尾迹 Tick 数，最多保留到配置上限 100
+     */
+    static int nextSuccessfulTrailTicks(int successfulTrailTicks, boolean trailDeposited) {
+        int normalizedTicks = Math.max(successfulTrailTicks, 0);
+        return trailDeposited ? Math.min(normalizedTicks + 1, 100) : normalizedTicks;
+    }
+
+    /**
+     * 在球体积内均匀采样附加尾迹偏移；半径为 0 时直接返回零向量且不消耗随机数。
+     *
+     * @param spread 球体散布半径，单位格
+     * @param random 随机数来源，每次应返回 [0, 1) 的均匀样本
+     * @return 相对原尾迹点的三维偏移
+     */
+    static Vec3 sampleUniformSphereOffset(double spread, DoubleSupplier random) {
+        if (!(spread > 0.0D) || !Double.isFinite(spread)) {
+            return Vec3.ZERO;
+        }
+        double vertical = random.getAsDouble() * 2.0D - 1.0D;
+        double azimuth = random.getAsDouble() * Math.PI * 2.0D;
+        double radius = spread * Math.cbrt(random.getAsDouble());
+        double horizontal = Math.sqrt(Math.max(0.0D, 1.0D - vertical * vertical));
+        return new Vec3(radius * horizontal * Math.cos(azimuth),
+                radius * vertical,
+                radius * horizontal * Math.sin(azimuth));
+    }
+
+    /** 按同一份数据配置创建尾迹，保证原始点与初段附加点完全复用视觉参数。 */
+    private static void spawnTrail(ClientLevel level, Vec3 position, float startScale,
+                                   RVP_ParticleProjectileData data,
+                                   RVP_TrailLifetimeGate trailLifetimeGate) {
+        // 调用本项目白磷粒子工厂：统一创建原始或附加尾迹粒子，避免两条视觉参数链分叉。
+        add(RVP_WhitePhosphorusParticle.createTrail(level, position,
+                startScale, data.getTrailEndScale(),
+                data.getTrailStartAlpha(), data.getTrailEndAlpha(),
+                data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
+                data.getTrailHotPhaseTicks(), data.getTrailHotColorRgb(),
+                data.getTrailLifetimeTicks(), data.isFullBright(), trailLifetimeGate));
+    }
+
     /** 按配置为同一弹体创建共享的落地寿命门；默认关闭时返回 null 并保持原即时计时。 */
     private static RVP_TrailLifetimeGate createTrailLifetimeGate(
             RVP_BaseBullet projectile, RVP_ParticleProjectileData data) {
@@ -187,10 +261,12 @@ public final class RVP_ParticleProjectileEmitter {
      * @param trailEligible 本 Tick 是否处于允许尾迹采样的距离内，避免跨越 512 格边界连接
      * @param sample 当前保持中的尺寸与水平目标点随机样本
      * @param trailLifetimeGate 对应尾迹共享的落地寿命门；null 表示出生后立即计时
+     * @param successfulTrailTicks 已成功沉积原始尾迹的 Tick 数，只由真实移动的连续近距尾迹推进
      */
     private record TrailState(Vec3 projectilePosition, Vec3 bodyPosition,
                               int tick, float bodyScale, boolean trailEligible,
-                              FlickerSample sample, RVP_TrailLifetimeGate trailLifetimeGate) {}
+                              FlickerSample sample, RVP_TrailLifetimeGate trailLifetimeGate,
+                              int successfulTrailTicks) {}
 
     /**
      * 主体尺寸与水平闪动目标点随机样本。

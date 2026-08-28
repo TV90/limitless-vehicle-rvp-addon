@@ -437,6 +437,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `body_flicker_interval_ticks` | int（tick） | `1` | 主体尺寸与 X/Z 随机目标点的刷新周期，读取时至少为 1；同时也是水平偏移从上一实际位置平滑到新目标的过渡时长。1 表示每 Tick 重抽并立即到达；增大后尺寸刷新更慢、位置移动更柔和。它不直接决定主体生成频率，颜色年龄渐变和尾迹出生率不受影响。 |
 | `body_sample_interval_ticks` | int（tick） | `1` | 主体粒子的生成采样间隔，读取时至少为 1。1 表示近距离每 Tick 生成；2 表示约每秒 10 次。只降低主体出生率，不改变随机样本刷新、颜色年龄曲线或近距离尾迹每 Tick 沉积。超过 512 格时有效间隔至少为 2。 |
 | `trail_enabled` | boolean | `true` | 是否在连续客户端 Tick 中把上一主体位置沉积为一个尾迹粒子；首 Tick、静止 Tick、追踪中断或距离超过 512 格时不生成。 |
+| `trail_initial_extra_count` | int | `0` | 每个初段成功移动尾迹 Tick 在原始尾迹外追加的粒子数，限制为 `0..16`；0 关闭。只有连续追踪、距离不超过 512 格、弹体真实移动且尾迹启用时才生效。 |
+| `trail_initial_extra_ticks` | int（有效尾迹 tick） | `0` | 初段增密覆盖的成功移动尾迹 Tick 数，限制为 `0..100`；0 关闭。首 Tick、静止、追踪中断、超距或尾迹关闭均不消耗计数。 |
+| `trail_initial_spread` | float（格） | `0` | 附加点相对原尾迹点的球体积均匀散布半径，有限值限制为 `0..16`，NaN/Infinity 回退 0。0 关闭初段增密，保持单个原始尾迹且不消耗散布随机数。 |
 | `trail_lifetime_ticks` | int（tick） | `24` | 单个尾迹粒子寿命，读取时至少为 `1`。 |
 | `trail_lifetime_start_on_landing` | boolean | `false` | 是否把同一弹体所有尾迹的寿命起点推迟到对应主体落地。false 保持每个尾迹从出生 Tick 立即计时；true 时飞行期间冻结尾迹年龄，检测到弹体 `onGround`、碰撞结束、被移除或客户端追踪释放后统一从年龄 0 开始按 `trail_lifetime_ticks` 计时。只影响客户端粒子生命周期。 |
 | `trail_hot_phase_ticks` | int（tick） | `0` | 尾迹出生后的高温火光阶段时长；读取时取 `max(value, 0)`，0 禁用并完全沿用旧颜色曲线。正值启用时按独立视觉年龄把 `trail_hot_color` 平滑混合回既有尾迹颜色，不增加粒子数。 |
@@ -447,7 +450,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `trail_start_color` | string（RGB） | `#FFFFFF` | 尾迹出生颜色；格式规则同 `body_color`，非法值回退白色。 |
 | `trail_end_color` | string（RGB） | `#FFFFFF` | 尾迹消失颜色；格式规则同 `body_color`，非法值回退白色。 |
 
-主体尺寸与 X/Z 目标偏移组成一组随机样本。尺寸目标为 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)`；若 `body_start_scale > 0` 且寿命至少 2 Tick，单个主体从较小出生尺寸使用 `smoothstep(t)=t²(3-2t)` 长到该目标，否则直接以目标尺寸生成。X/Z 从上一实际偏移使用相同平滑曲线移动，并在 `body_flicker_interval_ticks` 周期末准确到达目标；下个周期从该实际位置继续移动，不发生目标刷新瞬间的坐标跳变。追踪 Tick 中断时从权威位置重新起步并重抽，避免复用过期位置。`body_sample_interval_ticks` 只决定哪些 Tick 真正创建主体粒子，不影响这组视觉状态的逐 Tick 更新。尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体每 Tick 最多在上一视觉状态的实际平滑位置沉积一个尾迹粒子，超过 512 格不生成，因此主体降采样不会让尾迹同步断续。移动判定始终比较连续 Tick 的权威弹体位置，避免静止弹体只因 `body_horizontal_flicker` 改变而堆积假尾迹。尾迹出生尺寸继承对应主体的随机目标尺寸，而非启用后的较小出生尺寸，再平滑过渡到 `trail_end_scale`；透明度按平滑曲线过渡，基础颜色按年龄从 `trail_start_color` 线性过渡到 `trail_end_color`。启用高温阶段后，同一个尾迹粒子在出生时使用 `trail_hot_color`，并在 `trail_hot_phase_ticks` 内按 smoothstep 降低热色权重、平滑回到当时的基础颜色，因此形成贴近主体的短火光段而不增加第二层粒子。高温阶段使用不受寿命门冻结的独立视觉年龄；启用 `trail_lifetime_start_on_landing` 后，飞行期间尺寸、透明度和基础冷却曲线仍冻结，但火色会按真实客户端 Tick 正常结束。同一弹体的尾迹共享一个只弱引用弹体的客户端计时门；落地或实体结束后门永久打开并统一开始正常衰减，避免尾迹持有已移除实体。该模式不会增加每 Tick 出生率，但粒子峰值存量会额外包含全部可见飞行阶段尾迹。尺寸生长和高温阶段均不增加粒子数量。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
+主体尺寸与 X/Z 目标偏移组成一组随机样本。尺寸目标为 `body_scale × (1 + [-body_flicker, +body_flicker] 随机量)`；若 `body_start_scale > 0` 且寿命至少 2 Tick，单个主体从较小出生尺寸使用 `smoothstep(t)=t²(3-2t)` 长到该目标，否则直接以目标尺寸生成。X/Z 从上一实际偏移使用相同平滑曲线移动，并在 `body_flicker_interval_ticks` 周期末准确到达目标；下个周期从该实际位置继续移动，不发生目标刷新瞬间的坐标跳变。追踪 Tick 中断时从权威位置重新起步并重抽，避免复用过期位置。`body_sample_interval_ticks` 只决定哪些 Tick 真正创建主体粒子，不影响这组视觉状态的逐 Tick 更新。尾迹不再对“上一位置 → 当前位置”的线段插值补点：每个移动中的实体在上一视觉状态的实际平滑位置沉积一个原始尾迹粒子，超过 512 格不生成，因此主体降采样不会让尾迹同步断续。移动判定始终比较连续 Tick 的权威弹体位置，避免静止弹体只因 `body_horizontal_flicker` 改变而堆积假尾迹。若初段增密数量与 Tick 数均大于 0，前 `trail_initial_extra_ticks` 个成功沉积 Tick 还会在原始点周围追加 `trail_initial_extra_count` 个尾迹；半径使用 `cbrt(U) × trail_initial_spread`、方向按球面均匀采样，因此附加点在球体积内均匀分布而不堆积于球心。尾迹出生尺寸继承对应主体的随机目标尺寸，而非启用后的较小出生尺寸，再平滑过渡到 `trail_end_scale`；原始点和附加点完整复用尺寸、透明度、颜色、高温阶段、寿命、全亮和落地寿命门。启用高温阶段后，同一个尾迹粒子在出生时使用 `trail_hot_color`，并在 `trail_hot_phase_ticks` 内按 smoothstep 降低热色权重、平滑回到当时的基础颜色，因此形成贴近主体的短火光段而不增加第二层粒子。高温阶段使用不受寿命门冻结的独立视觉年龄；启用 `trail_lifetime_start_on_landing` 后，飞行期间尺寸、透明度和基础冷却曲线仍冻结，但火色会按真实客户端 Tick 正常结束。同一弹体的尾迹共享一个只弱引用弹体的客户端计时门；落地或实体结束后门永久打开并统一开始正常衰减，避免尾迹持有已移除实体。该模式不会增加每 Tick 出生率，但粒子峰值存量会额外包含全部可见飞行阶段尾迹。尺寸生长和高温阶段均不增加粒子数量。三个初段字段默认均为 0，未配置时不生成附加点且不额外消耗随机数。`trail_spacing` 与 `trail_start_scale` 均已从当前 schema 删除，旧 JSON 中的同名未知键只会被 Gson 忽略，不提供迁移或别名。
+
+`trail_initial_extra_count`、`trail_initial_extra_ticks` 与 `trail_initial_spread` 必须同时大于 0 才启用初段增密；任一字段关闭时保持旧行为，不生成附加点也不额外消耗随机数。
 
 ```json
 "effects_data": {
@@ -468,6 +473,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
     "body_flicker_interval_ticks": 4,
     "body_sample_interval_ticks": 2,
     "trail_enabled": true,
+    "trail_initial_extra_count": 4,
+    "trail_initial_extra_ticks": 10,
+    "trail_initial_spread": 0.8,
     "trail_lifetime_ticks": 26,
     "trail_lifetime_start_on_landing": true,
     "trail_hot_phase_ticks": 4,

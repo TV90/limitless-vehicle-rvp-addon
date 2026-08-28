@@ -59,6 +59,18 @@ public class RVP_ParticleProjectileData {
     @SerializedName("trail_enabled")
     private boolean trailEnabled = true;
 
+    /** 初段每个成功移动尾迹 Tick 的额外粒子数，默认 0（禁用）；启用尾迹时限制为 0～16。 */
+    @SerializedName("trail_initial_extra_count")
+    private int trailInitialExtraCount = 0;
+
+    /** 初段增密持续的成功移动尾迹 Tick 数，默认 0（禁用）；启用尾迹时限制为 0～100。 */
+    @SerializedName("trail_initial_extra_ticks")
+    private int trailInitialExtraTicks = 0;
+
+    /** 初段附加尾迹相对原尾迹点的均匀球体积散布半径，单位格，默认 0（禁用）；非有限值回退 0，限制为 0～16。 */
+    @SerializedName("trail_initial_spread")
+    private float trailInitialSpread = 0.0f;
+
     /** 单个尾迹粒子寿命，单位 Tick，默认 24；启用尾迹时至少为 1。 */
     @SerializedName("trail_lifetime_ticks")
     private int trailLifetimeTicks = 24;
@@ -149,6 +161,18 @@ public class RVP_ParticleProjectileData {
         return trailEnabled;
     }
 
+    public int getTrailInitialExtraCount() {
+        return Math.max(0, Math.min(trailInitialExtraCount, 16));
+    }
+
+    public int getTrailInitialExtraTicks() {
+        return Math.max(0, Math.min(trailInitialExtraTicks, 100));
+    }
+
+    public float getTrailInitialSpread() {
+        return finiteClamped(trailInitialSpread, 0.0f, 16.0f);
+    }
+
     public int getTrailLifetimeTicks() {
         return Math.max(trailLifetimeTicks, 1);
     }
@@ -191,6 +215,10 @@ public class RVP_ParticleProjectileData {
 
     private static float clamp01(float value, float fallback) {
         return Float.isFinite(value) ? Math.max(0f, Math.min(value, 1f)) : fallback;
+    }
+
+    private static float finiteClamped(float value, float fallback, float maximum) {
+        return Float.isFinite(value) ? Math.max(0f, Math.min(value, maximum)) : fallback;
     }
 
     private static int parseRgb(String value, int fallback) {

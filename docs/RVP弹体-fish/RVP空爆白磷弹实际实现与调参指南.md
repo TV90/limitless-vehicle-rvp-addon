@@ -556,7 +556,7 @@ M142 配置保留的幅度为 `0.010 格/Tick`、基础频率为 `0`，但当前
 
 ### 5.3 路径尾迹
 
-尾迹不是根据速度向量向后拉线，也不再沿“上一位置 → 当前位置”的单 Tick 运动段插值补点。发射器每 Tick 先计算权威位置附近的平滑水平闪动主体，再把**上一 Tick 的实际平滑主体位置**沉积为恰好一个尾迹粒子，因此显示的是主体实际呈现过的离散历史位置。
+尾迹不是根据速度向量向后拉线，也不再沿“上一位置 → 当前位置”的单 Tick 运动段插值补点。发射器每 Tick 先计算权威位置附近的平滑水平闪动主体，再把**上一 Tick 的实际平滑主体位置**沉积为一个原始尾迹粒子，因此显示的是主体实际呈现过的离散历史位置。可选初段增密只在这个原始点周围追加局部烟迹，不改变历史采样位置或跨 Tick 补线。
 
 尾迹生成同时要求：
 
@@ -565,7 +565,9 @@ M142 配置保留的幅度为 `0.010 格/Tick`、基础频率为 `0`，但当前
 - `trail_enabled: true`；
 - 玩家距离不超过 512 格。
 
-首 Tick、静止 Tick、刚进入追踪范围或中间缺少连续实体 Tick 时不生成尾迹，避免视觉随机偏移在静止处制造假尾迹，也避免跨越远距离的错误连接。当前 schema 已删除 `trail_spacing`，也不再存在 128/256 格间距倍率或单 Tick 12 点补点上限；每枚子体每 Tick 最多生成一个尾迹。
+首 Tick、静止 Tick、刚进入追踪范围或中间缺少连续实体 Tick 时不生成尾迹，避免视觉随机偏移在静止处制造假尾迹，也避免跨越远距离的错误连接。只有确实沉积原始尾迹的 Tick 才计入 `trail_initial_extra_ticks`；上述无效 Tick、超距和尾迹关闭都不消耗初段计数。
+
+`trail_initial_extra_count`、`trail_initial_extra_ticks` 与 `trail_initial_spread` 均大于 0 时，前若干个成功移动尾迹 Tick 会额外生成配置数量的尾迹。`trail_initial_spread` 为附加点相对原始点的球体半径：方向按球面均匀采样，半径为 `cbrt(U) × spread`，使粒子按球体积均匀分布而不向球心堆积；半径 0 时关闭增密且不消耗散布随机数。附加点完整复用原始尾迹的尺寸、透明度、颜色、高温阶段、寿命、全亮和落地寿命门。三个字段默认均为 0，任一字段关闭时旧配置保持每个成功移动 Tick 仅一个原始尾迹且不额外消耗随机数。当前 schema 已删除 `trail_spacing`，也不再存在 128/256 格间距倍率或单 Tick 12 点补点上限。
 
 `trail_lifetime_start_on_landing` 默认 false，此时每个尾迹仍从出生 Tick 立即消耗 `trail_lifetime_ticks`。设为 true 后，同一子体的全部尾迹共享客户端寿命门：飞行期间年龄保持 0，检测到子体 `onGround`、碰撞结束、实体移除或客户端停止追踪后，寿命门永久打开，所有已存在尾迹才分别从年龄 0 开始消散。寿命门只弱引用子体，不会为了保存尾迹而延长弹体实体生命周期；该字段不改变尾迹出生率、服务器落点或碰撞判定。
 
@@ -625,6 +627,9 @@ M142 配置保留的幅度为 `0.010 格/Tick`、基础频率为 `0`，但当前
     "body_flicker_interval_ticks": 1,
     "body_sample_interval_ticks": 1,
     "trail_enabled": true,
+    "trail_initial_extra_count": 4,
+    "trail_initial_extra_ticks": 10,
+    "trail_initial_spread": 0.8,
     "trail_lifetime_ticks": 400,
     "trail_lifetime_start_on_landing": false,
     "trail_hot_phase_ticks": 13,
@@ -709,7 +714,10 @@ response > 0
 
 | 字段 | 当前值 | 增大后的主要效果 | 建议起步范围 | 注意事项 |
 | --- | ---: | --- | ---: | --- |
-| `trail_lifetime_ticks` | 400 | 尾迹停留更久 | 80～400 | 最直接的粒子存量放大器；密度固定为每枚移动子体每 Tick 最多 1 个 |
+| `trail_initial_extra_count` | 4 | release 云初段烟迹更密 | 0～6 | 限制为 0～16；0 关闭；成本与子体数和初段 Tick 数线性相乘 |
+| `trail_initial_extra_ticks` | 10 | 增密段沿飞行方向延伸更久 | 0～20 有效 Tick | 限制为 0～100；只统计成功移动尾迹，静止、断续追踪和超距不消耗 |
+| `trail_initial_spread` | 0.8 | 初段附加烟迹云更蓬松 | 0～1.5 格 | 限制为 0～16；按球体积均匀散布；0 关闭增密且不抽散布随机数 |
+| `trail_lifetime_ticks` | 400 | 尾迹停留更久 | 80～400 | 最直接的持续粒子存量放大器；初段结束后每枚移动子体恢复每 Tick 1 个原始尾迹 |
 | `trail_lifetime_start_on_landing` | false | — | 按视觉需求 | 当前从出生 Tick 立即计时；true 会保留完整飞行轨迹并提高峰值存量 |
 | `trail_hot_phase_ticks` | 13 | 主体后方红橙火光段更长 | 2～15 Tick | 0 关闭；只改变同一尾迹粒子的颜色阶段，不增加出生率；高速子体不宜过长 |
 | `trail_hot_color` | `#FF8A1F` | — | 红橙至浅黄 | 高温阶段出生色；非法值仍回退字段默认 `#FFC247`，阶段结束后回到基础尾迹颜色 |
@@ -773,7 +781,7 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 
 ### 第六步：调整尾迹长度与外观
 
-尾迹密度固定为每枚移动子体每 Tick 最多一个。M142 当前 `trail_lifetime_start_on_landing: false`，每个尾迹从出生 Tick 立即消耗 400 Tick 寿命。先用 `trail_hot_phase_ticks` 调主体后紧邻的火光长度，再用 `trail_hot_color` 调热色；当前 13 Tick 是实机基线，且不会额外增加粒子。若改为落地后计时，`trail_lifetime_ticks` 才表示落地后的继续停留时间，但火光阶段仍在飞行中按真实 Tick 冷却。随后再调尺寸、透明度和灰色长尾；若超出预算，应优先保持关闭落地后计时、缩短寿命、减少子体数或关闭尾迹，而不是添加已删除的 `trail_spacing`。
+先用 `trail_initial_extra_count` 和 `trail_initial_extra_ticks` 调 release 云附近的初段密度，再用 `trail_initial_spread` 调局部蓬松范围；M142 当前前 10 个成功移动尾迹 Tick 每 Tick 追加 4 点，之后恢复每枚移动子体每 Tick 一个原始尾迹。`trail_lifetime_start_on_landing: false` 让每个尾迹从出生 Tick 立即消耗 400 Tick 寿命。随后用 `trail_hot_phase_ticks` 调主体后紧邻的火光长度，再用 `trail_hot_color` 调热色；当前 13 Tick 只改变同一批原始/附加尾迹的颜色阶段。若改为落地后计时，`trail_lifetime_ticks` 才表示落地后的继续停留时间，但火光阶段仍在飞行中按真实 Tick 冷却。最后再调尺寸、透明度和灰色长尾；若超出预算，应先减少初段附加数量或 Tick，再保持关闭落地后计时、缩短寿命、减少子体数或关闭尾迹，而不是添加已删除的 `trail_spacing`。
 
 ### 第七步：最后平衡毁伤
 
@@ -802,7 +810,7 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 
 ### 9.2 当前均衡型
 
-直接使用 M142 示例：水平半径 7 格/竖直半径 3 格的权威扁椭球释放云、34 枚子体、42° 世界向下 `stratified_cone`、`spawn_radial` 水平外向方位、0.9 径向速度、0 方位扰动与 0.08 径向扰动、20% 母弹 X/Z 继承、35 Tick 水平与 15 Tick 纵向半衰期、`-0.0035` 重力、关闭风漂、0.42 目标基准、0.12 出生尺寸、3 Tick 生长寿命、0.5 尺寸闪烁、0.5 格主体水平闪动、1 Tick 随机目标间隔与主体采样、13 Tick `#FF8A1F` 火光前段、400 Tick 尾迹寿命且出生即计时。它应作为实机对照基线。
+直接使用 M142 示例：水平半径 7 格/竖直半径 3 格的权威扁椭球释放云、34 枚子体、42° 世界向下 `stratified_cone`、`spawn_radial` 水平外向方位、0.9 径向速度、0 方位扰动与 0.08 径向扰动、20% 母弹 X/Z 继承、35 Tick 水平与 15 Tick 纵向半衰期、`-0.0035` 重力、关闭风漂、0.42 目标基准、0.12 出生尺寸、3 Tick 生长寿命、0.5 尺寸闪烁、0.5 格主体水平闪动、1 Tick 随机目标间隔与主体采样、前 10 个有效尾迹 Tick 每 Tick 追加 4 点并在 0.8 格球内散布、13 Tick `#FF8A1F` 火光前段、400 Tick 尾迹寿命且出生即计时。它应作为实机对照基线。
 
 ### 9.3 宽幅展示型
 
@@ -829,7 +837,7 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 "trail_lifetime_ticks": 240
 ```
 
-宽幅型增加了子体数量和尾迹尺寸，多发齐射前必须单独压测；尾迹出生率仍由“每枚移动子体每 Tick 一个”固定规则控制。
+宽幅型增加了子体数量和尾迹尺寸，多发齐射前必须单独压测；若沿用当前初段增密配置，额外成本仍按子体数、附加数量与有效 Tick 数相乘。
 
 ## 10. 性能预算
 
@@ -844,29 +852,137 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 
 ### 10.2 尾迹粒子存量
 
-单枚移动子体每 Tick 最多沉积 1 个尾迹点。当前 34 枚子体的理论出生峰值为：
+每枚移动子体始终沉积 1 个原始尾迹点；启用初段增密时，前若干个成功 Tick 还会追加配置数量。当前 34 枚子体的初段与常态理论出生峰值为：
 
 ```text
-34 × 1 = 34 个尾迹粒子/Tick
+初段前 10 个有效 Tick：34 × (1 + 4) = 170 个尾迹粒子/Tick
+初段结束后：34 × 1 = 34 个尾迹粒子/Tick
+单发额外总量上限：34 × 4 × 10 = 1,360
+六发同时释放额外总量上限：6 × 1,360 = 8,160
 ```
 
-当前 M142 关闭落地后计时，若持续达到上限，`400 Tick` 寿命对应约 `34 × 400 = 13,600` 个存活尾迹粒子。13 Tick 高温阶段只改变同一批粒子的颜色，不增加出生峰值或存量。若改为开启落地后计时，飞行期间的粗略峰值改为“34 × 每枚子体已沉积的可见飞行 Tick”；落地后这些历史点再各自保留最多 400 Tick，因此总存量上界近似：
+当前 M142 关闭落地后计时，持续移动时 `400 Tick` 寿命的原始尾迹滑动窗口约为 `34 × 400 = 13,600` 个；初段附加点在尚未过期时最多再增加 1,360 个，粗略瞬时峰值约 14,960 个，附加点过期后回落到原始滑动窗口。13 Tick 高温阶段只改变同一批粒子的颜色，不再生成第二层粒子。若改为开启落地后计时，飞行期间的粗略峰值需再加初段附加总量；落地后这些历史点分别继续保留最多 400 Tick，因此总存量上界近似：
 
 ```text
 尾迹峰值 ≈ 子体数 ×（可见飞行沉积 Tick + trail_lifetime_ticks）
+          + 子体数 × trail_initial_extra_count × trail_initial_extra_ticks
 ```
 
 实际数量还会受到各子体落地时间差、静止 Tick、512 格距离限制和客户端粒子总量限制影响。长滞空时，开启本开关可能比当前 400 Tick 滑动窗口保留更多粒子。
 
 调优优先级：
 
-1. 关闭 `trail_lifetime_start_on_landing`；
-2. 减少 `trail_lifetime_ticks`；
-3. 减少 `count`；
-4. 必要时关闭 `trail_enabled`；
-5. 最后才缩短主体寿命，因为主体对识别弹体位置很重要。
+1. 减少 `trail_initial_extra_count` 或 `trail_initial_extra_ticks`；
+2. 关闭 `trail_lifetime_start_on_landing`；
+3. 减少 `trail_lifetime_ticks`；
+4. 减少 `count`；
+5. 必要时关闭 `trail_enabled`；
+6. 最后才缩短主体寿命，因为主体对识别弹体位置很重要。
 
 `full_bright`、颜色和尺寸通常不是数量级性能因素；数量、寿命和同时存在的弹体数才是主要因素。
+
+### 10.3 粒子预算和距离lod
+
+按当前 M142 白磷配置来看，粒子预算主要由“出生数量 × 寿命”控制，距离 LOD 目前只有一个硬编码的 512 格分界，没有动态 FPS 预算。
+
+当前实机配置是 `6 / 20 / 1.6`，已经不是文档中的均衡档 `4 / 10 / 0.8`：[m142_m30_wp_pellet.json](D:\\WgameProject\\limitless-vehicle-rvp-addon\\run\\server\\limitless_vehicle\\rvp\\data\\rvp\\weapons\\m142_m30_wp_pellet.json)。
+
+### 当前预算
+
+34 枚子体，每枚初段生成：
+
+```
+1 个原始尾迹 + 6 个附加尾迹 = 7 个/Tick
+```
+
+因此：
+
+```
+初段尾迹出生率 = 34 × 7 = 238 个/Tick
+初段持续时间   = 20 个有效尾迹 Tick
+单发额外尾迹   = 34 × 6 × 20 = 4,080 个
+初段结束后     = 34 个尾迹/Tick
+```
+
+主体当前每 Tick 每枚生成一个，寿命 3 Tick：
+
+```
+主体出生率 = 34 个/Tick
+主体存量   ≈ 34 × 3 = 102 个
+```
+
+所以单发初段总出生率约为：
+
+```
+238 尾迹 + 34 主体 = 272 个客户端粒子/Tick
+```
+
+400 Tick 尾迹寿命下，理论单发峰值约：
+
+```
+基础尾迹：34 × 400 = 13,600
+初段附加：4,080
+主体：约 102
+合计：约 17,782
+```
+
+但原版粒子引擎每个 `ParticleRenderType` 最多保存 16,384 个粒子。白磷使用独立的自定义 RenderType，因此所有白磷主体和尾迹共享这个 16,384 上限；超过后会淘汰最旧粒子，而不是继续无限增长。
+
+也就是说，当前配置单发长时间滞空就可能碰到上限。多发叠加时不会无限占内存，但旧尾迹会明显提前消失。
+
+### 当前距离 LOD
+
+逻辑位于 [RVP_ParticleProjectileEmitter.java](D:\\WgameProject\\limitless-vehicle-rvp-addon\\src\\main\\java\\org\\ywzj\\rvp\\client\\particle\\RVP_ParticleProjectileEmitter.java)：
+
+| 玩家距离  | 主体                          | 原始尾迹 | 初段附加尾迹 |
+| --------- | ----------------------------- | -------- | ------------ |
+| `≤512` 格 | 按 JSON 间隔，当前每 Tick一次 | 开启     | 开启         |
+| `>512` 格 | 最快降为每 2 Tick一次         | 关闭     | 关闭         |
+
+细节：
+
+- `body_sample_interval_ticks: 1` 时，512 格内约 20 次/秒，512 格外约 10 次/秒。
+- 如果配置为 `2`，近远距离都是约 10 次/秒。
+- 如果配置为 `4`，近远距离都是约 5 次/秒。
+- 超过 512 格后完全没有尾迹，只有降频主体。
+- 重新进入 512 格时不会连接超距期间的路径。
+- 当前没有 128/256/512 多档比例，也没有可配置的 `trail_max_distance`。
+- 512 格阈值和远距最小间隔 2 目前写死在 Java 中，JSON 不能调整。
+- 白磷直接调用粒子引擎添加粒子，不受 Minecraft“全部/较少/最少”粒子选项自动抽样。
+- `dynamic_particle_budget` 当前只用于温压视觉，不会控制白磷。
+
+### 调参优先级
+
+只降低客户端压力、不改变子体实体和伤害，建议依次调整：
+
+1. 把 `trail_initial_extra_count` 从 `6` 降到 `4`。
+2. 把 `trail_initial_extra_ticks` 从 `20` 降到 `10`。
+3. 把 `trail_lifetime_ticks` 从 `400` 降到 `240`。
+4. 把 `body_sample_interval_ticks` 从 `1` 调到 `2`。
+5. 最后才考虑关闭 `trail_enabled`。
+
+`trail_initial_spread` 只改变分布半径，不改变粒子数量；从 `1.6` 降到 `0.8` 会让云更集中，但不会直接省粒子。
+
+比较稳妥的配置是：
+
+```
+"body_sample_interval_ticks": 2,
+"trail_initial_extra_count": 4,
+"trail_initial_extra_ticks": 10,
+"trail_initial_spread": 0.8,
+"trail_lifetime_ticks": 240
+```
+
+这时单发理论存量约为：
+
+```
+基础尾迹：34 × 240 = 8,160
+初段附加：34 × 4 × 10 = 1,360
+主体：34 × 3 ÷ 2 ≈ 51
+合计：约 9,571
+```
+
+单发会明显低于 16,384 层上限，同时保留 release 云增密效果。真正要改善多发齐射，则需要增加“按距离/活跃子体数动态抽样”的白磷专用预算器；当前实现还没有这一层。
 
 ## 11. 常见症状与排查
 
@@ -910,7 +1026,7 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 | 静止子体仍出现连续假尾迹 | 客户端/服务端版本或旧实现 | 当前实现必须用权威弹体位置判断移动，视觉闪动本身不应触发尾迹 |
 | 尾迹太短 | 寿命小、颜色/alpha 过早变暗 | 优先增寿命，再调整末端颜色和 alpha |
 | 尾迹太粗像实体管线 | 主体尺寸/闪烁大、尾迹寿命长 | 降 `body_scale` 或 `body_flicker`，也可缩短 `trail_lifetime_ticks`；尾迹起始尺寸不能独立调整 |
-| FPS 明显下降 | 子体数、尾迹寿命、齐射数量 | 按性能预算顺序削减；不要重新添加已删除的 `trail_spacing` |
+| FPS 明显下降 | 初段附加数量/Tick、子体数、尾迹寿命、齐射数量 | 按性能预算顺序削减；当前单发初段最多额外 1,360 点，六发同时释放最多额外 8,160 点；不要重新添加已删除的 `trail_spacing` |
 | 子体落地发生大量爆炸 | 子体误加 `explosion_data` | 当前白磷子体只应点火、着火和直击 |
 | 没有点燃方块 | chance、on_block、落点环境 | 水、雨、不可放置火焰的位置或事件拦截都会影响结果 |
 | 敌方没有持续灼烧 | 目标类型、阵营、半径 | `targets: non_allied` 且主要面向可着火实体，不是通用车辆 DOT |
@@ -937,8 +1053,8 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 - `RVP_SubmunitionCloudRadialSpreadTest`：水平外向关系、Y 为 0、方向/速度扰动边界、退化偏移有限兜底，以及椭球出生位置与 40% X/Z 继承的组合；
 - `RVP_SubmunitionReleaseDataTest`：释放云默认关闭、两个轴默认 4 格、显式独立配置、空对象、负值/非有限值回退，以及旧标量形状不再被当前 schema 接受；
 - `RVP_SubmunitionReleaseCloudUtilTest`：关闭/双零半径不消耗随机数，水平 4 格、竖直 2 格采样严格位于椭球内并符合均匀体积统计；
-- `RVP_ParticleProjectileDataTest`：字段默认、范围限制、`body_start_scale` 默认关闭与非有限值回退、闪动/主体采样间隔最小值、水平闪动非有限值回退、主体起止颜色解析及末端颜色回退、高温阶段默认关闭/负值归零/非法颜色回退、已删除 `trail_spacing`/`trail_start_scale` 不再属于数据模型，以及 `rvp:white_phosphorus` 运行时 ID 稳定性；
-- `RVP_ParticleProjectileEmitterTest`：水平偏移平滑采样、1 Tick 即时兼容、出生尺寸默认关闭、正值启用、大于随机目标时不反向缩小，以及 4 Tick 高温色 smoothstep 权重；
+- `RVP_ParticleProjectileDataTest`：字段默认、范围限制、`body_start_scale` 默认关闭与非有限值回退、闪动/主体采样间隔最小值、水平闪动非有限值回退、主体起止颜色解析及末端颜色回退、高温阶段默认关闭/负值归零/非法颜色回退、初段附加数量/Tick 的 `0..16`/`0..100` 限制、散布的 `0..16` 限制与 NaN/Infinity 回退、已删除 `trail_spacing`/`trail_start_scale` 不再属于数据模型，以及 `rvp:white_phosphorus` 运行时 ID 稳定性；
+- `RVP_ParticleProjectileEmitterTest`：水平偏移平滑采样、1 Tick 即时兼容、出生尺寸默认关闭、正值启用、大于随机目标时不反向缩小、前 10 个成功尾迹 Tick 的 4 点增密与第 11 Tick 恢复、无效 Tick 不消耗计数、半径 0 不抽随机数、正半径球体积均匀统计，以及 4 Tick 高温色 smoothstep 权重；
 - `RVP_WhitePhosphorusResourceTest`：权威纹理位于 `assets/ywzj_rvp` 且资源有效，同时不存在旧粒子 JSON 和图集追加文件。
 
 ### 12.2 游戏内功能测试
@@ -961,10 +1077,11 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 | A6-4 | 比较主体采样间隔 1、2、4 Tick | 主体分别约每秒生成 20、10、5 次；近距离尾迹仍逐 Tick 沉积且无 512 格边界长连接 |
 | A6-5 | 切换 `trail_lifetime_start_on_landing` | 当前 false 时尾迹出生即衰减；true 时飞行期间年龄保持 0，子体落地/结束后才开始 400 Tick 消散 |
 | A6-6 | 切换 `trail_hot_phase_ticks` 为 0 与 13，并配合落地后计时 | 0 时完全沿用灰色旧尾迹；13 时最近约 13 个历史点从 `#FF8A1F` 平滑冷却为暖灰，且寿命冻结期间也不会让整条轨迹持续发亮 |
+| A6-7 | 单发俯视观察初段增密 | release 云和母弹炸点附近前 10 个有效尾迹 Tick 明显更饱满，随后恢复单股尾迹；附加点均位于原始点 0.8 格球内 |
 | A7 | 专用服务端 + 客户端 | 服务端不加载客户端类，双方弹道与毁伤一致 |
 | A8 | 512 格边界及重新进入追踪范围 | 超过 512 格不生尾迹，重新进入时不连接旧位置或产生粒子尖峰 |
 | A9 | 子体落在可燃与不可燃环境 | 点火概率和环境限制符合预期，无子体小爆炸 |
-| A10 | 多发齐射 | TPS、客户端 FPS 和粒子存量可接受 |
+| A10 | 多发齐射 | 单发最多额外约 1,360 点、六发同时释放最多额外约 8,160 点时，TPS 不变且客户端 FPS/粒子存量可接受 |
 
 ### 12.3 回归检查
 
@@ -984,6 +1101,7 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 - 未配置 `body_sample_interval_ticks` 时按 1 处理，近距离主体保持原每 Tick 生成行为。
 - 未配置 `trail_lifetime_start_on_landing` 时按 false 处理，所有尾迹继续从各自出生 Tick 立即计时。
 - 未配置 `trail_hot_phase_ticks` 时按 0 处理，尾迹继续直接使用原有起止颜色且不改变粒子数量。
+- 未配置三个 `trail_initial_*` 字段时均按 0 处理，只生成原始尾迹且不额外消耗随机数。
 - 非白磷粒子 ID 不应错误调用白磷专用发射器。
 - 服务端判定不应依赖客户端是否开启粒子或粒子设置高低。
 
@@ -1018,6 +1136,7 @@ $env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
 - [ ] `body_flicker_interval_ticks` 已按尺寸刷新与 X/Z 平滑移动速度调节，且未误当成粒子生成间隔。
 - [ ] `body_sample_interval_ticks` 已按主体出生频率调节，并确认近距离尾迹密度不随之降低。
 - [ ] `body_horizontal_flicker` 已验证 0 与目标值；主体和尾迹沿 X/Z 平滑移动，静止子体不会因视觉随机量生成假尾迹。
+- [ ] `trail_initial_extra_count=4`、`trail_initial_extra_ticks=10`、`trail_initial_spread=0.8` 已验证；release 云初段更饱满，第 11 个成功尾迹 Tick 恢复单点，静止/断续/超距不消耗计数。
 - [ ] `trail_lifetime_start_on_landing` 已验证 false/true；开启时落地前不衰减、弹体结束后会开始计时，长滞空齐射的粒子峰值可接受。
 - [ ] `trail_hot_phase_ticks=13`、`trail_hot_color=#FF8A1F` 已验证；热色在寿命门冻结时仍按独立视觉年龄冷却，且没有增加第二层粒子。
 - [ ] 客户端与服务端使用同版本 addon 和载具包。
