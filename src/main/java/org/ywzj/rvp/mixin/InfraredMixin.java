@@ -36,7 +36,7 @@ public class InfraredMixin {
             if (!RVP_IrLockHelper.isTargetWithinLimits(
                     weaponUnit,
                     target,
-                    RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit),
+                    RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, state.isIrOffAxisStacksWithStationRotation()),
                     Math.max(1f, state.getIrGuideHeadMaxAngle()),
                     Math.max(0f, state.getIrSeekerRange()),
                     state.getIrLockMinHeight()

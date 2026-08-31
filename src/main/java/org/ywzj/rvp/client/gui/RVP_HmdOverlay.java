@@ -184,9 +184,20 @@ public class RVP_HmdOverlay {
             }
         }
 
-        Vec3 pos = projectWorldPos(mc, camPos, VectorUtil.rotToVec(hmdPitch, hmdYaw).normalize());
-        if (pos == null) return;
-        int hx = (int) pos.x, hy = (int) pos.y;
+        // [RVP] 观瞄模式下头瞄圈钉在屏幕中心，与对地 IR（renderGroundIr）保持一致：
+        // 开镜时视角中心即武器站指向，若继续跟随头瞄方向，会因 SMOOTH_FACTOR 平滑滞后
+        // 而偏离屏幕中心，导致对空/对地弹的头瞄位置观感不一致。
+        boolean isScope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        int hx, hy;
+        if (isScope) {
+            hx = mc.getWindow().getGuiScaledWidth() / 2;
+            hy = mc.getWindow().getGuiScaledHeight() / 2;
+        } else {
+            Vec3 pos = projectWorldPos(mc, camPos, VectorUtil.rotToVec(hmdPitch, hmdYaw).normalize());
+            if (pos == null) return;
+            hx = (int) pos.x;
+            hy = (int) pos.y;
+        }
         boolean visible = (System.currentTimeMillis() % 700) < 350;
         int color = visible ? COLOR_WHITE : (COLOR_WHITE & 0x00FFFFFF) | 0x02000000;
         RenderSystem.enableBlend();

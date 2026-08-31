@@ -70,5 +70,25 @@
     "sounds": [
       "ywzj_rvp:misc/ecm_jammer"
     ]
+  },
+  "ir_track_alarm": {
+    "subtitle": "subtitles.rvp.ir_track_alarm",
+    "sounds": [
+      "ywzj_rvp:misc/ir_track_alarm"
+    ]
+  },
+  "bomb_whistle": {
+    "subtitle": "subtitles.rvp.bomb_whistle",
+    "sounds": [
+      "ywzj_rvp:misc/bomb_whistle"
+    ]
+  },
+  "bombs_incoming": {
+    "subtitle": "subtitles.rvp.bombs_incoming",
+    "sounds": [
+      "ywzj_rvp:misc/bombs_incoming_1",
+      "ywzj_rvp:misc/bombs_incoming_2",
+      "ywzj_rvp:misc/bombs_incoming_3"
+    ]
   }
 }

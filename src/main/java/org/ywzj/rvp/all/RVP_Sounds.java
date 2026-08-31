@@ -31,6 +31,29 @@ public final class RVP_Sounds {
     public static final RegistryObject<SoundEvent> IR_ALERT = register("ir_alert");
     public static final RegistryObject<SoundEvent> LASER_ALERT = register("laser_alert");
 
+    /**
+     * IR 导引头锁定提示音（循环播放，锁定建立时起、脱锁时止）。
+     * 移植自本体 {@code ir_track_alarm}（本体在 {@code WeaponUnit#setLockedEntity} 中
+     * 仅当静态 {@code fire_control_sensor_type == IR} 时播放，而 RVP 载具部件从不配置 IR，
+     * 故该分支在 RVP 侧永不触发，由 RVP 自行判定）。
+     */
+    public static final RegistryObject<SoundEvent> IR_TRACK_ALARM = register("ir_track_alarm");
+
+    /**
+     * 炸弹/航弹飞行时的划破空气哨音。移植自本体 {@code bomb_whistle}
+     * （本体在 {@code AerialBombEntity#tickSound} 中于玩家 32 格内播放；
+     * RVP 炸弹继承 {@code RVP_BaseBullet} 而非 {@code AerialBombEntity}，故需自行实现）。
+     */
+    public static final RegistryObject<SoundEvent> BOMB_WHISTLE = register("bomb_whistle");
+
+    /**
+     * 炸弹临近命中的来袭轰鸣（3 个变体随机）。移植自本体 {@code bombs_incoming}
+     * （本体在 {@code AerialBombEntity#tickSound} 中于玩家 8 格内<b>且玩家不在载具上</b>时播放）。
+     * 该条件使其只作用于<b>地面上将被命中的徒步目标</b>——投弹者自己在座舱里听不到，
+     * 因此 RVP 侧保留同一限制，避免飞行员被自己的“来袭”音误惊。
+     */
+    public static final RegistryObject<SoundEvent> BOMBS_INCOMING = register("bombs_incoming");
+
     private RVP_Sounds() {}
 
     public static void register(IEventBus eventBus) {

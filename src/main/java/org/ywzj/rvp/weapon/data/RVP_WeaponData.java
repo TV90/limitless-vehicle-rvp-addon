@@ -13,6 +13,8 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.BaseVehicleWeaponData;
 
+import net.minecraft.resources.ResourceLocation;
+
 import java.util.List;
 
 /**
@@ -120,6 +122,23 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
      */
     @SerializedName("parent_weapon_unit_aim_override")
     private Boolean parentWeaponUnitAimOverride;
+
+    /**
+     * 可选：本武器锁定敌人时播放的导引头锁定音（{@code SoundEvent} 资源位置字符串，
+     * 如 {@code "ywzj_rvp:ir_track_alarm"} / {@code "ywzj_vehicle:missile_launch"}）。
+     * 不配置则消费方回退全局默认 {@code RVP_Sounds.IR_TRACK_ALARM}。
+     * 仅客户端消费（{@code RVP_ClientSeekerTone}）。
+     */
+    @SerializedName("lock_tone_sound")
+    private String lockToneSound;
+
+    @Nullable
+    public ResourceLocation getLockToneSound() {
+        if (lockToneSound == null || lockToneSound.isBlank()) {
+            return null;
+        }
+        return ResourceLocation.tryParse(lockToneSound);
+    }
 
     public RVP_EnumWeaponKind getWeaponKind() {
         return weaponKind;
@@ -475,6 +494,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public float resolveLaunchOffAxisLockAngle() {
         return resolveLaunchGuidanceConfig().maxOffAxisLockAngle();
+    }
+
+    /**
+     * 头瞄离轴角是否与武器站旋转叠加。开启后离轴锥跟随武器站当前朝向（含 xRot/yRot），
+     * 用于地对空红外导弹——炮塔转到哪，离轴锥就中心跟到哪。
+     */
+    public boolean resolveLaunchOffAxisStacksWithStationRotation() {
+        return resolveLaunchGuidanceConfig().offAxisStacksWithStationRotation();
     }
 
     /** 瞄准吊舱射线长度；优先 {@link RVP_LaserData}，默认 8192。 */

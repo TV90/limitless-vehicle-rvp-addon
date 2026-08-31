@@ -38,6 +38,7 @@ import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
+import org.ywzj.rvp.client.state.RVP_ClientSeekerTone;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
@@ -109,6 +110,8 @@ public class RVP_ClientEvents {
         RVP_ClientExternalRadarState.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
+        // IR 导引头锁定提示音（循环音，锁定即响、脱锁即停）
+        RVP_ClientSeekerTone.tick();
 
         // 调试：确认本体 RWR 覆盖层读取的 warningReceiver.targets 里是否有伪造 RADAR_LOCK
         if (org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.isDebugOn()

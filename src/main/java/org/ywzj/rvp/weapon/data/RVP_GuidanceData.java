@@ -49,6 +49,18 @@ public class RVP_GuidanceData {
     @SerializedName("max_off_axis_lock_angle")
     private Integer maxOffAxisLockAngle;
 
+    /**
+     * 头瞄离轴角与武器站旋转叠加。
+     *
+     * <p>关闭（默认）：离轴锥以武器站<b>中立安装轴</b> {@code worldVec(0,0)} 为基准，
+     * 忽略武器站自身 xRot/yRot 伺服旋转——炮塔转动不会扩大 IR 锁定覆盖。</p>
+     *
+     * <p>开启：离轴锥以武器站<b>当前朝向</b> {@code worldVec()}（含 xRot/yRot）为基准，
+     * 离轴范围与武器站已转过的角度<b>叠加</b>，适用于地对空红外导弹（炮塔指向即射向）。</p>
+     */
+    @SerializedName("off_axis_stacks_with_station_rotation")
+    private boolean offAxisStacksWithStationRotation = false;
+
     @SerializedName("predict_target_pos")
     private boolean predictTargetPos = false;
 
@@ -186,6 +198,11 @@ public class RVP_GuidanceData {
     /** 未配置（null）时由解析层用 max_guidance_angle 兜底。 */
     public Integer getMaxOffAxisLockAngle() {
         return maxOffAxisLockAngle == null ? null : Math.max(maxOffAxisLockAngle, 0);
+    }
+
+    /** @return 头瞄离轴角是否与武器站旋转叠加（离轴锥跟随武器站当前朝向）。 */
+    public boolean isOffAxisStacksWithStationRotation() {
+        return offAxisStacksWithStationRotation;
     }
 
     public boolean isPredictTargetPos() {

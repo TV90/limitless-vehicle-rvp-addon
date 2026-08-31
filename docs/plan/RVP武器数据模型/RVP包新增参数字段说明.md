@@ -342,6 +342,29 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `ahead_require_lock` | 是否要求必须存在锁定目标且能解出预瞄圈；为 `false` 时，无法解出预瞄圈会回退到当前 `AimContext.position` 的瞄点距离。 | `true` |
 | `ahead_min_ground_clearance` | 可编程空爆点的最低离地高度（米）；低于该值时取消 AHEAD 空爆，让母弹继续飞行/撞击，避免对地过强。`0` 表示不限制。 | `0` |
 
+#### 攻顶引信（`top_attack_*`）
+
+攻顶分两层，勿混淆：
+
+- **弹道层** `guidance_data.top_attack_height`——决定导弹是否拉起攻顶、攻到多高（见 1.13 `guidance_data` 公用字段表）。
+- **起爆层** `fuse_data.top_attack_*`（本小节）——决定**何时引爆**：向弹体正下方探测目标，探测到后起爆。
+
+攻顶引信检测弹体正下方（世界系绝对 `-Y` 轴，**不随弹体姿态变化**）半锥角区域内的实体；命中后触发引信，复用近炸全额伤害与 `on_fuse` 子母弹链路。
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `top_attack_fuse_enabled` | 是否启用攻顶引信。 | `boolean` | `false` |
+| `top_attack_fuse_distance` | 从弹体向正下方的最大检测距离（米）。 | `float` | `6` |
+| `top_attack_fuse_fov` | 检测半锥角（度）：实体与正下方方向的偏移角上限。 | `float` | `25` |
+| `top_attack_fuse_delay_tick` | 探测到目标后延时起爆的 tick 数；`0` = 立即触发。 | `int` | `0` |
+| `top_attack_fuse_arm_tick` | 解保 tick：出生后至少经过该 tick 才启用；`0` = 不限制。 | `int` | `0` |
+| `top_attack_smart_enabled` | **智能引信**（默认开启）：探测命中后不立即引爆，而是记录检测点（目标 AABB 中心），解除当前制导并改飞向「检测点正上方 ±`top_attack_smart_target_radius` 圆内、高度为触发时刻导弹高度」的目标点，到达后再引爆，缓解 `fov` 圈过大导致的偏爆。 | `boolean` | `true` |
+| `top_attack_smart_target_radius` | 智能引信目标点水平随机半径（米）。 | `float` | `0.5` |
+| `top_attack_smart_arrive_horizontal` | 智能引信到达判定：水平距离 ≤ 该值（米）**且**垂直高度差 ≤ `top_attack_smart_arrive_vertical` 时引爆。 | `float` | `0.5` |
+| `top_attack_smart_arrive_vertical` | 智能引信到达判定：垂直高度差 ≤ 该值（米）。 | `float` | `1.0` |
+
+> `top_attack_smart_*` 仅在 `top_attack_fuse_enabled: true` 时有意义。除两个布尔开关外，其余字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
+
 ### 1.7 `collision_data` 直击、衰减与碰撞
 
 | 字段 | 说明 |
@@ -1082,6 +1105,7 @@ velocity = worldDown × cos(theta) × launch_speed
 | `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
 | `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
 | `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
+| `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。注意 HUD 限位圈始终按 `true` 的基准绘制，故旋转炮塔车上建议开启以保持显示与判定一致。 | `boolean` | `false` |
 | `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
 | `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
@@ -1158,6 +1182,7 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | `hitl_max_control_tick` | 最大控制时长（tick）。 | `int` | `200` |
 | `hitl_max_look_offset` | HITL 视角最大偏转角度。 | `int` | `30` |
 | `hitl_video_modes` | 可用画面模式（可写多个，玩家可循环切换）：`COLOR` / `MONO`（或 `BW`、`BLACK_WHITE`、`BLACKWHITE`、`MONOCHROME`）/ `THERMAL`（或 `IR`）。列表第一个有效模式为初始画面；无法识别的值被忽略，全部无效时回退为彩色画面。 | `List<String>` | `["MONO"]` |
+| `hitl_right_click_detonate` | 开启后人在回路视角下鼠标右键从“退出视角”变为“**提前引爆导弹**”。 | `boolean` | `false` |
 
 #### `RVP_GuidanceDataGPS`（`GPS`）
 
@@ -1205,6 +1230,25 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | `seeker_fov_shrink_factor` | 跟踪时导引头 fov 倍率，检测 fov = `max_lock_angle × 此值`（完整 FOV）。 | `float` | `1.0` |
 | `seeker_shut_off_time` | 失去制导后导引头关闭时长（tick），关闭结束后重启主动搜索复锁；`null` 表示失锁后立即恢复搜索。 | `Integer` | `null` |
 | `chaff_resistance` | 导引头对箔条目标的锁定抗性（0~1）：ARH/AIR 开启导引头后可锁箔条，但按此值施加评分罚分（越大优先级越低，非完全不可锁）。默认 `0.5`，具备相当的抗箔条能力。 | `float` | `0.5` |
+
+#### PRESET 三段式弹道（弹道导弹巡航）
+
+弹道导弹（通常搭配 `guidance_type: GPS`）可启用**上升 → 巡航 → 俯冲**三段式弹道。**总开关为 `preset_cruise_altitude`**：`> 0` 即启用，`0`（默认）禁用。以下字段均写在 `guidance_data` 顶层。
+
+| 字段 | 说明 | 类型 | 默认值 |
+| --- | --- | --- | --- |
+| `preset_cruise_altitude` | 巡航高度（相对发射点 Y，格）。**`> 0` 启用 PRESET 三段式弹道**，`0` 禁用。 | `float` | `0` |
+| `preset_max_ascent_lead` | 上升段前伸量上限（格），实际取 `min(值, 25% × 水平距离)`。 | `float` | `64` |
+| `preset_ascent_radius` | 上升段完成判定半径（格）。 | `float` | `24` |
+| `preset_dive_radius` | 俯冲段最小启动水平距离（格）。 | `float` | `24` |
+| `preset_dive_altitude_factor` | 俯冲距离 = 高度差 × 该因子。 | `float` | `0.75` |
+| `preset_dive_lead_factor` | 俯冲距离 = 近似转弯半径 × 该因子。 | `float` | `1.5` |
+| `preset_cruise_altitude_gain` | 巡航段高度闭环 P 增益（越大收敛越快，过大易震荡）。 | `float` | `0.002` |
+| `preset_cruise_vertical_damping` | 巡航段高度闭环 D 阻尼（抑制高度震荡）。 | `float` | `0.05` |
+| `preset_cruise_max_vertical_component` | 垂直分量占速率的比例上限（0~1），限制爬升/俯冲的陡峭程度。 | `float` | `0.5` |
+| `preset_tactical_maneuver_amplitude` | 弹道中段战术机动（横向蛇形规避摆动）幅度（格）；`0` = 关闭。 | `float` | `0` |
+
+> 除 `preset_cruise_altitude` 外，以上参数**仅在 PRESET 启用**（巡航高度 > 0）时生效。全部字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
 
 #### 示例
 
@@ -1795,6 +1839,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `rvp_rf_off_axis_deg` | 雷达（RF）制导离轴限制（度）。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
+| `rvp_structure_bolt_bones` | 多挂点武器的**挂点骨骼名列表**。本体 `initStructureModel` 只为 `xTurnBone`（`structure_bone + "_barrel"`）构建**一个** Bolt，左右两侧挂架（如 `variable_agm_1_barrel` / `variable_agm_2_barrel`）只有第一个挂点有 Bolt，导致挂架渲染偏移到单侧。列出全部挂点骨骼后，`WeaponUnitDataMixin` 会自动跳过本体已处理的 `xTurnBone`，为其余骨骼计算偏移并**补充 Bolt**。 | `[]` |
 | `rvp_optical_sight_pivot` | 观瞄基准枢轴（`[x, y, z]`，**渲染模型骨块 pivot 像素值**，内部 `/16` 转方块单位）。默认观瞄位置 = `结构骨枢轴 + opticalSightOffset`；配置本字段后改为 `渲染骨枢轴/16 + opticalSightOffset`，用于“观瞄点相对某个渲染骨骼（如机枪观瞄镜）而非武器站结构骨枢轴”的场景（T84BM 机枪观瞄即以 `guanmiao` 骨骼为基准）。未配置时为 `null`（不生效）。 | `null` |
 
 ### 3.2 雷达部件扩展
@@ -1816,6 +1861,19 @@ SACLOS 反坦克导弹（半自动修正）：
 | `scan_vehicle_only` | 仅扫描/跟踪载具：`true` 时扫描与锁定只保留载具目标，排除弹药、箔条等非载具实体（扫描与接触保活均过滤）。适合“对地补盲雷达”（如长弓桅顶雷达）。 | `false` |
 
 > `enable_hms` 为 `JsonElement`：写布尔或字符串均可；`false`/`off`/`none` 表示关闭，`onlyACM`/`only_acm`/`acm` 表示仅空战模式启用，其余值视为完整启用。
+
+### 3.3 本体火箭弹武器数据扩展（`ballistic_*`）
+
+以下字段写在**本体火箭弹武器的 JSON**（`VehicleRocketWeaponData`，由 `VehicleRocketWeaponDataMixin` 注入），用于启用**火箭弹弹道预瞄**（按重力/阻力积分预测落点，供 CCIP 瞄准圈使用）。消费方为 `RVP_RocketBallistics`。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `ballistic_enabled` | 是否启用该火箭弹的弹道预瞄。`false` 时 `RVP_RocketBallistics.resolve` 直接返回 `null`，不做落点预测。 | `false` |
+| `ballistic_gravity` | 预瞄积分用的重力（格/tick²）。取负值按 `0` 处理。 | `0.03` |
+| `ballistic_drag` | 预瞄积分用的阻力系数。取负值按 `0` 处理。 | `0.002` |
+| `ballistic_prediction_tick` | 预瞄最长积分步数（tick）。解析时 `Math.max(1, 值)`，即写 `0` 或负数按 `1` 处理。 | `240` |
+
+> 初速取本体 `VehicleRocketWeaponData.velocity`（下限 `0.01`），不在本组字段内配置。炮兵场景另有 `ARTILLERY_PREDICTION_TICK = 1200` 常量，非 JSON 字段。
 
 ---
 
@@ -1840,6 +1898,8 @@ UI 预设决定载具 HUD 布局。加载来源（`UIPresetManager`）：
 | `vehicle_bones` | 骨骼俯视图位置。 |
 | `scope_envelope` | 瞄准镜包络位置。 |
 | `radars` | 多雷达独立位置：对象，key 为雷达部件 id（如 `scan_radar`），value 为位置对象。 |
+| `aps_hud` | APS（主动防护系统）状态 HUD 位置，类型为下方 `UIPosition`。 |
+| `dircm_hud` | DIRCM（定向红外对抗）通道 HUD 位置，类型为下方 `UIPosition`。 |
 
 ### 位置对象（`UIPosition`）
 
@@ -1876,6 +1936,7 @@ Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
 | `name` | 配置名（缺省用文件名）。 | `default` |
 | `faction` | 阵营：`friendly` / `enemy`（或 `hostile`）/ `team`（或 `faction`）。 | `friendly` |
 | `target_types` | 目标类型过滤：`vehicle` / `player` / `monster` / `living` / `rvp:missile`。 | `["rvp:missile","vehicle","monster","player"]` |
+| `gps_prefer_farthest` | 是否优先用 GPS 武器打击索敌范围内**最远**的目标（GPS 属远程点打击武器，默认优先打最远目标）。 | `true` |
 | `search_radius` | 索敌半径（格）。 | `96.0` |
 | `scan_interval_tick` | 目标扫描间隔（tick）。 | `10` |
 | `fire_window_deg` | 开火窗口角（度）：目标进入该角锥内才开火。 | `6.0` |

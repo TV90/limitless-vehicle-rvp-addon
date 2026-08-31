@@ -31,6 +31,7 @@ public final class RVP_GuidanceModelResolver {
                 data.isEnableIrHmd(),
                 data.getMaxLockAngle(),
                 resolvedOffAxis,
+                data.isOffAxisStacksWithStationRotation(),
                 data.getLockAngleGate()
         );
     }

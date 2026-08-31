@@ -240,13 +240,31 @@ public final class RVP_IrLockHelper {
         return null;
     }
 
+    /**
+     * IR 导引头离轴基准方向，默认以武器站<b>中立安装轴</b>为基准（不含武器站旋转）。
+     */
     public static Vec3 resolveIrBoresightDir(WeaponUnit weaponUnit) {
+        return resolveIrBoresightDir(weaponUnit, false);
+    }
+
+    /**
+     * IR 导引头离轴基准方向。
+     *
+     * <p>底层 {@code RotatableUnit.worldVec(xRot, yRot)} = {@code baseRot().transform(rotToVec(xRot, yRot))}，
+     * 故 {@code worldVec(0,0)} 会把武器站自身的 xRot/yRot（跟随目标的伺服旋转）归零，只剩中立安装轴。</p>
+     *
+     * @param stackWithStationRotation {@code true} = 以武器站<b>当前朝向</b> {@code worldVec()}（含 xRot/yRot）
+     *                                 为基准，离轴范围与武器站已转过的角度<b>叠加</b>；
+     *                                 {@code false} = 以<b>中立安装轴</b> {@code worldVec(0,0)} 为基准，忽略武器站旋转。
+     */
+    public static Vec3 resolveIrBoresightDir(WeaponUnit weaponUnit, boolean stackWithStationRotation) {
         if (weaponUnit == null) {
             return Vec3.ZERO;
         }
-        Vec3 boresight = weaponUnit.worldVec(0f, 0f);
+        // 首选基准按开关二选一，另一者作为退化兜底（首选为零向量时）。
+        Vec3 boresight = stackWithStationRotation ? weaponUnit.worldVec() : weaponUnit.worldVec(0f, 0f);
         if (boresight.lengthSqr() <= 1.0E-6) {
-            boresight = weaponUnit.worldVec();
+            boresight = stackWithStationRotation ? weaponUnit.worldVec(0f, 0f) : weaponUnit.worldVec();
         }
         return boresight.lengthSqr() <= 1.0E-6 ? Vec3.ZERO : boresight.normalize();
     }

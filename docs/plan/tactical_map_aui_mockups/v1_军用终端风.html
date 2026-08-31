@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<!-- 战术地图 AUI 重构设计稿 V1：军用终端风（绿色磷光CRT）。
+     含 战术地图 / 炮兵地图 两个独立界面，顶部灰色条仅为设计稿预览切换器。
+     按钮与功能严格对应现有后端：弹道仅 高弹道/低弹道 且只在炮兵地图出现。 -->
+<head>
+<meta charset="UTF-8">
+<title>V1 军用终端风 · 战术/炮兵地图</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000;
+    font-family:"Consolas","Courier New",monospace; font-size:13px; }
+
+  /* ===== 设计稿预览切换器（非游戏UI） ===== */
+  #previewbar { position:fixed; z-index:99; top:0; left:0; right:0; height:26px; background:#16181a;
+    border-bottom:1px solid #2a2d31; display:flex; align-items:center; gap:10px; padding:0 12px;
+    color:#6b7280; font-size:11px; letter-spacing:1px; }
+  #previewbar b { color:#9ca3af; font-weight:normal; }
+  #previewbar .sw { cursor:pointer; padding:2px 12px; border:1px solid #33373d; color:#9ca3af; }
+  #previewbar .sw:hover { color:#fff; }
+  #previewbar .sw.act { background:#233; border-color:#3fbf6f; color:#7fe79f; }
+
+  .stage { position:absolute; top:26px; left:0; right:0; bottom:0; overflow:hidden; }
+  .screen { position:absolute; inset:0; }
+  canvas.map { position:absolute; inset:0; width:100%; height:100%; }
+
+  /* 扫描线 + 余晖 */
+  .scan { position:absolute; inset:0; pointer-events:none; z-index:40;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
+  .vig { position:absolute; inset:0; pointer-events:none; z-index:41;
+    background:radial-gradient(ellipse at center, transparent 52%, rgba(0,8,0,.62) 100%); }
+
+  /* ===== 终端面板 ===== */
+  .pnl { position:absolute; z-index:20; background:rgba(3,13,6,.92);
+    border:1px solid #2c6e40; border-style:solid; box-shadow:inset 0 0 22px rgba(25,120,55,.22);
+    color:#93efab; }
+  .pnl-h { padding:3px 8px; font-size:11px; letter-spacing:2px; color:#03140a;
+    background:#39cf72; display:flex; justify-content:space-between; }
+  .pnl-h .dim { color:#0a3d20; }
+
+  /* 终端按钮：方括号文本 */
+  .tb { display:inline-block; padding:3px 9px; margin:2px; cursor:pointer; color:#7fd694;
+    border:1px solid #245c36; background:rgba(6,22,11,.9); letter-spacing:1px; white-space:nowrap; }
+  .tb::before { content:"["; color:#3f8f5c; } .tb::after { content:"]"; color:#3f8f5c; }
+  .tb:hover { color:#dcffe6; border-color:#54d984; text-shadow:0 0 6px rgba(70,255,140,.75); }
+  .tb.on { color:#eafff0; background:rgba(45,200,95,.24); border-color:#54d984; text-shadow:0 0 8px rgba(80,255,150,.85); }
+  .tb.warn { color:#ffd47e; } .tb.warn::before,.tb.warn::after { color:#8f6a34; }
+  .tb.warn:hover { border-color:#ffce7a; text-shadow:0 0 6px rgba(255,190,90,.6); }
+  .row { display:flex; align-items:center; flex-wrap:wrap; }
+
+  .fld { display:inline-flex; align-items:center; gap:3px; border:1px solid #1f4a2e;
+    background:#020a05; padding:2px 5px; margin:2px; }
+  .fld label { color:#3f8f5c; font-size:11px; }
+  .fld input { width:60px; background:none; border:none; outline:none; color:#c9ffd8; font:inherit; font-size:12px; }
+
+  /* ===== 战术：工具条 ===== */
+  #t-toolbar { top:10px; right:10px; padding:4px 6px; max-width:calc(100% - 20px); }
+  #t-toolbar .sub { border-top:1px dashed #1f4a2e; margin-top:3px; padding-top:3px; }
+
+  /* ===== 战术：右侧抽屉 ===== */
+  #t-drawer { top:86px; right:10px; bottom:40px; width:296px; display:flex; flex-direction:column; }
+  .body { flex:1; overflow-y:auto; padding:6px 9px; }
+  .body::-webkit-scrollbar { width:6px; } .body::-webkit-scrollbar-thumb { background:#2c6e40; }
+  .ln { padding:1px 0; color:#a8e8bb; white-space:pre-wrap; }
+  .ln b { color:#3f8f5c; font-weight:normal; }
+  .ln .ok { color:#5cff8a; } .ln .ng { color:#ff7a7a; } .ln .am { color:#ffd47e; }
+  .pr::before { content:"> "; color:#3f8f5c; }
+  table { width:100%; border-collapse:collapse; margin:4px 0; font-size:12px; }
+  th { color:#3f8f5c; font-weight:normal; text-align:right; padding:3px 4px; border-bottom:1px solid #245c36; }
+  td { text-align:right; padding:3px 4px; color:#bff0cd; border-bottom:1px solid rgba(36,92,54,.35); }
+  th:first-child,td:first-child { text-align:left; }
+  tbody tr { cursor:pointer; } tbody tr:hover { background:rgba(60,220,110,.12); }
+  tr.hostile td.iff { color:#ff7a7a; } tr.friend td.iff { color:#7ab8ff; } tr.neutral td.iff { color:#d8d8a8; }
+  tr.locked { background:rgba(255,212,126,.1); outline:1px solid rgba(255,212,126,.45); }
+
+  /* 下拉 / 右键菜单 */
+  .menu { display:none; min-width:210px; z-index:60; }
+  .mi { padding:4px 10px; cursor:pointer; color:#a8e8bb; }
+  .mi:hover { background:rgba(60,220,110,.18); color:#eafff0; }
+  .mh { padding:3px 10px; color:#3f8f5c; border-bottom:1px dashed #245c36; letter-spacing:2px; font-size:11px; }
+
+  /* 目标信息条 */
+  #t-sel { display:none; min-width:230px; z-index:30; }
+
+  /* 原生HUD示意（终端风文字） */
+  .hud { position:absolute; z-index:15; pointer-events:none; color:#63c57f; text-shadow:0 0 5px rgba(60,230,120,.55); }
+  #t-hudtl { top:44px; left:12px; line-height:1.75; }
+  #t-scale { bottom:12px; left:12px; }
+  .cur { display:inline-block; width:7px; height:13px; background:#5cff8a; vertical-align:-2px;
+    animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* ===== 炮兵：火控读数块 ===== */
+  #a-fire { top:10px; left:10px; min-width:250px; z-index:20; }
+  #a-fire .big { font-size:21px; color:#eaffee; letter-spacing:1px; padding:5px 9px 1px; text-shadow:0 0 8px rgba(90,255,150,.5); }
+  #a-fire .sub2 { padding:0 9px 6px; line-height:1.65; }
+  #a-sol-ok { color:#5cff8a; } #a-sol-ng { color:#ff6b6b; display:none; }
+  #a-tools { top:10px; right:10px; padding:4px 6px; }
+  #a-hint { position:absolute; z-index:15; bottom:12px; left:50%; transform:translateX(-50%);
+    color:#63c57f; text-shadow:0 0 5px rgba(60,230,120,.55); pointer-events:none; letter-spacing:2px; }
+
+  /* CCIP 光标（跟手） */
+  #reticle { position:absolute; z-index:35; width:46px; height:46px; margin:-23px 0 0 -23px;
+    pointer-events:none; display:none; }
+  #reticle::before,#reticle::after { content:""; position:absolute; background:rgba(120,255,160,.85); }
+  #reticle::before { left:50%; top:0; width:1px; height:100%; }
+  #reticle::after { top:50%; left:0; height:1px; width:100%; }
+  #reticle i { position:absolute; inset:12px; border:1px solid rgba(120,255,160,.9); transform:rotate(45deg); }
+</style>
+</head>
+<body>
+<div id="previewbar"><b>设计稿预览切换</b>
+  <span class="sw act" data-m="tac">战术地图</span>
+  <span class="sw" data-m="art">炮兵地图</span>
+  <span style="margin-left:auto">V1 军用终端风 · 绿色磷光 CRT · 数据为演示</span>
+</div>
+
+<!-- ================= 战术地图 ================= -->
+<div class="stage" id="scr-tac">
+  <canvas class="map" id="cv-tac"></canvas><div class="scan"></div><div class="vig"></div>
+
+  <div id="t-toolbar" class="pnl">
+    <div class="row">
+      <span class="tb" id="t-wpn">武器：无</span>
+      <span class="tb" id="t-cen">居中</span>
+      <span class="tb on" id="t-fol">跟随:开</span>
+      <span class="tb warn" id="t-rad">雷达面板</span>
+      <span class="tb warn" id="t-gps">GPS面板</span>
+    </div>
+    <div class="sub row">
+      <span class="tb" id="t-mode">单点</span>
+      <span class="tb">清空</span>
+      <span class="tb on" id="t-qmk">快标:开</span>
+    </div>
+  </div>
+
+  <div id="t-drawer" class="pnl">
+    <div class="pnl-h"><span id="dw-title">RADAR_TARGET_LIST // 雷达目标列表</span><span class="dim">SYS:OK</span></div>
+    <div class="body" id="dw-radar">
+      <div class="ln pr">扫描目标 <span class="ok">7</span>　锁定 <span class="am">SU-34#04</span></div>
+      <table>
+        <thead><tr><th>#</th><th>方位</th><th>距离</th><th>高度</th><th>NCTR</th><th>敌我</th></tr></thead>
+        <tbody>
+          <tr class="hostile locked"><td>SU-34</td><td>042°</td><td>3.2km</td><td>4200m</td><td>JET-A</td><td class="iff">敌</td></tr>
+          <tr class="hostile"><td>MBT-72</td><td>051°</td><td>1.4km</td><td>0m</td><td>TANK</td><td class="iff">敌</td></tr>
+          <tr class="hostile"><td>BTR-80</td><td>067°</td><td>2.1km</td><td>0m</td><td>APC</td><td class="iff">敌</td></tr>
+          <tr class="friend"><td>F-16A</td><td>112°</td><td>8.9km</td><td>3600m</td><td>JET-F</td><td class="iff">友</td></tr>
+          <tr class="friend"><td>M1A2</td><td>098°</td><td>0.8km</td><td>0m</td><td>TANK</td><td class="iff">友</td></tr>
+          <tr class="neutral"><td>AIRBUS</td><td>201°</td><td>14km</td><td>9800m</td><td>CIVIL</td><td class="iff">中</td></tr>
+        </tbody>
+      </table>
+      <div class="ln pr"><span class="tb" id="t-hidefrd">显示友方</span></div>
+      <div class="ln pr">双击左键 锁定　双击右键 发射</div>
+    </div>
+    <div class="body" id="dw-gps" style="display:none">
+      <div class="ln pr">当前GPS目标 <span class="ok">-1240.5, 72.0, 3088.2</span></div>
+      <div class="ln"> </div>
+      <div class="row">
+        <span class="fld"><label>X</label><input value="-1240.50"></span>
+        <span class="fld"><label>Y</label><input value="72.00"></span>
+        <span class="fld"><label>Z</label><input value="3088.20"></span>
+      </div>
+      <div class="row"><span class="tb">装订</span><span class="tb">清空</span><span class="tb on">单点</span><span class="tb on">快标:开</span></div>
+      <div class="ln"> </div>
+      <div class="ln pr">航点序列 <span class="am">MULTI</span></div>
+      <div class="ln">WP1 弹药库　　　1.2km 033°</div>
+      <div class="ln">WP2 防空阵地　　2.8km 051°</div>
+      <div class="ln">WP3 装甲集结点　4.5km 078°</div>
+    </div>
+  </div>
+
+  <div id="t-wddown" class="pnl menu">
+    <div class="mh">选择弹药</div>
+    <div class="mi">AGM-65L ×4</div>
+    <div class="mi">GBU-12 ×2</div>
+    <div class="mi">HYDRA-70 ×38</div>
+  </div>
+
+  <div id="t-ctxmap" class="pnl menu">
+    <div class="mh">地图操作</div>
+    <div class="mi">直接绑定为 GPS 目标</div>
+    <div class="mi">填入并打开 GPS 面板</div>
+    <div class="mi">设为盘旋圆心</div>
+    <div class="mi" style="color:#ff9d7a">清空 GPS 点</div>
+  </div>
+  <div id="t-ctxent" class="pnl menu">
+    <div class="mh">目标操作 // SU-34</div>
+    <div class="mi">视图居中到该目标</div>
+    <div class="mi">将该位置填入 GPS 面板</div>
+    <div class="mi">将该位置直接绑定为 GPS</div>
+  </div>
+
+  <div id="t-sel" class="pnl">
+    <div class="pnl-h"><span>TGT // 目标信息</span><span class="am">LOCKED</span></div>
+    <div class="body">
+      <div class="ln pr">名称 <span class="ng">SU-34 战斗轰炸机</span></div>
+      <div class="ln pr">速度 <b>870 km/h</b></div>
+      <div class="ln pr">位置 <b>1420, 3400</b> 敌我 <span class="ng">敌对</span></div>
+    </div>
+  </div>
+
+  <div class="hud" id="t-hudtl">战术地图<span class="cur"></span><br>左键图标选中 左键空白拖动<br>滚轮缩放 右键打开快捷菜单<br>快速标记: 开启（右键地图直接装订）</div>
+  <div class="hud" id="t-scale">比例 1.42 方块/像素<br>光标: 1024, 68, 2044</div>
+</div>
+
+<!-- ================= 炮兵地图 ================= -->
+<div class="stage" id="scr-art" style="display:none">
+  <canvas class="map" id="cv-art"></canvas><div class="scan"></div><div class="vig"></div>
+
+  <div id="a-fire" class="pnl">
+    <div class="pnl-h"><span>FIRE_CONTROL // 射击诸元</span><span class="dim">ARTY</span></div>
+    <div class="big">仰角 43.2°　落点 1840m</div>
+    <div class="sub2 ln">解算 <span id="a-sol-ok" class="ok">可命中</span><span id="a-sol-ng" class="ng">无解</span>　残弹 <span class="am">12/24</span></div>
+  </div>
+
+  <div id="a-tools" class="pnl">
+    <div class="row">
+      <span class="tb">居中</span>
+      <span class="tb on">跟随:开</span>
+      <span class="tb warn" id="a-trj">高弹道</span>
+    </div>
+  </div>
+
+  <div id="a-hint">移动光标指定落点 · 空格 开火 · 载具操纵持续有效</div>
+  <div class="hud" style="top:44px;left:12px">炮兵地图<span class="cur"></span></div>
+  <div class="hud" style="bottom:12px;left:12px">比例 3.80 方块/像素<br>光标: 1024, 68, 2044</div>
+  <div id="reticle"><i></i></div>
+</div>
+
+<script>
+// ---------- 预览切换 ----------
+document.querySelectorAll('#previewbar .sw').forEach(s => s.onclick = () => {
+  document.querySelectorAll('#previewbar .sw').forEach(x => x.classList.remove('act'));
+  s.classList.add('act');
+  document.getElementById('scr-tac').style.display = s.dataset.m === 'tac' ? '' : 'none';
+  document.getElementById('scr-art').style.display = s.dataset.m === 'art' ? '' : 'none';
+});
+
+// ---------- 终端绿地形底图 ----------
+let seed = 20260826;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+function terrain(cv, pal, river, grid) {
+  const cx = cv.getContext('2d'); seed = 20260826;
+  cv.width = cv.clientWidth || innerWidth; cv.height = cv.clientHeight || innerHeight;
+  for (let x = 0; x < cv.width; x += 24)
+    for (let y = 0; y < cv.height; y += 24) { cx.fillStyle = pal[(rnd() * pal.length) | 0]; cx.fillRect(x, y, 24, 24); }
+  cx.strokeStyle = river; cx.lineWidth = 13; cx.beginPath(); cx.moveTo(cv.width * .1, 0);
+  for (let y = 0; y <= cv.height; y += 60) cx.lineTo(cv.width * .1 + Math.sin(y * .004) * 180 + y * .1, y);
+  cx.stroke();
+  cx.strokeStyle = grid;
+  for (let x = 0; x < cv.width; x += 96) { cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, cv.height); cx.stroke(); }
+  for (let y = 0; y < cv.height; y += 96) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(cv.width, y); cx.stroke(); }
+}
+const PAL_T = ['#04120a','#061a0e','#07200f','#092713','#05150c','#0a2d16'];
+const RIV_T = '#0d2f33', GRID_T = 'rgba(70,220,120,.07)';
+const PAL_A = ['#0a1410','#0c1812','#0e1c14','#101f17','#0b1610'];
+const RIV_A = '#123038', GRID_A = 'rgba(70,220,120,.05)';
+function resize() {
+  const t = document.getElementById('cv-tac'), a = document.getElementById('cv-art');
+  if (t.style.display !== 'none') { terrain(t, PAL_T, RIV_T, GRID_T); unitsT(t); }
+  else { terrain(a, PAL_A, RIV_A, GRID_A); artBase(a); }
+}
+addEventListener('resize', resize);
+
+// 战术图单位符号（敌三角/友方/玩家）
+const UNITS = [];
+function unitsT(cv) {
+  const cx = cv.getContext('2d'); UNITS.length = 0;
+  function tri(x, y, c) {
+    UNITS.push({ x, y });
+    cx.save(); cx.translate(x, y); cx.fillStyle = c;
+    cx.beginPath(); cx.moveTo(0, -9); cx.lineTo(8, 8); cx.lineTo(-8, 8); cx.fill();
+    cx.strokeStyle = 'rgba(120,255,160,.5)'; cx.lineWidth = 1; cx.stroke(); cx.restore();
+  }
+  tri(cv.width * .52, cv.height * .40, '#ff6a5c');
+  tri(cv.width * .47, cv.height * .52, '#ff6a5c');
+  tri(cv.width * .56, cv.height * .66, '#ff6a5c');
+  // 盘旋圆 + GPS 航线
+  cx.strokeStyle = 'rgba(255,212,126,.55)'; cx.setLineDash([6, 5]); cx.lineWidth = 2;
+  cx.beginPath(); cx.arc(cv.width * .66, cv.height * .58, 64, 0, 7); cx.stroke();
+  cx.strokeStyle = 'rgba(120,255,170,.8)';
+  cx.beginPath(); cx.moveTo(cv.width * .38, cv.height * .64); cx.lineTo(cv.width * .48, cv.height * .5); cx.lineTo(cv.width * .58, cv.height * .38); cx.stroke();
+  [[.38,.64],[.48,.5],[.58,.38]].forEach(([x, y]) => {
+    cx.save(); cx.translate(cv.width * x, cv.height * y); cx.rotate(Math.PI / 4);
+    cx.strokeStyle = 'rgba(120,255,170,.95)'; cx.strokeRect(-5, -5, 10, 10); cx.restore();
+  });
+  cx.setLineDash([]);
+  const px = cv.width * .4, py = cv.height * .58;
+  cx.strokeStyle = '#eaffee'; cx.lineWidth = 2;
+  cx.beginPath(); cx.arc(px, py, 8, 0, 7); cx.stroke();
+  cx.beginPath(); cx.moveTo(px, py); cx.lineTo(px + 6, py - 14); cx.stroke();
+}
+
+// 炮兵图：预设火力单元 + 弹道弧
+let artTarget = null;
+function artBase(cv) {
+  const cx = cv.getContext('2d');
+  function tri(x, y, c) {
+    cx.save(); cx.translate(x, y); cx.fillStyle = c;
+    cx.beginPath(); cx.moveTo(0, -9); cx.lineTo(8, 8); cx.lineTo(-8, 8); cx.fill(); cx.restore();
+  }
+  tri(cv.width * .58, cv.height * .38, '#ff6a5c');
+  tri(cv.width * .5, cv.height * .55, '#ff6a5c');
+  tri(cv.width * .68, cv.height * .6, '#ff6a5c');
+  const px = cv.width * .32, py = cv.height * .78;
+  cx.strokeStyle = '#eaffee'; cx.lineWidth = 2;
+  cx.beginPath(); cx.arc(px, py, 8, 0, 7); cx.stroke();
+  cx.beginPath(); cx.moveTo(px, py); cx.lineTo(px + 6, py - 14); cx.stroke();
+  if (artTarget) {
+    // 预测弹道虚线弧（演示）
+    cx.strokeStyle = 'rgba(120,255,160,.75)'; cx.setLineDash([7, 6]); cx.lineWidth = 1.6;
+    cx.beginPath(); cx.moveTo(px, py);
+    cx.quadraticCurveTo((px + artTarget.x) / 2, Math.min(py, artTarget.y) - 180, artTarget.x, artTarget.y);
+    cx.stroke(); cx.setLineDash([]);
+    cx.save(); cx.translate(artTarget.x, artTarget.y); cx.rotate(Math.PI / 4);
+    cx.strokeStyle = 'rgba(255,120,110,.95)'; cx.lineWidth = 2; cx.strokeRect(-8, -8, 16, 16); cx.restore();
+  }
+}
+
+// ---------- 战术交互 ----------
+const $ = s => document.querySelector(s);
+$('#t-fol').onclick = e => { e.target.classList.toggle('on'); e.target.textContent = e.target.classList.contains('on') ? '跟随:开' : '跟随:关'; };
+$('#t-mode').onclick = e => { e.target.textContent = e.target.textContent === '单点' ? '多点' : '单点'; $('#t-qmk').classList.toggle('on'); };
+$('#t-qmk').onclick = e => e.target.classList.toggle('on');
+$('#a-trj').onclick = e => e.target.textContent = e.target.textContent === '高弹道' ? '低弹道' : '高弹道';
+function openDrawer(page, btn) {
+  const d = $('#t-drawer'), open = d.style.display === 'flex' && $('#' + page).style.display !== 'none';
+  d.style.display = open ? 'none' : 'flex';
+  $('#dw-radar').style.display = page === 'dw-radar' && !open ? '' : page === 'dw-radar' ? '' : 'none';
+  $('#dw-gps').style.display = page === 'dw-gps' ? '' : 'none';
+  $('#dw-title').textContent = page === 'dw-radar' ? 'RADAR_TARGET_LIST // 雷达目标列表' : 'GPS_WAYPOINTS // GPS 航点';
+  $('#t-rad').classList.toggle('on', page === 'dw-radar' && !open);
+  $('#t-gps').classList.toggle('on', page === 'dw-gps' && !open);
+  if (!open) { $('#dw-radar').style.display = page === 'dw-radar' ? '' : 'none'; $('#dw-gps').style.display = page === 'dw-gps' ? '' : 'none'; }
+}
+$('#t-rad').onclick = () => openDrawer('dw-radar');
+$('#t-gps').onclick = () => openDrawer('dw-gps');
+$('#t-wpn').onclick = () => { const m = $('#t-wddown'); const r = $('#t-wpn').getBoundingClientRect();
+  m.style.display = 'block'; m.style.left = r.left + 'px'; m.style.top = r.bottom + 4 + 'px'; };
+document.querySelectorAll('#t-wddown .mi').forEach(m => m.onclick = () => {
+  $('#t-wpn').textContent = m.textContent.split(' ')[0].slice(0, 12); $('#t-wddown').style.display = 'none';
+});
+document.querySelectorAll('#dw-radar tbody tr').forEach(r => r.onclick = () => {
+  document.querySelectorAll('tbody tr').forEach(x => x.classList.remove('locked')); r.classList.add('locked');
+});
+addEventListener('mousedown', e => { document.querySelectorAll('.menu').forEach(m => { if (!m.contains(e.target)) m.style.display = 'none'; }); });
+document.querySelector('#scr-tac').addEventListener('contextmenu', e => {
+  if (e.target.closest('.pnl')) return;
+  e.preventDefault();
+  const rect = document.getElementById('cv-tac').getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let hit = null, best = 900;
+  UNITS.forEach(u => { const d = (u.x - mx) ** 2 + (u.y - my) ** 2; if (d < best) { best = d; hit = u; } });
+  const m = hit ? $('#t-ctxent') : $('#t-ctxmap');
+  document.querySelectorAll('.menu').forEach(x => x.style.display = 'none');
+  m.style.display = 'block';
+  m.style.left = Math.min(e.clientX, innerWidth - 225) + 'px';
+  m.style.top = Math.min(e.clientY + 26, innerHeight - 175) + 'px';
+});
+
+// ---------- 炮兵交互 ----------
+const scr = document.getElementById('scr-art'), ret = document.getElementById('reticle');
+scr.addEventListener('mousemove', e => {
+  const r = scr.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  ret.style.display = 'block'; ret.style.left = x + 'px'; ret.style.top = y + 'px';
+  clearTimeout(scr._t); scr._t = setTimeout(() => {
+    artTarget = { x, y };
+    artBase(document.getElementById('cv-art'));
+  }, 50);
+});
+scr.addEventListener('mouseleave', () => { ret.style.display = 'none'; });
+resize();
+</script>
+</body>
+</html>

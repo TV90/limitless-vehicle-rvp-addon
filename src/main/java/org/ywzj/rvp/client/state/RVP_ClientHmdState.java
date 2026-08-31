@@ -52,6 +52,7 @@ public class RVP_ClientHmdState {
     private float irSeekerFov = 0f;
     private float irSeekerRange = 0f;
     private float irGuideHeadMaxAngle = 0f;
+    private boolean irOffAxisStacksWithStationRotation = false;
     private float irLockMinHeight = 4f;
     private boolean groundIr = false;
     private boolean irUsesNewLaunchData;
@@ -148,6 +149,11 @@ public class RVP_ClientHmdState {
         return irGuideHeadMaxAngle;
     }
 
+    /** @return 头瞄离轴角是否与武器站旋转叠加（离轴锥跟随武器站当前朝向）。 */
+    public boolean isIrOffAxisStacksWithStationRotation() {
+        return irOffAxisStacksWithStationRotation;
+    }
+
     public float getIrLockMinHeight() {
         return irLockMinHeight;
     }
@@ -238,6 +244,7 @@ public class RVP_ClientHmdState {
         float seekerFov = 0f;
         float seekerRange = 0f;
         float guideHeadMaxAngle = 0f;
+        boolean stackWithStationRotation = false;
         float lockMinHeight = 4f;
         boolean usesNewLaunchData = false;
         RVP_IrHudProfile nextHudProfile = RVP_IrHudProfile.AIR;
@@ -257,6 +264,7 @@ public class RVP_ClientHmdState {
                 seekerFov = data.resolveLaunchSeekerFullFov();
                 seekerRange = data.resolveLaunchLockRange();
                 guideHeadMaxAngle = data.resolveLaunchOffAxisLockAngle();
+                stackWithStationRotation = data.resolveLaunchOffAxisStacksWithStationRotation();
                 usesNewLaunchData = true;
                 nextLaunchWeapon = data;
                 nextHudProfile = RVP_IrHudProfile.resolve(RVP_IrLockHelper.getLaunchAltitudeRange(data));
@@ -270,6 +278,7 @@ public class RVP_ClientHmdState {
             irSeekerFov = seekerFov;
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
+            irOffAxisStacksWithStationRotation = stackWithStationRotation;
             irLockMinHeight = lockMinHeight;
             groundIr = nextHudProfile == RVP_IrHudProfile.GROUND;
             irUsesNewLaunchData = usesNewLaunchData;
@@ -280,6 +289,7 @@ public class RVP_ClientHmdState {
             lockedEntityId = -1;
             warningTicks = 0;
             groundIr = false;
+            irOffAxisStacksWithStationRotation = false;
             irUsesNewLaunchData = false;
             irLaunchWeapon = null;
             irHudProfile = RVP_IrHudProfile.AIR;
@@ -288,6 +298,7 @@ public class RVP_ClientHmdState {
             irSeekerFov = seekerFov;
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
+            irOffAxisStacksWithStationRotation = stackWithStationRotation;
             irLockMinHeight = lockMinHeight;
             groundIr = nextHudProfile == RVP_IrHudProfile.GROUND;
             irUsesNewLaunchData = usesNewLaunchData;
@@ -325,7 +336,7 @@ public class RVP_ClientHmdState {
         smoothYaw += (aimYaw - smoothYaw) * SMOOTH_FACTOR;
 
         if (hmdType == HmdType.IR && irGuideHeadMaxAngle > 0f) {
-            Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit);
+            Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation);
             Vec3 hmdDir = VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
             if (weaponDir.lengthSqr() > 1.0E-6) {
                 double currentAngle = angleBetweenDeg(weaponDir, hmdDir);
@@ -454,7 +465,7 @@ public class RVP_ClientHmdState {
                 return;
             }
             Vec3 dir = toTarget.normalize();
-            Vec3 refDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit);
+            Vec3 refDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation);
             double offBoresightAngle = angleBetweenDeg(refDir, dir);
             if (!irUsesNewLaunchData && !RVP_IrLockHelper.isTargetWithinLimits(
                     weaponUnit,

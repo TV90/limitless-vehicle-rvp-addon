@@ -13,6 +13,7 @@ public record RVP_GuidanceLaunchConfig(
         boolean enableIrHmd,
         int maxLockAngle,
         int maxOffAxisLockAngle,
+        boolean offAxisStacksWithStationRotation,
         Map<RVP_Range<Float>, RVP_Range<Float>> angleGate
 ) {
     public RVP_GuidanceLaunchConfig {
