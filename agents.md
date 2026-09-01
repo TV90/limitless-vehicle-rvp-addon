@@ -3,6 +3,9 @@
 - 命名时武器名称要使用AntiRadiation、TVMissile这种正规写法，并且如GPS等缩写不要写成Gps
 - 代码中必须包含清晰的中文注释，每个使用的字段也必须注释，在方法中调用其他本项目(`limitless-vehicle-rvp-addon`)以及本体(`ywzj_vehicle`)的方法时必须注释调用目的
 - 验证编译时在项目根目录直接运行 `./gradlew build` 即可
+- 服务端冒烟：`./gradlew runServer` 后台启动后**每 10 秒轮询一次日志**，出现 `Done (Xs)!` 即通过；
+  结论以日志为准（用户可能手动关服）；grep 日志要加 `-a`（中文 UTF-8）；历史噪音基线见
+  `docs/调试与修复规范.md` §5.1，只看新增错误
 
 **`ywzj_vehicle` 本体源码** 在 `"填入你的本体源码绝对路径"` 下
 

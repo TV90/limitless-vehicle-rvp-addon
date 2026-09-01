@@ -15,6 +15,8 @@
 | [炮兵地图与战术点亮机制方案.md](./plan/炮兵地图与战术点亮机制方案.md) | 火控开发 / QA | 炮兵地图、逆 CCIP 解算、偏航优先瞄准、俯仰门控与战术点亮机制 |
 | [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |
 | [plan/](./plan/) | 功能设计 | TV 导弹、[分段复合制导](./plan/导弹分段复合制导实现.md) 等方案稿 |
+| [plan/RVP_armor_min_max_damage移植方案_20260901.md](./plan/RVP_armor_min_max_damage移植方案_20260901.md) | 伤害/平衡开发 | 载具级装甲参数（固定扣减 + 最终封顶），已落码 |
+| [plan/RVP模型目录整理方案_20260901.md](./plan/RVP模型目录整理方案_20260901.md) | 载具包资产维护 | 模型/贴图目录 ammo/weapon_mount 子目录化与引用改写（待确认执行） |
 | [plan/RVP干扰物重构数据模型/](./plan/RVP干扰物重构数据模型/) | 功能设计 / 配置作者 / 开发 | 干扰物拆分为热焰弹（IR/AIR）与箔条（SARH/ARH）：载具状态机制、载具侧推荐参数、双端解耦规划（服务端优先里程碑） |
 | [调试与修复规范.md](./调试与修复规范.md) | 调试 / 接手开发 | RVP 侧铁律、Mixin 纪律、功能丢失记录表、经验教训 |
 | [修复方向/进度交接_20260806.md](./修复方向/进度交接_20260806.md) | 调试 / 接手开发 | **纯 Forge 服务端崩溃修复的最新交接**（阶段 1 已完成，功能恢复计划） |
@@ -24,13 +26,15 @@
 
 | 用途 | 路径 |
 | --- | --- |
-| Gradle 开发载具包（唯一维护位置） | `limitless-vehicle-rvp-addon/run/client_1/limitless_vehicle/rvp/` |
+| 载具包（**唯一权威源，git 管理**） | `ywzj_rvp/limitless_vehicle/rvp/` |
 | 玩家 `.minecraft` 安装目录 | `.minecraft/limitless_vehicle/rvp/` |
 | 武器数据 | `data/rvp/weapons/<id>.json` → 资源 ID `rvp:<id>` |
 | 武器显示 | `assets/rvp/display/weapon/<id>.json` |
 | 载具数据 | `data/rvp/vehicles/<id>.json` |
 
-直接编辑 `run/client_1/limitless_vehicle/rvp/`；发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`。
+直接编辑仓库内的 `limitless_vehicle/rvp/`（2026-09-01 核对：`run/*` 下的运行副本均为过期 0.5.7，
+dev 环境无 jar 安装链路，改完仓库包后需**全量复制**到 `run/<端>/limitless_vehicle/rvp/`；
+发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`）。
 
 ## 硬约束（与根目录 agents.md 一致）
 
