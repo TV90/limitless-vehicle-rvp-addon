@@ -122,6 +122,31 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return m;
     }
 
+    /** 装甲固定扣减值；未配置 / 非法值返回 0（= 不启用装甲）。 */
+    public float resolveArmorMinDamage(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return 0f;
+        }
+        float m = cfg.armorMinDamage;
+        return Float.isFinite(m) && m > 0f ? m : 0f;
+    }
+
+    /** 最终伤害上限；<=0 表示不封顶。 */
+    public float resolveArmorMaxDamage(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return 0f;
+        }
+        float m = cfg.armorMaxDamage;
+        return Float.isFinite(m) && m > 0f ? m : 0f;
+    }
+
+    /** 该载具是否配置了装甲（armor_min_damage 或 armor_max_damage 任一 > 0）。 */
+    public boolean isArmorConfigured(AbstractVehicle vehicle) {
+        return resolveArmorMinDamage(vehicle) > 0f || resolveArmorMaxDamage(vehicle) > 0f;
+    }
+
     public HitboxDamageResult resolveHitboxDamage(AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
         if (cfg == null || !cfg.isEnabled()) {
@@ -688,6 +713,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
             float coreDistanceScaleMultiplier,
+            float armorMinDamage,
+            float armorMaxDamage,
             boolean hitIndicatorRvp
     ) {
         boolean isEnabled() {
@@ -809,6 +836,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
+            // 装甲：armor_min_damage 与本体 damage_threshold 互斥（同时存在仅装甲生效）；
+            // armor_max_damage 封在全部系数算完之后（最终伤害上限）。<=0 均视为未配置。
+            float armorMin = Math.max(0f, GsonHelper.getAsFloat(obj, "armor_min_damage", 0f));
+            float armorMax = Math.max(0f, GsonHelper.getAsFloat(obj, "armor_max_damage", 0f));
             boolean hitIndicatorRvp = GsonHelper.getAsBoolean(obj, "hit_indicator_rvp", true);
             // 顶层无骨骼的 ecm_active（无骨骼ECM）：直接挂到虚拟骨骼 __vehicle__，始终存活
             BoneEcmActiveConfig vehicleEcmActive = BoneEcmActiveConfig.parse(obj.get("ecm_active"));
@@ -826,6 +857,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     && (aliasMap == null || aliasMap.isEmpty())
                     && def == 1f
                     && coreM == 1f
+                    && armorMin <= 0f
+                    && armorMax <= 0f
                     && hitIndicatorRvp) {
                 return null;
             }
@@ -836,6 +869,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
                     coreM,
+                    armorMin,
+                    armorMax,
                     hitIndicatorRvp
             );
         }

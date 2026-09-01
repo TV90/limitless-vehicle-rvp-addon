@@ -3046,7 +3046,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         float totalMult = preHitboxMult * hitboxMult;
         float base = headshot ? damage * headShot : damage;
         float preHitboxDamage = base * preHitboxMult;
-        float finalDamage = preHitboxDamage * hitboxMult;
+        // 装甲层（armor_min_damage / armor_max_damage）：仅对载具目标生效，preHitboxDamage 尚未乘
+        // 命中箱系数，由 applyArmor 按 MCH 不对称顺序统一施加（减伤先乘→扣装甲→保底 0.1→增伤后乘→
+        // armor_max 封最终）；未配置装甲时等价于 preHitboxDamage * hitboxMult，行为与改动前一致。
+        // 爆炸伤害不经此路径（triggerExplosion 走本体 VehicleExplosion），天然绕过装甲。
+        float finalDamage = entity instanceof AbstractVehicle armoredTarget
+                ? RVP_VehicleHurtScalingHandler.applyArmor(armoredTarget, preHitboxDamage, hitboxMult)
+                : preHitboxDamage * hitboxMult;
         float resolvedHitboxMult = hitboxMult;
         RVP_ProjectileLifecycleDebug.noteEvent(this,
                 RVP_ProjectileLifecycleDebug.Event.DIRECT_DAMAGE,

@@ -12,6 +12,7 @@ import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.vehicle.api.event.VehicleAttackEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
+import org.ywzj.vehicle.vehicle.pojo.DefenseStats;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
 import java.util.HashMap;
@@ -154,7 +155,10 @@ public final class RVP_VehicleHurtScalingHandler {
                 deltaAfterCore = deltaNoFalloff * effectiveScale;
             }
         }
-        float desiredFinal = deltaAfterCore * hitboxMult;
+        // 装甲层：命中箱系数由 applyArmor 按 MCH 不对称顺序施加（此处 deltaAfterCore 尚未乘 hitboxMult）。
+        // 爆炸伤害绕过装甲（方案确认项：爆炸不吃 armor_min 扣减，也不吃 armor_max 封顶），
+        // 且爆炸本就不参与命中箱缩放（hitboxMult=1），直接采用本体衰减后的值。
+        float desiredFinal = explosion ? deltaAfterCore : applyArmor(self, deltaAfterCore, hitboxMult);
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
         }
@@ -170,7 +174,12 @@ public final class RVP_VehicleHurtScalingHandler {
         event.setCanceled(true);
         REAPPLY_GUARD.add(self.getId());
         try {
-            self.hurt(source, adjustedAmount);
+            if (RVP_VehicleHitboxFactorManager.INSTANCE.isArmorConfigured(self)) {
+                // 装甲生效 → 屏蔽本体 threshold，避免重放跨分支把伤害钳成 0.1
+                hurtWithShieldedThreshold(self, source, adjustedAmount);
+            } else {
+                self.hurt(source, adjustedAmount);
+            }
         } finally {
             REAPPLY_GUARD.remove(self.getId());
         }
@@ -234,7 +243,7 @@ public final class RVP_VehicleHurtScalingHandler {
             return Float.NaN;
         }
         Entity direct = source.getDirectEntity();
-        if (!(direct instanceof Projectile) || amount < self.defenseStats.damageThreshold) {
+        if (!(direct instanceof Projectile) || amount < effectiveThreshold(self)) {
             return Float.NaN;
         }
         Vec3 hitPos = direct.position();
@@ -253,6 +262,84 @@ public final class RVP_VehicleHurtScalingHandler {
         }
         double s = (distanceMax - distanceToCore) / distanceMax;
         return Double.isFinite(s) ? (float) s : Float.NaN;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 装甲（armor_min_damage / armor_max_damage）
+    // ─────────────────────────────────────────────────────────────
+
+    /** 与本体 DamageSystem 一致的最低有效伤害（低于此值按 0.1 计）。 */
+    public static final float DAMAGE_FLOOR = 0.1f;
+
+    /**
+     * 装甲生效时屏蔽本体 {@code damage_threshold}（互斥：两者同时存在时仅装甲生效）。
+     * 未配置装甲时原样返回本体阈值，行为与改动前一致。
+     */
+    public static float effectiveThreshold(AbstractVehicle vehicle) {
+        if (vehicle == null || vehicle.defenseStats == null) {
+            return 0f;
+        }
+        return RVP_VehicleHitboxFactorManager.INSTANCE.isArmorConfigured(vehicle)
+                ? DAMAGE_FLOOR
+                : vehicle.defenseStats.damageThreshold;
+    }
+
+    /**
+     * 应用载具装甲。{@code dmg} 必须是<b>尚未乘命中箱系数</b>的中间伤害，
+     * 命中箱系数由本方法按 MCH 的不对称顺序施加：
+     * <pre>
+     *   ×hitboxMult(≤1 减伤) → −armor_min → 保底 0.1 → ×hitboxMult(&gt;1 增伤)
+     *   → 封顶 armor_max → 再保底 0.1
+     * </pre>
+     * 未配置装甲时返回 {@code dmg * hitboxMult}，与改动前完全一致。
+     */
+    public static float applyArmor(AbstractVehicle vehicle, float dmg, float hitboxMult) {
+        float mult = Float.isFinite(hitboxMult) ? hitboxMult : 1f;
+        if (vehicle == null || !RVP_VehicleHitboxFactorManager.INSTANCE.isArmorConfigured(vehicle)) {
+            return dmg * mult;
+        }
+        if (mult <= 1f) {
+            dmg *= mult;                                    // 减伤先乘：装甲更容易吃干净
+        }
+        dmg -= RVP_VehicleHitboxFactorManager.INSTANCE.resolveArmorMinDamage(vehicle);
+        if (dmg < DAMAGE_FLOOR) {
+            dmg = DAMAGE_FLOOR;                             // 不做完全免疫，保底擦伤
+        }
+        if (mult > 1f) {
+            dmg *= mult;                                    // 增伤后乘：扣减量不被放大
+        }
+        float max = RVP_VehicleHitboxFactorManager.INSTANCE.resolveArmorMaxDamage(vehicle);
+        if (max > 0f) {
+            dmg = Math.min(dmg, max);                       // 封最终（全部系数算完之后）
+        }
+        if (dmg < DAMAGE_FLOOR) {
+            dmg = DAMAGE_FLOOR;                             // 封顶后仍不低于下限
+        }
+        return dmg;
+    }
+
+    /**
+     * 在本体重放期间把 threshold 屏蔽为 {@link #DAMAGE_FLOOR}，使本体走
+     * {@code amount × scale} 分支，与 {@link #effectiveThreshold} 的预测一致（否则反推会跨分支失真）。
+     *
+     * <p>{@code AbstractVehicle#defenseStats} 指向的是<b>按载具 ID 全局共享</b>的
+     * {@code DefenseStats}（本体 {@code AbstractVehicle:420} 取的是引用、非拷贝），
+     * 因此绝不能修改其字段——那会污染所有同类型载具。这里只把<b>本实体</b>的字段
+     * 临时指向一个副本，finally 恢复引用；其他实体仍指向共享对象，零污染。
+     */
+    private static void hurtWithShieldedThreshold(AbstractVehicle self, DamageSource source, float amount) {
+        DefenseStats original = self.defenseStats;
+        DefenseStats shielded = new DefenseStats();
+        shielded.impactMultiplier = original == null ? 0.1f : original.impactMultiplier;
+        // damage_transfer_coefficient 目前仅部件级结算读取，载具级副本一并拷贝以防本体后续扩展读取
+        shielded.damageTransferCoefficient = original == null ? 1f : original.damageTransferCoefficient;
+        shielded.damageThreshold = DAMAGE_FLOOR;
+        self.defenseStats = shielded;
+        try {
+            self.hurt(source, amount);
+        } finally {
+            self.defenseStats = original;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -297,7 +384,7 @@ public final class RVP_VehicleHurtScalingHandler {
      * 低于 damageThreshold 时本体走 0.1 下限分支不应用衰减，原样返回。
      */
     public static float compensateCoreDistanceFalloff(AbstractVehicle vehicle, float amount, float falloffScale) {
-        if (amount < 0.1f || amount < vehicle.defenseStats.damageThreshold) {
+        if (amount < 0.1f || amount < effectiveThreshold(vehicle)) {
             return amount;
         }
         if (!Float.isFinite(falloffScale) || falloffScale <= 1.0E-6f) {
@@ -331,9 +418,11 @@ public final class RVP_VehicleHurtScalingHandler {
         if (explosion && direct != null) {
             hitPos = direct.position();
         }
+        // 阈值必须读 effectiveThreshold（装甲生效时为 DAMAGE_FLOOR）而非本体共享 defenseStats：
+        // 否则预测与换引用后的重放条件不一致，反推会在跨分支区间失真（方案 §4.2）
         if (effectiveAmount < 0.1f) {
             effectiveAmount = 0f;
-        } else if (effectiveAmount < self.defenseStats.damageThreshold) {
+        } else if (effectiveAmount < effectiveThreshold(self)) {
             effectiveAmount = 0.1f;
         } else if (hitPos == null) {
             scale = 0.2d;

@@ -73,7 +73,10 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     hitboxRes = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
                             targetVehicle, start, beam.impactPoint());
                     hitDamageBeforeHitbox = hitDamage;
-                    hitDamage *= hitboxRes.factor();
+                    // 装甲层（armor_min_damage / armor_max_damage）：与弹体路径一致，hitDamage 尚未乘
+                    // 命中箱系数，由 applyArmor 按 MCH 不对称顺序统一施加（减伤先乘→扣装甲→保底 0.1→
+                    // 增伤后乘→armor_max 封最终）；未配置装甲时等价于 hitDamage * factor，行为不变。
+                    hitDamage = RVP_VehicleHurtScalingHandler.applyArmor(targetVehicle, hitDamage, hitboxRes.factor());
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicleForHurt) {
                     // 激光伤害来源 direct=射手（非投射物），本体 DamageSystem 走 hitPos==null →

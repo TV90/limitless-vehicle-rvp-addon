@@ -54,7 +54,9 @@
       "min_trigger_damage": 12.0,
       "explosion": 1.5
     }
-  }
+  },
+  "armor_min_damage": 5.0,
+  "armor_max_damage": 30.0
 }
 ```
 
@@ -67,6 +69,11 @@
 - `hitbox_damage_factor_default`：当未命中任何配置分区或未配置对应 bone 时的倍率，默认 `1.0`
 - `hitbox_damage_factor`：按结构模型 bone 名称配置倍率
 - `hitbox_era`：爆炸反应装甲（ERA）配置（以“特殊碰撞箱”的思想实现，见下文扩展章节）
+- `armor_min_damage`：载具级装甲固定扣减值（2026-09-01 新增，设计详见 [RVP_armor_min_max_damage移植方案_20260901.md](./RVP_armor_min_max_damage移植方案_20260901.md)）
+  - 默认 `0`（不启用）；与本体 `damage_threshold` **互斥**，两者同时配置时仅装甲生效
+  - 生效位置：命中箱系数之后（减伤先乘再扣减，增伤后乘），扣减后低于 0.1 保底为 0.1（不做完全免疫）
+- `armor_max_damage`：单发最终伤害上限（封在全部系数算完之后，防秒杀口径）
+  - 默认 `0`（不封顶）；**爆炸伤害不受装甲扣减与封顶影响**
 
 约定：
 
