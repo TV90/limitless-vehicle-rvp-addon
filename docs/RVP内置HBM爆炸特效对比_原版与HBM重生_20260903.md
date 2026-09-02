@@ -1,155 +1,224 @@
 # RVP 内置 HBM bomb 爆炸特效 vs 原版 HBM / HBM 重生 对比调研
 
-> 调研日期：2026-09-03
+> 调研日期：2026-09-03（第三版，按用户观察修正方向后重写）
 > 范围：仅代码调查与文档，未做任何代码改动（按用户要求）。
-> 关注点：RVP 内置的 HBM 核爆/炸弹爆炸视觉，与原版 HBM、HBM 重生（NTM Rebirth）的差异，"为什么观感不太像"。
+> 用户观察到的三个症状（本版以此为纲）：
+> ① 粒子效果比 HBM **稀疏**；
+> ② 看起来**更高更长**，不像原版 HBM 那么**均匀**；
+> ③ **没有方块飞溅**。
+> 源码位置：
+> - 原版 HBM：`D:\MCHR\Hbm-s-Nuclear-Tech-GIT-master\...\src`（1.7.10，`com.hbm`）
+> - HBM 重生：`D:\ywzj\ywzj\HBM-NTM-Rebirth-main\...`（1.20.1，`com.hbm.ntm`）
+> - RVP：`D:\ywzj\ywzj\ywzj_rvp\src`（`org.ywzj.rvp`）
 
 ---
 
-## 1. Mod 关系链
+## 0. 结论摘要
 
-```
-原版 HBM（Hbm's Nuclear Tech，1.7.10 老 mod，com/hbm）
-        │  高版本移植重写（1.20.1）
-        ▼
-HBM NTM Rebirth（hbm_ntm_rebirth，com.hbm.ntm）
-        │  RVP 从这里移植 / 桥接爆炸视觉实现
-        ▼
-RVP 内置 HBM 特效（ywzj_rvp，org.ywzj.rvp.weapon.effects / client.nuclear）
-```
+三个症状全部能在参数与实现差异中找到直接对应，**与渲染公式本身基本无关**（烟柱公式、冲击波公式、颜色、寿命逐行核对是一致的）：
 
-- **原版 HBM**：最老的实现，爆炸视觉由三部分组成 —— 冲击波（MukeWave）+ 烟柱（RocketFlame）+ 碎片（Debris，用 `WorldInAJar` 抓取世界真实方块拼成 `debrisSize³` 立体方块簇抛飞）。
-  关键源：`com/hbm/particle/helper/ExplosionCreator.java`、`ParticleMukeWave.java`、`ParticleRocketFlame.java`、`ExplosionSmallCreator.java`。
-- **HBM NTM Rebirth**：原版 HBM 的 1.20.1 重制版，包名改为 `com.hbm.ntm`。爆炸实现挪到：
-  - `com/hbm/ntm/particle/ParticleUtil.java`（`spawnExplosionLarge` 等入口）
-  - `com/hbm/ntm/client/particle/HbmParticleEffects.java`（客户端实际生成粒子）
-  - `com/hbm/ntm/client/particle/LegacyDebrisParticle.java`（立体碎片粒子）
-  - 并用 `sampleLegacyDebrisStates` 复刻了原版 `WorldInAJar` 的算法：从世界中心 2×2×2 起步，逐层向外扩张抓取真实方块，填满 `debrisSize³` 的 `BlockState[]`。
-- **RVP 内置**：在 `RVP_HbmEffectBridge` / `RVP_HbmVisualService`（服务端调度）+ `RVP_ExplosionVisualManager`（客户端渲染）中**重新实现**了 HBM 的爆炸视觉。它不是抄原版 HBM，而是从 HBM 重生移植/桥接。通过反射优先调用 HBM 重生（若其已加载），否则回退到 RVP 自己的简化实现。
+| 症状 | 根因 | 量化 |
+| --- | --- | --- |
+| ① 稀疏 | M142 火箭弹 `visual_scale=0.3`，烟团数 `30→9`、烟团尺度 `6.5→1.95`（云量按线性缩、体积按立方缩）；原版是固定档位无缩放 | 烟团数 1/3.3，单个烟团面积 1/10.9 |
+| ② 更高更长、不均匀 | **速度用 `sqrt(scale)` 缩放而尺寸用线性 `scale` 缩放，两者不同步**：烟柱高度∝速度∝√0.3=0.55，宽度∝尺寸∝0.3 → 高宽比拉长 1.83×；且寿命固定 70–90 tick 不随 scale 缩，小烟团飘得一样久，形成细长拖尾；9 个小烟团沿高柱散布互不重叠 → 一条稀疏细线，而非原版 30 个大烟团挤成的均匀球团 | 高宽比 4.4→8.0（√(1/0.3)=1.83×） |
+| ③ 没有方块飞溅 | RVP 自研后端完全没有 HBM 的 `debrisSize³` 立体方块簇碎块（只有 vanilla 单方块碎屑）；即使桥接到重生，碎块数 `25×0.3=8`、填充重试 `50×0.3=15` 也被缩成 8 个稀疏骨架小块，几乎不可见（尺寸 16→5 的线性缩放本身是正确等比，坏在数量与填充率） | 自研：0 立体碎块；桥接：8 个稀疏 5³ |
+
+**一句话：RVP 把原版"固定三档"的爆炸参数改成了"一套大爆炸参数 × 系数缩放"，但数量型参数（烟团数/碎块数）和几何型参数（尺寸/速度）用了同一把尺子缩放，且烟柱速度误用 √ 缩放——数量缩没了导致稀疏、速度与尺寸失配导致细长；碎块则是数量与填充率被缩没（自研后端则完全没有）。修好缩放曲线后 `visual_scale` 继续生效，且成为真正的等比缩放旋钮。**
+
+该分析对两个后端同时成立：桥接层（`RVP_HbmEffectBridge.bombCloudSpeed` L258）与自研层（`RVP_ExplosionVisualManager` L404）用了**同一条 sqrt 速度公式**。
 
 ---
 
-## 2. 涉及代码位置
+## 1. Mod 关系链与代码位置
+
+```
+原版 HBM（1.7.10，com/hbm）──高版本移植──▶ HBM 重生（1.20.1，com.hbm.ntm）
+                                                    │ RVP 从这里移植/桥接
+                                                    ▼
+                              RVP 内置 HBM 特效（ywzj_rvp，org.ywzj.rvp）
+```
 
 | 角色 | 文件 |
 | --- | --- |
-| RVP 特效桥接（服务端） | `org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge` |
-| RVP 特效发包（服务端） | `org.ywzj.rvp.weapon.effects.RVP_HbmVisualService` |
-| RVP 特效数据 | `org.ywzj.rvp.weapon.data.RVP_HbmEffectData` |
-| RVP 自研视觉渲染（客户端） | `org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager` |
-| HBM 重生 入口 | `com.hbm.ntm.particle.ParticleUtil`（含 `spawnExplosionLarge`） |
-| HBM 重生 客户端 | `com.hbm.ntm.client.particle.HbmParticleEffects`（含 `spawnExplosionLarge` / `sampleLegacyDebrisStates`） |
-| HBM 重生 立体碎片 | `com.hbm.ntm.client.particle.LegacyDebrisParticle` |
+| 原版 HBM 入口 | `com/hbm/particle/helper/ExplosionCreator.java`（`composeEffect*` 三档，L47–L53） |
+| 原版 HBM 三粒子 | `particle/ParticleMukeWave.java`（冲击波）、`ParticleRocketFlame.java`（烟柱）、`ParticleDebris.java` + `wiaj/WorldInAJar.java`（碎块） |
+| HBM 重生 入口 | `com/hbm/ntm/particle/ParticleUtil.java`（`spawnExplosionLarge` L1164，`spawnLegacyExplosion*` L1112–L1122） |
+| HBM 重生 客户端 | `client/particle/HbmParticleEffects.java`（`spawnExplosionLarge` L961–L1015，`sampleLegacyDebrisStates` L1574） |
+| HBM 重生 立体碎块 | `client/particle/LegacyDebrisParticle.java` |
+| RVP 桥接（参数缩放所在） | `weapon/effects/RVP_HbmEffectBridge.java`（bomb 参数函数 L249–L287） |
+| RVP 自研渲染 | `client/nuclear/RVP_ExplosionVisualManager.java`（BOMB 参数 L379–L415，碎屑 L417–L438） |
+| RVP 实配武器 | `run/client_1/limitless_vehicle/rvp/data/rvp/weapons/m142_rocket.json`（唯一 `visual_preset:"bomb"`，`visual_scale:0.3`） |
 
 ---
 
-## 3. 三部分特效逐项对比
+## 2. 原版 HBM 基准：参数是"固定档位"，没有缩放这回事
 
-### 3.1 冲击波（Muke Wave）—— 基本一致
+`ExplosionCreator.java` L47–L53，三档写死：
 
-| 维度 | HBM 重生 | RVP 自研 | 结论 |
+| 参数 | Small | Standard | **Large（ATACMS/三级导弹）** |
 | --- | --- | --- | --- |
-| 缩放 | `waveScale` 默认 65 | `clamp(65*scale, 8, 220)`（`RVP_HbmEffectBridge.bombWaveScale`） | 一致 |
-| 扩散公式 | `1 - exp(-0.125 * t)` | `(1 - exp(age * -0.125)) * waveScale`（`RVP_ExplosionVisualManager.renderWaveTess`） | 一致 |
-| 混合 | 加法混合 | 加法混合（`SRC_ALPHA, ONE`） | 一致 |
-| 贴地四边形 | 中心 `y + 2.0` | 中心 `cy + 1.75`（BOMB only） | 基本一致 |
+| cloudCount（烟团数） | 10 | 15 | **30** |
+| cloudScale（烟团尺度） | 2.0 | 5.0 | **6.5** |
+| cloudSpeedMult（烟团速度） | 0.5 | 1.0 | **2.0** |
+| waveScale（冲击波半径） | 25 | 45 | **65** |
+| debrisCount（碎块数） | 5 | 10 | **25** |
+| debrisSize（碎块边长） | 8 | 16 | **16** |
+| debrisRetry（采样重试） | 20 | 50 | **50** |
+| debrisVelocity（抛射速度） | 0.75 | 1.0 | **1.25** |
+| soundRange（音域） | 150 | 200 | **350** |
 
-**结论：像素级还原，冲击波看不出差异。**
+**原版所有大炸弹（ATACMS、三级导弹、坠毁炸弹）的视觉完全相同**——30 个 6.5 尺度的烟团以 2.0 倍速上升，挤成一团均匀的爆炸球；25 个 16³ 真实方块簇高抛翻滚。没有"按当量 1/3 缩小"的形态。
 
-### 3.2 烟柱（Rocket Flame / Blast Cloud）—— 基本一致
+烟柱粒子行为基准（`ParticleRocketFlame`）：每烟团每帧 10 层公告板；初速 `gaussian*0.5*mult`（水平）/ `rand*3*mult`（垂直，只向上）；摩擦 0.91/tick；寿命 `70+rand(20)`；层尺寸 `(rand*0.5+0.1+进度*2)*cloudScale`；层偏移 `(gaussian-1)*0.2/0.5*spread`。碎块粒子（`ParticleDebris`）：初速 ×3（LARGE 档等效 3.75）、重力 0.15、寿命 100、±10°/tick 翻滚、每 3 个 1 个带烟尾、渲染带 AO 的真实方块模型、落地消失。
 
-| 维度 | HBM 重生 | RVP 自研 | 结论 |
+---
+
+## 3. 症状① 稀疏 —— 云量按系数线性缩、体积按立方缩
+
+**实际配置**：M142 火箭弹 `visual_scale = 0.3`（`m142_rocket.json`）。
+
+| 量 | 原版 LARGE | RVP @0.3（桥接 `bombCloudCount/Scale` L249–255 / 自研 L396–402 同值） | 效果 |
 | --- | --- | --- | --- |
-| 层数 | BOMB 预设 10 层 | BOMB 预设 `layers = 10` | 一致 |
-| 暗度/透明度/扩散 | `dark`、`alpha`、`spread` 公式 | `BlastCloud` 内 `dark/alpha/spread` 公式一致 | 一致 |
-| 颜色/尺寸 | `layerAdd/layerScale/layerOffset` 随机层 | 同名字段、同随机逻辑 | 一致 |
-| 寿命 | `70 + rand(20)` | `70 + rand(20)` | 一致 |
+| 烟团数 cloudCount | 30 | `round(30*0.3)=9` | 数量剩 30% |
+| 烟团尺度 cloudScale | 6.5 | `6.5*0.3=1.95` | 单团面积剩 9% |
+| 烟团总体量（数×面积） | 30 | 9×0.09≈0.81 | **整体覆盖面积约剩 1/37** |
 
-**结论：像素级还原，烟柱看不出差异。**
+30 个 6.5 尺度的大烟团从同一点出发会**互相大量重叠**，视觉上融合成一大团均匀的球——这是 HBM 标志性的"厚重"感。9 个 1.95 尺度的小烟团各飞各的、互不搭界，看起来就是**零星几点**。
 
-### 3.3 碎片（Debris）—— 这是"不像"的核心差异 ⚠️
+次要放大因素：
+- RVP 烟贴图用的是重生的 16×16 重绘版 `particle_base.png`（抖动噪点更细密），原版是 8×8 粗颗粒噪点——细密噪点在大尺寸公告板上显"薄纱感"，粗噪点显"实体感"（资产 md5 已核对：RVP=重生 `d3af0cf8…` ≠ 原版 `20e498d8…`）。
+- 渲染管线：RVP 烟层 `depthMask(false)` 不写深度（重生烟写深度），10 层全透叠，柔和但更"虚"。
 
-**HBM 重生（`HbmParticleEffects.spawnExplosionLarge`，约 L961–L1014）：**
-```java
-for (int i = 0; i < debrisCount; i++) {
-    if (debrisSize <= 0) continue;
-    // 从世界真实方块抓取 debrisSize³ 立体簇
-    BlockState[] debrisStates = sampleLegacyDebrisStates(
-            level, x+offsetX, y+debrisVerticalOffset, z+offsetZ,
-            debrisSize, debrisRetry, random);   // L1000-1002
-    ...
-    Particle particle = LegacyDebrisParticle.create(
-            level, x, y, z, mx, motionY, mz, debrisStates, debrisSize); // L1009-1010
-}
-```
-`sampleLegacyDebrisStates`（约 L1574）构造 `new BlockState[size*size*size]`，以世界中心 2×2×2 起步、逐层向外按 `debrisRetry` 次尝试抓取**真实存在的世界方块**填入 —— 即原版 `WorldInAJar` 的立体方块簇算法。**每个碎片是一个带真实纹理的 `debrisSize³` 立体块。**
+## 4. 症状② 更高更长、不均匀 —— √缩放与线性缩放不同步（本次核心发现）
 
-**RVP 自研（`RVP_ExplosionVisualManager.spawnDebris`，约 L417–L438）：**
-```java
-BlockPos samplePos = BlockPos.containing(center.x, center.y - 0.1, center.z);
-BlockState state = level.getBlockState(samplePos);          // 只取一个地表方块
-... // 最多向下找 6 格直到非空
-int particlesPerChunk = preset == BOMB ? 4 : 1;
-for (int i = 0; i < debrisCount * particlesPerChunk; i++) {
-    level.addParticle(new BlockParticleOption(ParticleTypes.BLOCK, state), // 单方块粒子
-            center.x, center.y + 0.1, center.z,
-            gaussian*horizontal, vertical, gaussian*horizontal);
-}
-```
-- 只从地表采样 **1 个** `BlockState`；
-- 每个碎片是 **`ParticleTypes.BLOCK` 单方块粒子**（vanilla 的方块碎屑），所有碎片共用同一纹理；
-- **没有 `debrisSize³` 立体簇，没有真实方块纹理抓取。**
+速度与尺寸用了**不同的缩放函数**：
 
-**结论：碎片是观感差异的唯一实质来源。** HBM 是"带真实世界纹理的实心方块立方体被抛飞"，RVP 自研是"地表同一种方块的小碎渣乱飞"。
-
----
-
-## 4. 桥接机制 —— 为什么"有时像、有时不像"
-
-`RVP_HbmEffectData.visual_backend` 默认 `"auto"`（`RVP_HbmEffectData.java:22`）。`RVP_HbmEffectBridge.applyVisualPresetWithBackend` 据此分支：
-
-```java
-case "rvp"  -> RVP_HbmVisualService.spawn(...)          // 强制自研（无立体碎片）
-case "hbm"  -> modLoaded && applyVisualPreset(...)       // 强制 HBM 重生反射（有立体碎片）
-default     -> { hbmApplied = modLoaded && applyVisualPreset(...);
-                yield hbmApplied || RVP_HbmVisualService.spawn(...); }  // 先 HBM 后自研
-```
-
-关键：默认 `"auto"` 下，**只要 HBM 重生 mod（`hbm_ntm_rebirth`）在 classpath 加载**，RVP 就反射调用 `ParticleUtil.spawnExplosionLarge`，并传入 `bombDebrisSize(visualScale)`（默认 16，`RVP_HbmEffectBridge.bombDebrisSize` L269）。重生据此生成 `16³` 的真实纹理立体碎片 —— **此时 RVP 的炸弹爆炸与原版 HBM 一致、有立体碎片**。
-
-只有一种情况会回退到 RVP 自研（无立体碎片）：
-- **HBM 重生 mod 未加载、且 `visual_backend` 不是显式 `"hbm"`**（即纯 RVP 运行、或桥接反射失败）。
-
-所以"观感不太像"发生在一个很具体的场景：**没有把 HBM NTM Rebirth 一起加载、只跑 RVP 时**。一旦同跑 HBM 重生，桥接会把爆炸视觉整体交给重生，差异消失。
-
----
-
-## 5. 音效对比
-
-| 维度 | HBM 重生 | RVP 自研 |
+| 层 | 速度公式 | 尺寸公式 |
 | --- | --- | --- |
-| 距离延迟 | 按 `distance / (17.15*0.5)` 延迟播放（音速延迟） | `LEGACY_SPEED_OF_SOUND = 17.15*0.5`，`soundDelayTicks = distance / speed`（`RVP_ExplosionVisualManager` L55/L383） |
-| 音域 | `350 * sqrt(scale)` | BOMB `clamp(350*sqrt(scale), 80, 1200)`（`RVP_ExplosionVisualManager` L380） |
-| 近/远音 | `playExplosionLarge`（近/远两版） | `RVP_Sounds.EXPLOSION_LARGE_NEAR / _FAR` |
+| 桥接 `RVP_HbmEffectBridge` | `bombCloudSpeed = 2.0*sqrt(s)`（L257–259） | `bombCloudScale = 6.5*s`（L253–255） |
+| 自研 `RVP_ExplosionVisualManager` | `speed = 2.0*sqrt(scale)`（L403–405） | `cloudScale = 6.5*scale`（L400–402） |
+| 原版/重生 | 固定 2.0 | 固定 6.5（配套） |
 
-**结论：音效参数与机制一致，无差异。**
+烟柱总升高 ≈ 初速 × Σ0.91^k ≈ 初速 × 11.1（寿命 70–90 内几何级数收敛）。定量对比：
+
+| 量 | 原版 LARGE | RVP @0.3 | 比例 |
+| --- | --- | --- | --- |
+| 最大垂直初速（`rand*3*speed`） | 6.0/tick | `3*2*√0.3`=3.29/tick | ×0.55（√缩放） |
+| 烟柱总升幅 | ≈67 格 | ≈37 格 | ×0.55 |
+| 单层公告板半宽（进度 1） | ≈15.3 格 | ≈4.6 格 | ×0.30（线性缩放） |
+| **高宽比** | **≈4.4** | **≈8.0** | **拉伸 1.83×（=√(1/0.3)）** |
+
+即：**宽度缩到 30%，高度却只缩到 55%——烟柱被拉成细高条**。这就是"看起来更高更长"的数学来源。
+
+"不均匀"的成因：
+- 原版：30 个大烟团 + 高宽比 4.4 → 球状厚团，均匀；
+- RVP：9 个小烟团 + 高宽比 8.0 → 沿 37 格高的轴排成一条细线，每个烟团独自生灭，可见"一颗颗"的分离感；
+- 且**寿命固定 70–90 tick 不随 scale 缩**：小烟团也飘 4 秒半，形成长长的拖尾（"更长"的另一层观感）。
+- `motionY` 只取正（`rand*3`），所有烟团只升不降，进一步强化"一柱冲天"的细长感（与原版行为一致，但原版团大不明显，RVP 团小就成线条）。
+
+注意：此失配在桥接与自研两个后端**同样存在**——就算装了 HBM 重生并走反射桥接，传给 `ParticleUtil.spawnExplosionLarge` 的 `cloudSpeedMult` 也是 `2*√0.3=1.095`、`cloudScale=1.95`，重生原样渲染出同样细高的烟柱。**换后端治不了这个症状，必须改缩放公式或改用固定档位。**
+
+## 5. 症状③ 没有方块飞溅 —— 立体碎块缺失/缩水
+
+**HBM（原版与重生一致）**：`debrisCount` 个碎块，每个用 `WorldInAJar`/`sampleLegacyDebrisStates` 抓取爆心周围**真实世界方块**拼成 `debrisSize³` 立体簇（LARGE 档 16×16×16=4096 格），初速 ×3 高抛、翻滚、1/3 带烟尾、落地消失——"整块地形被掀飞"。
+
+**RVP 自研后端**（`spawnDebris` L417–L438）：爆心向下采样 **1 个** BlockState，生成 `debrisCount×4` 个 vanilla `ParticleTypes.BLOCK` 单方块碎屑（@0.3 时仅 8×4=32 个小碎渣），初速 `0.8+rand*1.8` 低抛无弧线，无翻滚无烟尾——**视觉上等于没有方块飞溅**。
+
+**桥接后端**：碎块参数同样被 scale 缩水——`debrisCount=round(25*0.3)=8`、`debrisRetry=round(50*0.3)=15`（碎块簇填充稀疏、呈骨架状）、`debrisSize=round(16*0.3)=5`。就算桥接成功，飞起来的也只是 8 个稀疏填充的小块，远不及原版 25 个 16³ 实心簇的"整块地形被掀飞"。（注：`debrisSize` 线性缩放本身是**正确的等比**——5³ 配 19.5 格波径的比例与原版 16³ 配 65 格一致；碎块不可见的真正原因是**数量与重试率被缩没**，见 7.1 的修正表。）
+
+（补充澄清：shell 档原版本来就是单方块小碎渣 `EntityBlockDustFX`，RVP 对 shell 的做法是忠实的；此症状专属 bomb 档。）
 
 ---
 
-## 6. 总结："不像"的根因
+## 6. 三方逐项核对结论（支撑上面分析的底账）
 
-1. 冲击波、烟柱、音效：**像素级一致**，不是差异来源。
-2. **唯一实质差异在碎片**：RVP 自研只用 `ParticleTypes.BLOCK` 单方块粒子，缺失 HBM 的 `debrisSize³` 真实世界方块立体簇（`LegacyDebrisParticle` + `sampleLegacyDebrisStates`）。
-3. 但 RVP 通过 `RVP_HbmEffectBridge` 在 HBM 重生存在时**整体桥接**到重生实现，因此差异仅在"未加载 HBM 重生"时出现。
+| 维度 | 原版 | 重生 | RVP 自研 | 结论 |
+| --- | --- | --- | --- | --- |
+| 冲击波公式/寿命/混合/贴图 | `(1-e^-0.125t)*waveScale`；`25*w/45`；加法混合 | 同 | 同（L264, L386-387） | 一致（贴图三方同 md5 `c4221d56…`） |
+| 冲击波贴地高度 | 生成 y+2 渲染 −0.25 → 净 +1.75 | 同 | `center.y+1.75`（L266） | **三方完全一致**（旧版文档表述有误，已修正） |
+| 烟柱 10 层公式/颜色/暗度/alpha/spread | 见 §2 基准 | 同 | 同（L236–251） | 逐参数一致 |
+| 烟柱初速/摩擦/寿命 | `gaussian*0.5*mult`、`rand*3*mult`；0.91；`70+rand(20)` | 同 | 同结构，但 `mult` 与 `cloudScale` 缩放不同步 | **公式一致，参数缩放失配（症状②）** |
+| 烟贴图 | 8×8 粗噪点 | 16×16 重绘 | 与重生同文件 | RVP=重生≠原版（颗粒感差异） |
+| 碎块 | 25×16³ 真实方块簇+AO+翻滚+烟尾 | 同（无 AO、采样跳空气，≈95% 还原） | 无（vanilla 碎屑） | 症状③ |
+| 音效 ogg/延迟/近远阈值 | `45b0b599…`/`7418b341…`；`dist/(17.15*0.5)`；0.4 阈值 | 同 md5 同机制 | 同 md5 同机制（L55, L380-383, L446-459） | 三方字节级一致 |
+| RVP 自研多出的 vanilla 闪光 | 无此物 | 仅 explosionSmall 有 | 所有预设都加一发 `ParticleTypes.EXPLOSION`（L394） | RVP 特有偏差（次要） |
 
-一句话：**RVP 自己画的爆炸（冲击波+烟柱）已经和 HBM 几乎一模一样，缺的只是那团"被炸飞的真实泥土/石头立方体"；而只要同开 HBM 重生，RVP 会直接借用重生的完整实现，连这团立体碎片也有了。**
+另记两条环境性事实（非三大症状主因，但影响实际看到的画面）：
+- **VNT 遮蔽**：M142 同时配了 `real_explosion:"vnt"`，重生加载时 `realExplosionAlreadyIncludesVisual` 会跳过 bomb 视觉，呈现的是重生的 VNT 体积爆炸外观（`RVP_HbmEffectBridge` L101–112）。要看 bomb 预设需 `real_explosion:"none"` 或不装重生。
+- **无雾效 + 远平面 10000 + 512 格外 LOD 降层**（L57, L141-147, L239-240）：远景比 HBM 更"锐利"，细看有差异。
 
 ---
 
-## 7. 边界说明（本次未改代码）
+## 7. 优化方案（最终版：保留并优化 `visual_scale` 缩放曲线，不改配置文件）
 
-- 以上为现状调查与对比描述，按用户要求本次**未修改任何源码**。
-- 若后续希望"纯 RVP 不依赖 HBM 重生也长出立体碎片"，可行方向（待另行批示）：
-  - 在 `RVP_ExplosionVisualManager.spawnDebris` 中按 `debrisSize` 抓取世界真实方块、自绘 `debrisSize³` 立体簇（复刻 `sampleLegacyDebrisStates` + `LegacyDebrisParticle` 思路）；
-  - 或在 `RVP_HbmEffectData` 中提供"强制自研立体碎片"开关。
-  - 这两个方向都只触及客户端视觉、不改伤害/世界破坏逻辑，风险可控。
+> 用户明确：`visual_scale` 是控制爆炸规模的设计参数（1.0 太大），**应修参数映射，不动 JSON 配置**。
+
+### 7.0 设计原则：`visual_scale` 管几何，`visual_density` 管数量
+
+数据模型里这两个参数本来就有（`RVP_HbmEffectData.visualScale / visualDensity`），自研路径已经用 `density` 乘云数（L398）。把它们职责分清后，任意 scale 都能得到"原版爆炸的等比缩放图"：
+
+- **几何参数**（尺寸/速度/波径/音域）→ 按 `visual_scale` **线性**等比缩放；
+- **数量参数**（烟团数/采样重试）→ 不随 scale 缩，由 `visual_density` 控制（默认 1.0 = 原版满配）；
+- **碎块数例外（2026-09-03 修订）** → `debrisCount = round(25 × scale × density)`，同时受 scale 钳制
+  （几何越小碎块越少），clamp 下限 2 避免为 0（用户最新要求，见 §7.1 修订记录）；
+- **弹道参数**（碎块抛射速度）→ 按 `√visual_scale` 缩（物理正确，见下表）。
+
+### 7.1 参数映射修改表（桥接 `RVP_HbmEffectBridge` L249–287 与自研 `RVP_ExplosionVisualManager` L379–L415 两处同步改）
+
+| 参数 | 现公式 | 改为 | 理由 |
+| --- | --- | --- | --- |
+| cloudCount（烟团数） | `30×scale` | **`30×density`**（不随 scale） | 数量=密度≠尺寸。保持 30 团互相重叠才有原版"均匀厚球"；治症状① |
+| cloudScale（烟团尺度） | `6.5×scale` | 不变（线性） | 尺寸等比，正确 |
+| cloudSpeedMult（烟柱速度） | `2.0×√scale` | **`2.0×scale`** | 烟柱位移=初速×Σ0.91^k，线性于初速；线性缩放才保高宽比 4.4；治症状② |
+| waveScale（冲击波） | `65×scale` clamp 8..220 | 不变 | 已线性 |
+| debrisCount（碎块数） | `25×scale` | **`25×scale×density`**（clamp 2..160） | 数量受 density 与几何 scale **双重钳制**；治症状③。<br>**修订记录（2026-09-03）**：原第 7.1 版拟改为 `25×density`（不随 scale），按用户最新要求修订为 `25×scale×density`——"方块溅落数量"随几何 scale 等比缩小（m142 `visual_scale=0.3`、`density=1.0` 时 = round(7.5)=8），保留下限 2 避免为 0；桥接层与自研层同式同步 |
+| debrisSize（碎块边长） | `16×scale` clamp 4..64 | 不变（线性） | 立方体体积按立方缩是**正确的等比缩放**；5³ 碎块配 19.5 格波径，比例与原版 16³ 配 65 格完全一致。当前碎块不可见是数量（8 个）与填充率（retry 15）被缩没所致，不是尺寸缩法错 |
+| debrisRetry（簇填充重试） | `50×scale` | **固定 50** | retry 控制碎块簇内部填充密度，不是尺寸量；缩了导致碎块呈稀疏骨架 |
+| debrisVelocity（碎块抛速） | `1.25×√scale` | **不变（保留 √）** | 碎块是固定重力（0.15）无摩擦的弹道运动，射程 ∝ v²/g——√ 缩放才能把抛物线等比缩小。这条 √ 是对的（现代码恰好该 √ 的 √ 了、该线性的 √ 了） |
+| debrisHorizontalDeviation | `3×scale` | 不变 | 采样范围随爆心等比 |
+| soundRange（音域） | 桥接 `350×scale` / 自研 `350×√scale` | **统一 `350×scale`** | 两后端公式不一致，统一为线性 |
+| 烟团寿命 | 固定 `70+rand(20)` | 可选：`round((70+rand(20))×√scale)` | 小爆炸消散快些更自然；可选优化，不强制（不改也能等比，只是动画节奏偏慢动作） |
+| SHELL 预设同款病 | `shellCloudSpeed 0.5×√s`、`shellCloudCount/DebrisCount ×s` | 同上原则一并修 | 速度 √→线性、数量→density |
+
+### 7.2 改后的预期效果（`visual_scale=0.3`，`density=1.0`，M122 配置不动）
+
+| 量 | 原版 LARGE（=scale 1.0 满配） | 改后 @0.3 | 对比现况 @0.3 |
+| --- | --- | --- | --- |
+| 烟团数 | 30 | **30** | 现 9 → 恢复 3.3 倍 |
+| 烟团尺度 | 6.5 | 1.95 | 不变 |
+| 烟柱总升幅 | ≈67 格 | ≈20 格（等比 0.3） | 现 37 格（过高） |
+| 高宽比 | ≈4.4 | **≈4.4（不变）** | 现 8.0（拉伸 1.83×） |
+| 碎块 | 25 个 16³ 实心簇 | **8 个 5³ 实心簇**（round(25×0.3×1.0)，数量随 scale 等比缩、retry 满配） | 现 8 个稀疏 5³（retry 缩没致骨架） |
+| 冲击波 | 65 格 | 19.5 格（等比） | 不变 |
+
+整体画面 = **原版 LARGE 爆炸缩小到 30% 的等比图**——尺寸由 `visual_scale` 控制，密度由 `visual_density` 控制，两个旋钮各司其职。`visual_scale=1.0` 仍等价原版 ATACMS 满配，想要更小就调 scale，想要烟更少就调 density。
+
+性能说明：云数不再随 scale 缩减，回到档位满配（30 团×10 层=300 面/爆 + 25 个碎块），与原版/重生同量级；碎块更小反而采样渲染更便宜。
+
+### 7.3 自研后端补立体碎块（P1，无重生环境治症状③的后半）
+
+- 客户端按 `debrisSize³` 采样真实方块（复刻 `sampleLegacyDebrisStates`：2×2×2 起步 + 逐层 retry + 邻居占用；建议连原版"空气也填"行为一并复刻，可比重生更还原）；
+- 渲染 TERRAIN_SHEET 立方体 + 面剔除（对齐 `LegacyDebrisParticle`）；物理对齐原版（初速 ×3、重力 0.15、寿命 100、±10°/tick 翻滚、落地消失、1/3 带烟尾，烟尾复用现有 BlastCloud）；
+- 性能护栏：碎块总体积上限、>N 格降为占位立方体、同屏爆炸数上限。
+
+### 7.4 观感细节对齐（P2，小改动）
+
+- 烟贴图换回原版 8×8 `particle_base.png`（或两者可配）——粗噪点更接近原版"厚实"感；
+- 移除 bomb 档的 vanilla `EXPLOSION` 闪光（L394）或加开关（shell 档保留，与原版一致）；
+- 烟层评估改写深度（对齐重生），远景可选雾效淡出。
+
+### 7.5 验证与排障钩子（P3）
+
+- 每次爆炸打印实际后端（hbm/rvp）、预设、全部派生参数（对照 7.1/7.2 表），"不像"时一键定位是哪层；
+- 测试矩阵：`bomb @ scale {0.3, 0.6, 1.0}` × `density {0.5, 1.0}`，在"无重生 / 有重生"两环境对照录屏，验证等比性（高宽比恒 4.4）。
+
+### 实施顺序建议
+
+7.1 参数映射修正（一次小改，同时治①②，且碎块数量恢复后桥接路径的③也大幅缓解）→ 7.3 自研碎块（工作量最大，独立 PR + 压测）→ 7.4/7.5 顺带。**不改任何武器 JSON。**
+
+---
+
+## 8. 边界说明（本次未改代码）
+
+- 以上为现状调查与对比描述，按用户要求本次**未修改任何源码、未删除任何文件**。
+- 所有改动点已给出文件与行号定位，等待批示后实施。
