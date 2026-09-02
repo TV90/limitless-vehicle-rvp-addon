@@ -69,6 +69,9 @@ public class RVP_Keys {
      */
     public static final KeyMapping FIRE_SMOKE = key("fire_smoke", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H);
 
+    /** 快速维修（载具内一键回血 + 渐进恢复骨骼模块），默认 G。 */
+    public static final KeyMapping USE_MAINTENANCE = key("use_maintenance", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G);
+
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
@@ -90,5 +93,6 @@ public class RVP_Keys {
         event.register(FIRE_CHAFF);
         event.register(FIRE_ECM);
         event.register(FIRE_SMOKE);
+        event.register(USE_MAINTENANCE);
     }
 }

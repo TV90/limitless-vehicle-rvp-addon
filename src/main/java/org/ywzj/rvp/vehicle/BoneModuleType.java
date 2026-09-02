@@ -20,6 +20,9 @@ import java.util.Locale;
  *       失效后该通道失去激光照射能力。</li>
  *   <li>{@link #ECM_PASSIVE}：被动电子战防御措施（消费点 {@code RVP_EcmPassiveManager}），
  *       失效后不再在被敌对雷达照射时生成假目标。</li>
+ *   <li>{@link #ECM_ACTIVE}：主动电子战——按键触发的持续干扰设备（消费点 {@code RVP_EcmActiveManager}）。</li>
+ *   <li>{@link #MAINTENANCE}：快速维修——载具内按键触发的回血 + 模块渐进恢复
+ *       （消费点 {@code RVP_MaintenanceRuntimeManager}；缺省挂虚拟骨 {@code __vehicle__}，永不可被击毁）。</li>
  * </ul>
  */
 public enum BoneModuleType {
@@ -31,7 +34,14 @@ public enum BoneModuleType {
     DIRCM,
     ECM_PASSIVE,
     /** 主动电子战（ECM_ACTIVE）——按键触发的持续干扰设备（消费点 RVP_EcmActiveManager）。 */
-    ECM_ACTIVE;
+    ECM_ACTIVE,
+    /**
+     * 快速维修（MAINTENANCE）——载具内按键触发的回血 + 模块渐进恢复能力
+     * （消费点 {@code RVP_MaintenanceRuntimeManager}）。
+     * 缺省经 {@code bone_modules} 挂在虚拟骨 {@code __vehicle__}（载具级能力、永不可被击毁）；
+     * 绑定实体骨时可被直击打掉——模块失效后快修无法触发，维修能力即告失去。
+     */
+    MAINTENANCE;
 
     private static final BoneModuleType[] VALUES = values();
 

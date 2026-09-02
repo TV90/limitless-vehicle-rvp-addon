@@ -7,12 +7,14 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.network.C2SFireCountermeasure;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
+import org.ywzj.rvp.maintenance.network.C2SUseMaintenance;
+import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoVisualSnapshot;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
-    private static final String PROTOCOL = "4";
+    private static final String PROTOCOL = "6";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -107,6 +109,16 @@ public class RVP_Network {
                 .encoder(S2CBoneModuleState::encode)
                 .decoder(S2CBoneModuleState::decode)
                 .consumerMainThread(S2CBoneModuleState::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SUseMaintenance.class, id++)
+                .encoder(C2SUseMaintenance::encode)
+                .decoder(C2SUseMaintenance::decode)
+                .consumerMainThread(C2SUseMaintenance::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CMaintenanceSync.class, id++)
+                .encoder(S2CMaintenanceSync::encode)
+                .decoder(S2CMaintenanceSync::decode)
+                .consumerMainThread(S2CMaintenanceSync::handle)
                 .add();
         CHANNEL.messageBuilder(C2SSaclosDesignation.class, id++)
                 .encoder(C2SSaclosDesignation::encode)

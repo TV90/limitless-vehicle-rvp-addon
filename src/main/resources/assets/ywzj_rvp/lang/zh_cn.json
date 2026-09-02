@@ -179,6 +179,7 @@
   "key.ywzj_rvp.fire_ecm.desc": "释放主动ECM",
   "key.ywzj_rvp.fire_flare.desc": "发射热焰弹",
   "key.ywzj_rvp.fire_smoke.desc": "发射烟雾弹",
+  "key.ywzj_rvp.use_maintenance.desc": "快速维修",
   "message.ywzj_rvp.saclos.designation_on": "激光照射开启",
   "message.ywzj_rvp.saclos.designation_off": "激光照射关闭",
   "message.ywzj_rvp.hmd.on": "头盔瞄准具开启",

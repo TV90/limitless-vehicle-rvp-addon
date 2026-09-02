@@ -1825,6 +1825,58 @@ SACLOS 反坦克导弹（半自动修正）：
 
 > 配套：`laser_part` 引用的部件须为 `parts` 内的 `ywzj_vehicle:weapon` 型部件（`structure_bone` 指向结构模型对应骨骼）；动画脚本可用 `getPartXRot/getPartYRot(<laserPart>)` 让发射器随动。调试：`/rvpdebug scanviz` 会以白色粒子（END_ROD）勾勒 DIRCM 干扰锥。
 
+### 2.13 快速维修（`bone_modules.__vehicle__.maintenance`，模块 `MAINTENANCE`）
+
+写在 `bone_modules.<骨块名>` 条目的 `maintenance` 子对象（`modules` 数组需含 `"MAINTENANCE"`）。**规范写法挂虚拟骨骼 `__vehicle__`**（载具级能力、永不可被击毁，与无骨骼 ECM 同构）；也可绑定实体骨（如发动机）——骨块被直击打掉则维修模块失效，快修无法触发（模块失效后无法用快修复自身，该能力即告失去）。顶层 `maintenance` 块保留为别名（自动映射到 `__vehicle__`，等价）。
+
+按键默认 **G**（`key.ywzj_rvp.use_maintenance.desc`，可在按键设置改）。触发校验：未被摧毁 / 冷却就绪 / 触发者乘坐本车 / 离地高度限制。HUD 在干扰物信息组（热诱/箔条/ECM/烟雾）末尾按缺省递补显示"维修"行。冷却与生效剩余经载具实体 NBT 持久化（随存档）。
+
+触发瞬间执行**骨骼模块渐进恢复**（方案详见 `docs/plan/快速维修移植方案_20260902.md`）：
+
+- **设备类**（APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE）：每台已毁模块**独立按概率**恢复——部分恢复有明确语义（每根 APS 雷达骨 = 一个扫描扇区，修 1 根恢复 1 个方位）；
+- **ERA**：按数量比例恢复（对已毁数向上取整、至少 `era_recover_min` 块，随机洗牌），对齐 MCHR 消耗品手感；
+- `TRACK` 无功能消费点，**不在缺省白名单**且配置加入也不会被维修；
+- `MAINTENANCE` 自身不在设备恢复掷骰内。
+
+| 字段（`maintenance` 子对象） | 说明 | 默认值 |
+| --- | --- | --- |
+| `use_time_ticks` | 生效时长（tick），每 tick 回 `heal_per_tick_percent`% 最大血量。 | `20` |
+| `wait_time_ticks` | 冷却时长（tick）。 | `300` |
+| `heal_per_tick_percent` | 每 tick 回复量占最大血量百分比。 | `1.0` |
+| `heal_parts` | 生效期是否同步回部件血量（每部件 +10% 上限，对齐扳手）。 | `false` |
+| `require_max_altitude` | 允许触发的离地高度上限（方块）；`< 0` 不限。 | `-1` |
+| `module_repair` | 模块渐进恢复子对象；缺省即下表默认值。 | `null` |
+
+| 字段（`module_repair` 子对象） | 说明 | 默认值 |
+| --- | --- | --- |
+| `repairable_types` | 允许维修的模块类型白名单；空 = 除 `TRACK` 外全部（含 `ERA/APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE/MAINTENANCE`）。 | 空（全类型） |
+| `era_recover_fraction` | ERA 单次维修恢复比例（对已毁块数向上取整）。 | `0.25` |
+| `era_recover_min` | ERA 单次维修至少恢复块数。 | `1` |
+| `device_recover_chance` | 设备类每台已毁模块每次维修的独立恢复概率（0~1）。 | `0.25` |
+
+```json
+"bone_modules": {
+  "__vehicle__": {
+    "modules": ["MAINTENANCE"],
+    "maintenance": {
+      "use_time_ticks": 20,
+      "wait_time_ticks": 300,
+      "heal_per_tick_percent": 1.0,
+      "heal_parts": false,
+      "require_max_altitude": -1,
+      "module_repair": {
+        "repairable_types": [],
+        "era_recover_fraction": 0.25,
+        "era_recover_min": 1,
+        "device_recover_chance": 0.25
+      }
+    }
+  }
+}
+```
+
+> 骨骼模块失效状态经 `S2CBoneModuleState` 同步客户端（JS 动画 `rvp_isEraActive`/`isModuleActive` 据此显隐渲染骨），快修恢复后同通道自动恢复显示。
+
 ---
 
 ## 3 部件 JSON 扩展

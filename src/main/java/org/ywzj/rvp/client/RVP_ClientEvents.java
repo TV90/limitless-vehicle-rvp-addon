@@ -146,6 +146,15 @@ public class RVP_ClientEvents {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.SMOKE);
         }
 
+        // 快速维修（G）：乘坐在已配置 maintenance 的载具内按键 → 服务端权威触发
+        while (RVP_Keys.USE_MAINTENANCE.consumeClick()) {
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            if (lvp != null && lvp.vehicle != null && lvp.onVehicle()) {
+                RVP_Network.CHANNEL.sendToServer(
+                        new org.ywzj.rvp.maintenance.network.C2SUseMaintenance(lvp.vehicle.getId()));
+            }
+        }
+
         // HMD 模式切换：STT 状态下按 5 键先取消 STT 再进入 HMD
         while (RVP_Keys.HMD_TOGGLE.consumeClick()) {
             if (LocalVehiclePlayer.instance == null) continue;

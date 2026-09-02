@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
 import org.ywzj.rvp.client.state.RVP_EcmActiveHudState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
@@ -46,7 +47,9 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         boolean hasChaff = state != null && state.chaffTotal() > 0;
         boolean hasSmoke = state != null && state.smokeTotal() > 0;
         boolean hasEcm = isEcmAvailable(vehicle);
-        if (!hasFlare && !hasChaff && !hasSmoke && !hasEcm) {
+        // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
+        RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
+        if (!hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null) {
             return;
         }
         var font = Minecraft.getInstance().font;
@@ -81,6 +84,11 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
                 drawRow(guiGraphics, font, "烟雾", state.smokeRemain(), state.smokeTotal(),
                         state.smokeReloadRemain(), leftX, airDecoyDrawn ? y + 12 : y, RVP_Keys.FIRE_SMOKE);
+                y = (airDecoyDrawn ? y + 12 : y) + 12;
+            }
+            if (maintenanceState != null) {
+                // 维修行挂在干扰物组之后（烟雾缺失时自动递补其位置）
+                drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
             }
         } else {
             // 地面载具：ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
@@ -102,6 +110,11 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             }
             if (hasEcm) {
                 drawEcmRow(guiGraphics, font, vehicle, leftX, y);
+                y += 12;
+            }
+            if (maintenanceState != null) {
+                // 维修行递补干扰物/ECM 组末尾的空位
+                drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
             }
         }
     }
@@ -136,6 +149,22 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         String keyName = RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString();
         guiGraphics.drawString(font, "ECM: 就绪 [" + keyName + "]", x, y, Color.GREEN);
+    }
+
+    /** 绘制快速维修行（文案对齐干扰物/ECM 行：就绪带键位 / 维修中 / 冷却倒计时）。 */
+    private static void drawMaintenanceRow(GuiGraphics guiGraphics, Font font,
+                                           RVP_ClientMaintenanceState.Snapshot state, int x, int y) {
+        if (state.isUsing()) {
+            guiGraphics.drawString(font, "维修: 维修中", x, y, Color.GREEN);
+            return;
+        }
+        if (state.isCoolingDown()) {
+            int seconds = (state.cooldownRemain() + 19) / 20;
+            guiGraphics.drawString(font, "维修: 冷却 " + seconds + "秒", x, y, Color.GREEN);
+            return;
+        }
+        String keyName = RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString();
+        guiGraphics.drawString(font, "维修: 就绪 [" + keyName + "]", x, y, Color.GREEN);
     }
 
     private static void drawRow(GuiGraphics guiGraphics, Font font, String label,

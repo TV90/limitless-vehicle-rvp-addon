@@ -151,6 +151,7 @@
   "key.ywzj_rvp.fire_ecm.desc": "Deploy Active ECM",
   "key.ywzj_rvp.fire_flare.desc": "Launch flare",
   "key.ywzj_rvp.fire_smoke.desc": "Launch smoke",
+  "key.ywzj_rvp.use_maintenance.desc": "Quick maintenance",
   "message.ywzj_rvp.hmd.on": "HMD ON",
   "message.ywzj_rvp.hmd.off": "HMD OFF",
   "message.ywzj_rvp.saclos.designation_on": "Laser designation on",

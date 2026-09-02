@@ -68,6 +68,34 @@ public final class RVP_BoneModuleStateTable {
         return added;
     }
 
+    /**
+     * 恢复（维修）骨块的某模块；返回 true 表示之前确实失效、本次恢复成功。
+     * 与 {@link #destroyModule} 对称：恢复后若该骨失效集合为空则整键移除；
+     * 成功时自动触发持久化。快速维修（{@code RVP_MaintenanceRuntimeManager}）使用。
+     */
+    public static boolean restoreModule(UUID vehicleId, String boneName, BoneModuleType type) {
+        String normalized = normalizeBone(boneName);
+        if (normalized == null || type == null) {
+            return false;
+        }
+        Map<String, Set<BoneModuleType>> boneMap = INACTIVE_MODULES.get(vehicleId);
+        if (boneMap == null) {
+            return false;
+        }
+        Set<BoneModuleType> types = boneMap.get(normalized);
+        if (types == null || !types.remove(type)) {
+            return false;
+        }
+        if (types.isEmpty()) {
+            boneMap.remove(normalized);
+            if (boneMap.isEmpty()) {
+                INACTIVE_MODULES.remove(vehicleId);
+            }
+        }
+        persist(vehicleId);
+        return true;
+    }
+
     /** 兼容旧调用：骨块是否仍处于激活（未消耗 ERA 模块）。 */
     public static boolean isEraActive(UUID vehicleId, String boneName) {
         return isModuleActive(vehicleId, boneName, BoneModuleType.ERA);
