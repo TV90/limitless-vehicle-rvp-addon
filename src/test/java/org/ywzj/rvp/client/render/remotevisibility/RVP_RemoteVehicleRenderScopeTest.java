@@ -75,6 +75,7 @@ class RVP_RemoteVehicleRenderScopeTest {
         try (RVP_RemoteVehicleRenderScope ignored =
                      RVP_RemoteVehicleRenderScope.open(plan, false, true, state)) {
             assertTrue(state.remoteProjectionActive);
+            assertMatrixEquals(plan.offscreenProjection(), state.appliedProjection, 0.0F);
         }
 
         assertFalse(state.remoteProjectionActive);
@@ -98,6 +99,8 @@ class RVP_RemoteVehicleRenderScopeTest {
         private FogParameters currentFog = originalFog;
         /** 是否处于远距投影。 */
         private boolean remoteProjectionActive;
+        /** 最近一次由作用域应用的投影矩阵。 */
+        private Matrix4f appliedProjection;
         /** 是否让第一次雾应用在部分写入后抛出异常。 */
         private boolean failFirstFogApply;
         /** 投影恢复调用次数。 */
@@ -118,6 +121,7 @@ class RVP_RemoteVehicleRenderScopeTest {
         @Override
         public void applyProjection(Matrix4f projection) {
             remoteProjectionActive = true;
+            appliedProjection = new Matrix4f(projection);
         }
 
         /** 应用模拟雾参数，并可注入一次部分写入异常。 */
@@ -135,6 +139,15 @@ class RVP_RemoteVehicleRenderScopeTest {
         public void restoreProjection() {
             remoteProjectionActive = false;
             projectionRestoreCount++;
+        }
+    }
+
+    /** 比较矩阵全部 16 个 float 字段。 */
+    private static void assertMatrixEquals(Matrix4f expected, Matrix4f actual, float delta) {
+        float[] expectedValues = expected.get(new float[16]);
+        float[] actualValues = actual.get(new float[16]);
+        for (int index = 0; index < expectedValues.length; index++) {
+            assertEquals(expectedValues[index], actualValues[index], delta, "matrix index " + index);
         }
     }
 }

@@ -35,6 +35,7 @@ import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
@@ -74,7 +75,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 && RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
             // 调用本项目兼容状态与帧协调器，在 DH 地形 pass 前保存计划及真实初始失败原因。
             RVP_RemoteVehicleFrameCoordinator.prepareForDh(
-                    prepareFrame(event), RVP_DistantHorizonsCompatBootstrap.failureReasonForFrame());
+                    prepareFrame(event, true),
+                    RVP_DistantHorizonsCompatBootstrap.failureReasonForFrame());
             return;
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
@@ -92,7 +94,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
         // 调用本项目帧协调器，清除 DH 配置在帧中途关闭时遗留的未消费计划。
         RVP_RemoteVehicleFrameCoordinator.clear();
-        RVP_RemoteVehicleFramePlan framePlan = prepareFrame(event);
+        RVP_RemoteVehicleFramePlan framePlan = prepareFrame(event, false);
         if (framePlan != null) {
             // 调用本项目目标无关绘制入口，保持未安装 DH 时原有 AFTER_ENTITIES 像素路径。
             renderPrepared(framePlan, event.getCamera());
@@ -101,6 +103,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
 
     /** 读取当前事件并建立不可变的候选、预算、投影与相机计划；没有目标时返回 null。 */
     public static RVP_RemoteVehicleFramePlan prepareFrame(RenderLevelStageEvent event) {
+        return prepareFrame(event, false);
+    }
+
+    /** 读取当前事件并建立帧计划；DH 路由使用离屏高精度投影完成候选视锥裁剪。 */
+    private static RVP_RemoteVehicleFramePlan prepareFrame(RenderLevelStageEvent event,
+                                                            boolean useOffscreenFrustum) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null) {
@@ -108,6 +116,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
 
         Vec3 cameraPosition = event.getCamera().getPosition();
+        Vector3f cameraLook = event.getCamera().getLookVector();
         // 调用客户端缩放状态辅助，每帧只计算一次是否以本地观瞄选项覆盖服务端 Billboard 策略。
         boolean preferModelRendering = RVP_ClientZoomState.shouldPreferRemoteVehicleModelRendering();
         List<CandidateContext> preCandidates = new ArrayList<>();
@@ -162,9 +171,16 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     && !hasValidLod);
             double contribution = structureSize * structureSize / Math.max(1.0D, distanceSquared);
             double cameraDistance = Math.sqrt(distanceSquared);
+            Vec3 cameraToCandidate = entry.position().subtract(cameraPosition);
+            double centerViewDepth = cameraToCandidate.x * cameraLook.x()
+                    + cameraToCandidate.y * cameraLook.y()
+                    + cameraToCandidate.z * cameraLook.z();
+            double minimumViewDepth = centerViewDepth - cullRadius;
+            FarPlaneDemand projectionDemand = new FarPlaneDemand(
+                    cameraDistance, cullRadius, minimumViewDepth);
             preCandidates.add(new CandidateContext(entry, cameraDistance, cullingBox,
-                    contribution, fallbackHighModel, billboardPlan));
-            farPlaneDemands.add(new FarPlaneDemand(cameraDistance, cullRadius));
+                    contribution, fallbackHighModel, billboardPlan, projectionDemand));
+            farPlaneDemands.add(projectionDemand);
         }
         if (preCandidates.isEmpty()) {
             return null;
@@ -174,9 +190,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
         ProjectionPlan projectionPlan = RVP_RemoteVehicleProjection
                 .plan(event.getProjectionMatrix(), farPlaneDemands).orElse(null);
         Frustum remoteFrustum = event.getFrustum();
-        if (projectionPlan != null && projectionPlan.extended()) {
+        if (projectionPlan != null && (projectionPlan.extended() || useOffscreenFrustum)) {
             Matrix4f viewMatrix = new Matrix4f(event.getPoseStack().last().pose());
-            remoteFrustum = new Frustum(viewMatrix, projectionPlan.projection());
+            Matrix4f cullingProjection = useOffscreenFrustum
+                    ? projectionPlan.offscreenProjection()
+                    : projectionPlan.projection();
+            remoteFrustum = new Frustum(viewMatrix, cullingProjection);
             remoteFrustum.prepare(cameraPosition.x, cameraPosition.y, cameraPosition.z);
         } else if (projectionPlan == null && !warnedUnsupportedProjection) {
             warnedUnsupportedProjection = true;
@@ -204,6 +223,16 @@ public final class RVP_RemoteVehicleVisualRenderer {
         if (selected.isEmpty()) {
             return null;
         }
+
+        List<FarPlaneDemand> selectedProjectionDemands = selected.stream()
+                .map(candidate -> contexts.get(candidate.entityId()))
+                .filter(java.util.Objects::nonNull)
+                .map(CandidateContext::projectionDemand)
+                .toList();
+        // 调用投影规划器，仅按最终预算目标重建 near/far，避免屏外或已淘汰候选降低离屏深度精度。
+        projectionPlan = RVP_RemoteVehicleProjection
+                .plan(event.getProjectionMatrix(), selectedProjectionDemands)
+                .orElse(projectionPlan);
 
         List<BillboardPlan> selectedBillboardPlans = selected.stream()
                 .map(candidate -> contexts.get(candidate.entityId()))
@@ -414,11 +443,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
      * @param screenContribution 结构尺寸相对距离得到的屏幕贡献分数
      * @param fallbackHighModel 是否没有整模型 LOD、需要使用静态原模型回退
      * @param billboardPlan 服务端策略和本地资源共同生成的 Billboard 计划
+     * @param projectionDemand 候选对远平面和离屏近裁剪面的需求
      */
     record CandidateContext(RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
                             double cameraDistance, AABB cullingBox,
                             double screenContribution, boolean fallbackHighModel,
-                            BillboardPlan billboardPlan) {
+                            BillboardPlan billboardPlan, FarPlaneDemand projectionDemand) {
     }
 
     /** 渲染临时改写前的代理位置与三轴姿态。 */

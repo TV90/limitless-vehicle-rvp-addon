@@ -94,11 +94,12 @@ public final class RVP_DhDepthCompositeRenderer {
         if (depthCompositeShader == null || plan.projectionPlan() == null) {
             return fail("UNSUPPORTED_PROJECTION", "shader/projection unavailable");
         }
-        Matrix4f rvpProjection = plan.projectionPlan().projection();
+        // 调用本项目帧投影计划，确保离屏绘制、逆投影和视锥统一使用抬高 near 后的最终 float 矩阵。
+        Matrix4f rvpProjection = plan.projectionPlan().offscreenProjection();
         Optional<RVP_DhProjectionMath.ProjectionAnalysis> rvpAnalysis =
                 RVP_DhProjectionMath.analyze(rvpProjection,
-                        (float) plan.projectionPlan().nearPlane(),
-                        (float) plan.projectionPlan().requiredFarPlane());
+                        (float) plan.projectionPlan().offscreenNearPlane(),
+                        (float) plan.projectionPlan().offscreenFarPlane());
         // 调用本项目投影数学工具，从 DH 矩阵恢复真实裁剪面；DH 事件 near 是过度绘制距离，可能与矩阵 near 不同。
         Optional<RVP_DhProjectionMath.ProjectionAnalysis> dhAnalysis =
                 RVP_DhProjectionMath.analyzeFromProjection(dhParameters.projection());

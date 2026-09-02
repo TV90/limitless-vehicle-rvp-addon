@@ -95,6 +95,71 @@ class RVP_RemoteVehicleProjectionTest {
     }
 
     @Test
+    void offscreenProjectionRaisesNearAndCoversExtremeCandidateAfterFloatQuantization() {
+        Matrix4f original = perspective(0.05F, 1_024.0F);
+        double candidateDistance = 65_536.0D;
+        double cullRadius = 16.0D;
+        ProjectionPlan plan = RVP_RemoteVehicleProjection.plan(original,
+                List.of(new FarPlaneDemand(candidateDistance, cullRadius,
+                        candidateDistance - cullRadius))).orElseThrow();
+
+        assertEquals(RVP_RemoteVehicleProjection.OFFSCREEN_MAX_NEAR_PLANE,
+                plan.offscreenNearPlane(), 0.01D);
+        assertTrue(plan.offscreenFarPlane() >= plan.requiredFarPlane());
+        assertTrue(plan.offscreenFarPlane() >= candidateDistance + cullRadius);
+        Frustum offscreenFrustum = new Frustum(new Matrix4f(), plan.offscreenProjection());
+        offscreenFrustum.prepare(0.0D, 0.0D, 0.0D);
+        assertTrue(offscreenFrustum.isVisible(AABB.ofSize(
+                new Vec3(0.0D, 0.0D, -candidateDistance),
+                cullRadius * 2.0D, cullRadius * 2.0D, cullRadius * 2.0D)));
+    }
+
+    @Test
+    void offscreenProjectionKeepsVehicleScaleDepthSeparationAtMaximumDistance() {
+        Matrix4f original = perspective(0.05F, 1_024.0F);
+        double candidateDistance = 65_536.0D;
+        ProjectionPlan plan = RVP_RemoteVehicleProjection.plan(original,
+                List.of(new FarPlaneDemand(candidateDistance, 16.0D,
+                        candidateDistance - 16.0D))).orElseThrow();
+
+        float nearFaceDepth = projectDepth(plan.offscreenProjection(),
+                (float) -(candidateDistance - 8.0D));
+        float farFaceDepth = projectDepth(plan.offscreenProjection(),
+                (float) -(candidateDistance + 8.0D));
+
+        assertTrue(Float.isFinite(nearFaceDepth));
+        assertTrue(Float.isFinite(farFaceDepth));
+        assertTrue(nearFaceDepth < farFaceDepth);
+        assertTrue(Float.floatToRawIntBits(farFaceDepth)
+                - Float.floatToRawIntBits(nearFaceDepth) >= 4);
+    }
+
+    @Test
+    void offscreenActualFarCoversRepresentativeLongRangeBands() {
+        Matrix4f original = perspective(0.05F, 1_024.0F);
+        for (double candidateDistance : List.of(
+                4_096.0D, 8_192.0D, 16_384.0D, 32_768.0D, 65_536.0D)) {
+            ProjectionPlan plan = RVP_RemoteVehicleProjection.plan(original,
+                    List.of(new FarPlaneDemand(candidateDistance, 16.0D,
+                            candidateDistance - 16.0D))).orElseThrow();
+
+            assertTrue(plan.offscreenFarPlane() >= plan.requiredFarPlane(),
+                    "distance=" + candidateDistance);
+        }
+    }
+
+    @Test
+    void offscreenNearLeavesMarginBeforeNearestCandidateFront() {
+        Matrix4f original = perspective(0.05F, 1_024.0F);
+        double nearestFrontDepth = 180.0D;
+        ProjectionPlan plan = RVP_RemoteVehicleProjection.plan(original,
+                List.of(new FarPlaneDemand(800.0D, 10.0D, nearestFrontDepth))).orElseThrow();
+
+        assertEquals(nearestFrontDepth - RVP_RemoteVehicleProjection.OFFSCREEN_NEAR_MARGIN,
+                plan.offscreenNearPlane(), 0.01D);
+    }
+
+    @Test
     void orthographicOrNonFiniteProjectionIsRejected() {
         assertTrue(RVP_RemoteVehicleProjection.plan(
                 new Matrix4f().ortho(-1.0F, 1.0F, -1.0F, 1.0F, 0.05F, 100.0F),
@@ -107,6 +172,13 @@ class RVP_RemoteVehicleProjectionTest {
     private static Matrix4f perspective(float nearPlane, float farPlane) {
         return new Matrix4f().perspective((float) Math.toRadians(70.0D), 16.0F / 9.0F,
                 nearPlane, farPlane);
+    }
+
+    /** 使用最终 float 投影矩阵把相机视空间 Z 转换到纹理深度。 */
+    private static float projectDepth(Matrix4f projection, float viewZ) {
+        float clipZ = projection.m22() * viewZ + projection.m32();
+        float clipW = projection.m23() * viewZ + projection.m33();
+        return clipZ / clipW * 0.5F + 0.5F;
     }
 
     /** 比较矩阵全部 16 个元素。 */

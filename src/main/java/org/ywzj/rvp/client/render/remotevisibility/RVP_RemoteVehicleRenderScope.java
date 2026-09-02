@@ -61,7 +61,10 @@ final class RVP_RemoteVehicleRenderScope implements AutoCloseable {
             if (plan.extended() || forceProjection) {
                 stateAccess.backupProjection();
                 scope.projectionBackedUp = true;
-                stateAccess.applyProjection(plan.projection());
+                // 调用投影计划的离屏矩阵，使 DH/晚期回退使用抬高 near 后的远距深度精度；世界直绘仍保持原深度语义。
+                stateAccess.applyProjection(forceProjection
+                        ? plan.offscreenProjection()
+                        : plan.projection());
             }
 
             // 调用 RVP 雾策略，只在普通空气环境中延长完全雾化距离。
