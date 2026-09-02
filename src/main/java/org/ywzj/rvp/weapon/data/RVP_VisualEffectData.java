@@ -58,6 +58,14 @@ public final class RVP_VisualEffectData {
     private boolean suppressNativeExplosionEffect = true;
 
     /**
+     * 为 true 时屏蔽 RVP 内置默认爆炸视觉（MCHR 风格，按爆炸半径自动计算），
+     * 该武器改走本体 ywzj_vehicle 爆炸视觉；默认 {@code false}。
+     * 该标记的读取不受 {@code enabled} 门控——本条目可以只作为屏蔽标记存在（无 effect_type）。
+     */
+    @SerializedName("suppress_rvp_default_explosion")
+    private boolean suppressRvpDefaultExplosion = false;
+
+    /**
      * 当前 schema 的实验性视觉行为配置；默认所有实验均关闭。仅显式配置的当前字段生效，
      * 为 {@code null} 或缺失时必须保持既有视觉行为。
      */
@@ -110,6 +118,11 @@ public final class RVP_VisualEffectData {
 
     public boolean isShake() {
         return shake;
+    }
+
+    /** 是否屏蔽 RVP 内置默认爆炸视觉（读取不受 enabled 门控）。 */
+    public boolean isSuppressRvpDefaultExplosion() {
+        return this.suppressRvpDefaultExplosion;
     }
 
     public boolean isSuppressNativeExplosionEffect() {

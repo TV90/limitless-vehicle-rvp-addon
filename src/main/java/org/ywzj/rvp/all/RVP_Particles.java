@@ -21,6 +21,16 @@ public final class RVP_Particles {
             PARTICLES.register(RVP_ParticleIds.WHITE_PHOSPHORUS.getPath(),
                     () -> new SimpleParticleType(false));
 
+    /** MCHR 风格默认爆炸：翻滚灰黄大烟。 */
+    public static final RegistryObject<SimpleParticleType> MCHR_SMOKE =
+            PARTICLES.register(RVP_ParticleIds.MCHR_SMOKE.getPath(),
+                    () -> new SimpleParticleType(false));
+
+    /** MCHR 风格默认爆炸：曳光火星。 */
+    public static final RegistryObject<SimpleParticleType> MCHR_FLARE =
+            PARTICLES.register(RVP_ParticleIds.MCHR_FLARE.getPath(),
+                    () -> new SimpleParticleType(false));
+
     private RVP_Particles() {}
 
     public static void register(IEventBus eventBus) {
