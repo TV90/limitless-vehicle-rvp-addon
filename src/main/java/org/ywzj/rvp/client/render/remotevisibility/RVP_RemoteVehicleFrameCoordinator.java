@@ -20,9 +20,11 @@ public final class RVP_RemoteVehicleFrameCoordinator {
     }
 
     /** 在 AFTER_SKY 保存本帧计划；新帧会丢弃上一帧已经结束的引用。 */
-    public static void prepareForDh(RVP_RemoteVehicleFramePlan plan) {
+    public static void prepareForDh(RVP_RemoteVehicleFramePlan plan, String initialFailureReason) {
         currentPlan = plan;
-        failureReason = "NO_DH_EVENT_THIS_FRAME";
+        failureReason = initialFailureReason == null || initialFailureReason.isBlank()
+                ? "NO_DH_EVENT_THIS_FRAME"
+                : initialFailureReason;
         ROUTE.prepare(plan != null);
     }
 

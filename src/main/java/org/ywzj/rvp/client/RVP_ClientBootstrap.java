@@ -50,7 +50,7 @@ public final class RVP_ClientBootstrap {
                     message.dimension(), message.entityIds(), message.motorBurningEntityIds()));
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
-            // 调用无 DH 类型的可选依赖入口，仅在客户端且确认安装 DH 后加载 API 7.1 强类型桥。
+            // 调用无 DH 类型的可选依赖入口，仅在客户端且确认安装 DH 后加载 API 7 强类型桥。
             RVP_DistantHorizonsCompatBootstrap.initialize();
             RVP_ClientEntityRenderers.register();
             EntityRenderers.register(RVP_Entities.GUNNER.get(), GunnerRenderer::new);

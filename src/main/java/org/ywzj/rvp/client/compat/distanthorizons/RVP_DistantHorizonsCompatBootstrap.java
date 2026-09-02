@@ -12,20 +12,22 @@ import java.lang.reflect.InvocationTargetException;
 /**
  * 不引用任何 DH 类型的客户端可选依赖入口。
  *
- * <p>只有确认模组存在后才反射加载强类型 API 7.1 桥，保证无 DH 与专用服务器不会解析 DH 常量池。</p>
+ * <p>只有确认模组存在后才反射加载强类型 API 7 桥，保证无 DH 与专用服务器不会解析 DH 常量池。</p>
  */
 public final class RVP_DistantHorizonsCompatBootstrap {
     /** Distant Horizons Forge 模组 ID。 */
     private static final String DH_MOD_ID = "distanthorizons";
     /** 唯一直接引用 DH API 类型的桥接类名。 */
     private static final String BRIDGE_CLASS_NAME =
-            "org.ywzj.rvp.client.compat.distanthorizons.RVP_DhApi71Bridge";
+            "org.ywzj.rvp.client.compat.distanthorizons.RVP_DhApi7Bridge";
     /** 客户端兼容初始化日志。 */
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 当前运行期是否安装了 DH。 */
     private static boolean dhLoaded;
     /** 反射桥是否已成功进入等待/监听状态。 */
     private static boolean bridgeInstalled;
+    /** DH 强类型桥的运行期能力与永久失败原因。 */
+    private static final RVP_DhCompatAvailability AVAILABILITY = new RVP_DhCompatAvailability();
     /** DH 官方配置当前是否启用 LOD 渲染；桥初始化前保守视为启用。 */
     private static volatile boolean dhRenderingEnabled = true;
 
@@ -38,14 +40,19 @@ public final class RVP_DistantHorizonsCompatBootstrap {
         if (!dhLoaded) {
             return;
         }
+        // 调用本项目兼容可用性状态，标记等待 DH 初始化回调的过渡阶段。
+        AVAILABILITY.markUnavailable(RVP_DhCompatAvailability.BRIDGE_INITIALIZING);
         try {
             Class<?> bridgeClass = Class.forName(BRIDGE_CLASS_NAME, true,
                     RVP_DistantHorizonsCompatBootstrap.class.getClassLoader());
-            bridgeClass.getMethod("initialize").invoke(null);
-            bridgeInstalled = true;
+            // 调用本项目强类型桥初始化入口，并读取初始化事件是否实际绑定成功。
+            Object installResult = bridgeClass.getMethod("initialize").invoke(null);
+            bridgeInstalled = Boolean.TRUE.equals(installResult);
         } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException
                  | InvocationTargetException | LinkageError exception) {
             bridgeInstalled = false;
+            // 调用本项目兼容可用性状态，保留反射边界加载失败原因供后续帧降级。
+            AVAILABILITY.markUnavailable("DH_BRIDGE_LOAD_FAILED");
             LOGGER.warn("RVP DH compat: state=FALLBACK reason=DH_BRIDGE_LOAD_FAILED", exception);
         }
     }
@@ -61,6 +68,42 @@ public final class RVP_DistantHorizonsCompatBootstrap {
     /** 由已隔离的强类型桥同步 DH 官方 renderingEnabled 配置。 */
     public static void updateDhRenderingEnabled(boolean enabled) {
         dhRenderingEnabled = enabled;
+    }
+
+    /** 由强类型桥记录已观察到的 DH API 版本。 */
+    public static void updateApiVersion(String version) {
+        // 调用本项目兼容可用性状态，使成功与失败日志输出运行期真实 API 版本。
+        AVAILABILITY.updateApiVersion(version);
+    }
+
+    /** 由强类型桥在全部能力校验和 before-apply 绑定成功后标记就绪。 */
+    public static void markDepthCompositeReady() {
+        // 调用本项目兼容可用性状态，只有完成全部校验后才允许逐帧无事件原因。
+        AVAILABILITY.markReady();
+    }
+
+    /** 由强类型桥保留初始化或事件绑定的明确失败原因。 */
+    public static void markDepthCompositeUnavailable(String reason) {
+        // 调用本项目兼容可用性状态，跨帧保留初始化或绑定的永久失败原因。
+        AVAILABILITY.markUnavailable(reason);
+    }
+
+    /** 返回新帧应使用的初始原因，防止永久失败被误报为本帧无事件。 */
+    public static String failureReasonForFrame() {
+        // 调用本项目兼容可用性状态，为帧协调器提供不会覆盖永久失败的初始原因。
+        return AVAILABILITY.failureReasonForFrame();
+    }
+
+    /** 返回深度合成桥是否已完成全部校验。 */
+    public static boolean isDepthCompositeReady() {
+        // 调用本项目兼容可用性状态，阻止未就绪桥进入纹理合成。
+        return AVAILABILITY.isDepthCompositeReady();
+    }
+
+    /** 返回运行期实际 DH API 版本，供受限诊断日志使用。 */
+    public static String getApiVersion() {
+        // 调用本项目兼容可用性状态，读取初始化回调记录的实际 API 版本。
+        return AVAILABILITY.apiVersion();
     }
 
     /** 返回强类型 DH 桥是否已安装，供诊断使用。 */

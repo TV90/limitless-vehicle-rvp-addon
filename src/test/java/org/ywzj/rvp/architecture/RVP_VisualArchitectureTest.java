@@ -79,7 +79,7 @@ class RVP_VisualArchitectureTest {
         for (Path source : javaSources(mainRoot)) {
             String text = Files.readString(source);
             if (text.contains("com.seibel.distanthorizons")) {
-                assertEquals("RVP_DhApi71Bridge.java", source.getFileName().toString(),
+                assertEquals("RVP_DhApi7Bridge.java", source.getFileName().toString(),
                         source + " bypasses the optional DH class-loading boundary");
             }
         }

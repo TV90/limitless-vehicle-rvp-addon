@@ -33,9 +33,12 @@ public final class RVP_DhCompatDiagnostics {
         if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled() || !canLogStatistics()) {
             return;
         }
-        LOGGER.info("RVP DH compat: state=DEPTH_AWARE_OPENGL api=7.1 pass={} dhDepth={} "
+        // 调用本项目无 DH 类型入口，成功日志必须显示运行期真实 API 版本。
+        String apiVersion = RVP_DistantHorizonsCompatBootstrap.getApiVersion();
+        LOGGER.info("RVP DH compat: state=DEPTH_AWARE_OPENGL api={} pass={} dhDepth={} "
                         + "selected={} compositeMs={}",
-                renderPass, depthMode, selected, String.format(java.util.Locale.ROOT, "%.3f", milliseconds));
+                apiVersion, renderPass, depthMode,
+                selected, String.format(java.util.Locale.ROOT, "%.3f", milliseconds));
     }
 
     /** 在诊断启用时每秒至多输出一次降级状态。 */

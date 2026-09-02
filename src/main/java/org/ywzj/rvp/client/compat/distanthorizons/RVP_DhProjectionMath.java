@@ -39,7 +39,40 @@ public final class RVP_DhProjectionMath {
         if (!inverse.invert().isFinite()) {
             return Optional.empty();
         }
-        return Optional.of(new ProjectionAnalysis(inverse, nearDepth, farDepth, reverse));
+        return Optional.of(new ProjectionAnalysis(inverse, nearDepth, farDepth, reverse,
+                nearPlane, farPlane));
+    }
+
+    /**
+     * 直接从投影矩阵的两个纹理深度端点恢复真实 near/far。
+     *
+     * <p>DH 3.2.0-b 的事件 {@code nearClipPlane} 是过度绘制裁剪距离，而
+     * {@code dhProjectionMatrix} 在普通高度下会把实际 near 额外限制到 7.5 格；
+     * 因此 DH 深度分析不得再假定事件字段就是矩阵端点。</p>
+     */
+    public static Optional<ProjectionAnalysis> analyzeFromProjection(Matrix4f projection) {
+        if (projection == null || !projection.isFinite()) {
+            return Optional.empty();
+        }
+        Matrix4f inverse = new Matrix4f(projection);
+        if (!inverse.invert().isFinite()) {
+            return Optional.empty();
+        }
+
+        float depthZeroDistance = reconstructViewDepth(inverse, 0.5F, 0.5F, 0.0F);
+        float depthOneDistance = reconstructViewDepth(inverse, 0.5F, 0.5F, 1.0F);
+        if (!validPlaneDistance(depthZeroDistance) || !validPlaneDistance(depthOneDistance)
+                || Math.abs(depthZeroDistance - depthOneDistance) < MIN_ABS_W) {
+            return Optional.empty();
+        }
+
+        boolean reverse = depthOneDistance < depthZeroDistance;
+        float nearPlane = Math.min(depthZeroDistance, depthOneDistance);
+        float farPlane = Math.max(depthZeroDistance, depthOneDistance);
+        float nearDepth = reverse ? 1.0F : 0.0F;
+        float emptyDepth = reverse ? 0.0F : 1.0F;
+        return Optional.of(new ProjectionAnalysis(inverse, nearDepth, emptyDepth, reverse,
+                nearPlane, farPlane));
     }
 
     /** 把相机空间 Z 投影为 OpenGL 纹理深度。 */
@@ -69,6 +102,11 @@ public final class RVP_DhProjectionMath {
         return Math.abs(value - expected) <= ENDPOINT_EPSILON;
     }
 
+    /** 判断从逆投影恢复的裁剪面距离是否可作为正向相机视深度。 */
+    private static boolean validPlaneDistance(float distance) {
+        return Float.isFinite(distance) && distance > 0.0F;
+    }
+
     /**
      * 已校验投影分析。
      *
@@ -76,11 +114,15 @@ public final class RVP_DhProjectionMath {
      * @param nearDepth near 平面在纹理中的原始深度
      * @param emptyDepth far 平面对应的空深度
      * @param reverseZ 是否为 Reverse-Z
+     * @param nearPlane 投影矩阵实际使用的近裁剪面，单位格
+     * @param farPlane 投影矩阵实际使用的远裁剪面，单位格
      */
     public record ProjectionAnalysis(Matrix4f inverseProjection,
                                      float nearDepth,
                                      float emptyDepth,
-                                     boolean reverseZ) {
+                                     boolean reverseZ,
+                                     float nearPlane,
+                                     float farPlane) {
         /** 建立并返回逆投影矩阵防御性副本。 */
         public ProjectionAnalysis {
             inverseProjection = new Matrix4f(inverseProjection);

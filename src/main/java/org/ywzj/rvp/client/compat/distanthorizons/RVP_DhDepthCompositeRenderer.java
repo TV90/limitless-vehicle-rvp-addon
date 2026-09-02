@@ -99,11 +99,15 @@ public final class RVP_DhDepthCompositeRenderer {
                 RVP_DhProjectionMath.analyze(rvpProjection,
                         (float) plan.projectionPlan().nearPlane(),
                         (float) plan.projectionPlan().requiredFarPlane());
+        // 调用本项目投影数学工具，从 DH 矩阵恢复真实裁剪面；DH 事件 near 是过度绘制距离，可能与矩阵 near 不同。
         Optional<RVP_DhProjectionMath.ProjectionAnalysis> dhAnalysis =
-                RVP_DhProjectionMath.analyze(dhParameters.projection(),
-                        dhParameters.nearPlane(), dhParameters.farPlane());
-        if (rvpAnalysis.isEmpty() || dhAnalysis.isEmpty()) {
-            return fail("UNSUPPORTED_PROJECTION", "near/far endpoint validation failed");
+                RVP_DhProjectionMath.analyzeFromProjection(dhParameters.projection());
+        if (rvpAnalysis.isEmpty()) {
+            return fail("UNSUPPORTED_PROJECTION", "RVP near/far endpoint validation failed");
+        }
+        if (dhAnalysis.isEmpty()) {
+            return fail("UNSUPPORTED_PROJECTION", "DH matrix endpoint recovery failed, reportedNear="
+                    + dhParameters.nearPlane() + ", reportedFar=" + dhParameters.farPlane());
         }
 
         long started = System.nanoTime();
@@ -148,7 +152,7 @@ public final class RVP_DhDepthCompositeRenderer {
             setMatrix(dhProjectionUniform, dhParameters.projection());
             setFloat(dhEmptyDepthUniform, dhAnalysis.get().emptyDepth());
             setFloat(dhNearDepthUniform, dhAnalysis.get().nearDepth());
-            setFloat(dhFarPlaneUniform, dhParameters.farPlane());
+            setFloat(dhFarPlaneUniform, dhAnalysis.get().farPlane());
             setFloat(occlusionBiasUniform,
                     RVP_ClientConfig.getDistantHorizonsOcclusionBiasBlocks());
             drawFullscreenQuad();

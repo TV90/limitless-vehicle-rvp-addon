@@ -72,8 +72,9 @@ public final class RVP_RemoteVehicleVisualRenderer {
     public static void onRenderLevel(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY
                 && RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
-            // 调用本项目帧协调器，在 DH 地形 pass 前保存候选、预算与动态快照计划。
-            RVP_RemoteVehicleFrameCoordinator.prepareForDh(prepareFrame(event));
+            // 调用本项目兼容状态与帧协调器，在 DH 地形 pass 前保存计划及真实初始失败原因。
+            RVP_RemoteVehicleFrameCoordinator.prepareForDh(
+                    prepareFrame(event), RVP_DistantHorizonsCompatBootstrap.failureReasonForFrame());
             return;
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
