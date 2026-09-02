@@ -3476,15 +3476,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
-        boolean suppressNativeExplosionEffect = false;
+        // HBM 特效实际生效标记（由 hbm_effect_data 在数据层推导，经桥接层 Result.anyApplied 判定）。
+        // 生效时本爆进入"HBM 特效接管视觉"模式：一律屏蔽 RVP MCHR 烟雾 / 本体爆炸视觉 / 视觉工厂其余特效，
+        // 避免画面出现双重特效（任务1）。anyApplied 已包含 visualApplied，故不依赖 suppress_native_explosion_effect 开关。
+        boolean hbmApplied = false;
         if (detonateData != null && detonateData.hasHbmEffect() && level() instanceof ServerLevel serverLevel) {
             RVP_HbmEffectBridge.Result hbmResult =
                     RVP_HbmEffectBridge.apply(serverLevel, pos, detonateData.getHbmEffectData(), getOwner());
             if (hbmResult.realExplosionApplied()) {
                 return;
             }
-            suppressNativeExplosionEffect = hbmResult.visualApplied()
-                    && detonateData.getHbmEffectData().isSuppressNativeExplosionEffect();
+            hbmApplied = hbmResult.anyApplied();
         }
         if (explosion == null || !explosion.explode) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
@@ -3513,7 +3515,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         float resolvedDamage = damage;
         float resolvedRadius = radius;
         RVP_VisualPublishResult visualResult = RVP_VisualPublishResult.NONE;
-        if (detonateData != null && level() instanceof ServerLevel serverLevel) {
+        // HBM 特效生效时跳过视觉工厂发布（任务1）：视觉工厂与 HBM 同属特效类参数，双发会造成双重特效。
+        if (!hbmApplied && detonateData != null && level() instanceof ServerLevel serverLevel) {
             Entity owner = getOwner();
             RVP_DetonationVisualContext visualContext = new RVP_DetonationVisualContext(
                     serverLevel,
@@ -3534,7 +3537,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         //    该标记读取不受 enabled 门控——条目可以只作为屏蔽标记存在（无 effect_type）。
         // 默认路径（无视觉工厂/无屏蔽标记）：广播 RVP 内置 MCHR 爆炸视觉（数值按最终半径自动算）
         // + 服务端按本体分级音量补播爆炸音（负半径标记会取消客户端 effect() 的原生音效）。
-        boolean suppressRvpDefault = visualResult.publishedCount() > 0
+        // HBM 特效生效时同样跳过 MCHR 默认烟雾（任务1），避免与 HBM 视觉叠加。
+        boolean suppressRvpDefault = hbmApplied
+                || visualResult.publishedCount() > 0
                 || (detonateData != null && detonateData.getVisualEffectData() != null
                 && detonateData.getVisualEffectData().stream()
                 .anyMatch(org.ywzj.rvp.weapon.data.RVP_VisualEffectData::isSuppressRvpDefaultExplosion));
@@ -3544,7 +3549,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius);
             defaultVisualSpawned = true;
         }
-        boolean resolvedSuppressNative = suppressNativeExplosionEffect
+        boolean resolvedSuppressNative = hbmApplied
                 || visualResult.shouldSuppressNativeExplosionEffect()
                 || defaultVisualSpawned;
         RVP_ProjectileLifecycleDebug.noteEvent(this,
@@ -3593,9 +3598,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // DamageSystem.hurt 并 post HitVehicleEvent，监听器窗口内跳过，避免与下方
         // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
         RVP_HitVehicleListener.enterRvpDamage();
-        // 调用 RVP 现有爆炸视觉抑制门面，仅在视觉成功发布且配置要求替换本体视觉时屏蔽本体视觉包。
+        // 调用 RVP 现有爆炸视觉抑制门面，HBM 特效生效或视觉成功发布且配置要求替换本体视觉时屏蔽本体视觉包。
         try {
-            if (resolvedSuppressNative || suppressNativeExplosionEffect) {
+            if (resolvedSuppressNative) {
                 RVP_ExplosionVisualSuppression.run(explosionAction);
             } else {
                 explosionAction.run();

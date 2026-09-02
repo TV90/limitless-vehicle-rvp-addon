@@ -9,7 +9,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexSorting;
-import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -37,7 +36,6 @@ import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.network.S2CNuclearVisualEffect;
@@ -55,8 +53,6 @@ import java.util.Random;
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ExplosionVisualManager {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final ResourceLocation CLOUD_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
@@ -458,9 +454,10 @@ public final class RVP_ExplosionVisualManager {
             waveScale = preset == Preset.BOMB ? Mth.clamp(65.0F * scale, 8.0F, 220.0F) : 0.0F;
             waveLifetime = preset == Preset.BOMB
                     ? Math.max(1, Math.round(25.0F * waveScale / 45.0F)) : 1;
-            // 数量型参数只乘 density 不乘 scale（文档 7.1：数量=密度，与几何 scale 解耦）
+            // bomb 档碎块数同时受 scale×density 钳制（任务2，与桥接层 bombDebrisCount 同式同步）：
+            // round(25×scale×density)，下限 2 避免为 0；烟团数 30×density、shell 碎屑 15×density 仍只乘 density。
             debrisCount = preset == Preset.BOMB
-                    ? Mth.clamp(Math.round(25.0F * density), 2, 160)
+                    ? Mth.clamp(Math.round(25.0F * scale * density), 2, 160)
                     : Mth.clamp(Math.round(15.0F * density), 0, 120);
             if (preset == Preset.BOMB) {
                 debrisSize = Mth.clamp(Math.round(16.0F * scale), 4, 64);
@@ -491,9 +488,6 @@ public final class RVP_ExplosionVisualManager {
             float speed = preset == Preset.BOMB
                     ? Mth.clamp(2.0F * scale, 0.35F, 6.0F)
                     : Mth.clamp(0.5F * scale, 0.15F, 4.0F);
-            LOGGER.debug("[rvp:visual] preset={} scale={} density={} -> cloudCount={} cloudScale={} cloudSpeed={} waveScale={} soundRange={} debrisCount={} debrisSize={} debrisRetry={} debrisVelocity={} debrisDeviation={}",
-                    preset, scale, density, cloudCount, cloudScale, speed, waveScale, soundRange,
-                    debrisCount, debrisSize, DEBRIS_RETRY_ATTEMPTS, debrisVelocity, debrisHorizontalDeviation);
             for (int i = 0; i < cloudCount; i++) {
                 double motionX = random.nextGaussian() * (preset == Preset.BOMB ? 0.5D : 1.0D) * speed;
                 double motionY = preset == Preset.BOMB ? random.nextDouble() * 3.0D * speed : 0.0D;

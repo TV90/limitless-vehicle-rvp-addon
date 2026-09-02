@@ -610,6 +610,36 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `chlorine_yield` | 氯气当量（>0 启用）。 | `0.0` |
 | `destroy_block` | 是否破坏方块。 | `true` |
 
+##### `detonate_data.hbm_effect_data` 视觉数值推导公式（现网生效值，2026-09-03）
+
+`visual_preset` 的几何/数量参数由 `visual_scale`（几何缩放）与 `visual_density`（数量密度，0.1–1.0）在桥接层（HBM 后端）与自研回退后端以**同一公式同步推导**（两后端铁律一致）。以下均为现网生效公式与钳制区间：
+
+| 参数 | 公式 | 钳制区间 | 生效档位 |
+| --- | --- | --- | --- |
+| `shellCloudCount` 烟团数 | round(10 × density) | [4, 80] | shell |
+| `shellCloudScale` 烟团尺寸 | 2.0 × scale | [0.4, 16] | shell |
+| `shellCloudSpeed` 烟柱速度 | 0.5 × scale（线性） | [0.15, 4] | shell |
+| `shellDebrisCount` 碎屑数 | round(15 × density) | [0, 120] | shell（保持原样，不随 scale 缩） |
+| `bombCloudCount` 烟团数 | round(30 × density) | [8, 180] | bomb（仅受 density，不随 scale 缩） |
+| `bombCloudScale` 烟团尺寸 | 6.5 × scale | [1, 32] | bomb |
+| `bombCloudSpeed` 烟柱速度 | 2.0 × scale（线性） | [0.35, 6] | bomb |
+| `bombWaveScale` 冲击波 | 65 × scale | [8, 220] | bomb |
+| `bombDebrisCount` 碎块数 | round(25 × scale × density) | [2, 160] | bomb |
+| `bombDebrisSize` 碎块边长 | round(16 × scale) | [4, 64] | bomb |
+| `bombDebrisRetry` 簇填充重试 | 固定 50（不随 scale/density 缩） | — | bomb |
+| `bombDebrisVelocity` 碎块抛速 | 1.25 × √scale（保留 sqrt） | [0.2, 4] | bomb |
+| `bombDebrisHorizontalDeviation` 碎块水平散布 | 3.0 × scale | [0.5, 12] | bomb |
+| `bombSoundRange` 音域 | 350 × scale（线性） | [80, 800] | bomb |
+| `shellSoundRange` 音域 | 200 × scale（线性） | [60, 600] | shell |
+
+公式说明：
+- 烟柱速度与音域采用**线性** scale（原 √scale 会拉细烟柱，线性缩放才保持烟柱高宽比恒 ≈4.4）；
+- 碎块抛速**保留 √scale**（碎块为固定重力无摩擦弹道，射程 ∝ v²/g，sqrt 缩放才能等比缩小抛物线）；
+- 碎块采样重试固定 50（控制簇内部填充密度，属"簇质量"而非"数量/尺寸"，不随 scale 缩放）；
+- **`bombDebrisCount` 新公式（2026-09-03 修订）**：由原 `round(25 × density)` 改为 `round(25 × scale × density)`，同时受 scale 钳制（几何越小碎块越少），下限 2 避免为 0；烟团数与 shell 碎屑数维持原公式不变。例：`visual_scale=0.3`、`visual_density=1.0` 时碎块数 = round(7.5) = 8。
+
+生效条件：`visual_preset` 实际生效（经 `RVP_HbmEffectBridge.apply` / `RVP_HbmVisualService`）时，上述公式才参与推导；`real_explosion = vnt` 时其自带视觉，`visual_preset` 不生效。
+
 #### `detonate_data.visual_effect_data[]` 通用爆炸视觉
 
 该数组只选择视觉算法和表现参数，不改变 `explosion_data` 的伤害、最终半径或方块破坏。不得使用武器 ID 判断效果类型。单项 `preset_data` 规范化后的 UTF-8 载荷不得超过 8 KiB；非法或超限配置会放弃自定义视觉并保留本体普通爆炸视觉。

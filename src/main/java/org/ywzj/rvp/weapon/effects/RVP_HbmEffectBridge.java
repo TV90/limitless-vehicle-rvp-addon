@@ -1,6 +1,5 @@
 package org.ywzj.rvp.weapon.effects;
 
-import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -9,15 +8,12 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
 import org.ywzj.rvp.weapon.data.RVP_HbmEffectData;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 public final class RVP_HbmEffectBridge {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     // 原版 LARGE 档固定簇填充重试数：retry 控制碎块簇内部填充密度，不是尺寸量，不随 scale 缩放。
     private static final int DEBRIS_RETRY_ATTEMPTS = 50;
@@ -186,8 +182,6 @@ public final class RVP_HbmEffectBridge {
                     float cloudScale = shellCloudScale(visualScale);
                     float cloudSpeed = shellCloudSpeed(visualScale);
                     int debrisCount = shellDebrisCount(visualDensity);
-                    LOGGER.debug("[rvp:hbm-bridge] shell preset scale={} density={} -> cloudCount={} cloudScale={} cloudSpeed={} debrisCount={}",
-                            visualScale, visualDensity, cloudCount, cloudScale, cloudSpeed, debrisCount);
                     spawnExplosionSmallMethod.invoke(null, level, pos.x, pos.y, pos.z,
                             cloudCount, cloudScale, cloudSpeed, debrisCount);
                     return true;
@@ -203,15 +197,12 @@ public final class RVP_HbmEffectBridge {
                     float cloudScale = bombCloudScale(visualScale);
                     float cloudSpeed = bombCloudSpeed(visualScale);
                     float waveScale = bombWaveScale(visualScale);
-                    int debrisCount = bombDebrisCount(visualDensity);
+                    int debrisCount = bombDebrisCount(visualScale, visualDensity);
                     int debrisSize = bombDebrisSize(visualScale);
                     int debrisRetry = bombDebrisRetry();
                     float debrisVelocity = bombDebrisVelocity(visualScale);
                     float debrisDeviation = bombDebrisHorizontalDeviation(visualScale);
                     float soundRange = bombSoundRange(visualScale);
-                    LOGGER.debug("[rvp:hbm-bridge] bomb preset scale={} density={} -> cloudCount={} cloudScale={} cloudSpeed={} waveScale={} debrisCount={} debrisSize={} debrisRetry={} debrisVelocity={} debrisDeviation={} soundRange={}",
-                            visualScale, visualDensity, cloudCount, cloudScale, cloudSpeed, waveScale,
-                            debrisCount, debrisSize, debrisRetry, debrisVelocity, debrisDeviation, soundRange);
                     spawnExplosionLargeMethod.invoke(null, level, pos.x, pos.y, pos.z,
                             cloudCount, cloudScale, cloudSpeed,
                             waveScale, debrisCount, debrisSize,
@@ -257,7 +248,9 @@ public final class RVP_HbmEffectBridge {
         }
     }
 
-    // 数量型参数（烟团数/碎块数）由 visual_density 控制，不随 scale 缩放（文档 7.1）：
+    // 数量型参数公式（任务2 修订）：
+    // - 烟团数（shell/bomb）与 shell 碎屑数由 visual_density 控制，不随 scale 缩放（文档 7.1 原结论）；
+    // - bomb 档碎块数改为 25×scale×density 同时受 scale 钳制：几何越小碎块越少，下限 2 避免为 0。
     // scale 只管几何等比，density 才管数量，保持烟团互相重叠的原版"均匀厚球"观感。
 
     private static int shellCloudCount(float visualDensity) {
@@ -294,8 +287,9 @@ public final class RVP_HbmEffectBridge {
         return (float) clampDouble(65.0D * visualScale, 8.0D, 220.0D);
     }
 
-    private static int bombDebrisCount(float visualDensity) {
-        return clampInt(Math.round(25.0f * visualDensity), 2, 160);
+    private static int bombDebrisCount(float visualScale, float visualDensity) {
+        // 同时受 scale×density 钳制（与自研后端同式同步）：round(25×scale×density)，下限 2 避免为 0。
+        return clampInt(Math.round(25.0f * visualScale * visualDensity), 2, 160);
     }
 
     private static int bombDebrisSize(float visualScale) {
