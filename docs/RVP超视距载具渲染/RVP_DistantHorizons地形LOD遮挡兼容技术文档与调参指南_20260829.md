@@ -10,7 +10,7 @@
 当前实现已经把 RVP 超视距载具从单一的 Forge `AFTER_ENTITIES` 绘制，扩展为一条可选的 Distant Horizons（下文简称 DH）深度感知合成通道：
 
 - 未安装 DH、DH 关闭 LOD 渲染或用户把兼容模式设为 `OFF` 时，继续使用原有 `AFTER_ENTITIES` 路径，行为不变。
-- DH API 7.1+ 且使用原生 OpenGL 渲染器时，RVP 会在 DH apply shader 前取得当帧颜色、深度纹理，将远距载具离屏绘制后按相机空间视深度与 DH 地形比较，并把可见颜色和深度写回 DH 目标。
+- DH API 7.0.1+ 的 7.x 版本且使用原生 OpenGL 渲染器时，RVP 会在 DH apply shader 前取得当帧颜色、深度纹理，将远距载具离屏绘制后按相机空间视深度与 DH 地形比较，并把可见颜色和深度写回 DH 目标。
 - API、纹理、投影或光影管线不满足要求时，不会取消 DH 自身事件，也不会盲目继续写纹理；系统会按显式回退配置选择原通道、青色轮廓、始终可见或隐藏。
 - 整个兼容层位于 RVP 客户端代码中，不修改 `ywzj_vehicle` 本体，不使用 Mixin，也不依赖 DH 的内部 `common/core` 实现。
 
@@ -21,7 +21,7 @@
 ### 2.1 已实现
 
 - DH 为可选客户端依赖；无 DH 客户端和专用服务器不会解析 DH API 类型。
-- 对 DH API 主版本 7、次版本至少 1 做运行期检查。
+- 对 DH API 7.0.1～7.x 做运行期 major/minor/patch 检查；已验证公开版基线为 DH 3.2.0-b / API 7.0.1。
 - 仅接受 DH `OPEN_GL` 且 `isNativeRenderer() == true` 的纹理共享路径。
 - 在 DH `before apply shader` 官方事件中逐帧查询颜色、深度纹理 ID。
 - 同时支持标准 Forward-Z 和 Reverse-Z 投影。
@@ -97,11 +97,13 @@ dhViewDepth  = -dhViewPosition.z
 
 ### 4.2 Forward-Z、Reverse-Z 与空深度
 
-`RVP_DhProjectionMath` 会把 near/far 端点投影到纹理深度：
+RVP 自有投影会用绘制计划中的 near/far 校验端点；DH 投影则直接逆投影纹理深度 `0` 和 `1`，从 `dhProjectionMatrix` 恢复矩阵实际使用的 near/far：
 
 - near≈0、far≈1：判为 Forward-Z；
 - near≈1、far≈0：判为 Reverse-Z；
 - 端点不接近上述任一种、矩阵不可逆或 near/far 非法：拒绝合成并报告 `UNSUPPORTED_PROJECTION`。
+
+不能用 `DhApiRenderParam.nearClipPlane` 校验 DH 矩阵端点。DH 3.2.0-b 在普通高度下会把投影矩阵的实际 near 限制到 7.5 格，但事件字段仍可能是数百格的过度绘制裁剪距离；二者不一致属于正常运行事实。事件 near/far 只作为原始诊断参数保留，深度重建、空深度和 far 越界判断都以矩阵反解结果为准。
 
 far 端点同时作为 DH 空深度。只有采样值与空深度差异大于阈值时，才认为该像素存在 DH 地形。
 
@@ -149,14 +151,15 @@ DH 颜色、深度纹理只在当帧借用并挂接到 RVP 自建 FBO。RVP 不�
 
 ## 6. 可选依赖与版本策略
 
-`mods.toml` 把 `distanthorizons` 声明为 `CLIENT`、非强制依赖。普通入口 `RVP_DistantHorizonsCompatBootstrap` 不引用任何 DH 类型；只有确认 Mod 已加载后，才反射载入 `RVP_DhApi71Bridge`。
+`mods.toml` 把 `distanthorizons` 声明为 `CLIENT`、非强制依赖。普通入口 `RVP_DistantHorizonsCompatBootstrap` 不引用任何 DH 类型；只有确认 Mod 已加载后，才反射载入 `RVP_DhApi7Bridge`。
 
-项目编译期使用 Modrinth 上的 DH API 7.0 工件 `GgrzKRsK`，但运行期明确要求 API 7.1+。原因是独立 7.1 API 工件未发布，而 7.1 仍保留 7.0 的强类型纹理 getter 作为默认转发。维护时需注意：
+项目编译期使用 Modrinth 上的 DH API 7.0 工件 `GgrzKRsK`，运行期最低要求已验证的 API 7.0.1。兼容桥只调用 7.0 已公开的事件、原生渲染器判定和纹理 getter；7.1 及后续 7.x 仍需通过相同运行期能力检查。维护时需注意：
 
-- 不得把运行期要求误改为 7.0；
+- 不得把运行期要求放宽到未验证的 7.0.0，也不得未经适配接受未来 API 8.x；
 - 不得把 DH API 类复制或打包进 RVP jar；
 - 不得在桥以外的类直接引用 `com.seibel.distanthorizons.*`；
-- DH 后续若移除旧 getter，应只更新隔离桥和编译依赖，不扩散到渲染业务层。
+- DH 后续若移除现有 getter，应只更新隔离桥和编译依赖，不扩散到渲染业务层。
+- 初始化、版本、渲染器或事件绑定的永久失败原因由 bootstrap 跨帧保留；只有桥已就绪而某帧没有消费 apply 前事件时才报告 `NO_DH_EVENT_THIS_FRAME`。
 
 ## 7. 配置字段
 
@@ -278,7 +281,7 @@ diagnostics = true
 成功示例的字段结构：
 
 ```text
-RVP DH compat: state=DEPTH_AWARE_OPENGL api=7.1 pass=<pass> dhDepth=FORWARD_Z|REVERSE_Z selected=<数量> compositeMs=<毫秒>
+RVP DH compat: state=DEPTH_AWARE_OPENGL api=<实际版本> pass=<pass> dhDepth=FORWARD_Z|REVERSE_Z selected=<数量> compositeMs=<毫秒>
 ```
 
 回退示例的字段结构：
@@ -291,13 +294,16 @@ RVP DH compat: state=FALLBACK reason=<原因> fallback=<模式> selected=<数量
 
 | reason | 含义 | 优先处理 |
 | --- | --- | --- |
-| `DH_API_TOO_OLD` | DH API 不是 7.x，或次版本低于 1 | 升级 DH 到提供 API 7.1+ 的版本 |
+| `DH_API_TOO_OLD` | DH API 低于 7.0.1，或不是已支持的 7.x | 使用 DH 3.2.0-b / API 7.0.1 或兼容的后续 7.x |
+| `DH_BRIDGE_INITIALIZING` | DH 已加载，但初始化完成事件尚未确认桥能力 | 若进入世界后持续出现，检查 DH 初始化日志与事件绑定 |
+| `DH_INIT_EVENT_BIND_FAILED` | 初始化完成事件注册失败 | 检查 DH API 完整性及注册返回的 detail |
+| `DH_APPLY_EVENT_BIND_FAILED` | apply 前事件注册失败 | 检查 DH API 事件实现及注册返回的 detail |
 | `NON_OPENGL_ENGINE` | DH 不是原生 OpenGL 渲染器 | 保持安全回退；不要强行开启实验选项 |
 | `TEXTURE_UNAVAILABLE` | 当帧颜色/深度 ID、尺寸或 shader 不可用 | 检查 DH 状态、资源重载与日志 detail |
 | `FRAMEBUFFER_INCOMPLETE` | 借用纹理挂接或合成过程异常 | 检查显卡驱动、DH/光影组合和完整异常栈 |
 | `UNSUPPORTED_PROJECTION` | 投影不是已验证的 Forward-Z/Reverse-Z，或矩阵非法 | 关闭实验光影路径并提供复现矩阵/日志 |
 | `DEFERRED_SHADER_UNVERIFIED` | DH 延迟透明开启，但实验开关为 false | 接受回退；仅为测试临时开启实验选项 |
-| `NO_DH_EVENT_THIS_FRAME` | 已准备计划，但本帧没有成功收到/消费 DH apply 前事件 | 检查 DH 是否实际绘制 LOD、事件顺序和版本 |
+| `NO_DH_EVENT_THIS_FRAME` | 桥已就绪且已准备计划，但本帧没有成功收到/消费 DH apply 前事件 | 检查 DH 是否实际绘制 LOD 及事件顺序；版本/绑定失败会报告更具体原因 |
 | `DH_BRIDGE_LOAD_FAILED` | 反射加载强类型桥失败 | 检查 DH API 类兼容性和完整异常栈 |
 
 `diagnostics` 当前给出的 `compositeMs` 是整段 RVP 离屏绘制、DH 深度复制与全屏合成的 CPU 侧经过时间，不是纯 GPU query，不能直接当成精确 GPU 耗时。
@@ -401,7 +407,7 @@ diagnostics = true
 | Forge 阶段编排、候选准备与实际绘制 | `RVP_RemoteVehicleVisualRenderer` |
 | 单帧计划与唯一消费状态 | `RVP_RemoteVehicleFramePlan`、`RVP_RemoteVehicleFrameCoordinator`、`RVP_RemoteVehicleFrameRoute` |
 | 无 DH 类型的可选依赖入口 | `RVP_DistantHorizonsCompatBootstrap` |
-| 唯一 DH API 强类型边界 | `RVP_DhApi71Bridge` |
+| 唯一 DH API 强类型边界 | `RVP_DhApi7Bridge` |
 | 离屏绘制、深度比较与晚期回退 | `RVP_DhDepthCompositeRenderer` |
 | 投影识别和逆投影数学 | `RVP_DhProjectionMath` |
 | DH 深度复制 | `RVP_DhDepthCopy` |

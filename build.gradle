@@ -145,8 +145,8 @@ dependencies {
     // 全部 SBW 类引用必须位于 RVP_SuperbWarfareCompat.isLoaded() 之后的方法体内，
     // 卸载 SBW 时不会触发 SBW 类加载，RVP 仍可正常游玩）
     compileOnly fg.deobf("libs:superbwarfare-1.20.1:0.8.9.1-all")
-    // 编译使用官方 API 7.0.0 已存在的稳定事件/纹理方法；运行时严格要求 API >= 7.1.0。
-    // 7.1.0 尚无独立 Maven 发布物，其保留的旧纹理 getter 会转发到 7.1 OpenGL getter。
+    // 编译使用官方 API 7.0.0 工件；运行时最低要求已验证的 API 7.0.1（DH 3.2.0-b）。
+    // 桥只调用 7.0 公共事件/渲染接口，并在运行期按 major/minor/patch 校验兼容范围。
     compileOnly fg.deobf("maven.modrinth:Xs0XTOVv:GgrzKRsK")
     // SBM
     jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.5.1-forge-mc1.20.1"))) {
