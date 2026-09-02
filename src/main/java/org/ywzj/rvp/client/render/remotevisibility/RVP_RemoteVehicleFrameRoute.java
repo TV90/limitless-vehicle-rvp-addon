@@ -19,6 +19,15 @@ final class RVP_RemoteVehicleFrameRoute {
         return true;
     }
 
+    /** 尝试由世界末端的 RVP_FIRST 优先显示通道消费。 */
+    boolean consumeRvpFirst() {
+        if (state != State.PREPARED) {
+            return false;
+        }
+        state = State.RVP_FIRST;
+        return true;
+    }
+
     /** 尝试由原有实体后通道降级消费。 */
     boolean consumeCurrentPass() {
         if (state != State.PREPARED) {
@@ -55,6 +64,8 @@ final class RVP_RemoteVehicleFrameRoute {
         PREPARED,
         /** 已由 DH apply 前深度感知通道消费。 */
         DH_COMPOSITED,
+        /** 已由 AFTER_LEVEL 的 RVP_FIRST 优先显示通道消费。 */
+        RVP_FIRST,
         /** 已由原有 AFTER_ENTITIES 通道消费。 */
         CURRENT_PASS,
         /** 已由 AFTER_LEVEL 显式降级通道消费。 */

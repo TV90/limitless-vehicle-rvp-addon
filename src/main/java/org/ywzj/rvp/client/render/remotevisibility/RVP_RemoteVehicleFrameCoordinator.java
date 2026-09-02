@@ -7,7 +7,7 @@ import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhCompatDiagnostics;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.config.RVP_ClientConfig.DistantHorizonsFallbackMode;
 
-/** 协调同一帧计划在 DH、原有通道和晚期降级之间只消费一次。 */
+/** 协调同一帧计划在 RVP_FIRST、DH、原有通道和晚期降级之间只消费一次。 */
 public final class RVP_RemoteVehicleFrameCoordinator {
     /** 纯状态唯一消费路由。 */
     private static final RVP_RemoteVehicleFrameRoute ROUTE = new RVP_RemoteVehicleFrameRoute();
@@ -30,6 +30,10 @@ public final class RVP_RemoteVehicleFrameCoordinator {
 
     /** 返回仍等待 DH apply 前通道消费的计划；不存在或已消费时返回 null。 */
     public static RVP_RemoteVehicleFramePlan currentForDh() {
+        if (RVP_ClientConfig.getDistantHorizonsCompatMode()
+                == RVP_ClientConfig.DistantHorizonsCompatMode.RVP_FIRST) {
+            return null;
+        }
         return ROUTE.state() == RVP_RemoteVehicleFrameRoute.State.PREPARED ? currentPlan : null;
     }
 
@@ -53,6 +57,10 @@ public final class RVP_RemoteVehicleFrameCoordinator {
         if (ROUTE.state() != RVP_RemoteVehicleFrameRoute.State.PREPARED || currentPlan == null) {
             return;
         }
+        if (RVP_ClientConfig.getDistantHorizonsCompatMode()
+                == RVP_ClientConfig.DistantHorizonsCompatMode.RVP_FIRST) {
+            return;
+        }
         DistantHorizonsFallbackMode fallback = RVP_ClientConfig.getDistantHorizonsFallbackMode();
         if (fallback != DistantHorizonsFallbackMode.CURRENT_PASS) {
             return;
@@ -65,9 +73,21 @@ public final class RVP_RemoteVehicleFrameCoordinator {
         }
     }
 
-    /** 在 AFTER_LEVEL 执行轮廓/始终可见/隐藏语义，并清除本帧计划。 */
-    public static void finishLateFallback(RenderLevelStageEvent event) {
+    /** 在 AFTER_LEVEL 执行 RVP_FIRST 或降级输出，并清除所有已结束的本帧计划。 */
+    public static void finishLateOutput(RenderLevelStageEvent event) {
         try {
+            if (RVP_ClientConfig.getDistantHorizonsCompatMode()
+                    == RVP_ClientConfig.DistantHorizonsCompatMode.RVP_FIRST) {
+                if (currentPlan != null && ROUTE.consumeRvpFirst()) {
+                    // 调用本项目晚期完整图像合成器，忽略地形深度并保证载具不被 DH 地形覆盖。
+                    RVP_DhDepthCompositeRenderer.renderLateFallback(
+                            currentPlan, Minecraft.getInstance().gameRenderer.getMainCamera(),
+                            DistantHorizonsFallbackMode.ALWAYS_VISIBLE);
+                    // 调用本项目诊断器，按配置受限记录 RVP 优先显示挡位与候选数量。
+                    RVP_DhCompatDiagnostics.recordRvpFirst(currentPlan.selectedCount());
+                }
+                return;
+            }
             if (ROUTE.state() == RVP_RemoteVehicleFrameRoute.State.DH_COMPOSITED) {
                 return;
             }

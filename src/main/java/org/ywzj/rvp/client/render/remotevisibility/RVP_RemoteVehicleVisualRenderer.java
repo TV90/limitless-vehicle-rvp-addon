@@ -80,8 +80,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
             return;
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            // 调用本项目帧协调器，在 DH 通道失败时执行显式晚期降级并结束本帧。
-            RVP_RemoteVehicleFrameCoordinator.finishLateFallback(event);
+            // 调用本项目帧协调器，执行 RVP_FIRST 或显式晚期降级并结束本帧。
+            RVP_RemoteVehicleFrameCoordinator.finishLateOutput(event);
             return;
         }
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {

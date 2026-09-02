@@ -18,6 +18,8 @@ public class RVP_ClientConfig {
     public enum DistantHorizonsCompatMode {
         /** 完全关闭 DH 适配，继续使用原有实体后渲染通道。 */
         OFF,
+        /** 在世界末端把完整远距载具绘制到 DH 地形之上，保证不被 DH 覆盖。 */
+        RVP_FIRST,
         /** 优先深度感知合成，失败时使用配置的安全降级。 */
         AUTO,
         /** 只接受深度感知合成；失败时隐藏本帧远距载具。 */
@@ -177,8 +179,8 @@ public class RVP_ClientConfig {
         builder.push("distantHorizons");
 
         distantHorizonsCompatMode = builder
-                .comment("Distant Horizons 远距载具兼容模式：OFF/AUTO/DEPTH_AWARE。",
-                        "AUTO 默认使用深度感知合成；失败时进入 fallbackMode。")
+                .comment("Distant Horizons 远距载具兼容模式：OFF/RVP_FIRST/AUTO/DEPTH_AWARE。",
+                        "RVP_FIRST 保证完整载具显示在 DH 地形之上；AUTO 默认使用深度感知合成，失败时进入 fallbackMode。")
                 .defineEnum("compatMode", DistantHorizonsCompatMode.AUTO);
 
         distantHorizonsFallbackMode = builder

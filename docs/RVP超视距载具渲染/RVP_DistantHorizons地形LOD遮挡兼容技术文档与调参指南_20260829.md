@@ -7,9 +7,10 @@
 
 ## 1. 结论先行
 
-当前实现已经把 RVP 超视距载具从单一的 Forge `AFTER_ENTITIES` 绘制，扩展为一条可选的 Distant Horizons（下文简称 DH）深度感知合成通道：
+当前实现已经把 RVP 超视距载具从单一的 Forge `AFTER_ENTITIES` 绘制，扩展为可选的 Distant Horizons（下文简称 DH）优先显示与深度感知合成通道：
 
 - 未安装 DH、DH 关闭 LOD 渲染或用户把兼容模式设为 `OFF` 时，继续使用原有 `AFTER_ENTITIES` 路径，行为不变。
+- `RVP_FIRST` 在 `AFTER_SKY` 冻结远距载具计划，到 `AFTER_LEVEL` 再把完整载具合成到最终世界目标；它不读取 DH 深度，保证载具不被 DH 地形覆盖。
 - DH API 7.0.1+ 的 7.x 版本且使用原生 OpenGL 渲染器时，RVP 会在 DH apply shader 前取得当帧颜色、深度纹理，将远距载具离屏绘制后按相机空间视深度与 DH 地形比较，并把可见颜色和深度写回 DH 目标。
 - API、纹理、投影或光影管线不满足要求时，不会取消 DH 自身事件，也不会盲目继续写纹理；系统会按显式回退配置选择原通道、青色轮廓、始终可见或隐藏。
 - 整个兼容层位于 RVP 客户端代码中，不修改 `ywzj_vehicle` 本体，不使用 Mixin，也不依赖 DH 的内部 `common/core` 实现。
@@ -21,6 +22,7 @@
 ### 2.1 已实现
 
 - DH 为可选客户端依赖；无 DH 客户端和专用服务器不会解析 DH API 类型。
+- `RVP_FIRST` 复用 `AFTER_SKY` 帧计划和晚期完整图像合成，在 `AFTER_LEVEL` 唯一消费，并阻止 DH apply 前、`AFTER_ENTITIES` 和普通 fallback 重复绘制。
 - 对 DH API 7.0.1～7.x 做运行期 major/minor/patch 检查；已验证公开版基线为 DH 3.2.0-b / API 7.0.1。
 - 仅接受 DH `OPEN_GL` 且 `isNativeRenderer() == true` 的纹理共享路径。
 - 在 DH `before apply shader` 官方事件中逐帧查询颜色、深度纹理 ID。
@@ -52,7 +54,10 @@ flowchart TD
     A[Forge AFTER_SKY] --> B{DH 已加载、LOD 已启用、compatMode 非 OFF?}
     B -- 否 --> C[AFTER_ENTITIES 建立并直接绘制原路径]
     B -- 是 --> D[建立不可变 FramePlan]
-    D --> E{收到 DH BeforeApplyShader 事件?}
+    D --> Q{compatMode 为 RVP_FIRST?}
+    Q -- 是 --> R[跳过 DH 合成与 CURRENT_PASS]
+    R --> S[AFTER_LEVEL 完整合成并标记 RVP_FIRST]
+    Q -- 否 --> E{收到 DH BeforeApplyShader 事件?}
     E -- 是 --> F[校验 API、渲染器、纹理、尺寸和投影]
     F -- 成功 --> G[RVP 离屏绘制]
     G --> H[复制 DH 深度]
@@ -69,12 +74,14 @@ flowchart TD
 
 具体阶段如下：
 
-1. `AFTER_SKY`：调用 `prepareFrame`，冻结本帧候选、预算、投影和相机相关数据。没有候选时计划为 `null`。
-2. DH `DhApiBeforeApplyShaderRenderEvent`：兼容桥取得本帧计划和 DH 纹理，尝试深度合成。
+1. `AFTER_SKY`：调用 `prepareFrame`，冻结本帧候选、预算、投影和相机相关数据。没有候选时计划为 `null`；`RVP_FIRST` 只准备计划，不在这里输出像素。
+2. DH `DhApiBeforeApplyShaderRenderEvent`：仅 `AUTO` / `DEPTH_AWARE` 的未消费计划由兼容桥取得 DH 纹理并尝试深度合成。
 3. `AFTER_ENTITIES`：仅 `CURRENT_PASS` 回退会在这里消费计划；DH 已成功的帧不会重复绘制。
-4. `AFTER_LEVEL`：处理 `SILHOUETTE`、`ALWAYS_VISIBLE` 或 `HIDE`，并清理本帧引用。
+4. `AFTER_LEVEL`：`RVP_FIRST` 在这里以完整图像优先显示；其他模式处理 `SILHOUETTE`、`ALWAYS_VISIBLE` 或 `HIDE`，然后清理本帧引用。
 
 当 DH 官方 `renderingEnabled` 在运行中关闭时，监听器会同步状态；下一帧直接恢复普通 `AFTER_ENTITIES` 路径。
+
+`RVP_FIRST` 是明确的视觉优先级模式，不做逐像素视深度比较。其完整图像在 DH 和其他世界内容之后合成，因此 DH 地形不会覆盖载具；相应代价是载具会穿过 DH、原版地形和其他世界深度，不等同于 `AUTO` 的真实遮挡。
 
 ## 4. 深度感知合成原理
 
@@ -175,17 +182,18 @@ DH 颜色、深度纹理只在当帧借用并挂接到 RVP 自建 FBO。RVP 不�
 
 | 字段 | 范围/枚举 | 默认 | 实际语义 |
 | --- | --- | --- | --- |
-| `compatMode` | `OFF` / `AUTO` / `DEPTH_AWARE` | `AUTO` | 关闭、自动深度合成并回退、或严格要求深度合成 |
+| `compatMode` | `OFF` / `RVP_FIRST` / `AUTO` / `DEPTH_AWARE` | `AUTO` | 关闭、载具优先显示在 DH 地形之上、自动深度合成并回退、或严格要求深度合成 |
 | `fallbackMode` | `CURRENT_PASS` / `SILHOUETTE` / `ALWAYS_VISIBLE` / `HIDE` | `SILHOUETTE` | `AUTO` 合成失败时的显示语义 |
 | `occlusionBiasBlocks` | 0.0～8.0 | 2.0 | DH 地形遮挡比较的基础容差，单位格 |
 | `maxOcclusionBiasBlocks` | 0.0～8.0 | 8.0 | 容差硬上限；有效值为两者较小值 |
 | `allowExperimentalShaderPipeline` | `true` / `false` | `false` | 是否允许在 DH 延迟透明/未验证光影管线上尝试当前合成 |
 | `diagnostics` | `true` / `false` | `false` | 是否每秒最多输出一次状态、候选数与耗时 |
 
-两个容易误解的规则：
+三个容易误解的规则：
 
 1. `DEPTH_AWARE` 会强制把有效回退视为 `HIDE`，配置文件中的 `fallbackMode` 此时不会生效。
-2. 有效 bias 是 `min(occlusionBiasBlocks, maxOcclusionBiasBlocks)`；当前没有按距离放大 bias 的逻辑。
+2. `RVP_FIRST` 不进入深度合成，`fallbackMode`、两个 bias 与实验性光影开关都不参与该挡位的绘制决策。
+3. 有效 bias 是 `min(occlusionBiasBlocks, maxOcclusionBiasBlocks)`；当前没有按距离放大 bias 的逻辑。
 
 默认配置示例：
 
@@ -238,7 +246,16 @@ maxOcclusionBiasBlocks = 8.0
 
 只有明确接受“兼容失败时完整载具可能穿山”时才使用。该模式不会改变服务端授权范围或候选预算，只改变客户端最终合成语义。
 
-### 8.4 临时关闭兼容进行 A/B 对照
+### 8.4 RVP 优先显示
+
+```toml
+compatMode = "RVP_FIRST"
+diagnostics = true
+```
+
+该挡位在 `AFTER_SKY` 冻结计划、跳过 DH apply 前合成，到 `AFTER_LEVEL` 把完整载具绘制到最终世界目标并忽略地形深度。它保证 DH 地形不能覆盖载具，适合“目标可见性高于地形遮挡”的场景。代价是载具会穿山，并且原版地形和其他世界内容也无法遮挡该完整图像。`fallbackMode` 在此挡位不生效。
+
+### 8.5 临时关闭兼容进行 A/B 对照
 
 ```toml
 compatMode = "OFF"
@@ -290,6 +307,12 @@ diagnostics = true
 
 ```text
 RVP DH compat: state=DEPTH_AWARE_OPENGL api=<实际版本> pass=<pass> dhDepth=FORWARD_Z|REVERSE_Z selected=<数量> compositeMs=<毫秒>
+```
+
+`RVP_FIRST` 示例：
+
+```text
+RVP DH compat: state=RVP_FIRST stage=AFTER_LEVEL selected=<数量>
 ```
 
 回退示例的字段结构：
@@ -365,7 +388,7 @@ diagnostics = true
 | 维度 | 测试值 |
 | --- | --- |
 | DH | 未安装 / 已安装但 LOD 关闭 / 已安装且 LOD 开启 |
-| 模式 | `OFF` / `AUTO` 四种 fallback / `DEPTH_AWARE` |
+| 模式 | `OFF` / `RVP_FIRST` / `AUTO` 四种 fallback / `DEPTH_AWARE` |
 | 投影 | 默认视角 / 瞄准镜缩放 / 调整 FOV |
 | 深度 | 山前 / 山脊相切 / 山后 / 超过 DH far plane |
 | 分辨率 | 1080p / 1440p / 4K 或目标整合包实际分辨率 |
@@ -376,6 +399,7 @@ diagnostics = true
 验收标准：
 
 - DH 缺失或关闭时，原路径无回归；
+- `RVP_FIRST` 只在 `AFTER_LEVEL` 输出一次完整图像，不进入 DH apply 前或 `CURRENT_PASS`；
 - DH 成功时，山前目标显示、山后目标遮挡、山脊相切不持续抖动；
 - 同一载具同一帧不重复绘制；
 - 回退行为与配置完全一致；

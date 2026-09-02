@@ -41,6 +41,14 @@ public final class RVP_DhCompatDiagnostics {
                 selected, String.format(java.util.Locale.ROOT, "%.3f", milliseconds));
     }
 
+    /** 在诊断启用时每秒至多输出一次 RVP 优先显示统计。 */
+    public static void recordRvpFirst(int selected) {
+        if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled() || !canLogStatistics()) {
+            return;
+        }
+        LOGGER.info("RVP DH compat: state=RVP_FIRST stage=AFTER_LEVEL selected={}", selected);
+    }
+
     /** 在诊断启用时每秒至多输出一次降级状态。 */
     public static void recordFallback(String reason, DistantHorizonsFallbackMode fallback, int selected) {
         warnOnce(reason, "fallback=" + fallback);

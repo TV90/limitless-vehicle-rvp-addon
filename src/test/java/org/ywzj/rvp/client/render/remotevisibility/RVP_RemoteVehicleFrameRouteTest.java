@@ -16,6 +16,7 @@ class RVP_RemoteVehicleFrameRouteTest {
 
         assertTrue(route.consumeDh());
         assertFalse(route.consumeDh());
+        assertFalse(route.consumeRvpFirst());
         assertFalse(route.consumeCurrentPass());
         assertFalse(route.consumeLateFallback());
         assertEquals(RVP_RemoteVehicleFrameRoute.State.DH_COMPOSITED, route.state());
@@ -27,6 +28,7 @@ class RVP_RemoteVehicleFrameRouteTest {
 
         route.prepare(true);
         assertTrue(route.consumeCurrentPass());
+        assertFalse(route.consumeRvpFirst());
         assertFalse(route.consumeLateFallback());
 
         route.prepare(true);
@@ -36,12 +38,27 @@ class RVP_RemoteVehicleFrameRouteTest {
     }
 
     @Test
+    void rvpFirstConsumesPreparedFrameExclusively() {
+        RVP_RemoteVehicleFrameRoute route = new RVP_RemoteVehicleFrameRoute();
+
+        route.prepare(true);
+
+        assertTrue(route.consumeRvpFirst());
+        assertFalse(route.consumeRvpFirst());
+        assertFalse(route.consumeDh());
+        assertFalse(route.consumeCurrentPass());
+        assertFalse(route.consumeLateFallback());
+        assertEquals(RVP_RemoteVehicleFrameRoute.State.RVP_FIRST, route.state());
+    }
+
+    @Test
     void emptyPlanCannotBeConsumed() {
         RVP_RemoteVehicleFrameRoute route = new RVP_RemoteVehicleFrameRoute();
 
         route.prepare(false);
 
         assertFalse(route.consumeDh());
+        assertFalse(route.consumeRvpFirst());
         assertFalse(route.consumeCurrentPass());
         assertFalse(route.consumeLateFallback());
         assertEquals(RVP_RemoteVehicleFrameRoute.State.EMPTY, route.state());
