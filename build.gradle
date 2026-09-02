@@ -118,10 +118,20 @@ repositories {
             includeGroup "com.github.mcmodderanchor"
         }
     }
+    // Distant Horizons 官方 API 发布在 Modrinth Maven；仅用于编译可选客户端兼容层。
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content {
+            includeGroup 'maven.modrinth'
+        }
+    }
 }
 
 dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    // DH 矩阵字段映射测试在测试运行期构造官方 API 值对象；不会进入发布 jar。
+    testImplementation "maven.modrinth:Xs0XTOVv:GgrzKRsK"
     // 手动虚拟飞行测试使用 XChart 按 Tick 绘制实时轨迹，不进入模组运行时依赖。
     testImplementation 'org.knowm.xchart:xchart:3.8.8'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
@@ -135,6 +145,9 @@ dependencies {
     // 全部 SBW 类引用必须位于 RVP_SuperbWarfareCompat.isLoaded() 之后的方法体内，
     // 卸载 SBW 时不会触发 SBW 类加载，RVP 仍可正常游玩）
     compileOnly fg.deobf("libs:superbwarfare-1.20.1:0.8.9.1-all")
+    // 编译使用官方 API 7.0.0 已存在的稳定事件/纹理方法；运行时严格要求 API >= 7.1.0。
+    // 7.1.0 尚无独立 Maven 发布物，其保留的旧纹理 getter 会转发到 7.1 OpenGL getter。
+    compileOnly fg.deobf("maven.modrinth:Xs0XTOVv:GgrzKRsK")
     // SBM
     jarJar(implementation(fg.deobf("com.github.mcmodderanchor:simplebedrockmodel:2.5.1-forge-mc1.20.1"))) {
         jarJar.ranged(it, "[2.5.1,)")

@@ -6,6 +6,7 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager;
+import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 
 /** 资源重载时清除远距载具代理，防止旧 display 模型实例跨资源代际复用。 */
 public final class RVP_RemoteVehicleVisualReloadListener extends SimplePreparableReloadListener<Void> {
@@ -29,5 +30,7 @@ public final class RVP_RemoteVehicleVisualReloadListener extends SimplePreparabl
         RVP_ClientRemoteVehicleVisualState.clear();
         // 调用 RVP Billboard 管理器，释放旧资源代际的动态纹理与 RenderTarget。
         RVP_RemoteVehicleBillboardManager.clear();
+        // 调用无 DH 类型的兼容入口，释放 RVP 自有离屏/FBO 资源并清除未消费帧计划。
+        RVP_DistantHorizonsCompatBootstrap.clearClientResources();
     }
 }

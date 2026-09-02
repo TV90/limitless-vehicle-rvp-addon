@@ -1,0 +1,17 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "ywzj_rvp:dh_fallback_composite",
+  "fragment": "ywzj_rvp:dh_fallback_composite",
+  "attributes": ["Position"],
+  "samplers": [
+    {"name": "RvpColor"}
+  ],
+  "uniforms": [
+    {"name": "FallbackMode", "type": "int", "count": 1, "values": [0]},
+    {"name": "FallbackColor", "type": "float", "count": 4, "values": [0.0, 0.95, 1.0, 0.82]}
+  ]
+}

@@ -14,6 +14,28 @@ import org.apache.commons.lang3.tuple.Pair;
  */
 public class RVP_ClientConfig {
 
+    /** Distant Horizons 兼容通道选择。 */
+    public enum DistantHorizonsCompatMode {
+        /** 完全关闭 DH 适配，继续使用原有实体后渲染通道。 */
+        OFF,
+        /** 优先深度感知合成，失败时使用配置的安全降级。 */
+        AUTO,
+        /** 只接受深度感知合成；失败时隐藏本帧远距载具。 */
+        DEPTH_AWARE
+    }
+
+    /** Distant Horizons 深度感知不可用时的渲染语义。 */
+    public enum DistantHorizonsFallbackMode {
+        /** 继续原有 AFTER_ENTITIES 通道，可能仍被后续 DH 通道覆盖。 */
+        CURRENT_PASS,
+        /** 在世界末端绘制仅含边缘的青色目标轮廓。 */
+        SILHOUETTE,
+        /** 在世界末端合成完整载具并忽略地形深度，允许穿山。 */
+        ALWAYS_VISIBLE,
+        /** 隐藏本帧无法可信合成的远距载具。 */
+        HIDE
+    }
+
     /** 客户端温压粒子质量档位。 */
     public enum ThermobaricQuality {
         /** 低质量：保留作者粒子密度的 50%。 */
@@ -59,6 +81,18 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.IntValue remoteVehicleMaxFallbackHighModels;
     /** 客户端远距载具样本允许的最大外推 tick 数。 */
     private final ForgeConfigSpec.IntValue remoteVehicleMaxExtrapolationTicks;
+    /** Distant Horizons 远距载具兼容模式。 */
+    private final ForgeConfigSpec.EnumValue<DistantHorizonsCompatMode> distantHorizonsCompatMode;
+    /** Distant Horizons 深度合成失败后的降级模式。 */
+    private final ForgeConfigSpec.EnumValue<DistantHorizonsFallbackMode> distantHorizonsFallbackMode;
+    /** DH 简化地形遮挡的基础视深度容差，单位格。 */
+    private final ForgeConfigSpec.DoubleValue distantHorizonsOcclusionBiasBlocks;
+    /** DH 简化地形遮挡容差的硬上限，单位格。 */
+    private final ForgeConfigSpec.DoubleValue distantHorizonsMaxOcclusionBiasBlocks;
+    /** 是否允许在未经实机验证的光影/延迟透明管线中实验性合成。 */
+    private final ForgeConfigSpec.BooleanValue distantHorizonsAllowExperimentalShaderPipeline;
+    /** 是否输出受频率限制的 DH 兼容诊断。 */
+    private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnostics;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
         builder.push("lod");
@@ -140,6 +174,37 @@ public class RVP_ClientConfig {
                         "该值只能缩短协议规定的五 tick 上限。")
                 .defineInRange("maxExtrapolationTicks", 5, 0, 5);
 
+        builder.push("distantHorizons");
+
+        distantHorizonsCompatMode = builder
+                .comment("Distant Horizons 远距载具兼容模式：OFF/AUTO/DEPTH_AWARE。",
+                        "AUTO 默认使用深度感知合成；失败时进入 fallbackMode。")
+                .defineEnum("compatMode", DistantHorizonsCompatMode.AUTO);
+
+        distantHorizonsFallbackMode = builder
+                .comment("深度感知不可用时：CURRENT_PASS/SILHOUETTE/ALWAYS_VISIBLE/HIDE。",
+                        "ALWAYS_VISIBLE 会穿山，只有明确接受该语义时才应启用。")
+                .defineEnum("fallbackMode", DistantHorizonsFallbackMode.SILHOUETTE);
+
+        distantHorizonsOcclusionBiasBlocks = builder
+                .comment("DH 简化 LOD 轮廓的基础遮挡容差，单位格。范围：0..8，默认：2。")
+                .defineInRange("occlusionBiasBlocks", 2.0D, 0.0D, 8.0D);
+
+        distantHorizonsMaxOcclusionBiasBlocks = builder
+                .comment("DH 遮挡容差硬上限，单位格。范围：0..8，默认：8。")
+                .defineInRange("maxOcclusionBiasBlocks", 8.0D, 0.0D, 8.0D);
+
+        distantHorizonsAllowExperimentalShaderPipeline = builder
+                .comment("是否允许未经验证的光影/延迟透明 DH 管线使用实验性纹理合成。",
+                        "默认 false；关闭时明确进入安全降级。")
+                .define("allowExperimentalShaderPipeline", false);
+
+        distantHorizonsDiagnostics = builder
+                .comment("是否每秒至多一次输出 DH 兼容状态与耗时统计。")
+                .define("diagnostics", false);
+
+        builder.pop();
+
         builder.pop();
     }
 
@@ -194,6 +259,40 @@ public class RVP_ClientConfig {
     /** 返回客户端远距载具样本允许的最大外推 tick 数。 */
     public static int getRemoteVehicleMaxExtrapolationTicks() {
         return INSTANCE != null ? Math.min(INSTANCE.remoteVehicleMaxExtrapolationTicks.get(), 5) : 5;
+    }
+
+    /** 返回 Distant Horizons 兼容模式；配置未就绪时使用 AUTO。 */
+    public static DistantHorizonsCompatMode getDistantHorizonsCompatMode() {
+        return INSTANCE != null ? INSTANCE.distantHorizonsCompatMode.get() : DistantHorizonsCompatMode.AUTO;
+    }
+
+    /** 返回 DH 合成失败后的降级模式；DEPTH_AWARE 固定按 HIDE 处理。 */
+    public static DistantHorizonsFallbackMode getDistantHorizonsFallbackMode() {
+        if (getDistantHorizonsCompatMode() == DistantHorizonsCompatMode.DEPTH_AWARE) {
+            return DistantHorizonsFallbackMode.HIDE;
+        }
+        return INSTANCE != null
+                ? INSTANCE.distantHorizonsFallbackMode.get()
+                : DistantHorizonsFallbackMode.SILHOUETTE;
+    }
+
+    /** 返回受硬上限约束的 DH 遮挡容差，单位格。 */
+    public static float getDistantHorizonsOcclusionBiasBlocks() {
+        if (INSTANCE == null) {
+            return 2.0F;
+        }
+        return (float) Math.min(INSTANCE.distantHorizonsOcclusionBiasBlocks.get(),
+                INSTANCE.distantHorizonsMaxOcclusionBiasBlocks.get());
+    }
+
+    /** 返回是否允许实验性光影/延迟透明合成。 */
+    public static boolean isDistantHorizonsExperimentalShaderPipelineAllowed() {
+        return INSTANCE != null && INSTANCE.distantHorizonsAllowExperimentalShaderPipeline.get();
+    }
+
+    /** 返回是否启用受频率限制的 DH 兼容诊断。 */
+    public static boolean isDistantHorizonsDiagnosticsEnabled() {
+        return INSTANCE != null && INSTANCE.distantHorizonsDiagnostics.get();
     }
 
     /** Register the client config. Must be called from mod constructor. */

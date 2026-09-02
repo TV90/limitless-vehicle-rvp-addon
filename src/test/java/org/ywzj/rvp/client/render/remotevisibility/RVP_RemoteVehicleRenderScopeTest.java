@@ -63,6 +63,24 @@ class RVP_RemoteVehicleRenderScopeTest {
         assertEquals(1, state.projectionRestoreCount);
     }
 
+    @Test
+    void offscreenRouteCanForceUnextendedProjectionAndRestoreIt() {
+        FakeRenderState state = new FakeRenderState();
+        Matrix4f projection = new Matrix4f().perspective(
+                (float) Math.toRadians(70.0D), 16.0F / 9.0F, 0.05F, 1_024.0F);
+        ProjectionPlan plan = RVP_RemoteVehicleProjection.plan(projection,
+                List.of(new FarPlaneDemand(500.0D, 5.0D))).orElseThrow();
+        assertFalse(plan.extended());
+
+        try (RVP_RemoteVehicleRenderScope ignored =
+                     RVP_RemoteVehicleRenderScope.open(plan, false, true, state)) {
+            assertTrue(state.remoteProjectionActive);
+        }
+
+        assertFalse(state.remoteProjectionActive);
+        assertEquals(1, state.projectionRestoreCount);
+    }
+
     /** 创建必定超过 1024 格原远平面的测试计划。 */
     private static ProjectionPlan extendedPlan() {
         Matrix4f projection = new Matrix4f().perspective(

@@ -34,17 +34,31 @@ final class RVP_RemoteVehicleRenderScope implements AutoCloseable {
     /** 保存状态，并应用计划中的扩展投影及环境允许的远距雾终点。 */
     static RVP_RemoteVehicleRenderScope open(ProjectionPlan plan, Camera camera) {
         RenderSystem.assertOnRenderThread();
-        return open(plan, hasRestrictedVisibility(camera), RENDER_SYSTEM_ACCESS);
+        return open(plan, hasRestrictedVisibility(camera), false, RENDER_SYSTEM_ACCESS);
+    }
+
+    /** 保存状态，并按调用方要求强制应用计划投影，供跨渲染阶段的离屏目标使用。 */
+    static RVP_RemoteVehicleRenderScope open(ProjectionPlan plan, Camera camera,
+                                             boolean forceProjection) {
+        RenderSystem.assertOnRenderThread();
+        return open(plan, hasRestrictedVisibility(camera), forceProjection, RENDER_SYSTEM_ACCESS);
     }
 
     /** 使用指定状态后端建立作用域，供无 OpenGL 上下文的状态恢复测试复用。 */
     static RVP_RemoteVehicleRenderScope open(ProjectionPlan plan, boolean restrictedVisibility,
                                              RenderStateAccess stateAccess) {
+        return open(plan, restrictedVisibility, false, stateAccess);
+    }
+
+    /** 使用指定状态后端和强制投影选项建立作用域，供离屏路径及无 GL 测试复用。 */
+    static RVP_RemoteVehicleRenderScope open(ProjectionPlan plan, boolean restrictedVisibility,
+                                             boolean forceProjection,
+                                             RenderStateAccess stateAccess) {
         FogParameters originalFog = stateAccess.captureFog();
         RVP_RemoteVehicleRenderScope scope =
                 new RVP_RemoteVehicleRenderScope(originalFog, stateAccess);
         try {
-            if (plan.extended()) {
+            if (plan.extended() || forceProjection) {
                 stateAccess.backupProjection();
                 scope.projectionBackedUp = true;
                 stateAccess.applyProjection(plan.projection());

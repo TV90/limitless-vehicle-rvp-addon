@@ -74,6 +74,18 @@ class RVP_VisualArchitectureTest {
     }
 
     @Test
+    void onlyDhApiBridgeMayReferenceDistantHorizonsTypes() throws IOException {
+        Path mainRoot = Path.of("src/main/java/org/ywzj/rvp");
+        for (Path source : javaSources(mainRoot)) {
+            String text = Files.readString(source);
+            if (text.contains("com.seibel.distanthorizons")) {
+                assertEquals("RVP_DhApi71Bridge.java", source.getFileName().toString(),
+                        source + " bypasses the optional DH class-loading boundary");
+            }
+        }
+    }
+
+    @Test
     void legacyExtendedAirClassesWereRemovedWithoutCompatibilityWrappers() {
         Path mainRoot = Path.of("src/main/java/org/ywzj/rvp");
         List<String> removedNames = List.of(

@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
@@ -19,6 +20,7 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
@@ -40,7 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 在正常实体之后直接绘制服务端授权的远距载具静态主体。 */
+/** 准备并绘制服务端授权的远距载具静态主体，允许同一计划输出到不同目标缓冲。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_RemoteVehicleVisualRenderer {
     /** 原生实体追踪与扩展视觉的水平接管边界，单位格。 */
@@ -63,16 +65,45 @@ public final class RVP_RemoteVehicleVisualRenderer {
     private RVP_RemoteVehicleVisualRenderer() {
     }
 
-    /** 在 AFTER_ENTITIES 阶段先裁剪预算，再解析并绘制静态主体。 */
+    /**
+     * 编排原版与 DH 两条唯一消费路由：DH 路径在 AFTER_SKY 预备，普通路径保持 AFTER_ENTITIES。
+     */
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY
+                && RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
+            // 调用本项目帧协调器，在 DH 地形 pass 前保存候选、预算与动态快照计划。
+            RVP_RemoteVehicleFrameCoordinator.prepareForDh(prepareFrame(event));
+            return;
+        }
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            // 调用本项目帧协调器，在 DH 通道失败时执行显式晚期降级并结束本帧。
+            RVP_RemoteVehicleFrameCoordinator.finishLateFallback(event);
+            return;
+        }
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
             return;
         }
+        if (RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
+            // 调用本项目帧协调器：已由 DH 合成的帧跳过，CURRENT_PASS 降级只消费一次。
+            RVP_RemoteVehicleFrameCoordinator.finishCurrentPassFallback(event);
+            return;
+        }
+        // 调用本项目帧协调器，清除 DH 配置在帧中途关闭时遗留的未消费计划。
+        RVP_RemoteVehicleFrameCoordinator.clear();
+        RVP_RemoteVehicleFramePlan framePlan = prepareFrame(event);
+        if (framePlan != null) {
+            // 调用本项目目标无关绘制入口，保持未安装 DH 时原有 AFTER_ENTITIES 像素路径。
+            renderPrepared(framePlan, event.getCamera());
+        }
+    }
+
+    /** 读取当前事件并建立不可变的候选、预算、投影与相机计划；没有目标时返回 null。 */
+    public static RVP_RemoteVehicleFramePlan prepareFrame(RenderLevelStageEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null) {
-            return;
+            return null;
         }
 
         Vec3 cameraPosition = event.getCamera().getPosition();
@@ -135,7 +166,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
             farPlaneDemands.add(new FarPlaneDemand(cameraDistance, cullRadius));
         }
         if (preCandidates.isEmpty()) {
-            return;
+            return null;
         }
 
         // 调用 RVP 投影辅助，按本帧实际授权预候选计算受硬上限保护的动态远平面。
@@ -170,7 +201,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 RVP_ClientConfig.getRemoteVehicleMaxRenderedVehicles(),
                 RVP_ClientConfig.getRemoteVehicleMaxFallbackHighModels());
         if (selected.isEmpty()) {
-            return;
+            return null;
         }
 
         List<BillboardPlan> selectedBillboardPlans = selected.stream()
@@ -180,17 +211,37 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 .toList();
         // 调用独立 Billboard 管理器，在切换远距投影前按预算优先级预热至多一张动态快照。
         RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(selectedBillboardPlans);
+        PoseStack savedPoseStack = new PoseStack();
+        savedPoseStack.mulPoseMatrix(new Matrix4f(event.getPoseStack().last().pose()));
+        return new RVP_RemoteVehicleFramePlan(level, selected, contexts, cameraPosition,
+                new org.joml.Quaternionf(event.getCamera().rotation()), savedPoseStack,
+                projectionPlan, event.getPartialTick());
+    }
 
+    /** 在当前已绑定目标缓冲中绘制给定帧计划，并完整恢复扩展投影与雾。 */
+    public static void renderPrepared(RVP_RemoteVehicleFramePlan framePlan, Camera camera) {
+        renderPrepared(framePlan, camera, false);
+    }
+
+    /**
+     * 在当前目标缓冲绘制计划；forceProjection 用于 DH 回调等与准备阶段不同的渲染上下文。
+     */
+    public static void renderPrepared(RVP_RemoteVehicleFramePlan framePlan, Camera camera,
+                                      boolean forceProjection) {
+        if (framePlan == null) {
+            return;
+        }
+        ProjectionPlan projectionPlan = framePlan.projectionPlan();
         if (projectionPlan == null) {
-            renderSelected(level, selected, contexts, cameraPosition,
-                    event.getCamera().rotation(), event.getPoseStack());
+            renderSelected(framePlan.level(), framePlan.selected(), framePlan.contexts(),
+                    framePlan.cameraPosition(), framePlan.cameraOrientation(), framePlan.poseStack());
             return;
         }
         // 调用 RVP 渲染作用域，在隔离批次期间临时应用并最终恢复投影与完整雾状态。
         try (RVP_RemoteVehicleRenderScope ignored =
-                     RVP_RemoteVehicleRenderScope.open(projectionPlan, event.getCamera())) {
-            renderSelected(level, selected, contexts, cameraPosition,
-                    event.getCamera().rotation(), event.getPoseStack());
+                     RVP_RemoteVehicleRenderScope.open(projectionPlan, camera, forceProjection)) {
+            renderSelected(framePlan.level(), framePlan.selected(), framePlan.contexts(),
+                    framePlan.cameraPosition(), framePlan.cameraOrientation(), framePlan.poseStack());
         }
     }
 
@@ -363,10 +414,10 @@ public final class RVP_RemoteVehicleVisualRenderer {
      * @param fallbackHighModel 是否没有整模型 LOD、需要使用静态原模型回退
      * @param billboardPlan 服务端策略和本地资源共同生成的 Billboard 计划
      */
-    private record CandidateContext(RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
-                                    double cameraDistance, AABB cullingBox,
-                                    double screenContribution, boolean fallbackHighModel,
-                                    BillboardPlan billboardPlan) {
+    record CandidateContext(RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
+                            double cameraDistance, AABB cullingBox,
+                            double screenContribution, boolean fallbackHighModel,
+                            BillboardPlan billboardPlan) {
     }
 
     /** 渲染临时改写前的代理位置与三轴姿态。 */

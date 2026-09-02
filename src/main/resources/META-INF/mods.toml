@@ -29,3 +29,10 @@ mandatory=true
 versionRange="[0,)"
 ordering="BEFORE"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="distanthorizons"
+mandatory=false
+versionRange="[0,)"
+ordering="AFTER"
+side="CLIENT"

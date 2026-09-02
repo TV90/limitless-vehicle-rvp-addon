@@ -1,0 +1,24 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "ywzj_rvp:dh_depth_composite",
+  "fragment": "ywzj_rvp:dh_depth_composite",
+  "attributes": ["Position"],
+  "samplers": [
+    {"name": "RvpColor"},
+    {"name": "RvpDepth"},
+    {"name": "DhDepthCopy"}
+  ],
+  "uniforms": [
+    {"name": "RvpInverseProjection", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},
+    {"name": "DhInverseProjection", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},
+    {"name": "DhProjection", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},
+    {"name": "DhEmptyDepth", "type": "float", "count": 1, "values": [1.0]},
+    {"name": "DhNearDepth", "type": "float", "count": 1, "values": [0.0]},
+    {"name": "DhFarPlane", "type": "float", "count": 1, "values": [4096.0]},
+    {"name": "OcclusionBiasBlocks", "type": "float", "count": 1, "values": [2.0]}
+  ]
+}

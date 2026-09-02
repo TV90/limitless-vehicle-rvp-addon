@@ -11,6 +11,7 @@
 | [无人机_TV弹_区块加载功能调研.md](./无人机_TV弹_区块加载功能调研.md) | 系统调研 / 接手开发 | 可部署 UAV、TV/HITL 导弹、区块加载器当前实现与风险 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
 | [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、release 级三维释放云、载荷速度/定向发射、`allow_submunition` 与边界测试 |
+| [RVP Distant Horizons 地形 LOD 遮挡兼容技术文档与调参指南](./RVP超视距载具渲染/RVP_DistantHorizons地形LOD遮挡兼容技术文档与调参指南_20260829.md) | 客户端渲染 / 整合包 / QA | DH API 7.1 深度合成、显式回退、配置语义、bias 校准、诊断与实机验证矩阵 |
 | [RVP空爆白磷弹实际实现与调参指南.md](./RVP弹体-fish/RVP空爆白磷弹实际实现与调参指南.md) | 配置作者 / 特效 / 平衡 / QA | M30 权威白磷释放云、分层下坠、初段尾迹增密、毁伤、性能预算与调参排障 |
 | [炮兵地图与战术点亮机制方案.md](./plan/炮兵地图与战术点亮机制方案.md) | 火控开发 / QA | 炮兵地图、逆 CCIP 解算、偏航优先瞄准、俯仰门控与战术点亮机制 |
 | [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |
