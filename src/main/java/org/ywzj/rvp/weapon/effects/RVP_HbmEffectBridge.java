@@ -1,5 +1,6 @@
 package org.ywzj.rvp.weapon.effects;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -8,12 +9,19 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import org.ywzj.rvp.weapon.data.RVP_HbmEffectData;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 public final class RVP_HbmEffectBridge {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    // 原版 LARGE 档固定簇填充重试数：retry 控制碎块簇内部填充密度，不是尺寸量，不随 scale 缩放。
+    private static final int DEBRIS_RETRY_ATTEMPTS = 50;
+
 
     private static final String HBM_MOD_ID = "hbm_ntm_rebirth";
     private static final String PARTICLE_UTIL_CLASS = "com.hbm.ntm.particle.ParticleUtil";
@@ -167,15 +175,21 @@ public final class RVP_HbmEffectBridge {
         }
         String preset = spec.getVisualPreset();
         float visualScale = spec.getVisualScale();
+        float visualDensity = spec.getVisualDensity();
         try {
             if ("nuclear".equalsIgnoreCase(preset) || "nuke".equalsIgnoreCase(preset)) {
                 return spawnVisualNuclear(level, pos, spec, visualScale);
             }
             if ("shell".equalsIgnoreCase(preset)) {
                 if (spawnExplosionSmallMethod != null) {
+                    int cloudCount = shellCloudCount(visualDensity);
+                    float cloudScale = shellCloudScale(visualScale);
+                    float cloudSpeed = shellCloudSpeed(visualScale);
+                    int debrisCount = shellDebrisCount(visualDensity);
+                    LOGGER.debug("[rvp:hbm-bridge] shell preset scale={} density={} -> cloudCount={} cloudScale={} cloudSpeed={} debrisCount={}",
+                            visualScale, visualDensity, cloudCount, cloudScale, cloudSpeed, debrisCount);
                     spawnExplosionSmallMethod.invoke(null, level, pos.x, pos.y, pos.z,
-                            shellCloudCount(visualScale), shellCloudScale(visualScale), shellCloudSpeed(visualScale),
-                            shellDebrisCount(visualScale));
+                            cloudCount, cloudScale, cloudSpeed, debrisCount);
                     return true;
                 }
                 if (spawnLegacyExplosionSmallMethod != null) {
@@ -185,11 +199,24 @@ public final class RVP_HbmEffectBridge {
             }
             if ("bomb".equalsIgnoreCase(preset)) {
                 if (spawnExplosionLargeMethod != null) {
+                    int cloudCount = bombCloudCount(visualDensity);
+                    float cloudScale = bombCloudScale(visualScale);
+                    float cloudSpeed = bombCloudSpeed(visualScale);
+                    float waveScale = bombWaveScale(visualScale);
+                    int debrisCount = bombDebrisCount(visualDensity);
+                    int debrisSize = bombDebrisSize(visualScale);
+                    int debrisRetry = bombDebrisRetry();
+                    float debrisVelocity = bombDebrisVelocity(visualScale);
+                    float debrisDeviation = bombDebrisHorizontalDeviation(visualScale);
+                    float soundRange = bombSoundRange(visualScale);
+                    LOGGER.debug("[rvp:hbm-bridge] bomb preset scale={} density={} -> cloudCount={} cloudScale={} cloudSpeed={} waveScale={} debrisCount={} debrisSize={} debrisRetry={} debrisVelocity={} debrisDeviation={} soundRange={}",
+                            visualScale, visualDensity, cloudCount, cloudScale, cloudSpeed, waveScale,
+                            debrisCount, debrisSize, debrisRetry, debrisVelocity, debrisDeviation, soundRange);
                     spawnExplosionLargeMethod.invoke(null, level, pos.x, pos.y, pos.z,
-                            bombCloudCount(visualScale), bombCloudScale(visualScale), bombCloudSpeed(visualScale),
-                            bombWaveScale(visualScale), bombDebrisCount(visualScale), bombDebrisSize(visualScale),
-                            bombDebrisRetry(visualScale), bombDebrisVelocity(visualScale),
-                            bombDebrisHorizontalDeviation(visualScale), -2.0f, bombSoundRange(visualScale));
+                            cloudCount, cloudScale, cloudSpeed,
+                            waveScale, debrisCount, debrisSize,
+                            debrisRetry, debrisVelocity,
+                            debrisDeviation, -2.0f, soundRange);
                     return true;
                 }
                 if (spawnLegacyExplosionLargeMethod != null) {
@@ -230,8 +257,11 @@ public final class RVP_HbmEffectBridge {
         }
     }
 
-    private static int shellCloudCount(float visualScale) {
-        return clampInt(Math.round(10.0f * visualScale), 4, 80);
+    // 数量型参数（烟团数/碎块数）由 visual_density 控制，不随 scale 缩放（文档 7.1）：
+    // scale 只管几何等比，density 才管数量，保持烟团互相重叠的原版"均匀厚球"观感。
+
+    private static int shellCloudCount(float visualDensity) {
+        return clampInt(Math.round(10.0f * visualDensity), 4, 80);
     }
 
     private static float shellCloudScale(float visualScale) {
@@ -239,15 +269,16 @@ public final class RVP_HbmEffectBridge {
     }
 
     private static float shellCloudSpeed(float visualScale) {
-        return (float) clampDouble(0.5D * Math.sqrt(visualScale), 0.15D, 4.0D);
+        // 线性缩放：速度与尺寸同步缩，烟柱高宽比恒定（原 0.5*sqrt 会拉细烟柱）
+        return (float) clampDouble(0.5D * visualScale, 0.15D, 4.0D);
     }
 
-    private static int shellDebrisCount(float visualScale) {
-        return clampInt(Math.round(15.0f * visualScale), 0, 120);
+    private static int shellDebrisCount(float visualDensity) {
+        return clampInt(Math.round(15.0f * visualDensity), 0, 120);
     }
 
-    private static int bombCloudCount(float visualScale) {
-        return clampInt(Math.round(30.0f * visualScale), 8, 180);
+    private static int bombCloudCount(float visualDensity) {
+        return clampInt(Math.round(30.0f * visualDensity), 8, 180);
     }
 
     private static float bombCloudScale(float visualScale) {
@@ -255,26 +286,28 @@ public final class RVP_HbmEffectBridge {
     }
 
     private static float bombCloudSpeed(float visualScale) {
-        return (float) clampDouble(2.0D * Math.sqrt(visualScale), 0.35D, 6.0D);
+        // 线性缩放：烟柱位移 = 初速 × Σ0.91^k 线性于初速，线性缩放才保高宽比 ≈4.4（文档 7.1）
+        return (float) clampDouble(2.0D * visualScale, 0.35D, 6.0D);
     }
 
     private static float bombWaveScale(float visualScale) {
         return (float) clampDouble(65.0D * visualScale, 8.0D, 220.0D);
     }
 
-    private static int bombDebrisCount(float visualScale) {
-        return clampInt(Math.round(25.0f * visualScale), 2, 160);
+    private static int bombDebrisCount(float visualDensity) {
+        return clampInt(Math.round(25.0f * visualDensity), 2, 160);
     }
 
     private static int bombDebrisSize(float visualScale) {
         return clampInt(Math.round(16.0f * visualScale), 4, 64);
     }
 
-    private static int bombDebrisRetry(float visualScale) {
-        return clampInt(Math.round(50.0f * visualScale), 8, 160);
+    private static int bombDebrisRetry() {
+        return DEBRIS_RETRY_ATTEMPTS;
     }
 
     private static float bombDebrisVelocity(float visualScale) {
+        // 保留 sqrt：碎块是固定重力无摩擦弹道，射程 ∝ v²/g，sqrt 缩放才能等比缩小抛物线（文档 7.1）
         return (float) clampDouble(1.25D * Math.sqrt(visualScale), 0.2D, 4.0D);
     }
 
