@@ -74,6 +74,7 @@ import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
+import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
@@ -3527,8 +3528,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     visualContext,
                     detonateData.getVisualEffectData());
         }
+        // ── RVP 内置默认爆炸视觉（MCHR 风格）屏蔽判定（方案 v2 屏蔽矩阵）──
+        // a) 视觉工厂其它特效发布成功（温压等已完整替代爆炸视觉）→ 屏蔽默认视觉；
+        // b) 任一 visual_effect_data 显式 suppress_rvp_default_explosion=true → 屏蔽（走本体视觉）。
+        //    该标记读取不受 enabled 门控——条目可以只作为屏蔽标记存在（无 effect_type）。
+        // 默认路径（无视觉工厂/无屏蔽标记）：广播 RVP 内置 MCHR 爆炸视觉（数值按最终半径自动算）
+        // + 服务端按本体分级音量补播爆炸音（负半径标记会取消客户端 effect() 的原生音效）。
+        boolean suppressRvpDefault = visualResult.publishedCount() > 0
+                || (detonateData != null && detonateData.getVisualEffectData() != null
+                && detonateData.getVisualEffectData().stream()
+                .anyMatch(org.ywzj.rvp.weapon.data.RVP_VisualEffectData::isSuppressRvpDefaultExplosion));
+        boolean defaultVisualSpawned = false;
+        if (!suppressRvpDefault && level() instanceof ServerLevel defaultVisualLevel) {
+            // 水中水花由客户端按爆心流体状态自行判定（事件不含 water 标记）
+            RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius);
+            defaultVisualSpawned = true;
+        }
         boolean resolvedSuppressNative = suppressNativeExplosionEffect
-                || visualResult.shouldSuppressNativeExplosionEffect();
+                || visualResult.shouldSuppressNativeExplosionEffect()
+                || defaultVisualSpawned;
         RVP_ProjectileLifecycleDebug.noteEvent(this,
                 RVP_ProjectileLifecycleDebug.Event.EXPLOSION,
                 () -> "kind=" + kind

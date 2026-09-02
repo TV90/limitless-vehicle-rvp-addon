@@ -9,6 +9,14 @@ public final class RVP_ParticleIds {
     public static final ResourceLocation WHITE_PHOSPHORUS =
             ResourceLocation.fromNamespaceAndPath("rvp", "white_phosphorus");
 
+    /** MCHR 风格默认爆炸：翻滚灰黄大烟（vanilla big_smoke_0..11 帧）。 */
+    public static final ResourceLocation MCHR_SMOKE =
+            ResourceLocation.fromNamespaceAndPath("rvp", "mchr_smoke");
+
+    /** MCHR 风格默认爆炸：曳光火星（nuclear/flare.png 光斑，拖烟语义见粒子类）。 */
+    public static final ResourceLocation MCHR_FLARE =
+            ResourceLocation.fromNamespaceAndPath("rvp", "mchr_flare");
+
     private RVP_ParticleIds() {
     }
 }

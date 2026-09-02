@@ -6,6 +6,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Particles;
+import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WhitePhosphorusParticle;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
@@ -15,6 +16,7 @@ import org.ywzj.rvp.client.render.GunnerRenderer;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
+import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoVisualEndpoint;
@@ -37,6 +39,9 @@ public final class RVP_ClientBootstrap {
             // 调用 RVP 客户端视觉注册表，为通用事件协议注册温压效果工厂。
             RVP_ClientVisualEffectDispatcher.register(RVP_ThermobaricEffectFactory.EFFECT_TYPE,
                     new RVP_ThermobaricEffectFactory());
+            // 调用 RVP 客户端视觉注册表，为通用事件协议注册 RVP 内置默认爆炸（MCHR 风格）工厂。
+            RVP_ClientVisualEffectDispatcher.register(RVP_DefaultExplosionEffectFactory.EFFECT_TYPE,
+                    new RVP_DefaultExplosionEffectFactory());
             // 客户端初始化时安装既有核爆视觉消费端，保持旧 HBM 视觉行为并隔离物理侧。
             RVP_NuclearVisualEndpoint.install(message -> {
                 if ("nuclear".equalsIgnoreCase(message.preset()) || "nuke".equalsIgnoreCase(message.preset())) {
@@ -68,6 +73,10 @@ public final class RVP_ClientBootstrap {
     /** 注册直接绑定权威贴图的白磷粒子 Provider，不依赖粒子 JSON 或图集追加文件。 */
     public static void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
         event.registerSpecial(RVP_Particles.WHITE_PHOSPHORUS.get(), new RVP_WhitePhosphorusParticle.Provider());
+        // MCHR 风格默认爆炸烟雾：粒子直接绑定 MCHR 原版 smoke.png（textures/boom/smoke.png，
+        // 灰白底样 8 帧横排），帧集仅用于 Provider 兜底分发，工厂路径直接构造实例。
+        event.registerSpecial(RVP_Particles.MCHR_SMOKE.get(), new RVP_MchrSmokeParticle.Provider());
+
     }
 
     private static void registerVehicleRenderers() {
