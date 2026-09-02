@@ -623,7 +623,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `bombCloudCount` 烟团数 | round(30 × density) | [8, 180] | bomb（仅受 density，不随 scale 缩） |
 | `bombCloudScale` 烟团尺寸 | 6.5 × scale | [1, 32] | bomb |
 | `bombCloudSpeed` 烟柱速度 | 2.0 × scale（线性） | [0.35, 6] | bomb |
-| `bombWaveScale` 冲击波 | 65 × scale | [8, 220] | bomb |
+| `bombWaveScale` 冲击波 | 97.5 × scale（=65×1.5，2026-09-03 放大 1.5 倍） | [12, 330]（同比例放大） | bomb |
 | `bombDebrisCount` 碎块数 | round(25 × scale × density) | [2, 160] | bomb |
 | `bombDebrisSize` 碎块边长 | round(16 × scale) | [4, 64] | bomb |
 | `bombDebrisRetry` 簇填充重试 | 固定 50（不随 scale/density 缩） | — | bomb |

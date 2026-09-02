@@ -284,7 +284,9 @@ public final class RVP_HbmEffectBridge {
     }
 
     private static float bombWaveScale(float visualScale) {
-        return (float) clampDouble(65.0D * visualScale, 8.0D, 220.0D);
+        // 冲击波半径放大 1.5 倍（原 65×scale → 97.5×scale；钳制区间同比例放大保持相对窗口，
+        // 与自研后端 RVP_ExplosionVisualManager 同式同步，2026-09-03）
+        return (float) clampDouble(97.5D * visualScale, 12.0D, 330.0D);
     }
 
     private static int bombDebrisCount(float visualScale, float visualDensity) {

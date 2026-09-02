@@ -451,7 +451,8 @@ public final class RVP_ExplosionVisualManager {
             double distance = player == null ? 0.0D : player.position().distanceTo(center);
             soundDelayTicks = Math.max(0, (int) (distance / LEGACY_SPEED_OF_SOUND));
             soundPlayed = player != null && distance > soundRange;
-            waveScale = preset == Preset.BOMB ? Mth.clamp(65.0F * scale, 8.0F, 220.0F) : 0.0F;
+            // 冲击波半径放大 1.5 倍（97.5×scale，钳制 12..330，与桥接层 bombWaveScale 同式同步，2026-09-03）
+            waveScale = preset == Preset.BOMB ? Mth.clamp(97.5F * scale, 12.0F, 330.0F) : 0.0F;
             waveLifetime = preset == Preset.BOMB
                     ? Math.max(1, Math.round(25.0F * waveScale / 45.0F)) : 1;
             // bomb 档碎块数同时受 scale×density 钳制（任务2，与桥接层 bombDebrisCount 同式同步）：
