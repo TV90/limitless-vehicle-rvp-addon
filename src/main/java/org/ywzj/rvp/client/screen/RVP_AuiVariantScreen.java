@@ -19,20 +19,25 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * RVP 二选一武器变体选择屏幕（ApricityUI HTML 渲染）。
+ * RVP 自定义武器变体选择屏幕（ApricityUI HTML 渲染）。
  *
  * <p>左侧列出载具上所有 {@code modding_only_multi} 武器站，右侧列出选中站的子武器；
  * 点击右侧某项发送 {@link C2SSelectModdingSubWeapon} 切换。与本体改造工具屏幕同为
  * AUI 实现，可由本体屏幕直接 {@code setScreen} 打开。</p>
+ *
+ * <p>分组载波（如 T90M/VT4 的 AP 组 + HE 组 {@code merge_into_previous_slot} 并槽）按
+ * <b>每个分组合各一栏</b>展示（标题取该槽 JSON 的 {@code save_id}），点击组内弹种后
+ * 外层大组同步切到该组——与 ZBL08A 那种独立两栏的观感一致，F 键大组切换行为不变。</p>
  */
 public class RVP_AuiVariantScreen extends ApricityScreen {
 
     private static final String TEMPLATE = "screens/rvp_variants.html";
 
-    /** 一个武器站条目（多弹种或挂架队）。isPylon=true 表示挂架队（进下半区，金色）。 */
-    private record StationEntry(String partId, int weaponIndex, WeaponUnit unit, VehicleMultiWeapons multi, boolean isPylon) {
+    /** 一个武器站条目。isPylon=true 表示挂架队（进下半区，金色）；group≥0 表示分组载波的组序号。 */
+    private record StationEntry(String partId, int weaponIndex, WeaponUnit unit, VehicleMultiWeapons multi,
+                                boolean isPylon, int groupIndex, String groupTitle) {
         StationEntry(String partId, int weaponIndex, WeaponUnit unit, VehicleMultiWeapons multi) {
-            this(partId, weaponIndex, unit, multi, false);
+            this(partId, weaponIndex, unit, multi, false, -1, null);
         }
     }
 
@@ -67,8 +72,8 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
 
     private void rebuildStations() {
         stations.clear();
-        // 自定义弹种（多弹种，F 键屏蔽）：进上半区
-        for (var configEntry : RVP_VehicleExtendedConfigManager.INSTANCE.getModdingOnlyEntries(vehicle)) {
+        // 自定义弹种（多弹种，F 键屏蔽）：进上半区；分组载波按组拆栏
+        for (var configEntry : RVP_VehicleExtendedConfigManager.INSTANCE.getModdingGroupEntries(vehicle)) {
             PartUnit<?> partUnit = vehicle.getPartUnit(configEntry.partId()).orElse(null);
             if (!(partUnit instanceof WeaponUnit weaponUnit)) {
                 continue;
@@ -76,12 +81,23 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             if (configEntry.weaponIndex() < 0 || configEntry.weaponIndex() >= weaponUnit.weapons.size()) {
                 continue;
             }
-            VehicleMultiWeapons multi = RVP_VehicleExtendedConfigManager.INSTANCE
-                    .resolveModdingTargetMulti(weaponUnit, configEntry.weaponIndex());
-            if (multi == null) {
+            // 分组载波：外层 multi 的第 group 组即该栏展示的子武器列表
+            VehicleMultiWeapons target = null;
+            if (configEntry.groupIndex() >= 0) {
+                if (weaponUnit.weapons.get(configEntry.weaponIndex()) instanceof VehicleMultiWeapons outer
+                        && configEntry.groupIndex() < outer.getSubWeapons().size()
+                        && outer.getSubWeapons().get(configEntry.groupIndex()) instanceof VehicleMultiWeapons groupMulti) {
+                    target = groupMulti;
+                }
+            } else {
+                target = RVP_VehicleExtendedConfigManager.INSTANCE
+                        .resolveModdingTargetMulti(weaponUnit, configEntry.weaponIndex());
+            }
+            if (target == null) {
                 continue;
             }
-            stations.add(new StationEntry(configEntry.partId(), configEntry.weaponIndex(), weaponUnit, multi, false));
+            stations.add(new StationEntry(configEntry.partId(), configEntry.weaponIndex(), weaponUnit, target,
+                    false, configEntry.groupIndex(), configEntry.groupId()));
         }
         // 自定义挂架（按 partUnitId 分组，挂架队）：进下半区
         var mountGroups = new java.util.LinkedHashMap<String, List<org.ywzj.rvp.config.RVP_CustomMountConfig>>();
@@ -116,7 +132,7 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
                         new ArrayList<>(weaponUnit.weapons), "mount_" + partId);
             }
             // 标记为挂架站（isPylon=true），避免与上半区多弹种重复
-            stations.add(new StationEntry(partId, 0, weaponUnit, multi, true));
+            stations.add(new StationEntry(partId, 0, weaponUnit, multi, true, -1, null));
         }
         if (selectedStationIndex >= stations.size()) {
             selectedStationIndex = Math.max(0, stations.size() - 1);
@@ -171,8 +187,15 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
             entry.setAttribute("tabindex", "0");
             Element name = document.createElement("span");
             name.setClassName("weapon-entry-name");
-            // 挂架队显示 part 名，弹种站显示 multi 名
-            String display = isPylon ? station.partId() : station.multi.getDisplayName().getString();
+            // 挂架队显示 part 名；分组栏优先 save_id，普通弹种站显示 multi 名
+            String display;
+            if (isPylon) {
+                display = station.partId();
+            } else if (station.groupTitle() != null && !station.groupTitle().isBlank()) {
+                display = station.groupTitle();
+            } else {
+                display = station.multi.getDisplayName().getString();
+            }
             name.setTextContent(display);
             Element count = document.createElement("span");
             count.setClassName("weapon-entry-count");
@@ -281,8 +304,9 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
                                         vehicle.getId(), partIndex, subIndex));
                     }
                 } else {
+                    // 普通弹种/分组栏：groupIndex = -1 为整槽单组（旧寻址），≥0 为分组载波组序号
                     RVP_Network.CHANNEL.sendToServer(new C2SSelectModdingSubWeapon(
-                            vehicle.getId(), station.partId(), station.weaponIndex(), subIndex));
+                            vehicle.getId(), station.partId(), station.weaponIndex(), subIndex, station.groupIndex()));
                 }
                 Minecraft.getInstance().getSoundManager().play(
                         net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
@@ -294,20 +318,35 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
         if (weaponEmpty != null) {
             weaponEmpty.setAttribute("style", "display: none;");
         }
-        // 高亮选中：挂架队按 WeaponUnit 当前武器索引，弹种队按 multi 选中
+        // 高亮选中：挂架队按 WeaponUnit 当前武器索引，弹种队按 multi 选中；
+        // 分组栏仅当外层大组当前激活本组时才显示组内高亮（外层在另一组时本组无激活项）
         List<Element> subs = weaponList.querySelectorAll(".weapon-entry");
         int current;
-        if (selectedSubIndex >= 0) {
+        if (selectedSubIndex >= 0 && isGroupActive(station)) {
             current = selectedSubIndex;
         } else if (station.isPylon()) {
             current = station.unit.getCurrentWeaponIndex();
             if (current < 0 || current >= station.unit.weapons.size()) current = 0;
+        } else if (station.groupIndex() >= 0) {
+            current = -1;
         } else {
             current = station.multi.getSubWeapons().indexOf(station.multi.getSelectedWeapon());
         }
         for (int i = 0; i < subs.size(); i++) {
             subs.get(i).setClassName(i == current ? "weapon-entry active" : "weapon-entry");
         }
+    }
+
+    /** 分组载波的外层大组当前是否激活本站对应的组（用于组内高亮判定）。 */
+    private boolean isGroupActive(StationEntry station) {
+        if (station.groupIndex() < 0) {
+            return true;
+        }
+        if (station.weaponIndex() < 0 || station.weaponIndex() >= station.unit.weapons.size()
+                || !(station.unit.weapons.get(station.weaponIndex()) instanceof VehicleMultiWeapons outer)) {
+            return false;
+        }
+        return outer.getSelectedIndex() == station.groupIndex();
     }
 
     @Override

@@ -11,6 +11,7 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -222,12 +223,50 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return out;
     }
 
+    /**
+     * 改装界面分栏条目：把 grouped slot carrier（如 T90M/VT4 的 AP 组 + HE 组并槽）展开为
+     * <b>每个分组合一栏</b>，而不是整个合并槽只显示一个栏。
+     *
+     * <p>展开规则：</p>
+     * <ul>
+     *   <li>普通 {@code modding_only_multi} 槽（如 LAV25/ZBL08A）：一条目，{@code groupIndex = -1}，
+     *       行为与 {@link #getModdingOnlyEntries} 一致；</li>
+     *   <li>grouped slot carrier（载波槽 {@code modding_only_multi} + 后续 {@code merge_into_previous_slot}
+     *       槽）：载波槽展开为第 0 组，其后每个并入槽依次为第 1、2… 组——组序号即外层
+     *       {@code VehicleMultiWeapons} 的子武器下标。</li>
+     * </ul>
+     *
+     * @param groupId 配置里的 {@code save_id}（如 {@code main_gun_ap}），供界面作分栏标题；可能为 null
+     */
+    public List<ModdingGroupEntry> getModdingGroupEntries(AbstractVehicle vehicle) {
+        VehicleExtendedConfig cfg = get(vehicle);
+        List<ModdingGroupEntry> out = new ArrayList<>();
+        cfg.moddingOnlyMultiByPartId().forEach((partId, weaponIndexes) -> {
+            for (Integer weaponIndex : weaponIndexes) {
+                if (cfg.isGroupedSlotCarrier(partId, weaponIndex)) {
+                    out.add(new ModdingGroupEntry(partId, weaponIndex, 0, cfg.saveId(partId, weaponIndex)));
+                    int cursor = weaponIndex + 1;
+                    int group = 1;
+                    while (cfg.isMergeIntoPreviousSlot(partId, cursor)) {
+                        out.add(new ModdingGroupEntry(partId, weaponIndex, group, cfg.saveId(partId, cursor)));
+                        cursor++;
+                        group++;
+                    }
+                } else {
+                    out.add(new ModdingGroupEntry(partId, weaponIndex, -1, cfg.saveId(partId, weaponIndex)));
+                }
+            }
+        });
+        return out;
+    }
+
     private static VehicleExtendedConfig parseVehicle(JsonObject obj) {
         Set<String> groundContactPartIds = parseGroundContactPartIds(obj);
         ResourceLocation structureModel = parseStructureModel(obj);
         Set<String> physicsOnlyBones = parsePhysicsOnlyBones(obj);
         Map<String, Set<Integer>> moddingOnlyMulti = parseModdingOnlyMulti(obj);
         Map<String, Set<Integer>> mergeIntoPreviousSlots = parseMergeIntoPreviousSlots(obj);
+        Map<String, Map<Integer, String>> saveIds = parseWeaponSaveIds(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
@@ -239,7 +278,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 structureModel,
                 Set.copyOf(physicsOnlyBones),
                 immutableIndexMap(moddingOnlyMulti),
-                immutableIndexMap(mergeIntoPreviousSlots)
+                immutableIndexMap(mergeIntoPreviousSlots),
+                immutableSaveIdMap(saveIds)
         );
     }
 
@@ -385,6 +425,43 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return Map.copyOf(copy);
     }
 
+    private static Map<String, Map<Integer, String>> immutableSaveIdMap(Map<String, Map<Integer, String>> input) {
+        Map<String, Map<Integer, String>> copy = new LinkedHashMap<>();
+        input.forEach((key, value) -> copy.put(key, Map.copyOf(value)));
+        return Map.copyOf(copy);
+    }
+
+    /** 解析 parts→weapons 各条目的 {@code save_id}（存档标签，用作改装界面的分组标题）。 */
+    private static Map<String, Map<Integer, String>> parseWeaponSaveIds(JsonObject obj) {
+        if (!obj.has("parts") || !obj.get("parts").isJsonArray()) {
+            return Map.of();
+        }
+        Map<String, Map<Integer, String>> out = new LinkedHashMap<>();
+        JsonArray parts = obj.getAsJsonArray("parts");
+        for (JsonElement partElement : parts) {
+            if (partElement == null || !partElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject partObj = partElement.getAsJsonObject();
+            String partId = GsonHelper.getAsString(partObj, "id", "").trim();
+            if (partId.isEmpty() || !partObj.has("weapons") || !partObj.get("weapons").isJsonArray()) {
+                continue;
+            }
+            JsonArray weapons = partObj.getAsJsonArray("weapons");
+            for (int i = 0; i < weapons.size(); i++) {
+                JsonElement weaponElement = weapons.get(i);
+                if (weaponElement == null || !weaponElement.isJsonObject()) {
+                    continue;
+                }
+                String saveId = GsonHelper.getAsString(weaponElement.getAsJsonObject(), "save_id", "").trim();
+                if (!saveId.isEmpty()) {
+                    out.computeIfAbsent(partId, key -> new LinkedHashMap<>()).put(i, saveId);
+                }
+            }
+        }
+        return out;
+    }
+
     private static VehicleMultiWeapons findNestedModdingCarrier(VehicleMultiWeapons topMulti) {
         for (AbstractVehicleWeapon<?> subWeapon : topMulti.getSubWeapons()) {
             if (subWeapon instanceof VehicleMultiWeapons nested) {
@@ -396,14 +473,26 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     public record ModdingMultiEntry(String partId, int weaponIndex) {}
 
+    /** 改装界面分组条目：{@code groupIndex = -1} 为整槽单组；≥0 为分组载波外层 multi 的子武器下标。 */
+    public record ModdingGroupEntry(String partId, int weaponIndex, int groupIndex, String groupId) {}
+
     public record VehicleExtendedConfig(
             Set<String> groundContactPartIds,
             ResourceLocation structureModel,
             Set<String> physicsOnlyBones,
             Map<String, Set<Integer>> moddingOnlyMultiByPartId,
-            Map<String, Set<Integer>> mergeIntoPreviousSlotsByPartId
+            Map<String, Set<Integer>> mergeIntoPreviousSlotsByPartId,
+            Map<String, Map<Integer, String>> saveIdsByPartId
     ) {
-        public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(Set.of(), null, Set.of(), Map.of(), Map.of());
+        public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of());
+
+        /** 指定槽位配置的 {@code save_id}；未配置返回 null。 */
+        @Nullable
+        public String saveId(String partId, int weaponIndex) {
+            Map<Integer, String> byIndex = saveIdsByPartId.get(partId);
+            return byIndex == null ? null : byIndex.get(weaponIndex);
+        }
 
         public boolean isEnabled() {
             return !groundContactPartIds.isEmpty()
