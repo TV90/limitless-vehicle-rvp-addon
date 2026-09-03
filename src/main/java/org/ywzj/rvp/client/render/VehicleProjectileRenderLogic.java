@@ -12,8 +12,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
-import org.ywzj.vehicle.client.render.entity.weapon.BulletEntityRenderer;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
+import org.ywzj.vehicle.client.resource.InternalAssets;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
@@ -38,7 +38,7 @@ final class VehicleProjectileRenderLogic {
 
     static void renderBullet(RVP_BulletEntity bullet, float partialTicks, PoseStack poseStack,
                              MultiBufferSource bufferSource, int packedLight) {
-        BedrockModel model = BedrockModelLoader.getModel(BulletEntityRenderer.DEFAULT_BULLET_MODEL);
+        BedrockModel model = BedrockModelLoader.getModel(InternalAssets.BASIC_BULLET_MODEL);
         poseStack.pushPose();
         float width = Math.min(0.04f * bullet.getCaliber() / 7.62f, 0.2f);
         Vec3 bulletPosition = bullet.getPosition(partialTicks);
@@ -50,7 +50,7 @@ final class VehicleProjectileRenderLogic {
         poseStack.translate(0, 0, trailLength / 2.0);
         poseStack.scale(width, width, (float) trailLength);
         if (disToEye > 1.0) {
-            RenderType type = RenderType.energySwirl(BulletEntityRenderer.DEFAULT_BULLET_TEXTURE, 15, 15);
+            RenderType type = RenderType.energySwirl(InternalAssets.BASIC_BULLET_TEXTURE, 15, 15);
             VertexConsumer builder = bufferSource.getBuffer(type);
             model.renderToBuffer(poseStack, builder, packedLight, OverlayTexture.NO_OVERLAY,
                     bullet.getTracerR(), bullet.getTracerG(), bullet.getTracerB(), 1f);
