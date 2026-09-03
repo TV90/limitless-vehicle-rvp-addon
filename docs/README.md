@@ -15,7 +15,8 @@
 | [RVP空爆白磷弹实际实现与调参指南.md](./RVP弹体-fish/RVP空爆白磷弹实际实现与调参指南.md) | 配置作者 / 特效 / 平衡 / QA | M30 权威白磷释放云、分层下坠、初段尾迹增密、毁伤、性能预算与调参排障 |
 | [炮兵地图与战术点亮机制方案.md](./plan/炮兵地图与战术点亮机制方案.md) | 火控开发 / QA | 炮兵地图、逆 CCIP 解算、偏航优先瞄准、俯仰门控与战术点亮机制 |
 | [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |
-| [plan/](./plan/) | 功能设计 | TV 导弹、[分段复合制导](./plan/导弹分段复合制导实现.md) 等方案稿 |
+| [plan/](./plan/) | 功能设计 | TV 导弹、[分段复合制导](./plan/导弹分段复合制导实现.md)、[自定义挂架衔接点/出弹点分离](./plan/研发调研_自定义挂架衔接点与出弹点分离.md) 等方案稿 |
+| [examples/custom_mount_shoot_bone/](./examples/custom_mount_shoot_bone/) | 配置作者 / QA | 自定义挂架出弹骨（`shoot_structure_bones`）j15 新旧写法对比与条目级示例（伪配置） |
 | [plan/RVP_armor_min_max_damage移植方案_20260901.md](./plan/RVP_armor_min_max_damage移植方案_20260901.md) | 伤害/平衡开发 | 载具级装甲参数（固定扣减 + 最终封顶），已落码 |
 | [plan/RVP模型目录整理方案_20260901.md](./plan/RVP模型目录整理方案_20260901.md) | 载具包资产维护 | 模型/贴图目录 ammo/weapon_mount 子目录化与引用改写（待确认执行） |
 | [plan/RVP干扰物重构数据模型/](./plan/RVP干扰物重构数据模型/) | 功能设计 / 配置作者 / 开发 | 干扰物拆分为热焰弹（IR/AIR）与箔条（SARH/ARH）：载具状态机制、载具侧推荐参数、双端解耦规划（服务端优先里程碑） |

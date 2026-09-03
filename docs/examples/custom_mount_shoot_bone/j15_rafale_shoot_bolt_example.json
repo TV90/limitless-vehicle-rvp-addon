@@ -1,0 +1,172 @@
+// ============================================================================
+// 示例：自定义挂架"衔接点 / 出弹点分离"新参数配置效果 —— 伪配置（不可直接加载）
+//
+// 依据：载具包 limitless_vehicle/rvp/data/rvp/vehicles/j15.json 与 rafale.json
+//       的现状配置整理；新增参数为部件级 rvp_shoot_bolt_bones（调研文档 §3）。
+//       出弹骨骼名（*_shoot_barrel）为示意占位，实际以各机结构模型真实骨骼为准。
+// 对应调研文档：docs/研发调研_自定义挂架衔接点与出弹点分离.md
+//
+// 要点速记：
+//   1) rvp_custom_mounts 条目【完全不变】——挂架模型仍锚定在 attach_part_unit_id
+//      指向的 mount 部件（其 _barrel 骨 Cube 推算衔接位置）；
+//   2) 新增 rvp_shoot_bolt_bones 写在【parts 的武器站部件】上（不是 mount 部件、
+//      不是挂架条目）——配置后出弹 Bolt 集被全量替换为这些骨骼的 Cube 推算结果；
+//   3) 每根出弹骨的每个 Cube = 一个发射点；多挂架把各自的出弹骨都列进来；
+//   4) 不配置 rvp_shoot_bolt_bones → 行为与现版本完全一致（回退路径）。
+// ============================================================================
+
+{
+
+  // ==========================================================================
+  // 一、歼-15（j15.json）
+  //    现状：variable_aam（PL-12/PL-15）与 variable_agm（YJ-91/KD-88A）两个
+  //    武器站，各带 mount_1..4 四个挂架部件，每挂架单弹（missile_bones: missile1）
+  // ==========================================================================
+  "j15": {
+
+    // ---- parts 片段（仅列需要改动的武器站部件；mount_1..4 条目原样保留，省略）----
+    "parts": [
+      {
+        "id": "variable_aam",
+        "structure_bone": "variable_aam_1",
+
+        // 【现状参数，保留】未配置新参数时它就是出弹来源；配置新参数后不再参与出弹
+        "rvp_structure_bolt_bones": [
+          "variable_aam_1_barrel",
+          "variable_aam_2_barrel",
+          "variable_aam_3_barrel",
+          "variable_aam_4_barrel"
+        ],
+
+        // ★【新增】出弹骨：全量替换出弹 Bolt 集
+        //    - 弹丸实际从这 4 根骨骼的 Cube 位置打出（PL-12/PL-15 共用）；
+        //    - 挂架模型衔接位置不受影响（仍锚在 mount_N → variable_aam_N_barrel）；
+        //    - 骨骼名示意：结构模型中挂架弹位处的专用出弹骨，命名建议统一
+        //      "<挂架骨>_shoot_barrel"，与俯仰骨 *_barrel 同一刚体链。
+        "rvp_shoot_bolt_bones": [
+          "variable_aam_1_shoot_barrel",
+          "variable_aam_2_shoot_barrel",
+          "variable_aam_3_shoot_barrel",
+          "variable_aam_4_shoot_barrel"
+        ]
+      },
+      {
+        "id": "variable_agm",
+        "structure_bone": "variable_agm_1",
+        "rvp_structure_bolt_bones": [
+          "variable_agm_1_barrel",
+          "variable_agm_2_barrel",
+          "variable_agm_3_barrel",
+          "variable_agm_4_barrel"
+        ],
+        // YJ-91 / KD-88A 共用同一武器站的出弹骨
+        "rvp_shoot_bolt_bones": [
+          "variable_agm_1_shoot_barrel",
+          "variable_agm_2_shoot_barrel",
+          "variable_agm_3_shoot_barrel",
+          "variable_agm_4_shoot_barrel"
+        ]
+      }
+      // variable_aam_mount_1..4 / variable_agm_mount_1..4：原样保留，省略
+    ],
+
+    // ---- rvp_custom_mounts：与现版本【逐字段一致】，无需任何改动 ----
+    // 这里仅展示 pl_12 的第 1 条做对照；pl_12 余下 3 条（mount_2..4）、
+    // pl_15 ×4、yj_91 ×4、kd_88a ×4 同理，全部原样保留（共 16 条）。
+    "rvp_custom_mounts": [
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_1",
+        "weapon_id": "rvp:pl_12",
+        "model": "rvp:entity/weapon_mount/weapon_mount_pl12",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      }
+      // ...其余 15 条与 j15.json 现状完全一致，省略
+    ]
+  },
+
+  // ==========================================================================
+  // 二、阵风（rafale.json）
+  //    现状：variable_agm 武器站 + mount_1/mount_2 双挂架；AASM（红外/激光）
+  //    各为 3 联弹（missile1..3），风暴阴影单弹（missile1）
+  // ==========================================================================
+  "rafale": {
+
+    "parts": [
+      {
+        "id": "variable_agm",
+        "structure_bone": "variable_agm_1",
+
+        // 【现状参数，保留】
+        "rvp_structure_bolt_bones": [
+          "variable_agm_1_barrel",
+          "variable_agm_2_barrel"
+        ],
+
+        // ★【新增】双挂架各自的出弹骨都列进来：
+        //    RIPPLE 交替 / SALVO 齐射时按 ammo_slot 顺序在这两根骨骼间轮转；
+        //    AASM 三联挂架可给出一根多 Cube 出弹骨（3 个 Cube = 3 个发射点），
+        //    也可拆成 3 根单 Cube 骨，二者等价。
+        "rvp_shoot_bolt_bones": [
+          "variable_agm_1_shoot_barrel",
+          "variable_agm_2_shoot_barrel"
+        ]
+      }
+      // variable_agm_mount_1 / mount_2：原样保留，省略
+      // variable_aam（mica，非自定义挂架）：不在本示例范围
+    ],
+
+    // ---- rvp_custom_mounts：与现版本【逐字段一致】，无需任何改动 ----
+    // 展示两种弹位形态各 1 条：AASM 三联（missile1..3）与风暴阴影单弹（missile1）；
+    // 余下 4 条（aasm_ir slot2 / aasm_laser ×2 / storm_shadow slot2）同理省略（共 6 条）。
+    "rvp_custom_mounts": [
+      {
+        "part_unit_id": "variable_agm",
+        "attach_part_unit_id": "variable_agm_mount_1",
+        "weapon_id": "rvp:rafale_aasm_ir",
+        "model": "rvp:entity/weapon_mount/weapon_mount_aasm",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1", "missile2", "missile3"],
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      },
+      {
+        "part_unit_id": "variable_agm",
+        "attach_part_unit_id": "variable_agm_mount_1",
+        "weapon_id": "rvp:rafale_storm_shadow",
+        "model": "rvp:entity/weapon_mount/weapon_mount_stormshadow",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_stormshadow.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      }
+      // ...其余 4 条与 rafale.json 现状完全一致，省略
+    ]
+  },
+
+  // ==========================================================================
+  // 三、对照：回退形态（未配置 rvp_shoot_bolt_bones）
+  //    与现版本行为逐字节等价——出弹点仍从 _barrel / rvp_structure_bolt_bones
+  //    推算，挂架衔接点不变。存量载具包不需要任何迁移。
+  // ==========================================================================
+  "fallback_现状回退": {
+    "parts": [
+      {
+        "id": "variable_agm",
+        "structure_bone": "variable_agm_1",
+        "rvp_structure_bolt_bones": [
+          "variable_agm_1_barrel",
+          "variable_agm_2_barrel"
+        ]
+        // 未写 rvp_shoot_bolt_bones → 出弹 = 衔接（现有模式）
+      }
+    ]
+  }
+
+}

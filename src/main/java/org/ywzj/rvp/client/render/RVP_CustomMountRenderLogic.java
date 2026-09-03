@@ -16,6 +16,7 @@ import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
+import org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.DisplayManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -33,7 +34,6 @@ import org.ywzj.vehicle.vehicle.weapon.VehicleWeaponAgent;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 import org.slf4j.Logger;
 import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -311,34 +311,9 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     @Nullable
-    private static Field X_TURN_GROUP_FIELD;
-
-    /**
-     * [RVP] 挂架锚点骨组。B1 移除了 WeaponUnitAccessor（getXTurnGroup），当时用 getStructureGroup() 近似；
-     * 但结构模型中仅存在 structure_bone + "_barrel" 骨（如 variable_aam_1_barrel），无 structure_bone 本体骨，
-     * 导致 structureGroup 恒为 null、挂架整体不渲染。此处用反射读取实例 xTurnGroup 恢复原行为，
-     * 反射不可用时回退 structureGroup（仅功能降级，不崩溃）。
-     */
-    @Nullable
     private static VehicleCubeGroup resolveMountAnchorGroup(WeaponUnit mountUnit) {
-        if (X_TURN_GROUP_FIELD == null) {
-            try {
-                X_TURN_GROUP_FIELD = ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
-                X_TURN_GROUP_FIELD.setAccessible(true);
-            } catch (Throwable t) {
-                LOGGER.warn("[RVP] 无法解析 WeaponUnit.xTurnGroup 字段，挂架锚点退化为 structureGroup", t);
-                return mountUnit.getStructureGroup();
-            }
-        }
-        try {
-            VehicleCubeGroup group = (VehicleCubeGroup) X_TURN_GROUP_FIELD.get(mountUnit);
-            if (group != null) {
-                return group;
-            }
-        } catch (Throwable t) {
-            LOGGER.debug("[RVP] 读取 WeaponUnit.xTurnGroup 失败，退化为 structureGroup", t);
-        }
-        return mountUnit.getStructureGroup();
+        // [RVP] 反射读取逻辑收敛到公共层（与出弹队列功能共用，见 RVP_ShootBoltQueueResolver）
+        return RVP_ShootBoltQueueResolver.findXTurnGroup(mountUnit);
     }
 
     @Nullable
@@ -349,18 +324,27 @@ public final class RVP_CustomMountRenderLogic {
             if (!(vehicle.getPartUnit(config.attachPartUnitId()).orElse(null) instanceof WeaponUnit mountUnit)) {
                 return null;
             }
-            // [RVP] accessor 已移除：优先反射读实例 xTurnGroup（= structure_bone + "_barrel" 骨组，挂架锚点），失败退化为 structureGroup
+            // [RVP] accessor 已移除：反射读取在公共层 RVP_ShootBoltQueueResolver.findXTurnGroup（退化为 structureGroup）
             VehicleCubeGroup xTurnGroup = resolveMountAnchorGroup(mountUnit);
-            List<Bolt> bolts = mountUnit.getBolts();
             if (xTurnGroup == null) {
                 return null;
             }
             Vec3 translate;
-            if (bolts.isEmpty()) {
-                translate = xTurnGroup.pivotOffset;
+            if (!xTurnGroup.cubeOBBs.isEmpty()) {
+                // [RVP] 衔接点 = 锚定骨组首 Cube 中心：与旧"首 Bolt 炮口中点"逐点等价，
+                // 且不再依赖 bolts 列表——出弹队列（shoot_structure_bones）替换 bolts 后
+                // 衔接点仍固定在锚定骨，实现衔接/出弹解耦
+                Vec3 firstCubeCenter = xTurnGroup.cubeOBBs.get(0).position;
+                translate = xTurnGroup.pivotOffset.add(firstCubeCenter.x, firstCubeCenter.y, firstCubeCenter.z);
             } else {
-                Bolt bolt = bolts.get(0);
-                translate = xTurnGroup.pivotOffset.add(bolt.offset).add(0.0, 0.0, bolt.barrelLength / 2.0);
+                // 回退：组无 Cube（Bolt 由子骨递归产生等边界情况），沿用旧首 Bolt 口径
+                List<Bolt> bolts = mountUnit.getBolts();
+                if (bolts.isEmpty()) {
+                    translate = xTurnGroup.pivotOffset;
+                } else {
+                    Bolt bolt = bolts.get(0);
+                    translate = xTurnGroup.pivotOffset.add(bolt.offset).add(0.0, 0.0, bolt.barrelLength / 2.0);
+                }
             }
             Matrix4f matrix = new Matrix4f().translation((float) translate.x, (float) translate.y, (float) translate.z);
             return new AttachmentTransform(matrix);
@@ -596,58 +580,47 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     /**
-     * 根据总剩余弹药数为每个挂架分配可见导弹数量。
+     * [RVP v3] 按出弹队列顺序为每个挂架分配可见导弹数量（队列对齐算法）。
      *
-     * <p>对于单枚导弹挂架（{@code missileBones.size() <= 1}），保持原有逻辑：
-     * {@code hideMissile = visibleAmmo <= 0 || visibleAmmo < slot}。</p>
+     * <p>出弹队列 = 条目按 {@code (ammo_slot, 配置顺序)} 排序后 {@code missile_bones}
+     * 的拼接（与服务端 {@code RVP_ShootBoltQueueResolver} 的出弹队列同序），第 k 发
+     * 打的是队列第 k 项。已发射数 {@code fired = 队列总弹数 - visibleAmmo}，第 i 个
+     * 条目（队列偏移 {@code offset_i = Σ 前序条目弹数}）隐藏
+     * {@code clamp(fired - offset_i, 0, c_i)} 枚。</p>
      *
-     * <p>对于多枚导弹挂架（{@code missileBones.size() > 1}），按如下规则分配：
-     * <ul>
-     *   <li>每个挂架的弹药起始偏移 = {@code (ammoSlot - 1) × missileBones.size()}</li>
-     *   <li>该挂架可见导弹数 = {@code max(0, min(missileBones.size(), visibleAmmo - offset))}</li>
-     * </ul>
-     * 例如 AASM 三联挂架：2 个挂架 × 3 枚导弹 = 6 发总弹药
-     * <ul>
-     *   <li>ammo=6 → 挂架1=3, 挂架2=3</li>
-     *   <li>ammo=5 → 挂架1=3, 挂架2=2</li>
-     *   <li>ammo=4 → 挂架1=3, 挂架2=1</li>
-     *   <li>ammo=3 → 挂架1=3, 挂架2=0</li>
-     *   <li>ammo=2 → 挂架1=2, 挂架2=0</li>
-     *   <li>ammo=1 → 挂架1=1, 挂架2=0</li>
-     *   <li>ammo=0 → 挂架1=0, 挂架2=0</li>
-     * </ul>
-     * </p>
+     * <p>相比旧公式（{@code visibleAmmo < slot}，高 slot 先隐）的修正：旧方向与
+     * RIPPLE 升序开火相反（第 1 发从低 slot 打出、消失的却是高 slot 弹体）；
+     * 单弹模式是多弹模式 c=1 的特例，两模式统一为同一队列公式；
+     * SALVO 整队列齐射时可见态按整队列步进，公式同样成立。</p>
      */
     private static void assignAmmoVisibility(List<ResolvedMount> mounts) {
         mounts.sort(Comparator
                 .comparingInt((ResolvedMount mount) -> mount.config().ammoSlot() > 0 ? mount.config().ammoSlot() : Integer.MAX_VALUE)
                 .thenComparingInt(mount -> mount.config().configOrder()));
+        if (mounts.isEmpty()) {
+            return;
+        }
+        // 目的：队列总弹数 = 排序后各条目 missile_bones 数之和（与出弹队列同序同长）
+        int totalQueue = 0;
+        for (ResolvedMount mount : mounts) {
+            totalQueue += Math.max(0, mount.config().missileBones().size());
+        }
+        // 目的：已发射数由"队列总弹数 - 可见弹药"得出（可见弹药 = 服务端同步与客户端
+        // 开火预测取小，见 resolveVisibleAmmo）
+        int visibleAmmo = mounts.get(0).visibleAmmo();
+        int fired = Math.max(0, totalQueue - visibleAmmo);
+        // 目的：逐条目按队列偏移折算可见枚数（单弹条目 c=1 自然退化为全显/全隐）
+        int queueOffset = 0;
         int fallbackSlot = 1;
         for (int i = 0; i < mounts.size(); i++) {
             ResolvedMount mount = mounts.get(i);
             int slot = mount.config().ammoSlot() > 0 ? mount.config().ammoSlot() : fallbackSlot++;
-            int missileCount = mount.config().missileBones().size();
-
-            if (missileCount <= 1) {
-                // 单枚导弹模式：保持原有逻辑
-                boolean hideMissile = mount.visibleAmmo() <= 0 || mount.visibleAmmo() < slot;
-                mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
-                        mount.predictedAmmo(), slot, hideMissile, mount.firingMode()));
-            } else {
-                // 多枚导弹模式：计算该挂架上可见导弹数量
-                int visibleOnThisPylon;
-                if (mount.firingMode() == WeaponUnitData.FiringMode.SALVO && mounts.size() > 1) {
-                    int available = mount.visibleAmmo() - (slot - 1);
-                    visibleOnThisPylon = available <= 0 ? 0
-                            : Math.min(missileCount, (available + mounts.size() - 1) / mounts.size());
-                } else {
-                    int offset = (slot - 1) * missileCount;
-                    visibleOnThisPylon = Math.max(0, Math.min(missileCount, mount.visibleAmmo() - offset));
-                }
-                boolean hideMissile = visibleOnThisPylon <= 0;
-                mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
-                        mount.predictedAmmo(), slot, hideMissile, visibleOnThisPylon, mount.firingMode()));
-            }
+            int missileCount = Math.max(0, mount.config().missileBones().size());
+            int hiddenOnThis = Math.max(0, Math.min(missileCount, fired - queueOffset));
+            int visibleOnThis = missileCount - hiddenOnThis;
+            queueOffset += missileCount;
+            mounts.set(i, new ResolvedMount(mount.config(), mount.syncedAmmo(), mount.visibleAmmo(),
+                    mount.predictedAmmo(), slot, visibleOnThis <= 0, visibleOnThis, mount.firingMode()));
         }
     }
 
@@ -711,6 +684,10 @@ public final class RVP_CustomMountRenderLogic {
                                 || resolution.currentWeapon().getData().getWeaponId() == null
                                 ? "<null>"
                                 : resolution.currentWeapon().getData().getWeaponId())
+                        .append('\n');
+                // [RVP v3] 出弹队列状态（shoot_structure_bones）：null 表示该站未被管理，保持本体原 Bolt
+                List<Bolt> shootQueue = org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.buildQueue(vehicle, weaponUnit);
+                sb.append("shootQueue=").append(shootQueue == null ? "<not-managed>" : shootQueue.size() + " bolts")
                         .append('\n');
             }
 

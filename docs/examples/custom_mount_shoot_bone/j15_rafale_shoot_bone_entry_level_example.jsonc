@@ -1,0 +1,168 @@
+// ============================================================================
+// 示例（修订版）：shoot 骨直接写入 rvp_custom_mounts 条目 —— 伪配置
+//
+// 与部件级方案（j15_rafale_shoot_bolt_example.jsonc）的区别：
+//   出弹骨跟随挂架条目走，与 missile_bones（消失渲染骨骼）写在同一处，
+//   "哪根骨出弹"与"哪枚弹消失"按同一条目序列构造性对齐。
+//
+// 合并语义（实现约定）：
+//   出弹队列 = 当前武器站、当前武器 weapon_id 命中的所有条目，
+//              按 (ammo_slot, 配置顺序) 排序后，依次拼接各条目的 shoot_structure_bones。
+//   RIPPLE 第 k 发 = 出弹队列第 k 项；SALVO = 整个队列。
+//   消失顺序 = 同一个队列：第 k 发打出后，队列第 k 项对应的 (条目, missile_bones
+//   下标) 隐藏。开火与显隐读同一个队列，A/B 错位从机制上不可能发生。
+//
+// 未配置 shoot_structure_bones 的条目不贡献出弹点；整个武器站一个都没配 → 回退现状行为。
+// ⚠️ 结构模型铁律：出弹骨必须在 *.structure.json 中真实存在；优先复用既有骨骼，
+//    确需新增骨骼须先请示并备份原文件（agents.md L20）。
+// 对应调研：docs/plan/研发调研_自定义挂架衔接点与出弹点分离.md（§6 条目级，
+//           经对齐性分析后升级为推荐方案，部件级参数降级为可选兜底）
+// ============================================================================
+
+{
+
+  // ==========================================================================
+  // 一、歼-15（j15.json）：4 挂架 × 单弹，RIPPLE 逐发
+  //    ammo_capacity=4，开火顺序 mount_1 → mount_2 → mount_3 → mount_4，
+  //    打第 k 发后消失的就是第 k 个条目的 missile1 —— 顺序天然一致
+  // ==========================================================================
+  "j15": {
+    "rvp_custom_mounts": [
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_1",
+        "weapon_id": "rvp:pl_12",
+        "model": "rvp:entity/weapon_mount/weapon_mount_pl12",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+
+        // ★ 新增：本挂架的出弹骨（结构模型中的伪名占位）。
+        //    与 missile_bones 一一对应时语义最直白：
+        //    missile_bones[i] 的弹从 shoot_structure_bones[i] 的 Cube 打出。
+        "shoot_structure_bones": ["variable_aam_1_shoot_barrel"],
+
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      },
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_2",
+        "weapon_id": "rvp:pl_12",
+        "model": "rvp:entity/weapon_mount/weapon_mount_pl12",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "shoot_structure_bones": ["variable_aam_2_shoot_barrel"],
+        "replace_weapon_display": true,
+        "ammo_slot": 2
+      },
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_3",
+        "weapon_id": "rvp:pl_12",
+        "model": "rvp:entity/weapon_mount/weapon_mount_pl12",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "shoot_structure_bones": ["variable_aam_3_shoot_barrel"],
+        "replace_weapon_display": true,
+        "ammo_slot": 3
+      },
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_4",
+        "weapon_id": "rvp:pl_12",
+        "model": "rvp:entity/weapon_mount/weapon_mount_pl12",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_pl12.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "shoot_structure_bones": ["variable_aam_4_shoot_barrel"],
+        "replace_weapon_display": true,
+        "ammo_slot": 4
+      }
+      // pl_15 ×4、yj_91 ×4、kd_88a ×4 同构（各挂架 shoot_structure_bones 换成对应骨名），
+      // 变量武器站部件 variable_agm 的 8 条同理，此处省略。
+    ]
+  },
+
+  // ==========================================================================
+  // 二、阵风（rafale.json）：2 挂架，AASM 三联弹 + 风暴阴影单弹，ripple
+  //    出弹队列 = slot1 的 shoot_structure_bones（3 项）+ slot2 的 shoot_structure_bones（3 项）；
+  //    RIPPLE 第 1..3 发从 mount_1 的三枚弹出，第 4..6 发从 mount_2；
+  //    打第 4 发时消失的正是 mount_2 的 missile1 —— 与队列严格一致
+  // ==========================================================================
+  "rafale": {
+    "rvp_custom_mounts": [
+      {
+        "part_unit_id": "variable_agm",
+        "attach_part_unit_id": "variable_agm_mount_1",
+        "weapon_id": "rvp:rafale_aasm_ir",
+        "model": "rvp:entity/weapon_mount/weapon_mount_aasm",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1", "missile2", "missile3"],
+
+        // 写法 A：一根三 Cube 出弹骨 —— 3 个 Cube 按模型声明顺序展开为 3 个
+        //          发射点，与 missile_bones 顺序对应（推荐，配置最短）
+        "shoot_structure_bones": ["variable_agm_1_shoot_barrel"],
+
+        // 写法 B（等价）：三根单 Cube 出弹骨，逐枚对应三枚弹
+        // "shoot_structure_bones": [
+        //   "variable_agm_1_shoot_1_barrel",
+        //   "variable_agm_1_shoot_2_barrel",
+        //   "variable_agm_1_shoot_3_barrel"
+        // ],
+
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      },
+      {
+        "part_unit_id": "variable_agm",
+        "attach_part_unit_id": "variable_agm_mount_2",
+        "weapon_id": "rvp:rafale_aasm_ir",
+        "model": "rvp:entity/weapon_mount/weapon_mount_aasm",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1", "missile2", "missile3"],
+        "shoot_structure_bones": ["variable_agm_2_shoot_barrel"],
+        "replace_weapon_display": true,
+        "ammo_slot": 2
+      },
+      {
+        // 风暴阴影：单弹单出弹骨；同一 mount 部件在不同武器条目下可指向
+        // 不同的出弹骨（如弹体前后位置不同），这是条目级独有的灵活性
+        "part_unit_id": "variable_agm",
+        "attach_part_unit_id": "variable_agm_mount_1",
+        "weapon_id": "rvp:rafale_storm_shadow",
+        "model": "rvp:entity/weapon_mount/weapon_mount_stormshadow",
+        "texture": "rvp:textures/entity/weapon_mount/pylon_stormshadow.png",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"],
+        "shoot_structure_bones": ["variable_agm_1_storm_shadow_shoot_barrel"],
+        "replace_weapon_display": true,
+        "ammo_slot": 1
+      }
+      // aasm_ir slot2 之后省略的：aasm_laser ×2、storm_shadow slot2，
+      // 同构补 shoot_structure_bones 即可（共 6 条）。
+    ]
+  },
+
+  // ==========================================================================
+  // 三、回退：条目不写 shoot_structure_bones → 该条目不贡献出弹点；
+  //     武器站全部条目都没写 → 与现版本行为完全一致（现状包零迁移）
+  // ==========================================================================
+  "fallback_现状回退": {
+    "rvp_custom_mounts": [
+      {
+        "part_unit_id": "variable_aam",
+        "attach_part_unit_id": "variable_aam_mount_1",
+        "weapon_id": "rvp:pl_12",
+        "rack_bones": ["pylon"],
+        "missile_bones": ["missile1"]
+        // 无 shoot_structure_bones → 出弹仍走 rvp_structure_bolt_bones / _barrel 推算
+      }
+    ]
+  }
+
+}

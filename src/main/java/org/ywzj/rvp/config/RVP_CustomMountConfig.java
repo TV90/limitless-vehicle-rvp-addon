@@ -27,7 +27,8 @@ public record RVP_CustomMountConfig(
         int configOrder,
         Vec3fConfig offset,
         Vec3fConfig rotationDeg,
-        Vec3fConfig scale
+        Vec3fConfig scale,
+        List<String> shootStructureBones
 ) {
 
     public record Vec3fConfig(float x, float y, float z) {
@@ -81,7 +82,11 @@ public record RVP_CustomMountConfig(
                 order,
                 parseVec3(obj, "offset", Vec3fConfig.ZERO),
                 parseVec3(obj, "rotation_deg", Vec3fConfig.ZERO),
-                parseVec3(obj, "scale", Vec3fConfig.ONE)
+                parseVec3(obj, "scale", Vec3fConfig.ONE),
+                // [RVP] 出弹骨（载具结构模型骨骼名，区别于挂架渲染模型骨 rack/missile_bones）：
+                // 配置后该条目对应的发射点改由这些骨骼的 Cube 推算，与衔接点分离；
+                // 未配置时该条目不贡献出弹点（整站均未配置则回退本体 _barrel 推算行为）
+                parseStringList(obj, "shoot_structure_bones")
         );
     }
 
