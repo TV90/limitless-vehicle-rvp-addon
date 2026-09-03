@@ -6,6 +6,7 @@ import com.seibel.distanthorizons.api.interfaces.render.IDhApiRenderProxy;
 import com.seibel.distanthorizons.api.methods.events.DhApiEventRegister;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiAfterDhInitEvent;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeApplyShaderRenderEvent;
+import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeRenderCleanupEvent;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiCancelableEventParam;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
@@ -13,8 +14,6 @@ import com.seibel.distanthorizons.api.objects.DhApiResult;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
-import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleFrameCoordinator;
-import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleFramePlan;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 
 /**
@@ -34,6 +33,8 @@ public final class RVP_DhApi7Bridge {
     private static final AfterInitHandler AFTER_INIT_HANDLER = new AfterInitHandler();
     /** DH apply shader 前事件处理器的唯一实例。 */
     private static final BeforeApplyHandler BEFORE_APPLY_HANDLER = new BeforeApplyHandler();
+    /** 公开 cleanup 前事件处理器，在 DH apply 完成后读取本帧目标，不取消事件。 */
+    private static final BeforeCleanupHandler BEFORE_CLEANUP_HANDLER = new BeforeCleanupHandler();
     /** 是否已经注册初始化事件，防止客户端 setup 重入。 */
     private static boolean initializationEventBound;
 
@@ -106,6 +107,13 @@ public final class RVP_DhApi7Bridge {
             disable("DH_APPLY_EVENT_BIND_FAILED", resultDetail(registration));
             return;
         }
+        // 调用 DH 公开事件注册，补齐 apply 后的只读取证；失败仅提示，不改变兼容可用性。
+        DhApiResult<Void> cleanupRegistration = DhApiEventRegister.on(
+                DhApiBeforeRenderCleanupEvent.class, BEFORE_CLEANUP_HANDLER);
+        if (!eventRegistrationSucceeded(cleanupRegistration)) {
+            RVP_DhCompatDiagnostics.warnOnce("DH_PIXEL_CLEANUP_EVENT_UNAVAILABLE",
+                    resultDetail(cleanupRegistration));
+        }
         // 调用本项目无 DH 类型入口，确认版本、原生渲染器与 apply 事件均已就绪。
         RVP_DistantHorizonsCompatBootstrap.markDepthCompositeReady();
     }
@@ -113,7 +121,7 @@ public final class RVP_DhApi7Bridge {
     /** 在 apply 前查询本帧纹理并执行一次深度感知合成；任何失败均不取消 DH 事件。 */
     @SuppressWarnings("deprecation")
     private static void beforeApply(DhApiRenderParam parameter) {
-        RVP_RemoteVehicleFramePlan plan = RVP_RemoteVehicleFrameCoordinator.currentForDh();
+        RVP_DhVehicleFramePlan plan = RVP_DhVehicleFrameCoordinator.currentForDh();
         if (!RVP_DistantHorizonsCompatBootstrap.isDepthCompositeReady()
                 || plan == null || parameter == null) {
             return;
@@ -147,7 +155,7 @@ public final class RVP_DhApi7Bridge {
             if (RVP_DhDepthCompositeRenderer.composite(plan,
                     Minecraft.getInstance().gameRenderer.getMainCamera(), copiedParameters,
                     colorResult.payload, depthResult.payload)) {
-                RVP_RemoteVehicleFrameCoordinator.markDhCompositeSuccess(plan);
+                RVP_DhVehicleFrameCoordinator.markDhCompositeSuccess(plan);
             }
         } catch (RuntimeException | LinkageError exception) {
             fail("FRAMEBUFFER_INCOMPLETE", exception.toString());
@@ -197,7 +205,7 @@ public final class RVP_DhApi7Bridge {
 
     /** 标记本帧失败，并只警告一次相同原因。 */
     private static void fail(String reason, String detail) {
-        RVP_RemoteVehicleFrameCoordinator.markDhCompositeFailure(reason);
+        RVP_DhVehicleFrameCoordinator.markDhCompositeFailure(reason);
         RVP_DhCompatDiagnostics.warnOnce(reason, detail);
     }
 
@@ -214,6 +222,15 @@ public final class RVP_DhApi7Bridge {
         @Override
         public void beforeRender(DhApiCancelableEventParam<DhApiRenderParam> event) {
             beforeApply(event == null ? null : event.value);
+        }
+    }
+
+    /** DH apply 后、清理前的公开事件转发器，只读附件且不取消 DH 清理。 */
+    private static final class BeforeCleanupHandler extends DhApiBeforeRenderCleanupEvent {
+        @Override
+        public void beforeCleanup(DhApiEventParam<DhApiRenderParam> event) {
+            // 调用本项目像素取证，验证 DH apply 是否将载具颜色转入世界目标。
+            RVP_DhPixelDiagnostics.afterWorldStage("DH_BEFORE_CLEANUP", false);
         }
     }
 }

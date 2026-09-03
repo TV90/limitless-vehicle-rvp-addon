@@ -1,6 +1,6 @@
 # RVP Distant Horizons 地形 LOD 遮挡兼容技术文档与调参指南
 
-> 文档状态：以 2026-09-03 当前工作区实际实现为准
+> 文档状态：2026-09-04，DH 重建后的旧附件引用已修复；构建、GPU 回归通过，用户已实机确认载具消失修复成功
 > 适用项目：`limitless-vehicle-rvp-addon`（Minecraft 1.20.1 Forge）  
 > 配置文件：`.minecraft/config/ywzj_rvp-client.toml`  
 > 适用对象：客户端开发、整合包作者、实机测试与性能调优人员
@@ -10,12 +10,13 @@
 当前实现已经把 RVP 超视距载具从单一的 Forge `AFTER_ENTITIES` 绘制，扩展为可选的 Distant Horizons（下文简称 DH）优先显示与深度感知合成通道：
 
 - 未安装 DH、DH 关闭 LOD 渲染或用户把兼容模式设为 `OFF` 时，继续使用原有 `AFTER_ENTITIES` 路径，行为不变。
-- `RVP_FIRST` 在 `AFTER_SKY` 冻结远距载具计划，到 `AFTER_LEVEL` 再把完整载具合成到最终世界目标；它不读取 DH 深度，保证载具不被 DH 地形覆盖。
-- DH API 7.0.1+ 的 7.x 版本且使用原生 OpenGL 渲染器时，RVP 会在 DH apply shader 前取得当帧颜色、深度纹理，将远距载具离屏绘制后按相机空间视深度与 DH 地形比较，并把可见颜色和深度写回 DH 目标。
+- `RVP_FIRST` 在 `AFTER_SKY` 冻结远距代理与真实载具保护计划，到 `AFTER_LEVEL` 再把两层合成到最终世界目标；它不读取 DH 深度，保证载具不被 DH 地形覆盖。
+- DH API 7.0.1+ 的 7.x 版本且使用原生 OpenGL 渲染器时，RVP 会在 DH apply shader 前取得当帧颜色、深度纹理，先合成远距代理，再复制已更新的 DH 深度并合成客户端真实载具保护层。
+- 512 格内或其它已经加载为 `AbstractVehicle` 的真实实体使用当帧 Minecraft 投影和独立的默认 0.5 格 bias；远距代理继续使用动态 near/far 投影和默认 2 格 bias，互不牺牲深度精度。
 - API、纹理、投影或光影管线不满足要求时，不会取消 DH 自身事件，也不会盲目继续写纹理；系统会按显式回退配置选择原通道、青色轮廓、始终可见或隐藏。
 - 整个兼容层位于 RVP 客户端代码中，不修改 `ywzj_vehicle` 本体，不使用 Mixin，也不依赖 DH 的内部 `common/core` 实现。
 
-默认配置是面向普通玩家的折中方案：`AUTO + SILHOUETTE + 2 格 bias`。能可靠取得 DH 深度时遵守地形遮挡；不能可靠取得时用青色轮廓提示远距目标，避免目标静默消失。
+默认配置是面向普通玩家的折中方案：`AUTO + SILHOUETTE + 远距 2 格 bias + 真实载具 0.5 格 bias`。能可靠取得 DH 深度时遵守地形遮挡；不能可靠取得时用青色轮廓提示目标，避免目标静默消失。
 
 ## 2. 功能边界
 
@@ -25,9 +26,13 @@
 - `RVP_FIRST` 复用 `AFTER_SKY` 帧计划和晚期完整图像合成，在 `AFTER_LEVEL` 唯一消费，并阻止 DH apply 前、`AFTER_ENTITIES` 和普通 fallback 重复绘制。
 - 对 DH API 7.0.1～7.x 做运行期 major/minor/patch 检查；已验证公开版基线为 DH 3.2.0-b / API 7.0.1。
 - 仅接受 DH `OPEN_GL` 且 `isNativeRenderer() == true` 的纹理共享路径。
-- 在 DH `before apply shader` 官方事件中逐帧查询颜色、深度纹理 ID。
+- 在 DH `before apply shader` 官方事件中逐帧查询颜色、深度纹理 ID，并重新挂接到 RVP 两个借用 FBO；不能仅按 ID 或尺寸相等跳过，因为 DH 可能同名重建对象。
 - 同时支持标准 Forward-Z 和 Reverse-Z 投影。
 - RVP 与 DH 使用不同投影矩阵时，分别逆投影到相机空间后再比较视深度。
+- 真实载具与远距代理使用独立帧计划和投影；仅一层非空时也会正常准备、合成和消费。
+- 真实载具保护层使用独立 `BakedModelInstance` 复制正常实体上一轮已提交姿态，不调用完整 `EntityRenderer`，不推进动画、不更新 `lastRenderTime`。
+- 当前隔离测试版保护层仅绘制主体并应用脱落部件可见性；special bones 和武器挂载绘制暂时移除，不能视为完整保护覆盖。第一人称座舱/瞄准镜排除本机外壳，第三人称恢复保护。
+- 真实载具候选按屏幕贡献、距离、实体 ID 稳定排序，默认上限 64。
 - DH 与晚期回退的 RVP 离屏绘制使用独立远距投影：根据最终候选包围球前缘动态抬高 near（最高 256 格并保留 16 格余量），且从最终 float 矩阵反解并校正实际 far，避免极远距离模型面深度坍缩或被量化后的远平面切除。
 - 对 DH 地形 LOD 几何误差提供 0～8 格的遮挡容差。
 - 成功合成后回写 DH 深度，避免后续透明/合成阶段把载具误当作无深度颜色。
@@ -38,30 +43,32 @@
 ### 2.2 当前没有实现
 
 - 没有按候选包围盒裁剪到局部矩形；当前离屏目标与合成均使用完整 DH 纹理尺寸。
-- 没有 GPU query 或像素回读，因此日志不统计“可见/被挡/超 far”像素数。
+- 当前诊断版每秒至多一帧使用同步 GPU query 统计 alpha / passed 样本，并每五秒至多一帧回读源附件、DH 附件与世界目标的同点像素；回读可能造成短暂卡顿，单点或计数不能代替整帧视觉验收。仅开启 `diagnostics=true` 不改变颜色；同时开启 `diagnosticLayerColors=true` 才会将 remote / tracked 染为青色 / 品红色，仍保留真实深度、覆盖率与地形遮挡。
 - 没有针对某个光影 Mod、Oculus 或延迟透明实现专用的第二合成阶段。
 - `occlusionBiasBlocks` 是固定格数，不随目标距离自动增长。
 - 未把 `allowExperimentalShaderPipeline=true` 解释为“已兼容所有光影”；它只允许尝试当前 before-apply 路径。
+- 履带、尾焰和带独立动画的饰品不会在保护层重复调用本体 `render()`；这些方法会推进自身动画，当前保护层只覆盖不会产生副作用的主体与武器挂载几何。
+- 没有在同一帧多个 DH apply 事件中重复合成；当前已验证原生 OpenGL 路径使用首次可写 apply 目标，延迟透明/光影仍属于实验性能力。
 
 这些边界是实际代码现状，不应把原方案稿中的后续阶段当作已经完成。
 
 ## 3. 帧流程与唯一消费
 
-一帧远距载具计划只能被一条路径消费。`RVP_RemoteVehicleFrameCoordinator` 与 `RVP_RemoteVehicleFrameRoute` 负责避免 DH 成功后又在 Forge 阶段重复绘制。
+一帧统一载具信封只能被一条路径消费。`RVP_DhVehicleFrameCoordinator` 同时管理 remote/tracked 两个来源，避免 DH 成功后又在 Forge 阶段重复绘制。
 
 ```mermaid
 flowchart TD
     A[Forge AFTER_SKY] --> B{DH 已加载、LOD 已启用、compatMode 非 OFF?}
     B -- 否 --> C[AFTER_ENTITIES 建立并直接绘制原路径]
-    B -- 是 --> D[建立不可变 FramePlan]
+    B -- 是 --> D[建立 remote 与 tracked 两个不可变计划]
     D --> Q{compatMode 为 RVP_FIRST?}
     Q -- 是 --> R[跳过 DH 合成与 CURRENT_PASS]
     R --> S[AFTER_LEVEL 完整合成并标记 RVP_FIRST]
     Q -- 否 --> E{收到 DH BeforeApplyShader 事件?}
     E -- 是 --> F[校验 API、渲染器、纹理、尺寸和投影]
-    F -- 成功 --> G[RVP 离屏绘制]
-    G --> H[复制 DH 深度]
-    H --> I[视深度比较并写回 DH 颜色与深度]
+    F -- 成功 --> G[绘制并合成 remote 层]
+    G --> H[复制已更新的 DH 深度]
+    H --> I[用 Minecraft 投影绘制并合成 tracked 层]
     I --> J[标记 DH_COMPOSITED，本帧结束]
     F -- 失败 --> K[记录明确失败原因]
     E -- 否 --> K
@@ -74,7 +81,7 @@ flowchart TD
 
 具体阶段如下：
 
-1. `AFTER_SKY`：调用 `prepareFrame`，冻结本帧候选、预算、投影和相机相关数据。没有候选时计划为 `null`；`RVP_FIRST` 只准备计划，不在这里输出像素。
+1. `AFTER_SKY`：远距代理调用 `prepareFrame`；真实载具扫描 `ClientLevel.entitiesForRendering()` 并复制模型姿态。两个来源都为空时统一信封为 `null`；`RVP_FIRST` 只准备计划，不在这里输出像素。
 2. DH `DhApiBeforeApplyShaderRenderEvent`：仅 `AUTO` / `DEPTH_AWARE` 的未消费计划由兼容桥取得 DH 纹理并尝试深度合成。
 3. `AFTER_ENTITIES`：仅 `CURRENT_PASS` 回退会在这里消费计划；DH 已成功的帧不会重复绘制。
 4. `AFTER_LEVEL`：`RVP_FIRST` 在这里以完整图像优先显示；其他模式处理 `SILHOUETTE`、`ALWAYS_VISIBLE` 或 `HIDE`，然后清理本帧引用。
@@ -87,7 +94,7 @@ flowchart TD
 
 ### 4.1 为什么不能直接比较两张原始深度图
 
-RVP 远距载具投影的 far plane 会按目标距离扩展，而 DH 使用自己的投影矩阵、near/far 和深度方向。两张纹理中的 `0.5` 不一定代表相同距离，因此不能直接做 `rvpDepth < dhDepth`。
+RVP 远距载具投影的 far plane 会按目标距离扩展，真实载具使用 Minecraft 当帧投影，而 DH 使用自己的投影矩阵、near/far 和深度方向。任意两张纹理中的 `0.5` 都不一定代表相同距离，因此不能直接比较原始深度。
 
 离屏通道不能直接沿用原版世界投影的 `near=0.05`。在数千至数万格距离下，Forward-Z 即使使用 `DEPTH32F`，绝大多数有效深度也会挤在接近 `1.0` 的极小区间；模型不同表面会落入同一深度档位。同时，double far 写入 float 矩阵后，实际远裁剪面可能向相机方向偏移。当前实现因此为离屏通道保存第二张投影：
 
@@ -109,6 +116,8 @@ dhViewDepth  = -dhViewPosition.z
 ```
 
 `occlusionBiasBlocks` 不是把载具向前移动，而是容许载具比简化后的 DH 地形深一点。它用于吸收 LOD 山脊、坡面与真实地形之间的几何误差。
+
+真实载具层使用相同 shader，但 uniform 改为 Minecraft 逆投影与 `trackedOcclusionBiasBlocks`。远距层完成后会重新复制 DH 深度，所以 tracked 像素既与 DH 地形比较，也会尊重已经写回的远距载具深度。真实载具 bias 固定限制在 0～2 格，避免沿用远距 8 格硬上限造成近处穿墙。
 
 ### 4.2 Forward-Z、Reverse-Z 与空深度
 
@@ -186,14 +195,19 @@ DH 颜色、深度纹理只在当帧借用并挂接到 RVP 自建 FBO。RVP 不�
 | `fallbackMode` | `CURRENT_PASS` / `SILHOUETTE` / `ALWAYS_VISIBLE` / `HIDE` | `SILHOUETTE` | `AUTO` 合成失败时的显示语义 |
 | `occlusionBiasBlocks` | 0.0～8.0 | 2.0 | DH 地形遮挡比较的基础容差，单位格 |
 | `maxOcclusionBiasBlocks` | 0.0～8.0 | 8.0 | 容差硬上限；有效值为两者较小值 |
+| `protectTrackedVehicles` | `true` / `false` | `true` | 是否把客户端已加载的真实载具加入 DH 颜色与深度保护层；不改变服务端追踪和协议 |
+| `trackedOcclusionBiasBlocks` | 0.0～2.0 | 0.5 | 真实载具保护层的独立地形遮挡容差，单位格 |
+| `maxProtectedTrackedVehicles` | 1～256 | 64 | 每帧真实载具保护层上限；按屏幕贡献、距离、实体 ID 稳定排序 |
 | `allowExperimentalShaderPipeline` | `true` / `false` | `false` | 是否允许在 DH 延迟透明/未验证光影管线上尝试当前合成 |
 | `diagnostics` | `true` / `false` | `false` | 是否每秒最多输出一次状态、候选数与耗时 |
+| `diagnosticLayerColors` | `true` / `false` | `false` | 仅 diagnostics 开启时生效；远距青色、真实载具品红，仅改颜色，不改深度或遮挡 |
 
-三个容易误解的规则：
+四个容易误解的规则：
 
 1. `DEPTH_AWARE` 会强制把有效回退视为 `HIDE`，配置文件中的 `fallbackMode` 此时不会生效。
 2. `RVP_FIRST` 不进入深度合成，`fallbackMode`、两个 bias 与实验性光影开关都不参与该挡位的绘制决策。
 3. 有效 bias 是 `min(occlusionBiasBlocks, maxOcclusionBiasBlocks)`；当前没有按距离放大 bias 的逻辑。
+4. `protectTrackedVehicles` 独立于服务端远距快照开关；只要真实实体已在客户端世界中，保护层就不需要额外网络数据。
 
 默认配置示例：
 
@@ -203,8 +217,12 @@ DH 颜色、深度纹理只在当帧借用并挂接到 RVP 自建 FBO。RVP 不�
     fallbackMode = "SILHOUETTE"
     occlusionBiasBlocks = 2.0
     maxOcclusionBiasBlocks = 8.0
+    protectTrackedVehicles = true
+    trackedOcclusionBiasBlocks = 0.5
+    maxProtectedTrackedVehicles = 64
     allowExperimentalShaderPipeline = false
     diagnostics = false
+    diagnosticLayerColors = false
 ```
 
 ## 8. 模式选择指南
@@ -441,7 +459,9 @@ diagnostics = true
 | 职责 | 类/资源 |
 | --- | --- |
 | Forge 阶段编排、候选准备与实际绘制 | `RVP_RemoteVehicleVisualRenderer` |
-| 单帧计划与唯一消费状态 | `RVP_RemoteVehicleFramePlan`、`RVP_RemoteVehicleFrameCoordinator`、`RVP_RemoteVehicleFrameRoute` |
+| 统一 DH 帧信封与唯一消费状态 | `RVP_DhVehicleFramePlan`、`RVP_DhVehicleFrameCoordinator` |
+| 真实载具候选、稳定预算与模型副本 | `realvehicleprotect/RVP_DhTrackedVehicleCollector`、`RVP_DhTrackedVehicleBudget`、`RVP_DhTrackedVehicleModelCache` |
+| 真实载具只读保护绘制 | `realvehicleprotect/RVP_DhTrackedVehicleProtectionRenderer`、`RVP_DhTrackedVehicleFramePlan` |
 | 无 DH 类型的可选依赖入口 | `RVP_DistantHorizonsCompatBootstrap` |
 | 唯一 DH API 强类型边界 | `RVP_DhApi7Bridge` |
 | 离屏绘制、深度比较与晚期回退 | `RVP_DhDepthCompositeRenderer` |

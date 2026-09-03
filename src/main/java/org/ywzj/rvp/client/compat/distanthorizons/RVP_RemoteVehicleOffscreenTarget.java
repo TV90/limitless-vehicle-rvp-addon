@@ -51,10 +51,17 @@ final class RVP_RemoteVehicleOffscreenTarget {
         GL11.glViewport(0, 0, width, height);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GL11.glColorMask(true, true, true, true);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthFunc(GL11.GL_LEQUAL);
         GL11.glDepthMask(true);
         GL11.glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         GL11.glClearDepth(1.0D);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+    }
+
+    /** 返回 RVP 自有 FBO，供诊断核对模型提交后的真实 draw 目标。 */
+    int framebufferId() {
+        return framebufferId;
     }
 
     /** 返回 RVP 自有颜色纹理 ID。 */

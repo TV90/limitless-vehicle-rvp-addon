@@ -21,6 +21,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
+import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhVehicleFrameCoordinator;
+import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhVehicleFramePlan;
+import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleCollector;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
@@ -73,15 +76,18 @@ public final class RVP_RemoteVehicleVisualRenderer {
     public static void onRenderLevel(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY
                 && RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
-            // 调用本项目兼容状态与帧协调器，在 DH 地形 pass 前保存计划及真实初始失败原因。
-            RVP_RemoteVehicleFrameCoordinator.prepareForDh(
-                    prepareFrame(event, true),
+            RVP_RemoteVehicleFramePlan remotePlan = prepareFrame(event, true);
+            // 调用本项目真实载具收集器，冻结客户端已加载载具的只读保护计划。
+            var trackedPlan = RVP_DhTrackedVehicleCollector.collect(event);
+            // 调用统一 DH 帧协调器，使 remote/tracked 任一非空都能进入 apply 前合成。
+            RVP_DhVehicleFrameCoordinator.prepare(
+                    RVP_DhVehicleFramePlan.of(remotePlan, trackedPlan),
                     RVP_DistantHorizonsCompatBootstrap.failureReasonForFrame());
             return;
         }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             // 调用本项目帧协调器，执行 RVP_FIRST 或显式晚期降级并结束本帧。
-            RVP_RemoteVehicleFrameCoordinator.finishLateOutput(event);
+            RVP_DhVehicleFrameCoordinator.finishLateOutput(event);
             return;
         }
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
@@ -89,11 +95,11 @@ public final class RVP_RemoteVehicleVisualRenderer {
         }
         if (RVP_DistantHorizonsCompatBootstrap.shouldPrepareDhRoute()) {
             // 调用本项目帧协调器：已由 DH 合成的帧跳过，CURRENT_PASS 降级只消费一次。
-            RVP_RemoteVehicleFrameCoordinator.finishCurrentPassFallback(event);
+            RVP_DhVehicleFrameCoordinator.finishCurrentPassFallback(event);
             return;
         }
         // 调用本项目帧协调器，清除 DH 配置在帧中途关闭时遗留的未消费计划。
-        RVP_RemoteVehicleFrameCoordinator.clear();
+        RVP_DhVehicleFrameCoordinator.clear();
         RVP_RemoteVehicleFramePlan framePlan = prepareFrame(event, false);
         if (framePlan != null) {
             // 调用本项目目标无关绘制入口，保持未安装 DH 时原有 AFTER_ENTITIES 像素路径。

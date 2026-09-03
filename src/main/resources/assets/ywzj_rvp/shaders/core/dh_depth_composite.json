@@ -19,6 +19,8 @@
     {"name": "DhEmptyDepth", "type": "float", "count": 1, "values": [1.0]},
     {"name": "DhNearDepth", "type": "float", "count": 1, "values": [0.0]},
     {"name": "DhFarPlane", "type": "float", "count": 1, "values": [4096.0]},
-    {"name": "OcclusionBiasBlocks", "type": "float", "count": 1, "values": [2.0]}
+    {"name": "OcclusionBiasBlocks", "type": "float", "count": 1, "values": [2.0]},
+    {"name": "DiagnosticBypassOcclusion", "type": "int", "count": 1, "values": [0]},
+    {"name": "DiagnosticLayerColorMode", "type": "int", "count": 1, "values": [0]}
   ]
 }

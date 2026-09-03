@@ -13,21 +13,19 @@ final class RVP_DhFramebufferSet {
     private int depthSourceFramebuffer;
     /** 同时借用 DH 颜色与深度纹理的合成 FBO。 */
     private int compositeFramebuffer;
-    /** 上次附加的 DH 颜色纹理 ID，仅用于减少重复附加。 */
-    private int attachedColorTexture;
-    /** 上次附加的 DH 深度纹理 ID，仅用于减少重复附加。 */
-    private int attachedDepthTexture;
-
-    /** 每帧重新接收 DH 查询结果；ID 变化时重新附加并检查完整性。 */
+    /**
+     * 每次接收 DH 当前纹理都重新附加并检查完整性。
+     *
+     * <p>DH 3.2.0 调整尺寸或重建资源时会先删除纹理再创建，驱动可能复用相同数值 ID。
+     * 其它 FBO 仍可持有已删除名称对应的旧对象，因此不能按 ID 或尺寸相等跳过挂接。
+     * 两个 FBO 都必须更新：否则会分别出现向旧对象写回或从旧深度对象复制的问题。</p>
+     */
     void attachBorrowedTextures(int colorTexture, int depthTexture) {
         if (depthSourceFramebuffer == 0) {
             depthSourceFramebuffer = GL30.glGenFramebuffers();
         }
         if (compositeFramebuffer == 0) {
             compositeFramebuffer = GL30.glGenFramebuffers();
-        }
-        if (attachedColorTexture == colorTexture && attachedDepthTexture == depthTexture) {
-            return;
         }
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, depthSourceFramebuffer);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
@@ -44,8 +42,6 @@ final class RVP_DhFramebufferSet {
         GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
         GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
         requireComplete("DH_COMPOSITE");
-        attachedColorTexture = colorTexture;
-        attachedDepthTexture = depthTexture;
     }
 
     /** 返回只读 DH 深度复制源 FBO。 */
@@ -68,8 +64,6 @@ final class RVP_DhFramebufferSet {
             GL30.glDeleteFramebuffers(compositeFramebuffer);
             compositeFramebuffer = 0;
         }
-        attachedColorTexture = 0;
-        attachedDepthTexture = 0;
     }
 
     /** FBO 不完整时中止当前 pass，避免污染 DH 随后的 apply。 */

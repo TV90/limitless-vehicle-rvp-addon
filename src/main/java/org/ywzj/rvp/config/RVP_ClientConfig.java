@@ -91,10 +91,18 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.DoubleValue distantHorizonsOcclusionBiasBlocks;
     /** DH 简化地形遮挡容差的硬上限，单位格。 */
     private final ForgeConfigSpec.DoubleValue distantHorizonsMaxOcclusionBiasBlocks;
+    /** 是否把客户端已加载的真实载具加入 DH 颜色与深度保护层。 */
+    private final ForgeConfigSpec.BooleanValue distantHorizonsProtectTrackedVehicles;
+    /** 真实载具保护层相对 DH 简化地形的视深度容差，单位格。 */
+    private final ForgeConfigSpec.DoubleValue distantHorizonsTrackedOcclusionBiasBlocks;
+    /** 每帧允许进入 DH 保护层的真实载具上限。 */
+    private final ForgeConfigSpec.IntValue distantHorizonsMaxProtectedTrackedVehicles;
     /** 是否允许在未经实机验证的光影/延迟透明管线中实验性合成。 */
     private final ForgeConfigSpec.BooleanValue distantHorizonsAllowExperimentalShaderPipeline;
     /** 是否输出受频率限制的 DH 兼容诊断。 */
     private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnostics;
+    /** 是否启用分层诊断染色；默认 false，仅在 diagnostics=true 时生效，不改变深度。 */
+    private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnosticLayerColors;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
         builder.push("lod");
@@ -196,6 +204,21 @@ public class RVP_ClientConfig {
                 .comment("DH 遮挡容差硬上限，单位格。范围：0..8，默认：8。")
                 .defineInRange("maxOcclusionBiasBlocks", 8.0D, 0.0D, 8.0D);
 
+        distantHorizonsProtectTrackedVehicles = builder
+                .comment("是否把客户端已加载的真实载具加入 DH 颜色与深度保护层。",
+                        "只影响客户端画面，不改变服务端实体追踪或远距快照。默认：true。")
+                .define("protectTrackedVehicles", true);
+
+        distantHorizonsTrackedOcclusionBiasBlocks = builder
+                .comment("真实载具相对 DH 简化地形的遮挡容差，单位格。范围：0..2，默认：0.5。",
+                        "该值独立于远距载具的 occlusionBiasBlocks，避免近处明显穿墙。")
+                .defineInRange("trackedOcclusionBiasBlocks", 0.5D, 0.0D, 2.0D);
+
+        distantHorizonsMaxProtectedTrackedVehicles = builder
+                .comment("每帧进入 DH 保护层的真实载具安全上限。范围：1..256，默认：64。",
+                        "超过上限时优先保留屏幕贡献更大、距离更近的载具。")
+                .defineInRange("maxProtectedTrackedVehicles", 64, 1, 256);
+
         distantHorizonsAllowExperimentalShaderPipeline = builder
                 .comment("是否允许未经验证的光影/延迟透明 DH 管线使用实验性纹理合成。",
                         "默认 false；关闭时明确进入安全降级。")
@@ -204,6 +227,11 @@ public class RVP_ClientConfig {
         distantHorizonsDiagnostics = builder
                 .comment("是否每秒至多一次输出 DH 兼容状态与耗时统计。")
                 .define("diagnostics", false);
+
+        distantHorizonsDiagnosticLayerColors = builder
+                .comment("是否将 DH 合成的远距代理染为青色、真实载具保护层染为品红色。",
+                        "默认 false，仅在 diagnostics=true 时生效；保留真实深度与遮挡判断。")
+                .define("diagnosticLayerColors", false);
 
         builder.pop();
 
@@ -287,6 +315,23 @@ public class RVP_ClientConfig {
                 INSTANCE.distantHorizonsMaxOcclusionBiasBlocks.get());
     }
 
+    /** 返回是否保护客户端已经加载的真实载具。 */
+    public static boolean shouldProtectDistantHorizonsTrackedVehicles() {
+        return INSTANCE == null || INSTANCE.distantHorizonsProtectTrackedVehicles.get();
+    }
+
+    /** 返回真实载具保护层的 DH 遮挡容差，单位格，范围固定为 {@code 0..2}。 */
+    public static float getDistantHorizonsTrackedOcclusionBiasBlocks() {
+        return INSTANCE != null
+                ? INSTANCE.distantHorizonsTrackedOcclusionBiasBlocks.get().floatValue()
+                : 0.5F;
+    }
+
+    /** 返回每帧允许进入 DH 保护层的真实载具上限。 */
+    public static int getDistantHorizonsMaxProtectedTrackedVehicles() {
+        return INSTANCE != null ? INSTANCE.distantHorizonsMaxProtectedTrackedVehicles.get() : 64;
+    }
+
     /** 返回是否允许实验性光影/延迟透明合成。 */
     public static boolean isDistantHorizonsExperimentalShaderPipelineAllowed() {
         return INSTANCE != null && INSTANCE.distantHorizonsAllowExperimentalShaderPipeline.get();
@@ -295,6 +340,12 @@ public class RVP_ClientConfig {
     /** 返回是否启用受频率限制的 DH 兼容诊断。 */
     public static boolean isDistantHorizonsDiagnosticsEnabled() {
         return INSTANCE != null && INSTANCE.distantHorizonsDiagnostics.get();
+    }
+
+    /** 返回是否启用仅改变颜色的 DH 分层探针；关闭诊断总开关时同时禁用染色。 */
+    public static boolean isDistantHorizonsDiagnosticLayerColorsEnabled() {
+        // 调用本项目诊断总开关，保证关闭诊断后不会残留可视探针。
+        return isDistantHorizonsDiagnosticsEnabled() && INSTANCE.distantHorizonsDiagnosticLayerColors.get();
     }
 
     /** Register the client config. Must be called from mod constructor. */

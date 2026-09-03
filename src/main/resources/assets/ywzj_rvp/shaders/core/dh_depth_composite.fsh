@@ -10,6 +10,9 @@ uniform float DhEmptyDepth;
 uniform float DhNearDepth;
 uniform float DhFarPlane;
 uniform float OcclusionBiasBlocks;
+uniform int DiagnosticBypassOcclusion;
+// 可选分层染色只替换 RGB，保留实际覆盖率、投影深度和遮挡规则。
+uniform int DiagnosticLayerColorMode;
 
 in vec2 texCoord;
 
@@ -25,6 +28,13 @@ void main() {
     vec4 rvpColor = texture(RvpColor, texCoord);
     if (rvpColor.a <= 0.0001) {
         discard;
+    }
+
+    // 诊断探针只统计离屏颜色中实际存在的载具像素，不执行 DH 深度判断，也不写入目标附件。
+    if (DiagnosticBypassOcclusion != 0) {
+        gl_FragDepth = 0.0;
+        fragColor = vec4(0.0);
+        return;
     }
 
     float rvpRawDepth = texture(RvpDepth, texCoord).r;
@@ -49,4 +59,9 @@ void main() {
     gl_FragDepth = clamp(encodedDepth, 0.0, 1.0);
     // RVP 离屏 RGB 已预乘覆盖率；还原为直通颜色，交给 core shader 的标准 alpha 混合。
     fragColor = vec4(rvpColor.rgb / max(rvpColor.a, 0.0001), rvpColor.a);
+    if (DiagnosticLayerColorMode == 1) {
+        fragColor.rgb = vec3(0.0, 1.0, 1.0);
+    } else if (DiagnosticLayerColorMode == 2) {
+        fragColor.rgb = vec3(1.0, 0.0, 1.0);
+    }
 }

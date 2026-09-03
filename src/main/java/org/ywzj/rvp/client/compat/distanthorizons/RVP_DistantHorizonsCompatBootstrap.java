@@ -4,7 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.ModList;
 import org.slf4j.Logger;
-import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleFrameCoordinator;
+import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleModelCache;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 
 import java.lang.reflect.InvocationTargetException;
@@ -114,7 +114,9 @@ public final class RVP_DistantHorizonsCompatBootstrap {
     /** 资源重载、换世界或退出时释放所有 RVP 自有 GL 资源与未消费计划。 */
     public static void clearClientResources() {
         // 调用本项目帧协调器，丢弃旧世界或旧资源代际的候选引用。
-        RVP_RemoteVehicleFrameCoordinator.clear();
+        RVP_DhVehicleFrameCoordinator.clear();
+        // 调用真实载具保护模型缓存，释放旧世界或旧资源代际的姿态副本引用。
+        RVP_DhTrackedVehicleModelCache.clear();
         if (RenderSystem.isOnRenderThread()) {
             RVP_DhDepthCompositeRenderer.release();
         } else {
