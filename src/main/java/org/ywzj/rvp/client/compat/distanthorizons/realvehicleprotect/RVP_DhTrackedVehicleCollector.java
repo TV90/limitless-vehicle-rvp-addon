@@ -4,7 +4,6 @@ import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.Bake
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -85,7 +84,7 @@ public final class RVP_DhTrackedVehicleCollector {
             double projectedSize = Math.max(box.getXsize(), Math.max(box.getYsize(), box.getZsize()));
             double contribution = projectedSize * projectedSize / Math.max(1.0D, distanceSquared);
             preCandidates.add(new PreCandidate(vehicle, renderPosition, model,
-                    display.getTexture(), packedLight(level, vehicle),
+                    display.getTexture(), packedLight(vehicle, partialTick),
                     distanceSquared, contribution));
         }
         if (preCandidates.isEmpty()) {
@@ -151,9 +150,13 @@ public final class RVP_DhTrackedVehicleCollector {
                 Mth.lerp(partialTick, vehicle.zo, vehicle.getZ()));
     }
 
-    /** 读取正常世界光照，并复用本体对摧毁载具的暗化语义。 */
-    private static int packedLight(ClientLevel level, AbstractVehicle vehicle) {
-        int light = LevelRenderer.getLightColor(level, vehicle.blockPosition());
+    /** 使用正常实体渲染的取光位置与渲染器规则，并复用本体对摧毁载具的暗化语义。 */
+    private static int packedLight(AbstractVehicle vehicle, float partialTick) {
+        // 调用原版实体调度器的取光入口，间接使用本体 getLightProbePosition 的主碰撞盒中心。
+        // 载具物理原点可能略低于地表；直接按 blockPosition 取光会采到实心地块，把整车副本压黑。
+        // 此入口也保留实体渲染器的着火补光与可覆写取光规则，不硬编码高度或最低亮度。
+        int light = Minecraft.getInstance().getEntityRenderDispatcher()
+                .getPackedLightCoords(vehicle, partialTick);
         if (!vehicle.isDestroyed()) {
             return light;
         }

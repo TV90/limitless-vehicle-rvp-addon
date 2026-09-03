@@ -3,7 +3,10 @@ package org.ywzj.rvp.client.compat.distanthorizons;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceProvider;
 import org.lwjgl.opengl.GL11;
@@ -16,6 +19,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_ClientConfig;
+import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleFramePlan;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -61,6 +65,35 @@ final class RVP_DhPixelDiagnostics {
         LOGGER.info("RVP DH pixel: frame={} stage=BEGIN size={}x{} dhFbo={} dhColor={} dhDepth={}",
                 frame.id, width, height, dhFramebuffer, dhColorTexture, dhDepthTexture);
         logErrors("ENTRY_PREEXISTING");
+    }
+
+    /** 在既有五秒取证帧记录目标身份与取光差异，不增加逐帧查询或修改模型状态。 */
+    static void trackedLighting(RVP_DhTrackedVehicleFramePlan plan) {
+        if (!compositing || frame == null) {
+            return;
+        }
+        inspect(() -> {
+            // 调用保护层计划访问器，只检查本帧实际入选的目标，不按车型 ID 分支。
+            for (RVP_DhTrackedVehicleFramePlan.Candidate candidate : plan.selected()) {
+                var vehicle = candidate.vehicle();
+                BlockPos origin = vehicle.blockPosition();
+                // 调用本体实体的光照探针入口，记录正常渲染实际使用的主碰撞盒中心。
+                BlockPos probe = BlockPos.containing(vehicle.getLightProbePosition(plan.partialTick()));
+                // 复算旧版原点光照仅用于对照；已加载区块才读取，避免诊断触发空区块访问。
+                boolean originLoaded = plan.level().hasChunkAt(origin);
+                int originLight = originLoaded ? LevelRenderer.getLightColor(plan.level(), origin) : -1;
+                // 调用原版正常实体取光入口，与已经冻结并应用摧毁暗化的候选光照一起记录。
+                int nativeLight = Minecraft.getInstance().getEntityRenderDispatcher()
+                        .getPackedLightCoords(vehicle, plan.partialTick());
+                LOGGER.info("RVP DH pixel: frame={} stage=TRACKED_LIGHT entity={} display={} "
+                                + "origin={} probe={} originLoaded={} probeLoaded={} originLight={} "
+                                + "nativeLight={} selectedLight={} block={} sky={} destroyed={}",
+                        frame.id, vehicle.getId(), vehicle.getDisplayId(), origin, probe, originLoaded,
+                        plan.level().hasChunkAt(probe), originLight, nativeLight, candidate.packedLight(),
+                        LightTexture.block(candidate.packedLight()), LightTexture.sky(candidate.packedLight()),
+                        vehicle.isDestroyed());
+            }
+        });
     }
 
     /** 扫描实际 draw FBO 的 alpha，并挑选最大 alpha 的一个像素作为本层追踪点。 */

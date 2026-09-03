@@ -19,7 +19,7 @@ public final class RVP_DhTrackedVehicleProtectionRenderer {
     private RVP_DhTrackedVehicleProtectionRenderer() {
     }
 
-    /** 使用计划保存的 Minecraft 投影绘制主体、脱落骨骼和 special bones。 */
+    /** 使用计划保存的 Minecraft 投影绘制主体，并按脱落状态隐藏对应骨骼。 */
     public static void renderPrepared(RVP_DhTrackedVehicleFramePlan plan) {
         if (plan == null) {
             return;

@@ -176,7 +176,12 @@ public final class RVP_DhDepthCompositeRenderer {
                 LayerSampleCounts trackedSamples = compositeLayer(trackedAnalysis.get(), dhAnalysis.get(),
                         dhParameters.projection(),
                         width, height,
-                        () -> RVP_DhTrackedVehicleProtectionRenderer.renderPrepared(trackedPlan),
+                        () -> {
+                            // 调用限频取光对照，关联目标实体与离屏暗色；关闭 diagnostics 时直接返回。
+                            RVP_DhPixelDiagnostics.trackedLighting(trackedPlan);
+                            // 调用只读主体绘制，使用计划内与正常实体渲染一致的冻结光照。
+                            RVP_DhTrackedVehicleProtectionRenderer.renderPrepared(trackedPlan);
+                        },
                         RVP_ClientConfig.getDistantHorizonsTrackedOcclusionBiasBlocks(),
                         captureLayerSamples, "tracked");
                 trackedAlphaSamples = trackedSamples.alphaSamples();
