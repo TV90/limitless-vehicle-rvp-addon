@@ -65,12 +65,17 @@ import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
+import org.ywzj.vehicle.all.AllKeys;
 import org.ywzj.vehicle.client.shader.CrtHandler;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.CcipUtil;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.vehicle.part.SwitchableUnit;
+import org.ywzj.rvp.network.C2SWingSweepToggle;
+import org.ywzj.rvp.wingsweep.RVP_WingSweepState;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -152,6 +157,22 @@ public class RVP_ClientEvents {
             if (lvp != null && lvp.vehicle != null && lvp.onVehicle()) {
                 RVP_Network.CHANNEL.sendToServer(
                         new org.ywzj.rvp.maintenance.network.C2SUseMaintenance(lvp.vehicle.getId()));
+            }
+        }
+
+        // [RVP] 可变后掠翼手动切换：复用本体 FUNCTIONAL ↑/↓（边沿检测 consumeClick，
+        // 与本体 InputHandler 的 isDown 轮询互不干扰）。守卫：驾驶员 + 无矢量固定翼 +
+        // 双隐藏部件存在；不满足时仅吞掉点击（白按无提示，见方案 §1.4）
+        while (AllKeys.FUNCTIONAL_UP.consumeClick()) {
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            if (ywzj_rvp$wingSweepGuard(lvp)) {
+                RVP_Network.CHANNEL.sendToServer(new C2SWingSweepToggle(lvp.vehicle.getId(), true));
+            }
+        }
+        while (AllKeys.FUNCTIONAL_DOWN.consumeClick()) {
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            if (ywzj_rvp$wingSweepGuard(lvp)) {
+                RVP_Network.CHANNEL.sendToServer(new C2SWingSweepToggle(lvp.vehicle.getId(), false));
             }
         }
 
@@ -311,6 +332,25 @@ public class RVP_ClientEvents {
     }
 
     /** 干扰物发射键：当前驾驶载具时向服务端发送一次齐射请求（flare / chaff 分键）。 */
+    /**
+     * [RVP] 可变后掠翼手动切换客户端守卫：驾驶员 + 无推力矢量部件的固定翼 + 双隐藏
+     * 部件存在（与 {@code RVP_WingSweepState}/{@code C2SWingSweepToggle} 服务端校验
+     * 同口径，防无效包）。注意 {@code onVehicle()} 对乘员也为真，必须另行校验驾驶员。
+     */
+    private static boolean ywzj_rvp$wingSweepGuard(LocalVehiclePlayer lvp) {
+        if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            return false;
+        }
+        if (!(lvp.vehicle instanceof FixedWingVehicle fixedWing) || fixedWing.thrustUnit != null) {
+            return false;
+        }
+        if (lvp.vehicle.getDriver() != Minecraft.getInstance().player) {
+            return false;
+        }
+        return lvp.vehicle.getPartUnit(RVP_WingSweepState.PART_MANUAL_ID).orElse(null) instanceof SwitchableUnit
+                && lvp.vehicle.getPartUnit(RVP_WingSweepState.PART_FORM_ID).orElse(null) instanceof SwitchableUnit;
+    }
+
     private static void ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType type) {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {

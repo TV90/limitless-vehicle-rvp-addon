@@ -275,5 +275,11 @@ public class RVP_Network {
                 .decoder(S2CEcmDebug::decode)
                 .consumerMainThread(S2CEcmDebug::handle)
                 .add();
+        // [RVP] 可变后掠翼手动切换（C2S）：状态权威在服务端 RVP_WingSweepState
+        CHANNEL.messageBuilder(C2SWingSweepToggle.class, id++)
+                .encoder(C2SWingSweepToggle::encode)
+                .decoder(C2SWingSweepToggle::decode)
+                .consumerMainThread(C2SWingSweepToggle::handle)
+                .add();
     }
 }
