@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.util.RenderHelper;
@@ -55,7 +56,10 @@ public class VehicleCrossHairOverlayMixin {
         boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
         if (replace != ywzj_rvp$lastReticleReplaceState) {
             ywzj_rvp$lastReticleReplaceState = replace;
-            LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            // 火箭 CCIP 准星替换探针（开关：/rvpdebug flags ccip）
+            if (RVP_DebugFlags.CCIP.isEnabled()) {
+                LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            }
         }
         if (replace) {
             return;
@@ -82,7 +86,10 @@ public class VehicleCrossHairOverlayMixin {
         boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
         if (replace != ywzj_rvp$lastReticleReplaceState) {
             ywzj_rvp$lastReticleReplaceState = replace;
-            LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            // 火箭 CCIP 准星替换探针（开关：/rvpdebug flags ccip）
+            if (RVP_DebugFlags.CCIP.isEnabled()) {
+                LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            }
         }
         if (replace) {
             return;
@@ -110,7 +117,10 @@ public class VehicleCrossHairOverlayMixin {
         boolean replace = RVP_RocketCcipOverlay.shouldReplaceReticle();
         if (replace != ywzj_rvp$lastReticleReplaceState) {
             ywzj_rvp$lastReticleReplaceState = replace;
-            LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            // 火箭 CCIP 准星替换探针（开关：/rvpdebug flags ccip）
+            if (RVP_DebugFlags.CCIP.isEnabled()) {
+                LOGGER.info("[RVP][RocketCCIP] reticle_replace={}", replace);
+            }
         }
         if (replace) {
             return;

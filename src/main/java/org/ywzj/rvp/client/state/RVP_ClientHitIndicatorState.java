@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.ywzj.rvp.network.S2CRvpHitIndicator;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -97,8 +98,11 @@ public final class RVP_ClientHitIndicatorState {
     private RVP_ClientHitIndicatorState() {}
 
     public static void push(S2CRvpHitIndicator msg) {
-        LOGGER.info("[RVP-HitUI] push: entityId={} bone={} dmg={} radius={}",
-                msg.entityId, msg.boneDisplayName, msg.damage, msg.explosionRadius);
+        // 命中提示入队探针（开关：/rvpdebug flags hit_ui）
+        if (RVP_DebugFlags.HIT_UI.isEnabled()) {
+            LOGGER.info("[RVP-HitUI] push: entityId={} bone={} dmg={} radius={}",
+                    msg.entityId, msg.boneDisplayName, msg.damage, msg.explosionRadius);
+        }
         lastHitTime = System.currentTimeMillis();
         // 换载具清空；同一载具的多次命中累积展示“命中过程”
         if (!events.isEmpty() && events.get(0).entityId != msg.entityId) {

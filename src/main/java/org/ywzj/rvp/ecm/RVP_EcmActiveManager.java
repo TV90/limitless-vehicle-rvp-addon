@@ -12,6 +12,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.ecm.RVP_EcmIff;
@@ -75,14 +76,12 @@ public final class RVP_EcmActiveManager {
     /** 干扰成功提示节流间隔（tick），与 DIRCM 对齐。 */
     private static final long JAM_NOTIFY_INTERVAL = 40;
 
-    /** 调试日志开关：确认附近载具是否启动主动ECM、是否对弹药/载具产生干扰。 */
-    private static final boolean DEBUG_ECM = true;
     /** 调试日志节流：每 N tick 打印一次总览。 */
     private static final int DEBUG_INTERVAL = 20;
 
     /** 主动ECM 通用调试日志：同时写 gameDir/logs/rvp_ecm_server.log（单客户端与服务端同目录）。 */
     private static void rvpEcmServerLog(String line) {
-        if (!DEBUG_ECM) {
+        if (!RVP_DebugFlags.ECM.isEnabled()) {
             return;
         }
         String full = "[" + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
@@ -212,12 +211,12 @@ public final class RVP_EcmActiveManager {
                     syncHud(vehicle, cfg, state);
                 }
             }
-            // 调试快照：向本维度每位玩家推送主动ECM 调试信息（单客户端走回环网络，按 DEBUG_ECM 开关）
+            // 调试快照：向本维度每位玩家推送主动ECM 调试信息（单客户端走回环网络，按 RVP_DebugFlags.ECM.isEnabled() 开关）
             sendDebugSnapshots(level, activeInfos);
 
             // P3：弹药干扰（ARH/AIR 中继、SARH、HITL-radio、GPS）
             if (!activeInfos.isEmpty()) {
-                if (DEBUG_ECM && tick % DEBUG_INTERVAL == 0) {
+                if (RVP_DebugFlags.ECM.isEnabled() && tick % DEBUG_INTERVAL == 0) {
                     StringBuilder sb = new StringBuilder("[RVP-ECM][Active] dim=").append(level.dimension().location())
                             .append(" activeEcmCount=").append(activeInfos.size()).append(" :");
                     for (ActiveInfo ai : activeInfos) {
@@ -236,7 +235,7 @@ public final class RVP_EcmActiveManager {
                 // RWR 伪造每 4 tick（200ms）一次：本体 WarningReceiver 的告警 500ms 即过期，
                 // 若按旧 tick%10(20tick=1s) 发送会有 500ms 空窗导致 RWR 闪烁/看似失效
                 tickRwrFake(level, activeInfos, vehicles);
-            } else if (DEBUG_ECM && tick % DEBUG_INTERVAL == 0) {
+            } else if (RVP_DebugFlags.ECM.isEnabled() && tick % DEBUG_INTERVAL == 0) {
                 // 维度内无任何主动ECM活动时，打印一次载具总数以便排查（例如 gunner 载具是否装备 ECM）
                 int total = vehicles.size();
                 int equipped = 0;
@@ -347,7 +346,7 @@ public final class RVP_EcmActiveManager {
                 RVP_EnumGuidanceType type = bullet.resolveEffectiveGuidanceType();
                 // 主动ECM干扰：不可干扰 IR 制导（红外导引头不受电子干扰），跳过
                 if (type == RVP_EnumGuidanceType.IR) {
-                    if (DEBUG_ECM && level.getGameTime() % DEBUG_INTERVAL == 0) {
+                    if (RVP_DebugFlags.ECM.isEnabled() && level.getGameTime() % DEBUG_INTERVAL == 0) {
                         System.out.println("[RVP-ECM][Ammo] veh=" + ecmVehicle.getId()
                                 + " bullet=" + bullet.getId() + " type=IR 跳过(红外不受电子干扰)");
                     }
@@ -391,7 +390,7 @@ public final class RVP_EcmActiveManager {
                 // 首次被干扰：向干扰者（司机/乘员）与被干扰弹发射者弹 actionbar 提示（DIRCM 同款）
                 if (!wasJammed && bullet.ecmActiveJamRemainTick > 0) {
                     notifyJamAndVictim(ecmVehicle, bullet);
-                    if (DEBUG_ECM) {
+                    if (RVP_DebugFlags.ECM.isEnabled()) {
                         System.out.println("[RVP-ECM][Ammo] veh=" + ecmVehicle.getId()
                                 + " 干扰 bullet=" + bullet.getId() + " type=" + type
                                 + " remain=" + bullet.ecmActiveJamRemainTick);
@@ -401,7 +400,7 @@ public final class RVP_EcmActiveManager {
                     jammed++;
                 }
             }
-            if (DEBUG_ECM && (inRange > 0 || jammed > 0)) {
+            if (RVP_DebugFlags.ECM.isEnabled() && (inRange > 0 || jammed > 0)) {
                 System.out.println("[RVP-ECM][Ammo] veh=" + ecmVehicle.getId()
                         + " inRange=" + inRange + " jammed=" + jammed
                         + " ammoR=" + ammoRadius);
@@ -507,7 +506,7 @@ public final class RVP_EcmActiveManager {
                 }
                 if (anyUnlocked) {
                     RVP_ChaffJamState.setCooldown(target.getUUID(), gameTime, 60);
-                    if (DEBUG_ECM) {
+                    if (RVP_DebugFlags.ECM.isEnabled()) {
                         System.out.println("[RVP-ECM][Vehicle] veh=" + ecmVehicle.getId()
                                 + " 解除载具雷达锁定 target=" + target.getId()
                                 + " vehR=" + radius);
@@ -536,14 +535,14 @@ public final class RVP_EcmActiveManager {
                     continue;
                 }
                 if (RVP_EcmIff.isNeutralRadarVehicle(target)) {
-                    if (DEBUG_ECM) {
+                    if (RVP_DebugFlags.ECM.isEnabled()) {
                         rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
                                 + " 跳过 target=" + target.getId() + " (中立无主)");
                     }
                     continue;
                 }
                 if (RVP_EcmIff.areVehiclesFriendly(ecmVehicle, target)) {
-                    if (DEBUG_ECM) {
+                    if (RVP_DebugFlags.ECM.isEnabled()) {
                         rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
                                 + " 跳过 target=" + target.getId() + " (友方)");
                     }
@@ -553,7 +552,7 @@ public final class RVP_EcmActiveManager {
                 if (distSqr > radiusSqr) {
                     continue;
                 }
-                if (DEBUG_ECM) {
+                if (RVP_DebugFlags.ECM.isEnabled()) {
                     rvpEcmServerLog("[RVP-ECM][RwrFake] veh=" + ecmVehicle.getId()
                             + " 向 target=" + target.getId() + " 注入伪造锁定 radius=" + (int) radius);
                 }
@@ -800,10 +799,10 @@ public final class RVP_EcmActiveManager {
 
     /**
      * 调试快照：向本维度每位玩家推送主动ECM 调试信息（F10 调试覆盖层读取）。
-     * 单客户端模式下集成服务端走回环网络，同样可接收；由 {@link #DEBUG_ECM} 控制是否发送。
+     * 单客户端模式下集成服务端走回环网络，同样可接收；由 {@link #RVP_DebugFlags.ECM.isEnabled()} 控制是否发送。
      */
     private static void sendDebugSnapshots(ServerLevel level, List<ActiveInfo> activeInfos) {
-        if (!DEBUG_ECM) {
+        if (!RVP_DebugFlags.ECM.isEnabled()) {
             return;
         }
         for (ServerPlayer player : level.players()) {

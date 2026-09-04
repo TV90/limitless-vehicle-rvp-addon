@@ -10,6 +10,7 @@ import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.mixin.accessor.SwitchableUnitAccessor;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RotatableUnit;
@@ -81,10 +82,13 @@ public final class LauncherDeployStateMachine {
             if (lastLog == null || gameTime - lastLog >= 100) {
                 TRANSITION_LOG_THROTTLE.put(key, gameTime);
                 net.minecraft.world.entity.Entity drv = vehicle.getDriver();
+                // 发射架部署状态日志（开关：/rvpdebug flags launch_deploy，节流 100 tick）
+                if (RVP_DebugFlags.LAUNCH_DEPLOY.isEnabled()) {
                 LOGGER.info("[RVP-LaunchDeploy] 载具={} config={} state={} progress={} pitch={} speedKph={} hasPlayer={} driver={} passengers={}",
                         vehicle.getVehicleId(), config.id(), state.state, state.progressTick, currentPitch, speedKph,
                         hasPlayer, drv == null ? "null" : drv.getClass().getSimpleName(),
                         vehicle.getPassengers().size());
+                }
             }
 
             LauncherDeployRuntimeManager.put(

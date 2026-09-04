@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.all.AllItems;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -45,9 +46,12 @@ public class RVP_VehicleSpawnHandler {
         if (!(event.getEntity() instanceof AbstractVehicle vehicle)) {
             return;
         }
-        LOGGER.info("[RVP][SpawnAmmo] entityJoin vehicle={} entityId={} config={} partUnits={}",
-                vehicle.getVehicleId(), vehicle.getId(),
-                RVP_CommonConfig.isSpawnVehicleWithCreativeAmmo(), vehicle.getPartUnits().size());
+        // 上车补弹日志（开关：/rvpdebug flags spawn）
+        if (RVP_DebugFlags.SPAWN.isEnabled()) {
+            LOGGER.info("[RVP][SpawnAmmo] entityJoin vehicle={} entityId={} config={} partUnits={}",
+                    vehicle.getVehicleId(), vehicle.getId(),
+                    RVP_CommonConfig.isSpawnVehicleWithCreativeAmmo(), vehicle.getPartUnits().size());
+        }
         if (!RVP_CommonConfig.isSpawnVehicleWithCreativeAmmo()) {
             return;
         }
@@ -141,10 +145,13 @@ public class RVP_VehicleSpawnHandler {
             rvpWeapon.ywzj_rvp$clearReloadState();
         }
         if (weapon.getVehicle() != null) {
-            LOGGER.info("[RVP][SpawnAmmo] refill weapon={} before={} max={} after={}",
-                    weapon.getData() == null || weapon.getData().getWeaponId() == null
-                            ? "<null>" : weapon.getData().getWeaponId(),
-                    before, max, weapon.getRemainAmmo());
+            // 上车补弹 refill 日志（开关：/rvpdebug flags spawn）
+            if (RVP_DebugFlags.SPAWN.isEnabled()) {
+                LOGGER.info("[RVP][SpawnAmmo] refill weapon={} before={} max={} after={}",
+                        weapon.getData() == null || weapon.getData().getWeaponId() == null
+                                ? "<null>" : weapon.getData().getWeaponId(),
+                        before, max, weapon.getRemainAmmo());
+            }
         }
     }
 }

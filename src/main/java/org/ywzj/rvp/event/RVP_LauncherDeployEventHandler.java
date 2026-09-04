@@ -15,6 +15,7 @@ import net.minecraftforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.vehicle.LauncherDeployStateMachine;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /**
@@ -95,9 +96,12 @@ public class RVP_LauncherDeployEventHandler {
             if (!(part instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit wu)) {
                 continue;
             }
-            LOGGER.info("[RVP-LaunchDeploy] 渲染时刻 载具={} part={} xRot={} xTurnGroup角度={}",
-                    vehicle.getVehicleId(), part.getId(), wu.getXRot(),
-                    org.ywzj.rvp.config.LauncherDeployPoseHelper.getXTurnGroupAngleDeg(wu));
+            // 发射架部署渲染日志（开关：/rvpdebug flags launch_deploy）
+            if (RVP_DebugFlags.LAUNCH_DEPLOY.isEnabled()) {
+                LOGGER.info("[RVP-LaunchDeploy] 渲染时刻 载具={} part={} xRot={} xTurnGroup角度={}",
+                        vehicle.getVehicleId(), part.getId(), wu.getXRot(),
+                        org.ywzj.rvp.config.LauncherDeployPoseHelper.getXTurnGroupAngleDeg(wu));
+            }
         }
     }
 

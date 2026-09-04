@@ -9,6 +9,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
@@ -37,8 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RVP_JammingRuntime {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    /** 临时调试开关：定位干扰未触发问题，定位后移除。 */
-    private static final boolean JAM_DEBUG = true;
 
     /** 干扰扫描范围（格）。 */
     private static final double SCAN_RANGE = 4096.0;
@@ -73,7 +72,7 @@ public final class RVP_JammingRuntime {
         projectile.jammingNextScanTick = projectile.tickCount + SCAN_INTERVAL;
 
         ActiveJammer hit = scan(projectile);
-        if (JAM_DEBUG) {
+        if (RVP_DebugFlags.JAM.isEnabled()) {
             if (hit == null) {
                 LOGGER.info("[JAM-DBG] missile={} tick={} scan: NO HIT", projectile.getId(), projectile.tickCount);
             } else {
@@ -172,7 +171,7 @@ public final class RVP_JammingRuntime {
                 continue;
             }
             if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), entry.getKey(), BoneModuleType.JAMMER)) {
-                if (JAM_DEBUG) {
+                if (RVP_DebugFlags.JAM.isEnabled()) {
                     LOGGER.info("[JAM-DBG] vehicle={} bone={} module JAMMER INACTIVE", vehicle.getId(), entry.getKey());
                 }
                 continue; // 干扰机骨块已被击毁，设备失效
@@ -185,7 +184,7 @@ public final class RVP_JammingRuntime {
                 continue;
             }
             if (!RVP_GuidanceRuntimeGeometry.withinAngle(front, toMissile, cfg.halfAngleDeg())) {
-                if (JAM_DEBUG) {
+                if (RVP_DebugFlags.JAM.isEnabled()) {
                     LOGGER.info("[JAM-DBG] vehicle={} FOV MISS: front={} toMissile={} half={}",
                             vehicle.getId(), front, toMissile, cfg.halfAngleDeg());
                 }
@@ -201,13 +200,13 @@ public final class RVP_JammingRuntime {
             double approachAngle = Math.toDegrees(Math.acos(
                     flightDir.normalize().dot(toJammer.normalize())));
             if (approachAngle > cfg.approachHalfAngleDeg()) {
-                if (JAM_DEBUG) {
+                if (RVP_DebugFlags.JAM.isEnabled()) {
                     LOGGER.info("[JAM-DBG] vehicle={} APPROACH MISS: angle={} limit={}",
                             vehicle.getId(), approachAngle, cfg.approachHalfAngleDeg());
                 }
                 continue;
             }
-            if (JAM_DEBUG) {
+            if (RVP_DebugFlags.JAM.isEnabled()) {
                 LOGGER.info("[JAM-DBG] vehicle={} bone={} HIT dist={} range={}",
                         vehicle.getId(), entry.getKey(), dist, cfg.range());
             }

@@ -7,6 +7,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
@@ -72,8 +73,8 @@ final class RVP_RuntimeSeekerSupport {
             }
         }
         RVP_CountermeasureState.Result result = RVP_CountermeasureState.query(projectile, target, type, config);
-        // [RVP-DBG] 临时诊断：每次脱锁判定的综合状态（节流），定位干扰延迟
-        if (projectile.tickCount % 20 == 0) {
+        // 每次脱锁判定的综合状态诊断（开关：/rvpdebug flags jam，节流 20 tick）
+        if (RVP_DebugFlags.JAM.isEnabled() && projectile.tickCount % 20 == 0) {
             String near = RVP_CountermeasureState.debugNearestDecoyString(projectile, target,
                     RVP_CountermeasureState.decoyTypeFor(type), config);
             System.out.println("[RVP-DBG][JamQuery] seeker=" + projectile.getId()
@@ -90,8 +91,8 @@ final class RVP_RuntimeSeekerSupport {
             // 按制导类型在导引头视场锥内找对应干扰物（IR/AIR→热焰弹，SARH/ARH→箔条），转锁最近诱饵
             Entity decoy = RVP_CountermeasureState.findDecoyInSeekerCone(
                     projectile, target, RVP_CountermeasureState.decoyTypeFor(type), config).orElse(null);
-            // [RVP-DBG] 临时诊断：脱锁后是否找到可转锁干扰物（找不到→失目标滑行，近炸可能未关）
-            if (projectile.tickCount % 20 == 0) {
+            // 脱锁后是否找到可转锁干扰物诊断（开关：/rvpdebug flags jam，节流 20 tick）
+            if (RVP_DebugFlags.JAM.isEnabled() && projectile.tickCount % 20 == 0) {
                 System.out.println("[RVP-DBG][JamRetarget] seeker=" + projectile.getId()
                         + " decoyed=YES oldTarget=" + (projectile.getTargetEntity() == null ? "null" : projectile.getTargetEntity().getClass().getSimpleName())
                         + " retarget=" + (decoy == null ? "LOST_COAST" : "id=" + decoy.getId()));

@@ -16,6 +16,7 @@ import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -141,11 +142,15 @@ public final class RVP_DeployableUavService {
 
     public static boolean switchBackToParent(ServerPlayer player) {
         if (!(player.getVehicle() instanceof AbstractVehicle child)) {
-            LOGGER.info("[RVP-UAV] 切回失败：玩家不在载具上 vehicle={}", player.getVehicle());
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] 切回失败：玩家不在载具上 vehicle={}", player.getVehicle());
+            }
             return false;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavInstance(child)) {
-            LOGGER.info("[RVP-UAV] 切回失败：{} 非可部署UAV实例", child.getVehicleId());
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] 切回失败：{} 非可部署UAV实例", child.getVehicleId());
+            }
             return false;
         }
         UUID parentUuid = RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child);
@@ -153,24 +158,30 @@ public final class RVP_DeployableUavService {
         if (parent == null || parent.isRemoved() || !parent.isAlive() || parent.isDestroyed()) {
             // 母车实体暂不可用（区块卸载/已被移除）：直接下车，由 handleDismount 回传母车旁并
             // 进入延迟自动上车队列（母车区块重载后自动骑乘），避免玩家卡在无人机上。
-            LOGGER.info("[RVP-UAV] 母车暂不可用，下车回传: uav={} parentUuid={} parent={} removed={} alive={}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] 母车暂不可用，下车回传: uav={} parentUuid={} parent={} removed={} alive={}",
                     child.getVehicleId(),
                     parentUuid,
                     parent == null ? "null" : parent.getVehicleId(),
                     parent != null && parent.isRemoved(),
                     parent != null && parent.isAlive());
+            }
             if (player.getVehicle() == child) {
                 player.stopRiding();
             }
             return true;
         }
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
-            LOGGER.info("[RVP-UAV] 切回失败：控制切换被禁用 child={}", child.getVehicleId());
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] 切回失败：控制切换被禁用 child={}", child.getVehicleId());
+            }
             return false;
         }
         boolean riding = player.startRiding(parent);
         if (!riding) {
-            LOGGER.info("[RVP-UAV] 切回失败：startRiding返回false parent={}", parent.getVehicleId());
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] 切回失败：startRiding返回false parent={}", parent.getVehicleId());
+            }
             return false;
         }
         int returnSeatIndex = RVP_LinkedUavStateTable.getReturnSeatIndex(child);
@@ -429,21 +440,27 @@ public final class RVP_DeployableUavService {
         SeatLockInfo lock = PARENT_SEAT_LOCKS.get(parent.getUUID());
         if (lock != null && lock.ownerPlayerId() == owner.getId()) {
             PARENT_SEAT_LOCKS.remove(parent.getUUID());
-            LOGGER.info("[RVP-UAV-LOCK] 解锁母车 {} seat={} owner={}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-LOCK] 解锁母车 {} seat={} owner={}",
                     parent.getVehicleId(), lock.seatIndex(), lock.ownerPlayerId());
+            }
         }
     }
 
     /** 设置母车座位锁（玩家切至无人机期间，防止他人占用/开走母车）。 */
     public static void setSeatLock(AbstractVehicle parent, int seatIndex, int ownerPlayerId) {
         if (parent == null || seatIndex < 0) {
-            LOGGER.info("[RVP-UAV-LOCK] setSeatLock 跳过 parent={} seatIndex={}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-LOCK] setSeatLock 跳过 parent={} seatIndex={}",
                     parent == null ? "null" : parent.getVehicleId(), seatIndex);
+            }
             return;
         }
         PARENT_SEAT_LOCKS.put(parent.getUUID(), new SeatLockInfo(seatIndex, ownerPlayerId));
-        LOGGER.info("[RVP-UAV-LOCK] 锁母车 {} seat={} owner={}",
+                if (RVP_DebugFlags.UAV.isEnabled()) {
+            LOGGER.info("[RVP-UAV-LOCK] 锁母车 {} seat={} owner={}",
                 parent.getVehicleId(), seatIndex, ownerPlayerId);
+        }
     }
 
     /**
@@ -478,9 +495,11 @@ public final class RVP_DeployableUavService {
         }
         boolean reject = passenger == null || passenger.getId() != lock.ownerPlayerId();
         if (reject) {
-            LOGGER.info("[RVP-UAV-LOCK] 拒绝 {} 上母车 {}（锁 owner={} seat={}）",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-LOCK] 拒绝 {} 上母车 {}（锁 owner={} seat={}）",
                     passenger == null ? "null" : passenger.getName().getString(),
                     vehicle.getVehicleId(), lock.ownerPlayerId(), lock.seatIndex());
+            }
         }
         return reject;
     }
@@ -534,9 +553,11 @@ public final class RVP_DeployableUavService {
             }
             // 直接踢出而非换座：母车锁定的语义是"锁住母车"，入侵者不应留在母车任意座位上
             // （配合 onMount 上车事件拦截，此处的每 tick 强制定位为兜底）。
-            LOGGER.info("[RVP-UAV-LOCK] 每tick兜底踢出 {}（母车 {} 锁 seat={} owner={}）",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-LOCK] 每tick兜底踢出 {}（母车 {} 锁 seat={} owner={}）",
                     serverPlayer.getName().getString(), parent.getVehicleId(),
                     lock.seatIndex(), lock.ownerPlayerId());
+            }
             serverPlayer.stopRiding();
         }
     }

@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 import org.ywzj.rvp.network.S2CBoneModuleState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,8 +39,11 @@ public final class RVP_ClientBoneModuleState {
     }
 
     public static void apply(S2CBoneModuleState msg) {
-        LOGGER.info("[RVP-ERA-STATE] apply entityId={} inactive={}",
-                msg.entityId, msg.inactiveModules.keySet());
+        // 骨骼模块状态同步探针（开关：/rvpdebug flags client_state）
+        if (RVP_DebugFlags.CLIENT_STATE.isEnabled()) {
+            LOGGER.info("[RVP-ERA-STATE] apply entityId={} inactive={}",
+                    msg.entityId, msg.inactiveModules.keySet());
+        }
         if (msg.inactiveModules.isEmpty()) {
             INACTIVE_MODULES.remove(msg.entityId);
             ERA_DESTROY_TIMES.remove(msg.entityId);

@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -111,8 +112,11 @@ public final class RVP_ChaffJamHelper {
         if (count < chaff.getRadarJamCount()) {
             return false;
         }
-        LOGGER.info("[RVP-ChaffJam] 雷达={} 锁定目标={} 箔条数={} 触发脱锁（禁锁{}tick）",
-                radar.getId(), locked.getId(), count, chaff.getRadarJamCooldownTick());
+        // 箔条触发脱锁日志（开关：/rvpdebug flags cm；脱锁逻辑不受影响）
+        if (RVP_DebugFlags.CM.isEnabled()) {
+            LOGGER.info("[RVP-ChaffJam] 雷达={} 锁定目标={} 箔条数={} 触发脱锁（禁锁{}tick）",
+                    radar.getId(), locked.getId(), count, chaff.getRadarJamCooldownTick());
+        }
         breakLock(radarOwnerVehicle, radar, locked);
         RVP_ChaffJamState.setCooldown(locked.getUUID(), gameTime, chaff.getRadarJamCooldownTick());
         return true;
@@ -140,8 +144,11 @@ public final class RVP_ChaffJamHelper {
         if (count < chaff.getRadarJamCount()) {
             return false;
         }
-        LOGGER.info("[RVP-ChaffJam] 外置雷达 目标={} 记忆累计箔条数={} 触发脱锁（禁锁{}tick）",
-                locked.getId(), count, chaff.getRadarJamCooldownTick());
+        // 外置雷达箔条脱锁日志（开关：/rvpdebug flags cm）
+        if (RVP_DebugFlags.CM.isEnabled()) {
+            LOGGER.info("[RVP-ChaffJam] 外置雷达 目标={} 记忆累计箔条数={} 触发脱锁（禁锁{}tick）",
+                    locked.getId(), count, chaff.getRadarJamCooldownTick());
+        }
         // 清除外置雷达锁定与请求（服务端权威状态），并写目标禁锁期
         RVP_WeaponLockStateTable.clearExternalRadarLockedEntityId(root);
         RVP_WeaponLockStateTable.clearExternalRadarRequestedEntityId(root);

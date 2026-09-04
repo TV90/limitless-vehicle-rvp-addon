@@ -13,6 +13,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.OBB;
@@ -60,8 +61,11 @@ public final class RVP_PhysicsOnlyCollisionHelper {
                 PHYSICS_ONLY_CUBES.put(vehicle, cubes);
             }
             updatePhysicsOnlyCubes(vehicle);
-            LOGGER.info("[RVP-PhysicsOnly] {} 重建完成: physicsOnlyCubes={} bodyCubes剩余={}", vehicle.getVehicleId(),
-                    cubes.size(), vehicle.getVehicleCubeOBBs().size());
+            // 物理碰撞体重建日志（开关：/rvpdebug flags physics）
+            if (RVP_DebugFlags.PHYSICS.isEnabled()) {
+                LOGGER.info("[RVP-PhysicsOnly] {} 重建完成: physicsOnlyCubes={} bodyCubes剩余={}", vehicle.getVehicleId(),
+                        cubes.size(), vehicle.getVehicleCubeOBBs().size());
+            }
         } catch (Throwable t) {
             // 防御：任何异常都不允许破坏载具本体（已从车体剔除的 cube 无法回滚，仅影响碰撞盒精度）。
             LOGGER.error("[RVP-PhysicsOnly] {} rebuildPhysicsOnlyCubes 异常（已忽略）", vehicle.getVehicleId(), t);
@@ -203,8 +207,11 @@ public final class RVP_PhysicsOnlyCollisionHelper {
     private static List<VehicleCubeOBB> buildPhysicsOnlyCubes(AbstractVehicle vehicle) {
         var cfg = RVP_VehicleExtendedConfigManager.INSTANCE.get(vehicle);
         if (!cfg.hasPhysicsOnlyBones()) {
-            LOGGER.info("[RVP-PhysicsOnly] {} 无 physics-only 配置（structureModel={} bones={}）",
-                    vehicle.getVehicleId(), cfg.structureModel(), cfg.physicsOnlyBones());
+            // 无 physics-only 配置日志（开关：/rvpdebug flags physics）
+            if (RVP_DebugFlags.PHYSICS.isEnabled()) {
+                LOGGER.info("[RVP-PhysicsOnly] {} 无 physics-only 配置（structureModel={} bones={}）",
+                        vehicle.getVehicleId(), cfg.structureModel(), cfg.physicsOnlyBones());
+            }
             return List.of();
         }
         BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(cfg.structureModel()).orElse(null);
@@ -226,8 +233,11 @@ public final class RVP_PhysicsOnlyCollisionHelper {
             VehicleCubeGroup group = buildGroupChain(bone);
             collectRecursive(bone, group, cubes);
         }
-        LOGGER.info("[RVP-PhysicsOnly] {} 模型 {} 加载成功，physics_only_bone 提取 cubes={}", vehicle.getVehicleId(),
-                cfg.structureModel(), cubes.size());
+        // 模型加载日志（开关：/rvpdebug flags physics）
+        if (RVP_DebugFlags.PHYSICS.isEnabled()) {
+            LOGGER.info("[RVP-PhysicsOnly] {} 模型 {} 加载成功，physics_only_bone 提取 cubes={}", vehicle.getVehicleId(),
+                    cfg.structureModel(), cubes.size());
+        }
         return cubes;
     }
 

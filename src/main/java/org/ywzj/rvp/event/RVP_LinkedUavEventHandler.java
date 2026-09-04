@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.EntityUtil;
 
@@ -150,8 +151,10 @@ public class RVP_LinkedUavEventHandler {
                 EntityUtil.keepChunkLoaded(uav, parentVehicle.position());
             }
             if (uav.tickCount % 100 == 0) {
-                LOGGER.info("[RVP-UAV] refreshParent: uav={} parent={} 母车实体存在，强载@{}",
+                                if (RVP_DebugFlags.UAV.isEnabled()) {
+                    LOGGER.info("[RVP-UAV] refreshParent: uav={} parent={} 母车实体存在，强载@{}",
                         uav.getVehicleId(), parentVehicle.getVehicleId(), parentVehicle.blockPosition());
+                }
             }
             return;
         }
@@ -165,12 +168,14 @@ public class RVP_LinkedUavEventHandler {
             EntityUtil.keepChunkLoaded(uav, lastParentPos);
         }
         if (uav.tickCount % 100 == 0) {
-            LOGGER.info("[RVP-UAV] refreshParent: uav={} parentUuid={} 母车实体不可用！lastPos={} 距{}区块强载",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] refreshParent: uav={} parentUuid={} 母车实体不可用！lastPos={} 距{}区块强载",
                     uav.getVehicleId(), parentUuid,
                     lastParentPos == null ? "null" : lastParentPos.toString(),
                     lastParentPos == null ? "-" :
                             Math.max(Math.abs(uav.blockPosition().getX() - (int) Math.floor(lastParentPos.x)) >> 4,
                                     Math.abs(uav.blockPosition().getZ() - (int) Math.floor(lastParentPos.z)) >> 4));
+            }
         }
     }
 
@@ -185,10 +190,12 @@ public class RVP_LinkedUavEventHandler {
         if (!(event.getEntity() instanceof AbstractVehicle vehicle) || vehicle.level().isClientSide()) {
             return;
         }
-        LOGGER.info("[RVP-UAV-DIAG] onEntityLeaveWorld: vehicle={} isUav={} driver={} removed={}",
+                if (RVP_DebugFlags.UAV.isEnabled()) {
+            LOGGER.info("[RVP-UAV-DIAG] onEntityLeaveWorld: vehicle={} isUav={} driver={} removed={}",
                 vehicle.getVehicleId(), vehicle.uav,
                 vehicle.getDriver() instanceof ServerPlayer sp ? sp.getName().getString() : "null",
                 vehicle.isRemoved());
+        }
         DESTROYED_SINCE.remove(vehicle.getUUID());
         RVP_DeployableUavService.cleanupSeatLock(vehicle);
         RVP_DeployableUavService.clearLinkedParentLastPosition(vehicle.getUUID());
@@ -222,8 +229,10 @@ public class RVP_LinkedUavEventHandler {
         }
         if (event.isMounting()) {
             // 母车座位锁：无人机在飞、锁未解除时，非持有者禁止登上母车任意座位（防止把母车开走）。
-            LOGGER.info("[RVP-UAV-LOCK] mount尝试: {} -> {}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-LOCK] mount尝试: {} -> {}",
                     passenger.getName().getString(), vehicle.getVehicleId());
+            }
             if (RVP_DeployableUavService.shouldRejectMount(vehicle, passenger)) {
                 event.setCanceled(true);
                 if (passenger instanceof ServerPlayer serverPlayer) {
@@ -247,8 +256,10 @@ public class RVP_LinkedUavEventHandler {
             return;
         }
         if (passenger instanceof ServerPlayer serverPlayer && vehicle.tickCount != 0) {
-            LOGGER.info("[RVP-UAV-DIAG] handleMount: vehicle={} tickCount={} player={}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV-DIAG] handleMount: vehicle={} tickCount={} player={}",
                     vehicle.getVehicleId(), vehicle.tickCount, serverPlayer.getName().getString());
+            }
             if (!vehicle.uav) {
                 // 只保存玩家原位置，不生成假玩家实体（避免母车旁出现玩家模型）
                 RVP_LinkedUavStateTable.setFakeOperatorPosition(vehicle, passenger.position());
@@ -272,9 +283,11 @@ public class RVP_LinkedUavEventHandler {
         if (target != null) {
             serverPlayer.teleportTo(target.x, target.y, target.z);
         }
-        LOGGER.info("[RVP-UAV] {} 离机: uav={} 回传位置={} parentUuid={}",
+                if (RVP_DebugFlags.UAV.isEnabled()) {
+            LOGGER.info("[RVP-UAV] {} 离机: uav={} 回传位置={} parentUuid={}",
                 serverPlayer.getName().getString(), vehicle.getVehicleId(), target,
                 RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(vehicle));
+        }
         RVP_DeployableUavService.tryAutoRideParent(serverPlayer, vehicle);
     }
 

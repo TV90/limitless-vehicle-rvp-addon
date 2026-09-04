@@ -37,6 +37,7 @@ import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceController;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.debug.RVP_TopAttackDebug;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner;
@@ -2449,8 +2450,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 干扰期间关闭近炸引信：导弹被诱饵欺骗（目标为干扰物或导引头失锁关闭期）时不引爆近炸，
         // 避免导弹追诱饵飞掠玩家附近时仍被近炸引爆命中玩家
         if (isJammedByDecoy()) {
-            // [RVP-DBG] 临时诊断：近炸被干扰抑制
-            if (updateCount % 20 == 0) {
+            // 近炸被干扰抑制诊断（开关：/rvpdebug flags fuse）
+            if (RVP_DebugFlags.FUSE.isEnabled() && updateCount % 20 == 0) {
                 System.out.println("[RVP-DBG][FuseSuppress] seeker=" + getId()
                         + " jammed=true targetEntity=" + (targetEntity == null ? "null" : targetEntity.getClass().getSimpleName()));
             }
@@ -2487,12 +2488,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
                         && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
                         && !isProximityDamageImmune(e))) {
-            // [RVP-DBG] 临时诊断：近炸(探测盒)起爆时的干扰状态
-            System.out.println("[RVP-DBG][FuseDetonate] seeker=" + getId()
-                    + " source=detection_box target=" + entity.getClass().getSimpleName()
-                    + " jammed=" + isJammedByDecoy()
-                    + " targetEntity=" + (targetEntity == null ? "null" : targetEntity.getClass().getSimpleName())
-                    + " seekerShutOff=" + isSeekerShutOff());
+            // 近炸(探测盒)起爆时的干扰状态诊断（开关：/rvpdebug flags fuse）
+            if (RVP_DebugFlags.FUSE.isEnabled()) {
+                System.out.println("[RVP-DBG][FuseDetonate] seeker=" + getId()
+                        + " source=detection_box target=" + entity.getClass().getSimpleName()
+                        + " jammed=" + isJammedByDecoy()
+                        + " targetEntity=" + (targetEntity == null ? "null" : targetEntity.getClass().getSimpleName())
+                        + " seekerShutOff=" + isSeekerShutOff());
+            }
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
                     () -> "type=PROXIMITY_POST_MOTION source=detection_box radius="

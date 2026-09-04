@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.debug;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +22,10 @@ public final class RVP_DebugStateLogs {
     private RVP_DebugStateLogs() {}
 
     public static void logIrHms(String message) {
+        // 头盔显示（IR 锁定状态）日志，开关：/rvpdebug flags hmd
+        if (!RVP_DebugFlags.HMD.isEnabled()) {
+            return;
+        }
         append(IR_HMS_LOG_PATH, message);
     }
 

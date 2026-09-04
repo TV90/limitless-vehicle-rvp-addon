@@ -8,6 +8,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 /**
  * 注册 RVP 自定义 overlay。仅在 mod 事件总线上处理注册。
@@ -27,7 +28,10 @@ public class RVP_OverlayRegistry {
 
     @SubscribeEvent
     public static void onRegisterHud(RegisterGuiOverlaysEvent event) {
-        LOGGER.info("[RVP-Hud] onRegisterHud fired");
+        // HUD overlay 注册探针（开关：/rvpdebug flags hud）
+        if (RVP_DebugFlags.HUD.isEnabled()) {
+            LOGGER.info("[RVP-Hud] onRegisterHud fired");
+        }
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_radar", new RVP_RadarOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_scope", new RVP_ScopeOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_missile", new RVP_MissileOverlay());

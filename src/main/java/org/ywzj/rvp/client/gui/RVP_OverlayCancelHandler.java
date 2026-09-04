@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
@@ -41,8 +42,11 @@ public class RVP_OverlayCancelHandler {
                 }
                 sb.append(entry.id()).append(' ');
             }
-            LOGGER.info("[RVP-Hud] overlay probe: size={} current={} containsHitIndicator={} list={}",
-                    GuiOverlayManager.getOverlays().size(), event.getOverlay().id(), contains, sb);
+            // HUD overlay 注册探针（开关：/rvpdebug flags hud）
+            if (RVP_DebugFlags.HUD.isEnabled()) {
+                LOGGER.info("[RVP-Hud] overlay probe: size={} current={} containsHitIndicator={} list={}",
+                        GuiOverlayManager.getOverlays().size(), event.getOverlay().id(), contains, sb);
+            }
         }
         ResourceLocation id = event.getOverlay().id();
         if (!id.equals(VEHICLE_RADAR) && !id.equals(VEHICLE_SCOPE)) {

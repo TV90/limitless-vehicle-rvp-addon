@@ -31,6 +31,7 @@ import org.joml.Vector4f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
@@ -160,7 +161,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick,
                        int screenWidth, int screenHeight) {
         long now = System.currentTimeMillis();
-        if (now - lastEntryLog > 2000) {
+        // 命中提示 overlay 渲染探针（开关：/rvpdebug flags hit_ui，节流 2s）
+        if (RVP_DebugFlags.HIT_UI.isEnabled() && now - lastEntryLog > 2000) {
             lastEntryLog = now;
             LOGGER.info("[RVP-HitUI] OVERLAY render fired: active={} events={} screen={}",
                     RVP_ClientHitIndicatorState.isActive(),
@@ -188,7 +190,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             return;
         }
         long now = System.currentTimeMillis();
-        if (now - lastEraBurnCheck > 1000) {
+        // 命中提示活跃渲染探针（开关：/rvpdebug flags hit_ui，节流 1s）
+        if (RVP_DebugFlags.HIT_UI.isEnabled() && now - lastEraBurnCheck > 1000) {
             lastEraBurnCheck = now;
             LOGGER.info("[RVP-HitUI] render active: entity={} events={}",
                     RVP_ClientHitIndicatorState.getEntityId(),
@@ -207,7 +210,8 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
             return;
         }
         long dbgNow = System.currentTimeMillis();
-        if (dbgNow - lastDrawLog > 2000) {
+        // 命中展板绘制探针（开关：/rvpdebug flags hit_ui，节流 2s）
+        if (RVP_DebugFlags.HIT_UI.isEnabled() && dbgNow - lastDrawLog > 2000) {
             lastDrawLog = dbgNow;
             LOGGER.info("[RVP-HitUI] DRAW panel: entity={} type={} events={}",
                     entity.getId(),

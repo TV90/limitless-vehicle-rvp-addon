@@ -24,6 +24,7 @@ import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -280,7 +281,10 @@ public final class RVP_RocketCcipOverlay {
         String state = source + ", active=" + ywzj_rvp$activeTexture + ", hasTexture=" + ywzj_rvp$hasTexture;
         if (!state.equals(ywzj_rvp$lastTextureDebugState)) {
             ywzj_rvp$lastTextureDebugState = state;
-            LOGGER.info("[RVP][RocketCCIP] {}", state);
+            // 火箭 CCIP 纹理状态探针（开关：/rvpdebug flags ccip）
+            if (RVP_DebugFlags.CCIP.isEnabled()) {
+                LOGGER.info("[RVP][RocketCCIP] {}", state);
+            }
         }
     }
 

@@ -1,6 +1,8 @@
 package org.ywzj.rvp.debug;
 
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.logging.LogUtils;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -33,10 +35,51 @@ public final class RVP_ServerDebugCommands {
 
     private RVP_ServerDebugCommands() {}
 
+    /**
+     * 构建 {@code /rvpdebug flags} 子树：为 {@link RVP_DebugFlags} 中每个调试开关
+     * 动态注册 {@code on/off/status}，另含 {@code list} 列出全部开关当前状态。
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildFlagsSubtree() {
+        LiteralArgumentBuilder<CommandSourceStack> builder = Commands.literal("flags")
+                .then(Commands.literal("list").executes(ctx -> {
+                    StringBuilder sb = new StringBuilder("[RVP] 调试日志开关:\n");
+                    for (RVP_DebugFlags.RVP_DebugFlag flag : RVP_DebugFlags.ALL) {
+                        sb.append("  ").append(flag.getName())
+                                .append(" = ").append(flag.isEnabled() ? "on" : "off")
+                                .append("   (").append(flag.getDescription()).append(")\n");
+                    }
+                    ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
+                    return 1;
+                }));
+        for (RVP_DebugFlags.RVP_DebugFlag flag : RVP_DebugFlags.ALL) {
+            builder = builder.then(Commands.literal(flag.getName())
+                    .then(Commands.literal("on").executes(ctx -> {
+                        flag.setEnabled(true);
+                        ctx.getSource().sendSuccess(() ->
+                                Component.literal("[RVP] 已开启 " + flag.getName() + " 调试日志"), false);
+                        return 1;
+                    }))
+                    .then(Commands.literal("off").executes(ctx -> {
+                        flag.setEnabled(false);
+                        ctx.getSource().sendSuccess(() ->
+                                Component.literal("[RVP] 已关闭 " + flag.getName() + " 调试日志"), false);
+                        return 1;
+                    }))
+                    .then(Commands.literal("status").executes(ctx -> {
+                        ctx.getSource().sendSuccess(() -> Component.literal(
+                                "[RVP] " + flag.getName() + "=" + (flag.isEnabled() ? "on" : "off")
+                                        + "  (" + flag.getDescription() + ")"), false);
+                        return flag.isEnabled() ? 1 : 0;
+                    })));
+        }
+        return builder;
+    }
+
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("rvpdebug")
+                        .then(buildFlagsSubtree())
                         .then(Commands.literal("dualpulse")
                                 .then(Commands.literal("on").executes(ctx -> {
                                     RVP_DualPulseDebug.clearLog();

@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.state;
 
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.ywzj.rvp.network.S2CEcmDebug;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -67,10 +68,9 @@ public final class RVP_ClientEcmDebugState {
     }
 
     /** 客户端 ECM 调试开关（默认开，排查完置 false 即可关闭探针等输出）。 */
-    private static boolean debugOn = true;
-
     public static boolean isDebugOn() {
-        return debugOn;
+        // ECM 调试探针开关，由 /rvpdebug flags ecm 控制
+        return RVP_DebugFlags.ECM.isEnabled();
     }
 
     /** 把单行事件追加到日志文件。 */
@@ -101,6 +101,10 @@ public final class RVP_ClientEcmDebugState {
 
     /** 底层追加写入（含目录创建与超阈值清空），供快照与事件共用。 */
     private static void appendRaw(String text) {
+        // 客户端 ECM 调试文件日志统一开关：/rvpdebug flags ecm
+        if (!RVP_DebugFlags.ECM.isEnabled()) {
+            return;
+        }
         try {
             Path dir = FMLPaths.GAMEDIR.get().resolve("logs");
             Files.createDirectories(dir);

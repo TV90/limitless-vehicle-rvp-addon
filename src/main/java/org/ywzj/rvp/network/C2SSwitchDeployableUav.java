@@ -8,6 +8,7 @@ import net.minecraftforge.network.NetworkEvent;
 import org.slf4j.Logger;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.function.Supplier;
@@ -31,16 +32,20 @@ public class C2SSwitchDeployableUav {
             }
             if (!(player.getVehicle() instanceof AbstractVehicle vehicle)) {
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav.not_in_vehicle"), true);
-                LOGGER.info("[RVP-UAV] {} 按M：不在载具上（getVehicle={}）",
+                                if (RVP_DebugFlags.UAV.isEnabled()) {
+                    LOGGER.info("[RVP-UAV] {} 按M：不在载具上（getVehicle={}）",
                         player.getName().getString(),
                         player.getVehicle() == null ? "null" : player.getVehicle().getClass().getSimpleName());
+                }
                 return;
             }
 
             if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle)) {
                 boolean ok = RVP_DeployableUavService.switchBackToParent(player);
-                LOGGER.info("[RVP-UAV] {} 按M切回: vehicleId={} instance=true 结果={}",
+                                if (RVP_DebugFlags.UAV.isEnabled()) {
+                    LOGGER.info("[RVP-UAV] {} 按M切回: vehicleId={} instance=true 结果={}",
                         player.getName().getString(), vehicle.getVehicleId(), ok);
+                }
                 player.displayClientMessage(Component.translatable(
                         ok ? "message.ywzj_rvp.uav.switch_back_success" : "message.ywzj_rvp.uav.switch_back_failed"
                 ), true);
@@ -48,8 +53,10 @@ public class C2SSwitchDeployableUav {
             }
 
             boolean ok = RVP_DeployableUavService.switchToLinkedUav(player);
-            LOGGER.info("[RVP-UAV] {} 按M切到子载具: vehicleId={} instance=false 结果={}",
+                        if (RVP_DebugFlags.UAV.isEnabled()) {
+                LOGGER.info("[RVP-UAV] {} 按M切到子载具: vehicleId={} instance=false 结果={}",
                     player.getName().getString(), vehicle.getVehicleId(), ok);
+            }
             player.displayClientMessage(Component.translatable(
                     ok ? "message.ywzj_rvp.uav.switch_to_child_success" : "message.ywzj_rvp.uav.switch_to_child_failed"
             ), true);

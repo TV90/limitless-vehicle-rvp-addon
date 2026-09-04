@@ -13,6 +13,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
@@ -162,9 +163,8 @@ public final class RVP_CountermeasureState {
         }
         Optional<Entity> found = candidates.stream()
                 .min(byMemoryAge.thenComparingDouble(entity -> entity.distanceToSqr(seeker)));
-        // 转锁诱饵日志（脱锁期间每 tick 调用，节流输出）：脱锁后是否找到可转锁的干扰物
-        // （找到 → 导弹转锁诱饵；找不到 → 导弹失去目标）
-        if (seeker.tickCount % JAM_LOG_INTERVAL_TICKS == 0) {
+        // 转锁诱饵日志（开关：/rvpdebug flags jam，节流输出）
+        if (RVP_DebugFlags.JAM.isEnabled() && seeker.tickCount % JAM_LOG_INTERVAL_TICKS == 0) {
             LOGGER.info("[RVP-Jam] 转锁诱饵 seeker={} 类型={} 结果={}",
                     seeker.getId(), decoyType,
                     found.map(e -> "找到 id=" + e.getId() + " 距离=" + Math.round(seeker.distanceTo(e) * 10) / 10.0)
@@ -232,8 +232,8 @@ public final class RVP_CountermeasureState {
         memory.entrySet().removeIf(e -> now - e.getValue() >= DECOY_MEMORY_TICKS);
         int count = memory.size();
         boolean jam = count > config.seekerJamLimit();
-        // 干扰检测节流日志：有干扰物计数、触发脱锁、或 memory 非空（排查"有干扰物但没脱锁"的延迟）时按间隔输出
-        if (now % JAM_LOG_INTERVAL_TICKS == 0 || jam) {
+        // 干扰检测节流日志（开关：/rvpdebug flags jam）：有干扰物计数、触发脱锁、或 memory 非空时按间隔输出
+        if (RVP_DebugFlags.JAM.isEnabled() && (now % JAM_LOG_INTERVAL_TICKS == 0 || jam)) {
             LOGGER.info("[RVP-Jam] seeker={} target={} type={} 锥内={} 机体{}格内={} 记忆累计={} 阈值={} 脱锁={}",
                     seeker.getId(), target.getId(), decoyType, coneCount,
                     (int) TARGET_DECOY_RADIUS, nearCount, count,

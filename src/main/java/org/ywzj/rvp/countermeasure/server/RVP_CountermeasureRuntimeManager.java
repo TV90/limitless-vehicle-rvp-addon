@@ -19,6 +19,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.countermeasure.RVP_DecoyEntity;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
 import org.ywzj.rvp.vehicle.BoneModuleType;
@@ -255,7 +256,10 @@ public final class RVP_CountermeasureRuntimeManager {
             vehicle.level().playSound(null, soundPos.x, soundPos.y, soundPos.z,
                     sound, SoundSource.NEUTRAL, 1.0F, 1.0F);
         }
-        LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
+        // 干扰物抛洒日志（开关：/rvpdebug flags cm）
+        if (RVP_DebugFlags.CM.isEnabled()) {
+            LOGGER.info("[RVP-CM] {} 抛洒 {} 发，@{}", type, fireCount, soundPos);
+        }
     }
 
     private static void spawnOne(AbstractVehicle vehicle, WeaponUnit launcher,
@@ -272,9 +276,12 @@ public final class RVP_CountermeasureRuntimeManager {
             Vec3 dir = resolveSmokeLaunchDir(vehicle);
             smokeEntity.setDeltaMovement(dir.scale(system.getSmokeData().getSpeed()));
             vehicle.level().addFreshEntity(smokeEntity);
-            LOGGER.info("[RVP-CM] 烟雾出膛 launcher={} bolts={} 位置={} 方向={} 车位置={}",
-                    launcher.getId(), launcher.getBolts().size(), spawnPos,
-                    new java.text.DecimalFormat("#.##").format(dir.y), vehicle.position());
+            // 烟雾出膛日志（开关：/rvpdebug flags cm）
+            if (RVP_DebugFlags.CM.isEnabled()) {
+                LOGGER.info("[RVP-CM] 烟雾出膛 launcher={} bolts={} 位置={} 方向={} 车位置={}",
+                        launcher.getId(), launcher.getBolts().size(), spawnPos,
+                        new java.text.DecimalFormat("#.##").format(dir.y), vehicle.position());
+            }
             return;
         }
         RVP_CountermeasureDecoyData decoy = system.getDecoy();

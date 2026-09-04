@@ -46,6 +46,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
@@ -698,7 +699,7 @@ public final class GunnerBrain {
         } else {
             return;
         }
-        if ((gunner.tickCount + vehicle.getId()) % 100 == 0) {
+        if (RVP_DebugFlags.GUNNER.isEnabled() && (gunner.tickCount + vehicle.getId()) % 100 == 0) {
             LOGGER.info("[RVP-Gunner-DEBUG] 载具={} tick={} smoke扫描: threat={}({}) hasSmoke={}",
                     vehicle.getVehicleId(), gunner.tickCount,
                     threat == null ? "null" : threat.getId(),
@@ -706,7 +707,9 @@ public final class GunnerBrain {
         }
         RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.SMOKE);
         gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);
-        LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
+        if (RVP_DebugFlags.GUNNER.isEnabled()) {
+            LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
+        }
     }
 
     /** 单次遍历的导弹威胁扫描结果。 */
@@ -1207,12 +1210,10 @@ public final class GunnerBrain {
      */
     /** 主动ECM 调试日志节流（按载具 id）。 */
     private static final Map<Integer, Long> GUNNER_ECM_DBG = new HashMap<>();
-    /** 主动ECM gunner 调试开关。 */
-    private static final boolean GUNNER_ECM_DBG_ON = true;
 
     /** 记录 gunner 主动ECM 决策（控制台 + logs/rvp_ecm_server.log，单客户端同目录）。 */
     private static void rvpEcmDbg(AbstractVehicle vehicle, String msg) {
-        if (!GUNNER_ECM_DBG_ON) {
+        if (!RVP_DebugFlags.ECM.isEnabled()) {
             return;
         }
         long now = vehicle.level().getGameTime();
