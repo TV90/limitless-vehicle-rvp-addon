@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
@@ -36,6 +37,12 @@ public class RVP_MslOverlay {
 
     @SubscribeEvent
     public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Post event) {
+        // 目的：RenderGuiOverlayEvent 对每个已渲染 overlay 各触发一次（每帧 40+ 次），
+        // 而本处理器的全实体遍历 + 逐导弹解析只应每帧执行一次——锚定每帧必渲染的
+        // 原生 CHAT_PANEL 层，其余事件全部忽略（修复：多弹在飞时帧率腰斩）
+        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         if (!(mc.player.getVehicle() instanceof AbstractVehicle playerVehicle)) return;

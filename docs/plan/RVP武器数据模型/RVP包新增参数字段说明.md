@@ -88,6 +88,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `loc` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
 | `seeker_color` | 可选，导引头圈 HUD 颜色覆盖（RGB 十六进制字符串，如 `"0x30FF30"` / `"#FFAA00"`）。配置后该武器被选中时导引头圈用此颜色绘制，锁定时统一红色指示；未配置走本体机型基色（直升机绿 / 固定翼白）。仅客户端渲染消费。 |
 | `parent_weapon_unit_aim_override` | 可选布尔，覆盖所属武器站的 `parent_weapon_unit_aim`：`true`=弹着点预测与准心锚定到母武器站，`false`=使用自身挂架位置；未写=继承站级静态配置。仅客户端消费（弹着点预测与准心显示锚定方向）。 |
+| `lock_tone_sound` | 可选，本武器锁定敌人时播放的导引头锁定音（`SoundEvent` 资源位置字符串，如 `"ywzj_rvp:ir_track_alarm"` / `"ywzj_vehicle:missile_launch"`）。不配置则消费方回退全局默认（`RVP_Sounds.IR_TRACK_ALARM`）。仅客户端消费（`RVP_ClientSeekerTone`）。 |
 
 **破坏性变更（0.5.23+）：** 已删除顶层 `acceleration`、`delay_fuse`、`active_radiation_*`、`tv_missile_*`、`laser_range` 等旧键；爆炸配置在 `detonate_data.explosion_data` 内，不再支持顶层 `explosion` / `explosion_data`。
 
@@ -655,6 +656,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `broadcast_range` | 同维度网络广播距离（格）；接受非负有限值，不设业务上限。 | `1536.0` |
 | `sound` / `flash` / `shake` | 是否允许声音、闪光、镜头震动；客户端设置仍可进一步关闭。 | `true` |
 | `suppress_native_explosion_effect` | 视觉事件成功发布后是否屏蔽本体普通爆炸视觉；不影响伤害与方块破坏。 | `true` |
+| `suppress_rvp_default_explosion` | 屏蔽 RVP 内置默认爆炸视觉（`rvp:mchr_explosion`），该武器改走本体爆炸视觉。读取不受 `enabled` 门控——条目可只作屏蔽标记存在（不配 `effect_type`）。 | `false` |
 | `experimental` | 当前视觉事件的类型化实验配置对象；缺失或为 `null` 时所有实验均关闭。它与 `preset_data` 同级，不属于预设 schema。 | `{}` |
 | `preset_data` | 与 `preset` 相同 schema 的稀疏 JSON 覆盖；由对应客户端工厂类型化校验。 | `{}` |
 
@@ -803,6 +805,31 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
         "cloud_roll_speed_factor": 1.0
       }
     }
+  ]
+}
+```
+
+##### `rvp:mchr_explosion` 内置默认爆炸（MCHR 风格）
+
+RVP 武器（机枪/火箭/导弹/炸弹）爆炸的**默认视觉**，不需要任何 `visual_effect_data` 配置即生效。服务端 `RVP_DefaultExplosionVisualService` 在 `RVP_BaseBullet.triggerExplosion` 默认路径广播 `effectType = rvp:mchr_explosion`，客户端 `RVP_DefaultExplosionEffectFactory`（注册 `rvp:mchr_explosion`）消费。
+
+粒子表现（复刻 MCHR `MCH_Explosion.effectExplosion`）：
+- `rvp:mchr_smoke`（`RVP_MchrSmokeParticle`）：翻滚灰黄大烟（`big_smoke_0..11` 帧），逐帧放大、缓上浮、转白；
+- `rvp:mchr_flare`（`RVP_MchrFlareParticle`）：曳光火星（`nuclear/flare.png` 光斑，拖烟）；
+- 另含原版大十字闪光、方块碎屑（`BlockParticleOption`）、水中水花。
+
+**数值全部按 `baseExplosionRadius` 内置自动计算，不开放任何 `preset_data` / 粒子参数**（尺寸、数量、颜色、寿命均不可配）。顶层 `scale` / `density` 忽略（内置按半径推导）。
+
+**屏蔽矩阵**（任一成立即不播放默认视觉，改走本体/其它特效；`RVP_BaseBullet.java` 触发处）：
+- `hbm_effect_data` 生效（HBM 全权接管）；
+- `visual_effect_data` 其它特效发布成功（如温压，已完整替代爆炸视觉）；
+- 任一 `visual_effect_data` 条目 `suppress_rvp_default_explosion: true`（显式走本体视觉）。
+
+仅屏蔽默认视觉的写法（条目无 `effect_type`、不启用）：
+```json
+"detonate_data": {
+  "visual_effect_data": [
+    { "suppress_rvp_default_explosion": true }
   ]
 }
 ```
@@ -1906,6 +1933,84 @@ SACLOS 反坦克导弹（半自动修正）：
 ```
 
 > 骨骼模块失效状态经 `S2CBoneModuleState` 同步客户端（JS 动画 `rvp_isEraActive`/`isModuleActive` 据此显隐渲染骨），快修恢复后同通道自动恢复显示。
+
+---
+
+### 2.14 干扰物（`countermeasure`，热焰/箔条/烟雾）
+
+载具 JSON 顶层 `countermeasure` 块，键为子系统类型：`flare`（热焰弹）/ `chaff`（箔条）/ `smoke`（烟雾弹）。每个键是一个**系统对象**（`RVP_CountermeasureSystemData`）；键名大小写不敏感，`type` 字段缺省由所属键决定。系统启用条件：`total > 0` 且至少一个 `launcher_parts`。触发键位：热焰 H、箔条/ECM 左 Alt、烟雾 H（客户端按各自系统配置过滤）。
+
+#### 系统对象字段（`flare` / `chaff` / `smoke`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `type` | 干扰物类型 `FLARE` / `CHAFF` / `SMOKE`，大小写不敏感；缺省由所属键决定。 | 空（随键） |
+| `launcher_parts` | 发射装置部件 id 列表（本体 `WeaponUnit` 部件），作为出膛点与发射动画锚点。 | `[]` |
+| `total` | 干扰物总数（弹舱容量）；`0` = 禁用该系统。 | `32` |
+| `per_round` | 一轮发射数 m。 | `4` |
+| `burst_rounds` | 总发射轮数 n（一次按键最多发射的轮数）。 | `8` |
+| `launch_interval_tick` | 轮间发射间隔（tick）。 | `4` |
+| `reload_tick` | 装填时间（tick），从 0 装填到 total。 | `200` |
+| `decoy` | 干扰物实体属性（见下）。 | 见下 |
+| `smoke` | 烟雾云属性；**仅 `SMOKE` 系统生效**（见下）。 | 见下 |
+| `radar_jam_radius` | 箔条对雷达锁定的干扰判定半径（格）；**仅 `CHAFF` 生效**。 | `8.0` |
+| `radar_jam_count` | 被锁定目标周围箔条数 ≥ 该值时雷达脱锁；**仅 `CHAFF` 生效**。 | `3` |
+| `radar_jam_cooldown_tick` | 脱锁后目标短时间内不能被雷达选中/锁定（仍可被扫描）的时长（tick）；**仅 `CHAFF` 生效**。 | `60` |
+| `bone_modules` | 关联的 `bone_modules` 骨块名列表：非空时对应骨块 `COUNTERMEASURE` 模块全部被击毁则本系统失去抛洒功能；为空不联动骨块。 | `[]` |
+
+#### `decoy` 子对象（`RVP_CountermeasureDecoyData`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `lifetime_tick` | 单发干扰物存活 tick（有效干扰窗口）。 | `160` |
+| `speed` | 出膛初速（m/tick，沿发射装置瞄准方向，叠加载具速度）。 | `0.5` |
+| `gravity` | 下落加速度（热焰弹建议 `0.02` 漂浮更久；箔条建议 `0` 悬浮）。 | `0.02` |
+| `drag` | 空气阻力系数，速度按 `velocity *= (1 - drag)` 衰减。 | `0.05` |
+| `spread` | 发射散布半径（格，发射时随机偏移）。 | `1.0` |
+| `glow_color` | 发光颜色（`0xRRGGBB`），作用于 billboard 贴图颜色倍乘。 | `0xFFFFFF` |
+| `halo_scale` | 光晕/billboard 尺寸倍率（光圈大小）。 | `1.0` |
+
+#### `smoke` 子对象（`RVP_CountermeasureSmokeData`，仅 `SMOKE` 系统）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `lifetime_tick` | 云团存活 tick（含弹道飞行段），到点消散。 | `100` |
+| `radius` | 云团最终半径（格），AABB 从 0 随时间膨胀到该值；需显著大于导弹近炸半径。 | `10.0` |
+| `speed` | 出膛初速（格/tick，沿发射装置瞄准方向，叠加载具速度）。 | `1.0` |
+| `gravity` | 下落加速度（格/tick²），用于出膛弹道飞行段。 | `0.05` |
+| `explode_tick` | 出膛后延迟该 tick 爆炸生成烟雾云。 | `10` |
+| `rise_speed` | 烟雾上升速度（格/tick，即负重力语义）。 | `0.03` |
+| `opacity` | 遮蔽强度 0~1（预留：后续分级遮蔽/视线衰减，当前仅作数据保留）。 | `1.0` |
+| `drift` | 风/随机飘移幅度（格/tick，预留）。 | `0.0` |
+
+配置示例（热焰 + 箔条 + 烟雾）：
+
+```json
+"countermeasure": {
+  "flare": {
+    "launcher_parts": ["decoy_flare_barrel"],
+    "total": 32, "per_round": 4, "burst_rounds": 8,
+    "launch_interval_tick": 4, "reload_tick": 200,
+    "decoy": { "lifetime_tick": 160, "speed": 1.0, "gravity": 0.052, "drag": 0.02, "spread": 0.6, "glow_color": 16711680, "halo_scale": 1.6 }
+  },
+  "chaff": {
+    "launcher_parts": ["decoy_flare_barrel"],
+    "total": 32, "per_round": 4, "burst_rounds": 8,
+    "launch_interval_tick": 4, "reload_tick": 200,
+    "radar_jam_radius": 8, "radar_jam_count": 2, "radar_jam_cooldown_tick": 60,
+    "decoy": { "lifetime_tick": 100, "speed": 1.0, "gravity": 0.052, "drag": 0.02, "spread": 2.5, "glow_color": 16777215, "halo_scale": 0.7 }
+  },
+  "smoke": {
+    "launcher_parts": ["turret_smoke_grenade_l", "turret_smoke_grenade_r"],
+    "total": 4, "per_round": 2, "burst_rounds": 2,
+    "launch_interval_tick": 4, "reload_tick": 250,
+    "smoke": { "lifetime_tick": 100, "radius": 10.0, "speed": 1.0, "gravity": 0.01, "explode_tick": 10, "rise_speed": 0.0, "opacity": 1.0, "drift": 0.0 },
+    "decoy": { "glow_color": 16777215, "halo_scale": 4.0 }
+  }
+}
+```
+
+> 干扰物系统完整数据模型见 `docs/plan/RVP干扰物重构数据模型/RVP 干扰物重构数据模型文档.md`。
 
 ---
 
