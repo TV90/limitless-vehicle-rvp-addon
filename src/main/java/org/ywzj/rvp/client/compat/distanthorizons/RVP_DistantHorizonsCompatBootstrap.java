@@ -70,6 +70,11 @@ public final class RVP_DistantHorizonsCompatBootstrap {
         dhRenderingEnabled = enabled;
     }
 
+    /** 查询 DH 是否安装且开启地形渲染；RVP 兼容模式 OFF 不代表 DH 自身关闭。 */
+    public static boolean isDhRenderingEnabled() {
+        return dhLoaded && dhRenderingEnabled;
+    }
+
     /** 由强类型桥记录已观察到的 DH API 版本。 */
     public static void updateApiVersion(String version) {
         // 调用本项目兼容可用性状态，使成功与失败日志输出运行期真实 API 版本。

@@ -323,6 +323,7 @@ public final class RVP_RemoteVehicleVisualSyncService {
             long serverGameTime,
             long sequence,
             List<S2CRemoteVehicleVisualSnapshot.Entry> entries) {
+        // 调用服务端 common 配置读取渲染策略和无 DH 高度阈值，通过完整快照统一下发。
         S2CRemoteVehicleVisualSnapshot snapshot = new S2CRemoteVehicleVisualSnapshot(
                 dimension,
                 serverGameTime,
@@ -331,6 +332,7 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 RVP_CommonConfig.isRemoteVehicleForceAllVehicleBillboardEnabled(),
                 RVP_CommonConfig.getRemoteVehicleBillboardSource(),
                 RVP_CommonConfig.getRemoteVehicleDynamicSnapshotWarmupMode(),
+                RVP_CommonConfig.getRemoteVehicleMinHeightAboveGroundWithoutDH(),
                 entries);
         RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), snapshot);
     }

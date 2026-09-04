@@ -9,6 +9,41 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_ClientRemoteVehicleVisualStateTest {
+    /** 验证默认 25 米边界、DH 开关切换和服务端自定义阈值。 */
+    @Test
+    void heightPolicyUsesServerThresholdOnlyWhileDHIsDisabled() {
+        var policy = RVP_ClientRemoteVehicleVisualState.RenderPolicy.DEFAULT;
+        // 调用生产策略判断，覆盖阈值下方、恰好等于和上方的显示边界。
+        assertEquals(25, policy.minHeightAboveGroundWithoutDH());
+        assertFalse(policy.allowsHeightAboveGround(0.0D, false));
+        assertFalse(policy.allowsHeightAboveGround(24.999D, false));
+        assertTrue(policy.allowsHeightAboveGround(25.0D, false));
+        assertTrue(policy.allowsHeightAboveGround(25.001D, false));
+        // 调用同一策略模拟 DH 开启后解除限制，再关闭时恢复过滤。
+        assertTrue(policy.allowsHeightAboveGround(0.0D, true));
+        assertFalse(policy.allowsHeightAboveGround(0.0D, false));
+        var custom = heightPolicy(80);
+        assertFalse(custom.allowsHeightAboveGround(79.0D, false));
+        assertTrue(custom.allowsHeightAboveGround(80.0D, false));
+    }
+
+    /** 验证 -1 禁用以及 0 阈值均允许地面目标。 */
+    @Test
+    void disabledAndZeroHeightThresholdsAllowGroundVehicles() {
+        // 调用实际渲染策略，覆盖禁用与合法零高度的特殊值。
+        assertTrue(heightPolicy(-1).allowsHeightAboveGround(0.0D, false));
+        assertTrue(heightPolicy(0).allowsHeightAboveGround(0.0D, false));
+    }
+
+    /** 创建指定服务端高度阈值、其余字段使用默认值的策略。 */
+    private static RVP_ClientRemoteVehicleVisualState.RenderPolicy heightPolicy(int threshold) {
+        var defaults = RVP_ClientRemoteVehicleVisualState.RenderPolicy.DEFAULT;
+        // 调用协议策略访问器，仅替换本测试要验证的服务端高度值。
+        return new RVP_ClientRemoteVehicleVisualState.RenderPolicy(
+                defaults.aggressiveLodBillboard(), defaults.forceAllVehicleBillboard(),
+                defaults.billboardSource(), defaults.dynamicSnapshotWarmupMode(), threshold);
+    }
+
     /** 测试代理实体类型。 */
     private static final ResourceLocation ENTITY_TYPE = id("ywzj_vehicle:fixed_wing_vehicle");
     /** 测试车型数据。 */

@@ -39,6 +39,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 true,
                 RemoteVehicleBillboardSource.SLOT_TEXTURE,
                 RemoteVehicleSnapshotWarmupMode.MODEL,
+                73,
                 List.of(entry(42)));
 
         assertEquals(message, roundTrip(message));
@@ -198,6 +199,7 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 false,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
                 RemoteVehicleSnapshotWarmupMode.HIDE,
+                25,
                 entries);
     }
 
@@ -207,5 +209,44 @@ class S2CRemoteVehicleVisualSnapshotTest {
         buffer.writeBoolean(false);
         buffer.writeEnum(RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
         buffer.writeEnum(RemoteVehicleSnapshotWarmupMode.HIDE);
+        buffer.writeInt(25);
+    }
+
+    /** 验证禁用值、零和最大高度不会在协议往返中丢失。 */
+    @Test
+    void heightThresholdSpecialValuesRoundTrip() {
+        for (int threshold : new int[]{-1, 0, Integer.MAX_VALUE}) {
+            var message = new S2CRemoteVehicleVisualSnapshot(
+                    DIMENSION, 1L, 1L, true, false,
+                    RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
+                    RemoteVehicleSnapshotWarmupMode.HIDE, threshold, List.of(entry(42)));
+            // 调用测试编解码辅助，验证服务端高度策略完整保留。
+            assertEquals(message, roundTrip(message));
+        }
+    }
+
+    /** 验证非法负阈值在构造端和网络解码端均被拒绝。 */
+    @Test
+    void heightThresholdBelowDisabledSentinelIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new S2CRemoteVehicleVisualSnapshot(
+                DIMENSION, 1L, 1L, true, false,
+                RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
+                RemoteVehicleSnapshotWarmupMode.HIDE, -2, List.of()));
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            buffer.writeResourceLocation(DIMENSION);
+            buffer.writeLong(1L);
+            buffer.writeLong(1L);
+            buffer.writeBoolean(true);
+            buffer.writeBoolean(false);
+            buffer.writeEnum(RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT);
+            buffer.writeEnum(RemoteVehicleSnapshotWarmupMode.HIDE);
+            buffer.writeInt(-2);
+            buffer.writeVarInt(0);
+            // 调用实际网络解码入口，确认不能接受非法阈值。
+            assertThrows(DecoderException.class, () -> S2CRemoteVehicleVisualSnapshot.decode(buffer));
+        } finally {
+            buffer.release();
+        }
     }
 }

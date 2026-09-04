@@ -67,7 +67,7 @@ class RVP_RemoteVehicleBillboardManagerTest {
     void sourceAndSnapshotAvailabilityChooseExpectedFallbacks() {
         RenderPolicy slotSource = new RenderPolicy(
                 true, false, RemoteVehicleBillboardSource.SLOT_TEXTURE,
-                RemoteVehicleSnapshotWarmupMode.HIDE);
+                RemoteVehicleSnapshotWarmupMode.HIDE, 25);
         assertEquals(RenderMode.SLOT_TEXTURE,
                 RVP_RemoteVehicleBillboardManager.decideRenderMode(
                         slotSource, false, true, SnapshotState.MISSING));
@@ -145,6 +145,6 @@ class RVP_RemoteVehicleBillboardManagerTest {
                 aggressive,
                 forceAll,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
-                warmupMode);
+                warmupMode, 25);
     }
 }

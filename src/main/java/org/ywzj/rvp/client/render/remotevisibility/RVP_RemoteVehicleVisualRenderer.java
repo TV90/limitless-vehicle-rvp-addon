@@ -125,11 +125,19 @@ public final class RVP_RemoteVehicleVisualRenderer {
         Vector3f cameraLook = event.getCamera().getLookVector();
         // 调用客户端缩放状态辅助，每帧只计算一次是否以本地观瞄选项覆盖服务端 Billboard 策略。
         boolean preferModelRendering = RVP_ClientZoomState.shouldPreferRemoteVehicleModelRendering();
+        // 调用状态层读取已校验的服务端策略，确保联机时本地 common 不覆盖高度阈值。
+        var renderPolicy = RVP_ClientRemoteVehicleVisualState.renderPolicy();
+        // 调用无 DH 类型入口，每帧读取 DH 实际地形开关，使游戏内切换立即影响高度过滤。
+        boolean dhRenderingEnabled = RVP_DistantHorizonsCompatBootstrap.isDhRenderingEnabled();
         List<CandidateContext> preCandidates = new ArrayList<>();
         List<FarPlaneDemand> farPlaneDemands = new ArrayList<>();
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
                 : RVP_ClientRemoteVehicleVisualState.renderEntries(level, event.getPartialTick())) {
             if (level.getEntity(entry.entityId()) != null) {
+                continue;
+            }
+            // 调用服务端策略，在投影、预算及 Billboard 预热之前排除无 DH 时过低的远距代理。
+            if (!renderPolicy.allowsHeightAboveGround(entry.heightAboveGround(), dhRenderingEnabled)) {
                 continue;
             }
             double horizontalDistanceSquared = horizontalDistanceSquared(entry.position(), cameraPosition);
@@ -160,7 +168,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
             boolean hasValidLod = RVP_LodModelManager.hasRemoteLod(entry.proxy());
             // 调用独立 Billboard 管理器，依据已校验的服务端策略建立候选渲染计划。
             BillboardPlan billboardPlan = RVP_RemoteVehicleBillboardManager.plan(
-                    RVP_ClientRemoteVehicleVisualState.renderPolicy(),
+                    renderPolicy,
                     entry.proxy(),
                     display,
                     entry.position(),

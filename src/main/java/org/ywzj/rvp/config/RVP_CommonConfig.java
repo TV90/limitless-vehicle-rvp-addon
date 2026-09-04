@@ -89,6 +89,8 @@ public class RVP_CommonConfig {
     private final ForgeConfigSpec.EnumValue<VisibilityMode> remoteVehicleVisibilityMode;
     /** 载具超视距同步最大水平距离，单位格。 */
     private final ForgeConfigSpec.DoubleValue remoteVehicleMaxDistance;
+    /** 未开启 DH 时允许超视距渲染的最低离地高度，单位米（格）；默认 25，-1 禁用限制。 */
+    private final ForgeConfigSpec.IntValue remoteVehicleMinHeightAboveGroundWithoutDH;
     /** 载具视觉完整集合同步周期，单位 tick。 */
     private final ForgeConfigSpec.IntValue remoteVehicleSyncIntervalTicks;
     /** 单个玩家每份快照允许的最大载具目标数。 */
@@ -159,6 +161,11 @@ public class RVP_CommonConfig {
         remoteVehicleMaxDistance = builder
                 .comment("载具超视距同步最大水平距离，单位格。范围：512..65536，默认：4096")
                 .defineInRange("maxDistance", 4096.0D, 512.0D, 65_536.0D);
+        remoteVehicleMinHeightAboveGroundWithoutDH = builder
+                .comment("服务端参数：客户端未安装 DH 或关闭 DH 地形渲染时，隐藏离地高度低于该值的超视距载具。",
+                        "单位米（1 米 = 1 格），默认：25；-1 不启用限制，等于阈值时仍允许渲染。",
+                        "随完整快照强制同步；不受客户端本地 common 同名值覆盖，不影响原生追踪实体。")
+                .defineInRange("minHeightAboveGroundWithoutDH", 25, -1, Integer.MAX_VALUE);
         remoteVehicleSyncIntervalTicks = builder
                 .comment("载具视觉完整集合同步周期，单位 tick。范围：1..200，默认：5")
                 .defineInRange("syncIntervalTicks", 5, 1, 200);
@@ -249,6 +256,11 @@ public class RVP_CommonConfig {
     /** 返回载具超视距同步最大水平距离，单位格。 */
     public static double getRemoteVehicleMaxDistance() {
         return INSTANCE != null ? INSTANCE.remoteVehicleMaxDistance.get() : 4096.0D;
+    }
+
+    /** 获取服务端无 DH 超视距渲染最低离地高度，单位米（格）；默认 25，-1 禁用。 */
+    public static int getRemoteVehicleMinHeightAboveGroundWithoutDH() {
+        return INSTANCE != null ? INSTANCE.remoteVehicleMinHeightAboveGroundWithoutDH.get() : 25;
     }
 
     /** 返回载具视觉完整集合同步周期，单位 tick。 */

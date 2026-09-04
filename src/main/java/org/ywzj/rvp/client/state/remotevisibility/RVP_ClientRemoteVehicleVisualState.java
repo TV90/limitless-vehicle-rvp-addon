@@ -37,7 +37,7 @@ public final class RVP_ClientRemoteVehicleVisualState {
     private static long lastSequence = -1L;
     /** 按服务端实体 ID 保存的非世界代理与时间线。 */
     private static final Map<Integer, ProxyState> PROXIES = new HashMap<>();
-    /** 最近一份有效完整快照携带的服务端权威 Billboard 策略。 */
+    /** 最近一份有效完整快照携带的服务端权威 Billboard 与无 DH 高度策略。 */
     private static RenderPolicy renderPolicy = RenderPolicy.DEFAULT;
 
     private RVP_ClientRemoteVehicleVisualState() {
@@ -59,11 +59,13 @@ public final class RVP_ClientRemoteVehicleVisualState {
             return;
         }
         lastSequence = message.sequence();
+        // 调用已通过维度与序号校验的快照访问器，更新服务端策略，禁止读取客户端本地 common 覆盖。
         renderPolicy = new RenderPolicy(
                 message.aggressiveLodBillboard(),
                 message.forceAllVehicleBillboard(),
                 message.billboardSource(),
-                message.dynamicSnapshotWarmupMode());
+                message.dynamicSnapshotWarmupMode(),
+                message.minHeightAboveGroundWithoutDH());
 
         long clientTick = level.getGameTime();
         Set<Integer> retainedIds = new HashSet<>();
@@ -145,7 +147,7 @@ public final class RVP_ClientRemoteVehicleVisualState {
         renderPolicy = RenderPolicy.DEFAULT;
     }
 
-    /** 返回最近一份有效服务端快照携带的只读 Billboard 策略。 */
+    /** 返回最近一份有效服务端快照携带的只读渲染策略。 */
     public static RenderPolicy renderPolicy() {
         return renderPolicy;
     }
@@ -184,27 +186,39 @@ public final class RVP_ClientRemoteVehicleVisualState {
     }
 
     /**
-     * 服务端权威的远距载具 Billboard 策略。
+     * 服务端权威的远距载具 Billboard 与无 DH 高度策略。
      *
      * @param aggressiveLodBillboard 是否把没有有效 LOD 的目标改为 Billboard
      * @param forceAllVehicleBillboard 是否强制所有目标使用 Billboard
      * @param billboardSource Billboard 图像来源
      * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
+     * @param minHeightAboveGroundWithoutDH 未开启 DH 时的最低离地高度，单位米（格）；默认 25，-1 禁用
      */
     public record RenderPolicy(boolean aggressiveLodBillboard,
                                boolean forceAllVehicleBillboard,
                                RemoteVehicleBillboardSource billboardSource,
-                               RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode) {
+                               RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode,
+                               int minHeightAboveGroundWithoutDH) {
         /** 尚未收到服务端快照时使用的协议默认策略。 */
         public static final RenderPolicy DEFAULT = new RenderPolicy(
                 true,
                 false,
                 RemoteVehicleBillboardSource.DYNAMIC_SNAPSHOT,
-                RemoteVehicleSnapshotWarmupMode.HIDE);
+                RemoteVehicleSnapshotWarmupMode.HIDE,
+                25);
 
         public RenderPolicy {
             java.util.Objects.requireNonNull(billboardSource, "billboardSource");
             java.util.Objects.requireNonNull(dynamicSnapshotWarmupMode, "dynamicSnapshotWarmupMode");
+            if (minHeightAboveGroundWithoutDH < -1) {
+                throw new IllegalArgumentException("RVP remote vehicle minimum height must be -1 or non-negative");
+            }
+        }
+
+        /** 仅在 DH 未开启时按服务端阈值过滤；使用服务端高度样本的插值结果，等于阈值仍显示。 */
+        public boolean allowsHeightAboveGround(double heightAboveGround, boolean dhRenderingEnabled) {
+            return dhRenderingEnabled || minHeightAboveGroundWithoutDH == -1
+                    || heightAboveGround >= minHeightAboveGroundWithoutDH;
         }
     }
 

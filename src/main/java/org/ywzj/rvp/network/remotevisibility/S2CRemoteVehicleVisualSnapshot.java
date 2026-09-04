@@ -22,6 +22,7 @@ import java.util.function.Supplier;
  * @param forceAllVehicleBillboard 是否强制所有目标使用 Billboard
  * @param billboardSource Billboard 图像来源
  * @param dynamicSnapshotWarmupMode 动态快照预热期间的显示方式
+ * @param minHeightAboveGroundWithoutDH 未开启 DH 时的最低离地高度，单位米（格）；默认 25，-1 禁用限制
  * @param entries 当前服务端授权的完整载具视觉条目集合
  */
 public record S2CRemoteVehicleVisualSnapshot(
@@ -32,6 +33,7 @@ public record S2CRemoteVehicleVisualSnapshot(
         boolean forceAllVehicleBillboard,
         RemoteVehicleBillboardSource billboardSource,
         RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode,
+        int minHeightAboveGroundWithoutDH,
         List<Entry> entries) {
     /** 单份载具视觉快照允许的最大条目数。 */
     public static final int MAX_ENTRIES = 1024;
@@ -47,6 +49,9 @@ public record S2CRemoteVehicleVisualSnapshot(
         }
         Objects.requireNonNull(billboardSource, "billboardSource");
         Objects.requireNonNull(dynamicSnapshotWarmupMode, "dynamicSnapshotWarmupMode");
+        if (minHeightAboveGroundWithoutDH < -1) {
+            throw new IllegalArgumentException("RVP remote vehicle minimum height must be -1 or non-negative");
+        }
         Objects.requireNonNull(entries, "entries");
         if (entries.size() > MAX_ENTRIES) {
             throw new IllegalArgumentException("RVP remote vehicle entry count exceeds 1024");
@@ -66,6 +71,7 @@ public record S2CRemoteVehicleVisualSnapshot(
         buffer.writeBoolean(message.forceAllVehicleBillboard);
         buffer.writeEnum(message.billboardSource);
         buffer.writeEnum(message.dynamicSnapshotWarmupMode);
+        buffer.writeInt(message.minHeightAboveGroundWithoutDH);
         buffer.writeVarInt(message.entries.size());
         for (Entry entry : message.entries) {
             writeEntry(buffer, entry);
@@ -86,6 +92,7 @@ public record S2CRemoteVehicleVisualSnapshot(
             RemoteVehicleBillboardSource billboardSource = buffer.readEnum(RemoteVehicleBillboardSource.class);
             RemoteVehicleSnapshotWarmupMode dynamicSnapshotWarmupMode =
                     buffer.readEnum(RemoteVehicleSnapshotWarmupMode.class);
+            int minHeightAboveGroundWithoutDH = buffer.readInt();
             int entryCount = buffer.readVarInt();
             if (entryCount < 0 || entryCount > MAX_ENTRIES) {
                 throw new DecoderException("RVP remote vehicle entry count exceeds 1024");
@@ -97,7 +104,7 @@ public record S2CRemoteVehicleVisualSnapshot(
             return new S2CRemoteVehicleVisualSnapshot(
                     dimension, serverGameTime, sequence,
                     aggressiveLodBillboard, forceAllVehicleBillboard,
-                    billboardSource, dynamicSnapshotWarmupMode, entries);
+                    billboardSource, dynamicSnapshotWarmupMode, minHeightAboveGroundWithoutDH, entries);
         } catch (DecoderException exception) {
             throw exception;
         } catch (RuntimeException exception) {

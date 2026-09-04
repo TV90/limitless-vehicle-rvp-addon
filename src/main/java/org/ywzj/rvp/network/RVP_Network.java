@@ -14,7 +14,8 @@ import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 
 public class RVP_Network {
-    private static final String PROTOCOL = "6";
+    /** 协议 7 在载具视觉快照中加入无 DH 最低离地高度，要求客户端与服务端同步升级。 */
+    private static final String PROTOCOL = "7";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
