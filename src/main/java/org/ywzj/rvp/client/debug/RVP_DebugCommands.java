@@ -212,6 +212,18 @@ public class RVP_DebugCommands {
                                     ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已清空 custommount 调试日志: " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
                                     return 1;
                                 }))
+                                // [RVP] 出弹点状态 dump：缓存队列命中/已应用 Bolt/当前出弹点世界坐标
+                                .then(Commands.literal("bolts").executes(ctx -> {
+                                    AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+                                    if (vehicle == null) {
+                                        ctx.getSource().sendFailure(Component.literal("[RVP] 未乘坐载具"));
+                                        return 0;
+                                    }
+                                    String content = org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.dumpBoltState(vehicle);
+                                    writeLog(RVP_CustomMountRenderLogic.getDebugLogPath(), content);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 出弹点状态已写入 " + RVP_CustomMountRenderLogic.getDebugLogPath()), false);
+                                    return 1;
+                                }))
                         )
                         .then(Commands.literal("sbmprobe")
                                 .then(Commands.literal("on").executes(ctx -> {

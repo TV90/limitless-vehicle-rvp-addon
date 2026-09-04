@@ -3,7 +3,10 @@ package org.ywzj.rvp.mount;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockCube;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.GsonHelper;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -19,35 +22,44 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
+import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * [RVP] 自定义挂架出弹队列构建器（公共层，双端可用）。
+ * [RVP] 可变挂架出弹队列：重载期预计算 + 运行时查表（零 Mixin / 零反射新增）。
  *
- * <p>按挂架条目 {@code shoot_structure_bones}（载具结构模型骨骼）构建武器站的出弹
- * Bolt 队列：命中当前武器的条目按 {@code (ammo_slot, 配置顺序)} 排序，逐条目把出弹骨
- * 的 Cube 按"逐 Cube 一根炮管"展开，与 {@code missile_bones}（消失渲染骨骼）顺序
- * 一一对应，保证开火轮转与弹体消失构造性对齐。</p>
+ * <p>数据流：服务端数据重载时（{@code VehicleDataManagerMixin.apply} TAIL，此时结构模型
+ * 与部件模板百分百在册）按挂架条目 {@code shoot_structure_bones} 预计算每个
+ * （武器站 × 武器口径）的出弹 Bolt 队列并存入 {@link #QUEUES}；队列经
+ * {@code S2CShootBoltQueueSync} 下发客户端（同 JVM 单人游戏直接共享同一张表）。
+ * 运行期双端只查表：开火轮转与弹体显隐均按同一队列口径，构造性对齐。</p>
  *
- * <p>Cube→Bolt 数学与本体 {@code WeaponUnitData.buildBolts} / RVP 既有
- * {@code appendBoltsFromBone} 完全同构（Cube 前端面中心为炮闩、Z+ 为炮管轴、
- * depth 为管长），跨组偏移用骨骼 bind 枢轴差换算到锚定骨坐标系。</p>
- *
- * <p>纪律说明（agents.md）：本类为普通公共辅助类（非 mixin 包），不引用任何
- * {@code @OnlyIn(CLIENT)} 类型，可在服务端与客户端安全加载。</p>
+ * <p>Cube→Bolt 数学与本体 {@code buildBolts} / 既有 {@code appendBoltsFromBone} 完全同构
+ * （Cube 前端面中心为炮闩、Z+ 为炮管轴、depth 为管长）；跨组偏移用骨骼 bind 枢轴差
+ * 换算到锚定骨坐标系。</p>
  */
 public final class RVP_ShootBoltQueueResolver {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 骨链回溯深度保护：结构模型骨层级异常（成环）时中断，防止死循环。 */
     private static final int MAX_BONE_DEPTH = 32;
+
+    /**
+     * 出弹队列表：载具 id → 武器站 id → 武器口径（weaponId 字符串）→ Bolt 队列。
+     * 服务端重载期写入；客户端经 S2CShootBoltQueueSync 写入同一张表（单人游戏共用 JVM）。
+     */
+    private static final Map<ResourceLocation, Map<String, Map<String, List<Bolt>>>> QUEUES = new ConcurrentHashMap<>();
+    /** 编码/解码/重建的跨线程互斥锁（单人游戏下服务端主线程与客户端网络线程并发访问）。 */
+    private static final Object QUEUE_LOCK = new Object();
 
     private RVP_ShootBoltQueueResolver() {}
 
@@ -80,93 +92,6 @@ public final class RVP_ShootBoltQueueResolver {
     }
 
     /**
-     * 构建武器站当前武器的出弹 Bolt 队列。
-     *
-     * @param vehicle 载具实体（提供 vehicleId 与结构模型定位）
-     * @param station 武器站（条目 {@code part_unit_id} 指向的部件）
-     * @return 出弹队列；该武器站没有任何配置 {@code shoot_structure_bones} 的条目时
-     *         返回 {@code null}（调用方应保持本体原 Bolt 不动，即回退现状行为）
-     */
-    @Nullable
-    public static List<Bolt> buildQueue(AbstractVehicle vehicle, WeaponUnit station) {
-        ResourceLocation vehicleId = vehicle.getVehicleId();
-        if (vehicleId == null) {
-            return null;
-        }
-        // 目的：取本武器站的挂架条目（沿用缓存中按 vehicleId 聚合的数据）
-        List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicleId);
-        List<RVP_CustomMountConfig> stationConfigs = new ArrayList<>();
-        for (RVP_CustomMountConfig config : configs) {
-            // 目的：仅取指向本武器站的条目（与渲染侧 matchesConfiguredPartUnit 同口径，含母站链）
-            if (matchesStation(station, config.partUnitId()) && !config.shootStructureBones().isEmpty()) {
-                stationConfigs.add(config);
-            }
-        }
-        if (stationConfigs.isEmpty()) {
-            return null;
-        }
-
-        // 目的：按当前选中武器过滤条目（与渲染侧消失逻辑同武器口径，保证对齐）；
-        // 当前武器未定（无人乘骑等）时回退为全部条目并集，保证无人状态也有合理出弹点
-        ResourceLocation currentWeaponId = currentWeaponId(station);
-        List<RVP_CustomMountConfig> matched = new ArrayList<>();
-        for (RVP_CustomMountConfig config : stationConfigs) {
-            if (currentWeaponId != null && currentWeaponId.equals(config.weaponId())) {
-                matched.add(config);
-            }
-        }
-        if (matched.isEmpty()) {
-            matched = stationConfigs;
-        }
-
-        // 目的：条目按 (ammo_slot, 配置顺序) 排序后拼接 shoot 骨——与消失渲染的
-        // 条目顺序（assignAmmoVisibility 同排序）严格一致，这是对齐的构造性来源
-        matched.sort(Comparator
-                .comparingInt((RVP_CustomMountConfig config) -> config.ammoSlot() > 0 ? config.ammoSlot() : Integer.MAX_VALUE)
-                .thenComparingInt(RVP_CustomMountConfig::configOrder));
-
-        // 目的：解析结构模型与锚定骨，供 Cube→Bolt 的坐标系换算
-        BedrockModel model = CommonAssetsManager.structureModelManager()
-                .getStructureModel(vehicle.getStructureModel()).orElse(null);
-        if (model == null) {
-            LOGGER.warn("[RVP] 出弹队列构建失败：结构模型缺失 vehicle={}", vehicleId);
-            return null;
-        }
-        String anchorBoneName = anchorBoneName(station);
-        BedrockBone anchorBone = anchorBoneName.isEmpty() ? null : model.getBoneMap().get(anchorBoneName);
-        VehicleCubeGroup anchorGroup = findXTurnGroup(station);
-
-        List<Bolt> queue = new ArrayList<>();
-        Set<String> usedBones = new LinkedHashSet<>();
-        for (RVP_CustomMountConfig config : matched) {
-            for (String boneName : config.shootStructureBones()) {
-                // 目的：同一骨骼被多武器条目（红外/激光版挂架共用）重复引用时只展开一次
-                if (boneName == null || boneName.isBlank() || !usedBones.add(boneName)) {
-                    continue;
-                }
-                BedrockBone bone = model.getBoneMap().get(boneName);
-                if (bone == null) {
-                    LOGGER.warn("[RVP] 出弹骨不存在，跳过 vehicle={} bone={}（请核对结构模型）", vehicleId, boneName);
-                    continue;
-                }
-                // 目的：出弹骨坐标系 → 锚定骨坐标系（xTurnGroup 空间）的平移差
-                Vec3 delta = bindPivot(bone).subtract(bindPivot(anchorBone));
-                appendBoneBolts(bone, anchorBone, delta, queue, model);
-            }
-        }
-        return queue.isEmpty() ? null : queue;
-    }
-
-    /**
-     * 武器站锚定骨名（本体约定 {@code structure_bone + "_barrel"}）。
-     * 结构骨定义在父类 PartUnitData，经 {@link PartUnit#getData()} 公共方法读取。
-     */
-    private static String anchorBoneName(WeaponUnit station) {
-        String structureBone = station.getData() == null ? null : station.getData().getStructureBone();
-        return (structureBone == null || structureBone.isEmpty()) ? "" : structureBone + "_barrel";
-    }
-
-    /**
      * 当前选中武器的 weaponId（字符串口径，供应用器做换弹种检测）。
      * 无当前武器时返回空串。
      */
@@ -176,13 +101,12 @@ public final class RVP_ShootBoltQueueResolver {
     }
 
     /**
-     * 当前选中武器的 weaponId。
-     * 仅做公共类型解包（多弹种取当前选中子武器）；解包失败返回 null，
-     * 由调用方回退为条目并集，不引入对客户端专属类型的引用。
+     * 当前选中武器的 weaponId。仅做公共类型解包（多弹种取当前选中子武器）；
+     * 解包失败返回 null。运行期不依赖任何客户端专属类型。
      */
     @Nullable
     private static ResourceLocation currentWeaponId(WeaponUnit station) {
-        Optional<AbstractVehicleWeapon<?>> weapon = station.getCurrentWeapon();
+        java.util.Optional<AbstractVehicleWeapon<?>> weapon = station.getCurrentWeapon();
         if (weapon.isEmpty()) {
             return null;
         }
@@ -197,6 +121,241 @@ public final class RVP_ShootBoltQueueResolver {
         }
         return current.getData() == null ? null : current.getData().getWeaponId();
     }
+
+    /**
+     * 查询出弹队列。
+     *
+     * @return 命中的 Bolt 队列（只读语义，调用方不得修改）；该武器站没有可用的
+     *         出弹队列时返回 {@code null}（调用方保持本体原 Bolt，即回退现状）。
+     */
+    @Nullable
+    public static List<Bolt> lookupQueue(ResourceLocation vehicleId, String stationId, String weaponKey) {
+        Map<String, Map<String, List<Bolt>>> stations = QUEUES.get(vehicleId);
+        if (stations == null) {
+            return null;
+        }
+        Map<String, List<Bolt>> perWeapon = stations.get(stationId);
+        if (perWeapon == null) {
+            return null;
+        }
+        // 目的：口径精确命中优先；未命中（如该站只有一把武器在环）回退该站任一队列
+        List<Bolt> exact = perWeapon.get(weaponKey);
+        if (exact != null && !exact.isEmpty()) {
+            return exact;
+        }
+        for (List<Bolt> queue : perWeapon.values()) {
+            if (queue != null && !queue.isEmpty()) {
+                return queue;
+            }
+        }
+        return null;
+    }
+
+    // ==================================================================
+    // 重载期预计算（仅服务端数据重载线程调用；客户端经 S2C 同步获取结果）
+    // ==================================================================
+
+    /**
+     * 重载期预计算：扫描全部载具的挂架条目，为每个（武器站 × 武器口径）构建出弹
+     * Bolt 队列。调用时机：{@code VehicleDataManagerMixin.apply} TAIL——此时结构模型、
+     * 部件模板、挂架条目缓存三者百分百在册。
+     *
+     * @param rawVehicleJson 本轮重载的原始载具 JSON（用于读取部件 structure_bone）
+     */
+    public static void rebuild(Map<ResourceLocation, JsonElement> rawVehicleJson) {
+        Map<ResourceLocation, Map<String, Map<String, List<Bolt>>>> rebuilt = new HashMap<>();
+        if (rawVehicleJson != null) {
+            for (Map.Entry<ResourceLocation, JsonElement> entry : rawVehicleJson.entrySet()) {
+                ResourceLocation vehicleId = entry.getKey();
+                // 目的：读取本载具的挂架条目；未配置自定义挂架的载具直接跳过
+                List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicleId);
+                if (configs.isEmpty()) {
+                    continue;
+                }
+                buildVehicleQueues(rebuilt, vehicleId, entry.getValue(), configs);
+            }
+        }
+        synchronized (QUEUE_LOCK) {
+            QUEUES.clear();
+            QUEUES.putAll(rebuilt);
+        }
+        int vehicles = rebuilt.size();
+        int queues = 0;
+        for (Map<String, Map<String, List<Bolt>>> stations : rebuilt.values()) {
+            for (Map<String, List<Bolt>> perWeapon : stations.values()) {
+                queues += perWeapon.size();
+            }
+        }
+        LOGGER.info("[RVP] 出弹队列预计算完成：载具 {} 个，队列 {} 条", vehicles, queues);
+    }
+
+    /**
+     * 构建单载具的出弹队列表（vehicleId → 武器站 → 武器口径 → Bolt 队列）。
+     */
+    private static void buildVehicleQueues(Map<ResourceLocation, Map<String, Map<String, List<Bolt>>>> rebuilt,
+                                           ResourceLocation vehicleId, JsonElement root,
+                                           List<RVP_CustomMountConfig> configs) {
+        if (!root.isJsonObject() || !root.getAsJsonObject().has("parts")) {
+            return;
+        }
+        // 目的：解析部件表，得到每个武器站的 structure_bone（锚定骨基础名）
+        Map<String, String> stationBones = new HashMap<>();
+        for (JsonElement partElement : root.getAsJsonObject().getAsJsonArray("parts")) {
+            if (!partElement.isJsonObject()) {
+                continue;
+            }
+            JsonObject partObj = partElement.getAsJsonObject();
+            String id = GsonHelper.getAsString(partObj, "id", "").trim();
+            if (!id.isEmpty()) {
+                stationBones.put(id, GsonHelper.getAsString(partObj, "structure_bone", "").trim());
+            }
+        }
+
+        // 目的：结构模型（骨骼树）查询——重载期服务端实例百分百在册
+        String structureModelId = GsonHelper.getAsString(root.getAsJsonObject(), "structure_model", "");
+        ResourceLocation structureModelIdRl = ResourceLocation.tryParse(structureModelId);
+        BedrockModel model = structureModelIdRl == null ? null
+                : CommonAssetsManager.structureModelManager().getStructureModel(structureModelIdRl).orElse(null);
+        if (model == null) {
+            LOGGER.warn("[RVP] 出弹队列预计算跳过：结构模型缺失 vehicle={} model={}", vehicleId, structureModelId);
+            return;
+        }
+
+        // 目的：按（武器站 × 武器口径）分组挂架条目
+        Map<String, Map<String, List<RVP_CustomMountConfig>>> grouped = new HashMap<>();
+        for (RVP_CustomMountConfig config : configs) {
+            if (config.shootStructureBones().isEmpty()) {
+                continue;
+            }
+            String stationId = config.partUnitId();
+            String weaponKey = config.weaponId() == null ? "" : config.weaponId().toString();
+            grouped.computeIfAbsent(stationId, key -> new HashMap<>())
+                    .computeIfAbsent(weaponKey, key -> new ArrayList<>())
+                    .add(config);
+        }
+        if (grouped.isEmpty()) {
+            return;
+        }
+
+        // 目的：逐武器站构建队列（确定排序：ammoSlot 升序 → 配置顺序，与消失渲染同口径）
+        Map<String, Map<String, List<Bolt>>> stationQueues = new HashMap<>();
+        for (Map.Entry<String, Map<String, List<RVP_CustomMountConfig>>> stationEntry : grouped.entrySet()) {
+            String stationId = stationEntry.getKey();
+            String structureBone = stationBones.getOrDefault(stationId, "");
+            String anchorBoneName = structureBone.isEmpty() ? "" : structureBone + "_barrel";
+            BedrockBone anchorBone = model.getBoneMap().get(anchorBoneName);
+            if (anchorBone == null) {
+                LOGGER.warn("[RVP] 出弹队列预计算：锚定骨缺失 station={} bone={}，跳过",
+                        stationId, anchorBoneName);
+                continue;
+            }
+            Map<String, List<Bolt>> weaponQueues = new HashMap<>();
+            for (Map.Entry<String, List<RVP_CustomMountConfig>> weaponEntry : stationEntry.getValue().entrySet()) {
+                List<RVP_CustomMountConfig> entries = new ArrayList<>(weaponEntry.getValue());
+                entries.sort(Comparator
+                        .comparingInt((RVP_CustomMountConfig config) -> config.ammoSlot() > 0 ? config.ammoSlot() : Integer.MAX_VALUE)
+                        .thenComparingInt(RVP_CustomMountConfig::configOrder));
+                // 目的：同一骨骼被红外/激光等重复条目引用时只展开一次（按条目顺序保序）
+                Set<String> usedBones = new LinkedHashSet<>();
+                List<Bolt> queue = new ArrayList<>();
+                for (RVP_CustomMountConfig config : entries) {
+                    for (String boneName : config.shootStructureBones()) {
+                        if (boneName == null || boneName.isBlank() || !usedBones.add(boneName)) {
+                            continue;
+                        }
+                        BedrockBone bone = model.getBoneMap().get(boneName);
+                        if (bone == null) {
+                            LOGGER.warn("[RVP] 出弹骨不存在，跳过 vehicle={} station={} bone={}",
+                                    vehicleId, stationId, boneName);
+                            continue;
+                        }
+                        // 目的：出弹骨坐标系 → 锚定骨坐标系（xTurnGroup 空间）的平移差
+                        Vec3 delta = bindPivot(bone).subtract(bindPivot(anchorBone));
+                        appendBoneBolts(bone, anchorBone, delta, queue, model);
+                    }
+                }
+                if (!queue.isEmpty()) {
+                    weaponQueues.put(weaponEntry.getKey(), queue);
+                }
+            }
+            if (!weaponQueues.isEmpty()) {
+                stationQueues.put(stationId, weaponQueues);
+            }
+        }
+        rebuilt.put(vehicleId, stationQueues);
+    }
+
+    // ==================================================================
+    // 网络编解码（S2CShootBoltQueueSync 委托；跨线程经 QUEUE_LOCK 串行）
+    // ==================================================================
+
+    /** 目的：把整张出弹队列表编码到包缓冲（服务端 → 客户端整体下发）。 */
+    public static void encodeQueue(net.minecraft.network.FriendlyByteBuf buf) {
+        synchronized (QUEUE_LOCK) {
+            buf.writeVarInt(QUEUES.size());
+            for (Map.Entry<ResourceLocation, Map<String, Map<String, List<Bolt>>>> vehicleEntry : QUEUES.entrySet()) {
+                buf.writeUtf(vehicleEntry.getKey().toString());
+                Map<String, Map<String, List<Bolt>>> stations = vehicleEntry.getValue();
+                buf.writeVarInt(stations.size());
+                for (Map.Entry<String, Map<String, List<Bolt>>> stationEntry : stations.entrySet()) {
+                    buf.writeUtf(stationEntry.getKey());
+                    Map<String, List<Bolt>> perWeapon = stationEntry.getValue();
+                    buf.writeVarInt(perWeapon.size());
+                    for (Map.Entry<String, List<Bolt>> weaponEntry : perWeapon.entrySet()) {
+                        buf.writeUtf(weaponEntry.getKey());
+                        List<Bolt> queue = weaponEntry.getValue();
+                        buf.writeVarInt(queue.size());
+                        for (Bolt bolt : queue) {
+                            buf.writeFloat((float) bolt.offset.x);
+                            buf.writeFloat((float) bolt.offset.y);
+                            buf.writeFloat((float) bolt.offset.z);
+                            buf.writeFloat(bolt.barrelLength);
+                            buf.writeFloat(bolt.xRot);
+                            buf.writeFloat(bolt.yRot);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 目的：从包缓冲解码并整表替换本地出弹队列（客户端侧数据入口）。 */
+    public static void decodeQueue(net.minecraft.network.FriendlyByteBuf buf) {
+        synchronized (QUEUE_LOCK) {
+            QUEUES.clear();
+            int vehicleCount = buf.readVarInt();
+            for (int vi = 0; vi < vehicleCount; vi++) {
+                ResourceLocation vehicleId = ResourceLocation.tryParse(buf.readUtf());
+                int stationCount = buf.readVarInt();
+                Map<String, Map<String, List<Bolt>>> stations = new HashMap<>();
+                for (int si = 0; si < stationCount; si++) {
+                    String stationId = buf.readUtf();
+                    int weaponCount = buf.readVarInt();
+                    Map<String, List<Bolt>> perWeapon = new HashMap<>();
+                    for (int wi = 0; wi < weaponCount; wi++) {
+                        String weaponKey = buf.readUtf();
+                        int boltCount = buf.readVarInt();
+                        List<Bolt> queue = new ArrayList<>(boltCount);
+                        for (int bi = 0; bi < boltCount; bi++) {
+                            float ox = buf.readFloat();
+                            float oy = buf.readFloat();
+                            float oz = buf.readFloat();
+                            float barrelLength = buf.readFloat();
+                            float xRot = buf.readFloat();
+                            float yRot = buf.readFloat();
+                            queue.add(new Bolt(new Vec3(ox, oy, oz), barrelLength, xRot, yRot));
+                        }
+                        perWeapon.put(weaponKey, queue);
+                    }
+                    stations.put(stationId, perWeapon);
+                }
+                if (vehicleId != null) {
+                    QUEUES.put(vehicleId, stations);
+                }
+            }
+        }
+    }
+
 
     /**
      * 条目 {@code part_unit_id} 是否指向本武器站。
@@ -214,15 +373,74 @@ public final class RVP_ShootBoltQueueResolver {
         return false;
     }
 
+    // ==================================================================
+    // 调试输出（/rvpdebug custommount bolts）
+    // ==================================================================
+
+    /**
+     * dump 单载具出弹点全状态：缓存队列命中情况、已应用 Bolt 明细、当前出弹点世界坐标。
+     * 供 {@code /rvpdebug custommount bolts} 调试命令与排查使用；仅读写公共状态，双端安全。
+     */
+    public static String dumpBoltState(AbstractVehicle vehicle) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== RVP 出弹点状态 ===\n");
+        sb.append("vehicleId=").append(vehicle.getVehicleId())
+          .append(" entityId=").append(vehicle.getId()).append('\n');
+        List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicle.getVehicleId());
+        sb.append("挂架条目: ").append(configs.size()).append(" 条\n");
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof WeaponUnit station)) {
+                continue;
+            }
+            boolean managed = false;
+            for (RVP_CustomMountConfig config : configs) {
+                if (!config.shootStructureBones().isEmpty()
+                        && matchesStation(station, config.partUnitId())) {
+                    managed = true;
+                    break;
+                }
+            }
+            if (!managed) {
+                continue;
+            }
+            String weaponKey = currentWeaponKey(station);
+            List<Bolt> cached = lookupQueue(vehicle.getVehicleId(), station.getId(), weaponKey);
+            List<Bolt> applied = station.getBolts();
+            sb.append("== 站 ").append(station.getId())
+              .append(" 当前口径=").append(weaponKey).append("\n");
+            sb.append("  缓存队列: ").append(cached == null ? "<未命中>" : cached.size() + " 条").append('\n');
+            sb.append("  已应用 Bolt: ").append(applied.size()).append(" 根\n");
+            for (int i = 0; i < applied.size(); i++) {
+                Bolt bolt = applied.get(i);
+                sb.append("    #").append(i)
+                  .append(" offset=[").append(fmt(bolt.offset.x)).append(',').append(fmt(bolt.offset.y)).append(',').append(fmt(bolt.offset.z)).append(']')
+                  .append(" 管长=").append(fmt(bolt.barrelLength))
+                  .append(" xRot=").append(fmt(bolt.xRot)).append(" yRot=").append(fmt(bolt.yRot))
+                  .append('\n');
+            }
+            Vec3 world = station.worldCurrentBoltPosition();
+            sb.append("  当前出弹点世界坐标: [").append(fmt(world.x)).append(',').append(fmt(world.y)).append(',').append(fmt(world.z)).append("]\n");
+        }
+        sb.append("=== 结束 ===\n");
+        return sb.toString();
+    }
+
+    /** 三位小数格式化（调试输出用）。 */
+    private static String fmt(double value) {
+        return String.format(java.util.Locale.ROOT, "%.3f", value);
+    }
+
+    // ==================================================================
+    // 骨骼数学（Cube→Bolt，与本体 buildBolts 同构）
+    // ==================================================================
+
     /**
      * 把出弹骨（含匿名子骨）的每个 Cube 展开为一根炮管 Bolt，追加进队列。
-     * 数学与本体 {@code buildBolts} / RVP {@code appendBoltsFromBone} 同构：
-     * Cube 前端面中心为炮闩、Z+ 为炮管轴、depth 为管长；子骨平移按像素/16 累加；
+     * 锚定骨自身的 Bolt 不叠加骨骼自转（与本体主骨口径一致）；
      * 非锚定骨的骨骼自转写入 bolt.xRot/yRot（支持斜置发射）。
      */
     private static void appendBoneBolts(BedrockBone bone, BedrockBone anchorBone, Vec3 delta,
                                         List<Bolt> out, BedrockModel model) {
-        // 目的：与本体 buildBolts 的主骨口径一致——锚定骨自身的 Bolt 不叠加骨骼自转
         boolean isAnchorBone = bone == anchorBone;
         for (BedrockCube cube : bone.cubes) {
             float x = cube.x() + cube.width() / 2;

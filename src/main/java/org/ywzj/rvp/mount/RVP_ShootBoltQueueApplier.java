@@ -116,6 +116,11 @@ public final class RVP_ShootBoltQueueApplier {
             // initData() 尚未执行（部件未构建），下 tick 重试
             return false;
         }
+        // 目的：部件列表为空说明 initData 尚未完成，本轮无站可应用，下 tick 重试
+        //（EntityJoinLevelEvent 早于 onAddedToWorld/initData，join 当轮 partUnits=0 属正常）
+        if (vehicle.getPartUnits().isEmpty()) {
+            return false;
+        }
         // 目的：读取本载具的挂架条目；无任何条目（未配置自定义挂架）时直接放行，
         // 对未配置载具零开销、零行为影响
         List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicleId);
@@ -154,15 +159,18 @@ public final class RVP_ShootBoltQueueApplier {
      */
     private static void applyStationQueue(AbstractVehicle vehicle, WeaponUnit station,
                                           Map<String, String> weaponKeys) {
-        List<Bolt> queue = RVP_ShootBoltQueueResolver.buildQueue(vehicle, station);
-        String weaponKey = queue == null
-                ? KEY_UNION
-                : RVP_ShootBoltQueueResolver.currentWeaponKey(station);
-        // 目的：无论本次是否成功构建，都记录口径，避免 tick 内对同一状态反复重放
+        // 目的：出弹队列查表（重载期预计算 + S2C 同步），按当前武器口径取队列
+        String weaponKey = RVP_ShootBoltQueueResolver.currentWeaponKey(station);
+        List<Bolt> queue = RVP_ShootBoltQueueResolver.lookupQueue(
+                vehicle.getVehicleId(), station.getId(), weaponKey);
+        // 目的：记录口径，换弹种时经 refreshStationQueues 重放对应队列
         weaponKeys.put(station.getId(), weaponKey);
         if (queue == null) {
-            LOGGER.warn("[RVP] 出弹队列构建失败，保留本体原 Bolt vehicle={} station={}",
-                    vehicle.getVehicleId(), station.getId());
+            // 目的：构建失败仅告警一次（口径不变时不再重放），防止日志刷屏
+            if (weaponKeys.put(station.getId() + "|warned", KEY_UNION) == null) {
+                LOGGER.warn("[RVP] 出弹队列未命中，保留本体原 Bolt vehicle={} station={} key={}",
+                        vehicle.getVehicleId(), station.getId(), weaponKey);
+            }
             return;
         }
         // 目的：公共活引用整体替换出弹点（本体 Ztz99a/Z10 同款模式，不触碰数据模板）

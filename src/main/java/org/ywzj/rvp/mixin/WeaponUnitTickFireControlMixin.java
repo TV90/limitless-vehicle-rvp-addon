@@ -19,6 +19,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -103,9 +104,15 @@ public abstract class WeaponUnitTickFireControlMixin {
                 || RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
             entity = rvp$resolveIrLockWithHysteresis(self, rvpWeapon);
         } else if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
-            RadarUnit radar = RVP_RadarRoleHelper.getPreferredLockRadar(self);
-            if (radar != null) {
-                entity = Radar.findTarget(radar, 90, self);
+            // 雷达自动锁定（TWS 扫描跟踪）：ARH 等通过雷达 TWS 数据链制导，保持自动锁定
+            // （模拟现实中雷达边扫描边跟踪给主动弹提供数据链目标更新）；
+            // SARH 半主动雷达弹需要载具【锁定】目标才制导，扫描阶段不自动锁定，
+            // 避免"只开导引头、雷达照射到目标"时 SARH 未手动锁定也能获得制导。
+            if (!rvpWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SARH)) {
+                RadarUnit radar = RVP_RadarRoleHelper.getPreferredLockRadar(self);
+                if (radar != null) {
+                    entity = Radar.findTarget(radar, 90, self);
+                }
             }
         }
 

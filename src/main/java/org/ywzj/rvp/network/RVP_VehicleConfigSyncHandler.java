@@ -46,5 +46,12 @@ public class RVP_VehicleConfigSyncHandler {
         } else {
             RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
         }
+        // [RVP] 出弹队列随数据同步一并发往客户端（载具 JSON 变化 → 队列重算 → 客户端刷新）
+        S2CShootBoltQueueSync queueSync = new S2CShootBoltQueueSync();
+        if (event.getPlayer() != null) {
+            RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(event::getPlayer), queueSync);
+        } else {
+            RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), queueSync);
+        }
     }
 }
