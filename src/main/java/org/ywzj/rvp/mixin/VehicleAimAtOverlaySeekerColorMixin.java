@@ -10,6 +10,7 @@ import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
 import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -143,5 +144,25 @@ public class VehicleAimAtOverlaySeekerColorMixin {
         if (!RVP_ScopeOverlay.hudLockTakeoverActive()) {
             VehicleScopeOverlay.renderAimLockTarget(guiGraphics, partialTick);
         }
+    }
+
+    /**
+     * [RVP] 武器级准星样式覆盖（{@code crosshair_style_override}）：当前选中武器为配置了
+     * 该字段的 RVP 武器时，HUD 准星样式用武器 JSON 的覆盖值替换所属武器站的
+     * {@code crosshair_style}——适配"同一武器站内不同挂架武器需要不同准星"。
+     * 未配置该字段的武器（含本体武器）原样透传站级样式。
+     */
+    @WrapOperation(method = "render", remap = false, at = @At(value = "FIELD", remap = false,
+            target = "Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;crosshairStyle:Lorg/ywzj/vehicle/custom/part/data/WeaponUnitData$CrosshairStyle;"))
+    private WeaponUnitData.CrosshairStyle rvp$crosshairStyleOverride(WeaponUnit aimingWeaponUnit,
+                                                                     Operation<WeaponUnitData.CrosshairStyle> original) {
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(aimingWeaponUnit);
+        if (weapon instanceof RVP_WeaponBase rvpWeapon) {
+            WeaponUnitData.CrosshairStyle override = rvpWeapon.getData().getCrosshairStyleOverride();
+            if (override != null) {
+                return override;
+            }
+        }
+        return original.call(aimingWeaponUnit);
     }
 }

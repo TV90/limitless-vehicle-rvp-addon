@@ -104,6 +104,17 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     private WeaponUnitData.FireControlSensorType fireControlSensorTypeOverride;
 
     /**
+     * [RVP] 可选的武器级准星样式覆盖：按当前选中武器覆盖所属武器站的准星样式
+     * （{@code crosshair_style}），适配"同一武器站内不同挂架武器需要不同准星"的场景。
+     * 枚举值与本体 {@code WeaponUnitData.CrosshairStyle} 一致：
+     * {@code none}（隐藏准星）/ {@code circle} / {@code square} / {@code cross} / {@code big_cross}。
+     * 未配置（null）= 沿用武器站 {@code crosshair_style}。仅客户端 HUD 消费
+     * （{@code VehicleAimAtOverlay} 准星样式读取点，经 MixinExtras 字段包装拦截）。
+     */
+    @SerializedName("crosshair_style_override")
+    private WeaponUnitData.CrosshairStyle crosshairStyleOverride;
+
+    /**
      * 导引头圈 HUD 颜色覆盖（RGB 十六进制字符串，如 {@code "0x30FF30"} / {@code "#FFAA00"}）。
      * 配置后该武器处于选中状态时，{@code VehicleAimAtOverlay} 的导引头圈（含大圈）
      * 用此颜色绘制——未锁定显示该颜色，锁定时统一红色指示；未配置走本体机型基色
@@ -293,6 +304,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @Nullable
     public WeaponUnitData.FireControlSensorType getFireControlSensorTypeOverride() {
         return fireControlSensorTypeOverride;
+    }
+
+    /**
+     * [RVP] {@link #crosshairStyleOverride} 存取器。null = 未配置（沿用武器站样式）。
+     */
+    @Nullable
+    public WeaponUnitData.CrosshairStyle getCrosshairStyleOverride() {
+        return crosshairStyleOverride;
     }
 
     /**
