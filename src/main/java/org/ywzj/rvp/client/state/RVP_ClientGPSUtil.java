@@ -33,21 +33,8 @@ public class RVP_ClientGPSUtil {
                 && usesDesignatedPoint(weapon);
     }
 
-    public static boolean ensureGPSBombSelected(LocalPlayer player) {
-        if (!LocalVehiclePlayer.instance.onVehicle()) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.not_in_vehicle"), true);
-            return false;
-        }
-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (weaponUnit == null
-                || weaponUnit.getCurrentWeapon().isEmpty()
-                || !(weaponUnit.getCurrentWeapon().get() instanceof RVP_WeaponBase weapon)
-                || !usesDesignatedPoint(weapon)) {
-            player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.switch_to_bomb"), true);
-            return false;
-        }
-        return true;
-    }
+    // [RVP] 原 ensureGPSBombSelected（提示"未在载具/请切换 GPS 炸弹"）已删除：
+    // 全项目零调用的死代码，其"不适用弹提示"行为也不符合静默约定。
 
     private static boolean usesDesignatedPoint(RVP_WeaponBase weapon) {
         return weapon.getData().usesGuidanceType(RVP_EnumGuidanceType.GPS);

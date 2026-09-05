@@ -34,6 +34,13 @@ public class C2SDeployDeployableUav {
                 );
                 return;
             }
+            // [RVP] 不适用场景静默：客户端守卫（在载具 + deployable_uav_enabled）已拦截绝大多数，
+            // 此处兜底（防客户端配置缓存未同步）。"未在载具/未配置"属"键在这台车上没用"，
+            // 不回提示，避免覆盖其它 mod（如 SBW）的 actionbar 反馈；结果类提示（成功/冷却/已放飞等）照旧。
+            if (result == RVP_DeployableUavService.DeployResult.NO_PARENT_VEHICLE
+                    || result == RVP_DeployableUavService.DeployResult.NO_CONFIG) {
+                return;
+            }
             player.displayClientMessage(Component.translatable(switch (result) {
                 case SUCCESS -> "message.ywzj_rvp.uav.deploy_success";
                 case NO_PARENT_VEHICLE -> "message.ywzj_rvp.uav.not_in_vehicle";
