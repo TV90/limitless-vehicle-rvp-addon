@@ -3,7 +3,10 @@ package org.ywzj.rvp.client.bridge;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.client.particle.RVP_ParticleProjectileEmitter;
+import org.ywzj.rvp.client.firesupport.RVP_FireSupportMapTool;
+import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import net.minecraft.client.Minecraft;
 
 /** 客户端真实动作实现。 */
 @OnlyIn(Dist.CLIENT)
@@ -17,6 +20,8 @@ public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
     public void openFireSupportTerminal() {
-        // 阶段 C 只建立双端安全入口；阶段 D 完成地图无载具安全化后在此安装工具并打开地图。
+        // 调用本项目战术地图 Screen：保留普通地图画布并安装独立炮火工具，不进入载具 ARTILLERY 链路。
+        Minecraft.getInstance().setScreen(new RVP_TacticalMapScreen(
+                RVP_TacticalMapScreen.MapMode.TACTICAL, new RVP_FireSupportMapTool()));
     }
 }

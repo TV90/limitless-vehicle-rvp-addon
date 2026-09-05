@@ -25,6 +25,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.all.RVP_Items;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay;
 import org.ywzj.rvp.client.gui.RVP_HmdOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
@@ -253,7 +255,13 @@ public class RVP_ClientEvents {
         ywzj_rvp$artilleryFireKeyDown = artilleryFireKeyDown;
 
         while (RVP_Keys.OPEN_GPS_PANEL.consumeClick()) {
-            mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
+            if (player.getMainHandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())
+                    || player.getOffhandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())) {
+                // 调用本项目双端安全桥：K 键持有终端时打开炮火工具上下文。
+                RVP_ClientActionsAccess.openFireSupportTerminal();
+            } else {
+                mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
+            }
         }
         while (RVP_Keys.DEPLOY_DEPLOYABLE_UAV.consumeClick()) {
             RVP_Network.CHANNEL.sendToServer(new C2SDeployDeployableUav());
