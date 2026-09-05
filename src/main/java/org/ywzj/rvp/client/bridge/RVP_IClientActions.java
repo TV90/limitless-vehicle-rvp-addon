@@ -7,4 +7,7 @@ public interface RVP_IClientActions {
 
     /** 按客户端实体 Tick 更新纯粒子弹体表现。 */
     void tickParticleProjectile(RVP_BaseBullet projectile);
+
+    /** 请求客户端打开炮火支援终端上下文；阶段 D 安装实际地图工具前允许安全无操作。 */
+    void openFireSupportTerminal();
 }

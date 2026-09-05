@@ -9,6 +9,7 @@ import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WhitePhosphorusParticle;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
+import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
 import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
 import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
@@ -19,6 +20,7 @@ import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
+import org.ywzj.rvp.network.firesupport.RVP_FireSupportClientEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteAmmoVisualEndpoint;
 import org.ywzj.rvp.network.remotevisibility.RVP_RemoteVehicleVisualEndpoint;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
@@ -55,6 +57,8 @@ public final class RVP_ClientBootstrap {
                     message.dimension(), message.entityIds(), message.motorBurningEntityIds()));
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
+            // 安装炮火支援公共端口，阶段 C 的 profile、请求结果和任务状态只写入客户端快照。
+            RVP_FireSupportClientEndpoint.install(RVP_ClientFireSupportState.INSTANCE);
             // 调用无 DH 类型的可选依赖入口，仅在客户端且确认安装 DH 后加载 API 7 强类型桥。
             RVP_DistantHorizonsCompatBootstrap.initialize();
             RVP_ClientEntityRenderers.register();

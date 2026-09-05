@@ -12,10 +12,15 @@ import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoVisualSnapshot;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
+import org.ywzj.rvp.network.firesupport.C2SRequestFireSupport;
+import org.ywzj.rvp.network.firesupport.C2SRequestFireSupportCeaseFire;
+import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
+import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
+import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 7 在载具视觉快照中加入无 DH 最低离地高度，要求客户端与服务端同步升级。 */
-    private static final String PROTOCOL = "7";
+    /** 协议 8 新增炮火 profile、请求、任务状态与停火消息，要求客户端与服务端同步升级。 */
+    private static final String PROTOCOL = "8";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -287,6 +292,31 @@ public class RVP_Network {
                 .encoder(S2CShootBoltQueueSync::encode)
                 .decoder(S2CShootBoltQueueSync::decode)
                 .consumerMainThread(S2CShootBoltQueueSync::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CFireSupportProfileSnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CFireSupportProfileSnapshot::encode)
+                .decoder(S2CFireSupportProfileSnapshot::decode)
+                .consumerMainThread(S2CFireSupportProfileSnapshot::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SRequestFireSupport.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SRequestFireSupport::encode)
+                .decoder(C2SRequestFireSupport::decode)
+                .consumerMainThread(C2SRequestFireSupport::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CFireSupportRequestResult.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CFireSupportRequestResult::encode)
+                .decoder(S2CFireSupportRequestResult::decode)
+                .consumerMainThread(S2CFireSupportRequestResult::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CFireSupportMissionUpdate.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CFireSupportMissionUpdate::encode)
+                .decoder(S2CFireSupportMissionUpdate::decode)
+                .consumerMainThread(S2CFireSupportMissionUpdate::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SRequestFireSupportCeaseFire.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SRequestFireSupportCeaseFire::encode)
+                .decoder(C2SRequestFireSupportCeaseFire::decode)
+                .consumerMainThread(C2SRequestFireSupportCeaseFire::handle)
                 .add();
     }
 }

@@ -22,6 +22,7 @@ public class RVP_CreativeTabEvents {
             event.accept(RVP_Items.FRIENDLY_GUNNER.get());
             event.accept(RVP_Items.ENEMY_GUNNER.get());
             event.accept(RVP_Items.TEAM_GUNNER.get());
+            event.accept(RVP_Items.FIRE_SUPPORT_TERMINAL.get());
         }
     }
 }

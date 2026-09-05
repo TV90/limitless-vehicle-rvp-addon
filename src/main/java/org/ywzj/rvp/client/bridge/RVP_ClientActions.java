@@ -14,4 +14,9 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         // 调用本项目粒子弹体发射器：按 Tick 生成主体及历史路径采样点。
         RVP_ParticleProjectileEmitter.tick(projectile);
     }
+
+    @Override
+    public void openFireSupportTerminal() {
+        // 阶段 C 只建立双端安全入口；阶段 D 完成地图无载具安全化后在此安装工具并打开地图。
+    }
 }

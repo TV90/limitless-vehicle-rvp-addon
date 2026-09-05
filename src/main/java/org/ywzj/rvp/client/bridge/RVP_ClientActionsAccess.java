@@ -17,11 +17,21 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.tickParticleProjectile(projectile);
     }
 
+    /** 经物理侧桥请求打开终端，公共物品类不会加载客户端 Screen。 */
+    public static void openFireSupportTerminal() {
+        INSTANCE.openFireSupportTerminal();
+    }
+
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
         @Override
         public void tickParticleProjectile(RVP_BaseBullet projectile) {
             // 服务端不生成客户端粒子。
+        }
+
+        @Override
+        public void openFireSupportTerminal() {
+            // 专用服务端没有界面；阶段 D 的真实客户端实现不会进入此分支。
         }
     }
 }
