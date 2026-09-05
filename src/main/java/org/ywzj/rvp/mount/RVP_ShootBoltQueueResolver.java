@@ -6,6 +6,7 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
@@ -420,6 +421,21 @@ public final class RVP_ShootBoltQueueResolver {
             }
             Vec3 world = station.worldCurrentBoltPosition();
             sb.append("  当前出弹点世界坐标: [").append(fmt(world.x)).append(',').append(fmt(world.y)).append(',').append(fmt(world.z)).append("]\n");
+            // 目的：SARH 半主动弹锁状态（定位"无锁制导"泄漏来源）；当前武器制导类型
+            String currentGuidance = "<none>";
+            java.util.Optional<AbstractVehicleWeapon<?>> operated = station.getCurrentWeapon();
+            if (operated.isPresent() && operated.get().getData() != null
+                    && operated.get().getData().getWeaponId() != null) {
+                currentGuidance = operated.get().getData().getWeaponId().toString();
+            }
+            org.ywzj.vehicle.vehicle.part.RadarUnit lockRadar =
+                    org.ywzj.rvp.radar.RVP_RadarRoleHelper.getLockedRadar(station);
+            Entity radarLock = lockRadar == null ? null : lockRadar.getLockedEntity();
+            sb.append("  雷达TWS锁: ").append(radarLock == null ? "<无>"
+                    : radarLock.getName().getString() + " #" + radarLock.getId()).append('\n');
+            Entity unitLock = station.getLockedEntity();
+            sb.append("  武器站锁: ").append(unitLock == null ? "<无>"
+                    : unitLock.getName().getString() + " #" + unitLock.getId()).append('\n');
         }
         sb.append("=== 结束 ===\n");
         return sb.toString();

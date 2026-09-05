@@ -12,6 +12,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
@@ -40,6 +41,11 @@ public class RVP_TVMissileOverlay {
 
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
+        // RenderGuiOverlayEvent.Post 每帧对每个已注册 overlay 各触发一次（40+ 次），
+        // 只锚定每帧必渲染的原生 CHAT_PANEL 层执行一次，其余事件忽略（修复多弹/多实体时帧率腰斩）
+        if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.options.hideGui || mc.player == null || mc.level == null) {
             reset();
@@ -76,7 +82,11 @@ public class RVP_TVMissileOverlay {
             case VIEW -> Component.translatable("overlay.ywzj_rvp.hitl.control.view");
         };
         Component header = Component.translatable("overlay.ywzj_rvp.tv_missile.header", mode);
-        Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", (double) lastRateDegPerSec);
+        // 转向率显式格式化保留一位小数（避免翻译占位符浮点精度差异），并追加当前速度（km/h）
+        String turnRateText = String.format("%.1f", lastRateDegPerSec);
+        double speedKmh = missile.getDeltaMovement().length() * 72.0;
+        String speedText = String.format("%.0f", speedKmh);
+        Component turnRate = Component.translatable("overlay.ywzj_rvp.tv_missile.turn_rate", turnRateText, speedText);
         gg.drawString(font, header, x, y, Color.GREEN, true);
         gg.drawString(font, control, x, y + 10, Color.GREEN, true);
         gg.drawString(font, turnRate, x, y + 20, Color.GREEN, true);

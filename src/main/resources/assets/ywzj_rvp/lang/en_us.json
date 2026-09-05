@@ -114,7 +114,7 @@
   "overlay.ywzj_rvp.tv_missile.mode.color": "Color",
   "overlay.ywzj_rvp.tv_missile.mode.bw": "B&W",
   "overlay.ywzj_rvp.tv_missile.mode.thermal": "Thermal",
-  "overlay.ywzj_rvp.tv_missile.turn_rate": "Turn rate: %.1f deg/s",
+  "overlay.ywzj_rvp.tv_missile.turn_rate": "Turn rate: %s deg/s, Speed: %s km/h",
   "overlay.ywzj_rvp.hitl.control.mouse": "Control: mouse steering",
   "overlay.ywzj_rvp.hitl.control.designate": "Control: mouse look offset | re-designate target",
   "overlay.ywzj_rvp.hitl.control.view": "Control: view only",

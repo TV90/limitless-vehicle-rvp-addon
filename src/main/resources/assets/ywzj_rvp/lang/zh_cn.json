@@ -121,7 +121,7 @@
   "overlay.ywzj_rvp.tv_missile.mode.color": "彩色",
   "overlay.ywzj_rvp.tv_missile.mode.bw": "黑白",
   "overlay.ywzj_rvp.tv_missile.mode.thermal": "红外",
-  "overlay.ywzj_rvp.tv_missile.turn_rate": "转向速率：%.1f 度/秒",
+  "overlay.ywzj_rvp.tv_missile.turn_rate": "转向速率：%s 度/秒，速度：%s 公里/小时",
   "overlay.ywzj_rvp.hitl.control.mouse": "操控：人在回路[指令]",
   "overlay.ywzj_rvp.hitl.control.designate": "操控：鼠标偏移视角 | 重新选择目标",
   "overlay.ywzj_rvp.hitl.control.view": "操控：仅视角跟随",
