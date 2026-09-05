@@ -15,13 +15,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
-import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
-import org.ywzj.rvp.entity.projectile.RVP_DispensedEntity;
-import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
-import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.debug.RVP_TopAttackDebug;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionPayloadKind;
@@ -31,6 +25,7 @@ import org.ywzj.rvp.weapon.data.RVP_SubmunitionPayloadData;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionReleaseData;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionSpreadData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileEntityFactory;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponIndex;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -95,13 +90,15 @@ public final class RVP_SubmunitionSpawner {
             return false;
         }
         RVP_EnumWeaponKind kind = childData.getWeaponKind();
-        EntityType<? extends Projectile> entityType = entityTypeFor(kind);
+        // 调用本项目统一实体工厂：子弹药与载具/炮火投送共享同一份 kind → EntityType 映射。
+        EntityType<? extends Projectile> entityType = RVP_ProjectileEntityFactory.entityTypeFor(kind);
         if (entityType == null) {
             RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail entityType=null kind=" + kind + " childId=" + childId);
             return false;
         }
         Level level = parent.level();
-        RVP_BaseBullet child = createProjectile(kind, entityType, level, childData);
+        // 调用本项目统一实体工厂构造类型化 RVP 弹体，避免三条生成链维护重复 switch。
+        RVP_BaseBullet child = RVP_ProjectileEntityFactory.create(kind, entityType, level, childData);
         if (child == null) {
             RVP_TopAttackDebug.noteSpawn(parent, "SPAWN fail createProjectile=null kind=" + kind + " childId=" + childId);
             return false;
@@ -300,29 +297,4 @@ public final class RVP_SubmunitionSpawner {
                 .orElse(null);
     }
 
-    @Nullable
-    public static EntityType<? extends Projectile> entityTypeFor(RVP_EnumWeaponKind kind) {
-        return switch (kind) {
-            case MISSILE -> RVP_Entities.RVP_MISSILE.get();
-            case ROCKET -> RVP_Entities.RVP_ROCKET.get();
-            case MACHINEGUN -> RVP_Entities.RVP_BULLET.get();
-            case BOMB -> RVP_Entities.RVP_BOMB.get();
-            case DISPENSER -> RVP_Entities.RVP_DISPENSED.get();
-            case LASER, TARGETING_POD -> null;
-        };
-    }
-
-    @Nullable
-    public static RVP_BaseBullet createProjectile(RVP_EnumWeaponKind kind, EntityType<? extends Projectile> type,
-                                                  Level level, RVP_WeaponData data) {
-        ResourceLocation id = data.getWeaponId();
-        return switch (kind) {
-            case MISSILE -> new RVP_MissileEntity(type, level, id);
-            case ROCKET -> new RVP_RocketEntity(type, level, id);
-            case MACHINEGUN -> new RVP_BulletEntity(type, level, id);
-            case BOMB -> new RVP_BombEntity(type, level, id);
-            case DISPENSER -> new RVP_DispensedEntity(type, level, id);
-            case LASER, TARGETING_POD -> null;
-        };
-    }
 }
