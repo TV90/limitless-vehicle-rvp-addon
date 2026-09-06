@@ -49,7 +49,8 @@ public record RVP_ClientFireSupportProfile(
         for (JsonElement element : array) {
             JsonObject value = element.getAsJsonObject();
             out.add(new Munition(value.get("id").getAsString(), value.get("translation_key").getAsString(),
-                    value.get("rounds_per_unit").getAsInt()));
+                    value.get("rounds_per_unit").getAsInt(),
+                    !value.has("registration_phase_enabled") || value.get("registration_phase_enabled").getAsBoolean()));
         }
         return out;
     }
@@ -68,7 +69,8 @@ public record RVP_ClientFireSupportProfile(
                 int randomMax = rounds.has("random_max") ? rounds.get("random_max").getAsInt() : -1;
                 Integer interval = phase.has("interval_ticks") ? phase.get("interval_ticks").getAsInt() : null;
                 Integer duration = phase.has("duration_ticks") ? phase.get("duration_ticks").getAsInt() : null;
-                phases.add(new Phase(phase.get("start_delay_ticks").getAsInt(), fixed, multiplier,
+                phases.add(new Phase(phase.has("registration_phase") && phase.get("registration_phase").getAsBoolean(),
+                        phase.get("start_delay_ticks").getAsInt(), fixed, multiplier,
                         randomMin, randomMax, interval, duration));
             }
             out.add(new FireMode(value.get("id").getAsString(), value.get("translation_key").getAsString(),
@@ -100,7 +102,8 @@ public record RVP_ClientFireSupportProfile(
     public record Munition(
             /** profile 内弹种 ID。 */ String id,
             /** 弹种显示翻译键。 */ String translationKey,
-            /** 一基数顶层弹数。 */ int roundsPerUnit) {}
+            /** 一基数顶层弹数。 */ int roundsPerUnit,
+            /** 是否执行标记为试射的阶段。 */ boolean registrationPhaseEnabled) {}
 
     /** 客户端数据驱动射击模式。 */
     public record FireMode(
@@ -114,6 +117,7 @@ public record RVP_ClientFireSupportProfile(
 
     /** 客户端非权威计划预览所需的阶段摘要。 */
     public record Phase(
+            /** 是否为可由弹种关闭的试射阶段。 */ boolean registrationPhase,
             /** 相对阶段起点延迟，单位 Tick。 */ int startDelayTicks,
             /** 固定弹数；不使用时为 -1。 */ int fixedRounds,
             /** 基数倍率；不使用时为负数。 */ double baseMultiplier,

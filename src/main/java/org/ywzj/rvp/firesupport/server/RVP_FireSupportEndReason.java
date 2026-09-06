@@ -29,5 +29,6 @@ public enum RVP_FireSupportEndReason {
     DELIVERY_FAILED,
     OUTSIDE_WORLD,
     COMPLETED,
-    CEASED
+    CEASED,
+    USER_CANCELLED
 }

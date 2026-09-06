@@ -38,7 +38,7 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_FireSupportMissionManager {
     /** 每 Tick 最多成功生成的顶层炮火弹体数。 */ public static final int MAX_SPAWNS_PER_TICK = 8;
-    /** 同一计划弹的最大连续生成失败次数。 */ public static final int MAX_DELIVERY_FAILURES = 3;
+    /** 同一计划弹的最大连续生成失败次数。 */ public static final int MAX_DELIVERY_FAILURES = 20;
     /** 每名玩家保留的最近请求 nonce 数。 */ private static final int MAX_NONCES_PER_PLAYER = 64;
     /** nonce 结果保留时间，单位 Tick。 */ private static final int NONCE_TTL_TICKS = 1200;
     /** 终态任务供断线重连补发的保留时间，单位 Tick。 */ private static final int MISSION_HISTORY_TTL_TICKS = 1200;
@@ -96,7 +96,7 @@ public final class RVP_FireSupportMissionManager {
         return result;
     }
 
-    /** 处理独立停火请求；首次有效请求固定最早生效 Tick，重复请求不能改变倒计时。 */
+    /** 处理独立中止请求：呼叫阶段立即取消，打击阶段固定最早停火 Tick；重复请求不能改变结果。 */
     public static CeaseFireResult requestCeaseFire(ServerPlayer player, UUID missionId, UUID nonce) {
         if (player == null || missionId == null || nonce == null) {
             return new CeaseFireResult(false, RVP_FireSupportEndReason.INVALID_PACKET, Long.MAX_VALUE);
@@ -114,20 +114,26 @@ public final class RVP_FireSupportMissionManager {
         RVP_FireSupportMission mission = state == null ? null : state.missions.get(missionId);
         CeaseFireResult result;
         if (mission == null || !mission.ownerId.equals(player.getUUID())
-                || (mission.state != RVP_FireSupportMissionState.STRIKING
+                || (mission.state != RVP_FireSupportMissionState.CALLING
+                && mission.state != RVP_FireSupportMissionState.STRIKING
                 && mission.state != RVP_FireSupportMissionState.CEASE_FIRE_PENDING)) {
             result = new CeaseFireResult(false, RVP_FireSupportEndReason.CEASE_FIRE_NOT_ALLOWED, Long.MAX_VALUE);
         } else if (!RVP_FireSupportTerminalIdentity.matchesBoundTerminalInAllowedHand(
                 player, mission.terminalInstanceId, mission.profile.holderPolicy())) {
             result = new CeaseFireResult(false, RVP_FireSupportEndReason.TERMINAL_NOT_HELD, Long.MAX_VALUE);
         } else {
-            if (mission.state == RVP_FireSupportMissionState.STRIKING) {
+            if (mission.state == RVP_FireSupportMissionState.CALLING) {
+                // 调用本项目任务终结流程：玩家主动取消呼叫时立即广播终态并释放任务 Chunk 租约。
+                finish(player.server, mission, RVP_FireSupportMissionState.CANCELLED,
+                        RVP_FireSupportEndReason.USER_CANCELLED);
+            } else if (mission.state == RVP_FireSupportMissionState.STRIKING) {
                 mission.state = RVP_FireSupportMissionState.CEASE_FIRE_PENDING;
                 mission.ceaseFireEffectiveTick = Math.addExact(now,
                         mission.profile.strikeStage().ceaseFireDelayTicks());
                 sendUpdate(player.server, mission);
             }
-            result = new CeaseFireResult(true, RVP_FireSupportEndReason.NONE, mission.ceaseFireEffectiveTick);
+            result = new CeaseFireResult(true, RVP_FireSupportEndReason.NONE,
+                    mission.state == RVP_FireSupportMissionState.CANCELLED ? now : mission.ceaseFireEffectiveTick);
         }
         playerNonces.put(nonce, new CeaseNonceEntry(missionId, result, now));
         trimOldest(playerNonces, MAX_NONCES_PER_PLAYER);
@@ -377,25 +383,28 @@ public final class RVP_FireSupportMissionManager {
         }
     }
 
-    /** 停火请求即时响应。 */
+    /** 取消呼叫或停火请求的即时响应。 */
     public record CeaseFireResult(
             /** 服务端是否接受。 */ boolean accepted,
             /** 拒绝原因；接受时为 NONE。 */ RVP_FireSupportEndReason reason,
-            /** 接受时的权威停火生效 Tick。 */ long effectiveTick) {}
+            /** 接受时的权威生效 Tick；取消呼叫时为当前 Tick。 */ long effectiveTick) {}
 
     /** 对诊断公开的不可变活动任务摘要。 */
     public record MissionView(
             /** 任务 ID。 */ UUID missionId,
             /** 发起者 UUID。 */ UUID ownerId,
+            /** 任务绑定的终端实例 UUID。 */ UUID terminalInstanceId,
             /** 当前权威阶段。 */ RVP_FireSupportMissionState state,
             /** 终态或异常原因。 */ RVP_FireSupportEndReason reason,
             /** 已成功生成弹数。 */ int deliveredRounds,
             /** 总计划弹数。 */ int totalRounds,
+            /** 呼叫阶段截止 Tick。 */ long callDeadlineTick,
             /** 下一发权威 Tick。 */ long nextRoundTick,
             /** 停火生效 Tick。 */ long ceaseFireEffectiveTick) {
         public static MissionView from(RVP_FireSupportMission mission) {
-            return new MissionView(mission.missionId, mission.ownerId, mission.state, mission.endReason, mission.nextRoundIndex,
-                    mission.plan.rounds().size(), mission.nextSpawnTick(), mission.ceaseFireEffectiveTick);
+            return new MissionView(mission.missionId, mission.ownerId, mission.terminalInstanceId,
+                    mission.state, mission.endReason, mission.nextRoundIndex, mission.plan.rounds().size(),
+                    mission.callDeadlineTick, mission.nextSpawnTick(), mission.ceaseFireEffectiveTick);
         }
     }
 
@@ -404,7 +413,7 @@ public final class RVP_FireSupportMissionManager {
         /** 按创建顺序保存的活动任务。 */ private final Map<UUID, RVP_FireSupportMission> missions = new LinkedHashMap<>();
         /** 每名玩家下次允许成功请求的 Tick。 */ private final Map<UUID, Long> cooldownUntil = new LinkedHashMap<>();
         /** 每名玩家最近请求的幂等结果。 */ private final Map<UUID, LinkedHashMap<UUID, NonceEntry>> requestNonces = new LinkedHashMap<>();
-        /** 每名玩家最近停火请求的幂等结果。 */ private final Map<UUID, LinkedHashMap<UUID, CeaseNonceEntry>> ceaseNonces = new LinkedHashMap<>();
+        /** 每名玩家最近中止请求的幂等结果。 */ private final Map<UUID, LinkedHashMap<UUID, CeaseNonceEntry>> ceaseNonces = new LinkedHashMap<>();
         /** 近期终态任务，用于断线重连后补发最终状态。 */ private final Map<UUID, HistoryEntry> recentMissions = new LinkedHashMap<>();
         /** 跨 Tick 公平轮转起点。 */ private int rotationCursor;
     }
@@ -415,7 +424,7 @@ public final class RVP_FireSupportMissionManager {
             /** 第一次处理产生的稳定结果。 */ SubmissionResult result,
             /** 记录创建 Tick。 */ long createdTick) {}
 
-    /** 一条停火 nonce 缓存记录。 */
+    /** 一条取消呼叫或停火 nonce 缓存记录。 */
     private record CeaseNonceEntry(
             /** nonce 首次绑定的任务 ID。 */ UUID missionId,
             /** 首次处理产生的稳定结果。 */ CeaseFireResult result,

@@ -39,8 +39,7 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
     public RVP_FireSupportDeliveryResult deliver(RVP_FireSupportDeliveryContext context) {
         RVP_WeaponData weapon = context.weaponData();
         RVP_EnumWeaponKind kind = weapon.getWeaponKind();
-        if (!RVP_ProjectileEntityFactory.supports(kind)
-                || weapon.hasHumanInTheLoop() || weapon.isOperatorGuided() || weapon.isHitlClosTvGuided()) {
+        if (!RVP_ProjectileEntityFactory.supports(kind)) {
             return result(RVP_FireSupportDeliveryResult.Status.UNSUPPORTED_WEAPON, null, null);
         }
         int blockX = Mth.floor(context.impactPoint().x());
@@ -76,8 +75,10 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
 
         // Chunk 已达到 entity-ticking 后才调用权威高度图，避免该查询同步生成远程区块。
         int groundY = context.level().getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
-        double spawnY = groundY + data.spawnHeightAboveImpactMeters();
-        if (spawnY < context.level().getMinBuildHeight() || spawnY >= context.level().getMaxBuildHeight()) {
+        // 高地上方空间不足时钳制到世界顶端内侧，避免正常山地因固定入场高度被直接拒绝投送。
+        double spawnY = Math.min(groundY + data.spawnHeightAboveImpactMeters(),
+                context.level().getMaxBuildHeight() - 1.0);
+        if (spawnY <= groundY || spawnY < context.level().getMinBuildHeight()) {
             return result(RVP_FireSupportDeliveryResult.Status.OUTSIDE_BUILD_HEIGHT, null, null);
         }
         Vec3 spawn = new Vec3(context.impactPoint().x(), spawnY, context.impactPoint().z());

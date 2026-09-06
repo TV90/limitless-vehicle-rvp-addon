@@ -3,6 +3,7 @@ package org.ywzj.rvp.network.firesupport;
 import io.netty.handler.codec.DecoderException;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.firesupport.RVP_FireSupportRequest;
@@ -18,6 +19,7 @@ import java.util.function.Supplier;
 public record C2SRequestFireSupport(
         /** 客户端 profile revision。 */ long revision,
         /** 客户端选择的主手或副手。 */ InteractionHand hand,
+        /** 客户端明确选择的 profile 资源 ID。 */ ResourceLocation profileId,
         /** profile 内弹种 ID。 */ String munitionId,
         /** profile 内射击模式 ID。 */ String fireModeId,
         /** profile 内打击预设 ID。 */ String patternId,
@@ -35,6 +37,7 @@ public record C2SRequestFireSupport(
     public static void encode(C2SRequestFireSupport message, FriendlyByteBuf buffer) {
         buffer.writeLong(message.revision);
         buffer.writeEnum(message.hand);
+        buffer.writeResourceLocation(message.profileId);
         buffer.writeUtf(message.munitionId, MAX_ID_LENGTH);
         buffer.writeUtf(message.fireModeId, MAX_ID_LENGTH);
         buffer.writeUtf(message.patternId, MAX_ID_LENGTH);
@@ -55,6 +58,7 @@ public record C2SRequestFireSupport(
         try {
             long revision = buffer.readLong();
             InteractionHand hand = buffer.readEnum(InteractionHand.class);
+            ResourceLocation profileId = buffer.readResourceLocation();
             String munition = buffer.readUtf(MAX_ID_LENGTH);
             String mode = buffer.readUtf(MAX_ID_LENGTH);
             String pattern = buffer.readUtf(MAX_ID_LENGTH);
@@ -68,7 +72,7 @@ public record C2SRequestFireSupport(
                 String key = buffer.readUtf(MAX_ID_LENGTH);
                 if (parameters.putIfAbsent(key, buffer.readDouble()) != null) throw new DecoderException("炮火参数键重复");
             }
-            return new C2SRequestFireSupport(revision, hand, munition, mode, pattern, x, z, heading,
+            return new C2SRequestFireSupport(revision, hand, profileId, munition, mode, pattern, x, z, heading,
                     parameters, buffer.readUUID());
         } catch (DecoderException exception) {
             throw exception;
@@ -85,7 +89,7 @@ public record C2SRequestFireSupport(
             // 调用本项目权威任务管理器：在服务端主线程复核请求并执行 nonce 幂等创建。
             RVP_FireSupportMissionManager.SubmissionResult result = RVP_FireSupportMissionManager.submit(
                     context.getSender(), new RVP_FireSupportRequest(message.revision, message.hand,
-                            message.munitionId, message.fireModeId, message.patternId, message.targetX,
+                            message.profileId, message.munitionId, message.fireModeId, message.patternId, message.targetX,
                             message.targetZ, message.headingDegrees, message.parameters, message.nonce));
             // 调用本项目网络通道，把权威接受/拒绝摘要只回复给请求玩家。
             RVP_Network.CHANNEL.sendTo(S2CFireSupportRequestResult.from(result),

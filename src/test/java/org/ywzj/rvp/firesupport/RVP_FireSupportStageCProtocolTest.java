@@ -25,6 +25,7 @@ class RVP_FireSupportStageCProtocolTest {
     void requestPacketRoundTripsBoundedSelectionsAndParameters() {
         UUID nonce = UUID.randomUUID();
         C2SRequestFireSupport input = new C2SRequestFireSupport(17, InteractionHand.OFF_HAND,
+                RVP_FireSupportTestProfiles.PROFILE_ID,
                 "he", "effect", "line", 123.5, -456.25, 92.0,
                 Map.of("length_m", 120.0, "width_m", 24.0), nonce);
         assertEquals(input, roundTrip(input, C2SRequestFireSupport::encode, C2SRequestFireSupport::decode));
@@ -35,6 +36,7 @@ class RVP_FireSupportStageCProtocolTest {
         Map<String, Double> mutable = new LinkedHashMap<>();
         mutable.put("radius_m", 18.0);
         C2SRequestFireSupport request = new C2SRequestFireSupport(3, InteractionHand.MAIN_HAND,
+                RVP_FireSupportTestProfiles.PROFILE_ID,
                 "he", "rapid", "point", 20, 30, 0, mutable, UUID.randomUUID());
         mutable.put("radius_m", 32.0);
         assertEquals(18.0, request.parameters().get("radius_m"));
@@ -74,9 +76,9 @@ class RVP_FireSupportStageCProtocolTest {
         assertEquals(result, roundTrip(result, S2CFireSupportRequestResult::encode,
                 S2CFireSupportRequestResult::decode));
 
-        S2CFireSupportMissionUpdate update = new S2CFireSupportMissionUpdate(missionId,
+        S2CFireSupportMissionUpdate update = new S2CFireSupportMissionUpdate(missionId, UUID.randomUUID(),
                 RVP_FireSupportMissionState.CANCELLED, RVP_FireSupportEndReason.TERMINAL_LOST,
-                0, 9, Long.MAX_VALUE, Long.MAX_VALUE);
+                0, 9, 800L, Long.MAX_VALUE, Long.MAX_VALUE);
         assertEquals(update, roundTrip(update, S2CFireSupportMissionUpdate::encode,
                 S2CFireSupportMissionUpdate::decode));
     }

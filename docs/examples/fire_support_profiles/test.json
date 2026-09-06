@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "display": {
-    "translation_key": "fire_support_profile.rvp.default"
+    "translation_key": "fire_support_profile.rvp.test1"
   },
   "holder_policy": {
     "required_item": "ywzj_rvp:fire_support_terminal",
     "allowed_hands": ["main", "off"]
   },
   "call_stage": {
-    "base_duration_ticks": 800,
+    "base_duration_ticks": 80,
     "cancel_on_player_death": true,
     "cancel_on_terminal_lost": true,
     "cancel_on_disconnect": true
   },
   "strike_stage": {
-    "cease_fire_delay_ticks": 80
+    "cease_fire_delay_ticks": 40
   },
   "limits": {
     "min_target_distance_m": 0.0,
@@ -33,7 +33,87 @@
       "translation_key": "fire_support.munition.rvp.mk84_he",
       "weapon": "rvp:f14d_mk84",
       "rounds_per_unit": 12,
-      "registration_phase_enabled": true,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 256.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
+    },
+    {
+      "id": "gb_1000",
+      "translation_key": "fire_support.munition.rvp.gb_1000",
+      "weapon": "rvp:gb_1000",
+      "rounds_per_unit": 3,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 256.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
+    },
+    {
+      "id": "j10c_gb3_ir",
+      "translation_key": "fire_support.munition.rvp.j10c_gb3_ir",
+      "weapon": "rvp:j10c_gb3_ir",
+      "rounds_per_unit": 1,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 256.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
+    },
+    {
+      "id": "m142_m30",
+      "translation_key": "fire_support.munition.rvp.m142_m30",
+      "weapon": "rvp:m142_m30",
+      "rounds_per_unit": 12,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 256.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
+    },
+    {
+      "id": "m142_rocket",
+      "translation_key": "fire_support.munition.rvp.m142_rocket",
+      "weapon": "rvp:m142_rocket",
+      "rounds_per_unit": 12,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 256.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
+    },
+    {
+      "id": "m142_m30_wp",
+      "translation_key": "fire_support.munition.rvp.m142_m30_wp",
+      "weapon": "rvp:m142_m30_wp",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": false,
       "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {

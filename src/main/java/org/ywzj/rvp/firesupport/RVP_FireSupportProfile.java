@@ -63,6 +63,7 @@ public record RVP_FireSupportProfile(
             /** UI 使用的翻译键。 */ String translationKey,
             /** 引用的真实 RVP 武器资源 ID。 */ ResourceLocation weaponId,
             /** 一基数包含的顶层逻辑弹体数量。 */ int roundsPerUnit,
+            /** 是否执行射击模式中标记为试射的阶段；默认 true。 */ boolean registrationPhaseEnabled,
             /** 投送工厂类型 ID。 */ ResourceLocation deliveryType,
             /** 已由投送工厂严格解析的不可变配置对象。 */ Object deliveryData) {}
 
@@ -80,6 +81,7 @@ public record RVP_FireSupportProfile(
     public record Phase(
             /** 模式内唯一的小写 ID。 */ String id,
             /** UI 使用的翻译键。 */ String translationKey,
+            /** 是否为可由弹种关闭的试射阶段。 */ boolean registrationPhase,
             /** 相对打击开始或上一阶段末弹的延迟，单位 Tick。 */ int startDelayTicks,
             /** 已校验的弹数规则。 */ RoundRule rounds,
             /** 固定相邻弹间隔；与 durationTicks 仅一个非空。 */ Integer intervalTicks,

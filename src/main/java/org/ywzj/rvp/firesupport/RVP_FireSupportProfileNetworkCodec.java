@@ -65,6 +65,7 @@ public final class RVP_FireSupportProfileNetworkCodec {
         out.addProperty("translation_key", munition.translationKey());
         out.addProperty("weapon", munition.weaponId().toString());
         out.addProperty("rounds_per_unit", munition.roundsPerUnit());
+        out.addProperty("registration_phase_enabled", munition.registrationPhaseEnabled());
         JsonObject delivery = new JsonObject();
         delivery.addProperty("type", munition.deliveryType().toString());
         JsonObject data = new JsonObject();
@@ -90,6 +91,7 @@ public final class RVP_FireSupportProfileNetworkCodec {
             JsonObject value = new JsonObject();
             value.addProperty("id", phase.id());
             value.addProperty("translation_key", phase.translationKey());
+            value.addProperty("registration_phase", phase.registrationPhase());
             value.addProperty("start_delay_ticks", phase.startDelayTicks());
             JsonObject rounds = new JsonObject();
             if (phase.rounds().baseMultiplier() != null) {

@@ -16,7 +16,7 @@ class RVP_FireSupportSpawnChunkLeaseManagerTest {
                 List.of(false, false), 0, 0));
         assertTrue(RVP_FireSupportSpawnChunkLeaseManager.MAX_NEW_TICKETS_PER_TICK >= 16);
         assertTrue(RVP_FireSupportSpawnChunkLeaseManager.MAX_NEW_TICKETS_PER_TICK <= 32);
-        assertEquals(200, RVP_FireSupportSpawnChunkLeaseManager.MAX_WAIT_TICKS);
+        assertEquals(1200, RVP_FireSupportSpawnChunkLeaseManager.MAX_WAIT_TICKS);
     }
 
     @Test

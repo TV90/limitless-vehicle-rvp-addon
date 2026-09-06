@@ -49,11 +49,22 @@ class RVP_FireSupportPatternTest {
     }
 
     @Test
-    void dispersionMultiplierIsClampedToProfileParameterMaximum() {
+    void dispersionMultiplierScalesBeyondEditableParameterMaximum() {
         var pattern = RVP_FireSupportTestProfiles.parse().patterns().get("point").pattern();
         for (int i = 0; i < 100; i++) {
             var point = pattern.resolve(context(i, 100, Map.of("radius_m", 64.0), 1.5, 0));
-            assertTrue(Math.hypot(point.x(), point.z()) <= 64.0 + 1e-9);
+            assertTrue(Math.hypot(point.x(), point.z()) <= 96.0 + 1e-9);
+        }
+    }
+
+    @Test
+    void lineParametersScaleActualImpactCoordinates() {
+        var pattern = RVP_FireSupportTestProfiles.parse().patterns().get("line").pattern();
+        for (int i = 0; i < 32; i++) {
+            var small = pattern.resolve(context(i, 32, Map.of("length_m", 80.0, "width_m", 20.0), 1.5, 90));
+            var large = pattern.resolve(context(i, 32, Map.of("length_m", 160.0, "width_m", 40.0), 1.5, 90));
+            assertEquals(small.x() * 2.0, large.x(), 1.0e-9);
+            assertEquals(small.z() * 2.0, large.z(), 1.0e-9);
         }
     }
 

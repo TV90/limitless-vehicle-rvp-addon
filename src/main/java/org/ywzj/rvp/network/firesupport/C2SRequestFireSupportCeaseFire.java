@@ -9,10 +9,10 @@ import org.ywzj.rvp.network.RVP_Network;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-/** 所有者请求延迟停火的最小消息；服务端不采信任何手或实例字段。 */
+/** 所有者请求取消呼叫或延迟停火的最小消息；服务端不采信任何手或实例字段。 */
 public record C2SRequestFireSupportCeaseFire(
-        /** 要求停火的任务 UUID。 */ UUID missionId,
-        /** 停火操作独立幂等 nonce。 */ UUID nonce) {
+        /** 要求取消或停火的任务 UUID。 */ UUID missionId,
+        /** 中止操作独立幂等 nonce。 */ UUID nonce) {
     /** 编码两个固定长度 UUID。 */
     public static void encode(C2SRequestFireSupportCeaseFire message, FriendlyByteBuf buffer) {
         buffer.writeUUID(message.missionId);
@@ -30,7 +30,7 @@ public record C2SRequestFireSupportCeaseFire(
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             if (context.getSender() == null) return;
-            // 调用本项目任务管理器：即时读取服务端主/副手并固定最早停火生效 Tick。
+            // 调用本项目任务管理器：呼叫阶段立即取消，打击阶段固定最早停火生效 Tick。
             RVP_FireSupportMissionManager.CeaseFireResult result =
                     RVP_FireSupportMissionManager.requestCeaseFire(context.getSender(), message.missionId, message.nonce);
             // 调用本项目结果消息复用停火响应，向请求玩家返回明确拒绝原因或生效 Tick。

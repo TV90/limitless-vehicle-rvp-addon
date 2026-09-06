@@ -29,22 +29,29 @@ class RVP_FireSupportStageEResourcesTest {
             "src/main/resources/assets/ywzj_rvp/textures/item/fire_support_terminal.png");
 
     @Test
-    void authorExampleParsesAsCurrentSchemaAndUsesVerifiedMk84() throws Exception {
+    void authorExampleParsesAsCurrentSchemaAndUsesConfiguredMunitions() throws Exception {
         JsonObject json = JsonParser.parseString(Files.readString(EXAMPLE)).getAsJsonObject();
         ResourceLocation profileId = ResourceLocation.fromNamespaceAndPath("rvp", "default");
         ResourceLocation weaponId = ResourceLocation.fromNamespaceAndPath("rvp", "f14d_mk84");
+        java.util.Set<ResourceLocation> configuredWeapons = java.util.Set.of(weaponId,
+                ResourceLocation.fromNamespaceAndPath("rvp", "gb_1000"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "j10c_gb3_ir"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "m142_rocket"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30_wp"));
         RVP_FireSupportResolvedWeapon mk84 = new RVP_FireSupportResolvedWeapon(
                 RVP_EnumWeaponKind.BOMB, false, false, false,
                 1200, 0, false, 1200.0F, 18.0F);
         RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(Map.of(profileId, json),
-                id -> weaponId.equals(id) ? mk84 : null).get(profileId);
+                id -> configuredWeapons.contains(id) ? mk84 : null).get(profileId);
 
         assertEquals(1, profile.schemaVersion());
         assertEquals(weaponId, profile.munitions().get("mk84_he").weaponId());
-        assertEquals(4, profile.limits().maxActiveMissionsGlobal());
-        assertEquals(16, profile.limits().maxRoundsPerMission());
+        assertEquals(32, profile.limits().maxActiveMissionsGlobal());
+        assertEquals(128, profile.limits().maxRoundsPerMission());
+        assertFalse(profile.munitions().get("mk84_he").registrationPhaseEnabled());
         assertEquals(3, profile.patterns().size());
-        var monitor = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 4,
+        var monitor = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 4, true,
                 profile.fireModes().get("monitor"), 11L, profile.limits());
         assertTrue(monitor.rounds().size() == 10 || monitor.rounds().size() == 11);
         assertTrue(monitor.lastRoundFromAcceptanceTicks() <= profile.limits().maxMissionDurationTicks());
@@ -74,6 +81,12 @@ class RVP_FireSupportStageEResourcesTest {
                 assertTrue(zh.has(key), "中文缺少键 " + key);
             }
         }
+        for (var munition : JsonParser.parseString(Files.readString(EXAMPLE)).getAsJsonObject()
+                .getAsJsonArray("munitions")) {
+            String key = munition.getAsJsonObject().get("translation_key").getAsString();
+            assertTrue(zh.has(key), "中文缺少示例弹种键 " + key);
+            assertTrue(en.has(key), "英文缺少示例弹种键 " + key);
+        }
     }
 
     @Test
@@ -88,16 +101,17 @@ class RVP_FireSupportStageEResourcesTest {
 
     @Test
     void multiplayerAndLowTpsBacklogRemainInsideHardBudgets() {
-        int globalMissions = 4;
+        int globalMissions = 32;
         int worstRoundsPerMission = 11;
         long topLevelEntities = (long) globalMissions * worstRoundsPerMission;
-        assertEquals(44L, topLevelEntities);
+        assertEquals(352L, topLevelEntities);
         assertTrue(RVP_FireSupportMissionManager.MAX_SPAWNS_PER_TICK <= 8);
         assertTrue(RVP_FireSupportSpawnChunkLeaseManager.MAX_NEW_TICKETS_PER_TICK <= 24);
-        assertEquals(200, RVP_FireSupportSpawnChunkLeaseManager.MAX_WAIT_TICKS);
+        assertEquals(1200, RVP_FireSupportSpawnChunkLeaseManager.MAX_WAIT_TICKS);
         // 低 TPS 只延后游戏 Tick；任务管理器每次实际 Tick 每任务至多尝试一发，并受全局 8 发预算保护。
-        assertTrue(topLevelEntities <= (long) RVP_FireSupportMissionManager.MAX_SPAWNS_PER_TICK * 6L);
-        assertEquals(44L, RVP_FireSupportWeaponBudget.estimateExpandedEntities((int) topLevelEntities, 0));
+        assertEquals(44L, (topLevelEntities + RVP_FireSupportMissionManager.MAX_SPAWNS_PER_TICK - 1L)
+                / RVP_FireSupportMissionManager.MAX_SPAWNS_PER_TICK);
+        assertEquals(352L, RVP_FireSupportWeaponBudget.estimateExpandedEntities((int) topLevelEntities, 0));
     }
 
     private static JsonObject language(String language) throws Exception {

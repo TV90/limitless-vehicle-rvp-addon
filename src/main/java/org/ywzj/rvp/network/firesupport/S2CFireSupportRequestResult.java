@@ -11,10 +11,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-/** 新呼叫或停火请求的即时权威结果。 */
+/** 新呼叫、取消呼叫或停火请求的即时权威结果。 */
 public record S2CFireSupportRequestResult(
         /** 对应操作 nonce。 */ UUID nonce,
-        /** 是否为停火操作结果。 */ boolean ceaseFire,
+        /** 是否为取消呼叫或停火操作结果。 */ boolean ceaseFire,
         /** 是否被服务端接受。 */ boolean accepted,
         /** 稳定原因枚举。 */ RVP_FireSupportEndReason reason,
         /** 接受时任务 UUID。 */ UUID missionId,
@@ -22,7 +22,7 @@ public record S2CFireSupportRequestResult(
         /** 新呼叫规范化参数。 */ Map<String, Double> parameters,
         /** 新呼叫的呼叫截止 Tick。 */ long callDeadlineTick,
         /** 新呼叫首发计划 Tick。 */ long firstRoundTick,
-        /** 新呼叫末发计划 Tick；停火结果中为停火生效 Tick。 */ long lastRoundTick) {
+        /** 新呼叫末发计划 Tick；中止结果中为权威生效 Tick。 */ long lastRoundTick) {
     /** S2C 规范化参数硬上限。 */ private static final int MAX_PARAMETERS = 32;
     /** 参数键最大长度。 */ private static final int MAX_KEY_LENGTH = 64;
 
@@ -35,7 +35,7 @@ public record S2CFireSupportRequestResult(
                 result.firstRoundTick(), result.lastRoundTick());
     }
 
-    /** 从停火结果构造消息；lastRoundTick 复用为权威停火生效 Tick。 */
+    /** 从中止结果构造消息；lastRoundTick 复用为权威生效 Tick。 */
     public static S2CFireSupportRequestResult fromCeaseFire(UUID nonce, UUID missionId,
                                                             RVP_FireSupportMissionManager.CeaseFireResult result) {
         return new S2CFireSupportRequestResult(nonce, true, result.accepted(), result.reason(), missionId,

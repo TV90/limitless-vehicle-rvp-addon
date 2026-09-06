@@ -142,11 +142,14 @@ public final class RVP_FireSupportProfileParser {
         for (int i = 0; i < array.size(); i++) {
             String p = path + ".munitions[" + i + "]";
             JsonObject o = asObject(array.get(i), p, problems);
-            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "weapon", "rounds_per_unit", "delivery"), p, problems);
+            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "weapon", "rounds_per_unit",
+                    "registration_phase_enabled", "delivery"), p, problems);
             String id = localId(o, p, problems);
             String key = RVP_FireSupportJson.string(o, "translation_key", p, problems);
             ResourceLocation weapon = RVP_FireSupportJson.resource(RVP_FireSupportJson.string(o, "weapon", p, problems), p + ".weapon", problems);
             int rounds = RVP_FireSupportJson.integer(o, "rounds_per_unit", -1, p, problems);
+            boolean registrationPhaseEnabled = RVP_FireSupportJson.bool(
+                    o, "registration_phase_enabled", true, p, problems);
             if (rounds < 1 || rounds > ABSOLUTE_MAX_ROUNDS) problems.add(p + ".rounds_per_unit", "必须在 [1, 512] 内");
             JsonObject delivery = RVP_FireSupportJson.object(o, "delivery", p, problems, true);
             RVP_FireSupportJson.keys(delivery, Set.of("type", "data"), p + ".delivery", problems);
@@ -166,7 +169,8 @@ public final class RVP_FireSupportProfileParser {
                             problems, p + ".weapon");
                 }
             }
-            putUnique(out, id, new RVP_FireSupportProfile.Munition(id, key, weapon, rounds, type, data), p, problems);
+            putUnique(out, id, new RVP_FireSupportProfile.Munition(
+                    id, key, weapon, rounds, registrationPhaseEnabled, type, data), p, problems);
         }
         return Map.copyOf(out);
     }
@@ -201,10 +205,12 @@ public final class RVP_FireSupportProfileParser {
         for (int i = 0; i < array.size(); i++) {
             String p = path + ".phases[" + i + "]";
             JsonObject o = asObject(array.get(i), p, problems);
-            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "start_delay_ticks", "rounds", "interval_ticks", "duration_ticks"), p, problems);
+            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "registration_phase",
+                    "start_delay_ticks", "rounds", "interval_ticks", "duration_ticks"), p, problems);
             String id = localId(o, p, problems);
             if (!ids.add(id)) problems.add(p + ".id", "阶段 ID 重复");
             String key = RVP_FireSupportJson.string(o, "translation_key", p, problems);
+            boolean registrationPhase = RVP_FireSupportJson.bool(o, "registration_phase", false, p, problems);
             int start = RVP_FireSupportJson.integer(o, "start_delay_ticks", 0, p, problems);
             if (start < 0) problems.add(p + ".start_delay_ticks", "不得为负");
             RVP_FireSupportProfile.RoundRule rule = parseRoundRule(RVP_FireSupportJson.object(o, "rounds", p, problems, true), problems, p + ".rounds");
@@ -213,7 +219,8 @@ public final class RVP_FireSupportProfileParser {
             if ((interval == null) == (duration == null)) problems.add(p, "interval_ticks 与 duration_ticks 必须且只能配置一个");
             if (interval != null && interval <= 0) problems.add(p + ".interval_ticks", "必须为正");
             if (duration != null && duration < 0) problems.add(p + ".duration_ticks", "不得为负");
-            out.add(new RVP_FireSupportProfile.Phase(id, key, start, rule, interval, duration));
+            out.add(new RVP_FireSupportProfile.Phase(
+                    id, key, registrationPhase, start, rule, interval, duration));
         }
         return List.copyOf(out);
     }

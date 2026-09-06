@@ -30,6 +30,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 侧栏强调色。 */ private static final int ACCENT = 0xFFE7B85C;
     /** 每个交互行高度，单位 GUI 像素。 */ private static final int ROW_HEIGHT = 18;
     /** 方向手柄命中半径，单位 GUI 像素。 */ private static final double HANDLE_RADIUS = 9.0;
+    /** 下拉项高度，单位 GUI 像素。 */ private static final int DROPDOWN_ROW_HEIGHT = 16;
     /** 上次解析的服务端 profile revision。 */ private long loadedRevision = Long.MIN_VALUE;
     /** 当前解析成功的客户端 profile 列表。 */ private List<RVP_ClientFireSupportProfile> profiles = List.of();
     /** profile 解析失败时的可见诊断。 */ private String profileError = "";
@@ -43,8 +44,10 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 是否已经由玩家指定锚点。 */ private boolean hasAnchor;
     /** 长轴或徐进方向，单位度。 */ private double headingDegrees;
     /** 当前是否正在拖动方向手柄。 */ private boolean draggingDirection;
+    /** 当前展开的选择行：0 profile、1 弹种、2 射击模式、3 落区；-1 表示关闭。 */ private int openChoice = -1;
     /** 最近发送的新呼叫 nonce。 */ private UUID pendingCallNonce;
     /** 最近发送的停火 nonce。 */ private UUID pendingCeaseNonce;
+    /** 当前中止请求是否用于立即取消呼叫，用于选择准确的结果文案。 */ private boolean pendingCallCancellation;
     /** 当前面板跟踪的任务 UUID。 */ private UUID trackedMissionId;
     /** 当前任务绑定终端实例 UUID 的客户端副本。 */ private UUID boundTerminalInstance;
     /** 接受任务时的权威呼叫截止 Tick。 */ private long callDeadlineTick;
@@ -58,6 +61,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void initialize(RVP_TacticalMapHost host) {
         refreshProfiles();
+        restoreTrackedMission();
         if (!hasAnchor) {
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.player != null) {
@@ -70,6 +74,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void tick(RVP_TacticalMapHost host) {
         refreshProfiles();
+        restoreTrackedMission();
         acceptLatestResult();
     }
 
@@ -77,9 +82,11 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     public boolean mouseClicked(RVP_TacticalMapHost host, double mouseX, double mouseY, int button) {
         if (button != 0) return false;
         if (insideSidebar(host, mouseX, mouseY)) {
+            if (handleDropdownClick(host, mouseX, mouseY)) return true;
             handleSidebarClick(host, mouseX, mouseY);
             return true;
         }
+        openChoice = -1;
         if (!insideMap(host, mouseX, mouseY) || mouseY < host.mapTop() + 28) return false;
         if (hasDirectionalPattern() && isOverDirectionHandle(host, mouseX, mouseY)) {
             draggingDirection = true;
@@ -90,6 +97,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             anchorX = point.x;
             anchorZ = point.z;
             hasAnchor = true;
+            rememberDraft();
             return true;
         }
         return false;
@@ -100,6 +108,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                                 int button, double dragX, double dragY) {
         if (!draggingDirection || button != 0 || !hasAnchor) return false;
         updateDirectionFromPointer(host, mouseX, mouseY);
+        rememberDraft();
         return true;
     }
 
@@ -108,6 +117,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (button == 0 && draggingDirection) {
             updateDirectionFromPointer(host, mouseX, mouseY);
             draggingDirection = false;
+            rememberDraft();
             return true;
         }
         return false;
@@ -123,6 +133,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void onClose() {
         draggingDirection = false;
+        openChoice = -1;
+        rememberDraft();
     }
 
     private void refreshProfiles() {
@@ -142,6 +154,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         loadedRevision = state.revision();
         profileIndex = clampIndex(profileIndex, profiles.size());
         resetDependentSelections();
+        restoreDraft(state.draftSelection());
     }
 
     private void resetDependentSelections() {
@@ -158,6 +171,50 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (pattern != null) pattern.parameters().values().forEach(spec -> parameterValues.put(spec.key(), spec.defaultValue()));
     }
 
+    /** 按稳定 ID 恢复上次界面草稿，避免 profile 排序变化把索引指向另一选项。 */
+    private void restoreDraft(RVP_ClientFireSupportState.DraftSelection draft) {
+        if (draft == null || profiles.isEmpty()) return;
+        profileIndex = indexOfProfile(draft.profileId(), profileIndex);
+        RVP_ClientFireSupportProfile selectedProfile = profile();
+        if (selectedProfile == null) return;
+        munitionIndex = indexOfId(selectedProfile.munitions().stream().map(RVP_ClientFireSupportProfile.Munition::id).toList(), draft.munitionId(), 0);
+        modeIndex = indexOfId(selectedProfile.fireModes().stream().map(RVP_ClientFireSupportProfile.FireMode::id).toList(), draft.fireModeId(), 0);
+        patternIndex = indexOfId(selectedProfile.patterns().stream().map(RVP_ClientFireSupportProfile.Pattern::id).toList(), draft.patternId(), 0);
+        syncParameterDefaults();
+        RVP_ClientFireSupportProfile.Pattern selectedPattern = pattern();
+        if (selectedPattern != null) selectedPattern.parameters().forEach((key, spec) -> {
+            Double value = draft.parameters().get(key);
+            if (value != null && Double.isFinite(value)) parameterValues.put(key, snap(spec, value));
+        });
+        anchorX = draft.anchorX();
+        anchorZ = draft.anchorZ();
+        hasAnchor = draft.hasAnchor();
+        headingDegrees = normalizeHeading(draft.headingDegrees());
+    }
+
+    /** 把当前草稿提升到客户端会话状态；关闭 Screen 不再丢失选择。 */
+    private void rememberDraft() {
+        RVP_ClientFireSupportProfile selectedProfile = profile();
+        RVP_ClientFireSupportProfile.Munition selectedMunition = munition();
+        RVP_ClientFireSupportProfile.FireMode selectedMode = mode();
+        RVP_ClientFireSupportProfile.Pattern selectedPattern = pattern();
+        if (selectedProfile == null || selectedMunition == null || selectedMode == null || selectedPattern == null) return;
+        RVP_ClientFireSupportState.INSTANCE.rememberDraft(new RVP_ClientFireSupportState.DraftSelection(
+                selectedProfile.id(), selectedMunition.id(), selectedMode.id(), selectedPattern.id(),
+                parameterValues, anchorX, anchorZ, hasAnchor, headingDegrees));
+    }
+
+    /** 从低频权威任务缓存恢复新 Screen 的任务状态和停火终端绑定。 */
+    private void restoreTrackedMission() {
+        S2CFireSupportMissionUpdate tracked = trackedMission();
+        if (tracked != null) return;
+        S2CFireSupportMissionUpdate latest = RVP_ClientFireSupportState.INSTANCE.latestMission();
+        if (latest == null) return;
+        trackedMissionId = latest.missionId();
+        boundTerminalInstance = latest.terminalInstanceId();
+        callDeadlineTick = latest.callDeadlineTick();
+    }
+
     private void acceptLatestResult() {
         S2CFireSupportRequestResult result = RVP_ClientFireSupportState.INSTANCE.lastResult();
         if (result == null) return;
@@ -170,11 +227,16 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                 callDeadlineTick = result.callDeadlineTick();
                 parameterValues.putAll(result.parameters());
                 if (boundTerminalInstance == null) boundTerminalInstance = readAnyHeldTerminalInstance();
+                rememberDraft();
             }
         } else if (pendingCeaseNonce != null && pendingCeaseNonce.equals(result.nonce()) && result.ceaseFire()) {
             pendingCeaseNonce = null;
-            resultMessage = result.accepted() ? tr("gui.ywzj_rvp.fire_support.cease_pending")
-                    : tr("gui.ywzj_rvp.fire_support.cease_rejected", reason(result.reason()));
+            resultMessage = pendingCallCancellation
+                    ? (result.accepted() ? tr("gui.ywzj_rvp.fire_support.call_cancelled")
+                    : tr("gui.ywzj_rvp.fire_support.cancel_rejected", reason(result.reason())))
+                    : (result.accepted() ? tr("gui.ywzj_rvp.fire_support.cease_pending")
+                    : tr("gui.ywzj_rvp.fire_support.cease_rejected", reason(result.reason())));
+            pendingCallCancellation = false;
         }
     }
 
@@ -218,14 +280,18 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             }
         }
         y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.heading"), format(headingDegrees) + "°", mouseX, mouseY);
+        drawButton(graphics, left, y, right, y + 16, true, tr("gui.ywzj_rvp.fire_support.reset_parameters"), mouseX, mouseY);
+        y += 21;
         int[] preview = previewPlan();
         drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.estimate", preview[0], preview[1], format(preview[2] / 20.0)),
                 left, y + 3, right - left, 0xFFB9C5D1);
         y += ROW_HEIGHT;
-        boolean canCall = hasAnchor && heldTerminalHand() != null && pendingCallNonce == null;
-        drawButton(graphics, left, y, right, y + 18, canCall, tr("gui.ywzj_rvp.fire_support.confirm"), mouseX, mouseY);
+        S2CFireSupportMissionUpdate mission = trackedMission();
+        drawButton(graphics, left, y, right, y + 18, primaryActionEnabled(mission),
+                primaryActionLabel(mission), mouseX, mouseY);
         y += 23;
         renderMissionStatus(host, graphics, left, right, y, mouseX, mouseY);
+        renderChoiceDropdown(host, graphics, mouseX, mouseY);
     }
 
     private void renderMissionStatus(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right,
@@ -251,44 +317,42 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         y += 12;
         drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.delivered",
                 mission.deliveredRounds(), mission.totalRounds()), left, y, right - left, 0xFFB9C5D1);
-        y += 15;
-        if (mission.state() == RVP_FireSupportMissionState.STRIKING
-                || mission.state() == RVP_FireSupportMissionState.CEASE_FIRE_PENDING) {
-            boolean exactTerminalHeld = isBoundTerminalHeld();
-            drawButton(graphics, left, y, right, y + 18, exactTerminalHeld && pendingCeaseNonce == null,
-                    exactTerminalHeld ? tr("gui.ywzj_rvp.fire_support.cease")
-                            : tr("gui.ywzj_rvp.fire_support.hold_bound_terminal"), mouseX, mouseY);
-        }
     }
 
     private void handleSidebarClick(RVP_TacticalMapHost host, double mouseX, double mouseY) {
         int y = host.mapTop() + 31;
-        if (rowHit(y, mouseY)) { profileIndex = cycle(profileIndex, profiles.size(), side(host, mouseX)); resetDependentSelections(); return; }
+        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 0); return; }
         y += ROW_HEIGHT;
         RVP_ClientFireSupportProfile profile = profile();
-        if (rowHit(y, mouseY)) { munitionIndex = cycle(munitionIndex, profile == null ? 0 : profile.munitions().size(), side(host, mouseX)); return; }
+        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 1); return; }
         y += ROW_HEIGHT;
-        if (rowHit(y, mouseY)) { modeIndex = cycle(modeIndex, profile == null ? 0 : profile.fireModes().size(), side(host, mouseX)); return; }
+        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 2); return; }
         y += ROW_HEIGHT;
-        if (rowHit(y, mouseY)) { patternIndex = cycle(patternIndex, profile == null ? 0 : profile.patterns().size(), side(host, mouseX)); syncParameterDefaults(); return; }
+        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 3); return; }
         y += ROW_HEIGHT;
         RVP_ClientFireSupportProfile.Pattern pattern = pattern();
         if (pattern != null) {
             for (RVP_ClientFireSupportProfile.Parameter spec : pattern.parameters().values()) {
-                if (rowHit(y, mouseY)) { adjustParameterFromPointer(host, spec, mouseX); return; }
+                if (rowHit(y, mouseY)) { adjustParameterFromPointer(host, spec, mouseX); rememberDraft(); return; }
                 y += ROW_HEIGHT;
             }
         }
-        if (rowHit(y, mouseY)) { headingDegrees = normalizeHeading(headingDegrees + side(host, mouseX) * 5.0); return; }
-        y += ROW_HEIGHT * 2;
-        if (mouseY >= y && mouseY <= y + 18) { submitCall(); return; }
-        y += 23;
-        if (!resultMessage.isEmpty()) y += 12;
+        if (rowHit(y, mouseY)) { headingDegrees = normalizeHeading(headingDegrees + side(host, mouseX) * 5.0); rememberDraft(); return; }
+        y += ROW_HEIGHT;
+        if (mouseY >= y && mouseY <= y + 16) { resetParameters(); return; }
+        y += 21 + ROW_HEIGHT;
         S2CFireSupportMissionUpdate mission = trackedMission();
-        if (mission != null) y += 27;
-        if (mission != null && (mission.state() == RVP_FireSupportMissionState.STRIKING
-                || mission.state() == RVP_FireSupportMissionState.CEASE_FIRE_PENDING)
-                && mouseY >= y && mouseY <= y + 18) submitCeaseFire();
+        if (mouseY >= y && mouseY <= y + 18) {
+            if (mission != null && (mission.state() == RVP_FireSupportMissionState.CALLING
+                    || mission.state() == RVP_FireSupportMissionState.STRIKING)) {
+                submitCeaseFire();
+            } else if (mission == null || mission.state() == RVP_FireSupportMissionState.COMPLETED
+                    || mission.state() == RVP_FireSupportMissionState.CANCELLED
+                    || mission.state() == RVP_FireSupportMissionState.CEASED
+                    || mission.state() == RVP_FireSupportMissionState.FAILED) {
+                submitCall();
+            }
+        }
     }
 
     private void submitCall() {
@@ -302,17 +366,54 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         resultMessage = tr("gui.ywzj_rvp.fire_support.submitting");
         // 调用阶段 C 请求消息：只提交选择、锚点、方向和动态参数，派生值由服务端重算。
         RVP_Network.CHANNEL.sendToServer(new C2SRequestFireSupport(RVP_ClientFireSupportState.INSTANCE.revision(),
-                hand, munition.id(), mode.id(), pattern.id(), anchorX, anchorZ, headingDegrees,
+                hand, profile().id(), munition.id(), mode.id(), pattern.id(), anchorX, anchorZ, headingDegrees,
                 Map.copyOf(parameterValues), pendingCallNonce));
     }
 
     private void submitCeaseFire() {
         if (trackedMissionId == null || pendingCeaseNonce != null
                 || !isBoundTerminalHeld()) return;
+        S2CFireSupportMissionUpdate mission = trackedMission();
+        pendingCallCancellation = mission != null && mission.state() == RVP_FireSupportMissionState.CALLING;
         pendingCeaseNonce = UUID.randomUUID();
-        resultMessage = tr("gui.ywzj_rvp.fire_support.requesting_cease");
-        // 调用阶段 C 停火消息：服务端重新核验所有者、阶段与绑定终端实例。
+        resultMessage = tr(pendingCallCancellation
+                ? "gui.ywzj_rvp.fire_support.requesting_cancel"
+                : "gui.ywzj_rvp.fire_support.requesting_cease");
+        // 调用阶段 C 中止消息：服务端重新核验所有者、阶段与绑定终端实例。
         RVP_Network.CHANNEL.sendToServer(new C2SRequestFireSupportCeaseFire(trackedMissionId, pendingCeaseNonce));
+    }
+
+    /** @return 固定主操作位当前是否可点击，避免操作按钮随状态区向屏幕底部移动。 */
+    private boolean primaryActionEnabled(S2CFireSupportMissionUpdate mission) {
+        if (mission == null || mission.state() == RVP_FireSupportMissionState.COMPLETED
+                || mission.state() == RVP_FireSupportMissionState.CANCELLED
+                || mission.state() == RVP_FireSupportMissionState.CEASED
+                || mission.state() == RVP_FireSupportMissionState.FAILED) {
+            return hasAnchor && heldTerminalHand() != null
+                    && pendingCallNonce == null && pendingCeaseNonce == null;
+        }
+        return (mission.state() == RVP_FireSupportMissionState.CALLING
+                || mission.state() == RVP_FireSupportMissionState.STRIKING)
+                && isBoundTerminalHeld() && pendingCallNonce == null && pendingCeaseNonce == null;
+    }
+
+    /** @return 固定主操作位随权威任务阶段切换的文案。 */
+    private String primaryActionLabel(S2CFireSupportMissionUpdate mission) {
+        if (mission == null || mission.state() == RVP_FireSupportMissionState.COMPLETED
+                || mission.state() == RVP_FireSupportMissionState.CANCELLED
+                || mission.state() == RVP_FireSupportMissionState.CEASED
+                || mission.state() == RVP_FireSupportMissionState.FAILED) {
+            return tr("gui.ywzj_rvp.fire_support.confirm");
+        }
+        if (mission.state() == RVP_FireSupportMissionState.CALLING) {
+            return isBoundTerminalHeld() ? tr("gui.ywzj_rvp.fire_support.cancel_call")
+                    : tr("gui.ywzj_rvp.fire_support.hold_bound_terminal");
+        }
+        if (mission.state() == RVP_FireSupportMissionState.STRIKING) {
+            return isBoundTerminalHeld() ? tr("gui.ywzj_rvp.fire_support.cease")
+                    : tr("gui.ywzj_rvp.fire_support.hold_bound_terminal");
+        }
+        return tr("gui.ywzj_rvp.fire_support.cease_pending");
     }
 
     private void updateDirectionFromPointer(RVP_TacticalMapHost host, double mouseX, double mouseY) {
@@ -345,6 +446,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         int min = 0;
         int max = 0;
         for (RVP_ClientFireSupportProfile.Phase phase : mode.phases()) {
+            if (phase.registrationPhase() && !munition.registrationPhaseEnabled()) continue;
             if (phase.fixedRounds() >= 0) min += phase.fixedRounds();
             else if (phase.baseMultiplier() > 0) min += (int) Math.ceil(munition.roundsPerUnit() * phase.baseMultiplier());
             else min += phase.randomMin();
@@ -357,7 +459,9 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private int drawChoice(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
                            String name, String value, int mouseX, int mouseY) {
-        return drawValueRow(host, graphics, left, right, y, name, value, mouseX, mouseY);
+        int next = drawValueRow(host, graphics, left, right, y, name, value, mouseX, mouseY);
+        graphics.drawString(host.font(), "▾", right - 20, y + 4, ACCENT, false);
+        return next;
     }
 
     private int drawParameter(RVP_TacticalMapHost host, GuiGraphics graphics, int left, int right, int y,
@@ -436,6 +540,107 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private S2CFireSupportMissionUpdate trackedMission() {
         return trackedMissionId == null ? null : RVP_ClientFireSupportState.INSTANCE.missions().get(trackedMissionId);
+    }
+
+    /** 重置本地选择、参数、目标和方位；权威任务历史不受影响。 */
+    private void resetParameters() {
+        RVP_ClientFireSupportState.INSTANCE.resetDraft();
+        profileIndex = 0;
+        munitionIndex = 0;
+        modeIndex = 0;
+        patternIndex = 0;
+        headingDegrees = 0.0;
+        hasAnchor = false;
+        openChoice = -1;
+        resetDependentSelections();
+    }
+
+    /** 行两端保留快速轮换，中部同时提供完整下拉框选择。 */
+    private void handleChoiceRow(RVP_TacticalMapHost host, double mouseX, int choice) {
+        int left = host.sideLeft() + 7;
+        int right = host.sideRight() - 7;
+        if (mouseX > left + 14 && mouseX < right - 14) {
+            openChoice = openChoice == choice ? -1 : choice;
+            return;
+        }
+        int direction = side(host, mouseX);
+        switch (choice) {
+            case 0 -> { profileIndex = cycle(profileIndex, profiles.size(), direction); resetDependentSelections(); }
+            case 1 -> munitionIndex = cycle(munitionIndex, profile() == null ? 0 : profile().munitions().size(), direction);
+            case 2 -> modeIndex = cycle(modeIndex, profile() == null ? 0 : profile().fireModes().size(), direction);
+            case 3 -> { patternIndex = cycle(patternIndex, profile() == null ? 0 : profile().patterns().size(), direction); syncParameterDefaults(); }
+            default -> { return; }
+        }
+        openChoice = -1;
+        rememberDraft();
+    }
+
+    private boolean handleDropdownClick(RVP_TacticalMapHost host, double mouseX, double mouseY) {
+        if (openChoice < 0) return false;
+        List<String> labels = choiceLabels(openChoice);
+        int top = dropdownTop(host, labels.size());
+        int left = host.sideLeft() + 7;
+        int right = host.sideRight() - 7;
+        if (mouseX < left || mouseX > right || mouseY < top || mouseY >= top + labels.size() * DROPDOWN_ROW_HEIGHT) return false;
+        selectChoice(openChoice, Mth.clamp((int) ((mouseY - top) / DROPDOWN_ROW_HEIGHT), 0, labels.size() - 1));
+        openChoice = -1;
+        rememberDraft();
+        return true;
+    }
+
+    private void renderChoiceDropdown(RVP_TacticalMapHost host, GuiGraphics graphics, int mouseX, int mouseY) {
+        if (openChoice < 0) return;
+        List<String> labels = choiceLabels(openChoice);
+        if (labels.isEmpty()) return;
+        int left = host.sideLeft() + 7;
+        int right = host.sideRight() - 7;
+        int top = dropdownTop(host, labels.size());
+        graphics.pose().pushPose();
+        graphics.pose().translate(0, 0, 400);
+        for (int index = 0; index < labels.size(); index++) {
+            int rowTop = top + index * DROPDOWN_ROW_HEIGHT;
+            boolean hover = mouseX >= left && mouseX <= right && mouseY >= rowTop && mouseY < rowTop + DROPDOWN_ROW_HEIGHT;
+            graphics.fill(left, rowTop, right, rowTop + DROPDOWN_ROW_HEIGHT, hover ? 0xFF6D5733 : 0xF21A222C);
+            graphics.fill(left, rowTop, left + 1, rowTop + DROPDOWN_ROW_HEIGHT, ACCENT);
+            drawTrimmed(host, graphics, labels.get(index), left + 5, rowTop + 4, right - left - 10, 0xFFFFFFFF);
+        }
+        graphics.pose().popPose();
+    }
+
+    private int dropdownTop(RVP_TacticalMapHost host, int itemCount) {
+        int desired = host.mapTop() + 31 + (openChoice + 1) * ROW_HEIGHT;
+        return Math.max(host.mapTop() + 2, Math.min(desired, host.mapBottom() - itemCount * DROPDOWN_ROW_HEIGHT - 2));
+    }
+
+    private List<String> choiceLabels(int choice) {
+        RVP_ClientFireSupportProfile selectedProfile = profile();
+        return switch (choice) {
+            case 0 -> profiles.stream().map(value -> label(value.translationKey())).toList();
+            case 1 -> selectedProfile == null ? List.of() : selectedProfile.munitions().stream().map(value -> label(value.translationKey())).toList();
+            case 2 -> selectedProfile == null ? List.of() : selectedProfile.fireModes().stream().map(value -> label(value.translationKey())).toList();
+            case 3 -> selectedProfile == null ? List.of() : selectedProfile.patterns().stream().map(value -> label(value.translationKey())).toList();
+            default -> List.of();
+        };
+    }
+
+    private void selectChoice(int choice, int index) {
+        switch (choice) {
+            case 0 -> { profileIndex = index; resetDependentSelections(); }
+            case 1 -> munitionIndex = index;
+            case 2 -> modeIndex = index;
+            case 3 -> { patternIndex = index; syncParameterDefaults(); }
+            default -> { }
+        }
+    }
+
+    private int indexOfProfile(ResourceLocation id, int fallback) {
+        for (int index = 0; index < profiles.size(); index++) if (profiles.get(index).id().equals(id)) return index;
+        return clampIndex(fallback, profiles.size());
+    }
+
+    private int indexOfId(List<String> ids, String id, int fallback) {
+        int index = ids.indexOf(id);
+        return index >= 0 ? index : clampIndex(fallback, ids.size());
     }
 
     private InteractionHand heldTerminalHand() {

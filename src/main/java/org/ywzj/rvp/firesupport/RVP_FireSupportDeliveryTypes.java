@@ -75,9 +75,7 @@ public final class RVP_FireSupportDeliveryTypes {
             if (kind == null || kind == RVP_EnumWeaponKind.LASER || kind == RVP_EnumWeaponKind.TARGETING_POD) {
                 problems.add(path, "武器 " + weaponId + " 不是可投送的 RVP 实体弹体类型");
             }
-            if (data.humanInTheLoop() || data.operatorGuided() || data.hitlClosTvGuided()) {
-                problems.add(path, "武器 " + weaponId + " 依赖实时操作手/武器站制导，垂直投送不支持");
-            }
+            // 只按实体弹体能力拒绝；依赖操作手的制导弹可作为无制导垂直弹体使用，不再阻止整个 profile 发布。
         }
     }
 }

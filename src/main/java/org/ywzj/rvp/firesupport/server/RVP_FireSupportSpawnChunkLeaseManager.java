@@ -28,7 +28,7 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_FireSupportSpawnChunkLeaseManager {
     /** 每个服务器 Tick 最多首次申请的炮火 Chunk 数。 */ public static final int MAX_NEW_TICKETS_PER_TICK = 24;
-    /** 超过计划生成时间后仍未 entity-ticking 的最大等待，单位 Tick。 */ public static final int MAX_WAIT_TICKS = 200;
+    /** 超过计划生成时间后仍未 entity-ticking 的最大等待，单位 Tick。 */ public static final int MAX_WAIT_TICKS = 1200;
     /** 与既有动态路径系统一致的 POST_TELEPORT Ticket 距离参数。 */ private static final int TICKET_LEVEL = 2;
     /** 按服务器实例隔离所有临时租约。 */ private static final Map<MinecraftServer, ServerState> STATES = new IdentityHashMap<>();
 

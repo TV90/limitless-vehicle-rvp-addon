@@ -13,11 +13,12 @@ public final class RVP_FireSupportSchedulePlanner {
      *
      * @param baseCallDurationTicks profile 呼叫基准时长，单位 Tick
      * @param roundsPerUnit 弹种一基数逻辑弹数
+     * @param registrationPhaseEnabled 是否包含标记为试射的阶段
      * @param mode 已校验的数据驱动模式
      * @param authoritativeSeed 服务端权威随机种子
      * @param limits profile 任务上限
      */
-    public static Plan plan(int baseCallDurationTicks, int roundsPerUnit,
+    public static Plan plan(int baseCallDurationTicks, int roundsPerUnit, boolean registrationPhaseEnabled,
                             RVP_FireSupportProfile.FireMode mode, long authoritativeSeed,
                             RVP_FireSupportProfile.Limits limits) {
         int callTicks = checkedCeil(baseCallDurationTicks * mode.callDurationMultiplier(), "呼叫时长溢出");
@@ -25,10 +26,12 @@ public final class RVP_FireSupportSchedulePlanner {
         Random random = new Random(authoritativeSeed);
         int previousLastTick = 0;
         int globalIndex = 0;
+        int includedPhaseIndex = 0;
         for (int phaseIndex = 0; phaseIndex < mode.phases().size(); phaseIndex++) {
             RVP_FireSupportProfile.Phase phase = mode.phases().get(phaseIndex);
+            if (phase.registrationPhase() && !registrationPhaseEnabled) continue;
             int count = resolveRoundCount(phase.rounds(), roundsPerUnit, random);
-            int startTick = Math.addExact(phaseIndex == 0 ? 0 : previousLastTick, phase.startDelayTicks());
+            int startTick = Math.addExact(includedPhaseIndex == 0 ? 0 : previousLastTick, phase.startDelayTicks());
             for (int i = 0; i < count; i++) {
                 int offset;
                 if (count == 1) offset = 0;
@@ -38,7 +41,9 @@ public final class RVP_FireSupportSchedulePlanner {
                 rounds.add(new PlannedRound(globalIndex++, phase.id(), phaseIndex, i, tick));
             }
             previousLastTick = rounds.get(rounds.size() - 1).strikeOffsetTicks();
+            includedPhaseIndex++;
         }
+        if (rounds.isEmpty()) throw new IllegalArgumentException("射击模式没有可执行阶段");
         if (rounds.size() > limits.maxRoundsPerMission()) {
             throw new IllegalArgumentException("计划弹数 " + rounds.size() + " 超过 profile 上限 " + limits.maxRoundsPerMission());
         }

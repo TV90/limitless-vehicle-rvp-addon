@@ -17,8 +17,6 @@ import org.ywzj.rvp.firesupport.RVP_FireSupportSnapshot;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,18 +34,14 @@ public final class RVP_FireSupportRequestValidator {
         if (request.revision() != snapshot.revision()) return ValidationResult.reject(RVP_FireSupportEndReason.STALE_REVISION);
 
         ItemStack held = player.getItemInHand(request.hand());
-        List<Map.Entry<ResourceLocation, RVP_FireSupportProfile>> candidates = new ArrayList<>();
         ResourceLocation heldItemId = ForgeRegistries.ITEMS.getKey(held.getItem());
-        for (Map.Entry<ResourceLocation, RVP_FireSupportProfile> entry : snapshot.profiles().entrySet()) {
-            if (entry.getValue().holderPolicy().requiredItem().equals(heldItemId)
-                    && RVP_FireSupportTerminalIdentity.isAllowedHand(player, request.hand(), entry.getValue().holderPolicy())) {
-                candidates.add(entry);
-            }
+        ResourceLocation profileId = request.profileId();
+        RVP_FireSupportProfile profile = snapshot.profiles().get(profileId);
+        if (profile == null) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
+        if (!profile.holderPolicy().requiredItem().equals(heldItemId)
+                || !RVP_FireSupportTerminalIdentity.isAllowedHand(player, request.hand(), profile.holderPolicy())) {
+            return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
         }
-        if (candidates.isEmpty()) return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
-        if (candidates.size() > 1) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_AMBIGUOUS);
-        ResourceLocation profileId = candidates.get(0).getKey();
-        RVP_FireSupportProfile profile = candidates.get(0).getValue();
 
         UUID terminalId = RVP_FireSupportTerminalIdentity.getOrCreate(player, held);
         if (terminalId == null) return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
@@ -84,7 +78,7 @@ public final class RVP_FireSupportRequestValidator {
         try {
             // 调用阶段 A 计划器：重新计算弹数、呼叫时长和每发 Tick，不采信客户端派生值。
             plan = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(),
-                    munition.roundsPerUnit(), mode, seed, profile.limits());
+                    munition.roundsPerUnit(), munition.registrationPhaseEnabled(), mode, seed, profile.limits());
         } catch (RuntimeException exception) {
             return ValidationResult.reject(RVP_FireSupportEndReason.INVALID_SCHEDULE);
         }
@@ -115,7 +109,8 @@ public final class RVP_FireSupportRequestValidator {
     }
 
     private static boolean basicRequestValid(ServerPlayer player, RVP_FireSupportRequest request) {
-        return player != null && request != null && request.hand() != null && request.nonce() != null
+        return player != null && request != null && request.hand() != null && request.profileId() != null
+                && request.nonce() != null
                 && validSelection(request.munitionId()) && validSelection(request.fireModeId())
                 && validSelection(request.patternId()) && request.parameters() != null
                 && request.parameters().size() <= 32 && Double.isFinite(request.targetX())

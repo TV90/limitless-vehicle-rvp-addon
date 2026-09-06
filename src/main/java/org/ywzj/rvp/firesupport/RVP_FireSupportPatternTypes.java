@@ -48,19 +48,11 @@ public final class RVP_FireSupportPatternTypes {
             if (!parameters.keySet().equals(required.keySet())) {
                 problems.add(path + ".parameters", "参数必须恰好为 " + required.keySet());
             }
-            Map<String, Double> maximums = new LinkedHashMap<>();
-            for (String key : required.keySet()) {
-                JsonObject spec = parameters.has(key) && parameters.get(key).isJsonObject()
-                        ? parameters.getAsJsonObject(key) : new JsonObject();
-                maximums.put(key, RVP_FireSupportJson.number(spec, "max", 0, path + ".parameters." + key, problems));
-            }
-            return new BuiltInPattern(typeId, maximums);
+            return new BuiltInPattern(typeId);
         }
     }
 
-    private record BuiltInPattern(ResourceLocation typeId, Map<String, Double> maximums) implements RVP_FireSupportPattern {
-        private BuiltInPattern { maximums = Map.copyOf(maximums); }
-
+    private record BuiltInPattern(ResourceLocation typeId) implements RVP_FireSupportPattern {
         @Override
         public RVP_FireSupportImpactPoint resolve(Context context) {
             if (context.roundIndex() < 0 || context.totalRounds() <= 0 || context.roundIndex() >= context.totalRounds()) {
@@ -97,9 +89,9 @@ public final class RVP_FireSupportPatternTypes {
         private double scaled(Context context, String key) {
             Double value = context.parameters().get(key);
             if (value == null || !Double.isFinite(value) || value <= 0) throw new IllegalArgumentException("缺少有限正参数 " + key);
-            Double maximum = maximums.get(key);
-            if (maximum == null || !Double.isFinite(maximum) || maximum <= 0) throw new IllegalStateException("几何参数缺少已校验最大值 " + key);
-            return Math.min(value * context.dispersionMultiplier(), maximum);
+            double scaled = value * context.dispersionMultiplier();
+            if (!Double.isFinite(scaled) || scaled <= 0) throw new IllegalArgumentException("缩放后的几何参数无效 " + key);
+            return scaled;
         }
 
         private static long mix(long seed, int round) {
