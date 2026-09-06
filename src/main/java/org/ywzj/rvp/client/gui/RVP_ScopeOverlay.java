@@ -80,16 +80,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (!LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }
-        WeaponUnit currentWeaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
-            // 本机雷达目标框：RF 武器+无光学瞄准时渲染。
-            // 外置雷达接触框：只要有外置雷达条目也渲染（不再依赖传感器类型为 RF，
-            // 否则"外置雷达扫到但本机雷达没对准"的载具（如 bukm3+96l6 中继）不会出现 BVR 框）。
-            boolean rfAim = currentWeaponUnit != null
-                    && RVP_WeaponSensorHelper.effectiveSensorType(currentWeaponUnit) == WeaponUnitData.FireControlSensorType.RF
-                    && currentWeaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE;
-            boolean extEntries = hasExternalRadarEntries();
-            if (rfAim || extEntries) {
+            // [RVP] 非观瞄视角：RF 武器+无光学瞄（或存在外置雷达条目）时由本 overlay
+            // 统一绘制锁定目标框，并接管本体 VehicleAimAtOverlay 的重复绘制
+            //（见 VehicleAimAtOverlaySeekerColorMixin 的 hudLockTakeoverActive 重定向）。
+            if (hudLockTakeoverActive()) {
                 renderAimLockTarget(guiGraphics, partialTick);
             }
             return;
@@ -317,6 +312,28 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         poseStack.popPose();
     }
 
+    /**
+     * [RVP] HUD 非观瞄视角的锁定框接管门控：RF 武器 + 无光学瞄（或存在外置雷达条目）时，
+     * 锁定目标框由本 overlay（rvp_scope 非观瞄分支）统一绘制，本体 VehicleAimAtOverlay
+     * 的 renderAimLockTarget 跳过（见 VehicleAimAtOverlaySeekerColorMixin 的接管重定向），
+     * 避免本体/RVP 两套渲染器对同一目标各画一套框（锚点偏差在近距呈"双框"）。
+     */
+    public static boolean hudLockTakeoverActive() {
+        if (!LocalVehiclePlayer.instance.onVehicle()) {
+            return false;
+        }
+        if (LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE) {
+            return false;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) {
+            return false;
+        }
+        boolean rfAim = RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) == WeaponUnitData.FireControlSensorType.RF
+                && weaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE;
+        return rfAim || hasExternalRadarEntries();
+    }
+
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
         // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
         if (RVP_BVR_DEBUG) {
@@ -339,8 +356,13 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return;
         }
         WeaponUnitData.FireControlSensorType sensorType = RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit);
-        // 武器站锁定目标
-        if (weaponUnit.getLockedEntity() != null) {
+        // [RVP] 先解析两把锁：雷达锁（BVR 框分支）与武器站锁（导引头圈分支）。手动锁定时
+        // 锁路由会双写同一目标——两分支若都画，锚点不同（bbox 中心 vs 探测记录位置）会在
+        // 近距分离成"两个近乎重叠的框"。同目标时导引头圈并入 BVR 框同锚点组合绘制。
+        RadarUnit mainRadarUnit = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+        Entity radarLocked = mainRadarUnit == null ? null : mainRadarUnit.getLockedEntity();
+        // 武器站锁定目标（雷达锁分支接管同目标时跳过，避免双框）
+        if (weaponUnit.getLockedEntity() != null && weaponUnit.getLockedEntity() != radarLocked) {
             Entity entity = weaponUnit.getLockedEntity();
             double curX = Mth.lerp(partialTick, entity.xo, entity.getX());
             double curY = Mth.lerp(partialTick, entity.yo, entity.getY());
@@ -368,7 +390,6 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 poseStack.popPose();
             }
         }
-        RadarUnit mainRadarUnit = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         Minecraft mc = Minecraft.getInstance();
         Entity externalLockedEntity = null;
@@ -400,6 +421,14 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                         RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
                         alliesInfo(guiGraphics, detectedObject);
                         radarInfo(guiGraphics, poseStack, detectedObject);
+                        // [RVP] 武器站锁与雷达锁同目标：导引头圈并入 BVR 框同锚点绘制
+                        //（武器站锁分支已跳过，保留"框内导引头圈"视觉且不再分离成双框）
+                        if (weaponUnit.getLockedEntity() == radarLocked
+                                && weaponUnit.isSeekerOn()
+                                && sensorType == WeaponUnitData.FireControlSensorType.RF) {
+                            GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 5, Color.RED, 0.05f, 0, 0);
+                            GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 4, Color.RED, 0.06f, 0, 0);
+                        }
                     }
                     poseStack.popPose();
                     drewLockBox = true;

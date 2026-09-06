@@ -86,6 +86,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `sub_type` | 可选子类型标记（如 `incendiary`），仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
 | `rvp_fire_control_sensor_mode` | 武器自身的火控传感器模式标记（字符串）。可选值：空（默认，不覆盖）/ `eo_ccip`（强制按电光传感器做 CCIP 弹道求解，常用于对地机炮）。 |
 | `fire_control_sensor_type_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的火控传感器类型。枚举值与本体 `WeaponUnitData.FireControlSensorType` 一致：`none` / `ir` / `rf` / `eo` / `loc` / `ccip`。适合“同一武器站切不同武器时，火控传感器模式也随武器变化”的场景。 |
+| `crosshair_style_override` | 可选，按当前武器覆盖所属 `WeaponUnit` 的 HUD 准星样式（与部件级 `crosshair_style` 同枚举）。枚举值与本体 `WeaponUnitData.CrosshairStyle` 一致：`none`（隐藏准星）/ `circle` / `square` / `cross` / `big_cross`。适合“同一武器站内不同挂架武器需要不同准星”的场景；未配置沿用武器站 `crosshair_style`。仅影响 HUD 准星，不影响开镜（scope）分划。 |
 | `seeker_color` | 可选，导引头圈 HUD 颜色覆盖（RGB 十六进制字符串，如 `"0x30FF30"` / `"#FFAA00"`）。配置后该武器被选中时导引头圈用此颜色绘制，锁定时统一红色指示；未配置走本体机型基色（直升机绿 / 固定翼白）。仅客户端渲染消费。 |
 | `parent_weapon_unit_aim_override` | 可选布尔，覆盖所属武器站的 `parent_weapon_unit_aim`：`true`=弹着点预测与准心锚定到母武器站，`false`=使用自身挂架位置；未写=继承站级静态配置。仅客户端消费（弹着点预测与准心显示锚定方向）。 |
 | `lock_tone_sound` | 可选，本武器锁定敌人时播放的导引头锁定音（`SoundEvent` 资源位置字符串，如 `"ywzj_rvp:ir_track_alarm"` / `"ywzj_vehicle:missile_launch"`）。不配置则消费方回退全局默认（`RVP_Sounds.IR_TRACK_ALARM`）。仅客户端消费（`RVP_ClientSeekerTone`）。 |

@@ -36,11 +36,8 @@ public class RVP_Keys {
     /** ARM target selection (next). */
     public static final KeyMapping ARM_SELECT_NEXT = key("arm_select_next", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET);
 
-    /** GPS target set (R key while in GPS weapon seat). */
-    public static final KeyMapping SET_GPS_TARGET = key("set_gps_target", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_R);
-
-    /** Clear GPS target. */
-    public static final KeyMapping CLEAR_GPS = key("clear_gps", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_L);
+    /** [RVP] GPS 目标改由 T 键模式切换 + 地图界面/照准锁定的 R 键（本体 fireControlLock）设置，
+     * 原独立的 SET_GPS_TARGET(R)/CLEAR_GPS(L) 键从未接线（死键），已移除。 */
     public static final KeyMapping DEPLOY_DEPLOYABLE_UAV = key("deploy_deployable_uav", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N);
     public static final KeyMapping SWITCH_DEPLOYABLE_UAV = key("switch_deployable_uav", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_M);
     /** Toggle UAV auto-loiter. */
@@ -78,8 +75,6 @@ public class RVP_Keys {
         event.register(DEBUG_OVERLAY);
         event.register(ARM_SELECT_PREV);
         event.register(ARM_SELECT_NEXT);
-        event.register(SET_GPS_TARGET);
-        event.register(CLEAR_GPS);
         event.register(DEPLOY_DEPLOYABLE_UAV);
         event.register(SWITCH_DEPLOYABLE_UAV);
         event.register(TOGGLE_UAV_LOITER);

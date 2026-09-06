@@ -136,8 +136,6 @@
   "commands.ywzj_rvp.debug.ahead.status": "[RVP] AHEAD debug logging: %s",
   "key.ywzj_rvp.arm_select_prev.desc": "ARM previous target",
   "key.ywzj_rvp.arm_select_next.desc": "ARM next target",
-  "key.ywzj_rvp.set_gps_target.desc": "Set GPS target",
-  "key.ywzj_rvp.clear_gps.desc": "Clear GPS target",
   "key.ywzj_rvp.deploy_deployable_uav.desc": "Deploy radar relay UAV",
   "key.ywzj_rvp.switch_deployable_uav.desc": "Switch radar relay UAV / parent vehicle",
   "key.ywzj_rvp.toggle_uav_loiter.desc": "Toggle UAV auto-loiter",

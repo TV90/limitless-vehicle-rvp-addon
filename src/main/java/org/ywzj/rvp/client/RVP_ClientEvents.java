@@ -64,6 +64,9 @@ import org.ywzj.rvp.network.C2SDeployDeployableUav;
 import org.ywzj.rvp.network.C2SSwitchDeployableUav;
 import org.ywzj.rvp.network.C2SToggleUavLoiter;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.config.RVP_DeployableUavConfig;
+import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
+import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.util.RVP_CcipUtil;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
@@ -181,30 +184,40 @@ public class RVP_ClientEvents {
 
         // HMD 模式切换：STT 状态下按 5 键先取消 STT 再进入 HMD
         while (RVP_Keys.HMD_TOGGLE.consumeClick()) {
-            if (LocalVehiclePlayer.instance == null) continue;
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            // [RVP] 真守卫：仅在载具且有武器站时 HMD 键才有意义。原判断 instance == null
+            // 对单例恒为假，导致单兵按 5（原版快捷栏键）也走 else 分支误弹 "HMD 关闭"。
+            if (lvp == null || !lvp.onVehicle() || lvp.getWeaponUnit() == null) {
+                continue;
+            }
             RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
             if (hmd.isHmdMode()) {
                 hmd.disable();
                 player.displayClientMessage(
                         Component.translatable("message.ywzj_rvp.hmd.off"), true);
             } else {
+                // [RVP] 无 HMS 雷达时完全静默：不进 HMD、不清 STT 锁定、不弹提示。
+                // 原代码 toggle() 失败仍弹 "hmd.off"，且在进入 HMD 前就误清了 STT 锁定。
+                if (hmd.getRadarHmdUnit(lvp.getWeaponUnit()) == null) {
+                    continue;
+                }
                 // 检查是否有 STT 锁定
-                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-                if (weaponUnit != null) {
-                    RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
-                    if (radar != null && radar.getLockedEntity() != null) {
-                        RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
-                        weaponUnit.setLockedEntity(null);
-                    }
-                    if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(LocalVehiclePlayer.instance.vehicle,
-                            mc.level != null ? mc.level.dimension().location() : null)) {
-                        RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
-                    }
+                WeaponUnit weaponUnit = lvp.getWeaponUnit();
+                RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+                if (radar != null && radar.getLockedEntity() != null) {
+                    RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
+                    weaponUnit.setLockedEntity(null);
+                }
+                if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(lvp.vehicle,
+                        mc.level != null ? mc.level.dimension().location() : null)) {
+                    RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
                 }
                 boolean on = hmd.toggle();
-                player.displayClientMessage(
-                        Component.translatable(on ? "message.ywzj_rvp.hmd.on" : "message.ywzj_rvp.hmd.off"),
-                        true);
+                // [RVP] 仅在 HMD 真正开启时提示；toggle 失败（理论上已被上方守卫挡住）静默
+                if (on) {
+                    player.displayClientMessage(
+                            Component.translatable("message.ywzj_rvp.hmd.on"), true);
+                }
             }
         }
         while (RVP_Keys.TOGGLE_LASER_DESIGNATION.consumeClick()) {
@@ -264,13 +277,32 @@ public class RVP_ClientEvents {
             }
         }
         while (RVP_Keys.DEPLOY_DEPLOYABLE_UAV.consumeClick()) {
-            RVP_Network.CHANNEL.sendToServer(new C2SDeployDeployableUav());
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            // [RVP] N 键守卫：在载具且该车配置了可部署无人机（deployable_uav_enabled）才发包。
+            // 单兵/未配置车辆静默——防无效包与服务端"未在载具/未配置"提示刷屏
+            // （actionbar 只有一条，会覆盖 SBW 等其它 mod 的按键反馈）。
+            // 配置缓存由 VehicleDataManagerMixin 在 VehicleDataManager.apply 时双端各自填充，客户端可读。
+            if (lvp != null && lvp.onVehicle()
+                    && RVP_DeployableUavConfigCache.get(lvp.vehicle.getVehicleId()).isConfigured()) {
+                RVP_Network.CHANNEL.sendToServer(new C2SDeployDeployableUav());
+            }
         }
         while (RVP_Keys.SWITCH_DEPLOYABLE_UAV.consumeClick()) {
-            RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            // [RVP] M 键守卫：仅要求在载具。客户端无法识别"当前载具是无人机实例"
+            // （RVP_LinkedUavStateTable 为服务端 UUID 表，无 S2C 同步），驾驶子机按 M 切回
+            // 母车必须放行；"无子机可切"等不适用场景由服务端静默兜底。
+            if (lvp != null && lvp.onVehicle()) {
+                RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
+            }
         }
         while (RVP_Keys.TOGGLE_UAV_LOITER.consumeClick()) {
-            RVP_Network.CHANNEL.sendToServer(new C2SToggleUavLoiter());
+            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+            // [RVP] F 键守卫：自身或关联子机配置了盘旋参数才发包；地面子机（如 96l6 雷达车）
+            // 无盘旋语义，静默，不再误报"未配置盘旋参数"。
+            if (lvp != null && lvp.onVehicle() && ywzj_rvp$loiterKeyApplicable(lvp.vehicle)) {
+                RVP_Network.CHANNEL.sendToServer(new C2SToggleUavLoiter());
+            }
         }
 
         RVP_ClientHitlState.tick(mc, player);
@@ -358,6 +390,26 @@ public class RVP_ClientEvents {
         }
         return lvp.vehicle.getPartUnit(RVP_WingSweepState.PART_MANUAL_ID).orElse(null) instanceof SwitchableUnit
                 && lvp.vehicle.getPartUnit(RVP_WingSweepState.PART_FORM_ID).orElse(null) instanceof SwitchableUnit;
+    }
+
+    /**
+     * [RVP] F 键（盘旋开关）客户端守卫：仅当"自身带盘旋配置"（AC130 空中炮艇 / 驾驶 suav 自身）
+     * 或"当前载具配置了可部署无人机且子机带盘旋配置"（母车放飞 suav 场景）时才视为适用。
+     * 地面子机（如 Buk-M3 / IRIS-T 的 96l6、irist_slm_tads 轮式雷达车）无盘旋配置 → 静默不发，
+     * 不再触发服务端"未配置盘旋参数"提示。
+     * 注意：客户端不可用 {@link org.ywzj.rvp.uav.RVP_DeployableUavService#getLinkedChild}
+     * 判子机（其内部要求 ServerLevel，客户端恒返回 empty），故子机盘旋能力按两侧均由
+     * VehicleDataManagerMixin 填充的配置缓存（子机载具 JSON 的 rvp_loiter_* 字段）判定。
+     */
+    private static boolean ywzj_rvp$loiterKeyApplicable(AbstractVehicle vehicle) {
+        // 场景一：当前载具自身配置了盘旋参数（rvp_loiter_enabled）
+        if (RVP_LoiterConfigCache.get(vehicle.getVehicleId()).isConfigured()) {
+            return true;
+        }
+        // 场景二：当前载具配置了可部署无人机，且其子机载具配置了盘旋参数
+        RVP_DeployableUavConfig uavConfig = RVP_DeployableUavConfigCache.get(vehicle.getVehicleId());
+        return uavConfig.isConfigured()
+                && RVP_LoiterConfigCache.get(uavConfig.vehicleId()).isConfigured();
     }
 
     private static void ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType type) {

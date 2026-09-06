@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.handler;
 
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
@@ -57,27 +56,7 @@ public class RVP_ClientArmTickHandler {
         RVP_ArmOverlay.render(event.getGuiGraphics());
     }
 
-    @SubscribeEvent
-    public static void onKeyInput(InputEvent.Key event) {
-        RVP_ClientArmState state = RVP_ClientArmState.getInstance();
-        if (!state.isActive()) {
-            RVP_ClientRadarLockState radarState = RVP_ClientRadarLockState.getInstance();
-            if (!radarState.isActive()) {
-                return;
-            }
-            while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {
-                radarState.selectPrev();
-            }
-            while (RVP_Keys.ARM_SELECT_NEXT.consumeClick()) {
-                radarState.selectNext();
-            }
-            return;
-        }
-        while (RVP_Keys.ARM_SELECT_PREV.consumeClick()) {
-            state.selectPrev();
-        }
-        while (RVP_Keys.ARM_SELECT_NEXT.consumeClick()) {
-            state.selectNext();
-        }
-    }
+    // [RVP] 原 onKeyInput（InputEvent.Key 中重复消费 ARM_SELECT_PREV/NEXT）已删除：
+    // 与 onClientTick 的消费逻辑完全重复，consumeClick 计数两处会互相抢清，
+    // 单一消费点在 onClientTick。
 }

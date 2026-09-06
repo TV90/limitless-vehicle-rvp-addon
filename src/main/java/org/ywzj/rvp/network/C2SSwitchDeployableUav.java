@@ -31,8 +31,9 @@ public class C2SSwitchDeployableUav {
                 return;
             }
             if (!(player.getVehicle() instanceof AbstractVehicle vehicle)) {
-                player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav.not_in_vehicle"), true);
-                                if (RVP_DebugFlags.UAV.isEnabled()) {
+                // [RVP] 不在载具：不适用场景，静默（客户端 M 键守卫已放行在载具的情况，此处仅兜底）。
+                // 不回"未在载具中"提示，避免覆盖其它 mod（如 SBW 切弹头）的 actionbar 反馈。
+                if (RVP_DebugFlags.UAV.isEnabled()) {
                     LOGGER.info("[RVP-UAV] {} 按M：不在载具上（getVehicle={}）",
                         player.getName().getString(),
                         player.getVehicle() == null ? "null" : player.getVehicle().getClass().getSimpleName());
@@ -57,9 +58,13 @@ public class C2SSwitchDeployableUav {
                 LOGGER.info("[RVP-UAV] {} 按M切到子载具: vehicleId={} instance=false 结果={}",
                     player.getName().getString(), vehicle.getVehicleId(), ok);
             }
-            player.displayClientMessage(Component.translatable(
-                    ok ? "message.ywzj_rvp.uav.switch_to_child_success" : "message.ywzj_rvp.uav.switch_to_child_failed"
-            ), true);
+            // [RVP] 切换失败（无关联子机等不适用场景）静默：失败多代表该车没有无人机，
+            // 属"键在这台车上没用"，不刷屏；成功提示照旧。切回母车的失败为真失败，保留提示。
+            if (ok) {
+                player.displayClientMessage(Component.translatable(
+                        "message.ywzj_rvp.uav.switch_to_child_success"
+                ), true);
+            }
         });
         ctx.setPacketHandled(true);
     }

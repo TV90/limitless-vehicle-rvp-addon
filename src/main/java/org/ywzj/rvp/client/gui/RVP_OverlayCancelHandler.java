@@ -30,20 +30,21 @@ public class RVP_OverlayCancelHandler {
 
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Pre event) {
-        // 探针：确认 ForgeGui 每帧是否在渲染 overlay、rvp_hit_indicator 是否在渲染列表
-        long now = System.currentTimeMillis();
-        if (now - lastProbeLog > 2000) {
-            lastProbeLog = now;
-            boolean contains = false;
-            StringBuilder sb = new StringBuilder();
-            for (var entry : GuiOverlayManager.getOverlays()) {
-                if (entry.id().getPath().equals("rvp_hit_indicator")) {
-                    contains = true;
+        // 探针：确认 ForgeGui 每帧是否在渲染 overlay、rvp_hit_indicator 是否在渲染列表。
+        // [RVP] 探针（含 overlay 列表遍历与 StringBuilder 拼接）仅在 HUD 调试开关开启时执行，
+        // 避免正常游戏时每 2 秒白做一次全列表遍历（开关：/rvpdebug flags hud）
+        if (RVP_DebugFlags.HUD.isEnabled()) {
+            long now = System.currentTimeMillis();
+            if (now - lastProbeLog > 2000) {
+                lastProbeLog = now;
+                boolean contains = false;
+                StringBuilder sb = new StringBuilder();
+                for (var entry : GuiOverlayManager.getOverlays()) {
+                    if (entry.id().getPath().equals("rvp_hit_indicator")) {
+                        contains = true;
+                    }
+                    sb.append(entry.id()).append(' ');
                 }
-                sb.append(entry.id()).append(' ');
-            }
-            // HUD overlay 注册探针（开关：/rvpdebug flags hud）
-            if (RVP_DebugFlags.HUD.isEnabled()) {
                 LOGGER.info("[RVP-Hud] overlay probe: size={} current={} containsHitIndicator={} list={}",
                         GuiOverlayManager.getOverlays().size(), event.getOverlay().id(), contains, sb);
             }

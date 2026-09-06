@@ -26,6 +26,14 @@ public class RVP_VehicleConfigSyncHandler {
     @SubscribeEvent
     public static void onDatapackSync(OnDatapackSyncEvent event) {
         Map<ResourceLocation, JsonElement> raw = RVP_VehicleExtendedConfigManager.INSTANCE.getRawVehicleJson();
+        // [RVP] 出弹队列同步独立于扩展配置载荷：即便 raw/payload 为空也必须下发队列表，
+        // 否则客户端将保留旧表/空表，出弹点退化为本体模板占位值（"时好时坏"来源之一）
+        S2CShootBoltQueueSync queueSync = new S2CShootBoltQueueSync();
+        if (event.getPlayer() != null) {
+            RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(event::getPlayer), queueSync);
+        } else {
+            RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), queueSync);
+        }
         if (raw.isEmpty()) {
             return;
         }
@@ -45,13 +53,6 @@ public class RVP_VehicleConfigSyncHandler {
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(event::getPlayer), packet);
         } else {
             RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
-        }
-        // [RVP] 出弹队列随数据同步一并发往客户端（载具 JSON 变化 → 队列重算 → 客户端刷新）
-        S2CShootBoltQueueSync queueSync = new S2CShootBoltQueueSync();
-        if (event.getPlayer() != null) {
-            RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(event::getPlayer), queueSync);
-        } else {
-            RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), queueSync);
         }
     }
 }

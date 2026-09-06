@@ -61,6 +61,18 @@ public final class RVP_ShootBoltQueueResolver {
     private static final Map<ResourceLocation, Map<String, Map<String, List<Bolt>>>> QUEUES = new ConcurrentHashMap<>();
     /** 编码/解码/重建的跨线程互斥锁（单人游戏下服务端主线程与客户端网络线程并发访问）。 */
     private static final Object QUEUE_LOCK = new Object();
+    /**
+     * [RVP] 队列表版本号：rebuild（数据重载预计算）与 decodeQueue（S2C 整表同步）每次
+     * 整表替换时递增。应用器（RVP_ShootBoltQueueApplier.ensureApplied）用它判断
+     * "已应用记录"是否过期——表一变，所有站的队列自动视为待重放。
+     */
+    private static final java.util.concurrent.atomic.AtomicLong TABLE_GENERATION =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** 目的：暴露当前队列表版本号，供应用器做"已应用记录是否过期"比对。 */
+    public static long getTableGeneration() {
+        return TABLE_GENERATION.get();
+    }
 
     private RVP_ShootBoltQueueResolver() {}
 
@@ -124,29 +136,56 @@ public final class RVP_ShootBoltQueueResolver {
     }
 
     /**
-     * 查询出弹队列。
+     * 查询出弹队列（武器站实例版）。
+     *
+     * <p>目的：本站 id 未命中时沿母武器站链逐级回退——与 {@code RVP_ShootBoltQueueApplier}
+     * 的 matchesStation 同口径，避免"条目配置在母站、实际开火的是子站"时查表永久 miss。</p>
+     *
+     * @return 命中的 Bolt 队列（只读语义，调用方不得修改）；整条链都无可用队列时返回 {@code null}
+     *         （调用方保持本体原 Bolt，即回退现状）。
+     */
+    @Nullable
+    public static List<Bolt> lookupQueue(ResourceLocation vehicleId, WeaponUnit station, String weaponKey) {
+        WeaponUnit current = station;
+        while (current != null) {
+            List<Bolt> queue = lookupQueueById(vehicleId, current.getId(), weaponKey);
+            if (queue != null) {
+                return queue;
+            }
+            current = current.getParentWeaponUnit();
+        }
+        return null;
+    }
+
+    /**
+     * 按站 id 查询出弹队列（查表段纳入 {@link #QUEUE_LOCK}）。
+     *
+     * <p>目的：S2CShootBoltQueueSync 的 decode 在网络线程 clear+重灌整表，旧实现无锁读
+     * 会撞上清空窗口拿到空表/半表，导致应用器误判"未命中"并把武器站粘滞在本体模板出弹点。</p>
      *
      * @return 命中的 Bolt 队列（只读语义，调用方不得修改）；该武器站没有可用的
      *         出弹队列时返回 {@code null}（调用方保持本体原 Bolt，即回退现状）。
      */
     @Nullable
-    public static List<Bolt> lookupQueue(ResourceLocation vehicleId, String stationId, String weaponKey) {
-        Map<String, Map<String, List<Bolt>>> stations = QUEUES.get(vehicleId);
-        if (stations == null) {
-            return null;
-        }
-        Map<String, List<Bolt>> perWeapon = stations.get(stationId);
-        if (perWeapon == null) {
-            return null;
-        }
-        // 目的：口径精确命中优先；未命中（如该站只有一把武器在环）回退该站任一队列
-        List<Bolt> exact = perWeapon.get(weaponKey);
-        if (exact != null && !exact.isEmpty()) {
-            return exact;
-        }
-        for (List<Bolt> queue : perWeapon.values()) {
-            if (queue != null && !queue.isEmpty()) {
-                return queue;
+    public static List<Bolt> lookupQueueById(ResourceLocation vehicleId, String stationId, String weaponKey) {
+        synchronized (QUEUE_LOCK) {
+            Map<String, Map<String, List<Bolt>>> stations = QUEUES.get(vehicleId);
+            if (stations == null) {
+                return null;
+            }
+            Map<String, List<Bolt>> perWeapon = stations.get(stationId);
+            if (perWeapon == null) {
+                return null;
+            }
+            // 目的：口径精确命中优先；未命中（如该站只有一把武器在环）回退该站任一队列
+            List<Bolt> exact = perWeapon.get(weaponKey);
+            if (exact != null && !exact.isEmpty()) {
+                return exact;
+            }
+            for (List<Bolt> queue : perWeapon.values()) {
+                if (queue != null && !queue.isEmpty()) {
+                    return queue;
+                }
             }
         }
         return null;
@@ -179,15 +218,16 @@ public final class RVP_ShootBoltQueueResolver {
         synchronized (QUEUE_LOCK) {
             QUEUES.clear();
             QUEUES.putAll(rebuilt);
+            // 目的：整表替换即递增版本号——应用器据此判断"已应用记录"过期并重放
+            TABLE_GENERATION.incrementAndGet();
         }
         int vehicles = rebuilt.size();
         int queues = 0;
         for (Map<String, Map<String, List<Bolt>>> stations : rebuilt.values()) {
-            for (Map<String, List<Bolt>> perWeapon : stations.values()) {
-                queues += perWeapon.size();
-            }
+            queues += stations.values().stream().mapToInt(Map::size).sum();
         }
-        LOGGER.info("[RVP] 出弹队列预计算完成：载具 {} 个，队列 {} 条", vehicles, queues);
+        LOGGER.info("[RVP] 出弹队列预计算完成：载具 {} 个，队列 {} 条（表版本 {}）",
+                vehicles, queues, TABLE_GENERATION.get());
     }
 
     /**
@@ -277,6 +317,15 @@ public final class RVP_ShootBoltQueueResolver {
                 }
                 if (!queue.isEmpty()) {
                     weaponQueues.put(weaponEntry.getKey(), queue);
+                    // [RVP] 逐队列输出预计算结果（首 Bolt 偏移/管长），让"表里算的是什么"直接可见，
+                    // 用于对照 /rvpdebug custommount bolts 的实际应用值
+                    Bolt first = queue.get(0);
+                    LOGGER.info("[RVP] 出弹队列预计算 vehicle={} station={} key={} bolts={} first=({},{},{}) 管长={}",
+                            vehicleId, stationId, weaponEntry.getKey(), queue.size(),
+                            String.format(java.util.Locale.ROOT, "%.3f", first.offset.x),
+                            String.format(java.util.Locale.ROOT, "%.3f", first.offset.y),
+                            String.format(java.util.Locale.ROOT, "%.3f", first.offset.z),
+                            String.format(java.util.Locale.ROOT, "%.3f", first.barrelLength));
                 }
             }
             if (!weaponQueues.isEmpty()) {
@@ -320,7 +369,7 @@ public final class RVP_ShootBoltQueueResolver {
         }
     }
 
-    /** 目的：从包缓冲解码并整表替换本地出弹队列（客户端侧数据入口）。 */
+    /** 目的：从包缓冲解码并整表替换本地出弹队列（客户端侧数据入口），替换后递增表版本号。 */
     public static void decodeQueue(net.minecraft.network.FriendlyByteBuf buf) {
         synchronized (QUEUE_LOCK) {
             QUEUES.clear();
@@ -354,6 +403,8 @@ public final class RVP_ShootBoltQueueResolver {
                     QUEUES.put(vehicleId, stations);
                 }
             }
+            // 目的：整表替换即递增版本号——应用器据此判断"已应用记录"过期并重放
+            TABLE_GENERATION.incrementAndGet();
         }
     }
 
@@ -405,7 +456,8 @@ public final class RVP_ShootBoltQueueResolver {
                 continue;
             }
             String weaponKey = currentWeaponKey(station);
-            List<Bolt> cached = lookupQueue(vehicle.getVehicleId(), station.getId(), weaponKey);
+            // 目的：与 RVP_ShootBoltQueueApplier 同口径（本站未命中沿母武器站链回退），dump 才能反映实际应用值
+            List<Bolt> cached = lookupQueue(vehicle.getVehicleId(), station, weaponKey);
             List<Bolt> applied = station.getBolts();
             sb.append("== 站 ").append(station.getId())
               .append(" 当前口径=").append(weaponKey).append("\n");

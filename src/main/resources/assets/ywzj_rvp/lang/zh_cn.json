@@ -164,8 +164,6 @@
   "tips.ywzj_rvp.gunner_spawner.profile.team": "阵营",
   "key.ywzj_rvp.arm_select_prev.desc": "ARM 上一个目标",
   "key.ywzj_rvp.arm_select_next.desc": "ARM 下一个目标",
-  "key.ywzj_rvp.set_gps_target.desc": "设置 GPS 目标点",
-  "key.ywzj_rvp.clear_gps.desc": "清除 GPS 目标点",
   "key.ywzj_rvp.deploy_deployable_uav.desc": "放飞分体式雷达车",
   "key.ywzj_rvp.switch_deployable_uav.desc": "切换分体式雷达车 / 母车",
   "key.ywzj_rvp.toggle_uav_loiter.desc": "切换无人机自动盘旋",
