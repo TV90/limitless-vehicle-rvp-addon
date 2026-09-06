@@ -2037,7 +2037,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
 | `radar_role` | 雷达角色：`all`（默认，可搜索可锁定）/ `search`（仅搜索，不可锁定）/ `fire_control`（火控雷达，多雷达时锁定优先）。 | `all` |
-| `scan_animation_mode` | 扫描动画模式：`mechanical`（默认，机械扫描线）/ `phase`（相位阵列扫描）。 | `mechanical` |
+| `scan_animation_mode` | 扫描模式：`phase`（走 RVP 雷达路线：全扇区 O(实体) 扫描 + 接触保活 + BVR 合并 + `scan_period_tick` 节流 + 合成扫描线动画 + 按扫描周期的搜索告警节奏）；**未配置或写其他值 = 纯本体行为，RVP 完全不干预**（2026-09-06 起删除 RVP 机械扫描支持，原"机械雷达补 RVP 弹体/接触保活"行为移除）。 | `mechanical` |
 | `nctr_mode` | NCTR 非合作目标识别模式：`NONE`（默认，关闭）/ `EARLY`（早期简化识别）/ `MODERN`（现代识别，写任意非 `NONE`/`EARLY` 值均可）。 | `NONE` |
 | `scan_period_tick` | 扫描周期（tick）。 | `0` |
 | `scan_line_when_locked` | 锁定时是否显示扫描线。 | `false` |

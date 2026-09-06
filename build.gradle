@@ -137,9 +137,14 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
     implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.5.10-all")
-    // ApricityUI（本体 AUI 适配后 VehicleModdingToolScreen 继承了 ApricityScreen，编译需要；
-    // 版本随本体 jarJar 的 AUI 版本对齐，当前本体 0.5.10 内嵌 1.2.4）
-    compileOnly 'com.sighs:ApricityUI-forge-1.20.1:1.2.4'
+    // ApricityUI（本体 AUI 适配后 VehicleModdingToolScreen 继承了 ApricityScreen，编译+dev 运行时需要；
+    // 版本随本体 jarJar 的 AUI 版本对齐，当前本体 0.5.10 内嵌 1.2.4）。
+    // 必须 fg.deobf：maven 工件是生产版 SRG 映射 jar，直接进 dev 运行时会
+    // NoSuchMethodError(MenuScreens.m_96206_) → DeferredWorkQueue 崩溃（2026-09-07）；
+    // 仅 compileOnly 时 fg.deobf 的本体 all jar 不把 jarJar 内嵌 AUI 解到 dev 类路径，
+    // EventSubclassTransformer 解析 ApricityScreen 父类失败 → CONSTRUCT 崩溃。
+    // 正式环境不嵌入（无 jarJar），AUI 仍由本体 jarJar 提供。
+    implementation fg.deobf('com.sighs:ApricityUI-forge-1.20.1:1.2.4')
     // sbw（联动兼容层：仅编译期引用，运行时由用户另行安装，不打包、不强制依赖。
     // 注：本体用 CurseMaven 的 modCompileOnly 接入，但 RVP 的 ForgeGradle 未注册该方法，
     // 故改用本地 libs 下 SBW jar + compileOnly fg.deobf 等价接入（SBW 同样不被嵌入、可选）。

@@ -151,8 +151,13 @@ public class VehicleAimAtOverlaySeekerColorMixin {
      * 该字段的 RVP 武器时，HUD 准星样式用武器 JSON 的覆盖值替换所属武器站的
      * {@code crosshair_style}——适配"同一武器站内不同挂架武器需要不同准星"。
      * 未配置该字段的武器（含本体武器）原样透传站级样式。
+     *
+     * <p>注意：本体对 {@code WeaponUnit.crosshairStyle} 的唯一 getfield 读取点在编译产物
+     * {@code lambda$render$2}（render 主体的 {@code ifPresent} lambda 内），不在
+     * {@code render} 主体——2026-09-07 dev runClient 实测 {@code method="render"} 注入
+     * {@code (0/1) succeeded} 崩溃，已改为与同文件其余注入一致的 {@code lambda$render$2}。</p>
      */
-    @WrapOperation(method = "render", remap = false, at = @At(value = "FIELD", remap = false,
+    @WrapOperation(method = "lambda$render$2", remap = false, at = @At(value = "FIELD", remap = false,
             target = "Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;crosshairStyle:Lorg/ywzj/vehicle/custom/part/data/WeaponUnitData$CrosshairStyle;"))
     private WeaponUnitData.CrosshairStyle rvp$crosshairStyleOverride(WeaponUnit aimingWeaponUnit,
                                                                      Operation<WeaponUnitData.CrosshairStyle> original) {

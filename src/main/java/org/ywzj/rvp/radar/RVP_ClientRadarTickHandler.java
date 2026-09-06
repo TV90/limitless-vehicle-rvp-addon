@@ -40,10 +40,11 @@ import java.util.Map;
  * <p>本体 {@link RadarUnit#tickDetect()}（vanilla）对所有雷达一律使用
  * {@link Radar#detectTargets}，要求目标 yaw 与雷达扫描线（{@code yRot}）偏差
  * 在 {@code yRotSpeed/2} 内——对相控阵雷达（{@code scan_animation_mode == "phase"}，
- * 无机械旋转跟踪线）几乎探测不到目标。原 mixin 对 phase 雷达改用
- * {@link Radar#scanTargets}（只要求 yaw 在 [yRotMin,yRotMax] 内、xRot 在扇区内，
- * 不要求跟踪线），并为所有雷达补入 RVP 弹体（本体按 {@code getBoundingBox().getSize() < 1}
- * 过滤掉小体积弹体）。</p>
+ * 无机械旋转跟踪线）几乎探测不到目标。本类对 phase 雷达改用
+ * {@link Radar#scanTargets} 语义的全扇区探测（只要求 yaw 在 [yRotMin,yRotMax] 内、
+ * xRot 在扇区内，不要求跟踪线）并补入 RVP 弹体（本体按 {@code getBoundingBox().getSize() < 1}
+ * 过滤掉小体积弹体）。2026-09-06 起未配置 phase 的雷达（mechanical/默认）RVP
+ * <b>完全不干预</b>，保持纯本体行为（vanilla tickDetect/tickTargets）。</p>
  *
  * <p>原 mixin 还 HEAD-cancel 了 {@code tickTargets}，用自己的接触保持寿命
  * （contactHoldTick / scanPeriodTick / 扫描周期）并清理出扇区/高度、死亡、
@@ -54,7 +55,7 @@ import java.util.Map;
  * <p>实体 {@code RadarUnit} 为纯 Forge 服务端启动的"带毒"目标不可再 mixin，本类以
  * 客户端 tick 事件在玩家驾驶载具上执行等价逻辑；本体 vanilla {@code tickDetect} 无法
  * 取消，仍会每 tick 执行（其 DETECT 网络包回写循环会带上本类 detect 的目标，延迟一
- * tick）。非 phase 雷达本体已处理常规目标，本类仅补 RVP 弹体。</p>
+ * tick）。非 phase 雷达本类完全不干预（纯本体行为）。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ClientRadarTickHandler {
@@ -112,27 +113,19 @@ public final class RVP_ClientRadarTickHandler {
             }
             RadarUnitData data = radar.getData();
             RadarUnitDataExt ext = data instanceof RadarUnitDataExt radarExt ? radarExt : null;
-            // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
-            tickContactHold(radar);
             boolean phaseMode = ext != null && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
             if (phaseMode) {
+                // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
+                tickContactHold(radar);
                 if (shouldSkipScan(radar, ext)) {
                     continue;
                 }
                 scanPhaseRadar(radar);
-            } else {
-                // 非 phase：本体 tickDetect 已用 detectTargets 处理常规目标，这里只补 RVP 弹体（带跟踪线）
-                Iterable<Entity> allEntities = vehicle.level() instanceof net.minecraft.client.multiplayer.ClientLevel cl
-                        ? cl.entitiesForRendering() : List.of();
-                List<Entity> entities = new ArrayList<>();
-                RVP_RadarScanHelper.appendRvpAmmoTargets(radar, entities, allEntities, true);
-                RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
-                RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
-                for (Entity entity : entities) {
-                    radar.detect(entity);
-                }
             }
-            // 雷达箔条判定（客户端）：锁定目标周围箔条超阈值 → 脱锁 + 目标禁锁期
+            // 未配置 phase 的雷达（mechanical/默认）= 纯本体行为：vanilla tickDetect/tickTargets 自行
+            // 探测，RVP 不再补 RVP 弹体/接触保活（2026-09-06 用户决定删除 RVP 机械扫描支持，
+            // 本体包/其他载具包的雷达不受 RVP 干预；scan_animation_mode 仅保留 phase 可选值）
+            // 雷达箔条判定（客户端）：锁定目标周围箔条超阈值 → 脱锁 + 目标禁锁期（phase/非 phase 雷达都生效）
             Entity locked = radar.getLockedEntity();
             if (locked != null && locked.isAlive()) {
                 RVP_ChaffJamHelper.tryJamLock(vehicle, radar, locked, vehicle.level().getGameTime());

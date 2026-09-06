@@ -73,7 +73,8 @@
     "EntityRenderDispatcherPhysicsOnlyMixin",
     "AbstractVehicleWeaponSoundMixin",
     "AbstractVehicleUavClientSwitchMixin",
-    "EntityContextEraStateMixin"
+    "EntityContextEraStateMixin",
+    "WarningReceiverSearchWarnMixin"
   ],
   "injectors": {
     "defaultRequire": 1

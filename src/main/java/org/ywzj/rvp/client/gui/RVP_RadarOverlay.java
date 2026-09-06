@@ -60,6 +60,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
     private static final int EXTERNAL_RADAR_LINE = 0xDDFFE000;
     private static final int EXTERNAL_RADAR_SECTOR = 0x44FFE000;
 
+    /** RWR 搜索接触机型文字的平顶淡出阈值（毫秒）：中继每 5 tick(250ms) 刷新 targets，
+     *  600ms 内恒全亮保证文字常亮不闪，之后 1000ms 渐隐。 */
+    private static final float SEARCH_TEXT_STEADY_MS = 600f;
+
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
@@ -209,7 +213,15 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                         int color = Color.GREEN;
                         if (warnTarget.warnType() == WarnType.RADAR_SEARCH) {
                             float timeDiff = (float) (System.currentTimeMillis() - warnTarget.receivedTime());
-                            float alpha = 1.0f - Math.min(1000f, timeDiff) / 1000f;
+                            // 平顶淡出（2026-09-06）：搜索告警 targets 由 RVP 中继每 5 tick(250ms) 独家
+                            // 刷新，600ms 内恒全亮保证机型文字常亮不闪；仅在中继停发（出探测表/
+                            // 雷达关机）后 600→1600ms 渐隐消失。原 1000ms 线性淡出会随刷新节奏闪烁。
+                            float alpha;
+                            if (timeDiff <= SEARCH_TEXT_STEADY_MS) {
+                                alpha = 1.0f;
+                            } else {
+                                alpha = 1.0f - Math.min(1000f, timeDiff - SEARCH_TEXT_STEADY_MS) / 1000f;
+                            }
                             int alphaInt = Math.max(4, (int) (alpha * 255));
                             color = (alphaInt << 24) | (Color.GREEN & 0x00FFFFFF);
                         }
