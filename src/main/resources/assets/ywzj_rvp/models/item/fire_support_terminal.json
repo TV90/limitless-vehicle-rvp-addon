@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "ywzj_rvp:item/fire_support_terminal"
+  }
+}

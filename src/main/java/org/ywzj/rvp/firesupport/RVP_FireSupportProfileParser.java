@@ -56,7 +56,7 @@ public final class RVP_FireSupportProfileParser {
         RVP_FireSupportProfile.CallStage call = parseCall(root, problems, path);
         RVP_FireSupportProfile.StrikeStage strike = parseStrike(root, problems, path);
         RVP_FireSupportProfile.Limits limits = parseLimits(root, problems, path);
-        Map<String, RVP_FireSupportProfile.Munition> munitions = parseMunitions(root, resolver, problems, path);
+        Map<String, RVP_FireSupportProfile.Munition> munitions = parseMunitions(root, resolver, limits, problems, path);
         Map<String, RVP_FireSupportProfile.FireMode> modes = parseModes(root, problems, path);
         Map<String, RVP_FireSupportProfile.PatternPreset> patterns = parsePatterns(root, limits, problems, path);
         return new RVP_FireSupportProfile(schema, translation, holder, call, strike, limits, munitions, modes, patterns);
@@ -134,7 +134,8 @@ public final class RVP_FireSupportProfileParser {
     }
 
     private static Map<String, RVP_FireSupportProfile.Munition> parseMunitions(JsonObject root,
-            RVP_FireSupportWeaponResolver resolver, RVP_FireSupportProblemCollector problems, String path) {
+            RVP_FireSupportWeaponResolver resolver, RVP_FireSupportProfile.Limits limits,
+            RVP_FireSupportProblemCollector problems, String path) {
         JsonArray array = RVP_FireSupportJson.array(root, "munitions", path, problems);
         if (array.size() < 1 || array.size() > 64) problems.add(path + ".munitions", "数量必须在 [1, 64] 内");
         Map<String, RVP_FireSupportProfile.Munition> out = new LinkedHashMap<>();
@@ -158,7 +159,12 @@ public final class RVP_FireSupportProfileParser {
                 // 调用本体实际武器索引解析器，禁止仅按资源路径猜测武器类型。
                 RVP_FireSupportResolvedWeapon weaponData = resolver.resolve(weapon);
                 if (weaponData == null) problems.add(p + ".weapon", "武器不存在或不是 RVP_WeaponData: " + weapon);
-                else factory.validateWeapon(weapon, weaponData, problems, p + ".weapon");
+                else {
+                    factory.validateWeapon(weapon, weaponData, problems, p + ".weapon");
+                    // 调用本项目炮火预算器：按 profile 最大顶层弹数审计生命期、毁伤和最坏实体展开。
+                    RVP_FireSupportWeaponBudget.validate(weaponData, limits.maxRoundsPerMission(),
+                            problems, p + ".weapon");
+                }
             }
             putUnique(out, id, new RVP_FireSupportProfile.Munition(id, key, weapon, rounds, type, data), p, problems);
         }

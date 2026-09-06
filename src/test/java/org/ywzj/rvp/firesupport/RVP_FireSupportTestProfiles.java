@@ -56,7 +56,8 @@ final class RVP_FireSupportTestProfiles {
     }
 
     static RVP_FireSupportResolvedWeapon projectileWeapon() {
-        return new RVP_FireSupportResolvedWeapon(RVP_EnumWeaponKind.MACHINEGUN, false, false, false);
+        return new RVP_FireSupportResolvedWeapon(RVP_EnumWeaponKind.MACHINEGUN, false, false, false,
+                1200, 0, false, 20.0F, 4.0F);
     }
 
     static RVP_FireSupportProfile parse() {

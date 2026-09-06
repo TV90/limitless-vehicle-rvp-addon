@@ -135,7 +135,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                     .forEach(entry -> parsed.add(RVP_ClientFireSupportProfile.parse(entry.getKey(), entry.getValue())));
         } catch (RuntimeException exception) {
             parsed.clear();
-            error = "PROFILE PARSE: " + exception.getMessage();
+            error = tr("gui.ywzj_rvp.fire_support.profile_parse_error", exception.getMessage());
         }
         profiles = List.copyOf(parsed);
         profileError = error;
@@ -163,7 +163,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (result == null) return;
         if (pendingCallNonce != null && pendingCallNonce.equals(result.nonce()) && !result.ceaseFire()) {
             pendingCallNonce = null;
-            resultMessage = result.accepted() ? "呼叫已接受" : "呼叫拒绝: " + result.reason();
+            resultMessage = result.accepted() ? tr("gui.ywzj_rvp.fire_support.call_accepted")
+                    : tr("gui.ywzj_rvp.fire_support.call_rejected", reason(result.reason()));
             if (result.accepted()) {
                 trackedMissionId = result.missionId();
                 callDeadlineTick = result.callDeadlineTick();
@@ -172,7 +173,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             }
         } else if (pendingCeaseNonce != null && pendingCeaseNonce.equals(result.nonce()) && result.ceaseFire()) {
             pendingCeaseNonce = null;
-            resultMessage = result.accepted() ? "停火命令传达中" : "停火拒绝: " + result.reason();
+            resultMessage = result.accepted() ? tr("gui.ywzj_rvp.fire_support.cease_pending")
+                    : tr("gui.ywzj_rvp.fire_support.cease_rejected", reason(result.reason()));
         }
     }
 
@@ -194,33 +196,34 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         int y = host.mapTop() + 7;
         graphics.fill(left, y, right, y + 18, 0xDD111820);
         graphics.fill(left, y, right, y + 1, ACCENT);
-        graphics.drawString(host.font(), "RVP 炮火支援终端", left + 5, y + 5, 0xFFFFFFFF, false);
+        graphics.drawString(host.font(), tr("gui.ywzj_rvp.fire_support.title"), left + 5, y + 5, 0xFFFFFFFF, false);
         y += 24;
         if (!profileError.isEmpty()) {
             drawTrimmed(host, graphics, profileError, left, y, right - left, 0xFFFF7777);
             return;
         }
         if (profiles.isEmpty()) {
-            drawTrimmed(host, graphics, "等待服务端配置 / 阶段 E profile", left, y, right - left, 0xFFFFCC77);
+            drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.waiting_profile"), left, y,
+                    right - left, 0xFFFFCC77);
             return;
         }
-        y = drawChoice(host, graphics, left, right, y, "配置", profile() == null ? "-" : label(profile().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, "弹种", munition() == null ? "-" : label(munition().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, "射击", mode() == null ? "-" : label(mode().translationKey()), mouseX, mouseY);
-        y = drawChoice(host, graphics, left, right, y, "落区", pattern() == null ? "-" : label(pattern().translationKey()), mouseX, mouseY);
+        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.profile"), profile() == null ? "-" : label(profile().translationKey()), mouseX, mouseY);
+        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.munition"), munition() == null ? "-" : label(munition().translationKey()), mouseX, mouseY);
+        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.fire_mode"), mode() == null ? "-" : label(mode().translationKey()), mouseX, mouseY);
+        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.pattern"), pattern() == null ? "-" : label(pattern().translationKey()), mouseX, mouseY);
         RVP_ClientFireSupportProfile.Pattern pattern = pattern();
         if (pattern != null) {
             for (RVP_ClientFireSupportProfile.Parameter spec : pattern.parameters().values()) {
                 y = drawParameter(host, graphics, left, right, y, spec, mouseX, mouseY);
             }
         }
-        y = drawValueRow(host, graphics, left, right, y, "方位", format(headingDegrees) + "°", mouseX, mouseY);
+        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.heading"), format(headingDegrees) + "°", mouseX, mouseY);
         int[] preview = previewPlan();
-        drawTrimmed(host, graphics, "预估 " + preview[0] + "-" + preview[1] + " 发 / 呼叫 " + preview[2] / 20.0 + "s",
+        drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.estimate", preview[0], preview[1], format(preview[2] / 20.0)),
                 left, y + 3, right - left, 0xFFB9C5D1);
         y += ROW_HEIGHT;
         boolean canCall = hasAnchor && heldTerminalHand() != null && pendingCallNonce == null;
-        drawButton(graphics, left, y, right, y + 18, canCall, "确认呼叫", mouseX, mouseY);
+        drawButton(graphics, left, y, right, y + 18, canCall, tr("gui.ywzj_rvp.fire_support.confirm"), mouseX, mouseY);
         y += 23;
         renderMissionStatus(host, graphics, left, right, y, mouseX, mouseY);
     }
@@ -235,23 +238,26 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (mission == null) return;
         long now = Minecraft.getInstance().level == null ? 0L : Minecraft.getInstance().level.getGameTime();
         String state = switch (mission.state()) {
-            case CALLING -> "呼叫中 " + secondsRemaining(callDeadlineTick, now);
-            case STRIKING -> "打击中";
-            case CEASE_FIRE_PENDING -> "停火传达 " + secondsRemaining(mission.ceaseFireEffectiveTick(), now);
-            case COMPLETED -> "任务完成";
-            case CANCELLED -> "任务取消: " + mission.reason();
-            case CEASED -> "已停火";
-            case FAILED -> "任务失败: " + mission.reason();
+            case CALLING -> tr("gui.ywzj_rvp.fire_support.state.calling", secondsRemaining(callDeadlineTick, now));
+            case STRIKING -> tr("gui.ywzj_rvp.fire_support.state.striking");
+            case CEASE_FIRE_PENDING -> tr("gui.ywzj_rvp.fire_support.state.cease_pending",
+                    secondsRemaining(mission.ceaseFireEffectiveTick(), now));
+            case COMPLETED -> tr("gui.ywzj_rvp.fire_support.state.completed");
+            case CANCELLED -> tr("gui.ywzj_rvp.fire_support.state.cancelled", reason(mission.reason()));
+            case CEASED -> tr("gui.ywzj_rvp.fire_support.state.ceased");
+            case FAILED -> tr("gui.ywzj_rvp.fire_support.state.failed", reason(mission.reason()));
         };
         drawTrimmed(host, graphics, state, left, y, right - left, 0xFFFFFFFF);
         y += 12;
-        drawTrimmed(host, graphics, "已发 " + mission.deliveredRounds() + " / " + mission.totalRounds(), left, y, right - left, 0xFFB9C5D1);
+        drawTrimmed(host, graphics, tr("gui.ywzj_rvp.fire_support.delivered",
+                mission.deliveredRounds(), mission.totalRounds()), left, y, right - left, 0xFFB9C5D1);
         y += 15;
         if (mission.state() == RVP_FireSupportMissionState.STRIKING
                 || mission.state() == RVP_FireSupportMissionState.CEASE_FIRE_PENDING) {
             boolean exactTerminalHeld = isBoundTerminalHeld();
             drawButton(graphics, left, y, right, y + 18, exactTerminalHeld && pendingCeaseNonce == null,
-                    exactTerminalHeld ? "请求停火" : "需手持本任务终端", mouseX, mouseY);
+                    exactTerminalHeld ? tr("gui.ywzj_rvp.fire_support.cease")
+                            : tr("gui.ywzj_rvp.fire_support.hold_bound_terminal"), mouseX, mouseY);
         }
     }
 
@@ -293,7 +299,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (!hasAnchor || munition == null || mode == null || pattern == null || hand == null) return;
         pendingCallNonce = UUID.randomUUID();
         boundTerminalInstance = readTerminalInstance(Minecraft.getInstance().player.getItemInHand(hand));
-        resultMessage = "正在提交呼叫…";
+        resultMessage = tr("gui.ywzj_rvp.fire_support.submitting");
         // 调用阶段 C 请求消息：只提交选择、锚点、方向和动态参数，派生值由服务端重算。
         RVP_Network.CHANNEL.sendToServer(new C2SRequestFireSupport(RVP_ClientFireSupportState.INSTANCE.revision(),
                 hand, munition.id(), mode.id(), pattern.id(), anchorX, anchorZ, headingDegrees,
@@ -304,7 +310,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (trackedMissionId == null || pendingCeaseNonce != null
                 || !isBoundTerminalHeld()) return;
         pendingCeaseNonce = UUID.randomUUID();
-        resultMessage = "正在请求停火…";
+        resultMessage = tr("gui.ywzj_rvp.fire_support.requesting_cease");
         // 调用阶段 C 停火消息：服务端重新核验所有者、阶段与绑定终端实例。
         RVP_Network.CHANNEL.sendToServer(new C2SRequestFireSupportCeaseFire(trackedMissionId, pendingCeaseNonce));
     }
@@ -369,7 +375,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         graphics.fill(handleX - 1, trackY - 2, handleX + 2, trackY + 4, 0xFFF6D68F);
         graphics.drawString(host.font(), "−", left + 4, y + 4, ACCENT, false);
         graphics.drawString(host.font(), "+", right - 10, y + 4, ACCENT, false);
-        drawTrimmed(host, graphics, spec.key() + " " + format(value) + spec.unit(), left + 15, y + 3, 58, 0xFFE8EEF5);
+        drawTrimmed(host, graphics, parameterLabel(spec.key()) + " " + format(value) + unit(spec.unit()),
+                left + 15, y + 3, 58, 0xFFE8EEF5);
         return y + ROW_HEIGHT;
     }
 
@@ -477,6 +484,24 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private double normalizeHeading(double value) { double out = value % 360.0; return out < 0 ? out + 360.0 : out; }
     private String format(double value) { return Math.abs(value - Math.rint(value)) < 1.0E-6 ? Long.toString(Math.round(value)) : String.format(java.util.Locale.ROOT, "%.1f", value); }
     private String label(String translationKey) { return Component.translatable(translationKey).getString(); }
+    /** @return 服务端稳定原因枚举对应的本地化文案。 */
+    private String reason(org.ywzj.rvp.firesupport.server.RVP_FireSupportEndReason reason) {
+        return tr("gui.ywzj_rvp.fire_support.reason." + reason.name().toLowerCase(java.util.Locale.ROOT));
+    }
+    /** @return 动态参数键对应的本地化短标签；未知扩展参数保留原键。 */
+    private String parameterLabel(String key) {
+        String translationKey = "gui.ywzj_rvp.fire_support.parameter." + key;
+        String translated = tr(translationKey);
+        return translated.equals(translationKey) ? key : translated;
+    }
+    /** @return profile 单位对应的本地化后缀；未知单位按原值显示。 */
+    private String unit(String unit) {
+        String translationKey = "gui.ywzj_rvp.fire_support.unit." + unit;
+        String translated = tr(translationKey);
+        return translated.equals(translationKey) ? unit : translated;
+    }
+    /** 调用原版翻译组件，把阶段 E 双语资源转换成当前语言字符串。 */
+    private static String tr(String key, Object... arguments) { return Component.translatable(key, arguments).getString(); }
     private String secondsRemaining(long deadline, long now) { return String.format(java.util.Locale.ROOT, "%.1fs", Math.max(0L, deadline - now) / 20.0); }
     private static <T> T at(List<T> values, int index) { return index >= 0 && index < values.size() ? values.get(index) : null; }
 }

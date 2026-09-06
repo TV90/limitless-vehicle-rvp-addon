@@ -43,7 +43,7 @@ class RVP_FireSupportProfileParserTest {
                         Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, RVP_FireSupportTestProfiles.validJson()), id -> null));
 
         RVP_FireSupportResolvedWeapon laser = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.LASER, false, false, false);
+                RVP_EnumWeaponKind.LASER, false, false, false, 1200, 0, false, 0.0F, 0.0F);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> RVP_FireSupportProfileParser.parseAll(
                         Map.of(ResourceLocation.fromNamespaceAndPath("rvp", "laser"), RVP_FireSupportTestProfiles.validJson()), id -> laser));

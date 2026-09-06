@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ywzj.example/schemas/fire_support/fire_support_profile.schema.json",
+  "title": "RVP Fire Support Profile",
+  "description": "Current schema_version 1 only. Runtime validation remains authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "display", "holder_policy", "limits", "munitions", "fire_modes", "patterns"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["translation_key"],
+      "properties": {
+        "translation_key": { "$ref": "#/$defs/translationKey" }
+      }
+    },
+    "holder_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_item"],
+      "properties": {
+        "required_item": { "$ref": "#/$defs/resourceLocation" },
+        "allowed_hands": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["main", "off"] },
+          "default": ["main", "off"]
+        }
+      }
+    },
+    "call_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_duration_ticks": { "type": "integer", "minimum": 1, "maximum": 72000, "default": 800 },
+        "cancel_on_player_death": { "const": true, "default": true },
+        "cancel_on_terminal_lost": { "const": true, "default": true },
+        "cancel_on_disconnect": { "type": "boolean", "default": true }
+      }
+    },
+    "strike_stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cease_fire_delay_ticks": { "type": "integer", "minimum": 0, "maximum": 72000, "default": 80 }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_target_distance_m",
+        "max_target_distance_m",
+        "max_rounds_per_mission",
+        "max_active_missions_per_player",
+        "max_active_missions_global",
+        "request_cooldown_ticks",
+        "max_mission_duration_ticks",
+        "max_loaded_chunks_per_mission",
+        "max_parameter_count"
+      ],
+      "properties": {
+        "min_target_distance_m": { "type": "number", "minimum": 0 },
+        "max_target_distance_m": { "type": "number", "minimum": 0, "maximum": 16384 },
+        "max_rounds_per_mission": { "type": "integer", "minimum": 1, "maximum": 512 },
+        "max_active_missions_per_player": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "max_active_missions_global": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "request_cooldown_ticks": { "type": "integer", "minimum": 0 },
+        "max_mission_duration_ticks": { "type": "integer", "minimum": 1 },
+        "max_loaded_chunks_per_mission": { "type": "integer", "minimum": 1 },
+        "max_parameter_count": { "type": "integer", "minimum": 1, "maximum": 32 }
+      }
+    },
+    "munitions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/munition" }
+    },
+    "fire_modes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/fireMode" }
+    },
+    "patterns": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/pattern" }
+    }
+  },
+  "$defs": {
+    "resourceLocation": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_./-]+$"
+    },
+    "localId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "translationKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "parameterSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "default", "min", "max", "step", "unit"],
+      "properties": {
+        "type": { "const": "double" },
+        "default": { "type": "number", "exclusiveMinimum": 0 },
+        "min": { "type": "number", "exclusiveMinimum": 0 },
+        "max": { "type": "number", "exclusiveMinimum": 0 },
+        "step": { "type": "number", "exclusiveMinimum": 0 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 32 }
+      }
+    },
+    "verticalDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "rvp:vertical_projectile" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "spawn_height_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 120 },
+            "entry_speed_m_per_tick": { "type": "number", "minimum": 0, "maximum": 64, "default": 0 },
+            "preload_ticks": { "type": "integer", "minimum": 0, "maximum": 1200, "default": 10 },
+            "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 }
+          }
+        }
+      }
+    },
+    "munition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "weapon", "rounds_per_unit", "delivery"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "weapon": { "$ref": "#/$defs/resourceLocation" },
+        "rounds_per_unit": { "type": "integer", "minimum": 1, "maximum": 512 },
+        "delivery": { "$ref": "#/$defs/verticalDelivery" }
+      }
+    },
+    "baseRounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_multiplier", "rounding"],
+      "properties": {
+        "base_multiplier": { "type": "number", "exclusiveMinimum": 0 },
+        "rounding": { "const": "ceil" }
+      }
+    },
+    "randomRounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["random_min", "random_max"],
+      "properties": {
+        "random_min": { "type": "integer", "minimum": 1 },
+        "random_max": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "fixedRounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixed"],
+      "properties": {
+        "fixed": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "rounds"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "start_delay_ticks": { "type": "integer", "minimum": 0, "default": 0 },
+        "rounds": {
+          "oneOf": [
+            { "$ref": "#/$defs/baseRounds" },
+            { "$ref": "#/$defs/randomRounds" },
+            { "$ref": "#/$defs/fixedRounds" }
+          ]
+        },
+        "interval_ticks": { "type": "integer", "minimum": 1 },
+        "duration_ticks": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        { "required": ["interval_ticks"], "not": { "required": ["duration_ticks"] } },
+        { "required": ["duration_ticks"], "not": { "required": ["interval_ticks"] } }
+      ]
+    },
+    "fireMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "phases"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "call_duration_multiplier": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 1 },
+        "dispersion_multiplier": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 1 },
+        "phases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/phase" }
+        }
+      }
+    },
+    "pointPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "type", "data"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "type": { "const": "rvp:point" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parameters"],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["radius_m"],
+              "properties": { "radius_m": { "$ref": "#/$defs/parameterSpec" } }
+            }
+          }
+        }
+      }
+    },
+    "linePattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "type", "data"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "type": { "const": "rvp:line" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parameters"],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["length_m", "width_m"],
+              "properties": {
+                "length_m": { "$ref": "#/$defs/parameterSpec" },
+                "width_m": { "$ref": "#/$defs/parameterSpec" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "creepingPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "translation_key", "type", "data"],
+      "properties": {
+        "id": { "$ref": "#/$defs/localId" },
+        "translation_key": { "$ref": "#/$defs/translationKey" },
+        "type": { "const": "rvp:creeping" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parameters"],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["length_m", "width_m", "step_m"],
+              "properties": {
+                "length_m": { "$ref": "#/$defs/parameterSpec" },
+                "width_m": { "$ref": "#/$defs/parameterSpec" },
+                "step_m": { "$ref": "#/$defs/parameterSpec" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "pattern": {
+      "oneOf": [
+        { "$ref": "#/$defs/pointPattern" },
+        { "$ref": "#/$defs/linePattern" },
+        { "$ref": "#/$defs/creepingPattern" }
+      ]
+    }
+  }
+}

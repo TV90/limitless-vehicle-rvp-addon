@@ -16,6 +16,8 @@ public final class RVP_FireSupportProfileSyncService {
 
     @SubscribeEvent
     public static void onDatapackSync(OnDatapackSyncEvent event) {
+        // 调用本项目两阶段 profile 发布：保证本体武器索引完成后才做武器交叉引用与预算校验。
+        RVP_FireSupportProfileManager.INSTANCE.publishPreparedCandidates();
         // 调用本项目 profile 管理器和网络快照编码器：同步同一次原子发布的 revision 与规范化内容。
         S2CFireSupportProfileSnapshot packet = S2CFireSupportProfileSnapshot.from(
                 RVP_FireSupportProfileManager.INSTANCE.snapshot());

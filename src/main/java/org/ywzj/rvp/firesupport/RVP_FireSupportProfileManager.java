@@ -7,6 +7,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraftforge.event.AddReloadListenerEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
@@ -25,6 +26,8 @@ public final class RVP_FireSupportProfileManager
     /** 全局管理器实例。 */ public static final RVP_FireSupportProfileManager INSTANCE = new RVP_FireSupportProfileManager();
     /** 配置日志。 */ private static final Logger LOGGER = LogUtils.getLogger();
     /** 当前原子发布的不可变快照。 */ private volatile RVP_FireSupportSnapshot snapshot = RVP_FireSupportSnapshot.empty();
+    /** 等待本体武器索引完成同轮 reload 后再交叉校验的候选 JSON；null 表示没有待发布批次。 */
+    private Map<ResourceLocation, JsonElement> pendingCandidates;
 
     private RVP_FireSupportProfileManager() {}
 
@@ -35,10 +38,11 @@ public final class RVP_FireSupportProfileManager
     }
 
     @Override
-    protected void apply(Map<ResourceLocation, JsonElement> candidates, ResourceManager resourceManager, ProfilerFiller profiler) {
-        if (!tryPublish(candidates, RVP_FireSupportProfileManager::resolveIndexedWeapon)) {
-            LOGGER.error("炮火支援 profile 重载整批失败，继续使用 revision {} 的旧快照", snapshot.revision());
-        }
+    protected synchronized void apply(Map<ResourceLocation, JsonElement> candidates,
+                                      ResourceManager resourceManager, ProfilerFiller profiler) {
+        // 本体武器索引与自定义 listener 的 apply 顺序没有依赖保证；先冻结候选，稍后统一交叉校验。
+        pendingCandidates = Map.copyOf(candidates);
+        LOGGER.info("已准备 {} 个炮火支援 profile 候选，等待本体武器索引完成", candidates.size());
     }
 
     /**
@@ -60,9 +64,30 @@ public final class RVP_FireSupportProfileManager
     /** @return 当前不可变快照。 */
     public RVP_FireSupportSnapshot snapshot() { return snapshot; }
 
+    /**
+     * 在本体同轮资源索引已经可见后发布候选批次。
+     * 候选在尝试前即从 pending 槽取走；非法数据只记录一次并继续保留旧快照。
+     */
+    public synchronized boolean publishPreparedCandidates() {
+        Map<ResourceLocation, JsonElement> candidates = pendingCandidates;
+        if (candidates == null) return true;
+        pendingCandidates = null;
+        boolean published = tryPublish(candidates, RVP_FireSupportProfileManager::resolveIndexedWeapon);
+        if (!published) {
+            LOGGER.error("炮火支援 profile 重载整批失败，继续使用 revision {} 的旧快照", snapshot.revision());
+        }
+        return published;
+    }
+
     @SubscribeEvent
     public static void onAddReloadListener(AddReloadListenerEvent event) {
         event.addListener(INSTANCE);
+    }
+
+    /** 初次专服资源加载完成后发布候选；此时本体武器索引已经构建完毕。 */
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        INSTANCE.publishPreparedCandidates();
     }
 
     private static RVP_FireSupportResolvedWeapon resolveIndexedWeapon(ResourceLocation weaponId) {
