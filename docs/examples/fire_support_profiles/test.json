@@ -123,6 +123,22 @@
           "heading_jitter_deg": 0.0
         }
       }
+    },
+    {
+      "id": "9m723",
+      "translation_key": "fire_support.munition.rvp.9m723",
+      "weapon": "rvp:9k720_9m723",
+      "rounds_per_unit": 2,
+      "registration_phase_enabled": false,
+      "delivery": {
+        "type": "rvp:vertical_projectile",
+        "data": {
+          "spawn_height_above_impact_m": 512.0,
+          "entry_speed_m_per_tick": 4.0,
+          "preload_ticks": 20,
+          "heading_jitter_deg": 0.0
+        }
+      }
     }
   ],
   "fire_modes": [
