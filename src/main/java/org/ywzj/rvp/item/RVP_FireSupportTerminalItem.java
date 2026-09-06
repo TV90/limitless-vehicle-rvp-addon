@@ -1,19 +1,18 @@
 package org.ywzj.rvp.item;
 
+import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportTerminalIdentity;
-
-import java.util.List;
 
 /** 固定注册的炮火支援终端物品；任务权限与实例身份始终由服务端复核。 */
 public final class RVP_FireSupportTerminalItem extends Item {

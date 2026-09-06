@@ -15,6 +15,18 @@ class RVP_FireSupportArchitectureTest {
     private static final Path FIRE_SUPPORT_ROOT = Path.of("src/main/java/org/ywzj/rvp/firesupport");
 
     @Test
+    void fireSupportSourcesUseResponsibilityPackages() throws IOException {
+        try (Stream<Path> directChildren = Files.list(FIRE_SUPPORT_ROOT)) {
+            assertFalse(directChildren.anyMatch(path -> path.toString().endsWith(".java")),
+                    "炮火支援根包不得继续堆放未分层 Java 源文件");
+        }
+        for (String packageName : List.of("api", "config", "data", "delivery", "pattern", "schedule", "server")) {
+            assertTrue(Files.isDirectory(FIRE_SUPPORT_ROOT.resolve(packageName)),
+                    "缺少炮火支援职责包: " + packageName);
+        }
+    }
+
+    @Test
     void commonFireSupportDomainDoesNotImportClientTypesOrHardCodeWeaponPaths() throws IOException {
         for (Path source : javaSources(FIRE_SUPPORT_ROOT)) {
             String text = Files.readString(source);

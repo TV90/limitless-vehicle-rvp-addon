@@ -1,8 +1,9 @@
 package org.ywzj.rvp.firesupport.server;
 
-import net.minecraft.commands.Commands;
-import net.minecraft.commands.arguments.ResourceLocationArgument;
+import java.util.UUID;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -10,15 +11,14 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryContext;
+import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryResult;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportImpactPoint;
+import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
+import org.ywzj.rvp.firesupport.delivery.RVP_VerticalProjectileDelivery;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.firesupport.RVP_FireSupportDeliveryContext;
-import org.ywzj.rvp.firesupport.RVP_FireSupportDeliveryResult;
-import org.ywzj.rvp.firesupport.RVP_FireSupportDeliveryTypes;
-import org.ywzj.rvp.firesupport.RVP_FireSupportImpactPoint;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
-
-import java.util.UUID;
 
 /** 阶段 B 游戏内验收入口：由管理员玩家在指定已加载坐标投下一发真实 RVP 弹体。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)

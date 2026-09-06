@@ -1,12 +1,11 @@
 package org.ywzj.rvp.client.firesupport;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
-import org.ywzj.rvp.firesupport.RVP_FireSupportPatternTypes;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
+import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 
 /** 客户端落区预览注册表；按几何类型扩展，不在 Screen 中按预设 ID 分支。 */
 public final class RVP_FireSupportPreviewTypes {

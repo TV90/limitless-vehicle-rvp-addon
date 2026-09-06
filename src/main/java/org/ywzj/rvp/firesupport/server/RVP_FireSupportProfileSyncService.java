@@ -4,10 +4,10 @@ import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
-import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.firesupport.RVP_FireSupportProfileManager;
-import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileManager;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
+import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.RVP_MOD;
 
 /** 在玩家登录和成功 reload 同步服务端权威 profile revision 与规范化内容。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)

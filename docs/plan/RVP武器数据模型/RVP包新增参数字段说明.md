@@ -2158,23 +2158,237 @@ Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
 
 ---
 
-## 6 Forge 配置（config 文件）
+## 6 炮火支援配置文件（`fire_support_profiles`）
+
+炮火支援 profile 位于载具包：
+
+```text
+data/<namespace>/fire_support_profiles/<path>.json
+```
+
+资源 ID 为 `<namespace>:<path>`。系统只接受 `schema_version: 1`，严格拒绝未知字段和旧键；同一轮任一 profile 非法会导致整批不发布并保留旧 revision。完整技术语义、调参建议和排障见 `docs/RVP_item/RVP炮火支援技术文档与调参指南_20260906.md`，机器可读约束见 `docs/schemas/fire_support/fire_support_profile.schema.json`。
+
+### 6.1 顶层结构
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `schema_version` | 是 | 当前只能为 `1`。 |
+| `display.translation_key` | 是 | profile 的 UI 本地化键，不参与权限或行为判断。 |
+| `holder_policy` | 是 | 新呼叫和停火时的物品/手校验。 |
+| `call_stage` | 否 | 呼叫阶段时长与取消条件。 |
+| `strike_stage` | 否 | 打击阶段停火延迟。 |
+| `limits` | 是 | 距离、任务、区块与动态参数预算。 |
+| `munitions` | 是 | 1～64 个弹种定义。 |
+| `fire_modes` | 是 | 1～32 个射击模式。 |
+| `patterns` | 是 | 1～32 个落区预设。 |
+
+`id` 和参数键只能使用小写简单标识；`weapon`、`required_item`、`type` 等资源 ID 必须写完整 `namespace:path`。
+
+### 6.2 `holder_policy`、`call_stage` 与 `strike_stage`
+
+| 字段 | 默认值 | 范围与生效条件 |
+| --- | --- | --- |
+| `holder_policy.required_item` | 无 | 必填。提交呼叫时请求手必须实际持有此物品；停火还要求是任务绑定的同一终端实例。 |
+| `holder_policy.allowed_hands` | `["main","off"]` | 至少一项，只允许 `main`、`off` 且不可重复。 |
+| `call_stage.base_duration_ticks` | `800` | 1～72000 Tick；实际呼叫时长为 `ceil(本值 × fire_mode.call_duration_multiplier)`。 |
+| `call_stage.cancel_on_player_death` | `true` | 当前 schema 必须为 `true`，只在 `CALLING` 生效。 |
+| `call_stage.cancel_on_terminal_lost` | `true` | 当前 schema 必须为 `true`；终端离开玩家物品栏或实例不再唯一时取消呼叫。 |
+| `call_stage.cancel_on_disconnect` | `true` | 只在 `CALLING` 生效；可设 `false`。 |
+| `strike_stage.cease_fire_delay_ticks` | `80` | 0～72000 Tick；停火接受后到截断未生成弹的延迟。已生成弹体不删除。 |
+
+### 6.3 `limits`
+
+| 字段 | 解析器默认值 | 约束 | 说明 |
+| --- | ---: | --- | --- |
+| `min_target_distance_m` | `0` | `>= 0` | 玩家到目标的最小 X/Z 水平距离。 |
+| `max_target_distance_m` | `2048` | `>= min` 且 `<= 16384` | 最大 X/Z 水平距离。 |
+| `max_rounds_per_mission` | `96` | 1～512 | 单任务计划顶层弹数上限。 |
+| `max_active_missions_per_player` | `1` | 正数且不大于全局值 | 单玩家活动任务上限。 |
+| `max_active_missions_global` | `16` | 1～64 | 全服活动任务上限。 |
+| `request_cooldown_ticks` | `100` | `>= 0` | 一次呼叫成功接受后到下次成功请求的冷却。 |
+| `max_mission_duration_ticks` | `2400` | `>= 1` | 从任务接受到计划末弹的最大 Tick 数，包含呼叫阶段。 |
+| `max_loaded_chunks_per_mission` | `8` | `>= 1` | 单任务累计登记的唯一落点 Chunk 上限。 |
+| `max_parameter_count` | `16` | 1～32 | 单个 pattern 可声明/请求的动态参数数。 |
+
+Schema 和正式示例要求 `limits` 全部字段显式填写，不建议依赖解析器默认值。
+
+### 6.4 `munitions[]` 及与 `weapons` 的联动
+
+| 字段 | 默认值/范围 | 说明 |
+| --- | --- | --- |
+| `id` | 必填、profile 内唯一 | UI 选择 ID，不是武器资源 ID。 |
+| `translation_key` | 必填 | 弹种显示键。 |
+| `weapon` | 必填 | 指向本体实际武器索引中的 `RVP_WeaponData`，即 `data/<namespace>/weapons/<path>.json` 对应的 `<namespace>:<path>`。 |
+| `rounds_per_unit` | 必填，1～512 | 一基数的顶层逻辑弹体数量。 |
+| `registration_phase_enabled` | `true` | 为 `false` 时跳过模式中所有 `registration_phase: true` 的阶段。 |
+| `delivery.type` | 必填 | 当前只注册 `rvp:vertical_projectile`。 |
+| `delivery.data` | 必填对象 | 该投送类型的参数。 |
+
+`weapon` 引用在 profile 发布时通过本体权威武器索引解析，禁止按路径名猜类型。`rvp:vertical_projectile` 不接受 `LASER`、`TARGETING_POD` 等非实体弹体类型，运行时还要求相应 weapon kind 有 RVP 类型化实体工厂。
+
+炮火 profile 与 `weapons` 的职责边界如下：
+
+| 行为 | 数据来源 |
+| --- | --- |
+| 任务弹数 | `rounds_per_unit` × `fire_modes[].phases[].rounds`；不读取武器弹仓。 |
+| 发射时序 | `call_stage`、`fire_modes[].phases[]`；不读取 `shoot_interval`、`fire_data.fire_mode`、`burst_count`。 |
+| 计划落点散布 | `patterns[]` 与 `fire_modes[].dispersion_multiplier`；不读取 `fire_data.spread`。 |
+| 生成高度和初始入场速度 | `delivery.data`；速度为 `0` 时才回退到武器解析初速。 |
+| 实体类型和生成后运动 | `weapons` 的类型、`projectile_data`、重力、阻力、发动机、最大速度等。 |
+| 碰撞、引信和毁伤 | `weapons` 的 `collision_data`、`fuse_data`、`detonate_data`。 |
+| 特效、雷达杂项 | `weapons` 的 `effects_data`、`misc_data`。 |
+| 制导 | 仍读取 `guidance_data`，但炮火上下文没有来源载具、武器站、锁定目标或持续客户端输入。 |
+| 子弹药 | 由 `weapons.submunition_data` 真实执行，并参与炮火武器预算审计。 |
+| 装填、弹药与后坐力 | 炮火直接生成弹体，不经过载具开火链，因此 `reload`、`max_capacity`、弹药物品、后坐力和热量不限制任务。 |
+
+HITL/操作手制导武器可通过静态 profile 校验，但不代表持续制导在无载具上下文可用；应先用 `/rvpdebug firesupportprobe <weapon> [target]` 实测。`fire_data.canister_count` 不改变任务顶层弹数，不得用它替代 `rounds_per_unit` 或子弹药配置。
+
+profile 发布还会从武器数据审计：生命期 1～72000 Tick、单枚直接子实体不超过 4096、主爆炸半径不超过 512 格、主爆炸伤害不超过 1,000,000,000，以及 `max_rounds_per_mission × (1 + 直接子实体数)` 不超过 `Integer.MAX_VALUE`。直接子实体数来自各 `submunition_data.releases[]` 的释放事件数与 `payloads[].count`，使用饱和运算；嵌套子弹药链仍需作者另行压测。
+
+### 6.5 `delivery.type: "rvp:vertical_projectile"`
+
+| `delivery.data` 字段 | 默认值 | 范围 | 说明 |
+| --- | ---: | --- | --- |
+| `spawn_height_above_impact_m` | `120` | `(0, 2048]` | 计划 X/Z 高度图地面上方的生成高度；高地空间不足时钳制到世界顶端内侧。 |
+| `entry_speed_m_per_tick` | `0` | `[0, 64]` | 正数直接作为初速度；`0` 使用武器按 kind 解析的初速。 |
+| `preload_ticks` | `10` | `[0, 1200]` | 传入 Chunk 租约接口的预加载窗口。当前任务循环到计划 Tick 才首次调用投送，调大此值不会使任务提前申请 Ticket。 |
+| `heading_jitter_deg` | `0` | `[0, 45]` | 相对竖直向下的最大随机倾角，不是任务落区方向角。 |
+
+投送按落点 Chunk 建立短租约，Chunk 达到 entity-ticking 后才读取高度图和生成弹体。系统硬预算为每 Tick 最多成功生成 8 枚顶层炮火弹、每 Tick 最多新增 24 个 Ticket、计划 Tick 后最多等待 Chunk 1200 Tick；同一普通生成失败连续 20 次则任务失败。
+
+### 6.6 `fire_modes[]` 与 `phases[]`
+
+| 模式字段 | 默认值/范围 | 说明 |
+| --- | --- | --- |
+| `id` | 必填且唯一 | 仅作为选择 ID；Java 不按 `rapid`、`effect` 等名称分支。 |
+| `translation_key` | 必填 | 模式显示键。 |
+| `call_duration_multiplier` | `1`，`(0,100]` | 呼叫基准时长倍率。 |
+| `dispersion_multiplier` | `1`，`(0,100]` | 对 pattern 的全部几何尺寸统一乘算。 |
+| `phases` | 1～16 项 | 按声明顺序解释。 |
+
+| 阶段字段 | 默认值/约束 | 说明 |
+| --- | --- | --- |
+| `id` | 必填、模式内唯一 | 阶段 ID。 |
+| `translation_key` | 必填 | 阶段显示键。 |
+| `registration_phase` | `false` | 标记为可被弹种关闭的试射阶段。 |
+| `start_delay_ticks` | `0`、不得为负 | 首个已包含阶段相对打击开始；后续阶段相对上一已包含阶段末弹。 |
+| `rounds.base_multiplier` + `rounding` | 三选一 | `ceil(rounds_per_unit × base_multiplier)`；`rounding` 只能为 `ceil`。 |
+| `rounds.random_min` + `random_max` | 三选一 | 服务端权威 seed 的正整数闭区间。 |
+| `rounds.fixed` | 三选一 | 固定正整数弹数。 |
+| `interval_ticks` | 与 duration 二选一，`> 0` | 固定相邻弹间隔。 |
+| `duration_ticks` | 与 interval 二选一，`>= 0` | 阶段首末弹跨度；中间弹按比例四舍五入到 Tick。 |
+
+完整计划满足：
+
+```text
+callTicks = ceil(base_duration_ticks × call_duration_multiplier)
+phaseStart(first) = start_delay_ticks
+phaseStart(later) = previousPhaseLastTick + start_delay_ticks
+missionLast = callTicks + finalPhaseLastTick
+```
+
+只有 1 发的阶段总在阶段起点执行，`duration_ticks` 不会额外延后。最坏计划弹数不得超过 `max_rounds_per_mission`，`missionLast` 不得超过 `max_mission_duration_ticks`。
+
+### 6.7 `patterns[]` 与 `data.parameters`
+
+| pattern type | 必须且只能包含的参数 | 几何语义 |
+| --- | --- | --- |
+| `rvp:point` | `radius_m` | 锚点圆内按面积均匀随机。 |
+| `rvp:line` | `length_m`、`width_m` | 以锚点为中心的有向矩形内均匀随机。 |
+| `rvp:creeping` | `length_m`、`width_m`、`step_m` | 从锚点沿正方向分步推进，横向在宽度内随机。 |
+
+每个参数规格字段：
+
+| 字段 | 约束 | 说明 |
+| --- | --- | --- |
+| `type` | 只能为 `double` | 当前唯一参数类型。 |
+| `default` | `min <= default <= max` | 客户端初始值。 |
+| `min` | `> 0` | 请求下界。 |
+| `max` | `>= min` | 请求上界。 |
+| `step` | `> 0` 且不大于范围宽度 | 请求值必须从 `min` 起按步长对齐。 |
+| `unit` | 非空 | 仅用于 UI；`m` 在当前实现按格使用。 |
+
+服务端要求请求参数键集合与预设完全相同，不会静默补键或夹取非法值。所有几何尺寸先乘所选模式的 `dispersion_multiplier`。方向角 `0°` 为 `+Z`、`90°` 为 `+X`；条状以锚点居中，徐进以锚点为起点向正方向推进。落点由服务端 seed 和全局弹序号确定，可复现但客户端预览不代表最终爆点：武器的入场倾角、运动学、制导、碰撞和引信仍可能使真实爆点偏离计划 X/Z。
+
+### 6.8 最小示例
+
+```json
+{
+  "schema_version": 1,
+  "display": { "translation_key": "fire_support_profile.example.default" },
+  "holder_policy": {
+    "required_item": "ywzj_rvp:fire_support_terminal",
+    "allowed_hands": ["main", "off"]
+  },
+  "limits": {
+    "min_target_distance_m": 0,
+    "max_target_distance_m": 2048,
+    "max_rounds_per_mission": 24,
+    "max_active_missions_per_player": 1,
+    "max_active_missions_global": 8,
+    "request_cooldown_ticks": 100,
+    "max_mission_duration_ticks": 2400,
+    "max_loaded_chunks_per_mission": 16,
+    "max_parameter_count": 8
+  },
+  "munitions": [{
+    "id": "he",
+    "translation_key": "fire_support.munition.example.he",
+    "weapon": "rvp:f14d_mk84",
+    "rounds_per_unit": 4,
+    "delivery": {
+      "type": "rvp:vertical_projectile",
+      "data": {
+        "spawn_height_above_impact_m": 120,
+        "entry_speed_m_per_tick": 4,
+        "preload_ticks": 20,
+        "heading_jitter_deg": 0
+      }
+    }
+  }],
+  "fire_modes": [{
+    "id": "single",
+    "translation_key": "fire_support.fire_mode.example.single",
+    "phases": [{
+      "id": "main",
+      "translation_key": "fire_support.phase.example.main",
+      "rounds": { "fixed": 4 },
+      "duration_ticks": 60
+    }]
+  }],
+  "patterns": [{
+    "id": "point",
+    "translation_key": "fire_support.pattern.example.point",
+    "type": "rvp:point",
+    "data": { "parameters": {
+      "radius_m": {
+        "type": "double", "default": 16, "min": 4,
+        "max": 32, "step": 1, "unit": "m"
+      }
+    }}
+  }]
+}
+```
+
+---
+
+## 7 Forge 配置（config 文件）
 
 RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.toml`、`ywzj_rvp-client.toml`。
 
-### 6.1 `ywzj_rvp-server.toml`（服务端）
+### 7.1 `ywzj_rvp-server.toml`（服务端）
 
 | 配置项 | 说明 | 默认值 |
 | --- | --- | --- |
 | `explosion.craterDepthRules` | 爆炸坑深度规则：每个条目格式 `"maxRadius:maxDepth"`（maxRadius = 爆炸半径阈值格数，maxDepth = 爆炸中心 Y 以下最多破坏层数，`0` = 仅地表）。加载时按 maxRadius 自动升序排序，半径超过最后一条时沿用最后一条深度。**空列表 = 无限制（原版行为）**。 | `["5:0","15:1","35:2","65:3","100:4","9999:5"]` |
 
-### 6.2 `ywzj_rvp-common.toml`（通用）
+### 7.2 `ywzj_rvp-common.toml`（通用）
 
 | 配置项 | 说明 | 默认值 |
 | --- | --- | --- |
 | `spawning.spawnVehicleWithCreativeAmmo` | 用生成物品放置载具时，是否自动往载具库存塞一组创造弹药以便立即使用；同时**在载具生成的瞬间一次性补满所有武器的所有弹药**（跳过装填时间，避免换弹时间长的载具放置后还要等待）。该补满是仅生成时刻的一次性操作，不随后续消耗弹药重复触发。 | `false` |
 
-### 6.3 `ywzj_rvp-client.toml`（客户端）
+### 7.3 `ywzj_rvp-client.toml`（客户端）
 
 | 配置项 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -2184,11 +2398,11 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 
 ---
 
-## 7 旧写法迁移对照
+## 8 旧写法迁移对照
 
 > 此表帮助从旧版本 JSON 迁移到当前 schema。**当前版本不再解析旧键**（仅大小写与少量字段补全，不做全量键迁移），旧 JSON 需手工改写成新写法。
 
-### 7.1 武器类型迁移
+### 8.1 武器类型迁移
 
 | 旧写法 | 新写法 |
 | --- | --- |
@@ -2201,7 +2415,7 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 | 顶层 `velocity` | 移入 `projectile_data.velocity`（顶层写法仍被自动归一化补入） |
 | 无 `has_rocket_engine` 但有 `mass`/`thrust`/`motor_burn_time` | 归一化层自动补 `has_rocket_engine: true` |
 
-### 7.2 旧键 → 新键
+### 8.2 旧键 → 新键
 
 | 旧键 | 新键 |
 | --- | --- |
@@ -2223,7 +2437,7 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 
 ---
 
-## 8 参考
+## 9 参考
 
 - 弹体运动学：`docs/plan/RVP武器数据模型/弹体运动学与爆炸伤害.md`
 - 伤害倍率与爆炸：`docs/plan/RVP武器数据模型/RVP伤害倍率与爆炸.md`

@@ -1,8 +1,10 @@
 package org.ywzj.rvp.firesupport;
 
-import org.junit.jupiter.api.Test;
-
 import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.firesupport.api.RVP_FireSupportPattern;
+import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
+import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 
 import static org.junit.jupiter.api.Assertions.*;
 

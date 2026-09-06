@@ -1,15 +1,14 @@
 package org.ywzj.rvp.network.firesupport;
 
 import io.netty.handler.codec.DecoderException;
+import java.util.function.Supplier;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.firesupport.RVP_FireSupportProfileNetworkCodec;
-import org.ywzj.rvp.firesupport.RVP_FireSupportSnapshot;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.function.Supplier;
+import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileNetworkCodec;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportSnapshot;
 
 /** 登录与 reload 下发的完整、规范化炮火 profile 快照。 */
 public record S2CFireSupportProfileSnapshot(

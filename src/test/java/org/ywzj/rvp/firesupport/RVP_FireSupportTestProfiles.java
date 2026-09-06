@@ -2,10 +2,12 @@ package org.ywzj.rvp.firesupport;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import net.minecraft.resources.ResourceLocation;
-import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
-
 import java.util.Map;
+import net.minecraft.resources.ResourceLocation;
+import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportResolvedWeapon;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 
 final class RVP_FireSupportTestProfiles {
     static final ResourceLocation PROFILE_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test");

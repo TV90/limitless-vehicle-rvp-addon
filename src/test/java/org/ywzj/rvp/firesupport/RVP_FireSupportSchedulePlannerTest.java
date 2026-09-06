@@ -1,6 +1,8 @@
 package org.ywzj.rvp.firesupport;
 
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
+import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
 
 import static org.junit.jupiter.api.Assertions.*;
 

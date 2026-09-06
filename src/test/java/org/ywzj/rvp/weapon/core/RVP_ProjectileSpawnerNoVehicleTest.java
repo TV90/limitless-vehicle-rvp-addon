@@ -36,7 +36,7 @@ class RVP_ProjectileSpawnerNoVehicleTest {
     void noVehicleCorePreservesOwnerDetonationSubmunitionAndPrimeContracts() throws IOException {
         String spawner = Files.readString(Path.of("src/main/java/org/ywzj/rvp/weapon/core/RVP_ProjectileSpawner.java"));
         String vertical = Files.readString(Path.of(
-                "src/main/java/org/ywzj/rvp/firesupport/server/RVP_VerticalProjectileDelivery.java"));
+                "src/main/java/org/ywzj/rvp/firesupport/delivery/RVP_VerticalProjectileDelivery.java"));
         String base = Files.readString(Path.of(
                 "src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java"));
         String submunition = Files.readString(Path.of(

@@ -33,7 +33,7 @@
       "translation_key": "fire_support.munition.rvp.mk84_he",
       "weapon": "rvp:f14d_mk84",
       "rounds_per_unit": 12,
-      "registration_phase_enabled": true,
+      "registration_phase_enabled": false,
       "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {

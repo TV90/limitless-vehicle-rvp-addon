@@ -1040,7 +1040,7 @@ M142 当前 `wind_data.enabled: false`；确需增加尾后漂移时先显式启
 在项目根目录执行：
 
 ```powershell
-$env:JAVA_HOME='C:\Users\FishKing0721\.jdks\ms-17.0.16'
+$env:JAVA_HOME='你的java路径'
 ./gradlew build
 ```
 

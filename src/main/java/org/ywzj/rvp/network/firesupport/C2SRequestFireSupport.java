@@ -1,19 +1,18 @@
 package org.ywzj.rvp.network.firesupport;
 
 import io.netty.handler.codec.DecoderException;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.network.NetworkDirection;
-import net.minecraftforge.network.NetworkEvent;
-import org.ywzj.rvp.firesupport.RVP_FireSupportRequest;
-import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionManager;
-import org.ywzj.rvp.network.RVP_Network;
-
+import java.util.function.Supplier;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import net.minecraftforge.network.NetworkDirection;
+import net.minecraftforge.network.NetworkEvent;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportRequest;
+import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionManager;
+import org.ywzj.rvp.network.RVP_Network;
 
 /** 客户端到服务端的新炮火呼叫选择；不携带任何可信派生值。 */
 public record C2SRequestFireSupport(

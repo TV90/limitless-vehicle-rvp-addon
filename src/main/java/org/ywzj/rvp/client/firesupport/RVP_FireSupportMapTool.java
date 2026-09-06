@@ -1,7 +1,12 @@
 package org.ywzj.rvp.client.firesupport;
 
-import net.minecraft.client.Minecraft;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -11,18 +16,13 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapTool;
+import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionState;
-import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupport;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupportCeaseFire;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
-
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import org.ywzj.rvp.network.RVP_Network;
 
 /** 炮火终端战术地图工具：动态选择、参数控件、落区预览、提交和权威状态展示。 */
 public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
@@ -424,14 +424,14 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         RVP_ClientFireSupportProfile.Parameter length = pattern() == null ? null : pattern().parameters().get("length_m");
         if (length != null) {
             double distance = Math.hypot(dx, dz);
-            if (pattern().type().equals(org.ywzj.rvp.firesupport.RVP_FireSupportPatternTypes.LINE)) distance *= 2.0;
+            if (pattern().type().equals(RVP_FireSupportPatternTypes.LINE)) distance *= 2.0;
             parameterValues.put(length.key(), snap(length, distance / Math.max(0.001, mode().dispersionMultiplier())));
         }
     }
 
     private boolean isOverDirectionHandle(RVP_TacticalMapHost host, double mouseX, double mouseY) {
         double length = parameterValues.getOrDefault("length_m", 0.0) * mode().dispersionMultiplier();
-        double along = pattern().type().equals(org.ywzj.rvp.firesupport.RVP_FireSupportPatternTypes.LINE) ? length * 0.5 : length;
+        double along = pattern().type().equals(RVP_FireSupportPatternTypes.LINE) ? length * 0.5 : length;
         double heading = Math.toRadians(headingDegrees);
         double hx = host.worldToScreenX(anchorX + Math.sin(heading) * along);
         double hy = host.worldToScreenY(anchorZ + Math.cos(heading) * along);

@@ -1,5 +1,8 @@
 package org.ywzj.rvp.firesupport.server;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -8,11 +11,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.all.RVP_Items;
-import org.ywzj.rvp.firesupport.RVP_FireSupportProfile;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 
 /** 服务端权威的终端实例 UUID 分配、重复检查和生命周期匹配。 */
 public final class RVP_FireSupportTerminalIdentity {

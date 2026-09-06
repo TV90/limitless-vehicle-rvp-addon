@@ -1,6 +1,9 @@
 package org.ywzj.rvp.firesupport;
 
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.firesupport.api.RVP_FireSupportProblemCollector;
+import org.ywzj.rvp.firesupport.data.RVP_FireSupportResolvedWeapon;
+import org.ywzj.rvp.firesupport.config.RVP_FireSupportWeaponBudget;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
