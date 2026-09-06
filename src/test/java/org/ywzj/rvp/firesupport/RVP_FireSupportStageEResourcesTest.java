@@ -53,7 +53,9 @@ class RVP_FireSupportStageEResourcesTest {
         assertEquals(weaponId, profile.munitions().get("mk84_he").weaponId());
         assertEquals(32, profile.limits().maxActiveMissionsGlobal());
         assertEquals(128, profile.limits().maxRoundsPerMission());
-        assertFalse(profile.munitions().get("mk84_he").registrationPhaseEnabled());
+        // V1.1 为 mk84_he 显式启用试射阶段（registration_phase_enabled: true，提交 02f5549e），
+        // 测试断言随 V1.1 数据更新：此处应为 true
+        assertTrue(profile.munitions().get("mk84_he").registrationPhaseEnabled());
         assertEquals(3, profile.patterns().size());
         var monitor = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 4, true,
                 profile.fireModes().get("monitor"), 11L, profile.limits());
