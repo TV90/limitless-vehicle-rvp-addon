@@ -3539,7 +3539,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // b) 任一 visual_effect_data 显式 suppress_rvp_default_explosion=true → 屏蔽（走本体视觉）。
         //    该标记读取不受 enabled 门控——条目可以只作为屏蔽标记存在（无 effect_type）。
         // 默认路径（无视觉工厂/无屏蔽标记）：广播 RVP 内置 MCHR 爆炸视觉（数值按最终半径自动算）
-        // + 服务端按本体分级音量补播爆炸音（负半径标记会取消客户端 effect() 的原生音效）。
+        // + 同一事件在客户端按武器类型、半径和听者距离播放近音或远音。
         // HBM 特效生效时同样跳过 MCHR 默认烟雾（任务1），避免与 HBM 视觉叠加。
         boolean suppressRvpDefault = hbmApplied
                 || visualResult.publishedCount() > 0
@@ -3549,7 +3549,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean defaultVisualSpawned = false;
         if (!suppressRvpDefault && level() instanceof ServerLevel defaultVisualLevel) {
             // 水中水花由客户端按爆心流体状态自行判定（事件不含 water 标记）
-            RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius);
+            // 调用 RVP 默认爆炸发布端，同时把类型化武器分类交给客户端选择爆炸音色。
+            RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius, weaponKind);
             defaultVisualSpawned = true;
         }
         boolean resolvedSuppressNative = hbmApplied

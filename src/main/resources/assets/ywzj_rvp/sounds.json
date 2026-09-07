@@ -41,6 +41,69 @@
       "ywzj_rvp:nuclear/explosion_small_far2"
     ]
   },
+  "mchr_explosion_machinegun_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:nuclear/explosion_small_near1",
+      "ywzj_rvp:nuclear/explosion_small_near2",
+      "ywzj_rvp:nuclear/explosion_small_near3"
+    ]
+  },
+  "mchr_explosion_machinegun_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:nuclear/explosion_small_far1",
+      "ywzj_rvp:nuclear/explosion_small_far2"
+    ]
+  },
+  "mchr_explosion_rocket_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/rocket_exp/near/exp_rocket_close_07",
+      "ywzj_rvp:defaultexplosion/rocket_exp/near/exp_rocket_close_08",
+      "ywzj_rvp:defaultexplosion/rocket_exp/near/exp_rocket_close_09"
+    ]
+  },
+  "mchr_explosion_rocket_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/rocket_exp/far/exp_rocket_distant_07",
+      "ywzj_rvp:defaultexplosion/rocket_exp/far/exp_rocket_distant_08"
+    ]
+  },
+  "mchr_explosion_missile_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/missile_exp/near/missile_def_explode_1",
+      "ywzj_rvp:defaultexplosion/missile_exp/near/missile_def_explode_2",
+      "ywzj_rvp:defaultexplosion/missile_exp/near/missile_def_explode_3",
+      "ywzj_rvp:defaultexplosion/missile_exp/near/missile_def_explode_4"
+    ]
+  },
+  "mchr_explosion_missile_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_1",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_2",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_3"
+    ]
+  },
+  "mchr_explosion_bomb_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/bomb_exp/near/def_bomb_close_1",
+      "ywzj_rvp:defaultexplosion/bomb_exp/near/def_bomb_close_2",
+      "ywzj_rvp:defaultexplosion/bomb_exp/near/def_bomb_close_3"
+    ]
+  },
+  "mchr_explosion_bomb_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/bomb_exp/far/def_bomb_dist_1",
+      "ywzj_rvp:defaultexplosion/bomb_exp/far/def_bomb_dist_2",
+      "ywzj_rvp:defaultexplosion/bomb_exp/far/def_bomb_dist_3"
+    ]
+  },
   "countermeasure_flare": {
     "subtitle": "subtitles.rvp.countermeasure_flare",
     "sounds": [

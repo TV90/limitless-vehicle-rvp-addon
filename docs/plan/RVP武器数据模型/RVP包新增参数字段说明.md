@@ -814,12 +814,14 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 RVP 武器（机枪/火箭/导弹/炸弹）爆炸的**默认视觉**，不需要任何 `visual_effect_data` 配置即生效。服务端 `RVP_DefaultExplosionVisualService` 在 `RVP_BaseBullet.triggerExplosion` 默认路径广播 `effectType = rvp:mchr_explosion`，客户端 `RVP_DefaultExplosionEffectFactory`（注册 `rvp:mchr_explosion`）消费。
 
+默认爆炸音也由该客户端事件驱动：事件内部携带类型化 `weapon_kind`，客户端按 `MACHINEGUN` / `ROCKET` / `MISSILE` / `BOMB` 选择独立声音事件，再根据听者距离选择近音或远音。24 格内立即播放，超过 24 格后按 343 格/秒计算声波抵达延迟；非爆炸型类别按爆炸半径回退到火箭或导弹档案。该内部参数不对载具包开放，也不使用武器 ID 判断。
+
 粒子表现（复刻 MCHR `MCH_Explosion.effectExplosion`）：
 - `rvp:mchr_smoke`（`RVP_MchrSmokeParticle`）：翻滚灰黄大烟（`big_smoke_0..11` 帧），逐帧放大、缓上浮、转白；
 - `rvp:mchr_flare`（`RVP_MchrFlareParticle`）：曳光火星（`nuclear/flare.png` 光斑，拖烟）；
 - 另含原版大十字闪光、方块碎屑（`BlockParticleOption`）、水中水花。
 
-**数值全部按 `baseExplosionRadius` 内置自动计算，不开放任何 `preset_data` / 粒子参数**（尺寸、数量、颜色、寿命均不可配）。顶层 `scale` / `density` 忽略（内置按半径推导）。
+**粒子数值全部按 `baseExplosionRadius` 内置自动计算，不开放任何用户可配置的 `preset_data` / 粒子参数**（尺寸、数量、颜色、寿命均不可配）。顶层 `scale` / `density` 忽略（内置按半径推导）。
 
 **屏蔽矩阵**（任一成立即不播放默认视觉，改走本体/其它特效；`RVP_BaseBullet.java` 触发处）：
 - `hbm_effect_data` 生效（HBM 全权接管）；

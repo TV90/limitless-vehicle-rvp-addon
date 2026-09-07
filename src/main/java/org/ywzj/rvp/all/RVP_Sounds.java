@@ -21,6 +21,31 @@ public final class RVP_Sounds {
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_NEAR = register("explosion_small_near");
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_FAR = register("explosion_small_far");
 
+    /** MCHR 默认机枪/机炮弹爆炸近音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_MACHINEGUN_NEAR =
+            register("mchr_explosion_machinegun_near");
+    /** MCHR 默认机枪/机炮弹爆炸远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_MACHINEGUN_FAR =
+            register("mchr_explosion_machinegun_far");
+    /** MCHR 默认火箭弹爆炸近音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_ROCKET_NEAR =
+            register("mchr_explosion_rocket_near");
+    /** MCHR 默认火箭弹爆炸远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_ROCKET_FAR =
+            register("mchr_explosion_rocket_far");
+    /** MCHR 默认导弹爆炸近音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_MISSILE_NEAR =
+            register("mchr_explosion_missile_near");
+    /** MCHR 默认导弹爆炸远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_MISSILE_FAR =
+            register("mchr_explosion_missile_far");
+    /** MCHR 默认航弹爆炸近音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_BOMB_NEAR =
+            register("mchr_explosion_bomb_near");
+    /** MCHR 默认航弹爆炸远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_BOMB_FAR =
+            register("mchr_explosion_bomb_far");
+
     /** 热焰弹抛洒音效（assets/rvp/sounds/misc/flare.ogg）。 */
     public static final RegistryObject<SoundEvent> COUNTERMEASURE_FLARE = register("countermeasure_flare");
     /** 箔条抛洒音效（assets/rvp/sounds/misc/chaff.ogg）。 */

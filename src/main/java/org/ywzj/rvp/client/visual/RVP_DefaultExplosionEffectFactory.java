@@ -14,8 +14,8 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.client.particle.RVP_MchrFlareParticle;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
-import org.ywzj.rvp.client.visual.RVP_ClientVisualEffect;
-import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectFactory;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 import java.util.Optional;
@@ -33,7 +33,7 @@ import java.util.Optional;
  *       或横向（dirY×0.2、水平×2）偏置，尺寸/寿命/配色照抄，生成点 = 采样位与爆心中点；</li>
  * </ol>
  * 使用 {@code event.seed()} 派生确定性随机；直接构造粒子实例经 {@link ParticleEngine#add} 加入
- * 原版粒子系统，返回 {@code Optional.empty()}（无生命周期实例，数量由采样上限与预算钳制兜底）。
+ * 原版粒子系统；另返回轻量生命周期实例，按声速延迟推进客户端近远爆炸音。
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisualEffectFactory {
@@ -178,6 +178,11 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
             }
         }
 
-        return Optional.empty();
+        // 调用 RVP 默认爆炸事件解码器，从公共事件载荷恢复服务端确定的类型化武器分类。
+        RVP_EnumWeaponKind weaponKind = RVP_DefaultExplosionEventData.decodeWeaponKind(
+                event.canonicalPresetDataJson());
+        long elapsed = Math.max(0L, level.getGameTime() - event.startGameTime());
+        int initialAge = elapsed >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) elapsed;
+        return Optional.of(new RVP_DefaultExplosionEffectInstance(level, event, weaponKind, initialAge));
     }
 }
