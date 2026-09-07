@@ -19,7 +19,7 @@ public record C2SRequestFireSupport(
         /** 客户端 profile revision。 */ long revision,
         /** 客户端选择的主手或副手。 */ InteractionHand hand,
         /** 客户端明确选择的 profile 资源 ID。 */ ResourceLocation profileId,
-        /** profile 内弹种 ID。 */ String munitionId,
+        /** profile 内弹药方案 ID。 */ String munitionId,
         /** profile 内射击模式 ID。 */ String fireModeId,
         /** profile 内打击预设 ID。 */ String patternId,
         /** 目标锚点 X。 */ double targetX,

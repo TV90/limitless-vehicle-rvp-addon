@@ -18,7 +18,7 @@ public record RVP_ClientFireSupportProfile(
         /** profile 显示翻译键。 */ String translationKey,
         /** 允许发起请求的手，值为 main/off。 */ Set<String> allowedHands,
         /** 呼叫基础时长，单位 Tick。 */ int baseCallDurationTicks,
-        /** 客户端弹种选择表。 */ List<Munition> munitions,
+        /** 客户端弹药方案选择表。 */ List<Munition> munitions,
         /** 客户端射击模式选择表。 */ List<FireMode> fireModes,
         /** 客户端几何预设选择表。 */ List<Pattern> patterns) {
 
@@ -32,7 +32,7 @@ public record RVP_ClientFireSupportProfile(
     /** 从阶段 C 同步的规范化 JSON 创建 UI 视图。 */
     public static RVP_ClientFireSupportProfile parse(ResourceLocation id, String json) {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        if (root.get("schema_version").getAsInt() != 1) throw new IllegalArgumentException("不支持的炮火 profile schema");
+        if (root.get("schema_version").getAsInt() != 2) throw new IllegalArgumentException("不支持的炮火 profile schema");
         String translation = root.getAsJsonObject("display").get("translation_key").getAsString();
         JsonObject holder = root.getAsJsonObject("holder_policy");
         java.util.LinkedHashSet<String> hands = new java.util.LinkedHashSet<>();
@@ -98,10 +98,10 @@ public record RVP_ClientFireSupportProfile(
         return out;
     }
 
-    /** 客户端弹种摘要。 */
+    /** 客户端弹药方案摘要。 */
     public record Munition(
-            /** profile 内弹种 ID。 */ String id,
-            /** 弹种显示翻译键。 */ String translationKey,
+            /** profile 内弹药方案 ID。 */ String id,
+            /** 弹药方案显示翻译键。 */ String translationKey,
             /** 一基数顶层弹数。 */ int roundsPerUnit,
             /** 是否执行标记为试射的阶段。 */ boolean registrationPhaseEnabled) {}
 
@@ -117,7 +117,7 @@ public record RVP_ClientFireSupportProfile(
 
     /** 客户端非权威计划预览所需的阶段摘要。 */
     public record Phase(
-            /** 是否为可由弹种关闭的试射阶段。 */ boolean registrationPhase,
+            /** 是否为可由弹药方案关闭的试射阶段。 */ boolean registrationPhase,
             /** 相对阶段起点延迟，单位 Tick。 */ int startDelayTicks,
             /** 固定弹数；不使用时为 -1。 */ int fixedRounds,
             /** 基数倍率；不使用时为负数。 */ double baseMultiplier,

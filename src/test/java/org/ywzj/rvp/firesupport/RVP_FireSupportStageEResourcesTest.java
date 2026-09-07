@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RVP_FireSupportStageEResourcesTest {
     /** 文档中的可分发作者示例。 */ private static final Path EXAMPLE = Path.of(
             "docs/examples/fire_support_profiles/default.json");
+    /** 载具包实际发布的默认炮火 profile。 */ private static final Path RUNTIME_PROFILE = Path.of(
+            "limitless_vehicle/rvp/data/rvp/fire_support_profiles/default.json");
     /** 终端生成物品模型。 */ private static final Path ITEM_MODEL = Path.of(
             "src/main/resources/assets/ywzj_rvp/models/item/fire_support_terminal.json");
     /** 终端透明物品贴图。 */ private static final Path ITEM_TEXTURE = Path.of(
@@ -42,25 +44,48 @@ class RVP_FireSupportStageEResourcesTest {
                 ResourceLocation.fromNamespaceAndPath("rvp", "j10c_gb3_ir"),
                 ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30"),
                 ResourceLocation.fromNamespaceAndPath("rvp", "m142_rocket"),
-                ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30_wp"));
+                ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30_wp"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "f14a_iriaf_yasser"));
         RVP_FireSupportResolvedWeapon mk84 = new RVP_FireSupportResolvedWeapon(
                 RVP_EnumWeaponKind.BOMB, false, false, false,
                 1200, 0, false, 1200.0F, 18.0F);
         RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(Map.of(profileId, json),
                 id -> configuredWeapons.contains(id) ? mk84 : null).get(profileId);
 
-        assertEquals(1, profile.schemaVersion());
-        assertEquals(weaponId, profile.munitions().get("mk84_he").weaponId());
+        assertEquals(2, profile.schemaVersion());
+        assertEquals(weaponId, profile.munitions().get("mk84_he").weapons().get(0).weaponId());
+        assertEquals(java.util.List.of(2, 1), profile.munitions().get("mk84_yasser_mixed").weapons().stream()
+                .map(RVP_FireSupportProfile.MunitionWeapon::weight).toList());
         assertEquals(32, profile.limits().maxActiveMissionsGlobal());
         assertEquals(128, profile.limits().maxRoundsPerMission());
-        // mk84_he 试射阶段：V1.1 曾启用（registration_phase_enabled: true），V1.2（d43d008a）
-        // 又改回 false 关闭试射——断言以 V1.2 数据为准：false
+        // 作者示例刻意关闭单武器 MK-84 的试射，用于展示方案级 registration 开关。
         assertFalse(profile.munitions().get("mk84_he").registrationPhaseEnabled());
         assertEquals(3, profile.patterns().size());
-        var monitor = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 4, true,
-                profile.fireModes().get("monitor"), 11L, profile.limits());
-        assertTrue(monitor.rounds().size() == 10 || monitor.rounds().size() == 11);
+        var monitor = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(),
+                profile.munitions().get("mk84_yasser_mixed"), profile.fireModes().get("monitor"),
+                11L, profile.limits());
+        assertTrue(monitor.rounds().size() == 14 || monitor.rounds().size() == 15);
         assertTrue(monitor.lastRoundFromAcceptanceTicks() <= profile.limits().maxMissionDurationTicks());
+    }
+
+    @Test
+    void runtimeProfileKeepsSingleWeaponAndAddsWeightedMixedStrike() throws Exception {
+        JsonObject json = JsonParser.parseString(Files.readString(RUNTIME_PROFILE)).getAsJsonObject();
+        ResourceLocation profileId = ResourceLocation.fromNamespaceAndPath("rvp", "default");
+        ResourceLocation mk84 = ResourceLocation.fromNamespaceAndPath("rvp", "f14d_mk84");
+        ResourceLocation yasser = ResourceLocation.fromNamespaceAndPath("rvp", "f14a_iriaf_yasser");
+        RVP_FireSupportResolvedWeapon resolved = new RVP_FireSupportResolvedWeapon(
+                RVP_EnumWeaponKind.BOMB, false, false, false,
+                1200, 0, false, 1200.0F, 18.0F);
+        RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(Map.of(profileId, json),
+                id -> mk84.equals(id) || yasser.equals(id) ? resolved : null).get(profileId);
+
+        assertEquals(2, profile.schemaVersion());
+        assertEquals(2, profile.munitions().size());
+        assertEquals(java.util.List.of(mk84, yasser), profile.munitions().get("mk84_yasser_mixed")
+                .weapons().stream().map(RVP_FireSupportProfile.MunitionWeapon::weaponId).toList());
+        assertEquals(java.util.List.of(2, 1), profile.munitions().get("mk84_yasser_mixed")
+                .weapons().stream().map(RVP_FireSupportProfile.MunitionWeapon::weight).toList());
     }
 
     @Test
@@ -90,8 +115,8 @@ class RVP_FireSupportStageEResourcesTest {
         for (var munition : JsonParser.parseString(Files.readString(EXAMPLE)).getAsJsonObject()
                 .getAsJsonArray("munitions")) {
             String key = munition.getAsJsonObject().get("translation_key").getAsString();
-            assertTrue(zh.has(key), "中文缺少示例弹种键 " + key);
-            assertTrue(en.has(key), "英文缺少示例弹种键 " + key);
+            assertTrue(zh.has(key), "中文缺少示例弹药方案键 " + key);
+            assertTrue(en.has(key), "英文缺少示例弹药方案键 " + key);
         }
     }
 
@@ -103,6 +128,10 @@ class RVP_FireSupportStageEResourcesTest {
         assertFalse(schema.get("additionalProperties").getAsBoolean());
         assertTrue(schema.getAsJsonObject("$defs").getAsJsonObject("munition")
                 .get("additionalProperties").isJsonPrimitive());
+        assertEquals(2, schema.getAsJsonObject("properties").getAsJsonObject("schema_version")
+                .get("const").getAsInt());
+        assertFalse(schema.getAsJsonObject("$defs").getAsJsonObject("munitionWeapon")
+                .get("additionalProperties").getAsBoolean());
     }
 
     @Test

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "display": {
     "translation_key": "fire_support_profile.rvp.test1"
   },
@@ -31,10 +31,12 @@
     {
       "id": "mk84_he",
       "translation_key": "fire_support.munition.rvp.mk84_he",
-      "weapon": "rvp:f14d_mk84",
       "rounds_per_unit": 12,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:f14d_mk84",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -42,15 +44,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "gb_1000",
       "translation_key": "fire_support.munition.rvp.gb_1000",
-      "weapon": "rvp:gb_1000",
       "rounds_per_unit": 3,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:gb_1000",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -58,15 +63,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "j10c_gb3_ir",
       "translation_key": "fire_support.munition.rvp.j10c_gb3_ir",
-      "weapon": "rvp:j10c_gb3_ir",
       "rounds_per_unit": 1,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:j10c_gb3_ir",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -74,15 +82,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "m142_m30",
       "translation_key": "fire_support.munition.rvp.m142_m30",
-      "weapon": "rvp:m142_m30",
       "rounds_per_unit": 12,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:m142_m30",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -90,15 +101,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "m142_rocket",
       "translation_key": "fire_support.munition.rvp.m142_rocket",
-      "weapon": "rvp:m142_rocket",
       "rounds_per_unit": 12,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:m142_rocket",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -106,15 +120,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "m142_m30_wp",
       "translation_key": "fire_support.munition.rvp.m142_m30_wp",
-      "weapon": "rvp:m142_m30_wp",
       "rounds_per_unit": 6,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:m142_m30_wp",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 256.0,
@@ -122,15 +139,18 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     },
     {
       "id": "9m723",
       "translation_key": "fire_support.munition.rvp.9m723",
-      "weapon": "rvp:9k720_9m723",
       "rounds_per_unit": 2,
       "registration_phase_enabled": false,
-      "delivery": {
+      "weapons": [{
+        "weapon": "rvp:9k720_9m723",
+        "weight": 1,
+        "delivery": {
         "type": "rvp:vertical_projectile",
         "data": {
           "spawn_height_above_impact_m": 512.0,
@@ -138,7 +158,8 @@
           "preload_ticks": 20,
           "heading_jitter_deg": 0.0
         }
-      }
+        }
+      }]
     }
   ],
   "fire_modes": [

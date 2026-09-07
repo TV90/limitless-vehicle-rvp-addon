@@ -11,13 +11,13 @@ import org.ywzj.rvp.firesupport.api.RVP_FireSupportPattern;
  * 一份已通过严格校验的炮火支援配置。所有集合均为不可变副本，任务可安全冻结并跨重载持有。
  */
 public record RVP_FireSupportProfile(
-        /** 当前配置格式版本；阶段 A 只接受 1。 */ int schemaVersion,
+        /** 当前配置格式版本；解析器只接受 2。 */ int schemaVersion,
         /** UI 使用的翻译键。 */ String translationKey,
         /** 终端持有规则。 */ HolderPolicy holderPolicy,
         /** 呼叫阶段规则。 */ CallStage callStage,
         /** 打击阶段规则。 */ StrikeStage strikeStage,
         /** 服务端安全与性能上限。 */ Limits limits,
-        /** 以 profile 内弹种 ID 为键的不可变弹种表。 */ Map<String, Munition> munitions,
+        /** 以 profile 内弹药方案 ID 为键的不可变方案表。 */ Map<String, Munition> munitions,
         /** 以 profile 内模式 ID 为键的不可变射击模式表。 */ Map<String, FireMode> fireModes,
         /** 以 profile 内预设 ID 为键的不可变打击预设表。 */ Map<String, PatternPreset> patterns) {
 
@@ -57,13 +57,20 @@ public record RVP_FireSupportProfile(
             /** 单任务最多租约的唯一区块数。 */ int maxLoadedChunksPerMission,
             /** 请求允许携带的动态参数键数量。 */ int maxParameterCount) {}
 
-    /** 一种可选弹种及其投送定义。 */
+    /** 一种玩家可选的单武器或混合武器弹药方案。 */
     public record Munition(
-            /** profile 内的小写选择 ID。 */ String id,
-            /** UI 使用的翻译键。 */ String translationKey,
-            /** 引用的真实 RVP 武器资源 ID。 */ ResourceLocation weaponId,
-            /** 一基数包含的顶层逻辑弹体数量。 */ int roundsPerUnit,
+            /** profile 内的小写弹药方案 ID。 */ String id,
+            /** UI 使用的弹药方案翻译键。 */ String translationKey,
+            /** 一基数包含的顶层逻辑弹体总数。 */ int roundsPerUnit,
             /** 是否执行射击模式中标记为试射的阶段；默认 true。 */ boolean registrationPhaseEnabled,
+            /** 按声明顺序保存的不可变武器成员列表。 */ List<MunitionWeapon> weapons) {
+        public Munition { weapons = List.copyOf(weapons); }
+    }
+
+    /** 弹药方案中的一个真实 RVP 武器及其权重和投送定义。 */
+    public record MunitionWeapon(
+            /** 引用的真实 RVP 武器资源 ID；同一弹药方案内必须唯一。 */ ResourceLocation weaponId,
+            /** 阶段内声明顺序轮转所占的正整数权重。 */ int weight,
             /** 投送工厂类型 ID。 */ ResourceLocation deliveryType,
             /** 已由投送工厂严格解析的不可变配置对象。 */ Object deliveryData) {}
 
@@ -81,7 +88,7 @@ public record RVP_FireSupportProfile(
     public record Phase(
             /** 模式内唯一的小写 ID。 */ String id,
             /** UI 使用的翻译键。 */ String translationKey,
-            /** 是否为可由弹种关闭的试射阶段。 */ boolean registrationPhase,
+            /** 是否为可由弹药方案关闭的试射阶段。 */ boolean registrationPhase,
             /** 相对打击开始或上一阶段末弹的延迟，单位 Tick。 */ int startDelayTicks,
             /** 已校验的弹数规则。 */ RoundRule rounds,
             /** 固定相邻弹间隔；与 durationTicks 仅一个非空。 */ Integer intervalTicks,
@@ -89,7 +96,7 @@ public record RVP_FireSupportProfile(
 
     /** 弹数规则；只允许基数倍率、随机闭区间或固定弹数三者之一。 */
     public record RoundRule(
-            /** 与弹种基数相乘后向上取整；不用时为 null。 */ Double baseMultiplier,
+            /** 与弹药方案基数相乘后向上取整；不用时为 null。 */ Double baseMultiplier,
             /** 权威随机闭区间下界；不用时为 null。 */ Integer randomMin,
             /** 权威随机闭区间上界；不用时为 null。 */ Integer randomMax,
             /** 固定弹数；不用时为 null。 */ Integer fixed) {}

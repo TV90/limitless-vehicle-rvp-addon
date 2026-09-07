@@ -41,7 +41,7 @@ public final class RVP_FireSupportProbeCommands {
     }
 
     private static int execute(ServerPlayer player, ResourceLocation weaponId, Vec3 target) {
-        // 调用本体权威武器索引：测试入口不接受任意构造数据，也不按资源路径猜测弹种。
+        // 调用本体权威武器索引：测试入口不接受任意构造数据，也不按资源路径猜测武器类型。
         RVP_WeaponData weapon = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
                 .map(index -> index.data() instanceof RVP_WeaponData data ? data : null)
                 .orElse(null);

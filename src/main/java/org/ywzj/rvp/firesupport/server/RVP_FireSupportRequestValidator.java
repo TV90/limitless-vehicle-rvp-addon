@@ -1,5 +1,7 @@
 package org.ywzj.rvp.firesupport.server;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -77,7 +79,7 @@ public final class RVP_FireSupportRequestValidator {
         try {
             // 调用阶段 A 计划器：重新计算弹数、呼叫时长和每发 Tick，不采信客户端派生值。
             plan = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(),
-                    munition.roundsPerUnit(), munition.registrationPhaseEnabled(), mode, seed, profile.limits());
+                    munition, mode, seed, profile.limits());
         } catch (RuntimeException exception) {
             return ValidationResult.reject(RVP_FireSupportEndReason.INVALID_SCHEDULE);
         }
@@ -91,20 +93,26 @@ public final class RVP_FireSupportRequestValidator {
             return ValidationResult.reject(RVP_FireSupportEndReason.REQUEST_COOLDOWN);
         }
 
-        RVP_WeaponData weapon = CommonAssetsManager.vehicleWeaponManager().getIndex(munition.weaponId())
-                .filter(index -> index.data() instanceof RVP_WeaponData)
-                .map(index -> (RVP_WeaponData) index.data()).orElse(null);
-        RVP_FireSupportDeliveryFactory factory = RVP_FireSupportDeliveryTypes.get(munition.deliveryType());
-        if (weapon == null || factory == null) return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
-        RVP_FireSupportDelivery delivery;
-        try {
-            // 调用阶段 B 投送工厂：把 profile 冻结的类型化数据创建为运行时投送器。
-            delivery = factory.create(munition.deliveryData());
-        } catch (RuntimeException exception) {
-            return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
+        List<RVP_FireSupportMissionWeapon> weapons = new ArrayList<>();
+        for (RVP_FireSupportProfile.MunitionWeapon configuration : munition.weapons()) {
+            // 调用本体权威武器索引：请求接受时重新解析并冻结每个混合方案成员。
+            RVP_WeaponData weapon = CommonAssetsManager.vehicleWeaponManager().getIndex(configuration.weaponId())
+                    .filter(index -> index.data() instanceof RVP_WeaponData)
+                    .map(index -> (RVP_WeaponData) index.data()).orElse(null);
+            RVP_FireSupportDeliveryFactory factory = RVP_FireSupportDeliveryTypes.get(configuration.deliveryType());
+            if (weapon == null || factory == null) {
+                return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
+            }
+            try {
+                // 调用阶段 B 投送工厂：把每个成员冻结的类型化数据创建为运行时投送器。
+                RVP_FireSupportDelivery delivery = factory.create(configuration.deliveryData());
+                weapons.add(new RVP_FireSupportMissionWeapon(configuration, delivery, weapon));
+            } catch (RuntimeException exception) {
+                return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
+            }
         }
         return ValidationResult.accept(new Accepted(profileId, profile, munition, mode, pattern, parameters,
-                plan, delivery, weapon, terminalId, seed, Mth.wrapDegrees(request.headingDegrees())));
+                plan, weapons, terminalId, seed, Mth.wrapDegrees(request.headingDegrees())));
     }
 
     private static boolean basicRequestValid(ServerPlayer player, RVP_FireSupportRequest request) {
@@ -152,16 +160,18 @@ public final class RVP_FireSupportRequestValidator {
     public record Accepted(
             /** 唯一匹配实际手中终端的 profile ID。 */ ResourceLocation profileId,
             /** 冻结 profile。 */ RVP_FireSupportProfile profile,
-            /** 冻结弹种。 */ RVP_FireSupportProfile.Munition munition,
+            /** 冻结弹药方案。 */ RVP_FireSupportProfile.Munition munition,
             /** 冻结射击模式。 */ RVP_FireSupportProfile.FireMode mode,
             /** 冻结打击预设。 */ RVP_FireSupportProfile.PatternPreset pattern,
             /** 服务端规范化参数。 */ Map<String, Double> parameters,
             /** 服务端完整计划。 */ RVP_FireSupportSchedulePlanner.Plan plan,
-            /** 阶段 B 运行时投送器。 */ RVP_FireSupportDelivery delivery,
-            /** 本体索引解析的真实 RVP 武器数据。 */ RVP_WeaponData weaponData,
+            /** 按声明顺序冻结的真实武器与运行时投送器。 */ List<RVP_FireSupportMissionWeapon> weapons,
             /** 绑定终端实例 UUID。 */ UUID terminalId,
             /** 权威随机种子。 */ long seed,
             /** 规范化到 [-180,180) 的方向角。 */ double normalizedHeading) {
-        public Accepted { parameters = Map.copyOf(parameters); }
+        public Accepted {
+            parameters = Map.copyOf(parameters);
+            weapons = List.copyOf(weapons);
+        }
     }
 }

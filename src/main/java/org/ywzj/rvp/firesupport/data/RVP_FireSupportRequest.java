@@ -10,7 +10,7 @@ public record RVP_FireSupportRequest(
         /** 客户端选择时看到的 profile revision。 */ long revision,
         /** 客户端声称使用的手；服务端会直接读取该手。 */ InteractionHand hand,
         /** 客户端明确选择的 profile 资源 ID；服务端复核其持有规则。 */ ResourceLocation profileId,
-        /** profile 内弹种 ID。 */ String munitionId,
+        /** profile 内弹药方案 ID。 */ String munitionId,
         /** profile 内射击模式 ID。 */ String fireModeId,
         /** profile 内打击预设 ID。 */ String patternId,
         /** 目标锚点世界 X。 */ double targetX,

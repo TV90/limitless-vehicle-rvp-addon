@@ -35,7 +35,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 当前解析成功的客户端 profile 列表。 */ private List<RVP_ClientFireSupportProfile> profiles = List.of();
     /** profile 解析失败时的可见诊断。 */ private String profileError = "";
     /** 当前 profile 索引。 */ private int profileIndex;
-    /** 当前弹种索引。 */ private int munitionIndex;
+    /** 当前弹药方案索引。 */ private int munitionIndex;
     /** 当前射击模式索引。 */ private int modeIndex;
     /** 当前几何预设索引。 */ private int patternIndex;
     /** 当前动态参数值。 */ private final Map<String, Double> parameterValues = new LinkedHashMap<>();
@@ -44,7 +44,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 是否已经由玩家指定锚点。 */ private boolean hasAnchor;
     /** 长轴或徐进方向，单位度。 */ private double headingDegrees;
     /** 当前是否正在拖动方向手柄。 */ private boolean draggingDirection;
-    /** 当前展开的选择行：0 profile、1 弹种、2 射击模式、3 落区；-1 表示关闭。 */ private int openChoice = -1;
+    /** 当前展开的选择行：0 profile、1 弹药方案、2 射击模式、3 落区；-1 表示关闭。 */ private int openChoice = -1;
     /** 最近发送的新呼叫 nonce。 */ private UUID pendingCallNonce;
     /** 最近发送的停火 nonce。 */ private UUID pendingCeaseNonce;
     /** 当前中止请求是否用于立即取消呼叫，用于选择准确的结果文案。 */ private boolean pendingCallCancellation;

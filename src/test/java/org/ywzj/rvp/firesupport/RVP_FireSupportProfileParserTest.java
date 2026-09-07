@@ -20,9 +20,11 @@ class RVP_FireSupportProfileParserTest {
         RVP_FireSupportProfile profile = RVP_FireSupportTestProfiles.parse();
         assertEquals(3, profile.fireModes().size());
         assertEquals(3, profile.patterns().size());
+        assertEquals(2, profile.munitions().get("he").weapons().size());
         assertInstanceOf(RVP_FireSupportDeliveryTypes.VerticalProjectileData.class,
-                profile.munitions().get("he").deliveryData());
+                profile.munitions().get("he").weapons().get(0).deliveryData());
         assertThrows(UnsupportedOperationException.class, () -> profile.fireModes().clear());
+        assertThrows(UnsupportedOperationException.class, () -> profile.munitions().get("he").weapons().clear());
     }
 
     @Test
@@ -39,6 +41,79 @@ class RVP_FireSupportProfileParserTest {
                 () -> assertTrue(error.getMessage().contains("未知字段")),
                 () -> assertTrue(error.getMessage().contains("ID 重复")),
                 () -> assertTrue(error.getMessage().contains("有限数值")));
+    }
+
+    @Test
+    void rejectsLegacySingleWeaponShapeDuplicateWeaponsAndInvalidWeights() {
+        JsonObject legacy = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        JsonObject legacyMunition = legacy.getAsJsonArray("munitions").get(0).getAsJsonObject();
+        legacyMunition.addProperty("weapon", "rvp:test_round");
+        assertThrows(IllegalArgumentException.class, () -> RVP_FireSupportProfileParser.parseAll(
+                Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, legacy),
+                id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+
+        JsonObject invalid = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        var weapons = invalid.getAsJsonArray("munitions").get(0).getAsJsonObject().getAsJsonArray("weapons");
+        weapons.get(0).getAsJsonObject().addProperty("weight", 512);
+        weapons.get(1).getAsJsonObject().addProperty("weapon", "rvp:test_round");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, invalid),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertAll(
+                () -> assertTrue(error.getMessage().contains("不得重复")),
+                () -> assertTrue(error.getMessage().contains("权重总和不得超过 512")));
+    }
+
+    @Test
+    void rejectsEmptyWeaponListAndNonPositiveWeight() {
+        JsonObject empty = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        empty.getAsJsonArray("munitions").get(0).getAsJsonObject()
+                .add("weapons", new com.google.gson.JsonArray());
+        IllegalArgumentException emptyError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, empty),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(emptyError.getMessage().contains("数量必须在 [1, 64] 内"));
+
+        JsonObject zero = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        zero.getAsJsonArray("munitions").get(0).getAsJsonObject().getAsJsonArray("weapons")
+                .get(0).getAsJsonObject().addProperty("weight", 0);
+        IllegalArgumentException weightError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, zero),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(weightError.getMessage().contains("必须在 [1, 512] 内"));
+
+        JsonObject overflow = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        overflow.getAsJsonArray("munitions").get(0).getAsJsonObject().getAsJsonArray("weapons")
+                .get(0).getAsJsonObject().addProperty("weight", 513);
+        IllegalArgumentException overflowError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, overflow),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(overflowError.getMessage().contains("必须在 [1, 512] 内"));
+    }
+
+    @Test
+    void validatesEveryMixedMemberAndRejectsUnknownDeliveryType() {
+        JsonObject missingSecond = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        IllegalArgumentException missingError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, missingSecond),
+                        id -> RVP_FireSupportTestProfiles.WEAPON_ID.equals(id)
+                                ? RVP_FireSupportTestProfiles.projectileWeapon() : null));
+        assertTrue(missingError.getMessage().contains("munitions[0].weapons[1].weapon"));
+
+        JsonObject unknownDelivery = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        unknownDelivery.getAsJsonArray("munitions").get(0).getAsJsonObject().getAsJsonArray("weapons")
+                .get(1).getAsJsonObject().getAsJsonObject("delivery")
+                .addProperty("type", "rvp:unknown_delivery");
+        IllegalArgumentException deliveryError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, unknownDelivery),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(deliveryError.getMessage().contains("未知投送工厂"));
     }
 
     @Test

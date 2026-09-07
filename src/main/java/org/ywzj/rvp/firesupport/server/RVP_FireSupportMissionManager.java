@@ -81,8 +81,8 @@ public final class RVP_FireSupportMissionManager {
             String ownerName = sanitizeOwnerName(player.getGameProfile().getName());
             RVP_FireSupportMission mission = new RVP_FireSupportMission(missionId, player.getUUID(), ownerName,
                     accepted.terminalId(), player.level().dimension(), accepted.profileId(), request.revision(),
-                    accepted.profile(), accepted.munition(), accepted.mode(), accepted.pattern(), accepted.delivery(),
-                    accepted.weaponData(), accepted.parameters(), request.targetX(), request.targetZ(),
+                    accepted.profile(), accepted.munition(), accepted.mode(), accepted.pattern(), accepted.weapons(),
+                    accepted.parameters(), request.targetX(), request.targetZ(),
                     accepted.normalizedHeading(), accepted.seed(), now, accepted.plan());
             state.missions.put(missionId, mission);
             state.cooldownUntil.put(player.getUUID(), Math.addExact(now,
@@ -263,6 +263,7 @@ public final class RVP_FireSupportMissionManager {
             return false;
         }
         RVP_FireSupportSchedulePlanner.PlannedRound round = mission.plan.rounds().get(mission.nextRoundIndex);
+        RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
         RVP_FireSupportDeliveryResult result;
         try {
             LivingEntity owner = resolveOwner(server, level, mission);
@@ -272,7 +273,8 @@ public final class RVP_FireSupportMissionManager {
                     mission.plan.rounds().size(), mission.authoritativeSeed, mission.parameters,
                     mission.fireMode.dispersionMultiplier()));
             // 调用阶段 B 类型化投送器：租约就绪后生成真实 RVP 弹体并沿用既有生命周期。
-            result = mission.delivery.deliver(new RVP_FireSupportDeliveryContext(level, owner, mission.weaponData,
+            result = missionWeapon.delivery().deliver(new RVP_FireSupportDeliveryContext(
+                    level, owner, missionWeapon.weaponData(),
                     impact, mission.missionId, round.roundIndex(), mission.authoritativeSeed,
                     mission.nextSpawnTick(), mission.profile.limits().maxLoadedChunksPerMission()));
         } catch (RuntimeException exception) {

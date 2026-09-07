@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "display": {
     "translation_key": "fire_support_profile.rvp.default"
   },
@@ -31,18 +31,57 @@
     {
       "id": "mk84_he",
       "translation_key": "fire_support.munition.rvp.mk84_he",
-      "weapon": "rvp:f14d_mk84",
       "rounds_per_unit": 12,
       "registration_phase_enabled": false,
-      "delivery": {
-        "type": "rvp:vertical_projectile",
-        "data": {
-          "spawn_height_above_impact_m": 256.0,
-          "entry_speed_m_per_tick": 4.0,
-          "preload_ticks": 20,
-          "heading_jitter_deg": 0.0
+      "weapons": [
+        {
+          "weapon": "rvp:f14d_mk84",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:vertical_projectile",
+            "data": {
+              "spawn_height_above_impact_m": 256.0,
+              "entry_speed_m_per_tick": 4.0,
+              "preload_ticks": 20,
+              "heading_jitter_deg": 0.0
+            }
+          }
         }
-      }
+      ]
+    },
+    {
+      "id": "mk84_yasser_mixed",
+      "translation_key": "fire_support.munition.rvp.mk84_yasser_mixed",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": true,
+      "weapons": [
+        {
+          "weapon": "rvp:f14d_mk84",
+          "weight": 2,
+          "delivery": {
+            "type": "rvp:vertical_projectile",
+            "data": {
+              "spawn_height_above_impact_m": 120.0,
+              "entry_speed_m_per_tick": 4.0,
+              "preload_ticks": 20,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        },
+        {
+          "weapon": "rvp:f14a_iriaf_yasser",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:vertical_projectile",
+            "data": {
+              "spawn_height_above_impact_m": 120.0,
+              "entry_speed_m_per_tick": 4.0,
+              "preload_ticks": 20,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
     }
   ],
   "fire_modes": [

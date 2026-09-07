@@ -21,7 +21,7 @@ import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 
 /** 当前 schema 的严格、非迁移 profile 解析器。 */
 public final class RVP_FireSupportProfileParser {
-    /** 当前且唯一接受的 schema 版本。 */ public static final int SCHEMA_VERSION = 1;
+    /** 当前且唯一接受的 schema 版本。 */ public static final int SCHEMA_VERSION = 2;
     /** 单任务弹数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_ROUNDS = 512;
     /** 全局任务数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_GLOBAL_MISSIONS = 64;
     /** 动态参数数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_PARAMETERS = 32;
@@ -53,7 +53,7 @@ public final class RVP_FireSupportProfileParser {
         RVP_FireSupportJson.keys(root, Set.of("schema_version", "display", "holder_policy", "call_stage",
                 "strike_stage", "limits", "munitions", "fire_modes", "patterns"), path, problems);
         int schema = RVP_FireSupportJson.integer(root, "schema_version", -1, path, problems);
-        if (schema != SCHEMA_VERSION) problems.add(path + ".schema_version", "只接受当前版本 1");
+        if (schema != SCHEMA_VERSION) problems.add(path + ".schema_version", "只接受当前版本 2");
 
         JsonObject display = RVP_FireSupportJson.object(root, "display", path, problems, true);
         RVP_FireSupportJson.keys(display, Set.of("translation_key"), path + ".display", problems);
@@ -149,37 +149,71 @@ public final class RVP_FireSupportProfileParser {
         for (int i = 0; i < array.size(); i++) {
             String p = path + ".munitions[" + i + "]";
             JsonObject o = asObject(array.get(i), p, problems);
-            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "weapon", "rounds_per_unit",
-                    "registration_phase_enabled", "delivery"), p, problems);
+            RVP_FireSupportJson.keys(o, Set.of("id", "translation_key", "rounds_per_unit",
+                    "registration_phase_enabled", "weapons"), p, problems);
             String id = localId(o, p, problems);
             String key = RVP_FireSupportJson.string(o, "translation_key", p, problems);
-            ResourceLocation weapon = RVP_FireSupportJson.resource(RVP_FireSupportJson.string(o, "weapon", p, problems), p + ".weapon", problems);
             int rounds = RVP_FireSupportJson.integer(o, "rounds_per_unit", -1, p, problems);
             boolean registrationPhaseEnabled = RVP_FireSupportJson.bool(
                     o, "registration_phase_enabled", true, p, problems);
             if (rounds < 1 || rounds > ABSOLUTE_MAX_ROUNDS) problems.add(p + ".rounds_per_unit", "必须在 [1, 512] 内");
+            List<RVP_FireSupportProfile.MunitionWeapon> weapons = parseMunitionWeapons(
+                    o, resolver, limits, problems, p);
+            putUnique(out, id, new RVP_FireSupportProfile.Munition(
+                    id, key, rounds, registrationPhaseEnabled, weapons), p, problems);
+        }
+        return Map.copyOf(out);
+    }
+
+    /** 解析一个弹药方案内按声明顺序排列的真实武器成员。 */
+    private static List<RVP_FireSupportProfile.MunitionWeapon> parseMunitionWeapons(JsonObject munition,
+            RVP_FireSupportWeaponResolver resolver, RVP_FireSupportProfile.Limits limits,
+            RVP_FireSupportProblemCollector problems, String path) {
+        JsonArray array = RVP_FireSupportJson.array(munition, "weapons", path, problems);
+        if (array.size() < 1 || array.size() > 64) problems.add(path + ".weapons", "数量必须在 [1, 64] 内");
+        List<RVP_FireSupportProfile.MunitionWeapon> out = new ArrayList<>();
+        Set<ResourceLocation> weaponIds = new LinkedHashSet<>();
+        int totalWeight = 0;
+        for (int index = 0; index < array.size(); index++) {
+            String p = path + ".weapons[" + index + "]";
+            JsonObject o = asObject(array.get(index), p, problems);
+            RVP_FireSupportJson.keys(o, Set.of("weapon", "weight", "delivery"), p, problems);
+            ResourceLocation weapon = RVP_FireSupportJson.resource(
+                    RVP_FireSupportJson.string(o, "weapon", p, problems), p + ".weapon", problems);
+            if (!weaponIds.add(weapon)) problems.add(p + ".weapon", "同一弹药方案内武器不得重复: " + weapon);
+            int weight = RVP_FireSupportJson.integer(o, "weight", -1, p, problems);
+            if (weight < 1 || weight > ABSOLUTE_MAX_ROUNDS) {
+                problems.add(p + ".weight", "必须在 [1, 512] 内");
+            } else if (totalWeight <= ABSOLUTE_MAX_ROUNDS) {
+                totalWeight += weight;
+            }
+
             JsonObject delivery = RVP_FireSupportJson.object(o, "delivery", p, problems, true);
             RVP_FireSupportJson.keys(delivery, Set.of("type", "data"), p + ".delivery", problems);
-            ResourceLocation type = RVP_FireSupportJson.resource(RVP_FireSupportJson.string(delivery, "type", p + ".delivery", problems), p + ".delivery.type", problems);
+            ResourceLocation type = RVP_FireSupportJson.resource(RVP_FireSupportJson.string(
+                    delivery, "type", p + ".delivery", problems), p + ".delivery.type", problems);
             RVP_FireSupportDeliveryFactory factory = RVP_FireSupportDeliveryTypes.get(type);
             Object data = null;
-            if (factory == null) problems.add(p + ".delivery.type", "未知投送工厂 " + type);
-            else {
-                data = factory.parse(RVP_FireSupportJson.object(delivery, "data", p + ".delivery", problems, true), problems, p + ".delivery.data");
+            if (factory == null) {
+                problems.add(p + ".delivery.type", "未知投送工厂 " + type);
+            } else {
+                data = factory.parse(RVP_FireSupportJson.object(
+                        delivery, "data", p + ".delivery", problems, true), problems, p + ".delivery.data");
                 // 调用本体实际武器索引解析器，禁止仅按资源路径猜测武器类型。
                 RVP_FireSupportResolvedWeapon weaponData = resolver.resolve(weapon);
-                if (weaponData == null) problems.add(p + ".weapon", "武器不存在或不是 RVP_WeaponData: " + weapon);
-                else {
+                if (weaponData == null) {
+                    problems.add(p + ".weapon", "武器不存在或不是 RVP_WeaponData: " + weapon);
+                } else {
                     factory.validateWeapon(weapon, weaponData, problems, p + ".weapon");
-                    // 调用本项目炮火预算器：按 profile 最大顶层弹数审计生命期、毁伤和最坏实体展开。
+                    // 调用本项目炮火预算器：每个成员均按任务最大顶层弹数做保守最坏审计。
                     RVP_FireSupportWeaponBudget.validate(weaponData, limits.maxRoundsPerMission(),
                             problems, p + ".weapon");
                 }
             }
-            putUnique(out, id, new RVP_FireSupportProfile.Munition(
-                    id, key, weapon, rounds, registrationPhaseEnabled, type, data), p, problems);
+            out.add(new RVP_FireSupportProfile.MunitionWeapon(weapon, weight, type, data));
         }
-        return Map.copyOf(out);
+        if (totalWeight > ABSOLUTE_MAX_ROUNDS) problems.add(path + ".weapons", "武器权重总和不得超过 512");
+        return List.copyOf(out);
     }
 
     private static Map<String, RVP_FireSupportProfile.FireMode> parseModes(JsonObject root,

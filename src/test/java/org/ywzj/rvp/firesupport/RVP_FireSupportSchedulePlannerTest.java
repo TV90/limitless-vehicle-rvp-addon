@@ -32,22 +32,41 @@ class RVP_FireSupportSchedulePlannerTest {
     @Test
     void baseMultipliersAlwaysRoundUp() {
         RVP_FireSupportProfile profile = RVP_FireSupportTestProfiles.parse();
-        var rapid = RVP_FireSupportSchedulePlanner.plan(800, 5, true, profile.fireModes().get("rapid"), 1, profile.limits());
+        var source = profile.munitions().get("he");
+        var fiveRoundBase = new RVP_FireSupportProfile.Munition(source.id(), source.translationKey(), 5,
+                source.registrationPhaseEnabled(), source.weapons());
+        var rapid = RVP_FireSupportSchedulePlanner.plan(800, fiveRoundBase,
+                profile.fireModes().get("rapid"), 1, profile.limits());
         assertEquals(8, rapid.rounds().size());
     }
 
     @Test
     void munitionCanDisableMarkedRegistrationPhaseWithoutDependingOnItsId() {
         RVP_FireSupportProfile profile = RVP_FireSupportTestProfiles.parse();
-        var effect = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 6, false,
-                profile.fireModes().get("effect"), 11L, profile.limits());
+        var source = profile.munitions().get("he");
+        var withoutRegistration = new RVP_FireSupportProfile.Munition(source.id(), source.translationKey(),
+                source.roundsPerUnit(), false, source.weapons());
+        var effect = RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(),
+                withoutRegistration, profile.fireModes().get("effect"), 11L, profile.limits());
         assertEquals(12, effect.rounds().size());
         assertTrue(effect.rounds().stream().noneMatch(round -> round.phaseId().equals("registration")));
         assertEquals(80, effect.rounds().get(0).strikeOffsetTicks());
     }
 
+    @Test
+    void weightedWeaponsRepeatInDeclarationOrderAndResetForEachPhase() {
+        RVP_FireSupportProfile profile = RVP_FireSupportTestProfiles.parse();
+        var effect = plan(profile, "effect", 11L);
+        int registrationRounds = effect.rounds().size() - 12;
+        assertEquals(java.util.List.of(0, 0, 1), effect.rounds().stream().limit(3)
+                .map(RVP_FireSupportSchedulePlanner.PlannedRound::munitionWeaponIndex).toList());
+        assertEquals(0, effect.rounds().get(registrationRounds).munitionWeaponIndex());
+        assertEquals(java.util.List.of(0, 0, 1), effect.rounds().stream().skip(registrationRounds).limit(3)
+                .map(RVP_FireSupportSchedulePlanner.PlannedRound::munitionWeaponIndex).toList());
+    }
+
     private static RVP_FireSupportSchedulePlanner.Plan plan(RVP_FireSupportProfile profile, String mode, long seed) {
-        return RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(), 6, true,
-                profile.fireModes().get(mode), seed, profile.limits());
+        return RVP_FireSupportSchedulePlanner.plan(profile.callStage().baseDurationTicks(),
+                profile.munitions().get("he"), profile.fireModes().get(mode), seed, profile.limits());
     }
 }

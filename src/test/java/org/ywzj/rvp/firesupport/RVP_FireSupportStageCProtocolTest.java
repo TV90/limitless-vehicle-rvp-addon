@@ -56,10 +56,12 @@ class RVP_FireSupportStageCProtocolTest {
         RVP_FireSupportProfile reparsed = RVP_FireSupportProfileParser.parseAll(
                 Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, JsonParser.parseString(json)),
                 id -> RVP_FireSupportTestProfiles.WEAPON_ID.equals(id)
+                        || RVP_FireSupportTestProfiles.SECOND_WEAPON_ID.equals(id)
                         ? RVP_FireSupportTestProfiles.projectileWeapon() : null)
                 .get(RVP_FireSupportTestProfiles.PROFILE_ID);
         assertEquals(profile.callStage(), reparsed.callStage());
         assertEquals(profile.limits(), reparsed.limits());
+        assertEquals(profile.munitions(), reparsed.munitions());
         assertEquals(profile.fireModes().keySet(), reparsed.fireModes().keySet());
         assertEquals(profile.patterns().keySet(), reparsed.patterns().keySet());
 

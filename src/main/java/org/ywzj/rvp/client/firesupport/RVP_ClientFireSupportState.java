@@ -70,7 +70,7 @@ public final class RVP_ClientFireSupportState implements RVP_FireSupportClientEn
     /** 一份与 Screen 生命周期解耦的客户端会话草稿。 */
     public record DraftSelection(
             /** profile 资源 ID。 */ ResourceLocation profileId,
-            /** profile 内弹种 ID。 */ String munitionId,
+            /** profile 内弹药方案 ID。 */ String munitionId,
             /** profile 内射击模式 ID。 */ String fireModeId,
             /** profile 内打击预设 ID。 */ String patternId,
             /** 当前动态参数不可变副本。 */ Map<String, Double> parameters,

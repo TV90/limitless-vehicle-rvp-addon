@@ -12,13 +12,14 @@ import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 final class RVP_FireSupportTestProfiles {
     static final ResourceLocation PROFILE_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test");
     static final ResourceLocation WEAPON_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test_round");
+    static final ResourceLocation SECOND_WEAPON_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test_rocket");
 
     private RVP_FireSupportTestProfiles() {}
 
     static JsonElement validJson() {
         return JsonParser.parseString("""
                 {
-                  "schema_version":1,
+                  "schema_version":2,
                   "display":{"translation_key":"fire_support_profile.rvp.test"},
                   "holder_policy":{"required_item":"ywzj_rvp:fire_support_terminal","allowed_hands":["main","off"]},
                   "call_stage":{"base_duration_ticks":800,"cancel_on_player_death":true,"cancel_on_terminal_lost":true,"cancel_on_disconnect":true},
@@ -26,9 +27,13 @@ final class RVP_FireSupportTestProfiles {
                   "limits":{"min_target_distance_m":16,"max_target_distance_m":2048,"max_rounds_per_mission":96,
                     "max_active_missions_per_player":1,"max_active_missions_global":16,"request_cooldown_ticks":100,
                     "max_mission_duration_ticks":2400,"max_loaded_chunks_per_mission":8,"max_parameter_count":16},
-                  "munitions":[{"id":"he","translation_key":"fire_support.munition.rvp.he","weapon":"rvp:test_round",
-                    "rounds_per_unit":6,"registration_phase_enabled":true,"delivery":{"type":"rvp:vertical_projectile","data":{"spawn_height_above_impact_m":120,
-                    "entry_speed_m_per_tick":4,"preload_ticks":10,"heading_jitter_deg":0}}}],
+                  "munitions":[{"id":"he","translation_key":"fire_support.munition.rvp.he",
+                    "rounds_per_unit":6,"registration_phase_enabled":true,"weapons":[
+                      {"weapon":"rvp:test_round","weight":2,"delivery":{"type":"rvp:vertical_projectile","data":{"spawn_height_above_impact_m":120,
+                       "entry_speed_m_per_tick":4,"preload_ticks":10,"heading_jitter_deg":0}}},
+                      {"weapon":"rvp:test_rocket","weight":1,"delivery":{"type":"rvp:vertical_projectile","data":{"spawn_height_above_impact_m":100,
+                       "entry_speed_m_per_tick":3,"preload_ticks":10,"heading_jitter_deg":1}}}
+                    ]}],
                   "fire_modes":[
                     {"id":"rapid","translation_key":"fire_support.fire_mode.rvp.rapid","call_duration_multiplier":1,
                      "dispersion_multiplier":1.5,"phases":[{"id":"main","translation_key":"phase.main","start_delay_ticks":0,
@@ -64,6 +69,6 @@ final class RVP_FireSupportTestProfiles {
 
     static RVP_FireSupportProfile parse() {
         return RVP_FireSupportProfileParser.parseAll(Map.of(PROFILE_ID, validJson()),
-                id -> WEAPON_ID.equals(id) ? projectileWeapon() : null).get(PROFILE_ID);
+                id -> WEAPON_ID.equals(id) || SECOND_WEAPON_ID.equals(id) ? projectileWeapon() : null).get(PROFILE_ID);
     }
 }

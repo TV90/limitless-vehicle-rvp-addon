@@ -64,13 +64,23 @@ public final class RVP_FireSupportProfileNetworkCodec {
         JsonObject out = new JsonObject();
         out.addProperty("id", munition.id());
         out.addProperty("translation_key", munition.translationKey());
-        out.addProperty("weapon", munition.weaponId().toString());
         out.addProperty("rounds_per_unit", munition.roundsPerUnit());
         out.addProperty("registration_phase_enabled", munition.registrationPhaseEnabled());
+        JsonArray weapons = new JsonArray();
+        munition.weapons().forEach(weapon -> weapons.add(encodeMunitionWeapon(weapon)));
+        out.add("weapons", weapons);
+        return out;
+    }
+
+    /** 编码弹药方案中的一个真实武器成员及其类型化投送数据。 */
+    private static JsonObject encodeMunitionWeapon(RVP_FireSupportProfile.MunitionWeapon weapon) {
+        JsonObject out = new JsonObject();
+        out.addProperty("weapon", weapon.weaponId().toString());
+        out.addProperty("weight", weapon.weight());
         JsonObject delivery = new JsonObject();
-        delivery.addProperty("type", munition.deliveryType().toString());
+        delivery.addProperty("type", weapon.deliveryType().toString());
         JsonObject data = new JsonObject();
-        if (munition.deliveryData() instanceof RVP_FireSupportDeliveryTypes.VerticalProjectileData vertical) {
+        if (weapon.deliveryData() instanceof RVP_FireSupportDeliveryTypes.VerticalProjectileData vertical) {
             data.addProperty("spawn_height_above_impact_m", vertical.spawnHeightAboveImpactMeters());
             data.addProperty("entry_speed_m_per_tick", vertical.entrySpeedMetersPerTick());
             data.addProperty("preload_ticks", vertical.preloadTicks());

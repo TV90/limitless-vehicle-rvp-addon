@@ -1,14 +1,13 @@
 package org.ywzj.rvp.firesupport.server;
 
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
-import org.ywzj.rvp.firesupport.api.RVP_FireSupportDelivery;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** 单个服务端权威炮火任务；不缓存 Player、ItemStack 或世界等可变对象。 */
 public final class RVP_FireSupportMission {
@@ -20,11 +19,10 @@ public final class RVP_FireSupportMission {
     /** 创建任务所用 profile ID。 */ public final ResourceLocation profileId;
     /** 创建任务所用 profile revision。 */ public final long profileRevision;
     /** 冻结 profile 引用；重载会替换快照而不会修改此对象。 */ public final RVP_FireSupportProfile profile;
-    /** 冻结弹种配置。 */ public final RVP_FireSupportProfile.Munition munition;
+    /** 冻结弹药方案配置。 */ public final RVP_FireSupportProfile.Munition munition;
     /** 冻结射击模式配置。 */ public final RVP_FireSupportProfile.FireMode fireMode;
     /** 冻结打击预设配置。 */ public final RVP_FireSupportProfile.PatternPreset patternPreset;
-    /** 冻结的类型化投送实现。 */ public final RVP_FireSupportDelivery delivery;
-    /** 接受时由本体权威索引解析的 RVP 武器数据。 */ public final RVP_WeaponData weaponData;
+    /** 按弹药方案声明顺序冻结的真实武器与类型化投送器。 */ public final List<RVP_FireSupportMissionWeapon> weapons;
     /** 服务端规范化后的动态参数。 */ public final Map<String, Double> parameters;
     /** 目标锚点世界 X。 */ public final double targetX;
     /** 目标锚点世界 Z。 */ public final double targetZ;
@@ -44,7 +42,7 @@ public final class RVP_FireSupportMission {
                                   RVP_FireSupportProfile profile, RVP_FireSupportProfile.Munition munition,
                                   RVP_FireSupportProfile.FireMode fireMode,
                                   RVP_FireSupportProfile.PatternPreset patternPreset,
-                                  RVP_FireSupportDelivery delivery, RVP_WeaponData weaponData,
+                                  List<RVP_FireSupportMissionWeapon> weapons,
                                   Map<String, Double> parameters, double targetX, double targetZ,
                                   double headingDegrees, long authoritativeSeed, long acceptedTick,
                                   RVP_FireSupportSchedulePlanner.Plan plan) {
@@ -59,8 +57,15 @@ public final class RVP_FireSupportMission {
         this.munition = munition;
         this.fireMode = fireMode;
         this.patternPreset = patternPreset;
-        this.delivery = delivery;
-        this.weaponData = weaponData;
+        this.weapons = List.copyOf(weapons);
+        if (this.weapons.size() != munition.weapons().size()) {
+            throw new IllegalArgumentException("任务冻结武器数必须与弹药方案成员数一致");
+        }
+        for (int index = 0; index < this.weapons.size(); index++) {
+            if (!this.weapons.get(index).configuration().equals(munition.weapons().get(index))) {
+                throw new IllegalArgumentException("任务冻结武器顺序必须与弹药方案声明顺序一致");
+            }
+        }
         this.parameters = Map.copyOf(parameters);
         this.targetX = targetX;
         this.targetZ = targetZ;

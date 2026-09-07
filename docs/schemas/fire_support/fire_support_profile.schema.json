@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ywzj.example/schemas/fire_support/fire_support_profile.schema.json",
   "title": "RVP Fire Support Profile",
-  "description": "Current schema_version 1 only. Runtime validation remains authoritative.",
+  "description": "Current schema_version 2 only. Runtime validation remains authoritative.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "display", "holder_policy", "limits", "munitions", "fire_modes", "patterns"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "display": {
       "type": "object",
       "additionalProperties": false,
@@ -144,13 +144,27 @@
     "munition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "translation_key", "weapon", "rounds_per_unit", "delivery"],
+      "required": ["id", "translation_key", "rounds_per_unit", "weapons"],
       "properties": {
         "id": { "$ref": "#/$defs/localId" },
         "translation_key": { "$ref": "#/$defs/translationKey" },
-        "weapon": { "$ref": "#/$defs/resourceLocation" },
         "rounds_per_unit": { "type": "integer", "minimum": 1, "maximum": 512 },
         "registration_phase_enabled": { "type": "boolean", "default": true },
+        "weapons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/munitionWeapon" }
+        }
+      }
+    },
+    "munitionWeapon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weapon", "weight", "delivery"],
+      "properties": {
+        "weapon": { "$ref": "#/$defs/resourceLocation" },
+        "weight": { "type": "integer", "minimum": 1, "maximum": 512 },
         "delivery": { "$ref": "#/$defs/verticalDelivery" }
       }
     },
