@@ -5,6 +5,7 @@ import org.ywzj.rvp.firesupport.api.RVP_FireSupportProblemCollector;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportResolvedWeapon;
 import org.ywzj.rvp.firesupport.config.RVP_FireSupportWeaponBudget;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,7 +20,7 @@ class RVP_FireSupportWeaponBudgetTest {
     @Test
     void rejectsOnlyExtremelyLargeWeaponBudgets() {
         RVP_FireSupportResolvedWeapon unsafe = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.BOMB, false, false, false,
+                RVP_EnumWeaponKind.BOMB, RVP_EnumGuidanceType.NONE, false, false, false, false, false,
                 72001, 4097, true, 1_000_000_064.0F, 513.0F);
         RVP_FireSupportProblemCollector problems = new RVP_FireSupportProblemCollector();
         RVP_FireSupportWeaponBudget.validate(unsafe, 16, problems, "weapon");
@@ -29,7 +30,7 @@ class RVP_FireSupportWeaponBudgetTest {
     @Test
     void allowsNestedSubmunitionsInsideRelaxedVisibleBudget() {
         RVP_FireSupportResolvedWeapon nested = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.BOMB, false, false, false,
+                RVP_EnumWeaponKind.BOMB, RVP_EnumGuidanceType.NONE, false, false, false, false, false,
                 6000, 512, true, 250_000.0F, 96.0F);
         RVP_FireSupportProblemCollector problems = new RVP_FireSupportProblemCollector();
         RVP_FireSupportWeaponBudget.validate(nested, 128, problems, "weapon");

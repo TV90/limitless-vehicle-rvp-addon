@@ -103,7 +103,8 @@ public final class RVP_ProjectileSpawner {
         RVP_ProjectileSpawnResult result = spawn(new RVP_ProjectileSpawnContext(
                 level, data, kind, entityType.get(), vehicle, weaponUnit, launchUnit, shooter,
                 muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), motion, lockTarget, designatedTarget,
-                data.isInheritVehicleVelocity(), weaponUnit != null, RVP_AimContexts.muzzle(aim)));
+                data.isInheritVehicleVelocity(), weaponUnit != null, RVP_AimContexts.muzzle(aim),
+                RVP_ProjectileChunkLoadingPolicy.DEFAULT));
         return result.projectile();
     }
 
@@ -123,6 +124,8 @@ public final class RVP_ProjectileSpawner {
 
         projectile.initFromWeapon(context.weaponData(), context.weaponKind(), context.sourceVehicle(),
                 context.owner(), context.spawnPosition(), context.aim(), context.initialMotion());
+        projectile.setRemoteChunkPathEnabled(
+                context.chunkLoadingPolicy() == RVP_ProjectileChunkLoadingPolicy.REMOTE_FIRE_SUPPORT);
         projectile.setShooterWeaponUnit(context.sourceWeaponUnit());
         projectile.initColdLaunch(context.launchWeaponUnit());
         if (context.launchWeaponUnit() != null && context.wireLaunchFrom() != null) {

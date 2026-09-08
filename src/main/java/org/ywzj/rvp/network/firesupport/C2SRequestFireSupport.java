@@ -25,6 +25,7 @@ public record C2SRequestFireSupport(
         /** 目标锚点 X。 */ double targetX,
         /** 目标锚点 Z。 */ double targetZ,
         /** 长轴/徐进方向，单位度。 */ double headingDegrees,
+        /** 弹体从虚拟发射/释放点飞向目标的独立入场方向，单位度。 */ double inboundHeadingDegrees,
         /** 动态几何参数。 */ Map<String, Double> parameters,
         /** 新呼叫幂等 nonce。 */ UUID nonce) {
     /** 选择 ID 最大长度。 */ private static final int MAX_ID_LENGTH = 64;
@@ -43,6 +44,7 @@ public record C2SRequestFireSupport(
         buffer.writeDouble(message.targetX);
         buffer.writeDouble(message.targetZ);
         buffer.writeDouble(message.headingDegrees);
+        buffer.writeDouble(message.inboundHeadingDegrees);
         if (message.parameters.size() > MAX_PARAMETERS) throw new IllegalArgumentException("炮火参数超过 32 项");
         buffer.writeVarInt(message.parameters.size());
         message.parameters.forEach((key, value) -> {
@@ -64,15 +66,22 @@ public record C2SRequestFireSupport(
             double x = buffer.readDouble();
             double z = buffer.readDouble();
             double heading = buffer.readDouble();
+            double inboundHeading = buffer.readDouble();
+            if (!Double.isFinite(x) || !Double.isFinite(z) || !Double.isFinite(heading)
+                    || !Double.isFinite(inboundHeading)) {
+                throw new DecoderException("炮火坐标与双方位必须是有限数值");
+            }
             int count = buffer.readVarInt();
             if (count < 0 || count > MAX_PARAMETERS) throw new DecoderException("炮火参数超过 32 项");
             Map<String, Double> parameters = new LinkedHashMap<>();
             for (int index = 0; index < count; index++) {
                 String key = buffer.readUtf(MAX_ID_LENGTH);
-                if (parameters.putIfAbsent(key, buffer.readDouble()) != null) throw new DecoderException("炮火参数键重复");
+                double value = buffer.readDouble();
+                if (!Double.isFinite(value)) throw new DecoderException("炮火参数必须是有限数值");
+                if (parameters.putIfAbsent(key, value) != null) throw new DecoderException("炮火参数键重复");
             }
             return new C2SRequestFireSupport(revision, hand, profileId, munition, mode, pattern, x, z, heading,
-                    parameters, buffer.readUUID());
+                    inboundHeading, parameters, buffer.readUUID());
         } catch (DecoderException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -89,7 +98,8 @@ public record C2SRequestFireSupport(
             RVP_FireSupportMissionManager.SubmissionResult result = RVP_FireSupportMissionManager.submit(
                     context.getSender(), new RVP_FireSupportRequest(message.revision, message.hand,
                             message.profileId, message.munitionId, message.fireModeId, message.patternId, message.targetX,
-                            message.targetZ, message.headingDegrees, message.parameters, message.nonce));
+                            message.targetZ, message.headingDegrees, message.inboundHeadingDegrees,
+                            message.parameters, message.nonce));
             // 调用本项目网络通道，把权威接受/拒绝摘要只回复给请求玩家。
             RVP_Network.CHANNEL.sendTo(S2CFireSupportRequestResult.from(result),
                     context.getSender().connection.connection, NetworkDirection.PLAY_TO_CLIENT);

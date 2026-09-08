@@ -83,7 +83,8 @@ public final class RVP_FireSupportMissionManager {
                     accepted.terminalId(), player.level().dimension(), accepted.profileId(), request.revision(),
                     accepted.profile(), accepted.munition(), accepted.mode(), accepted.pattern(), accepted.weapons(),
                     accepted.parameters(), request.targetX(), request.targetZ(),
-                    accepted.normalizedHeading(), accepted.seed(), now, accepted.plan());
+                    accepted.normalizedHeading(), accepted.normalizedInboundHeading(), accepted.seed(), now,
+                    accepted.plan());
             state.missions.put(missionId, mission);
             state.cooldownUntil.put(player.getUUID(), Math.addExact(now,
                     accepted.profile().limits().requestCooldownTicks()));
@@ -210,6 +211,13 @@ public final class RVP_FireSupportMissionManager {
                 finish(server, mission, RVP_FireSupportMissionState.CEASED, RVP_FireSupportEndReason.CEASED);
                 continue;
             }
+            if (!mission.terminal() && mission.nextRoundIndex < mission.plan.rounds().size()
+                    && now >= mission.nextSpawnTick()
+                    - mission.weapons.get(mission.plan.rounds().get(mission.nextRoundIndex)
+                    .munitionWeaponIndex()).delivery().preloadTicks()) {
+                RVP_FireSupportDeliveryResult preparation = prepareOne(server, mission);
+                if (handleFatalDeliveryResult(server, mission, preparation)) continue;
+            }
             if (spawned >= MAX_SPAWNS_PER_TICK || mission.state == RVP_FireSupportMissionState.CALLING
                     || mission.terminal() || now < mission.nextSpawnTick()) continue;
             if (deliverOne(server, mission, now)) spawned++;
@@ -266,17 +274,8 @@ public final class RVP_FireSupportMissionManager {
         RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
         RVP_FireSupportDeliveryResult result;
         try {
-            LivingEntity owner = resolveOwner(server, level, mission);
-            // 调用阶段 A 几何实现：按冻结 seed、全局轮次和规范化参数计算本发权威落点。
-            RVP_FireSupportImpactPoint impact = mission.patternPreset.pattern().resolve(new RVP_FireSupportPattern.Context(
-                    mission.targetX, mission.targetZ, mission.headingDegrees, round.roundIndex(),
-                    mission.plan.rounds().size(), mission.authoritativeSeed, mission.parameters,
-                    mission.fireMode.dispersionMultiplier()));
             // 调用阶段 B 类型化投送器：租约就绪后生成真实 RVP 弹体并沿用既有生命周期。
-            result = missionWeapon.delivery().deliver(new RVP_FireSupportDeliveryContext(
-                    level, owner, missionWeapon.weaponData(),
-                    impact, mission.missionId, round.roundIndex(), mission.authoritativeSeed,
-                    mission.nextSpawnTick(), mission.profile.limits().maxLoadedChunksPerMission()));
+            result = missionWeapon.delivery().deliver(createDeliveryContext(server, level, mission, round));
         } catch (RuntimeException exception) {
             LOGGER.error("炮火任务 {} 第 {} 发投送异常", mission.missionId, round.roundIndex(), exception);
             result = new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, null, null);
@@ -292,7 +291,7 @@ public final class RVP_FireSupportMissionManager {
             return true;
         }
         switch (result.status()) {
-            case TOO_EARLY, WAITING_FOR_CHUNK -> { return false; }
+            case PREPARED, TOO_EARLY, WAITING_FOR_CHUNK -> { return false; }
             case CHUNK_LIMIT_EXCEEDED -> finish(server, mission, RVP_FireSupportMissionState.FAILED,
                     RVP_FireSupportEndReason.CHUNK_LIMIT);
             case CHUNK_WAIT_TIMED_OUT -> finish(server, mission, RVP_FireSupportMissionState.FAILED,
@@ -301,6 +300,8 @@ public final class RVP_FireSupportMissionManager {
                     RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.OUTSIDE_WORLD);
             case UNSUPPORTED_WEAPON, INVALID_CONTEXT -> finish(server, mission,
                     RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.DELIVERY_UNSUPPORTED);
+            case TRAJECTORY_UNREACHABLE -> finish(server, mission,
+                    RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.TRAJECTORY_UNREACHABLE);
             case SPAWN_FAILED -> {
                 if (++mission.consecutiveFailures >= MAX_DELIVERY_FAILURES) finish(server, mission,
                         RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.DELIVERY_FAILED);
@@ -308,6 +309,57 @@ public final class RVP_FireSupportMissionManager {
             case DELIVERED -> { }
         }
         return false;
+    }
+
+    /** 提前执行确定性解算与 Chunk 租约；不允许在计划 Tick 前生成实体。 */
+    private static RVP_FireSupportDeliveryResult prepareOne(MinecraftServer server,
+                                                             RVP_FireSupportMission mission) {
+        ServerLevel level = server.getLevel(mission.dimension);
+        if (level == null) return new RVP_FireSupportDeliveryResult(
+                RVP_FireSupportDeliveryResult.Status.OUTSIDE_WORLD_BORDER, null, null);
+        RVP_FireSupportSchedulePlanner.PlannedRound round = mission.plan.rounds().get(mission.nextRoundIndex);
+        RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
+        try {
+            // 调用类型化投送器的准备阶段，使远端生成点能在计划发射/释放前申请 Chunk。
+            return missionWeapon.delivery().prepare(createDeliveryContext(server, level, mission, round));
+        } catch (RuntimeException exception) {
+            LOGGER.error("炮火任务 {} 第 {} 发准备异常", mission.missionId, round.roundIndex(), exception);
+            return new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT,
+                    null, null);
+        }
+    }
+
+    /** 把冻结任务与本发弹序组合为 prepare/deliver 共用的完全一致上下文。 */
+    private static RVP_FireSupportDeliveryContext createDeliveryContext(
+            MinecraftServer server, ServerLevel level, RVP_FireSupportMission mission,
+            RVP_FireSupportSchedulePlanner.PlannedRound round) {
+        LivingEntity owner = resolveOwner(server, level, mission);
+        // 调用阶段 A 几何实现：按冻结 seed、全局轮次和规范化参数计算本发权威落点。
+        RVP_FireSupportImpactPoint impact = mission.patternPreset.pattern().resolve(new RVP_FireSupportPattern.Context(
+                mission.targetX, mission.targetZ, mission.headingDegrees, round.roundIndex(),
+                mission.plan.rounds().size(), mission.authoritativeSeed, mission.parameters,
+                mission.fireMode.dispersionMultiplier()));
+        RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
+        return new RVP_FireSupportDeliveryContext(level, owner, missionWeapon.weaponData(), impact,
+                mission.targetX, mission.targetZ, mission.headingDegrees, mission.inboundHeadingDegrees,
+                mission.missionId, round.roundIndex(), mission.authoritativeSeed, mission.nextSpawnTick(),
+                mission.profile.limits().maxLoadedChunksPerMission());
+    }
+
+    /** @return 是否已把不可恢复的准备错误转换为任务终态。 */
+    private static boolean handleFatalDeliveryResult(MinecraftServer server, RVP_FireSupportMission mission,
+                                                      RVP_FireSupportDeliveryResult result) {
+        RVP_FireSupportEndReason reason = switch (result.status()) {
+            case CHUNK_LIMIT_EXCEEDED -> RVP_FireSupportEndReason.CHUNK_LIMIT;
+            case CHUNK_WAIT_TIMED_OUT -> RVP_FireSupportEndReason.CHUNK_TIMEOUT;
+            case OUTSIDE_WORLD_BORDER, OUTSIDE_BUILD_HEIGHT -> RVP_FireSupportEndReason.OUTSIDE_WORLD;
+            case UNSUPPORTED_WEAPON, INVALID_CONTEXT -> RVP_FireSupportEndReason.DELIVERY_UNSUPPORTED;
+            case TRAJECTORY_UNREACHABLE -> RVP_FireSupportEndReason.TRAJECTORY_UNREACHABLE;
+            default -> null;
+        };
+        if (reason == null) return false;
+        finish(server, mission, RVP_FireSupportMissionState.FAILED, reason);
+        return true;
     }
 
     private static LivingEntity resolveOwner(MinecraftServer server, ServerLevel level,

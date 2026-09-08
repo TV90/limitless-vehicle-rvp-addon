@@ -12,7 +12,11 @@ public record RVP_FireSupportDeliveryResult(
     /** @return 是否成功生成并加入世界。 */
     public boolean delivered() { return status == Status.DELIVERED; }
 
+    /** @return 是否已经完成生成前准备。 */
+    public boolean prepared() { return status == Status.PREPARED; }
+
     public enum Status {
+        PREPARED,
         DELIVERED,
         TOO_EARLY,
         WAITING_FOR_CHUNK,
@@ -20,6 +24,7 @@ public record RVP_FireSupportDeliveryResult(
         CHUNK_WAIT_TIMED_OUT,
         OUTSIDE_WORLD_BORDER,
         OUTSIDE_BUILD_HEIGHT,
+        TRAJECTORY_UNREACHABLE,
         UNSUPPORTED_WEAPON,
         SPAWN_FAILED,
         INVALID_CONTEXT

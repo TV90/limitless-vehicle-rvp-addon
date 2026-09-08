@@ -16,6 +16,7 @@ import org.ywzj.rvp.weapon.core.RVP_ProjectileEntityFactory;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawnContext;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawnResult;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileChunkLoadingPolicy;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -35,6 +36,18 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
     }
 
     @Override
+    public int preloadTicks() {
+        return data.preloadTicks();
+    }
+
+    @Override
+    public RVP_FireSupportDeliveryResult prepare(RVP_FireSupportDeliveryContext context) {
+        int blockX = Mth.floor(context.impactPoint().x());
+        int blockZ = Mth.floor(context.impactPoint().z());
+        return leaseResult(context, new ChunkPos(blockX >> 4, blockZ >> 4));
+    }
+
+    @Override
     public RVP_FireSupportDeliveryResult deliver(RVP_FireSupportDeliveryContext context) {
         RVP_WeaponData weapon = context.weaponData();
         RVP_EnumWeaponKind kind = weapon.getWeaponKind();
@@ -49,10 +62,10 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
         }
 
         ChunkPos chunk = new ChunkPos(blockX >> 4, blockZ >> 4);
-        RVP_FireSupportSpawnChunkLeaseManager.LeaseStatus lease =
-                RVP_FireSupportSpawnChunkLeaseManager.request(
-                        context.level(), context.missionId(), chunk, context.expectedSpawnTick(),
-                        data.preloadTicks(), context.maxLoadedChunksPerMission());
+        RVP_FireSupportSpawnChunkLeaseManager.LeaseStatus lease = RVP_FireSupportSpawnChunkLeaseManager.request(
+                context.level(), context.missionId(), chunk, context.scheduledTick(),
+                data.preloadTicks(), context.maxLoadedChunksPerMission(),
+                RVP_FireSupportSpawnChunkLeaseManager.LeasePurpose.TARGET);
         switch (lease) {
             case TOO_EARLY, PRELOADING -> {
                 return result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null);
@@ -93,7 +106,7 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
         // 调用本项目无载具生成核心：sourceVehicle/sourceWeaponUnit/launchUnit 均为空，明确跳过载具副作用。
         RVP_ProjectileSpawnResult spawnResult = RVP_ProjectileSpawner.spawn(new RVP_ProjectileSpawnContext(
                 context.level(), weapon, kind, null, null, null, null, context.owner(), spawn, aim, motion,
-                null, null, false, false, null));
+                null, null, false, false, null, RVP_ProjectileChunkLoadingPolicy.REMOTE_FIRE_SUPPORT));
         if (!spawnResult.spawned()) {
             return result(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, spawnResult.projectile(), spawn);
         }
@@ -112,5 +125,20 @@ public final class RVP_VerticalProjectileDelivery implements RVP_FireSupportDeli
     private static RVP_FireSupportDeliveryResult result(RVP_FireSupportDeliveryResult.Status status,
                                                          RVP_BaseBullet projectile, Vec3 spawn) {
         return new RVP_FireSupportDeliveryResult(status, projectile, spawn);
+    }
+
+    private RVP_FireSupportDeliveryResult leaseResult(RVP_FireSupportDeliveryContext context, ChunkPos chunk) {
+        RVP_FireSupportSpawnChunkLeaseManager.LeaseStatus lease = RVP_FireSupportSpawnChunkLeaseManager.request(
+                context.level(), context.missionId(), chunk, context.scheduledTick(),
+                data.preloadTicks(), context.maxLoadedChunksPerMission(),
+                RVP_FireSupportSpawnChunkLeaseManager.LeasePurpose.TARGET);
+        return switch (lease) {
+            case READY -> result(RVP_FireSupportDeliveryResult.Status.PREPARED, null, null);
+            case TOO_EARLY, PRELOADING -> result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null);
+            case WAITING_FOR_CHUNK -> result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null);
+            case MISSION_CHUNK_LIMIT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_LIMIT_EXCEEDED, null, null);
+            case TIMED_OUT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_WAIT_TIMED_OUT, null, null);
+            case INVALID_REQUEST -> result(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT, null, null);
+        };
     }
 }

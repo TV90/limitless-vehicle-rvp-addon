@@ -46,7 +46,7 @@ public final class RVP_FireSupportSchedulePlanner {
             previousLastTick = rounds.get(rounds.size() - 1).strikeOffsetTicks();
             includedPhaseIndex++;
         }
-        if (rounds.isEmpty()) throw new IllegalArgumentException("射击模式没有可执行阶段");
+        if (rounds.isEmpty()) throw new IllegalArgumentException("打击模式没有可执行阶段");
         if (rounds.size() > limits.maxRoundsPerMission()) {
             throw new IllegalArgumentException("计划弹数 " + rounds.size() + " 超过 profile 上限 " + limits.maxRoundsPerMission());
         }

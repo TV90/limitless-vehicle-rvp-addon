@@ -30,14 +30,13 @@
 
 | 用途 | 路径 |
 | --- | --- |
-| 载具包（**唯一权威源，git 管理**） | `ywzj_rvp/limitless_vehicle/rvp/` |
+| 开发实机运行包（**客户端**） | `run/client_1/limitless_vehicle/rvp/` |
+| 开发实机运行包（**服务端**） | `run/server/limitless_vehicle/rvp/` |
 | 玩家 `.minecraft` 安装目录 | `.minecraft/limitless_vehicle/rvp/` |
 | 武器数据 | `data/rvp/weapons/<id>.json` → 资源 ID `rvp:<id>` |
 | 武器显示 | `assets/rvp/display/weapon/<id>.json` |
 | 载具数据 | `data/rvp/vehicles/<id>.json` |
 
-直接编辑仓库内的 `limitless_vehicle/rvp/`（2026-09-01 核对：`run/*` 下的运行副本均为过期 0.5.7，
-dev 环境无 jar 安装链路，改完仓库包后需**全量复制**到 `run/<端>/limitless_vehicle/rvp/`；
 发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`）。
 
 ## 硬约束（与根目录 agents.md 一致）

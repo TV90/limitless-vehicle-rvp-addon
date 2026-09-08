@@ -20,13 +20,14 @@ public final class RVP_FireSupportMission {
     /** 创建任务所用 profile revision。 */ public final long profileRevision;
     /** 冻结 profile 引用；重载会替换快照而不会修改此对象。 */ public final RVP_FireSupportProfile profile;
     /** 冻结弹药方案配置。 */ public final RVP_FireSupportProfile.Munition munition;
-    /** 冻结射击模式配置。 */ public final RVP_FireSupportProfile.FireMode fireMode;
+    /** 冻结打击模式配置。 */ public final RVP_FireSupportProfile.FireMode fireMode;
     /** 冻结打击预设配置。 */ public final RVP_FireSupportProfile.PatternPreset patternPreset;
     /** 按弹药方案声明顺序冻结的真实武器与类型化投送器。 */ public final List<RVP_FireSupportMissionWeapon> weapons;
     /** 服务端规范化后的动态参数。 */ public final Map<String, Double> parameters;
     /** 目标锚点世界 X。 */ public final double targetX;
     /** 目标锚点世界 Z。 */ public final double targetZ;
     /** 长轴或徐进方向，单位度。 */ public final double headingDegrees;
+    /** 弹体从发射点飞向目标的独立入场方向，单位度。 */ public final double inboundHeadingDegrees;
     /** 服务端权威随机种子。 */ public final long authoritativeSeed;
     /** 服务端接受任务的世界 Tick。 */ public final long acceptedTick;
     /** 呼叫阶段不可逆结束的世界 Tick。 */ public final long callDeadlineTick;
@@ -44,7 +45,8 @@ public final class RVP_FireSupportMission {
                                   RVP_FireSupportProfile.PatternPreset patternPreset,
                                   List<RVP_FireSupportMissionWeapon> weapons,
                                   Map<String, Double> parameters, double targetX, double targetZ,
-                                  double headingDegrees, long authoritativeSeed, long acceptedTick,
+                                  double headingDegrees, double inboundHeadingDegrees,
+                                  long authoritativeSeed, long acceptedTick,
                                   RVP_FireSupportSchedulePlanner.Plan plan) {
         this.missionId = missionId;
         this.ownerId = ownerId;
@@ -70,6 +72,7 @@ public final class RVP_FireSupportMission {
         this.targetX = targetX;
         this.targetZ = targetZ;
         this.headingDegrees = headingDegrees;
+        this.inboundHeadingDegrees = inboundHeadingDegrees;
         this.authoritativeSeed = authoritativeSeed;
         this.acceptedTick = acceptedTick;
         this.callDeadlineTick = Math.addExact(acceptedTick, plan.callDurationTicks());

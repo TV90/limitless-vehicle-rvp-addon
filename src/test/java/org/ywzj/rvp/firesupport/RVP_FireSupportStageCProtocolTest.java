@@ -2,6 +2,7 @@ package org.ywzj.rvp.firesupport;
 
 import com.google.gson.JsonParser;
 import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.DecoderException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -28,7 +29,7 @@ class RVP_FireSupportStageCProtocolTest {
         UUID nonce = UUID.randomUUID();
         C2SRequestFireSupport input = new C2SRequestFireSupport(17, InteractionHand.OFF_HAND,
                 RVP_FireSupportTestProfiles.PROFILE_ID,
-                "he", "effect", "line", 123.5, -456.25, 92.0,
+                "he", "effect", "line", 123.5, -456.25, 92.0, 271.5,
                 Map.of("length_m", 120.0, "width_m", 24.0), nonce);
         assertEquals(input, roundTrip(input, C2SRequestFireSupport::encode, C2SRequestFireSupport::decode));
     }
@@ -39,7 +40,7 @@ class RVP_FireSupportStageCProtocolTest {
         mutable.put("radius_m", 18.0);
         C2SRequestFireSupport request = new C2SRequestFireSupport(3, InteractionHand.MAIN_HAND,
                 RVP_FireSupportTestProfiles.PROFILE_ID,
-                "he", "rapid", "point", 20, 30, 0, mutable, UUID.randomUUID());
+                "he", "rapid", "point", 20, 30, 0, 180, mutable, UUID.randomUUID());
         mutable.put("radius_m", 32.0);
         assertEquals(18.0, request.parameters().get("radius_m"));
         assertThrows(UnsupportedOperationException.class, () -> request.parameters().put("x", 1.0));
@@ -47,6 +48,20 @@ class RVP_FireSupportStageCProtocolTest {
         C2SRequestFireSupportCeaseFire cease = new C2SRequestFireSupportCeaseFire(UUID.randomUUID(), UUID.randomUUID());
         assertEquals(cease, roundTrip(cease, C2SRequestFireSupportCeaseFire::encode,
                 C2SRequestFireSupportCeaseFire::decode));
+    }
+
+    @Test
+    void requestDecoderRejectsNonFiniteInboundHeadingAndParameters() {
+        C2SRequestFireSupport invalidHeading = new C2SRequestFireSupport(10, InteractionHand.MAIN_HAND,
+                RVP_FireSupportTestProfiles.PROFILE_ID, "he", "rapid", "point",
+                20, 30, 0, Double.NaN, Map.of("radius_m", 18.0), UUID.randomUUID());
+        assertThrows(DecoderException.class,
+                () -> roundTrip(invalidHeading, C2SRequestFireSupport::encode, C2SRequestFireSupport::decode));
+        C2SRequestFireSupport invalidParameter = new C2SRequestFireSupport(10, InteractionHand.MAIN_HAND,
+                RVP_FireSupportTestProfiles.PROFILE_ID, "he", "rapid", "point",
+                20, 30, 0, 180, Map.of("radius_m", Double.POSITIVE_INFINITY), UUID.randomUUID());
+        assertThrows(DecoderException.class,
+                () -> roundTrip(invalidParameter, C2SRequestFireSupport::encode, C2SRequestFireSupport::decode));
     }
 
     @Test

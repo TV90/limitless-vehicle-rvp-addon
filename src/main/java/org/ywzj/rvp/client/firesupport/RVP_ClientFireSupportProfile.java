@@ -19,7 +19,7 @@ public record RVP_ClientFireSupportProfile(
         /** 允许发起请求的手，值为 main/off。 */ Set<String> allowedHands,
         /** 呼叫基础时长，单位 Tick。 */ int baseCallDurationTicks,
         /** 客户端弹药方案选择表。 */ List<Munition> munitions,
-        /** 客户端射击模式选择表。 */ List<FireMode> fireModes,
+        /** 客户端打击模式选择表。 */ List<FireMode> fireModes,
         /** 客户端几何预设选择表。 */ List<Pattern> patterns) {
 
     public RVP_ClientFireSupportProfile {
@@ -105,7 +105,7 @@ public record RVP_ClientFireSupportProfile(
             /** 一基数顶层弹数。 */ int roundsPerUnit,
             /** 是否执行标记为试射的阶段。 */ boolean registrationPhaseEnabled) {}
 
-    /** 客户端数据驱动射击模式。 */
+    /** 客户端数据驱动打击模式。 */
     public record FireMode(
             /** profile 内模式 ID。 */ String id,
             /** 模式显示翻译键。 */ String translationKey,

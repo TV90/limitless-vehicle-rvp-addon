@@ -18,7 +18,7 @@ public record RVP_FireSupportProfile(
         /** 打击阶段规则。 */ StrikeStage strikeStage,
         /** 服务端安全与性能上限。 */ Limits limits,
         /** 以 profile 内弹药方案 ID 为键的不可变方案表。 */ Map<String, Munition> munitions,
-        /** 以 profile 内模式 ID 为键的不可变射击模式表。 */ Map<String, FireMode> fireModes,
+        /** 以 profile 内模式 ID 为键的不可变打击模式表。 */ Map<String, FireMode> fireModes,
         /** 以 profile 内预设 ID 为键的不可变打击预设表。 */ Map<String, PatternPreset> patterns) {
 
     public RVP_FireSupportProfile {
@@ -62,7 +62,7 @@ public record RVP_FireSupportProfile(
             /** profile 内的小写弹药方案 ID。 */ String id,
             /** UI 使用的弹药方案翻译键。 */ String translationKey,
             /** 一基数包含的顶层逻辑弹体总数。 */ int roundsPerUnit,
-            /** 是否执行射击模式中标记为试射的阶段；默认 true。 */ boolean registrationPhaseEnabled,
+            /** 是否执行打击模式中标记为试射的阶段；默认 true。 */ boolean registrationPhaseEnabled,
             /** 按声明顺序保存的不可变武器成员列表。 */ List<MunitionWeapon> weapons) {
         public Munition { weapons = List.copyOf(weapons); }
     }
@@ -74,7 +74,7 @@ public record RVP_FireSupportProfile(
             /** 投送工厂类型 ID。 */ ResourceLocation deliveryType,
             /** 已由投送工厂严格解析的不可变配置对象。 */ Object deliveryData) {}
 
-    /** 数据驱动射击模式；调度器不按 ID 分支。 */
+    /** 数据驱动打击模式；调度器不按 ID 分支。 */
     public record FireMode(
             /** profile 内的小写选择 ID。 */ String id,
             /** UI 使用的翻译键。 */ String translationKey,

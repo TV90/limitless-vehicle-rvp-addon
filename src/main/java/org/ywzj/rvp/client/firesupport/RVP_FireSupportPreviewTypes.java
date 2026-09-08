@@ -122,7 +122,7 @@ public final class RVP_FireSupportPreviewTypes {
     /** 一种类型化预览绘制器。 */
     @FunctionalInterface
     public interface Preview {
-        /** 绘制已经乘过射击模式散布倍率的客户端非权威落区。 */
+        /** 绘制已经乘过打击模式散布倍率的客户端非权威落区。 */
         void render(RVP_TacticalMapHost host, GuiGraphics graphics, Draft draft);
     }
 

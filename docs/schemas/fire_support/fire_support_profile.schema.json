@@ -141,6 +141,45 @@
         }
       }
     },
+    "groundLaunchedDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "rvp:ground_launched_projectile" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "launch_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 768 },
+            "min_launch_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 256 },
+            "launch_height_above_ground_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 64, "default": 2.5 },
+            "max_apex_above_impact_m": { "type": "number", "minimum": 16, "maximum": 2048, "default": 512 },
+            "preload_ticks": { "type": "integer", "minimum": 0, "maximum": 1200, "default": 80 },
+            "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 }
+          }
+        }
+      }
+    },
+    "airLaunchedDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "rvp:air_launched_projectile" },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 256 },
+            "min_release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 96 },
+            "carrier_speed_m_per_tick": { "type": "number", "exclusiveMinimum": 0, "maximum": 64, "default": 2.5 },
+            "preload_ticks": { "type": "integer", "minimum": 0, "maximum": 1200, "default": 80 },
+            "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 }
+          }
+        }
+      }
+    },
     "munition": {
       "type": "object",
       "additionalProperties": false,
@@ -165,7 +204,13 @@
       "properties": {
         "weapon": { "$ref": "#/$defs/resourceLocation" },
         "weight": { "type": "integer", "minimum": 1, "maximum": 512 },
-        "delivery": { "$ref": "#/$defs/verticalDelivery" }
+        "delivery": {
+          "oneOf": [
+            { "$ref": "#/$defs/verticalDelivery" },
+            { "$ref": "#/$defs/groundLaunchedDelivery" },
+            { "$ref": "#/$defs/airLaunchedDelivery" }
+          ]
+        }
       }
     },
     "baseRounds": {

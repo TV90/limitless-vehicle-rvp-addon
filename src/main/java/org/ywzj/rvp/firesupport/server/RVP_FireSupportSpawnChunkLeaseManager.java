@@ -39,8 +39,10 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
      * 调用仅查询现有就绪状态并排队 Ticket，绝不同步加载或生成区块。
      */
     public static LeaseStatus request(ServerLevel level, UUID missionId, ChunkPos chunk,
-                                      long expectedSpawnTick, int preloadTicks, int maxMissionChunks) {
-        if (level == null || missionId == null || chunk == null || preloadTicks < 0 || maxMissionChunks < 1) {
+                                      long expectedSpawnTick, int preloadTicks, int maxMissionChunks,
+                                      LeasePurpose purpose) {
+        if (level == null || missionId == null || chunk == null || purpose == null
+                || preloadTicks < 0 || maxMissionChunks < 1) {
             return LeaseStatus.INVALID_REQUEST;
         }
         long now = level.getGameTime();
@@ -54,6 +56,7 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         LeaseKey key = new LeaseKey(missionKey.dimensionId(), missionId, chunk);
         Lease lease = state.leases.computeIfAbsent(key,
                 ignored -> new Lease(level, chunk, expectedSpawnTick, state.allocateTicketId()));
+        lease.markPurpose(purpose);
         // 同一任务后续弹落在同一 Chunk 时复用租约，并把等待截止推进到最新计划弹。
         lease.expectedSpawnTick = Math.max(lease.expectedSpawnTick, expectedSpawnTick);
         lease.lastRequestTick = now;
@@ -71,6 +74,35 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         if (state == null || missionId == null) return;
         state.leases.entrySet().removeIf(entry -> entry.getKey().missionId().equals(missionId));
         state.missionChunks.entrySet().removeIf(entry -> entry.getKey().missionId().equals(missionId));
+    }
+
+    /**
+     * 停止跟踪一个已被投送器放弃的候选发射 Chunk；落点和已确认发射引用仍会保留。
+     * 当该 Chunk 不再被任何用途引用时，才释放其任务预算名额并停止刷新临时 Ticket。
+     */
+    public static void releaseLaunchCandidate(ServerLevel level, UUID missionId, ChunkPos chunk) {
+        if (level == null || missionId == null || chunk == null) return;
+        ServerState state = STATES.get(level.getServer());
+        if (state == null) return;
+        String dimensionId = level.dimension().location().toString();
+        MissionKey missionKey = new MissionKey(dimensionId, missionId);
+        LeaseKey key = new LeaseKey(dimensionId, missionId, chunk);
+        Lease lease = state.leases.get(key);
+        if (lease == null) return;
+        lease.launchCandidateReferenced = false;
+        removeLeaseWhenUnreferenced(state, missionKey, key, lease);
+    }
+
+    /** 标记候选发射点已实际生成弹体，使后续候选回退不会回收其仍有效的任务租约。 */
+    public static void confirmLaunch(ServerLevel level, UUID missionId, ChunkPos chunk) {
+        if (level == null || missionId == null || chunk == null) return;
+        ServerState state = STATES.get(level.getServer());
+        if (state == null) return;
+        String dimensionId = level.dimension().location().toString();
+        Lease lease = state.leases.get(new LeaseKey(dimensionId, missionId, chunk));
+        if (lease == null) return;
+        lease.confirmedLaunchReferenced = true;
+        lease.launchCandidateReferenced = false;
     }
 
     /** @return 当前服务器租约统计，供测试入口和后续任务管理器观测。 */
@@ -144,6 +176,17 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         return level.isPositionEntityTicking(new BlockPos(blockX, level.getMinBuildHeight(), blockZ));
     }
 
+    /** 在所有租约用途均已释放时删除账本条目；已添加的原版 Ticket 不再刷新并自然过期。 */
+    private static void removeLeaseWhenUnreferenced(ServerState state, MissionKey missionKey,
+                                                    LeaseKey key, Lease lease) {
+        if (lease.targetReferenced || lease.launchCandidateReferenced || lease.confirmedLaunchReferenced) return;
+        state.leases.remove(key);
+        Set<ChunkPos> missionChunks = state.missionChunks.get(missionKey);
+        if (missionChunks == null) return;
+        missionChunks.remove(key.chunk());
+        if (missionChunks.isEmpty()) state.missionChunks.remove(missionKey);
+    }
+
     /** 请求方可据此区分计划等待、Chunk 等待、预算/上限和可生成状态。 */
     public enum LeaseStatus {
         READY,
@@ -153,6 +196,12 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         MISSION_CHUNK_LIMIT,
         TIMED_OUT,
         INVALID_REQUEST
+    }
+
+    /** 调用方登记 Chunk 的业务用途；同一 Chunk 可同时被多个用途引用。 */
+    public enum LeasePurpose {
+        /** 本发计划落点，任务结束前始终保留。 */ TARGET,
+        /** 当前尚未生成弹体的发射/释放候选，可在候选失败后释放。 */ LAUNCH_CANDIDATE
     }
 
     /** 管理器当前的只读统计。 */
@@ -173,6 +222,9 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         /** 最近一次任务侧请求 Tick。 */ private long lastRequestTick;
         /** 是否至少成功申请过一次临时 Ticket。 */ private boolean ticketIssued;
         /** 是否已经超过最大等待时间。 */ private boolean timedOut;
+        /** 是否至少作为计划落点被登记；落点租约在任务结束前不可由候选回退释放。 */ private boolean targetReferenced;
+        /** 是否正在作为当前未确认的发射/释放候选被登记。 */ private boolean launchCandidateReferenced;
+        /** 是否已经从该 Chunk 成功生成过弹体；任务结束前保留。 */ private boolean confirmedLaunchReferenced;
 
         private Lease(ServerLevel level, ChunkPos chunk, long expectedSpawnTick, int ticketId) {
             this.level = level;
@@ -180,6 +232,15 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
             this.expectedSpawnTick = expectedSpawnTick;
             this.ticketId = ticketId;
             this.lastRequestTick = level.getGameTime();
+        }
+
+        /** 记录本次登记用途；同一 Chunk 的多种用途必须累积而非互相覆盖。 */
+        private void markPurpose(LeasePurpose purpose) {
+            if (purpose == LeasePurpose.TARGET) {
+                targetReferenced = true;
+            } else {
+                launchCandidateReferenced = true;
+            }
         }
     }
 

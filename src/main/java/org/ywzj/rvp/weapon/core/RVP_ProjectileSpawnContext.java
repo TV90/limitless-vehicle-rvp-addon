@@ -34,11 +34,13 @@ public record RVP_ProjectileSpawnContext(
         /** 可选坐标指示目标；无制导垂直投送为 null。 */ @Nullable Vec3 designatedTarget,
         /** 是否在初始运动上叠加 sourceVehicle 的速度。 */ boolean inheritVehicleVelocity,
         /** 是否从 sourceWeaponUnit 读取武器站可编程空爆距离。 */ boolean bindProgrammableAirburst,
-        /** 线导挂接使用的真实管口坐标；无挂接时为 null。 */ @Nullable Vec3 wireLaunchFrom) {
+        /** 线导挂接使用的真实管口坐标；无挂接时为 null。 */ @Nullable Vec3 wireLaunchFrom,
+        /** 弹体动态 Chunk 路径策略；炮火远程 Bullet 必须显式选择远程策略。 */
+        RVP_ProjectileChunkLoadingPolicy chunkLoadingPolicy) {
 
     public RVP_ProjectileSpawnContext {
         if (level == null || weaponData == null || weaponKind == null || owner == null
-                || spawnPosition == null || aim == null || initialMotion == null) {
+                || spawnPosition == null || aim == null || initialMotion == null || chunkLoadingPolicy == null) {
             throw new IllegalArgumentException("弹体生成上下文的世界、武器、owner、坐标、姿态和速度不能为空");
         }
         if (!finite(spawnPosition) || !finite(initialMotion)

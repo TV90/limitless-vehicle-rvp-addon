@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 9 使用炮火 profile schema v2，要求客户端与服务端同步升级。 */
-    private static final String PROTOCOL = "9";
+    /** 协议 10 在 schema v2 请求中加入独立入场方位，要求客户端与服务端同步升级。 */
+    private static final String PROTOCOL = "10";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

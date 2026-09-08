@@ -59,6 +59,10 @@ class RVP_FireSupportStageDMapToolTest {
         assertTrue(source.contains("new C2SRequestFireSupportCeaseFire("));
         assertTrue(source.contains("RVP_FireSupportMissionState.CALLING"));
         assertTrue(source.contains("primaryActionLabel(mission)"));
+        assertTrue(source.contains("inboundHeadingDegrees"));
+        assertTrue(source.contains("host.blocksPerPixel() * 48.0"));
+        assertTrue(source.contains("inboundHeadingDegrees + side(host, mouseX) * 5.0"));
+        assertTrue(source.contains("initializeInboundHeading(point)"));
         assertFalse(source.contains("weaponId.getPath().equals"));
     }
 }

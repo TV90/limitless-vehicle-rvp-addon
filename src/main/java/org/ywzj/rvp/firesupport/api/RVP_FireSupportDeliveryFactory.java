@@ -15,6 +15,9 @@ public interface RVP_FireSupportDeliveryFactory {
     /** 从已严格解析的类型专属数据创建不可变投送实现。 */
     RVP_FireSupportDelivery create(Object parsedData);
 
+    /** 把已严格解析的数据编码回当前 schema，供服务端同步规范化 profile。 */
+    JsonObject encode(Object parsedData);
+
     /** 使用本体实际武器索引解析出的 RVP 数据检查投送兼容性。 */
     void validateWeapon(ResourceLocation weaponId, RVP_FireSupportResolvedWeapon data,
                         RVP_FireSupportProblemCollector problems, String path);

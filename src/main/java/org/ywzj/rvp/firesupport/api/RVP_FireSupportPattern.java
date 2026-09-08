@@ -21,7 +21,7 @@ public interface RVP_FireSupportPattern {
             /** 任务总弹数。 */ int totalRounds,
             /** 服务端权威随机种子。 */ long seed,
             /** 规范化后的动态参数。 */ Map<String, Double> parameters,
-            /** 射击模式散布倍率。 */ double dispersionMultiplier) {
+            /** 打击模式散布倍率。 */ double dispersionMultiplier) {
         public Context { parameters = Map.copyOf(parameters); }
     }
 }

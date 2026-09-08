@@ -11,11 +11,12 @@ public record RVP_FireSupportRequest(
         /** 客户端声称使用的手；服务端会直接读取该手。 */ InteractionHand hand,
         /** 客户端明确选择的 profile 资源 ID；服务端复核其持有规则。 */ ResourceLocation profileId,
         /** profile 内弹药方案 ID。 */ String munitionId,
-        /** profile 内射击模式 ID。 */ String fireModeId,
+        /** profile 内打击模式 ID。 */ String fireModeId,
         /** profile 内打击预设 ID。 */ String patternId,
         /** 目标锚点世界 X。 */ double targetX,
         /** 目标锚点世界 Z。 */ double targetZ,
         /** 长轴或徐进方向，单位度。 */ double headingDegrees,
+        /** 弹体从发射点飞向目标的独立入场方向，单位度。 */ double inboundHeadingDegrees,
         /** 与 pattern 参数规格精确匹配的动态参数。 */ Map<String, Double> parameters,
         /** 客户端随机幂等键。 */ UUID nonce) {
     public RVP_FireSupportRequest {

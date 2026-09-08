@@ -71,13 +71,14 @@ public final class RVP_ClientFireSupportState implements RVP_FireSupportClientEn
     public record DraftSelection(
             /** profile 资源 ID。 */ ResourceLocation profileId,
             /** profile 内弹药方案 ID。 */ String munitionId,
-            /** profile 内射击模式 ID。 */ String fireModeId,
+            /** profile 内打击模式 ID。 */ String fireModeId,
             /** profile 内打击预设 ID。 */ String patternId,
             /** 当前动态参数不可变副本。 */ Map<String, Double> parameters,
             /** 当前目标锚点 X。 */ double anchorX,
             /** 当前目标锚点 Z。 */ double anchorZ,
             /** 是否已经指定目标锚点。 */ boolean hasAnchor,
-            /** 当前方向角，单位度。 */ double headingDegrees) {
+            /** 当前落区方向角，单位度。 */ double headingDegrees,
+            /** 当前独立入场方向角，单位度。 */ double inboundHeadingDegrees) {
         public DraftSelection { parameters = Map.copyOf(parameters); }
     }
 }

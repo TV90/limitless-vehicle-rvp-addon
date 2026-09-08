@@ -1,6 +1,7 @@
 package org.ywzj.rvp.firesupport.data;
 
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.weapon.data.RVP_Explosion;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionPayloadData;
 import org.ywzj.rvp.weapon.data.RVP_SubmunitionReleaseData;
@@ -9,6 +10,9 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 /** 从本体实际武器索引提取出的、可供纯逻辑校验使用的不可变能力描述。 */
 public record RVP_FireSupportResolvedWeapon(
         /** RVP 内部武器行为分类。 */ RVP_EnumWeaponKind kind,
+        /** 主阶段制导类型；首期真实入场只接受 NONE。 */ RVP_EnumGuidanceType guidanceType,
+        /** 是否使用发动机推力模型。 */ boolean propulsion,
+        /** 是否在弹道积分后强制保持速度大小。 */ boolean constantSpeed,
         /** 是否依赖玩家持续操作的 HITL。 */ boolean humanInTheLoop,
         /** 是否依赖武器站/客户端持续目标点。 */ boolean operatorGuided,
         /** 是否为 HITL CLOS TV 指令制导。 */ boolean hitlClosTvGuided,
@@ -33,7 +37,8 @@ public record RVP_FireSupportResolvedWeapon(
         }
         RVP_Explosion explosion = data.getExplosionData();
         boolean explodes = explosion != null && explosion.explode;
-        return new RVP_FireSupportResolvedWeapon(data.getWeaponKind(), data.hasHumanInTheLoop(),
+        return new RVP_FireSupportResolvedWeapon(data.getWeaponKind(), data.getGuidanceData().getGuidanceType(),
+                data.usesPropulsion(), data.getProjectileData().isConstantSpeed(), data.hasHumanInTheLoop(),
                 data.isOperatorGuided(), data.isHitlClosTvGuided(), data.getLife(),
                 (int) Math.min(directChildren, Integer.MAX_VALUE), nested,
                 explodes ? explosion.damage : 0.0F, explodes ? explosion.radius : 0.0F);

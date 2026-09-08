@@ -8,6 +8,7 @@ import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportResolvedWeapon;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 final class RVP_FireSupportTestProfiles {
     static final ResourceLocation PROFILE_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test");
@@ -63,8 +64,8 @@ final class RVP_FireSupportTestProfiles {
     }
 
     static RVP_FireSupportResolvedWeapon projectileWeapon() {
-        return new RVP_FireSupportResolvedWeapon(RVP_EnumWeaponKind.MACHINEGUN, false, false, false,
-                1200, 0, false, 20.0F, 4.0F);
+        return new RVP_FireSupportResolvedWeapon(RVP_EnumWeaponKind.MACHINEGUN, RVP_EnumGuidanceType.NONE,
+                false, false, false, false, false, 1200, 0, false, 20.0F, 4.0F);
     }
 
     static RVP_FireSupportProfile parse() {

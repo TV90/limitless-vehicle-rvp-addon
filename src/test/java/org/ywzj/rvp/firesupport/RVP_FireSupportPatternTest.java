@@ -46,7 +46,7 @@ class RVP_FireSupportPatternTest {
     @Test
     void builtInRegistriesAreCompleteAndImmutable() {
         assertEquals(3, RVP_FireSupportPatternTypes.all().size());
-        assertEquals(1, RVP_FireSupportDeliveryTypes.all().size());
+        assertEquals(3, RVP_FireSupportDeliveryTypes.all().size());
         assertThrows(UnsupportedOperationException.class, () -> RVP_FireSupportPatternTypes.all().clear());
     }
 

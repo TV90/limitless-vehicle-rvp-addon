@@ -24,6 +24,9 @@ import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
+import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
+import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 /**
  * Machinegun / cannon pellet. Both sides integrate motion; server runs {@link RVP_BaseBullet#tickHit()} before
  * movement. Clients with bounce predict block ricochet locally (no extra network packet).
@@ -54,10 +57,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         super(RVP_Entities.RVP_BULLET.get(), level);
     }
 
-    /** 机枪 Bullet 保持既有行为，不参与动态区块强加载。 */
+    /** 普通机枪 Bullet 保持既有行为；仅明确标记的远程炮火弹申请动态路径。 */
     @Override
     protected boolean shouldKeepDynamicChunkPathLoaded() {
-        return false;
+        return isRemoteChunkPathEnabled();
     }
 
     @Override
@@ -162,6 +165,16 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             discard();
             return false;
         }
+        if (shouldKeepDynamicChunkPathLoaded()) {
+            if (tickChunkWaitGate()) return false;
+            // 调用本项目动态路径加载器，远程炮火 Bullet 在推进引信和飞行时钟前等待路径就绪。
+            RVP_ChunkPathLoader.PathLoadResult path = requestDynamicChunkPath(
+                    RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+            if (!path.currentTickPathReady()) {
+                enterChunkWait(path, false);
+                return false;
+            }
+        }
         updateCount++;
         if (tickDelayFuse()) {
             return false;
@@ -187,6 +200,11 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     }
 
     private void tickBulletServerPostMotion() {
+        if (shouldKeepDynamicChunkPathLoaded()) {
+            // 调用本项目动态路径加载器，为远程炮弹下一 Tick 的连续路径提前申请租约。
+            requestDynamicChunkPath(RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
+            RVP_ChunkPathLoadManager.recordPostMoveObservation(this);
+        }
         tickProgrammableAirburst();
         tickProximityFuse();
         if (tickBounceFuse()) {
@@ -226,11 +244,14 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         setXRot(lerpRotation(xRotO, getXRot()));
         setYRot(lerpRotation(yRotO, getYRot()));
 
-        double nextPosX = getX() + x;
-        double nextPosY = getY() + y;
-        double nextPosZ = getZ() + z;
+        // 调用本项目共享无制导炮弹步进；位置与速度更新顺序保持本体 Bullet 语义。
+        RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepCannon(
+                position(), movement, cannonFriction, cannonGravity);
+        double nextPosX = step.position().x;
+        double nextPosY = step.position().y;
+        double nextPosZ = step.position().z;
         // 调用服务端实体 Tick 就绪查询，在移动前确认目标区块不仅已加载且允许实体 Tick；
-        // 机枪 Bullet 不强加载区块，目标区块未就绪时直接丢弃，避免跨入后冻结残留。
+        // 普通机枪 Bullet 不强加载区块；远程炮火路径已在前置门确认就绪，仍用同一检查兜底。
         if (level() instanceof ServerLevel serverLevel
                 && !serverLevel.isPositionEntityTicking(BlockPos.containing(nextPosX, nextPosY, nextPosZ))) {
             discard();
@@ -249,8 +270,11 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
             friction = 0.4F;
             gravity *= 0.6F;
         }
-        setDeltaMovement(getDeltaMovement().scale(1 - friction));
-        setDeltaMovement(getDeltaMovement().add(0, -gravity, 0));
+        if (friction == cannonFriction && gravity == cannonGravity) {
+            setDeltaMovement(step.velocity());
+        } else {
+            setDeltaMovement(getDeltaMovement().scale(1 - friction).add(0, -gravity, 0));
+        }
         if (level().isClientSide() && tickCount >= life - 1) {
             discard();
         }

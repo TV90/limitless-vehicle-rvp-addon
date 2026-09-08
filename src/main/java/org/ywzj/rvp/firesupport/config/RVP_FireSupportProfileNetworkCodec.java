@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.Map;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
+import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryFactory;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 
 /** 把已校验 profile 编码为供客户端 UI 使用的规范化当前 schema JSON。 */
@@ -79,14 +80,10 @@ public final class RVP_FireSupportProfileNetworkCodec {
         out.addProperty("weight", weapon.weight());
         JsonObject delivery = new JsonObject();
         delivery.addProperty("type", weapon.deliveryType().toString());
-        JsonObject data = new JsonObject();
-        if (weapon.deliveryData() instanceof RVP_FireSupportDeliveryTypes.VerticalProjectileData vertical) {
-            data.addProperty("spawn_height_above_impact_m", vertical.spawnHeightAboveImpactMeters());
-            data.addProperty("entry_speed_m_per_tick", vertical.entrySpeedMetersPerTick());
-            data.addProperty("preload_ticks", vertical.preloadTicks());
-            data.addProperty("heading_jitter_deg", vertical.headingJitterDegrees());
-        }
-        delivery.add("data", data);
+        RVP_FireSupportDeliveryFactory factory = RVP_FireSupportDeliveryTypes.get(weapon.deliveryType());
+        if (factory == null) throw new IllegalStateException("未知炮火投送类型 " + weapon.deliveryType());
+        // 调用本项目投送工厂编码入口，保证新增类型的规范化数据不会在同步时丢失。
+        delivery.add("data", factory.encode(weapon.deliveryData()));
         out.add("delivery", delivery);
         return out;
     }

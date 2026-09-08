@@ -36,7 +36,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** profile 解析失败时的可见诊断。 */ private String profileError = "";
     /** 当前 profile 索引。 */ private int profileIndex;
     /** 当前弹药方案索引。 */ private int munitionIndex;
-    /** 当前射击模式索引。 */ private int modeIndex;
+    /** 当前打击模式索引。 */ private int modeIndex;
     /** 当前几何预设索引。 */ private int patternIndex;
     /** 当前动态参数值。 */ private final Map<String, Double> parameterValues = new LinkedHashMap<>();
     /** 当前目标锚点 X。 */ private double anchorX;
@@ -44,7 +44,9 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 是否已经由玩家指定锚点。 */ private boolean hasAnchor;
     /** 长轴或徐进方向，单位度。 */ private double headingDegrees;
     /** 当前是否正在拖动方向手柄。 */ private boolean draggingDirection;
-    /** 当前展开的选择行：0 profile、1 弹药方案、2 射击模式、3 落区；-1 表示关闭。 */ private int openChoice = -1;
+    /** 弹体由虚拟发射/释放点飞向目标的方向，单位度。 */ private double inboundHeadingDegrees;
+    /** 当前是否正在拖动入场方向手柄。 */ private boolean draggingInboundDirection;
+    /** 当前展开的选择行：0 profile、1 弹药方案、2 打击模式、3 落区；-1 表示关闭。 */ private int openChoice = -1;
     /** 最近发送的新呼叫 nonce。 */ private UUID pendingCallNonce;
     /** 最近发送的停火 nonce。 */ private UUID pendingCeaseNonce;
     /** 当前中止请求是否用于立即取消呼叫，用于选择准确的结果文案。 */ private boolean pendingCallCancellation;
@@ -92,8 +94,13 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             draggingDirection = true;
             return true;
         }
+        if (hasAnchor && isOverInboundHandle(host, mouseX, mouseY)) {
+            draggingInboundDirection = true;
+            return true;
+        }
         Vec3 point = host.pickMapPoint(mouseX, mouseY);
         if (point != null) {
+            if (!hasAnchor) initializeInboundHeading(point);
             anchorX = point.x;
             anchorZ = point.z;
             hasAnchor = true;
@@ -106,17 +113,20 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public boolean mouseDragged(RVP_TacticalMapHost host, double mouseX, double mouseY,
                                 int button, double dragX, double dragY) {
-        if (!draggingDirection || button != 0 || !hasAnchor) return false;
-        updateDirectionFromPointer(host, mouseX, mouseY);
+        if ((!draggingDirection && !draggingInboundDirection) || button != 0 || !hasAnchor) return false;
+        if (draggingInboundDirection) updateInboundDirectionFromPointer(host, mouseX, mouseY);
+        else updateDirectionFromPointer(host, mouseX, mouseY);
         rememberDraft();
         return true;
     }
 
     @Override
     public boolean mouseReleased(RVP_TacticalMapHost host, double mouseX, double mouseY, int button) {
-        if (button == 0 && draggingDirection) {
-            updateDirectionFromPointer(host, mouseX, mouseY);
+        if (button == 0 && (draggingDirection || draggingInboundDirection)) {
+            if (draggingInboundDirection) updateInboundDirectionFromPointer(host, mouseX, mouseY);
+            else updateDirectionFromPointer(host, mouseX, mouseY);
             draggingDirection = false;
+            draggingInboundDirection = false;
             rememberDraft();
             return true;
         }
@@ -133,6 +143,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     @Override
     public void onClose() {
         draggingDirection = false;
+        draggingInboundDirection = false;
         openChoice = -1;
         rememberDraft();
     }
@@ -190,6 +201,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         anchorZ = draft.anchorZ();
         hasAnchor = draft.hasAnchor();
         headingDegrees = normalizeHeading(draft.headingDegrees());
+        inboundHeadingDegrees = normalizeHeading(draft.inboundHeadingDegrees());
     }
 
     /** 把当前草稿提升到客户端会话状态；关闭 Screen 不再丢失选择。 */
@@ -201,7 +213,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (selectedProfile == null || selectedMunition == null || selectedMode == null || selectedPattern == null) return;
         RVP_ClientFireSupportState.INSTANCE.rememberDraft(new RVP_ClientFireSupportState.DraftSelection(
                 selectedProfile.id(), selectedMunition.id(), selectedMode.id(), selectedPattern.id(),
-                parameterValues, anchorX, anchorZ, hasAnchor, headingDegrees));
+                parameterValues, anchorX, anchorZ, hasAnchor, headingDegrees, inboundHeadingDegrees));
     }
 
     /** 从低频权威任务缓存恢复新 Screen 的任务状态和停火终端绑定。 */
@@ -250,6 +262,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         parameterValues.forEach((key, value) -> scaled.put(key, value * mode.dispersionMultiplier()));
         // 调用本项目客户端类型化预览：按同步类型和动态参数绘制非权威落区。
         preview.render(host, graphics, new RVP_FireSupportPreviewTypes.Draft(anchorX, anchorZ, headingDegrees, scaled));
+        renderInboundDirection(host, graphics);
     }
 
     private void renderSidebar(RVP_TacticalMapHost host, GuiGraphics graphics, int mouseX, int mouseY) {
@@ -280,6 +293,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             }
         }
         y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.heading"), format(headingDegrees) + "°", mouseX, mouseY);
+        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.inbound_heading"), format(inboundHeadingDegrees) + "°", mouseX, mouseY);
         drawButton(graphics, left, y, right, y + 16, true, tr("gui.ywzj_rvp.fire_support.reset_parameters"), mouseX, mouseY);
         y += 21;
         int[] preview = previewPlan();
@@ -339,6 +353,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         }
         if (rowHit(y, mouseY)) { headingDegrees = normalizeHeading(headingDegrees + side(host, mouseX) * 5.0); rememberDraft(); return; }
         y += ROW_HEIGHT;
+        if (rowHit(y, mouseY)) { inboundHeadingDegrees = normalizeHeading(inboundHeadingDegrees + side(host, mouseX) * 5.0); rememberDraft(); return; }
+        y += ROW_HEIGHT;
         if (mouseY >= y && mouseY <= y + 16) { resetParameters(); return; }
         y += 21 + ROW_HEIGHT;
         S2CFireSupportMissionUpdate mission = trackedMission();
@@ -367,7 +383,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         // 调用阶段 C 请求消息：只提交选择、锚点、方向和动态参数，派生值由服务端重算。
         RVP_Network.CHANNEL.sendToServer(new C2SRequestFireSupport(RVP_ClientFireSupportState.INSTANCE.revision(),
                 hand, profile().id(), munition.id(), mode.id(), pattern.id(), anchorX, anchorZ, headingDegrees,
-                Map.copyOf(parameterValues), pendingCallNonce));
+                inboundHeadingDegrees, Map.copyOf(parameterValues), pendingCallNonce));
     }
 
     private void submitCeaseFire() {
@@ -427,6 +443,47 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             if (pattern().type().equals(RVP_FireSupportPatternTypes.LINE)) distance *= 2.0;
             parameterValues.put(length.key(), snap(length, distance / Math.max(0.001, mode().dispersionMultiplier())));
         }
+    }
+
+    /** 首次落点设置时冻结玩家到目标的来袭方向；之后玩家移动不会改变该草稿。 */
+    private void initializeInboundHeading(Vec3 target) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) return;
+        double dx = target.x - minecraft.player.getX();
+        double dz = target.z - minecraft.player.getZ();
+        if (dx * dx + dz * dz >= 1.0) {
+            inboundHeadingDegrees = normalizeHeading(Math.toDegrees(Math.atan2(dx, dz)));
+        }
+    }
+
+    /** 入场手柄位于目标后方，拖动源侧手柄时角度始终表示源点飞向目标。 */
+    private void updateInboundDirectionFromPointer(RVP_TacticalMapHost host, double mouseX, double mouseY) {
+        double dx = anchorX - host.screenToWorldX(mouseX);
+        double dz = anchorZ - host.screenToWorldZ(mouseY);
+        if (dx * dx + dz * dz < 1.0) return;
+        inboundHeadingDegrees = normalizeHeading(Math.toDegrees(Math.atan2(dx, dz)));
+    }
+
+    /** 绘制固定 48 像素半径的青色来袭手柄，使远程炮位不会落到地图外。 */
+    private void renderInboundDirection(RVP_TacticalMapHost host, GuiGraphics graphics) {
+        double worldRadius = host.blocksPerPixel() * 48.0;
+        double heading = Math.toRadians(inboundHeadingDegrees);
+        double sourceX = anchorX - Math.sin(heading) * worldRadius;
+        double sourceZ = anchorZ - Math.cos(heading) * worldRadius;
+        int color = 0xFF55DDE0;
+        host.drawWorldLine(graphics, sourceX, sourceZ, anchorX, anchorZ, color);
+        int sx = (int) Math.round(host.worldToScreenX(sourceX));
+        int sy = (int) Math.round(host.worldToScreenY(sourceZ));
+        graphics.fill(sx - 4, sy - 4, sx + 5, sy + 5, color);
+        graphics.fill(sx - 1, sy - 1, sx + 2, sy + 2, 0xFF17202A);
+    }
+
+    private boolean isOverInboundHandle(RVP_TacticalMapHost host, double mouseX, double mouseY) {
+        double heading = Math.toRadians(inboundHeadingDegrees);
+        double radius = host.blocksPerPixel() * 48.0;
+        double hx = host.worldToScreenX(anchorX - Math.sin(heading) * radius);
+        double hy = host.worldToScreenY(anchorZ - Math.cos(heading) * radius);
+        return Math.hypot(mouseX - hx, mouseY - hy) <= HANDLE_RADIUS;
     }
 
     private boolean isOverDirectionHandle(RVP_TacticalMapHost host, double mouseX, double mouseY) {
@@ -550,6 +607,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         modeIndex = 0;
         patternIndex = 0;
         headingDegrees = 0.0;
+        inboundHeadingDegrees = 0.0;
         hasAnchor = false;
         openChoice = -1;
         resetDependentSelections();

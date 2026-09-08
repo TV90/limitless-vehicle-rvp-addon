@@ -17,6 +17,7 @@ import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionManager;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportSpawnChunkLeaseManager;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -28,7 +29,7 @@ class RVP_FireSupportStageEResourcesTest {
     /** 文档中的可分发作者示例。 */ private static final Path EXAMPLE = Path.of(
             "docs/examples/fire_support_profiles/default.json");
     /** 载具包实际发布的默认炮火 profile。 */ private static final Path RUNTIME_PROFILE = Path.of(
-            "limitless_vehicle/rvp/data/rvp/fire_support_profiles/default.json");
+            "run/client_1/limitless_vehicle/rvp/data/rvp/fire_support_profiles/default.json");
     /** 终端生成物品模型。 */ private static final Path ITEM_MODEL = Path.of(
             "src/main/resources/assets/ywzj_rvp/models/item/fire_support_terminal.json");
     /** 终端透明物品贴图。 */ private static final Path ITEM_TEXTURE = Path.of(
@@ -45,12 +46,13 @@ class RVP_FireSupportStageEResourcesTest {
                 ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30"),
                 ResourceLocation.fromNamespaceAndPath("rvp", "m142_rocket"),
                 ResourceLocation.fromNamespaceAndPath("rvp", "m142_m30_wp"),
+                ResourceLocation.fromNamespaceAndPath("rvp", "f14d_maodie_yeshenggounai"),
                 ResourceLocation.fromNamespaceAndPath("rvp", "f14a_iriaf_yasser"));
-        RVP_FireSupportResolvedWeapon mk84 = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.BOMB, false, false, false,
-                1200, 0, false, 1200.0F, 18.0F);
         RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(Map.of(profileId, json),
-                id -> configuredWeapons.contains(id) ? mk84 : null).get(profileId);
+                id -> configuredWeapons.contains(id) ? resolved(id.getPath().contains("mk84")
+                        || id.getPath().contains("maodie") || id.getPath().startsWith("gb_")
+                        || id.getPath().contains("gb3") ? RVP_EnumWeaponKind.BOMB : RVP_EnumWeaponKind.ROCKET)
+                        : null).get(profileId);
 
         assertEquals(2, profile.schemaVersion());
         assertEquals(weaponId, profile.munitions().get("mk84_he").weapons().get(0).weaponId());
@@ -74,18 +76,25 @@ class RVP_FireSupportStageEResourcesTest {
         ResourceLocation profileId = ResourceLocation.fromNamespaceAndPath("rvp", "default");
         ResourceLocation mk84 = ResourceLocation.fromNamespaceAndPath("rvp", "f14d_mk84");
         ResourceLocation yasser = ResourceLocation.fromNamespaceAndPath("rvp", "f14a_iriaf_yasser");
-        RVP_FireSupportResolvedWeapon resolved = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.BOMB, false, false, false,
-                1200, 0, false, 1200.0F, 18.0F);
         RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(Map.of(profileId, json),
-                id -> mk84.equals(id) || yasser.equals(id) ? resolved : null).get(profileId);
+                id -> id.getPath().contains("mk84") || id.getPath().contains("maodie")
+                        ? resolved(RVP_EnumWeaponKind.BOMB) : resolved(RVP_EnumWeaponKind.ROCKET)).get(profileId);
 
         assertEquals(2, profile.schemaVersion());
-        assertEquals(2, profile.munitions().size());
+        assertEquals(6, profile.munitions().size());
         assertEquals(java.util.List.of(mk84, yasser), profile.munitions().get("mk84_yasser_mixed")
                 .weapons().stream().map(RVP_FireSupportProfile.MunitionWeapon::weaponId).toList());
         assertEquals(java.util.List.of(2, 1), profile.munitions().get("mk84_yasser_mixed")
                 .weapons().stream().map(RVP_FireSupportProfile.MunitionWeapon::weight).toList());
+        assertEquals(6, profile.munitions().get("m142_m30").roundsPerUnit());
+        assertEquals(6, profile.munitions().get("m142_m30_wp").roundsPerUnit());
+        assertEquals(6, profile.munitions().get("m142_m31").roundsPerUnit());
+        assertEquals(4, profile.munitions().get("novelty_heavy_bomb").roundsPerUnit());
+    }
+
+    private static RVP_FireSupportResolvedWeapon resolved(RVP_EnumWeaponKind kind) {
+        return new RVP_FireSupportResolvedWeapon(kind, RVP_EnumGuidanceType.NONE,
+                false, false, false, false, false, 1200, 0, false, 1200.0F, 18.0F);
     }
 
     @Test

@@ -82,6 +82,7 @@ import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil;
+import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
 import org.ywzj.rvp.weapon.physics.RVP_WindDirectionUtil;
 import org.ywzj.rvp.weapon.physics.RVP_DeploymentMotionUtil;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
@@ -454,6 +455,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private boolean guidanceWireDirectApplied;
     /** 当前一次连续区块等待已经实际暂停的 Tick 数。 */
     private int chunkWaitTicks;
+    /** 是否由炮火支援无载具入口显式启用远程 Chunk 路径；普通弹体默认关闭。 */
+    private boolean remoteChunkPathEnabled;
 
     public RVP_BaseBullet(EntityType<? extends Projectile> type, Level level, ResourceLocation weaponId) {
         super(type, level, weaponId);
@@ -493,6 +496,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         data.putBoolean("launchTargetSnapshot", launchTargetSnapshot);
         data.putInt("irSeekerGraceUntilTick", irSeekerGraceUntilTick);
         data.putBoolean("terminalIrTargetAcquired", terminalIrTargetAcquired);
+        data.putBoolean("remoteChunkPathEnabled", remoteChunkPathEnabled);
     }
 
     @Override
@@ -530,6 +534,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         launchTargetSnapshot = data.getBoolean("launchTargetSnapshot");
         irSeekerGraceUntilTick = data.contains("irSeekerGraceUntilTick") ? data.getInt("irSeekerGraceUntilTick") : Integer.MIN_VALUE;
         terminalIrTargetAcquired = data.getBoolean("terminalIrTargetAcquired");
+        remoteChunkPathEnabled = data.getBoolean("remoteChunkPathEnabled");
         resolveRemoteRefs();
     }
 
@@ -1816,6 +1821,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return true;
     }
 
+    /** 炮火支援生成器在实体入世前调用；不改变普通载具弹体的默认策略。 */
+    public final void setRemoteChunkPathEnabled(boolean enabled) {
+        this.remoteChunkPathEnabled = enabled;
+    }
+
+    /** @return 是否显式启用了炮火支援远程路径保护。 */
+    protected final boolean isRemoteChunkPathEnabled() {
+        return remoteChunkPathEnabled;
+    }
+
     /**
      * 弹体成功加入世界后提交首个路径窗口；Ticket 仍由下一 ServerTick START 统一分配。
      */
@@ -1836,7 +1851,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /** 等待态优先刷新路径并复查；返回 true 表示本 Tick 必须保持当前位置。 */
-    private boolean tickChunkWaitGate() {
+    protected final boolean tickChunkWaitGate() {
         if (!isWaitingForChunk()) {
             return false;
         }
@@ -1865,7 +1880,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /** 从活动飞行切换为等待；仅在尚未推进飞行状态时把转换 Tick 计入暂停时钟。 */
-    private void enterChunkWait(
+    protected final void enterChunkWait(
             RVP_ChunkPathLoader.PathLoadResult result,
             boolean flightStateAdvanced) {
         if (isWaitingForChunk()) {
@@ -1882,7 +1897,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /** 向纯路径加载器提交当前速度窗口。 */
-    private RVP_ChunkPathLoader.PathLoadResult requestDynamicChunkPath(
+    protected final RVP_ChunkPathLoader.PathLoadResult requestDynamicChunkPath(
             RVP_ChunkPathLoadManager.RequestPriority priority) {
         if (!shouldKeepDynamicChunkPathLoaded()) {
             return new RVP_ChunkPathLoader.PathLoadResult(
@@ -2225,14 +2240,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected void tickBallisticMotion() {
         Vec3 velocity = getDeltaMovement();
         if (!isInWater()) {
+            if (!isMissile() && !isGpsCruisePhaseActive()
+                    && !rvpData.getProjectileData().isConstantSpeed()) {
+                // 调用本项目共享无制导弹道步进，使实体与炮火反解严格使用同一 Tick 顺序。
+                RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepProjectile(
+                        position(), velocity, rvpData);
+                velocity = step.velocity();
+                setDeltaMovement(velocity);
+                setPos(step.position());
+                flightSpeed = Math.max(velocity.length(), 0.01);
+                flightDistance += velocity.length();
+                RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
+                return;
+            }
             float dragInAir = rvpData.getDragInAir();
-            if (isMissile()) {
-                dragInAir *= RVP_ProjectileMotion.resolveMissileAltitudeDragFactor(this, rvpData);
-            }
+            if (isMissile()) dragInAir *= RVP_ProjectileMotion.resolveMissileAltitudeDragFactor(this, rvpData);
             float gravity = rvpData.getGravity();
-            if (isGpsCruisePhaseActive()) {
-                gravity *= resolveGpsCruiseGravityScale();
-            }
+            if (isGpsCruisePhaseActive()) gravity *= resolveGpsCruiseGravityScale();
             velocity = velocity.add(0, gravity, 0);
             velocity = applyMchHorizontalDrag(velocity, dragInAir);
         } else {

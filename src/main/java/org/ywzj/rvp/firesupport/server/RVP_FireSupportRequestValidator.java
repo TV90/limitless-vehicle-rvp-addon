@@ -112,7 +112,8 @@ public final class RVP_FireSupportRequestValidator {
             }
         }
         return ValidationResult.accept(new Accepted(profileId, profile, munition, mode, pattern, parameters,
-                plan, weapons, terminalId, seed, Mth.wrapDegrees(request.headingDegrees())));
+                plan, weapons, terminalId, seed, Mth.wrapDegrees(request.headingDegrees()),
+                Mth.wrapDegrees(request.inboundHeadingDegrees())));
     }
 
     private static boolean basicRequestValid(ServerPlayer player, RVP_FireSupportRequest request) {
@@ -121,7 +122,8 @@ public final class RVP_FireSupportRequestValidator {
                 && validSelection(request.munitionId()) && validSelection(request.fireModeId())
                 && validSelection(request.patternId()) && request.parameters() != null
                 && request.parameters().size() <= 32 && Double.isFinite(request.targetX())
-                && Double.isFinite(request.targetZ()) && Double.isFinite(request.headingDegrees());
+                && Double.isFinite(request.targetZ()) && Double.isFinite(request.headingDegrees())
+                && Double.isFinite(request.inboundHeadingDegrees());
     }
 
     private static boolean validSelection(String value) {
@@ -161,14 +163,15 @@ public final class RVP_FireSupportRequestValidator {
             /** 唯一匹配实际手中终端的 profile ID。 */ ResourceLocation profileId,
             /** 冻结 profile。 */ RVP_FireSupportProfile profile,
             /** 冻结弹药方案。 */ RVP_FireSupportProfile.Munition munition,
-            /** 冻结射击模式。 */ RVP_FireSupportProfile.FireMode mode,
+            /** 冻结打击模式。 */ RVP_FireSupportProfile.FireMode mode,
             /** 冻结打击预设。 */ RVP_FireSupportProfile.PatternPreset pattern,
             /** 服务端规范化参数。 */ Map<String, Double> parameters,
             /** 服务端完整计划。 */ RVP_FireSupportSchedulePlanner.Plan plan,
             /** 按声明顺序冻结的真实武器与运行时投送器。 */ List<RVP_FireSupportMissionWeapon> weapons,
             /** 绑定终端实例 UUID。 */ UUID terminalId,
             /** 权威随机种子。 */ long seed,
-            /** 规范化到 [-180,180) 的方向角。 */ double normalizedHeading) {
+            /** 规范化到 [-180,180) 的落区方向角。 */ double normalizedHeading,
+            /** 规范化到 [-180,180) 的独立入场方向角。 */ double normalizedInboundHeading) {
         public Accepted {
             parameters = Map.copyOf(parameters);
             weapons = List.copyOf(weapons);

@@ -1,0 +1,337 @@
+{
+  "schema_version": 2,
+  "display": {
+    "translation_key": "fire_support_profile.rvp.launched_test"
+  },
+  "holder_policy": {
+    "required_item": "ywzj_rvp:fire_support_terminal",
+    "allowed_hands": ["main", "off"]
+  },
+  "call_stage": {
+    "base_duration_ticks": 800,
+    "cancel_on_player_death": true,
+    "cancel_on_terminal_lost": true,
+    "cancel_on_disconnect": true
+  },
+  "strike_stage": {
+    "cease_fire_delay_ticks": 80
+  },
+  "limits": {
+    "min_target_distance_m": 0.0,
+    "max_target_distance_m": 8192.0,
+    "max_rounds_per_mission": 128,
+    "max_active_missions_per_player": 4,
+    "max_active_missions_global": 32,
+    "request_cooldown_ticks": 20,
+    "max_mission_duration_ticks": 7200,
+    "max_loaded_chunks_per_mission": 64,
+    "max_parameter_count": 8
+  },
+  "munitions": [
+    {
+      "id": "mk84_he",
+      "translation_key": "fire_support.munition.rvp.mk84_he",
+      "rounds_per_unit": 12,
+      "registration_phase_enabled": false,
+      "weapons": [
+        {
+          "weapon": "rvp:f14d_mk84",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:air_launched_projectile",
+            "data": {
+              "release_altitude_above_impact_m": 256.0,
+              "min_release_altitude_above_impact_m": 96.0,
+              "carrier_speed_m_per_tick": 2.5,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "mk84_yasser_mixed",
+      "translation_key": "fire_support.munition.rvp.mk84_yasser_mixed",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": true,
+      "weapons": [
+        {
+          "weapon": "rvp:f14d_mk84",
+          "weight": 2,
+          "delivery": {
+            "type": "rvp:air_launched_projectile",
+            "data": {
+              "release_altitude_above_impact_m": 256.0,
+              "min_release_altitude_above_impact_m": 96.0,
+              "carrier_speed_m_per_tick": 2.5,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        },
+        {
+          "weapon": "rvp:f14a_iriaf_yasser",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:ground_launched_projectile",
+            "data": {
+              "launch_distance_m": 768.0,
+              "min_launch_distance_m": 256.0,
+              "launch_height_above_ground_m": 2.5,
+              "max_apex_above_impact_m": 512.0,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "m142_m30",
+      "translation_key": "fire_support.munition.rvp.m142_m30",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": true,
+      "weapons": [
+        {
+          "weapon": "rvp:m142_m30",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:ground_launched_projectile",
+            "data": {
+              "launch_distance_m": 768.0,
+              "min_launch_distance_m": 256.0,
+              "launch_height_above_ground_m": 2.5,
+              "max_apex_above_impact_m": 512.0,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "m142_m30_wp",
+      "translation_key": "fire_support.munition.rvp.m142_m30_wp",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": true,
+      "weapons": [
+        {
+          "weapon": "rvp:m142_m30_wp",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:ground_launched_projectile",
+            "data": {
+              "launch_distance_m": 768.0,
+              "min_launch_distance_m": 256.0,
+              "launch_height_above_ground_m": 2.5,
+              "max_apex_above_impact_m": 512.0,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "m142_m31",
+      "translation_key": "fire_support.munition.rvp.m142_m31",
+      "rounds_per_unit": 6,
+      "registration_phase_enabled": true,
+      "weapons": [
+        {
+          "weapon": "rvp:m142_rocket",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:ground_launched_projectile",
+            "data": {
+              "launch_distance_m": 768.0,
+              "min_launch_distance_m": 256.0,
+              "launch_height_above_ground_m": 2.5,
+              "max_apex_above_impact_m": 512.0,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "novelty_heavy_bomb",
+      "translation_key": "fire_support.munition.rvp.novelty_heavy_bomb",
+      "rounds_per_unit": 4,
+      "registration_phase_enabled": false,
+      "weapons": [
+        {
+          "weapon": "rvp:f14d_maodie_yeshenggounai",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:air_launched_projectile",
+            "data": {
+              "release_altitude_above_impact_m": 256.0,
+              "min_release_altitude_above_impact_m": 96.0,
+              "carrier_speed_m_per_tick": 2.5,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "fire_modes": [
+    {
+      "id": "rapid",
+      "translation_key": "fire_support.fire_mode.rvp.rapid",
+      "call_duration_multiplier": 1.0,
+      "dispersion_multiplier": 1.5,
+      "phases": [
+        {
+          "id": "main",
+          "translation_key": "fire_support.phase.rvp.rapid",
+          "start_delay_ticks": 0,
+          "rounds": {
+            "base_multiplier": 1.5,
+            "rounding": "ceil"
+          },
+          "duration_ticks": 60
+        }
+      ]
+    },
+    {
+      "id": "effect",
+      "translation_key": "fire_support.fire_mode.rvp.effect",
+      "call_duration_multiplier": 1.5,
+      "dispersion_multiplier": 1.0,
+      "phases": [
+        {
+          "id": "registration",
+          "translation_key": "fire_support.phase.rvp.registration",
+          "start_delay_ticks": 0,
+          "registration_phase": true,
+          "rounds": {
+            "random_min": 2,
+            "random_max": 3
+          },
+          "interval_ticks": 20
+        },
+        {
+          "id": "main",
+          "translation_key": "fire_support.phase.rvp.effect",
+          "start_delay_ticks": 80,
+          "rounds": {
+            "base_multiplier": 2.0,
+            "rounding": "ceil"
+          },
+          "duration_ticks": 180
+        }
+      ]
+    },
+    {
+      "id": "monitor",
+      "translation_key": "fire_support.fire_mode.rvp.monitor",
+      "call_duration_multiplier": 1.5,
+      "dispersion_multiplier": 1.0,
+      "phases": [
+        {
+          "id": "registration",
+          "translation_key": "fire_support.phase.rvp.registration",
+          "start_delay_ticks": 0,
+          "registration_phase": true,
+          "rounds": {
+            "random_min": 2,
+            "random_max": 3
+          },
+          "interval_ticks": 20
+        },
+        {
+          "id": "main",
+          "translation_key": "fire_support.phase.rvp.monitor",
+          "start_delay_ticks": 80,
+          "rounds": {
+            "base_multiplier": 2.0,
+            "rounding": "ceil"
+          },
+          "duration_ticks": 600
+        }
+      ]
+    }
+  ],
+  "patterns": [
+    {
+      "id": "point",
+      "translation_key": "fire_support.pattern.rvp.point",
+      "type": "rvp:point",
+      "data": {
+        "parameters": {
+          "radius_m": {
+            "type": "double",
+            "default": 32.0,
+            "min": 32.0,
+            "max": 128.0,
+            "step": 1.0,
+            "unit": "m"
+          }
+        }
+      }
+    },
+    {
+      "id": "line",
+      "translation_key": "fire_support.pattern.rvp.line",
+      "type": "rvp:line",
+      "data": {
+        "parameters": {
+          "length_m": {
+            "type": "double",
+            "default": 64.0,
+            "min": 64.0,
+            "max": 128.0,
+            "step": 4.0,
+            "unit": "m"
+          },
+          "width_m": {
+            "type": "double",
+            "default": 36.0,
+            "min": 36.0,
+            "max": 64.0,
+            "step": 2.0,
+            "unit": "m"
+          }
+        }
+      }
+    },
+    {
+      "id": "creeping",
+      "translation_key": "fire_support.pattern.rvp.creeping",
+      "type": "rvp:creeping",
+      "data": {
+        "parameters": {
+          "length_m": {
+            "type": "double",
+            "default": 80.0,
+            "min": 32.0,
+            "max": 256.0,
+            "step": 4.0,
+            "unit": "m"
+          },
+          "width_m": {
+            "type": "double",
+            "default": 32.0,
+            "min": 32.0,
+            "max": 64.0,
+            "step": 2.0,
+            "unit": "m"
+          },
+          "step_m": {
+            "type": "double",
+            "default": 4.0,
+            "min": 4.0,
+            "max": 32.0,
+            "step": 4.0,
+            "unit": "m"
+          }
+        }
+      }
+    }
+  ]
+}

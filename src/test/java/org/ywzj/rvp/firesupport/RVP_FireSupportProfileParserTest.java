@@ -11,6 +11,7 @@ import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportSnapshot;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -123,7 +124,8 @@ class RVP_FireSupportProfileParserTest {
                         Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, RVP_FireSupportTestProfiles.validJson()), id -> null));
 
         RVP_FireSupportResolvedWeapon laser = new RVP_FireSupportResolvedWeapon(
-                RVP_EnumWeaponKind.LASER, false, false, false, 1200, 0, false, 0.0F, 0.0F);
+                RVP_EnumWeaponKind.LASER, RVP_EnumGuidanceType.NONE, false, false, false, false, false,
+                1200, 0, false, 0.0F, 0.0F);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> RVP_FireSupportProfileParser.parseAll(
                         Map.of(ResourceLocation.fromNamespaceAndPath("rvp", "laser"), RVP_FireSupportTestProfiles.validJson()), id -> laser));
