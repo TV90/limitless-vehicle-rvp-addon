@@ -119,7 +119,7 @@ public final class RVP_FireSupportMissionManager {
                 && mission.state != RVP_FireSupportMissionState.CEASE_FIRE_PENDING)) {
             result = new CeaseFireResult(false, RVP_FireSupportEndReason.CEASE_FIRE_NOT_ALLOWED, Long.MAX_VALUE);
         } else if (!RVP_FireSupportTerminalIdentity.matchesBoundTerminalInAllowedHand(
-                player, mission.terminalInstanceId, mission.profile.holderPolicy())) {
+                player, mission.terminalInstanceId, mission.profileId, mission.profile.holderPolicy())) {
             result = new CeaseFireResult(false, RVP_FireSupportEndReason.TERMINAL_NOT_HELD, Long.MAX_VALUE);
         } else {
             if (mission.state == RVP_FireSupportMissionState.CALLING) {
@@ -256,7 +256,8 @@ public final class RVP_FireSupportMissionManager {
             return false;
         }
         if (mission.profile.callStage().cancelOnTerminalLost()
-                && !RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(player, mission.terminalInstanceId)) {
+                && !RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(
+                player, mission.terminalInstanceId, mission.profileId)) {
             finish(server, mission, RVP_FireSupportMissionState.CANCELLED, RVP_FireSupportEndReason.TERMINAL_LOST);
             return false;
         }
@@ -372,10 +373,16 @@ public final class RVP_FireSupportMissionManager {
 
     private static void finish(MinecraftServer server, RVP_FireSupportMission mission,
                                RVP_FireSupportMissionState state, RVP_FireSupportEndReason reason) {
+        if (mission.terminal()) return;
         mission.state = state;
         mission.endReason = reason;
         // 调用阶段 B 租约管理器：所有终态停止刷新该任务的短期 Chunk Ticket。
         RVP_FireSupportSpawnChunkLeaseManager.releaseMission(server, mission.missionId);
+        if ((state == RVP_FireSupportMissionState.COMPLETED || state == RVP_FireSupportMissionState.CEASED)
+                && mission.profile.callStage().consumeTerminalOnCompletion()) {
+            // 调用本项目实例级终端消耗服务：只删除任务冻结的 terminal_instance/profile_id。
+            RVP_FireSupportTerminalConsumption.consume(server, mission.terminalInstanceId, mission.profileId);
+        }
         ServerState serverState = STATES.get(server);
         if (serverState != null) serverState.recentMissions.put(mission.missionId,
                 new HistoryEntry(MissionView.from(mission), server.overworld().getGameTime()));

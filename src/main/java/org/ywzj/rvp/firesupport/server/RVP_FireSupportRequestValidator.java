@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.ywzj.rvp.firesupport.api.RVP_FireSupportDelivery;
 import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryFactory;
 import org.ywzj.rvp.firesupport.config.RVP_FireSupportParameterValidator;
@@ -35,18 +34,18 @@ public final class RVP_FireSupportRequestValidator {
         if (request.revision() != snapshot.revision()) return ValidationResult.reject(RVP_FireSupportEndReason.STALE_REVISION);
 
         ItemStack held = player.getItemInHand(request.hand());
-        ResourceLocation heldItemId = ForgeRegistries.ITEMS.getKey(held.getItem());
         ResourceLocation profileId = request.profileId();
         RVP_FireSupportProfile profile = snapshot.profiles().get(profileId);
         if (profile == null) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
-        if (!profile.holderPolicy().requiredItem().equals(heldItemId)
+        if (!RVP_FireSupportTerminalIdentity.isTerminal(held)
+                || !profileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(held))
                 || !RVP_FireSupportTerminalIdentity.isAllowedHand(player, request.hand(), profile.holderPolicy())) {
             return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
         }
 
         UUID terminalId = RVP_FireSupportTerminalIdentity.getOrCreate(player, held);
         if (terminalId == null) return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
-        if (!RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(player, terminalId)) {
+        if (!RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(player, terminalId, profileId)) {
             return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_DUPLICATED);
         }
 

@@ -11,8 +11,9 @@ import org.ywzj.rvp.firesupport.api.RVP_FireSupportPattern;
  * 一份已通过严格校验的炮火支援配置。所有集合均为不可变副本，任务可安全冻结并跨重载持有。
  */
 public record RVP_FireSupportProfile(
-        /** 当前配置格式版本；解析器只接受 2。 */ int schemaVersion,
+        /** 当前配置格式版本；解析器只接受 3。 */ int schemaVersion,
         /** UI 使用的翻译键。 */ String translationKey,
+        /** 由 profile 数据生成的终端物品显示配置。 */ Item item,
         /** 终端持有规则。 */ HolderPolicy holderPolicy,
         /** 呼叫阶段规则。 */ CallStage callStage,
         /** 打击阶段规则。 */ StrikeStage strikeStage,
@@ -27,9 +28,12 @@ public record RVP_FireSupportProfile(
         patterns = Map.copyOf(patterns);
     }
 
-    /** 打开、提交和停火时需要匹配的物品与手。 */
+    /** profile 生成的终端物品显示配置。 */
+    public record Item(
+            /** ItemStack 名称使用的翻译键。 */ String translationKey) {}
+
+    /** 打开、提交和停火时需要匹配的手。 */
     public record HolderPolicy(
-            /** 必须持有的物品注册 ID。 */ ResourceLocation requiredItem,
             /** 允许的手，当前值仅为 main/off。 */ Set<String> allowedHands) {
         public HolderPolicy { allowedHands = Set.copyOf(allowedHands); }
     }
@@ -39,7 +43,8 @@ public record RVP_FireSupportProfile(
             /** 模式倍率应用前的基础时长，单位 Tick，默认 800。 */ int baseDurationTicks,
             /** 玩家死亡时是否取消；首版固定为 true。 */ boolean cancelOnPlayerDeath,
             /** 绑定终端离开物品栏时是否取消；首版固定为 true。 */ boolean cancelOnTerminalLost,
-            /** 玩家断线时是否取消，默认 true。 */ boolean cancelOnDisconnect) {}
+            /** 玩家断线时是否取消，默认 true。 */ boolean cancelOnDisconnect,
+            /** 任务成功完成或停火生效后是否删除绑定终端，默认 false。 */ boolean consumeTerminalOnCompletion) {}
 
     /** 进入打击阶段后的生命周期配置。 */
     public record StrikeStage(

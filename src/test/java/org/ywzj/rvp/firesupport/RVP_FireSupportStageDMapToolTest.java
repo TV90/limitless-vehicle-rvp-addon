@@ -15,10 +15,11 @@ class RVP_FireSupportStageDMapToolTest {
     /** 最小但包含三类预设的当前 schema 客户端快照。 */
     private static final String PROFILE_JSON = """
             {
-              "schema_version":2,
+              "schema_version":3,
               "display":{"translation_key":"profile.test"},
-              "holder_policy":{"required_item":"ywzj_rvp:fire_support_terminal","allowed_hands":["main","off"]},
-              "call_stage":{"base_duration_ticks":800,"cancel_on_player_death":true,"cancel_on_terminal_lost":true,"cancel_on_disconnect":true},
+              "item":{"translation_key":"item.ywzj_rvp.fire_support_terminal.test"},
+              "holder_policy":{"allowed_hands":["main","off"]},
+              "call_stage":{"base_duration_ticks":800,"cancel_on_player_death":true,"cancel_on_terminal_lost":true,"cancel_on_disconnect":true,"consume_terminal_on_completion":false},
               "strike_stage":{"cease_fire_delay_ticks":80},
               "limits":{"min_target_distance_m":16,"max_target_distance_m":2048,"max_rounds_per_mission":96,"max_active_missions_per_player":1,"max_active_missions_global":16,"request_cooldown_ticks":100,"max_mission_duration_ticks":2400,"max_loaded_chunks_per_mission":8,"max_parameter_count":16},
               "munitions":[{"id":"he","translation_key":"munition.he","rounds_per_unit":6,"registration_phase_enabled":true,"weapons":[{"weapon":"rvp:test","weight":1,"delivery":{"type":"rvp:vertical_projectile","data":{}}}]}],
@@ -35,6 +36,7 @@ class RVP_FireSupportStageDMapToolTest {
     void clientProfilePreservesDynamicParametersAndGenericPhases() {
         RVP_ClientFireSupportProfile profile = RVP_ClientFireSupportProfile.parse(
                 net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("rvp", "test"), PROFILE_JSON);
+        assertEquals("item.ywzj_rvp.fire_support_terminal.test", profile.itemTranslationKey());
         assertEquals(3, profile.patterns().size());
         assertEquals(java.util.Set.of("length_m", "width_m", "step_m"), profile.patterns().get(2).parameters().keySet());
         assertEquals(2.0, profile.fireModes().get(0).phases().get(0).baseMultiplier());

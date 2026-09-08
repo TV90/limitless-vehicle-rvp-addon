@@ -14,7 +14,7 @@
 | [RVP Distant Horizons 地形 LOD 遮挡兼容技术文档与调参指南](./RVP载具渲染/RVP_DistantHorizons地形LOD遮挡兼容技术文档与调参指南_20260829.md) | 客户端渲染 / 整合包 / QA | DH API 7.0.1+ 的远距代理与 512 格内真实载具双层深度合成、显式回退、bias 校准、诊断与实机验证矩阵 |
 | [RVP空爆白磷弹实际实现与调参指南.md](./RVP弹体-fish/RVP空爆白磷弹实际实现与调参指南.md) | 配置作者 / 特效 / 平衡 / QA | M30 权威白磷释放云、分层下坠、初段尾迹增密、毁伤、性能预算与调参排障 |
 | [炮兵地图与战术点亮机制方案.md](./plan/炮兵地图与战术点亮机制方案.md) | 火控开发 / QA | 炮兵地图、逆 CCIP 解算、偏航优先瞄准、俯仰门控与战术点亮机制 |
-| [RVP 炮火支援技术文档与调参指南](./RVP_item/RVP炮火支援终端/RVP炮火支援技术文档与调参指南_20260906.md) | 玩家 / 配置作者 / 服务端管理员 / QA | schema v2 单武器/混合弹药方案、`fire_support_profiles` 全字段、调参、性能预算与排障 |
+| [RVP 炮火支援技术文档与调参指南](./RVP_item/RVP炮火支援终端/RVP炮火支援技术文档与调参指南_20260906.md) | 玩家 / 配置作者 / 服务端管理员 / QA | schema v3 单武器/混合弹药方案、数据驱动终端变体、`fire_support_profiles` 全字段、调参、性能预算与排障 |
 | [examples/mi28_s13_boundary/](./examples/mi28_s13_boundary/) | QA / 配置 | Mi-28 演示武器 JSON 副本（可复制到载具包） |
 | [plan/](./plan/) | 功能设计 | TV 导弹、[分段复合制导](./plan/导弹分段复合制导实现.md)、[自定义挂架衔接点/出弹点分离](./plan/研发调研_自定义挂架衔接点与出弹点分离.md) 等方案稿 |
 | [examples/custom_mount_shoot_bone/](./examples/custom_mount_shoot_bone/) | 配置作者 / QA | 自定义挂架出弹骨（`shoot_structure_bones`）j15 新旧写法对比与条目级示例（伪配置） |

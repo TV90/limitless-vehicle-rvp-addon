@@ -54,7 +54,9 @@ class RVP_FireSupportStageEResourcesTest {
                         || id.getPath().contains("gb3") ? RVP_EnumWeaponKind.BOMB : RVP_EnumWeaponKind.ROCKET)
                         : null).get(profileId);
 
-        assertEquals(2, profile.schemaVersion());
+        assertEquals(3, profile.schemaVersion());
+        assertEquals("item.ywzj_rvp.fire_support_terminal.default", profile.item().translationKey());
+        assertFalse(profile.callStage().consumeTerminalOnCompletion());
         assertEquals(weaponId, profile.munitions().get("mk84_he").weapons().get(0).weaponId());
         assertEquals(java.util.List.of(2, 1), profile.munitions().get("mk84_yasser_mixed").weapons().stream()
                 .map(RVP_FireSupportProfile.MunitionWeapon::weight).toList());
@@ -80,7 +82,7 @@ class RVP_FireSupportStageEResourcesTest {
                 id -> id.getPath().contains("mk84") || id.getPath().contains("maodie")
                         ? resolved(RVP_EnumWeaponKind.BOMB) : resolved(RVP_EnumWeaponKind.ROCKET)).get(profileId);
 
-        assertEquals(2, profile.schemaVersion());
+        assertEquals(3, profile.schemaVersion());
         assertEquals(6, profile.munitions().size());
         assertEquals(java.util.List.of(mk84, yasser), profile.munitions().get("mk84_yasser_mixed")
                 .weapons().stream().map(RVP_FireSupportProfile.MunitionWeapon::weaponId).toList());
@@ -137,8 +139,11 @@ class RVP_FireSupportStageEResourcesTest {
         assertFalse(schema.get("additionalProperties").getAsBoolean());
         assertTrue(schema.getAsJsonObject("$defs").getAsJsonObject("munition")
                 .get("additionalProperties").isJsonPrimitive());
-        assertEquals(2, schema.getAsJsonObject("properties").getAsJsonObject("schema_version")
+        assertEquals(3, schema.getAsJsonObject("properties").getAsJsonObject("schema_version")
                 .get("const").getAsInt());
+        assertEquals("boolean", schema.getAsJsonObject("properties").getAsJsonObject("call_stage")
+                .getAsJsonObject("properties").getAsJsonObject("consume_terminal_on_completion")
+                .get("type").getAsString());
         assertFalse(schema.getAsJsonObject("$defs").getAsJsonObject("munitionWeapon")
                 .get("additionalProperties").getAsBoolean());
     }

@@ -1,5 +1,6 @@
 package org.ywzj.rvp.client.bridge;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.fml.DistExecutor;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 
@@ -22,6 +23,11 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.openFireSupportTerminal();
     }
 
+    /** 经双端安全桥查询 profile 生命周期，公共物品类不直接引用客户端状态。 */
+    public static boolean isFireSupportProfileAvailable(ResourceLocation profileId) {
+        return INSTANCE.isFireSupportProfileAvailable(profileId);
+    }
+
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
         @Override
@@ -32,6 +38,12 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void openFireSupportTerminal() {
             // 专用服务端没有界面；阶段 D 的真实客户端实现不会进入此分支。
+        }
+
+        @Override
+        public boolean isFireSupportProfileAvailable(ResourceLocation profileId) {
+            // 服务端不负责客户端显示；公共物品名称在服务端不应被标成失效。
+            return true;
         }
     }
 }

@@ -19,7 +19,7 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 10 在 schema v2 请求中加入独立入场方位，要求客户端与服务端同步升级。 */
+    /** 协议 10 保留独立入场方位；profile 数据已升级为 schema v3。 */
     private static final String PROTOCOL = "10";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder

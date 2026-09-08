@@ -18,8 +18,10 @@ public final class RVP_FireSupportProfileNetworkCodec {
         JsonObject display = new JsonObject();
         display.addProperty("translation_key", profile.translationKey());
         root.add("display", display);
+        JsonObject item = new JsonObject();
+        item.addProperty("translation_key", profile.item().translationKey());
+        root.add("item", item);
         JsonObject holder = new JsonObject();
-        holder.addProperty("required_item", profile.holderPolicy().requiredItem().toString());
         JsonArray hands = new JsonArray();
         profile.holderPolicy().allowedHands().stream().sorted().forEach(hands::add);
         holder.add("allowed_hands", hands);
@@ -29,6 +31,7 @@ public final class RVP_FireSupportProfileNetworkCodec {
         call.addProperty("cancel_on_player_death", profile.callStage().cancelOnPlayerDeath());
         call.addProperty("cancel_on_terminal_lost", profile.callStage().cancelOnTerminalLost());
         call.addProperty("cancel_on_disconnect", profile.callStage().cancelOnDisconnect());
+        call.addProperty("consume_terminal_on_completion", profile.callStage().consumeTerminalOnCompletion());
         root.add("call_stage", call);
         JsonObject strike = new JsonObject();
         strike.addProperty("cease_fire_delay_ticks", profile.strikeStage().ceaseFireDelayTicks());

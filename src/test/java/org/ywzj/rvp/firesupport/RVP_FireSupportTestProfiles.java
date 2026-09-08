@@ -20,10 +20,11 @@ final class RVP_FireSupportTestProfiles {
     static JsonElement validJson() {
         return JsonParser.parseString("""
                 {
-                  "schema_version":2,
+                  "schema_version":3,
                   "display":{"translation_key":"fire_support_profile.rvp.test"},
-                  "holder_policy":{"required_item":"ywzj_rvp:fire_support_terminal","allowed_hands":["main","off"]},
-                  "call_stage":{"base_duration_ticks":800,"cancel_on_player_death":true,"cancel_on_terminal_lost":true,"cancel_on_disconnect":true},
+                  "item":{"translation_key":"item.ywzj_rvp.fire_support_terminal.test"},
+                  "holder_policy":{"allowed_hands":["main","off"]},
+                  "call_stage":{"base_duration_ticks":800,"cancel_on_player_death":true,"cancel_on_terminal_lost":true,"cancel_on_disconnect":true,"consume_terminal_on_completion":false},
                   "strike_stage":{"cease_fire_delay_ticks":80},
                   "limits":{"min_target_distance_m":16,"max_target_distance_m":2048,"max_rounds_per_mission":96,
                     "max_active_missions_per_player":1,"max_active_missions_global":16,"request_cooldown_ticks":100,

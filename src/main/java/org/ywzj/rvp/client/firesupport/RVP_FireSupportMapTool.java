@@ -18,6 +18,7 @@ import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapTool;
 import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 import org.ywzj.rvp.firesupport.server.RVP_FireSupportMissionState;
+import org.ywzj.rvp.firesupport.server.RVP_FireSupportTerminalIdentity;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupport;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupportCeaseFire;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
@@ -34,7 +35,9 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     /** 上次解析的服务端 profile revision。 */ private long loadedRevision = Long.MIN_VALUE;
     /** 当前解析成功的客户端 profile 列表。 */ private List<RVP_ClientFireSupportProfile> profiles = List.of();
     /** profile 解析失败时的可见诊断。 */ private String profileError = "";
-    /** 当前 profile 索引。 */ private int profileIndex;
+    /** 当前锁定 profile 在单元素列表中的索引。 */ private int profileIndex;
+    /** 打开地图时从终端 ItemStack 冻结的 profile ID。 */ private ResourceLocation lockedProfileId;
+    /** 打开地图时绑定的终端实例；换物品后提交前复核。 */ private UUID openedTerminalInstance;
     /** 当前弹药方案索引。 */ private int munitionIndex;
     /** 当前打击模式索引。 */ private int modeIndex;
     /** 当前几何预设索引。 */ private int patternIndex;
@@ -62,6 +65,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     @Override
     public void initialize(RVP_TacticalMapHost host) {
+        lockHeldProfile();
         refreshProfiles();
         restoreTrackedMission();
         if (!hasAnchor) {
@@ -160,12 +164,32 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
             parsed.clear();
             error = tr("gui.ywzj_rvp.fire_support.profile_parse_error", exception.getMessage());
         }
-        profiles = List.copyOf(parsed);
+        if (lockedProfileId == null) lockHeldProfile();
+        profiles = parsed.stream().filter(value -> value.id().equals(lockedProfileId)).toList();
         profileError = error;
+        if (profileError.isEmpty() && lockedProfileId == null) {
+            profileError = tr("gui.ywzj_rvp.fire_support.profile_item_missing");
+        } else if (profileError.isEmpty() && profiles.isEmpty()) {
+            profileError = tr("gui.ywzj_rvp.fire_support.profile_item_unavailable", lockedProfileId);
+        }
         loadedRevision = state.revision();
-        profileIndex = clampIndex(profileIndex, profiles.size());
+        profileIndex = 0;
         resetDependentSelections();
         restoreDraft(state.draftSelection());
+    }
+
+    /** 从打开地图时手中的终端 ItemStack 锁定 profile，避免界面中途切换配置。 */
+    private void lockHeldProfile() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) return;
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack stack = minecraft.player.getItemInHand(hand);
+            if (RVP_FireSupportTerminalIdentity.isTerminal(stack)) {
+                lockedProfileId = RVP_FireSupportTerminalIdentity.readProfileId(stack);
+                openedTerminalInstance = readTerminalInstance(stack);
+                return;
+            }
+        }
     }
 
     private void resetDependentSelections() {
@@ -282,7 +306,8 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                     right - left, 0xFFFFCC77);
             return;
         }
-        y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.profile"), profile() == null ? "-" : label(profile().translationKey()), mouseX, mouseY);
+        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.profile"),
+                profile() == null ? "-" : label(profile().translationKey()), mouseX, mouseY);
         y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.munition"), munition() == null ? "-" : label(munition().translationKey()), mouseX, mouseY);
         y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.fire_mode"), mode() == null ? "-" : label(mode().translationKey()), mouseX, mouseY);
         y = drawChoice(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.pattern"), pattern() == null ? "-" : label(pattern().translationKey()), mouseX, mouseY);
@@ -335,7 +360,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private void handleSidebarClick(RVP_TacticalMapHost host, double mouseX, double mouseY) {
         int y = host.mapTop() + 31;
-        if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 0); return; }
+        if (rowHit(y, mouseY)) { return; }
         y += ROW_HEIGHT;
         RVP_ClientFireSupportProfile profile = profile();
         if (rowHit(y, mouseY)) { handleChoiceRow(host, mouseX, 1); return; }
@@ -376,7 +401,16 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         RVP_ClientFireSupportProfile.FireMode mode = mode();
         RVP_ClientFireSupportProfile.Pattern pattern = pattern();
         InteractionHand hand = heldTerminalHand();
-        if (!hasAnchor || munition == null || mode == null || pattern == null || hand == null) return;
+        if (!hasAnchor || munition == null || mode == null || pattern == null || hand == null) {
+            resultMessage = tr("gui.ywzj_rvp.fire_support.profile_item_changed");
+            return;
+        }
+        ItemStack current = Minecraft.getInstance().player.getItemInHand(hand);
+        if (!lockedProfileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(current))
+                || (openedTerminalInstance != null && !openedTerminalInstance.equals(readTerminalInstance(current)))) {
+            resultMessage = tr("gui.ywzj_rvp.fire_support.profile_item_changed");
+            return;
+        }
         pendingCallNonce = UUID.randomUUID();
         boundTerminalInstance = readTerminalInstance(Minecraft.getInstance().player.getItemInHand(hand));
         resultMessage = tr("gui.ywzj_rvp.fire_support.submitting");
@@ -623,7 +657,6 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         }
         int direction = side(host, mouseX);
         switch (choice) {
-            case 0 -> { profileIndex = cycle(profileIndex, profiles.size(), direction); resetDependentSelections(); }
             case 1 -> munitionIndex = cycle(munitionIndex, profile() == null ? 0 : profile().munitions().size(), direction);
             case 2 -> modeIndex = cycle(modeIndex, profile() == null ? 0 : profile().fireModes().size(), direction);
             case 3 -> { patternIndex = cycle(patternIndex, profile() == null ? 0 : profile().patterns().size(), direction); syncParameterDefaults(); }
@@ -673,7 +706,6 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private List<String> choiceLabels(int choice) {
         RVP_ClientFireSupportProfile selectedProfile = profile();
         return switch (choice) {
-            case 0 -> profiles.stream().map(value -> label(value.translationKey())).toList();
             case 1 -> selectedProfile == null ? List.of() : selectedProfile.munitions().stream().map(value -> label(value.translationKey())).toList();
             case 2 -> selectedProfile == null ? List.of() : selectedProfile.fireModes().stream().map(value -> label(value.translationKey())).toList();
             case 3 -> selectedProfile == null ? List.of() : selectedProfile.patterns().stream().map(value -> label(value.translationKey())).toList();
@@ -683,7 +715,6 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private void selectChoice(int choice, int index) {
         switch (choice) {
-            case 0 -> { profileIndex = index; resetDependentSelections(); }
             case 1 -> munitionIndex = index;
             case 2 -> modeIndex = index;
             case 3 -> { patternIndex = index; syncParameterDefaults(); }
@@ -706,9 +737,11 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         if (minecraft.player == null) return null;
         RVP_ClientFireSupportProfile profile = profile();
         if (profile != null && profile.allowedHands().contains("main")
-                && minecraft.player.getMainHandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())) return InteractionHand.MAIN_HAND;
+                && minecraft.player.getMainHandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())
+                && lockedProfileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(minecraft.player.getMainHandItem()))) return InteractionHand.MAIN_HAND;
         if (profile != null && profile.allowedHands().contains("off")
-                && minecraft.player.getOffhandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())) return InteractionHand.OFF_HAND;
+                && minecraft.player.getOffhandItem().is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())
+                && lockedProfileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(minecraft.player.getOffhandItem()))) return InteractionHand.OFF_HAND;
         return null;
     }
 
@@ -728,7 +761,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     }
 
     private UUID readTerminalInstance(ItemStack stack) {
-        if (!stack.is(RVP_Items.FIRE_SUPPORT_TERMINAL.get())) return null;
+        if (!RVP_FireSupportTerminalIdentity.isTerminal(stack)) return null;
         var root = stack.getTagElement("rvp_fire_support");
         return root != null && root.hasUUID("terminal_instance") ? root.getUUID("terminal_instance") : null;
     }

@@ -1,17 +1,20 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "display": {
     "translation_key": "fire_support_profile.rvp.test1"
   },
+  "item": {
+    "translation_key": "item.ywzj_rvp.fire_support_terminal.test"
+  },
   "holder_policy": {
-    "required_item": "ywzj_rvp:fire_support_terminal",
     "allowed_hands": ["main", "off"]
   },
   "call_stage": {
     "base_duration_ticks": 80,
     "cancel_on_player_death": true,
     "cancel_on_terminal_lost": true,
-    "cancel_on_disconnect": true
+    "cancel_on_disconnect": true,
+    "consume_terminal_on_completion": false
   },
   "strike_stage": {
     "cease_fire_delay_ticks": 40

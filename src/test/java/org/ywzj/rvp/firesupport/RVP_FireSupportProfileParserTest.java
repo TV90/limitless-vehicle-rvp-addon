@@ -19,6 +19,8 @@ class RVP_FireSupportProfileParserTest {
     @Test
     void parsesCurrentSchemaIntoImmutableMapsAndActualResolvedWeaponData() {
         RVP_FireSupportProfile profile = RVP_FireSupportTestProfiles.parse();
+        assertEquals("item.ywzj_rvp.fire_support_terminal.test", profile.item().translationKey());
+        assertFalse(profile.callStage().consumeTerminalOnCompletion());
         assertEquals(3, profile.fireModes().size());
         assertEquals(3, profile.patterns().size());
         assertEquals(2, profile.munitions().get("he").weapons().size());
@@ -42,6 +44,45 @@ class RVP_FireSupportProfileParserTest {
                 () -> assertTrue(error.getMessage().contains("未知字段")),
                 () -> assertTrue(error.getMessage().contains("ID 重复")),
                 () -> assertTrue(error.getMessage().contains("有限数值")));
+    }
+
+    @Test
+    void parsesTerminalConsumptionFlagWithoutChangingTheDefault() {
+        JsonObject enabled = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        enabled.getAsJsonObject("call_stage").addProperty("consume_terminal_on_completion", true);
+        RVP_FireSupportProfile profile = RVP_FireSupportProfileParser.parseAll(
+                Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, enabled),
+                id -> RVP_FireSupportTestProfiles.projectileWeapon())
+                .get(RVP_FireSupportTestProfiles.PROFILE_ID);
+        assertTrue(profile.callStage().consumeTerminalOnCompletion());
+
+        JsonObject omitted = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        omitted.getAsJsonObject("call_stage").remove("consume_terminal_on_completion");
+        RVP_FireSupportProfile defaulted = RVP_FireSupportProfileParser.parseAll(
+                Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, omitted),
+                id -> RVP_FireSupportTestProfiles.projectileWeapon())
+                .get(RVP_FireSupportTestProfiles.PROFILE_ID);
+        assertFalse(defaulted.callStage().consumeTerminalOnCompletion());
+    }
+
+    @Test
+    void rejectsSchemaV2AndRemovedRequiredItemField() {
+        JsonObject oldVersion = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        oldVersion.addProperty("schema_version", 2);
+        IllegalArgumentException versionError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, oldVersion),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(versionError.getMessage().contains("只接受当前版本 3"));
+
+        JsonObject removedField = RVP_FireSupportTestProfiles.validJson().getAsJsonObject();
+        removedField.getAsJsonObject("holder_policy")
+                .addProperty("required_item", "ywzj_rvp:fire_support_terminal");
+        IllegalArgumentException fieldError = assertThrows(IllegalArgumentException.class,
+                () -> RVP_FireSupportProfileParser.parseAll(
+                        Map.of(RVP_FireSupportTestProfiles.PROFILE_ID, removedField),
+                        id -> RVP_FireSupportTestProfiles.projectileWeapon()));
+        assertTrue(fieldError.getMessage().contains("未知字段"));
     }
 
     @Test

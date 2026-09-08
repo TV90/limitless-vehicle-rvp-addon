@@ -6,6 +6,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Items;
+import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.vehicle.YwzjVehicle;
 
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD)
@@ -22,7 +23,8 @@ public class RVP_CreativeTabEvents {
             event.accept(RVP_Items.FRIENDLY_GUNNER.get());
             event.accept(RVP_Items.ENEMY_GUNNER.get());
             event.accept(RVP_Items.TEAM_GUNNER.get());
-            event.accept(RVP_Items.FIRE_SUPPORT_TERMINAL.get());
+            // 调用本项目客户端 profile 状态：为当前服务端快照中的每个 profile 展示一个 ItemStack 变体。
+            RVP_ClientFireSupportState.INSTANCE.itemVariants().forEach(event::accept);
         }
     }
 }

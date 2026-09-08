@@ -21,7 +21,7 @@ import org.ywzj.rvp.firesupport.pattern.RVP_FireSupportPatternTypes;
 
 /** 当前 schema 的严格、非迁移 profile 解析器。 */
 public final class RVP_FireSupportProfileParser {
-    /** 当前且唯一接受的 schema 版本。 */ public static final int SCHEMA_VERSION = 2;
+    /** 当前且唯一接受的 schema 版本。 */ public static final int SCHEMA_VERSION = 3;
     /** 单任务弹数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_ROUNDS = 512;
     /** 全局任务数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_GLOBAL_MISSIONS = 64;
     /** 动态参数数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_PARAMETERS = 32;
@@ -50,14 +50,19 @@ public final class RVP_FireSupportProfileParser {
 
     private static RVP_FireSupportProfile parseProfile(JsonObject root, RVP_FireSupportWeaponResolver resolver,
                                                         RVP_FireSupportProblemCollector problems, String path) {
-        RVP_FireSupportJson.keys(root, Set.of("schema_version", "display", "holder_policy", "call_stage",
+        RVP_FireSupportJson.keys(root, Set.of("schema_version", "display", "item", "holder_policy", "call_stage",
                 "strike_stage", "limits", "munitions", "fire_modes", "patterns"), path, problems);
         int schema = RVP_FireSupportJson.integer(root, "schema_version", -1, path, problems);
-        if (schema != SCHEMA_VERSION) problems.add(path + ".schema_version", "只接受当前版本 2");
+        if (schema != SCHEMA_VERSION) problems.add(path + ".schema_version", "只接受当前版本 3");
 
         JsonObject display = RVP_FireSupportJson.object(root, "display", path, problems, true);
         RVP_FireSupportJson.keys(display, Set.of("translation_key"), path + ".display", problems);
         String translation = RVP_FireSupportJson.string(display, "translation_key", path + ".display", problems);
+
+        JsonObject itemObject = RVP_FireSupportJson.object(root, "item", path, problems, true);
+        String itemPath = path + ".item";
+        RVP_FireSupportJson.keys(itemObject, Set.of("translation_key"), itemPath, problems);
+        String itemTranslation = RVP_FireSupportJson.string(itemObject, "translation_key", itemPath, problems);
 
         RVP_FireSupportProfile.HolderPolicy holder = parseHolder(root, problems, path);
         RVP_FireSupportProfile.CallStage call = parseCall(root, problems, path);
@@ -66,15 +71,16 @@ public final class RVP_FireSupportProfileParser {
         Map<String, RVP_FireSupportProfile.Munition> munitions = parseMunitions(root, resolver, limits, problems, path);
         Map<String, RVP_FireSupportProfile.FireMode> modes = parseModes(root, problems, path);
         Map<String, RVP_FireSupportProfile.PatternPreset> patterns = parsePatterns(root, limits, problems, path);
-        return new RVP_FireSupportProfile(schema, translation, holder, call, strike, limits, munitions, modes, patterns);
+        return new RVP_FireSupportProfile(schema, translation,
+                new RVP_FireSupportProfile.Item(itemTranslation), holder,
+                call, strike, limits, munitions, modes, patterns);
     }
 
     private static RVP_FireSupportProfile.HolderPolicy parseHolder(JsonObject root,
             RVP_FireSupportProblemCollector problems, String path) {
         JsonObject object = RVP_FireSupportJson.object(root, "holder_policy", path, problems, true);
         String p = path + ".holder_policy";
-        RVP_FireSupportJson.keys(object, Set.of("required_item", "allowed_hands"), p, problems);
-        ResourceLocation item = RVP_FireSupportJson.resource(RVP_FireSupportJson.string(object, "required_item", p, problems), p + ".required_item", problems);
+        RVP_FireSupportJson.keys(object, Set.of("allowed_hands"), p, problems);
         Set<String> hands = new LinkedHashSet<>();
         JsonElement rawHands = object.get("allowed_hands");
         if (rawHands == null) hands.addAll(List.of("main", "off"));
@@ -86,7 +92,7 @@ public final class RVP_FireSupportProfileParser {
             } else if (!hands.add(element.getAsString())) problems.add(p + ".allowed_hands", "手不能重复");
         }
         if (hands.isEmpty()) problems.add(p + ".allowed_hands", "至少允许一只手");
-        return new RVP_FireSupportProfile.HolderPolicy(item, hands);
+        return new RVP_FireSupportProfile.HolderPolicy(hands);
     }
 
     private static RVP_FireSupportProfile.CallStage parseCall(JsonObject root,
@@ -94,15 +100,16 @@ public final class RVP_FireSupportProfileParser {
         JsonObject o = RVP_FireSupportJson.object(root, "call_stage", path, problems, false);
         String p = path + ".call_stage";
         RVP_FireSupportJson.keys(o, Set.of("base_duration_ticks", "cancel_on_player_death",
-                "cancel_on_terminal_lost", "cancel_on_disconnect"), p, problems);
+                "cancel_on_terminal_lost", "cancel_on_disconnect", "consume_terminal_on_completion"), p, problems);
         int duration = RVP_FireSupportJson.integer(o, "base_duration_ticks", 800, p, problems);
         boolean death = RVP_FireSupportJson.bool(o, "cancel_on_player_death", true, p, problems);
         boolean lost = RVP_FireSupportJson.bool(o, "cancel_on_terminal_lost", true, p, problems);
         boolean disconnect = RVP_FireSupportJson.bool(o, "cancel_on_disconnect", true, p, problems);
+        boolean consume = RVP_FireSupportJson.bool(o, "consume_terminal_on_completion", false, p, problems);
         if (duration <= 0 || duration > 72000) problems.add(p + ".base_duration_ticks", "必须在 [1, 72000] 内");
         if (!death) problems.add(p + ".cancel_on_player_death", "首版必须为 true");
         if (!lost) problems.add(p + ".cancel_on_terminal_lost", "首版必须为 true");
-        return new RVP_FireSupportProfile.CallStage(duration, death, lost, disconnect);
+        return new RVP_FireSupportProfile.CallStage(duration, death, lost, disconnect, consume);
     }
 
     private static RVP_FireSupportProfile.StrikeStage parseStrike(JsonObject root,

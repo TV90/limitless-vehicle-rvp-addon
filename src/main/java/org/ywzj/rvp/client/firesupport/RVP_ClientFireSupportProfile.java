@@ -16,6 +16,7 @@ import java.util.Set;
 public record RVP_ClientFireSupportProfile(
         /** 服务端同步的 profile 资源 ID。 */ ResourceLocation id,
         /** profile 显示翻译键。 */ String translationKey,
+        /** profile 变体物品名称翻译键。 */ String itemTranslationKey,
         /** 允许发起请求的手，值为 main/off。 */ Set<String> allowedHands,
         /** 呼叫基础时长，单位 Tick。 */ int baseCallDurationTicks,
         /** 客户端弹药方案选择表。 */ List<Munition> munitions,
@@ -32,13 +33,14 @@ public record RVP_ClientFireSupportProfile(
     /** 从阶段 C 同步的规范化 JSON 创建 UI 视图。 */
     public static RVP_ClientFireSupportProfile parse(ResourceLocation id, String json) {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        if (root.get("schema_version").getAsInt() != 2) throw new IllegalArgumentException("不支持的炮火 profile schema");
+        if (root.get("schema_version").getAsInt() != 3) throw new IllegalArgumentException("不支持的炮火 profile schema");
         String translation = root.getAsJsonObject("display").get("translation_key").getAsString();
+        String itemTranslation = root.getAsJsonObject("item").get("translation_key").getAsString();
         JsonObject holder = root.getAsJsonObject("holder_policy");
         java.util.LinkedHashSet<String> hands = new java.util.LinkedHashSet<>();
         holder.getAsJsonArray("allowed_hands").forEach(value -> hands.add(value.getAsString()));
         int baseCall = root.getAsJsonObject("call_stage").get("base_duration_ticks").getAsInt();
-        return new RVP_ClientFireSupportProfile(id, translation, hands, baseCall,
+        return new RVP_ClientFireSupportProfile(id, translation, itemTranslation, hands, baseCall,
                 parseMunitions(root.getAsJsonArray("munitions")),
                 parseModes(root.getAsJsonArray("fire_modes")),
                 parsePatterns(root.getAsJsonArray("patterns")));

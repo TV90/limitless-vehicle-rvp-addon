@@ -2160,7 +2160,9 @@ Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
 
 ---
 
-## 6 炮火支援配置文件（`fire_support_profiles`）
+## 6 炮火支援配置文件（`fire_support_profiles`，历史草案）
+
+> 本节保留历史 schema v1 设计记录，不是当前运行时规范。当前实现只接受 schema v3；请以 `docs/RVP_item/RVP炮火支援终端/RVP炮火支援技术文档与调参指南_20260906.md` 和 `docs/schemas/fire_support/fire_support_profile.schema.json` 为准。当前 profile 使用 `item.translation_key` 生成终端 ItemStack 变体，不再使用 `holder_policy.required_item`。
 
 炮火支援 profile 位于载具包：
 
