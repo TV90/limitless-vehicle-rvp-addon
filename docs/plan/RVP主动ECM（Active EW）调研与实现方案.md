@@ -192,6 +192,7 @@
 | `radar_unlock` | true | 是否对被干扰载具执行雷达脱锁 |
 | `arm_priority_ticks` | 100 | ARM 高优先级窗口（5 秒=100 tick） |
 | `arm_memory_jitter_meters` | 7 | ARM 记忆落点随机抖动半径（±7m） |
+| `allowed_seat_indexes` | `[]` | 允许触发主动ECM 的座位索引数组（`0` = 一号位/驾驶位）。**空/缺省时仅一号位可用**；非授权座位按键静默拒绝，且该座位 HUD 不显示 ECM 文案行、告警不显示 ECM 释放建议。gunner AI 自动触发不受限（2026-09-10 增补，语义对齐 `countermeasure.allowed_seat_indexes`） |
 
 > **decoy_radius（假目标散布范围）**：批示"硬编码即可"——不设配置字段，固定取合理值（如车辆半径×随机系数，参考被动 `bands[].radius` 量级）。
 > **假目标 NCTR**：批示确认——同被动ECM，**有默认池，也可在主动配置里单独覆盖**（若未配置则回落到 `BoneEcmPassiveConfig.nctrNames` 或内置默认）。

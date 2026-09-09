@@ -10,6 +10,7 @@ import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
 import org.ywzj.rvp.client.state.RVP_EcmActiveHudState;
+import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
@@ -43,10 +44,15 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         // 取当前载具的干扰物余量同步状态
         RVP_CountermeasureHudState.Snapshot state = RVP_CountermeasureHudState.get(vehicle.getId());
-        boolean hasFlare = state != null && state.flareTotal() > 0;
-        boolean hasChaff = state != null && state.chaffTotal() > 0;
-        boolean hasSmoke = state != null && state.smokeTotal() > 0;
-        boolean hasEcm = isEcmAvailable(vehicle);
+        // 座位权限门控：非授权座位不显示对应干扰物/ECM 的 HUD 文案行（其余行自动递补位置）
+        int seatIndex = LocalVehiclePlayer.instance.seat == null ? -1 : LocalVehiclePlayer.instance.seat.seatIndex;
+        boolean hasFlare = isTypeSeatAllowed(vehicle, seatIndex, RVP_EnumCountermeasureType.FLARE)
+                && state != null && state.flareTotal() > 0;
+        boolean hasChaff = isTypeSeatAllowed(vehicle, seatIndex, RVP_EnumCountermeasureType.CHAFF)
+                && state != null && state.chaffTotal() > 0;
+        boolean hasSmoke = isTypeSeatAllowed(vehicle, seatIndex, RVP_EnumCountermeasureType.SMOKE)
+                && state != null && state.smokeTotal() > 0;
+        boolean hasEcm = isEcmSeatAllowed(vehicle, seatIndex) && isEcmAvailable(vehicle);
         // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
         RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
         if (!hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null) {
@@ -132,6 +138,50 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         // 无骨骼ECM（__vehicle__）始终可用
         return devices.containsKey("__vehicle__");
+    }
+
+    /** 本地玩家当前座位索引（未上载具/座位缺失返回 -1）。 */
+    private static int localSeatIndex() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        return lvp == null || lvp.seat == null ? -1 : lvp.seat.seatIndex;
+    }
+
+    /** 当前座位是否允许使用某类干扰物（读载具包 countermeasure 配置的 allowed_seat_indexes）。 */
+    private static boolean isTypeSeatAllowed(AbstractVehicle vehicle, int seatIndex,
+                                             RVP_EnumCountermeasureType type) {
+        var data = org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager.INSTANCE
+                .resolve(vehicle.getVehicleId());
+        if (data == null) {
+            return false;
+        }
+        var system = switch (type) {
+            case FLARE -> data.getFlare();
+            case CHAFF -> data.getChaff();
+            case SMOKE -> data.getSmoke();
+            default -> null;
+        };
+        return system != null && system.isSeatAllowed(seatIndex);
+    }
+
+    /** 当前座位是否被任一存活 ECM 骨块的配置允许（无骨骼 __vehicle__ 视作始终存活）。 */
+    private static boolean isEcmSeatAllowed(AbstractVehicle vehicle, int seatIndex) {
+        var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return false;
+        }
+        for (var entry : devices.entrySet()) {
+            if ("__vehicle__".equals(entry.getKey())) {
+                if (entry.getValue().isSeatAllowed(seatIndex)) {
+                    return true;
+                }
+                continue;
+            }
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), entry.getKey(), BoneModuleType.ECM_ACTIVE)
+                    && entry.getValue().isSeatAllowed(seatIndex)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 绘制 ECM 行（无“(主动)”后缀，样式对齐干扰物）。 */

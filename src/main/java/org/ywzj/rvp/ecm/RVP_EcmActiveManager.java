@@ -104,6 +104,31 @@ public final class RVP_EcmActiveManager {
     }
 
     /**
+     * 是否存在"存活且允许该座位触发"的 ECM_ACTIVE 骨块设备。
+     * 无骨骼 ECM（{@code __vehicle__}）视作始终存活，按其配置判定座位。
+     */
+    private static boolean anyAliveDeviceAllowsSeat(AbstractVehicle vehicle, int seatIndex) {
+        var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
+        if (devices == null || devices.isEmpty()) {
+            return false;
+        }
+        for (var entry : devices.entrySet()) {
+            String bone = entry.getKey();
+            if ("__vehicle__".equals(bone)) {
+                if (entry.getValue().isSeatAllowed(seatIndex)) {
+                    return true;
+                }
+                continue;
+            }
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ECM_ACTIVE)
+                    && entry.getValue().isSeatAllowed(seatIndex)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 供 GunnerBrain 自动触发（无玩家）：直接按载具触发主动ECM。
      *
      * @return 是否成功触发（冷却中或无配置则 false）
@@ -136,6 +161,12 @@ public final class RVP_EcmActiveManager {
      */
     public static void onFire(ServerPlayer player, AbstractVehicle vehicle) {
         if (player == null || vehicle == null || !vehicle.isAlive()) {
+            return;
+        }
+        // 座位权限校验（服务端权威）：任一存活 ECM 骨块的配置允许该座位才放行；
+        // 未配置 allowed_seat_indexes 时仅一号位可用。gunner 自动触发走 tryFireForVehicle 不受此限。
+        int seatIndex = org.ywzj.rvp.util.RVP_SeatAccessHelper.findSeatIndex(vehicle, player);
+        if (seatIndex < 0 || !anyAliveDeviceAllowsSeat(vehicle, seatIndex)) {
             return;
         }
         BoneEcmActiveConfig config = resolveAliveConfig(vehicle);

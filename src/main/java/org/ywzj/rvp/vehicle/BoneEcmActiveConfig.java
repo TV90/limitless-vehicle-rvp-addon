@@ -30,6 +30,7 @@ import java.util.List;
  * @param armPriorityTicks         反辐射导弹高优先级窗口时长（tick）（默认 100 = 5 秒）
  * @param armMemoryJitterMeters    反辐射导弹记忆落点随机抖动半径（米）（默认 7）
  * @param nctrNames                假目标 NCTR 假标识池（默认沿用被动ECM池，可单独覆盖）
+ * @param allowedSeatIndexes       允许触发主动ECM 的座位索引列表（0 = 一号位/驾驶位）；空/缺省时仅一号位可用
  */
 public record BoneEcmActiveConfig(
         int activeDurationTicks,
@@ -46,7 +47,8 @@ public record BoneEcmActiveConfig(
         boolean radarUnlock,
         int armPriorityTicks,
         double armMemoryJitterMeters,
-        List<String> nctrNames
+        List<String> nctrNames,
+        List<Integer> allowedSeatIndexes
 ) {
 
     /** 默认伪造锁定 radartype 文案池（设计文档 §4）。 */
@@ -81,6 +83,9 @@ public record BoneEcmActiveConfig(
         nctrNames = nctrNames == null || nctrNames.isEmpty()
                 ? List.of(DEFAULT_NCTR_NAMES)
                 : List.copyOf(nctrNames);
+        allowedSeatIndexes = allowedSeatIndexes == null
+                ? List.of()
+                : List.copyOf(allowedSeatIndexes);
     }
 
     /** 随机取一个 NCTR 假标识名。 */
@@ -89,6 +94,11 @@ public record BoneEcmActiveConfig(
             return "";
         }
         return nctrNames.get(random.nextInt(nctrNames.size()));
+    }
+
+    /** 当前座位是否允许触发主动ECM：未配置 {@code allowed_seat_indexes} 时仅一号位（0）可用。 */
+    public boolean isSeatAllowed(int seatIndex) {
+        return org.ywzj.rvp.util.RVP_SeatAccessHelper.isSeatAllowed(allowedSeatIndexes, seatIndex);
     }
 
     public static @Nullable BoneEcmActiveConfig parse(@Nullable JsonElement element) {
@@ -135,9 +145,20 @@ public record BoneEcmActiveConfig(
             }
         }
 
+        // 解析允许触发主动ECM 的座位索引列表（0 = 一号位）；缺省 = 仅一号位可用
+        List<Integer> allowedSeats = new ArrayList<>();
+        JsonArray seatArr = GsonHelper.getAsJsonArray(obj, "allowed_seat_indexes", null);
+        if (seatArr != null) {
+            for (JsonElement e : seatArr) {
+                if (e != null && e.isJsonPrimitive()) {
+                    allowedSeats.add(e.getAsInt());
+                }
+            }
+        }
+
         return new BoneEcmActiveConfig(activeTicks, cooldownTicks, decoyCount, decoyLifetime,
                 ammoRadius, vehicleRadius, gpsOffset,
                 fakeMin, fakeMax, fakeDuration,
-                sources, radarUnlock, armPriority, armJitter, nctr);
+                sources, radarUnlock, armPriority, armJitter, nctr, allowedSeats);
     }
 }

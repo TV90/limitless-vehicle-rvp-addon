@@ -108,6 +108,19 @@ public final class RVP_CountermeasureRuntimeManager {
     /* ==================== C2S 触发 ==================== */
 
     public static void onFire(ServerPlayer player, AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        if (player == null || vehicle == null) {
+            return;
+        }
+        // 座位权限校验（服务端权威）：未配置 allowed_seat_indexes 时仅一号位可用；
+        // 不在本车任何座位上（伪造包）一律拒绝。gunner 自动响应走 fire() 不受此限。
+        RVP_CountermeasureSystemData system = resolveSystem(vehicle, type);
+        if (system == null) {
+            return;
+        }
+        int seatIndex = org.ywzj.rvp.util.RVP_SeatAccessHelper.findSeatIndex(vehicle, player);
+        if (seatIndex < 0 || !system.isSeatAllowed(seatIndex)) {
+            return;
+        }
         fire(vehicle, type);
     }
 

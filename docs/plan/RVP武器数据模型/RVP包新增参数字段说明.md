@@ -1960,6 +1960,7 @@ SACLOS 反坦克导弹（半自动修正）：
 | `radar_jam_count` | 被锁定目标周围箔条数 ≥ 该值时雷达脱锁；**仅 `CHAFF` 生效**。 | `3` |
 | `radar_jam_cooldown_tick` | 脱锁后目标短时间内不能被雷达选中/锁定（仍可被扫描）的时长（tick）；**仅 `CHAFF` 生效**。 | `60` |
 | `bone_modules` | 关联的 `bone_modules` 骨块名列表：非空时对应骨块 `COUNTERMEASURE` 模块全部被击毁则本系统失去抛洒功能；为空不联动骨块。 | `[]` |
+| `allowed_seat_indexes` | 允许使用本系统的座位索引数组（`0` = 一号位/驾驶位，按部件声明顺序编号）。**空/缺省时仅一号位可用**；非授权座位按键静默拒绝，且 HUD 行与锁定告警中的干扰物/ECM 释放文案不显示。gunner AI 自动干扰不受限。 | `[]`（仅一号位） |
 
 #### `decoy` 子对象（`RVP_CountermeasureDecoyData`）
 
@@ -2064,6 +2065,25 @@ SACLOS 反坦克导弹（半自动修正）：
 | `ballistic_prediction_tick` | 预瞄最长积分步数（tick）。解析时 `Math.max(1, 值)`，即写 `0` 或负数按 `1` 处理。 | `240` |
 
 > 初速取本体 `VehicleRocketWeaponData.velocity`（下限 `0.01`），不在本组字段内配置。炮兵场景另有 `ARTILLERY_PREDICTION_TICK = 1200` 常量，非 JSON 字段。
+
+### 3.4 通用部件扩展（全部部件可用）
+
+以下字段写在**任意部件**的 JSON 内（`PartUnitPojo` 为全部部件 Pojo 基类，由 `PartUnitPojoMixin`/`PartUnitDataMixin` 注入，继承对所有部件类型生效）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_no_cockpit_view` | 无座舱视角标记（语义作用于座位）：被标记座位上玩家的视角循环（VIEW 键与 SCOPE 自动降级）不含 OPERATOR 座舱第一人称，仅允许 THIRD_PERSON 与 SCOPE（观瞄 CRT）。典型用于双座载具的后座/武器官位（配合光学瞄具 CRT 使用）。非武器位座位本就只有 THIRD↔OPERATOR 两态，标记后循环停在 THIRD；SWITCH_SCOPE 键（SCOPE↔THIRD 直切）不受影响；下车重置 THIRD 正常；切到未标记座位立即恢复正常视角循环。 | `false` |
+
+双座载具启用示例（写在后座/武器官位的部件对象内，与 `id`/`type` 平铺）：
+
+```json
+{
+  "id": "sighting_system_rear",
+  "type": "ywzj_vehicle:weapon",
+  "is_seat": true,
+  "rvp_no_cockpit_view": true
+}
+```
 
 ---
 
