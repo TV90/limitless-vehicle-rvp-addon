@@ -35,9 +35,14 @@ public class LocalVehiclePlayerViewTypeRestrictMixin {
                     opcode = Opcodes.PUTFIELD),
             cancellable = true, remap = false)
     private void ywzj_rvp$blockOperatorOnRestrictedSeat(LocalVehiclePlayer.ViewType toViewType, CallbackInfo ci) {
-        // 仅拦截「进入座舱第一人称」：被标记座位上跳过 viewType 写入，其余视角放行
+        // 仅拦截「进入座舱第一人称」：被标记座位上不进入 OPERATOR。
+        // 不做简单取消（会导致本体循环 SCOPE→OPERATOR→THIRD 断裂、卡死在 SCOPE），
+        // 而是把 OPERATOR 落点【改写为 THIRD_PERSON】后取消原始写入——
+        // 循环顺延为 THIRD↔SCOPE 连续可达；此刻本体的相机过渡副作用
+        // （thirdPersonCameraAimAt 等 THIRD/OPERATOR 共用分支）已执行完毕，仅替换最终写入值。
         if (toViewType == LocalVehiclePlayer.ViewType.OPERATOR
                 && RVP_ViewRestriction.isCockpitViewBlocked()) {
+            ((LocalVehiclePlayer) (Object) this).viewType = LocalVehiclePlayer.ViewType.THIRD_PERSON;
             ci.cancel();
         }
     }

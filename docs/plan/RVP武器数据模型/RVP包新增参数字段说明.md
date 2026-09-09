@@ -2072,7 +2072,7 @@ SACLOS 反坦克导弹（半自动修正）：
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `rvp_no_cockpit_view` | 无座舱视角标记（语义作用于座位）：被标记座位上玩家的视角循环（VIEW 键与 SCOPE 自动降级）不含 OPERATOR 座舱第一人称，仅允许 THIRD_PERSON 与 SCOPE（观瞄 CRT）。典型用于双座载具的后座/武器官位（配合光学瞄具 CRT 使用）。非武器位座位本就只有 THIRD↔OPERATOR 两态，标记后循环停在 THIRD；SWITCH_SCOPE 键（SCOPE↔THIRD 直切）不受影响；下车重置 THIRD 正常；切到未标记座位立即恢复正常视角循环。 | `false` |
+| `rvp_no_cockpit_view` | 无座舱视角标记（语义作用于座位）：被标记座位上玩家的视角循环不含 OPERATOR 座舱第一人称，OPERATOR 落点自动顺延为 THIRD_PERSON（V 键循环连续：THIRD↔SCOPE）。典型用于双座载具的后座/武器官位（配合光学瞄具 CRT 使用）。无光学瞄具的座位标记后循环停在 THIRD；SWITCH_SCOPE 键（SCOPE↔THIRD 直切）不受影响；下车重置 THIRD 正常；切到未标记座位立即恢复正常视角循环。 | `false` |
 
 双座载具启用示例（写在后座/武器官位的部件对象内，与 `id`/`type` 平铺）：
 
