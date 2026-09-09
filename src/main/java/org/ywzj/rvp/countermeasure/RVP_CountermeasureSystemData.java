@@ -69,6 +69,14 @@ public final class RVP_CountermeasureSystemData {
     @SerializedName("bone_modules")
     private List<String> boneModules = new ArrayList<>();
 
+    /**
+     * 允许使用本系统的座位索引列表（0 = 一号位/驾驶位，按部件声明顺序编号）：
+     * 空/缺省时仅一号位可用；配置多个索引（如 {@code [0,1]}）时列出的座位均可用。
+     * 非授权座位按键静默拒绝（服务端权威校验 + 客户端按键/UI 同步隐藏）。
+     */
+    @SerializedName("allowed_seat_indexes")
+    private List<Integer> allowedSeatIndexes = new ArrayList<>();
+
     public String getRawType() {
         return type;
     }
@@ -125,6 +133,15 @@ public final class RVP_CountermeasureSystemData {
 
     public List<String> getBoneModules() {
         return boneModules == null ? List.of() : List.copyOf(boneModules);
+    }
+
+    public List<Integer> getAllowedSeatIndexes() {
+        return allowedSeatIndexes == null ? List.of() : List.copyOf(allowedSeatIndexes);
+    }
+
+    /** 当前座位是否允许使用本系统：未配置 {@code allowed_seat_indexes} 时仅一号位（0）可用。 */
+    public boolean isSeatAllowed(int seatIndex) {
+        return org.ywzj.rvp.util.RVP_SeatAccessHelper.isSeatAllowed(getAllowedSeatIndexes(), seatIndex);
     }
 
     /** 系统是否启用：总数为正且至少有一个发射装置部件。 */

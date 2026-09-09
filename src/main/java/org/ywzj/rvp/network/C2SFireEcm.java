@@ -44,6 +44,10 @@ public class C2SFireEcm {
             }
             Entity entity = player.level().getEntity(msg.vehicleId);
             if (entity instanceof AbstractVehicle vehicle) {
+                // 伪造包加固：发送者必须正乘坐该载具（防止他车/徒步玩家越权触发）
+                if (player.getVehicle() != vehicle) {
+                    return;
+                }
                 // 校验玩家/载具/骨块存活/冷却在管理器内完成
                 RVP_EcmActiveManager.onFire(player, vehicle);
             }

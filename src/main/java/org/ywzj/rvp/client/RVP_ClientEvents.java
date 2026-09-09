@@ -421,6 +421,15 @@ public class RVP_ClientEvents {
         if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
             return;
         }
+        // 座位权限客户端预判（服务端权威校验兜底）：未配置 allowed_seat_indexes 时仅一号位可用；
+        // 非授权座位静默不发包（对齐按键审计"不适用静默"结论）
+        int seatIndex = lvp.seat == null ? -1 : lvp.seat.seatIndex;
+        var data = org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager.INSTANCE
+                .resolve(lvp.vehicle.getVehicleId());
+        var system = data == null ? null : data.system(type);
+        if (system == null || !system.isSeatAllowed(seatIndex)) {
+            return;
+        }
         // 调用 RVP 公共网络通道，发送 C2SFireCountermeasure 触发服务端状态机
         RVP_Network.CHANNEL.sendToServer(new C2SFireCountermeasure(lvp.vehicle.getId(), type));
     }
@@ -438,10 +447,13 @@ public class RVP_ClientEvents {
             return;
         }
         boolean hasAlive = false;
+        // 座位权限客户端预判（服务端权威校验兜底）：任一"存活且允许本座位"的 ECM 骨块才发包
+        int seatIndex = lvp.seat == null ? -1 : lvp.seat.seatIndex;
         for (String boneName : devices.keySet()) {
             // 调用 RVP 骨块状态表判断该骨块的 ECM_ACTIVE 模块是否存活
             if (org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable.isModuleActive(
-                    vehicle.getUUID(), boneName, org.ywzj.rvp.vehicle.BoneModuleType.ECM_ACTIVE)) {
+                    vehicle.getUUID(), boneName, org.ywzj.rvp.vehicle.BoneModuleType.ECM_ACTIVE)
+                    && devices.get(boneName).isSeatAllowed(seatIndex)) {
                 hasAlive = true;
                 break;
             }

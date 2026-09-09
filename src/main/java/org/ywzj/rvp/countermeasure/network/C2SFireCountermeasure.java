@@ -50,6 +50,10 @@ public class C2SFireCountermeasure {
                     Math.max(0, Math.min(msg.typeOrdinal, RVP_EnumCountermeasureType.values().length - 1))];
             Entity entity = player.level().getEntity(msg.vehicleId);
             if (entity instanceof AbstractVehicle vehicle) {
+                // 伪造包加固：发送者必须正乘坐该载具（防止他车/徒步玩家越权触发）
+                if (player.getVehicle() != vehicle) {
+                    return;
+                }
                 // 调用服务端干扰物运行时，推进对应类型的发射状态机并发射
                 RVP_CountermeasureRuntimeManager.onFire(player, vehicle, type);
             }

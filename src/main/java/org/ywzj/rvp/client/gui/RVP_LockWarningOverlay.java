@@ -57,7 +57,7 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
             return;
         }
         boolean ground = !isAircraft(vehicle);
-        // 载具干扰物能力：用于决定提示是否附带"释放干扰物"建议
+        // 载具干扰物能力 + 当前座位权限：非授权座位只提示被锁定，不显示干扰物/ECM 释放建议文案
         boolean hasFlare = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.FLARE);
         boolean hasSmoke = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE);
         boolean hasChaff = hasCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF);
@@ -135,7 +135,16 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
         }
     }
 
-    /** 载具是否装备某类 RVP 干扰物（热焰弹/箔条/烟雾）。 */
+    /** 本地玩家当前座位索引（未上载具/座位缺失返回 -1）。 */
+    private static int localSeatIndex() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        return lvp == null || lvp.seat == null ? -1 : lvp.seat.seatIndex;
+    }
+
+    /**
+     * 当前座位能否使用某类 RVP 干扰物：载具装备该系统
+     * 且座位在其 {@code allowed_seat_indexes} 白名单内（未配置时仅一号位）。
+     */
     private static boolean hasCountermeasure(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
         RVP_CountermeasureData data = RVP_CountermeasureConfigManager.INSTANCE.resolve(vehicle.getVehicleId());
         if (data == null) {
@@ -148,13 +157,33 @@ public class RVP_LockWarningOverlay implements IGuiOverlay {
             case SMOKE -> system = data.getSmoke();
             default -> system = null;
         }
-        return system != null && system.isEnabled();
+        return system != null && system.isEnabled() && system.isSeatAllowed(localSeatIndex());
     }
 
-    /** 载具是否装备主动ECM（可释放的 ECM 干扰）。 */
+    /**
+     * 当前座位能否使用主动ECM：存在"存活且座位被允许"的 ECM_ACTIVE 骨块
+     * （无骨骼 {@code __vehicle__} 视作始终存活）；未配置时仅一号位。
+     */
     private static boolean hasActiveEcm(AbstractVehicle vehicle) {
         var devices = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEcmActiveDevices(vehicle);
-        return devices != null && !devices.isEmpty();
+        if (devices == null || devices.isEmpty()) {
+            return false;
+        }
+        int seatIndex = localSeatIndex();
+        for (var entry : devices.entrySet()) {
+            if ("__vehicle__".equals(entry.getKey())) {
+                if (entry.getValue().isSeatAllowed(seatIndex)) {
+                    return true;
+                }
+                continue;
+            }
+            if (org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable.isModuleActive(
+                    vehicle.getUUID(), entry.getKey(), org.ywzj.rvp.vehicle.BoneModuleType.ECM_ACTIVE)
+                    && entry.getValue().isSeatAllowed(seatIndex)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasRadarLock(AbstractVehicle vehicle) {

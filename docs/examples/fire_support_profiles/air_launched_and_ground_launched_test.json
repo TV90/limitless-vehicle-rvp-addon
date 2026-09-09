@@ -10,7 +10,7 @@
     "allowed_hands": ["main", "off"]
   },
   "call_stage": {
-    "base_duration_ticks": 800,
+    "base_duration_ticks": 160,
     "cancel_on_player_death": true,
     "cancel_on_terminal_lost": true,
     "cancel_on_disconnect": true,
