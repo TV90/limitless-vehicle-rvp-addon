@@ -63,7 +63,9 @@ class RVP_FireSupportStageDMapToolTest {
         assertTrue(source.contains("primaryActionLabel(mission)"));
         assertTrue(source.contains("inboundHeadingDegrees"));
         assertTrue(source.contains("host.blocksPerPixel() * 48.0"));
-        assertTrue(source.contains("inboundHeadingDegrees + side(host, mouseX) * 5.0"));
+        assertTrue(source.contains("updateInboundDirectionFromPointer(host, mouseX, mouseY)"));
+        assertFalse(source.contains("tr(\"gui.ywzj_rvp.fire_support.heading\""));
+        assertFalse(source.contains("tr(\"gui.ywzj_rvp.fire_support.inbound_heading\""));
         assertTrue(source.contains("initializeInboundHeading(point)"));
         assertFalse(source.contains("weaponId.getPath().equals"));
     }

@@ -317,8 +317,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                 y = drawParameter(host, graphics, left, right, y, spec, mouseX, mouseY);
             }
         }
-        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.heading"), format(headingDegrees) + "°", mouseX, mouseY);
-        y = drawValueRow(host, graphics, left, right, y, tr("gui.ywzj_rvp.fire_support.inbound_heading"), format(inboundHeadingDegrees) + "°", mouseX, mouseY);
+        // 仅调整地图插件视觉：方位仍由地图上的方向手柄和内部草稿保留，不在侧栏显示为选项。
         drawButton(graphics, left, y, right, y + 16, true, tr("gui.ywzj_rvp.fire_support.reset_parameters"), mouseX, mouseY);
         y += 21;
         int[] preview = previewPlan();
@@ -376,10 +375,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
                 y += ROW_HEIGHT;
             }
         }
-        if (rowHit(y, mouseY)) { headingDegrees = normalizeHeading(headingDegrees + side(host, mouseX) * 5.0); rememberDraft(); return; }
-        y += ROW_HEIGHT;
-        if (rowHit(y, mouseY)) { inboundHeadingDegrees = normalizeHeading(inboundHeadingDegrees + side(host, mouseX) * 5.0); rememberDraft(); return; }
-        y += ROW_HEIGHT;
+        // 仅调整地图插件视觉：方位仍由地图上的方向手柄和内部草稿保留，不在侧栏显示为选项。
         if (mouseY >= y && mouseY <= y + 16) { resetParameters(); return; }
         y += 21 + ROW_HEIGHT;
         S2CFireSupportMissionUpdate mission = trackedMission();
