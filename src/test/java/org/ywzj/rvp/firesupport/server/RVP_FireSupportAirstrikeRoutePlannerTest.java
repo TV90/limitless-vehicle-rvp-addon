@@ -192,6 +192,22 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
     }
 
     @Test
+    void aircraftSpawnsOnlyAfterCallingStageHasEnded() {
+        assertTrue(!RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
+                RVP_FireSupportMissionState.CALLING, 100L, 100L),
+                "即使到达截止 Tick，CALLING 阶段也不得生成飞机");
+        assertTrue(!RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
+                RVP_FireSupportMissionState.STRIKING, 99L, 100L),
+                "即使状态已切换，截止 Tick 前也不得生成飞机");
+        assertTrue(RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
+                RVP_FireSupportMissionState.STRIKING, 100L, 100L),
+                "呼叫结束 Tick 进入 STRIKING 后应允许从出发点生成飞机");
+        assertTrue(!RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
+                RVP_FireSupportMissionState.CANCELLED, 101L, 100L),
+                "终态任务不得生成飞机");
+    }
+
+    @Test
     void recoveryUsesFullTwoHundredTickWindowAndFreezesLogicalTime() {
         assertEquals(RVP_FireSupportAirstrikeController.Status.RECOVERING,
                 RVP_FireSupportAirstrikeController.classifyRecovery(false, 100L, 299L));

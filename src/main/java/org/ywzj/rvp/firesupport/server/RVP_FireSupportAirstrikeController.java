@@ -80,7 +80,11 @@ public final class RVP_FireSupportAirstrikeController {
             if (state == null) return Status.TRAJECTORY_UNREACHABLE;
             serverStates.put(mission.missionId, state);
         }
-        if (state.aircraftUuid == null) return spawnAircraft(server, level, mission, state, now);
+        if (state.aircraftUuid == null) {
+            // 呼叫阶段只允许准备目标区块和冻结航线；必须等呼叫结束并进入打击阶段才从出发点生成飞机。
+            if (!aircraftSpawnAllowed(mission.state, now, mission.callDeadlineTick)) return Status.WAITING;
+            return spawnAircraft(server, level, mission, state, now);
+        }
 
         Entity entity = level.getEntity(state.aircraftUuid);
         if (entity instanceof AbstractVehicle aircraft) {
@@ -153,6 +157,11 @@ public final class RVP_FireSupportAirstrikeController {
         prepareAircraftPath(aircraft, state, now);
         RVP_FireSupportSpawnChunkLeaseManager.confirmLaunch(level, mission.missionId, entryChunk);
         return Status.WAITING;
+    }
+
+    /** 纯状态判定：飞机只能在呼叫截止 Tick 到达后的打击阶段生成。 */
+    static boolean aircraftSpawnAllowed(RVP_FireSupportMissionState missionState, long now, long callDeadlineTick) {
+        return missionState == RVP_FireSupportMissionState.STRIKING && now >= callDeadlineTick;
     }
 
     /** 区分首次生成观察期、生成失败与曾存活后被击落。 */

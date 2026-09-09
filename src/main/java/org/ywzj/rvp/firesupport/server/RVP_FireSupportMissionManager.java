@@ -209,6 +209,11 @@ public final class RVP_FireSupportMissionManager {
             if (mission.terminal()) continue;
             if (mission.state == RVP_FireSupportMissionState.CALLING) {
                 if (!guardCalling(server, mission)) continue;
+                if (now >= effectiveCallDeadlineTick(server, mission)) {
+                    // 呼叫守卫全部通过且截止 Tick 已到后，先切入打击阶段；空袭控制器据此才可在出发点生成飞机。
+                    mission.state = RVP_FireSupportMissionState.STRIKING;
+                    sendUpdate(server, mission);
+                }
             }
             RVP_FireSupportAirstrikeController.Status airStatus =
                     RVP_FireSupportAirstrikeController.tick(server, mission, now);
@@ -244,11 +249,6 @@ public final class RVP_FireSupportMissionManager {
             }
             if (airStatus == RVP_FireSupportAirstrikeController.Status.WAITING
                     || airStatus == RVP_FireSupportAirstrikeController.Status.RECOVERING) continue;
-            if (mission.state == RVP_FireSupportMissionState.CALLING
-                    && now >= effectiveCallDeadlineTick(server, mission)) {
-                mission.state = RVP_FireSupportMissionState.STRIKING;
-                sendUpdate(server, mission);
-            }
             boolean airMission = RVP_FireSupportAirstrikeController.isAirMission(mission);
             RVP_FireSupportSchedulePlanner.PlannedRound candidateRound = airMission
                     ? RVP_FireSupportAirstrikeController.nextCandidateRound(server, mission, now)
