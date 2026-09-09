@@ -192,6 +192,25 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
     }
 
     @Test
+    void exactAirstrikeStepUsesTurnedPoseInsteadOfPreviousVelocity() {
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose current =
+                new RVP_FireSupportAirstrikeRoutePlanner.AircraftPose(
+                        new Vec3(15.5D, 80.0D, 15.5D), new Vec3(0.0D, 0.0D, 1.0D),
+                        0.0F, 0.0F, 0.0F, new Vec3(0.0D, 0.0D, 20.0D));
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose turned =
+                RVP_FireSupportAirstrikeRoutePlanner.advance(
+                        current, new Vec3(1.0D, 0.0D, 0.0D), 20.0D,
+                        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback());
+
+        Vec3 exact = RVP_FireSupportAirstrikeController.exactStepMotion(current, turned);
+
+        assertEquals(turned.position().subtract(current.position()), exact);
+        assertTrue(Math.abs(exact.x) > 1.0E-6D, "转弯后的真实下一段必须包含横向位移");
+        assertTrue(exact.distanceTo(current.motion()) > 1.0E-6D,
+                "硬门禁不得继续使用上一 Tick 的旧速度预测下一段");
+    }
+
+    @Test
     void aircraftSpawnsOnlyAfterCallingStageHasEnded() {
         assertTrue(!RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
                 RVP_FireSupportMissionState.CALLING, 100L, 100L),
@@ -219,6 +238,27 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
         assertEquals(19L, RVP_FireSupportAirstrikeController.recoveryScheduleOffset(10L, 100L, 109L));
         assertEquals(10L, RVP_FireSupportAirstrikeController.recoveryScheduleOffset(
                 10L, Long.MIN_VALUE, 109L));
+    }
+
+    @Test
+    void recoveringPathRequestsKeepTargetingTheBlockedLogicalStep() {
+        long recoveryStart = 100L;
+        long accumulatedPause = 7L;
+
+        long failedMoveStep = RVP_FireSupportAirstrikeController.nextLogicalStepTick(
+                true, true, recoveryStart, 99L, accumulatedPause);
+        long sameTickPreloadStep = RVP_FireSupportAirstrikeController.nextLogicalStepTick(
+                true, false, recoveryStart, recoveryStart, accumulatedPause);
+        long nextTickRetryStep = RVP_FireSupportAirstrikeController.nextLogicalStepTick(
+                true, true, recoveryStart + 1L, recoveryStart,
+                RVP_FireSupportAirstrikeController.recoveryScheduleOffset(
+                        accumulatedPause, recoveryStart, recoveryStart + 1L));
+
+        assertEquals(93L, failedMoveStep);
+        assertEquals(failedMoveStep, sameTickPreloadStep,
+                "同 Tick 末尾的预加载不得覆盖成被阻塞步骤之后的路径");
+        assertEquals(failedMoveStep, nextTickRetryStep,
+                "下一 Tick 重试必须继续检查同一个冻结逻辑步骤");
     }
 
     private static RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget target(int roundIndex, long plannedTick,

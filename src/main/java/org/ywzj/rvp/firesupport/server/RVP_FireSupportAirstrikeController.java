@@ -94,13 +94,10 @@ public final class RVP_FireSupportAirstrikeController {
             state.captureDynamics(aircraft);
             aircraft.uav = true;
             aircraft.getPersistentData().putUUID(AIRCRAFT_MISSION_TAG, mission.missionId);
-            if (!prepareAircraftPath(aircraft, state, now)) {
+            if (!advanceAircraftIfPathReady(aircraft, state, now)) {
                 state.beginRecovery(now, "PATH_NOT_READY", aircraft.position());
                 return state.recoveryTimedOut(now) ? logAircraftLost(mission, state, now) : Status.RECOVERING;
             }
-            state.finishRecovery(now);
-            state.advanceTo(now);
-            applyPose(aircraft, state.pose());
             RVP_ChunkPathLoadManager.recordPostMoveObservation(aircraft);
             if (state.retainUntilExit && state.allDelivered() && now >= state.exitEndTick()) {
                 discardCompleteAircraft(server, state, aircraft);
@@ -140,7 +137,8 @@ public final class RVP_FireSupportAirstrikeController {
         RVP_FireSupportAirstrikeRoutePlanner.AircraftPose pose = state.initialPose(entry);
         // 调用本体载具构造方法：飞机必须从预计算入场点生成，姿态由插件航线状态初始化。
         AbstractVehicle aircraft = data.construct(level, entry, pose.pitch(), pose.yaw());
-        aircraft.setDeltaMovement(pose.motion());
+        // 飞机运动量由插件 RouteState 单独维护；实体初速度清零，避免首次路径门禁前被本体物理提前积分。
+        aircraft.setDeltaMovement(Vec3.ZERO);
         aircraft.setZRot(pose.roll());
         if (!level.addFreshEntity(aircraft)) {
             LOGGER.warn("炮火任务 {} 空袭飞机加入世界失败: aircraftId={}, position={}",
@@ -154,7 +152,8 @@ public final class RVP_FireSupportAirstrikeController {
         state.captureDynamics(aircraft);
         aircraft.uav = true;
         aircraft.getPersistentData().putUUID(AIRCRAFT_MISSION_TAG, mission.missionId);
-        prepareAircraftPath(aircraft, state, now);
+        // 调用本项目动态路径加载器：生成 Tick 只提交下一步路径，真正移动仍由后续 Tick 的硬门禁决定。
+        prepareNextAircraftStep(aircraft, state, now);
         RVP_FireSupportSpawnChunkLeaseManager.confirmLaunch(level, mission.missionId, entryChunk);
         return Status.WAITING;
     }
@@ -184,6 +183,17 @@ public final class RVP_FireSupportAirstrikeController {
     static long recoveryScheduleOffset(long accumulatedPauseTicks, long recoveryStartTick, long now) {
         return recoveryStartTick == Long.MIN_VALUE ? accumulatedPauseTicks
                 : Math.addExact(accumulatedPauseTicks, Math.max(0L, now - recoveryStartTick));
+    }
+
+    /**
+     * 计算下一步采用的冻结逻辑 Tick。路径恢复期间，即使本 Tick 已无待提交位移，预加载请求也必须
+     * 继续指向最初被阻塞的同一步，不能提前覆盖成下一步路径。
+     */
+    static long nextLogicalStepTick(boolean recovering, boolean movementDue,
+                                    long worldTick, long poseTick, long scheduleOffset) {
+        if (recovering) return Math.subtractExact(worldTick, scheduleOffset);
+        long movementTick = movementDue ? worldTick : Math.max(worldTick, Math.addExact(poseTick, 1L));
+        return Math.subtractExact(movementTick, scheduleOffset);
     }
 
     /** @return 当前任务是否正等待支援机路径或实体恢复。 */
@@ -279,7 +289,6 @@ public final class RVP_FireSupportAirstrikeController {
         ServerLevel level = server.getLevel(mission.dimension);
         Entity entity = level == null ? null : level.getEntity(state.aircraftUuid);
         if (!(entity instanceof AbstractVehicle aircraft) || aircraft.isRemoved() || aircraft.isDestroyed()) return null;
-        state.advanceTo(level.getGameTime());
         applyPose(aircraft, state.pose());
         return new Snapshot(aircraft, state.rackPosition(), state.pose().motion());
     }
@@ -304,7 +313,7 @@ public final class RVP_FireSupportAirstrikeController {
         }
     }
 
-    /** 本体每 Tick 物理之后的公开事件；推进连续姿态并校准位置。 */
+    /** 本体每 Tick 物理之后的公开事件；仅在下一段全部区块可执行实体 Tick 时提交插件位移。 */
     @SubscribeEvent
     public static void onVehicleMove(VehicleMoveEvent event) {
         AbstractVehicle aircraft = event.getVehicle();
@@ -317,8 +326,12 @@ public final class RVP_FireSupportAirstrikeController {
             state.aircraftObservedAlive = true;
             state.captureDynamics(aircraft);
             aircraft.uav = true;
-            state.advanceTo(level.getGameTime());
-            applyPose(aircraft, state.pose());
+            long now = level.getGameTime();
+            // 调用本项目动态路径加载器：按旧姿态到下一姿态的真实线段逐区块检查，失败时保持旧姿态。
+            if (!advanceAircraftIfPathReady(aircraft, state, now)) {
+                state.beginRecovery(now, "PATH_NOT_READY", state.pose().position());
+                applyPose(aircraft, state.pose());
+            }
             RVP_ChunkPathLoadManager.recordPostMoveObservation(aircraft);
             // 目的：本体 FixedWingVehicle 的 tickPhysics 已在事件前执行；空袭航线由插件状态机独占，
             // 取消事件可让 AbstractVehicle 不再把本体物理积分结果带入下一 Tick。
@@ -405,14 +418,38 @@ public final class RVP_FireSupportAirstrikeController {
         return serverStates == null ? null : serverStates.get(mission.missionId);
     }
 
-    /** 使用当前实际飞机位置预热路径，避免平滑转弯进入未加载 Chunk。 */
-    private static boolean prepareAircraftPath(AbstractVehicle aircraft, RouteState state, long now) {
+    /**
+     * 提交并检查飞机下一次真实位移线段。检查使用下一姿态的运动向量，而非上一 Tick 速度，
+     * 因此高速转弯时触及的侧邻区块也必须已经获得 Ticket 并进入 entity-ticking。
+     */
+    private static boolean prepareNextAircraftStep(AbstractVehicle aircraft, RouteState state, long now) {
         Vec3 start = state.pose().position();
-        Vec3 motion = state.pose().motion();
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose nextPose = state.previewNextPose(now);
+        Vec3 motion = exactStepMotion(state.pose(), nextPose);
         RVP_ChunkPathLoader.PathLoadResult result = RVP_ChunkPathLoader.requestProjectedPath(
                 aircraft, start, motion, AIRCRAFT_PATH_LOOKAHEAD_TICKS,
                 RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT);
+        state.lastPathLoadResult = result;
         return result.currentTickPathReady();
+    }
+
+    /** 在移动确实到期时执行硬门禁；同 Tick 的后续调用只继续预热下一步，不重复移动。 */
+    private static boolean advanceAircraftIfPathReady(AbstractVehicle aircraft, RouteState state, long now) {
+        boolean movementDue = state.movementDue(now);
+        boolean pathReady = prepareNextAircraftStep(aircraft, state, now);
+        if (!movementDue) return !state.recovering();
+        if (!pathReady) return false;
+        state.finishRecovery(now);
+        state.advanceOneTick(now);
+        applyPose(aircraft, state.pose());
+        return true;
+    }
+
+    /** 纯数学辅助：返回控制器即将提交的精确位移，供高速转弯回归测试复用。 */
+    static Vec3 exactStepMotion(RVP_FireSupportAirstrikeRoutePlanner.AircraftPose current,
+                                RVP_FireSupportAirstrikeRoutePlanner.AircraftPose next) {
+        if (current == null || next == null) return Vec3.ZERO;
+        return next.position().subtract(current.position());
     }
 
     private static Status handleMissingAircraft(RVP_FireSupportMission mission, RouteState state, long now) {
@@ -422,9 +459,19 @@ public final class RVP_FireSupportAirstrikeController {
     }
 
     private static Status logAircraftLost(RVP_FireSupportMission mission, RouteState state, long now) {
-        LOGGER.warn("炮火任务 {} 空袭飞机失联超时: aircraftId={}, uuid={}, reason={}, position={}, missingTicks={}",
+        RVP_ChunkPathLoader.PathLoadResult path = state.lastPathLoadResult;
+        LOGGER.warn("炮火任务 {} 空袭飞机失联超时: aircraftId={}, uuid={}, reason={}, position={}, "
+                        + "missingTicks={}, pathState={}, firstUnreadyChunk={}, plannedChunks={}, grantedChunks={}, "
+                        + "readyChunks={}, budgetExhausted={}, pathTruncated={}",
                 mission.missionId, state.aircraftId, state.aircraftUuid, state.lastLeaveReason,
-                state.lastKnownPosition, now - state.recoveryStartTick);
+                state.lastKnownPosition, now - state.recoveryStartTick,
+                path == null ? "UNKNOWN" : path.firstUnreadyState(),
+                path == null ? null : path.firstUnreadyChunk(),
+                path == null ? 0 : path.plannedChunkCount(),
+                path == null ? 0 : path.requestedChunkCount(),
+                path == null ? 0 : path.readyChunkCount(),
+                path != null && path.budgetExhausted(),
+                path != null && path.projectedPathTruncated());
         return Status.AIRCRAFT_LOST;
     }
 
@@ -459,7 +506,8 @@ public final class RVP_FireSupportAirstrikeController {
         aircraft.setXRot(pose.pitch());
         aircraft.setYRot(pose.yaw());
         aircraft.setZRot(pose.roll());
-        aircraft.setDeltaMovement(pose.motion());
+        // 真实航速只保存在 RouteState；实体速度恒为零，确保本体物理不能绕开下一 Tick 的区块硬门禁。
+        aircraft.setDeltaMovement(Vec3.ZERO);
     }
 
     private static void discardCompleteAircraft(MinecraftServer server, RouteState state, AbstractVehicle aircraft) {
@@ -526,6 +574,8 @@ public final class RVP_FireSupportAirstrikeController {
                 RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
         /** 是否已经记录过非固定翼回退诊断。 */
         private boolean fallbackDynamicsLogged;
+        /** 最近一次飞机路径申请结果，用于失联超时时输出精确阻塞原因。 */
+        private RVP_ChunkPathLoader.PathLoadResult lastPathLoadResult;
 
         private RouteState(RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData config,
                            List<RoundRef> refs,
@@ -552,24 +602,39 @@ public final class RVP_FireSupportAirstrikeController {
             this.lastObservedTick = Math.max(lastObservedTick, tick);
         }
 
-        private void advanceTo(long worldTick) {
+        /** 预演下一次真实位移；恢复期间按当前累计暂停量保持同一个逻辑航点。 */
+        private RVP_FireSupportAirstrikeRoutePlanner.AircraftPose previewNextPose(long worldTick) {
+            if (pose == null) return null;
+            long projectedPause = scheduleOffset(worldTick);
+            if (!recovering() && poseTick < worldTick - 1L) {
+                projectedPause = Math.addExact(projectedPause, worldTick - poseTick - 1L);
+            }
+            long logicalNext = nextLogicalStepTick(
+                    recovering(), movementDue(worldTick), worldTick, poseTick, projectedPause);
+            Vec3 desired = departing() ? route.direction()
+                    : route.tangentAtDistance(route.distanceAt(logicalNext));
+            return RVP_FireSupportAirstrikeRoutePlanner.advance(pose, desired,
+                    config.carrierSpeedMetersPerTick(), dynamics());
+        }
+
+        /** 每个服务器 Tick 最多推进一步；漏 Tick 计入暂停，禁止恢复时追赶并瞬间跨越多个区块。 */
+        private void advanceOneTick(long worldTick) {
             if (pose == null) setPose(initialPose(referencePosition(worldTick)), worldTick);
-            if (recovering()) {
-                lastObservedTick = Math.max(lastObservedTick, worldTick);
-                return;
-            }
             if (poseTick == Long.MIN_VALUE) poseTick = worldTick;
-            while (poseTick < worldTick) {
-                long logicalNext = logicalTick(poseTick + 1L);
-                // 末发成功后立即进入既定出场方向；固定翼仍由 advance() 按本体转向能力渐进修正。
-                Vec3 desired = departing() ? route.direction()
-                        : route.tangentAtDistance(route.distanceAt(logicalNext));
-                pose = RVP_FireSupportAirstrikeRoutePlanner.advance(pose, desired,
-                        config.carrierSpeedMetersPerTick(), dynamics());
-                poseTick++;
+            if (poseTick >= worldTick) return;
+            long skippedTicks = Math.max(0L, worldTick - poseTick - 1L);
+            if (skippedTicks > 0L) {
+                accumulatedPauseTicks = Math.addExact(accumulatedPauseTicks, skippedTicks);
             }
+            poseTick = worldTick - 1L;
+            // 末发成功后立即进入既定出场方向；固定翼仍由 advance() 按本体转向能力渐进修正。
+            pose = previewNextPose(worldTick);
+            poseTick = worldTick;
             lastObservedTick = Math.max(lastObservedTick, worldTick);
         }
+
+        /** @return 当前世界 Tick 是否尚有一步实际位移需要提交。 */
+        private boolean movementDue(long worldTick) { return pose != null && poseTick < worldTick; }
 
         private RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics dynamics() {
             return dynamics;
@@ -619,6 +684,8 @@ public final class RVP_FireSupportAirstrikeController {
 
         private void beginRecovery(long now, String reason, Vec3 position) {
             lastObservedTick = Math.max(lastObservedTick, now);
+            // 未就绪 Tick 必须只推进时间戳、不推进坐标，避免恢复后补走多步并跨过未验证区块。
+            poseTick = Math.max(poseTick, now);
             if (recovering()) return;
             recoveryStartTick = now;
             recoveryDeadlineTick = Math.addExact(now, AIRCRAFT_RECOVERY_TICKS);

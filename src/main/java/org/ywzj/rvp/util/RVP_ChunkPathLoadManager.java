@@ -44,8 +44,8 @@ public final class RVP_ChunkPathLoadManager {
     public static final int GLOBAL_NEW_CHUNK_REQUESTS_PER_TICK = 64;
     /** 单实体单次提交允许的最大连续路径区块数。 */
     public static final int MAX_CHUNKS_PER_ENTITY_TICK = 64;
-    /** 与本体 EntityUtil.keepChunkLoaded(...) 保持一致的 Ticket - 1 距离参数。 */
-    private static final int POST_TELEPORT_TICKET_LEVEL = 2;
+    /** 与本体 EntityUtil.keepChunkLoaded(...) 完全一致的 Region Ticket 距离参数。 */
+    private static final int POST_TELEPORT_TICKET_LEVEL = 3;
     /** 汇总统计日志周期，单位为服务器 Tick。 */
     private static final int STATS_LOG_INTERVAL_TICKS = 200;
     /** 实体漏 Tick 后继续保护最后驻留区块的短租约长度。 */
@@ -63,7 +63,8 @@ public final class RVP_ChunkPathLoadManager {
     /**
      * 提交实体下一服务器 Tick 需要的有序路径，并返回当前已经获票的连续前缀。
      *
-     * <p>同一实体在一个 Tick 内多次提交时以后一次路径为准；优先级取两次中较高者。</p>
+     * <p>同一实体在一个 Tick 内多次提交时，高优先级请求的路径和本 Tick 终点一并保留；
+     * 只有同级或更高优先级的新请求才可覆盖。</p>
      */
     public static PathRequestSnapshot submitPathRequest(
             @Nullable Entity entity,
@@ -85,21 +86,25 @@ public final class RVP_ChunkPathLoadManager {
 
         RequestPriority resolvedPriority = priority == null ? RequestPriority.ACTIVE_PROJECTILE : priority;
         PendingRequest previous = serverState.pendingRequests.get(key);
-        if (previous != null && previous.priority().ordinal() < resolvedPriority.ordinal()) {
-            resolvedPriority = previous.priority();
-        }
-        serverState.pendingRequests.put(key, new PendingRequest(
-                key, level, entity.getId(), normalizedPath, resolvedPriority));
+        PendingRequest incoming = new PendingRequest(
+                key, level, entity.getId(), normalizedPath,
+                currentTickEndChunk == null ? normalizedPath.get(0) : currentTickEndChunk,
+                resolvedPriority);
+        // 远距可视化会在 Tick 末尾为同一架支援机提交零速单区块路径；
+        // 保留先到的 AIR_SUPPORT 路径，避免其只获授起点区块而永久 NOT_REQUESTED。
+        PendingRequest selected = shouldKeepExistingRequest(
+                previous == null ? null : previous.priority(), resolvedPriority) ? previous : incoming;
+        serverState.pendingRequests.put(key, selected);
         long gameTime = level.getGameTime();
         serverState.leases.compute(key, (ignored, lease) -> {
             if (lease == null || lease.entityId != entity.getId() || lease.level != level) {
                 return new ResidencyLease(
                         level, entity, entity.getId(), gameTime, entity.chunkPosition(),
-                        currentTickEndChunk == null ? normalizedPath.get(0) : currentTickEndChunk);
+                        selected.currentTickEndChunk());
             }
             lease.noteSubmission(
                     entity, gameTime, entity.chunkPosition(),
-                    currentTickEndChunk == null ? normalizedPath.get(0) : currentTickEndChunk);
+                    selected.currentTickEndChunk());
             return lease;
         });
 
@@ -367,6 +372,12 @@ public final class RVP_ChunkPathLoadManager {
         return prefix;
     }
 
+    /** @return 已存在请求是否应阻止本 Tick 后到的低优先级请求覆盖路径。 */
+    static boolean shouldKeepExistingRequest(@Nullable RequestPriority existing,
+                                             RequestPriority incoming) {
+        return existing != null && existing.ordinal() < incoming.ordinal();
+    }
+
     /**
      * 执行纯内存预算分配。等待弹体优先；同优先级从轮转游标开始，每轮每实体最多新增一个区块。
      */
@@ -493,6 +504,7 @@ public final class RVP_ChunkPathLoadManager {
             ServerLevel level,
             int entityId,
             List<ChunkPos> path,
+            ChunkPos currentTickEndChunk,
             RequestPriority priority) {
     }
 

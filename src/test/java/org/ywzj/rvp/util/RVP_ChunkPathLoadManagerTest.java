@@ -16,6 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** 服务器级新增 Ticket 预算分配算法的纯单元测试。 */
 class RVP_ChunkPathLoadManagerTest {
 
+    /** 远距可视化的后到请求不得覆盖同一架飞机已提交的空袭路径。 */
+    @Test
+    void lowerPriorityRequestCannotOverwriteAirSupportPath() {
+        assertTrue(RVP_ChunkPathLoadManager.shouldKeepExistingRequest(
+                RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT,
+                RVP_ChunkPathLoadManager.RequestPriority.REMOTE_VEHICLE));
+        assertFalse(RVP_ChunkPathLoadManager.shouldKeepExistingRequest(
+                RVP_ChunkPathLoadManager.RequestPriority.REMOTE_VEHICLE,
+                RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT));
+        assertFalse(RVP_ChunkPathLoadManager.shouldKeepExistingRequest(
+                RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT,
+                RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT));
+    }
+
     /** 已有连续路径只需刷新，不消耗本 Tick 新增预算。 */
     @Test
     void existingContinuousPrefixRefreshesWithoutBudget() {
