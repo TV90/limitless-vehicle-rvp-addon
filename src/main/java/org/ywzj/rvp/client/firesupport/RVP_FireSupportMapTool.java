@@ -404,7 +404,11 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         RVP_ClientFireSupportProfile.FireMode mode = mode();
         RVP_ClientFireSupportProfile.Pattern pattern = pattern();
         InteractionHand hand = heldTerminalHand();
-        if (!hasAnchor || munition == null || mode == null || pattern == null || hand == null) {
+        if (!hasAnchor) {
+            resultMessage = tr("gui.ywzj_rvp.fire_support.target_required");
+            return;
+        }
+        if (munition == null || mode == null || pattern == null || hand == null) {
             resultMessage = tr("gui.ywzj_rvp.fire_support.profile_item_changed");
             return;
         }
@@ -721,7 +725,11 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
 
     private void selectChoice(int choice, int index) {
         switch (choice) {
-            case 1 -> munitionIndex = index;
+            case 1 -> {
+                munitionIndex = index;
+                // 调用本项目选择校正逻辑：弹药方案变化后立即检查并切换到兼容的打击方案。
+                resetDependentSelections();
+            }
             case 2 -> {
                 List<RVP_ClientFireSupportProfile.FireMode> modes = allowedModes();
                 if (index >= 0 && index < modes.size() && profile() != null) modeIndex = profile().fireModes().indexOf(modes.get(index));
