@@ -43,6 +43,10 @@
           "delivery": {
             "type": "rvp:air_launched_projectile",
             "data": {
+              "aircraft_id": "ywzj_vehicle:rafale",
+              "rack_offset": { "x": 0.0, "y": -2.0, "z": 0.0 },
+              "entry_distance_m": 1280.0,
+              "exit_distance_m": 768.0,
               "release_altitude_above_impact_m": 256.0,
               "min_release_altitude_above_impact_m": 96.0,
               "carrier_speed_m_per_tick": 2.5,
@@ -54,8 +58,8 @@
       ]
     },
     {
-      "id": "mk84_yasser_mixed",
-      "translation_key": "fire_support.munition.rvp.mk84_yasser_mixed",
+      "id": "mk84_yasser_air",
+      "translation_key": "fire_support.munition.rvp.mk84_yasser_air",
       "rounds_per_unit": 6,
       "registration_phase_enabled": true,
       "weapons": [
@@ -65,6 +69,10 @@
           "delivery": {
             "type": "rvp:air_launched_projectile",
             "data": {
+              "aircraft_id": "ywzj_vehicle:rafale",
+              "rack_offset": { "x": 0.0, "y": -2.0, "z": 0.0 },
+              "entry_distance_m": 1280.0,
+              "exit_distance_m": 768.0,
               "release_altitude_above_impact_m": 256.0,
               "min_release_altitude_above_impact_m": 96.0,
               "carrier_speed_m_per_tick": 2.5,
@@ -77,12 +85,15 @@
           "weapon": "rvp:f14a_iriaf_yasser",
           "weight": 1,
           "delivery": {
-            "type": "rvp:ground_launched_projectile",
+            "type": "rvp:air_launched_projectile",
             "data": {
-              "launch_distance_m": 768.0,
-              "min_launch_distance_m": 256.0,
-              "launch_height_above_ground_m": 2.5,
-              "max_apex_above_impact_m": 512.0,
+              "aircraft_id": "ywzj_vehicle:rafale",
+              "rack_offset": { "x": 0.0, "y": -2.0, "z": 0.0 },
+              "entry_distance_m": 1280.0,
+              "exit_distance_m": 768.0,
+              "release_altitude_above_impact_m": 256.0,
+              "min_release_altitude_above_impact_m": 96.0,
+              "carrier_speed_m_per_tick": 2.5,
               "preload_ticks": 80,
               "heading_jitter_deg": 0.0
             }
@@ -171,6 +182,10 @@
           "delivery": {
             "type": "rvp:air_launched_projectile",
             "data": {
+              "aircraft_id": "rvp:j16",
+              "rack_offset": { "x": 0.0, "y": -2.0, "z": 0.0 },
+              "entry_distance_m": 1280.0,
+              "exit_distance_m": 768.0,
               "release_altitude_above_impact_m": 256.0,
               "min_release_altitude_above_impact_m": 96.0,
               "carrier_speed_m_per_tick": 2.5,
@@ -183,6 +198,21 @@
     }
   ],
   "fire_modes": [
+    {
+      "id": "air_strike",
+      "translation_key": "fire_support.fire_mode.rvp.air_strike",
+      "call_duration_multiplier": 1.0,
+      "dispersion_multiplier": 1.0,
+      "phases": [
+        {
+          "id": "main",
+          "translation_key": "fire_support.phase.rvp.air_strike",
+          "start_delay_ticks": 0,
+          "rounds": { "base_multiplier": 1.0, "rounding": "ceil" },
+          "duration_ticks": 20
+        }
+      ]
+    },
     {
       "id": "rapid",
       "translation_key": "fire_support.fire_mode.rvp.rapid",

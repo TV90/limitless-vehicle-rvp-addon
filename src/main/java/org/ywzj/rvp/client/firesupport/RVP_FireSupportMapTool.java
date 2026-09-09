@@ -195,7 +195,10 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private void resetDependentSelections() {
         RVP_ClientFireSupportProfile profile = profile();
         munitionIndex = clampIndex(munitionIndex, profile == null ? 0 : profile.munitions().size());
-        modeIndex = clampIndex(modeIndex, profile == null ? 0 : profile.fireModes().size());
+        List<RVP_ClientFireSupportProfile.FireMode> modes = allowedModes();
+        RVP_ClientFireSupportProfile.FireMode currentMode = profile == null ? null : at(profile.fireModes(), modeIndex);
+        if (modes.isEmpty()) modeIndex = 0;
+        else if (currentMode == null || !modes.contains(currentMode)) modeIndex = profile.fireModes().indexOf(modes.get(0));
         patternIndex = clampIndex(patternIndex, profile == null ? 0 : profile.patterns().size());
         syncParameterDefaults();
     }
@@ -213,7 +216,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         RVP_ClientFireSupportProfile selectedProfile = profile();
         if (selectedProfile == null) return;
         munitionIndex = indexOfId(selectedProfile.munitions().stream().map(RVP_ClientFireSupportProfile.Munition::id).toList(), draft.munitionId(), 0);
-        modeIndex = indexOfId(selectedProfile.fireModes().stream().map(RVP_ClientFireSupportProfile.FireMode::id).toList(), draft.fireModeId(), 0);
+        modeIndex = indexOfModeId(selectedProfile, draft.fireModeId());
         patternIndex = indexOfId(selectedProfile.patterns().stream().map(RVP_ClientFireSupportProfile.Pattern::id).toList(), draft.patternId(), 0);
         syncParameterDefaults();
         RVP_ClientFireSupportProfile.Pattern selectedPattern = pattern();
@@ -341,8 +344,12 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         S2CFireSupportMissionUpdate mission = trackedMission();
         if (mission == null) return;
         long now = Minecraft.getInstance().level == null ? 0L : Minecraft.getInstance().level.getGameTime();
-        String state = switch (mission.state()) {
-            case CALLING -> tr("gui.ywzj_rvp.fire_support.state.calling", secondsRemaining(callDeadlineTick, now));
+        String state = mission.aircraftRecovering()
+                ? tr("gui.ywzj_rvp.fire_support.state.aircraft_recovering",
+                secondsRemaining(mission.aircraftRecoveryDeadlineTick(), now))
+                : switch (mission.state()) {
+            case CALLING -> tr("gui.ywzj_rvp.fire_support.state.calling",
+                    secondsRemaining(mission.callDeadlineTick(), now));
             case STRIKING -> tr("gui.ywzj_rvp.fire_support.state.striking");
             case CEASE_FIRE_PENDING -> tr("gui.ywzj_rvp.fire_support.state.cease_pending",
                     secondsRemaining(mission.ceaseFireEffectiveTick(), now));
@@ -653,8 +660,11 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         }
         int direction = side(host, mouseX);
         switch (choice) {
-            case 1 -> munitionIndex = cycle(munitionIndex, profile() == null ? 0 : profile().munitions().size(), direction);
-            case 2 -> modeIndex = cycle(modeIndex, profile() == null ? 0 : profile().fireModes().size(), direction);
+            case 1 -> {
+                munitionIndex = cycle(munitionIndex, profile() == null ? 0 : profile().munitions().size(), direction);
+                resetDependentSelections();
+            }
+            case 2 -> modeIndex = cycleMode(direction);
             case 3 -> { patternIndex = cycle(patternIndex, profile() == null ? 0 : profile().patterns().size(), direction); syncParameterDefaults(); }
             default -> { return; }
         }
@@ -703,7 +713,7 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
         RVP_ClientFireSupportProfile selectedProfile = profile();
         return switch (choice) {
             case 1 -> selectedProfile == null ? List.of() : selectedProfile.munitions().stream().map(value -> label(value.translationKey())).toList();
-            case 2 -> selectedProfile == null ? List.of() : selectedProfile.fireModes().stream().map(value -> label(value.translationKey())).toList();
+            case 2 -> allowedModes().stream().map(value -> label(value.translationKey())).toList();
             case 3 -> selectedProfile == null ? List.of() : selectedProfile.patterns().stream().map(value -> label(value.translationKey())).toList();
             default -> List.of();
         };
@@ -712,7 +722,10 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private void selectChoice(int choice, int index) {
         switch (choice) {
             case 1 -> munitionIndex = index;
-            case 2 -> modeIndex = index;
+            case 2 -> {
+                List<RVP_ClientFireSupportProfile.FireMode> modes = allowedModes();
+                if (index >= 0 && index < modes.size() && profile() != null) modeIndex = profile().fireModes().indexOf(modes.get(index));
+            }
             case 3 -> { patternIndex = index; syncParameterDefaults(); }
             default -> { }
         }
@@ -766,6 +779,32 @@ public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
     private RVP_ClientFireSupportProfile.Munition munition() { return profile() == null ? null : at(profile().munitions(), munitionIndex); }
     private RVP_ClientFireSupportProfile.FireMode mode() { return profile() == null ? null : at(profile().fireModes(), modeIndex); }
     private RVP_ClientFireSupportProfile.Pattern pattern() { return profile() == null ? null : at(profile().patterns(), patternIndex); }
+    /** 根据当前弹药方案返回客户端可选择的模式；服务端仍会再次校验。 */
+    private List<RVP_ClientFireSupportProfile.FireMode> allowedModes() {
+        RVP_ClientFireSupportProfile selectedProfile = profile();
+        RVP_ClientFireSupportProfile.Munition selectedMunition = munition();
+        if (selectedProfile == null) return List.of();
+        boolean air = selectedMunition != null && selectedMunition.airDelivery();
+        return selectedProfile.fireModes().stream()
+                .filter(value -> air ? "air_strike".equals(value.id()) : !"air_strike".equals(value.id()))
+                .toList();
+    }
+    /** 以允许模式列表为域轮换，并转换回 profile 原始索引。 */
+    private int cycleMode(int direction) {
+        List<RVP_ClientFireSupportProfile.FireMode> modes = allowedModes();
+        if (modes.isEmpty() || profile() == null) return 0;
+        RVP_ClientFireSupportProfile.FireMode current = at(profile().fireModes(), modeIndex);
+        int currentIndex = modes.indexOf(current);
+        int next = Math.floorMod((currentIndex < 0 ? 0 : currentIndex) + direction, modes.size());
+        return profile().fireModes().indexOf(modes.get(next));
+    }
+    /** 恢复草稿时只在兼容模式集合中查找。 */
+    private int indexOfModeId(RVP_ClientFireSupportProfile profile, String id) {
+        for (RVP_ClientFireSupportProfile.FireMode mode : allowedModes()) {
+            if (mode.id().equals(id)) return profile.fireModes().indexOf(mode);
+        }
+        return allowedModes().isEmpty() ? 0 : profile.fireModes().indexOf(allowedModes().get(0));
+    }
     private boolean hasDirectionalPattern() { return pattern() != null && parameterValues.containsKey("length_m"); }
     private boolean insideMap(RVP_TacticalMapHost host, double x, double y) { return x >= host.mapLeft() && x <= host.mapRight() && y >= host.mapTop() && y <= host.mapBottom(); }
     private boolean insideSidebar(RVP_TacticalMapHost host, double x, double y) { return x >= host.sideLeft() && x <= host.sideRight() && y >= host.mapTop() && y <= host.mapBottom(); }

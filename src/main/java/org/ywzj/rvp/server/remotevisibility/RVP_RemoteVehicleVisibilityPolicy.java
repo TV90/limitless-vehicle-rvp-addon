@@ -27,14 +27,16 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
     private RVP_RemoteVehicleVisibilityPolicy() {
     }
 
-    /** 服务端用于类型白名单判定的三类完整载具。 */
+    /** 服务端用于类型白名单判定的载具目标类型与观察者类型。 */
     public enum VehicleCategory {
         /** 直升机与其他旋翼航空器。 */
         HELICOPTER("helicopter"),
         /** 固定翼航空器。 */
         AIRCRAFT("aircraft"),
         /** 履带、轮式及其他可同步地面车辆。 */
-        GROUND_VEHICLES("ground_vehicles");
+        GROUND_VEHICLES("ground_vehicles"),
+        /** 步行玩家观察者；仅可作为矩阵的观察者键，不会作为载具目标分类。 */
+        WALKING_PLAYERS("walking_players");
 
         /** common 配置中使用的严格小写 token。 */
         private final String token;
@@ -59,6 +61,16 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
                 }
             }
             return Optional.empty();
+        }
+
+        /** 仅解析可作为远距载具目标的三类 token，排除仅用于观察者矩阵的步行玩家。 */
+        public static Optional<VehicleCategory> fromTargetToken(String token) {
+            return fromToken(token).filter(VehicleCategory::isTargetCategory);
+        }
+
+        /** 返回当前类型是否可以作为远距载具目标。 */
+        public boolean isTargetCategory() {
+            return this != WALKING_PLAYERS;
         }
     }
 
@@ -85,7 +97,7 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
      * 对单名玩家执行纯授权筛选和稳定截断。
      *
      * @param mode 服务端权威可见模式
-     * @param observerCategory 观察者所乘完整载具类型；步行或观察者玩家为空
+     * @param observerCategory 观察者类型；步行玩家使用 WALKING_PLAYERS
      * @param observerVehicleId 观察者所乘载具实体 ID；没有载具时为负数
      * @param allowedTargetTypes 观察者载具类型对应的权威目标类型白名单
      * @param maxDistance 最大水平同步距离，单位格
@@ -141,7 +153,8 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
         EnumSet<VehicleCategory> accepted = EnumSet.noneOf(VehicleCategory.class);
         Set<String> unknown = new LinkedHashSet<>();
         for (String token : configuredTokens) {
-            VehicleCategory.fromToken(token).ifPresentOrElse(accepted::add, () -> unknown.add(String.valueOf(token)));
+            VehicleCategory.fromTargetToken(token)
+                    .ifPresentOrElse(accepted::add, () -> unknown.add(String.valueOf(token)));
         }
         Set<VehicleCategory> immutableAccepted = accepted.isEmpty()
                 ? Set.of()

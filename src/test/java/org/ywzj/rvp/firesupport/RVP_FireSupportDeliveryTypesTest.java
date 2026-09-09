@@ -22,7 +22,9 @@ class RVP_FireSupportDeliveryTypesTest {
                 "max_apex_above_impact_m":512,"preload_ticks":80,"heading_jitter_deg":0}
                 """);
         roundTrip(RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE, """
-                {"release_altitude_above_impact_m":256,"min_release_altitude_above_impact_m":96,
+                {"aircraft_id":"ywzj_vehicle:rafale","rack_offset":{"x":0,"y":-2,"z":0},
+                "entry_distance_m":1280,"exit_distance_m":768,
+                "release_altitude_above_impact_m":256,"min_release_altitude_above_impact_m":96,
                 "carrier_speed_m_per_tick":2.5,"preload_ticks":80,"heading_jitter_deg":0}
                 """);
         assertEquals(3, RVP_FireSupportDeliveryTypes.all().size());
@@ -52,7 +54,15 @@ class RVP_FireSupportDeliveryTypesTest {
         RVP_FireSupportProblemCollector airProblems = new RVP_FireSupportProblemCollector();
         RVP_FireSupportDeliveryTypes.get(RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE)
                 .validateWeapon(weaponId, guidedRocket, airProblems, "weapon");
-        assertThrows(IllegalArgumentException.class, airProblems::throwIfAny);
+        airProblems.throwIfAny();
+
+        RVP_FireSupportResolvedWeapon airToAirMissile = new RVP_FireSupportResolvedWeapon(
+                RVP_EnumWeaponKind.MISSILE, RVP_EnumGuidanceType.AIR, true, true,
+                false, false, false, 1200, 0, false, 10.0F, 2.0F);
+        RVP_FireSupportProblemCollector rejectedAir = new RVP_FireSupportProblemCollector();
+        RVP_FireSupportDeliveryTypes.get(RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE)
+                .validateWeapon(weaponId, airToAirMissile, rejectedAir, "weapon");
+        assertThrows(IllegalArgumentException.class, rejectedAir::throwIfAny);
     }
 
     private static void roundTrip(ResourceLocation type, String json) {

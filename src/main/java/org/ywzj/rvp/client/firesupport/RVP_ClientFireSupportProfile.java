@@ -50,9 +50,19 @@ public record RVP_ClientFireSupportProfile(
         List<Munition> out = new ArrayList<>();
         for (JsonElement element : array) {
             JsonObject value = element.getAsJsonObject();
+            boolean airDelivery = false;
+            for (JsonElement weaponElement : value.getAsJsonArray("weapons")) {
+                JsonObject weapon = weaponElement.getAsJsonObject();
+                JsonObject delivery = weapon.getAsJsonObject("delivery");
+                if (delivery != null && "rvp:air_launched_projectile".equals(delivery.get("type").getAsString())) {
+                    airDelivery = true;
+                    break;
+                }
+            }
             out.add(new Munition(value.get("id").getAsString(), value.get("translation_key").getAsString(),
                     value.get("rounds_per_unit").getAsInt(),
-                    !value.has("registration_phase_enabled") || value.get("registration_phase_enabled").getAsBoolean()));
+                    !value.has("registration_phase_enabled") || value.get("registration_phase_enabled").getAsBoolean(),
+                    airDelivery));
         }
         return out;
     }
@@ -105,7 +115,8 @@ public record RVP_ClientFireSupportProfile(
             /** profile 内弹药方案 ID。 */ String id,
             /** 弹药方案显示翻译键。 */ String translationKey,
             /** 一基数顶层弹数。 */ int roundsPerUnit,
-            /** 是否执行标记为试射的阶段。 */ boolean registrationPhaseEnabled) {}
+            /** 是否执行标记为试射的阶段。 */ boolean registrationPhaseEnabled,
+            /** 是否包含空中实体飞机投送。 */ boolean airDelivery) {}
 
     /** 客户端数据驱动打击模式。 */
     public record FireMode(

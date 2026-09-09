@@ -241,6 +241,7 @@
   "fire_support_profile.rvp.launched_test": "RVP Launched-Delivery TEST",
   "fire_support.munition.rvp.mk84_he": "MK-84 High-Explosive Bomb",
   "fire_support.munition.rvp.mk84_yasser_mixed": "MK-84 / Yasser Mixed Strike",
+  "fire_support.munition.rvp.mk84_yasser_air": "MK-84 / Yasser Air Strike",
   "fire_support.munition.rvp.gb_1000": "GB-1000 Guided Bomb",
   "fire_support.munition.rvp.j10c_gb3_ir": "GB-3 Infrared-Guided Bomb",
   "fire_support.munition.rvp.m142_m30": "M30 Cluster Rocket",
@@ -252,6 +253,8 @@
   "fire_support.fire_mode.rvp.rapid": "Rapid Fire",
   "fire_support.fire_mode.rvp.effect": "Fire for Effect",
   "fire_support.fire_mode.rvp.monitor": "Watch Fire",
+  "fire_support.fire_mode.rvp.air_strike": "Air Strike",
+  "fire_support.phase.rvp.air_strike": "Air Strike Main Fire",
   "fire_support.phase.rvp.rapid": "Rapid Main Fire",
   "fire_support.phase.rvp.registration": "Registration Fire",
   "fire_support.phase.rvp.effect": "Effect Main Fire",
@@ -290,6 +293,7 @@
   "gui.ywzj_rvp.fire_support.state.completed": "Mission complete",
   "gui.ywzj_rvp.fire_support.state.cancelled": "Mission cancelled: %s",
   "gui.ywzj_rvp.fire_support.state.ceased": "Fire ceased",
+  "gui.ywzj_rvp.fire_support.state.aircraft_recovering": "Air support aircraft lost; recovering (%s remaining)",
   "gui.ywzj_rvp.fire_support.state.failed": "Mission failed: %s",
   "gui.ywzj_rvp.fire_support.delivered": "Delivered %s / %s",
   "gui.ywzj_rvp.fire_support.cease": "Request Cease-Fire",
@@ -328,5 +332,8 @@
   "gui.ywzj_rvp.fire_support.reason.trajectory_unreachable": "No valid trajectory from the current launch or release geometry",
   "gui.ywzj_rvp.fire_support.reason.completed": "Mission complete",
   "gui.ywzj_rvp.fire_support.reason.ceased": "Mission ceased",
-  "gui.ywzj_rvp.fire_support.reason.user_cancelled": "Cancelled by player"
+  "gui.ywzj_rvp.fire_support.reason.user_cancelled": "Cancelled by player",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_destroyed": "Air support aircraft destroyed; remaining deliveries stopped",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_spawn_failed": "Air support aircraft failed to spawn or initialize",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_lost": "Air support aircraft was lost and recovery timed out; remaining deliveries stopped"
 }

@@ -26,6 +26,7 @@ public final class RVP_FireSupportProfileParser {
     /** 全局任务数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_GLOBAL_MISSIONS = 64;
     /** 动态参数数不可配置的保险上限。 */ public static final int ABSOLUTE_MAX_PARAMETERS = 32;
     /** 目标距离不可配置的保险上限，单位格。 */ public static final double ABSOLUTE_MAX_TARGET_DISTANCE = 16384.0;
+    /** 空中投送唯一允许的炮火模式 ID。 */ public static final String AIR_STRIKE_MODE_ID = "air_strike";
 
     private RVP_FireSupportProfileParser() {}
 
@@ -70,10 +71,41 @@ public final class RVP_FireSupportProfileParser {
         RVP_FireSupportProfile.Limits limits = parseLimits(root, problems, path);
         Map<String, RVP_FireSupportProfile.Munition> munitions = parseMunitions(root, resolver, limits, problems, path);
         Map<String, RVP_FireSupportProfile.FireMode> modes = parseModes(root, problems, path);
+        validateAirCompatibility(munitions, modes, problems, path);
         Map<String, RVP_FireSupportProfile.PatternPreset> patterns = parsePatterns(root, limits, problems, path);
         return new RVP_FireSupportProfile(schema, translation,
                 new RVP_FireSupportProfile.Item(itemTranslation), holder,
                 call, strike, limits, munitions, modes, patterns);
+    }
+
+    /** 校验空中方案不得混用投送方式，且所有空中成员共享一套飞机配置。 */
+    private static void validateAirCompatibility(Map<String, RVP_FireSupportProfile.Munition> munitions,
+                                                  Map<String, RVP_FireSupportProfile.FireMode> modes,
+                                                  RVP_FireSupportProblemCollector problems, String path) {
+        for (RVP_FireSupportProfile.Munition munition : munitions.values()) {
+            boolean hasAir = munition.weapons().stream().anyMatch(
+                    weapon -> RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(weapon.deliveryType()));
+            boolean allAir = munition.weapons().stream().allMatch(
+                    weapon -> RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(weapon.deliveryType()));
+            if (hasAir && !allAir) {
+                problems.add(path + ".munitions." + munition.id(), "空中投送弹药方案不得混合地面或垂直投送");
+                continue;
+            }
+            if (!allAir) continue;
+            if (!modes.containsKey(AIR_STRIKE_MODE_ID)) {
+                problems.add(path + ".fire_modes", "包含空中投送时必须声明 air_strike 模式");
+            }
+            RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData first = null;
+            for (RVP_FireSupportProfile.MunitionWeapon weapon : munition.weapons()) {
+                if (!(weapon.deliveryData() instanceof RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData data)) continue;
+                if (first == null) first = data;
+                else if (!first.equals(data)) {
+                    problems.add(path + ".munitions." + munition.id(),
+                            "同一空中投送方案的所有武器必须共享 aircraft_id、航线和 rack_offset");
+                    break;
+                }
+            }
+        }
     }
 
     private static RVP_FireSupportProfile.HolderPolicy parseHolder(JsonObject root,

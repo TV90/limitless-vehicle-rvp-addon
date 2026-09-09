@@ -41,8 +41,16 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
     public static LeaseStatus request(ServerLevel level, UUID missionId, ChunkPos chunk,
                                       long expectedSpawnTick, int preloadTicks, int maxMissionChunks,
                                       LeasePurpose purpose) {
+        return request(level, missionId, chunk, expectedSpawnTick, preloadTicks, maxMissionChunks, purpose,
+                Math.addExact(expectedSpawnTick, MAX_WAIT_TICKS));
+    }
+
+    /** 登记带独立超时 Tick 的 Chunk 租约；空中任务用它分离预加载时机与任务安全截止时间。 */
+    public static LeaseStatus request(ServerLevel level, UUID missionId, ChunkPos chunk,
+                                      long expectedSpawnTick, int preloadTicks, int maxMissionChunks,
+                                      LeasePurpose purpose, long timeoutTick) {
         if (level == null || missionId == null || chunk == null || purpose == null
-                || preloadTicks < 0 || maxMissionChunks < 1) {
+                || preloadTicks < 0 || maxMissionChunks < 1 || timeoutTick < expectedSpawnTick) {
             return LeaseStatus.INVALID_REQUEST;
         }
         long now = level.getGameTime();
@@ -55,12 +63,13 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
 
         LeaseKey key = new LeaseKey(missionKey.dimensionId(), missionId, chunk);
         Lease lease = state.leases.computeIfAbsent(key,
-                ignored -> new Lease(level, chunk, expectedSpawnTick, state.allocateTicketId()));
+                ignored -> new Lease(level, chunk, expectedSpawnTick, timeoutTick, state.allocateTicketId()));
         lease.markPurpose(purpose);
         // 同一任务后续弹落在同一 Chunk 时复用租约，并把等待截止推进到最新计划弹。
         lease.expectedSpawnTick = Math.max(lease.expectedSpawnTick, expectedSpawnTick);
+        lease.timeoutTick = Math.max(lease.timeoutTick, timeoutTick);
         lease.lastRequestTick = now;
-        if (now > lease.expectedSpawnTick + MAX_WAIT_TICKS) {
+        if (now > lease.timeoutTick) {
             lease.timedOut = true;
             return LeaseStatus.TIMED_OUT;
         }
@@ -130,8 +139,8 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         if (state == null) return;
         long now = server.overworld().getGameTime();
         state.leases.values().removeIf(lease -> {
-            if (now > lease.expectedSpawnTick + MAX_WAIT_TICKS) lease.timedOut = true;
-            return lease.timedOut && now > lease.expectedSpawnTick + MAX_WAIT_TICKS + 20;
+            if (now > lease.timeoutTick) lease.timedOut = true;
+            return lease.timedOut && now > lease.timeoutTick + 20;
         });
         // 超时租约清除后同步回收任务去重集合，避免任务侧漏调 release 时留下纯内存残项。
         state.missionChunks.entrySet().removeIf(entry -> state.leases.keySet().stream().noneMatch(
@@ -218,6 +227,7 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         /** 租约所在服务端世界。 */ private final ServerLevel level;
         /** 唯一计划 Chunk。 */ private final ChunkPos chunk;
         /** 该 Chunk 当前已知最后一发的计划生成 Tick；同任务后续弹可向后推进。 */ private long expectedSpawnTick;
+        /** 调用方允许等待到的绝对超时 Tick；可独立于预加载开始时间。 */ private long timeoutTick;
         /** POST_TELEPORT 使用的管理器内唯一负整数标识。 */ private final int ticketId;
         /** 最近一次任务侧请求 Tick。 */ private long lastRequestTick;
         /** 是否至少成功申请过一次临时 Ticket。 */ private boolean ticketIssued;
@@ -226,10 +236,11 @@ public final class RVP_FireSupportSpawnChunkLeaseManager {
         /** 是否正在作为当前未确认的发射/释放候选被登记。 */ private boolean launchCandidateReferenced;
         /** 是否已经从该 Chunk 成功生成过弹体；任务结束前保留。 */ private boolean confirmedLaunchReferenced;
 
-        private Lease(ServerLevel level, ChunkPos chunk, long expectedSpawnTick, int ticketId) {
+        private Lease(ServerLevel level, ChunkPos chunk, long expectedSpawnTick, long timeoutTick, int ticketId) {
             this.level = level;
             this.chunk = chunk;
             this.expectedSpawnTick = expectedSpawnTick;
+            this.timeoutTick = timeoutTick;
             this.ticketId = ticketId;
             this.lastRequestTick = level.getGameTime();
         }

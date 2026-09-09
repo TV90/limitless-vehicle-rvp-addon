@@ -133,6 +133,42 @@ class RVP_FireSupportBallisticSolverTest {
         throw new AssertionError("炸弹未在预计 Tick 穿过目标高度");
     }
 
+    @Test
+    void airSolverUsesProjectileIntegratorForRocketAndMissileKinds() {
+        RVP_WeaponData projectile = weapon(4.0, -0.03, 0.0, 4.0);
+        RVP_FireSupportBallisticSolver.AirSolution rocket =
+                RVP_FireSupportBallisticSolver.solveAirRelease(projectile, RVP_EnumWeaponKind.ROCKET,
+                        320.0, 64.5, 2.5);
+        RVP_FireSupportBallisticSolver.AirSolution missile =
+                RVP_FireSupportBallisticSolver.solveAirRelease(projectile, RVP_EnumWeaponKind.MISSILE,
+                        320.0, 64.5, 2.5);
+        assertNotNull(rocket);
+        assertNotNull(missile);
+        assertTrue(rocket.releaseDistanceMeters() > 0.0);
+        assertTrue(missile.releaseDistanceMeters() > 0.0);
+    }
+
+    @Test
+    void actualAirSolverKeepsCarrierVerticalVelocityInWorldInitialMotion() {
+        RVP_WeaponData weapon = weapon(4.0, -0.03, 0.0, 8.0);
+        Vec3 release = new Vec3(0.0D, 320.0D, 0.0D);
+        Vec3 target = new Vec3(220.0D, 64.5D, 40.0D);
+        Vec3 carrierMotion = new Vec3(2.0D, 1.0D, 0.75D);
+
+        for (RVP_EnumWeaponKind kind : new RVP_EnumWeaponKind[] {
+                RVP_EnumWeaponKind.BOMB, RVP_EnumWeaponKind.ROCKET, RVP_EnumWeaponKind.MISSILE}) {
+            RVP_FireSupportBallisticSolver.ActualAirSolution solution =
+                    RVP_FireSupportBallisticSolver.solveActualAirRelease(
+                            weapon, kind, release, target, carrierMotion);
+            assertNotNull(solution, "当前载机速度下 " + kind + " 应能找到可重试的离散弹道");
+            // 载机速度先参与世界速度，再由相对投射速度补偿误差；不能退化为旧实现的零竖直速度初值。
+            assertTrue(Math.abs(solution.initializedMotion().y()) > 1.0E-6D,
+                    "弹种 " + kind + " 丢失载机竖直速度");
+            assertTrue(solution.predictionErrorMeters()
+                    <= RVP_FireSupportBallisticSolver.MAX_PREDICTION_ERROR_METERS);
+        }
+    }
+
     private static RVP_WeaponData weapon(double velocity, double gravity, double drag, double maxSpeed) {
         RVP_WeaponData data = allocateWithoutVehicleRegistry();
         RVP_ProjectileData projectile = new RVP_ProjectileData();

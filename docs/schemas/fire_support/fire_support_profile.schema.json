@@ -177,7 +177,24 @@
         "data": {
           "type": "object",
           "additionalProperties": false,
+          "required": ["aircraft_id", "rack_offset"],
           "properties": {
+            "aircraft_id": {
+              "$ref": "#/$defs/resourceLocation",
+              "description": "生成的飞机载具资源 ID；任务级空中投送必填。"
+            },
+            "rack_offset": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["x", "y", "z"],
+              "properties": {
+                "x": { "type": "number", "minimum": -128, "maximum": 128 },
+                "y": { "type": "number", "minimum": -128, "maximum": 128 },
+                "z": { "type": "number", "minimum": -128, "maximum": 128 }
+              }
+            },
+            "entry_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096, "default": 1280, "description": "入场点距首个参考飞机中心的距离；默认 1280 格。" },
+            "exit_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096, "default": 768, "description": "末个参考飞机中心之后的出场距离；默认 768 格。" },
             "release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 256 },
             "min_release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 96 },
             "carrier_speed_m_per_tick": { "type": "number", "exclusiveMinimum": 0, "maximum": 64, "default": 2.5 },

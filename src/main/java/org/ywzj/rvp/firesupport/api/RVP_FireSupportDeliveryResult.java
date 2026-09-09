@@ -27,6 +27,8 @@ public record RVP_FireSupportDeliveryResult(
         TRAJECTORY_UNREACHABLE,
         UNSUPPORTED_WEAPON,
         SPAWN_FAILED,
-        INVALID_CONTEXT
+        INVALID_CONTEXT,
+        /** 当前飞机姿态下暂时没有可行弹道；空中任务沿后续航线继续重试。 */
+        RETRY_LATER
     }
 }

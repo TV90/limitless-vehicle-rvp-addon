@@ -58,16 +58,28 @@ public final class RVP_FireSupportBallisticSolver {
     @Nullable
     public static AirSolution solveAirRelease(RVP_WeaponData weapon, double releaseY, double targetY,
                                               double carrierSpeedMetersPerTick) {
+        return solveAirRelease(weapon, RVP_EnumWeaponKind.BOMB, releaseY, targetY, carrierSpeedMetersPerTick);
+    }
+
+    /**
+     * 按具体 RVP 弹种计算目标上游投放距离；炸弹沿用本体炸弹重力，其余实体弹体沿用通用投射物步进。
+     */
+    @Nullable
+    public static AirSolution solveAirRelease(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
+                                              double releaseY, double targetY,
+                                              double carrierSpeedMetersPerTick) {
         if (weapon == null || !Double.isFinite(releaseY) || !Double.isFinite(targetY)
                 || !Double.isFinite(carrierSpeedMetersPerTick) || carrierSpeedMetersPerTick <= 0.0D
-                || releaseY <= targetY) return null;
+                || releaseY <= targetY || kind == null) return null;
         Vec3 position = new Vec3(0.0D, releaseY, 0.0D);
         Vec3 velocity = new Vec3(carrierSpeedMetersPerTick, 0.0D, 0.0D);
         double previousX = 0.0D;
         double previousY = releaseY;
         int maxTicks = Math.min(Math.max(weapon.getLife(), 1), MAX_SOLVER_TICKS);
         for (int tick = 1; tick <= maxTicks; tick++) {
-            RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepBomb(position, velocity, weapon);
+            RVP_UnguidedBallisticMath.Step step = kind == RVP_EnumWeaponKind.BOMB
+                    ? RVP_UnguidedBallisticMath.stepBomb(position, velocity, weapon)
+                    : RVP_UnguidedBallisticMath.stepProjectile(position, velocity, weapon);
             position = step.position();
             velocity = step.velocity();
             if (position.y <= targetY) {
@@ -80,6 +92,102 @@ public final class RVP_FireSupportBallisticSolver {
             previousY = position.y;
         }
         return null;
+    }
+
+    /**
+     * 从实际挂架位置和当前载机速度重新求解三维空投初速度。
+     *
+     * <p>该方法不把飞机速度重复叠加到 SpawnContext；返回的 initializedMotion 已经包含
+     * 法向补偿和当前载机切线速度。求解失败表示当前姿态暂时不适合投放，而不是永久的
+     * TRAJECTORY_UNREACHABLE。</p>
+     */
+    @Nullable
+    public static ActualAirSolution solveActualAirRelease(RVP_WeaponData weapon,
+                                                          RVP_EnumWeaponKind kind,
+                                                          Vec3 release,
+                                                          Vec3 target,
+                                                          Vec3 carrierMotion) {
+        if (weapon == null || kind == null || release == null || target == null || carrierMotion == null
+                || !finite(release) || !finite(target) || !finite(carrierMotion)
+                || release.y <= target.y || weapon.getLife() <= 0) return null;
+        Vec3 horizontalDelta = new Vec3(target.x - release.x, 0.0D, target.z - release.z);
+        if (horizontalDelta.lengthSqr() <= 1.0E-8D) return null;
+        int maxTicks = Math.min(Math.max(weapon.getLife(), 1), MAX_SOLVER_TICKS);
+        Vec3 targetDirection = horizontalDelta.normalize();
+        // 相对飞机的发射速度只表达武器自身初速；载机当前完整世界速度在最终实体初速度中单独叠加。
+        Vec3 relativeBaseMotion = Vec3.ZERO;
+        if (kind != RVP_EnumWeaponKind.BOMB) {
+            double muzzleSpeed = weapon.resolveMuzzleSpeed(kind);
+            if (Double.isFinite(muzzleSpeed) && muzzleSpeed > 0.0D) {
+                relativeBaseMotion = targetDirection.scale(muzzleSpeed);
+            }
+        }
+        Vec3 baseWorldMotion = carrierMotion.add(relativeBaseMotion);
+        int verticalCrossingTick = findVerticalCrossingTick(
+                weapon, kind, release, baseWorldMotion, target.y, maxTicks);
+        if (verticalCrossingTick < 0) return null;
+        Candidate best = null;
+        int firstCandidateTick = Math.max(1, verticalCrossingTick - 8);
+        int lastCandidateTick = Math.min(maxTicks, verticalCrossingTick + 8);
+        for (int flightTicks = firstCandidateTick; flightTicks <= lastCandidateTick; flightTicks++) {
+            // 迭代变量是相对飞机速度；飞机切向和转弯法向速度始终通过 carrierMotion 进入世界速度。
+            Vec3 relativeInitial = relativeBaseMotion;
+            for (int iteration = 0; iteration < 8; iteration++) {
+                Vec3 initial = carrierMotion.add(relativeInitial);
+                Vec3 predicted = simulateToTick(weapon, kind, release, initial, flightTicks);
+                Vec3 error = target.subtract(predicted);
+                // 目的：修正相对投射速度而不是覆盖世界速度；载机的切向、法向和竖直速度先进入模拟，
+                // 再由相对速度补足剩余三维误差，避免转弯时侧向速度被水平瞄准初值抹掉。
+                relativeInitial = relativeInitial.add(error.scale(1.0D / Math.max(1, flightTicks)));
+            }
+            Vec3 initial = carrierMotion.add(relativeInitial);
+            Vec3 predicted = simulateToTick(weapon, kind, release, initial, flightTicks);
+            double error = predicted.distanceTo(target);
+            if (best == null || error < best.error) best = new Candidate(initial, flightTicks, error);
+            if (error <= MAX_PREDICTION_ERROR_METERS) {
+                return new ActualAirSolution(initial, flightTicks, error);
+            }
+        }
+        return best != null && best.error <= 2.0D
+                ? new ActualAirSolution(best.motion, best.flightTicks, best.error) : null;
+    }
+
+    /**
+     * 先按当前载机竖直速度寻找穿越目标高度的 Tick，避免对整个 life 做平方级离散搜索。
+     * 水平法向补偿不会改变该竖直交会时间，随后只在邻域内做三维修正。
+     */
+    private static int findVerticalCrossingTick(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
+                                                 Vec3 release, Vec3 initial, double targetY, int maxTicks) {
+        Vec3 position = release;
+        Vec3 velocity = initial;
+        for (int tick = 1; tick <= maxTicks; tick++) {
+            RVP_UnguidedBallisticMath.Step step = kind == RVP_EnumWeaponKind.BOMB
+                    ? RVP_UnguidedBallisticMath.stepBomb(position, velocity, weapon)
+                    : RVP_UnguidedBallisticMath.stepProjectile(position, velocity, weapon);
+            position = step.position();
+            velocity = step.velocity();
+            if (position.y <= targetY) return tick;
+        }
+        return -1;
+    }
+
+    /** 按现有离散物理规则推进实际空投候选速度。 */
+    private static Vec3 simulateToTick(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
+                                       Vec3 release, Vec3 initial, int ticks) {
+        Vec3 position = release;
+        Vec3 velocity = initial;
+        for (int tick = 0; tick < ticks; tick++) {
+            RVP_UnguidedBallisticMath.Step step = kind == RVP_EnumWeaponKind.BOMB
+                    ? RVP_UnguidedBallisticMath.stepBomb(position, velocity, weapon)
+                    : RVP_UnguidedBallisticMath.stepProjectile(position, velocity, weapon);
+            position = step.position();
+            velocity = step.velocity();
+        }
+        return position;
+    }
+
+    private static boolean finite(Vec3 value) {
+        return Double.isFinite(value.x()) && Double.isFinite(value.y()) && Double.isFinite(value.z());
     }
 
     @Nullable
@@ -168,6 +276,15 @@ public final class RVP_FireSupportBallisticSolver {
             /** 释放点到目标点的水平距离，单位格。 */ double releaseDistanceMeters,
             /** 预计飞行 Tick。 */ int flightTicks,
             /** 最后离散 Tick 的垂直越界量，仅供诊断。 */ double terminalVerticalOvershootMeters) {}
+
+    /** 实际挂架位置下的三维空投解算结果。 */
+    public record ActualAirSolution(
+            /** 已包含载机当前速度和法向补偿的实体初速度。 */ Vec3 initializedMotion,
+            /** 预计离散飞行 Tick。 */ int flightTicks,
+            /** 预测终点误差，单位格。 */ double predictionErrorMeters) {}
+
+    /** 实时空投搜索中的最优候选。 */
+    private record Candidate(Vec3 motion, int flightTicks, double error) {}
 
     /** 指定水平距离处的轨迹评估。 */
     private record Evaluation(

@@ -31,5 +31,11 @@ public enum RVP_FireSupportEndReason {
     OUTSIDE_WORLD,
     COMPLETED,
     CEASED,
-    USER_CANCELLED
+    USER_CANCELLED,
+    /** 指定空中支援飞机被击落，未投送的计划立即终止。 */
+    AIRCRAFT_DESTROYED,
+    /** 空中支援飞机加入世界或初始化失败，尚未进入可观测存活状态。 */
+    AIRCRAFT_SPAWN_FAILED,
+    /** 空中支援飞机运行中非毁伤性失联，且未能在恢复窗口内重新出现。 */
+    AIRCRAFT_LOST
 }

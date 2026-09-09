@@ -107,6 +107,8 @@ public class RVP_CommonConfig {
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> aircraftVisibleTargets;
     /** 地面车辆观察者允许看见的目标载具类型 token。 */
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> groundVehicleVisibleTargets;
+    /** 步行玩家观察者允许看见的目标载具类型 token。 */
+    private final ForgeConfigSpec.ConfigValue<List<? extends String>> walkingPlayerVisibleTargets;
     /** 配置加载后生成的不可变观察者类型白名单。 */
     private volatile Map<VehicleCategory, Set<VehicleCategory>> normalizedVisibilityMatrix = defaultVisibilityMatrix();
 
@@ -190,6 +192,8 @@ public class RVP_CommonConfig {
                 List.of("helicopter", "aircraft", "ground_vehicles"));
         groundVehicleVisibleTargets = defineVehicleTypeList(builder, "ground_vehicles",
                 List.of("helicopter", "aircraft"));
+        walkingPlayerVisibleTargets = defineVehicleTypeList(builder, "walking_players",
+                List.of("helicopter", "aircraft"));
         builder.pop();
         builder.pop();
     }
@@ -198,7 +202,7 @@ public class RVP_CommonConfig {
     private static ForgeConfigSpec.ConfigValue<List<? extends String>> defineVehicleTypeList(
             ForgeConfigSpec.Builder builder, String key, List<String> defaults) {
         return builder
-                .comment("允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。")
+                .comment("允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。")
                 .defineListAllowEmpty(List.of(key), () -> defaults, value -> value instanceof String);
     }
 
@@ -310,13 +314,14 @@ public class RVP_CommonConfig {
         INSTANCE.refreshVisibilityMatrix();
     }
 
-    /** 规范化三类观察者白名单，并为本次加载合并输出一次未知 token 告警。 */
+    /** 规范化四类观察者白名单，并为本次加载合并输出一次未知 token 告警。 */
     private void refreshVisibilityMatrix() {
         EnumMap<VehicleCategory, Set<VehicleCategory>> matrix = new EnumMap<>(VehicleCategory.class);
         java.util.LinkedHashSet<String> unknownTokens = new java.util.LinkedHashSet<>();
         normalizeEntry(matrix, unknownTokens, VehicleCategory.HELICOPTER, helicopterVisibleTargets.get());
         normalizeEntry(matrix, unknownTokens, VehicleCategory.AIRCRAFT, aircraftVisibleTargets.get());
         normalizeEntry(matrix, unknownTokens, VehicleCategory.GROUND_VEHICLES, groundVehicleVisibleTargets.get());
+        normalizeEntry(matrix, unknownTokens, VehicleCategory.WALKING_PLAYERS, walkingPlayerVisibleTargets.get());
         normalizedVisibilityMatrix = Map.copyOf(matrix);
         if (!unknownTokens.isEmpty()) {
             LOGGER.warn("远距载具类型白名单包含未知或非严格小写 token，已忽略：{}", unknownTokens);
@@ -342,6 +347,8 @@ public class RVP_CommonConfig {
                 VehicleCategory.HELICOPTER, all,
                 VehicleCategory.AIRCRAFT, all,
                 VehicleCategory.GROUND_VEHICLES,
+                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
+                VehicleCategory.WALKING_PLAYERS,
                 Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT));
     }
 

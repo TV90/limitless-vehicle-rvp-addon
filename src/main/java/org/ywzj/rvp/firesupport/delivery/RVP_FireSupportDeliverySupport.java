@@ -81,6 +81,11 @@ final class RVP_FireSupportDeliverySupport {
                                                  RVP_FireSupportDeliveryResult second) {
         if (fatal(first.status())) return first;
         if (fatal(second.status())) return second;
+        if (first.status() == RVP_FireSupportDeliveryResult.Status.RETRY_LATER
+                || second.status() == RVP_FireSupportDeliveryResult.Status.RETRY_LATER) {
+            // 目的：保留“当前姿态暂不可投放”的诊断语义；调度器会保留武器池并沿后续参考点重试。
+            return result(RVP_FireSupportDeliveryResult.Status.RETRY_LATER, null, null);
+        }
         if (first.status() == RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK
                 || second.status() == RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK) {
             return result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null);
@@ -103,8 +108,8 @@ final class RVP_FireSupportDeliverySupport {
         // 调用本项目无载具生成核心；不伪造载具、武器站、锁定目标或载机速度继承。
         RVP_ProjectileSpawnResult spawnResult = RVP_ProjectileSpawner.spawn(new RVP_ProjectileSpawnContext(
                 context.level(), context.weaponData(), context.weaponData().getWeaponKind(), null,
-                null, null, null, context.owner(), spawn, aim, spawnContextMotion,
-                null, null, false, false, null, chunkPolicy));
+                context.sourceVehicle(), null, null, context.owner(), spawn, aim, spawnContextMotion,
+                null, context.designatedTarget(), context.inheritVehicleVelocity(), false, null, chunkPolicy));
         return spawnResult.spawned()
                 ? result(RVP_FireSupportDeliveryResult.Status.DELIVERED, spawnResult.projectile(), spawn)
                 : result(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, spawnResult.projectile(), spawn);
@@ -124,6 +129,7 @@ final class RVP_FireSupportDeliverySupport {
     private static boolean fatal(RVP_FireSupportDeliveryResult.Status status) {
         return status != RVP_FireSupportDeliveryResult.Status.PREPARED
                 && status != RVP_FireSupportDeliveryResult.Status.TOO_EARLY
-                && status != RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK;
+                && status != RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK
+                && status != RVP_FireSupportDeliveryResult.Status.RETRY_LATER;
     }
 }

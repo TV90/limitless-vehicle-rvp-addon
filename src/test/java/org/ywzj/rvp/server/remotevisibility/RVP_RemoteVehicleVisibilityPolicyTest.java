@@ -26,6 +26,8 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
         assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.AIRCRAFT));
         assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
                 RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.GROUND_VEHICLES));
+        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
+                RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.WALKING_PLAYERS));
     }
 
     @Test
@@ -44,6 +46,16 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
 
         assertEquals(Set.of(VehicleCategory.GROUND_VEHICLES), result.accepted());
         assertEquals(Set.of("HELICOPTER", " aircraft", "unknown"), result.unknown());
+    }
+
+    /** 步行玩家矩阵键可作为观察者，但不能混入远距载具目标类型。 */
+    @Test
+    void walkingPlayerTokenIsObserverOnly() {
+        NormalizationResult result = RVP_RemoteVehicleVisibilityPolicy.normalizeConfiguredTypes(
+                List.of("walking_players", "helicopter", "aircraft"));
+
+        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT), result.accepted());
+        assertEquals(Set.of("walking_players"), result.unknown());
     }
 
     @Test
@@ -116,6 +128,24 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
                 4096,
                 32,
                 candidates).isEmpty());
+    }
+
+    /** 步行玩家使用 walking_players 矩阵项时可看见默认的两类空中目标。 */
+    @Test
+    void walkingPlayerObserverUsesWalkingPlayerMatrix() {
+        List<Candidate> candidates = List.of(
+                candidate(1, VehicleCategory.AIRCRAFT, 600, false),
+                candidate(2, VehicleCategory.HELICOPTER, 700, false),
+                candidate(3, VehicleCategory.GROUND_VEHICLES, 800, false));
+
+        assertEquals(List.of(1, 2), ids(select(
+                VisibilityMode.VEHICLE_OCCUPANTS,
+                VehicleCategory.WALKING_PLAYERS,
+                -1,
+                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
+                4096,
+                32,
+                candidates)));
     }
 
     /** 自车排除后按距离和实体 ID 稳定排序并截断。 */

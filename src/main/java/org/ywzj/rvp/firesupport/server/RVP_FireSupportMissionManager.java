@@ -12,7 +12,10 @@ import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraftforge.common.util.FakePlayerFactory;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -32,6 +35,8 @@ import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /** 服务端权威任务管理器：按游戏 Tick 公平推进呼叫、打击、失败重试与延迟停火。 */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -128,12 +133,14 @@ public final class RVP_FireSupportMissionManager {
                         RVP_FireSupportEndReason.USER_CANCELLED);
             } else if (mission.state == RVP_FireSupportMissionState.STRIKING) {
                 mission.state = RVP_FireSupportMissionState.CEASE_FIRE_PENDING;
-                mission.ceaseFireEffectiveTick = Math.addExact(now,
+                mission.ceaseFireEffectiveTick = Math.addExact(
+                        RVP_FireSupportAirstrikeController.logicalTick(player.server, mission, now),
                         mission.profile.strikeStage().ceaseFireDelayTicks());
                 sendUpdate(player.server, mission);
             }
             result = new CeaseFireResult(true, RVP_FireSupportEndReason.NONE,
-                    mission.state == RVP_FireSupportMissionState.CANCELLED ? now : mission.ceaseFireEffectiveTick);
+                    mission.state == RVP_FireSupportMissionState.CANCELLED ? now
+                            : effectiveCeaseFireTick(player.server, mission));
         }
         playerNonces.put(nonce, new CeaseNonceEntry(missionId, result, now));
         trimOldest(playerNonces, MAX_NONCES_PER_PLAYER);
@@ -145,7 +152,7 @@ public final class RVP_FireSupportMissionManager {
         ServerState state = STATES.get(server);
         if (state == null) return List.of();
         return state.missions.values().stream().filter(mission -> !mission.terminal())
-                .map(MissionView::from).toList();
+                .map(mission -> MissionView.from(server, mission)).toList();
     }
 
     @SubscribeEvent
@@ -180,7 +187,8 @@ public final class RVP_FireSupportMissionManager {
         if (state == null) return;
         pruneNonces(state, player.serverLevel().getGameTime());
         state.missions.values().stream().filter(mission -> mission.ownerId.equals(player.getUUID()))
-                .map(MissionView::from).forEach(view -> sendView(player, view));
+                .map(mission -> MissionView.from(player.server, mission))
+                .forEach(view -> sendView(player, view));
         state.recentMissions.values().stream().map(HistoryEntry::view)
                 .filter(view -> view.ownerId().equals(player.getUUID())).forEach(view -> sendView(player, view));
     }
@@ -198,29 +206,73 @@ public final class RVP_FireSupportMissionManager {
         int spawned = 0;
         for (int offset = 0; offset < missions.size(); offset++) {
             RVP_FireSupportMission mission = missions.get((start + offset) % missions.size());
+            if (mission.terminal()) continue;
             if (mission.state == RVP_FireSupportMissionState.CALLING) {
                 if (!guardCalling(server, mission)) continue;
-                if (now >= mission.callDeadlineTick) {
-                    mission.state = RVP_FireSupportMissionState.STRIKING;
-                    sendUpdate(server, mission);
-                }
             }
+            RVP_FireSupportAirstrikeController.Status airStatus =
+                    RVP_FireSupportAirstrikeController.tick(server, mission, now);
+            if (RVP_FireSupportAirstrikeController.consumeRecoveryStateChanged(server, mission)) {
+                sendUpdate(server, mission);
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_DESTROYED) {
+                finish(server, mission, RVP_FireSupportMissionState.FAILED,
+                        RVP_FireSupportEndReason.AIRCRAFT_DESTROYED);
+                continue;
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_SPAWN_FAILED) {
+                finish(server, mission, RVP_FireSupportMissionState.FAILED,
+                        RVP_FireSupportEndReason.AIRCRAFT_SPAWN_FAILED);
+                continue;
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_LOST) {
+                finish(server, mission, RVP_FireSupportMissionState.FAILED,
+                        RVP_FireSupportEndReason.AIRCRAFT_LOST);
+                continue;
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_UNAVAILABLE
+                    || airStatus == RVP_FireSupportAirstrikeController.Status.TRAJECTORY_UNREACHABLE) {
+                finish(server, mission, RVP_FireSupportMissionState.FAILED,
+                        airStatus == RVP_FireSupportAirstrikeController.Status.TRAJECTORY_UNREACHABLE
+                                ? RVP_FireSupportEndReason.TRAJECTORY_UNREACHABLE
+                                : RVP_FireSupportEndReason.DELIVERY_UNSUPPORTED);
+                continue;
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.SCHEDULE_TIMEOUT) {
+                finish(server, mission, RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.CHUNK_TIMEOUT);
+                continue;
+            }
+            if (airStatus == RVP_FireSupportAirstrikeController.Status.WAITING
+                    || airStatus == RVP_FireSupportAirstrikeController.Status.RECOVERING) continue;
+            if (mission.state == RVP_FireSupportMissionState.CALLING
+                    && now >= effectiveCallDeadlineTick(server, mission)) {
+                mission.state = RVP_FireSupportMissionState.STRIKING;
+                sendUpdate(server, mission);
+            }
+            boolean airMission = RVP_FireSupportAirstrikeController.isAirMission(mission);
+            RVP_FireSupportSchedulePlanner.PlannedRound candidateRound = airMission
+                    ? RVP_FireSupportAirstrikeController.nextCandidateRound(server, mission, now)
+                    : (mission.nextRoundIndex < mission.plan.rounds().size()
+                    ? mission.plan.rounds().get(mission.nextRoundIndex) : null);
+            long nextSpawnTick = airMission
+                    ? (candidateRound == null ? effectiveNextSpawnTick(server, mission)
+                    : Math.addExact(mission.callDeadlineTick, candidateRound.strikeOffsetTicks()))
+                    : effectiveNextSpawnTick(server, mission);
             if ((mission.state == RVP_FireSupportMissionState.STRIKING
                     || mission.state == RVP_FireSupportMissionState.CEASE_FIRE_PENDING)
-                    && now >= mission.ceaseFireEffectiveTick) {
+                    && now >= effectiveCeaseFireTick(server, mission)) {
                 finish(server, mission, RVP_FireSupportMissionState.CEASED, RVP_FireSupportEndReason.CEASED);
                 continue;
             }
-            if (!mission.terminal() && mission.nextRoundIndex < mission.plan.rounds().size()
-                    && now >= mission.nextSpawnTick()
-                    - mission.weapons.get(mission.plan.rounds().get(mission.nextRoundIndex)
-                    .munitionWeaponIndex()).delivery().preloadTicks()) {
-                RVP_FireSupportDeliveryResult preparation = prepareOne(server, mission);
+            if (!mission.terminal() && candidateRound != null
+                    && now >= nextSpawnTick
+                    - mission.weapons.get(candidateRound.munitionWeaponIndex()).delivery().preloadTicks()) {
+                RVP_FireSupportDeliveryResult preparation = prepareOne(server, mission, candidateRound);
                 if (handleFatalDeliveryResult(server, mission, preparation)) continue;
             }
             if (spawned >= MAX_SPAWNS_PER_TICK || mission.state == RVP_FireSupportMissionState.CALLING
-                    || mission.terminal() || now < mission.nextSpawnTick()) continue;
-            if (deliverOne(server, mission, now)) spawned++;
+                    || mission.terminal() || candidateRound == null || now < nextSpawnTick) continue;
+            if (deliverOne(server, mission, candidateRound, now)) spawned++;
         }
         if (!missions.isEmpty()) state.rotationCursor = (start + 1) % missions.size();
         Iterator<RVP_FireSupportMission> iterator = state.missions.values().iterator();
@@ -265,26 +317,33 @@ public final class RVP_FireSupportMissionManager {
     }
 
     /** @return 本 Tick 是否成功生成一发并消耗全局发射预算。 */
-    private static boolean deliverOne(MinecraftServer server, RVP_FireSupportMission mission, long now) {
+    private static boolean deliverOne(MinecraftServer server, RVP_FireSupportMission mission,
+                                      RVP_FireSupportSchedulePlanner.PlannedRound round, long now) {
         ServerLevel level = server.getLevel(mission.dimension);
         if (level == null) {
             finish(server, mission, RVP_FireSupportMissionState.FAILED, RVP_FireSupportEndReason.OUTSIDE_WORLD);
             return false;
         }
-        RVP_FireSupportSchedulePlanner.PlannedRound round = mission.plan.rounds().get(mission.nextRoundIndex);
         RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
         RVP_FireSupportDeliveryResult result;
         try {
             // 调用阶段 B 类型化投送器：租约就绪后生成真实 RVP 弹体并沿用既有生命周期。
-            result = missionWeapon.delivery().deliver(createDeliveryContext(server, level, mission, round));
+            result = missionWeapon.delivery().deliver(createDeliveryContextForRound(server, level, mission, round));
         } catch (RuntimeException exception) {
             LOGGER.error("炮火任务 {} 第 {} 发投送异常", mission.missionId, round.roundIndex(), exception);
             result = new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, null, null);
         }
         if (result.delivered()) {
+            if (RVP_FireSupportAirstrikeController.isAirMission(mission)) {
+                RVP_FireSupportAirstrikeController.markDelivered(
+                        server, mission, round.roundIndex(), now);
+            }
             mission.nextRoundIndex++;
             mission.consecutiveFailures = 0;
-            if (mission.nextRoundIndex >= mission.plan.rounds().size()) {
+            if ((!RVP_FireSupportAirstrikeController.isAirMission(mission)
+                    && mission.nextRoundIndex >= mission.plan.rounds().size())
+                    || (RVP_FireSupportAirstrikeController.isAirMission(mission)
+                    && RVP_FireSupportAirstrikeController.allDelivered(server, mission))) {
                 finish(server, mission, RVP_FireSupportMissionState.COMPLETED, RVP_FireSupportEndReason.COMPLETED);
             } else {
                 sendUpdate(server, mission);
@@ -292,7 +351,7 @@ public final class RVP_FireSupportMissionManager {
             return true;
         }
         switch (result.status()) {
-            case PREPARED, TOO_EARLY, WAITING_FOR_CHUNK -> { return false; }
+            case PREPARED, TOO_EARLY, WAITING_FOR_CHUNK, RETRY_LATER -> { return false; }
             case CHUNK_LIMIT_EXCEEDED -> finish(server, mission, RVP_FireSupportMissionState.FAILED,
                     RVP_FireSupportEndReason.CHUNK_LIMIT);
             case CHUNK_WAIT_TIMED_OUT -> finish(server, mission, RVP_FireSupportMissionState.FAILED,
@@ -314,15 +373,15 @@ public final class RVP_FireSupportMissionManager {
 
     /** 提前执行确定性解算与 Chunk 租约；不允许在计划 Tick 前生成实体。 */
     private static RVP_FireSupportDeliveryResult prepareOne(MinecraftServer server,
-                                                             RVP_FireSupportMission mission) {
+                                                             RVP_FireSupportMission mission,
+                                                             RVP_FireSupportSchedulePlanner.PlannedRound round) {
         ServerLevel level = server.getLevel(mission.dimension);
         if (level == null) return new RVP_FireSupportDeliveryResult(
                 RVP_FireSupportDeliveryResult.Status.OUTSIDE_WORLD_BORDER, null, null);
-        RVP_FireSupportSchedulePlanner.PlannedRound round = mission.plan.rounds().get(mission.nextRoundIndex);
         RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
         try {
             // 调用类型化投送器的准备阶段，使远端生成点能在计划发射/释放前申请 Chunk。
-            return missionWeapon.delivery().prepare(createDeliveryContext(server, level, mission, round));
+            return missionWeapon.delivery().prepare(createDeliveryContextForRound(server, level, mission, round));
         } catch (RuntimeException exception) {
             LOGGER.error("炮火任务 {} 第 {} 发准备异常", mission.missionId, round.roundIndex(), exception);
             return new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT,
@@ -331,9 +390,32 @@ public final class RVP_FireSupportMissionManager {
     }
 
     /** 把冻结任务与本发弹序组合为 prepare/deliver 共用的完全一致上下文。 */
-    private static RVP_FireSupportDeliveryContext createDeliveryContext(
+    /** 组合单发上下文，并在空中任务中注入当前飞机和真实挂架位置。 */
+    private static RVP_FireSupportDeliveryContext createDeliveryContextForRound(
             MinecraftServer server, ServerLevel level, RVP_FireSupportMission mission,
             RVP_FireSupportSchedulePlanner.PlannedRound round) {
+        long plannedTick = Math.addExact(mission.callDeadlineTick, round.strikeOffsetTicks());
+        boolean airMission = RVP_FireSupportAirstrikeController.isAirMission(mission);
+        long effectiveTick = airMission
+                ? Math.max(plannedTick, level.getGameTime())
+                : RVP_FireSupportAirstrikeController.nextReleaseTick(server, mission, round.roundIndex(), plannedTick);
+        RVP_FireSupportAirstrikeController.Snapshot snapshot =
+                airMission ? RVP_FireSupportAirstrikeController.snapshot(server, mission, level.getGameTime()) : null;
+        RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
+        // 空投实时解算已经把载机速度纳入 initializedMotion，禁止 RVP 生成器再次叠加 sourceVehicle 速度。
+        boolean inherit = !airMission && missionWeapon.weaponData().getWeaponKind() != RVP_EnumWeaponKind.BOMB
+                && snapshot != null;
+        return createDeliveryContext(server, level, mission, round,
+                snapshot == null ? null : snapshot.aircraft(),
+                snapshot == null ? null : snapshot.rackPosition(),
+                snapshot == null ? null : snapshot.motion(), inherit);
+    }
+
+    static RVP_FireSupportDeliveryContext createDeliveryContext(
+            MinecraftServer server, ServerLevel level, RVP_FireSupportMission mission,
+            RVP_FireSupportSchedulePlanner.PlannedRound round,
+            AbstractVehicle sourceVehicle, Vec3 sourcePosition, Vec3 sourceMotion,
+            boolean inheritVehicleVelocity) {
         LivingEntity owner = resolveOwner(server, level, mission);
         // 调用阶段 A 几何实现：按冻结 seed、全局轮次和规范化参数计算本发权威落点。
         RVP_FireSupportImpactPoint impact = mission.patternPreset.pattern().resolve(new RVP_FireSupportPattern.Context(
@@ -341,10 +423,22 @@ public final class RVP_FireSupportMissionManager {
                 mission.plan.rounds().size(), mission.authoritativeSeed, mission.parameters,
                 mission.fireMode.dispersionMultiplier()));
         RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
+        long plannedTick = Math.addExact(mission.callDeadlineTick, round.strikeOffsetTicks());
+        long effectiveTick = RVP_FireSupportAirstrikeController.isAirMission(mission)
+                ? Math.max(plannedTick, level.getGameTime())
+                : RVP_FireSupportAirstrikeController.nextReleaseTick(server, mission, round.roundIndex(), plannedTick);
+        Vec3 designatedTarget = null;
+        if (missionWeapon.weaponData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE && sourceVehicle != null) {
+            int x = Mth.floor(impact.x());
+            int z = Mth.floor(impact.z());
+            int groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            designatedTarget = new Vec3(impact.x(), groundY + 0.5D, impact.z());
+        }
         return new RVP_FireSupportDeliveryContext(level, owner, missionWeapon.weaponData(), impact,
                 mission.targetX, mission.targetZ, mission.headingDegrees, mission.inboundHeadingDegrees,
-                mission.missionId, round.roundIndex(), mission.authoritativeSeed, mission.nextSpawnTick(),
-                mission.profile.limits().maxLoadedChunksPerMission());
+                mission.missionId, round.roundIndex(), mission.authoritativeSeed, effectiveTick,
+                mission.profile.limits().maxLoadedChunksPerMission(), sourceVehicle, sourcePosition, sourceMotion,
+                designatedTarget, inheritVehicleVelocity);
     }
 
     /** @return 是否已把不可恢复的准备错误转换为任务终态。 */
@@ -376,6 +470,10 @@ public final class RVP_FireSupportMissionManager {
         if (mission.terminal()) return;
         mission.state = state;
         mission.endReason = reason;
+        // 调用本项目空中航线控制器：终态移除完整飞机，击落飞机则保留残骸。
+        RVP_FireSupportAirstrikeController.finish(server, mission,
+                reason == RVP_FireSupportEndReason.AIRCRAFT_DESTROYED,
+                state == RVP_FireSupportMissionState.COMPLETED);
         // 调用阶段 B 租约管理器：所有终态停止刷新该任务的短期 Chunk Ticket。
         RVP_FireSupportSpawnChunkLeaseManager.releaseMission(server, mission.missionId);
         if ((state == RVP_FireSupportMissionState.COMPLETED || state == RVP_FireSupportMissionState.CEASED)
@@ -385,13 +483,37 @@ public final class RVP_FireSupportMissionManager {
         }
         ServerState serverState = STATES.get(server);
         if (serverState != null) serverState.recentMissions.put(mission.missionId,
-                new HistoryEntry(MissionView.from(mission), server.overworld().getGameTime()));
+                new HistoryEntry(MissionView.from(server, mission),
+                        server.overworld().getGameTime()));
         sendUpdate(server, mission);
     }
 
     private static void sendUpdate(MinecraftServer server, RVP_FireSupportMission mission) {
         ServerPlayer owner = server.getPlayerList().getPlayer(mission.ownerId);
-        if (owner != null) sendView(owner, MissionView.from(mission));
+        if (owner != null) sendView(owner,
+                MissionView.from(server, mission));
+    }
+
+    /** 返回当前任务对外展示和 Tick 调度都应使用的下一发绝对 Tick。 */
+    private static long effectiveNextSpawnTick(MinecraftServer server, RVP_FireSupportMission mission) {
+        if (RVP_FireSupportAirstrikeController.isAirMission(mission)) {
+            return RVP_FireSupportAirstrikeController.nextPendingTick(server, mission, mission.nextSpawnTick());
+        }
+        long planned = mission.nextSpawnTick();
+        if (mission.nextRoundIndex >= mission.plan.rounds().size()) return planned;
+        int roundIndex = mission.plan.rounds().get(mission.nextRoundIndex).roundIndex();
+        return RVP_FireSupportAirstrikeController.nextReleaseTick(server, mission, roundIndex, planned);
+    }
+
+    /** 返回包含空袭恢复暂停的呼叫截止世界 Tick。 */
+    private static long effectiveCallDeadlineTick(MinecraftServer server, RVP_FireSupportMission mission) {
+        return RVP_FireSupportAirstrikeController.effectiveTick(server, mission, mission.callDeadlineTick);
+    }
+
+    /** 返回包含空袭恢复暂停的停火生效世界 Tick。 */
+    private static long effectiveCeaseFireTick(MinecraftServer server, RVP_FireSupportMission mission) {
+        return mission.ceaseFireEffectiveTick == Long.MAX_VALUE ? Long.MAX_VALUE
+                : RVP_FireSupportAirstrikeController.effectiveTick(server, mission, mission.ceaseFireEffectiveTick);
     }
 
     private static void sendView(ServerPlayer owner, MissionView view) {
@@ -460,11 +582,24 @@ public final class RVP_FireSupportMissionManager {
             /** 总计划弹数。 */ int totalRounds,
             /** 呼叫阶段截止 Tick。 */ long callDeadlineTick,
             /** 下一发权威 Tick。 */ long nextRoundTick,
-            /** 停火生效 Tick。 */ long ceaseFireEffectiveTick) {
+            /** 停火生效 Tick。 */ long ceaseFireEffectiveTick,
+            /** 支援机是否正在等待路径或实体恢复。 */ boolean aircraftRecovering,
+            /** 支援机恢复窗口截止世界 Tick；未恢复时为 Long.MAX_VALUE。 */ long aircraftRecoveryDeadlineTick) {
         public static MissionView from(RVP_FireSupportMission mission) {
             return new MissionView(mission.missionId, mission.ownerId, mission.terminalInstanceId,
                     mission.state, mission.endReason, mission.nextRoundIndex, mission.plan.rounds().size(),
-                    mission.callDeadlineTick, mission.nextSpawnTick(), mission.ceaseFireEffectiveTick);
+                    mission.callDeadlineTick, mission.nextSpawnTick(), mission.ceaseFireEffectiveTick,
+                    false, Long.MAX_VALUE);
+        }
+
+        /** 使用服务端空袭时钟构造权威状态快照。 */
+        public static MissionView from(MinecraftServer server, RVP_FireSupportMission mission) {
+            return new MissionView(mission.missionId, mission.ownerId, mission.terminalInstanceId,
+                    mission.state, mission.endReason, mission.nextRoundIndex, mission.plan.rounds().size(),
+                    effectiveCallDeadlineTick(server, mission), effectiveNextSpawnTick(server, mission),
+                    effectiveCeaseFireTick(server, mission),
+                    RVP_FireSupportAirstrikeController.isRecovering(server, mission),
+                    RVP_FireSupportAirstrikeController.recoveryDeadlineTick(server, mission));
         }
     }
 

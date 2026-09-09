@@ -431,6 +431,8 @@ public final class RVP_ChunkPathLoadManager {
     public enum RequestPriority {
         WAITING_PROJECTILE,
         ACTIVE_PROJECTILE,
+        /** 炮火支援载机路径；低于已在飞行的弹体，高于仅用于远距视觉的载具。 */
+        AIR_SUPPORT,
         REMOTE_VEHICLE
     }
 

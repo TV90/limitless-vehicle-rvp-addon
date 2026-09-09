@@ -66,7 +66,9 @@ public final class RVP_FireSupportProbeCommands {
                             768.0, 256.0, 2.5, 512.0, 80, 0.0));
             case "air" -> new RVP_AirLaunchedProjectileDelivery(
                     new RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData(
-                            256.0, 96.0, 2.5, 80, 0.0));
+                            ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "none"),
+                            new RVP_FireSupportDeliveryTypes.LocalOffset(0.0, -2.0, 0.0),
+                            512.0, 512.0, 256.0, 96.0, 2.5, 80, 0.0));
             default -> null;
         };
         if (delivery == null) {

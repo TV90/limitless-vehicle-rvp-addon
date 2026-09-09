@@ -167,6 +167,21 @@
   ],
   "fire_modes": [
     {
+      "id": "air_strike",
+      "translation_key": "fire_support.fire_mode.rvp.air_strike",
+      "call_duration_multiplier": 1.0,
+      "dispersion_multiplier": 1.0,
+      "phases": [
+        {
+          "id": "main",
+          "translation_key": "fire_support.phase.rvp.air_strike",
+          "start_delay_ticks": 0,
+          "rounds": { "base_multiplier": 1.0, "rounding": "ceil" },
+          "duration_ticks": 20
+        }
+      ]
+    },
+    {
       "id": "rapid",
       "translation_key": "fire_support.fire_mode.rvp.rapid",
       "call_duration_multiplier": 1.0,

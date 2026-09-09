@@ -241,6 +241,7 @@
   "fire_support_profile.rvp.launched_test": "RVP 地射/空投测试",
   "fire_support.munition.rvp.mk84_he": "MK-84 高爆炸弹",
   "fire_support.munition.rvp.mk84_yasser_mixed": "MK-84 / 亚西尔混合打击",
+  "fire_support.munition.rvp.mk84_yasser_air": "MK-84 / 亚西尔空中打击",
   "fire_support.munition.rvp.gb_1000": "GB-1000 制导炸弹",
   "fire_support.munition.rvp.j10c_gb3_ir": "GB-3 红外制导炸弹",
   "fire_support.munition.rvp.m142_m30": "M30 反装甲集束火箭弹",
@@ -252,6 +253,8 @@
   "fire_support.fire_mode.rvp.rapid": "急促打击",
   "fire_support.fire_mode.rvp.effect": "效力打击",
   "fire_support.fire_mode.rvp.monitor": "监视打击",
+  "fire_support.fire_mode.rvp.air_strike": "空中打击",
+  "fire_support.phase.rvp.air_strike": "空中主打击",
   "fire_support.phase.rvp.rapid": "急促主打击",
   "fire_support.phase.rvp.registration": "试射校正",
   "fire_support.phase.rvp.effect": "效力主打击",
@@ -290,6 +293,7 @@
   "gui.ywzj_rvp.fire_support.state.completed": "任务完成",
   "gui.ywzj_rvp.fire_support.state.cancelled": "任务取消：%s",
   "gui.ywzj_rvp.fire_support.state.ceased": "已停火",
+  "gui.ywzj_rvp.fire_support.state.aircraft_recovering": "支援机失联，正在恢复（剩余 %s）",
   "gui.ywzj_rvp.fire_support.state.failed": "任务失败：%s",
   "gui.ywzj_rvp.fire_support.delivered": "已发 %s / %s",
   "gui.ywzj_rvp.fire_support.cease": "请求停火",
@@ -328,5 +332,8 @@
   "gui.ywzj_rvp.fire_support.reason.trajectory_unreachable": "当前炮位或释放高度无法形成有效弹道",
   "gui.ywzj_rvp.fire_support.reason.completed": "任务完成",
   "gui.ywzj_rvp.fire_support.reason.ceased": "任务已停火",
-  "gui.ywzj_rvp.fire_support.reason.user_cancelled": "玩家主动取消"
+  "gui.ywzj_rvp.fire_support.reason.user_cancelled": "玩家主动取消",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_destroyed": "空中支援飞机被击落，后续投送已停止",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_spawn_failed": "空中支援飞机生成或初始化失败",
+  "gui.ywzj_rvp.fire_support.reason.aircraft_lost": "空中支援飞机失联且恢复超时，后续投送已停止"
 }

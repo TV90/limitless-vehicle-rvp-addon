@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 10 保留独立入场方位；profile 数据已升级为 schema v3。 */
-    private static final String PROTOCOL = "10";
+    /** 协议 11 增加空中支援恢复状态和恢复截止 Tick。 */
+    private static final String PROTOCOL = "11";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

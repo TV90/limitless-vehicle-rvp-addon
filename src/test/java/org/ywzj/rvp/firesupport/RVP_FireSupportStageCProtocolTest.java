@@ -96,10 +96,21 @@ class RVP_FireSupportStageCProtocolTest {
                 S2CFireSupportRequestResult::decode));
 
         S2CFireSupportMissionUpdate update = new S2CFireSupportMissionUpdate(missionId, UUID.randomUUID(),
-                RVP_FireSupportMissionState.CANCELLED, RVP_FireSupportEndReason.TERMINAL_LOST,
-                0, 9, 800L, Long.MAX_VALUE, Long.MAX_VALUE);
+                RVP_FireSupportMissionState.STRIKING, RVP_FireSupportEndReason.NONE,
+                0, 9, 800L, Long.MAX_VALUE, Long.MAX_VALUE, true, 1000L);
         assertEquals(update, roundTrip(update, S2CFireSupportMissionUpdate::encode,
                 S2CFireSupportMissionUpdate::decode));
+    }
+
+    @Test
+    void missionUpdateRejectsInconsistentAircraftRecoveryDeadline() {
+        S2CFireSupportMissionUpdate invalid = new S2CFireSupportMissionUpdate(
+                UUID.randomUUID(), UUID.randomUUID(), RVP_FireSupportMissionState.STRIKING,
+                RVP_FireSupportEndReason.NONE, 0, 1, 800L, 800L, Long.MAX_VALUE,
+                false, 1000L);
+        assertThrows(DecoderException.class,
+                () -> roundTrip(invalid, S2CFireSupportMissionUpdate::encode,
+                        S2CFireSupportMissionUpdate::decode));
     }
 
     private static <T> T roundTrip(T value, Encoder<T> encoder, Decoder<T> decoder) {

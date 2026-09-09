@@ -16,6 +16,7 @@ import org.ywzj.rvp.firesupport.data.RVP_FireSupportProfile;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportRequest;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportSnapshot;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
+import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser;
 import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -53,6 +54,16 @@ public final class RVP_FireSupportRequestValidator {
         RVP_FireSupportProfile.FireMode mode = profile.fireModes().get(request.fireModeId());
         RVP_FireSupportProfile.PatternPreset pattern = profile.patterns().get(request.patternId());
         if (munition == null || mode == null || pattern == null) {
+            return ValidationResult.reject(RVP_FireSupportEndReason.SELECTION_NOT_FOUND);
+        }
+
+        boolean airMunition = munition.weapons().stream().allMatch(weapon ->
+                RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(weapon.deliveryType()));
+        boolean hasAirWeapon = munition.weapons().stream().anyMatch(weapon ->
+                RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(weapon.deliveryType()));
+        if (hasAirWeapon != airMunition
+                || (airMunition && !RVP_FireSupportProfileParser.AIR_STRIKE_MODE_ID.equals(mode.id()))
+                || (!airMunition && RVP_FireSupportProfileParser.AIR_STRIKE_MODE_ID.equals(mode.id()))) {
             return ValidationResult.reject(RVP_FireSupportEndReason.SELECTION_NOT_FOUND);
         }
 
@@ -105,6 +116,10 @@ public final class RVP_FireSupportRequestValidator {
             try {
                 // 调用阶段 B 投送工厂：把每个成员冻结的类型化数据创建为运行时投送器。
                 RVP_FireSupportDelivery delivery = factory.create(configuration.deliveryData());
+                if (delivery instanceof org.ywzj.rvp.firesupport.delivery.RVP_AirLaunchedProjectileDelivery air
+                        && CommonAssetsManager.vehicleDataManager().getVehicleData(air.data().aircraftId()).isEmpty()) {
+                    return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);
+                }
                 weapons.add(new RVP_FireSupportMissionWeapon(configuration, delivery, weapon));
             } catch (RuntimeException exception) {
                 return ValidationResult.reject(RVP_FireSupportEndReason.WEAPON_UNAVAILABLE);

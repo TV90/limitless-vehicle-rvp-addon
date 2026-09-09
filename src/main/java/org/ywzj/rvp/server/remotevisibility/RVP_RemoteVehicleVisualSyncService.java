@@ -160,6 +160,10 @@ public final class RVP_RemoteVehicleVisualSyncService {
         VisibilityMode mode = RVP_CommonConfig.getRemoteVehicleVisibilityMode();
         AbstractVehicle observerVehicle = resolveObserverVehicle(player);
         VehicleCategory observerCategory = RVP_RemoteVehicleVisibilityPolicy.classify(observerVehicle).orElse(null);
+        if (observerCategory == null && mode != VisibilityMode.ALL_PLAYERS && mode != VisibilityMode.OFF) {
+            // 调用类型矩阵，为步行玩家选择 walking_players 观察者配置。
+            observerCategory = VehicleCategory.WALKING_PLAYERS;
+        }
         Set<VehicleCategory> allowedTypes = observerCategory == null
                 ? Set.of()
                 : RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(observerCategory);

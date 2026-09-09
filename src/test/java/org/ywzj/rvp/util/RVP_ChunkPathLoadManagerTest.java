@@ -89,9 +89,9 @@ class RVP_ChunkPathLoadManagerTest {
         assertTrue(cycle.outputs().get(remoteVehicle.key()).budgetExhausted());
     }
 
-    /** 活动弹体耗尽新增预算时，最低优先级远距载具不能抢占移动安全预算。 */
+    /** 活动弹体先于支援机、支援机先于远距载具获得新增预算。 */
     @Test
-    void activeProjectileConsumesBudgetBeforeRemoteVehicle() {
+    void airSupportPriorityStaysBetweenProjectileAndRemoteVehicle() {
         RVP_ChunkPathLoadManager.AllocationInput active = input(
                 1,
                 RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE,
@@ -102,11 +102,17 @@ class RVP_ChunkPathLoadManagerTest {
                 RVP_ChunkPathLoadManager.RequestPriority.REMOTE_VEHICLE,
                 List.of(chunk(10), chunk(11)),
                 Set.of());
+        RVP_ChunkPathLoadManager.AllocationInput airSupport = input(
+                3,
+                RVP_ChunkPathLoadManager.RequestPriority.AIR_SUPPORT,
+                List.of(chunk(20), chunk(21)),
+                Set.of());
 
         RVP_ChunkPathLoadManager.AllocationCycle cycle = allocate(
-                List.of(remoteVehicle, active), 2, cursors());
+                List.of(remoteVehicle, airSupport, active), 3, cursors());
 
         assertEquals(List.of(chunk(0), chunk(1)), cycle.outputs().get(active.key()).grantedChunks());
+        assertEquals(List.of(chunk(20)), cycle.outputs().get(airSupport.key()).grantedChunks());
         assertTrue(cycle.outputs().get(remoteVehicle.key()).grantedChunks().isEmpty());
         assertTrue(cycle.outputs().get(remoteVehicle.key()).budgetExhausted());
     }

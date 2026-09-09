@@ -61,11 +61,21 @@ public final class RVP_FireSupportDeliveryTypes {
 
     /** 空中释放投送的不可变参数。 */
     public record AirLaunchedProjectileData(
+            /** 指定生成的本体载具资源 ID；必须在服务端载具索引中存在。 */ ResourceLocation aircraftId,
+            /** 飞机本地挂架坐标，单位格；由飞机姿态变换到世界坐标。 */ LocalOffset rackOffset,
+            /** 飞机相对首个投放点的入场距离，单位格，默认 1280。 */ double entryDistanceMeters,
+            /** 飞机相对末个投放点的出场距离，单位格，默认 768。 */ double exitDistanceMeters,
             /** 期望释放点相对目标地表的高度，单位格，默认 256。 */ double releaseAltitudeAboveImpactMeters,
             /** 世界高度/边界钳制后允许的最小释放高度，单位格，默认 96。 */ double minReleaseAltitudeAboveImpactMeters,
             /** 虚拟载机赋予弹体的水平速度，单位格/Tick，默认 2.5。 */ double carrierSpeedMetersPerTick,
             /** 生成点 Chunk 的提前准备窗口，单位 Tick，默认 80。 */ int preloadTicks,
             /** 整个任务航线相对请求方位的最大确定性扰动，单位度，默认 0。 */ double headingJitterDegrees) {}
+
+    /** 飞机本地坐标中的挂架偏移。 */
+    public record LocalOffset(
+            /** 本地 X 偏移，单位格。 */ double x,
+            /** 本地 Y 偏移，单位格。 */ double y,
+            /** 本地 Z 偏移，单位格。 */ double z) {}
 
     private static final class VerticalProjectileFactory implements RVP_FireSupportDeliveryFactory {
         @Override public ResourceLocation typeId() { return VERTICAL_PROJECTILE; }
@@ -177,19 +187,38 @@ public final class RVP_FireSupportDeliveryTypes {
 
         @Override
         public Object parse(JsonObject data, RVP_FireSupportProblemCollector problems, String path) {
-            RVP_FireSupportJson.keys(data, Set.of("release_altitude_above_impact_m",
+            RVP_FireSupportJson.keys(data, Set.of("aircraft_id", "rack_offset", "entry_distance_m",
+                    "exit_distance_m", "release_altitude_above_impact_m",
                     "min_release_altitude_above_impact_m", "carrier_speed_m_per_tick", "preload_ticks",
                     "heading_jitter_deg"), path, problems);
+            ResourceLocation aircraftId = RVP_FireSupportJson.resource(
+                    RVP_FireSupportJson.string(data, "aircraft_id", path, problems),
+                    path + ".aircraft_id", problems);
+            JsonObject rack = RVP_FireSupportJson.object(data, "rack_offset", path, problems, true);
+            String rackPath = path + ".rack_offset";
+            RVP_FireSupportJson.keys(rack, Set.of("x", "y", "z"), rackPath, problems);
+            LocalOffset rackOffset = new LocalOffset(
+                    RVP_FireSupportJson.number(rack, "x", 0.0, rackPath, problems),
+                    RVP_FireSupportJson.number(rack, "y", -2.0, rackPath, problems),
+                    RVP_FireSupportJson.number(rack, "z", 0.0, rackPath, problems));
+            double entry = RVP_FireSupportJson.number(data, "entry_distance_m", 1280.0, path, problems);
+            double exit = RVP_FireSupportJson.number(data, "exit_distance_m", 768.0, path, problems);
             double altitude = RVP_FireSupportJson.number(data, "release_altitude_above_impact_m", 256.0, path, problems);
             double minimum = RVP_FireSupportJson.number(data, "min_release_altitude_above_impact_m", 96.0, path, problems);
             double speed = RVP_FireSupportJson.number(data, "carrier_speed_m_per_tick", 2.5, path, problems);
             int preload = RVP_FireSupportJson.integer(data, "preload_ticks", 80, path, problems);
             double jitter = RVP_FireSupportJson.number(data, "heading_jitter_deg", 0.0, path, problems);
+            if (entry <= 0 || entry > 4096) problems.add(path + ".entry_distance_m", "必须在 (0, 4096] 内");
+            if (exit <= 0 || exit > 4096) problems.add(path + ".exit_distance_m", "必须在 (0, 4096] 内");
+            if (Math.abs(rackOffset.x()) > 128 || Math.abs(rackOffset.y()) > 128 || Math.abs(rackOffset.z()) > 128) {
+                problems.add(path + ".rack_offset", "各轴绝对值不得超过 128 格");
+            }
             if (altitude <= 0 || altitude > 2048) problems.add(path + ".release_altitude_above_impact_m", "必须在 (0, 2048] 内");
             if (minimum <= 0 || minimum > altitude) problems.add(path + ".min_release_altitude_above_impact_m", "必须在 (0, release_altitude_above_impact_m] 内");
             if (speed <= 0 || speed > 64) problems.add(path + ".carrier_speed_m_per_tick", "必须在 (0, 64] 内");
             validatePreloadAndJitter(preload, jitter, path, problems);
-            return new AirLaunchedProjectileData(altitude, minimum, speed, preload, jitter);
+            return new AirLaunchedProjectileData(aircraftId, rackOffset, entry, exit,
+                    altitude, minimum, speed, preload, jitter);
         }
 
         @Override
@@ -206,6 +235,14 @@ public final class RVP_FireSupportDeliveryTypes {
                 throw new IllegalArgumentException("air_launched_projectile 需要 AirLaunchedProjectileData");
             }
             JsonObject out = new JsonObject();
+            out.addProperty("aircraft_id", data.aircraftId().toString());
+            JsonObject rack = new JsonObject();
+            rack.addProperty("x", data.rackOffset().x());
+            rack.addProperty("y", data.rackOffset().y());
+            rack.addProperty("z", data.rackOffset().z());
+            out.add("rack_offset", rack);
+            out.addProperty("entry_distance_m", data.entryDistanceMeters());
+            out.addProperty("exit_distance_m", data.exitDistanceMeters());
             out.addProperty("release_altitude_above_impact_m", data.releaseAltitudeAboveImpactMeters());
             out.addProperty("min_release_altitude_above_impact_m", data.minReleaseAltitudeAboveImpactMeters());
             out.addProperty("carrier_speed_m_per_tick", data.carrierSpeedMetersPerTick());
@@ -217,10 +254,15 @@ public final class RVP_FireSupportDeliveryTypes {
         @Override
         public void validateWeapon(ResourceLocation weaponId, RVP_FireSupportResolvedWeapon data,
                                    RVP_FireSupportProblemCollector problems, String path) {
-            if (data.kind() != RVP_EnumWeaponKind.BOMB) {
-                problems.add(path, "空中释放投送首期只接受 BOMB 实体弹体: " + weaponId);
+            if (data.kind() != RVP_EnumWeaponKind.BOMB
+                    && data.kind() != RVP_EnumWeaponKind.MISSILE
+                    && data.kind() != RVP_EnumWeaponKind.ROCKET) {
+                problems.add(path, "空中投送只接受 BOMB、MISSILE 或 ROCKET 实体弹体: " + weaponId);
             }
-            validateUnguidedBallistic(weaponId, data, problems, path);
+            if (data.guidanceType() == RVP_EnumGuidanceType.AIR || data.humanInTheLoop()
+                    || data.operatorGuided() || data.hitlClosTvGuided()) {
+                problems.add(path, "空中投送不接受空对空或需要操作员持续控制的制导武器: " + weaponId);
+            }
         }
     }
 
