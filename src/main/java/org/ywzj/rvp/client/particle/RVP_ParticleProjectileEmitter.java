@@ -84,7 +84,7 @@ public final class RVP_ParticleProjectileEmitter {
             add(RVP_WhitePhosphorusParticle.createBody(level, bodyPosition,
                     bodyStartScale, sample.bodyScale(),
                     data.getBodyColorRgb(), data.getBodyEndColorRgb(),
-                    bodyLifetimeTicks, data.isFullBright()));
+                    bodyLifetimeTicks, data.isFullBright()), bodyPosition);
         }
 
         boolean trailEligible = distance <= 512.0D;
@@ -227,7 +227,7 @@ public final class RVP_ParticleProjectileEmitter {
                 data.getTrailStartAlpha(), data.getTrailEndAlpha(),
                 data.getTrailStartColorRgb(), data.getTrailEndColorRgb(),
                 data.getTrailHotPhaseTicks(), data.getTrailHotColorRgb(),
-                data.getTrailLifetimeTicks(), data.isFullBright(), trailLifetimeGate));
+                data.getTrailLifetimeTicks(), data.isFullBright(), trailLifetimeGate), position);
     }
 
     /** 按配置为同一弹体创建共享的落地寿命门；默认关闭时返回 null 并保持原即时计时。 */
@@ -244,11 +244,19 @@ public final class RVP_ParticleProjectileEmitter {
         return (level.random.nextDouble() * 2.0D - 1.0D) * amplitude;
     }
 
-    private static void add(Particle particle) {
-        if (particle != null) {
-            // 调用原版客户端粒子引擎：粒子仅在本地生成，不产生服务端广播包。
-            Minecraft.getInstance().particleEngine.add(particle);
+    private static void add(Particle particle, Vec3 position) {
+        if (particle == null) {
+            return;
         }
+        // HITL 视角屏蔽：白磷纯粒子弹体不走 ClientLevel.addParticle（particleEngine 直加），
+        // ClientLevelHitlTrailParticleMixin 拦不到——这里按生成位置单独过抑制球判定，
+        // 保证发射者本人在导弹视角内看不到自己的主体/尾迹粒子（其他玩家不受影响）
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldSuppressParticleNearActiveMissile(
+                position.x, position.y, position.z)) {
+            return;
+        }
+        // 调用原版客户端粒子引擎：粒子仅在本地生成，不产生服务端广播包。
+        Minecraft.getInstance().particleEngine.add(particle);
     }
 
     /**
