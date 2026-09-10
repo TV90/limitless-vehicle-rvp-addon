@@ -108,6 +108,36 @@ public final class RVP_GuidanceRuntimeGeometry {
         return Math.toDegrees(Math.acos(dot)) <= Math.max(maxAngle, 0.0) + 1.0E-6;
     }
 
+    /**
+     * 把期望方向钳制到与轴向量夹角不超过 {@code maxAngle} 的锥面边缘。
+     *
+     * <p>未超角时原样返回归一化方向；超出时返回"贴边"方向——在轴与期望方向所成平面内、
+     * 与轴恰好成 {@code maxAngle}。供 HITL 人手直控转向使用：指令超角不拒绝、贴边尽量转，
+     * 避免绕大圈攻击时因夹角恒超限导致导弹整 tick 拒转直飞（2026-09-10）。</p>
+     */
+    public static Vec3 clampToAngle(Vec3 axis, Vec3 toTarget, double maxAngle) {
+        if (axis == null || toTarget == null || axis.lengthSqr() <= 1.0E-8 || toTarget.lengthSqr() <= 1.0E-8) {
+            return toTarget == null ? Vec3.ZERO : toTarget;
+        }
+        Vec3 axisNorm = axis.normalize();
+        Vec3 dirNorm = toTarget.normalize();
+        if (withinAngle(axisNorm, dirNorm, maxAngle)) {
+            return dirNorm;
+        }
+        double limitRad = Math.toRadians(Math.max(maxAngle, 0.0));
+        // 正交分解：期望方向 = 沿轴分量 + 垂直分量；超角时把沿轴分量替换为 cos(limit)、垂直分量归一并缩放为 sin(limit)
+        double along = dirNorm.dot(axisNorm);
+        Vec3 perp = dirNorm.subtract(axisNorm.scale(along));
+        if (perp.lengthSqr() <= 1.0E-8) {
+            // 期望方向与轴共线且超角（≈反向 180°）：任取与轴垂直的方向作为贴边平面
+            perp = Math.abs(axisNorm.x) <= 0.9D
+                    ? new Vec3(0.0D, -axisNorm.z, axisNorm.y)
+                    : new Vec3(-axisNorm.y, axisNorm.x, 0.0D);
+        }
+        perp = perp.normalize();
+        return axisNorm.scale(Math.cos(limitRad)).add(perp.scale(Math.sin(limitRad)));
+    }
+
     private static Vec3 resolveTrackAxis(RVP_BaseBullet projectile) {
         if (projectile == null) {
             return Vec3.ZERO;
