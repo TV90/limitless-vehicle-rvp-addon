@@ -1161,7 +1161,7 @@ velocity = worldDown × cos(theta) × launch_speed
 | `lock_target_distance_range` | 载具火控锁定时，与制导目标点/记忆点的距离范围（格）。 | `RVP_Range<Float>` | `null` |
 | `lock_altitude_range` | 载具火控锁定时，与制导目标点/记忆点的离地高度范围（格）。支持并集区间。 | `RVP_Range<Float>` | `null` |
 | `enable_ir_hmd` | 是否启用红外弹头瞄。当前仅红外系弹药使用。 | `boolean` | `true` |
-| `max_guidance_angle` | 发射后导引头最大跟踪角（单侧角度，度）。 | `int` | `60` |
+| `max_guidance_angle` | 发射后导引头最大跟踪角（单侧角度，度）。**HITL 人手直控弹（2026-09-10 起）**：指令超出此锥角时不再整 tick 拒绝转向，而是把指令钳制到锥角边缘贴边尽量转（绕大圈回打不再被"掰走"）；自动制导弹保持原拒绝规则。 | `int` | `60` |
 | `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
 | `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
 | `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
@@ -1234,12 +1234,14 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 
 #### `RVP_GuidanceDataHITL`（TV / HITL_TV / HITL_CLOS_TV）
 
+**操控模型（2026-09-10 起，HITL_CLOS_TV 鼠标直控）**：虚拟摇杆——鼠标增量累加为**相对弹体朝向的转向偏移**（上限 ±45°），舵量目标 = 弹体当前朝向 + 偏移。偏移保持 = 持续转向（摇杆拉住不放）；偏移回中（反向甩鼠标）= 直飞。偏移恒在锥角内，不会触发超角拒转。
+
 | 字段 | 说明 | 类型 | 默认值 |
 | --- | --- | --- | --- |
 | `hitl_max_turn_deg_per_tick` | 导引头每 tick 最大转动角度，类似方向机速度。 | `int` | `2` |
 | `signal_source` | 制导信号源：`FIBER` / `RADIO`。仅这两个值有效，非 `FIBER` 一律按 `RADIO` 处理。无线电可被方块遮挡，光纤不可。 | `String` | `RADIO` |
 | `hitl_max_control_dist` | 最大控制距离（格）。 | `int` | `600` |
-| `hitl_max_control_tick` | 最大控制时长（tick）。 | `int` | `200` |
+| `hitl_max_control_tick` | 最大控制时长（tick）。从发射起倒计时，**收到操作手的有效转向/指定输入时自动重置**（2026-09-10 起）——持续操控即持续可控，完全不操作才会在超时后脱离。 | `int` | `200` |
 | `hitl_max_look_offset` | HITL 视角最大偏转角度。 | `int` | `30` |
 | `hitl_video_modes` | 可用画面模式（可写多个，玩家可循环切换）：`COLOR` / `MONO`（或 `BW`、`BLACK_WHITE`、`BLACKWHITE`、`MONOCHROME`）/ `THERMAL`（或 `IR`）。列表第一个有效模式为初始画面；无法识别的值被忽略，全部无效时回退为彩色画面。 | `List<String>` | `["MONO"]` |
 | `hitl_right_click_detonate` | 开启后人在回路视角下鼠标右键从“退出视角”变为“**提前引爆导弹**”。 | `boolean` | `false` |

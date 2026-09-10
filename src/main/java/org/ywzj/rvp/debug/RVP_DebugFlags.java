@@ -40,11 +40,13 @@ public final class RVP_DebugFlags {
     public static final RVP_DebugFlag CCIP = new RVP_DebugFlag("ccip", "火箭 CCIP 准星");
     /** 头盔显示（IR 锁定丢弃 / 宽限日志）。客户端。 */
     public static final RVP_DebugFlag HMD = new RVP_DebugFlag("hmd", "头盔显示（IR 锁定日志）");
+    /** HITL 人在回路导弹转向链诊断（输入角/舵量角/锥角门限/转向应用）。双端。 */
+    public static final RVP_DebugFlag HITL = new RVP_DebugFlag("hitl", "HITL 人在回路导弹转向链诊断");
 
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL);
 
     private RVP_DebugFlags() {
     }

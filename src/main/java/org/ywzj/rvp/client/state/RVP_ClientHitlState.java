@@ -1,6 +1,8 @@
 package org.ywzj.rvp.client.state;
 
+import com.mojang.logging.LogUtils;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.Entity;
@@ -10,6 +12,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.Mth;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.shader.TVMissileVideoPostHandler;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.network.C2SExitHitlView;
@@ -24,9 +27,13 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 public class RVP_ClientHitlState {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private static final int ENTITY_WAIT_TICKS = 80;
     private static final int VEHICLE_WAIT_TICKS = 8;
     private static final int EXIT_CLICK_GUARD_TICKS = 4;
+    /** 虚拟摇杆偏移的每 tick 衰减系数：0.6 ≈ 半衰期 2.6 tick（约 0.13 秒），停手约 0.3 秒回直飞。 */
+    private static final float STEER_OFFSET_DECAY = 0.6f;
     /** 右键被 RVP 消费（空爆引爆/退出视角）后的抑制窗口 tick，期间拦截本体右键放大。 */
     private static int rightClickGuardUntilTick = Integer.MIN_VALUE;
     /** Shared range for HUD crosshair, designation, and virtual sky aim points. */
@@ -67,6 +74,11 @@ public class RVP_ClientHitlState {
     private static double particleSuppressX;
     private static double particleSuppressY;
     private static double particleSuppressZ;
+    /**
+     * 抑制球半径平方（动态）：尾迹生成点在弹体后 missle_native_trail_offset（默认 3 格），
+     * 高速弹单 tick 位移可达数格——固定 4.5 格球会漏抑制尾段，按"弹速 + 偏移 + 余量"扩展。
+     */
+    private static double particleSuppressRadiusSq = 20.25D;
 
     public static boolean isActive() {
         return activeMissileId >= 0;
@@ -172,7 +184,7 @@ public class RVP_ClientHitlState {
         double dx = x - particleSuppressX;
         double dy = y - particleSuppressY;
         double dz = z - particleSuppressZ;
-        return dx * dx + dy * dy + dz * dz <= 20.25D;
+        return dx * dx + dy * dy + dz * dz <= particleSuppressRadiusSq;
     }
 
     public static RVP_EnumHitlControlMode getControlMode() {
@@ -220,7 +232,9 @@ public class RVP_ClientHitlState {
         dircmJamRemainTick = 0;
         dircmJamTotalTick = 0;
         clientAimPoint = null;
-        clearParticleSuppressCache();
+        // 预激活发射点粒子抑制（替换原 clear）：枪口烟/火花 burst 早于导弹实体同步到达，
+        // 见 preactivateParticleSuppressFromVehicle 注释
+        preactivateParticleSuppressFromVehicle();
         if (missileChanged) {
             videoMode = RVP_EnumVideoMode.COLOR;
             videoModeUserSelected = false;
@@ -294,8 +308,10 @@ public class RVP_ClientHitlState {
                 return;
             }
             if (!missileEntitySeen) {
-                hitlYaw = missile.getYRot();
-                hitlPitch = missile.getXRot();
+                // 虚拟摇杆：偏移量以 0 为基准（直飞），不继承弹体朝向——
+                // 导弹出膛后保持沿出膛方向直飞，直到玩家施加转向偏移
+                hitlYaw = 0f;
+                hitlPitch = 0f;
                 RVP_ClientHitlCamera.onMissileAcquired(missile);
                 missileEntitySeen = true;
                 if (!videoModeUserSelected) {
@@ -315,7 +331,8 @@ public class RVP_ClientHitlState {
             clear();
             return;
         } else {
-            clearParticleSuppressCache();
+            // 导弹实体同步等待窗口：保留 enter() 预激活的发射点抑制球，
+            // 覆盖枪口烟 burst；超时仍无实体才整体 clear
             if (++entityWaitTicks > ENTITY_WAIT_TICKS) {
                 clear();
                 return;
@@ -348,12 +365,26 @@ public class RVP_ClientHitlState {
             tickModeSwitch(mc);
         }
         if (controlMode == RVP_EnumHitlControlMode.MOUSE) {
+            // 虚拟摇杆自动回中：偏移每 tick 指数衰减回直飞（半衰期约 0.4 秒）。
+            // 持续甩鼠标 = 持续压着偏移转圈；停手 = 导弹自动缓缓回直飞，
+            // 无需精确反向甩鼠标回中（修复"一转弯就直不回来"的手感问题）。
+            hitlYaw = Mth.wrapDegrees(hitlYaw * STEER_OFFSET_DECAY);
+            hitlPitch *= STEER_OFFSET_DECAY;
             if (hitlLinkBlocked) {
+                // HITL 转向链诊断：链路阻断时转向输入被丢弃（不发 C2S），日志留痕供对照
+                if (RVP_DebugFlags.HITL.isEnabled()) {
+                    LOGGER.info("[RVP-HITL][C] 链路阻断，未发送 yaw={} pitch={}",
+                            Mth.wrapDegrees(hitlYaw), hitlPitch);
+                }
                 return;
             }
             controlSeq++;
             RVP_Network.CHANNEL.sendToServer(C2SHitlSteeringInput.of(
                     activeMissileId, hitlYaw, hitlPitch, controlSeq));
+            if (RVP_DebugFlags.HITL.isEnabled()) {
+                LOGGER.info("[RVP-HITL][C] 发送 seq={} yaw={} pitch={}",
+                        controlSeq, Mth.wrapDegrees(hitlYaw), hitlPitch);
+            }
         }
     }
 
@@ -363,8 +394,9 @@ public class RVP_ClientHitlState {
         }
         float yawStep = Mth.clamp((float) (pYRot * 0.15f), -4.0f, 4.0f);
         float pitchStep = Mth.clamp((float) (pXRot * 0.15f), -4.0f, 4.0f);
-        hitlYaw = Mth.wrapDegrees(hitlYaw + yawStep);
-        hitlPitch = Mth.clamp(hitlPitch + pitchStep, -89.9f, 89.9f);
+        // 虚拟摇杆：偏移量钳制 ±45°（与 max_guidance_angle 对齐，保证指令方向不超锥角、无死区）
+        hitlYaw = Mth.clamp(Mth.wrapDegrees(hitlYaw + yawStep), -45.0f, 45.0f);
+        hitlPitch = Mth.clamp(hitlPitch + pitchStep, -45.0f, 45.0f);
     }
 
     /** BF2-style TV: offset crosshair within seeker FOV relative to missile body. */
@@ -462,10 +494,37 @@ public class RVP_ClientHitlState {
         particleSuppressX = missile.getX();
         particleSuppressY = missile.getY();
         particleSuppressZ = missile.getZ();
+        // 动态抑制半径：尾迹生成点在弹体后（missle_native_trail_offset 默认 3 格），高速弹
+        // 单 tick 位移可达数格——固定 4.5 格球会漏抑制尾段，按"弹速 + 偏移 + 余量"扩展
+        particleSuppressRadiusSq = Math.max(20.25D,
+                Math.pow(missile.getDeltaMovement().length() + 5.5D, 2));
     }
 
     private static void clearParticleSuppressCache() {
         particleSuppressActive = false;
+        particleSuppressRadiusSq = 20.25D;
+    }
+
+    /**
+     * 进入导弹视角时用<b>发射车位置</b>立即预激活粒子抑制球。
+     *
+     * <p>时序：服务端先发 {@code S2CEnterHitlView}、后发开火广播包，而导弹实体的
+     * AddEntity 同步在 tick 末才到达——期间本体枪口烟/火花 burst
+     * （{@code AbstractVehicleWeapon.onClientFire}）已喷出，若屏蔽球未激活则永久漏出
+     * （burst 寿命仅 5/10 tick）。出膛点在发射车武器站上，用载具位置 + 放大半径
+     * （8 格）覆盖；导弹实体同步后由 {@link #updateParticleSuppressCache} 切回导弹跟随。</p>
+     */
+    private static void preactivateParticleSuppressFromVehicle() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.vehicle == null) {
+            clearParticleSuppressCache();
+            return;
+        }
+        particleSuppressActive = true;
+        particleSuppressX = lvp.vehicle.getX();
+        particleSuppressY = lvp.vehicle.getY();
+        particleSuppressZ = lvp.vehicle.getZ();
+        particleSuppressRadiusSq = 64.0D;
     }
 
     private static boolean tickExitClick(Minecraft mc) {

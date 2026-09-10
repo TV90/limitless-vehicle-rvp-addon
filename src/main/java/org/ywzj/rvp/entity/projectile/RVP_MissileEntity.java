@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -48,8 +49,9 @@ import java.util.function.Function;
  * Generic guided missile entity for {@code rvp:missile}.
  *
  * <p>MCLOS wire / TV+MCLOS 走分段制导（{@link org.ywzj.rvp.guidance.RVP_GuidanceController} +
- * {@code take_over_motion}）。HITL MOUSE 鼠标指令写入 {@code hitlInputYaw/Pitch}，
- * 弹体 {@code hitlSteeringYaw/Pitch} 直接跟随鼠标指令航向参与制导。</p>
+ * {@code take_over_motion}）。HITL MOUSE 鼠标指令为<b>虚拟摇杆</b>模型（2026-09-10）：
+ * 客户端累计的鼠标增量作为<b>相对弹体朝向的转向偏移</b>写入 {@code hitlInputYaw/Pitch}，
+ * 舵量目标 = 弹体当前朝向 + 偏移——偏移保持则持续转向（摇杆拉住），偏移回中则直飞。</p>
  */
 public class RVP_MissileEntity extends RVP_BaseBullet {
 
@@ -67,8 +69,10 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     private boolean hitlEnabled;
     private float hitlMaxTurnDegPerTick = RVP_HitlSteeringMath.DEFAULT_MAX_TURN_DEG_PER_TICK;
     private float hitlMaxLookOffsetDeg = 20f;
+    /** 客户端累计的转向偏移量（度，相对弹体朝向，虚拟摇杆）。 */
     private float hitlInputYaw;
     private float hitlInputPitch;
+    /** 服务端舵量航向（弹体朝向 + 偏移 经最大转速 slew 后的当前值）。 */
     private float hitlSteeringYaw;
     private float hitlSteeringPitch;
     private int hitlInputSeq = Integer.MIN_VALUE;
@@ -134,8 +138,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlRightClickDetonate = hitl.isHitlRightClickDetonate();
         this.hitlEnabled = true;
         this.hitlEnterViewResendTicks = 5;
-        this.hitlInputYaw = aim.yRot();
-        this.hitlInputPitch = aim.xRot();
+        this.hitlInputYaw = 0;
+        this.hitlInputPitch = 0;
         this.hitlSteeringYaw = aim.yRot();
         this.hitlSteeringPitch = aim.xRot();
     }
@@ -676,8 +680,13 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
         float max = Math.max(hitlMaxTurnDegPerTick, 0.05f);
-        hitlSteeringYaw = RVP_HitlSteeringMath.stepYawToward(hitlSteeringYaw, hitlInputYaw, max);
-        hitlSteeringPitch = RVP_HitlSteeringMath.stepPitchToward(hitlSteeringPitch, hitlInputPitch, max);
+        // 虚拟摇杆（2026-09-10）：舵量目标 = 弹体当前朝向 + 客户端转向偏移。
+        // 偏移保持 = 持续转向（摇杆拉住不放）；偏移回中 = 沿弹体方向直飞。
+        // 修复"绝对航向"模型的缺陷：鼠标停顿即指令航向冻结、转弯率迅速归零直飞甩掉目标。
+        float commandYaw = Mth.wrapDegrees(this.getYRot() + hitlInputYaw);
+        float commandPitch = Mth.clamp(this.getXRot() + hitlInputPitch, -89.9f, 89.9f);
+        hitlSteeringYaw = RVP_HitlSteeringMath.stepYawToward(hitlSteeringYaw, commandYaw, max);
+        hitlSteeringPitch = RVP_HitlSteeringMath.stepPitchToward(hitlSteeringPitch, commandPitch, max);
     }
 
     public RVP_EnumHitlControlMode rvp$getHitlControlMode() {
@@ -726,6 +735,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         this.hitlInputYaw = yaw;
         this.hitlInputPitch = pitch;
         this.hitlInputSeq = seq;
+        // 收到操作手有效转向输入即重置指令生命期：持续操控就持续可控，
+        // 修复"绕大圈回打超过 hitl_max_control_tick 后舵量被静默冻结"（2026-09-10）
+        ywzj_rvp$refreshHitlLife();
     }
 
     public void rvp$setHitlDesignatedTarget(Vec3 target) {
@@ -741,6 +753,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         setTargetPos(target);
         setTargetEntity(null);
+        // 指定目标同样是有效操作：重置指令生命期（与转向输入同语义）
+        ywzj_rvp$refreshHitlLife();
     }
 
     public void rvp$clearHitlDesignation() {
@@ -766,6 +780,20 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
         setTargetEntity(target);
         setTargetPos(target.getBoundingBox().getCenter());
+        // 指定目标实体同样是有效操作：重置指令生命期（与转向输入同语义）
+        ywzj_rvp$refreshHitlLife();
+    }
+
+    /**
+     * 重置指令生命期（2026-09-10）：收到操作手的有效输入（转向/指定目标）时把
+     * {@code hitlLife} 恢复为上限 {@code hitlTimeoutTick}——持续操控即持续可控。
+     * 修复"绕大圈回打超过 hitl_max_control_tick 后舵量静默冻结、导弹沿冻结航向自行
+     * 画弧飞走"的 bug。仅 hitlEnabled 时生效（弹已弃置则不复活）。
+     */
+    private void ywzj_rvp$refreshHitlLife() {
+        if (hitlEnabled) {
+            this.hitlLife = this.hitlTimeoutTick;
+        }
     }
 
     public void rvp$exitHitl() {

@@ -1,8 +1,11 @@
 package org.ywzj.rvp.guidance;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
@@ -11,6 +14,8 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
 public final class RVP_GuidanceRuntimeMath {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private RVP_GuidanceRuntimeMath() {}
 
@@ -58,13 +63,49 @@ public final class RVP_GuidanceRuntimeMath {
         if (speed <= 1.0E-6) {
             return false;
         }
-        if (!passesGuidanceAngle(projectile, steeringTarget, context.active()) && !irGrace) {
+        boolean withinGuidanceAngle = passesGuidanceAngle(projectile, steeringTarget, context.active());
+        boolean hitlIntent = intent.sourceType() == RVP_EnumGuidanceType.HITL_TV
+                || intent.sourceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
+        if (RVP_DebugFlags.HITL.isEnabled() && !projectile.level().isClientSide()) {
+            // HITL 转向链诊断（/rvpdebug flags hitl on）：三列对照——服务端收到输入角 /
+            // 舵量角 / 弹速方向夹角，用于定位"指令航向冻结（转弯率归零）"发生在哪一环
+            Vec3 velNorm = current.lengthSqr() > 1.0E-8 ? current.normalize() : projectile.getLookAngle();
+            Vec3 toTargetNorm = steeringTarget.subtract(projectile.position()).normalize();
+            double cmdAngle = Math.toDegrees(Math.acos(Mth.clamp(velNorm.dot(toTargetNorm), -1.0, 1.0)));
+            float inYaw = Float.NaN;
+            float inPitch = Float.NaN;
+            float steerYaw = Float.NaN;
+            float steerPitch = Float.NaN;
+            if (projectile instanceof org.ywzj.rvp.entity.projectile.RVP_MissileEntity missile) {
+                inYaw = missile.rvp$getHitlInputYaw();
+                inPitch = missile.rvp$getHitlInputPitch();
+                steerYaw = missile.rvp$getHitlSteeringYaw();
+                steerPitch = missile.rvp$getHitlSteeringPitch();
+            }
+            LOGGER.info("[RVP-HITL] id={} tick={} cmdAngle={} within={} direct={} "
+                            + "inYaw={} inPitch={} steerYaw={} steerPitch={} vel=({}/{}/{})",
+                    projectile.getId(), projectile.tickCount,
+                    String.format("%.1f", cmdAngle), withinGuidanceAngle, intent.directMotion(),
+                    String.format("%.1f", inYaw), String.format("%.1f", inPitch),
+                    String.format("%.1f", steerYaw), String.format("%.1f", steerPitch),
+                    String.format("%.2f", current.x), String.format("%.2f", current.y), String.format("%.2f", current.z));
+        }
+        if (!withinGuidanceAngle && !irGrace && !intent.directMotion()) {
+            // 电视弹（HITL_TV/DESIGNATE 追踪路径）与自动制导：超角维持原拒绝规则（行为不变）
             return false;
         }
         if (intent.directMotion()) {
+            Vec3 desired = steeringTarget.subtract(projectile.position());
+            // HITL 人手直控（2026-09-10）：指令超出 max_guidance_angle 锥角时不再整 tick 拒绝转向——
+            // 绕大圈回打（如攻击发射载具）时夹角恒超限，原逻辑表现为"导弹拒转直飞、被强行掰走"。
+            // 改为把指令方向钳制到锥角边缘贴边尽量转，随弹体转向夹角收敛后完全跟随指令航向。
+            if (!withinGuidanceAngle && !irGrace) {
+                desired = RVP_GuidanceRuntimeGeometry.clampToAngle(
+                        current.lengthSqr() > 1.0E-8 ? current : projectile.getLookAngle(),
+                        desired, context.active().maxGuidanceAngle());
+            }
             // 调用本项目直控转向入口；入口内部同样按 rvp_maxg 优先规则选择钳制算法。
-            RVP_WireGuidanceSteering.applyFromDirection(
-                    projectile, steeringTarget.subtract(projectile.position()), factor);
+            RVP_WireGuidanceSteering.applyFromDirection(projectile, desired, factor);
             return true;
         }
         // 调用本项目弹体数据访问器；配置 rvp_maxg 时先生成完整期望方向，再统一施加 G 钳制。
