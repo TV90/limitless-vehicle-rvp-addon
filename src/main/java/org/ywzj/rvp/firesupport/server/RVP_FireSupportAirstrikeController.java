@@ -240,6 +240,67 @@ public final class RVP_FireSupportAirstrikeController {
                 .allMatch(weapon -> weapon.delivery() instanceof RVP_AirLaunchedProjectileDelivery);
     }
 
+    /**
+     * 汇总空袭控制器阻止继续投送的现场状态；任务管理器把该文本写入统一 LOGGER.error。
+     * 只读取当前服务端状态，不改变航线、飞机或租约。
+     */
+    public static String describeStatus(MinecraftServer server, RVP_FireSupportMission mission, Status status) {
+        RouteState state = state(server, mission);
+        ServerLevel level = server.getLevel(mission.dimension);
+        if (status == Status.SCHEDULE_TIMEOUT) {
+            return "空袭任务超过安全截止；now=" + (level == null ? "null" : level.getGameTime())
+                    + ", safetyDeadline=" + safetyDeadlineTick(mission);
+        }
+        if (state == null) {
+            String routeFailure = firstAirPlanFailureDetail(mission);
+            return "空袭航线状态不存在；aircraftId=" + firstAirCraftId(mission)
+                    + ", missionDimension=" + mission.dimension + ", target=("
+                    + mission.targetX + "," + mission.targetZ + "), routeFailure=" + routeFailure;
+        }
+        RVP_ChunkPathLoader.PathLoadResult path = state.lastPathLoadResult;
+        return switch (status) {
+            case AIRCRAFT_UNAVAILABLE -> "空袭飞机或入场资源不可用；aircraftId=" + state.aircraftId
+                    + ", aircraftUuid=" + state.aircraftUuid + ", pose=" + state.pose
+                    + ", route=" + state.route;
+            case AIRCRAFT_SPAWN_FAILED -> "空袭飞机加入世界后未保持可观测存活；aircraftId=" + state.aircraftId
+                    + ", aircraftUuid=" + state.aircraftUuid + ", spawnTick=" + state.aircraftSpawnTick
+                    + ", now=" + (level == null ? "null" : level.getGameTime())
+                    + ", lastLeaveReason=" + state.lastLeaveReason;
+            case AIRCRAFT_DESTROYED -> "空袭飞机已进入毁伤或 KILLED 状态；aircraftId=" + state.aircraftId
+                    + ", aircraftUuid=" + state.aircraftUuid + ", lastKnownPosition=" + state.lastKnownPosition;
+            case AIRCRAFT_LOST -> "空袭飞机恢复窗口耗尽；aircraftId=" + state.aircraftId
+                    + ", aircraftUuid=" + state.aircraftUuid + ", lastLeaveReason=" + state.lastLeaveReason
+                    + ", lastKnownPosition=" + state.lastKnownPosition + ", recoveryStartTick="
+                    + state.recoveryStartTick + ", recoveryDeadlineTick=" + state.recoveryDeadlineTick
+                    + ", pathState=" + (path == null ? "null" : path.firstUnreadyState())
+                    + ", pathChunk=" + (path == null ? "null" : path.firstUnreadyChunk());
+            case TRAJECTORY_UNREACHABLE -> "空袭路线或释放弹道无法建立；aircraftId=" + state.aircraftId
+                    + ", route=" + state.route + ", refs=" + state.refs.size()
+                    + ", deliveredCount=" + state.deliveredCount;
+            default -> "空袭状态阻止投送；status=" + status + ", aircraftId=" + state.aircraftId;
+        };
+    }
+
+    /** 返回任务内第一架飞机资源 ID，供航线尚未建立时的错误诊断使用。 */
+    private static ResourceLocation firstAirCraftId(RVP_FireSupportMission mission) {
+        for (RVP_FireSupportMissionWeapon weapon : mission.weapons) {
+            if (weapon.delivery() instanceof RVP_AirLaunchedProjectileDelivery delivery) {
+                return delivery.data().aircraftId();
+            }
+        }
+        return null;
+    }
+
+    /** 读取航线建立阶段首个空投弹道的失败诊断，补足尚未创建 RouteState 时的信息。 */
+    private static String firstAirPlanFailureDetail(RVP_FireSupportMission mission) {
+        for (RVP_FireSupportMissionWeapon weapon : mission.weapons) {
+            if (weapon.delivery() instanceof RVP_AirLaunchedProjectileDelivery delivery) {
+                return delivery.lastPlanFailureDetail();
+            }
+        }
+        return "未找到空投投送器";
+    }
+
     /** @return 指定轮次参考点的实际 Tick；路线未建立时回退原始 Tick。 */
     public static long nextReleaseTick(MinecraftServer server, RVP_FireSupportMission mission,
                                        int roundIndex, long fallback) {
@@ -274,6 +335,13 @@ public final class RVP_FireSupportAirstrikeController {
         return Math.addExact(deliveryTick,
                 RVP_FireSupportAirstrikeRoutePlanner.requiredTicks(
                         exitDistanceMeters, carrierSpeedMetersPerTick));
+    }
+
+    /** 只有全部参考释放点均已执行过首次尝试，才允许使用出场延长段重试剩余弹体。 */
+    static boolean allReferencesAttempted(boolean[] referenceAttempted) {
+        if (referenceAttempted == null || referenceAttempted.length == 0) return false;
+        for (boolean attempted : referenceAttempted) if (!attempted) return false;
+        return true;
     }
 
     /** 返回当前所有未投送计划中最早原始 Tick。 */
@@ -727,6 +795,8 @@ public final class RVP_FireSupportAirstrikeController {
                 }
             }
             // 所有参考点都尝试过后进入出场延长段，继续清空尚未成功的武器池。
+            // 尚有未到达的参考点时必须立即返回，避免仅因原始计划 Tick 已到就在出生点投弹。
+            if (!allReferencesAttempted(referenceAttempted)) return null;
             for (ArrayDeque<RoundRef> pool : pools.values()) {
                 RoundRef candidate = pool.peekFirst();
                 if (candidate == null) continue;

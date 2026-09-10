@@ -163,7 +163,8 @@
             "launch_height_above_ground_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 64, "default": 2.5 },
             "max_apex_above_impact_m": { "type": "number", "minimum": 16, "maximum": 2048, "default": 512 },
             "preload_ticks": { "type": "integer", "minimum": 0, "maximum": 1200, "default": 80 },
-            "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 }
+            "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 },
+            "entry_speed_m_per_tick": { "type": "number", "minimum": 0, "maximum": 64, "default": 0 }
           }
         }
       }
@@ -197,6 +198,7 @@
             "exit_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096, "default": 768, "description": "末个参考飞机中心之后的出场距离；默认 768 格。" },
             "release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 256 },
             "min_release_altitude_above_impact_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 2048, "default": 96 },
+            "gps_release_distance_m": { "type": "number", "exclusiveMinimum": 0, "maximum": 4096, "default": 768, "description": "GPS 空射弹相对目标沿入场反方向的固定释放距离；非 GPS 弹忽略。" },
             "carrier_speed_m_per_tick": { "type": "number", "exclusiveMinimum": 0, "maximum": 64, "default": 2.5 },
             "preload_ticks": { "type": "integer", "minimum": 0, "maximum": 1200, "default": 80 },
             "heading_jitter_deg": { "type": "number", "minimum": 0, "maximum": 45, "default": 0 }

@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RVP_FireSupportStageEResourcesTest {
     /** 文档中的可分发作者示例。 */ private static final Path EXAMPLE = Path.of(
             "docs/examples/fire_support_profiles/default.json");
+    /** 空射/地射及 GPS 弹药的独立回归示例。 */ private static final Path LAUNCHED_EXAMPLE = Path.of(
+            "docs/examples/fire_support_profiles/air_launched_and_ground_launched_test.json");
     /** 载具包实际发布的默认炮火 profile。 */ private static final Path RUNTIME_PROFILE = Path.of(
             "run/client_1/limitless_vehicle/rvp/data/rvp/fire_support_profiles/default.json");
     /** 终端生成物品模型。 */ private static final Path ITEM_MODEL = Path.of(
@@ -82,6 +84,20 @@ class RVP_FireSupportStageEResourcesTest {
                 .get("type").getAsString());
         assertFalse(schema.getAsJsonObject("$defs").getAsJsonObject("munitionWeapon")
                 .get("additionalProperties").getAsBoolean());
+    }
+
+    @Test
+    void launchedExampleCoversBothGpsDeliveryDirections() throws Exception {
+        var ids = new java.util.HashSet<String>();
+        var root = JsonParser.parseString(Files.readString(LAUNCHED_EXAMPLE)).getAsJsonObject();
+        for (var element : root.getAsJsonArray("munitions")) {
+            var munition = element.getAsJsonObject();
+            ids.add(munition.get("id").getAsString());
+        }
+        assertTrue(ids.contains("gps_air_j16"));
+        assertTrue(ids.contains("gps_air_rafale"));
+        assertTrue(ids.contains("gps_ground_atacms"));
+        assertTrue(ids.contains("gps_ground_9k720"));
     }
 
     @Test

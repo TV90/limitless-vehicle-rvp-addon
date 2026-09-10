@@ -24,21 +24,56 @@ public final class RVP_FireSupportBallisticSolver {
     @Nullable
     public static GroundSolution solveGround(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
                                              Vec3 launch, Vec3 target, double maxApexAboveImpact) {
-        if (weapon == null || kind == null || launch == null || target == null) return null;
+        return solveGround(weapon, kind, launch, target, maxApexAboveImpact, 0.0D);
+    }
+
+    /**
+     * 使用可选初速覆盖求解高/低弹道；覆盖值为 0 时沿用武器解析初速及其 0.01 最小值兜底。
+     */
+    @Nullable
+    public static GroundSolution solveGround(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
+                                             Vec3 launch, Vec3 target, double maxApexAboveImpact,
+                                             double entrySpeedMetersPerTick) {
+        return diagnoseGround(weapon, kind, launch, target, maxApexAboveImpact,
+                entrySpeedMetersPerTick).solution();
+    }
+
+    /** 求解地射轨迹并保留失败原因；诊断不会改变正式轨迹选择。 */
+    public static GroundSolveDiagnostic diagnoseGround(RVP_WeaponData weapon, RVP_EnumWeaponKind kind,
+                                                       Vec3 launch, Vec3 target, double maxApexAboveImpact,
+                                                       double entrySpeedMetersPerTick) {
+        if (weapon == null || kind == null || launch == null || target == null) {
+            return GroundSolveDiagnostic.failure(GroundFailureReason.INVALID_INPUT,
+                    Double.NaN, Double.NaN, 0, 0, 0);
+        }
         Vec3 horizontalDelta = new Vec3(target.x - launch.x, 0.0D, target.z - launch.z);
         double distance = horizontalDelta.length();
-        double speed = weapon.resolveMuzzleSpeed(kind);
-        if (!Double.isFinite(distance) || distance < 1.0E-6D || !Double.isFinite(speed) || speed <= 0.0D) return null;
+        double speed = entrySpeedMetersPerTick > 0.0D
+                ? entrySpeedMetersPerTick : weapon.resolveMuzzleSpeed(kind);
+        if (!Double.isFinite(distance) || distance < 1.0E-6D) {
+            return GroundSolveDiagnostic.failure(GroundFailureReason.INVALID_HORIZONTAL_DISTANCE,
+                    distance, speed, 0, 0, 0);
+        }
+        if (!Double.isFinite(speed) || speed <= 0.0D) {
+            return GroundSolveDiagnostic.failure(GroundFailureReason.INVALID_SPEED,
+                    distance, speed, 0, 0, 0);
+        }
 
         List<GroundSolution> roots = new ArrayList<>();
         Evaluation previous = null;
         double previousAngle = 0.0D;
+        int evaluatedAngles = 0;
+        int reachableEvaluations = 0;
+        int signChangeCount = 0;
         for (double angle = ANGLE_STEP_DEGREES; angle < 90.0D; angle += ANGLE_STEP_DEGREES) {
             Evaluation current = evaluateGround(weapon, kind, distance, launch.y, target.y, speed, angle);
+            evaluatedAngles++;
+            if (current != null) reachableEvaluations++;
             if (current != null && Math.abs(current.verticalError()) <= MAX_PREDICTION_ERROR_METERS) {
                 roots.add(toGroundSolution(horizontalDelta, launch, current, angle, speed, weapon, kind));
             }
             if (previous != null && current != null && Math.signum(previous.verticalError()) != Math.signum(current.verticalError())) {
+                signChangeCount++;
                 roots.add(refineRoot(weapon, kind, horizontalDelta, launch, target, speed,
                         previousAngle, angle, previous, current));
             }
@@ -48,10 +83,20 @@ public final class RVP_FireSupportBallisticSolver {
         roots = roots.stream().filter(solution -> solution != null
                         && solution.predictionErrorMeters() <= MAX_PREDICTION_ERROR_METERS)
                 .sorted(Comparator.comparingDouble(GroundSolution::launchAngleDegrees)).toList();
-        if (roots.isEmpty()) return null;
+        if (roots.isEmpty()) {
+            GroundFailureReason reason = reachableEvaluations == 0
+                    ? GroundFailureReason.NO_FORWARD_TRAJECTORY
+                    : signChangeCount > 0
+                            ? GroundFailureReason.PREDICTION_ERROR
+                            : GroundFailureReason.NO_HEIGHT_INTERSECTION;
+            return GroundSolveDiagnostic.failure(reason, distance, speed, evaluatedAngles,
+                    reachableEvaluations, signChangeCount);
+        }
         GroundSolution low = roots.get(0);
         GroundSolution high = roots.get(roots.size() - 1);
-        return high.apexY() - target.y <= maxApexAboveImpact ? high : low;
+        GroundSolution selected = high.apexY() - target.y <= maxApexAboveImpact ? high : low;
+        return GroundSolveDiagnostic.success(selected, distance, speed, evaluatedAngles,
+                reachableEvaluations, signChangeCount);
     }
 
     /** 计算给定高度和载机水平速度下的无制导炸弹释放距离。 */
@@ -270,6 +315,41 @@ public final class RVP_FireSupportBallisticSolver {
             /** 预计飞行 Tick。 */ int flightTicks,
             /** 预测轨迹顶点世界 Y。 */ double apexY,
             /** 预测终点误差，单位格。 */ double predictionErrorMeters) {}
+
+    /** 地射求解失败类别；仅用于服务端诊断，不改变投送状态机。 */
+    public enum GroundFailureReason {
+        /** 输入对象缺失。 */ INVALID_INPUT,
+        /** 发射点与目标点水平距离无效或过小。 */ INVALID_HORIZONTAL_DISTANCE,
+        /** 初速无效。 */ INVALID_SPEED,
+        /** 所有角度都未能在武器生命周期内前进到目标距离。 */ NO_FORWARD_TRAJECTORY,
+        /** 轨迹到达目标距离，但没有穿越目标高度。 */ NO_HEIGHT_INTERSECTION,
+        /** 有高度交点，但离散预测误差超过允许值。 */ PREDICTION_ERROR,
+        /** 求解成功。 */ NONE
+    }
+
+    /** 地射解算诊断；保留有效速度、搜索统计和失败原因供 LOGGER.error 输出。 */
+    public record GroundSolveDiagnostic(
+            /** 成功时的轨迹，失败时为 null。 */ GroundSolution solution,
+            /** 本次求解的失败类别，成功时为 NONE。 */ GroundFailureReason failureReason,
+            /** 发射点到目标点的水平距离，单位格。 */ double horizontalDistanceMeters,
+            /** 本次实际使用的初速，单位格/Tick。 */ double effectiveSpeedMetersPerTick,
+            /** 扫描的发射角数量。 */ int evaluatedAngles,
+            /** 能够在生命周期内抵达目标水平距离的角度数量。 */ int reachableEvaluations,
+            /** 相邻角度间发现的高度误差符号变化数量。 */ int signChangeCount) {
+        private static GroundSolveDiagnostic success(GroundSolution solution, double distance, double speed,
+                                                      int evaluatedAngles, int reachableEvaluations,
+                                                      int signChangeCount) {
+            return new GroundSolveDiagnostic(solution, GroundFailureReason.NONE, distance, speed,
+                    evaluatedAngles, reachableEvaluations, signChangeCount);
+        }
+
+        private static GroundSolveDiagnostic failure(GroundFailureReason reason, double distance, double speed,
+                                                      int evaluatedAngles, int reachableEvaluations,
+                                                      int signChangeCount) {
+            return new GroundSolveDiagnostic(null, reason, distance, speed,
+                    evaluatedAngles, reachableEvaluations, signChangeCount);
+        }
+    }
 
     /** 空投反解结果。 */
     public record AirSolution(

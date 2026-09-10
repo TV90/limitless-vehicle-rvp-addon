@@ -54,6 +54,9 @@ class RVP_ProjectileSpawnerNoVehicleTest {
                         "射手有效性必须允许无载具但有 owner"),
                 () -> assertTrue(base.contains("getOwner(), shooterVehicle, blockImpact"),
                         "自定义落点效果必须保留 owner 并接受空载具"),
+                () -> assertTrue(spawner.contains("context.designatedTarget() != null")
+                                && spawner.contains("projectile.setTargetPos(context.designatedTarget())"),
+                        "无载具炮火实体必须保留统一 GPS 目标注入"),
                 () -> assertTrue(submunition.contains("parent.getOwner() instanceof LivingEntity"),
                         "子弹药必须继承母弹 owner"),
                 () -> assertTrue(submunition.contains("RVP_ProjectileEntityFactory.create"),

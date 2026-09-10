@@ -8,7 +8,14 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 public record RVP_FireSupportDeliveryResult(
         /** 任务调度器用于等待、重试或记账的状态。 */ Status status,
         /** 成功时已经加入世界的 RVP 弹体。 */ @Nullable RVP_BaseBullet projectile,
-        /** 成功时的权威生成位置。 */ @Nullable Vec3 spawnPosition) {
+        /** 成功时的权威生成位置。 */ @Nullable Vec3 spawnPosition,
+        /** 阻止本发投送或导致生成失败的结构化文字诊断；成功和等待状态可为空。 */ @Nullable String diagnostic) {
+    /** 保留没有详细诊断时的便捷构造形式，兼容普通成功结果和等待结果。 */
+    public RVP_FireSupportDeliveryResult(Status status, @Nullable RVP_BaseBullet projectile,
+                                         @Nullable Vec3 spawnPosition) {
+        this(status, projectile, spawnPosition, null);
+    }
+
     /** @return 是否成功生成并加入世界。 */
     public boolean delivered() { return status == Status.DELIVERED; }
 

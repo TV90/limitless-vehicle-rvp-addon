@@ -31,10 +31,12 @@ import org.ywzj.rvp.firesupport.api.RVP_FireSupportPattern;
 import org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileManager;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportImpactPoint;
 import org.ywzj.rvp.firesupport.data.RVP_FireSupportRequest;
+import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -220,6 +222,10 @@ public final class RVP_FireSupportMissionManager {
             if (RVP_FireSupportAirstrikeController.consumeRecoveryStateChanged(server, mission)) {
                 sendUpdate(server, mission);
             }
+            if (isBlockingAirStatus(airStatus)) {
+                logAirDeliveryBlock(mission, airStatus,
+                        RVP_FireSupportAirstrikeController.describeStatus(server, mission, airStatus));
+            }
             if (airStatus == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_DESTROYED) {
                 finish(server, mission, RVP_FireSupportMissionState.FAILED,
                         RVP_FireSupportEndReason.AIRCRAFT_DESTROYED);
@@ -268,7 +274,7 @@ public final class RVP_FireSupportMissionManager {
                     && now >= nextSpawnTick
                     - mission.weapons.get(candidateRound.munitionWeaponIndex()).delivery().preloadTicks()) {
                 RVP_FireSupportDeliveryResult preparation = prepareOne(server, mission, candidateRound);
-                if (handleFatalDeliveryResult(server, mission, preparation)) continue;
+                if (handleFatalDeliveryResult(server, mission, candidateRound, preparation)) continue;
             }
             if (spawned >= MAX_SPAWNS_PER_TICK || mission.state == RVP_FireSupportMissionState.CALLING
                     || mission.terminal() || candidateRound == null || now < nextSpawnTick) continue;
@@ -331,7 +337,8 @@ public final class RVP_FireSupportMissionManager {
             result = missionWeapon.delivery().deliver(createDeliveryContextForRound(server, level, mission, round));
         } catch (RuntimeException exception) {
             LOGGER.error("炮火任务 {} 第 {} 发投送异常", mission.missionId, round.roundIndex(), exception);
-            result = new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, null, null);
+            result = new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED,
+                    null, null, "投送器抛出 RuntimeException；exception=" + exception);
         }
         if (result.delivered()) {
             if (RVP_FireSupportAirstrikeController.isAirMission(mission)) {
@@ -368,6 +375,7 @@ public final class RVP_FireSupportMissionManager {
             }
             case DELIVERED -> { }
         }
+        logDeliveryBlock(mission, round, result);
         return false;
     }
 
@@ -377,7 +385,8 @@ public final class RVP_FireSupportMissionManager {
                                                              RVP_FireSupportSchedulePlanner.PlannedRound round) {
         ServerLevel level = server.getLevel(mission.dimension);
         if (level == null) return new RVP_FireSupportDeliveryResult(
-                RVP_FireSupportDeliveryResult.Status.OUTSIDE_WORLD_BORDER, null, null);
+                RVP_FireSupportDeliveryResult.Status.OUTSIDE_WORLD_BORDER, null, null,
+                "任务维度不存在，无法取得投送世界；dimension=" + mission.dimension);
         RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
         try {
             // 调用类型化投送器的准备阶段，使远端生成点能在计划发射/释放前申请 Chunk。
@@ -385,7 +394,7 @@ public final class RVP_FireSupportMissionManager {
         } catch (RuntimeException exception) {
             LOGGER.error("炮火任务 {} 第 {} 发准备异常", mission.missionId, round.roundIndex(), exception);
             return new RVP_FireSupportDeliveryResult(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT,
-                    null, null);
+                    null, null, "准备阶段抛出 RuntimeException；exception=" + exception);
         }
     }
 
@@ -428,11 +437,16 @@ public final class RVP_FireSupportMissionManager {
                 ? Math.max(plannedTick, level.getGameTime())
                 : RVP_FireSupportAirstrikeController.nextReleaseTick(server, mission, round.roundIndex(), plannedTick);
         Vec3 designatedTarget = null;
-        if (missionWeapon.weaponData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE && sourceVehicle != null) {
+        // 调用本体武器制导能力解析，并读取插件投送类型：只有空/地射 GPS 弹需要每发地表目标。
+        boolean gpsDelivery = missionWeapon.weaponData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                && (RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(missionWeapon.delivery().typeId())
+                || RVP_FireSupportDeliveryTypes.GROUND_LAUNCHED_PROJECTILE.equals(missionWeapon.delivery().typeId()));
+        if (gpsDelivery) {
             int x = Mth.floor(impact.x());
             int z = Mth.floor(impact.z());
             int groundY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-            designatedTarget = new Vec3(impact.x(), groundY + 0.5D, impact.z());
+            // 每发 GPS 目标固定为该发 pattern 落点的地表坐标；不读取玩家 GPS 队列，也不依赖真实载具存在。
+            designatedTarget = new Vec3(impact.x(), groundY, impact.z());
         }
         return new RVP_FireSupportDeliveryContext(level, owner, missionWeapon.weaponData(), impact,
                 mission.targetX, mission.targetZ, mission.headingDegrees, mission.inboundHeadingDegrees,
@@ -443,6 +457,7 @@ public final class RVP_FireSupportMissionManager {
 
     /** @return 是否已把不可恢复的准备错误转换为任务终态。 */
     private static boolean handleFatalDeliveryResult(MinecraftServer server, RVP_FireSupportMission mission,
+                                                      RVP_FireSupportSchedulePlanner.PlannedRound round,
                                                       RVP_FireSupportDeliveryResult result) {
         RVP_FireSupportEndReason reason = switch (result.status()) {
             case CHUNK_LIMIT_EXCEEDED -> RVP_FireSupportEndReason.CHUNK_LIMIT;
@@ -453,8 +468,45 @@ public final class RVP_FireSupportMissionManager {
             default -> null;
         };
         if (reason == null) return false;
+        logDeliveryBlock(mission, round, result);
         finish(server, mission, RVP_FireSupportMissionState.FAILED, reason);
         return true;
+    }
+
+    /** @return 空袭控制器已经确定会阻止任务继续投送的状态。 */
+    private static boolean isBlockingAirStatus(RVP_FireSupportAirstrikeController.Status status) {
+        return status == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_UNAVAILABLE
+                || status == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_SPAWN_FAILED
+                || status == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_DESTROYED
+                || status == RVP_FireSupportAirstrikeController.Status.AIRCRAFT_LOST
+                || status == RVP_FireSupportAirstrikeController.Status.TRAJECTORY_UNREACHABLE
+                || status == RVP_FireSupportAirstrikeController.Status.SCHEDULE_TIMEOUT;
+    }
+
+    /** 输出空袭阶段的详细阻塞原因；等待和恢复状态不在此处报错，避免每 Tick 刷屏。 */
+    private static void logAirDeliveryBlock(RVP_FireSupportMission mission,
+                                            RVP_FireSupportAirstrikeController.Status status,
+                                            String diagnostic) {
+        LOGGER.error("炮火任务 {} 空袭投送被阻止：status={}, diagnostic={}",
+                mission.missionId, status, diagnostic);
+    }
+
+    /** 输出单发投送的状态、武器、坐标和投送器诊断，统一覆盖所有硬失败。 */
+    private static void logDeliveryBlock(RVP_FireSupportMission mission,
+                                         RVP_FireSupportSchedulePlanner.PlannedRound round,
+                                         RVP_FireSupportDeliveryResult result) {
+        if (result.delivered() || result.status() == RVP_FireSupportDeliveryResult.Status.PREPARED
+                || result.status() == RVP_FireSupportDeliveryResult.Status.TOO_EARLY
+                || result.status() == RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK
+                || result.status() == RVP_FireSupportDeliveryResult.Status.RETRY_LATER) return;
+        RVP_FireSupportMissionWeapon missionWeapon = mission.weapons.get(round.munitionWeaponIndex());
+        LOGGER.error("炮火任务 {} 第 {} 发投送被阻止：status={}, deliveryType={}, weapon={}, kind={}, "
+                        + "impact={}, spawn={}, scheduledTick={}, diagnostic={}",
+                mission.missionId, round.roundIndex(), result.status(), missionWeapon.delivery().typeId(),
+                missionWeapon.weaponData().getWeaponId(), missionWeapon.weaponData().getWeaponKind(),
+                "(" + mission.targetX + "," + mission.targetZ + ")", result.spawnPosition(),
+                Math.addExact(mission.callDeadlineTick, round.strikeOffsetTicks()),
+                result.diagnostic() == null ? "未提供详细诊断" : result.diagnostic());
     }
 
     private static LivingEntity resolveOwner(MinecraftServer server, ServerLevel level,

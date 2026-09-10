@@ -19,7 +19,6 @@ import org.ywzj.vehicle.util.VectorUtil;
 /** 地面、空中与垂直投送共用的确定性方向、租约和无载具生成辅助。 */
 final class RVP_FireSupportDeliverySupport {
     /** 为入场方位扰动分配的独立随机盐。 */ private static final long HEADING_SALT = 0x4F1BBCDCBFA54001L;
-
     private RVP_FireSupportDeliverySupport() {}
 
     /** 把 Minecraft 方位角转换为水平飞行单位向量；0 指向 +Z。 */
@@ -67,12 +66,18 @@ final class RVP_FireSupportDeliverySupport {
                 RVP_FireSupportSpawnChunkLeaseManager.request(context.level(), context.missionId(), chunk,
                         context.scheduledTick(), preloadTicks, context.maxLoadedChunksPerMission(), purpose);
         return switch (status) {
-            case READY -> result(RVP_FireSupportDeliveryResult.Status.PREPARED, null, null);
-            case TOO_EARLY, PRELOADING -> result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null);
-            case WAITING_FOR_CHUNK -> result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null);
-            case MISSION_CHUNK_LIMIT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_LIMIT_EXCEEDED, null, null);
-            case TIMED_OUT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_WAIT_TIMED_OUT, null, null);
-            case INVALID_REQUEST -> result(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT, null, null);
+            case READY -> result(RVP_FireSupportDeliveryResult.Status.PREPARED, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
+            case TOO_EARLY, PRELOADING -> result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
+            case WAITING_FOR_CHUNK -> result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
+            case MISSION_CHUNK_LIMIT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_LIMIT_EXCEEDED, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
+            case TIMED_OUT -> result(RVP_FireSupportDeliveryResult.Status.CHUNK_WAIT_TIMED_OUT, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
+            case INVALID_REQUEST -> result(RVP_FireSupportDeliveryResult.Status.INVALID_CONTEXT, null, null,
+                    leaseDiagnostic(context, chunk, purpose, preloadTicks, status));
         };
     }
 
@@ -84,16 +89,24 @@ final class RVP_FireSupportDeliverySupport {
         if (first.status() == RVP_FireSupportDeliveryResult.Status.RETRY_LATER
                 || second.status() == RVP_FireSupportDeliveryResult.Status.RETRY_LATER) {
             // 目的：保留“当前姿态暂不可投放”的诊断语义；调度器会保留武器池并沿后续参考点重试。
-            return result(RVP_FireSupportDeliveryResult.Status.RETRY_LATER, null, null);
+            return result(RVP_FireSupportDeliveryResult.Status.RETRY_LATER, null, null,
+                    "合并投送结果包含 RETRY_LATER；等待后续 Tick 重试"
+                            + ", first=" + first.status() + ":" + first.diagnostic()
+                            + ", second=" + second.status() + ":" + second.diagnostic());
         }
         if (first.status() == RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK
                 || second.status() == RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK) {
-            return result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null);
+            return result(RVP_FireSupportDeliveryResult.Status.WAITING_FOR_CHUNK, null, null,
+                    "合并投送结果仍在等待 Chunk；first=" + first.status() + ":" + first.diagnostic()
+                            + ", second=" + second.status() + ":" + second.diagnostic());
         }
         if (!first.prepared() || !second.prepared()) {
-            return result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null);
+            return result(RVP_FireSupportDeliveryResult.Status.TOO_EARLY, null, null,
+                    "投送准备尚未进入允许窗口；first=" + first.status() + ":" + first.diagnostic()
+                            + ", second=" + second.status() + ":" + second.diagnostic());
         }
-        return result(RVP_FireSupportDeliveryResult.Status.PREPARED, null, null);
+        return result(RVP_FireSupportDeliveryResult.Status.PREPARED, null, null,
+                "目标 Chunk 与投送候选 Chunk 均已准备完成");
     }
 
     /** 使用统一无载具生成核心创建类型化 RVP 弹体。 */
@@ -101,7 +114,12 @@ final class RVP_FireSupportDeliverySupport {
                                                Vec3 initializedMotion, Vec3 spawnContextMotion,
                                                RVP_ProjectileChunkLoadingPolicy chunkPolicy) {
         if (initializedMotion.lengthSqr() <= 1.0E-12D || spawnContextMotion.lengthSqr() <= 1.0E-12D) {
-            return result(RVP_FireSupportDeliveryResult.Status.TRAJECTORY_UNREACHABLE, null, spawn);
+            return result(RVP_FireSupportDeliveryResult.Status.TRAJECTORY_UNREACHABLE, null, spawn,
+                    "生成速度向量无效；initializedMotion=" + initializedMotion
+                            + ", initializedSpeedSquared=" + initializedMotion.lengthSqr()
+                            + ", spawnContextMotion=" + spawnContextMotion
+                            + ", spawnContextSpeedSquared=" + spawnContextMotion.lengthSqr()
+                            + ", designatedTarget=" + context.designatedTarget());
         }
         var rotation = VectorUtil.vecToRot(initializedMotion.normalize());
         RVP_BaseBullet.AimRot aim = new RVP_BaseBullet.AimRot(rotation.x, rotation.y);
@@ -111,8 +129,12 @@ final class RVP_FireSupportDeliverySupport {
                 context.sourceVehicle(), null, null, context.owner(), spawn, aim, spawnContextMotion,
                 null, context.designatedTarget(), context.inheritVehicleVelocity(), false, null, chunkPolicy));
         return spawnResult.spawned()
-                ? result(RVP_FireSupportDeliveryResult.Status.DELIVERED, spawnResult.projectile(), spawn)
-                : result(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, spawnResult.projectile(), spawn);
+                ? result(RVP_FireSupportDeliveryResult.Status.DELIVERED, spawnResult.projectile(), spawn,
+                "RVP 弹体已加入世界")
+                : result(RVP_FireSupportDeliveryResult.Status.SPAWN_FAILED, spawnResult.projectile(), spawn,
+                "RVP 统一实体生成器拒绝加入世界；spawnStatus=" + spawnResult.status()
+                        + ", projectile=" + (spawnResult.projectile() == null
+                        ? "null" : spawnResult.projectile().getClass().getName()));
     }
 
     /** 在真实弹体成功生成后保留其发射/释放 Chunk 引用，避免后续候选回退错误回收。 */
@@ -124,6 +146,23 @@ final class RVP_FireSupportDeliverySupport {
     static RVP_FireSupportDeliveryResult result(RVP_FireSupportDeliveryResult.Status status,
                                                 RVP_BaseBullet projectile, Vec3 spawn) {
         return new RVP_FireSupportDeliveryResult(status, projectile, spawn);
+    }
+
+    /** 创建包含阻塞原因的投送结果；集中保持各投送器的诊断字段格式一致。 */
+    static RVP_FireSupportDeliveryResult result(RVP_FireSupportDeliveryResult.Status status,
+                                                RVP_BaseBullet projectile, Vec3 spawn, String diagnostic) {
+        return new RVP_FireSupportDeliveryResult(status, projectile, spawn, diagnostic);
+    }
+
+    /** 把 Chunk 租约状态转换为可直接用于服务端排障的详细诊断。 */
+    private static String leaseDiagnostic(RVP_FireSupportDeliveryContext context, ChunkPos chunk,
+                                           RVP_FireSupportSpawnChunkLeaseManager.LeasePurpose purpose,
+                                           int preloadTicks,
+                                           RVP_FireSupportSpawnChunkLeaseManager.LeaseStatus status) {
+        return "Chunk 租约阻止投送；leaseStatus=" + status + ", purpose=" + purpose + ", chunk=" + chunk
+                + ", now=" + context.level().getGameTime() + ", scheduledTick=" + context.scheduledTick()
+                + ", preloadTicks=" + preloadTicks + ", maxMissionChunks="
+                + context.maxLoadedChunksPerMission() + ", impact=" + context.impactPoint();
     }
 
     private static boolean fatal(RVP_FireSupportDeliveryResult.Status status) {

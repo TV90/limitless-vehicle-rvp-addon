@@ -68,7 +68,7 @@ public final class RVP_FireSupportProbeCommands {
                     new RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData(
                             ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "none"),
                             new RVP_FireSupportDeliveryTypes.LocalOffset(0.0, -2.0, 0.0),
-                            512.0, 512.0, 256.0, 96.0, 2.5, 80, 0.0));
+                            512.0, 512.0, 256.0, 96.0, 768.0, 2.5, 80, 0.0));
             default -> null;
         };
         if (delivery == null) {

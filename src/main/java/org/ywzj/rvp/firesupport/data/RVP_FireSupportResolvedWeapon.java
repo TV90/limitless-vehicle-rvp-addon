@@ -10,7 +10,9 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 /** 从本体实际武器索引提取出的、可供纯逻辑校验使用的不可变能力描述。 */
 public record RVP_FireSupportResolvedWeapon(
         /** RVP 内部武器行为分类。 */ RVP_EnumWeaponKind kind,
-        /** 主阶段制导类型；首期真实入场只接受 NONE。 */ RVP_EnumGuidanceType guidanceType,
+        /** 主阶段制导类型；用于保留现有主阶段诊断信息。 */ RVP_EnumGuidanceType guidanceType,
+        /** 主阶段或末段制导链路是否包含 GPS。 */ boolean gpsGuided,
+        /** 主阶段或末段制导链路是否包含空对空 AIR 制导。 */ boolean airGuided,
         /** 是否使用发动机推力模型。 */ boolean propulsion,
         /** 是否在弹道积分后强制保持速度大小。 */ boolean constantSpeed,
         /** 是否依赖玩家持续操作的 HITL。 */ boolean humanInTheLoop,
@@ -21,6 +23,21 @@ public record RVP_FireSupportResolvedWeapon(
         /** 子载荷是否允许继续执行自己的子母弹配置。 */ boolean nestedSubmunitionEnabled,
         /** 主爆炸伤害；未启用爆炸时为 0。 */ float explosionDamage,
         /** 主爆炸半径，单位格；未启用爆炸时为 0。 */ float explosionRadius) {
+
+    /**
+     * 保留旧版测试夹具和插件内调用方的构造形式；链路能力默认按主阶段类型推导。
+     * 末段制导能力由完整 record 构造形式提供。
+     */
+    public RVP_FireSupportResolvedWeapon(RVP_EnumWeaponKind kind, RVP_EnumGuidanceType guidanceType,
+                                          boolean propulsion, boolean constantSpeed, boolean humanInTheLoop,
+                                          boolean operatorGuided, boolean hitlClosTvGuided, int lifeTicks,
+                                          int directSubmunitionCount, boolean nestedSubmunitionEnabled,
+                                          float explosionDamage, float explosionRadius) {
+        this(kind, guidanceType, guidanceType == RVP_EnumGuidanceType.GPS,
+                guidanceType == RVP_EnumGuidanceType.AIR, propulsion, constantSpeed,
+                humanInTheLoop, operatorGuided, hitlClosTvGuided, lifeTicks,
+                directSubmunitionCount, nestedSubmunitionEnabled, explosionDamage, explosionRadius);
+    }
 
     /** 从本项目 RVP 武器数据提取能力，不保留可变数据对象引用。 */
     public static RVP_FireSupportResolvedWeapon from(RVP_WeaponData data) {
@@ -37,8 +54,11 @@ public record RVP_FireSupportResolvedWeapon(
         }
         RVP_Explosion explosion = data.getExplosionData();
         boolean explodes = explosion != null && explosion.explode;
+        // 调用本体制导能力解析：同时读取主阶段和 terminal_guidance，供炮火投送准入使用。
         return new RVP_FireSupportResolvedWeapon(data.getWeaponKind(), data.getGuidanceData().getGuidanceType(),
-                data.usesPropulsion(), data.getProjectileData().isConstantSpeed(), data.hasHumanInTheLoop(),
+                data.usesGuidanceType(RVP_EnumGuidanceType.GPS),
+                data.usesGuidanceType(RVP_EnumGuidanceType.AIR), data.usesPropulsion(),
+                data.getProjectileData().isConstantSpeed(), data.hasHumanInTheLoop(),
                 data.isOperatorGuided(), data.isHitlClosTvGuided(), data.getLife(),
                 (int) Math.min(directChildren, Integer.MAX_VALUE), nested,
                 explodes ? explosion.damage : 0.0F, explodes ? explosion.radius : 0.0F);

@@ -27,7 +27,7 @@ public record RVP_FireSupportDeliveryContext(
         /** 空中支援任务当前绑定的真实飞机；普通投送为 null。 */ @Nullable AbstractVehicle sourceVehicle,
         /** 空中支援任务当前挂架的世界坐标；普通投送为 null。 */ @Nullable Vec3 sourcePosition,
         /** 空中支援任务当前飞机的插件权威世界速度；普通投送为 null。 */ @Nullable Vec3 sourceMotion,
-        /** 空中导弹使用的地面指定目标；非导弹或普通投送为 null。 */ @Nullable Vec3 designatedTarget,
+        /** 空/地射 GPS 实体弹使用的本发地表指定目标；非 GPS 投送或垂直投送为 null。 */ @Nullable Vec3 designatedTarget,
         /** 是否把飞机当前速度叠加到投射物初速度。 */ boolean inheritVehicleVelocity) {
 
     /** 保留普通投送调用方的便捷构造形式。 */

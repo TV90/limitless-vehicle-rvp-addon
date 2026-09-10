@@ -35,6 +35,51 @@ class RVP_FireSupportBallisticSolverTest {
     }
 
     @Test
+    void groundSolverUsesOptionalEntrySpeedOverride() {
+        RVP_WeaponData rocket = weapon(1.0, -0.045, 0.0, 8.0);
+        Vec3 launch = new Vec3(-256.0, 70.0, -64.0);
+        Vec3 target = new Vec3(0.0, 70.0, -64.0);
+        RVP_FireSupportBallisticSolver.GroundSolution solution =
+                RVP_FireSupportBallisticSolver.solveGround(rocket, RVP_EnumWeaponKind.ROCKET,
+                        launch, target, 512.0, 6.0);
+
+        assertNotNull(solution);
+        assertTrue(Math.abs(solution.initializedMotion().length() - 6.0) < 1.0E-6);
+
+        RVP_FireSupportBallisticSolver.GroundSolveDiagnostic diagnostic =
+                RVP_FireSupportBallisticSolver.diagnoseGround(rocket, RVP_EnumWeaponKind.ROCKET,
+                        launch, target, 512.0, 6.0);
+        assertEquals(RVP_FireSupportBallisticSolver.GroundFailureReason.NONE, diagnostic.failureReason());
+        assertEquals(6.0, diagnostic.effectiveSpeedMetersPerTick(), 1.0E-6);
+        assertTrue(diagnostic.evaluatedAngles() > 0);
+    }
+
+    @Test
+    void gpsGroundFallbackMotionIsStrictlyVerticalAndUsesConfiguredSpeed() {
+        RVP_WeaponData rocket = weapon(6.0, -0.045, 0.0, 6.0);
+
+        Vec3 override = RVP_GroundLaunchedProjectileDelivery.resolveVerticalFallbackMotion(
+                rocket, RVP_EnumWeaponKind.ROCKET, 4.5);
+        Vec3 resolved = RVP_GroundLaunchedProjectileDelivery.resolveVerticalFallbackMotion(
+                rocket, RVP_EnumWeaponKind.ROCKET, 0.0);
+
+        assertEquals(0.0, override.x(), 1.0E-9);
+        assertEquals(4.5, override.y(), 1.0E-9);
+        assertEquals(0.0, override.z(), 1.0E-9);
+        assertEquals(rocket.resolveMuzzleSpeed(RVP_EnumWeaponKind.ROCKET), resolved.y(), 1.0E-9);
+    }
+
+    @Test
+    void groundSolverDiagnosticExplainsInvalidInputWithoutChangingNullResult() {
+        RVP_FireSupportBallisticSolver.GroundSolveDiagnostic diagnostic =
+                RVP_FireSupportBallisticSolver.diagnoseGround(null, RVP_EnumWeaponKind.ROCKET,
+                        Vec3.ZERO, Vec3.ZERO, 512.0, 0.0);
+        assertNull(diagnostic.solution());
+        assertEquals(RVP_FireSupportBallisticSolver.GroundFailureReason.INVALID_INPUT,
+                diagnostic.failureReason());
+    }
+
+    @Test
     void groundSolverUsesSurfaceReferenceInsteadOfGroundProximityFuseHeight() {
         RVP_WeaponData rocket = weapon(6.0, -0.045, 0.0, 6.0);
         Vec3 launch = new Vec3(-768.0, 70.0, -64.0);

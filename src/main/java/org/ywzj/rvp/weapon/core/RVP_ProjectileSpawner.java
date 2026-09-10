@@ -145,9 +145,8 @@ public final class RVP_ProjectileSpawner {
         applyLockTarget(projectile, context);
         if (context.designatedTarget() != null
                 && (context.weaponData().usesGuidanceType(RVP_EnumGuidanceType.GPS)
-                || projectile.getTargetPos() == null)
-                && context.weaponKind() == RVP_EnumWeaponKind.MISSILE) {
-            // GPS 坐标在旧入口中具有高于实体锁定的优先级；保留原有载具开火语义。
+                || projectile.getTargetPos() == null)) {
+            // GPS 坐标在旧入口中具有高于实体锁定的优先级；炮火任务也必须覆盖无载具实体弹体。
             projectile.setTargetPos(context.designatedTarget());
         }
         if (context.inheritVehicleVelocity() && context.sourceVehicle() != null) {

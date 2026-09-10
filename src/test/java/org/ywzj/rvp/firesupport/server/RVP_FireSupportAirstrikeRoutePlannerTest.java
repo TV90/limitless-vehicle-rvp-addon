@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -92,6 +93,13 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
                 RVP_FireSupportAirstrikeController.departureEndTick(100L, 25.0D, 2.5D));
         assertEquals(133L,
                 RVP_FireSupportAirstrikeController.departureEndTick(123L, 25.0D, 2.5D));
+    }
+
+    @Test
+    void exitRetryPoolRemainsLockedUntilEveryReferencePointWasAttempted() {
+        assertFalse(RVP_FireSupportAirstrikeController.allReferencesAttempted(new boolean[] {false}));
+        assertFalse(RVP_FireSupportAirstrikeController.allReferencesAttempted(new boolean[] {true, false}));
+        assertTrue(RVP_FireSupportAirstrikeController.allReferencesAttempted(new boolean[] {true, true}));
     }
 
     @Test
