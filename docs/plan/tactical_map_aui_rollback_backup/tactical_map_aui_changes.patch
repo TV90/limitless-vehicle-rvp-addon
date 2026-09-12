@@ -1,0 +1,2524 @@
+diff --git a/src/main/java/org/ywzj/rvp/client/screen/RVP_GPSPanelScreen.java b/src/main/java/org/ywzj/rvp/client/screen/RVP_GPSPanelScreen.java
+deleted file mode 100644
+index dc24377..0000000
+--- a/src/main/java/org/ywzj/rvp/client/screen/RVP_GPSPanelScreen.java
++++ /dev/null
+@@ -1,149 +0,0 @@
+-package org.ywzj.rvp.client.screen;
+-
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.components.Button;
+-import net.minecraft.client.gui.components.EditBox;
+-import net.minecraft.client.gui.screens.Screen;
+-import net.minecraft.network.chat.Component;
+-import net.minecraft.resources.ResourceLocation;
+-import net.minecraft.world.phys.Vec3;
+-import org.ywzj.rvp.client.state.RVP_ClientGPSState;
+-import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
+-
+-public class RVP_GPSPanelScreen extends Screen {
+-
+-    private EditBox xBox;
+-    private EditBox yBox;
+-    private EditBox zBox;
+-    private Button modeButton;
+-
+-    public RVP_GPSPanelScreen() {
+-        super(Component.translatable("gui.ywzj_rvp.gps.title"));
+-    }
+-
+-    @Override
+-    protected void init() {
+-        int boxW = 120;
+-        int boxH = 20;
+-        int centerX = this.width / 2;
+-        int centerY = this.height / 2;
+-
+-        xBox = new EditBox(this.font, centerX - boxW / 2, centerY - 40, boxW, boxH, Component.translatable("gui.ywzj_rvp.gps.coord.x"));
+-        yBox = new EditBox(this.font, centerX - boxW / 2, centerY - 15, boxW, boxH, Component.translatable("gui.ywzj_rvp.gps.coord.y"));
+-        zBox = new EditBox(this.font, centerX - boxW / 2, centerY + 10, boxW, boxH, Component.translatable("gui.ywzj_rvp.gps.coord.z"));
+-
+-        xBox.setMaxLength(32);
+-        yBox.setMaxLength(32);
+-        zBox.setMaxLength(32);
+-
+-        if (RVP_ClientGPSState.isActive()) {
+-            Vec3 pos = RVP_ClientGPSState.getPos();
+-            xBox.setValue(String.format("%.2f", pos.x));
+-            yBox.setValue(String.format("%.2f", pos.y));
+-            zBox.setValue(String.format("%.2f", pos.z));
+-        } else if (Minecraft.getInstance().player != null) {
+-            Vec3 pos = Minecraft.getInstance().player.position();
+-            xBox.setValue(String.format("%.2f", pos.x));
+-            yBox.setValue(String.format("%.2f", pos.y));
+-            zBox.setValue(String.format("%.2f", pos.z));
+-        }
+-
+-        addRenderableWidget(xBox);
+-        addRenderableWidget(yBox);
+-        addRenderableWidget(zBox);
+-
+-        int btnW = 54;
+-        int btnGap = 4;
+-        int btnY = centerY + 40;
+-        int rowW = btnW * 4 + btnGap * 3;
+-        int leftX = centerX - rowW / 2;
+-        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.bind"), b -> bind())
+-                .bounds(leftX, btnY, btnW, 20)
+-                .build());
+-
+-        modeButton = addRenderableWidget(Button.builder(modeLabel(), b -> {
+-                    Minecraft mc = Minecraft.getInstance();
+-                    if (mc.player != null) {
+-                        RVP_ClientGPSUtil.toggleGpsMode(mc.player);
+-                        b.setMessage(modeLabel());
+-                    }
+-                })
+-                .bounds(leftX + btnW + btnGap, btnY, btnW, 20)
+-                .build());
+-
+-        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.clear"), b -> clear())
+-                .bounds(leftX + (btnW + btnGap) * 2, btnY, btnW, 20)
+-                .build());
+-
+-        addRenderableWidget(Button.builder(Component.translatable("gui.ywzj_rvp.gps.cancel"), b -> onClose())
+-                .bounds(leftX + (btnW + btnGap) * 3, btnY, btnW, 20)
+-                .build());
+-    }
+-
+-    private Component modeLabel() {
+-        return RVP_ClientGPSState.isMultiMode() ? Component.literal("MULTI") : Component.literal("SINGLE");
+-    }
+-
+-    private void clear() {
+-        Minecraft mc = Minecraft.getInstance();
+-        if (mc.player == null) {
+-            return;
+-        }
+-        RVP_ClientGPSUtil.clearGpsTarget(mc.player);
+-        if (modeButton != null) {
+-            modeButton.setMessage(modeLabel());
+-        }
+-        if (mc.player != null) {
+-            Vec3 pos = mc.player.position();
+-            xBox.setValue(String.format("%.2f", pos.x));
+-            yBox.setValue(String.format("%.2f", pos.y));
+-            zBox.setValue(String.format("%.2f", pos.z));
+-        }
+-    }
+-
+-    private void bind() {
+-        Minecraft mc = Minecraft.getInstance();
+-        if (mc.player == null) {
+-            onClose();
+-            return;
+-        }
+-        try {
+-            double x = Double.parseDouble(xBox.getValue().trim());
+-            double y = Double.parseDouble(yBox.getValue().trim());
+-            double z = Double.parseDouble(zBox.getValue().trim());
+-            ResourceLocation dim = mc.player.level().dimension().location();
+-            Vec3 pos = new Vec3(x, y, z);
+-            RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, pos);
+-            if (modeButton != null) {
+-                modeButton.setMessage(modeLabel());
+-            }
+-            onClose();
+-        } catch (NumberFormatException e) {
+-            if (mc.player != null) {
+-                mc.player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.invalid_coords"), true);
+-            }
+-        }
+-    }
+-
+-    @Override
+-    public void onClose() {
+-        Minecraft.getInstance().setScreen(null);
+-    }
+-
+-    @Override
+-    public boolean isPauseScreen() {
+-        return false;
+-    }
+-
+-    @Override
+-    public void render(net.minecraft.client.gui.GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+-        this.renderBackground(guiGraphics);
+-        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 70, 0xFFFFFF);
+-        guiGraphics.drawCenteredString(this.font, Component.translatable("gui.ywzj_rvp.gps.hint"), this.width / 2, this.height / 2 - 58, 0xA0A0A0);
+-        String stateLine = "MODE " + RVP_ClientGPSUtil.currentModeTag()
+-                + "  |  " + RVP_ClientGPSUtil.currentPointTag()
+-                + "  |  CNT " + RVP_ClientGPSState.getPointCount();
+-        guiGraphics.drawCenteredString(this.font, stateLine, this.width / 2, this.height / 2 - 46, 0xFFF0DF7A);
+-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+-    }
+-}
+diff --git a/src/main/java/org/ywzj/rvp/client/screen/RVP_TacticalMapScreen.java b/src/main/java/org/ywzj/rvp/client/screen/RVP_TacticalMapScreen.java
+index 39a7ff3..4533e10 100644
+--- a/src/main/java/org/ywzj/rvp/client/screen/RVP_TacticalMapScreen.java
++++ b/src/main/java/org/ywzj/rvp/client/screen/RVP_TacticalMapScreen.java
+@@ -6,16 +6,16 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+ import com.mojang.blaze3d.vertex.Tesselator;
+ import com.mojang.blaze3d.vertex.VertexFormat;
+ import com.mojang.math.Axis;
++import com.sighs.apricityui.event.Event;
++import com.sighs.apricityui.event.MouseEvent;
++import com.sighs.apricityui.init.Document;
++import com.sighs.apricityui.init.Element;
++import com.sighs.apricityui.screen.ApricityScreen;
+ import org.jetbrains.annotations.Nullable;
+ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.player.LocalPlayer;
+ import net.minecraft.client.gui.GuiGraphics;
+-import net.minecraft.client.gui.components.AbstractWidget;
+-import net.minecraft.client.gui.components.EditBox;
+-import net.minecraft.client.gui.narration.NarrationElementOutput;
+ import net.minecraft.client.renderer.GameRenderer;
+-import net.minecraft.client.gui.screens.Screen;
+-import net.minecraft.client.sounds.SoundManager;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.util.Mth;
+@@ -92,7 +92,10 @@ import java.util.Set;
+ import java.util.Optional;
+ import java.lang.reflect.Method;
+ 
+-public class RVP_TacticalMapScreen extends Screen {
++public class RVP_TacticalMapScreen extends ApricityScreen {
++
++    /** AUI 模板路径（相对 assets/apricityui/apricity/）。mode=gui 视口：文档像素 = GUI 缩放像素。 */
++    private static final String TEMPLATE = "screens/rvp_tactical_map.html";
+ 
+     public enum MapMode {
+         TACTICAL,
+@@ -125,13 +128,6 @@ public class RVP_TacticalMapScreen extends Screen {
+     private static final int QUICK_FIRE_LOCK_STABLE_TICKS = 2;
+     private static final int QUICK_FIRE_RETRY_INTERVAL_TICKS = 2;
+     private static final int IMPACT_CROSS_LIFE_TICKS = 20;
+-    private static final int GPS_SECTION_GAP = 6;
+-    private static final int GPS_SUMMARY_HEIGHT = 46;
+-    private static final int GPS_CONTROLS_HEIGHT = 112;
+-    private static final int GPS_TARGET_HEIGHT = 56;
+-    private static final int GPS_FIELD_HEIGHT = 16;
+-    private static final int GPS_FIELD_LABEL_GAP = 3;
+-    private static final int GPS_FIELD_INNER_GAP = 8;
+ 
+     private enum SidebarMode {
+         NONE,
+@@ -139,6 +135,14 @@ public class RVP_TacticalMapScreen extends Screen {
+         RADAR
+     }
+ 
++    /** 浮层菜单类型：地图右键 / 实体右键 / 武器下拉，共用同一个 DOM 容器。 */
++    private enum PopupKind {
++        NONE,
++        MAP,
++        ENTITY,
++        WEAPON
++    }
++
+     private enum MarkerKind {
+         PLAYER,
+         OWN_VEHICLE,
+@@ -219,21 +223,58 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+     }
+ 
+-    private EditBox xBox;
+-    private EditBox yBox;
+-    private EditBox zBox;
+-    private TerminalButton bindButton;
+-    private TerminalButton clearButton;
+-    private TerminalButton centerButton;
+-    private TerminalButton followButton;
+-    private TerminalButton trajectoryModeButton;
+-    private TerminalButton weaponDropdownButton;
+-    private TerminalButton radarPanelButton;
+-    private TerminalButton gpsPanelButton;
+-    private TerminalButton gpsModeButton;
+-    private TerminalButton gpsClearAllButton;
+-    private TerminalButton gpsQuickMarkButton;
+-    private TerminalButton radarHideFriendlyButton;
++    // ===== AUI DOM 句柄（init 时从模板获取；resize 会重建文档，需重新抓取） =====
++    private Document dom;
++    private Element uiHole;
++    private Element uiToolbar;
++    private Element uiDrawer;
++    private Element btnWeapon;
++    private Element btnTraj;
++    private Element btnCenter;
++    private Element btnFollow;
++    private Element btnRadarPanel;
++    private Element btnGpsPanel;
++    private Element btnGpsMode;
++    private Element btnGpsClearAll;
++    private Element btnQuickMark;
++    private Element btnHideFriendly;
++    private Element gpsXInput;
++    private Element gpsYInput;
++    private Element gpsZInput;
++    private Element dwTitle;
++    private Element dwEn;
++    private Element dwUpperR;
++    private Element dwUpperG;
++    private Element dwLowerR;
++    private Element dwLowerG;
++    private Element lkName;
++    private Element lkTag;
++    private Element lkBrg;
++    private Element lkRng;
++    private Element lkAlt;
++    private Element lkSpd;
++    private Element lkNctr;
++    private Element lkIff;
++    private Element lkSelLine;
++    private Element lkGpsLine;
++    private Element gModeTag;
++    private Element gSummary;
++    private Element contactList;
++    private Element wpList;
++    private Element uiPopup;
++    private Element popHead;
++    private Element popSub;
++    private Element popItems;
++
++    /** 浮层菜单当前类型与归属数据（地图坐标目标 / 实体标记）。 */
++    private PopupKind popupKind = PopupKind.NONE;
++    private Vec3 mapContextTarget;
++    private MarkerHit entityContextTarget;
++
++    // 交互容器屏幕矩形缓存（GUI 像素），每帧由 DOM rect 换算刷新
++    private final double[] toolbarRect = new double[4];
++    private final double[] drawerRect = new double[4];
++    private final double[] popupRect = new double[4];
+     private boolean gpsQuickMarkMode;
+     private boolean hideFriendlyRadarRows;
+ 
+@@ -259,15 +300,7 @@ public class RVP_TacticalMapScreen extends Screen {
+     private static final double RIGHT_CLICK_DRAG_THRESHOLD_PIXELS = 5.0;
+     private boolean sidebarVisible;
+     private SidebarMode sidebarMode = SidebarMode.NONE;
+-    private boolean mapContextMenuVisible;
+-    private int mapContextMenuX;
+-    private int mapContextMenuY;
+-    private Vec3 mapContextTarget;
+     private final List<MarkerHit> markerHits = new ArrayList<>();
+-    private boolean entityContextMenuVisible;
+-    private int entityContextMenuX;
+-    private int entityContextMenuY;
+-    private MarkerHit entityContextTarget;
+     private Integer selectedMarkerId;
+     private MarkerHit selectedMarkerHit;
+     private final List<RadarUnit> tacticalRadarUnits = new ArrayList<>();
+@@ -276,7 +309,6 @@ public class RVP_TacticalMapScreen extends Screen {
+     private final Map<Integer, Vec3> trackedAmmoPositions = new HashMap<>();
+     private final Set<Integer> visibleTrackedAmmoIds = new HashSet<>();
+     private final List<ImpactCross> recentImpactCrosses = new ArrayList<>();
+-    private int radarRowScroll;
+     private Integer selectedRadarEntityId;
+     private long lastMapLeftClickAt;
+     private int lastMapLeftClickEntityId = Integer.MIN_VALUE;
+@@ -286,7 +318,6 @@ public class RVP_TacticalMapScreen extends Screen {
+     private int lastRadarRowLeftClickEntityId = Integer.MIN_VALUE;
+     private long lastRadarRowRightClickAt;
+     private int lastRadarRowRightClickEntityId = Integer.MIN_VALUE;
+-    private boolean weaponDropdownOpen;
+     private int assistedRadarLockEntityId = Integer.MIN_VALUE;
+     private int assistedRadarLockTicks;
+     private int pendingQuickFireEntityId = Integer.MIN_VALUE;
+@@ -298,6 +329,8 @@ public class RVP_TacticalMapScreen extends Screen {
+     private boolean pendingQuickFireEverSeekerReady;
+     private boolean pendingQuickFireEverSeekerReadyChecked;
+     private final MapMode mapMode;
++    /** 原生地图 HUD 标题（AUI 构造器不传 Component，标题自行保存）。 */
++    private final Component hudTitle;
+ 
+     private static ResourceLocation mapIcon(String fileName) {
+         return ResourceLocation.fromNamespaceAndPath("ywzj_rvp", ICON_TEXTURE_ROOT + fileName);
+@@ -308,10 +341,14 @@ public class RVP_TacticalMapScreen extends Screen {
+     }
+ 
+     public RVP_TacticalMapScreen(MapMode mapMode) {
+-        super(mapMode == MapMode.ARTILLERY
+-                ? Component.literal("Artillery Map")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.title"));
++        super(TEMPLATE);
+         this.mapMode = mapMode == null ? MapMode.TACTICAL : mapMode;
++        this.hudTitle = this.mapMode == MapMode.ARTILLERY
++                ? Component.literal("Artillery Map")
++                : Component.translatable("gui.ywzj_rvp.tactical_map.title");
++        // 地图打开期间游戏继续运行（原版行为保持），且不绘制原版暗色背景以免遮挡地图
++        setPauseGame(false);
++        setShowDefaultBackground(false);
+     }
+ 
+     public boolean allowsVehicleInputPassthrough() {
+@@ -324,345 +361,545 @@ public class RVP_TacticalMapScreen extends Screen {
+ 
+     @Override
+     protected void init() {
++        super.init();
+         syncViewToPlayer(true);
++        // 炮兵地图无侧栏交互，强制收起抽屉
+         if (isArtilleryMode()) {
+             sidebarVisible = false;
+             sidebarMode = SidebarMode.NONE;
+         }
+-        int boxWidth = 68;
+-        int boxHeight = 16;
+-        int compactToolbarHeight = 14;
+-
+-        xBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.x"));
+-        yBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.y"));
+-        zBox = new TerminalTextField(this.font, 0, 0, boxWidth, boxHeight, Component.translatable("gui.ywzj_rvp.gps.coord.z"));
+-        xBox.setMaxLength(32);
+-        yBox.setMaxLength(32);
+-        zBox.setMaxLength(32);
+-        syncGpsFields();
+-
+-        addRenderableWidget(xBox);
+-        addRenderableWidget(yBox);
+-        addRenderableWidget(zBox);
+-
+-        int buttonWidth = 72;
+-        bindButton = addRenderableWidget(new TerminalButton(
+-                0, 0, buttonWidth, 16,
+-                Component.translatable("gui.ywzj_rvp.gps.bind"),
+-                this::bindGps,
+-                () -> false,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        clearButton = addRenderableWidget(new TerminalButton(
+-                0, 0, buttonWidth, 16,
+-                Component.translatable("gui.ywzj_rvp.gps.clear"),
+-                this::clearGps,
+-                () -> false,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        centerButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 44, compactToolbarHeight,
+-                Component.translatable("gui.ywzj_rvp.tactical_map.btn.center"),
+-                () -> syncViewToPlayer(true),
+-                () -> false,
+-                () -> 0xFFBAC7D5
+-        ));
+-        followButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 56, compactToolbarHeight,
+-                followLabel(),
+-                () -> {
+-                    followPlayer = !followPlayer;
+-                    if (followPlayer) {
+-                        syncViewToPlayer(true);
+-                    }
+-                },
+-                () -> followPlayer,
+-                () -> OWN_ICON_COLOR
+-        ));
+-        trajectoryModeButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 58, compactToolbarHeight,
+-                artilleryTrajectoryLabel(),
+-                RVP_ArtilleryFireControlState::toggleTrajectoryMode,
+-                () -> RVP_ArtilleryFireControlState.getTrajectoryMode()
+-                        == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        weaponDropdownButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 92, compactToolbarHeight,
+-                weaponDropdownLabel(),
+-                () -> weaponDropdownOpen = !weaponDropdownOpen,
+-                () -> weaponDropdownOpen,
+-                () -> 0xFFBAC7D5
+-        ));
+-        radarPanelButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 54, compactToolbarHeight,
+-                radarPanelLabel(),
+-                () -> toggleSidebar(SidebarMode.RADAR),
+-                () -> sidebarVisible && sidebarMode == SidebarMode.RADAR,
+-                () -> 0xFF7BE0A5
+-        ));
+-        gpsPanelButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 50, compactToolbarHeight,
+-                gpsPanelLabel(),
+-                () -> toggleSidebar(SidebarMode.GPS),
+-                () -> sidebarVisible && sidebarMode == SidebarMode.GPS,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        gpsModeButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 50, compactToolbarHeight,
+-                gpsModeLabel(),
+-                () -> {
+-                    Minecraft mc = Minecraft.getInstance();
+-                    if (mc.player != null) {
+-                        RVP_ClientGPSUtil.toggleGpsMode(mc.player);
+-                    }
+-                },
+-                () -> RVP_ClientGPSState.isMultiMode(),
+-                () -> GPS_ICON_COLOR
+-        ));
+-        gpsClearAllButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 44, compactToolbarHeight,
+-                Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_clear"),
+-                () -> {
+-                    Minecraft mc = Minecraft.getInstance();
+-                    if (mc.player != null) {
+-                        RVP_ClientGPSUtil.clearGpsTarget(mc.player);
+-                    }
+-                },
+-                () -> false,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        gpsQuickMarkButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 64, compactToolbarHeight,
+-                gpsQuickMarkLabel(),
+-                () -> gpsQuickMarkMode = !gpsQuickMarkMode,
+-                () -> gpsQuickMarkMode,
+-                () -> GPS_ICON_COLOR
+-        ));
+-        radarHideFriendlyButton = addRenderableWidget(new TerminalButton(
+-                0, 0, 72, compactToolbarHeight,
+-                radarHideFriendlyLabel(),
+-                () -> hideFriendlyRadarRows = !hideFriendlyRadarRows,
+-                () -> hideFriendlyRadarRows,
+-                () -> 0xFF7BE0A5
+-        ));
+-
+-        refreshLayout();
+-        refreshSidebarWidgets();
+-    }
+-
+-    private Component followLabel() {
+-        return followPlayer
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.follow_on")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.follow_off");
+-    }
+-
+-    private Component artilleryTrajectoryLabel() {
+-        return Component.literal(RVP_ArtilleryFireControlState.getTrajectoryMode()
+-                == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH ? "高弹道" : "低弹道");
+-    }
++        dom = getLinkedDocument();
++        if (dom == null || dom.body == null) {
++            return;
++        }
++        uiHole = $id("tm-hole");
++        uiToolbar = $id("tm-toolbar");
++        uiDrawer = $id("tm-drawer");
++        btnWeapon = $id("btn-weapon");
++        btnTraj = $id("btn-traj");
++        btnCenter = $id("btn-center");
++        btnFollow = $id("btn-follow");
++        btnRadarPanel = $id("btn-radar");
++        btnGpsPanel = $id("btn-gps");
++        btnGpsMode = $id("btn-gpsmode");
++        btnGpsClearAll = $id("btn-gpsclear");
++        btnQuickMark = $id("btn-qmark");
++        btnHideFriendly = $id("btn-hidefrd");
++        gpsXInput = $id("gps-x");
++        gpsYInput = $id("gps-y");
++        gpsZInput = $id("gps-z");
++        dwTitle = $id("dw-title");
++        dwEn = $id("dw-en");
++        dwUpperR = $id("dw-upper-r");
++        dwUpperG = $id("dw-upper-g");
++        dwLowerR = $id("dw-lower-r");
++        dwLowerG = $id("dw-lower-g");
++        lkName = $id("lk-name");
++        lkTag = $id("lk-tag");
++        lkBrg = $id("lk-brg");
++        lkRng = $id("lk-rng");
++        lkAlt = $id("lk-alt");
++        lkSpd = $id("lk-spd");
++        lkNctr = $id("lk-nctr");
++        lkIff = $id("lk-iff");
++        lkSelLine = $id("lk-sel-line");
++        lkGpsLine = $id("lk-gps-line");
++        gModeTag = $id("g-mode-tag");
++        gSummary = $id("g-summary");
++        contactList = $id("contact-list");
++        wpList = $id("wp-list");
++        uiPopup = $id("tm-pop");
++        popHead = $id("pop-head");
++        popSub = $id("pop-sub");
++        popItems = $id("pop-items");
++        Element gpsBindChip = $id("gps-bind");
++        Element gpsClearChip = $id("gps-clear");
++
++        // ===== 工具条按钮事件（回调与旧版 TerminalButton 一一对应） =====
++        bindClick(btnCenter, () -> syncViewToPlayer(true));
++        bindClick(btnFollow, () -> {
++            followPlayer = !followPlayer;
++            if (followPlayer) {
++                syncViewToPlayer(true);
++            }
++        });
++        bindClick(btnTraj, RVP_ArtilleryFireControlState::toggleTrajectoryMode);
++        bindClick(btnWeapon, this::openWeaponPopup);
++        bindClick(btnRadarPanel, () -> toggleSidebar(SidebarMode.RADAR));
++        bindClick(btnGpsPanel, () -> toggleSidebar(SidebarMode.GPS));
++        bindClick(btnGpsMode, () -> {
++            Minecraft mc = Minecraft.getInstance();
++            if (mc.player != null) {
++                RVP_ClientGPSUtil.toggleGpsMode(mc.player);
++            }
++        });
++        bindClick(btnGpsClearAll, () -> {
++            Minecraft mc = Minecraft.getInstance();
++            if (mc.player != null) {
++                RVP_ClientGPSUtil.clearGpsTarget(mc.player);
++            }
++        });
++        bindClick(btnQuickMark, () -> gpsQuickMarkMode = !gpsQuickMarkMode);
++        bindClick(btnHideFriendly, () -> hideFriendlyRadarRows = !hideFriendlyRadarRows);
++        // GPS 抽屉内 装订 / 清空
++        bindClick(gpsBindChip, this::bindGps);
++        bindClick(gpsClearChip, this::clearGps);
++
++        // resize/init 会重建文档：浮层与上下文状态作废，列表缓存一并失效
++        popupKind = PopupKind.NONE;
++        entityContextTarget = null;
++        mapContextTarget = null;
++        closeTransientMenus();
++        contactSignature = "\u0000reset";
++        contactRowEls.clear();
++        contactRowCells.clear();
++        wpSignature = "\u0000reset";
+ 
+-    private Component gpsPanelLabel() {
+-        return sidebarVisible && sidebarMode == SidebarMode.GPS
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_panel_hide")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_panel_show");
++        syncGpsFieldsFromState();
++        applyBodyMode();
++        refreshDomLabels();
+     }
+ 
+-    private Component radarPanelLabel() {
+-        return sidebarVisible && sidebarMode == SidebarMode.RADAR
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.radar_panel_hide")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.radar_panel_show");
++    /** 按 id 获取模板元素（缺失时返回 null，调用方需容忍）。 */
++    @Nullable
++    private Element $id(String id) {
++        return dom == null ? null : dom.getElementById(id);
+     }
+ 
+-    private Component gpsModeLabel() {
+-        return RVP_ClientGPSState.isMultiMode()
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_mode_multi")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_mode_single");
++    /** 给元素挂 click 监听并播放原版按钮音。 */
++    private void bindClick(@Nullable Element element, Runnable action) {
++        if (element == null) {
++            return;
++        }
++        element.addEventListener("click", event -> {
++            Minecraft.getInstance().getSoundManager().play(
++                    net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
++                            net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
++            action.run();
++        });
+     }
+ 
+-    private Component gpsQuickMarkLabel() {
+-        return gpsQuickMarkMode
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_quick_mark_on")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_quick_mark_off");
++    /** 依据当前模式/抽屉状态刷新 body class（CSS 由此驱动布局与显隐）。 */
++    private void applyBodyMode() {
++        if (dom == null || dom.body == null) {
++            return;
++        }
++        String cls;
++        if (isArtilleryMode()) {
++            cls = "tm artillery";
++        } else {
++            cls = "tm tactical" + switch (sidebarMode) {
++                case RADAR -> sidebarVisible ? " dw-radar" : "";
++                case GPS -> sidebarVisible ? " dw-gps" : "";
++                case NONE -> "";
++            };
++        }
++        if (!cls.equals(dom.body.getClassName())) {
++            dom.body.setClassName(cls);
++        }
+     }
+ 
+-    private Component radarHideFriendlyLabel() {
+-        return hideFriendlyRadarRows
+-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.radar_hide_friendly_on")
+-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.radar_hide_friendly_off");
++    /** 刷新工具条胶囊文案与高亮、抽屉标题（每 tick 调用，值变化才写 DOM）。 */
++    private void refreshDomLabels() {
++        setText(btnFollow, Component.translatable(followPlayer
++                ? "gui.ywzj_rvp.tactical_map.follow_on" : "gui.ywzj_rvp.tactical_map.follow_off").getString());
++        setOn(btnFollow, followPlayer);
++        setText(btnTraj, RVP_ArtilleryFireControlState.getTrajectoryMode()
++                == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH ? "高弹道" : "低弹道");
++        setText(btnRadarPanel, Component.translatable(sidebarVisible && sidebarMode == SidebarMode.RADAR
++                ? "gui.ywzj_rvp.tactical_map.btn.radar_panel_hide" : "gui.ywzj_rvp.tactical_map.btn.radar_panel_show").getString());
++        setOn(btnRadarPanel, sidebarVisible && sidebarMode == SidebarMode.RADAR);
++        setText(btnGpsPanel, Component.translatable(sidebarVisible && sidebarMode == SidebarMode.GPS
++                ? "gui.ywzj_rvp.tactical_map.btn.gps_panel_hide" : "gui.ywzj_rvp.tactical_map.btn.gps_panel_show").getString());
++        setOn(btnGpsPanel, sidebarVisible && sidebarMode == SidebarMode.GPS);
++        setText(btnGpsMode, Component.translatable(RVP_ClientGPSState.isMultiMode()
++                ? "gui.ywzj_rvp.tactical_map.btn.gps_mode_multi" : "gui.ywzj_rvp.tactical_map.btn.gps_mode_single").getString());
++        setText(btnQuickMark, Component.translatable(gpsQuickMarkMode
++                ? "gui.ywzj_rvp.tactical_map.btn.gps_quick_mark_on" : "gui.ywzj_rvp.tactical_map.btn.gps_quick_mark_off").getString());
++        setOn(btnQuickMark, gpsQuickMarkMode);
++        setText(btnHideFriendly, Component.translatable(hideFriendlyRadarRows
++                ? "gui.ywzj_rvp.tactical_map.btn.radar_hide_friendly_on" : "gui.ywzj_rvp.tactical_map.btn.radar_hide_friendly_off").getString());
++        setOn(btnHideFriendly, hideFriendlyRadarRows);
++        // 抽屉分区显隐与标题
++        boolean radar = sidebarVisible && sidebarMode == SidebarMode.RADAR;
++        boolean gps = sidebarVisible && sidebarMode == SidebarMode.GPS;
++        showIf(dwUpperR, radar);
++        showIf(dwLowerR, radar);
++        showIf(dwUpperG, gps);
++        showIf(dwLowerG, gps);
++        if (radar) {
++            setText(dwTitle, Component.translatable("gui.ywzj_rvp.tactical_map.radar_title").getString());
++            setText(dwEn, "RADAR · LIVE");
++        } else if (gps) {
++            setText(dwTitle, Component.translatable("gui.ywzj_rvp.gps.title").getString());
++            setText(dwEn, "GPS WAYPOINTS");
++        }
++    }
++
++    /** 值变化时才写 textContent，避免每帧触发 DOM 脏标记。 */
++    private static void setText(@Nullable Element element, String value) {
++        if (element != null && !value.equals(element.getTextContent())) {
++            element.setTextContent(value);
++        }
++    }
++
++    /** 在元素现有 class 基础上增删高亮类 "on"（保留模板静态类，如 tac-only/art-only/warn）。 */
++    private static void setOn(@Nullable Element element, boolean on) {
++        if (element == null) {
++            return;
++        }
++        java.util.LinkedHashSet<String> parts = new java.util.LinkedHashSet<>(List.of(element.getClassName().split("\\s+")));
++        parts.remove("");
++        boolean changed = on ? parts.add("on") : parts.remove("on");
++        if (changed) {
++            element.setClassName(String.join(" ", parts));
++        }
+     }
+ 
+-    private Component weaponDropdownLabel() {
+-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+-        if (weaponUnit == null) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.btn.weapon");
++    /** 显隐切换（display:none 与恢复默认）。 */
++    private static void showIf(@Nullable Element element, boolean visible) {
++        if (element == null) {
++            return;
+         }
+-        Optional<AbstractVehicleWeapon<?>> currentWeapon = weaponUnit.getCurrentWeapon();
+-        if (currentWeapon.isEmpty()) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.btn.weapon");
++        String style = visible ? "" : "display: none;";
++        if (!style.equals(element.getAttribute("style"))) {
++            element.setAttribute("style", style);
+         }
+-        String name = currentWeapon.get().getDisplayName().getString();
+-        return Component.literal(StringUtils.abbreviate(name, 12));
+     }
+ 
+-    private void toggleSidebar(SidebarMode mode) {
+-        if (isArtilleryMode()) {
++    // ===== 抽屉数据同步（上区目标卡 + 下区列表） =====
++
++    /** 雷达行元素缓存：entityId -> 行根元素。 */
++    private final Map<Integer, Element> contactRowEls = new HashMap<>();
++    private final Map<Integer, Element[]> contactRowCells = new HashMap<>();
++    private String contactSignature = "";
++
++    /**
++     * 上区锁定/选中目标卡：优先显示雷达选中行，其次地图选中标记，再次任一已锁行，否则占位。
++     */
++    private void updateLockCard() {
++        RadarContactRow row = null;
++        if (selectedRadarEntityId != null) {
++            row = radarContactRows.stream().filter(r -> r.entityId == selectedRadarEntityId).findFirst().orElse(null);
++        }
++        boolean fromMarker = false;
++        if (row == null && selectedMarkerHit != null && selectedMarkerHit.entity != null) {
++            final MarkerHit hit = selectedMarkerHit;
++            row = radarContactRows.stream().filter(r -> r.entity == hit.entity).findFirst().orElse(null);
++            fromMarker = row == null;
++        }
++        if (row == null) {
++            row = radarContactRows.stream().filter(r -> r.locked).findFirst().orElse(null);
++        }
++        if (row == null && !fromMarker) {
++            setText(lkName, Component.translatable("gui.ywzj_rvp.tactical_map.radar_no_lock").getString());
++            lkName.setInlineStyleProperty("color", "#9fdcf7");
++            setText(lkTag, "");
++            showIf(lkTag, false);
++            for (Element cell : new Element[]{lkBrg, lkRng, lkAlt, lkSpd, lkNctr, lkIff}) {
++                setText(cell, "--");
++            }
++            setCellColor(lkIff, 0xFF3F7D96);
++            setText(lkSelLine, "");
++            setText(lkGpsLine, gpsSummaryText());
+             return;
+         }
+-        if (sidebarVisible && sidebarMode == mode) {
+-            sidebarVisible = false;
+-            sidebarMode = SidebarMode.NONE;
++        String name;
++        double distM;
++        double altM;
++        double spdKph;
++        String nctr;
++        String iffLabel;
++        int iffColor;
++        boolean locked;
++        Vec3 pos;
++        Entity entity;
++        if (row != null) {
++            entity = row.entity;
++            name = entity != null ? radarTargetDisplayName(entity)
++                    : (row.nctrLabel == null || row.nctrLabel.isBlank() ? "?" : row.nctrLabel);
++            distM = row.distanceMeters;
++            altM = row.altitudeMeters;
++            spdKph = row.speedKph;
++            nctr = row.nctrLabel;
++            iffLabel = row.relationLabel;
++            iffColor = row.relationColor;
++            locked = row.locked;
++            pos = row.detectedPos;
+         } else {
+-            sidebarVisible = true;
+-            sidebarMode = mode;
++            MarkerHit hit = selectedMarkerHit;
++            entity = hit.entity;
++            name = hit.displayName.getString();
++            distM = Double.NaN;
++            Minecraft mc = Minecraft.getInstance();
++            AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
++            Vec3 ref = vehicle != null ? vehicle.position()
++                    : (mc.player != null ? mc.player.position() : null);
++            if (ref != null) {
++                distM = Math.sqrt(Math.pow(hit.focusPos.x - ref.x, 2) + Math.pow(hit.focusPos.z - ref.z, 2));
++            }
++            altM = hit.focusPos.y;
++            spdKph = hit.speedKmh;
++            nctr = "";
++            iffLabel = "";
++            iffColor = hit.accentColor;
++            locked = false;
++            pos = hit.focusPos;
++        }
++        setText(lkName, name);
++        lkName.setInlineStyleProperty("color",
++                iffColor == HOSTILE_ICON_COLOR ? "#ff9db0"
++                        : iffColor == FRIEND_ICON_COLOR ? "#9fdcf7" : "#e8f2fa");
++        setText(lkTag, locked
++                ? Component.translatable("gui.ywzj_rvp.tactical_map.tag.locked").getString()
++                : Component.translatable("gui.ywzj_rvp.tactical_map.tag.selected").getString());
++        showIf(lkTag, true);
++        setText(lkBrg, formatBearing(pos));
++        setText(lkRng, Double.isFinite(distM) ? formatRadarDistanceOrAltitude(distM) : "--");
++        setText(lkAlt, formatRadarDistanceOrAltitude(altM));
++        setText(lkSpd, formatRadarSpeedKph(spdKph));
++        setText(lkNctr, nctr == null || nctr.isBlank() ? "--" : StringUtils.abbreviate(nctr, 10));
++        setText(lkIff, iffLabel == null || iffLabel.isBlank() ? "--" : iffLabel);
++        setCellColor(lkIff, iffColor);
++        // 副行：另一处选中来源摘要 + GPS 当前点
++        StringBuilder selLine = new StringBuilder();
++        if (selectedMarkerHit != null && selectedMarkerHit.entity != null
++                && (row == null || row.entity != selectedMarkerHit.entity)) {
++            selLine.append("选中标记 ").append(selectedMarkerHit.displayName.getString());
++        } else if (selectedMarkerHit != null && selectedMarkerHit.gpsAmmo && selectedMarkerHit.targetPos != null) {
++            selLine.append("GPS 目标点 ")
++                    .append(Mth.floor(selectedMarkerHit.targetPos.x)).append(' ')
++                    .append(Mth.floor(selectedMarkerHit.targetPos.y)).append(' ')
++                    .append(Mth.floor(selectedMarkerHit.targetPos.z));
++        }
++        setText(lkSelLine, selLine.toString());
++        setText(lkGpsLine, gpsSummaryText());
++    }
++
++    /** 下区雷达接触列表：签名变化时重建行，否则仅刷新单元格文本与高亮类。 */
++    private void updateContactRows() {
++        if (contactList == null) {
++            return;
++        }
++        StringBuilder sig = new StringBuilder();
++        for (RadarContactRow row : radarContactRows) {
++            sig.append(row.entityId).append(row.locked ? 'L' : '.').append('|');
++        }
++        String sigStr = sig.toString();
++        if (!sigStr.equals(contactSignature)) {
++            contactSignature = sigStr;
++            contactList.setTextContent("");
++            contactRowEls.clear();
++            contactRowCells.clear();
++            for (RadarContactRow row : radarContactRows) {
++                Element el = buildContactRow(row);
++                contactRowEls.put(row.entityId, el);
++                contactList.appendChild(el);
++            }
++        }
++        // 刷新文本与敌我配色、锁定/选中高亮
++        for (RadarContactRow row : radarContactRows) {
++            Element[] cells = contactRowCells.get(row.entityId);
++            if (cells == null) {
++                continue;
++            }
++            setText(cells[0], shortName(row));
++            setText(cells[1], formatRadarDistanceOrAltitude(row.distanceMeters));
++            setText(cells[2], formatRadarDistanceOrAltitude(row.altitudeMeters));
++            setText(cells[3], formatRadarSpeedKph(row.speedKph));
++            setText(cells[4], StringUtils.abbreviate(
++                    row.nctrLabel == null || row.nctrLabel.isBlank() ? "?" : row.nctrLabel, 10));
++            setText(cells[5], row.relationLabel);
++            setCellColor(cells[5], row.relationColor);
++            setText(cells[6], row.locked ? "LCK" : "-");
++            Element root = contactRowEls.get(row.entityId);
++            String cls = "trow" + relationCssClass(row.relationColor)
++                    + (row.locked ? " locked" : "")
++                    + (selectedRadarEntityId != null && selectedRadarEntityId == row.entityId ? " sel" : "");
++            if (!cls.equals(root.getClassName())) {
++                root.setClassName(cls);
++            }
++        }
++    }
++
++    /** 构建单条雷达接触行（7 列 flex 单元格 + 交互监听）。 */
++    private Element buildContactRow(RadarContactRow row) {
++        Element root = dom.createElement("div");
++        root.setClassName("trow");
++        String[] classes = {"c-name", "c-dist", "c-alt", "c-spd", "c-nctr", "c-iff", "c-lock"};
++        Element[] cells = new Element[classes.length];
++        for (int i = 0; i < classes.length; i++) {
++            Element cell = dom.createElement("span");
++            cell.setClassName(classes[i]);
++            cells[i] = cell;
++            root.appendChild(cell);
++        }
++        int entityId = row.entityId;
++        // 单击=同步上方目标卡；双击左键=锁定；双击右键=速射（复用旧 350ms 双击窗口状态）
++        root.addEventListener("mouseup", event -> onContactRowClick(entityId,
++                event instanceof MouseEvent mouse ? mouse.button : 0));
++        contactRowCells.put(entityId, cells);
++        return root;
++    }
++
++    /** 雷达行点击处理：单击选中，双击左键锁定，双击右键速射（语义与旧表格一致）。 */
++    private void onContactRowClick(int entityId, int button) {
++        RadarContactRow row = radarContactRows.stream()
++                .filter(r -> r.entityId == entityId).findFirst().orElse(null);
++        if (row == null) {
++            return;
++        }
++        selectedRadarEntityId = entityId;
++        selectMarker(findMarkerByEntityId(entityId));
++        if (button == 0) {
++            if (isRadarRowDoubleClick(row, true)) {
++                tryLockRadarTarget(row.entity);
++            }
++            return;
++        }
++        if (button == 1 && isRadarRowDoubleClick(row, false)) {
++            tryQuickFireOnTarget(row.entity);
+         }
+-        refreshLayout();
+-        refreshSidebarWidgets();
+     }
+ 
+-    private int panelMargin() {
+-        return Mth.clamp(Math.min(this.width, this.height) / 56, 8, 14);
++    /** GPS 态下区：航点序列（当前待飞航点高亮，点击居中视图）。 */
++    private void updateWaypointsDom() {
++        if (wpList == null) {
++            return;
++        }
++        List<RVP_ClientGPSState.Point> points = RVP_ClientGPSState.getPoints();
++        int armedIndex = RVP_ClientGPSState.getNextIndex();
++        StringBuilder sig = new StringBuilder(points.size()).append(':').append(armedIndex).append(':');
++        for (RVP_ClientGPSState.Point p : points) {
++            sig.append((int) p.pos().x()).append(',').append((int) p.pos().z()).append(';');
++        }
++        String key = sig.toString();
++        if (key.equals(wpSignature)) {
++            return;
++        }
++        wpSignature = key;
++        wpList.setTextContent("");
++        for (int i = 0; i < points.size(); i++) {
++            RVP_ClientGPSState.Point point = points.get(i);
++            Vec3 pos = point.pos();
++            Element rowEl = dom.createElement("div");
++            rowEl.setClassName(i == armedIndex ? "wp-row cur" : "wp-row");
++            Element idSpan = dom.createElement("span");
++            Element idb = dom.createElement("b");
++            idb.setClassName("wp-id");
++            idb.setTextContent("WP" + (i + 1));
++            idSpan.appendChild(idb);
++            idSpan.appendChild(dom.createElement("span")).setTextContent(pos.x() + ", " + pos.z());
++            Element right = dom.createElement("span");
++            String bearing = formatBearing(pos);
++            right.setTextContent(formatWpDistance(pos) + (bearing != null ? " · " + bearing : ""));
++            rowEl.appendChild(idSpan);
++            rowEl.appendChild(right);
++            rowEl.addEventListener("click", event -> centerViewOn(pos));
++            wpList.appendChild(rowEl);
++        }
++        if (points.isEmpty()) {
++            Element empty = dom.createElement("div");
++            empty.setClassName("hint");
++            empty.setTextContent(Component.translatable("gui.ywzj_rvp.tactical_map.gps_none").getString());
++            wpList.appendChild(empty);
++        }
+     }
+ 
+-    private int sidebarWidth() {
+-        return Mth.clamp((int) (this.width * 0.26), 228, 340);
++    /** GPS 摘要行（上区底部 + GPS 态标题态）：坐标/模式/数量。 */
++    private void updateGpsSummary() {
++        setText(gModeTag, RVP_ClientGPSState.isMultiMode() ? "MULTI 多点" : "SINGLE 单点");
++        setText(gSummary, gpsSummaryText());
+     }
+ 
+-    private int toolbarButtonHeight() {
+-        return Mth.clamp(Math.min(this.width, this.height) / 52, 14, 16);
++    private String gpsSummaryText() {
++        if (!RVP_ClientGPSState.isActive()) {
++            return Component.translatable("gui.ywzj_rvp.tactical_map.gps_none").getString();
++        }
++        Vec3 pos = RVP_ClientGPSState.getPos();
++        return "GPS " + String.format(Locale.ROOT, "%.1f, %.1f, %.1f", pos.x, pos.y, pos.z)
++                + " · " + (RVP_ClientGPSState.isMultiMode() ? "多点×" + RVP_ClientGPSState.getPointCount() : "单点")
++                + (gpsQuickMarkMode ? " · 快标开" : "");
+     }
+ 
+-    private void refreshLayout() {
+-        int margin = panelMargin();
+-        this.mapLeft = margin;
+-        this.mapTop = margin;
+-        this.mapBottom = this.height - margin;
++    private String wpSignature = "";
+ 
+-        boolean effectiveSidebarVisible = sidebarVisible && !isArtilleryMode();
+-        if (effectiveSidebarVisible) {
+-            this.sideRight = this.width - margin;
+-            this.sideLeft = Math.max(this.sideRight - sidebarWidth(), this.mapLeft + MAP_MIN_SIZE);
+-            this.mapRight = Math.max(this.sideLeft - 8, this.mapLeft + MAP_MIN_SIZE);
+-        } else {
+-            this.sideRight = this.width - margin;
+-            this.sideLeft = this.sideRight;
+-            this.mapRight = this.width - margin;
++    private String formatWpDistance(Vec3 pos) {
++        Minecraft mc = Minecraft.getInstance();
++        if (mc.player == null) {
++            return "";
+         }
++        double dx = pos.x - mc.player.getX();
++        double dz = pos.z - mc.player.getZ();
++        return formatRadarDistanceOrAltitude(Math.sqrt(dx * dx + dz * dz));
++    }
+ 
+-        int buttonHeight = toolbarButtonHeight();
+-        int buttonGap = 3;
+-        int buttonY = mapTop + 6;
+-        if (isArtilleryMode()) {
+-            int buttonX = mapRight - followButton.getWidth();
+-            followButton.setPosition(buttonX, buttonY);
+-            centerButton.setPosition(buttonX - buttonGap - centerButton.getWidth(), buttonY);
+-            trajectoryModeButton.setPosition(
+-                    centerButton.getX() - buttonGap - trajectoryModeButton.getWidth(), buttonY);
+-        } else {
+-            int buttonX = mapRight - gpsPanelButton.getWidth();
+-            gpsPanelButton.setPosition(buttonX, buttonY);
+-            radarPanelButton.setPosition(buttonX - buttonGap - radarPanelButton.getWidth(), buttonY);
+-            followButton.setPosition(radarPanelButton.getX() - buttonGap - followButton.getWidth(), buttonY);
+-            centerButton.setPosition(followButton.getX() - buttonGap - centerButton.getWidth(), buttonY);
+-            gpsModeButton.setPosition(centerButton.getX() - buttonGap - gpsModeButton.getWidth(), buttonY);
+-            gpsQuickMarkButton.setPosition(gpsModeButton.getX() - buttonGap - gpsQuickMarkButton.getWidth(), buttonY);
+-            gpsClearAllButton.setPosition(gpsQuickMarkButton.getX() - buttonGap - gpsClearAllButton.getWidth(), buttonY);
+-            int weaponButtonY = mapTop + (gpsQuickMarkMode ? 44 : 32);
+-            weaponDropdownButton.setPosition(mapLeft + 8, weaponButtonY);
+-        }
+-
+-        if (xBox == null) {
++    /** 以玩家为原点的罗盘方位角（北=000°）。 */
++    @Nullable
++    private String formatBearing(Vec3 target) {
++        Minecraft mc = Minecraft.getInstance();
++        if (mc.player == null || target == null) {
++            return null;
++        }
++        double dx = target.x - mc.player.getX();
++        double dz = target.z - mc.player.getZ();
++        double deg = Math.toDegrees(Math.atan2(dx, dz));
++        int normalized = ((Math.round((float) deg) % 360) + 360) % 360;
++        return String.format(Locale.ROOT, "%03d\u00B0", normalized);
++    }
++
++    private String shortName(RadarContactRow row) {
++        if (row.entity != null) {
++            String name = radarTargetDisplayName(row.entity);
++            if (name != null && !name.isBlank()) {
++                return StringUtils.abbreviate(name, 12);
++            }
++        }
++        return "?";
++    }
++
++    /** ARGB 颜色转 CSS #rrggbb 并写入单元格颜色。 */
++    private static void setCellColor(@Nullable Element cell, int argb) {
++        if (cell == null) {
+             return;
+         }
++        String css = String.format("#%06X", argb & 0x00FFFFFF);
++        if (!css.equalsIgnoreCase(cell.getInlineStylePropertyValue("color"))) {
++            cell.setInlineStyleProperty("color", css);
++        }
++    }
+ 
+-        int sectionX = sidePanelContentX();
+-        int sectionWidth = sidePanelContentWidth();
+-        int fieldsX = sectionX + 8;
+-        int fieldsWidth = Math.max(96, sectionWidth - 16);
+-        int columnGap = GPS_FIELD_INNER_GAP;
+-        int fieldWidth = Math.max(60, (fieldsWidth - columnGap) / 2);
+-        int rowY = gpsControlsSectionY() + 25 + 8 + GPS_FIELD_LABEL_GAP;
+-        int rightColumnX = fieldsX + fieldWidth + columnGap;
+-        xBox.setPosition(fieldsX, rowY);
+-        xBox.setWidth(fieldWidth);
+-        yBox.setPosition(rightColumnX, rowY);
+-        yBox.setWidth(fieldWidth);
+-        zBox.setPosition(fieldsX, rowY + GPS_FIELD_HEIGHT + 17);
+-        zBox.setWidth(fieldsWidth);
+-
+-        int actionY = zBox.getY() + zBox.getHeight() + 8;
+-        int buttonWidth = Math.max(62, (fieldsWidth - columnGap) / 2);
+-        bindButton.setPosition(fieldsX, actionY);
+-        bindButton.setWidth(buttonWidth);
+-        clearButton.setPosition(fieldsX + buttonWidth + columnGap, actionY);
+-        clearButton.setWidth(buttonWidth);
+-        radarHideFriendlyButton.setPosition(fieldsX, mapTop + 26);
+-        radarHideFriendlyButton.setWidth(Math.min(94, Math.max(72, fieldsWidth)));
+-    }
+-
+-    private void refreshSidebarWidgets() {
++    private static String relationCssClass(int relationColor) {
++        if (relationColor == HOSTILE_ICON_COLOR) {
++            return " hostile";
++        }
++        if (relationColor == FRIEND_ICON_COLOR) {
++            return " friend";
++        }
++        if (relationColor == NEUTRAL_ICON_COLOR || relationColor == UNMANNED_VEHICLE_ICON_COLOR) {
++            return " neutral";
++        }
++        return "";
++    }
++
++    private void toggleSidebar(SidebarMode mode) {
+         if (isArtilleryMode()) {
+-            xBox.visible = false;
+-            yBox.visible = false;
+-            zBox.visible = false;
+-            xBox.setEditable(false);
+-            yBox.setEditable(false);
+-            zBox.setEditable(false);
+-            bindButton.visible = false;
+-            bindButton.active = false;
+-            clearButton.visible = false;
+-            clearButton.active = false;
+-            gpsPanelButton.visible = false;
+-            gpsPanelButton.active = false;
+-            radarPanelButton.visible = false;
+-            radarPanelButton.active = false;
+-            gpsModeButton.visible = false;
+-            gpsModeButton.active = false;
+-            gpsClearAllButton.visible = false;
+-            gpsClearAllButton.active = false;
+-            gpsQuickMarkButton.visible = false;
+-            gpsQuickMarkButton.active = false;
+-            radarHideFriendlyButton.visible = false;
+-            radarHideFriendlyButton.active = false;
+-            weaponDropdownButton.visible = false;
+-            weaponDropdownButton.active = false;
+-            centerButton.visible = true;
+-            centerButton.active = true;
+-            followButton.visible = true;
+-            followButton.active = true;
+-            trajectoryModeButton.visible = true;
+-            trajectoryModeButton.active = true;
+             return;
+         }
+-        trajectoryModeButton.visible = false;
+-        trajectoryModeButton.active = false;
+-        boolean showGpsSidebar = sidebarVisible && sidebarMode == SidebarMode.GPS;
+-        boolean showRadarSidebar = sidebarVisible && sidebarMode == SidebarMode.RADAR;
+-        xBox.visible = showGpsSidebar;
+-        yBox.visible = showGpsSidebar;
+-        zBox.visible = showGpsSidebar;
+-        xBox.setEditable(showGpsSidebar);
+-        yBox.setEditable(showGpsSidebar);
+-        zBox.setEditable(showGpsSidebar);
+-        bindButton.visible = showGpsSidebar;
+-        bindButton.active = showGpsSidebar;
+-        clearButton.visible = showGpsSidebar;
+-        clearButton.active = showGpsSidebar;
+-        gpsPanelButton.setMessage(gpsPanelLabel());
+-        radarPanelButton.setMessage(radarPanelLabel());
+-        followButton.setMessage(followLabel());
+-        weaponDropdownButton.setMessage(weaponDropdownLabel());
+-        gpsModeButton.setMessage(gpsModeLabel());
+-        gpsQuickMarkButton.setMessage(gpsQuickMarkLabel());
+-        radarHideFriendlyButton.setMessage(radarHideFriendlyLabel());
+-        gpsModeButton.visible = true;
+-        gpsModeButton.active = true;
+-        gpsClearAllButton.visible = true;
+-        gpsClearAllButton.active = true;
+-        gpsQuickMarkButton.visible = true;
+-        gpsQuickMarkButton.active = true;
+-        radarHideFriendlyButton.visible = showRadarSidebar;
+-        radarHideFriendlyButton.active = showRadarSidebar;
++        if (sidebarVisible && sidebarMode == mode) {
++            sidebarVisible = false;
++            sidebarMode = SidebarMode.NONE;
++        } else {
++            sidebarVisible = true;
++            sidebarMode = mode;
++            // 切入雷达抽屉时立即收集一次，避免首帧空列表
++            if (mode == SidebarMode.RADAR) {
++                collectRadarContacts();
++            }
++        }
++        // 布局由 CSS（body class）驱动，这里只需同步 class 与标签
++        applyBodyMode();
++        refreshDomLabels();
+     }
+ 
+     private void openSidebar(SidebarMode mode) {
+@@ -671,23 +908,29 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+         sidebarVisible = true;
+         sidebarMode = mode;
+-        refreshLayout();
+-        refreshSidebarWidgets();
++        applyBodyMode();
++        refreshDomLabels();
+     }
+ 
+     private void closeMapContextMenu() {
+-        mapContextMenuVisible = false;
++        if (popupKind == PopupKind.MAP) {
++            closePopup();
++        }
+         mapContextTarget = null;
+     }
+ 
+     private void closeEntityContextMenu() {
+-        entityContextMenuVisible = false;
++        if (popupKind == PopupKind.ENTITY) {
++            closePopup();
++        }
+         entityContextTarget = null;
+     }
+ 
+     private void closeTransientMenus() {
+-        closeMapContextMenu();
+-        closeEntityContextMenu();
++        closePopup();
++        // 浮层关闭即视为菜单数据作废（条目回调已在打开时捕获所需数据副本）
++        mapContextTarget = null;
++        entityContextTarget = null;
+     }
+ 
+     private void syncViewToPlayer(boolean force) {
+@@ -701,7 +944,8 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+     }
+ 
+-    private void syncGpsFields() {
++    /** 将 GPS 当前目标（或玩家位置）回填到抽屉输入框。 */
++    private void syncGpsFieldsFromState() {
+         Minecraft mc = Minecraft.getInstance();
+         Vec3 pos = null;
+         if (RVP_ClientGPSState.isActive()) {
+@@ -714,32 +958,36 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+     }
+ 
++    /** 坐标写入 DOM 输入框（Input 元素经 value attribute 承载文本）。 */
+     private void setGpsFields(Vec3 pos) {
+-        if (xBox != null) {
+-            xBox.setValue(String.format("%.2f", pos.x));
+-            yBox.setValue(String.format("%.2f", pos.y));
+-            zBox.setValue(String.format("%.2f", pos.z));
++        if (gpsXInput != null) {
++            gpsXInput.setAttribute("value", String.format(Locale.ROOT, "%.2f", pos.x));
++            gpsYInput.setAttribute("value", String.format(Locale.ROOT, "%.2f", pos.y));
++            gpsZInput.setAttribute("value", String.format(Locale.ROOT, "%.2f", pos.z));
+         }
+     }
+ 
++    /** 读取输入框坐标并装订为 GPS 目标。 */
+     private void bindGps() {
+         Minecraft mc = Minecraft.getInstance();
+-        if (mc.player == null) {
+-            onClose();
++        if (mc.player == null || gpsXInput == null || gpsYInput == null || gpsZInput == null) {
+             return;
+         }
+         try {
+-            double x = Double.parseDouble(xBox.getValue().trim());
+-            double y = Double.parseDouble(yBox.getValue().trim());
+-            double z = Double.parseDouble(zBox.getValue().trim());
++            double x = Double.parseDouble(gpsXInput.getValue().trim());
++            double y = Double.parseDouble(gpsYInput.getValue().trim());
++            double z = Double.parseDouble(gpsZInput.getValue().trim());
+             ResourceLocation dim = mc.player.level().dimension().location();
+             Vec3 pos = new Vec3(x, y, z);
++            // 经 RVP 客户端 GPS 工具装订目标点
+             RVP_ClientGPSUtil.setGpsTarget(mc.player, dim, pos);
+         } catch (NumberFormatException e) {
+-            mc.player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.invalid_coords"), true);
++            mc.player.displayClientMessage(
++                    Component.translatable("message.ywzj_rvp.gps.invalid_coords"), true);
+         }
+     }
+ 
++    /** 清空 GPS 目标并回填玩家当前位置。 */
+     private void clearGps() {
+         Minecraft mc = Minecraft.getInstance();
+         if (mc.player == null) {
+@@ -757,79 +1005,54 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+         tickPendingRadarActions();
+         tickImpactCrosses();
+-        if (followButton != null) followButton.setMessage(followLabel());
+-        if (trajectoryModeButton != null) trajectoryModeButton.setMessage(artilleryTrajectoryLabel());
+-        if (weaponDropdownButton != null) weaponDropdownButton.setMessage(weaponDropdownLabel());
+-        if (gpsPanelButton != null) gpsPanelButton.setMessage(gpsPanelLabel());
+-        if (radarPanelButton != null) radarPanelButton.setMessage(radarPanelLabel());
+-        if (gpsModeButton != null) gpsModeButton.setMessage(gpsModeLabel());
+-        if (gpsQuickMarkButton != null) gpsQuickMarkButton.setMessage(gpsQuickMarkLabel());
+-        if (radarHideFriendlyButton != null) radarHideFriendlyButton.setMessage(radarHideFriendlyLabel());
++        // AUI：每 tick 同步胶囊文案/高亮、锁定目标卡与雷达/GPS 列表（内部带变化检测，避免无谓写 DOM）
++        if (dom != null) {
++            // 雷达抽屉打开期间每 tick 收集接触列表（旧版在原生绘制里逐帧收集，迁移后改在 tick 驱动）
++            if (sidebarVisible && sidebarMode == SidebarMode.RADAR) {
++                collectRadarContacts();
++            }
++            applyBodyMode();
++            refreshDomLabels();
++            updateLockCard();
++            updateContactRows();
++            updateWaypointsDom();
++            updateGpsSummary();
++        }
+     }
+ 
+     @Override
+     public boolean mouseClicked(double mouseX, double mouseY, int button) {
++        // 命中 AUI 交互容器（工具条/抽屉/浮层）时：DOM 监听自行处理，原版侧仅吞掉该点击
++        if (overInteractiveDom(mouseX, mouseY)) {
++            return true;
++        }
++        if (popupKind != PopupKind.NONE) {
++            // 点击地图区域空白处关闭浮层后，本次点击继续按地图逻辑处理
++            closeTransientMenus();
++        }
+         if (isArtilleryMode()) {
+-            if (isOverToolbarButton(mouseX, mouseY)) {
+-                closeTransientMenus();
+-                return super.mouseClicked(mouseX, mouseY, button);
+-            }
+             if (isOverMap(mouseX, mouseY) && button == 0) {
+                 draggingMap = false;
+-                closeTransientMenus();
+                 return true;
+             }
+             if (isOverMap(mouseX, mouseY) && (button == 1 || button == 2)) {
+                 draggingMap = true;
+                 followPlayer = false;
+-                closeTransientMenus();
+                 return true;
+             }
+             return super.mouseClicked(mouseX, mouseY, button);
+         }
+-        if (isOverToolbarButton(mouseX, mouseY)) {
+-            closeTransientMenus();
+-            return super.mouseClicked(mouseX, mouseY, button);
+-        }
+-        if (handleWeaponDropdownClick(mouseX, mouseY, button)) {
+-            closeTransientMenus();
+-            return true;
+-        }
+-        if (handleRadarPanelClick(mouseX, mouseY, button)) {
+-            closeTransientMenus();
+-            return true;
+-        }
+         if (button == 1 && isOverMap(mouseX, mouseY)) {
+             MarkerHit doubleRightMarker = hitTestMarker(mouseX, mouseY);
+             if (isMarkerDoubleClick(doubleRightMarker, false)) {
+-                closeTransientMenus();
+                 if (doubleRightMarker != null) {
+                     selectMarker(doubleRightMarker);
+                 }
+                 return doubleRightMarker != null && tryQuickFireOnTarget(doubleRightMarker.entity);
+             }
+         }
+-        if (entityContextMenuVisible) {
+-            if (handleEntityContextMenuClick(mouseX, mouseY, button)) {
+-                return true;
+-            }
+-            closeEntityContextMenu();
+-            if (button != 1 || !isOverMap(mouseX, mouseY)) {
+-                return super.mouseClicked(mouseX, mouseY, button);
+-            }
+-        }
+-        if (mapContextMenuVisible) {
+-            if (handleMapContextMenuClick(mouseX, mouseY, button)) {
+-                return true;
+-            }
+-            closeMapContextMenu();
+-            if (button != 1 || !isOverMap(mouseX, mouseY)) {
+-                return super.mouseClicked(mouseX, mouseY, button);
+-            }
+-        }
+         if (isOverMap(mouseX, mouseY)) {
+             if (button == 0) {
+-                closeTransientMenus();
+                 MarkerHit markerHit = hitTestMarker(mouseX, mouseY);
+                 if (markerHit != null) {
+                     selectMarker(markerHit);
+@@ -851,7 +1074,6 @@ public class RVP_TacticalMapScreen extends Screen {
+                 rightButtonDragged = false;
+                 draggingMap = true;
+                 followPlayer = false;
+-                closeTransientMenus();
+                 return true;
+             }
+         }
+@@ -946,21 +1168,16 @@ public class RVP_TacticalMapScreen extends Screen {
+ 
+     @Override
+     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+-        if (sidebarVisible && sidebarMode == SidebarMode.RADAR && isOverRadarTable(mouseX, mouseY)) {
+-            int maxScroll = Math.max(0, radarVisibleRowCount() < 1 ? 0 : radarContactRows.size() - radarVisibleRowCount());
+-            if (delta > 0) {
+-                radarRowScroll = Math.max(0, radarRowScroll - 1);
+-            } else if (delta < 0) {
+-                radarRowScroll = Math.min(maxScroll, radarRowScroll + 1);
+-            }
++        // 滚轮落在抽屉上：列表滚动由 AUI 原生处理（wheel 穿透模式），原版侧直接吞掉避免同时缩放地图
++        if (sidebarVisible && !isArtilleryMode() && inRect(drawerRect, mouseX, mouseY)) {
+             return true;
+         }
+         if (!isOverMap(mouseX, mouseY)) {
+-            weaponDropdownOpen = false;
+             return super.mouseScrolled(mouseX, mouseY, delta);
+         }
+-        closeTransientMenus();
+-        weaponDropdownOpen = false;
++        if (popupKind != PopupKind.NONE) {
++            closeTransientMenus();
++        }
+         double worldXBefore = screenToWorldX(mouseX);
+         double worldZBefore = screenToWorldZ(mouseY);
+         if (delta > 0) {
+@@ -1030,83 +1247,82 @@ public class RVP_TacticalMapScreen extends Screen {
+ 
+     @Override
+     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+-        refreshLayout();
++        // 1) 从模板占位元素反算地图矩形（rect×renderScale 即 GUI 像素，任意视口模式成立）
++        refreshMapRectFromDom();
++        refreshInteractiveRects();
++        // 2) 炮兵模式：光标悬停即指定落点（悬停在工具条等 DOM 上时不指定）
+         updateArtilleryHoverTarget(mouseX, mouseY);
+-        renderBackground(guiGraphics);
+-        drawFrame(guiGraphics);
++        // 3) 地图底色与边框：未覆盖瓦片区域保持暗色不透出世界（透明度对齐旧版 drawFrame）
++        guiGraphics.fill(mapLeft, mapTop, mapRight, mapBottom, 0xCC10151C);
++        guiGraphics.fill(mapLeft - 1, mapTop - 1, mapRight + 1, mapTop, 0xFF42556E);
++        guiGraphics.fill(mapLeft - 1, mapBottom, mapRight + 1, mapBottom + 1, 0xFF42556E);
++        guiGraphics.fill(mapLeft - 1, mapTop, mapLeft, mapBottom, 0xFF42556E);
++        guiGraphics.fill(mapRight, mapTop, mapRight + 1, mapBottom, 0xFF42556E);
++        // 4) 地图本体渲染管线（保持原生，含 HUD/选中信息条/CCIP 等）
+         renderMap(guiGraphics, mouseX, mouseY, partialTick);
+-        if (sidebarVisible && !isArtilleryMode()) {
+-            renderSidePanel(guiGraphics);
+-        }
++        // 5) 最后绘制 AUI chrome：外框/工具条/抽屉/浮层全部盖在地图之上
+         super.render(guiGraphics, mouseX, mouseY, partialTick);
+-        if (weaponDropdownOpen && !isArtilleryMode()) {
+-            renderWeaponDropdown(guiGraphics, mouseX, mouseY);
+-        }
+-        if (!isArtilleryMode() && entityContextMenuVisible && entityContextTarget != null) {
+-            if (entityContextTarget.entity != null && entityContextTarget.entity.isRemoved()) {
+-                closeEntityContextMenu();
+-            } else {
+-                renderEntityContextMenu(guiGraphics, mouseX, mouseY);
+-            }
+-        }
+-        if (!isArtilleryMode() && mapContextMenuVisible && mapContextTarget != null) {
+-            renderMapContextMenu(guiGraphics, mouseX, mouseY);
+-        }
+     }
+ 
+-    private void updateArtilleryHoverTarget(int mouseX, int mouseY) {
+-        if (!isArtilleryMode() || draggingMap || !isOverMap(mouseX, mouseY)) {
++    /** 由 #tm-hole 的 DOMRect 反算地图屏幕矩形（GUI 像素）。 */
++    private void refreshMapRectFromDom() {
++        if (uiHole == null || dom == null) {
+             return;
+         }
+-        Vec3 picked = pickMapPoint(mouseX, mouseY);
+-        if (picked != null) {
+-            RVP_ArtilleryFireControlState.designate(picked);
++        float scale = dom.getViewport().renderScale();
++        Element.DOMRect r = uiHole.getBoundingClientRect();
++        if (r == null || r.width <= 0 || r.height <= 0) {
++            return;
+         }
++        mapLeft = Mth.ceil(r.left * scale);
++        mapTop = Mth.ceil(r.top * scale);
++        mapRight = Mth.floor(r.right * scale);
++        mapBottom = Mth.floor(r.bottom * scale);
+     }
+ 
+-    private void renderWeaponDropdown(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+-        if (weaponUnit == null || weaponUnit.weapons.isEmpty()) {
++    /** 缓存工具条/抽屉/浮层的屏幕矩形，用于鼠标事件是否交给 DOM 的判定。 */
++    private void refreshInteractiveRects() {
++        copyRect(uiToolbar, toolbarRect);
++        copyRect(sidebarVisible ? uiDrawer : null, drawerRect);
++        copyRect(popupKind != PopupKind.NONE ? uiPopup : null, popupRect);
++    }
++
++    private void copyRect(@Nullable Element element, double[] out) {
++        if (element == null || dom == null) {
++            java.util.Arrays.fill(out, Double.NaN);
+             return;
+         }
+-        int x = weaponDropdownX();
+-        int y = weaponDropdownY();
+-        int width = weaponDropdownWidth();
+-        int itemHeight = weaponDropdownItemHeight();
+-        int height = weaponUnit.weapons.size() * itemHeight + 6;
+-        guiGraphics.fill(x, y, x + width, y + height, 0xEE151B23);
+-        guiGraphics.fill(x, y, x + width, y + 1, 0xFF6A7E95);
+-        guiGraphics.fill(x, y + height - 1, x + width, y + height, 0xFF6A7E95);
+-        guiGraphics.fill(x, y, x + 1, y + height, 0xFF6A7E95);
+-        guiGraphics.fill(x + width - 1, y, x + width, y + height, 0xFF6A7E95);
+-        for (int i = 0; i < weaponUnit.weapons.size(); i++) {
+-            int rowY = y + 3 + i * itemHeight;
+-            boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= rowY && mouseY <= rowY + itemHeight;
+-            boolean selected = i == weaponUnit.getCurrentWeaponIndex();
+-            if (selected) {
+-                guiGraphics.fill(x + 1, rowY, x + width - 1, rowY + itemHeight, 0x55374C61);
+-            } else if (hovered) {
+-                guiGraphics.fill(x + 1, rowY, x + width - 1, rowY + itemHeight, 0x66405A7A);
+-            }
+-            String label = (i + 1) + ". " + weaponUnit.weapons.get(i).getDisplayName().getString();
+-            guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(label, width - 8),
+-                    x + 4, rowY + 3, selected ? 0xFFFFFFFF : 0xFFE7EEF7, false);
++        Element.DOMRect r = element.getBoundingClientRect();
++        float scale = dom.getViewport().renderScale();
++        if (r == null || r.width <= 0) {
++            java.util.Arrays.fill(out, Double.NaN);
++            return;
+         }
++        out[0] = r.left * scale;
++        out[1] = r.top * scale;
++        out[2] = r.right * scale;
++        out[3] = r.bottom * scale;
+     }
+ 
+-    private void drawFrame(GuiGraphics guiGraphics) {
+-        guiGraphics.fill(mapLeft, mapTop, mapRight, mapBottom, 0xCC10151C);
+-        guiGraphics.fill(mapLeft - 1, mapTop - 1, mapRight + 1, mapTop, 0xFF4E5E73);
+-        guiGraphics.fill(mapLeft - 1, mapBottom, mapRight + 1, mapBottom + 1, 0xFF4E5E73);
+-        guiGraphics.fill(mapLeft - 1, mapTop, mapLeft, mapBottom, 0xFF4E5E73);
+-        guiGraphics.fill(mapRight, mapTop, mapRight + 1, mapBottom, 0xFF4E5E73);
++    /** 鼠标是否位于任一可见 DOM 交互容器内（工具条/抽屉/浮层）。 */
++    private boolean overInteractiveDom(double mouseX, double mouseY) {
++        return inRect(toolbarRect, mouseX, mouseY)
++                || (!Double.isNaN(drawerRect[0]) && sidebarVisible && !isArtilleryMode() && inRect(drawerRect, mouseX, mouseY))
++                || (popupKind != PopupKind.NONE && inRect(popupRect, mouseX, mouseY));
++    }
++
++    private static boolean inRect(double[] r, double x, double y) {
++        return !Double.isNaN(r[0]) && x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
++    }
+ 
+-        if (sidebarVisible) {
+-            guiGraphics.fill(sideLeft, mapTop, sideRight, mapBottom, 0xD9181D24);
+-            guiGraphics.fill(sideLeft - 1, mapTop - 1, sideRight + 1, mapTop, 0xFF4E5E73);
+-            guiGraphics.fill(sideLeft - 1, mapBottom, sideRight + 1, mapBottom + 1, 0xFF4E5E73);
+-            guiGraphics.fill(sideLeft - 1, mapTop, sideLeft, mapBottom, 0xFF4E5E73);
+-            guiGraphics.fill(sideRight, mapTop, sideRight + 1, mapBottom, 0xFF4E5E73);
++    private void updateArtilleryHoverTarget(double mouseX, double mouseY) {
++        if (!isArtilleryMode() || draggingMap || !isOverMap(mouseX, mouseY)
++                || overInteractiveDom(mouseX, mouseY)) {
++            return;
++        }
++        Vec3 picked = pickMapPoint(mouseX, mouseY);
++        if (picked != null) {
++            RVP_ArtilleryFireControlState.designate(picked);
+         }
+     }
+ 
+@@ -1880,7 +2096,7 @@ public class RVP_TacticalMapScreen extends Screen {
+     }
+ 
+     private void renderMapHud(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+-        guiGraphics.drawString(this.font, this.title, mapLeft + 8, mapTop + 8, 0xFFFFFFFF, false);
++        guiGraphics.drawString(this.font, this.hudTitle, mapLeft + 8, mapTop + 8, 0xFFFFFFFF, false);
+         if (isArtilleryMode()) {
+             renderArtilleryStatus(guiGraphics);
+         } else {
+@@ -2005,89 +2221,6 @@ public class RVP_TacticalMapScreen extends Screen {
+         return builder.toString();
+     }
+ 
+-    private static final class TerminalButton extends AbstractWidget {
+-        private final Runnable onPress;
+-        private final java.util.function.BooleanSupplier toggled;
+-        private final java.util.function.IntSupplier accentColor;
+-
+-        private TerminalButton(int x, int y, int width, int height, Component message,
+-                               Runnable onPress,
+-                               java.util.function.BooleanSupplier toggled,
+-                               java.util.function.IntSupplier accentColor) {
+-            super(x, y, width, height, message);
+-            this.onPress = onPress;
+-            this.toggled = toggled;
+-            this.accentColor = accentColor;
+-        }
+-
+-        @Override
+-        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+-            int bg = isHoveredOrFocused() ? 0xE81A1F2A : 0xD8111720;
+-            int border = toggled.getAsBoolean() ? accentColor.getAsInt() : 0x8842556E;
+-            guiGraphics.fill(getX(), getY(), getX() + width, getY() + height, bg);
+-            guiGraphics.fill(getX(), getY(), getX() + width, getY() + 1, border);
+-            guiGraphics.fill(getX(), getY(), getX() + 2, getY() + height, border);
+-            int textColor = this.active ? 0xFFEAF2FB : 0xFF9CA9B8;
+-            Minecraft mc = Minecraft.getInstance();
+-            String label = getMessage().getString();
+-            int maxTextWidth = Math.max(8, width - 8);
+-            int rawWidth = Math.max(1, mc.font.width(label));
+-            float textScale = Math.min(TOOLBAR_BUTTON_TEXT_SCALE, maxTextWidth / (float) rawWidth);
+-            int scaledTextWidth = Mth.ceil(rawWidth * textScale);
+-            int scaledTextHeight = Mth.ceil(8 * textScale);
+-            float tx = getX() + (width - scaledTextWidth) * 0.5f;
+-            float ty = getY() + (height - scaledTextHeight) * 0.5f;
+-            guiGraphics.pose().pushPose();
+-            guiGraphics.pose().translate(tx, ty, 0.0f);
+-            guiGraphics.pose().scale(textScale, textScale, 1.0f);
+-            guiGraphics.drawString(mc.font, label, 0, 0, textColor, false);
+-            guiGraphics.pose().popPose();
+-        }
+-
+-        @Override
+-        public void onClick(double mouseX, double mouseY) {
+-            if (!this.active) {
+-                return;
+-            }
+-            playDownSound(Minecraft.getInstance().getSoundManager());
+-            onPress.run();
+-        }
+-
+-        @Override
+-        public void playDownSound(SoundManager soundManager) {
+-            super.playDownSound(soundManager);
+-        }
+-
+-        @Override
+-        protected void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
+-        }
+-    }
+-
+-    private static final class TerminalTextField extends EditBox {
+-
+-        private TerminalTextField(net.minecraft.client.gui.Font font, int x, int y, int width, int height, Component message) {
+-            super(font, x, y, width, height, message);
+-            setBordered(false);
+-            setTextColor(0xFFEAF2FB);
+-            setTextColorUneditable(0xFF93A6BA);
+-        }
+-
+-        @Override
+-        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+-            if (!this.visible) {
+-                return;
+-            }
+-            int border = this.isFocused() ? GPS_ICON_COLOR : 0xAA42556E;
+-            int bg = this.isFocused() ? 0xF0121821 : 0xD8111720;
+-            guiGraphics.fill(getX(), getY(), getX() + this.width, getY() + this.height, bg);
+-            guiGraphics.fill(getX(), getY(), getX() + this.width, getY() + 1, border);
+-            guiGraphics.fill(getX(), getY(), getX() + 1, getY() + this.height, border);
+-            guiGraphics.fill(getX(), getY() + this.height - 1, getX() + this.width, getY() + this.height, 0x8842556E);
+-            guiGraphics.fill(getX() + this.width - 1, getY(), getX() + this.width, getY() + this.height, 0x8842556E);
+-            super.renderWidget(guiGraphics, mouseX, mouseY, partialTick);
+-        }
+-    }
+-
+     private void renderSelectedMarkerHighlight(GuiGraphics guiGraphics) {
+         if (selectedMarkerHit == null) {
+             return;
+@@ -2112,256 +2245,139 @@ public class RVP_TacticalMapScreen extends Screen {
+     }
+ 
+     private void openMapContextMenu(double mouseX, double mouseY, Vec3 target) {
+-        closeEntityContextMenu();
+-        mapContextMenuVisible = true;
+-        mapContextMenuX = Mth.floor(mouseX);
+-        mapContextMenuY = Mth.floor(mouseY);
+         mapContextTarget = target;
++        // 条目与旧版原生菜单一一对应（含"GPS 未激活时点清空→转盘旋圆心"的旧判定路径）
++        PopupItem[] items = {
++                new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_here").getString(), false,
++                        () -> {
++                            setGpsFields(mapContextTarget);
++                            bindGps();
++                        }),
++                new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_gps_panel").getString(), false,
++                        () -> {
++                            setGpsFields(mapContextTarget);
++                            openSidebar(SidebarMode.GPS);
++                        }),
++                new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps").getString(), true,
++                        () -> {
++                            if (RVP_ClientGPSState.isActive()) {
++                                clearGps();
++                            } else {
++                                sendLoiterCenter(mapContextTarget);
++                            }
++                        }),
++                new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_set_loiter_center").getString(), false,
++                        () -> sendLoiterCenter(mapContextTarget))
++        };
++        buildPopup(PopupKind.MAP,
++                Component.translatable("gui.ywzj_rvp.tactical_map.menu_title").getString(),
++                Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
++                        Mth.floor(target.x), Mth.floor(target.y), Mth.floor(target.z)).getString(),
++                mouseX, mouseY, items);
+     }
+ 
+     private void openEntityContextMenu(double mouseX, double mouseY, MarkerHit markerHit) {
+-        closeMapContextMenu();
+-        entityContextMenuVisible = true;
+-        entityContextMenuX = Mth.floor(mouseX);
+-        entityContextMenuY = Mth.floor(mouseY);
+         entityContextTarget = markerHit;
+-    }
+-
+-    private boolean handleMapContextMenuClick(double mouseX, double mouseY, int button) {
+-        if (!mapContextMenuVisible || mapContextTarget == null) {
+-            return false;
+-        }
+-        if (button != 0) {
+-            return false;
+-        }
+-        int menuX = contextMenuRenderX();
+-        int menuY = contextMenuRenderY();
+-        int menuWidth = contextMenuWidth();
+-        int itemHeight = contextMenuItemHeight();
+-        int headerHeight = contextMenuHeaderHeight();
+-        int menuHeight = contextMenuHeight();
+-        if (mouseX < menuX || mouseX > menuX + menuWidth || mouseY < menuY || mouseY > menuY + menuHeight) {
+-            return false;
+-        }
+-
+-        int itemIndex = (Mth.floor(mouseY) - (menuY + headerHeight + 3)) / itemHeight;
+-        if (itemIndex < 0 || itemIndex >= contextMenuItemCount()) {
+-            return true;
+-        }
+-
+-        if (itemIndex == 0) {
+-            setGpsFields(mapContextTarget);
+-            bindGps();
+-        } else if (itemIndex == 1) {
+-            setGpsFields(mapContextTarget);
+-            openSidebar(SidebarMode.GPS);
+-        } else if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
+-            clearGps();
+-        } else {
+-            // 最后一项：设为盘旋圆心
+-            RVP_Network.CHANNEL.sendToServer(new C2SSetLoiterCenter(
+-                    mapContextTarget.x, mapContextTarget.y, mapContextTarget.z));
++        Vec3 focusPos = markerHit.focusPos;
++        Vec3 targetPos = markerHit.targetPos;
++        List<PopupItem> items = new ArrayList<>();
++        items.add(new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_center_target").getString(), false,
++                () -> centerViewOn(focusPos)));
++        items.add(new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_entity_gps_panel").getString(), false,
++                () -> applyGpsTarget(focusPos, false, true)));
++        items.add(new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_entity_pos").getString(), false,
++                () -> applyGpsTarget(focusPos, true, false)));
++        if (targetPos != null) {
++            items.add(new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_missile_target_panel").getString(), false,
++                    () -> applyGpsTarget(targetPos, false, true)));
++            items.add(new PopupItem(Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_missile_target").getString(), false,
++                    () -> applyGpsTarget(targetPos, true, false)));
+         }
+-        closeMapContextMenu();
+-        return true;
++        buildPopup(PopupKind.ENTITY,
++                markerLabel(markerHit).getString(),
++                Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
++                        Mth.floor(focusPos.x), Mth.floor(focusPos.y), Mth.floor(focusPos.z)).getString(),
++                mouseX, mouseY, items.toArray(new PopupItem[0]));
+     }
+ 
+-    private void renderMapContextMenu(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+-        if (mapContextTarget == null) {
++    /** 武器下拉：锚定在武器胶囊下方，条目为当前武器站全部弹种。 */
++    private void openWeaponPopup() {
++        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
++        if (weaponUnit == null || weaponUnit.weapons.isEmpty()) {
+             return;
+         }
+-        int menuX = contextMenuRenderX();
+-        int menuY = contextMenuRenderY();
+-        int menuWidth = contextMenuWidth();
+-        int itemHeight = contextMenuItemHeight();
+-        int headerHeight = contextMenuHeaderHeight();
+-        int menuHeight = contextMenuHeight();
+-        guiGraphics.fill(menuX, menuY, menuX + menuWidth, menuY + menuHeight, 0xEE171C24);
+-        guiGraphics.fill(menuX, menuY, menuX + menuWidth, menuY + 1, 0xFF5A708C);
+-        guiGraphics.fill(menuX, menuY + menuHeight - 1, menuX + menuWidth, menuY + menuHeight, 0xFF5A708C);
+-        guiGraphics.fill(menuX, menuY, menuX + 1, menuY + menuHeight, 0xFF5A708C);
+-        guiGraphics.fill(menuX + menuWidth - 1, menuY, menuX + menuWidth, menuY + menuHeight, 0xFF5A708C);
+-
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.menu_title"),
+-                menuX + 8, menuY + 6, 0xFFFFFFFF, false);
+-        guiGraphics.drawString(this.font,
+-                Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
+-                        Mth.floor(mapContextTarget.x), Mth.floor(mapContextTarget.y), Mth.floor(mapContextTarget.z)),
+-                menuX + 8, menuY + 18, 0xFFB7C7D9, false);
+-        guiGraphics.fill(menuX + 6, menuY + headerHeight - 2, menuX + menuWidth - 6, menuY + headerHeight - 1, 0x335A708C);
+-
+-        for (int i = 0; i < contextMenuItemCount(); i++) {
+-            int rowY = menuY + headerHeight + 3 + i * itemHeight;
+-            boolean hovered = mouseX >= menuX && mouseX <= menuX + menuWidth && mouseY >= rowY && mouseY <= rowY + itemHeight;
+-            if (hovered) {
+-                guiGraphics.fill(menuX + 1, rowY, menuX + menuWidth - 1, rowY + itemHeight, 0x66405A7A);
+-            }
+-            Component label = contextMenuLabel(i);
+-            int color = hovered ? 0xFFFFFFFF : 0xFFE7EEF7;
+-            if (i == 2) {
+-                color = hovered ? 0xFFFFD4D4 : 0xFFFF8D8D;
++        List<PopupItem> items = new ArrayList<>();
++        for (int i = 0; i < weaponUnit.weapons.size(); i++) {
++            int index = i;
++            String label = (i + 1) + ". " + weaponUnit.weapons.get(i).getDisplayName().getString();
++            items.add(new PopupItem(label, false, () -> selectWeaponByIndex(weaponUnit, index)));
++        }
++        // 锚定在武器胶囊正下方（DOMRect×renderScale 换算为 GUI 像素）
++        float scale = dom != null ? dom.getViewport().renderScale() : 1.0f;
++        float k = dom != null ? Math.max(0.05f, dom.getViewport().layoutWidth() / 1920.0f) : 1.0f;
++        double ax = this.width / scale - 240.0 * k;
++        if (btnWeapon != null && dom != null) {
++            Element.DOMRect wr = btnWeapon.getBoundingClientRect();
++            if (wr != null && wr.width > 0) {
++                ax = wr.left * scale;
+             }
+-            guiGraphics.drawString(this.font, label, menuX + 8, rowY + 3, color, false);
+         }
++        buildPopup(PopupKind.WEAPON, "", "", ax,
++                (toolbarRect[1] + (toolbarRect[3] - toolbarRect[1]) + 2), items.toArray(new PopupItem[0]));
+     }
+ 
+-    private boolean handleEntityContextMenuClick(double mouseX, double mouseY, int button) {
+-        if (!entityContextMenuVisible || entityContextTarget == null) {
+-            return false;
+-        }
+-        if (button != 0) {
+-            return false;
+-        }
+-        int menuX = entityContextMenuRenderX();
+-        int menuY = entityContextMenuRenderY();
+-        int menuWidth = entityContextMenuWidth();
+-        int menuHeight = entityContextMenuHeight();
+-        int headerHeight = entityContextMenuHeaderHeight();
+-        int itemHeight = entityContextMenuItemHeight();
+-        if (mouseX < menuX || mouseX > menuX + menuWidth || mouseY < menuY || mouseY > menuY + menuHeight) {
+-            return false;
+-        }
++    // ===== 浮层基础设施 =====
+ 
+-        int itemIndex = (Mth.floor(mouseY) - (menuY + headerHeight + 3)) / itemHeight;
+-        if (itemIndex < 0 || itemIndex >= entityContextMenuItemCount()) {
+-            return true;
+-        }
+-
+-        Vec3 focusPos = entityContextTarget.focusPos;
+-        Vec3 targetPos = entityContextTarget.targetPos;
+-        if (itemIndex == 0) {
+-            centerViewOn(focusPos);
+-        } else if (itemIndex == 1) {
+-            applyGpsTarget(focusPos, false, true);
+-        } else if (itemIndex == 2) {
+-            applyGpsTarget(focusPos, true, false);
+-        } else if (itemIndex == 3 && targetPos != null) {
+-            applyGpsTarget(targetPos, false, true);
+-        } else if (itemIndex == 4 && targetPos != null) {
+-            applyGpsTarget(targetPos, true, false);
+-        }
+-        closeEntityContextMenu();
+-        return true;
++    private record PopupItem(String label, boolean danger, Runnable action) {
+     }
+ 
+-    private void renderEntityContextMenu(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+-        if (entityContextTarget == null) {
++    /**
++     * 打开浮层：写入标题/副标题/条目并定位（GUI 像素坐标，除以 renderScale 转文档坐标）。
++     */
++    private void buildPopup(PopupKind kind, String title, String sub, double mouseX, double mouseY, PopupItem[] items) {
++        if (dom == null || uiPopup == null || popItems == null) {
+             return;
+         }
+-        int menuX = entityContextMenuRenderX();
+-        int menuY = entityContextMenuRenderY();
+-        int menuWidth = entityContextMenuWidth();
+-        int menuHeight = entityContextMenuHeight();
+-        int headerHeight = entityContextMenuHeaderHeight();
+-        int itemHeight = entityContextMenuItemHeight();
+-        guiGraphics.fill(menuX, menuY, menuX + menuWidth, menuY + menuHeight, 0xEE151B23);
+-        guiGraphics.fill(menuX, menuY, menuX + menuWidth, menuY + 1, 0xFF6A7E95);
+-        guiGraphics.fill(menuX, menuY + menuHeight - 1, menuX + menuWidth, menuY + menuHeight, 0xFF6A7E95);
+-        guiGraphics.fill(menuX, menuY, menuX + 1, menuY + menuHeight, 0xFF6A7E95);
+-        guiGraphics.fill(menuX + menuWidth - 1, menuY, menuX + menuWidth, menuY + menuHeight, 0xFF6A7E95);
+-
+-        guiGraphics.drawString(this.font, markerLabel(entityContextTarget),
+-                menuX + 8, menuY + 6, 0xFFFFFFFF, false);
+-        guiGraphics.drawString(this.font,
+-                Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
+-                        Mth.floor(entityContextTarget.focusPos.x),
+-                        Mth.floor(entityContextTarget.focusPos.y),
+-                        Mth.floor(entityContextTarget.focusPos.z)),
+-                menuX + 8, menuY + 18, 0xFFB7C7D9, false);
+-        guiGraphics.fill(menuX + 6, menuY + headerHeight - 2, menuX + menuWidth - 6, menuY + headerHeight - 1, 0x336A7E95);
+-
+-        for (int i = 0; i < entityContextMenuItemCount(); i++) {
+-            int rowY = menuY + headerHeight + 3 + i * itemHeight;
+-            boolean hovered = mouseX >= menuX && mouseX <= menuX + menuWidth && mouseY >= rowY && mouseY <= rowY + itemHeight;
+-            if (hovered) {
+-                guiGraphics.fill(menuX + 1, rowY, menuX + menuWidth - 1, rowY + itemHeight, 0x66405A7A);
+-            }
+-            guiGraphics.drawString(this.font, entityContextMenuLabel(i),
+-                    menuX + 8, rowY + 3, hovered ? 0xFFFFFFFF : 0xFFE7EEF7, false);
+-        }
+-    }
+-
+-    private void renderSidePanel(GuiGraphics guiGraphics) {
+-        if (sidebarMode == SidebarMode.GPS) {
+-            renderGpsSidePanel(guiGraphics);
+-        } else if (sidebarMode == SidebarMode.RADAR) {
+-            renderRadarSidePanel(guiGraphics);
+-        }
+-    }
+-
+-    private void renderGpsSidePanel(GuiGraphics guiGraphics) {
+-        Minecraft mc = Minecraft.getInstance();
+-        int x = sidePanelContentX();
+-        int width = sidePanelContentWidth();
+-        int y = sidePanelTitleY();
+-        int textWidth = Math.max(88, width - 14);
+-        drawSidePanelTitle(guiGraphics, x, y, width, Component.translatable("gui.ywzj_rvp.gps.title"), GPS_ICON_COLOR);
+-
+-        int summaryY = gpsSummarySectionY();
+-        int controlsY = gpsControlsSectionY();
+-        int targetY = gpsTargetSectionY();
+-        drawSidePanelSection(guiGraphics, x, summaryY, width, GPS_SUMMARY_HEIGHT, 0xFF7C96B2);
+-        drawSidePanelSection(guiGraphics, x, controlsY, width, GPS_CONTROLS_HEIGHT, 0xFF6B86A2);
+-        drawSidePanelSection(guiGraphics, x, targetY, width, GPS_TARGET_HEIGHT, 0xFF4E6D91);
+-
+-        int textX = x + 6;
+-        int textY = summaryY + 5;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.status"), textX, textY, 0xFF9CA9B8, false);
+-        textY += 9;
+-
+-        String vehicleName = mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle
+-                ? vehicle.getType().getDescription().getString()
+-                : "-";
+-        String vehicleLine = this.font.plainSubstrByWidth(
+-                Component.translatable("gui.ywzj_rvp.tactical_map.vehicle", vehicleName).getString(), textWidth);
+-        guiGraphics.drawString(this.font, vehicleLine, textX, textY, 0xFFE6EDF6, false);
+-        textY += 9;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.center_pos",
+-                Mth.floor(viewWorldX), Mth.floor(viewWorldZ)), textX, textY, 0xFFE6EDF6, false);
+-        textY += 9;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.remote_count",
+-                LocalVehiclePlayer.instance.serverEntities.size()), textX, textY, 0xFFE6EDF6, false);
+-
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_current"), textX, controlsY + 5, 0xFFFFFFFF, false);
+-        guiGraphics.drawString(this.font, followLabel(), textX, controlsY + 14, 0xFF9CA9B8, false);
+-        drawGpsFieldLabel(guiGraphics, "X", xBox.getX(), controlsY + 25);
+-        drawGpsFieldLabel(guiGraphics, "Y", yBox.getX(), controlsY + 25);
+-        drawGpsFieldLabel(guiGraphics, "Z", zBox.getX(), zBox.getY() - 10);
+-
+-        int targetTextY = targetY + 5;
+-        String hint = this.font.plainSubstrByWidth(Component.translatable("gui.ywzj_rvp.gps.hint").getString(), textWidth);
+-        guiGraphics.drawString(this.font, hint, textX, targetTextY, 0xFF9CA9B8, false);
+-        targetTextY += 9;
+-
+-        if (RVP_ClientGPSState.isActive()) {
+-            Vec3 pos = RVP_ClientGPSState.getPos();
+-            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_current"), textX, targetTextY, 0xFFFFFFFF, false);
+-            targetTextY += 9;
+-            String coords = this.font.plainSubstrByWidth(
+-                    String.format("X %.1f  Y %.1f  Z %.1f", pos.x, pos.y, pos.z), textWidth);
+-            guiGraphics.drawString(this.font, coords, textX, targetTextY, 0xFFFFFF66, false);
+-            targetTextY += 9;
+-            String label = RVP_ClientGPSState.isMultiMode()
+-                    ? "GPS " + RVP_ClientGPSState.getArmedPointNumber()
+-                    : "GPS";
+-            String status = "MODE " + (RVP_ClientGPSState.isMultiMode() ? "MULTI" : "SINGLE")
+-                    + "  |  " + label
+-                    + "  |  CNT " + RVP_ClientGPSState.getPointCount();
+-            guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(status, textWidth), textX, targetTextY, GPS_ICON_COLOR, false);
+-        } else {
+-            guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.gps_none"), textX, targetTextY, 0xFF9CA9B8, false);
++        closePopup();
++        setText(popHead, title);
++        showIf(popHead, !title.isEmpty());
++        setText(popSub, sub);
++        showIf(popSub, !sub.isEmpty());
++        popItems.setTextContent("");
++        for (PopupItem item : items) {
++            Element row = dom.createElement("div");
++            row.setClassName(item.danger() ? "pop-item danger" : "pop-item");
++            row.setTextContent(item.label());
++            row.addEventListener("click", event -> {
++                closePopup();
++                item.action().run();
++            });
++            popItems.appendChild(row);
+         }
++        float scale = dom.getViewport().renderScale();
++        float k = Math.max(0.05f, dom.getViewport().layoutWidth() / 1920.0f);
++        double docW = Math.max(1, this.width / scale);
++        double docH = Math.max(1, this.height / scale);
++        // 边距/估高按 1920 设计值 × k 折算为文档像素
++        double x = Mth.clamp(mouseX / scale, 4 * k, Math.max(4 * k, docW - 240 * k));
++        double y = Mth.clamp(mouseY / scale, 4 * k, Math.max(4 * k, docH - 30 * k * items.length - 70 * k));
++        uiPopup.setInlineStyleProperty("left", x + "px");
++        uiPopup.setInlineStyleProperty("top", y + "px");
++        setOn(uiPopup, true);
++        popupKind = kind;
++        Minecraft.getInstance().getSoundManager().play(
++                net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
++                        net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 0.8F));
+     }
+ 
+-    private void drawGpsFieldLabel(GuiGraphics guiGraphics, String label, int x, int y) {
+-        guiGraphics.drawString(this.font, label, x + 1, y, 0xFFB8CADB, false);
++    private void closePopup() {
++        popupKind = PopupKind.NONE;
++        setOn(uiPopup, false);
+     }
+ 
+-    private void renderRadarSidePanel(GuiGraphics guiGraphics) {
+-        collectRadarContacts();
+-        drawSidePanelTitle(guiGraphics, sidePanelContentX(), sidePanelTitleY(), sidePanelContentWidth(),
+-                Component.translatable("gui.ywzj_rvp.tactical_map.radar_title"), 0xFF7BE0A5);
+-        renderRadarContactTable(guiGraphics);
++    private void sendLoiterCenter(Vec3 target) {
++        RVP_Network.CHANNEL.sendToServer(new C2SSetLoiterCenter(
++                target.x, target.y, target.z));
+     }
+ 
+     private void collectRadarContacts() {
+@@ -2370,11 +2386,9 @@ public class RVP_TacticalMapScreen extends Screen {
+         LocalPlayer player = mc.player;
+         List<S2CExternalRadarSnapshot.Entry> externalEntries = currentExternalRadarEntries();
+         if (player == null) {
+-            radarRowScroll = 0;
+             return;
+         }
+         if (tacticalRadarUnits.isEmpty() && externalEntries.isEmpty()) {
+-            radarRowScroll = 0;
+             return;
+         }
+         Set<Integer> seen = new HashSet<>();
+@@ -2462,137 +2476,6 @@ public class RVP_TacticalMapScreen extends Screen {
+                     .findFirst()
+                     .ifPresent(row -> selectMarker(findMarkerByEntityId(row.entityId)));
+         }
+-        radarRowScroll = Mth.clamp(radarRowScroll, 0, Math.max(0, radarContactRows.size() - radarVisibleRowCount()));
+-    }
+-
+-    private void renderRadarContactTable(GuiGraphics guiGraphics) {
+-        int x = radarTableX();
+-        int y = radarTableY();
+-        int width = radarTableWidth();
+-        int height = radarTableHeight();
+-        int headerHeight = radarTableHeaderHeight();
+-        int rowHeight = radarTableRowHeight();
+-
+-        guiGraphics.fill(x, y, x + width, y + height, 0xA0091118);
+-        guiGraphics.fill(x, y, x + width, y + 1, 0xFF516579);
+-        guiGraphics.fill(x, y + height - 1, x + width, y + height, 0xFF516579);
+-        guiGraphics.fill(x, y, x + 1, y + height, 0xFF516579);
+-        guiGraphics.fill(x + width - 1, y, x + width, y + height, 0xFF516579);
+-        guiGraphics.fill(x + 1, y + headerHeight, x + width - 1, y + headerHeight + 1, 0x6642556E);
+-
+-        int contentX = x + 4;
+-        int contentWidth = width - 12;
+-        drawRadarTableHeader(guiGraphics, contentX, y, contentWidth);
+-
+-        int visibleRows = radarVisibleRowCount();
+-        int rowStart = radarRowScroll;
+-        int rowEnd = Math.min(radarContactRows.size(), rowStart + visibleRows);
+-        guiGraphics.enableScissor(x + 1, y + headerHeight + 1, x + width - 7, y + height - 1);
+-        for (int index = rowStart; index < rowEnd; index++) {
+-            RadarContactRow row = radarContactRows.get(index);
+-            int rowY = y + headerHeight + 2 + (index - rowStart) * rowHeight;
+-            boolean selected = selectedRadarEntityId != null && selectedRadarEntityId == row.entityId;
+-            if (selected) {
+-                guiGraphics.fill(x + 1, rowY, x + width - 7, rowY + rowHeight, 0x55374C61);
+-            } else if ((index - rowStart) % 2 == 0) {
+-                guiGraphics.fill(x + 1, rowY, x + width - 7, rowY + rowHeight, 0x22131B24);
+-            }
+-            drawRadarRow(guiGraphics, row, contentX, rowY + 2, contentWidth);
+-        }
+-        guiGraphics.disableScissor();
+-        drawRadarTableScrollbar(guiGraphics, x, y, width, height, visibleRows);
+-    }
+-
+-    private void drawRadarTableHeader(GuiGraphics guiGraphics, int x, int y, int width) {
+-        int iffX = x + width - 50;
+-        int lockX = x + width - 24;
+-        int nctrX = iffX - 42;
+-        int tx = x;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_dist"), tx, y + 4, 0xFFBFD0E2, false);
+-        tx += 40;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_alt"), tx, y + 4, 0xFFBFD0E2, false);
+-        tx += 40;
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_speed"), tx, y + 4, 0xFFBFD0E2, false);
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_nctr"), nctrX, y + 4, 0xFFBFD0E2, false);
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_iff"), iffX, y + 4, 0xFFBFD0E2, false);
+-        guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.radar_col_lock"), lockX, y + 4, 0xFFBFD0E2, false);
+-    }
+-
+-    private void drawRadarRow(GuiGraphics guiGraphics, RadarContactRow row, int x, int y, int width) {
+-        int iffX = x + width - 50;
+-        int lockX = x + width - 24;
+-        int nctrX = iffX - 42;
+-        int tx = x;
+-        guiGraphics.drawString(this.font, formatRadarDistanceOrAltitude(row.distanceMeters), tx, y, 0xFFE6EDF6, false);
+-        tx += 40;
+-        guiGraphics.drawString(this.font, formatRadarDistanceOrAltitude(row.altitudeMeters), tx, y, 0xFFE6EDF6, false);
+-        tx += 40;
+-        guiGraphics.drawString(this.font, formatRadarSpeedKph(row.speedKph), tx, y, 0xFFE6EDF6, false);
+-        String nctr = StringUtils.abbreviate(row.nctrLabel == null || row.nctrLabel.isBlank() ? "?" : row.nctrLabel, 10);
+-        nctr = this.font.plainSubstrByWidth(nctr, Math.max(16, iffX - nctrX - 6));
+-        guiGraphics.drawString(this.font, nctr, nctrX, y, 0xFFF0F6FF, false);
+-        guiGraphics.drawString(this.font, row.relationLabel, iffX, y, row.relationColor, false);
+-        guiGraphics.drawString(this.font, row.locked ? "LCK" : "-", lockX, y, row.locked ? 0xFF8FE3B8 : 0xFF8E9AA8, false);
+-    }
+-
+-    private void drawRadarTableScrollbar(GuiGraphics guiGraphics, int x, int y, int width, int height, int visibleRows) {
+-        int barX = x + width - 5;
+-        int barTop = y + radarTableHeaderHeight() + 2;
+-        int barBottom = y + height - 3;
+-        guiGraphics.fill(barX, barTop, barX + 2, barBottom, 0x3342556E);
+-        if (radarContactRows.isEmpty() || radarContactRows.size() <= visibleRows) {
+-            guiGraphics.fill(barX, barTop, barX + 2, barBottom, 0x884C6378);
+-            return;
+-        }
+-        int barHeight = Math.max(12, (barBottom - barTop) * visibleRows / radarContactRows.size());
+-        int maxScroll = Math.max(1, radarContactRows.size() - visibleRows);
+-        int travel = Math.max(1, (barBottom - barTop) - barHeight);
+-        int thumbTop = barTop + travel * radarRowScroll / maxScroll;
+-        guiGraphics.fill(barX, thumbTop, barX + 2, thumbTop + barHeight, 0xFF8FB3D5);
+-    }
+-
+-    private boolean handleRadarPanelClick(double mouseX, double mouseY, int button) {
+-        if (!sidebarVisible || sidebarMode != SidebarMode.RADAR) {
+-            return false;
+-        }
+-        if (!isOverRadarTable(mouseX, mouseY)) {
+-            return false;
+-        }
+-        RadarContactRow row = hitTestRadarRow(mouseX, mouseY);
+-        if (row == null) {
+-            return true;
+-        }
+-        selectedRadarEntityId = row.entityId;
+-        selectMarker(findMarkerByEntityId(row.entityId));
+-        if (button == 0) {
+-            if (isRadarRowDoubleClick(row, true)) {
+-                return tryLockRadarTarget(row.entity);
+-            }
+-            return true;
+-        }
+-        if (button == 1) {
+-            if (isRadarRowDoubleClick(row, false)) {
+-                return tryQuickFireOnTarget(row.entity);
+-            }
+-            return true;
+-        }
+-        return false;
+-    }
+-
+-    private RadarContactRow hitTestRadarRow(double mouseX, double mouseY) {
+-        if (!isOverRadarTable(mouseX, mouseY)) {
+-            return null;
+-        }
+-        int relY = Mth.floor(mouseY) - (radarTableY() + radarTableHeaderHeight() + 2);
+-        if (relY < 0) {
+-            return null;
+-        }
+-        int rowIndex = relY / radarTableRowHeight();
+-        int actualIndex = radarRowScroll + rowIndex;
+-        if (actualIndex < 0 || actualIndex >= radarContactRows.size()) {
+-            return null;
+-        }
+-        return radarContactRows.get(actualIndex);
+     }
+ 
+     private boolean isMarkerDoubleClick(@Nullable MarkerHit markerHit, boolean leftButton) {
+@@ -2942,92 +2825,6 @@ public class RVP_TacticalMapScreen extends Screen {
+         return entity != null && entity.getId() == entityId;
+     }
+ 
+-    private int radarTableX() {
+-        return sideLeft + 8;
+-    }
+-
+-    private int radarTableY() {
+-        if (radarHideFriendlyButton != null && radarHideFriendlyButton.visible) {
+-            return radarHideFriendlyButton.getY() + radarHideFriendlyButton.getHeight() + 6;
+-        }
+-        return mapTop + 46;
+-    }
+-
+-    private int radarTableWidth() {
+-        return Math.max(140, sideRight - sideLeft - 16);
+-    }
+-
+-    private int radarTableHeight() {
+-        return Math.max(72, mapBottom - radarTableY() - 8);
+-    }
+-
+-    private int radarTableHeaderHeight() {
+-        return 14;
+-    }
+-
+-    private int radarTableRowHeight() {
+-        return 12;
+-    }
+-
+-    private int radarVisibleRowCount() {
+-        return Math.max(1, (radarTableHeight() - radarTableHeaderHeight() - 4) / radarTableRowHeight());
+-    }
+-
+-    private boolean isOverRadarTable(double mouseX, double mouseY) {
+-        int x = radarTableX();
+-        int y = radarTableY();
+-        return mouseX >= x && mouseX <= x + radarTableWidth()
+-                && mouseY >= y && mouseY <= y + radarTableHeight();
+-    }
+-
+-    private int sidePanelContentX() {
+-        return sideLeft + 8;
+-    }
+-
+-    private int sidePanelContentWidth() {
+-        return Math.max(140, sideRight - sideLeft - 16);
+-    }
+-
+-    private int sidePanelTitleY() {
+-        return mapTop + 8;
+-    }
+-
+-    private int sidePanelTitleHeight() {
+-        return 14;
+-    }
+-
+-    private int gpsSummarySectionY() {
+-        return sidePanelTitleY() + sidePanelTitleHeight() + GPS_SECTION_GAP;
+-    }
+-
+-    private int gpsControlsSectionY() {
+-        return gpsSummarySectionY() + GPS_SUMMARY_HEIGHT + GPS_SECTION_GAP;
+-    }
+-
+-    private int gpsTargetSectionY() {
+-        return gpsControlsSectionY() + GPS_CONTROLS_HEIGHT + GPS_SECTION_GAP;
+-    }
+-
+-    private void drawSidePanelTitle(GuiGraphics guiGraphics, int x, int y, int width, Component title, int accentColor) {
+-        guiGraphics.fill(x, y, x + width, y + sidePanelTitleHeight(), 0xCC0C1117);
+-        guiGraphics.fill(x, y, x + width, y + 1, accentColor);
+-        guiGraphics.fill(x, y + sidePanelTitleHeight() - 1, x + width, y + sidePanelTitleHeight(), 0x8842556E);
+-        guiGraphics.fill(x, y, x + 1, y + sidePanelTitleHeight(), 0x8842556E);
+-        guiGraphics.fill(x + width - 1, y, x + width, y + sidePanelTitleHeight(), 0x8842556E);
+-        guiGraphics.drawString(this.font, title, x + 5, y + 3, 0xFFFFFFFF, false);
+-    }
+-
+-    private void drawSidePanelSection(GuiGraphics guiGraphics, int x, int y, int width, int height, int accentColor) {
+-        if (height <= 0) {
+-            return;
+-        }
+-        guiGraphics.fill(x, y, x + width, y + height, 0xA0091118);
+-        guiGraphics.fill(x, y, x + width, y + 1, accentColor);
+-        guiGraphics.fill(x, y + height - 1, x + width, y + height, 0xFF516579);
+-        guiGraphics.fill(x, y, x + 1, y + height, 0xFF516579);
+-        guiGraphics.fill(x + width - 1, y, x + width, y + height, 0xFF516579);
+-    }
+-
+     private RadarUnit getMainRadarUnit() {
+         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+         return weaponUnit != null ? RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit) : null;
+@@ -3856,105 +3653,6 @@ public class RVP_TacticalMapScreen extends Screen {
+         }
+     }
+ 
+-    private int contextMenuItemCount() {
+-        int count = RVP_ClientGPSState.isActive() ? 3 : 2;
+-        // 玩家在载具中时增加"设为盘旋圆心"选项
+-        Minecraft mc = Minecraft.getInstance();
+-        if (mc.player != null && mc.player.getVehicle() != null) {
+-            count++;
+-        }
+-        return count;
+-    }
+-
+-    private int contextMenuItemHeight() {
+-        return 14;
+-    }
+-
+-    private int contextMenuHeaderHeight() {
+-        return 28;
+-    }
+-
+-    private int contextMenuWidth() {
+-        int width = 0;
+-        for (int i = 0; i < contextMenuItemCount(); i++) {
+-            width = Math.max(width, this.font.width(contextMenuLabel(i)));
+-        }
+-        if (mapContextTarget != null) {
+-            width = Math.max(width, this.font.width(Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
+-                    Mth.floor(mapContextTarget.x), Mth.floor(mapContextTarget.y), Mth.floor(mapContextTarget.z))));
+-        }
+-        width = Math.max(width, this.font.width(Component.translatable("gui.ywzj_rvp.tactical_map.menu_title")));
+-        return width + 16;
+-    }
+-
+-    private int contextMenuHeight() {
+-        return contextMenuHeaderHeight() + 6 + contextMenuItemCount() * contextMenuItemHeight();
+-    }
+-
+-    private int contextMenuRenderX() {
+-        int menuWidth = contextMenuWidth();
+-        int x = mapContextMenuX + 8;
+-        return Mth.clamp(x, mapLeft + 4, Math.max(mapLeft + 4, mapRight - menuWidth - 4));
+-    }
+-
+-    private int contextMenuRenderY() {
+-        int menuHeight = contextMenuHeight();
+-        return Mth.clamp(mapContextMenuY, mapTop + 4, Math.max(mapTop + 4, mapBottom - menuHeight - 4));
+-    }
+-
+-    private Component contextMenuLabel(int itemIndex) {
+-        if (itemIndex == 0) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_here");
+-        }
+-        if (itemIndex == 1) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_gps_panel");
+-        }
+-        if (itemIndex == 2 && RVP_ClientGPSState.isActive()) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_clear_gps");
+-        }
+-        // 最后一项：设为盘旋圆心
+-        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_set_loiter_center");
+-    }
+-
+-    private int entityContextMenuItemCount() {
+-        return entityContextTarget != null && entityContextTarget.targetPos != null ? 5 : 3;
+-    }
+-
+-    private int entityContextMenuItemHeight() {
+-        return 14;
+-    }
+-
+-    private int entityContextMenuHeaderHeight() {
+-        return 28;
+-    }
+-
+-    private int entityContextMenuWidth() {
+-        int width = this.font.width(markerLabel(entityContextTarget));
+-        width = Math.max(width, this.font.width(Component.translatable("gui.ywzj_rvp.tactical_map.cursor",
+-                Mth.floor(entityContextTarget.focusPos.x),
+-                Mth.floor(entityContextTarget.focusPos.y),
+-                Mth.floor(entityContextTarget.focusPos.z))));
+-        for (int i = 0; i < entityContextMenuItemCount(); i++) {
+-            width = Math.max(width, this.font.width(entityContextMenuLabel(i)));
+-        }
+-        return width + 16;
+-    }
+-
+-    private int entityContextMenuHeight() {
+-        return entityContextMenuHeaderHeight() + 6 + entityContextMenuItemCount() * entityContextMenuItemHeight();
+-    }
+-
+-    private int entityContextMenuRenderX() {
+-        int menuWidth = entityContextMenuWidth();
+-        int x = entityContextMenuX + 8;
+-        return Mth.clamp(x, mapLeft + 4, Math.max(mapLeft + 4, mapRight - menuWidth - 4));
+-    }
+-
+-    private int entityContextMenuRenderY() {
+-        int menuHeight = entityContextMenuHeight();
+-        return Mth.clamp(entityContextMenuY, mapTop + 4, Math.max(mapTop + 4, mapBottom - menuHeight - 4));
+-    }
+-
+     private Component markerLabel(MarkerHit markerHit) {
+         if (markerHit == null) {
+             return Component.empty();
+@@ -3965,22 +3663,6 @@ public class RVP_TacticalMapScreen extends Screen {
+         return markerHit.entity.getType().getDescription();
+     }
+ 
+-    private Component entityContextMenuLabel(int itemIndex) {
+-        if (itemIndex == 0) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_center_target");
+-        }
+-        if (itemIndex == 1) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_entity_gps_panel");
+-        }
+-        if (itemIndex == 2) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_entity_pos");
+-        }
+-        if (itemIndex == 3) {
+-            return Component.translatable("gui.ywzj_rvp.tactical_map.menu_open_missile_target_panel");
+-        }
+-        return Component.translatable("gui.ywzj_rvp.tactical_map.menu_bind_missile_target");
+-    }
+-
+     private void drawDiamond(GuiGraphics guiGraphics, int cx, int cy, int radius, int color, boolean filled) {
+         if (filled) {
+             fillDiamond(guiGraphics, cx, cy, radius, color);
+@@ -4080,88 +3762,12 @@ public class RVP_TacticalMapScreen extends Screen {
+         guiGraphics.fill(x, y, x + 1, y + 1, color);
+     }
+ 
+-    private boolean isOverToolbarButton(double mouseX, double mouseY) {
+-        return isToolbarHit(centerButton, mouseX, mouseY)
+-                || isToolbarHit(followButton, mouseX, mouseY)
+-                || isToolbarHit(trajectoryModeButton, mouseX, mouseY)
+-                || isToolbarHit(weaponDropdownButton, mouseX, mouseY)
+-                || isToolbarHit(radarPanelButton, mouseX, mouseY)
+-                || isToolbarHit(gpsPanelButton, mouseX, mouseY)
+-                || isToolbarHit(gpsModeButton, mouseX, mouseY)
+-                || isToolbarHit(gpsClearAllButton, mouseX, mouseY)
+-                || isToolbarHit(gpsQuickMarkButton, mouseX, mouseY);
+-    }
+-
+-    private static boolean isToolbarHit(@Nullable AbstractWidget widget, double mouseX, double mouseY) {
+-        return widget != null && widget.visible && widget.isMouseOver(mouseX, mouseY);
+-    }
+-
+-    private boolean handleWeaponDropdownClick(double mouseX, double mouseY, int button) {
+-        if (!weaponDropdownOpen) {
+-            return false;
+-        }
+-        if (button != 0) {
+-            if (!isOverWeaponDropdown(mouseX, mouseY)) {
+-                weaponDropdownOpen = false;
+-            }
+-            return false;
+-        }
+-        if (!isOverWeaponDropdown(mouseX, mouseY)) {
+-            weaponDropdownOpen = false;
+-            return false;
+-        }
+-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+-        if (weaponUnit == null) {
+-            weaponDropdownOpen = false;
+-            return true;
+-        }
+-        int index = (Mth.floor(mouseY) - (weaponDropdownY() + 3)) / weaponDropdownItemHeight();
+-        if (index >= 0 && index < weaponUnit.weapons.size()) {
+-            selectWeaponByIndex(weaponUnit, index);
+-        }
+-        weaponDropdownOpen = false;
+-        return true;
+-    }
+-
+-    private boolean isOverWeaponDropdown(double mouseX, double mouseY) {
+-        if (!weaponDropdownOpen) {
+-            return false;
+-        }
+-        int x = weaponDropdownX();
+-        int y = weaponDropdownY();
+-        int width = weaponDropdownWidth();
+-        int height = weaponDropdownHeight();
+-        return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
+-    }
+-
+-    private int weaponDropdownX() {
+-        return weaponDropdownButton.getX();
+-    }
+-
+-    private int weaponDropdownY() {
+-        return weaponDropdownButton.getY() + weaponDropdownButton.getHeight() + 2;
+-    }
+-
+-    private int weaponDropdownWidth() {
+-        return Math.max(100, weaponDropdownButton.getWidth() + 16);
+-    }
+-
+     private float interpolatedRadarMapYaw(RadarUnit radarUnit, float partialTick) {
+         float xRot = Mth.lerp(partialTick, radarUnit.xRotO, radarUnit.getXRot());
+         float yRot = Mth.lerp(partialTick, radarUnit.yRotO, radarUnit.getYRot());
+         return radarUnit.worldRot(xRot, yRot).y;
+     }
+ 
+-    private int weaponDropdownItemHeight() {
+-        return 14;
+-    }
+-
+-    private int weaponDropdownHeight() {
+-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+-        int count = weaponUnit == null ? 0 : weaponUnit.weapons.size();
+-        return count * weaponDropdownItemHeight() + 6;
+-    }
+-
+     private void selectWeaponByIndex(WeaponUnit weaponUnit, int targetIndex) {
+         int size = weaponUnit.weapons.size();
+         if (targetIndex < 0 || targetIndex >= size) {
+diff --git a/src/main/resources/assets/ywzj_rvp/lang/en_us.json b/src/main/resources/assets/ywzj_rvp/lang/en_us.json
+index a1c2407..11a8ec3 100644
+--- a/src/main/resources/assets/ywzj_rvp/lang/en_us.json
++++ b/src/main/resources/assets/ywzj_rvp/lang/en_us.json
+@@ -85,6 +85,8 @@
+   "gui.ywzj_rvp.tactical_map.radar_hint": "Double left click to lock  Double right click to fire",
+   "gui.ywzj_rvp.tactical_map.radar_locked": "Locked: %s",
+   "gui.ywzj_rvp.tactical_map.radar_no_lock": "No target locked",
++  "gui.ywzj_rvp.tactical_map.tag.locked": "LOCKED",
++  "gui.ywzj_rvp.tactical_map.tag.selected": "SELECTED",
+   "gui.ywzj_rvp.tactical_map.radar_col_id": "#",
+   "gui.ywzj_rvp.tactical_map.radar_col_az": "AZ",
+   "gui.ywzj_rvp.tactical_map.radar_col_dist": "DST",
+diff --git a/src/main/resources/assets/ywzj_rvp/lang/zh_cn.json b/src/main/resources/assets/ywzj_rvp/lang/zh_cn.json
+index 9357843..2f436bb 100644
+--- a/src/main/resources/assets/ywzj_rvp/lang/zh_cn.json
++++ b/src/main/resources/assets/ywzj_rvp/lang/zh_cn.json
+@@ -90,6 +90,8 @@
+   "gui.ywzj_rvp.tactical_map.radar_hint": "列表双击左键锁定  双击右键发射",
+   "gui.ywzj_rvp.tactical_map.radar_locked": "锁定目标：%s",
+   "gui.ywzj_rvp.tactical_map.radar_no_lock": "当前未锁定目标",
++  "gui.ywzj_rvp.tactical_map.tag.locked": "锁定中",
++  "gui.ywzj_rvp.tactical_map.tag.selected": "已选中",
+   "gui.ywzj_rvp.tactical_map.radar_col_id": "#",
+   "gui.ywzj_rvp.tactical_map.radar_col_az": "方位",
+   "gui.ywzj_rvp.tactical_map.radar_col_dist": "距离",

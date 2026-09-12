@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <!-- 与本体改造工具/rvp变体屏保持一致：mode=browser + 绝对 px 设计（文档宽≈1920），
+         字号 10-16px 与现有 AUI 界面同级，实机尺寸已验证正常 -->
+    <meta name="aui-viewport" content="mode=browser">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden;
+            font-family: "Microsoft YaHei", sans-serif; color: #b8d4e4; }
+
+        /* ===== 地图占位（透明矩形，仅用于向 Java 提供地图屏幕区域） ===== */
+        #tm-hole { position: absolute; left: 8px; top: 8px; right: 8px; bottom: 8px; }
+        body.dw-radar #tm-hole, body.dw-gps #tm-hole { right: 402px; }
+
+        /* ===== 全息面板基类：无整框、四角括号 ===== */
+        .holo { position: absolute; background: rgba(9, 20, 31, 0.82); }
+        .holo::before, .holo::after, .holo s::before, .holo s::after {
+            content: ""; position: absolute; width: 10px; height: 10px; pointer-events: none; }
+        .holo::before { top: -1px; left: -1px; border-top: 2px solid #46d2ff; border-left: 2px solid #46d2ff; }
+        .holo::after  { top: -1px; right: -1px; border-top: 2px solid #46d2ff; border-right: 2px solid #46d2ff; }
+        .holo s::before { bottom: -1px; left: -1px; border-bottom: 2px solid #46d2ff; border-left: 2px solid #46d2ff; }
+        .holo s::after  { bottom: -1px; right: -1px; border-bottom: 2px solid #46d2ff; border-right: 2px solid #46d2ff; }
+
+        .h-h { display: flex; justify-content: space-between; align-items: center;
+            padding: 7px 13px 5px; font-size: 11px; letter-spacing: 3px; color: #6fb6d8;
+            flex: 0 0 auto; }
+        .h-h .en { color: #35708c; letter-spacing: 2px; }
+        .h-line { height: 1px; margin: 0 13px;
+            background: linear-gradient(90deg, transparent, rgba(70,210,255,.55), transparent);
+            flex: 0 0 auto; }
+
+        /* ===== 工具条胶囊按钮 ===== */
+        #tm-toolbar { top: 12px; right: 12px; display: flex; align-items: center;
+            padding: 3px 8px 3px 4px; }
+        .sep { width: 1px; height: 18px; margin: 0 4px; background: rgba(70,190,240,.25); }
+        .chip { position: relative; display: inline-block; padding: 5px 11px 7px; margin: 1px;
+            color: #7fa8bd; font-size: 13px; letter-spacing: 1px; white-space: nowrap; cursor: pointer; }
+        .chip:hover { color: #e6f7ff; }
+        .chip.on { color: #dff6ff; }
+        .chip.on::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: 2px;
+            height: 2px; background: #46d2ff; box-shadow: 0 0 7px rgba(70,210,255,.9); }
+        .chip.warn.on::after { background: #ffb066; box-shadow: 0 0 7px rgba(255,176,102,.9); }
+        /* 模式可见性：战术/炮兵互斥显示 */
+        body.artillery .tac-only { display: none; }
+        body.tactical .art-only { display: none; }
+
+        /* ===== 侧栏抽屉（宽 384；上下分区 flex 高度比 1:2） ===== */
+        #tm-drawer { top: 54px; right: 12px; bottom: 44px; width: 384px;
+            display: none; flex-direction: column; }
+        body.dw-radar #tm-drawer, body.dw-gps #tm-drawer { display: flex; }
+        #dw-upper { flex: 1 1 0; min-height: 0; overflow: hidden;
+            padding: 8px 15px 4px; box-sizing: border-box; }
+        #dw-split { flex: 0 0 auto; height: 1px; margin: 2px 14px;
+            background: linear-gradient(90deg, transparent, rgba(70,210,255,.5), transparent); }
+        #dw-lower { flex: 2 1 0; min-height: 0; overflow-y: auto;
+            padding: 4px 14px 10px; box-sizing: border-box; }
+
+        .lk-name { display: flex; align-items: baseline; gap: 9px; padding-bottom: 5px; }
+        .lk-name b { font-size: 16px; color: #ff9db0; letter-spacing: 1px; font-weight: 600; }
+        .lk-name b.blue { color: #9fdcf7; }
+        .lk-name .tag { font-size: 10px; letter-spacing: 2px; color: #ffb066;
+            border: 1px solid rgba(255,176,102,.45); padding: 1px 7px; }
+        /* AUI 引擎对 display:grid 支持不可靠，改用 flex 三列（每格 1/3 宽换行） */
+        .lk-grid { display: flex; flex-wrap: wrap; }
+        .lk-grid .rd { flex: 0 0 33.33%; box-sizing: border-box; padding: 3px 5px 3px 0; }
+        .rd .k { font-size: 10px; letter-spacing: 2px; color: #3f7d96; }
+        .rd .v { font-size: 14px; color: #dff3ff; }
+        .sel-line { margin-top: 6px; padding-top: 5px; border-top: 1px dashed rgba(70,190,240,.18);
+            font-size: 12px; color: #4d8ba6; }
+        .gps-line { margin-top: 5px; font-size: 11px; color: #3f7d96; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; }
+        .gps-line b { color: #7ddcff; font-weight: normal; }
+
+        /* 雷达列表行 */
+        .thead, .trow { display: flex; align-items: center; font-size: 12px; }
+        .thead { color: #3f7d96; letter-spacing: 1px; font-size: 10.5px; padding: 3px 2px; }
+        .trow { padding: 4px 2px; color: #cdeafc; cursor: pointer;
+            border-top: 1px solid rgba(70,190,240,.09); }
+        .trow:hover { background: rgba(70,190,240,.10); }
+        .trow.sel { background: rgba(70,190,240,.16); }
+        .trow.locked .c-name::after { content: " ◈"; color: #ffb066; }
+        .c-name { width: 27%; overflow: hidden; white-space: nowrap; }
+        .hostile > .c-name { color: #ff7d92; } .friend > .c-name { color: #7ddcff; } .neutral > .c-name { color: #d8cf8a; }
+        .c-dist { width: 17%; text-align: right; } .c-alt { width: 15%; text-align: right; }
+        .c-spd { width: 14%; text-align: right; } .c-nctr { width: 13%; text-align: right;
+            overflow: hidden; white-space: nowrap; }
+        .c-iff { width: 8%; text-align: right; } .hostile > .c-iff { color: #ff7d92; }
+        .friend > .c-iff { color: #7ddcff; } .neutral > .c-iff { color: #d8cf8a; }
+        .c-lock { width: 6%; text-align: right; color: #8fe3b8; }
+        .hint { margin-top: 7px; font-size: 11px; line-height: 1.8; color: #3f7d96; }
+
+        /* GPS 输入行 */
+        .fld-row { display: flex; gap: 5px; margin-top: 6px; }
+        .fld { flex: 1 1 0; display: flex; align-items: center; background: rgba(6,16,26,.85);
+            border: 1px solid rgba(70,190,240,.28); padding: 3px 7px; }
+        .fld label { color: #3f7d96; font-size: 11px; margin-right: 4px; }
+        .fld input { flex: 1 1 auto; width: 60px; background: transparent; border: none; outline: none;
+            color: #dff5ff; font-size: 12px; font-family: Consolas, monospace; }
+        .act-row { display: flex; gap: 6px; margin-top: 7px; }
+        .mini-chip { padding: 4px 13px; font-size: 12px; color: #9fd4ea;
+            border: 1px solid rgba(70,190,240,.35); cursor: pointer; letter-spacing: 1px; }
+        .mini-chip:hover { color: #fff; background: rgba(70,190,240,.15); }
+        .wp-row { display: flex; justify-content: space-between; padding: 5px 4px; font-size: 12px;
+            color: #cdeafc; border-top: 1px solid rgba(70,190,240,.09); cursor: pointer; }
+        .wp-row:hover { background: rgba(70,190,240,.10); }
+        .wp-row.cur { color: #ffe9c2; }
+        .wp-row .wp-id { color: #ffb066; margin-right: 7px; }
+
+        /* ===== 浮层菜单（右键菜单 / 武器下拉 共用） ===== */
+        #tm-pop { display: none; min-width: 216px; z-index: 30; }
+        #tm-pop.open { display: block; }
+        #pop-head { padding: 7px 13px 3px; font-size: 12px; color: #dff3ff; letter-spacing: 1px; }
+        #pop-sub { padding: 0 13px 5px; font-size: 11px; color: #4d8ba6; }
+        #pop-items { padding: 3px 0 5px; }
+        .pop-item { padding: 7px 14px; font-size: 12.5px; color: #a8cede; cursor: pointer; }
+        .pop-item:hover { background: rgba(70,190,240,.14); color: #ffffff; }
+        .pop-item.danger { color: #ff8f7a; }
+        .pop-item.cur { color: #9fe8ff; }
+    </style>
+</head>
+<body class="tm tactical">
+    <!-- 地图占位 -->
+    <div id="tm-hole"></div>
+
+    <!-- 顶部工具条 -->
+    <div id="tm-toolbar" class="holo"><s></s>
+        <div class="chip tac-only" id="btn-weapon">武器</div>
+        <div class="chip art-only on" id="btn-traj">高弹道</div>
+        <div class="chip" id="btn-center">居中</div>
+        <div class="chip on" id="btn-follow">跟随：开</div>
+        <div class="chip warn tac-only" id="btn-radar">雷达面板</div>
+        <div class="chip warn tac-only" id="btn-gps">GPS面板</div>
+        <div class="sep tac-only"></div>
+        <div class="chip tac-only" id="btn-gpsmode">单点</div>
+        <div class="chip tac-only" id="btn-gpsclear">清空</div>
+        <div class="chip tac-only" id="btn-qmark">快标：关</div>
+        <div class="chip tac-only" id="btn-hidefrd">显示友方</div>
+    </div>
+
+    <!-- 侧栏抽屉：上区=锁定/选中目标卡（避让命中反馈UI），下区=雷达列表/GPS航点（鼠标交互），flex 高度比 1:2 -->
+    <aside id="tm-drawer" class="holo"><s></s>
+        <div class="h-h"><span id="dw-title">雷达面板</span><span class="en" id="dw-en">RADAR · LIVE</span></div>
+        <div class="h-line"></div>
+
+        <div id="dw-upper">
+            <!-- 雷达态上区 -->
+            <div id="dw-upper-r">
+                <div class="lk-name"><b id="lk-name">--</b><span class="tag" id="lk-tag"></span></div>
+                <div class="lk-grid">
+                    <div class="rd"><div class="k">方位 BRG</div><div class="v" id="lk-brg">--</div></div>
+                    <div class="rd"><div class="k">距离 RNG</div><div class="v" id="lk-rng">--</div></div>
+                    <div class="rd"><div class="k">高度 ALT</div><div class="v" id="lk-alt">--</div></div>
+                    <div class="rd"><div class="k">速度 SPD</div><div class="v" id="lk-spd">--</div></div>
+                    <div class="rd"><div class="k">NCTR</div><div class="v" id="lk-nctr">--</div></div>
+                    <div class="rd"><div class="k">敌我 IFF</div><div class="v" id="lk-iff">--</div></div>
+                </div>
+                <div class="sel-line" id="lk-sel-line"></div>
+                <div class="gps-line" id="lk-gps-line"></div>
+            </div>
+            <!-- GPS态上区 -->
+            <div id="dw-upper-g" style="display:none">
+                <div class="lk-name"><b class="blue" id="g-state">当前 GPS 目标</b><span class="tag" id="g-mode-tag">单点</span></div>
+                <div class="fld-row">
+                    <div class="fld"><label>X</label><input id="gps-x" type="text" value="0"></div>
+                    <div class="fld"><label>Y</label><input id="gps-y" type="text" value="0"></div>
+                    <div class="fld"><label>Z</label><input id="gps-z" type="text" value="0"></div>
+                </div>
+                <div class="act-row">
+                    <div class="mini-chip" id="gps-bind">装订</div>
+                    <div class="mini-chip" id="gps-clear">清空</div>
+                </div>
+                <div class="gps-line" id="g-summary"></div>
+            </div>
+        </div>
+
+        <div id="dw-split"></div>
+
+        <div id="dw-lower">
+            <!-- 雷达态下区：目标列表（需要鼠标交互，置于低处避开命中反馈UI） -->
+            <div id="dw-lower-r">
+                <div class="thead">
+                    <span class="c-name">#</span><span class="c-dist">距离</span><span class="c-alt">高度</span>
+                    <span class="c-spd">速度</span><span class="c-nctr">NCTR</span><span class="c-iff">敌我</span><span class="c-lock">锁</span>
+                </div>
+                <div id="contact-list"></div>
+                <div class="hint">双击左键 锁定 · 双击右键 发射 · 单击 同步上方目标卡</div>
+            </div>
+            <!-- GPS态下区：航点列表 -->
+            <div id="dw-lower-g" style="display:none">
+                <div id="wp-list"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 浮层：地图右键菜单 / 实体右键菜单 / 武器下拉 共用 -->
+    <div id="tm-pop" class="holo"><s></s>
+        <div id="pop-head"></div>
+        <div id="pop-sub"></div>
+        <div id="pop-items"></div>
+    </div>
+</body>
+</html>

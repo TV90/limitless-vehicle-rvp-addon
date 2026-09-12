@@ -37,3 +37,5 @@
 - 公共数组（`mixins`）的 Mixin 会让目标类在服务端变 dirty → Forge 重算字节码帧 → 目标类方法中若有 `@OnlyIn(CLIENT)` 类型引用（`LocalVehiclePlayer`、`Minecraft`、客户端粒子等）会触发服务端加载崩溃。
 - Mixin 及任何共享/公共代码中**禁止直接引用 `@OnlyIn(CLIENT)` 类型**；必须经 `org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess` 桥接（服务端 NOOP、客户端真实现），新增桥接方法见 `RVP_IClientActions`。
 - 公共数组 Mixin 的目标类必须是双端安全的；纯客户端行为放 `client` 数组。
+
+**Git 提交策略（2026-09-09 订立）**：只提交**代码**（`src/` 下 Java 源码及必要的构建配置）；**载具包**（`limitless_vehicle/` 资产，含 models/textures/display/vehicles/weapons 等）**一律不提交 gitee**。提交前核对 `git status` 暂存清单，禁止 `git add .` 误带载具包资产。
