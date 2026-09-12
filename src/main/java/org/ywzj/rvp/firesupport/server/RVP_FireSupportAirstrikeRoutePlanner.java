@@ -7,11 +7,12 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 
 /**
- * 空中支援全局平滑航线的纯数学规划器；不读取世界、不生成实体、不持有服务端状态。
+ * 空中支援公共任务航线的纯数学规划器；不读取世界、不生成实体、不持有服务端状态。
  *
- * <p>航线以向心 Catmull-Rom 插值曲线连接入场点和投放参考点，最后一个投放点到出场点
- * 使用直线段。原始投放 Tick 作为每个参考点的不得提前下限；实际飞机可以因固定翼转向
- * 限制偏离参考曲线，投送器会使用实时挂架位置重新解算弹道。</p>
+ * <p>GPS 与普通弹道策略先分别提供每发释放点，本实现再统一反推飞机中心、规划入场点和
+ * 出场点，并以向心 Catmull-Rom 曲线连接中段；最后一个投放点到出场点使用直线段。
+ * 原始投放 Tick 作为每个参考点的不得提前下限；实际飞机可以因固定翼转向限制偏离参考
+ * 曲线，投送器会使用实时挂架位置重新解算弹道。</p>
  */
 public final class RVP_FireSupportAirstrikeRoutePlanner {
     /** 每个控制点区间的数值采样数；足以让航点切线和弧长在服务端保持稳定。 */
@@ -217,7 +218,7 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         return new AircraftPose(current.position().add(motion), forward, pitch, yaw, roll, motion);
     }
 
-    /** 用平滑入场/投放曲线和直线出场段建立全局航线及原始 Tick 下限。 */
+    /** 用各单发策略的释放点、公共入场段和平直出场段建立任务航线及原始 Tick 下限。 */
     public static RoutePlan plan(List<ReleaseTarget> targets,
                                  RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
                                  double entryDistanceMeters, double exitDistanceMeters,

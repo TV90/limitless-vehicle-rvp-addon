@@ -10,26 +10,32 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** GPS 空射固定释放几何与载机速度继承回归。 */
+/** 空射航点策略选择、GPS 固定释放几何与载机速度继承回归。 */
 class RVP_AirLaunchedProjectileDeliveryTest {
     @Test
-    void gpsBranchRecognizesPrimaryAndTerminalGuidanceButNotUnguidedWeapons() {
+    void routePlannerSelectsGpsForPrimaryAndTerminalGuidanceButBallisticForUnguidedWeapons() {
         RVP_WeaponData primaryGps = weapon(RVP_EnumGuidanceType.GPS, null);
         RVP_WeaponData terminalGps = weapon(RVP_EnumGuidanceType.NONE, RVP_EnumGuidanceType.GPS);
         RVP_WeaponData unguided = weapon(RVP_EnumGuidanceType.NONE, null);
 
-        assertTrue(RVP_AirLaunchedProjectileDelivery.usesGpsGuidance(primaryGps));
-        assertTrue(RVP_AirLaunchedProjectileDelivery.usesGpsGuidance(terminalGps));
-        assertFalse(RVP_AirLaunchedProjectileDelivery.usesGpsGuidance(unguided));
+        assertTrue(RVP_AirLaunchedProjectileDelivery.selectRoutePlanner(primaryGps)
+                instanceof RVP_GpsAirstrikeRoutePlanningStrategy);
+        assertTrue(RVP_AirLaunchedProjectileDelivery.selectRoutePlanner(terminalGps)
+                instanceof RVP_GpsAirstrikeRoutePlanningStrategy);
+        assertTrue(RVP_AirLaunchedProjectileDelivery.selectRoutePlanner(unguided)
+                instanceof RVP_BallisticAirstrikeRoutePlanningStrategy);
+        assertFalse(RVP_AirLaunchedProjectileDelivery.selectRoutePlanner(unguided)
+                instanceof RVP_GpsAirstrikeRoutePlanningStrategy);
     }
 
     @Test
     void gpsReleasePointUsesFixedUpstreamDistanceAndConfiguredAltitude() {
         Vec3 direction = new Vec3(0.6D, 0.0D, 0.8D);
 
-        Vec3 release = RVP_AirLaunchedProjectileDelivery.resolveGpsReleasePosition(
+        Vec3 release = RVP_GpsAirstrikeRoutePlanningStrategy.resolveReleasePosition(
                 1000.0D, -200.0D, 72.0D, 256.0D, direction, 768.0D);
 
         assertEquals(539.2D, release.x, 1.0E-9D);
@@ -38,10 +44,57 @@ class RVP_AirLaunchedProjectileDeliveryTest {
     }
 
     @Test
+    void gpsReferencePlannerRejectsAltitudeBelowMinimumWithDiagnostic() {
+        RVP_AirstrikeRoutePlanningResult result =
+                RVP_GpsAirstrikeRoutePlanningStrategy.planReference(
+                        100.0D, 200.0D, 64.0D,
+                        256.0D, 31.0D, 32.0D,
+                        new Vec3(1.0D, 0.0D, 0.0D), 768.0D, 2.5D,
+                        ignored -> true);
+
+        assertFalse(result.successful());
+        assertTrue(result.diagnostic().contains("GPS 空投释放高度低于最小值"));
+    }
+
+    @Test
+    void gpsReferencePlannerRejectsOutOfBorderFixedReleaseWithoutShorteningDistance() {
+        RVP_AirstrikeRoutePlanningResult result =
+                RVP_GpsAirstrikeRoutePlanningStrategy.planReference(
+                        100.0D, 200.0D, 64.0D,
+                        256.0D, 256.0D, 32.0D,
+                        new Vec3(1.0D, 0.0D, 0.0D), 768.0D, 2.5D,
+                        ignored -> false);
+
+        assertFalse(result.successful());
+        assertTrue(result.diagnostic().contains("GPS 空投固定前置释放点超出世界边界"));
+        assertTrue(result.diagnostic().contains("gpsReleaseDistance=768.0"));
+    }
+
+    @Test
+    void gpsReferencePlannerReturnsConfiguredMotionAndClampedAltitude() {
+        RVP_AirstrikeRoutePlanningResult result =
+                RVP_GpsAirstrikeRoutePlanningStrategy.planReference(
+                        1000.0D, -200.0D, 72.0D,
+                        300.0D, 256.0D, 32.0D,
+                        new Vec3(0.6D, 0.0D, 0.8D), 768.0D, 2.5D,
+                        ignored -> true);
+
+        assertTrue(result.successful());
+        assertNotNull(result.plan());
+        assertEquals(539.2D, result.plan().spawn().x, 1.0E-9D);
+        assertEquals(328.0D, result.plan().spawn().y, 1.0E-9D);
+        assertEquals(-814.4D, result.plan().spawn().z, 1.0E-9D);
+        assertEquals(1.5D, result.plan().motion().x, 1.0E-9D);
+        assertEquals(0.0D, result.plan().motion().y, 1.0E-9D);
+        assertEquals(2.0D, result.plan().motion().z, 1.0E-9D);
+        assertEquals(256.0D, result.plan().releaseAltitudeMeters());
+    }
+
+    @Test
     void gpsInitialMotionPreservesActualCarrierMotionIncludingVerticalComponent() {
         Vec3 carrierMotion = new Vec3(2.1D, 0.35D, -0.7D);
 
-        Vec3 resolved = RVP_AirLaunchedProjectileDelivery.resolveGpsInitialMotion(
+        Vec3 resolved = RVP_GpsAirstrikeRoutePlanningStrategy.resolveInitialMotion(
                 carrierMotion, new Vec3(0.0D, 0.0D, 1.0D), 2.5D);
 
         assertEquals(carrierMotion, resolved);
@@ -52,11 +105,11 @@ class RVP_AirLaunchedProjectileDeliveryTest {
         Vec3 direction = new Vec3(3.0D, 4.0D, 4.0D);
         Vec3 expected = new Vec3(1.5D, 0.0D, 2.0D);
 
-        assertEquals(expected, RVP_AirLaunchedProjectileDelivery.resolveGpsInitialMotion(
+        assertEquals(expected, RVP_GpsAirstrikeRoutePlanningStrategy.resolveInitialMotion(
                 null, direction, 2.5D));
-        assertEquals(expected, RVP_AirLaunchedProjectileDelivery.resolveGpsInitialMotion(
+        assertEquals(expected, RVP_GpsAirstrikeRoutePlanningStrategy.resolveInitialMotion(
                 Vec3.ZERO, direction, 2.5D));
-        assertEquals(expected, RVP_AirLaunchedProjectileDelivery.resolveGpsInitialMotion(
+        assertEquals(expected, RVP_GpsAirstrikeRoutePlanningStrategy.resolveInitialMotion(
                 new Vec3(Double.NaN, 0.0D, 0.0D), direction, 2.5D));
     }
 

@@ -543,7 +543,7 @@ public final class RVP_FireSupportAirstrikeController {
         return Status.AIRCRAFT_LOST;
     }
 
-    /** 用原始空投弹道解算结果建立平滑参考航线和按武器 ID 分组的待投送池。 */
+    /** 用各单发航点策略的结果建立公共平滑参考航线和按武器 ID 分组的待投送池。 */
     private static RouteState buildRoute(MinecraftServer server, RVP_FireSupportMission mission, long actualStartTick) {
         RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData config = null;
         List<RVP_FireSupportSchedulePlanner.PlannedRound> rounds = mission.plan.rounds();
@@ -555,6 +555,7 @@ public final class RVP_FireSupportAirstrikeController {
             if (config == null) config = delivery.data();
             RVP_FireSupportDeliveryContext context = RVP_FireSupportMissionManager.createDeliveryContext(
                     server, server.getLevel(mission.dimension), mission, round, null, null, null, false);
+            // 调用本项目空投投送器的策略入口，让 GPS 与普通弹体分别解析本发参考释放点。
             RVP_AirLaunchedProjectileDelivery.AirPlan plan = delivery.resolvePlan(context);
             if (plan == null) return null;
             long releaseTick = Math.addExact(mission.callDeadlineTick, round.strikeOffsetTicks());
@@ -563,6 +564,7 @@ public final class RVP_FireSupportAirstrikeController {
             refs.add(new RoundRef(round, missionWeapon.weaponData().getWeaponId()));
         }
         if (config == null || releases.isEmpty()) return null;
+        // 调用本项目公共任务航线规划器，为混合弹种统一补进入场点、出场点、曲线和航点 Tick。
         RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = RVP_FireSupportAirstrikeRoutePlanner.plan(
                 releases, config.rackOffset(), config.entryDistanceMeters(), config.exitDistanceMeters(),
                 config.carrierSpeedMetersPerTick(), actualStartTick);
@@ -840,6 +842,7 @@ public final class RVP_FireSupportAirstrikeController {
                 targets.add(new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(release.roundIndex(),
                         release.plannedTick(), release.releasePosition(), route.direction()));
             }
+            // 调用本项目公共任务航线规划器，仅重排起始时间，保持各策略冻结的释放点和公共首尾段。
             RVP_FireSupportAirstrikeRoutePlanner.RoutePlan replanned =
                     RVP_FireSupportAirstrikeRoutePlanner.plan(targets, config.rackOffset(),
                             config.entryDistanceMeters(), config.exitDistanceMeters(),

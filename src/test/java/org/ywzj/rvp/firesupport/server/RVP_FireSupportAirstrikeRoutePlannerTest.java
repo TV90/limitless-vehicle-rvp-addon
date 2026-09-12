@@ -117,6 +117,31 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
     }
 
     @Test
+    void mixedGpsAndBallisticReleaseTargetsShareCommonEntryExitAndScheduling() {
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget gpsTarget =
+                targetAt(0, 5L, new Vec3(0.0D, 100.0D, 0.0D));
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget ballisticTarget =
+                targetAt(1, 8L, new Vec3(12.0D, 96.0D, 4.0D));
+
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route =
+                RVP_FireSupportAirstrikeRoutePlanner.plan(
+                        List.of(gpsTarget, ballisticTarget), ZERO_OFFSET,
+                        10.0D, 8.0D, 2.0D, 0L);
+
+        assertNotNull(route);
+        assertEquals(List.of(0, 1), route.releases().stream()
+                .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::roundIndex).toList());
+        assertEquals(gpsTarget.releasePosition(), route.releases().get(0).releasePosition());
+        assertEquals(ballisticTarget.releasePosition(), route.releases().get(1).releasePosition());
+        assertEquals(route.releases().get(0).aircraftCenter().subtract(route.direction().scale(10.0D)),
+                route.waypoints().get(0).position());
+        assertEquals(route.releases().get(1).aircraftCenter().add(route.direction().scale(8.0D)),
+                route.exitPosition());
+        assertTrue(route.releases().get(0).actualTick() >= gpsTarget.plannedTick());
+        assertTrue(route.releases().get(1).actualTick() >= ballisticTarget.plannedTick());
+    }
+
+    @Test
     void restrictedTurnRateKeepsForwardMotionContinuous() {
         RVP_FireSupportAirstrikeRoutePlanner.AircraftPose pose =
                 new RVP_FireSupportAirstrikeRoutePlanner.AircraftPose(
