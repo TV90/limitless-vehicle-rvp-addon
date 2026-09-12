@@ -22,5 +22,6 @@
   "rvp.lock_warning.radar_none": "被雷达锁定",
   "rvp.lock_warning.radar_ecm": "被雷达锁定，按[%s]释放主动ECM规避",
   "rvp.lock_warning.laser_none": "被激光照射",
-  "rvp.lock_warning.hitl_tv_none": "被人在回路电视制导导弹锁定"
+  "rvp.lock_warning.hitl_tv_none": "被人在回路电视制导导弹锁定",
+  "rvp.modding.vehicle_occupied": "载具已有乘员，无法改装"
 }

@@ -22,5 +22,6 @@
   "rvp.lock_warning.radar_none": "Radar locked",
   "rvp.lock_warning.radar_ecm": "Radar locked, press [%s] to deploy active ECM",
   "rvp.lock_warning.laser_none": "Laser-illuminated",
-  "rvp.lock_warning.hitl_tv_none": "Locked by man-in-the-loop TV missile"
+  "rvp.lock_warning.hitl_tv_none": "Locked by man-in-the-loop TV missile",
+  "rvp.modding.vehicle_occupied": "Vehicle is occupied, modding is disabled"
 }
