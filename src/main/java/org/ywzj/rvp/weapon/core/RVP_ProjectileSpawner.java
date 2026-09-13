@@ -167,11 +167,17 @@ public final class RVP_ProjectileSpawner {
     private static void applyLockTarget(RVP_BaseBullet projectile, RVP_ProjectileSpawnContext context) {
         Entity lockTarget = context.lockTarget();
         if (lockTarget == null) return;
+        RVP_WeaponData data = context.weaponData();
+        // 目的：视线类制导（SACLOS 视线指令 / LBR 驾束）不接收发射锁定——光束与视线严格跟随
+        // 操作手鼠标瞄准线，弹体不持 targetEntity（否则 tickGuidance 实体追踪与近炸锁定分支
+        // 会让导弹偏向发射时锁定的目标）；ARH/SARH/IR/LH/SALH/TV 等其他弹型传锁不变。
+        if (data.isLineOfSightGuided()) {
+            return;
+        }
         // 兜底归一：锁到载具乘员时改为所属载具，保持原载具射击与反制判定语义。
         Entity lockVehicle = lockTarget.getVehicle();
         if (lockVehicle instanceof AbstractVehicle) lockTarget = lockVehicle;
         projectile.setTargetEntity(lockTarget);
-        RVP_WeaponData data = context.weaponData();
         if (projectile instanceof RVP_MissileEntity missile
                 && (data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.AIR))) {

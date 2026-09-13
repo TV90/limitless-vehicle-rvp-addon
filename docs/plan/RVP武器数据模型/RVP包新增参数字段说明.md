@@ -326,12 +326,15 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 | `proximity_radius` | 近炸引信检测半径（米），0 表示不启用。未写时可读 `detonate_data.explosion_data.proximity_radius`。 |
 | `proximity_fuse_tick` | 近炸解保 tick：出生后至少经过该 tick 才启用；**-1** 表示不限制。 |
 | `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
+| `proximity_fuse_require_radar_lock` | 近炸是否要求目标为当前有效雷达锁定目标；默认 **false**（任何可伤实体均可触发，现行为）。开启后仅"发射武器站根的手动雷达锁（`RadarUnit.lockedEntity`，玩家锁定键写入）或外置雷达锁（外置雷达控制器 / AI 炮手写入）"锁定的目标可触发近炸——判定口径与 SARH 半主动照射源一致；雷达 TWS 自动跟踪与导引头自锁带来的目标**不算数**。ECM 干扰期近炸本就被诱饵干扰抑制关闭，无需重复配置。 |
 | `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
 | `ground_proximity_fuse_distance` | 近地引信高度（格），默认 `0` 表示禁用。沿世界系绝对 `-Y` 检测可碰撞方块并忽略流体；会扫掠本 Tick 完整运动段，使高速弹体在撞地前的准确高度触发。建筑和树叶等有碰撞体的方块同样算地面。 |
 | `ground_proximity_fuse_arm_tick` | 近地引信独立解保 tick，默认 `0`；弹体计时达到该值后才进行近地检测，不要求弹体必须下降。 |
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 | `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
+
+> **近炸触发实体过滤（2026-09-13 起，无需配置）**：机枪弹丸不再触发任何 RVP 近炸引信——RVP 弹体按 `weapon_kind` 精确判 `machinegun`（同基类的导弹/火箭/航弹不受影响，"近炸拦截敌方导弹"能力保留）；本体侧按 `BulletEntity`（机炮弹专用类）精确判。干扰物（`RVP_Decoy`）、贴地目标（`proximity_fuse_height`）、已直击/已近炸目标的排除维持不变。
 
 #### AHEAD 自动可编程空爆（`rvp:machinegun` 等）
 
