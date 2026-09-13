@@ -118,8 +118,8 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
 
     @Test
     void mixedGpsAndBallisticReleaseTargetsShareCommonEntryExitAndScheduling() {
-        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget gpsTarget =
-                targetAt(0, 5L, new Vec3(0.0D, 100.0D, 0.0D));
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget gpsTarget = targetAtGps(
+                0, 5L, new Vec3(0.0D, 100.0D, 0.0D), new Vec3(1.0D, 0.0D, 0.0D));
         RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget ballisticTarget =
                 targetAt(1, 8L, new Vec3(12.0D, 96.0D, 4.0D));
 
@@ -132,6 +132,8 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
         assertEquals(List.of(0, 1), route.releases().stream()
                 .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::roundIndex).toList());
         assertEquals(gpsTarget.releasePosition(), route.releases().get(0).releasePosition());
+        assertEquals(gpsTarget.preferredInboundDirection(),
+                route.releases().get(0).preferredInboundDirection());
         assertEquals(ballisticTarget.releasePosition(), route.releases().get(1).releasePosition());
         assertEquals(route.releases().get(0).aircraftCenter().subtract(route.direction().scale(10.0D)),
                 route.waypoints().get(0).position());
@@ -139,6 +141,105 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
                 route.exitPosition());
         assertTrue(route.releases().get(0).actualTick() >= gpsTarget.plannedTick());
         assertTrue(route.releases().get(1).actualTick() >= ballisticTarget.plannedTick());
+    }
+
+    @Test
+    void gpsTurnLeadDistanceUsesAircraftYawLimitSpeedAndSafetyMargin() {
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics fallback =
+                RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
+
+        double defaultTurn = RVP_FireSupportAirstrikeRoutePlanner.calculateGpsTurnLeadDistance(
+                new Vec3(0.0D, 0.0D, 1.0D), new Vec3(1.0D, 0.0D, 0.0D), 2.0D, fallback);
+        double fasterAircraft = RVP_FireSupportAirstrikeRoutePlanner.calculateGpsTurnLeadDistance(
+                new Vec3(0.0D, 0.0D, 1.0D), new Vec3(1.0D, 0.0D, 0.0D), 2.0D,
+                new RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics(0.4D, 2.0D, 6.0D, 8.0D));
+        double higherSpeed = RVP_FireSupportAirstrikeRoutePlanner.calculateGpsTurnLeadDistance(
+                new Vec3(0.0D, 0.0D, 1.0D), new Vec3(1.0D, 0.0D, 0.0D), 4.0D, fallback);
+        double noTurn = RVP_FireSupportAirstrikeRoutePlanner.calculateGpsTurnLeadDistance(
+                new Vec3(1.0D, 0.0D, 0.0D), new Vec3(1.0D, 0.0D, 0.0D), 2.0D, fallback);
+
+        // 默认偏航速率下每 Tick 2.4 度，90 度至少 38 Tick，再乘 2.0 格/Tick 与 1.5 余量。
+        assertEquals(114.0D, defaultTurn, 1.0E-6D);
+        assertTrue(fasterAircraft < defaultTurn, "更高偏航速率应缩短对准距离");
+        assertTrue(higherSpeed > defaultTurn, "更高航速应增加完成相同转角所需的距离");
+        assertEquals(0.0D, noTurn, 1.0E-9D, "同向航点无需额外对准段");
+    }
+
+    @Test
+    void laterGpsReleaseGetsUpstreamAlignmentLegAndExactInboundTangent() {
+        Vec3 inbound = new Vec3(1.0D, 0.0D, 0.0D);
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget first = targetAt(
+                0, 5L, new Vec3(0.0D, 0.0D, 0.0D));
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget second = targetAtGps(
+                1, 7L, new Vec3(0.0D, 0.0D, 100.0D), inbound);
+
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route =
+                RVP_FireSupportAirstrikeRoutePlanner.plan(
+                        List.of(first, second), ZERO_OFFSET, 10.0D, 8.0D, 2.0D,
+                        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback(), 0L);
+
+        RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease gpsRelease = route.releases().get(1);
+        assertEquals(second.releasePosition(), gpsRelease.releasePosition(),
+                "GPS 固定前置释放位置不得因对准规划而移动");
+        assertEquals(new Vec3(0.0D, 0.0D, 100.0D), gpsRelease.aircraftCenter());
+        assertEquals(inbound, route.tangentAtDistance(gpsRelease.distanceAlongRoute()),
+                "精确到达 GPS 参考点时路线切线必须沿单发计划落点方向");
+        assertEquals(new Vec3(-114.0D, 0.0D, 100.0D),
+                route.positionAtDistance(gpsRelease.distanceAlongRoute() - 114.0D),
+                "对准段应在 GPS 释放中心上游保留计算出的距离");
+        assertTrue(gpsRelease.actualTick() >= gpsRelease.plannedTick());
+        assertTrue(gpsRelease.actualTick() > route.releases().get(0).actualTick(),
+                "新增对准航程必须计入参考经过时间");
+    }
+
+    @Test
+    void firstGpsReleaseNeedsNoExtraLeadAndRetimeCanPreserveGpsMarker() {
+        Vec3 inbound = new Vec3(0.0D, 0.0D, 1.0D);
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget gpsFirst = targetAtGps(
+                0, 5L, new Vec3(0.0D, 0.0D, 0.0D), inbound);
+        RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget gpsSecond = targetAtGps(
+                1, 7L, new Vec3(100.0D, 0.0D, 0.0D), inbound);
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics dynamics =
+                RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
+
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan initial =
+                RVP_FireSupportAirstrikeRoutePlanner.plan(
+                        List.of(gpsFirst, gpsSecond), ZERO_OFFSET, 10.0D, 8.0D, 2.0D, dynamics, 0L);
+        assertEquals(5L, initial.releases().get(0).actualTick(),
+                "首发沿现有入场方向进入，不额外增加对准航程");
+        assertEquals(inbound, initial.releases().get(0).preferredInboundDirection());
+        assertEquals(gpsFirst.releasePosition(), initial.releases().get(0).releasePosition());
+
+        List<RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget> retimedTargets = initial.releases().stream()
+                .map(release -> new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
+                        release.roundIndex(), release.plannedTick(), release.releasePosition(), inbound,
+                        release.preferredInboundDirection()))
+                .toList();
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan retimed =
+                RVP_FireSupportAirstrikeRoutePlanner.plan(
+                        retimedTargets, ZERO_OFFSET, 10.0D, 8.0D, 2.0D, dynamics, 50L);
+
+        assertEquals(50L, retimed.startTick());
+        assertEquals(inbound, retimed.releases().get(1).preferredInboundDirection(),
+                "起始时间重排必须保留 GPS 对准方向");
+        assertEquals(inbound, retimed.tangentAtDistance(retimed.releases().get(1).distanceAlongRoute()));
+    }
+
+    @Test
+    void coincidentPriorGpsCentersUseLastValidHeadingForTurnReserve() {
+        Vec3 inbound = new Vec3(1.0D, 0.0D, 0.0D);
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route =
+                RVP_FireSupportAirstrikeRoutePlanner.plan(
+                        List.of(new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
+                                        0, 5L, Vec3.ZERO, new Vec3(0.0D, 0.0D, 1.0D)),
+                                targetAtGps(1, 7L, Vec3.ZERO, inbound)),
+                        ZERO_OFFSET, 10.0D, 8.0D, 2.0D,
+                        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback(), 0L);
+
+        assertEquals(new Vec3(-114.0D, 0.0D, 0.0D),
+                route.positionAtDistance(route.releases().get(1).distanceAlongRoute() - 114.0D),
+                "重复中心应沿最近有效航向计算完整的 90 度对准余量");
+        assertEquals(inbound, route.tangentAtDistance(route.releases().get(1).distanceAlongRoute()));
     }
 
     @Test
@@ -304,6 +405,13 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
             int roundIndex, long plannedTick, Vec3 releasePosition) {
         return new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
                 roundIndex, plannedTick, releasePosition, new Vec3(1.0D, 0.0D, 0.0D));
+    }
+
+    private static RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget targetAtGps(
+            int roundIndex, long plannedTick, Vec3 releasePosition, Vec3 preferredInboundDirection) {
+        return new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
+                roundIndex, plannedTick, releasePosition, preferredInboundDirection,
+                preferredInboundDirection);
     }
 
     private static RVP_FireSupportAirstrikeRoutePlanner.RoutePlan plan(

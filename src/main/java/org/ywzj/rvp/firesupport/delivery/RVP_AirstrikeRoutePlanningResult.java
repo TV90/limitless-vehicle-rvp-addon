@@ -14,6 +14,7 @@ record RVP_AirstrikeRoutePlanningResult(
     record Plan(
             /** 弹体参考或实时挂架生成位置。 */ Vec3 spawn,
             /** 参考载机速度或实时弹体初始化速度。 */ Vec3 motion,
+            /** GPS 单发参考路线要求的入场方向；普通弹道计划为 null。 */ @Nullable Vec3 preferredInboundDirection,
             /** 原始一维空投预测结果；GPS 或实时三维解算时为 null。 */ @Nullable AirSolution solution,
             /** 实际挂架位置下的三维预测结果；参考路线或 GPS 投送时为 null。 */
             @Nullable ActualAirSolution actualSolution,

@@ -24,7 +24,7 @@ final class RVP_GpsAirstrikeRoutePlanningStrategy implements RVP_AirstrikeRouteP
             Vec3 motion = resolveInitialMotion(sourceMotion, direction, data.carrierSpeedMetersPerTick());
             return RVP_AirstrikeRoutePlanningResult.success(
                     new RVP_AirstrikeRoutePlanningResult.Plan(
-                            context.sourcePosition(), motion, null, null, Double.NaN));
+                            context.sourcePosition(), motion, direction, null, null, Double.NaN));
         }
 
         int impactX = Mth.floor(context.impactPoint().x());
@@ -65,7 +65,8 @@ final class RVP_GpsAirstrikeRoutePlanningStrategy implements RVP_AirstrikeRouteP
         }
         return RVP_AirstrikeRoutePlanningResult.success(
                 new RVP_AirstrikeRoutePlanningResult.Plan(
-                        spawn, inboundDirection.scale(carrierSpeed), null, null, clampedAltitude));
+                        spawn, inboundDirection.scale(carrierSpeed), inboundDirection,
+                        null, null, clampedAltitude));
     }
 
     /** 按目标、入场方向和固定前置距离计算 GPS 参考释放点。 */

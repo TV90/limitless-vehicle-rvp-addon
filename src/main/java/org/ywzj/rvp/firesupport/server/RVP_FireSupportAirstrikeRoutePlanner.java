@@ -2,6 +2,7 @@ package org.ywzj.rvp.firesupport.server;
 
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
@@ -10,7 +11,7 @@ import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
  * 空中支援公共任务航线的纯数学规划器；不读取世界、不生成实体、不持有服务端状态。
  *
  * <p>GPS 与普通弹道策略先分别提供每发释放点，本实现再统一反推飞机中心、规划入场点和
- * 出场点，并以向心 Catmull-Rom 曲线连接中段；最后一个投放点到出场点使用直线段。
+ * 出场点，并以向心 Catmull-Rom 曲线连接转向段；GPS 对准段及出场段使用直线。
  * 原始投放 Tick 作为每个参考点的不得提前下限；实际飞机可以因固定翼转向限制偏离参考
  * 曲线，投送器会使用实时挂架位置重新解算弹道。</p>
  */
@@ -29,7 +30,13 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             /** 任务内全局轮次。 */ int roundIndex,
             /** 原始计划投放 Tick；实际投送不得早于此值。 */ long plannedTick,
             /** 原始弹道解算得到的空投释放位置。 */ Vec3 releasePosition,
-            /** 原始入场方向和载机速度向量。 */ Vec3 inboundMotion) {}
+            /** 原始入场方向和载机速度向量。 */ Vec3 inboundMotion,
+            /** GPS 单发策略要求的释放点入场方向；普通弹道策略为 null。 */ @Nullable Vec3 preferredInboundDirection) {
+        /** 保留无 GPS 对准标记的普通弹道航点构造形式。 */
+        public ReleaseTarget(int roundIndex, long plannedTick, Vec3 releasePosition, Vec3 inboundMotion) {
+            this(roundIndex, plannedTick, releasePosition, inboundMotion, null);
+        }
+    }
 
     /** 一发弹对应的平滑航线参考点。 */
     public record ScheduledRelease(
@@ -38,7 +45,8 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             /** 参考曲线经过该点时的实际 Tick；不得早于原始 Tick。 */ long actualTick,
             /** 原始空投释放点。 */ Vec3 releasePosition,
             /** 由挂架偏移反推的参考飞机中心。 */ Vec3 aircraftCenter,
-            /** 参考曲线上的弧长位置。 */ double distanceAlongRoute) {}
+            /** 参考曲线上的弧长位置。 */ double distanceAlongRoute,
+            /** GPS 单发策略要求的释放点入场方向；普通弹道策略为 null。 */ @Nullable Vec3 preferredInboundDirection) {}
 
     /** 固定翼参考航线；所有方法只执行确定性数学计算。 */
     public record RoutePlan(
@@ -113,6 +121,15 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         /** 按弧长取归一化曲线切线。 */
         public Vec3 tangentAtDistance(double distance) {
             if (curve.isEmpty()) return direction;
+            // GPS 航点精确到达时保留它要求的入场方向，避免同 Tick 取到出场段的切线。
+            for (ScheduledRelease release : releases) {
+                Vec3 preferred = release.preferredInboundDirection();
+                double tolerance = EPSILON * Math.max(1.0D, Math.abs(release.distanceAlongRoute()));
+                if (preferred != null && Math.abs(distance - release.distanceAlongRoute()) <= tolerance) {
+                    Vec3 horizontal = horizontalDirection(preferred, direction);
+                    return horizontal == null ? direction : horizontal;
+                }
+            }
             int index = Math.max(0, Math.min(curve.size() - 1, upperBound(Math.max(0.0D, distance))));
             Vec3 tangent = curve.get(index).tangent();
             return tangent.lengthSqr() > EPSILON ? tangent.normalize() : direction;
@@ -223,6 +240,16 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
                                  RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
                                  double entryDistanceMeters, double exitDistanceMeters,
                                  double carrierSpeedMetersPerTick, long actualStartTick) {
+        return plan(targets, rackOffset, entryDistanceMeters, exitDistanceMeters,
+                carrierSpeedMetersPerTick, AircraftDynamics.fallback(), actualStartTick);
+    }
+
+    /** 使用指定飞机的转向参数，为后续 GPS 释放点计算入场对准段并建立任务航线。 */
+    public static RoutePlan plan(List<ReleaseTarget> targets,
+                                 RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
+                                 double entryDistanceMeters, double exitDistanceMeters,
+                                 double carrierSpeedMetersPerTick, AircraftDynamics aircraftDynamics,
+                                 long actualStartTick) {
         if (targets == null || targets.isEmpty() || rackOffset == null
                 || !Double.isFinite(entryDistanceMeters) || entryDistanceMeters <= 0.0D
                 || !Double.isFinite(exitDistanceMeters) || exitDistanceMeters <= 0.0D
@@ -234,6 +261,7 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
                 || !finite(first.releasePosition()) || !finite(first.inboundMotion())
                 || first.inboundMotion().lengthSqr() <= EPSILON) return null;
         Vec3 direction = first.inboundMotion().normalize();
+        AircraftDynamics dynamics = sanitizeDynamics(aircraftDynamics);
         try {
             List<Vec3> centers = new ArrayList<>(targets.size());
             for (ReleaseTarget target : targets) {
@@ -242,11 +270,45 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             }
             Vec3 entry = centers.get(0).subtract(direction.scale(entryDistanceMeters));
             Vec3 exit = centers.get(centers.size() - 1).add(direction.scale(exitDistanceMeters));
-            List<Vec3> anchors = new ArrayList<>(centers.size() + 2);
+            List<Vec3> anchors = new ArrayList<>(centers.size() * 2 + 2);
+            List<Boolean> straightSegments = new ArrayList<>(centers.size() * 2 + 1);
+            List<Integer> releaseAnchorIndices = new ArrayList<>(targets.size());
             anchors.add(entry);
-            anchors.addAll(centers);
+            Vec3 lastValidHeading = horizontalDirection(direction, direction);
+            for (int index = 0; index < targets.size(); index++) {
+                Vec3 center = centers.get(index);
+                ReleaseTarget target = targets.get(index);
+                Vec3 preferred = horizontalDirection(target.preferredInboundDirection(), null);
+                if (index > 0 && preferred != null) {
+                    Vec3 displacement = horizontalDirection(center.subtract(centers.get(index - 1)), null);
+                    Vec3 incoming = displacement == null ? lastValidHeading : displacement;
+                    if (incoming == null) incoming = preferred;
+                    double leadDistance = calculateGpsTurnLeadDistance(
+                            incoming, preferred, carrierSpeedMetersPerTick, dynamics);
+                    if (leadDistance > EPSILON) {
+                        anchors.add(center.subtract(preferred.scale(leadDistance)));
+                        // 前序航点到对准点仍由平滑曲线转向；对准点到 GPS 中心严格沿期望来向飞行。
+                        straightSegments.add(false);
+                        anchors.add(center);
+                        straightSegments.add(true);
+                    } else {
+                        anchors.add(center);
+                        straightSegments.add(false);
+                    }
+                } else {
+                    anchors.add(center);
+                    // 首发 GPS 已从同一入场来向起飞，直线入场可避免后续 GPS 锚点扭曲首发对准段。
+                    straightSegments.add(index == 0 && preferred != null);
+                }
+                releaseAnchorIndices.add(anchors.size() - 1);
+                Vec3 displacement = index == 0 ? null
+                        : horizontalDirection(center.subtract(centers.get(index - 1)), null);
+                if (displacement != null) lastValidHeading = displacement;
+                if (preferred != null) lastValidHeading = preferred;
+            }
             anchors.add(exit);
-            List<CurveSample> curve = buildCurve(anchors, direction);
+            straightSegments.add(true);
+            List<CurveSample> curve = buildCurve(anchors, direction, straightSegments);
             if (curve.size() < 2) return null;
             double[] anchorDistances = resolveAnchorDistances(curve, anchors);
             List<Waypoint> waypoints = new ArrayList<>(targets.size() + 2);
@@ -256,14 +318,15 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             double previousDistance = 0.0D;
             for (int index = 0; index < targets.size(); index++) {
                 ReleaseTarget target = targets.get(index);
-                double distance = anchorDistances[index + 1];
+                double distance = anchorDistances[releaseAnchorIndices.get(index)];
                 long travelTicks = requiredTicks(distance - previousDistance, carrierSpeedMetersPerTick);
                 long earliest = Math.addExact(previousTick, travelTicks);
                 long actualTick = Math.max(target.plannedTick(), earliest);
                 Vec3 center = centers.get(index);
                 waypoints.add(new Waypoint(actualTick, center, distance));
                 releases.add(new ScheduledRelease(target.roundIndex(), target.plannedTick(), actualTick,
-                        target.releasePosition(), center, distance));
+                        target.releasePosition(), center, distance,
+                        horizontalDirection(target.preferredInboundDirection(), null)));
                 previousTick = actualTick;
                 previousDistance = distance;
             }
@@ -278,8 +341,9 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         }
     }
 
-    /** 构造平滑入场/投放曲线与直线出场段的弧长采样表。 */
-    private static List<CurveSample> buildCurve(List<Vec3> anchors, Vec3 fallbackDirection) {
+    /** 构造含 GPS 对准直线段的采样曲线；straightSegments 与控制点区间一一对应。 */
+    private static List<CurveSample> buildCurve(List<Vec3> anchors, Vec3 fallbackDirection,
+                                                List<Boolean> straightSegments) {
         List<CurveSample> result = new ArrayList<>();
         double distance = 0.0D;
         Vec3 previous = anchors.get(0);
@@ -292,19 +356,19 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             Vec3 p2 = anchors.get(segment + 1);
             Vec3 p3 = segment + 2 < anchors.size() ? anchors.get(segment + 2)
                     : anchors.get(segment + 1).add(fallbackDirection);
-            // 最后一个参考投放点到出场点必须是直线，避免末发后继续沿平滑曲线绕行。
-            boolean straightExitLeg = segment == anchors.size() - 2;
-            Vec3 exitDirection = p2.subtract(p1);
-            if (exitDirection.lengthSqr() <= EPSILON) exitDirection = fallbackDirection;
-            else exitDirection = exitDirection.normalize();
+            // GPS 对准段和出场段都使用直线，保持挂架对准方向并避免末发后继续沿曲线绕行。
+            boolean straightSegment = Boolean.TRUE.equals(straightSegments.get(segment));
+            Vec3 straightDirection = p2.subtract(p1);
+            if (straightDirection.lengthSqr() <= EPSILON) straightDirection = fallbackDirection;
+            else straightDirection = straightDirection.normalize();
             for (int sample = 1; sample <= SAMPLES_PER_SEGMENT; sample++) {
                 double u = (double) sample / SAMPLES_PER_SEGMENT;
-                Vec3 position = straightExitLeg ? p1.lerp(p2, u) : catmullRom(p0, p1, p2, p3, u);
+                Vec3 position = straightSegment ? p1.lerp(p2, u) : catmullRom(p0, p1, p2, p3, u);
                 if (!finite(position)) return List.of();
                 double delta = position.distanceTo(previous);
                 if (!Double.isFinite(delta)) return List.of();
                 distance += delta;
-                Vec3 tangent = straightExitLeg ? exitDirection : (sample + 1 <= SAMPLES_PER_SEGMENT
+                Vec3 tangent = straightSegment ? straightDirection : (sample + 1 <= SAMPLES_PER_SEGMENT
                         ? catmullRom(p0, p1, p2, p3,
                         Math.min(1.0D, u + 1.0D / SAMPLES_PER_SEGMENT)).subtract(position)
                         : position.subtract(previous));
@@ -356,6 +420,61 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         double ticks = Math.ceil(Math.max(0.0D, distance) / speed);
         if (!Double.isFinite(ticks) || ticks > Long.MAX_VALUE) throw new IllegalArgumentException("路线 Tick 溢出");
         return (long) ticks;
+    }
+
+    /** 按当前固定翼偏航限速估算转向航程，并附加 1.5 倍安全余量。 */
+    static double calculateGpsTurnLeadDistance(Vec3 incomingDirection, Vec3 desiredDirection,
+                                               double speed, AircraftDynamics dynamics) {
+        Vec3 incoming = horizontalDirection(incomingDirection, null);
+        Vec3 desired = horizontalDirection(desiredDirection, null);
+        if (incoming == null || desired == null || !Double.isFinite(speed) || speed <= 0.0D) return 0.0D;
+        AircraftDynamics safeDynamics = sanitizeDynamics(dynamics);
+        double maximumYaw = maximumYawTurnPerTick(speed, safeDynamics);
+        if (!Double.isFinite(maximumYaw) || maximumYaw <= EPSILON) return 0.0D;
+        double dot = Mth.clamp(incoming.dot(desired), -1.0D, 1.0D);
+        double angleDegrees = Math.toDegrees(Math.acos(dot));
+        if (angleDegrees <= 1.0E-6D) return 0.0D;
+        double turnTicks = Math.ceil(angleDegrees / maximumYaw);
+        double distance = speed * turnTicks * 1.5D;
+        if (!Double.isFinite(distance) || distance < 0.0D) {
+            throw new IllegalArgumentException("GPS 转弯对准距离无效");
+        }
+        return distance;
+    }
+
+    /** 与 advance() 保持同一套速度倍率公式，返回每 Tick 最大偏航角。 */
+    private static double maximumYawTurnPerTick(double speed, AircraftDynamics dynamics) {
+        double speedFactor = Math.max(0.0D, speed * dynamics.turnRateBySpeed());
+        return Math.min(dynamics.yawTurnRate(), speedFactor * dynamics.yawTurnRate());
+    }
+
+    /** 将缺失或非法的飞机动力参数回退为既有通用固定翼值。 */
+    private static AircraftDynamics sanitizeDynamics(AircraftDynamics dynamics) {
+        AircraftDynamics fallback = AircraftDynamics.fallback();
+        if (dynamics == null) return fallback;
+        return new AircraftDynamics(
+                finitePositive(dynamics.turnRateBySpeed(), fallback.turnRateBySpeed()),
+                finitePositive(dynamics.pitchTurnRate(), fallback.pitchTurnRate()),
+                finitePositive(dynamics.yawTurnRate(), fallback.yawTurnRate()),
+                finitePositive(dynamics.rollTurnRate(), fallback.rollTurnRate()));
+    }
+
+    /** 将可用的水平向量归一化；无效时尝试使用回退方向。 */
+    @Nullable
+    private static Vec3 horizontalDirection(@Nullable Vec3 value, @Nullable Vec3 fallback) {
+        if (value != null && finite(value)) {
+            Vec3 horizontal = new Vec3(value.x(), 0.0D, value.z());
+            if (horizontal.lengthSqr() > EPSILON) return horizontal.normalize();
+        }
+        if (fallback != null && finite(fallback)) {
+            Vec3 horizontalFallback = new Vec3(fallback.x(), 0.0D, fallback.z());
+            if (horizontalFallback.lengthSqr() > EPSILON) return horizontalFallback.normalize();
+        }
+        return null;
+    }
+
+    private static double finitePositive(double value, double fallback) {
+        return Double.isFinite(value) && value > 0.0D ? value : fallback;
     }
 
     private static Vec3 rotateRack(RVP_FireSupportDeliveryTypes.LocalOffset offset, Vec3 direction) {

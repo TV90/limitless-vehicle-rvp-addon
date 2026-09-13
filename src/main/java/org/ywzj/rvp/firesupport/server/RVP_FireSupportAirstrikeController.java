@@ -32,6 +32,7 @@ import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.vehicle.api.event.VehicleMoveEvent;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
+import org.ywzj.vehicle.custom.vehicle.FixedWingVehicleData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 
@@ -560,15 +561,39 @@ public final class RVP_FireSupportAirstrikeController {
             if (plan == null) return null;
             long releaseTick = Math.addExact(mission.callDeadlineTick, round.strikeOffsetTicks());
             releases.add(new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
-                    round.roundIndex(), releaseTick, plan.spawn(), plan.motion()));
+                    round.roundIndex(), releaseTick, plan.spawn(), plan.motion(),
+                    plan.preferredInboundDirection()));
             refs.add(new RoundRef(round, missionWeapon.weaponData().getWeaponId()));
         }
         if (config == null || releases.isEmpty()) return null;
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics planningDynamics =
+                resolveAircraftDynamics(config.aircraftId());
         // 调用本项目公共任务航线规划器，为混合弹种统一补进入场点、出场点、曲线和航点 Tick。
         RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = RVP_FireSupportAirstrikeRoutePlanner.plan(
                 releases, config.rackOffset(), config.entryDistanceMeters(), config.exitDistanceMeters(),
-                config.carrierSpeedMetersPerTick(), actualStartTick);
-        return route == null ? null : new RouteState(config, refs, route);
+                config.carrierSpeedMetersPerTick(), planningDynamics, actualStartTick);
+        return route == null ? null : new RouteState(config, refs, route, planningDynamics);
+    }
+
+    /** 在飞机生成前从载具数据读取建线用转向参数；非固定翼沿用控制器回退值。 */
+    private static RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics resolveAircraftDynamics(
+            ResourceLocation aircraftId) {
+        BaseVehicleData<?> data = CommonAssetsManager.vehicleDataManager().getVehicleData(aircraftId).orElse(null);
+        if (!(data instanceof FixedWingVehicleData fixedWing)) {
+            return RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
+        }
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics fallback =
+                RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
+        return new RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics(
+                finitePositive(fixedWing.turnRateBySpeed, fallback.turnRateBySpeed()),
+                finitePositive(fixedWing.xTurnRate, fallback.pitchTurnRate()),
+                finitePositive(fixedWing.yTurnRate, fallback.yawTurnRate()),
+                finitePositive(fixedWing.zTurnRate, fallback.rollTurnRate()));
+    }
+
+    /** 将异常或非正的本体参数限制到当前空袭控制器已有回退值。 */
+    private static double finitePositive(double value, double fallback) {
+        return Double.isFinite(value) && value > 0.0D ? value : fallback;
     }
 
     private static void applyPose(AbstractVehicle aircraft, RVP_FireSupportAirstrikeRoutePlanner.AircraftPose pose) {
@@ -642,6 +667,8 @@ public final class RVP_FireSupportAirstrikeController {
         /** 当前飞机采用的固定翼转向参数。 */
         private RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics dynamics =
                 RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback();
+        /** 规划 GPS 对准段和起始时间重排使用的冻结载具基础参数。 */
+        private final RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics planningDynamics;
         /** 是否已经记录过非固定翼回退诊断。 */
         private boolean fallbackDynamicsLogged;
         /** 最近一次飞机路径申请结果，用于失联超时时输出精确阻塞原因。 */
@@ -649,11 +676,14 @@ public final class RVP_FireSupportAirstrikeController {
 
         private RouteState(RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData config,
                            List<RoundRef> refs,
-                           RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route) {
+                           RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route,
+                           RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics planningDynamics) {
             this.aircraftId = config.aircraftId();
             this.config = config;
             this.refs = List.copyOf(refs);
             this.route = route;
+            this.planningDynamics = planningDynamics;
+            this.dynamics = planningDynamics;
             this.referenceAttempted = new boolean[refs.size()];
             for (RoundRef ref : refs) pools.computeIfAbsent(ref.weaponId(), ignored -> new ArrayDeque<>()).add(ref);
         }
@@ -840,13 +870,14 @@ public final class RVP_FireSupportAirstrikeController {
             ArrayList<RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget> targets = new ArrayList<>();
             for (RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease release : route.releases()) {
                 targets.add(new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(release.roundIndex(),
-                        release.plannedTick(), release.releasePosition(), route.direction()));
+                        release.plannedTick(), release.releasePosition(), route.direction(),
+                        release.preferredInboundDirection()));
             }
             // 调用本项目公共任务航线规划器，仅重排起始时间，保持各策略冻结的释放点和公共首尾段。
             RVP_FireSupportAirstrikeRoutePlanner.RoutePlan replanned =
                     RVP_FireSupportAirstrikeRoutePlanner.plan(targets, config.rackOffset(),
                             config.entryDistanceMeters(), config.exitDistanceMeters(),
-                            config.carrierSpeedMetersPerTick(), startTick);
+                            config.carrierSpeedMetersPerTick(), planningDynamics, startTick);
             if (replanned == null) return false;
             route = replanned;
             return true;

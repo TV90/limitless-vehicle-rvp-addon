@@ -33,7 +33,8 @@ final class RVP_BallisticAirstrikeRoutePlanningStrategy implements RVP_Airstrike
             }
             return RVP_AirstrikeRoutePlanningResult.success(
                     new RVP_AirstrikeRoutePlanningResult.Plan(
-                            context.sourcePosition(), actual.initializedMotion(), null, actual, Double.NaN));
+                            context.sourcePosition(), actual.initializedMotion(), null,
+                            null, actual, Double.NaN));
         }
 
         // 航线中心由释放点减去挂架偏移得到，机体中心必须为挂架的负 Y 偏移预留世界高度。
@@ -62,7 +63,7 @@ final class RVP_BallisticAirstrikeRoutePlanningStrategy implements RVP_Airstrike
                     return RVP_AirstrikeRoutePlanningResult.success(
                             new RVP_AirstrikeRoutePlanningResult.Plan(
                                     spawn, direction.scale(data.carrierSpeedMetersPerTick()),
-                                    solution, null, altitude));
+                                    null, solution, null, altitude));
                 }
                 borderRejectedPlans++;
             }

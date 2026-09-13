@@ -1,6 +1,7 @@
 package org.ywzj.rvp.firesupport.delivery;
 
 import com.mojang.logging.LogUtils;
+import javax.annotation.Nullable;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -129,7 +130,8 @@ public final class RVP_AirLaunchedProjectileDelivery implements RVP_FireSupportD
         if (context.sourcePosition() == null && Double.isFinite(plan.releaseAltitudeMeters())) {
             logAltitudeClamp(context, plan.releaseAltitudeMeters());
         }
-        cachedPlan = new AirPlan(plan.spawn(), plan.motion(), plan.solution(), plan.actualSolution());
+        cachedPlan = new AirPlan(plan.spawn(), plan.motion(), plan.preferredInboundDirection(),
+                plan.solution(), plan.actualSolution());
         return cachedPlan;
     }
 
@@ -158,6 +160,7 @@ public final class RVP_AirLaunchedProjectileDelivery implements RVP_FireSupportD
     public record AirPlan(
             /** 虚拟空中释放点。 */ Vec3 spawn,
             /** 沿独立入场方位的载机水平速度。 */ Vec3 motion,
+            /** GPS 参考航线要求的入场方向；普通弹道投送为 null。 */ @Nullable Vec3 preferredInboundDirection,
             /** 原始一维空投预测结果；实时三维解算时为 null。 */ RVP_FireSupportBallisticSolver.AirSolution solution,
             /** 实际挂架位置下的三维预测结果；原始路线构建时为 null。 */
             RVP_FireSupportBallisticSolver.ActualAirSolution actualSolution) {}

@@ -88,6 +88,8 @@ class RVP_AirLaunchedProjectileDeliveryTest {
         assertEquals(0.0D, result.plan().motion().y, 1.0E-9D);
         assertEquals(2.0D, result.plan().motion().z, 1.0E-9D);
         assertEquals(256.0D, result.plan().releaseAltitudeMeters());
+        assertEquals(new Vec3(0.6D, 0.0D, 0.8D), result.plan().preferredInboundDirection(),
+                "GPS 单发计划应把入场方向传给任务级参考航线");
     }
 
     @Test
