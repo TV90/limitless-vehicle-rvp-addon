@@ -58,6 +58,15 @@ public class WeaponUnitGetSeekerFovMixin {
             if (kind != RVP_EnumWeaponKind.MISSILE) {
                 return;
             }
+            // [RVP] 目的：ARM 反辐射导弹的导引头大圈由 RVP_MissileOverlay 自渲染（离轴圈），
+            // 本体 VehicleAimAtOverlay 的大圈半径 = 2.8 × getSeekerFov()——ARM 返回 0 使本体
+            // 大圈不可见（防 sensor=rf 站上本体圈与 RVP 自渲染圈叠加；全工程唯一消费方即该行）。
+            Object guidance = data.getClass().getMethod("getGuidanceData").invoke(data);
+            Object guidanceType = guidance.getClass().getMethod("getGuidanceType").invoke(guidance);
+            if (guidanceType != null && "ARM".equals(guidanceType.toString())) {
+                cir.setReturnValue(0f);
+                return;
+            }
             float fov = (float) data.getClass().getMethod("resolveLaunchOffAxisLockAngle").invoke(data);
             if (fov > 0) cir.setReturnValue(fov);
         } catch (Exception ignored) {

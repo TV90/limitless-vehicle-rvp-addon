@@ -178,6 +178,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `turning_factor` | 旧版 MCHR 风格方向插值参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 Tick 区间，value 为 0～1 的转向因子；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5。 |
 | `rvp_maxg` | 可选 RVP 最大法向过载，单位 G，默认不配置。显式配置后实体与虚拟制导均使用 `applySteering`，并覆盖同时存在的 `turning_factor`；负数和非有限值按 0 G 安全处理，0 表示不允许转向。 |
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
+| `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
+| `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
 | `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
 | `thrust` | 发动机推力。 |
 | `motor_burn_time` | 发动机燃烧时间（tick）。 |

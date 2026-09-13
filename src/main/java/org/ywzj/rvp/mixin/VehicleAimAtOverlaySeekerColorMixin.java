@@ -42,21 +42,27 @@ public class VehicleAimAtOverlaySeekerColorMixin {
         original.call(poseStack, x, y, radius, rvp$resolveSeekerColor(color), thickness, start, end);
     }
 
-    /** ordinal 2：RF 导引头内圈 */
+    /** ordinal 2：RF 导引头内圈（当前武器为 RVP ARM 时跳过——双白圈由 RVP 自渲染绿色小四角框替代） */
     @WrapOperation(method = "lambda$render$2", remap = false, at = @At(value = "INVOKE", remap = false,
             target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V",
             ordinal = 1))
     private void rvp$seekerCircleRfInner(PoseStack poseStack, float x, float y, float radius, int color,
                                          float thickness, float start, float end, Operation<Void> original) {
+        if (rvp$isArmWeapon()) {
+            return;
+        }
         original.call(poseStack, x, y, radius, rvp$resolveSeekerColor(color), thickness, start, end);
     }
 
-    /** ordinal 3：RF 导引头外圈 */
+    /** ordinal 3：RF 导引头外圈（ARM 跳过，同上） */
     @WrapOperation(method = "lambda$render$2", remap = false, at = @At(value = "INVOKE", remap = false,
             target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V",
             ordinal = 2))
     private void rvp$seekerCircleRfOuter(PoseStack poseStack, float x, float y, float radius, int color,
                                          float thickness, float start, float end, Operation<Void> original) {
+        if (rvp$isArmWeapon()) {
+            return;
+        }
         original.call(poseStack, x, y, radius, rvp$resolveSeekerColor(color), thickness, start, end);
     }
 
@@ -67,6 +73,25 @@ public class VehicleAimAtOverlaySeekerColorMixin {
     private void rvp$seekerCircleBig(PoseStack poseStack, float x, float y, float radius, int color,
                                      float thickness, float start, float end, Operation<Void> original) {
         original.call(poseStack, x, y, radius, rvp$resolveSeekerColor(color), thickness, start, end);
+    }
+
+    /**
+     * 当前操作武器站的当前武器是否 RVP 反辐射导弹（ARM）。
+     * 目的：ARM 的导引头圈（离轴四角框 / 头瞄圈）由 {@code RVP_MissileOverlay} 自渲染，
+     * 本体 RF 导引头双白圈对其抑制（{@code rvp$seekerCircleRfInner/RfOuter} 消费）。
+     */
+    @Unique
+    private static boolean rvp$isArmWeapon() {
+        LocalVehiclePlayer localVehiclePlayer = LocalVehiclePlayer.instance;
+        if (localVehiclePlayer == null || !localVehiclePlayer.onVehicle()) {
+            return false;
+        }
+        WeaponUnit weaponUnit = localVehiclePlayer.getWeaponUnit();
+        if (weaponUnit == null) {
+            return false;
+        }
+        AbstractVehicleWeapon<?> weapon = RVP_WeaponResolveHelper.currentPrimary(weaponUnit);
+        return weapon instanceof RVP_WeaponBase rvpWeapon && rvpWeapon.getData().isAntiRadiationMissile();
     }
 
     /**

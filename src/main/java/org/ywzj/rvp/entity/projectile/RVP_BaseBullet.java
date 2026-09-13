@@ -308,6 +308,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
     protected boolean antiRadiationSignalAcquired;
+    /** [RVP] ARM 预选独占窗口剩余 tick：&gt;0 期间仅预选辐射源（与 ECM 干扰机）可参与制导选择，
+     * 其它辐射源不抢制导；窗口耗尽后恢复自主捕获。纯服务端字段，不同步客户端。 */
+    protected int armPreselectExclusiveLeftTick;
+    /** [RVP] 预选辐射源最后已知位置：独占窗口内预选不可见时的追踪目标。
+     * 独立存储，仅发射预选快照与咬住预选时更新，不受 ECM 记忆抖动污染。 */
+    @Nullable
+    protected Vec3 armPreselectLastPos;
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
@@ -1372,6 +1379,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public void setPreselectedTarget(int vehicleId, int radarIndex) {
         this.preselectedVehicleId = vehicleId;
         this.preselectedRadarIndex = radarIndex;
+    }
+
+    /** [RVP] 预选独占窗口剩余 tick（&gt;0 = 独占中，仅预选与 ECM 干扰机可参与选择）。 */
+    public int getArmPreselectExclusiveLeftTick() {
+        return armPreselectExclusiveLeftTick;
+    }
+
+    public void setArmPreselectExclusiveLeftTick(int ticks) {
+        this.armPreselectExclusiveLeftTick = Math.max(ticks, 0);
+    }
+
+    /** [RVP] 预选辐射源最后已知位置（窗口内预选不可见时的追踪目标）；null = 尚无任何已知位置。 */
+    @Nullable
+    public Vec3 getArmPreselectLastPos() {
+        return armPreselectLastPos;
+    }
+
+    public void setArmPreselectLastPos(@Nullable Vec3 pos) {
+        this.armPreselectLastPos = pos;
     }
 
     // ===== ARH 主动雷达 getters/setters =====
