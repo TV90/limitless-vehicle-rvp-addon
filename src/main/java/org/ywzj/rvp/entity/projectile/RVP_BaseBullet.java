@@ -845,6 +845,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 .orElse(null);
     }
 
+    /**
+     * 客户端安全地取回当前武器的 RVP 配置（{@link #resolveWeaponConfig()} 的公共只读出口）。
+     *
+     * <p>{@link #rvpData} 只在服务端 {@code initFromWeapon} 赋值，<b>不随生成数据包同步到客户端</b>
+     * （客户端 {@code readSpawnData} 只同步 {@code motorBurnEndTick} 等标量）。因此客户端渲染、
+     * 粒子、HUD 等代码必须走本方法，按已同步的 {@code weaponId} 查 {@link CommonAssetsManager}
+     * 武器索引取回同一份配置；<b>禁止</b>用 {@link #getRvpData()} 是否为 {@code null} 做门控——
+     * 它在客户端恒为 {@code null}，会把整段逻辑静默吞掉（2026-09-14 导弹尾焰无渲染即此因）。</p>
+     *
+     * @return 当前武器配置；客户端武器数据尚未加载时返回 {@code null}
+     */
+    @Nullable
+    public RVP_WeaponData getResolvedWeaponConfig() {
+        // 调用本项目配置解析：服务端返回 spawn 期持有的配置，客户端按 weaponId 查公共武器索引
+        return resolveWeaponConfig();
+    }
+
     protected List<RVP_DamageDecayRuleData> damageDecayRules() {
         if (!damageDecayRules.isEmpty()) {
             return damageDecayRules;

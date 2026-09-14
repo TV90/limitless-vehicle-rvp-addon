@@ -44,11 +44,13 @@ public final class RVP_DebugFlags {
     public static final RVP_DebugFlag HITL = new RVP_DebugFlag("hitl", "HITL 人在回路导弹转向链诊断");
     /** 出弹队列拉取/应用诊断（weaponKey/查表命中/应用结果）。双端。 */
     public static final RVP_DebugFlag SHOOT_BOLT = new RVP_DebugFlag("shootbolt", "出弹队列拉取/应用诊断");
+    /** 导弹尾焰渲染门控诊断（配置解析/燃烧窗口/资源三件套，每发弹体各一条）。客户端。 */
+    public static final RVP_DebugFlag MOTOR_FLAME = new RVP_DebugFlag("motorflame", "导弹尾焰渲染门控诊断");
 
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME);
 
     private RVP_DebugFlags() {
     }
