@@ -4055,6 +4055,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean motorBurning = isMotorBurning();
         RVP_WeaponData config = resolveWeaponConfig();
         RVP_EffectsData effects = config != null ? config.getEffectsData() : new RVP_EffectsData();
+        // 目的：发射段贴地烟浪须在燃烧期门控之前执行——冷发射弹点火前（弹射气体）也冲刷地面
+        spawnLaunchWash(effects, motorBurning);
         boolean missileNativeTrail = this instanceof RVP_MissileEntity;
         if (!motorBurning) {
             trailMotorBurningO = false;
@@ -4183,24 +4185,44 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 }
             }
         }
-        // 目的：发射段贴地烟浪（HBM 发射台 launchSmoke 移植）——发动机燃烧且距地不足 20 格时，
-        // 在弹体地面投影点生成贴地横向冲刷的灰烟团，爬升过阈值后自然停止（仅 rvp_rocket_flame 默认开启）。
-        if (effects.isMissileNativeTrailGroundWashEnabled()) {
-            double groundY = level().getHeight(
-                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                    this.getBlockX(), this.getBlockZ());
-            if (this.getY() - groundY < 20.0D) {
-                float washScale = effects.getMissileNativeTrailParticleScale();
-                // 每 tick 4 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
-                for (int i = 0; i < 4; i++) {
-                    RVP_ClientActionsAccess.addLaunchWashParticle(
-                            this.getX(), groundY + 0.5D, this.getZ(), washScale);
-                }
-            }
-        }
+        // 目的：发射段贴地烟浪已前置到 spawnLaunchWash（含冷发射弹射段），此处不再重复生成
         particlePosO = pos;
         trailParticleTickO = getFlightTickCount();
         trailMotorBurningO = true;
+    }
+
+    /**
+     * [RVP] 发射段贴地烟浪（HBM 发射台 launchSmoke 观感，"大发散"的唯一归属地）：
+     * {@code rvp_rocket_flame} 风格 + wash 开启 +（发动机燃烧中<b>或</b>冷发射弹射段）+
+     * 距地不足 20 格时，在弹体地面投影点生成贴地横向冲刷的灰烟团——爬升过阈值或燃尽后自然停止。
+     *
+     * <p>与空中 TRAIL 尾迹分离：烟浪靠径向初速 + 大尺寸膨胀（0.3 → 3.0 × scale）在地面铺开发散，
+     * 空中尾迹保持柱状（末端发散已收敛为线性小系数）。须在 {@link #spawnTrailParticles()}
+     * 的燃烧期门控之前调用，否则点火前的弹射段没有烟。</p>
+     */
+    private void spawnLaunchWash(RVP_EffectsData effects, boolean motorBurning) {
+        if (!(this instanceof RVP_MissileEntity)) {
+            return;
+        }
+        if (!effects.isMissileNativeTrailEnabled() || !effects.isMissileNativeTrailGroundWashEnabled()) {
+            return;
+        }
+        // 冷发射弹射段：点火前（flightTick ≤ coldLaunchTimeTick）也出烟——弹射气体冲刷
+        if (!motorBurning && getFlightTickCount() > this.coldLaunchTimeTick) {
+            return;
+        }
+        double groundY = level().getHeight(
+                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                this.getBlockX(), this.getBlockZ());
+        if (this.getY() - groundY >= 20.0D) {
+            return;
+        }
+        float washScale = effects.getMissileNativeTrailParticleScale();
+        // 每 tick 8 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
+        for (int i = 0; i < 8; i++) {
+            RVP_ClientActionsAccess.addLaunchWashParticle(
+                    this.getX(), groundY + 0.5D, this.getZ(), washScale);
+        }
     }
 
     protected boolean isHeavyProjectile() {

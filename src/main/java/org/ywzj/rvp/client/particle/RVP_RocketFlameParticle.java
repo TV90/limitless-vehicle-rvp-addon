@@ -31,10 +31,11 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
  *       驱动橙焰→灰烟过渡），随后熄灭为 R=G=B 的中性深灰烟（黑烟观感）；
  *       尺寸 {@code (0.2 + rand*0.3 + 1.0×ageRatio) × scale} 持续膨胀（末端约 1.2~1.5 × scale），
  *       透明度 {@code sqrt(1 - age/maxAge) × 0.75} 缓出淡出；寿命 45~65t；
- *       渲染 3 层高斯抖动 quad（HBM 10 层的性能折衷）+ 横向抖动随寿命急剧扩大，营造
- *       "近弹尾细而亮、远弹尾粗而散"的锥形烟柱；</li>
- *   <li><b>WASH</b>（发射地面烟浪）：随机灰 0.25~0.75、寿命 80~100t、尺寸 0.25 → 2.25 × scale
- *       线性膨胀、膨胀量转浮升（HBM SmokePlume 技巧）、水平径向冲刷初速 + 0.925 阻尼。</li>
+ *       渲染 3 层高斯抖动 quad（HBM 10 层的性能折衷），层间抖动随寿命线性温和扩大
+ *       （最大 2.5×——大发散只归属地面烟浪，空中尾迹保持柱状观感）；</li>
+ *   <li><b>WASH</b>（发射地面烟浪）：随机灰 0.25~0.75、寿命 80~100t、尺寸 0.3 → 3.0 × scale
+ *       线性膨胀、膨胀量转浮升（HBM SmokePlume 技巧）、水平径向冲刷初速 + 0.925 阻尼。
+ *       "大发散"归属地：烟浪靠径向初速 + 大尺寸膨胀在地面铺开，与空中柱状尾迹观感分离。</li>
  * </ul>
  * 贴图复用已迁移的 HBM {@code textures/nuclear/particle_base.png}（软圆斑底样，16×16，
  * RGB tint 乘算出颜色），独立 RenderType + 全亮光照，不依赖粒子图集/SpriteSet。
@@ -104,10 +105,11 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
             this.lifetime = 45 + this.random.nextInt(20);
         } else {
-            // HBM ParticleSmokePlume：寿命 80~100t，0.25 起步线性膨胀（无碰撞，贴地扩散后浮升）
+            // HBM ParticleSmokePlume：寿命 80~100t，0.3 起步线性膨胀到 3.0（地面冲刷烟浪是
+            // "大发散"的归属地——空中 TRAIL 末端发散已收敛，见 render 的 spread 注释）
             this.lifetime = 80 + this.random.nextInt(20);
-            this.washEndQuad = 2.25f * this.sizeScale;
-            this.quadSize = 0.25f * this.sizeScale;
+            this.washEndQuad = 3.0f * this.sizeScale;
+            this.quadSize = 0.3f * this.sizeScale;
         }
         this.applyTrailCurve(0.0f);
     }
@@ -157,7 +159,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             this.yd *= 0.925D;
             this.zd *= 0.925D;
             float prevQuad = this.quadSize;
-            this.quadSize = Mth.lerp((float) this.age / this.lifetime, 0.25f * this.sizeScale, this.washEndQuad);
+            this.quadSize = Mth.lerp((float) this.age / this.lifetime, 0.3f * this.sizeScale, this.washEndQuad);
             this.move(this.xd, this.yd + (this.quadSize - prevQuad), this.zd);
         }
         this.applyTrailCurve((float) this.age / this.lifetime);
@@ -192,9 +194,9 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         this.quadSize = trailQuadSize(ageRatio);
     }
 
-    /** TRAIL 半宽曲线（半宽格）：{@code (0.2 + rand*0.3 + 1.0×ageRatio) × scale}，末端约 1.2~1.5 × scale。 */
+    /** TRAIL 半宽曲线（半宽格）：{@code (0.3 + rand*0.3 + 1.0×ageRatio) × scale}，末端约 1.3~1.6 × scale。 */
     private float trailQuadSize(float ageRatio) {
-        return (0.2f + this.random.nextFloat() * 0.3f + 1.0f * ageRatio) * this.sizeScale;
+        return (0.3f + this.random.nextFloat() * 0.3f + 1.0f * ageRatio) * this.sizeScale;
     }
 
     /**
@@ -211,8 +213,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         float baseZ = (float) (Mth.lerp(partialTicks, this.zo, this.z) - cameraPos.z());
         Quaternionf rotation = renderInfo.rotation();
         float ageRatio = (float) this.age / this.lifetime;
-        float spread = this.mode == Mode.TRAIL
-                ? (float) Math.pow(1.0D + 4.0D * ageRatio, 1.5D) : 1.0f;
+        // 目的：空中尾迹保持"柱状"——末端发散用线性小系数（最大 2.5×，2026-09-15 从 HBM 的
+        // (1+4·ageRatio)^1.5≈11× 收敛：原式末端 Y 抖动 ±5 格以上，观感为烟柱末端炸散成云）。
+        // 大发散只归属地面烟浪 WASH（其靠径向初速+尺寸膨胀发散，不走本系数）。
+        float spread = this.mode == Mode.TRAIL ? 1.0f + 1.5f * ageRatio : 1.0f;
         int light = this.getLightColor(partialTicks);
         float u0 = this.getU0();
         float u1 = this.getU1();
