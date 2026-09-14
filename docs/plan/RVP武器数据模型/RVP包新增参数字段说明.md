@@ -181,9 +181,9 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
 | `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
 | `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
-| `thrust` | 发动机推力。 |
-| `motor_burn_time` | 发动机燃烧时间（tick）。 |
-| `second_pulse` | 是否启用双脉冲推进（第二段推力）。 |
+| `thrust` | 发动机推力（一级推力；配置 `second_pulse` 时即第一段推进）。 |
+| `motor_burn_time` | 发动机燃烧时间（tick）（一级燃烧时间；配置 `second_pulse` 时即第一段时长）。 |
+| `second_pulse` | 是否启用双脉冲推进（第二段推力）。仅 IR/ARH/SARH/ARM/**GPS** 制导导弹生效（2026-09-15 起 GPS 加入——弹道/准弹道导弹两级推进，如 9M723 一级助推+二级接力；未配置本字段的 GPS 导弹行为不变）。触发评估仅在一级燃尽（`motor_burn_time` 耗尽）后开始。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |

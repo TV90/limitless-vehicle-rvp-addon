@@ -133,11 +133,17 @@ public final class RVP_ProjectileMotion {
         }
     }
 
+    /**
+     * 二级脉冲支持的制导类型白名单：IR/ARH/SARH/ARM（空空弹传统双脉冲）+ GPS
+     * （弹道/准弹道导弹的两级推进，如 9M723 一级助推 + 二级脉冲接力；2026-09-15 应用户要求加入）。
+     * 门控仅在 {@code second_pulse} 显式配置时生效——未配置该字段的 GPS 导弹行为不变。
+     */
     private static boolean isDualPulseSupportedMissile(RVP_WeaponData data) {
         return data.usesGuidanceType(RVP_EnumGuidanceType.IR)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
                 || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.ARM);
+                || data.usesGuidanceType(RVP_EnumGuidanceType.ARM)
+                || data.usesGuidanceType(RVP_EnumGuidanceType.GPS);
     }
 
     private static boolean shouldStartSecondPulse(RVP_BaseBullet projectile, RVP_WeaponData data, Vec3 velocity) {
