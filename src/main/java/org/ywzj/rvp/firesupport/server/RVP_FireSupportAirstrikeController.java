@@ -16,9 +16,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Entity.RemovalReason;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
@@ -97,8 +99,10 @@ public final class RVP_FireSupportAirstrikeController {
             state.captureDynamics(aircraft);
             aircraft.uav = true;
             aircraft.getPersistentData().putUUID(AIRCRAFT_MISSION_TAG, mission.missionId);
-            if (!advanceAircraftIfPathReady(aircraft, state, now)) {
-                state.beginRecovery(now, "PATH_NOT_READY", aircraft.position());
+            // 调用本项目下一步路径提交入口：本 Tick 末尾只预热下一 Tick，真正移动许可在
+            // ServerTick START、区块管理器完成 Ticket 分配后决定。
+            prepareNextAircraftStep(aircraft, state, now);
+            if (state.recovering()) {
                 return state.recoveryTimedOut(now) ? logAircraftLost(mission, state, now) : Status.RECOVERING;
             }
             RVP_ChunkPathLoadManager.recordPostMoveObservation(aircraft);
@@ -384,7 +388,27 @@ public final class RVP_FireSupportAirstrikeController {
         }
     }
 
-    /** 本体每 Tick 物理之后的公开事件；仅在下一段全部区块可执行实体 Tick 时提交插件位移。 */
+    /**
+     * 在区块管理器完成本 Tick Ticket 分配后，为每架支援机写入已获准的真实位移。
+     * 未就绪时速度保持为零，确保随后执行的本体 {@code aiStep()} 不会越过硬门控。
+     */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public static void onServerTickStart(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) return;
+        MinecraftServer server = event.getServer();
+        Map<UUID, RouteState> serverStates = STATES.get(server);
+        if (serverStates == null || serverStates.isEmpty()) return;
+        for (RouteState state : serverStates.values()) {
+            AbstractVehicle aircraft = findAircraft(server, state.aircraftUuid);
+            if (aircraft == null || aircraft.isRemoved() || aircraft.isDestroyed()) continue;
+            // ServerTick START 发生在 ServerLevel 推进 gameTime 之前；飞机实体随后会在下一世界 Tick 执行。
+            long now = movementTickAtServerStart(((ServerLevel) aircraft.level()).getGameTime());
+            // 调用本项目移动许可入口：只把已验证的下一步交给本体实体移动链消费。
+            armAircraftMoveIfPathReady(aircraft, state, now);
+        }
+    }
+
+    /** 本体完成 {@code aiStep()} 后提交已放行姿态；未获许可时恢复冻结位置。 */
     @SubscribeEvent
     public static void onVehicleMove(VehicleMoveEvent event) {
         AbstractVehicle aircraft = event.getVehicle();
@@ -398,21 +422,36 @@ public final class RVP_FireSupportAirstrikeController {
             state.captureDynamics(aircraft);
             aircraft.uav = true;
             long now = level.getGameTime();
-            // 调用本项目动态路径加载器：按旧姿态到下一姿态的真实线段逐区块检查，失败时保持旧姿态。
-            if (!advanceAircraftIfPathReady(aircraft, state, now)) {
+            if (state.hasArmedMove(now)) {
+                // 调用本项目已放行姿态提交入口：位置由本体真实移动完成，再用权威姿态消除碰撞修正误差。
+                state.commitArmedMove(now);
+                applyPose(aircraft, state.pose());
+            } else {
                 state.beginRecovery(now, "PATH_NOT_READY", state.pose().position());
                 applyPose(aircraft, state.pose());
+                aircraft.setDeltaMovement(Vec3.ZERO);
+                event.setCanceled(true);
             }
+            // 调用本项目下一步路径提交入口：实体完成或冻结本 Tick 后，立即为下一 Tick 预热五 Tick 路径；
+            // 即使任务已完成并处于保留出场阶段，也不会失去上一 Tick 提交环节。
+            prepareNextAircraftStep(aircraft, state, now);
             RVP_ChunkPathLoadManager.recordPostMoveObservation(aircraft);
-            // 目的：本体 FixedWingVehicle 的 tickPhysics 已在事件前执行；空袭航线由插件状态机独占，
-            // 取消事件可让 AbstractVehicle 不再把本体物理积分结果带入下一 Tick。
-            event.setCanceled(true);
             if (state.retainUntilExit && state.allDelivered()
                     && level.getGameTime() >= state.exitEndTick()) {
                 discardCompleteAircraft(level.getServer(), state, aircraft);
             }
             return;
         }
+    }
+
+    /** 跨维度查找已缓存 UUID 的支援机；只读取已加载实体索引，不触发区块加载。 */
+    private static AbstractVehicle findAircraft(MinecraftServer server, UUID aircraftUuid) {
+        if (aircraftUuid == null) return null;
+        for (ServerLevel level : server.getAllLevels()) {
+            Entity entity = level.getEntity(aircraftUuid);
+            if (entity instanceof AbstractVehicle aircraft) return aircraft;
+        }
+        return null;
     }
 
     @SubscribeEvent
@@ -504,16 +543,23 @@ public final class RVP_FireSupportAirstrikeController {
         return result.currentTickPathReady();
     }
 
-    /** 在移动确实到期时执行硬门禁；同 Tick 的后续调用只继续预热下一步，不重复移动。 */
-    private static boolean advanceAircraftIfPathReady(AbstractVehicle aircraft, RouteState state, long now) {
-        boolean movementDue = state.movementDue(now);
+    /** 在实体移动前执行硬门禁，并把获准的精确位移写入实体。 */
+    private static void armAircraftMoveIfPathReady(AbstractVehicle aircraft, RouteState state, long now) {
+        state.clearArmedMove();
+        if (!state.movementDue(now)) {
+            aircraft.setDeltaMovement(state.recovering() ? Vec3.ZERO : state.pose().motion());
+            return;
+        }
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose nextPose = state.previewNextPose(now);
         boolean pathReady = prepareNextAircraftStep(aircraft, state, now);
-        if (!movementDue) return !state.recovering();
-        if (!pathReady) return false;
+        if (!pathReady || nextPose == null) {
+            state.beginRecovery(now, "PATH_NOT_READY", state.pose().position());
+            aircraft.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
         state.finishRecovery(now);
-        state.advanceOneTick(now);
-        applyPose(aircraft, state.pose());
-        return true;
+        state.armMove(nextPose, now);
+        aircraft.setDeltaMovement(gatedStepMotion(true, state.pose(), nextPose));
     }
 
     /** 纯数学辅助：返回控制器即将提交的精确位移，供高速转弯回归测试复用。 */
@@ -521,6 +567,18 @@ public final class RVP_FireSupportAirstrikeController {
                                 RVP_FireSupportAirstrikeRoutePlanner.AircraftPose next) {
         if (current == null || next == null) return Vec3.ZERO;
         return next.position().subtract(current.position());
+    }
+
+    /** 纯数学硬门控：未就绪严格零速，就绪时返回转向后的精确下一步。 */
+    static Vec3 gatedStepMotion(boolean pathReady,
+                                RVP_FireSupportAirstrikeRoutePlanner.AircraftPose current,
+                                RVP_FireSupportAirstrikeRoutePlanner.AircraftPose next) {
+        return pathReady ? exactStepMotion(current, next) : Vec3.ZERO;
+    }
+
+    /** 把 ServerTick START 读取到的旧世界时间换算为随后实体实际执行的世界 Tick。 */
+    static long movementTickAtServerStart(long currentGameTime) {
+        return Math.addExact(currentGameTime, 1L);
     }
 
     private static Status handleMissingAircraft(RVP_FireSupportMission mission, RouteState state, long now) {
@@ -640,8 +698,9 @@ public final class RVP_FireSupportAirstrikeController {
         aircraft.setXRot(pose.pitch());
         aircraft.setYRot(pose.yaw());
         aircraft.setZRot(pose.roll());
-        // 真实航速只保存在 RouteState；实体速度恒为零，确保本体物理不能绕开下一 Tick 的区块硬门禁。
-        aircraft.setDeltaMovement(Vec3.ZERO);
+        // 正常飞行时向实体公开权威航速，供雷达、导弹预测和客户端同步读取；
+        // 下一 Tick 移动前仍会由 ServerTick START 硬门控重新批准或清零。
+        aircraft.setDeltaMovement(pose.motion());
     }
 
     private static void discardCompleteAircraft(MinecraftServer server, RouteState state, AbstractVehicle aircraft) {
@@ -712,6 +771,10 @@ public final class RVP_FireSupportAirstrikeController {
         private boolean fallbackDynamicsLogged;
         /** 最近一次飞机路径申请结果，用于失联超时时输出精确阻塞原因。 */
         private RVP_ChunkPathLoader.PathLoadResult lastPathLoadResult;
+        /** 已通过本 Tick 区块硬门控、等待本体实体移动完成的下一姿态。 */
+        private RVP_FireSupportAirstrikeRoutePlanner.AircraftPose armedPose;
+        /** {@link #armedPose} 获准执行的世界 Tick；不匹配时禁止提交。 */
+        private long armedWorldTick = Long.MIN_VALUE;
 
         private RouteState(RVP_FireSupportDeliveryTypes.AirLaunchedProjectileData config,
                            List<RoundRef> refs,
@@ -756,20 +819,28 @@ public final class RVP_FireSupportAirstrikeController {
                     config.carrierSpeedMetersPerTick(), dynamics());
         }
 
-        /** 每个服务器 Tick 最多推进一步；漏 Tick 计入暂停，禁止恢复时追赶并瞬间跨越多个区块。 */
-        private void advanceOneTick(long worldTick) {
-            if (pose == null) setPose(initialPose(referencePosition(worldTick)), worldTick);
-            if (poseTick == Long.MIN_VALUE) poseTick = worldTick;
-            if (poseTick >= worldTick) return;
-            long skippedTicks = Math.max(0L, worldTick - poseTick - 1L);
-            if (skippedTicks > 0L) {
-                accumulatedPauseTicks = Math.addExact(accumulatedPauseTicks, skippedTicks);
-            }
-            poseTick = worldTick - 1L;
-            // 末发成功后立即进入既定出场方向；固定翼仍由 advance() 按本体转向能力渐进修正。
-            pose = previewNextPose(worldTick);
-            poseTick = worldTick;
-            lastObservedTick = Math.max(lastObservedTick, worldTick);
+        /** 保存已通过区块检查的下一姿态，供本 Tick VehicleMoveEvent 提交。 */
+        private void armMove(RVP_FireSupportAirstrikeRoutePlanner.AircraftPose next, long worldTick) {
+            armedPose = next;
+            armedWorldTick = worldTick;
+        }
+
+        /** 清除上一 Tick 未消费的移动许可，禁止过期许可跨 Tick 复用。 */
+        private void clearArmedMove() {
+            armedPose = null;
+            armedWorldTick = Long.MIN_VALUE;
+        }
+
+        /** @return 当前 Tick 是否存在已通过硬门控的移动许可。 */
+        private boolean hasArmedMove(long worldTick) {
+            return armedPose != null && armedWorldTick == worldTick;
+        }
+
+        /** 提交已放行姿态；每个世界 Tick 最多消费一次。 */
+        private void commitArmedMove(long worldTick) {
+            if (!hasArmedMove(worldTick)) return;
+            setPose(armedPose, worldTick);
+            clearArmedMove();
         }
 
         /** @return 当前世界 Tick 是否尚有一步实际位移需要提交。 */

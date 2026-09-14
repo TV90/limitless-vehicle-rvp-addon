@@ -437,6 +437,31 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
     }
 
     @Test
+    void chunkGateOnlyZerosAircraftVelocityWhilePathIsUnready() {
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose current =
+                new RVP_FireSupportAirstrikeRoutePlanner.AircraftPose(
+                        new Vec3(15.5D, 80.0D, 15.5D), new Vec3(0.0D, 0.0D, 1.0D),
+                        0.0F, 0.0F, 0.0F, new Vec3(0.0D, 0.0D, 4.0D));
+        RVP_FireSupportAirstrikeRoutePlanner.AircraftPose next =
+                RVP_FireSupportAirstrikeRoutePlanner.advance(
+                        current, new Vec3(1.0D, 0.0D, 0.0D), 4.0D,
+                        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback());
+
+        assertEquals(Vec3.ZERO,
+                RVP_FireSupportAirstrikeController.gatedStepMotion(false, current, next),
+                "路径未就绪时支援机必须严格零速冻结");
+        assertEquals(next.position().subtract(current.position()),
+                RVP_FireSupportAirstrikeController.gatedStepMotion(true, current, next),
+                "路径就绪后实体速度必须等于本 Tick 真实位移");
+    }
+
+    @Test
+    void serverTickStartArmsTheFollowingWorldTick() {
+        assertEquals(101L, RVP_FireSupportAirstrikeController.movementTickAtServerStart(100L),
+                "ServerTick START 必须为随后执行的世界 Tick 放行位移");
+    }
+
+    @Test
     void aircraftSpawnsOnlyAfterCallingStageHasEnded() {
         assertTrue(!RVP_FireSupportAirstrikeController.aircraftSpawnAllowed(
                 RVP_FireSupportMissionState.CALLING, 100L, 100L),
