@@ -27,8 +27,10 @@ import org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryContext;
 import org.ywzj.rvp.firesupport.delivery.RVP_AirLaunchedProjectileDelivery;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
 import org.ywzj.rvp.firesupport.schedule.RVP_FireSupportSchedulePlanner;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.api.event.VehicleMoveEvent;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.vehicle.BaseVehicleData;
@@ -568,11 +570,48 @@ public final class RVP_FireSupportAirstrikeController {
         if (config == null || releases.isEmpty()) return null;
         RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics planningDynamics =
                 resolveAircraftDynamics(config.aircraftId());
-        // 调用本项目公共任务航线规划器，为混合弹种统一补进入场点、出场点、曲线和航点 Tick。
-        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = RVP_FireSupportAirstrikeRoutePlanner.plan(
-                releases, config.rackOffset(), config.entryDistanceMeters(), config.exitDistanceMeters(),
-                config.carrierSpeedMetersPerTick(), planningDynamics, actualStartTick);
-        return route == null ? null : new RouteState(config, refs, route, planningDynamics);
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route;
+        if (isPureUnguidedMission(mission)) {
+            // 调用本项目无制导空间排序入口：冻结原始出发点，并以任务锚点建立水平排序主轴。
+            route = RVP_FireSupportAirstrikeRoutePlanner.planSpatiallyOrderedUnguided(
+                    releases, config.rackOffset(), config.entryDistanceMeters(), config.exitDistanceMeters(),
+                    config.carrierSpeedMetersPerTick(), planningDynamics, actualStartTick,
+                    new Vec3(mission.targetX, 0.0D, mission.targetZ));
+        } else {
+            // 调用本项目公共任务航线规划器：混合或制导任务继续保持原轮次及 GPS 对准段行为。
+            route = RVP_FireSupportAirstrikeRoutePlanner.plan(
+                    releases, config.rackOffset(), config.entryDistanceMeters(), config.exitDistanceMeters(),
+                    config.carrierSpeedMetersPerTick(), planningDynamics, actualStartTick);
+        }
+        if (route == null) return null;
+        Map<Integer, RoundRef> refsByRound = new LinkedHashMap<>();
+        for (RoundRef ref : refs) refsByRound.put(ref.round().roundIndex(), ref);
+        ArrayList<RoundRef> orderedRefs = new ArrayList<>(refs.size());
+        for (RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease release : route.releases()) {
+            RoundRef ref = refsByRound.get(release.roundIndex());
+            if (ref == null) return null;
+            orderedRefs.add(ref);
+        }
+        return new RouteState(config, orderedRefs, route, planningDynamics);
+    }
+
+    /** @return 当前空袭任务的全部武器是否都仅配置 NONE 主制导和 NONE/缺失末段制导。 */
+    static boolean isPureUnguidedMission(RVP_FireSupportMission mission) {
+        if (mission == null || mission.weapons.isEmpty()) return false;
+        for (RVP_FireSupportMissionWeapon weapon : mission.weapons) {
+            if (!isFullyUnguided(weapon.weaponData())) return false;
+        }
+        return true;
+    }
+
+    /** 纯能力判断入口，供任务判定与回归测试共享。 */
+    static boolean isFullyUnguided(RVP_WeaponData weaponData) {
+        if (weaponData == null) return false;
+        // 调用本项目武器数据访问器：主、末段任一阶段不是 NONE 时都不得启用无制导空间排序。
+        var guidance = weaponData.getGuidanceData();
+        if (guidance.getGuidanceType() != RVP_EnumGuidanceType.NONE) return false;
+        var terminal = guidance.getTerminalGuidance();
+        return terminal == null || terminal.getGuidanceType() == RVP_EnumGuidanceType.NONE;
     }
 
     /** 在飞机生成前从载具数据读取建线用转向参数；非固定翼沿用控制器回退值。 */
@@ -873,11 +912,12 @@ public final class RVP_FireSupportAirstrikeController {
                         release.plannedTick(), release.releasePosition(), route.direction(),
                         release.preferredInboundDirection()));
             }
-            // 调用本项目公共任务航线规划器，仅重排起始时间，保持各策略冻结的释放点和公共首尾段。
+            Vec3 frozenEntry = route.waypoints().get(0).position();
+            // 调用本项目固定出发点重排入口，仅调整起始时间，保持释放点顺序及原始飞机生成位置。
             RVP_FireSupportAirstrikeRoutePlanner.RoutePlan replanned =
-                    RVP_FireSupportAirstrikeRoutePlanner.plan(targets, config.rackOffset(),
+                    RVP_FireSupportAirstrikeRoutePlanner.replanFromFixedEntry(targets, config.rackOffset(),
                             config.entryDistanceMeters(), config.exitDistanceMeters(),
-                            config.carrierSpeedMetersPerTick(), planningDynamics, startTick);
+                            config.carrierSpeedMetersPerTick(), planningDynamics, startTick, frozenEntry);
             if (replanned == null) return false;
             route = replanned;
             return true;

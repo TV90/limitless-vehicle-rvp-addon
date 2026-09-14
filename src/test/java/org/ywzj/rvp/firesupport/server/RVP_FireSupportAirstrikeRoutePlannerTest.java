@@ -1,9 +1,14 @@
 package org.ywzj.rvp.firesupport.server;
 
+import java.lang.reflect.Field;
 import java.util.List;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
+import org.ywzj.rvp.weapon.data.RVP_TerminalGuidanceData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -243,6 +248,93 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
     }
 
     @Test
+    void unguidedSpatialOrderUsesLongitudinalProjectionAndKeepsOriginalRoundMetadata() {
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = spatialPlan(List.of(
+                targetAt(0, 30L, new Vec3(30.0D, 100.0D, 0.0D)),
+                targetAt(1, 10L, new Vec3(22.0D, 80.0D, 0.0D)),
+                targetAt(2, 20L, new Vec3(26.0D, 90.0D, 0.0D))),
+                new Vec3(100.0D, 0.0D, 0.0D), 0L);
+
+        assertNotNull(route);
+        assertEquals(new Vec3(20.0D, 100.0D, 0.0D), route.waypoints().get(0).position(),
+                "空间重排必须保留按原首发反推的飞机出发点");
+        assertEquals(List.of(1, 2, 0), route.releases().stream()
+                .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::roundIndex).toList());
+        assertEquals(List.of(10L, 20L, 30L), route.releases().stream()
+                .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::plannedTick).toList(),
+                "原轮次的不得提前 Tick 必须随对应参考挂架航点一起移动");
+        assertTrue(route.releases().stream().allMatch(release -> release.actualTick() >= release.plannedTick()));
+    }
+
+    @Test
+    void unguidedSpatialOrderUsesAscendingSignedLateralDistanceAfterProjectionTie() {
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = spatialPlan(List.of(
+                targetAt(0, 0L, new Vec3(20.0D, 80.0D, 0.0D)),
+                targetAt(1, 0L, new Vec3(20.0D, 80.0D, -2.0D)),
+                targetAt(2, 0L, new Vec3(20.0D, 80.0D, 3.0D)),
+                targetAt(3, 0L, new Vec3(20.0D, 80.0D, -3.0D)),
+                targetAt(4, 0L, new Vec3(20.0D, 80.0D, 1.0D)),
+                targetAt(5, 0L, new Vec3(20.0D, 80.0D, -1.0D)),
+                targetAt(6, 0L, new Vec3(20.0D, 80.0D, 2.0D))),
+                new Vec3(100.0D, 0.0D, 0.0D), 0L);
+
+        assertNotNull(route);
+        assertEquals(List.of(3.0D, 2.0D, 1.0D, 0.0D, -1.0D, -2.0D, -3.0D),
+                route.releases().stream().map(release -> release.releasePosition().z()).toList(),
+                "右法向量有符号值应按 -3、-2、-1、0、+1、+2、+3 排列");
+    }
+
+    @Test
+    void unguidedSpatialOrderIgnoresHeightAndKeepsExactTiesStable() {
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan route = spatialPlan(List.of(
+                targetAt(7, 5L, new Vec3(20.0D, 120.0D, 0.0D)),
+                targetAt(3, 5L, new Vec3(20.0D, 60.0D, 0.0D))),
+                new Vec3(100.0D, 200.0D, 0.0D), 0L);
+
+        assertNotNull(route);
+        assertEquals(List.of(7, 3), route.releases().stream()
+                .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::roundIndex).toList(),
+                "同一 X/Z 的航点不得因高度或轮次编号改变稳定原序");
+    }
+
+    @Test
+    void retimeKeepsFrozenEntryAndExistingSpatialOrder() {
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan initial = spatialPlan(List.of(
+                targetAt(0, 30L, new Vec3(30.0D, 100.0D, 0.0D)),
+                targetAt(1, 10L, new Vec3(22.0D, 80.0D, 0.0D)),
+                targetAt(2, 20L, new Vec3(26.0D, 90.0D, 0.0D))),
+                new Vec3(100.0D, 0.0D, 0.0D), 0L);
+        Vec3 frozenEntry = initial.waypoints().get(0).position();
+        List<RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget> orderedTargets = initial.releases().stream()
+                .map(release -> new RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget(
+                        release.roundIndex(), release.plannedTick(), release.releasePosition(), initial.direction()))
+                .toList();
+
+        RVP_FireSupportAirstrikeRoutePlanner.RoutePlan retimed =
+                RVP_FireSupportAirstrikeRoutePlanner.replanFromFixedEntry(
+                        orderedTargets, ZERO_OFFSET, 10.0D, 8.0D, 2.0D,
+                        RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback(), 100L, frozenEntry);
+
+        assertNotNull(retimed);
+        assertEquals(frozenEntry, retimed.waypoints().get(0).position());
+        assertEquals(List.of(1, 2, 0), retimed.releases().stream()
+                .map(RVP_FireSupportAirstrikeRoutePlanner.ScheduledRelease::roundIndex).toList());
+        assertEquals(100L, retimed.startTick());
+    }
+
+    @Test
+    void spatialOrderingEligibilityRequiresNoneInPrimaryAndTerminalStages() {
+        assertTrue(RVP_FireSupportAirstrikeController.isFullyUnguided(
+                weapon(RVP_EnumGuidanceType.NONE, null)));
+        assertTrue(RVP_FireSupportAirstrikeController.isFullyUnguided(
+                weapon(RVP_EnumGuidanceType.NONE, RVP_EnumGuidanceType.NONE)));
+        assertFalse(RVP_FireSupportAirstrikeController.isFullyUnguided(
+                weapon(RVP_EnumGuidanceType.GPS, null)));
+        assertFalse(RVP_FireSupportAirstrikeController.isFullyUnguided(
+                weapon(RVP_EnumGuidanceType.NONE, RVP_EnumGuidanceType.SALH)));
+    }
+
+    @Test
     void restrictedTurnRateKeepsForwardMotionContinuous() {
         RVP_FireSupportAirstrikeRoutePlanner.AircraftPose pose =
                 new RVP_FireSupportAirstrikeRoutePlanner.AircraftPose(
@@ -419,6 +511,51 @@ class RVP_FireSupportAirstrikeRoutePlannerTest {
             double entryDistance, double speed) {
         return RVP_FireSupportAirstrikeRoutePlanner.plan(
                 targets, ZERO_OFFSET, entryDistance, 8.0D, speed, startTick);
+    }
+
+    /** 使用统一零挂架偏移和 +X 入场方向构造纯无制导空间排序路线。 */
+    private static RVP_FireSupportAirstrikeRoutePlanner.RoutePlan spatialPlan(
+            List<RVP_FireSupportAirstrikeRoutePlanner.ReleaseTarget> targets,
+            Vec3 taskAnchor, long startTick) {
+        return RVP_FireSupportAirstrikeRoutePlanner.planSpatiallyOrderedUnguided(
+                targets, ZERO_OFFSET, 10.0D, 8.0D, 2.0D,
+                RVP_FireSupportAirstrikeRoutePlanner.AircraftDynamics.fallback(), startTick, taskAnchor);
+    }
+
+    /** 构造仅包含当前 schema 主、末段制导字段的测试武器。 */
+    private static RVP_WeaponData weapon(RVP_EnumGuidanceType primary, RVP_EnumGuidanceType terminal) {
+        RVP_WeaponData weapon = allocateWithoutVehicleRegistry();
+        RVP_GuidanceData guidance = new RVP_GuidanceData();
+        set(guidance, "guidanceType", primary);
+        if (terminal != null) {
+            RVP_TerminalGuidanceData terminalGuidance = new RVP_TerminalGuidanceData();
+            set(terminalGuidance, "guidanceType", terminal);
+            set(guidance, "terminalGuidance", terminalGuidance);
+        }
+        set(weapon, "guidanceData", guidance);
+        return weapon;
+    }
+
+    /** 为回归夹具精确写入私有数据字段。 */
+    private static void set(Object target, String fieldName, Object value) {
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    /** 绕过本体武器默认物品字段的 Forge 注册表构造，仅用于资格判断测试。 */
+    private static RVP_WeaponData allocateWithoutVehicleRegistry() {
+        try {
+            Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            return (RVP_WeaponData) ((sun.misc.Unsafe) field.get(null)).allocateInstance(RVP_WeaponData.class);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     private static RVP_FireSupportAirstrikeRoutePlanner.AircraftPose poseWithYaw(float yaw) {

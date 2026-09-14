@@ -1,6 +1,7 @@
 package org.ywzj.rvp.firesupport.server;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.util.Mth;
@@ -250,10 +251,48 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
                                  double entryDistanceMeters, double exitDistanceMeters,
                                  double carrierSpeedMetersPerTick, AircraftDynamics aircraftDynamics,
                                  long actualStartTick) {
+        return planInternal(targets, rackOffset, entryDistanceMeters, exitDistanceMeters,
+                carrierSpeedMetersPerTick, aircraftDynamics, actualStartTick, null, null);
+    }
+
+    /**
+     * 按冻结原始出发点到任务锚点的水平坐标系重排纯无制导参考挂架航点，并建立任务航线。
+     * 该入口只由空袭控制器在确认任务全部武器主、末段制导均为 NONE 后调用。
+     */
+    static RoutePlan planSpatiallyOrderedUnguided(
+            List<ReleaseTarget> targets,
+            RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
+            double entryDistanceMeters, double exitDistanceMeters,
+            double carrierSpeedMetersPerTick, AircraftDynamics aircraftDynamics,
+            long actualStartTick, Vec3 taskAnchor) {
+        return planInternal(targets, rackOffset, entryDistanceMeters, exitDistanceMeters,
+                carrierSpeedMetersPerTick, aircraftDynamics, actualStartTick, taskAnchor, null);
+    }
+
+    /** 使用既有冻结出发点重建相同航点顺序，只允许起始 Tick 变化。 */
+    static RoutePlan replanFromFixedEntry(
+            List<ReleaseTarget> targets,
+            RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
+            double entryDistanceMeters, double exitDistanceMeters,
+            double carrierSpeedMetersPerTick, AircraftDynamics aircraftDynamics,
+            long actualStartTick, Vec3 fixedEntryPosition) {
+        return planInternal(targets, rackOffset, entryDistanceMeters, exitDistanceMeters,
+                carrierSpeedMetersPerTick, aircraftDynamics, actualStartTick, null, fixedEntryPosition);
+    }
+
+    /** 公共建线内核；taskAnchor 仅启用无制导空间排序，fixedEntryPosition 仅用于重定时。 */
+    private static RoutePlan planInternal(
+            List<ReleaseTarget> targets,
+            RVP_FireSupportDeliveryTypes.LocalOffset rackOffset,
+            double entryDistanceMeters, double exitDistanceMeters,
+            double carrierSpeedMetersPerTick, AircraftDynamics aircraftDynamics,
+            long actualStartTick, @Nullable Vec3 taskAnchor, @Nullable Vec3 fixedEntryPosition) {
         if (targets == null || targets.isEmpty() || rackOffset == null
                 || !Double.isFinite(entryDistanceMeters) || entryDistanceMeters <= 0.0D
                 || !Double.isFinite(exitDistanceMeters) || exitDistanceMeters <= 0.0D
-                || !Double.isFinite(carrierSpeedMetersPerTick) || carrierSpeedMetersPerTick <= 0.0D) {
+                || !Double.isFinite(carrierSpeedMetersPerTick) || carrierSpeedMetersPerTick <= 0.0D
+                || (taskAnchor != null && !finite(taskAnchor))
+                || (fixedEntryPosition != null && !finite(fixedEntryPosition))) {
             return null;
         }
         ReleaseTarget first = targets.get(0);
@@ -263,21 +302,36 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         Vec3 direction = first.inboundMotion().normalize();
         AircraftDynamics dynamics = sanitizeDynamics(aircraftDynamics);
         try {
-            List<Vec3> centers = new ArrayList<>(targets.size());
+            List<ReleaseTarget> orderedTargets = new ArrayList<>(targets);
+            List<Vec3> centers = new ArrayList<>(orderedTargets.size());
             for (ReleaseTarget target : targets) {
                 if (target == null || target.releasePosition() == null || !finite(target.releasePosition())) return null;
                 centers.add(target.releasePosition().subtract(rotateRack(rackOffset, direction)));
             }
-            Vec3 entry = centers.get(0).subtract(direction.scale(entryDistanceMeters));
+            Vec3 entry = fixedEntryPosition == null
+                    ? centers.get(0).subtract(direction.scale(entryDistanceMeters))
+                    : fixedEntryPosition;
+            if (taskAnchor != null) {
+                // 调用本项目纯数学排序：只改变航点访问次序，并让参考点继续携带原轮次和计划 Tick。
+                List<Integer> spatialOrder = spatialOrder(orderedTargets, entry, taskAnchor, direction);
+                List<ReleaseTarget> spatialTargets = new ArrayList<>(orderedTargets.size());
+                List<Vec3> spatialCenters = new ArrayList<>(centers.size());
+                for (int originalIndex : spatialOrder) {
+                    spatialTargets.add(orderedTargets.get(originalIndex));
+                    spatialCenters.add(centers.get(originalIndex));
+                }
+                orderedTargets = spatialTargets;
+                centers = spatialCenters;
+            }
             Vec3 exit = centers.get(centers.size() - 1).add(direction.scale(exitDistanceMeters));
             List<Vec3> anchors = new ArrayList<>(centers.size() * 2 + 2);
             List<Boolean> straightSegments = new ArrayList<>(centers.size() * 2 + 1);
-            List<Integer> releaseAnchorIndices = new ArrayList<>(targets.size());
+            List<Integer> releaseAnchorIndices = new ArrayList<>(orderedTargets.size());
             anchors.add(entry);
             Vec3 lastValidHeading = horizontalDirection(direction, direction);
-            for (int index = 0; index < targets.size(); index++) {
+            for (int index = 0; index < orderedTargets.size(); index++) {
                 Vec3 center = centers.get(index);
-                ReleaseTarget target = targets.get(index);
+                ReleaseTarget target = orderedTargets.get(index);
                 Vec3 preferred = horizontalDirection(target.preferredInboundDirection(), null);
                 if (index > 0 && preferred != null) {
                     Vec3 displacement = horizontalDirection(center.subtract(centers.get(index - 1)), null);
@@ -311,13 +365,13 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
             List<CurveSample> curve = buildCurve(anchors, direction, straightSegments);
             if (curve.size() < 2) return null;
             double[] anchorDistances = resolveAnchorDistances(curve, anchors);
-            List<Waypoint> waypoints = new ArrayList<>(targets.size() + 2);
+            List<Waypoint> waypoints = new ArrayList<>(orderedTargets.size() + 2);
             waypoints.add(new Waypoint(actualStartTick, entry, 0.0D));
-            List<ScheduledRelease> releases = new ArrayList<>(targets.size());
+            List<ScheduledRelease> releases = new ArrayList<>(orderedTargets.size());
             long previousTick = actualStartTick;
             double previousDistance = 0.0D;
-            for (int index = 0; index < targets.size(); index++) {
-                ReleaseTarget target = targets.get(index);
+            for (int index = 0; index < orderedTargets.size(); index++) {
+                ReleaseTarget target = orderedTargets.get(index);
                 double distance = anchorDistances[releaseAnchorIndices.get(index)];
                 long travelTicks = requiredTicks(distance - previousDistance, carrierSpeedMetersPerTick);
                 long earliest = Math.addExact(previousTick, travelTicks);
@@ -339,6 +393,38 @@ public final class RVP_FireSupportAirstrikeRoutePlanner {
         } catch (ArithmeticException | IllegalArgumentException exception) {
             return null;
         }
+    }
+
+    /**
+     * 返回参考挂架航点的稳定空间次序：先比较主轴投影点到出发点的距离，再比较有符号垂距。
+     * 右法向量为 (axis.z, 0, -axis.x)，因此数值升序表现为负侧远到近、再到正侧近到远。
+     */
+    private static List<Integer> spatialOrder(List<ReleaseTarget> targets, Vec3 entry,
+                                              Vec3 taskAnchor, Vec3 fallbackDirection) {
+        Vec3 axis = horizontalDirection(taskAnchor.subtract(entry), fallbackDirection);
+        if (axis == null) throw new IllegalArgumentException("无制导航线空间排序主轴无效");
+        Vec3 right = new Vec3(axis.z(), 0.0D, -axis.x());
+        List<Integer> order = new ArrayList<>(targets.size());
+        for (int index = 0; index < targets.size(); index++) order.add(index);
+        order.sort(Comparator
+                .comparingDouble((Integer index) -> projectionDistance(
+                        targets.get(index).releasePosition(), entry, axis))
+                .thenComparingDouble(index -> signedLateralDistance(
+                        targets.get(index).releasePosition(), entry, right))
+                .thenComparingInt(Integer::intValue));
+        return order;
+    }
+
+    /** 计算参考挂架航点投影到主轴后与出发点的水平距离。 */
+    private static double projectionDistance(Vec3 point, Vec3 entry, Vec3 axis) {
+        Vec3 delta = new Vec3(point.x() - entry.x(), 0.0D, point.z() - entry.z());
+        return Math.abs(delta.dot(axis));
+    }
+
+    /** 计算参考挂架航点相对主轴右法向量的有符号水平距离。 */
+    private static double signedLateralDistance(Vec3 point, Vec3 entry, Vec3 right) {
+        Vec3 delta = new Vec3(point.x() - entry.x(), 0.0D, point.z() - entry.z());
+        return delta.dot(right);
     }
 
     /** 构造含 GPS 对准直线段的采样曲线；straightSegments 与控制点区间一一对应。 */
