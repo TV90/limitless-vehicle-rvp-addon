@@ -65,7 +65,14 @@ public final class RVP_TopAttackDebug {
         }
     }
 
-    /** 由 {@link RVP_BaseBullet#tickTopAttackFuse()} 调用；开关关闭时无开销。 */
+    /**
+     * 由 {@link RVP_BaseBullet#tickTopAttackFuse()} 调用；开关关闭时无开销。
+     *
+     * <p><b>调用方注意（2026-09-14 性能审查 §5.1）</b>：本方法的 {@code detail} 是<b>饿汉求值</b>的
+     * {@code String}——实参在调用前就会拼好，开关关闭也白付这份构建成本。凡处于<b>每 tick 热路径</b>
+     * 的调用点，必须先用 {@link #isEnabled()} 短路再调用；仅"事件级"（引爆/命中/单次触发）的调用点
+     * 可直接调用。新增调用点请遵守此约定，或改用惰性 {@code Supplier} 重载。</p>
+     */
     public static void noteTick(RVP_BaseBullet bullet, String detail) {
         if (!ENABLED.get()) {
             return;
@@ -76,7 +83,12 @@ public final class RVP_TopAttackDebug {
                 + " " + detail);
     }
 
-    /** 子母弹生成链路调试（引信引爆 → runner → spawner → 子弹实体），与 topattack 同开关。 */
+    /**
+     * 子母弹生成链路调试（引信引爆 → runner → spawner → 子弹实体），与 topattack 同开关。
+     *
+     * <p>与 {@link #noteTick} 同注意项：{@code detail} 为饿汉求值，位于每 tick 热路径的调用点
+     * 须先用 {@link #isEnabled()} 短路。</p>
+     */
     public static void noteSpawn(RVP_BaseBullet bullet, String detail) {
         if (!ENABLED.get()) {
             return;

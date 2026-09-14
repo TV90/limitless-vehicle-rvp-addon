@@ -35,6 +35,30 @@ public class RVP_EffectsData {
     @SerializedName("missile_native_trail_offset")
     private Float missileNativeTrailOffset;
 
+    /**
+     * 导弹尾迹粒子渲染尺寸倍率，默认 {@code 1}（原尺寸）。
+     *
+     * <p>与 {@code missile_native_trail_density_scale}（只增加粒子<b>数量</b>）互补：本项放大
+     * 单个粒子的<b>渲染尺寸</b>，是让尾迹"变粗"的直接手段。仅客户端本地尾迹生效
+     * （服务端广播的 {@code trajectory_particle} 走原版 {@code sendParticles}，无法携带尺寸）。</p>
+     */
+    @SerializedName("missile_native_trail_particle_scale")
+    private Float missileNativeTrailParticleScale;
+
+    /**
+     * 尾迹粒子风格，默认空（按 {@code vanilla} 处理）。
+     *
+     * <ul>
+     *   <li>空 / {@code vanilla}：用原版粒子（类型由 {@code missile_native_trail_particle} 指定），
+     *       尺寸经 {@code Particle#scale} 缩放——只放大原版 sprite，观感受限于原版；</li>
+     *   <li>{@code rvp_smoke}：改用本项目 MCHR 风格翻滚烟团（`RVP_MchrSmokeParticle`，从
+     *       MCHR 的 `MCH_EntityParticleSmoke` 逐条移植）——尺寸直接烘进构造、8 帧消散动画、
+     *       天空光全亮，观感更接近真实导弹尾迹，且不依赖原版粒子的缩放行为。</li>
+     * </ul>
+     */
+    @SerializedName("missile_native_trail_particle_style")
+    private String missileNativeTrailParticleStyle = "";
+
     /** 是否在推进燃烧期追加火焰，默认 null（按 true 处理）；仅推进弹体客户端表现生效。 */
     @SerializedName("missile_native_trail_extra_flame")
     private Boolean missileNativeTrailExtraFlame;
@@ -132,6 +156,29 @@ public class RVP_EffectsData {
             return 3f;
         }
         return Math.max(missileNativeTrailOffset, 0f);
+    }
+
+    /**
+     * 尾迹粒子渲染尺寸倍率；未配置或非法值返回 {@code 1}（原尺寸）。
+     * 下限 0（不可为负），上限不设（由配置方自行控制在合理观感内）。
+     */
+    public float getMissileNativeTrailParticleScale() {
+        if (missileNativeTrailParticleScale == null
+                || Float.isNaN(missileNativeTrailParticleScale)
+                || Float.isInfinite(missileNativeTrailParticleScale)) {
+            return 1f;
+        }
+        return Math.max(missileNativeTrailParticleScale, 0f);
+    }
+
+    /** 尾迹粒子风格原始值（小写化）；空串表示原版粒子。 */
+    public String getMissileNativeTrailParticleStyle() {
+        return missileNativeTrailParticleStyle == null ? "" : missileNativeTrailParticleStyle.trim().toLowerCase();
+    }
+
+    /** 尾迹是否使用本项目 MCHR 风格翻滚烟团（{@code rvp_smoke}）。 */
+    public boolean isMissileNativeTrailRvpSmoke() {
+        return "rvp_smoke".equals(getMissileNativeTrailParticleStyle());
     }
 
     public boolean isMissileNativeTrailExtraFlameEnabled() {

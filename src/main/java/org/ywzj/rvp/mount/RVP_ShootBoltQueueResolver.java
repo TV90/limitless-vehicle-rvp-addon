@@ -65,6 +65,15 @@ public final class RVP_ShootBoltQueueResolver {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 骨链回溯深度保护：结构模型骨层级异常（成环）时中断，防止死循环。 */
     private static final int MAX_BONE_DEPTH = 32;
+    /**
+     * {@code WeaponUnit.xTurnGroup} 反射字段的缓存（volatile，渲染线程读取）。
+     * {@link #findXTurnGroup} 位于挂架渲染热路径（每帧每挂架一次），而
+     * {@code findField + setAccessible} 是结果恒定的元数据查询 → 解析一次后复用，
+     * 避免每帧重复付费。
+     */
+    private static volatile java.lang.reflect.Field xturnGroupField;
+    /** 标记"已尝试解析且失败"，避免每次调用都重试并重复刷告警日志（退化为 structureGroup）。 */
+    private static volatile boolean xturnGroupResolveFailed;
 
     private RVP_ShootBoltQueueResolver() {}
 
@@ -233,12 +242,9 @@ public final class RVP_ShootBoltQueueResolver {
      * （仅功能降级，不崩溃）。</p>
      */
     public static VehicleCubeGroup findXTurnGroup(WeaponUnit unit) {
-        java.lang.reflect.Field field;
-        try {
-            field = net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
-            field.setAccessible(true);
-        } catch (Throwable t) {
-            LOGGER.warn("[RVP] 无法解析 WeaponUnit.xTurnGroup 字段，出弹锚点退化为 structureGroup", t);
+        java.lang.reflect.Field field = resolveXTurnGroupField();
+        if (field == null) {
+            // 调用本项目结构组访问器：反射不可用时退化为结构组（仅锚点近似，不崩溃）
             return unit.getStructureGroup();
         }
         try {
@@ -250,6 +256,45 @@ public final class RVP_ShootBoltQueueResolver {
             LOGGER.debug("[RVP] 读取 WeaponUnit.xTurnGroup 失败，退化为 structureGroup", t);
         }
         return unit.getStructureGroup();
+    }
+
+    /**
+     * 解析并缓存 {@code WeaponUnit.xTurnGroup} 字段（双重检查 + 失败记忆）。
+     *
+     * <p>本方法把原先"每次调用都 {@code findField + setAccessible}"的元数据查询收敛为一次；
+     * 解析失败时置 {@link #xturnGroupResolveFailed} 并只告警一次（原实现每次调用都刷一条 WARN，
+     * 在每帧每挂架的热路径上会淹日志），后续调用直接走 structureGroup 降级。</p>
+     *
+     * @return 可用的反射字段；解析失败返回 {@code null}（调用方降级）
+     */
+    @Nullable
+    private static java.lang.reflect.Field resolveXTurnGroupField() {
+        java.lang.reflect.Field cached = xturnGroupField;
+        if (cached != null) {
+            return cached;
+        }
+        if (xturnGroupResolveFailed) {
+            return null;
+        }
+        synchronized (RVP_ShootBoltQueueResolver.class) {
+            if (xturnGroupField != null) {
+                return xturnGroupField;
+            }
+            if (xturnGroupResolveFailed) {
+                return null;
+            }
+            try {
+                java.lang.reflect.Field field = ObfuscationReflectionHelper.findField(WeaponUnit.class, "xTurnGroup");
+                field.setAccessible(true);
+                xturnGroupField = field;
+                return field;
+            } catch (Throwable t) {
+                xturnGroupResolveFailed = true;
+                LOGGER.warn("[RVP] 无法解析 WeaponUnit.xTurnGroup 字段，出弹锚点退化为 structureGroup"
+                        + "（后续不再重复告警）", t);
+                return null;
+            }
+        }
     }
 
     /**

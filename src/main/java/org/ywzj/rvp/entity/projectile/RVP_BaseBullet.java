@@ -2592,13 +2592,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         RVP_FuseData fuse = rvpData.getFuseData();
-        RVP_TopAttackDebug.noteTick(this, "enter enabled=" + fuse.isTopAttackFuseEnabled()
-                + " dist=" + fuse.getTopAttackFuseDistance()
-                + " fov=" + fuse.getTopAttackFuseFov()
-                + " delay=" + fuse.getTopAttackFuseDelayTick()
-                + " arm=" + fuse.getTopAttackFuseArmTick()
-                + " triggerTick=" + topAttackTriggerTick
-                + " delta=" + RVP_ProjectileLifecycleDebug.formatVec(getDeltaMovement()));
+        // [RVP] 目的：noteTick 的实参字符串在**调用前**就求值（含 formatVec 的临时对象），
+        // 而开关判断在 noteTick 内部——本行位于"每 tick × 每枚 RVP 弹体"的热路径上，
+        // 开关关闭时也会白造一整串字符串与临时对象（2026-09-14 性能审查 §5.1）。
+        // 故把开关判断提到求值之前：noteTick 在关闭时本就是 no-op（首行即 return），
+        // 因此行为完全等价，仅省去无用的字符串构建。
+        if (RVP_TopAttackDebug.isEnabled()) {
+            RVP_TopAttackDebug.noteTick(this, "enter enabled=" + fuse.isTopAttackFuseEnabled()
+                    + " dist=" + fuse.getTopAttackFuseDistance()
+                    + " fov=" + fuse.getTopAttackFuseFov()
+                    + " delay=" + fuse.getTopAttackFuseDelayTick()
+                    + " arm=" + fuse.getTopAttackFuseArmTick()
+                    + " triggerTick=" + topAttackTriggerTick
+                    + " delta=" + RVP_ProjectileLifecycleDebug.formatVec(getDeltaMovement()));
+        }
         if (!fuse.isTopAttackFuseEnabled()) {
             return;
         }
@@ -4136,8 +4143,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 effects.hasMissileNativeTrailParticleOverride() ? effects.getMissileNativeTrailParticle() : "",
                 ParticleTypes.CAMPFIRE_SIGNAL_SMOKE
         );
+        // 目的：rvp_smoke 风格下粒子来源是自定义烟团构造，不依赖原版粒子类型，
+        // 故此时即使 missile_native_trail_particle 配成 none（primary 为 null）也应继续生成。
+        boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
         int spawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
-        if (primary != null && getFlightTickCount() % spawnInterval == 0) {
+        if ((rvpSmokeStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
             Vec3 posO = particlePosO == null ? pos : particlePosO;
             Vec3 step = pos.subtract(posO);
             double dist = step.length();
@@ -4148,11 +4158,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (segments >= 0) {
                 Vec3 dir = dist > 1.0E-6D ? step.normalize() : Vec3.ZERO;
                 double spacing = segments <= 0 ? 0.0D : dist / segments;
+                // 目的：尾迹观感可配（effects_data.missile_native_trail_particle_style + _particle_scale）。
+                // vanilla：经客户端桥缩放原版粒子渲染尺寸；rvp_smoke：直接构造 MCHR 风格翻滚烟团
+                // （尺寸烘进构造，不增加粒子数量）。服务端无粒子渲染管线（桥为 NOOP），
+                // 本方法本就只在客户端实体 Tick 中调用。
+                float particleScale = effects.getMissileNativeTrailParticleScale();
                 for (int i = 0; i <= segments; i++) {
                     Vec3 particlePos = segments <= 0 ? pos : posO.add(dir.scale(i * spacing));
-                    level().addParticle(primary, true,
-                            particlePos.x, particlePos.y, particlePos.z,
-                            0.0D, 0.0D, 0.0D);
+                    if (rvpSmokeStyle) {
+                        RVP_ClientActionsAccess.addTrailSmokeParticle(
+                                particlePos.x, particlePos.y, particlePos.z, particleScale);
+                    } else {
+                        RVP_ClientActionsAccess.addScaledParticle(primary,
+                                particlePos.x, particlePos.y, particlePos.z, particleScale);
+                    }
                 }
             }
         }

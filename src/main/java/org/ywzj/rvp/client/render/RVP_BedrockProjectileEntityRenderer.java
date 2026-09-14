@@ -60,8 +60,14 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 尾焰默认喷口偏移（实体空间，Z- 为弹尾）：未配置 engine_nozzle_offset 时的默认值。 */
     private static final Vec3 DEFAULT_NOZZLE_OFFSET = new Vec3(0.0D, 0.0D, -0.5D);
-    /** 尾焰默认缩放：未配置 flame_scale 时的默认值（对标本体 PL-12：caliber 未配置钳制 200 → 200/1000）。 */
-    private static final float DEFAULT_FLAME_SCALE = 0.2f;
+    /**
+     * 尾焰默认缩放：未配置 {@code projectile_data.flame_scale} 时的默认值。
+     * 语义同本体的 {@code caliber/1000}，即数值 ≈ 弹体直径（格）——尾焰模型自身直径约 3.09 格，
+     * 缩放后约为弹径的 3 倍（与本体 PL-12 同比例）。
+     * 2026-09-15 由 0.2 上调至 0.3：0.2 是本体 PL-12（未配 caliber，被钳制 200）的基准，
+     * 对多数弹体偏细，整体观感偏小。
+     */
+    private static final float DEFAULT_FLAME_SCALE = 0.3f;
 
     public RVP_BedrockProjectileEntityRenderer(EntityRendererProvider.Context context,
                                                ResourceLocation fallbackModel,
