@@ -29,8 +29,8 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
  * <ul>
  *   <li><b>TRAIL</b>（飞行尾迹）：寿命前 25% 是亮橙黄火焰团（{@code dark = 1 - age/(maxAge*0.25)}
  *       驱动橙焰→灰烟过渡），随后熄灭为 R=G=B 的中性深灰烟（黑烟观感）；
- *       尺寸 {@code (0.2 + rand*0.3 + 1.0×ageRatio) × scale} 持续膨胀（末端约 1.2~1.5 × scale），
- *       透明度 {@code sqrt(1 - age/maxAge) × 0.75} 缓出淡出；寿命 45~65t；
+ *       尺寸 {@code (0.5 + rand*0.3 + 1.3×ageRatio) × scale} 持续膨胀（出生 0.5~0.8、
+ *       末端约 1.8~2.1 × scale），透明度 {@code sqrt(1 - age/maxAge) × 0.75} 缓出淡出；寿命 45~65t；
  *       渲染 3 层高斯抖动 quad（HBM 10 层的性能折衷），层间抖动随寿命线性温和扩大
  *       （最大 2.5×——大发散只归属地面烟浪，空中尾迹保持柱状观感）；</li>
  *   <li><b>WASH</b>（发射地面烟浪）：随机灰 0.25~0.75、寿命 80~100t、尺寸 0.3 → 3.0 × scale
@@ -201,9 +201,11 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         this.quadSize = trailQuadSize(ageRatio);
     }
 
-    /** TRAIL 半宽曲线（半宽格）：{@code (0.3 + rand*0.3 + 1.0×ageRatio) × scale}，末端约 1.3~1.6 × scale。 */
+    /** TRAIL 半宽曲线（半宽格）：{@code (0.5 + rand*0.3 + 1.3×ageRatio) × scale}——出生 0.5~0.8、
+     * 末端约 1.8~2.1 × scale（2026-09-15 第三轮实机反馈：近地面烟柱由年轻小粒子主导显得太细，
+     * 出生尺寸与增长系数同步加大，整条烟柱加粗）。 */
     private float trailQuadSize(float ageRatio) {
-        return (0.3f + this.random.nextFloat() * 0.3f + 1.0f * ageRatio) * this.sizeScale;
+        return (0.5f + this.random.nextFloat() * 0.3f + 1.3f * ageRatio) * this.sizeScale;
     }
 
     /**
