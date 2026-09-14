@@ -4191,7 +4191,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     this.getBlockX(), this.getBlockZ());
             if (this.getY() - groundY < 20.0D) {
                 float washScale = effects.getMissileNativeTrailParticleScale();
-                for (int i = 0; i < 6; i++) {
+                // 每 tick 4 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
+                for (int i = 0; i < 4; i++) {
                     RVP_ClientActionsAccess.addLaunchWashParticle(
                             this.getX(), groundY + 0.5D, this.getZ(), washScale);
                 }

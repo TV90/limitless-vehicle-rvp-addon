@@ -28,8 +28,9 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
  * （HBM 为 1.7.10 EntityFX，本类按 1.20.1 SingleQuadParticle 习惯重写，机制与数值保持同源）：
  * <ul>
  *   <li><b>TRAIL</b>（飞行尾迹）：寿命前 25% 是亮橙黄火焰团（{@code dark = 1 - age/(maxAge*0.25)}
- *       驱动 R/G 衰减），随后熄灭为深灰随机烟；尺寸 {@code (rand*0.5 + 0.1 + 2*ageRatio) × scale}
- *       持续膨胀（约 0.35 → 2.6 × scale），透明度 {@code sqrt(1 - age/maxAge) × 0.75} 缓出淡出；
+ *       驱动橙焰→灰烟过渡），随后熄灭为 R=G=B 的中性深灰烟（黑烟观感）；
+ *       尺寸 {@code (0.2 + rand*0.3 + 1.0×ageRatio) × scale} 持续膨胀（末端约 1.2~1.5 × scale），
+ *       透明度 {@code sqrt(1 - age/maxAge) × 0.75} 缓出淡出；寿命 45~65t；
  *       渲染 3 层高斯抖动 quad（HBM 10 层的性能折衷）+ 横向抖动随寿命急剧扩大，营造
  *       "近弹尾细而亮、远弹尾粗而散"的锥形烟柱；</li>
  *   <li><b>WASH</b>（发射地面烟浪）：随机灰 0.25~0.75、寿命 80~100t、尺寸 0.25 → 2.25 × scale
@@ -75,6 +76,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private static final int TRAIL_LAYERS = 3;
     /** TRAIL 模式火焰相位占比：寿命前 25% 亮橙焰，之后深灰烟（HBM dark 阈值）。 */
     private static final float FLAME_PHASE_RATIO = 0.25f;
+    /** 烟相位灰度下限（R=G=B 的中性灰，黑烟观感；灰度上限 = 下限 + SPREAD）。 */
+    private static final float SMOKE_GREY_MIN = 0.15f;
+    /** 烟相位灰度随机幅度（保持单通道同值，避免逐通道独立随机产生彩色噪点）。 */
+    private static final float SMOKE_GREY_SPREAD = 0.15f;
 
     /** 粒子模式。 */
     private final Mode mode;
@@ -96,8 +101,8 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         this.hasPhysics = false;
         this.gravity = 0.0f;
         if (mode == Mode.TRAIL) {
-            // HBM ParticleRocketFlame：寿命 60~80t，出生即按 ageRatio=0 出曲线
-            this.lifetime = 60 + this.random.nextInt(20);
+            // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
+            this.lifetime = 45 + this.random.nextInt(20);
         } else {
             // HBM ParticleSmokePlume：寿命 80~100t，0.25 起步线性膨胀（无碰撞，贴地扩散后浮升）
             this.lifetime = 80 + this.random.nextInt(20);
@@ -160,8 +165,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
 
     /**
      * 按寿命进度刷新颜色/透明度/尺寸（TRAIL 模式）：
-     * 火焰相位 {@code dark = 1 - age/(maxAge*FLAME_PHASE_RATIO)} 驱动 R/G 衰减，
-     * 熄火后落入 {@code rand*0.3} 的深灰随机烟；α 平方根缓出；quad 半宽持续膨胀。
+     * 火焰相位 {@code dark = 1 - age/(maxAge*FLAME_PHASE_RATIO)} 驱动橙焰→灰烟过渡；
+     * 烟相位为 R=G=B 的<b>单一中性灰</b>（黑烟观感）——不做逐通道独立随机
+     * （HBM 原式的 R/G/B 各自掷随机在单贴图 alpha 混合下会呈现彩色噪点，2026-09-15 实机反馈修正）；
+     * α 平方根缓出；quad 半宽持续膨胀。
      */
     private void applyTrailCurve(float ageRatio) {
         if (this.mode != Mode.TRAIL) {
@@ -176,13 +183,18 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             return;
         }
         float dark = 1.0f - Math.min(ageRatio / FLAME_PHASE_RATIO, 1.0f);
-        // HBM 原式：R = dark + rand*0.3、G = 0.6*dark + rand*0.3、B = rand*0.3（顶点色上限钳 1）
-        this.rCol = Math.min(dark + this.random.nextFloat() * 0.3f, 1.0f);
-        this.gCol = Math.min(0.6f * dark + this.random.nextFloat() * 0.3f, 1.0f);
-        this.bCol = this.random.nextFloat() * 0.3f;
+        // 烟相位基准：单一灰度值（R=G=B，黑烟）；火焰相位向亮橙过渡（随机幅度收窄到 ±0.1 保色相统一）
+        float grey = SMOKE_GREY_MIN + this.random.nextFloat() * SMOKE_GREY_SPREAD;
+        this.rCol = Mth.lerp(dark, grey, Math.min(1.0f + this.random.nextFloat() * 0.1f, 1.0f));
+        this.gCol = Mth.lerp(dark, grey, 0.6f + this.random.nextFloat() * 0.1f);
+        this.bCol = Mth.lerp(dark, grey, this.random.nextFloat() * 0.1f);
         this.alpha = Mth.sqrt(Math.max(1.0f - ageRatio, 0.0f)) * 0.75f;
-        // HBM 原式：quad 半宽 = (rand*0.5 + 0.1 + 2*ageRatio) × scale
-        this.quadSize = (this.random.nextFloat() * 0.5f + 0.1f + 2.0f * ageRatio) * this.sizeScale;
+        this.quadSize = trailQuadSize(ageRatio);
+    }
+
+    /** TRAIL 半宽曲线（半宽格）：{@code (0.2 + rand*0.3 + 1.0×ageRatio) × scale}，末端约 1.2~1.5 × scale。 */
+    private float trailQuadSize(float ageRatio) {
+        return (0.2f + this.random.nextFloat() * 0.3f + 1.0f * ageRatio) * this.sizeScale;
     }
 
     /**
@@ -207,10 +219,8 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         float v0 = this.getV0();
         float v1 = this.getV1();
         for (int layer = 0; layer < layers; layer++) {
-            float quadSize = this.getQuadSize(partialTicks);
-            if (this.mode == Mode.TRAIL) {
-                quadSize = (this.random.nextFloat() * 0.5f + 0.1f + 2.0f * ageRatio) * this.sizeScale;
-            }
+            // 目的：每层独立掷半宽（层间尺寸差 + 位置抖动共同构成体积感）；曲线同 tick 期一致
+            float quadSize = this.mode == Mode.TRAIL ? trailQuadSize(ageRatio) : this.getQuadSize(partialTicks);
             // 目的：层间位置抖动营造体积感；XZ 小抖 + Y 大抖，幅度随寿命扩大（HBM spread 同源）
             float jitterX = (float) this.random.nextGaussian() * 0.2f * spread;
             float jitterY = (float) this.random.nextGaussian() * 0.5f * spread;
