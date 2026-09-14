@@ -37,4 +37,22 @@ public interface RVP_IClientActions {
      * @param sizeScale 烟团尺寸倍率；{@code 1} = 拖烟默认观感
      */
     void addTrailSmokeParticle(double x, double y, double z, float sizeScale);
+
+    /**
+     * 生成一个 HBM 风格火箭尾焰粒子（弹道导弹"先火后烟"飞行尾迹专用）。
+     *
+     * <p>同 {@link #addTrailSmokeParticle}：不经 provider 查表，直接构造
+     * {@code RVP_RocketFlameParticle}（TRAIL 模式，HBM ParticleRocketFlame 移植）后加入引擎。</p>
+     *
+     * @param mx/my/mz 粒子初速（弹轴反方向，由调用方按 -lookAngle × 1.0 计算）
+     * @param sizeScale 尺寸倍率（对标本体 getContrailScale：大弹 1.0 / 小弹 0.5）
+     */
+    void addRocketFlameTrailParticle(double x, double y, double z,
+                                     double mx, double my, double mz, float sizeScale);
+
+    /**
+     * 生成一个 HBM 风格发射地面烟浪粒子（起飞贴地横向冲刷灰烟，ParticleSmokePlume 移植）。
+     * 初速由粒子内部随机（水平径向 0.5~0.9 + 微升），调用方只需给出生成点与尺寸倍率。
+     */
+    void addLaunchWashParticle(double x, double y, double z, float sizeScale);
 }

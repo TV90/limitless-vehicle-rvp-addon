@@ -79,4 +79,29 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         Minecraft.getInstance().particleEngine.add(
                 RVP_MchrSmokeParticle.ofTrailScaled(level, x, y, z, sizeScale));
     }
+
+    /** 生成 HBM 风格火箭尾焰粒子（TRAIL 模式，先火后烟膨胀柱，参数见粒子类移植注释）。 */
+    @Override
+    public void addRocketFlameTrailParticle(double x, double y, double z,
+                                            double mx, double my, double mz, float sizeScale) {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        Minecraft.getInstance().particleEngine.add(
+                org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofTrail(
+                        level, x, y, z, mx, my, mz, sizeScale));
+    }
+
+    /** 生成 HBM 风格发射地面烟浪粒子（WASH 模式，初速内部随机径向冲刷 + 浮升）。 */
+    @Override
+    public void addLaunchWashParticle(double x, double y, double z, float sizeScale) {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        Minecraft.getInstance().particleEngine.add(
+                org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofLaunchWash(
+                        level, x, y, z, sizeScale));
+    }
 }

@@ -54,10 +54,24 @@ public class RVP_EffectsData {
      *   <li>{@code rvp_smoke}：改用本项目 MCHR 风格翻滚烟团（`RVP_MchrSmokeParticle`，从
      *       MCHR 的 `MCH_EntityParticleSmoke` 逐条移植）——尺寸直接烘进构造、8 帧消散动画、
      *       天空光全亮，观感更接近真实导弹尾迹，且不依赖原版粒子的缩放行为。</li>
+     *   <li>{@code rvp_rocket_flame}：HBM 风格火箭尾焰（`RVP_RocketFlameParticle`，从 HBM 的
+     *       `ParticleRocketFlame` 移植）——寿命前 25% 亮橙火焰团、随后深灰烟持续膨胀，
+     *       先火后烟柱状尾迹；并默认启用发射段贴地烟浪（见
+     *       {@code missile_native_trail_ground_wash}）。</li>
      * </ul>
      */
     @SerializedName("missile_native_trail_particle_style")
     private String missileNativeTrailParticleStyle = "";
+
+    /**
+     * 发射段贴地烟浪开关，默认 null（按风格推导：{@code rvp_rocket_flame} 时开启、其余关闭）。
+     *
+     * <p>对齐 HBM 发射台 {@code launchSmoke}：导弹发动机燃烧且距地高度不足
+     * {@code 20} 格时，客户端在弹体地面投影点生成贴地横向冲刷的灰烟团（每 tick 6 粒，
+     * 尺寸 0.25 → 2.25 × {@code missile_native_trail_particle_scale} 线性膨胀带浮升）。</p>
+     */
+    @SerializedName("missile_native_trail_ground_wash")
+    private Boolean missileNativeTrailGroundWash;
 
     /** 是否在推进燃烧期追加火焰，默认 null（按 true 处理）；仅推进弹体客户端表现生效。 */
     @SerializedName("missile_native_trail_extra_flame")
@@ -179,6 +193,27 @@ public class RVP_EffectsData {
     /** 尾迹是否使用本项目 MCHR 风格翻滚烟团（{@code rvp_smoke}）。 */
     public boolean isMissileNativeTrailRvpSmoke() {
         return "rvp_smoke".equals(getMissileNativeTrailParticleStyle());
+    }
+
+    /** 尾迹是否使用 HBM 风格火箭尾焰（{@code rvp_rocket_flame}）。 */
+    public boolean isMissileNativeTrailRocketFlame() {
+        return "rvp_rocket_flame".equals(getMissileNativeTrailParticleStyle());
+    }
+
+    /** 是否配置了任一自定义尾迹风格（非空即真）；服务端据此跳过原生尾迹弹的广播路径。 */
+    public boolean hasMissileNativeTrailParticleStyle() {
+        return !getMissileNativeTrailParticleStyle().isEmpty();
+    }
+
+    /**
+     * 发射段贴地烟浪是否启用；未配置时按风格推导——
+     * {@code rvp_rocket_flame} 开启（HBM 观感打包），其余风格默认关闭。
+     */
+    public boolean isMissileNativeTrailGroundWashEnabled() {
+        if (missileNativeTrailGroundWash != null) {
+            return missileNativeTrailGroundWash;
+        }
+        return isMissileNativeTrailRocketFlame();
     }
 
     public boolean isMissileNativeTrailExtraFlameEnabled() {

@@ -4143,11 +4143,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 effects.hasMissileNativeTrailParticleOverride() ? effects.getMissileNativeTrailParticle() : "",
                 ParticleTypes.CAMPFIRE_SIGNAL_SMOKE
         );
-        // 目的：rvp_smoke 风格下粒子来源是自定义烟团构造，不依赖原版粒子类型，
+        // 目的：rvp_smoke/rvp_rocket_flame 风格下粒子来源是自定义粒子构造，不依赖原版粒子类型，
         // 故此时即使 missile_native_trail_particle 配成 none（primary 为 null）也应继续生成。
         boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
+        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
         int spawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
-        if ((rvpSmokeStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
+        if ((rvpSmokeStyle || rocketFlameStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
             Vec3 posO = particlePosO == null ? pos : particlePosO;
             Vec3 step = pos.subtract(posO);
             double dist = step.length();
@@ -4159,19 +4160,40 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 Vec3 dir = dist > 1.0E-6D ? step.normalize() : Vec3.ZERO;
                 double spacing = segments <= 0 ? 0.0D : dist / segments;
                 // 目的：尾迹观感可配（effects_data.missile_native_trail_particle_style + _particle_scale）。
-                // vanilla：经客户端桥缩放原版粒子渲染尺寸；rvp_smoke：直接构造 MCHR 风格翻滚烟团
-                // （尺寸烘进构造，不增加粒子数量）。服务端无粒子渲染管线（桥为 NOOP），
-                // 本方法本就只在客户端实体 Tick 中调用。
+                // vanilla：经客户端桥缩放原版粒子渲染尺寸；rvp_smoke：直接构造 MCHR 风格翻滚烟团；
+                // rvp_rocket_flame：HBM 风格火箭尾焰（先火后烟膨胀柱，初速沿弹轴反方向喷出）。
+                // 服务端无粒子渲染管线（桥为 NOOP），本方法本就只在客户端实体 Tick 中调用。
                 float particleScale = effects.getMissileNativeTrailParticleScale();
+                // HBM ParticleRocketFlame：初速沿 -thrust（弹轴反方向）× 1.0，随阻尼 0.91/tick 后抛
+                Vec3 exhaust = rocketFlameStyle
+                        ? this.getLookAngle().scale(-1.0D) : Vec3.ZERO;
                 for (int i = 0; i <= segments; i++) {
                     Vec3 particlePos = segments <= 0 ? pos : posO.add(dir.scale(i * spacing));
-                    if (rvpSmokeStyle) {
+                    if (rocketFlameStyle) {
+                        RVP_ClientActionsAccess.addRocketFlameTrailParticle(
+                                particlePos.x, particlePos.y, particlePos.z,
+                                exhaust.x, exhaust.y, exhaust.z, particleScale);
+                    } else if (rvpSmokeStyle) {
                         RVP_ClientActionsAccess.addTrailSmokeParticle(
                                 particlePos.x, particlePos.y, particlePos.z, particleScale);
                     } else {
                         RVP_ClientActionsAccess.addScaledParticle(primary,
                                 particlePos.x, particlePos.y, particlePos.z, particleScale);
                     }
+                }
+            }
+        }
+        // 目的：发射段贴地烟浪（HBM 发射台 launchSmoke 移植）——发动机燃烧且距地不足 20 格时，
+        // 在弹体地面投影点生成贴地横向冲刷的灰烟团，爬升过阈值后自然停止（仅 rvp_rocket_flame 默认开启）。
+        if (effects.isMissileNativeTrailGroundWashEnabled()) {
+            double groundY = level().getHeight(
+                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                    this.getBlockX(), this.getBlockZ());
+            if (this.getY() - groundY < 20.0D) {
+                float washScale = effects.getMissileNativeTrailParticleScale();
+                for (int i = 0; i < 6; i++) {
+                    RVP_ClientActionsAccess.addLaunchWashParticle(
+                            this.getX(), groundY + 0.5D, this.getZ(), washScale);
                 }
             }
         }
@@ -4246,7 +4268,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (config == null) {
             return;
         }
-        String configured = config.getEffectsData().getTrajectoryParticle();
+        // 目的：配置了自定义原生尾迹风格的导弹，客户端本地尾迹（含 HBM 火箭焰/烟团）已定制
+        // 完整观感，服务端广播烟 + 尾焰粒子会与之叠加成"本地粗烟 + 广播细烟"两路混合
+        // ——按配置整体跳过（无风格配置的弹保持原有广播行为不变）。
+        RVP_EffectsData effects = config.getEffectsData();
+        if (this instanceof RVP_MissileEntity && effects.isMissileNativeTrailEnabled()
+                && effects.hasMissileNativeTrailParticleStyle()) {
+            return;
+        }
+        String configured = effects.getTrajectoryParticle();
         boolean heavy = isHeavyProjectile();
         boolean motorBurning = isMotorBurning();
         // 轨迹粒子：推进类弹体仅在燃烧期发送
