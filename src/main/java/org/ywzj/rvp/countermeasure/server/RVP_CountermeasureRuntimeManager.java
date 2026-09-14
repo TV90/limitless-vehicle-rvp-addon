@@ -27,7 +27,6 @@ import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
-import org.ywzj.rvp.mount.RVP_ShootBoltQueueApplier;
 
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -248,8 +247,6 @@ public final class RVP_CountermeasureRuntimeManager {
             if (launcher == null) {
                 continue;
             }
-            // [RVP] 出弹前确保队列已应用（干扰物出生点读 launcher 的 bolts）
-            RVP_ShootBoltQueueApplier.ensureApplied(vehicle, launcher);
             if (soundPos == null) {
                 soundPos = launcher.worldCurrentBoltPosition();
             }

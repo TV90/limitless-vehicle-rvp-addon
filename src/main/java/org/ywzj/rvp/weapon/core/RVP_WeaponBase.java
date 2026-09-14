@@ -26,7 +26,6 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
-import org.ywzj.rvp.mount.RVP_ShootBoltQueueApplier;
 
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -109,9 +108,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     @Override
     @OnlyIn(Dist.CLIENT)
     public boolean doClientShoot() {
-        // [RVP] 开火前确保出弹队列为"当前口径 × 最新表版本"——玩家开火的出生坐标由客户端
-        // 计算后上传服务端，客户端站上的 bolts 必须先就位（出弹骨分离设计，见 ensureApplied）
-        RVP_ShootBoltQueueApplier.ensureApplied(getVehicle(), getWeaponUnit());
         if (getVehicle().level().isClientSide()) {
             fireController.syncClientInput();
             if (!fireController.shouldAttemptClientShot()) {

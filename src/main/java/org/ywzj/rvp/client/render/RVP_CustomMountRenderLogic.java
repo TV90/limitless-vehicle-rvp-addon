@@ -685,14 +685,6 @@ public final class RVP_CustomMountRenderLogic {
                                 ? "<null>"
                                 : resolution.currentWeapon().getData().getWeaponId())
                         .append('\n');
-                // [RVP v3] 出弹队列状态（shoot_structure_bones）：null 表示该站未被管理，保持本体原 Bolt
-                // 目的：查表（重载期预计算 + S2C 同步），无表项 = 该站未被管理，保持本体原 Bolt；
-                // 走武器站实例重载，与 RVP_ShootBoltQueueApplier 同口径（本站未命中沿母武器站链回退）
-                List<Bolt> shootQueue = org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.lookupQueue(
-                        vehicle.getVehicleId(), weaponUnit,
-                        org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.currentWeaponKey(weaponUnit));
-                sb.append("shootQueue=").append(shootQueue == null ? "<not-managed>" : shootQueue.size() + " bolts")
-                        .append('\n');
             }
 
             PartUnit<?> attachPart = config.attachPartUnitId().isEmpty() ? null : vehicle.getPartUnit(config.attachPartUnitId()).orElse(null);

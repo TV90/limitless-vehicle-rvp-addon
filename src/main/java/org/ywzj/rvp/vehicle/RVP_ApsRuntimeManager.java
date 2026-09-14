@@ -21,7 +21,6 @@ import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleFire;
-import org.ywzj.rvp.mount.RVP_ShootBoltQueueApplier;
 
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -404,8 +403,6 @@ public final class RVP_ApsRuntimeManager {
             return false;
         }
 
-        // [RVP] 出弹前确保队列已应用（拦截弹出生点读 spawnWeaponUnit 的 bolts）
-        RVP_ShootBoltQueueApplier.ensureApplied(vehicle, spawnWeaponUnit);
         Vec3 spawnPos = spawnWeaponUnit.worldCurrentBoltPosition();
         Vec3 interceptCenter = target.position();
         boolean intercepted = interceptProjectiles(vehicle, config, interceptCenter);

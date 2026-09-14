@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.ywzj.rvp.mount.RVP_ShootBoltQueueApplier;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
@@ -25,11 +24,7 @@ public abstract class VehicleMultiWeaponsChargeGateMixin {
         if (!(selected instanceof RVP_WeaponBase rvp)) {
             return;
         }
-        // [RVP] 目的（2026-09-14）：多弹种槽客户端开火兜底——本体 Multi.doClientShoot 自行
-        // 计算 aimContexts（出生坐标客户端权威），绕过 RVP_WeaponBase.doClientShoot 的
-        // ensureApplied；客户端 bolts 若仍停留在挂点模板（重进存档/配置就绪竞态），
         // 炸弹就会从挂点出生。开火前拉取一次（幂等：口径×表版本未变时零开销）。
-        RVP_ShootBoltQueueApplier.ensureApplied(rvp.getVehicle(), rvp.getWeaponUnit());
         rvp.getFireController().syncClientInput();
         if (!rvp.getFireController().shouldAttemptClientShot()) {
             cir.setReturnValue(false);
