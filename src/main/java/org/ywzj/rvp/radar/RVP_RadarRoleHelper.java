@@ -6,6 +6,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
@@ -27,6 +28,13 @@ public final class RVP_RadarRoleHelper {
     public static final String ROLE_SEARCH = "SEARCH";
     public static final String ROLE_FIRE_CONTROL = "FIRE_CONTROL";
     public static final float MANUAL_LOCK_REQUEST_FOV = 18.0f;
+
+    /**
+     * 自弹手动锁评分罚分（2026-09-15）：高于任意方位+距离的原始评分理论上限
+     * （{@code 180×4 + 远距×0.01}），保证自己载具发射的弹体沉到手动锁候选末位——
+     * 降权而非禁锁，循环选择到末位仍可选中（如需回收自弹测试等场景）。
+     */
+    private static final double OWN_MISSILE_LOCK_PENALTY = 1000.0;
 
     private RVP_RadarRoleHelper() {}
 
@@ -307,6 +315,15 @@ public final class RVP_RadarRoleHelper {
                 if (entity instanceof org.ywzj.rvp.countermeasure.RVP_Decoy decoy
                         && decoy.rvp$decoyType() == org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType.CHAFF) {
                     score += chaffResistance * 30.0;
+                }
+                // 目的：自弹最低优先级（2026-09-15）——拦截导弹作业时，自己刚发射的拦截弹常是
+                // 距雷达最近、方位最正的空中物体，按原始评分（方位×4+距离×0.01）总排在候选最前，
+                // 想锁来袭目标时反复锁到自弹。对自己载具发射的弹体施加固定大额评分罚分——
+                // 罚分高于任意方位+距离的原始评分上限（180×4+远距×0.01），保证自弹沉到候选末位；
+                // 参照上方箔条抗性罚分先例，是降权而非禁锁（循环选择到末位仍可选中自弹）。
+                if (entity instanceof RVP_BaseBullet ownProjectile
+                        && ownProjectile.getShooterVehicle() == weaponUnit.getVehicle()) {
+                    score += OWN_MISSILE_LOCK_PENALTY;
                 }
                 if (!Double.isFinite(score)) {
                     continue;
