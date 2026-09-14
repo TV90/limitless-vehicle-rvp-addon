@@ -33,6 +33,27 @@ class RVP_GunnerBehaviorBaselineTest {
     /** Gunner 制导控制源码，用于冻结 GPS、照射与 HITL 维护入口。 */
     private static final Path GUIDANCE_SOURCE = Path.of(
             "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerGuidedWeaponController.java");
+    /** 阶段 B 武器动作源码，用于冻结原子交战事务。 */
+    private static final Path WEAPON_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerWeaponActions.java");
+    /** 阶段 B 移动动作源码，用于冻结唯一 reset + apply 边界。 */
+    private static final Path MOVEMENT_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerMovementActions.java");
+    /** 阶段 B 雷达动作源码，用于冻结本车锁定事务。 */
+    private static final Path RADAR_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerRadarActions.java");
+    /** 阶段 B 制导动作源码，用于冻结维护与发射准备两条边界。 */
+    private static final Path GUIDANCE_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerGuidanceActions.java");
+    /** 阶段 B 防御动作源码，用于冻结干扰物与 ECM 写入边界。 */
+    private static final Path DEFENSE_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerDefenseActions.java");
+    /** 阶段 B 动作网关源码，用于冻结六个领域适配器的聚合入口。 */
+    private static final Path ACTION_GATEWAY_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerActionGateway.java");
+    /** 阶段 B 补给动作源码，用于冻结反射兼容的唯一归属。 */
+    private static final Path SUPPLY_ACTION_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/action/RVP_GunnerSupplyActions.java");
     /** Gunner 载具低频服务源码，用于冻结自动反制与同步周期。 */
     private static final Path VEHICLE_SERVICE_SOURCE = Path.of(
             "src/main/java/org/ywzj/rvp/entity/gunner/RVP_GunnerVehicleTickService.java");
@@ -45,7 +66,7 @@ class RVP_GunnerBehaviorBaselineTest {
         String brain = read(BRAIN_SOURCE);
         String tick = section(brain,
                 "public static void tick(GunnerEntity gunner, AbstractVehicle vehicle)",
-                "private static void tickRadarLock(");
+                "private static Entity tickTargeting(");
 
         assertOrdered(tick,
                 "gunner.tickCooldowns();",
@@ -53,14 +74,14 @@ class RVP_GunnerBehaviorBaselineTest {
                 "boolean driver = isDriver(vehicle, gunner);",
                 "resolveWeaponUnit(vehicle, seatUnit, driver)",
                 "tickTargeting(gunner, vehicle, weaponUnit, profile)",
-                "refillDriverVehicle(gunner, vehicle);",
-                "sustainDriverInfiniteAmmo(vehicle);",
+                "ACTIONS.supply().refillOnDriverEnter(gunner, vehicle);",
+                "ACTIONS.supply().sustainDriverAmmo(gunner, vehicle);",
                 "tickCountermeasure(gunner, vehicle, profile);",
                 "tickEcmActive(gunner, vehicle);",
                 "tickSmokeEvasion(gunner, vehicle);",
-                "tickRadarLock(gunner, vehicle, weaponUnit, target, profile);",
-                "GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);",
-                "GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);",
+                "ACTIONS.radar().maintainLocalLock(vehicle, weaponUnit, target);",
+                "ACTIONS.radar().maintainExternalLock(gunner, vehicle, weaponUnit, target, driverAi);",
+                "ACTIONS.guidance().maintain(gunner, vehicle, weaponUnit, target);",
                 "seadHandled = tickSead(gunner, vehicle, weaponUnit, profile);",
                 "allowFire = tickDriving(gunner, vehicle, target, profile);",
                 "tickCombat(gunner, weaponUnit, target, profile);");
@@ -68,8 +89,10 @@ class RVP_GunnerBehaviorBaselineTest {
                 "boolean driverAi = driver && profile.isAllowDrive();",
                 "if (!seadHandled)",
                 "gunner.setControlledWeaponIndex(-1);",
-                "vehicle.controlUnit.reset();",
+                "ACTIONS.movement().apply(gunner, vehicle, ACTIONS.movement().stopCommand());",
                 "gunner.clearDriverRideState();");
+        assertFalse(tick.contains(".shoot("), "阶段 B 后总编排不得绕过武器动作层");
+        assertFalse(brain.contains("controlUnit."), "阶段 B 后 GunnerBrain 不得直接写 ControlUnit");
     }
 
     @Test
@@ -111,14 +134,14 @@ class RVP_GunnerBehaviorBaselineTest {
 
     @Test
     void weaponEngagementKeepsAimLockGuidanceFireTransactionOrder() throws IOException {
-        String brain = read(BRAIN_SOURCE);
-        String combat = section(brain,
-                "private static void tickCombat(",
-                "private static boolean isRvpHomingMissile(");
-        String selection = section(brain,
+        String weaponActions = read(WEAPON_ACTION_SOURCE);
+        String combat = section(weaponActions,
+                "public RVP_GunnerActionResult engage(",
+                "public RVP_GunnerActionResult fireCountermeasure(");
+        String selection = section(weaponActions,
                 "private static int selectWeaponIndex(",
                 "private static int findGuidedWeaponIndex(");
-        String priority = section(brain,
+        String priority = section(weaponActions,
                 "private static int guidedWeaponPriority(",
                 "private static int findGunWeaponIndex(");
 
@@ -130,7 +153,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "gunner.isBurstWindowOpen()",
                 "GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)",
                 "findGunWeaponIndex(weaponUnit, target)",
-                "GunnerGuidedWeaponController.prepareForLaunch",
+                "guidance.prepareLaunch",
                 "weaponUnit.shoot(weaponIndex",
                 "gunner.onBurstShot",
                 "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
@@ -144,10 +167,10 @@ class RVP_GunnerBehaviorBaselineTest {
         assertOrdered(selection,
                 "profile.isGpsPreferFarthest()",
                 "if (targetIsAmmo)",
-                "if (dist > 200.0)",
+                "distance > 200.0",
                 "findGuidedWeaponIndex(weaponUnit, target)",
                 "findGunWeaponIndex(weaponUnit, target)");
-        assertContainsAll(brain,
+        assertContainsAll(weaponActions,
                 "private static final int MISSILE_COOLDOWN_TICK = 100;");
         assertOrdered(priority,
                 "if (data.isGpsMissile())",
@@ -180,6 +203,7 @@ class RVP_GunnerBehaviorBaselineTest {
     @Test
     void movementKeepsCurrentVehicleDispatchAndControlOutputs() throws IOException {
         String brain = read(BRAIN_SOURCE);
+        String movementActions = read(MOVEMENT_ACTION_SOURCE);
         String dispatch = section(brain,
                 "private static boolean tickDriving(",
                 "public static boolean hasLauncherDeployConfig(");
@@ -200,9 +224,10 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static boolean ensureAirPhase(");
 
         assertOrdered(dispatch,
-                "vehicle.controlUnit.reset();",
+                "ACTIONS.movement().stopCommand();",
                 "vehicle instanceof FixedWingVehicle",
                 "tickFixedWingDriving",
+                "ACTIONS.movement().apply(gunner, vehicle, command);",
                 "vehicle instanceof RotaryWingVehicle",
                 "tickRotaryDriving",
                 "hasLauncherDeployConfig(vehicle)",
@@ -211,51 +236,55 @@ class RVP_GunnerBehaviorBaselineTest {
 
         assertContainsAll(launcher,
                 "if (hasAmmo)",
-                "vehicle.controlUnit.reset();",
-                "tickGroundWander(gunner, vehicle, profile);",
-                "vehicle.controlUnit.backward = true;",
-                "vehicle.controlUnit.forward = true;");
+                "tickGroundWander(gunner, vehicle, profile, command);",
+                "command.backward = true;",
+                "command.forward = true;");
         assertContainsAll(ground,
                 "gunner.hasSmokeHoldTicks()",
-                "tickSmokeHoldDrive(gunner, vehicle);",
-                "tickGroundWander(gunner, vehicle, profile);",
+                "tickSmokeHoldDrive(gunner, vehicle, command);",
+                "tickGroundWander(gunner, vehicle, profile, command);",
                 "gunner.startTacticalHold(GROUND_TACTICAL_HOLD_TICK);",
                 "gunner.startRecovery(profile.getDriveRecoveryTick());",
-                "vehicle.controlUnit.backward = true;",
+                "command.backward = true;",
                 "tickGroundTacticalEvade",
-                "vehicle.controlUnit.forward = true;");
+                "command.forward = true;");
         assertContainsAll(fixedWing,
-                "tickFixedWingCruise(gunner, vehicle, profile, false);",
+                "tickFixedWingCruise(gunner, vehicle, profile, false, command);",
                 "return false;",
                 "ensureAirPhase(gunner, vehicle, profile)",
                 "boolean breakAway",
-                "vehicle.controlUnit.yRot = desiredRot.y;",
-                "vehicle.controlUnit.forward = true;");
+                "command.yRot = desiredRot.y;",
+                "command.forward = true;");
         assertContainsAll(rotaryWing,
-                "vehicle.controlUnit.up = true;",
+                "command.up = true;",
                 "ensureRotaryAirPhase(gunner, profile)",
-                "vehicle.controlUnit.yRot = facingRot.y;",
-                "vehicle.controlUnit.xRot = desiredPitch;");
+                "command.yRot = facingRot.y;",
+                "command.xRot = desiredPitch;");
         assertContainsAll(wander,
                 "profile.isGroundWanderEnabled()",
                 "gunner.setGroundBigTurnTargetYaw",
-                "vehicle.controlUnit.forward = true;",
-                "vehicle.controlUnit.left = true;",
-                "vehicle.controlUnit.right = true;");
+                "command.forward = true;",
+                "command.left = true;",
+                "command.right = true;");
+        assertOrdered(movementActions,
+                "control.reset();",
+                "control.forward = command.forward;",
+                "control.backward = command.backward;",
+                "control.xRot = command.xRot;",
+                "control.yRot = command.yRot;");
     }
 
     @Test
     void radarGuidanceAndDefenseKeepCurrentSupportSemantics() throws IOException {
         String brain = read(BRAIN_SOURCE);
-        String radar = section(brain,
-                "private static void tickRadarLock(",
-                "private static RadarUnit prepareGunnerLockRadar(");
+        String radar = read(RADAR_ACTION_SOURCE);
+        String defense = read(DEFENSE_ACTION_SOURCE);
         String countermeasure = section(brain,
                 "private static void tickCountermeasure(",
                 "private static final Map<Integer, Long> GUNNER_ECM_DBG");
         String ecm = section(brain,
                 "private static void tickEcmActive(",
-                "private static void refillDriverVehicle(");
+                "private static boolean tickSead(");
         String smoke = section(brain,
                 "private static void tickSmokeEvasion(",
                 "private record MissileScanResult(");
@@ -264,28 +293,32 @@ class RVP_GunnerBehaviorBaselineTest {
         String vehicleService = read(VEHICLE_SERVICE_SOURCE);
 
         assertOrdered(radar,
-                "prepareGunnerLockRadar(weaponUnit)",
+                "prepareLockRadar(weaponUnit)",
                 "radar.detect(lockTarget);",
                 "RVP_ChaffJamState.isInCooldown",
                 "radar.setLockedEntity(lockTarget);",
                 "root.setLockedEntity(lockTarget);");
         assertOrdered(countermeasure,
                 "GunnerTargeting.findAmmoThreat",
-                "weaponUnit.aim(threat.position());",
-                "weaponUnit.shoot(index, weaponUnit.aimContexts(), gunner);",
+                "ACTIONS.defense().fireBaseCountermeasure(gunner, vehicle, threat)",
                 "gunner.setCountermeasureCooldown");
         assertContainsAll(smoke,
                 "RVP_EnumCountermeasureType.SMOKE",
                 "% 10 != 0",
                 "scanMissileThreats",
                 "findLasingEnemy",
-                "RVP_CountermeasureRuntimeManager.fire",
+                "ACTIONS.defense()",
+                ".fireCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE)",
                 "gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);");
         assertContainsAll(ecm,
                 "WarnType.RADAR_LOCK",
                 "WarnType.MISSILE_LAUNCH",
                 "GunnerTargeting.findAmmoThreat",
-                "RVP_EcmActiveManager.tryFireForVehicle(vehicle);");
+                "ACTIONS.defense().fireActiveEcm(vehicle);");
+        assertContainsAll(defense,
+                "weapons.fireCountermeasure",
+                "RVP_CountermeasureRuntimeManager.fire(vehicle, type);",
+                "RVP_EcmActiveManager.tryFireForVehicle(vehicle)");
 
         assertOrdered(guidance,
                 "updateDesignation(gunner, vehicle, weaponUnit, targetPoint);",
@@ -319,15 +352,16 @@ class RVP_GunnerBehaviorBaselineTest {
     @Test
     void seadKeepsCurrentPreemptionStateMachineAndTiming() throws IOException {
         String brain = read(BRAIN_SOURCE);
+        String weaponActions = read(WEAPON_ACTION_SOURCE);
         String sead = section(brain,
                 "private static boolean tickSead(",
                 "private static void tickSeadFly(");
-        String armFire = section(brain,
-                "private static boolean fireArmMissileAt(",
-                "private static boolean tryFireRevenge(");
+        String armFire = section(weaponActions,
+                "public RVP_GunnerActionResult fireAntiRadiation(",
+                "public int findAntiRadiationWeaponIndex(");
         String clear = section(brain,
                 "private static void clearSead(",
-                "private static int selectWeaponIndex(");
+                "static int findWeaponIndexForDump(");
 
         assertContainsAll(brain,
                 "private static final int SEAD_FLY_AWAY_TICK = 100;",
@@ -339,10 +373,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;");
         assertOrdered(sead,
                 "findRadarLockingEntity(gunner, vehicle)",
-                "findArmWeaponIndex(weaponUnit)",
-                "GunnerWeaponSuitability.prepareLaunchLock",
-                "fireArmMissileAt(gunner, weaponUnit, radarSource);",
-                "RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.CHAFF);",
+                "findAntiRadiationWeaponIndex(weaponUnit)",
+                ".fireAntiRadiation(gunner, weaponUnit, radarSource)",
+                "fireCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF)",
                 "gunner.setSeadMode(SEAD_FLY_AWAY);",
                 "gunner.setSeadTotalTicks(gunner.getSeadTotalTicks() + 1);",
                 "gunner.getSeadTotalTicks() > SEAD_TIMEOUT_TICK",
@@ -352,8 +385,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "tryFireRevenge(gunner, weaponUnit, revengeTarget)");
         assertOrdered(armFire,
                 "gunner.getMissileCooldown() > 0",
-                "findArmWeaponIndex(weaponUnit)",
+                "findAntiRadiationWeaponIndex(weaponUnit)",
                 "GunnerWeaponSuitability.prepareLaunchLock",
+                "guidance.prepareLaunch",
                 "weaponUnit.shoot(index, Collections.singletonList(aimSource.aimContext()), gunner);",
                 "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
         assertContainsAll(clear,
@@ -410,6 +444,41 @@ class RVP_GunnerBehaviorBaselineTest {
                 "tacticalEvadeTicks--",
                 "smokeHoldTicks--",
                 "seadCooldownTicks--");
+    }
+
+    @Test
+    void phaseBActionGatewayOwnsAllMutableCapabilityBoundaries() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String gateway = read(ACTION_GATEWAY_SOURCE);
+        String weapon = read(WEAPON_ACTION_SOURCE);
+        String movement = read(MOVEMENT_ACTION_SOURCE);
+        String radar = read(RADAR_ACTION_SOURCE);
+        String guidance = read(GUIDANCE_ACTION_SOURCE);
+        String defense = read(DEFENSE_ACTION_SOURCE);
+        String supply = read(SUPPLY_ACTION_SOURCE);
+
+        assertContainsAll(gateway,
+                "private final RVP_GunnerMovementActions movement",
+                "private final RVP_GunnerWeaponActions weapons",
+                "private final RVP_GunnerRadarActions radar",
+                "private final RVP_GunnerGuidanceActions guidance",
+                "private final RVP_GunnerDefenseActions defense",
+                "private final RVP_GunnerSupplyActions supply");
+        assertFalse(brain.contains("controlUnit."), "移动写入必须只存在于动作适配器");
+        assertFalse(brain.contains(".shoot("), "本体发射必须只存在于武器动作适配器");
+        assertFalse(brain.contains("setLockedEntity("), "雷达锁写入必须只存在于雷达动作边界");
+        assertFalse(brain.contains("RVP_CountermeasureRuntimeManager.fire"), "干扰物写入必须只存在于防御动作边界");
+        assertFalse(brain.contains("RVP_EcmActiveManager.tryFireForVehicle"), "ECM 写入必须只存在于防御动作边界");
+        assertFalse(brain.contains("ObfuscationReflectionHelper"), "本体补给反射必须只存在于补给适配器");
+        assertContainsAll(weapon, "weaponUnit.shoot(", "guidance.prepareLaunch");
+        assertContainsAll(movement, "control.reset();", "control.forward = command.forward;");
+        assertContainsAll(radar, "radar.setLockedEntity(", "root.setLockedEntity(");
+        assertContainsAll(guidance,
+                "GunnerGuidedWeaponController.tick(",
+                "GunnerGuidedWeaponController.prepareForLaunch(");
+        assertContainsAll(defense, "RVP_CountermeasureRuntimeManager.fire", "RVP_EcmActiveManager.tryFireForVehicle");
+        assertContainsAll(supply, "ObfuscationReflectionHelper.findMethod", "rvpWeapon.ywzj_rvp$setReloadTime");
+        assertFalse(weapon.contains("getPath()"), "武器动作层不得按武器 ID 路径分种类");
     }
 
     @Test

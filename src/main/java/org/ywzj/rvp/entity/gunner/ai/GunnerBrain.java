@@ -1,7 +1,6 @@
 package org.ywzj.rvp.entity.gunner.ai;
 
 import com.mojang.logging.LogUtils;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -23,19 +22,17 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import net.minecraftforge.fml.loading.FMLEnvironment;
-import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
-import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
-import org.ywzj.rvp.countermeasure.server.RVP_CountermeasureRuntimeManager;
-import org.ywzj.rvp.ecm.RVP_EcmActiveManager;
+import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionGateway;
+import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionResult;
+import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerMovementActions;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
-import org.ywzj.vehicle.vehicle.passenger.WarningReceiver;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -43,37 +40,29 @@ import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
-import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
-import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
-import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
-import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle.Seat;
-import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
-import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
-import java.lang.reflect.Method;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
 
 public final class GunnerBrain {
 
     private GunnerBrain() {}
     private static final Logger LOGGER = LogUtils.getLogger();
+    /** Gunner 对本体与 RVP 写操作的唯一动作网关。 */
+    private static final RVP_GunnerActionGateway ACTIONS = RVP_GunnerActionGateway.INSTANCE;
     private static final int AIR_PHASE_ATTACK = 0;
     private static final int AIR_PHASE_DISENGAGE = 1;
     private static final int GROUND_TACTICAL_HOLD_TICK = 100;
@@ -102,9 +91,6 @@ public final class GunnerBrain {
     private static final double ROTARY_INITIAL_DISENGAGE_SCALE = 0.2;
     private static final double ROTARY_DISENGAGE_SCALE = 0.35;
     private static final double ROTARY_ATTACK_SCALE = 1.15;
-    private static final Map<AbstractVehicleWeapon<?>, Long> DRIVER_AMMO_READY_TIME = new WeakHashMap<>();
-    /** 所有 RVP 制导武器发射后的统一冷却（tick）：5 秒。 */
-    private static final int MISSILE_COOLDOWN_TICK = 100;
     /** SEAD 复仇模式：未激活。 */
     private static final int SEAD_NONE = 0;
     /** SEAD 复仇阶段：飞离（背对锁定者拉开距离）。 */
@@ -140,12 +126,15 @@ public final class GunnerBrain {
 
         boolean driverAi = driver && profile.isAllowDrive();
         if (driverAi) {
-            refillDriverVehicle(gunner, vehicle);
-            sustainDriverInfiniteAmmo(vehicle);
+            // 调用补给动作适配器，集中处理首次接管、能源和武器补给。
+            ACTIONS.supply().refillOnDriverEnter(gunner, vehicle);
+            ACTIONS.supply().sustainDriverAmmo(gunner, vehicle);
         } else {
-            clearDriverInfiniteAmmoTimers(vehicle);
+            // 调用补给动作适配器，清理失去司机资格后的无限弹药计时。
+            ACTIONS.supply().clearDriverAmmoTimers(vehicle);
             if (vehicle.getDriver() == gunner) {
-                vehicle.controlUnit.reset();
+                // 提交显式停车命令，避免 allow_drive 关闭后遗留上 tick 控制输入。
+                ACTIONS.movement().apply(gunner, vehicle, ACTIONS.movement().stopCommand());
             }
             gunner.clearDriverRideState();
         }
@@ -156,9 +145,11 @@ public final class GunnerBrain {
         if (driverAi) {
             tickSmokeEvasion(gunner, vehicle);
         }
-        tickRadarLock(gunner, vehicle, weaponUnit, target, profile);
-        GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);
-        GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);
+        // 调用雷达动作适配器，维持本车和外置雷达锁定边界。
+        ACTIONS.radar().maintainLocalLock(vehicle, weaponUnit, target);
+        ACTIONS.radar().maintainExternalLock(gunner, vehicle, weaponUnit, target, driverAi);
+        // 调用制导动作适配器，维持 GPS、照射及在途 HITL 控制源。
+        ACTIONS.guidance().maintain(gunner, vehicle, weaponUnit, target);
 
         boolean allowFire = true;
         // SEAD 复仇：被雷达锁定且带反辐射弹时，gunner 自行驾驶飞机完成"逃→回头→锁&打"。
@@ -183,107 +174,6 @@ public final class GunnerBrain {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             RVP_GunnerDebugMonitor.onTick(gunner, vehicle, weaponUnit, target);
         }
-    }
-
-    private static void tickRadarLock(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, @Nullable Entity target, GunnerProfile profile) {
-        if (weaponUnit == null || target == null || !target.isAlive()) {
-            return;
-        }
-        // 武器站传感器未写 rf 时，只要武器组内有能打击该目标的雷达制导武器（ARH/SARH）也应雷达锁定，
-        // 否则枪手导弹无实体锁 → 无 targetEntity → 干扰检测不生效
-        if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF
-                && !hasRadarHomingWeaponForTarget(weaponUnit, target)) {
-            return;
-        }
-        RadarUnit radar = prepareGunnerLockRadar(weaponUnit);
-        if (radar == null) {
-            return;
-        }
-
-        Entity lockTarget = null;
-        if (target instanceof Player player) {
-            if (player.getVehicle() instanceof AbstractVehicle targetVehicle) {
-                lockTarget = targetVehicle;
-            } else {
-                lockTarget = player;
-            }
-        } else if (target instanceof AbstractVehicle targetVehicle) {
-            lockTarget = targetVehicle;
-        }
-
-        if (lockTarget == null || !lockTarget.isAlive()) {
-            clearGunnerRadarLock(weaponUnit, radar);
-            return;
-        }
-
-        double maxRange = radar.getMaxScanDistance();
-        if (radar.worldRadarPosition().distanceToSqr(lockTarget.position()) > maxRange * maxRange) {
-            clearGunnerRadarLock(weaponUnit, radar);
-            return;
-        }
-
-        Vec2 aimRot = radar.aimRot(lockTarget.position());
-        if (aimRot.y < radar.getYRotMin() || aimRot.y > radar.getYRotMax()) {
-            clearGunnerRadarLock(weaponUnit, radar);
-            return;
-        }
-        if (aimRot.x < radar.getXRotMin() || aimRot.x > radar.getXRotMax()) {
-            clearGunnerRadarLock(weaponUnit, radar);
-            return;
-        }
-
-        radar.detect(lockTarget);
-        // 箔条禁锁期：目标被箔条干扰脱锁后短时间内不可被选中/锁定（仍可被扫描），
-        // 否则炮手 AI 每 tick 重锁会令脱锁瞬间被还原，雷达看起来"怎么都脱不了锁"
-        if (RVP_ChaffJamState.isInCooldown(lockTarget.getUUID(), vehicle.level().getGameTime())) {
-            clearGunnerRadarLock(weaponUnit, radar);
-            return;
-        }
-        if (radar.getLockedEntity() != lockTarget) {
-            radar.setLockedEntity(lockTarget);
-        }
-        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (root.getLockedEntity() != lockTarget) {
-            root.setLockedEntity(lockTarget);
-        }
-    }
-
-    @Nullable
-    private static RadarUnit prepareGunnerLockRadar(WeaponUnit weaponUnit) {
-        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
-            if (!radarUnit.isOn()) {
-                radarUnit.toggle(true);
-            }
-        }
-        return RVP_RadarRoleHelper.getPreferredLockRadar(weaponUnit);
-    }
-
-    private static void clearGunnerRadarLock(WeaponUnit weaponUnit, RadarUnit radar) {
-        if (radar.getLockedEntity() != null) {
-            radar.setLockedEntity(null);
-        }
-        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
-        if (root.getLockedEntity() != null) {
-            root.setLockedEntity(null);
-        }
-    }
-
-    /** 武器组内是否有能打击目标的雷达制导（ARH/SARH）武器（有则枪手应雷达锁定目标）。 */
-    private static boolean hasRadarHomingWeaponForTarget(WeaponUnit weaponUnit, Entity target) {
-        for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
-            AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
-            if (!(proxyWeapon instanceof RVP_WeaponBase rvpWeapon)) {
-                continue;
-            }
-            RVP_WeaponData data = rvpWeapon.getData();
-            if (data == null || !data.isRadarHoming()) {
-                continue;
-            }
-            if (GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Nullable
@@ -320,155 +210,36 @@ public final class GunnerBrain {
     }
 
     private static void tickCombat(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target, GunnerProfile profile) {
-        AbstractVehicle veh = weaponUnit.getVehicle();
-        boolean launcher = veh != null && hasLauncherDeployConfig(veh);
-        if (!launcher) {
-            Vec3 aimPoint = GunnerTargeting.predictAimPoint(weaponUnit.worldPivotPosition(), target)
-                    .add(target.getDeltaMovement().scale(Math.max(0.0, profile.getLeadScale() - 1.0)));
-            weaponUnit.aim(aimPoint);
-        }
-
-        int weaponIndex = selectWeaponIndex(weaponUnit, target, profile);
-        if (weaponIndex < 0) {
-            gunner.setControlledWeaponIndex(-1);
-            return;
-        }
-        gunner.setControlledWeaponIndex(weaponIndex);
-
-        AbstractVehicleWeapon<?> selectedWeapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
-        boolean isRvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
-        boolean isSelfGuided = isSelfGuidedMissile(weaponUnit, selectedWeapon);
-
-        // 对空导弹纪律：目标是飞机时，必须持锁满 5 秒（100 tick）才能发射；
-        // 发射后 5 秒内不再对同一目标发射（目标切换时计时重置）
-        boolean isAircraftTarget = target instanceof FixedWingVehicle || target instanceof RotaryWingVehicle;
-        if (isRvpMissile && isAircraftTarget) {
-            int now = gunner.tickCount;
-            if (gunner.getAirLockStartTick() == 0) {
-                gunner.setAirLockStartTick(now);
-            }
-            if (now - gunner.getAirLockStartTick() < 100) {
-                return;
-            }
-            if (gunner.getLastAirMissileFireTick() != 0 && now - gunner.getLastAirMissileFireTick() < 100) {
-                return;
-            }
-        }
-
-        if (isRvpMissile && gunner.getMissileCooldown() > 0) {
-            return;
-        }
-
-        if (!gunner.isBurstWindowOpen()) {
-            return;
-        }
-
-        // 炮塔对准窗口：仅对非制导武器（机炮等）要求对准。RVP 制导武器发射后自行转向目标，
-        // 不受炮塔旋转角度限制（垂发车辆本就跳过该检查）。
-        if (!launcher && !isRvpMissile) {
-            float xErr = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
-            float yErr = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
-            if (!(xErr <= profile.getFireWindowDeg() && yErr <= profile.getFireWindowDeg())) {
-                return;
-            }
-        }
-        if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)) {
-            // 制导武器无法发射（如缺雷达/锁不上/锥角不足）时回退到机炮等非制导武器，
-            // 避免 gunner 卡死在"选中导弹但打不出"而不作战（回归：优先导弹后必须保留机炮兜底）
-            if (isRvpMissile) {
-                int fallback = findGunWeaponIndex(weaponUnit, target);
-                if (fallback < 0 || fallback == weaponIndex) {
-                    return;
-                }
-                selectedWeapon = weaponUnit.getIndexedWeapons().get(fallback);
-                weaponIndex = fallback;
-                gunner.setControlledWeaponIndex(fallback);
-                if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)) {
-                    return;
-                }
-            } else {
-                return;
-            }
-        }
-        GunnerGuidedWeaponController.prepareForLaunch(gunner, weaponUnit.getVehicle(), weaponUnit, selectedWeapon, target);
-        // 使用实际发射武器站的 aimContexts（对 VehicleWeaponAgent 而言是目标武器站，如 launcher_weapon）
-        WeaponUnit aimSource = selectedWeapon.getWeaponUnit();
-        // 与手动发射保持一致：RIPPLE（轮射）只传当前管位 1 个瞄准上下文，SALVO（齐射）才一次全部发射。
-        // 此前非垂发车辆一律传 aimSource.aimContexts()，多管发射架（如 cssa5/ps1sm 的 missile_barrel 有 2 根管）
-        // 会一次把多管全打出去；垂发车辆也保留单上下文特判。
-        boolean singleContext = launcher || aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE;
-        weaponUnit.shoot(weaponIndex, singleContext ? Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts(), gunner);
-        gunner.onBurstShot(launcher ? 1 : profile.getBurstFireTick(), profile.getBurstRestTick());
-        if (isRvpMissile) {
-            gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);
-            if (isAircraftTarget) {
-                gunner.setLastAirMissileFireTick(gunner.tickCount);
-            }
-        }
-        if (isSelfGuided && target instanceof AmmoEntity) {
-            gunner.setCiwsTargetCooldown(target, 100);
-        }
-    }
-
-    /**
-     * 判断是否为 RVP 导弹类武器（包括所有具备防空拦截能力的制导类型）。
-     * 用于施加 60tick 射速限制以及在 missile/gun 分类中使用。
-     */
-    private static boolean isRvpHomingMissile(WeaponUnit weaponUnit, AbstractVehicleWeapon<?> rawWeapon) {
-        AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
-        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
-            return false;
-        }
-        RVP_WeaponData data = rvpWeapon.getData();
-        if (data == null) {
-            return false;
-        }
-        return data.isHomingProjectile()
-                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.SALH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.LBR);
-    }
-
-    /**
-     * 判断是否为"射后不管/半射后不管"的自导导弹（IR/ARH/SARH/AIR）。
-     * 这类导弹发射后不需要 gunner 持续瞄准目标，gunner 可以立即转向下一发来袭弹药。
-     */
-    private static boolean isSelfGuidedMissile(WeaponUnit weaponUnit, AbstractVehicleWeapon<?> rawWeapon) {
-        AbstractVehicleWeapon<?> weapon = weaponUnit.proxyWeapon(rawWeapon);
-        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
-            return false;
-        }
-        RVP_WeaponData data = rvpWeapon.getData();
-        if (data == null) {
-            return false;
-        }
-        return data.isHomingProjectile()
-                || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.IR)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.AIR);
+        AbstractVehicle vehicle = weaponUnit.getVehicle();
+        boolean launcher = vehicle != null && hasLauncherDeployConfig(vehicle);
+        // 调用武器动作适配器，原子执行瞄准、选弹、锁定/制导准备、发射和冷却推进。
+        ACTIONS.weapons().engage(gunner, weaponUnit, target, profile, launcher);
     }
 
     private static boolean tickDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
-        vehicle.controlUnit.reset();
+        RVP_GunnerMovementActions.Command command = ACTIONS.movement().stopCommand();
         boolean allowFire = true;
         if (vehicle instanceof FixedWingVehicle fixedWingVehicle) {
-            allowFire = tickFixedWingDriving(gunner, fixedWingVehicle, target, profile);
+            allowFire = tickFixedWingDriving(gunner, fixedWingVehicle, target, profile, command);
+            // 调用移动动作适配器，将固定翼算法输出一次性写入本体 ControlUnit。
+            ACTIONS.movement().apply(gunner, vehicle, command);
             return allowFire;
         }
         if (vehicle instanceof RotaryWingVehicle rotaryWingVehicle) {
-            allowFire = tickRotaryDriving(gunner, rotaryWingVehicle, target, profile);
+            allowFire = tickRotaryDriving(gunner, rotaryWingVehicle, target, profile, command);
+            // 调用移动动作适配器，将旋翼算法输出一次性写入本体 ControlUnit。
+            ACTIONS.movement().apply(gunner, vehicle, command);
             return allowFire;
         }
         if (hasLauncherDeployConfig(vehicle)) {
-            tickLauncherGroundDriving(gunner, vehicle, target, profile);
+            tickLauncherGroundDriving(gunner, vehicle, target, profile, command);
+            // 调用移动动作适配器，将发射架停车或转移命令一次性写入本体 ControlUnit。
+            ACTIONS.movement().apply(gunner, vehicle, command);
             return true;
         }
-        tickGroundDriving(gunner, vehicle, target, profile);
+        tickGroundDriving(gunner, vehicle, target, profile, command);
+        // 调用移动动作适配器，将普通地面算法输出一次性写入本体 ControlUnit。
+        ACTIONS.movement().apply(gunner, vehicle, command);
         return allowFire;
     }
 
@@ -482,17 +253,17 @@ public final class GunnerBrain {
     }
 
     /** Launcher vehicle driving: park when has ammo, roam when reloading. */
-    private static void tickLauncherGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
+    private static void tickLauncherGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target,
+                                                  GunnerProfile profile, RVP_GunnerMovementActions.Command command) {
         boolean hasAmmo = hasAnyAmmo(vehicle);
         if (hasAmmo) {
             // Park — stop and let weapon system aim freely
             gunner.clearTacticalEvade();
-            vehicle.controlUnit.reset();
             return;
         }
         // No ammo — reloading, roam tactically
         if (target == null) {
-            tickGroundWander(gunner, vehicle, profile);
+            tickGroundWander(gunner, vehicle, profile, command);
             return;
         }
         Vec3 delta = target.position().subtract(vehicle.position());
@@ -525,46 +296,37 @@ public final class GunnerBrain {
         }
 
         if (gunner.hasRecoveryTicks()) {
-            vehicle.controlUnit.backward = true;
-            if (yawDelta > 0) vehicle.controlUnit.right = true;
-            else vehicle.controlUnit.left = true;
+            command.backward = true;
+            if (yawDelta > 0) command.right = true;
+            else command.left = true;
             return;
         }
         if (gunner.hasTacticalHoldTicks()) return;
         if (gunner.hasTacticalEvadeTicks()) {
-            tickGroundTacticalEvade(gunner, vehicle, target, yawDelta);
+            tickGroundTacticalEvade(gunner, vehicle, target, yawDelta, command);
             return;
         }
 
-        if (yawDelta > 8) vehicle.controlUnit.right = true;
-        else if (yawDelta < -8) vehicle.controlUnit.left = true;
-        if (dist > stopDist * 1.2 && Math.abs(yawDelta) < 80) vehicle.controlUnit.forward = true;
+        if (yawDelta > 8) command.right = true;
+        else if (yawDelta < -8) command.left = true;
+        if (dist > stopDist * 1.2 && Math.abs(yawDelta) < 80) command.forward = true;
     }
 
     private static boolean hasAnyAmmo(AbstractVehicle vehicle) {
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (!(partUnit instanceof WeaponUnit weaponUnit)) continue;
-            for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
-                AbstractVehicleWeapon<?> proxy = weaponUnit.proxyWeapon(weapon);
-                boolean countermeasure = isCountermeasureWeapon(proxy);
-                boolean hasAmmo = proxy.hasAmmo();
-                if (!countermeasure && hasAmmo) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        // 调用武器动作适配器，按运行时类型/数据能力排除反制武器后检查作战弹药。
+        return ACTIONS.weapons().hasCombatAmmo(vehicle);
     }
 
-    private static void tickGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, Entity target, GunnerProfile profile) {
+    private static void tickGroundDriving(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
+                                          GunnerProfile profile, RVP_GunnerMovementActions.Command command) {
         // 烟雾躲避停车：开进烟雾停车直到烟雾消散（优先于正常驾驶）
         if (gunner.hasSmokeHoldTicks()) {
-            tickSmokeHoldDrive(gunner, vehicle);
+            tickSmokeHoldDrive(gunner, vehicle, command);
             return;
         }
         if (target == null) {
             gunner.clearTacticalEvade();
-            tickGroundWander(gunner, vehicle, profile);
+            tickGroundWander(gunner, vehicle, profile, command);
             return;
         }
         Vec3 delta = target.position().subtract(vehicle.position());
@@ -599,11 +361,11 @@ public final class GunnerBrain {
         }
 
         if (gunner.hasRecoveryTicks()) {
-            vehicle.controlUnit.backward = true;
+            command.backward = true;
             if (yawDelta > 0) {
-                vehicle.controlUnit.right = true;
+                command.right = true;
             } else {
-                vehicle.controlUnit.left = true;
+                command.left = true;
             }
             return;
         }
@@ -613,22 +375,23 @@ public final class GunnerBrain {
         }
 
         if (gunner.hasTacticalEvadeTicks()) {
-            tickGroundTacticalEvade(gunner, vehicle, target, yawDelta);
+            tickGroundTacticalEvade(gunner, vehicle, target, yawDelta, command);
             return;
         }
 
         if (yawDelta > 8) {
-            vehicle.controlUnit.right = true;
+            command.right = true;
         } else if (yawDelta < -8) {
-            vehicle.controlUnit.left = true;
+            command.left = true;
         }
 
         if (dist > stopDist * 1.2 && Math.abs(yawDelta) < 80) {
-            vehicle.controlUnit.forward = true;
+            command.forward = true;
         }
     }
 
-    private static void tickGroundTacticalEvade(GunnerEntity gunner, AbstractVehicle vehicle, Entity target, float targetYawDelta) {
+    private static void tickGroundTacticalEvade(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
+                                                float targetYawDelta, RVP_GunnerMovementActions.Command command) {
         Vec3 away = vehicle.position().subtract(target.position());
         if (away.horizontalDistanceSqr() < 1.0E-4) {
             away = vehicle.getLookAngle();
@@ -638,22 +401,22 @@ public final class GunnerBrain {
         float evadeYawDelta = Mth.wrapDegrees(desiredYaw - vehicle.getYRot());
 
         if (evadeYawDelta > 8.0F) {
-            vehicle.controlUnit.right = true;
+            command.right = true;
         } else if (evadeYawDelta < -8.0F) {
-            vehicle.controlUnit.left = true;
+            command.left = true;
         }
 
         if (Math.abs(evadeYawDelta) < 100.0F) {
-            vehicle.controlUnit.forward = true;
+            command.forward = true;
         } else {
-            vehicle.controlUnit.backward = true;
+            command.backward = true;
         }
 
         if (Math.abs(targetYawDelta) > 60.0F) {
             if (targetYawDelta > 0.0F) {
-                vehicle.controlUnit.right = true;
+                command.right = true;
             } else {
-                vehicle.controlUnit.left = true;
+                command.left = true;
             }
         }
     }
@@ -675,7 +438,7 @@ public final class GunnerBrain {
             return;
         }
         // 无烟雾系统的载具直接跳过全部威胁扫描（零成本，避免白跑两轮全量实体遍历）
-        boolean hasSmoke = RVP_CountermeasureRuntimeManager.hasSystem(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        boolean hasSmoke = ACTIONS.defense().hasCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE);
         if (!hasSmoke) {
             return;
         }
@@ -705,7 +468,12 @@ public final class GunnerBrain {
                     threat == null ? "null" : threat.getId(),
                     threat == null ? "null" : threat.getActiveGuidanceType(), hasSmoke);
         }
-        RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        // 调用防御动作适配器，将 Smoke 请求交给 RVP 服务端状态机权威校验。
+        RVP_GunnerActionResult fireResult = ACTIONS.defense()
+                .fireCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        if (fireResult != RVP_GunnerActionResult.DISPATCHED) {
+            return;
+        }
         gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);
         if (RVP_DebugFlags.GUNNER.isEnabled()) {
             LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
@@ -796,7 +564,8 @@ public final class GunnerBrain {
     }
 
     /** 烟雾躲避驾驶：向最近的烟雾云开进，进入云内即停车（无控制输入）；烟雾消散则提前结束。 */
-    private static void tickSmokeHoldDrive(GunnerEntity gunner, AbstractVehicle vehicle) {
+    private static void tickSmokeHoldDrive(GunnerEntity gunner, AbstractVehicle vehicle,
+                                           RVP_GunnerMovementActions.Command command) {
         RVP_SmokeEntity smoke = findNearbySmoke(vehicle, SMOKE_LOOK_RADIUS);
         if (smoke == null) {
             // 烟雾已散，提前结束停车
@@ -811,12 +580,12 @@ public final class GunnerBrain {
             Vec2 rot = VectorUtil.vecToRot(new Vec3(toSmoke.x, 0, toSmoke.z));
             float yawDelta = Mth.wrapDegrees(rot.y - vehicle.getYRot());
             if (yawDelta > 8.0F) {
-                vehicle.controlUnit.right = true;
+                command.right = true;
             } else if (yawDelta < -8.0F) {
-                vehicle.controlUnit.left = true;
+                command.left = true;
             }
             if (Math.abs(yawDelta) < 80.0F) {
-                vehicle.controlUnit.forward = true;
+                command.forward = true;
             }
         }
         // 已进云（dist <= radius*0.6）：无控制输入 = 停车
@@ -839,14 +608,16 @@ public final class GunnerBrain {
         return best;
     }
 
-    private static boolean tickFixedWingDriving(GunnerEntity gunner, FixedWingVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
+    private static boolean tickFixedWingDriving(GunnerEntity gunner, FixedWingVehicle vehicle,
+                                                @Nullable Entity target, GunnerProfile profile,
+                                                RVP_GunnerMovementActions.Command command) {
         if (target == null) {
-            tickFixedWingCruise(gunner, vehicle, profile, false);
+            tickFixedWingCruise(gunner, vehicle, profile, false, command);
             return false;
         }
         boolean allowFire = ensureAirPhase(gunner, vehicle, profile);
         boolean attackPhase = gunner.getAirPhase() == AIR_PHASE_ATTACK;
-        tickFixedWingCruise(gunner, vehicle, profile, attackPhase);
+        tickFixedWingCruise(gunner, vehicle, profile, attackPhase, command);
 
         Vec3 delta = target.position().subtract(vehicle.position());
         double horizontalDist = new Vec3(delta.x, 0, delta.z).length();
@@ -898,43 +669,47 @@ public final class GunnerBrain {
         }
 
         Vec2 desiredRot = VectorUtil.vecToRot(aimPoint.subtract(vehicle.position()));
-        vehicle.controlUnit.yRot = desiredRot.y;
-        vehicle.controlUnit.yRotKeep = false;
+        command.yRot = desiredRot.y;
+        command.yRotKeep = false;
 
-        vehicle.controlUnit.forward = true;
+        command.forward = true;
 
         if (vehicle.onGround()) {
             float groundYawDelta = Mth.wrapDegrees(desiredRot.y - vehicle.getYRot());
             if (groundYawDelta > 6) {
-                vehicle.controlUnit.rightYaw = true;
+                command.rightYaw = true;
             } else if (groundYawDelta < -6) {
-                vehicle.controlUnit.leftYaw = true;
+                command.leftYaw = true;
             }
         }
         return allowFire;
     }
 
-    private static boolean tickRotaryDriving(GunnerEntity gunner, RotaryWingVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
+    private static boolean tickRotaryDriving(GunnerEntity gunner, RotaryWingVehicle vehicle,
+                                             @Nullable Entity target, GunnerProfile profile,
+                                             RVP_GunnerMovementActions.Command command) {
         if (target == null) {
-            tickRotaryCruise(gunner, vehicle, profile, false);
+            tickRotaryCruise(gunner, vehicle, profile, false, command);
             return false;
         }
         boolean allowFire = ensureRotaryAirPhase(gunner, profile);
         boolean attackPhase = gunner.getAirPhase() == AIR_PHASE_ATTACK;
-        tickRotaryCruise(gunner, vehicle, profile, attackPhase);
+        tickRotaryCruise(gunner, vehicle, profile, attackPhase, command);
 
         double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
         double currentAgl = vehicle.getY() - groundY;
         double takeoffAgl = Math.min(profile.getRotaryCruiseAltitudeMin(), 25.0);
         if (currentAgl < takeoffAgl) {
-            vehicle.hoverMode = true;
-            vehicle.controlUnit.up = true;
-            vehicle.controlUnit.yRotKeep = true;
-            vehicle.controlUnit.xRotKeep = true;
+            command.setHoverMode = true;
+            command.hoverMode = true;
+            command.up = true;
+            command.yRotKeep = true;
+            command.xRotKeep = true;
             return false;
         }
 
-        vehicle.hoverMode = false;
+        command.setHoverMode = true;
+        command.hoverMode = false;
         Vec3 delta = target.position().subtract(vehicle.position());
         double horizontalDist = new Vec3(delta.x, 0, delta.z).length();
         Vec3 facingVec = attackPhase ? delta : vehicle.position().subtract(target.position());
@@ -943,13 +718,14 @@ public final class GunnerBrain {
         }
         Vec2 facingRot = VectorUtil.vecToRot(facingVec);
         Vec2 targetRot = VectorUtil.vecToRot(delta);
-        vehicle.controlUnit.yRot = facingRot.y;
-        vehicle.controlUnit.yRotKeep = false;
-        vehicle.controlUnit.xRotKeep = false;
+        command.yRot = facingRot.y;
+        command.yRotKeep = false;
+        command.xRotKeep = false;
 
         double stopDist = target instanceof AbstractVehicle ? profile.getDriveStopDistance() : 0.0;
-        float desiredPitch = computeRotaryPitch(vehicle, profile, attackPhase, currentAgl, horizontalDist, stopDist, targetRot);
-        vehicle.controlUnit.xRot = desiredPitch;
+        float desiredPitch = computeRotaryPitch(vehicle, profile, attackPhase, currentAgl,
+                horizontalDist, stopDist, targetRot, command);
+        command.xRot = desiredPitch;
         return allowFire;
     }
 
@@ -970,7 +746,9 @@ public final class GunnerBrain {
         return mid;
     }
 
-    private static void tickFixedWingCruise(GunnerEntity gunner, FixedWingVehicle vehicle, GunnerProfile profile, boolean attackPhase) {
+    private static void tickFixedWingCruise(GunnerEntity gunner, FixedWingVehicle vehicle,
+                                            GunnerProfile profile, boolean attackPhase,
+                                            RVP_GunnerMovementActions.Command command) {
         double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
         double currentAgl = vehicle.getY() - groundY;
         double min = profile.getFixedwingCruiseAltitudeMin();
@@ -1000,12 +778,14 @@ public final class GunnerBrain {
         if (vehicle.onGround() && vehicle.getY() < 68) {
             pitchCmd = -10.0F;
         }
-        vehicle.controlUnit.forward = true;
-        vehicle.controlUnit.xRot = pitchCmd;
-        vehicle.controlUnit.xRotKeep = false;
+        command.forward = true;
+        command.xRot = pitchCmd;
+        command.xRotKeep = false;
     }
 
-    private static void tickRotaryCruise(GunnerEntity gunner, RotaryWingVehicle vehicle, GunnerProfile profile, boolean attackPhase) {
+    private static void tickRotaryCruise(GunnerEntity gunner, RotaryWingVehicle vehicle,
+                                         GunnerProfile profile, boolean attackPhase,
+                                         RVP_GunnerMovementActions.Command command) {
         double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
         double currentAgl = vehicle.getY() - groundY;
         double min = profile.getRotaryCruiseAltitudeMin();
@@ -1019,15 +799,16 @@ public final class GunnerBrain {
         double desiredAlt = groundY + desiredAgl;
         double altitudeError = desiredAlt - vehicle.getY();
         if (vehicle.getCollectivePitch() < 55.0f) {
-            vehicle.controlUnit.up = true;
+            command.up = true;
         } else if (altitudeError > 2.0) {
-            vehicle.controlUnit.up = true;
+            command.up = true;
         } else if (altitudeError < -2.0) {
-            vehicle.controlUnit.down = true;
+            command.down = true;
         }
     }
 
-    private static void tickGroundWander(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile) {
+    private static void tickGroundWander(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile,
+                                         RVP_GunnerMovementActions.Command command) {
         if (!profile.isGroundWanderEnabled()) {
             return;
         }
@@ -1038,9 +819,9 @@ public final class GunnerBrain {
             float yawDelta = Mth.wrapDegrees(gunner.getGroundBigTurnTargetYaw() - vehicle.getYRot());
             if (Math.abs(yawDelta) > 6) {
                 if (yawDelta > 0) {
-                    vehicle.controlUnit.right = true;
+                    command.right = true;
                 } else {
-                    vehicle.controlUnit.left = true;
+                    command.left = true;
                 }
             } else {
                 gunner.setGroundBigTurnTicks(0);
@@ -1066,9 +847,9 @@ public final class GunnerBrain {
             return;
         }
 
-        vehicle.controlUnit.forward = true;
+        command.forward = true;
         if ((gunner.tickCount / 40) % 2 == 0) {
-            vehicle.controlUnit.left = true;
+            command.left = true;
         }
     }
 
@@ -1148,7 +929,8 @@ public final class GunnerBrain {
     }
 
     private static float computeRotaryPitch(RotaryWingVehicle vehicle, GunnerProfile profile, boolean attackPhase,
-                                            double currentAgl, double horizontalDist, double stopDist, Vec2 targetRot) {
+                                            double currentAgl, double horizontalDist, double stopDist, Vec2 targetRot,
+                                            RVP_GunnerMovementActions.Command command) {
         float desiredPitch = Mth.clamp(targetRot.x * 0.75F, -8.0F, 10.0F);
         double farDist = Math.max(stopDist * 2.0, 28.0);
         double nearDist = Math.max(stopDist * 0.9, 12.0);
@@ -1168,11 +950,11 @@ public final class GunnerBrain {
         double hardLowAgl = Math.max(8.0, profile.getRotaryCruiseAltitudeMin() * 0.3);
         if (currentAgl < lowAgl || descentRate < -0.18) {
             desiredPitch = Math.min(desiredPitch, -4.0F);
-            vehicle.controlUnit.up = true;
+            command.up = true;
         }
         if (currentAgl < hardLowAgl || descentRate < -0.35) {
             desiredPitch = Math.min(desiredPitch, -8.0F);
-            vehicle.controlUnit.up = true;
+            command.up = true;
         }
         return desiredPitch;
     }
@@ -1186,19 +968,10 @@ public final class GunnerBrain {
             return;
         }
 
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (!(partUnit instanceof WeaponUnit weaponUnit)) {
-                continue;
-            }
-            for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
-                AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-                if (isCountermeasureWeapon(weapon) && weapon.hasAmmo() && !weapon.isCoolingDown() && !weapon.isReloading()) {
-                    weaponUnit.aim(threat.position());
-                    weaponUnit.shoot(index, weaponUnit.aimContexts(), gunner);
-                    gunner.setCountermeasureCooldown(profile.getCountermeasureCooldownTick());
-                    return;
-                }
-            }
+        // 调用防御动作适配器，使本体式反制武器也经过统一瞄准/发射边界。
+        RVP_GunnerActionResult result = ACTIONS.defense().fireBaseCountermeasure(gunner, vehicle, threat);
+        if (result == RVP_GunnerActionResult.DISPATCHED) {
+            gunner.setCountermeasureCooldown(profile.getCountermeasureCooldownTick());
         }
     }
 
@@ -1316,129 +1089,10 @@ public final class GunnerBrain {
             return;
         }
         rvpEcmDbg(vehicle, "触发释放主动ECM");
-        // 尝试释放（服务端校验冷却）
+        // 调用防御动作适配器，由 RVP 服务端 ECM 管理器校验冷却并返回真实结果。
         if (vehicle.level() instanceof ServerLevel) {
-            RVP_EcmActiveManager.tryFireForVehicle(vehicle);
+            ACTIONS.defense().fireActiveEcm(vehicle);
         }
-    }
-
-    private static void refillDriverVehicle(GunnerEntity gunner, AbstractVehicle vehicle) {
-        if (!gunner.markDriverRide(vehicle.getId())) {
-            return;
-        }
-
-        if (!gunner.hasHomePos()) {
-            gunner.setHomePos(vehicle.position());
-        }
-        vehicle.toggleEngine(true);
-        vehicle.setEnergy(vehicle.energyInfo.energyCapacity);
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (partUnit instanceof WeaponUnit weaponUnit) {
-                for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
-                    if (weapon.getData().getWeaponId() == null) {
-                        continue;
-                    }
-                    weapon.setRemainAmmo(weapon.getMaxCapacity());
-                    forceSetReloadTime(weapon, 0);
-                }
-            }
-        }
-    }
-
-    private static void sustainDriverInfiniteAmmo(AbstractVehicle vehicle) {
-        long now = System.currentTimeMillis();
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (!(partUnit instanceof WeaponUnit weaponUnit)) {
-                continue;
-            }
-            for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
-                if (weapon.getData().getWeaponId() == null) {
-                    DRIVER_AMMO_READY_TIME.remove(weapon);
-                    continue;
-                }
-                if (weapon.getRemainAmmo() > 0) {
-                    DRIVER_AMMO_READY_TIME.remove(weapon);
-                    continue;
-                }
-
-                Long readyTime = DRIVER_AMMO_READY_TIME.get(weapon);
-                if (readyTime == null) {
-                    readyTime = now + getDriverInfiniteAmmoReloadMs(weapon);
-                    DRIVER_AMMO_READY_TIME.put(weapon, readyTime);
-                }
-
-                long remainMs = Math.max(0L, readyTime - now);
-                if (remainMs > 0L) {
-                    forceSetReloadTime(weapon, msToTicks(remainMs));
-                    continue;
-                }
-
-                weapon.setRemainAmmo(Math.max(1, weapon.getMaxCapacity()));
-                forceSetReloadTime(weapon, 0);
-                DRIVER_AMMO_READY_TIME.remove(weapon);
-            }
-        }
-    }
-
-    private static void clearDriverInfiniteAmmoTimers(AbstractVehicle vehicle) {
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (!(partUnit instanceof WeaponUnit weaponUnit)) {
-                continue;
-            }
-            for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
-                if (weapon.getData().getWeaponId() == null) {
-                    DRIVER_AMMO_READY_TIME.remove(weapon);
-                    continue;
-                }
-                DRIVER_AMMO_READY_TIME.remove(weapon);
-                forceSetReloadTime(weapon, 0);
-            }
-        }
-    }
-
-    /**
-     * [RVP] accessor 已移除：RVP 武器走公共方法直调（{@code RVP_WeaponBase#ywzj_rvp$setReloadTime}），
-     * 本体武器用 ObfuscationReflectionHelper 反射调用（正确处理开发/发布映射），失败时仅功能降级，不崩溃。
-     */
-    @Nullable
-    private static Method SET_RELOAD_TIME_METHOD;
-
-    private static void forceSetReloadTime(AbstractVehicleWeapon<?> weapon, int ticks) {
-        if (weapon == null) {
-            return;
-        }
-        if (weapon instanceof RVP_WeaponBase rvpWeapon) {
-            rvpWeapon.ywzj_rvp$setReloadTime(ticks);
-            return;
-        }
-        if (SET_RELOAD_TIME_METHOD == null) {
-            try {
-                SET_RELOAD_TIME_METHOD = ObfuscationReflectionHelper.findMethod(
-                        AbstractVehicleWeapon.class, "setReloadTime", int.class);
-                SET_RELOAD_TIME_METHOD.setAccessible(true);
-            } catch (Throwable t) {
-                LOGGER.warn("[GunnerBrain] 无法解析 setReloadTime 反射方法，无限弹药 reload 强制归零将失效", t);
-                return;
-            }
-        }
-        try {
-            SET_RELOAD_TIME_METHOD.invoke(weapon, ticks);
-        } catch (Throwable t) {
-            LOGGER.debug("[GunnerBrain] setReloadTime 反射调用失败", t);
-        }
-    }
-
-    private static long getDriverInfiniteAmmoReloadMs(AbstractVehicleWeapon<?> weapon) {
-        long reloadMs = Math.max(0, weapon.getData().getReload().getTime()) * 50L;
-        long cooldownMs = Math.max(0L, weapon.getShootInterval());
-        if (weapon.getMaxCapacity() <= 1) {
-            return reloadMs + cooldownMs;
-        }
-        return reloadMs;
-    }
-
-    private static int msToTicks(long ms) {
-        return Math.max(1, (int) ((ms + 49L) / 50L));
     }
 
     /**
@@ -1464,19 +1118,19 @@ public final class GunnerBrain {
                 return false;
             }
             Entity radarSource = findRadarLockingEntity(gunner, vehicle);
-            if (radarSource == null || findArmWeaponIndex(weaponUnit) < 0) {
+            if (radarSource == null || ACTIONS.weapons().findAntiRadiationWeaponIndex(weaponUnit) < 0) {
                 return false;
             }
             // 入口判定：若锁定我的雷达已在反辐射弹射击门控内，立即先射 1 枚（不等），再进复仇
-            int armIdx = findArmWeaponIndex(weaponUnit);
-            AbstractVehicleWeapon<?> arm = weaponUnit.getIndexedWeapons().get(armIdx);
-            if (gunner.getMissileCooldown() <= 0
-                    && GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, arm, radarSource)) {
-                fireArmMissileAt(gunner, weaponUnit, radarSource);
+            // 调用武器动作适配器，原子执行 AntiRadiation 锁定准备、制导准备、发射与冷却。
+            RVP_GunnerActionResult immediate = ACTIONS.weapons()
+                    .fireAntiRadiation(gunner, weaponUnit, radarSource);
+            if (immediate == RVP_GunnerActionResult.DISPATCHED) {
                 gunner.setSeadImmediateFired(true);
             }
             // 抛干扰物（箔条对抗雷达锁定）并进入飞离阶段
-            RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.CHAFF);
+            // 调用防御动作适配器，将 Chaff 请求交给 RVP 服务端状态机。
+            ACTIONS.defense().fireCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF);
             gunner.setSeadMode(SEAD_FLY_AWAY);
             gunner.setSeadTicks(SEAD_FLY_AWAY_TICK);
             gunner.setSeadTotalTicks(0);
@@ -1532,6 +1186,7 @@ public final class GunnerBrain {
 
     /** SEAD 复仇阶段驾驶：towardTarget=true 转向目标，false 背对目标飞离（含高度保持）。 */
     private static void tickSeadFly(GunnerEntity gunner, AbstractVehicle vehicle, Entity target, boolean towardTarget) {
+        RVP_GunnerMovementActions.Command command = ACTIONS.movement().stopCommand();
         Vec3 aimPoint;
         if (towardTarget) {
             aimPoint = target.position().add(0, 12, 0);
@@ -1543,28 +1198,31 @@ public final class GunnerBrain {
             aimPoint = vehicle.position().add(away.normalize().scale(256)).add(0, 20, 0);
         }
         Vec2 desiredRot = VectorUtil.vecToRot(aimPoint.subtract(vehicle.position()));
-        vehicle.controlUnit.yRot = desiredRot.y;
-        vehicle.controlUnit.yRotKeep = false;
+        command.yRot = desiredRot.y;
+        command.yRotKeep = false;
         if (vehicle instanceof FixedWingVehicle fixedWing) {
             // 固定翼：前飞 + 高度保持（复用巡航的高度控制思路，取适中巡航高度）
             double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
             double desiredAlt = groundY + 180.0;
             double altErr = desiredAlt - vehicle.getY();
             float pitchCmd = (float) Mth.clamp(-altErr * 0.25, -18.0, 10.0);
-            fixedWing.controlUnit.forward = true;
-            fixedWing.controlUnit.xRot = pitchCmd;
-            fixedWing.controlUnit.xRotKeep = false;
+            command.forward = true;
+            command.xRot = pitchCmd;
+            command.xRotKeep = false;
         } else if (vehicle instanceof RotaryWingVehicle rotary) {
             // 旋翼：悬停转向 + 高度保持
-            rotary.hoverMode = false;
+            command.setHoverMode = true;
+            command.hoverMode = false;
             double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
             double desiredAlt = groundY + 60.0;
             if (vehicle.getY() < desiredAlt - 4.0) {
-                rotary.controlUnit.up = true;
+                command.up = true;
             } else if (vehicle.getY() > desiredAlt + 4.0) {
-                rotary.controlUnit.down = true;
+                command.down = true;
             }
         }
+        // 调用移动动作适配器，将本 tick SEAD 飞行动作一次性写入本体 ControlUnit。
+        ACTIONS.movement().apply(gunner, vehicle, command);
     }
 
     /**
@@ -1629,54 +1287,14 @@ public final class GunnerBrain {
         return !(driver instanceof Player && gunner.isOwnedBy(driver));
     }
 
-    /** 查找第一把可用反辐射弹（有弹、不在冷却/装填）。 */
-    private static int findArmWeaponIndex(WeaponUnit weaponUnit) {
-        for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
-            AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-            AbstractVehicleWeapon<?> proxy = weaponUnit.proxyWeapon(weapon);
-            if (!(proxy instanceof RVP_WeaponBase rvpWeapon)) {
-                continue;
-            }
-            RVP_WeaponData data = rvpWeapon.getData();
-            if (data == null || !data.isAntiRadiationMissile()) {
-                continue;
-            }
-            if (proxy.hasAmmo() && !proxy.isCoolingDown() && !proxy.isReloading()) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * 发射一发反辐射弹到指定目标。复用 GunnerWeaponSuitability.prepareLaunchLock
-     * （对反辐射弹内部会做 resolveArmPreselect：范围/高度/锥角/发射源有效）作为门控；
-     * 受全导弹 5 秒冷却约束。返回是否实际发射。
-     */
-    private static boolean fireArmMissileAt(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target) {
-        if (gunner.getMissileCooldown() > 0) {
-            return false;
-        }
-        int index = findArmWeaponIndex(weaponUnit);
-        if (index < 0) {
-            return false;
-        }
-        AbstractVehicleWeapon<?> arm = weaponUnit.getIndexedWeapons().get(index);
-        if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, arm, target)) {
-            return false;
-        }
-        WeaponUnit aimSource = arm.getWeaponUnit();
-        weaponUnit.shoot(index, Collections.singletonList(aimSource.aimContext()), gunner);
-        gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);
-        return true;
-    }
-
     /** SEAD 复仇发射判定：复仇一发尚未打出、冷却结束且门控通过时发射。 */
     private static boolean tryFireRevenge(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target) {
         if (gunner.isSeadRevengeFired()) {
             return false;
         }
-        if (fireArmMissileAt(gunner, weaponUnit, target)) {
+        // 调用武器动作适配器，仅在 AntiRadiation 事务已提交时推进复仇状态。
+        if (ACTIONS.weapons().fireAntiRadiation(gunner, weaponUnit, target)
+                == RVP_GunnerActionResult.DISPATCHED) {
             gunner.setSeadRevengeFired(true);
             return true;
         }
@@ -1693,166 +1311,13 @@ public final class GunnerBrain {
         gunner.setSeadCooldownTicks(SEAD_COOLDOWN_TICK);
     }
 
-    private static int selectWeaponIndex(WeaponUnit weaponUnit, Entity target, @Nullable GunnerProfile profile) {
-        Vec3 weaponPos = weaponUnit.worldPivotPosition();
-        double dist = weaponPos.distanceTo(target.getBoundingBox().getCenter());
-        boolean targetIsAmmo = target instanceof AmmoEntity;
-        boolean targetHighAlt = altitudeAgl(target) >= 200.0;
-
-        // GPS 武器优先：profile 启用 gps_prefer_farthest 时，索敌阶段已选中最远的 GPS 可打击目标，
-        // 这里优先选定 GPS 武器发射，避免被武器索引顺序中更靠前的其它可用武器抢占
-        if (profile != null && profile.isGpsPreferFarthest()) {
-            for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
-                AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-                AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
-                if (proxyWeapon.hasAmmo()
-                        && !proxyWeapon.isCoolingDown()
-                        && !proxyWeapon.isReloading()
-                        && !isCountermeasureWeapon(proxyWeapon)
-                        && isGpsWeapon(proxyWeapon)
-                        && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
-                    return index;
-                }
-            }
-        }
-
-        // CIWS拦截弹药：200米外优先导弹，200米内优先机炮（近防拦截要快）
-        if (targetIsAmmo) {
-            if (dist > 200.0) {
-                return findGuidedWeaponIndex(weaponUnit, target);
-            }
-            return findGunWeaponIndex(weaponUnit, target);
-        }
-
-        // 普通目标（含对地/对空载具）：优先制导武器——修复"gunner 爱用机炮"问题。
-        // 只要目标能被任意 RVP 制导武器打到，就按武器类型打分选最优制导武器；机炮仅作兜底。
-        int guided = findGuidedWeaponIndex(weaponUnit, target);
-        if (guided >= 0) {
-            return guided;
-        }
-        return findGunWeaponIndex(weaponUnit, target);
-    }
-
-    /**
-     * 挑选可用制导武器：按"武器类型优先级"打分（ARM > IR/AIR > ARH/SARH > GPS > SACLOS/LBR/LH > HITL_TV），
-     * 取类型优先级最高且能打到目标的那把；无可用制导武器返回 -1。
-     */
-    private static int findGuidedWeaponIndex(WeaponUnit weaponUnit, Entity target) {
-        int bestIndex = -1;
-        int bestPriority = Integer.MAX_VALUE;
-        for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
-            AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-            AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
-            if (!proxyWeapon.hasAmmo()
-                    || proxyWeapon.isCoolingDown()
-                    || proxyWeapon.isReloading()
-                    || isCountermeasureWeapon(proxyWeapon)) {
-                continue;
-            }
-            int priority = guidedWeaponPriority(proxyWeapon);
-            if (priority < 0) {
-                continue;
-            }
-            if (priority >= bestPriority) {
-                continue;
-            }
-            if (!GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
-                continue;
-            }
-            bestPriority = priority;
-            bestIndex = index;
-        }
-        return bestIndex;
-    }
-
-    /**
-     * 制导武器类型优先级（越小越优先）：GPS=1（远程点打击优先），ARM=2, IR/AIR=3,
-     * ARH/SARH=4, SACLOS/LBR/LH=5, HITL_TV=6。非制导武器返回 -1（不参与优先选择）。
-     */
-    private static int guidedWeaponPriority(AbstractVehicleWeapon<?> weapon) {
-        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
-            return -1;
-        }
-        RVP_WeaponData data = rvpWeapon.getData();
-        if (data == null) {
-            return -1;
-        }
-        if (data.isGpsMissile()) {
-            return 1;
-        }
-        if (data.isAntiRadiationMissile()) {
-            return 2;
-        }
-        if (data.usesGuidanceType(RVP_EnumGuidanceType.IR) || data.usesGuidanceType(RVP_EnumGuidanceType.AIR)) {
-            return 3;
-        }
-        if (data.usesGuidanceType(RVP_EnumGuidanceType.ARH) || data.usesGuidanceType(RVP_EnumGuidanceType.SARH)) {
-            return 4;
-        }
-        if (data.usesGuidanceType(RVP_EnumGuidanceType.SACLOS)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.SALH)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.LBR)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.LH)) {
-            return 5;
-        }
-        if (data.usesGuidanceType(RVP_EnumGuidanceType.HITL_TV)
-                || data.usesGuidanceType(RVP_EnumGuidanceType.HITL_CLOS_TV)) {
-            return 6;
-        }
-        return -1;
-    }
-
-    /** 挑选可用机炮/非制导武器（近防或制导武器不可用时的兜底）。排除 RVP 制导导弹。 */
-    private static int findGunWeaponIndex(WeaponUnit weaponUnit, Entity target) {
-        for (int index = 0; index < weaponUnit.getIndexedWeapons().size(); index++) {
-            AbstractVehicleWeapon<?> weapon = weaponUnit.getIndexedWeapons().get(index);
-            AbstractVehicleWeapon<?> proxyWeapon = weaponUnit.proxyWeapon(weapon);
-            if (proxyWeapon.hasAmmo()
-                    && !proxyWeapon.isCoolingDown()
-                    && !proxyWeapon.isReloading()
-                    && !isCountermeasureWeapon(proxyWeapon)
-                    && !isRvpHomingMissile(weaponUnit, weapon)
-                    && GunnerWeaponSuitability.canSelectForTarget(weaponUnit, weapon, target)) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private static double altitudeAgl(Entity entity) {
-        int groundY = entity.level().getHeight(
-                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                net.minecraft.util.Mth.floor(entity.getX()),
-                net.minecraft.util.Mth.floor(entity.getZ()));
-        return entity.getY() - groundY;
-    }
-
-    private static boolean isCountermeasureWeapon(AbstractVehicleWeapon<?> weapon) {
-        ResourceLocation weaponId = weapon.getData().getWeaponId();
-        if (weaponId == null) {
-            return false;
-        }
-        String path = weaponId.getPath();
-        // 排除本体烟雾弹武器（launcher_smoke_grenade）：地面载具烟雾由 RVP countermeasure.smoke 承担，
-        // 避免 gunner 同时放本体烟雾 + RVP 烟雾双份
-        return path.contains("decoy_flare") || path.contains("aps_grenade");
-    }
-
-    /** 判断是否为 GPS 制导武器（GPS 为远程点打击武器，gunner 优先发射）。 */
-    private static boolean isGpsWeapon(AbstractVehicleWeapon<?> weapon) {
-        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
-            return false;
-        }
-        RVP_WeaponData data = rvpWeapon.getData();
-        return data != null && data.isGpsMissile();
-    }
-
     /**
      * 供 RVP_GunnerDebugMonitor 使用，返回 selectWeaponIndex 的结果。
      * 仅在监控 dump 中指示是否有可用武器，不产生实际开火副作用。
      */
     static int findWeaponIndexForDump(WeaponUnit weaponUnit, Entity target) {
-        return selectWeaponIndex(weaponUnit, target, null);
+        // 调用武器动作适配器的只读选择入口，避免调试监控复制选择算法。
+        return ACTIONS.weapons().findWeaponIndex(weaponUnit, target, null);
     }
 
     private static boolean isDriver(AbstractVehicle vehicle, GunnerEntity gunner) {
