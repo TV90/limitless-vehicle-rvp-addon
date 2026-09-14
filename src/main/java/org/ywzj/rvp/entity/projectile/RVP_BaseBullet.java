@@ -95,7 +95,10 @@ import org.ywzj.vehicle.api.entity.RemoteTickEntity;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
+import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.particle.BulletHoleOption;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.util.BulletHitResult;
 import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -305,6 +308,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected int antiRadiationMemoryLeftTick;
     protected boolean antiRadiationLostPermanent;
     protected boolean antiRadiationSignalAcquired;
+    /** [RVP] ARM 预选独占窗口剩余 tick：&gt;0 期间仅预选辐射源（与 ECM 干扰机）可参与制导选择，
+     * 其它辐射源不抢制导；窗口耗尽后恢复自主捕获。纯服务端字段，不同步客户端。 */
+    protected int armPreselectExclusiveLeftTick;
+    /** [RVP] 预选辐射源最后已知位置：独占窗口内预选不可见时的追踪目标。
+     * 独立存储，仅发射预选快照与咬住预选时更新，不受 ECM 记忆抖动污染。 */
+    @Nullable
+    protected Vec3 armPreselectLastPos;
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
@@ -1371,6 +1381,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.preselectedRadarIndex = radarIndex;
     }
 
+    /** [RVP] 预选独占窗口剩余 tick（&gt;0 = 独占中，仅预选与 ECM 干扰机可参与选择）。 */
+    public int getArmPreselectExclusiveLeftTick() {
+        return armPreselectExclusiveLeftTick;
+    }
+
+    public void setArmPreselectExclusiveLeftTick(int ticks) {
+        this.armPreselectExclusiveLeftTick = Math.max(ticks, 0);
+    }
+
+    /** [RVP] 预选辐射源最后已知位置（窗口内预选不可见时的追踪目标）；null = 尚无任何已知位置。 */
+    @Nullable
+    public Vec3 getArmPreselectLastPos() {
+        return armPreselectLastPos;
+    }
+
+    public void setArmPreselectLastPos(@Nullable Vec3 pos) {
+        this.armPreselectLastPos = pos;
+    }
+
     // ===== ARH 主动雷达 getters/setters =====
 
     public boolean isActiveRadarOn() {
@@ -2023,8 +2052,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         if (!level().isClientSide()) {
+            // 目的：视线类制导（SACLOS/LBR）不参与实体追踪——弹上即使残留 targetEntity，
+            // 也不把 targetPos/lastGuidancePos 刷成锁定目标实时位置（防止 evaluate 失败时
+            // 惯性分支追发射锁定目标）；LH/SALH 锁定追踪与 HITL_TV 实时跟随保持原逻辑。
             boolean allowEntityTracking = rvpData == null
-                    || !rvpData.isVehicleLaserGuided()
+                    || (!rvpData.isVehicleLaserGuided() && !rvpData.isLineOfSightGuided())
                     || rvpData.isSaclosTvGuided();
             if (!allowEntityTracking && targetEntity != null) {
                 targetEntity = null;
@@ -2496,6 +2528,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && !isProximityDamageImmune(targetEntity)
                 && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
+                && !isAmmoIgnoredByProximityFuse(targetEntity) // 机枪弹丸不触发近炸（精确按弹种过滤）
+                && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(targetEntity))
                 && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
@@ -2511,7 +2545,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         for (Entity entity : level().getEntities(this, detectionBox,
                 e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
                         && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
-                        && !isProximityDamageImmune(e))) {
+                        && !isProximityDamageImmune(e)
+                        && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
+                        && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(e)))) {
             // 近炸(探测盒)起爆时的干扰状态诊断（开关：/rvpdebug flags fuse）
             if (RVP_DebugFlags.FUSE.isEnabled()) {
                 System.out.println("[RVP-DBG][FuseDetonate] seeker=" + getId()
@@ -2658,6 +2694,59 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return false;
         }
         return directHitIds.contains(root.getId()) || proximityDamagedIds.contains(root.getId());
+    }
+
+    /**
+     * 近炸引信忽略机枪弹丸（探测盒 / 扫掠 / 锁定三分支统一过滤）。
+     * RVP 弹体同为一个基类，必须按 {@code weapon_kind} 精确判 MACHINEGUN，
+     * 禁止 instanceof 基类一刀切（否则会误伤导弹/火箭/航弹，丢失"近炸拦截敌方弹药"能力）；
+     * 本体侧 {@code BulletEntity} 为机炮弹专用类（本体导弹/火箭各有独立类），instanceof 精确。
+     */
+    protected boolean isAmmoIgnoredByProximityFuse(Entity entity) {
+        if (entity instanceof RVP_BaseBullet rvpBullet) {
+            return rvpBullet.rvpData != null
+                    && rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN;
+        }
+        return entity instanceof BulletEntity;
+    }
+
+    /**
+     * 近炸目标是否为当前有效雷达锁定目标（{@code fuse_data.proximity_fuse_require_radar_lock}）。
+     * 判定口径与 SARH 半主动照射源一致（{@code RVP_RuntimeSarhGuidanceSource.getManualIlluminatedTarget}）：
+     * 发射武器站根的"手动雷达锁"（{@code RadarUnit.lockedEntity}，玩家锁定键写入）或"外置雷达锁"
+     * （外置雷达控制器 / AI 炮手经 {@code RVP_WeaponLockStateTable} 写入）；雷达 TWS 自动跟踪与
+     * 导引头自锁带来的目标不算数。目标与锁定实体均先取碰撞 root 再比较，兼容载具部件 PartEntity。
+     * ECM 干扰期近炸已被 {@link #isJammedByDecoy()} 抑制关闭，此处无需重复判定。
+     */
+    private boolean isRadarIlluminatedTarget(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        WeaponUnit unit = getShooterWeaponUnit();
+        WeaponUnit root = unit == null ? null : unit.getRootParentWeaponUnit();
+        if (root == null) {
+            return false;
+        }
+        Entity rootTarget = ywzj_rvp$resolveCollisionRoot(entity);
+        if (rootTarget == null) {
+            return false;
+        }
+        // 来源 1：手动雷达锁（与 SARH 照射同源；getLockedRadarEntity 内部已过滤未锁定雷达）
+        Entity radarLocked = RVP_RadarRoleHelper.getLockedRadarEntity(root);
+        if (radarLocked != null && radarLocked.isAlive()
+                && rootTarget == ywzj_rvp$resolveCollisionRoot(radarLocked)) {
+            return true;
+        }
+        // 来源 2：外置雷达锁（外置雷达控制器 / AI 炮手写入）
+        int extId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
+        if (extId != Integer.MIN_VALUE) {
+            Entity ext = level().getEntity(extId);
+            if (ext != null && ext.isAlive()
+                    && rootTarget == ywzj_rvp$resolveCollisionRoot(ext)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -2878,7 +2967,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
                 entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
                         && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
-                        && !isProximityDamageImmune(entity));
+                        && !isProximityDamageImmune(entity)
+                        && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
+                        && (!rvpData.getFuseData().isProximityFuseRequireRadarLock()
+                            || isRadarIlluminatedTarget(entity)));
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;
         for (Entity entity : nearbyEntities) {

@@ -63,6 +63,19 @@ public class RVP_FuseData {
     private float proximityRadius = 0f;
 
     /**
+     * 近炸引信是否要求目标为当前有效雷达锁定目标（默认 {@code false}）。
+     *
+     * <p>生效条件：{@code proximity_radius > 0} 时本字段才有意义。开启后，近炸仅能被
+     * "当前有效雷达锁定目标"触发，判定口径与 SARH 半主动照射源一致
+     * （{@code RVP_RuntimeSarhGuidanceSource}）：发射武器站根的手动雷达锁
+     * （{@code RadarUnit.lockedEntity}）或外置雷达锁（{@code RVP_WeaponLockStateTable}）；
+     * 雷达 TWS 自动跟踪与导引头自锁带来的目标不算数。ECM 干扰期近炸本就被诱饵干扰
+     * 抑制关闭，无需重复判定。</p>
+     */
+    @SerializedName("proximity_fuse_require_radar_lock")
+    private boolean proximityFuseRequireRadarLock = false;
+
+    /**
      * 近地引信检测高度（格）：沿世界系绝对 {@code -Y} 检测可碰撞方块，忽略流体；
      * {@code 0} 表示不启用。解保后，弹体当前位置或本 Tick 运动段达到该离地高度时触发。
      */
@@ -232,6 +245,11 @@ public class RVP_FuseData {
 
     public int getProximityFuseHeight() {
         return Math.max(proximityFuseHeight, 0);
+    }
+
+    /** 近炸引信是否要求目标为当前有效雷达锁定目标（SARH 照射口径）；默认 {@code false}。 */
+    public boolean isProximityFuseRequireRadarLock() {
+        return proximityFuseRequireRadarLock;
     }
 
     public float getProximityRadius() {

@@ -648,6 +648,28 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.SALH;
     }
 
+    /**
+     * 激光系制导（LBR 驾束 / LH 激光指令 / SALH 半主动激光）。
+     * 激光照射告警（{@code RVP_LaserWarnService}）仅对这类武器的照射会话生效；
+     * SACLOS 视线指令等其他操作手制导不视为激光照射。
+     */
+    public boolean isLaserGuidanceType() {
+        RVP_EnumGuidanceType type = getGuidanceData().getGuidanceType();
+        return type == RVP_EnumGuidanceType.LBR
+                || type == RVP_EnumGuidanceType.LH
+                || type == RVP_EnumGuidanceType.SALH;
+    }
+
+    /**
+     * 视线类制导（SACLOS 视线指令 / LBR 驾束）：光束与视线严格跟随操作手鼠标瞄准线，
+     * 武器站锁定实体不吸附瞄准点（与 LH/SALH 的"锁定=照射承诺"语义区分）。
+     */
+    public boolean isLineOfSightGuided() {
+        RVP_EnumGuidanceType type = getGuidanceData().getGuidanceType();
+        return type == RVP_EnumGuidanceType.SACLOS
+                || type == RVP_EnumGuidanceType.LBR;
+    }
+
     /** 需要操作手持续提供世界瞄准点的制导类型（激光点、驾束或视线指令）。 */
     public boolean isOperatorGuided() {
         return isOperatorGuidanceType(getGuidanceData().getGuidanceType());

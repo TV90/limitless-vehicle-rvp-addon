@@ -101,7 +101,9 @@ public class RVP_ClientArmState {
 
         RVP_GuidanceActiveConfig guidance = RVP_GuidanceModelResolver.resolveActive(
                 rvpData, RVP_GuidancePhase.MAIN);
-        seekerFov = guidance.maxLockHalfAngle();
+        // [RVP] 目的（2026-09-14 定版）：max_lock_angle = 打出去时的扫描范围——预选锥角直接
+        // 用该值（不再减半），与导弹离轴捕获圈（max_off_axis_lock_angle）同口径
+        seekerFov = guidance.maxLockAngle();
         seekRange = (float) RVP_GuidanceRuntimeGeometry.resolveScanRadius(guidance.targetDistanceRange());
         pulseMemoryTick = guidance.radiationPulseMemoryTick();
         lockedBonus = guidance.armLockedEmitterBonus();

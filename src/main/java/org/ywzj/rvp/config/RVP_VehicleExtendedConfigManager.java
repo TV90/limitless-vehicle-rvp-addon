@@ -101,6 +101,24 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     public static final double MAX_MODDING_SPEED_KPH = 5.0;
 
     /**
+     * 载具是否有玩家或 gunner 乘员。
+     * 目的：作为改装类交互的"有人"判定单一语义源，供 {@link #canModVehicle} 与
+     * 潜行右键改装守卫 {@code RVP_ModdingInteractGuard} 共用，避免两处判定漂移。
+     */
+    public boolean hasPilotOrGunnerPassenger(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return false;
+        }
+        for (net.minecraft.world.entity.Entity passenger : vehicle.getPassengers()) {
+            if (passenger instanceof net.minecraft.world.entity.player.Player
+                    || passenger instanceof org.ywzj.rvp.entity.gunner.GunnerEntity) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 改装换弹条件校验：仅当载具速度低于 {@link #MAX_MODDING_SPEED_KPH} 且
      * 载具上无玩家或 gunner 乘员时才允许更换武器（服务端权威校验 + 客户端按钮显隐共用）。
      */
@@ -113,13 +131,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         if (speedKph >= MAX_MODDING_SPEED_KPH) {
             return false;
         }
-        for (net.minecraft.world.entity.Entity passenger : vehicle.getPassengers()) {
-            if (passenger instanceof net.minecraft.world.entity.player.Player
-                    || passenger instanceof org.ywzj.rvp.entity.gunner.GunnerEntity) {
-                return false;
-            }
-        }
-        return true;
+        return !hasPilotOrGunnerPassenger(vehicle);
     }
 
     public boolean isModdingOnlyMulti(WeaponUnit weaponUnit, int weaponIndex) {

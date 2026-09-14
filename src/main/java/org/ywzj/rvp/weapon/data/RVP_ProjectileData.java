@@ -2,6 +2,7 @@ package org.ywzj.rvp.weapon.data;
 
 import com.google.gson.JsonObject;
 import com.google.gson.annotations.SerializedName;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
 
@@ -64,6 +65,21 @@ public class RVP_ProjectileData {
     /** 是否启用火箭发动机动力学，默认 false；启用后质量、推力和燃烧时间参与运动计算。 */
     @SerializedName("has_rocket_engine")
     private boolean hasRocketEngine = false;
+
+    /**
+     * 尾焰喷口偏移（实体空间，[x,y,z]，格；Z- 为弹尾）。默认 {@code [0,0,-0.5]}。
+     * 生效条件：{@code has_rocket_engine=true} 且发动机燃烧中，用于客户端尾焰渲染位置
+     * （复用本体火箭尾焰模型/动画/贴图三件套）。
+     */
+    @SerializedName("engine_nozzle_offset")
+    private float[] engineNozzleOffset;
+
+    /**
+     * 尾焰渲染缩放，默认 {@code 0.2}（对标本体 PL-12：caliber 未配置被钳制为 200，
+     * 200/1000=0.2）。生效条件：同 {@code engine_nozzle_offset}。
+     */
+    @SerializedName("flame_scale")
+    private Float flameScale;
 
     /** 弹体质量，单位沿用本体动力学，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("mass")
@@ -253,6 +269,20 @@ public class RVP_ProjectileData {
 
     public boolean hasRocketEngine() {
         return hasRocketEngine;
+    }
+
+    /**
+     * 尾焰喷口偏移（实体空间）；未配置返回 {@code null}，调用方使用默认值 {@code [0,0,-0.5]}。
+     */
+    @Nullable
+    public float[] getEngineNozzleOffset() {
+        return engineNozzleOffset != null && engineNozzleOffset.length == 3 ? engineNozzleOffset : null;
+    }
+
+    /** 尾焰渲染缩放；未配置返回 {@code null}，调用方使用默认值 {@code 0.2}（本体 PL-12 口径）。 */
+    @Nullable
+    public Float getFlameScale() {
+        return flameScale;
     }
 
     public float getResolvedMass() {

@@ -14,7 +14,9 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosOperatorSession;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CMissileTrackAlert;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.Map;
 import java.util.UUID;
@@ -72,6 +74,12 @@ public final class RVP_LaserWarnService {
                 if (laserUser == null || !laserUser.isAlive()) {
                     continue;
                 }
+                // 目的：激光告警仅针对激光系武器（LBR 驾束 / LH / SALH）的照射——SACLOS 视线指令
+                // 等其他操作手制导复用同一瞄准会话，不视为激光照射（2026-09-13 需求澄清）。
+                // 解析失败（未乘载具 / 无武器站 / 非本項武器）按 fail-closed 跳过，宁漏不误。
+                if (!isLaserGuidanceOperator(laserUser)) {
+                    continue;
+                }
                 // 自己的载具不受自己的激光点告警（激光操作员就坐在该载具上时跳过）
                 if (vehicle.hasPassenger(laserUser)) {
                     continue;
@@ -87,6 +95,24 @@ public final class RVP_LaserWarnService {
                 }
             }
         }
+    }
+
+    /**
+     * 照射者当前武器是否激光系（LBR/LH/SALH）。
+     * 服务端权威解析（客户端会话不含武器类型）：玩家所乘载具 → 玩家操作位武器站 → 当前武器。
+     * 非本項武器或解析失败一律返回 false（fail-closed）。
+     */
+    private static boolean isLaserGuidanceOperator(ServerPlayer laserUser) {
+        // 目的：SACLOS 等操作手制导与激光系共用瞄准会话，告警面在此按武器制导类型收窄
+        if (!(laserUser.getVehicle() instanceof AbstractVehicle vehicle)) {
+            return false;
+        }
+        if (!(vehicle.getOwnOperatorUnit(laserUser) instanceof WeaponUnit operatorUnit)) {
+            return false;
+        }
+        return operatorUnit.getCurrentWeapon()
+                .map(weapon -> weapon.getData() instanceof RVP_WeaponData data && data.isLaserGuidanceType())
+                .orElse(false);
     }
 
     /** 被照射判定：激光点距本车 ≤10m，或本车 AABB 处于“敌方载具→激光点”连线中段。 */

@@ -121,11 +121,22 @@ public final class RVP_ClientSaclosState {
     @Nullable
     private static Vec3 resolvePodAimPoint() {
         WeaponUnit unit = resolveOperatorWeaponUnit();
-        Vec3 hit = RVP_SaclosPodAim.resolvePodAimPoint(unit);
+        // 目的：视线类制导（SACLOS 视线指令 / LBR 驾束）的光束与视线严格跟随鼠标瞄准线——
+        // 武器站锁定实体不吸附瞄准点（雷达锁定后仍跟准星，修复"锁定后导弹追目标"）；
+        // LH/SALH 等保持锁定吸附（锁定=照射承诺语义）。对齐服务端口径
+        // （RVP_SaclosDesignation.resolveDesignationPoint 本就只允许 SACLOS-TV 用锁）。
+        boolean allowLockedEntity = !isCurrentWeaponLineOfSightGuided();
+        Vec3 hit = RVP_SaclosPodAim.resolvePodAimPoint(unit, allowLockedEntity);
         if (hit != null) {
             return hit;
         }
         return unit != null ? unit.weaponHitPos : null;
+    }
+
+    /** 当前操作武器是否视线类制导（SACLOS/LBR）；非本項武器返回 false（保持原行为）。 */
+    private static boolean isCurrentWeaponLineOfSightGuided() {
+        AbstractVehicleWeapon<?> weapon = resolveCurrentWeapon();
+        return weapon instanceof RVP_WeaponBase rvp && rvp.getData().isLineOfSightGuided();
     }
 
     @Nullable
