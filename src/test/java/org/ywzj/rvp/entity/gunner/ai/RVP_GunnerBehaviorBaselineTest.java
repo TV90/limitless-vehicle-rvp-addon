@@ -1,0 +1,478 @@
+package org.ywzj.rvp.entity.gunner.ai;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Gunner 渐进式重构阶段 A 的特征测试。
+ *
+ * <p>当前 Gunner 直接依赖 Minecraft/Forge 实体和本体载具运行时，普通 JUnit 无法可靠构造完整世界。
+ * 本测试因此冻结现行权威入口的可观察调用顺序、控制输出、门控常量和清理语义。阶段 B 开始移动
+ * 生产逻辑时，应先让新的动作层测试覆盖相同契约，再调整这里的源码入口断言，禁止直接删除基线。</p>
+ */
+class RVP_GunnerBehaviorBaselineTest {
+
+    /** Gunner 总编排源码，用于冻结当前服务端行为顺序。 */
+    private static final Path BRAIN_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerBrain.java");
+    /** Gunner 实体源码，用于冻结生命周期、离座和运行时状态清理。 */
+    private static final Path ENTITY_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/GunnerEntity.java");
+    /** Gunner 索敌源码，用于冻结目标层级、范围和扫描方式。 */
+    private static final Path TARGETING_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerTargeting.java");
+    /** Gunner 外置雷达源码，用于冻结中继部署、锁定和清理顺序。 */
+    private static final Path EXTERNAL_RADAR_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerExternalRadarController.java");
+    /** Gunner 制导控制源码，用于冻结 GPS、照射与 HITL 维护入口。 */
+    private static final Path GUIDANCE_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerGuidedWeaponController.java");
+    /** Gunner 载具低频服务源码，用于冻结自动反制与同步周期。 */
+    private static final Path VEHICLE_SERVICE_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/RVP_GunnerVehicleTickService.java");
+    /** Gunner Profile 源码，用于冻结阶段 A 的平铺 schema 与默认值。 */
+    private static final Path PROFILE_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/profile/GunnerProfile.java");
+
+    @Test
+    void serverTickPipelineKeepsCurrentAuthoritativeOrder() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String tick = section(brain,
+                "public static void tick(GunnerEntity gunner, AbstractVehicle vehicle)",
+                "private static void tickRadarLock(");
+
+        assertOrdered(tick,
+                "gunner.tickCooldowns();",
+                "vehicle.getOwnOperatorUnit(gunner)",
+                "boolean driver = isDriver(vehicle, gunner);",
+                "resolveWeaponUnit(vehicle, seatUnit, driver)",
+                "tickTargeting(gunner, vehicle, weaponUnit, profile)",
+                "refillDriverVehicle(gunner, vehicle);",
+                "sustainDriverInfiniteAmmo(vehicle);",
+                "tickCountermeasure(gunner, vehicle, profile);",
+                "tickEcmActive(gunner, vehicle);",
+                "tickSmokeEvasion(gunner, vehicle);",
+                "tickRadarLock(gunner, vehicle, weaponUnit, target, profile);",
+                "GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);",
+                "GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);",
+                "seadHandled = tickSead(gunner, vehicle, weaponUnit, profile);",
+                "allowFire = tickDriving(gunner, vehicle, target, profile);",
+                "tickCombat(gunner, weaponUnit, target, profile);");
+        assertContainsAll(tick,
+                "boolean driverAi = driver && profile.isAllowDrive();",
+                "if (!seadHandled)",
+                "gunner.setControlledWeaponIndex(-1);",
+                "vehicle.controlUnit.reset();",
+                "gunner.clearDriverRideState();");
+    }
+
+    @Test
+    void targetingKeepsCiwsPreemptionAndCurrentTierOrder() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String targeting = read(TARGETING_SOURCE);
+        String tickTargeting = section(brain,
+                "private static Entity tickTargeting(",
+                "private static boolean isCiwsAltitudeMet(");
+        String findBest = section(targeting,
+                "public static Entity findBestTarget(",
+                "private static Entity pickBestInTier(");
+
+        assertOrdered(tickTargeting,
+                "GunnerTargeting.findCiwsTarget(gunner, vehicle)",
+                "gunner.setTrackedTarget(ciwsTarget);",
+                "gunner.tickCount % profile.getScanIntervalTick() == 0",
+                "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
+                "gunner.getTrackedTarget()");
+        assertContainsAll(tickTargeting,
+                "tracked == null || !tracked.isAlive()",
+                "gunner.setTrackedTarget(null);");
+
+        assertOrdered(findBest,
+                "collectTargetEntities(vehicle, radius",
+                "List<Entity> rvpAmmo",
+                "List<Entity> ewDecoys",
+                "List<Entity> hostileGunnerVehicles",
+                "List<Entity> playerTargets",
+                "return pickBestInTier(gunner, vehicle, weaponUnit, profile, entities, launcher);");
+        assertContainsAll(targeting,
+                "private static final double AIR_SEARCH_MULTIPLIER = 6.0;",
+                "return base * AIR_SEARCH_MULTIPLIER;",
+                "return Math.max(base, radarRange);",
+                "profile.isGpsPreferFarthest()",
+                "GunnerWeaponSuitability.hasUsableGpsWeaponForTarget",
+                "score(vehicle, weaponUnit, entity, launcher)");
+    }
+
+    @Test
+    void weaponEngagementKeepsAimLockGuidanceFireTransactionOrder() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String combat = section(brain,
+                "private static void tickCombat(",
+                "private static boolean isRvpHomingMissile(");
+        String selection = section(brain,
+                "private static int selectWeaponIndex(",
+                "private static int findGuidedWeaponIndex(");
+        String priority = section(brain,
+                "private static int guidedWeaponPriority(",
+                "private static int findGunWeaponIndex(");
+
+        assertOrdered(combat,
+                "weaponUnit.aim(aimPoint);",
+                "selectWeaponIndex(weaponUnit, target, profile)",
+                "gunner.setControlledWeaponIndex(weaponIndex);",
+                "gunner.getMissileCooldown() > 0",
+                "gunner.isBurstWindowOpen()",
+                "GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)",
+                "findGunWeaponIndex(weaponUnit, target)",
+                "GunnerGuidedWeaponController.prepareForLaunch",
+                "weaponUnit.shoot(weaponIndex",
+                "gunner.onBurstShot",
+                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
+        assertContainsAll(combat,
+                "now - gunner.getAirLockStartTick() < 100",
+                "now - gunner.getLastAirMissileFireTick() < 100",
+                "aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE",
+                "Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts()",
+                "gunner.setCiwsTargetCooldown(target, 100);");
+
+        assertOrdered(selection,
+                "profile.isGpsPreferFarthest()",
+                "if (targetIsAmmo)",
+                "if (dist > 200.0)",
+                "findGuidedWeaponIndex(weaponUnit, target)",
+                "findGunWeaponIndex(weaponUnit, target)");
+        assertContainsAll(brain,
+                "private static final int MISSILE_COOLDOWN_TICK = 100;");
+        assertOrdered(priority,
+                "if (data.isGpsMissile())",
+                "return 1;",
+                "if (data.isAntiRadiationMissile())",
+                "return 2;",
+                "RVP_EnumGuidanceType.IR",
+                "return 3;",
+                "RVP_EnumGuidanceType.ARH",
+                "return 4;",
+                "RVP_EnumGuidanceType.SACLOS",
+                "return 5;",
+                "RVP_EnumGuidanceType.HITL_TV",
+                "return 6;");
+        assertContainsAll(priority,
+                "data.isGpsMissile()",
+                "data.isAntiRadiationMissile()",
+                "RVP_EnumGuidanceType.IR",
+                "RVP_EnumGuidanceType.AIR",
+                "RVP_EnumGuidanceType.ARH",
+                "RVP_EnumGuidanceType.SARH",
+                "RVP_EnumGuidanceType.SACLOS",
+                "RVP_EnumGuidanceType.SALH",
+                "RVP_EnumGuidanceType.LBR",
+                "RVP_EnumGuidanceType.LH",
+                "RVP_EnumGuidanceType.HITL_TV",
+                "RVP_EnumGuidanceType.HITL_CLOS_TV");
+    }
+
+    @Test
+    void movementKeepsCurrentVehicleDispatchAndControlOutputs() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String dispatch = section(brain,
+                "private static boolean tickDriving(",
+                "public static boolean hasLauncherDeployConfig(");
+        String launcher = section(brain,
+                "private static void tickLauncherGroundDriving(",
+                "private static boolean hasAnyAmmo(");
+        String ground = section(brain,
+                "private static void tickGroundDriving(",
+                "private static void tickGroundTacticalEvade(");
+        String fixedWing = section(brain,
+                "private static boolean tickFixedWingDriving(",
+                "private static boolean tickRotaryDriving(");
+        String rotaryWing = section(brain,
+                "private static boolean tickRotaryDriving(",
+                "private static double pickCruiseAgl(");
+        String wander = section(brain,
+                "private static void tickGroundWander(",
+                "private static boolean ensureAirPhase(");
+
+        assertOrdered(dispatch,
+                "vehicle.controlUnit.reset();",
+                "vehicle instanceof FixedWingVehicle",
+                "tickFixedWingDriving",
+                "vehicle instanceof RotaryWingVehicle",
+                "tickRotaryDriving",
+                "hasLauncherDeployConfig(vehicle)",
+                "tickLauncherGroundDriving",
+                "tickGroundDriving");
+
+        assertContainsAll(launcher,
+                "if (hasAmmo)",
+                "vehicle.controlUnit.reset();",
+                "tickGroundWander(gunner, vehicle, profile);",
+                "vehicle.controlUnit.backward = true;",
+                "vehicle.controlUnit.forward = true;");
+        assertContainsAll(ground,
+                "gunner.hasSmokeHoldTicks()",
+                "tickSmokeHoldDrive(gunner, vehicle);",
+                "tickGroundWander(gunner, vehicle, profile);",
+                "gunner.startTacticalHold(GROUND_TACTICAL_HOLD_TICK);",
+                "gunner.startRecovery(profile.getDriveRecoveryTick());",
+                "vehicle.controlUnit.backward = true;",
+                "tickGroundTacticalEvade",
+                "vehicle.controlUnit.forward = true;");
+        assertContainsAll(fixedWing,
+                "tickFixedWingCruise(gunner, vehicle, profile, false);",
+                "return false;",
+                "ensureAirPhase(gunner, vehicle, profile)",
+                "boolean breakAway",
+                "vehicle.controlUnit.yRot = desiredRot.y;",
+                "vehicle.controlUnit.forward = true;");
+        assertContainsAll(rotaryWing,
+                "vehicle.controlUnit.up = true;",
+                "ensureRotaryAirPhase(gunner, profile)",
+                "vehicle.controlUnit.yRot = facingRot.y;",
+                "vehicle.controlUnit.xRot = desiredPitch;");
+        assertContainsAll(wander,
+                "profile.isGroundWanderEnabled()",
+                "gunner.setGroundBigTurnTargetYaw",
+                "vehicle.controlUnit.forward = true;",
+                "vehicle.controlUnit.left = true;",
+                "vehicle.controlUnit.right = true;");
+    }
+
+    @Test
+    void radarGuidanceAndDefenseKeepCurrentSupportSemantics() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String radar = section(brain,
+                "private static void tickRadarLock(",
+                "private static RadarUnit prepareGunnerLockRadar(");
+        String countermeasure = section(brain,
+                "private static void tickCountermeasure(",
+                "private static final Map<Integer, Long> GUNNER_ECM_DBG");
+        String ecm = section(brain,
+                "private static void tickEcmActive(",
+                "private static void refillDriverVehicle(");
+        String smoke = section(brain,
+                "private static void tickSmokeEvasion(",
+                "private record MissileScanResult(");
+        String guidance = read(GUIDANCE_SOURCE);
+        String externalRadar = read(EXTERNAL_RADAR_SOURCE);
+        String vehicleService = read(VEHICLE_SERVICE_SOURCE);
+
+        assertOrdered(radar,
+                "prepareGunnerLockRadar(weaponUnit)",
+                "radar.detect(lockTarget);",
+                "RVP_ChaffJamState.isInCooldown",
+                "radar.setLockedEntity(lockTarget);",
+                "root.setLockedEntity(lockTarget);");
+        assertOrdered(countermeasure,
+                "GunnerTargeting.findAmmoThreat",
+                "weaponUnit.aim(threat.position());",
+                "weaponUnit.shoot(index, weaponUnit.aimContexts(), gunner);",
+                "gunner.setCountermeasureCooldown");
+        assertContainsAll(smoke,
+                "RVP_EnumCountermeasureType.SMOKE",
+                "% 10 != 0",
+                "scanMissileThreats",
+                "findLasingEnemy",
+                "RVP_CountermeasureRuntimeManager.fire",
+                "gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);");
+        assertContainsAll(ecm,
+                "WarnType.RADAR_LOCK",
+                "WarnType.MISSILE_LAUNCH",
+                "GunnerTargeting.findAmmoThreat",
+                "RVP_EcmActiveManager.tryFireForVehicle(vehicle);");
+
+        assertOrdered(guidance,
+                "updateDesignation(gunner, vehicle, weaponUnit, targetPoint);",
+                "updateGpsTarget(gunner, vehicle, weaponUnit, targetPoint);",
+                "updateInFlightHitl(gunner, vehicle, target, targetPoint);");
+        assertContainsAll(guidance,
+                "GPSTargetManager.set",
+                "RVP_SaclosOperatorSession.setDesignation",
+                "missile.rvp$setHitlDesignatedEntity(target);",
+                "missile.rvp$setHitlSteeringInput",
+                "private static final double HITL_CONTROL_SEARCH_RANGE = 4096.0D;");
+
+        assertOrdered(externalRadar,
+                "RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle",
+                "RVP_DeployableUavService.deployLinkedUav",
+                "turnOnRelayRadars(relayVehicle);",
+                "getPreferredRelayLockRadar",
+                "lockRadar.detect(lockTarget);",
+                "RVP_ChaffJamState.isInCooldown",
+                "RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId",
+                "RVP_WeaponLockStateTable.setExternalRadarLockedEntityId");
+        assertContainsAll(vehicleService,
+                "private static final int TICK_INTERVAL = 5;",
+                "private static final long AUTO_CM_INTERVAL_TICK = 100L;",
+                "tickAutoCountermeasure(vehicle);",
+                "RVP_EnumCountermeasureType.FLARE",
+                "RVP_EnumCountermeasureType.CHAFF",
+                "syncFactionToPlayers");
+    }
+
+    @Test
+    void seadKeepsCurrentPreemptionStateMachineAndTiming() throws IOException {
+        String brain = read(BRAIN_SOURCE);
+        String sead = section(brain,
+                "private static boolean tickSead(",
+                "private static void tickSeadFly(");
+        String armFire = section(brain,
+                "private static boolean fireArmMissileAt(",
+                "private static boolean tryFireRevenge(");
+        String clear = section(brain,
+                "private static void clearSead(",
+                "private static int selectWeaponIndex(");
+
+        assertContainsAll(brain,
+                "private static final int SEAD_FLY_AWAY_TICK = 100;",
+                "private static final int SEAD_REVERSAL_TICK = 160;",
+                "private static final int SEAD_LOCK_FIRE_TICK = 40;",
+                "private static final int SEAD_TIMEOUT_TICK = 400;",
+                "private static final int SEAD_COOLDOWN_TICK = 400;",
+                "private static final int SEAD_THREAT_SCAN_INTERVAL = 10;",
+                "private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;");
+        assertOrdered(sead,
+                "findRadarLockingEntity(gunner, vehicle)",
+                "findArmWeaponIndex(weaponUnit)",
+                "GunnerWeaponSuitability.prepareLaunchLock",
+                "fireArmMissileAt(gunner, weaponUnit, radarSource);",
+                "RVP_CountermeasureRuntimeManager.fire(vehicle, RVP_EnumCountermeasureType.CHAFF);",
+                "gunner.setSeadMode(SEAD_FLY_AWAY);",
+                "gunner.setSeadTotalTicks(gunner.getSeadTotalTicks() + 1);",
+                "gunner.getSeadTotalTicks() > SEAD_TIMEOUT_TICK",
+                "case SEAD_FLY_AWAY:",
+                "case SEAD_REVERSAL:",
+                "case SEAD_LOCK_FIRE:",
+                "tryFireRevenge(gunner, weaponUnit, revengeTarget)");
+        assertOrdered(armFire,
+                "gunner.getMissileCooldown() > 0",
+                "findArmWeaponIndex(weaponUnit)",
+                "GunnerWeaponSuitability.prepareLaunchLock",
+                "weaponUnit.shoot(index, Collections.singletonList(aimSource.aimContext()), gunner);",
+                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
+        assertContainsAll(clear,
+                "gunner.setSeadMode(SEAD_NONE);",
+                "gunner.setSeadTicks(0);",
+                "gunner.setSeadRevengeTargetId(-1);",
+                "gunner.setSeadImmediateFired(false);",
+                "gunner.setSeadRevengeFired(false);",
+                "gunner.setSeadCooldownTicks(SEAD_COOLDOWN_TICK);");
+    }
+
+    @Test
+    void entityLifecycleKeepsServerAuthorityAndCleanupContract() throws IOException {
+        String entity = read(ENTITY_SOURCE);
+        String tick = section(entity,
+                "public void tick()",
+                "private void repairSeat(");
+        String cleanup = section(entity,
+                "public void clearDriverRideState()",
+                "public String getProfileId()");
+        String cooldowns = section(entity,
+                "public void tickCooldowns()",
+                "public boolean hasSmokeHoldTicks()");
+
+        assertOrdered(tick,
+                "super.tick();",
+                "if (level().isClientSide())",
+                "getVehicle() instanceof AbstractVehicle vehicle",
+                "GunnerBrain.tick(this, vehicle);",
+                "clearDriverRideState();",
+                "setTrackedTarget(null);",
+                "detachedTicks++;",
+                "detachedTicks > 40",
+                "discard();");
+        assertContainsAll(cleanup,
+                "refilledVehicleId = -1;",
+                "recoveryTicks = 0;",
+                "recoveryCooldownTicks = 0;",
+                "tacticalHoldTicks = 0;",
+                "tacticalEvadeTicks = 0;",
+                "smokeHoldTicks = 0;",
+                "homePosSet = false;",
+                "seadMode = 0;",
+                "seadRevengeTargetId = -1;",
+                "seadCooldownTicks = 0;");
+        assertContainsAll(cooldowns,
+                "burstFireTicks--",
+                "burstRestTicks--",
+                "countermeasureCooldown--",
+                "missileCooldown--",
+                "ciwsTargetCooldowns.values().removeIf",
+                "recoveryTicks--",
+                "tacticalHoldTicks--",
+                "tacticalEvadeTicks--",
+                "smokeHoldTicks--",
+                "seadCooldownTicks--");
+    }
+
+    @Test
+    void phaseAProfileSchemaAndDefaultsRemainFlatAndExplicit() throws IOException {
+        String profile = read(PROFILE_SOURCE);
+
+        assertContainsAll(profile,
+                "@SerializedName(\"name\")",
+                "private String name = \"default\";",
+                "@SerializedName(\"faction\")",
+                "private String faction = \"friendly\";",
+                "@SerializedName(\"target_types\")",
+                "@SerializedName(\"gps_prefer_farthest\")",
+                "private boolean gpsPreferFarthest = true;",
+                "private double searchRadius = 96.0;",
+                "private int scanIntervalTick = 10;",
+                "private float fireWindowDeg = 6.0F;",
+                "private double leadScale = 1.0;",
+                "private int burstFireTick = 6;",
+                "private int burstRestTick = 10;",
+                "private double countermeasureRange = 36.0;",
+                "private int countermeasureCooldownTick = 80;",
+                "private boolean allowDrive = true;",
+                "private double driveStopDistance = 12.0;",
+                "private double rotaryCruiseAltitudeMin = 28.0;",
+                "private double rotaryCruiseAltitudeMax = 60.0;",
+                "private double fixedwingCruiseAltitudeMin = 150.0;",
+                "private double fixedwingCruiseAltitudeMax = 500.0;");
+        assertFalse(profile.contains("@SerializedName(\"behaviors\")"),
+                "阶段 A 不得提前启用行为组合 schema");
+    }
+
+    /** 以 UTF-8 读取待冻结的源码。 */
+    private static String read(Path source) throws IOException {
+        assertTrue(Files.isRegularFile(source), "缺少 Gunner 基线源码: " + source);
+        return Files.readString(source);
+    }
+
+    /**
+     * 取得两个稳定源码标记之间的文本，用于把断言限制在一个权威方法或职责段内。
+     */
+    private static String section(String source, String startMarker, String endMarker) {
+        int start = source.indexOf(startMarker);
+        assertTrue(start >= 0, "缺少基线起始标记: " + startMarker);
+        int end = source.indexOf(endMarker, start + startMarker.length());
+        assertTrue(end > start, "缺少基线结束标记: " + endMarker);
+        return source.substring(start, end);
+    }
+
+    /** 断言指定语义片段全部存在。 */
+    private static void assertContainsAll(String source, String... fragments) {
+        for (String fragment : fragments) {
+            assertTrue(source.contains(fragment), "Gunner 行为基线缺少片段: " + fragment);
+        }
+    }
+
+    /** 断言指定语义片段按现行权威顺序出现。 */
+    private static void assertOrdered(String source, String... fragments) {
+        int cursor = -1;
+        for (String fragment : fragments) {
+            int found = source.indexOf(fragment, cursor + 1);
+            assertTrue(found >= 0, "Gunner 行为基线缺少或顺序改变: " + fragment);
+            cursor = found;
+        }
+    }
+}
