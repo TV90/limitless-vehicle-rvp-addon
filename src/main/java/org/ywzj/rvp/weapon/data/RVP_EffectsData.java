@@ -73,6 +73,17 @@ public class RVP_EffectsData {
     @SerializedName("missile_native_trail_ground_wash")
     private Boolean missileNativeTrailGroundWash;
 
+    /**
+     * 发射段烟柱加粗倍率，默认 {@code 1.0}（关闭）。
+     *
+     * <p>只影响发射段：粒子尺寸倍率在<b>一级燃烧窗口内</b>（同步的 {@code motorBurnEndTick}，
+     * 即点火延迟 + 一级燃烧时长）随飞行进度线性回落到 1.0——发射时全额加粗、一级燃尽恢复
+     * 常规粗细，中段/末段尾迹不受影响。最终尺寸 = {@code missile_native_trail_particle_scale}
+     * × 本倍率（随进度衰减）。</p>
+     */
+    @SerializedName("missile_native_trail_launch_boost")
+    private Float missileNativeTrailLaunchBoost;
+
     /** 是否在推进燃烧期追加火焰，默认 null（按 true 处理）；仅推进弹体客户端表现生效。 */
     @SerializedName("missile_native_trail_extra_flame")
     private Boolean missileNativeTrailExtraFlame;
@@ -203,6 +214,19 @@ public class RVP_EffectsData {
     /** 是否配置了任一自定义尾迹风格（非空即真）；服务端据此跳过原生尾迹弹的广播路径。 */
     public boolean hasMissileNativeTrailParticleStyle() {
         return !getMissileNativeTrailParticleStyle().isEmpty();
+    }
+
+    /**
+     * 发射段烟柱加粗倍率；未配置或非法值返回 {@code 1.0}（关闭）。
+     * 下限 0；语义见字段注释——在一级燃烧窗口内随飞行进度线性回落到 1.0。
+     */
+    public float getMissileNativeTrailLaunchBoost() {
+        if (missileNativeTrailLaunchBoost == null
+                || Float.isNaN(missileNativeTrailLaunchBoost)
+                || Float.isInfinite(missileNativeTrailLaunchBoost)) {
+            return 1f;
+        }
+        return Math.max(missileNativeTrailLaunchBoost, 0f);
     }
 
     /**

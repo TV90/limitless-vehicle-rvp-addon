@@ -41,6 +41,7 @@
 | `missile_native_trail_particle_scale` | 尾迹粒子渲染尺寸倍率。与 `density_scale`（加数量）互补，本项放大**单个粒子**的渲染尺寸，是"变粗"的直接手段。 | `1.0` |
 | `missile_native_trail_particle_style` | 尾迹粒子风格：空 = 原版粒子；`rvp_smoke` = MCHR 风格翻滚烟团；`rvp_rocket_flame` = HBM 风格火箭尾焰（先火后烟柱状尾迹，详见下节）。 | 空 |
 | `missile_native_trail_ground_wash` | 发射段贴地烟浪开关。未写时按风格推导：`rvp_rocket_flame` 开启、其余关闭。 | 按风格 |
+| `missile_native_trail_launch_boost` | 发射段烟柱加粗倍率。只影响发射段：在一级燃烧窗口内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细。最终尺寸 = `particle_scale` × 本倍率（随进度衰减）。 | `1.0` |
 | `missile_native_trail_extra_flame` | ⚠️ 当前**无消费者**（历史上曾控制额外 `FLAME` 粒子，2026-09-04 优化头瞄后链路已删），配置无效。 | — |
 | `missile_native_trail_extra_smoke` | ⚠️ 同上，当前**无消费者**，配置无效。 | — |
 

@@ -4166,6 +4166,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // rvp_rocket_flame：HBM 风格火箭尾焰（先火后烟膨胀柱，初速沿弹轴反方向喷出）。
                 // 服务端无粒子渲染管线（桥为 NOOP），本方法本就只在客户端实体 Tick 中调用。
                 float particleScale = effects.getMissileNativeTrailParticleScale();
+                // 目的：发射段烟柱加粗（effects_data.missile_native_trail_launch_boost）——
+                // 在一级燃烧窗口（motorBurnEndTick = 点火延迟 + 一级燃烧时长，随生成数据包同步）
+                // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
+                float launchBoost = effects.getMissileNativeTrailLaunchBoost();
+                if (launchBoost != 1.0f) {
+                    float window = Math.max(this.motorBurnEndTick, 1);
+                    float fade = Mth.clamp(1.0f - getFlightTickCount() / window, 0.0f, 1.0f);
+                    particleScale *= 1.0f + (launchBoost - 1.0f) * fade;
+                }
                 // HBM ParticleRocketFlame：初速沿 -thrust（弹轴反方向）× 1.0，随阻尼 0.91/tick 后抛
                 Vec3 exhaust = rocketFlameStyle
                         ? this.getLookAngle().scale(-1.0D) : Vec3.ZERO;
