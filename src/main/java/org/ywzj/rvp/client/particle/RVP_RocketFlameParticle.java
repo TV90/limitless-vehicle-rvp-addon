@@ -51,11 +51,18 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private static final ResourceLocation PARTICLE_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
 
-    /** 独立半透明渲染类型：绑定 particle_base.png、标准 alpha 混合（与 MchrSmoke/白磷同款契约）。 */
+    /**
+     * 独立半透明渲染类型：绑定 particle_base.png、标准 alpha 混合。
+     *
+     * <p><b>深度只测不写</b>（{@code depthMask(false)}）——对齐核爆云/冲击波/MchrFlare 的
+     * 半透明约定（{@code RVP_ExplosionVisualManager}/{@code RVP_NuclearShockwaveRenderer} 同款）：
+     * 半透明烟若写深度，会把后续绘制的粒子/弹体切片挡死，多层叠加后载具实体完全不可见
+     * （2026-09-15 实机反馈修正）。深度<b>测试</b>保持开启，地形仍正常遮挡烟。</p>
+     */
     private static final ParticleRenderType RENDER_TYPE = new ParticleRenderType() {
         @Override
         public void begin(BufferBuilder builder, TextureManager textureManager) {
-            RenderSystem.depthMask(true);
+            RenderSystem.depthMask(false);
             RenderSystem.setShaderTexture(0, PARTICLE_TEXTURE);
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
@@ -218,6 +225,9 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         // 大发散只归属地面烟浪 WASH（其靠径向初速+尺寸膨胀发散，不走本系数）。
         float spread = this.mode == Mode.TRAIL ? 1.0f + 1.5f * ageRatio : 1.0f;
         int light = this.getLightColor(partialTicks);
+        // 目的：3 层抖动 quad 若每层都用全量 α（0.75），叠加等效不透明度 ≈ 1-(0.25)³ ≈ 98%，
+        // 烟柱即实心墙——层间按 1/N 分摊 α，叠加后 ≈ 58%，半透明可透见载具（核爆云观感）
+        float layerAlpha = this.alpha * (this.mode == Mode.TRAIL ? 1.0f / TRAIL_LAYERS : 1.0f);
         float u0 = this.getU0();
         float u1 = this.getU1();
         float v0 = this.getV0();
@@ -244,13 +254,13 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                 corner.add(cx, cy, cz);
             }
             buffer.vertex(corners[0].x(), corners[0].y(), corners[0].z()).uv(u1, v1)
-                    .color(this.rCol, this.gCol, this.bCol, this.alpha).uv2(light).endVertex();
+                    .color(this.rCol, this.gCol, this.bCol, layerAlpha).uv2(light).endVertex();
             buffer.vertex(corners[1].x(), corners[1].y(), corners[1].z()).uv(u1, v0)
-                    .color(this.rCol, this.gCol, this.bCol, this.alpha).uv2(light).endVertex();
+                    .color(this.rCol, this.gCol, this.bCol, layerAlpha).uv2(light).endVertex();
             buffer.vertex(corners[2].x(), corners[2].y(), corners[2].z()).uv(u0, v0)
-                    .color(this.rCol, this.gCol, this.bCol, this.alpha).uv2(light).endVertex();
+                    .color(this.rCol, this.gCol, this.bCol, layerAlpha).uv2(light).endVertex();
             buffer.vertex(corners[3].x(), corners[3].y(), corners[3].z()).uv(u0, v1)
-                    .color(this.rCol, this.gCol, this.bCol, this.alpha).uv2(light).endVertex();
+                    .color(this.rCol, this.gCol, this.bCol, layerAlpha).uv2(light).endVertex();
         }
     }
 
