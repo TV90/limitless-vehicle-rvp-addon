@@ -105,7 +105,32 @@ public final class RVP_ShootBoltQueueResolver {
     }
 
     /**
-     * 当前选中武器的 weaponId（字符串口径，供应用器做换弹种检测）。
+     * [RVP] 该武器站（沿母站链）在队列表中是否存在出弹队列（预热门控用）。
+     * 目的：就绪门控直接依赖队列表本身（登录同步/数据重载即重建），替代对
+     * {@code RVP_CustomMountConfigCache} 的等待——配置包晚于载具生成时，旧"200 tick
+     * 等不到配置即永久放弃"的门控会把客户端出弹点粘在挂点模板上。
+     */
+    public static boolean hasStationQueue(ResourceLocation vehicleId, WeaponUnit station) {
+        synchronized (QUEUE_LOCK) {
+            Map<String, Map<String, List<Bolt>>> stations = QUEUES.get(vehicleId);
+            if (stations == null || stations.isEmpty()) {
+                return false;
+            }
+            WeaponUnit current = station;
+            int guard = 0;
+            while (current != null && guard++ < 16) {
+                Map<String, List<Bolt>> perWeapon = stations.get(current.getId());
+                if (perWeapon != null && !perWeapon.isEmpty()) {
+                    return true;
+                }
+                current = current.getParentWeaponUnit();
+            }
+            return false;
+        }
+    }
+
+    /**
+     * [RVP] 当前选中武器的 weaponId（字符串口径，供应用器做换弹种检测）。
      * 无当前武器时返回空串。
      */
     public static String currentWeaponKey(WeaponUnit station) {

@@ -183,7 +183,11 @@ public class RVP_ClientArmState {
             if (root != null) {
                 RVP_WeaponLockStateTable.setArmPreselected(root, -1, -1, null);
             }
-            RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.clear());
+            // [RVP] 目的（2026-09-14 崩溃修复）：退出存档时连接已断开（getConnection()=null），
+            // SimpleChannel.sendToServer 会 NPE 崩游戏——本地状态已清空，跳过上报即可。
+            if (Minecraft.getInstance().getConnection() != null) {
+                RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.clear());
+            }
         }
     }
 
@@ -197,7 +201,10 @@ public class RVP_ClientArmState {
         if (key != lockedKeySent) {
             lockedKeySent = key;
             RVP_WeaponLockStateTable.setArmPreselected(root, lockedVehicleId, lockedRadarIndex, c.position());
-            RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.set(lockedVehicleId, lockedRadarIndex, c.position()));
+            // [RVP] 目的（2026-09-14 崩溃修复）：退出存档窗口期连接可能已断开，发包前防护
+            if (Minecraft.getInstance().getConnection() != null) {
+                RVP_Network.CHANNEL.sendToServer(C2SSetArmPreselect.set(lockedVehicleId, lockedRadarIndex, c.position()));
+            }
         }
     }
 
@@ -289,6 +296,12 @@ public class RVP_ClientArmState {
     }
 
     private static WeaponUnit getRoot() {
+        // [RVP] 目的（2026-09-14 崩溃修复）：退出存档时 LocalVehiclePlayer.getPlayer() 已为
+        // null，本体 getWeaponUnit() 内部直接解引用玩家坐标（LocalVehiclePlayer.java:656）
+        // 会 NPE 崩游戏；玩家离场后预选状态本就无需上报，返回 null 走调用方的清空/跳过分支。
+        if (LocalVehiclePlayer.instance.getPlayer() == null) {
+            return null;
+        }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) return null;
         return weaponUnit.getRootParentWeaponUnit();

@@ -7,9 +7,9 @@ import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.config.RVP_CustomMountConfig;
-import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.Bolt;
@@ -59,12 +59,8 @@ public final class RVP_ShootBoltQueueApplier {
      * {@link #RETRY_INTERVAL_TICKS} 节流重查，命中即应用并移出。
      */
     private static final Map<AbstractVehicle, Set<String>> MISS_RETRY = new ConcurrentHashMap<>();
-    /** [RVP] 配置缓存未就绪时的有限重试上限（tick，双端各计各的）：超过后按"确实无配置"放行。 */
-    private static final int CONFIG_WAIT_LIMIT_TICKS = 200;
     /** [RVP] miss 重试的节流间隔（tick）。 */
     private static final int RETRY_INTERVAL_TICKS = 10;
-    /** [RVP] PENDING 载具的配置等待计数（vehicle → 已重试 tick 数），成功/离开时清除。 */
-    private static final Map<AbstractVehicle, Integer> CONFIG_WAIT = new ConcurrentHashMap<>();
     /** [RVP] miss 重试节流计数器（onLevelTick 自增）。 */
     private static int retryTickCounter;
 
@@ -92,7 +88,10 @@ public final class RVP_ShootBoltQueueApplier {
         }
         ResourceLocation vehicleId = vehicle.getVehicleId();
         if (vehicleId == null) {
-            // 部件数据尚未就绪（initData 未完成），本次保持现状，join 预热/重试机制稍后补应用
+            // initData() 尚未完成，队列/部件未构建
+            if (RVP_DebugFlags.SHOOT_BOLT.isEnabled()) {
+                LOGGER.info("[RVP][出弹] 跳过 station={}：vehicleId 未就绪（initData 未完成）", station.getId());
+            }
             return;
         }
         Map<String, Applied> applied = APPLIED.computeIfAbsent(vehicle, key -> new ConcurrentHashMap<>());
@@ -101,12 +100,18 @@ public final class RVP_ShootBoltQueueApplier {
         long generation = RVP_ShootBoltQueueResolver.getTableGeneration();
         if (record != null && record.tableGeneration() == generation && record.weaponKey().equals(weaponKey)) {
             // 目的：口径与表版本均未变化，零开销直接返回
+            if (RVP_DebugFlags.SHOOT_BOLT.isEnabled()) {
+                LOGGER.info("[RVP][出弹] 幂等跳过 station={} key={}", station.getId(), weaponKey);
+            }
             return;
         }
-        // 目的：出弹队列查表（重载期预计算 + S2C 同步），本站未命中沿母武器站链回退
+        // 目的：出弹队列查表（重载期预计算 + S2C 同步），本站未命中沿母站链回退
         List<Bolt> queue = RVP_ShootBoltQueueResolver.lookupQueue(vehicleId, station, weaponKey);
         if (queue == null) {
             // 目的：查表未命中——登记节流重试，队列表就绪后自动补应用，不刷屏
+            if (RVP_DebugFlags.SHOOT_BOLT.isEnabled()) {
+                LOGGER.info("[RVP][出弹] 查表未命中 station={} weaponKey={}", station.getId(), weaponKey);
+            }
             MISS_RETRY.computeIfAbsent(vehicle, key -> ConcurrentHashMap.newKeySet())
                     .add(station.getId());
             return;
@@ -152,7 +157,6 @@ public final class RVP_ShootBoltQueueApplier {
             PENDING.remove(vehicle);
             APPLIED.remove(vehicle);
             MISS_RETRY.remove(vehicle);
-            CONFIG_WAIT.remove(vehicle);
         }
     }
 
@@ -172,10 +176,32 @@ public final class RVP_ShootBoltQueueApplier {
         for (AbstractVehicle vehicle : PENDING) {
             if (tryPrewarmVehicle(vehicle)) {
                 PENDING.remove(vehicle);
-                CONFIG_WAIT.remove(vehicle);
             }
         }
         retryMissQueues();
+    }
+
+    /**
+     * [RVP] 目的（2026-09-14）：玩家所乘载具的武器站每 tick 拉取出弹队列——
+     * 多弹种槽（weapons 数组独立弹）切弹后客户端 bolts 立即跟随当前口径，修复
+     * "切弹后从挂点出弹"（本体独立弹/部分开火路径不全部经过开火口兜底）。
+     * 仅客户端触发（ClientTickEvent 只在客户端 post）；ensureApplied 幂等
+     * （口径×表版本未变时零开销），每 tick 调用无性能问题。
+     */
+    @SubscribeEvent
+    public static void onClientTickPull(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || vehicle.isRemoved() || vehicle.getVehicleId() == null) {
+            return;
+        }
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof WeaponUnit station) {
+                ensureApplied(vehicle, station);
+            }
+        }
     }
 
     /**
@@ -190,33 +216,31 @@ public final class RVP_ShootBoltQueueApplier {
         }
         ResourceLocation vehicleId = vehicle.getVehicleId();
         if (vehicleId == null) {
-            // initData() 尚未执行（部件未构建），下 tick 重试
+            // initData() 尚未完成，队列/部件未构建
             return false;
         }
         // 目的：部件列表为空说明 initData 尚未完成，本轮无站可应用，下 tick 重试
-        //（EntityJoinLevelEvent 早于 onAddedToWorld/initData，join 当轮 partUnits=0 属正常）
+        //（EntityJoinLevelEvent 早于 initData，join 当轮 partUnits=0 属正常）
         if (vehicle.getPartUnits().isEmpty()) {
             return false;
         }
-        // 目的：读取本载具的挂架条目。
-        // [RVP] 配置缓存尚未就绪（联机 S2CVehicleRvpConfig 晚于载具 join 等）时有限重试，
-        // 超过上限按"确实无配置"放行（保持未配置载具零影响）；即便放行，
-        // 开火口的 ensureApplied 仍会在配置就绪后补应用。
-        List<RVP_CustomMountConfig> configs = RVP_CustomMountConfigCache.get(vehicleId);
-        if (configs.isEmpty()) {
-            int attempts = CONFIG_WAIT.merge(vehicle, 1, Integer::sum);
-            return attempts > CONFIG_WAIT_LIMIT_TICKS;
-        }
+        // [RVP] 目的（2026-09-14）：就绪门控改用出弹队列表本身（登录同步/数据重载即重建），
+        // 不再等待 RVP_CustomMountConfigCache——旧逻辑等不到配置缓存 200 tick 后永久放弃，
+        // 载具出弹点被永久粘在挂点模板（ea18g aim260 存档重进复现）。队列表未就绪/该载具
+        // 无出弹骨配置时保持 PENDING 低频等待（每 tick 幂等检查开销极低；载具卸载由
+        // leave 事件清理，无泄漏），就绪或 /reload 热加配置后自动补应用。
+        boolean anyApplied = false;
         for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (!(partUnit instanceof WeaponUnit station)) {
                 continue;
             }
-            if (!hasShootStructureBones(configs, station)) {
+            if (!RVP_ShootBoltQueueResolver.hasStationQueue(vehicleId, station)) {
                 continue;
             }
             ensureApplied(vehicle, station);
+            anyApplied = true;
         }
-        return true;
+        return anyApplied;
     }
 
     /** 目的：预热时查表未命中的站按节流间隔重查——队列表就绪后自动补预热。 */
@@ -241,16 +265,5 @@ public final class RVP_ShootBoltQueueApplier {
                 }
             }
         }
-    }
-
-    /** 目的：判断武器站是否有配置出弹骨的条目（无则完全不受本功能影响）。 */
-    private static boolean hasShootStructureBones(List<RVP_CustomMountConfig> configs, WeaponUnit station) {
-        for (RVP_CustomMountConfig config : configs) {
-            if (!config.shootStructureBones().isEmpty()
-                    && RVP_ShootBoltQueueResolver.matchesStation(station, config.partUnitId())) {
-                return true;
-            }
-        }
-        return false;
     }
 }
