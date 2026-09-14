@@ -324,8 +324,9 @@ public final class RVP_GuidanceRuntimeMath {
      *
      * <p>弹道为对称抛物线：高度 = {@code launch.y + max(8, apogee×4p(1-p))}，p 为水平进度
      * （0 发射点 → 1 目标），最高点（apogee）在弹道水平中段。apogee 自适应为
-     * {@code min(配置巡航高度, 水平射程×0.35)}，保证任意射程下爬升/下降角约 35°，
-     * 短射程不会因配置的巡航高度过高而形成 60°+ 陡尖弧。取代旧的“追 ascentPos 陡直线
+     * {@code min(配置巡航高度, 水平射程×0.50)}（2026-09-15 应用户要求从 0.35 上调——
+     * 抬高弹道顶点，爬升/下降角上限约 45°；当前载具包内仅 9M723 使用 PRESET 弹道），
+     * 仍保留射程比例上限，避免短射程下形成过陡尖弧。取代旧的“追 ascentPos 陡直线
      * 爬升 → 尖顶 → 高度闭环平飞”巡航式三段制导。</p>
      */
     static Vec3 steerPresetBallisticArc(
@@ -356,8 +357,8 @@ public final class RVP_GuidanceRuntimeMath {
             }
         }
         double p = Mth.clamp(1.0 - hDist / totalH, 0.0, 1.0);
-        // 自适应弹道顶点：过高 apogee 在短射程下会形成陡尖弧（60°+ 爬升）
-        double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.35);
+        // 自适应弹道顶点：过高 apogee 在短射程下会形成陡尖弧；0.50 = 射程的 50% 上限（原 0.35，抬高弹道）
+        double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.50);
         // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：全程单调平滑、无
         // 硬切换，竖直发射后追点自然略高于自身平滑转上爬，不会“压-拉-压”的蛇形振荡
         double base = Math.min(40.0, apogee * 0.3);
