@@ -88,6 +88,8 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private static final float SMOKE_GREY_MIN = 0.15f;
     /** 烟相位灰度随机幅度（保持单通道同值，避免逐通道独立随机产生彩色噪点）。 */
     private static final float SMOKE_GREY_SPREAD = 0.15f;
+    /** WASH 模式寿命末端的高宽比（白云扩散期压扁为横铺贴地形态；初始脏灰烟为 1:1 圆团）。 */
+    private static final float WASH_FLATTEN_END = 0.45f;
 
     /** 粒子模式。 */
     private final Mode mode;
@@ -246,10 +248,22 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         for (int layer = 0; layer < layers; layer++) {
             // 目的：每层独立掷半宽（层间尺寸差 + 位置抖动共同构成体积感）；曲线同 tick 期一致
             float quadSize = this.mode == Mode.TRAIL ? trailQuadSize(ageRatio) : this.getQuadSize(partialTicks);
-            // 目的：层间位置抖动营造体积感；XZ 小抖 + Y 大抖，幅度随寿命扩大（HBM spread 同源）
-            float jitterX = (float) this.random.nextGaussian() * 0.2f * spread;
-            float jitterY = (float) this.random.nextGaussian() * 0.5f * spread;
-            float jitterZ = (float) this.random.nextGaussian() * 0.2f * spread;
+            // 目的：层间位置抖动为 TRAIL 专属（体积感；XZ 小抖 + Y 大抖，幅度随寿命扩大）。
+            // WASH 严禁逐帧抖动——单层大 quad 每帧重掷高斯会呈现高频颤动（2026-09-15 实机反馈），
+            // 其位置只由径向初速 + 浮升驱动。
+            float jitterX = 0.0F;
+            float jitterY = 0.0F;
+            float jitterZ = 0.0F;
+            // 目的：WASH 随寿命压扁——初始脏灰烟 1:1 圆团，扩散发白期线性压到 0.45 高宽比
+            // （横铺的贴地扁白云；在 billboard 本地纵轴上缩放，朝向仍取相机旋转）
+            float yScale = 1.0F;
+            if (this.mode == Mode.TRAIL) {
+                jitterX = (float) this.random.nextGaussian() * 0.2f * spread;
+                jitterY = (float) this.random.nextGaussian() * 0.5f * spread;
+                jitterZ = (float) this.random.nextGaussian() * 0.2f * spread;
+            } else {
+                yScale = Mth.lerp(ageRatio, 1.0F, WASH_FLATTEN_END);
+            }
             Vector3f[] corners = new Vector3f[]{
                     new Vector3f(-1.0F, -1.0F, 0.0F),
                     new Vector3f(-1.0F, 1.0F, 0.0F),
@@ -260,6 +274,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             float cy = baseY + jitterY;
             float cz = baseZ + jitterZ;
             for (Vector3f corner : corners) {
+                corner.y *= yScale;
                 corner.rotate(rotation);
                 corner.mul(quadSize);
                 corner.add(cx, cy, cz);
