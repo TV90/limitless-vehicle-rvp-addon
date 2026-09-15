@@ -158,7 +158,9 @@ public final class RVP_AspectRcs {
                 }
             }
         }
-        return Mth.clamp(aspect * bayFactor, 0.01D, 100.0D);
+        // 目的：连乘后封顶 1（2026-09-16 用户定版）——弹舱开启只能吃掉隐身裕度、
+        // 让 RCS 回到"不隐身"基准，不会比不隐身更显眼。
+        return Mth.clamp(aspect * bayFactor, 0.01D, 1.0D);
     }
 
     /** 供外部判断载具是否配置了剖面（未配置 = 无隐身行为）。 */

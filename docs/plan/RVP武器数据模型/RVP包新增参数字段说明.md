@@ -1171,8 +1171,8 @@ velocity = worldDown × cos(theta) × launch_speed
 | `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
 | `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
 | `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。HUD 限位圈与锁定保持判定共用本基准（2026-09-15 修复：此前限位圈恒按 `true` 基准绘制、与 `false` 判定锥错位，导致大离轴"圈内却脱锁"、锁定音消失）。 | `boolean` | `false` |
-| `rvp_radar_rcs_factor` | 载具顶层 RVP 扩展字段，分角度 RCS 雷达隐身（借鉴 MCH-Reforged）。`[front, side, rear]` 三档因子：方位角 = 载具 yRot 前向与"载具→雷达站"水平连线夹角，段内（0~90°、90~180°）按 sin³ 缓动插值（曲线强度 CURVE_POWER 类内常量可调）。雷达有效发现距离 = `max_scan_distance` × 因子（× 本体 `radar_cross_section` × 开启弹舱 `open_radar_rcs_multiplier` 连乘）。作用范围：玩家车客户端雷达探测表（mechanical/phase 通用）与来袭 ARH 主动雷达弹导引头获取距离；gunner AI、RADAR_SEARCH 告警、AIR 主动红外不受影响；已锁定目标跟踪保持不乘因子。缺省 `[1,1,1]`。 | `[1,1,1]` |
-| `open_radar_rcs_multiplier` | 弹舱部件条目字段（weapon_bay 的 parts 条目）：该弹舱**开启时**的 RCS 增幅倍率，逐弹舱独立设置（如隐身化侧弹舱 1.2、主弹舱 3.0），多弹舱全开连乘。缺省 `1.0`（开舱无影响）。 | `1.0` |
+| `rvp_radar_rcs_factor` | 载具顶层 RVP 扩展字段，分角度 RCS 雷达隐身（借鉴 MCH-Reforged）。`[front, side, rear]` 三档因子：方位角 = 载具 yRot 前向与"载具→雷达站"水平连线夹角，段内（0~90°、90~180°）按 sin³ 缓动插值（曲线强度 CURVE_POWER 类内常量可调）。雷达有效发现距离 = `max_scan_distance` × 因子（× 本体 `radar_cross_section` × 开启弹舱 `open_radar_rcs_multiplier` 连乘）。作用范围：玩家车客户端雷达探测表（mechanical/phase 通用）与来袭 ARH 主动雷达弹导引头获取距离；gunner AI、RADAR_SEARCH 告警、AIR 主动红外不受影响；已锁定目标跟踪保持不乘因子。各因子与弹舱增幅连乘后**封顶 1**（隐身只能回退到不隐身基准，不会反向增透）。缺省 `[1,1,1]`。 | `[1,1,1]` |
+| `open_radar_rcs_multiplier` | 弹舱部件条目字段（weapon_bay 的 parts 条目）：该弹舱**开启时**的 RCS 增幅倍率，逐弹舱独立设置（如隐身化侧弹舱 1.2、主弹舱 3.0），多弹舱全开连乘，连乘结果与分角度因子相乘后**封顶 1**。缺省 `1.0`（开舱无影响）。 | `1.0` |
 | `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
 | `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
