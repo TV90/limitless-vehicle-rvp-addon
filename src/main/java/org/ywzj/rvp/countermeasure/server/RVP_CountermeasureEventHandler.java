@@ -58,7 +58,7 @@ public final class RVP_CountermeasureEventHandler {
         if (server == null) {
             return;
         }
-        long gameTime = 0;
+        long gameTime = 0L;
         for (ServerLevel level : server.getAllLevels()) {
             gameTime = level.getGameTime();
             // 先快照载具列表再 tick：level.getEntities().getAll() 返回活列表，
@@ -73,9 +73,10 @@ public final class RVP_CountermeasureEventHandler {
             for (AbstractVehicle vehicle : vehicles) {
                 RVP_CountermeasureRuntimeManager.tick(vehicle);
             }
+            // 调用本项目组网表按当前维度的时钟清理过期记录，避免跨维度 gameTime 差异误删有效窗口。
+            org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet.onServerTick(
+                    level.dimension().location(), gameTime);
         }
         RVP_ChaffJamState.onServerTick(gameTime);
-        // 调用本项目组网交战侧表：同 faction gunner 已交战目标降权窗口的过期清理
-        org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet.onServerTick(gameTime);
     }
 }

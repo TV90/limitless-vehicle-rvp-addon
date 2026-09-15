@@ -434,12 +434,12 @@ RotaryWingVehicle -> 旋翼攻击/脱离阶段
 
 ### 9.1 本车雷达
 
-`GunnerBrain.tickRadarLock()` 在以下情况工作：
+阶段 B 后，本车雷达锁由 `RVP_GunnerRadarActions.maintainLocalLock()` 维护（由 `GunnerBrain.tick()` 每 tick 调用）。它在以下情况工作：
 
 - 当前武器站火控传感器为 RF；或
 - 武器组内存在一把能打当前目标的 ARH/SARH 武器。
 
-它会自动打开雷达，取首选锁定雷达，检查距离和雷达转角，调用 `detect()`，再把锁定写到 `RadarUnit` 和 root `WeaponUnit`。目标玩家若坐在载具内，会归一化为目标载具。
+有效目标时，它会自动打开雷达，取首选锁定雷达，检查距离和雷达转角，调用 `detect()`，再把锁定写到 `RadarUnit` 和 root `WeaponUnit`。目标玩家若坐在载具内，会归一化为目标载具。目标为空或死亡时，动作适配器清除该武器站全部雷达部件锁及 root `WeaponUnit` 锁，避免目标 RWR 持续显示锁定或 SARH 中继挂空；该清理覆盖目标被分角度 RCS 感知过滤而丢失的情况。
 
 由于 Gunner 没有玩家客户端向服务端回写雷达探测结果，`RVP_RadarScanService` 每 4 tick 为 Gunner 驾驶载具执行服务端扫描，每 2 tick 保活仍在扫描体积中的接触；这是导弹制导校验、火控锁定和远程可见性读取服务端 `detectedEntities` 的基础。
 
