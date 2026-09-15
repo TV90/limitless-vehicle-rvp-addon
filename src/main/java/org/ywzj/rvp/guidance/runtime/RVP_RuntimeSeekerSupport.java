@@ -12,6 +12,8 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
+import org.ywzj.rvp.radar.RVP_AspectRcs;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.rvp.guidance.RVP_GuidanceTargetUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -135,7 +137,14 @@ final class RVP_RuntimeSeekerSupport {
                     || !isRadarScannable(entity)) {
                 continue;
             }
-            if (entity.distanceToSqr(projectile) > range * range) {
+            // 目的：分角度 RCS + 弹舱开启增幅（2026-09-16）——载具目标的导引头截获距离
+            // 按"扫描半径 × 综合隐身因子"缩放（正面隐身机要贴近才可被截获）。
+            // 仅雷达导引头分支生效；AIR 主动红外不受 RCS 影响。非载具（HBM 导弹）因子 1。
+            double effectiveRange = range;
+            if (entity instanceof AbstractVehicle targetVehicle) {
+                effectiveRange = range * RVP_AspectRcs.combinedFactor(targetVehicle, pos);
+            }
+            if (entity.distanceToSqr(projectile) > effectiveRange * effectiveRange) {
                 continue;
             }
             if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
@@ -143,7 +152,7 @@ final class RVP_RuntimeSeekerSupport {
             }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pos);
             double angle = RVP_GuidanceTargetUtil.angleBetween(look, toTarget);
-            double score = angle * 4.0 + entity.distanceTo(projectile) / Math.max(range, 1.0);
+            double score = angle * 4.0 + entity.distanceTo(projectile) / Math.max(effectiveRange, 1.0);
             if (score < bestScore) {
                 bestScore = score;
                 best = entity;
