@@ -16,6 +16,7 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
@@ -46,7 +47,8 @@ public final class GunnerTargeting {
         // O(实体) 遍历已加载实体，替代 ±radius（带雷达时可达数千格）立方体 getEntities（服务端掉 TPS）
         List<Entity> entities = collectTargetEntities(vehicle, radius,
                 entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
-                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
+                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity)
+                        && passesAspectPerception(vehicle, entity, radius));
         // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
         //（即使它是唯一候选；交战者本人不受限），排除后再做未交战/排斥两池
         List<Entity> rvpAmmo = entities.stream()
@@ -127,6 +129,21 @@ public final class GunnerTargeting {
         return tier.stream()
                 .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                 .orElse(null);
+    }
+
+    /**
+     * [RVP] gunner 索敌的分角度 RCS 感知（2026-09-16）：载具目标的有效感知距离 =
+     * 索敌半径 × 综合隐身因子（{@code rvp_radar_rcs_factor} 分角度插值 × 开启弹舱增幅）——
+     * 正面隐身的载具要逼近到很近才会被 gunner 索敌发现；非载具目标（导弹/步行玩家等）不受影响。
+     * 仅作用于索敌收集：已锁定目标的跟踪保持不查此项（探测难、跟踪易）。
+     */
+    private static boolean passesAspectPerception(AbstractVehicle observer, Entity entity, double radius) {
+        if (!(entity instanceof AbstractVehicle targetVehicle)) {
+            return true;
+        }
+        double factor = RVP_AspectRcs.combinedFactor(targetVehicle, observer.position());
+        double effective = radius * factor;
+        return observer.position().distanceToSqr(entity.position()) <= effective * effective;
     }
 
     /** 玩家目标：玩家本体，或由玩家驾驶的载具（已通过 isValidTarget 的敌我过滤，此处只需分类）。 */
