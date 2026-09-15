@@ -146,7 +146,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         double angle = level.random.nextDouble() * Math.PI * 2.0D;
         double horizontal = 0.5D + level.random.nextDouble() * 0.4D;
         return new RVP_RocketFlameParticle(level, Mode.WASH, x, y, z,
-                Math.cos(angle) * horizontal, 0.05D, Math.sin(angle) * horizontal, sizeScale);
+                Math.cos(angle) * horizontal, 0.02D, Math.sin(angle) * horizontal, sizeScale);
     }
 
     @Override
@@ -166,13 +166,16 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             this.zd *= 0.91D;
             this.move(this.xd, this.yd, this.zd);
         } else {
-            // HBM ParticleSmokePlume：阻尼 0.925；尺寸线性膨胀，膨胀量转为浮升速度
+            // HBM ParticleSmokePlume：阻尼 0.925；尺寸线性膨胀，膨胀量转浮升——
+            // 但浮升随寿命衰减（riseScale 1→0.2）：趋白压扁期云贴地摊开而不是升空飘走
+            //（原恒定浮升一生累计上升 ~4-5 格，2026-09-15 实机反馈"白云直接飘上去"）
             this.xd *= 0.925D;
             this.yd *= 0.925D;
             this.zd *= 0.925D;
             float prevQuad = this.quadSize;
             this.quadSize = Mth.lerp((float) this.age / this.lifetime, 0.3f * this.sizeScale, this.washEndQuad);
-            this.move(this.xd, this.yd + (this.quadSize - prevQuad), this.zd);
+            float riseScale = 1.0f - 0.8f * ((float) this.age / this.lifetime);
+            this.move(this.xd, (this.yd + (this.quadSize - prevQuad)) * riseScale, this.zd);
         }
         this.applyTrailCurve((float) this.age / this.lifetime);
     }

@@ -55,11 +55,12 @@ public final class GunnerTargeting {
             // 导弹（窗口 = profile engagement_net_cooldown_tick）沉入第二池，优先在"未交战"
             // 池中选最优；全部候选均已交战时忽略降权照常选择（降权非禁选，仍有弹的继续打）。
             // 多台同 faction 防空车面对一波来袭时弹幕自动分配到不同导弹上。
-            long netWindow = profile.getEngagementNetCooldownTick();
-            if (netWindow > 0) {
+            if (profile.getEngagementNetCooldownTick() > 0) {
+                // 窗口（随交战距离滑动，见 GunnerBrain.computeEngagementNetWindow）在记账时
+                // 已烘进侧表截止 tick，查询端只需判断是否仍在窗口内
                 List<Entity> fresh = rvpAmmo.stream()
                         .filter(entity -> !RVP_GunnerEngagementNet.isRecentlyEngaged(
-                                vehicle.level(), gunner.getProfileFaction(), entity, netWindow))
+                                vehicle.level(), gunner.getProfileFaction(), entity))
                         .toList();
                 if (!fresh.isEmpty()) {
                     rvpAmmo = fresh;
@@ -486,10 +487,20 @@ public final class GunnerTargeting {
         if (candidates.isEmpty()) {
             return null;
         }
+        // 目的：组网智能拦截的真正读取点（2026-09-15 修复）——炮车选来袭导弹走的根本不是
+        // findBestTarget 的导弹层，而是本 CIWS 层（tickTargeting 每 tick 优先走这里）；此前
+        // 组网表只写在 findBestTarget 侧导致组网形同虚设。两池逻辑：优先在"未被同 faction
+        // 网络交战"的候选里选最近；全部已交战则回退全候选照常选（降权非禁选——单一来袭时
+        // fresh 池必然为空，回退后照常拦截）。窗口在记账时已烘进截止 tick，此处只判过期。
+        List<Entity> freshCandidates = candidates.stream()
+                .filter(entity -> !RVP_GunnerEngagementNet.isRecentlyEngaged(
+                        vehicle.level(), gunner.getProfileFaction(), entity))
+                .toList();
+        List<Entity> pool = freshCandidates.isEmpty() ? candidates : freshCandidates;
         Vec3 gunnerPos = gunner.position();
         Entity best = null;
         double bestDistSqr = Double.MAX_VALUE;
-        for (Entity entity : candidates) {
+        for (Entity entity : pool) {
             double distSqr = gunnerPos.distanceToSqr(entity.position());
             if (distSqr < bestDistSqr) {
                 bestDistSqr = distSqr;
