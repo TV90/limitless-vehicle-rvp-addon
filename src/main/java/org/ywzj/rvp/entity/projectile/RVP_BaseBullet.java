@@ -4169,12 +4169,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 目的：发射段烟柱加粗（effects_data.missile_native_trail_launch_boost）——
                 // 在一级燃烧窗口（motorBurnEndTick = 点火延迟 + 一级燃烧时长，随生成数据包同步）
                 // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
-                float launchBoost = effects.getMissileNativeTrailLaunchBoost();
-                if (launchBoost != 1.0f) {
-                    float window = Math.max(this.motorBurnEndTick, 1);
-                    float fade = Mth.clamp(1.0f - getFlightTickCount() / window, 0.0f, 1.0f);
-                    particleScale *= 1.0f + (launchBoost - 1.0f) * fade;
-                }
+                particleScale *= resolveLaunchBoostFactor(effects);
                 // HBM ParticleRocketFlame：初速沿 -thrust（弹轴反方向）× 1.0，随阻尼 0.91/tick 后抛
                 Vec3 exhaust = rocketFlameStyle
                         ? this.getLookAngle().scale(-1.0D) : Vec3.ZERO;
@@ -4227,11 +4222,29 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         float washScale = effects.getMissileNativeTrailParticleScale();
+        // 目的：烟浪滞留时长与扩散范围跟随"尾迹尺寸 × 发射段加粗"提升——
+        // 粒子侧按 sizeScale 等比放大寿命与膨胀末端，发射段加粗窗口内同样全额生效
+        washScale *= resolveLaunchBoostFactor(effects);
         // 每 tick 8 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
         for (int i = 0; i < 8; i++) {
             RVP_ClientActionsAccess.addLaunchWashParticle(
                     this.getX(), groundY + 0.5D, this.getZ(), washScale);
         }
+    }
+
+    /**
+     * 发射段加粗系数（{@code missile_native_trail_launch_boost}）：在一级燃烧窗口
+     * （{@code motorBurnEndTick}）内随飞行进度从全额线性回落到 1.0；未配置（1.0）时快速返回。
+     * 供空中尾迹与地面烟浪共同使用，保证两者发射段观感同步提升。
+     */
+    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {
+        float boost = effects.getMissileNativeTrailLaunchBoost();
+        if (boost == 1.0f) {
+            return 1.0f;
+        }
+        float window = Math.max(this.motorBurnEndTick, 1);
+        float fade = Mth.clamp(1.0f - getFlightTickCount() / window, 0.0f, 1.0f);
+        return 1.0f + (boost - 1.0f) * fade;
     }
 
     protected boolean isHeavyProjectile() {

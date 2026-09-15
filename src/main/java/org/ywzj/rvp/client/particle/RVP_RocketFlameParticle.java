@@ -93,8 +93,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private final Mode mode;
     /** 尺寸倍率（effects_data.missile_native_trail_particle_scale 透传）。 */
     private final float sizeScale;
-    /** WASH 模式寿命末端目标半宽（0.25 → 该值 × sizeScale 线性膨胀）；TRAIL 模式不使用。 */
+    /** WASH 模式寿命末端目标半宽（0.3 → 该值 × sizeScale 线性膨胀）；TRAIL 模式不使用。 */
     private float washEndQuad;
+    /** WASH 模式出生时的脏灰基调（中末期向近白过渡的起点）；TRAIL 模式不使用。 */
+    private float washBirthGrey = 0.5f;
 
     private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
                                     double x, double y, double z,
@@ -112,9 +114,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
             this.lifetime = 45 + this.random.nextInt(20);
         } else {
-            // HBM ParticleSmokePlume：寿命 80~100t，0.3 起步线性膨胀到 3.0（地面冲刷烟浪是
-            // "大发散"的归属地——空中 TRAIL 末端发散已收敛，见 render 的 spread 注释）
-            this.lifetime = 80 + this.random.nextInt(20);
+            // HBM ParticleSmokePlume：寿命 80~100t 基准，随尺寸倍率（尾迹 scale × 发射段加粗）
+            // 等比提升滞留时长——烟越大滞留越久（2026-09-15 实机需求），钳制 [40, 600] 防极端配置
+            this.lifetime = Mth.clamp(
+                    Math.round((80 + this.random.nextInt(20)) * Math.max(sizeScale, 0.25f)), 40, 600);
             this.washEndQuad = 3.0f * this.sizeScale;
             this.quadSize = 0.3f * this.sizeScale;
         }
@@ -181,13 +184,19 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
      */
     private void applyTrailCurve(float ageRatio) {
         if (this.mode != Mode.TRAIL) {
-            // WASH：随机灰出生时定色、线性淡出
+            // WASH：出生定脏灰基调；中末期向近白过渡（凝结云观感）+ 线性淡出
             if (this.age == 0) {
-                float grey = 0.25f + this.random.nextFloat() * 0.5f;
-                this.rCol = grey;
-                this.gCol = grey;
-                this.bCol = grey;
+                washBirthGrey = 0.25f + this.random.nextFloat() * 0.5f;
             }
+            // 目的：中末期趋白——whiten 权重在寿命 30%~70% 间 smoothstep 爬升、封顶 0.9 混合
+            // （保留一点灰底纹理，不至纯白平板）
+            float whiten = Mth.clamp((ageRatio - 0.3f) / 0.4f, 0.0f, 1.0f);
+            whiten = whiten * whiten * (3.0f - 2.0f * whiten);
+            float whiteBlend = whiten * 0.9f;
+            float color = Mth.lerp(whiteBlend, washBirthGrey, 0.95f);
+            this.rCol = color;
+            this.gCol = color;
+            this.bCol = color;
             this.alpha = (1.0f - ageRatio) * 0.9f;
             return;
         }
