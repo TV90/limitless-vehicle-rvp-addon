@@ -408,6 +408,12 @@ public final class GunnerBrain {
         if (isSelfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);
         }
+        // 调用本项目组网交战侧表：把本次射击目标记入同 faction 网络——窗口内其它 gunner 的
+        // 可拦截导弹选择层会优先选未交战目标（组网智能拦截，降权非禁选）
+        AbstractVehicle engagementVeh = weaponUnit.getVehicle();
+        if (engagementVeh != null) {
+            RVP_GunnerEngagementNet.markEngaged(engagementVeh.level(), gunner.getProfileFaction(), target);
+        }
     }
 
     /**

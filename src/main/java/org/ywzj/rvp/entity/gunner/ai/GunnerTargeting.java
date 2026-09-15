@@ -51,6 +51,20 @@ public final class GunnerTargeting {
                 .filter(entity -> isInterceptableRvpProjectile(entity))
                 .toList();
         if (!rvpAmmo.isEmpty()) {
+            // 目的：组网智能拦截（2026-09-15）——同 faction 网络内已被任一 gunner 射击过的
+            // 导弹（窗口 = profile engagement_net_cooldown_tick）沉入第二池，优先在"未交战"
+            // 池中选最优；全部候选均已交战时忽略降权照常选择（降权非禁选，仍有弹的继续打）。
+            // 多台同 faction 防空车面对一波来袭时弹幕自动分配到不同导弹上。
+            long netWindow = profile.getEngagementNetCooldownTick();
+            if (netWindow > 0) {
+                List<Entity> fresh = rvpAmmo.stream()
+                        .filter(entity -> !RVP_GunnerEngagementNet.isRecentlyEngaged(
+                                vehicle.level(), gunner.getProfileFaction(), entity, netWindow))
+                        .toList();
+                if (!fresh.isEmpty()) {
+                    rvpAmmo = fresh;
+                }
+            }
             return rvpAmmo.stream()
                     .min(Comparator.comparingDouble(entity -> score(vehicle, weaponUnit, entity, launcher)))
                     .orElse(null);
@@ -285,11 +299,15 @@ public final class GunnerTargeting {
         return true;
     }
 
+    /**
+     * 创造/旁观玩家无条件免攻击（2026-09-15 与用户定版）：生存/冒险攻击，创造与旁观永不攻击。
+     * 原实现为"创造 + 非困难难度"才保护（困难难度创造可被打），现已移除难度例外。
+     */
     private static boolean isProtectedCreativePlayer(AbstractVehicle sourceVehicle, Player player) {
         if (player.isSpectator()) {
             return true;
         }
-        return player.isCreative() && sourceVehicle.level().getDifficulty() != Difficulty.HARD;
+        return player.isCreative();
     }
 
     private static boolean hasProtectedCreativePassenger(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {
