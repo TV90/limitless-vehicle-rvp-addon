@@ -413,11 +413,11 @@ public final class GunnerBrain {
         if (isSelfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);
         }
-        // 调用本项目组网交战侧表：实际发射时刷新目标的网络降权截止 tick（随距离滑动的窗口）
+        // 调用本项目组网交战侧表：实际发射记账——60t 限位硬禁（对本人不生效）+ 随距离滑动的排斥窗
         AbstractVehicle engagementVeh = weaponUnit.getVehicle();
         if (engagementVeh != null) {
             RVP_GunnerEngagementNet.markEngaged(engagementVeh.level(), gunner.getProfileFaction(), target,
-                    computeEngagementNetWindow(engagementVeh, target, profile));
+                    gunner, computeEngagementNetWindow(engagementVeh, target, profile));
         }
     }
 
@@ -434,7 +434,8 @@ public final class GunnerBrain {
         }
         long window = computeEngagementNetWindow(vehicle, target, profile);
         if (window > 0) {
-            RVP_GunnerEngagementNet.markEngaged(vehicle.level(), gunner.getProfileFaction(), target, window);
+            // 跟踪记账只刷新排斥窗（不重置他人限位硬禁，周期性重扫描不会无限续期）
+            RVP_GunnerEngagementNet.markTracked(vehicle.level(), gunner.getProfileFaction(), target, window);
         }
     }
 

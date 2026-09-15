@@ -12,53 +12,98 @@ import java.util.UUID;
 /**
  * [RVP] 同 faction gunner 组网交战网络侧表（"组网智能拦截"）。
  *
- * <p>记录每个维度内、各 faction 最近被本 faction 任一 gunner 交战（选为跟踪目标或射击）
- * 的目标截止 tick，供 {@code GunnerTargeting.findBestTarget} 的可拦截导弹层做<b>降权</b>：
- * 某目标在窗口内已被同 faction 任何 gunner 交战，则该 gunner 优先选择其它未交战目标——
- * 拦截作业时多台防空车不再全体重复锁同一枚最近的导弹，弹幕自动分配到不同来袭目标上。</p>
- *
- * <p>语义（2026-09-15 与用户定版）：<b>降权而非禁选</b>——当所有候选都已被交战时，
- * 忽略降权照常选择（仍有弹的 gunner 继续打击）；窗口过后目标恢复可选。窗口随交战时
- * 射手与目标的距离滑动（近距离 100t、远距离 200t，由调用方计算后传入），记账点包括
- * "开始跟踪新目标"（覆盖选中但延迟开火的窗口）与"实际发射"（刷新窗口）。</p>
- *
- * <p>结构仿 {@code RVP_ChaffJamState}：静态 Map + 每服务端 tick 懒清理；服务端专用
- * （gunner AI 与射击记账均在服务端），无客户端读取路径。记账频率 = 发射/换目标事件级，
- * 查询频率 = 每 gunner 扫描周期 O(候选数) 哈希查表，无可测量 TPS 开销。</p>
+ * <p>记录每个维度内、各 faction 最近被本 faction 任一 gunner 交战的目标，供
+ * {@code GunnerTargeting.findCiwsTarget} / {@code findBestTarget} 的可拦截导弹层做两级限制
+ * （2026-09-15 与用户定版）：</p>
+ * <ul>
+ *   <li><b>限位窗口（硬禁，{@value #HARD_LOCK_TICKS} tick）</b>：交战后前 60 tick，除交战者
+ *       本身外的同 faction gunner <b>不可选择</b>该目标——即使它是唯一候选（多枚拦截弹不往
+ *       同一枚来袭导弹上倾泻）；</li>
+ *   <li><b>排斥窗口（软降权，随交战距离滑动 100~200 tick，由调用方按距离计算传入）</b>：
+ *       限位过期后仍降权——其它 gunner 仅在不存在未交战候选时才回退选择它；窗口过后恢复可选。</li>
+ * </ul>
+ * <p>记账点两处：实际发射（硬禁 + 排斥同时记账，交战者 = 射手本人）与开始跟踪新目标
+ * （仅刷新排斥窗，覆盖"已选中但延迟开火"的空隙，不重置他人硬禁）。结构仿
+ * {@code RVP_ChaffJamState}：静态 Map + 每服务端 tick 懒清理；服务端专用，无可测量 TPS 开销。</p>
  */
 public final class RVP_GunnerEngagementNet {
 
+    /** 限位窗口（硬禁）时长：交战后除交战者本人外其它同 faction gunner 不可选择的时长。 */
+    public static final long HARD_LOCK_TICKS = 60L;
+
     private record Key(ResourceLocation dimension, RVP_EnumGunnerFaction faction, UUID targetUuid) {}
 
-    /** 键 → 降权截止 gameTime（超过即恢复可选并清理）。 */
-    private static final Map<Key, Long> ENGAGED_UNTIL = new HashMap<>();
+    /** 单条交战记录：排斥窗截止 / 硬禁截止 / 交战者（硬禁对其本人不生效，null = 仅跟踪记账无交战者）。 */
+    private record Engagement(long engagedUntil, long hardLockedUntil, UUID engager) {}
+
+    private static final Map<Key, Engagement> ENGAGEMENTS = new HashMap<>();
 
     private RVP_GunnerEngagementNet() {
     }
 
     /**
-     * 记录一次交战：faction 网络内该目标在 {@code windowTick} 内进入其它 gunner 的降权窗口。
-     * 后续记账（如期发射）会刷新截止 tick。
+     * 发射记账：硬禁（{@value #HARD_LOCK_TICKS} tick，对交战者 {@code shooter} 本人不生效）+
+     * 排斥窗（{@code windowTick}，随交战距离滑动）同时记入。
      */
-    public static void markEngaged(Level level, RVP_EnumGunnerFaction faction, Entity target, long windowTick) {
+    public static void markEngaged(Level level, RVP_EnumGunnerFaction faction, Entity target,
+                                   Entity shooter, long windowTick) {
+        if (level == null || faction == null || target == null || !target.isAlive()
+                || windowTick <= 0 || shooter == null) {
+            return;
+        }
+        long now = level.getGameTime();
+        ENGAGEMENTS.put(new Key(level.dimension().location(), faction, target.getUUID()),
+                new Engagement(now + windowTick, now + HARD_LOCK_TICKS, shooter.getUUID()));
+    }
+
+    /**
+     * 跟踪记账：仅刷新排斥窗（覆盖"已选中但延迟开火"的空隙），<b>不重置</b>已有的
+     * 限位硬禁与交战者——周期性重扫描同一目标不会无限续期硬禁。
+     */
+    public static void markTracked(Level level, RVP_EnumGunnerFaction faction, Entity target, long windowTick) {
         if (level == null || faction == null || target == null || !target.isAlive() || windowTick <= 0) {
             return;
         }
-        ENGAGED_UNTIL.put(new Key(level.dimension().location(), faction, target.getUUID()),
-                level.getGameTime() + windowTick);
+        Key key = new Key(level.dimension().location(), faction, target.getUUID());
+        Engagement existing = ENGAGEMENTS.get(key);
+        long softUntil = level.getGameTime() + windowTick;
+        if (existing == null) {
+            ENGAGEMENTS.put(key, new Engagement(softUntil, 0L, null));
+        } else {
+            ENGAGEMENTS.put(key, new Engagement(softUntil, existing.hardLockedUntil(), existing.engager()));
+        }
     }
 
-    /** 目标是否处于本 faction 网络的降权窗口内（任一同 faction gunner 交战过且未到期）。 */
+    /**
+     * 目标当前是否对 {@code gunner} 处于限位硬禁期（{@value #HARD_LOCK_TICKS} tick 内被
+     * <b>其它</b>同 faction gunner 交战过）。硬禁期目标从该 gunner 的候选中完全排除——
+     * 即使它是唯一候选；交战者本人不受影响。
+     */
+    public static boolean isHardLockedFor(Level level, RVP_EnumGunnerFaction faction,
+                                          Entity target, Entity gunner) {
+        if (level == null || faction == null || target == null || gunner == null) {
+            return false;
+        }
+        Engagement engagement = ENGAGEMENTS.get(new Key(level.dimension().location(), faction, target.getUUID()));
+        if (engagement == null || level.getGameTime() >= engagement.hardLockedUntil()) {
+            return false;
+        }
+        UUID engager = engagement.engager();
+        return engager != null && !engager.equals(gunner.getUUID());
+    }
+
+    /** 目标是否处于本 faction 网络的排斥窗内（任一同 faction gunner 交战过且未到期）。 */
     public static boolean isRecentlyEngaged(Level level, RVP_EnumGunnerFaction faction, Entity target) {
         if (level == null || faction == null || target == null) {
             return false;
         }
-        Long until = ENGAGED_UNTIL.get(new Key(level.dimension().location(), faction, target.getUUID()));
-        if (until == null) {
+        Key key = new Key(level.dimension().location(), faction, target.getUUID());
+        Engagement engagement = ENGAGEMENTS.get(key);
+        if (engagement == null) {
             return false;
         }
-        if (level.getGameTime() >= until) {
-            ENGAGED_UNTIL.remove(new Key(level.dimension().location(), faction, target.getUUID()));
+        if (level.getGameTime() >= engagement.engagedUntil()) {
+            ENGAGEMENTS.remove(key);
             return false;
         }
         return true;
@@ -66,6 +111,6 @@ public final class RVP_GunnerEngagementNet {
 
     /** 服务端每 tick 清理过期条目，避免内存膨胀。 */
     public static void onServerTick(long gameTime) {
-        ENGAGED_UNTIL.entrySet().removeIf(entry -> gameTime >= entry.getValue());
+        ENGAGEMENTS.entrySet().removeIf(entry -> gameTime >= entry.getValue().engagedUntil());
     }
 }

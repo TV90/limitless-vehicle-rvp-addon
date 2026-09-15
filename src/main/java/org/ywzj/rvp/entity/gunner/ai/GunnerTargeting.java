@@ -47,8 +47,12 @@ public final class GunnerTargeting {
         List<Entity> entities = collectTargetEntities(vehicle, radius,
                 entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
+        // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
+        //（即使它是唯一候选；交战者本人不受限），排除后再做未交战/排斥两池
         List<Entity> rvpAmmo = entities.stream()
-                .filter(entity -> isInterceptableRvpProjectile(entity))
+                .filter(entity -> isInterceptableRvpProjectile(entity)
+                        && !RVP_GunnerEngagementNet.isHardLockedFor(
+                                vehicle.level(), gunner.getProfileFaction(), entity, gunner))
                 .toList();
         if (!rvpAmmo.isEmpty()) {
             // 目的：组网智能拦截（2026-09-15）——同 faction 网络内已被任一 gunner 射击过的
@@ -91,8 +95,13 @@ public final class GunnerTargeting {
             // 优先级3：玩家（或玩家驾驶的载具）
             return pickBestInTier(gunner, vehicle, weaponUnit, profile, playerTargets, launcher);
         }
-        // 优先级4：其它有效目标
-        return pickBestInTier(gunner, vehicle, weaponUnit, profile, entities, launcher);
+        // 优先级4：其它有效目标（排除处于限位硬禁期的可拦截弹——防止单弹场景从兜底层漏选）
+        List<Entity> fallbackTargets = entities.stream()
+                .filter(entity -> !(isInterceptableRvpProjectile(entity)
+                        && RVP_GunnerEngagementNet.isHardLockedFor(
+                                vehicle.level(), gunner.getProfileFaction(), entity, gunner)))
+                .toList();
+        return pickBestInTier(gunner, vehicle, weaponUnit, profile, fallbackTargets, launcher);
     }
 
     /**
@@ -484,6 +493,10 @@ public final class GunnerTargeting {
                     net.minecraft.util.Mth.floor(entity.getZ()));
             return ammoAgl >= minAgl;
         });
+        // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
+        //（即使它是唯一候选；交战者本人不受限）
+        candidates.removeIf(entity -> RVP_GunnerEngagementNet.isHardLockedFor(
+                vehicle.level(), gunner.getProfileFaction(), entity, gunner));
         if (candidates.isEmpty()) {
             return null;
         }
