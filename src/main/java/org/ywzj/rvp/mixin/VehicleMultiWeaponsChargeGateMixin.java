@@ -24,6 +24,7 @@ public abstract class VehicleMultiWeaponsChargeGateMixin {
         if (!(selected instanceof RVP_WeaponBase rvp)) {
             return;
         }
+        // 炸弹就会从挂点出生。开火前拉取一次（幂等：口径×表版本未变时零开销）。
         rvp.getFireController().syncClientInput();
         if (!rvp.getFireController().shouldAttemptClientShot()) {
             cir.setReturnValue(false);

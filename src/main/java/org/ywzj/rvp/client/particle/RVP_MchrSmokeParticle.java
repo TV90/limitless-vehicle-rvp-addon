@@ -92,6 +92,27 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
                 size, grey, grey, grey, 0.45f, lifetime);
     }
 
+    /**
+     * 弹体尾迹入口（可调尺寸倍率）：观感同 {@link #ofTrailDefault}（亮灰 0.7~1.0、寿命 18~84），
+     * 烟团尺寸按倍率缩放。
+     *
+     * <p>供 {@code effects_data.missile_native_trail_particle_style} 取 {@code rvp_smoke} 时使用——本类把尺寸
+     * 直接烘进构造（{@code mchrScale = size × 0.2}、上限 {@code size × 2.0}、{@code quadSize = 0.1 × scale}，
+     * 并每 tick {@code +0.8} 扩散到上限），所以"调粗尾迹"只需改这一个倍率，
+     * 不依赖原版粒子的 {@code scale()} 行为，也不增加粒子数量。</p>
+     *
+     * @param sizeScale 尺寸倍率（{@code <= 0} 按 0 处理）；{@code 1} = 与拖烟默认一致
+     */
+    public static RVP_MchrSmokeParticle ofTrailScaled(ClientLevel level, double x, double y, double z,
+                                                      float sizeScale) {
+        net.minecraft.util.RandomSource random = level.random;
+        float grey = random.nextFloat() * 0.3f + 0.7f;
+        float size = (random.nextFloat() * 0.5f + 5.0f) * Math.max(sizeScale, 0f);
+        int lifetime = (int) (16.0 / (random.nextDouble() * 0.8 + 0.2)) + 2;
+        return new RVP_MchrSmokeParticle(level, x, y, z, 0.0, 0.0, 0.0,
+                size, grey, grey, grey, 1.0f, lifetime);
+    }
+
     /** 按倍率衰减透明度（alpha 为父类 protected，须在类内修改；供火星拖烟 ×0.75 使用）。 */
     public RVP_MchrSmokeParticle scaleAlpha(float multiplier) {
         this.alpha *= multiplier;

@@ -118,13 +118,19 @@ public final class RVP_ClientRadarTickHandler {
                 // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
                 tickContactHold(radar);
                 if (shouldSkipScan(radar, ext)) {
+                    applyAspectRcsFilter(radar);
                     continue;
                 }
                 scanPhaseRadar(radar);
+                applyAspectRcsFilter(radar);
+            } else {
+                // 未配置 phase 的雷达（mechanical/默认）= 纯本体行为：vanilla tickDetect/tickTargets 自行
+                // 探测，RVP 不再补 RVP 弹体/接触保活（2026-09-06 用户决定删除 RVP 机械扫描支持，
+                // 本体包/其他载具包的雷达不受 RVP 干预；scan_animation_mode 仅保留 phase 可选值）。
+                // [RVP] 分角度 RCS（2026-09-16）：本体重填探测表后，把"距离 > max_scan_distance ×
+                // 综合隐身因子（分角度插值 × 开启弹舱增幅）"的载具条目移除——仅裁剪距离，不改探测行为。
+                applyAspectRcsFilter(radar);
             }
-            // 未配置 phase 的雷达（mechanical/默认）= 纯本体行为：vanilla tickDetect/tickTargets 自行
-            // 探测，RVP 不再补 RVP 弹体/接触保活（2026-09-06 用户决定删除 RVP 机械扫描支持，
-            // 本体包/其他载具包的雷达不受 RVP 干预；scan_animation_mode 仅保留 phase 可选值）
             // 雷达箔条判定（客户端）：锁定目标周围箔条超阈值 → 脱锁 + 目标禁锁期（phase/非 phase 雷达都生效）
             Entity locked = radar.getLockedEntity();
             if (locked != null && locked.isAlive()) {
@@ -133,6 +139,36 @@ public final class RVP_ClientRadarTickHandler {
         }
         // 外置雷达（中继雷达）锁定箔条干扰：外置锁定的目标被箔条遮蔽时清除外置锁定
         tickExternalLockChaffJam(vehicle, weaponUnit);
+    }
+
+    /**
+     * [RVP] 分角度 RCS 后过滤（2026-09-16，phase/非 phase 通用）：把"距离 > 雷达
+     * max_scan_distance × 综合隐身因子（rvp_radar_rcs_factor 分角度插值 × 开启弹舱增幅，
+     * 见 {@link RVP_AspectRcs#combinedFactor}）"的<b>载具</b>条目从探测表移除。
+     * 豁免：当前锁定目标（探测难、跟踪易——对标本体 MCHR 隐身机语义）与 RVP 弹体
+     * （有自己的信号尺寸机制）。本体每 tick 重填探测表，本过滤在其后每 tick 执行，
+     * 保证渲染与锁定候选拿到的表已裁剪。
+     */
+    private static void applyAspectRcsFilter(RadarUnit radar) {
+        Entity locked = radar.getLockedEntity();
+        Vec3 radarPos = radar.worldRadarPosition();
+        double maxScan = radar.getMaxScanDistance();
+        Iterator<Map.Entry<Integer, RadarUnit.DetectedObject>> it = radar.getDetectedEntities().entrySet().iterator();
+        while (it.hasNext()) {
+            RadarUnit.DetectedObject detectedObject = it.next().getValue();
+            Entity target = detectedObject.entity;
+            if (!(target instanceof AbstractVehicle targetVehicle) || !target.isAlive()) {
+                continue;
+            }
+            if (locked != null && target.getId() == locked.getId()) {
+                continue;
+            }
+            double factor = RVP_AspectRcs.combinedFactor(targetVehicle, radarPos);
+            double effectiveRange = maxScan * factor;
+            if (radarPos.distanceToSqr(target.position()) > effectiveRange * effectiveRange) {
+                it.remove();
+            }
+        }
     }
 
     /** 外置雷达锁定箔条判定（客户端）：外置锁定目标周围箔条超阈值 → 清除外置锁定请求并同步服务端。 */

@@ -115,6 +115,14 @@ public class GunnerProfile {
     @SerializedName("air_initial_disengage_tick_max")
     private int airInitialDisengageTickMax = 400;
 
+    /**
+     * 组网智能拦截：同 faction 网络内目标被任一 gunner 射击后的降权窗口（tick，默认 100）。
+     * 窗口内其它 gunner 的"可拦截导弹"选择层优先选未交战目标；全部候选均已交战时忽略降权
+     * 照常选择（降权非禁选）。0 = 关闭组网。
+     */
+    @SerializedName("engagement_net_cooldown_tick")
+    private int engagementNetCooldownTick = 100;
+
     public void normalize(String fallbackName) {
         if (name == null || name.isBlank()) {
             name = fallbackName;
@@ -126,6 +134,7 @@ public class GunnerProfile {
             targetTypes = new ArrayList<>(List.of("vehicle", "monster", "player"));
         }
         scanIntervalTick = Math.max(1, scanIntervalTick);
+        engagementNetCooldownTick = Math.max(0, Math.min(engagementNetCooldownTick, 1200));
         fireWindowDeg = Math.max(1.0F, fireWindowDeg);
         leadScale = Math.max(0.0, leadScale);
         burstFireTick = Math.max(0, burstFireTick);
@@ -183,6 +192,11 @@ public class GunnerProfile {
 
     public List<String> getTargetTypes() {
         return targetTypes;
+    }
+
+    /** 组网智能拦截降权窗口（tick）；0 = 关闭组网。语义见字段注释。 */
+    public int getEngagementNetCooldownTick() {
+        return engagementNetCooldownTick;
     }
 
     public boolean isGpsPreferFarthest() {

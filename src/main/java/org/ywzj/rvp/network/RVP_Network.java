@@ -287,12 +287,6 @@ public class RVP_Network {
                 .decoder(C2SWingSweepToggle::decode)
                 .consumerMainThread(C2SWingSweepToggle::handle)
                 .add();
-        // [RVP] 可变挂架出弹队列同步（服务端重载期预计算 → 客户端整表应用）
-        CHANNEL.messageBuilder(S2CShootBoltQueueSync.class, id++)
-                .encoder(S2CShootBoltQueueSync::encode)
-                .decoder(S2CShootBoltQueueSync::decode)
-                .consumerMainThread(S2CShootBoltQueueSync::handle)
-                .add();
         CHANNEL.messageBuilder(S2CFireSupportProfileSnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(S2CFireSupportProfileSnapshot::encode)
                 .decoder(S2CFireSupportProfileSnapshot::decode)

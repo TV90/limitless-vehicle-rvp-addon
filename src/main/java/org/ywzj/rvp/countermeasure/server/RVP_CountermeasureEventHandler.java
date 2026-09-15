@@ -75,5 +75,7 @@ public final class RVP_CountermeasureEventHandler {
             }
         }
         RVP_ChaffJamState.onServerTick(gameTime);
+        // 调用本项目组网交战侧表：同 faction gunner 已交战目标降权窗口的过期清理
+        org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet.onServerTick(gameTime);
     }
 }

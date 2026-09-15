@@ -25,7 +25,6 @@ import org.ywzj.rvp.weapon.util.RVP_SpreadDistributionUtil;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
-import org.ywzj.rvp.mount.RVP_ShootBoltQueueApplier;
 
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
@@ -64,8 +63,6 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
     @Override
     public boolean shoot(List<AimContext> aimContexts, LivingEntity shooter) {
-        // [RVP] 服务端开火前确保出弹队列为最新——覆盖炮手 AI 开火与双端一致性
-        RVP_ShootBoltQueueApplier.ensureApplied(getVehicle(), getWeaponUnit());
         noteServerShootInvocation(aimContexts, shooter);
         if (!check(aimContexts, shooter)) {
             return false;

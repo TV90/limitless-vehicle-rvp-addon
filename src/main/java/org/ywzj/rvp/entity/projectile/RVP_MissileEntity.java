@@ -26,6 +26,8 @@ import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
+import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
+import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.network.RVP_Network;
@@ -241,6 +243,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         return resolveNewActiveSeekerType();
     }
 
+    /** 干扰判定段标志：已进入原定开机距离（箔条判定 + MSL 告警生效），但导引头尚未真开机。 */
+    private boolean countermeasurePhaseActive;
+
     private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
         RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
         if (config == null || config.guidanceType() != type) {
@@ -264,14 +269,41 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             }
         }
 
+        // 目的：分角度 RCS 双阈值相位（2026-09-16）——
+        // 干扰判定段：dist ≤ 原定开机距离即开始箔条判定与 MSL 告警，但制导仍为 TWS 中继
+        // （载具雷达断中继照样丢目标转惯性）；主动段：dist ≤ 原定 × combined（目标 RCS 隐身
+        // 因子 = 分角度 × 开启弹舱增幅，隐身缩减后的真开机距离）才 setAutonomousSeekerOn。
+        // 非隐身目标（combined≈1）两阈值重合，行为与现状一致。
         if (!activeRadarOn) {
             Vec3 activationReference = targetPos != null ? targetPos : lastGuidancePos;
-            boolean withinActivationRange = activeRadarActivationRange <= 0
-                    || activationReference != null
-                    && activationReference.distanceTo(position()) <= activeRadarActivationRange;
-            if (withinActivationRange || !hasDesignation) {
+            if (activationReference == null || activeRadarActivationRange <= 0) {
+                // 发射后不管 / 无开机距离限制：保持发射即自主搜索，隐身由每候选获取距离因子体现
+                countermeasurePhaseActive = false;
                 setAutonomousSeekerOn(true);
                 notifyActiveSeekerOnline(type);
+            } else {
+                double distToRef = activationReference.distanceTo(position());
+                double effectiveActivation = activeRadarActivationRange;
+                Entity rcsReference = targetEntity != null ? targetEntity : designated;
+                if (rcsReference instanceof AbstractVehicle rcsVehicle) {
+                    effectiveActivation = activeRadarActivationRange
+                            * RVP_AspectRcs.combinedFactor(rcsVehicle, position());
+                }
+                // 干扰判定段：进入原定开机距离、尚未到有效开机距离
+                countermeasurePhaseActive = distToRef <= activeRadarActivationRange;
+                if (countermeasurePhaseActive && designated != null) {
+                    // 箔条判定（复用主动导引头同款查询，记忆表连续推进）：decoyed → 断中继
+                    // （清 targetEntity 转惯性直飞记忆点；designated 保留，开机后由反制逻辑转锁箔条或滑行）
+                    RVP_CountermeasureState.Result result =
+                            RVP_CountermeasureState.query(this, designated, type, config);
+                    if (result.decoyed()) {
+                        setTargetEntity(null);
+                    }
+                }
+                if (distToRef <= effectiveActivation) {
+                    setAutonomousSeekerOn(true);
+                    notifyActiveSeekerOnline(type);
+                }
             }
         }
 
@@ -311,19 +343,23 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (activeType != RVP_EnumGuidanceType.ARH) {
             return;
         }
-        // 仅导引头开机且有存活目标时才告警（对标本体 radar=true 分支）。
-        if (!activeRadarOn || targetEntity == null || !targetEntity.isAlive()) {
+        // 目的：告警闸门前移（2026-09-16 分角度 RCS）——进入干扰判定段（原定开机距离内）
+        // 即开始 MSL 告警，不等到隐身缩减后的真开机距离；目标优先取当前锁定实体，
+        // 中继被箔条断掉（targetEntity 置空）时回退指定目标实体。
+        Entity warnTarget = targetEntity != null ? targetEntity
+                : rvp$getActiveSeekerDesignatedTargetEntity();
+        if (!(countermeasurePhaseActive || activeRadarOn) || warnTarget == null || !warnTarget.isAlive()) {
             return;
         }
         // 对标本体 MissileEntity.java:400：每 2 tick 广播一次 MISSILE_LAUNCH 给跟踪目标的玩家。
         if (tickCount % 2 == 0) {
             ServerVehicleWarn packet = new ServerVehicleWarn(
-                    this.getId(), targetEntity.getId(), WarnType.MISSILE_LAUNCH, "MSL");
+                    this.getId(), warnTarget.getId(), WarnType.MISSILE_LAUNCH, "MSL");
             // 调用本体网络通道，向所有跟踪目标实体的玩家广播告警包。
-            Channel.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> targetEntity), packet);
+            Channel.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> warnTarget), packet);
             // RVP 无钳制补发：直接向目标载具乘客发 RVP 告警包，客户端写入 targets 后
             // 即使目标相对本机俯仰角超 ±45°（本体 WarningReceiver 会丢弃）也能告警。
-            if (targetEntity instanceof AbstractVehicle target) {
+            if (warnTarget instanceof AbstractVehicle target) {
                 for (Entity passenger : target.getPassengers()) {
                     // 仅向服务端玩家乘客补发（RVP 包不能进本体 Channel，走自有频道）
                     if (passenger instanceof ServerPlayer player) {

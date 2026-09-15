@@ -11,6 +11,7 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.state.RVP_ClientArmState;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_IrHudProfile;
+import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -78,13 +79,34 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         if (weaponUnit.isSeekerOn() && weaponUnit.getLockedEntity() == null && !data.isEnableIrHmd()) {
             GuiHelper.drawCircle(poseStack, 0, 0, 15, aimCircleColor, 0.03f, 0, 0);
         }
+        // 目的：离轴圈绘制基准与锁定保持判定一致（2026-09-15 修复大离轴"圈内却脱锁"）——
+        // 判定按 off_axis_stacks_with_station_rotation 选基准：true=武器站当前指向，
+        // false=中立安装轴（PL-10 等缺省，离轴圈锚定机头轴）；此前圈恒画在站指向、
+        // 判定锥钉在中立轴，站被伺服转走后圈内目标实际已在锥外 → 脱锁 → 锁定音消失。
+        // 非 HMD 武器的保持判定以武器站当前指向为基准，维持原绘制。
+        boolean irHmdActive = RVP_ClientHmdState.getInstance().isIrHmd();
+        boolean stackWithStation = irHmdActive
+                && RVP_ClientHmdState.getInstance().isIrOffAxisStacksWithStationRotation();
         Vec2 rot = weaponUnit.worldRot();
+        Vec3 centerDir;
+        Vec3 upDir;
+        Vec3 downDir;
+        if (stackWithStation) {
+            centerDir = VectorUtil.rotToVec(rot.x, rot.y).normalize();
+            upDir = VectorUtil.rotToVec(rot.x - fov, rot.y).normalize();
+            downDir = VectorUtil.rotToVec(rot.x + fov, rot.y).normalize();
+        } else {
+            // 中立安装轴基准：与判定同源（worldVec(0,0)），±fov 沿云台俯仰方向取边界
+            centerDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, false);
+            upDir = weaponUnit.worldVec(-fov, 0f).normalize();
+            downDir = weaponUnit.worldVec(fov, 0f).normalize();
+        }
         Vec3 screenPosUp = VectorUtil.worldToScreen(weaponUnit.worldPivotPosition()
-                .add(VectorUtil.rotToVec(rot.x - fov, rot.y).normalize().scale(256)));
+                .add(upDir.scale(256)));
         Vec3 screenPosDown = VectorUtil.worldToScreen(weaponUnit.worldPivotPosition()
-                .add(VectorUtil.rotToVec(rot.x + fov, rot.y).normalize().scale(256)));
+                .add(downDir.scale(256)));
         Vec3 screenPosCenter = VectorUtil.worldToScreen(weaponUnit.worldPivotPosition()
-                .add(VectorUtil.rotToVec(rot.x, rot.y).normalize().scale(256)));
+                .add(centerDir.scale(256)));
 
         if (screenPosUp != null && screenPosDown != null && screenPosCenter != null) {
             double px = screenPosDown.x - screenPosUp.x;

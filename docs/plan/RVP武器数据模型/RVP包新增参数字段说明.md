@@ -181,9 +181,9 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
 | `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
 | `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
-| `thrust` | 发动机推力。 |
-| `motor_burn_time` | 发动机燃烧时间（tick）。 |
-| `second_pulse` | 是否启用双脉冲推进（第二段推力）。 |
+| `thrust` | 发动机推力（一级推力；配置 `second_pulse` 时即第一段推进）。 |
+| `motor_burn_time` | 发动机燃烧时间（tick）（一级燃烧时间；配置 `second_pulse` 时即第一段时长）。 |
+| `second_pulse` | 是否启用双脉冲推进（第二段推力）。仅 IR/ARH/SARH/ARM/**GPS** 制导导弹生效（2026-09-15 起 GPS 加入——弹道/准弹道导弹两级推进，如 9M723 一级助推+二级接力；未配置本字段的 GPS 导弹行为不变）。触发评估仅在一级燃尽（`motor_burn_time` 耗尽）后开始。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
@@ -1170,7 +1170,9 @@ velocity = worldDown × cos(theta) × launch_speed
 | `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
 | `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
 | `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
-| `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。注意 HUD 限位圈始终按 `true` 的基准绘制，故旋转炮塔车上建议开启以保持显示与判定一致。 | `boolean` | `false` |
+| `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。HUD 限位圈与锁定保持判定共用本基准（2026-09-15 修复：此前限位圈恒按 `true` 基准绘制、与 `false` 判定锥错位，导致大离轴"圈内却脱锁"、锁定音消失）。 | `boolean` | `false` |
+| `rvp_radar_rcs_factor` | 载具顶层 RVP 扩展字段，分角度 RCS 雷达隐身（借鉴 MCH-Reforged）。`[front, side, rear]` 三档因子：方位角 = 载具 yRot 前向与"载具→雷达站"水平连线夹角，0~90° front→side 线性、90~180° side→rear 线性。雷达有效发现距离 = `max_scan_distance` × 因子（× 本体 `radar_cross_section` × 开启弹舱 `open_radar_rcs_multiplier` 连乘）。作用范围：玩家车客户端雷达探测表（mechanical/phase 通用）与来袭 ARH 主动雷达弹导引头获取距离；gunner AI、RADAR_SEARCH 告警、AIR 主动红外不受影响；已锁定目标跟踪保持不乘因子。缺省 `[1,1,1]`。 | `[1,1,1]` |
+| `open_radar_rcs_multiplier` | 弹舱部件条目字段（weapon_bay 的 parts 条目）：该弹舱**开启时**的 RCS 增幅倍率，逐弹舱独立设置（如隐身化侧弹舱 1.2、主弹舱 3.0），多弹舱全开连乘。缺省 `1.0`（开舱无影响）。 | `1.0` |
 | `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
 | `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |

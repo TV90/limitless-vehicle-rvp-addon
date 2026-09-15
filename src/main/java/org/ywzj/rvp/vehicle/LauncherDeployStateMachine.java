@@ -34,25 +34,33 @@ public final class LauncherDeployStateMachine {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final Map<Integer, Map<String, LauncherDeployLocalState>> STATES = new HashMap<>();
-    private static final Map<String, Long> TRANSITION_LOG_THROTTLE = new HashMap<>();
+    /** 服务端状态表：仅服务端线程读写（单机下与客户端状态表物理分离，杜绝跨线程 CME）。 */
+    private static final Map<Integer, Map<String, LauncherDeployLocalState>> SERVER_STATES = new HashMap<>();
+    /** 客户端状态表：仅客户端主线程读写（状态机双端各跑一份确定性实例）。 */
+    private static final Map<Integer, Map<String, LauncherDeployLocalState>> CLIENT_STATES = new HashMap<>();
+    private static final Map<String, Long> SERVER_LOG_THROTTLE = new HashMap<>();
+    private static final Map<String, Long> CLIENT_LOG_THROTTLE = new HashMap<>();
 
     private LauncherDeployStateMachine() {
     }
 
     public static void tick(AbstractVehicle vehicle) {
+        // 目的：状态机双端各跑一份（服务端线程 / 客户端主线程），状态表必须按端物理分离——
+        // 单机下双端并发 tick，共用非线程安全 HashMap 会跨线程 CME（2026-09-15 实机崩溃修复）
+        boolean clientSide = vehicle.level().isClientSide();
         if (vehicle.isRemoved()) {
-            clear(vehicle.getId());
+            clear(vehicle.getId(), clientSide);
             return;
         }
         List<RVP_LauncherDeployConfig> configs = RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId());
         if (configs.isEmpty()) {
-            clear(vehicle.getId());
+            clear(vehicle.getId(), clientSide);
             return;
         }
 
+        Map<Integer, Map<String, LauncherDeployLocalState>> sideStates = clientSide ? CLIENT_STATES : SERVER_STATES;
         Map<String, LauncherDeployLocalState> localStates =
-                STATES.computeIfAbsent(vehicle.getId(), ignored -> new HashMap<>());
+                sideStates.computeIfAbsent(vehicle.getId(), ignored -> new HashMap<>());
         localStates.keySet().removeIf(id -> configs.stream().noneMatch(config -> config.id().equals(id)));
 
         double speedKph = vehicle.getDeltaMovement().length() * 20.0 * 3.6;
@@ -78,9 +86,10 @@ public final class LauncherDeployStateMachine {
             // 节流日志：每 100 tick 记录一次状态/俯仰，便于确认部署是否推进
             long gameTime = vehicle.level().getGameTime();
             String key = vehicle.getId() + ":" + config.id();
-            Long lastLog = TRANSITION_LOG_THROTTLE.get(key);
+            Map<String, Long> logThrottle = clientSide ? CLIENT_LOG_THROTTLE : SERVER_LOG_THROTTLE;
+            Long lastLog = logThrottle.get(key);
             if (lastLog == null || gameTime - lastLog >= 100) {
-                TRANSITION_LOG_THROTTLE.put(key, gameTime);
+                logThrottle.put(key, gameTime);
                 net.minecraft.world.entity.Entity drv = vehicle.getDriver();
                 // 发射架部署状态日志（开关：/rvpdebug flags launch_deploy，节流 100 tick）
                 if (RVP_DebugFlags.LAUNCH_DEPLOY.isEnabled()) {
@@ -94,7 +103,8 @@ public final class LauncherDeployStateMachine {
             LauncherDeployRuntimeManager.put(
                     vehicle.getId(),
                     config.id(),
-                    new LauncherDeployRuntimeManager.Snapshot(state.state, state.progressTick, currentPitch, speedKph)
+                    new LauncherDeployRuntimeManager.Snapshot(state.state, state.progressTick, currentPitch, speedKph),
+                    clientSide
             );
         }
     }
@@ -140,9 +150,10 @@ public final class LauncherDeployStateMachine {
         rotatable.setXRot(pitch);
     }
 
-    public static void clear(int vehicleId) {
-        STATES.remove(vehicleId);
-        LauncherDeployRuntimeManager.clearVehicle(vehicleId);
+    public static void clear(int vehicleId, boolean clientSide) {
+        Map<Integer, Map<String, LauncherDeployLocalState>> sideStates = clientSide ? CLIENT_STATES : SERVER_STATES;
+        sideStates.remove(vehicleId);
+        LauncherDeployRuntimeManager.clearVehicle(vehicleId, clientSide);
     }
 
     private static void advanceState(RVP_LauncherDeployConfig config, LauncherDeployLocalState state,

@@ -51,6 +51,8 @@ public class VehicleDataManagerMixin {
         Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>> weaponHeatByVehicle = new HashMap<>();
         RVP_DeployableUavConfigCache.clear();
         RVP_LauncherDeployConfigCache.clear();
+        // 分角度 RCS 雷达隐身：载具剖面缓存随数据包全量重建
+        org.ywzj.rvp.radar.RVP_AspectRcs.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -91,6 +93,8 @@ public class VehicleDataManagerMixin {
                     autoGearByVehicle.put(vehicleId, new AutoLandingGearCache.AutoLandingGearConfig(
                             true, retractSpeed, deploySpeed, deployHeight, retractHeight));
                 }
+                // 分角度 RCS：解析 rvp_radar_rcs_factor 与弹舱 open_radar_rcs_multiplier
+                org.ywzj.rvp.radar.RVP_AspectRcs.parse(vehicleId, obj);
                 List<RVP_CustomMountConfig> customMounts = RVP_CustomMountConfig.parseList(obj);
                 if (customMounts != null) {
                     customMountsByVehicle.put(vehicleId, customMounts);
@@ -107,9 +111,7 @@ public class VehicleDataManagerMixin {
         RVP_CustomMountConfigCache.replace(customMountsByVehicle);
         RVP_VehicleWeaponHeatConfigCache.replace(weaponHeatByVehicle);
         AutoLandingGearCache.replace(autoGearByVehicle);
-        // [RVP] 出弹队列预计算：本 reload 时机结构模型/部件模板/挂架条目三者百分百在册，
-        // 计算结果经 S2CShootBoltQueueSync 下发客户端（服务端运行时直接查表）
-        org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.rebuild(resources);
+        org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.applyTemplateBolts(resources);
         // [RVP] 重载 UI 预设（配合 /ywzj_vehicle reload 热更新）
         UIPresetManager.load(manager);
     }

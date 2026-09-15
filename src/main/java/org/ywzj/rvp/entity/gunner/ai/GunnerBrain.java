@@ -186,12 +186,17 @@ public final class GunnerBrain {
         // CIWS: prioritize intercepting missiles/bombs
         AmmoEntity ciwsTarget = GunnerTargeting.findCiwsTarget(gunner, vehicle);
         if (ciwsTarget != null) {
+            markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);
             gunner.setTrackedTarget(ciwsTarget);
             return ciwsTarget;
         }
 
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
-            gunner.setTrackedTarget(GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile));
+            Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
+            if (best != null) {
+                markEngagementNetOnTrack(gunner, vehicle, best, profile);
+            }
+            gunner.setTrackedTarget(best);
         }
         Entity tracked = gunner.getTrackedTarget();
         if (tracked == null || !tracked.isAlive()) {

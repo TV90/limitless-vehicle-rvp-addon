@@ -75,8 +75,10 @@ public class RVP_ProjectileData {
     private float[] engineNozzleOffset;
 
     /**
-     * 尾焰渲染缩放，默认 {@code 0.2}（对标本体 PL-12：caliber 未配置被钳制为 200，
-     * 200/1000=0.2）。生效条件：同 {@code engine_nozzle_offset}。
+     * 尾焰渲染缩放，默认 {@code 0.3}（2026-09-15 由 0.2 上调）。语义同本体
+     * {@code caliber/1000}，即数值 ≈ 弹体直径（格）；尾焰模型自身直径约 3.09 格，
+     * 缩放后约为弹径的 3 倍。配置示例：9M723（弹径 0.92 格）取 {@code 1.15} 以显更粗。
+     * 生效条件：同 {@code engine_nozzle_offset}。
      */
     @SerializedName("flame_scale")
     private Float flameScale;
@@ -279,7 +281,7 @@ public class RVP_ProjectileData {
         return engineNozzleOffset != null && engineNozzleOffset.length == 3 ? engineNozzleOffset : null;
     }
 
-    /** 尾焰渲染缩放；未配置返回 {@code null}，调用方使用默认值 {@code 0.2}（本体 PL-12 口径）。 */
+    /** 尾焰渲染缩放；未配置返回 {@code null}，调用方使用默认值 {@code 0.3}。 */
     @Nullable
     public Float getFlameScale() {
         return flameScale;

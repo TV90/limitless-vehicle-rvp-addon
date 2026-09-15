@@ -35,7 +35,7 @@ public class RVP_LauncherDeployEventHandler {
     @SubscribeEvent
     public static void onEntityLeaveWorld(EntityLeaveLevelEvent event) {
         if (event.getEntity() instanceof AbstractVehicle vehicle) {
-            LauncherDeployStateMachine.clear(vehicle.getId());
+            LauncherDeployStateMachine.clear(vehicle.getId(), vehicle.level().isClientSide());
         }
     }
 

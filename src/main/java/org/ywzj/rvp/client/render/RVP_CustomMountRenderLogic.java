@@ -46,6 +46,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -161,11 +162,17 @@ public final class RVP_CustomMountRenderLogic {
         }
         int actualLight = vehicle.isDestroyed() ? 64 : packedLight;
         boolean localPlayerVehicle = vehicle == org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance.vehicle;
+        // 目的：把"配置 → 解析结果"一次性建成查找表，替代原先"每个配置都 stream + 线性查找"的
+        // O(配置数²)（2026-09-14 性能审查 §2.3）。用 IdentityHashMap 严格保持原先
+        // `entry.config() == config` 的**身份比较**语义（RVP_CustomMountConfig 是 record，
+        // 其 equals 为值相等，两者在配置完全重复时会分叉）。
+        Map<RVP_CustomMountConfig, ResolvedMount> resolvedByConfig =
+                new IdentityHashMap<>(Math.max(4, resolvedMounts.size() * 2));
+        for (ResolvedMount mount : resolvedMounts) {
+            resolvedByConfig.put(mount.config(), mount);
+        }
         for (RVP_CustomMountConfig config : configs) {
-            ResolvedMount resolved = resolvedMounts.stream()
-                    .filter(entry -> entry.config() == config)
-                    .findFirst()
-                    .orElse(null);
+            ResolvedMount resolved = resolvedByConfig.get(config);
             if (resolved == null) {
                 if (DEBUG_ENABLED.get()) {
                     appendDebugLog("render SKIP: unresolved vehicle=" + vehicle.getVehicleId()
@@ -253,8 +260,9 @@ public final class RVP_CustomMountRenderLogic {
     }
 
     private static List<ResolvedMount> resolveMounts(AbstractVehicle vehicle, List<RVP_CustomMountConfig> configs) {
-        List<ResolvedMount> resolved = new ArrayList<>();
-        Map<GroupKey, List<ResolvedMount>> grouped = new HashMap<>();
+        // 目的：按配置数预分配，避免每帧每车走 ArrayList 扩容（2026-09-14 性能审查 §2.3）
+        List<ResolvedMount> resolved = new ArrayList<>(configs.size());
+        Map<GroupKey, List<ResolvedMount>> grouped = new HashMap<>(Math.max(4, configs.size()));
         for (RVP_CustomMountConfig config : configs) {
             if (!(vehicle.getPartUnit(config.partUnitId()).orElse(null) instanceof WeaponUnit weaponUnit)) {
                 continue;
@@ -276,17 +284,24 @@ public final class RVP_CustomMountRenderLogic {
             grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(entry);
         }
         grouped.values().forEach(RVP_CustomMountRenderLogic::assignAmmoVisibility);
-        Map<RVP_CustomMountConfig, ResolvedMount> updatedByConfig = new HashMap<>();
+        // 目的：assignAmmoVisibility 会把组内元素替换为新实例（补 slot / 可见枚数），
+        // 故需按 config 回写。用 IdentityHashMap 与渲染侧身份比较语义保持一致。
+        Map<RVP_CustomMountConfig, ResolvedMount> updatedByConfig =
+                new IdentityHashMap<>(Math.max(4, resolved.size() * 2));
         for (List<ResolvedMount> mounts : grouped.values()) {
             for (ResolvedMount mount : mounts) {
                 updatedByConfig.put(mount.config(), mount);
             }
         }
-        List<ResolvedMount> finalResolved = new ArrayList<>(resolved.size());
-        for (ResolvedMount mount : resolved) {
-            finalResolved.add(updatedByConfig.getOrDefault(mount.config(), mount));
+        // 目的：原地回写（顺序不变、语义与原先"再建一个 finalResolved 列表"完全一致），
+        // 省掉每帧每车一次集合分配
+        for (int i = 0; i < resolved.size(); i++) {
+            ResolvedMount replacement = updatedByConfig.get(resolved.get(i).config());
+            if (replacement != null) {
+                resolved.set(i, replacement);
+            }
         }
-        return finalResolved;
+        return resolved;
     }
 
     @Nullable
@@ -639,6 +654,15 @@ public final class RVP_CustomMountRenderLogic {
                                               VehicleBedrockModel vehicleModel,
                                               List<RVP_CustomMountConfig> configs,
                                               List<ResolvedMount> resolvedMounts) {
+        // [RVP] 目的：本方法是"自动追踪首次状态"的诊断，原先**无条件执行**——每帧每车都要付一次
+        // 当前武器解析（→ resolveMounts 全量解析）+ getWeaponId().toString() + 拼 traceKey +
+        // ConcurrentHashMap.putIfAbsent，即玩家从未开过调试也在烧帧预算（2026-09-14 性能审查 P0）。
+        // 现改为由既有调试命令控制：执行 `/rvpdebug custommount on` 后才会自动抓取。
+        // 能力不变：on 会先 clearDebugLog()（内部清 AUTO_TRACE_KEYS），因此开启后每个
+        // 「载具实体|载具类型|当前武器」组合首次出现时仍会被记录一次；默认关闭时零开销。
+        if (!DEBUG_ENABLED.get()) {
+            return;
+        }
         if (configs.isEmpty()) {
             return;
         }
@@ -684,14 +708,6 @@ public final class RVP_CustomMountRenderLogic {
                                 || resolution.currentWeapon().getData().getWeaponId() == null
                                 ? "<null>"
                                 : resolution.currentWeapon().getData().getWeaponId())
-                        .append('\n');
-                // [RVP v3] 出弹队列状态（shoot_structure_bones）：null 表示该站未被管理，保持本体原 Bolt
-                // 目的：查表（重载期预计算 + S2C 同步），无表项 = 该站未被管理，保持本体原 Bolt；
-                // 走武器站实例重载，与 RVP_ShootBoltQueueApplier 同口径（本站未命中沿母武器站链回退）
-                List<Bolt> shootQueue = org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.lookupQueue(
-                        vehicle.getVehicleId(), weaponUnit,
-                        org.ywzj.rvp.mount.RVP_ShootBoltQueueResolver.currentWeaponKey(weaponUnit));
-                sb.append("shootQueue=").append(shootQueue == null ? "<not-managed>" : shootQueue.size() + " bolts")
                         .append('\n');
             }
 
