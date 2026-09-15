@@ -1,9 +1,11 @@
 package org.ywzj.rvp.entity.gunner.ai;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -31,14 +33,42 @@ public final class RVP_GunnerEngagementNet {
     /** 限位窗口（硬禁）时长：交战后除交战者本人外其它同 faction gunner 不可选择的时长。 */
     public static final long HARD_LOCK_TICKS = 60L;
 
+    /**
+     * 交战网络索引键。
+     * @param dimension 目标所在维度，避免跨维度 UUID 记录相互影响。
+     * @param faction Gunner 阵营，仅同阵营共享交战状态。
+     * @param targetUuid 被跟踪或交战目标 UUID。
+     */
     private record Key(ResourceLocation dimension, RVP_EnumGunnerFaction faction, UUID targetUuid) {}
 
-    /** 单条交战记录：排斥窗截止 / 硬禁截止 / 交战者（硬禁对其本人不生效，null = 仅跟踪记账无交战者）。 */
+    /**
+     * 单条交战记录。
+     * @param engagedUntil 软排斥窗口截止的维度 gameTime。
+     * @param hardLockedUntil 硬禁窗口截止的维度 gameTime。
+     * @param engager 发射记账的 Gunner UUID；跟踪记账没有交战者时为 null。
+     */
     private record Engagement(long engagedUntil, long hardLockedUntil, UUID engager) {}
 
+    /** 交战索引表：按维度、阵营与目标 UUID 保存尚未过期的交战状态。 */
     private static final Map<Key, Engagement> ENGAGEMENTS = new HashMap<>();
 
     private RVP_GunnerEngagementNet() {
+    }
+
+    /**
+     * 按射手到目标的距离计算组网排斥窗口：基础值为近距下限，384 格处线性增长到两倍。
+     * @param vehicle Gunner 当前控制的载具。
+     * @param target 当前跟踪或发射目标。
+     * @param minWindowTick Profile 配置的近距下限，单位 tick；非正数表示关闭。
+     * @return 线性距离窗口，单位 tick。
+     */
+    public static long resolveWindowTick(AbstractVehicle vehicle, Entity target, int minWindowTick) {
+        if (vehicle == null || target == null || minWindowTick <= 0) {
+            return 0L;
+        }
+        long maxWindowTick = minWindowTick * 2L;
+        double distanceRatio = Mth.clamp(vehicle.distanceTo(target) / 384.0D, 0.0D, 1.0D);
+        return Math.round(minWindowTick + (maxWindowTick - minWindowTick) * distanceRatio);
     }
 
     /**
@@ -109,8 +139,12 @@ public final class RVP_GunnerEngagementNet {
         return true;
     }
 
-    /** 服务端每 tick 清理过期条目，避免内存膨胀。 */
-    public static void onServerTick(long gameTime) {
-        ENGAGEMENTS.entrySet().removeIf(entry -> gameTime >= entry.getValue().engagedUntil());
+    /** 服务端每维度 tick 清理该维度的过期条目，避免使用其它维度的 gameTime 误删有效记录。 */
+    public static void onServerTick(ResourceLocation dimension, long gameTime) {
+        if (dimension == null) {
+            return;
+        }
+        ENGAGEMENTS.entrySet().removeIf(entry -> entry.getKey().dimension().equals(dimension)
+                && gameTime >= entry.getValue().engagedUntil());
     }
 }

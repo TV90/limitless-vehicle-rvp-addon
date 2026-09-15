@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet;
 import org.ywzj.rvp.entity.gunner.ai.GunnerTargeting;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
@@ -139,6 +140,14 @@ public final class RVP_GunnerWeaponActions {
         }
         if (selfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);
+        }
+        // 调用组网窗口策略，让发射记账与新目标跟踪记账使用相同的距离滑动窗口。
+        long engagementWindowTick = RVP_GunnerEngagementNet.resolveWindowTick(
+                vehicle, target, profile.getEngagementNetCooldownTick());
+        if (engagementWindowTick > 0L) {
+            // 调用本项目组网表记录已进入本体发射链的目标，同时启动排斥窗口与 60 tick 限位窗口。
+            RVP_GunnerEngagementNet.markEngaged(vehicle.level(), gunner.getProfileFaction(), target,
+                    gunner, engagementWindowTick);
         }
         return RVP_GunnerActionResult.DISPATCHED;
     }

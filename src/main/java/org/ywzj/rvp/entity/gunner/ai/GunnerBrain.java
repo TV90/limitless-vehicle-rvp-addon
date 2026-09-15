@@ -186,6 +186,7 @@ public final class GunnerBrain {
         // CIWS: prioritize intercepting missiles/bombs
         AmmoEntity ciwsTarget = GunnerTargeting.findCiwsTarget(gunner, vehicle);
         if (ciwsTarget != null) {
+            // 调用本类组网记账入口仅处理目标切换，避免 CIWS 每 tick 重扫时反复延长软窗口。
             markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);
             gunner.setTrackedTarget(ciwsTarget);
             return ciwsTarget;
@@ -194,6 +195,7 @@ public final class GunnerBrain {
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
             Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
             if (best != null) {
+                // 调用本类组网记账入口覆盖新目标等待持锁/冷却的窗口。
                 markEngagementNetOnTrack(gunner, vehicle, best, profile);
             }
             gunner.setTrackedTarget(best);
@@ -204,6 +206,23 @@ public final class GunnerBrain {
             return null;
         }
         return tracked;
+    }
+
+    /**
+     * 新目标开始跟踪时记录组网排斥窗口，覆盖选中后延迟开火的时间段；同一目标周期性重扫描不续窗。
+     */
+    private static void markEngagementNetOnTrack(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                  Entity target, GunnerProfile profile) {
+        if (target == null || target.getId() == gunner.getTrackedTargetId()) {
+            return;
+        }
+        // 调用本项目组网窗口策略，按当前交战距离生成同一套软窗口时长。
+        long windowTick = RVP_GunnerEngagementNet.resolveWindowTick(
+                vehicle, target, profile.getEngagementNetCooldownTick());
+        if (windowTick > 0L) {
+            // 调用本项目组网表记录新开始跟踪的目标，防止同阵营炮车在等待持锁时重复占用该来袭弹。
+            RVP_GunnerEngagementNet.markTracked(vehicle.level(), gunner.getProfileFaction(), target, windowTick);
+        }
     }
 
     private static boolean isCiwsAltitudeMet(AbstractVehicle vehicle) {

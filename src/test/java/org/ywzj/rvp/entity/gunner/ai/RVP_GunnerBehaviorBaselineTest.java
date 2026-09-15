@@ -27,6 +27,9 @@ class RVP_GunnerBehaviorBaselineTest {
     /** Gunner 索敌源码，用于冻结目标层级、范围和扫描方式。 */
     private static final Path TARGETING_SOURCE = Path.of(
             "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerTargeting.java");
+    /** Gunner 组网交战表源码，用于冻结排斥窗口、硬禁截止和交战者豁免语义。 */
+    private static final Path ENGAGEMENT_NET_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/ai/RVP_GunnerEngagementNet.java");
     /** Gunner 外置雷达源码，用于冻结中继部署、锁定和清理顺序。 */
     private static final Path EXTERNAL_RADAR_SOURCE = Path.of(
             "src/main/java/org/ywzj/rvp/entity/gunner/ai/GunnerExternalRadarController.java");
@@ -105,24 +108,35 @@ class RVP_GunnerBehaviorBaselineTest {
         String findBest = section(targeting,
                 "public static Entity findBestTarget(",
                 "private static Entity pickBestInTier(");
+        String ciws = section(targeting,
+                "public static AmmoEntity findCiwsTarget(",
+                "public static List<Entity> collectTargetEntities(");
 
         assertOrdered(tickTargeting,
                 "GunnerTargeting.findCiwsTarget(gunner, vehicle)",
+                "markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);",
                 "gunner.setTrackedTarget(ciwsTarget);",
                 "gunner.tickCount % profile.getScanIntervalTick() == 0",
                 "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
+                "markEngagementNetOnTrack(gunner, vehicle, best, profile);",
                 "gunner.getTrackedTarget()");
         assertContainsAll(tickTargeting,
                 "tracked == null || !tracked.isAlive()",
                 "gunner.setTrackedTarget(null);");
+        assertContainsAll(brain,
+                "target.getId() == gunner.getTrackedTargetId()",
+                "RVP_GunnerEngagementNet.markTracked(");
 
         assertOrdered(findBest,
                 "collectTargetEntities(vehicle, radius",
                 "List<Entity> rvpAmmo",
+                "RVP_GunnerEngagementNet.isHardLockedFor(",
+                "RVP_GunnerEngagementNet.isRecentlyEngaged(",
                 "List<Entity> ewDecoys",
                 "List<Entity> hostileGunnerVehicles",
                 "List<Entity> playerTargets",
-                "return pickBestInTier(gunner, vehicle, weaponUnit, profile, entities, launcher);");
+                "List<Entity> fallbackTargets",
+                "return pickBestInTier(gunner, vehicle, weaponUnit, profile, fallbackTargets, launcher);");
         assertContainsAll(targeting,
                 "private static final double AIR_SEARCH_MULTIPLIER = 6.0;",
                 "return base * AIR_SEARCH_MULTIPLIER;",
@@ -130,6 +144,16 @@ class RVP_GunnerBehaviorBaselineTest {
                 "profile.isGpsPreferFarthest()",
                 "GunnerWeaponSuitability.hasUsableGpsWeaponForTarget",
                 "score(vehicle, weaponUnit, entity, launcher)");
+        assertContainsAll(ciws,
+                "candidates.removeIf(entity -> RVP_GunnerEngagementNet.isHardLockedFor(",
+                "RVP_GunnerEngagementNet.isRecentlyEngaged(",
+                "freshCandidates.isEmpty() ? candidates : freshCandidates");
+        String creativeProtection = section(targeting,
+                "private static boolean isProtectedCreativePlayer(",
+                "private static boolean hasProtectedCreativePassenger(");
+        assertContainsAll(creativeProtection, "player.isSpectator()", "return player.isCreative();");
+        assertFalse(creativeProtection.contains("Difficulty.HARD"),
+                "创造模式免攻击不应随难度改变");
     }
 
     @Test
@@ -156,13 +180,16 @@ class RVP_GunnerBehaviorBaselineTest {
                 "guidance.prepareLaunch",
                 "weaponUnit.shoot(weaponIndex",
                 "gunner.onBurstShot",
-                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
+                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);",
+                "RVP_GunnerEngagementNet.resolveWindowTick(",
+                "RVP_GunnerEngagementNet.markEngaged(");
         assertContainsAll(combat,
                 "now - gunner.getAirLockStartTick() < 100",
                 "now - gunner.getLastAirMissileFireTick() < 100",
                 "aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE",
                 "Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts()",
-                "gunner.setCiwsTargetCooldown(target, 100);");
+                "gunner.setCiwsTargetCooldown(target, 100);",
+                "profile.getEngagementNetCooldownTick()");
 
         assertOrdered(selection,
                 "profile.isGpsPreferFarthest()",
@@ -491,6 +518,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "@SerializedName(\"faction\")",
                 "private String faction = \"friendly\";",
                 "@SerializedName(\"target_types\")",
+                "@SerializedName(\"engagement_net_cooldown_tick\")",
+                "private int engagementNetCooldownTick = 100;",
+                "engagementNetCooldownTick = Math.max(0, Math.min(engagementNetCooldownTick, 1200));",
                 "@SerializedName(\"gps_prefer_farthest\")",
                 "private boolean gpsPreferFarthest = true;",
                 "private double searchRadius = 96.0;",
@@ -509,6 +539,21 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private double fixedwingCruiseAltitudeMax = 500.0;");
         assertFalse(profile.contains("@SerializedName(\"behaviors\")"),
                 "阶段 A 不得提前启用行为组合 schema");
+    }
+
+    @Test
+    void engagementNetKeepsSlidingWindowAndHardLockSemantics() throws IOException {
+        String net = read(ENGAGEMENT_NET_SOURCE);
+
+        assertContainsAll(net,
+                "public static final long HARD_LOCK_TICKS = 60L;",
+                "public static long resolveWindowTick(",
+                "minWindowTick * 2L",
+                "vehicle.distanceTo(target) / 384.0D",
+                "now + windowTick, now + HARD_LOCK_TICKS, shooter.getUUID()",
+                "new Engagement(softUntil, existing.hardLockedUntil(), existing.engager())",
+                "!engager.equals(gunner.getUUID())",
+                "entry.getKey().dimension().equals(dimension)");
     }
 
     /** 以 UTF-8 读取待冻结的源码。 */
