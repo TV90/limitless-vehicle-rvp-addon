@@ -1170,7 +1170,7 @@ velocity = worldDown × cos(theta) × launch_speed
 | `scan_interval_tick` | 发射后导引头自主扫描间隔。主要用于 `ARH/AIR/ARM`。`null` 表示不主动扫描。 | `Integer` | `null` |
 | `max_lock_angle` | 导引头搜索视场角（完整 FOV，度）。用于“开机但未锁定”的扫描阶段。 | `int` | `5` |
 | `max_off_axis_lock_angle` | 锁定后允许保持的最大离轴角（单侧角度，度）。 | `int` | `60` |
-| `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。注意 HUD 限位圈始终按 `true` 的基准绘制，故旋转炮塔车上建议开启以保持显示与判定一致。 | `boolean` | `false` |
+| `off_axis_stacks_with_station_rotation` | 头瞄离轴角是否与**武器站旋转叠加**。`false`（默认）：离轴锥以武器站**中立安装轴** `worldVec(0,0)` 为基准，忽略武器站自身 `xRot/yRot` 伺服旋转，炮塔转动**不**扩大 IR 锁定覆盖。`true`：离轴锥以武器站**当前朝向** `worldVec()`（含 `xRot/yRot`）为基准，离轴范围与武器站已转过的角度**叠加**——炮塔转到哪，离轴锥中心跟到哪。用于地对空红外导弹。HUD 限位圈与锁定保持判定共用本基准（2026-09-15 修复：此前限位圈恒按 `true` 基准绘制、与 `false` 判定锥错位，导致大离轴"圈内却脱锁"、锁定音消失）。 | `boolean` | `false` |
 | `predict_target_pos` | 是否启用比例制导/预测拦截。 | `boolean` | `false` |
 | `predict_target_pos_gain` | 比例制导增益系数（收敛速度）。 | `float` | `3.0` |
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
