@@ -186,7 +186,22 @@ public final class GunnerBrain {
     }
 
     private static void tickRadarLock(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, @Nullable Entity target, GunnerProfile profile) {
-        if (weaponUnit == null || target == null || !target.isAlive()) {
+        if (weaponUnit == null) {
+            return;
+        }
+        // 目的：AI 丢目标（死亡/出感知范围被隐身因子过滤/索敌返回空）时同步清除雷达锁——
+        // 否则已建立的雷达锁残留（目标 RWR 持续显示被锁定、SARH 中继挂空）。
+        // 2026-09-16 分角度 RCS 适配时补齐；只清锁，不触发 prepareGunnerLockRadar 的开机副作用。
+        if (target == null || !target.isAlive()) {
+            for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+                if (radarUnit.getLockedEntity() != null) {
+                    radarUnit.setLockedEntity(null);
+                }
+            }
+            WeaponUnit rootUnit = weaponUnit.getRootParentWeaponUnit();
+            if (rootUnit.getLockedEntity() != null) {
+                rootUnit.setLockedEntity(null);
+            }
             return;
         }
         // 武器站传感器未写 rf 时，只要武器组内有能打击该目标的雷达制导武器（ARH/SARH）也应雷达锁定，
