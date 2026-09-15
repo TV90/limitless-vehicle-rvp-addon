@@ -276,6 +276,11 @@ public class GunnerEntity extends Mob {
         this.entityData.set(TRACKED_TARGET_ID, trackedTargetId);
     }
 
+    /** 当前跟踪目标实体 id（-1 = 无）；供组网交战侧表判断"开始跟踪新目标"。 */
+    public int getTrackedTargetId() {
+        return trackedTargetId;
+    }
+
     @Nullable
     public Entity getTrackedTarget() {
         int id = level().isClientSide() ? entityData.get(TRACKED_TARGET_ID) : trackedTargetId;

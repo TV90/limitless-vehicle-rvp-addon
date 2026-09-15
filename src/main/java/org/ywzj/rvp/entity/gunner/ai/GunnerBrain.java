@@ -296,12 +296,17 @@ public final class GunnerBrain {
         // CIWS: prioritize intercepting missiles/bombs
         AmmoEntity ciwsTarget = GunnerTargeting.findCiwsTarget(gunner, vehicle);
         if (ciwsTarget != null) {
+            markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);
             gunner.setTrackedTarget(ciwsTarget);
             return ciwsTarget;
         }
 
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
-            gunner.setTrackedTarget(GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile));
+            Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
+            if (best != null) {
+                markEngagementNetOnTrack(gunner, vehicle, best, profile);
+            }
+            gunner.setTrackedTarget(best);
         }
         Entity tracked = gunner.getTrackedTarget();
         if (tracked == null || !tracked.isAlive()) {
@@ -408,12 +413,45 @@ public final class GunnerBrain {
         if (isSelfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);
         }
-        // 调用本项目组网交战侧表：把本次射击目标记入同 faction 网络——窗口内其它 gunner 的
-        // 可拦截导弹选择层会优先选未交战目标（组网智能拦截，降权非禁选）
+        // 调用本项目组网交战侧表：实际发射时刷新目标的网络降权截止 tick（随距离滑动的窗口）
         AbstractVehicle engagementVeh = weaponUnit.getVehicle();
         if (engagementVeh != null) {
-            RVP_GunnerEngagementNet.markEngaged(engagementVeh.level(), gunner.getProfileFaction(), target);
+            RVP_GunnerEngagementNet.markEngaged(engagementVeh.level(), gunner.getProfileFaction(), target,
+                    computeEngagementNetWindow(engagementVeh, target, profile));
         }
+    }
+
+    /**
+     * 开始跟踪新目标时的组网记账（覆盖"已选中但延迟开火"的窗口——导弹冷却/对空持锁期间
+     * 其它同 faction gunner 也不应重复选它）。仅当跟踪目标较上一次发生变化时记账，
+     * 同目标的周期性重扫描不刷新窗口。
+     */
+    private static void markEngagementNetOnTrack(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                 Entity target, GunnerProfile profile) {
+        int previousId = gunner.getTrackedTargetId();
+        if (target == null || target.getId() == previousId) {
+            return;
+        }
+        long window = computeEngagementNetWindow(vehicle, target, profile);
+        if (window > 0) {
+            RVP_GunnerEngagementNet.markEngaged(vehicle.level(), gunner.getProfileFaction(), target, window);
+        }
+    }
+
+    /**
+     * 组网降权窗口随交战距离滑动：档案 {@code engagement_net_cooldown_tick}（默认 100）为
+     * 近距最低窗口，最高 = 2 × 最低（默认 200），以 {@code 384} 格为线性滑动基准——
+     * 远处目标导弹飞行时间长，网络避让窗口相应更长。{@code <= 0} 返回 0（组网关闭）。
+     */
+    private static long computeEngagementNetWindow(AbstractVehicle vehicle, Entity target, GunnerProfile profile) {
+        int minWindow = profile.getEngagementNetCooldownTick();
+        if (minWindow <= 0) {
+            return 0;
+        }
+        long maxWindow = minWindow * 2L;
+        double distanceRef = 384.0D;
+        double progress = Mth.clamp(vehicle.distanceTo(target) / distanceRef, 0.0D, 1.0D);
+        return Math.round(minWindow + (maxWindow - minWindow) * progress);
     }
 
     /**
