@@ -20,8 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>载具 JSON 新增两个 RVP 扩展字段（均缺省 = 行为与现状一致）：</p>
  * <ul>
  *   <li>顶层 {@code rvp_radar_rcs_factor: [front, side, rear]}：分角度因子。方位角 =
- *       载具 yRot 前向单位向量与"载具→观察者"水平连线向量的夹角，0~90° 在 front→side
- *       线性插值、90~180° 在 side→rear 线性插值（左右对称、无俯仰维度），结果钳 [0.01,10]；</li>
+ *       载具 yRot 前向单位向量与"载具→观察者"水平连线向量的夹角，段内（0~90°、90~180°）
+ *       按 sin³ 缓动插值（左右对称、无俯仰维度），结果钳 [0.01,10]；</li>
  *   <li>弹舱部件条目 {@code open_radar_rcs_multiplier}：该弹舱<b>开启时</b>的 RCS 增幅倍率
  *       （逐弹舱独立，如隐身化侧弹舱小、主弹舱大），取所有开启弹舱倍率的连乘。</li>
  * </ul>
@@ -40,6 +40,13 @@ public final class RVP_AspectRcs {
     private record Profile(float front, float side, float rear, Map<String, Float> bayMultipliers) {}
 
     private static final Map<ResourceLocation, Profile> PROFILES = new ConcurrentHashMap<>();
+
+    /**
+     * 段内插值曲线强度：过渡进度 v = sin^(2×CURVE_POWER)(u·π/2)。
+     * 1 = sin²（接近线性）、1.5 = sin³（当前，2026-09-16 用户定版：±30° 隐身保留 ~88%、
+     * ±45° 保留 ~65%、接近正侧方快速暴露）、2 = sin⁴（前段极平）。
+     */
+    private static final double CURVE_POWER = 1.5;
 
     private RVP_AspectRcs() {
     }
@@ -129,11 +136,17 @@ public final class RVP_AspectRcs {
         double fz = Mth.cos(yawRad);
         double dot = Mth.clamp(fx * nx + fz * nz, -1.0D, 1.0D);
         double aspectDeg = Math.toDegrees(Math.acos(dot));
+        // 目的：段内插值用 sin³ 缓动（CURVE_POWER=1.5）替代线性——正面 ±30° 锥内隐身
+        // 几乎不衰减（保留 ~88%）、±45° 保留 ~65%，接近正侧方才快速暴露（线性在 30°
+        // 就丢掉 1/3 隐身收益，2026-09-16 用户反馈衰减过快）。
+        double segmentProgress = Mth.clamp(
+                (aspectDeg <= 90.0D ? aspectDeg : aspectDeg - 90.0D) / 90.0D, 0.0D, 1.0D);
+        double eased = Math.pow(Math.sin(segmentProgress * Math.PI / 2.0D), 2.0D * CURVE_POWER);
         double aspect;
         if (aspectDeg <= 90.0D) {
-            aspect = profile.front() + (profile.side() - profile.front()) * (aspectDeg / 90.0D);
+            aspect = profile.front() + (profile.side() - profile.front()) * eased;
         } else {
-            aspect = profile.side() + (profile.rear() - profile.side()) * ((aspectDeg - 90.0D) / 90.0D);
+            aspect = profile.side() + (profile.rear() - profile.side()) * eased;
         }
         // 弹舱开启增幅：所有开启弹舱倍率连乘（isOn 为同步数据，双端一致）
         double bayFactor = 1.0D;

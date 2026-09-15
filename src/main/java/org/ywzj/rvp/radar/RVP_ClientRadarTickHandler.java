@@ -62,6 +62,10 @@ public final class RVP_ClientRadarTickHandler {
 
     private static final Map<String, Integer> SCAN_SKIP_COUNTER = new HashMap<>();
     private static int lastVehicleId = Integer.MIN_VALUE;
+    /** 锁定目标烧穿宽限（tick）：出有效发现距离后跟踪保持 5 秒，仍在外才脱锁。 */
+    private static final long LOCKED_TRACK_GRACE_TICKS = 100L;
+    /** 锁定目标离开烧穿范围的起始时刻（目标实体 id → gameTime），回到范围内即清除。 */
+    private static final Map<Integer, Long> LOCKED_OUT_OF_BURN_THROUGH_SINCE = new HashMap<>();
     /** 雷达开关状态快照：key = 车辆ID + ":" + 雷达ID，value = isOn()。 */
     private static final Map<String, Boolean> RADAR_POWER_SNAPSHOT = new HashMap<>();
 
@@ -96,6 +100,7 @@ public final class RVP_ClientRadarTickHandler {
             lastVehicleId = vehicle.getId();
             SCAN_SKIP_COUNTER.clear();
             RADAR_POWER_SNAPSHOT.clear();
+            LOCKED_OUT_OF_BURN_THROUGH_SINCE.clear();
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
@@ -118,18 +123,18 @@ public final class RVP_ClientRadarTickHandler {
                 // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
                 tickContactHold(radar);
                 if (shouldSkipScan(radar, ext)) {
-                    applyAspectRcsFilter(radar);
+                    applyAspectRcsFilter(radar, vehicle.level().getGameTime());
                     continue;
                 }
                 scanPhaseRadar(radar);
-                applyAspectRcsFilter(radar);
+                applyAspectRcsFilter(radar, vehicle.level().getGameTime());
             } else {
                 // 未配置 phase 的雷达（mechanical/默认）= 纯本体行为：vanilla tickDetect/tickTargets 自行
                 // 探测，RVP 不再补 RVP 弹体/接触保活（2026-09-06 用户决定删除 RVP 机械扫描支持，
                 // 本体包/其他载具包的雷达不受 RVP 干预；scan_animation_mode 仅保留 phase 可选值）。
                 // [RVP] 分角度 RCS（2026-09-16）：本体重填探测表后，把"距离 > max_scan_distance ×
                 // 综合隐身因子（分角度插值 × 开启弹舱增幅）"的载具条目移除——仅裁剪距离，不改探测行为。
-                applyAspectRcsFilter(radar);
+                applyAspectRcsFilter(radar, vehicle.level().getGameTime());
             }
             // 雷达箔条判定（客户端）：锁定目标周围箔条超阈值 → 脱锁 + 目标禁锁期（phase/非 phase 雷达都生效）
             Entity locked = radar.getLockedEntity();
@@ -149,7 +154,7 @@ public final class RVP_ClientRadarTickHandler {
      * （有自己的信号尺寸机制）。本体每 tick 重填探测表，本过滤在其后每 tick 执行，
      * 保证渲染与锁定候选拿到的表已裁剪。
      */
-    private static void applyAspectRcsFilter(RadarUnit radar) {
+    private static void applyAspectRcsFilter(RadarUnit radar, long gameTime) {
         Entity locked = radar.getLockedEntity();
         Vec3 radarPos = radar.worldRadarPosition();
         double maxScan = radar.getMaxScanDistance();
@@ -160,13 +165,32 @@ public final class RVP_ClientRadarTickHandler {
             if (!(target instanceof AbstractVehicle targetVehicle) || !target.isAlive()) {
                 continue;
             }
-            if (locked != null && target.getId() == locked.getId()) {
-                continue;
-            }
             double factor = RVP_AspectRcs.combinedFactor(targetVehicle, radarPos);
             double effectiveRange = maxScan * factor;
-            if (radarPos.distanceToSqr(target.position()) > effectiveRange * effectiveRange) {
+            boolean withinBurnThrough = radarPos.distanceToSqr(target.position()) <= effectiveRange * effectiveRange;
+            boolean isLockedTarget = locked != null && target.getId() == locked.getId();
+            if (!isLockedTarget) {
+                // 非锁定目标：出烧穿范围（综合隐身因子压缩后的有效发现距离）即移除
+                if (!withinBurnThrough) {
+                    it.remove();
+                }
+                continue;
+            }
+            // 目的：锁定目标烧穿语义（2026-09-16 用户定版）——出烧穿范围后跟踪保持 5 秒
+            //（期间回到烧穿范围内即恢复计时清除）；5 秒后仍在范围外 → 移出探测表并清除锁定。
+            if (withinBurnThrough) {
+                LOCKED_OUT_OF_BURN_THROUGH_SINCE.remove(target.getId());
+                continue;
+            }
+            long since = LOCKED_OUT_OF_BURN_THROUGH_SINCE.getOrDefault(target.getId(), -1L);
+            if (since < 0) {
+                LOCKED_OUT_OF_BURN_THROUGH_SINCE.put(target.getId(), gameTime);
+                continue;
+            }
+            if (gameTime - since >= LOCKED_TRACK_GRACE_TICKS) {
+                LOCKED_OUT_OF_BURN_THROUGH_SINCE.remove(target.getId());
                 it.remove();
+                radar.setLockedEntity(null);
             }
         }
     }
