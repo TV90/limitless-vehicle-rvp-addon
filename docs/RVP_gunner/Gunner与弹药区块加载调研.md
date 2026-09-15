@@ -101,7 +101,7 @@ GunnerBrain.tick(gunner, vehicle)
   ├── resolveWeaponUnit()
   ├── tickTargeting()           -- 周期性扫描目标
   ├── tickCountermeasure()      -- 检测来袭弹药，发射诱饵
-  ├── tickRadarLock()           -- ENEMY 阵营的 RF 雷达锁定
+  ├── ACTIONS.radar().maintainLocalLock() -- 本车 RF 雷达锁定与失效目标清锁
   ├── if (driver && allowDrive):
   │     ├── refillDriverVehicle()       -- 补满弹药/能量/引擎
   │     ├── sustainDriverSingleShotWeapons() -- 单发武器自动装填

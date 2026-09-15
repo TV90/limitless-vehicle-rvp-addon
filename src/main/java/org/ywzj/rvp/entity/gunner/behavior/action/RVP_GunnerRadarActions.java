@@ -27,7 +27,15 @@ public final class RVP_GunnerRadarActions {
     public RVP_GunnerActionResult maintainLocalLock(AbstractVehicle vehicle,
                                                     @Nullable WeaponUnit weaponUnit,
                                                     @Nullable Entity target) {
-        if (vehicle == null || weaponUnit == null || target == null || !target.isAlive()) {
+        if (weaponUnit == null) {
+            return RVP_GunnerActionResult.INVALID;
+        }
+        if (target == null || !target.isAlive()) {
+            // 目标消失或死亡时清除武器站内所有雷达锁，避免 RWR 和 SARH 中继保留幽灵目标。
+            clearAllLocalLocks(weaponUnit);
+            return RVP_GunnerActionResult.INVALID;
+        }
+        if (vehicle == null) {
             return RVP_GunnerActionResult.INVALID;
         }
         if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF
@@ -112,6 +120,25 @@ public final class RVP_GunnerRadarActions {
         }
         WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
         if (root.getLockedEntity() != null) {
+            root.setLockedEntity(null);
+        }
+    }
+
+    /** 清除指定武器站的全部雷达锁及根武器站锁定目标。 */
+    private static void clearAllLocalLocks(WeaponUnit weaponUnit) {
+        // 调用本体雷达列表 API，枚举该武器站拥有的全部雷达部件，避免只清首选雷达。
+        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+            // 调用本体雷达锁读取 API，跳过本来就没有锁定目标的雷达部件。
+            if (radarUnit.getLockedEntity() != null) {
+                // 调用本体雷达锁定 API，清除目标失效后留在各雷达部件上的锁。
+                radarUnit.setLockedEntity(null);
+            }
+        }
+        // 调用本体武器站层级 API，定位发射链实际读取锁定状态的 root 武器站。
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        // 调用本体根锁读取 API，仅在仍有锁时执行清理写入。
+        if (root.getLockedEntity() != null) {
+            // 调用本体武器站锁定 API，同步清理发射链读取的根武器站锁。
             root.setLockedEntity(null);
         }
     }

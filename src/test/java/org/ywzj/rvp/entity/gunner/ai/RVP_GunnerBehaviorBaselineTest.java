@@ -500,6 +500,17 @@ class RVP_GunnerBehaviorBaselineTest {
         assertContainsAll(weapon, "weaponUnit.shoot(", "guidance.prepareLaunch");
         assertContainsAll(movement, "control.reset();", "control.forward = command.forward;");
         assertContainsAll(radar, "radar.setLockedEntity(", "root.setLockedEntity(");
+        assertOrdered(radar,
+                "if (weaponUnit == null)",
+                "if (target == null || !target.isAlive())",
+                "clearAllLocalLocks(weaponUnit);",
+                "if (vehicle == null)",
+                "weaponUnit.getFireControlSensorType()");
+        assertContainsAll(radar,
+                "private static void clearAllLocalLocks(WeaponUnit weaponUnit)",
+                "for (RadarUnit radarUnit : weaponUnit.getRadarUnits())",
+                "radarUnit.setLockedEntity(null);",
+                "root.setLockedEntity(null);");
         assertContainsAll(guidance,
                 "GunnerGuidedWeaponController.tick(",
                 "GunnerGuidedWeaponController.prepareForLaunch(");

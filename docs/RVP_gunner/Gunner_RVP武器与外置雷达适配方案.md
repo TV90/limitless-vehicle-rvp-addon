@@ -11,7 +11,7 @@
 | 问题 | 当前处理 |
 | --- | --- |
 | 创造模式非 HARD 难度下敌对 Gunner 攻击玩家驾驶载具 | `GunnerTargeting` 现在会过滤受保护玩家自身，以及载有受保护玩家的 `AbstractVehicle`。 |
-| 敌对 Gunner 不主动雷达锁定玩家飞机 | `GunnerBrain.tickRadarLock()` 会自动打开当前 RF weapon unit 的雷达，并使用可锁定 radar 写入 `RadarUnit.lockedEntity` 和 root `WeaponUnit.lockedEntity`。 |
+| 敌对 Gunner 不主动雷达锁定玩家飞机 | `RVP_GunnerRadarActions.maintainLocalLock()` 会自动打开当前 RF weapon unit 的雷达，并使用可锁定 radar 写入 `RadarUnit.lockedEntity` 和 root `WeaponUnit.lockedEntity`；目标为空或死亡时清除该武器站全部雷达锁与根锁。 |
 | Gunner 驾驶载具打光弹药 | `GunnerBrain.sustainDriverInfiniteAmmo()` 在驾驶 AI 持续存在时补弹。 |
 | 无限弹药绕过换弹/射速 | 补弹只在弹药归零后等待 reload/cooldown 计时；实际射速仍由 `weapon.isCoolingDown()` 和 `weapon.isReloading()` 钳制。 |
 
@@ -29,8 +29,8 @@
 ### Gunner 当前 RF 锁定链路
 
 1. `GunnerBrain.tickTargeting()` 先按 profile 从实体列表里选目标。
-2. `GunnerBrain.tickRadarLock()` 只处理本车 RF weapon unit。
-3. 当前实现会打开 weapon unit 直属 radar，并对 target 写入 `RadarUnit.lockedEntity` 和 root `WeaponUnit.lockedEntity`。
+2. `GunnerBrain.tick()` 调用 `RVP_GunnerRadarActions.maintainLocalLock()` 处理本车 RF weapon unit。
+3. 动作适配器会打开 weapon unit 直属 radar，并对有效 target 写入 `RadarUnit.lockedEntity` 和 root `WeaponUnit.lockedEntity`；空/死亡目标触发全雷达锁清理。
 4. 还没有自动释放 relay radar，也没有使用外置雷达锁定状态。
 
 ## 需要新增的 AI 服务端链路

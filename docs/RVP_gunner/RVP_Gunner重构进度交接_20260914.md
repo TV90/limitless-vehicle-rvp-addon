@@ -1,7 +1,7 @@
 # RVP Gunner 渐进式重构进度交接
 
-> 更新日期：2026-09-14
-> 代码基线：Git `HEAD=eb9dd73b2681`，并以本交接完成时工作树中的 Gunner 源码为权威
+> 更新日期：2026-09-16
+> 代码基线：Git `HEAD=3ede38d6`（包含 `d3f765dd` 的 RCS/Gunner 修复及阶段 B 动作层）；以当前 Gunner 源码为权威
 > 对应方案：[RVP_Gunner行为组合渐进式重构实施方案_20260914.md](./RVP_Gunner行为组合渐进式重构实施方案_20260914.md) §12
 > 当前状态：阶段 A、阶段 B 已完成；阶段 C～G 未实施
 > 本轮范围：仅修改 Addon 的 Java 源码、Gunner 基线测试与文档；未修改本体、Mixin、Profile JSON 或载具包资产
@@ -20,6 +20,8 @@
 - 动作结果使用统一枚举显式表达 `EXECUTED`、`DISPATCHED`、`GATED`、`UNSUPPORTED`、`INVALID` 和 `NOT_DRIVER`。
 
 阶段 B 没有修改 Gunner Profile 字段、默认值、扫描频率、目标层级、飞行/地面战术参数或 JSON。
+
+2026-09-16 将 `d3f765dd` 的目标丢失清锁修复接入重构后的动作边界：`RVP_GunnerRadarActions.maintainLocalLock()` 在目标为空或死亡时清理该武器站全部 `RadarUnit` 锁和 root `WeaponUnit` 锁，再返回 `INVALID`。`GunnerBrain.tick()` 每 tick 都调用此适配器，因此目标死亡、离开感知范围或索敌结果为空时不再留下 RWR 幽灵锁或 SARH 空中继。新增阶段 B 基线断言保护该清理契约；有效目标锁定流程保持不变。验证：指定环境下 `./gradlew build` 通过；`./gradlew runServer` 日志出现 `Done (2.636s)!`。日志 ERROR 与 §5.2 基线一致，未见本次新增错误。
 
 ---
 
