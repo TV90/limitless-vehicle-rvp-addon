@@ -259,7 +259,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (config == null) {
             return true;
         }
-        LauncherDeployRuntimeManager.Snapshot snapshot = LauncherDeployRuntimeManager.get(vehicle.getId(), config.id());
+        LauncherDeployRuntimeManager.Snapshot snapshot = LauncherDeployRuntimeManager.get(
+                vehicle.getId(), config.id(), vehicle.level().isClientSide());
         LauncherDeployRuntimeManager.State state = snapshot == null
                 ? LauncherDeployRuntimeManager.State.CLOSED
                 : snapshot.state();
