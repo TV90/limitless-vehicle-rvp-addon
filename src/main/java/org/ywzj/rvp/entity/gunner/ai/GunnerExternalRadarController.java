@@ -118,6 +118,9 @@ public final class GunnerExternalRadarController {
             return null;
         }
         // O(实体) 遍历已加载载具，替代 ±maxRange（可达数千格）立方体 getEntities（O(箱子截面)）
+        // 目的：分角度 RCS（2026-09-16）——中继落锁距离同样吃目标隐身因子（正面隐身超出
+        // maxRange × combined 的载具不落锁、不触发 RWR 锁定），与 AI 索敌门保持一致，
+        // 消除"RWR 显示被锁定但 gunner 不开火"的两链不对称。
         Entity best = null;
         double bestDistSqr = Double.MAX_VALUE;
         for (Entity entity : serverLevel.getEntities().getAll()) {
@@ -130,9 +133,10 @@ public final class GunnerExternalRadarController {
             if (!isHostileRelayTarget(launcher, entity, gunner)) {
                 continue;
             }
+            double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(vehicle, radarPos);
             Vec3 center = entity.getBoundingBox().getCenter();
             double distSqr = center.distanceToSqr(radarPos);
-            if (distSqr > maxRange * maxRange) {
+            if (distSqr > effectiveRange * effectiveRange) {
                 continue;
             }
             if (distSqr < bestDistSqr) {

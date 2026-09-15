@@ -15,6 +15,7 @@ import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.audio.VehicleSound;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -59,11 +60,19 @@ public final class RVP_ClientSeekerTone {
         if (tone != null && tone.isStopped()) {
             tone = null;
         }
+        // 声音可能已自行停止（目标实体移除等），此时重建而非复用失效实例
+        if (tone != null && tone.isStopped()) {
+            tone = null;
+        }
         if (tone == null) {
-            // 挂在本地玩家身上（distance=1 → 原位发声），与 RVP 既有 ir_alert 一致；
-            // loop=true 保持长鸣，直到脱锁/换武器/离车时 stop()
+            // 挂在本地玩家骑乘的载具上（对标本体 IR_TRACK_ALARM 挂 vehicle.getId()）：
+            // VehicleSound 对"相机所骑载具"的声音强制钳制在离相机 8 格处——任何视角
+            //（含第三人称远距）都必然可闻；挂在玩家 id 则第三人称相机 16~28 格会超出
+            // 16 格线性可听半径而无声（2026-09-16 实机反馈修复）。
+            AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+            int attachId = vehicle != null ? vehicle.getId() : player.getId();
             SoundEvent ev = resolveLockTone(weapon.getData());
-            tone = new VehicleSound(ev, 1f, 1f, 1f, true, 0, false, false, player.getId());
+            tone = new VehicleSound(ev, 1f, 1f, 1f, true, 0, false, false, attachId);
             tone.play();
         }
     }
