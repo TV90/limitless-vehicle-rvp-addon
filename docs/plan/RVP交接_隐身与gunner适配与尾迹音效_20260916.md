@@ -83,6 +83,9 @@
 - [ ] gunner 本地锁俯仰门修复（2026-09-16 追加）：Su-57 开弹舱贴脸掠顶 Buk → RADAR_LOCK + 5 秒后导弹；
       远距接近 SENSE REJECT 仍在（RCS 无回归）；cssa5/ps1sm 对空回归；诊断 `/rvpdebug gunnerlock on`；
       详见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`；
+- [ ] "只锁定不攻击"第二轮修复（同日 §六）：创造+困难开 f14a_iriaf 应被选中并 5 秒后发射；
+      创造+非困难仍受保护；低空（<25 格 AGL）可被锁打；若仍不攻击看 SENSE REJECT reason /
+      AI NO_TARGET 的 profile 与 difficulty；
 - [ ] 三机隐身强度手感（当前中间档：正面接近 ARH 截获距离 = 原定 × 0.08~0.18；gunner 感知同比例）；
 - [ ] 弹舱 6 倍增幅：开主弹舱投 PL-15 立即"变亮"（封顶 1）；只开 pl10_bay（×2）几乎不暴露；
 - [ ] ARH 相位：原定开机距离即响 MSL 告警 + 箔条可断中继；真开机距离随隐身缩短；

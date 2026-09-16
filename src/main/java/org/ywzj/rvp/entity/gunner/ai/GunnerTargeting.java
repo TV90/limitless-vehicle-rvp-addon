@@ -48,9 +48,8 @@ public final class GunnerTargeting {
         boolean launcher = GunnerBrain.hasLauncherDeployConfig(vehicle);
         // O(实体) 遍历已加载实体，替代 ±radius（带雷达时可达数千格）立方体 getEntities（服务端掉 TPS）
         List<Entity> entities = collectTargetEntities(vehicle, radius,
-                entity -> isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
-                        && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity)
-                        && passesAspectPerception(vehicle, entity, radius));
+                entity -> passesTargetCollectionGates(gunner, vehicle, weaponUnit,
+                        vehicleTeam, gunnerTeam, entity, profile, radius));
         // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
         //（即使它是唯一候选；交战者本人不受限），排除后再做未交战/排斥两池
         List<Entity> rvpAmmo = entities.stream()
@@ -291,6 +290,66 @@ public final class GunnerTargeting {
         return center.add(target.getDeltaMovement().scale(leadScale));
     }
 
+    /**
+     * 索敌收集谓词：与原 {@code isValidTarget && 武器可用 && RCS 感知} 短路顺序完全一致，
+     * 仅在候选为载具/玩家且被拒时把拒绝首因写入 gunnerlock 诊断
+     * （2026-09-16"只锁定不攻击"排查引入，专用服务器为零开销——dist 守卫后不执行）。
+     */
+    private static boolean passesTargetCollectionGates(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                       WeaponUnit weaponUnit, @Nullable Team vehicleTeam,
+                                                       @Nullable Team gunnerTeam, Entity entity,
+                                                       GunnerProfile profile, double radius) {
+        if (!isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)) {
+            if (FMLEnvironment.dist == Dist.CLIENT
+                    && (entity instanceof AbstractVehicle || entity instanceof Player)) {
+                RVP_GunnerLockDebug.logCandidateReject(vehicle, entity,
+                        classifyTargetReject(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile));
+            }
+            return false;
+        }
+        if (!GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity)) {
+            if (FMLEnvironment.dist == Dist.CLIENT && entity instanceof AbstractVehicle targetVehicle) {
+                double agl = targetVehicle.getY() - targetVehicle.level().getHeight(
+                        net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                        Mth.floor(targetVehicle.getX()), Mth.floor(targetVehicle.getZ()));
+                RVP_GunnerLockDebug.logCandidateReject(vehicle, entity,
+                        "WEAPON_UNUSABLE agl=" + String.format("%.0f", agl));
+            }
+            return false;
+        }
+        return passesAspectPerception(vehicle, entity, radius);
+    }
+
+    /** gunnerlock 诊断用：按 {@link #isValidTarget} 的判定顺序给出拒绝首因（仅分类，无副作用）。 */
+    private static String classifyTargetReject(GunnerEntity gunner, AbstractVehicle vehicle,
+                                               @Nullable Team vehicleTeam, @Nullable Team gunnerTeam,
+                                               Entity entity, GunnerProfile profile) {
+        if (!entity.isAlive() || entity == gunner || entity == vehicle) {
+            return "DEAD_OR_SELF";
+        }
+        if (vehicle.getPassengers().contains(entity)) {
+            return "OWN_PASSENGER";
+        }
+        if (entity instanceof Player player && isProtectedCreativePlayer(vehicle, player)) {
+            return "CREATIVE_PLAYER";
+        }
+        if (entity instanceof AbstractVehicle targetVehicle && hasProtectedCreativePassenger(vehicle, targetVehicle)) {
+            return "CREATIVE_PASSENGER";
+        }
+        TargetMatch match = matchProfileTarget(gunner, vehicle, entity, profile);
+        if (!match.allowed) {
+            return "PROFILE_TYPE";
+        }
+        if (gunner.getProfileFaction() != RVP_EnumGunnerFaction.ENEMY && gunner.isOwnedBy(entity)) {
+            return "OWNED";
+        }
+        if (shouldApplyTeamFilter(entity, profile.getFaction()) && !match.bypassTeamFilter
+                && (isAllied(entity, vehicleTeam) || isAllied(entity, gunnerTeam))) {
+            return "ALLIED";
+        }
+        return "OTHER";
+    }
+
     private static boolean isValidTarget(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Team vehicleTeam, @Nullable Team gunnerTeam, Entity entity, GunnerProfile profile) {
         if (!entity.isAlive() || entity == gunner || entity == vehicle) {
             return false;
@@ -337,14 +396,20 @@ public final class GunnerTargeting {
     }
 
     /**
-     * 创造/旁观玩家无条件免攻击（2026-09-15 与用户定版）：生存/冒险攻击，创造与旁观永不攻击。
-     * 原实现为"创造 + 非困难难度"才保护（困难难度创造可被打），现已移除难度例外。
+     * 创造模式保护（2026-09-16 恢复困难难度例外，用户要求）：旁观玩家恒保护；
+     * 创造玩家仅当 gunner 所在世界难度非困难时保护——创造 + 困难难度可被正常攻击。
+     * 步行玩家与驾驶载具（{@link #hasProtectedCreativePassenger}）走本判定，一并生效。
+     * 2026-09-15（c31171d9）曾改为无条件保护（任何难度都不打），2026-09-16 按用户要求
+     * 恢复 09-15 之前的"创造 + 非困难才保护"老语义。
      */
     private static boolean isProtectedCreativePlayer(AbstractVehicle sourceVehicle, Player player) {
         if (player.isSpectator()) {
             return true;
         }
-        return player.isCreative();
+        if (!player.isCreative()) {
+            return false;
+        }
+        return sourceVehicle.level().getDifficulty() != Difficulty.HARD;
     }
 
     private static boolean hasProtectedCreativePassenger(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {

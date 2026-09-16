@@ -125,6 +125,31 @@ public final class RVP_GunnerLockDebug {
     }
 
     /**
+     * AI 索敌无目标诊断：{@code GunnerBrain} 的 target==null 门——不选目标则 engage 永不调用，
+     * 是"只锁定（中继）/不攻击"的直接信号。记录档案/索敌半径/驾驶员模式/难度，
+     * 用于定位 target_types 不匹配、创造模式保护等拒因。
+     */
+    public static void logNoTarget(AbstractVehicle vehicle, String detail) {
+        if (!enabled || FMLEnvironment.dist != Dist.CLIENT) {
+            return;
+        }
+        throttledLog("AI", "NO_TARGET", vehicle, null, detail, PERCEPTION_THROTTLE_TICKS);
+    }
+
+    /**
+     * 索敌候选被拒首因分类：对载具/玩家候选记录 {@code isValidTarget} 或武器可用性的
+     * 拒绝原因（CREATIVE_PLAYER/CREATIVE_PASSENGER/PROFILE_TYPE/ALLIED/WEAPON_UNUSABLE 等），
+     * 按 载具+目标 独立节流。一次实机日志即可判定"为什么不攻击"。
+     */
+    public static void logCandidateReject(AbstractVehicle vehicle, Entity target, String reason) {
+        if (!enabled || FMLEnvironment.dist != Dist.CLIENT) {
+            return;
+        }
+        throttledLog("SENSE", "REJECT#" + target.getId(), vehicle, target,
+                "reason=" + reason, PERCEPTION_THROTTLE_TICKS);
+    }
+
+    /**
      * 外置中继锁（{@code GunnerExternalRadarController.tick}）状态。
      * RELAY_LOCKED 按锁目标变化触发（换目标/从无到有才记一条）；RELAY_DOWN 走低频心跳。
      *

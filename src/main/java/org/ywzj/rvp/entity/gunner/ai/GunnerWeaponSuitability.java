@@ -496,6 +496,14 @@ public final class GunnerWeaponSuitability {
     }
 
     private static boolean isAirTarget(Entity target) {
+        // 目的：固定翼/旋翼载具恒为空中目标（2026-09-16 修复）——低空掠飞（AGL≤25）的
+        // 飞机/直升机是合法对空目标；原 AGL>25 启发式会把"仅对空弹"（如 9M317MA，
+        // 无 lock_altitude_range 默认判仅对空）对低空固定翼全部拒选，导致 gunner 索敌
+        // 整个不选该目标（表现为只锁定/不攻击）。其余实体（地面载具/步行玩家）维持
+        // AGL>25 判据，保留"对空弹不打地面单位"的语义。
+        if (target instanceof FixedWingVehicle || target instanceof RotaryWingVehicle) {
+            return true;
+        }
         return altitudeAgl(target) > 25.0;
     }
 

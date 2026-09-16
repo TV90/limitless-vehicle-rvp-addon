@@ -165,6 +165,18 @@ public final class GunnerBrain {
             if (weaponUnit != null && target != null && allowFire) {
                 tickCombat(gunner, weaponUnit, target, profile);
             } else {
+                if (weaponUnit != null && target == null) {
+                    // gunnerlock 诊断：索敌无目标是"只锁定（中继）/不攻击"的直接信号——
+                    // engage 只在 target!=null 时被调用。记录档案/索敌半径/驾驶员模式/难度，
+                    // 一次日志即可区分 target_types 不匹配、创造模式保护等拒因。
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        RVP_GunnerLockDebug.logNoTarget(vehicle,
+                                "profile=" + gunner.getProfileId()
+                                        + " searchRadius=" + String.format("%.0f", profile.getSearchRadius())
+                                        + " driverMode=" + describeDriverMode(vehicle)
+                                        + " difficulty=" + vehicle.level().getDifficulty());
+                    }
+                }
                 gunner.setControlledWeaponIndex(-1);
             }
         }
@@ -223,6 +235,17 @@ public final class GunnerBrain {
             // 调用本项目组网表记录新开始跟踪的目标，防止同阵营炮车在等待持锁时重复占用该来袭弹。
             RVP_GunnerEngagementNet.markTracked(vehicle.level(), gunner.getProfileFaction(), target, windowTick);
         }
+    }
+
+    /** gunnerlock 诊断用：驾驶员游戏模式描述（creative/spectator/survival/无驾驶员）。 */
+    private static String describeDriverMode(AbstractVehicle vehicle) {
+        if (vehicle.getDriver() instanceof Player player) {
+            if (player.isSpectator()) {
+                return "spectator";
+            }
+            return player.isCreative() ? "creative" : "survival";
+        }
+        return "none";
     }
 
     private static boolean isCiwsAltitudeMet(AbstractVehicle vehicle) {

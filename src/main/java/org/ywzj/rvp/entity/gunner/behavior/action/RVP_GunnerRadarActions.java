@@ -36,6 +36,10 @@ public final class RVP_GunnerRadarActions {
         if (target == null || !target.isAlive()) {
             // 目标消失或死亡时清除武器站内所有雷达锁，避免 RWR 和 SARH 中继保留幽灵目标。
             clearAllLocalLocks(weaponUnit);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, null, "NO_TARGET",
+                        target == null ? "AI无tracked目标" : "target已死亡");
+            }
             return RVP_GunnerActionResult.INVALID;
         }
         if (vehicle == null) {
@@ -50,6 +54,9 @@ public final class RVP_GunnerRadarActions {
         }
         RadarUnit radar = prepareLockRadar(weaponUnit);
         if (radar == null) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, target, "UNSUPPORTED", "无可锁雷达（radar==null）");
+            }
             return RVP_GunnerActionResult.UNSUPPORTED;
         }
         Entity lockTarget = normalizeTarget(target);

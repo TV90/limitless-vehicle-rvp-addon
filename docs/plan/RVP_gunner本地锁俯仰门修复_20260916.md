@@ -114,3 +114,55 @@ if (aimRot.y < radar.getYRotMin() || aimRot.y > radar.getYRotMax()
 - **有意变更**：gunner 本地雷达锁不再有俯仰限制（原俯仰门从未正确工作过，
   实际效果是"视轴以上全拒"）；修复后贴脸/掠顶可被本地锁。玩家的雷达锁行为不受影响
   （玩家锁本就无俯仰门）。
+
+---
+
+## 六、追加排查（2026-09-16 第二轮）："只锁定不攻击"（F-14D/f14a_iriaf）
+
+### 现象
+
+俯仰门修复后，用户实测 gunner 山毛榉对玩家驾驶的非隐身飞机（先报 f14d，后更正为
+f14a_iriaf——诊断日志里只有实体类名 `fixed_wing_vehicle#715`，无法区分机型，均无 RCS
+配置，不影响结论）**只锁定（RWR 有锁定告警）不攻击**。
+
+### 日志判读（logs/rvp_gunner_lock_debug.log）
+
+- RELAY 通道有日志（含 RELAY_LOCKED target=fixed_wing_vehicle#715）；
+- LOCK / FIRE 通道整段零日志。
+
+LOCK/FIRE 全空 ⇒ `maintainLocalLock`（GunnerBrain:149）与 `engage`（经 tickCombat:166）
+从未执行到任何带日志的出口——两处背靠背共用同一 target 参数，而中继锁成立（其兜底
+`findRelayScanTarget` 只在 target==null 时触发）⇒ **AI 的 trackedTarget 恒为 null：
+索敌（findBestTarget）从未选中该飞机，engage 从未被调用**。中继"锁定仅是告警"是
+既有设计（见交接文档 §五.2），不构成攻击。
+
+### 三个候选拒因（索敌收集谓词逐门排查）
+
+| 拒因 | 位置 | 触发条件 |
+|---|---|---|
+| **创造模式保护** | `GunnerTargeting.isValidTarget` → `hasProtectedCreativePassenger` → `isProtectedCreativePlayer` | 乘客含创造/旁观玩家。**2026-09-15（c31171d9）起为无条件保护（任何难度都不打）**；中继不做此过滤 → 恰好"只锁不攻" |
+| 对空弹专用门 | `GunnerWeaponSuitability.canSelectForTarget` L96-99 | 9M317MA 无 `lock_altitude_range` → 判"仅对空弹"；"对空"=硬编码 AGL>25 → **AGL≤25 的低空固定翼整个进不了候选池**（真 bug，已修） |
+| 档案 target_types | gunner 档案 JSON（friendly=`["monster","vehicle:enemy_gunner"]` 等） | 档案不含玩家目标则永不索敌玩家；中继只查 team/owner 敌对照锁 |
+
+已排除：RCS 感知（无配置因子恒 1.0）、组网硬禁（只管弹药）、俯仰门修复（只动锁门）。
+
+### 本轮修复（cbaf5fac 之上）
+
+1. **恢复困难难度例外**（用户要求，覆盖 09-15 定版）：`isProtectedCreativePlayer` =
+   旁观恒保护；创造仅当 `sourceVehicle.level().getDifficulty() != Difficulty.HARD` 才保护
+   → **创造 + 困难 = 可被正常攻击**（步行/驾驶载具一并生效）。
+2. **低空对空弹误拒修复**：`GunnerWeaponSuitability.isAirTarget` 对 FixedWing/RotaryWing
+   恒真（低空掠飞也是空中目标）；其余实体维持 AGL>25（不打地面单位语义保留）。
+3. **插桩补全**：LOCK 通道补 NO_TARGET/NO_RADAR 静默出口；新增 AI 通道 NO_TARGET
+   （profile/索敌半径/驾驶员模式/难度）；SENSE 通道候选拒绝首因分类
+   （CREATIVE_PLAYER/CREATIVE_PASSENGER/PROFILE_TYPE/ALLIED/WEAPON_UNUSABLE(AGL)/PERCEPTION）。
+   下次日志可直接读出拒因。
+
+### 实机验证清单（追加）
+
+- [ ] 创造 + 困难难度开 f14a_iriaf：Buk 应选中并 5 秒对空纪律后发射导弹；
+- [ ] 创造 + 非困难难度：仍受保护（不打）；
+- [ ] 生存模式各难度行为不变；
+- [ ] 低空（<25 格 AGL）飞行可被锁定并攻击（对空弹低空门修复）；
+- [ ] 若仍不攻击：`/rvpdebug gunnerlock on` 后看 SENSE REJECT#id 的 reason 与 AI NO_TARGET
+      的 profile/driverMode/difficulty——PROFILE_TYPE=档案不对（换 enemy 档案刷）；其它按 reason 对号。
