@@ -337,7 +337,6 @@ public final class RVP_ExternalRadarSyncService {
     private static void appendAmmoTargets(RadarUnit radarUnit, AbstractVehicle relayVehicle, List<Entity> targets, boolean requireTrackingLine) {
         Vec3 radarPos = radarUnit.worldRadarPosition();
         double maxDistance = radarUnit.getMaxScanDistance();
-        double maxDistanceSqr = maxDistance * maxDistance;
         java.util.Set<Integer> existingIds = new java.util.HashSet<>();
         for (Entity target : targets) {
             existingIds.add(target.getId());
@@ -353,8 +352,12 @@ public final class RVP_ExternalRadarSyncService {
             if (!bullet.isAlive() || bullet.getVehicle() != null || !bullet.isRadarDetectableAmmo()) {
                 continue;
             }
+            // 2026-09-17 弹药分角度 RCS：与主链路（RVP_RadarScanHelper）统一按弹体朝向因子
+            // 缩放探测距离——修复旧实现 sig 只当开关不当倍率的不一致
+            double signature = bullet.getRadarSignatureTowards(radarPos);
+            double effectiveMaxSqr = maxDistance * signature * (double) signature;
             Vec3 pos = bullet.getBoundingBox().getCenter();
-            if (pos.distanceToSqr(radarPos) > maxDistanceSqr) {
+            if (pos.distanceToSqr(radarPos) > effectiveMaxSqr) {
                 continue;
             }
             if (!isWithinScanHeight(radarUnit, pos)) {

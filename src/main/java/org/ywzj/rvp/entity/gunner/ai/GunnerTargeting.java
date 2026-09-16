@@ -11,6 +11,7 @@ import net.minecraft.world.scores.Team;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
@@ -372,6 +373,21 @@ public final class GunnerTargeting {
         return isValidTarget(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), designated, profile);
     }
 
+    /**
+     * 弹药分角度 RCS 感知门（2026-09-17，与战机 passesAspectPerception 同构）：
+     * 拦截感知距离 = 索敌半径 × 弹药朝向因子（misc_data.ammo_radar_rcs_factor，
+     * 迎头突防的隐身导弹更难被 gunner 自动拦截）；因子 >1 的增透由索敌 AABB 天然封顶。
+     * 非 RVP_BaseBullet 候选（本体弹药等）不经过本门。
+     */
+    private static boolean passesAmmoAspectPerception(AbstractVehicle observer, Entity ammo, double radius) {
+        if (!(ammo instanceof RVP_BaseBullet bullet)) {
+            return true;
+        }
+        double factor = bullet.getRadarSignatureTowards(observer.position());
+        double effective = radius * factor;
+        return observer.position().distanceToSqr(ammo.position()) <= effective * effective;
+    }
+
     private static boolean isValidTarget(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Team vehicleTeam, @Nullable Team gunnerTeam, Entity entity, GunnerProfile profile) {
         if (!entity.isAlive() || entity == gunner || entity == vehicle) {
             return false;
@@ -566,6 +582,7 @@ public final class GunnerTargeting {
         List<Entity> entities = collectTargetEntities(vehicle, radius, entity ->
                 isValidTarget(gunner, vehicle, vehicleTeam, gunnerTeam, entity, profile)
                         && (isRvpMissile(entity) || isRvpBomb(entity) || isRvpRocket(entity))
+                        && passesAmmoAspectPerception(vehicle, entity, radius)
                         && GunnerWeaponSuitability.hasUsableWeaponForTarget(weaponUnit, entity));
         if (entities.isEmpty()) {
             return null;
@@ -600,6 +617,10 @@ public final class GunnerTargeting {
                 return false;
             }
             if (!isInterceptableRvpProjectile(entity)) {
+                return false;
+            }
+            // 弹药分角度 RCS 感知门（2026-09-17）：迎头突防的隐身导弹更难被 CIWS 自动拦截
+            if (!passesAmmoAspectPerception(vehicle, entity, ciwsRange)) {
                 return false;
             }
             if (gunner.isCiwsTargetOnCooldown(entity)) {

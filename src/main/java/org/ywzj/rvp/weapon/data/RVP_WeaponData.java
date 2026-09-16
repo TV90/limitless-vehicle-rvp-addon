@@ -240,8 +240,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return getMiscData().resolveMissileNameOnRadar(distance);
     }
 
-    public float resolveSignalIntensityFactorOnRadar(float distance) {
-        return getMiscData().resolveSignalIntensityFactorOnRadar(distance);
+    /** 弹药分角度雷达信号因子 [迎头, 侧向, 尾向]（未配置返回 [1,1,1]，见 RVP_MiscData）。 */
+    public float[] getAmmoRadarRcsFactor() {
+        return getMiscData().getAmmoRadarRcsFactor();
+    }
+
+    /** 弹药是否配置了分角度雷达信号因子。 */
+    public boolean hasAmmoRadarRcsFactor() {
+        return getMiscData().hasAmmoRadarRcsFactor();
     }
 
     public RVP_Explosion getExplosionData() {

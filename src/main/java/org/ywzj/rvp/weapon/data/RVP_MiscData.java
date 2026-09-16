@@ -14,8 +14,15 @@ public class RVP_MiscData {
     @SerializedName("missile_name_on_radar")
     private Map<RVP_Range<Float>, String> missileNameOnRadar = createDefaultRadarNames();
 
-    @SerializedName("signal_intensity_factor_on_radar")
-    private Map<RVP_Range<Float>, Float> signalIntensityFactorOnRadar = createDefaultSignalIntensityFactors();
+    /**
+     * 弹药分角度雷达信号因子 [迎头, 侧向, 尾向]（2026-09-17 取代旧
+     * signal_intensity_factor_on_radar 均匀倍率）：雷达探测该弹药的距程 =
+     * 雷达 max_scan_distance × 按弹体速度方向插值出的方向因子（与战机
+     * rvp_radar_rcs_factor 同款 sin³ 曲线，字段名加 ammo 与载具区分）。
+     * null = 未配置（等效 [1,1,1]）；单档钳 [0.01, 10]，可大于 1 增透。
+     */
+    @SerializedName("ammo_radar_rcs_factor")
+    private float[] ammoRadarRcsFactor;
 
     @SerializedName("artillery_map")
     private boolean artilleryMap;
@@ -28,10 +35,31 @@ public class RVP_MiscData {
         return missileNameOnRadar == null ? createDefaultRadarNames() : missileNameOnRadar;
     }
 
-    public Map<RVP_Range<Float>, Float> getSignalIntensityFactorOnRadar() {
-        return signalIntensityFactorOnRadar == null
-                ? createDefaultSignalIntensityFactors()
-                : signalIntensityFactorOnRadar;
+    /** 弹药分角度雷达信号因子；未配置返回 [1,1,1]，单档钳 [0.01, 10]，非法回退 1。 */
+    public float[] getAmmoRadarRcsFactor() {
+        float[] resolved = clampAmmoRadarRcsFactor(ammoRadarRcsFactor);
+        return resolved != null ? resolved : new float[]{1.0f, 1.0f, 1.0f};
+    }
+
+    /** 弹药是否配置了分角度雷达信号因子（未配置走 [1,1,1] 中性路径）。 */
+    public boolean hasAmmoRadarRcsFactor() {
+        return clampAmmoRadarRcsFactor(ammoRadarRcsFactor) != null;
+    }
+
+    @Nullable
+    private static float[] clampAmmoRadarRcsFactor(float[] factor) {
+        if (factor == null || factor.length < 3) {
+            return null;
+        }
+        float[] clamped = new float[3];
+        for (int i = 0; i < 3; i++) {
+            float value = factor[i];
+            if (Float.isNaN(value) || Float.isInfinite(value)) {
+                return null;
+            }
+            clamped[i] = Math.max(0.01f, Math.min(10.0f, value));
+        }
+        return clamped;
     }
 
     public boolean isArtilleryMap() {
@@ -93,14 +121,6 @@ public class RVP_MiscData {
         return resolveByRange(getMissileNameOnRadar(), distance, null);
     }
 
-    public float resolveSignalIntensityFactorOnRadar(float distance) {
-        Float resolved = resolveByRange(getSignalIntensityFactorOnRadar(), distance, 1.0f);
-        if (resolved == null || Float.isNaN(resolved) || Float.isInfinite(resolved)) {
-            return 1.0f;
-        }
-        return Math.max(resolved, 0f);
-    }
-
     @Nullable
     private static <T> T resolveByRange(
             Map<RVP_Range<Float>, T> values,
@@ -141,12 +161,6 @@ public class RVP_MiscData {
     private static Map<RVP_Range<Float>, String> createDefaultRadarNames() {
         Map<RVP_Range<Float>, String> values = new LinkedHashMap<>();
         values.put(RVP_Range.of(new RVP_Range.Interval<>(20f, null)), "MSL");
-        return values;
-    }
-
-    private static Map<RVP_Range<Float>, Float> createDefaultSignalIntensityFactors() {
-        Map<RVP_Range<Float>, Float> values = new LinkedHashMap<>();
-        values.put(RVP_Range.of(new RVP_Range.Interval<>(0f, null)), 1.0f);
         return values;
     }
 }

@@ -305,3 +305,49 @@ RADAR_SEARCH（文字每 5t 刷新、响声每 `scan_period_tick`=60t 一轮）�
 （=索敌同款 `isValidTarget` 全链：创造保护方案A矩阵/target_types/敌我）——修复"创造+
 和平模式驾驶被攻击"回归（搜索中继接触链不做创造过滤，指示采纳后又经本车落锁获得
 发射授权，绕过方案A保护）。
+
+---
+
+## 九、第五轮（2026-09-17）：弹药分角度雷达信号（ammo_radar_rcs_factor）
+
+### 需求
+
+给 RVP 导弹/炸弹/火箭弹加与战机同款的分角度 RCS 隐身。现有
+`misc_data.signal_intensity_factor_on_radar`（14 个武器配 5/6）是均匀倍率不分角度——
+全量替换为新字段 `misc_data.ammo_radar_rcs_factor: [迎头, 侧向, 尾向]`（字段名含 ammo
+与载具的 `rvp_radar_rcs_factor` 区分），参照方向为**弹体飞行方向**（迎头突防信号最小），
+探测距离 = `雷达 max_scan_distance × 方向因子`，无 ≤1 封顶（弹药可增透）。
+
+### 迁移（用户定版）
+
+- j16_akf98a / rafale_storm_shadow → `[0.08, 0.35, 0.18]`（与 j20a 相同隐身参数）；
+- 其余 12 个（9k720_9m723、f14d_mk84、j10c_gb3_ir/laser、m142_atacms、
+  f14d_maodie_yeshenggounai、mi28_kh_39、rafale_aasm_ir/laser、m1a2sep_lahat、
+  spice_1000、su57_kh38）→ `[1, 1, 1]`（不再有旧 5/6 倍增透，按雷达标称距离探测）；
+- 迁移脚本 `scripts/migrate_ammo_radar_rcs_20260917.py`（带 type=missile/bomb/rocket 断言，
+  机炮等其它类型跳过）：主包 14 + run/server 14 + client_1/client_2 各 11 成功（这两份
+  陈旧副本本就缺 j16_akf98a/f14d_mk84/f14d_maodie_yeshenggounai 三文件）；旧字段全项目 0 残留。
+
+### 实现
+
+- `RVP_MiscData`：删旧字段/resolver/默认工厂，新增 `ammo_radar_rcs_factor` float[3]
+  （Gson 解析，缺省 null→[1,1,1]，单档钳 [0.01,10]，非法整体回退 1）；`RVP_WeaponData` 转发；
+- `RVP_BaseBullet`：三档字段（spawn 赋值 + 生成包同步三 float，替代原单 sig）；
+  `getSignatureSize()` 改返回**侧向值**（红外虚拟箱/遗留消费不变）；新增
+  `getRadarSignatureTowards(observerPos)` 按速度方向插值（纯 Math 的
+  `RVP_AmmoRadarRcs.factorTowards`，零速度回退侧向）；无 rvpData 保持 0 不可见；
+- 消费链：`RVP_RadarScanHelper.appendRvpAmmoTargets`（玩家客户端雷达 + 服务端 gunner
+  雷达表）与 `RVP_ExternalRadarSyncService.appendAmmoTargets`（中继快照，顺带修复旧
+  "sig 只当开关不当倍率"不一致）改调方向因子；`GunnerTargeting` 弹药层
+  （findCiwsTarget/findNearbyAmmoTarget/findBestTarget rvpAmmo 层）新增拦截感知门
+  （索敌半径 × 方向因子，与战机 passesAspectPerception 同构；>1 由索敌 AABB 封顶）；
+- 不动：红外虚拟箱仍用侧向均匀值（红外不分角度）、ARH 导引头（弹药本非候选）、
+  接触保持（探测难跟踪易）、组网记账、载具探测链。
+
+### 实机验证清单（追加）
+
+- [ ] AKF98A/风暴阴影迎头突防：雷达/中继快照上出现距离明显短于侧掠（j20a 同款 0.08）；
+      gunner CIWS/拦截对迎头隐身弹明显变难；
+- [ ] 9M723/kh38 等配 [1,1,1] 的弹药：雷达探测距离 = 雷达标称值（不再有旧 5/6 倍增透，
+      属用户定版的平衡变化）；
+- [ ] 机炮弹/未配置弹药行为不变；红外弹对导弹的锁定（虚拟箱）不变。

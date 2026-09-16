@@ -114,7 +114,9 @@ public final class RVP_RadarScanHelper {
                     || !bullet.isRadarDetectableAmmo()) {
                 continue;
             }
-            float sig = bullet.getSignatureSize();
+            // 2026-09-17 弹药分角度 RCS：信号按弹体速度方向朝向雷达的因子插值
+            // （迎头突防最小、侧掠/过顶暴露），未配置 ammo_radar_rcs_factor 恒 1.0 与旧 uniform 一致
+            float sig = bullet.getRadarSignatureTowards(radarPos);
             double effectiveMaxSqr = maxScanDistanceSqr * sig * sig;
             Vec3 targetPos = bullet.getBoundingBox().getCenter();
             if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {

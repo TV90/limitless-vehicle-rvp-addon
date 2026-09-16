@@ -1118,7 +1118,7 @@ velocity = worldDown × cos(theta) × launch_speed
 | --- | --- | --- | --- |
 | `missile_name_on_hud` | 导弹在 HUD 上显示的名称，按距目标距离区间映射（距离单位：米）。 | `Map<RVP_Range<Float>, String>` | `{"[[0,500]]":"MSL","[[500,inf]]":null}` |
 | `missile_name_on_radar` | 导弹在雷达上的显示名称，按距离区间映射。 | `Map<RVP_Range<Float>, String>` | `{"[[20,inf]]":"MSL"}` |
-| `signal_intensity_factor_on_radar` | 导弹在雷达上的信号强度倍率，按距离区间映射；未命中区间或非法值按 `1.0`。 | `Map<RVP_Range<Float>, Float>` | `{"[[0,inf]]":1.0}` |
+| `ammo_radar_rcs_factor` | **弹药分角度雷达信号因子 `[迎头, 侧向, 尾向]`**（2026-09-17 取代旧 `signal_intensity_factor_on_radar` 均匀倍率，字段名含 ammo 与载具的 `rvp_radar_rcs_factor` 区分）：雷达探测该弹药的距程 = 雷达 `max_scan_distance` × 按弹体速度方向插值的方向因子（与战机同款 sin³ 曲线，迎头最小、侧掠居中、尾向最大，可 >1 增透）；未配置等效 `[1,1,1]`（与旧默认 1.0 行为一致），单档钳 `[0.01, 10]`。 | `float[3]` | `[0.08, 0.35, 0.18]`（隐身巡航弹）／`[1, 1, 1]`（默认） |
 | `artillery_map` | 是否作为火炮地图弹药（在战术地图上绘制弹道/落点）。 | `boolean` | `false` |
 
 ```json
@@ -1130,9 +1130,7 @@ velocity = worldDown × cos(theta) × launch_speed
   "missile_name_on_radar": {
     "[[20,inf]]": "MSL"
   },
-  "signal_intensity_factor_on_radar": {
-    "[[0,inf]]": 1.0
-  },
+  "ammo_radar_rcs_factor": [0.08, 0.35, 0.18],
   "artillery_map": false
 }
 ```
@@ -2462,7 +2460,7 @@ RVP 的 Forge 配置分三个文件：`ywzj_rvp-server.toml`、`ywzj_rvp-common.
 | `dual_pulse` | `projectile_data.second_pulse` / `second_pulse_trigger_speed` / `second_pulse_trigger_distance` / `second_pulse_thrust` / `second_pulse_burn_time` |
 | `altitude_drag_*` | `projectile_data.altitude_drag_factor` |
 | `gps_cep` | `guidance_data.gps_spread_radius` |
-| `signature_size` | `misc_data.signal_intensity_factor_on_radar` |
+| `signature_size` | `misc_data.ammo_radar_rcs_factor` |
 | `guide_head_max_angle` | `guidance_data.max_off_axis_lock_angle` |
 | `seek.fov` | `guidance_data.max_lock_angle`（注意后者为完整 FOV，运行时减半） |
 | `terminal_ir_*` | 并入 `guidance_data.terminal_guidance`（仅 `NONE`/`ATV`/`AIR`/`ARH`/`ARM`/`IR`） |

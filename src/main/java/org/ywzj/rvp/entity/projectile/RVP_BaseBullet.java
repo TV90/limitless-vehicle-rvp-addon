@@ -97,6 +97,7 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.particle.BulletHoleOption;
+import org.ywzj.rvp.radar.RVP_AmmoRadarRcs;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.util.BulletHitResult;
@@ -322,8 +323,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
     protected boolean showMslIndicator;
 
-    /** 信号尺寸：0=不可被雷达/红外探测；>0 替代碰撞箱尺寸用于探测过滤及 RCS 倍率。 */
+    /** 信号尺寸（= 分角度因子的侧向值）：0=不可被雷达/红外探测；红外虚拟箱沿用此值。 */
     protected float signatureSize = 0f;
+
+    /** 弹药分角度雷达信号因子 [迎头, 侧向, 尾向]（misc_data.ammo_radar_rcs_factor，2026-09-17），经生成数据包同步。 */
+    protected float radarRcsFront = 1.0f;
+    protected float radarRcsSide = 1.0f;
+    protected float radarRcsRear = 1.0f;
 
     /** 本 tick 内直击命中的载具 ID 集合，用于区分 HE 直击与非直击爆炸的 ERA 破坏。 */
     protected final java.util.Set<Integer> directHitVehicleIds = new java.util.HashSet<>();
@@ -631,7 +637,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 this.entityData.set(DATA_WIRE_PIVOT_LOCAL_PREV_Z, local.z);
             }
         }
-        this.signatureSize = data.resolveSignalIntensityFactorOnRadar(0f);
+        // 2026-09-17 弹药分角度雷达信号：三档 [迎头, 侧向, 尾向] 取代旧均匀倍率
+        // signal_intensity_factor_on_radar；侧向值兼作均匀信号尺寸（红外虚拟箱等遗留消费）。
+        float[] ammoRcs = data.getAmmoRadarRcsFactor();
+        this.radarRcsFront = ammoRcs[0];
+        this.radarRcsSide = ammoRcs[1];
+        this.radarRcsRear = ammoRcs[2];
+        this.signatureSize = ammoRcs[1];
         this.submunitionRunner = RVP_SubmunitionRunner.create(data.getSubmunitionData(), submunitionDepth);
         this.livingPenetrationLeft = data.getLivingPenetration();
         this.wallPenetrationLeft = data.getWallPenetration();
@@ -800,9 +812,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return rvpData;
     }
 
-    /** 获取信号尺寸；0 表示不可被雷达/红外探测。 */
+    /** 获取信号尺寸（= 分角度因子的侧向值，红外虚拟箱沿用）；0 表示不可被雷达/红外探测。 */
     public float getSignatureSize() {
         return signatureSize;
+    }
+
+    /**
+     * 朝向观察者方向的雷达信号因子（2026-09-17 弹药分角度 RCS）：按弹体速度方向与
+     * "弹体→观察者"方向的夹角，在 [迎头, 侧向, 尾向] 三档间做与战机同款的 sin³ 插值——
+     * 迎头突防（弹头指向雷达）信号最小，侧掠/过顶暴露，飞离最大。
+     * 速度趋近零（如刚投放的炸弹）回退侧向值；无配置（三档全 1）恒 1.0。
+     */
+    public float getRadarSignatureTowards(Vec3 observerPos) {
+        Vec3 velocity = this.getDeltaMovement();
+        return RVP_AmmoRadarRcs.factorTowards(
+                velocity.x, velocity.y, velocity.z,
+                this.getX(), this.getY(), this.getZ(),
+                observerPos.x, observerPos.y, observerPos.z,
+                radarRcsFront, radarRcsSide, radarRcsRear);
     }
 
     public boolean isRadarDetectableAmmo() {
@@ -4470,7 +4497,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeDouble(coldLaunchVelocity.y);
         buffer.writeDouble(coldLaunchVelocity.z);
         buffer.writeBoolean(showMslIndicator);
-        buffer.writeFloat(signatureSize);
+        buffer.writeFloat(radarRcsFront);
+        buffer.writeFloat(radarRcsSide);
+        buffer.writeFloat(radarRcsRear);
         buffer.writeBoolean(launchTargetSnapshot);
         buffer.writeVarInt(Math.max(irSeekerGraceUntilTick, Integer.MIN_VALUE + 1));
         buffer.writeVarInt(targetEntity != null ? targetEntity.getId() : 0);
@@ -4500,7 +4529,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.coldLaunchTimeTick = buffer.readVarInt();
         this.coldLaunchVelocity = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         this.showMslIndicator = buffer.readBoolean();
-        this.signatureSize = buffer.readFloat();
+        this.radarRcsFront = buffer.readFloat();
+        this.radarRcsSide = buffer.readFloat();
+        this.radarRcsRear = buffer.readFloat();
+        this.signatureSize = this.radarRcsSide;
         this.launchTargetSnapshot = buffer.readBoolean();
         this.irSeekerGraceUntilTick = buffer.readVarInt();
         yRotO = getYRot();
