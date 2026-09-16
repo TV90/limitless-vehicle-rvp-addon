@@ -31,6 +31,7 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerDebugMonitor;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.network.C2SDebugSpawnVehicle;
 import org.ywzj.rvp.network.RVP_Network;
 
@@ -289,6 +290,23 @@ public class RVP_DebugCommands {
                                 .then(Commands.literal("stop").executes(ctx -> {
                                     RVP_GunnerDebugMonitor.stop();
                                     return 1;
+                                }))
+                        )
+                        .then(Commands.literal("gunnerlock")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    RVP_GunnerLockDebug.setEnabled(true);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已开启 gunnerlock 诊断: " + RVP_GunnerLockDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    RVP_GunnerLockDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 已关闭 gunnerlock 诊断: " + RVP_GunnerLockDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = RVP_GunnerLockDebug.isEnabled();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] gunnerlock=" + enabled + " path=" + RVP_GunnerLockDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
                                 }))
                         )
                         .then(Commands.literal("ui").executes(ctx -> {

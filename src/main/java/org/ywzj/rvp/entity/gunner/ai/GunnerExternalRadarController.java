@@ -7,6 +7,8 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
@@ -47,6 +49,10 @@ public final class GunnerExternalRadarController {
             relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
         }
         if (relayVehicle == null || relayVehicle.isRemoved() || !relayVehicle.isAlive() || relayVehicle.isDestroyed()) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_DOWN", null,
+                        relayVehicle == null ? "无可用中继载具" : "中继载具已失效");
+            }
             clearExternalLock(root, null);
             return;
         }
@@ -54,6 +60,9 @@ public final class GunnerExternalRadarController {
         turnOnRelayRadars(relayVehicle);
         RadarUnit lockRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
         if (lockRadar == null) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_DOWN", null, "中继无可锁雷达");
+            }
             clearExternalLock(root, relayVehicle);
             return;
         }
@@ -64,7 +73,17 @@ public final class GunnerExternalRadarController {
             // 直接按中继雷达扫描范围找最近敌对载具作为锁定目标，保证 RWR 告警生效
             lockTarget = findRelayScanTarget(launcher, relayVehicle, lockRadar, gunner);
         }
-        if (lockTarget == null || !lockTarget.isAlive() || !isWithinRelayLockVolume(lockRadar, lockTarget)) {
+        if (lockTarget == null || !lockTarget.isAlive()) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_UNLOCKED", null, "无有效锁目标");
+            }
+            clearExternalLock(root, relayVehicle);
+            return;
+        }
+        if (!isWithinRelayLockVolume(lockRadar, lockTarget)) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_UNLOCKED", lockTarget, "目标在中继锁体积外");
+            }
             clearExternalLock(root, relayVehicle);
             return;
         }
@@ -73,6 +92,9 @@ public final class GunnerExternalRadarController {
         // 箔条禁锁期：目标被箔条干扰脱锁后短时间内不可被选中/锁定（仍可被扫描），
         // 否则炮手 AI 每 tick 重锁会令脱锁瞬间被还原，雷达看起来"怎么都脱不了锁"
         if (RVP_ChaffJamState.isInCooldown(lockTarget.getUUID(), launcher.level().getGameTime())) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_UNLOCKED", lockTarget, "箔条禁锁期");
+            }
             clearExternalLock(root, relayVehicle);
             return;
         }
@@ -84,6 +106,11 @@ public final class GunnerExternalRadarController {
         }
         RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId(root, lockTarget.getId());
         RVP_WeaponLockStateTable.setExternalRadarLockedEntityId(root, lockTarget.getId());
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            // 按锁目标变化触发：换目标/从无到有才记一条，稳态持锁不刷日志
+            RVP_GunnerLockDebug.logRelay(launcher, "RELAY_LOCKED", lockTarget,
+                    String.format("dist=%.0f", relayVehicle.position().distanceTo(lockTarget.position())));
+        }
     }
 
     private static void turnOnRelayRadars(AbstractVehicle relayVehicle) {

@@ -1,7 +1,9 @@
 # RVP 交接文档：分角度 RCS 隐身 / gunner 适配 / ARH 相位 / 尾迹与音效（2026-09-16）
 
 > **用途**：上下文交接。新窗口从此文档恢复全部背景；末节附新窗口开场提示词。
-> **当前状态**：全部工作已提交，gitee/github 双端同步至 `289ffa94`，工作区干净（载具包照例不进 git）。
+> **当前状态**：在 `289ffa94` 之上追加 **gunner 本地锁俯仰射界门修复 + `/rvpdebug gunnerlock` 诊断**
+> （根因/验证见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`），已提交并双端同步；
+> 工作区干净（载具包照例不进 git）。
 
 ---
 
@@ -68,6 +70,8 @@
 | ARH 相位/告警闸门 | `RVP_MissileEntity.tickActiveSeekerTargetManagement` / `tickRwrMissileLaunchWarn` |
 | ARH 获取距离 | `RVP_RuntimeSeekerSupport.scanRadarTarget`（effectiveRange = 扫描半径 × combined） |
 | 组网交战侧表 | `org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet`（HARD_LOCK_TICKS=60；读取点 findCiwsTarget + findBestTarget 导弹层） |
+| gunner 锁/开火门诊断 | `org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug`（`/rvpdebug gunnerlock`，logs/rvp_gunner_lock_debug.log） |
+| 本地锁俯仰门修复 | `org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerRadarActions`（2026-09-16：删 aimRot.x 俯仰判定，详见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`） |
 | gunner 索敌隐身门 | `GunnerTargeting.passesAspectPerception` + `findCiwsTarget` 两池 |
 | 尾迹/烟浪粒子 | `org.ywzj.rvp.client.particle.RVP_RocketFlameParticle`（CURVE 常量在 trailQuadSize/applyTrailCurve） |
 | 尾迹字段解析 | `RVP_EffectsData`（missile_native_trail_* 全系） |
@@ -76,6 +80,9 @@
 
 ## 四、待实机验证清单
 
+- [ ] gunner 本地锁俯仰门修复（2026-09-16 追加）：Su-57 开弹舱贴脸掠顶 Buk → RADAR_LOCK + 5 秒后导弹；
+      远距接近 SENSE REJECT 仍在（RCS 无回归）；cssa5/ps1sm 对空回归；诊断 `/rvpdebug gunnerlock on`；
+      详见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`；
 - [ ] 三机隐身强度手感（当前中间档：正面接近 ARH 截获距离 = 原定 × 0.08~0.18；gunner 感知同比例）；
 - [ ] 弹舱 6 倍增幅：开主弹舱投 PL-15 立即"变亮"（封顶 1）；只开 pl10_bay（×2）几乎不暴露；
 - [ ] ARH 相位：原定开机距离即响 MSL 告警 + 箔条可断中继；真开机距离随隐身缩短；

@@ -3,8 +3,11 @@ package org.ywzj.rvp.entity.gunner.behavior.action;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.GunnerExternalRadarController;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
@@ -40,6 +43,9 @@ public final class RVP_GunnerRadarActions {
         }
         if (weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF
                 && !hasRadarHomingWeaponForTarget(weaponUnit, target)) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, target, "UNSUPPORTED", "sensor!=RF且无雷达制导武器");
+            }
             return RVP_GunnerActionResult.UNSUPPORTED;
         }
         RadarUnit radar = prepareLockRadar(weaponUnit);
@@ -52,14 +58,28 @@ public final class RVP_GunnerRadarActions {
             return RVP_GunnerActionResult.INVALID;
         }
         double maxRange = radar.getMaxScanDistance();
-        if (radar.worldRadarPosition().distanceToSqr(lockTarget.position()) > maxRange * maxRange) {
+        double dist = radar.worldRadarPosition().distanceTo(lockTarget.position());
+        if (dist > maxRange) {
             clearLocalLock(weaponUnit, radar);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "RANGE",
+                        String.format("dist=%.0f max=%.0f", dist, maxRange));
+            }
             return RVP_GunnerActionResult.GATED;
         }
+        // 方位扇区门：只判 y（方位）。本体雷达扫描/探测（RadarUnit.tickScan/tickDetect）与 RVP
+        // 两条扫描链（RVP_RadarScanService / RVP_ClientRadarTickHandler）对俯仰均不设限，
+        // rot_info 的 x_rot 仅是碟面动画钳制参数（phase 雷达 x_rot_speed=0 时碟面恒 0），
+        // 不代表目标俯仰包线——2026-09-16 修复：原实现把 x_rot_min=0 当 MC 俯仰下限（负=向上），
+        // 导致视轴上方目标（aimRot.x<0，即一切仰角目标）恒 GATED 清锁，gunner 贴脸/掠顶
+        // 永远无法本地锁定；玩家手动锁走 ClientRadarAction.LOCK 不经过此门，故仅 gunner 复现。
         Vec2 aimRot = radar.aimRot(lockTarget.position());
-        if (aimRot.y < radar.getYRotMin() || aimRot.y > radar.getYRotMax()
-                || aimRot.x < radar.getXRotMin() || aimRot.x > radar.getXRotMax()) {
+        if (aimRot.y < radar.getYRotMin() || aimRot.y > radar.getYRotMax()) {
             clearLocalLock(weaponUnit, radar);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "YAW",
+                        String.format("aimY=%.1f lim=[%.0f,%.0f]", aimRot.y, radar.getYRotMin(), radar.getYRotMax()));
+            }
             return RVP_GunnerActionResult.GATED;
         }
         // 调用本体雷达探测，刷新目标对应的雷达告警与探测状态。
@@ -68,6 +88,9 @@ public final class RVP_GunnerRadarActions {
         // 否则炮手 AI 每 tick 重锁会令脱锁瞬间被还原.
         if (RVP_ChaffJamState.isInCooldown(lockTarget.getUUID(), vehicle.level().getGameTime())) {
             clearLocalLock(weaponUnit, radar);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "CHAFF", "");
+            }
             return RVP_GunnerActionResult.GATED;
         }
         if (radar.getLockedEntity() != lockTarget) {
@@ -78,6 +101,10 @@ public final class RVP_GunnerRadarActions {
         if (root.getLockedEntity() != lockTarget) {
             // 调用本体根武器站锁定 API，使武器发射链读取同一目标。
             root.setLockedEntity(lockTarget);
+        }
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "LOCKED",
+                    String.format("dist=%.0f aimY=%.1f", dist, aimRot.y));
         }
         return RVP_GunnerActionResult.EXECUTED;
     }

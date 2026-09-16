@@ -8,6 +8,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
@@ -143,7 +145,15 @@ public final class GunnerTargeting {
         }
         double factor = RVP_AspectRcs.combinedFactor(targetVehicle, observer.position());
         double effective = radius * factor;
-        return observer.position().distanceToSqr(entity.position()) <= effective * effective;
+        double distSqr = observer.position().distanceToSqr(entity.position());
+        if (distSqr > effective * effective) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logPerceptionReject(observer, targetVehicle,
+                        factor, effective, Math.sqrt(distSqr));
+            }
+            return false;
+        }
+        return true;
     }
 
     /** 玩家目标：玩家本体，或由玩家驾驶的载具（已通过 isValidTarget 的敌我过滤，此处只需分类）。 */

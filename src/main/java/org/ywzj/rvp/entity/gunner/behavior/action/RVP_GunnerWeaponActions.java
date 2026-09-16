@@ -3,9 +3,12 @@ package org.ywzj.rvp.entity.gunner.behavior.action;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.entity.gunner.ai.GunnerTargeting;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
@@ -65,6 +68,9 @@ public final class RVP_GunnerWeaponActions {
         int weaponIndex = selectWeaponIndex(weaponUnit, target, profile);
         if (weaponIndex < 0) {
             gunner.setControlledWeaponIndex(-1);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logEngage(vehicle, target, "NO_WEAPON", "");
+            }
             return RVP_GunnerActionResult.UNSUPPORTED;
         }
         gunner.setControlledWeaponIndex(weaponIndex);
@@ -83,10 +89,20 @@ public final class RVP_GunnerWeaponActions {
             if (now - gunner.getAirLockStartTick() < 100
                     || gunner.getLastAirMissileFireTick() != 0
                     && now - gunner.getLastAirMissileFireTick() < 100) {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logEngage(vehicle, target, "AIR_DISCIPLINE",
+                            String.format("hold=%d/100 refire=%s", now - gunner.getAirLockStartTick(),
+                                    gunner.getLastAirMissileFireTick() != 0
+                                            ? (now - gunner.getLastAirMissileFireTick()) + "/100" : "clear"));
+                }
                 return RVP_GunnerActionResult.GATED;
             }
         }
         if (rvpMissile && gunner.getMissileCooldown() > 0 || !gunner.isBurstWindowOpen()) {
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                RVP_GunnerLockDebug.logEngage(vehicle, target, "COOLDOWN",
+                        String.format("missileCD=%d burstOpen=%b", gunner.getMissileCooldown(), gunner.isBurstWindowOpen()));
+            }
             return RVP_GunnerActionResult.GATED;
         }
 
@@ -96,6 +112,10 @@ public final class RVP_GunnerWeaponActions {
             float xError = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
             float yError = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
             if (xError > profile.getFireWindowDeg() || yError > profile.getFireWindowDeg()) {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logEngage(vehicle, target, "AIM_WINDOW",
+                            String.format("err=%.1f,%.1f win=%.1f", xError, yError, profile.getFireWindowDeg()));
+                }
                 return RVP_GunnerActionResult.GATED;
             }
         }
@@ -105,10 +125,18 @@ public final class RVP_GunnerWeaponActions {
             // 制导武器无法发射（如缺雷达/锁不上/锥角不足）时回退到机炮等非制导武器，
             // 避免 gunner 卡死在"选中导弹但打不出"而不作战
             if (!rvpMissile) {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logEngage(vehicle, target, "LOCK_PREPARE_FAIL",
+                            "weapon=" + weaponTag(selectedWeapon));
+                }
                 return RVP_GunnerActionResult.GATED;
             }
             int fallback = findGunWeaponIndex(weaponUnit, target);
             if (fallback < 0 || fallback == weaponIndex) {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logEngage(vehicle, target, "LOCK_PREPARE_FAIL",
+                            "missile无备选机炮 weapon=" + weaponTag(selectedWeapon));
+                }
                 return RVP_GunnerActionResult.GATED;
             }
             selectedWeapon = weaponUnit.getIndexedWeapons().get(fallback);
@@ -116,6 +144,10 @@ public final class RVP_GunnerWeaponActions {
             gunner.setControlledWeaponIndex(fallback);
             // 调用同一项目锁定准备入口，保证回退武器也经过完整门控。
             if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)) {
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logEngage(vehicle, target, "LOCK_PREPARE_FAIL",
+                            "fallback=" + weaponTag(selectedWeapon));
+                }
                 return RVP_GunnerActionResult.GATED;
             }
         }
@@ -140,6 +172,9 @@ public final class RVP_GunnerWeaponActions {
         }
         if (selfGuided && target instanceof AmmoEntity) {
             gunner.setCiwsTargetCooldown(target, 100);
+        }
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            RVP_GunnerLockDebug.logEngage(vehicle, target, "FIRED", "weapon=" + weaponTag(selectedWeapon));
         }
         // 调用组网窗口策略，让发射记账与新目标跟踪记账使用相同的距离滑动窗口。
         long engagementWindowTick = RVP_GunnerEngagementNet.resolveWindowTick(
@@ -178,6 +213,14 @@ public final class RVP_GunnerWeaponActions {
             }
         }
         return RVP_GunnerActionResult.UNSUPPORTED;
+    }
+
+    /** 调试日志用的武器标识（weaponId，缺失时回退类名）。 */
+    private static String weaponTag(AbstractVehicleWeapon<?> weapon) {
+        if (weapon.getData() != null && weapon.getData().getWeaponId() != null) {
+            return weapon.getData().getWeaponId().toString();
+        }
+        return weapon.getClass().getSimpleName();
     }
 
     /** 尝试向指定雷达辐射源发射一枚 AntiRadiation 武器。 */
