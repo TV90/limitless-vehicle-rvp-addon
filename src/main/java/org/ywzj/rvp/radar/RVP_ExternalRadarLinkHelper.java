@@ -72,6 +72,32 @@ public final class RVP_ExternalRadarLinkHelper {
         return firstLockCapable;
     }
 
+    /**
+     * 取中继车上的搜索雷达（2026-09-16 搜索中继定版）：radar_role=search 优先（如 96L6 的
+     * "S400"），否则回退扫描距离最大的任意雷达。搜索中继只用于喂探测表（RADAR_SEARCH 告警）
+     * 与指示目标（gunner 转炮口），**不参与落锁/发射授权**——落锁仍走
+     * {@link #getPreferredRelayLockRadar}（96L6 为 search 时返回 null，锁链自然断开）。
+     */
+    @Nullable
+    public static RadarUnit getPreferredRelaySearchRadar(@Nullable AbstractVehicle relayVehicle) {
+        if (relayVehicle == null || relayVehicle.isDestroyed()) {
+            return null;
+        }
+        RadarUnit bestAny = null;
+        for (PartUnit<?> partUnit : relayVehicle.getPartUnits()) {
+            if (!(partUnit instanceof RadarUnit radarUnit) || !radarUnit.isOn()) {
+                continue;
+            }
+            if (RVP_RadarRoleHelper.ROLE_SEARCH.equalsIgnoreCase(RVP_RadarRoleHelper.getRadarRole(radarUnit))) {
+                return radarUnit;
+            }
+            if (bestAny == null || radarUnit.getMaxScanDistance() > bestAny.getMaxScanDistance()) {
+                bestAny = radarUnit;
+            }
+        }
+        return bestAny;
+    }
+
     public static Collection<S2CExternalRadarSnapshot.Entry> getClientEntries(@Nullable AbstractVehicle launcher,
                                                                               @Nullable ResourceLocation dimension) {
         if (launcher == null || dimension == null) {

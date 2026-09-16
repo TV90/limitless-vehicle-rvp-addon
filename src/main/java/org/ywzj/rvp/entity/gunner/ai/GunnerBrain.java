@@ -214,6 +214,16 @@ public final class GunnerBrain {
         }
         Entity tracked = gunner.getTrackedTarget();
         if (tracked == null || !tracked.isAlive()) {
+            // 搜索中继指示（2026-09-16 搜索中继定版）：自身索敌（RCS 门控）无结果时，
+            // 回退取搜索中继（如 96L6）的当前接触作为 trackedTarget——仅驱动炮口转向
+            // （engage 的 weaponUnit.aim），不落锁（搜索中继不写锁）故 prepareLaunchLock
+            // 的 RF 授权失败、不会发射；目标进入本车雷达烧穿距离后由 maintainLocalLock
+            // 落锁，解锁发射授权（RADAR_LOCK 亦从此才有）。
+            Entity designated = GunnerExternalRadarController.getRelaySearchContact(vehicle);
+            if (designated != null) {
+                gunner.setTrackedTarget(designated);
+                return designated;
+            }
             gunner.setTrackedTarget(null);
             return null;
         }

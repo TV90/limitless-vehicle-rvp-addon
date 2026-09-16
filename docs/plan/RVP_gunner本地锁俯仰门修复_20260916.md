@@ -222,3 +222,65 @@ LOCK/FIRE 全空 ⇒ `maintainLocalLock`（GunnerBrain:149）与 `engage`（经 
       AI NO_TARGET 持续、SENSE REJECT#id 的 factor 为载具因子；
 - [ ] 同距离 AA 车对 AI 隐身机与 AI gunner 对用户隐身机行为对称；
 - [ ] 步行玩家/导弹拦截等非骑乘目标的索敌行为不变。
+
+---
+
+## 八、第四轮（2026-09-16）：搜索中继与火控中继分离（96L6 vs IRIST TADS）
+
+### 用户指出的语义问题
+
+96L6 是搜索/指示雷达（现实中不能锁定目标），但配置里 `radar_role` 竟是 `"fire_control"`，
+导致 gunner 用 96L6 中继"锁定"并发射导弹（RWR 出现 96L6 的锁定告警）。正确语义应为：
+①96L6 只提供搜索/指示——gunner 炮口转向目标但不发射；②RWR 只有 96L6 "S400" 的
+RADAR_SEARCH、无锁定告警；③目标进入 bukm3 发射车**自身雷达烧穿距离**后 gunner 才发射。
+IRIST TADS（radar_role "all"）是火控中继，可锁可射——保持不变。
+
+### 调查结论
+
+- **配置**：`96l6.json:82` `radar_role: "fire_control"`（错误源头）；`irist_slm_tads.json:82`
+  `radar_role: "all"`（TADS 可锁符合预期）；
+- **选锁雷达**：`RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar` 本就按
+  `canLock`（排除 SEARCH）过滤——配置改对后 96L6 自动退出锁雷达选择；
+- **发射授权**：`GunnerWeaponSuitability.getStrictRfLockedEntity:369-372` 允许外置中继锁
+  顶替本车火控锁 → 搜索中继不写锁后该授权自然消失（TADS 仍写锁仍可射）；
+- **搜索告警**：96L6 探测表唯一喂食者是控制器每 tick 的 `radar.detect(target)`，
+  `RVP_WarnRelayService` 由此发 radar_type "S400" 的 RADAR_SEARCH——只喂表不落锁即可保告警；
+- **炮口指示无现成路径**：炮塔瞄准只在 engage（`weaponUnit.aim`）里，而 engage 需要
+  trackedTarget；原中继接触不进 trackedTarget。
+
+### 修复（搜索中继 vs 火控中继双分支）
+
+1. **配置**：4 份副本 `96l6.json` `radar_role → "search"`（载具包不进 git）。
+2. **搜索中继分支**（`GunnerExternalRadarController`）：`getPreferredRelayLockRadar` 为
+   null 时改用 `getPreferredRelaySearchRadar`（新 helper，search 优先/最大扫描兜底）——
+   仍 `findRelayScanTarget`（RCS effectiveRange 门控）+ `radar.detect` 喂表；接触有效性按
+   **烧穿距离**校验（新 `isWithinRelaySearchVolume`，acquire/retain 一致无盲区）；接触记入
+   侧表（40t 新鲜度）；**不落锁、不写外置授权表**。
+3. **gunner 炮口指示**：`GunnerBrain.tickTargeting` 自身索敌无结果时回退取
+   `getRelaySearchContact` 作 trackedTarget——engage 会 `weaponUnit.aim` 转炮口，因无锁
+   `prepareLaunchLock` 失败不发射（fire 日志 LOCK_PREPARE_FAIL）。
+4. **本车烧穿发射门**：`maintainLocalLock` 距离门改为 `maxScan × combinedFactor`，出烧穿
+   距离保持 100t（5 秒）宽限再脱锁（镜像客户端链 LOCKED_TRACK_GRACE_TICKS 语义）；
+   非隐身目标因子 1.0 行为不变。
+5. **诊断**：gunnerlock RELAY 通道新增 SEARCH_ACQ / SEARCH_LOST（接触变化触发）；
+   LOCK 通道 BURN_THROUGH 门（dist/burnThrough/graceExpired）。
+6. **基线**：`RVP_GunnerBehaviorBaselineTest` externalRadar ordered 断言改写
+   （搜索分支 recordRelaySearchContact 即 return；火控分支保留原顺序）+
+   radar 段冻结烧穿门（`maxRange * RVP_AspectRcs.combinedFactor` + 100t 常量）+
+   tickTargeting 断言追加 `getRelaySearchContact` 回退。
+
+### 修复后完整时序（隐身战机 vs 带搜索中继的 SAM 阵地）
+
+96L6 RCS 门控发现 → "S400" 搜索告警 + Buk 炮口跟转（无锁、无锁定告警、不发射）
+→ 目标进入 Buk 烧穿距离（1500×因子，正面 0.12≈180 格）→ 本车落锁 → "BUK" 锁定告警
+→ 5 秒对空纪律 → 导弹发射。
+
+### 实机验证清单（追加）
+
+- [ ] 带 96L6 的 Buk：隐身战机远距只有 "S400" 搜索告警，Buk 炮口跟转但无锁定告警/无导弹；
+- [ ] 目标进入烧穿距离（正面 ≈180 格内）→ "BUK" 锁定告警 + 5 秒后导弹；拉出烧穿距离
+      （含 5 秒宽限）后锁告警停止、不再发射；
+- [ ] IRIST TADS 中继：远距锁定+开火行为保持不变（radar_role "all"）；
+- [ ] 非隐身目标（f14a_iriaf）：96L6 搜索 + Buk 全程行为与旧版一致（因子 1.0）；
+- [ ] gunnerlock 日志：搜索中继阶段 RELAY SEARCH_ACQ / AI NO_TARGET（或 FIRE
+      LOCK_PREPARE_FAIL）、进入烧穿后 LOCK LOCKED + FIRE FIRED。

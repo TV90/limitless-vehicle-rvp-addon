@@ -49,6 +49,8 @@ public final class RVP_GunnerLockDebug {
     private static final Map<String, Long> LAST_LOG_TICK = new HashMap<>();
     /** 外置中继锁目标变化检测：launcher 实体 id → 最近记录的锁目标实体 id（Integer.MIN_VALUE=无锁） */
     private static final Map<Integer, Integer> LAST_RELAY_LOCK = new HashMap<>();
+    /** 搜索中继接触变化检测：launcher 实体 id → 最近记录的指示接触实体 id（Integer.MIN_VALUE=无） */
+    private static final Map<Integer, Integer> LAST_RELAY_SEARCH = new HashMap<>();
 
     private RVP_GunnerLockDebug() {
     }
@@ -68,6 +70,7 @@ public final class RVP_GunnerLockDebug {
         enabled = value;
         LAST_LOG_TICK.clear();
         LAST_RELAY_LOCK.clear();
+        LAST_RELAY_SEARCH.clear();
         closeWriter();
         if (value) {
             PrintWriter pw = getWriter();
@@ -171,6 +174,28 @@ public final class RVP_GunnerLockDebug {
         }
         long minInterval = "RELAY_DOWN".equals(gate) ? RELAY_HEARTBEAT_TICKS : THROTTLE_TICKS;
         throttledLog("RELAY", gate, launcher, lockTarget, detail, minInterval);
+    }
+
+    /**
+     * 搜索中继接触（2026-09-16 搜索中继定版）：96L6 等 radar_role=search 的中继只提供
+     * 指示（gunner 转炮口、RADAR_SEARCH 告警），不落锁。按接触变化触发：
+     * SEARCH_ACQ（新指示目标）/SEARCH_LOST（接触丢失）各记一条。
+     */
+    public static void logRelaySearch(AbstractVehicle launcher, @Nullable Entity contact) {
+        if (!enabled || FMLEnvironment.dist != Dist.CLIENT) {
+            return;
+        }
+        int id = contact != null ? contact.getId() : Integer.MIN_VALUE;
+        Integer previous = LAST_RELAY_SEARCH.get(launcher.getId());
+        if (previous != null && previous == id) {
+            return;
+        }
+        LAST_RELAY_SEARCH.put(launcher.getId(), id);
+        String gate = contact != null ? "SEARCH_ACQ" : "SEARCH_LOST";
+        String detail = contact instanceof AbstractVehicle contactVehicle
+                ? String.format("dist=%.0f", launcher.position().distanceTo(contactVehicle.position()))
+                : "";
+        throttledLog("RELAY", gate, launcher, contact, detail, THROTTLE_TICKS);
     }
 
     /** 节流写核心：同一 key 在 minInterval 个 game tick 内只写一条。 */

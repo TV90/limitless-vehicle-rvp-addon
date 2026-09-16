@@ -58,12 +58,21 @@ public final class GunnerExternalRadarController {
         }
 
         turnOnRelayRadars(relayVehicle);
+        // 2026-09-16 搜索中继定版：火控中继（如 IRIST TADS，radar_role 非 search）走原
+        // 落锁/发射授权链路；仅搜索中继（如 96L6，radar_role=search → getPreferredRelayLockRadar
+        // 返回 null）改走搜索分支——只喂探测表（RADAR_SEARCH "S400"）与指示目标（gunner
+        // 转炮口），绝不落锁：无锁则 prepareLaunchLock 的 RF 授权失败，导弹不会发射，
+        // 玩家 RWR 也不会出现 96L6 的锁定告警。
         RadarUnit lockRadar = RVP_ExternalRadarLinkHelper.getPreferredRelayLockRadar(relayVehicle);
-        if (lockRadar == null) {
+        RadarUnit relayRadar = lockRadar != null
+                ? lockRadar
+                : RVP_ExternalRadarLinkHelper.getPreferredRelaySearchRadar(relayVehicle);
+        if (relayRadar == null) {
             if (FMLEnvironment.dist == Dist.CLIENT) {
-                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_DOWN", null, "中继无可锁雷达");
+                RVP_GunnerLockDebug.logRelay(launcher, "RELAY_DOWN", null, "中继无可用雷达");
             }
             clearExternalLock(root, relayVehicle);
+            recordRelaySearchContact(launcher, null);
             return;
         }
 
@@ -71,24 +80,33 @@ public final class GunnerExternalRadarController {
         if (lockTarget == null || !lockTarget.isAlive()) {
             // gunner 索敌半径太小（默认 96 格），无自身雷达的发射车只能靠外置雷达：
             // 直接按中继雷达扫描范围找最近敌对载具作为锁定目标，保证 RWR 告警生效
-            lockTarget = findRelayScanTarget(launcher, relayVehicle, lockRadar, gunner);
+            lockTarget = findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner);
         }
         if (lockTarget == null || !lockTarget.isAlive()) {
             if (FMLEnvironment.dist == Dist.CLIENT) {
                 RVP_GunnerLockDebug.logRelay(launcher, "RELAY_UNLOCKED", null, "无有效锁目标");
             }
             clearExternalLock(root, relayVehicle);
+            recordRelaySearchContact(launcher, null);
             return;
         }
-        if (!isWithinRelayLockVolume(lockRadar, lockTarget)) {
+        boolean searchOnly = lockRadar == null;
+        if (searchOnly ? !isWithinRelaySearchVolume(relayRadar, lockTarget)
+                       : !isWithinRelayLockVolume(relayRadar, lockTarget)) {
             if (FMLEnvironment.dist == Dist.CLIENT) {
                 RVP_GunnerLockDebug.logRelay(launcher, "RELAY_UNLOCKED", lockTarget, "目标在中继锁体积外");
             }
             clearExternalLock(root, relayVehicle);
+            recordRelaySearchContact(launcher, null);
             return;
         }
 
-        lockRadar.detect(lockTarget);
+        relayRadar.detect(lockTarget);
+        if (searchOnly) {
+            // 搜索中继：只喂探测表 + 记录指示接触，不落锁、不写发射授权。
+            recordRelaySearchContact(launcher, lockTarget);
+            return;
+        }
         // 箔条禁锁期：目标被箔条干扰脱锁后短时间内不可被选中/锁定（仍可被扫描），
         // 否则炮手 AI 每 tick 重锁会令脱锁瞬间被还原，雷达看起来"怎么都脱不了锁"
         if (RVP_ChaffJamState.isInCooldown(lockTarget.getUUID(), launcher.level().getGameTime())) {
@@ -111,6 +129,41 @@ public final class GunnerExternalRadarController {
             RVP_GunnerLockDebug.logRelay(launcher, "RELAY_LOCKED", lockTarget,
                     String.format("dist=%.0f", relayVehicle.position().distanceTo(lockTarget.position())));
         }
+    }
+
+    /** 搜索中继接触侧表：launcher 实体 id → 最近指示接触（目标实体 id + 记录 game time）。 */
+    private static final java.util.Map<Integer, SearchContact> SEARCH_CONTACTS = new java.util.HashMap<>();
+    /** 指示接触新鲜度（tick）：超时视为中继已丢失该接触，gunner 不再据此转炮口。 */
+    private static final long SEARCH_CONTACT_FRESH_TICKS = 40L;
+
+    private record SearchContact(int targetEntityId, long gameTick) {
+    }
+
+    private static void recordRelaySearchContact(AbstractVehicle launcher, @Nullable Entity target) {
+        if (target == null) {
+            SEARCH_CONTACTS.remove(launcher.getId());
+        } else {
+            SEARCH_CONTACTS.put(launcher.getId(),
+                    new SearchContact(target.getId(), launcher.level().getGameTime()));
+        }
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            RVP_GunnerLockDebug.logRelaySearch(launcher, target);
+        }
+    }
+
+    /**
+     * 读取搜索中继的当前指示接触（供 gunner 仅瞄准/转炮口用，2026-09-16 搜索中继定版）：
+     * 服务端按实体 id 解析，超过 {@link #SEARCH_CONTACT_FRESH_TICKS} 未刷新视为失效。
+     */
+    @Nullable
+    public static Entity getRelaySearchContact(AbstractVehicle launcher) {
+        SearchContact contact = SEARCH_CONTACTS.get(launcher.getId());
+        if (contact == null
+                || launcher.level().getGameTime() - contact.gameTick() > SEARCH_CONTACT_FRESH_TICKS) {
+            return null;
+        }
+        Entity entity = launcher.level().getEntity(contact.targetEntityId());
+        return entity != null && entity.isAlive() ? entity : null;
     }
 
     private static void turnOnRelayRadars(AbstractVehicle relayVehicle) {
@@ -214,6 +267,35 @@ public final class GunnerExternalRadarController {
         }
         // MC 约定负俯仰=仰角（目标在上方）。SAM 中继雷达 x_rot_min 常为 0 只允许向下扫描，
         // 会把高空目标（aimRot.x<0）全拒掉；这里放开到 ±90 让中继雷达能锁定上方目标。
+        return Math.abs(aimRot.x) <= 90;
+    }
+
+    /**
+     * 搜索中继接触有效性（2026-09-16 搜索中继定版）：与
+     * {@link #isWithinRelayLockVolume} 同构，但距离按**烧穿距离**判定——
+     * maxScanDistance × 目标综合隐身因子（与 {@link #findRelayScanTarget} 的
+     * effectiveRange 同源）：隐身目标飞出其因子距离后中继即"丢失"该接触，
+     * gunner 不再据此转炮口（ acquire 门控 + retain 门控一致，无烧穿盲区）。
+     */
+    private static boolean isWithinRelaySearchVolume(RadarUnit radarUnit, Entity target) {
+        Vec3 radarPos = radarUnit.worldRadarPosition();
+        Vec3 targetPos = target.getBoundingBox().getCenter();
+        double maxRange = radarUnit.getMaxScanDistance();
+        double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(
+                target instanceof AbstractVehicle targetVehicle ? targetVehicle : null, radarPos);
+        if (targetPos.distanceToSqr(radarPos) > effectiveRange * effectiveRange) {
+            return false;
+        }
+        if (!isWithinScanHeight(radarUnit, targetPos)) {
+            return false;
+        }
+        Vec2 aimRot = radarUnit.aimRot(targetPos);
+        float yMin = radarUnit.getYRotMin();
+        float yMax = radarUnit.getYRotMax();
+        float y = normalizeYawForLimits((float) aimRot.y, yMin, yMax);
+        if (!isYawWithin(y, yMin, yMax)) {
+            return false;
+        }
         return Math.abs(aimRot.x) <= 90;
     }
 

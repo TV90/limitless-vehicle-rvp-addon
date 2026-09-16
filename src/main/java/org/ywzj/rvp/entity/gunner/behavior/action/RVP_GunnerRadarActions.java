@@ -11,6 +11,7 @@ import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.GunnerExternalRadarController;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
+import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -22,6 +23,11 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 /** 封装 Gunner 对本车雷达、根武器站锁和外置雷达锁的写操作。 */
 public final class RVP_GunnerRadarActions {
+
+    /** 烧穿宽限（tick）：目标出烧穿距离后本车锁保持的时长（镜像客户端链 5 秒语义）。 */
+    private static final long BURN_THROUGH_GRACE_TICKS = 100L;
+    /** 烧穿宽限侧表："本车id:目标id" → 最近一次处于烧穿距离内的 game time。 */
+    private static final java.util.Map<String, Long> BURN_THROUGH_GRACE = new java.util.HashMap<>();
 
     RVP_GunnerRadarActions() {
     }
@@ -67,12 +73,41 @@ public final class RVP_GunnerRadarActions {
         double maxRange = radar.getMaxScanDistance();
         double dist = radar.worldRadarPosition().distanceTo(lockTarget.position());
         if (dist > maxRange) {
+            BURN_THROUGH_GRACE.remove(vehicle.getId() + ":" + lockTarget.getId());
             clearLocalLock(weaponUnit, radar);
             if (FMLEnvironment.dist == Dist.CLIENT) {
                 RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "RANGE",
                         String.format("dist=%.0f max=%.0f", dist, maxRange));
             }
             return RVP_GunnerActionResult.GATED;
+        }
+        // 目的（2026-09-16 烧穿发射门，配合搜索中继定版）：本车雷达对目标的获取距离 =
+        // maxScanDistance × 综合隐身因子（烧穿距离，与客户端探测链/findRelayScanTarget 语义
+        // 对齐）——隐身目标必须进入烧穿距离本车雷达才落锁（RADAR_LOCK 告警与 requireLock RF
+        // 发射授权都由本车锁决定，96L6 搜索中继不再顶替）；出烧穿距离按"探测难跟踪易"
+        // 保持 100t（5 秒）宽限再脱锁（镜像客户端链 LOCKED_TRACK_GRACE_TICKS 语义），
+        // 避免在烧穿边界反复闪烁。非隐身目标（因子 1.0）行为与旧裸距离门一致。
+        double burnThroughRange = maxRange * RVP_AspectRcs.combinedFactor(
+                lockTarget instanceof AbstractVehicle targetVehicle ? targetVehicle : null,
+                radar.worldRadarPosition());
+        long now = vehicle.level().getGameTime();
+        String graceKey = vehicle.getId() + ":" + lockTarget.getId();
+        if (dist <= burnThroughRange) {
+            BURN_THROUGH_GRACE.put(graceKey, now);
+        } else {
+            Long lastInBurnThrough = BURN_THROUGH_GRACE.get(graceKey);
+            boolean withinGrace = lastInBurnThrough != null
+                    && now - lastInBurnThrough <= BURN_THROUGH_GRACE_TICKS;
+            if (!withinGrace) {
+                BURN_THROUGH_GRACE.remove(graceKey);
+                clearLocalLock(weaponUnit, radar);
+                if (FMLEnvironment.dist == Dist.CLIENT) {
+                    RVP_GunnerLockDebug.logLocalLock(vehicle, lockTarget, "BURN_THROUGH",
+                            String.format("dist=%.0f burnThrough=%.0f graceExpired=%s",
+                                    dist, burnThroughRange, lastInBurnThrough != null));
+                }
+                return RVP_GunnerActionResult.GATED;
+            }
         }
         // 方位扇区门：只判 y（方位）。本体雷达扫描/探测（RadarUnit.tickScan/tickDetect）与 RVP
         // 两条扫描链（RVP_RadarScanService / RVP_ClientRadarTickHandler）对俯仰均不设限，

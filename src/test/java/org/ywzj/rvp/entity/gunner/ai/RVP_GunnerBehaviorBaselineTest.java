@@ -119,7 +119,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "gunner.tickCount % profile.getScanIntervalTick() == 0",
                 "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
                 "markEngagementNetOnTrack(gunner, vehicle, best, profile);",
-                "gunner.getTrackedTarget()");
+                "gunner.getTrackedTarget()",
+                // 搜索中继指示（2026-09-16）：自身索敌无结果时回退取中继接触（仅瞄准不发射）
+                "GunnerExternalRadarController.getRelaySearchContact(vehicle)");
         assertContainsAll(tickTargeting,
                 "tracked == null || !tracked.isAlive()",
                 "gunner.setTrackedTarget(null);");
@@ -371,15 +373,28 @@ class RVP_GunnerBehaviorBaselineTest {
                 "missile.rvp$setHitlSteeringInput",
                 "private static final double HITL_CONTROL_SEARCH_RANGE = 4096.0D;");
 
+        // 2026-09-16 搜索中继定版：火控中继（lockRadar 非 null）走 detect→箔条→落锁→授权；
+        // 搜索中继（getPreferredRelaySearchRadar，如 96L6 radar_role=search）在 detect 后只
+        // recordRelaySearchContact（指示接触，gunner 转炮口）即 return，绝不落锁/写授权表。
         assertOrdered(externalRadar,
                 "RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle",
                 "RVP_DeployableUavService.deployLinkedUav",
                 "turnOnRelayRadars(relayVehicle);",
                 "getPreferredRelayLockRadar",
-                "lockRadar.detect(lockTarget);",
+                "getPreferredRelaySearchRadar",
+                "findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner)",
+                "isWithinRelaySearchVolume(relayRadar, lockTarget)",
+                "relayRadar.detect(lockTarget);",
+                "recordRelaySearchContact(launcher, lockTarget);",
                 "RVP_ChaffJamState.isInCooldown",
+                "lockRadar.setLockedEntity(lockTarget);",
                 "RVP_WeaponLockStateTable.setExternalRadarRequestedEntityId",
                 "RVP_WeaponLockStateTable.setExternalRadarLockedEntityId");
+        // 本车烧穿发射门（2026-09-16）：获取距离 = maxScanDistance × 目标 RCS 因子，
+        // 出烧穿距离保持 100t（5 秒）宽限再脱锁（探测难跟踪易）。
+        assertContainsAll(radar,
+                "maxRange * RVP_AspectRcs.combinedFactor(",
+                "BURN_THROUGH_GRACE_TICKS = 100L;");
         assertContainsAll(vehicleService,
                 "private static final int TICK_INTERVAL = 5;",
                 "private static final long AUTO_CM_INTERVAL_TICK = 100L;",
