@@ -151,11 +151,18 @@ class RVP_GunnerBehaviorBaselineTest {
         String creativeProtection = section(targeting,
                 "private static boolean isProtectedCreativePlayer(",
                 "private static boolean hasProtectedCreativePassenger(");
-        // 创造模式保护基线（2026-09-16 恢复困难难度例外，覆盖 09-15 无条件保护定版，用户要求）：
-        // 旁观恒保护；创造 + 非困难保护；创造 + 困难难度可被正常攻击。
-        assertOrdered(creativeProtection,
-                "player.isSpectator()",
-                "player.isCreative()",
+        // 创造模式保护基线（2026-09-16 方案A 最终定版，用户选定矩阵）：
+        // ① 创造步兵：任何难度都保护（isProtectedCreativePlayer 不得含难度判定）；
+        // ② 载具乘员：存在创造/旁观乘员仅非困难保护、困难难度可被打（难度判定在乘员分支）；
+        // ③ 生存任何状态可被打。
+        assertContainsAll(creativeProtection, "player.isSpectator()", "return player.isCreative();");
+        assertFalse(creativeProtection.contains("Difficulty"),
+                "创造步兵保护不应随难度改变（方案A：步兵永不挨打）");
+        String occupantProtection = section(targeting,
+                "private static boolean hasProtectedCreativePassenger(",
+                "private static boolean shouldApplyTeamFilter(");
+        assertContainsAll(occupantProtection,
+                "player.isSpectator() || player.isCreative()",
                 "getDifficulty() != Difficulty.HARD");
     }
 

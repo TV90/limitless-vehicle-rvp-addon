@@ -396,29 +396,33 @@ public final class GunnerTargeting {
     }
 
     /**
-     * 创造模式保护（2026-09-16 恢复困难难度例外，用户要求）：旁观玩家恒保护；
-     * 创造玩家仅当 gunner 所在世界难度非困难时保护——创造 + 困难难度可被正常攻击。
-     * 步行玩家与驾驶载具（{@link #hasProtectedCreativePassenger}）走本判定，一并生效。
-     * 2026-09-15（c31171d9）曾改为无条件保护（任何难度都不打），2026-09-16 按用户要求
-     * 恢复 09-15 之前的"创造 + 非困难才保护"老语义。
+     * 步行玩家保护（2026-09-16 方案A 最终定版）：本方法只服务 isValidTarget 的**步行玩家**
+     * 实体分支——创造/旁观步兵**任何难度都不被攻击**，生存/冒险步行可被攻击。
+     * 难度判定在载具分支：见 {@link #hasProtectedCreativePassenger}（载具内创造乘员仅
+     * 非困难难度受保护，困难难度可被打）。难度不参与本方法判定。
      */
     private static boolean isProtectedCreativePlayer(AbstractVehicle sourceVehicle, Player player) {
         if (player.isSpectator()) {
             return true;
         }
-        if (!player.isCreative()) {
-            return false;
-        }
-        return sourceVehicle.level().getDifficulty() != Difficulty.HARD;
+        return player.isCreative();
     }
 
+    /**
+     * 载具乘员保护（2026-09-16 方案A 最终定版）：车上存在创造/旁观乘员（含驾驶员）时载具
+     * 受保护，但**仅非困难难度**——困难难度下创造驾驶员/乘员的载具可被正常攻击；
+     * 生存乘员不提供任何保护。难度不影响生存目标。
+     * （对照：创造**步行**玩家走 {@link #isProtectedCreativePlayer}，任何难度都保护。）
+     */
     private static boolean hasProtectedCreativePassenger(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {
+        boolean hasProtectedCreativeOccupant = false;
         for (Entity passenger : targetVehicle.getPassengers()) {
-            if (passenger instanceof Player player && isProtectedCreativePlayer(sourceVehicle, player)) {
-                return true;
+            if (passenger instanceof Player player && (player.isSpectator() || player.isCreative())) {
+                hasProtectedCreativeOccupant = true;
+                break;
             }
         }
-        return false;
+        return hasProtectedCreativeOccupant && sourceVehicle.level().getDifficulty() != Difficulty.HARD;
     }
 
     private static boolean shouldApplyTeamFilter(Entity entity, RVP_EnumGunnerFaction faction) {

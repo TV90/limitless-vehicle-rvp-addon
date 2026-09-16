@@ -148,9 +148,8 @@ LOCK/FIRE 全空 ⇒ `maintainLocalLock`（GunnerBrain:149）与 `engage`（经 
 
 ### 本轮修复（cbaf5fac 之上）
 
-1. **恢复困难难度例外**（用户要求，覆盖 09-15 定版）：`isProtectedCreativePlayer` =
-   旁观恒保护；创造仅当 `sourceVehicle.level().getDifficulty() != Difficulty.HARD` 才保护
-   → **创造 + 困难 = 可被正常攻击**（步行/驾驶载具一并生效）。
+1. ~~恢复困难难度例外~~（当日上午中间版，**同日已被下方"方案A 最终定版"取代**）：曾把
+   `isProtectedCreativePlayer` 改为"创造仅非困难保护（创造+困难可被打，步行/驾驶一并生效）"。
 2. **低空对空弹误拒修复**：`GunnerWeaponSuitability.isAirTarget` 对 FixedWing/RotaryWing
    恒真（低空掠飞也是空中目标）；其余实体维持 AGL>25（不打地面单位语义保留）。
 3. **插桩补全**：LOCK 通道补 NO_TARGET/NO_RADAR 静默出口；新增 AI 通道 NO_TARGET
@@ -158,11 +157,32 @@ LOCK/FIRE 全空 ⇒ `maintainLocalLock`（GunnerBrain:149）与 `engage`（经 
    （CREATIVE_PLAYER/CREATIVE_PASSENGER/PROFILE_TYPE/ALLIED/WEAPON_UNUSABLE(AGL)/PERCEPTION）。
    下次日志可直接读出拒因。
 
+### 创造保护最终定版（2026-09-16 方案A，用户选定矩阵）
+
+用户澄清：09-15 的误解在于把"创造免攻击"扩大到载具、且早先还有难度例外。最终矩阵
+（难度只在**载具分支**参与）：
+
+| 状态 | 是否被 gunner 攻击 |
+|---|---|
+| 创造 · 步行 | ❌ 任何难度都不被打 |
+| 创造 · 驾驶载具（含载具内创造乘员） | 困难→✅被打；非困难→❌保护 |
+| 生存/冒险 · 任何状态 | ✅ 任何难度都被打 |
+| 旁观 | ❌ 永不被打 |
+
+实现：
+- `isProtectedCreativePlayer`（仅步行玩家分支）＝创造/旁观无条件保护，**难度不参与**；
+- `hasProtectedCreativePassenger`（载具分支）＝存在创造/旁观乘员保护整车，但仅
+  **非困难难度**（`getDifficulty() != Difficulty.HARD`），困难难度可被打；
+- 行为基线 `RVP_GunnerBehaviorBaselineTest` 同步冻结：步行保护方法体断言不得含
+  `Difficulty`（步兵保护与难度无关）；载具乘员分支断言含
+  `getDifficulty() != Difficulty.HARD`。
+
 ### 实机验证清单（追加）
 
-- [ ] 创造 + 困难难度开 f14a_iriaf：Buk 应选中并 5 秒对空纪律后发射导弹；
-- [ ] 创造 + 非困难难度：仍受保护（不打）；
-- [ ] 生存模式各难度行为不变；
+- [ ] 创造步行（任意难度）：不被任何 gunner 攻击；
+- [ ] 创造 + 困难难度驾驶 f14a_iriaf：Buk 选中并 5 秒对空纪律后发射导弹；
+- [ ] 创造 + 非困难难度驾驶：受保护（不打）；
+- [ ] 生存模式步行/驾驶各难度：都被攻击；
 - [ ] 低空（<25 格 AGL）飞行可被锁定并攻击（对空弹低空门修复）；
 - [ ] 若仍不攻击：`/rvpdebug gunnerlock on` 后看 SENSE REJECT#id 的 reason 与 AI NO_TARGET
       的 profile/driverMode/difficulty——PROFILE_TYPE=档案不对（换 enemy 档案刷）；其它按 reason 对号。
