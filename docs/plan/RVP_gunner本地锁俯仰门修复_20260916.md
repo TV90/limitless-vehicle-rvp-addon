@@ -186,3 +186,39 @@ LOCK/FIRE 全空 ⇒ `maintainLocalLock`（GunnerBrain:149）与 `engage`（经 
 - [ ] 低空（<25 格 AGL）飞行可被锁定并攻击（对空弹低空门修复）；
 - [ ] 若仍不攻击：`/rvpdebug gunnerlock on` 后看 SENSE REJECT#id 的 reason 与 AI NO_TARGET
       的 profile/driverMode/difficulty——PROFILE_TYPE=档案不对（换 enemy 档案刷）；其它按 reason 对号。
+
+---
+
+## 七、第三轮（2026-09-16）："gunner 老远探测到隐身战机"——乘员绕过 RCS 感知门
+
+### 现象
+
+用户生存模式驾驶隐身战机（Su-57），AI gunner（山毛榉）**老远就探测/锁定**；同距离下用户
+自己操作 AA 车却探测不到 AI 的隐身战机——明显不对称。
+
+### 根因（用户猜想"gunner 没找到飞机却感知到驾驶飞机的我"——正确）
+
+`GunnerTargeting.collectTargetEntities` **不排除骑乘者**：驾驶隐身战机时，玩家的 Player
+实体作为独立候选进入索敌收集（target_types "player" 命中）；而
+`passesAspectPerception` 原实现对非载具实体**直接放行、不吃分角度 RCS 因子**——
+- 你的隐身战机（载具实体）：被因子正常限制；
+- **驾驶飞机的你（Player 实体）：绕过隐身门**，在全索敌半径（有 96L6 中继时
+  max(1024, 1500, 3500) 格）内都是合法候选 → trackedTarget=你 → `normalizeTarget`
+  解析回战机 → 锁定开火；
+- 反方向无此洞：AI 隐身战机驾驶员是 GunnerEntity 非 Player，不会被"player"层收集——
+  **不对称完全吻合**。创造模式下此洞被创造保护（步行分支拒创造玩家）掩盖，生存必现。
+
+### 修复
+
+`passesAspectPerception` 开头解析骑乘关系：候选骑乘在载具上（`entity.getVehicle()`）
+时，RCS 因子按**所乘载具**的 `combinedFactor` 判定（距离按乘员实体自身位置）；
+真正步行玩家/弹药维持"直接放行"。行为基线同步冻结
+（`RVP_GunnerBehaviorBaselineTest`：断言源码含 `entity.getVehicle() instanceof AbstractVehicle ridden`）。
+
+### 实机验证清单（追加）
+
+- [ ] 生存模式开隐身战机正面接近 AI gunner：探测/锁定距离收缩到 索敌半径×方位因子
+      （有中继 3500×0.12≈420 格内才被发现，拉远即脱）；`/rvpdebug gunnerlock on` 下
+      AI NO_TARGET 持续、SENSE REJECT#id 的 factor 为载具因子；
+- [ ] 同距离 AA 车对 AI 隐身机与 AI gunner 对用户隐身机行为对称；
+- [ ] 步行玩家/导弹拦截等非骑乘目标的索敌行为不变。

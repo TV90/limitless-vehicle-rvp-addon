@@ -139,15 +139,25 @@ public final class GunnerTargeting {
      * 仅作用于索敌收集：已锁定目标的跟踪保持不查此项（探测难、跟踪易）。
      */
     private static boolean passesAspectPerception(AbstractVehicle observer, Entity entity, double radius) {
-        if (!(entity instanceof AbstractVehicle targetVehicle)) {
+        // 目的：乘员随载具隐身（2026-09-16 修复"gunner 没找到飞机却感知到驾驶员"）——
+        // collectTargetEntities 不排除骑乘者，驾驶隐身战机时玩家的 Player 实体会作为
+        // 独立候选进入索敌；原实现对非载具实体直接放行、不吃分角度 RCS，导致 AI 在
+        // 全索敌半径（有中继时 3500 格）"感知到驾驶员"而载具隐身失效（AI 驾驶员是
+        // GunnerEntity 非 Player，反向无此洞，造成"AI 看得见我、我看不见 AI"的不对称）。
+        // 修复：候选骑乘在载具上时，RCS 因子按所乘载具的 combinedFactor 判定；
+        // 真正的步行玩家/弹药维持原"直接放行"。
+        AbstractVehicle effectiveVehicle = entity instanceof AbstractVehicle targetVehicle
+                ? targetVehicle
+                : (entity.getVehicle() instanceof AbstractVehicle ridden ? ridden : null);
+        if (effectiveVehicle == null) {
             return true;
         }
-        double factor = RVP_AspectRcs.combinedFactor(targetVehicle, observer.position());
+        double factor = RVP_AspectRcs.combinedFactor(effectiveVehicle, observer.position());
         double effective = radius * factor;
         double distSqr = observer.position().distanceToSqr(entity.position());
         if (distSqr > effective * effective) {
             if (FMLEnvironment.dist == Dist.CLIENT) {
-                RVP_GunnerLockDebug.logPerceptionReject(observer, targetVehicle,
+                RVP_GunnerLockDebug.logPerceptionReject(observer, effectiveVehicle,
                         factor, effective, Math.sqrt(distSqr));
             }
             return false;

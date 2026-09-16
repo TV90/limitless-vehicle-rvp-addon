@@ -143,7 +143,10 @@ class RVP_GunnerBehaviorBaselineTest {
                 "return Math.max(base, radarRange);",
                 "profile.isGpsPreferFarthest()",
                 "GunnerWeaponSuitability.hasUsableGpsWeaponForTarget",
-                "score(vehicle, weaponUnit, entity, launcher)");
+                "score(vehicle, weaponUnit, entity, launcher)",
+                // 乘员随载具隐身（2026-09-16）：骑乘候选（如隐身战机驾驶员）按所乘载具吃
+                // 分角度 RCS 因子，防止"AI 感知到驾驶员"绕过载具隐身
+                "entity.getVehicle() instanceof AbstractVehicle ridden");
         assertContainsAll(ciws,
                 "candidates.removeIf(entity -> RVP_GunnerEngagementNet.isHardLockedFor(",
                 "RVP_GunnerEngagementNet.isRecentlyEngaged(",
