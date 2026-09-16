@@ -284,3 +284,24 @@ IRIST TADS（radar_role "all"）是火控中继，可锁可射——保持不变
 - [ ] 非隐身目标（f14a_iriaf）：96L6 搜索 + Buk 全程行为与旧版一致（因子 1.0）；
 - [ ] gunnerlock 日志：搜索中继阶段 RELAY SEARCH_ACQ / AI NO_TARGET（或 FIRE
       LOCK_PREPARE_FAIL）、进入烧穿后 LOCK LOCKED + FIRE FIRED。
+
+### S400 告警点亮条件核对表（2026-09-16 追加，问题二排查指引）
+
+S400（96L6）亮 = 搜索分支接触通过全部四道门 + `RVP_WarnRelayService` 从探测表发
+RADAR_SEARCH（文字每 5t 刷新、响声每 `scan_period_tick`=60t 一轮）。不亮只可能：
+
+| 条件 | 阈值/来源 | 日志特征 |
+|---|---|---|
+| ① 96L6 存活 | 被毁后 `deployable_uav_redeploy_cooldown_tick`=1200t（60 秒）冷却 | RELAY 通道 RELAY_DOWN"无可用中继载具" |
+| ② 距离 ≤ 3500 × 隐身因子 | 隐身机正面 0.12≈420 格、侧 0.35≈1225；非隐身 3500 | RELAY 无 SEARCH_ACQ（距离越界即不记录接触） |
+| ③ 离地 ≥ `scan_min_height`（96L6=25） | 96l6.json；**低飞时 96L6 看不见你，但 BUK 本车锁无高度门——低空只剩 BUK 告警** | 同上 |
+| ④ 告警节奏 | 96L6 `scan_period_tick`=60 → 每 3 秒闪一次（BUK 每秒） | 视觉易漏，文字 600ms 平顶 |
+
+"S400 只和 BUK 一起亮"的典型场景即 ③（低空）——BUK 本车锁无高度门而 96L6 有，属数据
+语义不对称；如需统一可调 96l6 `scan_min_height` 或给 maintainLocalLock 加同款高度门
+（会改变低空可攻击性，需用户定版，未实施）。若四条件均满足仍不亮，属代码 bug，另立排查。
+
+同日追加修复：搜索中继指示目标采纳前必须过 `GunnerTargeting.isValidDesignationTarget`
+（=索敌同款 `isValidTarget` 全链：创造保护方案A矩阵/target_types/敌我）——修复"创造+
+和平模式驾驶被攻击"回归（搜索中继接触链不做创造过滤，指示采纳后又经本车落锁获得
+发射授权，绕过方案A保护）。

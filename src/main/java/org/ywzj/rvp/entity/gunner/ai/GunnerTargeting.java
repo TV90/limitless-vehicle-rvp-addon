@@ -360,6 +360,18 @@ public final class GunnerTargeting {
         return "OTHER";
     }
 
+    /**
+     * 校验搜索中继指示目标能否作为 gunner 的（仅瞄准/待发射）目标（2026-09-16）：沿用与
+     * 索敌收集完全相同的 {@link #isValidTarget} 规则（创造保护方案A矩阵/档案 target_types/
+     * 敌我），防止指示链绕过保护判定——搜索中继接触链（findRelayScanTarget）刻意不做
+     * 创造过滤（历史"锁定仅是告警"语义），指示目标被采纳后会经本车落锁获得发射授权，
+     * 不过保护判定会造成创造+非困难被攻击的旁路。
+     */
+    public static boolean isValidDesignationTarget(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                   Entity designated, GunnerProfile profile) {
+        return isValidTarget(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), designated, profile);
+    }
+
     private static boolean isValidTarget(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Team vehicleTeam, @Nullable Team gunnerTeam, Entity entity, GunnerProfile profile) {
         if (!entity.isAlive() || entity == gunner || entity == vehicle) {
             return false;

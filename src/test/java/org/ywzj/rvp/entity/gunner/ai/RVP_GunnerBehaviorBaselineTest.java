@@ -120,8 +120,10 @@ class RVP_GunnerBehaviorBaselineTest {
                 "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
                 "markEngagementNetOnTrack(gunner, vehicle, best, profile);",
                 "gunner.getTrackedTarget()",
-                // 搜索中继指示（2026-09-16）：自身索敌无结果时回退取中继接触（仅瞄准不发射）
-                "GunnerExternalRadarController.getRelaySearchContact(vehicle)");
+                // 搜索中继指示（2026-09-16）：自身索敌无结果时回退取中继接触（仅瞄准不发射），
+                // 且指示目标必须过 isValidTarget 保护判定（创造保护/target_types 不被绕过）
+                "GunnerExternalRadarController.getRelaySearchContact(vehicle)",
+                "GunnerTargeting.isValidDesignationTarget(gunner, vehicle, designated, profile)");
         assertContainsAll(tickTargeting,
                 "tracked == null || !tracked.isAlive()",
                 "gunner.setTrackedTarget(null);");

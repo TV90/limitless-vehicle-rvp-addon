@@ -220,7 +220,10 @@ public final class GunnerBrain {
             // 的 RF 授权失败、不会发射；目标进入本车雷达烧穿距离后由 maintainLocalLock
             // 落锁，解锁发射授权（RADAR_LOCK 亦从此才有）。
             Entity designated = GunnerExternalRadarController.getRelaySearchContact(vehicle);
-            if (designated != null) {
+            if (designated != null
+                    // 指示目标必须过与索敌相同的保护判定（2026-09-16 修复）：搜索中继接触链
+                    // 不做创造过滤，直接采纳会让创造+非困难玩家经本车落锁被攻击
+                    && GunnerTargeting.isValidDesignationTarget(gunner, vehicle, designated, profile)) {
                 gunner.setTrackedTarget(designated);
                 return designated;
             }
