@@ -18,6 +18,7 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,6 +43,10 @@ public final class RVP_LaserWarnService {
     private static final double LASER_POINT_RADIUS = 10.0;
     /** 照射点新鲜度（毫秒）：超过该值视为已停止照射（客户端每 tick 同步）。 */
     private static final long LASER_FRESH_MS = 1000;
+    /** 激光武器命中告警节流（tick）：同一"射手车→目标车"对每 10t 最多发一次（射击间隔可短至数 tick）。 */
+    private static final long HIT_WARN_INTERVAL_TICK = 10L;
+    /** 激光武器命中告警节流侧表："射手车id:目标车id" → 最近一次告警的 game time。 */
+    private static final Map<String, Long> LAST_HIT_WARN = new HashMap<>();
 
     private RVP_LaserWarnService() {}
 
@@ -138,6 +143,39 @@ public final class RVP_LaserWarnService {
             if (passenger instanceof ServerPlayer player) {
                 RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                         new S2CMissileTrackAlert(0, vehicle.getId(), S2CMissileTrackAlert.TYPE_LASER));
+            }
+        }
+    }
+
+    /**
+     * 激光武器命中载具告警（2026-09-17）：`rvp:laser` 射线命中敌对载具时向其乘客发
+     * {@link S2CMissileTrackAlert#TYPE_LASER} 激光照射告警——照射类武器命中即应触发被照射
+     * 告警，与操作手照射会话（scanLevel）互补。友方不告警（Team 联盟判定同 scanLevel）；
+     * 同一"射手车→目标车"对按 {@link #HIT_WARN_INTERVAL_TICK} 节流，由
+     * {@code RVP_LaserWeapon.shoot} 在射线命中载具时调用。
+     */
+    public static void warnLaserHit(AbstractVehicle sourceVehicle, AbstractVehicle targetVehicle) {
+        if (sourceVehicle == null || targetVehicle == null
+                || targetVehicle.isDestroyed() || !targetVehicle.isAlive()
+                || sourceVehicle == targetVehicle) {
+            return;
+        }
+        if (sourceVehicle.getTeam() != null && targetVehicle.getTeam() != null
+                && sourceVehicle.getTeam().isAlliedTo(targetVehicle.getTeam())) {
+            return;
+        }
+        long now = sourceVehicle.level().getGameTime();
+        String key = sourceVehicle.getId() + ":" + targetVehicle.getId();
+        Long last = LAST_HIT_WARN.get(key);
+        if (last != null && now - last < HIT_WARN_INTERVAL_TICK) {
+            return;
+        }
+        LAST_HIT_WARN.put(key, now);
+        for (Entity passenger : targetVehicle.getPassengers()) {
+            if (passenger instanceof ServerPlayer player) {
+                RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                        new S2CMissileTrackAlert(sourceVehicle.getId(), targetVehicle.getId(),
+                                S2CMissileTrackAlert.TYPE_LASER));
             }
         }
     }

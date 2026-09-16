@@ -351,3 +351,18 @@ RADAR_SEARCH（文字每 5t 刷新、响声每 `scan_period_tick`=60t 一轮）�
 - [ ] 9M723/kh38 等配 [1,1,1] 的弹药：雷达探测距离 = 雷达标称值（不再有旧 5/6 倍增透，
       属用户定版的平衡变化）；
 - [ ] 机炮弹/未配置弹药行为不变；红外弹对导弹的锁定（虚拟箱）不变。
+
+---
+
+## 十、（2026-09-17）激光武器命中载具触发激光照射告警
+
+用户提出：`rvp:laser` 命中载具也应触发激光告警（此前仅 LH/SALH 操作手照射会话触发 LWR，
+激光武器命中无任何告警）。实现：`RVP_LaserWeapon.shoot` 射线命中载具时调
+`RVP_LaserWarnService.warnLaserHit(sourceVehicle, targetVehicle)`——敌对才告警
+（Team 联盟判定同 scanLevel）、向目标乘客发 `S2CMissileTrackAlert(TYPE_LASER)`
+（客户端 `laser_alert` 音效 + "被激光照射"提示）、同"射手车×目标车"对 10t 节流；
+友方照射不告警。照射会话型 LWR（scanLevel 扫描 LBR/LH/SALH 照射点）不变。
+文档同步：《RVP 激光武器数据模型文档》联动表与伤害结算节更新。
+
+实机验证：生存模式用 rvp:laser 照射敌对载具 → 目标乘客收到"被激光照射"提示与音效；
+友军载具不被告警；创造载具同样会收告警（告警非攻击，不涉创造保护）。

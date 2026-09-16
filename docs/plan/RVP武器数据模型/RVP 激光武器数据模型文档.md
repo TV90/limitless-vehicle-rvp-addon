@@ -62,7 +62,8 @@
 3. `RVP_DamageApplier.applyScaled`：乘 `collision_data.direct_damage_factor` 的目标类别倍率；
 4. **对载具（AbstractVehicle）**：命中箱系数（按 structureModel 骨架/默认系数解析）→ 装甲（`armor_min_damage`/`armor_max_damage`，未配置装甲时等价于命中伤害×系数）→ **core_distance 预补偿**（按 `core_distance_scale_multiplier` 用 `amount' = amount/falloff × (1+(falloff-1)×coreMult)` 抵消本体 0.2 衰减，并跳过全局二次缩放）→ 有机会打掉骨块模块；
 5. **对普通实体**：直接 `EntityUtil.hurt` 全额伤害；
-6. 不点燃、不爆炸、无实体命中粒子（仅方块命中火花，见渲染节）。
+6. 不点燃、不爆炸、无实体命中粒子（仅方块命中火花，见渲染节）；
+7. **命中载具触发激光照射告警**：向目标乘客发 `S2CMissileTrackAlert(TYPE_LASER)`（客户端播 `laser_alert` 音效 + "被激光照射"提示；友方不告警；同"射手车→目标车"对 10t 节流）。
 
 ### 开火模式与蓄力
 
@@ -87,7 +88,7 @@
 
 | 联动系统 | 说明 |
 | -------- | ---- |
-| 激光告警 LWR | `rvp:laser` 的光束**不产生照射会话、不触发激光告警**——LWR（`RVP_LaserWarnService` → `S2CMissileTrackAlert` TYPE_LASER）只由 LBR/LH/SALH 操作手照射会话触发 |
+| 激光告警 LWR | `rvp:laser` **命中敌对载具时向其乘客发 TYPE_LASER 激光照射告警**（同 LWR 提示与 `laser_alert` 音效；友方不告警；同一"射手车→目标车"对 10t 节流）。注意它与操作手照射会话型 LWR（`RVP_LaserWarnService` 扫描 LBR/LH/SALH 照射点）是两条独立触发路径——激光武器不产生照射会话，但命中即告警 |
 | LH/SALH 激光制导 | 激光武器**不提供照射点/designation**，与操作手照射会话、GPS 目标点均相互独立（同吊舱文档"方块标记与激光照射点不互通"的口径） |
 | 装甲/命中箱/core_distance | 与弹体武器完全同路径（命中箱系数、armor_min/max、core_distance 预补偿、骨块破坏） |
 | 目标指示吊舱 | `laser_data.range` 同时是 `rvp:targetingpod` 的方块标记射线长度（吊舱 `block_range` 未配置时的回退值） |

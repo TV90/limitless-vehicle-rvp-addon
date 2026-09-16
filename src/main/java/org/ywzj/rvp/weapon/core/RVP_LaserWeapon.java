@@ -8,6 +8,7 @@ import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
 import org.ywzj.rvp.weapon.laser.RVP_LaserBeam;
+import org.ywzj.rvp.server.warn.RVP_LaserWarnService;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.EntityUtil;
@@ -94,6 +95,8 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
                     RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, hitDamageBeforeHitbox);
+                    // 2026-09-17：激光命中载具触发激光照射告警（TYPE_LASER，敌对才告警、按射手车×目标车 10t 节流）
+                    RVP_LaserWarnService.warnLaserHit(vehicle, targetVehicle);
                 }
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
