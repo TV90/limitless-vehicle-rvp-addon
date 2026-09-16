@@ -89,6 +89,19 @@ public final class GunnerWeaponSuitability {
         if (data == null || target == null || !target.isAlive()) {
             return false;
         }
+        // 激光致盲（2026-09-17）：被致盲的 gunner 只能使用雷达制导/雷达中段（SARH/ARH/AIR）
+        // 导弹，且要求载具保有可用雷达（发射授权走雷达锁）——其余武器一律不可选，索敌层
+        // （hasUsableWeaponForTarget）因此失去目标；无雷达载具的 gunner 致盲期间彻底哑火
+        if (rootUnit.getVehicle() != null
+                && rootUnit.getVehicle().getDriver() instanceof org.ywzj.rvp.entity.gunner.GunnerEntity gunner
+                && org.ywzj.rvp.server.warn.RVP_LaserBlindService.isBlinded(gunner)) {
+            boolean radarGuided = data.usesGuidanceType(RVP_EnumGuidanceType.SARH)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.ARH)
+                    || data.usesGuidanceType(RVP_EnumGuidanceType.AIR);
+            if (!radarGuided || !hasUsableRadar(rootUnit, target)) {
+                return false;
+            }
+        }
         // GPS 制导只打离地 ≤5m 的贴地/地面目标（远程点打击，不打升高/悬浮目标）
         if (data.isGpsMissile() && altitudeAgl(target) > GPS_MAX_TARGET_AGL) {
             return false;

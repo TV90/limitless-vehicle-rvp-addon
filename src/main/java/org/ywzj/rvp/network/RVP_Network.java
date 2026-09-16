@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 11 增加空中支援恢复状态和恢复截止 Tick。 */
-    private static final String PROTOCOL = "11";
+    /** 协议 12 增加激光致盲滤镜同步包（S2CLaserBlind）。 */
+    private static final String PROTOCOL = "12";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -311,6 +311,12 @@ public class RVP_Network {
                 .encoder(C2SRequestFireSupportCeaseFire::encode)
                 .decoder(C2SRequestFireSupportCeaseFire::decode)
                 .consumerMainThread(C2SRequestFireSupportCeaseFire::handle)
+                .add();
+        // [RVP] 激光致盲（S2C）：客户端白色闪光滤镜
+        CHANNEL.messageBuilder(S2CLaserBlind.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CLaserBlind::encode)
+                .decoder(S2CLaserBlind::decode)
+                .consumerMainThread(S2CLaserBlind::handle)
                 .add();
     }
 }

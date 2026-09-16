@@ -9,6 +9,9 @@
 | RVP_LaserData字段 | 解释 | 类型 | 默认值 |
 | ----------------- | ---- | ---- | ------ |
 | range | 射线最大射程（格），getter 下限钳到 1。另：本字段同时是 `rvp:targetingpod` 目标指示吊舱的方块标记射线长度（吊舱 `targeting_pod_data.block_range` 未配置时的回退值，见 RVP_WeaponData.getTargetingPodRange） | float | 512 |
+| blind_hit_count | **激光致盲：触发致盲所需命中次数。默认 0 = 功能关闭**（仅显式配置 >0 的激光生效）。命中玩家/gunner/其骑乘的载具时累计，窗口内攒满触发致盲，触发后计数清零重新累计 | int | 0 |
+| blind_hit_window_tick | 激光致盲命中累计窗口（tick，20tick=1秒），窗口内攒满次数才触发，超窗清零重计 | int | 100 |
+| blind_duration_tick | 激光致盲时长（tick）；0 = 关闭。玩家=白色闪光滤镜，gunner=失去目标（详见"激光致盲"节） | int | 200 |
 | visual_data | 光束外观配置（仅客户端渲染消费），见下表 | RVP_LaserVisualData | 见下表 |
 
 ## RVP_LaserVisualData字段（`laser_data.visual_data`）
@@ -43,6 +46,22 @@
 | `submunition_data`/`dispenser_data` | 无子母/布洒，不消费 | ❌ |
 | `guidance_data` | 激光武器自身不制导、不提供照射，不消费 | ❌ |
 | `life`/`headshot_multiplier`/`inaccuracy`/`fire_data.spread` | 射线即时判定，无寿命/爆头/散布实现 | ❌ |
+
+## 激光致盲（blind_* 字段，默认关闭）
+
+命中**玩家 / gunner / 其骑乘的载具**时累计受击次数；`blind_hit_count` 次（须在
+`blind_hit_window_tick` 窗口内）触发致盲，**触发时命中计数清零、窗口重开、重新累计**
+——再次攒满才再次致盲（刷新致盲时长）；窗口超时未达标同样清零重计。
+
+- **玩家致盲**：服务端发 `S2CLaserBlind` 同步包 → 客户端全屏白色闪光滤镜
+  （`RVP_LaserBlindOverlay`：前 70% 时长全亮、后 30% 线性渐隐），期间再次触发刷新时长；
+- **gunner 致盲**：服务端致盲状态表标记（`RVP_LaserBlindService.isBlinded`）——期间
+  视觉索敌失效（武器可选性收紧导致 `hasUsableWeaponForTarget` 失败，自然失去目标）；
+- **有雷达载具的 gunner 例外**：致盲期间仍可作战，但只能选用雷达制导/雷达中段的
+  **SARH/ARH/AIR** 导弹（发射仍需本车雷达锁定授权——96L6 搜索中继不算，TADS 火控中继算）；
+  无雷达载具的 gunner 致盲期间无可用武器=彻底失去目标；
+- CIWS 拦截来袭导弹不变（雷达指向，非目视）；射手不会被自己的激光致盲（射线 canHit 已排除）；
+- `blind_duration_tick: 0` 或 `blind_hit_count: 0`（默认）= 该激光不致盲。
 
 ## 行为说明
 
@@ -89,6 +108,7 @@
 | 联动系统 | 说明 |
 | -------- | ---- |
 | 激光告警 LWR | `rvp:laser` **命中敌对载具时向其乘客发 TYPE_LASER 激光照射告警**（同 LWR 提示与 `laser_alert` 音效；友方不告警；同一"射手车→目标车"对 10t 节流）。注意它与操作手照射会话型 LWR（`RVP_LaserWarnService` 扫描 LBR/LH/SALH 照射点）是两条独立触发路径——激光武器不产生照射会话，但命中即告警 |
+| 激光致盲 | 命中累计达标（`blind_*` 字段，**默认关闭**）→ 玩家白色闪光滤镜、gunner 失去目标（详见"激光致盲"节） |
 | LH/SALH 激光制导 | 激光武器**不提供照射点/designation**，与操作手照射会话、GPS 目标点均相互独立（同吊舱文档"方块标记与激光照射点不互通"的口径） |
 | 装甲/命中箱/core_distance | 与弹体武器完全同路径（命中箱系数、armor_min/max、core_distance 预补偿、骨块破坏） |
 | 目标指示吊舱 | `laser_data.range` 同时是 `rvp:targetingpod` 的方块标记射线长度（吊舱 `block_range` 未配置时的回退值） |

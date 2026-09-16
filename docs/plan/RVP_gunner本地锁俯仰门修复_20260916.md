@@ -366,3 +366,38 @@ RADAR_SEARCH（文字每 5t 刷新、响声每 `scan_period_tick`=60t 一轮）�
 
 实机验证：生存模式用 rvp:laser 照射敌对载具 → 目标乘客收到"被激光照射"提示与音效；
 友军载具不被告警；创造载具同样会收告警（告警非攻击，不涉创造保护）。
+
+---
+
+## 十一、（2026-09-17）激光致盲系统（laser_data blind_* 三字段，默认关闭）
+
+### 语义（用户定版）
+
+`rvp:laser` 命中玩家/gunner/其骑乘载具时累计受击次数；`blind_hit_count` 次（窗口内）触发
+致盲——**触发时计数清零、窗口重开、重新累计**（再次攒满刷新时长；超窗清零重计）。
+`blind_hit_count` **默认 0 = 功能默认关闭**，仅显式配置的激光生效。
+
+- 玩家：S2CLaserBlind → 客户端全屏白色闪光滤镜（前 70% 全亮、后 30% 渐隐，登出清理）；
+- gunner：服务端致盲状态（isBlinded）——视觉索敌失效；**有雷达载具例外**：致盲期间仅
+  雷达制导/雷达中段（SARH/ARH/AIR）导弹可选且要求 hasUsableRadar（96L6 搜索中继不算、
+  TADS 算）；无雷达载具 gunner 彻底哑火；
+- CIWS 拦截不变；射手/宿主不自我致盲（canHit 排除）。
+
+### 实现
+
+- `RVP_LaserData` +3 字段；`RVP_LaserBlindService`（新，服务端：累计侧表/致盲状态表/
+  onLaserHit/isBlinded）；`S2CLaserBlind`（新包，协议 11→12）+ 客户端
+  `RVP_ClientLaserBlindState` + `RVP_LaserBlindOverlay`（RenderGuiEvent.Post 白色滤镜）；
+- `RVP_LaserWeapon.shoot` 命中累计调用；`GunnerWeaponSuitability.canSelectForTarget`
+  致盲分支（SARH/ARH/AIR + hasUsableRadar(weaponUnit, target)）；
+- 消费点语义：索敌层 hasUsableWeaponForTarget 自动收紧 → 雷达无力/无雷达武器的
+  gunner 自然失去目标；CIWS 雷达指向不受影响。
+
+### 实机验证清单（追加）
+
+- [ ] 默认（未写 blind_* 字段）激光：无任何致盲；
+- [ ] 配置 blind_hit_count=3 后：生存玩家被命中 3 次（5 秒内）→ 白屏 10 秒渐隐，触发后
+      计数重置（再打 3 次才再次致盲，期间命中不刷新白屏时长）；
+- [ ] 创造驾驶被命中 → 白屏；
+- [ ] 有雷达+SARH/ARH 弹的敌方 gunner 被致盲 → 失去目标但雷达弹仍会打；
+- [ ] 无雷达/无机炮弹 gunner 被致盲 → 哑火。

@@ -8,6 +8,7 @@ import org.ywzj.rvp.weapon.damage.RVP_VehicleHurtScalingHandler;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.laser.RVP_LaserRaycast;
 import org.ywzj.rvp.weapon.laser.RVP_LaserBeam;
+import org.ywzj.rvp.server.warn.RVP_LaserBlindService;
 import org.ywzj.rvp.server.warn.RVP_LaserWarnService;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -98,6 +99,12 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     // 2026-09-17：激光命中载具触发激光照射告警（TYPE_LASER，敌对才告警、按射手车×目标车 10t 节流）
                     RVP_LaserWarnService.warnLaserHit(vehicle, targetVehicle);
                 }
+                // 激光致盲（2026-09-17）：命中玩家/gunner/其载具累计次数，攒满触发白色闪光/gunner 失去目标；
+                // blind_hit_count 默认 0 = 功能关闭（onLaserHit 内短路）
+                RVP_LaserBlindService.onLaserHit(vehicle, beam.hitEntity(),
+                        data.getLaserData().getBlindHitCount(),
+                        data.getLaserData().getBlindHitWindowTick(),
+                        data.getLaserData().getBlindDurationTick());
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
