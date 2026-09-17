@@ -73,8 +73,14 @@ public final class RVP_WeaponFireController {
         clientFireDownPrev = fireDown;
         lastFireDown = fireDown;
 
+        // 目的（2026-09-17）：同轴机枪等共用武器站开火键的输入不得驱动蓄力/转管积累——
+        // isFireKeyDown 的回退分支（未选中武器时任意开火键都算开火）会让打同轴机枪时
+        // railgun 蓄力条一起涨。蓄力类模式只认本武器被选中（主/副操作位）时的开火输入。
+        boolean chargeOwnInput = weapon.getWeaponUnit().getCurrentWeapon().orElse(null) == weapon
+                || weapon.getWeaponUnit().getCurrentSecondaryWeapon().orElse(null) == weapon;
+
         RVP_FireData fire = weapon.getData().getFireData();
-        if (mode() == RVP_EnumFireMode.RAILGUN && lastPressed && !railgunCharging) {
+        if (mode() == RVP_EnumFireMode.RAILGUN && lastPressed && !railgunCharging && chargeOwnInput) {
             railgunCharging = true;
             railgunChargeTick = 0;
             weapon.setChargeTick(0);
@@ -83,23 +89,23 @@ public final class RVP_WeaponFireController {
         if (mode() == RVP_EnumFireMode.RAILGUN && lastReleased) {
             railgunCharging = false;
         }
-        if (mode() == RVP_EnumFireMode.CHARGE && lastPressed) {
+        if (mode() == RVP_EnumFireMode.CHARGE && lastPressed && chargeOwnInput) {
             playChargeSound();
         }
 
-        tickSpinClient(fireDown);
+        tickSpinClient(fireDown && chargeOwnInput);
         int chargeCap = fire.getChargeTick();
         if (chargeCap <= 0) {
             return;
         }
-        if (mode() == RVP_EnumFireMode.CHARGE && fireDown) {
+        if (mode() == RVP_EnumFireMode.CHARGE && fireDown && chargeOwnInput) {
             weapon.setChargeTick(Math.min(weapon.getChargeTick() + 1, chargeCap));
         } else if (mode() == RVP_EnumFireMode.CHARGE && weapon.getChargeTick() > 0) {
             // 2026-09-17：松开蓄力后客户端按 charge_decay_tick 快速衰减清零（镜像服务端 tick 的
             // 衰减语义），蓄力条跟随真实值平滑跌落，不再冻结在松开瞬间
             weapon.setChargeTick(decayCharge(weapon.getChargeTick(), fire));
         }
-        if (mode() == RVP_EnumFireMode.RAILGUN && railgunCharging && fireDown) {
+        if (mode() == RVP_EnumFireMode.RAILGUN && railgunCharging && fireDown && chargeOwnInput) {
             railgunChargeTick = Math.min(railgunChargeTick + 1, chargeCap);
             weapon.setChargeTick(railgunChargeTick);
         } else if (mode() == RVP_EnumFireMode.RAILGUN && !railgunCharging && railgunChargeTick > 0) {
