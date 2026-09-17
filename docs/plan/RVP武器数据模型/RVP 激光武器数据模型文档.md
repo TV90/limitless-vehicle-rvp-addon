@@ -88,6 +88,7 @@
 
 - 六种 `fire_mode` 均可用；CHARGE/MINIGUN/RAILGUN 显示蓄力条 HUD（`RVP_ChargeBarOverlay`）；
 - 蓄力伤害放大：释放时伤害 = 基础 × `1 + (charge_power_scale - 1) × 蓄力比例`（FULL_AUTO/SEMI_AUTO 蓄力比例恒 0，倍率恒 1）；
+- **松开蓄力后客户端按 `charge_decay_tick` 快速衰减清零**（与 MINIGUN/服务端同语义）：蓄力条跟随真实值平滑快速跌落归零，不再冻结在松开瞬间；想要更明显的跌落动画调大 `charge_decay_tick`（默认 2≈瞬变，配 10 即约 0.5 秒跌落）；
 - **光束亮度提示**：光束 alpha 按蓄力比例压缩（最低 15%），而 `fire_data.charge_tick` **默认值为 10**——即 FULL_AUTO 且未显式写 `charge_tick: 0` 时，常亮光束会以约 15% 透明度渲染。**想要全亮常亮光束请写 `"charge_tick": 0`**；
 - 过热：`heat_count`/`max_heat_count`/`overheat_extra_heat` 与弹体武器同路径（`RVP_HeatHudOverlay` 亦支持激光武器）。
 

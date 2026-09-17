@@ -94,9 +94,17 @@ public final class RVP_WeaponFireController {
         }
         if (mode() == RVP_EnumFireMode.CHARGE && fireDown) {
             weapon.setChargeTick(Math.min(weapon.getChargeTick() + 1, chargeCap));
+        } else if (mode() == RVP_EnumFireMode.CHARGE && weapon.getChargeTick() > 0) {
+            // 2026-09-17：松开蓄力后客户端按 charge_decay_tick 快速衰减清零（镜像服务端 tick 的
+            // 衰减语义），蓄力条跟随真实值平滑跌落，不再冻结在松开瞬间
+            weapon.setChargeTick(decayCharge(weapon.getChargeTick(), fire));
         }
         if (mode() == RVP_EnumFireMode.RAILGUN && railgunCharging && fireDown) {
             railgunChargeTick = Math.min(railgunChargeTick + 1, chargeCap);
+            weapon.setChargeTick(railgunChargeTick);
+        } else if (mode() == RVP_EnumFireMode.RAILGUN && !railgunCharging && railgunChargeTick > 0) {
+            // 2026-09-17：松开蓄力后客户端同样快速衰减清零，蓄力条不再冻结（镜像服务端语义）
+            railgunChargeTick = decayCharge(railgunChargeTick, fire);
             weapon.setChargeTick(railgunChargeTick);
         }
     }
@@ -227,7 +235,7 @@ public final class RVP_WeaponFireController {
 
     public void tick(boolean fireDown) {
         RVP_FireData fire = weapon.getData().getFireData();
-        RVP_WeaponHeatManager.tick(weapon, weapon.getLocalHeatState());
+        RVP_WeaponHeatManager.tick(weapon);
         tickSpinServer(fireDown);
         if (weapon.isReloading() || !weapon.hasAmmo()) {
             clearChargeState();
@@ -342,31 +350,31 @@ public final class RVP_WeaponFireController {
     }
 
     public void recordHeatForShot() {
-        RVP_WeaponHeatManager.onShotFired(weapon, weapon.getLocalHeatState());
+        RVP_WeaponHeatManager.onShotFired(weapon);
     }
 
     public boolean canShootHeat() {
-        return RVP_WeaponHeatManager.canShoot(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.canShoot(weapon);
     }
 
     public boolean hasHeat() {
-        return RVP_WeaponHeatManager.hasHeat(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.hasHeat(weapon);
     }
 
     public boolean isOverheated() {
-        return RVP_WeaponHeatManager.isOverheated(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.isOverheated(weapon);
     }
 
     public int getCurrentHeat() {
-        return RVP_WeaponHeatManager.currentHeat(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.currentHeat(weapon);
     }
 
     public int getMaxHeatCount() {
-        return RVP_WeaponHeatManager.maxHeat(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.maxHeat(weapon);
     }
 
     public float heatRatio() {
-        return RVP_WeaponHeatManager.heatRatio(weapon, weapon.getLocalHeatState());
+        return RVP_WeaponHeatManager.heatRatio(weapon);
     }
 
     private void clearChargeState() {
