@@ -6,6 +6,7 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.vehicle.all.AllKeys;
 
 /**
@@ -76,8 +77,10 @@ public final class RVP_WeaponFireController {
         // 目的（2026-09-17）：同轴机枪等共用武器站开火键的输入不得驱动蓄力/转管积累——
         // isFireKeyDown 的回退分支（未选中武器时任意开火键都算开火）会让打同轴机枪时
         // railgun 蓄力条一起涨。蓄力类模式只认本武器被选中（主/副操作位）时的开火输入。
-        boolean chargeOwnInput = weapon.getWeaponUnit().getCurrentWeapon().orElse(null) == weapon
-                || weapon.getWeaponUnit().getCurrentSecondaryWeapon().orElse(null) == weapon;
+        // 判定必须经 RVP_WeaponResolveHelper 解包 Agent/Multi 代理后再比对——
+        // getCurrentWeapon() 返回的可能是 VehicleMultiWeapons 包装而非本武器实例。
+        boolean chargeOwnInput = RVP_WeaponResolveHelper.currentPrimary(weapon.getWeaponUnit()) == weapon
+                || RVP_WeaponResolveHelper.unwrap(weapon.getWeaponUnit().getCurrentSecondaryWeapon().orElse(null)) == weapon;
 
         RVP_FireData fire = weapon.getData().getFireData();
         if (mode() == RVP_EnumFireMode.RAILGUN && lastPressed && !railgunCharging && chargeOwnInput) {
