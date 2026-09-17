@@ -1,13 +1,14 @@
-# limitless-vehicle-rvp-addon：Gunner（AI 炮手）系统架构、数据流与关键入口
+# limitless-vehicle-rvp-addon：Gunner（AI 炮手）系统架构、数据流与关键入口（重构前历史基线）
 
 > 调研日期：2026-09-05  
 > 代码基线：`D:\WgameProject\limitless-vehicle-rvp-addon` 当前工作树，Git `HEAD=3c57aa72`；调研时 Gunner 相关 Java 文件无未提交改动。  
 > 本体参照：`D:\WgameProject\ywzj_vehicle_fish`，仅用于确认 `AbstractVehicle`、`WeaponUnit`、`ControlUnit` 等公开 API，未修改本体。  
-> 本文描述的是当前实际实现，不以旧计划文档或历史 Mixin 方案为准。
+> 文档定位：**重构前历史基线（2026-09-05）**。本文记录阶段 B 动作层引入前的代码结构；其中 `GunnerBrain` 直接写控制量/开火、武器发射入口及行号等内容不代表当前实现。当前进度与代码基线见 [RVP_Gunner重构进度交接_20260914.md](./RVP_Gunner重构进度交接_20260914.md)。
+> 本文只陈述上述 Git 基线当时的实现，不应作为当前代码结构的权威描述。
 
 ## 1. 结论先行
 
-当前 Gunner 不是 Forge `Goal`/`Brain` 体系中的普通生物 AI，而是一个**以 `GunnerEntity.tick()` 为入口、直接操纵本体载具 API 的服务端状态机**：
+截至 2026-09-05 的 Gunner 不是 Forge `Goal`/`Brain` 体系中的普通生物 AI，而是一个**以 `GunnerEntity.tick()` 为入口、直接操纵本体载具 API 的服务端状态机**：
 
 1. `GunnerEntity` 作为真实 `Mob` 实体骑乘 `AbstractVehicle`，保存归属、Profile、目标、武器索引以及驾驶/战术/SEAD 等运行时状态。
 2. 服务端每 tick 由 `GunnerEntity.tick()` 调用 `GunnerBrain.tick()`。

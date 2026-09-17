@@ -1,9 +1,9 @@
 # RVP Gunner 渐进式重构进度交接
 
-> 更新日期：2026-09-16
-> 代码基线：Git `HEAD=3ede38d6`（包含 `d3f765dd` 的 RCS/Gunner 修复及阶段 B 动作层）；以当前 Gunner 源码为权威
+> 更新日期：2026-09-17
+> 代码基线：Git `HEAD=69d6dbbb96126764f507a9efff8ad19b026d75ec`；以该提交中的 Gunner 源码为权威
 > 对应方案：[RVP_Gunner行为组合渐进式重构实施方案_20260914.md](./RVP_Gunner行为组合渐进式重构实施方案_20260914.md) §12
-> 当前状态：阶段 A、阶段 B 已完成；阶段 C～G 未实施
+> 当前状态：阶段 A 基线和阶段 B 动作边界已建立；阶段 C～G 未实施。阶段 B 的动作适配器行为单测验收仍缺记录型 Fake Gateway 测试，当前测试以源码结构断言为主
 > 本轮范围：仅修改 Addon 的 Java 源码、Gunner 基线测试与文档；未修改本体、Mixin、Profile JSON 或载具包资产
 
 ---
@@ -22,6 +22,17 @@
 阶段 B 没有修改 Gunner Profile 字段、默认值、扫描频率、目标层级、飞行/地面战术参数或 JSON。
 
 2026-09-16 将 `d3f765dd` 的目标丢失清锁修复接入重构后的动作边界：`RVP_GunnerRadarActions.maintainLocalLock()` 在目标为空或死亡时清理该武器站全部 `RadarUnit` 锁和 root `WeaponUnit` 锁，再返回 `INVALID`。`GunnerBrain.tick()` 每 tick 都调用此适配器，因此目标死亡、离开感知范围或索敌结果为空时不再留下 RWR 幽灵锁或 SARH 空中继。新增阶段 B 基线断言保护该清理契约；有效目标锁定流程保持不变。验证：指定环境下 `./gradlew build` 通过；`./gradlew runServer` 日志出现 `Done (2.636s)!`。日志 ERROR 与 §5.2 基线一致，未见本次新增错误。
+
+### 1.1 当前基线相对 `3ede38d6` 的后续 Gunner 语义变更
+
+本交接最初记录的 `3ede38d6` 之后，Gunner 行为又有以下已落地变化；这些是当前基线的一部分，不应误判为阶段 C/D 的重构结果：
+
+- **雷达与中继**（`ef6832c6`、`892e95a9`、`cbaf5fac`、`b2059555`）：区分搜索中继与火控中继，搜索中继只提供指示、不授予发射锁；本车锁定距离按目标综合 RCS 因子计算，并在离开烧穿距离后保留 100 tick 宽限；外置中继落锁距离也纳入目标隐身因子。修正本车锁定误用俯仰角门的问题，当前保留方位门；补齐目标丢失时清理本车全部雷达锁和根武器站锁。
+- **目标合法性与感知**（`3f006bc7`、`e6544754`、`092c2bf4`、`120d2a31`）：中继指示目标复用普通索敌的保护、`target_types` 和敌我校验；步行创造/旁观玩家在任何难度下受保护，载具内创造/旁观乘员仅在非困难难度保护；骑乘者的感知距离按所乘载具的分角度 RCS 计算，避免绕过载具隐身。
+- **武器适用性与拦截感知**（`120d2a31`、`b9a74592`）：固定翼和旋翼即使低空飞行仍按空中目标处理，修复仅对空武器拒绝攻击低空掠飞载具；RVP 弹药的 CIWS/拦截索敌距离现在按 `ammo_radar_rcs_factor` 朝向因子缩放。
+- **新增状态与诊断**（`cbaf5fac`、`69d6dbbb`）：新增 `/rvpdebug gunnerlock` 锁定/索敌出口诊断；激光命中在配置窗口内累积到致盲阈值后会限制 Gunner 的可选武器，仅在存在可用雷达时保留 SARH/ARH/AIR 雷达制导武器。
+
+以上基线变更已部分写入 `RVP_GunnerBehaviorBaselineTest` 的目标合法性、创造保护、乘员 RCS、中继锁定和武器门控断言。涉及雷达烧穿距离、CIWS 弹药朝向感知和激光致盲的完整运行时场景仍需后续回归覆盖。
 
 ---
 
@@ -140,25 +151,22 @@ tickCooldowns
 
 ## 4. 基线测试演化
 
-`RVP_GunnerBehaviorBaselineTest` 从 8 项增加为 9 项，并把已迁移职责的源码断言指向新的动作类：
+当前 `RVP_GunnerBehaviorBaselineTest` 有 10 项。测试通过读取源码并断言调用顺序、关键条件和职责边界来冻结结构基线；它不是动作适配器的行为单测，也不替代运行时场景回归。现有测试为：
 
 | 测试 | 阶段 B 后冻结内容 |
 |---|---|
 | `serverTickPipelineKeepsCurrentAuthoritativeOrder` | `GunnerBrain` 编排顺序及动作网关调用顺序 |
+| `targetingKeepsCiwsPreemptionAndCurrentTierOrder` | CIWS 优先、普通目标层级、中继指示目标校验及创造保护矩阵 |
 | `weaponEngagementKeepsAimLockGuidanceFireTransactionOrder` | 武器动作内瞄准、锁定、制导、发射、冷却及优先级 |
 | `movementKeepsCurrentVehicleDispatchAndControlOutputs` | 各载具算法的 Command 输出与唯一 `reset + apply` |
 | `radarGuidanceAndDefenseKeepCurrentSupportSemantics` | 本车/外置雷达、制导、防御的原有时序和入口 |
 | `seadKeepsCurrentPreemptionStateMachineAndTiming` | SEAD 时序及统一 AntiRadiation 武器事务 |
+| `entityLifecycleKeepsServerAuthorityAndCleanupContract` | 服务端权威、座位自愈、冷却和离座清理 |
 | `phaseBActionGatewayOwnsAllMutableCapabilityBoundaries` | 六域网关、Brain 禁止直写、补给反射归属、禁止武器 ID 路径分支 |
+| `phaseAProfileSchemaAndDefaultsRemainFlatAndExplicit` | 阶段 F 前继续使用当前平铺 Profile schema 和既有默认值 |
+| `engagementNetKeepsSlidingWindowAndHardLockSemantics` | 组网交战的滑动窗口、硬禁截止和交战者豁免 |
 
-其余目标、生命周期和 Profile schema 基线继续保留。阶段 F 之前，`phaseAProfileSchemaAndDefaultsRemainFlatAndExplicit` 仍应阻止提前加入 `behaviors` JSON schema。
-
-针对性结果：
-
-```text
-tests=9, skipped=0, failures=0, errors=0
-BUILD SUCCESSFUL
-```
+阶段 F 之前，`phaseAProfileSchemaAndDefaultsRemainFlatAndExplicit` 应继续阻止提前加入 `behaviors` JSON schema。阶段 B 的“动作适配器具备单元测试”验收尚未完成：目前没有 Gunner 动作类的独立行为测试或记录型 Fake Gateway 测试。阶段 A 的控制输出和战斗场景目前也没有单独的运行时断言；当前测试主要冻结源码结构和关键调用契约。
 
 ---
 
@@ -193,6 +201,16 @@ BUILD SUCCESSFUL in 40s
 
 本次新增日志错误与阶段 A 基线一致：本体 Bedrock 模型缺失 8 条、`abramsx.structure - 副本.json` 非法路径 4 条、`rvp_bomber:ac130u` 配方解析 1 条、`rvp_bomber:tu160` 载具数据 1 条。未发现 Gunner 动作层相关新增错误。
 
+### 5.3 当前代码基线定向验证（2026-09-17）
+
+当前源码中的 `RVP_GunnerBehaviorBaselineTest` 有 10 个 `@Test`。执行：
+
+```powershell
+./gradlew test --tests org.ywzj.rvp.entity.gunner.ai.RVP_GunnerBehaviorBaselineTest
+```
+
+结果：`BUILD SUCCESSFUL`。这次只运行了定向基线测试，没有重跑完整构建或服务端冒烟；测试仍是源码结构断言，尚未覆盖前述所有新增 Gunner 语义的实机/运行时结果。
+
 ---
 
 ## 6. 阶段 B 的边界与已知限制
@@ -218,4 +236,4 @@ BUILD SUCCESSFUL in 40s
 6. 先增加记录型 fake gateway 测试，再将 `GunnerEntity.tick()` 切到管理器；Profile 继续保持当前平铺 schema。
 7. 保持无 Mixin、无武器/载具 ID 特判、无本体修改。
 
-阶段 C 完成判定应至少包括：固定计划下 9 项现有基线继续通过；同 tick 只有一个最终 MovementIntent 和一个普通 FireIntent 胜者；离座/Profile generation 变化时能显式清理动作租约和运行时状态。
+阶段 C 完成判定应至少包括：固定计划下 10 项现有源码基线继续通过；同 tick 只有一个最终 MovementIntent 和一个普通 FireIntent 胜者；离座/Profile generation 变化时能显式清理动作租约和运行时状态，并补上记录型 Fake Gateway 行为测试。
