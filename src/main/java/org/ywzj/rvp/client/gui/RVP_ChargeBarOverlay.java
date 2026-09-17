@@ -2,14 +2,11 @@ package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.util.Mth;
-import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
-import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -48,28 +45,16 @@ public class RVP_ChargeBarOverlay implements IGuiOverlay {
         }
         float ratio = Math.min(tick / (float) cap, 1.0f);
 
-        double x = screenWidth * 0.5D;
-        double y = screenHeight * 0.5D;
-        Vec3 hit = weaponUnit.weaponHitPos;
-        if (hit != null) {
-            Vec3 screenHit = VectorUtil.worldToScreen(hit);
-            if (screenHit != null && screenHit.z >= 0.0D) {
-                Vec3 previousHit = weaponUnit.weaponHitPosO;
-                Vec3 previousScreenHit = previousHit != null ? VectorUtil.worldToScreen(previousHit) : null;
-                if (previousScreenHit != null && previousScreenHit.z >= 0.0D) {
-                    x = Mth.lerp(partialTick, previousScreenHit.x, screenHit.x);
-                    y = Mth.lerp(partialTick, previousScreenHit.y, screenHit.y);
-                } else {
-                    x = screenHit.x;
-                    y = screenHit.y;
-                }
-            }
-        }
+        // 2026-09-17：定位改为固定屏幕坐标（准星正下方 72px）——原实现锚定武器瞄准射线的
+        // 世界落点投影（weaponUnit.weaponHitPos → worldToScreen），转动炮塔时落点扫动导致
+        // 蓄力条在屏幕上乱跑；与 DIRCM/APS/ECM/过热等辅助 HUD 的固定屏幕定位方式对齐。
+        int x = screenWidth / 2;
+        int y = screenHeight / 2;
 
         int barW = 44;
         int barH = 4;
-        int ix = (int) Math.round(x) - barW / 2;
-        int iy = (int) Math.round(y) + 72;
+        int ix = x - barW / 2;
+        int iy = y + 72;
         int fillW = Math.max(0, Math.min(barW, Math.round(barW * ratio)));
 
         guiGraphics.fill(ix - 1, iy - 1, ix + barW + 1, iy + barH + 1, BORDER);
