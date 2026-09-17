@@ -43,7 +43,6 @@ import java.util.Set;
 public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponData> {
 
     protected int chargeTick;
-    private final RVP_WeaponHeatManager.HeatState localHeatState = new RVP_WeaponHeatManager.HeatState();
     private final RVP_WeaponFireController fireController = new RVP_WeaponFireController(this);
 
     protected RVP_WeaponBase(AbstractVehicle vehicle, WeaponUnit weaponUnit, int index, RVP_WeaponData data, String serializeId) {
@@ -60,10 +59,6 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
      */
     protected void noteServerShootInvocation(List<AimContext> aimContexts, LivingEntity shooter) {
         RVP_WeaponOriginDebug.noteShootInvocation(getWeaponUnit(), getIndex(), this, aimContexts, shooter);
-    }
-
-    RVP_WeaponHeatManager.HeatState getLocalHeatState() {
-        return localHeatState;
     }
 
     protected int getChargeTick() {
