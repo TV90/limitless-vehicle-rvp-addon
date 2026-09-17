@@ -64,6 +64,8 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     vehicle.level(), vehicle, shooter, start, look, range,
                     data.getLaserVisual().getRenderStartDistance());
 
+            // 烟幕截断（smokeBlocked=true）时 hitEntity 为 null：下方实体命中分支整体跳过，
+            // 不结算伤害/告警/致盲——光束被烟吸收但弹药与热量照常消耗，属设计语义。
             if (beam.hitEntity() != null) {
                 var source = AllDamageTypes.Sources.bullet(
                         vehicle.level().registryAccess(), shooter, shooter, beam.hitEntity().position());
@@ -105,6 +107,14 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                         data.getLaserData().getBlindHitCount(),
                         data.getLaserData().getBlindHitWindowTick(),
                         data.getLaserData().getBlindDurationTick());
+                // 清除原版受击无敌帧：与 RVP_BaseBullet.applyEntityHitDamage 尾部同款——
+                // LivingEntity.hurt 置 invulnerableTime=20（前 10t 完全免疫、后 10t 仅更高伤害可破），
+                // shoot_interval 间隔的后续脉冲大多落进无敌窗且伤害恒定被原版整体吞掉，
+                // 表现为"激光打生物有无敌帧"（弹体类武器无此问题正因弹体路径每次清零）；
+                // 载具（AbstractVehicle）走本体 DamageSystem 不吃原版此帧，打载具本就正常。
+                if (beam.hitEntity() instanceof LivingEntity living) {
+                    living.invulnerableTime = 0;
+                }
             }
             vehicle.physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }

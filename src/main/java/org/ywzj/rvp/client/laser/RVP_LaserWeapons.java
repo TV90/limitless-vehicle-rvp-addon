@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.laser;
 import org.ywzj.rvp.client.laser.RVP_ClientLaserState.LaserBeamKey;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_LaserWeapon;
+import org.ywzj.rvp.weapon.core.RVP_WeaponHeatManager;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -71,8 +72,14 @@ public final class RVP_LaserWeapons {
      * Client beam visibility. Do not use {@link AbstractVehicleWeapon#isCoolingDown()} here:
      * laser {@code shoot_interval} is per damage tick; cooldown is almost always true between shots
      * and would prune the beam every tick while the player holds fire.
+     *
+     * <p>但必须查过热（2026-09-18 实机反馈）：服务端 {@code shoot()} 的 {@code canShootHeat()}
+     * 门过热时拒绝结算伤害，若客户端照常续脉冲就会出现"过热后光束还在渲染却打不中"的
+     * 渲染/伤害分叉。{@code isOverheated}（热量 ≥ max_heat_count）与 {@code canShoot}
+     * 严格互补；未配热量的武器恒 false，行为不变。热量数据客户端可用：单机共享同表、
+     * 专用服由 {@code onClientFire} 回包计热（与热 HUD 同源）。</p>
      */
     public static boolean canRenderBeam(RVP_LaserWeapon laser) {
-        return !laser.isReloading() && laser.hasAmmo();
+        return !laser.isReloading() && laser.hasAmmo() && !RVP_WeaponHeatManager.isOverheated(laser);
     }
 }

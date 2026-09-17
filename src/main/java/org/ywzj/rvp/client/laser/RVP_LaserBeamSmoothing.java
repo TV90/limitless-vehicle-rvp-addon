@@ -39,7 +39,7 @@ public final class RVP_LaserBeamSmoothing {
 
         remember(key, start, end);
         return new RVP_LaserBeam(beam.muzzle(), start, end, impact,
-                beam.hitSomething(), beam.hitEntity(), beam.blockHit());
+                beam.hitSomething(), beam.hitEntity(), beam.blockHit(), beam.smokeBlocked());
     }
 
     public static void clear(LaserBeamKey key) {

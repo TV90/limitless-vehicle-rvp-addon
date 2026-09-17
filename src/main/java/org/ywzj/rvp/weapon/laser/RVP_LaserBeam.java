@@ -16,7 +16,9 @@ public record RVP_LaserBeam(
         Vec3 impactPoint,
         boolean hitSomething,
         @Nullable Entity hitEntity,
-        @Nullable BlockHitResult blockHit) {
+        @Nullable BlockHitResult blockHit,
+        /** 射线被烟雾弹（{@link RVP_SmokeEntity}）AABB 截断：光束止于云团表面，hitEntity 为 null，不结算任何伤害。 */
+        boolean smokeBlocked) {
 
     private static final double MIN_DRAW_LENGTH = 0.05;
 

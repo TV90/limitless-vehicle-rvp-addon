@@ -68,9 +68,10 @@
 ### 射线检测
 
 1. 炮口出膛裁剪：从炮口沿视线以 0.08 步进（上限 3.0 格）前进，找到第一个离开载具包围盒（膨胀 0.25）且无方块遮挡的点作为光束起点，最小起绘距离取 `max(render_start_distance, 0.5)`；
-2. 方块射线（`ClipContext` Block.COLLIDER、忽略流体）与实体射线（`ProjectileUtil.getEntityHitResult`）同时发射，取**最近**命中；
+2. 方块射线（`ClipContext` Block.COLLIDER、忽略流体）与实体射线（`ProjectileUtil.getEntityHitResult`）同时发射，取**最近**命中；实体命中后再对命中实体碰撞箱做一次精确射线求交取**真实入射点**（原版 `EntityHitResult` 的位置是 `entity.position()` 即实体脚底坐标，不可直接用作落点——直接用会让光束末端折向生物脚底，2026-09-18 修复）；
 3. 实体命中过滤（canHit）：死亡/不可选中的实体、发射载具自身、射手本人、载具乘客一律跳过；
-4. 未命中任何实体时仅消耗弹药与冷却，无任何效果。
+4. **烟幕截断（2026-09-18 新增，烟雾弹反制激光压制）**：射线与存活 `RVP_SmokeEntity`（rvp:rvp_smoke 烟幕实体）的 AABB 求交，命中即提前判定命中并截断——光束止于云团表面（沿用表面内缩），`hitEntity` 保持 null → 服务端伤害/激光告警/致盲随实体命中门控自动跳过，命中火花也不生成；弹药与热量照常消耗。不分敌我（烟挡光的物理语义）；飞行段小箱（0.5³）与爆炸后云团箱统一 AABB 判据；服务端伤害射线与客户端渲染射线共用同一检测，gunner 激光同样被反制。边界：发射端已在烟幕 AABB 内部时不截断（原版 AABB.clip 只求外部入射点）；SALH/LBR/LH 激光制导链与目标指示吊舱标记射线不在本截断范围；
+5. 未命中任何实体时仅消耗弹药与冷却，无任何效果。
 
 ### 伤害结算
 
@@ -80,7 +81,7 @@
 2. 基础伤害 = `damage（或 collision_data.direct_damage）× 蓄力倍率`；
 3. `RVP_DamageApplier.applyScaled`：乘 `collision_data.direct_damage_factor` 的目标类别倍率；
 4. **对载具（AbstractVehicle）**：命中箱系数（按 structureModel 骨架/默认系数解析）→ 装甲（`armor_min_damage`/`armor_max_damage`，未配置装甲时等价于命中伤害×系数）→ **core_distance 预补偿**（按 `core_distance_scale_multiplier` 用 `amount' = amount/falloff × (1+(falloff-1)×coreMult)` 抵消本体 0.2 衰减，并跳过全局二次缩放）→ 有机会打掉骨块模块；
-5. **对普通实体**：直接 `EntityUtil.hurt` 全额伤害；
+5. **对普通实体**：直接 `EntityUtil.hurt` 全额伤害；结算后**清零原版受击无敌帧**（`invulnerableTime = 0`，与 `RVP_BaseBullet.applyEntityHitDamage` 尾部同款）——否则 `shoot_interval` 间隔的后续脉冲会落进原版 20t 无敌窗（前 10t 完全免疫、后 10t 仅更高伤害可破）且伤害恒定被整体吞掉，表现为"打生物有无敌帧"；载具走本体 DamageSystem 不吃此帧（2026-09-18 修复）；
 6. 不点燃、不爆炸、无实体命中粒子（仅方块命中火花，见渲染节）；
 7. **命中载具触发激光照射告警**：向目标乘客发 `S2CMissileTrackAlert(TYPE_LASER)`（客户端播 `laser_alert` 音效 + "被激光照射"提示；友方不告警；同"射手车→目标车"对 10t 节流）。
 
@@ -94,7 +95,7 @@
 
 ### 弹药、过热与射击门控
 
-每次脉冲依次通过：冷却（`shoot_interval`）→ 装填 → 过热 → `canShootOnServer`（含 `max_off_axis_shoot_angle` 离轴门控、发射架展开门控）→ `consumeAmmo` 真实耗弹。任意一门失败该脉冲不结算；客户端在无弹药/装填中不渲染光束。
+每次脉冲依次通过：冷却（`shoot_interval`）→ 装填 → 过热 → `canShootOnServer`（含 `max_off_axis_shoot_angle` 离轴门控、发射架展开门控）→ `consumeAmmo` 真实耗弹。任意一门失败该脉冲不结算；客户端在无弹药/装填中/**过热**时不渲染光束（2026-09-18 修复：过热只熄光束不结算伤害，消除"过热后光束还在渲染却打不中"的分叉；`shoot_interval` 逐发冷却不参与渲染门，按住开火键的持续光束不受影响）。
 
 ### 客户端光束渲染
 

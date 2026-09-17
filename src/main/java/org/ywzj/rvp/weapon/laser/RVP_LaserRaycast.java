@@ -11,7 +11,11 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Shared laser geometry: muzzle clip-out + ray trace to first block/entity hit.
@@ -40,7 +44,7 @@ public final class RVP_LaserRaycast {
         }
 
         return new RVP_LaserBeam(muzzle, renderStart, renderEnd, impactPoint,
-                trace.hitSomething, trace.hitEntity, trace.blockHit);
+                trace.hitSomething, trace.hitEntity, trace.blockHit, trace.smokeBlocked);
     }
 
     private static Vec3 clipMuzzleExit(Level level, AbstractVehicle vehicle, Vec3 muzzle, Vec3 look, double minDistance) {
@@ -88,17 +92,46 @@ public final class RVP_LaserRaycast {
                 vehicle.getBoundingBox().expandTowards(look.scale(bestDist)).inflate(1.0),
                 e -> canHit(e, vehicle, shooter));
         if (entityHit != null) {
-            double dist = start.distanceTo(entityHit.getLocation());
+            // 原版 ProjectileUtil.getEntityHitResult 返回的 EntityHitResult 位置是
+            // entity.position()（实体脚底坐标），直接用作落点会让光束末端折向生物脚底
+            // （2026-09-18 实机反馈）。对命中实体碰撞箱重做射线求交取真实入射点
+            // （0 膨胀，与 ProjectileUtil 内部几何一致），此处 hitEnd 尚为方块命中点/
+            // 射程端点，即实体搜索段的终点，clip 失败时才回退脚底坐标。
+            Vec3 entityHitPos = entityHit.getEntity().getBoundingBox().clip(start, hitEnd)
+                    .orElse(entityHit.getEntity().position());
+            double dist = start.distanceTo(entityHitPos);
             if (dist < bestDist) {
                 bestDist = dist;
-                hitEnd = entityHit.getLocation();
+                hitEnd = entityHitPos;
                 hitEntity = entityHit.getEntity();
                 blockResult = null;
             }
         }
 
-        boolean hit = hitEntity != null || blockHit.getType() != HitResult.Type.MISS;
-        return new TraceResult(hitEnd, hit, hitEntity, blockResult);
+        boolean smokeBlocked = false;
+        // 烟雾弹反制激光压制（2026-09-18 用户定版）：激光射线命中 RVP 烟幕实体 AABB 即提前判命中并截断，
+        // 光束止于云团表面。hitEntity 保持 null → 服务端伤害/告警/致盲随实体命中门控自动跳过；
+        // 不分敌我（烟挡光的物理语义）；飞行段小箱（0.5³）与爆炸后云团箱统一 AABB 判据。
+        // 查询范围仅需射线走廊盒，烟幕实体数量少，量级与制导链 SightObstruction 查询相当。
+        List<RVP_SmokeEntity> smokes = level.getEntitiesOfClass(RVP_SmokeEntity.class,
+                new AABB(start, hitEnd), Entity::isAlive);
+        for (RVP_SmokeEntity smoke : smokes) {
+            Optional<Vec3> smokeHit = smoke.getBoundingBox().clip(start, hitEnd);
+            if (smokeHit.isEmpty()) {
+                continue;
+            }
+            double dist = start.distanceTo(smokeHit.get());
+            if (dist < bestDist) {
+                bestDist = dist;
+                hitEnd = smokeHit.get();
+                hitEntity = null;
+                blockResult = null;
+                smokeBlocked = true;
+            }
+        }
+
+        boolean hit = hitEntity != null || smokeBlocked || blockHit.getType() != HitResult.Type.MISS;
+        return new TraceResult(hitEnd, hit, hitEntity, blockResult, smokeBlocked);
     }
 
     private static Vec3 normalize(Vec3 direction) {
@@ -116,5 +149,5 @@ public final class RVP_LaserRaycast {
     }
 
     private record TraceResult(Vec3 hitEnd, boolean hitSomething, @Nullable Entity hitEntity,
-                               @Nullable BlockHitResult blockHit) {}
+                               @Nullable BlockHitResult blockHit, boolean smokeBlocked) {}
 }
