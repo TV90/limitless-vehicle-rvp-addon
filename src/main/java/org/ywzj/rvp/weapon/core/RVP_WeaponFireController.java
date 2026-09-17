@@ -8,6 +8,8 @@ import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_FireData;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.vehicle.all.AllKeys;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
  * 按 {@link RVP_EnumFireMode} 驱动客户端是否发送开火包，以及服务端 spin / 轨道炮蓄力状态。
@@ -76,11 +78,15 @@ public final class RVP_WeaponFireController {
 
         // 目的（2026-09-17）：同轴机枪等共用武器站开火键的输入不得驱动蓄力/转管积累——
         // isFireKeyDown 的回退分支（未选中武器时任意开火键都算开火）会让打同轴机枪时
-        // railgun 蓄力条一起涨。蓄力类模式只认本武器被选中（主/副操作位）时的开火输入。
-        // 判定必须经 RVP_WeaponResolveHelper 解包 Agent/Multi 代理后再比对——
-        // getCurrentWeapon() 返回的可能是 VehicleMultiWeapons 包装而非本武器实例。
-        boolean chargeOwnInput = RVP_WeaponResolveHelper.currentPrimary(weapon.getWeaponUnit()) == weapon
-                || RVP_WeaponResolveHelper.unwrap(weapon.getWeaponUnit().getCurrentSecondaryWeapon().orElse(null)) == weapon;
+        // railgun 蓄力条一起涨。蓄力类模式只认"玩家当前正在操作本武器单位、且本武器是
+        // 该单位当前选中武器"的开火输入；选中判定必须经 RVP_WeaponResolveHelper 解包
+        // Agent/Multi 代理（getCurrentWeapon() 返回的可能是包装对象，恒等比较会失效）。
+        boolean chargeOwnInput = false;
+        if (LocalVehiclePlayer.instance != null && LocalVehiclePlayer.instance.onVehicle()) {
+            WeaponUnit operatedUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+            chargeOwnInput = operatedUnit == weapon.getWeaponUnit()
+                    && RVP_WeaponResolveHelper.currentPrimary(operatedUnit) == weapon;
+        }
 
         RVP_FireData fire = weapon.getData().getFireData();
         if (mode() == RVP_EnumFireMode.RAILGUN && lastPressed && !railgunCharging && chargeOwnInput) {
