@@ -121,7 +121,7 @@ public final class RVP_ClientRadarTickHandler {
             boolean phaseMode = ext != null && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
             if (phaseMode) {
                 // 扫描后保活：每 tick 刷新仍在扫描范围内目标的接触时间戳（复刻原 mixin tickTargets 语义）
-                tickContactHold(radar);
+                tickContactHold(radar, (net.minecraft.client.multiplayer.ClientLevel) vehicle.level());
                 if (shouldSkipScan(radar, ext)) {
                     applyAspectRcsFilter(radar, vehicle.level().getGameTime());
                     continue;
@@ -225,7 +225,7 @@ public final class RVP_ClientRadarTickHandler {
      * 客户端部分）：目标仍在扫描范围内（高度/方位限位/扇区）→ {@link RadarUnit#detect}
      * 刷新接触时间戳，即使扫描节流间隙也不消失；出范围/死亡/不可探测 → 移除。
      */
-    private static void tickContactHold(RadarUnit radar) {
+    private static void tickContactHold(RadarUnit radar, net.minecraft.client.multiplayer.ClientLevel clientLevel) {
         float yMin = radar.getYRotMin();
         float yMax = radar.getYRotMax();
         float xRot = radar.getXRot();
@@ -238,6 +238,18 @@ public final class RVP_ClientRadarTickHandler {
             RadarUnit.DetectedObject detectedObject = entry.getValue();
             Entity targetEntity = detectedObject.entity;
             if (targetEntity == null || !targetEntity.isAlive()) {
+                it.remove();
+                continue;
+            }
+            // BVR 广播克隆过期校验（2026-09-19 鬼影修复）：超视距弹药的接触实体是广播克隆
+            // （serverEntities 里的游离对象，从未加入 ClientLevel）——弹体被拦截/坠毁后服务端
+            // 停止广播，克隆对象无人调 setRemoved，isAlive() 恒 true 且位置冻结在拦截点，
+            // 上面的存活判定拦不住它 → 接触表无限期保留"静止+带旧速度矢量"的鬼影。
+            // 本体清理（LocalVehiclePlayer tick 按 interval×5 清 stale）把克隆移出
+            // serverEntities 后，此处立即移除接触。残影时长 ≈ 广播间隔×5，亚秒级。
+            if (targetEntity instanceof RVP_BaseBullet
+                    && !LocalVehiclePlayer.instance.serverEntities.containsKey(targetEntity.getId())
+                    && clientLevel.getEntity(targetEntity.getId()) == null) {
                 it.remove();
                 continue;
             }
