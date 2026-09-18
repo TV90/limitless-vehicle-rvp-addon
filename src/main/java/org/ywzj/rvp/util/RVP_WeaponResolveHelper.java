@@ -32,6 +32,19 @@ public final class RVP_WeaponResolveHelper {
         return weaponUnit == null ? null : unwrap(weaponUnit.getCurrentWeapon().orElse(null));
     }
 
+    /**
+     * 当前选中的副武器（解包 Agent/Multi 代理后比较）。
+     *
+     * <p>与 {@link #currentPrimary} 同动机：{@code getCurrentSecondaryWeapon()} 返回的可能是
+     * 包装对象，恒等比较会失效——蓄力类武器的开火键归属判定（{@code isFireKeyDown}）必须
+     * 经此解包，否则主选中的 railgun 会把同轴机枪的副键输入当成自己的开火输入（2026-09-19
+     * 同轴开火误驱动 railgun 蓄力回归的根因）。</p>
+     */
+    @Nullable
+    public static AbstractVehicleWeapon<?> currentSecondary(WeaponUnit weaponUnit) {
+        return weaponUnit == null ? null : unwrap(weaponUnit.getCurrentSecondaryWeapon().orElse(null));
+    }
+
     @Nullable
     public static RVP_WeaponBase currentPrimaryRvp(WeaponUnit weaponUnit) {
         AbstractVehicleWeapon<?> weapon = currentPrimary(weaponUnit);

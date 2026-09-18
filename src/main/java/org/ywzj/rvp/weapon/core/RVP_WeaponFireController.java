@@ -464,10 +464,14 @@ public final class RVP_WeaponFireController {
     @OnlyIn(Dist.CLIENT)
     private boolean isFireKeyDown() {
         var unit = weapon.getWeaponUnit();
-        if (unit.getCurrentWeapon().orElse(null) == weapon) {
+        // 经解包比较当前选中武器：getCurrentWeapon()/getCurrentSecondaryWeapon() 返回的可能是
+        // Multi/Agent 包装对象，恒等比较恒假 → 主选中的 railgun 会落进兜底分支，把同轴机枪的
+        // 副键输入当成自己的开火输入（2026-09-19 同轴蓄力回归根因，0917 修复只改了 chargeOwnInput
+        // 门未改输入源）。
+        if (RVP_WeaponResolveHelper.currentPrimary(unit) == weapon) {
             return AllKeys.MAIN_WEAPON_SHOOT.isDown();
         }
-        if (unit.getCurrentSecondaryWeapon().orElse(null) == weapon) {
+        if (RVP_WeaponResolveHelper.currentSecondary(unit) == weapon) {
             return AllKeys.SECONDARY_WEAPON_SHOOT.isDown();
         }
         return AllKeys.MAIN_WEAPON_SHOOT.isDown() || AllKeys.SECONDARY_WEAPON_SHOOT.isDown();
