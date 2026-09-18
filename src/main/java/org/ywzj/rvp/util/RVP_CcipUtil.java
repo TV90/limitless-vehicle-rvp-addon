@@ -1,16 +1,23 @@
 package org.ywzj.rvp.util;
 
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 public final class RVP_CcipUtil {
 
     private static final int MAX_TICKS = 1200;
+
+    /** 弹道 march 的最大飞行距离（格）：超出视距的落点对准星无意义（2026-09-19 天空垂落修复）。 */
+    private static final double MARCH_MAX_DISTANCE = 512.0D;
 
     private RVP_CcipUtil() {}
 
@@ -111,5 +118,74 @@ public final class RVP_CcipUtil {
             return velocity.normalize().scale(clampedMin);
         }
         return velocity;
+    }
+
+    /**
+     * RVP 弹药弹道 march：观瞄准星预测用（按武器 kind 走与真实弹完全相同的积分器）。
+     *
+     * <p>MACHINEGUN 走 {@link RVP_UnguidedBallisticMath#stepCannon}（位移 → {@code cannon_friction}
+     * 线性摩擦 → {@code cannon_gravity} 重力，对齐 {@code RVP_BulletEntity}）；MISSILE/ROCKET/BOMB 走
+     * {@link RVP_UnguidedBallisticMath#stepBomb}/{@link RVP_UnguidedBallisticMath#stepProjectile}
+     * （{@code data.getGravity} / {@code drag_in_air} / 恒速与最小最大速度钳制，与炮火支援解算同源）。
+     * 初速 {@code resolveMuzzleSpeed(kind)}，按 {@code inherit_vehicle_velocity} 叠加载具速度。</p>
+     *
+     * <p>每 tick 段内用本体 {@link VectorUtil#hitPosition}（方块+实体 AABB+遮挡，与本体准星同一语义）
+     * 求交，返回点偏离段终点即视为命中并返回落点。寿命（{@code life}，钳 [10,120]）内、或飞行距离超过
+     * 视距上限（512 格）仍未命中时返回 <b>null</b>——调用方（观瞄准星）据此把准星居中，而不是标记
+     * 数千格外地平线下的弹道终点（2026-09-19 天空垂落修复）。本体准星对 RVP 武器只有直线射线
+     * （无下坠/阻力且不识别 RVP 弹道参数），此方法补齐物理模型（2026-09-18 观瞄准星 RVP 弹道适配）。</p>
+     */
+    @Nullable
+    public static Vec3 computeBulletImpact(Level level, Vec3 startPos, Vec3 aimDir, RVP_WeaponData data,
+                                           @Nullable Entity contextEntity) {
+        if (level == null || startPos == null || aimDir == null || data == null
+                || aimDir.lengthSqr() < 1.0E-8) {
+            return null;
+        }
+        RVP_EnumWeaponKind kind = data.getWeaponKind();
+        Vec3 velocity = aimDir.normalize()
+                .scale(Math.max(data.resolveMuzzleSpeed(kind), 0.01f));
+        if (data.isInheritVehicleVelocity() && contextEntity != null) {
+            velocity = velocity.add(contextEntity.getDeltaMovement());
+        }
+        int maxTicks = Mth.clamp(data.getLife() > 0 ? data.getLife() : 120, 10, 120);
+        Vec3 position = startPos;
+        double travelled = 0.0D;
+        for (int tick = 0; tick < maxTicks; tick++) {
+            Vec3 next;
+            Vec3 nextVelocity;
+            switch (kind) {
+                case BOMB -> {
+                    RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepBomb(position, velocity, data);
+                    next = step.position();
+                    nextVelocity = step.velocity();
+                }
+                case MISSILE, ROCKET -> {
+                    // 先受力后移动语义（与 RVP_BaseBullet.tickBallisticMotion 一致）
+                    RVP_UnguidedBallisticMath.Step step = RVP_UnguidedBallisticMath.stepProjectile(position, velocity, data);
+                    next = step.position();
+                    nextVelocity = step.velocity();
+                }
+                default -> {
+                    // MACHINEGUN：先移动后摩擦与重力（与 RVP_BulletEntity.tickBulletMotionAndFacing 一致）
+                    next = position.add(velocity);
+                    nextVelocity = RVP_UnguidedBallisticMath.stepCannon(position, velocity,
+                            data.getCannonFriction(), data.getCannonGravity()).velocity();
+                }
+            }
+            // 调用本体命中求交：方块+实体 AABB+遮挡一体语义，返回点与段终点不重合即段内有命中
+            Vec3 segmentHit = VectorUtil.hitPosition(contextEntity, position, next);
+            if (segmentHit.distanceToSqr(next) > 1.0E-6) {
+                return segmentHit;
+            }
+            position = next;
+            velocity = nextVelocity;
+            travelled += velocity.length();
+            // 视距外仍无命中：落点对准星无意义，交由调用方居中处理
+            if (travelled >= MARCH_MAX_DISTANCE || position.y < level.getMinBuildHeight() - 16) {
+                return null;
+            }
+        }
+        return null;
     }
 }

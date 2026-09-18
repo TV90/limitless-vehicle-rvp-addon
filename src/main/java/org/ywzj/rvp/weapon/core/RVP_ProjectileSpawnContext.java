@@ -36,7 +36,9 @@ public record RVP_ProjectileSpawnContext(
         /** 是否从 sourceWeaponUnit 读取武器站可编程空爆距离。 */ boolean bindProgrammableAirburst,
         /** 线导挂接使用的真实管口坐标；无挂接时为 null。 */ @Nullable Vec3 wireLaunchFrom,
         /** 弹体动态 Chunk 路径策略；炮火远程 Bullet 必须显式选择远程策略。 */
-        RVP_ProjectileChunkLoadingPolicy chunkLoadingPolicy) {
+        RVP_ProjectileChunkLoadingPolicy chunkLoadingPolicy,
+        /** 观瞄视角射弹原点分离伪装数据；无伪装（普通出弹/炮火支援）为 null。 */
+        @Nullable org.ywzj.rvp.sight.RVP_SightFireDisguise sightFireDisguise) {
 
     public RVP_ProjectileSpawnContext {
         if (level == null || weaponData == null || weaponKind == null || owner == null
@@ -53,6 +55,26 @@ public record RVP_ProjectileSpawnContext(
         if (sourceVehicle != null && sourceVehicle.level() != level) {
             throw new IllegalArgumentException("发射载具必须位于生成世界");
         }
+    }
+
+    /**
+     * 旧参兼容重载（无观瞄伪装）：炮火支援等无载具投送调用点签名不变，伪装数据为 null。
+     */
+    public RVP_ProjectileSpawnContext(ServerLevel level, RVP_WeaponData weaponData,
+                                      RVP_EnumWeaponKind weaponKind,
+                                      @Nullable EntityType<? extends Projectile> entityType,
+                                      @Nullable AbstractVehicle sourceVehicle,
+                                      @Nullable WeaponUnit sourceWeaponUnit,
+                                      @Nullable WeaponUnit launchWeaponUnit,
+                                      LivingEntity owner, Vec3 spawnPosition,
+                                      RVP_BaseBullet.AimRot aim, Vec3 initialMotion,
+                                      @Nullable Entity lockTarget, @Nullable Vec3 designatedTarget,
+                                      boolean inheritVehicleVelocity, boolean bindProgrammableAirburst,
+                                      @Nullable Vec3 wireLaunchFrom,
+                                      RVP_ProjectileChunkLoadingPolicy chunkLoadingPolicy) {
+        this(level, weaponData, weaponKind, entityType, sourceVehicle, sourceWeaponUnit, launchWeaponUnit,
+                owner, spawnPosition, aim, initialMotion, lockTarget, designatedTarget,
+                inheritVehicleVelocity, bindProgrammableAirburst, wireLaunchFrom, chunkLoadingPolicy, null);
     }
 
     private static boolean finite(Vec3 value) {

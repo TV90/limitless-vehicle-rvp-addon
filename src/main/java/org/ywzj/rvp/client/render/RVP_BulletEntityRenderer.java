@@ -25,6 +25,8 @@ public class RVP_BulletEntityRenderer extends EntityRenderer<RVP_BulletEntity> {
         if (bullet.isParticleProjectileVisual()) {
             return;
         }
+        // 观瞄视角射弹原点分离：伪装期把弹体/曳光平移渲染为"从炮口射出"的平行弹道并平滑合流
+        RVP_SightFireDisguiseRender.applyDisguiseTranslate(bullet, poseStack, partialTicks);
         // 调用本项目通用 Bullet 绘制逻辑：非粒子模式继续绘制既有曳光弹体。
         VehicleProjectileRenderLogic.renderBullet(bullet, partialTicks, poseStack, bufferSource, packedLight);
     }

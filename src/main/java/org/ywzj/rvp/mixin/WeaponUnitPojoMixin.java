@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
+import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitPojo;
 
@@ -35,6 +36,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private Vec3 ywzj_rvp$opticalSightPivot;
 
+    /** 观瞄视角射弹原点分离配置（null = 未配置 = 功能关闭）。 */
+    @SerializedName("rvp_sight_fire_disguise")
+    @Unique
+    private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
@@ -63,5 +69,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public Vec3 ywzj_rvp$getOpticalSightPivot() {
         return ywzj_rvp$opticalSightPivot;
+    }
+
+    @Override
+    public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
+        return ywzj_rvp$sightFireDisguise;
     }
 }

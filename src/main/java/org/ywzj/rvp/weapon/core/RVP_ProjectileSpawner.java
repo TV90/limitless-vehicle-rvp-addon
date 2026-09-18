@@ -13,13 +13,18 @@ import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
+import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
+import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CGpsStateSync;
+import org.ywzj.rvp.sight.RVP_SightFireDisguise;
+import org.ywzj.rvp.sight.RVP_ScopeViewStateTable;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.gps.GPSTarget;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -82,6 +87,13 @@ public final class RVP_ProjectileSpawner {
         float muzzleSpeed = data.resolveMuzzleSpeed(kind);
         Vec3 motion = direction.scale(Math.max(muzzleSpeed * powerScale, 0.01f));
         Vec3 muzzle = RVP_AimContexts.muzzle(aim);
+        // 观瞄视角射弹原点分离（rvp_sight_fire_disguise）：玩家处于本站观瞄视角开火时，
+        // 实际出弹点覆盖为观瞄相机坐标（方向不变=炮管指向=准星方向，消除观瞄离炮闩枢轴的抵近偏差）；
+        // 炮口位置本身不进 aimContext，本体枪口烟特效天然留在炮管。查不到有效状态即原样出弹。
+        RVP_SightFireDisguise sightDisguise = resolveSightFireDisguise(vehicle, weaponUnit, shooter, level, muzzle);
+        if (sightDisguise != null) {
+            muzzle = sightDisguise.actualSpawn();
+        }
         RVP_WeaponOriginDebug.noteSpawnInvocation(
                 vehicle,
                 new RVP_WeaponOriginDebug.ResourceRef(
@@ -103,8 +115,8 @@ public final class RVP_ProjectileSpawner {
         RVP_ProjectileSpawnResult result = spawn(new RVP_ProjectileSpawnContext(
                 level, data, kind, entityType.get(), vehicle, weaponUnit, launchUnit, shooter,
                 muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), motion, lockTarget, designatedTarget,
-                data.isInheritVehicleVelocity(), weaponUnit != null, RVP_AimContexts.muzzle(aim),
-                RVP_ProjectileChunkLoadingPolicy.DEFAULT));
+                data.isInheritVehicleVelocity(), weaponUnit != null, muzzle,
+                RVP_ProjectileChunkLoadingPolicy.DEFAULT, sightDisguise));
         return result.projectile();
     }
 
@@ -124,6 +136,10 @@ public final class RVP_ProjectileSpawner {
 
         projectile.initFromWeapon(context.weaponData(), context.weaponKind(), context.sourceVehicle(),
                 context.owner(), context.spawnPosition(), context.aim(), context.initialMotion());
+        // 观瞄伪装数据必须在 addFreshEntity 前烙上：生成包（writeSpawnData）在客户端开始追踪时即读
+        if (context.sightFireDisguise() != null) {
+            projectile.rvp$applySightFireDisguise(context.sightFireDisguise());
+        }
         projectile.setRemoteChunkPathEnabled(
                 context.chunkLoadingPolicy() == RVP_ProjectileChunkLoadingPolicy.REMOTE_FIRE_SUPPORT);
         projectile.setShooterWeaponUnit(context.sourceWeaponUnit());
@@ -162,6 +178,49 @@ public final class RVP_ProjectileSpawner {
         // 调用本项目动态路径加载器：仅在成功入世且最终速度已确定后预热飞行路径。
         projectile.primeDynamicChunkPath();
         return new RVP_ProjectileSpawnResult(RVP_ProjectileSpawnResult.Status.SPAWNED, projectile);
+    }
+
+    /**
+     * 解析观瞄视角射弹原点分离：玩家状态表命中本站 + 站级配置启用 + 距离帽内，
+     * 返回以观瞄相机为实际出弹点、炮口为伪装出发点的伪装数据；任一门不过返回 null（普通出弹）。
+     */
+    private static RVP_SightFireDisguise resolveSightFireDisguise(AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                                                  LivingEntity shooter, ServerLevel level,
+                                                                  Vec3 normalMuzzle) {
+        if (weaponUnit == null || !(shooter instanceof ServerPlayer player)) {
+            return null;
+        }
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        if (root == null) {
+            return null;
+        }
+        RVP_ScopeViewStateTable.ScopeState state = RVP_ScopeViewStateTable.get(player, level.getGameTime());
+        if (state == null || state.vehicleId() != vehicle.getId()
+                || stationIndexOf(vehicle, root) != state.partUnitIndex()) {
+            return null;
+        }
+        if (!(root.getData() instanceof WeaponUnitDataExt ext) || ext.ywzj_rvp$getSightFireDisguise() == null) {
+            return null;
+        }
+        RVP_SightFireDisguiseConfig config = ext.ywzj_rvp$getSightFireDisguise();
+        // 观瞄相机坐标服务端现算（与本体 LocalVehiclePlayer SCOPE 分支同源；partialTick=1 取当前 tick）
+        Vec3 sightMuzzle = root.getOpticalSightType() == WeaponUnitData.OpticalSightType.OPERATOR
+                ? root.worldOwnerViewPosition(1.0f)
+                : root.worldOpticalSightPosition(1.0f);
+        if (sightMuzzle.distanceTo(vehicle.position()) > config.maxDistance()) {
+            return null;
+        }
+        return new RVP_SightFireDisguise(normalMuzzle, sightMuzzle, config.disguiseTicks(), config.blendTicks());
+    }
+
+    /** 求武器站在 getPartUnits() 中的序号（与客户端 RVP_ScopeViewSyncClient 同一套站序语义）。 */
+    private static int stationIndexOf(AbstractVehicle vehicle, WeaponUnit root) {
+        for (int i = 0; i < vehicle.getPartUnits().size(); i++) {
+            if (vehicle.getPartUnits().get(i) == root) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static void applyLockTarget(RVP_BaseBullet projectile, RVP_ProjectileSpawnContext context) {

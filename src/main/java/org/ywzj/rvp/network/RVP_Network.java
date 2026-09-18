@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 12 增加激光致盲滤镜同步包（S2CLaserBlind）。 */
-    private static final String PROTOCOL = "12";
+    /** 协议 13 增加观瞄视角状态上行包（C2SScopeViewSync）。 */
+    private static final String PROTOCOL = "13";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -317,6 +317,12 @@ public class RVP_Network {
                 .encoder(S2CLaserBlind::encode)
                 .decoder(S2CLaserBlind::decode)
                 .consumerMainThread(S2CLaserBlind::handle)
+                .add();
+        // [RVP] 观瞄视角状态上行（C2S）：进入/退出观瞄 + 心跳，出弹覆盖判定依据
+        CHANNEL.messageBuilder(C2SScopeViewSync.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SScopeViewSync::encode)
+                .decoder(C2SScopeViewSync::decode)
+                .consumerMainThread(C2SScopeViewSync::handle)
                 .add();
     }
 }

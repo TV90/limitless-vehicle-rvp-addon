@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
+import org.ywzj.rvp.config.RVP_SightFireDisguiseConfig;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.ext.WeaponUnitPojoExt;
 import org.ywzj.rvp.mixin.accessor.PartUnitDataAccessor;
@@ -49,6 +50,9 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private Vec3 ywzj_rvp$opticalSightPivot;
 
+    @Unique
+    private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/WeaponUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(WeaponUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof WeaponUnitPojoExt ext) {
@@ -58,6 +62,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$followParentOnlyPartUnitIds = ywzj_rvp$safeCopy(ext.ywzj_rvp$getFollowParentOnlyPartUnitIds());
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
             this.ywzj_rvp$opticalSightPivot = ext.ywzj_rvp$getOpticalSightPivot();
+            this.ywzj_rvp$sightFireDisguise = ext.ywzj_rvp$getSightFireDisguise();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
     }
@@ -167,5 +172,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public Vec3 ywzj_rvp$getOpticalSightPivot() {
         return ywzj_rvp$opticalSightPivot;
+    }
+
+    @Override
+    public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
+        return ywzj_rvp$sightFireDisguise;
     }
 }

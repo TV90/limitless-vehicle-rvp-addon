@@ -48,6 +48,7 @@ import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
 import org.ywzj.rvp.network.RVP_BulletHitDebugNetworking;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.sight.RVP_SightFireDisguise;
 import org.ywzj.rvp.network.S2CRvpHitIndicator;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.weapon.util.RVP_DamageDecayUtil;
@@ -365,6 +366,44 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private Vec3 gpsTargetOffset;
     private boolean gpsTargetOffsetResolved;
     private boolean gpsCruiseVerticalResetApplied;
+
+    /** ===== 观瞄视角射弹原点分离（rvp_sight_fire_disguise）===== */
+    /** 服务端伪装数据（visualMuzzle/actualSpawn/时长）；普通出弹为 null。 */
+    @Nullable
+    private RVP_SightFireDisguise sightFireDisguise;
+    /** 客户端渲染平移常量 = visualMuzzle − 生成点（readSpawnData 时按当时 position() 冻结）。 */
+    @Nullable
+    private Vec3 sightDisguiseRenderOffset;
+    /** 客户端伪装期结束 tick（disguiseTicks）。 */
+    private int sightDisguiseTicks;
+    /** 客户端合流结束 tick（disguiseTicks + blendTicks），此后按真实位置渲染。 */
+    private int sightDisguiseEndTick;
+
+    /** 出弹器在 addFreshEntity 前调用：烙上观瞄伪装数据（服务端尾迹门控 + 生成包同步共用）。 */
+    public void rvp$applySightFireDisguise(RVP_SightFireDisguise disguise) {
+        this.sightFireDisguise = disguise;
+    }
+
+    /** 服务端伪装数据（含时长配置）；普通出弹为 null。 */
+    @Nullable
+    public RVP_SightFireDisguise rvp$getSightFireDisguise() {
+        return sightFireDisguise;
+    }
+
+    /** 客户端渲染平移常量；未伪装为 null。 */
+    @Nullable
+    public Vec3 rvp$getSightDisguiseRenderOffset() {
+        return sightDisguiseRenderOffset;
+    }
+
+    public int rvp$getSightDisguiseTicks() {
+        return sightDisguiseTicks;
+    }
+
+    public int rvp$getSightDisguiseEndTick() {
+        return sightDisguiseEndTick;
+    }
+
     @Nullable
     private Vec3 topAttackLaunchPos;
     @Nullable
@@ -4084,6 +4123,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         RVP_EffectsData effects = config != null ? config.getEffectsData() : new RVP_EffectsData();
         // 目的：发射段贴地烟浪须在燃烧期门控之前执行——冷发射弹点火前（弹射气体）也冲刷地面
         spawnLaunchWash(effects, motorBurning);
+        // 观瞄伪装期内跳过客户端本地尾迹：粒子生成在真实弹道位置，会出卖炮口伪装
+        if (sightDisguiseRenderOffset != null && tickCount < sightDisguiseTicks) {
+            trailMotorBurningO = false;
+            return;
+        }
         boolean missileNativeTrail = this instanceof RVP_MissileEntity;
         if (!motorBurning) {
             trailMotorBurningO = false;
@@ -4336,6 +4380,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!(level() instanceof ServerLevel serverLevel)) {
             return;
         }
+        // 观瞄伪装期内跳过服务端尾迹：服务端粒子落在真实弹道（观瞄相机出弹）上，会出卖炮口伪装
+        if (sightFireDisguise != null && tickCount < sightFireDisguise.disguiseTicks()) {
+            return;
+        }
         RVP_WeaponData config = resolveWeaponConfig();
         if (config == null) {
             return;
@@ -4515,6 +4563,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             buffer.writeDouble(gpsTargetOffset.y);
             buffer.writeDouble(gpsTargetOffset.z);
         }
+        // 观瞄视角射弹原点分离：伪装出发点（炮口）+ 时长；actualSpawn 不重复同步（readSpawnData
+        // 时实体坐标已由生成包落位，直接按当时 position() 冻结为渲染平移常量）
+        buffer.writeBoolean(sightFireDisguise != null);
+        if (sightFireDisguise != null) {
+            Vec3 visual = sightFireDisguise.visualMuzzle();
+            buffer.writeDouble(visual.x);
+            buffer.writeDouble(visual.y);
+            buffer.writeDouble(visual.z);
+            buffer.writeVarInt(sightFireDisguise.disguiseTicks());
+            buffer.writeVarInt(sightFireDisguise.blendTicks());
+        }
     }
 
     @Override
@@ -4554,6 +4613,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         } else {
             this.gpsTargetOffset = null;
             this.gpsTargetOffsetResolved = false;
+        }
+        if (buffer.readBoolean()) {
+            Vec3 visual = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
+            this.sightDisguiseTicks = buffer.readVarInt();
+            int blendTicks = Math.max(1, buffer.readVarInt());
+            // 实际出弹点 = 生成包已落位的当前坐标；冻结差值常量供渲染期平移
+            this.sightDisguiseRenderOffset = visual.subtract(this.position());
+            this.sightDisguiseEndTick = this.sightDisguiseTicks + blendTicks;
+        } else {
+            this.sightDisguiseRenderOffset = null;
+            this.sightDisguiseTicks = 0;
+            this.sightDisguiseEndTick = 0;
         }
     }
 }

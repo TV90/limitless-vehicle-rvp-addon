@@ -83,6 +83,8 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
         if (ammo instanceof RVP_BaseBullet projectile && projectile.isParticleProjectileVisual()) {
             return;
         }
+        // 观瞄视角射弹原点分离：伪装期把弹体模型/尾焰平移渲染为"从炮口射出"的平行弹道并平滑合流
+        RVP_SightFireDisguiseRender.applyDisguiseTranslate(ammo, poseStack, partialTick);
         // 调用本项目通用弹体绘制逻辑：非粒子模式继续使用 display Bedrock 模型或类型 fallback。
         VehicleProjectileRenderLogic.renderBedrockProjectile(
                 ammo, entityYaw, partialTick, poseStack, bufferSource, packedLight, fallbackModel, fallbackTexture);
