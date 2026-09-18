@@ -2,7 +2,7 @@
 
 > **用途**：上下文交接。新窗口从此文档恢复全部背景；末节附新窗口开场提示词。
 > **当前状态**：在 `289ffa94` 之上追加 **gunner 本地锁俯仰射界门修复 + `/rvpdebug gunnerlock` 诊断**
-> （根因/验证见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`），已提交并双端同步；
+> （根因/验证见 `docs/RVP_gunner/RVP_gunner本地锁俯仰门修复_20260916.md`），已提交并双端同步；
 > 工作区干净（载具包照例不进 git）。
 
 ---
@@ -71,7 +71,7 @@
 | ARH 获取距离 | `RVP_RuntimeSeekerSupport.scanRadarTarget`（effectiveRange = 扫描半径 × combined） |
 | 组网交战侧表 | `org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet`（HARD_LOCK_TICKS=60；读取点 findCiwsTarget + findBestTarget 导弹层） |
 | gunner 锁/开火门诊断 | `org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug`（`/rvpdebug gunnerlock`，logs/rvp_gunner_lock_debug.log） |
-| 本地锁俯仰门修复 | `org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerRadarActions`（2026-09-16：删 aimRot.x 俯仰判定，详见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`） |
+| 本地锁俯仰门修复 | `org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerRadarActions`（2026-09-16：删 aimRot.x 俯仰判定，详见 `docs/RVP_gunner/RVP_gunner本地锁俯仰门修复_20260916.md`） |
 | gunner 索敌隐身门 | `GunnerTargeting.passesAspectPerception` + `findCiwsTarget` 两池 |
 | 尾迹/烟浪粒子 | `org.ywzj.rvp.client.particle.RVP_RocketFlameParticle`（CURVE 常量在 trailQuadSize/applyTrailCurve） |
 | 尾迹字段解析 | `RVP_EffectsData`（missile_native_trail_* 全系） |
@@ -82,7 +82,7 @@
 
 - [ ] gunner 本地锁俯仰门修复（2026-09-16 追加）：Su-57 开弹舱贴脸掠顶 Buk → RADAR_LOCK + 5 秒后导弹；
       远距接近 SENSE REJECT 仍在（RCS 无回归）；cssa5/ps1sm 对空回归；诊断 `/rvpdebug gunnerlock on`；
-      详见 `docs/plan/RVP_gunner本地锁俯仰门修复_20260916.md`；
+      详见 `docs/RVP_gunner/RVP_gunner本地锁俯仰门修复_20260916.md`；
 - [ ] "只锁定不攻击"第二轮修复（同日 §六）：创造保护最终矩阵（方案A）——创造步行永不挨打；
       创造+困难驾驶 f14a_iriaf 被锁定攻击（5 秒纪律后导弹）；创造+非困难驾驶受保护；
       生存步行/驾驶都被打；低空（<25 格 AGL）可被锁打；若仍不攻击看 SENSE REJECT reason /
@@ -125,7 +125,7 @@
 
 > 项目：D:\ywzj\ywzj\ywzj_rvp（RVP，Limitless Vehicle 的 Submod；本体 D:\ywzj\ywzj\ywzj_vehicle 只读）。
 > 规范：agents.md 与 docs/调试与修复规范.md。
-> 交接：先读 docs/plan/RVP交接_隐身与gunner适配与尾迹音效_20260916.md，恢复上一窗口全部背景。
+> 交接：先读 docs/RVP_gunner/RVP交接_隐身与gunner适配与尾迹音效_20260916.md，恢复上一窗口全部背景。
 > 状态速览：分角度 RCS 隐身（rvp_radar_rcs_factor + 弹舱 open_radar_rcs_multiplier，封顶 1）、
 > ARH 四段相位（箔条判定段/告警前移/隐身缩减开机距离）、组网智能拦截（硬禁 60t + 排斥窗滑动）、
 > gunner 索敌隐身适配、尾迹 HBM 风格（sin³ 缓动）、IR 锁定音挂载具修复、LauncherDeploy CME 修复
