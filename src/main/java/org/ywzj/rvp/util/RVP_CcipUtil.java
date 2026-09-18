@@ -133,7 +133,9 @@ public final class RVP_CcipUtil {
      * 求交，返回点偏离段终点即视为命中并返回落点。寿命（{@code life}，钳 [10,120]）内、或飞行距离超过
      * 视距上限（512 格）仍未命中时返回 <b>null</b>——调用方（观瞄准星）据此把准星居中，而不是标记
      * 数千格外地平线下的弹道终点（2026-09-19 天空垂落修复）。本体准星对 RVP 武器只有直线射线
-     * （无下坠/阻力且不识别 RVP 弹道参数），此方法补齐物理模型（2026-09-18 观瞄准星 RVP 弹道适配）。</p>
+     * （无下坠/阻力且不识别 RVP 弹道参数），此方法补齐物理模型（2026-09-18 观瞄准星 RVP 弹道适配）。
+     * 当前调用方（观瞄准星适配）仅对 MACHINEGUN 类启用（2026-09-19 用户定版，火箭/导弹/炸弹暂不适配）；
+     * 其余 kind 的积分分支保留备用。</p>
      */
     @Nullable
     public static Vec3 computeBulletImpact(Level level, Vec3 startPos, Vec3 aimDir, RVP_WeaponData data,

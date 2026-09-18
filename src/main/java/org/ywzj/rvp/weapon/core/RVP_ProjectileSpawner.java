@@ -90,7 +90,11 @@ public final class RVP_ProjectileSpawner {
         // 观瞄视角射弹原点分离（rvp_sight_fire_disguise）：玩家处于本站观瞄视角开火时，
         // 实际出弹点覆盖为观瞄相机坐标（方向不变=炮管指向=准星方向，消除观瞄离炮闩枢轴的抵近偏差）；
         // 炮口位置本身不进 aimContext，本体枪口烟特效天然留在炮管。查不到有效状态即原样出弹。
-        RVP_SightFireDisguise sightDisguise = resolveSightFireDisguise(vehicle, weaponUnit, shooter, level, muzzle);
+        // 范围（2026-09-19 用户定版）：仅 MACHINEGUN 类（机枪/机炮/榴弹/APFSDS）；
+        // 火箭/导弹/炸弹暂不适配（含推进段飞行模型，回退炮口出弹与本体准星原逻辑）。
+        RVP_SightFireDisguise sightDisguise = kind == RVP_EnumWeaponKind.MACHINEGUN
+                ? resolveSightFireDisguise(vehicle, weaponUnit, shooter, level, muzzle)
+                : null;
         if (sightDisguise != null) {
             muzzle = sightDisguise.actualSpawn();
         }

@@ -146,12 +146,13 @@ public final class RVP_ScopeViewSyncClient {
         lastAdaptedKey = key;
     }
 
-    /** 观瞄准星 march 只覆盖 RVP 投射类弹种；LASER/TARGETING_POD/DISPENSER 走本体原逻辑。 */
+    /**
+     * 观瞄准星 march 范围（2026-09-19 用户定版）：仅 RVP 机枪/机炮类（MACHINEGUN，含下坠明显的
+     * 榴弹如 3of26 与高初速 APFSDS）；火箭/导弹/炸弹暂不适配——这些弹的飞行模型含发动机推进段，
+     * 弹道 march 预测不准，且本体行为对其够用，回退本体直线射线原逻辑。
+     */
     private static boolean marchable(org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind kind) {
-        return kind == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MACHINEGUN
-                || kind == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MISSILE
-                || kind == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.ROCKET
-                || kind == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.BOMB;
+        return kind == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.MACHINEGUN;
     }
 
     /**
