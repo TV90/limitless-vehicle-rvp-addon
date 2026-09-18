@@ -51,8 +51,25 @@ public interface RVP_IClientActions {
                                      double mx, double my, double mz, float sizeScale);
 
     /**
+     * 生成一个 HBM 风格液氧煤油黑烟尾焰粒子（技术储备：09-19 前的原始黑烟观感）。
+     *
+     * @param mx/my/mz 粒子初速（弹轴反方向，由调用方按 -lookAngle × 1.0 计算）
+     * @param sizeScale 尺寸倍率（effects_data.missile_native_trail_particle_scale × launch_boost）
+     */
+    void addKeroseneBlackSmokeTrailParticle(double x, double y, double z,
+                                            double mx, double my, double mz, float sizeScale);
+
+    /**
      * 生成一个 HBM 风格发射地面烟浪粒子（起飞贴地横向冲刷灰烟，ParticleSmokePlume 移植）。
      * 初速由粒子内部随机（水平径向 0.5~0.9 + 微升），调用方只需给出生成点与尺寸倍率。
      */
     void addLaunchWashParticle(double x, double y, double z, float sizeScale);
+
+    /**
+     * 查询世界坐标是否落在人在回路（HITL）激活导弹的粒子屏蔽半径内（TV 导弹视角下屏蔽自身尾焰，
+     * 避免尾焰烟遮挡弹载相机画面）。
+     *
+     * @return 客户端返回屏蔽判定结果；专用服 NOOP 恒 false。
+     */
+    boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z);
 }

@@ -93,6 +93,19 @@ public final class RVP_ClientActions implements RVP_IClientActions {
                         level, x, y, z, mx, my, mz, sizeScale));
     }
 
+    /** 生成 HBM 风格液氧煤油黑烟尾焰粒子（技术储备款，TRAIL 模式，09-19 前原始黑烟观感）。 */
+    @Override
+    public void addKeroseneBlackSmokeTrailParticle(double x, double y, double z,
+                                                   double mx, double my, double mz, float sizeScale) {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        Minecraft.getInstance().particleEngine.add(
+                org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofKeroseneBlackSmokeTrail(
+                        level, x, y, z, mx, my, mz, sizeScale));
+    }
+
     /** 生成 HBM 风格发射地面烟浪粒子（WASH 模式，初速内部随机径向冲刷 + 浮升）。 */
     @Override
     public void addLaunchWashParticle(double x, double y, double z, float sizeScale) {
@@ -103,5 +116,11 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         Minecraft.getInstance().particleEngine.add(
                 org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofLaunchWash(
                         level, x, y, z, sizeScale));
+    }
+
+    /** HITL 粒子屏蔽查询：委托 RVP_ClientHitlState（激活导弹半径内返回 true）。 */
+    @Override
+    public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
+        return org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldSuppressParticleNearActiveMissile(x, y, z);
     }
 }

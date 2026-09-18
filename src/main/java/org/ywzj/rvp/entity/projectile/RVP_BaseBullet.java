@@ -590,6 +590,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         irSeekerGraceUntilTick = data.contains("irSeekerGraceUntilTick") ? data.getInt("irSeekerGraceUntilTick") : Integer.MIN_VALUE;
         terminalIrTargetAcquired = data.getBoolean("terminalIrTargetAcquired");
         remoteChunkPathEnabled = data.getBoolean("remoteChunkPathEnabled");
+        // 广播克隆继承分角度雷达因子（2026-09-19）：克隆 radarRcs* 字段默认恒 1，会使隐身弹
+        // （如 [0.08,0.35,0.18]）的超视距广播克隆以标称 RCS 出现在雷达上（隐身失效）；
+        // remoteWeaponId 已随广播数据同步，此处按客户端武器配置解析并写入克隆因子
+        if (remoteWeaponId != null) {
+            RVP_WeaponData remoteConfig = getResolvedWeaponConfig();
+            if (remoteConfig != null) {
+                float[] rcs = remoteConfig.getAmmoRadarRcsFactor();
+                this.radarRcsFront = rcs[0];
+                this.radarRcsSide = rcs[1];
+                this.radarRcsRear = rcs[2];
+                this.signatureSize = rcs[1];
+            }
+        }
         resolveRemoteRefs();
     }
 
@@ -872,7 +885,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public boolean isRadarDetectableAmmo() {
-        return signatureSize > 0f && weaponKind != RVP_EnumWeaponKind.MACHINEGUN;
+        // 2026-09-19 修复：广播克隆实体（serverEntities 超视距克隆，无 initFromWeapon/生成包数据）
+        // 的 signatureSize 保持字段默认 0，但 radarRcs* 默认 1.0——可探测判定补上 radarRcsSide，
+        // 使 BVR 广播克隆进入雷达探测表（克隆分角度因子恒 1，探测半径 = maxScan）。
+        // 配置微小 ammo_radar_rcs_factor（如 0.01）的隐身弹在克隆上同样按 1 处理（当前广播数据
+        // 不携带分角度因子，超视距克隆统一按标称 RCS 探测）。
+        return (signatureSize > 0f || radarRcsSide > 0f) && weaponKind != RVP_EnumWeaponKind.MACHINEGUN;
     }
 
     public int getProgrammedAirburstDistance() {
@@ -4216,12 +4234,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 effects.hasMissileNativeTrailParticleOverride() ? effects.getMissileNativeTrailParticle() : "",
                 ParticleTypes.CAMPFIRE_SIGNAL_SMOKE
         );
-        // 目的：rvp_smoke/rvp_rocket_flame 风格下粒子来源是自定义粒子构造，不依赖原版粒子类型，
-        // 故此时即使 missile_native_trail_particle 配成 none（primary 为 null）也应继续生成。
+        // 目的：rvp_smoke/rvp_rocket_flame/rvp_kerosene_black_smoke 风格下粒子来源是自定义粒子构造，不依赖
+        // 原版粒子类型，故此时即使 missile_native_trail_particle 配成 none（primary 为 null）也应继续生成。
+        // HITL 屏蔽（2026-09-19 回归修复）：HBM 风格尾迹经 particleEngine.add 直通粒子引擎，
+        // 绕过了 ClientLevel.addParticle 的 HITL 拦截 Mixin，TV 导弹视角会看见自身尾焰——
+        // 生成前经桥查询激活导弹屏蔽半径（修复回归）。
+        if (RVP_ClientActionsAccess.shouldSuppressTrailParticleNearHitlMissile(pos.x, pos.y, pos.z)) {
+            particlePosO = pos;
+            trailParticleTickO = getFlightTickCount();
+            return;
+        }
         boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
         boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
+        boolean keroseneBlackStyle = effects.isMissileNativeTrailKeroseneBlackSmoke();
         int spawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
-        if ((rvpSmokeStyle || rocketFlameStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
+        if ((rvpSmokeStyle || rocketFlameStyle || keroseneBlackStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
             Vec3 posO = particlePosO == null ? pos : particlePosO;
             Vec3 step = pos.subtract(posO);
             double dist = step.length();
@@ -4234,7 +4261,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 double spacing = segments <= 0 ? 0.0D : dist / segments;
                 // 目的：尾迹观感可配（effects_data.missile_native_trail_particle_style + _particle_scale）。
                 // vanilla：经客户端桥缩放原版粒子渲染尺寸；rvp_smoke：直接构造 MCHR 风格翻滚烟团；
-                // rvp_rocket_flame：HBM 风格火箭尾焰（先火后烟膨胀柱，初速沿弹轴反方向喷出）。
+                // rvp_rocket_flame：HBM 风格火箭尾焰·固体发动机凝结云款（先火后烟膨胀柱，初速沿弹轴
+                // 反方向喷出）；rvp_kerosene_black_smoke：液氧煤油黑烟技术储备款（09-19 前原始观感）。
                 // 服务端无粒子渲染管线（桥为 NOOP），本方法本就只在客户端实体 Tick 中调用。
                 float particleScale = effects.getMissileNativeTrailParticleScale();
                 // 目的：发射段烟柱加粗（effects_data.missile_native_trail_launch_boost）——
@@ -4242,12 +4270,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
                 particleScale *= resolveLaunchBoostFactor(effects);
                 // HBM ParticleRocketFlame：初速沿 -thrust（弹轴反方向）× 1.0，随阻尼 0.91/tick 后抛
-                Vec3 exhaust = rocketFlameStyle
+                Vec3 exhaust = rocketFlameStyle || keroseneBlackStyle
                         ? this.getLookAngle().scale(-1.0D) : Vec3.ZERO;
                 for (int i = 0; i <= segments; i++) {
                     Vec3 particlePos = segments <= 0 ? pos : posO.add(dir.scale(i * spacing));
                     if (rocketFlameStyle) {
                         RVP_ClientActionsAccess.addRocketFlameTrailParticle(
+                                particlePos.x, particlePos.y, particlePos.z,
+                                exhaust.x, exhaust.y, exhaust.z, particleScale);
+                    } else if (keroseneBlackStyle) {
+                        RVP_ClientActionsAccess.addKeroseneBlackSmokeTrailParticle(
                                 particlePos.x, particlePos.y, particlePos.z,
                                 exhaust.x, exhaust.y, exhaust.z, particleScale);
                     } else if (rvpSmokeStyle) {
@@ -4262,8 +4294,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 目的：发射段贴地烟浪已前置到 spawnLaunchWash（含冷发射弹射段），此处不再重复生成
         particlePosO = pos;
-        trailParticleTickO = getFlightTickCount();
-        trailMotorBurningO = true;
+        trailParticleTickO = getFlightTickCount();        trailMotorBurningO = true;
     }
 
     /**
@@ -4284,6 +4315,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 冷发射弹射段：点火前（flightTick ≤ coldLaunchTimeTick）也出烟——弹射气体冲刷
         if (!motorBurning && getFlightTickCount() > this.coldLaunchTimeTick) {
+            return;
+        }
+        // HITL 屏蔽：贴地烟浪同样会被 TV 导弹视角看见，生成前查激活导弹屏蔽半径
+        if (RVP_ClientActionsAccess.shouldSuppressTrailParticleNearHitlMissile(
+                this.getX(), this.getY(), this.getZ())) {
             return;
         }
         double groundY = level().getHeight(

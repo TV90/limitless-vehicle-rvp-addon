@@ -308,6 +308,20 @@ public final class RVP_ClientRadarTickHandler {
             RVP_RadarScanHelper.filterRadarInvisibleDecoys(entities);
             RVP_RadarScanHelper.appendRadarVisibleChaffDecoys(radar, entities, allEntities);
         }
+        // radarammo 诊断（默认关）：BVR 弹药探测回归排查——记录本地/克隆弹药计数、
+        // 每弹距离/因子/过门结果，一次开火测试即可定位探测半径被什么钳住
+        if (RVP_RadarAmmoDebug.isEnabled()) {
+            java.util.Set<Integer> detectedIds = new java.util.HashSet<>();
+            for (Entity entity : entities) {
+                detectedIds.add(entity.getId());
+            }
+            java.util.Set<Integer> localIds = new java.util.HashSet<>();
+            for (Entity entity : clientLevel.entitiesForRendering()) {
+                localIds.add(entity.getId());
+            }
+            RVP_RadarAmmoDebug.logScan(radar.getVehicle(), radar.getId(),
+                    radar.getMaxScanDistance(), allEntities, localIds, detectedIds);
+        }
         for (Entity entity : entities) {
             radar.detect(entity);
         }
@@ -320,6 +334,9 @@ public final class RVP_ClientRadarTickHandler {
         for (Entity entity : clientLevel.entitiesForRendering()) {
             merged.add(entity);
             ids.add(entity.getId());
+            // 广播克隆与本地实体同 id：本地已同步即取代克隆，及时删除克隆，
+            // 否则雷达会在同步边界残留一个不再更新、静止不动的克隆接触（2026-09-19 鬼影修复）
+            LocalVehiclePlayer.instance.serverEntities.remove(entity.getId());
         }
         for (LocalVehiclePlayer.ServerEntity serverEntity : LocalVehiclePlayer.instance.serverEntities.values()) {
             if (serverEntity == null || serverEntity.entity == null || !ids.add(serverEntity.entity.getId())) {

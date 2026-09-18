@@ -17,7 +17,9 @@ public final class RVP_ClientHitlCamera {
     private static final float VIEW_ROTATION_TAU = 0.038f;
     /** SACLOS+TV designate: softer follow than instant snap, tighter than passive VIEW. */
     private static final float DESIGNATE_ROTATION_TAU = 0.072f;
-    private static final double NOSE_OFFSET = 0.35;
+    /** 镜头沿弹轴前移量（2026-09-19 用户定版 2 米）：相机脱离弹体原点的尾焰/烟团，
+     *  TV 画面不再被自身尾焰烟遮挡（替代修复 effectdata 尾迹在 HITL 视角不显示的绕过方案）。 */
+    private static final double NOSE_OFFSET = 2.0;
 
     private static int lastMissileId = -1;
     private static boolean poseValid;

@@ -55,11 +55,28 @@ public final class RVP_ClientActionsAccess {
     }
 
     /**
+     * 经双端安全桥生成 HBM 风格液氧煤油黑烟尾焰粒子（技术储备款）。
+     * 服务端为 NOOP——粒子是纯客户端表现。
+     */
+    public static void addKeroseneBlackSmokeTrailParticle(double x, double y, double z,
+                                                          double mx, double my, double mz, float sizeScale) {
+        INSTANCE.addKeroseneBlackSmokeTrailParticle(x, y, z, mx, my, mz, sizeScale);
+    }
+
+    /**
      * 经双端安全桥生成 HBM 风格发射地面烟浪粒子（贴地横向冲刷灰烟）。
      * 服务端为 NOOP——粒子是纯客户端表现。
      */
     public static void addLaunchWashParticle(double x, double y, double z, float sizeScale) {
         INSTANCE.addLaunchWashParticle(x, y, z, sizeScale);
+    }
+
+    /**
+     * 经双端安全桥查询 HITL 粒子屏蔽（TV 导弹视角下屏蔽导弹自身尾焰/烟浪）。
+     * 服务端 NOOP 恒 false——粒子生成只发生在客户端。
+     */
+    public static boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
+        return INSTANCE.shouldSuppressTrailParticleNearHitlMissile(x, y, z);
     }
 
     /** 专用服务端空实现。 */
@@ -98,8 +115,20 @@ public final class RVP_ClientActionsAccess {
         }
 
         @Override
+        public void addKeroseneBlackSmokeTrailParticle(double x, double y, double z,
+                                                       double mx, double my, double mz, float sizeScale) {
+            // 同上：黑烟尾焰尾迹只在客户端实体 Tick 中产生。
+        }
+
+        @Override
         public void addLaunchWashParticle(double x, double y, double z, float sizeScale) {
             // 同上：发射地面烟浪是纯客户端表现。
+        }
+
+        @Override
+        public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
+            // 服务端不产生客户端粒子，屏蔽判定恒 false。
+            return false;
         }
     }
 }

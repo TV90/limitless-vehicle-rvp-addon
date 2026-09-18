@@ -84,12 +84,18 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private static final int TRAIL_LAYERS = 3;
     /** TRAIL 模式火焰相位占比：寿命前 25% 亮橙焰，之后深灰烟（HBM dark 阈值）。 */
     private static final float FLAME_PHASE_RATIO = 0.25f;
+    /** TRAIL 模式火焰相位占比：黑烟储备款 0.25（HBM dark 阈值）；凝结云款 0.12（2026-09-19 用户定版缩短橙焰段）。 */
+    private float flamePhaseRatio = FLAME_PHASE_RATIO;
     /** 烟相位灰度下限（R=G=B 的中性灰，黑烟观感；灰度上限 = 下限 + SPREAD）。 */
     private static final float SMOKE_GREY_MIN = 0.15f;
     /** 烟相位灰度随机幅度（保持单通道同值，避免逐通道独立随机产生彩色噪点）。 */
     private static final float SMOKE_GREY_SPREAD = 0.15f;
     /** WASH 模式寿命末端的高宽比（白云扩散期压扁为横铺贴地形态；初始脏灰烟为 1:1 圆团）。 */
     private static final float WASH_FLATTEN_END = 0.45f;
+    /** 距离 LOD 单层档（仿视觉工厂 RVP_ExplosionVisualManager 的距离分档）：>256 格 TRAIL 退化单层渲染。 */
+    private static final double LOD_SINGLE_LAYER_DISTANCE_SQ = 256.0D * 256.0D;
+    /** 距离 LOD 消亡档：>1024 格凝结云粒子提前消亡（远超常规视距，仅防极端情况下同屏预算白耗）。 */
+    private static final double LOD_CULL_DISTANCE_SQ = 1024.0D * 1024.0D;
 
     /** 粒子模式。 */
     private final Mode mode;
@@ -99,22 +105,51 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private float washEndQuad;
     /** WASH 模式出生时的脏灰基调（中末期向近白过渡的起点）；TRAIL 模式不使用。 */
     private float washBirthGrey = 0.5f;
+    /** TRAIL 烟相位灰度下限：液氧煤油款 0.15（黑烟）/ 固体发动机款 0.55（中灰）。 */
+    private float smokeGreyMin = SMOKE_GREY_MIN;
+    /** TRAIL 烟相位灰度随机幅度。 */
+    private float smokeGreySpread = SMOKE_GREY_SPREAD;
+    /** TRAIL 烟相位是否随寿命 smoothstep 渐白到凝结云灰白（固体发动机款开）。 */
+    private boolean smokeWhiten;
+    /** 层间抖动基值 [层][轴]：每 tick 重掷一次，渲染帧间按 partialTick 插值——降频且平滑。 */
+    private final float[][] jitterCur = new float[TRAIL_LAYERS][3];
+    private final float[][] jitterPrev = new float[TRAIL_LAYERS][3];
 
     private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
                                     double x, double y, double z,
                                     double vx, double vy, double vz,
                                     float sizeScale) {
+        this(level, mode, x, y, z, vx, vy, vz, sizeScale, SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false,
+                FLAME_PHASE_RATIO);
+    }
+
+    private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
+                                    double x, double y, double z,
+                                    double vx, double vy, double vz,
+                                    float sizeScale,
+                                    float smokeGreyMin, float smokeGreySpread, boolean smokeWhiten,
+                                    float flamePhaseRatio) {
         super(level, x, y, z, 0.0D, 0.0D, 0.0D);
         this.mode = mode;
         this.sizeScale = Math.max(sizeScale, 0.0f);
+        this.smokeGreyMin = smokeGreyMin;
+        this.smokeGreySpread = smokeGreySpread;
+        this.smokeWhiten = smokeWhiten;
+        this.flamePhaseRatio = flamePhaseRatio;
         this.xd = vx;
         this.yd = vy;
         this.zd = vz;
         this.hasPhysics = false;
         this.gravity = 0.0f;
         if (mode == Mode.TRAIL) {
-            // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
-            this.lifetime = 45 + this.random.nextInt(20);
+            if (smokeWhiten) {
+                // 固体发动机款（2026-09-19 用户需求）：凝结云持久化——寿命 240~340t（12~17 秒），
+                // 飞过的整段弹道都留有灰白凝结云，保持一段时间后缓缓散开；LOD 见 render/tick
+                this.lifetime = 240 + this.random.nextInt(100);
+            } else {
+                // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
+                this.lifetime = 45 + this.random.nextInt(20);
+            }
         } else {
             // HBM ParticleSmokePlume：寿命 80~100t 基准，随尺寸倍率（尾迹 scale × 发射段加粗）
             // 等比提升滞留时长——烟越大滞留越久（2026-09-15 实机需求），钳制 [40, 600] 防极端配置
@@ -127,14 +162,30 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     }
 
     /**
-     * 飞行尾迹入口（HBM ParticleRocketFlame 移植）。
+     * 飞行尾迹入口（HBM ParticleRocketFlame 移植）——{@code rvp_rocket_flame} 样式（2026-09-19
+     * 路由调整后为<b>固体发动机凝结云款</b>）：火焰相位亮橙黄不变，烟相位出生中灰、随寿命
+     * smoothstep 渐变到凝结云灰白，寿命延长（120~180t）+ 前段保持 + 距离 LOD，见类注释。
      *
      * @param mx/my/mz 初速：弹轴反方向（-lookAngle）× 1.0，由调用方传入
      * @param sizeScale 尺寸倍率（对标本体大弹 1.0 / 小弹 0.5 的 getContrailScale 语义）
      */
     public static RVP_RocketFlameParticle ofTrail(ClientLevel level, double x, double y, double z,
                                                   double mx, double my, double mz, float sizeScale) {
-        return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale);
+        return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
+                0.55f, 0.15f, true, 0.12f);
+    }
+
+    /**
+     * 液氧煤油黑烟款飞行尾迹（技术储备，样式 {@code rvp_kerosene_black_smoke}）：09-19 之前的
+     * 原始观感——寿命 45~65t、烟相位深灰黑烟（0.15~0.30）、α 全程平方根淡出、无距离 LOD 消亡档。
+     *
+     * @param mx/my/mz 初速：弹轴反方向（-lookAngle）× 1.0，由调用方传入
+     * @param sizeScale 尺寸倍率（对标本体大弹 1.0 / 小弹 0.5 的 getContrailScale 语义）
+     */
+    public static RVP_RocketFlameParticle ofKeroseneBlackSmokeTrail(ClientLevel level, double x, double y, double z,
+                                                                    double mx, double my, double mz, float sizeScale) {
+        return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
+                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO);
     }
 
     /**
@@ -154,6 +205,15 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         this.xo = this.x;
         this.yo = this.y;
         this.zo = this.z;
+        // 距离 LOD 之消亡档（仿视觉工厂 RVP_ExplosionVisualManager 的距离分档思路）：
+        // 凝结云粒子远离本地玩家超 384 格后提前消亡——远端粒子不足一像素，纯耗同屏预算
+        if (this.smokeWhiten) {
+            var player = net.minecraft.client.Minecraft.getInstance().player;
+            if (player != null && player.distanceToSqr(this.x, this.y, this.z) > LOD_CULL_DISTANCE_SQ) {
+                this.remove();
+                return;
+            }
+        }
         ++this.age;
         if (this.age >= this.lifetime) {
             this.remove();
@@ -165,6 +225,14 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             this.yd *= 0.91D;
             this.zd *= 0.91D;
             this.move(this.xd, this.yd, this.zd);
+            // 抖动降频（2026-09-19 用户反馈）：层间抖动基值每 tick 重掷一次（原每帧重掷为
+            // 帧率级高频闪烁），渲染时按 partialTick 在 prev/current 间插值，低频且连续
+            for (int l = 0; l < TRAIL_LAYERS; l++) {
+                System.arraycopy(this.jitterCur[l], 0, this.jitterPrev[l], 0, 3);
+                for (int a = 0; a < 3; a++) {
+                    this.jitterCur[l][a] = (float) this.random.nextGaussian();
+                }
+            }
         } else {
             // HBM ParticleSmokePlume：阻尼 0.925；尺寸线性膨胀，膨胀量转浮升——
             // 但浮升随寿命衰减（riseScale 1→0.2）：趋白压扁期云贴地摊开而不是升空飘走
@@ -205,13 +273,26 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             this.alpha = (1.0f - ageRatio) * 0.9f;
             return;
         }
-        float dark = 1.0f - Math.min(ageRatio / FLAME_PHASE_RATIO, 1.0f);
-        // 烟相位基准：单一灰度值（R=G=B，黑烟）；火焰相位向亮橙过渡（随机幅度收窄到 ±0.1 保色相统一）
-        float grey = SMOKE_GREY_MIN + this.random.nextFloat() * SMOKE_GREY_SPREAD;
+        float dark = 1.0f - Math.min(ageRatio / this.flamePhaseRatio, 1.0f);
+        // 烟相位基准灰度：液氧煤油款 0.15~0.30（黑烟）；固体发动机款 0.55~0.70 起步并随寿命
+        // smoothstep 渐白到凝结云灰白（复用 WASH 趋白数学，向 0.9 混合，封顶 0.85 保留灰底纹理）
+        float grey = this.smokeGreyMin + this.random.nextFloat() * this.smokeGreySpread;
+        if (this.smokeWhiten) {
+            float whiten = Mth.clamp((ageRatio - 0.2f) / 0.5f, 0.0f, 1.0f);
+            whiten = whiten * whiten * (3.0f - 2.0f * whiten);
+            grey = Mth.lerp(whiten * 0.85f, grey, 0.9f);
+        }
         this.rCol = Mth.lerp(dark, grey, Math.min(1.0f + this.random.nextFloat() * 0.1f, 1.0f));
         this.gCol = Mth.lerp(dark, grey, 0.6f + this.random.nextFloat() * 0.1f);
         this.bCol = Mth.lerp(dark, grey, this.random.nextFloat() * 0.1f);
-        this.alpha = Mth.sqrt(Math.max(1.0f - ageRatio, 0.0f)) * 0.75f;
+        if (this.smokeWhiten) {
+            // 凝结云持久化 alpha：前 45% 寿命保持（"保持一段时间"），之后 smoothstep 缓缓散开淡出
+            float fade = Mth.clamp((ageRatio - 0.45f) / 0.55f, 0.0f, 1.0f);
+            fade = 1.0f - fade * fade * (3.0f - 2.0f * fade);
+            this.alpha = 0.75f * fade;
+        } else {
+            this.alpha = Mth.sqrt(Math.max(1.0f - ageRatio, 0.0f)) * 0.75f;
+        }
         this.quadSize = trailQuadSize(ageRatio);
     }
 
@@ -241,16 +322,23 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         // 大发散只归属地面烟浪 WASH（其靠径向初速+尺寸膨胀发散，不走本系数）。
         float spread = this.mode == Mode.TRAIL ? 1.0f + 1.5f * ageRatio : 1.0f;
         int light = this.getLightColor(partialTicks);
+        // 距离 LOD 单层档（>128 格）：TRAIL 退化为单层渲染（顶点数省 3 倍），尺寸补 1.25×
+        // 维持远观质量——仿视觉工厂 RVP_ExplosionVisualManager 的距离分档（layerStep + lodSizeBoost）
+        boolean lodSingleLayer = this.mode == Mode.TRAIL
+                && baseX * baseX + baseY * baseY + baseZ * baseZ > LOD_SINGLE_LAYER_DISTANCE_SQ;
+        float lodSizeBoost = lodSingleLayer ? 1.25f : 1.0f;
         // 目的：3 层抖动 quad 若每层都用全量 α（0.75），叠加等效不透明度 ≈ 1-(0.25)³ ≈ 98%，
-        // 烟柱即实心墙——层间按 1/N 分摊 α，叠加后 ≈ 58%，半透明可透见载具（核爆云观感）
-        float layerAlpha = this.alpha * (this.mode == Mode.TRAIL ? 1.0f / TRAIL_LAYERS : 1.0f);
+        // 烟柱即实心墙——层间按 1/N 分摊 α，叠加后 ≈ 58%，半透明可透见载具（核爆云观感）；
+        // LOD 单层时按全量 α 渲染（无层叠加，亮度与近观一致）
+        float layerAlpha = this.alpha * (this.mode == Mode.TRAIL && !lodSingleLayer ? 1.0f / TRAIL_LAYERS : 1.0f);
         float u0 = this.getU0();
         float u1 = this.getU1();
         float v0 = this.getV0();
         float v1 = this.getV1();
         for (int layer = 0; layer < layers; layer++) {
             // 目的：每层独立掷半宽（层间尺寸差 + 位置抖动共同构成体积感）；曲线同 tick 期一致
-            float quadSize = this.mode == Mode.TRAIL ? trailQuadSize(ageRatio) : this.getQuadSize(partialTicks);
+            float quadSize = (this.mode == Mode.TRAIL ? trailQuadSize(ageRatio) : this.getQuadSize(partialTicks))
+                    * lodSizeBoost;
             // 目的：层间位置抖动为 TRAIL 专属（体积感；XZ 小抖 + Y 大抖，幅度随寿命扩大）。
             // WASH 严禁逐帧抖动——单层大 quad 每帧重掷高斯会呈现高频颤动（2026-09-15 实机反馈），
             // 其位置只由径向初速 + 浮升驱动。
@@ -261,9 +349,13 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             // （横铺的贴地扁白云；在 billboard 本地纵轴上缩放，朝向仍取相机旋转）
             float yScale = 1.0F;
             if (this.mode == Mode.TRAIL) {
-                jitterX = (float) this.random.nextGaussian() * 0.2f * spread;
-                jitterY = (float) this.random.nextGaussian() * 0.5f * spread;
-                jitterZ = (float) this.random.nextGaussian() * 0.2f * spread;
+                // 抖动取该层 prev/current 插值（每 tick 重掷一次的基值），帧间连续不闪烁，
+                // 且层与层之间基值独立（体积感来源保留）
+                float[] prev = this.jitterPrev[layer];
+                float[] cur = this.jitterCur[layer];
+                jitterX = Mth.lerp(partialTicks, prev[0], cur[0]) * 0.2f * spread;
+                jitterY = Mth.lerp(partialTicks, prev[1], cur[1]) * 0.5f * spread;
+                jitterZ = Mth.lerp(partialTicks, prev[2], cur[2]) * 0.2f * spread;
             } else {
                 yScale = Mth.lerp(ageRatio, 1.0F, WASH_FLATTEN_END);
             }

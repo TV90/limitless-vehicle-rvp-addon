@@ -54,10 +54,12 @@ public class RVP_EffectsData {
      *   <li>{@code rvp_smoke}：改用本项目 MCHR 风格翻滚烟团（`RVP_MchrSmokeParticle`，从
      *       MCHR 的 `MCH_EntityParticleSmoke` 逐条移植）——尺寸直接烘进构造、8 帧消散动画、
      *       天空光全亮，观感更接近真实导弹尾迹，且不依赖原版粒子的缩放行为。</li>
-     *   <li>{@code rvp_rocket_flame}：HBM 风格火箭尾焰（`RVP_RocketFlameParticle`，从 HBM 的
-     *       `ParticleRocketFlame` 移植）——寿命前 25% 亮橙火焰团、随后深灰烟持续膨胀，
-     *       先火后烟柱状尾迹；并默认启用发射段贴地烟浪（见
-     *       {@code missile_native_trail_ground_wash}）。</li>
+     *   <li>{@code rvp_rocket_flame}：HBM 风格火箭尾焰·固体发动机凝结云款（`RVP_RocketFlameParticle`，
+     *       从 HBM 的 `ParticleRocketFlame` 移植）——寿命前 25% 亮橙火焰团、烟相位出生中灰随寿命
+     *       smoothstep 渐变凝结云灰白，寿命延长（120~180t）+ 前段保持 + 距离 LOD；默认启用发射段
+     *       贴地烟浪（见 {@code missile_native_trail_ground_wash}）；</li>
+     *   <li>{@code rvp_kerosene_black_smoke}：液氧煤油黑烟款（同粒子类，技术储备）——09-19 前的
+     *       原始观感：寿命 45~65t、深灰黑烟（0.15~0.30）、全程平方根淡出；贴地烟浪推导同开。</li>
      * </ul>
      */
     @SerializedName("missile_native_trail_particle_style")
@@ -206,9 +208,14 @@ public class RVP_EffectsData {
         return "rvp_smoke".equals(getMissileNativeTrailParticleStyle());
     }
 
-    /** 尾迹是否使用 HBM 风格火箭尾焰（{@code rvp_rocket_flame}）。 */
+    /** 尾迹是否使用 HBM 风格火箭尾焰（{@code rvp_rocket_flame}，液氧煤油黑烟技术储备款）。 */
     public boolean isMissileNativeTrailRocketFlame() {
         return "rvp_rocket_flame".equals(getMissileNativeTrailParticleStyle());
+    }
+
+    /** 尾迹是否使用液氧煤油黑烟款（{@code rvp_kerosene_black_smoke}，技术储备：09-19 前的原始黑烟观感）。 */
+    public boolean isMissileNativeTrailKeroseneBlackSmoke() {
+        return "rvp_kerosene_black_smoke".equals(getMissileNativeTrailParticleStyle());
     }
 
     /** 是否配置了任一自定义尾迹风格（非空即真）；服务端据此跳过原生尾迹弹的广播路径。 */
@@ -231,13 +238,13 @@ public class RVP_EffectsData {
 
     /**
      * 发射段贴地烟浪是否启用；未配置时按风格推导——
-     * {@code rvp_rocket_flame} 开启（HBM 观感打包），其余风格默认关闭。
+     * {@code rvp_rocket_flame} / {@code rvp_kerosene_black_smoke} 开启（HBM 观感打包），其余风格默认关闭。
      */
     public boolean isMissileNativeTrailGroundWashEnabled() {
         if (missileNativeTrailGroundWash != null) {
             return missileNativeTrailGroundWash;
         }
-        return isMissileNativeTrailRocketFlame();
+        return isMissileNativeTrailRocketFlame() || isMissileNativeTrailKeroseneBlackSmoke();
     }
 
     public boolean isMissileNativeTrailExtraFlameEnabled() {

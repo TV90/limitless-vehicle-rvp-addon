@@ -353,9 +353,12 @@ public final class RVP_ExternalRadarSyncService {
                 continue;
             }
             // 2026-09-17 弹药分角度 RCS：与主链路（RVP_RadarScanHelper）统一按弹体朝向因子
-            // 缩放探测距离——修复旧实现 sig 只当开关不当倍率的不一致
+            // 缩放探测距离——修复旧实现 sig 只当开关不当倍率的不一致。
+            // 2026-09-19 修复单位错误：effectiveMaxSqr 与 distanceToSqr（平方距离）比较，
+            // 原式 maxDistance × sig² 是线性值，实际半径塌缩为 √maxScan × sig（96L6 3500→59 格）；
+            // 正确式 = maxScan² × sig²（有效半径 = maxScan × sig）。
             double signature = bullet.getRadarSignatureTowards(radarPos);
-            double effectiveMaxSqr = maxDistance * signature * (double) signature;
+            double effectiveMaxSqr = maxDistance * maxDistance * signature * (double) signature;
             Vec3 pos = bullet.getBoundingBox().getCenter();
             if (pos.distanceToSqr(radarPos) > effectiveMaxSqr) {
                 continue;
