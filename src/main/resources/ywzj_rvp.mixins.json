@@ -14,6 +14,7 @@
     "VehicleExplosionCraterMixin",
     "VehicleExplosionCraterSphericalMixin",
     "VehicleExplosionHurtSkipMixin",
+    "VehicleExplosionImmediatePathMixin",
     "VehicleExplosionVisualPacketMixin",
     "PartUnitAccessorMixin",
     "PartUnitTypeScopeCompatMixin",

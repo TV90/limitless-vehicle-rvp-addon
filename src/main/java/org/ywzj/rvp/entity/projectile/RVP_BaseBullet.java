@@ -75,9 +75,11 @@ import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
+import org.ywzj.rvp.weapon.effects.RVP_ExplosionImmediatePath;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.effects.RVP_TerrainOnlyExplosion;
+import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
@@ -3692,6 +3694,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         GROUND_PROXIMITY
     }
 
+    /**
+     * RVP 弹体爆炸强制即时破坏路径窗口（2026-09-20 用户定版）：配置
+     * {@code forceImmediateExplosionDestruction}（默认 true）开启时，把爆炸调用包进
+     * {@link RVP_ExplosionImmediatePath} ThreadLocal 窗口——窗口内
+     * {@code VehicleExplosionImmediatePathMixin} 将本体批量破坏半径阈值（32）抬到正无穷，
+     * 任意半径都走 ≤32 的即时破坏路径（GridCollectionTask + destroyBlocksImmediately，
+     * 单 tick 完成、无烧灼方块替换、无跨 tick 服务端持续负载），不再被 32 截断进核爆炸
+     * 批处理。配置关闭或本体/其它 mod 的爆炸不受影响。
+     */
+    private static Runnable wrapImmediatePath(Runnable action) {
+        return RVP_Config.isForceImmediateExplosionDestruction()
+                ? () -> RVP_ExplosionImmediatePath.run(action)
+                : action;
+    }
+
     protected void triggerExplosion(Vec3 pos) {
         triggerExplosion(pos, FuseDetonation.NORMAL, null);
     }
@@ -3828,13 +3845,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 excluded.add(shooterVehicle);
             }
         }
-        Runnable explosionAction = !excluded.isEmpty()
+        Runnable explosionAction = wrapImmediatePath(!excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
-                : ex::explode;
+                : ex::explode);
         Runnable terrainExplosionAction = terrainExplosion == null ? null
-                : !excluded.isEmpty()
+                : wrapImmediatePath(!excluded.isEmpty()
                         ? () -> terrainExplosion.explode(List.copyOf(excluded))
-                        : terrainExplosion::explode;
+                        : terrainExplosion::explode);
         // RVP 爆炸命中提示：载具集合必须在爆炸伤害结算前快照 —— AbstractVehicle.hurt
         // 会把被炸死的载具同步 setDestroyed()（已在销毁状态的直接 discard），若结算后再
         // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体
@@ -4390,8 +4407,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * （{@code motorBurnEndTick}）内随飞行进度从全额线性回落到 1.0；未配置（1.0）时快速返回。
      * 供空中尾迹与地面烟浪共同使用，保证两者发射段观感同步提升。
      */
-    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {
-        float boost = effects.getMissileNativeTrailLaunchBoost();
+    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {        float boost = effects.getMissileNativeTrailLaunchBoost();
         if (boost == 1.0f) {
             return 1.0f;
         }

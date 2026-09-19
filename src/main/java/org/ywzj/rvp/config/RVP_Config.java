@@ -16,11 +16,26 @@ public class RVP_Config {
 
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> craterDepthRules;
 
+    private final ForgeConfigSpec.BooleanValue forceImmediateExplosionDestruction;
+
     /** Parsed cache: sorted by maxRadius ascending. */
     private volatile List<CraterRule> parsedRules = List.of();
 
     public RVP_Config(ForgeConfigSpec.Builder builder) {
         builder.push("explosion");
+
+        forceImmediateExplosionDestruction = builder
+                .comment(
+                        "Force RVP projectile explosions to always use the vanilla-style immediate",
+                        "destruction path (GridCollectionTask + destroyBlocksImmediately), even when",
+                        "the radius exceeds the base mod's 32-block threshold that would normally",
+                        "switch to the batched nuclear path (SphericalCollectionTask: split-tick",
+                        "scorch-transforming block replacement + sustained multi-tick server load).",
+                        "true (default): RVP projectile explosions never enter the batched path;",
+                        "false: vanilla threshold behavior.",
+                        "Only affects explosions triggered by RVP projectile triggerExplosion."
+                )
+                .define("forceImmediateExplosionDestruction", true);
 
         craterDepthRules = builder
                 .comment(
@@ -74,8 +89,7 @@ public class RVP_Config {
      * Returns max depth (layers below center Y) allowed for the given explosion radius.
      * Returns -1 if no limit applies (no rules configured).
      */
-    public static int getMaxDepthForRadius(float radius) {
-        RVP_Config cfg = INSTANCE;
+    public static int getMaxDepthForRadius(float radius) {        RVP_Config cfg = INSTANCE;
         if (cfg == null) {
             return -1;
         }
@@ -91,6 +105,15 @@ public class RVP_Config {
         }
         // If radius exceeds the last rule's threshold, return the last rule's depth
         return rules.get(rules.size() - 1).maxDepth();
+    }
+
+    /**
+     * RVP 弹体爆炸是否强制走即时破坏路径（true = 半径 &gt; 32 也不进本体核爆炸批量路径）。
+     * 高频调用（mixin 常量修改处每条射线判定），直接读缓存的 ConfigValue。
+     */
+    public static boolean isForceImmediateExplosionDestruction() {
+        RVP_Config cfg = INSTANCE;
+        return cfg != null && cfg.forceImmediateExplosionDestruction.get();
     }
 
     /** Register the server config. Must be called from mod constructor. */

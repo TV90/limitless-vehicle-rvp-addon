@@ -581,7 +581,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `radius` | 爆炸半径（杀伤半径，同时决定客户端视觉档位）。 |
 | `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
 | `destroy_block` | 是否破坏方块。 |
-| `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，`crater_depth_rules` 弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。 |
+| `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，`crater_depth_rules` 弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。<br>**强制即时路径（2026-09-20）**：RVP 弹体爆炸默认（`explosion.forceImmediateExplosionDestruction=true`，common 配置）**不再被本体 32 阈值截断进核爆炸批处理**——任意破坏半径都走 ≤32 的即时路径（GridCollectionTask + 单 tick 即时破坏，无烧灼方块替换、无跨 tick 服务端持续负载，表现为单 tick 一次性 hitch）；本体的爆炸与其它 mod 不受影响，配置改 false 恢复本体阈值行为。 |
 
 9M723 示例（杀伤 64、地形爆破 33）：
 
