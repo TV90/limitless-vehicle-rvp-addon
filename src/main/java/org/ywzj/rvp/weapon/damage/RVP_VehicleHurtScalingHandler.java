@@ -130,12 +130,27 @@ public final class RVP_VehicleHurtScalingHandler {
 
         float coreMult = RVP_VehicleHitboxFactorManager.INSTANCE.resolveCoreDistanceScaleMultiplier(self);
         RVP_VehicleHitboxFactorManager.HitboxDamageResult res = null;
-        if (!explosion) {
+        float explosionHitboxMult = 1f;
+        boolean explosionHitboxEnabled = false;
+        if (explosion) {
+            // 爆炸伤害倍率（2026-09-20 拆分）：explosion_damage_factor 按面向爆心的骨块乘算。
+            // 爆心从 DamageSource 取（本体 AllDamageTypes.Sources.explosion 存入 position；
+            // 注意 DamageSystem.hurt 的 hitPos 在 RVP 弹爆炸时是射手载具位置，不能用作爆心）
+            Vec3 explosionPos = source.getSourcePosition();
+            if (explosionPos != null) {
+                float m = RVP_VehicleHitboxFactorManager.INSTANCE.resolveExplosionHitboxDamageFactor(
+                        self, explosionPos, self.getBoundingBox().getCenter());
+                if (Float.isFinite(m) && Math.abs(m - 1f) > 1.0E-4f) {
+                    explosionHitboxMult = Math.max(0f, m);
+                    explosionHitboxEnabled = true;
+                }
+            }
+        } else {
             res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(self, segment[0], segment[1]);
         }
         boolean hitboxEnabled = res != null && res.enabled();
-        // 爆炸不参与命中箱缩放；无任何覆盖时完全放行（与原 mixin 净效果一致）
-        if (!hitboxEnabled && (coreMult == 1f || explosion)) {
+        // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸仅配置了爆炸倍率时进入重放
+        if (!hitboxEnabled && !explosionHitboxEnabled && (coreMult == 1f || explosion)) {
             return;
         }
 
@@ -156,9 +171,11 @@ public final class RVP_VehicleHurtScalingHandler {
             }
         }
         // 装甲层：命中箱系数由 applyArmor 按 MCH 不对称顺序施加（此处 deltaAfterCore 尚未乘 hitboxMult）。
-        // 爆炸伤害绕过装甲（方案确认项：爆炸不吃 armor_min 扣减，也不吃 armor_max 封顶），
-        // 且爆炸本就不参与命中箱缩放（hitboxMult=1），直接采用本体衰减后的值。
-        float desiredFinal = explosion ? deltaAfterCore : applyArmor(self, deltaAfterCore, hitboxMult);
+        // 爆炸伤害绕过装甲（方案确认项：爆炸不吃 armor_min 扣减，也不吃 armor_max 封顶）；
+        // 爆炸倍率（explosion_damage_factor，倍率 ≠1 时上方已进入重放）直接乘在本体衰减后的值上。
+        float desiredFinal = explosion
+                ? deltaAfterCore * explosionHitboxMult
+                : applyArmor(self, deltaAfterCore, hitboxMult);
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
         }

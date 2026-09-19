@@ -41,6 +41,7 @@
     "WeaponUnitParentAimOverrideMixin"
   ],
   "client": [
+    "FirstPersonHandlerExplosionShakeMixin",
     "ClientLevelHitlTrailParticleMixin",
     "ClientAssetsManagerCustomMountMixin",
     "VehicleAimAtOverlaySeekerColorMixin",

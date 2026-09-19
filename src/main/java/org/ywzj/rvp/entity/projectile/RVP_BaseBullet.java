@@ -3262,11 +3262,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         Entity owner = getOwner();
         boolean headshot = result.isHeadshot();
-        float distanceMult = distanceDecayFactor();
-        float incidenceMult = incidenceDecayFactor();
-        float penetrationMult = penetrationDamageFactor();
-        RVP_WeaponData config = resolveWeaponConfig();
-        float vehicleMult = config != null ? config.getDirectDamageFactor().getFactor(entity) : 1f;
+        // 命中箱结算前置（2026-09-20 ERA 入射角上界需要 hitboxRes 先行）：resolveHitboxDamage
+        // 无累积副作用（sanitizeModuleState 幂等家务），上移安全
         float hitboxMult = 1f;
         RVP_VehicleHitboxFactorManager.HitboxDamageResult hitboxRes = null;
         if (entity instanceof AbstractVehicle targetVehicle) {
@@ -3274,6 +3271,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     targetVehicle, collisionSegmentStart(), collisionSegmentEnd());
             hitboxMult = hitboxRes.factor();
         }
+        // 入射角上界前置（2026-09-20 用户需求）：命中的骨 OBB 挂有 ERA 且未失效时，
+        // 伤害衰减用的入射角钳到 min(实际角, eraMaxIncidenceAngle)——模拟 ERA 对大角度
+        // 的等效防护。仅影响直击角度衰减；跳弹判定在更早的碰撞阶段用现算角，数据流独立；
+        // lastImpactIncidenceAngleDeg 字段不被改写（调试包与爆炸引信衰减仍读原值）。
+        float effectiveIncidence = lastImpactIncidenceAngleDeg;
+        if (hitboxRes != null && hitboxRes.era()
+                && !hitboxRes.destroyedModules().contains(org.ywzj.rvp.vehicle.BoneModuleType.ERA)
+                && !Float.isNaN(effectiveIncidence)) {
+            effectiveIncidence = Math.min(effectiveIncidence,
+                    org.ywzj.rvp.config.RVP_Config.getEraMaxIncidenceAngle());
+        }
+        float distanceMult = distanceDecayFactor();
+        float incidenceMult = incidenceDecayFactor(effectiveIncidence);
+        float penetrationMult = penetrationDamageFactor();
+        RVP_WeaponData config = resolveWeaponConfig();
+        float vehicleMult = config != null ? config.getDirectDamageFactor().getFactor(entity) : 1f;
         float preHitboxMult = distanceMult * incidenceMult * penetrationMult * vehicleMult;
         float totalMult = preHitboxMult * hitboxMult;
         float base = headshot ? damage * headShot : damage;
@@ -3391,12 +3404,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return RVP_DamageDecayUtil.distanceFactor(rules, decaySampleDistanceM());
     }
 
+    /** 无参形态：按命中时记录的原始入射角取角度衰减（调试/爆炸引信等仍读原始值）。 */
     protected float incidenceDecayFactor() {
+        return incidenceDecayFactor(lastImpactIncidenceAngleDeg);
+    }
+
+    /** 带角形态：ERA 入射角上界前置（2026-09-20）由调用方先钳好角度再传入。 */
+    protected float incidenceDecayFactor(float incidenceAngleDeg) {
         List<RVP_DamageDecayRuleData> rules = damageDecayRules();
         if (rules.isEmpty()) {
             return 1f;
         }
-        return RVP_DamageDecayUtil.angleFactor(rules, lastImpactIncidenceAngleDeg);
+        return RVP_DamageDecayUtil.angleFactor(rules, incidenceAngleDeg);
     }
 
     protected void rememberImpactIncidence(Vec3 velocity, Vec3 surfaceNormal) {

@@ -77,6 +77,8 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.DoubleValue thermobaricFlashIntensity;
     /** 温压镜头震动的客户端强度倍率。 */
     private final ForgeConfigSpec.DoubleValue thermobaricShakeIntensity;
+
+    private final ForgeConfigSpec.DoubleValue explosionShakeIntensity;
     /** 客户端每帧允许绘制的最大远距载具数。 */
     private final ForgeConfigSpec.IntValue remoteVehicleMaxRenderedVehicles;
     /** 客户端每帧允许绘制的最大无 LOD 高模载具数。 */
@@ -164,6 +166,15 @@ public class RVP_ClientConfig {
                         "Default: 1.0"
                 )
                 .defineInRange("thermobaricShakeIntensity", 1.0D, 0.0D, 1.0D);
+
+        explosionShakeIntensity = builder
+                .comment(
+                        "Base-mod explosion camera shake intensity multiplier applied to",
+                        "FirstPersonHandler.addExplosionShake strength (covers base/RVP explosions",
+                        "and large-caliber missile flyby shake). 0 disables the shake entirely.",
+                        "Default: 1.0"
+                )
+                .defineInRange("explosionShakeIntensity", 1.0D, 0.0D, 1.0D);
 
         builder.pop();
 
@@ -270,6 +281,11 @@ public class RVP_ClientConfig {
     /** 返回温压镜头震动强度倍率，范围为 {@code 0..1}。 */
     public static float getThermobaricShakeIntensity() {
         return INSTANCE != null ? INSTANCE.thermobaricShakeIntensity.get().floatValue() : 1.0F;
+    }
+
+    /** 返回本体爆炸视角晃动强度倍率（作用于 FirstPersonHandler.addExplosionShake），{@code 0..1}。 */
+    public static float getExplosionShakeIntensity() {
+        return INSTANCE != null ? INSTANCE.explosionShakeIntensity.get().floatValue() : 1.0F;
     }
 
     /** 返回客户端每帧允许绘制的最大远距载具数。 */

@@ -110,6 +110,30 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return resolveHitboxDamage(vehicle, segmentStart, segmentEnd).factor();
     }
 
+    /**
+     * 爆炸伤害倍率（2026-09-20 拆分自 hitbox_damage_factor，独立参数
+     * {@code explosion_damage_factor} / {@code explosion_damage_factor_default}）：
+     * 以「爆心 → 目标载具包围盒中心」线段与各配置骨 OBB 求交，取最近命中骨的
+     * 爆炸倍率（天然命中面向爆心的装甲面）；未配置爆炸倍率时返回 1（不缩放）。
+     * 供 {@code RVP_VehicleHurtScalingHandler} 的爆炸分支乘算——爆炸伤害此前
+     * 完全绕过命中箱倍率。
+     */
+    public float resolveExplosionHitboxDamageFactor(AbstractVehicle vehicle, Vec3 explosionPos, Vec3 targetCenter) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || !cfg.isEnabled()) {
+            return 1f;
+        }
+        ResourceLocation structureModelId = cfg.structureModel();
+        if (structureModelId == null) {
+            return cfg.explosionFactorDefault();
+        }
+        BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(structureModelId).orElse(null);
+        if (model == null) {
+            return cfg.explosionFactorDefault();
+        }
+        return cfg.resolve(model, vehicle, explosionPos, targetCenter, true).factor();
+    }
+
     public float resolveCoreDistanceScaleMultiplier(AbstractVehicle vehicle) {
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
         if (cfg == null) {
@@ -767,6 +791,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable ResourceLocation structureModel,
             float defaultFactor,
             Map<String, Float> factorByBoneName,
+            Map<String, Float> explosionFactorByBoneName,
+            float explosionFactorDefault,
             Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
             float coreDistanceScaleMultiplier,
@@ -777,14 +803,29 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         boolean isEnabled() {
             return defaultFactor != 1f
                     || (factorByBoneName != null && !factorByBoneName.isEmpty())
+                    || (explosionFactorByBoneName != null && !explosionFactorByBoneName.isEmpty())
+                    || explosionFactorDefault != 1f
                     || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
                     || (moduleByBoneName != null && !moduleByBoneName.isEmpty());
         }
 
         HitboxDamageResult resolve(BedrockModel model, AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
+            return resolve(model, vehicle, segmentStart, segmentEnd, false);
+        }
+
+        /**
+         * useExplosionFactor=true：倍率取爆炸伤害倍率（{@code explosion_damage_factor}，
+         * 供爆炸伤害乘算，2026-09-20 拆分）；false：原直击命中箱倍率。
+         */
+        HitboxDamageResult resolve(BedrockModel model, AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd,
+                boolean useExplosionFactor) {
             if ((factorByBoneName == null || factorByBoneName.isEmpty())
-                    && (moduleByBoneName == null || moduleByBoneName.isEmpty())) {
-                return HitboxDamageResult.defaulted(defaultFactor, structureModel, 0, Double.NaN);
+                    && (moduleByBoneName == null || moduleByBoneName.isEmpty())
+                    && (!useExplosionFactor
+                        || explosionFactorByBoneName == null || explosionFactorByBoneName.isEmpty())) {
+                return HitboxDamageResult.defaulted(
+                        useExplosionFactor ? explosionFactorDefault : defaultFactor,
+                        structureModel, 0, Double.NaN);
             }
             if (!RVP_PhysicsOnlyCollisionHelper.getPhysicsOnlyCubes(vehicle).isEmpty()
                     && RVP_PhysicsOnlyCollisionHelper.closestNonPhysicsOnlyHitPosition(vehicle, segmentStart, segmentEnd) == null
@@ -800,13 +841,24 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             List<HitCandidate> candidates = new ArrayList<>();
             Set<String> allConfigBones = new LinkedHashSet<>();
             allConfigBones.addAll(factorByBoneName.keySet());
+            if (useExplosionFactor && explosionFactorByBoneName != null) {
+                allConfigBones.addAll(explosionFactorByBoneName.keySet());
+            }
             allConfigBones.addAll(moduleByBoneName.keySet());
 
             for (String boneName : allConfigBones) {
                 BoneModuleConfig moduleConfig = moduleByBoneName.get(boneName);
-                float factor = moduleConfig != null
-                        ? moduleConfig.damageFactor()
-                        : factorByBoneName.getOrDefault(boneName, defaultFactor);
+                float factor;
+                if (useExplosionFactor) {
+                    // 爆炸伤害倍率：per-bone explosion_damage_factor → 模块骨共用骨倍率 → 默认
+                    factor = explosionFactorByBoneName != null
+                            ? explosionFactorByBoneName.getOrDefault(boneName, explosionFactorDefault)
+                            : explosionFactorDefault;
+                } else {
+                    factor = moduleConfig != null
+                            ? moduleConfig.damageFactor()
+                            : factorByBoneName.getOrDefault(boneName, defaultFactor);
+                }
                 List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
                 if (resolvedObbs.isEmpty()) {
                     if (boneMap.get(boneName) == null && vehicle.getPartUnit(boneName).isEmpty()) {
@@ -882,6 +934,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             ResourceLocation structure = parseId(GsonHelper.getAsString(obj, "structure_model", null));
             float def = GsonHelper.getAsFloat(obj, "hitbox_damage_factor_default", 1f);
             Map<String, Float> map = parseFactorMap(obj.get("hitbox_damage_factor"));
+            // 爆炸伤害倍率（2026-09-20 拆分）：与直击 hitbox_damage_factor 同构，独立配置
+            float explosionDef = GsonHelper.getAsFloat(obj, "explosion_damage_factor_default", 1f);
+            Map<String, Float> explosionMap = parseFactorMap(obj.get("explosion_damage_factor"));
             // 新配置 bone_modules 优先；旧配置 hitbox_era 兼容为仅 ERA 模块，两者按骨块合并
             Map<String, BoneModuleConfig> moduleMap = parseBoneModuleMap(obj.get("bone_modules"));
             Map<String, BoneModuleConfig> eraCompatMap = parseEraCompatMap(obj.get("hitbox_era"));
@@ -925,6 +980,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     && (moduleMap == null || moduleMap.isEmpty())
                     && (aliasMap == null || aliasMap.isEmpty())
                     && def == 1f
+                    && (explosionMap == null || explosionMap.isEmpty())
+                    && explosionDef == 1f
                     && coreM == 1f
                     && armorMin <= 0f
                     && armorMax <= 0f
@@ -935,6 +992,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     structure,
                     def,
                     map == null ? Map.of() : Map.copyOf(map),
+                    explosionMap == null ? Map.of() : Map.copyOf(explosionMap),
+                    explosionDef,
                     moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
                     coreM,

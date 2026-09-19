@@ -18,6 +18,8 @@ public class RVP_Config {
 
     private final ForgeConfigSpec.BooleanValue forceImmediateExplosionDestruction;
 
+    private final ForgeConfigSpec.DoubleValue eraMaxIncidenceAngle;
+
     /** Parsed cache: sorted by maxRadius ascending. */
     private volatile List<CraterRule> parsedRules = List.of();
 
@@ -36,6 +38,18 @@ public class RVP_Config {
                         "Only affects explosions triggered by RVP projectile triggerExplosion."
                 )
                 .define("forceImmediateExplosionDestruction", true);
+
+        eraMaxIncidenceAngle = builder
+                .comment(
+                        "Incidence angle upper bound for direct hits on bones with active ERA:",
+                        "when the hit bone has ERA configured (and not yet destroyed), the impact",
+                        "angle used by the damage_decay 'angle' rules is clamped to",
+                        "min(actualAngle, this value) - simulating ERA's equivalent protection",
+                        "against steep impacts. 90 disables the clamp (vanilla angle decay).",
+                        "Only affects direct-hit angle decay; ricochet judgment keeps the raw angle.",
+                        "Default: 35"
+                )
+                .defineInRange("eraMaxIncidenceAngle", 35.0D, 0.0D, 90.0D);
 
         craterDepthRules = builder
                 .comment(
@@ -114,6 +128,15 @@ public class RVP_Config {
     public static boolean isForceImmediateExplosionDestruction() {
         RVP_Config cfg = INSTANCE;
         return cfg != null && cfg.forceImmediateExplosionDestruction.get();
+    }
+
+    /**
+     * 激活 ERA 骨骼直击的入射角上界（度）：伤害衰减角度取 min(实际入射角, 该值)。
+     * 高频调用（每枚命中弹一次），直接读缓存的 ConfigValue。
+     */
+    public static float getEraMaxIncidenceAngle() {
+        RVP_Config cfg = INSTANCE;
+        return cfg != null ? cfg.eraMaxIncidenceAngle.get().floatValue() : 35.0F;
     }
 
     /** Register the server config. Must be called from mod constructor. */
