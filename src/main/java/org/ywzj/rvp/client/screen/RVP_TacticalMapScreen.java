@@ -114,6 +114,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private static final ResourceLocation HELI_ICON = mapIcon("atkheli.png");
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
+    private static final ResourceLocation SHIP_ICON = mapIcon("ship.png");
     private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
     private static final ResourceLocation NORMAL_ICON = mapIcon("normal.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
@@ -3207,6 +3208,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         if (entity instanceof RotaryWingVehicle) {
             return "HELI";
         }
+        // 船载具适配（2026-09-20）：本体新增 VesselVehicle 后早期 NCTR 模式不再显示 "?"
+        if (entity instanceof org.ywzj.vehicle.entity.vehicle.VesselVehicle) {
+            return "SHIP";
+        }
         if (entity instanceof RVP_BaseBullet bullet) {
             String label = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
             if (label != null && !label.isBlank()) {
@@ -3533,6 +3538,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             ResourceLocation configured = resolveConfiguredIcon(readVehicleIconOverride(data));
             if (configured != null) {
                 return configured;
+            }
+            if (data instanceof org.ywzj.vehicle.custom.vehicle.VesselVehicleData) {
+                // 船载具适配（2026-09-20）：本体新增 VesselVehicle 后战术地图不再回落坦克图标；
+                // ship.png 目前为程序生成占位，正式素材就绪后直接替换文件
+                return SHIP_ICON;
             }
             if (data instanceof RotaryWingVehicleData) {
                 return HELI_ICON;

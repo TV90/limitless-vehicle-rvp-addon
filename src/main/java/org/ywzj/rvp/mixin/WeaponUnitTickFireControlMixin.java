@@ -113,6 +113,14 @@ public abstract class WeaponUnitTickFireControlMixin {
                 if (radar != null) {
                     entity = Radar.findTarget(radar, 90, self);
                 }
+                // IR 发射武器的 RF 供锁补离轴校验（2026-09-20 离轴角 bug 修复，bug B 治本）：
+                // 雷达 TWS 锥（90°）远大于 IR 导引头离轴角，直接落锁会让 IR 弹获得超锥锁
+                //（发射授权的离轴终检会兜底拒射，这里在锁建立时就拦掉，语义更干净）。
+                // ARH 等雷达制导弹不受 IR 离轴角约束（isIrLaunchWeapon 已排除雷达/反辐射/GPS）。
+                if (entity != null && !RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
+                        self, entity, rvpWeapon.getData(), 0f)) {
+                    entity = null;
+                }
             }
         }
 

@@ -196,6 +196,19 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     unit.setLockedEntity(externalLocked);
                 }
             }
+
+            // 离轴角发射终检（2026-09-20 离轴角 bug 修复，bug A/B 统一收口）：
+            // "锁存在"不等于"目标在离轴角内"——HMD 20t 保活、EO/RF 传感器直锁都会造成
+            // 超锥锁残留。以中立安装轴（或按配置叠加站旋转）为基准复验，超锥拒射。
+            if (isIrLaunchWeapon && requiresEntityLock(data)) {
+                Entity finalLock = isIrHmdManaged
+                        ? RVP_ClientHmdState.getInstance().getLockedEntity()
+                        : unit.getLockedEntity() != null ? unit.getLockedEntity() : externalLocked;
+                if (!RVP_IrLockHelper.isLaunchTargetWithinOffAxis(unit, finalLock, data, 1.0f)) {
+                    LocalVehiclePlayer.instance.sendMessage("ui.ir_target_off_axis");
+                    return false;
+                }
+            }
         }
         return true;
     }

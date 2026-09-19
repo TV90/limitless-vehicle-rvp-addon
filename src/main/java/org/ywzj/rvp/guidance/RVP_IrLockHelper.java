@@ -241,6 +241,33 @@ public final class RVP_IrLockHelper {
     }
 
     /**
+     * 发射授权离轴终检（2026-09-20 离轴角 bug 修复）：以离轴基准方向（按
+     * {@code off_axis_stacks_with_station_rotation} 配置二选一）校验目标是否仍在
+     * 离轴角 + 容差内。锁定建立的任何来源（HMD/EO 捕获/RF 雷达落锁/外置雷达/切武器
+     * 恢复）最终都收口到这里——"锁存在"不等于"目标在离轴角内"（20t 保活、传感器
+     * 直锁都会造成超锥锁残留，实机表现为超离轴角仍可发射）。
+     *
+     * <p>非 IR 发射武器恒 true（ARM/GPS 等无离轴概念）；目标缺失/死亡 false。</p>
+     *
+     * @param angleToleranceDeg 容差（度）：一般 0；HMD 路径可给 1° 抵消显示取整抖动
+     */
+    public static boolean isLaunchTargetWithinOffAxis(WeaponUnit weaponUnit, @Nullable Entity target,
+                                                      RVP_WeaponData data, float angleToleranceDeg) {
+        if (target == null || !target.isAlive()) {
+            return false;
+        }
+        if (!isIrLaunchWeapon(data)) {
+            return true;
+        }
+        RVP_GuidanceLaunchConfig launch = RVP_GuidanceModelResolver.resolveLaunch(data);
+        Vec3 boresight = resolveIrBoresightDir(weaponUnit, data.resolveLaunchOffAxisStacksWithStationRotation());
+        return isTargetWithinRangedLimits(
+                weaponUnit, target, boresight,
+                launch.maxOffAxisLockAngle() + Math.max(0f, angleToleranceDeg),
+                launch.targetDistanceRange(), launch.altitudeRange());
+    }
+
+    /**
      * IR 导引头离轴基准方向，默认以武器站<b>中立安装轴</b>为基准（不含武器站旋转）。
      */
     public static Vec3 resolveIrBoresightDir(WeaponUnit weaponUnit) {

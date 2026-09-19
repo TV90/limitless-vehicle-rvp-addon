@@ -160,6 +160,18 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                     ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                     : rootUnit.getLockedEntity();
         }
+        // 服务端离轴角权威终检（2026-09-20 离轴角 bug 修复，bug B 兜底）：IR 发射武器的
+        // 锁可能来自 EO 捕获/RF 落锁/切武器恢复——这些来源都不查离轴角，改包客户端也可能
+        // 直接发。以离轴基准方向复验，超锥拒射（不耗弹，提示 ui.ir_target_off_axis）。
+        if (lock != null && shooter.level() instanceof net.minecraft.server.level.ServerLevel) {
+            if (!org.ywzj.rvp.guidance.RVP_IrLockHelper.isLaunchTargetWithinOffAxis(rootUnit, lock, data, 1.0f)) {
+                if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                    notifyPlayer.displayClientMessage(
+                            net.minecraft.network.chat.Component.translatable("ui.ir_target_off_axis"), true);
+                }
+                return;
+            }
+        }
 
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;

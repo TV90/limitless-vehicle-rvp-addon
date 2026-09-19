@@ -75,6 +75,7 @@ import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
+import org.ywzj.rvp.weapon.effects.RVP_ExplosionDamageFactor;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionImmediatePath;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
@@ -3728,6 +3729,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 : action;
     }
 
+    /**
+     * 弹药爆炸对载具的伤害倍率窗口（2026-09-20 拆分，武器侧
+     * {@code explosion_data.explosion_damage_factor}）：倍率 ≠1 时把爆炸调用包进
+     * {@link RVP_ExplosionDamageFactor} 窗口，handler 爆炸分支对载具目标乘算。
+     */
+    private static Runnable wrapExplosionDamageFactor(Runnable action, float damageFactor) {
+        return damageFactor != 1f
+                ? () -> RVP_ExplosionDamageFactor.run(damageFactor, action)
+                : action;
+    }
+
     protected void triggerExplosion(Vec3 pos) {
         triggerExplosion(pos, FuseDetonation.NORMAL, null);
     }
@@ -3787,6 +3799,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Float destroyRadiusCfg = explosion instanceof RVP_Explosion rvpExplosion
                 ? rvpExplosion.getDestroyRadius()
                 : null;
+        // 武器侧爆炸伤害倍率（2026-09-20 拆分，仅载具目标乘算）：窗口包装见 wrapExplosionDamageFactor
+        float explosionDamageFactor = explosion instanceof RVP_Explosion rvpExplosion2
+                && rvpExplosion2.getExplosionDamageFactor() != null
+                && rvpExplosion2.getExplosionDamageFactor() > 0f
+                        ? rvpExplosion2.getExplosionDamageFactor()
+                        : 1f;
         boolean disableTerrain = destroyRadiusCfg != null && destroyRadiusCfg <= 0f;
         boolean splitDestroyRadius = explosion.destroyBlock && destroyRadiusCfg != null
                 && !disableTerrain && destroyRadiusCfg != radius;
@@ -3864,13 +3882,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 excluded.add(shooterVehicle);
             }
         }
-        Runnable explosionAction = wrapImmediatePath(!excluded.isEmpty()
+        Runnable explosionAction = wrapImmediatePath(wrapExplosionDamageFactor(!excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
-                : ex::explode);
+                : ex::explode, explosionDamageFactor));
         Runnable terrainExplosionAction = terrainExplosion == null ? null
-                : wrapImmediatePath(!excluded.isEmpty()
+                : wrapImmediatePath(wrapExplosionDamageFactor(!excluded.isEmpty()
                         ? () -> terrainExplosion.explode(List.copyOf(excluded))
-                        : terrainExplosion::explode);
+                        : terrainExplosion::explode, explosionDamageFactor));
         // RVP 爆炸命中提示：载具集合必须在爆炸伤害结算前快照 —— AbstractVehicle.hurt
         // 会把被炸死的载具同步 setDestroyed()（已在销毁状态的直接 discard），若结算后再
         // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体

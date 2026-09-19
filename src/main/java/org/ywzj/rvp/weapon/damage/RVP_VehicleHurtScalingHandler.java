@@ -9,6 +9,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.weapon.effects.RVP_ExplosionDamageFactor;
 import org.ywzj.vehicle.api.event.VehicleAttackEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -130,27 +131,31 @@ public final class RVP_VehicleHurtScalingHandler {
 
         float coreMult = RVP_VehicleHitboxFactorManager.INSTANCE.resolveCoreDistanceScaleMultiplier(self);
         RVP_VehicleHitboxFactorManager.HitboxDamageResult res = null;
-        float explosionHitboxMult = 1f;
-        boolean explosionHitboxEnabled = false;
+        // 受击载具侧爆炸倍率（vehicle_explosion_damage_factor，per-bone + 默认）
+        float vehicleExplosionHitboxMult = 1f;
+        boolean vehicleExplosionHitboxEnabled = false;
+        // 武器侧爆炸倍率（explosion_data.explosion_damage_factor，RVP_ExplosionDamageFactor 窗口）
+        float weaponExplosionDamageFactor = RVP_ExplosionDamageFactor.current();
         if (explosion) {
-            // 爆炸伤害倍率（2026-09-20 拆分）：explosion_damage_factor 按面向爆心的骨块乘算。
+            // 受击载具爆炸倍率（2026-09-20 拆分）：vehicle_explosion_damage_factor 按面向爆心的骨块乘算。
             // 爆心从 DamageSource 取（本体 AllDamageTypes.Sources.explosion 存入 position；
             // 注意 DamageSystem.hurt 的 hitPos 在 RVP 弹爆炸时是射手载具位置，不能用作爆心）
             Vec3 explosionPos = source.getSourcePosition();
             if (explosionPos != null) {
-                float m = RVP_VehicleHitboxFactorManager.INSTANCE.resolveExplosionHitboxDamageFactor(
+                float m = RVP_VehicleHitboxFactorManager.INSTANCE.resolveVehicleExplosionHitboxDamageFactor(
                         self, explosionPos, self.getBoundingBox().getCenter());
                 if (Float.isFinite(m) && Math.abs(m - 1f) > 1.0E-4f) {
-                    explosionHitboxMult = Math.max(0f, m);
-                    explosionHitboxEnabled = true;
+                    vehicleExplosionHitboxMult = Math.max(0f, m);
+                    vehicleExplosionHitboxEnabled = true;
                 }
             }
         } else {
             res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(self, segment[0], segment[1]);
         }
         boolean hitboxEnabled = res != null && res.enabled();
-        // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸仅配置了爆炸倍率时进入重放
-        if (!hitboxEnabled && !explosionHitboxEnabled && (coreMult == 1f || explosion)) {
+        // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸任一侧倍率 ≠1 时进入重放
+        if (!hitboxEnabled && !vehicleExplosionHitboxEnabled && weaponExplosionDamageFactor == 1f
+                && (coreMult == 1f || explosion)) {
             return;
         }
 
@@ -172,9 +177,11 @@ public final class RVP_VehicleHurtScalingHandler {
         }
         // 装甲层：命中箱系数由 applyArmor 按 MCH 不对称顺序施加（此处 deltaAfterCore 尚未乘 hitboxMult）。
         // 爆炸伤害绕过装甲（方案确认项：爆炸不吃 armor_min 扣减，也不吃 armor_max 封顶）；
-        // 爆炸倍率（explosion_damage_factor，倍率 ≠1 时上方已进入重放）直接乘在本体衰减后的值上。
+        // 爆炸倍率按用户语义两侧独立乘算（2026-09-20 拆分）：
+        //   武器侧 explosion_damage_factor（窗口值）× 受击载具侧 vehicle_explosion_damage_factor
+        //   ——仅载具目标乘算，任一侧 ≠1 时上方已进入重放。
         float desiredFinal = explosion
-                ? deltaAfterCore * explosionHitboxMult
+                ? deltaAfterCore * weaponExplosionDamageFactor * vehicleExplosionHitboxMult
                 : applyArmor(self, deltaAfterCore, hitboxMult);
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;

@@ -764,6 +764,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (entity instanceof RotaryWingVehicle) {
             return "HELI";
         }
+        // 船载具适配（2026-09-20）：本体新增 VesselVehicle 后早期 NCTR 模式不再显示 "?"
+        if (entity instanceof org.ywzj.vehicle.entity.vehicle.VesselVehicle) {
+            return "SHIP";
+        }
         if (entity instanceof RVP_BaseBullet bullet) {
             String label = RVP_RadarContactHelper.resolveBulletRadarLabel(bullet, Float.MAX_VALUE);
             if (label != null && !label.isBlank()) {

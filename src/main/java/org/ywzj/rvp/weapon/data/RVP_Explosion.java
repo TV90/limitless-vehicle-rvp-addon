@@ -28,6 +28,21 @@ public class RVP_Explosion extends Explosion {
         return destroyRadius;
     }
 
+    /**
+     * 弹药爆炸对载具的伤害倍率（2026-09-20 拆分新增，武器侧参数）：
+     * 作用于本体核心距离衰减之后的爆炸伤害（面板 300 → 命中偏差衰减 270 → ×2 = 540）。
+     * 仅对<b>载具目标</b>生效（经 {@code RVP_VehicleHurtScalingHandler} 爆炸分支乘算，
+     * 生物目标不乘）；与受击载具侧的 {@code vehicle_explosion_damage_factor}（per-bone）
+     * 独立相乘。未写 = 1.0（不缩放）。
+     */
+    @SerializedName("explosion_damage_factor")
+    private Float explosionDamageFactor;
+
+    /** {@code null} 表示未配置（1.0，不缩放）。 */
+    public Float getExplosionDamageFactor() {
+        return explosionDamageFactor;
+    }
+
     public static RVP_Explosion disabled() {
         RVP_Explosion explosion = new RVP_Explosion();
         explosion.explode = false;
