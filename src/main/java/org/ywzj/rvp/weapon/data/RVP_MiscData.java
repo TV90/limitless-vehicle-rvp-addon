@@ -6,6 +6,14 @@ import org.jetbrains.annotations.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 【已封印参数】{@code signal_intensity_factor_on_radar}（均匀雷达信号倍率，距离分区 Map）：
+ * 2026-09-17 由 {@code ammo_radar_rcs_factor}（分角度）取代并<b>全量删除，刻意不再支持</b>。
+ * 该参数极易与分角度因子、探测半径平方公式纠缠出单位/语义错误——2026-09-19 中继链
+ * 探测半径塌缩为 √maxScan 的 BVR 失效事故即源于对它的重写（开发者 dtc10 与其奋战一晚，
+ * 最终采取土办法封印：即使武器 JSON 里写了该键，Gson 也按未知键静默忽略，等效恒 1）。
+ * 请勿在解析器或任何探测链中恢复此参数；放大探测距离请直接调大 ammo_radar_rcs_factor。
+ */
 public class RVP_MiscData {
 
     @SerializedName("missile_name_on_hud")
