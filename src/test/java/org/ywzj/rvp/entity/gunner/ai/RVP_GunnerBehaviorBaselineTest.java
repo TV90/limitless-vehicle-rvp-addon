@@ -63,37 +63,46 @@ class RVP_GunnerBehaviorBaselineTest {
     /** Gunner Profile 源码，用于冻结阶段 A 的平铺 schema 与默认值。 */
     private static final Path PROFILE_SOURCE = Path.of(
             "src/main/java/org/ywzj/rvp/entity/gunner/ai/profile/GunnerProfile.java");
+    /** 阶段 C 固定计划管理器源码。 */
+    private static final Path BEHAVIOR_MANAGER_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/runtime/RVP_GunnerBehaviorManager.java");
+    /** 阶段 C 单 tick 上下文源码。 */
+    private static final Path BEHAVIOR_CONTEXT_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/api/RVP_GunnerBehaviorContext.java");
+    /** 阶段 C 意图模型源码。 */
+    private static final Path BEHAVIOR_INTENT_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/api/RVP_GunnerBehaviorIntent.java");
+    /** 阶段 C 确定性仲裁器源码。 */
+    private static final Path INTENT_ARBITER_SOURCE = Path.of(
+            "src/main/java/org/ywzj/rvp/entity/gunner/behavior/runtime/RVP_GunnerIntentArbiter.java");
 
     @Test
     void serverTickPipelineKeepsCurrentAuthoritativeOrder() throws IOException {
         String brain = read(BRAIN_SOURCE);
-        String tick = section(brain,
-                "public static void tick(GunnerEntity gunner, AbstractVehicle vehicle)",
-                "private static Entity tickTargeting(");
+        String manager = read(BEHAVIOR_MANAGER_SOURCE);
+        String tick = section(manager,
+                "public void tick(GunnerEntity gunner, AbstractVehicle vehicle)",
+                "public void exit(GunnerEntity gunner)");
 
         assertOrdered(tick,
+                "RVP_GunnerBehaviorContext.create(",
+                "runtime.requiresExit(context)",
                 "gunner.tickCooldowns();",
-                "vehicle.getOwnOperatorUnit(gunner)",
-                "boolean driver = isDriver(vehicle, gunner);",
-                "resolveWeaponUnit(vehicle, seatUnit, driver)",
-                "tickTargeting(gunner, vehicle, weaponUnit, profile)",
-                "ACTIONS.supply().refillOnDriverEnter(gunner, vehicle);",
-                "ACTIONS.supply().sustainDriverAmmo(gunner, vehicle);",
-                "tickCountermeasure(gunner, vehicle, profile);",
-                "tickEcmActive(gunner, vehicle);",
-                "tickSmokeEvasion(gunner, vehicle);",
-                "ACTIONS.radar().maintainLocalLock(vehicle, weaponUnit, target);",
-                "ACTIONS.radar().maintainExternalLock(gunner, vehicle, weaponUnit, target, driverAi);",
-                "ACTIONS.guidance().maintain(gunner, vehicle, weaponUnit, target);",
-                "seadHandled = tickSead(gunner, vehicle, weaponUnit, profile);",
-                "allowFire = tickDriving(gunner, vehicle, target, profile);",
-                "tickCombat(gunner, weaponUnit, target, profile);");
+                "GunnerBrain.planTarget(context, session);",
+                "Channel.TARGET",
+                "context.withTarget(gunner.getTrackedTarget())",
+                "GunnerBrain.planSupport(context, session);",
+                "Channel.SUPPLY",
+                "Channel.GUIDANCE_MAINTAIN",
+                "GunnerBrain.planTactics(context, session);",
+                "session.ensureDriverStopFallback();",
+                "Channel.MOVEMENT",
+                "Channel.FIRE",
+                "runtime.setDebugSnapshot(session.snapshot());");
         assertContainsAll(tick,
-                "boolean driverAi = driver && profile.isAllowDrive();",
-                "if (!seadHandled)",
-                "gunner.setControlledWeaponIndex(-1);",
-                "ACTIONS.movement().apply(gunner, vehicle, ACTIONS.movement().stopCommand());",
-                "gunner.clearDriverRideState();");
+                "RVP_GunnerBehaviorRuntime runtime = gunner.getBehaviorRuntime();",
+                "session.execute(EnumSet.of(",
+                "RVP_GunnerDebugMonitor.onTick");
         assertFalse(tick.contains(".shoot("), "阶段 B 后总编排不得绕过武器动作层");
         assertFalse(brain.contains("controlUnit."), "阶段 B 后 GunnerBrain 不得直接写 ControlUnit");
     }
@@ -103,8 +112,11 @@ class RVP_GunnerBehaviorBaselineTest {
         String brain = read(BRAIN_SOURCE);
         String targeting = read(TARGETING_SOURCE);
         String tickTargeting = section(brain,
-                "private static Entity tickTargeting(",
-                "private static boolean isCiwsAltitudeMet(");
+                "private static Entity selectTarget(",
+                "public static void commitTarget(");
+        String commitTarget = section(brain,
+                "public static void commitTarget(",
+                "private static void markEngagementNetOnTrack(");
         String findBest = section(targeting,
                 "public static Entity findBestTarget(",
                 "private static Entity pickBestInTier(");
@@ -114,11 +126,8 @@ class RVP_GunnerBehaviorBaselineTest {
 
         assertOrdered(tickTargeting,
                 "GunnerTargeting.findCiwsTarget(gunner, vehicle)",
-                "markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);",
-                "gunner.setTrackedTarget(ciwsTarget);",
                 "gunner.tickCount % profile.getScanIntervalTick() == 0",
                 "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
-                "markEngagementNetOnTrack(gunner, vehicle, best, profile);",
                 "gunner.getTrackedTarget()",
                 // 搜索中继指示（2026-09-16）：自身索敌无结果时回退取中继接触（仅瞄准不发射），
                 // 且指示目标必须过 isValidTarget 保护判定（创造保护/target_types 不被绕过）
@@ -126,7 +135,10 @@ class RVP_GunnerBehaviorBaselineTest {
                 "GunnerTargeting.isValidDesignationTarget(gunner, vehicle, designated, profile)");
         assertContainsAll(tickTargeting,
                 "tracked == null || !tracked.isAlive()",
-                "gunner.setTrackedTarget(null);");
+                "return null;");
+        assertOrdered(commitTarget,
+                "markEngagementNetOnTrack(context.gunner(), context.vehicle(), target, context.profile());",
+                "context.gunner().setTrackedTarget(target);");
         assertContainsAll(brain,
                 "target.getId() == gunner.getTrackedTargetId()",
                 "RVP_GunnerEngagementNet.markTracked(");
@@ -268,15 +280,18 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static boolean ensureAirPhase(");
 
         assertOrdered(dispatch,
-                "ACTIONS.movement().stopCommand();",
+                "new RVP_GunnerMovementActions.Command();",
                 "vehicle instanceof FixedWingVehicle",
                 "tickFixedWingDriving",
-                "ACTIONS.movement().apply(gunner, vehicle, command);",
                 "vehicle instanceof RotaryWingVehicle",
                 "tickRotaryDriving",
                 "hasLauncherDeployConfig(vehicle)",
                 "tickLauncherGroundDriving",
-                "tickGroundDriving");
+                "tickGroundDriving",
+                "Channel.MOVEMENT",
+                "Kind.MOVEMENT");
+        assertFalse(dispatch.contains("ACTIONS.movement().apply"),
+                "阶段 C 规划器不得直接应用 ControlUnit");
 
         assertContainsAll(launcher,
                 "if (hasAmmo)",
@@ -344,21 +359,21 @@ class RVP_GunnerBehaviorBaselineTest {
                 "root.setLockedEntity(lockTarget);");
         assertOrdered(countermeasure,
                 "GunnerTargeting.findAmmoThreat",
-                "ACTIONS.defense().fireBaseCountermeasure(gunner, vehicle, threat)",
+                "Kind.BASE_COUNTERMEASURE",
                 "gunner.setCountermeasureCooldown");
         assertContainsAll(smoke,
                 "RVP_EnumCountermeasureType.SMOKE",
                 "% 10 != 0",
                 "scanMissileThreats",
                 "findLasingEnemy",
-                "ACTIONS.defense()",
-                ".fireCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE)",
+                "Kind.RVP_COUNTERMEASURE",
+                "RVP_EnumCountermeasureType.SMOKE",
                 "gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);");
         assertContainsAll(ecm,
                 "WarnType.RADAR_LOCK",
                 "WarnType.MISSILE_LAUNCH",
                 "GunnerTargeting.findAmmoThreat",
-                "ACTIONS.defense().fireActiveEcm(vehicle);");
+                "Kind.ACTIVE_ECM");
         assertContainsAll(defense,
                 "weapons.fireCountermeasure",
                 "RVP_CountermeasureRuntimeManager.fire(vehicle, type);",
@@ -431,15 +446,15 @@ class RVP_GunnerBehaviorBaselineTest {
         assertOrdered(sead,
                 "findRadarLockingEntity(gunner, vehicle)",
                 "findAntiRadiationWeaponIndex(weaponUnit)",
-                ".fireAntiRadiation(gunner, weaponUnit, radarSource)",
-                "fireCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF)",
+                "Kind.FIRE_ANTI_RADIATION",
+                "RVP_EnumCountermeasureType.CHAFF",
                 "gunner.setSeadMode(SEAD_FLY_AWAY);",
                 "gunner.setSeadTotalTicks(gunner.getSeadTotalTicks() + 1);",
                 "gunner.getSeadTotalTicks() > SEAD_TIMEOUT_TICK",
                 "case SEAD_FLY_AWAY:",
                 "case SEAD_REVERSAL:",
                 "case SEAD_LOCK_FIRE:",
-                "tryFireRevenge(gunner, weaponUnit, revengeTarget)");
+                "tryFireRevenge(gunner, weaponUnit, revengeTarget, sink)");
         assertOrdered(armFire,
                 "gunner.getMissileCooldown() > 0",
                 "findAntiRadiationWeaponIndex(weaponUnit)",
@@ -473,7 +488,8 @@ class RVP_GunnerBehaviorBaselineTest {
                 "super.tick();",
                 "if (level().isClientSide())",
                 "getVehicle() instanceof AbstractVehicle vehicle",
-                "GunnerBrain.tick(this, vehicle);",
+                "RVP_GunnerBehaviorManager.INSTANCE.tick(this, vehicle);",
+                "RVP_GunnerBehaviorManager.INSTANCE.exit(this);",
                 "clearDriverRideState();",
                 "setTrackedTarget(null);",
                 "detachedTicks++;",
@@ -547,6 +563,51 @@ class RVP_GunnerBehaviorBaselineTest {
         assertContainsAll(defense, "RVP_CountermeasureRuntimeManager.fire", "RVP_EcmActiveManager.tryFireForVehicle");
         assertContainsAll(supply, "ObfuscationReflectionHelper.findMethod", "rvpWeapon.ywzj_rvp$setReloadTime");
         assertFalse(weapon.contains("getPath()"), "武器动作层不得按武器 ID 路径分种类");
+    }
+
+    @Test
+    void phaseCManagerOwnsContextIntentArbitrationAndCleanup() throws IOException {
+        String manager = read(BEHAVIOR_MANAGER_SOURCE);
+        String context = read(BEHAVIOR_CONTEXT_SOURCE);
+        String intent = read(BEHAVIOR_INTENT_SOURCE);
+        String arbiter = read(INTENT_ARBITER_SOURCE);
+        String entity = read(ENTITY_SOURCE);
+
+        assertContainsAll(context,
+                "public final class RVP_GunnerBehaviorContext",
+                "enum Capability",
+                "DRIVER_AI",
+                "WEAPON_UNIT",
+                "FIXED_WING",
+                "ROTARY_WING",
+                "LAUNCHER",
+                "public RVP_GunnerBehaviorContext withTarget");
+        assertContainsAll(intent,
+                "enum Channel",
+                "TARGET",
+                "MOVEMENT",
+                "FIRE",
+                "RADAR_LOCK",
+                "enum Kind",
+                "FIRE_ENGAGEMENT",
+                "FIRE_ANTI_RADIATION",
+                "transactionId");
+        assertContainsAll(arbiter,
+                "comparingInt(RVP_GunnerBehaviorIntent::priority).reversed()",
+                "thenComparingInt(RVP_GunnerBehaviorIntent::planOrder)",
+                "thenComparing(RVP_GunnerBehaviorIntent::behaviorId)",
+                "putIfAbsent(key, intent)");
+        assertContainsAll(manager,
+                "new RVP_GunnerActionIntentExecutor(RVP_GunnerActionGateway.INSTANCE)",
+                "ensureDriverStopFallback()",
+                "runtime.requiresExit(context)",
+                "runtime.setDebugSnapshot(session.snapshot())",
+                "actions.radar().clearExternalLock(vehicle, weaponUnit)",
+                "actions.guidance().clear(gunner)");
+        assertContainsAll(entity,
+                "private final RVP_GunnerBehaviorRuntime behaviorRuntime",
+                "RVP_GunnerBehaviorManager.INSTANCE.tick(this, vehicle);",
+                "RVP_GunnerBehaviorManager.INSTANCE.exit(this);");
     }
 
     @Test

@@ -3,8 +3,8 @@ package org.ywzj.rvp.entity.gunner.behavior.action;
 /**
  * Gunner 调用本体与 RVP 写操作的统一入口。
  *
- * <p>阶段 B 仍由 {@code GunnerBrain} 决定顺序；它只能通过本入口取得各领域动作适配器，
- * 为阶段 C 的意图仲裁保留稳定执行边界。</p>
+ * <p>阶段 C 由行为管理器在意图仲裁后通过本入口取得各领域动作适配器；{@code GunnerBrain}
+ * 只保留固定计划算法和只读能力查询，不再直接执行游戏写操作。</p>
  */
 public final class RVP_GunnerActionGateway {
 

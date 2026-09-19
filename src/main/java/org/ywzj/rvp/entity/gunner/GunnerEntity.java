@@ -17,7 +17,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Team;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
+import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorRuntime;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerBehaviorManager;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -32,6 +33,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public class GunnerEntity extends Mob {
+    /** 阶段 C 行为实例运行时、计划身份与最近调试快照。 */
+    private final RVP_GunnerBehaviorRuntime behaviorRuntime = new RVP_GunnerBehaviorRuntime();
     private static final EntityDataAccessor<String> PROFILE_ID = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> PROFILE_FACTION = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Integer> TRACKED_TARGET_ID = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.INT);
@@ -136,8 +139,11 @@ public class GunnerEntity extends Mob {
                     repairSeat(vehicle);
                 }
             }
-            GunnerBrain.tick(this, vehicle);
+            // 调用阶段 C 固定计划管理器，统一构建 Context、仲裁 Intent 并进入动作层。
+            RVP_GunnerBehaviorManager.INSTANCE.tick(this, vehicle);
         } else {
+            // 调用行为管理器退出入口，释放上一载具的锁、制导、补给与行为运行时状态。
+            RVP_GunnerBehaviorManager.INSTANCE.exit(this);
             clearDriverRideState();
             setTrackedTarget(null);
             detachedTicks++;
@@ -311,6 +317,17 @@ public class GunnerEntity extends Mob {
         seadImmediateFired = false;
         seadRevengeFired = false;
         seadCooldownTicks = 0;
+    }
+
+    /** 返回持久化所有者 UUID；未绑定所有者时为 null。 */
+    @Nullable
+    public UUID getOwnerUuid() {
+        return ownerUuid;
+    }
+
+    /** 返回本实体拥有的服务端临时行为运行时。 */
+    public RVP_GunnerBehaviorRuntime getBehaviorRuntime() {
+        return behaviorRuntime;
     }
 
     public String getProfileId() {

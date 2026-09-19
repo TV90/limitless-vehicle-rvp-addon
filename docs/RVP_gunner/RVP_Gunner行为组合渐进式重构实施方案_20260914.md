@@ -1,7 +1,7 @@
 # RVP Gunner 行为组合渐进式重构实施方案
 
 > 文档日期：2026-09-14  
-> 状态：实施中；阶段 A、B 已完成，阶段 C～G 尚未实施
+> 状态：实施中；阶段 A、B、C 已完成，阶段 D～G 尚未实施
 > 现状基线：[RVP_Gunner系统架构与数据流_20260905.md](./RVP_Gunner系统架构与数据流_20260905.md)  
 > 实施范围：只修改 `limitless-vehicle-rvp-addon`；本体 `ywzj_vehicle` 仅作只读 API 参照  
 > 本文目标：先把 Gunner 能调用的本体/RVP 动作封装成稳定能力层，再由 Gunner 行为管理器组合目标、攻击、移动、雷达、制导、反制等行为；不同 `gunner/*.json` 通过选择不同组合获得不同战术效果。
@@ -807,6 +807,9 @@ sead_revenge      -> 雷达锁来源，半径 1024，每 10 tick
 完成标准：`GunnerBrain` 不再直接调用 `WeaponUnit.shoot`、直接散写雷达锁/制导状态，也不在多个方法中直接写 `ControlUnit`；动作适配器具备单元测试。
 
 ### 阶段 C：引入 Context、Intent 与固定计划管理器
+
+> 实施状态：已于 2026-09-19 完成；实现结构、验证结果与阶段 D 接手要点见
+> [RVP_Gunner重构进度交接_20260914.md](./RVP_Gunner重构进度交接_20260914.md)。
 
 目标：建立管理器骨架，但先使用代码内固定计划复刻当前调用顺序，Profile 仍使用当前 schema。
 

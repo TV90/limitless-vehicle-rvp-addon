@@ -29,6 +29,13 @@ public class GPSTargetManager {
         return state.snapshot();
     }
 
+    /** 清除任意实体（含 Gunner）拥有的 GPS 目标。 */
+    public static Snapshot clear(Entity entity) {
+        PlayerState state = state(entity.getUUID());
+        state.clearPoints();
+        return state.snapshot();
+    }
+
     public static Snapshot set(ServerPlayer player, ResourceLocation dimension, Vec3 pos) {
         PlayerState state = state(player.getUUID());
         state.setSingle(new GPSTarget(dimension, pos));

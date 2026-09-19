@@ -172,6 +172,17 @@ public final class RVP_GunnerRadarActions {
         return RVP_GunnerActionResult.EXECUTED;
     }
 
+    /** Profile 切换或离座时撤销本 Gunner 所在发射链的外置雷达锁租约。 */
+    public RVP_GunnerActionResult clearExternalLock(AbstractVehicle vehicle,
+                                                    @Nullable WeaponUnit weaponUnit) {
+        if (vehicle == null || weaponUnit == null || vehicle.level().isClientSide()) {
+            return RVP_GunnerActionResult.INVALID;
+        }
+        // 调用既有外置雷达控制器的退出清理入口，清除中继锁、请求表和搜索接触。
+        GunnerExternalRadarController.clearForExit(vehicle, weaponUnit);
+        return RVP_GunnerActionResult.EXECUTED;
+    }
+
     @Nullable
     private static RadarUnit prepareLockRadar(WeaponUnit weaponUnit) {
         for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {

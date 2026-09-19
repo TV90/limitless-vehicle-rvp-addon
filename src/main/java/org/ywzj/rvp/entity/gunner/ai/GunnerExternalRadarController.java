@@ -166,6 +166,14 @@ public final class GunnerExternalRadarController {
         return entity != null && entity.isAlive() ? entity : null;
     }
 
+    /** 行为计划退出时清除发射架关联的外置锁定与搜索中继接触。 */
+    public static void clearForExit(AbstractVehicle launcher, WeaponUnit weaponUnit) {
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        AbstractVehicle relayVehicle = RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher).orElse(null);
+        clearExternalLock(root, relayVehicle);
+        recordRelaySearchContact(launcher, null);
+    }
+
     private static void turnOnRelayRadars(AbstractVehicle relayVehicle) {
         if (relayVehicle.isDestroyed()) {
             return;

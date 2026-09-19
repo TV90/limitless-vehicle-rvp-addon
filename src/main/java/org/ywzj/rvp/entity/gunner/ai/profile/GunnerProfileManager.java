@@ -23,6 +23,8 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
     public static final GunnerProfileManager INSTANCE = new GunnerProfileManager();
 
     private Map<ResourceLocation, GunnerProfile> profiles = Map.of(DEFAULT_PROFILE_ID, DEFAULT_PROFILE);
+    /** 已成功应用的 Profile 资源加载代次，用于触发行为计划退出清理。 */
+    private long generation;
 
     @Override
     protected Map<ResourceLocation, JsonElement> prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
@@ -50,6 +52,7 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
             } catch (Exception ignored) {}
         });
         profiles = Map.copyOf(loaded);
+        generation++;
     }
 
     public GunnerProfile getProfile(ResourceLocation id) {
@@ -78,6 +81,11 @@ public class GunnerProfileManager extends SimplePreparableReloadListener<Map<Res
             }
         }
         return parsed;
+    }
+
+    /** 返回当前 Profile 资源加载代次。 */
+    public long getGeneration() {
+        return generation;
     }
 
     @SubscribeEvent

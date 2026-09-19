@@ -3,8 +3,7 @@ package org.ywzj.rvp.entity.gunner.behavior.action;
 /**
  * Gunner 动作适配器的统一执行结果。
  *
- * <p>阶段 B 尚未引入意图仲裁，因此当前结果用于把“已提交”“门控拒绝”和“不支持”显式传回
- * 现行 {@code GunnerBrain}。后续行为管理器可以直接复用这些结果推进运行时状态。</p>
+ * <p>阶段 C 的行为管理器将仲裁拒绝和动作层结果统一送回意图提交者，用于可靠推进运行时状态。</p>
  */
 public enum RVP_GunnerActionResult {
     /** 动作已由本适配器完整执行。 */
@@ -18,5 +17,7 @@ public enum RVP_GunnerActionResult {
     /** 输入对象已失效或不完整。 */
     INVALID,
     /** 提交者不是当前载具司机，移动动作被拒绝。 */
-    NOT_DRIVER
+    NOT_DRIVER,
+    /** 同通道资源已被更高优先级或更早固定计划意图占用。 */
+    OCCUPIED
 }

@@ -29,13 +29,15 @@ import org.ywzj.rvp.countermeasure.RVP_SmokeEntity;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionGateway;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionResult;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerMovementActions;
+import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorContext;
+import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorIntent;
+import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerIntentSink;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
-import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
@@ -114,56 +116,76 @@ public final class GunnerBrain {
     /** SEAD 雷达锁定检测半径（格）：扫描该范围内锁定本机的敌方雷达载具。 */
     private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;
 
-    public static void tick(GunnerEntity gunner, AbstractVehicle vehicle) {
-        gunner.tickCooldowns();
-        GunnerProfile profile = GunnerProfileManager.INSTANCE.getProfile(
-                GunnerProfileManager.INSTANCE.normalizeProfileId(gunner.getProfileId())
-        );
-        PartUnit<?> seatUnit = vehicle.getOwnOperatorUnit(gunner);
-        boolean driver = isDriver(vehicle, gunner);
-        WeaponUnit weaponUnit = resolveWeaponUnit(vehicle, seatUnit, driver);
-        Entity target = tickTargeting(gunner, vehicle, weaponUnit, profile);
+    /** 固定计划 TARGET 阶段：运行现有索敌算法并提交唯一目标候选。 */
+    public static void planTarget(RVP_GunnerBehaviorContext context, RVP_GunnerIntentSink sink) {
+        Entity target = selectTarget(context.gunner(), context.vehicle(), context.weaponUnit(), context.profile());
+        sink.submit(intent("fixed_targeting", "target", 100, 500,
+                RVP_GunnerBehaviorIntent.Channel.TARGET, RVP_GunnerBehaviorIntent.Kind.TARGET,
+                target, null, null, false, "", null));
+    }
 
-        boolean driverAi = driver && profile.isAllowDrive();
+    /** 固定计划支持阶段：按阶段 A 顺序提交补给、反制、雷达与制导维护意图。 */
+    public static void planSupport(RVP_GunnerBehaviorContext context, RVP_GunnerIntentSink sink) {
+        GunnerEntity gunner = context.gunner();
+        AbstractVehicle vehicle = context.vehicle();
+        WeaponUnit weaponUnit = context.weaponUnit();
+        Entity target = context.target();
+        GunnerProfile profile = context.profile();
+        boolean driverAi = context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI);
         if (driverAi) {
-            // 调用补给动作适配器，集中处理首次接管、能源和武器补给。
-            ACTIONS.supply().refillOnDriverEnter(gunner, vehicle);
-            ACTIONS.supply().sustainDriverAmmo(gunner, vehicle);
+            sink.submit(intent("driver_supply", "vehicle", 200, 500,
+                    RVP_GunnerBehaviorIntent.Channel.SUPPLY,
+                    RVP_GunnerBehaviorIntent.Kind.SUPPLY_MAINTAIN,
+                    null, null, null, true, "", null));
         } else {
-            // 调用补给动作适配器，清理失去司机资格后的无限弹药计时。
-            ACTIONS.supply().clearDriverAmmoTimers(vehicle);
-            if (vehicle.getDriver() == gunner) {
-                // 提交显式停车命令，避免 allow_drive 关闭后遗留上 tick 控制输入。
-                ACTIONS.movement().apply(gunner, vehicle, ACTIONS.movement().stopCommand());
-            }
+            sink.submit(intent("driver_supply", "vehicle", 200, 500,
+                    RVP_GunnerBehaviorIntent.Channel.SUPPLY,
+                    RVP_GunnerBehaviorIntent.Kind.SUPPLY_CLEAR,
+                    null, null, null, false, "", null));
             gunner.clearDriverRideState();
         }
 
-        tickCountermeasure(gunner, vehicle, profile);
-        tickEcmActive(gunner, vehicle);
+        tickCountermeasure(gunner, vehicle, profile, sink);
+        tickEcmActive(gunner, vehicle, sink);
         // 地面载具被红外导弹锁定：抛烟雾并开进烟雾停车（仅司机 AI）
         if (driverAi) {
-            tickSmokeEvasion(gunner, vehicle);
+            tickSmokeEvasion(gunner, vehicle, sink);
         }
-        // 调用雷达动作适配器，维持本车和外置雷达锁定边界。
-        ACTIONS.radar().maintainLocalLock(vehicle, weaponUnit, target);
-        ACTIONS.radar().maintainExternalLock(gunner, vehicle, weaponUnit, target, driverAi);
-        // 调用制导动作适配器，维持 GPS、照射及在途 HITL 控制源。
-        ACTIONS.guidance().maintain(gunner, vehicle, weaponUnit, target);
+        sink.submit(intent("ownship_radar", "local", 500, 500,
+                RVP_GunnerBehaviorIntent.Channel.RADAR_LOCK,
+                RVP_GunnerBehaviorIntent.Kind.LOCAL_RADAR,
+                target, null, null, driverAi, "", null));
+        sink.submit(intent("external_radar", "external", 510, 500,
+                RVP_GunnerBehaviorIntent.Channel.RADAR_LOCK,
+                RVP_GunnerBehaviorIntent.Kind.EXTERNAL_RADAR,
+                target, null, null, driverAi, "", null));
+        sink.submit(intent("guided_weapon_support", "operator", 520, 500,
+                RVP_GunnerBehaviorIntent.Channel.GUIDANCE_MAINTAIN,
+                RVP_GunnerBehaviorIntent.Kind.GUIDANCE_MAINTAIN,
+                target, null, null, driverAi, "", null));
+    }
 
+    /** 固定计划战术阶段：SEAD 优先，否则提交唯一常规移动与普通交战意图。 */
+    public static void planTactics(RVP_GunnerBehaviorContext context, RVP_GunnerIntentSink sink) {
+        GunnerEntity gunner = context.gunner();
+        AbstractVehicle vehicle = context.vehicle();
+        WeaponUnit weaponUnit = context.weaponUnit();
+        Entity target = context.target();
+        GunnerProfile profile = context.profile();
+        boolean driverAi = context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI);
         boolean allowFire = true;
         // SEAD 复仇：被雷达锁定且带反辐射弹时，gunner 自行驾驶飞机完成"逃→回头→锁&打"。
         // 返回 true 表示本 tick 已由 SEAD 接管（含驾驶与复仇开火），跳过常规 driving/combat。
         boolean seadHandled = false;
         if (driverAi) {
-            seadHandled = tickSead(gunner, vehicle, weaponUnit, profile);
+            seadHandled = tickSead(gunner, vehicle, weaponUnit, profile, sink);
             if (!seadHandled) {
-                allowFire = tickDriving(gunner, vehicle, target, profile);
+                allowFire = tickDriving(gunner, vehicle, target, profile, sink);
             }
         }
         if (!seadHandled) {
             if (weaponUnit != null && target != null && allowFire) {
-                tickCombat(gunner, weaponUnit, target, profile);
+                tickCombat(gunner, weaponUnit, target, profile, sink);
             } else {
                 if (weaponUnit != null && target == null) {
                     // gunnerlock 诊断：索敌无目标是"只锁定（中继）/不攻击"的直接信号——
@@ -177,21 +199,17 @@ public final class GunnerBrain {
                                         + " difficulty=" + vehicle.level().getDifficulty());
                     }
                 }
-                gunner.setControlledWeaponIndex(-1);
+                sink.submit(intent("weapon_engagement", "controlled_weapon", 900, 0,
+                        RVP_GunnerBehaviorIntent.Channel.SYNC,
+                        RVP_GunnerBehaviorIntent.Kind.CLEAR_CONTROLLED_WEAPON,
+                        null, null, null, false, "", null));
             }
-        }
-
-        // 周期监控（仅客户端有效）。必须按 dist 隔离调用：该类引用了 Minecraft/LocalPlayer 等
-        // 客户端专属类，服务端若加载该类会在类加载验证阶段连带解析这些类并被 RuntimeDistCleaner 拦截崩溃。
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            RVP_GunnerDebugMonitor.onTick(gunner, vehicle, weaponUnit, target);
         }
     }
 
     @Nullable
-    private static Entity tickTargeting(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, GunnerProfile profile) {
+    private static Entity selectTarget(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable WeaponUnit weaponUnit, GunnerProfile profile) {
         if (weaponUnit == null) {
-            gunner.setTrackedTarget(null);
             return null;
         }
 
@@ -199,20 +217,19 @@ public final class GunnerBrain {
         AmmoEntity ciwsTarget = GunnerTargeting.findCiwsTarget(gunner, vehicle);
         if (ciwsTarget != null) {
             // 调用本类组网记账入口仅处理目标切换，避免 CIWS 每 tick 重扫时反复延长软窗口。
-            markEngagementNetOnTrack(gunner, vehicle, ciwsTarget, profile);
-            gunner.setTrackedTarget(ciwsTarget);
             return ciwsTarget;
         }
 
+        Entity tracked;
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
             Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
             if (best != null) {
-                // 调用本类组网记账入口覆盖新目标等待持锁/冷却的窗口。
-                markEngagementNetOnTrack(gunner, vehicle, best, profile);
+                return best;
             }
-            gunner.setTrackedTarget(best);
+            tracked = null;
+        } else {
+            tracked = gunner.getTrackedTarget();
         }
-        Entity tracked = gunner.getTrackedTarget();
         if (tracked == null || !tracked.isAlive()) {
             // 搜索中继指示（2026-09-16 搜索中继定版）：自身索敌（RCS 门控）无结果时，
             // 回退取搜索中继（如 96L6）的当前接触作为 trackedTarget——仅驱动炮口转向
@@ -224,13 +241,19 @@ public final class GunnerBrain {
                     // 指示目标必须过与索敌相同的保护判定（2026-09-16 修复）：搜索中继接触链
                     // 不做创造过滤，直接采纳会让创造+非困难玩家经本车落锁被攻击
                     && GunnerTargeting.isValidDesignationTarget(gunner, vehicle, designated, profile)) {
-                gunner.setTrackedTarget(designated);
                 return designated;
             }
-            gunner.setTrackedTarget(null);
             return null;
         }
         return tracked;
+    }
+
+    /** 管理器执行 TARGET 胜者时调用，集中推进组网记账与同步目标。 */
+    public static void commitTarget(RVP_GunnerBehaviorContext context, @Nullable Entity target) {
+        if (target != null) {
+            markEngagementNetOnTrack(context.gunner(), context.vehicle(), target, context.profile());
+        }
+        context.gunner().setTrackedTarget(target);
     }
 
     /**
@@ -269,37 +292,35 @@ public final class GunnerBrain {
         return agl >= 50.0;
     }
 
-    private static void tickCombat(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target, GunnerProfile profile) {
+    private static void tickCombat(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target, GunnerProfile profile,
+                                   RVP_GunnerIntentSink sink) {
         AbstractVehicle vehicle = weaponUnit.getVehicle();
-        boolean launcher = vehicle != null && hasLauncherDeployConfig(vehicle);
-        // 调用武器动作适配器，原子执行瞄准、选弹、锁定/制导准备、发射和冷却推进。
-        ACTIONS.weapons().engage(gunner, weaponUnit, target, profile, launcher);
+        String transactionId = "engage:" + gunner.tickCount + ":" + target.getId();
+        // 提交原子交战意图；管理器胜者执行时仍由武器动作适配器完成瞄准、锁定、制导与发射。
+        sink.submit(intent("weapon_engagement", "weapon", 900, 500,
+                RVP_GunnerBehaviorIntent.Channel.FIRE,
+                RVP_GunnerBehaviorIntent.Kind.FIRE_ENGAGEMENT,
+                target, null, null, false, transactionId, null));
     }
 
-    private static boolean tickDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target, GunnerProfile profile) {
-        RVP_GunnerMovementActions.Command command = ACTIONS.movement().stopCommand();
+    private static boolean tickDriving(GunnerEntity gunner, AbstractVehicle vehicle, @Nullable Entity target,
+                                       GunnerProfile profile, RVP_GunnerIntentSink sink) {
+        RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
         boolean allowFire = true;
         if (vehicle instanceof FixedWingVehicle fixedWingVehicle) {
             allowFire = tickFixedWingDriving(gunner, fixedWingVehicle, target, profile, command);
-            // 调用移动动作适配器，将固定翼算法输出一次性写入本体 ControlUnit。
-            ACTIONS.movement().apply(gunner, vehicle, command);
-            return allowFire;
-        }
-        if (vehicle instanceof RotaryWingVehicle rotaryWingVehicle) {
+        } else if (vehicle instanceof RotaryWingVehicle rotaryWingVehicle) {
             allowFire = tickRotaryDriving(gunner, rotaryWingVehicle, target, profile, command);
-            // 调用移动动作适配器，将旋翼算法输出一次性写入本体 ControlUnit。
-            ACTIONS.movement().apply(gunner, vehicle, command);
-            return allowFire;
-        }
-        if (hasLauncherDeployConfig(vehicle)) {
+        } else if (hasLauncherDeployConfig(vehicle)) {
             tickLauncherGroundDriving(gunner, vehicle, target, profile, command);
-            // 调用移动动作适配器，将发射架停车或转移命令一次性写入本体 ControlUnit。
-            ACTIONS.movement().apply(gunner, vehicle, command);
-            return true;
+        } else {
+            tickGroundDriving(gunner, vehicle, target, profile, command);
         }
-        tickGroundDriving(gunner, vehicle, target, profile, command);
-        // 调用移动动作适配器，将普通地面算法输出一次性写入本体 ControlUnit。
-        ACTIONS.movement().apply(gunner, vehicle, command);
+        // 所有载具算法只产生 Command；管理器保证同 tick 仅一个 MOVEMENT 胜者进入动作适配器。
+        sink.submit(intent("legacy_movement", "vehicle", 800, 500,
+                RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
+                RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
+                target, command, null, true, "", null));
         return allowFire;
     }
 
@@ -486,7 +507,7 @@ public final class GunnerBrain {
      * 并进入"开进烟雾停车"状态（时长略大于烟雾存活）：
      * 1) 被红外族（IR/AIR）导弹锁定跟踪；2) 100 格内出现敌对阵营导弹；3) 被敌对玩家激光照射。
      */
-    private static void tickSmokeEvasion(GunnerEntity gunner, AbstractVehicle vehicle) {
+    private static void tickSmokeEvasion(GunnerEntity gunner, AbstractVehicle vehicle, RVP_GunnerIntentSink sink) {
         if (vehicle.level().isClientSide()) {
             return;
         }
@@ -529,15 +550,18 @@ public final class GunnerBrain {
                     threat == null ? "null" : threat.getActiveGuidanceType(), hasSmoke);
         }
         // 调用防御动作适配器，将 Smoke 请求交给 RVP 服务端状态机权威校验。
-        RVP_GunnerActionResult fireResult = ACTIONS.defense()
-                .fireCountermeasure(vehicle, RVP_EnumCountermeasureType.SMOKE);
-        if (fireResult != RVP_GunnerActionResult.DISPATCHED) {
-            return;
-        }
-        gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);
-        if (RVP_DebugFlags.GUNNER.isEnabled()) {
-            LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
-        }
+        sink.submit(intent("smoke_evasion", "countermeasure:SMOKE", 420, 850,
+                RVP_GunnerBehaviorIntent.Channel.COUNTERMEASURE,
+                RVP_GunnerBehaviorIntent.Kind.RVP_COUNTERMEASURE,
+                threat, null, RVP_EnumCountermeasureType.SMOKE, true, "",
+                result -> {
+                    if (result == RVP_GunnerActionResult.DISPATCHED) {
+                        gunner.setSmokeHoldTicks(SMOKE_HOLD_TICKS);
+                        if (RVP_DebugFlags.GUNNER.isEnabled()) {
+                            LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
+                        }
+                    }
+                }));
     }
 
     /** 单次遍历的导弹威胁扫描结果。 */
@@ -1019,7 +1043,8 @@ public final class GunnerBrain {
         return desiredPitch;
     }
 
-    private static void tickCountermeasure(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile) {
+    private static void tickCountermeasure(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile,
+                                           RVP_GunnerIntentSink sink) {
         if (gunner.getCountermeasureCooldown() > 0) {
             return;
         }
@@ -1029,10 +1054,15 @@ public final class GunnerBrain {
         }
 
         // 调用防御动作适配器，使本体式反制武器也经过统一瞄准/发射边界。
-        RVP_GunnerActionResult result = ACTIONS.defense().fireBaseCountermeasure(gunner, vehicle, threat);
-        if (result == RVP_GunnerActionResult.DISPATCHED) {
-            gunner.setCountermeasureCooldown(profile.getCountermeasureCooldownTick());
-        }
+        sink.submit(intent("base_countermeasure", "countermeasure:BASE", 300, 800,
+                RVP_GunnerBehaviorIntent.Channel.COUNTERMEASURE,
+                RVP_GunnerBehaviorIntent.Kind.BASE_COUNTERMEASURE,
+                threat, null, null, false, "",
+                result -> {
+                    if (result == RVP_GunnerActionResult.DISPATCHED) {
+                        gunner.setCountermeasureCooldown(profile.getCountermeasureCooldownTick());
+                    }
+                }));
     }
 
     /**
@@ -1072,7 +1102,7 @@ public final class GunnerBrain {
         }
     }
 
-    private static void tickEcmActive(GunnerEntity gunner, AbstractVehicle vehicle) {
+    private static void tickEcmActive(GunnerEntity gunner, AbstractVehicle vehicle, RVP_GunnerIntentSink sink) {
         if (vehicle == null || vehicle.level().isClientSide()) {
             return;
         }
@@ -1149,9 +1179,12 @@ public final class GunnerBrain {
             return;
         }
         rvpEcmDbg(vehicle, "触发释放主动ECM");
-        // 调用防御动作适配器，由 RVP 服务端 ECM 管理器校验冷却并返回真实结果。
+        // 提交主动 ECM 意图，由管理器去重并调用防御动作适配器。
         if (vehicle.level() instanceof ServerLevel) {
-            ACTIONS.defense().fireActiveEcm(vehicle);
+            sink.submit(intent("active_ecm", "vehicle", 400, 800,
+                    RVP_GunnerBehaviorIntent.Channel.ECM,
+                    RVP_GunnerBehaviorIntent.Kind.ACTIVE_ECM,
+                    null, null, null, false, "", null));
         }
     }
 
@@ -1166,7 +1199,8 @@ public final class GunnerBrain {
      * <p>TPS 控制：触发检测按 {@link #SEAD_THREAT_SCAN_INTERVAL} 节流，不逐 tick 全量遍历；
      * 复仇期间复用已存储的复仇目标 id，不重复扫描。</p>
      */
-    private static boolean tickSead(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
+    private static boolean tickSead(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                    GunnerProfile profile, RVP_GunnerIntentSink sink) {
         if (!(vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle)) {
             return false;
         }
@@ -1183,14 +1217,18 @@ public final class GunnerBrain {
             }
             // 入口判定：若锁定我的雷达已在反辐射弹射击门控内，立即先射 1 枚（不等），再进复仇
             // 调用武器动作适配器，原子执行 AntiRadiation 锁定准备、制导准备、发射与冷却。
-            RVP_GunnerActionResult immediate = ACTIONS.weapons()
-                    .fireAntiRadiation(gunner, weaponUnit, radarSource);
-            if (immediate == RVP_GunnerActionResult.DISPATCHED) {
-                gunner.setSeadImmediateFired(true);
-            }
+            String transactionId = "sead-entry:" + gunner.tickCount + ":" + radarSource.getId();
+            sink.submit(intent("sead_revenge", "weapon", 700, 950,
+                    RVP_GunnerBehaviorIntent.Channel.FIRE,
+                    RVP_GunnerBehaviorIntent.Kind.FIRE_ANTI_RADIATION,
+                    radarSource, null, null, true, transactionId,
+                    result -> gunner.setSeadImmediateFired(result == RVP_GunnerActionResult.DISPATCHED)));
             // 抛干扰物（箔条对抗雷达锁定）并进入飞离阶段
             // 调用防御动作适配器，将 Chaff 请求交给 RVP 服务端状态机。
-            ACTIONS.defense().fireCountermeasure(vehicle, RVP_EnumCountermeasureType.CHAFF);
+            sink.submit(intent("sead_revenge", "countermeasure:CHAFF", 710, 950,
+                    RVP_GunnerBehaviorIntent.Channel.COUNTERMEASURE,
+                    RVP_GunnerBehaviorIntent.Kind.RVP_COUNTERMEASURE,
+                    radarSource, null, RVP_EnumCountermeasureType.CHAFF, true, "", null));
             gunner.setSeadMode(SEAD_FLY_AWAY);
             gunner.setSeadTicks(SEAD_FLY_AWAY_TICK);
             gunner.setSeadTotalTicks(0);
@@ -1216,7 +1254,7 @@ public final class GunnerBrain {
         switch (mode) {
             case SEAD_FLY_AWAY:
                 // 飞离：背对锁定者拉开距离，跑完时长进入回旋
-                tickSeadFly(gunner, vehicle, revengeTarget, false);
+                tickSeadFly(gunner, vehicle, revengeTarget, false, sink);
                 if (ticks <= 0) {
                     gunner.setSeadMode(SEAD_REVERSAL);
                     gunner.setSeadTicks(SEAD_REVERSAL_TICK);
@@ -1225,9 +1263,8 @@ public final class GunnerBrain {
             case SEAD_REVERSAL:
             case SEAD_LOCK_FIRE:
                 // 回旋/锁定发射：转向目标并每 tick 检查攻击门控，门控通过立即发射复仇一发
-                tickSeadFly(gunner, vehicle, revengeTarget, true);
-                if (tryFireRevenge(gunner, weaponUnit, revengeTarget)) {
-                    clearSead(gunner);
+                tickSeadFly(gunner, vehicle, revengeTarget, true, sink);
+                if (tryFireRevenge(gunner, weaponUnit, revengeTarget, sink)) {
                     return true;
                 }
                 if (mode == SEAD_REVERSAL && ticks <= 0) {
@@ -1245,8 +1282,9 @@ public final class GunnerBrain {
     }
 
     /** SEAD 复仇阶段驾驶：towardTarget=true 转向目标，false 背对目标飞离（含高度保持）。 */
-    private static void tickSeadFly(GunnerEntity gunner, AbstractVehicle vehicle, Entity target, boolean towardTarget) {
-        RVP_GunnerMovementActions.Command command = ACTIONS.movement().stopCommand();
+    private static void tickSeadFly(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
+                                    boolean towardTarget, RVP_GunnerIntentSink sink) {
+        RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
         Vec3 aimPoint;
         if (towardTarget) {
             aimPoint = target.position().add(0, 12, 0);
@@ -1281,8 +1319,11 @@ public final class GunnerBrain {
                 command.down = true;
             }
         }
-        // 调用移动动作适配器，将本 tick SEAD 飞行动作一次性写入本体 ControlUnit。
-        ACTIONS.movement().apply(gunner, vehicle, command);
+        // 提交高优先级 SEAD 移动意图；管理器保证它与常规驾驶不会同时写 ControlUnit。
+        sink.submit(intent("sead_revenge", "vehicle", 720, 950,
+                RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
+                RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
+                target, command, null, true, "", null));
     }
 
     /**
@@ -1348,16 +1389,23 @@ public final class GunnerBrain {
     }
 
     /** SEAD 复仇发射判定：复仇一发尚未打出、冷却结束且门控通过时发射。 */
-    private static boolean tryFireRevenge(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target) {
+    private static boolean tryFireRevenge(GunnerEntity gunner, WeaponUnit weaponUnit, Entity target,
+                                          RVP_GunnerIntentSink sink) {
         if (gunner.isSeadRevengeFired()) {
             return false;
         }
-        // 调用武器动作适配器，仅在 AntiRadiation 事务已提交时推进复仇状态。
-        if (ACTIONS.weapons().fireAntiRadiation(gunner, weaponUnit, target)
-                == RVP_GunnerActionResult.DISPATCHED) {
-            gunner.setSeadRevengeFired(true);
-            return true;
-        }
+        String transactionId = "sead-revenge:" + gunner.tickCount + ":" + target.getId();
+        // 只有管理器实际执行且动作层返回 DISPATCHED 时才推进“已发射”并退出 SEAD。
+        sink.submit(intent("sead_revenge", "weapon", 730, 950,
+                RVP_GunnerBehaviorIntent.Channel.FIRE,
+                RVP_GunnerBehaviorIntent.Kind.FIRE_ANTI_RADIATION,
+                target, null, null, true, transactionId,
+                result -> {
+                    if (result == RVP_GunnerActionResult.DISPATCHED) {
+                        gunner.setSeadRevengeFired(true);
+                        clearSead(gunner);
+                    }
+                }));
         return false;
     }
 
@@ -1380,7 +1428,8 @@ public final class GunnerBrain {
         return ACTIONS.weapons().findWeaponIndex(weaponUnit, target, null);
     }
 
-    private static boolean isDriver(AbstractVehicle vehicle, GunnerEntity gunner) {
+    /** 供单 tick Context 解析司机能力，并兼容本体 driver 缓存尚未更新的座位表。 */
+    public static boolean isDriverSeat(AbstractVehicle vehicle, GunnerEntity gunner) {
         if (vehicle.getDriver() == gunner) {
             return true;
         }
@@ -1392,8 +1441,11 @@ public final class GunnerBrain {
         return false;
     }
 
+    /** 供单 tick Context 解析 Gunner 当前实际可控制的武器站。 */
     @Nullable
-    private static WeaponUnit resolveWeaponUnit(AbstractVehicle vehicle, @Nullable PartUnit<?> seatUnit, boolean driver) {
+    public static WeaponUnit resolveControlledWeaponUnit(AbstractVehicle vehicle,
+                                                         @Nullable PartUnit<?> seatUnit,
+                                                         boolean driver) {
         if (seatUnit instanceof WeaponUnit weaponUnit) {
             return weaponUnit;
         }
@@ -1406,5 +1458,19 @@ public final class GunnerBrain {
             }
         }
         return null;
+    }
+
+    /** 统一创建带完整仲裁元数据的固定计划意图。 */
+    private static RVP_GunnerBehaviorIntent intent(String behaviorId, String resourceKey,
+                                                   int planOrder, int priority,
+                                                   RVP_GunnerBehaviorIntent.Channel channel,
+                                                   RVP_GunnerBehaviorIntent.Kind kind,
+                                                   @Nullable Entity target,
+                                                   @Nullable RVP_GunnerMovementActions.Command movement,
+                                                   @Nullable RVP_EnumCountermeasureType countermeasureType,
+                                                   boolean driverAi, String transactionId,
+                                                   @Nullable RVP_GunnerBehaviorIntent.ResultHandler resultHandler) {
+        return RVP_GunnerBehaviorIntent.of(behaviorId, resourceKey, planOrder, priority, channel, kind,
+                target, movement, countermeasureType, driverAi, transactionId, resultHandler);
     }
 }
