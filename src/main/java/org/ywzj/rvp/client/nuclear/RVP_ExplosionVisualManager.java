@@ -50,6 +50,10 @@ import java.util.Random;
 /**
  * Standalone shell and bomb visual fallback adapted from HBM NTM Rebirth's
  * explosionSmall/explosionLarge behavior. It performs no damage or world mutation.
+ *
+ * <p>来源与许可：移植自 HBM's Nuclear Tech Mod: Rebirth（LGPL-3.0），版权归其原作者及
+ * 贡献者所有；并入本项目后随项目以 GPL-3.0 再分发（LGPLv3 §3 许可的合并方式，
+ * 详见项目根 {@code THIRD_PARTY_NOTICES.md}）。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_ExplosionVisualManager {
@@ -153,6 +157,27 @@ public final class RVP_ExplosionVisualManager {
         EFFECTS.clear();
         RENDER_CLOUDS.clear();
         activeLevel = nextLevel;
+    }
+
+    /**
+     * 把全部内置 HBM 爆炸特效重画进本体热成像 thermal_buffer（2026-09-20 用户需求，仅
+     * 热成像激活时由 {@code RVP_ThermalParticleChannel} 在 AFTER_PARTICLES 热成像窗口调用，
+     * 调用时热缓冲已绑定为渲染目标）。
+     *
+     * <p>渲染完全自包含：{@link #render} 内部自行扩展投影矩阵、pushPose+setIdentity+相机旋转
+     * 的视图语义（与进入时 ModelViewStack 无关）、收尾完整还原全部状态——热缓冲绑定时重调
+     * 即写入：灼热碎块/烟云 alpha 混合 → 白热显形，冲击波 additive → 白热亮环，深度测试沿用
+     * 主画面拷贝深度，遮挡表现与主画面一致。</p>
+     */
+    public static void renderThermal(RenderLevelStageEvent event) {
+        if (EFFECTS.isEmpty()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return;
+        }
+        render(event, minecraft);
     }
 
     private static void render(RenderLevelStageEvent event, Minecraft minecraft) {

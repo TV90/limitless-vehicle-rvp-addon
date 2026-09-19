@@ -4,15 +4,21 @@
 > 来源仓库：`D:\ywzj\ywzj\HBM-NTM-Rebirth-main\HBM-NTM-Rebirth-main`  
 > 上游项目：`10MeV/HBM-NTM-Rebirth`  
 > 上游声明：`LGPL-3.0-only`，仓库同时提供 `LICENSE` 与 `LICENSE.LESSER`  
-> 当前策略：下列资产仅作为功能开发和视觉对照用临时资产，全部标记为 `待替换`。
+> ~~当前策略：下列资产仅作为功能开发和视觉对照用临时资产，全部标记为 `待替换`。~~
+> **策略更新（2026-09-20 用户定版）：不再替换**——RVP 整体按 GPL-3.0 分发（`gradle.properties`
+> 已改为 GPL-3.0，与根目录 LICENSE 一致），LGPL-3.0 资产/代码并入 GPL-3.0 项目随项目再分发
+> 是 LGPLv3 §3 明确许可的合并方式。来源与许可声明见项目根 `THIRD_PARTY_NOTICES.md`，
+> 下列资产继续保留，状态行仅作历史记录。
 
 ## 1. 许可证状态
 
 - HBM 上游 `gradle.properties` 声明 `mod_license=LGPL-3.0-only`。
 - HBM 上游 `README.md` 明确说明项目按 LGPLv3 分发，并以 `LICENSE`、`LICENSE.LESSER` 为准。
-- RVP 当前 `gradle.properties` 声明 `mod_license=All Rights Reserved`，但仓库根目录 `LICENSE` 内容是 GPLv3，二者存在冲突。
-- 在公开发布含下列资产的 RVP 构建前，必须解决 RVP 自身许可证声明冲突，并保留 HBM 来源、许可证文本和修改说明。
-- 最终目标是用自制或单独授权资产逐项替换；替换后应保留旧哈希记录，把状态改为 `已替换` 并填写新资产来源。
+- ~~RVP 当前 `gradle.properties` 声明 `mod_license=All Rights Reserved`，但仓库根目录 `LICENSE` 内容是 GPLv3，二者存在冲突。~~
+  **已解决（2026-09-20）**：`mod_license` 改为 `GNU General Public License v3.0`。
+- 合规要求（继续生效）：保留 HBM 来源、许可证声明与修改说明——已由 `THIRD_PARTY_NOTICES.md`
+  与各移植类头部声明满足；flare.png 于 2026-09-20 在本项目内补全 alpha 通道（修改说明见
+  `scripts/fix_flare_alpha_20260920.py` 与 `docs/调试与修复规范.md` §4）。
 
 ## 2. 已复制资产
 

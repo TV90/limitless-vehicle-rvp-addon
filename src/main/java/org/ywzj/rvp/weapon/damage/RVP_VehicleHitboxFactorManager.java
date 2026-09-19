@@ -4,15 +4,14 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockBone;
 import com.github.mcmodderanchor.simplebedrockmodel.v1.common.model.BedrockModel;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
+import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -376,16 +375,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         syncBoneModuleState(vehicle);
         if (destroyedEra) {
+            // 命中点优先（ERA 块在命中位置爆），无命中点回退载具包围盒中心
             Vec3 hitPoint = result.hitPoint() != null ? result.hitPoint() : vehicle.getBoundingBox().getCenter();
             float explosionScale = result.explosion() > 0f ? result.explosion() : 1f;
-            serverLevel.sendParticles(ParticleTypes.EXPLOSION, hitPoint.x, hitPoint.y, hitPoint.z,
-                    1, 0.02, 0.02, 0.02, 0.0);
-            serverLevel.sendParticles(ParticleTypes.SMOKE, hitPoint.x, hitPoint.y, hitPoint.z,
-                    Math.max(6, Math.round(8f * explosionScale)),
-                    0.18 * explosionScale, 0.12 * explosionScale, 0.18 * explosionScale, 0.01);
-            serverLevel.playSound(null, hitPoint.x, hitPoint.y, hitPoint.z,
-                    SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
-                    Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
+            spawnMchrEraExplosion(serverLevel, hitPoint, explosionScale);
         }
         return true;
     }
@@ -513,7 +506,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             if (destroyedAny) {
                 float explosionScale = (eCfg != null && eCfg.explosion() > 0f) ? eCfg.explosion() : 1f;
-                spawnEraEffect(serverLevel, vehicle, boneName, explosionScale);
+                spawnEraEffect(serverLevel, vehicle, cfg, boneName, explosionScale);
                 destroyed++;
             }
         }
@@ -665,18 +658,47 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return resolved;
     }
 
-    /** 播放松散 ERA 特效。 */
+    /**
+     * 播放 ERA 模块爆炸特效（2026-09-19 用户定版：MCHR 爆炸特效，烟雾规模对齐
+     * 武器爆炸半径 3 × 模块 {@code explosion} 缩放）。
+     *
+     * <p>特效位置优先取失效骨块的 OBB 中心（比旧实现的车体包围盒中心更符合
+     * "这一块 ERA 爆了"的观感，多块连爆也不在同一点叠加）；结构模型不可解析时
+     * 回退车体中心。音效由 {@code rvp:mchr_explosion} 事件在客户端按声速延迟播放
+     * 近/远音（MISSILE 战斗部音色），服务端不再补播 {@code GENERIC_EXPLODE}。</p>
+     */
     private static void spawnEraEffect(ServerLevel serverLevel, AbstractVehicle vehicle,
-                                        String boneName, float explosionScale) {
-        Vec3 pos = vehicle.getBoundingBox().getCenter();
-        serverLevel.sendParticles(ParticleTypes.EXPLOSION, pos.x, pos.y, pos.z,
-                1, 0.02, 0.02, 0.02, 0.0);
-        serverLevel.sendParticles(ParticleTypes.SMOKE, pos.x, pos.y, pos.z,
-                Math.max(6, Math.round(8f * explosionScale)),
-                0.18 * explosionScale, 0.12 * explosionScale, 0.18 * explosionScale, 0.01);
-        serverLevel.playSound(null, pos.x, pos.y, pos.z,
-                SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS,
-                Math.min(2.0f, 0.7f + explosionScale * 0.35f), 1.15f);
+                                        VehicleHitboxConfig cfg, String boneName, float explosionScale) {
+        spawnMchrEraExplosion(serverLevel, resolveBoneEffectPos(vehicle, cfg, boneName), explosionScale);
+    }
+
+    /** 解析失效骨块 OBB 的世界系中心（复用 {@link #resolveBoneObbs}）；不可解析时回退车体包围盒中心。 */
+    private static Vec3 resolveBoneEffectPos(AbstractVehicle vehicle, VehicleHitboxConfig cfg, String boneName) {
+        ResourceLocation structureId = cfg.structureModel;
+        if (structureId != null) {
+            BedrockModel model = CommonAssetsManager.structureModelManager()
+                    .getStructureModel(structureId).orElse(null);
+            if (model != null) {
+                Map<String, BedrockBone> boneMap = model.getBoneMap();
+                HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+                List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+                if (!resolved.isEmpty()) {
+                    Vector3f center = resolved.get(0).obb().center();
+                    return new Vec3(center.x(), center.y(), center.z());
+                }
+            }
+        }
+        return vehicle.getBoundingBox().getCenter();
+    }
+
+    /**
+     * ERA 爆炸统一发布 MCHR 爆炸视觉事件：烟雾规模 = 武器爆炸半径 3 × 模块
+     * {@code explosion} 缩放（未配置即 3，与武器 JSON {@code explosion_radius: 3} 的
+     * 爆炸烟雾同规模）；MISSILE 音色（战斗部爆轰观感）。
+     */
+    private static void spawnMchrEraExplosion(ServerLevel serverLevel, Vec3 pos, float explosionScale) {
+        RVP_DefaultExplosionVisualService.spawn(serverLevel, pos,
+                3.0f * Math.max(explosionScale, 0.25f), RVP_EnumWeaponKind.MISSILE);
     }
 
     private static String fmt(float v) {

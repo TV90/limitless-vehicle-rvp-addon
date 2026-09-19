@@ -96,6 +96,8 @@ public class RVP_MchrFlareParticle extends SingleQuadParticle {
         this.gCol = TINT_G;
         this.bCol = TINT_B;
         this.alpha = 1.0f;
+        // 热成像自登记：曳光/火花/闪光在本体热成像视角下作为热源重画发白
+        RVP_ThermalParticleChannel.register(this);
     }
 
     /** EMBER：曳光火星（拖烟 + 缓慢下坠长滞空；重力 0.012/tick，寿命 160~240 tick）。 */

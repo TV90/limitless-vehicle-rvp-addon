@@ -88,6 +88,17 @@ public final class RVP_ClientVisualEffectDispatcher {
         }
     }
 
+    /**
+     * 把全部自绘几何类视觉实例重画进本体热成像 thermal_buffer（仅热成像激活时由
+     * {@code RVP_ThermalParticleChannel} 在 AFTER_PARTICLES 热成像窗口调用）。
+     * 粒子类特效默认空实现自然跳过（其热成像由通道的粒子路径覆盖），不重复提亮。
+     */
+    public static void renderThermal(RenderLevelStageEvent event) {
+        for (RVP_ClientVisualEffect effect : ACTIVE_EFFECTS) {
+            effect.renderThermal(event);
+        }
+    }
+
     /** 清理当前世界的全部视觉实例。 */
     public static void clear() {
         for (RVP_ClientVisualEffect effect : ACTIVE_EFFECTS) {

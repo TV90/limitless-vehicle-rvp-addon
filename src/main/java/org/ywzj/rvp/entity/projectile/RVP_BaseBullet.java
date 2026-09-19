@@ -4265,6 +4265,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 反方向喷出）；rvp_kerosene_black_smoke：液氧煤油黑烟技术储备款（09-19 前原始观感）。
                 // 服务端无粒子渲染管线（桥为 NOOP），本方法本就只在客户端实体 Tick 中调用。
                 float particleScale = effects.getMissileNativeTrailParticleScale();
+                // 目的：凝结云保持期绑定发动机燃烧期（2026-09-20 用户需求）——距燃尽还有多少
+                // tick 传给粒子（固体款专用），发动机开启时飞过的距离全程留云、燃尽后缓缓散开
+                int holdTicks = rocketFlameStyle ? ticksUntilMotorStopsBurning() : 0;
                 // 目的：发射段烟柱加粗（effects_data.missile_native_trail_launch_boost）——
                 // 在一级燃烧窗口（motorBurnEndTick = 点火延迟 + 一级燃烧时长，随生成数据包同步）
                 // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
@@ -4277,7 +4280,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     if (rocketFlameStyle) {
                         RVP_ClientActionsAccess.addRocketFlameTrailParticle(
                                 particlePos.x, particlePos.y, particlePos.z,
-                                exhaust.x, exhaust.y, exhaust.z, particleScale);
+                                exhaust.x, exhaust.y, exhaust.z, particleScale, holdTicks);
                     } else if (keroseneBlackStyle) {
                         RVP_ClientActionsAccess.addKeroseneBlackSmokeTrailParticle(
                                 particlePos.x, particlePos.y, particlePos.z,
@@ -4406,6 +4409,39 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     public final boolean isMotorBurningNow() {
         return isMotorBurning();
+    }
+
+    /**
+     * 距发动机最后一次燃烧结束还剩多少 tick（固体款凝结云保持期输入，2026-09-20）：
+     * 取一级燃尽与二脉冲燃尽的最晚者减当前飞行 tick，钳 [0, 1200]——上限防
+     * {@code motorBurnEndTick} 默认 {@code Integer.MAX_VALUE}（生成包未到达/未设置）把粒子
+     * 寿命撑爆。数据源与 {@link #isMotorBurning()} 同款（客户端 {@code rvpData} 为 null 走
+     * 生成包同步的 {@code motorBurnEndTick} + 二脉冲 entityData）；非推进弹体返回 0
+     * （保持期走粒子侧保底值 108t）。仅在客户端尾迹生成点调用。
+     */
+    private int ticksUntilMotorStopsBurning() {
+        int lastBurningTick;
+        if (rvpData == null) {
+            // 客户端克隆/同步实体：生成数据包同步的标量（与 isMotorBurning 客户端分支同源）
+            lastBurningTick = this.motorBurnEndTick;
+            int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
+            int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
+            if (start >= 0 && burn > 0) {
+                lastBurningTick = Math.max(lastBurningTick, start + burn);
+            }
+        } else {
+            if (!isMotorPropulsion()) {
+                return 0;
+            }
+            lastBurningTick = rvpData.getResolvedIgnitionDelayTick()
+                    + (int) Math.ceil(rvpData.getResolvedMotorBurnTime());
+            if (rvpData.getProjectileData().usesSecondPulse() && isMissile() && secondPulseStartTick >= 0) {
+                int secondEnd = secondPulseStartTick + (int) Math.ceil(
+                        rvpData.getProjectileData().getResolvedSecondPulseBurnTime());
+                lastBurningTick = Math.max(lastBurningTick, secondEnd);
+            }
+        }
+        return Math.max(0, Math.min(lastBurningTick - getFlightTickCount(), 1200));
     }
 
     public final int getSecondPulseStartTick() {

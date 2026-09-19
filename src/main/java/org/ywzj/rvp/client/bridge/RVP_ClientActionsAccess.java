@@ -47,11 +47,13 @@ public final class RVP_ClientActionsAccess {
 
     /**
      * 经双端安全桥生成 HBM 风格火箭尾焰尾迹粒子（先火后烟膨胀柱）。
+     * holdTicks 为距发动机燃尽的 tick 数（凝结云保持期绑定燃烧期）。
      * 服务端为 NOOP——粒子是纯客户端表现。
      */
     public static void addRocketFlameTrailParticle(double x, double y, double z,
-                                                   double mx, double my, double mz, float sizeScale) {
-        INSTANCE.addRocketFlameTrailParticle(x, y, z, mx, my, mz, sizeScale);
+                                                   double mx, double my, double mz, float sizeScale,
+                                                   int holdTicks) {
+        INSTANCE.addRocketFlameTrailParticle(x, y, z, mx, my, mz, sizeScale, holdTicks);
     }
 
     /**
@@ -110,7 +112,8 @@ public final class RVP_ClientActionsAccess {
 
         @Override
         public void addRocketFlameTrailParticle(double x, double y, double z,
-                                                double mx, double my, double mz, float sizeScale) {
+                                                double mx, double my, double mz, float sizeScale,
+                                                int holdTicks) {
             // 服务端无粒子渲染管线，火箭尾焰尾迹只在客户端实体 Tick 中产生。
         }
 

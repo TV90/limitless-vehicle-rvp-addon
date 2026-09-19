@@ -80,17 +80,19 @@ public final class RVP_ClientActions implements RVP_IClientActions {
                 RVP_MchrSmokeParticle.ofTrailScaled(level, x, y, z, sizeScale));
     }
 
-    /** 生成 HBM 风格火箭尾焰粒子（TRAIL 模式，先火后烟膨胀柱，参数见粒子类移植注释）。 */
+    /** 生成 HBM 风格火箭尾焰粒子（TRAIL 模式，先火后烟膨胀柱，参数见粒子类移植注释；
+     *  holdTicks 为距发动机燃尽的 tick 数，凝结云保持期据此绑定燃烧期）。 */
     @Override
     public void addRocketFlameTrailParticle(double x, double y, double z,
-                                            double mx, double my, double mz, float sizeScale) {
+                                            double mx, double my, double mz, float sizeScale,
+                                            int holdTicks) {
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return;
         }
         Minecraft.getInstance().particleEngine.add(
                 org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofTrail(
-                        level, x, y, z, mx, my, mz, sizeScale));
+                        level, x, y, z, mx, my, mz, sizeScale, holdTicks));
     }
 
     /** 生成 HBM 风格液氧煤油黑烟尾焰粒子（技术储备款，TRAIL 模式，09-19 前原始黑烟观感）。 */

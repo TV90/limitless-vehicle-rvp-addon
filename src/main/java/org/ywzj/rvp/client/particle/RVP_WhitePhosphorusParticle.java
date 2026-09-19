@@ -103,6 +103,8 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
         this.yd = 0.0D;
         this.zd = 0.0D;
         applyCurve(0.0f, 0);
+        // 热成像自登记：白磷烟（燃烧烟雾）在本体热成像视角下作为热源重画发白
+        RVP_ThermalParticleChannel.register(this);
     }
 
     public static Particle createBody(ClientLevel level, Vec3 position,

@@ -46,6 +46,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Standalone nuclear visual fallback adapted from the GPLv3 HBM NTM Rebirth Torex behavior.
  * It contains no HBM class references and performs no real nuclear damage or world mutation.
+ *
+ * <p>来源与许可：移植自 HBM's Nuclear Tech Mod: Rebirth（LGPL-3.0），版权归其原作者及
+ * 贡献者所有；并入本项目后随项目以 GPL-3.0 再分发（LGPLv3 §3 许可的合并方式，
+ * 详见项目根 {@code THIRD_PARTY_NOTICES.md}）。</p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_NuclearVisualManager {

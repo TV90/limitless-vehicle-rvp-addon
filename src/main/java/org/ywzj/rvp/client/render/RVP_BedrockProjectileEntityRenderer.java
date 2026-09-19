@@ -5,6 +5,7 @@ import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockA
 import com.maydaymemory.mae.control.runner.AnimationContext;
 import com.maydaymemory.mae.control.runner.AnimationRunner;
 import com.maydaymemory.mae.control.runner.LoopingState;
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
@@ -69,6 +70,21 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
      */
     private static final float DEFAULT_FLAME_SCALE = 0.3f;
 
+    /**
+     * [RVP] 尾焰立即绘制缓冲（独立 immediate source，仅渲染线程访问）：
+     * 若把 {@code RenderType.entityTranslucent} 顶点写进实体渲染主 bufferSource，会被推迟到
+     * 粒子阶段<b>之后</b>的 translucent 统一 flush——绘制顺序变成"地形→实体→粒子烟浪→尾焰"，
+     * 任何粒子烟（发射段地面烟浪等）都画在尾焰之前、无法半透明衰减它，尾焰隔着浓浓烟浪
+     * 仍然全亮可见（2026-09-19 实机反馈"透过地面气浪还能看到尾焰、不像经过半透明处理"）。
+     * 改走本独立 source + {@link #renderMotorFlame} 当场 endBatch：尾焰顶点在实体阶段内
+     * 立即上屏（先于粒子阶段），后画的烟正常叠上来半透明衰减；entityTranslucent 写深度，
+     * 尾焰<b>后方</b>的烟仍被深度剔除——前后遮挡语义恢复。逐弹 getBuffer→endBatch、
+     * 渲染线程串行调用，无并发重入。
+     */
+    private static final BufferBuilder FLAME_IMMEDIATE_BUFFER = new BufferBuilder(256);
+    private static final MultiBufferSource.BufferSource FLAME_IMMEDIATE_SOURCE =
+            MultiBufferSource.immediate(FLAME_IMMEDIATE_BUFFER);
+
     public RVP_BedrockProjectileEntityRenderer(EntityRendererProvider.Context context,
                                                ResourceLocation fallbackModel,
                                                ResourceLocation fallbackTexture) {
@@ -91,7 +107,7 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
         // [RVP] 目的：带火箭发动机的弹在燃烧期渲染尾焰动画（复用本体 InternalAssets 三件套，
         // 与本体 MissileEntity/RocketEntity 同款观感）；渲染器侧自建 runner，不依赖本体导弹基类。
         if (ammo instanceof RVP_BaseBullet projectile) {
-            renderMotorFlame(projectile, entityYaw, partialTick, poseStack, bufferSource);
+            renderMotorFlame(projectile, entityYaw, partialTick, poseStack);
         }
     }
 
@@ -99,9 +115,13 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
      * [RVP] 尾焰渲染：{@code has_rocket_engine} 且发动机燃烧中时，按本体
      * {@code RocketPropelledEntityRenderer} 同款变换（实体 yaw/xRot 旋转 → 喷口平移 →
      * 弹径缩放 → 全亮半透明渲染）绘制循环尾焰动画。
+     *
+     * <p><b>绘制时机</b>：写入 {@link #FLAME_IMMEDIATE_SOURCE} 并当场 endBatch——不走
+     * 调用方传入的实体主 bufferSource（其 entityTranslucent 顶点会推迟到粒子阶段之后
+     * flush，粒子烟无法衰减尾焰，见字段注释），保证尾焰在实体阶段上屏、先于一切粒子。</p>
      */
     private void renderMotorFlame(RVP_BaseBullet projectile, float entityYaw, float partialTick,
-                                  PoseStack poseStack, MultiBufferSource bufferSource) {
+                                  PoseStack poseStack) {
         // 调用本项目弹体的客户端安全配置出口：rvpData 只在服务端赋值、不随生成数据包同步，
         // 客户端必须按已同步的 weaponId 查武器索引取回配置，否则本门控在客户端恒为 false 而整段尾焰永不执行。
         RVP_WeaponData data = projectile.getResolvedWeaponConfig();
@@ -149,10 +169,13 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
             }
             float scale = flameScale != null && flameScale > 0f ? flameScale : DEFAULT_FLAME_SCALE;
             poseStack.scale(scale, scale, scale);
-            flameModel.renderToBuffer(poseStack, bufferSource,
+            flameModel.renderToBuffer(poseStack, FLAME_IMMEDIATE_SOURCE,
                     RenderType.entityTranslucent(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
                     BedrockModelRenderTypes.polyMeshCutout(InternalAssets.ROCKET_MOTOR_FLAME_TEXTURE),
                     LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            // 当场 flush：尾焰顶点立即上屏（实体阶段内、先于粒子阶段），后画的烟浪等粒子
+            // 才能正常半透明衰减尾焰；immediate source 的 endBatch 无遗留批时为空操作
+            FLAME_IMMEDIATE_SOURCE.endBatch();
         } finally {
             poseStack.popPose();
             flameModel.applyPose(flameModel.getBindPose());

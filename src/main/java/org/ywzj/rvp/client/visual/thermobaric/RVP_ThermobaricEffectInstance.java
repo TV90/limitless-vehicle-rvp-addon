@@ -130,6 +130,15 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     }
 
     @Override
+    public void renderThermal(RenderLevelStageEvent event) {
+        // 调用同一温压渲染器把四层几何（凝结云/压力波/尘环/烟云 + additive 火球）重画进
+        // 本体热成像 thermal_buffer——渲染器完全自包含（pushPose+setIdentity+相机旋转的
+        // 视图语义与进入时 ModelViewStack 无关、混合/深度/shader 自管理），在热成像通道
+        // 的 AFTER_PARTICLES 窗口重调位置正确（2026-09-20 用户需求：温压蘑菇云热成像下白热）。
+        RVP_ThermobaricRenderer.render(this, event);
+    }
+
+    @Override
     public boolean isFinished() {
         return age >= duration || level != net.minecraft.client.Minecraft.getInstance().level;
     }

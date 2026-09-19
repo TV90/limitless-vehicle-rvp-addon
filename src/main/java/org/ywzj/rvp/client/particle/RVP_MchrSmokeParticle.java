@@ -56,6 +56,8 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         this.alpha = alpha;
         this.hasPhysics = false;
         this.frame = 0;
+        // 热成像自登记：MCHR 爆炸烟（视觉工厂烟体）在本体热成像视角下作为热源重画发白
+        RVP_ThermalParticleChannel.register(this);
     }
 
     /** 工厂入口：按 {@code MCH_Explosion.effectExplosion:226-268} 参数构造灰黄大烟。 */
