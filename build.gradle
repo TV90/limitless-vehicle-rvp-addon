@@ -80,7 +80,7 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
-// RVP 载具包仅维护在 run/client_1/limitless_vehicle/rvp（不再从 src/main/resources/rvp 同步）
+// RVP 载具包维护在仓库根 limitless_vehicle/rvp/（git-ignored，不入库）；run/* 仅用于服务端代码冒烟，不再维护载具包（原 run/client_1 同步约定作废，2026-09-20）
 
 tasks.named('compileJava').configure {
     // clean + FROM-CACHE can skip writing build/classes and breaks dev run (NoClassDefFoundError).

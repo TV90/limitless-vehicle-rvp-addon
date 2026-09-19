@@ -135,7 +135,9 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         // 本体热成像 thermal_buffer——渲染器完全自包含（pushPose+setIdentity+相机旋转的
         // 视图语义与进入时 ModelViewStack 无关、混合/深度/shader 自管理），在热成像通道
         // 的 AFTER_PARTICLES 窗口重调位置正确（2026-09-20 用户需求：温压蘑菇云热成像下白热）。
-        RVP_ThermobaricRenderer.render(this, event);
+        // thermalMode=true：火球写入色灰化提白（2026-09-20 用户反馈：热成像下火球白度
+        // 不如凝结云，违反"火球最热"语义）——见 RVP_ThermobaricRenderer.thermalFireballColor。
+        RVP_ThermobaricRenderer.render(this, event, true);
     }
 
     @Override

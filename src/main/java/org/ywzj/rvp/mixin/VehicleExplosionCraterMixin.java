@@ -14,10 +14,12 @@ import org.ywzj.rvp.config.RVP_Config;
  * Injects into {@code VehicleExplosion.GridCollectionTask.finish()} to
  * limit crater depth based on server-side {@code craterDepthRules} config.
  * <p>
- * Since both the immediate and batched block destruction paths call
- * {@code GridCollectionTask.finish()}, this single injection covers all
- * explosion sources that go through {@code VehicleExplosion} (RVP weapons,
- * ywzj_vehicle default weapons, etc.).
+ * This covers the immediate (&le; 32 radius) block destruction path for all
+ * explosion sources going through {@code VehicleExplosion} (RVP weapons,
+ * ywzj_vehicle default weapons, etc.). The batched nuclear path (&gt; 32,
+ * {@code SphericalCollectionTask}) destroys blocks incrementally in
+ * {@code flushBlocks} and has no {@code finish()} — it is covered by
+ * {@link VehicleExplosionCraterSphericalMixin} instead.
  */
 @Mixin(targets = "org.ywzj.vehicle.util.VehicleExplosion$GridCollectionTask")
 public abstract class VehicleExplosionCraterMixin {

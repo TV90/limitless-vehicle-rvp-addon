@@ -12,6 +12,7 @@
 | `proximityFuze` | 是否启用近炸引信（旧版，已被 RVP_FuseData 替代） | boolean | false |
 | `proximityRadius` | 近炸检测半径（旧版，已被 RVP_FuseData 替代） | float | 0 |
 | `destroyBlock` | 是否破坏方块 | boolean | false |
+| `destroyRadius` | **方块破坏半径**（独立于 `radius` 杀伤半径，语义对齐 MCHeli 的 ExplosionBlock）：null=继承 `radius`（破坏范围=杀伤范围，历史行为）；0=不破坏方块；>0=地形破坏用独立半径，>32 时引擎自动走核爆炸批量破坏。仅 `destroyBlock=true` 时生效 | Float | null |
 
 ---
 
@@ -34,6 +35,38 @@
 | `hbmEffectData` | **HBM 模组特效**：`type`(VNT/NUCLEAR/SHRAPNEL/WHITE_PHOSPHORUS/CHLORINE)、`radius` | RVP_HbmEffectData | null |
 
 `targets` 过滤选项：`all`(所有)、`living`(活体)、`players`(玩家)、`hostile`(敌对生物)、`non_allied`(排除发射者和其载具乘员)
+
+---
+
+# destroy_radius：爆炸破坏范围与杀伤范围隔离
+
+`explosion_data.destroy_radius` 把**方块破坏范围**从**对生物/实体的杀伤范围**中隔离出来（对齐 MCHeli `ExplosionBlock` 参数语义）：
+
+| 配置 | 行为 |
+| ---- | ---- |
+| 未配置（null） | 破坏范围 = 杀伤范围 = `radius`（历史行为，单次 `VehicleExplosion`，零变化） |
+| `destroy_radius: 0` | 只伤人不破坏地形（单次爆炸，`destroy_block` 被视为 false） |
+| `destroy_radius: N`（N>0 且 N≠radius） | **双爆炸**：地形爆炸按 N 破坏方块，杀伤爆炸按 `radius` 伤害实体并决定视觉档位 |
+| `destroy_radius: N`（N = radius） | 等价于未配置（单次爆炸） |
+
+双爆炸机制（`RVP_BaseBullet.triggerExplosion`）：
+
+```
+triggerExplosion（destroy_radius 有效且 ≠ radius 时）
+  ├─ 爆炸 A（地形）: VehicleExplosion(pos, destroy_radius, damage=0, destroyBlock=true)
+  │     ├─ 实体伤害被 RVP_TerrainOnlyExplosion 窗口 + VehicleExplosionHurtSkipMixin 跳过
+  │     ├─ destroy_radius ≤32 → 引擎即时 Grid 破坏；>32 → 引擎核爆炸批量破坏（Spherical）
+  │     └─ 本体视觉包：与爆炸 B 只保留半径更大的一发（两个半径都可能 >32，避免双份蘑菇云）
+  └─ 爆炸 B（杀伤）: VehicleExplosion(pos, radius, damage, destroyBlock=false)
+        └─ AoE 伤害、ServerVehicleExplosion 视觉档位、ERA/命中提示/波及补发均按杀伤半径
+```
+
+注意：
+
+- 弹坑深度规则 `craterDepthRules` 对两条路径都生效，且按**破坏半径**（地形爆炸的 radius）查表。
+- 引擎在半径 >32 时切换核爆炸路径（`VehicleExplosion.BATCHED_DESTRUCTION_RADIUS_THRESHOLD = 32`：分 tick 批量破坏 + 蘑菇云视觉），destroy_radius 大于 32 的地形爆炸自动享受该路径。
+- 引信半径覆盖（`airburst_explosion_radius` 等）只重写杀伤半径；destroy_radius 始终取 `explosion_data` 配置值。
+- `hbm_effect_data` 的真实爆炸接管整次引爆时（`realExplosionApplied`），destroy_radius 不参与（HBM 有自己的 `destroy_block`）。
 
 ---
 
@@ -129,7 +162,23 @@ RVP_BaseBullet tick()
 | ---- | ---- |
 | 注入目标 | VehicleExplosion.GridCollectionTask.finish() |
 | Mixin 类型 | @Inject RETURN |
-| 作用 | 根据 craterDepthRules 配置限制弹坑深度，移除 centerY - maxDepth 以下的方块，避免超深大坑 |
+| 作用 | 根据 craterDepthRules 配置限制弹坑深度（≤32 即时破坏路径），移除 centerY - maxDepth 以下的方块 |
+
+## VehicleExplosionCraterSphericalMixin
+
+| 属性 | 内容 |
+| ---- | ---- |
+| 注入目标 | VehicleExplosion.SphericalCollectionTask.flushBlocks() |
+| Mixin 类型 | @Inject HEAD |
+| 作用 | 核爆炸路径（半径>32，分 tick 批量破坏）的弹坑深度限制：在每个 flush 周期把低于 centerY - maxDepth 的待处理方块（破坏与烧灼转化）移出队列 |
+
+## VehicleExplosionHurtSkipMixin
+
+| 属性 | 内容 |
+| ---- | ---- |
+| 注入目标 | VehicleExplosion.hurt(List) |
+| Mixin 类型 | @Inject(cancellable) HEAD |
+| 作用 | RVP_TerrainOnlyExplosion 窗口激活时跳过实体伤害结算，供 destroy_radius 双爆炸的地形爆炸使用 |
 
 ## AbstractVehicleHitboxDamageFactorMixin
 
@@ -169,10 +218,13 @@ RVP_ExplosionVisualSuppression.run(action)
 | RVP_BaseBullet | `ywzj_rvp/.../entity/projectile/RVP_BaseBullet.java` |
 | RVP_DetonateApplier | `ywzj_rvp/.../weapon/effects/RVP_DetonateApplier.java` |
 | RVP_ExplosionVisualSuppression | `ywzj_rvp/.../weapon/effects/RVP_ExplosionVisualSuppression.java` |
+| RVP_TerrainOnlyExplosion | `ywzj_rvp/.../weapon/effects/RVP_TerrainOnlyExplosion.java` |
 | RVP_HbmEffectBridge | `ywzj_rvp/.../weapon/effects/RVP_HbmEffectBridge.java` |
 | VehicleExplosionVisualPacketMixin | `ywzj_rvp/.../mixin/VehicleExplosionVisualPacketMixin.java` |
 | VehicleExplosionClientVisualMixin | `ywzj_rvp/.../mixin/VehicleExplosionClientVisualMixin.java` |
 | VehicleExplosionCraterMixin | `ywzj_rvp/.../mixin/VehicleExplosionCraterMixin.java` |
+| VehicleExplosionCraterSphericalMixin | `ywzj_rvp/.../mixin/VehicleExplosionCraterSphericalMixin.java` |
+| VehicleExplosionHurtSkipMixin | `ywzj_rvp/.../mixin/VehicleExplosionHurtSkipMixin.java` |
 | AbstractVehicleHitboxDamageFactorMixin | `ywzj_rvp/.../mixin/AbstractVehicleHitboxDamageFactorMixin.java` |
 | Explosion（本体基础类） | `ywzj_vehicle/.../vehicle/pojo/Explosion.java` |
 | VehicleExplosion（本体引擎） | `ywzj_vehicle/.../util/VehicleExplosion.java` |

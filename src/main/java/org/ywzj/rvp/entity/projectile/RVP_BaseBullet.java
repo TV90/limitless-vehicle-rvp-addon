@@ -64,6 +64,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeMath;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.data.RVP_Explosion;
 import org.ywzj.rvp.weapon.data.RVP_ParticleProjectileData;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -76,6 +77,7 @@ import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
+import org.ywzj.rvp.weapon.effects.RVP_TerrainOnlyExplosion;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
@@ -3741,6 +3743,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         float resolvedDamage = damage;
         float resolvedRadius = radius;
+        // destroy_radius 参数拆分（语义对齐 MCHeli 的 ExplosionBlock）：
+        // null/缺省 = 继承 radius（历史单爆炸行为，零变化）；0 = 只伤人不破坏地形；
+        // >0 且 ≠ radius = 独立的方块破坏半径，走"地形爆炸(A) + 杀伤爆炸(B)"双爆炸路径。
+        // explosion 字段声明类型是本体 AmmoEntity 的基类 Explosion，实际持有 RVP_Explosion；
+        // 防御式取值：类型不符时按未配置处理（继承 radius，历史行为）。
+        Float destroyRadiusCfg = explosion instanceof RVP_Explosion rvpExplosion
+                ? rvpExplosion.getDestroyRadius()
+                : null;
+        boolean disableTerrain = destroyRadiusCfg != null && destroyRadiusCfg <= 0f;
+        boolean splitDestroyRadius = explosion.destroyBlock && destroyRadiusCfg != null
+                && !disableTerrain && destroyRadiusCfg != radius;
         RVP_VisualPublishResult visualResult = RVP_VisualPublishResult.NONE;
         // HBM 特效生效时跳过视觉工厂发布（任务1）：视觉工厂与 HBM 同属特效类参数，双发会造成双重特效。
         if (!hbmApplied && detonateData != null && level() instanceof ServerLevel serverLevel) {
@@ -3787,10 +3800,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         + " damage=" + RVP_ProjectileLifecycleDebug.decimal(resolvedDamage)
                         + " radius=" + RVP_ProjectileLifecycleDebug.decimal(resolvedRadius)
                         + " destroyBlock=" + explosion.destroyBlock
+                        + " destroyRadius=" + (disableTerrain ? "0(off)"
+                                : splitDestroyRadius ? RVP_ProjectileLifecycleDebug.decimal(destroyRadiusCfg)
+                                : "inherit")
                         + " exclude=" + RVP_ProjectileLifecycleDebug.formatEntity(excludeEntity)
                         + " suppressNativeVisual=" + resolvedSuppressNative);
+        // 爆炸 A（地形）：只破坏方块——引擎的 ≤32 即时 Grid 与 >32 核爆炸批量路径均由破坏半径驱动，
+        // 实体伤害由 RVP_TerrainOnlyExplosion 窗口经 VehicleExplosionHurtSkipMixin 跳过。
+        VehicleExplosion terrainExplosion = splitDestroyRadius
+                ? new VehicleExplosion(level(), getOwner(), vehicle, pos, destroyRadiusCfg, 0f, true)
+                : null;
+        // 爆炸 B / 默认单爆炸：对实体杀伤 + 客户端视觉档位按杀伤半径；destroy_radius=0 时不破坏方块。
+        // 拆分模式（destroy_radius>0 且 ≠ radius）下 B 必须 destroyBlock=false——地形破坏全权归
+        // 爆炸 A（按 destroy_radius），否则 B 仍按完整杀伤 radius 走核爆炸批量路径把地形炸到
+        // radius，destroy_radius 完全失效且（9M723 的 64）方块扫描/灼烧替换量是 A 的数倍
+        //（2026-09-20 审计发现的实现与文档语义矛盾，也是">32 爆炸卡顿"的主因）。
+        // 本体 explode() 的 if (destroyBlocks) 门控会跳过全部方块扫描/入队，B 只做杀伤与发包。
         VehicleExplosion ex = new VehicleExplosion(level(), getOwner(), vehicle, pos,
-                radius, damage, explosion.destroyBlock);
+                radius, damage, explosion.destroyBlock && !disableTerrain && !splitDestroyRadius);
         Set<Entity> excluded = new HashSet<>();
         if (excludeEntity != null) {
             excluded.add(excludeEntity);
@@ -3804,6 +3831,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Runnable explosionAction = !excluded.isEmpty()
                 ? () -> ex.explode(List.copyOf(excluded))
                 : ex::explode;
+        Runnable terrainExplosionAction = terrainExplosion == null ? null
+                : !excluded.isEmpty()
+                        ? () -> terrainExplosion.explode(List.copyOf(excluded))
+                        : terrainExplosion::explode;
         // RVP 爆炸命中提示：载具集合必须在爆炸伤害结算前快照 —— AbstractVehicle.hurt
         // 会把被炸死的载具同步 setDestroyed()（已在销毁状态的直接 discard），若结算后再
         // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体
@@ -3827,8 +3858,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
         RVP_HitVehicleListener.enterRvpDamage();
         // 调用 RVP 现有爆炸视觉抑制门面，HBM 特效生效或视觉成功发布且配置要求替换本体视觉时屏蔽本体视觉包。
+        // 地形爆炸（A）先于杀伤爆炸（B）结算。双爆炸时只有半径更大的一发包保留本体视觉
+        // （两个半径可能都 >32，都放行会出双份蘑菇云）：A 按 destroy_radius、B 按 radius 定档。
         try {
-            if (resolvedSuppressNative) {
+            if (terrainExplosionAction != null) {
+                if (resolvedSuppressNative || destroyRadiusCfg <= radius) {
+                    RVP_ExplosionVisualSuppression.run(
+                            () -> RVP_TerrainOnlyExplosion.run(terrainExplosionAction));
+                } else {
+                    RVP_TerrainOnlyExplosion.run(terrainExplosionAction);
+                }
+            }
+            boolean suppressHurtVisual = resolvedSuppressNative
+                    || (terrainExplosionAction != null && destroyRadiusCfg > radius);
+            if (suppressHurtVisual) {
                 RVP_ExplosionVisualSuppression.run(explosionAction);
             } else {
                 explosionAction.run();

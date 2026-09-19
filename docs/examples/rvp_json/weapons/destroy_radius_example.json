@@ -1,0 +1,14 @@
+{
+    "type": "rvp:missile",
+    "name": "destroy_radius 参数示例（杀伤半径与破坏半径隔离）",
+    "_comment": "仅演示 detonate_data.destroy_radius 用法，实际使用请参考完整武器 JSON（如 bmpt_9m120_f.json）补齐 fire_data / projectile_data 等字段。",
+    "detonate_data": {
+        "explosion_data": {
+            "explode": true,
+            "damage": 350,
+            "radius": 6,
+            "destroy_block": true,
+            "destroy_radius": 40
+        }
+    }
+}

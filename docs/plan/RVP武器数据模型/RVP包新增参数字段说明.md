@@ -578,9 +578,24 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | --- | --- |
 | `explode` | 是否产生爆炸效果。 |
 | `damage` | 爆炸伤害。 |
-| `radius` | 爆炸半径。 |
+| `radius` | 爆炸半径（杀伤半径，同时决定客户端视觉档位）。 |
 | `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
 | `destroy_block` | 是否破坏方块。 |
+| `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，`crater_depth_rules` 弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。 |
+
+9M723 示例（杀伤 64、地形爆破 33）：
+
+```json
+"detonate_data": {
+  "explosion_data": {
+    "explode": true,
+    "damage": 2400,
+    "radius": 64,
+    "destroy_block": true,
+    "destroy_radius": 33
+  }
+}
+```
 
 燃烧弹示例（先点火再小爆炸）：
 

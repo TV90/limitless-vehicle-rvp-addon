@@ -49,6 +49,18 @@ public final class RVP_ThermobaricRenderer {
 
     /** 在世界半透明阶段提交一个温压实例的四层几何。 */
     public static void render(RVP_ThermobaricEffectInstance effect, RenderLevelStageEvent event) {
+        render(effect, event, false);
+    }
+
+    /**
+     * 提交几何，{@code thermalMode=true} 时由 {@code RVP_ThermalParticleChannel} 在本体
+     * 热成像窗口调用（目标为本体 thermal_buffer）：火球写入色经 {@link #thermalFireballColor}
+     * 灰化提白——thermal.fsh 的白热度只由 RGB 亮度决定，橙色火球（luma≈0.55）天生低于
+     * 灰白凝结云（≈0.87），观感为"火球温度不如凝结云"，而热成像语义上火球才是最热源
+     * （2026-09-20 用户反馈）。正常画面路径（false）完全不变。
+     */
+    public static void render(RVP_ThermobaricEffectInstance effect, RenderLevelStageEvent event,
+            boolean thermalMode) {
         float visualAge = effect.age() + event.getPartialTick();
         if (visualAge >= effect.duration()) {
             return;
@@ -93,7 +105,7 @@ public final class RVP_ThermobaricRenderer {
         // 主火球使用加色混合，让多团火焰云共同形成短时白橙色高亮核心。
         RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
         if (effect.preset().showCore()) {
-            renderFireball(effect, visualAge, cameraPosition, particleRatio);
+            renderFireball(effect, visualAge, cameraPosition, particleRatio, thermalMode);
         }
 
         RenderSystem.defaultBlendFunc();
@@ -105,7 +117,7 @@ public final class RVP_ThermobaricRenderer {
     }
 
     private static void renderFireball(RVP_ThermobaricEffectInstance effect, float age,
-            Vec3 camera, float particleRatio) {
+            Vec3 camera, float particleRatio, boolean thermalMode) {
         StageWindow window = resolveStageWindow(
                 effect.preset().coreStartTick(), effect.preset().coreFullTick(),
                 effect.preset().coreFadeDurationTicks(), effect.duration());
@@ -180,6 +192,9 @@ public final class RVP_ThermobaricRenderer {
                     + cloud.offsetY() * cloud.offsetY() + cloud.offsetZ() * cloud.offsetZ());
             float grayProgress = outerToInnerGrayProgress(fadeProgress, radialFactor);
             color = mixColor(color, grayscaleColor(color), grayProgress);
+            if (thermalMode) {
+                color = thermalFireballColor(color);
+            }
             writeParticleBillboard(builder, x, y, z, size, cloud.rotation(), color,
                     alpha * Mth.clamp(localProgress * 2.0F, 0.0F, 1.0F)
                             * (0.58F + cloud.sizeFactor()));
@@ -191,18 +206,31 @@ public final class RVP_ThermobaricRenderer {
         float coreRadius = resolveFireballCoreRadius(effect.visualRadius(),
                 formationProgress, fadeProgress);
         if (coreLayerCount >= 1) {
+            int color = fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F);
             writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius, 0.0F,
-                    fadeToGray(effect.preset().flameColor(), fadeProgress, 1.0F), alpha * 0.72F);
+                    thermalMode ? thermalFireballColor(color) : color, alpha * 0.72F);
         }
         if (coreLayerCount >= 2) {
+            int color = fadeToGray(effect.preset().coreColor(), fadeProgress, 0.55F);
             writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.62F, 0.7F,
-                    fadeToGray(effect.preset().coreColor(), fadeProgress, 0.55F), alpha);
+                    thermalMode ? thermalFireballColor(color) : color, alpha);
         }
         if (coreLayerCount >= 3) {
+            int color = fadeToGray(0xFFF5DC, fadeProgress, 0.15F);
             writeParticleBillboard(builder, centerX, centerY, centerZ, coreRadius * 0.28F, 1.4F,
-                    fadeToGray(0xFFF5DC, fadeProgress, 0.15F), alpha);
+                    thermalMode ? thermalFireballColor(color) : color, alpha);
         }
         BufferUploader.drawWithShader(builder.end());
+    }
+
+    /**
+     * 热成像模式火球色：灰度后向纯白混合 60%——橙色系（如预设 flame #FF6820，luma≈0.55）
+     * 在 thermal.fsh 的白热度折算（heat = 0.4 + 0.6×luma）下天生低于灰白凝结云（≈0.87），
+     * 灰化提白后 luma≈0.85+、经 additive 叠加核心区饱和到纯白，恢复"火球是最热源"的
+     * 热成像语义；仅影响 thermal_buffer 写入色，正常画面不经过本变换。
+     */
+    private static int thermalFireballColor(int color) {
+        return mixColor(grayscaleColor(color), 0xFFFFFF, 0.6F);
     }
 
     /** 返回火球核心在指定成形和淡出进度下的实际外包络半径。 */

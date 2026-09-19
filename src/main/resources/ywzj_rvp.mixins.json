@@ -12,6 +12,8 @@
     "accessor.PartUnitDataAccessor",
     "accessor.SwitchableUnitAccessor",
     "VehicleExplosionCraterMixin",
+    "VehicleExplosionCraterSphericalMixin",
+    "VehicleExplosionHurtSkipMixin",
     "VehicleExplosionVisualPacketMixin",
     "PartUnitAccessorMixin",
     "PartUnitTypeScopeCompatMixin",

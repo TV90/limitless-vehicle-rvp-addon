@@ -46,8 +46,8 @@
 
 | 用途 | 路径 |
 | --- | --- |
-| 开发实机运行包（**客户端**） | `run/client_1/limitless_vehicle/rvp/` |
-| 开发实机运行包（**服务端**） | `run/server/limitless_vehicle/rvp/` |
+| **载具包维护目录（唯一权威源，git-ignored）** | `limitless_vehicle/rvp/`（仓库根） |
+| 服务端代码冒烟运行目录 | `run/server/`（仅服务端代码冒烟，不再维护载具包） |
 | 玩家 `.minecraft` 安装目录 | `.minecraft/limitless_vehicle/rvp/` |
 | 武器数据 | `data/rvp/weapons/<id>.json` → 资源 ID `rvp:<id>` |
 | 武器显示 | `assets/rvp/display/weapon/<id>.json` |
