@@ -28,8 +28,8 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.vehicle.client.particle.SmokeCloudParticle;
 import org.ywzj.vehicle.client.shader.ThermalHandler;
-import org.ywzj.vehicle.mixin.client.ParticleEngineAccessor;
 
+import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -174,17 +174,22 @@ public final class RVP_ThermalParticleChannel {
      * {@code CAMPFIRE_SIGNAL_SMOKE} / {@code smoke} / {@code flame} / {@code large_smoke}
      * 等轨迹与尾迹粒子——原版类无法构造器自登记，改从引擎批次侧捞取）。
      *
-     * <p>批次访问复用<b>本体已注入的</b> {@code ParticleEngineAccessor}（本体热成像同款
-     * 途径，非 RVP 新增 Mixin）；白名单：{@link SmokeParticle} / {@link LargeSmokeParticle} /
+     * <p>批次访问用<b>运行时反射</b>调用本体 accessor mixin 注入的 {@code getParticles()}
+     * （public 方法，mod 自定义名不参与混淆；本体 {@code ThermalHandler} 强依赖同一方法，
+     * 运行时必然存在）。<b>不走编译期 import</b>——本体的 mixin 包只在本体 dev 构建的
+     * {@code -all} jar 里，发布 jar 的编译 classpath 不含它（2026-09-20 其它开发者
+     * 编译失败反馈），反射失败走 reflectionBroken 静默降级（仅失去原版烟火粒子路径）。
+     * 白名单：{@link SmokeParticle} / {@link LargeSmokeParticle} /
      * {@link CampfireSmokeParticle} / {@link BaseAshSmokeParticle} / {@link FlameParticle}
      * （烟火类热源，符合热成像语义）。本体 {@code SmokeCloudParticle} 由本体烟通道自己
      * 重画，此处跳过防双重提亮；RVP 登记表成员走各自 RenderType 分组，不在 translucent 批，
      * 无需排除。</p>
      */
     private static List<Particle> collectVanillaThermalParticles(RenderLevelStageEvent event, Minecraft mc) {
-        Map<ParticleRenderType, Queue<Particle>> batches;
+        Map<?, ?> batches;
         try {
-            batches = ((ParticleEngineAccessor) mc.particleEngine).getParticles();
+            Method accessor = mc.particleEngine.getClass().getMethod("getParticles");
+            batches = (Map<?, ?>) accessor.invoke(mc.particleEngine);
         } catch (Throwable t) {
             // 本体 accessor 缺失（版本不匹配等）仅失去原版粒子热成像，不影响登记表路径
             if (!reflectionBroken) {
@@ -193,7 +198,16 @@ public final class RVP_ThermalParticleChannel {
             }
             return new ArrayList<>();
         }
-        Queue<Particle> translucent = batches.get(ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT);
+        Queue<Particle> translucent = null;
+        for (Map.Entry<?, ?> entry : batches.entrySet()) {
+            if (entry.getKey() == ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT) {
+                Object value = entry.getValue();
+                if (value instanceof Queue<?> queue) {
+                    translucent = (Queue<Particle>) queue;
+                }
+                break;
+            }
+        }
         if (translucent == null || translucent.isEmpty()) {
             return new ArrayList<>();
         }
