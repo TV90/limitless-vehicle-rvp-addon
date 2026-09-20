@@ -341,5 +341,6 @@
   "gui.ywzj_rvp.fire_support.reason.aircraft_destroyed": "Air support aircraft destroyed; remaining deliveries stopped",
   "gui.ywzj_rvp.fire_support.reason.aircraft_spawn_failed": "Air support aircraft failed to spawn or initialize",
   "gui.ywzj_rvp.fire_support.reason.aircraft_lost": "Air support aircraft was lost and recovery timed out; remaining deliveries stopped",
-  "ui.ir_target_off_axis": "IR seeker target is outside the off-axis gimbal limit"
+  "ui.ir_target_off_axis": "IR seeker target is outside the off-axis gimbal limit",
+  "ui.hitl_target_speed_break": "Target too fast - lock broken"
 }

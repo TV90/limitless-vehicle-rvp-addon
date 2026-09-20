@@ -246,6 +246,17 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /** 干扰判定段标志：已进入原定开机距离（箔条判定 + MSL 告警生效），但导引头尚未真开机。 */
     private boolean countermeasurePhaseActive;
 
+    // ==================== HITL 电视制导速度脱锁反制（2026-09-21） ====================
+
+    /**
+     * 速度脱锁：清除实体锁，跟踪点设为最后一次持续跟踪的坐标。之后吊舱实时指定点
+     * （含指方块/地面）立即恢复可用，重锁超速实体会被制导源闸门再次脱锁。
+     */
+    public void rvp$markHitlSpeedBreak(Vec3 lastTrackedPos) {
+        setTargetEntity(null);
+        setTargetPos(lastTrackedPos);
+    }
+
     private void tickActiveSeekerTargetManagement(RVP_EnumGuidanceType type) {
         RVP_GuidanceActiveConfig config = resolveNewActiveConfig();
         if (config == null || config.guidanceType() != type) {

@@ -1,7 +1,10 @@
 package org.ywzj.rvp.guidance.runtime;
 
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -35,6 +38,22 @@ public final class RVP_RuntimeHitlTvGuidanceSource implements RVP_RuntimeGuidanc
             Entity valid = RVP_RuntimeSeekerSupport.validateEntity(
                     context.projectile(), target, RVP_EnumGuidanceType.HITL_TV, context.active());
             if (valid != null) {
+                // 速度脱锁反制（2026-09-21）：被锁实体速度超阈值（格/tick × 72 = km/h）立即脱锁，
+                // 锁定位置改为最后一次持续跟踪的坐标（弹体转飞该点）。操作手吊舱实时指定点
+                //（指方块/地面/新目标）与实体重锁均立即可用；重锁入口 rvp$setHitlDesignatedEntity
+                // 只把实体放回，本闸门每 tick 复查，再锁超速目标会立刻再脱锁，无需额外挂钩。
+                float breakKph = RVP_Config.getHitlTvBreakLockTargetSpeedKph();
+                if (breakKph > 0 && valid.getDeltaMovement().length() * 72.0 > breakKph) {
+                    Vec3 lastTracked = valid.getBoundingBox().getCenter();
+                    missile.rvp$markHitlSpeedBreak(lastTracked);
+                    if (missile.getOwner() instanceof ServerPlayer operator) {
+                        operator.displayClientMessage(
+                                Component.translatable("ui.hitl_target_speed_break"), true);
+                    }
+                    // 本 tick 起由实体跟踪转为点制导飞向最后跟踪坐标；下一 tick 起吊舱实时
+                    // 指定点（指方块/地面/新目标）即恢复正常接管，重锁超速实体则再次进本闸门
+                    return RVP_GuidanceIntent.point(lastTracked, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
+                }
                 return RVP_GuidanceIntent.entity(valid, false, 1.0, RVP_EnumGuidanceType.HITL_TV);
             }
         }

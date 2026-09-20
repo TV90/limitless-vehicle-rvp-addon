@@ -341,5 +341,6 @@
   "gui.ywzj_rvp.fire_support.reason.aircraft_destroyed": "空中支援飞机被击落，后续投送已停止",
   "gui.ywzj_rvp.fire_support.reason.aircraft_spawn_failed": "空中支援飞机生成或初始化失败",
   "gui.ywzj_rvp.fire_support.reason.aircraft_lost": "空中支援飞机失联且恢复超时，后续投送已停止",
-  "ui.ir_target_off_axis": "红外导引头目标超出离轴角"
+  "ui.ir_target_off_axis": "红外导引头目标超出离轴角",
+  "ui.hitl_target_speed_break": "目标速度过高，锁定解除"
 }

@@ -20,6 +20,8 @@ public class RVP_Config {
 
     private final ForgeConfigSpec.DoubleValue eraMaxIncidenceAngle;
 
+    private final ForgeConfigSpec.DoubleValue hitlTvBreakLockTargetSpeedKph;
+
     /** Parsed cache: sorted by maxRadius ascending. */
     private volatile List<CraterRule> parsedRules = List.of();
 
@@ -50,6 +52,25 @@ public class RVP_Config {
                         "Default: 35"
                 )
                 .defineInRange("eraMaxIncidenceAngle", 35.0D, 0.0D, 90.0D);
+
+        builder.push("guidance");
+
+        // HITL 电视制导速度脱锁反制（2026-09-21 用户需求）：被锁定实体速度超过该阈值（km/h）
+        // 时立即脱锁，锁定位置冻结为最后一次持续跟踪的坐标；操作手可重新锁定，但再锁超速目标
+        // 仍会立刻脱锁。0 = 关闭该反制（维持旧行为：可无限跟踪任意速度目标）。
+        hitlTvBreakLockTargetSpeedKph = builder
+                .comment(
+                        "HITL TV guidance break-lock countermeasure: when the locked entity's speed",
+                        "exceeds this threshold (km/h), the missile breaks lock immediately and its",
+                        "aim point freezes at the last continuously tracked position. The operator",
+                        "can keep controlling and re-lock, but re-locking a target above the speed",
+                        "breaks lock again right away.",
+                        "0 = disable (old behavior: track targets at any speed).",
+                        "Default: 72 (equals 1 block/tick)"
+                )
+                .defineInRange("hitlTvBreakLockTargetSpeedKph", 72.0D, 0.0D, 10000.0D);
+
+        builder.pop();
 
         craterDepthRules = builder
                 .comment(
@@ -137,6 +158,15 @@ public class RVP_Config {
     public static float getEraMaxIncidenceAngle() {
         RVP_Config cfg = INSTANCE;
         return cfg != null ? cfg.eraMaxIncidenceAngle.get().floatValue() : 35.0F;
+    }
+
+    /**
+     * HITL 电视制导速度脱锁阈值（km/h）：被锁实体速度超过该值即脱锁并冻结跟踪点。
+     * 返回 0 表示关闭该反制。速度换算：格/tick × 72 = km/h（72 kph = 1 格/tick）。
+     */
+    public static float getHitlTvBreakLockTargetSpeedKph() {
+        RVP_Config cfg = INSTANCE;
+        return cfg != null ? cfg.hitlTvBreakLockTargetSpeedKph.get().floatValue() : 72.0F;
     }
 
     /** Register the server config. Must be called from mod constructor. */
