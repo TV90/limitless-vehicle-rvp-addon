@@ -19,6 +19,7 @@ public class WeaponUnitCustomMountSuppressMixin {
     private void ywzj_rvp$suppressDefaultWeaponRender(PoseStack pPoseStack,
                                                       MultiBufferSource bufferSource,
                                                       int pPackedLight,
+                                                      float partialTick,
                                                       CallbackInfo ci) {
         WeaponUnit self = (WeaponUnit) (Object) this;
         if (RVP_CustomMountRenderLogic.shouldSuppressDefaultWeaponDisplay(self)) {

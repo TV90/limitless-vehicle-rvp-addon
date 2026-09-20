@@ -23,7 +23,10 @@ public class InfraredSignatureMixin {
 
     @Redirect(
             method = "findTarget",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;getBoundingBox()Lnet/minecraft/world/phys/AABB;"),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;getBoundingBox()Lnet/minecraft/world/phys/AABB;",
+                    // remap 显式 true：原版 getBoundingBox 生产 SRG 环境需 refmap 翻译，
+                    // 否则 require=0 静默失效（2026-09-20 排查：生产上 IR 探测 RVP 弹体一直未生效）
+                    remap = true),
             require = 0
     )
     private static AABB ywzj_rvp$irBox(Entity entity) {

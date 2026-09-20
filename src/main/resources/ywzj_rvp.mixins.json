@@ -8,7 +8,6 @@
     "ControlUnitMixin",
     "accessor.BaseBulletAccessor",
     "accessor.BaseVehicleDataAccessor",
-    "accessor.BaseVehicleDataAccessor",
     "accessor.PartUnitDataAccessor",
     "accessor.SwitchableUnitAccessor",
     "VehicleExplosionCraterMixin",

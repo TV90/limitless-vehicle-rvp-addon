@@ -29,8 +29,11 @@ public abstract class FirstPersonHandlerExplosionShakeMixin {
             method = "addExplosionShake",
             at = @At(
                     value = "INVOKE",
+                    // remap 必须显式 true：@Mixin(remap=false) 会抑制 refmap 生成，
+                    // 而 Mth.clamp 是原版方法，生产 SRG 环境需 refmap 翻译（2026-09-20 生产崩溃教训）
                     target = "Lnet/minecraft/util/Mth;clamp(DDD)D",
-                    ordinal = 0
+                    ordinal = 0,
+                    remap = true
             ),
             index = 1
     )

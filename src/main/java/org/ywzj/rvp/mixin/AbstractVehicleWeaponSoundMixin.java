@@ -28,7 +28,10 @@ public abstract class AbstractVehicleWeaponSoundMixin {
 
     @Redirect(
             method = "onClientFire",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;playSound(Lnet/minecraft/world/entity/player/Player;DDDLnet/minecraft/sounds/SoundEvent;Lnet/minecraft/sounds/SoundSource;FF)V"),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;playSound(Lnet/minecraft/world/entity/player/Player;DDDLnet/minecraft/sounds/SoundEvent;Lnet/minecraft/sounds/SoundSource;FF)V",
+                    // remap 显式 true：原版 playSound 在生产 SRG 环境需 refmap 翻译，
+                    // 否则 require=0 会静默失效（2026-09-20 排查：07-27 起生产上此衰减一直未生效）
+                    remap = true),
             require = 0
     )
     private void ywzj_rvp$redirectPlaySound(Level level, @Nullable Player except,
