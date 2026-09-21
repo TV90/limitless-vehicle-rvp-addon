@@ -11,6 +11,7 @@ import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_IrHudProfile;
+import org.ywzj.rvp.guidance.RVP_IrHmdTargetingMath;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
@@ -33,7 +34,12 @@ public class RVP_ClientHmdState {
 
     private static final float RADAR_HMD_HALF_FOV = 2.5f;
     private static final float HMD_RANGE_MULTIPLIER = 0.5f;
-    private static final int HMD_SCAN_INTERVAL = 5;
+    /** 雷达 HMD 扫描周期（Tick），保持原有节奏。 */
+    private static final int RADAR_HMD_SCAN_INTERVAL = 5;
+    /** IR HMD 捕获扫描周期：2 Tick 可避免快速掠过目标时被旧 5 Tick 周期漏检。 */
+    private static final int IR_HMD_SCAN_INTERVAL = 2;
+    /** 目标可见轮廓之外允许的轻微捕获容差（度），只影响头瞄捕获，不放宽发射离轴终检。 */
+    private static final double IR_HMD_OUTLINE_TOLERANCE_DEG = 0.0;
     private static final int IR_LOCK_GRACE_TICKS = 20;
     private static final int OUT_OF_BOUNDS_TIMEOUT = 20;
     private static final float SMOOTH_FACTOR = 0.4f;
@@ -335,6 +341,7 @@ public class RVP_ClientHmdState {
         smoothPitch += (aimPitch - smoothPitch) * SMOOTH_FACTOR;
         smoothYaw += (aimYaw - smoothYaw) * SMOOTH_FACTOR;
 
+        Vec3 rawHeadLook = VectorUtil.rotToVec(aimPitch, aimYaw).normalize();
         if (hmdType == HmdType.IR && irGuideHeadMaxAngle > 0f) {
             Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation);
             Vec3 hmdDir = VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
@@ -353,7 +360,9 @@ public class RVP_ClientHmdState {
         if (hmdType == HmdType.RADAR) {
             tickRadarHmd(mc, vehicle, weaponUnit, headLook);
         } else if (hmdType == HmdType.IR) {
-            tickIrHmd(mc, vehicle, weaponUnit, headLook);
+            // 捕获使用本 Tick 原始头瞄方向，避免 HUD 平滑方向滞后造成快速扫过目标时漏锁；
+            // HUD 仍读取 smoothPitch/smoothYaw，故显示动画和平滑手感保持不变。
+            tickIrHmd(mc, vehicle, weaponUnit, clampIrScanDirection(weaponUnit, rawHeadLook));
         }
     }
 
@@ -389,7 +398,7 @@ public class RVP_ClientHmdState {
         Vec3 radarPos = radar.worldRadarPosition();
         float maxRange = radar.getMaxScanDistance() * HMD_RANGE_MULTIPLIER;
 
-        if (++scanCounter < HMD_SCAN_INTERVAL) {
+        if (++scanCounter < RADAR_HMD_SCAN_INTERVAL) {
             return;
         }
         scanCounter = 0;
@@ -503,7 +512,7 @@ public class RVP_ClientHmdState {
             clearIrLockState(weaponUnit);
         }
 
-        if (++scanCounter < HMD_SCAN_INTERVAL) {
+        if (++scanCounter < IR_HMD_SCAN_INTERVAL) {
             return;
         }
         scanCounter = 0;
@@ -514,6 +523,8 @@ public class RVP_ClientHmdState {
 
         Entity bestTarget = null;
         double bestScore = Double.MAX_VALUE;
+        double bestEffectiveAngle = Double.MAX_VALUE;
+        boolean bestIsVehicle = false;
         // O(实体) 遍历已加载实体，替代 ±maxRange（雷达扫描距离可达数千格）立方体 getEntities
         // （客户端 HMD IR 扫描掉帧）；maxRange 距离闸门保留在下方循环内
         for (Entity entity : mc.level.entitiesForRendering()) {
@@ -525,9 +536,11 @@ public class RVP_ClientHmdState {
                     || entity.getVehicle() != null) {
                 continue;
             }
+            // 调用本项目 IR 发射终检几何，保持距离、高度、LOS 与离轴中心点门槛不变；
+            // 捕获锥角单独按下方目标可见轮廓计算，避免中心点门槛抵消轮廓辅助。
             if (irUsesNewLaunchData && irLaunchWeapon != null
-                    && !RVP_IrLockHelper.isTargetWithinAcquireLimits(
-                    weaponUnit, entity, irLaunchWeapon, scanDir)) {
+                    && !RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
+                    weaponUnit, entity, irLaunchWeapon, 0f)) {
                 continue;
             }
             Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(seekerPos);
@@ -535,27 +548,50 @@ public class RVP_ClientHmdState {
             if (dist > maxRange || dist < 1.0) {
                 continue;
             }
-            Vec3 dir = toTarget.normalize();
-            double angle = Math.toDegrees(Math.acos(
-                    Math.max(-1.0, Math.min(1.0, scanDir.dot(dir)))));
-            if (angle > scanHalfAngle) {
+            // 调用本项目头瞄轮廓角算法：准线命中目标包围盒外接轮廓时按 0° 计，
+            // 轮廓外仅再给予固定 IR_HMD_OUTLINE_TOLERANCE_DEG° 容差，避免简单扩大整片空域吸附范围。
+            double effectiveAngle = RVP_IrHmdTargetingMath.effectiveAngularMissDeg(
+                    seekerPos, scanDir, entity.getBoundingBox());
+            if (effectiveAngle > scanHalfAngle + IR_HMD_OUTLINE_TOLERANCE_DEG) {
                 continue;
             }
-            double score = angle * 0.7 + dist * 0.0003;
-            if (score < bestScore) {
+            double score = effectiveAngle * 0.7 + dist * 0.0003;
+            boolean candidateIsVehicle = entity instanceof AbstractVehicle;
+            // 同一捕获区域内优先载具，避免提高灵敏度后普通生物或弹体抢走载具目标；
+            // 同类别仍按轮廓角距离优先、距离次优的原权重排序。
+            if (bestTarget == null
+                    || candidateIsVehicle && !bestIsVehicle
+                    || candidateIsVehicle == bestIsVehicle && score < bestScore) {
                 bestScore = score;
+                bestEffectiveAngle = effectiveAngle;
+                bestIsVehicle = candidateIsVehicle;
                 bestTarget = entity;
             }
         }
 
         if (bestTarget != null) {
-            confirmIrLock(weaponUnit, bestTarget, bestScore, "acquire");
+            confirmIrLock(weaponUnit, bestTarget, bestEffectiveAngle, "acquire");
             mc.player.displayClientMessage(
                     Component.translatable("message.ywzj_rvp.hmd.ir_locked"), true);
         } else if (irGraceTargetId != -1 && tickCount - irLastConfirmedLockTick > IR_LOCK_GRACE_TICKS) {
             irGraceTargetId = -1;
             irGraceStartTick = Integer.MIN_VALUE;
         }
+    }
+
+    /**
+     * 把原始头瞄扫描方向钳制在 IR 机械离轴锥内；只供捕获扫描使用，HUD 仍使用平滑方向。
+     */
+    private Vec3 clampIrScanDirection(WeaponUnit weaponUnit, Vec3 rawHeadLook) {
+        Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(
+                weaponUnit, irOffAxisStacksWithStationRotation);
+        if (weaponDir.lengthSqr() <= 1.0E-6 || rawHeadLook.lengthSqr() <= 1.0E-6
+                || irGuideHeadMaxAngle <= 0f) {
+            return rawHeadLook;
+        }
+        return angleBetweenDeg(weaponDir, rawHeadLook) > irGuideHeadMaxAngle
+                ? clampDirectionToCone(weaponDir, rawHeadLook, irGuideHeadMaxAngle)
+                : rawHeadLook;
     }
 
     private Entity resolveTrackedIrTarget(Minecraft mc, WeaponUnit weaponUnit) {
