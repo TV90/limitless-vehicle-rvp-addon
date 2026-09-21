@@ -120,8 +120,14 @@ public class RVP_MissileOverlay implements IGuiOverlay {
 
         poseStack.popPose();
 
-        // 头瞄圈：锁定后跟踪目标
-        Entity locked = weaponUnit.getLockedEntity();
+        // 头瞄圈：只展示真实的 IR 导引头锁定。
+        // HMD 激活时调用本项目 HMD 状态读取 IR 通道自己的目标，禁止把雷达写入的共享火控目标
+        // 误画成 IR 锁定圈；非 HMD IR 模式保持读取本体 WeaponUnit 锁定目标的既有行为。
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        Entity locked = null;
+        if (weaponUnit.isSeekerOn()) {
+            locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();
+        }
         if (locked != null) {
             double ex = Mth.lerp(partialTick, locked.xo, locked.getX());
             double ey = Mth.lerp(partialTick, locked.yo, locked.getY());

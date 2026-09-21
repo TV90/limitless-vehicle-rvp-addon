@@ -86,6 +86,16 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             //（见 VehicleAimAtOverlaySeekerColorMixin 的 hudLockTakeoverActive 重定向）。
             if (hudLockTakeoverActive()) {
                 renderAimLockTarget(guiGraphics, partialTick);
+            } else {
+                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+                // 本体 HUD 仅在武器站静态传感器为 RF 时绘制雷达硬锁框；PL-10 等非 RF
+                // 武器下仍可能由 HMD 建立真实雷达锁，因此这里只补画硬锁框，不接管扫描航迹。
+                if (weaponUnit != null
+                        && weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.RF) {
+                    // 调用本项目雷达角色解析，获取当前实际持锁的雷达而非只读主雷达。
+                    RadarUnit lockedRadar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+                    renderLocalRadarHardLock(guiGraphics, partialTick, weaponUnit, lockedRadar);
+                }
             }
             return;
         }
@@ -407,34 +417,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         // 本机雷达锁定：能解析出探测对象才画框（否则可能只是外置锁定被镜像进本机雷达的 lockedEntity，
         // 目标并不在本机雷达探测表里——如 bukm3 这类"外置雷达车提供探测+发射车自带雷达"的载具）。
         // 外置锁定作为兜底分支：本机锁画不出时再画外置锁，避免 BVR 框缺失。
-        boolean drewLockBox = false;
-        if (mainRadarUnit != null && sensorType == WeaponUnitData.FireControlSensorType.RF && mainRadarUnit.getLockedEntity() != null) {
-            RadarUnit.DetectedObject detectedObject = resolveDetectedObject(weaponUnit, mainRadarUnit, mainRadarUnit.getLockedEntity());
-            if (detectedObject != null) {
-                Vec3 screenPos = VectorUtil.worldToScreen(detectedObject.entity.position());
-                if (screenPos.z >= 0) {
-                    PoseStack poseStack = guiGraphics.pose();
-                    poseStack.pushPose();
-                    {
-                        poseStack.translate(screenPos.x, screenPos.y, 0);
-                        RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
-                        RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
-                        alliesInfo(guiGraphics, detectedObject);
-                        radarInfo(guiGraphics, poseStack, detectedObject);
-                        // [RVP] 武器站锁与雷达锁同目标：导引头圈并入 BVR 框同锚点绘制
-                        //（武器站锁分支已跳过，保留"框内导引头圈"视觉且不再分离成双框）
-                        if (weaponUnit.getLockedEntity() == radarLocked
-                                && weaponUnit.isSeekerOn()
-                                && sensorType == WeaponUnitData.FireControlSensorType.RF) {
-                            GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 5, Color.RED, 0.05f, 0, 0);
-                            GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 4, Color.RED, 0.06f, 0, 0);
-                        }
-                    }
-                    poseStack.popPose();
-                    drewLockBox = true;
-                }
-            }
-        }
+        // 雷达硬锁属于雷达通道状态，不取决于当前选择武器的传感器类型；调用独立绘制入口后，
+        // IR 弹也能与自己的红色锁定圈同时显示雷达双绿色实心框。
+        boolean drewLockBox = renderLocalRadarHardLock(
+                guiGraphics, partialTick, weaponUnit, mainRadarUnit);
         if (!drewLockBox && sensorType == WeaponUnitData.FireControlSensorType.RF
                 && externalLockedEntry != null
                 && vehicle != null) {
@@ -486,6 +472,57 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         // 若这里也门控 RF，则"外置雷达扫到但本机雷达未对准"的载具不会画 BVR 框）
         renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
                 externalLockedEntityId);
+    }
+
+    /**
+     * 绘制本机雷达的硬锁目标双实心框。
+     *
+     * <p>硬锁状态直接来自实际持锁的 {@link RadarUnit}，不以当前武器的 IR/RF 类型为门控；
+     * 普通扫描航迹仍由 {@link #renderAimLockTarget(GuiGraphics, float)} 的原有接管条件控制。</p>
+     *
+     * @return 已成功把雷达硬锁目标绘制到屏幕时返回 {@code true}
+     */
+    private static boolean renderLocalRadarHardLock(GuiGraphics guiGraphics, float partialTick,
+                                                    WeaponUnit weaponUnit, @Nullable RadarUnit lockedRadar) {
+        if (lockedRadar == null || lockedRadar.getLockedEntity() == null) {
+            return false;
+        }
+        Entity radarLocked = lockedRadar.getLockedEntity();
+        // 调用本项目探测记录解析，确保锁定框只使用本机雷达实际持有的航迹数据。
+        RadarUnit.DetectedObject detectedObject = resolveDetectedObject(weaponUnit, lockedRadar, radarLocked);
+        if (detectedObject == null) {
+            return false;
+        }
+        Entity detectedEntity = detectedObject.entity;
+        double curX = Mth.lerp(partialTick, detectedEntity.xo, detectedEntity.getX());
+        double curY = Mth.lerp(partialTick, detectedEntity.yo, detectedEntity.getY());
+        double curZ = Mth.lerp(partialTick, detectedEntity.zo, detectedEntity.getZ());
+        Vec3 centerOffset = detectedEntity.getBoundingBox().getCenter().subtract(detectedEntity.position());
+        // 与 IR 锁定圈使用同一“插值后包围盒中心”锚点，保证两个通道锁定同一目标时视觉重合。
+        Vec3 screenPos = VectorUtil.worldToScreen(new Vec3(curX, curY, curZ).add(centerOffset));
+        if (screenPos.z < 0) {
+            return false;
+        }
+        PoseStack poseStack = guiGraphics.pose();
+        poseStack.pushPose();
+        {
+            poseStack.translate(screenPos.x, screenPos.y, 0);
+            RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
+            RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
+            alliesInfo(guiGraphics, detectedObject);
+            radarInfo(guiGraphics, poseStack, detectedObject);
+            // RF 导引头继续沿用原有“红双圈并入雷达框”的显示；IR 红圈由
+            // RVP_MissileOverlay 按 IR 通道独立绘制，二者可在同一目标上并存。
+            if (weaponUnit.getLockedEntity() == radarLocked
+                    && weaponUnit.isSeekerOn()
+                    && RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit)
+                    == WeaponUnitData.FireControlSensorType.RF) {
+                GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 5, Color.RED, 0.05f, 0, 0);
+                GuiHelper.drawCircle(guiGraphics.pose(), 0, 0, 4, Color.RED, 0.06f, 0, 0);
+            }
+        }
+        poseStack.popPose();
+        return true;
     }
 
     /** 本机是否有外置雷达条目（有外置雷达中继且探测到目标）。 */

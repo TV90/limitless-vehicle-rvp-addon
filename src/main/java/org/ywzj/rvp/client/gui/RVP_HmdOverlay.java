@@ -84,7 +84,9 @@ public class RVP_HmdOverlay {
         if (tan <= 0) return;
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) return;
-        Entity locked = weaponUnit.getLockedEntity();
+        // 调用本项目 HMD 状态读取 IR 通道自己的目标，避免雷达硬锁写入共享 WeaponUnit
+        // 锁定字段后被误判为 IR 锁定。
+        Entity locked = state.getLockedEntity();
         Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 camPos = camera.getPosition();
 
@@ -164,7 +166,8 @@ public class RVP_HmdOverlay {
 
     private static void renderAirIr(GuiGraphics guiGraphics, Minecraft mc, RVP_ClientHmdState state) {
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-        if (weaponUnit == null || weaponUnit.getLockedEntity() != null) return;
+        // 调用本项目 HMD 状态判断 IR 通道是否已锁定；雷达通道独立持锁时仍应保留 IR 捕获圈。
+        if (weaponUnit == null || state.hasLock()) return;
 
         Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 camPos = camera.getPosition();
