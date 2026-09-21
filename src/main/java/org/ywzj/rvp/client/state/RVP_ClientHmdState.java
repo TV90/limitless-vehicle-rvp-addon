@@ -11,7 +11,7 @@ import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_GuidanceMath;
 import org.ywzj.rvp.guidance.RVP_IrHudProfile;
-import org.ywzj.rvp.guidance.RVP_IrHmdTargetingMath;
+import org.ywzj.rvp.guidance.RVP_HmdTargetingMath;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
@@ -32,10 +32,13 @@ public class RVP_ClientHmdState {
 
     private static final RVP_ClientHmdState INSTANCE = new RVP_ClientHmdState();
 
-    private static final float RADAR_HMD_HALF_FOV = 2.5f;
+    /** 雷达 HMD 捕获框、雷达扇区与捕获算法共用的单侧半视场角（度）。 */
+    public static final float RADAR_HMD_HALF_FOV_DEG = 2.5f;
     private static final float HMD_RANGE_MULTIPLIER = 0.5f;
-    /** 雷达 HMD 扫描周期（Tick），保持原有节奏。 */
+    /** 雷达 HMD 捕获扫描周期：2 Tick 可降低快速扫过已发现航迹时的漏检概率。目前 5 Tick 降低开销*/
     private static final int RADAR_HMD_SCAN_INTERVAL = 5;
+    /** 雷达目标可见轮廓之外允许的轻微捕获容差（度），不扩大雷达发现范围。 */
+    private static final double RADAR_HMD_OUTLINE_TOLERANCE_DEG = 0.75;
     /** IR HMD 捕获扫描周期：2 Tick 可避免快速掠过目标时被旧 5 Tick 周期漏检。 */
     private static final int IR_HMD_SCAN_INTERVAL = 2;
     /** 目标可见轮廓之外允许的轻微捕获容差（度），只影响头瞄捕获，不放宽发射离轴终检。 */
@@ -356,9 +359,9 @@ public class RVP_ClientHmdState {
             }
         }
 
-        Vec3 headLook = VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
         if (hmdType == HmdType.RADAR) {
-            tickRadarHmd(mc, vehicle, weaponUnit, headLook);
+            // 雷达捕获与 IR HMD 一样使用本 Tick 原始头瞄方向；HUD 和雷达扫描线仍读取平滑方向。
+            tickRadarHmd(mc, weaponUnit, rawHeadLook);
         } else if (hmdType == HmdType.IR) {
             // 捕获使用本 Tick 原始头瞄方向，避免 HUD 平滑方向滞后造成快速扫过目标时漏锁；
             // HUD 仍读取 smoothPitch/smoothYaw，故显示动画和平滑手感保持不变。
@@ -387,14 +390,14 @@ public class RVP_ClientHmdState {
         return true;
     }
 
-    private void tickRadarHmd(Minecraft mc, AbstractVehicle vehicle, WeaponUnit weaponUnit, Vec3 headLook) {
+    private void tickRadarHmd(Minecraft mc, WeaponUnit weaponUnit, Vec3 rawHeadLook) {
         RadarUnit radar = findHmdRadar(weaponUnit);
         if (radar == null) {
             disable();
             return;
         }
 
-        Vec3 scanDir = resolveRadarAimDir(weaponUnit, radar);
+        Vec3 scanDir = resolveRadarScanDir(weaponUnit, radar, rawHeadLook);
         Vec3 radarPos = radar.worldRadarPosition();
         float maxRange = radar.getMaxScanDistance() * HMD_RANGE_MULTIPLIER;
 
@@ -429,11 +432,17 @@ public class RVP_ClientHmdState {
                 continue;
             }
             Vec3 dir = toTarget.normalize();
-            double angle = Math.toDegrees(Math.acos(scanDir.dot(dir)));
-            if (angle > RADAR_HMD_HALF_FOV) {
+            // 目标中心仍须位于雷达机械扫描范围内，防止轮廓容差越过方位/俯仰边界误锁。
+            if (!isWithinRadarLimits(radar, dir)) {
                 continue;
             }
-            double score = angle * 0.7 + dist * 0.0003;
+            // 调用共用头瞄轮廓算法：目标包围盒进入捕获框即可捕获，框外仅增加固定小容差。
+            double effectiveAngle = RVP_HmdTargetingMath.effectiveAngularMissDeg(
+                    radarPos, scanDir, entity.getBoundingBox());
+            if (effectiveAngle > RADAR_HMD_HALF_FOV_DEG + RADAR_HMD_OUTLINE_TOLERANCE_DEG) {
+                continue;
+            }
+            double score = effectiveAngle * 0.7 + dist * 0.0003;
             if (score < bestScore) {
                 bestScore = score;
                 bestTarget = entity;
@@ -550,7 +559,7 @@ public class RVP_ClientHmdState {
             }
             // 调用本项目头瞄轮廓角算法：准线命中目标包围盒外接轮廓时按 0° 计，
             // 轮廓外仅再给予固定 IR_HMD_OUTLINE_TOLERANCE_DEG° 容差，避免简单扩大整片空域吸附范围。
-            double effectiveAngle = RVP_IrHmdTargetingMath.effectiveAngularMissDeg(
+            double effectiveAngle = RVP_HmdTargetingMath.effectiveAngularMissDeg(
                     seekerPos, scanDir, entity.getBoundingBox());
             if (effectiveAngle > scanHalfAngle + IR_HMD_OUTLINE_TOLERANCE_DEG) {
                 continue;
@@ -592,6 +601,20 @@ public class RVP_ClientHmdState {
         return angleBetweenDeg(weaponDir, rawHeadLook) > irGuideHeadMaxAngle
                 ? clampDirectionToCone(weaponDir, rawHeadLook, irGuideHeadMaxAngle)
                 : rawHeadLook;
+    }
+
+    /**
+     * 解析雷达 HMD 的实际捕获方向：普通视角使用原始头瞄，观瞄/仅 ACM 模式保持武器轴线语义。
+     */
+    private Vec3 resolveRadarScanDir(WeaponUnit weaponUnit, RadarUnit radarUnit, Vec3 rawHeadLook) {
+        boolean scope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        if (scope || isRadarOnlyAcm(radarUnit)) {
+            Vec3 boresight = weaponUnit.worldVec();
+            return boresight.lengthSqr() > 1.0E-6 ? boresight.normalize() : rawHeadLook;
+        }
+        return rawHeadLook.lengthSqr() > 1.0E-6
+                ? rawHeadLook.normalize()
+                : VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
     }
 
     private Entity resolveTrackedIrTarget(Minecraft mc, WeaponUnit weaponUnit) {

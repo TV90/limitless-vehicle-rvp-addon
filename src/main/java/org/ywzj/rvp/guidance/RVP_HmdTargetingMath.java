@@ -5,15 +5,15 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 红外头瞄捕获的纯几何计算。
+ * 雷达与红外头瞄共用的纯几何计算。
  *
- * <p>锁定判定不再只比较准线与目标包围盒中心的夹角，而是把包围盒近似为外接球，
+ * <p>锁定判定不只比较准线与目标包围盒中心的夹角，而是把包围盒近似为外接球，
  * 用外接球在观察点形成的角半径表示目标可见轮廓。这样准线落在机翼、车体边缘等
- * 可见部分时仍能捕获目标，同时不会改变距离、高度、视线或离轴发射门槛。</p>
+ * 可见部分时仍能捕获目标，同时不会改变各传感器自身的距离、高度、视线或机械边界。</p>
  */
-public final class RVP_IrHmdTargetingMath {
+public final class RVP_HmdTargetingMath {
 
-    private RVP_IrHmdTargetingMath() {}
+    private RVP_HmdTargetingMath() {}
 
     /**
      * 计算扫描方向到目标可见轮廓的最小角距离。

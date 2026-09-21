@@ -19,7 +19,6 @@ public class RVP_HmdOverlay {
     private static final int COLOR_GREEN = Color.GREEN;
     private static final int COLOR_RED = 0xFFFF2B2B;
     private static final int COLOR_WHITE = 0xFFFFFFFF;
-    private static final float RADAR_HMD_HALF_FOV_DEG = 1.5f;
     private static final float GROUND_IR_HALF_FOV_DEG = 2.4f;
     private static final int CROSS_HALF = 8;
 
@@ -65,7 +64,7 @@ public class RVP_HmdOverlay {
         double fov = mc.options.fov().get();
         double tan = Math.tan(Math.toRadians(fov / 2.0));
         if (tan <= 0) return;
-        int boxHalf = (int) (Math.tan(Math.toRadians(RADAR_HMD_HALF_FOV_DEG)) / tan * cy * 1.1);
+        int boxHalf = (int) (Math.tan(Math.toRadians(RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG)) / tan * cy * 1.1);
         if (boxHalf < 8) boxHalf = 8;
         int left = cx - boxHalf, right = cx + boxHalf, top = cy - boxHalf, bottom = cy + boxHalf;
         boolean visible = (System.currentTimeMillis() % 700) < 350;

@@ -108,7 +108,7 @@ public class VehicleRadarOverlayMixin {
             remap = false
     )
     private float ywzj_rvp$modifyScanAngle(float angleDeg) {
-        // HMD 模式：扫描线只在 3° 小扇形内摆动，频率加快（每 5 tick 一个周期）
+        // HMD 模式：扫描线在共享捕获半视场内摆动；显示仍使用平滑方向。
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         if (hmdState.isRadarHmd()) {
             RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
@@ -127,12 +127,13 @@ public class VehicleRadarOverlayMixin {
                     yMax = 360f;
                 }
                 float center = Mth.clamp((float) localRot.y, yMin, yMax);
-                // 在 3° 内 ping-pong，每 5 tick 一个完整周期
+                // 在共享捕获视场内 ping-pong，每 5 tick 一个完整显示周期。
                 int tick = hmd.getTickCount();
                 float phase = ((tick % 5) + this.ywzj_rvp$partialTick) / 5.0f;
                 phase = Mth.clamp(phase, 0f, 1f);
                 float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
-                return center - 1.5f + 3.0f * pingPong;
+                float halfFov = RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG;
+                return center - halfFov + halfFov * 2.0f * pingPong;
             }
             return angleDeg;
         }
@@ -241,8 +242,9 @@ public class VehicleRadarOverlayMixin {
         // 取反 localRot.y：worldVecToLocalRot 与 drawRadarSector 的角方向相反
         float hmdBearing = Mth.clamp(-(float) localRot.y, -yMax, -yMin);
 
-        float sectorStart = hmdBearing - 1.5f;
-        float sectorEnd = hmdBearing + 1.5f;
+        float halfFov = RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG;
+        float sectorStart = hmdBearing - halfFov;
+        float sectorEnd = hmdBearing + halfFov;
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
