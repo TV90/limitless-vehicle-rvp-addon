@@ -58,6 +58,32 @@
       ]
     },
     {
+      "id": "fa18f_specialweapon",
+      "translation_key": "fire_support.munition.rvp.fa18f_specialweapon",
+      "rounds_per_unit": 2,
+      "registration_phase_enabled": false,
+      "weapons": [
+        {
+          "weapon": "rvp:f18f_specialweapon",
+          "weight": 1,
+          "delivery": {
+            "type": "rvp:air_launched_projectile",
+            "data": {
+              "aircraft_id": "rvp:fa18f",
+              "rack_offset": { "x": 0.0, "y": -2.0, "z": 0.0 },
+              "entry_distance_m": 1280.0,
+              "exit_distance_m": 768.0,
+              "release_altitude_above_impact_m": 256.0,
+              "min_release_altitude_above_impact_m": 96.0,
+              "carrier_speed_m_per_tick": 2.5,
+              "preload_ticks": 80,
+              "heading_jitter_deg": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "mk84_yasser_air",
       "translation_key": "fire_support.munition.rvp.mk84_yasser_air",
       "rounds_per_unit": 6,

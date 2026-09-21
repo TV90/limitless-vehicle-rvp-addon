@@ -14,6 +14,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.ywzj.rvp.client.particle.RVP_MchrFlareParticle;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_MchrSmokeRenderType;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
@@ -66,6 +67,10 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
         float smokeSize = smokeRadius < 8.0f
                 ? (smokeRadius < 2.0f ? 1.5f : smokeRadius * 1.5f)
                 : Math.min(12.0f + (smokeRadius - 8.0f) * 0.5f, 20.0f);
+        // 彩蛋（2026-09-22）：explosion_data.explosion_sound = rvp:114514 时，
+        // 烟雾改绑 textures/boom/114514.png（布局须与 smoke.png 一致：512×64 八帧横排）。
+        boolean eggSmoke = "rvp:114514".equals(
+                RVP_DefaultExplosionEventData.decodeExplosionSound(event.canonicalPresetDataJson()));
         for (int i = 0; i < smokeCount; i++) {
             // 爆心 ± smokeRadius 球域内随机（含空气——空爆时烟铺满球面）
             double randX = center.x + (random.nextDouble() - 0.5) * 2.0 * smokeRadius;
@@ -101,7 +106,10 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
             int lifetime = (int) ((5 + random.nextInt(10)) * Math.max(smokeRadius / 2.0f, 6.0f));
             engine.add(RVP_MchrSmokeParticle.of(level,
                     (randX + center.x) / 2.0, (randY + center.y) / 2.0, (randZ + center.z) / 2.0,
-                    smokeX, smokeY, smokeZ, smokeSize, lifetime));
+                    smokeX, smokeY, smokeZ, smokeSize, lifetime)
+                    .withRenderType(eggSmoke
+                            ? RVP_MchrSmokeRenderType.EGG_RENDER_TYPE
+                            : RVP_MchrSmokeRenderType.RENDER_TYPE));
         }
 
         // ── 3) 受影响方块采样环（碎屑 + 曳光火星）──

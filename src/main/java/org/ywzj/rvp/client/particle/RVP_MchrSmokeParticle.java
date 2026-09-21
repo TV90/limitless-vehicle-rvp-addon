@@ -35,6 +35,8 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
     private final float maxScale;
     /** 当前帧索引（8 帧横排，UV 自算）。 */
     private int frame;
+    /** 渲染类型（默认 MCHR 烟贴图；114514 彩蛋事件切换 EGG 贴图，布局一致）。 */
+    private ParticleRenderType renderType = RVP_MchrSmokeRenderType.RENDER_TYPE;
 
     private RVP_MchrSmokeParticle(ClientLevel level, double x, double y, double z,
                                   double vx, double vy, double vz,
@@ -121,9 +123,15 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         return this;
     }
 
+    /** 切换渲染类型（链式）：爆炸工厂在 114514 彩蛋事件时切到 EGG 贴图（布局与 smoke.png 一致）。 */
+    public RVP_MchrSmokeParticle withRenderType(ParticleRenderType renderType) {
+        this.renderType = renderType;
+        return this;
+    }
+
     @Override
     public ParticleRenderType getRenderType() {
-        return RVP_MchrSmokeRenderType.RENDER_TYPE;
+        return renderType;
     }
 
     @Override

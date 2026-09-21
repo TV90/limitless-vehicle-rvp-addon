@@ -27,6 +27,14 @@ public class RVP_CollisionData {
     @SerializedName("damage_decay")
     private List<RVP_DamageDecayRuleData> damageDecay = new ArrayList<>();
 
+    /**
+     * 直击命中药水效果列表（2026-09-22 MCHeli {@code AddPotionEffect} 机制移植）。
+     * 直击命中载具 → 对全体乘员满时长施加；命中普通生物 → 对其本体满时长施加。
+     * 爆炸携带的药水另见 {@link RVP_Explosion} 的 {@code potion_effects}（按爆心距离衰减）。
+     */
+    @SerializedName("hit_potion_effects")
+    private List<RVP_PotionEffectEntry> hitPotionEffects = new ArrayList<>();
+
     @SerializedName("living_penetration")
     private int livingPenetration = 0;
 
@@ -90,8 +98,21 @@ public class RVP_CollisionData {
         return !getDamageDecayRules().isEmpty();
     }
 
+    /** 直击命中药水效果（只读快照，未配置返回空列表）。 */
+    public List<RVP_PotionEffectEntry> getHitPotionEffects() {
+        if (hitPotionEffects == null || hitPotionEffects.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return hitPotionEffects;
+    }
+
+    public boolean hasHitPotionEffects() {
+        return !getHitPotionEffects().isEmpty();
+    }
+
     public boolean isSpecified() {
         return directDamage != null || hasDirectDamageFactor() || hasDamageDecay()
+                || hasHitPotionEffects()
                 || livingPenetration > 0 || wallPenetration > 0 || bounce > 0 || bounceFuseTick > 0
                 || bounceStrength != null || bounceIncidenceAngle > 0f || bounceOnVehicle
                 || penetrationDamageMultiplier > 0f && penetrationDamageMultiplier < 0.999f

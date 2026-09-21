@@ -22,34 +22,46 @@ import org.ywzj.rvp.RVP_MOD;
 @OnlyIn(Dist.CLIENT)
 public final class RVP_MchrSmokeRenderType {
 
-    /** MCHR 烟雾贴图（复制自 MCHR textures/particles/smoke.png，512×64 = 8 帧横排 64×64）。 */
+    /** MCHR 烟雾贴图（复制自 MCHR textures/particles/smoke.png，实际 64×8 = 8 帧横排 8×8）。 */
     public static final ResourceLocation TEXTURE =
             RVP_MOD.modLocation("textures/boom/smoke.png");
 
-    /** 烟帧数（贴图横排 8 帧，64×64 每帧）。 */
+    /** 彩蛋贴图：事件配置 {@code explosion_sound = rvp:114514} 时烟雾改绑此贴图（2026-09-22）。 */
+    public static final ResourceLocation EGG_TEXTURE =
+            RVP_MOD.modLocation("textures/boom/114514.png");
+
+    /** 烟帧数（贴图横排 8 帧，8×8 每帧）。 */
     public static final int FRAME_COUNT = 8;
 
     /** 独立半透明渲染类型：绑定 MCHR 烟贴图、标准 alpha 混合（GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
-    public static final ParticleRenderType RENDER_TYPE = new ParticleRenderType() {
-        @Override
-        public void begin(BufferBuilder builder, TextureManager textureManager) {
-            RenderSystem.depthMask(true);
-            RenderSystem.setShaderTexture(0, TEXTURE);
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
-        }
+    public static final ParticleRenderType RENDER_TYPE = forTexture(TEXTURE);
 
-        @Override
-        public void end(Tesselator tesselator) {
-            tesselator.end();
-        }
+    /** 彩蛋渲染类型：绑定 114514.png（8 帧横排、分辨率不限——UV 归一化，512×64 或 64×8 均可）。 */
+    public static final ParticleRenderType EGG_RENDER_TYPE = forTexture(EGG_TEXTURE);
 
-        @Override
-        public String toString() {
-            return "RVP_MCHR_SMOKE";
-        }
-    };
+    /** 按贴图生成独立半透明渲染类型实例（标准 alpha 混合 GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
+    private static ParticleRenderType forTexture(ResourceLocation texture) {
+        return new ParticleRenderType() {
+            @Override
+            public void begin(BufferBuilder builder, TextureManager textureManager) {
+                RenderSystem.depthMask(true);
+                RenderSystem.setShaderTexture(0, texture);
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
+            }
+
+            @Override
+            public void end(Tesselator tesselator) {
+                tesselator.end();
+            }
+
+            @Override
+            public String toString() {
+                return "RVP_MCHR_SMOKE";
+            }
+        };
+    }
 
     private RVP_MchrSmokeRenderType() {
     }

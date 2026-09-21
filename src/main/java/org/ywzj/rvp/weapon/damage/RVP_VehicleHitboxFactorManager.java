@@ -721,8 +721,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * 爆炸烟雾同规模）；MISSILE 音色（战斗部爆轰观感）。
      */
     private static void spawnMchrEraExplosion(ServerLevel serverLevel, Vec3 pos, float explosionScale) {
+        // ERA 模块爆炸无武器爆炸配置，自定义音效传 null 按MISSILE 默认音色。
         RVP_DefaultExplosionVisualService.spawn(serverLevel, pos,
-                3.0f * Math.max(explosionScale, 0.25f), RVP_EnumWeaponKind.MISSILE);
+                3.0f * Math.max(explosionScale, 0.25f), RVP_EnumWeaponKind.MISSILE, null);
     }
 
     private static String fmt(float v) {

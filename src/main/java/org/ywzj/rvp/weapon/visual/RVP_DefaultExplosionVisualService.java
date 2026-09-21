@@ -3,6 +3,7 @@ package org.ywzj.rvp.weapon.visual;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.server.visual.RVP_NetworkVisualEventPublisher;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
@@ -35,13 +36,15 @@ public final class RVP_DefaultExplosionVisualService {
      * @param pos 服务端权威爆心
      * @param radius 已解析引信覆盖后的最终爆炸半径，单位格
      * @param weaponKind RVP 弹体行为类型，用于客户端选择默认爆炸音色
+     * @param explosionSound 自定义爆炸音效事件 ID（可空；空则客户端按 weaponKind 选默认音色）
      */
-    public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind) {
+    public static void spawn(ServerLevel level, Vec3 pos, float radius, RVP_EnumWeaponKind weaponKind,
+                             @Nullable String explosionSound) {
         RVP_VisualEffectEvent event = new RVP_VisualEffectEvent(
                 EFFECT_TYPE,
                 ResourceLocation.fromNamespaceAndPath("rvp", "default"),
-                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类写入受限公共载荷。
-                RVP_DefaultExplosionEventData.encode(weaponKind),
+                // 调用 RVP 默认爆炸事件编码器，把类型化武器分类与自定义音效写入受限公共载荷。
+                RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound),
                 level.dimension(),
                 pos,
                 radius,

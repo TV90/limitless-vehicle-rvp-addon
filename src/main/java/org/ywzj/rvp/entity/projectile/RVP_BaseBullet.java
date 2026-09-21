@@ -75,6 +75,7 @@ import org.ywzj.rvp.weapon.data.RVP_DispenserPayloadData;
 import org.ywzj.rvp.weapon.effects.RVP_DetonateApplier;
 import org.ywzj.rvp.weapon.effects.RVP_DispenserPlacement;
 import org.ywzj.rvp.weapon.effects.RVP_HbmEffectBridge;
+import org.ywzj.rvp.weapon.effects.RVP_HitPotionEffectService;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionDamageFactor;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionImmediatePath;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
@@ -3395,6 +3396,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.invulnerableTime = 0;
         }
+        // 直击命中药水效果（2026-09-22 MCH AddPotionEffect 移植）：命中载具→对全体乘员、
+        // 命中生物→对其本体，均满时长施加（collision_data.hit_potion_effects）。
+        // 与爆炸药水（explosion_data.potion_effects，距离衰减）独立互斥不叠加。
+        if (!level().isClientSide() && level() instanceof ServerLevel serverLevel && config != null) {
+            RVP_HitPotionEffectService.applyForDirectHit(serverLevel, entity,
+                    config.getCollisionData().getHitPotionEffects(), owner, shooterVehicle);
+        }
     }
 
     protected float distanceDecayFactor() {
@@ -3840,8 +3848,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean defaultVisualSpawned = false;
         if (!suppressRvpDefault && level() instanceof ServerLevel defaultVisualLevel) {
             // 水中水花由客户端按爆心流体状态自行判定（事件不含 water 标记）
-            // 调用 RVP 默认爆炸发布端，同时把类型化武器分类交给客户端选择爆炸音色。
-            RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius, weaponKind);
+            // 调用 RVP 默认爆炸发布端，同时把类型化武器分类与自定义爆炸音效交给客户端。
+            RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius, weaponKind,
+                    detonateData == null ? null : detonateData.getExplosionData().getExplosionSound());
             defaultVisualSpawned = true;
         }
         boolean resolvedSuppressNative = hbmApplied
@@ -3932,6 +3941,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
         } finally {
             RVP_HitVehicleListener.exitRvpDamage();
+        }
+        // 爆炸药水效果（2026-09-22）：explosion_data.potion_effects，对杀伤半径内全体
+        // LivingEntity（含载具乘员——乘员作为独立实体按各自离爆心距离判定）施加，
+        // 时长线性衰减：爆心满时长 → 半径边缘 0。只随杀伤爆炸施加一次（地形爆炸 A 的
+        // hurt 已被跳过，且本调用不依赖爆炸事件，双爆炸场景天然只走一次）。
+        // 注意父类 explosion 字段声明为本体 Explosion，取子类 RVP_Explosion 的新 getter 须走 config。
+        if (!level().isClientSide() && level() instanceof ServerLevel serverLevel) {
+            RVP_WeaponData potionConfig = resolveWeaponConfig();
+            RVP_HitPotionEffectService.applyForExplosion(serverLevel, pos, radius,
+                    potionConfig == null ? java.util.List.of() : potionConfig.getExplosionData().getPotionEffects(),
+                    getOwner(), shooterVehicle);
         }
         if (!resolvedSuppressNative && level() instanceof ServerLevel serverLevel && rvpData != null) {
             RVP_ProjectileParticleEffects.spawnExplosion(

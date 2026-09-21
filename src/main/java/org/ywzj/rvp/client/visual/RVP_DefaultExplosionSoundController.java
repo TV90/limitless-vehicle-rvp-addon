@@ -12,6 +12,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 /** 单次 MCHR 默认爆炸的客户端武器分流、近远音选择与声速延迟控制器。 */
@@ -38,6 +39,8 @@ final class RVP_DefaultExplosionSoundController {
     private final boolean soundEnabled;
     /** 事件确定性随机种子，用于声音变体与轻微音高抖动。 */
     private final long seed;
+    /** 事件参数携带的自定义爆炸音效 ID；非空时替换武器类别档案的近/远音（2026-09-22）。 */
+    private final String customSoundId;
     /** 主爆音是否已播放或已确认无需播放。 */
     private boolean handled;
     /** 所属效果实例是否已经关闭。 */
@@ -48,6 +51,8 @@ final class RVP_DefaultExplosionSoundController {
         this.level = level;
         center = event.position();
         profile = resolveProfile(weaponKind, event.baseExplosionRadius());
+        // 解析事件参数里的自定义爆炸音效（explosion_data.explosion_sound 经 preset_data 通道下发）。
+        customSoundId = RVP_DefaultExplosionEventData.decodeExplosionSound(event.canonicalPresetDataJson());
         net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
         listenerDistance = player == null ? 0.0D : player.position().distanceTo(center);
         arrivalAge = resolveArrivalTick(listenerDistance);
@@ -71,7 +76,14 @@ final class RVP_DefaultExplosionSoundController {
         if (!soundEnabled) {
             return;
         }
-        ResourceLocation sound = useNearSound ? profile.nearSound() : profile.farSound();
+        // 自定义爆炸音效优先（explosion_data.explosion_sound）；传播距离与音高抖动仍按武器类别档案。
+        ResourceLocation sound = null;
+        if (customSoundId != null) {
+            sound = ResourceLocation.tryParse(customSoundId);
+        }
+        if (sound == null) {
+            sound = useNearSound ? profile.nearSound() : profile.farSound();
+        }
         float jitter = (RandomSource.create(seed).nextFloat() - 0.5F) * 0.06F;
         float pitch = Mth.clamp(profile.basePitch() + jitter, 0.5F, 1.5F);
         for (int layer = 0; layer < profile.loudnessLayers(); layer++) {

@@ -389,6 +389,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `bounce_incidence_angle` | 入射角阈值（度）：速度方向与撞击面法线夹角 **≥** 该值时才跳弹（如 `50` = 掠射跳弹、近垂直击中不跳）；`0` 表示不限制角度。 |
 | `bounce_on_vehicle` | 击中载具（`AbstractVehicle`）时是否跳弹；默认 `false`（仅对方块等地形跳弹）。 |
 | `bounce_min_block_hardness` | 方块跳弹硬度下限：仅当方块 `getDestroySpeed` **严格大于** 该值时才跳弹；默认 `2.1`（如石头约 1.5 不跳、铁块约 5 可跳）。不影响载具跳弹。 |
+| `hit_potion_effects` | 直击命中药水效果数组（2026-09-22，MCH `AddPotionEffect` 移植）：命中载具→对**全体乘员**满时长施加；命中普通生物→对其本体满时长施加。见下 `hit_potion_effects` 条目字段。 |
 
 #### `direct_damage_factor` 子字段
 
@@ -431,6 +432,28 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 ```
 
 最终系数 = 距离衰减 × 入射角衰减 × 穿透衰减（若有）。爆炸参数写在 `detonate_data.explosion_data`（与 `direct_damage` **无关**）。
+
+#### `hit_potion_effects` 直击命中药水（2026-09-22，MCH `AddPotionEffect` 移植）
+
+条目字段（`RVP_PotionEffectEntry`，与 `explosion_data.potion_effects` 共用，可写多条叠加）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `effect` | 药水注册 ID，如 `slowness` / `minecraft:poison`（缺省命名空间自动补 `minecraft:`）；无效 ID 该条静默跳过。 | 必填 |
+| `duration_ticks` | 基础时长（tick）。直击按该值**满时长**施加。 | `100` |
+| `amplifier` | 效果等级（0 计数：0 = 效果 I）。 | `0` |
+| `targets` | 目标过滤：`all` / `players` / `hostile` / `non_allied`（排除发射者本人与其载具乘员）。 | `all` |
+
+示例（毒镖弹：直击中毒 II + 缓速）：
+
+```json
+"collision_data": {
+  "hit_potion_effects": [
+    { "effect": "minecraft:poison", "duration_ticks": 200, "amplifier": 1 },
+    { "effect": "minecraft:slowness", "duration_ticks": 150 }
+  ]
+}
+```
 
 ### 1.8 `effects_data` 特效
 
@@ -528,6 +551,10 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `missile_native_trail_enabled` | 是否启用原生尾焰。 | `true` |
 | `missile_native_trail_particle` | 覆盖尾焰粒子 ID（空 = 保持本体默认）。 | `""` |
 | `missile_native_trail_step` | 尾焰沿弹道采样步长（格）。 | `0.5` |
+| `missile_native_trail_particle_scale` | 尾焰粒子尺寸倍率覆盖（服务端广播的粒子不带尺寸，此项控制客户端缩放）。 | `null`（保持默认） |
+| `missile_native_trail_particle_style` | 尾焰风格预设：`rvp_hbm_solid_boost`（HBM `ParticleRocketFlame` 移植款：亮橙火焰团 + 凝结云渐变 + 距离 LOD）/ `rvp_kerosene_black_smoke`（液氧煤油黑烟款，技术储备）；空 = 保持本体默认。 | `""` |
+| `missile_native_trail_ground_wash` | 发射段贴地烟浪：发动机燃烧且距地不足 20 格时，在弹体地面投影点生成贴地横向冲刷灰烟团。 | `null`（按 `true`） |
+| `missile_native_trail_launch_boost` | 一级燃烧窗口内粒子尺寸加粗倍率：发射时全额加粗、随飞行进度线性回落到 1.0（最终尺寸 = `particle_scale` × 本倍率），只影响发射段。 | `null`（不启用） |
 | `missile_native_trail_spawn_interval_tick` | 粒子生成间隔（tick）。 | `1` |
 | `missile_native_trail_density_scale` | 粒子密度倍率。 | `1` |
 | `missile_native_trail_offset` | 粒子相对弹体尾部的偏移距离（格）。 | `3` |
@@ -581,6 +608,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `radius` | 爆炸半径（杀伤半径，同时决定客户端视觉档位）。 |
 | `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
 | `destroy_block` | 是否破坏方块。 |
+| `potion_effects` | 爆炸药水效果数组（2026-09-22，条目字段同 `collision_data.hit_potion_effects`，见 §1.7）：爆炸结算后对杀伤半径内全体 `LivingEntity`（含载具乘员——乘员按各自离爆心距离判定）施加，**时长按离爆心距离线性衰减到 30%**：爆心 = `duration_ticks` 满时长 → 杀伤半径（`radius`）边缘衰减到 30%（`90t` 配 300t 的例子）；缩放后不足 20 tick 不施加。`destroy_radius` 双爆炸场景只随杀伤爆炸施加一次。与 `collision_data.hit_potion_effects`（直击满时长）独立；与 `potion_effect_data`（落点范围均匀时长）互补共存。 |
+| `explosion_sound` | 自定义爆炸音效事件 ID（2026-09-22，如 `rvp:114514`，需在 `sounds.json` 注册）。经默认爆炸视觉事件的 `preset_data` 通道下发客户端，替换按武器类别选择的 `mchr_explosion_*_near/far` 爆音；传播距离与音高抖动仍按原类别档案。未写 = 使用类别默认音色。 |
 | `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，`crater_depth_rules` 弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。<br>**强制即时路径（2026-09-20）**：RVP 弹体爆炸默认（`explosion.forceImmediateExplosionDestruction=true`，common 配置）**不再被本体 32 阈值截断进核爆炸批处理**——任意破坏半径都走 ≤32 的即时路径（GridCollectionTask + 单 tick 即时破坏，无烧灼方块替换、无跨 tick 服务端持续负载，表现为单 tick 一次性 hitch）；本体的爆炸与其它 mod 不受影响，配置改 false 恢复本体阈值行为。 |
 
 9M723 示例（杀伤 64、地形爆破 33）：
@@ -835,6 +864,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 RVP 武器（机枪/火箭/导弹/炸弹）爆炸的**默认视觉**，不需要任何 `visual_effect_data` 配置即生效。服务端 `RVP_DefaultExplosionVisualService` 在 `RVP_BaseBullet.triggerExplosion` 默认路径广播 `effectType = rvp:mchr_explosion`，客户端 `RVP_DefaultExplosionEffectFactory`（注册 `rvp:mchr_explosion`）消费。
 
 默认爆炸音也由该客户端事件驱动：事件内部携带类型化 `weapon_kind`，客户端按 `MACHINEGUN` / `ROCKET` / `MISSILE` / `BOMB` 选择独立声音事件，再根据听者距离选择近音或远音。24 格内立即播放，超过 24 格后按 343 格/秒计算声波抵达延迟；非爆炸型类别按爆炸半径回退到火箭或导弹档案。该内部参数不对载具包开放，也不使用武器 ID 判断。
+
+**自定义爆炸音效（2026-09-22）**：`detonate_data.explosion_data.explosion_sound`（音效事件 ID）是唯一开放的事件 `preset_data` 内部键——服务端把它编码进事件载荷，客户端解码后用它替换上述近/远音选择（传播距离、音高抖动仍按武器类别档案）；未配置时行为不变。粒子数值仍不可配。
 
 粒子表现（复刻 MCHR `MCH_Explosion.effectExplosion`）：
 - `rvp:mchr_smoke`（`RVP_MchrSmokeParticle`）：翻滚灰黄大烟（`big_smoke_0..11` 帧），逐帧放大、缓上浮、转白；
@@ -2048,6 +2079,24 @@ SACLOS 反坦克导弹（半自动修正）：
 
 ---
 
+### 2.15 观瞄视角射弹原点分离（`rvp_sight_fire_disguise`，写在武器站字段内）
+
+启用后：玩家处于观瞄视角（SCOPE）操作本站开火时，实际弹体从**观瞄相机坐标**射出（方向不变），
+消除观瞄相机离炮闩枢轴过远带来的抵近射击偏差；客户端在前 `disguise_ticks` 内把弹体模型/曳光
+平移渲染成"从炮口射出"的伪装弹道，随后 `blend_ticks` 内平滑合流真实弹道。
+**字段缺失 = 功能关闭**，站上全部弹种（含 `modding_only_multi` 变体）自动继承。
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `rvp_sight_fire_disguise` | 武器站级对象，见下；不写 = 关闭。 | 无 |
+| `rvp_sight_fire_disguise.disguise_ticks` | 伪装持续 tick：真实弹出生后渲染平移到"炮口出发平行弹道"的时长。 | `1` |
+| `rvp_sight_fire_disguise.blend_ticks` | 合流 tick：伪装位置向真实弹道 smoothstep 过渡时长（0 钳为 1）。 | `3` |
+| `rvp_sight_fire_disguise.max_distance` | 服务端防滥用距离帽：观瞄射出点距载具原点超过该值（格）的覆盖请求被拒绝。 | `32.0` |
+
+```json
+"rvp_sight_fire_disguise": { "disguise_ticks": 1, "blend_ticks": 3, "max_distance": 32.0 }
+```
+
 ## 3 部件 JSON 扩展
 
 ### 3.1 武器站部件扩展
@@ -2185,6 +2234,7 @@ Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
 | `burst_rest_tick` | 点射间隔（tick）。 | `10` |
 | `countermeasure_range` | 应对来袭导弹的告警/规避半径（格）。 | `36.0` |
 | `countermeasure_cooldown_tick` | 反制动作冷却（tick）。 | `80` |
+| `engagement_net_cooldown_tick` | 组网智能拦截窗口（tick，2026-09-15）：同 faction 网络内已被任一 gunner 射击过的导弹在该窗口内沉入第二池**降权**（非禁选），使多台同阵营防空车的弹幕自动分配到不同来袭导弹上；`0` 关闭组网去重。 | `0` |
 | `allow_drive` | 是否允许 AI 驾驶本车。 | `true` |
 | `drive_pursuit_distance` | 追击目标距离（格）。 | `64.0` |
 | `drive_stop_distance` | 停车距离（格）。 | `12.0` |

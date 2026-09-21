@@ -17,6 +17,10 @@
 
 **Bedrock 模型**：只在载具包 `assets/rvp/models/bedrock/` 与 display JSON 的 `model` 配置；禁止在 Java 里维护模型 ID 白名单（已删除 `RVP_BedrockModels`）。
 
+**Bedrock 模型**：只在载具包 `assets/rvp/models/bedrock/` 与 display JSON 的 `model` 配置；禁止在 Java 里维护模型 ID 白名单（已删除 `RVP_BedrockModels`）。
+
+**贴图与资源类替换铁律（2026-09-22 事故后订立）**：凡是涉及**贴图、音效、模型等任何资源文件的写入/替换/覆盖**（无论目标在 `src/main/resources`、载具包还是 run 目录），动手前**必须先确认目标路径是否已有现有资源**——用 `find`/`ls` 检查全相关目录（含 `src/main/resources` 与载具包两处命名空间）确认目标不存在后，还须**向用户说明并获确认**才可创建或覆盖；已存在的资源**一律不得直接覆盖**，只能询问用户处理方式（保留 / 另名新写 / 用户自行替换）。搜索现有资源时禁止只查部分目录——搜索范围必须覆盖 mod 源码资源与载具包资源两处命名空间。资源文件是用户手工劳动成果，误覆盖可能无法恢复（不在 git、不进回收站）。
+
 **结构模型修改铁律（2026-08-16 事故后订立）**：任何对载具**结构模型**（`data/rvp/models/bedrock/vehicle/*.structure.json`，含骨层级 / 骨枢轴 pivot / cube 几何 / 父级关系）的修改，**必须先向用户请示，获确认后才可动手；且动手前必须先备份原文件**（复制为 `*.structure.json.bak` 或 `*.structure.原始时间戳.json`），改动完成后再核对。禁止擅自重构骨层级、移动骨枢轴或批量改写 cube——结构模型是资产，牵一发动全身，误改会导致整车模型/发射点/受击盒全乱。宁可只做 JSON 配置层/Java 代码层方案，也不要直接动结构模型骨结构。
 
 **`RVP_*Data` JavaDoc**：每个 `@SerializedName` 字段须有与 `RVP_FireData` 同级的说明（单位、默认、生效条件）；规范见仓库 `.cursor/skills/mcheli-rvp-port/data-class-javadoc.md`。

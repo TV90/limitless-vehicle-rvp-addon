@@ -171,7 +171,8 @@ public final class RVP_DetonateApplier {
         return ResourceLocation.tryParse(trimmed);
     }
 
-    private static boolean matchesTarget(String targets, LivingEntity entity,
+    /** 目标过滤（包级可见供 RVP_HitPotionEffectService 复用同一套语义）。 */
+    static boolean matchesTarget(String targets, LivingEntity entity,
                                          @Nullable Entity owner, @Nullable AbstractVehicle shooterVehicle) {
         return switch (targets) {
             case "all" -> true;
