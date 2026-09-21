@@ -79,7 +79,11 @@ public abstract class WeaponUnitFireControlLockMixin {
             ci.cancel();
             return;
         }
-        if (self.getLockedEntity() != null) {
+        // ARH 导引头开机后的 TWS 软跟踪只占用 WeaponUnit 锁定槽，并不代表用户已经按 R
+        // 建立雷达硬锁。此时继续走下方手动候选流程，目的为调用 RVP_RadarRoleHelper
+        // 的 applyRequestedLock，把软跟踪升级为 RadarUnit 硬锁；pending/外置/普通本地锁
+        // 仍保持再次按 R 解锁的原语义。
+        if (self.getLockedEntity() != null && !RVP_RadarRoleHelper.isAutomaticRfSeekerTrack(self)) {
             RVP_RadarRoleHelper.clearPendingRadarLock(self);
             self.setLockedEntity(null);
             ci.cancel();

@@ -8,9 +8,14 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ClientRadarAction;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -139,6 +144,50 @@ public final class RVP_RadarRoleHelper {
     public static Entity getLockedRadarEntity(WeaponUnit weaponUnit) {
         RadarUnit radarUnit = getLockedRadar(weaponUnit);
         return radarUnit != null ? radarUnit.getLockedEntity() : null;
+    }
+
+    /**
+     * 判断当前武器站目标是否只是 ARH 等武器在导引头开机后建立的本地软跟踪。
+     *
+     * <p>软跟踪只写入 {@link WeaponUnit#getLockedEntity()}，不会写入雷达硬锁、外置雷达锁
+     * 或待定手动锁。R 键遇到这种状态时应继续执行手动锁定并把目标升级为雷达硬锁，
+     * 不能把它误判为“再次按 R 解锁”。SARH 不允许自动软跟踪，因此不会命中此判定。</p>
+     */
+    public static boolean isAutomaticRfSeekerTrack(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return false;
+        }
+        RVP_WeaponBase rvpWeapon = RVP_WeaponResolveHelper.currentPrimaryRvp(weaponUnit);
+        boolean automaticRfTrackCapable = rvpWeapon != null
+                && rvpWeapon.getData().isHomingProjectile()
+                && !rvpWeapon.getData().isAntiRadiationMissile()
+                && !rvpWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SARH);
+        boolean hasExternalLock = RVP_WeaponLockStateTable.getExternalRadarRequestedEntityId(weaponUnit)
+                != Integer.MIN_VALUE
+                || RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(weaponUnit) != Integer.MIN_VALUE;
+        return isAutomaticRfSeekerTrackState(
+                RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) == WeaponUnitData.FireControlSensorType.RF,
+                weaponUnit.isSeekerOn(),
+                weaponUnit.getLockedEntity() != null,
+                getLockedRadarEntity(weaponUnit) != null,
+                RVP_WeaponLockStateTable.getPendingRadarLockEntityId(weaponUnit) != Integer.MIN_VALUE,
+                hasExternalLock,
+                automaticRfTrackCapable
+        );
+    }
+
+    /** 纯状态判定入口，供锁定输入策略测试覆盖，不接触游戏实体。 */
+    static boolean isAutomaticRfSeekerTrackState(boolean rfSensor, boolean seekerOn,
+                                                  boolean hasWeaponTrack, boolean hasRadarLock,
+                                                  boolean hasPendingManualLock, boolean hasExternalLock,
+                                                  boolean automaticRfTrackCapable) {
+        return rfSensor
+                && seekerOn
+                && hasWeaponTrack
+                && !hasRadarLock
+                && !hasPendingManualLock
+                && !hasExternalLock
+                && automaticRfTrackCapable;
     }
 
     @Nullable
