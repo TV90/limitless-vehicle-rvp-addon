@@ -195,8 +195,9 @@ public class RVP_ClientEvents {
                 continue;
             }
             RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
-            if (hmd.isHmdMode()) {
-                hmd.disable();
+            if (hmd.isRadarHmd()) {
+                // 按 5 只切换雷达 HMD；当前武器自动启用的 IR HMD 必须继续工作。
+                hmd.disableRadarHmd();
                 player.displayClientMessage(
                         Component.translatable("message.ywzj_rvp.hmd.off"), true);
             } else {
@@ -216,7 +217,7 @@ public class RVP_ClientEvents {
                         mc.level != null ? mc.level.dimension().location() : null)) {
                     RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
                 }
-                boolean on = hmd.toggle();
+                boolean on = hmd.toggleRadarHmd();
                 // [RVP] 仅在 HMD 真正开启时提示；toggle 失败（理论上已被上方守卫挡住）静默
                 if (on) {
                     player.displayClientMessage(

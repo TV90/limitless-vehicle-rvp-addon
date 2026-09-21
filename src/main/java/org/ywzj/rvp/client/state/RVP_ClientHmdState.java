@@ -26,14 +26,12 @@ import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 public class RVP_ClientHmdState {
 
-    public enum HmdType {
-        NONE, RADAR, IR
-    }
-
+    /** 客户端唯一 HMD 状态实例。 */
     private static final RVP_ClientHmdState INSTANCE = new RVP_ClientHmdState();
 
     /** 雷达 HMD 捕获框、雷达扇区与捕获算法共用的单侧半视场角（度）。 */
     public static final float RADAR_HMD_HALF_FOV_DEG = 2.5f;
+    /** 雷达 HMD 相对雷达最大探测距离的捕获距离倍率。 */
     private static final float HMD_RANGE_MULTIPLIER = 0.5f;
     /** 雷达 HMD 捕获扫描周期：2 Tick 可降低快速扫过已发现航迹时的漏检概率。目前 5 Tick 降低开销*/
     private static final int RADAR_HMD_SCAN_INTERVAL = 5;
@@ -43,34 +41,65 @@ public class RVP_ClientHmdState {
     private static final int IR_HMD_SCAN_INTERVAL = 2;
     /** 目标可见轮廓之外允许的轻微捕获容差（度），只影响头瞄捕获，不放宽发射离轴终检。 */
     private static final double IR_HMD_OUTLINE_TOLERANCE_DEG = 0.0;
+    /** IR 目标短暂越出离轴范围后的保锁宽限，单位 Tick。 */
     private static final int IR_LOCK_GRACE_TICKS = 20;
+    /** 雷达 HMD 连续越界扫描达到该次数后自动关闭。 */
     private static final int OUT_OF_BOUNDS_TIMEOUT = 20;
+    /** HUD 头瞄方向每 Tick 的插值比例。 */
     private static final float SMOOTH_FACTOR = 0.4f;
 
-    private HmdType hmdType = HmdType.NONE;
-    private int scanCounter;
-    private int outOfBoundsTicks;
-    private int lockedEntityId = -1;
-    private int warningTicks;
+    /** 雷达与 IR 两条互不排斥的 HMD 活动通道。 */
+    private final RVP_HmdChannelState channels = new RVP_HmdChannelState();
+    /** 雷达 HMD 独立扫描计数器。 */
+    private int radarScanCounter;
+    /** IR HMD 独立扫描计数器。 */
+    private int irScanCounter;
+    /** 雷达 HMD 连续超出机械边界的扫描次数。 */
+    private int radarOutOfBoundsTicks;
+    /** IR HMD 当前确认锁定的实体 ID。 */
+    private int irLockedEntityId = -1;
+    /** 雷达 HMD 越界警告闪烁计数。 */
+    private int radarWarningTicks;
+    /** HMD 客户端累计 Tick，用于 IR 保锁宽限计时。 */
     private int tickCount;
 
+    /** 未受 IR 离轴钳制的平滑头瞄俯仰，供雷达 HMD 使用。 */
     private float smoothPitch;
+    /** 未受 IR 离轴钳制的平滑头瞄偏航，供雷达 HMD 使用。 */
     private float smoothYaw;
+    /** IR 离轴钳制后的平滑头瞄俯仰，供 IR HUD 使用。 */
+    private float irSmoothPitch;
+    /** IR 离轴钳制后的平滑头瞄偏航，供 IR HUD 使用。 */
+    private float irSmoothYaw;
+    /** 共享头瞄平滑值是否已初始化。 */
     private boolean smoothInitialized;
 
+    /** 当前 IR 弹发射前捕获完整视场角，单位度。 */
     private float irSeekerFov = 0f;
+    /** 当前 IR 弹发射前最大锁定距离，单位格。 */
     private float irSeekerRange = 0f;
+    /** 当前 IR 弹单侧最大离轴锁定角，单位度。 */
     private float irGuideHeadMaxAngle = 0f;
+    /** IR 离轴基准是否叠加武器站当前旋转。 */
     private boolean irOffAxisStacksWithStationRotation = false;
+    /** 旧数据链 IR 目标最低离地高度，单位格。 */
     private float irLockMinHeight = 4f;
+    /** 当前 IR HUD 是否使用对地样式。 */
     private boolean groundIr = false;
+    /** 当前 IR 武器是否使用 RVP 新版发射锁定数据。 */
     private boolean irUsesNewLaunchData;
+    /** 当前 IR 武器数据，供锁定包线与 HUD 类型解析使用。 */
     private RVP_WeaponData irLaunchWeapon;
+    /** 当前 IR 高度包线对应的 HUD 样式。 */
     private RVP_IrHudProfile irHudProfile = RVP_IrHudProfile.AIR;
 
+    /** 最近一次 IR 确认锁定的实体 ID。 */
     private int irCachedLockedEntityId = -1;
+    /** 最近一次 IR 目标通过离轴检查的客户端 Tick。 */
     private int irLastConfirmedLockTick = Integer.MIN_VALUE;
+    /** 当前 IR 离轴宽限开始的客户端 Tick。 */
     private int irGraceStartTick = Integer.MIN_VALUE;
+    /** 当前处于 IR 离轴宽限的目标实体 ID。 */
     private int irGraceTargetId = -1;
 
     private RVP_ClientHmdState() {}
@@ -80,15 +109,11 @@ public class RVP_ClientHmdState {
     }
 
     public boolean isHmdMode() {
-        return hmdType != HmdType.NONE;
-    }
-
-    public HmdType getHmdType() {
-        return hmdType;
+        return channels.isAnyActive();
     }
 
     public boolean isRadarHmd() {
-        return hmdType == HmdType.RADAR;
+        return channels.isRadarActive();
     }
 
     public boolean isRadarOnlyAcm(RadarUnit radarUnit) {
@@ -100,7 +125,7 @@ public class RVP_ClientHmdState {
     }
 
     public boolean isIrHmd() {
-        return hmdType == HmdType.IR;
+        return channels.isIrActive();
     }
 
     public int getTickCount() {
@@ -108,30 +133,30 @@ public class RVP_ClientHmdState {
     }
 
     public boolean isWarning() {
-        return warningTicks > 0;
+        return radarWarningTicks > 0;
     }
 
     public int getLockedEntityId() {
-        return lockedEntityId;
+        return irLockedEntityId;
     }
 
     public boolean hasLock() {
-        return hmdType == HmdType.IR && lockedEntityId != -1;
+        return channels.isIrActive() && irLockedEntityId != -1;
     }
 
     public Entity getLockedEntity() {
-        if (lockedEntityId == -1) {
+        if (irLockedEntityId == -1) {
             return null;
         }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             return null;
         }
-        return mc.level.getEntity(lockedEntityId);
+        return mc.level.getEntity(irLockedEntityId);
     }
 
     public boolean shouldKeepIrLockGrace(Entity target) {
-        return hmdType == HmdType.IR
+        return channels.isIrActive()
                 && target != null
                 && target.isAlive()
                 && target.getId() == irCachedLockedEntityId
@@ -144,6 +169,16 @@ public class RVP_ClientHmdState {
 
     public float getSmoothYaw() {
         return smoothYaw;
+    }
+
+    /** @return 经过 IR 离轴限制后的平滑头瞄俯仰。 */
+    public float getIrSmoothPitch() {
+        return irSmoothPitch;
+    }
+
+    /** @return 经过 IR 离轴限制后的平滑头瞄偏航。 */
+    public float getIrSmoothYaw() {
+        return irSmoothYaw;
     }
 
     public float getIrSeekerFov() {
@@ -191,11 +226,9 @@ public class RVP_ClientHmdState {
         return VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
     }
 
-    public boolean toggle() {
-        if (hmdType == HmdType.RADAR) {
-            hmdType = HmdType.NONE;
-            lockedEntityId = -1;
-            warningTicks = 0;
+    public boolean toggleRadarHmd() {
+        if (channels.isRadarActive()) {
+            disableRadarHmd();
             return false;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
@@ -203,11 +236,14 @@ public class RVP_ClientHmdState {
             return false;
         }
         ensureRadarOn();
-        hmdType = HmdType.RADAR;
-        scanCounter = 0;
-        outOfBoundsTicks = 0;
-        warningTicks = 0;
-        smoothInitialized = false;
+        channels.enableRadar();
+        radarScanCounter = 0;
+        radarOutOfBoundsTicks = 0;
+        radarWarningTicks = 0;
+        // IR HMD 已经在工作时沿用同一头瞄平滑值，避免按 5 后两套框发生一次跳变。
+        if (!channels.isIrActive()) {
+            smoothInitialized = false;
+        }
         return true;
     }
 
@@ -223,29 +259,33 @@ public class RVP_ClientHmdState {
         }
     }
 
-    public void disable() {
-        if (hmdType != HmdType.NONE) {
-            hmdType = HmdType.NONE;
-            lockedEntityId = -1;
-            warningTicks = 0;
-            clearIrLockState();
-        }
+    /** 只关闭雷达 HMD 通道，IR HMD 与其锁定状态保持不变。 */
+    public void disableRadarHmd() {
+        channels.disableRadar();
+        radarScanCounter = 0;
+        radarOutOfBoundsTicks = 0;
+        radarWarningTicks = 0;
+    }
+
+    /** 离开有效载具上下文时关闭所有 HMD 通道。 */
+    public void disableAll() {
+        channels.disableAll();
+        radarScanCounter = 0;
+        irScanCounter = 0;
+        radarOutOfBoundsTicks = 0;
+        radarWarningTicks = 0;
+        irLockedEntityId = -1;
+        clearIrLockState();
     }
 
     public void checkIrHmd() {
         if (!LocalVehiclePlayer.instance.onVehicle()) {
-            if (hmdType == HmdType.IR) {
-                hmdType = HmdType.NONE;
-                clearIrLockState();
-            }
+            disableIrHmd();
             return;
         }
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
-            if (hmdType == HmdType.IR) {
-                hmdType = HmdType.NONE;
-                clearIrLockState();
-            }
+            disableIrHmd();
             return;
         }
 
@@ -280,10 +320,13 @@ public class RVP_ClientHmdState {
             }
         }
 
-        if (shouldBeActive && hmdType != HmdType.IR) {
-            hmdType = HmdType.IR;
-            scanCounter = 0;
-            smoothInitialized = false;
+        if (shouldBeActive && !channels.isIrActive()) {
+            channels.setIrActive(true);
+            irScanCounter = 0;
+            // 雷达 HMD 已开启时沿用当前头瞄平滑值，使两套框从同一方向开始。
+            if (!channels.isRadarActive()) {
+                smoothInitialized = false;
+            }
             irSeekerFov = seekerFov;
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
@@ -293,17 +336,9 @@ public class RVP_ClientHmdState {
             irUsesNewLaunchData = usesNewLaunchData;
             irLaunchWeapon = nextLaunchWeapon;
             irHudProfile = nextHudProfile;
-        } else if (!shouldBeActive && hmdType == HmdType.IR) {
-            hmdType = HmdType.NONE;
-            lockedEntityId = -1;
-            warningTicks = 0;
-            groundIr = false;
-            irOffAxisStacksWithStationRotation = false;
-            irUsesNewLaunchData = false;
-            irLaunchWeapon = null;
-            irHudProfile = RVP_IrHudProfile.AIR;
-            clearIrLockState();
-        } else if (hmdType == HmdType.IR) {
+        } else if (!shouldBeActive && channels.isIrActive()) {
+            disableIrHmd();
+        } else if (channels.isIrActive()) {
             irSeekerFov = seekerFov;
             irSeekerRange = seekerRange;
             irGuideHeadMaxAngle = guideHeadMaxAngle;
@@ -316,21 +351,34 @@ public class RVP_ClientHmdState {
         }
     }
 
+    /** 只关闭 IR HMD 通道，不影响按键控制的雷达 HMD。 */
+    private void disableIrHmd() {
+        channels.setIrActive(false);
+        irScanCounter = 0;
+        irLockedEntityId = -1;
+        groundIr = false;
+        irOffAxisStacksWithStationRotation = false;
+        irUsesNewLaunchData = false;
+        irLaunchWeapon = null;
+        irHudProfile = RVP_IrHudProfile.AIR;
+        clearIrLockState();
+    }
+
     public void tick() {
         tickCount++;
-        if (hmdType == HmdType.NONE) {
+        if (!channels.isAnyActive()) {
             return;
         }
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || !(mc.player.getVehicle() instanceof AbstractVehicle vehicle)) {
-            disable();
+            disableAll();
             return;
         }
 
         WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) {
-            disable();
+            disableAll();
             return;
         }
 
@@ -344,25 +392,29 @@ public class RVP_ClientHmdState {
         smoothPitch += (aimPitch - smoothPitch) * SMOOTH_FACTOR;
         smoothYaw += (aimYaw - smoothYaw) * SMOOTH_FACTOR;
 
+        irSmoothPitch = smoothPitch;
+        irSmoothYaw = smoothYaw;
+
         Vec3 rawHeadLook = VectorUtil.rotToVec(aimPitch, aimYaw).normalize();
-        if (hmdType == HmdType.IR && irGuideHeadMaxAngle > 0f) {
+        if (channels.isIrActive() && irGuideHeadMaxAngle > 0f) {
             Vec3 weaponDir = RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation);
-            Vec3 hmdDir = VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
+            Vec3 hmdDir = VectorUtil.rotToVec(irSmoothPitch, irSmoothYaw).normalize();
             if (weaponDir.lengthSqr() > 1.0E-6) {
                 double currentAngle = angleBetweenDeg(weaponDir, hmdDir);
                 if (currentAngle > irGuideHeadMaxAngle) {
                     Vec3 limitedDir = clampDirectionToCone(weaponDir, hmdDir, irGuideHeadMaxAngle);
                     Vec2 limitedRot = VectorUtil.vecToRot(limitedDir);
-                    smoothPitch = limitedRot.x;
-                    smoothYaw = limitedRot.y;
+                    irSmoothPitch = limitedRot.x;
+                    irSmoothYaw = limitedRot.y;
                 }
             }
         }
 
-        if (hmdType == HmdType.RADAR) {
+        if (channels.isRadarActive()) {
             // 雷达捕获与 IR HMD 一样使用本 Tick 原始头瞄方向；HUD 和雷达扫描线仍读取平滑方向。
             tickRadarHmd(mc, weaponUnit, rawHeadLook);
-        } else if (hmdType == HmdType.IR) {
+        }
+        if (channels.isIrActive()) {
             // 捕获使用本 Tick 原始头瞄方向，避免 HUD 平滑方向滞后造成快速扫过目标时漏锁；
             // HUD 仍读取 smoothPitch/smoothYaw，故显示动画和平滑手感保持不变。
             tickIrHmd(mc, vehicle, weaponUnit, clampIrScanDirection(weaponUnit, rawHeadLook));
@@ -393,7 +445,7 @@ public class RVP_ClientHmdState {
     private void tickRadarHmd(Minecraft mc, WeaponUnit weaponUnit, Vec3 rawHeadLook) {
         RadarUnit radar = findHmdRadar(weaponUnit);
         if (radar == null) {
-            disable();
+            disableRadarHmd();
             return;
         }
 
@@ -401,23 +453,23 @@ public class RVP_ClientHmdState {
         Vec3 radarPos = radar.worldRadarPosition();
         float maxRange = radar.getMaxScanDistance() * HMD_RANGE_MULTIPLIER;
 
-        if (++scanCounter < RADAR_HMD_SCAN_INTERVAL) {
+        if (++radarScanCounter < RADAR_HMD_SCAN_INTERVAL) {
             return;
         }
-        scanCounter = 0;
+        radarScanCounter = 0;
 
         if (!isWithinRadarLimits(radar, scanDir)) {
-            outOfBoundsTicks++;
-            warningTicks = Math.min(warningTicks + 1, OUT_OF_BOUNDS_TIMEOUT + 5);
-            if (outOfBoundsTicks >= OUT_OF_BOUNDS_TIMEOUT) {
+            radarOutOfBoundsTicks++;
+            radarWarningTicks = Math.min(radarWarningTicks + 1, OUT_OF_BOUNDS_TIMEOUT + 5);
+            if (radarOutOfBoundsTicks >= OUT_OF_BOUNDS_TIMEOUT) {
                 mc.player.displayClientMessage(
                         Component.translatable("message.ywzj_rvp.hmd.out_of_bounds"), true);
-                disable();
+                disableRadarHmd();
             }
             return;
         }
-        outOfBoundsTicks = 0;
-        warningTicks = 0;
+        radarOutOfBoundsTicks = 0;
+        radarWarningTicks = 0;
 
         Entity bestTarget = null;
         double bestScore = Double.MAX_VALUE;
@@ -436,6 +488,11 @@ public class RVP_ClientHmdState {
             if (!isWithinRadarLimits(radar, dir)) {
                 continue;
             }
+            // 当前选择 IR HMD 弹时，雷达头瞄只宣布可由红外导引头接收的组合锁定；
+            // 目的：保证雷达落锁后 IR HMD 接收同一目标，同时不绕过 IR 距离、高度、LOS 与离轴门槛。
+            if (channels.isIrActive() && !canAcceptRadarCueForIr(weaponUnit, entity)) {
+                continue;
+            }
             // 调用共用头瞄轮廓算法：目标包围盒进入捕获框即可捕获，框外仅增加固定小容差。
             double effectiveAngle = RVP_HmdTargetingMath.effectiveAngularMissDeg(
                     radarPos, scanDir, entity.getBoundingBox());
@@ -452,20 +509,48 @@ public class RVP_ClientHmdState {
         if (bestTarget != null) {
             radar.setLockedEntity(bestTarget);
             weaponUnit.setLockedEntity(bestTarget);
-            lockedEntityId = bestTarget.getId();
-            hmdType = HmdType.NONE;
+            if (channels.isIrActive()) {
+                Vec3 irBoresight = RVP_IrLockHelper.resolveIrBoresightDir(
+                        weaponUnit, irOffAxisStacksWithStationRotation);
+                Vec3 targetDir = bestTarget.getBoundingBox().getCenter()
+                        .subtract(weaponUnit.worldPivotPosition());
+                // 调用本项目 IR 锁定确认入口，把雷达 HMD 捕获到的同一实体显式交给 IR 通道。
+                confirmIrLock(weaponUnit, bestTarget, angleBetweenDeg(irBoresight, targetDir), "radar-cue");
+            }
+            disableRadarHmd();
             mc.player.displayClientMessage(
                     Component.translatable("message.ywzj_rvp.hmd.locked"), true);
         }
+    }
+
+    /**
+     * 检查雷达 HMD 候选能否作为当前 IR HMD 的同目标指示。
+     * 雷达只负责提供航迹，IR 仍执行自己的距离、高度、视线与离轴物理门槛。
+     */
+    private boolean canAcceptRadarCueForIr(WeaponUnit weaponUnit, Entity target) {
+        if (!channels.isIrActive() || target == null || !target.isAlive()) {
+            return false;
+        }
+        if (irUsesNewLaunchData && irLaunchWeapon != null) {
+            // 调用本项目 IR 持续包线与发射离轴检查，避免雷达指示绕过红外弹现有授权边界。
+            return RVP_IrLockHelper.isTargetWithinHoldEnvelope(weaponUnit, target, irLaunchWeapon)
+                    && RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
+                    weaponUnit, target, irLaunchWeapon, 0f);
+        }
+        return RVP_IrLockHelper.isTargetWithinLimits(
+                weaponUnit,
+                target,
+                RVP_IrLockHelper.resolveIrBoresightDir(weaponUnit, irOffAxisStacksWithStationRotation),
+                Math.max(1f, irGuideHeadMaxAngle),
+                Math.max(0f, irSeekerRange),
+                irLockMinHeight
+        );
     }
 
     private void tickIrHmd(Minecraft mc, AbstractVehicle vehicle, WeaponUnit weaponUnit, Vec3 headLook) {
         Vec3 seekerPos = weaponUnit.worldPivotPosition();
         float maxRange = irSeekerRange;
         float halfFov = irSeekerFov / 2f;
-
-        warningTicks = 0;
-        outOfBoundsTicks = 0;
 
         Entity tracked = resolveTrackedIrTarget(mc, weaponUnit);
         if (tracked != null) {
@@ -505,7 +590,7 @@ public class RVP_ClientHmdState {
                 if (weaponUnit.getLockedEntity() == null || weaponUnit.getLockedEntity().getId() != tracked.getId()) {
                     weaponUnit.setLockedEntity(tracked);
                 }
-                lockedEntityId = tracked.getId();
+                irLockedEntityId = tracked.getId();
                 if (irGraceTargetId != tracked.getId()) {
                     irGraceTargetId = tracked.getId();
                     irGraceStartTick = tickCount;
@@ -521,10 +606,10 @@ public class RVP_ClientHmdState {
             clearIrLockState(weaponUnit);
         }
 
-        if (++scanCounter < IR_HMD_SCAN_INTERVAL) {
+        if (++irScanCounter < IR_HMD_SCAN_INTERVAL) {
             return;
         }
-        scanCounter = 0;
+        irScanCounter = 0;
 
         boolean isScope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
         Vec3 scanDir = isScope ? weaponUnit.worldVec() : headLook;
@@ -633,7 +718,7 @@ public class RVP_ClientHmdState {
         if (weaponUnit.getLockedEntity() == null || weaponUnit.getLockedEntity().getId() != target.getId()) {
             weaponUnit.setLockedEntity(target);
         }
-        lockedEntityId = target.getId();
+        irLockedEntityId = target.getId();
         irCachedLockedEntityId = target.getId();
         irLastConfirmedLockTick = tickCount;
         if (irGraceTargetId == target.getId()) {
@@ -656,11 +741,28 @@ public class RVP_ClientHmdState {
     }
 
     private void clearIrLockState(WeaponUnit weaponUnit) {
-        if (weaponUnit.getLockedEntity() != null) {
+        Entity unitLocked = weaponUnit.getLockedEntity();
+        if (unitLocked != null
+                && unitLocked.getId() == irLockedEntityId
+                && !isHeldByRadar(weaponUnit, unitLocked)) {
             weaponUnit.setLockedEntity(null);
         }
-        lockedEntityId = -1;
+        irLockedEntityId = -1;
         clearIrLockState();
+    }
+
+    /**
+     * 判断共享武器站目标是否仍由任一雷达硬锁持有。
+     * IR 失锁时保留这种目标，避免一个 HMD 通道反向清除另一个通道的有效锁定。
+     */
+    private static boolean isHeldByRadar(WeaponUnit weaponUnit, Entity target) {
+        for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
+            Entity radarLocked = radarUnit.getLockedEntity();
+            if (radarLocked != null && radarLocked.getId() == target.getId()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private RVP_IrHudProfile resolveIrHudProfile() {

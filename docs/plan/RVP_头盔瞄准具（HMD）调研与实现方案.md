@@ -228,3 +228,43 @@ public void tick() {
 | 4 | `RVP_ClientEvents.java` 注册 tick + 按键响应 | 1 修改 |
 | 5 | `VehicleRadarOverlayMixin.java` 雷达小地图 HMD 扇形 | 1 修改 |
 | 6 | 离轴警告动画 + 模式切换过渡动画 | 在 state + overlay 中 |
+
+---
+
+## 六、2026-09-22 实施修订：雷达 HMD 与 IR HMD 独立并存
+
+本节覆盖本文早期“单一 `hmdMode`”状态设计。旧设计只考虑雷达 HMD，后续把自动启用的 IR HMD 也并入同一单值枚举后形成结构性互斥：IR 活动时按 `5` 会被当作关闭操作，随后 IR 自动检测又覆盖雷达状态；扫描和 HUD 的 `if/else-if` 进一步保证了两者不可能并存。
+
+最终实现改为：
+
+| 状态/资源 | 雷达 HMD | IR HMD |
+|:--|:--|:--|
+| 活动态 | `radarActive`，按 `5` 切换 | `irActive`，由当前 IR 武器和导引头自动驱动 |
+| 扫描计数 | `radarScanCounter` | `irScanCounter` |
+| 锁定所有权 | `RadarUnit.getLockedEntity()` | `irLockedEntityId` 与 IR 宽限缓存 |
+| 退出条件 | 再按 `5`、捕获成功、雷达缺失或机械越界 | 换出适用武器、关闭导引头或离开有效上下文 |
+| HUD | 雷达绿色捕获框 | 对空/对地/混合 IR HMD 样式 |
+
+关键时序为：
+
+```text
+IR HMD 已自动开启
+  → 按 5，只开启雷达 HMD
+  → 每 Tick 更新一次头瞄输入
+  → 雷达与 IR 按各自周期扫描，两个 HUD 独立绘制
+  → 雷达捕获候选
+      ├─ 非 IR 场景：写入雷达/武器站锁定，退出雷达 HMD
+      └─ IR 场景：先验证 IR 距离/高度/LOS/离轴包线
+                    → 同一目标写入雷达、武器站和 IR 锁定
+                    → 仅退出雷达 HMD，IR 继续保持目标
+```
+
+实现文件：
+
+- `RVP_HmdChannelState.java`：纯状态通道，允许雷达与 IR 同时活动；
+- `RVP_ClientHmdState.java`：双扫描通道、共享头瞄输入、雷达到 IR 的同目标交接和来源感知清锁；
+- `RVP_ClientEvents.java`：`5` 键只切换雷达通道；
+- `RVP_HmdOverlay.java`：两套 HUD 独立绘制；
+- `RVP_HmdChannelStateTest.java`：并存及独立退出回归测试。
+
+约束保持：不新增 Mixin，不改 `ywzj_vehicle`；雷达 HMD 不扩大探测能力，IR 指示不绕过物理包线或双端发射终检。定向 JUnit、完整构建和服务端 `Done (3.085s)!` 冒烟均已通过。

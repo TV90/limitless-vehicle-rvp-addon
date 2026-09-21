@@ -30,12 +30,16 @@ public class RVP_HmdOverlay {
         Minecraft mc = Minecraft.getInstance();
         if (state.isRadarHmd()) {
             renderRadarHmd(guiGraphics, mc, state);
-        } else if (state.isGroundIr()) {
-            renderGroundIr(guiGraphics, mc, state);
-        } else if (state.isMixedIr()) {
-            renderMixedIr(guiGraphics, mc, state);
-        } else {
-            renderAirIr(guiGraphics, mc, state);
+        }
+        // 雷达与 IR 是可并存的两条 HMD 通道；分别绘制，禁止用 else-if 再次制造视觉互斥。
+        if (state.isIrHmd()) {
+            if (state.isGroundIr()) {
+                renderGroundIr(guiGraphics, mc, state);
+            } else if (state.isMixedIr()) {
+                renderMixedIr(guiGraphics, mc, state);
+            } else {
+                renderAirIr(guiGraphics, mc, state);
+            }
         }
     }
 
@@ -91,7 +95,7 @@ public class RVP_HmdOverlay {
         float guideHeadAngle = state.getIrGuideHeadMaxAngle();
 
         // 无大圈，仅计算离轴角
-        float hmdPitch = state.getSmoothPitch(), hmdYaw = state.getSmoothYaw();
+        float hmdPitch = state.getIrSmoothPitch(), hmdYaw = state.getIrSmoothYaw();
         Vec3 hmdDir = VectorUtil.rotToVec(hmdPitch, hmdYaw).normalize();
         double hmdAngle = Math.toDegrees(Math.acos(
                 Math.max(-1.0, Math.min(1.0, refDir.dot(hmdDir)))));
@@ -167,7 +171,7 @@ public class RVP_HmdOverlay {
         Vec2 weaponRot = weaponUnit.worldRot();
         Vec3 weaponDir = VectorUtil.rotToVec(weaponRot.x, weaponRot.y).normalize();
 
-        float hmdPitch = state.getSmoothPitch(), hmdYaw = state.getSmoothYaw();
+        float hmdPitch = state.getIrSmoothPitch(), hmdYaw = state.getIrSmoothYaw();
         Vec3 hmdDir = VectorUtil.rotToVec(hmdPitch, hmdYaw).normalize();
 
         float limit = state.getIrGuideHeadMaxAngle();
