@@ -422,6 +422,13 @@ visualRadius = baseExplosionRadius × scale
 
 曲线计算尽量抽成无 Minecraft 客户端依赖的纯函数，便于单元测试边界和单调性。
 
+温压实现对贴地尘环还有一层代码级空爆门控：
+
+- `RVP_ThermobaricEffectInstance.MAX_DUST_RING_AIRBORNE_HEIGHT` 是尘环允许生成的最大爆心离地高度，当前为 `20.0F` 格；
+- 客户端以爆心中心 X/Z 下方的 `MOTION_BLOCKING` 高度图候选碰撞表面作为地面，并使用碰撞形状顶面进行最终高度判定；
+- `explosionY - groundY <= 20.0` 时照常采样地表并渲染尘环，严格超过 20 格时跳过地表采样、尘环环段数据和渲染；恰好 20 格仍生成；
+- 该阈值是 Java 代码配置字段，不新增或覆盖 `preset_data` JSON 字段。地面暂不可用时不作超过阈值的推断，以避免客户端区块不同步导致尘环误消失。
+
 ## 12. 密度、LOD 与性能预算
 
 `event.density()` 是服务端作者允许的视觉密度，不是必须完整使用的粒子数量。推荐最终数量按以下顺序收敛：

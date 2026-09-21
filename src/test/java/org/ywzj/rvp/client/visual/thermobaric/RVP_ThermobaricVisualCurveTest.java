@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.visual.thermobaric;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_ThermobaricVisualCurveTest {
@@ -213,5 +214,13 @@ class RVP_ThermobaricVisualCurveTest {
                 RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(10.0F, 2.4F));
         assertTrue(Float.isFinite(RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
                 Float.MAX_VALUE, Float.MAX_VALUE)));
+    }
+
+    @Test
+    void airborneDustRingStopsAboveConfiguredGroundClearance() {
+        assertTrue(RVP_ThermobaricEffectInstance.shouldGenerateDustRing(120.0D, 100.0F));
+        assertTrue(RVP_ThermobaricEffectInstance.shouldGenerateDustRing(120.0D, 100.0001F));
+        assertTrue(RVP_ThermobaricEffectInstance.shouldGenerateDustRing(120.0D, Float.NaN));
+        assertFalse(RVP_ThermobaricEffectInstance.shouldGenerateDustRing(120.0001D, 100.0F));
     }
 }

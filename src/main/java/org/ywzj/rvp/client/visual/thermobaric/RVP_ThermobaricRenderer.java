@@ -95,7 +95,8 @@ public final class RVP_ThermobaricRenderer {
         if (effect.preset().showPressureWave()) {
             renderPressureWave(effect, visualAge, cameraPosition);
         }
-        if (effect.preset().showDustRing()) {
+        // 调用温压实例的离地高度门控，空爆超过代码配置阈值时跳过尘环绘制。
+        if (effect.dustRingEnabled() && effect.preset().showDustRing()) {
             renderDustRing(effect, visualAge, cameraPosition, particleRatio);
         }
         if (effect.preset().showCloud()) {

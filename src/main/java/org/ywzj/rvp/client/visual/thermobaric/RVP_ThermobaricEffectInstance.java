@@ -23,6 +23,8 @@ import java.util.Random;
 public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffect {
     /** 客户端区块包会同步的尘环地表候选高度图类型。 */
     private static final Heightmap.Types DUST_GROUND_HEIGHTMAP = Heightmap.Types.MOTION_BLOCKING;
+    /** 尘环允许生成的最大爆心离地高度，单位为格；超过该高度的空爆不生成尘环。 */
+    static final float MAX_DUST_RING_AIRBORNE_HEIGHT = 20.0F;
     /** 实验关闭时复用的空尘环渐进顺序。 */
     private static final int[] NO_PROGRESSIVE_DUST_SEGMENTS = new int[0];
     /** 效果所属的客户端世界。 */
@@ -51,6 +53,8 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     private final float pressureWaveFadeSpread;
     /** 尘环各径向层、各环段预采样得到的地表高度。 */
     private final float[][] dustGroundHeights;
+    /** 本实例是否满足离地高度条件并允许生成尘环。 */
+    private final boolean dustRingEnabled;
     /** 仅实验模式使用的尘环渐进稳定环段顺序。 */
     private final int[] progressiveDustSegmentOrder;
     /** 后燃烟云的竖直生成基准；贴地爆炸使用地表，空爆使用爆心。 */
@@ -92,14 +96,17 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
                 event.seed() ^ 0x19C7E04AB53D826FL, pressureSmokeCount);
         Random fadeRandom = new Random(event.seed() ^ 0x6D2B79F5A4C381E7L);
         pressureWaveFadeSpread = 0.18F + fadeRandom.nextFloat() * 0.16F;
-        int dustSegmentCount = resolveDensityLimitedCount(
-                preset.maxDustSegments(), effectiveDensity);
-        dustGroundHeights = sampleGround(dustSegmentCount);
+        float centerGroundHeight = sampleGroundSurfaceHeight(Mth.floor(center.x), Mth.floor(center.z));
+        // 调用本实例的离地高度判定，超过代码配置阈值时不创建尘环地表采样数据。
+        dustRingEnabled = shouldGenerateDustRing(center.y, centerGroundHeight);
+        int dustSegmentCount = dustRingEnabled
+                ? resolveDensityLimitedCount(preset.maxDustSegments(), effectiveDensity) : 0;
+        // 不满足离地高度条件时直接跳过地表采样，避免空爆创建任何尘环数据。
+        dustGroundHeights = dustRingEnabled ? sampleGround(dustSegmentCount) : new float[0][0];
         // 仅在实验开关开启时创建渐进顺序，确保默认关闭不增加旧路径的数组分配和选段变化。
         progressiveDustSegmentOrder = dynamicParticleBudgetEnabled
                 ? RVP_ThermobaricParticleBudget.createProgressiveSegmentOrder(dustSegmentCount)
                 : NO_PROGRESSIVE_DUST_SEGMENTS;
-        float centerGroundHeight = sampleGroundSurfaceHeight(Mth.floor(center.x), Mth.floor(center.z));
         float groundAnchorDistance = Math.max(2.0F, visualRadius * 0.25F);
         cloudGroundAnchored = Float.isFinite(centerGroundHeight)
                 && center.y >= centerGroundHeight - 1.0D
@@ -177,6 +184,11 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     int dynamicCoreLayerCapacity() {
         return dynamicCoreLayerCapacity;
+    }
+
+    /** 返回本实例是否允许渲染贴地尘环。 */
+    boolean dustRingEnabled() {
+        return dustRingEnabled;
     }
 
     int age() {
@@ -434,6 +446,16 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
      */
     static float resolveDustGroundSampleRadius(float visualRadius, float dustRadiusFactor) {
         return multiplyNonNegative(multiplyNonNegative(visualRadius, dustRadiusFactor), 2.0F);
+    }
+
+    /**
+     * 判断爆心是否足够接近可识别地表；地表暂不可用时保留旧行为，避免客户端区块不同步时误删尘环。
+     */
+    static boolean shouldGenerateDustRing(double explosionY, float groundY) {
+        if (!Double.isFinite(explosionY) || !Float.isFinite(groundY)) {
+            return true;
+        }
+        return explosionY - groundY <= MAX_DUST_RING_AIRBORNE_HEIGHT;
     }
 
     /**
