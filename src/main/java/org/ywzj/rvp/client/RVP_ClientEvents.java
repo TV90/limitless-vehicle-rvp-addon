@@ -125,9 +125,6 @@ public class RVP_ClientEvents {
         RVP_ClientExternalRadarState.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
-        // IR 导引头锁定提示音（循环音，锁定即响、脱锁即停）
-        RVP_ClientSeekerTone.tick();
-
         // 调试：确认本体 RWR 覆盖层读取的 warningReceiver.targets 里是否有伪造 RADAR_LOCK
         if (org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.isDebugOn()
                 && player.tickCount % 20 == 0) {
@@ -315,6 +312,9 @@ public class RVP_ClientEvents {
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         hmdState.checkIrHmd();
         hmdState.tick();
+        // 调用本项目 IR HMD 状态更新后再判定锁定音，保证新锁/脱锁当 Tick 生效，
+        // 且不再读到被本体 NONE 传感器火控短暂清空的过渡状态。
+        RVP_ClientSeekerTone.tick();
 
         ywzj_rvp$refreshVehicleMarkers(mc, player);
 
