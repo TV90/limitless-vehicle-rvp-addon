@@ -346,7 +346,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         // 调用本项目雷达角色解析，确保任何武器/光学配置下的真实雷达硬锁都由平滑渲染器接管。
         RadarUnit lockedRadar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
         boolean localRadarHardLock = lockedRadar != null && lockedRadar.getLockedEntity() != null;
-        return localRadarHardLock || rfAim || hasExternalRadarEntries();
+        // TWS 单缺口航迹若来自本体广播载具，也必须接管；否则带光学瞄具时会回落到本体离散锚点。
+        boolean smoothableTwsContact = hasBroadcastVehicleRadarContact(weaponUnit);
+        return localRadarHardLock || smoothableTwsContact || rfAim || hasExternalRadarEntries();
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
@@ -537,6 +539,18 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return false;
         }
         return !RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()).isEmpty();
+    }
+
+    /** 当前雷达合并航迹中是否包含需要跨广播周期平滑的远程载具。 */
+    private static boolean hasBroadcastVehicleRadarContact(WeaponUnit weaponUnit) {
+        for (RadarUnit.DetectedObject detectedObject : weaponUnit.getRadarDetectedEntities()) {
+            if (detectedObject != null
+                    && detectedObject.entity != null
+                    && RVP_ClientBroadcastVehicleInterpolator.isBroadcastVehicle(detectedObject.entity)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void renderExternalRadarContacts(GuiGraphics guiGraphics, float partialTick,

@@ -20,6 +20,7 @@ import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
+import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -132,7 +133,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                             drawScanLine(matrix, 0, 0, radius, scanAngle, 0.4f, lineColor);
                         }
                         radarUnit.getDetectedEntities().values().forEach(detectedObject -> {
-                            Vec3 v = detectedObject.detectedPosition.subtract(radarUnit.worldRadarPosition());
+                            // 调用本项目广播载具插值器，让雷达显示器 TWS 航迹点与 HUD 单缺口框同源平滑。
+                            Vec3 detectedPosition = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(
+                                    detectedObject.entity, partialTick, detectedObject.detectedPosition);
+                            Vec3 v = detectedPosition.subtract(radarUnit.worldRadarPosition());
                             v = radarUnit.worldVecToLocalVec(v);
                             double l = v.length() / maxScanDistance * radius;
                             v = v.normalize().scale(-l);

@@ -69,10 +69,7 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
 
         LocalVehiclePlayer localVehiclePlayer = LocalVehiclePlayer.instance;
         LocalVehiclePlayer.ServerEntity serverEntity = localVehiclePlayer.serverEntities.get(entity.getId());
-        if (!(entity instanceof AbstractVehicle vehicle)
-                || !vehicle.remote
-                || serverEntity == null
-                || serverEntity.entity != entity) {
+        if (!isBroadcastVehicle(entity) || serverEntity == null) {
             removeTrackForDifferentEntity(entity);
             return nonBroadcastCenter;
         }
@@ -96,6 +93,22 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
 
         double renderTick = minecraft.player.tickCount + Mth.clamp(partialTick, 0.0F, 1.0F);
         return track.interpolate(renderTick);
+    }
+
+    /**
+     * 判断目标是否为本体当前维护的远程广播载具克隆。
+     *
+     * <p>同时核对类型、{@code remote} 标记、实体 ID 与对象身份，供 HUD 接管门控判断
+     * 是否确实需要跨广播样本平滑。</p>
+     */
+    public static boolean isBroadcastVehicle(Entity entity) {
+        if (!(entity instanceof AbstractVehicle vehicle) || !vehicle.remote) {
+            return false;
+        }
+        // 调用本体广播实体表核对对象身份，防止普通实体或复用相同 ID 的新对象误入平滑路径。
+        LocalVehiclePlayer.ServerEntity serverEntity =
+                LocalVehiclePlayer.instance.serverEntities.get(entity.getId());
+        return serverEntity != null && serverEntity.entity == entity;
     }
 
     /**
