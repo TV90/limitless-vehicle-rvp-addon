@@ -68,6 +68,15 @@ public class RVP_WingSweepConfigManager extends SimplePreparableReloadListener<M
     }
 
     /**
+     * 用指定资源仓库手动重载（{@code /rvp reload} 轻量热重载调用）：prepare/apply 为 protected，
+     * 外部触发不了，此入口让 rvp 载具包的可变后掠翼参数在不重载渲染模型/贴图的前提下刷新。
+     * apply 内空 map 不覆盖守卫保持不变。
+     */
+    public void reloadFrom(ResourceManager resourceManager) {
+        apply(prepare(resourceManager, null), null, null);
+    }
+
+    /**
      * 取载具的可变后掠翼参数；未声明 {@code wing_sweep} 的载具返回
      * {@link RVP_WingSweepConfig#DEFAULT}（乘子全 1.0 = 不干预物理）。
      */

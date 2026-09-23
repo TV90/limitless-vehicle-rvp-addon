@@ -77,6 +77,9 @@ public final class RVP_ServerDebugCommands {
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
+        // /rvp 根：目前仅挂轻量热重载（/rvp reload，见 RVP_LightReloadCommand）
+        event.getDispatcher().register(
+                Commands.literal("rvp").then(RVP_LightReloadCommand.get()));
         event.getDispatcher().register(
                 Commands.literal("rvpdebug")
                         .then(buildFlagsSubtree())

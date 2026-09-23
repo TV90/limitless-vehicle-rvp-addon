@@ -97,6 +97,14 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         apply(jsonMap, null, null);
     }
 
+    /**
+     * 用指定资源仓库手动重载（{@code /rvp reload} 轻量热重载调用）：prepare/apply 为 protected，
+     * 外部触发不了，此入口让 rvp 载具包的载具 JSON（命中箱系数/骨模块等）在不重载渲染模型/贴图的前提下刷新。
+     */
+    public void reloadFrom(ResourceManager resourceManager) {
+        apply(prepare(resourceManager, null), null, null);
+    }
+
     public boolean isHidePassenger(ResourceLocation vehicleId) {
         return hidePassengerVehicles.contains(vehicleId);
     }
