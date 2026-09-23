@@ -84,6 +84,13 @@ public final class RVP_WeaponSwitchSyncHelper {
         if (unit.weaponBayUnits.isEmpty()) {
             // 无弹舱的武器站仍需复位导引头（如 cssa5：HQ13 导弹切到机炮后 seekerOn 残留）
             syncSeekerOn(unit, unit.getCurrentWeaponIndex(), unit.getCurrentSecondaryWeaponIndex());
+            // 无弹舱分支同样要恢复雷达锁（2026-09-23 修复）：本体切换武器时清空武器站级
+            // lockedEntity（WeaponUnit.setCurrentWeaponIndex），而发射门对雷达制导/AIR 弹只读
+            // 武器站锁——有弹舱路径每 tick 经 :112 恢复，此处漏调导致 cssa5 机炮切导弹后
+            // "雷达仍锁定却拒射导引头未锁定、脱锁复锁才能发射"。restoreRadarLock 三重门
+            // （根站 RF / 有锁定雷达 / 目标存活）保证手动脱锁时 no-op，每 tick 调用可自愈
+            // 导引头键翻转清锁（toggleSeeker 清 lockedEntity）的场景。
+            restoreRadarLock(unit);
             return;
         }
 
