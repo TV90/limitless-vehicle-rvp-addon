@@ -117,3 +117,125 @@
 - [x] HUD 实现
 - [x] 火控接入
 - [x] 构建验证
+
+## 2026-09-23 MI-28 实测问题与方案二实施记录
+
+### 实测问题
+
+使用 RVP MI-28 验证自动提前量时发现：
+
+1. 静止目标的提前量圈会向目标左侧或右侧偏移；
+2. 低速目标的提前量过大，且绿色虚线的目标端没有连接到锁定方框；
+3. 按 `6` 切换到 `火控模式：稳定` 后移动鼠标，会引发明显客户端卡顿。
+
+### 根因
+
+#### 静止与低速目标偏移
+
+旧解算在目标速度较低时使用目标朝向，并沿该方向固定前推 `8.5` 格。该补偿不是由弹丸飞行时间或目标实测速度推导，因此静止目标也会产生水平提前量；目标朝向变化时，偏移会表现为时而向左、时而向右。
+
+旧实现还会对长飞行时间额外增加最多 `3.5 tick` 的目标运动时间。低速目标同时受到固定距离补偿和额外时间补偿，导致预瞄量明显过大。
+
+#### 虚线与锁定框脱离
+
+锁定方框使用当前渲染帧插值后的目标包围盒中心，而旧提前量状态把带方向补偿且经过独立平滑的目标点作为虚线锚点。两者不是同一空间点，也不使用同一插值时刻，因此虚线目标端无法稳定贴合锁定框。
+
+#### 稳定模式移动鼠标卡顿
+
+完整提前量解算会：
+
+- 以 `0.5 tick` 步长扫描候选命中时间，最长扫描 `120 tick`；
+- 每个候选时间最多执行 6 次炮口方向修正；
+- 每次修正都按真实重力和阻力逐 tick 积分弹丸轨迹。
+
+旧稳定模式的鼠标 X、Y 转向回调会分别触发完整解算，火控执行器和 HUD 随后还会各自解算。解算次数因鼠标采样率和渲染帧率放大，形成客户端主线程卡顿。
+
+### 方案二实际落地
+
+#### 1. 目标预测只使用真实运动量
+
+目标基准位置统一为当前渲染时刻的包围盒中心：
+
+```text
+C(α) = lerp(previousPosition, currentPosition, α) + boundingBoxCenterOffset
+```
+
+目标速度同时参考相邻 tick 位置差分与实体运动速度：
+
+```text
+v_target = 0.35 × (positionNow - positionPrevious)
+         + 0.65 × entityDeltaMovement
+```
+
+当 `|v_target| < 0.01 格/tick` 时按静止目标处理，以过滤载具物理和网络插值产生的近零抖动。候选命中时刻 `t` 的目标位置改为：
+
+```text
+P_target(t) = C(α) + v_target × t
+```
+
+目标朝向不再参与计算；已删除固定 `8.5` 格前推和远距离额外时间补偿。
+
+#### 2. 弹丸预测继续匹配真实积分顺序
+
+候选炮口方向为 `d` 时，初始速度为：
+
+```text
+v_0 = normalize(d) × muzzleSpeed + inheritedVehicleVelocity
+```
+
+每个完整 tick 按真实弹体顺序推进：
+
+```text
+p_(n+1) = p_n + v_n
+v_(n+1) = (1 - friction) × v_n + (0, -gravity, 0)
+```
+
+解算器在 `1..min(projectileLife, 120)` tick 内以 `0.5 tick` 为步长搜索，并对每个候选时刻最多修正 6 次炮口方向，最终选取预测脱靶距离最小的解。
+
+#### 3. 锁定框和虚线共用目标锚点
+
+目标锚点只保存真实包围盒中心，不再做滞后平滑或方向前推。HUD 渲染时使用与锁定框相同的 `partialTick` 在上一 tick 与当前 tick 的真实中心之间插值。
+
+预瞄圈本身仍保留自适应平滑和 `0.02` 的轻微前馈，避免圆圈跳动；该平滑不会再影响虚线连接目标的位置。
+
+#### 4. 每武器站每 tick 只完整解算一次
+
+`RVP_MachinegunLeadState.resolveCurrent(...)` 以“载具实体 ID + 武器站索引”为键缓存本 tick 原始解：
+
+- 火控执行器、HUD 和客户端 AHEAD 显示共用同一份结果；
+- 鼠标 X/Y 转向回调只检查当前武器类型和是否存在有效锁定，不再运行弹道积分；
+- 原始解短暂缺失时最多保持 8 tick，超过后清空平滑状态；
+- 切换目标、切换武器或重新获得目标时重新初始化，避免继承旧目标的提前量。
+
+该改动不新增 Mixin 类或注入点，只收窄既有 `LocalVehiclePlayerMachinegunLeadTurnMixin` 内的回调工作量。
+
+### 代码落点
+
+| 职责 | 文件 |
+| --- | --- |
+| 目标速度过滤、目标预测和数值弹道解算 | `client/lead/RVP_MachinegunLeadSolver.java` |
+| 每武器站每 tick 缓存、预瞄圈平滑、目标锚点插值 | `client/state/RVP_MachinegunLeadState.java` |
+| HUD 共用缓存与虚线端点对齐 | `client/gui/RVP_MachinegunLeadOverlay.java` |
+| 通用弹道提前量火控消费缓存 | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
+| 稳定模式鼠标回调改为廉价锁定检查 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+| AHEAD 客户端读数复用已解算结果 | `weapon/ahead/RVP_AheadProgrammer.java` |
+| 静止、微抖、低速与速度融合自动化测试 | `src/test/java/org/ywzj/rvp/client/lead/RVP_MachinegunLeadSolverTest.java` |
+
+以上路径的 Java 主源码均位于 `src/main/java/org/ywzj/rvp/`；测试文件路径按表中完整路径解析。本次没有修改 `ywzj_vehicle` 本体、载具包资源或 JSON schema。
+
+### 自动验证结果
+
+- 定向测试通过：`RVP_MachinegunLeadSolverTest`、`RVP_BallisticLeadFireControlPolicyTest`；
+- 项目根目录执行规定的 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟：日志出现 `Done (2.891s)!`；
+- 冒烟日志中的缺失模型、Create/TACZ 类、AbramsX 非法路径、`rvp_bomber:ac130u` 配方与 `rvp_bomber:tu160` 数据错误均与既有噪音基线一致，未发现本次新增类加载、Mixin 或服务端错误；
+- 测试服务端已正常清理，端口 `25565` 无残留监听。
+
+### 客户端实机回归清单
+
+- [ ] MI-28 锁定静止目标：提前量圈不再因目标朝向偏左或偏右；
+- [ ] MI-28 锁定低速横移目标：提前量与速度、距离连续变化，不再出现固定大幅前推；
+- [ ] 虚线目标端在不同帧率及目标运动状态下持续贴合锁定方框；
+- [ ] 按 `6` 切到 `火控模式：稳定` 后持续移动鼠标，不再出现此前的主线程卡顿；
+- [ ] 高速横移、己方高速运动和双方同时运动时，预瞄圈与实际弹着趋势一致；
+- [ ] AHEAD 客户端距离/时间读数正常，切换目标后不显示上一目标的旧解。

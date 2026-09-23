@@ -55,6 +55,8 @@ public class LocalVehiclePlayerMachinegunLeadTurnMixin {
         if (!RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(weaponUnit)) {
             return false;
         }
-        return RVP_MachinegunLeadSolver.solveCurrent(weaponUnit, 1.0f) != null;
+        // 调用本项目锁定目标解析器只做轻量资格判断；实际弹道解由共享状态每 tick 至多计算一次，
+        // 禁止在 X/Y 鼠标重定向中重复扫描 239 组候选时间导致客户端卡顿。
+        return RVP_MachinegunLeadSolver.resolveTrackedTarget(weaponUnit) != null;
     }
 }

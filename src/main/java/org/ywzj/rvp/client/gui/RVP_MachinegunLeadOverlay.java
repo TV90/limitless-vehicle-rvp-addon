@@ -10,7 +10,6 @@ import org.ywzj.rvp.weapon.ahead.RVP_AheadProgrammer;
 import org.ywzj.rvp.weapon.ahead.RVP_AheadSolution;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
-import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -21,6 +20,7 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
+    /** 机炮预瞄圈与目标连线使用的半透明绿色。 */
     private static final int LEAD_COLOR = (Color.GREEN & 0x00FFFFFF) | (0xDD << 24);
 
     @Override
@@ -37,18 +37,14 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
             }
             return;
         }
-        boolean fireControlTracking = RVP_FireControlStabilizerState.getMode(weaponUnit)
-                != RVP_FireControlStabilizerState.Mode.OFF;
-        float solvePartial = fireControlTracking ? 1.0f : partialTick;
-        float renderPartial = fireControlTracking ? 1.0f : partialTick;
-        RVP_LeadSolution solution = RVP_MachinegunLeadState.smooth(
-                weaponUnit,
-                RVP_MachinegunLeadSolver.solveCurrent(weaponUnit, solvePartial),
-                renderPartial
-        );
+        // 调用本项目每 tick 解算缓存，使 HUD 与火控复用同一份结果且不随渲染帧率重复积分。
+        // HUD 始终使用当前渲染 partialTick 插值真实目标中心，使连线锚点与锁定框逐帧重合。
+        RVP_LeadSolution solution = RVP_MachinegunLeadState.resolveCurrent(weaponUnit, partialTick);
         RVP_AheadSolution aheadSolution = null;
         if (RVP_AheadProgrammer.isAheadWeapon(data)) {
-            aheadSolution = RVP_AheadProgrammer.solve(data, weaponUnit, weaponUnit.aimContext(), solvePartial);
+            // 调用本项目 AHEAD 编程入口并复用缓存提前量，避免客户端为同一目标再次执行弹道解算。
+            aheadSolution = RVP_AheadProgrammer.solveFromResolvedLead(
+                    data, weaponUnit, weaponUnit.aimContext(), solution);
             renderAheadReadout(guiGraphics, screenWidth, screenHeight, aheadSolution);
         }
         if (solution == null) {

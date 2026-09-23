@@ -82,11 +82,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
 
         // 调用本项目机炮解算器和状态平滑器，使炮塔控制与HUD使用同一份稳定预瞄点。
         RVP_LeadSolution leadSolution = machinegunLeadMode
-                ? RVP_MachinegunLeadState.smooth(
-                        weaponUnit,
-                        RVP_MachinegunLeadSolver.solveCurrent(weaponUnit, 1.0F),
-                        1.0F
-                )
+                ? RVP_MachinegunLeadState.resolveCurrent(weaponUnit, 1.0F)
                 : null;
         if (leadSolution != null) {
             trackedTargetWorldPos = leadSolution.leadWorldPos();

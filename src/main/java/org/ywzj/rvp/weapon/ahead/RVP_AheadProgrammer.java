@@ -28,6 +28,27 @@ public final class RVP_AheadProgrammer {
 
     public static RVP_AheadSolution solve(RVP_WeaponData data, WeaponUnit weaponUnit, AimContext aim,
                                           float partialTick) {
+        return solveInternal(data, weaponUnit, aim, partialTick, null, true);
+    }
+
+    /**
+     * 使用客户端已缓存的机炮提前量生成 AHEAD 读数，不再次执行弹道解算。
+     * 空缓存会直接走无锁定回退，不得在 HUD 渲染路径补算。
+     */
+    public static RVP_AheadSolution solveFromResolvedLead(RVP_WeaponData data, WeaponUnit weaponUnit,
+                                                          AimContext aim,
+                                                          @Nullable RVP_LeadSolution resolvedLead) {
+        Entity currentTarget = resolveTrackedTargetServerSafe(weaponUnit);
+        RVP_LeadSolution usableLead = resolvedLead != null && resolvedLead.target() == currentTarget
+                ? resolvedLead : null;
+        return solveInternal(data, weaponUnit, aim, 1.0F, usableLead, false);
+    }
+
+    /** 统一处理服务端独立解算与客户端缓存复用两条 AHEAD 编程路径。 */
+    private static RVP_AheadSolution solveInternal(RVP_WeaponData data, WeaponUnit weaponUnit, AimContext aim,
+                                                   float partialTick,
+                                                   @Nullable RVP_LeadSolution resolvedLead,
+                                                   boolean allowIndependentSolve) {
         if (!isAheadWeapon(data)) {
             return RVP_AheadSolution.invalid("not_ahead_weapon");
         }
@@ -39,20 +60,24 @@ public final class RVP_AheadProgrammer {
             return RVP_AheadSolution.invalid("missing_muzzle");
         }
 
-        Entity target = resolveTrackedTargetServerSafe(weaponUnit);
-        if (target != null) {
-            RVP_LeadSolution lead = RVP_MachinegunLeadSolver.solveForTarget(
-                    weaponUnit, data, muzzle, target, partialTick
-            );
-            if (lead != null && lead.leadWorldPos() != null) {
-                return fromReference(
-                        data,
-                        lead.leadWorldPos(),
-                        muzzle,
-                        true,
-                        lead.projectileTravelDistanceMeters()
+        RVP_LeadSolution lead = resolvedLead;
+        if (lead == null && allowIndependentSolve) {
+            Entity target = resolveTrackedTargetServerSafe(weaponUnit);
+            if (target != null) {
+                // 调用本项目机炮解算器，为服务端真实开火独立生成权威的 AHEAD 编程距离。
+                lead = RVP_MachinegunLeadSolver.solveForTarget(
+                        weaponUnit, data, muzzle, target, partialTick
                 );
             }
+        }
+        if (lead != null && lead.leadWorldPos() != null) {
+            return fromReference(
+                    data,
+                    lead.leadWorldPos(),
+                    muzzle,
+                    true,
+                    lead.projectileTravelDistanceMeters()
+            );
         }
 
         if (data.getFuseData().isAheadRequireLock()) {
