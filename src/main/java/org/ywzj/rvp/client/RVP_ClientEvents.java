@@ -44,6 +44,7 @@ import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
 import org.ywzj.rvp.client.state.RVP_ClientSeekerTone;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
+import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
@@ -123,6 +124,8 @@ public class RVP_ClientEvents {
         RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
+        // 调用本项目广播载具插值器，按本体 serverEntities 生命周期淘汰过期 HUD 平滑轨迹。
+        RVP_ClientBroadcastVehicleInterpolator.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
         // 调试：确认本体 RWR 覆盖层读取的 warningReceiver.targets 里是否有伪造 RADAR_LOCK
