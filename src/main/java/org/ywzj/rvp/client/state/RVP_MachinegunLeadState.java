@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.state;
 
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
@@ -15,31 +14,34 @@ import java.util.Iterator;
 import java.util.Map;
 
 public final class RVP_MachinegunLeadState {
-    /** 各武器站的解算与平滑状态，键由载具实体 ID 和武器站索引组合。 */
+    /** 各武器站的解算、世界坐标 EMA 与渲染插值状态，键由载具实体 ID 和武器站索引组合。 */
     private static final Map<Integer, State> STATES = new HashMap<>();
 
     /** 原始解短暂缺失时继续显示上一份解的最长时间，单位为 tick。 */
     private static final int RAW_MISS_HOLD_TICKS = 8;
 
-    /** 预瞄点平滑的最低插值系数。 */
+    /** 世界提前点 EMA 的最低插值系数。 */
     private static final double LEAD_ALPHA_BASE = 0.23D;
 
-    /** 预瞄点误差对插值系数的增益。 */
+    /** 世界提前点误差对 EMA 插值系数的增益。 */
     private static final double LEAD_ALPHA_SCALE = 0.022D;
 
-    /** 预瞄点平滑允许使用的最大插值系数。 */
+    /** 世界提前点 EMA 允许使用的最大插值系数。 */
     private static final double LEAD_ALPHA_MAX = 0.46D;
 
-    /** 预瞄点渲染前馈系数，用于抵消平滑产生的轻微拖尾。 */
-    private static final double LEAD_FORWARD_COMPENSATION = 0.02D;
+    /**
+     * EMA 理论相位滞后的补偿比例；补足全部滞后后额外前置 ，使匀速火控宁可略提前而不落后。
+     */
+    private static final double LEAD_PHASE_COMPENSATION_RATIO = 1.15D;
 
     private RVP_MachinegunLeadState() {}
 
     /**
-     * 取得当前武器站的平滑提前量解。
+     * 取得当前武器站本 tick 的 EMA 与相位补偿提前量解。
      *
      * <p>同一武器站在同一个载具 tick 内只允许调用一次实际弹道解算；火控执行器和 HUD 后续调用
-     * 直接复用状态中的结果，避免解算成本随帧率或鼠标采样率增长。</p>
+     * 直接复用状态中的结果，避免解算成本随帧率或鼠标采样率增长。世界提前点保留 EMA 抗抖，
+     * 再按当前 {@code alpha} 的理论滞后 tick 补偿 1+LEAD_PHASE_COMPENSATION_RATIO，使高速匀速目标略微提前而不拖尾。</p>
      */
     @Nullable
     public static RVP_LeadSolution resolveCurrent(WeaponUnit weaponUnit, float partialTick) {
@@ -51,27 +53,43 @@ public final class RVP_MachinegunLeadState {
         State state = STATES.computeIfAbsent(key, unused -> new State());
         if (state.lastSolveTick != nowTick) {
             state.lastSolveTick = nowTick;
-            // 调用本项目机炮解算器，每个武器站每 tick 仅生成一份原始解供火控与 HUD 共用。
+            // 调用本项目机炮解算器，每个武器站每 tick 仅生成一份原始物理解供 EMA、火控与 HUD 共用。
             acceptRawSolution(weaponUnit, state,
                     RVP_MachinegunLeadSolver.solveCurrent(weaponUnit, 1.0F), nowTick);
         }
+        prune(nowTick);
+        return state.controlSolution;
+    }
 
-        if (!state.initialized) {
+    /**
+     * 取得 HUD 使用的帧间插值解。
+     *
+     * <p>这里只在相邻两个已经过 EMA 与相位补偿的控制解之间按渲染 partialTick 插值，
+     * 保证 HUD 与实际火控使用同一世界坐标控制点。</p>
+     */
+    @Nullable
+    public static RVP_LeadSolution resolveDisplayCurrent(WeaponUnit weaponUnit, float partialTick) {
+        RVP_LeadSolution control = resolveCurrent(weaponUnit, 1.0F);
+        State state = STATES.get(key(weaponUnit));
+        if (state == null || !state.initialized) {
             return null;
         }
-        if (nowTick - state.lastSeenTick > RAW_MISS_HOLD_TICKS) {
-            // 保留本 tick 的空解缓存，防止火控与 HUD 在同一 tick 内因删除状态而各自重算一次。
+        int nowTick = weaponUnit.getVehicle().tickCount;
+        if (control == null && nowTick - state.lastSeenTick > RAW_MISS_HOLD_TICKS) {
             state.initialized = false;
             return null;
         }
-        prune(nowTick);
-        return buildSolution(state.target, state, partialTick);
+        if (control == null || state.previousControlSolution == null) {
+            return state.currentControlSolution;
+        }
+        return interpolateSolution(state.previousControlSolution, state.currentControlSolution, partialTick);
     }
 
-    /** 把本 tick 的原始解写入平滑状态；空解只触发既有短时保持，不刷新有效时间。 */
+    /** 把本 tick 的原始解写入缓存；空解只触发 HUD 短时保持，不刷新有效时间。 */
     private static void acceptRawSolution(WeaponUnit weaponUnit, State state,
                                           @Nullable RVP_LeadSolution raw, int nowTick) {
         if (raw == null) {
+            state.controlSolution = null;
             return;
         }
 
@@ -80,43 +98,29 @@ public final class RVP_MachinegunLeadState {
         if (!state.initialized
                 || state.targetId != targetId
                 || !weaponKey.equals(state.weaponKey)
-                || nowTick - state.lastSeenTick > 8) {
-            state.prevLead = raw.leadWorldPos();
-            state.currLead = raw.leadWorldPos();
-            state.prevTarget = raw.targetWorldPos();
-            state.currTarget = raw.targetWorldPos();
-            state.prevTime = raw.timeToImpact();
-            state.currTime = raw.timeToImpact();
-            state.prevMiss = raw.missDistance();
-            state.currMiss = raw.missDistance();
-            state.prevTravel = raw.projectileTravelDistanceMeters();
-            state.currTravel = raw.projectileTravelDistanceMeters();
+                || nowTick - state.lastSeenTick != 1) {
+            state.smoothedLead = raw.leadWorldPos();
+            state.previousControlSolution = raw;
+            state.currentControlSolution = raw;
             state.weaponKey = weaponKey;
             state.targetId = targetId;
-            state.target = raw.target();
             state.initialized = true;
         } else if (state.lastSeenTick != nowTick) {
-            state.prevLead = state.currLead;
-            state.prevTarget = state.currTarget;
-            state.prevTime = state.currTime;
-            state.prevMiss = state.currMiss;
-            state.prevTravel = state.currTravel;
+            state.previousControlSolution = state.currentControlSolution;
 
-            double leadErr = state.currLead.distanceTo(raw.leadWorldPos());
+            double leadError = state.smoothedLead.distanceTo(raw.leadWorldPos());
             double leadAlpha = Mth.clamp(
-                    LEAD_ALPHA_BASE + leadErr * LEAD_ALPHA_SCALE,
+                    LEAD_ALPHA_BASE + leadError * LEAD_ALPHA_SCALE,
                     LEAD_ALPHA_BASE,
                     LEAD_ALPHA_MAX
             );
-
-            state.currLead = state.currLead.lerp(raw.leadWorldPos(), leadAlpha);
-            // 目标锚点必须保持真实碰撞箱中心，只做帧间插值，不做滞后平滑，否则虚线会脱离锁定框。
-            state.currTarget = raw.targetWorldPos();
-            state.currTime += (raw.timeToImpact() - state.currTime) * leadAlpha;
-            state.currMiss += (raw.missDistance() - state.currMiss) * leadAlpha;
-            state.currTravel += (raw.projectileTravelDistanceMeters() - state.currTravel) * leadAlpha;
-            state.target = raw.target();
+            Vec3 previousSmoothedLead = state.smoothedLead;
+            state.smoothedLead = previousSmoothedLead.lerp(raw.leadWorldPos(), leadAlpha);
+            Vec3 compensatedLead = compensateSmoothedLead(
+                    previousSmoothedLead, state.smoothedLead, leadAlpha);
+            state.currentControlSolution = withLeadWorldPos(raw, compensatedLead);
         }
+        state.controlSolution = state.currentControlSolution;
         state.lastSeenTick = nowTick;
     }
 
@@ -149,53 +153,66 @@ public final class RVP_MachinegunLeadState {
         }
     }
 
-    private static RVP_LeadSolution buildSolution(@Nullable Entity target, State state, float partialTick) {
+    /** 在两份相邻的原始物理解之间做纯渲染插值。 */
+    static RVP_LeadSolution interpolateSolution(RVP_LeadSolution previous,
+                                                RVP_LeadSolution current,
+                                                float partialTick) {
         float clampedPartial = Mth.clamp(partialTick, 0f, 1f);
-        Vec3 renderLead = state.prevLead.lerp(state.currLead, clampedPartial);
-        Vec3 renderTarget = state.prevTarget.lerp(state.currTarget, clampedPartial);
-        // 为预瞄圈保留极小前馈以抵消平滑拖尾，同时避免激进外推造成跳动。
-        Vec3 leadVelocity = state.currLead.subtract(state.prevLead);
-        renderLead = renderLead.add(leadVelocity.scale(LEAD_FORWARD_COMPENSATION));
-        double renderTime = Mth.lerp(clampedPartial, (float) state.prevTime, (float) state.currTime);
-        double renderMiss = Mth.lerp(clampedPartial, (float) state.prevMiss, (float) state.currMiss);
-        double renderTravel = Mth.lerp(clampedPartial, (float) state.prevTravel, (float) state.currTravel);
-        return new RVP_LeadSolution(target, renderTarget, renderLead, renderTime, renderMiss, renderTravel);
+        Vec3 renderLead = previous.leadWorldPos().lerp(current.leadWorldPos(), clampedPartial);
+        Vec3 renderTarget = previous.targetWorldPos().lerp(current.targetWorldPos(), clampedPartial);
+        double renderTime = Mth.lerp(clampedPartial, (float) previous.timeToImpact(), (float) current.timeToImpact());
+        double renderMiss = Mth.lerp(clampedPartial, (float) previous.missDistance(), (float) current.missDistance());
+        double renderTravel = Mth.lerp(
+                clampedPartial,
+                (float) previous.projectileTravelDistanceMeters(),
+                (float) current.projectileTravelDistanceMeters()
+        );
+        return new RVP_LeadSolution(
+                current.target(), renderTarget, renderLead, renderTime, renderMiss, renderTravel);
+    }
+
+    /**
+     * 按 EMA 的理论稳态滞后 tick 对当前平滑点直接做部分相位补偿。
+     *
+     * <p>理论滞后为 {@code (1-alpha)/alpha} tick；补偿 LEAD_PHASE_COMPENSATION_RATIO 后，匀速目标会额外前置原 EMA
+     * 滞后的 LEAD_PHASE_COMPENSATION_RATIO。补偿仍随世界提前点速度变化，不产生固定米数或目标朝向偏置。</p>
+     */
+    static Vec3 compensateSmoothedLead(Vec3 previousSmoothedLead, Vec3 currentSmoothedLead, double alpha) {
+        Vec3 safePrevious = previousSmoothedLead == null ? Vec3.ZERO : previousSmoothedLead;
+        Vec3 safeCurrent = currentSmoothedLead == null ? safePrevious : currentSmoothedLead;
+        double safeAlpha = Mth.clamp(alpha, 1.0E-4D, 1.0D);
+        double compensationTicks = (1.0D - safeAlpha) / safeAlpha * LEAD_PHASE_COMPENSATION_RATIO;
+        Vec3 smoothedVelocity = safeCurrent.subtract(safePrevious);
+        return safeCurrent.add(smoothedVelocity.scale(compensationTicks));
+    }
+
+    /** 用补偿后的世界提前点构造控制解，其余弹道物理量保持本 tick 原始值。 */
+    private static RVP_LeadSolution withLeadWorldPos(RVP_LeadSolution raw, Vec3 leadWorldPos) {
+        return new RVP_LeadSolution(
+                raw.target(),
+                raw.targetWorldPos(),
+                leadWorldPos,
+                raw.timeToImpact(),
+                raw.missDistance(),
+                raw.projectileTravelDistanceMeters()
+        );
     }
 
     private static final class State {
-        /** 当前解对应的锁定实体；仅用于构造对外解算结果。 */
+        /** 本 tick 供火控直接使用的 EMA 相位补偿解；空值表示本 tick 没有有效锁定。 */
         @Nullable
-        Entity target;
+        RVP_LeadSolution controlSolution;
 
-        /** 上一 tick 的平滑预瞄点。 */
-        Vec3 prevLead = Vec3.ZERO;
+        /** 上一 tick 的 EMA 相位补偿解，仅供 HUD 帧间插值。 */
+        @Nullable
+        RVP_LeadSolution previousControlSolution;
 
-        /** 当前 tick 的平滑预瞄点。 */
-        Vec3 currLead = Vec3.ZERO;
+        /** 最近一份有效 EMA 相位补偿解，供 HUD 插值与短时显示保持。 */
+        @Nullable
+        RVP_LeadSolution currentControlSolution;
 
-        /** 上一 tick 的真实目标中心锚点。 */
-        Vec3 prevTarget = Vec3.ZERO;
-
-        /** 当前 tick 的真实目标中心锚点。 */
-        Vec3 currTarget = Vec3.ZERO;
-
-        /** 上一 tick 的预测命中时间。 */
-        double prevTime;
-
-        /** 当前 tick 的预测命中时间。 */
-        double currTime;
-
-        /** 上一 tick 的预测脱靶距离。 */
-        double prevMiss;
-
-        /** 当前 tick 的预测脱靶距离。 */
-        double currMiss;
-
-        /** 上一 tick 的预测弹道累计距离。 */
-        double prevTravel;
-
-        /** 当前 tick 的预测弹道累计距离。 */
-        double currTravel;
+        /** 当前世界提前点的纯 EMA 状态，不包含相位补偿。 */
+        Vec3 smoothedLead = Vec3.ZERO;
 
         /** 最近一次取得有效原始解的载具 tick。 */
         int lastSeenTick;

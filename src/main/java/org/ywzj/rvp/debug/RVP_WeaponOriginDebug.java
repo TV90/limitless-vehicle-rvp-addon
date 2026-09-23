@@ -1,6 +1,7 @@
 package org.ywzj.rvp.debug;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -9,6 +10,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -207,6 +209,57 @@ public final class RVP_WeaponOriginDebug {
         sb.append("spawn.sourceAim.position=").append(formatVec(aim == null ? null : aim.position)).append('\n');
         if (weaponUnit != null) {
             appendWeaponUnit(sb, weaponUnit, vehicle, "spawnWeaponUnit");
+        }
+        appendFileLog(sb.toString());
+    }
+
+    /**
+     * 记录客户端机炮提前量解算快照。
+     *
+     * <p>复用 {@code weaponorigin verbose} 显式开关，默认不产生任何高频日志。该记录用于对照
+     * 根火控站、实际发射单元、目标实位移和最终提前点，便于实机判断是否仍有网络管线延迟。</p>
+     */
+    public static void noteLeadSolution(WeaponUnit controlUnit, WeaponUnit launchUnit, Entity target,
+                                        Vec3 muzzle, RVP_LeadSolution solution) {
+        if (!VERBOSE_ENABLED.get()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("reason=lead-solution").append('\n');
+        sb.append("controlUnit.id=").append(controlUnit == null ? "<null>" : controlUnit.getId()).append('\n');
+        sb.append("launchUnit.id=").append(launchUnit == null ? "<null>" : launchUnit.getId()).append('\n');
+        sb.append("muzzle=").append(formatVec(muzzle)).append('\n');
+        if (controlUnit != null) {
+            // 调用本体火控站瞄准上下文，记录旧根节点原点供实机核对炮口视差是否已消除。
+            AimContext controlAim = controlUnit.aimContext();
+            sb.append("controlUnit.aim.from=")
+                    .append(formatVec(controlAim == null ? null : controlAim.from)).append('\n');
+        }
+        if (launchUnit != null) {
+            // 调用本体实际发射单元瞄准上下文，记录当前解算使用的真实炮口原点。
+            AimContext launchAim = launchUnit.aimContext();
+            sb.append("launchUnit.aim.from=")
+                    .append(formatVec(launchAim == null ? null : launchAim.from)).append('\n');
+        }
+        if (target != null) {
+            sb.append("target.id=").append(target.getId()).append('\n');
+            sb.append("target.class=").append(target.getClass().getName()).append('\n');
+            sb.append("target.position=").append(formatVec(target.position())).append('\n');
+            sb.append("target.tickDelta=").append(formatVec(new Vec3(
+                    target.getX() - target.xo,
+                    target.getY() - target.yo,
+                    target.getZ() - target.zo))).append('\n');
+            sb.append("target.motion=").append(formatVec(target.getDeltaMovement())).append('\n');
+            sb.append("target.onGround=").append(target.onGround()).append('\n');
+        }
+        if (solution == null) {
+            sb.append("solution=<null>").append('\n');
+        } else {
+            sb.append("solution.target=").append(formatVec(solution.targetWorldPos())).append('\n');
+            sb.append("solution.lead=").append(formatVec(solution.leadWorldPos())).append('\n');
+            sb.append("solution.timeTicks=").append(solution.timeToImpact()).append('\n');
+            sb.append("solution.miss=").append(solution.missDistance()).append('\n');
+            sb.append("solution.travel=").append(solution.projectileTravelDistanceMeters()).append('\n');
         }
         appendFileLog(sb.toString());
     }

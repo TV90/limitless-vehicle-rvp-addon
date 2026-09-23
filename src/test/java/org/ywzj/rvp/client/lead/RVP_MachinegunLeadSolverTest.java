@@ -3,6 +3,9 @@ package org.ywzj.rvp.client.lead;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -19,9 +22,10 @@ class RVP_MachinegunLeadSolverTest {
 
     @Test
     void nearZeroPhysicsJitterIsTreatedAsStationary() {
-        Vec3 filtered = RVP_MachinegunLeadSolver.blendAndFilterTargetVelocity(
+        Vec3 filtered = RVP_MachinegunLeadSolver.combineAndFilterTargetVelocity(
                 new Vec3(0.004D, 0.0D, -0.003D),
-                new Vec3(0.006D, 0.0D, -0.002D)
+                new Vec3(0.006D, 0.0D, -0.002D),
+                false
         );
 
         assertSame(Vec3.ZERO, filtered);
@@ -40,14 +44,52 @@ class RVP_MachinegunLeadSolverTest {
     }
 
     @Test
-    void velocityEstimatorKeepsExistingDeltaMovementWeightingAboveDeadband() {
-        Vec3 filtered = RVP_MachinegunLeadSolver.blendAndFilterTargetVelocity(
+    void airborneVelocityEstimatorFavorsRealizedMovement() {
+        Vec3 filtered = RVP_MachinegunLeadSolver.combineAndFilterTargetVelocity(
                 new Vec3(0.20D, 0.0D, 0.0D),
-                new Vec3(0.10D, 0.0D, 0.0D)
+                new Vec3(0.10D, 0.0D, 0.0D),
+                false
         );
 
-        assertEquals(0.135D, filtered.x, 1.0E-9D);
+        assertEquals(0.175D, filtered.x, 1.0E-9D);
         assertEquals(0.0D, filtered.y, 1.0E-9D);
         assertEquals(0.0D, filtered.z, 1.0E-9D);
+    }
+
+    @Test
+    void groundedVelocityIgnoresPhysicsVerticalMotion() {
+        Vec3 filtered = RVP_MachinegunLeadSolver.combineAndFilterTargetVelocity(
+                new Vec3(0.80D, 0.02D, -0.40D),
+                new Vec3(0.75D, -0.60D, -0.35D),
+                true
+        );
+
+        assertEquals(0.80D, filtered.x, 1.0E-9D);
+        assertEquals(0.02D, filtered.y, 1.0E-9D);
+        assertEquals(-0.40D, filtered.z, 1.0E-9D);
+    }
+
+    @Test
+    void groundedRealizedVerticalVelocityIsClamped() {
+        Vec3 filtered = RVP_MachinegunLeadSolver.combineAndFilterTargetVelocity(
+                new Vec3(0.50D, 0.80D, 0.0D),
+                Vec3.ZERO,
+                true
+        );
+
+        assertEquals(0.25D, filtered.y, 1.0E-9D);
+    }
+
+    @Test
+    void positionHistoryProducesVelocityWithoutWorldPointLag() {
+        Deque<RVP_MachinegunLeadSolver.PositionSample> samples = new ArrayDeque<>();
+        samples.addLast(new RVP_MachinegunLeadSolver.PositionSample(20, new Vec3(10.0D, 64.0D, 3.0D)));
+        samples.addLast(new RVP_MachinegunLeadSolver.PositionSample(24, new Vec3(18.0D, 64.4D, -1.0D)));
+
+        Vec3 velocity = RVP_MachinegunLeadSolver.estimateRealizedVelocity(samples);
+
+        assertEquals(2.0D, velocity.x, 1.0E-9D);
+        assertEquals(0.1D, velocity.y, 1.0E-9D);
+        assertEquals(-1.0D, velocity.z, 1.0E-9D);
     }
 }

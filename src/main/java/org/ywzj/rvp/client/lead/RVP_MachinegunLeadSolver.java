@@ -4,12 +4,19 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public final class RVP_MachinegunLeadSolver {
     /** 单次提前量解算允许搜索的最长飞行时间，单位为 tick。 */
@@ -28,6 +35,24 @@ public final class RVP_MachinegunLeadSolver {
     private static final double TARGET_VELOCITY_DEADBAND_SQR =
             TARGET_VELOCITY_DEADBAND * TARGET_VELOCITY_DEADBAND;
 
+    /** 目标实位移速度估算保留的最大位置样本数。 */
+    private static final int TARGET_HISTORY_SAMPLES = 5;
+
+    /** 超过该间隔未更新的目标历史会被重置，单位为 tick。 */
+    private static final int TARGET_HISTORY_STALE_TICKS = 3;
+
+    /** 空中目标的实体运动速度混合权重，用于补充网络位置差分尚未体现的速度变化。 */
+    private static final double AIR_MOTION_WEIGHT = 0.25D;
+
+    /** 着地目标允许外推的最大垂直速度，单位为格/tick。 */
+    private static final double GROUNDED_MAX_VERTICAL_SPEED = 0.25D;
+
+    /**
+     * 当前执行线程内各目标的短期中心位置历史；客户端与集成服务端线程隔离，弱键保证实体卸载后可回收。
+     */
+    private static final ThreadLocal<Map<Entity, TargetMotionHistory>> TARGET_MOTION_HISTORIES =
+            ThreadLocal.withInitial(WeakHashMap::new);
+
     /** 单次弹道积分结果：包含预测位置与累计飞行距离。 */
     private record BulletSimResult(Vec3 position, double travelledDistance) {}
 
@@ -39,19 +64,33 @@ public final class RVP_MachinegunLeadSolver {
 
     @Nullable
     public static RVP_LeadSolution solveCurrent(WeaponUnit weaponUnit, float partialTick) {
-        RVP_WeaponData data = resolveCurrentWeaponData(weaponUnit);
-        if (data == null) {
+        AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon(weaponUnit);
+        RVP_WeaponData data = currentWeapon != null && currentWeapon.getData() instanceof RVP_WeaponData rvpData
+                ? rvpData : null;
+        if (data == null || data.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
             return null;
         }
         Entity target = resolveTrackedTarget(weaponUnit);
         if (target == null) {
             return null;
         }
-        Vec3 muzzle = weaponUnit.aimContext().from;
-        if (muzzle == null) {
-            muzzle = weaponUnit.worldCurrentBoltPosition();
+        // 调用本体武器对象取得实际挂载单元，保证解算原点与弹体生成使用同一门炮的炮口。
+        WeaponUnit launchWeaponUnit = currentWeapon.getWeaponUnit();
+        if (launchWeaponUnit == null) {
+            return null;
         }
-        return solveForTarget(weaponUnit, data, muzzle, target, partialTick);
+        // 调用本体实际挂载单元的瞄准上下文，读取本 tick 的真实炮口世界坐标。
+        AimContext launchAim = launchWeaponUnit.aimContext();
+        Vec3 muzzle = launchAim == null ? null : launchAim.from;
+        if (muzzle == null) {
+            // 调用本体炮闩坐标，作为实际挂载单元瞄准上下文缺失时的安全回退。
+            muzzle = launchWeaponUnit.worldCurrentBoltPosition();
+        }
+        RVP_LeadSolution solution = solveForTarget(launchWeaponUnit, data, muzzle, target, partialTick);
+        // 调用本项目既有 weaponorigin 详细日志，在用户显式开启时记录解算与真实发射单元的对应关系。
+        RVP_WeaponOriginDebug.noteLeadSolution(
+                weaponUnit, launchWeaponUnit, target, muzzle, solution);
+        return solution;
     }
 
     @Nullable
@@ -60,8 +99,8 @@ public final class RVP_MachinegunLeadSolver {
         if (weaponUnit == null || data == null || target == null || muzzle == null) {
             return null;
         }
-        Vec3 targetVelocity = estimateEntityVelocity(target);
         Vec3 targetPos = interpolateEntityCenter(target, partialTick);
+        Vec3 targetVelocity = estimateEntityVelocity(target, targetPos);
         Vec3 inheritedVelocity = data.isInheritVehicleVelocity()
                 ? weaponUnit.getVehicle().getDeltaMovement()
                 : Vec3.ZERO;
@@ -166,7 +205,7 @@ public final class RVP_MachinegunLeadSolver {
 
     @Nullable
     public static RVP_WeaponData resolveCurrentWeaponData(WeaponUnit weaponUnit) {
-        AbstractVehicleWeapon<?> weapon = weaponUnit.getCurrentWeapon().orElse(null);
+        AbstractVehicleWeapon<?> weapon = resolveCurrentWeapon(weaponUnit);
         if (weapon == null || !(weapon.getData() instanceof RVP_WeaponData data)) {
             return null;
         }
@@ -174,6 +213,31 @@ public final class RVP_MachinegunLeadSolver {
             return null;
         }
         return data;
+    }
+
+    /**
+     * 取得当前由火控站选中的实际武器对象。
+     *
+     * <p>武器可能通过 {@code part_unit_id} 挂载到子武器站，不能把执行火控的根武器站当作发射单元。</p>
+     */
+    @Nullable
+    private static AbstractVehicleWeapon<?> resolveCurrentWeapon(WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return null;
+        }
+        // 调用本体武器站选择状态，解析当前真正参与发射的武器对象。
+        return weaponUnit.getCurrentWeapon().orElse(null);
+    }
+
+    /** 取得当前武器实际挂载的武器站，供火控方向与弹道解算统一炮口原点。 */
+    @Nullable
+    public static WeaponUnit resolveCurrentLaunchWeaponUnit(WeaponUnit weaponUnit) {
+        AbstractVehicleWeapon<?> weapon = resolveCurrentWeapon(weaponUnit);
+        if (weapon == null) {
+            return null;
+        }
+        // 调用本体武器对象读取实际挂载单元，避免根火控站与子炮塔炮口混用。
+        return weapon.getWeaponUnit();
     }
 
     @Nullable
@@ -206,25 +270,73 @@ public final class RVP_MachinegunLeadSolver {
         return new Vec3(x, y, z).add(centerOffset);
     }
 
-    private static Vec3 estimateEntityVelocity(Entity entity) {
+    private static Vec3 estimateEntityVelocity(Entity entity, Vec3 targetCenter) {
         Vec3 tickDelta = new Vec3(
                 entity.getX() - entity.xo,
                 entity.getY() - entity.yo,
                 entity.getZ() - entity.zo
         );
         Vec3 motion = entity.getDeltaMovement();
-        return blendAndFilterTargetVelocity(tickDelta, motion);
+        int nowTick = entity.tickCount;
+        TargetMotionHistory history = TARGET_MOTION_HISTORIES.get().computeIfAbsent(
+                entity, unused -> new TargetMotionHistory());
+        if (history.lastUpdateTick == nowTick) {
+            return history.cachedVelocity;
+        }
+        if (history.lastUpdateTick == Integer.MIN_VALUE
+                || nowTick <= history.lastUpdateTick
+                || nowTick - history.lastUpdateTick > TARGET_HISTORY_STALE_TICKS) {
+            history.samples.clear();
+        }
+        history.samples.addLast(new PositionSample(nowTick, targetCenter));
+        while (history.samples.size() > TARGET_HISTORY_SAMPLES) {
+            history.samples.removeFirst();
+        }
+
+        Vec3 realizedVelocity = estimateRealizedVelocity(history.samples);
+        if (realizedVelocity == null) {
+            realizedVelocity = tickDelta;
+        }
+        // 调用原版实体着地状态，着地目标只采用实位移的 Y 分量，排除悬挂、重力和接触修正污染。
+        history.cachedVelocity = combineAndFilterTargetVelocity(realizedVelocity, motion, entity.onGround());
+        history.lastUpdateTick = nowTick;
+        return history.cachedVelocity;
     }
 
     /**
-     * 混合位置差分与实体运动速度，并对近零速度施加死区。
+     * 混合实位移速度与实体运动速度，并对近零速度施加死区。
      * 该纯数学入口供自动化测试复核静止/低速目标行为。
      */
-    static Vec3 blendAndFilterTargetVelocity(Vec3 tickDelta, Vec3 motion) {
-        Vec3 safeTickDelta = tickDelta == null ? Vec3.ZERO : tickDelta;
+    static Vec3 combineAndFilterTargetVelocity(Vec3 realizedVelocity, Vec3 motion, boolean onGround) {
+        Vec3 safeRealizedVelocity = realizedVelocity == null ? Vec3.ZERO : realizedVelocity;
         Vec3 safeMotion = motion == null ? Vec3.ZERO : motion;
-        Vec3 blended = safeTickDelta.lerp(safeMotion, 0.65D);
+        Vec3 blended;
+        if (onGround) {
+            double groundedY = Mth.clamp(
+                    safeRealizedVelocity.y,
+                    -GROUNDED_MAX_VERTICAL_SPEED,
+                    GROUNDED_MAX_VERTICAL_SPEED
+            );
+            blended = new Vec3(safeRealizedVelocity.x, groundedY, safeRealizedVelocity.z);
+        } else {
+            blended = safeRealizedVelocity.lerp(safeMotion, AIR_MOTION_WEIGHT);
+        }
         return blended.lengthSqr() < TARGET_VELOCITY_DEADBAND_SQR ? Vec3.ZERO : blended;
+    }
+
+    /** 根据位置历史首尾样本计算真实平均速度；样本不足时返回 {@code null}。 */
+    @Nullable
+    static Vec3 estimateRealizedVelocity(Deque<PositionSample> samples) {
+        if (samples == null || samples.size() < 2) {
+            return null;
+        }
+        PositionSample first = samples.getFirst();
+        PositionSample last = samples.getLast();
+        int elapsedTicks = last.tick - first.tick;
+        if (elapsedTicks <= 0) {
+            return null;
+        }
+        return last.position.subtract(first.position).scale(1.0D / elapsedTicks);
     }
 
     /** 按匀速模型计算候选时间的目标位置；目标朝向不参与提前量。 */
@@ -232,5 +344,31 @@ public final class RVP_MachinegunLeadSolver {
         Vec3 safeCenter = targetCenter == null ? Vec3.ZERO : targetCenter;
         Vec3 safeVelocity = targetVelocity == null ? Vec3.ZERO : targetVelocity;
         return safeCenter.add(safeVelocity.scale(Math.max(timeTicks, 0.0D)));
+    }
+
+    /** 单个目标的短期位置与速度缓存。 */
+    private static final class TargetMotionHistory {
+        /** 按 tick 升序保存的目标中心位置样本。 */
+        final Deque<PositionSample> samples = new ArrayDeque<>();
+
+        /** 最近一次更新历史的实体 tick。 */
+        int lastUpdateTick = Integer.MIN_VALUE;
+
+        /** 当前 tick 已计算的目标速度，供同 tick 多个 HUD/火控调用复用。 */
+        Vec3 cachedVelocity = Vec3.ZERO;
+    }
+
+    /** 目标中心位置的带 tick 样本。 */
+    static final class PositionSample {
+        /** 采样时的实体 tick。 */
+        final int tick;
+
+        /** 采样时的目标碰撞箱中心世界坐标。 */
+        final Vec3 position;
+
+        PositionSample(int tick, Vec3 position) {
+            this.tick = tick;
+            this.position = position;
+        }
     }
 }

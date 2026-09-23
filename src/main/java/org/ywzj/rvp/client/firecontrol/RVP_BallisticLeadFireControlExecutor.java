@@ -80,7 +80,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
             return true;
         }
 
-        // 调用本项目机炮解算器和状态平滑器，使炮塔控制与HUD使用同一份稳定预瞄点。
+        // 调用本项目机炮解算缓存，使用保留世界坐标 EMA 且带相位补偿的控制解以兼顾抗抖与高速跟随。
         RVP_LeadSolution leadSolution = machinegunLeadMode
                 ? RVP_MachinegunLeadState.resolveCurrent(weaponUnit, 1.0F)
                 : null;
@@ -210,15 +210,20 @@ public final class RVP_BallisticLeadFireControlExecutor {
         return aimFrom.add(state.currDir.scale(state.currDistance));
     }
 
-    /** 优先取得本体瞄准上下文的炮口原点，缺失时回退当前炮闩世界坐标。 */
+    /** 优先取得实际发射武器瞄准上下文的炮口原点，缺失时回退其当前炮闩世界坐标。 */
     private static Vec3 aimOrigin(WeaponUnit weaponUnit) {
-        // 调用本体瞄准上下文，确保提前量方向以真实发射原点而不是炮塔枢轴为基准。
-        AimContext aimContext = weaponUnit.aimContext();
+        // 调用本项目发射单元解析，处理根火控站把当前武器委托给子武器站的载具配置。
+        WeaponUnit launchWeaponUnit = RVP_MachinegunLeadSolver.resolveCurrentLaunchWeaponUnit(weaponUnit);
+        if (launchWeaponUnit == null) {
+            launchWeaponUnit = weaponUnit;
+        }
+        // 调用本体实际发射单元瞄准上下文，确保火控方向与弹体生成共用真实炮口。
+        AimContext aimContext = launchWeaponUnit.aimContext();
         if (aimContext != null && aimContext.from != null) {
             return aimContext.from;
         }
-        // 调用本体炮闩坐标作为瞄准上下文缺失时的安全回退。
-        return weaponUnit.worldCurrentBoltPosition();
+        // 调用本体实际发射单元炮闩坐标作为瞄准上下文缺失时的安全回退。
+        return launchWeaponUnit.worldCurrentBoltPosition();
     }
 
     /** 沿指定世界方向调用本体瞄准，使用远点避免距离改变方向。 */

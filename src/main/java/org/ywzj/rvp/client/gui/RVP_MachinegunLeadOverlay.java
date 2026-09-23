@@ -18,6 +18,7 @@ import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 
 public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
     /** 机炮预瞄圈与目标连线使用的半透明绿色。 */
@@ -37,14 +38,21 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
             }
             return;
         }
-        // 调用本项目每 tick 解算缓存，使 HUD 与火控复用同一份结果且不随渲染帧率重复积分。
-        // HUD 始终使用当前渲染 partialTick 插值真实目标中心，使连线锚点与锁定框逐帧重合。
-        RVP_LeadSolution solution = RVP_MachinegunLeadState.resolveCurrent(weaponUnit, partialTick);
+        // 调用本项目每 tick 解算缓存；HUD 在相邻 EMA 相位补偿解间做帧插值，与实际火控保持一致。
+        // 目标中心与提前点使用相同 partialTick，使连线锚点和预瞄圈保持同一时间基准。
+        RVP_LeadSolution solution = RVP_MachinegunLeadState.resolveDisplayCurrent(weaponUnit, partialTick);
         RVP_AheadSolution aheadSolution = null;
         if (RVP_AheadProgrammer.isAheadWeapon(data)) {
+            // 调用本项目发射单元解析，确保 AHEAD HUD 的测距原点与实际炮口一致。
+            WeaponUnit launchWeaponUnit = RVP_MachinegunLeadSolver.resolveCurrentLaunchWeaponUnit(weaponUnit);
+            if (launchWeaponUnit == null) {
+                launchWeaponUnit = weaponUnit;
+            }
+            // 调用本体实际发射单元瞄准上下文，为 AHEAD 编程距离提供真实炮口。
+            AimContext launchAim = launchWeaponUnit.aimContext();
             // 调用本项目 AHEAD 编程入口并复用缓存提前量，避免客户端为同一目标再次执行弹道解算。
             aheadSolution = RVP_AheadProgrammer.solveFromResolvedLead(
-                    data, weaponUnit, weaponUnit.aimContext(), solution);
+                    data, weaponUnit, launchAim, solution);
             renderAheadReadout(guiGraphics, screenWidth, screenHeight, aheadSolution);
         }
         if (solution == null) {
