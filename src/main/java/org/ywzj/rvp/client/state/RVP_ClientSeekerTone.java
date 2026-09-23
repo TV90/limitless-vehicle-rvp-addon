@@ -60,10 +60,6 @@ public final class RVP_ClientSeekerTone {
         if (tone != null && tone.isStopped()) {
             tone = null;
         }
-        // 声音可能已自行停止（目标实体移除等），此时重建而非复用失效实例
-        if (tone != null && tone.isStopped()) {
-            tone = null;
-        }
         if (tone == null) {
             // 挂在本地玩家骑乘的载具上（对标本体 IR_TRACK_ALARM 挂 vehicle.getId()）：
             // VehicleSound 对"相机所骑载具"的声音强制钳制在离相机 8 格处——任何视角
@@ -94,7 +90,10 @@ public final class RVP_ClientSeekerTone {
         if (unit == null || !unit.isSeekerOn()) {
             return false;
         }
-        Entity locked = unit.getLockedEntity();
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        // IR HMD 使用本项目独立锁定通道作为唯一真值源：PL-10 等 NONE 传感器武器站
+        // 会被本体火控每 Tick 清掉共享锁，但 HMD 自身仍然有效；非 HMD 路径继续读本体共享锁。
+        Entity locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : unit.getLockedEntity();
         if (locked == null || !locked.isAlive()) {
             return false;
         }

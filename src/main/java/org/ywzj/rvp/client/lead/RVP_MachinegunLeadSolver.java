@@ -12,14 +12,23 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 public final class RVP_MachinegunLeadSolver {
+    /** 单次提前量解算允许搜索的最长飞行时间，单位为 tick。 */
     private static final double MAX_SOLVE_TICKS = 120.0;
-    private static final double SOLVE_STEP_TICKS = 0.5;
-    private static final int AIM_REFINE_ITERATIONS = 6;
-    private static final double TARGET_FORWARD_OFFSET_METERS = 8.5;
-    private static final double LONG_RANGE_BIAS_START_TICKS = 15.0;
-    private static final double LONG_RANGE_BIAS_MAX_TICKS = 3.5;
-    private static final double LONG_RANGE_BIAS_PER_TICK = 0.06;
 
+    /** 候选命中时间的扫描步长，单位为 tick。 */
+    private static final double SOLVE_STEP_TICKS = 0.5;
+
+    /** 每个候选命中时间最多执行的炮口方向误差修正次数。 */
+    private static final int AIM_REFINE_ITERATIONS = 6;
+
+    /** 小于该速度的目标按静止处理，避免载具物理微抖产生伪提前量，单位为格/tick。 */
+    static final double TARGET_VELOCITY_DEADBAND = 0.01D;
+
+    /** 目标速度死区的平方，避免每次判定执行开方。 */
+    private static final double TARGET_VELOCITY_DEADBAND_SQR =
+            TARGET_VELOCITY_DEADBAND * TARGET_VELOCITY_DEADBAND;
+
+    /** 单次弹道积分结果：包含预测位置与累计飞行距离。 */
     private record BulletSimResult(Vec3 position, double travelledDistance) {}
 
     private RVP_MachinegunLeadSolver() {}
@@ -52,8 +61,7 @@ public final class RVP_MachinegunLeadSolver {
             return null;
         }
         Vec3 targetVelocity = estimateEntityVelocity(target);
-        Vec3 targetPos = interpolateEntityCenter(target, partialTick)
-                .add(resolveTargetForward(target, targetVelocity).scale(TARGET_FORWARD_OFFSET_METERS));
+        Vec3 targetPos = interpolateEntityCenter(target, partialTick);
         Vec3 inheritedVelocity = data.isInheritVehicleVelocity()
                 ? weaponUnit.getVehicle().getDeltaMovement()
                 : Vec3.ZERO;
@@ -82,15 +90,8 @@ public final class RVP_MachinegunLeadSolver {
         RVP_LeadSolution best = null;
 
         for (double timeTicks = 1.0; timeTicks <= maxTicks; timeTicks += SOLVE_STEP_TICKS) {
-            Vec3 futureTargetPos = targetPos.add(targetVelocity.scale(timeTicks));
-            double extraLeadTicks = Mth.clamp(
-                    (timeTicks - LONG_RANGE_BIAS_START_TICKS) * LONG_RANGE_BIAS_PER_TICK,
-                    0.0,
-                    LONG_RANGE_BIAS_MAX_TICKS
-            );
-            if (extraLeadTicks > 0.0) {
-                futureTargetPos = futureTargetPos.add(targetVelocity.scale(extraLeadTicks));
-            }
+            // 只按目标实测速率做匀速预测；不再叠加与目标朝向有关的固定距离或额外时间偏置。
+            Vec3 futureTargetPos = predictTargetPosition(targetPos, targetVelocity, timeTicks);
             Vec3 aimPoint = futureTargetPos;
 
             for (int i = 0; i < AIM_REFINE_ITERATIONS; i++) {
@@ -212,14 +213,24 @@ public final class RVP_MachinegunLeadSolver {
                 entity.getZ() - entity.zo
         );
         Vec3 motion = entity.getDeltaMovement();
-        return tickDelta.lerp(motion, 0.65);
+        return blendAndFilterTargetVelocity(tickDelta, motion);
     }
 
-    private static Vec3 resolveTargetForward(Entity entity, Vec3 targetVelocity) {
-        Vec3 forward = targetVelocity.lengthSqr() > 0.25 ? targetVelocity : entity.getLookAngle();
-        if (forward.lengthSqr() < 1.0E-6) {
-            return Vec3.ZERO;
-        }
-        return forward.normalize();
+    /**
+     * 混合位置差分与实体运动速度，并对近零速度施加死区。
+     * 该纯数学入口供自动化测试复核静止/低速目标行为。
+     */
+    static Vec3 blendAndFilterTargetVelocity(Vec3 tickDelta, Vec3 motion) {
+        Vec3 safeTickDelta = tickDelta == null ? Vec3.ZERO : tickDelta;
+        Vec3 safeMotion = motion == null ? Vec3.ZERO : motion;
+        Vec3 blended = safeTickDelta.lerp(safeMotion, 0.65D);
+        return blended.lengthSqr() < TARGET_VELOCITY_DEADBAND_SQR ? Vec3.ZERO : blended;
+    }
+
+    /** 按匀速模型计算候选时间的目标位置；目标朝向不参与提前量。 */
+    static Vec3 predictTargetPosition(Vec3 targetCenter, Vec3 targetVelocity, double timeTicks) {
+        Vec3 safeCenter = targetCenter == null ? Vec3.ZERO : targetCenter;
+        Vec3 safeVelocity = targetVelocity == null ? Vec3.ZERO : targetVelocity;
+        return safeCenter.add(safeVelocity.scale(Math.max(timeTicks, 0.0D)));
     }
 }

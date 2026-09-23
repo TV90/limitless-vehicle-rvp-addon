@@ -12,26 +12,37 @@ import java.util.List;
 
 @Mixin(value = WeaponUnitPojo.class, remap = false)
 public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
+    /** 武器站RVP火控模式；默认空字符串表示完全使用本体火控。 */
     @SerializedName("rvp_fire_control_mode")
     @Unique
     private String ywzj_rvp$fireControlMode = "";
 
+    /** 现有 {@code rvp_rf} 模式离轴角，单位为度，默认10度，仅在RF软火控生效。 */
     @SerializedName("rvp_rf_off_axis_deg")
     @Unique
     private float ywzj_rvp$rfOffAxisDeg = 10.0f;
 
+    /** 通用弹道提前量模式离轴角，单位为度，默认10度，仅在 {@code rvp_ballistic_lead} 生效。 */
+    @SerializedName("rvp_fire_control_off_axis_deg")
+    @Unique
+    private float ywzj_rvp$fireControlOffAxisDeg = 10.0f;
+
+    /** 是否关闭该武器站的CRT后处理效果；默认false。 */
     @SerializedName("rvp_disable_crt_effect")
     @Unique
     private boolean ywzj_rvp$disableCrtEffect;
 
+    /** 仅跟随父部件姿态的部件ID列表；默认空列表。 */
     @SerializedName("rvp_follow_parent_only_part_unit_ids")
     @Unique
     private List<String> ywzj_rvp$followParentOnlyPartUnitIds = List.of();
 
+    /** 用于补充炮闩的结构骨骼名称列表；默认空列表。 */
     @SerializedName("rvp_structure_bolt_bones")
     @Unique
     private List<String> ywzj_rvp$structureBoltBones = List.of();
 
+    /** 观瞄基准枢轴，单位为模型像素；未配置时为null并回退武器站自身枢轴。 */
     @SerializedName("rvp_optical_sight_pivot")
     @Unique
     private Vec3 ywzj_rvp$opticalSightPivot;
@@ -49,6 +60,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public float ywzj_rvp$getRfOffAxisDeg() {
         return ywzj_rvp$rfOffAxisDeg;
+    }
+
+    @Override
+    public float ywzj_rvp$getFireControlOffAxisDeg() {
+        return ywzj_rvp$fireControlOffAxisDeg;
     }
 
     @Override
