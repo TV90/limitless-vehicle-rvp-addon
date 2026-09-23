@@ -2105,12 +2105,24 @@ SACLOS 反坦克导弹（半自动修正）：
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）或 `rvp_rf`（启用 RF 软火控/瞄准辅助，配合 `rvp_rf_off_axis_deg` 限制离轴角度）。 | `""` |
-| `rvp_rf_off_axis_deg` | 雷达（RF）制导离轴限制（度）。 | `10.0` |
+| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 启用RF软火控并要求当前传感器为RF；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
+| `rvp_rf_off_axis_deg` | `rvp_rf` 雷达软火控离轴限制（度）。为保持既有手感，机炮获得有效提前量解时执行器仍按历史规则使用该值的 `0.1` 倍；非机炮使用原值。 | `10.0` |
+| `rvp_fire_control_off_axis_deg` | `rvp_ballistic_lead` 通用弹道提前量火控离轴限制（度），仅当前武器为RVP `machinegun` 且IR/EO/RF锁定链有效时生效；执行器按配置原值使用。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
 | `rvp_structure_bolt_bones` | 多挂点武器的**挂点骨骼名列表**。本体 `initStructureModel` 只为 `xTurnBone`（`structure_bone + "_barrel"`）构建**一个** Bolt，左右两侧挂架（如 `variable_agm_1_barrel` / `variable_agm_2_barrel`）只有第一个挂点有 Bolt，导致挂架渲染偏移到单侧。列出全部挂点骨骼后，`WeaponUnitDataMixin` 会自动跳过本体已处理的 `xTurnBone`，为其余骨骼计算偏移并**补充 Bolt**。 | `[]` |
 | `rvp_optical_sight_pivot` | 观瞄基准枢轴（`[x, y, z]`，**渲染模型骨块 pivot 像素值**，内部 `/16` 转方块单位）。默认观瞄位置 = `结构骨枢轴 + opticalSightOffset`；配置本字段后改为 `渲染骨枢轴/16 + opticalSightOffset`，用于“观瞄点相对某个渲染骨骼（如机枪观瞄镜）而非武器站结构骨枢轴”的场景（T84BM 机枪观瞄即以 `guanmiao` 骨骼为基准）。未配置时为 `null`（不生效）。 | `null` |
+
+通用弹道提前量火控示例（字段写在负责操作与锁定的根武器站上）：
+
+```json
+{
+  "rvp_fire_control_mode": "rvp_ballistic_lead",
+  "rvp_fire_control_off_axis_deg": 10
+}
+```
+
+该模式不负责搜索目标或自动开火。它只消费本体已经建立并维持的实体锁定，使用当前RVP机炮的初速、重力、阻力和载具速度继承参数计算预瞄点，再由 `STABLE`、`SEMI_AUTO`、`OFF` 三态决定炮塔控制方式。
 
 ### 3.2 雷达部件扩展
 

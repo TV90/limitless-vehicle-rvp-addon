@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.firecontrol.RVP_BallisticLeadFireControlPolicy;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
@@ -64,17 +65,22 @@ public final class RVP_FireControlStabilizerState {
     }
 
     private static boolean isEligible(WeaponUnit unit) {
+        // 调用本项目武器解析器，解包Agent/Multi后确认当前实际武器是否为RVP机炮。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
-        if (weapon == null
-                || weapon.getData().getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
-            return false;
-        }
-        if (RVP_WeaponSensorHelper.effectiveSensorType(unit) != WeaponUnitData.FireControlSensorType.RF) {
+        boolean rvpMachinegun = weapon != null
+                && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN;
+        if (!rvpMachinegun) {
             return false;
         }
         if (!(unit.getData() instanceof WeaponUnitDataExt ext)) {
             return false;
         }
-        return "rvp_rf".equalsIgnoreCase(ext.ywzj_rvp$getFireControlMode());
+        // 调用本项目传感器解析器，使武器级动态覆盖与三态切换资格保持一致。
+        WeaponUnitData.FireControlSensorType sensorType = RVP_WeaponSensorHelper.effectiveSensorType(unit);
+        return RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
+                ext.ywzj_rvp$getFireControlMode(),
+                sensorType,
+                true
+        );
     }
 }

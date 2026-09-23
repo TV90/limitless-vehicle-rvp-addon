@@ -5,8 +5,8 @@
 - 仅对 `rvp:machinegun` 启用预瞄圈。
 - HUD 形态为一个小的绿色圆圈。
 - 预瞄圈与当前锁定目标之间用绿色虚线连接。
-- 当当前武器站为 `rvp_rf` 且当前武器为 `rvp:machinegun` 时，火控辅助中心从目标中心切换为预瞄圈。
-- `rvp_rf` 的软限位手感保留，但围绕预瞄圈生效，而不是围绕敌机中心生效。
+- 当当前武器站为 `rvp_rf` 或 `rvp_ballistic_lead` 且当前武器为 `rvp:machinegun` 时，火控辅助中心从目标中心切换为预瞄圈。
+- 两种模式复用通用火控执行器；`rvp_rf` 保留历史软限位缩放，`rvp_ballistic_lead` 使用通用离轴角原值。
 
 ## 已确认真值
 
@@ -62,7 +62,7 @@
 ### 火控层
 
 - 复用现有 `WeaponUnitSoftRfMixin`
-- 在 `rvp_rf + machinegun` 情况下，把软限位目标点从目标中心切到 `leadWorldPos`
+- 在受支持火控模式与 `machinegun` 组合下，把软限位目标点从目标中心切到 `leadWorldPos`
 - 其余武器继续保持当前 `rvp_rf` 逻辑
 
 ## 执行顺序
@@ -95,7 +95,7 @@
 
 ### 5. 接入火控
 
-- 在 `rvp_rf + machinegun` 下将火控目标点切到预瞄点
+- 在 `rvp_rf` 或 `rvp_ballistic_lead` 与 `machinegun` 组合下将火控目标点切到预瞄点
 - 不改变其他传感器类型
 - 不改变非机枪武器行为
 

@@ -29,27 +29,41 @@ import java.util.Map;
 
 @Mixin(value = WeaponUnitData.class, remap = false)
 public class WeaponUnitDataMixin implements WeaponUnitDataExt {
+    /** 本体炮闩列表；用于把RVP额外结构骨骼转换成发射点。 */
     @Shadow private List<Bolt> bolts;
+
+    /** 本体俯仰旋转组；用于计算额外炮闩相对主旋转组的偏移。 */
     @Shadow private VehicleCubeGroup xTurnGroup;
 
+    /** 武器站RVP火控模式；默认空字符串表示完全使用本体火控。 */
     @Unique
     private String ywzj_rvp$fireControlMode = "";
 
+    /** 现有 {@code rvp_rf} 模式离轴角，单位为度，默认10度，仅在RF软火控生效。 */
     @Unique
     private float ywzj_rvp$rfOffAxisDeg = 10.0f;
 
+    /** 通用弹道提前量模式离轴角，单位为度，默认10度，仅在 {@code rvp_ballistic_lead} 生效。 */
+    @Unique
+    private float ywzj_rvp$fireControlOffAxisDeg = 10.0f;
+
+    /** 是否关闭该武器站的CRT后处理效果；默认false。 */
     @Unique
     private boolean ywzj_rvp$disableCrtEffect;
 
+    /** 仅跟随父部件姿态的部件ID列表；默认空列表。 */
     @Unique
     private List<String> ywzj_rvp$followParentOnlyPartUnitIds = List.of();
 
+    /** 用于补充炮闩的结构骨骼名称列表；默认空列表。 */
     @Unique
     private List<String> ywzj_rvp$structureBoltBones = List.of();
 
+    /** 观瞄基准枢轴，单位为模型像素；未配置时为null并回退武器站自身枢轴。 */
     @Unique
     private Vec3 ywzj_rvp$opticalSightPivot;
 
+    /** 观瞄视角射弹原点分离配置；未配置时为null并关闭该功能。 */
     @Unique
     private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
 
@@ -58,6 +72,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
         if (pojo instanceof WeaponUnitPojoExt ext) {
             this.ywzj_rvp$fireControlMode = ext.ywzj_rvp$getFireControlMode();
             this.ywzj_rvp$rfOffAxisDeg = ext.ywzj_rvp$getRfOffAxisDeg();
+            this.ywzj_rvp$fireControlOffAxisDeg = ext.ywzj_rvp$getFireControlOffAxisDeg();
             this.ywzj_rvp$disableCrtEffect = ext.ywzj_rvp$disableCrtEffect();
             this.ywzj_rvp$followParentOnlyPartUnitIds = ywzj_rvp$safeCopy(ext.ywzj_rvp$getFollowParentOnlyPartUnitIds());
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
@@ -152,6 +167,11 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public float ywzj_rvp$getRfOffAxisDeg() {
         return ywzj_rvp$rfOffAxisDeg;
+    }
+
+    @Override
+    public float ywzj_rvp$getFireControlOffAxisDeg() {
+        return ywzj_rvp$fireControlOffAxisDeg;
     }
 
     @Override
