@@ -1,5 +1,11 @@
 package org.ywzj.rvp.client.gui;
 
+import com.github.mcmodderanchor.simplebedrockmodel.v1.common.animation.BedrockAnimation;
+import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
+import com.maydaymemory.mae.control.runner.AnimationContext;
+import com.maydaymemory.mae.control.runner.AnimationRunner;
+import com.maydaymemory.mae.control.runner.PlayingState;
+import com.maydaymemory.mae.control.runner.StopState;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -42,7 +48,10 @@ import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+
+import static org.ywzj.vehicle.client.render.animation.util.PoseBlenders.BLENDER;
 
 /**
  * RVP 命中提示：被击中载具后，在屏幕右上角展板内渲染载具 3D 模型 + 受击部位红色射线 +
@@ -735,7 +744,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         }
     }
 
-    /** 渲染来袭弹体模型（有模型的弹药，如导弹/火箭）：模型 +Z 轴对齐来袭方向 */
+    /**
+     * 渲染来袭弹体模型（有模型的弹药，如导弹/火箭）：模型 +Z 轴对齐来袭方向。
+     * <p>display 配了 {@code animations} 时用预烘"末帧姿态"实例渲染（弹翼展开类动画定格最后一帧，
+     * 飞入到命中全程不变，不播动画）；未配时走绑定姿态静态渲染（现状行为）。</p>
+     */
     private static void renderProjectileModel(GuiGraphics gg, Vec3 pos, Vec3 dir) {
         PoseStack pose = gg.pose();
         pose.pushPose();
@@ -753,7 +766,11 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         VehicleBedrockModel model = projectileModel(eventCacheWeaponId);
         ResourceLocation tex = projectileTexture(eventCacheWeaponId);
         if (model != null && tex != null) {
-            model.renderToBuffer(pose, gg.bufferSource(), tex, 15728880);
+            if (cachedDeployedInstance != null) {
+                model.renderToBuffer(cachedDeployedInstance, pose, gg.bufferSource(), tex, 15728880);
+            } else {
+                model.renderToBuffer(pose, gg.bufferSource(), tex, 15728880);
+            }
         }
         pose.popPose();
     }
@@ -763,6 +780,12 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
     private static ResourceLocation cachedTexture;
     /** 当前缓存弹药的弹头前点后拉距离（米） */
     private static float cachedBackOffset = PROJECTILE_BACK_FALLBACK;
+    /**
+     * 定格"动画最后一关键帧"姿态的烘焙实例（可空）：武器 display 配了 {@code animations} 时构建，
+     * 展板飞入到命中全程以该姿态渲染（如滑翔弹弹翼全展开），不播动画；未配/构建失败为 null，
+     * 回退绑定姿态静态渲染（现状行为）。
+     */
+    private static BakedModelInstance cachedDeployedInstance;
 
     private static VehicleBedrockModel projectileModel(String weaponId) {
         resolveProjectileCache(weaponId);
@@ -783,6 +806,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         cachedModel = null;
         cachedTexture = null;
         cachedBackOffset = PROJECTILE_BACK_FALLBACK;
+        cachedDeployedInstance = null;
         if (weaponId == null || weaponId.isEmpty()) {
             return;
         }
@@ -795,9 +819,36 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                     cachedModel = m;
                     cachedTexture = display.get().getTexture();
                     cachedBackOffset = computeProjectileBackOffset(m);
+                    cachedDeployedInstance = buildDeployPoseInstance(display.get(), m);
                 }
             }
         } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 构建定格"动画最后一关键帧"姿态的烘焙实例（如滑翔弹弹翼全展开形态）：
+     * 取 display 第一个动画（与本體 {@code AmmoEntity.readSpawnData} 同款取法），进度直接设到
+     * 末帧（本體 triggered 跳末帧语义）求值一次并烘进实例——之后每帧零动画开销。
+     * display 未配 {@code animations} 或构建异常时返回 null，回退绑定姿态（现状行为）。
+     */
+    private static BakedModelInstance buildDeployPoseInstance(BaseDisplay display, VehicleBedrockModel model) {
+        try {
+            Map<String, BedrockAnimation> animations = display.getAnimations();
+            if (animations.isEmpty()) {
+                return null;
+            }
+            BakedModelInstance instance = model.createBakedInstance();
+            BedrockAnimation animation = animations.values().iterator().next();
+            AnimationContext animContext = new AnimationContext(animation.getSpecifiedEndTimeS());
+            AnimationRunner runner = new AnimationRunner(animation, animContext);
+            runner.setState(new PlayingState(System::nanoTime, StopState::new));
+            animContext.setProgress(animation.getSpecifiedEndTimeS());
+            instance.applyPose(BLENDER.blend(instance.getBindPose(), runner.evaluate()));
+            return instance;
+        } catch (Exception e) {
+            LOGGER.error("[RVP-HitUI] build deploy-pose instance failed: {}", e.toString());
+            return null;
         }
     }
 
