@@ -8,6 +8,11 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployPhase;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployVisualState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.RotatablePartState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartKind;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -149,6 +154,19 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 0.0F, 0.0F, 0.0F, 0.0D, 0.0F, Float.NaN);
     }
 
+    /** 验证嵌套部件状态数量受到构造端硬上限保护。 */
+    @Test
+    void nestedVisualStateCountAboveLimitIsRejected() {
+        List<RotatablePartState> states = new ArrayList<>();
+        for (int index = 0; index <= S2CRemoteVehicleVisualSnapshot.MAX_ROTATABLE_PARTS; index++) {
+            states.add(new RotatablePartState(index, 0.0F, 0.0F));
+        }
+        assertThrows(IllegalArgumentException.class, () -> new S2CRemoteVehicleVisualSnapshot.Entry(
+                1, ENTITY_TYPE, VEHICLE_ID, DISPLAY_ID, Vec3.ZERO, Vec3.ZERO,
+                0.0F, 0.0F, 0.0F, 0.0D, false, false, 0.0F, 0.0F,
+                states, List.of(), List.of()));
+    }
+
     private static void assertInvalidNumbers(Vec3 position, Vec3 velocity,
                                              float xRot, float yRot, float zRot,
                                              double heightAboveGround,
@@ -175,7 +193,16 @@ class S2CRemoteVehicleVisualSnapshotTest {
                 true,
                 true,
                 75.0F,
-                62.5F);
+                62.5F,
+                List.of(
+                        new RotatablePartState(2, -15.5F, 178.0F),
+                        new RotatablePartState(3, 7.25F, -179.0F)),
+                List.of(
+                        new SwitchablePartState(4, SwitchablePartKind.LANDING_GEAR, true),
+                        new SwitchablePartState(5, SwitchablePartKind.WEAPON_BAY, false)),
+                List.of(new LauncherDeployVisualState(
+                        "main_launcher", 6, 3, LauncherDeployPhase.DEPLOYING,
+                        17, -42.5F, 3.6D)));
     }
 
     private static S2CRemoteVehicleVisualSnapshot roundTrip(S2CRemoteVehicleVisualSnapshot message) {

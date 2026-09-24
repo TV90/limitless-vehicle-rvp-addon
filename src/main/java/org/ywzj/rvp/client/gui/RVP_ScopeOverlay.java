@@ -22,6 +22,7 @@ import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.UIPresetManager.UIPreset;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -323,7 +324,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     /**
-     * [RVP] HUD 非观瞄视角的锁定框接管门控：RF 武器 + 无光学瞄（或存在外置雷达条目）时，
+     * [RVP] HUD 非观瞄视角的锁定框接管门控：存在本机雷达硬锁、RF 武器 + 无光学瞄
+     *（或存在外置雷达条目）时，
      * 锁定目标框由本 overlay（rvp_scope 非观瞄分支）统一绘制，本体 VehicleAimAtOverlay
      * 的 renderAimLockTarget 跳过（见 VehicleAimAtOverlaySeekerColorMixin 的接管重定向），
      * 避免本体/RVP 两套渲染器对同一目标各画一套框（锚点偏差在近距呈"双框"）。
@@ -341,7 +343,12 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
         boolean rfAim = RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit) == WeaponUnitData.FireControlSensorType.RF
                 && weaponUnit.getOpticalSightType() == WeaponUnitData.OpticalSightType.NONE;
-        return rfAim || hasExternalRadarEntries();
+        // 调用本项目雷达角色解析，确保任何武器/光学配置下的真实雷达硬锁都由平滑渲染器接管。
+        RadarUnit lockedRadar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+        boolean localRadarHardLock = lockedRadar != null && lockedRadar.getLockedEntity() != null;
+        // TWS 单缺口航迹若来自本体广播载具，也必须接管；否则带光学瞄具时会回落到本体离散锚点。
+        boolean smoothableTwsContact = hasBroadcastVehicleRadarContact(weaponUnit);
+        return localRadarHardLock || smoothableTwsContact || rfAim || hasExternalRadarEntries();
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
@@ -374,11 +381,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         // 武器站锁定目标（雷达锁分支接管同目标时跳过，避免双框）
         if (weaponUnit.getLockedEntity() != null && weaponUnit.getLockedEntity() != radarLocked) {
             Entity entity = weaponUnit.getLockedEntity();
-            double curX = Mth.lerp(partialTick, entity.xo, entity.getX());
-            double curY = Mth.lerp(partialTick, entity.yo, entity.getY());
-            double curZ = Mth.lerp(partialTick, entity.zo, entity.getZ());
-            Vec3 centerOffset = entity.getBoundingBox().getCenter().subtract(entity.position());
-            Vec3 targetPosition = new Vec3(curX, curY, curZ).add(centerOffset);
+            // 调用本项目广播载具插值器，避免超远距武器锁定圈随 5 Tick 广播阶梯跳动。
+            Vec3 targetPosition = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(entity, partialTick);
             Vec3 screenPos = VectorUtil.worldToScreen(targetPosition);
             if (screenPos.z >= 0) {
                 PoseStack poseStack = guiGraphics.pose();
@@ -424,8 +428,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (!drewLockBox && sensorType == WeaponUnitData.FireControlSensorType.RF
                 && externalLockedEntry != null
                 && vehicle != null) {
+            // 外置雷达若已解析到本体广播克隆，则复用同一平滑锚点，保持硬锁双框连续。
             Vec3 targetPos = externalLockedEntity != null
-                    ? externalLockedEntity.getBoundingBox().getCenter()
+                    ? RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(externalLockedEntity, partialTick)
                     : RVP_ExternalRadarLinkHelper.position(externalLockedEntry);
             Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
             if (screenPos.z >= 0) {
@@ -449,7 +454,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 if (lockedEntity != null && detectedObject.entity.getId() == lockedEntity.getId()) {
                     continue;
                 }
-                Vec3 screenPos = VectorUtil.worldToScreen(detectedObject.detectedPosition);
+                // 调用本项目广播载具插值器；普通实体会自动回退到本体单 Tick 插值。
+                Vec3 detectedPosition = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(
+                        detectedObject.entity, partialTick, detectedObject.detectedPosition);
+                Vec3 screenPos = VectorUtil.worldToScreen(detectedPosition);
                 if (screenPos.z < 0) {
                     continue;
                 }
@@ -470,7 +478,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
         // 外置雷达接触：不依赖传感器类型为 RF，有外置条目即渲染（本机雷达 loop 无传感器门控，
         // 若这里也门控 RF，则"外置雷达扫到但本机雷达未对准"的载具不会画 BVR 框）
-        renderExternalRadarContacts(guiGraphics, weaponUnit, mainRadarUnit,
+        renderExternalRadarContacts(guiGraphics, partialTick, weaponUnit, mainRadarUnit,
                 externalLockedEntityId);
     }
 
@@ -494,12 +502,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return false;
         }
         Entity detectedEntity = detectedObject.entity;
-        double curX = Mth.lerp(partialTick, detectedEntity.xo, detectedEntity.getX());
-        double curY = Mth.lerp(partialTick, detectedEntity.yo, detectedEntity.getY());
-        double curZ = Mth.lerp(partialTick, detectedEntity.zo, detectedEntity.getZ());
-        Vec3 centerOffset = detectedEntity.getBoundingBox().getCenter().subtract(detectedEntity.position());
+        // 调用本项目广播载具插值器：广播克隆跨广播周期平滑，普通实体保持单 Tick 插值。
         // 与 IR 锁定圈使用同一“插值后包围盒中心”锚点，保证两个通道锁定同一目标时视觉重合。
-        Vec3 screenPos = VectorUtil.worldToScreen(new Vec3(curX, curY, curZ).add(centerOffset));
+        Vec3 renderCenter = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(detectedEntity, partialTick);
+        Vec3 screenPos = VectorUtil.worldToScreen(renderCenter);
         if (screenPos.z < 0) {
             return false;
         }
@@ -535,7 +541,20 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         return !RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()).isEmpty();
     }
 
-    private static void renderExternalRadarContacts(GuiGraphics guiGraphics, WeaponUnit weaponUnit,
+    /** 当前雷达合并航迹中是否包含需要跨广播周期平滑的远程载具。 */
+    private static boolean hasBroadcastVehicleRadarContact(WeaponUnit weaponUnit) {
+        for (RadarUnit.DetectedObject detectedObject : weaponUnit.getRadarDetectedEntities()) {
+            if (detectedObject != null
+                    && detectedObject.entity != null
+                    && RVP_ClientBroadcastVehicleInterpolator.isBroadcastVehicle(detectedObject.entity)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void renderExternalRadarContacts(GuiGraphics guiGraphics, float partialTick,
+                                                    WeaponUnit weaponUnit,
                                                     @Nullable RadarUnit mainRadarUnit,
                                                     int externalLockedEntityId) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
@@ -557,7 +576,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 continue;
             }
             Entity resolvedEntity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entry.entityId());
-            Vec3 targetPos = resolvedEntity != null ? resolvedEntity.getBoundingBox().getCenter() : RVP_ExternalRadarLinkHelper.position(entry);
+            // 调用本项目广播载具插值器，让外置雷达扫描框与本机雷达框共享连续显示位置。
+            Vec3 targetPos = resolvedEntity != null
+                    ? RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(resolvedEntity, partialTick)
+                    : RVP_ExternalRadarLinkHelper.position(entry);
             Vec3 screenPos = VectorUtil.worldToScreen(targetPos);
             if (screenPos.z < 0) {
                 dbgBehind++;

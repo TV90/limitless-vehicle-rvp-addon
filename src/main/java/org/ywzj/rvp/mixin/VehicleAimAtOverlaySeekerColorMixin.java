@@ -158,7 +158,7 @@ public class VehicleAimAtOverlaySeekerColorMixin {
      * 也画一套 BVR 框/导引头圈——两套渲染器锚点不同（本体 bbox 中心、RVP 探测记录
      * 位置），近距 visibly 分离为"两个近乎重叠的框"。
      *
-     * <p>处理：RVP 接管门控命中（RF+无光学瞄、或存在外置雷达条目）时跳过本体绘制，
+     * <p>处理：RVP 接管门控命中（存在本机雷达硬锁、RF+无光学瞄、或存在外置雷达条目）时跳过本体绘制，
      * 由 RVP_ScopeOverlay.renderAimLockTarget 统一绘制（额外含 NCTR 目标名与外置
      * 雷达框）；门控不命中（如 j15 观瞄 crt、机炮无传感器）保持本体原行为。
      * 本 Mixin 位于 client 数组、目标为纯客户端 HUD 类，服务端零加载。</p>

@@ -552,8 +552,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `missile_native_trail_particle` | 覆盖尾焰粒子 ID（空 = 保持本体默认）。 | `""` |
 | `missile_native_trail_step` | 尾焰沿弹道采样步长（格）。 | `0.5` |
 | `missile_native_trail_particle_scale` | 尾焰粒子尺寸倍率覆盖（服务端广播的粒子不带尺寸，此项控制客户端缩放）。 | `null`（保持默认） |
-| `missile_native_trail_particle_style` | 尾焰风格预设：`rvp_hbm_solid_boost`（HBM `ParticleRocketFlame` 移植款：亮橙火焰团 + 凝结云渐变 + 距离 LOD）/ `rvp_kerosene_black_smoke`（液氧煤油黑烟款，技术储备）；空 = 保持本体默认。 | `""` |
-| `missile_native_trail_ground_wash` | 发射段贴地烟浪：发动机燃烧且距地不足 20 格时，在弹体地面投影点生成贴地横向冲刷灰烟团。 | `null`（按 `true`） |
+| `missile_native_trail_particle_style` | 尾焰风格预设：`rvp_smoke`（MCHR 翻滚烟团）/ `rvp_rocket_flame`（HBM 固体发动机橙焰 + 灰白凝结云）/ `rvp_kerosene_black_smoke`（液氧煤油黑烟技术储备款）；空 = 保持本体默认。 | `""` |
+| `missile_native_trail_ground_wash` | 发射段贴地烟浪：发动机燃烧且距地不足 20 格时，在弹体地面投影点生成贴地横向冲刷灰烟团。 | `null`（`rvp_rocket_flame` / `rvp_kerosene_black_smoke` 推导为开启，其余关闭） |
 | `missile_native_trail_launch_boost` | 一级燃烧窗口内粒子尺寸加粗倍率：发射时全额加粗、随飞行进度线性回落到 1.0（最终尺寸 = `particle_scale` × 本倍率），只影响发射段。 | `null`（不启用） |
 | `missile_native_trail_spawn_interval_tick` | 粒子生成间隔（tick）。 | `1` |
 | `missile_native_trail_density_scale` | 粒子密度倍率。 | `1` |

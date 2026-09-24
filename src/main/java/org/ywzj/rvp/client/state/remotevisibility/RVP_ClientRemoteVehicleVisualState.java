@@ -12,8 +12,20 @@ import org.ywzj.rvp.client.render.RVP_LodModelManager;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleBillboardSource;
 import org.ywzj.rvp.config.RVP_CommonConfig.RemoteVehicleSnapshotWarmupMode;
+import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
+import org.ywzj.rvp.mixin.accessor.SwitchableUnitAccessor;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployVisualState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.RotatablePartState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartKind;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.DoorUnit;
+import org.ywzj.vehicle.vehicle.part.LandingGearUnit;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.RotatableUnit;
+import org.ywzj.vehicle.vehicle.part.SwitchableUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -85,6 +97,8 @@ public final class RVP_ClientRemoteVehicleVisualState {
                 }
                 removeProxy(entry.entityId());
                 PROXIES.put(entry.entityId(), ProxyState.initial(metadata, proxy, sample, clientTick));
+                // 调用发射架运行时侧表，发布首包的服务端权威部署状态。
+                applyLauncherStates(entry.entityId(), sample.launcherStates);
                 continue;
             }
 
@@ -92,6 +106,8 @@ public final class RVP_ClientRemoteVehicleVisualState {
             existing.latest = sample;
             existing.lastUpdateClientTick = clientTick;
             applyLatestDynamicState(existing.proxy, sample);
+            // 调用发射架运行时侧表，用完整集合替换该代理上一份部署状态。
+            applyLauncherStates(entry.entityId(), sample.launcherStates);
         }
 
         // 调用完整集合语义立即撤销缺失实体，避免客户端继续显示已失去服务端授权的目标。
@@ -133,15 +149,16 @@ public final class RVP_ClientRemoteVehicleVisualState {
             InterpolatedSample interpolated = state.interpolate(clientTime, maxExtrapolation);
             result.add(new RenderEntry(state.proxy, state.latest.entityId, interpolated.position,
                     interpolated.xRot, interpolated.yRot, interpolated.zRot,
-                    interpolated.heightAboveGround, state.latest.destroyed));
+                    interpolated.heightAboveGround, state.latest.destroyed,
+                    interpolated.rotatableParts));
         }
         return List.copyOf(result);
     }
 
     /** 清除世界退出、维度切换或资源重载后遗留的全部代理与序号。 */
     public static void clear() {
-        PROXIES.values().forEach(state -> RVP_LodModelManager.forgetVehicle(state.proxy));
-        PROXIES.clear();
+        List<Integer> entityIds = List.copyOf(PROXIES.keySet());
+        entityIds.forEach(RVP_ClientRemoteVehicleVisualState::removeProxy);
         dimension = null;
         lastSequence = -1L;
         renderPolicy = RenderPolicy.DEFAULT;
@@ -163,6 +180,8 @@ public final class RVP_ClientRemoteVehicleVisualState {
         if (removed != null) {
             // 调用 RVP LOD 管理器清理该非世界代理的弱引用选级缓存。
             RVP_LodModelManager.forgetVehicle(removed.proxy);
+            // 调用 RVP 发射架运行时侧表，清除非世界代理对应的客户端部署状态。
+            LauncherDeployRuntimeManager.clearVehicle(entityId, true);
         }
     }
 
@@ -172,7 +191,9 @@ public final class RVP_ClientRemoteVehicleVisualState {
         return oldMetadata == null
                 || oldSample == null
                 || !oldMetadata.equals(newMetadata)
-                || oldSample.destroyed && !newSample.destroyed;
+                || oldSample.destroyed && !newSample.destroyed
+                // 方案 A 对开关部件采用终态跳变；状态改变时重建动画实例，避免补播声音和过渡动画。
+                || !oldSample.switchableParts.equals(newSample.switchableParts);
     }
 
     /** 判断代理是否已经达到无更新超时边界。 */
@@ -245,13 +266,35 @@ public final class RVP_ClientRemoteVehicleVisualState {
                     interpolateAngleDegrees(previous.xRot, latest.xRot, alpha),
                     interpolateAngleDegrees(previous.yRot, latest.yRot, alpha),
                     interpolateAngleDegrees(previous.zRot, latest.zRot, alpha),
-                    Mth.lerp(alpha, previous.heightAboveGround, latest.heightAboveGround));
+                    Mth.lerp(alpha, previous.heightAboveGround, latest.heightAboveGround),
+                    interpolateRotatableParts(previous.rotatableParts, latest.rotatableParts, alpha));
         }
 
         double extrapolationTicks = Math.min(Math.max(0.0D, maxExtrapolation),
                 Math.max(0.0D, renderTime - latest.serverGameTime));
         return new InterpolatedSample(latest.position.add(latest.velocity.scale(extrapolationTicks)),
-                latest.xRot, latest.yRot, latest.zRot, latest.heightAboveGround);
+                latest.xRot, latest.yRot, latest.zRot, latest.heightAboveGround,
+                List.copyOf(latest.rotatableParts.values()));
+    }
+
+    /** 按部件索引对炮塔、炮管和武器站角度执行最短角差插值。 */
+    private static List<RotatablePartState> interpolateRotatableParts(
+            Map<Integer, RotatablePartState> previous,
+            Map<Integer, RotatablePartState> latest,
+            double alpha) {
+        List<RotatablePartState> result = new ArrayList<>(latest.size());
+        for (RotatablePartState current : latest.values()) {
+            RotatablePartState old = previous.get(current.partIndex());
+            if (old == null) {
+                result.add(current);
+                continue;
+            }
+            result.add(new RotatablePartState(
+                    current.partIndex(),
+                    interpolateAngleDegrees(old.xRot(), current.xRot(), alpha),
+                    interpolateAngleDegrees(old.yRot(), current.yRot(), alpha)));
+        }
+        return List.copyOf(result);
     }
 
     /** 创建并初始化正确实体类型的非世界载具代理。 */
@@ -268,14 +311,16 @@ public final class RVP_ClientRemoteVehicleVisualState {
         proxy.setId(entityId);
         proxy.setVehicleId(metadata.vehicleId);
         proxy.setDisplayId(metadata.displayId);
+        proxy.remote = true;
         // 调用本体公开初始化方法，建立车型数据、部件数据、旋转枢轴与原模型实例。
         proxy.initData();
         if (proxy.isRemoved()) {
             return null;
         }
+        // 调用本体部件公共访问器与既有 SwitchableUnit 访问器，在动画实例创建前落入服务端终态。
+        applyPartStates(proxy, sample);
         // 调用本体公开显示初始化方法，按快照 displayId 创建正确的载具模型实例。
         proxy.initDisplayData();
-        proxy.remote = true;
         applyLatestDynamicState(proxy, sample);
         applyPose(proxy, sample.position, sample.xRot, sample.yRot, sample.zRot);
         return proxy;
@@ -287,8 +332,66 @@ public final class RVP_ClientRemoteVehicleVisualState {
         proxy.toggleEngine(sample.engineOn);
         proxy.setPower(sample.power);
         proxy.setEngineSpeed(sample.engineSpeed);
+        applyPartRotations(proxy, sample.rotatableParts.values());
         if (sample.destroyed && !proxy.isDestroyed()) {
             proxy.setDestroyed();
+        }
+    }
+
+    /** 在代理显示初始化前应用开关终态，并同时写入首份旋转姿态。 */
+    private static void applyPartStates(AbstractVehicle proxy, Sample sample) {
+        for (SwitchablePartState state : sample.switchableParts.values()) {
+            PartUnit<?> partUnit = proxy.getPartUnit(state.partIndex()).orElse(null);
+            if (partUnit instanceof SwitchableUnit<?> switchable
+                    && matchesSwitchableKind(partUnit, state.kind())) {
+                // 调用既有字段访问器绕过武器舱动力门控、提示和起落架过渡，严格采用快照终态。
+                ((SwitchableUnitAccessor) switchable).setOnField(state.on());
+            }
+        }
+        applyPartRotations(proxy, sample.rotatableParts.values());
+    }
+
+    /** 校验开关快照的语义类型，避免载具包版本不一致时把状态写入错误部件。 */
+    private static boolean matchesSwitchableKind(PartUnit<?> partUnit, SwitchablePartKind kind) {
+        return switch (kind) {
+            case LANDING_GEAR -> partUnit instanceof LandingGearUnit;
+            case DOOR -> partUnit instanceof DoorUnit;
+            case WEAPON_BAY -> partUnit instanceof WeaponBayUnit;
+            case LAUNCHER -> partUnit instanceof SwitchableUnit<?>;
+        };
+    }
+
+    /** 把一组已经完成网络插值的局部转角写入代理部件。 */
+    public static void applyPartRotations(AbstractVehicle proxy,
+                                          Iterable<RotatablePartState> states) {
+        for (RotatablePartState state : states) {
+            PartUnit<?> partUnit = proxy.getPartUnit(state.partIndex()).orElse(null);
+            if (!(partUnit instanceof RotatableUnit<?> rotatable)) {
+                continue;
+            }
+            rotatable.setXRot(state.xRot());
+            rotatable.setYRot(state.yRot());
+            rotatable.xRotO = state.xRot();
+            rotatable.yRotO = state.yRot();
+            rotatable.setXAimRot(state.xRot());
+            rotatable.setYAimRot(state.yRot());
+        }
+    }
+
+    /** 用完整集合覆盖客户端发射架侧表，供既有姿态查询读取权威阶段。 */
+    private static void applyLauncherStates(int entityId,
+                                            Map<String, LauncherDeployVisualState> states) {
+        LauncherDeployRuntimeManager.clearVehicle(entityId, true);
+        for (LauncherDeployVisualState state : states.values()) {
+            LauncherDeployRuntimeManager.put(
+                    entityId,
+                    state.ruleId(),
+                    new LauncherDeployRuntimeManager.Snapshot(
+                            LauncherDeployRuntimeManager.State.valueOf(state.phase().name()),
+                            state.progressTick(),
+                            state.currentPitch(),
+                            state.speedKph()),
+                    true);
         }
     }
 
@@ -336,15 +439,62 @@ public final class RVP_ClientRemoteVehicleVisualState {
      * @param engineOn 发动机是否开启
      * @param power 动力表现值
      * @param engineSpeed 发动机转速表现值
+     * @param rotatableParts 按部件索引保存的旋转状态完整集合
+     * @param switchableParts 按部件索引保存的开关终态完整集合
+     * @param launcherStates 按规则 ID 保存的发射架状态完整集合
      */
     record Sample(long serverGameTime, int entityId, Vec3 position, Vec3 velocity,
                   float xRot, float yRot, float zRot, double heightAboveGround,
-                  boolean destroyed, boolean engineOn, float power, float engineSpeed) {
+                  boolean destroyed, boolean engineOn, float power, float engineSpeed,
+                  Map<Integer, RotatablePartState> rotatableParts,
+                  Map<Integer, SwitchablePartState> switchableParts,
+                  Map<String, LauncherDeployVisualState> launcherStates) {
+        /** 保证样本内部集合不可变，并以协议键去重。 */
+        Sample {
+            rotatableParts = Map.copyOf(rotatableParts);
+            switchableParts = Map.copyOf(switchableParts);
+            launcherStates = Map.copyOf(launcherStates);
+        }
+
+        /** 兼容不关注部件状态的既有单元测试。 */
+        Sample(long serverGameTime, int entityId, Vec3 position, Vec3 velocity,
+               float xRot, float yRot, float zRot, double heightAboveGround,
+               boolean destroyed, boolean engineOn, float power, float engineSpeed) {
+            this(serverGameTime, entityId, position, velocity, xRot, yRot, zRot,
+                    heightAboveGround, destroyed, engineOn, power, engineSpeed,
+                    Map.of(), Map.of(), Map.of());
+        }
+
         /** 从网络条目构造带服务端时间的样本。 */
         static Sample from(long serverGameTime, S2CRemoteVehicleVisualSnapshot.Entry entry) {
             return new Sample(serverGameTime, entry.entityId(), entry.position(), entry.velocity(),
                     entry.xRot(), entry.yRot(), entry.zRot(), entry.heightAboveGround(),
-                    entry.destroyed(), entry.engineOn(), entry.power(), entry.engineSpeed());
+                    entry.destroyed(), entry.engineOn(), entry.power(), entry.engineSpeed(),
+                    indexRotatableParts(entry.rotatableParts()),
+                    indexSwitchableParts(entry.switchableParts()),
+                    indexLauncherStates(entry.launcherStates()));
+        }
+
+        /** 按部件索引建立旋转状态查找表。 */
+        private static Map<Integer, RotatablePartState> indexRotatableParts(List<RotatablePartState> states) {
+            Map<Integer, RotatablePartState> result = new java.util.LinkedHashMap<>();
+            states.forEach(state -> result.putIfAbsent(state.partIndex(), state));
+            return result;
+        }
+
+        /** 按部件索引建立开关状态查找表。 */
+        private static Map<Integer, SwitchablePartState> indexSwitchableParts(List<SwitchablePartState> states) {
+            Map<Integer, SwitchablePartState> result = new java.util.LinkedHashMap<>();
+            states.forEach(state -> result.putIfAbsent(state.partIndex(), state));
+            return result;
+        }
+
+        /** 按规则 ID 建立发射架状态查找表。 */
+        private static Map<String, LauncherDeployVisualState> indexLauncherStates(
+                List<LauncherDeployVisualState> states) {
+            Map<String, LauncherDeployVisualState> result = new java.util.LinkedHashMap<>();
+            states.forEach(state -> result.putIfAbsent(state.ruleId(), state));
+            return result;
         }
     }
 
@@ -356,9 +506,10 @@ public final class RVP_ClientRemoteVehicleVisualState {
      * @param yRot 当前帧偏航角
      * @param zRot 当前帧滚转角
      * @param heightAboveGround 当前帧服务端离地高度
+     * @param rotatableParts 当前帧已经插值的旋转部件姿态
      */
     record InterpolatedSample(Vec3 position, float xRot, float yRot, float zRot,
-                              double heightAboveGround) {
+                              double heightAboveGround, List<RotatablePartState> rotatableParts) {
     }
 
     /**
@@ -372,10 +523,12 @@ public final class RVP_ClientRemoteVehicleVisualState {
      * @param zRot 当前帧滚转角
      * @param heightAboveGround 当前帧服务端离地高度
      * @param destroyed 是否损毁
+     * @param rotatableParts 当前帧已经插值的炮塔、炮管、武器站和发射架转角
      */
     public record RenderEntry(AbstractVehicle proxy, int entityId, Vec3 position,
                               float xRot, float yRot, float zRot,
-                              double heightAboveGround, boolean destroyed) {
+                              double heightAboveGround, boolean destroyed,
+                              List<RotatablePartState> rotatableParts) {
     }
 
     /** 单个代理的元数据、两个样本与单调渲染时间游标。 */
@@ -413,7 +566,7 @@ public final class RVP_ClientRemoteVehicleVisualState {
         private InterpolatedSample interpolate(double clientTime, double maxExtrapolation) {
             if (previous == null) {
                 return new InterpolatedSample(latest.position, latest.xRot, latest.yRot, latest.zRot,
-                        latest.heightAboveGround);
+                        latest.heightAboveGround, List.copyOf(latest.rotatableParts.values()));
             }
             double sampleSpan = Math.max(1.0D, latest.serverGameTime - previous.serverGameTime);
             double estimatedServerNow = latest.serverGameTime + Math.max(0.0D, clientTime - lastUpdateClientTick);

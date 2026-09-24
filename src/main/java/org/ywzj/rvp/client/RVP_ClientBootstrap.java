@@ -54,7 +54,7 @@ public final class RVP_ClientBootstrap {
             });
             // 安装 RVP 弹药视觉公共消费端，把完整集合写入客户端弹药视觉状态表。
             RVP_RemoteAmmoVisualEndpoint.install(message -> RVP_ClientRemoteAmmoVisualState.replace(
-                    message.dimension(), message.entityIds(), message.motorBurningEntityIds()));
+                    message.dimension(), message.entityIds(), message.motorBurnRemainingTicksByEntityId()));
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
             // 安装炮火支援公共端口，阶段 C 的 profile、请求结果和任务状态只写入客户端快照。

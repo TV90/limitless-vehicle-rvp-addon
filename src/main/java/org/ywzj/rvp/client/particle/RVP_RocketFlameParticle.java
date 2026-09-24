@@ -115,11 +115,15 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private static final double LOD_SINGLE_LAYER_DISTANCE_SQ = 256.0D * 256.0D;
     /** 距离 LOD 消亡档：>1024 格凝结云粒子提前消亡（远超常规视距，仅防极端情况下同屏预算白耗）。 */
     private static final double LOD_CULL_DISTANCE_SQ = 1024.0D * 1024.0D;
+    /** 超视距代理粒子的水平消亡边界：与远程弹药视觉最远 4096 格边界一致。 */
+    private static final double REMOTE_LOD_CULL_DISTANCE_SQ = 4096.0D * 4096.0D;
 
     /** 粒子模式。 */
     private final Mode mode;
     /** 尺寸倍率（effects_data.missile_native_trail_particle_scale 透传）。 */
     private final float sizeScale;
+    /** 是否由超视距弹药代理生成；为真时使用 4096 格消亡边界，避免 1024 格外立即退化消失。 */
+    private final boolean remoteVisual;
     /** WASH 模式寿命末端目标半宽（0.3 → 该值 × sizeScale 线性膨胀）；TRAIL 模式不使用。 */
     private float washEndQuad;
     /** WASH 模式出生时的脏灰基调（中末期向近白过渡的起点）；TRAIL 模式不使用。 */
@@ -149,7 +153,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                                     double vx, double vy, double vz,
                                     float sizeScale) {
         this(level, mode, x, y, z, vx, vy, vz, sizeScale, SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false,
-                FLAME_PHASE_RATIO, 0);
+                FLAME_PHASE_RATIO, 0, false);
     }
 
     private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
@@ -157,10 +161,11 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                                     double vx, double vy, double vz,
                                     float sizeScale,
                                     float smokeGreyMin, float smokeGreySpread, boolean smokeWhiten,
-                                    float flamePhaseRatio, int holdTicks) {
+                                    float flamePhaseRatio, int holdTicks, boolean remoteVisual) {
         super(level, x, y, z, 0.0D, 0.0D, 0.0D);
         this.mode = mode;
         this.sizeScale = Math.max(sizeScale, 0.0f);
+        this.remoteVisual = remoteVisual;
         this.smokeGreyMin = smokeGreyMin;
         this.smokeGreySpread = smokeGreySpread;
         this.smokeWhiten = smokeWhiten;
@@ -221,7 +226,18 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                                                   double mx, double my, double mz, float sizeScale,
                                                   int holdTicks) {
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
-                0.55f, 0.15f, true, 0.12f, holdTicks);
+                0.55f, 0.15f, true, 0.12f, holdTicks, false);
+    }
+
+    /**
+     * 超视距固体发动机尾迹入口：复用近距颜色、寿命与凝结云曲线，只把距离消亡边界放宽到
+     * 远程弹药视觉的 4096 格；渲染器现有的 256 格单层 LOD 会令该模式始终使用单层 quad。
+     */
+    public static RVP_RocketFlameParticle ofRemoteTrail(ClientLevel level, double x, double y, double z,
+                                                        double mx, double my, double mz, float sizeScale,
+                                                        int holdTicks) {
+        return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
+                0.55f, 0.15f, true, 0.12f, holdTicks, true);
     }
 
     /**
@@ -234,7 +250,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     public static RVP_RocketFlameParticle ofKeroseneBlackSmokeTrail(ClientLevel level, double x, double y, double z,
                                                                     double mx, double my, double mz, float sizeScale) {
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
-                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO, 0);
+                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO, 0, false);
     }
 
     /**
@@ -258,7 +274,18 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         // 凝结云粒子远离本地玩家超 384 格后提前消亡——远端粒子不足一像素，纯耗同屏预算
         if (this.smokeWhiten) {
             var player = net.minecraft.client.Minecraft.getInstance().player;
-            if (player != null && player.distanceToSqr(this.x, this.y, this.z) > LOD_CULL_DISTANCE_SQ) {
+            if (this.remoteVisual && player != null) {
+                // 超视距授权按水平距离判定，远程粒子同样忽略高度差，避免高空导弹在 4096 格内误消亡。
+                double dx = this.x - player.getX();
+                double dz = this.z - player.getZ();
+                double horizontalDistanceSq = dx * dx + dz * dz;
+                if (horizontalDistanceSq > REMOTE_LOD_CULL_DISTANCE_SQ) {
+                    this.remove();
+                    return;
+                }
+            }
+            if (!this.remoteVisual && player != null
+                    && player.distanceToSqr(this.x, this.y, this.z) > LOD_CULL_DISTANCE_SQ) {
                 this.remove();
                 return;
             }

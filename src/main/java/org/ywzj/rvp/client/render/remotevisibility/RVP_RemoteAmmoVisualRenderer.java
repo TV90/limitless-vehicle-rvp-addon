@@ -21,6 +21,8 @@ import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
+import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -29,6 +31,7 @@ import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -54,6 +57,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
     private static final double MAX_EXTRAPOLATION_TICK = 5.0D;
     /** 尾迹相邻采样点允许连接的最大距离平方。 */
     private static final double MAX_TRAIL_LINK_DISTANCE_SQ = 64.0D * 64.0D;
+    /** 单次远程补线最多生成的尾迹粒子数，防止位置快照跳变造成瞬时粒子洪峰。 */
+    private static final int MAX_TRAIL_PARTICLES_PER_SPAWN = 8;
     /** 按弹药实体 ID 保存的尾迹采样状态。 */
     private static final Map<Integer, TrailState> TRAIL_STATES = new HashMap<>();
     /** 当前尾迹状态所属维度。 */
@@ -85,7 +90,11 @@ public final class RVP_RemoteAmmoVisualRenderer {
 
         for (LocalVehiclePlayer.ServerEntity remote : LocalVehiclePlayer.instance.serverEntities.values()) {
             Entity entity = remote.entity;
-            if (entity == null || !isSupported(entity) || minecraft.level.getEntity(entity.getId()) != null) {
+            if (entity == null || !isSupported(entity)) {
+                continue;
+            }
+            if (minecraft.level.getEntity(entity.getId()) != null) {
+                TRAIL_STATES.remove(entity.getId());
                 continue;
             }
             if (!RVP_ClientRemoteAmmoVisualState.contains(currentDimension, entity.getId())) {
@@ -217,31 +226,62 @@ public final class RVP_RemoteAmmoVisualRenderer {
             return;
         }
 
-        long gameTick = minecraft.level.getGameTime();
+        // 调用 RVP 远程克隆配置出口，以同步的 weaponId 读取客户端同款尾迹风格；本体弹保持 null 回退。
+        RVP_EffectsData effects = resolveRemoteTrailEffects(entity);
+        if (effects != null && !effects.isMissileNativeTrailEnabled()) {
+            TRAIL_STATES.remove(entity.getId());
+            return;
+        }
+
         double horizontalDistance = Math.sqrt(horizontalDistanceSqr(renderPos, cameraPos));
-        int interval = horizontalDistance < 768.0D ? 1 : horizontalDistance < 1152.0D ? 2 : 3;
-        double spacing = horizontalDistance < 768.0D ? 1.0D : horizontalDistance < 1152.0D ? 2.0D : 4.0D;
+        int lodInterval = horizontalDistance < 768.0D ? 1 : horizontalDistance < 1152.0D ? 2 : 3;
+        double lodSpacing = horizontalDistance < 768.0D ? 2.0D : horizontalDistance < 1152.0D ? 4.0D : 8.0D;
+        int interval = effects == null
+                ? lodInterval
+                : Math.max(lodInterval, effects.getMissileNativeTrailSpawnIntervalTick());
+        double spacing = lodSpacing;
+        if (effects != null) {
+            // 调用 RVP 密度/步长解析出口：配置只能让远距尾迹更稀，不能突破远距性能下限。
+            float densityScale = effects.getMissileNativeTrailDensityScale();
+            if (densityScale <= 0.0f) {
+                TRAIL_STATES.remove(entity.getId());
+                return;
+            }
+            spacing = Math.max(lodSpacing, effects.getMissileNativeTrailStep() / densityScale);
+        }
+
+        long gameTick = minecraft.level.getGameTime();
         TrailState state = TRAIL_STATES.computeIfAbsent(entity.getId(), ignored -> new TrailState());
-        Vec3 nozzlePos = remoteNozzlePosition(entity, renderPos);
         if (state.lastSpawnTick == gameTick || gameTick % interval != 0) {
             return;
         }
+        Vec3 nozzlePos = remoteNozzlePosition(entity, renderPos, effects);
 
         Vec3 previous = state.lastPosition;
         state.lastPosition = nozzlePos;
         state.lastSpawnTick = gameTick;
+        Vec3 exhaustVelocity = remoteExhaustVelocity(entity);
+        int remainingBurnTicks = RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(
+                dimension, entity.getId());
         if (previous == null || previous.distanceToSqr(nozzlePos) > MAX_TRAIL_LINK_DISTANCE_SQ) {
-            addSmokeParticle(minecraft, nozzlePos);
+            // 调用 RVP 远程尾迹发射器，在首点或断链后按武器配置生成正确风格而非固定信号烟。
+            RVP_RemoteMissileTrailEmitter.spawn(
+                    minecraft, effects, nozzlePos, exhaustVelocity, remainingBurnTicks);
             return;
         }
 
         Vec3 delta = nozzlePos.subtract(previous);
         double distance = delta.length();
-        int segments = Math.max(1, (int) Math.ceil(distance / spacing));
+        int segments = Math.min(MAX_TRAIL_PARTICLES_PER_SPAWN,
+                Math.max(1, (int) Math.ceil(distance / spacing)));
         for (int index = 1; index <= segments; index++) {
-            addSmokeParticle(minecraft, previous.add(delta.scale((double) index / segments)));
+            // 调用 RVP 远程尾迹发射器，对补线上的每个采样点复用同一风格与服务端燃尽保持时间。
+            RVP_RemoteMissileTrailEmitter.spawn(minecraft, effects,
+                    previous.add(delta.scale((double) index / segments)),
+                    exhaustVelocity, remainingBurnTicks);
         }
-        if (horizontalDistance < 768.0D && gameTick % 2L == 0L) {
+        if (!RVP_RemoteMissileTrailEmitter.usesCustomStyle(effects)
+                && horizontalDistance < 768.0D && gameTick % 2L == 0L) {
             Vec3 velocity = entity.getDeltaMovement();
             minecraft.level.addParticle(ParticleTypes.FLAME, true,
                     nozzlePos.x, nozzlePos.y, nozzlePos.z,
@@ -250,11 +290,35 @@ public final class RVP_RemoteAmmoVisualRenderer {
     }
 
     /** 根据弹体速度估算远程尾喷口世界位置。 */
-    private static Vec3 remoteNozzlePosition(Entity entity, Vec3 renderPos) {
+    private static Vec3 remoteNozzlePosition(Entity entity, Vec3 renderPos,
+                                             @Nullable RVP_EffectsData effects) {
         Vec3 velocity = entity.getDeltaMovement();
         Vec3 rear = velocity.lengthSqr() > 1.0E-6D ? velocity.normalize().scale(-1.0D) : Vec3.ZERO;
-        double offset = entity instanceof RocketEntity || entity instanceof RVP_RocketEntity ? 1.0D : 2.0D;
+        double offset;
+        if (effects != null && entity instanceof RVP_MissileEntity) {
+            // 调用 RVP 效果数据出口，使远程尾喷口与近距 missile_native_trail_offset 完全同源。
+            offset = effects.getMissileNativeTrailOffset();
+        } else {
+            offset = entity instanceof RocketEntity || entity instanceof RVP_RocketEntity ? 1.0D : 2.0D;
+        }
         return renderPos.add(rear.scale(offset));
+    }
+
+    /** 以克隆速度方向构造 HBM 尾迹需要的反向单位尾喷初速。 */
+    private static Vec3 remoteExhaustVelocity(Entity entity) {
+        Vec3 velocity = entity.getDeltaMovement();
+        return velocity.lengthSqr() > 1.0E-6D ? velocity.normalize().scale(-1.0D) : Vec3.ZERO;
+    }
+
+    /** 从 RVP 远程导弹克隆恢复效果配置；本体导弹、火箭或资源尚未就绪时返回 null。 */
+    @Nullable
+    private static RVP_EffectsData resolveRemoteTrailEffects(Entity entity) {
+        if (!(entity instanceof RVP_MissileEntity missile)) {
+            return null;
+        }
+        // 调用 RVP 弹体公共配置解析出口，按远程广播同步的 weaponId 查询武器数据。
+        RVP_WeaponData config = missile.getResolvedWeaponConfig();
+        return config == null ? null : config.getEffectsData();
     }
 
     /** 计算两个位置的水平距离平方。 */
@@ -262,12 +326,6 @@ public final class RVP_RemoteAmmoVisualRenderer {
         double dx = first.x - second.x;
         double dz = first.z - second.z;
         return dx * dx + dz * dz;
-    }
-
-    /** 在指定位置生成一枚远程烟迹粒子。 */
-    private static void addSmokeParticle(Minecraft minecraft, Vec3 position) {
-        minecraft.level.addParticle(ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, true,
-                position.x, position.y, position.z, 0.0D, 0.0D, 0.0D);
     }
 
     /** 单个弹药实体的尾迹采样状态。 */
