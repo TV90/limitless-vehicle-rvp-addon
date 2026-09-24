@@ -41,6 +41,10 @@ public class RVP_HmdOverlay {
                 renderAirIr(guiGraphics, mc, state);
             }
         }
+        // EO 头瞄（光电）：样式与雷达头瞄一致（同款捕获框），与雷达/IR 通道互不排斥。
+        if (state.isEoHmd()) {
+            renderEoHmd(guiGraphics, mc);
+        }
     }
 
     // ==================== RADAR HMD ====================
@@ -75,6 +79,39 @@ public class RVP_HmdOverlay {
         int base = warning ? COLOR_RED : COLOR_GREEN;
         int color = visible ? base : (base & 0x00FFFFFF) | 0x02000000;
         drawCornerBox(guiGraphics, left, right, top, bottom, color);
+    }
+
+    // ==================== EO HMD（光电，样式同雷达头瞄） ====================
+
+    /**
+     * EO 头瞄渲染：与雷达头瞄同款绿色捕获框（观瞄钉屏幕中心，非观瞄沿平滑头瞄方向投射）。
+     * 无雷达扇形/扫描航迹/NCTR——光电无探测表，纯视场轮廓捕获。
+     */
+    private static void renderEoHmd(GuiGraphics guiGraphics, Minecraft mc) {
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) return;
+        int cx, cy;
+        boolean isScope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        if (isScope) {
+            cx = mc.getWindow().getGuiScaledWidth() / 2;
+            cy = mc.getWindow().getGuiScaledHeight() / 2;
+        } else {
+            Camera camera = mc.gameRenderer.getMainCamera();
+            Vec3 dir = VectorUtil.rotToVec(
+                    RVP_ClientHmdState.getInstance().getSmoothPitch(),
+                    RVP_ClientHmdState.getInstance().getSmoothYaw()).normalize();
+            Vec3 hit = projectWorldPos(mc, camera.getPosition(), dir);
+            if (hit == null) return;
+            cx = (int) hit.x;
+            cy = (int) hit.y;
+        }
+        double tan = getTanFov(mc);
+        if (tan <= 0) return;
+        int boxHalf = (int) (Math.tan(Math.toRadians(RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG)) / tan * cy * 1.1);
+        if (boxHalf < 8) boxHalf = 8;
+        boolean visible = (System.currentTimeMillis() % 700) < 350;
+        int color = visible ? COLOR_GREEN : (COLOR_GREEN & 0x00FFFFFF) | 0x02000000;
+        drawCornerBox(guiGraphics, cx - boxHalf, cx + boxHalf, cy - boxHalf, cy + boxHalf, color);
     }
 
     // ==================== IR HMD（对地）====================

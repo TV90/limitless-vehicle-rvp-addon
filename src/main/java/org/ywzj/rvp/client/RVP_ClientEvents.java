@@ -197,29 +197,38 @@ public class RVP_ClientEvents {
                 hmd.disableRadarHmd();
                 player.displayClientMessage(
                         Component.translatable("message.ywzj_rvp.hmd.off"), true);
+            } else if (hmd.isEoHmd()) {
+                // EO 头瞄开启时按 5 关闭（与雷达头瞄同键同语义）。
+                hmd.disableEoHmd();
+                player.displayClientMessage(
+                        Component.translatable("message.ywzj_rvp.hmd.off"), true);
             } else {
                 // [RVP] 无 HMS 雷达时完全静默：不进 HMD、不清 STT 锁定、不弹提示。
                 // 原代码 toggle() 失败仍弹 "hmd.off"，且在进入 HMD 前就误清了 STT 锁定。
-                if (hmd.getRadarHmdUnit(lvp.getWeaponUnit()) == null) {
-                    continue;
-                }
-                // 检查是否有 STT 锁定
-                WeaponUnit weaponUnit = lvp.getWeaponUnit();
-                RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
-                if (radar != null && radar.getLockedEntity() != null) {
-                    RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
-                    weaponUnit.setLockedEntity(null);
-                }
-                if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(lvp.vehicle,
-                        mc.level != null ? mc.level.dimension().location() : null)) {
-                    RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
-                }
-                boolean on = hmd.toggleRadarHmd();
-                // [RVP] 仅在 HMD 真正开启时提示；toggle 失败（理论上已被上方守卫挡住）静默
-                if (on) {
+                if (hmd.getRadarHmdUnit(lvp.getWeaponUnit()) != null) {
+                    // 检查是否有 STT 锁定
+                    WeaponUnit weaponUnit = lvp.getWeaponUnit();
+                    RadarUnit radar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
+                    if (radar != null && radar.getLockedEntity() != null) {
+                        RVP_RadarRoleHelper.clearAllRadarLocks(weaponUnit);
+                        weaponUnit.setLockedEntity(null);
+                    }
+                    if (RVP_ExternalRadarLinkHelper.hasClientExternalLockState(lvp.vehicle,
+                            mc.level != null ? mc.level.dimension().location() : null)) {
+                        RVP_ExternalRadarLinkHelper.clearClientLockRequest(weaponUnit);
+                    }
+                    boolean on = hmd.toggleRadarHmd();
+                    // [RVP] 仅在 HMD 真正开启时提示；toggle 失败（理论上已被上方守卫挡住）静默
+                    if (on) {
+                        player.displayClientMessage(
+                                Component.translatable("message.ywzj_rvp.hmd.on"), true);
+                    }
+                } else if (hmd.toggleEoHmd()) {
+                    // [RVP] 光电头瞄：EO 武器站且载具无雷达的载具，5 键进入（雷达优先，无雷达才走此分支）。
                     player.displayClientMessage(
-                            Component.translatable("message.ywzj_rvp.hmd.on"), true);
+                            Component.translatable("message.ywzj_rvp.hmd.eo_on"), true);
                 }
+                // 雷达与 EO 条件都不满足：保持静默（原行为）。
             }
         }
         while (RVP_Keys.TOGGLE_LASER_DESIGNATION.consumeClick()) {

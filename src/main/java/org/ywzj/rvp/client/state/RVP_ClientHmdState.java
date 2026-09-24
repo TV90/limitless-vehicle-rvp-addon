@@ -17,12 +17,15 @@ import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
+import org.ywzj.vehicle.vehicle.weapon.seeker.ElectroOptical;
 
 public class RVP_ClientHmdState {
 
@@ -47,17 +50,25 @@ public class RVP_ClientHmdState {
     private static final int OUT_OF_BOUNDS_TIMEOUT = 20;
     /** HUD 头瞄方向每 Tick 的插值比例。 */
     private static final float SMOOTH_FACTOR = 0.4f;
+    /** EO 头瞄最大捕获/保锁距离（格）：光电无探测表，视距内轮廓直接捕获，超过即脱锁。 */
+    public static final float EO_HMD_MAX_RANGE = 512f;
+    /** EO HMD 捕获扫描周期（Tick），对齐雷达 HMD。 */
+    private static final int EO_HMD_SCAN_INTERVAL = 5;
 
-    /** 雷达与 IR 两条互不排斥的 HMD 活动通道。 */
+    /** 雷达、IR 与 EO 三条互不排斥的 HMD 活动通道。 */
     private final RVP_HmdChannelState channels = new RVP_HmdChannelState();
     /** 雷达 HMD 独立扫描计数器。 */
     private int radarScanCounter;
     /** IR HMD 独立扫描计数器。 */
     private int irScanCounter;
+    /** EO HMD 独立扫描计数器。 */
+    private int eoScanCounter;
     /** 雷达 HMD 连续超出机械边界的扫描次数。 */
     private int radarOutOfBoundsTicks;
     /** IR HMD 当前确认锁定的实体 ID。 */
     private int irLockedEntityId = -1;
+    /** EO 头瞄当前建立的锁定实体 ID（-1 无）：捕获即关通道，锁的维持由本状态独立检查。 */
+    private int eoLockedEntityId = -1;
     /** 雷达 HMD 越界警告闪烁计数。 */
     private int radarWarningTicks;
     /** HMD 客户端累计 Tick，用于 IR 保锁宽限计时。 */
@@ -126,6 +137,11 @@ public class RVP_ClientHmdState {
 
     public boolean isIrHmd() {
         return channels.isIrActive();
+    }
+
+    /** @return EO 头瞄捕获通道是否开启（捕获成功建立 EO 锁后通道自动关闭，锁独立维持）。 */
+    public boolean isEoHmd() {
+        return channels.isEoActive();
     }
 
     public int getTickCount() {
@@ -267,14 +283,69 @@ public class RVP_ClientHmdState {
         radarWarningTicks = 0;
     }
 
+    /**
+     * 切换光电（EO）头瞄通道（与雷达头瞄共用 5 键，雷达优先）：仅当前武器站为 EO 传感器
+     * 且载具无任何雷达部件时可用。进入时清空当前武器站锁，避免 R 键旧锁（视距级距离）
+     * 与 EO 头瞄 512 米捕获/脱锁语义不一致。
+     */
+    public boolean toggleEoHmd() {
+        if (channels.isEoActive()) {
+            disableEoHmd();
+            return false;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null
+                || weaponUnit.getFireControlSensorType() != WeaponUnitData.FireControlSensorType.EO
+                || !vehicleHasNoRadar(weaponUnit)) {
+            return false;
+        }
+        channels.enableEo();
+        eoScanCounter = 0;
+        weaponUnit.setLockedEntity(null);
+        eoLockedEntityId = -1;
+        // IR HMD 已经在工作时沿用同一头瞄平滑值，避免按 5 后两套框发生一次跳变。
+        if (!channels.isIrActive()) {
+            smoothInitialized = false;
+        }
+        return true;
+    }
+
+    /** 只关闭 EO 头瞄捕获通道；已建立的 EO 锁由维持逻辑独立管理，不在此清除。 */
+    public void disableEoHmd() {
+        channels.disableEo();
+        eoScanCounter = 0;
+    }
+
+    /**
+     * 判断载具是否完全没有雷达部件（含武器站 sub_part 挂载的雷达）：
+     * EO 头瞄仅限"EO 武器站且无雷达"的载具，有雷达载具按 5 仍走雷达头瞄。
+     */
+    private static boolean vehicleHasNoRadar(WeaponUnit weaponUnit) {
+        AbstractVehicle vehicle = weaponUnit.getVehicle();
+        if (vehicle == null) {
+            return false;
+        }
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof RadarUnit) {
+                return false;
+            }
+            if (partUnit instanceof WeaponUnit unit && !unit.getRadarUnits().isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** 离开有效载具上下文时关闭所有 HMD 通道。 */
     public void disableAll() {
         channels.disableAll();
         radarScanCounter = 0;
         irScanCounter = 0;
+        eoScanCounter = 0;
         radarOutOfBoundsTicks = 0;
         radarWarningTicks = 0;
         irLockedEntityId = -1;
+        eoLockedEntityId = -1;
         clearIrLockState();
     }
 
@@ -366,6 +437,8 @@ public class RVP_ClientHmdState {
 
     public void tick() {
         tickCount++;
+        // EO 锁维持独立于 HMD 通道：捕获即关通道后，脱锁检查（距离/视场/遮挡）仍需每 Tick 执行。
+        tickEoLockMaintenance();
         if (!channels.isAnyActive()) {
             return;
         }
@@ -419,6 +492,139 @@ public class RVP_ClientHmdState {
             // HUD 仍读取 smoothPitch/smoothYaw，故显示动画和平滑手感保持不变。
             tickIrHmd(mc, vehicle, weaponUnit, clampIrScanDirection(weaponUnit, rawHeadLook));
         }
+        if (channels.isEoActive()) {
+            // EO 捕获同雷达 HMD 语义：使用本 Tick 原始头瞄方向（观瞄为武器轴线）。
+            tickEoHmd(mc, vehicle, weaponUnit, rawHeadLook);
+        }
+    }
+
+    /**
+     * EO 头瞄捕获（无雷达探测表）：遍历客户端可见实体做轮廓捕获，复用雷达头瞄的视场、
+     * 容差与评分；候选额外过 EO 视线检查（{@link ElectroOptical#checkTarget}，不透光方块/
+     * 烟幕类视觉遮挡不可捕获）。命中即写武器站锁（内建客户端→服务端同步，服务端发射授权与
+     * HOMING 制导直接可用）并关闭通道——捕获即关，同雷达头瞄语义。
+     */
+    private void tickEoHmd(Minecraft mc, AbstractVehicle vehicle, WeaponUnit weaponUnit, Vec3 rawHeadLook) {
+        if (++eoScanCounter < EO_HMD_SCAN_INTERVAL) {
+            return;
+        }
+        eoScanCounter = 0;
+
+        Vec3 pivot = weaponUnit.worldPivotPosition();
+        Vec3 scanDir = resolveEoScanDir(weaponUnit, rawHeadLook);
+
+        Entity bestTarget = null;
+        double bestScore = Double.MAX_VALUE;
+        boolean bestIsVehicle = false;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity == vehicle || !entity.isAlive() || entity == mc.player
+                    || (entity instanceof AbstractVehicle v && v.isDestroyed())
+                    // 排除乘员/炮手等坐在载具内的实体：应锁定载具本体而非车内小人（同 IR HMD 口径）。
+                    || entity.getVehicle() != null) {
+                continue;
+            }
+            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pivot);
+            double dist = toTarget.length();
+            if (dist > EO_HMD_MAX_RANGE || dist < 1.0) {
+                continue;
+            }
+            // 与雷达头瞄同款轮廓捕获：目标包围盒进入捕获框即可捕获，框外仅固定小容差。
+            double effectiveAngle = RVP_HmdTargetingMath.effectiveAngularMissDeg(
+                    pivot, scanDir, entity.getBoundingBox());
+            if (effectiveAngle > RADAR_HMD_HALF_FOV_DEG + RADAR_HMD_OUTLINE_TOLERANCE_DEG) {
+                continue;
+            }
+            // 光电物理：视线被不透光方块或视觉遮挡物挡住时不可捕获（角度过滤后再查，控制射线开销）。
+            if (ElectroOptical.checkTarget(weaponUnit, entity) == null) {
+                continue;
+            }
+            double score = effectiveAngle * 0.7 + dist * 0.0003;
+            boolean candidateIsVehicle = entity instanceof AbstractVehicle;
+            // 同一捕获区域内优先载具（同 IR HMD 口径），避免生物/弹体抢走载具目标。
+            if (bestTarget == null
+                    || candidateIsVehicle && !bestIsVehicle
+                    || candidateIsVehicle == bestIsVehicle && score < bestScore) {
+                bestScore = score;
+                bestIsVehicle = candidateIsVehicle;
+                bestTarget = entity;
+            }
+        }
+
+        if (bestTarget != null) {
+            weaponUnit.setLockedEntity(bestTarget);
+            eoLockedEntityId = bestTarget.getId();
+            disableEoHmd();
+            mc.player.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.hmd.eo_locked"), true);
+        }
+    }
+
+    /**
+     * EO 锁维持（每 Tick、独立于 HMD 通道）：当前武器站锁不再是 EO 头瞄锁（玩家 R 键另锁
+     * 其它目标）时让位不干预；目标死亡 / 超出 512 米 / 离开头瞄视场 / 视线被遮挡时清锁并提示
+     * 脱锁。脱锁后不自动重开捕获通道，需再按 5（同雷达头瞄捕获即关语义）。
+     */
+    private void tickEoLockMaintenance() {
+        if (eoLockedEntityId == -1) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || !(mc.player.getVehicle() instanceof AbstractVehicle)) {
+            eoLockedEntityId = -1;
+            return;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) {
+            eoLockedEntityId = -1;
+            return;
+        }
+        Entity unitLocked = weaponUnit.getLockedEntity();
+        if (unitLocked == null || unitLocked.getId() != eoLockedEntityId) {
+            eoLockedEntityId = -1;
+            return;
+        }
+        Entity target = mc.level == null ? null : mc.level.getEntity(eoLockedEntityId);
+        if (target == null || !target.isAlive()) {
+            clearEoLock(weaponUnit);
+            return;
+        }
+        Vec3 pivot = weaponUnit.worldPivotPosition();
+        double dist = target.getBoundingBox().getCenter().subtract(pivot).length();
+        // 脱锁条件只看 距离 + 视线遮挡，不做视场角门：火控（如 rvp_ballistic_lead）带动炮塔
+        // 指向提前点时天然偏离目标中心（离轴角内最多 10°），视场门会把有效 EO 锁误清，
+        // 造成"提前量圈消失、炮塔回摆"的死循环（2026-09-24 实测修复）。
+        if (dist > EO_HMD_MAX_RANGE || dist < 1.0
+                || ElectroOptical.checkTarget(weaponUnit, target) == null) {
+            clearEoLock(weaponUnit);
+            mc.player.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.hmd.eo_unlocked"), true);
+        }
+    }
+
+    /** 清除 EO 头瞄建立的武器站锁（仅在锁仍为 EO 目标时写入，避免覆盖其它来源的新锁）。 */
+    private void clearEoLock(WeaponUnit weaponUnit) {
+        Entity unitLocked = weaponUnit.getLockedEntity();
+        if (unitLocked != null && unitLocked.getId() == eoLockedEntityId) {
+            weaponUnit.setLockedEntity(null);
+        }
+        eoLockedEntityId = -1;
+    }
+
+    /**
+     * 解析 EO 头瞄的实际捕获/维持方向：观瞄模式使用武器轴线（屏幕中心语义），
+     * 非观瞄使用调用方给定的方向（捕获=原始头瞄，维持=相机视线）。
+     */
+    private Vec3 resolveEoScanDir(WeaponUnit weaponUnit, Vec3 fallbackDir) {
+        boolean scope = LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE;
+        if (scope) {
+            Vec3 boresight = weaponUnit.worldVec();
+            if (boresight.lengthSqr() > 1.0E-6) {
+                return boresight.normalize();
+            }
+        }
+        return fallbackDir.lengthSqr() > 1.0E-6
+                ? fallbackDir.normalize()
+                : VectorUtil.rotToVec(smoothPitch, smoothYaw).normalize();
     }
 
     private static RadarUnit findHmdRadar(WeaponUnit weaponUnit) {
