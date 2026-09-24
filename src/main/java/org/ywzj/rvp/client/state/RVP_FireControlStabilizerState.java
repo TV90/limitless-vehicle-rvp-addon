@@ -54,6 +54,8 @@ public final class RVP_FireControlStabilizerState {
         }
         Mode mode = getMode(unit).next();
         MODES.put(unit, mode);
+        // 调用本项目半自动微调状态，在任意模式切换时清除旧目标偏置，防止重新进入半自动后突然跳向旧方向。
+        RVP_SemiAutoLeadTrimState.clear(unit);
         LocalPlayer player = Minecraft.getInstance().player;
         if (player != null) {
             player.displayClientMessage(

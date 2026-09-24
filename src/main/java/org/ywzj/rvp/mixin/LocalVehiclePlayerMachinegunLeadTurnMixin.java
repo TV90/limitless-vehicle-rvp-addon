@@ -1,15 +1,21 @@
 package org.ywzj.rvp.mixin;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
+import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 @Mixin(value = LocalVehiclePlayer.class, remap = false)
 public class LocalVehiclePlayerMachinegunLeadTurnMixin {
+
+    /** 本体用于区分进入瞄具后的自动对齐与真实鼠标输入；读取它可避免把自动对齐误记为微调。 */
+    @Shadow
+    public boolean mouseTurnedAfterScope;
 
     @Redirect(
             method = "handlePlayerTurn",
@@ -22,6 +28,12 @@ public class LocalVehiclePlayerMachinegunLeadTurnMixin {
     private void ywzj_rvp$suppressStableLeadMouseX(WeaponUnit weaponUnit, float xAimRot) {
         if (ywzj_rvp$shouldSuppressMouseAim(weaponUnit)) {
             return;
+        }
+        if (mouseTurnedAfterScope
+                && RVP_FireControlStabilizerState.getMode(weaponUnit)
+                == RVP_FireControlStabilizerState.Mode.SEMI_AUTO) {
+            // 调用本项目半自动微调状态，把本体即将写入的俯仰增量锁存为相对预瞄方向偏置。
+            RVP_SemiAutoLeadTrimState.recordPitchInput(weaponUnit, xAimRot);
         }
         weaponUnit.setXAimRot(xAimRot);
     }
@@ -37,6 +49,12 @@ public class LocalVehiclePlayerMachinegunLeadTurnMixin {
     private void ywzj_rvp$suppressStableLeadMouseY(WeaponUnit weaponUnit, float yAimRot) {
         if (ywzj_rvp$shouldSuppressMouseAim(weaponUnit)) {
             return;
+        }
+        if (mouseTurnedAfterScope
+                && RVP_FireControlStabilizerState.getMode(weaponUnit)
+                == RVP_FireControlStabilizerState.Mode.SEMI_AUTO) {
+            // 调用本项目半自动微调状态，把本体即将写入的方位增量锁存为相对预瞄方向偏置。
+            RVP_SemiAutoLeadTrimState.recordYawInput(weaponUnit, yAimRot);
         }
         weaponUnit.setYAimRot(yAimRot);
     }

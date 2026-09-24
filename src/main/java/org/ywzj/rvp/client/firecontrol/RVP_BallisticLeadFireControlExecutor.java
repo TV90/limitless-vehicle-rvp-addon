@@ -7,6 +7,7 @@ import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_AimAssistState;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
+import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
 import org.ywzj.rvp.debug.RVP_LeadFcDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -56,6 +57,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
         WeaponUnitData data = weaponUnit.getData();
         if (!(data instanceof WeaponUnitDataExt ext)) {
             clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
             return false;
         }
 
@@ -75,6 +77,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
         if (profile == RVP_BallisticLeadFireControlPolicy.Profile.NONE) {
             RVP_LeadFcDebug.logDecision(weaponUnit, "NONE_回退本体瞄准目标中心", false, null, null, trackedTargetWorldPos);
             clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
             return false;
         }
 
@@ -82,6 +85,7 @@ public final class RVP_BallisticLeadFireControlExecutor {
             float offAxisDeg = resolveOffAxisDeg(profile, ext);
             if (offAxisDeg <= 0.0F) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 RVP_LeadFcDebug.logDecision(weaponUnit, "离轴角为零_跟目标中心", false, null, null, trackedTargetWorldPos);
                 // 调用本体瞄准方法，保持旧配置将离轴角设为零时退回目标中心跟踪的行为。
                 weaponUnit.aim(trackedTargetWorldPos);
@@ -104,11 +108,13 @@ public final class RVP_BallisticLeadFireControlExecutor {
             Vec3 aimFrom = leadSolution != null ? aimOrigin(weaponUnit) : weaponUnit.worldPivotPosition();
             if (stabilizerMode == RVP_FireControlStabilizerState.Mode.OFF) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 RVP_LeadFcDebug.logDecision(weaponUnit, "OFF_不驱动", false, null, null, null);
                 return true;
             }
             if (stabilizerMode == RVP_FireControlStabilizerState.Mode.STABLE) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 if (machinegunLeadMode) {
                     if (leadSolution == null) {
                         RVP_LeadFcDebug.logDecision(weaponUnit, "STABLE_无解_不驱动", false, null, null, null);
@@ -134,6 +140,29 @@ public final class RVP_BallisticLeadFireControlExecutor {
                 clearAimAssist(weaponUnit);
                 return true;
             }
+            if (machinegunLeadMode) {
+                clearAimAssist(weaponUnit);
+                // 调用本项目半自动微调状态，按目标和当前武器身份初始化或延续锁存偏置。
+                RVP_SemiAutoLeadTrimState.activate(weaponUnit, leadSolution.target());
+                // 调用本项目半自动微调解算，将玩家双轴偏置叠加到持续移动的理论预瞄方向。
+                Vec3 trimmedDirection = RVP_SemiAutoLeadTrimState.apply(
+                        weaponUnit,
+                        targetDir,
+                        offAxisDeg
+                );
+                Vec3 trimmedPoint = aimFrom.add(trimmedDirection.scale(targetDir.length()));
+                RVP_LeadFcDebug.logDecision(
+                        weaponUnit,
+                        "SEMI_跟随预瞄并保持微调",
+                        true,
+                        leadSolution,
+                        aimFrom,
+                        trimmedPoint
+                );
+                aimAlongDirection(weaponUnit, trimmedDirection);
+                return true;
+            }
+
             // 调用本体方向换算，取得玩家本Tick请求的瞄准方向而不是炮塔尚未追上的当前姿态。
             Vec3 desiredDir = weaponUnit.worldVec(weaponUnit.getXAimRot(), weaponUnit.getYAimRot());
             double angleDeg = Math.toDegrees(VectorUtil.angleBetween(desiredDir, targetDir));
@@ -144,26 +173,20 @@ public final class RVP_BallisticLeadFireControlExecutor {
                         desiredDir,
                         offAxisDeg
                 );
-                if (leadSolution != null) {
-                    clearAimAssist(weaponUnit);
-                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_拉回提前方向", true, leadSolution, aimFrom, clampedPoint);
-                    aimAlongDirection(weaponUnit, clampedPoint.subtract(aimFrom));
-                } else {
-                    Vec3 smoothedPoint = smoothAimAssist(
-                            weaponUnit,
-                            aimFrom,
-                            desiredDir,
-                            clampedPoint,
-                            angleDeg - offAxisDeg
-                    );
-                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_软修正目标中心", false, null, aimFrom, smoothedPoint);
-                    // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
-                    weaponUnit.aim(smoothedPoint);
-                }
+                Vec3 smoothedPoint = smoothAimAssist(
+                        weaponUnit,
+                        aimFrom,
+                        desiredDir,
+                        clampedPoint,
+                        angleDeg - offAxisDeg
+                );
+                RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_软修正目标中心", false, null, aimFrom, smoothedPoint);
+                // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
+                weaponUnit.aim(smoothedPoint);
                 return true;
             }
             clearAimAssist(weaponUnit);
-            RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_离轴内_跟鼠标", leadSolution != null, leadSolution, aimFrom, trackedTargetWorldPos);
+            RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_离轴内_跟鼠标", false, null, aimFrom, trackedTargetWorldPos);
             return true;
         } catch (Throwable t) {
             // [RVP] 诊断：策略通过但解算/决策中途抛异常时，上层若吞掉会导致"看起来回退本体跟机体"。

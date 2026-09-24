@@ -239,3 +239,47 @@ v_(n+1) = (1 - friction) × v_n + (0, -gravity, 0)
 - [ ] 按 `6` 切到 `火控模式：稳定` 后持续移动鼠标，不再出现此前的主线程卡顿；
 - [ ] 高速横移、己方高速运动和双方同时运动时，预瞄圈与实际弹着趋势一致；
 - [ ] AHEAD 客户端距离/时间读数正常，切换目标后不显示上一目标的旧解。
+
+## 2026-09-25 半自动相对预瞄微调
+
+### 行为定义
+
+- `STABLE`：继续严格跟随理论预瞄方向，瞄具内鼠标输入不改变炮口目标角。
+- `SEMI_AUTO`：炮口每 Tick 跟随理论预瞄方向，并叠加玩家锁存的武器站局部俯仰/方位角偏置；
+  玩家把准星移动到预瞄点略前、略后、略上或略下后即可松开鼠标，无需继续追随移动目标。
+- `OFF`：继续完全手动，不由弹道提前量火控驱动。
+
+微调偏置使用武器站局部角而非世界坐标点，因此载具转向、俯仰和横滚后仍保持相对预瞄点的
+屏幕方向关系。双轴偏置按圆形包线限制，最大夹角复用当前火控模式已有的离轴角配置；不新增
+JSON 字段。切换目标、当前武器或火控模式会清零偏置，同一目标不超过 8 Tick 的短暂丢解保留
+偏置以抵抗网络抖动。
+
+### 代码落点
+
+| 职责 | 文件 |
+| --- | --- |
+| 微调身份、输入累积、局部角换算与离轴钳制 | `client/state/RVP_SemiAutoLeadTrimState.java` |
+| 复用现有 X/Y 重定向记录真实鼠标增量，并过滤进入瞄具时的自动对齐 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+| 半自动每 Tick 应用“理论预瞄方向＋锁存偏置” | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
+| 模式切换时清除旧偏置 | `client/state/RVP_FireControlStabilizerState.java` |
+| 局部角跟随与圆形离轴包线自动化测试 | `src/test/java/org/ywzj/rvp/client/state/RVP_SemiAutoLeadTrimStateTest.java` |
+
+本次复用已有 Mixin 类及注入点，不新增 Mixin，不修改 `ywzj_vehicle` 本体、载具包资源、JSON
+schema 或网络协议。
+
+### 自动验证结果
+
+- 定向测试：`RVP_SemiAutoLeadTrimStateTest` 与 `RVP_BallisticLeadFireControlPolicyTest` 通过；
+- 项目根目录执行规定的 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟：日志出现 `Done (2.276s)!`；
+- 日志仅出现既有 Create/TACZ 缺类、配方与 `rvp_bomber:tu160` 数据噪音，未发现本次新增
+  类加载、Mixin 或服务端错误；结束后 `BootstrapLauncher` 无残留，端口 `25565` 已释放。
+
+### 客户端实机回归清单
+
+- [ ] MI-28 / AH-64 半自动模式：向理论预瞄圈前、后、上、下微调后松开鼠标，偏置持续跟随目标；
+- [ ] 目标加减速、转弯以及本机转向/横滚时，微调方向不固定在世界轴上且不反转；
+- [ ] 双轴微调达到离轴边界时平滑饱和，反向移动鼠标能立即退出边界；
+- [ ] 切换目标、武器或火控模式后旧偏置清零；短暂丢解恢复后同目标偏置不跳变；
+- [ ] `STABLE` 仍严格跟预瞄圈且屏蔽鼠标，`OFF` 仍完全手动；
+- [ ] 非机炮 `rvp_rf` 软修正手感不变。
