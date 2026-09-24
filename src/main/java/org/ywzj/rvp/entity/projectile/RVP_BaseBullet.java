@@ -4533,9 +4533,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * {@code motorBurnEndTick} 默认 {@code Integer.MAX_VALUE}（生成包未到达/未设置）把粒子
      * 寿命撑爆。数据源与 {@link #isMotorBurning()} 同款（客户端 {@code rvpData} 为 null 走
      * 生成包同步的 {@code motorBurnEndTick} + 二脉冲 entityData）；非推进弹体返回 0
-     * （保持期走粒子侧保底值 108t）。仅在客户端尾迹生成点调用。
+     * （保持期走粒子侧保底值 108t）。供近距客户端尾迹与服务端超视距燃烧快照共同调用。
      */
-    private int ticksUntilMotorStopsBurning() {
+    public final int ticksUntilMotorStopsBurning() {
         int lastBurningTick;
         if (rvpData == null) {
             // 客户端克隆/同步实体：生成数据包同步的标量（与 isMotorBurning 客户端分支同源）

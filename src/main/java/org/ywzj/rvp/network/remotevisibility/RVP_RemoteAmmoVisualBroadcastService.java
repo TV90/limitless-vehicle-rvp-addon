@@ -74,8 +74,7 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
             RVP_Network.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                     new S2CRemoteAmmoVisualSnapshot(player.serverLevel().dimension().location(),
                             eligible.stream().map(Entity::getId).collect(java.util.stream.Collectors.toSet()),
-                            eligible.stream().filter(RVP_RemoteAmmoVisualBroadcastService::isMotorBurning)
-                                    .map(Entity::getId).collect(java.util.stream.Collectors.toSet())));
+                            collectMotorBurnRemainingTicks(eligible)));
             ServerBroadcastEntities packet = buildPacket(eligible);
             if (!packet.entities.isEmpty()) {
                 // 调用本体网络通道，补充创建客户端尚未追踪的远程弹药克隆。
@@ -177,6 +176,39 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
             return rocket.tickCount <= rocket.motorBurnTime;
         }
         return false;
+    }
+
+    /**
+     * 收集燃烧中弹药的剩余燃烧时间，供超视距客户端让固体发动机凝结云保持期绑定真实燃尽时刻。
+     * 映射存在即代表仍在燃烧；值为 0 表示当前正处于燃尽边界 Tick。
+     */
+    private static Map<Integer, Integer> collectMotorBurnRemainingTicks(List<Entity> eligible) {
+        Map<Integer, Integer> result = new LinkedHashMap<>();
+        for (Entity entity : eligible) {
+            if (!isMotorBurning(entity)) {
+                continue;
+            }
+            result.put(entity.getId(), remainingMotorBurnTicks(entity));
+        }
+        return result;
+    }
+
+    /** 解析一枚受支持弹药距最后燃尽的剩余 Tick，并钳制到快照协议允许范围。 */
+    private static int remainingMotorBurnTicks(Entity entity) {
+        int remainingTicks;
+        if (entity instanceof RVP_BaseBullet bullet) {
+            // 调用 RVP 弹体燃烧窗口出口，使远程凝结云与一级/二脉冲的最晚燃尽时刻一致。
+            remainingTicks = bullet.ticksUntilMotorStopsBurning();
+        } else if (entity instanceof MissileEntity missile) {
+            int motorTick = missile.tickCount - missile.coldLaunchTimeTick;
+            remainingTicks = (int) Math.ceil(missile.motorBurnTime - motorTick);
+        } else if (entity instanceof RocketEntity rocket) {
+            remainingTicks = (int) Math.ceil(rocket.motorBurnTime - rocket.tickCount);
+        } else {
+            remainingTicks = 0;
+        }
+        return Math.max(0, Math.min(remainingTicks,
+                S2CRemoteAmmoVisualSnapshot.MAX_MOTOR_BURN_REMAINING_TICKS));
     }
 
     /** 应用既有弹药距离、离地高度、所有权和雷达授权规则。 */

@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 14 为远距载具视觉快照增加类型化部件姿态与发射架状态。 */
-    private static final String PROTOCOL = "14";
+    /** 协议 15 为远距弹药视觉快照增加服务端权威的剩余发动机燃烧 Tick。 */
+    private static final String PROTOCOL = "15";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
