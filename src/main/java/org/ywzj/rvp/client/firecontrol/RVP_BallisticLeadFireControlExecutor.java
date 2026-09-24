@@ -7,6 +7,7 @@ import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_AimAssistState;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
+import org.ywzj.rvp.debug.RVP_LeadFcDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -67,88 +68,109 @@ public final class RVP_BallisticLeadFireControlExecutor {
                 sensorType,
                 machinegunLeadMode
         );
+        // [RVP] 诊断（/rvpdebug flags lead_fc on）：输出执行器四输入与解析档位，
+        // 定位"炮塔跟踪目标本体而非预瞄圈"时哪个输入与预期不符。
+        RVP_LeadFcDebug.logExecutorInput(weaponUnit, ext.ywzj_rvp$getFireControlMode(), sensorType,
+                machinegunLeadMode, profile, RVP_FireControlStabilizerState.getMode(weaponUnit));
         if (profile == RVP_BallisticLeadFireControlPolicy.Profile.NONE) {
+            RVP_LeadFcDebug.logDecision(weaponUnit, "NONE_回退本体瞄准目标中心", false, null, null, trackedTargetWorldPos);
             clearAimAssist(weaponUnit);
             return false;
         }
 
-        float offAxisDeg = resolveOffAxisDeg(profile, ext);
-        if (offAxisDeg <= 0.0F) {
-            clearAimAssist(weaponUnit);
-            // 调用本体瞄准方法，保持旧配置将离轴角设为零时退回目标中心跟踪的行为。
-            weaponUnit.aim(trackedTargetWorldPos);
-            return true;
-        }
-
-        // 调用本项目机炮解算缓存，使用保留世界坐标 EMA 且带相位补偿的控制解以兼顾抗抖与高速跟随。
-        RVP_LeadSolution leadSolution = machinegunLeadMode
-                ? RVP_MachinegunLeadState.resolveCurrent(weaponUnit, 1.0F)
-                : null;
-        if (leadSolution != null) {
-            trackedTargetWorldPos = leadSolution.leadWorldPos();
-            if (profile == RVP_BallisticLeadFireControlPolicy.Profile.RVP_RF) {
-                offAxisDeg *= RVP_RF_MACHINEGUN_OFF_AXIS_SCALE;
-            }
-        }
-
-        // 调用本项目稳定器状态，决定本Tick采用全自动、软限位或完全手动控制。
-        RVP_FireControlStabilizerState.Mode stabilizerMode = RVP_FireControlStabilizerState.getMode(weaponUnit);
-        Vec3 aimFrom = leadSolution != null ? aimOrigin(weaponUnit) : weaponUnit.worldPivotPosition();
-        if (stabilizerMode == RVP_FireControlStabilizerState.Mode.OFF) {
-            clearAimAssist(weaponUnit);
-            return true;
-        }
-        if (stabilizerMode == RVP_FireControlStabilizerState.Mode.STABLE) {
-            clearAimAssist(weaponUnit);
-            if (machinegunLeadMode) {
-                if (leadSolution == null) {
-                    return true;
-                }
-                aimAlongDirection(weaponUnit, trackedTargetWorldPos.subtract(aimFrom));
-            } else {
-                // 调用本体瞄准方法，让现有RF非机炮在稳定模式下继续指向目标中心。
-                weaponUnit.aim(trackedTargetWorldPos);
-            }
-            return true;
-        }
-        if (machinegunLeadMode && leadSolution == null) {
-            clearAimAssist(weaponUnit);
-            return true;
-        }
-
-        Vec3 targetDir = trackedTargetWorldPos.subtract(aimFrom);
-        if (targetDir.lengthSqr() < 1.0E-6D) {
-            clearAimAssist(weaponUnit);
-            return true;
-        }
-        // 调用本体方向换算，取得玩家本Tick请求的瞄准方向而不是炮塔尚未追上的当前姿态。
-        Vec3 desiredDir = weaponUnit.worldVec(weaponUnit.getXAimRot(), weaponUnit.getYAimRot());
-        double angleDeg = Math.toDegrees(VectorUtil.angleBetween(desiredDir, targetDir));
-        if (angleDeg > offAxisDeg) {
-            Vec3 clampedPoint = clampAimToOffAxisBoundary(
-                    aimFrom,
-                    trackedTargetWorldPos,
-                    desiredDir,
-                    offAxisDeg
-            );
-            if (leadSolution != null) {
+        try {
+            float offAxisDeg = resolveOffAxisDeg(profile, ext);
+            if (offAxisDeg <= 0.0F) {
                 clearAimAssist(weaponUnit);
-                aimAlongDirection(weaponUnit, clampedPoint.subtract(aimFrom));
-            } else {
-                Vec3 smoothedPoint = smoothAimAssist(
-                        weaponUnit,
-                        aimFrom,
-                        desiredDir,
-                        clampedPoint,
-                        angleDeg - offAxisDeg
-                );
-                // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
-                weaponUnit.aim(smoothedPoint);
+                RVP_LeadFcDebug.logDecision(weaponUnit, "离轴角为零_跟目标中心", false, null, null, trackedTargetWorldPos);
+                // 调用本体瞄准方法，保持旧配置将离轴角设为零时退回目标中心跟踪的行为。
+                weaponUnit.aim(trackedTargetWorldPos);
+                return true;
             }
+
+            // 调用本项目机炮解算缓存，使用保留世界坐标 EMA 且带相位补偿的控制解以兼顾抗抖与高速跟随。
+            RVP_LeadSolution leadSolution = machinegunLeadMode
+                    ? RVP_MachinegunLeadState.resolveCurrent(weaponUnit, 1.0F)
+                    : null;
+            if (leadSolution != null) {
+                trackedTargetWorldPos = leadSolution.leadWorldPos();
+                if (profile == RVP_BallisticLeadFireControlPolicy.Profile.RVP_RF) {
+                    offAxisDeg *= RVP_RF_MACHINEGUN_OFF_AXIS_SCALE;
+                }
+            }
+
+            // 调用本项目稳定器状态，决定本Tick采用全自动、软限位或完全手动控制。
+            RVP_FireControlStabilizerState.Mode stabilizerMode = RVP_FireControlStabilizerState.getMode(weaponUnit);
+            Vec3 aimFrom = leadSolution != null ? aimOrigin(weaponUnit) : weaponUnit.worldPivotPosition();
+            if (stabilizerMode == RVP_FireControlStabilizerState.Mode.OFF) {
+                clearAimAssist(weaponUnit);
+                RVP_LeadFcDebug.logDecision(weaponUnit, "OFF_不驱动", false, null, null, null);
+                return true;
+            }
+            if (stabilizerMode == RVP_FireControlStabilizerState.Mode.STABLE) {
+                clearAimAssist(weaponUnit);
+                if (machinegunLeadMode) {
+                    if (leadSolution == null) {
+                        RVP_LeadFcDebug.logDecision(weaponUnit, "STABLE_无解_不驱动", false, null, null, null);
+                        return true;
+                    }
+                    RVP_LeadFcDebug.logDecision(weaponUnit, "STABLE_跟预瞄圈", true, leadSolution, aimFrom, trackedTargetWorldPos);
+                    aimAlongDirection(weaponUnit, trackedTargetWorldPos.subtract(aimFrom));
+                } else {
+                    RVP_LeadFcDebug.logDecision(weaponUnit, "STABLE_非机炮_跟目标中心", false, null, null, trackedTargetWorldPos);
+                    // 调用本体瞄准方法，让现有RF非机炮在稳定模式下继续指向目标中心。
+                    weaponUnit.aim(trackedTargetWorldPos);
+                }
+                return true;
+            }
+            if (machinegunLeadMode && leadSolution == null) {
+                clearAimAssist(weaponUnit);
+                RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_无解_不驱动", false, null, null, null);
+                return true;
+            }
+
+            Vec3 targetDir = trackedTargetWorldPos.subtract(aimFrom);
+            if (targetDir.lengthSqr() < 1.0E-6D) {
+                clearAimAssist(weaponUnit);
+                return true;
+            }
+            // 调用本体方向换算，取得玩家本Tick请求的瞄准方向而不是炮塔尚未追上的当前姿态。
+            Vec3 desiredDir = weaponUnit.worldVec(weaponUnit.getXAimRot(), weaponUnit.getYAimRot());
+            double angleDeg = Math.toDegrees(VectorUtil.angleBetween(desiredDir, targetDir));
+            if (angleDeg > offAxisDeg) {
+                Vec3 clampedPoint = clampAimToOffAxisBoundary(
+                        aimFrom,
+                        trackedTargetWorldPos,
+                        desiredDir,
+                        offAxisDeg
+                );
+                if (leadSolution != null) {
+                    clearAimAssist(weaponUnit);
+                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_拉回提前方向", true, leadSolution, aimFrom, clampedPoint);
+                    aimAlongDirection(weaponUnit, clampedPoint.subtract(aimFrom));
+                } else {
+                    Vec3 smoothedPoint = smoothAimAssist(
+                            weaponUnit,
+                            aimFrom,
+                            desiredDir,
+                            clampedPoint,
+                            angleDeg - offAxisDeg
+                    );
+                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_软修正目标中心", false, null, aimFrom, smoothedPoint);
+                    // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
+                    weaponUnit.aim(smoothedPoint);
+                }
+                return true;
+            }
+            clearAimAssist(weaponUnit);
+            RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_离轴内_跟鼠标", leadSolution != null, leadSolution, aimFrom, trackedTargetWorldPos);
             return true;
+        } catch (Throwable t) {
+            // [RVP] 诊断：策略通过但解算/决策中途抛异常时，上层若吞掉会导致"看起来回退本体跟机体"。
+            // 记录堆栈后按原语义继续抛出，不改变行为。
+            RVP_LeadFcDebug.logThrowable(weaponUnit, t);
+            throw t;
         }
-        clearAimAssist(weaponUnit);
-        return true;
     }
 
     /** 按模式读取各自的离轴角字段，避免把现有RF字段当作旧键别名迁移。 */

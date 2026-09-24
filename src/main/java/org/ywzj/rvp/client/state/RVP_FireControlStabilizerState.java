@@ -5,6 +5,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.firecontrol.RVP_BallisticLeadFireControlPolicy;
+import org.ywzj.rvp.debug.RVP_LeadFcDebug;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
@@ -46,6 +47,9 @@ public final class RVP_FireControlStabilizerState {
     /** 火控稳定器键按下时切换稳定模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
     public static boolean tryHandleToggleKey(@Nullable WeaponUnit unit) {
         if (unit == null || !isEligible(unit)) {
+            // [RVP] 诊断（/rvpdebug flags lead_fc on）：T 键切换被资格判定拒绝时落盘原因，
+            // 定位"切稳定无效（机炮/模式/传感器任一在客户端不成立）"。
+            RVP_LeadFcDebug.logToggleRejected(unit);
             return false;
         }
         Mode mode = getMode(unit).next();
