@@ -17,15 +17,18 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private String ywzj_rvp$fireControlMode = "";
 
-    /** 现有 {@code rvp_rf} 模式离轴角，单位为度，默认10度，仅在RF软火控生效。 */
+    /** 现有 {@code rvp_rf} 模式离轴角，单位为度，仅在RF软火控生效。
+     *  <p>用 Float 而非 float：Gson 反序列化 pojo 走 Unsafe 分配，字段初始化器不执行，
+     *  原始类型"未配置"会落 0 而非注释声称的 10；null 可穿透分配，由 getter 兜底默认。 */
     @SerializedName("rvp_rf_off_axis_deg")
     @Unique
-    private float ywzj_rvp$rfOffAxisDeg = 10.0f;
+    private Float ywzj_rvp$rfOffAxisDeg;
 
-    /** 通用弹道提前量模式离轴角，单位为度，默认10度，仅在 {@code rvp_ballistic_lead} 生效。 */
+    /** 通用弹道提前量模式离轴角，单位为度，仅在 {@code rvp_ballistic_lead} 生效。
+     *  <p>Float 兜底理由同上；显式配置 0 仍保留"退回目标中心跟踪"语义。 */
     @SerializedName("rvp_fire_control_off_axis_deg")
     @Unique
-    private float ywzj_rvp$fireControlOffAxisDeg = 10.0f;
+    private Float ywzj_rvp$fireControlOffAxisDeg;
 
     /** 是否关闭该武器站的CRT后处理效果；默认false。 */
     @SerializedName("rvp_disable_crt_effect")
@@ -54,17 +57,18 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
 
     @Override
     public String ywzj_rvp$getFireControlMode() {
-        return ywzj_rvp$fireControlMode;
+        // Gson Unsafe 分配下 String 字段"未配置"实际为 null，兜底空串（= 完全使用本体火控）
+        return ywzj_rvp$fireControlMode == null ? "" : ywzj_rvp$fireControlMode;
     }
 
     @Override
     public float ywzj_rvp$getRfOffAxisDeg() {
-        return ywzj_rvp$rfOffAxisDeg;
+        return ywzj_rvp$rfOffAxisDeg == null ? 10.0f : ywzj_rvp$rfOffAxisDeg;
     }
 
     @Override
     public float ywzj_rvp$getFireControlOffAxisDeg() {
-        return ywzj_rvp$fireControlOffAxisDeg;
+        return ywzj_rvp$fireControlOffAxisDeg == null ? 10.0f : ywzj_rvp$fireControlOffAxisDeg;
     }
 
     @Override
