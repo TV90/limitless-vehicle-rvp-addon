@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 13 增加观瞄视角状态上行包（C2SScopeViewSync）。 */
-    private static final String PROTOCOL = "13";
+    /** 协议 14 为远距载具视觉快照增加类型化部件姿态与发射架状态。 */
+    private static final String PROTOCOL = "14";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

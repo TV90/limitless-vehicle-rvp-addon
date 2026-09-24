@@ -26,6 +26,7 @@ import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhVehicleFramePlan;
 import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleCollector;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_LodModelManager;
+import org.ywzj.rvp.client.render.RVP_StateBoneHider;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager.BillboardPlan;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.FarPlaneDemand;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleProjection.ProjectionPlan;
@@ -342,10 +343,12 @@ public final class RVP_RemoteVehicleVisualRenderer {
         VehicleBedrockModel model;
         BakedModelInstance instance;
         ResourceLocation texture;
+        boolean dynamicBaseModel;
         if (lodState != null) {
             model = lodState.model;
             instance = lodState.instance;
             texture = lodState.texture;
+            dynamicBaseModel = false;
         } else {
             model = display.getModel();
             // 调用本体载具模型实例访问器，为无远距 LOD 的代理载具复用其独立静态模型实例。
@@ -354,8 +357,7 @@ public final class RVP_RemoteVehicleVisualRenderer {
             if (!model.hasBakedModel() || instance == null) {
                 return false;
             }
-            // 调用 RVP 显式距离骨骼入口，在静态原模型回退中复用 display 的既有规则。
-            RVP_DistanceBoneHider.apply(proxy, instance, context.cameraDistance);
+            dynamicBaseModel = true;
         }
         if (model == null || instance == null || texture == null || !model.hasBakedModel()) {
             return false;
@@ -363,6 +365,10 @@ public final class RVP_RemoteVehicleVisualRenderer {
 
         ProxyPose oldPose = ProxyPose.capture(proxy);
         applyRenderPose(proxy, entry);
+        if (dynamicBaseModel) {
+            // 调用远距动态高模辅助，消费已插值部件转角及服务端开关终态。
+            applyDynamicHighModelState(proxy, entry, instance, context.cameraDistance);
+        }
         poseStack.pushPose();
         try {
             poseStack.translate(entry.position().x - cameraPosition.x,
@@ -393,10 +399,10 @@ public final class RVP_RemoteVehicleVisualRenderer {
         if (model == null || !model.hasBakedModel() || instance == null || texture == null) {
             return false;
         }
-        // 调用 RVP 显式距离骨骼入口，保持高模降级仍可消费 display 的既有隐藏规则。
-        RVP_DistanceBoneHider.apply(proxy, instance, cameraDistance);
         ProxyPose oldPose = ProxyPose.capture(proxy);
         applyRenderPose(proxy, entry);
+        // 调用远距动态高模辅助，消费已插值部件转角及服务端开关终态。
+        applyDynamicHighModelState(proxy, entry, instance, cameraDistance);
         poseStack.pushPose();
         try {
             poseStack.translate(entry.position().x - cameraPosition.x,
@@ -410,6 +416,21 @@ public final class RVP_RemoteVehicleVisualRenderer {
             poseStack.popPose();
             oldPose.restore(proxy);
         }
+    }
+
+    /** 在基础高模路径应用方案 A 的部件姿态；LOD 与 Billboard 仍保持静态。 */
+    private static void applyDynamicHighModelState(
+            AbstractVehicle proxy,
+            RVP_ClientRemoteVehicleVisualState.RenderEntry entry,
+            BakedModelInstance instance,
+            double cameraDistance) {
+        // 调用客户端远距状态辅助，把当前帧已插值的炮塔、炮管和武器站角度写入非世界代理。
+        RVP_ClientRemoteVehicleVisualState.applyPartRotations(proxy, entry.rotatableParts());
+        // 调用本体公开动画入口，让主体模型中的部件绑定读取代理当前状态；开关变化通过代理重建直接到终态。
+        VehicleRender.applyAnimationPose(proxy, 1.0F, instance, false);
+        // 调用 RVP 状态骨与距离骨规则，保持起落架隐藏和既有远距骨骼配置生效。
+        RVP_StateBoneHider.apply(proxy, instance);
+        RVP_DistanceBoneHider.apply(proxy, instance, cameraDistance);
     }
 
     /** 已加载区块读取世界光照；未加载区块使用中性光照且不触发区块加载。 */

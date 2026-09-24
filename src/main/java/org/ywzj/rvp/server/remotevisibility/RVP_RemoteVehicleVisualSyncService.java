@@ -19,8 +19,16 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.config.RVP_CommonConfig.VisibilityMode;
+import org.ywzj.rvp.config.LauncherDeployRuntimeManager;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
+import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployPhase;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.LauncherDeployVisualState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.RotatablePartState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartKind;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartState;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleChunkLeaseService.AuthorizedTarget;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleVisibilityPolicy.Candidate;
 import org.ywzj.rvp.server.remotevisibility.RVP_RemoteVehicleVisibilityPolicy.VehicleCategory;
@@ -28,8 +36,14 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.DoorUnit;
+import org.ywzj.vehicle.vehicle.part.LandingGearUnit;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
+import org.ywzj.vehicle.vehicle.part.RotatableUnit;
+import org.ywzj.vehicle.vehicle.part.SwitchableUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponBayUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -292,6 +306,11 @@ public final class RVP_RemoteVehicleVisualSyncService {
                 vehicle.blockPosition().getZ());
         double heightAboveGround = Math.max(0.0D, vehicle.getY() - groundY);
         try {
+            // 调用本服务的部件采集辅助，只提取超远距静态高模需要的最小视觉字段。
+            List<RotatablePartState> rotatableParts = collectRotatableParts(vehicle);
+            List<SwitchablePartState> switchableParts = collectSwitchableParts(vehicle);
+            // 调用 RVP 发射架运行时管理器，携带服务端权威阶段而不让非世界代理自行推导。
+            List<LauncherDeployVisualState> launcherStates = collectLauncherStates(vehicle);
             return new S2CRemoteVehicleVisualSnapshot.Entry(
                     vehicle.getId(),
                     entityType,
@@ -306,11 +325,95 @@ public final class RVP_RemoteVehicleVisualSyncService {
                     vehicle.isDestroyed(),
                     vehicle.isEngineOn(),
                     vehicle.getPower(),
-                    vehicle.getEngineSpeed());
+                    vehicle.getEngineSpeed(),
+                    rotatableParts,
+                    switchableParts,
+                    launcherStates);
         } catch (IllegalArgumentException exception) {
             LOGGER.warn("远距载具包含非法视觉数值，已跳过：entityId={}", vehicle.getId());
             return null;
         }
+    }
+
+    /** 收集炮塔、炮管、武器站以及 RVP 发射架俯仰部件的当前局部转角。 */
+    private static List<RotatablePartState> collectRotatableParts(AbstractVehicle vehicle) {
+        Map<Integer, RotatablePartState> states = new LinkedHashMap<>();
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof WeaponUnit weaponUnit) {
+                states.put(partUnit.getIndex(), new RotatablePartState(
+                        partUnit.getIndex(), weaponUnit.getXRot(), weaponUnit.getYRot()));
+            }
+        }
+        // 调用发射架配置缓存，补入并非 WeaponUnit 的自定义俯仰部件。
+        for (RVP_LauncherDeployConfig config : RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            PartUnit<?> pitchPart = vehicle.getPartUnit(config.pitchPartUnitId()).orElse(null);
+            if (pitchPart instanceof RotatableUnit<?> rotatable) {
+                states.put(pitchPart.getIndex(), new RotatablePartState(
+                        pitchPart.getIndex(), rotatable.getXRot(), rotatable.getYRot()));
+            }
+        }
+        return List.copyOf(states.values());
+    }
+
+    /** 收集起落架、舱门、武器舱及 RVP 发射架开关部件的当前终态。 */
+    private static List<SwitchablePartState> collectSwitchableParts(AbstractVehicle vehicle) {
+        Map<Integer, SwitchablePartState> states = new LinkedHashMap<>();
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            SwitchablePartKind kind = switchableKind(partUnit);
+            if (kind != null && partUnit instanceof SwitchableUnit<?> switchable) {
+                states.put(partUnit.getIndex(), new SwitchablePartState(
+                        partUnit.getIndex(), kind, switchable.isOn()));
+            }
+        }
+        // 调用发射架配置缓存，补入普通 SwitchableUnit 形式的 TEL 开关部件。
+        for (RVP_LauncherDeployConfig config : RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            PartUnit<?> switchPart = vehicle.getPartUnit(config.partUnitId()).orElse(null);
+            if (switchPart instanceof SwitchableUnit<?> switchable) {
+                states.putIfAbsent(switchPart.getIndex(), new SwitchablePartState(
+                        switchPart.getIndex(), SwitchablePartKind.LAUNCHER, switchable.isOn()));
+            }
+        }
+        return List.copyOf(states.values());
+    }
+
+    /** 将本体具体开关部件归类为网络稳定的视觉类型。 */
+    @Nullable
+    private static SwitchablePartKind switchableKind(PartUnit<?> partUnit) {
+        if (partUnit instanceof LandingGearUnit) {
+            return SwitchablePartKind.LANDING_GEAR;
+        }
+        if (partUnit instanceof DoorUnit) {
+            return SwitchablePartKind.DOOR;
+        }
+        if (partUnit instanceof WeaponBayUnit) {
+            return SwitchablePartKind.WEAPON_BAY;
+        }
+        return null;
+    }
+
+    /** 收集 RVP TEL/发射架状态机的服务端权威阶段、进度、俯仰和速度。 */
+    private static List<LauncherDeployVisualState> collectLauncherStates(AbstractVehicle vehicle) {
+        List<LauncherDeployVisualState> states = new ArrayList<>();
+        for (RVP_LauncherDeployConfig config : RVP_LauncherDeployConfigCache.get(vehicle.getVehicleId())) {
+            LauncherDeployRuntimeManager.Snapshot snapshot = LauncherDeployRuntimeManager.get(
+                    vehicle.getId(), config.id(), false);
+            if (snapshot == null) {
+                continue;
+            }
+            int switchPartIndex = vehicle.getPartUnit(config.partUnitId())
+                    .map(PartUnit::getIndex).orElse(-1);
+            int pitchPartIndex = vehicle.getPartUnit(config.pitchPartUnitId())
+                    .map(PartUnit::getIndex).orElse(-1);
+            states.add(new LauncherDeployVisualState(
+                    config.id(),
+                    switchPartIndex,
+                    pitchPartIndex,
+                    LauncherDeployPhase.valueOf(snapshot.state().name()),
+                    snapshot.progressTick(),
+                    snapshot.currentPitch(),
+                    snapshot.speedKph()));
+        }
+        return List.copyOf(states);
     }
 
     /** 计算观察者到目标的 X/Z 水平距离平方。 */

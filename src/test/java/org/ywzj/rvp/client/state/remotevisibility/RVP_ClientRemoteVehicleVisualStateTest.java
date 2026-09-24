@@ -3,6 +3,11 @@ package org.ywzj.rvp.client.state.remotevisibility;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.RotatablePartState;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartKind;
+import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot.SwitchablePartState;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -66,6 +71,21 @@ class RVP_ClientRemoteVehicleVisualStateTest {
                 metadata, sample(100L, true), metadata, sample(105L, false)));
     }
 
+    /** 验证方案 A 只在开关终态改变时重建代理，纯炮塔转角变化保持插值时间线。 */
+    @Test
+    void switchStateChangeRequiresRebuildButRotationChangeDoesNot() {
+        var metadata = new RVP_ClientRemoteVehicleVisualState.ProxyMetadata(
+                ENTITY_TYPE, VEHICLE_ID, DISPLAY_ID);
+        var closed = sampleWithParts(false, 0.0F);
+        var rotated = sampleWithParts(false, 90.0F);
+        var opened = sampleWithParts(true, 90.0F);
+
+        assertFalse(RVP_ClientRemoteVehicleVisualState.requiresRebuild(
+                metadata, closed, metadata, rotated));
+        assertTrue(RVP_ClientRemoteVehicleVisualState.requiresRebuild(
+                metadata, rotated, metadata, opened));
+    }
+
     @Test
     void positionAndWrappedAnglesInterpolateAcrossTwoSamples() {
         var previous = sample(100L, false, new Vec3(0.0D, 10.0D, 0.0D), Vec3.ZERO,
@@ -80,6 +100,26 @@ class RVP_ClientRemoteVehicleVisualStateTest {
         assertEquals(-180.0F, result.yRot(), 0.0001F);
         assertEquals(360.0F, result.zRot(), 0.0001F);
         assertEquals(7.0D, result.heightAboveGround(), 0.0001D);
+    }
+
+    /** 验证炮塔、炮管和武器站转角与整车姿态使用相同的最短角差插值。 */
+    @Test
+    void rotatablePartAnglesInterpolateByPartIndex() {
+        var previous = new RVP_ClientRemoteVehicleVisualState.Sample(
+                100L, 42, Vec3.ZERO, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 0.0D,
+                false, true, 80.0F, 60.0F,
+                Map.of(3, new RotatablePartState(3, 179.0F, -170.0F)), Map.of(), Map.of());
+        var latest = new RVP_ClientRemoteVehicleVisualState.Sample(
+                105L, 42, Vec3.ZERO, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 0.0D,
+                false, true, 80.0F, 60.0F,
+                Map.of(3, new RotatablePartState(3, -179.0F, 170.0F)), Map.of(), Map.of());
+
+        var result = RVP_ClientRemoteVehicleVisualState.interpolateSamples(
+                previous, latest, 102.5D, 5.0D);
+
+        assertEquals(1, result.rotatableParts().size());
+        assertEquals(180.0F, result.rotatableParts().get(0).xRot(), 0.0001F);
+        assertEquals(-180.0F, result.rotatableParts().get(0).yRot(), 0.0001F);
     }
 
     @Test
@@ -124,6 +164,17 @@ class RVP_ClientRemoteVehicleVisualStateTest {
             float xRot, float yRot, float zRot, double heightAboveGround) {
         return new RVP_ClientRemoteVehicleVisualState.Sample(gameTime, 42, position, velocity,
                 xRot, yRot, zRot, heightAboveGround, destroyed, true, 80.0F, 60.0F);
+    }
+
+    /** 创建带一个旋转部件和一个舱门终态的测试样本。 */
+    private static RVP_ClientRemoteVehicleVisualState.Sample sampleWithParts(
+            boolean doorOn, float turretYRot) {
+        return new RVP_ClientRemoteVehicleVisualState.Sample(
+                100L, 42, Vec3.ZERO, Vec3.ZERO, 0.0F, 0.0F, 0.0F, 0.0D,
+                false, true, 80.0F, 60.0F,
+                Map.of(2, new RotatablePartState(2, 0.0F, turretYRot)),
+                Map.of(4, new SwitchablePartState(4, SwitchablePartKind.DOOR, doorOn)),
+                Map.of());
     }
 
     /** 解析测试资源 ID。 */
