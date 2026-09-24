@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.InternalAssets;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -42,9 +43,10 @@ final class VehicleProjectileRenderLogic {
         poseStack.pushPose();
         float width = Math.min(0.04f * bullet.getCaliber() / 7.62f, 0.2f);
         Vec3 bulletPosition = bullet.getPosition(partialTicks);
-        double trailLength = 0.3 * bullet.getDeltaMovement().length();
         double disToEye = bulletPosition.distanceTo(bullet.getStartPos());
-        trailLength = Math.min(trailLength, disToEye * 0.8);
+        // 曳光长度 = 0.3 × 当前速度 × effects_data.tracer_length_scale，上限 = 已飞距离 × 0.8
+        double trailLength = RVP_EffectsData.resolveTracerLength(bullet.getDeltaMovement().length(), disToEye,
+                bullet.getTracerLengthScale());
         poseStack.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTicks, bullet.yRotO, bullet.getYRot()) - 180.0F));
         poseStack.mulPose(Axis.XP.rotationDegrees(Mth.lerp(partialTicks, bullet.xRotO, bullet.getXRot())));
         poseStack.translate(0, 0, trailLength / 2.0);

@@ -44,6 +44,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     private float tracerR = 1f;
     private float tracerG = 0.85f;
     private float tracerB = 0.2f;
+    /** 机枪曳光长度倍率（effects_data.tracer_length_scale），默认 1f = 现状；随生成包同步供客户端渲染。 */
+    private float tracerLengthScale = 1f;
 
     public RVP_BulletEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -75,6 +77,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         this.tracerR = effects.getTracerR();
         this.tracerG = effects.getTracerG();
         this.tracerB = effects.getTracerB();
+        this.tracerLengthScale = effects.getTracerLengthScale();
     }
 
     @Override
@@ -301,6 +304,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         return tracerB;
     }
 
+    public float getTracerLengthScale() {
+        return tracerLengthScale;
+    }
+
     @Override
     public void writeSpawnData(FriendlyByteBuf buffer) {
         super.writeSpawnData(buffer);
@@ -315,6 +322,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         buffer.writeFloat(bounceStrength);
         buffer.writeFloat(bounceIncidenceAngleMin);
         buffer.writeBoolean(bounceOnVehicle);
+        buffer.writeFloat(tracerLengthScale);
     }
 
     @Override
@@ -331,6 +339,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         bounceStrength = buffer.readFloat();
         bounceIncidenceAngleMin = buffer.readFloat();
         bounceOnVehicle = buffer.readBoolean();
+        tracerLengthScale = buffer.readFloat();
         startPos = position();
         applyCannonFacingFromVelocity(getDeltaMovement(), false);
         yRotO = getYRot();

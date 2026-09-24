@@ -134,6 +134,14 @@ public class RVP_EffectsData {
     @SerializedName("tracer_b")
     private Float tracerB;
 
+    /**
+     * 机枪曳光长度倍率，默认 1.0（= 现状）。
+     * 生效公式：长度 = min(0.3 × 当前速度 × 本倍率, 已飞距离 × 0.8) 格。
+     * 0 表示不显示曳光；非法值（NaN/无穷）按 1.0 处理；上限 8。
+     */
+    @SerializedName("tracer_length_scale")
+    private Float tracerLengthScale;
+
     /** 线导视觉线：导弹与发射枢轴间绘制原版钓鱼线风格线缆。 */
     @SerializedName("wire_link_enabled")
     private Boolean wireLinkEnabled;
@@ -297,6 +305,31 @@ public class RVP_EffectsData {
 
     public float getTracerB() {
         return tracerB != null ? tracerB : 0.2f;
+    }
+
+    /** @return 是否显式配置了 tracer_length_scale（配置探测预留查询，渲染链路直接用 getTracerLengthScale）。 */
+    public boolean hasTracerLengthScaleOverride() {
+        return tracerLengthScale != null;
+    }
+
+    /** 曳光长度倍率；未配置或非法返回 1.0，下限 0、上限 8。 */
+    public float getTracerLengthScale() {
+        if (tracerLengthScale == null
+                || Float.isNaN(tracerLengthScale)
+                || Float.isInfinite(tracerLengthScale)) {
+            return 1f;
+        }
+        return Math.max(0f, Math.min(tracerLengthScale, 8f));
+    }
+
+    /**
+     * 机枪曳光长度（格）：min(0.3 × 弹速 × tracer_length_scale, 已飞距离 × 0.8)。
+     * 倍率默认 1.0 = 历史行为。纯数学静态方法（本类无 MC 依赖，供渲染端与单测共用；
+     * 不放渲染类是因为其类图引用动画库，测试运行时类路径加载不到）。
+     */
+    public static double resolveTracerLength(double speed, double travelDistance, float scale) {
+        double len = 0.3 * speed * scale;
+        return Math.min(len, travelDistance * 0.8);
     }
 
     /** 线导视觉线开关（effects_data.wire_link_enabled）。 */
