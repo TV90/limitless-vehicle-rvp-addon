@@ -14,19 +14,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 本体超远距广播载具的客户端显示位置插值器。
+ * 本体超远距广播载具的客户端目标运动插值器。
  *
  * <p>本体 {@code ServerBroadcastEntities} 收包时会把 {@code xo/yo/zo} 与当前坐标同时写成
  * 新样本，且载具的 {@code remoteTick()} 不推进位置，因此常规 {@link Mth#lerp} 无法消除
- * 广播间隔内的阶梯。这里仅缓存 RVP HUD 的显示锚点，不修改实体坐标、速度、雷达探测结果
- * 或服务端权威状态。</p>
+ * 广播间隔内的阶梯。这里缓存 RVP HUD 与客户端火控共用的位置、速度轨迹，
+ * 不修改实体坐标、速度、雷达探测结果或服务端权威状态。</p>
  */
 public final class RVP_ClientBroadcastVehicleInterpolator {
 
     /** 判定两个广播中心点相同所用的平方距离误差。 */
     private static final double POSITION_EPSILON_SQR = 1.0E-12;
 
-    /** 按实体 ID 保存的广播显示轨迹；实体对象变化时会重建，避免 ID 复用串轨。 */
+    /** 按实体 ID 保存的广播目标轨迹；实体对象变化时会重建，避免 ID 复用串轨。 */
     private static final Map<Integer, PositionTrack> TRACKS = new HashMap<>();
 
     /** 当前轨迹缓存所属客户端世界；切换维度或重进世界时用于整体失效。 */
@@ -60,10 +60,31 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
      * @return 广播载具的平滑中心，或调用方提供的普通实体位置
      */
     public static Vec3 resolveRenderCenter(Entity entity, float partialTick, Vec3 nonBroadcastCenter) {
+        // 调用本项目共享目标运动解析，使 HUD 与火控消费同一条广播插值轨迹。
+        return resolveTrackingSample(entity, partialTick, nonBroadcastCenter).center();
+    }
+
+    /**
+     * 解析客户端火控应使用的目标运动样本。
+     *
+     * <p>广播载具返回跨包插值的中心和速度，普通实体保持原版单 Tick 中心插值与
+     * 实体当前运动量。返回的缓冲时长仅用于弹道解算补偿显示时间线的固定延迟。</p>
+     *
+     * @param entity      当前锁定目标
+     * @param partialTick 当前客户端 Tick 或渲染帧的局部 Tick
+     * @return 可供 HUD 和火控共用的目标运动样本
+     */
+    public static TargetTrackingSample resolveTrackingSample(Entity entity, float partialTick) {
+        return resolveTrackingSample(entity, partialTick, resolveVanillaCenter(entity, partialTick));
+    }
+
+    /** 以调用方的普通实体位置语义解析共享目标运动样本。 */
+    private static TargetTrackingSample resolveTrackingSample(Entity entity, float partialTick,
+                                                               Vec3 nonBroadcastCenter) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null || minecraft.player == null || entity.level() != level) {
-            return nonBroadcastCenter;
+            return new TargetTrackingSample(nonBroadcastCenter, entity.getDeltaMovement(), 0.0D, false);
         }
         ensureLevel(level);
 
@@ -71,28 +92,36 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
         LocalVehiclePlayer.ServerEntity serverEntity = localVehiclePlayer.serverEntities.get(entity.getId());
         if (!isBroadcastVehicle(entity) || serverEntity == null) {
             removeTrackForDifferentEntity(entity);
-            return nonBroadcastCenter;
+            return new TargetTrackingSample(nonBroadcastCenter, entity.getDeltaMovement(), 0.0D, false);
         }
 
         Vec3 sampleCenter = entity.getBoundingBox().getCenter();
+        Vec3 sampleVelocity = entity.getDeltaMovement();
         int sampleTick = serverEntity.updateTick == null
                 ? minecraft.player.tickCount
                 : serverEntity.updateTick;
         PositionTrack track = TRACKS.get(entity.getId());
         if (track == null || track.entity != entity) {
             // 首次看见该广播克隆时没有上一份样本，直接以当前中心初始化，避免从世界原点飞入。
-            track = new PositionTrack(entity, sampleCenter, sampleTick);
+            track = new PositionTrack(entity, sampleCenter, sampleVelocity, sampleTick);
             TRACKS.put(entity.getId(), track);
         } else if (track.sampleTick != sampleTick
                 || track.targetCenter.distanceToSqr(sampleCenter) > POSITION_EPSILON_SQR) {
             // 调用本项目轨迹插值，先取得旧过渡在新样本时刻的连续位置，再接续到新样本。
             Vec3 continuousStart = track.interpolate(sampleTick);
+            Vec3 continuousVelocity = track.interpolateVelocity(sampleTick);
             int intervalTicks = resolveBroadcastIntervalTicks();
-            track.acceptSample(sampleCenter, sampleTick, continuousStart, intervalTicks);
+            track.acceptSample(sampleCenter, sampleVelocity, sampleTick,
+                    continuousStart, continuousVelocity, intervalTicks);
         }
 
         double renderTick = minecraft.player.tickCount + Mth.clamp(partialTick, 0.0F, 1.0F);
-        return track.interpolate(renderTick);
+        return new TargetTrackingSample(
+                track.interpolate(renderTick),
+                track.interpolateVelocity(renderTick),
+                track.bufferDelayTicks(),
+                true
+        );
     }
 
     /**
@@ -131,7 +160,7 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
         });
     }
 
-    /** 清空全部显示轨迹；不修改本体的广播实体表。 */
+    /** 清空全部目标轨迹；不修改本体的广播实体表。 */
     public static void clear() {
         TRACKS.clear();
         trackedLevel = null;
@@ -167,7 +196,19 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
         return Math.max(1, AllConfigs.server.serverBroadcastEntitiesInterval.get());
     }
 
-    /** 单个广播载具的显示样本过渡状态。 */
+    /**
+     * HUD 与客户端火控共用的目标运动样本。
+     *
+     * @param center           当前时间线上的目标包围盒中心，单位为格
+     * @param velocity         当前时间线上的目标速度，单位为格/Tick
+     * @param bufferDelayTicks 相对服务端最新状态的样本缓冲时长，单位为 Tick
+     * @param broadcastVehicle 是否为本体 {@code serverEntities} 中的广播载具克隆
+     */
+    public record TargetTrackingSample(Vec3 center, Vec3 velocity, double bufferDelayTicks,
+                                       boolean broadcastVehicle) {
+    }
+
+    /** 单个广播载具的目标运动样本过渡状态。 */
     private static final class PositionTrack {
 
         /** 本轨迹绑定的实体对象，用于识别实体 ID 复用。 */
@@ -179,33 +220,64 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
         /** 最近一份广播样本的目标中心。 */
         private Vec3 targetCenter;
 
+        /** 当前过渡的起点速度，单位为格/Tick。 */
+        private Vec3 startVelocity;
+
+        /** 最近一份广播样本的目标速度，单位为格/Tick。 */
+        private Vec3 targetVelocity;
+
         /** 最近一份广播样本到达客户端时的玩家 Tick。 */
         private int sampleTick;
 
         /** 当前过渡使用的时长，单位为 Tick。 */
         private int intervalTicks;
 
-        private PositionTrack(Entity entity, Vec3 initialCenter, int sampleTick) {
+        /** 是否已收到第二份样本并建立固定延迟时间线。 */
+        private boolean buffered;
+
+        private PositionTrack(Entity entity, Vec3 initialCenter, Vec3 initialVelocity, int sampleTick) {
             this.entity = entity;
             this.startCenter = initialCenter;
             this.targetCenter = initialCenter;
+            this.startVelocity = initialVelocity;
+            this.targetVelocity = initialVelocity;
             this.sampleTick = sampleTick;
             this.intervalTicks = 1;
+            this.buffered = false;
         }
 
         /** 接收新广播样本，并从旧过渡的连续位置开始下一段插值。 */
-        private void acceptSample(Vec3 sampleCenter, int sampleTick,
-                                  Vec3 continuousStart, int intervalTicks) {
+        private void acceptSample(Vec3 sampleCenter, Vec3 sampleVelocity, int sampleTick,
+                                  Vec3 continuousStart, Vec3 continuousVelocity, int intervalTicks) {
             this.startCenter = continuousStart;
             this.targetCenter = sampleCenter;
+            this.startVelocity = continuousVelocity;
+            this.targetVelocity = sampleVelocity;
             this.sampleTick = sampleTick;
             this.intervalTicks = intervalTicks;
+            this.buffered = true;
         }
 
         /** 计算指定客户端 Tick（可含帧小数）对应的线性插值中心。 */
         private Vec3 interpolate(double renderTick) {
-            double progress = Mth.clamp((renderTick - sampleTick) / intervalTicks, 0.0, 1.0);
+            double progress = interpolationProgress(renderTick);
             return startCenter.lerp(targetCenter, progress);
+        }
+
+        /** 计算指定客户端 Tick 对应的连续目标速度。 */
+        private Vec3 interpolateVelocity(double renderTick) {
+            double progress = interpolationProgress(renderTick);
+            return startVelocity.lerp(targetVelocity, progress);
+        }
+
+        /** 计算当前广播过渡的归一化进度。 */
+        private double interpolationProgress(double renderTick) {
+            return Mth.clamp((renderTick - sampleTick) / intervalTicks, 0.0, 1.0);
+        }
+
+        /** 返回当前相对服务端样本的固定缓冲时长。 */
+        private double bufferDelayTicks() {
+            return buffered ? intervalTicks : 0.0D;
         }
     }
 }

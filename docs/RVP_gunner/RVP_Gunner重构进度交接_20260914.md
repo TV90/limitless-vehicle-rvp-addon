@@ -1,8 +1,8 @@
 # RVP Gunner 行为组合重构进度交接
 
-> 最后更新：2026-09-19
+> 最后更新：2026-09-26
 >
-> 当前状态：阶段 A、B、C 已完成；阶段 D～G 尚未实施
+> 当前状态：阶段 A、B、C、D 已完成；阶段 E～G 尚未实施
 >
 > 实施范围：仅 `limitless-vehicle-rvp-addon` 的 Java 源码、测试与文档
 >
@@ -12,10 +12,13 @@
 
 ## 1. 当前结论
 
-阶段 C“引入 Context、Intent 与固定计划管理器”已经完成，并已切换为服务端权威运行入口：
+阶段 D“按风险从低到高抽取内建行为”已经完成，服务端权威入口现由不可变固定行为计划驱动：
 
 - `GunnerEntity.tick()` 不再直接调用 `GunnerBrain.tick()`，而是进入 `RVP_GunnerBehaviorManager.INSTANCE.tick(...)`。
-- `GunnerBrain` 仍保留阶段 A 冻结的索敌、地面/发射架/固定翼/旋翼、Smoke、SEAD 和交战算法，但现在只作为固定计划规划器提交意图，不再直接执行移动、开火、雷达、制导、反制或补给写操作。
+- `GunnerBrain` 已缩减为发射架能力、司机座位、武器站解析和诊断用武器选择的兼容查询入口，不再包含索敌、支持或战术总编排。
+- `RVP_BuiltinGunnerBehaviors` 以 18 个固定行为实例承接普通/CIWS 索敌、补给、雷达、制导、交战、地面/发射架/固定翼/旋翼移动、Smoke、反制、ECM 与 SEAD。
+- `RVP_GunnerBehaviorPlan` 保持声明顺序、拒绝重复实例 ID，并按 TARGET、SUPPORT、TACTICS 固定阶段筛选当前能力适用的行为。
+- `RVP_IGunnerBehavior` 明确 `onEnter`、`plan`、`onExit` 生命周期；管理器按能力变化、换车、换 Profile 和资源重载进入或退出行为实例。
 - 管理器每 tick 构建只读 `RVP_GunnerBehaviorContext`，按 TARGET、支持、移动、战斗、清理阶段执行固定计划。
 - TARGET、MOVEMENT、FIRE、RADAR_LOCK、COUNTERMEASURE、ECM、GUIDANCE_MAINTAIN、SUPPLY 和 SYNC 已形成显式意图通道。
 - MOVEMENT 与 FIRE 按“优先级 → 固定计划顺序 → 行为实例 ID”确定唯一胜者；不依赖 `HashMap` 遍历顺序。
@@ -25,7 +28,9 @@
 - Profile ID、Profile 资源代次或所乘载具变化时，旧计划会先退出并清理；离座路径也显式调用管理器退出入口。
 - Profile 仍是现有平铺 schema，没有加入 `behaviors` 字段，也没有旧版 JSON 兼容/迁移分支。
 
-阶段 C 没有提前实施阶段 D 的可注册内建行为。当前 `fixed_targeting`、`driver_supply`、`weapon_engagement`、`sead_revenge` 等名称只是固定计划中的稳定行为实例 ID；它们尚不能由 JSON 增删或重排。
+阶段 D 仍保持现有平铺 Profile schema；内建行为已是独立实例，但尚不能由 JSON 增删或重排，注册表与 Profile 编译器属于阶段 F。
+
+原 `RVP_GunnerVehicleTickService` 中独立执行的自动 Flare/Chaff 路径已删除，现由 `rvp_countermeasure` 行为提交 `COUNTERMEASURE` 意图，避免载具服务与行为计划双执行。该行为的节流状态存放在行为 Runtime 中，只有动作层返回 `DISPATCHED` 才推进上次释放时间。
 
 ---
 
@@ -90,6 +95,8 @@ src/main/java/org/ywzj/rvp/entity/gunner/behavior/
 `RVP_GunnerBehaviorRuntime` 由每个 `GunnerEntity` 持有：
 
 - `Map<String, Object>` 按行为实例 ID 隔离后续强类型状态；
+- 记录当前实际适用的行为实例 ID，支持能力变化时精确调用 `onEnter`/`onExit`；
+- 地面接敌/巡逻/脱困、发射架定位、固定翼/旋翼阶段、Smoke、武器反制、RVP 反制和 SEAD 临时状态均归属对应行为实例；
 - 使用载具/WeaponUnit 弱引用支持离座和 Profile 切换清理，避免长期强持有实体；
 - 记录 Profile ID 与 Profile generation；
 - 保存最近一帧 `RVP_GunnerBehaviorDebugSnapshot`。
@@ -107,22 +114,21 @@ KERNEL_PREPARE
   -> tickCooldowns
 
 TARGET
-  -> GunnerBrain.planTarget
+  -> ciws_targeting / primary_targeting
   -> 仲裁 TARGET
-  -> commitTarget（组网跟踪记账 + trackedTarget 同步）
+  -> RVP_GunnerTargetActions.commit（组网跟踪记账 + trackedTarget 同步）
   -> context.withTarget
 
 EXECUTE_SUPPORT
-  -> driver supply / supply cleanup
-  -> 本体式反制、Smoke
-  -> active ECM
-  -> 本车雷达、外置雷达
-  -> GPS / designation / HITL maintain
+  -> driver_supply
+  -> weapon_countermeasure / rvp_countermeasure / active_ecm / smoke_evasion
+  -> ownship_radar / external_radar / guided_weapon_support
 
 PLAN
-  -> SEAD 优先规划
-  -> 未被 SEAD 接管时规划普通驾驶
-  -> 满足门控时提交普通/CIWS FireIntent
+  -> sead_revenge 提交最高优先级多通道意图
+  -> smoke_evasion / stuck_recovery 提交生存移动候选
+  -> fixed_wing / rotary_wing / launcher / ground 行为提交普通移动候选
+  -> weapon_engagement 提交普通/CIWS FireIntent
 
 EXECUTE_MOVEMENT
   -> 仲裁并应用一个 MovementIntent
@@ -153,7 +159,7 @@ Smoke 仍在移动规划前执行：只有 Smoke 动作返回 `DISPATCHED` 才�
 - 以空目标清理当前 WeaponUnit 的全部本车 RadarUnit 锁和 root WeaponUnit 锁；
 - 清除外置雷达 requested/locked 状态、关联中继锁和搜索接触；
 - 按 Gunner UUID 清除 GPS 目标与 SACLOS/designation 会话；
-- 清空 tracked target、controlled weapon 和实体上的驾驶/SEAD 临时状态；
+- 清空 tracked target、controlled weapon、司机补给标记和全部行为 Runtime 状态；
 - 删除全部行为实例状态与调试快照。
 
 `GPSTargetManager` 为此增加了实体所有者版本的 `clear(Entity)`，没有修改玩家原有 `clear(ServerPlayer)` 语义。
@@ -164,21 +170,27 @@ Smoke 仍在移动规划前执行：只有 Smoke 动作返回 `DISPATCHED` 才�
 
 ### 5.1 自动测试
 
-`RVP_GunnerBehaviorBaselineTest` 已从阶段 B 的直接 Brain 编排断言更新为阶段 C 固定计划断言，当前共 11 项：原有战术/动作/Profile/组网基线 10 项，加阶段 C Context、Intent、仲裁、管理器、Runtime 和退出清理结构断言 1 项。
+`RVP_GunnerBehaviorBaselineTest` 已更新为阶段 D 固定行为计划断言，当前共 11 项，覆盖战术/动作/Profile/组网基线，以及行为接口、固定计划、生命周期、Runtime 和旧权威路径删除。
 
 新增 `RVP_GunnerIntentArbiterTest` 2 项：
 
 - 两个 MovementIntent 与两个 FireIntent 竞争时，记录型 fake executor 每通道只收到一个胜者；SEAD 高优先级胜出；
 - 同优先级时按固定计划顺序，再按行为实例 ID 确定胜者，不依赖输入 Map 顺序。
 
+新增 `RVP_GunnerBehaviorPlanTest` 2 项：
+
+- 保持声明顺序并按阶段/能力筛选行为；
+- 重复行为实例 ID 在计划构造时立即拒绝。
+
 定向测试：
 
 ```powershell
 ./gradlew test --tests org.ywzj.rvp.entity.gunner.ai.RVP_GunnerBehaviorBaselineTest `
-  --tests org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerIntentArbiterTest
+  --tests org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerIntentArbiterTest `
+  --tests org.ywzj.rvp.entity.gunner.behavior.config.RVP_GunnerBehaviorPlanTest
 ```
 
-结果：使用 `--rerun-tasks` 强制重跑后 `BUILD SUCCESSFUL in 38s`，7 个 task 全部 executed。
+结果：使用 `--rerun-tasks` 强制重跑后 `BUILD SUCCESSFUL in 36s`，7 个 task 全部 executed；共执行上述 15 项 Gunner 测试。
 
 ### 5.2 完整构建
 
@@ -190,48 +202,42 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
 ./gradlew build
 ```
 
-结果：最终复验 `BUILD SUCCESSFUL in 19s`，17 个 task（12 executed，5 up-to-date）。此前首次完整重编译亦已通过。
+结果：最终复验 `BUILD SUCCESSFUL in 43s`，17 个 task（14 executed，3 up-to-date）。
 
 ### 5.3 服务端冒烟
 
 按 10 秒周期轮询 `run/server/logs/latest.log`，出现：
 
 ```text
-[00:52:38] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.198s)! For help, type "help"
+[04:27:31] [Server thread/INFO] [minecraft/DedicatedServer]: Done (3.280s)! For help, type "help"
 ```
 
 结论：服务端冒烟通过，确认 `Done` 后已结束测试进程。
 
-本次 ERROR 与既有噪音基线一致：本体 Bedrock 模型缺失 8 条、`abramsx.structure - 副本.json` 非法路径 4 条、`rvp_bomber:ac130u` 配方解析 1 条、`rvp_bomber:tu160` 载具数据 1 条。未发现 Context、Intent、管理器或退出清理相关新增错误。
+本次 ERROR 与既有噪音基线一致：本体 Bedrock 模型缺失 8 条、`abramsx.structure - 副本.json` 非法路径 4 条、`rvp_bomber:ac130u` 配方解析 1 条、`rvp_bomber:tu160` 载具数据 1 条。未发现 BehaviorPlan、内建行为、Context、Intent、管理器或退出清理相关新增错误。
 
 ---
 
-## 6. 阶段 C 边界与已知限制
+## 6. 阶段 D 边界与已知限制
 
-- 当前仍是代码内固定计划，不读取 Profile `behaviors`；这是阶段 C 的刻意边界。
-- `GunnerBrain` 仍包含战术算法与大部分旧运行时字段；阶段 D 应按风险顺序抽取行为，不要继续向 Brain 增加新的直接战术分支。
+- 当前仍是代码内固定计划，不读取 Profile `behaviors`；注册表、强类型行为配置和 JSON 计划编译属于阶段 F。
+- burst、导弹发射冷却和 CIWS 目标冷却仍是武器动作事务状态，由 `GunnerEntity` 承载；地面机动、空战、Smoke、反制和 SEAD 等行为状态已迁入按实例 ID 隔离的 Runtime。
 - ObservationService 尚未实施；索敌、Smoke、ECM、SEAD 扫描仍按原周期和原入口运行。扫描合并属于阶段 E。
-- Runtime 容器已支持按实例 ID 放置强类型状态，但现有状态尚未从 `GunnerEntity` 迁移；迁移应随阶段 D 的单个行为逐项完成。
 - 本体 `WeaponUnit.shoot` 与 RVP 干扰物 `fire` 仍不返回“实际生成”布尔值，故 `DISPATCHED` 不能解释为确认发射或命中。
-- 当前 Aim 始终封装在 FireIntent 对应的武器动作事务内，没有开放可独立竞争的 AimIntent；抽取行为时必须继续保持同一 `transactionId`，不能把 aim 与 shoot 拆成不同胜者。
-- DebugSnapshot 已可从 `gunner.getBehaviorRuntime().debugSnapshot()` 读取，但尚未新增命令/HUD 展示入口；阶段 D 可接入现有 `rvpdebug`，不应让调试展示反向成为决策源。
+- 当前 Aim 始终封装在 FireIntent 对应的武器动作事务内，没有开放可独立竞争的 AimIntent；后续不得把 aim 与 shoot 拆成不同胜者。
+- DebugSnapshot 已可从 `gunner.getBehaviorRuntime().debugSnapshot()` 读取，但尚未新增命令/HUD 展示入口。
 
 ---
 
-## 7. 阶段 D 接手建议
+## 7. 阶段 E 接手建议
 
-按实施方案的低风险到高风险顺序迁移，每迁移一个行为就删除 Brain 中对应的固定计划分支，禁止新旧双执行：
+下一步只实施共享观察与性能回归，不改变阶段 D 行为结果：
 
-1. `driver_supply`、`active_ecm`；
-2. `primary_targeting`、`ciws_targeting`；
-3. `ownship_radar`、`external_radar`、`guided_weapon_support`；
-4. `weapon_engagement`；
-5. 地面巡逻、脱困、接敌移动；
-6. 发射架定位；
-7. 固定翼与旋翼飞行；
-8. Smoke 与其他反制；
-9. 最后迁移多通道 `sead_revenge`。
+1. 合并普通目标、CIWS、Smoke、ECM 与 SEAD 的重复实体扫描；
+2. 缓存 Team/Faction、目标载具归一化与 AGL；
+3. 为雷达锁来源和在途制导弹药建立共享查询；
+4. 对 1/8/16/32 Gunner 场景记录 MSPT 和扫描统计。
 
-接手时应直接复用 `RVP_GunnerBehaviorContext`、现有 Intent 通道、`RVP_GunnerIntentArbiter`、`RVP_IGunnerIntentExecutor` fake 边界、`RVP_GunnerBehaviorRuntime` 和 `RVP_GunnerActionGateway`，不要创建第二套动作入口。
+接手时应直接复用 Context、BehaviorPlan、现有 Intent 通道、Runtime 和动作网关；ObservationService 只提供只读快照，不得成为第二套决策或写操作入口。
 
-阶段 D 仍不需要修改 `ywzj_vehicle`、新增 Mixin、按武器/载具 ID 特判或改动载具结构模型。
+阶段 E 仍不需要修改 `ywzj_vehicle`、新增 Mixin、按武器/载具 ID 特判或改动载具结构模型。

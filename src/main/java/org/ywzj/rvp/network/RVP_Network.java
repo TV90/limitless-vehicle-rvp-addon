@@ -20,7 +20,7 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 16 新增 C2SSetRepairOrder：辅助设备面板上行"爆反/辅助设备维修顺序"（旧客户端无法连新服）。 */
+    /** 协议 16：新增 SACLOS STABLE 模式 PIP 辅助请求 + C2SSetRepairOrder（辅助设备面板维修顺序上行）；旧客户端无法连新服。 */
     private static final String PROTOCOL = "16";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder

@@ -3,7 +3,6 @@ package org.ywzj.rvp.entity.gunner.behavior.runtime;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
-import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerDebugMonitor;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
@@ -14,6 +13,9 @@ import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorContext;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorIntent;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorRuntime;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerIntentSink;
+import org.ywzj.rvp.entity.gunner.behavior.api.RVP_IGunnerBehavior;
+import org.ywzj.rvp.entity.gunner.behavior.builtin.RVP_BuiltinGunnerBehaviors;
+import org.ywzj.rvp.entity.gunner.behavior.config.RVP_GunnerBehaviorPlan;
 import org.ywzj.rvp.entity.gunner.behavior.debug.RVP_GunnerBehaviorDebugSnapshot;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -22,31 +24,41 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Gunner 阶段 C 固定计划管理器。
+ * Gunner 阶段 D 固定行为计划管理器。
  *
- * <p>本阶段仍复用 {@link GunnerBrain} 的既有战术算法，但算法只能提交意图；本管理器按固定阶段
- * 仲裁并通过阶段 B 动作层执行。Profile 仍使用平铺 schema，不在此处提前引入行为列表。</p>
+ * <p>管理器只负责固定阶段、行为生命周期、意图仲裁和动作提交；战术业务均由内建行为提供。
+ * Profile 仍使用平铺 schema，阶段 F 才接入 JSON 行为组合。</p>
  */
 public final class RVP_GunnerBehaviorManager {
 
     /** 全局固定计划管理器。 */
     public static final RVP_GunnerBehaviorManager INSTANCE = new RVP_GunnerBehaviorManager(
-            new RVP_GunnerActionIntentExecutor(RVP_GunnerActionGateway.INSTANCE));
+            new RVP_GunnerActionIntentExecutor(RVP_GunnerActionGateway.INSTANCE),
+            RVP_BuiltinGunnerBehaviors.fixedPlan());
 
     /** 确定性意图仲裁器。 */
     private final RVP_GunnerIntentArbiter arbiter = new RVP_GunnerIntentArbiter();
     /** 已仲裁意图执行器。 */
     private final RVP_IGunnerIntentExecutor executor;
+    /** 当前不可变固定行为计划。 */
+    private final RVP_GunnerBehaviorPlan plan;
 
     RVP_GunnerBehaviorManager(RVP_IGunnerIntentExecutor executor) {
-        this.executor = executor;
+        this(executor, RVP_BuiltinGunnerBehaviors.fixedPlan());
     }
 
-    /** 运行 KERNEL_PREPARE 到 KERNEL_CLEANUP 的阶段 C 固定计划。 */
+    RVP_GunnerBehaviorManager(RVP_IGunnerIntentExecutor executor, RVP_GunnerBehaviorPlan plan) {
+        this.executor = executor;
+        this.plan = plan;
+    }
+
+    /** 运行 KERNEL_PREPARE 到 KERNEL_CLEANUP 的阶段 D 固定行为计划。 */
     public void tick(GunnerEntity gunner, AbstractVehicle vehicle) {
         GunnerProfileManager profiles = GunnerProfileManager.INSTANCE;
         String profileId = profiles.normalizeProfileId(gunner.getProfileId()).toString();
@@ -56,23 +68,25 @@ public final class RVP_GunnerBehaviorManager {
         RVP_GunnerBehaviorRuntime runtime = gunner.getBehaviorRuntime();
         if (runtime.requiresExit(context)) {
             // Profile/资源代次/载具变化时先释放旧计划的锁、制导与补给租约。
+            exitBehaviors(gunner, runtime);
             cleanup(gunner, runtime.previousVehicle(), runtime.previousWeaponUnit());
             runtime.clear();
         }
         runtime.bind(context);
+        synchronizeBehaviors(context, runtime);
 
         // KERNEL_PREPARE：统一推进公共冷却，行为不得各自重复推进。
         gunner.tickCooldowns();
         TickSession session = new TickSession(context, arbiter, executor);
 
-        // TARGET：固定计划先提交并确定本 tick 唯一权威目标。
-        GunnerBrain.planTarget(context, session);
+        // TARGET：所有适用索敌行为提交候选，再确定本 tick 唯一权威目标。
+        planStage(RVP_IGunnerBehavior.Stage.TARGET, context, runtime, session);
         session.execute(EnumSet.of(RVP_GunnerBehaviorIntent.Channel.TARGET));
         context = context.withTarget(gunner.getTrackedTarget());
         session.setContext(context);
 
         // EXECUTE_SUPPORT：补给、反制、雷达与在途制导先执行，使 Smoke 等结果可影响同 tick 移动。
-        GunnerBrain.planSupport(context, session);
+        planStage(RVP_IGunnerBehavior.Stage.SUPPORT, context, runtime, session);
         session.execute(EnumSet.of(
                 RVP_GunnerBehaviorIntent.Channel.SUPPLY,
                 RVP_GunnerBehaviorIntent.Channel.COUNTERMEASURE,
@@ -80,8 +94,8 @@ public final class RVP_GunnerBehaviorManager {
                 RVP_GunnerBehaviorIntent.Channel.RADAR_LOCK,
                 RVP_GunnerBehaviorIntent.Channel.GUIDANCE_MAINTAIN));
 
-        // PLAN/EXECUTE_MOVEMENT/EXECUTE_COMBAT：SEAD 与常规战术共用唯一移动和开火通道。
-        GunnerBrain.planTactics(context, session);
+        // PLAN/EXECUTE_MOVEMENT/EXECUTE_COMBAT：独立行为通过优先级竞争唯一移动和开火通道。
+        planStage(RVP_IGunnerBehavior.Stage.TACTICS, context, runtime, session);
         session.ensureDriverStopFallback();
         session.execute(EnumSet.of(
                 RVP_GunnerBehaviorIntent.Channel.COUNTERMEASURE,
@@ -100,8 +114,51 @@ public final class RVP_GunnerBehaviorManager {
     /** Gunner 离座、死亡或实体移除时释放固定计划状态。 */
     public void exit(GunnerEntity gunner) {
         RVP_GunnerBehaviorRuntime runtime = gunner.getBehaviorRuntime();
+        exitBehaviors(gunner, runtime);
         cleanup(gunner, runtime.previousVehicle(), runtime.previousWeaponUnit());
         runtime.clear();
+    }
+
+    /** 调用指定阶段的全部适用行为；行为只可提交意图。 */
+    private void planStage(RVP_IGunnerBehavior.Stage stage, RVP_GunnerBehaviorContext context,
+                           RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
+        for (RVP_IGunnerBehavior behavior : plan.applicable(stage, context)) {
+            behavior.plan(stage, context, runtime, sink);
+        }
+    }
+
+    /** 根据硬能力变化调用行为 enter/exit，并更新运行时活动实例集合。 */
+    private void synchronizeBehaviors(RVP_GunnerBehaviorContext context, RVP_GunnerBehaviorRuntime runtime) {
+        Set<String> previous = runtime.activeBehaviorIds();
+        Set<String> current = new LinkedHashSet<>();
+        for (RVP_IGunnerBehavior behavior : plan.behaviors()) {
+            if (behavior.isApplicable(context)) {
+                current.add(behavior.id());
+                if (!previous.contains(behavior.id())) {
+                    behavior.onEnter(context, runtime);
+                }
+            }
+        }
+        for (String behaviorId : previous) {
+            if (!current.contains(behaviorId)) {
+                RVP_IGunnerBehavior behavior = plan.behavior(behaviorId);
+                if (behavior != null) {
+                    behavior.onExit(context.gunner(), runtime);
+                }
+            }
+        }
+        runtime.setActiveBehaviorIds(current);
+    }
+
+    /** 退出当前计划中所有活动行为，确保实例状态不会跨换车/Profile 泄漏。 */
+    private void exitBehaviors(GunnerEntity gunner, RVP_GunnerBehaviorRuntime runtime) {
+        for (String behaviorId : runtime.activeBehaviorIds()) {
+            RVP_IGunnerBehavior behavior = plan.behavior(behaviorId);
+            if (behavior != null) {
+                behavior.onExit(gunner, runtime);
+            }
+        }
+        runtime.setActiveBehaviorIds(List.of());
     }
 
     /** 通过动作层清理不再续租的雷达、制导、补给与同步状态。 */

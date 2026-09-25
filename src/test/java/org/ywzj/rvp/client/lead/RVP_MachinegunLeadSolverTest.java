@@ -92,4 +92,34 @@ class RVP_MachinegunLeadSolverTest {
         assertEquals(0.1D, velocity.y, 1.0E-9D);
         assertEquals(-1.0D, velocity.z, 1.0E-9D);
     }
+
+    @Test
+    void broadcastBufferDelayIsAddedOnlyToPredictionBase() {
+        Vec3 displayedCenter = new Vec3(100.0D, 80.0D, -25.0D);
+        Vec3 velocity = new Vec3(1.5D, -0.2D, 0.5D);
+
+        Vec3 compensated = RVP_MachinegunLeadSolver.compensateBufferedTargetPosition(
+                displayedCenter,
+                velocity,
+                5.0D
+        );
+
+        assertEquals(107.5D, compensated.x, 1.0E-9D);
+        assertEquals(79.0D, compensated.y, 1.0E-9D);
+        assertEquals(-22.5D, compensated.z, 1.0E-9D);
+        assertEquals(new Vec3(100.0D, 80.0D, -25.0D), displayedCenter);
+    }
+
+    @Test
+    void negativeBroadcastDelayCannotMovePredictionBackwards() {
+        Vec3 center = new Vec3(20.0D, 30.0D, 40.0D);
+
+        Vec3 compensated = RVP_MachinegunLeadSolver.compensateBufferedTargetPosition(
+                center,
+                new Vec3(3.0D, 0.0D, 0.0D),
+                -5.0D
+        );
+
+        assertEquals(center, compensated);
+    }
 }

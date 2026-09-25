@@ -158,7 +158,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | 分支 | 条件 | 本体参考 |
 | --- | --- | --- |
 | 机炮积分 | `rvp:machinegun` | `BulletEntity` |
-| 推力积分 | `has_rocket_engine` 且 mass/thrust/燃烧时间有效 | `MissileEntity#tickMove` |
+| 推力积分 | `has_rocket_engine` 且 mass、motor_burn_time 与推力（`thrust` 或 `thrust_curve`）有效 | `MissileEntity#tickMove` |
 | 简化弹道 | 其余 | gravity + drag（+ 可选 constant_speed） |
 
 #### 字段一览
@@ -180,8 +180,10 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
 | `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
 | `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
-| `mass` | 弹体质量（与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
+| `mass` | 弹体质量（发射总质量，与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
+| `fuel_mass` | 燃料质量（`mass` 的一部分），默认 `0`（禁用变质量）。`> 0` 且 `mass > 0` 时，主燃烧期间弹体质量由 `mass` 线性递减至干质量 `mass - fuel_mass`，使发动机后半程加速度随质量下降而增大（对齐真实火箭燃耗）；第二脉冲按干质量工作。 |
 | `thrust` | 发动机推力（一级推力；配置 `second_pulse` 时即第一段推进）。 |
+| `thrust_curve` | 按点火后 Tick 分段的推力表，类型 `Map<RVP_Range<Integer>, Float>`（key 为 `"[[起,止]]"` Tick 区间、含端点、`inf` 表无穷），默认不配置。配置后曲线为权威：区间内取匹配值、区间外推力为 0；燃烧总窗口仍由 `motor_burn_time` 决定，曲线只塑造窗口内推力形状（助推/续航分级）。 |
 | `motor_burn_time` | 发动机燃烧时间（tick）（一级燃烧时间；配置 `second_pulse` 时即第一段时长）。 |
 | `second_pulse` | 是否启用双脉冲推进（第二段推力）。仅 IR/ARH/SARH/ARM/**GPS** 制导导弹生效（2026-09-15 起 GPS 加入——弹道/准弹道导弹两级推进，如 9M723 一级助推+二级接力；未配置本字段的 GPS 导弹行为不变）。触发评估仅在一级燃尽（`motor_burn_time` 耗尽）后开始。 |
 | `second_pulse_trigger_speed` | 第二段触发：导弹速度 ≤ 阈值时满足（0 表示不按速度触发）。 |
@@ -290,7 +292,7 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 
 #### 火箭发动机与推进回退
 
-**何时启用推力：** `has_rocket_engine: true`，且解析后 `mass > 0`、`thrust > 0`、`motor_burn_time > 0`。否则打日志并退回简化弹道。
+**何时启用推力：** `has_rocket_engine: true`，且解析后 `mass > 0`、`motor_burn_time > 0`，且推力有效（`thrust > 0` 或配置了非空 `thrust_curve`）。否则打日志并退回简化弹道。
 
 **参数写在哪儿：**
 
@@ -300,7 +302,9 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 
 `has_rocket_engine` 为 **false** 时，不跑推力积分；仍可用 `gravity` / `drag` / `constant_speed` 等简化弹道。
 
-**推力有效时的每 tick 近似：** `Δv += lookDir * (thrust/mass)`（燃烧期内）→ 二次阻力 `-drag_coefficient * |v|²` → 重力（默认 `PhysicsEngine.G`，或 `projectile_data.gravity`）。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
+**推力有效时的每 tick 近似：** 先按本 Tick 解析推力与质量——`thrust(tick)` 取 `thrust_curve` 区间值或标量 `thrust`，`mass(tick)` 取变质量线性递减值或标量 `mass`——再 `Δv += lookDir * (thrust(tick)/mass(tick))`（燃烧期内）→ 二次阻力 `-drag_coefficient * |v|²` → 重力（默认 `PhysicsEngine.G`，或 `projectile_data.gravity`）。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
+
+> **单位约定（RVP 游戏单位）**：`thrust / mass` 直接作为每 tick 加速度（格/tick²），不再像本体 `MissileEntity#tickMove` 那样除以 `TICKS_PER_SECOND_SQUARED`（400）。换算统一封装在 `RVP_BallisticTrajectoryMath.thrustAccelerationPerTick`，实体链（`tickMissileMove`/`tickHitlTvMove`）、火箭弹道预测（`RVP_RocketBallistics`）与虚拟中段积分（`integrateForces`）三处共用，避免推进模型漂移。
 
 **加载期归一化：** 顶层或弹体出现 `mass`/`thrust`/`motor_burn_time` 时会自动补 `has_rocket_engine: true`（若未显式配置）。
 
@@ -2105,8 +2109,8 @@ SACLOS 反坦克导弹（半自动修正）：
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 启用RF软火控并要求当前传感器为RF；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
-| `rvp_rf_off_axis_deg` | `rvp_rf` 雷达软火控离轴限制（度）。为保持既有手感，机炮获得有效提前量解时执行器仍按历史规则使用该值的 `0.1` 倍；非机炮使用原值。 | `10.0` |
+| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 要求当前传感器为RF，为RVP机炮启用弹道预瞄，为RVP导弹启用雷达硬锁目标三态跟踪，其他武器保留原软火控；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
+| `rvp_rf_off_axis_deg` | `rvp_rf` 火控离轴限制（度）。机炮获得有效提前量解时按历史规则使用该值的 `0.1` 倍；RVP导弹的 `SEMI_AUTO` 双轴锁存及其他非机炮软修正使用原值。 | `10.0` |
 | `rvp_fire_control_off_axis_deg` | `rvp_ballistic_lead` 通用弹道提前量火控离轴限制（度），仅当前武器为RVP `machinegun` 且IR/EO/RF锁定链有效时生效；执行器按配置原值使用。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
@@ -2123,6 +2127,8 @@ SACLOS 反坦克导弹（半自动修正）：
 ```
 
 该模式不负责搜索目标或自动开火。它只消费本体已经建立并维持的实体锁定，使用当前RVP机炮的初速、重力、阻力和载具速度继承参数计算预瞄点，再由 `STABLE`、`SEMI_AUTO`、`OFF` 三态决定炮塔控制方式。
+
+`rvp_rf` 下当前选中武器为RVP `missile` 时也可切换完整三态：`STABLE` 严格跟随雷达硬锁目标中心；`SEMI_AUTO` 在硬锁目标方向上叠加玩家锁存的局部俯仰/方位偏置；`OFF` 完全手动。只认本车火控雷达或外置雷达的正式硬锁，不认仅写入 `WeaponUnit.lockedEntity` 的TWS/导引头软航迹；无硬锁时不驱动自动视线。当前制导阶段为 `SACLOS` 且已有 `predict_target_pos: true` 时，`STABLE` 还会让服务端以正式硬锁目标生成临时实体意图，复用现有PIP预测拦截；切换到其它模式、丢锁、请求超时或PIP门控不满足时立即回退原SACLOS视线制导。临时意图不写弹体持久 `targetEntity`。该行为不新增JSON字段。
 
 ### 3.2 雷达部件扩展
 

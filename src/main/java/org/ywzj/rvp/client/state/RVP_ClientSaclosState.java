@@ -8,6 +8,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.RVP_Keys;
+import org.ywzj.rvp.client.firecontrol.RVP_RadarMissileTrackHelper;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
@@ -206,15 +207,30 @@ public final class RVP_ClientSaclosState {
             syncTargetingDisabled();
             return;
         }
-        RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(true, laserHudPos));
+        // 调用本项目火控三态与雷达硬锁解析器；只有当前RVP RF导弹处于STABLE且确有
+        // 正式硬锁时才请求服务端PIP，服务端仍会独立复核全部条件。
+        boolean stablePIPAssist = isStablePIPAssistRequested();
+        RVP_Network.CHANNEL.sendToServer(
+                C2SSaclosDesignation.of(true, laserHudPos, stablePIPAssist));
         serverTargetingActive = true;
+    }
+
+    /** 判断客户端当前是否应请求STABLE模式SACLOS PIP辅助。 */
+    private static boolean isStablePIPAssistRequested() {
+        WeaponUnit unit = resolveOperatorWeaponUnit();
+        return unit != null
+                && RVP_FireControlStabilizerState.getMode(unit)
+                == RVP_FireControlStabilizerState.Mode.STABLE
+                && RVP_RadarMissileTrackHelper.isEligible(unit)
+                && RVP_RadarMissileTrackHelper.resolveHardLockedTarget(unit) != null;
     }
 
     private static void syncTargetingDisabled() {
         if (!serverTargetingActive) {
             return;
         }
-        RVP_Network.CHANNEL.sendToServer(C2SSaclosDesignation.of(false, Vec3.ZERO));
+        RVP_Network.CHANNEL.sendToServer(
+                C2SSaclosDesignation.of(false, Vec3.ZERO, false));
         serverTargetingActive = false;
     }
 

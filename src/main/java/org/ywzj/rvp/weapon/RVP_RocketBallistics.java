@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -401,9 +402,20 @@ public final class RVP_RocketBallistics {
                     }
                 }
                 if (burning1 || burning2) {
-                    float mass = Math.max(data.getResolvedMass(), 1.0E-6f);
-                    float thrust = burning1 ? data.getResolvedThrust() : data.getProjectileData().getResolvedSecondPulseThrust();
-                    velocity = velocity.add(lookDir.scale((thrust / mass) * dt));
+                    float mass;
+                    float thrust;
+                    if (burning1) {
+                        // 主燃烧段：按点火后 Tick 解析推力曲线与变质量（A1 变质量 / A2 推力曲线）。
+                        thrust = data.getProjectileData().resolveThrustAt((int) motorTick);
+                        mass = data.getProjectileData().resolveMassAt((int) motorTick, burn1);
+                    } else {
+                        // 第二脉冲：沿用标量推力，质量取主燃烧结束后的干质量。
+                        thrust = data.getProjectileData().getResolvedSecondPulseThrust();
+                        mass = data.getProjectileData().resolveMassAt((int) burn1, burn1);
+                    }
+                    // 调用本项目推力加速度换算，保证单位一致（A3）。
+                    velocity = velocity.add(lookDir.scale(
+                            RVP_BallisticTrajectoryMath.thrustAccelerationPerTick(thrust, mass) * dt));
                 }
                 double speedSqr = velocity.lengthSqr();
                 float dragCoeff = data.getResolvedDragCoefficient();

@@ -239,3 +239,177 @@ v_(n+1) = (1 - friction) × v_n + (0, -gravity, 0)
 - [ ] 按 `6` 切到 `火控模式：稳定` 后持续移动鼠标，不再出现此前的主线程卡顿；
 - [ ] 高速横移、己方高速运动和双方同时运动时，预瞄圈与实际弹着趋势一致；
 - [ ] AHEAD 客户端距离/时间读数正常，切换目标后不显示上一目标的旧解。
+
+## 2026-09-25 半自动相对预瞄微调
+
+### 行为定义
+
+- `STABLE`：继续严格跟随理论预瞄方向，瞄具内鼠标输入不改变炮口目标角。
+- `SEMI_AUTO`：炮口每 Tick 跟随理论预瞄方向，并叠加玩家锁存的武器站局部俯仰/方位角偏置；
+  玩家把准星移动到预瞄点略前、略后、略上或略下后即可松开鼠标，无需继续追随移动目标。
+- `OFF`：继续完全手动，不由弹道提前量火控驱动。
+
+微调偏置使用武器站局部角而非世界坐标点，因此载具转向、俯仰和横滚后仍保持相对预瞄点的
+屏幕方向关系。双轴偏置按圆形包线限制，最大夹角复用当前火控模式已有的离轴角配置；不新增
+JSON 字段。切换目标、当前武器或火控模式会清零偏置，同一目标不超过 8 Tick 的短暂丢解保留
+偏置以抵抗网络抖动。
+
+### 代码落点
+
+| 职责 | 文件 |
+| --- | --- |
+| 微调身份、输入累积、局部角换算与离轴钳制 | `client/state/RVP_SemiAutoLeadTrimState.java` |
+| 复用现有 X/Y 重定向记录真实鼠标增量，并过滤进入瞄具时的自动对齐 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+| 半自动每 Tick 应用“理论预瞄方向＋锁存偏置” | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
+| 模式切换时清除旧偏置 | `client/state/RVP_FireControlStabilizerState.java` |
+| 局部角跟随与圆形离轴包线自动化测试 | `src/test/java/org/ywzj/rvp/client/state/RVP_SemiAutoLeadTrimStateTest.java` |
+
+本次复用已有 Mixin 类及注入点，不新增 Mixin，不修改 `ywzj_vehicle` 本体、载具包资源、JSON
+schema 或网络协议。
+
+### 自动验证结果
+
+- 定向测试：`RVP_SemiAutoLeadTrimStateTest` 与 `RVP_BallisticLeadFireControlPolicyTest` 通过；
+- 项目根目录执行规定的 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟：日志出现 `Done (2.276s)!`；
+- 日志仅出现既有 Create/TACZ 缺类、配方与 `rvp_bomber:tu160` 数据噪音，未发现本次新增
+  类加载、Mixin 或服务端错误；结束后 `BootstrapLauncher` 无残留，端口 `25565` 已释放。
+
+### 客户端实机回归清单
+
+- [ ] MI-28 / AH-64 半自动模式：向理论预瞄圈前、后、上、下微调后松开鼠标，偏置持续跟随目标；
+- [ ] 目标加减速、转弯以及本机转向/横滚时，微调方向不固定在世界轴上且不反转；
+- [ ] 双轴微调达到离轴边界时平滑饱和，反向移动鼠标能立即退出边界；
+- [ ] 切换目标、武器或火控模式后旧偏置清零；短暂丢解恢复后同目标偏置不跳变；
+- [ ] `STABLE` 仍严格跟预瞄圈且屏蔽鼠标，`OFF` 仍完全手动；
+- [ ] 非机炮、非导弹的 `rvp_rf` 软修正手感不变。
+
+## 2026-09-25 `rvp_rf` 导弹完整三态与硬锁跟踪
+
+### 行为定义
+
+- 所有当前有效传感器为RF、且根武器站配置 `rvp_fire_control_mode: rvp_rf`
+  的RVP导弹获得 `STABLE / SEMI_AUTO / OFF` 完整三态，不新增JSON字段。
+- `STABLE`：视线严格跟随本车或外置雷达硬锁目标中心，屏蔽瞄具鼠标改角。
+- `SEMI_AUTO`：以硬锁目标方向为移动基准，叠加玩家锁存的武器站局部俯仰/方位
+  偏置；双轴圆形包线复用 `rvp_rf_off_axis_deg` 原值。
+- `OFF`：不由RVP火控驱动视线，恢复玩家完全手动控制。
+- 仅本车 `RadarUnit` 硬锁与外置雷达正式锁定有效；仅存在于
+  `WeaponUnit.lockedEntity` 的TWS/导引头软航迹不会启动自动视线。
+- LBR与非稳定模式SACLOS仍只消费操作手视线。SACLOS在 `STABLE` 下若当前阶段配置
+  `predict_target_pos: true`，则由服务端复核正式雷达硬锁后生成当Tick临时实体意图，复用
+  现有PIP预测拦截；不向弹体持久 `targetEntity` 注入雷达目标。
+
+### 代码落点
+
+| 职责 | 文件 |
+| --- | --- |
+| `rvp_rf` RVP导弹资格与完整三态策略 | `client/firecontrol/RVP_BallisticLeadFireControlPolicy.java`、`client/state/RVP_FireControlStabilizerState.java` |
+| 本车/外置雷达硬锁目标解析 | `client/firecontrol/RVP_RadarMissileTrackHelper.java` |
+| 基准类型隔离、双轴输入锁存与局部角应用 | `client/state/RVP_SemiAutoLeadTrimState.java` |
+| 三态执行与瞄准视线转动 | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
+| 复用现有鼠标 X/Y 重定向记录导弹微调/在稳定态屏蔽输入 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+| STABLE请求同步、服务端新鲜度与硬锁复核 | `network/C2SSaclosDesignation.java`、`guidance/saclos/RVP_SaclosOperatorSession.java`、`guidance/saclos/RVP_SACLOSStablePIPAssist.java` |
+| SACLOS临时实体意图与现有PIP转向复用 | `guidance/runtime/RVP_RuntimeSaclosGuidanceSource.java`、`guidance/RVP_GuidanceRuntimeMath.java` |
+
+本次仅扩展现有 Mixin 转发后的业务逻辑，不新增 Mixin 类或注入点，不修改
+`ywzj_vehicle` 本体或载具包JSON。SACLOS STABLE PIP同步使网络协议由15升至16。
+
+定向资格测试与完整 `./gradlew build` 已通过；开发服务端冒烟达到
+`Done (2.321s)!`，对照历史基线无新增错误，服务端进程与25565端口已清理。
+
+### 实机回归清单
+
+- [ ] PS1SM 选择 TKB-1055 / 95Ya6M：雷达硬锁后 `SEMI_AUTO` 视线跟随目标，微调后松鼠标仍保持偏置。
+- [ ] PS1SM 在途 SACLOS 导弹：`STABLE` 下导弹走PIP预测拦截；切到 `SEMI_AUTO/OFF`、丢失硬锁或切换武器后立即回到原视线制导。
+- [ ] `STABLE` 下PIP只影响TKB-1055/95Ya6M等当前阶段为SACLOS且配置 `predict_target_pos: true` 的导弹；LBR、SALH与ARH路径不变。
+- [ ] PS1SM Hermes 1A：观瞄/发射架跟随硬锁目标，ARH导引目标链不变。
+- [ ] 仅有TWS软航迹时三态不驱动视线；建立硬锁后才开始跟踪。
+- [ ] 切换目标、导弹/机炮或火控模式后不继承上一份双轴偏置。
+- [ ] Buk-M3、CSSA-5、IRIS-T SLM TEL 在 `rvp_rf` 导弹下也具有相同三态，其他非导弹武器保留旧软修正。
+
+## 2026-09-25 超过 512 格的广播目标火控插值
+
+### 根因
+
+本体对超视距载具默认每 5 Tick 通过 `ServerBroadcastEntities` 更新一次。收包后克隆实体的
+`xo/yo/zo` 和当前坐标会同时被写成新样本，载具 `remoteTick()` 也不推进位置。因此：
+
+- HUD 已经通过 `RVP_ClientBroadcastVehicleInterpolator` 跨包插值，锁定框能连续移动；
+- `rvp_rf` 导弹的稳定/半自动火控仍直接读取克隆实体的离散 AABB 中心；
+- 机炮提前量解算仍尝试用 `xo -> x` 做单 Tick 插值，且速度历史以不推进的
+  广播克隆 `entity.tickCount` 为时间轴。
+
+所以 PS1SM 在目标超过近距实体跟踪范围后，2A38、TKB-1055、95Ya6M 与 Hermes 1A 的
+`STABLE / SEMI_AUTO` 基准方向都会按广播周期跳变。
+
+### 实施方案
+
+1. 将 `RVP_ClientBroadcastVehicleInterpolator` 扩展为 HUD/火控共享的目标运动轨迹，同时插值
+   包围盒中心和广播包速度；
+2. `RVP_BallisticLeadFireControlExecutor` 的 RF 导弹 `STABLE / SEMI_AUTO` 统一使用该轨迹中心；
+3. `RVP_MachinegunLeadSolver` 对广播载具使用该轨迹中心和速度，不再读取克隆实体
+   `tickCount` 历史；
+4. 由于样本缓冲会让可视目标中心落后一个广播周期，机炮只在弹道预测起点上补回
+   `velocity × bufferTicks`；`RVP_LeadSolution.targetWorldPos` 仍保留插值中心，保证虚线端点与锁定框对齐；
+5. 客户端采样放在独立 `RVP_ClientMachinegunLeadResolver` 中，服务端 AHEAD 引信继续调用不依赖
+   客户端广播缓存的普通实体求解入口。
+
+普通近距实体继续使用原有单 Tick 插值与位置历史；不修改本体实体、雷达锁定、服务端
+SACLOS PIP 或导弹权威制导。本次没有新增 Mixin、没有修改载具包 JSON/资源，也没有硬编码载具或武器 ID。
+
+### 自动验证
+
+- `RVP_MachinegunLeadSolverTest`、`RVP_BallisticLeadFireControlPolicyTest` 与
+  `RVP_SemiAutoLeadTrimStateTest` 定向测试通过；
+- 项目根目录按规定 JDK 17 执行 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟达到 `Done (2.844s)!`；日志仅出现既有 Create/TACZ
+  缺类、8 个缺失模型、AbramsX 非法路径、`rvp_bomber:ac130u` 配方和
+  `rvp_bomber:tu160` 数据错误，无新增异常；
+- 冒烟结束后 `jps -l` 无 Gradle/服务端 JVM 残留，25565 端口已释放。
+
+### 实机回归
+
+- [ ] PS1SM 对 512 格外匀速横向载具硬锁：锁定框、观瞄和发射架连续移动；
+- [ ] 2A38 在 `STABLE / SEMI_AUTO` 下的提前量圈不按 5 Tick 跳变，弹着不因显示缓冲固定落后；
+- [ ] TKB-1055 / 95Ya6M / Hermes 1A 在两种火控模式下平滑跟踪，微调偏置不被每包重置；
+- [ ] 目标急停、急转时只体现样本缓冲延迟，不产生外推过冲；
+- [ ] 目标进入 512 格内并切换回正常 `ClientLevel` 实体后，不沿用广播克隆的旧轨迹。
+
+### 2026-09-25 硬锁跨 512 格边界连续性补充
+
+实机发现同一目标由近到远越过 512 格时会丢失硬锁，而由远到近通常不丢锁。根因不是雷达
+量程或 RCS，而是同一实体 ID 在 `ClientLevel` 实体与 `serverEntities` 广播克隆之间切换时，
+本体 `RadarUnit` / `WeaponUnit` 先按 Java 对象引用检查目标、后按 ID 迁移引用。近到远时本地
+实体先失活，RVP 又曾在近距扫描时删除同 ID 广播克隆，导致 PS1SM 火控雷达最长 20 Tick 的
+扫描节流窗口内没有接管对象；远到近时旧广播克隆仍保持存活，因而存在重叠窗口。
+
+按方案 A 在 `RVP_ClientRadarTickHandler` 内实施，无新增 Mixin：
+
+1. 仅为当前 `RadarUnit` 硬锁目标保留同 ID 广播克隆，普通目标仍沿用既有近距鬼影清理；
+2. 每 Tick 在接触死亡清理前解析规范对象，优先存活的 `ClientLevel` 实体，其次为不超过两个
+   广播周期的克隆；
+3. 表示切换时同步迁移 `DetectedObject.entity`、`RadarUnit.lockedEntity` 和同 ID 的
+   `WeaponUnit.lockedEntity`；
+4. 接触保持统一校验本地对象身份或广播样本新鲜度，服务端停止广播后不会因克隆
+   `isAlive()` 恒真而留下车辆/弹体鬼影；
+5. 没有同 ID 有效替代对象时不迁移锁，因此手动解锁、箔条脱锁、真实销毁和出雷达范围
+   仍按原逻辑处理。
+
+自动验证（2026-09-26）：
+
+- `RVP_ClientRadarTickHandlerTest` 覆盖近距实体优先、近到远接管、无替代对象不迁移及两个
+  广播周期的新鲜度边界；连同 `RVP_RadarRoleHelperTest`、`RVP_MachinegunLeadSolverTest`
+  定向执行通过；
+- 项目根目录按规定 JDK 17 执行 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟达到 `Done (2.849s)!`；日志仅出现既有 Create/TACZ
+  缺类、8 个缺失模型、AbramsX 非法路径、`rvp_bomber:ac130u` 配方和
+  `rvp_bomber:tu160` 数据错误，无新增异常；
+- 冒烟结束后无服务端 JVM 残留，25565 端口已释放。
+
+待实机验证：
+
+- [ ] F-14 从 500 格内飞到 520 格外，PS1SM 火控雷达硬锁与 WeaponUnit 目标均不断开；
+- [ ] F-14 从 520 格外飞到 500 格内，锁定引用切回本地实体且无重复提示；
+- [ ] 边界附近反复往返不产生双目标、静止鬼影或重复锁定网络风暴；
+- [ ] 手动解锁、箔条干扰和销毁远距目标不会被边界接管逻辑重新锁定。

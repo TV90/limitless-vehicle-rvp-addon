@@ -1,14 +1,18 @@
 package org.ywzj.rvp.client.firecontrol;
 
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_AimAssistState;
+import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
+import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
 import org.ywzj.rvp.debug.RVP_LeadFcDebug;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
+import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -56,32 +60,56 @@ public final class RVP_BallisticLeadFireControlExecutor {
         WeaponUnitData data = weaponUnit.getData();
         if (!(data instanceof WeaponUnitDataExt ext)) {
             clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
             return false;
         }
 
         // 调用本项目机炮解析器，确认当前实际选中的武器是否能进行RVP弹道提前量解算。
         boolean machinegunLeadMode = RVP_MachinegunLeadSolver.isCurrentRvpMachinegun(weaponUnit);
-        // 调用本体武器站接口，取得当前子武器委托后的传感器类型以匹配本体锁定链。
-        WeaponUnitData.FireControlSensorType sensorType = weaponUnit.getFireControlSensorType();
+        // 调用本项目RF导弹跟踪辅助器，确认当前导弹是否应使用完整火控三态。
+        boolean radarMissileTrackMode = RVP_RadarMissileTrackHelper.isEligible(weaponUnit);
+        // 调用本项目传感器解析器，兼容武器级覆盖并与三态资格使用同一口径。
+        WeaponUnitData.FireControlSensorType sensorType = RVP_WeaponSensorHelper.effectiveSensorType(weaponUnit);
         RVP_BallisticLeadFireControlPolicy.Profile profile = RVP_BallisticLeadFireControlPolicy.resolve(
                 ext.ywzj_rvp$getFireControlMode(),
                 sensorType,
                 machinegunLeadMode
         );
-        // [RVP] 诊断（/rvpdebug flags lead_fc on）：输出执行器四输入与解析档位，
+        // [RVP] 诊断（/rvpdebug flags lead_fc on）：输出执行器模式、传感器、武器分支与解析档位，
         // 定位"炮塔跟踪目标本体而非预瞄圈"时哪个输入与预期不符。
         RVP_LeadFcDebug.logExecutorInput(weaponUnit, ext.ywzj_rvp$getFireControlMode(), sensorType,
-                machinegunLeadMode, profile, RVP_FireControlStabilizerState.getMode(weaponUnit));
+                machinegunLeadMode, radarMissileTrackMode, profile,
+                RVP_FireControlStabilizerState.getMode(weaponUnit));
         if (profile == RVP_BallisticLeadFireControlPolicy.Profile.NONE) {
             RVP_LeadFcDebug.logDecision(weaponUnit, "NONE_回退本体瞄准目标中心", false, null, null, trackedTargetWorldPos);
             clearAimAssist(weaponUnit);
+            RVP_SemiAutoLeadTrimState.clear(weaponUnit);
             return false;
         }
 
         try {
             float offAxisDeg = resolveOffAxisDeg(profile, ext);
-            if (offAxisDeg <= 0.0F) {
+            // 调用本项目硬锁解析器，只允许本车/外置雷达正式锁定驱动导弹视线。
+            Entity radarLockedTarget = radarMissileTrackMode
+                    ? RVP_RadarMissileTrackHelper.resolveHardLockedTarget(weaponUnit)
+                    : null;
+            if (radarMissileTrackMode && radarLockedTarget == null) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
+                RVP_LeadFcDebug.logDecision(weaponUnit, "RF导弹_无硬锁_不驱动", false, null, null, null);
+                return true;
+            }
+            if (radarLockedTarget != null) {
+                // 调用本项目广播载具插值器，让导弹的稳定/半自动火控与 HUD
+                // 共用同一远距目标中心，避免本体每五 Tick 广播导致观瞄阶梯跳变。
+                trackedTargetWorldPos = RVP_ClientBroadcastVehicleInterpolator
+                        .resolveTrackingSample(radarLockedTarget, 1.0F)
+                        .center();
+            }
+
+            if (offAxisDeg <= 0.0F && !radarMissileTrackMode) {
+                clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 RVP_LeadFcDebug.logDecision(weaponUnit, "离轴角为零_跟目标中心", false, null, null, trackedTargetWorldPos);
                 // 调用本体瞄准方法，保持旧配置将离轴角设为零时退回目标中心跟踪的行为。
                 weaponUnit.aim(trackedTargetWorldPos);
@@ -104,11 +132,13 @@ public final class RVP_BallisticLeadFireControlExecutor {
             Vec3 aimFrom = leadSolution != null ? aimOrigin(weaponUnit) : weaponUnit.worldPivotPosition();
             if (stabilizerMode == RVP_FireControlStabilizerState.Mode.OFF) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 RVP_LeadFcDebug.logDecision(weaponUnit, "OFF_不驱动", false, null, null, null);
                 return true;
             }
             if (stabilizerMode == RVP_FireControlStabilizerState.Mode.STABLE) {
                 clearAimAssist(weaponUnit);
+                RVP_SemiAutoLeadTrimState.clear(weaponUnit);
                 if (machinegunLeadMode) {
                     if (leadSolution == null) {
                         RVP_LeadFcDebug.logDecision(weaponUnit, "STABLE_无解_不驱动", false, null, null, null);
@@ -134,6 +164,60 @@ public final class RVP_BallisticLeadFireControlExecutor {
                 clearAimAssist(weaponUnit);
                 return true;
             }
+            if (machinegunLeadMode) {
+                clearAimAssist(weaponUnit);
+                // 调用本项目半自动微调状态，按目标和当前武器身份初始化或延续锁存偏置。
+                RVP_SemiAutoLeadTrimState.activate(
+                        weaponUnit,
+                        leadSolution.target(),
+                        RVP_SemiAutoLeadTrimState.AnchorType.BALLISTIC_LEAD
+                );
+                // 调用本项目半自动微调解算，将玩家双轴偏置叠加到持续移动的理论预瞄方向。
+                Vec3 trimmedDirection = RVP_SemiAutoLeadTrimState.apply(
+                        weaponUnit,
+                        targetDir,
+                        offAxisDeg
+                );
+                Vec3 trimmedPoint = aimFrom.add(trimmedDirection.scale(targetDir.length()));
+                RVP_LeadFcDebug.logDecision(
+                        weaponUnit,
+                        "SEMI_跟随预瞄并保持微调",
+                        true,
+                        leadSolution,
+                        aimFrom,
+                        trimmedPoint
+                );
+                aimAlongDirection(weaponUnit, trimmedDirection);
+                return true;
+            }
+
+            if (radarMissileTrackMode) {
+                clearAimAssist(weaponUnit);
+                // 调用本项目半自动微调状态，按硬锁目标和当前导弹身份初始化或延续锁存偏置。
+                RVP_SemiAutoLeadTrimState.activate(
+                        weaponUnit,
+                        radarLockedTarget,
+                        RVP_SemiAutoLeadTrimState.AnchorType.RADAR_HARD_LOCK
+                );
+                // 调用本项目双轴微调解算，把玩家偏置叠加到持续移动的雷达目标方向。
+                Vec3 trimmedDirection = RVP_SemiAutoLeadTrimState.apply(
+                        weaponUnit,
+                        targetDir,
+                        offAxisDeg
+                );
+                Vec3 trimmedPoint = aimFrom.add(trimmedDirection.scale(targetDir.length()));
+                RVP_LeadFcDebug.logDecision(
+                        weaponUnit,
+                        "SEMI_RF导弹_跟随硬锁并保持微调",
+                        false,
+                        null,
+                        aimFrom,
+                        trimmedPoint
+                );
+                aimAlongDirection(weaponUnit, aimFrom, trimmedDirection);
+                return true;
+            }
+
             // 调用本体方向换算，取得玩家本Tick请求的瞄准方向而不是炮塔尚未追上的当前姿态。
             Vec3 desiredDir = weaponUnit.worldVec(weaponUnit.getXAimRot(), weaponUnit.getYAimRot());
             double angleDeg = Math.toDegrees(VectorUtil.angleBetween(desiredDir, targetDir));
@@ -144,26 +228,20 @@ public final class RVP_BallisticLeadFireControlExecutor {
                         desiredDir,
                         offAxisDeg
                 );
-                if (leadSolution != null) {
-                    clearAimAssist(weaponUnit);
-                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_拉回提前方向", true, leadSolution, aimFrom, clampedPoint);
-                    aimAlongDirection(weaponUnit, clampedPoint.subtract(aimFrom));
-                } else {
-                    Vec3 smoothedPoint = smoothAimAssist(
-                            weaponUnit,
-                            aimFrom,
-                            desiredDir,
-                            clampedPoint,
-                            angleDeg - offAxisDeg
-                    );
-                    RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_软修正目标中心", false, null, aimFrom, smoothedPoint);
-                    // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
-                    weaponUnit.aim(smoothedPoint);
-                }
+                Vec3 smoothedPoint = smoothAimAssist(
+                        weaponUnit,
+                        aimFrom,
+                        desiredDir,
+                        clampedPoint,
+                        angleDeg - offAxisDeg
+                );
+                RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_超离轴_软修正目标中心", false, null, aimFrom, smoothedPoint);
+                // 调用本体瞄准方法，把非机炮软修正后的世界点同步到武器站旋转。
+                weaponUnit.aim(smoothedPoint);
                 return true;
             }
             clearAimAssist(weaponUnit);
-            RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_离轴内_跟鼠标", leadSolution != null, leadSolution, aimFrom, trackedTargetWorldPos);
+            RVP_LeadFcDebug.logDecision(weaponUnit, "SEMI_离轴内_跟鼠标", false, null, aimFrom, trackedTargetWorldPos);
             return true;
         } catch (Throwable t) {
             // [RVP] 诊断：策略通过但解算/决策中途抛异常时，上层若吞掉会导致"看起来回退本体跟机体"。
@@ -250,10 +328,14 @@ public final class RVP_BallisticLeadFireControlExecutor {
 
     /** 沿指定世界方向调用本体瞄准，使用远点避免距离改变方向。 */
     private static void aimAlongDirection(WeaponUnit weaponUnit, Vec3 desiredDir) {
+        aimAlongDirection(weaponUnit, aimOrigin(weaponUnit), desiredDir);
+    }
+
+    /** 从指定世界原点沿目标方向调用本体瞄准，供根视线和实际炮口分别使用。 */
+    private static void aimAlongDirection(WeaponUnit weaponUnit, Vec3 aimFrom, Vec3 desiredDir) {
         if (desiredDir.lengthSqr() < 1.0E-6D) {
             return;
         }
-        Vec3 aimFrom = aimOrigin(weaponUnit);
         // 调用本体瞄准方法，将通用执行器求出的世界方向转换并同步为武器站旋转。
         weaponUnit.aim(aimFrom.add(desiredDir.normalize().scale(4096.0D)));
     }

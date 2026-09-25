@@ -1,6 +1,7 @@
 package org.ywzj.rvp.guidance.runtime;
 
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.countermeasure.RVP_JammingRuntime;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
@@ -11,6 +12,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeContext;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
+import org.ywzj.rvp.guidance.saclos.RVP_SACLOSStablePIPAssist;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -79,6 +81,14 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
                 return RVP_GuidanceIntent.point(jamTarget, false, 1.0, RVP_EnumGuidanceType.SACLOS);
             }
             return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.SACLOS);
+        }
+
+        // 调用本项目STABLE PIP辅助：仅服务端确认当前仍为rvp_rf/RF/SACLOS导弹、
+        // 操作手请求新鲜且雷达正式硬锁仍存在时，生成当Tick临时实体意图。
+        Entity stablePIPTarget = RVP_SACLOSStablePIPAssist.resolveTarget(context);
+        if (stablePIPTarget != null) {
+            return RVP_GuidanceIntent.entity(
+                    stablePIPTarget, false, 1.0, RVP_EnumGuidanceType.SACLOS);
         }
 
         // Original SACLOS behavior when semi-correction is disabled

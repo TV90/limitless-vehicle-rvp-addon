@@ -91,9 +91,27 @@ public class RVP_ProjectileData {
     @SerializedName("thrust")
     private float thrust = 0f;
 
+    /**
+     * 燃料质量（发射总质量 {@link #mass} 的一部分），单位与 {@link #mass} 一致，默认 0（禁用变质量）。
+     * 生效条件：{@code has_rocket_engine=true} 且 {@code fuel_mass>0} 且 {@code mass>0}；
+     * 主燃烧期间弹体质量由发射总质量线性递减至干质量 {@code mass - fuel_mass}，
+     * 使发动机后半程加速度随质量下降而增大（对齐真实火箭燃耗）；第二脉冲按干质量工作。
+     */
+    @SerializedName("fuel_mass")
+    private float fuelMass = 0f;
+
     /** 主发动机燃烧时间，单位 Tick，默认 0；仅火箭发动机启用时生效。 */
     @SerializedName("motor_burn_time")
     private float motorBurnTime = 0f;
+
+    /**
+     * 按点火后 Tick 分段的推力表，单位与 {@link #thrust} 一致，默认 null；未配置时使用标量
+     * {@link #thrust}。键为 {@code "[[起始,结束]]"} 形式的 Tick 区间（含端点，{@code inf} 表示无穷），
+     * 值为该区间的推力。配置后曲线为权威：区间内取匹配值、区间外推力为 0；燃烧总窗口仍由
+     * {@link #motorBurnTime} 决定，曲线只塑造窗口内的推力形状（实现助推/续航分级推力）。
+     */
+    @SerializedName("thrust_curve")
+    private Map<RVP_Range<Integer>, Float> thrustCurve;
 
     /** 是否启用第二脉冲发动机，默认 false；仅火箭发动机启用时生效。 */
     @SerializedName("second_pulse")
@@ -155,6 +173,9 @@ public class RVP_ProjectileData {
         }
         if (!proj.has("thrust") && weaponRoot.has("thrust") && weaponRoot.get("thrust").isJsonPrimitive()) {
             thrust = weaponRoot.get("thrust").getAsFloat();
+        }
+        if (!proj.has("fuel_mass") && weaponRoot.has("fuel_mass") && weaponRoot.get("fuel_mass").isJsonPrimitive()) {
+            fuelMass = weaponRoot.get("fuel_mass").getAsFloat();
         }
         if (!proj.has("motor_burn_time") && weaponRoot.has("motor_burn_time")
                 && weaponRoot.get("motor_burn_time").isJsonPrimitive()) {
@@ -299,6 +320,59 @@ public class RVP_ProjectileData {
         return hasRocketEngine ? Math.max(motorBurnTime, 0f) : 0f;
     }
 
+    /** @return 是否配置了非空推力曲线 {@code thrust_curve}。 */
+    public boolean hasThrustCurve() {
+        return thrustCurve != null && !thrustCurve.isEmpty();
+    }
+
+    /** @return 燃料质量原始值（未启用火箭发动机时返回 0），供调试与外部读取。 */
+    public float getFuelMass() {
+        return hasRocketEngine ? Math.max(fuelMass, 0f) : 0f;
+    }
+
+    /**
+     * 解析点火后第 {@code motorTick} 个 Tick 的主发动机推力（RVP 游戏单位，与 {@link #thrust} 一致）。
+     * 未配置 {@code thrust_curve} 时恒返回标量 {@link #getResolvedThrust()}；配置后曲线为权威：
+     * 命中区间返回非负匹配值，未命中任何区间返回 0（区间外视为无推力）。
+     */
+    public float resolveThrustAt(int motorTick) {
+        if (!hasThrustCurve()) {
+            return getResolvedThrust();
+        }
+        for (Map.Entry<RVP_Range<Integer>, Float> entry : thrustCurve.entrySet()) {
+            RVP_Range<Integer> range = entry.getKey();
+            Float value = entry.getValue();
+            if (range == null || value == null || !Float.isFinite(value) || !range.contains(motorTick)) {
+                continue;
+            }
+            return Math.max(value, 0f);
+        }
+        return 0f;
+    }
+
+    /**
+     * 解析点火后第 {@code motorTick} 个 Tick 的弹体质量（RVP 游戏单位，与 {@link #mass} 一致）。
+     * 未启用变质量（{@code fuel_mass<=0} 或未启用火箭发动机）时恒返回发射总质量
+     * {@link #getResolvedMass()}；启用后按主燃烧窗口线性递减：
+     * {@code mass(motorTick) = (mass - fuelMass) + fuelMass * (1 - motorTick/motorBurnTime)}。
+     * {@code motorTick} 负值按 0 处理，超过燃烧窗口按干质量处理。
+     */
+    public float resolveMassAt(int motorTick, float motorBurnTime) {
+        float totalMass = getResolvedMass();
+        if (!hasRocketEngine || fuelMass <= 0f || totalMass <= 0f) {
+            return totalMass;
+        }
+        float burn = Math.max(motorBurnTime, 1f);
+        float dryMass = Math.max(totalMass - fuelMass, 0f);
+        float progress = Math.max(0f, Math.min(1f, motorTick / burn));
+        return dryMass + fuelMass * (1f - progress);
+    }
+
+    /** @return 是否存在有效推力（标量推力或推力曲线任一即可），供推进判定使用。 */
+    public boolean hasEffectiveThrust() {
+        return getResolvedThrust() > 0f || hasThrustCurve();
+    }
+
     public boolean isSecondPulse() {
         return secondPulse;
     }
@@ -397,7 +471,7 @@ public class RVP_ProjectileData {
             return false;
         }
         return getResolvedMass() > 1.0E-6f
-                && getResolvedThrust() > 0f
+                && hasEffectiveThrust()
                 && getResolvedMotorBurnTime() > 0f;
     }
 

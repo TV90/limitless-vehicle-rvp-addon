@@ -4,13 +4,11 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
-import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.ArrayDeque;
@@ -62,37 +60,11 @@ public final class RVP_MachinegunLeadSolver {
         return resolveCurrentWeaponData(weaponUnit) != null;
     }
 
-    @Nullable
-    public static RVP_LeadSolution solveCurrent(WeaponUnit weaponUnit, float partialTick) {
-        AbstractVehicleWeapon<?> currentWeapon = resolveCurrentWeapon(weaponUnit);
-        RVP_WeaponData data = currentWeapon != null && currentWeapon.getData() instanceof RVP_WeaponData rvpData
-                ? rvpData : null;
-        if (data == null || data.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
-            return null;
-        }
-        Entity target = resolveTrackedTarget(weaponUnit);
-        if (target == null) {
-            return null;
-        }
-        // 调用本体武器对象取得实际挂载单元，保证解算原点与弹体生成使用同一门炮的炮口。
-        WeaponUnit launchWeaponUnit = currentWeapon.getWeaponUnit();
-        if (launchWeaponUnit == null) {
-            return null;
-        }
-        // 调用本体实际挂载单元的瞄准上下文，读取本 tick 的真实炮口世界坐标。
-        AimContext launchAim = launchWeaponUnit.aimContext();
-        Vec3 muzzle = launchAim == null ? null : launchAim.from;
-        if (muzzle == null) {
-            // 调用本体炮闩坐标，作为实际挂载单元瞄准上下文缺失时的安全回退。
-            muzzle = launchWeaponUnit.worldCurrentBoltPosition();
-        }
-        RVP_LeadSolution solution = solveForTarget(launchWeaponUnit, data, muzzle, target, partialTick);
-        // 调用本项目既有 weaponorigin 详细日志，在用户显式开启时记录解算与真实发射单元的对应关系。
-        RVP_WeaponOriginDebug.noteLeadSolution(
-                weaponUnit, launchWeaponUnit, target, muzzle, solution);
-        return solution;
-    }
-
+    /**
+     * 以实体自身的双端可用位置与速度解算提前量。
+     *
+     * <p>AHEAD 引信会在服务端调用本入口，因此这里不能依赖客户端广播载具缓存。</p>
+     */
     @Nullable
     public static RVP_LeadSolution solveForTarget(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
                                                   Entity target, float partialTick) {
@@ -101,6 +73,31 @@ public final class RVP_MachinegunLeadSolver {
         }
         Vec3 targetPos = interpolateEntityCenter(target, partialTick);
         Vec3 targetVelocity = estimateEntityVelocity(target, targetPos);
+        return solveForTargetMotion(weaponUnit, data, muzzle, target, targetPos, targetVelocity, 0.0D);
+    }
+
+    /**
+     * 以调用方提供的可视目标中心、速度和样本缓冲时长解算提前量。
+     *
+     * <p>参数只包含双端安全的数据类型；客户端广播载具采样由
+     * {@link RVP_ClientMachinegunLeadResolver} 负责，避免服务端 AHEAD 路径主动加载客户端类。</p>
+     */
+    @Nullable
+    static RVP_LeadSolution solveForTargetMotion(WeaponUnit weaponUnit, RVP_WeaponData data, Vec3 muzzle,
+                                                 Entity target, Vec3 targetPos, Vec3 targetVelocity,
+                                                 double bufferDelayTicks) {
+        if (weaponUnit == null || data == null || target == null || muzzle == null || targetPos == null) {
+            return null;
+        }
+        Vec3 safeTargetVelocity = targetVelocity == null ? Vec3.ZERO : targetVelocity;
+        // 广播插值为了连续显示会落后一个样本周期；弹道预测补回该段位移，
+        // 避免目标轨迹平滑后机炮反而固定少打约五 Tick 的提前量。
+        Vec3 predictionBasePos = compensateBufferedTargetPosition(
+                targetPos,
+                safeTargetVelocity,
+                bufferDelayTicks
+        );
+        // 调用本体载具速度，按武器数据决定是否把发射载具速度继承到弹体初速度。
         Vec3 inheritedVelocity = data.isInheritVehicleVelocity()
                 ? weaponUnit.getVehicle().getDeltaMovement()
                 : Vec3.ZERO;
@@ -113,7 +110,8 @@ public final class RVP_MachinegunLeadSolver {
                 target,
                 muzzle,
                 targetPos,
-                targetVelocity,
+                predictionBasePos,
+                safeTargetVelocity,
                 inheritedVelocity,
                 muzzleSpeed,
                 gravity,
@@ -122,15 +120,25 @@ public final class RVP_MachinegunLeadSolver {
         );
     }
 
+    /** 按原版实体的前后 tick 坐标插值碰撞箱中心，供双端普通实体解算使用。 */
+    private static Vec3 interpolateEntityCenter(Entity entity, float partialTick) {
+        double x = Mth.lerp(partialTick, entity.xo, entity.getX());
+        double y = Mth.lerp(partialTick, entity.yo, entity.getY());
+        double z = Mth.lerp(partialTick, entity.zo, entity.getZ());
+        Vec3 centerOffset = entity.getBoundingBox().getCenter().subtract(entity.position());
+        return new Vec3(x, y, z).add(centerOffset);
+    }
+
     @Nullable
-    private static RVP_LeadSolution solve(Entity target, Vec3 muzzle, Vec3 targetPos, Vec3 targetVelocity,
+    private static RVP_LeadSolution solve(Entity target, Vec3 muzzle, Vec3 targetPos,
+                                          Vec3 predictionBasePos, Vec3 targetVelocity,
                                           Vec3 inheritedVelocity, double muzzleSpeed, double gravity,
                                           double friction, double maxTicks) {
         RVP_LeadSolution best = null;
 
         for (double timeTicks = 1.0; timeTicks <= maxTicks; timeTicks += SOLVE_STEP_TICKS) {
             // 只按目标实测速率做匀速预测；不再叠加与目标朝向有关的固定距离或额外时间偏置。
-            Vec3 futureTargetPos = predictTargetPosition(targetPos, targetVelocity, timeTicks);
+            Vec3 futureTargetPos = predictTargetPosition(predictionBasePos, targetVelocity, timeTicks);
             Vec3 aimPoint = futureTargetPos;
 
             for (int i = 0; i < AIM_REFINE_ITERATIONS; i++) {
@@ -262,14 +270,6 @@ public final class RVP_MachinegunLeadSolver {
         return radarTarget != null && radarTarget.isAlive() ? radarTarget : null;
     }
 
-    private static Vec3 interpolateEntityCenter(Entity entity, float partialTick) {
-        double x = Mth.lerp(partialTick, entity.xo, entity.getX());
-        double y = Mth.lerp(partialTick, entity.yo, entity.getY());
-        double z = Mth.lerp(partialTick, entity.zo, entity.getZ());
-        Vec3 centerOffset = entity.getBoundingBox().getCenter().subtract(entity.position());
-        return new Vec3(x, y, z).add(centerOffset);
-    }
-
     private static Vec3 estimateEntityVelocity(Entity entity, Vec3 targetCenter) {
         Vec3 tickDelta = new Vec3(
                 entity.getX() - entity.xo,
@@ -344,6 +344,19 @@ public final class RVP_MachinegunLeadSolver {
         Vec3 safeCenter = targetCenter == null ? Vec3.ZERO : targetCenter;
         Vec3 safeVelocity = targetVelocity == null ? Vec3.ZERO : targetVelocity;
         return safeCenter.add(safeVelocity.scale(Math.max(timeTicks, 0.0D)));
+    }
+
+    /**
+     * 用目标速度补回广播样本缓冲引入的固定位置延迟。
+     *
+     * <p>只修正弹道预测起点；{@link RVP_LeadSolution#targetWorldPos()} 仍保留插值后的可视目标中心，
+     * 保证 HUD 虚线端点与锁定框对齐。</p>
+     */
+    static Vec3 compensateBufferedTargetPosition(Vec3 targetCenter, Vec3 targetVelocity,
+                                                 double bufferDelayTicks) {
+        Vec3 safeCenter = targetCenter == null ? Vec3.ZERO : targetCenter;
+        Vec3 safeVelocity = targetVelocity == null ? Vec3.ZERO : targetVelocity;
+        return safeCenter.add(safeVelocity.scale(Math.max(bufferDelayTicks, 0.0D)));
     }
 
     /** 单个目标的短期位置与速度缓存。 */

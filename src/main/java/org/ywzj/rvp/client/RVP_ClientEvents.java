@@ -124,7 +124,7 @@ public class RVP_ClientEvents {
         RVP_ClientHbmMissileState.clientTick();
         RVP_ClientRemoteAmmoState.clientTick();
         RVP_ClientExternalRadarState.clientTick();
-        // 调用本项目广播载具插值器，按本体 serverEntities 生命周期淘汰过期 HUD 平滑轨迹。
+        // 调用本项目广播载具插值器，按本体 serverEntities 生命周期淘汰过期 HUD/火控轨迹。
         RVP_ClientBroadcastVehicleInterpolator.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
