@@ -282,4 +282,41 @@ schema 或网络协议。
 - [ ] 双轴微调达到离轴边界时平滑饱和，反向移动鼠标能立即退出边界；
 - [ ] 切换目标、武器或火控模式后旧偏置清零；短暂丢解恢复后同目标偏置不跳变；
 - [ ] `STABLE` 仍严格跟预瞄圈且屏蔽鼠标，`OFF` 仍完全手动；
-- [ ] 非机炮 `rvp_rf` 软修正手感不变。
+- [ ] 非机炮、非导弹的 `rvp_rf` 软修正手感不变。
+
+## 2026-09-25 `rvp_rf` 导弹完整三态与硬锁跟踪
+
+### 行为定义
+
+- 所有当前有效传感器为RF、且根武器站配置 `rvp_fire_control_mode: rvp_rf`
+  的RVP导弹获得 `STABLE / SEMI_AUTO / OFF` 完整三态，不新增JSON字段。
+- `STABLE`：视线严格跟随本车或外置雷达硬锁目标中心，屏蔽瞄具鼠标改角。
+- `SEMI_AUTO`：以硬锁目标方向为移动基准，叠加玩家锁存的武器站局部俯仰/方位
+  偏置；双轴圆形包线复用 `rvp_rf_off_axis_deg` 原值。
+- `OFF`：不由RVP火控驱动视线，恢复玩家完全手动控制。
+- 仅本车 `RadarUnit` 硬锁与外置雷达正式锁定有效；仅存在于
+  `WeaponUnit.lockedEntity` 的TWS/导引头软航迹不会启动自动视线。
+- SACLOS/LBR仍然只消费操作手视线；本功能通过旋转视线间接跟踪目标，不向弹体
+  `targetEntity` 注入雷达目标，保留视线指令制导语义。
+
+### 代码落点
+
+| 职责 | 文件 |
+| --- | --- |
+| `rvp_rf` RVP导弹资格与完整三态策略 | `client/firecontrol/RVP_BallisticLeadFireControlPolicy.java`、`client/state/RVP_FireControlStabilizerState.java` |
+| 本车/外置雷达硬锁目标解析 | `client/firecontrol/RVP_RadarMissileTrackHelper.java` |
+| 基准类型隔离、双轴输入锁存与局部角应用 | `client/state/RVP_SemiAutoLeadTrimState.java` |
+| 三态执行与瞄准视线转动 | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
+| 复用现有鼠标 X/Y 重定向记录导弹微调/在稳定态屏蔽输入 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+
+本次仅扩展现有 Mixin 转发后的业务逻辑，不新增 Mixin 类或注入点，不修改
+`ywzj_vehicle` 本体、载具包JSON或网络协议。
+
+### 实机回归清单
+
+- [ ] PS1SM 选择 TKB-1055 / 95Ya6M：雷达硬锁后 `SEMI_AUTO` 视线跟随目标，微调后松鼠标仍保持偏置。
+- [ ] PS1SM 在途 SACLOS 导弹：视线自动跟踪可持续制导，切到 `OFF` 后可立即手动接管。
+- [ ] PS1SM Hermes 1A：观瞄/发射架跟随硬锁目标，ARH导引目标链不变。
+- [ ] 仅有TWS软航迹时三态不驱动视线；建立硬锁后才开始跟踪。
+- [ ] 切换目标、导弹/机炮或火控模式后不继承上一份双轴偏置。
+- [ ] Buk-M3、CSSA-5、IRIS-T SLM TEL 在 `rvp_rf` 导弹下也具有相同三态，其他非导弹武器保留旧软修正。

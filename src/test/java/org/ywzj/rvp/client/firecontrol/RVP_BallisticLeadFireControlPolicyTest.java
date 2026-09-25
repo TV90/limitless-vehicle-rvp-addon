@@ -30,7 +30,7 @@ class RVP_BallisticLeadFireControlPolicyTest {
     }
 
     @Test
-    void existingRvpRfKeepsNonMachinegunSoftTrackingProfile() {
+    void existingRvpRfKeepsGenericNonMachinegunProfileAndOnlyMissilesGainThreeModes() {
         assertEquals(
                 RVP_BallisticLeadFireControlPolicy.Profile.RVP_RF,
                 RVP_BallisticLeadFireControlPolicy.resolve(
@@ -42,7 +42,20 @@ class RVP_BallisticLeadFireControlPolicyTest {
         assertFalse(RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
                 "rvp_rf",
                 WeaponUnitData.FireControlSensorType.RF,
+                false,
                 false
+        ));
+        assertTrue(RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
+                "rvp_rf",
+                WeaponUnitData.FireControlSensorType.RF,
+                false,
+                true
+        ));
+        assertFalse(RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
+                "rvp_rf",
+                WeaponUnitData.FireControlSensorType.EO,
+                false,
+                true
         ));
     }
 
@@ -64,9 +77,29 @@ class RVP_BallisticLeadFireControlPolicyTest {
             assertTrue(RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
                     "rvp_ballistic_lead",
                     sensorType,
-                    true
+                    true,
+                    false
             ));
         }
+    }
+
+    @Test
+    void rfMissileTrackTrimRejectsOtherModesAndNonMissiles() {
+        assertTrue(RVP_BallisticLeadFireControlPolicy.supportsRfMissileTrackTrim(
+                "rvp_rf",
+                WeaponUnitData.FireControlSensorType.RF,
+                true
+        ));
+        assertFalse(RVP_BallisticLeadFireControlPolicy.supportsRfMissileTrackTrim(
+                "rvp_ballistic_lead",
+                WeaponUnitData.FireControlSensorType.RF,
+                true
+        ));
+        assertFalse(RVP_BallisticLeadFireControlPolicy.supportsRfMissileTrackTrim(
+                "rvp_rf",
+                WeaponUnitData.FireControlSensorType.RF,
+                false
+        ));
     }
 
     @Test

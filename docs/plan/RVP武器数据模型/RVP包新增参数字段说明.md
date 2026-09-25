@@ -2105,8 +2105,8 @@ SACLOS 反坦克导弹（半自动修正）：
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 启用RF软火控并要求当前传感器为RF；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
-| `rvp_rf_off_axis_deg` | `rvp_rf` 雷达软火控离轴限制（度）。为保持既有手感，机炮获得有效提前量解时执行器仍按历史规则使用该值的 `0.1` 倍；非机炮使用原值。 | `10.0` |
+| `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 要求当前传感器为RF，为RVP机炮启用弹道预瞄，为RVP导弹启用雷达硬锁目标三态跟踪，其他武器保留原软火控；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
+| `rvp_rf_off_axis_deg` | `rvp_rf` 火控离轴限制（度）。机炮获得有效提前量解时按历史规则使用该值的 `0.1` 倍；RVP导弹的 `SEMI_AUTO` 双轴锁存及其他非机炮软修正使用原值。 | `10.0` |
 | `rvp_fire_control_off_axis_deg` | `rvp_ballistic_lead` 通用弹道提前量火控离轴限制（度），仅当前武器为RVP `machinegun` 且IR/EO/RF锁定链有效时生效；执行器按配置原值使用。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
 | `rvp_follow_parent_only_part_unit_ids` | 仅跟随父级部件旋转的部件 id 列表。 | `[]` |
@@ -2123,6 +2123,8 @@ SACLOS 反坦克导弹（半自动修正）：
 ```
 
 该模式不负责搜索目标或自动开火。它只消费本体已经建立并维持的实体锁定，使用当前RVP机炮的初速、重力、阻力和载具速度继承参数计算预瞄点，再由 `STABLE`、`SEMI_AUTO`、`OFF` 三态决定炮塔控制方式。
+
+`rvp_rf` 下当前选中武器为RVP `missile` 时也可切换完整三态：`STABLE` 严格跟随雷达硬锁目标中心；`SEMI_AUTO` 在硬锁目标方向上叠加玩家锁存的局部俯仰/方位偏置；`OFF` 完全手动。只认本车火控雷达或外置雷达的正式硬锁，不认仅写入 `WeaponUnit.lockedEntity` 的TWS/导引头软航迹；无硬锁时不驱动自动视线。该行为不新增JSON字段，对所有现有 `rvp_rf` RVP导弹统一生效。
 
 ### 3.2 雷达部件扩展
 

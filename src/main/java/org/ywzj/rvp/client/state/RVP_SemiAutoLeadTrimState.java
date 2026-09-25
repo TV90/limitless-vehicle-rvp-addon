@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.firecontrol.RVP_RadarMissileTrackHelper;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -16,17 +17,21 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * 半自动机炮火控的玩家微调状态。
+ * 半自动火控的玩家双轴微调状态。
  *
- * <p>状态只保存相对理论预瞄方向的局部俯仰/方位角偏置，不保存世界坐标点；因此目标、载具和
- * 炮口继续运动时，最终射击方向仍会自动跟随预瞄解，玩家不需要持续移动鼠标。</p>
+ * <p>状态只保存相对基准方向的局部俯仰/方位角偏置，不保存世界坐标点；基准可以是
+ * 机炮理论预瞄方向，也可以是RF导弹的雷达硬锁目标方向。目标、载具和发射点继续运动时，
+ * 最终方向仍会自动跟随基准，玩家不需要持续移动鼠标。</p>
  */
 public final class RVP_SemiAutoLeadTrimState {
     /** 各根火控武器站的半自动微调状态，键由载具实体 ID 和武器站索引组合。 */
     private static final Map<Integer, State> STATES = new HashMap<>();
 
-    /** 有效预瞄解短暂缺失时允许继续接收微调输入的最长时间，单位为 Tick。 */
-    private static final int SOLUTION_HOLD_TICKS = 8;
+    /** 机炮有效预瞄解短暂缺失时保留微调的最长时间，单位为 Tick。 */
+    private static final int BALLISTIC_SOLUTION_HOLD_TICKS = 8;
+
+    /** 雷达硬锁基准允许的最大连续 Tick 间隔；完整丢锁一 Tick 后重锁即重置偏置。 */
+    private static final int RADAR_LOCK_HOLD_TICKS = 1;
 
     /** 状态表超过该规模后才执行过期清理，避免常规单载具场景产生无意义遍历。 */
     private static final int PRUNE_SIZE_THRESHOLD = 24;
@@ -41,29 +46,35 @@ public final class RVP_SemiAutoLeadTrimState {
     private RVP_SemiAutoLeadTrimState() {}
 
     /**
-     * 激活当前有效预瞄解对应的微调状态。
+     * 激活当前有效基准对应的微调状态。
      *
-     * <p>目标、武器或有效解连续性变化时清零偏置；同一目标在八 Tick 内的短暂丢解则继续沿用，
-     * 避免网络抖动造成准星突然跳回理论预瞄点。</p>
+     * <p>目标、武器或基准类型变化时清零偏置；机炮同一目标在八 Tick 内的短暂丢解继续沿用，
+     * 雷达导弹仅允许相邻 Tick 连续硬锁，避免显式解锁后重锁继承旧偏置。</p>
      *
      * @param weaponUnit 当前根火控武器站
-     * @param target 当前预瞄解对应的锁定目标
+     * @param target 当前基准对应的锁定目标
+     * @param anchorType 基准类型，用于切换机炮/导弹时隔离旧偏置
      */
-    public static void activate(WeaponUnit weaponUnit, @Nullable Entity target) {
+    public static void activate(WeaponUnit weaponUnit, @Nullable Entity target, AnchorType anchorType) {
         if (weaponUnit == null || target == null) {
             return;
         }
         int nowTick = weaponUnit.getVehicle().tickCount;
         State state = STATES.computeIfAbsent(key(weaponUnit), unused -> new State());
         String weaponKey = currentWeaponKey(weaponUnit);
+        int continuityTicks = anchorType == AnchorType.RADAR_HARD_LOCK
+                ? RADAR_LOCK_HOLD_TICKS
+                : BALLISTIC_SOLUTION_HOLD_TICKS;
         if (!state.initialized
                 || state.targetId != target.getId()
                 || !state.weaponKey.equals(weaponKey)
-                || nowTick - state.lastSolutionTick > SOLUTION_HOLD_TICKS) {
+                || state.anchorType != anchorType
+                || nowTick - state.lastSolutionTick > continuityTicks) {
             state.pitchOffsetDeg = 0.0F;
             state.yawOffsetDeg = 0.0F;
             state.targetId = target.getId();
             state.weaponKey = weaponKey;
+            state.anchorType = anchorType;
             state.initialized = true;
         }
         state.lastSolutionTick = nowTick;
@@ -101,13 +112,13 @@ public final class RVP_SemiAutoLeadTrimState {
     }
 
     /**
-     * 把当前锁存微调应用到理论预瞄方向，并按离轴角限制最终方向。
+     * 把当前锁存微调应用到理论预瞄或雷达目标基准方向，并按离轴角限制最终方向。
      *
      * <p>先在武器站局部俯仰/方位坐标中叠加偏置，再转换回世界方向。这样载具横滚或转向时，
      * “准星位于预瞄点前/后/上/下”的关系会随武器站一起运动，而不会固定在世界轴上。</p>
      *
      * @param weaponUnit 当前根火控武器站
-     * @param baseWorldDirection 理论预瞄世界方向
+     * @param baseWorldDirection 理论预瞄或雷达目标的世界基准方向
      * @param maxOffAxisDeg 允许的最大单侧偏置角，单位为度
      * @return 应交给本体瞄准方法的最终世界方向
      */
@@ -129,7 +140,7 @@ public final class RVP_SemiAutoLeadTrimState {
         state.pitchOffsetDeg = clampedOffset[0];
         state.yawOffsetDeg = clampedOffset[1];
 
-        // 调用本体武器站坐标换算，将世界预瞄方向变换到随载具和安装骨旋转的局部坐标。
+        // 调用本体武器站坐标换算，将世界基准方向变换到随载具和安装骨旋转的局部坐标。
         Vec3 baseLocalDirection = weaponUnit.worldVecToLocalVec(baseWorldDirection).normalize();
         Vec3 trimmedLocalDirection = applyLocalTrim(
                 baseLocalDirection,
@@ -210,12 +221,18 @@ public final class RVP_SemiAutoLeadTrimState {
             return null;
         }
         int nowTick = weaponUnit.getVehicle().tickCount;
-        if (nowTick - state.lastSolutionTick > SOLUTION_HOLD_TICKS) {
+        int continuityTicks = state.anchorType == AnchorType.RADAR_HARD_LOCK
+                ? RADAR_LOCK_HOLD_TICKS
+                : BALLISTIC_SOLUTION_HOLD_TICKS;
+        if (nowTick - state.lastSolutionTick > continuityTicks) {
             STATES.remove(key(weaponUnit));
             return null;
         }
-        // 调用本项目锁定目标解析器，防止切换目标后、下一份预瞄解生成前把输入写入旧目标状态。
-        Entity trackedTarget = RVP_MachinegunLeadSolver.resolveTrackedTarget(weaponUnit);
+        // 调用对应基准的本项目目标解析器，防止切换目标后把输入写入旧状态。
+        Entity trackedTarget = switch (state.anchorType) {
+            case BALLISTIC_LEAD -> RVP_MachinegunLeadSolver.resolveTrackedTarget(weaponUnit);
+            case RADAR_HARD_LOCK -> RVP_RadarMissileTrackHelper.resolveHardLockedTarget(weaponUnit);
+        };
         if (trackedTarget == null
                 || trackedTarget.getId() != state.targetId
                 || !currentWeaponKey(weaponUnit).equals(state.weaponKey)) {
@@ -225,9 +242,9 @@ public final class RVP_SemiAutoLeadTrimState {
         return state;
     }
 
-    /** 取得当前实际武器的数据键，用于切换同一武器站内不同机炮时隔离微调。 */
+    /** 取得当前实际武器的数据键，用于切换同一武器站内不同武器时隔离微调。 */
     private static String currentWeaponKey(WeaponUnit weaponUnit) {
-        // 调用本项目武器解析器，兼容根火控站把当前机炮委托给子武器站或组合武器的配置。
+        // 调用本项目武器解析器，兼容根火控站把当前武器委托给子武器站或组合武器的配置。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(weaponUnit);
         if (weapon != null && weapon.getData().getWeaponId() != null) {
             return weapon.getData().getWeaponId().toString();
@@ -254,24 +271,35 @@ public final class RVP_SemiAutoLeadTrimState {
         }
     }
 
+    /** 微调基准类型。 */
+    public enum AnchorType {
+        /** RVP机炮数值弹道解得到的预瞄方向。 */
+        BALLISTIC_LEAD,
+        /** {@code rvp_rf} 导弹的本车或外置雷达硬锁目标方向。 */
+        RADAR_HARD_LOCK
+    }
+
     /** 单个根火控武器站的双轴微调及身份连续性状态。 */
     private static final class State {
-        /** 玩家相对理论预瞄方向锁存的俯仰角偏置，单位为度。 */
+        /** 玩家相对当前基准方向锁存的俯仰角偏置，单位为度。 */
         float pitchOffsetDeg;
 
-        /** 玩家相对理论预瞄方向锁存的方位角偏置，单位为度。 */
+        /** 玩家相对当前基准方向锁存的方位角偏置，单位为度。 */
         float yawOffsetDeg;
 
-        /** 最近一次有效预瞄解对应的目标实体 ID。 */
+        /** 最近一次有效基准对应的目标实体 ID。 */
         int targetId = -1;
 
-        /** 最近一次有效预瞄解对应的当前武器资源键。 */
+        /** 最近一次有效基准对应的当前武器资源键。 */
         String weaponKey = "";
 
-        /** 最近一次取得有效预瞄解的载具 Tick。 */
+        /** 当前锁存状态对应的基准类型。 */
+        AnchorType anchorType = AnchorType.BALLISTIC_LEAD;
+
+        /** 最近一次取得有效基准的载具 Tick。 */
         int lastSolutionTick = Integer.MIN_VALUE;
 
-        /** 当前状态是否已由一份有效预瞄解初始化。 */
+        /** 当前状态是否已由一份有效基准初始化。 */
         boolean initialized;
     }
 }

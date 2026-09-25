@@ -14,8 +14,6 @@ import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
-import java.util.Collections;
-import java.util.Set;
 import java.util.WeakHashMap;
 
 public final class RVP_FireControlStabilizerState {
@@ -33,6 +31,7 @@ public final class RVP_FireControlStabilizerState {
         }
     }
 
+    /** 各根火控武器站当前选择的三态模式；弱键避免载具卸载后残留客户端状态。 */
     private static final java.util.Map<WeaponUnit, Mode> MODES = new WeakHashMap<>();
 
     private RVP_FireControlStabilizerState() {}
@@ -48,7 +47,7 @@ public final class RVP_FireControlStabilizerState {
     public static boolean tryHandleToggleKey(@Nullable WeaponUnit unit) {
         if (unit == null || !isEligible(unit)) {
             // [RVP] 诊断（/rvpdebug flags lead_fc on）：T 键切换被资格判定拒绝时落盘原因，
-            // 定位"切稳定无效（机炮/模式/传感器任一在客户端不成立）"。
+            // 定位"切稳定无效（武器种类/模式/传感器任一在客户端不成立）"。
             RVP_LeadFcDebug.logToggleRejected(unit);
             return false;
         }
@@ -71,13 +70,12 @@ public final class RVP_FireControlStabilizerState {
     }
 
     private static boolean isEligible(WeaponUnit unit) {
-        // 调用本项目武器解析器，解包Agent/Multi后确认当前实际武器是否为RVP机炮。
+        // 调用本项目武器解析器，解包Agent/Multi后确认当前实际武器种类。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
         boolean rvpMachinegun = weapon != null
                 && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN;
-        if (!rvpMachinegun) {
-            return false;
-        }
+        boolean rvpMissile = weapon != null
+                && weapon.getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE;
         if (!(unit.getData() instanceof WeaponUnitDataExt ext)) {
             return false;
         }
@@ -86,7 +84,8 @@ public final class RVP_FireControlStabilizerState {
         return RVP_BallisticLeadFireControlPolicy.supportsStabilizer(
                 ext.ywzj_rvp$getFireControlMode(),
                 sensorType,
-                true
+                rvpMachinegun,
+                rvpMissile
         );
     }
 }

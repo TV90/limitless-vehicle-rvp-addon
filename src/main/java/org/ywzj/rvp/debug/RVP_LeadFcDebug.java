@@ -42,10 +42,11 @@ public final class RVP_LeadFcDebug {
 
     private RVP_LeadFcDebug() {}
 
-    /** 执行器入口四输入与解析档位（每站节流 2 秒）。 */
+    /** 执行器入口模式、传感器、武器分支与解析档位（每站节流 2 秒）。 */
     public static void logExecutorInput(WeaponUnit station, String configuredMode,
                                         WeaponUnitData.FireControlSensorType sensorType,
-                                        boolean machinegun, Object profile, Object stabilizer) {
+                                        boolean machinegun, boolean radarMissileTrack,
+                                        Object profile, Object stabilizer) {
         if (!RVP_DebugFlags.LEAD_FC.isEnabled() || station == null) {
             return;
         }
@@ -54,6 +55,7 @@ public final class RVP_LeadFcDebug {
                 + " configuredMode='" + configuredMode + "'"
                 + " sensor=" + sensorType
                 + " machinegun=" + machinegun
+                + " radarMissileTrack=" + radarMissileTrack
                 + " profile=" + profile
                 + " stabilizer=" + stabilizer;
         write(station, "input", 2000L, line);
@@ -105,7 +107,7 @@ public final class RVP_LeadFcDebug {
                 + " machinegun=" + machinegun
                 + " primaryRvp=" + (primary != null)
                 + " primaryKind=" + (primary != null ? primary.getData().getWeaponKind() : "null")
-                + " ← T 键切换被资格判定拒绝（机炮/模式/传感器任一不成立）";
+                + " ← T 键切换被资格判定拒绝（RVP机炮或RF导弹/模式/传感器任一不成立）";
         write(station, "toggle_rejected", 0L, line);
     }
 
