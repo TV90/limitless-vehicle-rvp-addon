@@ -296,8 +296,9 @@ schema 或网络协议。
 - `OFF`：不由RVP火控驱动视线，恢复玩家完全手动控制。
 - 仅本车 `RadarUnit` 硬锁与外置雷达正式锁定有效；仅存在于
   `WeaponUnit.lockedEntity` 的TWS/导引头软航迹不会启动自动视线。
-- SACLOS/LBR仍然只消费操作手视线；本功能通过旋转视线间接跟踪目标，不向弹体
-  `targetEntity` 注入雷达目标，保留视线指令制导语义。
+- LBR与非稳定模式SACLOS仍只消费操作手视线。SACLOS在 `STABLE` 下若当前阶段配置
+  `predict_target_pos: true`，则由服务端复核正式雷达硬锁后生成当Tick临时实体意图，复用
+  现有PIP预测拦截；不向弹体持久 `targetEntity` 注入雷达目标。
 
 ### 代码落点
 
@@ -308,14 +309,20 @@ schema 或网络协议。
 | 基准类型隔离、双轴输入锁存与局部角应用 | `client/state/RVP_SemiAutoLeadTrimState.java` |
 | 三态执行与瞄准视线转动 | `client/firecontrol/RVP_BallisticLeadFireControlExecutor.java` |
 | 复用现有鼠标 X/Y 重定向记录导弹微调/在稳定态屏蔽输入 | `mixin/LocalVehiclePlayerMachinegunLeadTurnMixin.java` |
+| STABLE请求同步、服务端新鲜度与硬锁复核 | `network/C2SSaclosDesignation.java`、`guidance/saclos/RVP_SaclosOperatorSession.java`、`guidance/saclos/RVP_SACLOSStablePIPAssist.java` |
+| SACLOS临时实体意图与现有PIP转向复用 | `guidance/runtime/RVP_RuntimeSaclosGuidanceSource.java`、`guidance/RVP_GuidanceRuntimeMath.java` |
 
 本次仅扩展现有 Mixin 转发后的业务逻辑，不新增 Mixin 类或注入点，不修改
-`ywzj_vehicle` 本体、载具包JSON或网络协议。
+`ywzj_vehicle` 本体或载具包JSON。SACLOS STABLE PIP同步使网络协议由15升至16。
+
+定向资格测试与完整 `./gradlew build` 已通过；开发服务端冒烟达到
+`Done (2.321s)!`，对照历史基线无新增错误，服务端进程与25565端口已清理。
 
 ### 实机回归清单
 
 - [ ] PS1SM 选择 TKB-1055 / 95Ya6M：雷达硬锁后 `SEMI_AUTO` 视线跟随目标，微调后松鼠标仍保持偏置。
-- [ ] PS1SM 在途 SACLOS 导弹：视线自动跟踪可持续制导，切到 `OFF` 后可立即手动接管。
+- [ ] PS1SM 在途 SACLOS 导弹：`STABLE` 下导弹走PIP预测拦截；切到 `SEMI_AUTO/OFF`、丢失硬锁或切换武器后立即回到原视线制导。
+- [ ] `STABLE` 下PIP只影响TKB-1055/95Ya6M等当前阶段为SACLOS且配置 `predict_target_pos: true` 的导弹；LBR、SALH与ARH路径不变。
 - [ ] PS1SM Hermes 1A：观瞄/发射架跟随硬锁目标，ARH导引目标链不变。
 - [ ] 仅有TWS软航迹时三态不驱动视线；建立硬锁后才开始跟踪。
 - [ ] 切换目标、导弹/机炮或火控模式后不继承上一份双轴偏置。

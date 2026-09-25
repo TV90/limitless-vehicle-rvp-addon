@@ -19,8 +19,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 15 为远距弹药视觉快照增加服务端权威的剩余发动机燃烧 Tick。 */
-    private static final String PROTOCOL = "15";
+    /** 协议 16 为SACLOS照射同步增加STABLE模式PIP辅助请求。 */
+    private static final String PROTOCOL = "16";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

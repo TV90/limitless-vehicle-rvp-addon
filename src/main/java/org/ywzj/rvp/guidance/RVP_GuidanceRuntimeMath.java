@@ -121,7 +121,7 @@ public final class RVP_GuidanceRuntimeMath {
                     context.active().cruiseLevelingFactor(),
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
-        } else if (!isTopAttack && entity != null && shouldUseProportionalNavigation(context)) {
+        } else if (!isTopAttack && entity != null && canUsePredictiveIntercept(context)) {
             next = steerPredictiveIntercept(
                     projectile,
                     projectile.position(),
@@ -563,7 +563,13 @@ public final class RVP_GuidanceRuntimeMath {
         return configured != null ? configured : 0.5f;
     }
 
-    private static boolean shouldUseProportionalNavigation(RVP_GuidanceRuntimeContext context) {
+    /**
+     * 判断当前制导阶段是否允许复用预测拦截点（PIP）转向。
+     *
+     * <p>公开此门控供SACLOS STABLE辅助在生成实体意图前复核，确保尚未到启用Tick、
+     * 诱饵干扰期或二脉冲等待期仍走原SACLOS视线制导，而不是退化成实体纯追踪。</p>
+     */
+    public static boolean canUsePredictiveIntercept(RVP_GuidanceRuntimeContext context) {
         if (context == null || !context.active().predictTargetPos()) {
             return false;
         }

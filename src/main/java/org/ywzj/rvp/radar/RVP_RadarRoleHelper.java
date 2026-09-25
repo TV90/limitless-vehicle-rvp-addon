@@ -147,6 +147,43 @@ public final class RVP_RadarRoleHelper {
     }
 
     /**
+     * 解析本车雷达或外置雷达已经确认的正式硬锁目标。
+     *
+     * <p>与 {@link #getEffectiveRfLockedEntity(WeaponUnit)} 不同，本方法故意不回退
+     * {@link WeaponUnit#getLockedEntity()}，避免把ARH导引头/TWS软航迹升级成硬锁授权。</p>
+     *
+     * @param weaponUnit 当前武器站或其子武器站
+     * @return 存活的本车雷达硬锁优先，其次为服务端/客户端各自侧表中的外置雷达正式锁；无则null
+     */
+    @Nullable
+    public static Entity getConfirmedRFHardLockedEntity(@Nullable WeaponUnit weaponUnit) {
+        if (weaponUnit == null) {
+            return null;
+        }
+        // 调用本体武器站层级接口，统一在根火控站的雷达与外置锁状态上取值。
+        WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+        if (root == null) {
+            root = weaponUnit;
+        }
+        // 调用本项目雷达角色解析，只接收具有锁定能力的实际RadarUnit持有的锁定实体；
+        // 即使搜索雷达因旧状态残留lockedEntity，也不能成为PIP授权源。
+        RadarUnit lockedRadar = getLockedRadar(root);
+        Entity localLocked = lockedRadar != null && lockedRadar.isOn() && canLock(lockedRadar)
+                ? lockedRadar.getLockedEntity()
+                : null;
+        if (localLocked != null && localLocked.isAlive()) {
+            return localLocked;
+        }
+        // 调用本项目外置雷达服务端/客户端侧表，只接收已确认locked ID，不接收requested航迹。
+        int externalLockedId = RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root);
+        if (externalLockedId == Integer.MIN_VALUE || root.getVehicle() == null) {
+            return null;
+        }
+        Entity externalLocked = root.getVehicle().level().getEntity(externalLockedId);
+        return externalLocked != null && externalLocked.isAlive() ? externalLocked : null;
+    }
+
+    /**
      * 判断当前武器站目标是否只是 ARH 等武器在导引头开机后建立的本地软跟踪。
      *
      * <p>软跟踪只写入 {@link WeaponUnit#getLockedEntity()}，不会写入雷达硬锁、外置雷达锁
