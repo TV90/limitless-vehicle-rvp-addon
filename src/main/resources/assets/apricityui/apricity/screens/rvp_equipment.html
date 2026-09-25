@@ -1,0 +1,142 @@
+<!doctype html>
+<!--
+  RVP 辅助设备面板（O 键打开，RVP_EquipPanelScreen）
+  布局 v4：左上=俯视图（#skeleton-stage 卡体本身作原生渲染锚点，Java 侧 scissor 内绘制）；
+          左下=快速维修顺序设置（爆反/辅助设备双队列，自绘下拉切换；无开始按钮）；
+          右半页=同屏四栏目 2×2 等高网格，行=序号/别名/状态（失效红框置顶，点击入队）。
+  实测修正（2026-09-26）：
+    1. 字号全面调大并加粗（AUI 的 OTF 平滑字体小字号发虚；viewport 锁 zoom=1 防
+       Ctrl+滚轮残留缩放造成的模糊——若仍模糊先清 config/apricityui/viewport-zoom.properties）；
+    2. 俯视图锚点弃用 inset 简写（AUI 不支持导致锚点 0×0 不渲染），直接绑定有确定尺寸的卡体；
+    3. 栏目头改为单文本节点（AUI 下"文本+子元素"混排会重叠），汇总并入标题文本；
+    4. 高频抖动根治在 Java 侧签名比对（本模板无脚本）。
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser, zoom=1, min-zoom=1, max-zoom=1, user-scalable=false">
+    <link rel="stylesheet" href="/apricityui/theme/ore/ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; font-size: 14px; font-weight: bold; }
+        .equip-screen .navbar { min-height: 40px; padding: 6px 10px; flex: 0 0 auto; align-items: center; display: flex; justify-content: space-between; }
+        .equip-screen .navbar-brand, .equip-screen .card-header, .equip-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
+        .equip-screen .navbar-brand { font-size: 21px; font-weight: bold; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .hp-text { font-size: 14px; font-weight: bold; color: var(--ore-ink); }
+        .hp-bar { width: 150px; height: 12px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hp-fill { height: 100%; background: var(--ore-success); }
+        .equip-screen .close-button { width: 32px; height: 28px; min-height: 28px; padding: 3px 7px 7px; font-size: 15px; line-height: 1; flex: 0 0 32px; }
+
+        .equip-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .left-column { flex: 0 0 40%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
+        .right-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .equip-screen .card-header { min-height: 30px; padding: 7px 9px; font-size: 15px; font-weight: bold; flex: 0 0 auto; }
+        .equip-screen .card-body { padding: 6px 7px; }
+        .cat-sum { font-size: 14px; color: var(--ore-ink-muted); }
+
+        /* 右半页：同屏四栏目（2×2 等高）；单卡内部滚动；栏目总数超出靠外层滚轮 */
+        .cat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 7px; align-content: flex-start; }
+        .cat-card { flex: 0 0 48%; max-width: 48%; height: 47%; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; }
+        .cat-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+
+        /* 设备行：序号 / 别名（无别名回退骨名）/ 状态；失效置顶由 Java 排序保证 */
+        .mod-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px; box-sizing: border-box; font-size: 15px; font-weight: bold; cursor: pointer; flex: 0 0 auto; }
+        .mod-row.ok { border: 2px solid rgba(105,173,69,0.6); background: rgba(105,173,69,0.08); }
+        .mod-row.bad { border: 2px solid var(--ore-danger); background: rgba(212,91,80,0.10); }
+        .row-idx { flex: 0 0 22px; color: var(--ore-ink-muted); font-size: 13px; text-align: right; }
+        .row-alias { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
+        .row-extra { flex: 0 0 auto; font-size: 14px; color: var(--ore-ink-muted); }
+        .row-state { flex: 0 0 auto; font-size: 12px; font-weight: bold; padding: 1px 7px; border: 1px solid; }
+        .row-state.ok { color: var(--ore-success); border-color: var(--ore-success); }
+        .row-state.bad { color: var(--ore-danger); border-color: var(--ore-danger); }
+
+        /* 左下：快速维修顺序设置（双队列 + 自绘下拉；无开始按钮）；俯视图缩到左上 45% 高后占满剩余。
+            ★.card 在 ore 主题下不是 flex，必须显式加 display:flex 才能让 card-body/queue-list 撑满 */
+        .maint-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+        .maint-panel .card-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+        .repair-forecast { font-size: 14px; color: var(--ore-ink); }
+        .queue-picker { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ore-ink); }
+        .queue-select { flex: 1 1 auto; position: relative; height: 28px; box-sizing: border-box; display: flex; align-items: center; padding: 0 10px; font-size: 14px; font-weight: bold; background: #33353a; color: var(--ore-ink); border: 1px solid var(--ore-edge); cursor: pointer; user-select: none; }
+        .queue-select-value { flex: 1 1 auto; overflow: hidden; white-space: nowrap; }
+        .queue-select-arrow { flex: 0 0 auto; font-size: 12px; color: var(--ore-ink-muted); }
+        .queue-menu { position: absolute; left: -1px; right: -1px; top: 27px; z-index: 30; background: #33353a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .queue-option { min-height: 28px; padding: 5px 10px; font-size: 14px; cursor: pointer; }
+        .queue-option:hover { background: #4a4b4e; }
+        .queue-option.active { background: #514a35; border-left: 2px solid var(--ore-gold); }
+        .queue-list { flex: 1 1 auto; min-height: 100px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; box-sizing: border-box; border: 1px solid var(--ore-edge); background: rgba(0,0,0,0.14); padding: 3px; }
+        .queue-items { display: flex; flex-direction: column; gap: 3px; }
+        .queue-row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 2px 8px; font-size: 14px; font-weight: bold; border: 1px solid var(--ore-gold); background: rgba(240,185,45,0.08); flex: 0 0 auto; }
+        .queue-idx { color: var(--ore-gold); font-size: 13px; flex: 0 0 auto; }
+        .queue-own { color: var(--ore-ink-muted); font-size: 13px; flex: 0 0 auto; }
+        .queue-x { margin-left: auto; color: var(--ore-ink-muted); cursor: pointer; padding: 0 5px; flex: 0 0 auto; }
+        .queue-empty { font-size: 14px; color: var(--ore-ink-muted); padding: 5px 6px; }
+        .queue-hint { font-size: 13px; color: var(--ore-ink-muted); line-height: 1.4; }
+
+        /* 左上：俯视图（Java 把骨块投影为绝对定位 div 注入 #skeleton-canvas；
+            只占左上角 45% 高，维修顺序栏占左列剩余。画布/块均用显式 left/top/width/height，
+            勿用 inset 简写——AUI 不支持） */
+        .skeleton-panel { flex: 0 0 45%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+        .skeleton-stage-wrap { position: relative; flex: 1 1 auto; min-height: 0; background: #252628; border: 2px solid #56585b; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; overflow: hidden; }
+        .skeleton-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+        .skeleton-rect { position: absolute; box-sizing: border-box; }
+        .sk-legend { position: absolute; right: 8px; top: 6px; display: flex; gap: 10px; font-size: 13px; color: var(--ore-ink-muted); }
+        .sk-legend i { display: inline-block; width: 10px; height: 10px; border: 1px solid #141517; box-sizing: border-box; vertical-align: -1px; margin-right: 3px; }
+    </style>
+</head>
+<body class="ore-theme equip-screen">
+    <nav class="navbar">
+        <div class="navbar-brand" id="panel-title"><translation>gui.ywzj_rvp.equipment.title</translation></div>
+        <div class="nav-right">
+            <span id="hp-text" class="hp-text"></span>
+            <div class="hp-bar"><div id="hp-fill" class="hp-fill"></div></div>
+            <button id="close-button" class="close-button button button-danger" type="button">X</button>
+        </div>
+    </nav>
+    <main class="equip-workspace">
+        <!-- 左列：上=俯视图，下=维修顺序设置 -->
+        <div class="left-column">
+            <aside class="card card-accent-green skeleton-panel">
+                <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">
+                    <span id="skeleton-header-text"></span>
+                </div>
+                <div id="skeleton-stage" class="card-body skeleton-stage-wrap" style="padding:0">
+                    <div id="skeleton-canvas" class="skeleton-canvas"></div>
+                    <div class="sk-legend">
+                        <span><i style="background:var(--ore-success)"></i>ERA</span>
+                        <span><i style="background:var(--ore-blue)"></i><translation>gui.ywzj_rvp.equipment.legend_device</translation></span>
+                        <span><i style="background:var(--ore-danger);opacity:.5"></i><translation>gui.ywzj_rvp.equipment.legend_dead</translation></span>
+                    </div>
+                </div>
+            </aside>
+            <aside id="maint-panel" class="card card-accent-gold maint-panel">
+                <div class="card-header"><translation>gui.ywzj_rvp.equipment.repair_order</translation></div>
+                <div class="card-body">
+                    <div id="repair-forecast" class="repair-forecast"></div>
+                    <div class="queue-picker">
+                        <span><translation>gui.ywzj_rvp.equipment.queue</translation></span>
+                        <div id="queue-picker" class="queue-select">
+                            <span id="queue-picker-value" class="queue-select-value"><translation>gui.ywzj_rvp.equipment.queue_era</translation></span>
+                            <span class="queue-select-arrow">▼</span>
+                            <div id="queue-menu" class="queue-menu hidden">
+                                <div class="queue-option active" data-queue="era"><translation>gui.ywzj_rvp.equipment.queue_era</translation></div>
+                                <div class="queue-option" data-queue="dev"><translation>gui.ywzj_rvp.equipment.queue_dev</translation></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="queue-list">
+                        <div id="queue-era-list" class="queue-items"></div>
+                        <div id="queue-dev-list" class="queue-items hidden"></div>
+                    </div>
+                    <div class="queue-hint"><translation>gui.ywzj_rvp.equipment.queue_hint</translation></div>
+                </div>
+            </aside>
+        </div>
+        <!-- 右半页：同屏四栏目（2×2 等高），Java 动态构建 -->
+        <div class="right-column">
+            <div id="category-scroll" class="cat-scroll"></div>
+        </div>
+    </main>
+</body>
+</html>

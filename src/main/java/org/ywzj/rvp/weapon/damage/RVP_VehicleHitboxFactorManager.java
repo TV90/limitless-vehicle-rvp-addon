@@ -316,24 +316,29 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      *
      * <p>规范写法为 {@code bone_modules.__vehicle__.maintenance}（虚拟骨，载具级能力、
      * 永不可被击毁）；绑定实体骨时骨块被击毁则维修失效（可被快修的模块恢复修回）。
-     * 无配置返回 null。供 {@code RVP_MaintenanceRuntimeManager} 使用。</p>
+     * <b>2026-09-25 起全载具默认快修</b>：未显式配置的载具回退 {@link BoneMaintenanceConfig#defaults()}
+     * （冷却 15 秒、一次修复 30% 最大血量，虚拟骨 {@code __vehicle__} 承载）；
+     * 仅 {@code vehicle == null} 返回 null。供 {@code RVP_MaintenanceRuntimeManager} 使用。</p>
      */
     public @Nullable MaintenanceModuleBinding resolveMaintenanceModule(AbstractVehicle vehicle) {
         if (vehicle == null) {
             return null;
         }
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
-        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
-            return null;
-        }
-        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
-            BoneModuleConfig moduleConfig = entry.getValue();
-            if (moduleConfig != null && moduleConfig.maintenance() != null
-                    && moduleConfig.modules() != null && moduleConfig.modules().contains(BoneModuleType.MAINTENANCE)) {
-                return new MaintenanceModuleBinding(entry.getKey(), moduleConfig.maintenance());
+        if (cfg != null && cfg.moduleByBoneName != null && !cfg.moduleByBoneName.isEmpty()) {
+            for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+                BoneModuleConfig moduleConfig = entry.getValue();
+                if (moduleConfig != null && moduleConfig.maintenance() != null
+                        && moduleConfig.modules() != null && moduleConfig.modules().contains(BoneModuleType.MAINTENANCE)) {
+                    return new MaintenanceModuleBinding(entry.getKey(), moduleConfig.maintenance());
+                }
             }
         }
-        return null;
+        // [RVP] 2026-09-25 全载具默认快修（用户定版）：未显式配置 maintenance 的载具回退默认配置
+        // （冷却 300t=15 秒，生效 20t × 1.5%/tick = 一次修复 30% 最大血量），挂在永不可毁的
+        // 虚拟骨 __vehicle__ 上（虚拟骨不进任何击毁/失效路径，isModuleActive 缺省视为存活）；
+        // 显式配置（含绑实体骨的对抗性写法）仍在上方优先返回。
+        return new MaintenanceModuleBinding("__vehicle__", BoneMaintenanceConfig.defaults());
     }
 
     /** 快速维修模块绑定：骨块名（可为虚拟骨 {@code __vehicle__}）+ 配置。 */
@@ -434,6 +439,28 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return boneName;
         }
         return cfg.aliasByBoneName.getOrDefault(boneName, boneName);
+    }
+
+    /**
+     * 解析载具全部骨模块配置的"骨名 → 模块类型集合"只读视图（辅助设备面板用）。
+     *
+     * <p>注意：底层 {@code moduleByBoneName} 为 HashMap 不保序，需要"载具数据出现顺序"
+     * 的消费方（如辅助设备面板的行序号）应拿本表键集合去对照 {@code vehicle.getPartUnits()}
+     * 的 JSON 顺序自行排序；无配置返回空 Map。</p>
+     */
+    public Map<String, Set<BoneModuleType>> resolveBoneModules(AbstractVehicle vehicle) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Set<BoneModuleType>> out = new HashMap<>();
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneModuleConfig moduleConfig = entry.getValue();
+            if (moduleConfig != null && moduleConfig.hasModules()) {
+                out.put(entry.getKey(), Set.copyOf(moduleConfig.modules()));
+            }
+        }
+        return out;
     }
 
     /** 载具 JSON 顶层 {@code hit_indicator_rvp}（默认 true）：是否对命中该载具显示 RVP 命中提示。 */

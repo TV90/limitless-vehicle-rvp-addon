@@ -27,6 +27,9 @@ public class RVP_Keys {
 
     public static final KeyMapping OPEN_GPS_PANEL = key("open_gps_panel", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K);
 
+    /** 辅助设备面板（AUI）：俯视图 + 设备状态栏目 + 快修顺序设置，默认 O。 */
+    public static final KeyMapping OPEN_EQUIP_PANEL = key("open_equip_panel", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O);
+
     /** Toggle debug overlay (hit debug HUD). */
     public static final KeyMapping DEBUG_OVERLAY = key("debug_overlay", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F10);
 
@@ -66,12 +69,13 @@ public class RVP_Keys {
      */
     public static final KeyMapping FIRE_SMOKE = key("fire_smoke", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H);
 
-    /** 快速维修（载具内一键回血 + 渐进恢复骨骼模块），默认 G。 */
-    public static final KeyMapping USE_MAINTENANCE = key("use_maintenance", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G);
+    /** 快速维修（载具内一键回血 + 渐进恢复骨骼模块）。默认 ;（2026-09-25 由 G 改键，用户定版）。 */
+    public static final KeyMapping USE_MAINTENANCE = key("use_maintenance", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_SEMICOLON);
 
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_GPS_PANEL);
+        event.register(OPEN_EQUIP_PANEL);
         event.register(DEBUG_OVERLAY);
         event.register(ARM_SELECT_PREV);
         event.register(ARM_SELECT_NEXT);

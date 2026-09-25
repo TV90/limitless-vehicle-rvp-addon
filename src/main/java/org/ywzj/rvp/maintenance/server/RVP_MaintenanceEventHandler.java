@@ -47,6 +47,8 @@ public final class RVP_MaintenanceEventHandler {
         }
         if (event.getEntity() instanceof AbstractVehicle vehicle) {
             RVP_MaintenanceRuntimeManager.onVehicleLeave(vehicle);
+            // [RVP] 维修顺序为无持久化的会话内状态，随载具离开世界一并清理
+            RVP_RepairOrderTable.onVehicleLeave(vehicle.getUUID());
         }
     }
 

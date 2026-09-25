@@ -179,7 +179,10 @@ public final class RVP_MaintenanceRuntimeManager {
     }
 
     /**
-     * 骨骼模块渐进恢复（方案 v2.1）：① 设备类逐台概率掷骰；② ERA 数量比例随机；
+     * 骨骼模块渐进恢复（方案 v2.1 + 维修顺序队列）：① 设备类先按"辅助设备维修顺序"队列
+     * 逐台掷骰，队列外保持原有遍历掷骰；② ERA 恢复数量配额不变（ceil(n × fraction)、
+     * 至少 eraRecoverMin），改为从"爆反维修顺序"队列头优先占配额，队列外仍洗牌补足——
+     * 即只把"修哪些"的决定权交给玩家，恢复量 / 概率公式一律不动；
      * ③ 一次 {@code syncBoneModuleState} 广播——消费端全部查状态表，恢复即自动生效。
      */
     private static void recoverModules(AbstractVehicle vehicle, BoneMaintenanceConfig config) {
@@ -192,18 +195,34 @@ public final class RVP_MaintenanceRuntimeManager {
             return;
         }
         var random = vehicle.level().random;
+        // 玩家设置的维修顺序（未设置 = EMPTY，两条分支行为与改动前完全一致）
+        RVP_RepairOrderTable.RepairOrder order = RVP_RepairOrderTable.getOrder(vehicleId);
+        List<String> deviceQueue = order.deviceBones();
+        List<String> eraQueue = order.eraBones();
 
-        // ① 设备类：逐台独立概率恢复（部分恢复有明确语义：APS 雷达骨 = 一个扫描扇区）。
-        //    MAINTENANCE 自身不在设备恢复掷骰内（维修恢复维修设备由 ②/白名单控制，缺省不含）。
-        for (Map.Entry<String, Set<BoneModuleType>> boneEntry : inactive.entrySet()) {
-            for (BoneModuleType type : boneEntry.getValue()) {
-                if (type != BoneModuleType.ERA && type != BoneModuleType.MAINTENANCE && cfg.isRepairable(type)
-                        && random.nextFloat() < cfg.deviceRecoverChance) {
-                    RVP_BoneModuleStateTable.restoreModule(vehicleId, boneEntry.getKey(), type);
-                }
+        // ① 辅助设备（纯设备骨）：按骨掷骰一次，成功则该骨全部失效设备模块一起恢复（捆绑语义）。
+        //    含 ERA 的双角色骨（如 t84bm 的 ERA+干扰机同骨）不在此列——它归入爆反配额，随 ERA 捆绑恢复。
+        //    MAINTENANCE 自身不在设备恢复掷骰内。
+        for (String queuedBone : deviceQueue) {
+            Set<BoneModuleType> queuedTypes = inactive.get(queuedBone);
+            if (queuedTypes == null || queuedTypes.contains(BoneModuleType.ERA)) {
+                continue; // 双角色骨走爆反配额捆绑恢复
+            }
+            if (hasRepairableDevice(queuedTypes, cfg) && random.nextFloat() < cfg.deviceRecoverChance) {
+                restoreBoneModules(vehicleId, queuedBone, queuedTypes, cfg, false);
             }
         }
-        // ② ERA：洗牌取 ceil(n * fraction)，至少 eraRecoverMin 块（MCHR 手感）
+        for (Map.Entry<String, Set<BoneModuleType>> boneEntry : inactive.entrySet()) {
+            if (deviceQueue.contains(boneEntry.getKey()) || boneEntry.getValue().contains(BoneModuleType.ERA)) {
+                continue; // 队列内已处理；双角色骨走爆反配额捆绑恢复
+            }
+            if (hasRepairableDevice(boneEntry.getValue(), cfg) && random.nextFloat() < cfg.deviceRecoverChance) {
+                restoreBoneModules(vehicleId, boneEntry.getKey(), boneEntry.getValue(), cfg, false);
+            }
+        }
+        // ② ERA：恢复数量配额不变（ceil(n * fraction)，至少 eraRecoverMin 块，MCHR 手感）；
+        //    选择顺序为"爆反维修顺序"队列头优先，队列外剩余块仍 Fisher–Yates 洗牌补足。
+        //    配额选中的骨按捆绑语义整骨恢复：ERA 连同骨上失效的可修设备模块（如干扰机）一起修回。
         List<String> destroyedEraBones = new ArrayList<>();
         for (Map.Entry<String, Set<BoneModuleType>> boneEntry : inactive.entrySet()) {
             if (boneEntry.getValue().contains(BoneModuleType.ERA) && cfg.isRepairable(BoneModuleType.ERA)) {
@@ -211,22 +230,63 @@ public final class RVP_MaintenanceRuntimeManager {
             }
         }
         if (!destroyedEraBones.isEmpty()) {
+            // 队列内且确实已毁的块按队列序排在最前（只保留一次，防客户端重复上报）
+            List<String> ordered = new ArrayList<>();
+            for (String queuedBone : eraQueue) {
+                if (destroyedEraBones.contains(queuedBone) && !ordered.contains(queuedBone)) {
+                    ordered.add(queuedBone);
+                }
+            }
+            List<String> remaining = new ArrayList<>(destroyedEraBones);
+            remaining.removeAll(ordered);
+            // 队列外洗牌（Level.random 为 RandomSource，不能用 Collections.shuffle）
+            for (int i = remaining.size() - 1; i > 0; i--) {
+                int j = random.nextInt(i + 1);
+                String tmp = remaining.get(i);
+                remaining.set(i, remaining.get(j));
+                remaining.set(j, tmp);
+            }
+            ordered.addAll(remaining);
             int n = (int) Math.ceil(destroyedEraBones.size() * cfg.eraRecoverFraction);
             n = Math.max(n, cfg.eraRecoverMin);
-            n = Math.min(n, destroyedEraBones.size());
-            // Fisher–Yates 洗牌（Level.random 为 RandomSource，不能用 Collections.shuffle）
-            for (int i = destroyedEraBones.size() - 1; i > 0; i--) {
-                int j = random.nextInt(i + 1);
-                String tmp = destroyedEraBones.get(i);
-                destroyedEraBones.set(i, destroyedEraBones.get(j));
-                destroyedEraBones.set(j, tmp);
-            }
+            n = Math.min(n, ordered.size());
             for (int i = 0; i < n; i++) {
-                RVP_BoneModuleStateTable.restoreModule(vehicleId, destroyedEraBones.get(i), BoneModuleType.ERA);
+                String bone = ordered.get(i);
+                restoreBoneModules(vehicleId, bone, inactive.get(bone), cfg, true);
             }
         }
         // ③ 一次广播：客户端动画恢复渲染骨、各消费端下 tick 自动重新生效
         RVP_VehicleHitboxFactorManager.syncBoneModuleState(vehicle);
+    }
+
+    /** 骨上是否存在可修的非 ERA 设备模块（用于辅助设备分支按骨掷骰判定）。 */
+    private static boolean hasRepairableDevice(Set<BoneModuleType> types, BoneMaintenanceConfig.ModuleRepair cfg) {
+        for (BoneModuleType type : types) {
+            if (type != BoneModuleType.ERA && type != BoneModuleType.MAINTENANCE && cfg.isRepairable(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 捆绑恢复一块骨上全部失效的可修模块（用户 2026-09-26 定版：同骨多角色一起修）。
+     *
+     * @param includeEra true = 连同 ERA 一起恢复（爆反配额路径）；false = 跳过 ERA（纯设备骨掷骰路径）
+     */
+    private static void restoreBoneModules(UUID vehicleId, String bone, Set<BoneModuleType> types,
+                                           BoneMaintenanceConfig.ModuleRepair cfg, boolean includeEra) {
+        for (BoneModuleType type : types) {
+            if (type == BoneModuleType.MAINTENANCE) {
+                continue; // 维修模块自身永不恢复
+            }
+            if (type == BoneModuleType.ERA && !includeEra) {
+                continue;
+            }
+            if (cfg.isRepairable(type)) {
+                RVP_BoneModuleStateTable.restoreModule(vehicleId, bone, type);
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────

@@ -128,6 +128,8 @@ public class RVP_ClientEvents {
         RVP_ClientBroadcastVehicleInterpolator.clientTick();
         RVP_ClientTacticalRevealState.clientTick();
         RVP_ClientGunnerVehicleState.clientTick();
+        // 调用本项目客户端维修顺序侧表清理：维度切换/登出全清，剔除已卸载载具
+        org.ywzj.rvp.client.state.RVP_ClientRepairOrderState.clientTick();
         // 调试：确认本体 RWR 覆盖层读取的 warningReceiver.targets 里是否有伪造 RADAR_LOCK
         if (org.ywzj.rvp.client.state.RVP_ClientEcmDebugState.isDebugOn()
                 && player.tickCount % 20 == 0) {
@@ -161,7 +163,8 @@ public class RVP_ClientEvents {
             ywzj_rvp$fireCountermeasure(RVP_EnumCountermeasureType.SMOKE);
         }
 
-        // 快速维修（G）：乘坐在已配置 maintenance 的载具内按键 → 服务端权威触发
+        // 快速维修（;，2026-09-25 由 G 改键）：全部载具可用（未显式配置 maintenance 的载具
+        // 走 resolveMaintenanceModule 的默认配置：冷却 15 秒、一次修复 30% 最大血量）→ 服务端权威触发
         while (RVP_Keys.USE_MAINTENANCE.consumeClick()) {
             LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
             if (lvp != null && lvp.vehicle != null && lvp.onVehicle()) {
@@ -288,6 +291,14 @@ public class RVP_ClientEvents {
                 RVP_ClientActionsAccess.openFireSupportTerminal();
             } else {
                 mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
+            }
+        }
+        // [RVP] O 键：辅助设备面板（俯视图 + 设备状态栏目 + 快修顺序设置）。
+        // 守卫：仅乘载具时可打开（面板展示的就是本车设备状态）。
+        while (RVP_Keys.OPEN_EQUIP_PANEL.consumeClick()) {
+            LocalVehiclePlayer equipPanelLvp = LocalVehiclePlayer.instance;
+            if (equipPanelLvp != null && equipPanelLvp.onVehicle() && equipPanelLvp.vehicle != null) {
+                mc.setScreen(new org.ywzj.rvp.client.screen.RVP_EquipPanelScreen(equipPanelLvp.vehicle));
             }
         }
         while (RVP_Keys.DEPLOY_DEPLOYABLE_UAV.consumeClick()) {

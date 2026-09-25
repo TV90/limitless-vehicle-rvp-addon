@@ -7,6 +7,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.network.C2SFireCountermeasure;
 import org.ywzj.rvp.countermeasure.network.S2CCountermeasureHudSync;
+import org.ywzj.rvp.maintenance.network.C2SSetRepairOrder;
 import org.ywzj.rvp.maintenance.network.C2SUseMaintenance;
 import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
 import org.ywzj.rvp.network.remotevisibility.S2CRemoteAmmoVisualSnapshot;
@@ -19,8 +20,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 15 为远距弹药视觉快照增加服务端权威的剩余发动机燃烧 Tick。 */
-    private static final String PROTOCOL = "15";
+    /** 协议 16 新增 C2SSetRepairOrder：辅助设备面板上行"爆反/辅助设备维修顺序"（旧客户端无法连新服）。 */
+    private static final String PROTOCOL = "16";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -323,6 +324,13 @@ public class RVP_Network {
                 .encoder(C2SScopeViewSync::encode)
                 .decoder(C2SScopeViewSync::decode)
                 .consumerMainThread(C2SScopeViewSync::handle)
+                .add();
+        // [RVP] 维修顺序上行（C2S，协议 16）：辅助设备面板编辑"爆反/辅助设备维修顺序"后即时同步，
+        //       服务端按载具记入 RVP_RepairOrderTable；触发维修仍走快修工具既有链路
+        CHANNEL.messageBuilder(C2SSetRepairOrder.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SSetRepairOrder::encode)
+                .decoder(C2SSetRepairOrder::decode)
+                .consumerMainThread(C2SSetRepairOrder::handle)
                 .add();
     }
 }

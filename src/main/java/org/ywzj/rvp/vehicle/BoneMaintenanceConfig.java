@@ -25,9 +25,14 @@ import java.util.Locale;
  * <p>也可绑定实体骨（如发动机）：骨块被直击打掉则维修模块失效——快修无法触发，
  * 该能力即告失去（对抗性设计，慎用）。</p>
  *
+ * <p><b>2026-09-25 起全载具默认快修</b>：未显式配置 maintenance 的载具在
+ * {@code resolveMaintenanceModule} 回退 {@link #defaults()}（冷却 300t=15 秒、
+ * 生效 20t × 1.5%/tick = 一次修复 30% 最大血量，挂在永不可毁的虚拟骨上）；
+ * 显式配置仍按 JSON 覆盖。</p>
+ *
  * @param useTimeTicks        生效时长 tick（1~1200），每 tick 回 healPerTickPercent% 最大血量
  * @param waitTimeTicks       冷却时长 tick（0~100000）
- * @param healPerTickPercent  每 tick 回复量占最大血量百分比（0.1~100，默认 1.0 = MCHR 手感）
+ * @param healPerTickPercent  每 tick 回复量占最大血量百分比（0.1~100，默认 1.5：20t 共 30%）
  * @param healParts           生效期是否同步回部件血量（每部件 +10% 上限，默认 false）
  * @param requireMaxAltitude  允许触发的离地高度上限（方块，<0 不限；默认 -1）
  * @param moduleRepair        模块渐进恢复子配置（null = 缺省：设备概率 25% + ERA 25%）
@@ -41,6 +46,15 @@ public record BoneMaintenanceConfig(
         @Nullable ModuleRepair moduleRepair
 ) {
 
+    /**
+     * 全载具默认快修配置（未显式配置 maintenance 时的回退值，用户 2026-09-25 定版）：
+     * 冷却 300t（15 秒）、生效 20t × 1.5%/tick = 一次修复 30% 最大血量；
+     * 不回部件血量、无离地限制、模块恢复走缺省（设备 25% + ERA 25%/至少 1 块）。
+     */
+    public static BoneMaintenanceConfig defaults() {
+        return new BoneMaintenanceConfig(20, 300, 1.5f, false, -1f, null);
+    }
+
     /** 解析 maintenance 子对象；缺省值由字段初值决定（ GsonUtil 同款语义）。 */
     @Nullable
     public static BoneMaintenanceConfig parse(@Nullable JsonElement element) {
@@ -50,7 +64,8 @@ public record BoneMaintenanceConfig(
         JsonObject obj = element.getAsJsonObject();
         int useTimeTicks = Math.max(1, Math.min(1200, GsonHelper.getAsInt(obj, "use_time_ticks", 20)));
         int waitTimeTicks = Math.max(0, Math.min(100000, GsonHelper.getAsInt(obj, "wait_time_ticks", 300)));
-        float healPercent = GsonHelper.getAsFloat(obj, "heal_per_tick_percent", 1.0f);
+        // 缺省值与 defaults() 对齐（用户 2026-09-25 定版：冷却 15 秒、一次修复 30% 血量）
+        float healPercent = GsonHelper.getAsFloat(obj, "heal_per_tick_percent", 1.5f);
         if (!Float.isFinite(healPercent) || healPercent <= 0f) {
             healPercent = 1.0f;
         }
