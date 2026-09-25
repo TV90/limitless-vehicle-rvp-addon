@@ -3,8 +3,8 @@ package org.ywzj.rvp.client.state;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.lead.RVP_ClientMachinegunLeadResolver;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
-import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -53,9 +53,9 @@ public final class RVP_MachinegunLeadState {
         State state = STATES.computeIfAbsent(key, unused -> new State());
         if (state.lastSolveTick != nowTick) {
             state.lastSolveTick = nowTick;
-            // 调用本项目机炮解算器，每个武器站每 tick 仅生成一份原始物理解供 EMA、火控与 HUD 共用。
+            // 调用本项目客户端机炮追踪解析器，每个武器站每 tick 仅生成一份原始物理解供 EMA、火控与 HUD 共用。
             acceptRawSolution(weaponUnit, state,
-                    RVP_MachinegunLeadSolver.solveCurrent(weaponUnit, 1.0F), nowTick);
+                    RVP_ClientMachinegunLeadResolver.solveCurrent(weaponUnit, 1.0F), nowTick);
         }
         prune(nowTick);
         return state.controlSolution;

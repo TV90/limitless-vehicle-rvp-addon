@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.state.RVP_AimAssistState;
+import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_MachinegunLeadState;
 import org.ywzj.rvp.client.state.RVP_SemiAutoLeadTrimState;
@@ -99,7 +100,11 @@ public final class RVP_BallisticLeadFireControlExecutor {
                 return true;
             }
             if (radarLockedTarget != null) {
-                trackedTargetWorldPos = radarLockedTarget.getBoundingBox().getCenter();
+                // 调用本项目广播载具插值器，让导弹的稳定/半自动火控与 HUD
+                // 共用同一远距目标中心，避免本体每五 Tick 广播导致观瞄阶梯跳变。
+                trackedTargetWorldPos = RVP_ClientBroadcastVehicleInterpolator
+                        .resolveTrackingSample(radarLockedTarget, 1.0F)
+                        .center();
             }
 
             if (offAxisDeg <= 0.0F && !radarMissileTrackMode) {

@@ -327,3 +327,51 @@ schema 或网络协议。
 - [ ] 仅有TWS软航迹时三态不驱动视线；建立硬锁后才开始跟踪。
 - [ ] 切换目标、导弹/机炮或火控模式后不继承上一份双轴偏置。
 - [ ] Buk-M3、CSSA-5、IRIS-T SLM TEL 在 `rvp_rf` 导弹下也具有相同三态，其他非导弹武器保留旧软修正。
+
+## 2026-09-25 超过 512 格的广播目标火控插值
+
+### 根因
+
+本体对超视距载具默认每 5 Tick 通过 `ServerBroadcastEntities` 更新一次。收包后克隆实体的
+`xo/yo/zo` 和当前坐标会同时被写成新样本，载具 `remoteTick()` 也不推进位置。因此：
+
+- HUD 已经通过 `RVP_ClientBroadcastVehicleInterpolator` 跨包插值，锁定框能连续移动；
+- `rvp_rf` 导弹的稳定/半自动火控仍直接读取克隆实体的离散 AABB 中心；
+- 机炮提前量解算仍尝试用 `xo -> x` 做单 Tick 插值，且速度历史以不推进的
+  广播克隆 `entity.tickCount` 为时间轴。
+
+所以 PS1SM 在目标超过近距实体跟踪范围后，2A38、TKB-1055、95Ya6M 与 Hermes 1A 的
+`STABLE / SEMI_AUTO` 基准方向都会按广播周期跳变。
+
+### 实施方案
+
+1. 将 `RVP_ClientBroadcastVehicleInterpolator` 扩展为 HUD/火控共享的目标运动轨迹，同时插值
+   包围盒中心和广播包速度；
+2. `RVP_BallisticLeadFireControlExecutor` 的 RF 导弹 `STABLE / SEMI_AUTO` 统一使用该轨迹中心；
+3. `RVP_MachinegunLeadSolver` 对广播载具使用该轨迹中心和速度，不再读取克隆实体
+   `tickCount` 历史；
+4. 由于样本缓冲会让可视目标中心落后一个广播周期，机炮只在弹道预测起点上补回
+   `velocity × bufferTicks`；`RVP_LeadSolution.targetWorldPos` 仍保留插值中心，保证虚线端点与锁定框对齐；
+5. 客户端采样放在独立 `RVP_ClientMachinegunLeadResolver` 中，服务端 AHEAD 引信继续调用不依赖
+   客户端广播缓存的普通实体求解入口。
+
+普通近距实体继续使用原有单 Tick 插值与位置历史；不修改本体实体、雷达锁定、服务端
+SACLOS PIP 或导弹权威制导。本次没有新增 Mixin、没有修改载具包 JSON/资源，也没有硬编码载具或武器 ID。
+
+### 自动验证
+
+- `RVP_MachinegunLeadSolverTest`、`RVP_BallisticLeadFireControlPolicyTest` 与
+  `RVP_SemiAutoLeadTrimStateTest` 定向测试通过；
+- 项目根目录按规定 JDK 17 执行 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟达到 `Done (2.844s)!`；日志仅出现既有 Create/TACZ
+  缺类、8 个缺失模型、AbramsX 非法路径、`rvp_bomber:ac130u` 配方和
+  `rvp_bomber:tu160` 数据错误，无新增异常；
+- 冒烟结束后 `jps -l` 无 Gradle/服务端 JVM 残留，25565 端口已释放。
+
+### 实机回归
+
+- [ ] PS1SM 对 512 格外匀速横向载具硬锁：锁定框、观瞄和发射架连续移动；
+- [ ] 2A38 在 `STABLE / SEMI_AUTO` 下的提前量圈不按 5 Tick 跳变，弹着不因显示缓冲固定落后；
+- [ ] TKB-1055 / 95Ya6M / Hermes 1A 在两种火控模式下平滑跟踪，微调偏置不被每包重置；
+- [ ] 目标急停、急转时只体现样本缓冲延迟，不产生外推过冲；
+- [ ] 目标进入 512 格内并切换回正常 `ClientLevel` 实体后，不沿用广播克隆的旧轨迹。
