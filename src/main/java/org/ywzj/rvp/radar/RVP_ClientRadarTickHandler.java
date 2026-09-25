@@ -7,6 +7,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamHelper;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
@@ -18,6 +19,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.C2SRadarPowerToggle;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.vehicle.all.AllConfigs;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.weapon.BulletEntity;
@@ -68,6 +70,8 @@ public final class RVP_ClientRadarTickHandler {
     private static final Map<Integer, Long> LOCKED_OUT_OF_BURN_THROUGH_SINCE = new HashMap<>();
     /** 雷达开关状态快照：key = 车辆ID + ":" + 雷达ID，value = isOn()。 */
     private static final Map<String, Boolean> RADAR_POWER_SNAPSHOT = new HashMap<>();
+    /** 广播克隆允许参与实体接管的最大样本年龄倍数，基准为本体广播间隔。 */
+    private static final int BROADCAST_HANDOVER_FRESHNESS_MULTIPLIER = 2;
 
     private RVP_ClientRadarTickHandler() {
     }
@@ -116,6 +120,13 @@ public final class RVP_ClientRadarTickHandler {
             if (!(partUnit instanceof RadarUnit radar) || !radar.isOn()) {
                 continue;
             }
+            // 调用本项目边界接管逻辑，在接触死亡清理前把同 ID 的近距实体/广播克隆
+            // 统一到当前有效对象，避免本体先按对象引用判失锁、后按实体 ID 迁移的顺序缺陷。
+            reconcileTrackedEntityRepresentations(
+                    radar,
+                    weaponUnit,
+                    (net.minecraft.client.multiplayer.ClientLevel) vehicle.level()
+            );
             RadarUnitData data = radar.getData();
             RadarUnitDataExt ext = data instanceof RadarUnitDataExt radarExt ? radarExt : null;
             boolean phaseMode = ext != null && "phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode());
@@ -144,6 +155,108 @@ public final class RVP_ClientRadarTickHandler {
         }
         // 外置雷达（中继雷达）锁定箔条干扰：外置锁定的目标被箔条遮蔽时清除外置锁定
         tickExternalLockChaffJam(vehicle, weaponUnit);
+    }
+
+    /**
+     * 在 512 格原生跟踪边界迁移雷达接触和硬锁引用。
+     *
+     * <p>同一服务端实体在客户端会先后表现为 {@code ClientLevel} 实体和
+     * {@code serverEntities} 广播克隆。两者实体 ID 相同但对象引用不同；本体锁定检查先按
+     * 对象引用判定、后按 ID 迁移，因此必须在下一次本体检查前完成统一。</p>
+     */
+    private static void reconcileTrackedEntityRepresentations(
+            RadarUnit radar,
+            WeaponUnit weaponUnit,
+            net.minecraft.client.multiplayer.ClientLevel clientLevel
+    ) {
+        Entity radarLocked = radar.getLockedEntity();
+        if (radarLocked != null) {
+            Entity canonicalLocked = resolveCanonicalTrackedEntity(radarLocked.getId(), clientLevel);
+            if (canonicalLocked != null && canonicalLocked != radarLocked) {
+                // 调用本体雷达探测写入接口，先把同 ID 接触切到新对象并刷新接触时间。
+                radar.detect(canonicalLocked);
+                // 调用本体雷达锁定接口，把硬锁从失效的近距实体/旧广播克隆迁移到新对象。
+                radar.setLockedEntity(canonicalLocked);
+                Entity weaponLocked = weaponUnit.getLockedEntity();
+                if (weaponLocked != null
+                        && weaponLocked.getId() == canonicalLocked.getId()
+                        && weaponLocked != canonicalLocked) {
+                    // 调用本体武器站锁定接口，让火控目标与已迁移的 RadarUnit 硬锁保持同一对象。
+                    weaponUnit.setLockedEntity(canonicalLocked);
+                }
+            }
+        }
+
+        for (RadarUnit.DetectedObject detectedObject : radar.getDetectedEntities().values()) {
+            Entity current = detectedObject.entity;
+            if (current == null) {
+                continue;
+            }
+            Entity canonical = resolveCanonicalTrackedEntity(current.getId(), clientLevel);
+            if (canonical == null || canonical == current) {
+                continue;
+            }
+            detectedObject.entity = canonical;
+            detectedObject.detectedPosition = canonical.getBoundingBox().getCenter();
+            detectedObject.detectedTime = System.currentTimeMillis();
+        }
+    }
+
+    /** 按“存活本地实体优先、仍新鲜广播克隆兜底”的顺序解析同 ID 目标对象。 */
+    @Nullable
+    private static Entity resolveCanonicalTrackedEntity(
+            int entityId,
+            net.minecraft.client.multiplayer.ClientLevel clientLevel
+    ) {
+        // 调用原版客户端世界按 ID 取实体，优先使用仍受原生网络跟踪的对象。
+        Entity localEntity = clientLevel.getEntity(entityId);
+        LocalVehiclePlayer.ServerEntity serverEntity = LocalVehiclePlayer.instance.serverEntities.get(entityId);
+        Entity broadcastEntity = serverEntity == null ? null : serverEntity.entity;
+        boolean localAlive = localEntity != null && localEntity.isAlive();
+        boolean broadcastUsable = broadcastEntity != null
+                && broadcastEntity.isAlive()
+                && broadcastEntity.level() == clientLevel
+                && isFreshBroadcastSample(
+                        LocalVehiclePlayer.instance.getPlayer().tickCount,
+                        serverEntity.updateTick,
+                        AllConfigs.server.serverBroadcastEntitiesInterval.get()
+                );
+        return switch (chooseRepresentationSource(localAlive, broadcastUsable)) {
+            case LOCAL -> localEntity;
+            case BROADCAST -> broadcastEntity;
+            case NONE -> null;
+        };
+    }
+
+    /** 纯状态决策入口，供自动化测试覆盖近→远、远→近及无替代对象场景。 */
+    static EntityRepresentationSource chooseRepresentationSource(boolean localAlive, boolean broadcastUsable) {
+        if (localAlive) {
+            return EntityRepresentationSource.LOCAL;
+        }
+        if (broadcastUsable) {
+            return EntityRepresentationSource.BROADCAST;
+        }
+        return EntityRepresentationSource.NONE;
+    }
+
+    /** 判断广播样本是否仍足够新鲜，可安全承担 512 格边界的实体接管。 */
+    static boolean isFreshBroadcastSample(int nowTick, @Nullable Integer updateTick, int intervalTicks) {
+        if (updateTick == null) {
+            return false;
+        }
+        long age = (long) nowTick - updateTick;
+        long maxAge = (long) Math.max(intervalTicks, 1) * BROADCAST_HANDOVER_FRESHNESS_MULTIPLIER;
+        return age >= 0L && age <= maxAge;
+    }
+
+    /** 客户端同 ID 目标当前应采用的实体表示来源。 */
+    enum EntityRepresentationSource {
+        /** 使用 ClientLevel 中的原生跟踪实体。 */
+        LOCAL,
+        /** 使用本体 serverEntities 中仍新鲜的广播克隆。 */
+        BROADCAST,
+        /** 当前没有可安全接管的实体对象。 */
+        NONE
     }
 
     /**
@@ -241,15 +354,10 @@ public final class RVP_ClientRadarTickHandler {
                 it.remove();
                 continue;
             }
-            // BVR 广播克隆过期校验（2026-09-19 鬼影修复）：超视距弹药的接触实体是广播克隆
-            // （serverEntities 里的游离对象，从未加入 ClientLevel）——弹体被拦截/坠毁后服务端
-            // 停止广播，克隆对象无人调 setRemoved，isAlive() 恒 true 且位置冻结在拦截点，
-            // 上面的存活判定拦不住它 → 接触表无限期保留"静止+带旧速度矢量"的鬼影。
-            // 本体清理（LocalVehiclePlayer tick 按 interval×5 清 stale）把克隆移出
-            // serverEntities 后，此处立即移除接触。残影时长 ≈ 广播间隔×5，亚秒级。
-            if (targetEntity instanceof RVP_BaseBullet
-                    && !LocalVehiclePlayer.instance.serverEntities.containsKey(targetEntity.getId())
-                    && clientLevel.getEntity(targetEntity.getId()) == null) {
+            // 广播对象从未加入 ClientLevel，服务端停止广播后其 isAlive() 仍会保持 true。
+            // 调用本项目表示有效性检查，以本地实体身份或新鲜广播样本证明接触仍有效；
+            // 车辆与弹体统一执行，防止为 512 格硬锁接管保留克隆后重新引入静止鬼影。
+            if (!isCurrentTrackedRepresentation(targetEntity, clientLevel)) {
                 it.remove();
                 continue;
             }
@@ -283,6 +391,27 @@ public final class RVP_ClientRadarTickHandler {
             // 仍在扫描范围内：刷新接触时间戳保活
             radar.detect(targetEntity);
         }
+    }
+
+    /** 判断接触对象是否仍是本地世界实体，或仍由新鲜广播样本持有。 */
+    private static boolean isCurrentTrackedRepresentation(
+            Entity entity,
+            net.minecraft.client.multiplayer.ClientLevel clientLevel
+    ) {
+        // 调用原版客户端世界按 ID 取实体，并要求对象引用一致，排除已经被同 ID 新实体取代的旧对象。
+        Entity localEntity = clientLevel.getEntity(entity.getId());
+        if (localEntity == entity && localEntity.isAlive()) {
+            return true;
+        }
+        LocalVehiclePlayer.ServerEntity serverEntity = LocalVehiclePlayer.instance.serverEntities.get(entity.getId());
+        return serverEntity != null
+                && serverEntity.entity == entity
+                && entity.level() == clientLevel
+                && isFreshBroadcastSample(
+                        LocalVehiclePlayer.instance.getPlayer().tickCount,
+                        serverEntity.updateTick,
+                        AllConfigs.server.serverBroadcastEntitiesInterval.get()
+                );
     }
 
     /** phase 雷达全扇区扫描（替代原 mixin phase 分支，scanTargets 不要求跟踪线）。 */
@@ -339,24 +468,52 @@ public final class RVP_ClientRadarTickHandler {
         }
     }
 
-    /** 客户端已加载实体 = 本地跟踪实体 ∪ serverEntities（去重），复刻本体 getClientLevelEntities 语义。 */
+    /** 客户端已加载实体 = 本地跟踪实体 ∪ 新鲜 serverEntities（去重），复刻本体 getClientLevelEntities 语义。 */
     private static Iterable<Entity> mergedClientEntities(net.minecraft.client.multiplayer.ClientLevel clientLevel) {
         List<Entity> merged = new ArrayList<>();
         java.util.Set<Integer> ids = new java.util.HashSet<>();
         for (Entity entity : clientLevel.entitiesForRendering()) {
             merged.add(entity);
             ids.add(entity.getId());
-            // 广播克隆与本地实体同 id：本地已同步即取代克隆，及时删除克隆，
-            // 否则雷达会在同步边界残留一个不再更新、静止不动的克隆接触（2026-09-19 鬼影修复）
-            LocalVehiclePlayer.instance.serverEntities.remove(entity.getId());
+            if (!isHardLockedTarget(entity.getId())) {
+                // 非硬锁目标沿用既有鬼影治理：本地实体已接管时删除同 ID 广播克隆。
+                // 硬锁目标保留克隆作为近→远待命对象，但不会加入本次扫描结果。
+                LocalVehiclePlayer.instance.serverEntities.remove(entity.getId());
+            }
         }
+        int nowTick = LocalVehiclePlayer.instance.getPlayer().tickCount;
+        int intervalTicks = AllConfigs.server.serverBroadcastEntitiesInterval.get();
         for (LocalVehiclePlayer.ServerEntity serverEntity : LocalVehiclePlayer.instance.serverEntities.values()) {
-            if (serverEntity == null || serverEntity.entity == null || !ids.add(serverEntity.entity.getId())) {
+            if (serverEntity == null
+                    || serverEntity.entity == null
+                    || !serverEntity.entity.isAlive()
+                    || serverEntity.entity.level() != clientLevel
+                    || !isFreshBroadcastSample(nowTick, serverEntity.updateTick, intervalTicks)
+                    || !ids.add(serverEntity.entity.getId())) {
                 continue;
             }
             merged.add(serverEntity.entity);
         }
         return merged;
+    }
+
+    /** 判断实体 ID 是否正被本车任一 RadarUnit 硬锁，用于只保留必要的待命广播克隆。 */
+    private static boolean isHardLockedTarget(int entityId) {
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null) {
+            return false;
+        }
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof RadarUnit radar)) {
+                continue;
+            }
+            // 调用本体雷达锁定读取接口，只为当前正式硬锁目标保留同 ID 广播克隆。
+            Entity locked = radar.getLockedEntity();
+            if (locked != null && locked.getId() == entityId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 复刻原 mixin {@code shouldSkipScan}：phase 雷达按 scanPeriodTick 节流扫描。 */

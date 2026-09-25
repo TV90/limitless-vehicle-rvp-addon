@@ -375,3 +375,41 @@ SACLOS PIP 或导弹权威制导。本次没有新增 Mixin、没有修改载具
 - [ ] TKB-1055 / 95Ya6M / Hermes 1A 在两种火控模式下平滑跟踪，微调偏置不被每包重置；
 - [ ] 目标急停、急转时只体现样本缓冲延迟，不产生外推过冲；
 - [ ] 目标进入 512 格内并切换回正常 `ClientLevel` 实体后，不沿用广播克隆的旧轨迹。
+
+### 2026-09-25 硬锁跨 512 格边界连续性补充
+
+实机发现同一目标由近到远越过 512 格时会丢失硬锁，而由远到近通常不丢锁。根因不是雷达
+量程或 RCS，而是同一实体 ID 在 `ClientLevel` 实体与 `serverEntities` 广播克隆之间切换时，
+本体 `RadarUnit` / `WeaponUnit` 先按 Java 对象引用检查目标、后按 ID 迁移引用。近到远时本地
+实体先失活，RVP 又曾在近距扫描时删除同 ID 广播克隆，导致 PS1SM 火控雷达最长 20 Tick 的
+扫描节流窗口内没有接管对象；远到近时旧广播克隆仍保持存活，因而存在重叠窗口。
+
+按方案 A 在 `RVP_ClientRadarTickHandler` 内实施，无新增 Mixin：
+
+1. 仅为当前 `RadarUnit` 硬锁目标保留同 ID 广播克隆，普通目标仍沿用既有近距鬼影清理；
+2. 每 Tick 在接触死亡清理前解析规范对象，优先存活的 `ClientLevel` 实体，其次为不超过两个
+   广播周期的克隆；
+3. 表示切换时同步迁移 `DetectedObject.entity`、`RadarUnit.lockedEntity` 和同 ID 的
+   `WeaponUnit.lockedEntity`；
+4. 接触保持统一校验本地对象身份或广播样本新鲜度，服务端停止广播后不会因克隆
+   `isAlive()` 恒真而留下车辆/弹体鬼影；
+5. 没有同 ID 有效替代对象时不迁移锁，因此手动解锁、箔条脱锁、真实销毁和出雷达范围
+   仍按原逻辑处理。
+
+自动验证（2026-09-26）：
+
+- `RVP_ClientRadarTickHandlerTest` 覆盖近距实体优先、近到远接管、无替代对象不迁移及两个
+  广播周期的新鲜度边界；连同 `RVP_RadarRoleHelperTest`、`RVP_MachinegunLeadSolverTest`
+  定向执行通过；
+- 项目根目录按规定 JDK 17 执行 `./gradlew build`：`BUILD SUCCESSFUL`；
+- `./gradlew runServer` 服务端冒烟达到 `Done (2.849s)!`；日志仅出现既有 Create/TACZ
+  缺类、8 个缺失模型、AbramsX 非法路径、`rvp_bomber:ac130u` 配方和
+  `rvp_bomber:tu160` 数据错误，无新增异常；
+- 冒烟结束后无服务端 JVM 残留，25565 端口已释放。
+
+待实机验证：
+
+- [ ] F-14 从 500 格内飞到 520 格外，PS1SM 火控雷达硬锁与 WeaponUnit 目标均不断开；
+- [ ] F-14 从 520 格外飞到 500 格内，锁定引用切回本地实体且无重复提示；
+- [ ] 边界附近反复往返不产生双目标、静止鬼影或重复锁定网络风暴；
+- [ ] 手动解锁、箔条干扰和销毁远距目标不会被边界接管逻辑重新锁定。
