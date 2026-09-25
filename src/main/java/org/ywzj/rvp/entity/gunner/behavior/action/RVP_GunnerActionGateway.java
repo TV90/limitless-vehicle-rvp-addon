@@ -3,8 +3,8 @@ package org.ywzj.rvp.entity.gunner.behavior.action;
 /**
  * Gunner 调用本体与 RVP 写操作的统一入口。
  *
- * <p>阶段 C 由行为管理器在意图仲裁后通过本入口取得各领域动作适配器；{@code GunnerBrain}
- * 只保留固定计划算法和只读能力查询，不再直接执行游戏写操作。</p>
+ * <p>阶段 D 由行为管理器在意图仲裁后通过本入口取得各领域动作适配器；内建行为只提交
+ * 意图，不直接执行游戏写操作。</p>
  */
 public final class RVP_GunnerActionGateway {
 
@@ -13,6 +13,8 @@ public final class RVP_GunnerActionGateway {
 
     /** 载具移动控制适配器。 */
     private final RVP_GunnerMovementActions movement = new RVP_GunnerMovementActions();
+    /** 权威目标同步与组网记账适配器。 */
+    private final RVP_GunnerTargetActions target = new RVP_GunnerTargetActions();
     /** 制导控制源适配器。 */
     private final RVP_GunnerGuidanceActions guidance = new RVP_GunnerGuidanceActions();
     /** 武器瞄准与发射事务适配器。 */
@@ -30,6 +32,11 @@ public final class RVP_GunnerActionGateway {
     /** 返回载具移动控制适配器。 */
     public RVP_GunnerMovementActions movement() {
         return movement;
+    }
+
+    /** 返回权威目标同步适配器。 */
+    public RVP_GunnerTargetActions target() {
+        return target;
     }
 
     /** 返回武器瞄准与发射事务适配器。 */

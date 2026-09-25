@@ -33,25 +33,38 @@ import java.util.Map;
 import java.util.UUID;
 
 public class GunnerEntity extends Mob {
-    /** 阶段 C 行为实例运行时、计划身份与最近调试快照。 */
+    /** 阶段 D 行为实例状态、活动实例、计划身份与最近调试快照。 */
     private final RVP_GunnerBehaviorRuntime behaviorRuntime = new RVP_GunnerBehaviorRuntime();
+    /** 同步到客户端的 Profile 资源 ID。 */
     private static final EntityDataAccessor<String> PROFILE_ID = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.STRING);
+    /** 同步到客户端的 Gunner 阵营。 */
     private static final EntityDataAccessor<String> PROFILE_FACTION = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.STRING);
+    /** 同步到客户端的权威目标实体 ID。 */
     private static final EntityDataAccessor<Integer> TRACKED_TARGET_ID = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.INT);
+    /** 同步到客户端的当前受控武器索引。 */
     private static final EntityDataAccessor<Integer> CONTROLLED_WEAPON_INDEX = SynchedEntityData.defineId(GunnerEntity.class, EntityDataSerializers.INT);
 
+    /** 创建该 Gunner 的玩家 UUID。 */
     @Nullable
     private UUID ownerUuid;
+    /** 创建者离线时保留的记分板队伍名。 */
     @Nullable
     private String ownerTeamName;
+    /** 离开有效载具后的累计 tick。 */
     private int detachedTicks;
+    /** 服务端权威目标实体 ID。 */
     private int trackedTargetId = -1;
+    /** 已执行首次司机补满的载具实体 ID。 */
     private int refilledVehicleId = -1;
+    /** 当前 Gunner Profile 资源 ID。 */
     private String profileId = GunnerProfileManager.DEFAULT_PROFILE_ID.toString();
+    /** 当前 burst 连射窗口剩余 tick。 */
     private int burstFireTicks;
+    /** burst 休止窗口剩余 tick。 */
     private int burstRestTicks;
+    /** 当前 burst 结束后待启用的休止 tick。 */
     private int pendingBurstRestTicks;
-    private int countermeasureCooldown;
+    /** 普通导弹再次发射前的剩余冷却 tick。 */
     private int missileCooldown;
     /** 对空导弹：开始锁定当前目标时的 tick（目标切换时重置；0=未开始）。 */
     private int airLockStartTick;
@@ -59,42 +72,18 @@ public class GunnerEntity extends Mob {
     private int lastAirMissileFireTick;
     /** 对空导弹：最近一个有效目标 id（用于判定是否切换到不同目标）。 */
     private int lastAirEngagedTargetId = -1;
+    /** CIWS 目标实体 ID 到剩余重复交战冷却 tick 的映射。 */
     private final Map<Integer, Integer> ciwsTargetCooldowns = new HashMap<>();
-    private double lastDriveCheckX;
-    private double lastDriveCheckZ;
-    private int recoveryTicks;
-    private int recoveryTotalTicks;
-    private int recoveryCooldownTicks;
-    private int tacticalHoldTicks;
-    private int tacticalEvadeTicks;
-    private float tacticalEvadeYawBias;
-    /** 烟雾躲避停车剩余 tick：被红外锁定抛烟雾后开进烟雾停车，直到烟雾消散。 */
-    private int smokeHoldTicks;
+    /** 服务端权威当前受控武器索引。 */
     private int controlledWeaponIndex = -1;
-    private int groundBigTurnCooldown;
-    private int groundBigTurnTicks;
-    private float groundBigTurnTargetYaw;
-    private int airPhase;
-    private int airPhaseTicks;
-    private boolean airPhaseInitialized;
+    /** 是否已记录首次驾驶位置作为空战回航锚点。 */
     private boolean homePosSet;
+    /** 回航锚点 X 坐标。 */
     private double homePosX;
+    /** 回航锚点 Y 坐标。 */
     private double homePosY;
+    /** 回航锚点 Z 坐标。 */
     private double homePosZ;
-    /** SEAD 复仇阶段：0=未激活，1=FLY_AWAY，2=REVERSAL，3=LOCK_AND_FIRE。 */
-    private int seadMode;
-    /** SEAD 复仇当前子阶段剩余 tick。 */
-    private int seadTicks;
-    /** SEAD 复仇累计经过 tick（用于总超时保护）。 */
-    private int seadTotalTicks;
-    /** SEAD 复仇目标（锁定本机的雷达载具）实体 id。 */
-    private int seadRevengeTargetId = -1;
-    /** SEAD 触发瞬间是否已发射过"入口立即一发"。 */
-    private boolean seadImmediateFired;
-    /** SEAD 复仇阶段是否已发射过复仇一发。 */
-    private boolean seadRevengeFired;
-    /** SEAD 复仇结束后冷却 tick：期间不重新触发，避免被持续雷达锁定时陷入"飞离→复仇→再飞离"循环。 */
-    private int seadCooldownTicks;
 
     public GunnerEntity(EntityType<? extends Mob> entityType, Level level) {
         super(entityType, level);
@@ -303,20 +292,7 @@ public class GunnerEntity extends Mob {
 
     public void clearDriverRideState() {
         refilledVehicleId = -1;
-        recoveryTicks = 0;
-        recoveryCooldownTicks = 0;
-        tacticalHoldTicks = 0;
-        tacticalEvadeTicks = 0;
-        tacticalEvadeYawBias = 0.0F;
-        smokeHoldTicks = 0;
         homePosSet = false;
-        seadMode = 0;
-        seadTicks = 0;
-        seadTotalTicks = 0;
-        seadRevengeTargetId = -1;
-        seadImmediateFired = false;
-        seadRevengeFired = false;
-        seadCooldownTicks = 0;
     }
 
     /** 返回持久化所有者 UUID；未绑定所有者时为 null。 */
@@ -367,14 +343,6 @@ public class GunnerEntity extends Mob {
         this.burstRestTicks = burstRestTicks;
     }
 
-    public int getCountermeasureCooldown() {
-        return countermeasureCooldown;
-    }
-
-    public void setCountermeasureCooldown(int countermeasureCooldown) {
-        this.countermeasureCooldown = countermeasureCooldown;
-    }
-
     public int getMissileCooldown() {
         return missileCooldown;
     }
@@ -419,44 +387,11 @@ public class GunnerEntity extends Mob {
         } else if (burstRestTicks > 0) {
             burstRestTicks--;
         }
-        if (countermeasureCooldown > 0) {
-            countermeasureCooldown--;
-        }
         if (missileCooldown > 0) {
             missileCooldown--;
         }
         ciwsTargetCooldowns.values().removeIf(v -> v <= 1);
         ciwsTargetCooldowns.replaceAll((k, v) -> v - 1);
-        if (recoveryTicks > 0) {
-            recoveryTicks--;
-        }
-        if (recoveryCooldownTicks > 0) {
-            recoveryCooldownTicks--;
-        }
-        if (tacticalHoldTicks > 0) {
-            tacticalHoldTicks--;
-        }
-        if (tacticalEvadeTicks > 0) {
-            tacticalEvadeTicks--;
-        }
-        if (smokeHoldTicks > 0) {
-            smokeHoldTicks--;
-        }
-        if (seadCooldownTicks > 0) {
-            seadCooldownTicks--;
-        }
-    }
-
-    public boolean hasSmokeHoldTicks() {
-        return smokeHoldTicks > 0;
-    }
-
-    public int getSmokeHoldTicks() {
-        return smokeHoldTicks;
-    }
-
-    public void setSmokeHoldTicks(int smokeHoldTicks) {
-        this.smokeHoldTicks = Math.max(0, smokeHoldTicks);
     }
 
     public boolean isInBurstRest() {
@@ -465,58 +400,6 @@ public class GunnerEntity extends Mob {
 
     public boolean isBurstWindowOpen() {
         return burstRestTicks <= 0;
-    }
-
-    public boolean hasRecoveryTicks() {
-        return recoveryTicks > 0;
-    }
-
-    public void startRecovery(int ticks) {
-        recoveryTicks = ticks;
-        recoveryTotalTicks = ticks;
-    }
-
-    public int getRecoveryCooldownTicks() {
-        return recoveryCooldownTicks;
-    }
-
-    public void setRecoveryCooldownTicks(int recoveryCooldownTicks) {
-        this.recoveryCooldownTicks = Math.max(0, recoveryCooldownTicks);
-    }
-
-    public boolean hasTacticalHoldTicks() {
-        return tacticalHoldTicks > 0;
-    }
-
-    public int getTacticalHoldTicks() {
-        return tacticalHoldTicks;
-    }
-
-    public boolean hasTacticalEvadeTicks() {
-        return tacticalEvadeTicks > 0;
-    }
-
-    public int getTacticalEvadeTicks() {
-        return tacticalEvadeTicks;
-    }
-
-    public float getTacticalEvadeYawBias() {
-        return tacticalEvadeYawBias;
-    }
-
-    public void startTacticalHold(int ticks) {
-        tacticalHoldTicks = Math.max(0, ticks);
-    }
-
-    public void startTacticalEvade(int ticks, float yawBias) {
-        tacticalEvadeTicks = Math.max(0, ticks);
-        tacticalEvadeYawBias = yawBias;
-    }
-
-    public void clearTacticalEvade() {
-        tacticalHoldTicks = 0;
-        tacticalEvadeTicks = 0;
-        tacticalEvadeYawBias = 0.0F;
     }
 
     public boolean hasHomePos() {
@@ -538,27 +421,6 @@ public class GunnerEntity extends Mob {
         homePosZ = pos.z;
     }
 
-    public int getRecoveryTicks() {
-        return recoveryTicks;
-    }
-
-    public int getRecoveryTotalTicks() {
-        return recoveryTotalTicks;
-    }
-
-    public double getLastDriveCheckX() {
-        return lastDriveCheckX;
-    }
-
-    public double getLastDriveCheckZ() {
-        return lastDriveCheckZ;
-    }
-
-    public void setLastDriveCheck(double x, double z) {
-        this.lastDriveCheckX = x;
-        this.lastDriveCheckZ = z;
-    }
-
     public int getControlledWeaponIndex() {
         return level().isClientSide() ? entityData.get(CONTROLLED_WEAPON_INDEX) : controlledWeaponIndex;
     }
@@ -566,110 +428,6 @@ public class GunnerEntity extends Mob {
     public void setControlledWeaponIndex(int controlledWeaponIndex) {
         this.controlledWeaponIndex = controlledWeaponIndex;
         this.entityData.set(CONTROLLED_WEAPON_INDEX, controlledWeaponIndex);
-    }
-
-    public int getGroundBigTurnCooldown() {
-        return groundBigTurnCooldown;
-    }
-
-    public void setGroundBigTurnCooldown(int groundBigTurnCooldown) {
-        this.groundBigTurnCooldown = groundBigTurnCooldown;
-    }
-
-    public int getGroundBigTurnTicks() {
-        return groundBigTurnTicks;
-    }
-
-    public void setGroundBigTurnTicks(int groundBigTurnTicks) {
-        this.groundBigTurnTicks = groundBigTurnTicks;
-    }
-
-    public float getGroundBigTurnTargetYaw() {
-        return groundBigTurnTargetYaw;
-    }
-
-    public void setGroundBigTurnTargetYaw(float groundBigTurnTargetYaw) {
-        this.groundBigTurnTargetYaw = groundBigTurnTargetYaw;
-    }
-
-    public int getAirPhase() {
-        return airPhase;
-    }
-
-    public void setAirPhase(int airPhase) {
-        this.airPhase = airPhase;
-    }
-
-    public int getAirPhaseTicks() {
-        return airPhaseTicks;
-    }
-
-    public void setAirPhaseTicks(int airPhaseTicks) {
-        this.airPhaseTicks = airPhaseTicks;
-    }
-
-    public boolean isAirPhaseInitialized() {
-        return airPhaseInitialized;
-    }
-
-    public void setAirPhaseInitialized(boolean airPhaseInitialized) {
-        this.airPhaseInitialized = airPhaseInitialized;
-    }
-
-    public int getSeadMode() {
-        return seadMode;
-    }
-
-    public void setSeadMode(int seadMode) {
-        this.seadMode = seadMode;
-    }
-
-    public int getSeadTicks() {
-        return seadTicks;
-    }
-
-    public void setSeadTicks(int seadTicks) {
-        this.seadTicks = Math.max(0, seadTicks);
-    }
-
-    public int getSeadTotalTicks() {
-        return seadTotalTicks;
-    }
-
-    public void setSeadTotalTicks(int seadTotalTicks) {
-        this.seadTotalTicks = Math.max(0, seadTotalTicks);
-    }
-
-    public int getSeadRevengeTargetId() {
-        return seadRevengeTargetId;
-    }
-
-    public void setSeadRevengeTargetId(int seadRevengeTargetId) {
-        this.seadRevengeTargetId = seadRevengeTargetId;
-    }
-
-    public boolean isSeadImmediateFired() {
-        return seadImmediateFired;
-    }
-
-    public void setSeadImmediateFired(boolean seadImmediateFired) {
-        this.seadImmediateFired = seadImmediateFired;
-    }
-
-    public boolean isSeadRevengeFired() {
-        return seadRevengeFired;
-    }
-
-    public void setSeadRevengeFired(boolean seadRevengeFired) {
-        this.seadRevengeFired = seadRevengeFired;
-    }
-
-    public int getSeadCooldownTicks() {
-        return seadCooldownTicks;
-    }
-
-    public void setSeadCooldownTicks(int seadCooldownTicks) {
-        this.seadCooldownTicks = Math.max(0, seadCooldownTicks);
     }
 
     public void onBurstShot(int fireTicks, int restTicks) {

@@ -1,6 +1,5 @@
 package org.ywzj.rvp.entity.gunner.behavior.runtime;
 
-import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionGateway;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionResult;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorContext;
@@ -21,9 +20,8 @@ public final class RVP_GunnerActionIntentExecutor implements RVP_IGunnerIntentEx
     public RVP_GunnerActionResult execute(RVP_GunnerBehaviorContext context, RVP_GunnerBehaviorIntent intent) {
         return switch (intent.kind()) {
             case TARGET -> {
-                // 调用固定计划目标提交入口，统一推进组网记账和同步目标字段。
-                GunnerBrain.commitTarget(context, intent.target());
-                yield RVP_GunnerActionResult.EXECUTED;
+                // 调用目标动作适配器，统一推进组网记账和同步目标字段。
+                yield actions.target().commit(context, intent.target());
             }
             case SUPPLY_MAINTAIN -> {
                 // 调用补给适配器完成首次接管，再维持司机武器弹药。
@@ -54,6 +52,7 @@ public final class RVP_GunnerActionIntentExecutor implements RVP_IGunnerIntentEx
             case FIRE_ANTI_RADIATION -> context.weaponUnit() == null || intent.target() == null
                     ? RVP_GunnerActionResult.INVALID
                     : actions.weapons().fireAntiRadiation(context.gunner(), context.weaponUnit(), intent.target());
+            case FIRE_HOLD -> RVP_GunnerActionResult.GATED;
             case CLEAR_CONTROLLED_WEAPON -> {
                 context.gunner().setControlledWeaponIndex(-1);
                 yield RVP_GunnerActionResult.EXECUTED;

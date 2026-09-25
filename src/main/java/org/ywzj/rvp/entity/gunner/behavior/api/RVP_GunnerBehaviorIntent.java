@@ -36,6 +36,7 @@ public final class RVP_GunnerBehaviorIntent {
         /** 应用唯一移动命令。 */ MOVEMENT,
         /** 执行普通/CIWS 武器交战事务。 */ FIRE_ENGAGEMENT,
         /** 执行 AntiRadiation 发射事务。 */ FIRE_ANTI_RADIATION,
+        /** 占用本 tick 武器通道但不发射，用于脱离/起飞等安全门控。 */ FIRE_HOLD,
         /** 清除当前受控武器索引。 */ CLEAR_CONTROLLED_WEAPON
     }
 
