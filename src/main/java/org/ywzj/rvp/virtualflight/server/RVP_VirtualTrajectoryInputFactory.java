@@ -34,16 +34,25 @@ final class RVP_VirtualTrajectoryInputFactory {
         var projectile = data.getProjectileData();
         // 调用本项目弹体数据解析器，按虚拟态连续飞行 Tick 取得与实体态相同的方向插值值。
         Float configuredTurningFactor = projectile.resolveTurningFactor(flightTick);
+        // 调用本项目弹体数据解析器，按当前飞行 Tick 解析点火后 Tick，再冻结本 Tick 的推力与质量
+        // （含推力曲线 A2 与变质量 A1），使虚拟链与实体链使用完全相同的推进模型。
+        int ignitionTick = Math.max(data.getResolvedIgnitionDelayTick(), coldLaunchTimeTick);
+        int motorTick = flightTick - ignitionTick;
+        float motorBurnTime = data.getResolvedMotorBurnTime();
+        double resolvedThrust = (motorTick >= 0 && motorTick <= motorBurnTime)
+                ? projectile.resolveThrustAt(motorTick)
+                : 0f;
+        double resolvedMass = projectile.resolveMassAt(motorTick, motorBurnTime);
         return new RVP_VirtualTrajectoryParameters(
                 projectile.getRvpMaxG(),
                 configuredTurningFactor != null ? configuredTurningFactor : 0.5F,
                 data.getVirtualMidcourseData().getCruiseAltitude(),
                 projectile.isRotateToMotion(),
                 data.usesPropulsion(),
-                data.getResolvedMass(),
-                data.getResolvedThrust(),
-                data.getResolvedMotorBurnTime(),
-                Math.max(data.getResolvedIgnitionDelayTick(), coldLaunchTimeTick),
+                resolvedMass,
+                resolvedThrust,
+                motorBurnTime,
+                ignitionTick,
                 data.getResolvedDragCoefficient(),
                 projectile.resolveAltitudeDragFactor(altitude),
                 data.getGravity(),
