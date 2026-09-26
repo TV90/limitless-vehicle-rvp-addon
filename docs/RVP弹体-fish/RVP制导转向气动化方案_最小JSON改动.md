@@ -851,9 +851,10 @@ if (lambda > 0.0 && kInduced > 0.0 && velocity.lengthSqr() > 1.0E-8) {
 
 ---
 
-## 15. 附录：若引入攻角 α 的增量方案
+## 15. 附录一：若引入攻角 α 的增量评估
 
 > 本章是**独立增量评估**，不改变 §1–§14 的结论。若采纳本章，则 §4.5 的载荷因子 `λ` 被真实攻角 `α` 取代，§6.3 的非目标需要相应改写。
+> 本章给出**为什么 / 值不值得 / 影响哪些地方**；具体怎么落地见 **§16 附录二（实施方案）**。
 
 ### 15.1 为什么当前 3DOF 下没有 α
 
@@ -980,3 +981,350 @@ K_L = G_design · PhysicsEngine.G / α_max
 | 风险 | 低（无新状态，可单键回滚） | 中（姿态语义变化会外溢到导引头/摄像机/告警；`VERSION` 再升一次） |
 
 **建议**：先按 §1–§14 落地 λ 版（无新状态、影响面可控），把 `rvp_induced_drag` 与动压减载调稳；**把 α 作为第二阶段**，在 λ 版证明了"转弯掉速手感正确"之后再升级——因为 α 版的 `G_avail` 公式与 λ 版完全一致，升级是纯增量，不会推翻已有调参。唯一需要提前预留的是：**姿态语义决策（导引头视轴取机体轴还是速度轴）必须在动 α 之前定，否则环 3 的 12 处要改两遍。**
+
+---
+
+## 16. 附录二：引入攻角 α 的实施方案
+
+> 以下为**可执行实施方案**：决策表 → 数据模型 → 状态机 → 逐文件改动 → 版本号 → 切片 → 测试 → 调参 → 验收。
+> 前置假设：§1–§14 的 λ 版**已落地并验证通过**（α 版是它的增量，见 §16.7 的等价性证明）。
+
+### 16.1 前置决策（写代码前必须定死，否则后期返工）
+
+| # | 决策点 | 选项 | **建议** | 不定的后果 |
+| --- | --- | --- | --- | --- |
+| D1 | `xRot/yRot` 字段语义 | A. 改为**机体轴**<br>B. 保持"速度方向"，α 另存新字段 | **A** | 选 B 需第二套姿态字段，渲染/尾焰/子母弹全部要改；选 A 则这些自动获得 α |
+| D2 | 导引头视轴 | A. 机体轴（固连）<br>B. 速度轴（稳定平台）<br>C. 按 `guidance_type` 分派 | **C**：IR / ARH / ARM → 机体轴；SARH / SALH / 激光 / 指令线导 → 速度轴 | 决定环 3 中 6 处导引头代码取哪个向量，**必须与 D1 同时定** |
+| D3 | 关机段 α 行为 | A. 按同一 τ 衰减到 0（气动配平）<br>B. 维持最后 α | **A** | 不定的后果：与残留的 `MISSILE_COAST_LERP` 双重滞后叠加 |
+| D4 | `turning_factor ≥ 1` | A. τ→0 瞬转豁免<br>B. 仍受 α 限制 | **A** | 4 枚线导直控弹（TOW-2B/N、HJ-73E、Switchblade）手感被压掉 |
+| D5 | 无动力弹走不走 α | A. 不走（保持 3DOF）<br>B. 也走 | **A** | 机枪弹/火箭/炸弹/2 枚滑翔导弹无需引入无意义的 α |
+| D6 | α 是否网络同步 | A. **不同步**（客户端用同步的 `xRot/yRot` 插值）<br>B. 新增包同步 α | **A** | 选 B 要多一个包与一套插值；选 A 客户端误差 ≤1 Tick |
+| D7 | `rvp_turn_rate_limit` | A. 删除（新 schema 无历史负担）<br>B. 保留为兼容键 | **A**，但**等 λ 版上线稳定后再删** | 需同步 4 份数据模型文档 |
+
+**D1 + D2 是唯一必须在写第一行代码前定死的两项**，因为它们决定"机体轴"这个概念在项目里的定义与消费方。
+
+### 16.2 数据模型改动
+
+**`RVP_ProjectileData`（+2 键，JavaDoc 按 `RVP_FireData` 同级规范）**
+
+```java
+/**
+ * 可用攻角上限（失速边界），单位度，默认 15.0，运行时钳制到 [1, 90]；
+ * 生效条件：rvp_aero_steering=true 且 turning_factor<1。
+ * 该值只改变"用多大攻角换取设计过载"——升力增益由
+ * K_L = G_design·PhysicsEngine.G/α_max 反解，故不改变设计点过载本身，
+ * 只改变满舵时的攻角与失速余量。
+ */
+@SerializedName("rvp_alpha_max")
+private float rvpAlphaMax = 15.0f;
+
+/**
+ * 攻角一阶响应时间常数，单位 Tick，默认 3.0（≈0.15 s），运行时下限 1.0；
+ * 生效条件：同 rvp_alpha_max。数值越大机头建立过载越慢、发射初期越"转不动"；
+ * 置 1.0 表示瞬转，此时本模型精确退化为无滞后版本（可作逐弹灰度开关）。
+ */
+@SerializedName("rvp_alpha_tau")
+private float rvpAlphaTau = 3.0f;
+```
+
+Getter（换算集中在一处，内部一律用弧度）：
+
+```java
+public float getRvpAlphaMaxRadians() { return (float) Math.toRadians(Mth.clamp(rvpAlphaMax, 1.0F, 90.0F)); }
+public float getRvpAlphaTauTicks()   { return Math.max(rvpAlphaTau, 1.0F); }
+```
+
+**record 组件新增（全部追加在末尾，降低构造点破坏面）**
+
+| record | 新增组件 |
+| --- | --- |
+| `RVP_AeroSteeringLimits` | `float alphaMaxRadians`、`float alphaTauTicks` |
+| `RVP_AeroSteeringSolution` | `double alphaRadians`（更新后的 α）、`double alphaCommandRadians`、`boolean stalled` |
+| `RVP_VirtualTrajectoryParameters` | `float alphaMaxRadians`、`float alphaTauTicks` |
+| `RVP_VirtualTrajectoryState` | `double alphaRadians` **（必须末位，全部构造点按位置传参）** |
+
+**`RVP_VirtualMissileState`（NBT）**
+
+```java
+// saveSnapshot 追加
+tag.putDouble("alphaRadians", t.alphaRadians());
+// loadSnapshot 追加：缺失回退 0.0，保证旧 NBT 仍可读
+tag.contains("alphaRadians") ? tag.getDouble("alphaRadians") : 0.0
+```
+
+### 16.3 版本号：两个独立版本都要动
+
+| 版本号 | 现値 | α 版 | 位置 | 说明 |
+| --- | --- | --- | --- | --- |
+| `RVP_RvpTrajectoryIntegrator.VERSION` | 7（λ 版后 8） | **8 → 9** | 积分器 | 轨迹数学语义变更 |
+| `RVP_VirtualMissileState.STATE_SCHEMA_VERSION` | 1 | **1 → 2** | SavedData NBT | 权威记录 schema 变更 |
+
+两者**分开演进**（见 `RVP_VirtualMissileState` 类注释）。旧版本记录按既有校验安全返回空并按策略重建，无需手工清理。
+
+### 16.4 核心状态机（纯数学层保持无状态）
+
+α 是**跨 Tick 状态**，但它不进数学层：由调用方传入、由返回体带出，落在实体/虚拟态上。这与本项目"数学层无状态、状态在实体/虚拟态"的分层一致，也让 α 可被单测直接注入。
+
+```java
+/**
+ * 单 Tick 转向求解（α 版）。alphaRadians 为持久状态，由调用方传入并从返回体写回。
+ */
+public static RVP_AeroSteeringSolution solve(Vec3 current, Vec3 desiredDirection,
+                                             double alphaRadians, RVP_AeroSteeringLimits limits) {
+    double speed = current.length();
+    if (!limits.enabled()) {
+        return RVP_AeroSteeringSolution.disabled(   // 回退 λ 版/旧路径，α 原样返回
+                legacySteering(current, desiredDirection, limits), alphaRadians);
+    }
+    if (speed <= 1.0E-8 || desiredDirection == null
+            || desiredDirection.lengthSqr() <= 1.0E-12) {
+        return RVP_AeroSteeringSolution.noTurn(current, alphaRadians);
+    }
+
+    double gDesign = resolveDesignGs(limits);        // rvp_maxg 优先，否则 turning_factor 折算
+    if (!Double.isFinite(gDesign)) {                 // f ≥ 1：瞬转豁免（D4）
+        Vec3 steered = RVP_TrajectorySteeringMath.applyTurningFactor(
+                current, desiredDirection, speed, limits.turningFactor());
+        return RVP_AeroSteeringSolution.exempt(steered, 0.0, 0.0);
+    }
+
+    double qp = dynamicPressureFactor(speed, limits);
+    double alphaMax = limits.alphaMaxRadians();
+    // K_L 每 Tick 反解，不缓存：gDesign 会随 turning_factor 的 Tick 区间变化（现网 5 枚用区间表）
+    double liftGain = gDesign * PhysicsEngine.G / alphaMax;
+
+    double thetaCmd = RVP_BallisticTrajectoryMath.angleBetween(current, desiredDirection);
+    if (thetaCmd <= 1.0E-9) {
+        // 无转向需求：α 按配平衰减（D3），不影响速度方向
+        double alpha = decayAlpha(alphaRadians, limits.alphaTauTicks());
+        return RVP_AeroSteeringSolution.noTurn(current, alpha);
+    }
+
+    // ② ③ 需求攻角：把"本 Tick 完全对齐所需的横向加速度"折成攻角
+    double requiredChord = 2.0 * speed * Math.sin(thetaCmd * 0.5);
+    double lift = Math.max(liftGain * qp, 1.0E-9);   // 防除零；qp 已有 qp_min 下限
+    double alphaCmdRaw = requiredChord / lift;
+
+    // ④ 失速饱和
+    double alphaCmd = Mth.clamp(alphaCmdRaw, -alphaMax, alphaMax);
+    boolean stalled = Math.abs(alphaCmdRaw) > alphaMax;
+
+    // ⑤ 一阶滞后：τ ≤ 1 → 瞬转（此时精确退化为 λ 版，见 §16.7）
+    double tau = limits.alphaTauTicks();
+    double gain = tau <= 1.0 + 1.0E-6 ? 1.0 : Math.min(1.0, 1.0 / tau);
+    double alpha = alphaRadians + (alphaCmd - alphaRadians) * gain;
+
+    // ⑦ ⑧ 实际横向加速度 → 实际转角
+    double accel = liftGain * qp * alpha;
+    double thetaApplied = 2.0 * Math.asin(Mth.clamp(accel / (2.0 * speed), 0.0, 1.0));
+    thetaApplied = Math.min(thetaApplied, thetaCmd);  // 关键：不得越过期望方向（防抖振）
+    double fraction = thetaApplied / thetaCmd;
+    Vec3 next = RVP_BallisticTrajectoryMath.slerpDirection(
+            current.normalize(), desiredDirection.normalize(), fraction).scale(speed);
+
+    // ⑨ 载荷因子改用真实攻角比 → §4.5 诱导阻力公式一字不改
+    double lambda = Mth.clamp(Math.abs(alpha) / alphaMax, 0.0, 1.0);
+    double thetaAero = 2.0 * Math.asin(Mth.clamp(
+            liftGain * qp * alphaMax / (2.0 * speed), 0.0, 1.0));
+    return new RVP_AeroSteeringSolution(next, thetaApplied, thetaAero, lambda,
+            gDesign * qp, inducedDragLoss(limits.inducedDrag(), lambda, speed),
+            alpha, alphaCmd, stalled, LimitReason.AERO_G);
+}
+
+/** 关机/无指令段：α 按同一 τ 指数衰减到 0（D3），取代 MISSILE_COAST_LERP。 */
+private static double decayAlpha(double alpha, double tau) {
+    double gain = tau <= 1.0 + 1.0E-6 ? 1.0 : Math.min(1.0, 1.0 / tau);
+    return alpha - alpha * gain;
+}
+```
+
+**六个实现要点（都是容易踩的坑）**
+
+1. **单位**：内部一律弧度，只在 `RVP_ProjectileData` 的 getter 换算一次；JSON 面向用户用度。
+2. **`K_L` 每 Tick 反解，不缓存**：`gDesign` 随 `turning_factor` 的 Tick 区间变化（现网有 5 枚用区间表：`f14d_mk84`、`f16_gbu53`、`j10c_gb3_*`、`_backup/pl_15_2`），缓存会与区间失配。
+3. **`θ_applied` 必须再钳到 `θ_cmd`**：一阶滞后 + 饱和后，上一 Tick 残留的大 α 可能让本 Tick 的实际加速度**超过**需求，不钳会越过期望方向产生抖振。
+4. **转轴退化**：机体轴 = 速度方向绕 `axis = v̂ × d̂` 归一化后旋转 α。当 `v̂ ∥ d̂`（轴退化）时必须回退到上一 Tick 的轴或世界 up 向量，否则 `normalize()` 出 NaN。α 的符号由 `v̂ × d̂` 自然给出，无需额外符号位。
+5. **`stalled` 只记录不改行为**：第一版仅用于调试与后续扩展（失速后额外诱导阻力），避免一次引入太多变量。
+6. **`θ_aero` 与 λ 版完全一致**：`2·asin(K_L·qp·α_max/(2v)) = 2·asin(G_design·G·qp/(2v))`，这是 §16.7 等价性证明的基础。
+
+### 16.5 实体链接入（逐文件逐方法）
+
+| 文件 | 位置 | 改动 | 必须成对的原因 |
+| --- | --- | --- | --- |
+| `RVP_BaseBullet` | 字段 | 新增 `alphaRadians`（transient double，**跨 Tick 保留**）。注意与 λ 相反：λ 每 Tick 复位，α**不能**复位 | 状态语义 |
+| `RVP_BaseBullet` | `tick()`（`guidanceWireDirectApplied = false;` 旁） | **不复位 α**，仅在此处旁加注释说明为何不复位 | 防止照抄 λ 的写法误加复位 |
+| `RVP_BaseBullet` | 出膛/`finalizeSpawnOrientation` 之后 | `initAlphaFromSpawn()`：`α_0 = angle(出膛机体轴, 出膛速度)` | 冷发射/载机初速会让两者不一致 |
+| `RVP_BaseBullet` | 跳弹反射（`applyRotationFromVelocity(reflected)`） | `resetAlpha()` → 0 | 反射无气动过程 |
+| `RVP_GuidanceRuntimeMath` | `applyIntent` | 读 `getAlphaRadians()` → `solve(...)` → `setAlphaRadians(solution.alphaRadians())`；λ 与诱导阻力从返回体取 | α 的唯一写入点（自动制导） |
+| `RVP_GuidanceRuntimeMath` | `applyPresetBallistic` | 同上 | PRESET 弹道也要有 α |
+| `RVP_WireGuidanceSteering` | `applyFromDirection` | 同上（HITL / 线导直控） | α 的第二写入点 |
+| `RVP_ProjectileMotion` | `applyGuidanceFacing` | 改名/新增 `applyBodyFacing(entity, velocityDirection, alphaRadians)`：速度方向绕转轴旋转 α 后写 `xRot/yRot` | 取代 snap，是 D1 的落点 |
+| `RVP_ProjectileMotion` | `tickMissileMove` 开头 | **删除 `applyMissileCoastFacing(projectile, velocity, 1.0F)`** | 不清掉就每 Tick 把 α 抹零，整个模型失效 |
+| `RVP_ProjectileMotion` | `tickMissileMove` 推力行 | `Vec3 lookDir = projectile.getLookAngle()` 语义由"=速度"变为"=机体轴"，**代码不变、注释必须改** | 推力自带 `cos α` 轴向损失，是期望行为 |
+| `RVP_ProjectileMotion` | `MISSILE_COAST_LERP = 0.2` 分支 | 删除；关机段姿态滞后改由 `decayAlpha` 承担 | 避免双重滞后 |
+| `RVP_ProjectileMotion` | `applyRotationFromVelocity` | **保持不变**（D5：无动力弹不入 α 模型），但注释写明"该路径 α ≡ 0" | 机枪弹/火箭/炸弹回归风险为零 |
+| `RVP_BallisticTrajectoryMath` | `integrateForces` | 推力方向由 `velocity.normalize()` 改为**传入的机体轴** | 虚拟链与实体链推力口径必须一致，否则交接点速度不连续 |
+| `RVP_RuntimeSaclosGuidanceSource` | `applyVelocityRotation` | 保留绕开气动（外部强制力矩），但把旋转角折算进 α/λ 记账 | 干扰仍强于机动性，同时付能量代价 |
+| `RVP_SbwThreatManager` | 威胁方向（157） | 按 D2 改取 `getFlightAxis()` | 束流几何应以速度轴为基准 |
+| `RVP_SubmunitionSpawner` | 142 / 276 | 子弹出膛姿态继承机体轴（已由 D1 自动获得），确认无需改 | 回归确认项 |
+
+### 16.6 虚拟中段链与姿态语义落地
+
+**虚拟链**
+
+| 文件 | 改动 |
+| --- | --- |
+| `RVP_VirtualTrajectoryParameters` | +`alphaMaxRadians`、`alphaTauTicks` |
+| `RVP_VirtualTrajectoryInputFactory.createParameters` | 填 `projectile.getRvpAlphaMaxRadians()` / `getRvpAlphaTauTicks()` |
+| `RVP_RvpTrajectoryIntegrator.step` | 读 `state.alphaRadians()` → `solve(...)` → 写入新 state；推力改沿机体轴；`VERSION` **8 → 9** |
+| `RVP_VirtualMissileState` | NBT +`alphaRadians`；`STATE_SCHEMA_VERSION` **1 → 2** |
+| 交接 | 进虚拟态时快照 α、恢复实体时写回 `projectile.alphaRadians`，**双向都要搬** |
+
+**姿态语义（D2 的落点）**：新增一个薄封装，把"取哪个轴"收在唯一一处，避免 12 处各自判断。
+
+```java
+/** 机体轴：机头指向，导引头固连基准（D1 后 xRot/yRot 即此轴）。 */
+public Vec3 getBodyAxis() { return getLookAngle(); }
+
+/** 速度轴：弹道方向，稳定平台/随动基准。 */
+public Vec3 getFlightAxis() {
+    Vec3 v = getDeltaMovement();
+    return v.lengthSqr() > 1.0E-8 ? v.normalize() : getLookAngle();
+}
+
+/** 导引头视轴：按 guidance_type 分派（D2）。 */
+public Vec3 getSeekerBoresight() { /* IR/ARH/ARM → getBodyAxis()；SARH/SALH/激光/指令 → getFlightAxis() */ }
+```
+
+替换清单（环 3 收敛为 6 处导引头 + 1 处告警）：
+
+| 位置 | 改为 |
+| --- | --- |
+| `RVP_RuntimeSeekerSupport` 131 / 193 | `getSeekerBoresight()` |
+| `RVP_RuntimeArmGuidanceSource` 64 / 163 / 200 | `getSeekerBoresight()` |
+| `AntiRadiationSeekerHelper` 26 / 30 | `getSeekerBoresight()` |
+| `RVP_GuidanceRuntimeGeometry` 85 / 149（锥角/视轴） | `getSeekerBoresight()` |
+| `RVP_SbwThreatManager` 157 | `getFlightAxis()` |
+| `RVP_ClientHitlCamera` 45 / 46 / 116、`RVP_TVMissileOverlay` 188–195 | `getBodyAxis()`，并加 `rvp_hitl_camera_speed_axis` 开关（默认 false = 机体轴）供玩家规避眩晕 |
+| 近炸检测盒后移 2650、尾焰锚点 4281/4346/4394 | 保持 `getLookAngle()`（= 机体轴），视觉自然获得 α，**确认无需改** |
+
+### 16.7 与 λ 版的迁移路径（等价性证明）
+
+| 量 | λ 版 | α 版 | 关系 |
+| --- | --- | --- | --- |
+| `θ_aero` | `2·asin(G_design·qp·G/(2v))` | 同 | **完全一致** |
+| `θ_applied` | `min(θ_cmd, θ_aero)` | `2·asin(K_L·qp·α/(2v))`，且 `≤ θ_aero` | α 版 = λ 版 + 滞后 |
+| `λ`（载荷因子） | `θ_applied/θ_aero` | `|α|/α_max` | 小角近似下等价；升级后以 α 为准 |
+| 诱导阻力 | `k_i·λ²·v` | `k_i·λ²·v`（λ 换源） | **公式一字不改** |
+| `G_avail` | `G_design·qp` | `G_design·qp·(α/α_max)` | `α = α_max` 时退化为 λ 版 |
+
+**结论：α 版只改"α 怎么来"，不改"α → 速度"的映射。** 由此得到两个可操作的好处：
+
+1. **λ 版调好的 `rvp_maxg`、`rvp_ref_speed`、`rvp_induced_drag` 全部继续有效**，升级不推翻调参。
+2. **`rvp_alpha_tau: 1` 让单枚弹精确退化为 λ 版** —— α 版天然包含 λ 版，可逐弹灰度、可逐弹回退，不需要改代码。
+
+相对 λ 版的 diff 摘要：+2 JSON 键；+2 组件 `Limits`；+3 组件 `Solution`；+2 组件 `Parameters`；+1 组件 `State`；+1 NBT 字段；新增 `decayAlpha` / `applyBodyFacing` / `getBodyAxis|getFlightAxis|getSeekerBoresight`；删除 `MISSILE_COAST_LERP` 分支与 `tickMissileMove` 开头的 `applyMissileCoastFacing`；`VERSION` +1；`STATE_SCHEMA_VERSION` +1；环 3 的 6～7 处视轴替换。
+
+### 16.8 分阶段实施切片
+
+| 切片 | 内容 | 前置 | 验收 |
+| --- | --- | --- | --- |
+| **A1** | 定死 D1–D7，把决策表填成本附录的最终版 | — | 决策表无待选项 |
+| **A2** | 数据模型：2 字段 + getter + JavaDoc；4 份数据模型文档补行；`rvp_turn_rate_limit` 标记弃用 | A1 | `./gradlew build` 通过 |
+| **A3** | `RVP_AeroSteeringModel` α 状态机 + `RVP_AeroSteeringModelTest`（**纯数学、不接入**） | A2 | 单测全绿，含"α=α_max 时与 λ 版逐位一致" |
+| **A4** | 虚拟链：`Parameters`/`State`/`Integrator`/`InputFactory`/NBT + 双版本号提升 | A3 | 编解码单测 + 手动长航程仿真 |
+| **A5** | 实体链：状态字段、求解器接入、`applyBodyFacing`、删除 coast lerp、推力方向注释 | A3 | 冒烟 + 3 弹实弹（`pl_15` / `9k720_9m723` / `lav25_tow2b`） |
+| **A6** | 姿态语义：`getSeekerBoresight()` + 环 3 替换 + HITL 摄像机开关 | A5 | 导引头捕获/丢失回归 |
+| **A7** | 全弹种回归 + 按 §16.9 调参 | A4 + A6 | §16.11 验收标准 |
+
+依赖关系：**A4 与 A5 可并行，但都必须等 A3**；A6 必须在 A5 之后（否则视轴替换无法验证）；A7 需要 A4 与 A6 都完成。
+
+### 16.9 调参指南（α 专有参数）
+
+| 参数 | 物理含义 | 推荐值 | 怎么测出来 |
+| --- | --- | --- | --- |
+| `rvp_alpha_max` | 失速/可用攻角上限 | 空空·防空 `20`；反坦克·空地·巡航 `15`；弹道 `15`；线导 `f=1` **不配** | 满舵直飞，读稳态 G：应等于 `G_design × qp`；若达不到，说明 α 上限偏低或 `qp` 被 `v_ref` 压低 |
+| `rvp_alpha_tau` | 舵机 + 气动滞后 | 快速弹 `3`；重型弹 `4～6`；退化到 λ 版用 `1` | 阶跃指令后数到 **90% 稳态 G** 的 Tick 数，应 ≈ `2.3τ` |
+| `rvp_lift_gain` | 升力增益覆盖 | **不填**（由 `G_design/α_max` 反解） | 只有想让"满舵攻角换不到设计过载"时才填 |
+| `qp_min` | 低速舵效下限 | `0.05` | 观察发射首 Tick 是否有舵效 |
+
+**组合自检三条**
+
+```text
+1. 满舵稳态：G_steady = G_design · qp · (α/α_max)，qp=1 且 α=α_max 时应等于 G_design
+2. 建立时间：90% 稳态 ≈ 2.3τ Tick
+3. 关机后：α → 0，速度衰减率 = drag_coefficient·v² + k_i·(α/α_max)²·v
+```
+
+参数交互提醒：`rvp_alpha_tau` 与 `rvp_induced_drag` 会叠加出"转不动且掉速快"的双重惩罚，**调 τ 时先固定 `rvp_induced_drag`**；`rvp_alpha_max` 与 `rvp_maxg` 是"用什么换过载"与"最多能换多少"的关系，**改 α_max 不会改变设计点过载**。
+
+### 16.10 测试计划
+
+**新增单测 `RVP_AeroSteeringModelTest`（纯数学，无 MC 依赖）**
+
+| # | 用例 | 断言 |
+| --- | --- | --- |
+| 1 | `τ = 1` 瞬转 | `θ_applied = min(θ_cmd, θ_aero)`，`α = α_cmd` |
+| 2 | `τ → ∞` 极限 | α 单 Tick 增量趋 0，`θ_applied → 0`（转不动） |
+| 3 | α 建立过程 | 从 0 到 `α_max` 的 90% 用时应 ≈ `2.3τ`（±1 Tick） |
+| 4 | 失速饱和 | `qp` 减半时同一 `α_cmd` 仍被钳到 `α_max`，`θ_aero` 减半，`stalled = true` |
+| 5 | 关机段配平 | `α_cmd = 0`，经 `5τ` 后 `|α| < 1.0E-4` |
+| 6 | `f ≥ 1` 豁免 | 返回瞬转结果且 `α = 0`，`λ = 0` |
+| 7 | 转轴退化 | `v̂ ∥ d̂` 时三个分量有限、不产生 NaN、α 单调衰减 |
+| 8 | **等价性回归** | `α = α_max` 时输出与 λ 版 `solve` **逐位一致** |
+| 9 | **回退回归** | `rvp_aero_steering = false` 时输出与今日 `applySteering` 逐位一致 |
+| 10 | 不越过期望方向 | 构造"上 Tick α 很大、本 Tick θ_cmd 很小"的场景，`θ_applied ≤ θ_cmd` |
+
+**需改写的既有断言**（契约变更必须显式改，不得悄悄改语义）
+
+| 文件 | 原断言 | 改为 |
+| --- | --- | --- |
+| `RVP_RvpTrajectoryIntegratorTest` | `assertEquals(current.length(), steered.length())`（两条） | "速率不增 + 变化量 ≤ `G_avail` 上限 + 诱导阻力使速率下降" |
+| `RVP_VirtualMissileStateCodecTest` | 字段往返 | 增 `alphaRadians` 往返 + 旧 `stateSchemaVersion` 被拒绝的用例 |
+| `RVP_ProjectileDataTurningFactorTest` | — | 增 `rvp_alpha_max` / `rvp_alpha_tau` 的解析与钳制（含越界值 `0`、`90`、`−3`） |
+
+**手动仿真**：复用 `manualFullVirtualFlightMaintainsCruiseAltitudeAndExpectedArrivalTime`，对比 λ 版与 α 版的 ETA、最大稳定高度误差、末端是否仍进入一个 Tick 航程。α 的滞后会让 ETA 略微增加，**容差需在对照后重新固定**，不能沿用 λ 版数值。
+
+**服务端冒烟**：`./gradlew runServer` 后台启动，每 10 秒轮询日志，出现 `Done (Xs)!` 即通过；`grep` 加 `-a`；只看新增错误（基线见 `docs/调试与修复规范.md` §5.1）。
+
+**实弹验收三组**
+
+| 弹 | 观察点 |
+| --- | --- |
+| `pl_15` | 发射后前 10 Tick 机头转角 **小于**速度转角（α ≠ 0 可观测）；关机后急转速度明显下降 |
+| `9k720_9m723` | PRESET 抛物线形态不变；虚拟中段进出点速度方向连续（无折线）；带 `altitude_drag_factor` 的高空段舵效下降 |
+| `lav25_tow2b` | `f = 1` 瞬转手感**完全不变**（回归对照） |
+
+### 16.11 风险、回滚与验收标准
+
+**新增风险（α 专有）**
+
+| 风险 | 缓解 |
+| --- | --- |
+| D1/D2 决策错误 → 环 3 的 12 处返工 | D1+D2 在 A1 定死；A6 单列切片，不与动力学混提 |
+| α 在实体↔虚拟交接时丢失 → 交接折线 | 双向搬运 + 手动长航程对比（`9k720` 验收项） |
+| 转轴退化产生 NaN 污染 SavedData | 单测 7 + `RVP_BallisticTrajectoryMath.isFinite` 兜底 |
+| HITL 玩家眩晕（画面随 α 抖动） | HITL 摄像机加 `rvp_hitl_camera_speed_axis` 开关，默认机体轴 |
+| `constant_speed` 弹看不到掉速 | 配置明确意图，不覆盖；文档注明 |
+| 未来二阶化引入短周期振荡 | 第一版**限定一阶**；二阶化必须同时引入阻尼比 `ζ` |
+| 双版本号提升使在途记录失效 | 既有机制安全重建，无需手工清理 |
+
+**三层回滚开关**
+
+| 层 | 操作 | 效果 |
+| --- | --- | --- |
+| 单弹（α） | `"rvp_alpha_tau": 1` | 该弹**精确退化到 λ 版**，保留动压与诱导阻力 |
+| 单弹（全部） | `"rvp_aero_steering": false` | 回退到今日行为（含严格保速契约） |
+| 全局 | `RVP_ProjectileData.rvpAlphaTau` 默认值改 `1` | 全弹种退化到 λ 版，代码不回退 |
+
+第 1 层是 α 版最大的工程优势：**因为 `τ = 1` 时 α 版与 λ 版逐位一致（单测 8/1 覆盖），所以 α 版可以逐弹灰度上线，任何一枚手感不对就单独降级，不需要回滚代码。**
+
+**验收标准（可判定）**
+
+1. `./gradlew build` 通过；单测全绿，**含用例 8（α=α_max 与 λ 版逐位一致）与用例 9（总开关关闭与今日逐位一致）**。
+2. `pl_15` 发射后前 10 Tick 存在稳定的 `α ≠ 0`（机头角与速度方向夹角 > 0.5°）且单调收敛。
+3. `lav25_tow2b` 与 λ 版逐帧对照，瞬转手感无差异。
+4. `9k720_9m723` 虚拟中段进出点两侧速度方向夹角 < 1°。
+5. 导引头捕获/丢失、告警方向、DIRCM 束流三项回归通过。
+6. 服务端冒烟出现 `Done (Xs)!` 且无新增错误。
+7. 连续 60 秒满舵机动，`position`/`velocity`/`alphaRadians` 全程有限（无 NaN/Infinity）。

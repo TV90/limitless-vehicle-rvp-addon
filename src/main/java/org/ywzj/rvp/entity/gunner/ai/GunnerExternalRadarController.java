@@ -2,7 +2,6 @@ package org.ywzj.rvp.entity.gunner.ai;
 
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -13,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -33,7 +33,8 @@ public final class GunnerExternalRadarController {
                             AbstractVehicle launcher,
                             @Nullable WeaponUnit weaponUnit,
                             @Nullable Entity target,
-                            boolean driverAi) {
+                            boolean driverAi,
+                            RVP_GunnerObservationService observations) {
         if (!driverAi || launcher.level().isClientSide() || weaponUnit == null) {
             return;
         }
@@ -76,11 +77,11 @@ public final class GunnerExternalRadarController {
             return;
         }
 
-        Entity lockTarget = normalizeTarget(target);
+        Entity lockTarget = observations.normalizeTarget(target);
         if (lockTarget == null || !lockTarget.isAlive()) {
             // gunner 索敌半径太小（默认 96 格），无自身雷达的发射车只能靠外置雷达：
             // 直接按中继雷达扫描范围找最近敌对载具作为锁定目标，保证 RWR 告警生效
-            lockTarget = findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner);
+            lockTarget = findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner, observations);
         }
         if (lockTarget == null || !lockTarget.isAlive()) {
             if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -196,13 +197,14 @@ public final class GunnerExternalRadarController {
      */
     @Nullable
     private static Entity findRelayScanTarget(AbstractVehicle launcher, AbstractVehicle relayVehicle,
-                                              RadarUnit lockRadar, GunnerEntity gunner) {
+                                              RadarUnit lockRadar, GunnerEntity gunner,
+                                              RVP_GunnerObservationService observations) {
         double maxRange = lockRadar.getMaxScanDistance();
         if (maxRange <= 0) {
             return null;
         }
         Vec3 radarPos = lockRadar.worldRadarPosition();
-        if (!(relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+        if (!(relayVehicle.level() instanceof net.minecraft.server.level.ServerLevel)) {
             return null;
         }
         // O(实体) 遍历已加载载具，替代 ±maxRange（可达数千格）立方体 getEntities（O(箱子截面)）
@@ -211,14 +213,14 @@ public final class GunnerExternalRadarController {
         // 消除"RWR 显示被锁定但 gunner 不开火"的两链不对称。
         Entity best = null;
         double bestDistSqr = Double.MAX_VALUE;
-        for (Entity entity : serverLevel.getEntities().getAll()) {
+        for (Entity entity : observations.loadedEntities()) {
             if (!(entity instanceof AbstractVehicle vehicle) || !vehicle.isAlive() || vehicle.isDestroyed()) {
                 continue;
             }
             if (entity == launcher || entity == relayVehicle) {
                 continue;
             }
-            if (!isHostileRelayTarget(launcher, entity, gunner)) {
+            if (!isHostileRelayTarget(launcher, entity, gunner, observations)) {
                 continue;
             }
             double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(vehicle, radarPos);
@@ -236,9 +238,10 @@ public final class GunnerExternalRadarController {
     }
 
     /** 敌对判定：不同队且（ENEMY faction 无差别 / 非自己人载具）。 */
-    private static boolean isHostileRelayTarget(AbstractVehicle launcher, Entity entity, GunnerEntity gunner) {
-        Team launcherTeam = launcher.getTeam();
-        Team targetTeam = entity.getTeam();
+    private static boolean isHostileRelayTarget(AbstractVehicle launcher, Entity entity, GunnerEntity gunner,
+                                                RVP_GunnerObservationService observations) {
+        Team launcherTeam = observations.team(launcher);
+        Team targetTeam = observations.team(entity);
         if (launcherTeam != null && targetTeam != null && launcherTeam.isAlliedTo(targetTeam)) {
             return false;
         }
@@ -246,14 +249,6 @@ public final class GunnerExternalRadarController {
             return false;
         }
         return true;
-    }
-
-    @Nullable
-    private static Entity normalizeTarget(@Nullable Entity target) {
-        if (target instanceof Player player && player.getVehicle() instanceof AbstractVehicle vehicle) {
-            return vehicle;
-        }
-        return target;
     }
 
     private static boolean isWithinRelayLockVolume(RadarUnit radarUnit, Entity target) {

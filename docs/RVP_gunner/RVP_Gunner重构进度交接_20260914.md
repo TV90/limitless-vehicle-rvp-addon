@@ -1,8 +1,8 @@
 # RVP Gunner 行为组合重构进度交接
 
-> 最后更新：2026-09-26
+> 最后更新：2026-09-27
 >
-> 当前状态：阶段 A、B、C、D 已完成；阶段 E～G 尚未实施
+> 当前状态：阶段 A、B、C、D、E 已完成；阶段 F～G 尚未实施
 >
 > 实施范围：仅 `limitless-vehicle-rvp-addon` 的 Java 源码、测试与文档
 >
@@ -11,6 +11,10 @@
 ---
 
 ## 1. 当前结论
+
+阶段 E“观察扫描合并与性能回归”已经完成。每个 Gunner tick 现在拥有一个
+`RVP_GunnerObservationService`：普通索敌、CIWS、Smoke、武器站反制、RVP 反制、主动 ECM、
+SEAD、外置雷达和在途制导从同一惰性实体快照派生结果，不再由各行为分别遍历世界。
 
 阶段 D“按风险从低到高抽取内建行为”已经完成，服务端权威入口现由不可变固定行为计划驱动：
 
@@ -49,7 +53,10 @@ src/main/java/org/ywzj/rvp/entity/gunner/behavior/
    ├─ RVP_GunnerBehaviorManager.java
    ├─ RVP_GunnerIntentArbiter.java
    ├─ RVP_IGunnerIntentExecutor.java
-   └─ RVP_GunnerActionIntentExecutor.java
+   ├─ RVP_GunnerActionIntentExecutor.java
+   ├─ RVP_GunnerObservationQueryCache.java
+   ├─ RVP_GunnerObservationService.java
+   └─ RVP_GunnerPerformanceRecorder.java
 ```
 
 ### 2.1 单 tick Context
@@ -218,26 +225,90 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:\WgameProject'
 
 ---
 
-## 6. 阶段 D 边界与已知限制
+## 6. 阶段 E 实施结果
+
+### 6.1 共享观察与专用查询
+
+- `RVP_GunnerBehaviorContext` 持有单 tick `observations`，并用其 AGL 缓存生成载具高度快照；空战与 SEAD 不再重复查询同一地形高度。
+- `RVP_GunnerObservationService` 首次有实体查询时才抓取已加载存活实体；无论后续行为派生多少候选查询，`worldTraversals` 都只会从 0 变为 1。
+- 普通目标、CIWS、来袭弹药、Smoke 导弹威胁、ECM 威胁和烟雾云均从共享候选快照筛选，保持原半径、AABB 相交、扫描周期和门控语义。
+- 雷达锁来源按半径缓存；RVP 自动反制与 SEAD 复用该专用查询，不再各自遍历全部载具和雷达部件。
+- 当前 Gunner 拥有的在途 RVP 弹药按半径缓存；designation 与 HITL 维持复用同一集合。
+- Team、Gunner Faction、玩家目标到所乘载具的归一化结果、实体 AGL 均为单 tick Identity 缓存。
+- `GunnerTargeting` 保留无观察参数的诊断兼容入口；服务端固定行为计划全部走共享观察重载。
+
+### 6.2 性能记录
+
+`RVP_GunnerPerformanceRecorder` 在 Forge 服务端 Tick START/END 间记录完整 MSPT，并聚合同 tick 的：
+
+- Gunner 数量；
+- Gunner 行为执行耗时；
+- 世界实体全量遍历次数；
+- 快照实体数；
+- 派生候选检查次数。
+
+记录器为 1/8/16/32 Gunner 场景分别保留累计平均值和最大 MSPT。正常服务端不逐 tick 输出；执行
+`/rvpdebug flags gunner on` 后每 200 tick 输出一次 `[RVP-Gunner-Perf]`，可在对应实机场景直接采样。
+`RVP_GunnerBehaviorDebugSnapshot.observationStats` 同时保存单 Gunner tick 的扫描明细。
+
+### 6.3 自动回归
+
+`RVP_GunnerObservationServiceTest` 固定以下约束：
+
+- 多个观察查询只加载一次底层快照；
+- 内建行为、外置雷达和制导维持不得直接调用 `getEntities().getAll()`；
+- CIWS 硬限位筛选不得原地修改共享观察返回的只读候选列表；
+- 1/8/16/32 场景统计器的 MSPT、行为耗时和扫描平均值计算稳定。
+
+阶段 A～D 行为基线测试已同步为共享观察调用签名，战术顺序、门控和意图仲裁语义未改变。
+
+> 说明：自动测试验证统计与扫描次数，不伪造真实载具场景的 MSPT 数值；真实 1/8/16/32 载具包场景数值应在目标存档中按上述调试开关采集。
+
+定向测试共 18 项（阶段 A～D 基线、阶段 E 观察服务、计划与仲裁），强制重跑后通过。按项目指定
+JDK 17 命令执行最终完整构建，结果为 `BUILD SUCCESSFUL in 31s`，17 个 task（13 executed、4 up-to-date）。
+
+服务端按 10 秒周期检查 `run/server/logs/latest.log`，出现：
+
+```text
+[02:09:55] [Server thread/INFO] [minecraft/DedicatedServer]: Done (2.149s)! For help, type "help"
+```
+
+本次 ERROR 与 `docs/调试与修复规范.md` §5.1 及阶段 D 冒烟基线一致：本体 Bedrock 模型缺失 8 条、
+`abramsx.structure - 副本.json` 非法路径 4 条、`rvp_bomber:ac130u` 配方解析 1 条、
+`rvp_bomber:tu160` 载具数据 1 条；未出现 ObservationService、性能记录器或 Gunner 行为新增错误。
+
+### 6.4 CIWS 只读候选回归修复（2026-09-27）
+
+实机放置 Gunner 后，`GunnerTargeting.findCiwsTarget` 对阶段 E 返回的不可变候选列表执行
+`removeIf`，触发 `UnsupportedOperationException`。现已将组网硬限位判断合入候选生成谓词，既不修改
+共享观察结果，也保持“被其他同阵营 Gunner 硬锁定的弹体不可选”语义。
+
+新增自动回归断言禁止恢复 `candidates.removeIf`。修复后定向测试 15 项通过，完整构建为
+`BUILD SUCCESSFUL in 19s`；服务端日志出现 `Done (3.070s)!`，仅包含上述既有噪音基线。
+
+---
+
+## 7. 阶段 E 边界与已知限制
 
 - 当前仍是代码内固定计划，不读取 Profile `behaviors`；注册表、强类型行为配置和 JSON 计划编译属于阶段 F。
 - burst、导弹发射冷却和 CIWS 目标冷却仍是武器动作事务状态，由 `GunnerEntity` 承载；地面机动、空战、Smoke、反制和 SEAD 等行为状态已迁入按实例 ID 隔离的 Runtime。
-- ObservationService 尚未实施；索敌、Smoke、ECM、SEAD 扫描仍按原周期和原入口运行。扫描合并属于阶段 E。
+- 共享观察以“单 Gunner、单 tick”为边界；不同 Gunner 不共享实体快照，避免一个 Gunner 的半径、过滤或生命周期污染另一个 Gunner。
 - 本体 `WeaponUnit.shoot` 与 RVP 干扰物 `fire` 仍不返回“实际生成”布尔值，故 `DISPATCHED` 不能解释为确认发射或命中。
 - 当前 Aim 始终封装在 FireIntent 对应的武器动作事务内，没有开放可独立竞争的 AimIntent；后续不得把 aim 与 shoot 拆成不同胜者。
 - DebugSnapshot 已可从 `gunner.getBehaviorRuntime().debugSnapshot()` 读取，但尚未新增命令/HUD 展示入口。
 
 ---
 
-## 7. 阶段 E 接手建议
+## 8. 阶段 F 接手建议
 
-下一步只实施共享观察与性能回归，不改变阶段 D 行为结果：
+下一步启用 JSON 行为组合，不再调整阶段 E 的观察语义：
 
-1. 合并普通目标、CIWS、Smoke、ECM 与 SEAD 的重复实体扫描；
-2. 缓存 Team/Faction、目标载具归一化与 AGL；
-3. 为雷达锁来源和在途制导弹药建立共享查询；
-4. 对 1/8/16/32 Gunner 场景记录 MSPT 和扫描统计。
+1. 完成行为注册表、强类型配置解析和 Plan 编译器；
+2. 冻结 `schema_version: 2`；
+3. 用 `scripts/` 一次性改写当前 `gunner/*.json`；
+4. 保证阶段 E 固定计划与每个迁移后 Profile 的行为列表等价。
 
-接手时应直接复用 Context、BehaviorPlan、现有 Intent 通道、Runtime 和动作网关；ObservationService 只提供只读快照，不得成为第二套决策或写操作入口。
+接手时应直接复用 Context、BehaviorPlan、现有 Intent 通道、Runtime、动作网关和 ObservationService；
+行为注册表只能选择与配置观察需求，不得绕过共享观察重新扫描世界。
 
-阶段 E 仍不需要修改 `ywzj_vehicle`、新增 Mixin、按武器/载具 ID 特判或改动载具结构模型。
+阶段 F 仍不需要修改 `ywzj_vehicle`、新增 Mixin、按武器/载具 ID 特判或改动载具结构模型。

@@ -4,6 +4,7 @@ import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.GunnerGuidedWeaponController;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosOperatorSession;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -20,12 +21,13 @@ public final class RVP_GunnerGuidanceActions {
     public RVP_GunnerActionResult maintain(GunnerEntity gunner,
                                            AbstractVehicle vehicle,
                                            @Nullable WeaponUnit weaponUnit,
-                                           @Nullable Entity target) {
+                                           @Nullable Entity target,
+                                           RVP_GunnerObservationService observations) {
         if (gunner == null || vehicle == null || vehicle.level().isClientSide()) {
             return RVP_GunnerActionResult.INVALID;
         }
         // 调用项目既有制导控制器，集中维护 GPS、照射与在途 HITL 会话。
-        GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target);
+        GunnerGuidedWeaponController.tick(gunner, vehicle, weaponUnit, target, observations);
         return RVP_GunnerActionResult.EXECUTED;
     }
 

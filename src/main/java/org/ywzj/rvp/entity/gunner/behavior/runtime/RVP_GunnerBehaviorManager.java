@@ -60,6 +60,7 @@ public final class RVP_GunnerBehaviorManager {
 
     /** 运行 KERNEL_PREPARE 到 KERNEL_CLEANUP 的阶段 D 固定行为计划。 */
     public void tick(GunnerEntity gunner, AbstractVehicle vehicle) {
+        long behaviorStartedNanos = System.nanoTime();
         GunnerProfileManager profiles = GunnerProfileManager.INSTANCE;
         String profileId = profiles.normalizeProfileId(gunner.getProfileId()).toString();
         GunnerProfile profile = profiles.getProfile(profiles.normalizeProfileId(profileId));
@@ -105,10 +106,14 @@ public final class RVP_GunnerBehaviorManager {
 
         // KERNEL_CLEANUP：保存候选、胜者、拒因和动作结果，供诊断命令/监控读取。
         runtime.setDebugSnapshot(session.snapshot());
+        long behaviorNanos = System.nanoTime() - behaviorStartedNanos;
         if (FMLEnvironment.dist == Dist.CLIENT) {
             // 调用现有客户端诊断监控，保持阶段 A 的观察输出；服务器不会加载客户端专属类型。
-            RVP_GunnerDebugMonitor.onTick(gunner, vehicle, context.weaponUnit(), context.target());
+            RVP_GunnerDebugMonitor.onTick(gunner, vehicle, context.weaponUnit(), context.target(),
+                    context.observations());
         }
+        // 调用阶段 E 性能记录器，将单 Gunner 行为耗时与最终共享观察统计并入当前服务端 tick。
+        RVP_GunnerPerformanceRecorder.recordGunnerTick(context.observations().statistics(), behaviorNanos);
     }
 
     /** Gunner 离座、死亡或实体移除时释放固定计划状态。 */
@@ -256,7 +261,8 @@ public final class RVP_GunnerBehaviorManager {
 
         private RVP_GunnerBehaviorDebugSnapshot snapshot() {
             return new RVP_GunnerBehaviorDebugSnapshot(context.gameTime(), context.profileId(),
-                    List.copyOf(candidates), stableMap(winners), List.copyOf(rejections), stableMap(results));
+                    List.copyOf(candidates), stableMap(winners), List.copyOf(rejections), stableMap(results),
+                    context.observations().statistics().asDebugMap());
         }
 
         /** 保留固定计划执行顺序，避免调试输出重新依赖 Map 实现顺序。 */

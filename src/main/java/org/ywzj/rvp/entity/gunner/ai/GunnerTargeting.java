@@ -19,6 +19,7 @@ import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.vehicle.entity.weapon.AerialBombEntity;
@@ -43,12 +44,20 @@ public final class GunnerTargeting {
 
     @Nullable
     public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit, GunnerProfile profile) {
+        return findBestTarget(gunner, vehicle, weaponUnit, profile, null);
+    }
+
+    /** 从阶段 E 单 tick 共享观察快照选择普通目标。 */
+    @Nullable
+    public static Entity findBestTarget(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit,
+                                        GunnerProfile profile,
+                                        @Nullable RVP_GunnerObservationService observations) {
         double radius = resolveSearchRadius(vehicle, weaponUnit, profile);
-        Team vehicleTeam = vehicle.getTeam();
-        Team gunnerTeam = gunner.getTeam();
+        Team vehicleTeam = observations == null ? vehicle.getTeam() : observations.team(vehicle);
+        Team gunnerTeam = observations == null ? gunner.getTeam() : observations.team(gunner);
         boolean launcher = GunnerBrain.hasLauncherDeployConfig(vehicle);
         // O(实体) 遍历已加载实体，替代 ±radius（带雷达时可达数千格）立方体 getEntities（服务端掉 TPS）
-        List<Entity> entities = collectTargetEntities(vehicle, radius,
+        List<Entity> entities = collectTargetEntities(observations, vehicle, radius,
                 entity -> passesTargetCollectionGates(gunner, vehicle, weaponUnit,
                         vehicleTeam, gunnerTeam, entity, profile, radius));
         // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
@@ -217,7 +226,14 @@ public final class GunnerTargeting {
 
     @Nullable
     public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double radius) {
-        return findAmmoThreat(gunner, vehicle, radius, 32.0, 25.0);
+        return findAmmoThreat(gunner, vehicle, radius, 32.0, 25.0, null);
+    }
+
+    /** 从共享观察快照查找默认近距来袭弹药。 */
+    @Nullable
+    public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double radius,
+                                            RVP_GunnerObservationService observations) {
+        return findAmmoThreat(gunner, vehicle, radius, 32.0, 25.0, observations);
     }
 
     /**
@@ -229,10 +245,19 @@ public final class GunnerTargeting {
      */
     public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double scanRadius,
                                             double closeRangeCap, double maxTimeToImpact) {
-        Team vehicleTeam = vehicle.getTeam();
-        Team gunnerTeam = gunner.getTeam();
+        return findAmmoThreat(gunner, vehicle, scanRadius, closeRangeCap, maxTimeToImpact, null);
+    }
+
+    /** 从共享观察快照查找指定门限的来袭弹药。 */
+    @Nullable
+    public static AmmoEntity findAmmoThreat(GunnerEntity gunner, AbstractVehicle vehicle, double scanRadius,
+                                            double closeRangeCap, double maxTimeToImpact,
+                                            @Nullable RVP_GunnerObservationService observations) {
+        Team vehicleTeam = observations == null ? vehicle.getTeam() : observations.team(vehicle);
+        Team gunnerTeam = observations == null ? gunner.getTeam() : observations.team(gunner);
         // O(实体) 遍历已加载实体，替代 ±radius 立方体 getEntities
-        List<Entity> entities = collectTargetEntities(vehicle, scanRadius, entity -> entity instanceof AmmoEntity ammo
+        List<Entity> entities = collectTargetEntities(observations, vehicle, scanRadius,
+                entity -> entity instanceof AmmoEntity ammo
                 && ammo.isAlive()
                 && ammo.vehicle != vehicle
                 && !isFriendlyAmmoOwner(gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner()));
@@ -598,12 +623,19 @@ public final class GunnerTargeting {
      */
     @Nullable
     public static AmmoEntity findCiwsTarget(GunnerEntity gunner, AbstractVehicle vehicle) {
+        return findCiwsTarget(gunner, vehicle, null);
+    }
+
+    /** 从阶段 E 单 tick 共享观察快照选择 CIWS 目标。 */
+    @Nullable
+    public static AmmoEntity findCiwsTarget(GunnerEntity gunner, AbstractVehicle vehicle,
+                                            @Nullable RVP_GunnerObservationService observations) {
         final double ciwsRange = 1000.0;
         final double minAgl = GunnerBrain.hasLauncherDeployConfig(vehicle) ? 0.0 : 50.0;
-        Team vehicleTeam = vehicle.getTeam();
-        Team gunnerTeam = gunner.getTeam();
+        Team vehicleTeam = observations == null ? vehicle.getTeam() : observations.team(vehicle);
+        Team gunnerTeam = observations == null ? gunner.getTeam() : observations.team(gunner);
         // O(实体) 遍历已加载实体，替代 ±1000 立方体 getEntities（2000³，服务端掉 TPS）
-        List<Entity> candidates = collectTargetEntities(vehicle, ciwsRange, entity -> {
+        List<Entity> candidates = collectTargetEntities(observations, vehicle, ciwsRange, entity -> {
             if (!(entity instanceof AmmoEntity ammo)) {
                 return false;
             }
@@ -626,16 +658,19 @@ public final class GunnerTargeting {
             if (gunner.isCiwsTargetOnCooldown(entity)) {
                 return false;
             }
-            double ammoAgl = entity.getY() - entity.level().getHeight(
-                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                    net.minecraft.util.Mth.floor(entity.getX()),
-                    net.minecraft.util.Mth.floor(entity.getZ()));
-            return ammoAgl >= minAgl;
+            double ammoAgl = observations == null
+                    ? entity.getY() - entity.level().getHeight(
+                            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                            net.minecraft.util.Mth.floor(entity.getX()),
+                            net.minecraft.util.Mth.floor(entity.getZ()))
+                    : observations.agl(entity);
+            if (ammoAgl < minAgl) {
+                return false;
+            }
+            // 调用项目组网限位入口，在生成候选时完成硬禁筛选，避免修改阶段 E 返回的只读观察结果。
+            return !RVP_GunnerEngagementNet.isHardLockedFor(
+                    vehicle.level(), gunner.getProfileFaction(), entity, gunner);
         });
-        // 目的：限位窗口（硬禁）——被其它同 faction gunner 交战后 60t 内本 gunner 完全不可选
-        //（即使它是唯一候选；交战者本人不受限）
-        candidates.removeIf(entity -> RVP_GunnerEngagementNet.isHardLockedFor(
-                vehicle.level(), gunner.getProfileFaction(), entity, gunner));
         if (candidates.isEmpty()) {
             return null;
         }
@@ -679,6 +714,15 @@ public final class GunnerTargeting {
             }
         }
         return result;
+    }
+
+    /** 优先从共享观察快照派生候选；兼容诊断调用时保留旧的直接遍历入口。 */
+    private static List<Entity> collectTargetEntities(@Nullable RVP_GunnerObservationService observations,
+                                                      AbstractVehicle vehicle, double radius,
+                                                      java.util.function.Predicate<Entity> filter) {
+        return observations == null
+                ? collectTargetEntities(vehicle, radius, filter)
+                : observations.candidates(radius, filter);
     }
 
     private static final class TargetMatch {

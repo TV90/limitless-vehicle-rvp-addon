@@ -1,11 +1,11 @@
 package org.ywzj.rvp.entity.gunner.ai;
 
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -29,14 +29,15 @@ public final class GunnerGuidedWeaponController {
     public static void tick(GunnerEntity gunner,
                             AbstractVehicle vehicle,
                             @Nullable WeaponUnit weaponUnit,
-                            @Nullable Entity target) {
+                            @Nullable Entity target,
+                            RVP_GunnerObservationService observations) {
         if (vehicle.level().isClientSide()) {
             return;
         }
         Vec3 targetPoint = targetPoint(target);
-        updateDesignation(gunner, vehicle, weaponUnit, targetPoint);
+        updateDesignation(gunner, vehicle, weaponUnit, targetPoint, observations);
         updateGpsTarget(gunner, vehicle, weaponUnit, targetPoint);
-        updateInFlightHitl(gunner, vehicle, target, targetPoint);
+        updateInFlightHitl(gunner, target, targetPoint, observations);
     }
 
     public static void prepareForLaunch(GunnerEntity gunner,
@@ -70,10 +71,11 @@ public final class GunnerGuidedWeaponController {
     private static void updateDesignation(GunnerEntity gunner,
                                           AbstractVehicle vehicle,
                                           @Nullable WeaponUnit weaponUnit,
-                                          @Nullable Vec3 targetPoint) {
+                                          @Nullable Vec3 targetPoint,
+                                          RVP_GunnerObservationService observations) {
         if (targetPoint == null || weaponUnit == null
                 || !currentWeaponNeedsDesignation(gunner, weaponUnit)
-                && !hasInFlightDesignationWeapon(gunner, vehicle)) {
+                && !hasInFlightDesignationWeapon(observations)) {
             RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), false, null);
             return;
         }
@@ -91,26 +93,18 @@ public final class GunnerGuidedWeaponController {
     }
 
     private static void updateInFlightHitl(GunnerEntity gunner,
-                                           AbstractVehicle vehicle,
                                            @Nullable Entity target,
-                                           @Nullable Vec3 targetPoint) {
+                                           @Nullable Vec3 targetPoint,
+                                           RVP_GunnerObservationService observations) {
         if (targetPoint == null || target == null || !target.isAlive()) {
             return;
         }
-        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
-            return;
-        }
-        // O(实体) 遍历已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，灾难级）；
-        // 距离闸门还原原 box 范围，避免纳入 4096 格外的弹体
-        AABB searchBox = vehicle.getBoundingBox().inflate(HITL_CONTROL_SEARCH_RANGE);
-        for (Entity entity : serverLevel.getEntities().getAll()) {
-            if (!(entity instanceof RVP_MissileEntity missile)
-                    || !missile.isAlive()
-                    || missile.getOwner() != gunner
+        // 调用共享观察服务的 Owner 专用索引，避免 HITL 与照射维持各自遍历世界。
+        for (RVP_BaseBullet projectile : observations.ownedProjectiles(HITL_CONTROL_SEARCH_RANGE)) {
+            if (!(projectile instanceof RVP_MissileEntity missile)
                     || missile.getRvpData() == null
                     || !missile.getRvpData().hasHumanInTheLoop()
-                    || !missile.rvp$isHitlActive()
-                    || !missile.getBoundingBox().intersects(searchBox)) {
+                    || !missile.rvp$isHitlActive()) {
                 continue;
             }
             RVP_EnumHitlControlMode mode = missile.rvp$getHitlControlMode();
@@ -140,20 +134,10 @@ public final class GunnerGuidedWeaponController {
                 || data.usesGuidanceType(RVP_EnumGuidanceType.HITL_TV);
     }
 
-    private static boolean hasInFlightDesignationWeapon(GunnerEntity gunner, AbstractVehicle vehicle) {
-        if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
-            return false;
-        }
-        // O(实体) 遍历已加载实体，替代 ±4096 立方体 getEntitiesOfClass（8192³，灾难级）；
-        // 距离闸门还原原 box 范围，避免把 4096 格外的弹判为空射依据
-        AABB searchBox = vehicle.getBoundingBox().inflate(HITL_CONTROL_SEARCH_RANGE);
-        for (Entity entity : serverLevel.getEntities().getAll()) {
-            if (entity instanceof RVP_BaseBullet projectile
-                    && projectile.isAlive()
-                    && projectile.getOwner() == gunner
-                    && projectile.getRvpData() != null
-                    && needsDesignation(projectile.getRvpData())
-                    && projectile.getBoundingBox().intersects(searchBox)) {
+    private static boolean hasInFlightDesignationWeapon(RVP_GunnerObservationService observations) {
+        // 调用共享观察服务的 Owner 专用索引，复用 HITL 维持已经请求的在途弹药集合。
+        for (RVP_BaseBullet projectile : observations.ownedProjectiles(HITL_CONTROL_SEARCH_RANGE)) {
+            if (projectile.getRvpData() != null && needsDesignation(projectile.getRvpData())) {
                 return true;
             }
         }

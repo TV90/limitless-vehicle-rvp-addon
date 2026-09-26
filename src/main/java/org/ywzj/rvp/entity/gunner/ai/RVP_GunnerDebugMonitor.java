@@ -13,6 +13,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceLaunchConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
@@ -116,15 +117,16 @@ public final class RVP_GunnerDebugMonitor {
         }
     }
 
-    /** 由 GunnerBrain.tick() 在每 tick 调用 */
+    /** 由行为管理器在每 tick 调用，并复用阶段 E 共享观察快照。 */
     public static void onTick(GunnerEntity gunner, AbstractVehicle vehicle,
-                              @Nullable WeaponUnit weaponUnit, @Nullable Entity target) {
+                              @Nullable WeaponUnit weaponUnit, @Nullable Entity target,
+                              RVP_GunnerObservationService observations) {
         if (!active) return;
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         tickCounter++;
         if (tickCounter % INTERVAL_TICK != 0) return;
 
-        String dump = buildDump(gunner, vehicle, weaponUnit, target);
+        String dump = buildDump(gunner, vehicle, weaponUnit, target, observations);
         PrintWriter pw = getWriter();
         if (pw != null) {
             pw.println(FMT.format(new Date()) + " [GunnerBrain] " + dump.replace("\n", " | "));
@@ -137,7 +139,8 @@ public final class RVP_GunnerDebugMonitor {
     }
 
     private static String buildDump(GunnerEntity gunner, AbstractVehicle vehicle,
-                                    @Nullable WeaponUnit weaponUnit, @Nullable Entity target) {
+                                    @Nullable WeaponUnit weaponUnit, @Nullable Entity target,
+                                    RVP_GunnerObservationService observations) {
         StringBuilder sb = new StringBuilder();
         GunnerProfile profile = GunnerProfileManager.INSTANCE.getProfile(
                 GunnerProfileManager.INSTANCE.normalizeProfileId(gunner.getProfileId()));
@@ -167,10 +170,8 @@ public final class RVP_GunnerDebugMonitor {
             sb.append(" target=").append(target.getType().toString());
             sb.append(" dist=").append(String.format("%.0f", vehicle.position().distanceTo(target.position())));
             // target altitude AGL
-            int groundY = target.level().getHeight(
-                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                    Mth.floor(target.getX()), Mth.floor(target.getZ()));
-            double agl = target.getY() - groundY;
+            // 调用阶段 E 观察服务，复用目标 AGL 单 tick 缓存。
+            double agl = observations.agl(target);
             sb.append(" tgtAGL=").append(String.format("%.0f", agl));
             // target velocity
             sb.append(" tgtVel=").append(String.format("%.1f", target.getDeltaMovement().length()));
@@ -179,7 +180,8 @@ public final class RVP_GunnerDebugMonitor {
         }
 
         // --- CIWS ---
-        AmmoEntity ciws = GunnerTargeting.findCiwsTarget(gunner, vehicle);
+        // 调用共享观察重载，避免启用诊断监控时产生第二次世界实体遍历。
+        AmmoEntity ciws = GunnerTargeting.findCiwsTarget(gunner, vehicle, observations);
         sb.append(" ciws=").append(ciws != null ? ciws.getType().toString() : "none");
 
         // --- selected weapon details ---

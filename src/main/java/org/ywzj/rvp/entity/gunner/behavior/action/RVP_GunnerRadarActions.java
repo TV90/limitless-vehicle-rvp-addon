@@ -11,6 +11,7 @@ import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.GunnerExternalRadarController;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
@@ -36,6 +37,14 @@ public final class RVP_GunnerRadarActions {
     public RVP_GunnerActionResult maintainLocalLock(AbstractVehicle vehicle,
                                                     @Nullable WeaponUnit weaponUnit,
                                                     @Nullable Entity target) {
+        return maintainLocalLock(vehicle, weaponUnit, target, null);
+    }
+
+    /** 按现行顺序维护本车 RF 雷达锁，并复用单 tick 目标归一化缓存。 */
+    public RVP_GunnerActionResult maintainLocalLock(AbstractVehicle vehicle,
+                                                    @Nullable WeaponUnit weaponUnit,
+                                                    @Nullable Entity target,
+                                                    @Nullable RVP_GunnerObservationService observations) {
         if (weaponUnit == null) {
             return RVP_GunnerActionResult.INVALID;
         }
@@ -65,7 +74,7 @@ public final class RVP_GunnerRadarActions {
             }
             return RVP_GunnerActionResult.UNSUPPORTED;
         }
-        Entity lockTarget = normalizeTarget(target);
+        Entity lockTarget = observations == null ? normalizeTarget(target) : observations.normalizeTarget(target);
         if (lockTarget == null || !lockTarget.isAlive()) {
             clearLocalLock(weaponUnit, radar);
             return RVP_GunnerActionResult.INVALID;
@@ -156,7 +165,8 @@ public final class RVP_GunnerRadarActions {
                                                        AbstractVehicle vehicle,
                                                        @Nullable WeaponUnit weaponUnit,
                                                        @Nullable Entity target,
-                                                       boolean driverAi) {
+                                                       boolean driverAi,
+                                                       RVP_GunnerObservationService observations) {
         if (gunner == null || vehicle == null) {
             return RVP_GunnerActionResult.INVALID;
         }
@@ -168,7 +178,7 @@ public final class RVP_GunnerRadarActions {
             return RVP_GunnerActionResult.UNSUPPORTED;
         }
         // 调用项目既有外置雷达控制器，维持中继部署、探测、锁定和失效清理。
-        GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi);
+        GunnerExternalRadarController.tick(gunner, vehicle, weaponUnit, target, driverAi, observations);
         return RVP_GunnerActionResult.EXECUTED;
     }
 

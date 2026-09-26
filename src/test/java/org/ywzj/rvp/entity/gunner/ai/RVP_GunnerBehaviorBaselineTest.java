@@ -144,7 +144,7 @@ class RVP_GunnerBehaviorBaselineTest {
 
         assertOrdered(tickTargeting,
                 "gunner.tickCount % profile.getScanIntervalTick() == 0",
-                "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile)",
+                "GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile, observations)",
                 "gunner.getTrackedTarget()",
                 // 搜索中继指示（2026-09-16）：自身索敌无结果时回退取中继接触（仅瞄准不发射），
                 // 且指示目标必须过 isValidTarget 保护判定（创造保护/target_types 不被绕过）
@@ -157,7 +157,8 @@ class RVP_GunnerBehaviorBaselineTest {
                 "markEngagementNetOnTrack(context.gunner(), context.vehicle(), target, context.profile());",
                 "context.gunner().setTrackedTarget(target);");
         assertContainsAll(behaviors,
-                "GunnerTargeting.findCiwsTarget(context.gunner(), context.vehicle())",
+                "GunnerTargeting.findCiwsTarget(",
+                "context.gunner(), context.vehicle(), context.observations())",
                 "new BaseBehavior(\"ciws_targeting\"",
                 "new BaseBehavior(\"primary_targeting\"",
                 "RVP_GunnerBehaviorIntent.Kind.TARGET");
@@ -166,7 +167,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "RVP_GunnerEngagementNet.markTracked(");
 
         assertOrdered(findBest,
-                "collectTargetEntities(vehicle, radius",
+                "collectTargetEntities(observations, vehicle, radius",
                 "List<Entity> rvpAmmo",
                 "RVP_GunnerEngagementNet.isHardLockedFor(",
                 "RVP_GunnerEngagementNet.isRecentlyEngaged(",
@@ -186,7 +187,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 // 分角度 RCS 因子，防止"AI 感知到驾驶员"绕过载具隐身
                 "entity.getVehicle() instanceof AbstractVehicle ridden");
         assertContainsAll(ciws,
-                "candidates.removeIf(entity -> RVP_GunnerEngagementNet.isHardLockedFor(",
+                "return !RVP_GunnerEngagementNet.isHardLockedFor(",
                 "RVP_GunnerEngagementNet.isRecentlyEngaged(",
                 "freshCandidates.isEmpty() ? candidates : freshCandidates");
         String creativeProtection = section(targeting,
@@ -329,9 +330,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "RVP_GunnerBehaviorIntent.Kind.MOVEMENT",
                 "command.backward = true;");
         assertContainsAll(fixedWing,
-                "tickFixedWingCruise(gunner, vehicle, profile, false, command);",
+                "tickFixedWingCruise(gunner, vehicle, profile, false, currentAgl, command);",
                 "return false;",
-                "ensureAirPhase(gunner, vehicle, profile, state)",
+                "ensureAirPhase(gunner, profile, state, currentAgl)",
                 "boolean breakAway",
                 "command.yRot = desiredRot.y;",
                 "command.forward = true;");
@@ -401,7 +402,7 @@ class RVP_GunnerBehaviorBaselineTest {
         assertContainsAll(rvpCountermeasure,
                 "RVP_COUNTERMEASURE_SCAN_INTERVAL_TICK",
                 "RVP_COUNTERMEASURE_COOLDOWN_TICK",
-                "resolveRvpCountermeasureThreat(vehicle)",
+                "resolveRvpCountermeasureThreat(vehicle, context.observations())",
                 "Kind.RVP_COUNTERMEASURE",
                 "result == RVP_GunnerActionResult.DISPATCHED");
         assertContainsAll(defense,
@@ -410,9 +411,9 @@ class RVP_GunnerBehaviorBaselineTest {
                 "RVP_EcmActiveManager.tryFireForVehicle(vehicle)");
 
         assertOrdered(guidance,
-                "updateDesignation(gunner, vehicle, weaponUnit, targetPoint);",
+                "updateDesignation(gunner, vehicle, weaponUnit, targetPoint, observations);",
                 "updateGpsTarget(gunner, vehicle, weaponUnit, targetPoint);",
-                "updateInFlightHitl(gunner, vehicle, target, targetPoint);");
+                "updateInFlightHitl(gunner, target, targetPoint, observations);");
         assertContainsAll(guidance,
                 "GPSTargetManager.set",
                 "RVP_SaclosOperatorSession.setDesignation",
@@ -429,7 +430,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "turnOnRelayRadars(relayVehicle);",
                 "getPreferredRelayLockRadar",
                 "getPreferredRelaySearchRadar",
-                "findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner)",
+                "findRelayScanTarget(launcher, relayVehicle, relayRadar, gunner, observations)",
                 "isWithinRelaySearchVolume(relayRadar, lockTarget)",
                 "relayRadar.detect(lockTarget);",
                 "recordRelaySearchContact(launcher, lockTarget);",
@@ -472,7 +473,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static final int SEAD_THREAT_SCAN_INTERVAL = 10;",
                 "private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;");
         assertOrdered(sead,
-                "findRadarLockingEntity(gunner, vehicle)",
+                "findRadarLockingEntity(gunner, vehicle, context.observations())",
                 "findAntiRadiationWeaponIndex(weaponUnit)",
                 "Kind.FIRE_ANTI_RADIATION",
                 "RVP_EnumCountermeasureType.CHAFF",

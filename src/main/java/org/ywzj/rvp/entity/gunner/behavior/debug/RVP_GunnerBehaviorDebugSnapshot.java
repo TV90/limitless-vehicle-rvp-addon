@@ -10,10 +10,11 @@ public record RVP_GunnerBehaviorDebugSnapshot(
         /** 所有已提交候选的稳定描述。 */ List<String> candidates,
         /** 以“通道/资源键”为键的胜者描述。 */ Map<String, String> winners,
         /** 被仲裁拒绝的候选及原因。 */ List<String> rejections,
-        /** 已执行胜者及动作层结果。 */ Map<String, String> results) {
+        /** 已执行胜者及动作层结果。 */ Map<String, String> results,
+        /** 本 tick 共享观察扫描统计。 */ Map<String, Long> observationStats) {
 
     /** 创建完全空的初始快照。 */
     public static RVP_GunnerBehaviorDebugSnapshot empty() {
-        return new RVP_GunnerBehaviorDebugSnapshot(-1L, "", List.of(), Map.of(), List.of(), Map.of());
+        return new RVP_GunnerBehaviorDebugSnapshot(-1L, "", List.of(), Map.of(), List.of(), Map.of(), Map.of());
     }
 }

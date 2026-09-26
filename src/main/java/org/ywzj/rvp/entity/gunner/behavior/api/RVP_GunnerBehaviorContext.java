@@ -9,6 +9,7 @@ import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.GunnerBrain;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.entity.gunner.ai.profile.RVP_EnumGunnerFaction;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
@@ -18,7 +19,6 @@ import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
-import org.ywzj.vehicle.util.EntityUtil;
 
 import java.util.Collections;
 import java.util.EnumSet;
@@ -102,6 +102,8 @@ public final class RVP_GunnerBehaviorContext {
     private final boolean missileLaunchWarning;
     /** 本 tick 游戏时间。 */
     private final long gameTime;
+    /** 本 tick 共享观察快照；所有行为和动作层查询都复用该实例。 */
+    private final RVP_GunnerObservationService observations;
     /** 不可变能力集合。 */
     private final Set<Capability> capabilities;
 
@@ -126,6 +128,7 @@ public final class RVP_GunnerBehaviorContext {
                                       boolean radarLockWarning,
                                       boolean missileLaunchWarning,
                                       long gameTime,
+                                      RVP_GunnerObservationService observations,
                                       Set<Capability> capabilities) {
         this.gunner = gunner;
         this.vehicle = vehicle;
@@ -148,6 +151,7 @@ public final class RVP_GunnerBehaviorContext {
         this.radarLockWarning = radarLockWarning;
         this.missileLaunchWarning = missileLaunchWarning;
         this.gameTime = gameTime;
+        this.observations = observations;
         this.capabilities = capabilities;
     }
 
@@ -185,13 +189,14 @@ public final class RVP_GunnerBehaviorContext {
             }
         }
         Player owner = gunner.getOwnerPlayer();
-        double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
+        // 创建阶段 E 单 tick 观察服务，并用其 AGL 缓存生成上下文高度快照。
+        RVP_GunnerObservationService observations = RVP_GunnerObservationService.create(gunner, vehicle);
         return new RVP_GunnerBehaviorContext(gunner, vehicle, profile, profileId, profileGeneration,
                 gunner.getUUID(), owner == null ? gunner.getOwnerUuid() : owner.getUUID(),
                 gunner.getProfileFaction(), gunner.getTeam(), seatUnit, weaponUnit, gunner.getTrackedTarget(),
                 vehicle.position(), vehicle.getDeltaMovement(), vehicle.getYRot(), vehicle.getXRot(),
-                vehicle.getY() - groundY, vehicle.isDestroyed(), radarWarning, missileWarning,
-                vehicle.level().getGameTime(), Collections.unmodifiableSet(capabilities));
+                observations.agl(vehicle), vehicle.isDestroyed(), radarWarning, missileWarning,
+                vehicle.level().getGameTime(), observations, Collections.unmodifiableSet(capabilities));
     }
 
     /** 返回带有 TARGET 阶段胜者的新上下文，其余快照保持不变。 */
@@ -199,7 +204,7 @@ public final class RVP_GunnerBehaviorContext {
         return new RVP_GunnerBehaviorContext(gunner, vehicle, profile, profileId, profileGeneration,
                 gunnerUuid, ownerUuid, faction, team, seatUnit, weaponUnit, target,
                 vehiclePosition, vehicleVelocity, vehicleYaw, vehiclePitch, vehicleAgl, vehicleDestroyed,
-                radarLockWarning, missileLaunchWarning, gameTime, capabilities);
+                radarLockWarning, missileLaunchWarning, gameTime, observations, capabilities);
     }
 
     /** 返回当前 Gunner。 */
@@ -234,6 +239,8 @@ public final class RVP_GunnerBehaviorContext {
     /** 返回是否存在导弹发射告警。 */ public boolean missileLaunchWarning() { return missileLaunchWarning; }
     /** 返回本 tick 游戏时间。 */
     public long gameTime() { return gameTime; }
+    /** 返回本 tick 共享观察快照。 */
+    public RVP_GunnerObservationService observations() { return observations; }
     /** 返回不可变能力集合。 */
     public Set<Capability> capabilities() { return capabilities; }
     /** 判断是否具备指定能力。 */
