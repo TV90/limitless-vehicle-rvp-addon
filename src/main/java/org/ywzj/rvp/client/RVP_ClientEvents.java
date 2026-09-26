@@ -155,9 +155,14 @@ public class RVP_ClientEvents {
         if (!pressed || !anyBroken || workingRadars.isEmpty()) {
             return;
         }
-        // 主控开关：全开 → 本次全关（反辐射反制）；有未开的 → 本次全开（回到双雷达）
-        boolean allWorkingOn = snapshot != null && workingOnNow.equals(snapshot) && !workingOnNow.isEmpty();
-        boolean masterOn = !allWorkingOn;
+        // [RVP] 方向判定（2026-09-28 修复）：必须用按键前快照，不能用 workingOnNow——
+        // 本体 InputHandler 的逐台翻转在本 tick 更早时已执行，workingOnNow 是被翻转后的
+        // 状态（永远≠快照 → 永远判为"全开"→ 纠正把刚关的又强行开回，关不掉的根因）。
+        // 快照语义：全部工作雷达 id 都在快照 ON 集合里 = 按键前全开 → 本次全关（反辐射反制）；
+        // 有未开的 → 本次全开（回到双雷达）。
+        boolean allWereOn = snapshot != null && !snapshot.isEmpty()
+                && workingRadars.stream().allMatch(r -> snapshot.contains(r.getId()));
+        boolean masterOn = !allWereOn;
         for (org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit : workingRadars) {
             if (radarUnit.isOn() != masterOn) {
                 radarUnit.toggle(masterOn);
