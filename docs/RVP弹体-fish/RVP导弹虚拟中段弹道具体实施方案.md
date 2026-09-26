@@ -1,6 +1,6 @@
 # RVP 导弹航程采用虚拟中段弹道的具体实施方案
 
-> 状态：阶段 B 实施文档；已按 `RVP_RvpTrajectoryIntegrator` 当前 `rvp_current` / `VERSION = 7` 实现同步。
+> 状态：阶段 B 实施文档；已按气动转向阶段 S2 的 `rvp_current` / `VERSION = 8` 实现同步。
 > 适用项目：`limitless-vehicle-rvp-addon`，Minecraft 1.20.1 Forge。  
 > 约束：所有新逻辑只写在 RVP 子模组，不修改 `ywzj_vehicle` 本体源码。
 
@@ -103,7 +103,7 @@ org.ywzj.rvp.virtualflight.common
 
 org.ywzj.rvp.guidance.trajectorymath.virtualguidance
 ├─ RVP_VirtualTrajectoryIntegrator    可替换的虚拟弹道积分接口
-├─ RVP_RvpTrajectoryIntegrator        当前 rvp_current/VERSION=7 Tick 编排器
+├─ RVP_RvpTrajectoryIntegrator        当前 rvp_current/VERSION=8 Tick 编排器
 ├─ RVP_VirtualTrajectoryState         积分器所需的最小运动/发动机状态
 ├─ RVP_VirtualGuidanceInput           固定 GPS 目标点与可选 PRESET 参数
 ├─ RVP_VirtualPresetGuidance          PRESET 弹道的不可变纯数学输入
@@ -328,11 +328,12 @@ server manager
 - `restore_lead_tick × 当前水平速度` 与 `restore_target_distance` 取较大值作为实际恢复触发距离。
 - `restore_ticket_radius` 最大为 2，避免单枚导弹恢复时请求过多区块。
 - `max_virtual_flight_tick <= weapon life`；运行时最终使用两者较小值。
-- 虚拟积分读取 `projectile_data.rvp_maxg` 和当前飞行 Tick 对应的 `turning_factor`；前者显式配置时优先，未配置时使用后者。
-- 虚拟积分不使用 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`；转向只由 `projectile_data.rvp_maxg` / `turning_factor` 决定。
+- 虚拟积分读取 `projectile_data.rvp_maxg`、当前飞行 Tick 对应的 `turning_factor` 以及 `rvp_aero_steering`、`rvp_induced_drag`、`rvp_ref_speed`、`rvp_turn_rate_limit`。
+- 阶段 S2 的 `rvp_aero_steering` 默认 `false`，因此旧 JSON 全局静默；显式启用时，虚拟链按与实体链相同的动压和诱导阻力语义积分。
+- 虚拟积分不使用 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
 - 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
 
-`projectile_data.rvp_maxg` 与 `turning_factor` 是实体态和虚拟态共用的转向参数契约，不读取本体 `max_g`。`rvp_maxg` 配置 0 表示禁止转向；未配置且 `turning_factor` 区间未命中时，两条链路均回退 0.5。以后替换积分方法时，新实现必须显式声明参数和状态版本，不得静默改变在途记录语义。
+`projectile_data.rvp_maxg`、`turning_factor` 与 4 个气动转向字段是实体态和虚拟态共用的转向参数契约，不读取本体 `max_g`。`rvp_maxg` 配置 0 表示禁止转向；未配置且 `turning_factor` 区间未命中时，两条链路均回退 0.5。以后替换积分方法时，新实现必须显式声明参数和状态版本，不得静默改变在途记录语义。
 
 ## 5. 虚拟飞行记录
 
@@ -466,7 +467,7 @@ isAlive
 服务器虚拟管理器
   -> 只依赖 RVP_VirtualTrajectoryIntegrator
        -> 第一阶段注入 RVP_RvpTrajectoryIntegrator
-            -> rvp_maxg / turningFactor 二选一钳制与 GPS 高度闭环
+            -> 阶段 S2 气动开关、动压转向与 GPS 高度闭环
             -> 当前实现的主推力/阻力/重力/速度积分
        -> 后续可替换为其他实现
 ```
@@ -503,7 +504,7 @@ public interface RVP_VirtualTrajectoryIntegrator {
 public final class RVP_RvpTrajectoryIntegrator
         implements RVP_VirtualTrajectoryIntegrator {
     public static final String ID = "rvp_current";
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 }
 ```
 
@@ -511,7 +512,7 @@ public final class RVP_RvpTrajectoryIntegrator
 
 - `RVP_VirtualTrajectoryState`：`position`、`velocity`、`xRot`、`yRot`、`peakFlightSpeed`、`flightDistance`、`flightTick`、`remainingLife` 和 `secondPulseStartTick`；
 - `RVP_VirtualGuidanceInput`：第一阶段仅包含 `fixedTargetPosition`；
-- `RVP_VirtualTrajectoryParameters`：包含可选 `rvpMaxGs`、当前 Tick 的 `turningFactor`、`cruiseAltitude`、推进开关、质量、推力、燃烧时间、点火 Tick、阻力、高度阻力因子、重力及速度上下限等冻结参数；不包含 `levelingFactor`。`rotateToMotion` 仅作为恢复姿态快照携带；
+- `RVP_VirtualTrajectoryParameters`：包含可选 `rvpMaxGs`、当前 Tick 的 `turningFactor`、`aeroSteering`、`rvpRefSpeed`、`inducedDrag`、`turnRateLimitDegPerTick`、`densityFactor`、`constantSpeed`、`cruiseAltitude`、推进开关、质量、推力、燃烧时间、点火 Tick、阻力、重力及速度上下限等冻结参数；不包含 `levelingFactor`。`rotateToMotion` 仅作为恢复姿态快照携带；
 - 当前没有 `RVP_VirtualEnvironmentSnapshot`；管理器在每次积分前以当前位置 Y 调用 `RVP_VirtualTrajectoryParameters.from(...)`，高度阻力因子在该次参数中冻结；
 - `RVP_VirtualTrajectoryResult`：只包含新状态、`turnAngleRadians` 和 `invalid`。
 
@@ -521,24 +522,24 @@ public final class RVP_RvpTrajectoryIntegrator
 
 ### 7.3 虚拟积分的统一转向选择模型
 
-`RVP_RvpTrajectoryIntegrator` 在主推力、阻力和重力计算后读取冻结的弹体转向参数：显式配置 `rvp_maxg` 时调用 G 值钳制；否则调用从实体链抽取到 `RVP_TrajectorySteeringMath` 的 `turningFactor` 方向插值。两个字段同时存在时只使用 `rvp_maxg`：
+`RVP_RvpTrajectoryIntegrator` 在主推力、阻力和重力计算后读取冻结的弹体转向参数。阶段 S2 默认关闭气动开关，此时仍按“显式 `rvp_maxg` 优先，否则 `turningFactor`”执行旧算法；显式开启后，二者先形成设计过载，再乘当前动压因子，并由统一求解器返回转角使用率 λ：
 
 ```java
-Vec3 applySteering(Vec3 velocity, Vec3 desiredDir, double maxGs)
-Vec3 applyTurningFactor(Vec3 velocity, Vec3 desiredDir, double speed, float turningFactor)
+RVP_AeroSteeringSolution applyAeroSteering(
+    Vec3 velocity, Vec3 desiredDir, RVP_AeroSteeringLimits limits)
 ```
 
-该方法保持当前速率不变，并把单 Tick 速度向量变化量限制为 `maxGs × PhysicsEngine.G`。实现把允许的速度弦长换算成最大转角，再对当前单位方向和期望单位方向做球面插值：
+转向裁决阶段保持当前速率不变，并把单 Tick 速度向量变化量限制为 `availableGs × PhysicsEngine.G`。`availableGs = designGs × clamp(densityFactor × (speed / referenceSpeed)², 0.05, 1)`；实现把允许的速度弦长换算成最大转角，再对当前单位方向和期望单位方向做球面插值：
 
 ```text
 speed       = length(velocity)
-maxDeltaV   = maxGs × PhysicsEngine.G
+maxDeltaV   = availableGs × PhysicsEngine.G
 maxTurn     = 2 × asin(clamp(maxDeltaV / (2 × speed), 0, 1))
 actualTurn  = min(angle(currentDir, desiredDir), maxTurn)
 newVelocity = slerp(currentDir, desiredDir, actualTurn) × speed
 ```
 
-因此 `applySteering` 同时满足：结果速率等于调用时输入速率、该次转向产生的速度向量变化量不超过最大 G 值、期望方向较近时不会过度转向。由于推力、阻力和重力在此前已改变速度，不能用整个 Tick 的 `nextVelocity - previousVelocity` 直接断言其不超过 `maxGs × G`。0 G、零速或无效期望方向保持调用时的输入速度；反向向量使用确定性的正交轴处理，避免球面插值奇点。
+统一求解结果还携带 `loadFactor = appliedTurn / availableTurn`。速度上下限钳制完成后，积分器按 `inducedDrag × loadFactor² × speed` 扣除诱导阻力；`constant_speed=true` 时豁免。0 G、零速或无效期望方向保持调用时的输入速度；反向向量使用确定性的正交轴处理，避免球面插值奇点。
 
 GPS 巡航先由水平制导和高度闭环合成候选方向：
 
@@ -548,13 +549,13 @@ height   = cruise_altitude（有配置）否则当前虚拟位置 Y
 vertCmd  = clamp((height - pos.y) × 0.015 - velocity.y × 0.05,
                  -speed × 0.5, speed × 0.5)
 cruiseDir      = normalize(hDes.x, vertCmd / speed, hDes.z)
-cruiseVelocity = applyConfiguredSteering(velocity, cruiseDir, rvp_maxg, turningFactor)
+cruiseSolution = applyAeroSteering(velocity, cruiseDir, aeroLimits)
 ```
 
-候选方向不能直接执行。积分器先评估“本 Tick 继续追踪巡航高度后，目标点是否仍处于当前转向能力的可接入区域”。G 值模式按速度弦长求半径；`turningFactor` 模式沿用实体 PRESET 的 `speed / turningFactor` 一阶近似：
+候选方向不能直接执行。积分器先评估“本 Tick 继续追踪巡航高度后，目标点是否仍处于当前转向能力的可接入区域”。气动开启时转弯半径使用当前动压下的 `availableGs`；关闭时继续沿用旧 G 值/`turningFactor` 估算：
 
 ```text
-maxDeltaV = rvp_maxg × PhysicsEngine.G
+maxDeltaV = availableGs × PhysicsEngine.G
 radius    = speed² / maxDeltaV
 factorRadius = clamp(speed / turningFactor, 8, 80)
 ```
@@ -573,7 +574,7 @@ reachable = forward >= minForward + reserveTicks × speed
 
 `canReachTarget(...)` 的边界行为也与代码一致：目标已在一个 Tick 航程内时直接视为可达；目标不在当前速度前方时视为不可达；`maxGs` 非正或非有限时，只有正前方且基本共线的目标才可达；当 `maxGs × G >= 2 × speed` 时，前方目标直接视为可达。
 
-当前 `step(...)` 在未启用 PRESET 时每 Tick 都调用 `RVP_BallisticTrajectoryMath.steerGpsCruise(...)`，没有使用 `cruiseStartTick` 或 `cruiseEndHorizontalDistance` 切换巡航阶段。`max_guidance_angle`、`guidance_data.cruise_leveling_factor` 和本体 `max_g` 均不参与虚拟积分；转向读取 `projectile_data.rvp_maxg`，未配置时读取当前飞行 Tick 的 `turning_factor`。质量只由 `integrateForces(...)` 的推力加速度计算消费，GPS 高度闭环不再接收无效的质量参数。
+当前 `step(...)` 在未启用 PRESET 时每 Tick 都调用 `RVP_BallisticTrajectoryMath.steerGpsCruise(...)`，没有使用 `cruiseStartTick` 或 `cruiseEndHorizontalDistance` 切换巡航阶段。`max_guidance_angle`、`guidance_data.cruise_leveling_factor` 和本体 `max_g` 均不参与虚拟积分；转向及诱导阻力只读取冻结后的 `projectile_data` 参数。质量只由 `integrateForces(...)` 的推力加速度计算消费，GPS 高度闭环不再接收无效的质量参数。
 
 ### 7.4 弹道数学工具覆盖的运动积分范围
 
@@ -853,10 +854,10 @@ phase=REAL_TERMINAL
 | `RVP_ProjectileData` | 增加可空 `rvp_maxg`；`rvp_maxg` 与按 Tick 解析的 `turning_factor` 同时传入实体/虚拟转向选择器 |
 | `RVP_BaseBullet` | 提供快照/恢复接口、有效飞行 Tick 恢复接口和虚拟转换移除标志 |
 | `RVP_MissileEntity` | 第一阶段保留现有实体积分链；服务端运动结算后调用虚拟资格检查，重建后恢复 Missile/雷达相关状态 |
-| `RVP_GuidanceRuntimeMath` | 原 `turningFactor` 算法委托给共享纯数学工具；配置 `rvp_maxg` 时实体链也优先调用 `applySteering` |
-| `RVP_ProjectileMotion` | 第一阶段保持实体行为；当前虚拟积分器只实装主推力、阻力、重力和速度钳制子集，尚未包含第二脉冲或 GPS 专用重力缩放 |
+| `RVP_GuidanceRuntimeMath` | 自动制导与 PRESET 候选方向统一交给 `applyAeroSteering`；阶段 S2 开关关闭时走旧算法，开启时把 λ 写入弹体 |
+| `RVP_ProjectileMotion` | 在速度钳制后按本 Tick λ² 结算诱导阻力；`constant_speed=true` 豁免；当前虚拟积分器尚未包含第二脉冲或 GPS 专用重力缩放 |
 | `RVP_VirtualTrajectoryIntegrator` | 新增稳定的可替换积分接口；管理器只依赖此接口 |
-| `RVP_RvpTrajectoryIntegrator` | `rvp_current` / `VERSION = 7` 纯弹道实现；先执行已点火动力学，再按 `rvp_maxg` 优先、否则 `turningFactor` 的规则钳制 GPS/PRESET 转向，并评估目标可达性 |
+| `RVP_RvpTrajectoryIntegrator` | `rvp_current` / `VERSION = 8` 纯弹道实现；先执行已点火动力学，再按阶段 S2 气动开关选择旧转向或动压转向，随后结算诱导阻力并评估目标可达性 |
 | `RVP_VirtualMissileManager` | 仅服务端持有权威记录，当前以固定目标快照调用已安装的积分接口，每 Tick 按当前高度重建冻结参数 |
 | `RVP_ChunkPathLoader` | 复用 supercover 算法检查恢复后的短路径，不增加同步加载 |
 | `RVP_ChunkPathLoadManager` | 实体恢复成功后接管常规滚动路径；不要让虚拟记录混入实体租约 Map |
@@ -929,7 +930,7 @@ reason
 - 负坐标、极大坐标和非有限输入；
 - `applySteering` 在各方向夹角下保持输入速率；
 - 对 `applySteering` 单独验证 `|steeredVelocity - steeringInputVelocity| <= rvp_maxg × PhysicsEngine.G`；不把推力、阻力和重力产生的整 Tick 速度变化误算为转向过载；
-- 验证未配置 `rvp_maxg` 时虚拟链与实体链使用相同 `turningFactor` 插值，两个字段同时配置时 G 值模式优先；
+- 验证气动开关关闭时虚拟链与实体链保持相同旧转向；开启时两条链共享 `rvp_maxg`/`turningFactor` 优先级、动压减载与诱导阻力；
 - 0 G 保持原方向，充足 G 可在单 Tick 达到期望方向，反向向量结果有限且确定；
 - `cruise_altitude` 高于/低于当前位置时分别产生受限爬升/下降指令，且不会瞬移到目标高度；
 - 低 `maxGs` 场景会在目标进入最小转弯圆不可接入区域前结束巡航，并提前转入目标点；
@@ -1032,7 +1033,7 @@ reason
 进入时距目标最少距离   1600 格
 弹体最大法向过载       projectile_data.rvp_maxg = 18 G（可选；未配置时使用 turning_factor）
 可选虚拟巡航高度       cruise_altitude = 320 世界 Y
-第一阶段积分实现       rvp_current（implementationVersion=7）
+第一阶段积分实现       rvp_current（implementationVersion=8）
 目标恢复基础距离       768 格
 恢复提前时间           60 Tick（3 秒）
 恢复 Ticket 半径       1 区块
@@ -1043,6 +1044,6 @@ reason
 
 最终采用“删除真实实体、服务器级记录通过可替换接口调用 RVP 复制积分器、目标前方异步恢复”的方案，而不是隐藏实体、关闭渲染或让实体在未加载区块中继续设置坐标。后几种方式仍然依赖实体 section、区块生命周期或客户端追踪，无法真正消除长航程的沿途加载成本。
 
-第一版成功标准是：一枚 5000～20000 格 GPS 导弹只在发射区和目标末段产生真实实体与区块加载；中段只有轻量服务器记录；虚拟态按当前 `rvp_current` / `VERSION = 7` 顺序执行“已点火动力学 → GPS/PRESET 路线与可达性判断 → `rvp_maxg` 优先、否则 `turningFactor` 的转向钳制 → 速度钳制 → 位置、姿态与时钟更新”。配置 `cruise_altitude` 时先按当前转向模式估算最小转弯半径，可达则接近设定高度，不可达则直接追踪三维目标。位置和速度应在转换点连续，朝向由权威速度逐 Tick 派生。恢复后仍由 RVP 实体碰撞、引信、爆炸和动态路径 Ticket 体系完成权威结算。积分实现可在不改管理器的前提下替换。
+第一版成功标准是：一枚 5000～20000 格 GPS 导弹只在发射区和目标末段产生真实实体与区块加载；中段只有轻量服务器记录；虚拟态按当前 `rvp_current` / `VERSION = 8` 顺序执行“已点火动力学 → GPS/PRESET 路线与可达性判断 → 旧转向或动压转向裁决 → 速度钳制 → 诱导阻力 → 位置、姿态与时钟更新”。配置 `cruise_altitude` 时先按当前转向模式估算最小转弯半径，可达则接近设定高度，不可达则直接追踪三维目标。位置和速度应在转换点连续，朝向由权威速度逐 Tick 派生。恢复后仍由 RVP 实体碰撞、引信、爆炸和动态路径 Ticket 体系完成权威结算。积分实现可在不改管理器的前提下替换。
 
 在 R-01 的 P0 恢复姿态对齐完成前，GPS + ARH 末制导重捕获和 `rotate_to_motion=false` 且恢复时仍在燃烧的导弹，不应视为已通过虚拟中段生产验收。

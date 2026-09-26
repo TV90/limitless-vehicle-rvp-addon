@@ -1,6 +1,6 @@
 # RVP 制导转向气动化方案（最小 JSON 改动）
 
-> 状态：设计阶段方案，**未实施**。本文只给方案与改动清单，不含已落地代码。
+> 状态：阶段 S1、S2 已实施；当前气动链已接入实体态与虚拟态，但 `rvp_aero_steering` 默认仍为 `false`，尚未进入阶段 S3 代表弹种实弹验证。
 > 适用项目：`limitless-vehicle-rvp-addon`，Minecraft 1.20.1 Forge，`ywzj_vehicle` 本体源码**不改**。
 > 基准要求：**对现有 JSON 结构做最小改动**——不删除、不改名、不迁移任何现有键；只新增少量可选键，默认值使旧配置可继续工作。
 
@@ -636,8 +636,8 @@ velocity = velocity.normalize().scale(Math.max(velocity.length() - loss, minSpee
 
 | 阶段 | 内容 | 验证方式 |
 | --- | --- | --- |
-| S1 | 纯数学层 + 单测（`RVP_AeroSteeringModel` / `RVP_AeroSteeringSolution`），暂不接入实体链 | `./gradlew build`，单测通过 |
-| S2 | 接入实体链与虚拟链，`rvp_aero_steering` 默认 **false**（全局静默，无行为变化） | 冒烟通过；日志无新增错误 |
+| S1（已完成） | 纯数学层 + 单测（`RVP_AeroSteeringModel` / `RVP_AeroSteeringSolution`），暂不接入实体链 | `./gradlew build`，单测通过 |
+| S2（已完成） | 接入实体链与虚拟链，`rvp_aero_steering` 默认 **false**（全局静默，无行为变化） | 构建、单测及服务端冒烟通过；日志无新增错误 |
 | S3 | 选取 3 个代表性弹种显式开启：`pl_15`（空空+双脉冲）、`9k720_9m723`（弹道+PRESET+虚拟中段）、`lav25_tow2b`（线导 `f=1` 豁免） | 手动实弹测试 + 虚拟中段 ETA 对比 |
 | S4 | 默认值翻转为 `true`，全弹种生效 | 全弹种回归清单 |
 | S5 | 按 §9 调参，把明显偏强的弹补 `rvp_maxg` 或调 `turning_factor` | 手感评审 |

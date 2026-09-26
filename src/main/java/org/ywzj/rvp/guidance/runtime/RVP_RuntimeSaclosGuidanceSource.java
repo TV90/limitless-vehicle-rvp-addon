@@ -13,6 +13,9 @@ import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.guidance.RVP_RuntimeGuidanceSource;
 import org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation;
 import org.ywzj.rvp.guidance.saclos.RVP_SACLOSStablePIPAssist;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 /**
@@ -226,7 +229,26 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
             Vec3 hNew = hDir.scale(Math.cos(theta)).add(away.scale(Math.sin(theta)));
             if (hNew.lengthSqr() > 1.0E-8) {
                 hNew = hNew.normalize().scale(hSpeed);
-                projectile.setDeltaMovement(hNew.x, vel.y, hNew.z);
+                Vec3 rotatedVelocity = new Vec3(hNew.x, vel.y, hNew.z);
+                projectile.setDeltaMovement(rotatedVelocity);
+                if (projectile.getRvpData() != null) {
+                    // 调用本项目弹体数据解析器，取得当前 Tick 的 turningFactor 与气动预算。
+                    Float configuredFactor = projectile.getRvpData().getProjectileData()
+                            .resolveTurningFactor(projectile.getFlightTickCount());
+                    float turningFactor = configuredFactor != null ? configuredFactor : 0.5F;
+                    RVP_AeroSteeringLimits limits = projectile.getRvpData().getProjectileData()
+                            .resolveAeroSteeringLimits(
+                                    projectile.getRvpData().getProjectileVelocity(),
+                                    projectile.getY(), turningFactor);
+                    if (limits.enabled()) {
+                        // 调用本项目气动求解器只测算本次强制旋转对应的 λ；实际干扰转角不受裁决。
+                        RVP_AeroSteeringSolution loadSolution =
+                                RVP_BallisticTrajectoryMath.applyAeroSteering(
+                                        vel, rotatedVelocity, limits);
+                        // 调用本项目弹体载荷记录器，使干扰强制偏转同样承担诱导阻力代价。
+                        projectile.recordAeroLoadFactor(loadSolution.loadFactor());
+                    }
+                }
             }
         }
     }

@@ -3,8 +3,8 @@ package org.ywzj.rvp.guidance.trajectorymath.util;
 /**
  * 单 Tick 气动转向求解所需的不可变限制快照。
  *
- * <p>本记录只携带已经由上层解析完成的数值，不访问武器数据、实体或世界。阶段 S1
- * 暂不把它接入运行时链路，后续实体态与虚拟态可共同构造该快照并复用同一求解器。</p>
+ * <p>本记录只携带已经由上层解析完成的数值，不访问武器数据、实体或世界。阶段 S2
+ * 由实体态与虚拟态共同构造该快照并复用同一求解器。</p>
  *
  * @param rvpMaxGs 可选设计法向过载上限，单位 G；{@code null} 表示由 turningFactor 折算
  * @param turningFactor 未配置 rvpMaxGs 时使用的旧版单 Tick 方向插值强度，运行时钳制到 0～1

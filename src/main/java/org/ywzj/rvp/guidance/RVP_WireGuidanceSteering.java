@@ -6,6 +6,8 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -73,7 +75,21 @@ public final class RVP_WireGuidanceSteering {
         Double rvpMaxGs = projectile.getRvpData() == null
                 ? null
                 : projectile.getRvpData().getProjectileData().getRvpMaxG();
-        if (rvpMaxGs != null) {
+        RVP_AeroSteeringLimits aeroLimits = null;
+        if (projectile.getRvpData() != null) {
+            // 调用本项目弹体数据解析器，为 HITL/线导冻结与自动制导相同的气动限制。
+            aeroLimits = projectile.getRvpData().getProjectileData().resolveAeroSteeringLimits(
+                    projectile.getRvpData().getProjectileVelocity(), projectile.getY(),
+                    (float) turningFactor);
+        }
+        if (aeroLimits != null && aeroLimits.enabled()) {
+            // 调用本项目统一气动求解器，使直控制导同样受动压与绝对转角上限约束。
+            RVP_AeroSteeringSolution solution = RVP_BallisticTrajectoryMath.applyAeroSteering(
+                    current, desired, aeroLimits);
+            velocity = solution.velocity();
+            // 调用本项目弹体载荷记录器，供本 Tick 运动阶段结算线导转向的诱导阻力。
+            projectile.recordAeroLoadFactor(solution.loadFactor());
+        } else if (rvpMaxGs != null) {
             // 调用本项目共享 G 值转向工具，严格限制直控指令造成的单 Tick 速度方向变化。
             velocity = RVP_BallisticTrajectoryMath.applySteering(current, desired, rvpMaxGs);
         } else {

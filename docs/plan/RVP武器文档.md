@@ -81,7 +81,11 @@
 | RVP_ProjectileData公用字段 | 解释                                                         | 类型                          | 默认值 |
 | -------------------------- | ------------------------------------------------------------ | ----------------------------- | ------ |
 | turningFactor              | JSON 键 `turning_factor`。不为null时使用旧版MCHR的过载算法。按飞行 Tick 区间配置 0～1 的方向插值强度(推荐值0.05-0.2之间，1为无过载，弹药可锐角机动)(在map中，key为tick，value为过载参数，如{"[[0,20],[100,inf]]": 0.05, "[[20,100]]": 0.15}，表示在射出后20tick内和100tick之后过载值为0.05，其余时间内过载值为0.15)；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5 | Map<RVP_Range<Integer>,Float> | null   |
-| rvpMaxG                    | JSON 键 `rvp_maxg`。RVP 最大法向过载，单位 G；显式配置后实体与虚拟制导均调用 `applySteering`，并优先于 `turning_factor`。0 表示禁止转向 | Double | null |
+| rvpMaxG                    | JSON 键 `rvp_maxg`。RVP 最大法向过载，单位 G；优先于 `turning_factor`。气动转向启用时表示设计动压点过载上限，0 表示禁止转向 | Double | null |
+| rvpAeroSteering            | JSON 键 `rvp_aero_steering`。气动转向总开关；阶段 S2 默认关闭，关闭时完整保留旧行为 | boolean | false |
+| rvpInducedDrag             | JSON 键 `rvp_induced_drag`。诱导阻力系数；null 复用有效 `drag_coefficient`，0 显式关闭 | Float | null |
+| rvpRefSpeed                | JSON 键 `rvp_ref_speed`。动压参考速度，单位格/Tick；null 自动推导，0 关闭动压减载 | Float | null |
+| rvpTurnRateLimit           | JSON 键 `rvp_turn_rate_limit`。绝对转角上限，单位度/Tick；0 表示不限制 | float | 0 |
 
 
 

@@ -3,6 +3,7 @@ package org.ywzj.rvp.weapon.data;
 import com.google.gson.JsonObject;
 import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 
 import java.util.Map;
 
@@ -61,6 +62,34 @@ public class RVP_ProjectileData {
      */
     @SerializedName("rvp_maxg")
     private Double rvpMaxG;
+
+    /**
+     * 是否启用气动转向统一求解，默认 false；仅实体与虚拟制导转向生效。阶段 S2 保持
+     * false 以保证旧武器配置静默兼容；显式启用后，转角按动压减载并结算诱导阻力。
+     */
+    @SerializedName("rvp_aero_steering")
+    private boolean rvpAeroSteering = false;
+
+    /**
+     * 诱导阻力系数，无量纲，默认 null；仅 {@code rvp_aero_steering=true} 时生效。
+     * 未配置时复用有效 {@code drag_coefficient}，0 表示显式关闭诱导阻力。
+     */
+    @SerializedName("rvp_induced_drag")
+    private Float rvpInducedDrag;
+
+    /**
+     * 动压参考速度，单位格/Tick，默认 null；仅 {@code rvp_aero_steering=true} 时生效。
+     * 未配置时依次回退到 {@code max_speed}、武器初速和 3.0；显式 0 关闭动压减载。
+     */
+    @SerializedName("rvp_ref_speed")
+    private Float rvpRefSpeed;
+
+    /**
+     * 单 Tick 绝对转角上限，单位度/Tick，默认 0；仅 {@code rvp_aero_steering=true}
+     * 且值为正有限数时生效，0 表示不额外限制。
+     */
+    @SerializedName("rvp_turn_rate_limit")
+    private float rvpTurnRateLimit = 0f;
 
     /** 是否启用火箭发动机动力学，默认 false；启用后质量、推力和燃烧时间参与运动计算。 */
     @SerializedName("has_rocket_engine")
@@ -288,6 +317,98 @@ public class RVP_ProjectileData {
             return null;
         }
         return Double.isFinite(rvpMaxG) ? Math.max(rvpMaxG, 0.0) : 0.0;
+    }
+
+    /** @return 是否启用气动转向统一求解；阶段 S2 默认 false。 */
+    public boolean isRvpAeroSteering() {
+        return rvpAeroSteering;
+    }
+
+    /**
+     * @return 原始诱导阻力配置；null 表示运行时复用有效 {@code drag_coefficient}
+     */
+    @Nullable
+    public Float getRvpInducedDrag() {
+        return rvpInducedDrag;
+    }
+
+    /**
+     * @return 原始动压参考速度配置；null 表示按最高速率、武器初速和常量依次推导
+     */
+    @Nullable
+    public Float getRvpRefSpeed() {
+        return rvpRefSpeed;
+    }
+
+    /** @return 非负有限的绝对转角上限，单位度/Tick；非法值按 0 处理。 */
+    public float getRvpTurnRateLimit() {
+        return Float.isFinite(rvpTurnRateLimit) ? Math.max(rvpTurnRateLimit, 0f) : 0f;
+    }
+
+    /**
+     * 解析气动转向限制，turningFactor 未显式传入时使用运行时默认值 0.5。
+     *
+     * @param fallbackSpeed 武器初速兜底，单位格/Tick
+     * @param altitude 当前世界 Y 高度，用于复用高度阻力倍率作为密度倍率
+     * @return 不持有数据对象引用的单 Tick 气动转向限制快照
+     */
+    public RVP_AeroSteeringLimits resolveAeroSteeringLimits(double fallbackSpeed,
+                                                             double altitude) {
+        return resolveAeroSteeringLimits(fallbackSpeed, altitude, 0.5F);
+    }
+
+    /**
+     * 解析实体态与虚拟态共用的气动转向限制快照。
+     *
+     * @param fallbackSpeed 武器初速兜底，单位格/Tick；仅显式参考速度与最高速率均缺失时使用
+     * @param altitude 当前世界 Y 高度，用于复用高度阻力倍率作为密度倍率
+     * @param resolvedTurningFactor 当前飞行 Tick 已解析的方向插值强度，运行时钳制到 0～1
+     * @return 不持有数据对象引用的单 Tick 气动转向限制快照
+     */
+    public RVP_AeroSteeringLimits resolveAeroSteeringLimits(double fallbackSpeed,
+                                                             double altitude,
+                                                             float resolvedTurningFactor) {
+        double referenceSpeed = resolveAeroReferenceSpeed(fallbackSpeed);
+        double inducedDrag = resolveInducedDragCoefficient();
+        // 调用本项目高度阻力解析器，复用同一倍率作为气动转向的空气密度因子。
+        double densityFactor = resolveAltitudeDragFactor(altitude);
+        float turning = Float.isFinite(resolvedTurningFactor)
+                ? Math.max(0f, Math.min(1f, resolvedTurningFactor))
+                : 0.5F;
+        return new RVP_AeroSteeringLimits(
+                getRvpMaxG(), turning, referenceSpeed, densityFactor,
+                inducedDrag, getRvpTurnRateLimit(), rvpAeroSteering);
+    }
+
+    /**
+     * @return 有效诱导阻力系数；显式值优先，未配置时复用火箭动力学的速度平方阻力系数
+     */
+    public float resolveInducedDragCoefficient() {
+        if (rvpInducedDrag != null) {
+            return Float.isFinite(rvpInducedDrag) ? Math.max(rvpInducedDrag, 0f) : 0f;
+        }
+        // 调用本项目阻力解析器，保持 has_rocket_engine 对 drag_coefficient 的既有门控。
+        return getResolvedDragCoefficient();
+    }
+
+    /**
+     * 解析动压设计参考速度。
+     *
+     * @param fallbackSpeed 武器初速兜底，单位格/Tick
+     * @return 非负有限参考速度；显式 0 保留为“关闭动压减载”，无可用来源时返回 3.0
+     */
+    private double resolveAeroReferenceSpeed(double fallbackSpeed) {
+        if (rvpRefSpeed != null) {
+            return Float.isFinite(rvpRefSpeed) ? Math.max(rvpRefSpeed, 0f) : 0.0;
+        }
+        float configuredMaxSpeed = getMaxSpeed();
+        if (configuredMaxSpeed > 0f) {
+            return configuredMaxSpeed;
+        }
+        if (Double.isFinite(fallbackSpeed) && fallbackSpeed > 0.0) {
+            return fallbackSpeed;
+        }
+        return 3.0;
     }
 
     public boolean hasRocketEngine() {

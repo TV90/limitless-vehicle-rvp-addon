@@ -98,6 +98,21 @@ public final class RVP_BallisticTrajectoryMath {
      * @return 经过 G 值钳制的新速度向量，长度与 {@code velocity} 相同
      */
     public static Vec3 applySteering(Vec3 velocity, Vec3 desiredDirection, double maxGs) {
+        RVP_AeroSteeringLimits legacyLimits = new RVP_AeroSteeringLimits(
+                maxGs, 0.0F, 0.0, 1.0, 0.0, 0.0, false);
+        // 调用本项目统一气动求解入口的关闭分支，保持旧版 G 值转向逐位兼容。
+        return applyAeroSteering(velocity, desiredDirection, legacyLimits).velocity();
+    }
+
+    /**
+     * 旧版常量 G 转向的底层实现，仅供统一气动模型关闭分支调用以避免递归。
+     *
+     * @param velocity 当前速度向量，单位格/Tick
+     * @param desiredDirection 期望飞行方向；允许传入未归一化向量
+     * @param maxGs 最大法向过载，单位 G
+     * @return 经过旧版 G 值钳制、且保持输入速率的新速度
+     */
+    static Vec3 applyLegacyMaxGSteering(Vec3 velocity, Vec3 desiredDirection, double maxGs) {
         double speed = velocity.length();
         if (!isFinite(velocity) || desiredDirection == null || !isFinite(desiredDirection)
                 || speed <= 1.0E-8 || desiredDirection.lengthSqr() <= 1.0E-12
@@ -120,6 +135,20 @@ public final class RVP_BallisticTrajectoryMath {
     }
 
     /**
+     * 按不可变气动限制求解单 Tick 转向，并返回载荷与诱导阻力信息。
+     *
+     * @param velocity 当前速度向量，单位格/Tick
+     * @param desiredDirection 期望飞行方向；允许传入未归一化向量
+     * @param limits 当前 Tick 已冻结的气动转向限制
+     * @return 统一气动转向求解结果
+     */
+    public static RVP_AeroSteeringSolution applyAeroSteering(
+            Vec3 velocity, Vec3 desiredDirection, RVP_AeroSteeringLimits limits) {
+        // 调用本项目纯数学气动模型，使实体链与虚拟链共享完全相同的转角裁决。
+        return RVP_AeroSteeringModel.solve(velocity, desiredDirection, limits);
+    }
+
+    /**
      * 按弹体配置选择唯一的转向钳制算法。
      *
      * <p>{@code rvpMaxGs} 非 null 时必须调用 G 值 {@link #applySteering(Vec3, Vec3, double)}，
@@ -134,12 +163,10 @@ public final class RVP_BallisticTrajectoryMath {
      */
     public static Vec3 applyConfiguredSteering(Vec3 velocity, Vec3 desiredDirection,
                                                 Double rvpMaxGs, float turningFactor) {
-        if (rvpMaxGs != null) {
-            return applySteering(velocity, desiredDirection, rvpMaxGs);
-        }
-        double speed = velocity == null ? 0.0 : velocity.length();
-        return RVP_TrajectorySteeringMath.applyTurningFactor(
-                velocity, desiredDirection, speed, turningFactor);
+        RVP_AeroSteeringLimits legacyLimits = new RVP_AeroSteeringLimits(
+                rvpMaxGs, turningFactor, 0.0, 1.0, 0.0, 0.0, false);
+        // 调用本项目统一气动求解入口的关闭分支，保留 rvpMaxGs 优先与旧插值语义。
+        return applyAeroSteering(velocity, desiredDirection, legacyLimits).velocity();
     }
 
     /**
@@ -175,20 +202,41 @@ public final class RVP_BallisticTrajectoryMath {
     public static Vec3 steerGpsCruise(Vec3 position, Vec3 velocity, Vec3 target,
                                       Double configuredCruiseAltitude, Double rvpMaxGs,
                                       float turningFactor) {
+        RVP_AeroSteeringLimits legacyLimits = new RVP_AeroSteeringLimits(
+                rvpMaxGs, turningFactor, 0.0, 1.0, 0.0, 0.0, false);
+        // 调用本项目气动版 GPS 巡航入口的关闭分支，维持原有公有方法的旧语义。
+        return steerGpsCruise(
+                position, velocity, target, configuredCruiseAltitude, legacyLimits).velocity();
+    }
+
+    /**
+     * 为 GPS 巡航生成候选方向，并按当前动压下的气动权限裁决实际转向。
+     *
+     * @param position 当前世界坐标
+     * @param velocity 当前速度，单位格/Tick
+     * @param target 固定 GPS 目标世界坐标
+     * @param configuredCruiseAltitude 可选世界 Y 巡航高度
+     * @param limits 当前 Tick 已冻结的气动转向限制
+     * @return 包含巡航转向速度与载荷因子的统一求解结果
+     */
+    public static RVP_AeroSteeringSolution steerGpsCruise(
+            Vec3 position, Vec3 velocity, Vec3 target,
+            Double configuredCruiseAltitude, RVP_AeroSteeringLimits limits) {
         double speed = velocity.length();
         if (speed <= 1.0E-8) {
-            return velocity;
+            // 调用本项目统一气动求解器，以零转角结果保持输入速度和限制状态口径。
+            return applyAeroSteering(velocity, velocity, limits);
         }
         Vec3 directTargetDelta = target.subtract(position);
         if (directTargetDelta.length() <= speed * (TERMINAL_RESERVE_TICKS + 1.0)) {
-            return applyConfiguredSteering(
-                    velocity, directTargetDelta, rvpMaxGs, turningFactor);
+            // 调用本项目统一气动求解器，近目标时优先直接追踪三维目标。
+            return applyAeroSteering(velocity, directTargetDelta, limits);
         }
 
         Vec3 horizontalDelta = new Vec3(target.x - position.x, 0.0, target.z - position.z);
         if (horizontalDelta.lengthSqr() <= 1.0E-12) {
-            return applyConfiguredSteering(
-                    velocity, target.subtract(position), rvpMaxGs, turningFactor);
+            // 调用本项目统一气动求解器，目标位于垂直方向时避免水平单位向量除零。
+            return applyAeroSteering(velocity, target.subtract(position), limits);
         }
         Vec3 horizontalDesired = horizontalDelta.normalize();
         double cruiseAltitude = configuredCruiseAltitude == null
@@ -205,16 +253,17 @@ public final class RVP_BallisticTrajectoryMath {
                 horizontalDesired.x,
                 verticalCommand / speed,
                 horizontalDesired.z).normalize();
-        Vec3 cruiseVelocity = applyConfiguredSteering(
-                velocity, desired, rvpMaxGs, turningFactor);
+        // 调用本项目统一气动求解器，按动压与角速率上限裁决巡航候选方向。
+        RVP_AeroSteeringSolution cruiseSolution = applyAeroSteering(velocity, desired, limits);
+        Vec3 cruiseVelocity = cruiseSolution.velocity();
         Vec3 candidatePosition = position.add(cruiseVelocity);
-        if (canReachTarget(
-                candidatePosition, cruiseVelocity, target,
-                rvpMaxGs, turningFactor, TERMINAL_RESERVE_TICKS)) {
-            return cruiseVelocity;
+        // 调用本项目气动可达性判断，确保低动压时提前为末端转向保留距离。
+        if (canReachTarget(candidatePosition, cruiseVelocity, target,
+                limits, TERMINAL_RESERVE_TICKS)) {
+            return cruiseSolution;
         }
-        return applyConfiguredSteering(
-                velocity, directTargetDelta, rvpMaxGs, turningFactor);
+        // 调用本项目统一气动求解器，不可达时放弃高度目标并直接追踪目标点。
+        return applyAeroSteering(velocity, directTargetDelta, limits);
     }
 
     /**
@@ -249,15 +298,36 @@ public final class RVP_BallisticTrajectoryMath {
     public static Vec3 steerPresetBallistic(Vec3 position, Vec3 velocity, Vec3 target,
                                             RVP_BallisticTrajectoryProfile preset,
                                             Double rvpMaxGs, float turningFactor) {
+        RVP_AeroSteeringLimits legacyLimits = new RVP_AeroSteeringLimits(
+                rvpMaxGs, turningFactor, 0.0, 1.0, 0.0, 0.0, false);
+        // 调用本项目气动版 PRESET 入口的关闭分支，维持原有公有方法的旧语义。
+        return steerPresetBallistic(position, velocity, target, preset, legacyLimits).velocity();
+    }
+
+    /**
+     * 为 PRESET 弹道生成抛物线中段或终端俯冲方向，并执行气动转向裁决。
+     *
+     * @param position 当前世界坐标
+     * @param velocity 当前速度，单位格/Tick
+     * @param target 固定目标世界坐标
+     * @param preset PRESET 弹道冻结参数
+     * @param limits 当前 Tick 已冻结的气动转向限制
+     * @return 包含 PRESET 转向速度与载荷因子的统一求解结果
+     */
+    public static RVP_AeroSteeringSolution steerPresetBallistic(
+            Vec3 position, Vec3 velocity, Vec3 target,
+            RVP_BallisticTrajectoryProfile preset, RVP_AeroSteeringLimits limits) {
         double speed = velocity.length();
         if (speed <= 1.0E-8 || target == null || preset == null
                 || preset.launchPosition() == null) {
-            return velocity;
+            // 调用本项目统一气动求解器，以零转角结果保持非法几何输入的安全退化。
+            return applyAeroSteering(velocity, velocity, limits);
         }
         // 通过通用只读参数契约取得纯几何计算所需的冻结值，不依赖虚拟飞行业务类型。
         Vec3 launch = preset.launchPosition();
 
-        double turnRadius = resolveTurnRadius(speed, rvpMaxGs, turningFactor);
+        // 调用本项目气动转弯半径估算，使 PRESET 俯冲点响应当前动压权限。
+        double turnRadius = resolveTurnRadius(speed, limits);
         double diveDistance = Math.max(preset.diveRadius(), Math.max(
                 Math.max(0.0, position.y - target.y) * preset.diveAltitudeFactor(),
                 turnRadius * preset.diveLeadFactor()));
@@ -287,15 +357,16 @@ public final class RVP_BallisticTrajectoryMath {
             } else {
                 desired = toTarget;
             }
-            return applyConfiguredSteering(velocity, desired, rvpMaxGs, turningFactor);
+            // 调用本项目统一气动求解器，裁决终端俯冲方向的实际转角。
+            return applyAeroSteering(velocity, desired, limits);
         }
 
         Vec3 toTargetHorizontal = new Vec3(
                 target.x - position.x, 0.0, target.z - position.z);
         double horizontalDistance = toTargetHorizontal.length();
         if (horizontalDistance <= 1.0E-8) {
-            return applyConfiguredSteering(
-                    velocity, target.subtract(position), rvpMaxGs, turningFactor);
+            // 调用本项目统一气动求解器，水平距离退化时直接追踪三维目标。
+            return applyAeroSteering(velocity, target.subtract(position), limits);
         }
 
         Vec3 forwardHorizontal = toTargetHorizontal.normalize();
@@ -331,8 +402,8 @@ public final class RVP_BallisticTrajectoryMath {
                         lateral.scale(maneuverAmplitude * Math.sin(phase) * weight));
             }
         }
-        return applyConfiguredSteering(
-                velocity, targetPoint.subtract(position), rvpMaxGs, turningFactor);
+        // 调用本项目统一气动求解器，裁决抛物线中段追点方向的实际转角。
+        return applyAeroSteering(velocity, targetPoint.subtract(position), limits);
     }
 
     /**
@@ -371,6 +442,36 @@ public final class RVP_BallisticTrajectoryMath {
             return Double.POSITIVE_INFINITY;
         }
         return Mth.clamp(speed / factor, 8.0, 80.0);
+    }
+
+    /**
+     * 按气动模型当前可用 G 值估算最小转弯半径。
+     *
+     * @param speed 当前速率，单位格/Tick
+     * @param limits 当前 Tick 已冻结的气动转向限制
+     * @return 钳制在 8～80 格内的近似转弯半径；完全禁止转向时返回正无穷
+     */
+    public static double resolveTurnRadius(double speed, RVP_AeroSteeringLimits limits) {
+        if (limits == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+        if (!limits.enabled()) {
+            // 调用本项目旧版转弯半径估算，保证关闭气动开关时路线判定行为不变。
+            return resolveTurnRadius(speed, limits.rvpMaxGs(), limits.turningFactor());
+        }
+        // 调用本项目气动模型，按当前速率对应的归一化动压取得可用过载。
+        double currentAvailableGs = RVP_AeroSteeringModel.availableGs(speed, limits);
+        if (Double.isInfinite(currentAvailableGs)) {
+            return 8.0;
+        }
+        if (!Double.isFinite(currentAvailableGs) || currentAvailableGs <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double maxDeltaVelocity = currentAvailableGs * PhysicsEngine.G;
+        if (maxDeltaVelocity >= 2.0 * speed) {
+            return 8.0;
+        }
+        return Mth.clamp(speed * speed / maxDeltaVelocity, 8.0, 80.0);
     }
 
     /**
@@ -431,6 +532,66 @@ public final class RVP_BallisticTrajectoryMath {
         double radius = rvpMaxGs != null
                 ? speed * speed / (rvpMaxGs * PhysicsEngine.G)
                 : resolveTurnRadius(speed, null, turningFactor);
+        double lateralDistanceSqr = Math.max(
+                targetDelta.lengthSqr() - forwardDistance * forwardDistance, 0.0);
+        double lateralDistance = Math.sqrt(lateralDistanceSqr);
+        double minimumForwardDistance = lateralDistance >= radius
+                ? radius
+                : Math.sqrt(Math.max(
+                        lateralDistance * (2.0 * radius - lateralDistance), 0.0));
+        double reserveDistance = Math.max(reserveTicks, 0.0) * speed;
+        return forwardDistance >= minimumForwardDistance + reserveDistance;
+    }
+
+    /**
+     * 按当前动压下的气动转向能力评估目标是否仍可接入。
+     *
+     * @param position 评估起点的世界坐标
+     * @param velocity 评估起点的速度，单位格/Tick
+     * @param target 固定目标世界坐标
+     * @param limits 当前 Tick 已冻结的气动转向限制
+     * @param reserveTicks 额外保留的直线飞行 Tick
+     * @return 目标位于当前气动转向能力的可接入区域时返回 true
+     */
+    public static boolean canReachTarget(Vec3 position, Vec3 velocity, Vec3 target,
+                                         RVP_AeroSteeringLimits limits,
+                                         double reserveTicks) {
+        if (limits == null) {
+            return false;
+        }
+        if (!limits.enabled()) {
+            // 调用本项目旧版可达性判断，保证阶段 S2 默认关闭时路线决策不发生变化。
+            return canReachTarget(position, velocity, target,
+                    limits.rvpMaxGs(), limits.turningFactor(), reserveTicks);
+        }
+        if (!isFinite(position) || !isFinite(velocity) || !isFinite(target)) {
+            return false;
+        }
+        double speed = velocity.length();
+        Vec3 targetDelta = target.subtract(position);
+        double distance = targetDelta.length();
+        if (speed <= 1.0E-8 || distance <= speed) {
+            return distance <= speed;
+        }
+
+        Vec3 forward = velocity.scale(1.0 / speed);
+        double forwardDistance = targetDelta.dot(forward);
+        // 调用本项目气动模型，取得当前动压下的真实可用过载预算。
+        double currentAvailableGs = RVP_AeroSteeringModel.availableGs(speed, limits);
+        boolean steeringDisabled = !Double.isFinite(currentAvailableGs)
+                ? !Double.isInfinite(currentAvailableGs)
+                : currentAvailableGs <= 0.0;
+        if (forwardDistance <= 0.0 || steeringDisabled) {
+            return forwardDistance > 0.0
+                    && angleBetween(velocity, targetDelta) <= 1.0E-9;
+        }
+        if (Double.isInfinite(currentAvailableGs)
+                || currentAvailableGs * PhysicsEngine.G >= 2.0 * speed) {
+            return true;
+        }
+
+        // 调用本项目气动转弯半径估算，把动压减载同步到路线接入判定。
+        double radius = resolveTurnRadius(speed, limits);
         double lateralDistanceSqr = Math.max(
                 targetDelta.lengthSqr() - forwardDistance * forwardDistance, 0.0);
         double lateralDistance = Math.sqrt(lateralDistanceSqr);

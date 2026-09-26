@@ -43,11 +43,21 @@ final class RVP_VirtualTrajectoryInputFactory {
                 ? projectile.resolveThrustAt(motorTick)
                 : 0f;
         double resolvedMass = projectile.resolveMassAt(motorTick, motorBurnTime);
+        float turningFactor = configuredTurningFactor != null ? configuredTurningFactor : 0.5F;
+        // 调用本项目弹体数据解析器，把实体链使用的参考速度、密度与诱导阻力冻结给虚拟链。
+        var aeroLimits = projectile.resolveAeroSteeringLimits(
+                data.getProjectileVelocity(), altitude, turningFactor);
         return new RVP_VirtualTrajectoryParameters(
                 projectile.getRvpMaxG(),
-                configuredTurningFactor != null ? configuredTurningFactor : 0.5F,
+                turningFactor,
+                aeroLimits.enabled(),
+                aeroLimits.referenceSpeed(),
+                aeroLimits.inducedDrag(),
+                aeroLimits.turnRateLimitDegPerTick(),
+                aeroLimits.densityFactor(),
                 data.getVirtualMidcourseData().getCruiseAltitude(),
                 projectile.isRotateToMotion(),
+                projectile.isConstantSpeed(),
                 data.usesPropulsion(),
                 resolvedMass,
                 resolvedThrust,

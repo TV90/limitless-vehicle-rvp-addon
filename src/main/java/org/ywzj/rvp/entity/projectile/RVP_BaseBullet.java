@@ -514,6 +514,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected String activeStageName;
     /** Set when MCLOS {@code take_over_motion} applied wire-direct steering this tick. */
     private boolean guidanceWireDirectApplied;
+    /**
+     * 本 Tick 气动转向使用率 λ，范围 0～1，默认 0；仅服务端运动结算读取。
+     * 该瞬态值每 Tick 制导前复位，不持久化、不参与网络同步。
+     */
+    private transient double aeroLoadFactor;
     /** 当前一次连续区块等待已经实际暂停的 Tick 数。 */
     private int chunkWaitTicks;
     /** 是否由炮火支援无载具入口显式启用远程 Chunk 路径；普通弹体默认关闭。 */
@@ -1617,6 +1622,26 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return guidanceWireDirectApplied;
     }
 
+    /** @return 本 Tick 已记录的最大气动转向使用率 λ，范围 0～1。 */
+    public double getAeroLoadFactor() {
+        return aeroLoadFactor;
+    }
+
+    /**
+     * 合并本 Tick 一次气动转向产生的载荷因子。
+     *
+     * <p>同 Tick 可能先发生干扰强制偏转、再发生制导修正，因此只保留最大值，避免后一次
+     * 小修正覆盖此前的大载荷。非法值按 0 处理。</p>
+     *
+     * @param loadFactor 本次转向使用率 λ
+     */
+    public void recordAeroLoadFactor(double loadFactor) {
+        if (!Double.isFinite(loadFactor)) {
+            return;
+        }
+        aeroLoadFactor = Math.max(aeroLoadFactor, Mth.clamp(loadFactor, 0.0, 1.0));
+    }
+
     @Nullable
     public String getActiveStageName() {
         return activeStageName;
@@ -1740,6 +1765,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 return;
             }
             guidanceWireDirectApplied = false;
+            aeroLoadFactor = 0.0;
             tickGuidance();
             RVP_ChunkPathLoader.PathLoadResult pathLoadResult = requestDynamicChunkPath(
                     RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);

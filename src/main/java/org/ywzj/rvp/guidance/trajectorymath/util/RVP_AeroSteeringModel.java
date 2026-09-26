@@ -241,7 +241,7 @@ public final class RVP_AeroSteeringModel {
         Vec3 legacyVelocity;
         if (limits.rvpMaxGs() != null) {
             // 调用本项目旧版 G 值转向，确保关闭开关时与现有实体/虚拟链行为一致。
-            legacyVelocity = RVP_BallisticTrajectoryMath.applySteering(
+            legacyVelocity = RVP_BallisticTrajectoryMath.applyLegacyMaxGSteering(
                     current, desiredDirection, limits.rvpMaxGs());
         } else {
             double speed = RVP_BallisticTrajectoryMath.isFinite(current)

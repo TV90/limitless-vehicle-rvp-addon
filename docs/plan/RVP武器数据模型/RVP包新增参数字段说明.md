@@ -176,7 +176,11 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `max_speed` | 最大速度限制，0 表示不限制。 |
 | `min_speed` | 最小速度限制，0 表示不限制。 |
 | `turning_factor` | 旧版 MCHR 风格方向插值参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 Tick 区间，value 为 0～1 的转向因子；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5。 |
-| `rvp_maxg` | 可选 RVP 最大法向过载，单位 G，默认不配置。显式配置后实体与虚拟制导均使用 `applySteering`，并覆盖同时存在的 `turning_factor`；负数和非有限值按 0 G 安全处理，0 表示不允许转向。 |
+| `rvp_maxg` | 可选 RVP 最大法向过载，单位 G，默认不配置；优先于 `turning_factor`。气动转向启用时表示设计动压点过载上限；负数和非有限值按 0 G 安全处理，0 表示不允许转向。 |
+| `rvp_aero_steering` | 气动转向总开关，阶段 S2 默认 `false`。关闭时完整保留旧版 `turning_factor` / 常量 `rvp_maxg` 转向且不结算诱导阻力；显式 `true` 时实体与虚拟链共同启用动压减载。 |
+| `rvp_induced_drag` | 可选诱导阻力系数，无量纲，默认 null；仅 `rvp_aero_steering=true` 时生效。null 复用有效 `drag_coefficient`，0 显式关闭。 |
+| `rvp_ref_speed` | 可选动压参考速度，单位格/Tick，默认 null；依次回退 `max_speed`、武器初速、3.0。显式 0 关闭动压减载。 |
+| `rvp_turn_rate_limit` | 单 Tick 绝对转角上限，单位度/Tick，默认 0；仅 `rvp_aero_steering=true` 且为正值时生效，0 表示不限制。 |
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
 | `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
 | `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
@@ -1538,11 +1542,11 @@ SACLOS 反坦克导弹（半自动修正）：
 - `restore_lead_tick × 当前水平速度` 与 `restore_target_distance` 取较大值作为实际恢复触发距离。
 - `restore_ticket_radius` 最大为 2，避免单枚导弹恢复时请求过多区块。
 - `max_virtual_flight_tick <= weapon life`；运行时最终使用两者较小值。
-- 虚拟积分从 `projectile_data` 读取 `rvp_maxg` 与当前飞行 Tick 对应的 `turning_factor`；`rvp_maxg` 已配置时优先，未配置时使用 `turning_factor`，区间未命中回退 0.5。
+- 虚拟积分从 `projectile_data` 读取 `rvp_maxg`、当前飞行 Tick 的 `turning_factor` 及 4 个气动转向字段；`rvp_aero_steering=false` 时维持旧选择规则，显式启用时与实体链共享动压、转角上限和诱导阻力结算。
 - 虚拟积分不读取 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
 - 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
 
-`rvp_maxg` 与 `turning_factor` 是实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级与数学实现，避免虚拟化或恢复时出现转向能力跳变。以后替换积分方法时，新实现必须显式声明参数和状态版本，不静默改变在途记录语义。
+`rvp_maxg`、`turning_factor` 与 `rvp_aero_steering` 等新增字段共同构成实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级、动压解析与诱导阻力实现，避免虚拟化或恢复时出现转向能力跳变。气动语义接入后积分器版本为 8；以后替换积分方法时，新实现必须显式声明参数和状态版本，不静默改变在途记录语义。
 
 ---
 
