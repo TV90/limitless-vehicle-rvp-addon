@@ -346,5 +346,12 @@ public class RVP_Network {
                 .decoder(S2CModuleHitNotify::decode)
                 .consumerMainThread(S2CModuleHitNotify::handle)
                 .add();
+        // [RVP] 雷达开关状态同步（S2C，协议 17）：服务端强制关闭/快修自动开机的结果
+        //       推送到客户端镜像实体（本体 RadarUnit.on 不参与同步，客户端雷达页/HMD 读本地 isOn）
+        CHANNEL.messageBuilder(S2CRadarPowerSync.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CRadarPowerSync::encode)
+                .decoder(S2CRadarPowerSync::decode)
+                .consumerMainThread(S2CRadarPowerSync::handle)
+                .add();
     }
 }

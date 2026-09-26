@@ -99,7 +99,9 @@ public final class RVP_RadarModuleEnforcer {
 
     /**
      * 维修恢复后的自动开机（用户 2026-09-26 定版）：RADAR 模块恢复存活且雷达处于
-     * 关闭时 {@code toggle(true)}。由 {@code RVP_MaintenanceRuntimeManager} 恢复链调用。
+     * 关闭时 {@code toggle(true)}，并经 {@code S2CRadarPowerSync} 把开机同步到客户端
+     * 镜像（本体 RadarUnit.on 不参与同步，客户端不推就看不到"修好自动开"）。
+     * 由 {@code RVP_MaintenanceRuntimeManager} 恢复链调用。
      */
     public static void restoreRadar(AbstractVehicle vehicle, @Nullable String boneName) {
         if (vehicle == null || boneName == null || vehicle.level().isClientSide()) {
@@ -109,6 +111,10 @@ public final class RVP_RadarModuleEnforcer {
                 && !radarUnit.isOn()
                 && RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), boneName, BoneModuleType.RADAR)) {
             radarUnit.toggle(true);
+            // 同步客户端镜像（雷达页/HMD 读客户端 isOn；部分雷达骨恢复后客户端仍关的 bug）
+            org.ywzj.rvp.network.RVP_Network.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> vehicle),
+                    new org.ywzj.rvp.network.S2CRadarPowerSync(vehicle.getId(), boneName, true));
         }
     }
 }

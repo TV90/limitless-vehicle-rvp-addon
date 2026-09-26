@@ -104,33 +104,37 @@ public class RVP_ClientEvents {
     private static boolean ywzj_rvp$radarKeyDown;
     /** [RVP] "雷达已损坏"提示上次弹出时间（10 秒节流）。 */
     private static long ywzj_rvp$radarBrokenNoticeAt;
+    /** [RVP] 上一 tick 完好雷达的开启集合（实体id → ON 的雷达部件 id），主控开关方向判定用。 */
+    private static final java.util.Map<Integer, java.util.Set<String>> ywzj_rvp$radarOnSnapshot =
+            new java.util.HashMap<>();
 
     /**
-     * [RVP] 雷达骨骼部件（2026-09-27）：雷达损坏时按雷达键（本体 3 键 TOGGLE_RADAR）给
-     * 动作栏提示，并实现损坏车的专用开关语义（用户定版）：
+     * [RVP] 雷达骨骼部件（2026-09-28 定版）：按雷达键（本体 3 键 TOGGLE_RADAR）在
+     * 载具存在被击毁雷达时切换为<b>主控开关</b>语义——以按键前（上一 tick 末）快照判定：
      * <ul>
-     *   <li>载具存在被击毁（RADAR 模块失效）的雷达时，按键 = <b>把全部未损坏雷达置为开启</b>，
-     *       不翻转——否则本体逐台 flip 会把已修好/开着的雷达关掉，形成"一开一关"循环；</li>
-     *   <li>全部雷达完好时走本体原版逐台翻转，行为不变。</li>
+     *   <li>全部未损坏雷达都在开 → 本次按键 = <b>全部关闭</b>（打反辐射导弹时关雷达反制）；</li>
+     *   <li>有关闭的未损坏雷达（含刚修好自动开的）→ 本次按键 = <b>全部开启</b>（回到双雷达运行，
+     *       修复此前"逐台翻转把修好/开着的雷达关掉"的一开一关循环）。</li>
      * </ul>
-     * 本方法在 ClientTickEvent.END 运行（晚于本体 InputHandler 的按键事件），即在原版
-     * 翻转之后做纠正；客户端 toggle 经 syncRadarPowerStates 自动同步服务端。
+     * 被击毁的雷达不由本语义触碰（服务端网关 + 客户端 enforce 保持其关闭）。
+     * 全部雷达完好时走本体原版逐台翻转，行为不变。纯客户端实现，翻转经
+     * syncRadarPowerStates 自动同步服务端。
      */
     private static void tickRadarDestroyNotice(net.minecraft.world.entity.player.Player player) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null || vehicle.level() == null || !vehicle.level().isClientSide()) {
             ywzj_rvp$radarKeyDown = false;
+            ywzj_rvp$radarOnSnapshot.remove(vehicle == null ? 0 : vehicle.getId());
             return;
         }
         boolean down = org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.isDown();
         boolean pressed = down && !ywzj_rvp$radarKeyDown;
         ywzj_rvp$radarKeyDown = down;
-        if (!pressed) {
-            return;
-        }
-        // 分类：损坏雷达（RADAR 模块失效）/ 完好雷达
+
+        // 分类：损坏雷达（RADAR 模块失效）/ 完好雷达，并记录完好雷达当前 ON 集合
         boolean anyBroken = false;
         java.util.List<org.ywzj.vehicle.vehicle.part.RadarUnit> workingRadars = new java.util.ArrayList<>();
+        java.util.Set<String> workingOnNow = new java.util.HashSet<>();
         for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
                 if (!org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
@@ -138,20 +142,28 @@ public class RVP_ClientEvents {
                     anyBroken = true;
                 } else {
                     workingRadars.add(radarUnit);
+                    if (radarUnit.isOn()) {
+                        workingOnNow.add(radarUnit.getId());
+                    }
                 }
             }
         }
-        long now = System.currentTimeMillis();
-        if (!anyBroken) {
-            return; // 全部完好：本体原版逐台翻转语义，RVP 不干预
+        // 刷新快照：以本 tick 状态为准（供下一次按键判定；本 tick 的翻转判定用上一 tick 快照）
+        java.util.Set<String> snapshot = ywzj_rvp$radarOnSnapshot.put(
+                vehicle.getId(), new java.util.HashSet<>(workingOnNow));
+
+        if (!pressed || !anyBroken || workingRadars.isEmpty()) {
+            return;
         }
-        // 损坏车专用语义：不关闭任何完好雷达，把关闭的完好雷达全部置为开启
-        // （击毁雷达仍会被服务端网关+巡检强制关闭，不受影响）
+        // 主控开关：全开 → 本次全关（反辐射反制）；有未开的 → 本次全开（回到双雷达）
+        boolean allWorkingOn = snapshot != null && workingOnNow.equals(snapshot) && !workingOnNow.isEmpty();
+        boolean masterOn = !allWorkingOn;
         for (org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit : workingRadars) {
-            if (!radarUnit.isOn()) {
-                radarUnit.toggle(true);
+            if (radarUnit.isOn() != masterOn) {
+                radarUnit.toggle(masterOn);
             }
         }
+        long now = System.currentTimeMillis();
         if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
             ywzj_rvp$radarBrokenNoticeAt = now;
             player.displayClientMessage(
