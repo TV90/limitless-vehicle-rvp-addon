@@ -228,7 +228,8 @@ class RVP_RvpTrajectoryIntegratorTest {
         RVP_VirtualTrajectoryState initial = new RVP_VirtualTrajectoryState(
                 Vec3.ZERO, new Vec3(4, 0, 0), 0, -90, 4, 12, 100, 50, -1);
         RVP_VirtualTrajectoryParameters parameters = new RVP_VirtualTrajectoryParameters(
-                18.0, 0.5F, null, true, false, 1, 11, 1000, 0, 0, 1, 0,
+                18.0, 0.5F, false, 340.0, 0.0, 0.0, 1.0,
+                null, true, false, false, 1, 11, 1000, 0, 0, 1, 0,
                 0, 340);
         RVP_VirtualTrajectoryResult result = new RVP_RvpTrajectoryIntegrator().step(
                 initial, new RVP_VirtualGuidanceInput(new Vec3(100000, 0, 100000)), parameters);
@@ -241,6 +242,31 @@ class RVP_RvpTrajectoryIntegratorTest {
                 result.state().flightDistance(), EPSILON);
         assertEquals(rotationPitch(result.state().velocity()), result.state().xRot(), 1.0E-5);
         assertEquals(rotationYaw(result.state().velocity()), result.state().yRot(), 1.0E-5);
+    }
+
+    /** 启用气动转向后，虚拟链应按动压减载限制转角，并在速度钳制后扣除诱导阻力。 */
+    @Test
+    void aeroSteeringReducesAvailableTurnAndAppliesInducedDrag() {
+        RVP_VirtualTrajectoryState initial = new RVP_VirtualTrajectoryState(
+                Vec3.ZERO, new Vec3(6.0, 0.0, 0.0), 0.0F, -90.0F,
+                6.0, 0.0, 0, 100, -1);
+        RVP_VirtualTrajectoryParameters parameters = new RVP_VirtualTrajectoryParameters(
+                18.0, 1.0F, true, 6.0, 0.01, 0.0, 0.25,
+                null, true, false, false,
+                1.0, 0.0, 0.0, 0, 0.0, 0.25, Double.MIN_NORMAL,
+                0.0F, 0.0F);
+
+        RVP_VirtualTrajectoryResult result = new RVP_RvpTrajectoryIntegrator().step(
+                initial,
+                new RVP_VirtualGuidanceInput(new Vec3(1000.0, 0.0, 1000.0)),
+                parameters);
+        double expectedTurn = 2.0 * Math.asin(
+                18.0 * 0.25 * PhysicsEngine.G / (2.0 * initial.velocity().length()));
+
+        assertFalse(result.invalid());
+        assertEquals(expectedTurn, result.turnAngleRadians(), EPSILON);
+        assertEquals(5.94, result.state().velocity().length(), 1.0E-8);
+        assertTrue(result.state().velocity().length() < initial.velocity().length());
     }
 
     /**
@@ -298,7 +324,8 @@ class RVP_RvpTrajectoryIntegratorTest {
                 new Vec3(0.0, StartPY, 0.0), new Vec3(cruiseSpeed, 0.0, 0.0),
                 xRot, yRot, cruiseSpeed, 0.0, 0, simulationTimeoutTick + 100, -1);
         RVP_VirtualTrajectoryParameters parameters = new RVP_VirtualTrajectoryParameters(
-                10.0, 0.5F, cruiseAltitude, true, propulsion,
+                10.0, 0.5F, false, maxSpeed, 0.00045, 0.0, 1.0,
+                cruiseAltitude, true, false, propulsion,
                 690.0f, 50800f, motorBurnTime, 0,
                 0.00045f, 1.0f, -PhysicsEngine.G,
                 (float) minSpeed, (float) maxSpeed);

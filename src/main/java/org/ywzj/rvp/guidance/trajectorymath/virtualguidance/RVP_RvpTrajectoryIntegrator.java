@@ -1,6 +1,9 @@
 package org.ywzj.rvp.guidance.trajectorymath.virtualguidance;
 
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 
 /**
@@ -14,7 +17,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */
     public static final String ID = "rvp_current";
     /** 当前 RVP 纯数学弹道状态版本，用于阻止不兼容状态继续积分。 */
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 
     /** {@inheritDoc} */
     @Override
@@ -49,23 +52,36 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
                 parameters.gravity());
 
         Vec3 target = guidance.fixedTargetPosition();
-        Vec3 steered;
+        // 调用本项目虚拟参数投影，构造与实体链同口径的气动转向限制快照。
+        RVP_AeroSteeringLimits aeroLimits = parameters.aeroSteeringLimits();
+        RVP_AeroSteeringSolution steeringSolution;
         if (guidance.preset() != null && guidance.preset().cruiseAltitude() > 0.0) {
-            // 调用本项目弹道数学工具，为 PRESET 弹道按 rvp_maxg 优先规则生成受限新速度。
-            steered = RVP_BallisticTrajectoryMath.steerPresetBallistic(
+            // 调用本项目弹道数学工具，为 PRESET 弹道生成受动压与转角上限裁决的新速度。
+            steeringSolution = RVP_BallisticTrajectoryMath.steerPresetBallistic(
                     state.position(), velocity, target, guidance.preset(),
-                    parameters.rvpMaxGs(), parameters.turningFactor());
+                    aeroLimits);
         } else {
-            // 调用本项目弹道数学工具，为固定 GPS 目标按同一转向优先级生成高度闭环速度。
-            steered = RVP_BallisticTrajectoryMath.steerGpsCruise(
+            // 调用本项目弹道数学工具，为固定 GPS 目标按同一气动预算生成高度闭环速度。
+            steeringSolution = RVP_BallisticTrajectoryMath.steerGpsCruise(
                     state.position(), velocity, target, parameters.cruiseAltitude(),
-                    parameters.rvpMaxGs(), parameters.turningFactor());
+                    aeroLimits);
         }
 
-        // 调用本项目弹道数学工具，记录实际转角并执行最终速率上下限钳制。
-        double turnAngleRadians = RVP_BallisticTrajectoryMath.angleBetween(velocity, steered);
+        double turnAngleRadians = steeringSolution.turnAngleRadians();
+        // 调用本项目弹道数学工具，在转向后执行最终速率上下限钳制。
         velocity = RVP_BallisticTrajectoryMath.clampSpeed(
-                steered, parameters.minSpeed(), parameters.maxSpeed());
+                steeringSolution.velocity(), parameters.minSpeed(), parameters.maxSpeed());
+        if (parameters.aeroSteering() && !parameters.constantSpeed()
+                && velocity.lengthSqr() > 1.0E-8) {
+            double speed = velocity.length();
+            // 调用本项目纯数学公式，在速度钳制后按 λ² 结算诱导阻力，避免被最高速率吸收。
+            double inducedLoss = RVP_AeroSteeringModel.inducedDragLoss(
+                    parameters.inducedDrag(), steeringSolution.loadFactor(), speed);
+            if (inducedLoss > 0.0) {
+                double minimumSpeed = Math.max(parameters.minSpeed(), 0.01);
+                velocity = velocity.normalize().scale(Math.max(speed - inducedLoss, minimumSpeed));
+            }
+        }
 
         float xRot = state.xRot();
         float yRot = state.yRot();

@@ -37,11 +37,13 @@ public final class RVP_GunnerActionIntentExecutor implements RVP_IGunnerIntentEx
                     : actions.defense().fireCountermeasure(context.vehicle(), intent.countermeasureType());
             case ACTIVE_ECM -> actions.defense().fireActiveEcm(context.vehicle());
             case LOCAL_RADAR -> actions.radar().maintainLocalLock(
-                    context.vehicle(), context.weaponUnit(), intent.target());
+                    context.vehicle(), context.weaponUnit(), intent.target(), context.observations());
             case EXTERNAL_RADAR -> actions.radar().maintainExternalLock(
-                    context.gunner(), context.vehicle(), context.weaponUnit(), intent.target(), intent.driverAi());
+                    context.gunner(), context.vehicle(), context.weaponUnit(), intent.target(), intent.driverAi(),
+                    context.observations());
             case GUIDANCE_MAINTAIN -> actions.guidance().maintain(
-                    context.gunner(), context.vehicle(), context.weaponUnit(), intent.target());
+                    context.gunner(), context.vehicle(), context.weaponUnit(), intent.target(),
+                    context.observations());
             case MOVEMENT -> intent.movement() == null
                     ? RVP_GunnerActionResult.INVALID
                     : actions.movement().apply(context.gunner(), context.vehicle(), intent.movement());

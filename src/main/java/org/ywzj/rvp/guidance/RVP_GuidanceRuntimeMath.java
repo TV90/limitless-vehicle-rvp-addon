@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TrajectorySteeringMath;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -142,10 +144,9 @@ public final class RVP_GuidanceRuntimeMath {
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
         }
-        if (rvpMaxGs != null) {
-            // 调用本项目共享 G 值转向工具，使实体态优先按 rvp_maxg 钳制本 Tick 方向变化。
-            next = RVP_BallisticTrajectoryMath.applySteering(current, next, rvpMaxGs);
-        }
+        // 调用本项目实体气动转向收口；开关关闭时维持旧版 rvpMaxGs/turningFactor 行为。
+        next = applyResolvedAeroSteering(
+                projectile, context.data(), current, next, factor, rvpMaxGs);
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
@@ -191,8 +192,13 @@ public final class RVP_GuidanceRuntimeMath {
         // 调用本项目弹体数据访问器；PRESET 实体链也遵守 rvp_maxg 高于 turning_factor。
         Double rvpMaxGs = context.data().getProjectileData().getRvpMaxG();
         float steeringFactor = rvpMaxGs != null ? 1.0F : factor;
+        // 调用本项目弹体数据解析器，使实体 PRESET 俯冲判据使用与最终转向相同的气动预算。
+        RVP_AeroSteeringLimits presetLimits = context.data().getProjectileData()
+                .resolveAeroSteeringLimits(
+                        context.data().getProjectileVelocity(), projectile.getY(), factor);
         Vec3 next;
-        if (shouldBeginPresetDive(projectile.position(), target, launchPos, current, preset, factor)) {
+        if (shouldBeginPresetDive(
+                projectile.position(), target, launchPos, current, preset, presetLimits)) {
             next = steerPresetTerminal(
                     current, projectile.position(), target, speed, steeringFactor);
         } else {
@@ -205,10 +211,9 @@ public final class RVP_GuidanceRuntimeMath {
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
         }
-        if (rvpMaxGs != null) {
-            // 调用本项目共享 G 值转向工具，限制 PRESET 实体弹道的实际转向而非路线几何。
-            next = RVP_BallisticTrajectoryMath.applySteering(current, next, rvpMaxGs);
-        }
+        // 调用本项目实体气动转向收口，使 PRESET 与普通制导共享动压和载荷结算。
+        next = applyResolvedAeroSteering(
+                projectile, context.data(), current, next, factor, rvpMaxGs);
         projectile.setDeltaMovement(next);
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
@@ -283,7 +288,7 @@ public final class RVP_GuidanceRuntimeMath {
             Vec3 launch,
             Vec3 velocity,
             RVP_PresetBallisticProfile preset,
-            float turningFactor
+            RVP_AeroSteeringLimits limits
     ) {
         if (projectilePos == null || target == null || preset == null) {
             return true;
@@ -293,7 +298,16 @@ public final class RVP_GuidanceRuntimeMath {
         double horizontalDistanceSqr = dx * dx + dz * dz;
         double verticalDistance = Math.max(0.0, projectilePos.y - target.y);
         double speed = velocity != null ? velocity.length() : 0.0;
-        double turnRadius = resolvePresetTurnRadius(speed, turningFactor);
+        double turnRadius;
+        if (limits != null && limits.enabled()) {
+            // 调用本项目共享转弯半径估算，使实体 PRESET 俯冲点随动压减载同步前移。
+            turnRadius = RVP_BallisticTrajectoryMath.resolveTurnRadius(speed, limits);
+        } else {
+            // 气动开关关闭时保留实体 PRESET 原有的 0.05 最小 factor 与 8～80 格钳制。
+            double effectiveFactor = Mth.clamp(
+                    limits == null ? 0.5F : limits.turningFactor(), 0.05F, 1.0F);
+            turnRadius = Mth.clamp(speed / effectiveFactor, 8.0, 80.0);
+        }
         double diveDistance = Math.max(preset.diveRadius(), Math.max(
                 verticalDistance * preset.diveAltitudeFactor(),
                 turnRadius * preset.diveLeadFactor()));
@@ -306,17 +320,6 @@ public final class RVP_GuidanceRuntimeMath {
         Vec3 route = new Vec3(target.x - launch.x, 0, target.z - launch.z);
         Vec3 remaining = new Vec3(target.x - projectilePos.x, 0, target.z - projectilePos.z);
         return remaining.dot(route) <= 0.0;
-    }
-
-    /**
-     * RVP 无 G 钳制转向，转弯半径用 {@code speed/turningFactor} 一阶近似并钳制范围。
-     * <p>上限从 200 收窄到 80：turning_factor 是方向混合比例而非真实 G，speed/factor 在
-     * 高速（speed≥30、factor=0.15）时顶到 200，乘上 dive_lead_factor 后俯冲启动距离
-     * 高达 300+ 格，把巡航段整个吃掉（近距离发射"上升完直接俯冲"）。</p>
-     */
-    private static double resolvePresetTurnRadius(double speed, float turningFactor) {
-        double effectiveFactor = Mth.clamp(turningFactor, 0.05F, 1.0F);
-        return Mth.clamp(speed / effectiveFactor, 8.0, 80.0);
     }
 
     /**
@@ -561,6 +564,43 @@ public final class RVP_GuidanceRuntimeMath {
     private static float resolveTurningFactor(RVP_GuidanceRuntimeContext context) {
         Float configured = context.data().getProjectileData().resolveTurningFactor(context.projectile().getFlightTickCount());
         return configured != null ? configured : 0.5f;
+    }
+
+    /**
+     * 把实体制导生成的候选速度交给统一气动求解器，并把载荷因子写回弹体。
+     *
+     * @param projectile 当前弹体
+     * @param data 当前武器配置
+     * @param current 转向前速度
+     * @param desired 制导层生成的候选速度或方向
+     * @param turningFactor 当前飞行 Tick 的方向插值强度
+     * @param rvpMaxGs 已解析的可选显式最大 G 值
+     * @return 最终写入弹体的速度
+     */
+    private static Vec3 applyResolvedAeroSteering(
+            RVP_BaseBullet projectile,
+            RVP_WeaponData data,
+            Vec3 current,
+            Vec3 desired,
+            float turningFactor,
+            Double rvpMaxGs
+    ) {
+        // 调用本项目弹体数据解析器，冻结参考速度、密度、诱导阻力和转角上限。
+        RVP_AeroSteeringLimits limits = data.getProjectileData().resolveAeroSteeringLimits(
+                data.getProjectileVelocity(), projectile.getY(), turningFactor);
+        if (!limits.enabled()) {
+            if (rvpMaxGs == null) {
+                return desired;
+            }
+            // 调用本项目旧版 G 值转向，保证阶段 S2 默认关闭时实体行为逐位不变。
+            return RVP_BallisticTrajectoryMath.applySteering(current, desired, rvpMaxGs);
+        }
+        // 调用本项目统一气动求解器，按当前动压裁决实际转角并计算 λ。
+        RVP_AeroSteeringSolution solution = RVP_BallisticTrajectoryMath.applyAeroSteering(
+                current, desired, limits);
+        // 调用本项目弹体载荷记录器，供同 Tick 运动阶段在速度钳制后结算诱导阻力。
+        projectile.recordAeroLoadFactor(solution.loadFactor());
+        return solution.velocity();
     }
 
     /**

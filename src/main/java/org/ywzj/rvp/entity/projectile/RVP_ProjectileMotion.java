@@ -7,6 +7,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.rvp.debug.RVP_DualPulseDebug;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -120,6 +121,8 @@ public final class RVP_ProjectileMotion {
         }
 
         velocity = clampSpeed(projectile, velocity, data);
+        // 调用本项目诱导阻力结算，在速度上下限钳制后扣除本 Tick 转向能量代价。
+        velocity = applyInducedDrag(projectile, velocity, data);
         projectile.setDeltaMovement(velocity);
         projectile.setPos(projectile.position().add(velocity));
         projectile.flightDistance += velocity.length();
@@ -324,6 +327,8 @@ public final class RVP_ProjectileMotion {
             velocity = clampSpeed(missile, velocity, data);
         }
 
+        // 调用本项目诱导阻力结算，使 HITL/线导直控与自动制导使用同一能量代价。
+        velocity = applyInducedDrag(missile, velocity, data);
         missile.setDeltaMovement(velocity);
         missile.setPos(missile.position().add(velocity));
         missile.flightDistance += velocity.length();
@@ -402,5 +407,39 @@ public final class RVP_ProjectileMotion {
             return velocity.normalize().scale(min);
         }
         return velocity;
+    }
+
+    /**
+     * 在推力、基础阻力、重力和速度钳制之后结算气动转向诱导阻力。
+     *
+     * <p>{@code constant_speed=true} 明确表示保持配置速率，因此跳过该独立损失。阶段 S2
+     * 默认关闭气动模型，旧配置不会进入本分支。</p>
+     *
+     * @param projectile 当前弹体，用于读取本 Tick 的载荷因子
+     * @param velocity 已完成速度钳制的速度
+     * @param data 当前武器配置
+     * @return 扣除诱导阻力后的速度
+     */
+    static Vec3 applyInducedDrag(RVP_BaseBullet projectile, Vec3 velocity, RVP_WeaponData data) {
+        if (projectile == null || data == null || velocity == null) {
+            return velocity;
+        }
+        // 调用本项目弹体数据访问器，确认气动开关与恒速豁免后再解析损失系数。
+        var projectileData = data.getProjectileData();
+        if (!projectileData.isRvpAeroSteering() || projectileData.isConstantSpeed()) {
+            return velocity;
+        }
+        double loadFactor = projectile.getAeroLoadFactor();
+        double speed = velocity.length();
+        // 调用本项目诱导阻力系数解析器，显式配置优先，未配置时复用有效基础阻力。
+        double inducedDrag = projectileData.resolveInducedDragCoefficient();
+        // 调用本项目纯数学公式，按 λ² 计算本 Tick 应扣除的速率。
+        double loss = RVP_AeroSteeringModel.inducedDragLoss(
+                inducedDrag, loadFactor, speed);
+        if (loss <= 0.0 || speed <= 1.0E-8) {
+            return velocity;
+        }
+        double minimumSpeed = Math.max(projectileData.getMinSpeed(), 0.01);
+        return velocity.normalize().scale(Math.max(speed - loss, minimumSpeed));
     }
 }

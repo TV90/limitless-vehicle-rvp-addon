@@ -42,6 +42,7 @@ import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerIntentSink;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorRuntime;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_IGunnerBehavior;
 import org.ywzj.rvp.entity.gunner.behavior.config.RVP_GunnerBehaviorPlan;
+import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
@@ -63,10 +64,7 @@ import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
-import org.ywzj.vehicle.util.EntityUtil;
 import org.ywzj.vehicle.util.VectorUtil;
-import org.ywzj.vehicle.vehicle.part.PartUnit;
-import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.List;
@@ -177,7 +175,8 @@ public final class RVP_BuiltinGunnerBehaviors {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
-                AmmoEntity target = GunnerTargeting.findCiwsTarget(context.gunner(), context.vehicle());
+                AmmoEntity target = GunnerTargeting.findCiwsTarget(
+                        context.gunner(), context.vehicle(), context.observations());
                 if (target != null) {
                     sink.submit(intent(id(), "target", 90, 850,
                             RVP_GunnerBehaviorIntent.Channel.TARGET,
@@ -195,7 +194,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
                 Entity target = selectPrimaryTarget(context.gunner(), context.vehicle(),
-                        context.weaponUnit(), context.profile());
+                        context.weaponUnit(), context.profile(), context.observations());
                 sink.submit(intent(id(), "target", 100, 500,
                         RVP_GunnerBehaviorIntent.Channel.TARGET,
                         RVP_GunnerBehaviorIntent.Kind.TARGET,
@@ -229,7 +228,8 @@ public final class RVP_BuiltinGunnerBehaviors {
                 WeaponCountermeasureState state = state(runtime, id(), WeaponCountermeasureState.class,
                         WeaponCountermeasureState::new);
                 state.tick();
-                tickCountermeasure(context.gunner(), context.vehicle(), context.profile(), state, sink);
+                tickCountermeasure(context.gunner(), context.vehicle(), context.profile(), state,
+                        context.observations(), sink);
             }
         };
     }
@@ -256,7 +256,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
-                tickEcmActive(context.gunner(), context.vehicle(), sink);
+                tickEcmActive(context, sink);
             }
         };
     }
@@ -277,12 +277,12 @@ public final class RVP_BuiltinGunnerBehaviors {
                 SmokeEvasionState state = state(runtime, id(), SmokeEvasionState.class, SmokeEvasionState::new);
                 if (stage == Stage.SUPPORT) {
                     state.tick();
-                    tickSmokeEvasion(context.gunner(), context.vehicle(), state, sink);
+                    tickSmokeEvasion(context, state, sink);
                     return;
                 }
                 if (state.holdTicks > 0) {
                     RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
-                    tickSmokeHoldDrive(context.vehicle(), state, command);
+                    tickSmokeHoldDrive(context.vehicle(), context.observations(), state, command);
                     sink.submit(intent(id(), "vehicle", 600, 850,
                             RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
                             RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
@@ -344,7 +344,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
                 SeadState state = state(runtime, id(), SeadState.class, SeadState::new);
                 state.tickCooldown();
-                tickSead(context.gunner(), context.vehicle(), context.weaponUnit(), context.profile(), state, sink);
+                tickSead(context, state, sink);
             }
         };
     }
@@ -367,7 +367,8 @@ public final class RVP_BuiltinGunnerBehaviors {
                 AirFlightState state = state(runtime, id(), AirFlightState.class, AirFlightState::new);
                 RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
                 boolean allowFire = tickFixedWingDriving(context.gunner(),
-                        (FixedWingVehicle) context.vehicle(), context.target(), context.profile(), state, command);
+                        (FixedWingVehicle) context.vehicle(), context.target(), context.profile(), state,
+                        context.vehicleAgl(), command);
                 submitFlightIntents(id(), 800, context, command, allowFire, sink);
             }
         };
@@ -391,7 +392,8 @@ public final class RVP_BuiltinGunnerBehaviors {
                 AirFlightState state = state(runtime, id(), AirFlightState.class, AirFlightState::new);
                 RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
                 boolean allowFire = tickRotaryDriving(context.gunner(),
-                        (RotaryWingVehicle) context.vehicle(), context.target(), context.profile(), state, command);
+                        (RotaryWingVehicle) context.vehicle(), context.target(), context.profile(), state,
+                        context.vehicleAgl(), command);
                 submitFlightIntents(id(), 810, context, command, allowFire, sink);
             }
         };
@@ -727,14 +729,15 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     @Nullable
     private static Entity selectPrimaryTarget(GunnerEntity gunner, AbstractVehicle vehicle,
-                                              @Nullable WeaponUnit weaponUnit, GunnerProfile profile) {
+                                              @Nullable WeaponUnit weaponUnit, GunnerProfile profile,
+                                              RVP_GunnerObservationService observations) {
         if (weaponUnit == null) {
             return null;
         }
 
         Entity tracked;
         if (gunner.tickCount % profile.getScanIntervalTick() == 0) {
-            Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile);
+            Entity best = GunnerTargeting.findBestTarget(gunner, vehicle, weaponUnit, profile, observations);
             if (best != null) {
                 return best;
             }
@@ -970,8 +973,10 @@ public final class RVP_BuiltinGunnerBehaviors {
      * 并进入"开进烟雾停车"状态（时长略大于烟雾存活）：
      * 1) 被红外族（IR/AIR）导弹锁定跟踪；2) 100 格内出现敌对阵营导弹；3) 被敌对玩家激光照射。
      */
-    private static void tickSmokeEvasion(GunnerEntity gunner, AbstractVehicle vehicle,
+    private static void tickSmokeEvasion(RVP_GunnerBehaviorContext context,
                                          SmokeEvasionState state, RVP_GunnerIntentSink sink) {
+        GunnerEntity gunner = context.gunner();
+        AbstractVehicle vehicle = context.vehicle();
         if (vehicle.level().isClientSide()) {
             return;
         }
@@ -995,7 +1000,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             return;
         }
         // 单次遍历同时检测：红外锁定威胁 + 近距敌方来袭导弹
-        MissileScanResult scan = scanMissileThreats(gunner, serverLevel, vehicle);
+        MissileScanResult scan = scanMissileThreats(gunner, vehicle, context.observations());
         RVP_MissileEntity threat = scan.irThreat();
         String reason;
         if (threat != null) {
@@ -1039,14 +1044,15 @@ public final class RVP_BuiltinGunnerBehaviors {
      * O(实体) 遍历替代大箱体 getEntities（服务端 gunner 掉 TPS）；敌我判定复用 CIWS 的
      * {@link GunnerTargeting#isFriendlyAmmoOwner}——按弹药 owner（发射者玩家/gunner）判友方。 */
     private static MissileScanResult scanMissileThreats(
-            GunnerEntity gunner, net.minecraft.server.level.ServerLevel serverLevel, AbstractVehicle vehicle) {
+            GunnerEntity gunner, AbstractVehicle vehicle, RVP_GunnerObservationService observations) {
         AABB irBox = vehicle.getBoundingBox().inflate(INFRARED_THREAT_RADIUS);
         AABB nearbyBox = vehicle.getBoundingBox().inflate(NEARBY_MISSILE_RADIUS);
-        net.minecraft.world.scores.Team vehicleTeam = vehicle.getTeam();
-        net.minecraft.world.scores.Team gunnerTeam = gunner.getTeam();
+        net.minecraft.world.scores.Team vehicleTeam = observations.team(vehicle);
+        net.minecraft.world.scores.Team gunnerTeam = observations.team(gunner);
         RVP_MissileEntity irThreat = null;
         boolean nearbyEnemyMissile = false;
-        for (Entity entity : serverLevel.getEntities().getAll()) {
+        for (Entity entity : observations.candidates(INFRARED_THREAT_RADIUS,
+                candidate -> candidate instanceof RVP_MissileEntity)) {
             if (!(entity instanceof RVP_MissileEntity missile) || !missile.isAlive()) {
                 continue;
             }
@@ -1112,9 +1118,11 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 烟雾躲避驾驶：向最近的烟雾云开进，进入云内即停车（无控制输入）；烟雾消散则提前结束。 */
-    private static void tickSmokeHoldDrive(AbstractVehicle vehicle, SmokeEvasionState state,
+    private static void tickSmokeHoldDrive(AbstractVehicle vehicle,
+                                           RVP_GunnerObservationService observations,
+                                           SmokeEvasionState state,
                                            RVP_GunnerMovementActions.Command command) {
-        RVP_SmokeEntity smoke = findNearbySmoke(vehicle, SMOKE_LOOK_RADIUS);
+        RVP_SmokeEntity smoke = findNearbySmoke(vehicle, observations, SMOKE_LOOK_RADIUS);
         if (smoke == null) {
             // 烟雾已散，提前结束停车
             state.holdTicks = 0;
@@ -1141,12 +1149,13 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     /** 查找最近的存活烟雾云实体。 */
     @Nullable
-    private static RVP_SmokeEntity findNearbySmoke(AbstractVehicle vehicle, double radius) {
-        AABB box = vehicle.getBoundingBox().inflate(radius);
+    private static RVP_SmokeEntity findNearbySmoke(AbstractVehicle vehicle,
+                                                   RVP_GunnerObservationService observations,
+                                                   double radius) {
         RVP_SmokeEntity best = null;
         double bestSqr = Double.MAX_VALUE;
-        for (Entity entity : vehicle.level().getEntities(vehicle, box,
-                e -> e instanceof RVP_SmokeEntity && e.isAlive())) {
+        for (Entity entity : observations.candidates(radius,
+                candidate -> candidate instanceof RVP_SmokeEntity)) {
             double d = entity.distanceToSqr(vehicle);
             if (d < bestSqr) {
                 bestSqr = d;
@@ -1159,14 +1168,15 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static boolean tickFixedWingDriving(GunnerEntity gunner, FixedWingVehicle vehicle,
                                                 @Nullable Entity target, GunnerProfile profile,
                                                 AirFlightState state,
+                                                double currentAgl,
                                                 RVP_GunnerMovementActions.Command command) {
         if (target == null) {
-            tickFixedWingCruise(gunner, vehicle, profile, false, command);
+            tickFixedWingCruise(gunner, vehicle, profile, false, currentAgl, command);
             return false;
         }
-        boolean allowFire = ensureAirPhase(gunner, vehicle, profile, state);
+        boolean allowFire = ensureAirPhase(gunner, profile, state, currentAgl);
         boolean attackPhase = state.phase == AIR_PHASE_ATTACK;
-        tickFixedWingCruise(gunner, vehicle, profile, attackPhase, command);
+        tickFixedWingCruise(gunner, vehicle, profile, attackPhase, currentAgl, command);
 
         Vec3 delta = target.position().subtract(vehicle.position());
         double horizontalDist = new Vec3(delta.x, 0, delta.z).length();
@@ -1237,17 +1247,16 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static boolean tickRotaryDriving(GunnerEntity gunner, RotaryWingVehicle vehicle,
                                              @Nullable Entity target, GunnerProfile profile,
                                              AirFlightState state,
+                                             double currentAgl,
                                              RVP_GunnerMovementActions.Command command) {
         if (target == null) {
-            tickRotaryCruise(gunner, vehicle, profile, false, command);
+            tickRotaryCruise(gunner, vehicle, profile, false, currentAgl, command);
             return false;
         }
         boolean allowFire = ensureRotaryAirPhase(gunner, profile, state);
         boolean attackPhase = state.phase == AIR_PHASE_ATTACK;
-        tickRotaryCruise(gunner, vehicle, profile, attackPhase, command);
+        tickRotaryCruise(gunner, vehicle, profile, attackPhase, currentAgl, command);
 
-        double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
-        double currentAgl = vehicle.getY() - groundY;
         double takeoffAgl = Math.min(profile.getRotaryCruiseAltitudeMin(), 25.0);
         if (currentAgl < takeoffAgl) {
             command.setHoverMode = true;
@@ -1281,9 +1290,9 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     private static void tickFixedWingCruise(GunnerEntity gunner, FixedWingVehicle vehicle,
                                             GunnerProfile profile, boolean attackPhase,
+                                            double currentAgl,
                                             RVP_GunnerMovementActions.Command command) {
-        double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
-        double currentAgl = vehicle.getY() - groundY;
+        double groundY = vehicle.getY() - currentAgl;
         double min = profile.getFixedwingCruiseAltitudeMin();
         double max = profile.getFixedwingCruiseAltitudeMax();
         double desiredAgl;
@@ -1318,9 +1327,9 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     private static void tickRotaryCruise(GunnerEntity gunner, RotaryWingVehicle vehicle,
                                          GunnerProfile profile, boolean attackPhase,
+                                         double currentAgl,
                                          RVP_GunnerMovementActions.Command command) {
-        double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
-        double currentAgl = vehicle.getY() - groundY;
+        double groundY = vehicle.getY() - currentAgl;
         double min = profile.getRotaryCruiseAltitudeMin();
         double max = profile.getRotaryCruiseAltitudeMax();
         double desiredAgl = attackPhase ? (min + max) * 0.5 : max;
@@ -1387,8 +1396,8 @@ public final class RVP_BuiltinGunnerBehaviors {
         }
     }
 
-    private static boolean ensureAirPhase(GunnerEntity gunner, FixedWingVehicle vehicle,
-                                          GunnerProfile profile, AirFlightState state) {
+    private static boolean ensureAirPhase(GunnerEntity gunner, GunnerProfile profile,
+                                          AirFlightState state, double currentAgl) {
         if (!state.initialized) {
             state.initialized = true;
             state.phase = AIR_PHASE_DISENGAGE;
@@ -1405,8 +1414,6 @@ public final class RVP_BuiltinGunnerBehaviors {
         if (ticks <= 0) {
             int nextPhase = state.phase == AIR_PHASE_ATTACK ? AIR_PHASE_DISENGAGE : AIR_PHASE_ATTACK;
             if (nextPhase == AIR_PHASE_ATTACK) {
-                double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
-                double currentAgl = vehicle.getY() - groundY;
                 if (currentAgl < FIXEDWING_ATTACK_ENTRY_MIN_AGL) {
                     state.phase = AIR_PHASE_DISENGAGE;
                     state.phaseTicks = 20;
@@ -1520,7 +1527,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                 && context.gameTime() - state.lastDispatchedTick < RVP_COUNTERMEASURE_COOLDOWN_TICK) {
             return;
         }
-        RVP_EnumCountermeasureType type = resolveRvpCountermeasureThreat(vehicle);
+        RVP_EnumCountermeasureType type = resolveRvpCountermeasureThreat(vehicle, context.observations());
         if (type == null) {
             return;
         }
@@ -1538,16 +1545,15 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     /** 解析当前导弹/雷达威胁；优先导弹锁定，再检查雷达锁定。 */
     @Nullable
-    private static RVP_EnumCountermeasureType resolveRvpCountermeasureThreat(AbstractVehicle vehicle) {
-        if (!(vehicle.level() instanceof ServerLevel serverLevel)) {
+    private static RVP_EnumCountermeasureType resolveRvpCountermeasureThreat(
+            AbstractVehicle vehicle, RVP_GunnerObservationService observations) {
+        if (!(vehicle.level() instanceof ServerLevel)) {
             return null;
         }
-        AABB missileBox = vehicle.getBoundingBox().inflate(RVP_MISSILE_THREAT_RANGE);
-        AABB radarBox = vehicle.getBoundingBox().inflate(RVP_RADAR_LOCK_THREAT_RANGE);
-        for (Entity entity : serverLevel.getEntities().getAll()) {
+        for (Entity entity : observations.candidates(RVP_MISSILE_THREAT_RANGE,
+                candidate -> candidate instanceof RVP_BaseBullet)) {
             if (!(entity instanceof RVP_BaseBullet bullet)
-                    || !bullet.isAlive() || bullet.getTargetEntity() != vehicle
-                    || !bullet.getBoundingBox().intersects(missileBox)) {
+                    || bullet.getTargetEntity() != vehicle) {
                 continue;
             }
             RVP_WeaponData data = bullet.getRvpData();
@@ -1563,10 +1569,10 @@ public final class RVP_BuiltinGunnerBehaviors {
                 return RVP_EnumCountermeasureType.CHAFF;
             }
         }
-        for (Entity entity : serverLevel.getEntities().getAll()) {
+        for (Entity entity : observations.candidates(RVP_MISSILE_THREAT_RANGE,
+                candidate -> candidate instanceof MissileEntity)) {
             if (!(entity instanceof MissileEntity missile)
-                    || !missile.isAlive() || missile.targetEntity != vehicle
-                    || !missile.getBoundingBox().intersects(missileBox)) {
+                    || missile.targetEntity != vehicle) {
                 continue;
             }
             VehicleMissileWeaponData.HomingMode mode = resolveBaseHomingMode(missile);
@@ -1574,16 +1580,8 @@ public final class RVP_BuiltinGunnerBehaviors {
                     || mode == VehicleMissileWeaponData.HomingMode.ACTIVE_RADAR
                     ? RVP_EnumCountermeasureType.CHAFF : RVP_EnumCountermeasureType.FLARE;
         }
-        for (Entity entity : serverLevel.getEntities().getAll()) {
-            if (!(entity instanceof AbstractVehicle enemy) || enemy == vehicle || !enemy.isAlive()
-                    || !enemy.getBoundingBox().intersects(radarBox)) {
-                continue;
-            }
-            for (PartUnit<?> part : enemy.getPartUnits()) {
-                if (part instanceof RadarUnit radar && radar.isOn() && radar.getLockedEntity() == vehicle) {
-                    return RVP_EnumCountermeasureType.CHAFF;
-                }
-            }
+        if (!observations.radarLockSources(RVP_RADAR_LOCK_THREAT_RANGE).isEmpty()) {
+            return RVP_EnumCountermeasureType.CHAFF;
         }
         return null;
     }
@@ -1602,11 +1600,14 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     private static void tickCountermeasure(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile,
-                                           WeaponCountermeasureState state, RVP_GunnerIntentSink sink) {
+                                           WeaponCountermeasureState state,
+                                           RVP_GunnerObservationService observations,
+                                           RVP_GunnerIntentSink sink) {
         if (state.cooldownTicks > 0) {
             return;
         }
-        AmmoEntity threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, profile.getCountermeasureRange());
+        AmmoEntity threat = GunnerTargeting.findAmmoThreat(
+                gunner, vehicle, profile.getCountermeasureRange(), observations);
         if (threat == null) {
             return;
         }
@@ -1660,7 +1661,9 @@ public final class RVP_BuiltinGunnerBehaviors {
         }
     }
 
-    private static void tickEcmActive(GunnerEntity gunner, AbstractVehicle vehicle, RVP_GunnerIntentSink sink) {
+    private static void tickEcmActive(RVP_GunnerBehaviorContext context, RVP_GunnerIntentSink sink) {
+        GunnerEntity gunner = context.gunner();
+        AbstractVehicle vehicle = context.vehicle();
         if (vehicle == null || vehicle.level().isClientSide()) {
             return;
         }
@@ -1704,31 +1707,38 @@ public final class RVP_BuiltinGunnerBehaviors {
                 triggerRadius = Math.max(triggerRadius, cfg.vehicleJamRadius());
             }
             // findAmmoThreat 内部用 isFriendlyAmmoOwner 判定敌我（RVP 导弹已纳入 isDangerousAmmo）
-            AmmoEntity threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, triggerRadius, triggerRadius, 600.0);
-            // 调试：统计触发半径内弹药/敌对危险数量，定位"为何不触发"
-            int near = 0, hostileDanger = 0;
-            AmmoEntity sample = null;
-            for (Entity e : GunnerTargeting.collectTargetEntities(vehicle, triggerRadius, ent -> ent instanceof AmmoEntity ammo
-                    && ammo.isAlive() && ammo.vehicle != vehicle)) {
-                AmmoEntity ammo = (AmmoEntity) e;
-                if (ammo.position().distanceToSqr(vehicle.position()) > triggerRadius * triggerRadius) {
-                    continue;
-                }
-                near++;
-                if (!GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), ammo.getOwner())
-                        && GunnerTargeting.isDangerousAmmo(ammo)) {
-                    hostileDanger++;
-                    if (sample == null) {
-                        sample = ammo;
+            AmmoEntity threat = GunnerTargeting.findAmmoThreat(gunner, vehicle, triggerRadius,
+                    triggerRadius, 600.0, context.observations());
+            if (RVP_DebugFlags.ECM.isEnabled()) {
+                // 调试开关开启时才派生详细样本，正常服务端不为日志重复筛选候选。
+                int near = 0, hostileDanger = 0;
+                AmmoEntity sample = null;
+                Team vehicleTeam = context.observations().team(vehicle);
+                Team gunnerTeam = context.observations().team(gunner);
+                for (Entity e : context.observations().candidates(triggerRadius,
+                        ent -> ent instanceof AmmoEntity ammo && ammo.vehicle != vehicle)) {
+                    AmmoEntity ammo = (AmmoEntity) e;
+                    if (ammo.position().distanceToSqr(vehicle.position()) > triggerRadius * triggerRadius) {
+                        continue;
+                    }
+                    near++;
+                    if (!GunnerTargeting.isFriendlyAmmoOwner(
+                            gunner, vehicle, vehicleTeam, gunnerTeam, ammo.getOwner())
+                            && GunnerTargeting.isDangerousAmmo(ammo)) {
+                        hostileDanger++;
+                        if (sample == null) {
+                            sample = ammo;
+                        }
                     }
                 }
+                rvpEcmDbg(vehicle, "扫描: tr=" + (int) triggerRadius + " 半径内弹药=" + near
+                        + " 敌对危险=" + hostileDanger
+                        + (sample != null ? " 样本#" + sample.getId()
+                            + " friendly=" + GunnerTargeting.isFriendlyAmmoOwner(
+                                    gunner, vehicle, vehicleTeam, gunnerTeam, sample.getOwner())
+                            + " danger=" + GunnerTargeting.isDangerousAmmo(sample) : "")
+                        + " findAmmoThreat=" + (threat != null ? "有#" + threat.getId() : "null"));
             }
-            rvpEcmDbg(vehicle, "扫描: tr=" + (int) triggerRadius + " 半径内弹药=" + near
-                    + " 敌对危险=" + hostileDanger
-                    + (sample != null ? " 样本#" + sample.getId()
-                        + " friendly=" + GunnerTargeting.isFriendlyAmmoOwner(gunner, vehicle, vehicle.getTeam(), gunner.getTeam(), sample.getOwner())
-                        + " danger=" + GunnerTargeting.isDangerousAmmo(sample) : "")
-                    + " findAmmoThreat=" + (threat != null ? "有#" + threat.getId() : "null"));
             if (threat != null) {
                 shouldFire = true;
             }
@@ -1757,8 +1767,11 @@ public final class RVP_BuiltinGunnerBehaviors {
      * <p>TPS 控制：触发检测按 {@link #SEAD_THREAT_SCAN_INTERVAL} 节流，不逐 tick 全量遍历；
      * 复仇期间复用已存储的复仇目标 id，不重复扫描。</p>
      */
-    private static boolean tickSead(GunnerEntity gunner, AbstractVehicle vehicle, WeaponUnit weaponUnit,
-                                    GunnerProfile profile, SeadState state, RVP_GunnerIntentSink sink) {
+    private static boolean tickSead(RVP_GunnerBehaviorContext context,
+                                    SeadState state, RVP_GunnerIntentSink sink) {
+        GunnerEntity gunner = context.gunner();
+        AbstractVehicle vehicle = context.vehicle();
+        WeaponUnit weaponUnit = context.weaponUnit();
         if (!(vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle)) {
             return false;
         }
@@ -1769,7 +1782,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                     || gunner.tickCount % SEAD_THREAT_SCAN_INTERVAL != 0 || weaponUnit == null) {
                 return false;
             }
-            Entity radarSource = findRadarLockingEntity(gunner, vehicle);
+            Entity radarSource = findRadarLockingEntity(gunner, vehicle, context.observations());
             if (radarSource == null || ACTIONS.weapons().findAntiRadiationWeaponIndex(weaponUnit) < 0) {
                 return false;
             }
@@ -1812,7 +1825,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         switch (mode) {
             case SEAD_FLY_AWAY:
                 // 飞离：背对锁定者拉开距离，跑完时长进入回旋
-                tickSeadFly(gunner, vehicle, revengeTarget, false, sink);
+                tickSeadFly(gunner, vehicle, revengeTarget, false, context.vehicleAgl(), sink);
                 // 飞离期仍占用武器通道，保持旧逻辑“SEAD 接管时不执行普通交战”。
                 sink.submit(intent("sead_revenge", "weapon", 725, 950,
                         RVP_GunnerBehaviorIntent.Channel.FIRE,
@@ -1826,7 +1839,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             case SEAD_REVERSAL:
             case SEAD_LOCK_FIRE:
                 // 回旋/锁定发射：转向目标并每 tick 检查攻击门控，门控通过立即发射复仇一发
-                tickSeadFly(gunner, vehicle, revengeTarget, true, sink);
+                tickSeadFly(gunner, vehicle, revengeTarget, true, context.vehicleAgl(), sink);
                 if (tryFireRevenge(gunner, weaponUnit, revengeTarget, state, sink)) {
                     return true;
                 }
@@ -1846,7 +1859,8 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     /** SEAD 复仇阶段驾驶：towardTarget=true 转向目标，false 背对目标飞离（含高度保持）。 */
     private static void tickSeadFly(GunnerEntity gunner, AbstractVehicle vehicle, Entity target,
-                                    boolean towardTarget, RVP_GunnerIntentSink sink) {
+                                    boolean towardTarget, double currentAgl,
+                                    RVP_GunnerIntentSink sink) {
         RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
         Vec3 aimPoint;
         if (towardTarget) {
@@ -1863,7 +1877,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         command.yRotKeep = false;
         if (vehicle instanceof FixedWingVehicle fixedWing) {
             // 固定翼：前飞 + 高度保持（复用巡航的高度控制思路，取适中巡航高度）
-            double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
+            double groundY = vehicle.getY() - currentAgl;
             double desiredAlt = groundY + 180.0;
             double altErr = desiredAlt - vehicle.getY();
             float pitchCmd = (float) Mth.clamp(-altErr * 0.25, -18.0, 10.0);
@@ -1874,7 +1888,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             // 旋翼：悬停转向 + 高度保持
             command.setHoverMode = true;
             command.hoverMode = false;
-            double groundY = EntityUtil.getGroundY(vehicle.level(), vehicle.position());
+            double groundY = vehicle.getY() - currentAgl;
             double desiredAlt = groundY + 60.0;
             if (vehicle.getY() < desiredAlt - 4.0) {
                 command.up = true;
@@ -1895,34 +1909,24 @@ public final class RVP_BuiltinGunnerBehaviors {
      * 命中"敌方载具雷达 isOn 且 getLockedEntity()==本机"即返回该载具。
      */
     @Nullable
-    private static Entity findRadarLockingEntity(GunnerEntity gunner, AbstractVehicle vehicle) {
-        if (!(vehicle.level() instanceof ServerLevel serverLevel)) {
-            return null;
-        }
-        AABB box = vehicle.getBoundingBox().inflate(SEAD_RADAR_LOCK_RANGE);
-        for (Entity entity : serverLevel.getEntities().getAll()) {
-            if (!(entity instanceof AbstractVehicle enemy) || enemy == vehicle || !enemy.isAlive()
-                    || !enemy.getBoundingBox().intersects(box)) {
+    private static Entity findRadarLockingEntity(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                 RVP_GunnerObservationService observations) {
+        for (AbstractVehicle enemy : observations.radarLockSources(SEAD_RADAR_LOCK_RANGE)) {
+            if (!isHostileTo(gunner, vehicle, enemy, observations)) {
                 continue;
             }
-            if (!isHostileTo(gunner, vehicle, enemy)) {
-                continue;
-            }
-            for (PartUnit<?> part : enemy.getPartUnits()) {
-                if (part instanceof RadarUnit radar && radar.isOn() && radar.getLockedEntity() == vehicle) {
-                    return enemy;
-                }
-            }
+            return enemy;
         }
         return null;
     }
 
     /** 敌我判定：gunner 阵营优先（镜像 GunnerTargeting.isRelativeHostileGunnerVehicle），
      *  其次队伍，无队伍时排除本 gunner 的主人。 */
-    private static boolean isHostileTo(GunnerEntity gunner, AbstractVehicle vehicle, AbstractVehicle enemy) {
+    private static boolean isHostileTo(GunnerEntity gunner, AbstractVehicle vehicle, AbstractVehicle enemy,
+                                       RVP_GunnerObservationService observations) {
         if (enemy.getDriver() instanceof GunnerEntity targetGunner) {
             RVP_EnumGunnerFaction sourceFaction = gunner.getProfileFaction();
-            RVP_EnumGunnerFaction targetFaction = targetGunner.getProfileFaction();
+            RVP_EnumGunnerFaction targetFaction = observations.faction(enemy);
             if (sourceFaction == RVP_EnumGunnerFaction.ENEMY) {
                 return targetFaction == RVP_EnumGunnerFaction.FRIENDLY
                         || targetFaction == RVP_EnumGunnerFaction.TEAM;
@@ -1935,15 +1939,15 @@ public final class RVP_BuiltinGunnerBehaviors {
                     return true;
                 }
                 if (targetFaction == RVP_EnumGunnerFaction.TEAM) {
-                    Team sourceTeam = gunner.getTeam();
-                    Team targetTeam = targetGunner.getTeam();
+                    Team sourceTeam = observations.team(gunner);
+                    Team targetTeam = observations.team(targetGunner);
                     return sourceTeam == null || targetTeam == null || !targetTeam.isAlliedTo(sourceTeam);
                 }
             }
             return false;
         }
-        Team vehicleTeam = vehicle.getTeam();
-        Team enemyTeam = enemy.getTeam();
+        Team vehicleTeam = observations.team(vehicle);
+        Team enemyTeam = observations.team(enemy);
         if (vehicleTeam != null && enemyTeam != null) {
             return !enemyTeam.isAlliedTo(vehicleTeam);
         }
