@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  RVP 辅助设备面板 示例3：T-90M 紧凑卡片（对照版，无骨架图）
+  用途：验证窄侧栏形态与小尺寸观感；数据与示例1同源（t90m.json），数值为演示硬编码。
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
+        .compact-wrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
+        .compact-panel { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; }
+        .equip-screen .card-header { min-height: 28px; padding: 6px 9px; font-size: 12px; flex: 0 0 auto; font-family: OreDisplay, "Microsoft YaHei"; }
+        .equip-screen .card-body { padding: 6px 7px; }
+        .title-row { display: flex; align-items: center; gap: 8px; font-size: 16px; min-height: 26px; }
+        .hp-bar { flex: 1 1 auto; height: 10px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hp-fill { height: 100%; background: var(--ore-success); }
+        .hp-text { font-size: 11px; color: var(--ore-ink-muted); flex: 0 0 auto; }
+        .dev-row { display: flex; align-items: center; gap: 7px; min-height: 24px; font-size: 14px; }
+        .dev-dot { width: 9px; height: 9px; flex: 0 0 9px; border: 1px solid #141517; box-sizing: border-box; }
+        .dot-ok { background: var(--ore-success); }
+        .dot-warn { background: var(--ore-warning); }
+        .dev-value { margin-left: auto; flex: 0 0 auto; color: var(--ore-ink-muted); font-size: 12px; }
+        .cellbar { display: flex; gap: 1px; flex: 0 0 auto; flex-wrap: wrap; width: 120px; }
+        .cell { width: 8px; height: 10px; background: #2c2d30; border: 1px solid #141517; box-sizing: border-box; }
+        .cell.ok { background: var(--ore-success); }
+        .cell.bad { background: var(--ore-danger); }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .part-chip { font-size: 11px; padding: 2px 6px; border: 1px solid var(--ore-edge); background: #33353a; }
+        .part-chip b { font-weight: normal; }
+        .part-chip.ok b { color: var(--ore-success); }
+        .part-chip.warn b { color: var(--ore-warning); }
+        .dev-sub { font-size: 10px; color: var(--ore-ink-muted); padding-left: 16px; line-height: 1.3; }
+    </style>
+</head>
+<body class="ore-theme equip-screen">
+    <main class="compact-wrap">
+        <aside class="card card-accent-green compact-panel">
+            <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">辅助设备 · T-90M</div>
+            <div class="card-body" style="display:flex; flex-direction:column; gap:5px">
+                <div class="title-row">
+                    <span>车体</span>
+                    <div class="hp-bar"><div class="hp-fill" style="width:87%"></div></div>
+                    <span class="hp-text">1042/1200</span>
+                </div>
+                <div class="dev-row">
+                    <span class="dev-dot dot-ok"></span><span>ECM 主动干扰</span>
+                    <span class="dev-value">干扰中 18s</span>
+                </div>
+                <div class="dev-row">
+                    <span class="dev-dot dot-ok"></span><span>烟幕弹</span>
+                    <span class="cellbar"><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span></span>
+                    <span class="dev-value">4/4</span>
+                </div>
+                <div class="dev-row">
+                    <span class="dev-dot dot-warn"></span><span>爆反装甲</span>
+                    <span class="cellbar">
+                        <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell bad"></span>
+                        <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell bad"></span>
+                        <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                        <span class="cell ok"></span><span class="cell bad"></span><span class="cell ok"></span><span class="cell ok"></span>
+                    </span>
+                    <span class="dev-value" style="color:var(--ore-warning)">13/16</span>
+                </div>
+                <div class="dev-sub">失效：ERA3 车体侧 · ERA7 炮塔 · ERA13 首上</div>
+                <div class="chip-row" style="margin-top:3px">
+                    <span class="part-chip ok">炮塔 <b>94%</b></span>
+                    <span class="part-chip ok">车体 <b>100%</b></span>
+                    <span class="part-chip warn">履带 <b>61%</b></span>
+                    <span class="part-chip ok">发动机 <b>87%</b></span>
+                </div>
+            </div>
+        </aside>
+    </main>
+</body>
+</html>

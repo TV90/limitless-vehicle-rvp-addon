@@ -97,7 +97,10 @@ public class RVP_LaserWeapon extends RVP_WeaponBase {
                     EntityUtil.hurt(source, beam.hitEntity(), hitDamage);
                 }
                 if (beam.hitEntity() instanceof AbstractVehicle targetVehicle) {
-                    RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, hitDamageBeforeHitbox);
+                    // [RVP] 2026-09-27 分轨：hitDamage 已过装甲层（applyArmor）= 实际到骨伤害，
+                    // 供非 ERA 模块（引擎累计等）判定；ERA 仍按 hitDamageBeforeHitbox（模块前）
+                    RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(
+                            targetVehicle, hitboxRes, hitDamageBeforeHitbox, shooter, true, hitDamage);
                     // 2026-09-17：激光命中载具触发激光照射告警（TYPE_LASER，敌对才告警、按射手车×目标车 10t 节流）
                     RVP_LaserWarnService.warnLaserHit(vehicle, targetVehicle);
                 }

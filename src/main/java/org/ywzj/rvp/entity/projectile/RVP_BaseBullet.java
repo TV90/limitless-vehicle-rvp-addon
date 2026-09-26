@@ -3387,10 +3387,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             if (explosion != null && explosion.explode && explosion.radius > 5f) {
                 // HE 弹（爆炸半径 > 5）→ 机制二A（百分比破坏，按直击位置排序，至少 1 块保底）
                 RVP_VehicleHitboxFactorManager.destroyModulesByExplosionRadius(
-                        targetVehicle, explosion.radius, result.getLocation(), true);
+                        targetVehicle, explosion.radius, result.getLocation(), true, owner);
             } else {
-                // AP 弹或小爆炸弹 → 机制一（OBB 单块）
-                RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(targetVehicle, hitboxRes, preHitboxDamage);
+                // AP 弹或小爆炸弹 → 机制一（OBB 单块）。
+                // [RVP] 2026-09-27 分轨：finalDamage = preHitboxDamage 乘命中倍率+装甲后的
+                // 实际入账伤害——ERA 仍按 preHitboxDamage（模块前，旧平衡），其余模块（引擎
+                // 累计/雷达/APS 等）按实际到骨伤害判定（用户定版）
+                RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(
+                        targetVehicle, hitboxRes, preHitboxDamage, owner, true, finalDamage);
             }
         }
         if (entity instanceof LivingEntity livingEntity) {
@@ -3968,7 +3972,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     continue;
                 }
                 RVP_VehicleHitboxFactorManager.destroyModulesByExplosionRadius(
-                        v, radius, pos, false);
+                        v, radius, pos, false, getOwner());
             }
             directHitVehicleIds.clear();
         }

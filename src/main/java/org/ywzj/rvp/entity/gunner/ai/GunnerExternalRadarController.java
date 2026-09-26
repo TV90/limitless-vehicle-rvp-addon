@@ -18,6 +18,8 @@ import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -184,7 +186,11 @@ public final class GunnerExternalRadarController {
             relayVehicle.toggleEngine(true);
         }
         for (PartUnit<?> partUnit : relayVehicle.getPartUnits()) {
-            if (partUnit instanceof RadarUnit radarUnit && !radarUnit.isOn()) {
+            if (partUnit instanceof RadarUnit radarUnit && !radarUnit.isOn()
+                    // [RVP] 雷达骨骼部件：RADAR 模块被击毁的雷达不接受自动开机
+                    // （中继链经 RVP_ExternalRadarSyncService.hasAnyRadarOn 自然断开）
+                    && RVP_BoneModuleStateTable.isModuleActive(
+                            relayVehicle.getUUID(), radarUnit.getId(), BoneModuleType.RADAR)) {
                 radarUnit.toggle(true);
             }
         }

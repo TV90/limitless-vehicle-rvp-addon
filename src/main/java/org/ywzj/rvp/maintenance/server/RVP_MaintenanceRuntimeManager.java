@@ -4,9 +4,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -174,6 +176,9 @@ public final class RVP_MaintenanceRuntimeManager {
         writeThrough(vehicle, state);
         // 模块渐进恢复（设备概率 + ERA 比例），恢复后一次广播即可
         recoverModules(vehicle, config);
+        // [RVP] 引擎部件（2026-09-26）：快修触发即清空引擎骨窗口累计——受损档随维修回落，
+        // 瘫痪档的模块恢复仍走下方 recoverModules 掷骰（恢复成功同样清累计）
+        RVP_EngineDamageTable.clearVehicle(vehicle.getUUID());
         syncHud(vehicle, state);
         return true;
     }
@@ -200,24 +205,47 @@ public final class RVP_MaintenanceRuntimeManager {
         List<String> deviceQueue = order.deviceBones();
         List<String> eraQueue = order.eraBones();
 
-        // ① 辅助设备（纯设备骨）：按骨掷骰一次，成功则该骨全部失效设备模块一起恢复（捆绑语义）。
+        // ① 辅助设备（纯设备骨）：确定性配额制（用户 2026-09-27 定版，与 ERA 配额同构）——
+        //    每次快修复原 ceil(失效设备骨数 × deviceRecoverChance) 台（缺省 25%：坏 1 台修 1 台、
+        //    坏 4 台修 1 台、坏 5 台一次修 2 台）。顺序 = 玩家设置的辅助设备维修顺序队列头优先，
+        //    队列外按部件顺序；命中配额的骨按捆绑语义整骨恢复（同骨全部失效可修模块一起修回）。
+        //    替代原"逐骨掷骰 deviceRecoverChance"概率制——面板"预计维修 X 个"（ceil）与机制完全对齐。
         //    含 ERA 的双角色骨（如 t84bm 的 ERA+干扰机同骨）不在此列——它归入爆反配额，随 ERA 捆绑恢复。
-        //    MAINTENANCE 自身不在设备恢复掷骰内。
+        //    MAINTENANCE 自身不在设备恢复内。
+        List<String> brokenDevices = new ArrayList<>();
         for (String queuedBone : deviceQueue) {
             Set<BoneModuleType> queuedTypes = inactive.get(queuedBone);
             if (queuedTypes == null || queuedTypes.contains(BoneModuleType.ERA)) {
                 continue; // 双角色骨走爆反配额捆绑恢复
             }
-            if (hasRepairableDevice(queuedTypes, cfg) && random.nextFloat() < cfg.deviceRecoverChance) {
-                restoreBoneModules(vehicleId, queuedBone, queuedTypes, cfg, false);
+            if (hasRepairableDevice(queuedTypes, cfg) && !brokenDevices.contains(queuedBone)) {
+                brokenDevices.add(queuedBone);
             }
         }
+        // 队列外失效设备骨按名称排序（HashMap 不保序，排序保证确定性）
+        List<String> outsideDevices = new ArrayList<>();
         for (Map.Entry<String, Set<BoneModuleType>> boneEntry : inactive.entrySet()) {
-            if (deviceQueue.contains(boneEntry.getKey()) || boneEntry.getValue().contains(BoneModuleType.ERA)) {
+            String bone = boneEntry.getKey();
+            Set<BoneModuleType> types = boneEntry.getValue();
+            if (deviceQueue.contains(bone) || types.contains(BoneModuleType.ERA)) {
                 continue; // 队列内已处理；双角色骨走爆反配额捆绑恢复
             }
-            if (hasRepairableDevice(boneEntry.getValue(), cfg) && random.nextFloat() < cfg.deviceRecoverChance) {
-                restoreBoneModules(vehicleId, boneEntry.getKey(), boneEntry.getValue(), cfg, false);
+            if (hasRepairableDevice(types, cfg)) {
+                outsideDevices.add(bone);
+            }
+        }
+        java.util.Collections.sort(outsideDevices);
+        for (String bone : outsideDevices) {
+            if (!brokenDevices.contains(bone)) {
+                brokenDevices.add(bone);
+            }
+        }
+        if (!brokenDevices.isEmpty()) {
+            int quota = (int) Math.ceil(brokenDevices.size() * cfg.deviceRecoverChance);
+            quota = Math.min(quota, brokenDevices.size());
+            for (int i = 0; i < quota; i++) {
+                String bone = brokenDevices.get(i);
+                restoreBoneModules(vehicle, bone, inactive.get(bone), cfg, false);
             }
         }
         // ② ERA：恢复数量配额不变（ceil(n * fraction)，至少 eraRecoverMin 块，MCHR 手感）；
@@ -252,7 +280,7 @@ public final class RVP_MaintenanceRuntimeManager {
             n = Math.min(n, ordered.size());
             for (int i = 0; i < n; i++) {
                 String bone = ordered.get(i);
-                restoreBoneModules(vehicleId, bone, inactive.get(bone), cfg, true);
+                restoreBoneModules(vehicle, bone, inactive.get(bone), cfg, true);
             }
         }
         // ③ 一次广播：客户端动画恢复渲染骨、各消费端下 tick 自动重新生效
@@ -274,8 +302,9 @@ public final class RVP_MaintenanceRuntimeManager {
      *
      * @param includeEra true = 连同 ERA 一起恢复（爆反配额路径）；false = 跳过 ERA（纯设备骨掷骰路径）
      */
-    private static void restoreBoneModules(UUID vehicleId, String bone, Set<BoneModuleType> types,
+    private static void restoreBoneModules(AbstractVehicle vehicle, String bone, Set<BoneModuleType> types,
                                            BoneMaintenanceConfig.ModuleRepair cfg, boolean includeEra) {
+        UUID vehicleId = vehicle.getUUID();
         for (BoneModuleType type : types) {
             if (type == BoneModuleType.MAINTENANCE) {
                 continue; // 维修模块自身永不恢复
@@ -283,8 +312,15 @@ public final class RVP_MaintenanceRuntimeManager {
             if (type == BoneModuleType.ERA && !includeEra) {
                 continue;
             }
-            if (cfg.isRepairable(type)) {
-                RVP_BoneModuleStateTable.restoreModule(vehicleId, bone, type);
+            if (cfg.isRepairable(type) && RVP_BoneModuleStateTable.restoreModule(vehicleId, bone, type)) {
+                // [RVP] 新类型恢复联动（2026-09-26）：
+                // RADAR——修好自动开机（用户定版，与 gunner 自动开机语义一致）；
+                // ENGINE——清空窗口累计，防止恢复后残存累计立即再次跨阈值
+                if (type == BoneModuleType.RADAR) {
+                    RVP_RadarModuleEnforcer.restoreRadar(vehicle, bone);
+                } else if (type == BoneModuleType.ENGINE) {
+                    RVP_EngineDamageTable.clear(vehicleId, bone);
+                }
             }
         }
     }

@@ -1,0 +1,228 @@
+<!doctype html>
+<!--
+  RVP 辅助设备面板 示例6：v2 布局（M1A2SEP 数据，重点=APS 栏目 + "部件"未来扩展示例栏目）
+  数据来源：m1a2sep.json —— bone_modules JSON 顺序：ERA0-5 → aps_radar_ne/se/nw/sw → ecm_bone；
+        APS 四传感器各 ammo_max 4（facing_yaw 45/-45/135/-135，scan_fov 120）；
+        烟幕 smoke total 4；部件栏目为"未来扩展引擎/履带损毁"的占位演示（parts[]：track/Engine/turret…）。
+  演示状态：aps_radar_se（右后）被毁、全车弹药 12/16 装填中、ECM 充能、烟雾 2/4、ERA2 失效。
+  t90m/m1a2sep 均未配置 maintenance，维修栏为演示态（正式版无维修配置不显示，见 README）。
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
+        .equip-screen .navbar { min-height: 38px; padding: 6px 10px; flex: 0 0 auto; align-items: center; display: flex; justify-content: space-between; }
+        .equip-screen .navbar-brand, .equip-screen .card-header, .equip-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
+        .equip-screen .navbar-brand { font-size: 18px; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .hp-text { font-size: 12px; color: var(--ore-ink-muted); }
+        .hp-bar { width: 150px; height: 10px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hp-fill { height: 100%; background: var(--ore-success); }
+        .equip-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
+
+        .equip-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .left-column { flex: 0 0 40%; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
+        .right-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .equip-screen .card-header { min-height: 30px; padding: 8px 9px; font-size: 12px; flex: 0 0 auto; }
+        .equip-screen .card-body { padding: 7px; }
+        .cat-sum { margin-left: auto; font-size: 11px; color: var(--ore-ink-muted); }
+
+        .cat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+        .cat-card { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
+        .cat-card.grow { flex: 1 1 auto; min-height: 140px; }
+        .cat-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+
+        .mod-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 8px; box-sizing: border-box; font-size: 14px; cursor: pointer; flex: 0 0 auto; }
+        .mod-row.ok { border: 2px solid rgba(105,173,69,0.6); background: rgba(105,173,69,0.08); }
+        .mod-row.bad { border: 2px solid var(--ore-danger); background: rgba(212,91,80,0.10); }
+        .row-idx { flex: 0 0 20px; color: var(--ore-ink-muted); font-size: 11px; text-align: right; }
+        .row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+        .row-alias { min-width: 0; overflow: hidden; white-space: nowrap; }
+        .row-bone { flex: 0 0 auto; font-size: 10px; color: var(--ore-ink-muted); }
+        .row-extra { flex: 0 0 auto; font-size: 11px; color: var(--ore-ink-muted); }
+        .row-state { flex: 0 0 auto; font-size: 11px; padding: 1px 7px; border: 1px solid; }
+        .row-state.ok { color: var(--ore-success); border-color: var(--ore-success); }
+        .row-state.bad { color: var(--ore-danger); border-color: var(--ore-danger); }
+
+        .maint-panel { flex: 0 0 auto; }
+        .maint-panel .card-body { display: flex; flex-direction: column; gap: 4px; }
+        .queue-row { display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 2px 8px; font-size: 13px; border: 1px solid var(--ore-gold); background: rgba(240,185,45,0.08); }
+        .queue-idx { color: var(--ore-gold); font-size: 12px; flex: 0 0 auto; }
+        .queue-x { margin-left: auto; color: var(--ore-ink-muted); cursor: pointer; padding: 0 4px; }
+        .queue-hint { font-size: 10px; color: var(--ore-ink-muted); }
+        .maint-footer { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ore-ink-muted); }
+        .maint-footer .button { min-height: 26px; font-size: 12px; margin-left: auto; }
+
+        /* 左上：俯视图（含 APS 扇区锥） */
+        .skeleton-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+        .skeleton-stage-wrap { position: relative; flex: 1 1 auto; background: #252628; border: 2px solid #56585b; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; overflow: hidden; }
+        .skeleton-stage { position: absolute; left: 50%; top: 50%; width: 360px; height: 480px; margin: -240px 0 0 -180px; }
+        .track { position: absolute; background: #2e2f33; border: 2px solid #45474c; box-sizing: border-box; }
+        .hull { position: absolute; background: #3b3d42; border: 2px solid #55575c; box-sizing: border-box; }
+        .turret-box { position: absolute; background: #43454b; border: 2px solid #5d5f65; box-sizing: border-box; }
+        .barrel { position: absolute; background: #4a4c52; border: 1px solid #5d5f65; box-sizing: border-box; }
+        .era { position: absolute; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-success); opacity: 0.92; }
+        .era.dead { background: var(--ore-danger); opacity: 0.45; }
+        .aps-chip { position: absolute; width: 14px; height: 14px; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-blue); }
+        .aps-chip.dead { background: var(--ore-danger); opacity: 0.5; }
+        .launcher-chip { position: absolute; width: 12px; height: 12px; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-gold); }
+        .smoke-chip { position: absolute; width: 8px; height: 8px; box-sizing: border-box; border: 1px solid #141517; background: #9aa0a8; }
+        .cone { position: absolute; width: 0; height: 0; border-left: 52px solid transparent; border-right: 52px solid transparent; border-bottom: 92px solid rgba(105,173,69,0.16); }
+        .sk-label { position: absolute; font-size: 10px; color: var(--ore-ink-muted); }
+        .sk-legend { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 12px; font-size: 10px; color: var(--ore-ink-muted); }
+        .sk-legend i { display: inline-block; width: 9px; height: 9px; border: 1px solid #141517; box-sizing: border-box; vertical-align: -1px; margin-right: 3px; }
+    </style>
+</head>
+<body class="ore-theme equip-screen">
+    <nav class="navbar">
+        <div class="navbar-brand">辅助设备 · M1A2SEP</div>
+        <div class="nav-right">
+            <span class="hp-text">车体 1096/1200</span>
+            <div class="hp-bar"><div class="hp-fill" style="width:91%"></div></div>
+            <button class="close-button button button-danger" type="button">X</button>
+        </div>
+    </nav>
+    <main class="equip-workspace">
+        <!-- 左列：上=俯视图，下=维修顺序 -->
+        <div class="left-column">
+            <aside class="card card-accent-green skeleton-panel">
+                <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">俯视图 · 爆反 5/6 · APS 扇区 3/4</div>
+                <div class="card-body skeleton-stage-wrap" style="padding:0">
+                    <div class="skeleton-stage">
+                        <div class="sk-label" style="left:158px; top:6px">▲ 车首</div>
+                        <div class="track" style="left:74px;  top:70px; width:30px; height:340px"></div>
+                        <div class="track" style="left:256px; top:70px; width:30px; height:340px"></div>
+                        <div class="hull"  style="left:104px; top:70px; width:152px; height:340px"></div>
+                        <div class="cone" style="left:79px;  top:-19px; transform:rotate(-45deg);  transform-origin:50% 100%"></div>
+                        <div class="cone" style="left:229px; top:-19px; transform:rotate(45deg);   transform-origin:50% 100%"></div>
+                        <div class="cone" style="left:79px;  top:277px; transform:rotate(-135deg); transform-origin:50% 100%"></div>
+                        <div class="aps-chip"      style="left:107px; top:75px"></div>
+                        <div class="aps-chip"      style="left:239px; top:75px"></div>
+                        <div class="aps-chip"      style="left:107px; top:391px"></div>
+                        <div class="aps-chip dead" style="left:239px; top:391px"></div>
+                        <div class="sk-label" style="left:256px; top:410px">SE 损毁</div>
+                        <div class="era" style="left:90px;  top:150px; width:14px; height:44px"></div>
+                        <div class="era dead" style="left:90px;  top:250px; width:14px; height:44px"></div>
+                        <div class="era"      style="left:90px;  top:350px; width:14px; height:44px"></div>
+                        <div class="era" style="left:256px; top:150px; width:14px; height:44px"></div>
+                        <div class="era" style="left:256px; top:250px; width:14px; height:44px"></div>
+                        <div class="era" style="left:256px; top:350px; width:14px; height:44px"></div>
+                        <div class="barrel"     style="left:172px; top:138px; width:16px; height:52px"></div>
+                        <div class="turret-box" style="left:136px; top:190px; width:88px; height:120px"></div>
+                        <div class="launcher-chip" style="left:124px; top:244px"></div>
+                        <div class="launcher-chip" style="left:224px; top:244px"></div>
+                        <div class="smoke-chip" style="left:142px; top:296px"></div>
+                        <div class="smoke-chip" style="left:202px; top:296px"></div>
+                        <div class="sk-label" style="left:8px;   top:236px">车体侧爆反</div>
+                        <div class="sk-label" style="left:236px; top:196px">炮塔</div>
+                        <div class="sk-legend">
+                            <span><i style="background:var(--ore-success)"></i>爆反完好</span>
+                            <span><i style="background:var(--ore-danger);opacity:.5"></i>失效</span>
+                            <span><i style="background:var(--ore-blue)"></i>APS雷达</span>
+                            <span><i style="background:var(--ore-gold)"></i>APS发射器</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            <aside class="card card-accent-gold maint-panel">
+                <div class="card-header">快速维修 · 顺序队列 <span class="cat-sum">演示：m1a2sep 未配置 maintenance</span></div>
+                <div class="card-body">
+                    <div id="repair-queue">
+                        <div class="queue-row" data-bone="ERA2"><span class="queue-idx">1.</span>车体侧爆反 · ERA2<span class="queue-x">✕</span></div>
+                        <div class="queue-row" data-bone="aps_radar_se"><span class="queue-idx">2.</span>APS雷达(右后) · aps_radar_se<span class="queue-x">✕</span></div>
+                    </div>
+                    <div class="queue-hint">点击右侧红框（失效）行加入队列，✕ 移除；触发维修时队列内目标优先恢复</div>
+                    <div class="maint-footer">
+                        <span>状态：就绪 · 冷却 --</span>
+                        <button class="button button-primary" type="button">开始维修 [G]</button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+        <!-- 右半页：设备类型分栏 -->
+        <div class="right-column">
+            <div class="cat-scroll">
+                <section class="card cat-card grow">
+                    <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">APS 主动防护<span class="cat-sum">3/4 生效 · 弹药 12/16 · 装填 18s</span></div>
+                    <div class="card-body cat-body">
+                        <div class="mod-row ok" data-bone="aps_radar_ne" data-alias="APS雷达(右前)"><span class="row-idx">1</span><span class="row-main"><span class="row-alias">APS雷达(右前)</span><span class="row-bone">aps_radar_ne</span></span><span class="row-extra">4发 · 扇区45°±60</span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row bad" data-bone="aps_radar_se" data-alias="APS雷达(右后)"><span class="row-idx">2</span><span class="row-main"><span class="row-alias">APS雷达(右后)</span><span class="row-bone">aps_radar_se</span></span><span class="row-extra">传感器损毁</span><span class="row-state bad">失效</span></div>
+                        <div class="mod-row ok" data-bone="aps_radar_nw" data-alias="APS雷达(左前)"><span class="row-idx">3</span><span class="row-main"><span class="row-alias">APS雷达(左前)</span><span class="row-bone">aps_radar_nw</span></span><span class="row-extra">4发 · 扇区-45°±60</span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok" data-bone="aps_radar_sw" data-alias="APS雷达(左后)"><span class="row-idx">4</span><span class="row-main"><span class="row-alias">APS雷达(左后)</span><span class="row-bone">aps_radar_sw</span></span><span class="row-extra">3/4 · 扇区-135°±60</span><span class="row-state ok">生效</span></div>
+                    </div>
+                </section>
+                <section class="card cat-card grow">
+                    <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">ERA 爆反装甲<span class="cat-sum">5/6 生效 · 失效 1</span></div>
+                    <div class="card-body cat-body">
+                        <div class="mod-row ok" data-bone="ERA0" data-alias="车体侧爆反"><span class="row-idx">1</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA0</span></span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok" data-bone="ERA1" data-alias="车体侧爆反"><span class="row-idx">2</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA1</span></span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row bad" data-bone="ERA2" data-alias="车体侧爆反"><span class="row-idx">3</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA2</span></span><span class="row-state bad">失效</span></div>
+                        <div class="mod-row ok" data-bone="ERA3" data-alias="车体侧爆反"><span class="row-idx">4</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA3</span></span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok" data-bone="ERA4" data-alias="车体侧爆反"><span class="row-idx">5</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA4</span></span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok" data-bone="ERA5" data-alias="车体侧爆反"><span class="row-idx">6</span><span class="row-main"><span class="row-alias">车体侧爆反</span><span class="row-bone">ERA5</span></span><span class="row-state ok">生效</span></div>
+                    </div>
+                </section>
+                <section class="card cat-card">
+                    <div class="card-header">ECM 主动干扰<span class="cat-sum">1/1 生效 · 充能 5s · 半径 250 格</span></div>
+                    <div class="card-body cat-body">
+                        <div class="mod-row ok" data-bone="ecm_bone" data-alias="ECM 主动干扰"><span class="row-idx">1</span><span class="row-main"><span class="row-alias">ECM 主动干扰</span><span class="row-bone">ecm_bone</span></span><span class="row-state ok">生效</span></div>
+                    </div>
+                </section>
+                <section class="card cat-card">
+                    <div class="card-header">烟幕弹<span class="cat-sum">余弹 2/4 · 装填 9s · 每轮 2 发</span></div>
+                    <div class="card-body cat-body">
+                        <div class="mod-row ok"><span class="row-idx">1</span><span class="row-main"><span class="row-alias">烟幕弹发射器</span><span class="row-bone">turret_smoke_grenade</span></span><span class="row-extra">余弹 2/4</span><span class="row-state ok">生效</span></div>
+                    </div>
+                </section>
+                <section class="card cat-card">
+                    <div class="card-header">部件血量<span class="cat-sum">未来扩展示例（引擎/履带损毁类栏目）</span></div>
+                    <div class="card-body cat-body">
+                        <div class="mod-row ok"><span class="row-idx">1</span><span class="row-main"><span class="row-alias">履带</span><span class="row-bone">track</span></span><span class="row-extra">78%</span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok"><span class="row-idx">2</span><span class="row-main"><span class="row-alias">发动机舱</span><span class="row-bone">Engine</span></span><span class="row-extra">92%</span><span class="row-state ok">生效</span></div>
+                        <div class="mod-row ok"><span class="row-idx">3</span><span class="row-main"><span class="row-alias">炮塔</span><span class="row-bone">turret</span></span><span class="row-extra">100%</span><span class="row-state ok">生效</span></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+    <script>
+        // 浏览器演示交互（点击失效行入队 / ✕ 移除）。正式版由 Java 侧 addEventListener 实现，AUI 内不执行本脚本。
+        (function () {
+            function renumber() {
+                var rows = document.querySelectorAll('#repair-queue .queue-row');
+                for (var i = 0; i < rows.length; i++) {
+                    rows[i].querySelector('.queue-idx').textContent = (i + 1) + '.';
+                }
+            }
+            document.addEventListener('click', function (e) {
+                var t = e.target;
+                var row = t.closest ? t.closest('.mod-row') : null;
+                if (row && row.classList.contains('bad')) {
+                    var bone = row.getAttribute('data-bone');
+                    var alias = row.getAttribute('data-alias') || bone;
+                    var list = document.getElementById('repair-queue');
+                    if (!bone || !list || list.querySelector('[data-bone="' + bone + '"]')) { return; }
+                    var div = document.createElement('div');
+                    div.className = 'queue-row';
+                    div.setAttribute('data-bone', bone);
+                    div.innerHTML = '<span class="queue-idx"></span>' + alias + ' · ' + bone + '<span class="queue-x">✕</span>';
+                    list.appendChild(div);
+                    renumber();
+                    return;
+                }
+                var q = t.closest ? t.closest('.queue-row') : null;
+                if (q && t.classList && t.classList.contains('queue-x')) {
+                    q.parentNode.removeChild(q);
+                    renumber();
+                }
+            });
+            renumber();
+        })();
+    </script>
+</body>
+</html>

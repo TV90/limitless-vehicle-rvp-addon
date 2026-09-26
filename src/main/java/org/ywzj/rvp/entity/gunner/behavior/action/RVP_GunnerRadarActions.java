@@ -13,6 +13,8 @@ import org.ywzj.rvp.entity.gunner.ai.GunnerExternalRadarController;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -186,7 +188,10 @@ public final class RVP_GunnerRadarActions {
     @Nullable
     private static RadarUnit prepareLockRadar(WeaponUnit weaponUnit) {
         for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
-            if (!radarUnit.isOn()) {
+            if (!radarUnit.isOn()
+                    // [RVP] 雷达骨骼部件：RADAR 模块被击毁的雷达不接受 gunner 锁定前的自动开机
+                    && RVP_BoneModuleStateTable.isModuleActive(
+                            weaponUnit.getVehicle().getUUID(), radarUnit.getId(), BoneModuleType.RADAR)) {
                 // 调用本体雷达开关 API，为 Gunner 的 RF 锁定准备传感器。
                 radarUnit.toggle(true);
             }

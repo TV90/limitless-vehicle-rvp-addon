@@ -6,10 +6,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.entity.Entity;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import net.minecraft.world.phys.Vec3;
@@ -22,15 +24,19 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CBoneModuleState;
+import org.ywzj.rvp.network.S2CModuleHitNotify;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
 import org.ywzj.rvp.vehicle.BoneEcmPassiveConfig;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
+import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -341,6 +347,41 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return new MaintenanceModuleBinding("__vehicle__", BoneMaintenanceConfig.defaults());
     }
 
+    /**
+     * 解析载具全部引擎部件骨（{@code modules} 含 ENGINE 的 {@code bone_modules} 条目）。
+     * 返回 {@code Map<骨块名, 配置>}；未写 {@code engine} 子对象时回退 {@link BoneEngineConfig#defaults()}。
+     * 无配置返回 null。供 {@code RVP_EngineDamageTable}（累计衰减）与
+     * {@code RVP_EnginePowerHandler}（动力覆写）按骨取阈值/倍率。
+     */
+    public @Nullable Map<String, BoneEngineConfig> resolveEngineModules(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneEngineConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneModuleConfig moduleConfig = entry.getValue();
+            if (moduleConfig != null && moduleConfig.hasModules()
+                    && moduleConfig.modules().contains(BoneModuleType.ENGINE)) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), moduleConfig.engine() != null
+                        ? moduleConfig.engine() : BoneEngineConfig.defaults());
+            }
+        }
+        return out;
+    }
+
+    /** 单块引擎骨的配置（无配置返回 null）；供直击累计路径按命中骨取阈值。 */
+    public @Nullable BoneEngineConfig resolveEngineConfig(AbstractVehicle vehicle, String boneName) {
+        var modules = resolveEngineModules(vehicle);
+        return modules == null ? null : modules.get(boneName);
+    }
+
     /** 快速维修模块绑定：骨块名（可为虚拟骨 {@code __vehicle__}）+ 配置。 */
     public record MaintenanceModuleBinding(String bone, BoneMaintenanceConfig config) {
     }
@@ -386,6 +427,41 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * @return 是否消耗了至少一个模块
      */
     public boolean tryDestroyBoneModules(AbstractVehicle vehicle, @Nullable HitboxDamageResult result, float triggerDamage) {
+        return tryDestroyBoneModules(vehicle, result, triggerDamage, null, false, 0f);
+    }
+
+    /** 兼容入口：带射手、ERA 仍按模块前伤害判定（2026-09-27 前旧语义）。 */
+    public boolean tryDestroyBoneModules(AbstractVehicle vehicle, @Nullable HitboxDamageResult result,
+                                         float triggerDamage, @Nullable Entity shooter) {
+        return tryDestroyBoneModules(vehicle, result, triggerDamage, shooter, false, 0f);
+    }
+
+    /**
+     * 直击骨骼模块消耗（含引擎累计与部件战果通知）。
+     *
+     * <p>triggerDamage 语义（2026-09-27 用户定版分轨）：<b>ERA 用模块前伤害</b>（erode 骨倍率
+     * 装甲前的值，保持旧平衡——装甲车 ERA 门槛按裸弹伤设计）；<b>其余模块（雷达/引擎/APS/
+     * 干扰机等）用实际到骨伤害</b>（乘命中倍率、过装甲层后的最终入账值）——防弹衣逻辑：
+     * 大倍率装甲骨上的雷达被小倍率弹蹭一下不该打坏。useFinalDamageForModules=true 时
+     * triggerDamage 必须传入 applyArmor 之后的最终伤害。</p>
+     *
+     * @param shooter                   本次伤害的射手实体（弹体 owner / 激光射手 / 伤害源攻击者，
+     *                                  可空——gunner 等非玩家射手不发展板通知）
+     * @param useFinalDamageForModules  true = 非 ERA 模块（含引擎累计）按 finalBoneDamage
+     *                                  （实际到骨伤害）判定，ERA 仍用 triggerDamage（模块前伤害）；
+     *                                  false = 全模块按 triggerDamage（旧语义）
+     * @param finalBoneDamage           实际到骨伤害：乘命中倍率、过装甲层后的最终入账值
+     *                                  （useFinalDamageForModules=false 时不读）
+     */
+    public boolean tryDestroyBoneModules(AbstractVehicle vehicle, @Nullable HitboxDamageResult result,
+                                         float triggerDamage, @Nullable Entity shooter,
+                                         boolean useFinalDamageForModules, float finalBoneDamage) {
+        // [RVP] 引擎部件（2026-09-26）：窗口累计直击伤害——必须在无模块/低伤早退之前累计，
+        // 三个调用方（RVP_BaseBullet 直击 / RVP_LaserWeapon 激光 / RVP_VehicleHurtScalingHandler
+        // 本体武器重放）全部经过本方法，一处埋点全覆盖；累计跨过重损阈值即触发 ENGINE 模块失效。
+        // 引擎累计在 useFinalDamageForModules=true 时同样用实际到骨伤害（用户 2026-09-27 定版）
+        accumulateEngineDamage(vehicle, result,
+                useFinalDamageForModules ? finalBoneDamage : triggerDamage, shooter);
         if (vehicle == null || result == null || result.modules().isEmpty()) {
             return false;
         }
@@ -393,18 +469,48 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return false;
         }
         String boneName = result.hitBoneName();
-        if (boneName == null || !result.shouldTriggerModules(triggerDamage)) {
+        if (boneName == null) {
             return false;
         }
         UUID vehicleId = vehicle.getUUID();
-        boolean destroyedEra = false;
+        // [RVP] 2026-09-27 分轨判定（用户定版）：ERA 按模块前伤害（旧平衡，装甲车 ERA 门槛
+        // 按裸弹伤设计）；其余模块（雷达/引擎/APS/干扰机等）按实际到骨伤害 finalBoneDamage——
+        // 乘命中倍率、过装甲层后的最终入账值（防弹衣逻辑：大倍率装甲骨上的雷达被小倍率弹
+        // 蹭一下不该打坏）。useFinalDamageForModules=false 时两轨同值（旧语义兼容）。
+        float moduleTriggerDamage = useFinalDamageForModules ? finalBoneDamage : triggerDamage;
+        if (!Float.isFinite(moduleTriggerDamage) || moduleTriggerDamage < 0f) {
+            return false;
+        }
+        // 总门槛：ERA 轨或模块轨任一过 min_damage 即进入逐模块销毁（各模块内再按各自轨判定）
+        boolean anyTrigger = result.shouldTriggerModules(triggerDamage)
+                || (useFinalDamageForModules && result.shouldTriggerModules(moduleTriggerDamage));
+        if (!anyTrigger) {
+            return false;
+        }
         boolean anyDestroyed = false;
+        boolean destroyedEra = false;
+        String destroyedRadarBone = null;
         for (BoneModuleType type : result.modules()) {
+            if (type == BoneModuleType.ENGINE) {
+                // 引擎模块不走单发 min_damage 直毁路径：失效完全由窗口累计伤害跨阈值驱动
+                // （见 accumulateEngineDamage），否则一发过门槛的炮弹会跳过"受损档"直接瘫痪
+                continue;
+            }
+            // 分轨门槛：ERA 用模块前伤害判定；其余模块用实际到骨伤害判定（各自过 min_damage）
+            float gateDamage = type == BoneModuleType.ERA ? triggerDamage : moduleTriggerDamage;
+            if (Float.isFinite(gateDamage) && gateDamage <= result.minTriggerDamage()) {
+                continue;
+            }
             if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
                 anyDestroyed = true;
                 if (type == BoneModuleType.ERA) {
                     destroyedEra = true;
                 }
+                if (type == BoneModuleType.RADAR) {
+                    destroyedRadarBone = boneName;
+                }
+                // [RVP] 部件战果通知：摧毁部件推送给射手（展板下方 60 tick 文案）
+                notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
             }
         }
         if (!anyDestroyed) {
@@ -417,7 +523,81 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float explosionScale = result.explosion() > 0f ? result.explosion() : 1f;
             spawnMchrEraExplosion(serverLevel, hitPoint, explosionScale);
         }
+        if (destroyedRadarBone != null) {
+            // [RVP] 雷达部件：模块失效即强制关闭对应雷达（toggle(false) 清锁定目标）；
+            // 巡检兜底见 RVP_RadarModuleEnforcer，外置中继链经 hasAnyRadarOn 自动断开
+            RVP_RadarModuleEnforcer.forceRadarOff(vehicle, destroyedRadarBone);
+        }
         return true;
+    }
+
+    /**
+     * [RVP] 引擎部件累计段：命中骨配置了 ENGINE 模块时，把本次直击伤害累入
+     * {@link RVP_EngineDamageTable}（每 tick 线性衰减的窗口累计）；累计跨过重损阈值
+     * 且模块仍存活时触发 ENGINE 模块失效（进失效表 → 瘫痪档，可维修恢复）。
+     * 累计值变化随 {@code RVP_EnginePowerHandler} 的档位差分自动同步客户端。
+     */
+    private void accumulateEngineDamage(@Nullable AbstractVehicle vehicle,
+                                        @Nullable HitboxDamageResult result, float triggerDamage,
+                                        @Nullable Entity shooter) {
+        if (vehicle == null || result == null || triggerDamage <= 0f || vehicle.level().isClientSide()) {
+            return;
+        }
+        String boneName = result.hitBoneName();
+        if (boneName == null) {
+            return;
+        }
+        BoneEngineConfig engineConfig = resolveEngineConfig(vehicle, boneName);
+        if (engineConfig == null) {
+            return; // 命中骨未配置引擎部件：不累计
+        }
+        UUID vehicleId = vehicle.getUUID();
+        float accumulated = RVP_EngineDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        boolean moduleAlive = RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE);
+        // [RVP] 引擎部件诊断（/rvpdebug engine on）：每次直击入账的完整数值链——
+        // 入账伤害（分轨后实际到骨值）、累计（无衰减，永久）、阈值、模块存活，写入专有日志
+        // logs/rvp_engine_debug.log（不污染 latest.log），供"累计是裸伤还是实际伤害"的实机对账
+        org.ywzj.rvp.debug.RVP_EngineDebug.log(String.format(
+                "%s(%d) 引擎骨=%s 入账=%.1f 累计=%.1f 受损阈=%.0f 瘫痪阈=%.0f 模块存活=%s",
+                vehicle.getVehicleId(), vehicle.getId(), boneName,
+                triggerDamage, accumulated,
+                engineConfig.thresholdLight(), engineConfig.thresholdHeavy(), moduleAlive));
+        if (!moduleAlive) {
+            return; // 已瘫痪：不再重复通知
+        }
+        // 档位跨越判定：before = 本次累计前值（accumulate 为同步加法，差值即本次伤害）
+        float before = accumulated - triggerDamage;
+        if (accumulated >= engineConfig.thresholdHeavy()) {
+            // 跨过重损阈值：ENGINE 模块失效（瘫痪档），走标准失效广播（面板红框 / dev 队列 / 动画）
+            RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE);
+            syncBoneModuleState(vehicle);
+            // [RVP] 部件战果通知：单发跨两档时只报"摧毁引擎"，不叠报"重创发动机"
+            notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.ENGINE);
+        } else if (before < engineConfig.thresholdLight() && accumulated >= engineConfig.thresholdLight()) {
+            // 跨过受损阈值（功率减半）：向射手报"重创发动机"——一个受损窗期内只报一次
+            // （tryMarkDamagedNotified 首次登记返回 true 即发；累计清零/快修后重新武装）
+            if (RVP_EngineDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
+                notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_ENGINE_DAMAGED, BoneModuleType.ENGINE);
+            }
+        }
+    }
+
+    /**
+     * [RVP] 部件战果通知：摧毁模块/引擎受损时向射手本人推送（命中展板下方 60 tick 文案）。
+     * 射手非玩家（gunner/无人武器站）或被命中载具关闭 {@code hit_indicator_rvp} 时不发
+     * （通知挂靠展板显隐，与展板一致）。
+     */
+    private static void notifyModuleHit(@Nullable Entity shooter, AbstractVehicle vehicle,
+                                        int kind, BoneModuleType type) {
+        if (!(shooter instanceof ServerPlayer player)) {
+            return;
+        }
+        if (!INSTANCE.isHitIndicatorRvpEnabled(vehicle)) {
+            return;
+        }
+        RVP_Network.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> player),
+                S2CModuleHitNotify.create(kind, type.name()));
     }
 
     public String resolveHitboxDisplayName(AbstractVehicle vehicle, @Nullable String boneName) {
@@ -507,6 +687,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable Vec3 hitPos,
             boolean isDirectHit
     ) {
+        destroyModulesByExplosionRadius(vehicle, explosionRadius, hitPos, isDirectHit, null);
+    }
+
+    /**
+     * 爆炸波及骨骼模块百分比破坏（shooter = 爆炸弹射手，可空；用于部件战果通知）。
+     */
+    public static void destroyModulesByExplosionRadius(
+            AbstractVehicle vehicle,
+            float explosionRadius,
+            @Nullable Vec3 hitPos,
+            boolean isDirectHit,
+            @Nullable Entity shooter
+    ) {
         if (vehicle == null || vehicle.level().isClientSide()) {
             return;
         }
@@ -561,6 +754,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 if (type.participatesInBlastDestruction()
                         && RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
                     destroyedAny = true;
+                    // [RVP] 部件战果通知：爆炸波及摧毁的部件同样推送给射手
+                    notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
                 }
             }
             if (destroyedAny) {
@@ -891,9 +1086,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                             ? vehicleExplosionFactorByBoneName.getOrDefault(boneName, vehicleExplosionFactorDefault)
                             : vehicleExplosionFactorDefault;
                 } else {
-                    factor = moduleConfig != null
-                            ? moduleConfig.damageFactor()
-                            : factorByBoneName.getOrDefault(boneName, defaultFactor);
+                    // [RVP] 2026-09-27 倍率统合：直击倍率唯一来源 = hitbox_damage_factor。
+                    // bone_modules 条目不再携带 damage_factor（模块骨的倍率也统一写顶层映射），
+                    // 根除"条目值静默覆盖顶层倍率"的双配置陷阱
+                    factor = factorByBoneName.getOrDefault(boneName, defaultFactor);
                 }
                 List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
                 if (resolvedObbs.isEmpty()) {
@@ -973,15 +1169,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             // 爆炸伤害倍率（2026-09-20 拆分）：与直击 hitbox_damage_factor 同构，独立配置
             float explosionDef = GsonHelper.getAsFloat(obj, "vehicle_vehicle_explosion_damage_factor_default", 1f);
             Map<String, Float> explosionMap = parseFactorMap(obj.get("vehicle_explosion_damage_factor"));
-            // 新配置 bone_modules 优先；旧配置 hitbox_era 兼容为仅 ERA 模块，两者按骨块合并
+            // 新配置 bone_modules：骨骼模块体系（模块/门槛/爆炸档位/设备子对象）；
+            // 命中倍率统一由 hitbox_damage_factor 提供（2026-09-27 统合，条目不再带 damage_factor）
             Map<String, BoneModuleConfig> moduleMap = parseBoneModuleMap(obj.get("bone_modules"));
-            Map<String, BoneModuleConfig> eraCompatMap = parseEraCompatMap(obj.get("hitbox_era"));
-            if (eraCompatMap != null) {
-                if (moduleMap == null) {
-                    moduleMap = new HashMap<>();
-                }
-                moduleMap.putAll(eraCompatMap);
-            }
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             // 装甲：armor_min_damage 与本体 damage_threshold 互斥（同时存在仅装甲生效）；
@@ -996,8 +1186,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     moduleMap = new HashMap<>();
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.ECM_ACTIVE);
-                BoneModuleConfig synthetic = new BoneModuleConfig(1f, Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, vehicleEcmActive, null);
+                BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
+                        null, null, null, null, vehicleEcmActive, null, null);
                 moduleMap.put("__vehicle__", synthetic);
             }
             // 顶层无骨骼的 maintenance（无骨骼快速维修）：同款挂到虚拟骨骼 __vehicle__，始终存活；
@@ -1008,8 +1198,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     moduleMap = new HashMap<>();
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.MAINTENANCE);
-                BoneModuleConfig synthetic = new BoneModuleConfig(1f, Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, null, vehicleMaintenance);
+                BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
+                        null, null, null, null, null, vehicleMaintenance, null);
                 moduleMap.put("__vehicle__", synthetic);
             }
             if ((map == null || map.isEmpty())
@@ -1115,26 +1305,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return map.isEmpty() ? null : map;
         }
 
-        /** 兼容旧配置 {@code hitbox_era}：映射为仅 ERA 模块的骨块。 */
-        private static @Nullable Map<String, BoneModuleConfig> parseEraCompatMap(@Nullable JsonElement element) {
-            if (element == null || !element.isJsonObject()) {
-                return null;
-            }
-            JsonObject obj = element.getAsJsonObject();
-            Map<String, BoneModuleConfig> map = new HashMap<>();
-            for (var entry : obj.entrySet()) {
-                String key = normalizeBone(entry.getKey());
-                if (key == null) {
-                    continue;
-                }
-                BoneModuleConfig config = BoneModuleConfig.parseEraCompat(entry.getValue());
-                if (config != null) {
-                    map.put(key, config);
-                }
-            }
-            return map.isEmpty() ? null : map;
-        }
-
         private static @Nullable String normalizeBone(@Nullable String raw) {
             if (raw == null) {
                 return null;
@@ -1199,7 +1369,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * 一个骨块可挂多个模块（如 {@code ["era","jammer"]} 叠加），各模块独立失效。
      */
     private record BoneModuleConfig(
-            float damageFactor,
             float minTriggerDamage,
             float explosion,
             Set<BoneModuleType> modules,
@@ -1208,19 +1377,23 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable BoneDircmConfig dircm,
             @Nullable BoneEcmPassiveConfig ecmPassive,
             @Nullable BoneEcmActiveConfig ecmActive,
-            @Nullable BoneMaintenanceConfig maintenance
+            @Nullable BoneMaintenanceConfig maintenance,
+            @Nullable BoneEngineConfig engine
     ) {
         boolean hasModules() {
             return modules != null && !modules.isEmpty();
         }
 
-        /** 新配置 {@code bone_modules} 条目：显式 modules 数组，缺省视为 [ERA]。 */
+        /**
+         * 新配置 {@code bone_modules} 条目：模块集合 + 失效门槛 + ERA 爆炸档位 + 设备子对象。
+         * ★命中倍率不在条目内（2026-09-27 统合）——统一由顶层 {@code hitbox_damage_factor} 提供；
+         * 显式 modules 数组缺省视为 [ERA]（兼容纯爆反骨简写）。
+         */
         static @Nullable BoneModuleConfig parse(@Nullable JsonElement element) {
             if (element == null || !element.isJsonObject()) {
                 return null;
             }
             JsonObject obj = element.getAsJsonObject();
-            float damageFactor = GsonHelper.getAsFloat(obj, "damage_factor", 1f);
             float minTriggerDamage = parseMinTriggerDamage(obj);
             float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
             Set<BoneModuleType> modules = parseModules(obj.get("modules"));
@@ -1234,43 +1407,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if (!Float.isFinite(explosion) || explosion < 0f) {
                 explosion = 0f;
             }
-            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules,
+            return new BoneModuleConfig(minTriggerDamage, explosion, modules,
                     BoneJammerConfig.parse(obj.get("jammer")), BoneApsConfig.parse(obj.get("aps")),
                     BoneDircmConfig.parse(obj.get("dircm")),
                     BoneEcmPassiveConfig.parse(obj.get("ecm_passive")),
                     BoneEcmActiveConfig.parse(obj.get("ecm_active")),
-                    BoneMaintenanceConfig.parse(obj.get("maintenance")));
-        }
-
-        /** 兼容旧配置 {@code hitbox_era} 条目：始终仅 ERA 模块。 */
-        static @Nullable BoneModuleConfig parseEraCompat(@Nullable JsonElement element) {
-            if (element == null) {
-                return null;
-            }
-            if (element.isJsonPrimitive()) {
-                Optional<Float> factor = VehicleHitboxConfig.tryFloat(element);
-                return factor.map(value -> {
-                    Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
-                    modules.add(BoneModuleType.ERA);
-                    return new BoneModuleConfig(Math.max(0f, value), Float.POSITIVE_INFINITY, 0f, modules, null, null, null, null, null, null);
-                }).orElse(null);
-            }
-            if (!element.isJsonObject()) {
-                return null;
-            }
-            JsonObject obj = element.getAsJsonObject();
-            float damageFactor = GsonHelper.getAsFloat(obj, "damage_factor", 1f);
-            float minTriggerDamage = parseMinTriggerDamage(obj);
-            float explosion = GsonHelper.getAsFloat(obj, "explosion", 0f);
-            if (!Float.isFinite(minTriggerDamage) || minTriggerDamage < 0f) {
-                minTriggerDamage = Float.POSITIVE_INFINITY;
-            }
-            if (!Float.isFinite(explosion) || explosion < 0f) {
-                explosion = 0f;
-            }
-            Set<BoneModuleType> modules = java.util.EnumSet.noneOf(BoneModuleType.class);
-            modules.add(BoneModuleType.ERA);
-            return new BoneModuleConfig(Math.max(0f, damageFactor), minTriggerDamage, explosion, modules, null, null, null, null, null, null);
+                    BoneMaintenanceConfig.parse(obj.get("maintenance")),
+                    BoneEngineConfig.parse(obj.get("engine")));
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */

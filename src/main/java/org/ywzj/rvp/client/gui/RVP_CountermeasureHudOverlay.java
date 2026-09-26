@@ -55,7 +55,10 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         boolean hasEcm = isEcmSeatAllowed(vehicle, seatIndex) && isEcmAvailable(vehicle);
         // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
         RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
-        if (!hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null) {
+        // 地面载具速度行始终显示（用户 2026-09-27），故地面载具不因"无干扰物/ECM/维修"而跳过渲染
+        boolean groundVehicle = !(vehicle instanceof RotaryWingVehicle)
+                && !(vehicle instanceof FixedWingVehicle);
+        if (!groundVehicle && !hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null) {
             return;
         }
         var font = Minecraft.getInstance().font;
@@ -97,8 +100,12 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
             }
         } else {
-            // 地面载具：ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
+            // 地面载具：速度行置顶（用户 2026-09-27），其后 ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
             int y = centerY - 4;
+            // [RVP] 速度行（仅地面载具）：前进正 KPH / 倒车负 KPH（水平速度在本体前向上的投影，
+            // tick/s → km/h），样式对齐干扰物行（绿字带阴影）
+            drawSpeedRow(guiGraphics, font, vehicle, leftX, y);
+            y += 12;
             if (hasFlare) {
                 drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
                         state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
@@ -123,6 +130,34 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
             }
         }
+    }
+
+    /**
+     * [RVP] 绘制速度行（2026-09-27 用户需求，仅地面载具）：显示当前水平速度，
+     * 单位 KPH，前进为正、倒车为负（向下取整）；数值 = 载具水平速度在本体前向单位向量上
+     * 的投影（格/tick）× 20 tick/s × 3.6 / 1（1 格 = 1 米）→ km/h。样式对齐干扰物行
+     * （绿字带阴影；无键位段、无数量段，纯读数）。
+     */
+    private static void drawSpeedRow(GuiGraphics guiGraphics, Font font, AbstractVehicle vehicle, int x, int y) {
+        var velocity = vehicle.getDeltaMovement();
+        double horizontalSq = velocity.x * velocity.x + velocity.z * velocity.z;
+        int kph = 0;
+        if (horizontalSq > 1.0E-6) {
+            var forward = vehicle.getLookAngle();
+            double horizontalLen = Math.sqrt(horizontalSq);
+            // 前向水平单位向量（抑制俯仰分量，倒车判定=速度与前向水平投影反向）
+            double fx = forward.x, fz = forward.z;
+            double forwardLenSq = fx * fx + fz * fz;
+            double proj;
+            if (forwardLenSq < 1.0E-6) {
+                proj = 0;
+            } else {
+                proj = (velocity.x * fx + velocity.z * fz) / Math.sqrt(forwardLenSq);
+            }
+            // 格/tick → km/h：×20 tick/s × 3.6 km/h per m/s（1 格 = 1 米）
+            kph = (int) Math.floor(proj * 20.0 * 3.6 + (proj >= 0 ? 1.0E-3 : -1.0E-3));
+        }
+        guiGraphics.drawString(font, "速度: " + kph + " KPH", x, y, Color.GREEN);
     }
 
     /** 是否装备主动ECM（任一骨块存活）。 */

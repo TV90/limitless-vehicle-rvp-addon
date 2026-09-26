@@ -20,8 +20,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 16：新增 SACLOS STABLE 模式 PIP 辅助请求 + C2SSetRepairOrder（辅助设备面板维修顺序上行）；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "16";
+    /** 协议 17：新增 S2CEngineDamageState（引擎部件档位同步，RADAR/ENGINE 骨骼部件）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "17";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -331,6 +331,20 @@ public class RVP_Network {
                 .encoder(C2SSetRepairOrder::encode)
                 .decoder(C2SSetRepairOrder::decode)
                 .consumerMainThread(C2SSetRepairOrder::handle)
+                .add();
+        // [RVP] 引擎部件档位同步（S2C，协议 17）：受损/瘫痪档差分推送，辅助设备面板 ENGINE 栏目消费；
+        //       瘫痪档另经 S2CBoneModuleState 失效广播（面板红框 / dev 维修队列）
+        CHANNEL.messageBuilder(S2CEngineDamageState.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CEngineDamageState::encode)
+                .decoder(S2CEngineDamageState::decode)
+                .consumerMainThread(S2CEngineDamageState::handle)
+                .add();
+        // [RVP] 部件战果通知（S2C，协议 17）：摧毁部件/重创发动机推送给射手本人，
+        //       命中展板下方显示 60 tick 文案（"摧毁光电干扰机"/"重创发动机"等）
+        CHANNEL.messageBuilder(S2CModuleHitNotify.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CModuleHitNotify::encode)
+                .decoder(S2CModuleHitNotify::decode)
+                .consumerMainThread(S2CModuleHitNotify::handle)
                 .add();
     }
 }

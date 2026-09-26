@@ -1,0 +1,170 @@
+<!doctype html>
+<!--
+  RVP 辅助设备面板 示例4：M1A2SEP 组合布局 + 命中记录（扩展版）
+  在示例2基础上底部增加"最近受击"面板：
+  数据来源（正式实现）：S2CRvpHitIndicator → RVP_ClientHitIndicatorState.HitEvent
+    （damage / boneDisplayName / ammoNameKey / incomingDir / explosionRadius / hitTime / accumulatedDamage）
+  载具配置同示例2（m1a2sep.json），数值为演示硬编码。
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
+        .equip-screen .navbar { min-height: 38px; padding: 6px 10px; flex: 0 0 auto; align-items: center; display: flex; justify-content: space-between; }
+        .equip-screen .navbar-brand, .equip-screen .card-header, .equip-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
+        .equip-screen .navbar-brand { font-size: 18px; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .hp-text { font-size: 12px; color: var(--ore-ink-muted); }
+        .hp-bar { width: 150px; height: 10px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hp-fill { height: 100%; background: var(--ore-success); }
+        .equip-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
+
+        .equip-workspace { display: flex; flex-direction: column; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .top-row { display: flex; gap: 7px; min-height: 0; flex: 1 1 auto; }
+        .skeleton-panel { flex: 0 0 40%; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .device-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
+        .hitlog-panel { flex: 0 0 148px; min-height: 0; display: flex; flex-direction: column; }
+        .equip-screen .card-header { min-height: 30px; padding: 8px 9px; font-size: 12px; flex: 0 0 auto; }
+        .equip-screen .card-body { padding: 7px; }
+        .dev-card { display: flex; flex-direction: column; min-height: 0; }
+        .dev-card .card-body { display: flex; flex-direction: column; gap: 6px; }
+
+        .dev-row { display: flex; align-items: center; gap: 8px; min-height: 24px; font-size: 14px; }
+        .dev-dot { width: 10px; height: 10px; flex: 0 0 10px; border: 1px solid #141517; box-sizing: border-box; }
+        .dot-ok { background: var(--ore-success); }
+        .dot-warn { background: var(--ore-warning); }
+        .dev-value { margin-left: auto; flex: 0 0 auto; color: var(--ore-ink-muted); font-size: 12px; }
+        .dev-sub { font-size: 11px; color: var(--ore-ink-muted); padding-left: 18px; line-height: 1.35; }
+        .cellbar { display: flex; gap: 1px; flex: 0 0 auto; }
+        .cell { width: 8px; height: 11px; background: #2c2d30; border: 1px solid #141517; box-sizing: border-box; }
+        .cell.ok { background: var(--ore-success); }
+        .cell.warn { background: var(--ore-warning); }
+        .cell.bad { background: var(--ore-danger); }
+
+        .sector-row { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 18px; }
+        .sector-chip { font-size: 12px; padding: 2px 7px; border: 1px solid var(--ore-edge); background: #33353a; }
+        .sector-chip b { font-weight: normal; }
+        .sector-chip.ok b { color: var(--ore-success); }
+        .sector-chip.bad { border-color: var(--ore-danger); }
+        .sector-chip.bad b { color: var(--ore-danger); }
+
+        /* 命中记录 */
+        .hit-log { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+        .hit-row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 3px 7px; font-size: 13px; background: #33353a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hit-time { flex: 0 0 auto; font-size: 10px; color: var(--ore-ink-muted); }
+        .hit-ammo { flex: 0 0 auto; min-width: 110px; }
+        .hit-arrow { flex: 0 0 auto; color: var(--ore-ink-muted); }
+        .hit-bone { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
+        .hit-badge { flex: 0 0 auto; }
+        .hit-dmg { flex: 0 0 auto; font-size: 13px; }
+    </style>
+</head>
+<body class="ore-theme equip-screen">
+    <nav class="navbar">
+        <div class="navbar-brand">辅助设备 · M1A2SEP</div>
+        <div class="nav-right">
+            <span class="hp-text">车体 1096/1200</span>
+            <div class="hp-bar"><div class="hp-fill" style="width:91%"></div></div>
+            <button class="close-button button button-danger" type="button">X</button>
+        </div>
+    </nav>
+    <main class="equip-workspace">
+        <div class="top-row">
+            <aside class="card card-accent-green skeleton-panel">
+                <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">骨架俯视 · 爆反 5/6 · APS 扇区 3/4</div>
+                <div class="card-body" style="position:relative; flex:1 1 auto; padding:0; background:#252628; overflow:hidden">
+                    <!-- 骨架图同示例2，此处以占位说明代替（预览时可见示例2效果） -->
+                    <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px">
+                        <div style="font-size:14px; color:var(--ore-ink-muted)">骨架俯视图</div>
+                        <div style="font-size:11px; color:var(--ore-ink-muted)">（同示例2：ERA0-5 + APS 四扇区）</div>
+                    </div>
+                </div>
+            </aside>
+            <div class="device-column">
+                <section class="card card-accent-green dev-card" style="flex:1 1 auto">
+                    <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">辅助设备</div>
+                    <div class="card-body">
+                        <div class="dev-row">
+                            <span class="dev-dot dot-warn"></span><span>APS 主动防护</span>
+                            <span class="cellbar">
+                                <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                                <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                                <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                                <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+                            </span>
+                            <span class="dev-value">12/16 · 装填 18s</span>
+                        </div>
+                        <div class="sector-row">
+                            <span class="sector-chip ok">NE <b>4/4</b></span>
+                            <span class="sector-chip ok">NW <b>4/4</b></span>
+                            <span class="sector-chip ok">SW <b>4/4</b></span>
+                            <span class="sector-chip bad">SE <b>失效</b></span>
+                        </div>
+                        <div class="dev-row" style="margin-top:4px">
+                            <span class="dev-dot dot-warn"></span><span>ECM 主动干扰</span>
+                            <span class="dev-value">充能 5s</span>
+                        </div>
+                        <div class="dev-row" style="margin-top:4px">
+                            <span class="dev-dot dot-warn"></span><span>烟幕弹发射器</span>
+                            <span class="cellbar"><span class="cell ok"></span><span class="cell ok"></span><span class="cell"></span><span class="cell"></span></span>
+                            <span class="dev-value">2/4 · 装填 9s</span>
+                        </div>
+                        <div class="dev-row" style="margin-top:4px">
+                            <span class="dev-dot dot-warn"></span><span>爆反装甲 (ERA)</span>
+                            <span class="cellbar">
+                                <span class="cell ok"></span><span class="cell ok"></span><span class="cell bad"></span>
+                                <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                            </span>
+                            <span class="dev-value" style="color:var(--ore-warning)">5/6 失效 1</span>
+                        </div>
+                        <div class="dev-sub">失效：ERA2 车体侧爆反</div>
+                    </div>
+                </section>
+            </div>
+        </div>
+        <!-- 底部：最近受击（S2CRvpHitIndicator / RVP_ClientHitIndicatorState） -->
+        <section class="card card-accent-gold hitlog-panel">
+            <div class="card-header">最近受击</div>
+            <div class="card-body hit-log">
+                <div class="hit-row">
+                    <span class="hit-time">14:02:11</span>
+                    <span class="hit-ammo">APFSDS · M829A2</span>
+                    <span class="hit-arrow">→</span>
+                    <span class="hit-bone">车体侧爆反 (ERA2)</span>
+                    <span class="badge badge-success hit-badge">爆反挡下 · 已失效</span>
+                    <span class="hit-dmg">穿透伤害 0</span>
+                </div>
+                <div class="hit-row">
+                    <span class="hit-time">14:01:47</span>
+                    <span class="hit-ammo">机炮 · 30mm</span>
+                    <span class="hit-arrow">→</span>
+                    <span class="hit-bone">履带</span>
+                    <span class="badge badge-danger hit-badge">受损</span>
+                    <span class="hit-dmg" style="color:var(--ore-danger)">-34</span>
+                </div>
+                <div class="hit-row">
+                    <span class="hit-time">14:01:02</span>
+                    <span class="hit-ammo">破片 · 155mm HE</span>
+                    <span class="hit-arrow">→</span>
+                    <span class="hit-bone">炮塔侧</span>
+                    <span class="badge badge-danger hit-badge">受损</span>
+                    <span class="hit-dmg" style="color:var(--ore-danger)">-12</span>
+                </div>
+                <div class="hit-row">
+                    <span class="hit-time">13:58:30</span>
+                    <span class="hit-ammo">ATGM · LAHAT</span>
+                    <span class="hit-arrow">→</span>
+                    <span class="hit-bone">车体侧爆反 (ERA5)</span>
+                    <span class="badge badge-success hit-badge">爆反挡下</span>
+                    <span class="hit-dmg">穿透伤害 0</span>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

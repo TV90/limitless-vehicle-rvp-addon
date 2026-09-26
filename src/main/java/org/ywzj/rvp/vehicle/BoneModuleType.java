@@ -23,6 +23,13 @@ import java.util.Locale;
  *   <li>{@link #ECM_ACTIVE}：主动电子战——按键触发的持续干扰设备（消费点 {@code RVP_EcmActiveManager}）。</li>
  *   <li>{@link #MAINTENANCE}：快速维修——载具内按键触发的回血 + 模块渐进恢复
  *       （消费点 {@code RVP_MaintenanceRuntimeManager}；缺省挂虚拟骨 {@code __vehicle__}，永不可被击毁）。</li>
+ *   <li>{@link #RADAR}：雷达部件（消费点 {@code RVP_RadarModuleEnforcer}）——模块失效后该骨对应的
+ *       {@code RadarUnit} 被服务端强制 {@code toggle(false)} 关闭（清锁定目标），修好自动开机；
+ *       不参与爆炸百分比破坏（只能直击打坏）。多雷达载具按雷达骨分粒度
+ *       （如 cssa5/ps1sm 的 {@code lock_radar}/{@code scan_radar} 各自独立失效）。</li>
+ *   <li>{@link #ENGINE}：引擎部件（消费点 {@code RVP_EnginePowerHandler}）——窗口内累计直击伤害
+ *       分级削动力：超阈一档功率减半（受损）、超阈二档功率清零（瘫痪，进失效表可维修恢复）；
+ *       不关发动机、不压 POWER（方向机/高低机照常）；两档均可被快修修复。</li>
  * </ul>
  */
 public enum BoneModuleType {
@@ -41,7 +48,20 @@ public enum BoneModuleType {
      * 缺省经 {@code bone_modules} 挂在虚拟骨 {@code __vehicle__}（载具级能力、永不可被击毁）；
      * 绑定实体骨时可被直击打掉——模块失效后快修无法触发，维修能力即告失去。
      */
-    MAINTENANCE;
+    MAINTENANCE,
+    /**
+     * 雷达部件（RADAR）——挂在雷达 PartUnit 的骨名下（骨名 = 雷达部件 id）。失效后由
+     * {@code RVP_RadarModuleEnforcer} 强制关闭对应雷达并堵死三个自动/手动开机点；
+     * 单发直毁路径被跳过（见 {@code tryDestroyBoneModules}），失效与否完全由"被命中"
+     * 即毁的常规判定决定（每骨 min_damage 门槛照常）。
+     */
+    RADAR,
+    /**
+     * 引擎部件（ENGINE）——挂在引擎骨（如 {@code Engine}）名下，带 {@code engine} 子配置
+     * （{@link BoneEngineConfig}）。失效不由单发 min_damage 直毁（消费点跳过），
+     * 而由 {@code RVP_EngineDamageTable} 窗口累计伤害跨过重损阈值触发。
+     */
+    ENGINE;
 
     private static final BoneModuleType[] VALUES = values();
 

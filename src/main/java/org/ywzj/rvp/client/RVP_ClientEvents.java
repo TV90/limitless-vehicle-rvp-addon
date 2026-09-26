@@ -100,6 +100,64 @@ public class RVP_ClientEvents {
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
     private static boolean ywzj_rvp$artilleryFireKeyDown;
+    /** [RVP] 雷达键上升沿检测记忆（上一 tick 是否按下）。 */
+    private static boolean ywzj_rvp$radarKeyDown;
+    /** [RVP] "雷达已损坏"提示上次弹出时间（10 秒节流）。 */
+    private static long ywzj_rvp$radarBrokenNoticeAt;
+
+    /**
+     * [RVP] 雷达骨骼部件（2026-09-27）：雷达损坏时按雷达键（本体 3 键 TOGGLE_RADAR）给
+     * 动作栏提示，并实现损坏车的专用开关语义（用户定版）：
+     * <ul>
+     *   <li>载具存在被击毁（RADAR 模块失效）的雷达时，按键 = <b>把全部未损坏雷达置为开启</b>，
+     *       不翻转——否则本体逐台 flip 会把已修好/开着的雷达关掉，形成"一开一关"循环；</li>
+     *   <li>全部雷达完好时走本体原版逐台翻转，行为不变。</li>
+     * </ul>
+     * 本方法在 ClientTickEvent.END 运行（晚于本体 InputHandler 的按键事件），即在原版
+     * 翻转之后做纠正；客户端 toggle 经 syncRadarPowerStates 自动同步服务端。
+     */
+    private static void tickRadarDestroyNotice(net.minecraft.world.entity.player.Player player) {
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || vehicle.level() == null || !vehicle.level().isClientSide()) {
+            ywzj_rvp$radarKeyDown = false;
+            return;
+        }
+        boolean down = org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.isDown();
+        boolean pressed = down && !ywzj_rvp$radarKeyDown;
+        ywzj_rvp$radarKeyDown = down;
+        if (!pressed) {
+            return;
+        }
+        // 分类：损坏雷达（RADAR 模块失效）/ 完好雷达
+        boolean anyBroken = false;
+        java.util.List<org.ywzj.vehicle.vehicle.part.RadarUnit> workingRadars = new java.util.ArrayList<>();
+        for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
+                if (!org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                        vehicle.getId(), partUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR)) {
+                    anyBroken = true;
+                } else {
+                    workingRadars.add(radarUnit);
+                }
+            }
+        }
+        long now = System.currentTimeMillis();
+        if (!anyBroken) {
+            return; // 全部完好：本体原版逐台翻转语义，RVP 不干预
+        }
+        // 损坏车专用语义：不关闭任何完好雷达，把关闭的完好雷达全部置为开启
+        // （击毁雷达仍会被服务端网关+巡检强制关闭，不受影响）
+        for (org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit : workingRadars) {
+            if (!radarUnit.isOn()) {
+                radarUnit.toggle(true);
+            }
+        }
+        if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
+            ywzj_rvp$radarBrokenNoticeAt = now;
+            player.displayClientMessage(
+                    Component.translatable("message.ywzj_rvp.radar_broken"), true);
+        }
+    }
 
     private record VehicleMarker(int vehicleId, int argb) {}
 
@@ -141,6 +199,13 @@ public class RVP_ClientEvents {
             RVP_TacticalMapCache.processChunkUpdates(mc.level, player.getX(), player.getZ(), 6);
             RVP_TacticalMapCache.uploadDirtyTextures();
         }
+
+        // [RVP] 雷达骨骼部件（2026-09-27）：雷达损坏时按雷达键给出动作栏提示。
+        // 本体 InputHandler 用 InputEvent.Key 事件驱动 TOGGLE_RADAR，不走 consumeClick
+        // 计数——RVP 侧用 isDown 上升沿检测（每 tick 比对），提示 10 秒节流。
+        tickRadarDestroyNotice(player);
+        // [RVP] 引擎部件（2026-09-27）：瘫痪/受损档位变化时给驾驶员动作栏提示（各 10 秒节流）
+        tickEngineDamageNotice(player);
 
         while (RVP_Keys.DEBUG_OVERLAY.consumeClick()) {
             boolean on = org.ywzj.rvp.client.RVP_DebugOverlayState.toggle();
@@ -228,6 +293,14 @@ public class RVP_ClientEvents {
                     if (on) {
                         player.displayClientMessage(
                                 Component.translatable("message.ywzj_rvp.hmd.on"), true);
+                    } else if (lvp.vehicle != null && ywzj_rvp$hasBrokenRadar(lvp.vehicle)) {
+                        // [RVP] HMD 开启失败且本车雷达已被击毁：不再静默，提示损坏（10 秒节流）
+                        long now = System.currentTimeMillis();
+                        if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
+                            ywzj_rvp$radarBrokenNoticeAt = now;
+                            player.displayClientMessage(
+                                    Component.translatable("message.ywzj_rvp.radar_broken"), true);
+                        }
                     }
                 } else if (hmd.toggleEoHmd()) {
                     // [RVP] 光电头瞄：EO 武器站且载具无雷达的载具，5 键进入（雷达优先，无雷达才走此分支）。
@@ -378,6 +451,62 @@ public class RVP_ClientEvents {
      * 这里按实际骑乘状态自愈：玩家骑乘在载具上但 LocalVehiclePlayer 未指向该载具时，
      * 用该载具当前座位重新 toSeat，恢复载具 UI 与相机。
      */
+    /**
+     * [RVP] 本车是否存在 RADAR 模块已失效的雷达骨（HMD 开启失败时的损坏提示判据）。
+     */
+    private static boolean ywzj_rvp$hasBrokenRadar(AbstractVehicle vehicle) {
+        for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit
+                    && !org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                            vehicle.getId(), partUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** [RVP] 引擎提示记忆：上次档位（0 正常/1 受损/2 瘫痪，-1 初始）与上次提示时间。 */
+    private static int ywzj_rvp$engineNoticeStage = -1;
+    private static long ywzj_rvp$engineNoticeAt;
+
+    /**
+     * [RVP] 引擎部件（2026-09-27）：驾驶员驾驶引擎受损/瘫痪的载具时给动作栏提示——
+     * 档位变化即提示（进入受损/进入瘫痪各一次），同档 10 秒节流兜底（防止反复进出
+     * 受损阈值刷屏）。数据源 = S2CEngineDamageState 档位侧表（服务端差分推送）。
+     */
+    private static void tickEngineDamageNotice(net.minecraft.world.entity.player.Player player) {
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || vehicle.level() == null || !vehicle.level().isClientSide()) {
+            ywzj_rvp$engineNoticeStage = -1;
+            return;
+        }
+        // 取本车引擎骨最高档位（0/1/2；无配置 = -1 不提示）
+        int stage = -1;
+        var engineBones = org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
+        if (engineBones != null && !engineBones.isEmpty()) {
+            stage = 0;
+            for (String bone : engineBones.keySet()) {
+                stage = Math.max(stage,
+                        org.ywzj.rvp.client.state.RVP_ClientEngineDamageState.getStage(vehicle.getId(), bone));
+            }
+        }
+        if (stage == ywzj_rvp$engineNoticeStage) {
+            return; // 档位未变化
+        }
+        int prev = ywzj_rvp$engineNoticeStage;
+        ywzj_rvp$engineNoticeStage = stage;
+        if (stage <= 0 || stage <= prev) {
+            return; // 恢复正常不提示；档位下降（受损→瘫痪仍算上升）才提示
+        }
+        long now = System.currentTimeMillis();
+        if (now - ywzj_rvp$engineNoticeAt < 10_000L) {
+            return;
+        }
+        ywzj_rvp$engineNoticeAt = now;
+        player.displayClientMessage(Component.translatable(stage == 2
+                ? "message.ywzj_rvp.engine_disabled" : "message.ywzj_rvp.engine_damaged"), true);
+    }
+
     private static void ywzj_rvp$syncLocalVehiclePlayerSeat() {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         if (lvp == null || lvp.getPlayer() == null) {

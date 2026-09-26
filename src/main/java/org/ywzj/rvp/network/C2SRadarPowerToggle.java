@@ -50,6 +50,12 @@ public class C2SRadarPowerToggle {
             }
             for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
                 if (partUnit instanceof RadarUnit radarUnit && radarUnit.getId().equals(msg.radarId)) {
+                    // [RVP] 雷达骨骼部件：RADAR 模块被击毁的雷达拒绝开机请求（关机请求放行，
+                    // 与服务端 RVP_RadarModuleEnforcer 巡检强制关闭保持一致，防两端状态打架）
+                    if (msg.on && !org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable.isModuleActive(
+                            vehicle.getUUID(), radarUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR)) {
+                        return;
+                    }
                     if (radarUnit.isOn() != msg.on) {
                         radarUnit.toggle(msg.on);
                     }

@@ -9,6 +9,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamHelper;
 import org.ywzj.rvp.countermeasure.RVP_ChaffJamState;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
@@ -19,6 +20,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.C2SRadarPowerToggle;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.vehicle.all.AllConfigs;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -93,6 +95,13 @@ public final class RVP_ClientRadarTickHandler {
         if (vehicle == null || vehicle.level().isClientSide() == false) {
             return;
         }
+        // [RVP] 雷达骨骼部件（2026-09-27）：客户端侧强制关闭——失效雷达骨对应的客户端
+        // RadarUnit.on 若仍为 true（销毁只发生在服务端，单机双端 on 字段分叉），客户端
+        // tickDetect/tickLock 会照常扫描锁定，玩家体感"雷达被摧毁后依旧能用"。
+        // 与服务端 RVP_RadarModuleEnforcer 巡检对称：查客户端失效侧表（S2C 已推送），
+        // on=true 且模块失效 → toggle(false) 压回。此压回同时让 syncRadarPowerStates
+        // 的快照比对捕获到变化，向服务端补发 off 包，两端状态自然合拢。
+        enforceDisabledRadars(vehicle);
         if (vehicle.isDestroyed() || !vehicle.hasPower()) {
             return;
         }
@@ -553,6 +562,22 @@ public final class RVP_ClientRadarTickHandler {
                 continue;
             }
             RVP_Network.CHANNEL.sendToServer(new C2SRadarPowerToggle(vehicle.getId(), radar.getId(), on));
+        }
+    }
+
+    /**
+     * [RVP] 雷达骨骼部件客户端强压（2026-09-27）：客户端雷达 on 与服务端分叉（on 不进
+     * 同步，销毁只发生在服务端），客户端 on=true 的失效雷达仍会 tickDetect/tickLock。
+     * 查客户端失效侧表 {@link RVP_ClientBoneModuleState}，模块失效且客户端 on=true 时
+     * toggle(false) 压回（清客户端锁定目标，与服务端巡检对称）。
+     */
+    private static void enforceDisabledRadars(AbstractVehicle vehicle) {
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof RadarUnit radarUnit && radarUnit.isOn()
+                    && !RVP_ClientBoneModuleState.isModuleActive(
+                            vehicle.getId(), radarUnit.getId(), BoneModuleType.RADAR)) {
+                radarUnit.toggle(false);
+            }
         }
     }
 }

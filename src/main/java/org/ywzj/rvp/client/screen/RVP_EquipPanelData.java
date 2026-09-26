@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.screen;
 
 import net.minecraft.client.resources.language.I18n;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
+import org.ywzj.rvp.client.state.RVP_ClientEngineDamageState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureData;
@@ -9,6 +10,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureSystemData;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
 import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
+import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
@@ -109,6 +111,44 @@ public final class RVP_EquipPanelData {
         List<Row> dircmRows = typeRows(vehicle, orderedBones, modules, dircmDevices, BoneModuleType.DIRCM, entityId);
         if (!dircmRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_dircm"), summary(dircmRows), dircmRows));
+        }
+
+        // [RVP] 雷达部件（2026-09-26）：骨模块含 RADAR 的骨（= 雷达 PartUnit id）；失效即该雷达
+        // 被服务端强制关闭（多雷达载具按雷达骨分粒度）。失效行走辅助设备维修队列（修好自动开机）
+        Map<String, Set<BoneModuleType>> radarBones = bonesOfType(modules, BoneModuleType.RADAR);
+        List<Row> radarRows = typeRows(vehicle, orderedBones, modules, radarBones, BoneModuleType.RADAR, entityId);
+        if (!radarRows.isEmpty()) {
+            out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_radar"), summary(radarRows), radarRows));
+        }
+
+        // [RVP] 引擎部件（2026-09-26）：三档显示——正常 / 受损（功率减半，窗口累计伤害，可自然回落
+        // 或随快修清零）/ 瘫痪（ENGINE 模块失效，功率清零，红框入辅助设备维修队列）。
+        // 受损档读 RVP_ClientEngineDamageState 档位快照（S2CEngineDamageState 差分推送）
+        Map<String, BoneEngineConfig> engineBones =
+                RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
+        if (engineBones != null && !engineBones.isEmpty()) {
+            List<Row> engineRows = new ArrayList<>();
+            index = 1;
+            for (String bone : orderedBones) {
+                BoneEngineConfig config = engineBones.get(bone);
+                if (config == null) {
+                    continue;
+                }
+                boolean destroyed = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE);
+                int stage = RVP_ClientEngineDamageState.getStage(entityId, bone);
+                String extra;
+                if (destroyed) {
+                    extra = I18n.get("gui.ywzj_rvp.equipment.engine_disabled");
+                } else if (stage == 1) {
+                    extra = I18n.get("gui.ywzj_rvp.equipment.engine_damaged");
+                } else {
+                    extra = null;
+                }
+                engineRows.add(new Row(index++, alias(vehicle, bone), !destroyed, bone, QUEUE_DEV, extra));
+            }
+            if (!engineRows.isEmpty()) {
+                out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_engine"), summary(engineRows), engineRows));
+            }
         }
 
         // 干扰物（热焰/箔条/烟雾）：余弹型，无失效语义，不可入维修队列
@@ -229,6 +269,18 @@ public final class RVP_EquipPanelData {
     /** 行别名：命中箱别名优先，未配置别名回退骨名（"只显示别名"规则）。 */
     private static String alias(AbstractVehicle vehicle, String bone) {
         return RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(vehicle, bone);
+    }
+
+    /** 过滤出配置了指定模块类型的骨（骨名 → 原类型集合），供 typeRows 生成栏目行。 */
+    private static Map<String, Set<BoneModuleType>> bonesOfType(Map<String, Set<BoneModuleType>> modules,
+                                                                BoneModuleType type) {
+        Map<String, Set<BoneModuleType>> out = new java.util.HashMap<>();
+        for (Map.Entry<String, Set<BoneModuleType>> entry : modules.entrySet()) {
+            if (entry.getValue().contains(type)) {
+                out.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return out;
     }
 
     /** 双角色骨判定：同骨既有 ERA 又有其它设备模块（捆绑修复、显示标注用）。 */

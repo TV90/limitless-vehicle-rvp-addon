@@ -208,9 +208,12 @@ public final class RVP_VehicleHurtScalingHandler {
             REAPPLY_GUARD.remove(self.getId());
         }
 
-        // 骨骼模块消耗（ERA 等）
+        // 骨骼模块消耗（ERA 等）；shooter = 伤害源攻击者（部件战果通知用）。
+        // [RVP] 2026-09-27 分轨：adjustedAmount 为重放入账伤害（近似实际到骨），predicted 为
+        // 模块前伤害——ERA 按 predicted（旧平衡），其余模块按 adjustedAmount（用户定版）
         if (res != null) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(self, res, predicted);
+            RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(
+                    self, res, predicted, source.getEntity(), true, adjustedAmount);
         }
     }
 

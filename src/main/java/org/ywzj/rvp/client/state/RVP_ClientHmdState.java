@@ -269,7 +269,12 @@ public class RVP_ClientHmdState {
             return;
         }
         for (RadarUnit radarUnit : weaponUnit.getRadarUnits()) {
-            if (isRadarHmsEnabled(radarUnit) && !radarUnit.isOn()) {
+            if (isRadarHmsEnabled(radarUnit) && !radarUnit.isOn()
+                    // [RVP] 雷达骨骼部件：RADAR 模块被击毁的雷达不接受 HMD 自动开机
+                    // （骨名 = 雷达部件 id；客户端查 RVP_ClientBoneModuleState 失效侧表）
+                    && org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                            LocalVehiclePlayer.instance.vehicle.getId(), radarUnit.getId(),
+                            org.ywzj.rvp.vehicle.BoneModuleType.RADAR)) {
                 radarUnit.toggle(true);
             }
         }

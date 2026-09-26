@@ -1,0 +1,202 @@
+<!doctype html>
+<!--
+  RVP 辅助设备面板 示例2：M1A2SEP 组合布局（重点演示 APS 四扇区）
+  数据来源：limitless_vehicle/rvp/data/rvp/vehicles/m1a2sep.json
+    - APS：aps_radar_ne/nw/se/sw 四传感器（facing_yaw 45/-45/135/-135，scan_fov 120，ammo_max 4，
+      detect 16 / intercept 8 / reload_one_tick 600），发射器 aps_l / aps_r（挂 turret）
+    - ERA：车体侧爆反 ERA0-5（min_damage 100 / explosion 2）
+    - ECM 主动：ecm_bone（ammo_jam_radius 250）
+    - 烟幕弹：smoke total 4 / per_round 2 / burst 2 / reload 250t（launcher_parts: turret_smoke_grenade）
+  演示状态：SE 扇区传感器被毁（失去该扇区拦截）、全车弹药 12/16 且 SW 扇区装填中、ECM 充能、烟雾 2/4、ERA2 失效。
+-->
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="aui-font-mode" content="web">
+    <meta name="aui-viewport" content="mode=browser">
+    <link rel="stylesheet" href="ore.css">
+    <style>
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+        .equip-screen { color: var(--ore-ink); background: var(--ore-canvas); display: flex; flex-direction: column; font-family: OreRegular, "Microsoft YaHei"; }
+        .equip-screen .navbar { min-height: 38px; padding: 6px 10px; flex: 0 0 auto; align-items: center; display: flex; justify-content: space-between; }
+        .equip-screen .navbar-brand, .equip-screen .card-header, .equip-screen .button { font-family: OreDisplay, "Microsoft YaHei"; }
+        .equip-screen .navbar-brand { font-size: 18px; }
+        .nav-right { display: flex; align-items: center; gap: 10px; }
+        .hp-text { font-size: 12px; color: var(--ore-ink-muted); }
+        .hp-bar { width: 150px; height: 10px; background: #26272a; border: 1px solid var(--ore-edge); box-sizing: border-box; }
+        .hp-fill { height: 100%; background: var(--ore-success); }
+        .equip-screen .close-button { width: 30px; height: 26px; min-height: 26px; padding: 3px 7px 7px; font-size: 14px; line-height: 1; flex: 0 0 30px; }
+
+        .equip-workspace { display: flex; gap: 7px; padding: 7px; min-height: 0; flex: 1 1 auto; }
+        .skeleton-panel { flex: 0 0 44%; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .device-column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
+        .equip-screen .card-header { min-height: 30px; padding: 8px 9px; font-size: 12px; flex: 0 0 auto; }
+        .equip-screen .card-body { padding: 7px; }
+        .dev-card { display: flex; flex-direction: column; min-height: 0; }
+        .dev-card .card-body { display: flex; flex-direction: column; gap: 6px; }
+
+        .dev-row { display: flex; align-items: center; gap: 8px; min-height: 26px; font-size: 15px; }
+        .dev-dot { width: 10px; height: 10px; flex: 0 0 10px; border: 1px solid #141517; box-sizing: border-box; }
+        .dot-ok { background: var(--ore-success); }
+        .dot-warn { background: var(--ore-warning); }
+        .dot-bad { background: var(--ore-danger); }
+        .dev-value { margin-left: auto; flex: 0 0 auto; color: var(--ore-ink-muted); font-size: 13px; }
+        .dev-sub { font-size: 11px; color: var(--ore-ink-muted); padding-left: 18px; line-height: 1.35; }
+        .cellbar { display: flex; gap: 1px; flex: 0 0 auto; }
+        .cell { width: 9px; height: 12px; background: #2c2d30; border: 1px solid #141517; box-sizing: border-box; }
+        .cell.ok { background: var(--ore-success); }
+        .cell.warn { background: var(--ore-warning); }
+        .cell.bad { background: var(--ore-danger); }
+
+        /* APS 扇区芯片 */
+        .sector-row { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 18px; }
+        .sector-chip { font-size: 12px; padding: 2px 7px; border: 1px solid var(--ore-edge); background: #33353a; color: var(--ore-ink); }
+        .sector-chip b { font-weight: normal; }
+        .sector-chip.ok b { color: var(--ore-success); }
+        .sector-chip.warn { border-color: var(--ore-warning); }
+        .sector-chip.warn b { color: var(--ore-warning); }
+        .sector-chip.bad { border-color: var(--ore-danger); }
+        .sector-chip.bad b { color: var(--ore-danger); }
+
+        .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .part-chip { font-size: 12px; padding: 3px 7px; border: 1px solid var(--ore-edge); background: #33353a; color: var(--ore-ink); }
+        .part-chip b { font-weight: normal; }
+        .part-chip.ok b { color: var(--ore-success); }
+        .part-chip.warn b { color: var(--ore-warning); }
+
+        /* 骨架俯视图 */
+        .skeleton-stage-wrap { position: relative; flex: 1 1 auto; background: #252628; border: 2px solid #56585b; box-shadow: inset 3px 3px #222325, inset -3px -3px #444649; overflow: hidden; }
+        .skeleton-stage { position: absolute; left: 50%; top: 50%; width: 360px; height: 480px; margin: -240px 0 0 -180px; }
+        .track { position: absolute; background: #2e2f33; border: 2px solid #45474c; box-sizing: border-box; }
+        .hull { position: absolute; background: #3b3d42; border: 2px solid #55575c; box-sizing: border-box; }
+        .turret-box { position: absolute; background: #43454b; border: 2px solid #5d5f65; box-sizing: border-box; }
+        .barrel { position: absolute; background: #4a4c52; border: 1px solid #5d5f65; box-sizing: border-box; }
+        .era { position: absolute; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-success); opacity: 0.92; }
+        .era.dead { background: var(--ore-danger); opacity: 0.45; }
+        /* APS 传感器芯片与扇区锥（锥=朝向示意；正式版按 facing_yaw/scan_fov 由 Java 预计算） */
+        .aps-chip { position: absolute; width: 14px; height: 14px; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-blue); }
+        .aps-chip.dead { background: var(--ore-danger); opacity: 0.5; }
+        .launcher-chip { position: absolute; width: 12px; height: 12px; box-sizing: border-box; border: 1px solid #141517; background: var(--ore-gold); }
+        .smoke-chip { position: absolute; width: 8px; height: 8px; box-sizing: border-box; border: 1px solid #141517; background: #9aa0a8; }
+        .cone { position: absolute; width: 0; height: 0; border-left: 52px solid transparent; border-right: 52px solid transparent; border-bottom: 92px solid rgba(105,173,69,0.16); }
+        .sk-label { position: absolute; font-size: 10px; color: var(--ore-ink-muted); }
+        .sk-legend { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 12px; font-size: 10px; color: var(--ore-ink-muted); }
+        .sk-legend i { display: inline-block; width: 9px; height: 9px; border: 1px solid #141517; box-sizing: border-box; vertical-align: -1px; margin-right: 3px; }
+    </style>
+</head>
+<body class="ore-theme equip-screen">
+    <nav class="navbar">
+        <div class="navbar-brand">辅助设备 · M1A2SEP</div>
+        <div class="nav-right">
+            <span class="hp-text">车体 1096/1200</span>
+            <div class="hp-bar"><div class="hp-fill" style="width:91%"></div></div>
+            <button class="close-button button button-danger" type="button">X</button>
+        </div>
+    </nav>
+    <main class="equip-workspace">
+        <!-- 左：骨架俯视图（ERA + APS 四扇区） -->
+        <aside class="card card-accent-green skeleton-panel">
+            <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">骨架俯视 · 爆反 5/6 · APS 扇区 3/4</div>
+            <div class="card-body skeleton-stage-wrap">
+                <div class="skeleton-stage">
+                    <div class="sk-label" style="left:158px; top:6px">▲ 车首</div>
+                    <!-- 履带 / 车体 -->
+                    <div class="track" style="left:74px;  top:70px; width:30px; height:340px"></div>
+                    <div class="track" style="left:256px; top:70px; width:30px; height:340px"></div>
+                    <div class="hull"  style="left:104px; top:70px; width:152px; height:340px"></div>
+                    <!-- APS 扇区锥（apex 在雷达芯片，按 facing_yaw ±45/±135 旋转示意） -->
+                    <div class="cone" style="left:79px;  top:-19px; transform:rotate(-45deg);  transform-origin:50% 100%"></div>
+                    <div class="cone" style="left:229px; top:-19px; transform:rotate(45deg);   transform-origin:50% 100%"></div>
+                    <div class="cone" style="left:79px;  top:277px; transform:rotate(-135deg); transform-origin:50% 100%"></div>
+                    <!-- APS 传感器（NE/NW/SW 在位，SE 被毁） -->
+                    <div class="aps-chip"      style="left:107px; top:75px"></div>
+                    <div class="aps-chip"      style="left:239px; top:75px"></div>
+                    <div class="aps-chip"      style="left:107px; top:391px"></div>
+                    <div class="aps-chip dead" style="left:239px; top:391px"></div>
+                    <div class="sk-label" style="left:256px; top:410px">SE 损毁</div>
+                    <!-- 车体侧爆反 ERA0-5 -->
+                    <div class="era" style="left:90px;  top:150px; width:14px; height:44px"></div>
+                    <div class="era dead" style="left:90px;  top:250px; width:14px; height:44px"></div>
+                    <div class="era"      style="left:90px;  top:350px; width:14px; height:44px"></div>
+                    <div class="era" style="left:256px; top:150px; width:14px; height:44px"></div>
+                    <div class="era" style="left:256px; top:250px; width:14px; height:44px"></div>
+                    <div class="era" style="left:256px; top:350px; width:14px; height:44px"></div>
+                    <!-- 炮塔 / 主炮 / APS 发射器 / 烟幕弹发射器 -->
+                    <div class="barrel"     style="left:172px; top:138px; width:16px; height:52px"></div>
+                    <div class="turret-box" style="left:136px; top:190px; width:88px; height:120px"></div>
+                    <div class="launcher-chip" style="left:124px; top:244px"></div>
+                    <div class="launcher-chip" style="left:224px; top:244px"></div>
+                    <div class="smoke-chip" style="left:142px; top:296px"></div>
+                    <div class="smoke-chip" style="left:202px; top:296px"></div>
+                    <!-- 分组标签 / 图例 -->
+                    <div class="sk-label" style="left:8px;   top:236px">车体侧爆反</div>
+                    <div class="sk-label" style="left:236px; top:196px">炮塔</div>
+                    <div class="sk-legend">
+                        <span><i style="background:var(--ore-success)"></i>爆反完好</span>
+                        <span><i style="background:var(--ore-danger);opacity:.5"></i>失效</span>
+                        <span><i style="background:var(--ore-blue)"></i>APS雷达</span>
+                        <span><i style="background:var(--ore-gold)"></i>APS发射器</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        <!-- 右：部件状态 + 设备列表 -->
+        <div class="device-column">
+            <section class="card card-accent-gold dev-card" style="flex:0 0 auto">
+                <div class="card-header">部件状态</div>
+                <div class="card-body">
+                    <div class="chip-row">
+                        <span class="part-chip ok">炮塔 <b>100%</b></span>
+                        <span class="part-chip ok">武器站 <b>100%</b></span>
+                        <span class="part-chip ok">发动机 <b>92%</b></span>
+                        <span class="part-chip warn">履带 <b>78%</b></span>
+                    </div>
+                </div>
+            </section>
+            <section class="card card-accent-green dev-card" style="flex:1 1 auto">
+                <div class="card-header" style="background:#1e3a2e; border-left:3px solid #4caf50">辅助设备</div>
+                <div class="card-body">
+                    <div class="dev-row">
+                        <span class="dev-dot dot-warn"></span><span>APS 主动防护</span>
+                        <span class="cellbar">
+                            <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                            <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                            <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                            <span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="cell"></span>
+                        </span>
+                        <span class="dev-value">12/16 · 装填 18s</span>
+                    </div>
+                    <div class="sector-row">
+                        <span class="sector-chip ok">NE <b>4/4</b></span>
+                        <span class="sector-chip ok">NW <b>4/4</b></span>
+                        <span class="sector-chip warn">SW <b>3/4 装填</b></span>
+                        <span class="sector-chip bad">SE <b>失效</b></span>
+                    </div>
+                    <div class="dev-sub">探测 16 格 · 拦截 8 格 · SE 传感器损毁（该扇区失去拦截）</div>
+                    <div class="dev-row" style="margin-top:4px">
+                        <span class="dev-dot dot-warn"></span><span>ECM 主动干扰</span>
+                        <span class="badge badge-warning">充能 5s</span>
+                        <span class="dev-value">就绪后可手动触发</span>
+                    </div>
+                    <div class="dev-sub">对弹药干扰半径 250 格</div>
+                    <div class="dev-row" style="margin-top:4px">
+                        <span class="dev-dot dot-warn"></span><span>烟幕弹发射器</span>
+                        <span class="cellbar"><span class="cell ok"></span><span class="cell ok"></span><span class="cell"></span><span class="cell"></span></span>
+                        <span class="dev-value">2/4 · 装填 9s</span>
+                    </div>
+                    <div class="dev-sub">每轮 2 发 · 连射 2 轮</div>
+                    <div class="dev-row" style="margin-top:4px">
+                        <span class="dev-dot dot-warn"></span><span>爆反装甲 (ERA)</span>
+                        <span class="cellbar">
+                            <span class="cell ok"></span><span class="cell ok"></span><span class="cell bad"></span>
+                            <span class="cell ok"></span><span class="cell ok"></span><span class="cell ok"></span>
+                        </span>
+                        <span class="dev-value" style="color:var(--ore-warning)">5/6 失效 1</span>
+                    </div>
+                    <div class="dev-sub">失效：ERA2 车体侧爆反</div>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

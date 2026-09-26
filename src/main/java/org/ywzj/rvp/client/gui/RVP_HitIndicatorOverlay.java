@@ -37,6 +37,7 @@ import org.joml.Vector4f;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientHitIndicatorState;
+import org.ywzj.rvp.client.state.RVP_ClientHitNotifyState;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplay;
@@ -211,6 +212,55 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         // 按 RenderType 分桶、文字缓冲排在填充缓冲之后，而画在展板底色之上。
         guiGraphics.flush();
         renderPanel(guiGraphics, mc, partialTick);
+        // [RVP] 部件战果通知（2026-09-27）：展板正下方渲染"摧毁XX/重创发动机"（每条 60 tick）
+        drawModuleNotifications(guiGraphics, mc);
+    }
+
+    /** 展板矩形（GUI 坐标）{x0, y0, x1, y1}：与 renderPanel 共用唯一几何实现。 */
+    private static int[] panelRect(Minecraft mc) {
+        var window = mc.getWindow();
+        double guiScale = window.getGuiScale();
+        int guiW = window.getGuiScaledWidth();
+        int panelW = Math.max(60, (int) Math.round(window.getScreenWidth() * PANEL_W_FRAC / guiScale));
+        int panelH = Math.max(40, (int) Math.round(window.getScreenHeight() * PANEL_H_FRAC / guiScale));
+        int margin = Math.max(2, (int) (MARGIN_PX / guiScale));
+        int x0 = guiW - margin - panelW;
+        return new int[]{x0, margin, x0 + panelW, margin + panelH};
+    }
+
+    /**
+     * [RVP] 部件战果通知渲染（2026-09-27 用户定版改版）：文案绘制在<b>展板框内底部</b>
+     * （展板已有底色，不再叠半透明底条），每条 60 tick，摧毁红/受损橙沿用展板伤害配色。
+     * 仅在展板活动期间显示（通知由命中触发，生命周期与展板一致）。
+     */
+    private static void drawModuleNotifications(GuiGraphics gg, Minecraft mc) {
+        long now = System.currentTimeMillis();
+        List<RVP_ClientHitNotifyState.Notify> active = RVP_ClientHitNotifyState.active(now);
+        if (active.isEmpty()) {
+            return;
+        }
+        var window = mc.getWindow();
+        double guiScale = window.getGuiScale();
+        int[] rect = panelRect(mc);
+        int centerX = (rect[0] + rect[2]) / 2;
+        float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
+        int lineH = (int) Math.ceil(9 * textScale);
+        int lineGap = (int) (2 / guiScale);
+        // 展板框内底部起排（底边留 2px 内边距），自下而上最多画到框顶
+        int bottomY = rect[3] - (int) (2 / guiScale);
+        for (int i = active.size() - 1; i >= 0; i--) {
+            RVP_ClientHitNotifyState.Notify n = active.get(i);
+            int top = bottomY - lineH;
+            if (top < rect[1]) {
+                break; // 超出框顶：更早的不再画
+            }
+            gg.pose().pushPose();
+            gg.pose().translate(centerX, top, 0);
+            gg.pose().scale(textScale, textScale, 1.0F);
+            gg.drawCenteredString(mc.font, Component.literal(n.text()), 0, 0, n.color());
+            gg.pose().popPose();
+            bottomY = top - lineGap;
+        }
     }
 
     private static void renderPanel(GuiGraphics gg, Minecraft mc, float partialTick) {
@@ -247,13 +297,13 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
 
         // 展板尺寸按屏幕实际分辨率（像素）固定比例计算，再除以 guiScale 转成 GUI 坐标：
         // 无论“界面尺寸”怎么缩放，展板/模型的物理大小都不变，只随分辨率自适应。
-        int panelW = Math.max(60, (int) Math.round(window.getScreenWidth() * PANEL_W_FRAC / guiScale));
-        int panelH = Math.max(40, (int) Math.round(window.getScreenHeight() * PANEL_H_FRAC / guiScale));
-        int margin = Math.max(2, (int) (MARGIN_PX / guiScale));
-        int x0 = guiW - margin - panelW;
-        int y0 = margin;
-        int x1 = x0 + panelW;
-        int y1 = y0 + panelH;
+        int[] rect = panelRect(mc);
+        int panelW = rect[2] - rect[0];
+        int panelH = rect[3] - rect[1];
+        int x0 = rect[0];
+        int y0 = rect[1];
+        int x1 = rect[2];
+        int y1 = rect[3];
 
         // 展示框裁剪：框内正常渲染，任何超出面板的内容（模型、弹体、曳光、红线）一律裁掉。
         // GuiGraphics.enableScissor 会把 GUI 坐标换算成物理像素，3D 模型缓冲提交时同样生效。

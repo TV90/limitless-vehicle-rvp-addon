@@ -1,5 +1,6 @@
 package org.ywzj.rvp.client.screen;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraftforge.api.distmarker.Dist;
@@ -20,13 +21,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 辅助设备面板（AUI ApricityScreen，O 键打开，布局=2026-09-25 v4 定稿）：
  * <ul>
- *   <li>左上俯视图：HTML 放占位锚点，{@link RVP_EquipSkeletonRenderer} 在 scissor 内
- *       原生绘制车体+骨模块块（参考本体/RVP 观瞄俯视图的投影设计，坐标换算用项目唯一
- *       合法公式 {@code getBoundingClientRect × renderScale}）；</li>
+ *   <li>左上俯视图：HTML 放占位锚点，{@link RVP_EquipSkeletonRenderer} 在 AUI
+ *       {@code super.render} 之后的原生 scissor 内每帧绘制（本体观瞄 OBB 俯视图同款画法：
+ *       实时姿态+炮塔朝上；坐标换算用项目唯一合法公式
+ *       {@code getBoundingClientRect × renderScale}，深度抬 z=400 盖过 AUI 文档元素深度
+ *       ——此前三次"原生不可见"的根因即 GuiGraphics.fill 的 z=0 被 AUI 深度剔除）；</li>
  *   <li>左下快速维修顺序设置：爆反/辅助设备双队列（自绘下拉切换，规避 AUI 对原生
  *       {@code <select>} 支持未知），点击右侧失效行入队、✕ 移除；编辑即经
  *       {@link C2SSetRepairOrder} 上行，触发维修仍由玩家用快修工具完成（无开始按钮）；
@@ -50,7 +54,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private Element panelTitle;
     private Element hpText;
     private Element hpFill;
-    /** 俯视图画布：注入绝对定位 div 的容器（HTML 渲染路径，弃用 scissor 原生绘制）。 */
+    /** 俯视图画布锚点：原生 scissor 绘制区域由它的布局矩形 × renderScale 换算。 */
     private Element skeletonCanvas;
     private Element skeletonHeaderText;
     private Element categoryScroll;
@@ -74,6 +78,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
      *  requestStyleRecalc 只重算样式不触发重绘；置位后在下一帧走一次程序化 resize
      *  （窗口缩放同款完整重布局+重绘路径）。 */
     private boolean pendingRepaint;
+    /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，俯视图逐帧绘制共用（OBB/失效态逐帧现读）。 */
+    private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
 
     public RVP_EquipPanelScreen(AbstractVehicle vehicle) {
         super(TEMPLATE);
@@ -133,11 +139,13 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             resize(minecraft, width, height);
         }
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        // 节流刷新动态状态（俯视图线框/栏目行失效态/血量/队列），签名未变化时零 DOM 操作
+        // 节流刷新动态状态（栏目行失效态/血量/队列），签名未变化时零 DOM 操作
         if (++refreshCounter >= 10) {
             refreshCounter = 0;
             refreshDynamic();
         }
+        // 俯视图：AUI 文档上屏后的原生 scissor 绘制（每帧重绘，实时姿态）
+        renderSkeletonNative(guiGraphics, partialTick);
     }
 
     @Override
@@ -169,18 +177,18 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             boolean visible = RVP_EquipPanelData.hasMaintenance(vehicle);
             maintPanel.setClassName("card card-accent-gold maint-panel" + (visible ? "" : " hidden"));
         }
-        // init 每次都会重建 Document：俯视图本轮先尝试注入（画布未布局好会在下轮刷新自动重试）
-        rebuildSkeleton();
+        // init 每次都会重建 Document：分类表先刷新（俯视图逐帧原生绘制消费）
+        cachedModules = RVP_EquipPanelData.boneModules(vehicle);
         rebuildCategories();
         rebuildQueues();
         applyQueueVisibility();
         lastDynamicSignature = buildDynamicSignature();
     }
 
-    /** 节流刷新：俯视图每轮都重建（实时 OBB 位置，炮塔/车体姿态变化 0.5s 内跟上）；
-     *  其余区域按内容签名门控（未变化时重建会重置滚动/悬停态 → 高频抖动）。 */
+    /** 节流刷新：分类表/血量/栏目/队列按内容签名门控（未变化时重建会重置滚动/悬停态 → 高频抖动）；
+     *  俯视图已改原生每帧重绘，不再走 DOM。 */
     private void refreshDynamic() {
-        rebuildSkeleton();
+        cachedModules = RVP_EquipPanelData.boneModules(vehicle);
         String signature = buildDynamicSignature();
         if (signature.equals(lastDynamicSignature)) {
             return;
@@ -206,6 +214,15 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         RVP_ClientRepairOrderState.Order order = RVP_ClientRepairOrderState.get(vehicle.getId());
         sb.append("Q").append(String.join(",", order.eraBones()))
                 .append("#").append(String.join(",", order.deviceBones()));
+        // [RVP] 引擎受损档位入签名（2026-09-27）：受损标注（extra 文本）变化时触发面板重绘——
+        // 否则受损后行内容变了但签名未变，面板永不刷新受损标注
+        var engineBones = RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
+        if (engineBones != null) {
+            for (String bone : engineBones.keySet()) {
+                sb.append('E').append(bone).append(':')
+                        .append(org.ywzj.rvp.client.state.RVP_ClientEngineDamageState.getStage(vehicle.getId(), bone));
+            }
+        }
         return sb.toString();
     }
 
@@ -380,19 +397,18 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         return container == queueEraList ? RVP_EquipPanelData.QUEUE_ERA : RVP_EquipPanelData.QUEUE_DEV;
     }
 
-    /** 预计维修量提示行：ERA 为配额确定值；辅助设备显示按失效数×单台概率算出的期望修复数。 */
+    /** 预计维修量提示行：ERA 为配额确定值；辅助设备为概率制——期望修复数向上取整（维修以
+     *  整台为单位，"预计修 0.3 台"不成立；用户 2026-09-27 定版），括号保留失效数与单台概率。 */
     private void updateForecast() {
         if (repairForecast == null) {
             return;
         }
         RVP_EquipPanelData.Forecast forecast = RVP_EquipPanelData.repairForecast(vehicle);
-        // 期望修复数：整数就显示整数，否则保留一位小数（如 4 台×25% = 1，6 台×25% = 1.5）
-        double expected = forecast.deviceExpected();
-        String expectedText = expected == Math.floor(expected)
-                ? String.valueOf((long) expected)
-                : String.format("%.1f", expected);
+        // 期望修复数向上取整（1 台×25% → 1；6 台×25% 期望 1.5 → 2）：保守估计，即"修完
+        // 全部失效设备最多需要的快修次数"量级
+        int expected = (int) Math.ceil(forecast.deviceExpected());
         repairForecast.setTextContent(I18n.get("gui.ywzj_rvp.equipment.forecast",
-                forecast.eraQuota(), expectedText, forecast.deviceDestroyed(), forecast.deviceChancePercent()));
+                forecast.eraQuota(), expected, forecast.deviceDestroyed(), forecast.deviceChancePercent()));
     }
 
     /** 点击失效行加入对应队列：本地先行更新（即时反馈）再上行服务端。 */
@@ -478,103 +494,41 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // 俯视图（原生 scissor 绘制，div 注入路径已废弃——见 RVP_EquipSkeletonRenderer）
+    // ─────────────────────────────────────────────────────────────
+
     /**
-     * 俯视图（HTML div 注入）：Java 投影骨块/车体 OBB → 视空间矩形，按画布 CSS 尺寸
-     * 等比缩放居中后注入绝对定位 div。双层结构（外层描边色 + 内层填充/底色）规避 AUI
-     * 对 border 简写的支持不确定性；布局为车体固定视，仅随模块失效/修复经签名节流重建。
+     * 俯视图原生绘制：AUI {@code super.render} 之后执行（AUI 无 post-render 钩子，不会被覆盖）。
+     * 画布矩形 = {@code #skeleton-canvas} 布局矩形 × renderScale（项目唯一合法换算公式，
+     * RVP_AuiVariantScreen 实证同款）；scissor 裁剪画布区域，深度抬 z=400（tooltip 同级）——
+     * AUI 文档元素开深度写入且 z 从 1.0 起递增（物品最高 ~250），GuiGraphics.fill 的 z=0
+     * 顶点会被深度剔除，这是此前三次"原生不可见"的根因。
      */
-    private void rebuildSkeleton() {
+    private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {
         if (skeletonCanvas == null || document == null) {
             return;
         }
         Element.DOMRect rect = skeletonCanvas.getBoundingClientRect();
         if (rect.width <= 8 || rect.height <= 8) {
-            // DOM 尚未布局完成：本轮跳过，refreshDynamic 下轮继续重试
+            // DOM 尚未布局完成：本轮跳过（原生每帧重试，无需节流）
             return;
         }
-        List<RVP_EquipSkeletonRenderer.ViewRect> rects = RVP_EquipSkeletonRenderer.buildRects(vehicle);
-        if (rects.isEmpty()) {
-            return;
+        double renderScale = document.getViewport().renderScale();
+        int x0 = (int) Math.floor(rect.x * renderScale);
+        int y0 = (int) Math.floor(rect.y * renderScale);
+        int x1 = (int) Math.ceil((rect.x + rect.width) * renderScale);
+        int y1 = (int) Math.ceil((rect.y + rect.height) * renderScale);
+        guiGraphics.enableScissor(x0, y0, x1, y1);
+        PoseStack poseStack = guiGraphics.pose();
+        poseStack.pushPose();
+        try {
+            poseStack.translate(0, 0, 400);
+            RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle, cachedModules, x0, y0, x1, y1, partialTick);
+            guiGraphics.flush();
+        } finally {
+            poseStack.popPose();
+            guiGraphics.disableScissor();
         }
-        skeletonCanvas.replaceChildren();
-        float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE;
-        float minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
-        // 缩放包络只算 fit=true 的矩形（炮管等长条部件不参与，防车体被压扁）
-        for (RVP_EquipSkeletonRenderer.ViewRect r : rects) {
-            if (!r.fit()) {
-                continue;
-            }
-            minX = Math.min(minX, r.x0());
-            maxX = Math.max(maxX, r.x1());
-            minY = Math.min(minY, r.y0());
-            maxY = Math.max(maxY, r.y1());
-        }
-        float spanX = Math.max(maxX - minX, 0.01f);
-        float spanY = Math.max(maxY - minY, 0.01f);
-        double scale = Math.min((rect.width - 12) / spanX, (rect.height - 12) / spanY);
-        double offX = (rect.width - spanX * scale) / 2 - minX * scale;
-        double offY = (rect.height - spanY * scale) / 2 - minY * scale;
-        for (RVP_EquipSkeletonRenderer.ViewRect r : rects) {
-            double rx = offX + r.x0() * scale;
-            double ry = offY + r.y0() * scale;
-            double rw = Math.max((r.x1() - r.x0()) * scale, 3);
-            double rh = Math.max((r.y1() - r.y0()) * scale, 3);
-            appendSkeletonRect(skeletonCanvas, rx, ry, rw, rh, r.line(), r.solid());
-        }
-        // div 注入后做一次定向样式重算，让新线框立即上屏（无需点击触发）。
-        // ★禁止调用 Document.refresh()——那是按模板重建整个文档，会作废全部已注入内容
-        document.requestStyleRecalc(skeletonCanvas);
-        skeletonCanvas.invalidateStyle();
-    }
-
-    /**
-     * 注入单个矩形：solid=true → 纯白实心块（普通部件，拼整车轮廓）；
-     * solid=false → 4 条边 div 平铺的彩色空心线框（特殊设备骨，2px 加粗便于辨识）。
-     * DOM 顺序 = 绘制层级：线框矩形在白底之后注入，永远压在白底之上。
-     */
-    private void appendSkeletonRect(Element canvas, double x, double y, double w, double h,
-                                    String lineColor, boolean solid) {
-        int ix = (int) Math.round(x);
-        int iy = (int) Math.round(y);
-        int iw = Math.max((int) Math.round(w), 4);
-        int ih = Math.max((int) Math.round(h), 4);
-        if (solid) {
-            appendSkeletonEdge(canvas, ix, iy, iw, ih, "#FFFFFF");
-            return;
-        }
-        int t = 2;
-        appendSkeletonEdge(canvas, ix, iy, iw, t, lineColor);                      // 上边
-        appendSkeletonEdge(canvas, ix, iy + ih - t, iw, t, lineColor);             // 下边
-        appendSkeletonEdge(canvas, ix, iy, t, ih, lineColor);                      // 左边
-        appendSkeletonEdge(canvas, ix + iw - t, iy, t, ih, lineColor);             // 右边
-    }
-
-    /**
-     * 注入单个线框矩形：4 条边 div（每边一个细长条、bg=线框色）平铺拼成空心矩形——
-     * 本体观瞄小图 drawRectByCorner 的同款观感。
-     * ★禁止用嵌套 div 做空心：AUI 不渲染绝对定位 div 的子元素内联样式，会退化成实心色块。
-     */
-    private void appendSkeletonRect(Element canvas, double x, double y, double w, double h, String lineColor) {
-        int ix = (int) Math.round(x);
-        int iy = (int) Math.round(y);
-        int iw = Math.max((int) Math.round(w), 3);
-        int ih = Math.max((int) Math.round(h), 3);
-        int t = 1;
-        appendSkeletonEdge(canvas, ix, iy, iw, t, lineColor);                      // 上边
-        appendSkeletonEdge(canvas, ix, iy + ih - t, iw, t, lineColor);             // 下边
-        appendSkeletonEdge(canvas, ix, iy, t, ih, lineColor);                      // 左边
-        appendSkeletonEdge(canvas, ix + iw - t, iy, t, ih, lineColor);             // 右边
-    }
-
-    /** 注入一条边（细长条 div，bg=线框色）。 */
-    private void appendSkeletonEdge(Element canvas, int x, int y, int w, int h, String color) {
-        Element edge = document.createElement("div");
-        edge.setClassName("skeleton-rect");
-        edge.setInlineStyleProperty("left", x + "px");
-        edge.setInlineStyleProperty("top", y + "px");
-        edge.setInlineStyleProperty("width", w + "px");
-        edge.setInlineStyleProperty("height", h + "px");
-        edge.setInlineStyleProperty("background", color);
-        canvas.appendChild(edge);
     }
 }
