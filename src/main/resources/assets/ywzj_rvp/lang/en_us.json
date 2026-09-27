@@ -399,5 +399,16 @@
   "gui.ywzj_rvp.equipment.ammo": "Ammo %s/%s",
   "gui.ywzj_rvp.module.barrel": "Barrel",
   "ui.rvp.barrel_destroyed": "Barrel destroyed - repair required",
-  "gui.ywzj_rvp.equipment.cat_barrel": "Barrel"
+  "gui.ywzj_rvp.equipment.cat_barrel": "Barrel",
+  "gui.ywzj_rvp.hud.label_flare": "FLA",
+  "gui.ywzj_rvp.hud.label_chaff": "CHF",
+  "gui.ywzj_rvp.hud.label_smoke": "SMK",
+  "gui.ywzj_rvp.hud.speed": "SPD: %s KPH",
+  "gui.ywzj_rvp.hud.reload": "%s: RLD %s",
+  "gui.ywzj_rvp.hud.ecm_jamming": "ECM: JAM %ss",
+  "gui.ywzj_rvp.hud.ecm_reload": "ECM: RLD %s",
+  "gui.ywzj_rvp.hud.ecm_ready": "ECM: RDY [%s]",
+  "gui.ywzj_rvp.hud.maintenance_repairing": "REP: FIX",
+  "gui.ywzj_rvp.hud.maintenance_cooling": "REP: CLD %s",
+  "gui.ywzj_rvp.hud.maintenance_ready": "REP: RDY [%s]"
 }

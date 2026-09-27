@@ -6,6 +6,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import net.minecraft.client.resources.language.I18n;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
@@ -73,13 +74,13 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             int y = centerY - 21 + (rotaryWing ? 48 : 60);
             boolean airDecoyDrawn = false;
             if (hasFlare) {
-                drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
                         state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
                 y += 12;
                 airDecoyDrawn = true;
             }
             if (hasChaff) {
-                drawRow(guiGraphics, font, "箔条", state.chaffRemain(), state.chaffTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
                         state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
                 y += 12;
                 airDecoyDrawn = true;
@@ -91,7 +92,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             }
             if (hasSmoke) {
                 // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
-                drawRow(guiGraphics, font, "烟雾", state.smokeRemain(), state.smokeTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
                         state.smokeReloadRemain(), leftX, airDecoyDrawn ? y + 12 : y, RVP_Keys.FIRE_SMOKE);
                 y = (airDecoyDrawn ? y + 12 : y) + 12;
             }
@@ -107,17 +108,17 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             drawSpeedRow(guiGraphics, font, vehicle, leftX, y);
             y += 12;
             if (hasFlare) {
-                drawRow(guiGraphics, font, "热诱", state.flareRemain(), state.flareTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
                         state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
                 y += 12;
             }
             if (hasChaff) {
-                drawRow(guiGraphics, font, "箔条", state.chaffRemain(), state.chaffTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
                         state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
                 y += 12;
             }
             if (hasSmoke) {
-                drawRow(guiGraphics, font, "烟雾", state.smokeRemain(), state.smokeTotal(),
+                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
                         state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE);
                 y += 12;
             }
@@ -157,7 +158,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             // 格/tick → km/h：×20 tick/s × 3.6 km/h per m/s（1 格 = 1 米）
             kph = (int) Math.floor(proj * 20.0 * 3.6 + (proj >= 0 ? 1.0E-3 : -1.0E-3));
         }
-        guiGraphics.drawString(font, "速度: " + kph + " KPH", x, y, Color.GREEN);
+        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.speed", kph), x, y, Color.GREEN);
     }
 
     /** 是否装备主动ECM（任一骨块存活）。 */
@@ -224,32 +225,32 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         var snapshot = RVP_EcmActiveHudState.get(vehicle.getId());
         if (snapshot != null && snapshot.isActive()) {
             int seconds = (snapshot.activeRemainTick() + 19) / 20;
-            guiGraphics.drawString(font, "ECM: 反制中 " + seconds + "s", x, y, Color.GREEN);
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_jamming", seconds), x, y, Color.GREEN);
             return;
         }
         if (snapshot != null && snapshot.isCoolingDown()) {
             int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
-            guiGraphics.drawString(font, "ECM: 装填 " + seconds + "秒", x, y, Color.GREEN);
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.GREEN);
             return;
         }
         String keyName = RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString();
-        guiGraphics.drawString(font, "ECM: 就绪 [" + keyName + "]", x, y, Color.GREEN);
+        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_ready", keyName), x, y, Color.GREEN);
     }
 
     /** 绘制快速维修行（文案对齐干扰物/ECM 行：就绪带键位 / 维修中 / 冷却倒计时）。 */
     private static void drawMaintenanceRow(GuiGraphics guiGraphics, Font font,
                                            RVP_ClientMaintenanceState.Snapshot state, int x, int y) {
         if (state.isUsing()) {
-            guiGraphics.drawString(font, "维修: 维修中", x, y, Color.GREEN);
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_repairing"), x, y, Color.GREEN);
             return;
         }
         if (state.isCoolingDown()) {
             int seconds = (state.cooldownRemain() + 19) / 20;
-            guiGraphics.drawString(font, "维修: 冷却 " + seconds + "秒", x, y, Color.GREEN);
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.GREEN);
             return;
         }
         String keyName = RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString();
-        guiGraphics.drawString(font, "维修: 就绪 [" + keyName + "]", x, y, Color.GREEN);
+        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_ready", keyName), x, y, Color.GREEN);
     }
 
     private static void drawRow(GuiGraphics guiGraphics, Font font, String label,
@@ -262,7 +263,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
-            guiGraphics.drawString(font, label + ": 装填 " + seconds + "秒", x, y, color);
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.reload", label, seconds), x, y, color);
         } else {
             // 当前数量 + 键位（英文冒号 + 空格，同本体 lang 样式）
             String keyName = key.getTranslatedKeyMessage().getString();

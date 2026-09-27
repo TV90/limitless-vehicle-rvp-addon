@@ -399,5 +399,16 @@
   "gui.ywzj_rvp.equipment.ammo": "余弹 %s/%s",
   "gui.ywzj_rvp.module.barrel": "炮管",
   "ui.rvp.barrel_destroyed": "炮管损坏，请先维修",
-  "gui.ywzj_rvp.equipment.cat_barrel": "炮管"
+  "gui.ywzj_rvp.equipment.cat_barrel": "炮管",
+  "gui.ywzj_rvp.hud.label_flare": "热诱",
+  "gui.ywzj_rvp.hud.label_chaff": "箔条",
+  "gui.ywzj_rvp.hud.label_smoke": "烟雾",
+  "gui.ywzj_rvp.hud.speed": "速度: %s KPH",
+  "gui.ywzj_rvp.hud.reload": "%s: 装填 %s秒",
+  "gui.ywzj_rvp.hud.ecm_jamming": "ECM: 反制中 %ss",
+  "gui.ywzj_rvp.hud.ecm_reload": "ECM: 装填 %s秒",
+  "gui.ywzj_rvp.hud.ecm_ready": "ECM: 就绪 [%s]",
+  "gui.ywzj_rvp.hud.maintenance_repairing": "维修: 维修中",
+  "gui.ywzj_rvp.hud.maintenance_cooling": "维修: 冷却 %s秒",
+  "gui.ywzj_rvp.hud.maintenance_ready": "维修: 就绪 [%s]"
 }
