@@ -16,11 +16,11 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
  * @param rotateToMotion 是否让实体恢复后朝向运动方向；纯积分过程只负责携带该快照值
  * @param constantSpeed 是否明确保持配置速率；为 true 时豁免诱导阻力掉速
  * @param propulsion 是否启用发动机推力
- * @param mass 当前 Tick 已解析的弹体质量（含变质量 A1 燃烧递减；RVP 游戏单位）
+ * @param mass 当前 Tick 已解析的弹体质量（含变质量 A1 燃烧递减；阻力仅在质量小于 1 时换算为千克）
  * @param thrust 当前 Tick 已解析的发动机推力（含推力曲线 A2；RVP 游戏单位，加速度=thrust/mass）
  * @param motorBurnTime 主发动机从点火起持续的 Tick 数
  * @param ignitionTick 发射后开始点火的飞行 Tick
- * @param dragCoefficient 速度平方阻力系数；阻力按系数×速度平方÷当前质量×高度倍率计算
+ * @param dragCoefficient 速度平方阻力系数；阻力按系数×速度平方÷阻力质量×高度倍率计算（质量小于 1 时阻力质量为原值千倍）
  * @param altitudeDragFactor 当前高度对应的阻力倍率
  * @param gravity 每 Tick 施加的 Y 轴重力增量；零值使用本体默认重力常量
  * @param minSpeed 最低速率，单位格/Tick；非正值表示不限制

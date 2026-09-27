@@ -28,7 +28,7 @@ public final class RVP_BallisticTrajectoryMath {
      * 保留既有轨迹数学 API，并委托给共享推进工具计算 RVP 游戏单位下的单 Tick 加速度。
      *
      * @param thrust 发动机推力（RVP 游戏单位）
-     * @param mass 弹体质量（RVP 游戏单位）
+     * @param mass 弹体质量；推力沿用原值，阻力仅在质量小于 1 时换算为千克
      * @return 推力加速度，单位格/Tick²
      */
     public static double thrustAccelerationPerTick(double thrust, double mass) {
@@ -46,7 +46,7 @@ public final class RVP_BallisticTrajectoryMath {
      * @param motorBurnTime 主发动机从点火起持续的 Tick 数
      * @param thrust 每 Tick 沿当前速度方向施加的推力
      * @param mass 弹体质量，必须与推力使用相同单位制
-     * @param dragCoefficient 速度平方阻力系数，阻力计算时除以当前 {@code mass}
+     * @param dragCoefficient 速度平方阻力系数，阻力计算时除以按小质量规则解析后的当前 {@code mass}
      * @param altitudeDragFactor 当前高度对应的阻力倍率
      * @param gravity 每 Tick 施加的 Y 轴重力增量；零值使用本体默认重力常量
      * @return 施加各项力后的新速度

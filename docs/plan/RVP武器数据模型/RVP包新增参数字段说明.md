@@ -184,7 +184,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `has_rocket_engine` | 是否装备火箭发动机，默认 `false`。为 `false` 时不启用推力运动学。 |
 | `engine_nozzle_offset` | 可选尾焰喷口偏移（实体空间 `[x,y,z]`，格；Z- 为弹尾），默认 `[0,0,-0.5]`。生效条件：`has_rocket_engine=true` 且发动机燃烧中——用于客户端导弹尾焰渲染位置（复用本体火箭尾焰模型/动画/贴图）。 |
 | `flame_scale` | 可选尾焰渲染缩放，默认 `0.2`（对标本体 PL-12：caliber 未配置被钳制为 200，200/1000=0.2）。生效条件同 `engine_nozzle_offset`。 |
-| `mass` | 弹体质量（发射总质量，与 `thrust` 共同决定加速度）；仅在 `has_rocket_engine` 为 true 时生效。 |
+| `mass` | 弹体质量；发射总质量与 `thrust` 共同决定加速度，空气阻力计算时仅当质量小于 1 才按吨换算为千克；仅在 `has_rocket_engine` 为 true 时生效。 |
 | `fuel_mass` | 燃料质量（`mass` 的一部分），默认 `0`（禁用变质量）。`> 0` 且 `mass > 0` 时，主燃烧期间弹体质量由 `mass` 线性递减至干质量 `mass - fuel_mass`，使发动机后半程加速度随质量下降而增大（对齐真实火箭燃耗）；第二脉冲按干质量工作。 |
 | `thrust` | 发动机推力（一级推力；配置 `second_pulse` 时即第一段推进）。 |
 | `thrust_curve` | 按点火后 Tick 分段的推力表，类型 `Map<RVP_Range<Integer>, Float>`（key 为 `"[[起,止]]"` Tick 区间、含端点、`inf` 表无穷），默认不配置。配置后曲线为权威：区间内取匹配值、区间外推力为 0；燃烧总窗口仍由 `motor_burn_time` 决定，曲线只塑造窗口内推力形状（助推/续航分级）。 |
@@ -195,7 +195,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
 | `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
-| `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / mass × altitude_drag_factor` 沿速度反方向扣速。仅火箭发动机分支读取。 |
+| `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
 | `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布/父弹继承 X/Z 生效，包含分层圆锥径向与云心水平径向分量；Y、风偏和显式附加速度不参与该衰减。 |
@@ -306,7 +306,7 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 
 `has_rocket_engine` 为 **false** 时，不跑推力积分；仍可用 `gravity` / `drag` / `constant_speed` 等简化弹道。
 
-**推力有效时的每 tick 近似：** 先按本 Tick 解析推力与质量——`thrust(tick)` 取 `thrust_curve` 区间值或标量 `thrust`，`mass(tick)` 取变质量线性递减值或标量 `mass`——再 `Δv += lookDir * (thrust(tick)/mass(tick))`（燃烧期内）→ 二次阻力 `Δv -= 方向(v) * (drag_coefficient * |v|² / mass(tick)) * altitude_drag_factor` → 重力（默认 `PhysicsEngine.G`，或 `projectile_data.gravity`）。燃尽后推力停止，阻力使用主燃烧结束时的干质量继续计算。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
+**推力有效时的每 tick 近似：** 先按本 Tick 解析推力与质量——`thrust(tick)` 取 `thrust_curve` 区间值或标量 `thrust`，`mass(tick)` 取变质量线性递减值或标量 `mass`——再 `Δv += lookDir * (thrust(tick)/mass(tick))`（燃烧期内）→ 二次阻力 `Δv -= 方向(v) * (drag_coefficient * |v|² / dragMass) * altitude_drag_factor`，其中 `mass(tick) < 1` 时 `dragMass = mass(tick) × 1000`，否则 `dragMass = mass(tick)`。燃尽后推力停止，阻力使用主燃烧结束时的干质量继续计算。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
 
 > **单位约定（RVP 游戏单位）**：`thrust / mass` 直接作为每 tick 加速度（格/tick²），不再像本体 `MissileEntity#tickMove` 那样除以 `TICKS_PER_SECOND_SQUARED`（400）。推力、质量阶段解析与速度增量统一由 `RVP_PropulsionMath` 实现，实体链（`tickMissileMove`/`tickHitlTvMove`）、火箭弹道预测（`RVP_RocketBallistics`）与虚拟中段积分（`integrateForces`）共用，避免推进模型漂移。
 

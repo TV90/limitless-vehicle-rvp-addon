@@ -15,7 +15,7 @@ public final class RVP_PropulsionMath {
      *
      * @param burning 发动机是否在当前 Tick 提供推力
      * @param thrust 当前阶段推力，RVP 游戏单位
-     * @param mass 当前阶段质量，RVP 游戏单位
+     * @param mass 当前阶段质量；推力积分沿用原值，阻力仅在质量小于 1 时换算为千克
      */
     public record MotorState(boolean burning, double thrust, double mass) {
     }

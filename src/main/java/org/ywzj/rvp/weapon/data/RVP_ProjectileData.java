@@ -112,7 +112,7 @@ public class RVP_ProjectileData {
     @SerializedName("flame_scale")
     private Float flameScale;
 
-    /** 弹体质量，单位沿用本体动力学，默认 0；仅火箭发动机启用时生效。 */
+    /** 弹体质量，默认 0；推力计算沿用此数值，阻力仅在质量小于 1 时按吨换算为千克；仅火箭发动机启用时生效。 */
     @SerializedName("mass")
     private float mass = 0f;
 
@@ -166,7 +166,7 @@ public class RVP_ProjectileData {
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
 
-    /** 速度平方阻力系数，默认 0；推进弹体每 Tick 按系数×速度平方÷当前质量×高度倍率扣速。 */
+    /** 速度平方阻力系数，默认 0；推进弹体每 Tick 按系数×速度平方÷阻力质量×高度倍率扣速，质量小于 1 时阻力质量为其千倍。 */
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 
