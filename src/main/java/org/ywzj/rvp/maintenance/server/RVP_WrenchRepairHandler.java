@@ -98,6 +98,8 @@ public final class RVP_WrenchRepairHandler {
             AIMING.remove(playerId);
             return;
         }
+        // [RVP] 焊枪修 ERA（2026-09-28 用户确认）：ERA 失效骨也走恢复（restoreModule 内部
+        // 会移除失效标记——单块 ERA 无累计表语义，恢复即重新挂载爆反效果）。
         // 骨上无失效模块：无维修目标，清进度（部件血量回补由本体焊枪自行处理）
         Set<BoneModuleType> inactive = RVP_BoneModuleStateTable.getInactiveModules(vehicle.getUUID())
                 .get(boneName);

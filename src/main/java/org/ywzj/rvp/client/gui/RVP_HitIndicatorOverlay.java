@@ -230,9 +230,9 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
     }
 
     /**
-     * [RVP] 部件战果通知渲染（2026-09-27 用户定版改版）：文案绘制在<b>展板框内底部</b>
-     * （展板已有底色，不再叠半透明底条），每条 60 tick，摧毁红/受损橙沿用展板伤害配色。
-     * 仅在展板活动期间显示（通知由命中触发，生命周期与展板一致）。
+     * [RVP] 部件战果通知渲染（2026-09-28 用户定版改版）：首行紧贴展板"命中XX"标题<b>下一行</b>
+     * 居中，多条战果<b>向下延伸</b>（最新在上、旧的依次下移）；每条 60 tick，摧毁红/受损橙
+     * 沿用展板伤害配色。仅在展板活动期间显示（通知由命中触发，生命周期与展板一致）。
      */
     private static void drawModuleNotifications(GuiGraphics gg, Minecraft mc) {
         long now = System.currentTimeMillis();
@@ -247,20 +247,18 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
         int lineH = (int) Math.ceil(9 * textScale);
         int lineGap = (int) (2 / guiScale);
-        // 展板框内底部起排（底边留 2px 内边距），自下而上最多画到框顶
-        int bottomY = rect[3] - (int) (2 / guiScale);
-        for (int i = active.size() - 1; i >= 0; i--) {
-            RVP_ClientHitNotifyState.Notify n = active.get(i);
-            int top = bottomY - lineH;
-            if (top < rect[1]) {
-                break; // 超出框顶：更早的不再画
+        // 首行起点 = 展板顶 + 标题行高 + 2px 间距（即"命中XX -x%"的下一行）；向下延伸
+        int top = rect[1] + (int) (3 / guiScale) + lineH + lineGap;
+        for (RVP_ClientHitNotifyState.Notify n : active) {
+            if (top + lineH > rect[3]) {
+                break; // 超出展板底：更早的不再画
             }
             gg.pose().pushPose();
             gg.pose().translate(centerX, top, 0);
             gg.pose().scale(textScale, textScale, 1.0F);
             gg.drawCenteredString(mc.font, Component.literal(n.text()), 0, 0, n.color());
             gg.pose().popPose();
-            bottomY = top - lineGap;
+            top += lineH + lineGap;
         }
     }
 
