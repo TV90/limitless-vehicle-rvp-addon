@@ -61,7 +61,15 @@ public enum BoneModuleType {
      * （{@link BoneEngineConfig}）。失效不由单发 min_damage 直毁（消费点跳过），
      * 而由 {@code RVP_EngineDamageTable} 窗口累计伤害跨过重损阈值触发。
      */
-    ENGINE;
+    ENGINE,
+    /**
+     * 引擎重创档（ENGINE_DAMAGED）——累计直击伤害跨过受损阈值时写入失效表的"重创"标记，
+     * 与 {@link #ENGINE}（瘫痪档）区分：失效后 {@code RVP_EnginePowerHandler} 判定受损档
+     * （功率降低），随失效表持久化、维修面板识别为失效设备（可入维修顺序队列指定优先级）、
+     * 快修按设备配额恢复（恢复时清该骨引擎累计）。继续累计跨过瘫痪阈值才消耗
+     * {@link #ENGINE}（真正的瘫痪档，动力清零趴窝）。
+     */
+    ENGINE_DAMAGED;
 
     private static final BoneModuleType[] VALUES = values();
 

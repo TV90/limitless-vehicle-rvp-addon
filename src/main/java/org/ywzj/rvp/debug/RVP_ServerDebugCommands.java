@@ -13,6 +13,8 @@ import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
+import org.ywzj.rvp.vehicle.RVP_EraStateSavedData;
 import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
@@ -164,6 +166,21 @@ public final class RVP_ServerDebugCommands {
                                     RVP_EngineDebug.clearLog();
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal("[RVP] 已清空 engine 调试日志: " + RVP_EngineDebug.getLogPath()), false);
+                                    return 1;
+                                })))
+                        .then(Commands.literal("modulestate")
+                                .then(Commands.literal("dump").executes(ctx -> {
+                                    // [RVP] 失效状态诊断（2026-09-28）：内存侧表 vs 主世界存档逐条对照——
+                                    // 定位"部件退出重进自动修好"丢失在内存层还是存档层
+                                    String memoryDump = RVP_BoneModuleStateTable.dump();
+                                    var archived = RVP_EraStateSavedData.get(ctx.getSource().getServer().overworld()).snapshot();
+                                    StringBuilder sb = new StringBuilder("[RVP] modulestate：存档(主世界) ")
+                                            .append(archived.size()).append(" 条\n").append(memoryDump).append('\n');
+                                    for (var entry : archived.entrySet()) {
+                                        sb.append("存档 ").append(shortUuid(entry.getKey())).append(" = ")
+                                                .append(entry.getValue()).append('\n');
+                                    }
+                                    ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
                                     return 1;
                                 })))
                         .then(Commands.literal("projectilelife")
@@ -426,5 +443,11 @@ public final class RVP_ServerDebugCommands {
         } catch (IOException e) {
             LOGGER.error("Failed to write dualpulse debug log to {}", path, e);
         }
+    }
+
+    /** modulestate dump 输出用：UUID 取前 8 位缩短显示。 */
+    private static String shortUuid(java.util.UUID uuid) {
+        String s = uuid.toString();
+        return s.substring(0, Math.min(8, s.length()));
     }
 }

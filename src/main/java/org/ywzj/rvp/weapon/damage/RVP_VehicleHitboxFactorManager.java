@@ -574,7 +574,14 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             // [RVP] 部件战果通知：单发跨两档时只报"摧毁引擎"，不叠报"重创发动机"
             notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.ENGINE);
         } else if (before < engineConfig.thresholdLight() && accumulated >= engineConfig.thresholdLight()) {
-            // 跨过受损阈值（功率减半）：向射手报"重创发动机"——一个受损窗期内只报一次
+            // 跨过受损阈值（功率降低）：ENGINE_DAMAGED 进入失效表（用户 2026-09-28 定版：重创=
+            // 可修的失效设备）——随失效表持久化（跨退出重进保持）、维修面板失效置顶、
+            // 可入维修顺序队列指定优先级、快修按设备配额恢复（恢复时清该骨累计）
+            if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE_DAMAGED)) {
+                // 失效表变化广播（辅助设备面板/俯视图/冒烟/维修队列联动）
+                syncBoneModuleState(vehicle);
+            }
+            // 同时向射手报"重创发动机"——一个受损窗期内只报一次
             // （tryMarkDamagedNotified 首次登记返回 true 即发；累计清零/快修后重新武装）
             if (RVP_EngineDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_ENGINE_DAMAGED, BoneModuleType.ENGINE);

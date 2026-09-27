@@ -132,4 +132,13 @@ public class RVP_EraStateSavedData extends SavedData {
     public Map<String, Set<BoneModuleType>> readEntry(UUID vehicleId) {
         return inactiveModules.get(vehicleId);
     }
+
+    /** [RVP] 诊断（/rvpdebug modulestate dump）：存档层全部条目快照（与内存侧表对照）。 */
+    public Map<UUID, Map<String, Set<BoneModuleType>>> snapshot() {
+        Map<UUID, Map<String, Set<BoneModuleType>>> copy = new HashMap<>();
+        for (var entry : inactiveModules.entrySet()) {
+            copy.put(entry.getKey(), Map.copyOf(entry.getValue()));
+        }
+        return copy;
+    }
 }

@@ -102,7 +102,10 @@ public final class RVP_EnginePowerHandler {
             int stage;
             if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ENGINE)) {
                 stage = 2;
-            } else if (RVP_EngineDamageTable.getAccumulated(vehicle.getUUID(), bone) >= config.thresholdLight()) {
+            } else if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ENGINE_DAMAGED)
+                    || RVP_EngineDamageTable.getAccumulated(vehicle.getUUID(), bone) >= config.thresholdLight()) {
+                // [RVP] 重创档双通道判定（2026-09-28 定版）：ENGINE_DAMAGED 进失效表（持久化、
+                // 可维修指定优先级）或累计≥受损阈——重启后累计虽清零，失效表标记保持 → 重创永久
                 stage = 1;
                 // [RVP] 取全部受损骨中最大的倍率（最宽容口径）
                 if (!hasDamaged || config.powerMultiplierDamaged() > damagedMultiplier) {

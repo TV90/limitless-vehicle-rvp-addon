@@ -315,10 +315,11 @@ public final class RVP_MaintenanceRuntimeManager {
             if (cfg.isRepairable(type) && RVP_BoneModuleStateTable.restoreModule(vehicleId, bone, type)) {
                 // [RVP] 新类型恢复联动（2026-09-26）：
                 // RADAR——修好自动开机（用户定版，与 gunner 自动开机语义一致）；
-                // ENGINE——清空窗口累计，防止恢复后残存累计立即再次跨阈值
+                // ENGINE/ENGINE_DAMAGED——清空引擎累计，防止恢复后残存累计立即再次跨阈值
+                // （ENGINE_DAMAGED 重创档 2026-09-28 进失效表，恢复=重创解除，同样清累计）
                 if (type == BoneModuleType.RADAR) {
                     RVP_RadarModuleEnforcer.restoreRadar(vehicle, bone);
-                } else if (type == BoneModuleType.ENGINE) {
+                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
                     RVP_EngineDamageTable.clear(vehicleId, bone);
                 }
             }

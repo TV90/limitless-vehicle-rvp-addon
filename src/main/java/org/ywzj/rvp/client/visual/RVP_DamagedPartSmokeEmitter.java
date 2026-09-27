@@ -1,7 +1,7 @@
 package org.ywzj.rvp.client.visual;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
@@ -13,12 +13,14 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.particle.RVP_MchrFlareParticle;
+import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_MchrSmokeRenderType;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientEngineDamageState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.particle.SmokeCloudOption;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
 import java.util.List;
@@ -45,9 +47,10 @@ import java.util.Set;
  * <li><b>状态来源</b>：既有 {@code S2CBoneModuleState}/{@code S2CEngineDamageState} 客户端
  *     侧表（{@link RVP_ClientBoneModuleState}/{@link RVP_ClientEngineDamageState}），
  *     零新增网络包，各客户端对可见载具本地生成粒子。</li>
- * <li><b>黑烟</b>：本体 {@link SmokeCloudOption} 渐变配色（深灰→黑，与
- *     {@code ParticleUtil.spawnEngineSmoke} 同源），但寿命/尺寸加大以示"损坏"；
- *     本体正常运行时排气口的小浅烟（lifetime 20、size 0.3→0.4）不受影响。</li>
+ * <li><b>黑烟</b>：{@link RVP_MchrSmokeParticle}（RVP 视觉工厂爆炸烟同款 8 帧烟贴图与
+ *     渲染类型，用户 2026-09-28 定版"复用视觉工厂粒子样式"）；烟团尺寸随 OBB 体积收敛在
+ *     2~5（MCHR scale，渲染半宽 0.2~0.5 格起步），远小于爆炸烟（1.5~20）——只缩尺寸
+ *     不缩数量。本体正常运行时排气口的小浅烟（lifetime 20、size 0.3→0.4）不受影响。</li>
  * </ul></p>
  */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -140,31 +143,36 @@ public final class RVP_DamagedPartSmokeEmitter {
         }
     }
 
-    /** 黑烟：在失效骨的实时 OBB 内随机取样，深灰→黑渐变烟（体积越大粒数越多）。 */
+    /** 黑烟：在失效骨的实时 OBB 内随机取样（视觉工厂同款 MCHR 8 帧烟，体积越大粒数越多）。 */
     private static void emitBlackSmoke(AbstractVehicle vehicle, String bone, RandomSource random) {
+        Minecraft mc = Minecraft.getInstance();
         for (OBB obb : resolveObbs(vehicle, bone)) {
             int count = Mth.clamp(Mth.ceil(volume(obb) / CUBIC_METERS_PER_PARTICLE),
                     SMOKE_MIN_PER_OBB, SMOKE_MAX_PER_OBB);
+            // [RVP] 烟团尺寸随 OBB 体积（用户 2026-09-28 定版：是太大不是太多——只缩尺寸
+            // 不缩数量）：MCHR scale 2~5 = 渲染半宽 0.2~0.5 格起步、每 tick +0.8 扩散到
+            // size×2.0 上限，远小于爆炸烟（1.5~20），观感为"部件冒着中等黑烟"而非爆炸
+            float size = Mth.clamp(1.5f + volume(obb) * 0.12f, 2f, 5f);
             for (int i = 0; i < count; i++) {
                 Vec3 point = randomPointIn(obb, random);
                 if (point == null) {
                     continue;
                 }
-                // 配色/重力与本体 ParticleUtil.spawnEngineSmoke 同源（0.3→0 深灰到黑），
-                // 寿命与尺寸加大以示"部件损坏"级烟雾（本体正常运行烟 lifetime=20、size 0.3→0.4）
-                int life = 60 + random.nextInt(40);
-                vehicle.level().addParticle(new SmokeCloudOption(0.3f, 0.3f, 0.3f,
-                                0.0f, 0.0f, 0.0f, 0.7f, life, 0.5f, 2.5f, 0.005f), true,
+                mc.particleEngine.add(RVP_MchrSmokeParticle.of((ClientLevel) vehicle.level(),
                         point.x, point.y, point.z,
                         (random.nextDouble() - 0.5) * 0.06,
                         0.02 + random.nextDouble() * 0.02,
-                        (random.nextDouble() - 0.5) * 0.06);
+                        (random.nextDouble() - 0.5) * 0.06,
+                        size, 40 + random.nextInt(40))
+                        .withRenderType(RVP_MchrSmokeRenderType.RENDER_TYPE));
             }
         }
     }
 
-    /** 瘫痪档火星火焰：原版 FLAME 上窜火焰 + LAVA 溅落火星，少量黑烟打底。 */
+    /** 瘫痪档火星火焰：视觉工厂同源火花/曳光火星 + 小烟打底（替代原版 FLAME/LAVA，风格统一）。 */
     private static void emitEngineFire(AbstractVehicle vehicle, String bone, RandomSource random) {
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel level = (ClientLevel) vehicle.level();
         for (OBB obb : resolveObbs(vehicle, bone)) {
             int count = Mth.clamp(Mth.ceil(volume(obb) / (CUBIC_METERS_PER_PARTICLE * 1.5f)),
                     FIRE_MIN_PER_OBB, FIRE_MAX_PER_OBB);
@@ -173,25 +181,27 @@ public final class RVP_DamagedPartSmokeEmitter {
                 if (point == null) {
                     continue;
                 }
-                // 火焰粒子自带向上漂移渲染，补一点初速让火焰从引擎舱内窜出
-                vehicle.level().addParticle(ParticleTypes.FLAME,
+                // 飞溅火星：重力下坠收缩淡出（自带短暂寿命）；向上初速让火星从引擎舱窜出
+                RVP_MchrFlareParticle.spawnSpark(mc.particleEngine, level,
                         point.x, point.y, point.z,
-                        (random.nextDouble() - 0.5) * 0.04,
-                        0.04 + random.nextDouble() * 0.06,
-                        (random.nextDouble() - 0.5) * 0.04);
-                // 三分之一概率追加熔岩滴火星（自带重力弹跳，火星感）
+                        (random.nextDouble() - 0.5) * 0.08,
+                        0.05 + random.nextDouble() * 0.08,
+                        (random.nextDouble() - 0.5) * 0.08,
+                        0.5f, 20 + random.nextInt(20));
+                // 三分之一概率追加曳光火星（上飘缓慢、落地即亡，燃烧滴落感）
                 if (random.nextInt(3) == 0) {
-                    vehicle.level().addParticle(ParticleTypes.LAVA,
-                            point.x, point.y, point.z, 0, 0.05, 0);
+                    RVP_MchrFlareParticle.spawnEmber(mc.particleEngine, level,
+                            point.x, point.y, point.z,
+                            (random.nextDouble() - 0.5) * 0.06,
+                            0.08,
+                            (random.nextDouble() - 0.5) * 0.06);
                 }
             }
-            // 少量黑烟打底（燃烧但不完全，视觉与重创档衔接）
+            // 少量小烟打底（燃烧但不完全，与重创档黑烟观感衔接）
             Vec3 smokePoint = randomPointIn(obb, random);
             if (smokePoint != null) {
-                vehicle.level().addParticle(new SmokeCloudOption(0.25f, 0.25f, 0.25f,
-                                0.0f, 0.0f, 0.0f, 0.6f, 80, 0.6f, 3.0f, 0.005f), true,
-                        smokePoint.x, smokePoint.y, smokePoint.z,
-                        0, 0.03, 0);
+                mc.particleEngine.add(RVP_MchrSmokeParticle.ofTrailSmall(level,
+                        smokePoint.x, smokePoint.y, smokePoint.z));
             }
         }
     }

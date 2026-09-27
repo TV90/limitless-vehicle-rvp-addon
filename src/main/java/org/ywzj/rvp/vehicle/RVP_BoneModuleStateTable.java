@@ -1,9 +1,11 @@
 package org.ywzj.rvp.vehicle;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -26,6 +28,8 @@ import java.util.UUID;
  * 存档）；载具加入世界时由 {@code RVP_EraStateEventHandler} 恢复，离开时写回并清理内存。</p>
  */
 public final class RVP_BoneModuleStateTable {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final Map<UUID, Map<String, Set<BoneModuleType>>> INACTIVE_MODULES = new HashMap<>();
 
@@ -156,8 +160,20 @@ public final class RVP_BoneModuleStateTable {
                 }
             }
         }
+        // [RVP] 剪枝防护日志（2026-09-28）：剪掉失效骨名必须留痕——车包 bone_modules 骨名
+        // 漂移（改名/删除条目）会让存档里的失效记录被静默清除并写回，表现为"部件自动修好"
+        java.util.List<String> pruned = new java.util.ArrayList<>();
+        for (String boneName : map.keySet()) {
+            if (!valid.contains(boneName)) {
+                pruned.add(boneName);
+            }
+        }
         boolean changed = map.keySet().removeIf(boneName -> !valid.contains(boneName));
         if (changed) {
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("[RVP-BoneModuleState] 载具 {} 剪除失效骨（不在当前配置合法骨名集合内）: {}",
+                        vehicleId, pruned);
+            }
             if (map.isEmpty()) {
                 INACTIVE_MODULES.remove(vehicleId);
             }
@@ -169,6 +185,53 @@ public final class RVP_BoneModuleStateTable {
     /** 载具离开世界：从内存侧表移除（持久化由事件处理器负责）。 */
     public static void onVehicleLeave(UUID vehicleId) {
         INACTIVE_MODULES.remove(vehicleId);
+    }
+
+    /**
+     * [RVP] 停服兜底落盘（2026-09-28）：把内存侧表<b>全部</b>条目写入主世界 SavedData
+     * （幂等——leave 已写过的条目原样覆盖）。覆盖 {@code EntityLeaveLevelEvent} 未按预期
+     * 触发的路径（强杀进程前的关卡关闭、实体批量卸载时序等），消除"退出重进失效状态
+     * 丢失"的最后缝隙。返回写入条目数。
+     */
+    public static int flushAll(ServerLevel overworld) {
+        if (overworld == null || INACTIVE_MODULES.isEmpty()) {
+            return 0;
+        }
+        RVP_EraStateSavedData savedData = RVP_EraStateSavedData.get(overworld);
+        int count = 0;
+        for (Map.Entry<UUID, Map<String, Set<BoneModuleType>>> entry : INACTIVE_MODULES.entrySet()) {
+            savedData.writeEntry(entry.getKey(), entry.getValue());
+            count++;
+        }
+        return count;
+    }
+
+    /** [RVP] 诊断（/rvpdebug modulestate dump）：内存侧表全部条目的可读文本。 */
+    public static String dump() {
+        if (INACTIVE_MODULES.isEmpty()) {
+            return "内存侧表为空";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<UUID, Map<String, Set<BoneModuleType>>> entry : INACTIVE_MODULES.entrySet()) {
+            sb.append("内存 ").append(shortId(entry.getKey())).append(" = ").append(format(entry.getValue())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static String format(Map<String, Set<BoneModuleType>> boneMap) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Set<BoneModuleType>> entry : boneMap.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append("; ");
+            }
+            sb.append(entry.getKey()).append(':').append(entry.getValue());
+        }
+        return sb.toString();
+    }
+
+    private static String shortId(UUID uuid) {
+        String s = uuid.toString();
+        return s.substring(0, Math.min(8, s.length()));
     }
 
     private static void persist(UUID vehicleId) {

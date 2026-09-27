@@ -121,9 +121,10 @@ public final class RVP_EquipPanelData {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_radar"), summary(radarRows), radarRows));
         }
 
-        // [RVP] 引擎部件（2026-09-26）：三档显示——正常 / 受损（功率减半，窗口累计伤害，可自然回落
-        // 或随快修清零）/ 瘫痪（ENGINE 模块失效，功率清零，红框入辅助设备维修队列）。
-        // 受损档读 RVP_ClientEngineDamageState 档位快照（S2CEngineDamageState 差分推送）
+        // [RVP] 引擎部件（2026-09-26；2026-09-28 重创进失效表）：三档显示——正常 /
+        // 受损（功率降低：ENGINE_DAMAGED 进失效表=可修失效设备，可入维修顺序队列指定
+        // 优先级；无衰减永久，唯一恢复=快修）/ 瘫痪（ENGINE 模块失效，动力清零，红框入队）。
+        // 受损/瘫痪档读 RVP_ClientEngineDamageState 档位快照（S2CEngineDamageState 差分推送）
         Map<String, BoneEngineConfig> engineBones =
                 RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
         if (engineBones != null && !engineBones.isEmpty()) {
@@ -134,17 +135,20 @@ public final class RVP_EquipPanelData {
                 if (config == null) {
                     continue;
                 }
-                boolean destroyed = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE);
+                // 失效判定（置顶+入维修队列）：瘫痪（ENGINE 失效）或重创（ENGINE_DAMAGED 失效）
+                boolean disabled = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE);
+                boolean damaged = disabled
+                        || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED);
                 int stage = RVP_ClientEngineDamageState.getStage(entityId, bone);
                 String extra;
-                if (destroyed) {
+                if (disabled) {
                     extra = I18n.get("gui.ywzj_rvp.equipment.engine_disabled");
-                } else if (stage == 1) {
+                } else if (damaged || stage == 1) {
                     extra = I18n.get("gui.ywzj_rvp.equipment.engine_damaged");
                 } else {
                     extra = null;
                 }
-                engineRows.add(new Row(index++, alias(vehicle, bone), !destroyed, bone, QUEUE_DEV, extra));
+                engineRows.add(new Row(index++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
             }
             if (!engineRows.isEmpty()) {
                 out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_engine"), summary(engineRows), engineRows));
