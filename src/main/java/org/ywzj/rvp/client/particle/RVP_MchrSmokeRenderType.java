@@ -34,17 +34,31 @@ public final class RVP_MchrSmokeRenderType {
     public static final int FRAME_COUNT = 8;
 
     /** 独立半透明渲染类型：绑定 MCHR 烟贴图、标准 alpha 混合（GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
-    public static final ParticleRenderType RENDER_TYPE = forTexture(TEXTURE);
+    public static final ParticleRenderType RENDER_TYPE = forTexture(TEXTURE, true);
 
     /** 彩蛋渲染类型：绑定 114514.png（8 帧横排、分辨率不限——UV 归一化，512×64 或 64×8 均可）。 */
-    public static final ParticleRenderType EGG_RENDER_TYPE = forTexture(EGG_TEXTURE);
+    public static final ParticleRenderType EGG_RENDER_TYPE = forTexture(EGG_TEXTURE, true);
+
+    /**
+     * 损坏冒烟专用渲染类型（2026-09-28）：与 {@link #RENDER_TYPE} 同贴图，但<b>深度只测不写</b>
+     * （{@code depthMask(false)}）——对齐火箭尾焰（{@code RVP_RocketFlameParticle}）、核爆云、
+     * 冲击波、MchrFlare 的半透明约定：半透明烟写深度会把后续绘制的粒子/载具切片挡死，多层
+     * 叠加后透过烟雾看载具出现"实体被剔穿"（2026-09-15 实机同款问题）。MCHR 普通爆炸烟的
+     * {@link #RENDER_TYPE}/{@link #EGG_RENDER_TYPE} 保持原状不受影响。
+     */
+    public static final ParticleRenderType DAMAGED_SMOKE_RENDER_TYPE = forTexture(TEXTURE, false);
+
+    /** 按贴图生成独立半透明渲染类型实例（默认写深度，爆炸烟历史行为保持）。 */
+    private static ParticleRenderType forTexture(ResourceLocation texture) {
+        return forTexture(texture, true);
+    }
 
     /** 按贴图生成独立半透明渲染类型实例（标准 alpha 混合 GL_SRC_ALPHA / GL_ONE_MINUS_SRC_ALPHA）。 */
-    private static ParticleRenderType forTexture(ResourceLocation texture) {
+    private static ParticleRenderType forTexture(ResourceLocation texture, boolean depthWrite) {
         return new ParticleRenderType() {
             @Override
             public void begin(BufferBuilder builder, TextureManager textureManager) {
-                RenderSystem.depthMask(true);
+                RenderSystem.depthMask(depthWrite);
                 RenderSystem.setShaderTexture(0, texture);
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();

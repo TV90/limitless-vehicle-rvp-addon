@@ -76,6 +76,20 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
                 size, r, g, b, alpha, lifetime);
     }
 
+    /**
+     * 损坏冒烟入口（2026-09-28）：深灰→近黑 tint——贴图为灰白底样，tint 越暗烟越黑
+     * （灰度底样 × 暗色乘算）。与 {@link #of}（爆炸烟灰黄随机）分离，调色互不影响：
+     * MCHR 普通爆炸烟保持原观感。
+     */
+    public static RVP_MchrSmokeParticle ofDark(ClientLevel level, double x, double y, double z,
+                                               double vx, double vy, double vz,
+                                               float size, int lifetime) {
+        net.minecraft.util.RandomSource random = level.random;
+        float base = 0.06f + random.nextFloat() * 0.12f;
+        return new RVP_MchrSmokeParticle(level, x, y, z, vx, vy, vz,
+                size, base + 0.02f, base + 0.01f, base, 0.55f + random.nextFloat() * 0.25f, lifetime);
+    }
+
     /** 拖烟入口：MCHR 烟构造默认（亮灰 0.7~1.0、scale 5~5.5、寿命 18~84）。 */
     public static RVP_MchrSmokeParticle ofTrailDefault(ClientLevel level, double x, double y, double z) {
         net.minecraft.util.RandomSource random = level.random;
