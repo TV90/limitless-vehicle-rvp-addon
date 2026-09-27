@@ -9,6 +9,7 @@ import org.ywzj.rvp.debug.RVP_DualPulseDebug;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -73,6 +74,8 @@ public final class RVP_ProjectileMotion {
             int motorTick = projectile.getFlightTickCount() - ignition;
             float burn1 = data.getResolvedMotorBurnTime();
             boolean burning1 = motorTick <= burn1;
+            // 调用本项目质量解析器：燃烧期使用当前变质量，燃尽后继续使用主燃烧结束时的干质量。
+            float dragMass = resolvePropulsionDragMass(data, motorTick, burning1, burn1);
             boolean burning2 = false;
             if (!burning1
                     && projectile.isMissile()
@@ -92,6 +95,10 @@ public final class RVP_ProjectileMotion {
                     burning2 = t2 >= 0 && t2 <= data.getProjectileData().getResolvedSecondPulseBurnTime();
                 }
             }
+            if (burning2) {
+                // 调用本项目质量解析器：第二脉冲阶段的主燃料已耗尽，阻力使用干质量。
+                dragMass = resolvePropulsionDragMass(data, motorTick, false, burn1);
+            }
             if (burning1 || burning2) {
                 float mass;
                 float thrust;
@@ -108,11 +115,9 @@ public final class RVP_ProjectileMotion {
                 double acceleration = RVP_BallisticTrajectoryMath.thrustAccelerationPerTick(thrust, mass);
                 velocity = velocity.add(lookDir.scale(acceleration));
             }
-            double speedSqr = velocity.lengthSqr();
-            float dragCoeff = data.getResolvedDragCoefficient() * resolveMissileAltitudeDragFactor(projectile, data);
-            if (speedSqr > 1.0E-12 && dragCoeff > 0) {
-                velocity = velocity.add(velocity.normalize().scale(-dragCoeff * speedSqr));
-            }
+            // 调用本项目统一空气阻力工具：按当前质量、速度平方及弹体高度倍率扣速。
+            velocity = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), dragMass,
+                    resolveMissileAltitudeDragFactor(projectile, data));
         }
 
         if (projectile.getFlightTickCount() < ignition) {
@@ -319,18 +324,22 @@ public final class RVP_ProjectileMotion {
         } else {
             double speed = Math.max(velocity.length(), missile.getMotionSpeedReference());
             int motorTick = missile.getFlightTickCount() - ignition;
-            if (motorTick <= data.getResolvedMotorBurnTime()) {
+            float burnTime = data.getResolvedMotorBurnTime();
+            boolean burning = motorTick <= burnTime;
+            if (burning) {
                 // 主燃烧段：按点火后 Tick 解析推力曲线与变质量（A1 变质量 / A2 推力曲线）。
-                float mass = data.getProjectileData().resolveMassAt(motorTick, data.getResolvedMotorBurnTime());
+                float mass = data.getProjectileData().resolveMassAt(motorTick, burnTime);
                 float thrust = data.getProjectileData().resolveThrustAt(motorTick);
                 // 调用本项目推力加速度换算，保证单位一致（A3）。
                 speed += RVP_BallisticTrajectoryMath.thrustAccelerationPerTick(thrust, mass);
             }
-            float dragCoeff = data.getResolvedDragCoefficient() * resolveMissileAltitudeDragFactor(missile, data);
-            if (dragCoeff > 0 && speed > 0) {
-                speed -= dragCoeff * speed * speed;
-                speed = Math.max(speed, 0.01);
-            }
+            // 调用本项目质量解析器：HITL 主燃料燃尽后按干质量计算后续阻力。
+            float dragMass = resolvePropulsionDragMass(data, motorTick, burning, burnTime);
+            // 调用本项目统一空气阻力工具：HITL 沿视线方向应用与自动导弹相同的质量相关阻力。
+            Vec3 dragAdjustedVelocity = RVP_QuadraticAirDrag.apply(lookDir.scale(speed),
+                    data.getResolvedDragCoefficient(), dragMass,
+                    resolveMissileAltitudeDragFactor(missile, data));
+            speed = Math.max(dragAdjustedVelocity.length(), 0.01D);
             if (data.getProjectileData().isConstantSpeed()) {
                 speed = Math.max(missile.getMotionSpeedReference(), data.getProjectileVelocity());
             }
@@ -359,6 +368,14 @@ public final class RVP_ProjectileMotion {
             return 0;
         }
         return Math.max(data.getResolvedIgnitionDelayTick(), projectile.getColdLaunchTimeTick());
+    }
+
+    /** 按主燃烧阶段解析用于推进阻力的当前弹体质量。 */
+    private static float resolvePropulsionDragMass(RVP_WeaponData data, int motorTick,
+                                                    boolean burningPrimary, float primaryBurnTime) {
+        int massTick = burningPrimary ? motorTick : Math.round(primaryBurnTime);
+        // 调用本项目质量解析器：按当前燃烧 Tick 或主燃尽 Tick 得到阻力计算所需质量。
+        return data.getProjectileData().resolveMassAt(massTick, primaryBurnTime);
     }
 
     private static Vec3 applyPreIgnitionVelocity(RVP_BaseBullet projectile, Vec3 velocity, int ignition) {

@@ -20,7 +20,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
  * @param thrust 当前 Tick 已解析的发动机推力（含推力曲线 A2；RVP 游戏单位，加速度=thrust/mass）
  * @param motorBurnTime 主发动机从点火起持续的 Tick 数
  * @param ignitionTick 发射后开始点火的飞行 Tick
- * @param dragCoefficient 速度平方阻力系数
+ * @param dragCoefficient 速度平方阻力系数；阻力按系数×速度平方÷当前质量×高度倍率计算
  * @param altitudeDragFactor 当前高度对应的阻力倍率
  * @param gravity 每 Tick 施加的 Y 轴重力增量；零值使用本体默认重力常量
  * @param minSpeed 最低速率，单位格/Tick；非正值表示不限制

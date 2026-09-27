@@ -15,6 +15,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.weapon.VehicleWeaponIndex;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -239,7 +240,7 @@ public final class RVP_RocketBallistics {
             if (fallbackImpact != null) {
                 return fallbackImpact;
             }
-            state = stepVelocity(state, data, tick + 1.0D, 1.0D);
+            state = stepVelocity(state, data, tick + 1.0D, 1.0D, pos.y);
             pos = pos.add(state.velocity());
             if (pos.y < level.getMinBuildHeight() - 16) {
                 return null;
@@ -377,7 +378,8 @@ public final class RVP_RocketBallistics {
         return Math.max(DEFAULT_PREDICTION_TICK, 1);
     }
 
-    private static RvpState stepVelocity(RvpState state, RVP_WeaponData data, double tickTime, double dt) {
+    private static RvpState stepVelocity(RvpState state, RVP_WeaponData data,
+                                         double tickTime, double dt, double altitude) {
         Vec3 velocity = state.velocity();
         Vec3 lookDir = state.lookDir();
         double currentSpeed = Math.max(state.currentSpeed(), velocity.length());
@@ -392,6 +394,9 @@ public final class RVP_RocketBallistics {
                 float burn1 = data.getResolvedMotorBurnTime();
                 boolean burning1 = motorTick <= burn1;
                 boolean burning2 = false;
+                // 调用本项目质量解析器：燃烧期使用当前质量，主燃料耗尽后使用干质量。
+                int dragMassTick = burning1 ? Math.max(0, (int) motorTick) : Math.round(burn1);
+                float dragMass = data.getProjectileData().resolveMassAt(dragMassTick, burn1);
                 if (!burning1 && data.getProjectileData().usesSecondPulse()) {
                     float speedThreshold = data.getProjectileData().getResolvedSecondPulseTriggerSpeed();
                     if (secondPulseStartTick < 0 && speedThreshold > 0f && velocity.length() <= speedThreshold) {
@@ -418,11 +423,9 @@ public final class RVP_RocketBallistics {
                     velocity = velocity.add(lookDir.scale(
                             RVP_BallisticTrajectoryMath.thrustAccelerationPerTick(thrust, mass) * dt));
                 }
-                double speedSqr = velocity.lengthSqr();
-                float dragCoeff = data.getResolvedDragCoefficient();
-                if (speedSqr > 1.0E-12 && dragCoeff > 0f) {
-                    velocity = velocity.add(velocity.normalize().scale(-dragCoeff * speedSqr * dt));
-                }
+                // 调用本项目统一空气阻力工具：预测按当前位置高度倍率和积分子步时长扣速。
+                velocity = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), dragMass,
+                        data.getProjectileData().resolveAltitudeDragFactor(altitude), dt);
                 velocity = applyGravity(velocity, data, dt);
                 velocity = clampSpeed(velocity, data);
                 if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
