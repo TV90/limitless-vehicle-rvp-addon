@@ -1007,7 +1007,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return currentFlightSpeed;
     }
 
-    /** @return 已完成航程中的历史峰值速率，单位格/Tick；不得作为运动速度基准。 */
+    /**
+     * 解析运动与制导使用的速率基准；恒速导弹按历史峰值回填，其余弹体跟随当前速率。
+     *
+     * @return 运动速率基准，单位格/Tick
+     */
+    public double getMotionSpeedReference() {
+        double speed = currentFlightSpeed;
+        if (isMissile() && rvpData != null && rvpData.getProjectileData().isConstantSpeed()) {
+            speed = peakFlightSpeed;
+        }
+        return Math.max(speed, RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED);
+    }
+
+    /** @return 已完成航程中的历史峰值速率，单位格/Tick；仅恒速导弹将其作为回填基准。 */
     public double getPeakFlightSpeed() {
         return peakFlightSpeed;
     }
@@ -2388,7 +2401,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 .add(deploymentVerticalVelocity)
                 .add(deploymentWindVelocity);
         if (rvpData.getProjectileData().isConstantSpeed() && composed.lengthSqr() > 1.0E-6D) {
-            double targetSpeed = Math.max(currentFlightSpeed, RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED);
+            double targetSpeed = getMotionSpeedReference();
             scaleDeploymentComponents(targetSpeed / composed.length());
             composed = deploymentBaseVelocity
                     .add(deploymentHorizontalVelocity)
@@ -2457,8 +2470,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInWater());
         }
         if (rvpData.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-6) {
-            velocity = velocity.normalize().scale(Math.max(
-                    currentFlightSpeed, RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED));
+            velocity = velocity.normalize().scale(getMotionSpeedReference());
         }
         velocity = clampSpeed(velocity);
         setDeltaMovement(velocity);

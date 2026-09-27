@@ -61,7 +61,7 @@ public final class RVP_GuidanceRuntimeMath {
                 && Math.abs(context.active().topAttackHeight()) > 1.0E-6f;
 
         Vec3 current = projectile.getDeltaMovement();
-        double speed = Math.max(projectile.getFlightSpeed(), current.length());
+        double speed = Math.max(projectile.getMotionSpeedReference(), current.length());
         if (speed <= 1.0E-6) {
             return false;
         }
@@ -184,7 +184,7 @@ public final class RVP_GuidanceRuntimeMath {
         }
 
         Vec3 current = projectile.getDeltaMovement();
-        double speed = Math.max(projectile.getFlightSpeed(), current.length());
+        double speed = Math.max(projectile.getMotionSpeedReference(), current.length());
         if (speed <= 1.0E-6) {
             return false;
         }

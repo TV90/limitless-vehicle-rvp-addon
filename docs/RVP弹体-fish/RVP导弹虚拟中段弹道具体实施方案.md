@@ -658,7 +658,7 @@ reachable = forward >= minForward + reserveTicks × speed
 
 | 编号 | 等级 | 当前实现 | 具体风险 | 收敛要求 |
 | --- | --- | --- | --- | --- |
-| R-01 | 高（已解决，2026-09-27 全链收口） | 实体以 `currentFlightSpeed` 保存当前制导基准、以 `peakFlightSpeed` 单独统计峰值；虚拟状态继续保存 `peakFlightSpeed` | 基础阻力、诱导阻力、穿透或虚拟末段减速后，历史峰值不再进入下一 Tick 制导/HITL/恒速运动 | 所有真实运动出口统一更新两类状态；恢复时当前基准只取末 Tick `velocity.length()`，虚拟峰值仅写统计字段；定向回归覆盖减速后当前值下降而峰值保持 |
+| R-01 | 已收口（2026-09-27；恒速导弹规则同步） | 实体分别维护 `currentFlightSpeed` 与 `peakFlightSpeed`；虚拟状态保存末段速度和历史峰值 | 普通弹体及未启用恒速的导弹不会用历史峰值回填；`constant_speed=true` 的导弹在实体运动/制导中按历史峰值恢复速度，受 `max_speed` 限制。虚拟中段本身仍按积分器速度推进，实体恢复后重新启用峰值回填 | 运动出口统一更新当前值与峰值；虚拟恢复以末 Tick `velocity.length()` 恢复当前基准，并保留虚拟峰值供恒速导弹后续回填 |
 | R-02 | 中 | 每次积分只替换快照中的 `trajectory`，制导相位、雷达开关/捕获状态、丢失计时、Top Attack 状态等保留进入虚拟态时的值 | 虚拟飞行经过大量 Tick 后，恢复的子系统时钟和记忆可与 `flightTick`、当前位置不一致 | 逐字段定义“虚拟期间冻结”、“继续计时”或“恢复时重算”语义，不能统一原样写回 |
 | R-03 | 中 | `cruiseStartTick`、`cruiseEndHorizontalDistance` 和 `rotateToMotion` 已进入参数对象，但积分器不读取 | JSON 表面上可配置的巡航切换和朝向行为对虚拟段无效，真实段/虚拟段轨迹语义不一致 | 字段`rotateToMotion`语义是让弹体模型方向朝向速度方向，虚拟积分不需要这个字段，仅记录然后原样恢复即可。从虚拟参数契约中删除`cruiseStartTick`、`cruiseEndHorizontalDistance` |
 

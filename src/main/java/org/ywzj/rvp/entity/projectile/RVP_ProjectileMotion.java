@@ -125,6 +125,13 @@ public final class RVP_ProjectileMotion {
         velocity = clampSpeed(projectile, velocity, data);
         // 调用本项目诱导阻力结算，在速度上下限钳制后扣除本 Tick 转向能量代价。
         velocity = applyInducedDrag(projectile, velocity, data);
+        if (projectile.isMissile() && data.getProjectileData().isConstantSpeed()
+                && velocity.lengthSqr() > 1.0E-12) {
+            // 调用本项目弹体速率基准入口，使恒速导弹在推力/阻力结算后恢复至已达到的峰值。
+            velocity = velocity.normalize().scale(Math.max(
+                    projectile.getMotionSpeedReference(), velocity.length()));
+            velocity = clampSpeed(projectile, velocity, data);
+        }
         projectile.setDeltaMovement(velocity);
         projectile.setPos(projectile.position().add(velocity));
         projectile.flightDistance += velocity.length();
@@ -310,7 +317,7 @@ public final class RVP_ProjectileMotion {
         if (missile.getFlightTickCount() < ignition) {
             velocity = applyPreIgnitionVelocity(missile, velocity, ignition);
         } else {
-            double speed = Math.max(velocity.length(), missile.currentFlightSpeed);
+            double speed = Math.max(velocity.length(), missile.getMotionSpeedReference());
             int motorTick = missile.getFlightTickCount() - ignition;
             if (motorTick <= data.getResolvedMotorBurnTime()) {
                 // 主燃烧段：按点火后 Tick 解析推力曲线与变质量（A1 变质量 / A2 推力曲线）。
@@ -325,7 +332,7 @@ public final class RVP_ProjectileMotion {
                 speed = Math.max(speed, 0.01);
             }
             if (data.getProjectileData().isConstantSpeed()) {
-                speed = Math.max(missile.currentFlightSpeed, data.getProjectileVelocity());
+                speed = Math.max(missile.getMotionSpeedReference(), data.getProjectileVelocity());
             }
             velocity = lookDir.scale(speed);
             velocity = applyPropulsionGravity(missile, velocity, data);
@@ -334,6 +341,12 @@ public final class RVP_ProjectileMotion {
 
         // 调用本项目诱导阻力结算，使 HITL/线导直控与自动制导使用同一能量代价。
         velocity = applyInducedDrag(missile, velocity, data);
+        if (data.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-12) {
+            // 调用本项目弹体速率基准入口，使恒速 HITL 导弹无论点火阶段都按已达峰值恢复速度。
+            velocity = velocity.normalize().scale(Math.max(
+                    missile.getMotionSpeedReference(), velocity.length()));
+            velocity = clampSpeed(missile, velocity, data);
+        }
         missile.setDeltaMovement(velocity);
         missile.setPos(missile.position().add(velocity));
         missile.flightDistance += velocity.length();

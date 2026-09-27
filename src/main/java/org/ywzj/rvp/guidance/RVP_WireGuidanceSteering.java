@@ -61,9 +61,9 @@ public final class RVP_WireGuidanceSteering {
 
         double speed = projectile.getDeltaMovement().length();
         if (projectile.getRvpData() != null) {
-            speed = Math.max(speed, projectile.getFlightSpeed());
+            speed = Math.max(speed, projectile.getMotionSpeedReference());
             if (projectile.getRvpData().getProjectileData().isConstantSpeed()) {
-                speed = Math.max(projectile.getFlightSpeed(), projectile.getRvpData().getProjectileVelocity());
+                speed = Math.max(projectile.getMotionSpeedReference(), projectile.getRvpData().getProjectileVelocity());
             }
         }
         speed = Math.max(speed, 0.01);

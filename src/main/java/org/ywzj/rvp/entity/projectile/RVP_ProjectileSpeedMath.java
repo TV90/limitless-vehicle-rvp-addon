@@ -3,8 +3,8 @@ package org.ywzj.rvp.entity.projectile;
 /**
  * 弹体当前速率基准与历史峰值的纯数学更新规则。
  *
- * <p>当前速率供下一 Tick 制导与恒速运动消费，必须允许随阻力、穿透和转向损失下降；
- * 历史峰值仅用于统计与虚拟中段快照，禁止反向写回当前速率。</p>
+ * <p>当前速率供普通运动与制导消费，允许随阻力、穿透和转向损失下降；历史峰值用于统计、
+ * 虚拟中段快照，并作为显式配置恒速导弹的运动回填基准。</p>
  */
 public final class RVP_ProjectileSpeedMath {
     /** 速度接近零时保留的最小制导数值基准，单位格/Tick。 */
@@ -23,7 +23,7 @@ public final class RVP_ProjectileSpeedMath {
     }
 
     /**
-     * 只向上更新历史峰值；该返回值不得用于制导或运动速度回填。
+     * 只向上更新历史峰值；恒速导弹可由实体速率策略选择该值作为运动回填基准。
      *
      * @param previousPeak 已记录的历史峰值，单位格/Tick
      * @param actualSpeed 当前权威速度模长，单位格/Tick
