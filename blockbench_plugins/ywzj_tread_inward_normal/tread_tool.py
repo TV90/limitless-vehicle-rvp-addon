@@ -34,7 +34,7 @@ def extract_transform(bone):
     }
 
 
-def build_animation(bones, duration=1.0):
+def build_animation(bones, duration=1.0, reverse=False):
     anim = {
         "format_version": "1.8.0",
         "animations": {}
@@ -57,13 +57,20 @@ def build_animation(bones, duration=1.0):
             continue  # 不足两个骨骼无法形成闭环动画
         indices = sorted(idx_bone_map.keys())
         min_idx = indices[0]
+        max_idx = indices[-1]
         # 创建从索引到骨骼的快速查找
         for idx, bone in idx_bone_map.items():
-            # 计算下一个索引
-            next_idx = idx + 1
-            if next_idx not in idx_bone_map:
-                # 没有下一个索引，则闭环到最小索引
-                next_idx = min_idx
+            # 反向时每个环节向前一个环节移动，履带朝序号减小方向滚动
+            if reverse:
+                next_idx = idx - 1
+                if next_idx not in idx_bone_map:
+                    # 没有前一个索引，则闭环到最大索引
+                    next_idx = max_idx
+            else:
+                next_idx = idx + 1
+                if next_idx not in idx_bone_map:
+                    # 没有下一个索引，则闭环到最小索引
+                    next_idx = min_idx
             next_bone = idx_bone_map.get(next_idx)
             if not next_bone:
                 continue
@@ -106,6 +113,7 @@ def main():
     parser.add_argument("model", nargs="?", help="输入模型 JSON 文件，例如 `ztz99a.json`")
     parser.add_argument("--out", "-o", help="输出动画文件名，默认：<modelname>.animation.json")
     parser.add_argument("--duration", "-d", type=float, default=1.0, help="关键帧间时长（秒），默认 1.0")
+    parser.add_argument("--reverse", "-r", action="store_true", help="履带反向滚动")
     args = parser.parse_args()
 
     if not args.model:
@@ -124,11 +132,12 @@ def main():
         print(str(e))
         return
 
-    animation = build_animation(bones, duration=args.duration)
+    animation = build_animation(bones, duration=args.duration, reverse=args.reverse)
 
     out_path = Path(args.out) if args.out else model_path.with_name(model_path.stem + ".animation.json")
     save_json(animation, out_path)
-    print(f"已生成闭环动画: {out_path}")
+    direction = "反向" if args.reverse else "正向"
+    print(f"已生成{direction}闭环动画: {out_path}")
 
 
 if __name__ == "__main__":
