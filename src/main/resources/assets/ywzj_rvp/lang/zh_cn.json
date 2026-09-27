@@ -408,7 +408,7 @@
   "gui.ywzj_rvp.hud.ecm_jamming": "ECM: 反制中 %ss",
   "gui.ywzj_rvp.hud.ecm_reload": "ECM: 装填 %s秒",
   "gui.ywzj_rvp.hud.ecm_ready": "ECM: 就绪 [%s]",
-  "gui.ywzj_rvp.hud.maintenance_repairing": "维修: 维修中",
+  "gui.ywzj_rvp.hud.maintenance_repairing": "维修: 维修中 %s秒",
   "gui.ywzj_rvp.hud.maintenance_cooling": "维修: 冷却 %s秒",
   "gui.ywzj_rvp.hud.maintenance_ready": "维修: 就绪 [%s]",
   "gui.ywzj_rvp.hud.aps_reload_none": "装填时间:无需装填",
@@ -435,5 +435,6 @@
   "message.ywzj_rvp.launcher.not_deployed": "发射架未展开",
   "message.ywzj_rvp.launcher.deploying": "发射架展开中",
   "message.ywzj_rvp.launcher.retracting": "发射架收回中",
-  "message.ywzj_rvp.launcher.too_fast": "车速过高，无法发射"
+  "message.ywzj_rvp.launcher.too_fast": "车速过高，无法发射",
+  "message.ywzj_rvp.part_repaired": "部件修复完成"
 }

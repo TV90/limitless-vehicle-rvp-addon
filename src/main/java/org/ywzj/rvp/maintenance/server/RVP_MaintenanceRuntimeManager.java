@@ -3,6 +3,7 @@ package org.ywzj.rvp.maintenance.server;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.PacketDistributor;
 import org.ywzj.rvp.maintenance.network.S2CMaintenanceSync;
+import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
@@ -112,8 +113,19 @@ public final class RVP_MaintenanceRuntimeManager {
             if (config.healParts()) {
                 healParts(vehicle);
             }
+            // [RVP] 维修音效（2026-09-28）：扳手音每 ~25t 一次循环（wrench1/2/3 随机变体）
+            if (state.useRemain % 25 == 0) {
+                vehicle.level().playSound(null, vehicle.getX(), vehicle.getY(), vehicle.getZ(),
+                        RVP_Sounds.MAINTENANCE_WRENCH.get(), net.minecraft.sounds.SoundSource.NEUTRAL, 1.0F, 1.0F);
+            }
             if (state.useRemain == 0) {
-                // 生效结束：写穿冷却 + 立即推一次，客户端及时切出"维修中"
+                // [RVP] 生效结束（2026-09-28 定版，三件事都在维修完毕时刻发生）：
+                // ① 冷却从此刻才开始计时；② 骨骼模块（部件）此刻才恢复——按维修不再瞬时恢复；
+                // ③ 引擎累计此刻清空（随部件恢复语义）
+                state.cooldown = config.waitTimeTicks();
+                recoverModules(vehicle, config);
+                RVP_EngineDamageTable.clearVehicle(vehicle.getUUID());
+                // 写穿 + 立即推一次，客户端及时切出"维修中"并显示冷却倒计时
                 writeThrough(vehicle, state);
                 syncHud(vehicle, state);
                 return;
@@ -170,15 +182,9 @@ public final class RVP_MaintenanceRuntimeManager {
                 && vehicle.getY() - vehicle.level().getMinBuildHeight() > config.requireMaxAltitude()) {
             return false;
         }
-        // 进入生效期
-        state.cooldown = config.waitTimeTicks();
+        // 进入生效期（2026-09-28 定版：冷却在维修持续结束后才开始计时——见 tick() 结束分支）
         state.useRemain = config.useTimeTicks();
         writeThrough(vehicle, state);
-        // 模块渐进恢复（设备概率 + ERA 比例），恢复后一次广播即可
-        recoverModules(vehicle, config);
-        // [RVP] 引擎部件（2026-09-26）：快修触发即清空引擎骨窗口累计——受损档随维修回落，
-        // 瘫痪档的模块恢复仍走下方 recoverModules 掷骰（恢复成功同样清累计）
-        RVP_EngineDamageTable.clearVehicle(vehicle.getUUID());
         syncHud(vehicle, state);
         return true;
     }
@@ -334,8 +340,10 @@ public final class RVP_MaintenanceRuntimeManager {
     // ─────────────────────────────────────────────────────────────
 
     private static void maybeSyncHud(AbstractVehicle vehicle, MaintenanceState state) {
+        // 生效期 5t 节流（维修中倒计时 0.25s 粒度），其余 10t
+        int interval = state.useRemain > 0 ? 5 : 10;
         int now = vehicle.tickCount;
-        if (now - state.lastHudSyncTick < 10) {
+        if (now - state.lastHudSyncTick < interval) {
             return;
         }
         state.lastHudSyncTick = now;

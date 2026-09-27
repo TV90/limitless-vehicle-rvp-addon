@@ -47,12 +47,13 @@ public record BoneMaintenanceConfig(
 ) {
 
     /**
-     * 全载具默认快修配置（未显式配置 maintenance 时的回退值，用户 2026-09-25 定版）：
-     * 冷却 300t（15 秒）、生效 20t × 1.5%/tick = 一次修复 30% 最大血量；
+     * 全载具默认快修配置（未显式配置 maintenance 时的回退值；2026-09-28 用户定版：
+     * 生效 4 秒 = 80t × 0.25%/tick = 一次修复 20% 最大血量；冷却 300t（15 秒）且维修
+     * 持续结束后才开始计时）；
      * 不回部件血量、无离地限制、模块恢复走缺省（设备 25% + ERA 25%/至少 1 块）。
      */
     public static BoneMaintenanceConfig defaults() {
-        return new BoneMaintenanceConfig(20, 300, 1.5f, false, -1f, null);
+        return new BoneMaintenanceConfig(80, 300, 0.25f, false, -1f, null);
     }
 
     /** 解析 maintenance 子对象；缺省值由字段初值决定（ GsonUtil 同款语义）。 */
@@ -62,10 +63,10 @@ public record BoneMaintenanceConfig(
             return null;
         }
         JsonObject obj = element.getAsJsonObject();
-        int useTimeTicks = Math.max(1, Math.min(1200, GsonHelper.getAsInt(obj, "use_time_ticks", 20)));
+        int useTimeTicks = Math.max(1, Math.min(1200, GsonHelper.getAsInt(obj, "use_time_ticks", 80)));
         int waitTimeTicks = Math.max(0, Math.min(100000, GsonHelper.getAsInt(obj, "wait_time_ticks", 300)));
-        // 缺省值与 defaults() 对齐（用户 2026-09-25 定版：冷却 15 秒、一次修复 30% 血量）
-        float healPercent = GsonHelper.getAsFloat(obj, "heal_per_tick_percent", 1.5f);
+        // 缺省值与 defaults() 对齐（2026-09-28 定版：4 秒恢复 20% 血量）
+        float healPercent = GsonHelper.getAsFloat(obj, "heal_per_tick_percent", 0.25f);
         if (!Float.isFinite(healPercent) || healPercent <= 0f) {
             healPercent = 1.0f;
         }

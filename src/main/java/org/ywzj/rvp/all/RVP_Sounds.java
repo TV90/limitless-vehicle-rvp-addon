@@ -17,6 +17,8 @@ public final class RVP_Sounds {
             () -> SoundEvent.createVariableRangeEvent(RVP_MOD.modLocation("nuclear_explosion")));
 
     public static final RegistryObject<SoundEvent> EXPLOSION_LARGE_NEAR = register("explosion_large_near");
+    /** 快修扳手音（wrench1/2/3 随机变体，维修持续期每 ~25t 循环播放）。 */
+    public static final RegistryObject<SoundEvent> MAINTENANCE_WRENCH = register("maintenance_wrench");
     public static final RegistryObject<SoundEvent> EXPLOSION_LARGE_FAR = register("explosion_large_far");
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_NEAR = register("explosion_small_near");
     public static final RegistryObject<SoundEvent> EXPLOSION_SMALL_FAR = register("explosion_small_far");

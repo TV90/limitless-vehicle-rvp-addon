@@ -241,7 +241,9 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
     private static void drawMaintenanceRow(GuiGraphics guiGraphics, Font font,
                                            RVP_ClientMaintenanceState.Snapshot state, int x, int y) {
         if (state.isUsing()) {
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_repairing"), x, y, Color.GREEN);
+            // [RVP] 维修中 + 倒计时（2026-09-28）：useRemain → 秒（Snapshot 已含 useRemain）
+            int remainSec = (state.useRemain() + 19) / 20;
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_repairing", remainSec), x, y, Color.GREEN);
             return;
         }
         if (state.isCoolingDown()) {
