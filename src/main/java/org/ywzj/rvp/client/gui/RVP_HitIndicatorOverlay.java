@@ -15,6 +15,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
@@ -333,11 +334,25 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         String bone = RVP_ClientHitIndicatorState.getBoneDisplayName();
         // 服务端对未配置命中箱骨块（倍率骨骼）的载具下发的是载具名翻译 key（entity.<ns>.<path>），
         // 这里翻译成可读载具名（如 "T-90M 突破3"）；骨骼显示别名等普通文本原样显示。
-        String boneText = bone.startsWith("entity.") ? Component.translatable(bone).getString() : bone;
+        // [RVP] CN 别名重查（2026-09-28）：包内服务端解析串恒为服务端语言，中文环境凭
+        // 骨名在客户端配置重查 hitbox_display_name_CN（entity.* 载具名走 lang 已双语，跳过）
+        String boneText;
+        if (bone.startsWith("entity.")) {
+            boneText = Component.translatable(bone).getString();
+        } else {
+            String boneName = RVP_ClientHitIndicatorState.getBoneName();
+            AbstractVehicle hitVehicle = mc.level == null ? null
+                    : mc.level.getEntity(RVP_ClientHitIndicatorState.getLastEntityId())
+                            instanceof AbstractVehicle v ? v : null;
+            boneText = hitVehicle != null && !boneName.isBlank()
+                    ? org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE
+                            .resolveHitboxDisplayNameLocalized(hitVehicle, boneName)
+                    : bone;
+        }
         // 文案：直击命中显示“命中XX骨骼 -x%”（未配倍率骨骼时为载具名）；非直击爆炸（骨骼名为空）显示“爆炸 -x%”
         String title = bone.isEmpty()
-                ? String.format("爆炸 -%.1f%%", damagePercent)
-                : String.format("命中%s -%.1f%%", boneText, damagePercent);
+                ? I18n.get("gui.ywzj_rvp.hit_panel.title_explode", String.format("%.1f", damagePercent))
+                : I18n.get("gui.ywzj_rvp.hit_panel.title_hit", boneText, String.format("%.1f", damagePercent));
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
         gg.pose().pushPose();
         // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）

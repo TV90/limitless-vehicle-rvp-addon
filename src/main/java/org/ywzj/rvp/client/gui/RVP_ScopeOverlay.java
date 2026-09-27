@@ -852,7 +852,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             ResourceLocation weaponId = bullet.getWeaponId();
             if (weaponId != null) {
                 String display = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
-                        .map(index -> index.data().getName())
+                        .map(index -> index.data() instanceof org.ywzj.rvp.weapon.data.RVP_WeaponData rvpData
+                                ? org.ywzj.rvp.client.util.RVP_LangHelper.resolveWeaponName(rvpData)
+                                : index.data().getName())
                         .filter(name -> name != null && !name.isBlank())
                         .orElse(weaponId.getPath().toUpperCase());
                 if (!display.isBlank()) {

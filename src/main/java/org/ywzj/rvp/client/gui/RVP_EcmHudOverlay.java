@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
@@ -46,14 +47,14 @@ public class RVP_EcmHudOverlay implements IGuiOverlay {
             String line;
             int color;
             if (totalDecoys > 0) {
-                line = "ECM: 干扰中";
+                line = I18n.get("gui.ywzj_rvp.hud.passive_ecm_jamming");
                 color = Color.GREEN;
             } else if (maxCharge > 0) {
                 int seconds = (maxCharge + 19) / 20;
-                line = "ECM: 充能 " + seconds + "s";
+                line = I18n.get("gui.ywzj_rvp.hud.passive_ecm_charging", seconds);
                 color = Color.GRAY;
             } else {
-                line = "ECM: 就绪";
+                line = I18n.get("gui.ywzj_rvp.hud.passive_ecm_ready");
                 color = Color.GREEN;
             }
             guiGraphics.drawString(font, line, x, y, color, false);

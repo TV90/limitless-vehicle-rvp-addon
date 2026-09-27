@@ -29,6 +29,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     @SerializedName("show_msl_indicator")
     private boolean showMslIndicator = false;
 
+    /**
+     * 中文名（可选，2026-09-28 数据文件双语名机制）：中文环境（zh_*）客户端 UI 显示本字段，
+     * 其它语言显示基类 {@code name}。经 S2C 资产全量同步客户端自动可得，零网络改动。
+     * 解析统一走 {@code RVP_LangHelper.resolveWeaponName}（服务端恒返回 name）。
+     */
+    @SerializedName("name_CN")
+    private String nameCn = "";
+
     @SerializedName("tactical_map_icon")
     private String tacticalMapIcon = "";
     private transient RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
@@ -699,5 +707,10 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         RVP_GuidanceData guidance = getGuidanceData();
         return guidance.getGuidanceType() == RVP_EnumGuidanceType.SACLOS
                 || guidance.getGuidanceType() == RVP_EnumGuidanceType.HITL_CLOS_TV;
+    }
+
+    /** 中文名 getter（{@code name_CN}，缺省空串）。显示解析走 {@code RVP_LangHelper.resolveWeaponName}。 */
+    public String getNameCn() {
+        return this.nameCn;
     }
 }

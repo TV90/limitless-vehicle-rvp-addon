@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
@@ -59,10 +60,10 @@ public class RVP_ApsHudOverlay implements IGuiOverlay {
 
     private static String resolveReloadText(RVP_ApsHudState.Snapshot state) {
         if (state.ammoCurrent() >= state.ammoMax()) {
-            return "装填时间:无需装填";
+            return I18n.get("gui.ywzj_rvp.hud.aps_reload_none");
         }
         int remaining = Math.max(state.reloadOneTick() - state.reloadProgressTick(), 0);
         int seconds = (remaining + 19) / 20;
-        return "装填时间:" + seconds + "秒";
+        return I18n.get("gui.ywzj_rvp.hud.aps_reload", seconds);
     }
 }

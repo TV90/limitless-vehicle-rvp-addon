@@ -4,6 +4,7 @@ import com.sighs.apricityui.init.Document;
 import com.sighs.apricityui.init.Element;
 import com.sighs.apricityui.screen.ApricityScreen;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
@@ -204,7 +205,7 @@ public class RVP_AuiVariantScreen extends ApricityScreen {
                             .filter(c -> c.partUnitId().equals(station.partId())).toList().size()
                     : station.multi.getSubWeapons().size();
             int current = isPylon ? 0 : station.multi.getSubWeapons().indexOf(station.multi.getSelectedWeapon());
-            count.setTextContent(isPylon ? total + " 项" : (current + 1) + "/" + total);
+            count.setTextContent(isPylon ? I18n.get("gui.ywzj_rvp.variants.count_items", total) : (current + 1) + "/" + total);
             entry.appendChild(name);
             entry.appendChild(count);
             int selectionIndex = index;

@@ -441,13 +441,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         if (!(getOwner() instanceof ServerPlayer player)) {
             return;
         }
-        String message = switch (type) {
-            case AIR -> "主动红外导引头开机";
-            case ARH -> "主动雷达导引头开机";
+        String messageKey = switch (type) {
+            case AIR -> "message.ywzj_rvp.seeker_online_ir";
+            case ARH -> "message.ywzj_rvp.seeker_online_radar";
             default -> null;
         };
-        if (message != null) {
-            player.displayClientMessage(Component.literal(message), true);
+        if (messageKey != null) {
+            // [RVP] translatable：服务端发 key，客户端按自身语言本地化（专用服安全）
+            player.displayClientMessage(Component.translatable(messageKey), true);
         }
     }
 

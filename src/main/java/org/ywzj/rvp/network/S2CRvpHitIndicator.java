@@ -19,6 +19,9 @@ public class S2CRvpHitIndicator {
     public Vec3 hitVector;
     public float damage;
     public String boneDisplayName;
+    /** 命中骨名（可空，2026-09-28）：客户端凭它在客户端配置重查 CN 别名（hitbox_display_name_CN），
+     *  服务端 boneDisplayName 恒为服务端语言解析串 */
+    public String boneName;
     public String ammoNameKey;
     /** 武器 id（可空）：客户端据此查询武器 display 判断“有无模型”，决定命中动画渲染模型还是曳光 */
     public String weaponId;
@@ -42,12 +45,22 @@ public class S2CRvpHitIndicator {
                                             float damage, String boneDisplayName, String ammoNameKey,
                                             String weaponId, Vec3 entityPosAtHit, String vehicleDisplayId,
                                             float explosionRadius) {
+        return create(entityId, hitPosition, hitVector, damage, boneDisplayName, ammoNameKey,
+                weaponId, entityPosAtHit, vehicleDisplayId, explosionRadius, null);
+    }
+
+    /** 带命中骨名（客户端 CN 别名重查用，2026-09-28）。 */
+    public static S2CRvpHitIndicator create(int entityId, Vec3 hitPosition, Vec3 hitVector,
+                                            float damage, String boneDisplayName, String ammoNameKey,
+                                            String weaponId, Vec3 entityPosAtHit, String vehicleDisplayId,
+                                            float explosionRadius, @org.jetbrains.annotations.Nullable String boneName) {
         S2CRvpHitIndicator msg = new S2CRvpHitIndicator();
         msg.entityId = entityId;
         msg.hitPosition = hitPosition;
         msg.hitVector = hitVector;
         msg.damage = damage;
         msg.boneDisplayName = boneDisplayName == null ? "" : boneDisplayName;
+        msg.boneName = boneName == null ? "" : boneName;
         msg.ammoNameKey = ammoNameKey == null ? "" : ammoNameKey;
         msg.weaponId = weaponId == null ? "" : weaponId;
         msg.entityPosAtHit = entityPosAtHit == null ? hitPosition : entityPosAtHit;
@@ -62,6 +75,7 @@ public class S2CRvpHitIndicator {
         buf.writeVector3f(msg.hitVector.toVector3f());
         buf.writeFloat(msg.damage);
         buf.writeUtf(msg.boneDisplayName, 128);
+        buf.writeUtf(msg.boneName, 128);
         buf.writeUtf(msg.ammoNameKey, 128);
         buf.writeUtf(msg.weaponId, 128);
         buf.writeVector3f(msg.entityPosAtHit.toVector3f());
@@ -76,6 +90,7 @@ public class S2CRvpHitIndicator {
         msg.hitVector = new Vec3(buf.readVector3f());
         msg.damage = buf.readFloat();
         msg.boneDisplayName = buf.readUtf(128);
+        msg.boneName = buf.readUtf(128);
         msg.ammoNameKey = buf.readUtf(128);
         msg.weaponId = buf.readUtf(128);
         msg.entityPosAtHit = new Vec3(buf.readVector3f());

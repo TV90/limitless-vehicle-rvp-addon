@@ -3445,7 +3445,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             targetVehicle.position(),
                             targetVehicle.getDisplayId() == null ? null
                                     : targetVehicle.getDisplayId().toString(),
-                            explosionRadius));
+                            explosionRadius,
+                            hitboxRes == null ? null : hitboxRes.hitBoneName()));
         }
         if (hitboxRes != null && entity instanceof AbstractVehicle targetVehicle && !level().isClientSide()) {
             // 记录直击命中的载具，用于 triggerExplosion 中区分 HE 直击与非直击

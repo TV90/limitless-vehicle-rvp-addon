@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.math.Axis;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -500,7 +501,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private Component artilleryTrajectoryLabel() {
         return Component.literal(RVP_ArtilleryFireControlState.getTrajectoryMode()
-                == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH ? "高弹道" : "低弹道");
+                == RVP_ArtilleryFireControlState.TrajectoryMode.HIGH
+                ? I18n.get("gui.ywzj_rvp.tactical_map.trajectory_high")
+                : I18n.get("gui.ywzj_rvp.tactical_map.trajectory_low"));
     }
 
     private Component gpsPanelLabel() {
@@ -2025,16 +2028,20 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 ? String.format(Locale.ROOT, "%.1f°", snapshot.elevationDeg()) : "--";
         String distanceText = Double.isFinite(distance)
                 ? String.format(Locale.ROOT, "%.0fm", distance) : "--";
-        String line1 = "仰角 " + elevationText + "  落点距离 " + distanceText;
-        String hitText = snapshot.exact() ? "可命中" : "无解";
+        // [RVP] i18n（2026-09-28）：仰角/落点/解算/残弹文案走 lang；布局测量用本地化后的串
+        String line1 = I18n.get("gui.ywzj_rvp.tactical_map.artillery.elevation", elevationText, distanceText);
+        String hitText = snapshot.exact()
+                ? I18n.get("gui.ywzj_rvp.tactical_map.artillery.hit")
+                : I18n.get("gui.ywzj_rvp.tactical_map.artillery.no_solution");
         int hitColor = snapshot.exact() ? 0xFF62F58A : 0xFFFF5B5B;
         String ammoText = maxAmmo > 0 ? remainAmmo + "/" + maxAmmo : Integer.toString(remainAmmo);
 
         guiGraphics.drawString(this.font, line1, mapLeft + 8, mapTop + 20, 0xFFE5EDF6, false);
-        guiGraphics.drawString(this.font, "解算 ", mapLeft + 8, mapTop + 30, 0xFF9CA9B8, false);
-        int statusX = mapLeft + 8 + this.font.width("解算 ");
+        String solutionLabel = I18n.get("gui.ywzj_rvp.tactical_map.artillery.solution");
+        guiGraphics.drawString(this.font, solutionLabel, mapLeft + 8, mapTop + 30, 0xFF9CA9B8, false);
+        int statusX = mapLeft + 8 + this.font.width(solutionLabel);
         guiGraphics.drawString(this.font, hitText, statusX, mapTop + 30, hitColor, false);
-        guiGraphics.drawString(this.font, "  残弹 " + ammoText,
+        guiGraphics.drawString(this.font, I18n.get("gui.ywzj_rvp.tactical_map.artillery.ammo", ammoText),
                 statusX + this.font.width(hitText), mapTop + 30, 0xFFE5EDF6, false);
     }
 
@@ -3823,7 +3830,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         }
         markerHits.add(new MarkerHit(entry.entityId(), null, MarkerKind.MISSILE, sx, sy, radius,
                 new Vec3(entry.x(), entry.y(), entry.z()), entry.guidancePos(),
-                Component.literal(entry.displayName()),
+                Component.literal(resolveRemoteAmmoDisplayName(entry)),
                 entry.speedKmh(),
                 entry.gpsCapable(),
                 relationColorForAffiliation(entry.affiliation())));
@@ -3914,10 +3921,32 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         if (weaponId == null) {
             return "Unknown";
         }
+        // [RVP] 语言感知（name_CN，2026-09-28）：客户端直查配置按当前语言二选一
         return CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
-                .map(index -> index.data().getName())
+                .map(index -> index.data() instanceof org.ywzj.rvp.weapon.data.RVP_WeaponData rvpData
+                        ? org.ywzj.rvp.client.util.RVP_LangHelper.resolveWeaponName(rvpData)
+                        : index.data().getName())
                 .filter(name -> name != null && !name.isBlank())
                 .orElse(weaponId.toString());
+    }
+
+    /**
+     * [RVP] 远程弹药显示名语言感知（name_CN，2026-09-28）：S2C 包的服务端解析串恒为
+     * 服务端语言（专用服=英文），客户端凭包内 weaponId 重查本地化名；查不到回退服务端串。
+     */
+    private String resolveRemoteAmmoDisplayName(S2CRemoteAmmoSnapshot.Entry entry) {
+        if (entry.weaponId() != null) {
+            String localized = CommonAssetsManager.vehicleWeaponManager().getIndex(entry.weaponId())
+                    .map(index -> index.data() instanceof org.ywzj.rvp.weapon.data.RVP_WeaponData rvpData
+                            ? org.ywzj.rvp.client.util.RVP_LangHelper.resolveWeaponName(rvpData)
+                            : index.data().getName())
+                    .filter(name -> name != null && !name.isBlank())
+                    .orElse(null);
+            if (localized != null) {
+                return localized;
+            }
+        }
+        return entry.displayName();
     }
 
     private double resolveEntitySpeedKmh(Entity entity) {

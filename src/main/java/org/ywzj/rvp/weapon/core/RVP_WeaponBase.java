@@ -352,19 +352,19 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                 : snapshot.speedKph();
 
         if (state == LauncherDeployRuntimeManager.State.CLOSED && config.blockFireWhenClosed()) {
-            denyLauncherDeployFire(operator, "发射架未展开");
+            denyLauncherDeployFire(operator, "message.ywzj_rvp.launcher.not_deployed");
             return false;
         }
         if (state == LauncherDeployRuntimeManager.State.DEPLOYING && config.blockFireWhenDeploying()) {
-            denyLauncherDeployFire(operator, "发射架展开中");
+            denyLauncherDeployFire(operator, "message.ywzj_rvp.launcher.deploying");
             return false;
         }
         if (state == LauncherDeployRuntimeManager.State.RETRACTING && config.blockFireWhenRetracting()) {
-            denyLauncherDeployFire(operator, "发射架收回中");
+            denyLauncherDeployFire(operator, "message.ywzj_rvp.launcher.retracting");
             return false;
         }
         if (config.blockFireWhenSpeeding() && speedKph >= config.retractSpeedMin()) {
-            denyLauncherDeployFire(operator, "车速过高，无法发射");
+            denyLauncherDeployFire(operator, "message.ywzj_rvp.launcher.too_fast");
             return false;
         }
         return true;
@@ -414,8 +414,24 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             }
         }
         if (player != null) {
-            player.displayClientMessage(Component.literal(message), true);
+            // [RVP] translatable：服务端发 key，客户端按自身语言本地化
+            player.displayClientMessage(Component.translatable(message), true);
         }
+    }
+
+    /**
+     * [RVP] 武器显示名语言感知（2026-09-28 数据文件双语名机制）：中文环境（zh_*）且武器
+     * JSON 配置了 {@code name_CN} 时返回 CN 名，其它环境返回原 name（translatable 包装）。
+     * 本体右下角弹药 HUD（{@code VehicleWeaponOverlay}）、切枪动作栏提示、选弹界面全部经
+     * 本虚方法取名——覆写一处全链路生效；服务端（专用服）恒走原 name。
+     */
+    @Override
+    public net.minecraft.network.chat.Component getDisplayName() {
+        String cn = getData().getNameCn();
+        if (cn != null && !cn.isBlank() && org.ywzj.rvp.client.util.RVP_LangHelper.isChineseUi()) {
+            return net.minecraft.network.chat.Component.literal(cn);
+        }
+        return super.getDisplayName();
     }
 
     @Override

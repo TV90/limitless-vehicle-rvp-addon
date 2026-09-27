@@ -4,6 +4,7 @@ import com.sighs.apricityui.init.Document;
 import com.sighs.apricityui.init.Element;
 import com.sighs.apricityui.init.Node;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ScreenEvent;
@@ -77,7 +78,7 @@ public final class RVP_ModdingToolOverlay {
             rvpButton.setAttribute("id", "rvp-variants-button");
             rvpButton.setClassName("button button-secondary");
             rvpButton.setAttribute("type", "button");
-            rvpButton.setTextContent("改装武器");
+            rvpButton.setTextContent(net.minecraft.client.resources.language.I18n.get("gui.ywzj_rvp.modding.unified_button"));
             rvpButton.addEventListener("click", ev -> {
                 if (!RVP_VehicleExtendedConfigManager.INSTANCE.canModVehicle(vehicle)) {
                     Minecraft mc = Minecraft.getInstance();

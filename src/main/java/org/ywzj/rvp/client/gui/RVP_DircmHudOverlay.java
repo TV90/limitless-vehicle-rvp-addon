@@ -1,6 +1,7 @@
 package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
@@ -50,14 +51,14 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
             String line;
             int color;
             if (channel.irradiating()) {
-                line = "DIRCM[" + name + "]:照射中";
+                line = I18n.get("gui.ywzj_rvp.hud.dircm_irradiating", name);
                 color = Color.GREEN;
             } else if (channel.charging()) {
                 int seconds = (channel.chargeRemainTick() + 19) / 20;
-                line = "DIRCM[" + name + "]:充能 " + seconds + "s";
+                line = I18n.get("gui.ywzj_rvp.hud.dircm_charging", name, seconds);
                 color = Color.GRAY;
             } else {
-                line = "DIRCM[" + name + "]:就绪";
+                line = I18n.get("gui.ywzj_rvp.hud.dircm_ready", name);
                 color = Color.GREEN;
             }
             guiGraphics.drawString(font, line, x, y, color, false);

@@ -49,6 +49,8 @@ public final class RVP_ClientHitIndicatorState {
         public final Vec3 hitVector;
         public final float damage;
         public final String boneDisplayName;
+        /** 命中骨名（可空，2026-09-28）：客户端重查 CN 别名（hitbox_display_name_CN）用 */
+        public final String boneName;
         public final String ammoNameKey;
         /** 武器 id（可空）：客户端据此查询武器 display 判断“有无模型” */
         public final String weaponId;
@@ -72,6 +74,7 @@ public final class RVP_ClientHitIndicatorState {
             this.hitVector = msg.hitVector;
             this.damage = msg.damage;
             this.boneDisplayName = msg.boneDisplayName;
+            this.boneName = msg.boneName == null ? "" : msg.boneName;
             this.ammoNameKey = msg.ammoNameKey;
             this.weaponId = msg.weaponId;
             Vec3 hv = msg.hitVector;
@@ -190,6 +193,16 @@ public final class RVP_ClientHitIndicatorState {
      */
     public static String getBoneDisplayName() {
         return events.isEmpty() ? "" : events.get(events.size() - 1).boneDisplayName;
+    }
+
+    /** 最近一次命中的原始骨名（可空串）：客户端重查 CN 别名（hitbox_display_name_CN）用。 */
+    public static String getBoneName() {
+        return events.isEmpty() ? "" : events.get(events.size() - 1).boneName;
+    }
+
+    /** 最近一次命中事件的被命中实体 id（客户端重查 CN 别名时定位载具用）。 */
+    public static int getLastEntityId() {
+        return events.isEmpty() ? 0 : events.get(events.size() - 1).entityId;
     }
 
     public static String getAmmoNameKey() {

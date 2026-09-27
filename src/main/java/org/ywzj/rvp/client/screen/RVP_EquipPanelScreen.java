@@ -380,7 +380,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             row.appendChild(own);
             Element alias = document.createElement("span");
             // 队列行同样只显示别名（无别名回退骨名）；去重按骨名 id 在状态表内完成
-            alias.setTextContent(RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(vehicle, bone));
+            alias.setTextContent(RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone));
             row.appendChild(alias);
             Element remove = document.createElement("span");
             remove.setClassName("queue-x");

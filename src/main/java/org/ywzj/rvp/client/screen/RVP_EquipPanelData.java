@@ -288,7 +288,7 @@ public final class RVP_EquipPanelData {
 
     /** 行别名：命中箱别名优先，未配置别名回退骨名（"只显示别名"规则）。 */
     private static String alias(AbstractVehicle vehicle, String bone) {
-        return RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(vehicle, bone);
+        return RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone);
     }
 
     /** 过滤出配置了指定模块类型的骨（骨名 → 原类型集合），供 typeRows 生成栏目行。 */

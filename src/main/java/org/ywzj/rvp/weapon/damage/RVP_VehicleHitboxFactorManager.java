@@ -780,6 +780,24 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
+     * [RVP] 命中箱别名语言感知重载（2026-09-28 数据文件双语名机制）：中文环境（zh_*）
+     * 且载具 JSON 配置了 {@code hitbox_display_name_CN}（与 hitbox_display_name 同构的
+     * 顶层对象）时返回 CN 别名，否则回退英文名。服务端调用恒英文（isChineseUi dist 门）。
+     * 回退链：CN 别名 → 英文别名 → 骨名/entity 翻译 key。
+     */
+    public String resolveHitboxDisplayNameLocalized(AbstractVehicle vehicle, @Nullable String boneName) {
+        String fallback = resolveHitboxDisplayName(vehicle, boneName);
+        if (boneName == null || boneName.isBlank() || !org.ywzj.rvp.client.util.RVP_LangHelper.isChineseUi()) {
+            return fallback;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.aliasCnByBoneName == null || cfg.aliasCnByBoneName.isEmpty()) {
+            return fallback;
+        }
+        return cfg.aliasCnByBoneName.getOrDefault(boneName, fallback);
+    }
+
+    /**
      * 解析载具全部骨模块配置的"骨名 → 模块类型集合"只读视图（辅助设备面板用）。
      *
      * <p>注意：底层 {@code moduleByBoneName} 为 HashMap 不保序，需要"载具数据出现顺序"
@@ -1310,6 +1328,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float vehicleExplosionFactorDefault,
             Map<String, BoneModuleConfig> moduleByBoneName,
             Map<String, String> aliasByBoneName,
+            Map<String, String> aliasCnByBoneName,
             float coreDistanceScaleMultiplier,
             float armorMinDamage,
             float armorMaxDamage,
@@ -1457,6 +1476,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             // 命中倍率统一由 hitbox_damage_factor 提供（2026-09-27 统合，条目不再带 damage_factor）
             Map<String, BoneModuleConfig> moduleMap = parseBoneModuleMap(obj.get("bone_modules"));
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
+            // 中文名映射（可选，2026-09-28）：与 hitbox_display_name 同构，缺省 null=未配置
+            Map<String, String> aliasCnMap = parseAliasMap(obj.get("hitbox_display_name_CN"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             // 装甲：armor_min_damage 与本体 damage_threshold 互斥（同时存在仅装甲生效）；
             // armor_max_damage 封在全部系数算完之后（最终伤害上限）。<=0 均视为未配置。
@@ -1489,6 +1510,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if ((map == null || map.isEmpty())
                     && (moduleMap == null || moduleMap.isEmpty())
                     && (aliasMap == null || aliasMap.isEmpty())
+                    && (aliasCnMap == null || aliasCnMap.isEmpty())
                     && def == 1f
                     && (explosionMap == null || explosionMap.isEmpty())
                     && explosionDef == 1f
@@ -1506,6 +1528,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     explosionDef,
                     moduleMap == null ? Map.of() : Map.copyOf(moduleMap),
                     aliasMap == null ? Map.of() : Map.copyOf(aliasMap),
+                    aliasCnMap == null ? Map.of() : Map.copyOf(aliasCnMap),
                     coreM,
                     armorMin,
                     armorMax,

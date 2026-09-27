@@ -84,13 +84,15 @@ public final class RVP_HitVehicleListener {
         // 从本体 OBB 表面命中点反推 RVP 命中箱骨骼（用命中点两侧 0.75 米短线段跨过骨骼 OBB 表面）；
         // 未配置命中箱骨块（倍率骨骼）时 hitBoneName 为 null，resolveHitboxDisplayName 回退为载具名。
         String boneDisp = "";
+        String hitboxBoneName = null;
         if (dir != Vec3.ZERO) {
             RVP_VehicleHitboxFactorManager.HitboxDamageResult res =
                     RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
                             vehicle, hitPos.subtract(dir.scale(0.75)), hitPos.add(dir.scale(0.75)));
             if (res != null) {
+                hitboxBoneName = res.hitBoneName();
                 boneDisp = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayName(
-                        vehicle, res.hitBoneName());
+                        vehicle, hitboxBoneName);
             }
         }
         // 非 RVP 伤害源没有 weaponId（客户端回退曳光渲染）；弹药名留空
@@ -101,6 +103,7 @@ public final class RVP_HitVehicleListener {
                         vehicle.position(),
                         vehicle.getDisplayId().toString(),
                         // 非 RVP 伤害源（本体武器/原版弓箭等）无爆炸语义：不扩散爆炸圈
-                        0f));
+                        0f,
+                        hitboxBoneName));
     }
 }
