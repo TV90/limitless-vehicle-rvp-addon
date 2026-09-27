@@ -196,7 +196,7 @@ thrustAccelerationPerTick(thrust, mass) = thrust / max(mass, 1e-6)
 | --- | --- | --- |
 | 制导直接改写速度 | `projectile.setDeltaMovement(next)`（速率严格保持） | 方向跳变不由任何力驱动；能量零代价（即 P3） |
 | 速度硬钳制 | `clampSpeed`（`min_speed` / `max_speed` 等比缩放） | 速度墙，无过渡过程 |
-| `constant_speed` | `velocity.normalize().scale(Math.max(flightSpeed, 0.01))`，而 `flightSpeed` 是**历史峰值**（`flightSpeed = max(flightSpeed, v)`） | **速度被棘轮钉死在峰值**，惯性完全失效 |
+| `constant_speed` | 导弹运动与制导使用 `peakFlightSpeed` 作为速率参考；普通弹体继续使用当前速率 | `constant_speed=true` 的导弹按已达到的历史峰值回填，仍受 `max_speed` 限制；未启用恒速的导弹不会因历史峰值自动加速 |
 | 位置伺服类 | `tickSmartFuseGuidance`：`toTarget.normalize() × min(base, dist×0.9)`；`tickHitlTvMove`：`lookDir × speed` | 速度由位置/姿态直接决定，无横向惯性 |
 
 另有：跳弹反射 `setDeltaMovement(reflected)`（瞬时，无冲量过程）、子弹药部署四分量独立指数衰减（部分惯性）、`applyWindDrift`（加性外力，有惯性）。
@@ -218,7 +218,7 @@ thrustAccelerationPerTick(thrust, mass) = thrust / max(mass, 1e-6)
 #### 1.7.7 对方案的直接影响
 
 - 惯性只存在于"力 → 速度"这一段；制导分支是运动学跳变，完全绕开惯性 → 这正是 P1 / P3 的机理。
-- 由于导弹默认 `gravity = 0`，本方案的诱导阻力会成为**关机后除 `drag_coefficient` 之外唯一的速度衰减源**。这也是 §3.2 坚持把它放在速度钳制之后的原因：否则一枚 `constant_speed` 或已顶到 `max_speed` 的弹，转弯代价会被完全抹掉。
+- 对未启用恒速的导弹，因默认 `gravity = 0`，诱导阻力可成为**关机后除 `drag_coefficient` 之外的速度衰减源**；放在速度钳制之后，可避免 `max_speed` 钳制把这次减速补回。`constant_speed=true` 的导弹按既定豁免跳过诱导阻力，并在实体运动中按历史峰值回填，故该配置下看不到诱导阻力造成的持续掉速。
 
 ---
 
@@ -387,8 +387,8 @@ velocity = velocity.normalize().scale(Math.max(velocity.length() - loss, minSpee
 
   `minSpeedFloor` 由 `projectile_data.min_speed` 提供（未配置时不设下限，但保留 0.01 的数学下限防止零向量）。
 
-- 与 `max_speed` 的关系已在上文说明：放在钳制之后，才能表现为"顶速变慢/掉速"而不是被推力补回。
-- `constant_speed: true` 的弹（`RVP_ProjectileMotion.tickHitlTvMove` 会强制恢复到配置速度）**永远不会掉速**，这是配置的明确意图，方案不覆盖；文档需注明。
+- 对未启用恒速的弹，与 `max_speed` 的关系已在上文说明：诱导阻力放在钳制之后，才能表现为"顶速变慢/掉速"而不是被速度钳制补回。
+- `constant_speed: true` 的导弹会按历史峰值回填速度（HITL 与常规运动均生效），这是显式恒速语义；`max_speed` 仍可限制回填速度。未启用恒速的导弹保留基础阻力、穿透和转向造成的掉速。
 
 ### 4.6 边界与退化
 
@@ -466,7 +466,7 @@ velocity = velocity.normalize().scale(Math.max(velocity.length() - loss, minSpee
 | B2 | 否则 `drag_coefficient > 0` 且 `has_rocket_engine=true`（`getResolvedDragCoefficient()` 的门控） | `k_i=0`，无诱导阻力；只有线性 `drag` 的老弹需显式配 `rvp_induced_drag` |
 | B3 | `turning_factor < 1`（`f≥1` 被豁免气动限制 → 无 `θ_aero` → 无 `λ`） | 线导直控弹（TOW / HJ-73E / Switchblade）无转弯阻力 |
 | B4 | `rvp_aero_steering = true` | 无 `λ` |
-| B5 | `constant_speed = false`（`tickHitlTvMove` 会强制恢复到配置速度） | 掉速被抹掉，不可观测 |
+| B5 | `constant_speed = false`（恒速导弹会按历史峰值回填） | 掉速被抹掉，不可观测 |
 
 #### 4.7.3 反例：`9k720_9m723`（推导会失效）
 
@@ -722,7 +722,7 @@ velocity = velocity.normalize().scale(Math.max(velocity.length() - loss, minSpee
 | `max_speed` 虚高的弹（弹道导弹）机动被过度削弱 | 中 | `rvp_ref_speed` 显式覆盖；调参指南明示 |
 | 诱导阻力放在速度钳制之后，属于刻意的游戏化抽象 | 中 | 在 JavaDoc 与本文档写明"独立能量损耗，非气动物理" |
 | `min_speed` 与诱导阻力冲突（掉到下限后被托住） | 低 | 文档注明；不建议同时配大 `k_i` 与非零 `min_speed` |
-| `constant_speed: true` 弹免疫掉速 | 低 | 配置意图明确，方案不覆盖 |
+| `constant_speed: true` 导弹按历史峰值回填速度 | 低 | 保持显式恒速语义并受 `max_speed` 限制 |
 | `VERSION` 7→8 使在途虚拟记录失效 | 低 | 现有虚拟中段机制已定义恢复/取消策略，按既定流程处理 |
 | record 组件新增导致构造点编译错误 | 低 | 全库仅 3 处构造（1 生产 + 2 测试），一次性同步 |
 | 干扰注入 `λ` 计入后掉速过强 | 低 | `λ` 只由旋转角折算，满舵旋转才接近 1；必要时给干扰旋转单独乘 0.5 |
@@ -1305,7 +1305,7 @@ public Vec3 getSeekerBoresight() { /* IR/ARH/ARM → getBodyAxis()；SARH/SALH/�
 | α 在实体↔虚拟交接时丢失 → 交接折线 | 双向搬运 + 手动长航程对比（`9k720` 验收项） |
 | 转轴退化产生 NaN 污染 SavedData | 单测 7 + `RVP_BallisticTrajectoryMath.isFinite` 兜底 |
 | HITL 玩家眩晕（画面随 α 抖动） | HITL 摄像机加 `rvp_hitl_camera_speed_axis` 开关，默认机体轴 |
-| `constant_speed` 弹看不到掉速 | 配置明确意图，不覆盖；文档注明 |
+| `constant_speed` 导弹看不到掉速 | 恒速配置按历史峰值回填；未启用恒速的弹体保留实际掉速 |
 | 未来二阶化引入短周期振荡 | 第一版**限定一阶**；二阶化必须同时引入阻尼比 `ζ` |
 | 双版本号提升使在途记录失效 | 既有机制安全重建，无需手工清理 |
 

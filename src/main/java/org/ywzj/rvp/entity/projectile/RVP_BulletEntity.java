@@ -278,6 +278,8 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         } else {
             setDeltaMovement(getDeltaMovement().scale(1 - friction).add(0, -gravity, 0));
         }
+        // 调用本项目弹体速率状态入口，使机枪弹当前基准跟随本 Tick 阻力与重力结果。
+        updateFlightSpeedState(getDeltaMovement());
         if (level().isClientSide() && tickCount >= life - 1) {
             discard();
         }

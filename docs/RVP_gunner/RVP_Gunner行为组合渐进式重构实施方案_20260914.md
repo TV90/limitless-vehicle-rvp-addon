@@ -862,7 +862,7 @@ sead_revenge      -> 雷达锁来源，半径 1024，每 10 tick
 
 ### 阶段 F：启用 JSON 行为组合
 
-目标：Profile 正式控制行为组合。
+目标：Profile 正式控制行为组合。并且每新增一个类型的gunner.json要数据驱动的在游戏内注册物品，无需新增java代码。
 
 工作项：
 
