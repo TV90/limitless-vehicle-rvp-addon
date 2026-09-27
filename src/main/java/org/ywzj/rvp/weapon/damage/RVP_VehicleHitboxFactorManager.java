@@ -913,6 +913,46 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
+     * [RVP] 骨名 → 实时命中 OBB 列表（客户端部件损坏冒烟取样公共入口，2026-09-28）。
+     *
+     * <p>与命中判定同源：首选部件实例实时 OBB（{@code PartUnit.getOBBs()}，本体
+     * {@code AbstractVehicle.tick → updateOBBs()} 每 tick 随载具旋转/位移更新，双端有效）；
+     * 无部件实例的骨（如 Engine 结构骨）回退 {@link OBB#getOBBsFromBone}——namedBones 传
+     * 全部具名骨，即<b>仅该骨自身 cubes + 匿名子骨</b>（不含具名子骨骼的 OBB，用户定版），
+     * 且叠加 {@code vehicle.rotYXZ()/position()} 跟随车体实时变换（骨姿势为静态，车体变换实时）。
+     * 无任何配置/模型时返回空列表（调用方跳过冒烟）。</p>
+     */
+    public List<OBB> resolveBoneObbsForSampling(AbstractVehicle vehicle, String boneName) {
+        if (vehicle == null || boneName == null) {
+            return List.of();
+        }
+        // 无 RVP 命中配置的载具：仍可尝试部件实例 OBB（部件 id=骨名时可用）
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return vehicle.getPartUnit(boneName)
+                    .map(partUnit -> partUnit.getOBBs() == null ? List.<OBB>of() : partUnit.getOBBs())
+                    .orElse(List.of());
+        }
+        BedrockModel model = cfg.structureModel == null
+                ? null
+                : CommonAssetsManager.structureModelManager().getStructureModel(cfg.structureModel).orElse(null);
+        if (model == null) {
+            // 无结构模型：部件实例 OBB 兜底
+            return vehicle.getPartUnit(boneName)
+                    .map(partUnit -> partUnit.getOBBs() == null ? List.<OBB>of() : partUnit.getOBBs())
+                    .orElse(List.of());
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+        List<OBB> result = new ArrayList<>(resolved.size());
+        for (ResolvedObb resolvedObb : resolved) {
+            result.add(resolvedObb.obb());
+        }
+        return result;
+    }
+
+    /**
      * 播放 ERA 模块爆炸特效（2026-09-19 用户定版：MCHR 爆炸特效，烟雾规模对齐
      * 武器爆炸半径 3 × 模块 {@code explosion} 缩放）。
      *
