@@ -267,6 +267,13 @@ public final class RVP_EquipPanelData {
                 return true;
             }
         }
+        // [RVP] 引擎重创档（ENGINE_DAMAGED）是运行时写入失效表的标记，不在 bone_modules
+        // 配置类型集合里——按配置类型遍历会漏掉重创的引擎（2026-09-28 用户实机：损坏
+        // 5 个部件只算 4 个）。配置含 ENGINE 的骨额外查重创标记失效状态。
+        if (types.contains(BoneModuleType.ENGINE)
+                && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED)) {
+            return true;
+        }
         return false;
     }
 
