@@ -22,6 +22,16 @@ public interface RVP_IGunnerBehavior {
     /** 返回稳定行为实例 ID。 */
     String id();
 
+    /** 返回由当前 Profile 声明的仲裁优先级。 */
+    default int priority() {
+        return 0;
+    }
+
+    /** 返回该行为是否可能提交真实载具移动意图。 */
+    default boolean controlsMovement() {
+        return false;
+    }
+
     /** 返回行为参与的固定阶段；集合不得在运行时修改。 */
     Set<Stage> stages();
 

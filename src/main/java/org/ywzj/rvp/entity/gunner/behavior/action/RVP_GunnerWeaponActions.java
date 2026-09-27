@@ -32,7 +32,7 @@ import java.util.Collections;
 public final class RVP_GunnerWeaponActions {
 
     /** 所有 RVP 制导武器发射后的统一冷却，单位 tick。 */
-    private static final int MISSILE_COOLDOWN_TICK = 100;
+    private static final int DEFAULT_MISSILE_COOLDOWN_TICK = 100;
     /** 发射事务使用的制导控制源适配器。 */
     private final RVP_GunnerGuidanceActions guidance;
 
@@ -165,13 +165,13 @@ public final class RVP_GunnerWeaponActions {
                 singleContext ? Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts(), gunner);
         gunner.onBurstShot(launcher ? 1 : profile.getBurstFireTick(), profile.getBurstRestTick());
         if (rvpMissile) {
-            gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);
+            gunner.setMissileCooldown(profile.getGuidedWeaponCooldownTick());
             if (aircraftTarget) {
                 gunner.setLastAirMissileFireTick(gunner.tickCount);
             }
         }
         if (selfGuided && target instanceof AmmoEntity) {
-            gunner.setCiwsTargetCooldown(target, 100);
+            gunner.setCiwsTargetCooldown(target, profile.getCiwsTargetCooldownTick());
         }
         if (FMLEnvironment.dist == Dist.CLIENT) {
             RVP_GunnerLockDebug.logEngage(vehicle, target, "FIRED", "weapon=" + weaponTag(selectedWeapon));
@@ -247,7 +247,7 @@ public final class RVP_GunnerWeaponActions {
         WeaponUnit aimSource = weapon.getWeaponUnit();
         // 调用本体权威发射链；AntiRadiation 维持阶段 A 的单管上下文语义。
         weaponUnit.shoot(index, Collections.singletonList(aimSource.aimContext()), gunner);
-        gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);
+        gunner.setMissileCooldown(DEFAULT_MISSILE_COOLDOWN_TICK);
         return RVP_GunnerActionResult.DISPATCHED;
     }
 

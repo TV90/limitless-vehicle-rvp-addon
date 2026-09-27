@@ -166,6 +166,7 @@ public final class RVP_GunnerBehaviorContext {
         WeaponUnit weaponUnit = GunnerBrain.resolveControlledWeaponUnit(vehicle, seatUnit, driver);
         EnumSet<Capability> capabilities = EnumSet.noneOf(Capability.class);
         if (driver) capabilities.add(Capability.DRIVER);
+        // schema v2 以是否包含移动行为控制驾驶，静态炮手即使坐在司机位也不写 ControlUnit。
         if (driver && profile.isAllowDrive()) capabilities.add(Capability.DRIVER_AI);
         if (weaponUnit != null) capabilities.add(Capability.WEAPON_UNIT);
         if (vehicle instanceof TrackedVehicle || vehicle instanceof WheeledVehicle) {
@@ -202,6 +203,14 @@ public final class RVP_GunnerBehaviorContext {
     /** 返回带有 TARGET 阶段胜者的新上下文，其余快照保持不变。 */
     public RVP_GunnerBehaviorContext withTarget(@Nullable Entity target) {
         return new RVP_GunnerBehaviorContext(gunner, vehicle, profile, profileId, profileGeneration,
+                gunnerUuid, ownerUuid, faction, team, seatUnit, weaponUnit, target,
+                vehiclePosition, vehicleVelocity, vehicleYaw, vehiclePitch, vehicleAgl, vehicleDestroyed,
+                radarLockWarning, missileLaunchWarning, gameTime, observations, capabilities);
+    }
+
+    /** 返回使用指定行为参数视图的新上下文；世界观察与能力快照保持共享。 */
+    public RVP_GunnerBehaviorContext withProfile(GunnerProfile behaviorProfile) {
+        return new RVP_GunnerBehaviorContext(gunner, vehicle, behaviorProfile, profileId, profileGeneration,
                 gunnerUuid, ownerUuid, faction, team, seatUnit, weaponUnit, target,
                 vehiclePosition, vehicleVelocity, vehicleYaw, vehiclePitch, vehicleAgl, vehicleDestroyed,
                 radarLockWarning, missileLaunchWarning, gameTime, observations, capabilities);

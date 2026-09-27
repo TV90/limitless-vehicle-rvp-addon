@@ -2,6 +2,7 @@ package org.ywzj.rvp.entity.gunner.behavior.api;
 
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.behavior.debug.RVP_GunnerBehaviorDebugSnapshot;
+import org.ywzj.rvp.entity.gunner.behavior.config.RVP_GunnerBehaviorPlan;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
@@ -11,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.Collections;
+import java.util.function.Predicate;
 
 /** Gunner 跨 tick 的行为运行时容器，按行为实例 ID 隔离临时状态。 */
 public final class RVP_GunnerBehaviorRuntime {
@@ -27,6 +29,8 @@ public final class RVP_GunnerBehaviorRuntime {
     private String profileId = "";
     /** 上 tick Profile 加载代次。 */
     private long profileGeneration = -1L;
+    /** 上 tick 实际执行的计划，用于 reload 后精确调用旧实例 onExit。 */
+    private RVP_GunnerBehaviorPlan previousPlan = RVP_GunnerBehaviorPlan.empty();
     /** 上 tick 是否为允许驾驶的司机 AI。 */
     private boolean previousDriverAi;
     /** 最近一次调试快照。 */
@@ -44,12 +48,18 @@ public final class RVP_GunnerBehaviorRuntime {
     }
 
     /** 记录本 tick 身份，用弱引用避免跨 tick 强持有载具实体。 */
-    public void bind(RVP_GunnerBehaviorContext context) {
+    public void bind(RVP_GunnerBehaviorContext context, RVP_GunnerBehaviorPlan plan) {
         previousVehicle = new WeakReference<>(context.vehicle());
         previousWeaponUnit = new WeakReference<>(context.weaponUnit());
         profileId = context.profileId();
         profileGeneration = context.profileGeneration();
+        previousPlan = plan;
         previousDriverAi = context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI);
+    }
+
+    /** 返回上 tick 实际执行的不可变计划。 */
+    public RVP_GunnerBehaviorPlan previousPlan() {
+        return previousPlan;
     }
 
     /** 返回上 tick 载具；可能已被回收。 */
@@ -81,6 +91,11 @@ public final class RVP_GunnerBehaviorRuntime {
         states.remove(behaviorId);
     }
 
+    /** 查询任意行为实例的指定强类型状态，仅供跨行为安全门控读取。 */
+    public <T> boolean anyState(Class<T> type, Predicate<T> predicate) {
+        return states.values().stream().filter(type::isInstance).map(type::cast).anyMatch(predicate);
+    }
+
     /** 返回上 tick 实际适用行为的稳定快照。 */
     public Set<String> activeBehaviorIds() {
         return Collections.unmodifiableSet(new LinkedHashSet<>(activeBehaviorIds));
@@ -102,6 +117,7 @@ public final class RVP_GunnerBehaviorRuntime {
         previousWeaponUnit.clear();
         profileId = "";
         profileGeneration = -1L;
+        previousPlan = RVP_GunnerBehaviorPlan.empty();
         previousDriverAi = false;
         debugSnapshot = RVP_GunnerBehaviorDebugSnapshot.empty();
     }

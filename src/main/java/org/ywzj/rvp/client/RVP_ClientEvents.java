@@ -50,6 +50,7 @@ import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
+import org.ywzj.rvp.client.gunner.RVP_ClientGunnerProfileState;
 import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
 import org.ywzj.rvp.client.state.RVP_ArtilleryFireControlState;
 import org.ywzj.rvp.client.state.RVP_RocketCcipState;
@@ -191,6 +192,7 @@ public class RVP_ClientEvents {
 
         // 调用本项目客户端 profile 状态：收到 profile 快照后重建动态终端创造栏变体。
         RVP_ClientFireSupportState.INSTANCE.clientTick();
+        RVP_ClientGunnerProfileState.INSTANCE.clientTick();
 
         ywzj_rvp$syncLocalVehiclePlayerSeat();
 

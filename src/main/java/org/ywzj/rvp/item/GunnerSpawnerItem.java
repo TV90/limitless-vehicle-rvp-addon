@@ -14,7 +14,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
-import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfileManager;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
@@ -24,14 +23,18 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.List;
+import java.util.Comparator;
 
 public class GunnerSpawnerItem extends VehicleItem {
 
+    /** 物品 NBT 中的优先座位键。 */
     private static final String TAG_PREFERRED_SEAT = "PreferredSeat";
+    /** 物品 NBT 中的 Profile 资源 ID 键。 */
     private static final String TAG_PROFILE = "ProfileId";
+    /** 由生成器自动选择座位时的标记值。 */
     private static final int AUTO_SEAT = -1;
+    /** 手动轮换支持的最大座位索引。 */
     private static final int MAX_SEAT_INDEX = 9;
-    private static final List<String> PROFILE_ORDER = List.of("default", "ground", "air", "mixed", "friendly", "enemy", "team");
 
     public GunnerSpawnerItem(Properties properties) {
         super(properties);
@@ -196,21 +199,32 @@ public class GunnerSpawnerItem extends VehicleItem {
         stack.getOrCreateTag().putInt(TAG_PREFERRED_SEAT, seatIndex);
     }
 
-    private static String getProfileId(ItemStack stack) {
+    public static String getProfileId(ItemStack stack) {
         CompoundTag tag = stack.getOrCreateTag();
         return tag.contains(TAG_PROFILE) ? tag.getString(TAG_PROFILE) : GunnerProfileManager.DEFAULT_PROFILE_ID.toString();
     }
 
-    private static void setProfileId(ItemStack stack, String profileId) {
+    public static void setProfileId(ItemStack stack, String profileId) {
         stack.getOrCreateTag().putString(TAG_PROFILE, profileId);
+    }
+
+    /** 为一个服务端 Profile 创建同一注册物品的 NBT 变体，无需新增 Java 注册项。 */
+    public static ItemStack createForProfile(ResourceLocation profileId) {
+        ItemStack stack = new ItemStack(org.ywzj.rvp.all.RVP_Items.GUNNER_SPAWNER.get());
+        setProfileId(stack, profileId.toString());
+        stack.setHoverName(Component.translatableWithFallback(
+                "tips.ywzj_rvp.gunner_spawner.profile." + profileId.getPath(), profileId.toString()));
+        return stack;
     }
 
     private static String nextProfileId(ItemStack stack) {
         String current = getProfileId(stack);
-        String path = ResourceLocation.tryParse(current) != null ? ResourceLocation.tryParse(current).getPath() : current;
-        int idx = PROFILE_ORDER.indexOf(path);
-        String next = PROFILE_ORDER.get((idx + 1 + PROFILE_ORDER.size()) % PROFILE_ORDER.size());
-        return RVP_MOD.modLocation(next).toString();
+        List<ResourceLocation> profiles = GunnerProfileManager.INSTANCE.getProfileIds().stream()
+                .sorted(Comparator.comparing(ResourceLocation::toString)).toList();
+        if (profiles.isEmpty()) return GunnerProfileManager.DEFAULT_PROFILE_ID.toString();
+        ResourceLocation currentId = ResourceLocation.tryParse(current);
+        int index = profiles.indexOf(currentId);
+        return profiles.get((index + 1 + profiles.size()) % profiles.size()).toString();
     }
 
     private static Component getSeatLabel(int seatIndex) {
@@ -223,6 +237,6 @@ public class GunnerSpawnerItem extends VehicleItem {
     private static Component getProfileLabel(String profileId) {
         ResourceLocation id = ResourceLocation.tryParse(profileId);
         String path = id == null ? profileId : id.getPath();
-        return Component.translatable("tips.ywzj_rvp.gunner_spawner.profile." + path);
+        return Component.translatableWithFallback("tips.ywzj_rvp.gunner_spawner.profile." + path, profileId);
     }
 }

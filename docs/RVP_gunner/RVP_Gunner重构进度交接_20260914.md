@@ -2,7 +2,7 @@
 
 > 最后更新：2026-09-27
 >
-> 当前状态：阶段 A、B、C、D、E 已完成；阶段 F～G 尚未实施
+> 当前状态：阶段 A、B、C、D、E、F 已完成；阶段 G 尚未实施
 >
 > 实施范围：仅 `limitless-vehicle-rvp-addon` 的 Java 源码、测试与文档
 >
@@ -11,6 +11,10 @@
 ---
 
 ## 1. 当前结论
+
+阶段 F“启用 JSON 行为组合”已经完成。`gunner/*.json` 现只接受 `schema_version: 2`，
+Profile 的行为增删、顺序、优先级和参数会编译成自身不可变计划；Java 不再消费旧平铺字段。
+新增 Profile 会通过服务端 ID 快照自动生成 `gunner_spawner` ItemStack 变体，无需新增物品注册代码。
 
 阶段 E“观察扫描合并与性能回归”已经完成。每个 Gunner tick 现在拥有一个
 `RVP_GunnerObservationService`：普通索敌、CIWS、Smoke、武器站反制、RVP 反制、主动 ECM、
@@ -32,7 +36,7 @@ SEAD、外置雷达和在途制导从同一惰性实体快照派生结果，不�
 - Profile ID、Profile 资源代次或所乘载具变化时，旧计划会先退出并清理；离座路径也显式调用管理器退出入口。
 - Profile 仍是现有平铺 schema，没有加入 `behaviors` 字段，也没有旧版 JSON 兼容/迁移分支。
 
-阶段 D 仍保持现有平铺 Profile schema；内建行为已是独立实例，但尚不能由 JSON 增删或重排，注册表与 Profile 编译器属于阶段 F。
+阶段 D 的固定计划已由阶段 F 的 Profile 计划替换；内建行为实例现在由 JSON 增删、重排和配置。
 
 原 `RVP_GunnerVehicleTickService` 中独立执行的自动 Flare/Chaff 路径已删除，现由 `rvp_countermeasure` 行为提交 `COUNTERMEASURE` 意图，避免载具服务与行为计划双执行。该行为的节流状态存放在行为 Runtime 中，只有动作层返回 `DISPATCHED` 才推进上次释放时间。
 
@@ -288,9 +292,9 @@ JDK 17 命令执行最终完整构建，结果为 `BUILD SUCCESSFUL in 31s`，17
 
 ---
 
-## 7. 阶段 E 边界与已知限制
+## 7. 阶段 E 边界在阶段 F 后的现状
 
-- 当前仍是代码内固定计划，不读取 Profile `behaviors`；注册表、强类型行为配置和 JSON 计划编译属于阶段 F。
+- 代码内固定计划已被 Profile `behaviors` 编译结果替代；注册表、强类型配置和 JSON 计划已在阶段 F 启用。
 - burst、导弹发射冷却和 CIWS 目标冷却仍是武器动作事务状态，由 `GunnerEntity` 承载；地面机动、空战、Smoke、反制和 SEAD 等行为状态已迁入按实例 ID 隔离的 Runtime。
 - 共享观察以“单 Gunner、单 tick”为边界；不同 Gunner 不共享实体快照，避免一个 Gunner 的半径、过滤或生命周期污染另一个 Gunner。
 - 本体 `WeaponUnit.shoot` 与 RVP 干扰物 `fire` 仍不返回“实际生成”布尔值，故 `DISPATCHED` 不能解释为确认发射或命中。
@@ -299,16 +303,42 @@ JDK 17 命令执行最终完整构建，结果为 `BUILD SUCCESSFUL in 31s`，17
 
 ---
 
-## 8. 阶段 F 接手建议
+## 8. 阶段 F 实施结果
 
-下一步启用 JSON 行为组合，不再调整阶段 E 的观察语义：
+### 8.1 schema、注册表与原子发布
 
-1. 完成行为注册表、强类型配置解析和 Plan 编译器；
-2. 冻结 `schema_version: 2`；
-3. 用 `scripts/` 一次性改写当前 `gunner/*.json`；
-4. 保证阶段 E 固定计划与每个迁移后 Profile 的行为列表等价。
+- `RVP_GunnerBehaviorRegistry` 注册 18 种稳定 `rvp:*` 行为类型及其允许配置键、默认优先级和范围。
+- `RVP_GunnerProfileCompiler` 严格检查顶层键、行为键、配置键、类型、数值范围、区间顺序、重复实例 ID 和未知类型。
+- 加载器只扫描 `gunner/`，不读取 `gunner_profiles/`，不含 `legacy*`、`migrate*` 或旧键别名。
+- 任一 Profile 失败时整批候选不发布，保留上一代快照；缺少 `default` 也拒绝发布。
+- 管理器按当前 Profile 获取计划；reload 时使用 Runtime 保存的旧计划逐实例 `onExit`，然后清理锁、制导和控制状态。
+- JSON 声明顺序和优先级覆盖行为内部历史常量，成为仲裁的唯一元数据来源。
 
-接手时应直接复用 Context、BehaviorPlan、现有 Intent 通道、Runtime、动作网关和 ObservationService；
-行为注册表只能选择与配置观察需求，不得绕过共享观察重新扫描世界。
+### 8.2 载具包迁移
 
-阶段 F 仍不需要修改 `ywzj_vehicle`、新增 Mixin、按武器/载具 ID 特判或改动载具结构模型。
+- `scripts/migrate_gunner_profiles_v2.py` 只改写显式传入目录，默认仅为
+  `limitless_vehicle/rvp/data/rvp/gunner/`。
+- 按用户要求只迁移载具包主副本；`run/client_1`、`run/client_2`、`run/server` 未修改，由用户手动覆盖。
+- 7 个现有 Profile 已迁移；新增 `static_gunner`、`ciws_only`、`sead_pilot` 三个组合样例。
+- `allow_drive=false` 的旧 Profile 不生成任何移动、Smoke、SEAD、脱困或司机补给行为。
+
+### 8.3 数据驱动物品
+
+- Minecraft 注册表中仍只有通用 `gunner_spawner`，避免运行期动态注册物品 ID。
+- 服务端登录/reload 下发完整 Profile ID 快照；客户端为每个 ID 构造带 `ProfileId` NBT 的 ItemStack 变体并重建创造栏。
+- 通用生成器的右键切换顺序也改为服务端 Profile ID 动态列表；新增 JSON 无需改 Java 列表。
+- 既有 `friendly_gunner`、`enemy_gunner`、`team_gunner` 注册物品保留，兼容现有存档。
+
+### 8.4 验证结果
+
+- 按项目指定 JDK 17 命令执行 `./gradlew build`：`BUILD SUCCESSFUL in 37s`，全部 608 项测试通过。
+- 服务端按 10 秒周期轮询日志，出现 `Done (2.857s)!`，启动冒烟通过。
+- 根据用户要求，`run/client_1`、`run/client_2`、`run/server` 各自的 7 个旧 Profile 均未改写；
+  因此本次 `runServer` 日志会明确拒绝旧字段并使用安全空计划。用户手动覆盖后，将由 schema v2 正常发布行为计划。
+- 其余 ERROR 与 `docs/调试与修复规范.md` §5.1 噪音基线一致：本体 Bedrock 模型缺失 8 条、
+  `abramsx.structure - 副本.json` 非法路径 4 条、`rvp_bomber:ac130u` 配方解析 1 条、`rvp_bomber:tu160` 载具数据 1 条。
+
+### 8.5 阶段 G 接手边界
+
+下一步仅做过渡字段清理、最终架构/Profile 文档收口与完整实机场景回归；不得恢复旧 schema，
+也不得绕过共享 Context、Intent、动作网关或 ObservationService。

@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Gunner 渐进式重构阶段 A～D 的特征测试。
+ * Gunner 渐进式重构阶段 A～F 的特征测试。
  *
  * <p>当前 Gunner 直接依赖 Minecraft/Forge 实体和本体载具运行时，普通 JUnit 无法可靠构造完整世界。
  * 本测试因此冻结现行权威入口的可观察调用顺序、控制输出、门控常量和清理语义。阶段 B 开始移动
@@ -100,15 +100,15 @@ class RVP_GunnerBehaviorBaselineTest {
         assertOrdered(tick,
                 "RVP_GunnerBehaviorContext.create(",
                 "runtime.requiresExit(context)",
-                "synchronizeBehaviors(context, runtime)",
+                "synchronizeBehaviors(context, runtime, plan)",
                 "gunner.tickCooldowns();",
-                "planStage(RVP_IGunnerBehavior.Stage.TARGET, context, runtime, session);",
+                "planStage(RVP_IGunnerBehavior.Stage.TARGET, context, runtime, session, plan);",
                 "Channel.TARGET",
                 "context.withTarget(gunner.getTrackedTarget())",
-                "planStage(RVP_IGunnerBehavior.Stage.SUPPORT, context, runtime, session);",
+                "planStage(RVP_IGunnerBehavior.Stage.SUPPORT, context, runtime, session, plan);",
                 "Channel.SUPPLY",
                 "Channel.GUIDANCE_MAINTAIN",
-                "planStage(RVP_IGunnerBehavior.Stage.TACTICS, context, runtime, session);",
+                "planStage(RVP_IGunnerBehavior.Stage.TACTICS, context, runtime, session, plan);",
                 "session.ensureDriverStopFallback();",
                 "Channel.MOVEMENT",
                 "Channel.FIRE",
@@ -159,8 +159,7 @@ class RVP_GunnerBehaviorBaselineTest {
         assertContainsAll(behaviors,
                 "GunnerTargeting.findCiwsTarget(",
                 "context.gunner(), context.vehicle(), context.observations())",
-                "new BaseBehavior(\"ciws_targeting\"",
-                "new BaseBehavior(\"primary_targeting\"",
+                "new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TARGET)",
                 "RVP_GunnerBehaviorIntent.Kind.TARGET");
         assertContainsAll(targetAction,
                 "target.getId() == gunner.getTrackedTargetId()",
@@ -232,7 +231,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "guidance.prepareLaunch",
                 "weaponUnit.shoot(weaponIndex",
                 "gunner.onBurstShot",
-                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);",
+                "gunner.setMissileCooldown(profile.getGuidedWeaponCooldownTick());",
                 "RVP_GunnerEngagementNet.resolveWindowTick(",
                 "RVP_GunnerEngagementNet.markEngaged(");
         assertContainsAll(combat,
@@ -240,7 +239,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "now - gunner.getLastAirMissileFireTick() < 100",
                 "aimSource.getFiringMode() == WeaponUnitData.FiringMode.RIPPLE",
                 "Collections.singletonList(aimSource.aimContext()) : aimSource.aimContexts()",
-                "gunner.setCiwsTargetCooldown(target, 100);",
+                "gunner.setCiwsTargetCooldown(target, profile.getCiwsTargetCooldownTick());",
                 "profile.getEngagementNetCooldownTick()");
 
         assertOrdered(selection,
@@ -250,7 +249,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "findGuidedWeaponIndex(weaponUnit, target)",
                 "findGunWeaponIndex(weaponUnit, target)");
         assertContainsAll(weaponActions,
-                "private static final int MISSILE_COOLDOWN_TICK = 100;");
+                "private static final int DEFAULT_MISSILE_COOLDOWN_TICK = 100;");
         assertOrdered(priority,
                 "if (data.isGpsMissile())",
                 "return 1;",
@@ -284,7 +283,7 @@ class RVP_GunnerBehaviorBaselineTest {
         String behaviors = read(BUILTIN_BEHAVIORS_SOURCE);
         String movementActions = read(MOVEMENT_ACTION_SOURCE);
         String plan = section(behaviors,
-                "private static RVP_GunnerBehaviorPlan createFixedPlan()",
+                "public static RVP_IGunnerBehavior create(",
                 "/** CIWS 目标抢占行为。 */");
         String launcher = section(behaviors,
                 "private static void tickLauncherGroundDriving(",
@@ -306,13 +305,13 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static boolean ensureAirPhase(");
 
         assertOrdered(plan,
-                "fixedWingCombatFlight()",
-                "rotaryWingCombatFlight()",
-                "launcherPositioning()",
-                "stuckRecovery()",
-                "groundEngagementMove()",
-                "groundPatrol()",
-                "weaponEngagement()");
+                "fixedWingCombatFlight(instanceId, priority)",
+                "rotaryWingCombatFlight(instanceId, priority)",
+                "launcherPositioning(instanceId, priority)",
+                "stuckRecovery(instanceId, priority)",
+                "groundEngagementMove(instanceId, priority)",
+                "groundPatrol(instanceId, priority)",
+                "weaponEngagement(instanceId, priority)");
         assertFalse(behaviors.contains("ACTIONS.movement().apply"),
                 "阶段 D 行为不得直接应用 ControlUnit");
 
@@ -321,7 +320,7 @@ class RVP_GunnerBehaviorBaselineTest {
                 "tickGroundWander(gunner, vehicle, profile, state.patrol, command);",
                 "command.forward = true;");
         assertContainsAll(ground,
-                "state.start(GROUND_TACTICAL_HOLD_TICK",
+                "state.start(profile.getGroundHoldTick()",
                 "tickGroundTacticalEvade",
                 "command.forward = true;");
         assertContainsAll(recovery,
@@ -342,7 +341,6 @@ class RVP_GunnerBehaviorBaselineTest {
                 "command.yRot = facingRot.y;",
                 "command.xRot = desiredPitch;");
         assertContainsAll(wander,
-                "profile.isGroundWanderEnabled()",
                 "state.targetYaw = vehicle.getYRot() + ang;",
                 "command.forward = true;",
                 "command.left = true;",
@@ -388,21 +386,21 @@ class RVP_GunnerBehaviorBaselineTest {
                 "state.cooldownTicks = profile.getCountermeasureCooldownTick()");
         assertContainsAll(smoke,
                 "RVP_EnumCountermeasureType.SMOKE",
-                "% 10 != 0",
+                "% context.profile().getSmokeScanIntervalTick() != 0",
                 "scanMissileThreats",
                 "findLasingEnemy",
                 "Kind.RVP_COUNTERMEASURE",
                 "RVP_EnumCountermeasureType.SMOKE",
-                "state.holdTicks = SMOKE_HOLD_TICKS;");
+                "state.holdTicks = context.profile().getSmokeHoldTick();");
         assertContainsAll(ecm,
                 "WarnType.RADAR_LOCK",
                 "WarnType.MISSILE_LAUNCH",
                 "GunnerTargeting.findAmmoThreat",
                 "Kind.ACTIVE_ECM");
         assertContainsAll(rvpCountermeasure,
-                "RVP_COUNTERMEASURE_SCAN_INTERVAL_TICK",
-                "RVP_COUNTERMEASURE_COOLDOWN_TICK",
-                "resolveRvpCountermeasureThreat(vehicle, context.observations())",
+                "context.profile().getRvpCountermeasureScanIntervalTick()",
+                "context.profile().getRvpCountermeasureCooldownTick()",
+                "resolveRvpCountermeasureThreat(",
                 "Kind.RVP_COUNTERMEASURE",
                 "result == RVP_GunnerActionResult.DISPATCHED");
         assertContainsAll(defense,
@@ -473,13 +471,14 @@ class RVP_GunnerBehaviorBaselineTest {
                 "private static final int SEAD_THREAT_SCAN_INTERVAL = 10;",
                 "private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;");
         assertOrdered(sead,
-                "findRadarLockingEntity(gunner, vehicle, context.observations())",
+                "findRadarLockingEntity(gunner, vehicle,",
+                "context.profile().getSeadRadarLockRange(), context.observations())",
                 "findAntiRadiationWeaponIndex(weaponUnit)",
                 "Kind.FIRE_ANTI_RADIATION",
                 "RVP_EnumCountermeasureType.CHAFF",
                 "state.mode = SEAD_FLY_AWAY;",
                 "state.totalTicks++;",
-                "state.totalTicks > SEAD_TIMEOUT_TICK",
+                "state.totalTicks > context.profile().getSeadTimeoutTick()",
                 "case SEAD_FLY_AWAY:",
                 "Kind.FIRE_HOLD",
                 "case SEAD_REVERSAL:",
@@ -491,14 +490,14 @@ class RVP_GunnerBehaviorBaselineTest {
                 "GunnerWeaponSuitability.prepareLaunchLock",
                 "guidance.prepareLaunch",
                 "weaponUnit.shoot(index, Collections.singletonList(aimSource.aimContext()), gunner);",
-                "gunner.setMissileCooldown(MISSILE_COOLDOWN_TICK);");
+                "gunner.setMissileCooldown(DEFAULT_MISSILE_COOLDOWN_TICK);");
         assertContainsAll(clear,
                 "state.mode = SEAD_NONE;",
                 "state.phaseTicks = 0;",
                 "state.revengeTargetId = -1;",
                 "state.immediateFired = false;",
                 "state.revengeFired = false;",
-                "state.cooldownTicks = SEAD_COOLDOWN_TICK;");
+                "state.cooldownTicks = state.cooldownDurationTick;");
     }
 
     @Test
@@ -602,7 +601,7 @@ class RVP_GunnerBehaviorBaselineTest {
     }
 
     @Test
-    void phaseDManagerRunsImmutableBuiltInBehaviorPlan() throws IOException {
+    void phaseFManagerRunsImmutableProfileBehaviorPlan() throws IOException {
         String manager = read(BEHAVIOR_MANAGER_SOURCE);
         String context = read(BEHAVIOR_CONTEXT_SOURCE);
         String intent = read(BEHAVIOR_INTENT_SOURCE);
@@ -641,11 +640,11 @@ class RVP_GunnerBehaviorBaselineTest {
                 "new RVP_GunnerActionIntentExecutor(RVP_GunnerActionGateway.INSTANCE)",
                 "ensureDriverStopFallback()",
                 "runtime.requiresExit(context)",
-                "synchronizeBehaviors(context, runtime)",
+                "synchronizeBehaviors(context, runtime, plan)",
                 "planStage(RVP_IGunnerBehavior.Stage.TARGET",
                 "planStage(RVP_IGunnerBehavior.Stage.SUPPORT",
                 "planStage(RVP_IGunnerBehavior.Stage.TACTICS",
-                "exitBehaviors(gunner, runtime)",
+                "exitBehaviors(gunner, runtime, runtime.previousPlan())",
                 "runtime.setDebugSnapshot(session.snapshot())",
                 "actions.radar().clearExternalLock(vehicle, weaponUnit)",
                 "actions.guidance().clear(gunner)");
@@ -660,12 +659,11 @@ class RVP_GunnerBehaviorBaselineTest {
                 "putIfAbsent(behavior.id(), behavior)",
                 "List.copyOf(values)",
                 "filter(behavior -> behavior.isApplicable(context))");
-        assertOrdered(builtins,
-                "ciwsTargeting(), primaryTargeting(), driverSupply(), weaponCountermeasure()",
-                "rvpCountermeasure(), activeEcm(), smokeEvasion(), ownshipRadar(), externalRadar()",
-                "guidedWeaponSupport(), seadRevenge(), fixedWingCombatFlight()",
-                "rotaryWingCombatFlight(), launcherPositioning(), stuckRecovery()",
-                "groundEngagementMove(), groundPatrol(), weaponEngagement()");
+        assertContainsAll(builtins,
+                "public static RVP_IGunnerBehavior create(",
+                "case \"primary_targeting\"",
+                "case \"weapon_engagement\"",
+                "new ConfiguredBehavior(behavior, config, controlsMovement)");
         assertFalse(builtins.contains("weaponId.getPath()"),
                 "内建行为不得按武器 ID 硬编码弹种");
         assertContainsAll(entity,
@@ -675,36 +673,17 @@ class RVP_GunnerBehaviorBaselineTest {
     }
 
     @Test
-    void phaseAProfileSchemaAndDefaultsRemainFlatAndExplicit() throws IOException {
+    void phaseFProfileSchemaIsCompiledAndHasNoSerializedLegacyFields() throws IOException {
         String profile = read(PROFILE_SOURCE);
 
         assertContainsAll(profile,
-                "@SerializedName(\"name\")",
-                "private String name = \"default\";",
-                "@SerializedName(\"faction\")",
-                "private String faction = \"friendly\";",
-                "@SerializedName(\"target_types\")",
-                "@SerializedName(\"engagement_net_cooldown_tick\")",
-                "private int engagementNetCooldownTick = 100;",
-                "engagementNetCooldownTick = Math.max(0, Math.min(engagementNetCooldownTick, 1200));",
-                "@SerializedName(\"gps_prefer_farthest\")",
-                "private boolean gpsPreferFarthest = true;",
-                "private double searchRadius = 96.0;",
-                "private int scanIntervalTick = 10;",
-                "private float fireWindowDeg = 6.0F;",
-                "private double leadScale = 1.0;",
-                "private int burstFireTick = 6;",
-                "private int burstRestTick = 10;",
-                "private double countermeasureRange = 36.0;",
-                "private int countermeasureCooldownTick = 80;",
-                "private boolean allowDrive = true;",
-                "private double driveStopDistance = 12.0;",
-                "private double rotaryCruiseAltitudeMin = 28.0;",
-                "private double rotaryCruiseAltitudeMax = 60.0;",
-                "private double fixedwingCruiseAltitudeMin = 150.0;",
-                "private double fixedwingCruiseAltitudeMax = 500.0;");
-        assertFalse(profile.contains("@SerializedName(\"behaviors\")"),
-                "阶段 A 不得提前启用行为组合 schema");
+                "public final class GunnerProfile",
+                "private final RVP_GunnerBehaviorPlan behaviorPlan;",
+                "public GunnerProfile behaviorView()",
+                "public boolean isAllowDrive()",
+                "anyMatch(org.ywzj.rvp.entity.gunner.behavior.api.RVP_IGunnerBehavior::controlsMovement)");
+        assertFalse(profile.contains("@SerializedName"),
+                "schema v2 必须由严格编译器读取，不得恢复 Gson 字段兼容解析");
     }
 
     @Test
