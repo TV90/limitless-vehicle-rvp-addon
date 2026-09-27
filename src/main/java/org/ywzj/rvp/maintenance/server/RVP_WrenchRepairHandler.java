@@ -15,8 +15,6 @@ import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.all.AllItems;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.VectorUtil;
-import org.ywzj.vehicle.vehicle.part.PartUnit;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -32,10 +30,10 @@ import java.util.UUID;
  * 损坏骨：换目标、丢失瞄准、骨上无失效模块即清空进度重新累计。</p>
  *
  * <p>实现：{@link LivingEntityUseItemEvent.Tick} 服务端分支（与本体焊枪 onUseTick 逐 tick
- * 同步，双端事件、无需扫描全玩家）+ 本体公共 {@code VectorUtil#hitPartUnit}（服务端安全，
- * 服务端路径已被本体三处实证）定位命中部件 → RVP 自有
- * {@link RVP_VehicleHitboxFactorManager#resolveHitboxDamage} 骨射线（实时命中 OBB，§29
- * 组细分修复后炮管骨同样可命中）拿骨名。判定完成后走快修同款恢复语义
+ * 同步，双端事件、无需扫描全玩家）+ 本体焊枪同款 {@code ProjectileUtil.getEntityHitResult}
+ * 实体盒判定找载具 → RVP 自有 {@link RVP_VehicleHitboxFactorManager#resolveHitboxDamage}
+ * 骨射线（实时命中 OBB，§29 组细分修复后炮管骨同样可命中）拿骨名。判定完成后走快修同款
+ * 恢复语义
  * （{@code restoreModule} + RADAR 自动开机 + ENGINE/BARREL 清累计 + 一次失效广播）。
  * 带毒类（AbstractVehicle/WeaponUnit/PartUnit）零接触。</p>
  */
@@ -75,24 +73,28 @@ public final class RVP_WrenchRepairHandler {
     /** 焊枪瞄准状态机：射线 → 命中载具部件骨 → 查失效模块 → 连续 100t 完成修复。 */
     private static void tickAim(ServerPlayer player) {
         Vec3 eye = player.getEyePosition();
-        Vec3 end = eye.add(player.getViewVector(1.0F).scale(RAY_LENGTH));
-        // 目的：本体公共 API（服务端安全）拿准星命中的部件——已摧毁部件也参与命中（维修场景）
-        PartUnit<?> hitPart = VectorUtil.hitPartUnit(player, eye, end);
+        Vec3 view = player.getViewVector(1.0F);
+        Vec3 end = eye.add(view.scale(RAY_LENGTH));
+        // 目的：找准星命中的载具——与本体焊枪 onUseTick 同款 ProjectileUtil 实体盒判定
+        //（宽进：AABB 膨胀盒）。注意 VectorUtil.hitPartUnit 的 entity 参数要求是载具本体
+        //（内部 if (entity instanceof AbstractVehicle) 才遍历部件），传 player 恒 null。
+        var hitResult = net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
+                player, eye, end,
+                player.getBoundingBox().expandTowards(view.scale(6.0)).inflate(1.0),
+                e -> e.isAlive() && e instanceof AbstractVehicle, RAY_LENGTH);
+        if (hitResult == null || !(hitResult.getEntity() instanceof AbstractVehicle vehicle)) {
+            AIMING.remove(player.getUUID());
+            return;
+        }
+        // 骨名判定走 RVP 命中链（实时 OBB 精确到骨，含武器站按组细分与炮管组修复）
         String boneName = null;
-        AbstractVehicle vehicle = null;
-        if (hitPart != null && hitPart.getVehicle() != null) {
-            vehicle = hitPart.getVehicle();
-            // 骨名判定走 RVP 命中链（实时 OBB，含武器站按组细分）；部件型失效骨（部件 id=骨名）
-            // resolve 未命中时回退部件 id
-            var res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(vehicle, eye, end);
-            if (res != null && res.hitBoneName() != null && !res.hitBoneName().isBlank()) {
-                boneName = res.hitBoneName();
-            } else {
-                boneName = hitPart.getId();
-            }
+        var res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(vehicle, eye, end);
+        if (res != null && res.hitBoneName() != null && !res.hitBoneName().isBlank()) {
+            boneName = res.hitBoneName();
         }
         UUID playerId = player.getUUID();
-        if (vehicle == null || boneName == null) {
+        if (boneName == null) {
+            // 打在载具上但未命中任何模块骨：无维修目标，清进度（回血由本体焊枪处理）
             AIMING.remove(playerId);
             return;
         }
@@ -114,6 +116,11 @@ public final class RVP_WrenchRepairHandler {
             AIMING.put(playerId, state);
         }
         state.ticks++;
+        // [RVP] 进度反馈（每 20t 动作栏）：让玩家确认"对准且在累计"，区分无目标状态
+        if (state.ticks % 20 == 0) {
+            player.displayClientMessage(Component.translatable(
+                    "message.ywzj_rvp.part_repairing", state.ticks * 100 / REQUIRED_TICKS), true);
+        }
         if (state.ticks < REQUIRED_TICKS) {
             return;
         }
