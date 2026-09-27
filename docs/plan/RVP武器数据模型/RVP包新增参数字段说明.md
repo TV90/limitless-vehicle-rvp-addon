@@ -81,6 +81,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 
 | 字段 | 说明 |
 | --- | --- |
+| `name` | 武器显示名（本体 `BaseVehicleWeaponData` 基类字段）。作为翻译 key 包装；未命中 lang 时原样显示。右下角弹药 HUD、切枪提示、选弹界面、NCTR、战术地图共用。 | （本体字段） |
+| `name_CN` | 可选中文名（2026-09-28 数据文件双语名）：客户端语言为 `zh_*` 且本字段非空时显示本名，其它语言显示 `name`。数据文件自含、无需 lang 条目；经资产同步客户端自动可得。 | `""` |
 | `show_msl_indicator` | 是否在 HUD 中显示导弹指示器（菱形框 + 距离）；默认 `false`。 |
 | `tactical_map_icon` | 战术地图上该武器弹药显示的自定义图标名（如 `rvp:textures/...` 或短名）；空字符串表示使用默认。 |
 | `sub_type` | 可选子类型标记（如 `incendiary`），仅配置可读性；**落点逻辑请用 `detonate_data`**。 |
@@ -1598,32 +1600,39 @@ SACLOS 反坦克导弹（半自动修正）：
 | `explosion_damage_factor_default` | **（武器侧）**爆炸伤害对载具的倍率（2026-09-20 拆分新增）：作用于本体核心距离衰减之后的爆炸伤害（面板 300 → 命中偏差衰减 270 → ×2 = 540），仅载具目标乘算（生物不乘）；与受击载具侧 `vehicle_explosion_damage_factor` 独立相乘。 | `1.0` |
 | `vehicle_explosion_damage_factor_default` | **（载具侧，受击方）**爆炸伤害默认倍率（2026-09-20 拆分新增）。**仅作用于爆炸伤害**（本体武器与 RVP 弹体的爆炸，对载具目标）；未配置时爆炸不缩放。 | `1.0` |
 | `vehicle_explosion_damage_factor` | **（载具侧，受击方）**对象：`骨骼名 → 倍率`（2026-09-20 拆分新增）。爆炸伤害按「爆心 → 载具中心」线段命中的最近骨骼取对应倍率（天然命中面向爆心的装甲面）。**与直击倍率完全独立**，未配置不缩放。 | 空对象 |
-| `hitbox_era` | 对象：`骨骼名 → 数字或对象`。数字为伤害倍率（简化）；对象见下表。 | 空对象 |
-| `hitbox_display_name` | 对象：`骨骼名 → 显示名`，用于命中调试消息（HBX）。 | 空对象 |
+| `hitbox_era` | **已废弃（0.5.24+ 删除，写了无效）**：迁移到 `bone_modules.<骨>` 条目（`modules: ["era"]` + `min_damage` + `explosion`），倍率统一写顶层 `hitbox_damage_factor`。见下文现代写法。 | — |
+| `hitbox_display_name` | 对象：`骨骼名 → 显示名`。命中展板标题（"命中主炮 -x%"）、辅助设备面板行别名、维修队列行共用；未配置骨回退载具名翻译 key（`entity.<ns>.<path>`）。 | 空对象 |
+| `hitbox_display_name_CN` | 可选对象：`骨骼名 → 中文名`（2026-09-28 数据文件双语名）。客户端语言 `zh_*` 时上述所有消费点优先显示本表别名，未配置的骨回退英文表。 | 空对象 |
 | `core_distance_scale_multiplier` | 核心距离缩放倍率。 | `1.0` |
 
-#### `hitbox_era` 值对象
+#### ERA 现代写法（`bone_modules` 条目，2026-09-27 倍率统合后）
 
-| 字段 | 说明 | 默认值 |
+ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模块章节与 §2.16–2.18）：
+
+| 字段（`bone_modules.<骨>` 条目） | 说明 | 默认值 |
 | --- | --- | --- |
-| `damage_factor` | 命中该 ERA 骨骼时的伤害倍率。 | `1.0` |
-| `min_trigger_damage` | 单次伤害需**大于**该值才触发 ERA 阻挡（消耗该骨骼并播放特效）。 | `inf`（不触发） |
-| `explosion` | 触发时的爆炸特效规模系数（影响粒子/音效强度）。 | `0` |
+| `modules` | 模块类型数组（大小写不敏感）：`era` / `radar` / `engine` / `barrel` / `aps` / `jammer` / `dircm` / `countermeasure` / `ecm_passive` / `ecm_active` / `maintenance`。`ENGINE_DAMAGED` 为运行时标记，**不在配置中写**。 | 缺省 `[era]` |
+| `min_damage` | 单发直击伤害门槛（ERA 用**模块前**伤害判定；其余模块路径跳过单发直毁）。 | `inf` |
+| `explosion` | ERA 触发特效规模系数。 | `0` |
+| `smoke` | 失效冒烟开关（§2.18）。 | `true` |
+| `<设备子对象>` | `dircm` / `maintenance` / `engine` / `barrel` / `aps` / `jammer` / `ecm_*` 等按模块配置，见各自章节。 | — |
+
+> **倍率统合（2026-09-27）**：每骨直击倍率唯一来源 = 顶层 `hitbox_damage_factor`；条目内**不再支持 `damage_factor` 字段（写了无效）**，`hitbox_era` 兼容解析已删除。
 
 ```json
-"structure_model": "ywzj_rvp:models/vehicle/apc.obj",
-"hitbox_damage_factor_default": 1.0,
+"structure_model": "rvp:t90m_structure",
 "hitbox_damage_factor": {
-  "turret": 1.2,
-  "engine": 1.5
+  "turret": 0.6,
+  "turret_barrel": 0.4,
+  "ERA0": 0.3
 },
-"hitbox_era": {
-  "hull_front": 0.25,
-  "turret_side": { "damage_factor": 0.4, "min_trigger_damage": 20, "explosion": 1.2 }
+"bone_modules": {
+  "ERA0": { "modules": ["era"], "min_damage": 100.0, "explosion": 2 },
+  "Engine": { "modules": ["engine"], "engine": { "threshold_light": 550, "threshold_heavy": 800 } },
+  "turret_barrel": { "modules": ["barrel"], "barrel": { "threshold": 300 } }
 },
-"hitbox_display_name": {
-  "hull_front": "首上装甲"
-}
+"hitbox_display_name": { "turret_barrel": "Main Gun" },
+"hitbox_display_name_CN": { "turret_barrel": "主炮" }
 ```
 
 > 机制说明：直击命中 ERA 骨骼且伤害超过 `min_trigger_damage` 时消耗该骨骼（同骨骼冷却期内不再触发）并播放松散特效；附近爆炸（非直击）按爆炸半径阈值表按百分比破坏 ERA（≤5 格不破坏、5–8 格 10%、8–12 格 25%、12–18 格 50%、>18 格全毁，直击至少 1 块保底）。配置过 `physics_info.physics_only_bone(s)` 时，若命中只落在“仅物理”碰撞体上则本次伤害判定被禁用。
@@ -1958,39 +1967,41 @@ SACLOS 反坦克导弹（半自动修正）：
 
 写在 `bone_modules.<骨块名>` 条目的 `maintenance` 子对象（`modules` 数组需含 `"MAINTENANCE"`）。**规范写法挂虚拟骨骼 `__vehicle__`**（载具级能力、永不可被击毁，与无骨骼 ECM 同构）；也可绑定实体骨（如发动机）——骨块被直击打掉则维修模块失效，快修无法触发（模块失效后无法用快修复自身，该能力即告失去）。顶层 `maintenance` 块保留为别名（自动映射到 `__vehicle__`，等价）。
 
-按键默认 **G**（`key.ywzj_rvp.use_maintenance.desc`，可在按键设置改）。触发校验：未被摧毁 / 冷却就绪 / 触发者乘坐本车 / 离地高度限制。HUD 在干扰物信息组（热诱/箔条/ECM/烟雾）末尾按缺省递补显示"维修"行。冷却与生效剩余经载具实体 NBT 持久化（随存档）。
+按键默认 **`;`**（`key.ywzj_rvp.use_maintenance.desc`，可在按键设置改；2026-09-25 由 G 迁移）。触发校验：未被摧毁 / 冷却与生效期均就绪 / 触发者乘坐本车 / 离地高度限制。HUD 在干扰物信息组（热诱/箔条/ECM/烟雾）末尾按缺省递补显示"维修"行（维修中显示"维修中 Xs"倒计时 + wrench 扳手音效循环）。冷却与生效剩余经载具实体 NBT 持久化（随存档）。
 
-触发瞬间执行**骨骼模块渐进恢复**（方案详见 `docs/plan/快速维修移植方案_20260902.md`）：
+**时序（2026-09-28 定版）**：按下 → 进入生效期（每 tick 回血 + 音效）→ 生效结束瞬间**才开始冷却计时**并**恢复骨骼模块**——按下维修的瞬间不恢复任何部件（防"边打边修"瞬时白嫖）。
 
-- **设备类**（APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE）：每台已毁模块**独立按概率**恢复——部分恢复有明确语义（每根 APS 雷达骨 = 一个扫描扇区，修 1 根恢复 1 个方位）；
-- **ERA**：按数量比例恢复（对已毁数向上取整、至少 `era_recover_min` 块，随机洗牌），对齐 MCHR 消耗品手感；
+生效结束瞬间执行**骨骼模块渐进恢复**（方案详见 `docs/plan/快速维修移植方案_20260902.md`；2026-09-28 改配额制）：
+
+- **设备类**（RADAR/ENGINE/ENGINE_DAMAGED/BARREL/APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE）：**确定性配额制**——每次快修复原 `ceil(已毁设备骨数 × device_recover_chance)` 台（坏 1 台必修 1 台、坏 4 台修 1 台、坏 5 台修 2 台）；顺序 = 玩家"辅助设备维修顺序"队列头优先，队列外按骨名排序；命中配额的骨按捆绑语义整骨恢复（同骨全部失效可修模块一起修回）；
+- **ERA**：按数量比例恢复（对已毁数向上取整、至少 `era_recover_min` 块，队列头优先占配额、队列外洗牌补足），对齐 MCHR 消耗品手感；
 - `TRACK` 无功能消费点，**不在缺省白名单**且配置加入也不会被维修；
 - `MAINTENANCE` 自身不在设备恢复掷骰内。
 
 | 字段（`maintenance` 子对象） | 说明 | 默认值 |
 | --- | --- | --- |
-| `use_time_ticks` | 生效时长（tick），每 tick 回 `heal_per_tick_percent`% 最大血量。 | `20` |
+| `use_time_ticks` | 生效时长（tick），每 tick 回 `heal_per_tick_percent`% 最大血量。 | `80` |
 | `wait_time_ticks` | 冷却时长（tick）。 | `300` |
-| `heal_per_tick_percent` | 每 tick 回复量占最大血量百分比。 | `1.0` |
+| `heal_per_tick_percent` | 每 tick 回复量占最大血量百分比（80t × 0.25% = 一次恢复 20%）。 | `0.25` |
 | `heal_parts` | 生效期是否同步回部件血量（每部件 +10% 上限，对齐扳手）。 | `false` |
 | `require_max_altitude` | 允许触发的离地高度上限（方块）；`< 0` 不限。 | `-1` |
 | `module_repair` | 模块渐进恢复子对象；缺省即下表默认值。 | `null` |
 
 | 字段（`module_repair` 子对象） | 说明 | 默认值 |
 | --- | --- | --- |
-| `repairable_types` | 允许维修的模块类型白名单；空 = 除 `TRACK` 外全部（含 `ERA/APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE/MAINTENANCE`）。 | 空（全类型） |
+| `repairable_types` | 允许维修的模块类型白名单；空 = 除 `TRACK` 外全部（含 `ERA/RADAR/ENGINE/ENGINE_DAMAGED/BARREL/APS/JAMMER/DIRCM/COUNTERMEASURE/ECM_PASSIVE/ECM_ACTIVE/MAINTENANCE`）。 | 空（全类型） |
 | `era_recover_fraction` | ERA 单次维修恢复比例（对已毁块数向上取整）。 | `0.25` |
 | `era_recover_min` | ERA 单次维修至少恢复块数。 | `1` |
-| `device_recover_chance` | 设备类每台已毁模块每次维修的独立恢复概率（0~1）。 | `0.25` |
+| `device_recover_chance` | 设备类确定性配额比例：每次快修恢复 `ceil(已毁设备骨数 × 本值)` 台（队列优先）。 | `0.25` |
 
 ```json
 "bone_modules": {
   "__vehicle__": {
     "modules": ["MAINTENANCE"],
     "maintenance": {
-      "use_time_ticks": 20,
+      "use_time_ticks": 80,
       "wait_time_ticks": 300,
-      "heal_per_tick_percent": 1.0,
+      "heal_per_tick_percent": 0.25,
       "heal_parts": false,
       "require_max_altitude": -1,
       "module_repair": {
@@ -2004,7 +2015,9 @@ SACLOS 反坦克导弹（半自动修正）：
 }
 ```
 
-> 骨骼模块失效状态经 `S2CBoneModuleState` 同步客户端（JS 动画 `rvp_isEraActive`/`isModuleActive` 据此显隐渲染骨），快修恢复后同通道自动恢复显示。
+> 骨骼模块失效状态经 `S2CBoneModuleState` 同步客户端（JS 动画 `rvp_isEraActive`/`isModuleActive` 据此显隐渲染骨），快修恢复后同通道自动恢复显示；RADAR 恢复自动开机，ENGINE/ENGINE_DAMAGED/BARREL 恢复同时清对应累计表（防残存累计立即再跨阈值）。失效状态随独立存档持久化（跨退出重进，全链主世界单实例）。
+>
+> **焊枪部件修复**（2026-09-28）：手持本体焊枪（`ywzj_vehicle:repair_tool`）对准损坏部件骨骼持续照射 5 秒（100t，3 格内、须持续对准同一骨）→ 恢复该骨全部失效模块（快修同款联动）；载具/部件回血由本体焊枪自带。与快修系统相互独立。
 
 ---
 
@@ -2104,6 +2117,73 @@ SACLOS 反坦克导弹（半自动修正）：
 ```json
 "rvp_sight_fire_disguise": { "disguise_ticks": 1, "blend_ticks": 3, "max_distance": 32.0 }
 ```
+
+### 2.16 引擎部件（`bone_modules.<骨>.engine`，模块 `ENGINE` / 运行时标记 `ENGINE_DAMAGED`）
+
+写在 `bone_modules.<骨块名>` 条目的 `engine` 子对象（`modules` 数组需含 `"engine"`，骨名通常为结构模型的引擎骨如 `Engine`）。引擎部件**不由单发伤害直毁**，而由**累计直击伤害**（实际到骨伤害口径：乘命中倍率、过装甲层后的最终入账值）分级驱动：
+
+- 累计 ≥ `threshold_light` → **重创档**（`ENGINE_DAMAGED` 写入失效表）：极速/转向上限 ×`power_multiplier_damaged`（默认 0.5，坦克 50→25 KPH）、动力/加速度 ×0.75（保留起步能力）；可正常驾驶、炮塔/武器/雷达不受影响；
+- 继续累计 ≥ `threshold_heavy` → **瘫痪档**（`ENGINE` 模块失效）：全部动力字段 ×0.0001 趴窝；不关发动机、不压 POWER（方向机/高低机照常）。
+
+**两档均无时间衰减、永久状态**；随失效表持久化（跨退出重进保持）；重创档即失效设备——维修面板失效置顶、可入维修顺序队列指定优先级、快修按设备配额恢复。全程不碰 `ENGINE_ON`/POWER（`hasPower()` 门保持原样）。服务端每 tick 经 `VehicleMoveEvent` 覆写动力字段为本体 JSON 配置值×倍率（配置每 tick 直读，本体重注入下一 tick 即被纠正）；NaN/除零多重防护（瘫痪倍率 0.0001 而非 0）。诊断：`/rvpdebug engine on` 写 `logs/rvp_engine_debug.log`（入账/累计/阈值逐发对账）。
+
+已配 18 台陆地载具：履带坦克 550/800、步战/防空/轮式 450/700（Java 缺省仅兜底）。
+
+| 字段（`engine` 子对象） | 说明 | 默认值 |
+| --- | --- | --- |
+| `threshold_light` | 重创档累计伤害阈值（实际到骨伤害，无衰减）。 | `60` |
+| `threshold_heavy` | 瘫痪档累计伤害阈值（≥ 重创档，写反自动抬升）。 | `150` |
+| `power_multiplier_damaged` | 重创档极速/转向上限倍率（动力路恒 ≥0.75，不随此字段）。 | `0.5` |
+
+```json
+"bone_modules": {
+  "Engine": {
+    "modules": ["engine"],
+    "engine": { "threshold_light": 550, "threshold_heavy": 800 }
+  }
+}
+```
+
+> 单发直毁路径跳过 ENGINE（否则一发过门槛的炮弹会跳过重创直接瘫痪）；爆炸波及不累计（仅弹体/激光/本体武器重放三链路直击）；累计中间量不持久化（停服清零，瘫痪/重创档随失效表保持）。当前 Java 缺省阈值偏小，**务必显式配置**。
+
+### 2.17 炮管部件（`bone_modules.<骨>.barrel`，模块 `BARREL`）
+
+写在 `bone_modules.<骨块名>` 条目的 `barrel` 子对象（`modules` 数组需含 `"barrel"`）。骨名遵循本体约定：**`structure_bone + "_barrel"`**（如 `turret` 站 → `turret_barrel`）；结构模型无该骨时回退 `structure_bone` 本名（同轴机枪站形态）。弹炮结合车机炮骨（`turret_barrel`）与导弹发射管（`missile_barrel`）分属不同武器站，互不波及。
+
+**单档累计语义（无衰减永久）**：命中炮管骨的实际到骨伤害累计 ≥ `threshold` → `BARREL` 模块失效（进失效表：持久化、面板炮管栏目红框置顶、维修顺序队列可指定优先级、失效冒烟、快修设备 ceil 配额）→ **整个炮管所在武器站禁止射击**：
+
+- 覆盖玩家 + gunner AI（gunner 在索敌/选弹层直接跳过坏炮管站）+ 全部 RVP 武器类型与弹种（服务端 `Multi` 委托子武器必经 gate，**切弹种无法绕过**）；
+- BURST/AHEAD 连发中段炮管被打坏即中断剩余弹；装填与切弹不拦（修好装填态保留立即可射）；
+- 拒绝射击时动作栏提示 `ui.rvp.barrel_destroyed`（"炮管损坏，请先维修"）；其它武器站不受影响。
+
+快修恢复（清炮管累计）。已配 15 台 19 骨（2026-09-28，清单见 `docs/plan/RVP雷达与引擎骨骼部件实施_20260926.md` §28.4）。
+
+| 字段（`barrel` 子对象） | 说明 | 默认值 |
+| --- | --- | --- |
+| `threshold` | 炮管损坏累计伤害阈值（实际到骨伤害，单档、无衰减永久）。 | `300` |
+
+```json
+"bone_modules": {
+  "turret_barrel": {
+    "modules": ["barrel"],
+    "barrel": { "threshold": 300 }
+  }
+}
+```
+
+> `turret_barrel` 命中判定使用武器站实时炮管组 OBB（随炮塔/炮管转动；2026-09-28 修复了旧版静态 bind-pose 残留命中盒问题）。
+
+### 2.18 部件失效冒烟开关（`bone_modules.<骨>.smoke`）
+
+`bone_modules.<骨块名>` 条目的顶层布尔字段（2026-09-28）：该骨模块失效后是否在骨的实时命中 OBB 内生成损坏黑烟（引擎骨：重创黑烟/瘫痪火星火焰；含炮管/雷达/APS 等全部模块）。**缺省 `true`**（不写即冒烟）。
+
+```json
+"bone_modules": {
+  "turret_barrel": { "modules": ["barrel"], "barrel": { "threshold": 300 }, "smoke": false }
+}
+```
+
+> 黑烟使用 RVP 损坏烟渲染类型（深度只测不写）；配 `hideBone` 联动（JS 动画 `rvp_isModuleActive`）的部件建议关烟（如带 hurt 受损骨的坦克主炮）。
 
 ## 3 部件 JSON 扩展
 
