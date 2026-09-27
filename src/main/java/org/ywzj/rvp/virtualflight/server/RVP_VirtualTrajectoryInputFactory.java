@@ -3,6 +3,7 @@ package org.ywzj.rvp.virtualflight.server;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualPresetGuidance;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /**
@@ -37,12 +38,14 @@ final class RVP_VirtualTrajectoryInputFactory {
         // 调用本项目弹体数据解析器，按当前飞行 Tick 解析点火后 Tick，再冻结本 Tick 的推力与质量
         // （含推力曲线 A2 与变质量 A1），使虚拟链与实体链使用完全相同的推进模型。
         int ignitionTick = Math.max(data.getResolvedIgnitionDelayTick(), coldLaunchTimeTick);
-        int motorTick = flightTick - ignitionTick;
+        // 调用本项目武器数据访问器：冻结主发动机燃烧时长，供后续虚拟积分阶段判定使用。
         float motorBurnTime = data.getResolvedMotorBurnTime();
-        double resolvedThrust = (motorTick >= 0 && motorTick <= motorBurnTime)
-                ? projectile.resolveThrustAt(motorTick)
-                : 0f;
-        double resolvedMass = projectile.resolveMassAt(motorTick, motorBurnTime);
+        int motorTick = flightTick - ignitionTick;
+        // 调用本项目推进工具：冻结虚拟轨迹当前主燃烧阶段的推力、变质量或燃尽干质量。
+        RVP_PropulsionMath.MotorState motorState = RVP_PropulsionMath.resolveMotorState(
+                projectile, motorTick, false);
+        double resolvedThrust = motorState.thrust();
+        double resolvedMass = motorState.mass();
         float turningFactor = configuredTurningFactor != null ? configuredTurningFactor : 0.5F;
         // 调用本项目弹体数据解析器，把实体链使用的参考速度、密度与诱导阻力冻结给虚拟链。
         var aeroLimits = projectile.resolveAeroSteeringLimits(

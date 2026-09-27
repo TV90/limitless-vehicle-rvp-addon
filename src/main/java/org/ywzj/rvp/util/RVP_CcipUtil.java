@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
@@ -72,13 +73,12 @@ public final class RVP_CcipUtil {
 
     private static Vec3 stepPropulsionVelocity(Vec3 velocity, RVP_WeaponData data,
                                                int flightTick, double altitude) {
-        float burnTime = data.getResolvedMotorBurnTime();
         int motorTick = flightTick - data.getResolvedIgnitionDelayTick();
-        int massTick = Math.max(0, Math.min((int) burnTime, motorTick));
-        // 调用本项目质量解析器：CCIP 预测按当前主燃烧进度或燃尽后的干质量计算阻力。
-        float mass = data.getProjectileData().resolveMassAt(massTick, burnTime);
+        // 调用本项目推进工具：CCIP 预测复用主燃烧进度或燃尽后的质量解析。
+        RVP_PropulsionMath.MotorState motorState = RVP_PropulsionMath.resolveMotorState(
+                data.getProjectileData(), motorTick, false);
         // 调用本项目统一空气阻力工具：预测与实体弹体使用相同的质量、速度平方和高度倍率语义。
-        Vec3 next = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), mass,
+        Vec3 next = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), motorState.mass(),
                 data.getProjectileData().resolveAltitudeDragFactor(altitude));
         float gravity = data.getGravity();
         if (gravity != 0f) {

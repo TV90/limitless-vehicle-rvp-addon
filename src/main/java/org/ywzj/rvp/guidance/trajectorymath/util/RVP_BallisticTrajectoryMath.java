@@ -25,6 +25,18 @@ public final class RVP_BallisticTrajectoryMath {
     }
 
     /**
+     * 保留既有轨迹数学 API，并委托给共享推进工具计算 RVP 游戏单位下的单 Tick 加速度。
+     *
+     * @param thrust 发动机推力（RVP 游戏单位）
+     * @param mass 弹体质量（RVP 游戏单位）
+     * @return 推力加速度，单位格/Tick²
+     */
+    public static double thrustAccelerationPerTick(double thrust, double mass) {
+        // 调用本项目共享推进工具：兼容既有调用方，同时由唯一实现维护推力质量换算。
+        return RVP_PropulsionMath.accelerationPerTick(thrust, mass);
+    }
+
+    /**
      * 按虚拟弹道参数依次施加点火后的推力、速度平方阻力和重力。
      *
      * @param velocity Tick 开始时的速度，单位格/Tick
@@ -49,13 +61,13 @@ public final class RVP_BallisticTrajectoryMath {
         }
 
         int motorTick = flightTick - ignitionTick;
-        if (propulsion && motorTick <= motorBurnTime) {
+        if (propulsion && motorTick >= 0 && motorTick <= motorBurnTime) {
             Vec3 direction = velocity.lengthSqr() > 1.0E-8
                     ? velocity.normalize()
                     : new Vec3(0.0, 1.0, 0.0);
-            // 调用本项目推力加速度换算，保证实体链/虚拟链单位一致（A3）。
-            double acceleration = thrustAccelerationPerTick(thrust, mass);
-            velocity = velocity.add(direction.scale(acceleration));
+            // 调用本项目推进工具：实体与虚拟轨迹共用同一 RVP 推力加速度口径。
+            velocity = RVP_PropulsionMath.applyThrust(velocity, direction,
+                    new RVP_PropulsionMath.MotorState(true, thrust, mass), 1.0D);
         }
 
         // 调用本项目统一空气阻力工具：虚拟弹道沿用实体态的质量相关速度平方阻力。
@@ -64,23 +76,6 @@ public final class RVP_BallisticTrajectoryMath {
         return gravity != 0.0
                 ? velocity.add(0.0, gravity, 0.0)
                 : velocity.subtract(0.0, PhysicsEngine.G, 0.0);
-    }
-
-    /**
-     * RVP 推力加速度换算（RVP 游戏单位制）。
-     *
-     * <p>RVP 的 {@code thrust} 与 {@code mass} 采用游戏调优单位：每 Tick 加速度（格/Tick²）
-     * 直接等于 {@code thrust / mass}，<b>不</b> 再除以 {@code TICKS_PER_SECOND_SQUARED}。
-     * 这与本体 {@link org.ywzj.vehicle.util.PhysicsHelper#accelerationPerTick(double, double)}
-     * （牛顿/千克，需再除 400）刻意不同，使 RVP JSON 的 mass/thrust 保持小数值、便于调参。
-     * 实体链与虚拟链必须统一经本方法换算，避免两套推进模型漂移。</p>
-     *
-     * @param thrust 发动机推力（RVP 游戏单位）
-     * @param mass 弹体质量（RVP 游戏单位，内部钳制到最小 1e-6 防止除零）
-     * @return 每 Tick 推力加速度，单位格/Tick²
-     */
-    public static double thrustAccelerationPerTick(double thrust, double mass) {
-        return thrust / Math.max(mass, 1.0E-6);
     }
 
     /**

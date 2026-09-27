@@ -11,7 +11,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
-import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.weapon.core.RVP_AimContexts;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -394,9 +394,6 @@ public final class RVP_RocketBallistics {
                 float burn1 = data.getResolvedMotorBurnTime();
                 boolean burning1 = motorTick <= burn1;
                 boolean burning2 = false;
-                // 调用本项目质量解析器：燃烧期使用当前质量，主燃料耗尽后使用干质量。
-                int dragMassTick = burning1 ? Math.max(0, (int) motorTick) : Math.round(burn1);
-                float dragMass = data.getProjectileData().resolveMassAt(dragMassTick, burn1);
                 if (!burning1 && data.getProjectileData().usesSecondPulse()) {
                     float speedThreshold = data.getProjectileData().getResolvedSecondPulseTriggerSpeed();
                     if (secondPulseStartTick < 0 && speedThreshold > 0f && velocity.length() <= speedThreshold) {
@@ -407,24 +404,15 @@ public final class RVP_RocketBallistics {
                         burning2 = t2 >= 0 && t2 <= data.getProjectileData().getResolvedSecondPulseBurnTime();
                     }
                 }
-                if (burning1 || burning2) {
-                    float mass;
-                    float thrust;
-                    if (burning1) {
-                        // 主燃烧段：按点火后 Tick 解析推力曲线与变质量（A1 变质量 / A2 推力曲线）。
-                        thrust = data.getProjectileData().resolveThrustAt((int) motorTick);
-                        mass = data.getProjectileData().resolveMassAt((int) motorTick, burn1);
-                    } else {
-                        // 第二脉冲：沿用标量推力，质量取主燃烧结束后的干质量。
-                        thrust = data.getProjectileData().getResolvedSecondPulseThrust();
-                        mass = data.getProjectileData().resolveMassAt((int) burn1, burn1);
-                    }
-                    // 调用本项目推力加速度换算，保证单位一致（A3）。
-                    velocity = velocity.add(lookDir.scale(
-                            RVP_BallisticTrajectoryMath.thrustAccelerationPerTick(thrust, mass) * dt));
+                // 调用本项目推进工具：预测统一解析主燃烧、第二脉冲和滑翔阶段的推力与质量。
+                RVP_PropulsionMath.MotorState motorState = RVP_PropulsionMath.resolveMotorState(
+                        data.getProjectileData(), (int) motorTick, burning2);
+                if (motorState.burning()) {
+                    // 调用本项目推进工具：沿当前朝向并按预测子步比例积分推力。
+                    velocity = RVP_PropulsionMath.applyThrust(velocity, lookDir, motorState, dt);
                 }
                 // 调用本项目统一空气阻力工具：预测按当前位置高度倍率和积分子步时长扣速。
-                velocity = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), dragMass,
+                velocity = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), motorState.mass(),
                         data.getProjectileData().resolveAltitudeDragFactor(altitude), dt);
                 velocity = applyGravity(velocity, data, dt);
                 velocity = clampSpeed(velocity, data);

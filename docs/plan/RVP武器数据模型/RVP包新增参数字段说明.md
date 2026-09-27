@@ -308,7 +308,7 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 
 **推力有效时的每 tick 近似：** 先按本 Tick 解析推力与质量——`thrust(tick)` 取 `thrust_curve` 区间值或标量 `thrust`，`mass(tick)` 取变质量线性递减值或标量 `mass`——再 `Δv += lookDir * (thrust(tick)/mass(tick))`（燃烧期内）→ 二次阻力 `Δv -= 方向(v) * (drag_coefficient * |v|² / mass(tick)) * altitude_drag_factor` → 重力（默认 `PhysicsEngine.G`，或 `projectile_data.gravity`）。燃尽后推力停止，阻力使用主燃烧结束时的干质量继续计算。`constant_speed` 不参与；`max_speed` / `min_speed` 仍可钳制速度。
 
-> **单位约定（RVP 游戏单位）**：`thrust / mass` 直接作为每 tick 加速度（格/tick²），不再像本体 `MissileEntity#tickMove` 那样除以 `TICKS_PER_SECOND_SQUARED`（400）。换算统一封装在 `RVP_BallisticTrajectoryMath.thrustAccelerationPerTick`，实体链（`tickMissileMove`/`tickHitlTvMove`）、火箭弹道预测（`RVP_RocketBallistics`）与虚拟中段积分（`integrateForces`）三处共用，避免推进模型漂移。
+> **单位约定（RVP 游戏单位）**：`thrust / mass` 直接作为每 tick 加速度（格/tick²），不再像本体 `MissileEntity#tickMove` 那样除以 `TICKS_PER_SECOND_SQUARED`（400）。推力、质量阶段解析与速度增量统一由 `RVP_PropulsionMath` 实现，实体链（`tickMissileMove`/`tickHitlTvMove`）、火箭弹道预测（`RVP_RocketBallistics`）与虚拟中段积分（`integrateForces`）共用，避免推进模型漂移。
 
 **加载期归一化：** 顶层或弹体出现 `mass`/`thrust`/`motor_burn_time` 时会自动补 `has_rocket_engine: true`（若未显式配置）。
 
