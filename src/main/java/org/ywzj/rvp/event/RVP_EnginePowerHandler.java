@@ -146,6 +146,13 @@ public final class RVP_EnginePowerHandler {
         // 3) 动力字段覆写：极速/转向上限 × speedMult，力/加速度 × accelMult
         // （配置每 tick 直读，inject 重置下一 tick 即被纠正）
         applyPower(vehicle, speedMult, accelMult);
+        if (worstStage == 2) {
+            // [RVP] 瘫痪档静音（2026-09-28 用户定版）：ENGINE_SPEED 是发动机运转轰鸣音的
+            // 同步门（>60 播 run 音），本 tick 本体 tickEngineSpeed（油门 +1/+2）先行写入、
+            // VehicleMoveEvent 在其后发布——此处覆写 0 为每 tick 最后写入者，轰鸣音恒不触发
+            //（≤60 只保留怠速音；不碰 POWER/ENGINE_ON，炮塔与武器门不受影响）
+            vehicle.setEngineSpeed(0f);
+        }
         // [RVP] 引擎诊断（/rvpdebug engine on）：档位变化时记录覆写后的实际字段值，
         // 供"重创/瘫痪动力不生效"类问题的实机对账（同时记录 POWER/能量排除供能干扰）
         Map<String, Integer> lastLogged = LAST_LOGGED_FIELDS.get(vehicle);
