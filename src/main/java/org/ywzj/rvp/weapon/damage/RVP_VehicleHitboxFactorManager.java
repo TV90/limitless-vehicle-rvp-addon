@@ -46,6 +46,8 @@ import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.util.ResourceScanner;
 import org.ywzj.vehicle.vehicle.structure.OBB;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
+import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -967,7 +969,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
         Map<String, Double> distances = new HashMap<>();
         for (String name : boneNames) {
-            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, name);
+            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, name, null);
             if (resolvedObbs.isEmpty()) {
                 distances.put(name, Double.MAX_VALUE);
                 continue;
@@ -1025,7 +1027,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             int partUnitObbCount = partUnitOptional.map(partUnit -> partUnit.getOBBs().size()).orElse(0);
             BedrockBone bone = boneMap.get(boneName);
             int boneObbCount = bone == null ? 0 : OBB.getOBBsFromBone(bone, vehicle, namedBones).size();
-            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+            List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
             String source = resolvedObbs.isEmpty() ? "missing" : resolvedObbs.get(0).source();
             sb.append("bone=").append(boneName)
                     .append(" source=").append(source)
@@ -1044,8 +1046,17 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             AbstractVehicle vehicle,
             Map<String, BedrockBone> boneMap,
             HashSet<BedrockBone> namedBones,
-            String boneName
+            String boneName,
+            @Nullable Set<String> configBones
     ) {
+        // [RVP] 武器站按组细分（2026-09-28 命中修复）：炮管骨/站骨从归属 WeaponUnit 的
+        // 实时 OBB 按组拆分——原实现对炮管骨（structureBone+"_barrel"，无同名 PartUnit）
+        // 走 bone_fallback（静态 bind-pose），炮塔转动后残留"初始朝前位置"的固定命中盒；
+        // 且炮管组实时 OBB 整包归入站骨（炮塔）骨名。见 {@link #resolveWeaponUnitSplitObbs}。
+        List<ResolvedObb> weaponUnitSplit = resolveWeaponUnitSplitObbs(vehicle, boneName, configBones);
+        if (weaponUnitSplit != null) {
+            return weaponUnitSplit;
+        }
         Optional<PartUnit<?>> partUnitOptional = vehicle.getPartUnit(boneName);
         if (partUnitOptional.isPresent()) {
             List<OBB> partUnitObbs = partUnitOptional.get().getOBBs();
@@ -1066,6 +1077,74 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             resolved.add(new ResolvedObb(cubeObb.obb(), "bone_fallback"));
         }
         return resolved;
+    }
+
+    /**
+     * [RVP] 武器站按组细分 OBB 源（2026-09-28 命中修复，零 Mixin）。
+     *
+     * <p>本体 {@code WeaponUnitData.initStructureModel} 只把<b>炮塔组</b>（structureBone 骨，
+     * yTurnGroup）与<b>炮管组</b>（structureBone+"_barrel" 骨，xTurnGroup）两组 cube 塞入
+     * WeaponUnit 的 {@code partCubeOBBs}，两组实时跟随炮塔 yaw/炮管 pitch（每 tick
+     * {@code updateOBBs} 刷新）。遍历 WeaponUnit：骨名匹配炮管骨 → 返回炮管组 OBB；
+     * 匹配站骨 → 返回<b>非</b>炮管组 OBB（仅当炮管骨也是配置骨时才拆分，否则维持炮管组
+     * 归站骨的旧行为保证兼容）。{@code partCubeOBBs} 经 {@code VehicleCubeOBB.update} 的
+     * {@code group.globalTransform()} 吃到组旋转——实时正确。</p>
+     *
+     * <p>组判定零 Mixin：{@code PartUnit.getStructureGroup()} 公共、
+     * {@code VehicleCubeOBB.group}/{@code VehicleCubeGroup.parent} 公共字段——
+     * cube 的 group 沿 parent 链可达 structureGroup 且不等于它，即为炮管俯仰组。</p>
+     *
+     * @return 匹配武器站时返回细分 OBB；未匹配任何武器站（Engine 等非武器骨，其骨不随
+     *         炮塔转、静态 fallback 正确）返回 null 走原逻辑
+     */
+    private static @Nullable List<ResolvedObb> resolveWeaponUnitSplitObbs(
+            AbstractVehicle vehicle, String boneName, @Nullable Set<String> configBones) {
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof WeaponUnit weaponUnit)) {
+                continue;
+            }
+            String structureBone = weaponUnit.getData() == null
+                    ? null : weaponUnit.getData().getStructureBone();
+            if (structureBone == null || structureBone.isBlank()) {
+                continue;
+            }
+            String barrelBone = structureBone + "_barrel";
+            boolean wantBarrel = boneName.equals(barrelBone);
+            if (!wantBarrel && !boneName.equals(structureBone)) {
+                continue;
+            }
+            if (!wantBarrel && (configBones == null || !configBones.contains(barrelBone))) {
+                // 站骨且炮管骨未配置为独立命中骨：炮管组维持归站骨（旧行为），走原 part_unit 全量
+                return null;
+            }
+            List<ResolvedObb> out = new ArrayList<>();
+            for (VehicleCubeOBB cube : weaponUnit.getPartCubeOBBs()) {
+                if (wantBarrel == isBarrelGroupCube(cube, weaponUnit)) {
+                    out.add(new ResolvedObb(cube.obb(),
+                            wantBarrel ? "weapon_unit_barrel" : "weapon_unit_structure"));
+                }
+            }
+            if (!out.isEmpty()) {
+                return out;
+            }
+            // 该站无对应组 cube（异常结构）：继续尝试其它站 / 走原逻辑
+        }
+        return null;
+    }
+
+    /** cube 是否属于武器站炮管组（xTurnGroup 及其子组）：group 沿 parent 链可达 structureGroup 且非其本身。 */
+    private static boolean isBarrelGroupCube(VehicleCubeOBB cube, WeaponUnit weaponUnit) {
+        VehicleCubeGroup group = cube.group;
+        VehicleCubeGroup structureGroup = weaponUnit.getStructureGroup();
+        if (group == null || structureGroup == null || group == structureGroup) {
+            return false;
+        }
+        for (VehicleCubeGroup g = group.parent; g != null; g = g.parent) {
+            if (g == structureGroup) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1100,7 +1179,16 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         Map<String, BedrockBone> boneMap = model.getBoneMap();
         HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
-        List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+        // [RVP] 冒烟骨都来自 bone_modules 配置键——传配置键集合启用武器站按组细分
+        // （炮管骨 → 实时炮管组 OBB，冒烟取样点随炮塔/炮管转动正确）
+        java.util.Set<String> samplingBones = new java.util.HashSet<>();
+        if (cfg.moduleByBoneName != null) {
+            samplingBones.addAll(cfg.moduleByBoneName.keySet());
+        }
+        if (cfg.factorByBoneName != null) {
+            samplingBones.addAll(cfg.factorByBoneName.keySet());
+        }
+        List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, samplingBones);
         List<OBB> result = new ArrayList<>(resolved.size());
         for (ResolvedObb resolvedObb : resolved) {
             result.add(resolvedObb.obb());
@@ -1131,7 +1219,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if (model != null) {
                 Map<String, BedrockBone> boneMap = model.getBoneMap();
                 HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
-                List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+                List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
                 if (!resolved.isEmpty()) {
                     Vector3f center = resolved.get(0).obb().center();
                     return new Vec3(center.x(), center.y(), center.z());
@@ -1287,7 +1375,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     // 根除"条目值静默覆盖顶层倍率"的双配置陷阱
                     factor = factorByBoneName.getOrDefault(boneName, defaultFactor);
                 }
-                List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName);
+                List<ResolvedObb> resolvedObbs = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, allConfigBones);
                 if (resolvedObbs.isEmpty()) {
                     if (boneMap.get(boneName) == null && vehicle.getPartUnit(boneName).isEmpty()) {
                         missingBones++;
