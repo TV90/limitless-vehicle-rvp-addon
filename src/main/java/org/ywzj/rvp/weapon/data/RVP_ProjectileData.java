@@ -166,7 +166,7 @@ public class RVP_ProjectileData {
     @SerializedName("ignition_delay_tick")
     private int ignitionDelayTick = 0;
 
-    /** 速度平方阻力系数，默认 0；火箭发动机动力学按 Tick 施加。 */
+    /** 速度平方阻力系数，默认 0；推进弹体每 Tick 按系数×速度平方÷当前质量×高度倍率扣速。 */
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 

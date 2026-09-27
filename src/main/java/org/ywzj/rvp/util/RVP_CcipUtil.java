@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.physics.RVP_UnguidedBallisticMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
@@ -38,7 +39,7 @@ public final class RVP_CcipUtil {
 
         for (int tick = 0; tick < MAX_TICKS; tick++) {
             if (usesPropulsion) {
-                velocity = stepPropulsionVelocity(velocity, data);
+                velocity = stepPropulsionVelocity(velocity, data, tick, y);
             } else {
                 velocity = stepBallisticVelocity(velocity, data, bombDefaultGravity, flightSpeed);
             }
@@ -69,12 +70,16 @@ public final class RVP_CcipUtil {
         return clampSpeed(next, data.getProjectileData().getMinSpeed(), data.getProjectileData().getMaxSpeed());
     }
 
-    private static Vec3 stepPropulsionVelocity(Vec3 velocity, RVP_WeaponData data) {
-        Vec3 next = velocity;
-        double speedSqr = next.lengthSqr();
-        if (speedSqr > 1.0E-12 && data.getResolvedDragCoefficient() > 0f) {
-            next = next.add(next.normalize().scale(-data.getResolvedDragCoefficient() * speedSqr));
-        }
+    private static Vec3 stepPropulsionVelocity(Vec3 velocity, RVP_WeaponData data,
+                                               int flightTick, double altitude) {
+        float burnTime = data.getResolvedMotorBurnTime();
+        int motorTick = flightTick - data.getResolvedIgnitionDelayTick();
+        int massTick = Math.max(0, Math.min((int) burnTime, motorTick));
+        // 调用本项目质量解析器：CCIP 预测按当前主燃烧进度或燃尽后的干质量计算阻力。
+        float mass = data.getProjectileData().resolveMassAt(massTick, burnTime);
+        // 调用本项目统一空气阻力工具：预测与实体弹体使用相同的质量、速度平方和高度倍率语义。
+        Vec3 next = RVP_QuadraticAirDrag.apply(velocity, data.getResolvedDragCoefficient(), mass,
+                data.getProjectileData().resolveAltitudeDragFactor(altitude));
         float gravity = data.getGravity();
         if (gravity != 0f) {
             next = next.add(0.0D, gravity, 0.0D);

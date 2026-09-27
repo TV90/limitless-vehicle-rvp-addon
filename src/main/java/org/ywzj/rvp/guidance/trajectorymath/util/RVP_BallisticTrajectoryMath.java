@@ -34,7 +34,7 @@ public final class RVP_BallisticTrajectoryMath {
      * @param motorBurnTime 主发动机从点火起持续的 Tick 数
      * @param thrust 每 Tick 沿当前速度方向施加的推力
      * @param mass 弹体质量，必须与推力使用相同单位制
-     * @param dragCoefficient 速度平方阻力系数
+     * @param dragCoefficient 速度平方阻力系数，阻力计算时除以当前 {@code mass}
      * @param altitudeDragFactor 当前高度对应的阻力倍率
      * @param gravity 每 Tick 施加的 Y 轴重力增量；零值使用本体默认重力常量
      * @return 施加各项力后的新速度
@@ -58,11 +58,9 @@ public final class RVP_BallisticTrajectoryMath {
             velocity = velocity.add(direction.scale(acceleration));
         }
 
-        double speedSqr = velocity.lengthSqr();
-        double drag = dragCoefficient * altitudeDragFactor;
-        if (speedSqr > 1.0E-12 && drag > 0.0) {
-            velocity = velocity.add(velocity.normalize().scale(-drag * speedSqr));
-        }
+        // 调用本项目统一空气阻力工具：虚拟弹道沿用实体态的质量相关速度平方阻力。
+        velocity = RVP_QuadraticAirDrag.apply(
+                velocity, dragCoefficient, mass, altitudeDragFactor);
         return gravity != 0.0
                 ? velocity.add(0.0, gravity, 0.0)
                 : velocity.subtract(0.0, PhysicsEngine.G, 0.0);
