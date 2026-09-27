@@ -233,7 +233,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.GREEN);
             return;
         }
-        String keyName = RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString();
+        String keyName = shortenKeyName(RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString());
         guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_ready", keyName), x, y, Color.GREEN);
     }
 
@@ -251,7 +251,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.GREEN);
             return;
         }
-        String keyName = RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString();
+        String keyName = shortenKeyName(RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString());
         guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_ready", keyName), x, y, Color.GREEN);
     }
 
@@ -268,9 +268,29 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.reload", label, seconds), x, y, color);
         } else {
             // 当前数量 + 键位（英文冒号 + 空格，同本体 lang 样式）
-            String keyName = key.getTranslatedKeyMessage().getString();
+            String keyName = shortenKeyName(key.getTranslatedKeyMessage().getString());
             guiGraphics.drawString(font, label + ": " + remain + " [" + keyName + "]",
                     x, y, color);
         }
+    }
+
+    /**
+     * [RVP] 键位名缩短（2026-09-28 用户要求）：原版键名太长（"Left Control"）遮挡 HUD——
+     * 修饰键前缀缩写（Left/Right → L/R）、Control → CTR；中文键名（"左Ctrl"）不含前缀原样返回。
+     */
+    private static String shortenKeyName(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        String shortened = name;
+        if (shortened.startsWith("Left ")) {
+            shortened = "L " + shortened.substring(5);
+        } else if (shortened.startsWith("Right ")) {
+            shortened = "R " + shortened.substring(6);
+        }
+        if (shortened.endsWith("Control")) {
+            shortened = shortened.substring(0, shortened.length() - "Control".length()) + "CTR";
+        }
+        return shortened;
     }
 }
