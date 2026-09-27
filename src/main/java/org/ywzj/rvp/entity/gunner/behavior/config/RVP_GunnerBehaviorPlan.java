@@ -11,10 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 阶段 D 使用的不可变固定行为计划。
- *
- * <p>Profile 行为列表会在阶段 F 接入；当前计划仍由代码固定，但每项已经是独立行为实例，
- * 管理器不再调用旧的战术总编排。</p>
+ * schema v2 Profile 编译得到的不可变行为计划。
  */
 public final class RVP_GunnerBehaviorPlan {
 
@@ -47,6 +44,11 @@ public final class RVP_GunnerBehaviorPlan {
         this.behaviors = ordered;
         this.behaviorsById = Collections.unmodifiableMap(ids);
         this.byStage = Collections.unmodifiableMap(immutableStages);
+    }
+
+    /** 返回不执行任何可配置战术、只保留管理器安全清理的最小计划。 */
+    public static RVP_GunnerBehaviorPlan empty() {
+        return new RVP_GunnerBehaviorPlan(List.of());
     }
 
     /** 返回全部固定行为，保持计划声明顺序。 */

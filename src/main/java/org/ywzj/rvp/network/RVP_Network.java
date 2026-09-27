@@ -18,9 +18,10 @@ import org.ywzj.rvp.network.firesupport.C2SRequestFireSupportCeaseFire;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
+import org.ywzj.rvp.network.gunner.S2CGunnerProfileSnapshot;
 
 public class RVP_Network {
-    /** 协议 19：BoneModuleType 新增 BARREL（炮管部件：累计损坏禁射站级武器，快修恢复）；旧客户端无法连新服。 */
+    /** 协议 19：新增服务端 Gunner Profile ID 快照，用于数据驱动生成物品变体。 */
     private static final String PROTOCOL = "19";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
@@ -352,6 +353,11 @@ public class RVP_Network {
                 .encoder(S2CRadarPowerSync::encode)
                 .decoder(S2CRadarPowerSync::decode)
                 .consumerMainThread(S2CRadarPowerSync::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CGunnerProfileSnapshot.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CGunnerProfileSnapshot::encode)
+                .decoder(S2CGunnerProfileSnapshot::decode)
+                .consumerMainThread(S2CGunnerProfileSnapshot::handle)
                 .add();
     }
 }

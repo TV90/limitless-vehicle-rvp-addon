@@ -41,7 +41,6 @@ import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorIntent;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerIntentSink;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_GunnerBehaviorRuntime;
 import org.ywzj.rvp.entity.gunner.behavior.api.RVP_IGunnerBehavior;
-import org.ywzj.rvp.entity.gunner.behavior.config.RVP_GunnerBehaviorPlan;
 import org.ywzj.rvp.entity.gunner.behavior.runtime.RVP_GunnerObservationService;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
@@ -146,27 +145,42 @@ public final class RVP_BuiltinGunnerBehaviors {
     /** SEAD 雷达锁定检测半径（格）：扫描该范围内锁定本机的敌方雷达载具。 */
     private static final double SEAD_RADAR_LOCK_RANGE = 1024.0;
 
-    /** 阶段 D 的不可变固定行为计划。 */
-    private static final RVP_GunnerBehaviorPlan FIXED_PLAN = createFixedPlan();
-
-    /** 返回阶段 D 固定行为计划；阶段 F 才由 Profile 编译计划。 */
-    public static RVP_GunnerBehaviorPlan fixedPlan() {
-        return FIXED_PLAN;
-    }
-
-    /** 创建按现有权威顺序排列的全部内建行为实例。 */
-    private static RVP_GunnerBehaviorPlan createFixedPlan() {
-        return new RVP_GunnerBehaviorPlan(List.of(
-                ciwsTargeting(), primaryTargeting(), driverSupply(), weaponCountermeasure(),
-                rvpCountermeasure(), activeEcm(), smokeEvasion(), ownshipRadar(), externalRadar(),
-                guidedWeaponSupport(), seadRevenge(), fixedWingCombatFlight(),
-                rotaryWingCombatFlight(), launcherPositioning(), stuckRecovery(),
-                groundEngagementMove(), groundPatrol(), weaponEngagement()));
+    /** 按注册类型创建一个由 JSON 配置的独立行为实例。 */
+    public static RVP_IGunnerBehavior create(String typePath, String instanceId, int priority,
+                                              GunnerProfile config) {
+        RVP_IGunnerBehavior behavior = switch (typePath) {
+            case "ciws_targeting" -> ciwsTargeting(instanceId, priority);
+            case "primary_targeting" -> primaryTargeting(instanceId, priority);
+            case "driver_supply" -> driverSupply(instanceId, priority);
+            case "weapon_countermeasure" -> weaponCountermeasure(instanceId, priority);
+            case "rvp_countermeasure" -> rvpCountermeasure(instanceId, priority);
+            case "active_ecm" -> activeEcm(instanceId, priority);
+            case "smoke_evasion" -> smokeEvasion(instanceId, priority);
+            case "ownship_radar" -> ownshipRadar(instanceId, priority);
+            case "external_radar" -> externalRadar(instanceId, priority);
+            case "guided_weapon_support" -> guidedWeaponSupport(instanceId, priority);
+            case "sead_revenge" -> seadRevenge(instanceId, priority);
+            case "fixed_wing_combat_flight" -> fixedWingCombatFlight(instanceId, priority);
+            case "rotary_wing_combat_flight" -> rotaryWingCombatFlight(instanceId, priority);
+            case "launcher_positioning" -> launcherPositioning(instanceId, priority);
+            case "stuck_recovery" -> stuckRecovery(instanceId, priority);
+            case "ground_engagement_move" -> groundEngagementMove(instanceId, priority);
+            case "ground_patrol" -> groundPatrol(instanceId, priority);
+            case "weapon_engagement" -> weaponEngagement(instanceId, priority);
+            default -> throw new IllegalArgumentException("未知 Gunner 行为类型: rvp:" + typePath);
+        };
+        boolean controlsMovement = switch (typePath) {
+            case "smoke_evasion", "sead_revenge", "fixed_wing_combat_flight",
+                    "rotary_wing_combat_flight", "launcher_positioning", "stuck_recovery",
+                    "ground_engagement_move", "ground_patrol" -> true;
+            default -> false;
+        };
+        return new ConfiguredBehavior(behavior, config, controlsMovement);
     }
 
     /** CIWS 目标抢占行为。 */
-    private static RVP_IGunnerBehavior ciwsTargeting() {
-        return new BaseBehavior("ciws_targeting", RVP_IGunnerBehavior.Stage.TARGET) {
+    private static RVP_IGunnerBehavior ciwsTargeting(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TARGET) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.WEAPON_UNIT);
@@ -175,6 +189,9 @@ public final class RVP_BuiltinGunnerBehaviors {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
+                if (context.gunner().tickCount % context.profile().getCiwsScanIntervalTick() != 0) {
+                    return;
+                }
                 AmmoEntity target = GunnerTargeting.findCiwsTarget(
                         context.gunner(), context.vehicle(), context.observations());
                 if (target != null) {
@@ -188,8 +205,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 普通目标过滤、分层与评分行为。 */
-    private static RVP_IGunnerBehavior primaryTargeting() {
-        return new BaseBehavior("primary_targeting", RVP_IGunnerBehavior.Stage.TARGET) {
+    private static RVP_IGunnerBehavior primaryTargeting(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TARGET) {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
@@ -204,8 +221,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 司机载具补给行为。 */
-    private static RVP_IGunnerBehavior driverSupply() {
-        return new BaseBehavior("driver_supply", RVP_IGunnerBehavior.Stage.SUPPORT) {
+    private static RVP_IGunnerBehavior driverSupply(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.SUPPORT) {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
@@ -220,8 +237,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 武器站内本体式反制行为。 */
-    private static RVP_IGunnerBehavior weaponCountermeasure() {
-        return new BaseBehavior("weapon_countermeasure", RVP_IGunnerBehavior.Stage.SUPPORT) {
+    private static RVP_IGunnerBehavior weaponCountermeasure(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.SUPPORT) {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
@@ -235,8 +252,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** RVP Flare/Chaff 自动反制行为。 */
-    private static RVP_IGunnerBehavior rvpCountermeasure() {
-        return new BaseBehavior("rvp_countermeasure", RVP_IGunnerBehavior.Stage.SUPPORT) {
+    private static RVP_IGunnerBehavior rvpCountermeasure(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.SUPPORT) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER);
@@ -245,14 +262,14 @@ public final class RVP_BuiltinGunnerBehaviors {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
-                tickRvpCountermeasure(context, runtime, sink);
+                tickRvpCountermeasure(context, runtime, sink, id());
             }
         };
     }
 
     /** 主动 ECM 自动触发行为。 */
-    private static RVP_IGunnerBehavior activeEcm() {
-        return new BaseBehavior("active_ecm", RVP_IGunnerBehavior.Stage.SUPPORT) {
+    private static RVP_IGunnerBehavior activeEcm(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.SUPPORT) {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
@@ -262,8 +279,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** Smoke 威胁检测与驶入烟幕行为。 */
-    private static RVP_IGunnerBehavior smokeEvasion() {
-        return new BaseBehavior("smoke_evasion", RVP_IGunnerBehavior.Stage.SUPPORT,
+    private static RVP_IGunnerBehavior smokeEvasion(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.SUPPORT,
                 RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
@@ -282,7 +299,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                 }
                 if (state.holdTicks > 0) {
                     RVP_GunnerMovementActions.Command command = new RVP_GunnerMovementActions.Command();
-                    tickSmokeHoldDrive(context.vehicle(), context.observations(), state, command);
+                    tickSmokeHoldDrive(context.vehicle(), context.profile(), context.observations(), state, command);
                     sink.submit(intent(id(), "vehicle", 600, 850,
                             RVP_GunnerBehaviorIntent.Channel.MOVEMENT,
                             RVP_GunnerBehaviorIntent.Kind.MOVEMENT,
@@ -293,32 +310,32 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 本车雷达开机、探测与锁定行为。 */
-    private static RVP_IGunnerBehavior ownshipRadar() {
-        return supportIntentBehavior("ownship_radar", 500,
+    private static RVP_IGunnerBehavior ownshipRadar(String instanceId, int priority) {
+        return supportIntentBehavior(instanceId, priority, 500,
                 RVP_GunnerBehaviorIntent.Channel.RADAR_LOCK,
                 RVP_GunnerBehaviorIntent.Kind.LOCAL_RADAR, "local");
     }
 
     /** 外置雷达部署、请求与锁定行为。 */
-    private static RVP_IGunnerBehavior externalRadar() {
-        return supportIntentBehavior("external_radar", 510,
+    private static RVP_IGunnerBehavior externalRadar(String instanceId, int priority) {
+        return supportIntentBehavior(instanceId, priority, 510,
                 RVP_GunnerBehaviorIntent.Channel.RADAR_LOCK,
                 RVP_GunnerBehaviorIntent.Kind.EXTERNAL_RADAR, "external");
     }
 
     /** GPS、照射和 HITL 在途维持行为。 */
-    private static RVP_IGunnerBehavior guidedWeaponSupport() {
-        return supportIntentBehavior("guided_weapon_support", 520,
+    private static RVP_IGunnerBehavior guidedWeaponSupport(String instanceId, int priority) {
+        return supportIntentBehavior(instanceId, priority, 520,
                 RVP_GunnerBehaviorIntent.Channel.GUIDANCE_MAINTAIN,
                 RVP_GunnerBehaviorIntent.Kind.GUIDANCE_MAINTAIN, "operator");
     }
 
     /** 创建无需额外扫描的单支持意图行为。 */
-    private static RVP_IGunnerBehavior supportIntentBehavior(String id, int order,
+    private static RVP_IGunnerBehavior supportIntentBehavior(String id, int priority, int order,
                                                               RVP_GunnerBehaviorIntent.Channel channel,
                                                               RVP_GunnerBehaviorIntent.Kind kind,
                                                               String resourceKey) {
-        return new BaseBehavior(id, RVP_IGunnerBehavior.Stage.SUPPORT) {
+        return new BaseBehavior(id, priority, RVP_IGunnerBehavior.Stage.SUPPORT) {
             @Override
             public void plan(Stage stage, RVP_GunnerBehaviorContext context,
                              RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
@@ -330,8 +347,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** SEAD 多通道复仇状态机行为。 */
-    private static RVP_IGunnerBehavior seadRevenge() {
-        return new BaseBehavior("sead_revenge", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior seadRevenge(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -350,8 +367,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 固定翼攻击、脱离、巡航和回航行为。 */
-    private static RVP_IGunnerBehavior fixedWingCombatFlight() {
-        return new BaseBehavior("fixed_wing_combat_flight", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior fixedWingCombatFlight(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -375,8 +392,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 旋翼起飞、攻击、脱离和高度保持行为。 */
-    private static RVP_IGunnerBehavior rotaryWingCombatFlight() {
-        return new BaseBehavior("rotary_wing_combat_flight", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior rotaryWingCombatFlight(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -416,8 +433,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 发射架有弹停车、装填期走位行为。 */
-    private static RVP_IGunnerBehavior launcherPositioning() {
-        return new BaseBehavior("launcher_positioning", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior launcherPositioning(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -442,8 +459,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 地面载具卡住检测与倒车脱困行为。 */
-    private static RVP_IGunnerBehavior stuckRecovery() {
-        return new BaseBehavior("stuck_recovery", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior stuckRecovery(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -462,8 +479,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 地面载具有目标时的接近、停车与侧移行为。 */
-    private static RVP_IGunnerBehavior groundEngagementMove() {
-        return new BaseBehavior("ground_engagement_move", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior groundEngagementMove(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -493,8 +510,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 地面载具无目标时的漫游与大转弯行为。 */
-    private static RVP_IGunnerBehavior groundPatrol() {
-        return new BaseBehavior("ground_patrol", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior groundPatrol(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.DRIVER_AI)
@@ -520,8 +537,8 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 普通/CIWS 原子武器交战行为。 */
-    private static RVP_IGunnerBehavior weaponEngagement() {
-        return new BaseBehavior("weapon_engagement", RVP_IGunnerBehavior.Stage.TACTICS) {
+    private static RVP_IGunnerBehavior weaponEngagement(String instanceId, int priority) {
+        return new BaseBehavior(instanceId, priority, RVP_IGunnerBehavior.Stage.TACTICS) {
             @Override
             public boolean isApplicable(RVP_GunnerBehaviorContext context) {
                 return context.has(RVP_GunnerBehaviorContext.Capability.WEAPON_UNIT);
@@ -563,8 +580,7 @@ public final class RVP_BuiltinGunnerBehaviors {
 
     /** 判断 SEAD 行为是否正处于复仇状态，避免普通飞行行为推进自身阶段。 */
     private static boolean isSeadActive(RVP_GunnerBehaviorRuntime runtime) {
-        SeadState state = runtime.getState("sead_revenge", SeadState.class);
-        return state != null && state.mode != SEAD_NONE;
+        return runtime.anyState(SeadState.class, state -> state.mode != SEAD_NONE);
     }
 
     /** 本体式反制行为的独立冷却状态。 */
@@ -695,6 +711,8 @@ public final class RVP_BuiltinGunnerBehaviors {
         private boolean revengeFired;
         /** 退出后禁止再次触发的剩余 tick。 */
         private int cooldownTicks;
+        /** 当前行为配置的退出冷却 tick。 */
+        private int cooldownDurationTick = SEAD_COOLDOWN_TICK;
 
         /** 推进一 tick 复仇冷却。 */
         private void tickCooldown() {
@@ -708,11 +726,14 @@ public final class RVP_BuiltinGunnerBehaviors {
     private abstract static class BaseBehavior implements RVP_IGunnerBehavior {
         /** 稳定行为实例 ID。 */
         private final String id;
+        /** Profile 声明的仲裁优先级。 */
+        private final int priority;
         /** 行为参与的不可变固定阶段集合。 */
         private final Set<Stage> stages;
 
-        private BaseBehavior(String id, Stage... stages) {
+        private BaseBehavior(String id, int priority, Stage... stages) {
             this.id = id;
+            this.priority = priority;
             this.stages = Set.copyOf(EnumSet.copyOf(List.of(stages)));
         }
 
@@ -722,8 +743,35 @@ public final class RVP_BuiltinGunnerBehaviors {
         }
 
         @Override
+        public int priority() {
+            return priority;
+        }
+
+        @Override
         public Set<Stage> stages() {
             return stages;
+        }
+    }
+
+    /** 将行为实例绑定到自身配置视图，避免同类型多实例串用参数。 */
+    private record ConfiguredBehavior(RVP_IGunnerBehavior delegate,
+                                      GunnerProfile config,
+                                      boolean controlsMovement) implements RVP_IGunnerBehavior {
+        @Override public String id() { return delegate.id(); }
+        @Override public int priority() { return delegate.priority(); }
+        @Override public Set<Stage> stages() { return delegate.stages(); }
+        @Override public boolean isApplicable(RVP_GunnerBehaviorContext context) {
+            return delegate.isApplicable(context.withProfile(config));
+        }
+        @Override public void onEnter(RVP_GunnerBehaviorContext context, RVP_GunnerBehaviorRuntime runtime) {
+            delegate.onEnter(context.withProfile(config), runtime);
+        }
+        @Override public void plan(Stage stage, RVP_GunnerBehaviorContext context,
+                                   RVP_GunnerBehaviorRuntime runtime, RVP_GunnerIntentSink sink) {
+            delegate.plan(stage, context.withProfile(config), runtime, sink);
+        }
+        @Override public void onExit(GunnerEntity gunner, RVP_GunnerBehaviorRuntime runtime) {
+            delegate.onExit(gunner, runtime);
         }
     }
 
@@ -790,7 +838,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         sink.submit(intent("weapon_engagement", "weapon", 900, 500,
                 RVP_GunnerBehaviorIntent.Channel.FIRE,
                 RVP_GunnerBehaviorIntent.Kind.FIRE_ENGAGEMENT,
-                target, null, null, false, transactionId, null));
+                target, null, null, false, transactionId, null).withActionProfile(profile));
     }
 
     /** Launcher vehicle driving: park when has ammo, roam when reloading. */
@@ -858,11 +906,12 @@ public final class RVP_BuiltinGunnerBehaviors {
 
         if (tacticalTarget && dist <= stopDist) {
             if (state.holdTicks <= 0 && state.evadeTicks <= 0) {
-                float yawBias = gunner.getRandom().nextBoolean() ? 55.0F : -55.0F;
-                state.start(GROUND_TACTICAL_HOLD_TICK,
-                        GROUND_TACTICAL_EVADE_MIN_TICK
-                                + gunner.getRandom().nextInt(
-                                GROUND_TACTICAL_EVADE_MAX_TICK - GROUND_TACTICAL_EVADE_MIN_TICK + 1),
+                float yawBias = gunner.getRandom().nextBoolean()
+                        ? profile.getGroundEvadeYawDeg() : -profile.getGroundEvadeYawDeg();
+                state.start(profile.getGroundHoldTick(),
+                        profile.getGroundEvadeTickMin()
+                                + gunner.getRandom().nextInt(Math.max(1,
+                                profile.getGroundEvadeTickMax() - profile.getGroundEvadeTickMin() + 1)),
                         yawBias);
             }
         } else if (!tacticalTarget || dist > stopDist * 1.8) {
@@ -993,7 +1042,7 @@ public final class RVP_BuiltinGunnerBehaviors {
             return;
         }
         // 错相节流：按实体 id 相位错开各载具的扫描时刻，避免大量载具同刻全量扫实体造成 TPS 尖峰
-        if ((gunner.tickCount + vehicle.getId()) % 10 != 0) {
+        if ((gunner.tickCount + vehicle.getId()) % context.profile().getSmokeScanIntervalTick() != 0) {
             return;
         }
         if (!(vehicle.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
@@ -1025,7 +1074,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                 threat, null, RVP_EnumCountermeasureType.SMOKE, true, "",
                 result -> {
                     if (result == RVP_GunnerActionResult.DISPATCHED) {
-                        state.holdTicks = SMOKE_HOLD_TICKS;
+                        state.holdTicks = context.profile().getSmokeHoldTick();
                         if (RVP_DebugFlags.GUNNER.isEnabled()) {
                             LOGGER.info("[RVP-Gunner] 载具={} 因{}，抛烟雾并停车", vehicle.getVehicleId(), reason);
                         }
@@ -1118,11 +1167,11 @@ public final class RVP_BuiltinGunnerBehaviors {
     }
 
     /** 烟雾躲避驾驶：向最近的烟雾云开进，进入云内即停车（无控制输入）；烟雾消散则提前结束。 */
-    private static void tickSmokeHoldDrive(AbstractVehicle vehicle,
+    private static void tickSmokeHoldDrive(AbstractVehicle vehicle, GunnerProfile profile,
                                            RVP_GunnerObservationService observations,
                                            SmokeEvasionState state,
                                            RVP_GunnerMovementActions.Command command) {
-        RVP_SmokeEntity smoke = findNearbySmoke(vehicle, observations, SMOKE_LOOK_RADIUS);
+        RVP_SmokeEntity smoke = findNearbySmoke(vehicle, observations, profile.getSmokeLookRadius());
         if (smoke == null) {
             // 烟雾已散，提前结束停车
             state.holdTicks = 0;
@@ -1352,9 +1401,6 @@ public final class RVP_BuiltinGunnerBehaviors {
     private static void tickGroundWander(GunnerEntity gunner, AbstractVehicle vehicle, GunnerProfile profile,
                                          GroundPatrolState state,
                                          RVP_GunnerMovementActions.Command command) {
-        if (!profile.isGroundWanderEnabled()) {
-            return;
-        }
         int cooldown = state.turnCooldownTicks;
         int turning = state.turningTicks;
         if (turning > 0) {
@@ -1511,23 +1557,26 @@ public final class RVP_BuiltinGunnerBehaviors {
     /** 按现行 5 tick 扫描与 100 tick 节流语义提交 Flare/Chaff 意图。 */
     private static void tickRvpCountermeasure(RVP_GunnerBehaviorContext context,
                                               RVP_GunnerBehaviorRuntime runtime,
-                                              RVP_GunnerIntentSink sink) {
+                                              RVP_GunnerIntentSink sink,
+                                              String behaviorId) {
         AbstractVehicle vehicle = context.vehicle();
         RVP_CountermeasureData config = RVP_CountermeasureConfigManager.INSTANCE.resolve(vehicle.getVehicleId());
         if (config == null || !config.isEnabled()
-                || context.gameTime() % RVP_COUNTERMEASURE_SCAN_INTERVAL_TICK != 0L) {
+                || context.gameTime() % context.profile().getRvpCountermeasureScanIntervalTick() != 0L) {
             return;
         }
-        RvpCountermeasureState state = runtime.getState("rvp_countermeasure", RvpCountermeasureState.class);
+        RvpCountermeasureState state = runtime.getState(behaviorId, RvpCountermeasureState.class);
         if (state == null) {
             state = new RvpCountermeasureState();
-            runtime.putState("rvp_countermeasure", state);
+            runtime.putState(behaviorId, state);
         }
         if (state.lastDispatchedTick != Long.MIN_VALUE
-                && context.gameTime() - state.lastDispatchedTick < RVP_COUNTERMEASURE_COOLDOWN_TICK) {
+                && context.gameTime() - state.lastDispatchedTick
+                < context.profile().getRvpCountermeasureCooldownTick()) {
             return;
         }
-        RVP_EnumCountermeasureType type = resolveRvpCountermeasureThreat(vehicle, context.observations());
+        RVP_EnumCountermeasureType type = resolveRvpCountermeasureThreat(
+                vehicle, context.profile(), context.observations());
         if (type == null) {
             return;
         }
@@ -1546,11 +1595,11 @@ public final class RVP_BuiltinGunnerBehaviors {
     /** 解析当前导弹/雷达威胁；优先导弹锁定，再检查雷达锁定。 */
     @Nullable
     private static RVP_EnumCountermeasureType resolveRvpCountermeasureThreat(
-            AbstractVehicle vehicle, RVP_GunnerObservationService observations) {
+            AbstractVehicle vehicle, GunnerProfile profile, RVP_GunnerObservationService observations) {
         if (!(vehicle.level() instanceof ServerLevel)) {
             return null;
         }
-        for (Entity entity : observations.candidates(RVP_MISSILE_THREAT_RANGE,
+        for (Entity entity : observations.candidates(profile.getRvpMissileThreatRange(),
                 candidate -> candidate instanceof RVP_BaseBullet)) {
             if (!(entity instanceof RVP_BaseBullet bullet)
                     || bullet.getTargetEntity() != vehicle) {
@@ -1569,7 +1618,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                 return RVP_EnumCountermeasureType.CHAFF;
             }
         }
-        for (Entity entity : observations.candidates(RVP_MISSILE_THREAT_RANGE,
+        for (Entity entity : observations.candidates(profile.getRvpMissileThreatRange(),
                 candidate -> candidate instanceof MissileEntity)) {
             if (!(entity instanceof MissileEntity missile)
                     || missile.targetEntity != vehicle) {
@@ -1580,7 +1629,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                     || mode == VehicleMissileWeaponData.HomingMode.ACTIVE_RADAR
                     ? RVP_EnumCountermeasureType.CHAFF : RVP_EnumCountermeasureType.FLARE;
         }
-        if (!observations.radarLockSources(RVP_RADAR_LOCK_THREAT_RANGE).isEmpty()) {
+        if (!observations.radarLockSources(profile.getRvpRadarLockThreatRange()).isEmpty()) {
             return RVP_EnumCountermeasureType.CHAFF;
         }
         return null;
@@ -1701,7 +1750,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         // 见 RVP_EcmIff.areVehiclesFriendly 的 faction 守卫），不会对所有导弹无差别触发。
         if (!shouldFire) {
             // 取所有 ECM 设备中的最大干扰半径作为触发阈值（弹药/载具干扰半径与 200m 兜底）
-            double triggerRadius = 200.0;
+            double triggerRadius = context.profile().getEcmThreatRange();
             for (BoneEcmActiveConfig cfg : devices.values()) {
                 triggerRadius = Math.max(triggerRadius, cfg.ammoJamRadius());
                 triggerRadius = Math.max(triggerRadius, cfg.vehicleJamRadius());
@@ -1772,6 +1821,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         GunnerEntity gunner = context.gunner();
         AbstractVehicle vehicle = context.vehicle();
         WeaponUnit weaponUnit = context.weaponUnit();
+        state.cooldownDurationTick = context.profile().getSeadCooldownTick();
         if (!(vehicle instanceof FixedWingVehicle || vehicle instanceof RotaryWingVehicle)) {
             return false;
         }
@@ -1779,10 +1829,12 @@ public final class RVP_BuiltinGunnerBehaviors {
         if (mode == SEAD_NONE) {
             // 触发检测（节流）：仅"被敌方雷达锁定"且"带反辐射弹"且"不在复仇冷却内"时进入 SEAD 复仇
             if (state.cooldownTicks > 0
-                    || gunner.tickCount % SEAD_THREAT_SCAN_INTERVAL != 0 || weaponUnit == null) {
+                    || gunner.tickCount % context.profile().getSeadThreatScanIntervalTick() != 0
+                    || weaponUnit == null) {
                 return false;
             }
-            Entity radarSource = findRadarLockingEntity(gunner, vehicle, context.observations());
+            Entity radarSource = findRadarLockingEntity(gunner, vehicle,
+                    context.profile().getSeadRadarLockRange(), context.observations());
             if (radarSource == null || ACTIONS.weapons().findAntiRadiationWeaponIndex(weaponUnit) < 0) {
                 return false;
             }
@@ -1801,7 +1853,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                     RVP_GunnerBehaviorIntent.Kind.RVP_COUNTERMEASURE,
                     radarSource, null, RVP_EnumCountermeasureType.CHAFF, true, "", null));
             state.mode = SEAD_FLY_AWAY;
-            state.phaseTicks = SEAD_FLY_AWAY_TICK;
+            state.phaseTicks = context.profile().getSeadFlyAwayTick();
             state.totalTicks = 0;
             state.revengeTargetId = radarSource.getId();
             state.revengeFired = false;
@@ -1809,7 +1861,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         }
         // 复仇推进：累计总时长，超保险上限强制退出
         state.totalTicks++;
-        if (state.totalTicks > SEAD_TIMEOUT_TICK) {
+        if (state.totalTicks > context.profile().getSeadTimeoutTick()) {
             clearSead(state);
             return false;
         }
@@ -1833,7 +1885,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                         revengeTarget, null, null, true, "", null));
                 if (ticks <= 0) {
                     state.mode = SEAD_REVERSAL;
-                    state.phaseTicks = SEAD_REVERSAL_TICK;
+                    state.phaseTicks = context.profile().getSeadReversalTick();
                 }
                 break;
             case SEAD_REVERSAL:
@@ -1845,7 +1897,7 @@ public final class RVP_BuiltinGunnerBehaviors {
                 }
                 if (mode == SEAD_REVERSAL && ticks <= 0) {
                     state.mode = SEAD_LOCK_FIRE;
-                    state.phaseTicks = SEAD_LOCK_FIRE_TICK;
+                    state.phaseTicks = context.profile().getSeadLockFireTick();
                 } else if (mode == SEAD_LOCK_FIRE && ticks <= 0) {
                     clearSead(state);
                 }
@@ -1910,8 +1962,9 @@ public final class RVP_BuiltinGunnerBehaviors {
      */
     @Nullable
     private static Entity findRadarLockingEntity(GunnerEntity gunner, AbstractVehicle vehicle,
+                                                 double radarLockRange,
                                                  RVP_GunnerObservationService observations) {
-        for (AbstractVehicle enemy : observations.radarLockSources(SEAD_RADAR_LOCK_RANGE)) {
+        for (AbstractVehicle enemy : observations.radarLockSources(radarLockRange)) {
             if (!isHostileTo(gunner, vehicle, enemy, observations)) {
                 continue;
             }
@@ -1984,7 +2037,7 @@ public final class RVP_BuiltinGunnerBehaviors {
         state.revengeTargetId = -1;
         state.immediateFired = false;
         state.revengeFired = false;
-        state.cooldownTicks = SEAD_COOLDOWN_TICK;
+        state.cooldownTicks = state.cooldownDurationTick;
     }
 
     /** 统一创建带完整仲裁元数据的固定计划意图。 */

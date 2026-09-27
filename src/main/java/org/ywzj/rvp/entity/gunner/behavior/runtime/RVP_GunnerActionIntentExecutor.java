@@ -50,7 +50,8 @@ public final class RVP_GunnerActionIntentExecutor implements RVP_IGunnerIntentEx
             case FIRE_ENGAGEMENT -> context.weaponUnit() == null || intent.target() == null
                     ? RVP_GunnerActionResult.INVALID
                     : actions.weapons().engage(context.gunner(), context.weaponUnit(), intent.target(),
-                            context.profile(), context.has(RVP_GunnerBehaviorContext.Capability.LAUNCHER));
+                            intent.actionProfile() == null ? context.profile() : intent.actionProfile(),
+                            context.has(RVP_GunnerBehaviorContext.Capability.LAUNCHER));
             case FIRE_ANTI_RADIATION -> context.weaponUnit() == null || intent.target() == null
                     ? RVP_GunnerActionResult.INVALID
                     : actions.weapons().fireAntiRadiation(context.gunner(), context.weaponUnit(), intent.target());

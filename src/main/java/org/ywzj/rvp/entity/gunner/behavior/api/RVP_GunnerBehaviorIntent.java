@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerActionResult;
 import org.ywzj.rvp.entity.gunner.behavior.action.RVP_GunnerMovementActions;
+import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 
 /** 单 tick 行为意图；仅携带动作数据和仲裁元数据，不直接执行游戏写操作。 */
 public final class RVP_GunnerBehaviorIntent {
@@ -71,13 +72,16 @@ public final class RVP_GunnerBehaviorIntent {
     private final String transactionId;
     /** 动作执行后的状态推进回调。 */
     @Nullable private final ResultHandler resultHandler;
+    /** 仅原子武器事务使用的行为专属参数视图。 */
+    @Nullable private final GunnerProfile actionProfile;
 
     private RVP_GunnerBehaviorIntent(String behaviorId, String resourceKey, int planOrder, int priority,
                                      Channel channel, Kind kind, @Nullable Entity target,
                                      @Nullable RVP_GunnerMovementActions.Command movement,
                                      @Nullable RVP_EnumCountermeasureType countermeasureType,
                                      boolean driverAi, String transactionId,
-                                     @Nullable ResultHandler resultHandler) {
+                                     @Nullable ResultHandler resultHandler,
+                                     @Nullable GunnerProfile actionProfile) {
         this.behaviorId = behaviorId;
         this.resourceKey = resourceKey;
         this.planOrder = planOrder;
@@ -90,6 +94,7 @@ public final class RVP_GunnerBehaviorIntent {
         this.driverAi = driverAi;
         this.transactionId = transactionId;
         this.resultHandler = resultHandler;
+        this.actionProfile = actionProfile;
     }
 
     /** 创建通用固定计划意图。 */
@@ -100,7 +105,21 @@ public final class RVP_GunnerBehaviorIntent {
                                               boolean driverAi, String transactionId,
                                               @Nullable ResultHandler resultHandler) {
         return new RVP_GunnerBehaviorIntent(behaviorId, resourceKey, planOrder, priority, channel, kind,
-                target, movement, countermeasureType, driverAi, transactionId, resultHandler);
+                target, movement, countermeasureType, driverAi, transactionId, resultHandler, null);
+    }
+
+    /** 用编译后计划元数据覆盖行为内部默认值，防止行为绕过 JSON 仲裁优先级。 */
+    public RVP_GunnerBehaviorIntent withArbitration(String compiledBehaviorId, int compiledPlanOrder,
+                                                    int compiledPriority) {
+        return new RVP_GunnerBehaviorIntent(compiledBehaviorId, resourceKey, compiledPlanOrder, compiledPriority,
+                channel, kind, target, movement, countermeasureType, driverAi, transactionId, resultHandler,
+                actionProfile);
+    }
+
+    /** 绑定提交该开火意图的行为参数视图。 */
+    public RVP_GunnerBehaviorIntent withActionProfile(GunnerProfile profile) {
+        return new RVP_GunnerBehaviorIntent(behaviorId, resourceKey, planOrder, priority, channel, kind,
+                target, movement, countermeasureType, driverAi, transactionId, resultHandler, profile);
     }
 
     /** 返回行为实例 ID。 */ public String behaviorId() { return behaviorId; }
@@ -114,6 +133,8 @@ public final class RVP_GunnerBehaviorIntent {
     /** 返回干扰物类型。 */ @Nullable public RVP_EnumCountermeasureType countermeasureType() { return countermeasureType; }
     /** 返回是否允许司机 AI。 */ public boolean driverAi() { return driverAi; }
     /** 返回开火事务 ID。 */ public String transactionId() { return transactionId; }
+    /** 返回武器事务专属参数；非开火意图为空。 */
+    @Nullable public GunnerProfile actionProfile() { return actionProfile; }
 
     /** 将动作结果送回唯一提交者。 */
     public void notifyResult(RVP_GunnerActionResult result) {
