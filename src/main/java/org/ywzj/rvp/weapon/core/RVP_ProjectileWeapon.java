@@ -133,6 +133,12 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (burstVolleyAimContexts == null || burstVolleyShooter == null) {
             return;
         }
+        // [RVP] 炮管损坏门控（2026-09-28）：canShootOnServer 只拦首发起，连发续发路径绕过它——
+        // 连发中段炮管被打坏须在此中断剩余弹（completeBurstRound 结束本轮）
+        if (!passesBarrelDamageGate(burstVolleyShooter)) {
+            getFireController().completeBurstRound(getData().getFireData());
+            return;
+        }
         if (!consumeAmmo(burstVolleyAimContexts)) {
             getFireController().completeBurstRound(getData().getFireData());
             return;

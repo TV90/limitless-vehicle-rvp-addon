@@ -396,5 +396,8 @@
   "gui.ywzj_rvp.equipment.cm_flare": "Flares",
   "gui.ywzj_rvp.equipment.cm_chaff": "Chaff",
   "gui.ywzj_rvp.equipment.cm_smoke": "Smoke",
-  "gui.ywzj_rvp.equipment.ammo": "Ammo %s/%s"
+  "gui.ywzj_rvp.equipment.ammo": "Ammo %s/%s",
+  "gui.ywzj_rvp.module.barrel": "Barrel",
+  "ui.rvp.barrel_destroyed": "Barrel destroyed - repair required",
+  "gui.ywzj_rvp.equipment.cat_barrel": "Barrel"
 }

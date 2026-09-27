@@ -20,8 +20,8 @@ import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
 
 public class RVP_Network {
-    /** 协议 18：S2CBoneModuleState 失效表新增 ENGINE_DAMAGED（引擎重创档进失效表，可持久化/指定维修优先级）；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "18";
+    /** 协议 19：BoneModuleType 新增 BARREL（炮管部件：累计损坏禁射站级武器，快修恢复）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "19";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

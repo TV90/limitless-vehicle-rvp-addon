@@ -115,6 +115,11 @@ public final class RVP_DamagedPartSmokeEmitter {
             if (types == null || types.isEmpty()) {
                 continue;
             }
+            // [RVP] 部件冒烟选配（2026-09-28 用户定版）：bone_modules 条目 smoke 字段，
+            // 缺省 true——显式 false 的部件失效不生成黑烟特效
+            if (!RVP_VehicleHitboxFactorManager.INSTANCE.isPartSmokeEnabled(vehicle, bone)) {
+                continue;
+            }
             // 引擎骨统一走引擎档位侧表：重创(1)=黑烟、瘫痪(2)=火星火焰（瘫痪时 ENGINE
             // 也进失效表，若走下方失效分支会与档位分支重复冒烟，故优先分流）
             if (types.contains(BoneModuleType.ENGINE)) {

@@ -69,7 +69,16 @@ public enum BoneModuleType {
      * 快修按设备配额恢复（恢复时清该骨引擎累计）。继续累计跨过瘫痪阈值才消耗
      * {@link #ENGINE}（真正的瘫痪档，动力清零趴窝）。
      */
-    ENGINE_DAMAGED;
+    ENGINE_DAMAGED,
+    /**
+     * 炮管部件（BARREL）——挂在炮管骨名下（本体约定 {@code structure_bone + "_barrel"}，
+     * 如 {@code turret_barrel}；同轴机枪站形态 {@code structure_bone} 本身即炮管骨）。
+     * 失效不由单发 min_damage 直毁（消费点跳过），而由 {@code RVP_BarrelDamageTable}
+     * 累计直击伤害跨过阈值触发（用户 2026-09-28 定版：单档，累计即坏，无衰减永久）。
+     * 失效后整个炮管所在武器站禁止射击（含 RVP 自定义弹种切换绕过与 gunner AI 选弹），
+     * 提示"炮管损坏，请先维修"；快修恢复（清炮管累计）。
+     */
+    BARREL;
 
     private static final BoneModuleType[] VALUES = values();
 

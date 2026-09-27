@@ -28,6 +28,7 @@ import org.ywzj.rvp.network.S2CModuleHitNotify;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
 import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneApsConfig;
+import org.ywzj.rvp.vehicle.BoneBarrelConfig;
 import org.ywzj.rvp.vehicle.BoneEcmActiveConfig;
 import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
 import org.ywzj.rvp.vehicle.BoneEcmPassiveConfig;
@@ -35,12 +36,14 @@ import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
+import org.ywzj.rvp.vehicle.RVP_BarrelDamageTable;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.util.ResourceScanner;
 import org.ywzj.vehicle.vehicle.structure.OBB;
 
@@ -382,6 +385,110 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return modules == null ? null : modules.get(boneName);
     }
 
+    /**
+     * 解析载具全部炮管部件骨（{@code modules} 含 BARREL 的 {@code bone_modules} 条目）。
+     * 返回 {@code Map<骨块名, 配置>}；未写 {@code barrel} 子对象时回退 {@link BoneBarrelConfig#defaults()}。
+     * 无配置返回 null。供 {@code RVP_BarrelDamageTable}（累计）与射击 gate 按骨取阈值。
+     */
+    public @Nullable Map<String, BoneBarrelConfig> resolveBarrelModules(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return null;
+        }
+        Map<String, BoneBarrelConfig> out = null;
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneModuleConfig moduleConfig = entry.getValue();
+            if (moduleConfig != null && moduleConfig.hasModules()
+                    && moduleConfig.modules().contains(BoneModuleType.BARREL)) {
+                if (out == null) {
+                    out = new HashMap<>();
+                }
+                out.put(entry.getKey(), moduleConfig.barrel() != null
+                        ? moduleConfig.barrel() : BoneBarrelConfig.defaults());
+            }
+        }
+        return out;
+    }
+
+    /** 单块炮管骨的配置（无配置返回 null）；供直击累计路径按命中骨取阈值。 */
+    public @Nullable BoneBarrelConfig resolveBarrelConfig(AbstractVehicle vehicle, String boneName) {
+        var modules = resolveBarrelModules(vehicle);
+        return modules == null ? null : modules.get(boneName);
+    }
+
+    /**
+     * [RVP] 部件失效冒烟开关（2026-09-28，用户定版按部件选配）：{@code bone_modules}
+     * 条目 {@code smoke} 字段，缺省 true（不写即冒烟）。供
+     * {@code RVP_DamagedPartSmokeEmitter} 决定该骨失效时是否生成黑烟。
+     */
+    public boolean isPartSmokeEnabled(AbstractVehicle vehicle, String boneName) {
+        if (vehicle == null || boneName == null) {
+            return true;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null) {
+            return true;
+        }
+        BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+        return moduleConfig == null || moduleConfig.smoke();
+    }
+
+    /**
+     * [RVP] 武器站炮管骨解析（2026-09-28 炮管部件）：本体 {@code WeaponUnitData.initStructureModel}
+     * 约定炮管骨 = {@code structure_bone + "_barrel"}（如 turret→turret_barrel，炮管俯仰组与
+     * 炮管 OBB 挂该骨）；结构模型无该骨时回退 {@code structure_bone} 本名（同轴机枪站
+     * {@code turret_machine_gun_barrel} 形态——structure_bone 本身即炮管骨）。
+     * 结构模型不可用或两骨均不存在时返回 null（无炮管语义，射击 gate 放行）。
+     */
+    public @Nullable String resolveBarrelBone(AbstractVehicle vehicle, WeaponUnit weaponUnit) {
+        if (vehicle == null || weaponUnit == null) {
+            return null;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return null;
+        }
+        String structureBone = weaponUnit.getData() == null ? null : weaponUnit.getData().getStructureBone();
+        if (structureBone == null || structureBone.isBlank()) {
+            return null;
+        }
+        String candidate = structureBone + "_barrel";
+        if (boneExistsInStructureModel(cfg, candidate)) {
+            return candidate;
+        }
+        if (boneExistsInStructureModel(cfg, structureBone)) {
+            return structureBone;
+        }
+        return null;
+    }
+
+    /** 结构模型是否含指定骨（炮管骨候选存在性判定）。 */
+    private boolean boneExistsInStructureModel(VehicleHitboxConfig cfg, String boneName) {
+        if (cfg.structureModel == null) {
+            return false;
+        }
+        BedrockModel model = CommonAssetsManager.structureModelManager()
+                .getStructureModel(cfg.structureModel).orElse(null);
+        return model != null && model.getBoneMap().containsKey(boneName);
+    }
+
+    /**
+     * [RVP] 武器站炮管是否已损坏（BARREL 模块失效，2026-09-28）。
+     * 炮管骨未配置 BARREL 部件时 {@code isModuleActive} 恒真 → 放行（未配置部件的炮管不会坏）。
+     * 供 {@code RVP_WeaponBase.canShootOnServer} 射击 gate 与 gunner 选弹排除——站级判定，
+     * 同武器站全部武器/弹种共享该结论。
+     */
+    public boolean isBarrelDestroyed(AbstractVehicle vehicle, WeaponUnit weaponUnit) {
+        String barrelBone = resolveBarrelBone(vehicle, weaponUnit);
+        if (barrelBone == null) {
+            return false;
+        }
+        return !RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), barrelBone, BoneModuleType.BARREL);
+    }
+
     /** 快速维修模块绑定：骨块名（可为虚拟骨 {@code __vehicle__}）+ 配置。 */
     public record MaintenanceModuleBinding(String bone, BoneMaintenanceConfig config) {
     }
@@ -461,6 +568,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         // 本体武器重放）全部经过本方法，一处埋点全覆盖；累计跨过重损阈值即触发 ENGINE 模块失效。
         // 引擎累计在 useFinalDamageForModules=true 时同样用实际到骨伤害（用户 2026-09-27 定版）
         accumulateEngineDamage(vehicle, result,
+                useFinalDamageForModules ? finalBoneDamage : triggerDamage, shooter);
+        // [RVP] 炮管部件（2026-09-28，单档累计）：埋点与引擎同位（早退之前，三调用方全覆盖），
+        // 累计跨过阈值即 BARREL 模块失效（炮管所在武器站禁止射击）
+        accumulateBarrelDamage(vehicle, result,
                 useFinalDamageForModules ? finalBoneDamage : triggerDamage, shooter);
         if (vehicle == null || result == null || result.modules().isEmpty()) {
             return false;
@@ -586,6 +697,44 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             if (RVP_EngineDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_ENGINE_DAMAGED, BoneModuleType.ENGINE);
             }
+        }
+    }
+
+    /**
+     * [RVP] 炮管部件累计段（2026-09-28，单档）：命中骨配置了 BARREL 模块时，把本次直击
+     * 实际到骨伤害累入 {@link RVP_BarrelDamageTable}（无衰减，只增不减）；累计跨过
+     * {@link BoneBarrelConfig#getThreshold} 即 BARREL 模块失效（进失效表 → 整个炮管所在
+     * 武器站禁止射击 + 持久化 + 冒烟 + 维修队列，战果通知"摧毁炮管"）。埋点与引擎累计
+     * 同位（tryDestroyBoneModules 开头，弹体/激光/本体武器重放三调用方全覆盖）。
+     */
+    private void accumulateBarrelDamage(@Nullable AbstractVehicle vehicle,
+                                        @Nullable HitboxDamageResult result, float triggerDamage,
+                                        @Nullable Entity shooter) {
+        if (vehicle == null || result == null || triggerDamage <= 0f || vehicle.level().isClientSide()) {
+            return;
+        }
+        String boneName = result.hitBoneName();
+        if (boneName == null) {
+            return;
+        }
+        BoneBarrelConfig barrelConfig = resolveBarrelConfig(vehicle, boneName);
+        if (barrelConfig == null) {
+            return; // 命中骨未配置炮管部件：不累计
+        }
+        UUID vehicleId = vehicle.getUUID();
+        float accumulated = RVP_BarrelDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        // [RVP] 累计诊断（/rvpdebug engine on 专有日志）：炮管入账同写，供实机对账
+        org.ywzj.rvp.debug.RVP_EngineDebug.log(String.format(
+                "%s(%d) 炮管骨=%s 入账=%.1f 累计=%.1f 损坏阈=%.0f 模块存活=%s",
+                vehicle.getVehicleId(), vehicle.getId(), boneName,
+                triggerDamage, accumulated, barrelConfig.threshold(),
+                RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
+        if (accumulated >= barrelConfig.threshold()
+                && RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
+            // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
+            syncBoneModuleState(vehicle);
+            // [RVP] 部件战果通知：向射手报"摧毁炮管"
+            notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
         }
     }
 
@@ -1234,7 +1383,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.ECM_ACTIVE);
                 BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, vehicleEcmActive, null, null);
+                        null, null, null, null, vehicleEcmActive, null, null, null, true);
                 moduleMap.put("__vehicle__", synthetic);
             }
             // 顶层无骨骼的 maintenance（无骨骼快速维修）：同款挂到虚拟骨骼 __vehicle__，始终存活；
@@ -1246,7 +1395,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 }
                 java.util.Set<BoneModuleType> modules = java.util.EnumSet.of(BoneModuleType.MAINTENANCE);
                 BoneModuleConfig synthetic = new BoneModuleConfig(Float.POSITIVE_INFINITY, 0f, modules,
-                        null, null, null, null, null, vehicleMaintenance, null);
+                        null, null, null, null, null, vehicleMaintenance, null, null, true);
                 moduleMap.put("__vehicle__", synthetic);
             }
             if ((map == null || map.isEmpty())
@@ -1425,7 +1574,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             @Nullable BoneEcmPassiveConfig ecmPassive,
             @Nullable BoneEcmActiveConfig ecmActive,
             @Nullable BoneMaintenanceConfig maintenance,
-            @Nullable BoneEngineConfig engine
+            @Nullable BoneEngineConfig engine,
+            @Nullable BoneBarrelConfig barrel,
+            boolean smoke
     ) {
         boolean hasModules() {
             return modules != null && !modules.isEmpty();
@@ -1435,6 +1586,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
          * 新配置 {@code bone_modules} 条目：模块集合 + 失效门槛 + ERA 爆炸档位 + 设备子对象。
          * ★命中倍率不在条目内（2026-09-27 统合）——统一由顶层 {@code hitbox_damage_factor} 提供；
          * 显式 modules 数组缺省视为 [ERA]（兼容纯爆反骨简写）。
+         * {@code smoke} 为部件失效冒烟开关（缺省 true，用户 2026-09-28 定版按部件选配）。
          */
         static @Nullable BoneModuleConfig parse(@Nullable JsonElement element) {
             if (element == null || !element.isJsonObject()) {
@@ -1460,7 +1612,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     BoneEcmPassiveConfig.parse(obj.get("ecm_passive")),
                     BoneEcmActiveConfig.parse(obj.get("ecm_active")),
                     BoneMaintenanceConfig.parse(obj.get("maintenance")),
-                    BoneEngineConfig.parse(obj.get("engine")));
+                    BoneEngineConfig.parse(obj.get("engine")),
+                    BoneBarrelConfig.parse(obj.get("barrel")),
+                    GsonHelper.getAsBoolean(obj, "smoke", true));
         }
 
         /** 通用触发阈值：优先 {@code min_damage}（新通用字段），回退 {@code min_trigger_damage}（旧 ERA 字段）。 */

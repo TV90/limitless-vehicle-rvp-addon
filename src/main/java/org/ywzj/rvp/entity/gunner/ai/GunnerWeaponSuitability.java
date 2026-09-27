@@ -81,6 +81,14 @@ public final class GunnerWeaponSuitability {
     }
 
     public static boolean canSelectForTarget(WeaponUnit rootUnit, AbstractVehicleWeapon<?> rawWeapon, Entity target) {
+        // [RVP] 炮管损坏排除（2026-09-28）：炮管所在武器站 BARREL 模块失效时该站全部武器
+        // 不可选——gunner 索敌/选弹层直接跳过坏炮管站（连目标都不选），射击 gate 仍兜底。
+        // 站级判定不依赖武器类型；未配置炮管部件的站恒放行。
+        if (rootUnit.getVehicle() != null
+                && org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE
+                        .isBarrelDestroyed(rootUnit.getVehicle(), rootUnit)) {
+            return false;
+        }
         AbstractVehicleWeapon<?> weapon = rootUnit.proxyWeapon(rawWeapon);
         if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
             return true;

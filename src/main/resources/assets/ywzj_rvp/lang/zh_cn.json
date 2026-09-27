@@ -396,5 +396,8 @@
   "gui.ywzj_rvp.equipment.cm_flare": "热焰弹",
   "gui.ywzj_rvp.equipment.cm_chaff": "箔条",
   "gui.ywzj_rvp.equipment.cm_smoke": "烟幕弹",
-  "gui.ywzj_rvp.equipment.ammo": "余弹 %s/%s"
+  "gui.ywzj_rvp.equipment.ammo": "余弹 %s/%s",
+  "gui.ywzj_rvp.module.barrel": "炮管",
+  "ui.rvp.barrel_destroyed": "炮管损坏，请先维修",
+  "gui.ywzj_rvp.equipment.cat_barrel": "炮管"
 }

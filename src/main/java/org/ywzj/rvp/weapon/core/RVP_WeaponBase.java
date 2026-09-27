@@ -16,6 +16,7 @@ import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.rvp.weapon.data.RVP_EnumFireMode;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -110,6 +111,9 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             }
         }
         if (!passesFireModeChargeGate()) {
+            return false;
+        }
+        if (!passesBarrelDamageGateClient()) {
             return false;
         }
         if (!passesOffAxisShootGate()) {
@@ -255,7 +259,78 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (!fireController.canShootNowAfterPrime() || !passesOffAxisShootGate()) {
             return false;
         }
+        if (!passesBarrelDamageGate(operator)) {
+            return false;
+        }
         return passesLauncherDeployGate(operator);
+    }
+
+    /**
+     * [RVP] 炮管损坏门控（2026-09-28，用户定版"站级禁射"）：本武器站的炮管骨 BARREL 模块
+     * 失效时禁止射击——站级判定，同武器站全部武器/弹种（RVP 自定义弹种组
+     * {@code modding_only_multi}、grouped slot、Multi 内层子武器）在服务端都必经本方法
+     * （Multi.shoot 直接委托子武器 shoot），切弹种无法绕过；gunner AI 开火走同一
+     * {@code WeaponUnit.shoot → canShootOnServer} 链路同样被拦。炮管骨未配置 BARREL
+     * 部件时恒放行。拒绝时动作栏提示"炮管损坏，请先维修"。
+     */
+    protected boolean passesBarrelDamageGate(@Nullable LivingEntity operator) {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return true;
+        }
+        WeaponUnit weaponUnit = getWeaponUnit();
+        if (weaponUnit == null) {
+            return true;
+        }
+        if (!RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDestroyed(vehicle, weaponUnit)) {
+            return true;
+        }
+        denyBarrelDestroyedFire(operator);
+        return false;
+    }
+
+    /** 炮管损坏拒绝提示（动作栏 translatable；operator 为空回退载具乘客玩家，仿发射架 deny 先例）。 */
+    private void denyBarrelDestroyedFire(@Nullable LivingEntity operator) {
+        Player player = operator instanceof Player p ? p : null;
+        if (player == null) {
+            AbstractVehicle vehicle = getVehicle();
+            if (vehicle != null) {
+                for (Entity passenger : vehicle.getPassengers()) {
+                    if (passenger instanceof Player p) {
+                        player = p;
+                        break;
+                    }
+                }
+            }
+        }
+        if (player != null) {
+            player.displayClientMessage(Component.translatable("ui.rvp.barrel_destroyed"), true);
+        }
+    }
+
+    /**
+     * [RVP] 炮管损坏客户端预检（体验优化）：客户端失效侧表判定本武器站炮管骨损坏时
+     * 直接阻止发包并动作栏提示——专用服下服务端静态表不可见，客户端读
+     * {@code RVP_ClientBoneModuleState}（S2C 已推送）；服务端
+     * {@code canShootOnServer} 仍权威兜底。仅客户端调用（doClientShoot 链）。
+     */
+    @OnlyIn(Dist.CLIENT)
+    protected boolean passesBarrelDamageGateClient() {
+        AbstractVehicle vehicle = getVehicle();
+        if (vehicle == null || !vehicle.level().isClientSide()) {
+            return true;
+        }
+        WeaponUnit weaponUnit = getWeaponUnit();
+        if (weaponUnit == null) {
+            return true;
+        }
+        String barrelBone = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBarrelBone(vehicle, weaponUnit);
+        if (barrelBone == null || org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                vehicle.getId(), barrelBone, org.ywzj.rvp.vehicle.BoneModuleType.BARREL)) {
+            return true;
+        }
+        LocalVehiclePlayer.instance.sendMessage("ui.rvp.barrel_destroyed");
+        return false;
     }
 
     private boolean passesLauncherDeployGate(@Nullable LivingEntity operator) {
