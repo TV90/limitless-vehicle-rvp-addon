@@ -10,15 +10,17 @@ import org.jetbrains.annotations.Nullable;
  *
  * <p>引擎模块的失效语义（用户 2026-09-27 最终定版，无衰减）与其它模块不同：不由单发
  * {@code min_damage} 直毁，而由 {@code RVP_EngineDamageTable} 的<b>累计直击伤害</b>分级驱动——
- * 累计超过 {@link #thresholdLight} 进入受损档（功率 ×{@link #powerMultiplierDamaged}）；
- * 超过 {@link #thresholdHeavy} 触发 ENGINE 模块失效（瘫痪档，功率清零，进失效表可维修恢复）。
+ * 累计超过 {@link #thresholdLight} 进入受损档（极速/转向上限 ×{@link #powerMultiplierDamaged}，
+ * 动力/加速度恒 ×0.75——×0.5 连地面摩擦都克服不了，2026-09-28 用户定版）；
+ * 超过 {@link #thresholdHeavy} 触发 ENGINE 模块失效（瘫痪档，全字段 ×0.0001，进失效表可维修恢复）。
  * <b>重创与瘫痪均为永久状态，无时间衰减</b>——受损不修复会一直保持，继续挨打升级为瘫痪，
  * 唯一恢复途径是快修（旧版 45 秒衰减窗已按用户定版移除）。全程不关发动机、不压 POWER——
  * 方向机/高低机（{@code hasPower()} 门）照常。</p>
  *
  * @param thresholdLight         受损档累计伤害阈值（窗口内累计直击伤害，默认 60）
  * @param thresholdHeavy         瘫痪档累计伤害阈值（跨过即 ENGINE 模块失效，默认 150）
- * @param powerMultiplierDamaged 受损档功率倍率（默认 0.5）；瘫痪档恒 0.0001
+ * @param powerMultiplierDamaged 受损档极速/转向上限倍率（默认 0.5，50→25 KPH）；动力/加速度
+ *                               路不随此字段（恒 ≥0.75）；瘫痪档恒 0.0001
  */
 public record BoneEngineConfig(
         float thresholdLight,

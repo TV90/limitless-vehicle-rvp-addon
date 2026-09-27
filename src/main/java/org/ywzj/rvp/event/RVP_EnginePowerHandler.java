@@ -45,9 +45,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code ENGINE_ON}、不把 {@code POWER} 压向 20——本体炮塔/武器/雷达的
  * {@code hasPower()} 门（POWER&gt;20）保持原样，瘫痪档只是驱动字段清零。</p>
  *
- * <p>档位语义：任一引擎骨 ENGINE 模块失效 → 瘫痪（×0）；否则任一引擎骨窗口累计伤害
- * ≥ 受损阈值 → 受损（×{@code power_multiplier_damaged}，默认 0.5）；否则正常（×1，
- * 即配置值原样覆写一遍——与 inject 等价，幂等无害）。</p>
+ * <p>档位语义：任一引擎骨 ENGINE 模块失效 → 瘫痪（全字段 ×0.0001 趴窝）；否则任一引擎骨
+ * 累计伤害 ≥ 受损阈值 → 受损（极速/转向上限 ×{@code power_multiplier_damaged} 默认 0.5；
+ * 动力/加速度 ×0.75——×0.5 连地面摩擦都克服不了起不了步，2026-09-28 用户定版）；否则正常
+ * （×1，即配置值原样覆写一遍——与 inject 等价，幂等无害）。两档均永久无衰减，唯一恢复 = 快修。</p>
  *
  * <p>NaN 防火墙（2026-09-27 实机事故）：载具位置非有限、或配置值非有限时跳过本 tick
  * 覆写——绝不把 NaN 带进物理字段（NaN 经 setDeltaMovement 污染位置/旋转并存档固化）。</p>
@@ -132,12 +133,13 @@ public final class RVP_EnginePowerHandler {
             // 理论不可达（上一步已钳制）：倍率非法时本 tick 跳过覆写
             return;
         }
-        // [RVP] 力/加速度不参与倍率（2026-09-27 实机定版）：履带车 vf 靠加速度积分对抗
-        // PhysicsEngine 的地面摩擦减速——加速度砍半后净加速可能低于摩擦，车辆永远起不了步
-        // （实测"重创后只能转向不能前进后退"）；"功率减半"的体感由**极速上限减半**表达
-        // （50→25 KPH），起步照常。瘫痪档 1e-4 全字段（含力/加速度）——本来就趴窝。
+        // [RVP] 动力路独立倍率（2026-09-28 用户定版）：重创档动力（力/加速度/转向速率）
+        // ×0.75——×0.5 实测连地面摩擦都克服不了、车辆起不了步（履带 vf 靠加速度积分对抗
+        // PhysicsEngine 摩擦减速）；"功率减半"的体感由极速/转向上限 ×0.5 表达（50→25 KPH）。
+        // JSON power_multiplier_damaged 只作用于极速路；动力路恒 ≥0.75（JSON 调高受损倍率时跟随）。
+        // 瘫痪档 1e-4 全字段（含动力）——本来就趴窝，非零防除零 NaN。
         float speedMult = multiplier;
-        float accelMult = multiplier >= 1f ? 1f : Math.max(multiplier, 0.2f);
+        float accelMult = worstStage == 2 ? multiplier : Math.max(multiplier, 0.75f);
         // 3) 动力字段覆写：极速/转向上限 × speedMult，力/加速度 × accelMult
         // （配置每 tick 直读，inject 重置下一 tick 即被纠正）
         applyPower(vehicle, speedMult, accelMult);
@@ -148,7 +150,8 @@ public final class RVP_EnginePowerHandler {
             LAST_LOGGED_FIELDS.put(vehicle, new HashMap<>(stages));
             StringBuilder sb = new StringBuilder("[RVP-Engine-Power] ").append(vehicle.getVehicleId())
                     .append('(').append(vehicle.getId()).append(") 档位=").append(stages)
-                    .append(" 倍率=").append(String.format("%.4f", multiplier))
+                    .append(" 极速倍率=").append(String.format("%.4f", speedMult))
+                    .append(" 动力倍率=").append(String.format("%.4f", accelMult))
                     .append(" POWER=").append(String.format("%.0f", vehicle.getPower()))
                     .append(" 能量=").append(String.format("%.0f", vehicle.getEnergy()));
             if (vehicle instanceof org.ywzj.vehicle.entity.vehicle.TrackedVehicle tv) {
