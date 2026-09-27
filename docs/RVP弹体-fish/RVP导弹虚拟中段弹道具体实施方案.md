@@ -658,7 +658,7 @@ reachable = forward >= minForward + reserveTicks × speed
 
 | 编号 | 等级 | 当前实现 | 具体风险 | 收敛要求 |
 | --- | --- | --- | --- | --- |
-| R-01 | 高 | `flightSpeed` 恢复为虚拟段历史峰值，而实体制导使用 `max(flightSpeed, currentVelocity.length())` | 若虚拟段末尾已因阻力减速，恢复后首次成功制导可把速率拉回历史峰值，形成非物理瞬时加速 | 区分“当前制导基准速率”和“历史峰值统计”，恢复时不得用历史峰值覆盖当前速率 |
+| R-01 | 高（已解决，2026-09-27 全链收口） | 实体以 `currentFlightSpeed` 保存当前制导基准、以 `peakFlightSpeed` 单独统计峰值；虚拟状态继续保存 `peakFlightSpeed` | 基础阻力、诱导阻力、穿透或虚拟末段减速后，历史峰值不再进入下一 Tick 制导/HITL/恒速运动 | 所有真实运动出口统一更新两类状态；恢复时当前基准只取末 Tick `velocity.length()`，虚拟峰值仅写统计字段；定向回归覆盖减速后当前值下降而峰值保持 |
 | R-02 | 中 | 每次积分只替换快照中的 `trajectory`，制导相位、雷达开关/捕获状态、丢失计时、Top Attack 状态等保留进入虚拟态时的值 | 虚拟飞行经过大量 Tick 后，恢复的子系统时钟和记忆可与 `flightTick`、当前位置不一致 | 逐字段定义“虚拟期间冻结”、“继续计时”或“恢复时重算”语义，不能统一原样写回 |
 | R-03 | 中 | `cruiseStartTick`、`cruiseEndHorizontalDistance` 和 `rotateToMotion` 已进入参数对象，但积分器不读取 | JSON 表面上可配置的巡航切换和朝向行为对虚拟段无效，真实段/虚拟段轨迹语义不一致 | 字段`rotateToMotion`语义是让弹体模型方向朝向速度方向，虚拟积分不需要这个字段，仅记录然后原样恢复即可。从虚拟参数契约中删除`cruiseStartTick`、`cruiseEndHorizontalDistance` |
 

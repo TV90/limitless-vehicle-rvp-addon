@@ -227,7 +227,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected Vec3 wirePivotLocalPrev = Vec3.ZERO;
     protected int coldLaunchTimeTick;
     protected Vec3 coldLaunchVelocity = new Vec3(0, -1, 0);
-    protected double flightSpeed;
+    /** 下一 Tick 制导与恒速运动使用的当前速率基准，单位格/Tick；允许随动力学损失下降。 */
+    protected double currentFlightSpeed;
+    /** 已完成航程中的历史峰值速率，单位格/Tick；仅用于统计与虚拟中段快照。 */
+    protected double peakFlightSpeed;
     /** Official cannon-style linear friction (machinegun only). */
     protected float cannonFriction = 0.01f;
     /** Official cannon-style positive-down gravity per tick (machinegun only). */
@@ -724,7 +727,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (usesCannonBallistics(kind)) {
             this.cannonFriction = data.getCannonFriction();
             this.cannonGravity = data.getCannonGravity();
-            this.flightSpeed = Math.max(spawnMotion.length(), 0.01f);
+            this.currentFlightSpeed = Math.max(spawnMotion.length(), RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED);
         } else {
             float projectileSpeed = data.getProjectileVelocity();
             if (data.getProjectileData().isRocketEngineMisconfigured()) {
@@ -735,8 +738,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // Legacy high-speed rockets without propulsion: scale once at spawn (was wrongly applied every tick).
                 spawnMotion = spawnMotion.scale(projectileSpeed / 4f);
             }
-            this.flightSpeed = Math.max(Math.max(spawnMotion.length(), projectileSpeed), 0.01f);
+            this.currentFlightSpeed = Math.max(Math.max(spawnMotion.length(), projectileSpeed),
+                    RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED);
         }
+        this.peakFlightSpeed = this.currentFlightSpeed;
         this.setPos(spawnPos);
         this.setDeltaMovement(spawnMotion);
         this.virtualMidcourseLaunchPosition = spawnPos;
@@ -999,7 +1004,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     public double getFlightSpeed() {
-        return flightSpeed;
+        return currentFlightSpeed;
+    }
+
+    /** @return 已完成航程中的历史峰值速率，单位格/Tick；不得作为运动速度基准。 */
+    public double getPeakFlightSpeed() {
+        return peakFlightSpeed;
+    }
+
+    /**
+     * 以当前权威速度同步运动学速率状态：当前基准直接跟随速度，历史峰值只向上更新。
+     *
+     * @param velocity 当前权威速度，单位格/Tick
+     */
+    final void updateFlightSpeedState(Vec3 velocity) {
+        double actualSpeed = velocity.length();
+        // 调用本项目速率数学工具，保证减速后当前基准不会被历史峰值回填。
+        currentFlightSpeed = RVP_ProjectileSpeedMath.resolveCurrentSpeed(actualSpeed);
+        // 调用本项目速率数学工具，独立保留只用于统计的历史峰值。
+        peakFlightSpeed = RVP_ProjectileSpeedMath.resolvePeakSpeed(peakFlightSpeed, actualSpeed);
     }
 
     public double getCurrentSpeed() {
@@ -1856,7 +1879,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     public final RVP_VirtualTrajectoryState createVirtualTrajectoryState() {
         return new RVP_VirtualTrajectoryState(position(), getDeltaMovement(), getXRot(), getYRot(),
-                flightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick);
+                peakFlightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick);
     }
 
     /** 在 discard 前标记“真实转虚拟”专用移除语义。 */
@@ -1907,8 +1930,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setYRot(state.yRot());
         xRotO = state.xRot();
         yRotO = state.yRot();
-        // flightSpeed 是实体制导继续使用的当前速率基准，禁止用虚拟段历史峰值制造恢复加速。
-        flightSpeed = Math.max(state.velocity().length(), 0.01);
+        // 调用本项目速率状态更新入口：当前基准取恢复瞬间速度，不从虚拟段历史峰值回填。
+        updateFlightSpeedState(state.velocity());
+        // 虚拟段峰值只恢复到统计字段，禁止进入制导与运动速度基准。
+        peakFlightSpeed = RVP_ProjectileSpeedMath.resolvePeakSpeed(
+                state.peakFlightSpeed(), state.velocity().length());
         flightDistance = state.flightDistance();
         life = state.remainingLife();
         tickCount = Math.max(state.flightTick(), 0);
@@ -2258,6 +2284,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         Vec3 next = toTarget.normalize().scale(speed);
         setDeltaMovement(next);
+        // 智能引信分支绕过常规运动积分，需在此同步当前速率，防止下一 Tick 读到接管前的高速值。
+        updateFlightSpeedState(next);
         RVP_ProjectileMotion.applyGuidanceFacing(this, next);
     }
 
@@ -2360,7 +2388,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 .add(deploymentVerticalVelocity)
                 .add(deploymentWindVelocity);
         if (rvpData.getProjectileData().isConstantSpeed() && composed.lengthSqr() > 1.0E-6D) {
-            double targetSpeed = Math.max(flightSpeed, 0.01D);
+            double targetSpeed = Math.max(currentFlightSpeed, RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED);
             scaleDeploymentComponents(targetSpeed / composed.length());
             composed = deploymentBaseVelocity
                     .add(deploymentHorizontalVelocity)
@@ -2373,7 +2401,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setDeltaMovement(clamped);
         setPos(position().add(clamped));
         deploymentLastComposedVelocity = clamped;
-        flightSpeed = Math.max(clamped.length(), 0.01D);
+        updateFlightSpeedState(clamped);
         flightDistance += clamped.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, clamped);
     }
@@ -2413,7 +2441,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 velocity = step.velocity();
                 setDeltaMovement(velocity);
                 setPos(step.position());
-                flightSpeed = Math.max(velocity.length(), 0.01);
+                updateFlightSpeedState(velocity);
                 flightDistance += velocity.length();
                 RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
                 return;
@@ -2429,12 +2457,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             velocity = applyMchHorizontalDrag(velocity, rvpData.getDragInWater());
         }
         if (rvpData.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-6) {
-            velocity = velocity.normalize().scale(Math.max(flightSpeed, 0.01));
+            velocity = velocity.normalize().scale(Math.max(
+                    currentFlightSpeed, RVP_ProjectileSpeedMath.MIN_REFERENCE_SPEED));
         }
         velocity = clampSpeed(velocity);
         setDeltaMovement(velocity);
         setPos(position().add(velocity));
-        flightSpeed = Math.max(velocity.length(), 0.01);
+        updateFlightSpeedState(velocity);
         flightDistance += velocity.length();
         RVP_ProjectileMotion.applyRotationFromVelocity(this, velocity);
     }
@@ -3484,7 +3513,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         Vec3 velocity = getDeltaMovement().scale(penetrationSpeedMultiplier);
         setDeltaMovement(velocity);
-        flightSpeed = Math.max(velocity.length(), 0.01);
+        updateFlightSpeedState(velocity);
         applyRotationFromVelocity(velocity);
     }
 
@@ -4756,7 +4785,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeDouble(getDeltaMovement().x);
         buffer.writeDouble(getDeltaMovement().y);
         buffer.writeDouble(getDeltaMovement().z);
-        buffer.writeDouble(flightSpeed);
+        buffer.writeDouble(currentFlightSpeed);
         buffer.writeVarInt(motorBurnEndTick);
         buffer.writeVarInt(coldLaunchTimeTick);
         buffer.writeDouble(coldLaunchVelocity.x);
@@ -4801,7 +4830,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setXRot(buffer.readFloat());
         setYRot(buffer.readFloat());
         setDeltaMovement(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
-        this.flightSpeed = buffer.readDouble();
+        this.currentFlightSpeed = buffer.readDouble();
+        this.peakFlightSpeed = this.currentFlightSpeed;
         this.motorBurnEndTick = buffer.readVarInt();
         this.coldLaunchTimeTick = buffer.readVarInt();
         this.coldLaunchVelocity = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());

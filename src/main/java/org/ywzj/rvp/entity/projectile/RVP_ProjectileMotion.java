@@ -48,6 +48,8 @@ public final class RVP_ProjectileMotion {
         }
         bullet.setDeltaMovement(bullet.getDeltaMovement().scale(1f - friction));
         bullet.setDeltaMovement(bullet.getDeltaMovement().add(0, -gravity, 0));
+        // 调用本项目弹体速率状态入口，使炮弹当前基准跟随摩擦与重力后的权威速度。
+        bullet.updateFlightSpeedState(bullet.getDeltaMovement());
     }
 
     /**
@@ -126,7 +128,8 @@ public final class RVP_ProjectileMotion {
         projectile.setDeltaMovement(velocity);
         projectile.setPos(projectile.position().add(velocity));
         projectile.flightDistance += velocity.length();
-        projectile.flightSpeed = (float) Math.max(projectile.flightSpeed, velocity.length());
+        // 调用本项目弹体速率状态入口，分离当前速率与只增不减的历史峰值。
+        projectile.updateFlightSpeedState(velocity);
 
         if (projectile.getFlightTickCount() >= ignition) {
             int motorTick = projectile.getFlightTickCount() - ignition;
@@ -233,6 +236,8 @@ public final class RVP_ProjectileMotion {
     /** 发射完成：初速 + 可选载机速度已写入 {@code deltaMovement}。 */
     public static void finalizeSpawnOrientation(RVP_BaseBullet projectile, RVP_BaseBullet.AimRot aim) {
         Vec3 vel = projectile.getDeltaMovement();
+        // 调用本项目弹体速率状态入口，吸收载机速度叠加后的最终出膛速度。
+        projectile.updateFlightSpeedState(vel);
         if (projectile.usesCannonBallistics()) {
             if (vel.lengthSqr() > 1.0E-8) {
                 projectile.applyCannonFacingFromVelocity(vel, false);
@@ -305,7 +310,7 @@ public final class RVP_ProjectileMotion {
         if (missile.getFlightTickCount() < ignition) {
             velocity = applyPreIgnitionVelocity(missile, velocity, ignition);
         } else {
-            double speed = Math.max(velocity.length(), Math.max(missile.flightSpeed, data.getProjectileVelocity()));
+            double speed = Math.max(velocity.length(), missile.currentFlightSpeed);
             int motorTick = missile.getFlightTickCount() - ignition;
             if (motorTick <= data.getResolvedMotorBurnTime()) {
                 // 主燃烧段：按点火后 Tick 解析推力曲线与变质量（A1 变质量 / A2 推力曲线）。
@@ -320,7 +325,7 @@ public final class RVP_ProjectileMotion {
                 speed = Math.max(speed, 0.01);
             }
             if (data.getProjectileData().isConstantSpeed()) {
-                speed = Math.max(missile.flightSpeed, data.getProjectileVelocity());
+                speed = Math.max(missile.currentFlightSpeed, data.getProjectileVelocity());
             }
             velocity = lookDir.scale(speed);
             velocity = applyPropulsionGravity(missile, velocity, data);
@@ -332,7 +337,8 @@ public final class RVP_ProjectileMotion {
         missile.setDeltaMovement(velocity);
         missile.setPos(missile.position().add(velocity));
         missile.flightDistance += velocity.length();
-        missile.flightSpeed = (float) Math.max(missile.flightSpeed, velocity.length());
+        // 调用本项目弹体速率状态入口，使 HITL 转向损失不会在下一 Tick 被历史峰值回填。
+        missile.updateFlightSpeedState(velocity);
     }
 
     private static int resolveMotorIgnitionTick(RVP_BaseBullet projectile, RVP_WeaponData data) {

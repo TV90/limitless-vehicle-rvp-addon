@@ -38,7 +38,8 @@ public final class RVP_RocketBallistics {
     private RVP_RocketBallistics() {}
 
     public record Params(double velocity, double gravity, double drag, int predictionTick) {}
-    private record RvpState(Vec3 velocity, Vec3 lookDir, double flightSpeed, double secondPulseStartTick) {}
+    /** 预测器当前运动状态；currentSpeed 是上一子步的当前速率，不是历史峰值。 */
+    private record RvpState(Vec3 velocity, Vec3 lookDir, double currentSpeed, double secondPulseStartTick) {}
 
     @FunctionalInterface
     public interface TerrainHeightResolver {
@@ -379,7 +380,7 @@ public final class RVP_RocketBallistics {
     private static RvpState stepVelocity(RvpState state, RVP_WeaponData data, double tickTime, double dt) {
         Vec3 velocity = state.velocity();
         Vec3 lookDir = state.lookDir();
-        double flightSpeed = Math.max(state.flightSpeed(), velocity.length());
+        double currentSpeed = Math.max(state.currentSpeed(), velocity.length());
         double secondPulseStartTick = state.secondPulseStartTick();
         if (data.usesPropulsion()) {
             int ignition = data.getResolvedIgnitionDelayTick();
@@ -428,19 +429,19 @@ public final class RVP_RocketBallistics {
                     lookDir = velocity.normalize();
                 }
             }
-            return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()), secondPulseStartTick);
+            return new RvpState(velocity, lookDir, Math.max(velocity.length(), 0.01D), secondPulseStartTick);
         }
 
         velocity = velocity.add(0.0, data.getGravity() * dt, 0.0);
         velocity = applyMchHorizontalDrag(velocity, data.getDragInAir(), dt);
         if (data.getProjectileData().isConstantSpeed() && velocity.lengthSqr() > 1.0E-6) {
-            velocity = velocity.normalize().scale(Math.max(flightSpeed, 0.01));
+            velocity = velocity.normalize().scale(Math.max(currentSpeed, 0.01D));
         }
         velocity = clampSpeed(velocity, data);
         if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
             lookDir = velocity.normalize();
         }
-        return new RvpState(velocity, lookDir, Math.max(flightSpeed, velocity.length()), secondPulseStartTick);
+        return new RvpState(velocity, lookDir, Math.max(velocity.length(), 0.01D), secondPulseStartTick);
     }
 
     private static Vec3 applyGravity(Vec3 velocity, RVP_WeaponData data, double dt) {

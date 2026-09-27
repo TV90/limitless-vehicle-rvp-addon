@@ -196,7 +196,7 @@ thrustAccelerationPerTick(thrust, mass) = thrust / max(mass, 1e-6)
 | --- | --- | --- |
 | 制导直接改写速度 | `projectile.setDeltaMovement(next)`（速率严格保持） | 方向跳变不由任何力驱动；能量零代价（即 P3） |
 | 速度硬钳制 | `clampSpeed`（`min_speed` / `max_speed` 等比缩放） | 速度墙，无过渡过程 |
-| `constant_speed` | `velocity.normalize().scale(Math.max(flightSpeed, 0.01))`，而 `flightSpeed` 是**历史峰值**（`flightSpeed = max(flightSpeed, v)`） | **速度被棘轮钉死在峰值**，惯性完全失效 |
+| `constant_speed` | `velocity.normalize().scale(Math.max(currentFlightSpeed, 0.01))`；2026-09-27 起当前速率与历史峰值已分离 | 仍是显式恒速语义，但不会再把更早 Tick 的峰值回填为当前速度 |
 | 位置伺服类 | `tickSmartFuseGuidance`：`toTarget.normalize() × min(base, dist×0.9)`；`tickHitlTvMove`：`lookDir × speed` | 速度由位置/姿态直接决定，无横向惯性 |
 
 另有：跳弹反射 `setDeltaMovement(reflected)`（瞬时，无冲量过程）、子弹药部署四分量独立指数衰减（部分惯性）、`applyWindDrift`（加性外力，有惯性）。
