@@ -202,9 +202,11 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         updateDynamicRows();
         rebuildQueues();
         // [RVP] 标脏（2026-09-28 修面板左右闪/行全空）：AUI 对运行中 DOM 变更是惰性绘制——
-        // 原体改装屏同款 markDirty(RELAYOUT|REPAINT) 才会重布局+重绘；不再走 resize 全量重建
-        //（重建 Document 是“左右闪”根因），也不能静默零调用（“行全空”根因）
+        // ① requestStyleRecalc（SUBTREE 模式）挂起子树样式重算 → 渲染帧
+        //    commitPendingStyleRecalcForRender → flushPendingUpdates 自动重建 PaintList（新增行生效）；
+        // ② markDirty(RELAYOUT|REPAINT) 视觉重绘脏（原体改装屏同款）。两者互补缺一不可。
         if (categoryScroll != null) {
+            document.requestStyleRecalc(categoryScroll);
             document.markDirty(categoryScroll,
                     com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
         }
