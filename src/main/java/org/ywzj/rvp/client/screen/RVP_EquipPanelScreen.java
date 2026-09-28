@@ -201,6 +201,21 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         updateHp();
         rebuildCategories();
         rebuildQueues();
+        // [RVP] 标脏（2026-09-28 修面板左右闪/行全空）：AUI 对运行中 DOM 变更是惰性绘制——
+        // 原体改装屏同款 markDirty(RELAYOUT|REPAINT) 才会重布局+重绘；不再走 resize 全量重建
+        //（重建 Document 是“左右闪”根因），也不能静默零调用（“行全空”根因）
+        if (categoryScroll != null) {
+            document.markDirty(categoryScroll,
+                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        }
+        if (hpText != null) {
+            document.markDirty(hpText,
+                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        }
+        if (hpFill != null) {
+            document.markDirty(hpFill,
+                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        }
     }
 
     /** 动态区内容签名：整车血量 + 各栏目行生效态 + 两条维修队列。 */
