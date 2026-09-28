@@ -43,5 +43,3 @@
 - 公共数组 Mixin 的目标类必须是双端安全的；纯客户端行为放 `client` 数组。
 
 **Git 提交策略（2026-09-09 订立）**：只提交**代码**（`src/` 下 Java 源码及必要的构建配置）；**载具包**（`limitless_vehicle/` 资产，含 models/textures/display/vehicles/weapons 等）**一律不提交 gitee**。提交前核对 `git status` 暂存清单，禁止 `git add .` 误带载具包资产。
-
-**载具包权威副本铁律（2026-09-29 订立，run 目录误诊事故后）**：载具包**唯一权威副本 = 项目根 `limitless_vehicle/`**（用户游戏目录由用户自行同步、保持最新）。`run/**`（run/server、run/client_1 等）下的 limitless_vehicle 副本是**冒烟测试沙盒**，全是陈年旧包——**排查、对比、诊断、修复一律只看 `limitless_vehicle/`，禁止把 run 目录当部署现状**、禁止从 run 目录取载具数据下结论、也不需要"同步 run 目录"。"数据过期"类结论必须先核对权威副本本身。
