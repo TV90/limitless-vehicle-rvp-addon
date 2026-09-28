@@ -31,7 +31,7 @@ import java.util.UUID;
  *
  * <p>承接原 mixin 的：</p>
  * <ul>
- *   <li>{@code tick}：残骸 10 秒提前清除、部署实例强载区块、母车位置快照同步、母车被毁联动判定；</li>
+ *   <li>{@code tick}：残骸 60 秒清除、部署实例强载区块、母车位置快照同步、母车被毁联动判定；</li>
  *   <li>{@code onRemovedFromWorld}：清理座位锁/位置快照/联动注册，并传送操作员回母车；</li>
  *   <li>{@code onEnterVehicle}/{@code onLeaveVehicle}：非 UAV 模板部署实例的假操作员位置记录与
  *       离机回传 + 自动上车（经 {@link EntityMountEvent}）；</li>
@@ -43,8 +43,8 @@ import java.util.UUID;
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_LinkedUavEventHandler {
 
-    /** 残骸遗留时间（毫秒）：本体硬编码 60 秒，RVP 缩短为 10 秒。 */
-    private static final long WRECK_EXPIRE_MS = 10_000L;
+    /** 残骸遗留时间（毫秒）：与本体硬编码的 60 秒保持一致，保留 RVP 的清除机制。 */
+    private static final long WRECK_EXPIRE_MS = 60_000L;
     /** 母车距无人机超过此区块数时不再强载母车区块（避免无限制远距离强载）。96 区块 = 1536 格。 */
     private static final int MAX_PARENT_CHUNK_DISTANCE = 96;
 
