@@ -440,5 +440,6 @@
   "message.ywzj_rvp.part_repairing": "部件维修中 %s%%",
   "gui.ywzj_rvp.hud.cm_destroyed": "%s: 损坏",
   "ui.rvp.barrel_damaged_misfire": "炮管受损，射击失败",
-  "ui.rvp.barrel_burst": "炮管炸膛！"
+  "ui.rvp.barrel_burst": "炮管炸膛！",
+  "gui.ywzj_rvp.equipment.barrel_damaged": "受损"
 }

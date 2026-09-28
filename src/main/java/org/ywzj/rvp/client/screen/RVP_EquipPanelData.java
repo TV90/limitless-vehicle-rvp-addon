@@ -126,6 +126,26 @@ public final class RVP_EquipPanelData {
         // 无衰减永久）。失效行走辅助设备维修队列（快修恢复清累计）。
         Map<String, Set<BoneModuleType>> barrelBones = bonesOfType(modules, BoneModuleType.BARREL);
         List<Row> barrelRows = typeRows(vehicle, orderedBones, modules, barrelBones, BoneModuleType.BARREL, entityId);
+        // [RVP] 炮管受损态标注（2026-09-28 两档炮管）：客户端按累计推导——两档配置且
+        // 累计 ≥ threshold_light 且 BARREL 未失效 → extra 加"受损"（射击已进入三选一）
+        var barrelConfigs = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBarrelModules(vehicle);
+        if (barrelConfigs != null) {
+            for (int i = 0; i < barrelRows.size(); i++) {
+                Row row = barrelRows.get(i);
+                var config = barrelConfigs.get(row.boneName());
+                if (config == null || !config.hasDamagedStage() || !row.active()) {
+                    continue;
+                }
+                float accumulated = org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress
+                        .getAccumulated(entityId, row.boneName());
+                if (accumulated + 1.0E-3f >= config.thresholdLight()) {
+                    String extra = (row.extra() == null ? "" : row.extra() + " · ")
+                            + I18n.get("gui.ywzj_rvp.equipment.barrel_damaged");
+                    barrelRows.set(i, new Row(row.index(), row.alias(), row.active(), row.boneName(),
+                            row.queueKey(), extra));
+                }
+            }
+        }
         if (!barrelRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));
         }

@@ -690,13 +690,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         // 档位跨越判定：before = 本次累计前值（accumulate 为同步加法，差值即本次伤害）
         float before = accumulated - triggerDamage;
-        if (accumulated >= engineConfig.thresholdHeavy()) {
+        if (accumulated + 1.0E-3f >= engineConfig.thresholdHeavy()) {
             // 跨过重损阈值：ENGINE 模块失效（瘫痪档），走标准失效广播（面板红框 / dev 队列 / 动画）
             RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE);
             syncBoneModuleState(vehicle);
             // [RVP] 部件战果通知：单发跨两档时只报"摧毁引擎"，不叠报"重创发动机"
             notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.ENGINE);
-        } else if (before < engineConfig.thresholdLight() && accumulated >= engineConfig.thresholdLight()) {
+        } else if (before < engineConfig.thresholdLight() && accumulated + 1.0E-3f >= engineConfig.thresholdLight()) {
             // 跨过受损阈值（功率降低）：ENGINE_DAMAGED 进入失效表（用户 2026-09-28 定版：重创=
             // 可修的失效设备）——随失效表持久化（跨退出重进保持）、维修面板失效置顶、
             // 可入维修顺序队列指定优先级、快修按设备配额恢复（恢复时清该骨累计）
@@ -759,7 +759,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 triggerDamage, accumulated, barrelConfig.threshold(),
                 RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
         // [RVP] 两档判定（2026-09-28 用户定版）：先判彻底损坏（heavy），否则判受损档（light）
-        if (accumulated >= barrelConfig.threshold()) {
+        //（+1e-3 浮点容差：累计恰等于阈值时必须立即失效，面板虚拟血量已显示 0）
+        if (accumulated + 1.0E-3f >= barrelConfig.threshold()) {
             clearBarrelDamagedStage(vehicle, boneName);
             if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
                 // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
@@ -767,7 +768,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 // [RVP] 部件战果通知：向射手报"摧毁炮管"
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
             }
-        } else if (barrelConfig.hasDamagedStage() && accumulated >= barrelConfig.thresholdLight()) {
+        } else if (barrelConfig.hasDamagedStage() && accumulated + 1.0E-3f >= barrelConfig.thresholdLight()) {
             // 跨过受损阈值（两档配置）：进入受损档——此后每次射击三选一
             //（1/3 正常散布×10 / 1/3 哑火 / 1/3 炸膛升级），判定在射击 gate（WeaponBase）
             BARREL_DAMAGED_STAGE.add(vehicleId + "|" + boneName);
@@ -1372,15 +1373,16 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
-     * [RVP] 炮管炸膛特效（2026-09-28 两档炮管）：复用 ERA 的 MCHR 爆炸视觉，规模 ≈2 格
-     *（scale = 2/3 × 基准 3）。在炮管骨 OBB 中心爆（无 OBB 回退载具包围盒中心）。
+     * [RVP] 炮管炸膛特效（2026-09-28 两档炮管）：复用 ERA 的 MCHR 爆炸视觉，规模与单块
+     * ERA 同级（scale 1.0 = 基准半径 3 格；0.67 实测被车体遮挡不可见）。在炮管骨 OBB
+     * 中心爆（无 OBB 回退载具包围盒中心）。
      */
     public static void spawnBarrelBurstEffect(AbstractVehicle vehicle, String barrelBone) {
         if (vehicle == null || !(vehicle.level() instanceof ServerLevel serverLevel)) {
             return;
         }
         Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
-        spawnMchrEraExplosion(serverLevel, pos, 2.0f / 3.0f);
+        spawnMchrEraExplosion(serverLevel, pos, 1.0f);
     }
 
     /**
