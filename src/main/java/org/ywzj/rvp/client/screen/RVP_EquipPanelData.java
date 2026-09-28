@@ -157,6 +157,12 @@ public final class RVP_EquipPanelData {
                 } else {
                     extra = null;
                 }
+                if (!disabled) {
+                    String hp = virtualHpText(vehicle, entityId, bone);
+                    if (hp != null) {
+                        extra = (extra == null ? "" : extra + " · ") + hp;
+                    }
+                }
                 engineRows.add(new Row(index++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
             }
             if (!engineRows.isEmpty()) {
@@ -286,6 +292,21 @@ public final class RVP_EquipPanelData {
         return false;
     }
 
+    /**
+     * [RVP] 模块虚拟血量文本（2026-09-28 全模块累计化配套）："现存/阈值"
+     * （阈值 − 已累计 = 还能吃多少伤害失效）。无限（未配置阈值）返回 null 不显示。
+     * 数据源：S2CBoneDamageProgress 客户端侧表（差分推送）。
+     */
+    private static String virtualHpText(AbstractVehicle vehicle, int entityId, String bone) {
+        float threshold = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneDamageThreshold(vehicle, bone);
+        if (threshold <= 0) {
+            return null;
+        }
+        float accumulated = org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress.getAccumulated(entityId, bone);
+        float remain = Math.max(0f, threshold - accumulated);
+        return (int) Math.ceil(remain) + "/" + (int) threshold;
+    }
+
     /** 行别名：命中箱别名优先，未配置别名回退骨名（"只显示别名"规则）。 */
     private static String alias(AbstractVehicle vehicle, String bone) {
         return RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDisplayNameLocalized(vehicle, bone);
@@ -354,6 +375,11 @@ public final class RVP_EquipPanelData {
             Set<BoneModuleType> boneTypes = modules.get(bone);
             boolean dualRole = boneTypes != null && boneTypes.contains(BoneModuleType.ERA);
             String extra = dualRole ? I18n.get("gui.ywzj_rvp.equipment.note_with_era") : null;
+            // [RVP] 虚拟血量（2026-09-28 全模块累计化）：阈值−已累计，如 "22/30"
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra = (extra == null ? "" : extra + " · ") + hp;
+            }
             rows.add(new Row(index++, alias(vehicle, bone), active, bone,
                     dualRole ? QUEUE_ERA : QUEUE_DEV, extra));
         }

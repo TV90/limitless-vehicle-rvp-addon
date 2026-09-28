@@ -9,7 +9,7 @@ import org.ywzj.rvp.radar.RVP_RadarModuleEnforcer;
 import org.ywzj.rvp.vehicle.BoneMaintenanceConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
-import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
+import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -124,7 +124,7 @@ public final class RVP_MaintenanceRuntimeManager {
                 // ③ 引擎累计此刻清空（随部件恢复语义）
                 state.cooldown = config.waitTimeTicks();
                 recoverModules(vehicle, config);
-                RVP_EngineDamageTable.clearVehicle(vehicle.getUUID());
+                RVP_BoneCumulativeDamageTable.clearVehicle(vehicle.getUUID());
                 // 写穿 + 立即推一次，客户端及时切出"维修中"并显示冷却倒计时
                 writeThrough(vehicle, state);
                 syncHud(vehicle, state);
@@ -327,9 +327,9 @@ public final class RVP_MaintenanceRuntimeManager {
                 if (type == BoneModuleType.RADAR) {
                     RVP_RadarModuleEnforcer.restoreRadar(vehicle, bone);
                 } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
-                    RVP_EngineDamageTable.clear(vehicleId, bone);
+                    RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
                 } else if (type == BoneModuleType.BARREL) {
-                    org.ywzj.rvp.vehicle.RVP_BarrelDamageTable.clear(vehicleId, bone);
+                    org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
                 }
             }
         }

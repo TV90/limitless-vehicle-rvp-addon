@@ -1,0 +1,37 @@
+{
+  "type": "rvp:machinegun",
+  "name": "TOW-2B 自锻破片",
+  "life": 200,
+  "shoot_interval": 0,
+  "max_capacity": 0,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_machine_gun"
+  },
+  "fire_data": {
+    "spread": 1.0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 1.5,
+    "gravity": -0.05,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:flame",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "impact_trail_particles": true,
+    "caliber": 50.0,
+    "tracer_r": 1.0,
+    "tracer_g": 0.55,
+    "tracer_b": 0.05
+  },
+  "detonate_data": {
+ },
+  "collision_data": {
+    "direct_damage": 55
+  },
+  "fuse_data": {}
+}

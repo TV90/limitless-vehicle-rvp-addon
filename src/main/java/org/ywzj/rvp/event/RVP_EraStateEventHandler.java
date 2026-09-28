@@ -86,7 +86,7 @@ public class RVP_EraStateEventHandler {
         }
         RVP_BoneModuleStateTable.onVehicleLeave(vehicle.getUUID());
         // [RVP] 炮管累计中间量随载具离开清理（失效状态已在失效表持久化，不受影响；同引擎累计口径）
-        org.ywzj.rvp.vehicle.RVP_BarrelDamageTable.onVehicleLeave(vehicle.getUUID());
+        org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable.onVehicleLeave(vehicle.getUUID());
     }
 
     /**

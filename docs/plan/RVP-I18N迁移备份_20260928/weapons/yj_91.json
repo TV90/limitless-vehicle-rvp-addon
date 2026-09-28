@@ -1,0 +1,70 @@
+{
+  "type": "rvp:missile",
+  "name": "YJ-91 反辐射导弹",
+  "headshot_multiplier": 1.5,
+  "recoil": 0.1,
+  "shoot_interval": 1000,
+  "max_capacity": 4,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 90,
+  "y_rot_min": -90,
+  "fire_control_sensor_type_override": "rf",
+  "projectile_data": {
+    "has_rocket_engine": true,
+    "velocity": 0,
+    "rotate_to_motion": true,
+    "max_speed": 5.0,
+    "mass": 0.01,
+    "thrust": 0.006,
+    "motor_burn_time": 200,
+    "drag_coefficient": 0.0005,
+    "inherit_vehicle_velocity": true,
+    "turning_factor": {
+      "[[1,inf]]": 0.12
+    }
+  },
+  "guidance_data": {
+    "guidance_type": "ARM",
+    "guidance_tick_range": "[[0,inf]]",
+    "guidance_target_distance_range": "[[0,2048]]",
+    "lock_target_distance_range": "[[0,2048]]",
+    "max_lock_angle": 40,
+    "max_off_axis_lock_angle": 40,
+    "max_guidance_angle": 60,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "scan_interval_tick": 1,
+    "radiation_pulse_memory_tick": 80,
+    "arm_memory_tick": 120,
+    "arm_locked_emitter_bonus": 0.5
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 1200,
+      "radius": 8,
+      "proximity_fuze": true,
+      "proximity_radius": 4,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 300
+  },
+  "fuse_data": {
+    "proximity_radius": 5.0,
+    "proximity_fuse_tick": 10,
+    "proximity_fuse_height": 0
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke"
+  },
+  "fire_data": {
+    "require_lock": true
+  }
+}

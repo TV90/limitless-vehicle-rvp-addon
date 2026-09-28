@@ -1,0 +1,44 @@
+{
+    "type": "rvp:machinegun",
+    "name": "DTB-10-125 高爆榴弹",
+    "shoot_interval": 20,
+    "max_capacity": 1,
+    "reload": {
+        "time": 120,
+        "ammo": "ywzj_vehicle:ammo_artillery"
+    },
+    "fire_data": {
+        "spread": 0.1,
+        "fire_mode": "FULL_AUTO"
+    },
+    "projectile_data": {
+        "velocity": 12,
+        "gravity": -0.01,
+        "drag": 0.0,
+        "rotate_to_motion": true
+    },
+    "effects_data": {
+        "trajectory_particle": "none",
+        "impact_particle": "minecraft:block",
+        "explosion_particle": "minecraft:explosion",
+        "caliber": 24.765,
+        "tracer_r": 0.6,
+        "tracer_g": 0.85,
+        "tracer_b": 1.0
+    },
+    "fuse_data": {
+        "proximity_radius": 0,
+        "proximity_fuse_height": 400
+    },
+    "detonate_data": {
+        "explosion_data": {
+            "explode": true,
+            "damage": 300,
+            "radius": 7,
+            "destroy_block": true
+        }
+    },
+    "collision_data": {
+        "direct_damage": 20
+    }
+}

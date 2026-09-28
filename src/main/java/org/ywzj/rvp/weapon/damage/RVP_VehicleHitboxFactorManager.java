@@ -36,9 +36,9 @@ import org.ywzj.rvp.vehicle.BoneDircmConfig;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneJammerConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
-import org.ywzj.rvp.vehicle.RVP_BarrelDamageTable;
+
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
-import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
+import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
 import org.ywzj.vehicle.custom.serialize.GsonUtil;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -594,24 +594,28 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (!Float.isFinite(moduleTriggerDamage) || moduleTriggerDamage < 0f) {
             return false;
         }
-        // 总门槛：ERA 轨或模块轨任一过 min_damage 即进入逐模块销毁（各模块内再按各自轨判定）
-        boolean anyTrigger = result.shouldTriggerModules(triggerDamage)
-                || (useFinalDamageForModules && result.shouldTriggerModules(moduleTriggerDamage));
-        if (!anyTrigger) {
-            return false;
+        // [RVP] 全模块累计化（2026-09-28 用户定版）：命中配置模块骨即把实际到骨伤害累入通用
+        // 累计表（含 ERA）——各模块按自身累计阈值（min_damage 字段，语义改为"累计失效阈值"）
+        // 判定失效：小口径蹭伤可攒、大口径一发照旧超阈。引擎/炮管走下方专属累计段（子对象阈值）
+        if (!result.modules().isEmpty()) {
+            RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, moduleTriggerDamage);
+            syncBoneDamageProgress(vehicle);
         }
         boolean anyDestroyed = false;
         boolean destroyedEra = false;
         String destroyedRadarBone = null;
         for (BoneModuleType type : result.modules()) {
-            if (type == BoneModuleType.ENGINE) {
-                // 引擎模块不走单发 min_damage 直毁路径：失效完全由窗口累计伤害跨阈值驱动
-                // （见 accumulateEngineDamage），否则一发过门槛的炮弹会跳过"受损档"直接瘫痪
+            if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
+                    || type == BoneModuleType.BARREL) {
+                // 引擎/炮管不走单发直毁路径：失效完全由各自累计（engine/barrel 子对象阈值）驱动
+                //（见 accumulateEngineDamage/accumulateBarrelDamage），循环里重复判定会跳档
                 continue;
             }
-            // 分轨门槛：ERA 用模块前伤害判定；其余模块用实际到骨伤害判定（各自过 min_damage）
-            float gateDamage = type == BoneModuleType.ERA ? triggerDamage : moduleTriggerDamage;
-            if (Float.isFinite(gateDamage) && gateDamage <= result.minTriggerDamage()) {
+            // [RVP] 累计失效判定（原单发 min_damage 门槛废除）：通用累计 ≥ 累计阈值（min_damage）
+            // 即失效；min_damage 未配置（∞）＝该模块不可被直击打坏（保持现状）
+            float threshold = result.minTriggerDamage();
+            if (!Float.isFinite(threshold)
+                    || RVP_BoneCumulativeDamageTable.getAccumulated(vehicleId, boneName) < threshold) {
                 continue;
             }
             if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
@@ -646,7 +650,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     /**
      * [RVP] 引擎部件累计段：命中骨配置了 ENGINE 模块时，把本次直击伤害累入
-     * {@link RVP_EngineDamageTable}（每 tick 线性衰减的窗口累计）；累计跨过重损阈值
+     * {@link RVP_BoneCumulativeDamageTable}（无衰减永久累计）；累计跨过重损阈值
      * 且模块仍存活时触发 ENGINE 模块失效（进失效表 → 瘫痪档，可维修恢复）。
      * 累计值变化随 {@code RVP_EnginePowerHandler} 的档位差分自动同步客户端。
      */
@@ -665,7 +669,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return; // 命中骨未配置引擎部件：不累计
         }
         UUID vehicleId = vehicle.getUUID();
-        float accumulated = RVP_EngineDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        syncBoneDamageProgress(vehicle);
         boolean moduleAlive = RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE);
         // [RVP] 引擎部件诊断（/rvpdebug engine on）：每次直击入账的完整数值链——
         // 入账伤害（分轨后实际到骨值）、累计（无衰减，永久）、阈值、模块存活，写入专有日志
@@ -696,7 +701,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             }
             // 同时向射手报"重创发动机"——一个受损窗期内只报一次
             // （tryMarkDamagedNotified 首次登记返回 true 即发；累计清零/快修后重新武装）
-            if (RVP_EngineDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
+            if (RVP_BoneCumulativeDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_ENGINE_DAMAGED, BoneModuleType.ENGINE);
             }
         }
@@ -704,7 +709,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     /**
      * [RVP] 炮管部件累计段（2026-09-28，单档）：命中骨配置了 BARREL 模块时，把本次直击
-     * 实际到骨伤害累入 {@link RVP_BarrelDamageTable}（无衰减，只增不减）；累计跨过
+     * 实际到骨伤害累入 {@link RVP_BoneCumulativeDamageTable}（无衰减，只增不减）；累计跨过
      * {@link BoneBarrelConfig#getThreshold} 即 BARREL 模块失效（进失效表 → 整个炮管所在
      * 武器站禁止射击 + 持久化 + 冒烟 + 维修队列，战果通知"摧毁炮管"）。埋点与引擎累计
      * 同位（tryDestroyBoneModules 开头，弹体/激光/本体武器重放三调用方全覆盖）。
@@ -724,7 +729,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return; // 命中骨未配置炮管部件：不累计
         }
         UUID vehicleId = vehicle.getUUID();
-        float accumulated = RVP_BarrelDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        syncBoneDamageProgress(vehicle);
         // [RVP] 累计诊断（/rvpdebug engine on 专有日志）：炮管入账同写，供实机对账
         org.ywzj.rvp.debug.RVP_EngineDebug.log(String.format(
                 "%s(%d) 炮管骨=%s 入账=%.1f 累计=%.1f 损坏阈=%.0f 模块存活=%s",
@@ -837,7 +843,67 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * 供本类与快速维修（{@code RVP_MaintenanceRuntimeManager}）在模块状态变化后统一调用：
      * 客户端 JS 动画（rvp_isEraActive / isModuleActive）与 HUD 据此恢复/隐藏渲染骨。
      */
+    /** 累计进度差分缓存：UUID → 上次已推送快照（相同不发）。 */
+    private static final Map<UUID, Map<String, Float>> LAST_DAMAGE_PROGRESS = new HashMap<>();
+
+    /**
+     * [RVP] 骨骼模块累计进度推送（2026-09-28 全模块累计化配套）：该载具全部骨累计快照
+     * 差分发 {@code S2CBoneDamageProgress}（相同不发）——面板虚拟血量（阈值−已累计）消费。
+     * 调用点：各累计段 + syncBoneModuleState（失效恢复全量补发）。
+     */
+    private static void syncBoneDamageProgress(AbstractVehicle vehicle) {
+        if (vehicle == null || vehicle.level().isClientSide()) {
+            return;
+        }
+        java.util.UUID vehicleId = vehicle.getUUID();
+        Map<String, Float> snapshot = RVP_BoneCumulativeDamageTable.snapshotOf(vehicleId);
+        Map<String, Float> last = LAST_DAMAGE_PROGRESS.get(vehicleId);
+        if (last != null && last.equals(snapshot)) {
+            return;
+        }
+        LAST_DAMAGE_PROGRESS.put(vehicleId, new HashMap<>(snapshot));
+        RVP_Network.CHANNEL.send(
+                PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> vehicle),
+                org.ywzj.rvp.network.S2CBoneDamageProgress.create(vehicle.getId(), snapshot));
+    }
+
+    /** 载具离开世界：清累计进度差分缓存（实体 id 变化防陈旧推送）。 */
+    public static void clearBoneDamageProgressCache(AbstractVehicle vehicle) {
+        if (vehicle != null) {
+            LAST_DAMAGE_PROGRESS.remove(vehicle.getUUID());
+        }
+    }
+
+    /**
+     * [RVP] 骨的累计失效阈值（面板虚拟血量分母）：bone_modules 骨 = 条目 min_damage；
+     * 引擎骨 = 瘫痪阈（threshold_heavy）；炮管骨 = barrel threshold。未配置/∞ 返回 -1（无限）。
+     */
+    public float resolveBoneDamageThreshold(AbstractVehicle vehicle, String boneName) {
+        if (vehicle == null || boneName == null) {
+            return -1f;
+        }
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
+            return -1f;
+        }
+        BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+        if (moduleConfig != null && Float.isFinite(moduleConfig.minTriggerDamage())) {
+            return moduleConfig.minTriggerDamage();
+        }
+        BoneEngineConfig engine = resolveEngineConfig(vehicle, boneName);
+        if (engine != null) {
+            return engine.thresholdHeavy();
+        }
+        BoneBarrelConfig barrel = resolveBarrelConfig(vehicle, boneName);
+        if (barrel != null) {
+            return barrel.threshold();
+        }
+        return -1f;
+    }
+
     public static void syncBoneModuleState(AbstractVehicle vehicle) {
+        // [RVP] 累计进度全量补发（2026-09-28）：失效恢复（余弹回满场景）时客户端虚拟血量同步刷新
+        syncBoneDamageProgress(vehicle);
         RVP_Network.CHANNEL.send(
                 PacketDistributor.TRACKING_ENTITY_AND_SELF.with(() -> vehicle),
                 S2CBoneModuleState.create(vehicle, RVP_BoneModuleStateTable.getInactiveModules(vehicle.getUUID()))

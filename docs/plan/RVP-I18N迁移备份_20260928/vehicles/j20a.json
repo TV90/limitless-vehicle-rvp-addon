@@ -1,0 +1,291 @@
+{
+  "type": "ywzj_vehicle:fixed_wing_vehicle",
+  "countermeasure": {
+    "flare": {
+      "launcher_parts": [
+        "decoy_flare_barrel"
+      ],
+      "total": 32,
+      "per_round": 4,
+      "burst_rounds": 8,
+      "launch_interval_tick": 4,
+      "reload_tick": 200,
+      "decoy": {
+        "lifetime_tick": 160,
+        "speed": 1.0,
+        "gravity": 0.052,
+        "drag": 0.02,
+        "spread": 0.6,
+        "glow_color": 16711680,
+        "halo_scale": 1.6
+      }
+    },
+    "chaff": {
+      "launcher_parts": [
+        "decoy_flare_barrel"
+      ],
+      "total": 32,
+      "per_round": 4,
+      "burst_rounds": 8,
+      "launch_interval_tick": 4,
+      "reload_tick": 200,
+      "radar_jam_radius": 8,
+      "radar_jam_count": 2,
+      "radar_jam_cooldown_tick": 60,
+      "decoy": {
+        "lifetime_tick": 100,
+        "speed": 1.0,
+        "gravity": 0.052,
+        "drag": 0.02,
+        "spread": 2.5,
+        "glow_color": 16777215,
+        "halo_scale": 0.7
+      }
+    }
+  },
+  "attributes": {
+    "thrust": 194795.8,
+    "thrust_k": 1.4,
+    "ceiling": 1024,
+    "x_rot_input_step": 0.2,
+    "y_rot_input_step": 0.5,
+    "z_rot_input_step": 0.2,
+    "air_drag_k_min": 38.8,
+    "air_drag_k_max": 155.2,
+    "lift_to_drag_k": 3,
+    "angle_of_attack_min": -10,
+    "angle_of_attack_max": 28,
+    "x_rot_input_drag_k": 1.0,
+    "y_rot_input_drag_k": 0.25,
+    "z_rot_input_drag_k": 0.125,
+    "landing_gear_drag_k": 0.5,
+    "turn_rate_by_speed": 0.4,
+    "x_turn_rate": 2.0,
+    "y_turn_rate": 3.0,
+    "z_turn_rate": 8.0,
+    "vortex_offsets": [
+      [
+        6.51,
+        1.808,
+        -5.77
+      ],
+      [
+        -6.51,
+        1.808,
+        -5.77
+      ],
+      [
+        1.15,
+        2.328,
+        3.541
+      ],
+      [
+        -1.15,
+        2.328,
+        3.541
+      ]
+    ],
+    "afterburner_offsets": [
+      [
+        0.74953125,
+        2.28594375,
+        -6.55635625
+      ],
+      [
+        -0.74953125,
+        2.28594375,
+        -6.55635625
+      ]
+    ]
+  },
+  "landing_gear_part_id": "landing_gear",
+  "rvp_auto_landing_gear": true,
+  "airbrake_part_id": "airbrake",
+  "max_health": 500,
+  "nctr_name": "?",
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      6,
+      0
+    ],
+    "third_person_distance": 20,
+    "third_person_center_offset_zoomed": [
+      0,
+      7,
+      0
+    ],
+    "third_person_distance_zoomed": 4,
+    "sound_distance": 8
+  },
+  "energy_info": {
+    "energy_capacity": 0.25,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "defense_stats": {
+    "damage_threshold": 0.1,
+    "impact_multiplier": 3
+  },
+  "armor_min_damage": 10,
+  "with_warning_receiver": true,
+  "center_offset": [
+    0,
+    1.625,
+    0
+  ],
+  "structure_model": "rvp:vehicle/j20a",
+  "core_distance_scale_multiplier": 0.0,
+  "parts": [
+    {
+      "id": "decoy_flare_barrel",
+      "name": "decoy_flare_barrel",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "decoy_flare_barrel",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "sighting_system",
+      "name": "sighting_system",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "sighting_system",
+      "seat_offset": [
+        0,
+        3.3875,
+        6.625
+      ],
+      "operator_on_weapon_unit": false,
+      "disable_scope_auto_level": true,
+      "with_focus_locker": true,
+      "with_stabilizer": true,
+      "rot_info": {
+        "x_rot_speed": 7,
+        "y_rot_speed": 7,
+        "x_rot_min": -40,
+        "x_rot_max": 120,
+        "y_rot_min": -120,
+        "y_rot_max": 120
+      },
+      "optical_sight_offset": [
+        0,
+        0,
+        1
+      ],
+      "operator_view_offset": [
+        0,
+        2.1296875,
+        -2.246875
+      ],
+      "optical_sight_type": "crt",
+      "zoom_max": 12,
+      "with_thermal_imager": true,
+      "sub_part_unit_ids": [
+        "radar"
+      ],
+      "weapons": [
+        {
+          "id": "rvp:j20a_targeting_pod_block"
+        },
+        {
+          "id": "rvp:j20a_pl15",
+          "part_unit_id": "pl15",
+          "weapon_bay_unit_id": "pl15_bay"
+        },
+        {
+          "id": "rvp:j20a_pl10",
+          "part_unit_id": "pl10",
+          "weapon_bay_unit_id": "pl10_bay"
+        }
+      ]
+    },
+    {
+      "id": "pl15",
+      "name": "pl15",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "arh_missile_barrel",
+      "ammo_capacity": 4,
+      "fire_control_sensor_type": "rf",
+      "is_seat": false,
+      "parent_weapon_unit_aim": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "pl10",
+      "name": "pl10",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "ir_missile_barrel",
+      "ammo_capacity": 2,
+      "fire_control_sensor_type": "eo",
+      "is_seat": false,
+      "parent_weapon_unit_aim": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "pl15_bay",
+      "name": "pl15_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "arh_missile_barrel",
+      "is_seat": false,
+      "open_radar_rcs_multiplier": 6.0
+    },
+    {
+      "id": "pl10_bay",
+      "name": "pl10_bay",
+      "type": "ywzj_vehicle:weapon_bay",
+      "structure_bone": "ir_missile_barrel",
+      "is_seat": false,
+      "open_radar_rcs_multiplier": 2.0
+    },
+    {
+      "id": "radar",
+      "name": "radar",
+      "type": "ywzj_vehicle:radar",
+      "structure_bone": "radar",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0,
+        "y_rot_max": 85,
+        "y_rot_min": -85
+      },
+      "radar_type": "J20",
+      "nctr_mode": "MODERN",
+      "scan_sector_angle": 170,
+      "max_scan_distance": 2048,
+      "scan_animation_mode": "phase",
+      "scan_period_tick": 20
+    },
+    {
+      "id": "landing_gear",
+      "name": "landing_gear",
+      "type": "ywzj_vehicle:landing_gear",
+      "structure_bone": "landing_gear",
+      "is_seat": false
+    },
+    {
+      "id": "airbrake",
+      "name": "airbrake",
+      "type": "ywzj_vehicle:airbrake",
+      "structure_bone": "wing_back",
+      "is_seat": false,
+      "drag_k": 2
+    }
+  ],
+  "rvp_radar_rcs_factor": [
+    0.08,
+    0.35,
+    0.18
+  ],
+  "physics_info": {
+    "mass": 19400,
+    "friction": 38800
+  },
+  "bone_modules": {
+    "radar": {
+      "modules": [
+        "radar"
+      ],
+      "min_damage": 20.0
+    }
+  }
+}

@@ -10,7 +10,7 @@ import org.ywzj.rvp.network.S2CEngineDamageState;
 import org.ywzj.rvp.vehicle.BoneEngineConfig;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
-import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
+import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.api.event.VehicleMoveEvent;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -103,7 +103,7 @@ public final class RVP_EnginePowerHandler {
             if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ENGINE)) {
                 stage = 2;
             } else if (!RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.ENGINE_DAMAGED)
-                    || RVP_EngineDamageTable.getAccumulated(vehicle.getUUID(), bone) >= config.thresholdLight()) {
+                    || RVP_BoneCumulativeDamageTable.getAccumulated(vehicle.getUUID(), bone) >= config.thresholdLight()) {
                 // [RVP] 重创档双通道判定（2026-09-28 定版）：ENGINE_DAMAGED 进失效表（持久化、
                 // 可维修指定优先级）或累计≥受损阈——重启后累计虽清零，失效表标记保持 → 重创永久
                 stage = 1;
@@ -193,7 +193,7 @@ public final class RVP_EnginePowerHandler {
     public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
         if (event.getEntity() instanceof AbstractVehicle vehicle) {
             cleanupStageCache(vehicle);
-            RVP_EngineDamageTable.onVehicleLeave(vehicle.getUUID());
+            RVP_BoneCumulativeDamageTable.onVehicleLeave(vehicle.getUUID());
         }
     }
 

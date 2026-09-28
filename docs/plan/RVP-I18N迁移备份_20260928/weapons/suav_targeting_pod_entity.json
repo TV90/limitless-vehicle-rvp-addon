@@ -1,0 +1,21 @@
+{
+  "type": "rvp:targetingpod",
+  "name": "SUAV 目标指示吊舱",
+  "shoot_interval": 20,
+  "max_capacity": 10,
+  "reload": {
+    "time": 40,
+    "ammo": "ywzj_vehicle:ammo_creative"
+  },
+  "targeting_pod_data": {
+    "mode": "entity",
+    "spot_range": 600,
+    "spot_angle": 45,
+    "mark_duration": 200,
+    "target_filter": ["vehicle", "player", "living"],
+    "team_share": true
+  },
+  "fire_data": {
+    "fire_mode": "SEMI_AUTO"
+  }
+}

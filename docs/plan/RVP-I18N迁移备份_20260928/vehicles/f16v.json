@@ -1,0 +1,427 @@
+{
+  "type": "ywzj_vehicle:fixed_wing_vehicle",
+  "countermeasure": {
+    "flare": {
+      "launcher_parts": [
+        "decoy_flare_barrel"
+      ],
+      "total": 32,
+      "per_round": 4,
+      "burst_rounds": 8,
+      "launch_interval_tick": 4,
+      "reload_tick": 200,
+      "decoy": {
+        "lifetime_tick": 160,
+        "speed": 1.0,
+        "gravity": 0.052,
+        "drag": 0.02,
+        "spread": 0.6,
+        "glow_color": 16711680,
+        "halo_scale": 1.6
+      }
+    },
+    "chaff": {
+      "launcher_parts": [
+        "decoy_flare_barrel"
+      ],
+      "total": 32,
+      "per_round": 4,
+      "burst_rounds": 8,
+      "launch_interval_tick": 4,
+      "reload_tick": 200,
+      "radar_jam_radius": 8,
+      "radar_jam_count": 2,
+      "radar_jam_cooldown_tick": 60,
+      "decoy": {
+        "lifetime_tick": 100,
+        "speed": 1.0,
+        "gravity": 0.052,
+        "drag": 0.02,
+        "spread": 2.5,
+        "glow_color": 16777215,
+        "halo_scale": 0.7
+      }
+    }
+  },
+  "attributes": {
+    "thrust": 78502.5,
+    "thrust_k": 1.4,
+    "ceiling": 1024,
+    "x_rot_input_step": 0.2,
+    "y_rot_input_step": 0.5,
+    "z_rot_input_step": 0.2,
+    "air_drag_k_min": 17.2,
+    "air_drag_k_max": 68.8,
+    "lift_to_drag_k": 3,
+    "x_rot_input_drag_k": 1.0,
+    "y_rot_input_drag_k": 0.25,
+    "z_rot_input_drag_k": 0.125,
+    "landing_gear_drag_k": 0.5,
+    "turn_rate_by_speed": 0.4,
+    "x_turn_rate": 2.0,
+    "y_turn_rate": 3.0,
+    "z_turn_rate": 8.0,
+    "vortex_offsets": [
+      [
+        6.51,
+        1.808,
+        -5.77
+      ],
+      [
+        -6.51,
+        1.808,
+        -5.77
+      ],
+      [
+        1.15,
+        2.328,
+        3.541
+      ],
+      [
+        -1.15,
+        2.328,
+        3.541
+      ]
+    ],
+    "afterburner_offsets": [
+      [
+        0,
+        2.3597625,
+        -5.290375,
+        1.0
+      ]
+    ]
+  },
+  "landing_gear_part_id": "landing_gear",
+  "rvp_auto_landing_gear": true,
+  "max_health": 500,
+  "nctr_name": "F16",
+  "view_info": {
+    "third_person_center_offset": [
+      0,
+      6,
+      0
+    ],
+    "third_person_distance": 20,
+    "third_person_center_offset_zoomed": [
+      0,
+      7,
+      0
+    ],
+    "third_person_distance_zoomed": 4,
+    "sound_distance": 8
+  },
+  "energy_info": {
+    "energy_capacity": 0.25,
+    "energy_consumption_per_tick": 1e-05
+  },
+  "defense_stats": {
+    "damage_threshold": 0.1,
+    "impact_multiplier": 3
+  },
+  "armor_min_damage": 10,
+  "with_warning_receiver": true,
+  "center_offset": [
+    0,
+    1.625,
+    0
+  ],
+  "structure_model": "rvp:vehicle/f16v",
+  "core_distance_scale_multiplier": 0.0,
+  "rvp_custom_mounts": [
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount",
+      "weapon_id": "rvp:f16_gbu39",
+      "model": "rvp:entity/weapon_mount/weapon_mount_gbu39_f16",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_f16_gbu39.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "$weapon1",
+        "$weapon2",
+        "$weapon3",
+        "$weapon4",
+        "$weapon5",
+        "$weapon6",
+        "$weapon7",
+        "$weapon8"
+      ],
+      "shoot_structure_bones": [
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount",
+      "weapon_id": "rvp:f16_gbu53",
+      "model": "rvp:entity/weapon_mount/weapon_mount_gbu53_f16",
+      "texture": "rvp:textures/entity/weapon_mount/pylon_f16_gbu53.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "$weapon2",
+        "$weapon1",
+        "$weapon4",
+        "$weapon3",
+        "$weapon6",
+        "$weapon5",
+        "$weapon8",
+        "$weapon7"
+      ],
+      "shoot_structure_bones": [
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel",
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_agm",
+      "attach_part_unit_id": "variable_agm_mount",
+      "weapon_id": "rvp:f16_spice1000",
+      "model": "rvp:entity/weapon_mount/weapon_mount_spice1000_f16",
+      "texture": "rvp:textures/entity/f16v.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2"
+      ],
+      "shoot_structure_bones": [
+        "agm_shoot_2_barrel",
+        "agm_shoot_1_barrel"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount",
+      "weapon_id": "rvp:f16_aim120d",
+      "model": "rvp:entity/weapon_mount/weapon_mount_aim120_f16",
+      "texture": "rvp:textures/entity/f16v.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "$missile1",
+        "$missile2",
+        "$missile3",
+        "$missile4"
+      ],
+      "shoot_structure_bones": [
+        "aam_shoot_4_barrel",
+        "aam_shoot_3_barrel",
+        "aam_shoot_2_barrel",
+        "aam_shoot_1_barrel"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    },
+    {
+      "part_unit_id": "variable_aam",
+      "attach_part_unit_id": "variable_aam_mount",
+      "weapon_id": "rvp:f16_aim260a",
+      "model": "rvp:entity/weapon_mount/weapon_mount_aim260_f16",
+      "texture": "rvp:textures/entity/f16v.png",
+      "rack_bones": [
+        "pylon"
+      ],
+      "missile_bones": [
+        "missile1",
+        "missile2",
+        "missile3",
+        "missile4"
+      ],
+      "shoot_structure_bones": [
+        "aam_shoot_4_barrel",
+        "aam_shoot_3_barrel",
+        "aam_shoot_2_barrel",
+        "aam_shoot_1_barrel"
+      ],
+      "replace_weapon_display": true,
+      "ammo_slot": 1
+    }
+  ],
+  "parts": [
+    {
+      "id": "sighting_system",
+      "name": "sighting_system",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "sighting_system",
+      "seat_offset": [
+        0,
+        3.5037625,
+        5.36249375
+      ],
+      "operator_on_weapon_unit": false,
+      "disable_scope_auto_level": true,
+      "with_focus_locker": true,
+      "with_stabilizer": true,
+      "rot_info": {
+        "x_rot_speed": 7,
+        "y_rot_speed": 7,
+        "x_rot_min": -40,
+        "x_rot_max": 120,
+        "y_rot_min": -120,
+        "y_rot_max": 120
+      },
+      "optical_sight_offset": [
+        0,
+        0,
+        1
+      ],
+      "operator_view_offset": [
+        0.69529375,
+        2.62095,
+        0.0061875
+      ],
+      "optical_sight_type": "crt",
+      "zoom_max": 12,
+      "with_thermal_imager": true,
+      "sub_part_unit_ids": [
+        "radar"
+      ],
+      "weapons": [
+        {
+          "id": "rvp:f16_m61a1",
+          "part_unit_id": "auto_cannon"
+        },
+        {
+          "part_unit_id": "variable_agm"
+        },
+        {
+          "part_unit_id": "variable_aam"
+        }
+      ]
+    },
+    {
+      "id": "auto_cannon",
+      "name": "auto_cannon",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "auto_cannon",
+      "ammo_capacity": 150,
+      "is_seat": false,
+      "crosshair_style": "circle"
+    },
+    {
+      "id": "variable_agm",
+      "name": "variable_agm",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_agm_1",
+      "rvp_structure_bolt_bones": [
+        "variable_agm_1_barrel"
+      ],
+      "ammo_capacity": -1,
+      "fire_control_sensor_type": "eo",
+      "is_seat": false,
+      "parent_weapon_unit_aim": true,
+      "crosshair_style": "big_cross",
+      "weapons": [
+        "rvp:f16_gbu39",
+        "rvp:f16_spice1000",
+        "rvp:f16_gbu53"
+      ]
+    },
+    {
+      "id": "variable_aam",
+      "name": "variable_aam",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_aam_1",
+      "rvp_structure_bolt_bones": [
+        "variable_aam_1_barrel"
+      ],
+      "ammo_capacity": -1,
+      "fire_control_sensor_type": "rf",
+      "is_seat": false,
+      "parent_weapon_unit_aim": true,
+      "crosshair_style": "none",
+      "weapons": [
+        "rvp:f16_aim120d",
+        "rvp:f16_aim260a"
+      ]
+    },
+    {
+      "id": "variable_agm_mount",
+      "name": "variable_agm_mount",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_agm_1",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "variable_aam_mount",
+      "name": "variable_aam_mount",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "variable_aam_1",
+      "is_seat": false,
+      "crosshair_style": "none"
+    },
+    {
+      "id": "decoy_flare_barrel",
+      "name": "decoy_flare_barrel",
+      "type": "ywzj_vehicle:weapon",
+      "structure_bone": "decoy_flare_barrel",
+      "is_seat": false,
+      "crosshair_style": "none",
+      "firing_mode": "salvo"
+    },
+    {
+      "id": "radar",
+      "name": "radar",
+      "type": "ywzj_vehicle:radar",
+      "structure_bone": "radar",
+      "is_seat": false,
+      "rot_info": {
+        "x_rot_speed": 0,
+        "y_rot_speed": 0,
+        "y_rot_max": 60,
+        "y_rot_min": -60
+      },
+      "radar_type": "F16",
+      "nctr_mode": "MODERN",
+      "scan_sector_angle": 120,
+      "max_scan_distance": 1024,
+      "scan_animation_mode": "phase",
+      "scan_period_tick": 30
+    },
+    {
+      "id": "landing_gear",
+      "name": "landing_gear",
+      "type": "ywzj_vehicle:landing_gear",
+      "structure_bone": "landing_gear",
+      "is_seat": false
+    }
+  ],
+  "physics_info": {
+    "mass": 8600,
+    "friction": 17200
+  },
+  "bone_modules": {
+    "radar": {
+      "modules": [
+        "radar"
+      ],
+      "min_damage": 20.0
+    }
+  }
+}

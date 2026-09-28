@@ -1626,12 +1626,14 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | 字段（`bone_modules.<骨>` 条目） | 说明 | 默认值 |
 | --- | --- | --- |
 | `modules` | 模块类型数组（大小写不敏感）：`era` / `radar` / `engine` / `barrel` / `aps` / `jammer` / `dircm` / `countermeasure` / `ecm_passive` / `ecm_active` / `maintenance`。`ENGINE_DAMAGED` 为运行时标记，**不在配置中写**。 | 缺省 `[era]` |
-| `min_damage` | 单发直击伤害门槛（ERA 用**模块前**伤害判定；其余模块路径跳过单发直毁）。 | `inf` |
+| `min_damage` | **累计失效阈值**（2026-09-28 全模块累计化，原"单发直击门槛"废除）：命中该骨的**实际到骨伤害**累计达到本值即该骨模块失效——小口径蹭伤可攒、大口径一发照旧超阈。未配置（∞）＝该模块不可被直击打坏。 | `inf` |
 | `explosion` | ERA 触发特效规模系数。 | `0` |
 | `smoke` | 失效冒烟开关（§2.18）。 | `true` |
 | `<设备子对象>` | `dircm` / `maintenance` / `engine` / `barrel` / `aps` / `jammer` / `ecm_*` 等按模块配置，见各自章节。 | — |
 
 > **倍率统合（2026-09-27）**：每骨直击倍率唯一来源 = 顶层 `hitbox_damage_factor`；条目内**不再支持 `damage_factor` 字段（写了无效）**，`hitbox_era` 兼容解析已删除。
+>
+> **全模块累计化（2026-09-28）**：全部模块（含 ERA）失效均由**累计实际到骨伤害**达到 `min_damage` 驱动（原单发直毁废除；引擎/炮管阈值仍在各自子对象）；爆炸百分比破坏仅 ERA 保留（HE 炸多块）。辅助设备面板各模块行显示**虚拟血量**"现存/阈值"（阈值−已累计，经 S2CBoneDamageProgress 差分同步）；累计中间量不持久化（停服清零，失效状态随失效表保持）。
 
 ```json
 "structure_model": "rvp:t90m_structure",

@@ -22,7 +22,9 @@ import org.ywzj.rvp.network.gunner.S2CGunnerProfileSnapshot;
 
 public class RVP_Network {
     /** 协议 19：新增服务端 Gunner Profile ID 快照，用于数据驱动生成物品变体。 */
-    private static final String PROTOCOL = "19";
+    
+    /** 协议 20：新增 S2CBoneDamageProgress（全模块累计化配套：骨→累计伤害，面板虚拟血量）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "20";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -339,6 +341,13 @@ public class RVP_Network {
                 .encoder(S2CEngineDamageState::encode)
                 .decoder(S2CEngineDamageState::decode)
                 .consumerMainThread(S2CEngineDamageState::handle)
+                .add();
+        // [RVP] 骨骼模块累计伤害进度（S2C，协议 20，全模块累计化配套）：差分推送骨→累计伤害，
+        //       辅助设备面板显示各模块"虚拟血量"（阈值 − 已累计）
+        CHANNEL.messageBuilder(S2CBoneDamageProgress.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CBoneDamageProgress::encode)
+                .decoder(S2CBoneDamageProgress::decode)
+                .consumerMainThread(S2CBoneDamageProgress::handle)
                 .add();
         // [RVP] 部件战果通知（S2C，协议 17）：摧毁部件/重创发动机推送给射手本人，
         //       命中展板下方显示 60 tick 文案（"摧毁光电干扰机"/"重创发动机"等）

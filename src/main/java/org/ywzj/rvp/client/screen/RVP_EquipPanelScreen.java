@@ -223,6 +223,16 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                         .append(org.ywzj.rvp.client.state.RVP_ClientEngineDamageState.getStage(vehicle.getId(), bone));
             }
         }
+        // [RVP] 模块虚拟血量入签名（2026-09-28 全模块累计化）：累计值变化触发面板重绘
+        //（取配置骨并集，避免依赖栏目结构）
+        var modules = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneModules(vehicle);
+        if (modules != null) {
+            for (String bone : modules.keySet()) {
+                sb.append('D').append(bone).append(':')
+                        .append((int) org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress
+                                .getAccumulated(vehicle.getId(), bone));
+            }
+        }
         return sb.toString();
     }
 

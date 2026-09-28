@@ -9,9 +9,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.vehicle.BoneModuleType;
-import org.ywzj.rvp.vehicle.RVP_BarrelDamageTable;
+
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
-import org.ywzj.rvp.vehicle.RVP_EngineDamageTable;
+import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.all.AllItems;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -139,9 +139,9 @@ public final class RVP_WrenchRepairHandler {
                 if (type == BoneModuleType.RADAR) {
                     org.ywzj.rvp.radar.RVP_RadarModuleEnforcer.restoreRadar(vehicle, boneName);
                 } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
-                    RVP_EngineDamageTable.clear(vehicle.getUUID(), boneName);
+                    RVP_BoneCumulativeDamageTable.clear(vehicle.getUUID(), boneName);
                 } else if (type == BoneModuleType.BARREL) {
-                    RVP_BarrelDamageTable.clear(vehicle.getUUID(), boneName);
+                    RVP_BoneCumulativeDamageTable.clear(vehicle.getUUID(), boneName);
                 }
             }
         }

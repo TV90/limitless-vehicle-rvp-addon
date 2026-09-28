@@ -1,0 +1,56 @@
+{
+  "type": "rvp:missile",
+  "name": "PL-8",
+  "damage": 100,
+  "headshot_multiplier": 1.5,
+  "recoil": 0.1,
+  "shoot_interval": 1000,
+  "max_capacity": 6,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "projectile_data": {
+    "mass": 0.01,
+    "thrust": 0.01,
+    "motor_burn_time": 60,
+    "drag_coefficient": 0.005,
+    "has_rocket_engine": true,
+    "rotate_to_motion": true
+  },
+  "fuse_data": {
+    "proximity_fuse_tick": 20,
+    "proximity_fuse_height": 5
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 500,
+      "radius": 8,
+      "proximity_fuze": true,
+      "proximity_radius": 4,
+      "destroy_block": true
+    }
+  },
+  "guidance_data": {
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 4.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "guidance_type": "IR",
+    "guidance_tick_range": "[[0,inf]]",
+    "guidance_target_distance_range": "[[0,512]]",
+    "lock_target_distance_range": "[[0,512]]",
+    "max_lock_angle": 3,
+    "max_off_axis_lock_angle": 30,
+    "max_guidance_angle": 180,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "lock_altitude_range": "[[4,inf]]",
+    "guidance_altitude_range": "[[4,inf]]",
+    "scan_interval_tick": 2,
+    "guidance_start_tick": 20
+  }
+}
