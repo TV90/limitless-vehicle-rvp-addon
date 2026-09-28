@@ -1150,8 +1150,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return null;
     }
 
-    /** cube 是否属于武器站炮管组（xTurnGroup 及其子组）：group 沿 parent 链可达 structureGroup 且非其本身。 */
-    private static boolean isBarrelGroupCube(VehicleCubeOBB cube, WeaponUnit weaponUnit) {
+    /**
+     * cube 是否属于武器站炮管组（xTurnGroup 及其子组）：group 沿 parent 链可达 structureGroup
+     * 且非其本身。公共：俯视图（{@code RVP_EquipSkeletonRenderer}）按组拆分炮管线框复用。
+     */
+    public static boolean isBarrelGroupCube(VehicleCubeOBB cube, WeaponUnit weaponUnit) {
         VehicleCubeGroup group = cube.group;
         VehicleCubeGroup structureGroup = weaponUnit.getStructureGroup();
         if (group == null || structureGroup == null || group == structureGroup) {

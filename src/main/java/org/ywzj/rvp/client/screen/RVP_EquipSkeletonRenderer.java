@@ -211,6 +211,12 @@ public final class RVP_EquipSkeletonRenderer {
                 continue;
             }
             for (VehicleCubeOBB cube : partUnit.getPartCubeOBBs()) {
+                // [RVP] 炮管骨模块（2026-09-28）：炮管骨已配置 bone_modules 时其炮管组 cube
+                // 留给第二层画彩色线框（与其它模块骨一致：无白色实心填充）
+                if (partUnit instanceof WeaponUnit weaponUnit && isStationBarrelModule(weaponUnit, modules)
+                        && org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, weaponUnit)) {
+                    continue;
+                }
                 addCube(out, cube, vehiclePos, axisX, axisY, axisZ, partialTick, NORMAL_SOLID, true, !isBarrel);
             }
             // 子武器 cube 一并画入轮廓（本体对 rvp 载具经 WeaponUnitsMixin 同样全部绘制）
@@ -218,6 +224,11 @@ public final class RVP_EquipSkeletonRenderer {
                 for (WeaponUnit subWeaponUnit : weaponUnit.getSubWeaponUnits()) {
                     boolean subIsBarrel = subWeaponUnit.getId().contains("barrel");
                     for (VehicleCubeOBB cube : subWeaponUnit.getPartCubeOBBs()) {
+                        // 子站炮管骨模块同款让位（如 cssa5 的 missile 子站 → missile_barrel 骨）
+                        if (isStationBarrelModule(subWeaponUnit, modules)
+                                && org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, subWeaponUnit)) {
+                            continue;
+                        }
                         addCube(out, cube, vehiclePos, axisX, axisY, axisZ, partialTick, NORMAL_SOLID, true, !subIsBarrel);
                     }
                 }
@@ -242,7 +253,42 @@ public final class RVP_EquipSkeletonRenderer {
                 addCube(out, cube, vehiclePos, axisX, axisY, axisZ, partialTick, line, false, true);
             }
         }
+        // [RVP] 第二层·武器站炮管骨模块（2026-09-28）：炮管骨（structure_bone+"_barrel"）不是
+        // 部件 id、上循环遍历不到——此处按 manager 组判定把炮管组 cube 单独画设备色线框
+        //（蓝 = 存活，红 = BARREL 失效）
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (!(partUnit instanceof WeaponUnit weaponUnit)) {
+                continue;
+            }
+            String structureBone = weaponUnit.getData() == null ? null : weaponUnit.getData().getStructureBone();
+            if (structureBone == null || structureBone.isBlank()) {
+                continue;
+            }
+            String barrelBone = structureBone + "_barrel";
+            Set<BoneModuleType> barrelTypes = modules.get(barrelBone);
+            if (barrelTypes == null || !barrelTypes.contains(BoneModuleType.BARREL)) {
+                continue;
+            }
+            boolean barrelDestroyed = barrelTypes.stream().anyMatch(
+                    type -> !RVP_ClientBoneModuleState.isModuleActive(entityId, barrelBone, type));
+            int line = barrelDestroyed ? DEAD_LINE : DEV_OK_LINE;
+            for (VehicleCubeOBB cube : weaponUnit.getPartCubeOBBs()) {
+                if (org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, weaponUnit)) {
+                    addCube(out, cube, vehiclePos, axisX, axisY, axisZ, partialTick, line, false, true);
+                }
+            }
+        }
         return out;
+    }
+
+    /**
+     * 武器站的炮管骨是否配置了 bone_modules（供第一层让位判断）：炮管骨键存在即视为模块骨
+     *（不限定类型——与命中判定同口径，见 manager.resolveBarrelBone 的骨名约定）。
+     */
+    private static boolean isStationBarrelModule(WeaponUnit weaponUnit, Map<String, Set<BoneModuleType>> modules) {
+        String structureBone = weaponUnit.getData() == null ? null : weaponUnit.getData().getStructureBone();
+        return structureBone != null && !structureBone.isBlank()
+                && modules.containsKey(structureBone + "_barrel");
     }
 
     /**
