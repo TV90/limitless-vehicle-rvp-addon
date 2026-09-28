@@ -10,6 +10,8 @@ import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.rvp.client.firesupport.RVP_FireSupportMapTool;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.util.ParticleUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 
@@ -21,6 +23,17 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     public void tickParticleProjectile(RVP_BaseBullet projectile) {
         // 调用本项目粒子弹体发射器：按 Tick 生成主体及历史路径采样点。
         RVP_ParticleProjectileEmitter.tick(projectile);
+    }
+
+    @Override
+    public void preserveDestroyedVehicleWaterBubbles(AbstractVehicle vehicle) {
+        // 目的：本体 AbstractVehicle.tickParticle 原先在击毁烟前生成水面气泡；取消该方法后按原条件补回。
+        if (vehicle.getMainCubeOBB() != null
+                && vehicle.tickCount % 5 == 0
+                && vehicle.getDeltaMovement().length() > 0.01f) {
+            // 调用本体粒子工具，仅恢复水面气泡，不再生成本体击毁烟。
+            ParticleUtil.spawnWaterSurfaceBubbles(vehicle.level(), vehicle.level().random, vehicle.getMainCubeOBB());
+        }
     }
 
     @Override

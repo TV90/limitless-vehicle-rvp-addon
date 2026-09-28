@@ -81,7 +81,7 @@
     "BedrockModelRenderTypesMixin",
     "EntityRenderDispatcherPhysicsOnlyMixin",
     "AbstractVehicleWeaponSoundMixin",
-    "AbstractVehicleUavClientSwitchMixin",
+    "AbstractVehicleClientMixin",
     "EntityContextEraStateMixin",
     "WarningReceiverSearchWarnMixin"
   ],

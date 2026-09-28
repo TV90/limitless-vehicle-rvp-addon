@@ -89,7 +89,7 @@ public final class RVP_DamagedPartSmokeEmitter {
         }
         AABB range = mc.player.getBoundingBox().inflate(EMIT_RANGE);
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (!(entity instanceof AbstractVehicle vehicle)) {
+            if (!(entity instanceof AbstractVehicle vehicle) || vehicle.isDestroyed()) {
                 continue;
             }
             if (!vehicle.getBoundingBox().intersects(range)) {

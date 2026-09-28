@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.bridge;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.fml.DistExecutor;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 /** 双端安全的客户端动作入口；专用服务端始终使用 NOOP 实现。 */
 public final class RVP_ClientActionsAccess {
@@ -16,6 +17,11 @@ public final class RVP_ClientActionsAccess {
 
     public static void tickParticleProjectile(RVP_BaseBullet projectile) {
         INSTANCE.tickParticleProjectile(projectile);
+    }
+
+    /** 经双端安全桥保留击毁载具的水面气泡，避免客户端 Mixin 直接引用本体客户端粒子类。 */
+    public static void preserveDestroyedVehicleWaterBubbles(AbstractVehicle vehicle) {
+        INSTANCE.preserveDestroyedVehicleWaterBubbles(vehicle);
     }
 
     /** 经物理侧桥请求打开终端，公共物品类不会加载客户端 Screen。 */
@@ -86,6 +92,11 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void tickParticleProjectile(RVP_BaseBullet projectile) {
             // 服务端不生成客户端粒子。
+        }
+
+        @Override
+        public void preserveDestroyedVehicleWaterBubbles(AbstractVehicle vehicle) {
+            // 服务端不执行击毁载具的客户端粒子 Tick。
         }
 
         @Override
