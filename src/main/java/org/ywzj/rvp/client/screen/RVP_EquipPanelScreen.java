@@ -133,10 +133,15 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // DOM 变更后的强制重绘：走 resize 完整重布局（同窗口缩放路径），AUI 必然整体重绘
+        // DOM 变更后的刷新（2026-09-28 修"左右闪"）：改走 Document.refresh() 轻量刷新——
+        // 重算样式与布局但**不重建 Document**；原 resize 路径会重建整个 AUI Document
+        //（init 重跑 + 布局从头算），每次状态更新面板整体重布局，表现为左右闪。
+        // 窗口真实缩放仍由 Minecraft 触发 init/resize 全量路径，不受影响。
         if (pendingRepaint) {
             pendingRepaint = false;
-            resize(minecraft, width, height);
+            if (document != null) {
+                document.refresh();
+            }
         }
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         // 节流刷新动态状态（栏目行失效态/血量/队列），签名未变化时零 DOM 操作
