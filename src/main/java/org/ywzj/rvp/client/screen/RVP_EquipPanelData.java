@@ -76,6 +76,11 @@ public final class RVP_EquipPanelData {
             boolean active = RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ERA);
             eraBad += active ? 0 : 1;
             String extra = hasDeviceRole(types) ? I18n.get("gui.ywzj_rvp.equipment.note_dual") : null;
+            // [RVP] ERA 虚拟血量（2026-09-28 全模块累计化）：阈值−已累计，如 "100/100"
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra = (extra == null ? "" : extra + " · ") + hp;
+            }
             eraRows.add(new Row(index++, alias(vehicle, bone), active, bone, QUEUE_ERA, extra));
         }
         if (!eraRows.isEmpty()) {
