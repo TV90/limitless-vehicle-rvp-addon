@@ -53,13 +53,19 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 && state != null && state.chaffTotal() > 0;
         boolean hasSmoke = isTypeSeatAllowed(vehicle, seatIndex, RVP_EnumCountermeasureType.SMOKE)
                 && state != null && state.smokeTotal() > 0;
+        // [RVP] 发射器全损判定（2026-09-28）：绑定骨的 COUNTERMEASURE 模块全部失效 →
+        // 该系统整行红字"损坏"（部分失效表现为上限变小，不特殊标注）
+        boolean flareDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.FLARE);
+        boolean chaffDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.CHAFF);
+        boolean smokeDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.SMOKE);
         boolean hasEcm = isEcmSeatAllowed(vehicle, seatIndex) && isEcmAvailable(vehicle);
         // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
         RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
         // 地面载具速度行始终显示（用户 2026-09-27），故地面载具不因"无干扰物/ECM/维修"而跳过渲染
         boolean groundVehicle = !(vehicle instanceof RotaryWingVehicle)
                 && !(vehicle instanceof FixedWingVehicle);
-        if (!groundVehicle && !hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null) {
+        if (!groundVehicle && !hasFlare && !hasChaff && !hasSmoke && !hasEcm && maintenanceState == null
+                && !flareDestroyed && !chaffDestroyed && !smokeDestroyed) {
             return;
         }
         var font = Minecraft.getInstance().font;
@@ -73,15 +79,23 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             // 固定翼末行 leftY+48 → 组起点 leftY+60），三者在组内按 热诱→箔条→ECM 顺序紧凑排列，缺失则递补
             int y = centerY - 21 + (rotaryWing ? 48 : 60);
             boolean airDecoyDrawn = false;
-            if (hasFlare) {
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                        state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+            if (hasFlare || flareDestroyed) {
+                if (flareDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
+                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+                }
                 y += 12;
                 airDecoyDrawn = true;
             }
-            if (hasChaff) {
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                        state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+            if (hasChaff || chaffDestroyed) {
+                if (chaffDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
+                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+                }
                 y += 12;
                 airDecoyDrawn = true;
             }
@@ -90,11 +104,16 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 y += 12;
                 airDecoyDrawn = true;
             }
-            if (hasSmoke) {
+            if (hasSmoke || smokeDestroyed) {
                 // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                        state.smokeReloadRemain(), leftX, airDecoyDrawn ? y + 12 : y, RVP_Keys.FIRE_SMOKE);
-                y = (airDecoyDrawn ? y + 12 : y) + 12;
+                int smokeY = airDecoyDrawn ? y + 12 : y;
+                if (smokeDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, smokeY);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
+                            state.smokeReloadRemain(), leftX, smokeY, RVP_Keys.FIRE_SMOKE);
+                }
+                y = smokeY + 12;
             }
             if (maintenanceState != null) {
                 // 维修行挂在干扰物组之后（烟雾缺失时自动递补其位置）
@@ -107,19 +126,31 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             // tick/s → km/h），样式对齐干扰物行（绿字带阴影）
             drawSpeedRow(guiGraphics, font, vehicle, leftX, y);
             y += 12;
-            if (hasFlare) {
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                        state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+            if (hasFlare || flareDestroyed) {
+                if (flareDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
+                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+                }
                 y += 12;
             }
-            if (hasChaff) {
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                        state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+            if (hasChaff || chaffDestroyed) {
+                if (chaffDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
+                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+                }
                 y += 12;
             }
-            if (hasSmoke) {
-                drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                        state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE);
+            if (hasSmoke || smokeDestroyed) {
+                if (smokeDestroyed) {
+                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, y);
+                } else {
+                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
+                            state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE);
+                }
                 y += 12;
             }
             if (hasEcm) {
@@ -272,6 +303,44 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             guiGraphics.drawString(font, label + ": " + remain + " [" + keyName + "]",
                     x, y, color);
         }
+    }
+
+    /** 发射器全损行：红字 "标签: 损坏"（无数量无键位）。 */
+    private static void drawDestroyedRow(net.minecraft.client.gui.GuiGraphics guiGraphics,
+                                         net.minecraft.client.gui.Font font, String label, int x, int y) {
+        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.cm_destroyed", label), x, y,
+                org.ywzj.vehicle.client.render.util.Color.RED);
+    }
+
+    /**
+     * [RVP] 干扰物系统发射器是否全部损坏（2026-09-28）：系统启用且配置了 bone_modules、
+     * 绑定骨的 COUNTERMEASURE 模块全部失效。读服务端侧表（与 isEcmAvailable 同款——
+     * 单机直读；专用服客户端表空则不显示损坏行，服务端 gate 仍生效）。
+     */
+    private static boolean isTypeDestroyed(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        var data = org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager.INSTANCE.resolve(vehicle.getVehicleId());
+        if (data == null) {
+            return false;
+        }
+        var system = switch (type) {
+            case FLARE -> data.getFlare();
+            case CHAFF -> data.getChaff();
+            case SMOKE -> data.getSmoke();
+            default -> null;
+        };
+        if (system == null || !system.isEnabled()) {
+            return false;
+        }
+        var bones = system.getBoneModules();
+        if (bones == null || bones.isEmpty()) {
+            return false; // 未绑定发射器骨：无模块化损伤
+        }
+        for (String bone : bones) {
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.COUNTERMEASURE)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

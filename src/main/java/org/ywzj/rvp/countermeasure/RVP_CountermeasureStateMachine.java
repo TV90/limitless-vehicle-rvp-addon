@@ -10,7 +10,8 @@ package org.ywzj.rvp.countermeasure;
 public final class RVP_CountermeasureStateMachine {
 
     /** 弹舱容量。 */
-    private final int total;
+    /** 配置总量（2026-09-28 起可随发射器失效按比例动态下调，见 {@link #setTotal}）。 */
+    private int total;
     /** 一轮发射数 m。 */
     private final int perRound;
     /** 总发射轮数 n。 */
@@ -108,6 +109,17 @@ public final class RVP_CountermeasureStateMachine {
             roundTimer = launchIntervalTick;
         }
         return fireCount;
+    }
+
+    /**
+     * 动态调整总量（发射器失效按存活比例缩减，2026-09-28）：剩余超出新总量即钳制
+     * （失效侧余弹作废）；恢复回升时不回补剩余，装填自然到新上限。
+     */
+    public void setTotal(int newTotal) {
+        this.total = Math.max(0, newTotal);
+        if (this.remaining > this.total) {
+            this.remaining = this.total;
+        }
     }
 
     public int getTotal() {

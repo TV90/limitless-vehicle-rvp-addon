@@ -1086,6 +1086,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 return resolved;
             }
         }
+        // [RVP] 部件 structureBone 匹配（2026-09-28）：部件 id ≠ 骨名的部件（如烟幕发射器
+        // 部件 turret_smoke_grenade_l 的 structure_bone = turret_smoke_grenade_l_barrel）——
+        // 直接走 bone_fallback 会得到静态 bind-pose 残留命中盒（§29 同款问题），此处优先
+        // 用该部件的实时 OBB（每 tick 随炮塔/车体更新）
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit.getData() != null && boneName.equals(partUnit.getData().getStructureBone())) {
+                List<OBB> structureObbs = partUnit.getOBBs();
+                if (structureObbs != null && !structureObbs.isEmpty()) {
+                    List<ResolvedObb> resolved = new ArrayList<>(structureObbs.size());
+                    for (OBB obb : structureObbs) {
+                        resolved.add(new ResolvedObb(obb, "part_structure"));
+                    }
+                    return resolved;
+                }
+            }
+        }
         BedrockBone bone = boneMap.get(boneName);
         if (bone == null) {
             return List.of();

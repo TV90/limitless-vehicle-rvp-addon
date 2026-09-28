@@ -161,14 +161,29 @@ public final class RVP_CountermeasureRuntimeManager {
     private static void tickSystem(AbstractVehicle vehicle, RVP_CountermeasureData config,
                                    RVP_EnumCountermeasureType type, RVP_CountermeasureStateMachine machine) {
         RVP_CountermeasureSystemData system = config.system(type);
-        if (system == null || !isSystemActive(vehicle, system)) {
+        if (system == null) {
             return;
+        }
+        // [RVP] 发射器模块化损伤（2026-09-28）：存活发射器数动态折算总量（ceil 比例）、
+        // 失效侧余弹作废（setTotal 钳制）——恢复发射器后自动回升
+        java.util.List<String> active = activeLauncherParts(vehicle, system);
+        int partsTotal = system.getLauncherParts().size();
+        int activeCount = active.size();
+        if (activeCount <= 0) {
+            machine.setTotal(0); // 全部发射器打坏：系统彻底失效（isEnabled 恒假，按键/出弹全断）
+            return;
+        }
+        // 折算基准 = 配置原值（machine 当前 total 已折算过，恢复后按原值回算才能回升）
+        if (activeCount < partsTotal) {
+            machine.setTotal((int) Math.ceil(system.getTotal() / (double) partsTotal * activeCount));
+        } else if (machine.getTotal() != system.getTotal()) {
+            machine.setTotal(system.getTotal());
         }
         int fireCount = machine.onTick();
         if (fireCount <= 0) {
             return;
         }
-        spawnRound(vehicle, system, fireCount, type);
+        spawnRound(vehicle, system, fireCount, type, active);
     }
 
     /** 雷达箔条判定：对每台有锁定目标的雷达/外置雷达锁定做脱锁 + 禁锁（节流）。 */
@@ -235,9 +250,10 @@ public final class RVP_CountermeasureRuntimeManager {
     /* ==================== 发射 ==================== */
 
     private static void spawnRound(AbstractVehicle vehicle, RVP_CountermeasureSystemData system,
-                                   int fireCount, RVP_EnumCountermeasureType type) {
-        List<String> launcherParts = system.getLauncherParts();
-        if (launcherParts.isEmpty()) {
+                                   int fireCount, RVP_EnumCountermeasureType type,
+                                   java.util.List<String> activeLauncherParts) {
+        List<String> launcherParts = activeLauncherParts;
+        if (launcherParts == null || launcherParts.isEmpty()) {
             return;
         }
         Vec3 vehicleVelocity = vehicle.getDeltaMovement();
@@ -351,24 +367,52 @@ public final class RVP_CountermeasureRuntimeManager {
     }
 
     /**
-     * 系统是否当前可用：配置启用，且若配置了 {@code bone_modules}，对应骨块的
-     * COUNTERMEASURE 模块必须仍有存活（全部被击毁则失去抛洒功能）。
+     * 系统是否当前可用：配置启用，且若配置了 {@code bone_modules}，至少一台发射器存活
+     *（2026-09-28 改按存活发射器判定——部分失效按比例减上限、失效侧不出弹，见
+     * {@link #activeLauncherParts}）。
      */
     private static boolean isSystemActive(AbstractVehicle vehicle, RVP_CountermeasureSystemData system) {
         if (system == null || !system.isEnabled()) {
             return false;
         }
+        return !activeLauncherParts(vehicle, system).isEmpty();
+    }
+
+    /**
+     * [RVP] 发射器模块化损伤（2026-09-28）：返回系统 {@code launcher_parts} 中**存活**的
+     * 部件 id 子集——部件的 {@code structure_bone} 落在 {@code bone_modules} 骨列表内且该骨
+     * COUNTERMEASURE 模块已失效 → 该发射器不再出弹。未配置 bone_modules 时全部可用（现状）。
+     */
+    private static java.util.List<String> activeLauncherParts(AbstractVehicle vehicle,
+                                                              RVP_CountermeasureSystemData system) {
+        List<String> launcherParts = system.getLauncherParts();
         java.util.List<String> bones = system.getBoneModules();
-        if (bones.isEmpty()) {
-            return true;
+        if (launcherParts.isEmpty()) {
+            return List.of();
         }
+        if (bones == null || bones.isEmpty()) {
+            return launcherParts; // 未绑定发射器骨：全量可用（原行为）
+        }
+        java.util.Set<String> deadBones = new java.util.HashSet<>();
         java.util.UUID vehicleId = vehicle.getUUID();
         for (String bone : bones) {
-            if (RVP_BoneModuleStateTable.isModuleActive(vehicleId, bone, BoneModuleType.COUNTERMEASURE)) {
-                return true;
+            if (!RVP_BoneModuleStateTable.isModuleActive(vehicleId, bone, BoneModuleType.COUNTERMEASURE)) {
+                deadBones.add(bone);
             }
         }
-        return false;
+        if (deadBones.isEmpty()) {
+            return launcherParts;
+        }
+        List<String> active = new java.util.ArrayList<>();
+        for (String partId : launcherParts) {
+            PartUnit<?> part = vehicle.getPartUnit(partId).orElse(null);
+            String structureBone = part != null && part.getData() != null ? part.getData().getStructureBone() : null;
+            // 部件骨不在失效集合（或部件无骨数据）＝存活
+            if (structureBone == null || !deadBones.contains(structureBone)) {
+                active.add(partId);
+            }
+        }
+        return active;
     }
 
     private static void ensureState(AbstractVehicle vehicle, VehicleCountermeasureState state, @Nullable RVP_CountermeasureData config) {
