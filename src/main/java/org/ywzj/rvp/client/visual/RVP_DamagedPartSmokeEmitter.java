@@ -115,6 +115,14 @@ public final class RVP_DamagedPartSmokeEmitter {
             if (types == null || types.isEmpty()) {
                 continue;
             }
+            // [RVP] 炮管受损档（2026-09-28 两档炮管）：第一档受损**无条件冒黑烟**
+            //（不受 smoke 参数钳制——受损三选一需要视觉反馈）；第二档彻底损坏才受钳制
+            if (types.contains(BoneModuleType.BARREL)
+                    && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL_DAMAGED)
+                    && RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL)) {
+                emitBlackSmoke(vehicle, bone, random);
+                continue;
+            }
             // [RVP] 部件冒烟选配（2026-09-28 用户定版）：bone_modules 条目 smoke 字段，
             // 缺省 true——显式 false 的部件失效不生成黑烟特效
             if (!RVP_VehicleHitboxFactorManager.INSTANCE.isPartSmokeEnabled(vehicle, bone)) {

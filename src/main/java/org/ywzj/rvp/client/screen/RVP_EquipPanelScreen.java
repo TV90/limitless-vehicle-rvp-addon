@@ -77,7 +77,6 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     /** DOM 变更后待强制重绘标记：AUI 对 init 之后的 DOM 变更是惰性绘制的，
      *  requestStyleRecalc 只重算样式不触发重绘；置位后在下一帧走一次程序化 resize
      *  （窗口缩放同款完整重布局+重绘路径）。 */
-    private boolean pendingRepaint;
     /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，俯视图逐帧绘制共用（OBB/失效态逐帧现读）。 */
     private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
 
@@ -133,16 +132,10 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // DOM 变更后的刷新（2026-09-28 修"左右闪"）：改走 Document.refresh() 轻量刷新——
-        // 重算样式与布局但**不重建 Document**；原 resize 路径会重建整个 AUI Document
-        //（init 重跑 + 布局从头算），每次状态更新面板整体重布局，表现为左右闪。
-        // 窗口真实缩放仍由 Minecraft 触发 init/resize 全量路径，不受影响。
-        if (pendingRepaint) {
-            pendingRepaint = false;
-            if (document != null) {
-                document.refresh();
-            }
-        }
+        // [RVP] 动态 DOM 更新（replaceChildren/setTextContent）后**零刷新调用**——AUI 渲染
+        // 每帧读 DOM 当前态，天然生效（2026-09-28 对齐本体改装屏 buildDisplayCatalog 同款
+        // 零调用模式）。此前 resize()/Document.refresh() 都是全量重布局，为"左右闪"根因。
+        // 窗口缩放仍由 Minecraft 触发 init/resize 全量路径，不受影响。
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         // 节流刷新动态状态（栏目行失效态/血量/队列），签名未变化时零 DOM 操作
         if (++refreshCounter >= 10) {
@@ -202,7 +195,6 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         updateHp();
         rebuildCategories();
         rebuildQueues();
-        pendingRepaint = true;
     }
 
     /** 动态区内容签名：整车血量 + 各栏目行生效态 + 两条维修队列。 */
