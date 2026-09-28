@@ -430,7 +430,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         state.setClassName("row-state " + rowStateClass(row));
         state.setTextContent(I18n.get(rowStateLang(row)));
         div.appendChild(state);
-        if (!row.active() && row.queueKey() != null) {
+        // 失效或受损（炮管/引擎受损档在失效表中）都可入队；addToQueue 内有 queueEntryStillFailed 二次校验
+        if ((!row.active() || row.damaged()) && row.queueKey() != null) {
             div.addEventListener("click", event -> addToQueue(row.queueKey(), row.boneName(), row.alias()));
         }
         return div;

@@ -143,15 +143,17 @@ public final class RVP_EquipPanelData {
                 continue;
             }
             boolean burst = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL);
-            boolean damaged = burst
-                    || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL_DAMAGED);
-            String extra = damaged && !burst
+            // 三态（2026-09-29 用户定版"炮管一档受损也用黄框"）：彻底损坏（BARREL 失效）=红失效；
+            // 受损档（BARREL_DAMAGED 失效、未炸膛）=黄受损（仍可入维修队列）；正常=绿生效
+            boolean hurt = !burst
+                    && !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL_DAMAGED);
+            String extra = hurt
                     ? I18n.get("gui.ywzj_rvp.equipment.barrel_damaged") : null;
             String hp = virtualHpText(vehicle, entityId, bone);
             if (hp != null) {
                 extra = (extra == null ? "" : extra + " · ") + hp;
             }
-            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !damaged, false, bone, QUEUE_DEV, extra));
+            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !burst && !hurt, hurt, bone, QUEUE_DEV, extra));
         }
         if (!barrelRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));
@@ -173,13 +175,15 @@ public final class RVP_EquipPanelData {
                 }
                 // 失效判定（置顶+入维修队列）：瘫痪（ENGINE 失效）或重创（ENGINE_DAMAGED 失效）
                 boolean disabled = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE);
-                boolean damaged = disabled
-                        || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED);
+                boolean hurtStage = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ENGINE_DAMAGED);
                 int stage = RVP_ClientEngineDamageState.getStage(entityId, bone);
+                // 三态（2026-09-29 用户定版"引擎一档受损也用黄框"）：瘫痪（ENGINE 失效）=红失效；
+                // 重创（ENGINE_DAMAGED 失效或累计达受损阈 stage=1、未瘫痪）=黄受损；正常=绿生效
+                boolean damaged = !disabled && (hurtStage || stage == 1);
                 String extra;
                 if (disabled) {
                     extra = I18n.get("gui.ywzj_rvp.equipment.engine_disabled");
-                } else if (damaged || stage == 1) {
+                } else if (damaged) {
                     extra = I18n.get("gui.ywzj_rvp.equipment.engine_damaged");
                 } else {
                     extra = null;
@@ -190,7 +194,7 @@ public final class RVP_EquipPanelData {
                         extra = (extra == null ? "" : extra + " · ") + hp;
                     }
                 }
-                engineRows.add(new Row(index++, alias(vehicle, bone), !damaged, false, bone, QUEUE_DEV, extra));
+                engineRows.add(new Row(index++, alias(vehicle, bone), !disabled && !damaged, damaged, bone, QUEUE_DEV, extra));
             }
             if (!engineRows.isEmpty()) {
                 out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_engine"), summary(engineRows), engineRows));
@@ -223,9 +227,12 @@ public final class RVP_EquipPanelData {
         for (int i = 0; i < out.size(); i++) {
             Category category = out.get(i);
             List<Row> sorted = new ArrayList<>(category.rows());
+            // 三档排序（2026-09-29 受损黄标顺延）：失效置顶 → 受损次之 → 正常（组内按序号）
             sorted.sort((a, b) -> {
-                if (a.active() != b.active()) {
-                    return a.active() ? 1 : -1;
+                int rankA = !a.active() ? 0 : (a.damaged() ? 1 : 2);
+                int rankB = !b.active() ? 0 : (b.damaged() ? 1 : 2);
+                if (rankA != rankB) {
+                    return Integer.compare(rankA, rankB);
                 }
                 return Integer.compare(a.index(), b.index());
             });
