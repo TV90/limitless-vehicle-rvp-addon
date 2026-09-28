@@ -1352,7 +1352,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /** 解析失效骨块 OBB 的世界系中心（复用 {@link #resolveBoneObbs}）；不可解析时回退车体包围盒中心。 */
-    private static Vec3 resolveBoneEffectPos(AbstractVehicle vehicle, VehicleHitboxConfig cfg, String boneName) {
+    private static Vec3 resolveBoneEffectPos(AbstractVehicle vehicle, @Nullable VehicleHitboxConfig cfg, String boneName) {
+        // 无命中配置（cfg null）：回退载具包围盒中心（调用方多为特效定位，不做硬失败）
+        if (cfg == null) {
+            return vehicle.getBoundingBox().getCenter();
+        }
         ResourceLocation structureId = cfg.structureModel;
         if (structureId != null) {
             BedrockModel model = CommonAssetsManager.structureModelManager()
@@ -1392,7 +1396,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return;
         }
         try {
-            Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
+            Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getVehicleId()), barrelBone);
             org.ywzj.rvp.debug.RVP_BarrelDebug.log(String.format(
                     "炸膛特效: pos=[%.2f, %.2f, %.2f] radius=%.1f", pos.x, pos.y, pos.z, 3.0f));
             spawnMchrEraExplosion(serverLevel, pos, 1.0f);
