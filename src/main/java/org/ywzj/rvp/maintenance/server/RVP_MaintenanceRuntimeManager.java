@@ -326,10 +326,9 @@ public final class RVP_MaintenanceRuntimeManager {
                 // BARREL——清空炮管累计（同口径，2026-09-28）
                 if (type == BoneModuleType.RADAR) {
                     RVP_RadarModuleEnforcer.restoreRadar(vehicle, bone);
-                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
+                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
+                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
                     RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
-                } else if (type == BoneModuleType.BARREL) {
-                    org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable.clear(vehicleId, bone);
                 }
             }
         }

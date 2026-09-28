@@ -70,6 +70,8 @@ public final class RVP_EquipSkeletonRenderer {
     private static final int ERA_OK_LINE = 0xFF69AD45;
     /** 设备骨模块生效：蓝色线框。 */
     private static final int DEV_OK_LINE = 0xFF4C8BE8;
+    /** 受损档线框色（两档炮管）：黄。 */
+    private static final int DAMAGED_LINE = 0xFFD4C44F;
     /** 模块失效：红色线框。 */
     private static final int DEAD_LINE = 0xFFD45B50;
     /** 本体俯视图比例：1 方块 = 10 px（本体 renderCubeOBB 的 offset×10 / 半宽 width×5）。 */
@@ -269,9 +271,14 @@ public final class RVP_EquipSkeletonRenderer {
             if (barrelTypes == null || !barrelTypes.contains(BoneModuleType.BARREL)) {
                 continue;
             }
-            boolean barrelDestroyed = barrelTypes.stream().anyMatch(
-                    type -> !RVP_ClientBoneModuleState.isModuleActive(entityId, barrelBone, type));
-            int line = barrelDestroyed ? DEAD_LINE : DEV_OK_LINE;
+            boolean barrelBurst = barrelTypes.stream().anyMatch(
+                    type -> type == BoneModuleType.BARREL
+                            && !RVP_ClientBoneModuleState.isModuleActive(entityId, barrelBone, type));
+            boolean barrelDamaged = barrelTypes.stream().anyMatch(
+                    type -> type == BoneModuleType.BARREL_DAMAGED
+                            && !RVP_ClientBoneModuleState.isModuleActive(entityId, barrelBone, type));
+            // 三色（2026-09-28 两档炮管）：彻底损坏红 / 受损黄 / 存活蓝
+            int line = barrelBurst ? DEAD_LINE : (barrelDamaged ? DAMAGED_LINE : DEV_OK_LINE);
             for (VehicleCubeOBB cube : weaponUnit.getPartCubeOBBs()) {
                 if (org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.isBarrelGroupCube(cube, weaponUnit)) {
                     addCube(out, cube, vehiclePos, axisX, axisY, axisZ, partialTick, line, false, true);

@@ -125,26 +125,26 @@ public final class RVP_EquipPanelData {
         // structure_bone + "_barrel"）；失效即整个炮管所在武器站禁止射击（累计伤害单档、
         // 无衰减永久）。失效行走辅助设备维修队列（快修恢复清累计）。
         Map<String, Set<BoneModuleType>> barrelBones = bonesOfType(modules, BoneModuleType.BARREL);
-        List<Row> barrelRows = typeRows(vehicle, orderedBones, modules, barrelBones, BoneModuleType.BARREL, entityId);
-        // [RVP] 炮管受损态标注（2026-09-28 两档炮管）：客户端按累计推导——两档配置且
-        // 累计 ≥ threshold_light 且 BARREL 未失效 → extra 加"受损"（射击已进入三选一）
+        // [RVP] 炮管行双档判定（2026-09-28 对齐引擎行）：彻底损坏（BARREL 失效）/"受损"
+        //（BARREL_DAMAGED 失效，红框置顶入维修队列）——受损态标注改失效表直读（原客户端
+        // 累计推导删除）；虚拟血量保留（分母 = threshold）
         var barrelConfigs = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBarrelModules(vehicle);
-        if (barrelConfigs != null) {
-            for (int i = 0; i < barrelRows.size(); i++) {
-                Row row = barrelRows.get(i);
-                var config = barrelConfigs.get(row.boneName());
-                if (config == null || !config.hasDamagedStage() || !row.active()) {
-                    continue;
-                }
-                float accumulated = org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress
-                        .getAccumulated(entityId, row.boneName());
-                if (accumulated + 1.0E-3f >= config.thresholdLight()) {
-                    String extra = (row.extra() == null ? "" : row.extra() + " · ")
-                            + I18n.get("gui.ywzj_rvp.equipment.barrel_damaged");
-                    barrelRows.set(i, new Row(row.index(), row.alias(), row.active(), row.boneName(),
-                            row.queueKey(), extra));
-                }
+        List<Row> barrelRows = new ArrayList<>();
+        int barrelIndex = 1;
+        for (String bone : orderedBones) {
+            if (!barrelBones.containsKey(bone)) {
+                continue;
             }
+            boolean burst = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL);
+            boolean damaged = burst
+                    || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL_DAMAGED);
+            String extra = damaged && !burst
+                    ? I18n.get("gui.ywzj_rvp.equipment.barrel_damaged") : null;
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra = (extra == null ? "" : extra + " · ") + hp;
+            }
+            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
         }
         if (!barrelRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));

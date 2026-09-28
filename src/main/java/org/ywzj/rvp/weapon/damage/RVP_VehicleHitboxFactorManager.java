@@ -713,9 +713,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
     }
 
-    /** 炮管受损档（两档中间态）：key = vehicleId|bone。服务端内存不持久化（与累计中间量同口径）。 */
-    private static final java.util.Set<String> BARREL_DAMAGED_STAGE = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
     /**
      * 哑火封锁（2026-09-28 用户定版）：哑火后 30 tick 内禁止再次射击（key = vehicleId|bone
      * → 解封 gameTime）。防连射窗口内连续 roll（连续哑火/哑火接炸膛），也给装填节奏留缓冲。
@@ -738,16 +735,18 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
     }
 
-    /** 炮管是否处于受损档（两档中间态：射击三选一判定用）。 */
+    /** 炮管是否处于受损档（两档中间态：射击三选一判定用）——查失效表 BARREL_DAMAGED。 */
     public static boolean isBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
         return vehicle != null && barrelBone != null
-                && BARREL_DAMAGED_STAGE.contains(vehicle.getUUID() + "|" + barrelBone);
+                && !RVP_BoneModuleStateTable.isModuleActive(
+                        vehicle.getUUID(), barrelBone, BoneModuleType.BARREL_DAMAGED);
     }
 
-    /** 清除炮管受损档（快修/焊枪恢复 BARREL、炸膛升级彻底损坏时）。 */
+    /** 清除炮管受损档（快修/焊枪恢复 BARREL_DAMAGED 时；restore 幂等）。 */
     public static void clearBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
         if (vehicle != null && barrelBone != null) {
-            BARREL_DAMAGED_STAGE.remove(vehicle.getUUID() + "|" + barrelBone);
+            RVP_BoneModuleStateTable.restoreModule(
+                    vehicle.getUUID(), barrelBone, BoneModuleType.BARREL_DAMAGED);
         }
     }
 
@@ -799,10 +798,12 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
             }
         } else if (barrelConfig.hasDamagedStage() && accumulated + 1.0E-3f >= barrelConfig.thresholdLight()) {
-            org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨受损阈: 进入受损档");
-            // 跨过受损阈值（两档配置）：进入受损档——此后每次射击三选一
-            //（1/3 正常散布×10 / 1/3 哑火 / 1/3 炸膛升级），判定在射击 gate（WeaponBase）
-            BARREL_DAMAGED_STAGE.add(vehicleId + "|" + boneName);
+            // 跨过受损阈值（两档配置）：BARREL_DAMAGED 进失效表（2026-09-28 对齐引擎重创档——
+            // 快修/焊枪可修、面板红框置顶、维修队列、持久化），此后每次射击三选一
+            if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL_DAMAGED)) {
+                org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨受损阈: BARREL_DAMAGED 已失效(广播)");
+                syncBoneModuleState(vehicle);
+            }
         }
     }
 

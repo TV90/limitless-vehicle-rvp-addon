@@ -138,9 +138,8 @@ public final class RVP_WrenchRepairHandler {
                 // 恢复联动（与快修 restoreBoneModules 同款）：RADAR 自动开机；引擎/炮管清累计
                 if (type == BoneModuleType.RADAR) {
                     org.ywzj.rvp.radar.RVP_RadarModuleEnforcer.restoreRadar(vehicle, boneName);
-                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
-                    RVP_BoneCumulativeDamageTable.clear(vehicle.getUUID(), boneName);
-                } else if (type == BoneModuleType.BARREL) {
+                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED
+                        || type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
                     RVP_BoneCumulativeDamageTable.clear(vehicle.getUUID(), boneName);
                 }
             }
