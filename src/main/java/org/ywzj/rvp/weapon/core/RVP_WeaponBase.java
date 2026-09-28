@@ -296,6 +296,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         // 受损档（两档中间态）：1/3 正常（散布×10）/ 1/3 哑火 / 1/3 炸膛升级
         if (RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDamagedStage(vehicle, barrelBone)) {
             int roll = vehicle.level().random.nextInt(3);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("受损射击 roll=" + roll + "（0=正常散大 1=哑火 2=炸膛）武器="
+                    + getData().getWeaponId() + " 骨=" + barrelBone);
             if (roll == 0) {
                 // 正常射击但散布 ×10（extraSpread = 原散布 ×9，出弹时消费）
                 this.barrelDamageSpreadExtra = getData().getInaccuracy() * 9f;

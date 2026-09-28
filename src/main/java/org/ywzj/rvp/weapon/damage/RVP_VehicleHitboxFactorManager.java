@@ -65,7 +65,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     public static final RVP_VehicleHitboxFactorManager INSTANCE = new RVP_VehicleHitboxFactorManager();
 
-    private static final org.slf4j.Logger BARREL_LOG = com.mojang.logging.LogUtils.getLogger();
 
     private Map<ResourceLocation, VehicleHitboxConfig> configs = Map.of();
     private Set<ResourceLocation> hidePassengerVehicles = Set.of();
@@ -762,15 +761,23 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
         // [RVP] 两档判定（2026-09-28 用户定版）：先判彻底损坏（heavy），否则判受损档（light）
         //（+1e-3 浮点容差：累计恰等于阈值时必须立即失效，面板虚拟血量已显示 0）
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log(String.format(
+                "入账: %s(%d) 骨=%s 本次=%.1f 累计=%.1f 损坏阈=%.0f 受损阈=%s 存活=%s",
+                vehicle.getVehicleId(), vehicle.getId(), boneName, triggerDamage, accumulated,
+                barrelConfig.threshold(), barrelConfig.hasDamagedStage() ? barrelConfig.thresholdLight() : -1,
+                RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
         if (accumulated + 1.0E-3f >= barrelConfig.threshold()) {
             clearBarrelDamagedStage(vehicle, boneName);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨损坏阈: 入失效表前");
             if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
+                org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨损坏阈: BARREL 已失效(广播+战果)");
                 // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
                 syncBoneModuleState(vehicle);
                 // [RVP] 部件战果通知：向射手报"摧毁炮管"
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
             }
         } else if (barrelConfig.hasDamagedStage() && accumulated + 1.0E-3f >= barrelConfig.thresholdLight()) {
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨受损阈: 进入受损档");
             // 跨过受损阈值（两档配置）：进入受损档——此后每次射击三选一
             //（1/3 正常散布×10 / 1/3 哑火 / 1/3 炸膛升级），判定在射击 gate（WeaponBase）
             BARREL_DAMAGED_STAGE.add(vehicleId + "|" + boneName);
@@ -1403,7 +1410,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return false;
         }
         syncBoneModuleState(vehicle);
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛流程: destroy=true sync完成 → 发布特效 @bone=" + barrelBone);
         spawnBarrelBurstEffect(vehicle, barrelBone);
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛流程: 特效已发布");
         notifyModuleHit(shooter, vehicle, org.ywzj.rvp.network.S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
         return true;
     }
