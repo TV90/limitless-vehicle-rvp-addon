@@ -45,12 +45,16 @@
         .mod-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 2px 8px; box-sizing: border-box; font-size: 15px; font-weight: bold; cursor: pointer; flex: 0 0 auto; }
         .mod-row.ok { border: 2px solid rgba(105,173,69,0.6); background: rgba(105,173,69,0.08); }
         .mod-row.bad { border: 2px solid var(--ore-danger); background: rgba(212,91,80,0.10); }
+        /* 部分受损黄（2026-09-29 用户定版：坏一边=受损），置于 ok/bad 之后保证覆盖生效绿 */
+        .mod-row.damaged { border: 2px solid #d4c44f; background: rgba(212,196,79,0.10); }
         .row-idx { flex: 0 0 22px; color: var(--ore-ink-muted); font-size: 13px; text-align: right; }
         .row-alias { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; }
         .row-extra { flex: 0 0 auto; font-size: 14px; color: var(--ore-ink-muted); }
         .row-state { flex: 0 0 auto; font-size: 12px; font-weight: bold; padding: 1px 7px; border: 1px solid; }
         .row-state.ok { color: var(--ore-success); border-color: var(--ore-success); }
         .row-state.bad { color: var(--ore-danger); border-color: var(--ore-danger); }
+        /* 状态徽标受损黄，同上置于 ok/bad 之后 */
+        .row-state.damaged { color: #d4c44f; border-color: #d4c44f; }
 
         /* 左下：快速维修顺序设置（双队列 + 自绘下拉；无开始按钮）；俯视图缩到左上 45% 高后占满剩余。
             ★.card 在 ore 主题下不是 flex，必须显式加 display:flex 才能让 card-body/queue-list 撑满 */

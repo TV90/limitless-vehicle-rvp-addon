@@ -42,10 +42,12 @@ public final class RVP_EquipPanelData {
     public static final String QUEUE_DEV = "dev";
 
     /**
-     * 栏目行：序号（载具数据顺序，1 起）/ 别名（无别名回退骨名）/ 是否生效 / 骨名 /
-     * 队列路由（null=不可入队）/ 行尾附加文本（可空，如干扰物余弹）。
+     * 面板行：index=栏目内序号、alias、active=生效（false=失效红框）、
+     * damaged=部分受损黄标（2026-09-29：仅 active=true 时有意义——如烟雾弹坏一边）、
+     * boneName/queueKey=入队路由（null=不可入队）、extra=行尾附加文本。
      */
-    public record Row(int index, String alias, boolean active, String boneName, String queueKey, String extra) {
+    public record Row(int index, String alias, boolean active, boolean damaged,
+                      String boneName, String queueKey, String extra) {
     }
 
     /** 栏目：标题（已本地化）/ 汇总行（已本地化）/ 行列表。 */
@@ -81,7 +83,7 @@ public final class RVP_EquipPanelData {
             if (hp != null) {
                 extra = (extra == null ? "" : extra + " · ") + hp;
             }
-            eraRows.add(new Row(index++, alias(vehicle, bone), active, bone, QUEUE_ERA, extra));
+            eraRows.add(new Row(index++, alias(vehicle, bone), active, false, bone, QUEUE_ERA, extra));
         }
         if (!eraRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_era"), summary(eraRows.size(), eraBad), eraRows));
@@ -149,7 +151,7 @@ public final class RVP_EquipPanelData {
             if (hp != null) {
                 extra = (extra == null ? "" : extra + " · ") + hp;
             }
-            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
+            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !damaged, false, bone, QUEUE_DEV, extra));
         }
         if (!barrelRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));
@@ -188,7 +190,7 @@ public final class RVP_EquipPanelData {
                         extra = (extra == null ? "" : extra + " · ") + hp;
                     }
                 }
-                engineRows.add(new Row(index++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
+                engineRows.add(new Row(index++, alias(vehicle, bone), !damaged, false, bone, QUEUE_DEV, extra));
             }
             if (!engineRows.isEmpty()) {
                 out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_engine"), summary(engineRows), engineRows));
@@ -405,7 +407,7 @@ public final class RVP_EquipPanelData {
             if (hp != null) {
                 extra = (extra == null ? "" : extra + " · ") + hp;
             }
-            rows.add(new Row(index++, alias(vehicle, bone), active, bone,
+            rows.add(new Row(index++, alias(vehicle, bone), active, false, bone,
                     dualRole ? QUEUE_ERA : QUEUE_DEV, extra));
         }
         return rows;
@@ -414,7 +416,10 @@ public final class RVP_EquipPanelData {
     /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。
      *  2026-09-29 补虚拟血量（用户实机反馈"烟雾弹行没有血条"）：系统绑定的发射器骨
      *  逐根追加"现存/阈值"（与其它模块行同源 {@link #virtualHpText}，数据链
-     *  S2CBoneDamageProgress 已含 COUNTERMEASURE 骨），多骨以 " · " 连接、无阈值骨跳过。 */
+     *  S2CBoneDamageProgress 已含 COUNTERMEASURE 骨），多骨以 " · " 连接、无阈值骨跳过。
+     *  2026-09-29 行状态三态（用户反馈"坏一边也显示生效"）：按绑定骨的 COUNTERMEASURE
+     *  模块活性（RVP_ClientBoneModuleState，与俯视图红框同源）——全部存活=生效（绿）、
+     *  全部失效=失效（红）、部分失效=受损（黄，用户定版）。 */
     private static int addCountermeasureRow(List<Row> rows, int index, String alias,
                                             AbstractVehicle vehicle, int entityId,
                                             RVP_CountermeasureSystemData system, int remain, int total) {
@@ -424,13 +429,21 @@ public final class RVP_EquipPanelData {
         int shownTotal = total >= 0 ? total : system.getTotal();
         int shownRemain = remain >= 0 ? remain : shownTotal;
         String extra = I18n.get("gui.ywzj_rvp.equipment.ammo", shownRemain, shownTotal);
+        boolean anyAlive = false;
+        boolean anyDead = false;
         for (String bone : system.getBoneModules()) {
+            boolean alive = RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.COUNTERMEASURE);
+            anyAlive |= alive;
+            anyDead |= !alive;
             String hp = virtualHpText(vehicle, entityId, bone);
             if (hp != null) {
                 extra += " · " + hp;
             }
         }
-        rows.add(new Row(index++, alias, true, null, null, extra));
+        // 三态：部分失效=受损（active=true + damaged=true 黄标）；全失效=失效（红）；全存活=生效
+        boolean active = !anyDead || anyAlive;
+        boolean damaged = anyDead && anyAlive;
+        rows.add(new Row(index++, alias, active, damaged, null, null, extra));
         return index;
     }
 

@@ -254,7 +254,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             for (RVP_EquipPanelData.Row row : category.rows()) {
                 signature.append(cardKey).append('|').append(row.boneName()).append(':')
                         .append(row.alias()).append('|').append(row.extra()).append('|')
-                        .append(row.active() ? 'a' : 'b').append(';');
+                        .append(row.active() ? 'a' : 'b')
+                        .append(row.damaged() ? 'd' : '-').append(';');
             }
         }
         String rowSignature = signature.toString();
@@ -269,13 +270,11 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                 if (rowDiv == null || rowDiv.children.size() < 4) {
                     continue;
                 }
-                rowDiv.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
+                rowDiv.setClassName(rowClassName(row));
                 rowDiv.children.get(1).setTextContent(row.alias());
                 rowDiv.children.get(2).setTextContent(row.extra() == null ? "" : row.extra());
-                rowDiv.children.get(3).setClassName("row-state " + (row.active() ? "ok" : "bad"));
-                rowDiv.children.get(3).setTextContent(I18n.get(row.active()
-                        ? "gui.ywzj_rvp.equipment.state_ok"
-                        : "gui.ywzj_rvp.equipment.state_bad"));
+                rowDiv.children.get(3).setClassName("row-state " + rowStateClass(row));
+                rowDiv.children.get(3).setTextContent(I18n.get(rowStateLang(row)));
             }
         }
         return true;
@@ -288,7 +287,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
             sb.append(category.summary()).append(';');
             for (RVP_EquipPanelData.Row row : category.rows()) {
-                sb.append(row.index()).append(row.active() ? 'a' : 'b');
+                sb.append(row.index()).append(row.active() ? 'a' : 'b')
+                    .append(row.damaged() ? 'd' : '-');
             }
             sb.append('|');
         }
@@ -382,10 +382,36 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
     }
 
+    /** 行三态类名（2026-09-29）：生效绿 / 失效红 / 部分受损黄（damaged 仅 active 时有意义）。 */
+    private static String rowClassName(RVP_EquipPanelData.Row row) {
+        if (!row.active()) {
+            return "mod-row bad";
+        }
+        return row.damaged() ? "mod-row ok damaged" : "mod-row ok";
+    }
+
+    /** 状态徽标类名：三态同 {@link #rowClassName}。 */
+    private static String rowStateClass(RVP_EquipPanelData.Row row) {
+        if (!row.active()) {
+            return "bad";
+        }
+        return row.damaged() ? "damaged" : "ok";
+    }
+
+    /** 状态徽标文案 key：生效 / 失效 / 受损（部分失效，2026-09-29 用户定版）。 */
+    private static String rowStateLang(RVP_EquipPanelData.Row row) {
+        if (!row.active()) {
+            return "gui.ywzj_rvp.equipment.state_bad";
+        }
+        return row.damaged()
+                ? "gui.ywzj_rvp.equipment.state_damaged"
+                : "gui.ywzj_rvp.equipment.state_ok";
+    }
+
     /** 单行：序号 / 别名（+行尾附加文本）/ 状态徽标；失效且可入队的行绑定点击入队。 */
     private Element buildRow(RVP_EquipPanelData.Row row) {
         Element div = document.createElement("div");
-        div.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
+        div.setClassName(rowClassName(row));
         Element idx = document.createElement("span");
         idx.setClassName("row-idx");
         idx.setTextContent(String.valueOf(row.index()));
@@ -401,10 +427,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             div.appendChild(extra);
         }
         Element state = document.createElement("span");
-        state.setClassName("row-state " + (row.active() ? "ok" : "bad"));
-        state.setTextContent(I18n.get(row.active()
-                ? "gui.ywzj_rvp.equipment.state_ok"
-                : "gui.ywzj_rvp.equipment.state_bad"));
+        state.setClassName("row-state " + rowStateClass(row));
+        state.setTextContent(I18n.get(rowStateLang(row)));
         div.appendChild(state);
         if (!row.active() && row.queueKey() != null) {
             div.addEventListener("click", event -> addToQueue(row.queueKey(), row.boneName(), row.alias()));

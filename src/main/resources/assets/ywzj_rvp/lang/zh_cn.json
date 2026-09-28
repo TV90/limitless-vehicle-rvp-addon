@@ -364,6 +364,7 @@
   "gui.ywzj_rvp.equipment.note_with_era": "随爆反修复",
   "gui.ywzj_rvp.equipment.state_ok": "生效",
   "gui.ywzj_rvp.equipment.state_bad": "失效",
+  "gui.ywzj_rvp.equipment.state_damaged": "受损",
   "gui.ywzj_rvp.equipment.summary": "%s/%s 生效 · 失效 %s",
   "gui.ywzj_rvp.equipment.summary_ok": "%s/%s 生效",
   "gui.ywzj_rvp.equipment.summary_simple": "共 %s 项",

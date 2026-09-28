@@ -364,6 +364,7 @@
   "gui.ywzj_rvp.equipment.note_with_era": "repairs with ERA",
   "gui.ywzj_rvp.equipment.state_ok": "Active",
   "gui.ywzj_rvp.equipment.state_bad": "Failed",
+  "gui.ywzj_rvp.equipment.state_damaged": "Damaged",
   "gui.ywzj_rvp.equipment.summary": "%s/%s active - %s failed",
   "gui.ywzj_rvp.equipment.summary_ok": "%s/%s active",
   "gui.ywzj_rvp.equipment.summary_simple": "%s item(s)",
