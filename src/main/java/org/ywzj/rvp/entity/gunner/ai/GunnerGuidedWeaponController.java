@@ -24,6 +24,14 @@ public final class GunnerGuidedWeaponController {
     /** HITL 导弹搜索范围（格），作为 O(实体) 遍历的距离闸门，与原 ±4096 立方体语义一致。 */
     private static final double HITL_CONTROL_SEARCH_RANGE = 4096.0D;
 
+    /**
+     * 当前 tick 的合格在途 SACLOS 弹状态。
+     *
+     * @param active 是否至少存在一枚仍符合发射站 STABLE PIP 资格的在途 SACLOS 弹
+     * @param fallbackPoint 弹体最近可用的制导目标点，用于 Gunner 当前目标暂时丢失时续接会话
+     */
+    private record InFlightStableSaclosState(boolean active, @Nullable Vec3 fallbackPoint) {}
+
     private GunnerGuidedWeaponController() {}
 
     public static void tick(GunnerEntity gunner,
@@ -63,8 +71,12 @@ public final class GunnerGuidedWeaponController {
         if (data.usesGuidanceType(RVP_EnumGuidanceType.GPS)) {
             GPSTargetManager.set(gunner, vehicle.level().dimension().location(), targetPoint);
         }
-        if (needsDesignation(data)) {
-            RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), true, targetPoint);
+        // 调用本项目火控资格解析器，判断本次选中的 SACLOS 弹是否请求硬锁 PIP 辅助。
+        boolean stablePipAssist = RVP_GunnerFireControlPolicy.supportsStableSaclos(weaponUnit, rawWeapon);
+        if (needsDesignation(data) || stablePipAssist) {
+            // 调用本项目服务端照射会话，写入 Gunner 目标点及经服务端复核的 STABLE PIP 请求。
+            RVP_SaclosOperatorSession.setDesignation(
+                    gunner.getUUID(), true, targetPoint, stablePipAssist);
         }
     }
 
@@ -73,13 +85,49 @@ public final class GunnerGuidedWeaponController {
                                           @Nullable WeaponUnit weaponUnit,
                                           @Nullable Vec3 targetPoint,
                                           RVP_GunnerObservationService observations) {
-        if (targetPoint == null || weaponUnit == null
-                || !currentWeaponNeedsDesignation(gunner, weaponUnit)
-                && !hasInFlightDesignationWeapon(observations)) {
+        // 调用共享观察快照，先于目标/当前武器门控检查仍在飞行的 STABLE SACLOS 弹。
+        InFlightStableSaclosState inFlightStableSaclos = findInFlightStableSaclos(observations);
+        if (targetPoint == null || weaponUnit == null) {
+            if (inFlightStableSaclos.active()) {
+                // 调用本项目操作手会话，目标短暂丢失时优先保留发射时的最后有效照射点。
+                Vec3 retainedPoint = targetPoint;
+                if (retainedPoint == null) {
+                    // 调用本项目操作手会话，读取目标暂失前持续刷新的最后有效照射点。
+                    retainedPoint = RVP_SaclosOperatorSession.getDesignationPoint(gunner.getUUID());
+                }
+                if (retainedPoint == null) {
+                    retainedPoint = inFlightStableSaclos.fallbackPoint();
+                }
+                if (retainedPoint != null) {
+                    // 调用本项目服务端会话，仅续期仍有合格在途弹的 STABLE PIP 请求。
+                    RVP_SaclosOperatorSession.setDesignation(
+                            gunner.getUUID(), true, retainedPoint, true);
+                }
+                // 活弹没有可恢复目标点时也不撤销已有会话；PIP 仍由新鲜度与雷达硬锁门控。
+                return;
+            }
+            // 调用本项目操作手会话，目标丢失或武器站不可用时清除旧照射与稳定请求。
             RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), false, null);
             return;
         }
-        RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), true, targetPoint);
+        // 调用本项目武器解析器，读取 Gunner 当前受控武器的 SACLOS STABLE 资格。
+        boolean currentStableSaclos = RVP_GunnerFireControlPolicy.supportsStableSaclos(
+                weaponUnit, currentRvpWeapon(gunner, weaponUnit));
+        // 调用本项目现有制导会话扫描，保留激光照射与 HITL 在途维持行为。
+        boolean inFlightDesignation = hasInFlightDesignationWeapon(observations);
+        // 调用本项目当前受控武器识别器，检查是否仍需维持常规照射/在途控制。
+        boolean currentNeedsDesignation = currentWeaponNeedsDesignation(gunner, weaponUnit);
+        if (!currentNeedsDesignation
+                && !inFlightDesignation
+                && !currentStableSaclos
+                && !inFlightStableSaclos.active()) {
+            // 调用本项目操作手会话，目标或武器条件失效时清除旧照射与稳定请求。
+            RVP_SaclosOperatorSession.setDesignation(gunner.getUUID(), false, null);
+            return;
+        }
+        // 调用本项目服务端会话，每 tick 刷新目标点并仅在 Gunner SACLOS 资格有效时请求 PIP。
+        RVP_SaclosOperatorSession.setDesignation(
+                gunner.getUUID(), true, targetPoint, currentStableSaclos || inFlightStableSaclos.active());
     }
 
     private static void updateGpsTarget(GunnerEntity gunner,
@@ -142,6 +190,34 @@ public final class GunnerGuidedWeaponController {
             }
         }
         return false;
+    }
+
+    /** 收集仍有发射武器站 STABLE PIP 资格的在途 SACLOS 弹及可恢复目标点。 */
+    private static InFlightStableSaclosState findInFlightStableSaclos(
+            RVP_GunnerObservationService observations) {
+        boolean active = false;
+        Vec3 fallbackPoint = null;
+        // 调用共享观察服务的全量 Owner 索引，避免长航程弹离开载具周围范围后停止续期。
+        for (RVP_BaseBullet projectile : observations.ownedProjectiles()) {
+            if (projectile.getRvpData() == null) {
+                continue;
+            }
+            // 调用本项目火控策略，按弹体自身武器数据与发射武器站验证 PIP 资格。
+            if (!RVP_GunnerFireControlPolicy.supportsStableSaclos(
+                    projectile.getShooterWeaponUnit(), projectile.getRvpData())) {
+                continue;
+            }
+            active = true;
+            if (fallbackPoint == null) {
+                // 调用本体弹药位置接口，目标跟踪暂失时优先复用弹体最近一次有效制导点。
+                fallbackPoint = projectile.getLastGuidancePos();
+                if (fallbackPoint == null) {
+                    // 调用本体弹药目标点接口，兼容尚未写入 lastGuidancePos 的在途弹。
+                    fallbackPoint = projectile.getTargetPos();
+                }
+            }
+        }
+        return new InFlightStableSaclosState(active, fallbackPoint);
     }
 
     private static boolean currentWeaponUses(WeaponUnit weaponUnit, RVP_EnumGuidanceType type) {
