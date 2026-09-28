@@ -209,7 +209,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         for (int i = 0; i < totalProjectiles; i++) {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
                     data, data.getWeaponKind(), entityType, getVehicle(), shooter, aim, lock,
-                    rootUnit, launchUnit, chargeScale, 0f, true);
+                    rootUnit, launchUnit, chargeScale, getBarrelDamageSpreadExtra(), true);
             if (armPreselectVehicleId >= 0 && projectile != null) {
                 projectile.setPreselectedTarget(armPreselectVehicleId, armPreselectRadarIndex);
                 if (armPreselectPos != null) {
@@ -243,7 +243,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             }
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
                     data, data.getWeaponKind(), entityType, getVehicle(), shooter, pelletAim, lock,
-                    rootUnit, launchUnit, chargeScale, 0f, false);
+                    rootUnit, launchUnit, chargeScale, getBarrelDamageSpreadExtra(), false);
             maybeEnterHitlView(data, shooter, projectile, i);
         }
     }

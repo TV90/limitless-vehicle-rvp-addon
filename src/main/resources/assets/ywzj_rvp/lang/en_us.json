@@ -438,5 +438,7 @@
   "message.ywzj_rvp.launcher.too_fast": "Too fast to launch",
   "message.ywzj_rvp.part_repaired": "Part repaired",
   "message.ywzj_rvp.part_repairing": "Repairing part %s%%",
-  "gui.ywzj_rvp.hud.cm_destroyed": "%s: DESTROYED"
+  "gui.ywzj_rvp.hud.cm_destroyed": "%s: DESTROYED",
+  "ui.rvp.barrel_damaged_misfire": "Barrel damaged - shot failed",
+  "ui.rvp.barrel_burst": "Barrel burst!"
 }

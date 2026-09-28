@@ -707,6 +707,22 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
     }
 
+    /** 炮管受损档（两档中间态）：key = vehicleId|bone。服务端内存不持久化（与累计中间量同口径）。 */
+    private static final java.util.Set<String> BARREL_DAMAGED_STAGE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** 炮管是否处于受损档（两档中间态：射击三选一判定用）。 */
+    public static boolean isBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
+        return vehicle != null && barrelBone != null
+                && BARREL_DAMAGED_STAGE.contains(vehicle.getUUID() + "|" + barrelBone);
+    }
+
+    /** 清除炮管受损档（快修/焊枪恢复 BARREL、炸膛升级彻底损坏时）。 */
+    public static void clearBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
+        if (vehicle != null && barrelBone != null) {
+            BARREL_DAMAGED_STAGE.remove(vehicle.getUUID() + "|" + barrelBone);
+        }
+    }
+
     /**
      * [RVP] 炮管部件累计段（2026-09-28，单档）：命中骨配置了 BARREL 模块时，把本次直击
      * 实际到骨伤害累入 {@link RVP_BoneCumulativeDamageTable}（无衰减，只增不减）；累计跨过
@@ -737,12 +753,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 vehicle.getVehicleId(), vehicle.getId(), boneName,
                 triggerDamage, accumulated, barrelConfig.threshold(),
                 RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
-        if (accumulated >= barrelConfig.threshold()
-                && RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
-            // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
-            syncBoneModuleState(vehicle);
-            // [RVP] 部件战果通知：向射手报"摧毁炮管"
-            notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
+        // [RVP] 两档判定（2026-09-28 用户定版）：先判彻底损坏（heavy），否则判受损档（light）
+        if (accumulated >= barrelConfig.threshold()) {
+            clearBarrelDamagedStage(vehicle, boneName);
+            if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
+                // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
+                syncBoneModuleState(vehicle);
+                // [RVP] 部件战果通知：向射手报"摧毁炮管"
+                notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
+            }
+        } else if (barrelConfig.hasDamagedStage() && accumulated >= barrelConfig.thresholdLight()) {
+            // 跨过受损阈值（两档配置）：进入受损档——此后每次射击三选一
+            //（1/3 正常散布×10 / 1/3 哑火 / 1/3 炸膛升级），判定在射击 gate（WeaponBase）
+            BARREL_DAMAGED_STAGE.add(vehicleId + "|" + boneName);
         }
     }
 
@@ -1341,6 +1364,39 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         // ERA 模块爆炸无武器爆炸配置，自定义音效传 null 按MISSILE 默认音色。
         RVP_DefaultExplosionVisualService.spawn(serverLevel, pos,
                 3.0f * Math.max(explosionScale, 0.25f), RVP_EnumWeaponKind.MISSILE, null);
+    }
+
+    /**
+     * [RVP] 炮管炸膛特效（2026-09-28 两档炮管）：复用 ERA 的 MCHR 爆炸视觉，规模 ≈2 格
+     *（scale = 2/3 × 基准 3）。在炮管骨 OBB 中心爆（无 OBB 回退载具包围盒中心）。
+     */
+    public static void spawnBarrelBurstEffect(AbstractVehicle vehicle, String barrelBone) {
+        if (vehicle == null || !(vehicle.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
+        spawnMchrEraExplosion(serverLevel, pos, 2.0f / 3.0f);
+    }
+
+    /**
+     * [RVP] 炮管炸膛升级流程（两档受损档射击 roll 命中时，由射击 gate 调用）：
+     * 清受损档 → BARREL 进失效表（彻底损坏：站级禁射/持久化/冒烟/维修队列）→
+     * 一次失效广播 → 炮管处爆炸特效 → 向射手战果通知"摧毁炮管"。
+     *
+     * @return 是否实际发生升级（BARREL 此前未失效）
+     */
+    public static boolean burstBarrel(AbstractVehicle vehicle, String barrelBone, @Nullable Entity shooter) {
+        if (vehicle == null || barrelBone == null || vehicle.level().isClientSide()) {
+            return false;
+        }
+        clearBarrelDamagedStage(vehicle, barrelBone);
+        if (!RVP_BoneModuleStateTable.destroyModule(vehicle.getUUID(), barrelBone, BoneModuleType.BARREL)) {
+            return false;
+        }
+        syncBoneModuleState(vehicle);
+        spawnBarrelBurstEffect(vehicle, barrelBone);
+        notifyModuleHit(shooter, vehicle, org.ywzj.rvp.network.S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
+        return true;
     }
 
     private static String fmt(float v) {

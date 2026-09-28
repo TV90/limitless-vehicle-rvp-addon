@@ -266,12 +266,12 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     /**
-     * [RVP] 炮管损坏门控（2026-09-28，用户定版"站级禁射"）：本武器站的炮管骨 BARREL 模块
-     * 失效时禁止射击——站级判定，同武器站全部武器/弹种（RVP 自定义弹种组
-     * {@code modding_only_multi}、grouped slot、Multi 内层子武器）在服务端都必经本方法
-     * （Multi.shoot 直接委托子武器 shoot），切弹种无法绕过；gunner AI 开火走同一
-     * {@code WeaponUnit.shoot → canShootOnServer} 链路同样被拦。炮管骨未配置 BARREL
-     * 部件时恒放行。拒绝时动作栏提示"炮管损坏，请先维修"。
+     * [RVP] 炮管损坏门控（2026-09-28，用户定版"站级禁射"；2026-09-28 两档扩展）：本武器站
+     * 炮管骨 BARREL 模块失效 → 彻底损坏禁止射击；两档配置（threshold_light）下进入受损档
+     * → 每次射击三选一：1/3 正常但散布 ×10（barrelDamageSpreadExtra 标记，出弹消费）、
+     * 1/3 哑火、1/3 炸膛（炮管处爆炸特效 + 升级彻底损坏 + 战果通知）。站级判定，同武器站
+     * 全部武器/弹种在服务端都必经本方法，切弹种无法绕过；gunner AI 同链路被拦。未配置
+     * BARREL 部件恒放行。
      */
     protected boolean passesBarrelDamageGate(@Nullable LivingEntity operator) {
         AbstractVehicle vehicle = getVehicle();
@@ -282,15 +282,47 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
         if (weaponUnit == null) {
             return true;
         }
-        if (!RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDestroyed(vehicle, weaponUnit)) {
+        // 每次进入先清散布标记（上一次射击残留防误放大）
+        this.barrelDamageSpreadExtra = 0f;
+        String barrelBone = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBarrelBone(vehicle, weaponUnit);
+        if (barrelBone == null) {
             return true;
         }
-        denyBarrelDestroyedFire(operator);
-        return false;
+        // 二档：彻底损坏（BARREL 失效）→ 站级禁射
+        if (RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDestroyed(vehicle, weaponUnit)) {
+            denyBarrelFire(operator, "ui.rvp.barrel_destroyed");
+            return false;
+        }
+        // 受损档（两档中间态）：1/3 正常（散布×10）/ 1/3 哑火 / 1/3 炸膛升级
+        if (RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDamagedStage(vehicle, barrelBone)) {
+            int roll = vehicle.level().random.nextInt(3);
+            if (roll == 0) {
+                // 正常射击但散布 ×10（extraSpread = 原散布 ×9，出弹时消费）
+                this.barrelDamageSpreadExtra = getData().getInaccuracy() * 9f;
+                return true;
+            }
+            if (roll == 1) {
+                denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
+                return false;
+            }
+            // 炸膛：不出弹 + 炮管处爆炸特效 + 升级彻底损坏（BARREL 进失效表 + 战果通知）
+            RVP_VehicleHitboxFactorManager.INSTANCE.burstBarrel(vehicle, barrelBone, operator);
+            denyBarrelFire(operator, "ui.rvp.barrel_burst");
+            return false;
+        }
+        return true;
     }
 
-    /** 炮管损坏拒绝提示（动作栏 translatable；operator 为空回退载具乘客玩家，仿发射架 deny 先例）。 */
-    private void denyBarrelDestroyedFire(@Nullable LivingEntity operator) {
+    /** 本次射击的炮管受损额外散布（度；gate 受损 roll 成功时 = 原散布 ×9）。 */
+    private float barrelDamageSpreadExtra;
+
+    /** 本次射击的炮管受损额外散布（出弹时消费，×10 总散布语义）。 */
+    protected float getBarrelDamageSpreadExtra() {
+        return barrelDamageSpreadExtra;
+    }
+
+    /** 炮管拒绝提示（动作栏 translatable；operator 为空回退载具乘客玩家，仿发射架 deny 先例）。 */
+    private void denyBarrelFire(@Nullable LivingEntity operator, String langKey) {
         Player player = operator instanceof Player p ? p : null;
         if (player == null) {
             AbstractVehicle vehicle = getVehicle();
@@ -304,7 +336,7 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             }
         }
         if (player != null) {
-            player.displayClientMessage(Component.translatable("ui.rvp.barrel_destroyed"), true);
+            player.displayClientMessage(Component.translatable(langKey), true);
         }
     }
 
