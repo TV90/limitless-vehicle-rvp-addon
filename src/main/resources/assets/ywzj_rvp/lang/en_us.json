@@ -416,6 +416,7 @@
   "gui.ywzj_rvp.hud.dircm_irradiating": "DIRCM[%s]: TRK",
   "gui.ywzj_rvp.hud.dircm_charging": "DIRCM[%s]: CHG %ss",
   "gui.ywzj_rvp.hud.dircm_ready": "DIRCM[%s]: RDY",
+  "gui.ywzj_rvp.hud.dircm_destroyed": "DIRCM[%s]: DMG",
   "gui.ywzj_rvp.hud.passive_ecm_jamming": "ECM: JAM",
   "gui.ywzj_rvp.hud.passive_ecm_charging": "ECM: CHG %ss",
   "gui.ywzj_rvp.hud.passive_ecm_ready": "ECM: RDY",

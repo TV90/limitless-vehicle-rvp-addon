@@ -279,7 +279,8 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         if (state.isCoolingDown()) {
             int seconds = (state.cooldownRemain() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.GREEN);
+            // [RVP] 冷却红字（2026-09-29 用户定版）：冷却期按键无效，红色警示对齐干扰物耗尽行
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.RED);
             return;
         }
         String keyName = shortenKeyName(RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString());
