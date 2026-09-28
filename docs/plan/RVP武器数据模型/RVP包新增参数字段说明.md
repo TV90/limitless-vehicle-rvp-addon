@@ -198,16 +198,33 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
 | `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
 | `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
-| `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；未命中区间或 value 非法时按 `1.0` 处理。 |
+| `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；缺省或 JSON `null` 时使用下述默认大气表，显式空表、未命中区间或 value 非法时按 `1.0` 处理。 |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
 | `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布/父弹继承 X/Z 生效，包含分层圆锥径向与云心水平径向分量；Y、风偏和显式附加速度不参与该衰减。 |
 | `deployment_vertical_half_life_ticks` | 子弹药部署纵向速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布 Y 生效；重力、`payloads_velocity[1]`、风偏和其他外力不参与该衰减。 |
 
 `altitude_drag_factor` 的运行规则：
 
-- 为空或未命中任何区间时，回退倍率 `1.0`。
+- 缺省或 JSON `null` 时，使用下述默认大气表并在相邻锚点之间线性插值。显式配置 `{}` 可恢复全高度 `1.0`。
+- 显式表仍按区间直接取值，不插值；未命中任何区间或命中非法倍率时回退 `1.0`。
 - `y` 采样的是**世界坐标**，不是离地高度。
 - 推力弹道会把倍率乘到 `drag_coefficient`；简化弹道会把倍率乘到 `drag`。
+- 启用 `rvp_aero_steering` 时，同一倍率还用作气动转向的空气密度因子。
+
+默认表把 Y64 映射到现实海平面、Y550 映射到约 20 km，采用空气密度相对海平面的比例作为阻力倍率，而不是直接采用气压比例。高度换算约为 `max(0, y − 64) × 20 / 486 km`；锚点值近似取自 [NASA 地球大气模型](https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/earth-atmosphere-equation-metric/)，并四舍五入到三位小数。低于 Y64 固定为 `1.000`，高于 Y793 固定为 `0.014`。
+
+| 世界 Y 锚点 | 对应现实高度（约） | 默认倍率 |
+| ---: | ---: | ---: |
+| 64 | 0 km | 1.000 |
+| 113 | 2 km | 0.822 |
+| 186 | 5 km | 0.601 |
+| 258 | 8 km | 0.429 |
+| 307 | 10 km | 0.338 |
+| 356 | 12 km | 0.255 |
+| 429 | 15 km | 0.159 |
+| 550 | 20 km | 0.073 |
+| 672 | 25 km | 0.033 |
+| 793 | 30 km | 0.014 |
 
 子弹药分量化部署的速度关系为：
 
@@ -232,14 +249,11 @@ totalVelocity = baseVelocity + deploymentXZ(t) + deploymentY(t) + windContributi
   "second_pulse_trigger_distance": 120,
   "second_pulse_thrust": 5.2,
   "second_pulse_burn_time": 24,
-  "altitude_drag_factor": {
-    "[[-64,300]]": 0.98,
-    "[[300,500]]": 1.0,
-    "[[500,1000]]": 1.02,
-    "[[1000,inf]]": 1.05
-  }
+  "altitude_drag_factor": {}
 }
 ```
+
+示例中的显式空表用于关闭默认高度倍率。删除 `altitude_drag_factor` 键即可启用默认大气表；配置非空表可完全覆盖默认表。
 
 #### `wind_data` 弹体风漂
 

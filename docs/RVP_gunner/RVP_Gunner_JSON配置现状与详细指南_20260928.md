@@ -164,6 +164,49 @@ ywzj_rvp:example
 - 所有含 `active_ecm` 的现有 Profile 均使用 `threat_range=400`，而编译器缺省值是 200。
 - 现有 RVP 反制、Smoke、SEAD、巡航和飞行参数除上述项外均使用当前缺省组合。
 
+### 2.5 Gunner 物品与 Profile 选择
+
+当前注册 4 个 Gunner 生成物品，均为单个堆叠上限：
+
+| 注册 ID | 物品实现 | Profile 来源 | Owner 处理 |
+| --- | --- | --- | --- |
+| `gunner_spawner` | `GunnerSpawnerItem` | 物品 NBT 的 `ProfileId`；默认 `ywzj_rvp:default`，可在游戏内切换 | 记录放置玩家 |
+| `friendly_gunner` | `FixedProfileGunnerSpawnerItem` | 固定为 `ywzj_rvp:friendly` | 记录放置玩家 |
+| `enemy_gunner` | `FixedProfileGunnerSpawnerItem` | 固定为 `ywzj_rvp:enemy` | 不记录放置玩家；生成后显示通用炮手名字并设为持久实体 |
+| `team_gunner` | `FixedProfileGunnerSpawnerItem` | 固定为 `ywzj_rvp:team` | 记录放置玩家 |
+
+固定物品的 Profile 与 Owner 选项由 `RVP_Items` 注册时传入；它们与通用生成器共用同一部署及座位选择实现主体，但目前代码分在两个 Item 类中。
+
+#### Profile 切换与创造栏变体
+
+- 通用生成器普通右键空气时，在服务端按当前已加载的 Profile ID 字典序循环；Profile ID 集合来自成功发布的服务端快照，不是 Java 中的固定列表。
+- 新增 Profile JSON 无需增加 Item 注册项。服务端在 datapack 登录同步时下发 Profile ID 快照；客户端为每个 ID 建立一个通用生成器 `ItemStack` 变体，在 NBT 写入 `ProfileId`，并重建创造栏内容。
+- 4 个注册物品及这些动态变体会显示在搜索、工具与实用物品、刷怪蛋，以及 RVP / 杂项创造标签页中。动态变体仍是 `gunner_spawner` 注册物品，不会产生新的注册 ID。
+- 通用生成器潜行右键空气只切换座位模式；固定 Profile 生成器没有 Profile 切换入口，只能切换座位模式。
+
+#### 部署、座位与拆除
+
+1. 右键载具时，服务端先清理座位表中指向不存在实体的 `passengerId`，再校验空座位或指定座位。
+2. 创建 `GunnerEntity`，设置 Owner（若该物品启用 Owner 绑定）和 Profile，加入世界后尝试骑乘载具。
+3. 座位模式为“自动”时，先接受当前分配座位；若该座位不关联含武器的 `WeaponUnit`，则遍历可用座位寻找第一个符合条件的武器座位。找不到时保留原分配座位。
+4. 指定座位时，切换到该座位；座位不存在、占用、上车失败或切座失败都会给玩家提示，并在失败路径清理新建的 Gunner。
+5. 右键 Gunner 实体会尝试拆除：通用生成器只允许拆除本人所有的 Gunner 或在创造模式拆除；固定 Profile 生成器还允许拆除 `getOwnerPlayer() == null` 的 Gunner。由于 Owner 离线时也可能返回 `null`，固定物品的拆除权限可能覆盖无在线 Owner 的实体。
+
+座位模式保存在物品 NBT 的 `PreferredSeat`：缺省 `-1` 表示自动，潜行右键空气按“自动 → 0 → … → 9 → 自动”循环。因此物品操作只提供 0–9 的手动座位选择；当前读取逻辑也未对被外部改写为小于 `-1` 的 NBT 值做归一化。部署不会消耗物品。
+
+#### 当前代码入口
+
+| 用途 | 代码位置 |
+| --- | --- |
+| 4 个物品的注册与固定 Profile/Owner 参数 | `src/main/java/org/ywzj/rvp/all/RVP_Items.java` |
+| 通用物品的 Profile 切换、部署、拆除及 NBT | `src/main/java/org/ywzj/rvp/item/GunnerSpawnerItem.java` |
+| 固定 Profile 物品的部署、座位切换及拆除权限 | `src/main/java/org/ywzj/rvp/item/FixedProfileGunnerSpawnerItem.java` |
+| datapack 同步时下发 Profile ID 快照 | `src/main/java/org/ywzj/rvp/entity/gunner/ai/profile/RVP_GunnerProfileSyncService.java` |
+| 客户端创建 Profile 物品变体并重建创造栏 | `src/main/java/org/ywzj/rvp/client/gunner/RVP_ClientGunnerProfileState.java`、`src/main/java/org/ywzj/rvp/client/RVP_CreativeTabEvents.java` |
+| 中英文物品名称、模式提示和部署反馈 | `src/main/resources/assets/ywzj_rvp/lang/zh_cn.json`、`en_us.json` |
+
+物品显示名与交互提示目前已经本地化；四个物品模型使用原版物品贴图作为图标。`FixedProfileGunnerSpawnerItem` 与 `GunnerSpawnerItem` 存在重复的部署和座位逻辑，调整时需注意两边保持一致。固定物品允许拆除无在线 Owner 的实体、手动座位上限为 9，以及异常 `PreferredSeat` NBT 的下界处理，是当前值得单独确认的行为边界。
+
 ---
 
 ## 3. Profile 顶层字段
