@@ -270,7 +270,12 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             return;
         }
         List<RVP_EquipPanelData.Category> categories = RVP_EquipPanelData.buildCategories(vehicle);
+        // [RVP] 两遍式 diff（2026-09-28 修"行全空"）：先建/更新全部目标行并挂载，
+        // 循环外一次性移除非目标行/卡——原实现在每栏目循环内 removeIf，
+        // 处理第一栏目时把其它栏目的行误判消失全部移除，且 predicate 内
+        // 手动改同一 map 属未定义行为，缓存错乱后行全空。
         java.util.Set<String> seenCards = new java.util.HashSet<>();
+        java.util.Set<String> seenRowKeys = new java.util.HashSet<>();
         boolean first = true;
         for (RVP_EquipPanelData.Category category : categories) {
             String cardKey = category.title();
@@ -295,8 +300,6 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                 }
             }
             first = false;
-            // 行 diff：原地更新 / 新增 / 移除，并按目标顺序重排
-            java.util.Set<String> seenRows = new java.util.HashSet<>();
             for (RVP_EquipPanelData.Row row : category.rows()) {
                 String rowKey = cardKey + "|" + row.boneName() + "|" + row.index();
                 RowBinding binding = rowBindingByKey.get(rowKey);
@@ -306,35 +309,35 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                 } else {
                     updateRowElement(binding, row);
                 }
-                seenRows.add(rowKey);
-                body.appendChild(binding.div());
+                seenRowKeys.add(rowKey);
+                body.appendChild(binding.div()); // 按目标顺序重排（已存在节点 append = 移动）
             }
-            // 移除消失行
-            rowBindingByKey.keySet().removeIf(key -> {
-                if (!key.startsWith(rowPrefixOf(cardKey)) || seenRows.contains(key)) {
-                    return false;
-                }
-                RowBinding binding = rowBindingByKey.remove(key);
-                if (binding != null && binding.div().getParentElement() != null) {
-                    binding.div().getParentElement().removeChild(binding.div());
-                }
-                return true;
-            });
             seenCards.add(cardKey);
         }
-        // 移除消失栏目卡（连带清其行缓存）
-        catBodyByKey.keySet().removeIf(key -> {
-            if (seenCards.contains(key)) {
+        // 循环外一次性移除非目标行（DOM + 缓存）
+        rowBindingByKey.entrySet().removeIf(entry -> {
+            if (seenRowKeys.contains(entry.getKey())) {
                 return false;
             }
-            Element body = catBodyByKey.remove(key);
-            if (body != null && body.getParentElement() != null) {
+            Element div = entry.getValue().div();
+            if (div.getParentElement() != null) {
+                div.getParentElement().removeChild(div);
+            }
+            return true;
+        });
+        // 移除消失栏目卡
+        catBodyByKey.entrySet().removeIf(entry -> {
+            if (seenCards.contains(entry.getKey())) {
+                return false;
+            }
+            Element body = entry.getValue();
+            if (body.getParentElement() != null) {
                 Element card = body.getParentElement();
                 if (card.getParentElement() != null) {
                     card.getParentElement().removeChild(card);
                 }
             }
-            rowBindingByKey.keySet().removeIf(k -> k.startsWith(rowPrefixOf(key)));
+            rowBindingByKey.keySet().removeIf(k -> k.startsWith(rowPrefixOf(entry.getKey())));
             return true;
         });
     }
