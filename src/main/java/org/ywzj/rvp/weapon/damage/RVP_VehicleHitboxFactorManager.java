@@ -50,6 +50,7 @@ import org.ywzj.vehicle.vehicle.structure.VehicleCubeGroup;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1006,6 +1007,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (vehicle == null || vehicle.level().isClientSide()) {
             return;
         }
+        // [RVP] 半径阈值前置（2026-09-29 视距判定性能保险）：≤5 百分比为 0，零开销直接返回
+        //（遮挡映射都不建）
+        if (explosionRadius <= 5f) {
+            return;
+        }
         VehicleHitboxConfig cfg = INSTANCE.configs.get(vehicle.getVehicleId());
         if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
             return;
@@ -1028,6 +1034,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         if (activeBones.isEmpty()) {
             return;
+        }
+        // [RVP] 爆心视距判定（2026-09-29 用户定版）：爆心到 ERA 骨 OBB 中心的连线被本车
+        // 其它骨骼 OBB 阻挡 → 该 ERA 不参与爆炸破坏（半径再大也不炸，正面挨导弹不掉侧后
+        // ERA）；百分比基数 = 可见块数。hitPos 为空（理论不发生）或模型解析失败时保持原行为。
+        if (hitPos != null) {
+            activeBones = filterBonesByLineOfSightWithResolution(vehicle, cfg, activeBones, hitPos);
+            if (activeBones.isEmpty()) {
+                return;
+            }
         }
 
         int totalActive = activeBones.size();
@@ -1133,6 +1148,113 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         List<String> result = new ArrayList<>(boneNames);
         result.sort(Comparator.comparingDouble(distances::get));
         return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // [RVP] 爆心视距判定（2026-09-29 用户定版）：机制二破坏前按"爆心→ERA 骨 OBB 中心"
+    // 连线做本车骨骼 OBB 遮挡测试——被挡住的 ERA 不参与爆炸破坏（半径再大也不炸）
+    // ─────────────────────────────────────────────────────────────
+
+    /** 遮挡入射判定 ε：命中点距爆心至少 0.2 格（防贴板 grazing 误挡 ERA 安装面）。 */
+    private static final double LOS_MIN_ENTRY_DISTANCE = 0.2;
+    /** 遮挡入射判定 ε：命中点至少位于线段 5% 处（与上条取与，双条件同满足才算遮挡）。 */
+    private static final double LOS_MIN_ENTRY_FRACTION = 0.05;
+
+    /**
+     * 视距过滤入口：解析结构模型**全骨**实时 OBB（车体/装甲骨无模块但才是主要遮挡物，
+     * {@code moduleByBoneName} 不含它们），每次爆炸建一次 {@code 骨名→OBB列表} 映射后走
+     * 纯函数 {@link #filterBonesByLineOfSight}。模型/骨解析失败时原样返回候选（保守，
+     * 不因解析问题静默清零全部破坏）。
+     */
+    private static List<String> filterBonesByLineOfSightWithResolution(
+            AbstractVehicle vehicle, VehicleHitboxConfig cfg, List<String> candidates, Vec3 blastCenter) {
+        ResourceLocation structureId = cfg.structureModel;
+        if (structureId == null) {
+            return candidates;
+        }
+        BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
+        if (model == null) {
+            return candidates;
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        Map<String, List<OBB>> obbsByBone = new HashMap<>();
+        for (String boneName : boneMap.keySet()) {
+            List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
+            if (resolved.isEmpty()) {
+                continue;
+            }
+            List<OBB> obbs = new ArrayList<>(resolved.size());
+            for (ResolvedObb resolvedObb : resolved) {
+                obbs.add(resolvedObb.obb());
+            }
+            obbsByBone.put(boneName, obbs);
+        }
+        if (obbsByBone.isEmpty()) {
+            return candidates;
+        }
+        return filterBonesByLineOfSight(blastCenter, obbsByBone, candidates);
+    }
+
+    /**
+     * 视距过滤（纯逻辑，可 JUnit）：候选 ERA 骨**任一** OBB 中心到爆心的连线不被本车其它
+     * 骨骼 OBB 阻挡即视为可见。防误挡三则：①候选自身骨的 OBB 不算遮挡；②爆心位于某
+     * 遮挡 OBB 内部时该遮挡物不计（贴板/入车爆炸不应全挡）；③遮挡入射点需满足
+     * {@link #LOS_MIN_ENTRY_DISTANCE}/{@link #LOS_MIN_ENTRY_FRACTION} 双 ε。无法解析 OBB
+     * 的候选视为可见（保守）。
+     */
+    static List<String> filterBonesByLineOfSight(
+            Vec3 blastCenter, Map<String, List<OBB>> obbsByBone, Collection<String> candidates) {
+        List<String> visible = new ArrayList<>();
+        for (String bone : candidates) {
+            List<OBB> own = obbsByBone.get(bone);
+            if (own == null || own.isEmpty()) {
+                visible.add(bone);
+                continue;
+            }
+            for (OBB obb : own) {
+                Vector3f center = obb.center();
+                if (isLineUnblocked(blastCenter, new Vec3(center.x, center.y, center.z), bone, obbsByBone)) {
+                    visible.add(bone);
+                    break;
+                }
+            }
+        }
+        return visible;
+    }
+
+    /** 爆心→目标点连线是否无遮挡（遮挡物 = 除候选自身骨外的全部骨骼 OBB，见三则防误挡）。 */
+    private static boolean isLineUnblocked(
+            Vec3 blastCenter, Vec3 target, String candidateBone, Map<String, List<OBB>> obbsByBone) {
+        double totalLength = target.subtract(blastCenter).length();
+        if (totalLength < 1.0E-4) {
+            return true; // 爆心就在 OBB 中心：视为可见
+        }
+        Vector3f from = new Vector3f((float) blastCenter.x, (float) blastCenter.y, (float) blastCenter.z);
+        Vector3f to = new Vector3f((float) target.x, (float) target.y, (float) target.z);
+        for (Map.Entry<String, List<OBB>> entry : obbsByBone.entrySet()) {
+            if (entry.getKey().equals(candidateBone)) {
+                continue; // ①候选自身骨的 OBB 不算遮挡
+            }
+            for (OBB blocker : entry.getValue()) {
+                if (blocker.contains(blastCenter)) {
+                    continue; // ②爆心在该遮挡物内部：不遮挡（贴板/入车爆炸不全挡）
+                }
+                var hit = blocker.clip(from, to);
+                if (hit.isEmpty()) {
+                    continue;
+                }
+                // ③双 ε 容差：入射点距爆心足够远才算真遮挡
+                Vector3f hitPoint = hit.get();
+                double entryDistance = new Vec3(hitPoint.x, hitPoint.y, hitPoint.z)
+                        .subtract(blastCenter).length();
+                if (entryDistance > LOS_MIN_ENTRY_DISTANCE
+                        && entryDistance / totalLength > LOS_MIN_ENTRY_FRACTION) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public String dumpResolveDebug(AbstractVehicle vehicle) {
