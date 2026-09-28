@@ -55,8 +55,9 @@ import java.util.Set;
  * 微振/行驶姿态变化时整个俯视图逐帧缩放+平移跳动（"帧间布局跳动"；本体观瞄图同数据
  * 不闪，因其固定 10px/格、锚定载具中心，无自适应包络）。修复：包络改<b>角度无关半径</b>
  * {@code max(√(cx²+cy²)+√(hw²+hd²))}——画布空间中整车随炮塔刚性旋转，角点到原点距离
- * 恒定，任意炮塔角/车体朝向都不裁切；半径按"载具+画布尺寸"缓存且<b>只增不减</b>
- * （{@link Framing}，由面板屏持有实例、开屏自然重置），居中锚定载具原点（本体观瞄同款
+ * 恒定，任意炮塔角/车体朝向都不裁切；半径按载具缓存且<b>只增不减</b>
+ * （{@link Framing}，由面板屏持有实例、开屏自然重置；画布尺寸变化不重置——半径是
+ * 视空间量），居中锚定载具原点（本体观瞄同款
  * 锚点选择）。静止时帧间像素级全等；炮塔扫到更远处才一次性放大一档，无连续呼吸。</p>
  */
 @OnlyIn(Dist.CLIENT)
@@ -64,13 +65,15 @@ public final class RVP_EquipSkeletonRenderer {
 
     /**
      * 俯视图取景缓存（由调用方面板屏持有实例——屏对象每次开屏新建，缓存自然重置）：
-     * key = 载具 entityId 与画布像素尺寸的组合（任一变化即重算）；
-     * radiusPx = 角度无关包络半径（10px/格 视空间，只增不减——包络变大立即跟随、
-     * 变小不收缩，避免任何形式的连续缩放呼吸）。
+     * key = 载具 entityId（换车重置）。注意**不含画布尺寸**——radiusPx 是视空间量
+     * （10px/格），与画布像素宽高无关；画布尺寸变化只影响当帧 scale 换算，不得重置
+     * 包络半径（2026-09-29 回血闪烁补丁：画布矩形 ±1px 抖动曾使 key 翻转 → 取景重置）。
+     * radiusPx = 角度无关包络半径（视空间 px，只增不减——包络变大立即跟随、变小不收缩，
+     * 避免任何形式的连续缩放呼吸）。
      */
     public static final class Framing {
-        /** 上次取景使用的 key（载具 id ^ 画布宽高组合）；初始 0 表示无缓存。 */
-        private long key;
+        /** 上次取景使用的载具 entityId；初始 -1 表示无缓存。 */
+        private long key = -1;
         /** 冻结的包络半径（视空间 px，10px/格）。 */
         private float radiusPx = -1.0f;
     }
@@ -127,8 +130,9 @@ public final class RVP_EquipSkeletonRenderer {
         // 让扫到更远包络时一次性放大一档后再次冻结。
         float canvasW = x1 - x0;
         float canvasH = y1 - y0;
-        // 取景缓存 key：载具实体 + 画布像素尺寸（换车/窗口缩放/布局变化都会换 key 重算）
-        long key = (long) vehicle.getId() << 32 ^ (long) (x1 - x0) << 16 ^ (long) (y1 - y0);
+        // 取景缓存 key：只按载具实体换车重置（半径是视空间量，与画布尺寸无关——画布 ±1px
+        // 抖动不得重置取景，见 Framing 注释）
+        long key = vehicle.getId();
         float liveRadius = 0.0f;
         for (ViewCube cube : cubes) {
             if (!cube.fit()) {

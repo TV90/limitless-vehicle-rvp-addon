@@ -204,11 +204,11 @@ public final class RVP_EquipPanelData {
             List<Row> cmRows = new ArrayList<>();
             index = 1;
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_flare"),
-                    cmData.getFlare(), cm == null ? -1 : cm.flareRemain(), cm == null ? -1 : cm.flareTotal());
+                    vehicle, entityId, cmData.getFlare(), cm == null ? -1 : cm.flareRemain(), cm == null ? -1 : cm.flareTotal());
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_chaff"),
-                    cmData.getChaff(), cm == null ? -1 : cm.chaffRemain(), cm == null ? -1 : cm.chaffTotal());
+                    vehicle, entityId, cmData.getChaff(), cm == null ? -1 : cm.chaffRemain(), cm == null ? -1 : cm.chaffTotal());
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_smoke"),
-                    cmData.getSmoke(), cm == null ? -1 : cm.smokeRemain(), cm == null ? -1 : cm.smokeTotal());
+                    vehicle, entityId, cmData.getSmoke(), cm == null ? -1 : cm.smokeRemain(), cm == null ? -1 : cm.smokeTotal());
             if (!cmRows.isEmpty()) {
                 out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_cm"),
                         I18n.get("gui.ywzj_rvp.equipment.summary_simple", cmRows.size()), cmRows));
@@ -411,8 +411,12 @@ public final class RVP_EquipPanelData {
         return rows;
     }
 
-    /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。 */
+    /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。
+     *  2026-09-29 补虚拟血量（用户实机反馈"烟雾弹行没有血条"）：系统绑定的发射器骨
+     *  逐根追加"现存/阈值"（与其它模块行同源 {@link #virtualHpText}，数据链
+     *  S2CBoneDamageProgress 已含 COUNTERMEASURE 骨），多骨以 " · " 连接、无阈值骨跳过。 */
     private static int addCountermeasureRow(List<Row> rows, int index, String alias,
+                                            AbstractVehicle vehicle, int entityId,
                                             RVP_CountermeasureSystemData system, int remain, int total) {
         if (system == null || !system.isEnabled()) {
             return index;
@@ -420,6 +424,12 @@ public final class RVP_EquipPanelData {
         int shownTotal = total >= 0 ? total : system.getTotal();
         int shownRemain = remain >= 0 ? remain : shownTotal;
         String extra = I18n.get("gui.ywzj_rvp.equipment.ammo", shownRemain, shownTotal);
+        for (String bone : system.getBoneModules()) {
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra += " · " + hp;
+            }
+        }
         rows.add(new Row(index++, alias, true, null, null, extra));
         return index;
     }

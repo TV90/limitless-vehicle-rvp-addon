@@ -74,6 +74,10 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private int refreshCounter;
     /** 动态区签名：内容未变化时跳过 DOM 重建（根治高频抖动——重建会重置滚动/悬停态）。 */
     private String lastDynamicSignature = "";
+    /** 行内容签名：updateDynamicRows 上次写入的全部行状态（不变则零 DOM 写入，2026-09-29）。 */
+    private String lastRowSignature = null;
+    /** 队列 DOM 签名：era#dev 骨名序列（不变则跳过 replaceChildren 重建，2026-09-29）。 */
+    private String lastQueueSignature = null;
     /** DOM 变更后待强制重绘标记：AUI 对 init 之后的 DOM 变更是惰性绘制的，
      *  requestStyleRecalc 只重算样式不触发重绘；置位后在下一帧走一次程序化 resize
      *  （窗口缩放同款完整重布局+重绘路径）。 */
@@ -81,6 +85,14 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
     /** 俯视图取景缓存（2026-09-29 闪烁根治）：跨帧冻结缩放包络，屏实例持有、开屏自然重置。 */
     private final RVP_EquipSkeletonRenderer.Framing skeletonFraming = new RVP_EquipSkeletonRenderer.Framing();
+    /** 俯视图画布矩形采用值（GUI 像素坐标）：scissor 与绘制区域来源。 */
+    private int skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1;
+    /** 是否已有稳定有效的画布矩形采用值（首帧/布局未完成前为 false，跳过俯视图绘制）。 */
+    private boolean skeletonRectValid;
+    /** 帧首原始读数（浏览器 px）：连续两帧一致才更新采用值，过滤布局缓存失效期的瞬时读数。 */
+    private double skeletonRectFreshX, skeletonRectFreshY, skeletonRectFreshW, skeletonRectFreshH;
+    /** 本次帧首读数是否有效（>8px）；与 {@link #skeletonRectValid}（采用值）分离。 */
+    private boolean skeletonRectFreshValid;
 
     public RVP_EquipPanelScreen(AbstractVehicle vehicle) {
         super(TEMPLATE);
@@ -134,6 +146,12 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // [RVP] 俯视图画布矩形帧首预读（2026-09-29 回血闪烁根治）：此刻是上一帧 AUI commit
+        // 完成后的自洽态，committed 矩形必有效。回血期 refreshDynamic 的 setTextContent/
+        // markDirty(RELAYOUT) 会当场沿祖先链失效 layoutVersion、commit 时递归清全文档
+        // position 缓存——在其后读 rect 会命中"擦了一半"的中间态（#skeleton-canvas 是
+        // 100%×100% 空锚点 div，百分比尺寸瞬时塌陷为 0）→ rect.width<=8 跳帧 = 闪烁。
+        querySkeletonCanvasRect();
         // [RVP] 动态 DOM 更新（replaceChildren/setTextContent）后**零刷新调用**——AUI 渲染
         // 每帧读 DOM 当前态，天然生效（2026-09-28 对齐本体改装屏 buildDisplayCatalog 同款
         // 零调用模式）。此前 resize()/Document.refresh() 都是全量重布局，为"左右闪"根因。
@@ -163,6 +181,10 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         if (document == null) {
             return;
         }
+        // [RVP] DOM 写入等值守卫的签名重置（2026-09-29）：init 会重建 Document（模板队列表
+        // 为空、行元素全新），旧签名会让守卫误判"没变"而跳过写入 → 必须先清
+        lastQueueSignature = null;
+        lastRowSignature = null;
         if (panelTitle != null) {
             panelTitle.setTextContent(I18n.get("gui.ywzj_rvp.equipment.title")
                     + " · " + vehicle.getDisplayName().getString());
@@ -186,7 +208,9 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     }
 
     /** 节流刷新：分类表/血量/栏目/队列按内容签名门控（未变化时重建会重置滚动/悬停态 → 高频抖动）；
-     *  俯视图已改原生每帧重绘，不再走 DOM。 */
+     *  俯视图已改原生每帧重绘，不再走 DOM。markDirty 只标真正变化的容器（2026-09-29 回血
+     *  闪烁减量：markDirty(RELAYOUT) 的 commit 会沿祖先链递归清全文档 position 缓存，无谓
+     *  标脏 = 回血期每轮全文档布局失效）。 */
     private void refreshDynamic() {
         cachedModules = RVP_EquipPanelData.boneModules(vehicle);
         String signature = buildDynamicSignature();
@@ -194,30 +218,50 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             return;
         }
         lastDynamicSignature = signature;
-        updateHp();
         // [RVP] 运行中原地更新已建行（别名/附加/状态/失效样式）+ 容器 markDirty 上屏——
         // 不 replaceChildren 重建（重建帧 = 闪烁）、不 resize（AUI 重建 Document 同闪）。
-        updateDynamicRows();
+        boolean hpChanged = updateHp();
+        boolean rowsChanged = updateDynamicRows();
         rebuildQueues();
-        if (categoryScroll != null) {
+        if (rowsChanged && categoryScroll != null) {
             document.markDirty(categoryScroll,
                     com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
         }
-        if (hpText != null) {
-            document.markDirty(hpText,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
-        if (hpFill != null) {
-            document.markDirty(hpFill,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        if (hpChanged) {
+            if (hpText != null) {
+                document.markDirty(hpText,
+                        com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+            }
+            if (hpFill != null) {
+                document.markDirty(hpFill,
+                        com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+            }
         }
     }
 
     /**
      * [RVP] 运行中原地更新已建行（2026-09-28）：别名/附加/状态/失效样式按固定子序写入
      * （rebuildCategories 首建时缓存的行 Element，键 = 栏目|骨名）。
+     *
+     * <p>2026-09-29 回血闪烁减量：先按目标行内容算签名，与上次一致直接跳过（回血期只有
+     * 血量在变、行内容不变）——每次写入都会沿祖先链失效布局缓存，签名门控把无谓无效化
+     * 清零；内容真变时全量重写并返回 true（调用方据此 markDirty categoryScroll）。</p>
      */
-    private void updateDynamicRows() {
+    private boolean updateDynamicRows() {
+        StringBuilder signature = new StringBuilder(256);
+        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
+            String cardKey = category.title();
+            for (RVP_EquipPanelData.Row row : category.rows()) {
+                signature.append(cardKey).append('|').append(row.boneName()).append(':')
+                        .append(row.alias()).append('|').append(row.extra()).append('|')
+                        .append(row.active() ? 'a' : 'b').append(';');
+            }
+        }
+        String rowSignature = signature.toString();
+        if (rowSignature.equals(lastRowSignature)) {
+            return false;
+        }
+        lastRowSignature = rowSignature;
         for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
             String cardKey = category.title();
             for (RVP_EquipPanelData.Row row : category.rows()) {
@@ -234,6 +278,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
                         : "gui.ywzj_rvp.equipment.state_bad"));
             }
         }
+        return true;
     }
 
     /** 动态区内容签名：整车血量 + 各栏目行生效态 + 两条维修队列。 */
@@ -272,18 +317,29 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         return sb.toString();
     }
 
-    /** 顶栏整车血量。 */
-    private void updateHp() {
+    /** 顶栏整车血量。等值守卫（2026-09-29）：内容未变不写（setTextContent 当场沿祖先链
+     *  失效布局缓存，回血期高频刷新下无谓写入是闪烁减量重点）。返回是否发生了写入。 */
+    private boolean updateHp() {
         float health = vehicle.getHealth();
         float maxHealth = vehicle.getMaxHealth();
+        boolean changed = false;
         if (hpText != null) {
-            hpText.setTextContent(I18n.get("gui.ywzj_rvp.equipment.hull")
-                    + " " + (int) health + "/" + (int) maxHealth);
+            String text = I18n.get("gui.ywzj_rvp.equipment.hull")
+                    + " " + (int) health + "/" + (int) maxHealth;
+            if (!text.equals(hpText.getTextContent())) {
+                hpText.setTextContent(text);
+                changed = true;
+            }
         }
         if (hpFill != null && maxHealth > 0) {
             int pct = (int) Math.max(0, Math.min(100, health / maxHealth * 100f));
-            hpFill.setInlineStyleProperty("width", pct + "%");
+            String width = pct + "%";
+            if (!width.equals(hpFill.getInlineStylePropertyValue("width"))) {
+                hpFill.setInlineStyleProperty("width", width);
+                changed = true;
+            }
         }
+        return changed;
     }
 
     /** 右半页栏目：同屏四卡 2×2，由数据模型逐行构建。 */
@@ -360,7 +416,10 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     // 维修顺序队列（爆反 / 辅助设备）
     // ─────────────────────────────────────────────────────────────
 
-    /** 队列区重建：两条队列各自渲染为"#顺序号 自身序号 别名 ✕"行，空队列显示占位提示。 */
+    /** 队列区重建：两条队列各自渲染为"#顺序号 自身序号 别名 ✕"行，空队列显示占位提示。
+     *  2026-09-29 回血闪烁减量：prune 校验每轮照跑（已修好踢除需即时同步服务端），但
+     *  fillQueueList 的 replaceChildren 重建按队列签名门控——replaceChildren 会沿祖先链
+     *  清布局缓存（回血期每轮 refreshDynamic 都进这里，无谓重建是无效化大头）。 */
     private void rebuildQueues() {
         if (document == null) {
             return;
@@ -386,8 +445,12 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
             syncOrderToServer();
             order = RVP_ClientRepairOrderState.get(vehicle.getId());
         }
-        fillQueueList(queueEraList, order.eraBones(), ownIndexByBone);
-        fillQueueList(queueDevList, order.deviceBones(), ownIndexByBone);
+        String signature = String.join(",", order.eraBones()) + "#" + String.join(",", order.deviceBones());
+        if (!signature.equals(lastQueueSignature)) {
+            lastQueueSignature = signature;
+            fillQueueList(queueEraList, order.eraBones(), ownIndexByBone);
+            fillQueueList(queueDevList, order.deviceBones(), ownIndexByBone);
+        }
         updateForecast();
     }
 
@@ -466,8 +529,12 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         // 期望修复数向上取整（1 台×25% → 1；6 台×25% 期望 1.5 → 2）：保守估计，即"修完
         // 全部失效设备最多需要的快修次数"量级
         int expected = (int) Math.ceil(forecast.deviceExpected());
-        repairForecast.setTextContent(I18n.get("gui.ywzj_rvp.equipment.forecast",
-                forecast.eraQuota(), expected, forecast.deviceDestroyed(), forecast.deviceChancePercent()));
+        String text = I18n.get("gui.ywzj_rvp.equipment.forecast",
+                forecast.eraQuota(), expected, forecast.deviceDestroyed(), forecast.deviceChancePercent());
+        // 等值守卫（2026-09-29）：预计维修量在回血期不随血量变化，重复写入即无谓失效布局
+        if (!text.equals(repairForecast.getTextContent())) {
+            repairForecast.setTextContent(text);
+        }
     }
 
     /** 点击失效行加入对应队列：本地先行更新（即时反馈）再上行服务端。 */
@@ -559,39 +626,64 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
 
     /**
      * 俯视图原生绘制：AUI {@code super.render} 之后执行（AUI 无 post-render 钩子，不会被覆盖）。
-     * 画布矩形 = {@code #skeleton-canvas} 布局矩形 × renderScale（项目唯一合法换算公式，
-     * RVP_AuiVariantScreen 实证同款）；scissor 裁剪画布区域，深度抬 z=400（tooltip 同级）——
-     * AUI 文档元素开深度写入且 z 从 1.0 起递增（物品最高 ~250），GuiGraphics.fill 的 z=0
-     * 顶点会被深度剔除，这是此前三次"原生不可见"的根因。
+     * 画布矩形用 {@link #querySkeletonCanvasRect()} 的帧首预读采用值（项目唯一合法换算公式
+     * {@code rect × renderScale} 已在预读时完成）；scissor 裁剪画布区域，深度抬 z=400
+     * （tooltip 同级）——AUI 文档元素开深度写入且 z 从 1.0 起递增（物品最高 ~250），
+     * GuiGraphics.fill 的 z=0 顶点会被深度剔除，这是此前三次"原生不可见"的根因。
      *
      * <p>取景缩放跨帧冻结在 {@link #skeletonFraming}（2026-09-29 闪烁根治）：旧版每帧重算
-     * 自适应包络 → 炮塔回转/悬架微振时整图逐帧缩放平移（"帧间布局跳动"）。</p>
+     * 自适应包络 → 炮塔回转/悬架微振时整图逐帧缩放平移（"帧间布局跳动"）；画布矩形
+     * 两帧稳定过滤后，回血期布局缓存失效的瞬时读数不再引发跳帧/scissor 跳动。</p>
      */
     private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {
-        if (skeletonCanvas == null || document == null) {
+        if (!skeletonRectValid) {
+            // 尚无稳定有效矩形（首帧/布局未完成）：跳过，下一帧帧首预读重试
             return;
         }
-        Element.DOMRect rect = skeletonCanvas.getBoundingClientRect();
-        if (rect.width <= 8 || rect.height <= 8) {
-            // DOM 尚未布局完成：本轮跳过（原生每帧重试，无需节流）
-            return;
-        }
-        double renderScale = document.getViewport().renderScale();
-        int x0 = (int) Math.floor(rect.x * renderScale);
-        int y0 = (int) Math.floor(rect.y * renderScale);
-        int x1 = (int) Math.ceil((rect.x + rect.width) * renderScale);
-        int y1 = (int) Math.ceil((rect.y + rect.height) * renderScale);
-        guiGraphics.enableScissor(x0, y0, x1, y1);
+        guiGraphics.enableScissor(skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1);
         PoseStack poseStack = guiGraphics.pose();
         poseStack.pushPose();
         try {
             poseStack.translate(0, 0, 400);
             RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle, cachedModules,
-                    x0, y0, x1, y1, partialTick, skeletonFraming);
+                    skeletonRectX0, skeletonRectY0, skeletonRectX1, skeletonRectY1, partialTick, skeletonFraming);
             guiGraphics.flush();
         } finally {
             poseStack.popPose();
             guiGraphics.disableScissor();
+        }
+    }
+
+    /**
+     * 帧首预读俯视图画布矩形（2026-09-29 回血闪烁根治）：原始读数与上一帧读数比对，
+     * 连续两帧一致（±1px 内）才更新采用值——回血期 refreshDynamic 失效布局缓存后的
+     * 瞬时塌陷/位移读数是单帧态，被两帧一致过滤；读数无效（≤8px）时采用值保持最近
+     * 有效矩形（跳帧空白根源即此处曾被 0 尺寸读数打断）。
+     */
+    private void querySkeletonCanvasRect() {
+        if (skeletonCanvas == null || document == null) {
+            return;
+        }
+        Element.DOMRect rect = skeletonCanvas.getBoundingClientRect();
+        boolean valid = rect.width > 8 && rect.height > 8;
+        boolean stable = valid && skeletonRectFreshValid
+                && Math.abs(rect.x - skeletonRectFreshX) <= 1.0
+                && Math.abs(rect.y - skeletonRectFreshY) <= 1.0
+                && Math.abs(rect.width - skeletonRectFreshW) <= 1.0
+                && Math.abs(rect.height - skeletonRectFreshH) <= 1.0;
+        skeletonRectFreshX = rect.x;
+        skeletonRectFreshY = rect.y;
+        skeletonRectFreshW = rect.width;
+        skeletonRectFreshH = rect.height;
+        skeletonRectFreshValid = valid;
+        if (valid && (stable || !skeletonRectValid)) {
+            // 两帧读数一致（或首次拿到有效矩形）才更新采用值；换算用项目唯一合法公式
+            double renderScale = document.getViewport().renderScale();
+            skeletonRectX0 = (int) Math.floor(rect.x * renderScale);
+            skeletonRectY0 = (int) Math.floor(rect.y * renderScale);
+            skeletonRectX1 = (int) Math.ceil((rect.x + rect.width) * renderScale);
+            skeletonRectY1 = (int) Math.ceil((rect.y + rect.height) * renderScale);
+            skeletonRectValid = true;
         }
     }
 }
