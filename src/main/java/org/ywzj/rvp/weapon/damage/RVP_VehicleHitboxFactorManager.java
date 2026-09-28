@@ -1388,10 +1388,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      */
     public static void spawnBarrelBurstEffect(AbstractVehicle vehicle, String barrelBone) {
         if (vehicle == null || !(vehicle.level() instanceof ServerLevel serverLevel)) {
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 非 ServerLevel 或 vehicle 为空，跳过");
             return;
         }
-        Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
-        spawnMchrEraExplosion(serverLevel, pos, 1.0f);
+        try {
+            Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log(String.format(
+                    "炸膛特效: pos=[%.2f, %.2f, %.2f] radius=%.1f", pos.x, pos.y, pos.z, 3.0f));
+            spawnMchrEraExplosion(serverLevel, pos, 1.0f);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 视觉事件已发布");
+        } catch (Exception exception) {
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 异常 " + exception);
+            com.mojang.logging.LogUtils.getLogger().error("[RVP-Barrel] 炸膛特效发布失败", exception);
+        }
     }
 
     /**
