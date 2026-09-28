@@ -136,12 +136,18 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         rebuildAll();
     }
 
+    /** DOM 变更后待强制重绘标记：下一帧走 resize 完整重布局+重绘（显示恢复路径）。 */
+    private boolean pendingRepaint;
+
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // [RVP] 动态 DOM 更新（replaceChildren/setTextContent）后**零刷新调用**——AUI 渲染
-        // 每帧读 DOM 当前态，天然生效（2026-09-28 对齐本体改装屏 buildDisplayCatalog 同款
-        // 零调用模式）。此前 resize()/Document.refresh() 都是全量重布局，为"左右闪"根因。
-        // 窗口缩放仍由 Minecraft 触发 init/resize 全量路径，不受影响。
+        // [RVP] 回退 87ce0a2（2026-09-28 用户要求，显示优先）：恢复 resize 强制重绘路径——
+        // 状态更新时左右闪（AUI 重建 Document 重布局）回归；原地 diff 更新（updateDynamicRows）
+        // 与 init 全量重建均保留，闪烁治本另开一轮排查。
+        if (pendingRepaint) {
+            pendingRepaint = false;
+            resize(minecraft, width, height);
+        }
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         // 节流刷新动态状态（栏目行失效态/血量/队列），签名未变化时零 DOM 操作
         if (++refreshCounter >= 10) {
@@ -199,25 +205,11 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
         lastDynamicSignature = signature;
         updateHp();
-        updateDynamicRows();
+        rebuildCategories();
         rebuildQueues();
-        // [RVP] 标脏（2026-09-28 修面板左右闪/行全空）：AUI 对运行中 DOM 变更是惰性绘制——
-        // ① requestStyleRecalc（SUBTREE 模式）挂起子树样式重算 → 渲染帧
-        //    commitPendingStyleRecalcForRender → flushPendingUpdates 自动重建 PaintList（新增行生效）；
-        // ② markDirty(RELAYOUT|REPAINT) 视觉重绘脏（原体改装屏同款）。两者互补缺一不可。
-        if (categoryScroll != null) {
-            document.requestStyleRecalc(categoryScroll);
-            document.markDirty(categoryScroll,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
-        if (hpText != null) {
-            document.markDirty(hpText,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
-        if (hpFill != null) {
-            document.markDirty(hpFill,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
+        // [RVP] 回退 87ce0a2（2026-09-28 用户要求）：恢复 resize 强制重绘路径（显示优先）。
+        // resize 重建 Document + 全量重布局 = 状态更新时左右闪（旧观感回归，显示先保住）。
+        pendingRepaint = true;
     }
 
     /** 动态区内容签名：整车血量 + 各栏目行生效态 + 两条维修队列。 */
