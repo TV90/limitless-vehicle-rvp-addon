@@ -96,12 +96,6 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         if (document == null) {
             return;
         }
-        // Document 重建（resize/首开）：行与卡片缓存全部失效清空（旧 Element 引用不可复用）
-        catBodyByKey.clear();
-        rowBindingByKey.clear();
-        // Document 重建（resize/首开）：行与卡片缓存全部失效清空（旧 Element 引用不可复用）
-        catBodyByKey.clear();
-        rowBindingByKey.clear();
         panelTitle = document.getElementById("panel-title");
         hpText = document.getElementById("hp-text");
         hpFill = document.getElementById("hp-fill");
@@ -199,14 +193,11 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
         lastDynamicSignature = signature;
         updateHp();
+        // [RVP] 运行中原地更新已建行（别名/附加/状态/失效样式）+ 容器 markDirty 上屏——
+        // 不 replaceChildren 重建（重建帧 = 闪烁）、不 resize（AUI 重建 Document 同闪）。
         updateDynamicRows();
         rebuildQueues();
-        // [RVP] 标脏（2026-09-28 修面板左右闪/行全空）：AUI 对运行中 DOM 变更是惰性绘制——
-        // ① requestStyleRecalc（SUBTREE 模式）挂起子树样式重算 → 渲染帧
-        //    commitPendingStyleRecalcForRender → flushPendingUpdates 自动重建 PaintList（新增行生效）；
-        // ② markDirty(RELAYOUT|REPAINT) 视觉重绘脏（原体改装屏同款）。两者互补缺一不可。
         if (categoryScroll != null) {
-            document.requestStyleRecalc(categoryScroll);
             document.markDirty(categoryScroll,
                     com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
         }
@@ -217,6 +208,29 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         if (hpFill != null) {
             document.markDirty(hpFill,
                     com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        }
+    }
+
+    /**
+     * [RVP] 运行中原地更新已建行（2026-09-28）：别名/附加/状态/失效样式按固定子序写入
+     * （rebuildCategories 首建时缓存的行 Element，键 = 栏目|骨名）。
+     */
+    private void updateDynamicRows() {
+        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
+            String cardKey = category.title();
+            for (RVP_EquipPanelData.Row row : category.rows()) {
+                Element rowDiv = rowElementsByKey.get(cardKey + "|" + row.boneName());
+                if (rowDiv == null || rowDiv.children.size() < 4) {
+                    continue;
+                }
+                rowDiv.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
+                rowDiv.children.get(1).setTextContent(row.alias());
+                rowDiv.children.get(2).setTextContent(row.extra() == null ? "" : row.extra());
+                rowDiv.children.get(3).setClassName("row-state " + (row.active() ? "ok" : "bad"));
+                rowDiv.children.get(3).setTextContent(I18n.get(row.active()
+                        ? "gui.ywzj_rvp.equipment.state_ok"
+                        : "gui.ywzj_rvp.equipment.state_bad"));
+            }
         }
     }
 
@@ -271,148 +285,47 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
     }
 
     /** 右半页栏目：同屏四卡 2×2，由数据模型逐行构建。 */
-    /** 栏目卡缓存：栏目 key → body Element（原地 diff 更新复用，防全量重建抖动）。 */
+    /** 栏目行缓存：栏目 key + 骨名 → 行 div（运行中原地更新，不重建）。 */
     private final Map<String, Element> catBodyByKey = new HashMap<>();
-    /** 行缓存：栏目 key|骨名|序号 → 行绑定（div + 可变行数据，原地更新复用）。 */
-    private final Map<String, RowBinding> rowBindingByKey = new HashMap<>();
+    private final Map<String, Element> rowElementsByKey = new HashMap<>();
 
-    /**
-     * 栏目/行原地 diff 更新（2026-09-28 修"ERA 栏目左右闪"）：替换原 replaceChildren
-     * 全量重建——新建元素首帧布局抖动，高频状态更新（虚拟血量）时栏目卡片左右晃。
-     * 现按栏目 key / 行 key 复用现有 Element 原地更新文本与类名，仅新增/消失行做 DOM
-     * 增删，顺序按目标序 appendChild 重排（已存在节点 append = 移动）。AUI 每帧读 DOM，零刷新调用。
-     */
     private void rebuildCategories() {
         if (categoryScroll == null || document == null) {
             return;
         }
+        // [RVP] 首建守卫（2026-09-28 修左右闪/行全空）：栏目行只在首次构建一次并缓存行
+        // Element；运行中状态变化由 refreshDynamic → updateDynamicRows **原地更新**（文本/
+        // 类名/markDirty 上屏）——replaceChildren 全量重建帧是闪烁与空白来源，彻底移除。
+        if (!catBodyByKey.isEmpty()) {
+            return;
+        }
         List<RVP_EquipPanelData.Category> categories = RVP_EquipPanelData.buildCategories(vehicle);
-        // [RVP] 两遍式 diff（2026-09-28 修"行全空"）：先建/更新全部目标行并挂载，
-        // 循环外一次性移除非目标行/卡——原实现在每栏目循环内 removeIf，
-        // 处理第一栏目时把其它栏目的行误判消失全部移除，且 predicate 内
-        // 手动改同一 map 属未定义行为，缓存错乱后行全空。
-        java.util.Set<String> seenCards = new java.util.HashSet<>();
-        java.util.Set<String> seenRowKeys = new java.util.HashSet<>();
         boolean first = true;
         for (RVP_EquipPanelData.Category category : categories) {
             String cardKey = category.title();
-            Element body = catBodyByKey.get(cardKey);
-            if (body == null) {
-                Element card = document.createElement("section");
-                card.setClassName("card cat-card" + (first ? " card-accent-green" : ""));
-                Element header = document.createElement("div");
-                header.setClassName("card-header");
-                header.setTextContent(category.title() + "　" + category.summary());
-                body = document.createElement("div");
-                body.setClassName("card-body cat-body");
-                card.appendChild(header);
-                card.appendChild(body);
-                categoryScroll.appendChild(card);
-                catBodyByKey.put(cardKey, body);
-            } else {
-                // 标题汇总原地更新（summary 变化不重建卡）；卡片已挂载不重挂（栏目顺序稳定）
-                Element header = body.children.isEmpty() ? null : body.children.get(0);
-                if (header != null) {
-                    header.setTextContent(category.title() + "　" + category.summary());
-                }
-            }
+            Element card = document.createElement("section");
+            card.setClassName("card cat-card" + (first ? " card-accent-green" : ""));
             first = false;
+            // 标题与汇总并入同一文本节点：AUI 下"文本 + 子元素"混排渲染会重叠
+            Element header = document.createElement("div");
+            header.setClassName("card-header");
+            header.setTextContent(category.title() + "　" + category.summary());
+            Element body = document.createElement("div");
+            body.setClassName("card-body cat-body");
             for (RVP_EquipPanelData.Row row : category.rows()) {
-                String rowKey = cardKey + "|" + row.boneName() + "|" + row.index();
-                RowBinding binding = rowBindingByKey.get(rowKey);
-                if (binding == null) {
-                    binding = buildRow(row);
-                    rowBindingByKey.put(rowKey, binding);
-                } else {
-                    updateRowElement(binding, row);
-                }
-                seenRowKeys.add(rowKey);
-                body.appendChild(binding.div()); // 按目标顺序重排（已存在节点 append = 移动）
+                Element rowDiv = buildRow(row);
+                rowElementsByKey.put(cardKey + "|" + row.boneName(), rowDiv);
+                body.appendChild(rowDiv);
             }
-            seenCards.add(cardKey);
-        }
-        // 循环外一次性移除非目标行（DOM + 缓存）
-        rowBindingByKey.entrySet().removeIf(entry -> {
-            if (seenRowKeys.contains(entry.getKey())) {
-                return false;
-            }
-            Element div = entry.getValue().div();
-            if (div.getParentElement() != null) {
-                div.getParentElement().removeChild(div);
-            }
-            return true;
-        });
-        // 移除消失栏目卡
-        catBodyByKey.entrySet().removeIf(entry -> {
-            if (seenCards.contains(entry.getKey())) {
-                return false;
-            }
-            Element body = entry.getValue();
-            if (body.getParentElement() != null) {
-                Element card = body.getParentElement();
-                if (card.getParentElement() != null) {
-                    card.getParentElement().removeChild(card);
-                }
-            }
-            rowBindingByKey.keySet().removeIf(k -> k.startsWith(rowPrefixOf(entry.getKey())));
-            return true;
-        });
-    }
-
-    /** 栏目 key 前缀（行键 = 前缀 + 骨名|序号）。 */
-    private static String rowPrefixOf(String cardKey) {
-        return cardKey + "|";
-    }
-
-    /**
-     * [RVP] 运行中动态更新（2026-09-28 重写）：只对 init 时已建好的行原地更新（文本/类名/
-     * 失效置顶 order 样式），不增删不重建任何 Element——AUI 对 init 后新增的子树不做布局
-     *（markDirty 也无效，实测行全空），init 构建的元素 markDirty 才会上屏（本体改装屏同款）。
-     */
-    private void updateDynamicRows() {
-        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
-            for (RVP_EquipPanelData.Row row : category.rows()) {
-                String rowKey = category.title() + "|" + row.boneName() + "|" + row.index();
-                RowBinding binding = rowBindingByKey.get(rowKey);
-                if (binding != null) {
-                    updateRowElement(binding, row);
-                }
-            }
-        }
-        if (categoryScroll != null) {
-            document.markDirty(categoryScroll,
-                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
-        }
-    }
-
-    /** 更新既有行 Element：类名 / 序号 / 别名 / 附加文本 / 状态徽标 / 失效置顶 order 原地写入。 */
-    private static void updateRowElement(RowBinding binding, RVP_EquipPanelData.Row row) {
-        binding.holder().set(row);
-        Element div = binding.div();
-        div.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
-        // 失效行视觉置顶（flex order；AUI 不支持 order 时被忽略，保持原序无副作用）
-        div.setInlineStyleProperty("order", row.active() ? "1" : "0");
-        if (div.children.size() >= 4) {
-            div.children.get(0).setTextContent(String.valueOf(row.index()));
-            div.children.get(1).setTextContent(row.alias());
-            div.children.get(2).setTextContent(row.extra() == null ? "" : row.extra());
-            div.children.get(3).setClassName("row-state " + (row.active() ? "ok" : "bad"));
-            div.children.get(3).setTextContent(I18n.get(row.active()
-                    ? "gui.ywzj_rvp.equipment.state_ok"
-                    : "gui.ywzj_rvp.equipment.state_bad"));
+            card.appendChild(header);
+            card.appendChild(body);
+            categoryScroll.appendChild(card);
+            catBodyByKey.put(cardKey, body);
         }
     }
 
     /** 单行：序号 / 别名（+行尾附加文本）/ 状态徽标；失效且可入队的行绑定点击入队。 */
-    /** 行绑定：div + 可变行数据（原地更新时刷新，监听闭包读当前值）。 */
-    private record RowBinding(Element div,
-                              java.util.concurrent.atomic.AtomicReference<RVP_EquipPanelData.Row> holder) {
-    }
-
-    /** 构建行 Element（extra 槽恒建，空文本占位——原地更新按固定子序写入）。 */
-    private RowBinding buildRow(RVP_EquipPanelData.Row row) {
-        java.util.concurrent.atomic.AtomicReference<RVP_EquipPanelData.Row> holder =
-                new java.util.concurrent.atomic.AtomicReference<>(row);
+    private Element buildRow(RVP_EquipPanelData.Row row) {
         Element div = document.createElement("div");
         div.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
         Element idx = document.createElement("span");
@@ -423,24 +336,22 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         alias.setClassName("row-alias");
         alias.setTextContent(row.alias());
         div.appendChild(alias);
-        Element extra = document.createElement("span");
-        extra.setClassName("row-extra");
-        extra.setTextContent(row.extra() == null ? "" : row.extra());
-        div.appendChild(extra);
+        if (row.extra() != null) {
+            Element extra = document.createElement("span");
+            extra.setClassName("row-extra");
+            extra.setTextContent(row.extra());
+            div.appendChild(extra);
+        }
         Element state = document.createElement("span");
         state.setClassName("row-state " + (row.active() ? "ok" : "bad"));
         state.setTextContent(I18n.get(row.active()
                 ? "gui.ywzj_rvp.equipment.state_ok"
                 : "gui.ywzj_rvp.equipment.state_bad"));
         div.appendChild(state);
-        // 点击入队：读 holder 当前行（原地更新后语义同步）——失效且可入队才生效
-        div.addEventListener("click", event -> {
-            RVP_EquipPanelData.Row current = holder.get();
-            if (!current.active() && current.queueKey() != null) {
-                addToQueue(current.queueKey(), current.boneName(), current.alias());
-            }
-        });
-        return new RowBinding(div, holder);
+        if (!row.active() && row.queueKey() != null) {
+            div.addEventListener("click", event -> addToQueue(row.queueKey(), row.boneName(), row.alias()));
+        }
+        return div;
     }
 
     // ─────────────────────────────────────────────────────────────
