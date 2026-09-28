@@ -716,6 +716,28 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     /** 炮管受损档（两档中间态）：key = vehicleId|bone。服务端内存不持久化（与累计中间量同口径）。 */
     private static final java.util.Set<String> BARREL_DAMAGED_STAGE = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * 哑火封锁（2026-09-28 用户定版）：哑火后 30 tick 内禁止再次射击（key = vehicleId|bone
+     * → 解封 gameTime）。防连射窗口内连续 roll（连续哑火/哑火接炸膛），也给装填节奏留缓冲。
+     */
+    private static final java.util.Map<String, Long> BARREL_MISFIRE_UNTIL = new java.util.HashMap<>();
+
+    /** 哑火封锁剩余 tick（<0 未封锁）。 */
+    public static long getBarrelMisfireRemain(AbstractVehicle vehicle, String barrelBone, long gameTime) {
+        if (vehicle == null || barrelBone == null) {
+            return -1;
+        }
+        Long until = BARREL_MISFIRE_UNTIL.get(vehicle.getUUID() + "|" + barrelBone);
+        return until == null ? -1 : until - gameTime;
+    }
+
+    /** 设置哑火封锁（哑火 roll 时调用）。 */
+    public static void markBarrelMisfire(AbstractVehicle vehicle, String barrelBone, long gameTime, int durationTicks) {
+        if (vehicle != null && barrelBone != null) {
+            BARREL_MISFIRE_UNTIL.put(vehicle.getUUID() + "|" + barrelBone, gameTime + durationTicks);
+        }
+    }
+
     /** 炮管是否处于受损档（两档中间态：射击三选一判定用）。 */
     public static boolean isBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
         return vehicle != null && barrelBone != null
