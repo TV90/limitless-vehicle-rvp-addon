@@ -7,7 +7,7 @@
 
 本文档同时回答两个问题：
 
-1. 当前载具包中 10 个 Gunner Profile 分别配了什么；
+1. 当前载具包中 11 个 Gunner Profile 分别配了什么；
 2. 如何用 schema v2 编写、组合和调试新的 Gunner Profile。
 
 本文以当前 JSON、`RVP_GunnerProfileCompiler`、`RVP_GunnerBehaviorRegistry` 和内建行为实现为准。若后续修改字段、默认值或范围，应同步更新本文。
@@ -77,7 +77,7 @@ ywzj_rvp:example
 
 ---
 
-## 2. 当前 10 个 Profile 现状
+## 2. 当前 11 个 Profile 现状
 
 ### 2.1 总览
 
@@ -92,17 +92,19 @@ ywzj_rvp:example
 | `mixed` | `friendly` | 18 | 完整组合；宽目标类型，兼顾普通载具、怪物、玩家和其他生物 |
 | `sead_pilot` | `friendly` | 18 | 完整组合；基础索敌半径1024 格，用于带 AntiRadiation 武器的驾驶员 |
 | `static_gunner` | `friendly` | 6 | 固定武器座；普通索敌、雷达、制导和开火；不写载具移动 |
+| `static_anti_air` | `friendly` | 6 | 静态防空炮手；CIWS 与普通索敌仅选 `rvp:missile`、`vehicle:aircraft`，不写载具移动 |
 | `team` | `team` | 18 | 完整组合；以 Minecraft Team 联盟关系过滤，打玩家和非盟友 Gunner 载具 |
 
 ### 2.2 行为组合模式
 
-当前 10 个 Profile 实际使用四种组合模式。
+当前 11 个 Profile 实际使用五种组合模式。
 
 | 模式 | Profile | 行为组成 |
 | --- | --- | --- |
 | 完整 18 行为 | `default`、`enemy`、`friendly`、`ground`、`mixed`、`sead_pilot`、`team` | 全部注册行为；不适用载具类型的行为由能力门控静默跳过 |
 | 飞行武器操作员 | `air` | CIWS、普通索敌、本体/RVP 反制、ECM、本车/外置雷达、制导维持、武器交战 |
 | 静态炮手 | `static_gunner` | CIWS、普通索敌、本车/外置雷达、制导维持、武器交战 |
+| 静态防空炮手 | `static_anti_air` | CIWS、仅导弹/飞机普通索敌、本车/外置雷达、制导维持、武器交战；不含移动行为 |
 | 纯 CIWS | `ciws_only` | CIWS 索敌、本车雷达、武器交战 |
 
 完整 18 行为 Profile 当前的声明顺序和显式优先级如下。所有值都与当前注册表缺省优先级相同：
@@ -143,6 +145,7 @@ ywzj_rvp:example
 | `mixed` | `vehicle`, `monster`, `player`, `living` | 224 | 8 | 5° | 1.2 | 6/8 | 40/70 |
 | `sead_pilot` | `vehicle`, `player` | 1024 | 10 | 6° | 1.0 | 6/10 | 36/80 |
 | `static_gunner` | `vehicle`, `monster`, `player` | 192 | 10 | 6° | 1.0 | 6/10 | — |
+| `static_anti_air` | `rvp:missile`, `vehicle:aircraft` | 320 | 6 | 4° | 1.5 | 4/8 | — |
 | `team` | `player`, `vehicle:non_allied_gunner` | 256 | 8 | 5° | 1.0 | 6/10 | 36/80 |
 
 表中“基础半径”不一定等于最终索敌半径：
@@ -243,6 +246,7 @@ Profile 包含下列任一行为时，才被认为具有移动能力：
 | `neutral` | 非玩家、非载具、非 Gunner、非怪物的其他生物 |
 | `living` | 任意 `LivingEntity`，仍受自身、乘员、所有者和盟友过滤 |
 | `vehicle` | 任意已有乘员的载具；空载具不匹配 |
+| `vehicle:aircraft` | 有驾驶员的固定翼或旋翼载具；按载具类别判断，不检查当前离地/飞行状态 |
 | `vehicle:player` | 由玩家驾驶的载具 |
 | `vehicle:enemy_gunner` | 由 `enemy` Gunner 驾驶的载具 |
 | `vehicle:friendly_gunner` | 由 `friendly` Gunner 驾驶的载具 |
@@ -252,6 +256,7 @@ Profile 包含下列任一行为时，才被认为具有移动能力：
 额外过滤规则：
 
 - 死亡实体、Gunner 自身、当前载具和同车乘员不会成为目标。
+- `vehicle:aircraft` 匹配固定翼与旋翼载具类别；飞机停在地面时仍匹配，空载飞机不匹配。
 - 步行的创造/旁观玩家在任何难度下受保护。
 - 带创造/旁观乘员的载具在非困难难度下受保护；困难难度下可被攻击。
 - 来袭弹药会过滤本机、同阵营 Gunner、同车乘员和盟友的弹药。
@@ -474,7 +479,17 @@ Smoke 的威胁触发范围当前不全部开放为 JSON：红外锁定导弹检
 }
 ```
 
-### 7.2 纯 CIWS
+### 7.2 静态防空炮手
+
+使用 `static_anti_air.json`。Profile 不含任何移动行为；`primary_targeting` 只配置：
+
+```json
+"target_types": ["rvp:missile", "vehicle:aircraft"]
+```
+
+`vehicle:aircraft` 只匹配有驾驶员的固定翼或旋翼载具，不要求目标当前正在飞行。`rvp:missile` 沿用当前类型语义，包含可拦截的导弹、炸弹和火箭。CIWS 与普通索敌共用这组弹药类别，CIWS 负责高频来袭弹药目标抢占。
+
+### 7.3 纯 CIWS
 
 仅保留：
 
@@ -484,7 +499,7 @@ ciws_targeting + ownship_radar + weapon_engagement
 
 不要加 `primary_targeting`，否则它也会选普通目标。
 
-### 7.3 地面突击车
+### 7.4 地面突击车
 
 建议最小移动组合：
 
@@ -498,7 +513,7 @@ weapon_engagement
 
 按载具能力再加 `driver_supply`、`weapon_countermeasure`、`rvp_countermeasure`、`active_ecm`、`smoke_evasion`、雷达和制导支持。
 
-### 7.4 固定翼/SEAD 驾驶员
+### 7.5 固定翼/SEAD 驾驶员
 
 建议至少包含：
 
@@ -513,7 +528,7 @@ weapon_engagement
 
 `sead_revenge` 不会把普通武器自动变成 AntiRadiation；当前武器站必须实际存在类型化 AntiRadiation 武器且发射门控成功。
 
-### 7.5 旋翼驾驶员
+### 7.6 旋翼驾驶员
 
 把固定翼范本中的 `fixed_wing_combat_flight` 换成 `rotary_wing_combat_flight`。如果 Profile 需要同时通用于固定翼和旋翼，可同时放入两种行为，运行时只有匹配载具类型的一个会生效。
 

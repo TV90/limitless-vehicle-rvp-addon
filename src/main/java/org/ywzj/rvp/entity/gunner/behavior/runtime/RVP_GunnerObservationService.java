@@ -50,6 +50,9 @@ public final class RVP_GunnerObservationService {
     private final Map<Double, List<AbstractVehicle>> radarLockSourceCache = new java.util.HashMap<>();
     /** 按半径缓存当前 Gunner 拥有的在途 RVP 弹药。 */
     private final Map<Double, List<RVP_BaseBullet>> ownedProjectileCache = new java.util.HashMap<>();
+    /** 从完整已加载实体快照缓存当前 Gunner 拥有的在途 RVP 弹药。 */
+    @Nullable
+    private List<RVP_BaseBullet> allOwnedProjectileSnapshot;
     /** 派生候选查询次数。 */
     private int queryCount;
     /** 派生查询检查过的快照实体总数。 */
@@ -131,6 +134,24 @@ public final class RVP_GunnerObservationService {
             }
             return List.copyOf(result);
         });
+    }
+
+    /** 返回当前世界全部已加载实体中由当前 Gunner 拥有的在途 RVP 弹药，不按距载具距离裁切。 */
+    public List<RVP_BaseBullet> ownedProjectiles() {
+        if (allOwnedProjectileSnapshot == null) {
+            List<RVP_BaseBullet> result = new ArrayList<>();
+            // 调用共享单 tick 世界快照，允许长航程在途弹离开载具附近后继续被火控会话追踪。
+            for (Entity entity : loadedEntities()) {
+                if (entity instanceof RVP_BaseBullet projectile) {
+                    // 调用本体弹药 Owner 入口，只收集当前 Gunner 发射且仍已加载的弹体。
+                    if (projectile.getOwner() == gunner) {
+                        result.add(projectile);
+                    }
+                }
+            }
+            allOwnedProjectileSnapshot = List.copyOf(result);
+        }
+        return allOwnedProjectileSnapshot;
     }
 
     /** 返回实体当前 Team；同一实体在本 tick 只读取一次。 */

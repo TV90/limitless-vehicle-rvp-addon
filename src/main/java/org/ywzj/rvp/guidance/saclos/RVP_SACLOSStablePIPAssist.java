@@ -2,6 +2,8 @@ package org.ywzj.rvp.guidance.saclos;
 
 import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.entity.gunner.GunnerEntity;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerFireControlPolicy;
 import org.ywzj.rvp.ext.WeaponUnitDataExt;
 import org.ywzj.rvp.guidance.RVP_CommandGuidanceAim;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -24,7 +26,7 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
  */
 public final class RVP_SACLOSStablePIPAssist {
 
-    /** 客户端每Tick同步一次；超过500毫秒未刷新即视为STABLE请求失效。 */
+    /** 玩家客户端或 Gunner 服务端每Tick刷新；超过500毫秒未刷新即视为STABLE请求失效。 */
     private static final long STABLE_REQUEST_MAX_AGE_MS = 500L;
 
     /** 工具类不允许实例化。 */
@@ -42,7 +44,7 @@ public final class RVP_SACLOSStablePIPAssist {
                 || context.data() == null || context.projectile().getOwner() == null) {
             return null;
         }
-        // 调用本项目操作手会话，只接受仍由客户端逐Tick刷新的STABLE辅助请求。
+        // 调用本项目操作手会话，只接受仍由玩家客户端或 Gunner 服务端逐Tick刷新的 STABLE 请求。
         boolean stableRequestFresh = RVP_SaclosOperatorSession.isStablePIPAssistRequested(
                 context.projectile().getOwner().getUUID(), STABLE_REQUEST_MAX_AGE_MS);
 
@@ -54,13 +56,19 @@ public final class RVP_SACLOSStablePIPAssist {
         }
         // 调用本项目双端安全传感器解析，服务端不引用LocalVehiclePlayer客户端类型。
         WeaponUnitData.FireControlSensorType sensorType =
-                RVP_WeaponSensorHelper.effectiveOrStatic(aimUnit);
-        // 调用本项目武器解析器，要求操作手当前仍选中SACLOS导弹；切到机炮或其它弹种后
-        // 即使旧客户端请求尚在500毫秒新鲜窗口内，也不能继续借用STABLE PIP。
-        RVP_WeaponBase selectedWeapon = RVP_WeaponResolveHelper.currentPrimaryRvp(aimUnit);
-        boolean selectedSACLOSMissile = selectedWeapon != null
-                && selectedWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE
-                && selectedWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
+                RVP_WeaponSensorHelper.effectiveOrStatic(aimUnit, context.data());
+        boolean selectedSACLOSMissile;
+        if (context.projectile().getOwner() instanceof GunnerEntity) {
+            // 调用本项目 Gunner 火控策略，按在途弹自身数据验证 AI 的服务端 STABLE 授权。
+            selectedSACLOSMissile = RVP_GunnerFireControlPolicy.supportsStableSaclos(
+                    aimUnit, context.data());
+        } else {
+            // 调用本项目武器解析器，玩家只有仍选中 SACLOS 导弹时才可使用新鲜 STABLE 请求。
+            RVP_WeaponBase selectedWeapon = RVP_WeaponResolveHelper.currentPrimaryRvp(aimUnit);
+            selectedSACLOSMissile = selectedWeapon != null
+                    && selectedWeapon.getData().getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                    && selectedWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SACLOS);
+        }
         boolean eligible = supportsStablePIP(
                 stableRequestFresh,
                 context.data().getWeaponKind() == RVP_EnumWeaponKind.MISSILE

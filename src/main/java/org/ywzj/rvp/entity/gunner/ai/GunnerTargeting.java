@@ -27,6 +27,8 @@ import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.entity.weapon.MissileEntity;
 import org.ywzj.vehicle.entity.weapon.RocketEntity;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
@@ -558,6 +560,11 @@ public final class GunnerTargeting {
             if ("living".equals(type) && entity instanceof LivingEntity) {
                 return TargetMatch.allowed(false);
             }
+            // 调用本项目机型分类判定，使 Profile 可以只将固定翼与旋翼载具作为目标。
+            if ("vehicle:aircraft".equals(type) && isAircraftVehicle(entity)) {
+                // 调用本项目载具占用判定，沿用 vehicle 仅匹配有人驾驶载具的语义。
+                return isOccupiedVehicle(entity) ? TargetMatch.allowed(false) : TargetMatch.DISALLOWED;
+            }
             if ("vehicle".equals(type) && entity instanceof AbstractVehicle) {
                 return isOccupiedVehicle(entity) ? TargetMatch.allowed(false) : TargetMatch.DISALLOWED;
             }
@@ -773,6 +780,11 @@ public final class GunnerTargeting {
                 GunnerProfileManager.INSTANCE.normalizeProfileId(gunnerDriver.getProfileId())
         );
         return driverProfile.getFaction() == faction;
+    }
+
+    /** 判断目标是否属于固定翼或旋翼飞机类别；此判定不要求载具当前处于飞行状态。 */
+    private static boolean isAircraftVehicle(Entity entity) {
+        return entity instanceof FixedWingVehicle || entity instanceof RotaryWingVehicle;
     }
 
     private static boolean isRelativeHostileGunnerVehicle(GunnerEntity sourceGunner, Entity entity) {

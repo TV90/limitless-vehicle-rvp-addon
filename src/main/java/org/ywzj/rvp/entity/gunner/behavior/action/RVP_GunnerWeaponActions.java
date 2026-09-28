@@ -8,11 +8,15 @@ import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.entity.gunner.GunnerEntity;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerEngagementNet;
+import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerFireControlPolicy;
 import org.ywzj.rvp.entity.gunner.ai.RVP_GunnerLockDebug;
 import org.ywzj.rvp.entity.gunner.ai.GunnerTargeting;
 import org.ywzj.rvp.entity.gunner.ai.GunnerWeaponSuitability;
 import org.ywzj.rvp.entity.gunner.ai.profile.GunnerProfile;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
+import org.ywzj.rvp.client.lead.RVP_LeadSolution;
+import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -22,6 +26,7 @@ import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.vehicle.entity.weapon.AmmoEntity;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.pojo.AimContext;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleDecoyFlare;
 import org.ywzj.vehicle.vehicle.weapon.VehicleGrenade;
@@ -75,6 +80,10 @@ public final class RVP_GunnerWeaponActions {
         }
         gunner.setControlledWeaponIndex(weaponIndex);
         AbstractVehicleWeapon<?> selectedWeapon = weaponUnit.getIndexedWeapons().get(weaponIndex);
+        if (!launcher) {
+            // 调用本项目 STABLE 资格与机炮求解入口，在机炮通过资格时用弹道预瞄覆盖旧目标点。
+            applyStableMachinegunAim(weaponUnit, selectedWeapon, target);
+        }
         boolean rvpMissile = isRvpHomingMissile(weaponUnit, selectedWeapon);
         boolean selfGuided = isSelfGuidedMissile(weaponUnit, selectedWeapon);
         boolean aircraftTarget = target instanceof FixedWingVehicle || target instanceof RotaryWingVehicle;
@@ -142,6 +151,21 @@ public final class RVP_GunnerWeaponActions {
             selectedWeapon = weaponUnit.getIndexedWeapons().get(fallback);
             weaponIndex = fallback;
             gunner.setControlledWeaponIndex(fallback);
+            // 调用本项目机炮火控入口，更新导弹锁定失败后切换到的 STABLE 机炮预瞄方向。
+            boolean fallbackStableAim = !launcher
+                    && applyStableMachinegunAim(weaponUnit, selectedWeapon, target);
+            if (fallbackStableAim) {
+                float xError = Math.abs(Mth.wrapDegrees(weaponUnit.getXRot() - weaponUnit.getXAimRot()));
+                float yError = Math.abs(Mth.wrapDegrees(weaponUnit.getYRot() - weaponUnit.getYAimRot()));
+                if (xError > profile.getFireWindowDeg() || yError > profile.getFireWindowDeg()) {
+                    if (FMLEnvironment.dist == Dist.CLIENT) {
+                        RVP_GunnerLockDebug.logEngage(vehicle, target, "STABLE_FALLBACK_AIM_WINDOW",
+                                String.format("err=%.1f,%.1f win=%.1f", xError, yError,
+                                        profile.getFireWindowDeg()));
+                    }
+                    return RVP_GunnerActionResult.GATED;
+                }
+            }
             // 调用同一项目锁定准备入口，保证回退武器也经过完整门控。
             if (!GunnerWeaponSuitability.prepareLaunchLock(weaponUnit, selectedWeapon, target)) {
                 if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -185,6 +209,48 @@ public final class RVP_GunnerWeaponActions {
                     gunner, engagementWindowTick);
         }
         return RVP_GunnerActionResult.DISPATCHED;
+    }
+
+    /** 以服务端 RVP 弹道解算结果瞄准符合 STABLE 资格的 Gunner 机炮。 */
+    private static boolean applyStableMachinegunAim(WeaponUnit controlWeaponUnit,
+                                                    AbstractVehicleWeapon<?> rawWeapon,
+                                                    Entity target) {
+        // 调用本项目火控资格解析器，拒绝非 RVP 机炮或不支持当前火控/传感器的武器站。
+        if (!RVP_GunnerFireControlPolicy.supportsStableMachinegun(controlWeaponUnit, rawWeapon)) {
+            return false;
+        }
+        // 调用本体代理解析与本项目解包器，取得本次 Gunner 选弹对应的实际 RVP 武器。
+        AbstractVehicleWeapon<?> selectedWeapon = RVP_WeaponResolveHelper.unwrap(
+                controlWeaponUnit.proxyWeapon(rawWeapon));
+        if (!(selectedWeapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return false;
+        }
+        // 调用本项目 RVP 武器数据访问器，取得本次弹道解算所需的机炮参数。
+        RVP_WeaponData data = rvpWeapon.getData();
+        if (data == null) {
+            return false;
+        }
+        // 调用本体武器对象读取真实挂载站，保持弹道解算枪口与弹体发射原点一致。
+        WeaponUnit launchWeaponUnit = rvpWeapon.getWeaponUnit();
+        if (launchWeaponUnit == null) {
+            return false;
+        }
+        // 调用本体挂载站瞄准上下文，读取当前炮口世界位置。
+        AimContext aimContext = launchWeaponUnit.aimContext();
+        Vec3 muzzle = aimContext == null ? null : aimContext.from;
+        if (muzzle == null) {
+            // 调用本体炮闩坐标，在挂载站未提供瞄准上下文时回退到实际炮口位置。
+            muzzle = launchWeaponUnit.worldCurrentBoltPosition();
+        }
+        // 调用双端安全的本项目机炮弹道解算器，按服务端实体位置和速度预测拦截点。
+        RVP_LeadSolution solution = RVP_MachinegunLeadSolver.solveForTarget(
+                launchWeaponUnit, data, muzzle, target, 1.0F);
+        if (solution == null || solution.leadWorldPos() == null) {
+            return false;
+        }
+        // 调用本体武器站瞄准 API，让 Gunner 炮塔跟随本次机炮弹道预瞄点。
+        controlWeaponUnit.aim(solution.leadWorldPos());
+        return true;
     }
 
     /** 尝试由本体式反制武器瞄准并拦截危险弹药。 */

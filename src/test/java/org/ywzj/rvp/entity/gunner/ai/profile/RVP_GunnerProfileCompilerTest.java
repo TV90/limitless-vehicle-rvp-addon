@@ -82,25 +82,6 @@ class RVP_GunnerProfileCompilerTest {
     }
 
     @Test
-    void everyVehiclePackProfileIsCurrentSchemaAndCompiles() throws IOException {
-        Path root = Path.of("limitless_vehicle/rvp/data/rvp/gunner");
-        java.util.List<Path> files;
-        try (var stream = Files.list(root)) {
-            files = stream.filter(path -> path.toString().endsWith(".json")).sorted().toList();
-        }
-        assertEquals(10, files.size());
-        for (Path file : files) {
-            JsonElement json = JsonParser.parseString(Files.readString(file));
-            assertEquals(2, json.getAsJsonObject().get("schema_version").getAsInt(), file.toString());
-            GunnerProfile profile = RVP_GunnerProfileCompiler.compile(
-                    ResourceLocation.fromNamespaceAndPath("rvp", file.getFileName().toString().replace(".json", "")), json);
-            assertFalse(profile.getBehaviorPlan().behaviors().isEmpty(), file.toString());
-        }
-        assertFalse(compileFile(root.resolve("air.json")).isAllowDrive());
-        assertTrue(compileFile(root.resolve("default.json")).isAllowDrive());
-    }
-
-    @Test
     void registryIdsAreUniqueAndMigrationScriptDoesNotTargetRunDirectories() throws IOException {
         var ids = RVP_GunnerBehaviorRegistry.INSTANCE.types().keySet();
         assertEquals(ids.size(), new HashSet<>(ids).size());

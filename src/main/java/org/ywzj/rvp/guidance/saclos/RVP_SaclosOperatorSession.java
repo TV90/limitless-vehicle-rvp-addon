@@ -15,7 +15,7 @@ public final class RVP_SaclosOperatorSession {
 
     /**
      * 玩家照射会话状态：targeting=是否正在照射，point=实时照射点，
-     * stablePIPAssist=客户端是否请求STABLE PIP辅助，updatedMs=最近刷新时刻（防陈旧条目）。
+     * stablePIPAssist=玩家或服务端Gunner是否请求STABLE PIP辅助，updatedMs=最近刷新时刻（防陈旧条目）。
      */
     private record State(boolean targeting, @Nullable Vec3 point,
                          boolean stablePIPAssist, long updatedMs) {}
@@ -38,7 +38,7 @@ public final class RVP_SaclosOperatorSession {
      * @param playerId 操作手UUID
      * @param targeting 是否保持照射
      * @param point 当前世界照射点
-     * @param stablePIPAssist 是否请求STABLE模式PIP辅助；服务端制导源还会再次校验
+     * @param stablePIPAssist 玩家请求或服务端Gunner授权的STABLE模式PIP辅助；服务端制导源还会再次校验
      */
     public static void setDesignation(UUID playerId, boolean targeting, @Nullable Vec3 point,
                                       boolean stablePIPAssist) {

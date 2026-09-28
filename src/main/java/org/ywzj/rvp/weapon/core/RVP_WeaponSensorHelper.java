@@ -2,6 +2,7 @@ package org.ywzj.rvp.weapon.core;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -57,15 +58,32 @@ public final class RVP_WeaponSensorHelper {
         if (unit == null) {
             return WeaponUnitData.FireControlSensorType.NONE;
         }
+        // 调用本项目武器解析器，读取武器站手动当前选中的 RVP 主武器。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
-        if (weapon == null) {
+        // 调用本类显式数据重载，统一解析传感器覆盖与静态回退。
+        return effectiveOrStatic(unit, weapon == null ? null : weapon.getData());
+    }
+
+    /**
+     * 双端安全版本：按调用方指定的实际 RVP 武器数据解析动态传感器，供 Gunner 受控索引等
+     * 与武器站手动当前选中项不同步的服务端调用使用。
+     */
+    public static WeaponUnitData.FireControlSensorType effectiveOrStatic(
+            WeaponUnit unit, @Nullable RVP_WeaponData data) {
+        if (unit == null) {
+            return WeaponUnitData.FireControlSensorType.NONE;
+        }
+        if (data == null) {
+            // 调用本体数据访问器，武器未提供动态覆盖时沿用站点静态传感器。
             return unit.getFireControlSensorType();
         }
-        RVP_WeaponData data = weapon.getData();
+        // 调用本项目武器数据模型，服务端将 eo_ccip 固定解析为 CCIP。
         if ("eo_ccip".equalsIgnoreCase(data.getFireControlSensorMode())) {
             return WeaponUnitData.FireControlSensorType.CCIP;
         }
+        // 调用本项目武器数据模型，优先应用武器级传感器覆盖。
         WeaponUnitData.FireControlSensorType override = data.getFireControlSensorTypeOverride();
+        // 调用本体数据访问器，覆盖未配置时回退到站点静态传感器。
         return override != null ? override : unit.getFireControlSensorType();
     }
 }

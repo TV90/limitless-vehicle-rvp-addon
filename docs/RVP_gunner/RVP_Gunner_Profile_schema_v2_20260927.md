@@ -4,7 +4,7 @@
 > 资源目录：`data/<namespace>/gunner/*.json`  
 > 旧平铺 schema：不支持；只可使用 `scripts/migrate_gunner_profiles_v2.py` 离线改写
 
-10 个当前 Profile 盘点、全部 18 种行为字段、范围、生效条件和组合范本见
+11 个当前 Profile 盘点、全部 18 种行为字段、范围、生效条件和组合范本见
 [RVP_Gunner_JSON配置现状与详细指南_20260928.md](./RVP_Gunner_JSON配置现状与详细指南_20260928.md)。
 
 ## 顶层
