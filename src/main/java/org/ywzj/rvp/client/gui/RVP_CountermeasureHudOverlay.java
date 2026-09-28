@@ -268,7 +268,8 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         if (snapshot != null && snapshot.isCoolingDown()) {
             int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.GREEN);
+            // 装填/冷却类红字（2026-09-29 用户定版）
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.RED);
             return;
         }
         String keyName = shortenKeyName(RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString());
@@ -301,8 +302,14 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             return;
         }
         // 对齐本体纵向 HUD：正常绿字，耗尽红字，带阴影（同本体 drawString 默认样式）；
-        // 部分受损黄（2026-09-29）：部分发射器打坏系统仍可用，优先于耗尽红
-        int color = damaged ? DAMAGED_YELLOW : (remain <= 0 ? Color.RED : Color.GREEN);
+        // 部分受损黄（2026-09-29）：部分发射器打坏系统仍可用，优先于耗尽红；
+        // 装填红字（2026-09-29 用户定版：装填类一律红，优先于受损黄）
+        int color;
+        if (reloadRemain > 0) {
+            color = Color.RED;
+        } else {
+            color = damaged ? DAMAGED_YELLOW : (remain <= 0 ? Color.RED : Color.GREEN);
+        }
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
