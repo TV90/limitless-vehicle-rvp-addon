@@ -596,8 +596,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         // [RVP] 全模块累计化（2026-09-28 用户定版）：命中配置模块骨即把实际到骨伤害累入通用
         // 累计表（含 ERA）——各模块按自身累计阈值（min_damage 字段，语义改为"累计失效阈值"）
-        // 判定失效：小口径蹭伤可攒、大口径一发照旧超阈。引擎/炮管走下方专属累计段（子对象阈值）
-        if (!result.modules().isEmpty()) {
+        // 判定失效：小口径蹭伤可攒、大口径一发照旧超阈。
+        // 排除引擎/炮管骨：它们走下方专属累计段（子对象阈值）——2026-09-28 实测双重入账
+        //（同一发 ×2：面板一发满 0/300 但两炮才失效，即本 bug），专属骨不通用入账
+        boolean exclusiveBone = result.modules().contains(BoneModuleType.ENGINE)
+                || result.modules().contains(BoneModuleType.ENGINE_DAMAGED)
+                || result.modules().contains(BoneModuleType.BARREL);
+        if (!result.modules().isEmpty() && !exclusiveBone) {
             RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, moduleTriggerDamage);
             syncBoneDamageProgress(vehicle);
         }
