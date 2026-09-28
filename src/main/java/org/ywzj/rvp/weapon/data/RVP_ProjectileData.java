@@ -9,6 +9,17 @@ import java.util.Map;
 
 public class RVP_ProjectileData {
 
+    /** 默认大气表的世界 Y 锚点；Y64 对应海平面，Y550 对应约 20 km。 */
+    private static final float[] DEFAULT_ALTITUDE_DRAG_HEIGHTS = {
+            64f, 113f, 186f, 258f, 307f, 356f, 429f, 550f, 672f, 793f
+    };
+
+    /** 默认大气表各锚点的空气密度相对海平面倍率；按相邻锚点线性插值。 */
+    private static final float[] DEFAULT_ALTITUDE_DRAG_FACTORS = {
+            1.000f, 0.822f, 0.601f, 0.429f, 0.338f,
+            0.255f, 0.159f, 0.073f, 0.033f, 0.014f
+    };
+
     /** 可选弹体初速覆盖，单位格/Tick，默认 null；未配置时继承武器顶层速度。 */
     @SerializedName("velocity")
     private Float velocity;
@@ -170,7 +181,7 @@ public class RVP_ProjectileData {
     @SerializedName("drag_coefficient")
     private float dragCoefficient = 0f;
 
-    /** 按世界 Y 高度配置的阻力倍率，默认 null；未命中或非法值按 1.0 处理。 */
+    /** 按世界 Y 高度配置的阻力倍率，字段默认 null；未配置时使用默认大气密度表，显式空表、未命中或非法值按 1.0 处理。 */
     @SerializedName("altitude_drag_factor")
     private Map<RVP_Range<Float>, Float> altitudeDragFactor;
 
@@ -553,10 +564,13 @@ public class RVP_ProjectileData {
     }
 
     public float resolveAltitudeDragFactor(double y) {
-        if (altitudeDragFactor == null || altitudeDragFactor.isEmpty()) {
+        float sample = normalizeAltitudeSample(y);
+        if (altitudeDragFactor == null) {
+            return resolveDefaultAltitudeDragFactor(sample);
+        }
+        if (altitudeDragFactor.isEmpty()) {
             return 1.0f;
         }
-        float sample = normalizeAltitudeSample(y);
         for (Map.Entry<RVP_Range<Float>, Float> entry : altitudeDragFactor.entrySet()) {
             RVP_Range<Float> range = entry.getKey();
             if (range == null || !range.contains(sample)) {
@@ -569,6 +583,24 @@ public class RVP_ProjectileData {
             return factor;
         }
         return 1.0f;
+    }
+
+    /** 未配置 JSON 倍率表时，在压缩后的现实大气密度锚点间平滑插值。 */
+    private static float resolveDefaultAltitudeDragFactor(float y) {
+        if (y <= DEFAULT_ALTITUDE_DRAG_HEIGHTS[0]) {
+            return DEFAULT_ALTITUDE_DRAG_FACTORS[0];
+        }
+        for (int index = 1; index < DEFAULT_ALTITUDE_DRAG_HEIGHTS.length; index++) {
+            float upperHeight = DEFAULT_ALTITUDE_DRAG_HEIGHTS[index];
+            if (y <= upperHeight) {
+                float lowerHeight = DEFAULT_ALTITUDE_DRAG_HEIGHTS[index - 1];
+                float fraction = (y - lowerHeight) / (upperHeight - lowerHeight);
+                float lowerFactor = DEFAULT_ALTITUDE_DRAG_FACTORS[index - 1];
+                float upperFactor = DEFAULT_ALTITUDE_DRAG_FACTORS[index];
+                return lowerFactor + (upperFactor - lowerFactor) * fraction;
+            }
+        }
+        return DEFAULT_ALTITUDE_DRAG_FACTORS[DEFAULT_ALTITUDE_DRAG_FACTORS.length - 1];
     }
 
     private static float normalizeAltitudeSample(double y) {
