@@ -79,6 +79,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
      *  （窗口缩放同款完整重布局+重绘路径）。 */
     /** 骨名→模块类型分类表：随 refreshDynamic 10 帧节流刷新，俯视图逐帧绘制共用（OBB/失效态逐帧现读）。 */
     private Map<String, Set<BoneModuleType>> cachedModules = Map.of();
+    /** 俯视图取景缓存（2026-09-29 闪烁根治）：跨帧冻结缩放包络，屏实例持有、开屏自然重置。 */
+    private final RVP_EquipSkeletonRenderer.Framing skeletonFraming = new RVP_EquipSkeletonRenderer.Framing();
 
     public RVP_EquipPanelScreen(AbstractVehicle vehicle) {
         super(TEMPLATE);
@@ -561,6 +563,9 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
      * RVP_AuiVariantScreen 实证同款）；scissor 裁剪画布区域，深度抬 z=400（tooltip 同级）——
      * AUI 文档元素开深度写入且 z 从 1.0 起递增（物品最高 ~250），GuiGraphics.fill 的 z=0
      * 顶点会被深度剔除，这是此前三次"原生不可见"的根因。
+     *
+     * <p>取景缩放跨帧冻结在 {@link #skeletonFraming}（2026-09-29 闪烁根治）：旧版每帧重算
+     * 自适应包络 → 炮塔回转/悬架微振时整图逐帧缩放平移（"帧间布局跳动"）。</p>
      */
     private void renderSkeletonNative(GuiGraphics guiGraphics, float partialTick) {
         if (skeletonCanvas == null || document == null) {
@@ -581,7 +586,8 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         poseStack.pushPose();
         try {
             poseStack.translate(0, 0, 400);
-            RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle, cachedModules, x0, y0, x1, y1, partialTick);
+            RVP_EquipSkeletonRenderer.render(guiGraphics, vehicle, cachedModules,
+                    x0, y0, x1, y1, partialTick, skeletonFraming);
             guiGraphics.flush();
         } finally {
             poseStack.popPose();

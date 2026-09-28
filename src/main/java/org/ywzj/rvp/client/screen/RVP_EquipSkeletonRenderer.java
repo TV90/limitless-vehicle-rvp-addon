@@ -49,9 +49,31 @@ import java.util.Set;
  * 全部 cube（含 ERA/特殊设备线框，用户定版）按局部高度（车体 up 轴分量）升序分带绘制——
  * 高块后画盖住低块（车体盖履带线框），同带先填充后描边/线框。
  * 炮管等长条部件不参与缩放包络（fit=false）仍绘制。已知边界：APS 扇区锥未画。</p>
+ *
+ * <p><b>取景冻结（2026-09-29 闪烁根治）</b>：闪烁根因 = 旧版每帧用插值实时数据重算
+ * fit cube 的旋转敏感 AABB 包络 → {@code scale} 与居中平移每帧变化——炮塔回转/悬架
+ * 微振/行驶姿态变化时整个俯视图逐帧缩放+平移跳动（"帧间布局跳动"；本体观瞄图同数据
+ * 不闪，因其固定 10px/格、锚定载具中心，无自适应包络）。修复：包络改<b>角度无关半径</b>
+ * {@code max(√(cx²+cy²)+√(hw²+hd²))}——画布空间中整车随炮塔刚性旋转，角点到原点距离
+ * 恒定，任意炮塔角/车体朝向都不裁切；半径按"载具+画布尺寸"缓存且<b>只增不减</b>
+ * （{@link Framing}，由面板屏持有实例、开屏自然重置），居中锚定载具原点（本体观瞄同款
+ * 锚点选择）。静止时帧间像素级全等；炮塔扫到更远处才一次性放大一档，无连续呼吸。</p>
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_EquipSkeletonRenderer {
+
+    /**
+     * 俯视图取景缓存（由调用方面板屏持有实例——屏对象每次开屏新建，缓存自然重置）：
+     * key = 载具 entityId 与画布像素尺寸的组合（任一变化即重算）；
+     * radiusPx = 角度无关包络半径（10px/格 视空间，只增不减——包络变大立即跟随、
+     * 变小不收缩，避免任何形式的连续缩放呼吸）。
+     */
+    public static final class Framing {
+        /** 上次取景使用的 key（载具 id ^ 画布宽高组合）；初始 0 表示无缓存。 */
+        private long key;
+        /** 冻结的包络半径（视空间 px，10px/格）。 */
+        private float radiusPx = -1.0f;
+    }
 
     /**
      * 单个 OBB 的俯视图绘制数据（视空间 = 本体俯视图坐标系，10 px/方块）：
@@ -88,43 +110,54 @@ public final class RVP_EquipSkeletonRenderer {
      * scissor 与深度抬升（translate z=400 盖过 AUI 元素深度）由调用方处理。
      *
      * @param modules 骨名 → 模块类型分类表（面板 10 帧节流缓存；失效态仍逐帧查状态表）
+     * @param framing 取景缓存（面板屏实例持有，跨帧冻结缩放——闪烁根治见类注释）
      */
     public static void render(GuiGraphics guiGraphics, AbstractVehicle vehicle,
                               Map<String, Set<BoneModuleType>> modules,
-                              int x0, int y0, int x1, int y1, float partialTick) {
+                              int x0, int y0, int x1, int y1, float partialTick, Framing framing) {
         List<ViewCube> cubes = buildCubes(vehicle, modules, partialTick);
         if (cubes.isEmpty()) {
             return;
         }
-        // 缩放包络只算 fit=true 的 cube（炮管等长条不参与，防车体被压扁），按旋转后角点取包络
-        float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE;
-        float minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        // 取景冻结（2026-09-29 闪烁根治）：包络半径用角度无关口径实时计算，但只增不减地
+        // 冻结在 framing 缓存里——帧间 scale 恒定，消灭"每帧重算包络 → 缩放/居中跳动"。
+        // 角度无关依据：画布空间中整车随炮塔刚性旋转（180−炮塔偏航全局旋转），cube 角点到
+        // 画布原点（= 载具原点）的距离恒定，故 √(cx²+cy²)+√(hw²+hd²) 覆盖任意旋转姿态；
+        // 炮管组 cube 中心随炮塔在车体本地系绕塔轴公转、到原点距离会变 → 只增不减策略
+        // 让扫到更远包络时一次性放大一档后再次冻结。
+        float canvasW = x1 - x0;
+        float canvasH = y1 - y0;
+        // 取景缓存 key：载具实体 + 画布像素尺寸（换车/窗口缩放/布局变化都会换 key 重算）
+        long key = (long) vehicle.getId() << 32 ^ (long) (x1 - x0) << 16 ^ (long) (y1 - y0);
+        float liveRadius = 0.0f;
         for (ViewCube cube : cubes) {
             if (!cube.fit()) {
                 continue;
             }
-            float rad = (float) Math.toRadians(cube.headingDeg());
-            float absCos = Math.abs(Mth.cos(rad));
-            float absSin = Math.abs(Mth.sin(rad));
-            float envX = cube.hw() * absCos + cube.hd() * absSin;
-            float envY = cube.hw() * absSin + cube.hd() * absCos;
-            minX = Math.min(minX, cube.cx() - envX);
-            maxX = Math.max(maxX, cube.cx() + envX);
-            minY = Math.min(minY, cube.cy() - envY);
-            maxY = Math.max(maxY, cube.cy() + envY);
+            float centerDist = Mth.sqrt(cube.cx() * cube.cx() + cube.cy() * cube.cy());
+            float cornerRadius = Mth.sqrt(cube.hw() * (float) cube.hw() + cube.hd() * (float) cube.hd());
+            liveRadius = Math.max(liveRadius, centerDist + cornerRadius);
         }
-        float spanX = Math.max(maxX - minX, 0.01f);
-        float spanY = Math.max(maxY - minY, 0.01f);
-        double scale = Math.min((x1 - x0 - 12) / spanX, (y1 - y0 - 12) / spanY);
+        liveRadius = Math.max(liveRadius, 0.01f);
+        if (framing.radiusPx < 0.0f || framing.key != key) {
+            // 无缓存 / 载具或画布尺寸变化：重置为当前实测半径
+            framing.key = key;
+            framing.radiusPx = liveRadius;
+        } else if (liveRadius > framing.radiusPx) {
+            // 只增不减：包络实测变大（炮塔扫到更远）立即跟随一次，随后再次冻结
+            framing.radiusPx = liveRadius;
+        }
+        double scale = Math.min((canvasW - 12) / (2f * framing.radiusPx),
+                (canvasH - 12) / (2f * framing.radiusPx));
         PoseStack poseStack = guiGraphics.pose();
         poseStack.pushPose();
         {
-            // 画布中心 → 炮塔朝上整体旋转（本体 renderVehicleHeading 同款 180−zRot，转塔全图跟转）
-            // → 缩放适配画布 → 包络居中
+            // 画布中心（= 载具原点锚点，本体观瞄同款锚定载具中心而非足印质心）
+            // → 炮塔朝上整体旋转（本体 renderVehicleHeading 同款 180−zRot，转塔全图跟转）
+            // → 冻结缩放（无每帧包络居中平移——闪烁根因）
             poseStack.translate((x0 + x1) / 2f, (y0 + y1) / 2f, 0f);
             poseStack.mulPose(Axis.ZP.rotationDegrees(180 - turretZRotDeg(vehicle, partialTick)));
             poseStack.scale((float) scale, (float) scale, (float) scale);
-            poseStack.translate(-(minX + maxX) / 2f, -(minY + maxY) / 2f, 0f);
             // 全部 cube（含 ERA/特殊设备线框，用户定版）按局部高度升序"分带"绘制：
             // 低带先画、高带后画自然盖住低带（车体比履带高 → 履带被车体遮住）；
             // 同带内先全部填充（白实心轮廓）再全部描边/线框（白块深灰描边 + 模块彩色线框），
