@@ -24,7 +24,8 @@ public class RVP_Network {
     /** 协议 19：新增服务端 Gunner Profile ID 快照，用于数据驱动生成物品变体。 */
     
     /** 协议 20：新增 S2CBoneDamageProgress（全模块累计化配套：骨→累计伤害，面板虚拟血量）；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "20";
+    /** 协议 21：失效表新增 BARREL_DAMAGED（炮管受损档进失效表：可快修/队列/持久化）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "21";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

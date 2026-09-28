@@ -76,6 +76,11 @@ public final class RVP_EquipPanelData {
             boolean active = RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.ERA);
             eraBad += active ? 0 : 1;
             String extra = hasDeviceRole(types) ? I18n.get("gui.ywzj_rvp.equipment.note_dual") : null;
+            // [RVP] ERA 虚拟血量（2026-09-28 全模块累计化）：阈值−已累计，如 "100/100"
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra = (extra == null ? "" : extra + " · ") + hp;
+            }
             eraRows.add(new Row(index++, alias(vehicle, bone), active, bone, QUEUE_ERA, extra));
         }
         if (!eraRows.isEmpty()) {
@@ -125,26 +130,26 @@ public final class RVP_EquipPanelData {
         // structure_bone + "_barrel"）；失效即整个炮管所在武器站禁止射击（累计伤害单档、
         // 无衰减永久）。失效行走辅助设备维修队列（快修恢复清累计）。
         Map<String, Set<BoneModuleType>> barrelBones = bonesOfType(modules, BoneModuleType.BARREL);
-        List<Row> barrelRows = typeRows(vehicle, orderedBones, modules, barrelBones, BoneModuleType.BARREL, entityId);
-        // [RVP] 炮管受损态标注（2026-09-28 两档炮管）：客户端按累计推导——两档配置且
-        // 累计 ≥ threshold_light 且 BARREL 未失效 → extra 加"受损"（射击已进入三选一）
+        // [RVP] 炮管行双档判定（2026-09-28 对齐引擎行）：彻底损坏（BARREL 失效）/"受损"
+        //（BARREL_DAMAGED 失效，红框置顶入维修队列）——受损态标注改失效表直读（原客户端
+        // 累计推导删除）；虚拟血量保留（分母 = threshold）
         var barrelConfigs = RVP_VehicleHitboxFactorManager.INSTANCE.resolveBarrelModules(vehicle);
-        if (barrelConfigs != null) {
-            for (int i = 0; i < barrelRows.size(); i++) {
-                Row row = barrelRows.get(i);
-                var config = barrelConfigs.get(row.boneName());
-                if (config == null || !config.hasDamagedStage() || !row.active()) {
-                    continue;
-                }
-                float accumulated = org.ywzj.rvp.client.state.RVP_ClientBoneDamageProgress
-                        .getAccumulated(entityId, row.boneName());
-                if (accumulated + 1.0E-3f >= config.thresholdLight()) {
-                    String extra = (row.extra() == null ? "" : row.extra() + " · ")
-                            + I18n.get("gui.ywzj_rvp.equipment.barrel_damaged");
-                    barrelRows.set(i, new Row(row.index(), row.alias(), row.active(), row.boneName(),
-                            row.queueKey(), extra));
-                }
+        List<Row> barrelRows = new ArrayList<>();
+        int barrelIndex = 1;
+        for (String bone : orderedBones) {
+            if (!barrelBones.containsKey(bone)) {
+                continue;
             }
+            boolean burst = !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL);
+            boolean damaged = burst
+                    || !RVP_ClientBoneModuleState.isModuleActive(entityId, bone, BoneModuleType.BARREL_DAMAGED);
+            String extra = damaged && !burst
+                    ? I18n.get("gui.ywzj_rvp.equipment.barrel_damaged") : null;
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra = (extra == null ? "" : extra + " · ") + hp;
+            }
+            barrelRows.add(new Row(barrelIndex++, alias(vehicle, bone), !damaged, bone, QUEUE_DEV, extra));
         }
         if (!barrelRows.isEmpty()) {
             out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_barrel"), summary(barrelRows), barrelRows));
@@ -199,11 +204,11 @@ public final class RVP_EquipPanelData {
             List<Row> cmRows = new ArrayList<>();
             index = 1;
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_flare"),
-                    cmData.getFlare(), cm == null ? -1 : cm.flareRemain(), cm == null ? -1 : cm.flareTotal());
+                    vehicle, entityId, cmData.getFlare(), cm == null ? -1 : cm.flareRemain(), cm == null ? -1 : cm.flareTotal());
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_chaff"),
-                    cmData.getChaff(), cm == null ? -1 : cm.chaffRemain(), cm == null ? -1 : cm.chaffTotal());
+                    vehicle, entityId, cmData.getChaff(), cm == null ? -1 : cm.chaffRemain(), cm == null ? -1 : cm.chaffTotal());
             index = addCountermeasureRow(cmRows, index, I18n.get("gui.ywzj_rvp.equipment.cm_smoke"),
-                    cmData.getSmoke(), cm == null ? -1 : cm.smokeRemain(), cm == null ? -1 : cm.smokeTotal());
+                    vehicle, entityId, cmData.getSmoke(), cm == null ? -1 : cm.smokeRemain(), cm == null ? -1 : cm.smokeTotal());
             if (!cmRows.isEmpty()) {
                 out.add(new Category(I18n.get("gui.ywzj_rvp.equipment.cat_cm"),
                         I18n.get("gui.ywzj_rvp.equipment.summary_simple", cmRows.size()), cmRows));
@@ -406,8 +411,12 @@ public final class RVP_EquipPanelData {
         return rows;
     }
 
-    /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。 */
+    /** 干扰物行：仅生成已配置且启用的系统；余弹缺快照时按满弹显示。
+     *  2026-09-29 补虚拟血量（用户实机反馈"烟雾弹行没有血条"）：系统绑定的发射器骨
+     *  逐根追加"现存/阈值"（与其它模块行同源 {@link #virtualHpText}，数据链
+     *  S2CBoneDamageProgress 已含 COUNTERMEASURE 骨），多骨以 " · " 连接、无阈值骨跳过。 */
     private static int addCountermeasureRow(List<Row> rows, int index, String alias,
+                                            AbstractVehicle vehicle, int entityId,
                                             RVP_CountermeasureSystemData system, int remain, int total) {
         if (system == null || !system.isEnabled()) {
             return index;
@@ -415,6 +424,12 @@ public final class RVP_EquipPanelData {
         int shownTotal = total >= 0 ? total : system.getTotal();
         int shownRemain = remain >= 0 ? remain : shownTotal;
         String extra = I18n.get("gui.ywzj_rvp.equipment.ammo", shownRemain, shownTotal);
+        for (String bone : system.getBoneModules()) {
+            String hp = virtualHpText(vehicle, entityId, bone);
+            if (hp != null) {
+                extra += " · " + hp;
+            }
+        }
         rows.add(new Row(index++, alias, true, null, null, extra));
         return index;
     }

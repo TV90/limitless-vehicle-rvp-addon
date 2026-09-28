@@ -71,6 +71,14 @@ public enum BoneModuleType {
      */
     ENGINE_DAMAGED,
     /**
+     * 炮管受损档（BARREL_DAMAGED，2026-09-28 两档炮管）——累计直击伤害跨过受损阈值
+     * （{@code threshold_light}）时写入失效表的"受损"标记，与 {@link #BARREL}（彻底损坏档）
+     * 区分：失效后射击进入三选一（1/3 正常散布 ×10 / 1/3 哑火 + 30t 封锁 / 1/3 炸膛升级），
+     * 随失效表持久化、维修面板红框置顶、可入维修顺序队列、快修/焊枪恢复（清炮管累计）。
+     * 继续累计跨过彻底损坏阈值或炸膛才消耗 {@link #BARREL}。
+     */
+    BARREL_DAMAGED,
+    /**
      * 炮管部件（BARREL）——挂在炮管骨名下（本体约定 {@code structure_bone + "_barrel"}，
      * 如 {@code turret_barrel}；同轴机枪站形态 {@code structure_bone} 本身即炮管骨）。
      * 失效不由单发 min_damage 直毁（消费点跳过），而由 {@code RVP_BarrelDamageTable}

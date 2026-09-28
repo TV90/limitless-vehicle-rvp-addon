@@ -293,15 +293,27 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             denyBarrelFire(operator, "ui.rvp.barrel_destroyed");
             return false;
         }
-        // 受损档（两档中间态）：1/3 正常（散布×10）/ 1/3 哑火 / 1/3 炸膛升级
+        // 受损档（两档中间态）：1/3 正常（散布×10）/ 1/3 哑火（+30t 封锁）/ 1/3 炸膛升级
         if (RVP_VehicleHitboxFactorManager.INSTANCE.isBarrelDamagedStage(vehicle, barrelBone)) {
+            long gameTime = vehicle.level().getGameTime();
+            // [RVP] 哑火封锁（2026-09-28 用户定版）：哑火后 30t 内禁止再次射击（不 roll 不出弹）
+            long misfireRemain = RVP_VehicleHitboxFactorManager.INSTANCE
+                    .getBarrelMisfireRemain(vehicle, barrelBone, gameTime);
+            if (misfireRemain >= 0) {
+                denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
+                return false;
+            }
             int roll = vehicle.level().random.nextInt(3);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("受损射击 roll=" + roll + "（0=正常散大 1=哑火 2=炸膛）武器="
+                    + getData().getWeaponId() + " 骨=" + barrelBone);
             if (roll == 0) {
                 // 正常射击但散布 ×10（extraSpread = 原散布 ×9，出弹时消费）
                 this.barrelDamageSpreadExtra = getData().getInaccuracy() * 9f;
                 return true;
             }
             if (roll == 1) {
+                // 哑火：不出弹 + 30t 射击封锁（防连射窗口连续 roll/哑火接炸膛）
+                RVP_VehicleHitboxFactorManager.INSTANCE.markBarrelMisfire(vehicle, barrelBone, gameTime, 30);
                 denyBarrelFire(operator, "ui.rvp.barrel_damaged_misfire");
                 return false;
             }

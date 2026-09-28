@@ -183,6 +183,31 @@ public final class RVP_ServerDebugCommands {
                                     ctx.getSource().sendSuccess(() -> Component.literal(sb.toString()), false);
                                     return 1;
                                 })))
+                        .then(Commands.literal("barrel")
+                                .then(Commands.literal("on").executes(ctx -> {
+                                    org.ywzj.rvp.debug.RVP_BarrelDebug.setEnabled(true);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已开启 barrel 调试: " + org.ywzj.rvp.debug.RVP_BarrelDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("off").executes(ctx -> {
+                                    org.ywzj.rvp.debug.RVP_BarrelDebug.setEnabled(false);
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已关闭 barrel 调试: " + org.ywzj.rvp.debug.RVP_BarrelDebug.getLogPath()), false);
+                                    return 1;
+                                }))
+                                .then(Commands.literal("status").executes(ctx -> {
+                                    boolean enabled = org.ywzj.rvp.debug.RVP_BarrelDebug.isEnabled();
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] barrel=" + enabled + " path=" + org.ywzj.rvp.debug.RVP_BarrelDebug.getLogPath()), false);
+                                    return enabled ? 1 : 0;
+                                }))
+                                .then(Commands.literal("clear").executes(ctx -> {
+                                    org.ywzj.rvp.debug.RVP_BarrelDebug.clearLog();
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("[RVP] 已清空 barrel 调试日志: " + org.ywzj.rvp.debug.RVP_BarrelDebug.getLogPath()), false);
+                                    return 1;
+                                })))
                         .then(Commands.literal("projectilelife")
                                 .then(Commands.literal("on").executes(ctx -> {
                                     RVP_ProjectileLifecycleDebug.clearLog();

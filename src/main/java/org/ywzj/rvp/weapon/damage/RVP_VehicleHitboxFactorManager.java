@@ -65,6 +65,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     public static final RVP_VehicleHitboxFactorManager INSTANCE = new RVP_VehicleHitboxFactorManager();
 
+
     private Map<ResourceLocation, VehicleHitboxConfig> configs = Map.of();
     private Set<ResourceLocation> hidePassengerVehicles = Set.of();
 
@@ -712,19 +713,40 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
     }
 
-    /** 炮管受损档（两档中间态）：key = vehicleId|bone。服务端内存不持久化（与累计中间量同口径）。 */
-    private static final java.util.Set<String> BARREL_DAMAGED_STAGE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /**
+     * 哑火封锁（2026-09-28 用户定版）：哑火后 30 tick 内禁止再次射击（key = vehicleId|bone
+     * → 解封 gameTime）。防连射窗口内连续 roll（连续哑火/哑火接炸膛），也给装填节奏留缓冲。
+     */
+    private static final java.util.Map<String, Long> BARREL_MISFIRE_UNTIL = new java.util.HashMap<>();
 
-    /** 炮管是否处于受损档（两档中间态：射击三选一判定用）。 */
-    public static boolean isBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
-        return vehicle != null && barrelBone != null
-                && BARREL_DAMAGED_STAGE.contains(vehicle.getUUID() + "|" + barrelBone);
+    /** 哑火封锁剩余 tick（<0 未封锁）。 */
+    public static long getBarrelMisfireRemain(AbstractVehicle vehicle, String barrelBone, long gameTime) {
+        if (vehicle == null || barrelBone == null) {
+            return -1;
+        }
+        Long until = BARREL_MISFIRE_UNTIL.get(vehicle.getUUID() + "|" + barrelBone);
+        return until == null ? -1 : until - gameTime;
     }
 
-    /** 清除炮管受损档（快修/焊枪恢复 BARREL、炸膛升级彻底损坏时）。 */
+    /** 设置哑火封锁（哑火 roll 时调用）。 */
+    public static void markBarrelMisfire(AbstractVehicle vehicle, String barrelBone, long gameTime, int durationTicks) {
+        if (vehicle != null && barrelBone != null) {
+            BARREL_MISFIRE_UNTIL.put(vehicle.getUUID() + "|" + barrelBone, gameTime + durationTicks);
+        }
+    }
+
+    /** 炮管是否处于受损档（两档中间态：射击三选一判定用）——查失效表 BARREL_DAMAGED。 */
+    public static boolean isBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
+        return vehicle != null && barrelBone != null
+                && !RVP_BoneModuleStateTable.isModuleActive(
+                        vehicle.getUUID(), barrelBone, BoneModuleType.BARREL_DAMAGED);
+    }
+
+    /** 清除炮管受损档（快修/焊枪恢复 BARREL_DAMAGED 时；restore 幂等）。 */
     public static void clearBarrelDamagedStage(AbstractVehicle vehicle, String barrelBone) {
         if (vehicle != null && barrelBone != null) {
-            BARREL_DAMAGED_STAGE.remove(vehicle.getUUID() + "|" + barrelBone);
+            RVP_BoneModuleStateTable.restoreModule(
+                    vehicle.getUUID(), barrelBone, BoneModuleType.BARREL_DAMAGED);
         }
     }
 
@@ -760,18 +782,28 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
         // [RVP] 两档判定（2026-09-28 用户定版）：先判彻底损坏（heavy），否则判受损档（light）
         //（+1e-3 浮点容差：累计恰等于阈值时必须立即失效，面板虚拟血量已显示 0）
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log(String.format(
+                "入账: %s(%d) 骨=%s 本次=%.1f 累计=%.1f 损坏阈=%.0f 受损阈=%s 存活=%s",
+                vehicle.getVehicleId(), vehicle.getId(), boneName, triggerDamage, accumulated,
+                barrelConfig.threshold(), barrelConfig.hasDamagedStage() ? barrelConfig.thresholdLight() : -1,
+                RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)));
         if (accumulated + 1.0E-3f >= barrelConfig.threshold()) {
             clearBarrelDamagedStage(vehicle, boneName);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨损坏阈: 入失效表前");
             if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
+                org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨损坏阈: BARREL 已失效(广播+战果)");
                 // 跨过损坏阈值：BARREL 模块失效（标准失效广播——面板红框/维修队列/冒烟/持久化）
                 syncBoneModuleState(vehicle);
                 // [RVP] 部件战果通知：向射手报"摧毁炮管"
                 notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
             }
         } else if (barrelConfig.hasDamagedStage() && accumulated + 1.0E-3f >= barrelConfig.thresholdLight()) {
-            // 跨过受损阈值（两档配置）：进入受损档——此后每次射击三选一
-            //（1/3 正常散布×10 / 1/3 哑火 / 1/3 炸膛升级），判定在射击 gate（WeaponBase）
-            BARREL_DAMAGED_STAGE.add(vehicleId + "|" + boneName);
+            // 跨过受损阈值（两档配置）：BARREL_DAMAGED 进失效表（2026-09-28 对齐引擎重创档——
+            // 快修/焊枪可修、面板红框置顶、维修队列、持久化），此后每次射击三选一
+            if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL_DAMAGED)) {
+                org.ywzj.rvp.debug.RVP_BarrelDebug.log("跨受损阈: BARREL_DAMAGED 已失效(广播)");
+                syncBoneModuleState(vehicle);
+            }
         }
     }
 
@@ -1343,7 +1375,11 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /** 解析失效骨块 OBB 的世界系中心（复用 {@link #resolveBoneObbs}）；不可解析时回退车体包围盒中心。 */
-    private static Vec3 resolveBoneEffectPos(AbstractVehicle vehicle, VehicleHitboxConfig cfg, String boneName) {
+    private static Vec3 resolveBoneEffectPos(AbstractVehicle vehicle, @Nullable VehicleHitboxConfig cfg, String boneName) {
+        // 无命中配置（cfg null）：回退载具包围盒中心（调用方多为特效定位，不做硬失败）
+        if (cfg == null) {
+            return vehicle.getBoundingBox().getCenter();
+        }
         ResourceLocation structureId = cfg.structureModel;
         if (structureId != null) {
             BedrockModel model = CommonAssetsManager.structureModelManager()
@@ -1379,10 +1415,19 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      */
     public static void spawnBarrelBurstEffect(AbstractVehicle vehicle, String barrelBone) {
         if (vehicle == null || !(vehicle.level() instanceof ServerLevel serverLevel)) {
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 非 ServerLevel 或 vehicle 为空，跳过");
             return;
         }
-        Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getUUID()), barrelBone);
-        spawnMchrEraExplosion(serverLevel, pos, 1.0f);
+        try {
+            Vec3 pos = resolveBoneEffectPos(vehicle, INSTANCE.configs.get(vehicle.getVehicleId()), barrelBone);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log(String.format(
+                    "炸膛特效: pos=[%.2f, %.2f, %.2f] radius=%.1f", pos.x, pos.y, pos.z, 3.0f));
+            spawnMchrEraExplosion(serverLevel, pos, 1.0f);
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 视觉事件已发布");
+        } catch (Exception exception) {
+            org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛特效: 异常 " + exception);
+            com.mojang.logging.LogUtils.getLogger().error("[RVP-Barrel] 炸膛特效发布失败", exception);
+        }
     }
 
     /**
@@ -1401,7 +1446,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return false;
         }
         syncBoneModuleState(vehicle);
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛流程: destroy=true sync完成 → 发布特效 @bone=" + barrelBone);
         spawnBarrelBurstEffect(vehicle, barrelBone);
+        org.ywzj.rvp.debug.RVP_BarrelDebug.log("炸膛流程: 特效已发布");
         notifyModuleHit(shooter, vehicle, org.ywzj.rvp.network.S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
         return true;
     }
