@@ -97,14 +97,24 @@ public final class RVP_VehicleHurtScalingHandler {
         if (REAPPLY_GUARD.contains(self.getId())) {
             return;
         }
-        if (shouldSkip(self)) {
-            return; // RVP 弹体/激光已自行结算命中箱系数
-        }
-
         DamageSource source = event.getSource();
         float amount = event.getAmount();
         if (amount <= 0f) {
             return;
+        }
+        // [RVP] 辅助设备爆炸损伤·RVP 弹路（2026-09-29 用户定版，§38）：RVP 弹爆炸在
+        // shouldSkip 窗口内（无重放），event.getAmount() 即实收伤害；挂在本 guard 之后、
+        // shouldSkip 早退之前。本体武器爆炸在下方重放分支按 desiredFinal 入账（重放二次
+        // 进入被 REAPPLY_GUARD 挡住，天然防双计）。
+        if ("ywzj_vehicle.explosion".equals(source.getMsgId())) {
+            Vec3 skipBlastPos = source.getSourcePosition();
+            if (skipBlastPos != null && shouldSkip(self)) {
+                RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
+                        self, skipBlastPos, amount, source.getEntity());
+            }
+        }
+        if (shouldSkip(self)) {
+            return; // RVP 弹体/激光已自行结算命中箱系数
         }
 
         Entity direct = source.getDirectEntity();
@@ -136,11 +146,13 @@ public final class RVP_VehicleHurtScalingHandler {
         boolean vehicleExplosionHitboxEnabled = false;
         // 武器侧爆炸倍率（explosion_data.explosion_damage_factor，RVP_ExplosionDamageFactor 窗口）
         float weaponExplosionDamageFactor = RVP_ExplosionDamageFactor.current();
+        // [RVP] 辅助设备爆炸损伤（§38）：爆心提升到分支外，供下方设备损伤入账复用
+        Vec3 explosionPos = null;
         if (explosion) {
             // 受击载具爆炸倍率（2026-09-20 拆分）：vehicle_explosion_damage_factor 按面向爆心的骨块乘算。
             // 爆心从 DamageSource 取（本体 AllDamageTypes.Sources.explosion 存入 position；
             // 注意 DamageSystem.hurt 的 hitPos 在 RVP 弹爆炸时是射手载具位置，不能用作爆心）
-            Vec3 explosionPos = source.getSourcePosition();
+            explosionPos = source.getSourcePosition();
             if (explosionPos != null) {
                 float m = RVP_VehicleHitboxFactorManager.INSTANCE.resolveVehicleExplosionHitboxDamageFactor(
                         self, explosionPos, self.getBoundingBox().getCenter());
@@ -156,6 +168,11 @@ public final class RVP_VehicleHurtScalingHandler {
         // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸任一侧倍率 ≠1 时进入重放
         if (!hitboxEnabled && !vehicleExplosionHitboxEnabled && weaponExplosionDamageFactor == 1f
                 && (coreMult == 1f || explosion)) {
+            // [RVP] 辅助设备爆炸损伤·本体武器无倍率路（§38）：实收 = amount
+            if (explosion && explosionPos != null) {
+                RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
+                        self, explosionPos, amount, source.getEntity());
+            }
             return;
         }
 
@@ -185,6 +202,11 @@ public final class RVP_VehicleHurtScalingHandler {
                 : applyArmor(self, deltaAfterCore, hitboxMult);
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
+        }
+        // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = desiredFinal（重放入账伤害）
+        if (explosion && explosionPos != null) {
+            RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
+                    self, explosionPos, desiredFinal, source.getEntity());
         }
 
         // ── 反推输入量：本体 DamageSystem 内部会再乘一次自身缩放（predicted/amount）──

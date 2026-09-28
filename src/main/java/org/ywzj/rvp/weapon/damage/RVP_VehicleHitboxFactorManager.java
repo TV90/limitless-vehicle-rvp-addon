@@ -1257,6 +1257,91 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return true;
     }
 
+    /**
+     * [RVP] 辅助设备爆炸损伤（2026-09-29 用户定版）：爆炸实收伤害等额扣除**视距内**设备骨
+     * 虚拟血量——爆心与骨 OBB 中心连线未被本车其它骨骼 OBB 阻挡（复用 §36 视距过滤，
+     * 同一套防误挡三则）的设备骨各扣 {@code damage}；累计 ≥ min_damage 即模块失效
+     * （与直击累计同口径）。ERA 不参与（保留机制二半径百分比破坏，不双计）；引擎/炮管
+     * 不参与（自有专属累计段）。调用方 = RVP_VehicleHurtScalingHandler 爆炸伤害两入账点
+     * （RVP 弹 skip 路 amount / 本体武器重放路 desiredFinal，REAPPLY_GUARD 防双计）。
+     * 面板虚拟血量经 syncBoneDamageProgress 自动更新，失效红框/黄标三态随失效表自动刷新。
+     */
+    public void accumulateExplosionEquipmentDamage(
+            AbstractVehicle vehicle, Vec3 blastCenter, float damage, @Nullable Entity shooter) {
+        if (vehicle == null || vehicle.level().isClientSide()
+                || !Float.isFinite(damage) || damage <= 0f || blastCenter == null) {
+            return;
+        }
+        VehicleHitboxConfig cfg = INSTANCE.configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.moduleByBoneName == null || cfg.moduleByBoneName.isEmpty()) {
+            return;
+        }
+        UUID vehicleId = vehicle.getUUID();
+        // 候选：配置了可直击打坏模块的设备骨（排除 ERA/引擎/炮管/维修；模块仍激活且阈值有限）
+        List<String> candidates = new ArrayList<>();
+        for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            BoneModuleConfig moduleConfig = entry.getValue();
+            if (moduleConfig == null || !Float.isFinite(moduleConfig.minTriggerDamage())
+                    || moduleConfig.minTriggerDamage() <= 0f) {
+                continue; // min_damage 未配置（∞）＝不可打坏
+            }
+            for (BoneModuleType type : moduleConfig.modules()) {
+                if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
+                        || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
+                        || type == BoneModuleType.MAINTENANCE) {
+                    continue;
+                }
+                if (RVP_BoneModuleStateTable.isModuleActive(vehicleId, entry.getKey(), type)) {
+                    candidates.add(entry.getKey());
+                    break;
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            return;
+        }
+        // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除）
+        List<String> visible = filterBonesByLineOfSightWithResolution(vehicle, cfg, candidates, blastCenter);
+        if (visible.isEmpty()) {
+            return;
+        }
+        boolean anyDestroyed = false;
+        boolean anyAccumulated = false;
+        for (String boneName : visible) {
+            float threshold = resolveBoneDamageThreshold(vehicle, boneName);
+            if (!Float.isFinite(threshold) || threshold <= 0f) {
+                continue;
+            }
+            RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+            anyAccumulated = true;
+            if (RVP_BoneCumulativeDamageTable.getAccumulated(vehicleId, boneName) < threshold) {
+                continue;
+            }
+            BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+            if (moduleConfig == null) {
+                continue;
+            }
+            for (BoneModuleType type : moduleConfig.modules()) {
+                if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
+                        || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
+                        || type == BoneModuleType.MAINTENANCE) {
+                    continue;
+                }
+                if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
+                    anyDestroyed = true;
+                    // [RVP] 部件战果通知：爆炸波及摧毁的设备同样推送给射手
+                    notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
+                }
+            }
+        }
+        if (anyAccumulated) {
+            syncBoneDamageProgress(vehicle);
+        }
+        if (anyDestroyed) {
+            syncBoneModuleState(vehicle);
+        }
+    }
+
     public String dumpResolveDebug(AbstractVehicle vehicle) {
         StringBuilder sb = new StringBuilder();
         sb.append("vehicleId=").append(vehicle == null ? "<null>" : vehicle.getVehicleId()).append('\n');
