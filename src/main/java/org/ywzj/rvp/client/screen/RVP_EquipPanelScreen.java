@@ -199,7 +199,7 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         }
         lastDynamicSignature = signature;
         updateHp();
-        rebuildCategories();
+        updateDynamicRows();
         rebuildQueues();
         // [RVP] 标脏（2026-09-28 修面板左右闪/行全空）：AUI 对运行中 DOM 变更是惰性绘制——
         // 原体改装屏同款 markDirty(RELAYOUT|REPAINT) 才会重布局+重绘；不再走 resize 全量重建
@@ -362,11 +362,34 @@ public class RVP_EquipPanelScreen extends ApricityScreen {
         return cardKey + "|";
     }
 
-    /** 更新既有行 Element：类名 / 序号 / 别名 / 附加文本 / 状态徽标原地写入，并刷新行数据。 */
+    /**
+     * [RVP] 运行中动态更新（2026-09-28 重写）：只对 init 时已建好的行原地更新（文本/类名/
+     * 失效置顶 order 样式），不增删不重建任何 Element——AUI 对 init 后新增的子树不做布局
+     *（markDirty 也无效，实测行全空），init 构建的元素 markDirty 才会上屏（本体改装屏同款）。
+     */
+    private void updateDynamicRows() {
+        for (RVP_EquipPanelData.Category category : RVP_EquipPanelData.buildCategories(vehicle)) {
+            for (RVP_EquipPanelData.Row row : category.rows()) {
+                String rowKey = category.title() + "|" + row.boneName() + "|" + row.index();
+                RowBinding binding = rowBindingByKey.get(rowKey);
+                if (binding != null) {
+                    updateRowElement(binding, row);
+                }
+            }
+        }
+        if (categoryScroll != null) {
+            document.markDirty(categoryScroll,
+                    com.sighs.apricityui.render.Drawer.RELAYOUT | com.sighs.apricityui.render.Drawer.REPAINT);
+        }
+    }
+
+    /** 更新既有行 Element：类名 / 序号 / 别名 / 附加文本 / 状态徽标 / 失效置顶 order 原地写入。 */
     private static void updateRowElement(RowBinding binding, RVP_EquipPanelData.Row row) {
         binding.holder().set(row);
         Element div = binding.div();
         div.setClassName("mod-row " + (row.active() ? "ok" : "bad"));
+        // 失效行视觉置顶（flex order；AUI 不支持 order 时被忽略，保持原序无副作用）
+        div.setInlineStyleProperty("order", row.active() ? "1" : "0");
         if (div.children.size() >= 4) {
             div.children.get(0).setTextContent(String.valueOf(row.index()));
             div.children.get(1).setTextContent(row.alias());
