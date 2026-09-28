@@ -65,6 +65,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
 
     public static final RVP_VehicleHitboxFactorManager INSTANCE = new RVP_VehicleHitboxFactorManager();
 
+    private static final org.slf4j.Logger BARREL_LOG = com.mojang.logging.LogUtils.getLogger();
+
     private Map<ResourceLocation, VehicleHitboxConfig> configs = Map.of();
     private Set<ResourceLocation> hidePassengerVehicles = Set.of();
 
