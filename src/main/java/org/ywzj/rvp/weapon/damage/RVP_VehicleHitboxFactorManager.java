@@ -1165,6 +1165,10 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * {@code moduleByBoneName} 不含它们），每次爆炸建一次 {@code 骨名→OBB列表} 映射后走
      * 纯函数 {@link #filterBonesByLineOfSight}。模型/骨解析失败时原样返回候选（保守，
      * 不因解析问题静默清零全部破坏）。
+     *
+     * <p>2026-09-29 用户定版补充：**已被引爆的 ERA 骨 OBB 不再作为遮挡物**——ERA 爆掉后
+     * 该块已不存在（JS 动画隐藏/实体上不参与爆炸破坏），其残影 OBB 挡住身后设备的视距线
+     * 会造成"爆掉一块反而保护一片"的悖论，故构建遮挡映射时跳过 ERA 模块已失效的骨。</p>
      */
     private static List<String> filterBonesByLineOfSightWithResolution(
             AbstractVehicle vehicle, VehicleHitboxConfig cfg, List<String> candidates, Vec3 blastCenter) {
@@ -1178,8 +1182,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         }
         Map<String, BedrockBone> boneMap = model.getBoneMap();
         HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        UUID vehicleId = vehicle.getUUID();
         Map<String, List<OBB>> obbsByBone = new HashMap<>();
         for (String boneName : boneMap.keySet()) {
+            // 已引爆的 ERA 骨不作为遮挡物（2026-09-29 用户定版，见方法注释）
+            BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+            if (moduleConfig != null && moduleConfig.modules().contains(BoneModuleType.ERA)
+                    && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
+                continue;
+            }
             List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
             if (resolved.isEmpty()) {
                 continue;
@@ -1443,8 +1454,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return realBones;
         }
         HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        UUID vehicleId = vehicle.getUUID();
         Map<String, List<OBB>> obbsByBone = new HashMap<>();
         for (String boneName : boneMap.keySet()) {
+            // 已引爆的 ERA 骨不作为遮挡物（2026-09-29 用户定版，同 filterBonesByLineOfSightWithResolution）
+            BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+            if (moduleConfig != null && moduleConfig.modules().contains(BoneModuleType.ERA)
+                    && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
+                continue;
+            }
             List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
             if (resolved.isEmpty()) {
                 continue;
