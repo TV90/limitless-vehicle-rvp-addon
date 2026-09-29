@@ -213,6 +213,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         if (tickBounceFuse()) {
             return;
         }
+        // [RVP] 自毁距离（2026-09-29 用户定版：机枪/机炮默认 1024 米）：越界即消失/爆炸
+        if (tickSelfDestruct()) {
+            return;
+        }
         broadcastTrailParticles();
         life--;
         if (life < 0) {

@@ -48,12 +48,14 @@ public class RVP_ApsHudOverlay implements IGuiOverlay {
         );
 
         String reloadText = resolveReloadText(state);
+        // 装填类红字（2026-09-29 用户定版）：未满弹即处于装填，行红；满弹行保持常规色
+        boolean reloading = state.ammoCurrent() < state.ammoMax();
         guiGraphics.drawString(
                 Minecraft.getInstance().font,
                 reloadText,
                 x,
                 y + 12,
-                textColor,
+                reloading ? Color.RED : textColor,
                 false
         );
     }

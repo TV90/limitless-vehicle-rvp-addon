@@ -55,6 +55,7 @@
     "LocalVehiclePlayerViewTypeRestrictMixin",
     "VehicleMultiWeaponsChargeGateMixin",
     "VehicleScopeOverlayHeadingFixMixin",
+    "VehicleRenderRenderHitboxMixin",
     "VehicleScopeOverlayWeaponUnitsMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleWeaponOverlayMixin",

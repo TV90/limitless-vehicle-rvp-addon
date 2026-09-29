@@ -33,6 +33,9 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
  */
 public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
 
+    /** 部分受损黄（2026-09-29 用户定版）：与俯视图受损线框 #D4C44F 同色，alpha 对齐 HUD 其它色。 */
+    private static final int DAMAGED_YELLOW = 0xDDD4C44F;
+
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
         // 调用本体 LocalVehiclePlayer：判断玩家是否正乘坐载具
@@ -58,6 +61,10 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         boolean flareDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.FLARE);
         boolean chaffDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.CHAFF);
         boolean smokeDestroyed = isTypeDestroyed(vehicle, RVP_EnumCountermeasureType.SMOKE);
+        // [RVP] 部分受损黄（2026-09-29 用户定版）：部分发射器打坏但系统仍可用 → 行黄字
+        boolean flareDamaged = !flareDestroyed && isTypeDamaged(vehicle, RVP_EnumCountermeasureType.FLARE);
+        boolean chaffDamaged = !chaffDestroyed && isTypeDamaged(vehicle, RVP_EnumCountermeasureType.CHAFF);
+        boolean smokeDamaged = !smokeDestroyed && isTypeDamaged(vehicle, RVP_EnumCountermeasureType.SMOKE);
         boolean hasEcm = isEcmSeatAllowed(vehicle, seatIndex) && isEcmAvailable(vehicle);
         // 快速维修行（融入缺省自动补位：服务端已同步 hasMaintenance 才占行，否则后续行前移）
         RVP_ClientMaintenanceState.Snapshot maintenanceState = RVP_ClientMaintenanceState.get(vehicle.getId());
@@ -84,7 +91,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE, flareDamaged);
                 }
                 y += 12;
                 airDecoyDrawn = true;
@@ -94,7 +101,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF, chaffDamaged);
                 }
                 y += 12;
                 airDecoyDrawn = true;
@@ -111,7 +118,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, smokeY);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                            state.smokeReloadRemain(), leftX, smokeY, RVP_Keys.FIRE_SMOKE);
+                            state.smokeReloadRemain(), leftX, smokeY, RVP_Keys.FIRE_SMOKE, smokeDamaged);
                 }
                 y = smokeY + 12;
             }
@@ -131,7 +138,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE);
+                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE, flareDamaged);
                 }
                 y += 12;
             }
@@ -140,7 +147,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF);
+                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF, chaffDamaged);
                 }
                 y += 12;
             }
@@ -149,7 +156,7 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                     drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, y);
                 } else {
                     drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                            state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE);
+                            state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE, smokeDamaged);
                 }
                 y += 12;
             }
@@ -261,7 +268,8 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         if (snapshot != null && snapshot.isCoolingDown()) {
             int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.GREEN);
+            // 装填/冷却类红字（2026-09-29 用户定版）
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.RED);
             return;
         }
         String keyName = shortenKeyName(RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString());
@@ -279,7 +287,8 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         if (state.isCoolingDown()) {
             int seconds = (state.cooldownRemain() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.GREEN);
+            // [RVP] 冷却红字（2026-09-29 用户定版）：冷却期按键无效，红色警示对齐干扰物耗尽行
+            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.RED);
             return;
         }
         String keyName = shortenKeyName(RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString());
@@ -287,12 +296,20 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
     }
 
     private static void drawRow(GuiGraphics guiGraphics, Font font, String label,
-                                int remain, int total, int reloadRemain, int x, int y, KeyMapping key) {
+                                int remain, int total, int reloadRemain, int x, int y, KeyMapping key,
+                                boolean damaged) {
         if (total <= 0) {
             return;
         }
-        // 对齐本体纵向 HUD：正常绿字，耗尽红字，带阴影（同本体 drawString 默认样式）
-        int color = remain <= 0 ? Color.RED : Color.GREEN;
+        // 对齐本体纵向 HUD：正常绿字，耗尽红字，带阴影（同本体 drawString 默认样式）；
+        // 部分受损黄（2026-09-29）：部分发射器打坏系统仍可用，优先于耗尽红；
+        // 装填红字（2026-09-29 用户定版：装填类一律红，优先于受损黄）
+        int color;
+        if (reloadRemain > 0) {
+            color = Color.RED;
+        } else {
+            color = damaged ? DAMAGED_YELLOW : (remain <= 0 ? Color.RED : Color.GREEN);
+        }
         if (reloadRemain > 0) {
             // 装填倒计时（秒）
             int seconds = (reloadRemain + 19) / 20;
@@ -341,6 +358,41 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             }
         }
         return true;
+    }
+
+    /**
+     * [RVP] 干扰物系统是否部分受损（2026-09-29 用户定版）：配置了 bone_modules 且绑定骨的
+     * COUNTERMEASURE 模块**部分**失效（仍有存活发射器）→ HUD 行黄字；全失效走
+     * {@link #isTypeDestroyed} 红字"损坏"。未绑定发射器骨时恒 false（无模块化损伤）。
+     */
+    private static boolean isTypeDamaged(AbstractVehicle vehicle, RVP_EnumCountermeasureType type) {
+        var data = org.ywzj.rvp.countermeasure.RVP_CountermeasureConfigManager.INSTANCE.resolve(vehicle.getVehicleId());
+        if (data == null) {
+            return false;
+        }
+        var system = switch (type) {
+            case FLARE -> data.getFlare();
+            case CHAFF -> data.getChaff();
+            case SMOKE -> data.getSmoke();
+            default -> null;
+        };
+        if (system == null || !system.isEnabled()) {
+            return false;
+        }
+        var bones = system.getBoneModules();
+        if (bones == null || bones.isEmpty()) {
+            return false;
+        }
+        boolean anyAlive = false;
+        boolean anyDead = false;
+        for (String bone : bones) {
+            if (RVP_BoneModuleStateTable.isModuleActive(vehicle.getUUID(), bone, BoneModuleType.COUNTERMEASURE)) {
+                anyAlive = true;
+            } else {
+                anyDead = true;
+            }
+        }
+        return anyAlive && anyDead;
     }
 
     /**

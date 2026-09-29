@@ -256,6 +256,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** Segment used by this tick's hit-scan before motion; programmable airburst must use the same segment. */
     protected Vec3 programmableAirburstSegmentStart = Vec3.ZERO;
     protected Vec3 programmableAirburstSegmentEnd = Vec3.ZERO;
+    /** 自毁距离已触发标记（2026-09-29）：防同一发重复触发。 */
+    protected boolean selfDestructTriggered;
+    /** 沿弹道累计飞行路程（米，与可编程空爆同口径：每 Tick 累加命中扫掠运动段长）。 */
+    protected double selfDestructTravelled;
   @Nullable
     protected RVP_SubmunitionRunner submunitionRunner;
     /** Child projectiles increment depth; blocks chains beyond {@link org.ywzj.rvp.weapon.submunition.RVP_SubmunitionSpawner#MAX_DEPTH}. */
@@ -1826,6 +1830,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     RVP_ProjectileLifecycleDebug.NotAliveCheckpoint.AFTER_MOTION)) {
                 return;
             }
+            // [RVP] 自毁距离（2026-09-29）：运动后按本 Tick 运动段累计路程，越界即消失/爆炸
+            if (tickSelfDestruct()) {
+                return;
+            }
             // 从运动后的新位置刷新滚动窗口，为下一 Tick 的管理器预算分配提前提交路径。
             requestDynamicChunkPath(RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
             //弹体完成移动后的驻留状态
@@ -2971,6 +2979,59 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     protected Vec3 collisionSegmentEnd() {
         return position().add(getDeltaMovement());
+    }
+
+    /**
+     * 自毁距离（2026-09-29 用户需求）：沿弹道累计飞行路程达到 {@code self_destruct_distance}
+     * 即自毁——缺省口径：机枪/机炮（{@code MACHINEGUN}）默认 1024 米，其它类别默认不自毁，
+     * 均可 JSON 覆盖（显式 0 = 关闭）。{@code self_destruct_explode=true} 在精确越界点按弹药
+     * 引信语义引爆（{@code detonateFuseAt}，继承 ON_FUSE 子母弹等配置；无爆炸配置退化为
+     * 消失），{@code false} 直接消失（discard）。距离口径与可编程空爆一致：每 Tick 累加
+     * 命中扫掠运动段长，高速弹体按段插值到精确越界点。仅服务端执行。
+     *
+     * @return true = 本 Tick 弹体已自毁（调用方立即返回）
+     */
+    protected boolean tickSelfDestruct() {
+        if (selfDestructTriggered || rvpData == null || !isAlive() || level().isClientSide()) {
+            return false;
+        }
+        float configDistance = rvpData.getProjectileData()
+                .resolveSelfDestructDistance(rvpData.getWeaponKind());
+        if (configDistance <= 0f) {
+            return false;
+        }
+        Vec3 segmentStart = programmableAirburstSegmentStart;
+        Vec3 segmentEnd = programmableAirburstSegmentEnd;
+        Vec3 motion = segmentEnd.subtract(segmentStart);
+        double segLen = motion.length();
+        if (segLen <= 0.0D) {
+            return false;
+        }
+        double newTravel = selfDestructTravelled + segLen;
+        if (newTravel < configDistance) {
+            selfDestructTravelled = newTravel;
+            return false;
+        }
+        selfDestructTriggered = true;
+        // 沿线插值到精确越界点（高速弹体单 Tick 段长可达数十米，直接用端点会超程）
+        double remain = configDistance - selfDestructTravelled;
+        Vec3 selfDestructPos = remain <= 0 ? segmentEnd : segmentStart.add(motion.scale(remain / segLen));
+        if (rvpData.getProjectileData().isSelfDestructExplode()) {
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.FUSE,
+                    () -> "type=SELF_DESTRUCT_EXPLODE distance="
+                            + RVP_ProjectileLifecycleDebug.decimal(configDistance)
+                            + " position=" + RVP_ProjectileLifecycleDebug.formatVec(selfDestructPos));
+            detonateFuseAt(selfDestructPos, FuseDetonation.NORMAL);
+        } else {
+            RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    RVP_ProjectileLifecycleDebug.Event.LIFE_END,
+                    () -> "type=SELF_DESTRUCT_DESPAWN distance="
+                            + RVP_ProjectileLifecycleDebug.decimal(configDistance)
+                            + " position=" + RVP_ProjectileLifecycleDebug.formatVec(selfDestructPos));
+            discard();
+        }
+        return true;
     }
 
     /**

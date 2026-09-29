@@ -113,12 +113,23 @@ public final class RVP_CountermeasureStateMachine {
 
     /**
      * 动态调整总量（发射器失效按存活比例缩减，2026-09-28）：剩余超出新总量即钳制
-     * （失效侧余弹作废）；恢复回升时不回补剩余，装填自然到新上限。
+     * （失效侧余弹作废）。
+     *
+     * <p>2026-09-29 全毁修复补弹：总量<b>回升</b>（发射器修复）且弹舱未满、又无进行中的
+     * 装填/齐射时，自动进入一次装填——全毁时 {@code total} 钳 0 顺带清空剩余，且全毁分支
+     * 每 tick 早退状态机不推进，修复后若不补装填则剩余恒 0、按键被忽略（remaining<=0），
+     * 永远无法恢复。回升装填到的是<b>新</b>总量（onTick 完成时按当前 total 回满）。</p>
      */
     public void setTotal(int newTotal) {
-        this.total = Math.max(0, newTotal);
+        int clamped = Math.max(0, newTotal);
+        boolean recovering = clamped > this.total;
+        this.total = clamped;
         if (this.remaining > this.total) {
             this.remaining = this.total;
+        }
+        if (recovering && this.remaining < this.total && !this.reloading && !this.firing) {
+            this.reloading = true;
+            this.reloadProgress = 0;
         }
     }
 

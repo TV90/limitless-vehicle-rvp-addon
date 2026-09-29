@@ -127,4 +127,50 @@ class RVP_CountermeasureStateMachineTest {
         }
         return m.onTick();
     }
+
+    /** 全毁（total 钳 0 清空剩余）后修复发射器：total 回升自动进入装填，一个周期回满新上限
+     *  （2026-09-29 用户实机 bug：全毁→修复后上限/剩余恒 0——无此补装填则按键永远被忽略）。 */
+    @Test
+    void totalRecoveryAfterFullLossKicksReload() {
+        RVP_CountermeasureStateMachine m = new RVP_CountermeasureStateMachine(4, 2, 2, 4, 100);
+        // 模拟全部发射器打坏：tickSystem 全毁分支 setTotal(0)（剩余钳 0、无装填周期）
+        m.setTotal(0);
+        assertEquals(0, m.getRemaining());
+        assertFalse(m.isReloading());
+        // 修复发射器：total 回升 → 自动补装填
+        m.setTotal(4);
+        assertEquals(4, m.getTotal());
+        assertTrue(m.isReloading());
+        // 装填完成前按键仍被忽略（剩余 0），但装填走完即回满新上限
+        m.onKeyPress();
+        assertFalse(m.isFiring());
+        for (int t = 0; t < 100; t++) {
+            m.onTick();
+        }
+        assertFalse(m.isReloading());
+        assertEquals(4, m.getRemaining());
+        // 回满后可正常射击
+        m.onKeyPress();
+        assertTrue(m.isFiring());
+    }
+
+    /** 部分恢复（2→4）同样补装填；稳定损伤期（total 不变）每 tick setTotal 不重复触发。 */
+    @Test
+    void partialRecoveryKicksReloadOnce() {
+        RVP_CountermeasureStateMachine m = new RVP_CountermeasureStateMachine(4, 2, 2, 4, 100);
+        m.setTotal(2); // 半数失效：剩余钳 2
+        assertEquals(2, m.getRemaining());
+        // 稳定损伤期 tickSystem 每 tick setTotal(2)：total 不变 → 不得反复触发装填
+        for (int i = 0; i < 10; i++) {
+            m.setTotal(2);
+        }
+        assertFalse(m.isReloading());
+        // 修复一台：total 2→4 回升 → 补装填一次
+        m.setTotal(4);
+        assertTrue(m.isReloading());
+        for (int t = 0; t < 100; t++) {
+            m.onTick();
+        }
+        assertEquals(4, m.getRemaining());
+    }
 }

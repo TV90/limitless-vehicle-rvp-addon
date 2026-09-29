@@ -203,6 +203,37 @@ public class RVP_ProjectileData {
     @SerializedName("deployment_vertical_half_life_ticks")
     private float deploymentVerticalHalfLifeTicks = 0f;
 
+    /**
+     * 自毁距离，单位米（=格，沿弹道累计飞行路程），字段缺省 {@code -1}=未配置；
+     * 生效条件：弹体每 Tick 累计飞行路程达到该值即自毁（消失或爆炸，见
+     * {@link #selfDestructExplode}）。未配置时按武器类别取默认：机枪/机炮
+     * （{@code MACHINEGUN}）默认 1024 米，其它类别默认 0（不自毁）；显式配置优先——
+     * 显式 {@code 0} 表示关闭（含显式关闭机枪默认）。
+     */
+    @SerializedName("self_destruct_distance")
+    private float selfDestructDistance = -1f;
+
+    /**
+     * 自毁行为，默认 {@code false}=消失（弹体直接移除）；{@code true}=爆炸——按弹药自身
+     * 引信语义引爆（{@code detonateFuseAt}，继承 ON_FUSE 子母弹等引信配置）；弹药无爆炸
+     * 配置时爆炸退化为消失。仅 {@link #selfDestructDistance} 生效时本字段有意义。
+     */
+    @SerializedName("self_destruct_explode")
+    private boolean selfDestructExplode = false;
+
+    /** 自毁距离解析：显式配置（≥0，含显式 0=关闭）优先；未配置按类别默认——机枪 1024 米，其它 0。 */
+    public float resolveSelfDestructDistance(RVP_EnumWeaponKind weaponKind) {
+        if (selfDestructDistance >= 0f) {
+            return selfDestructDistance;
+        }
+        return weaponKind == RVP_EnumWeaponKind.MACHINEGUN ? 1024f : 0f;
+    }
+
+    /** 自毁行为：true=爆炸（无爆炸配置退化为消失），false=消失。 */
+    public boolean isSelfDestructExplode() {
+        return selfDestructExplode;
+    }
+
     public void resolvePropulsionFallback(JsonObject weaponRoot, JsonObject projectileJson) {
         if (!hasRocketEngine || weaponRoot == null) {
             return;

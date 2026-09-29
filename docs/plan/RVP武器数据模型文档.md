@@ -161,6 +161,8 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 | secondPulseBurnTime | 二次点火燃烧时间 | float | 0 |
 | ignitionDelayTick | 点火延迟tick | int | 0      |
 | altitudeDragFactor | 高空空气阻力倍率，该值为null时不启用，map中的key为弹体高度（为y轴坐标，不是离地高度），value为水平阻力倍率，该值为null时默认阻力为1.0。如{"[[inf,300]]": 0.98, "[[300,500]]": 1.0, "[[500,1000]]": 1.02, "[[1000,inf]]": 1.05}，表示不同高度下的阻力倍率（记为f），则最终导弹的阻力为drag * f | Map<RVP_Range<Float>,Float> | null |
+| selfDestructDistance | JSON 键 `self_destruct_distance`。自毁距离（米=格，沿弹道累计飞行路程），弹体飞满即自毁（消失或爆炸，见 `self_destruct_explode`）。-1（字段缺省）=未配置，按武器类别取默认：机枪/机炮（MACHINEGUN）默认 1024，其它类别 0（不自毁）；显式配置优先，显式 `0` 表示关闭（含显式关闭机枪默认） | float | -1 |
+| selfDestructExplode | JSON 键 `self_destruct_explode`。自毁行为：false=消失（直接移除），true=爆炸（按弹药自身引信语义引爆，继承 ON_FUSE 子母弹等配置；无爆炸配置退化为消失）。仅 selfDestructDistance 生效时有意义 | boolean | false |
 
 
 

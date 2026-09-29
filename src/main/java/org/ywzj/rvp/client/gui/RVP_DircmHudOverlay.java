@@ -5,9 +5,11 @@ import net.minecraft.client.resources.language.I18n;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
+import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_DircmHudState;
 import org.ywzj.rvp.config.UIPresetAccess;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
+import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
@@ -15,6 +17,8 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
  * DIRCM HUD：显示各照射通道的照射/充能状态。
  * 由服务端 {@link org.ywzj.rvp.network.S2CDircmHudSync} 推送数据驱动。
  * 通道显示名用载具 JSON 的 {@code display_name}（如"左"/"右"），未配置用骨块名；
+ * 通道骨的 DIRCM 模块被打坏时整行红字"受损"（查 {@link RVP_ClientBoneModuleState}
+ * 客户端失效侧表，与俯视图红框/面板失效行同数据源）。
  * 位置可经 UI 预设（{@code ui_presets} 的 {@code dircm_hud} 组件）自由配置，
  * 未配置时用默认位置（屏幕左缘 8、垂直居中上方 60）。
  */
@@ -48,6 +52,14 @@ public class RVP_DircmHudOverlay implements IGuiOverlay {
         for (RVP_DircmHudState.ChannelSnapshot channel : state.channels()) {
             String name = channel.displayName() != null && !channel.displayName().isBlank()
                     ? channel.displayName() : channel.boneName();
+            // [RVP] 通道骨 DIRCM 模块失效 → 整行红字"受损"（2026-09-29 用户需求）：
+            // 失效态照常显示（不隐藏行），与干扰物"烟雾: 损坏"红字行同款语义
+            if (channel.boneName() != null && !RVP_ClientBoneModuleState.isModuleActive(
+                    vehicle.getId(), channel.boneName(), BoneModuleType.DIRCM)) {
+                guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.dircm_destroyed", name), x, y, Color.RED, false);
+                y += 12;
+                continue;
+            }
             String line;
             int color;
             if (channel.irradiating()) {

@@ -72,8 +72,29 @@ public class VehicleScopeOverlayHeadingFixMixin {
         poseStack.mulPose(Axis.ZP.rotationDegrees(headingDeg));
         int hw = (int) (cubeOBB.width * 5.0);
         int hd = (int) (cubeOBB.depth * 5.0);
-        RenderHelper.drawRectByCorner(guiGraphics, -hw, hw, -hd, hd, color, 1);
+        // [RVP] 失效模块骨近黑线框（2026-09-29 用户需求）：cube → 所属部件反查（恒等比对
+        // getPartCubeOBBs，1 帧缓存）→ 失效侧表判定（与面板俯视图口径一致）→ 近黑覆盖色。
+        // 车体层 cube（无部件持有）与普通部件骨不变色，走原 color。
+        int drawColor = color;
+        org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        org.ywzj.vehicle.vehicle.part.PartUnit<?> ownerPart = findOwnerPart(vehicle, cubeOBB);
+        if (ownerPart != null && org.ywzj.rvp.client.util.RVP_DamagedPartWireframeHelper
+                .isDamagedPartCube(vehicle, ownerPart, cubeOBB)) {
+            int c = (int) (org.ywzj.rvp.client.util.RVP_DamagedPartWireframeHelper.DAMAGED_RGB * 255f);
+            drawColor = 0xFF000000 | (c << 16) | (c << 8) | c;
+        }
+        RenderHelper.drawRectByCorner(guiGraphics, -hw, hw, -hd, hd, drawColor, 1);
         poseStack.popPose();
         ci.cancel();
+    }
+
+    /** 单帧 cube→部件 反查缓存：键=载具，值=[帧号, cube, 部件]（俯视图每帧自上而下顺序绘制）。 */
+    private static final org.ywzj.rvp.client.util.RVP_ScopeCubePartResolver
+            CUBE_PART_CACHE = new org.ywzj.rvp.client.util.RVP_ScopeCubePartResolver();
+
+    /** 反查 cube 所属部件（1 帧缓存，见 {@link #CUBE_PART_CACHE}）。 */
+    private static org.ywzj.vehicle.vehicle.part.PartUnit<?> findOwnerPart(
+            org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle, VehicleCubeOBB cubeOBB) {
+        return CUBE_PART_CACHE.resolve(vehicle, cubeOBB);
     }
 }
