@@ -205,7 +205,7 @@ public class RVP_ClientConfig {
         distantHorizonsFallbackMode = builder
                 .comment("深度感知不可用时：CURRENT_PASS/SILHOUETTE/ALWAYS_VISIBLE/HIDE。",
                         "ALWAYS_VISIBLE 会穿山，只有明确接受该语义时才应启用。")
-                .defineEnum("fallbackMode", DistantHorizonsFallbackMode.SILHOUETTE);
+                .defineEnum("fallbackMode", DistantHorizonsFallbackMode.CURRENT_PASS);
 
         distantHorizonsOcclusionBiasBlocks = builder
                 .comment("DH 简化 LOD 轮廓的基础遮挡容差，单位格。范围：0..8，默认：2。")
@@ -319,7 +319,7 @@ public class RVP_ClientConfig {
         }
         return INSTANCE != null
                 ? INSTANCE.distantHorizonsFallbackMode.get()
-                : DistantHorizonsFallbackMode.SILHOUETTE;
+                : DistantHorizonsFallbackMode.CURRENT_PASS;
     }
 
     /** 返回受硬上限约束的 DH 遮挡容差，单位格。 */
