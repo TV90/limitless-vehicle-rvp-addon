@@ -605,7 +605,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 || result.modules().contains(BoneModuleType.ENGINE_DAMAGED)
                 || result.modules().contains(BoneModuleType.BARREL);
         if (!result.modules().isEmpty() && !exclusiveBone) {
-            RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, moduleTriggerDamage);
+            RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, moduleTriggerDamage, vehicle.level().getGameTime());
             syncBoneDamageProgress(vehicle);
         }
         boolean anyDestroyed = false;
@@ -676,7 +676,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return; // 命中骨未配置引擎部件：不累计
         }
         UUID vehicleId = vehicle.getUUID();
-        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage, vehicle.level().getGameTime());
         syncBoneDamageProgress(vehicle);
         boolean moduleAlive = RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE);
         // [RVP] 引擎部件诊断（/rvpdebug engine on）：每次直击入账的完整数值链——
@@ -773,7 +773,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return; // 命中骨未配置炮管部件：不累计
         }
         UUID vehicleId = vehicle.getUUID();
-        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage);
+        float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, triggerDamage, vehicle.level().getGameTime());
         syncBoneDamageProgress(vehicle);
         // [RVP] 累计诊断（/rvpdebug engine on 专有日志）：炮管入账同写，供实机对账
         org.ywzj.rvp.debug.RVP_EngineDebug.log(String.format(
@@ -1392,7 +1392,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 if (engineConfig == null) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
                 anyAccumulated = true;
                 float before = accumulated - damage;
                 if (accumulated + 1.0E-3f >= engineConfig.thresholdHeavy()
@@ -1417,7 +1417,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 if (barrelConfig == null) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
                 anyAccumulated = true;
                 if (accumulated + 1.0E-3f >= barrelConfig.threshold()
                         && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)) {
@@ -1440,7 +1440,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                         || moduleConfig.minTriggerDamage() <= 0f) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
                 anyAccumulated = true;
                 if (accumulated + 1.0E-3f < moduleConfig.minTriggerDamage()) {
                     continue;
