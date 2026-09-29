@@ -20,6 +20,8 @@ public final class RVP_ClientReloadListeners {
 
     @SubscribeEvent
     public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
+        // 注册本项目殉燃资源检查：重载时清理自动挂点并检查火柱贴图。
+        event.registerReloadListener(org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffRenderer.INSTANCE);
         event.registerReloadListener(RVP_DisplayTransparentModeManager.INSTANCE);
         event.registerReloadListener(RVP_CustomMountReloadListener.INSTANCE);
         // 注册远距载具代理清理器，资源重载后由后续权威快照按新 display/模型重建。
