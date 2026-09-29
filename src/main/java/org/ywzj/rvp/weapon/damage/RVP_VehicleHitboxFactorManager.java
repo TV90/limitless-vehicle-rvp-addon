@@ -887,6 +887,45 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return out;
     }
 
+    /**
+     * [RVP] 快修默认维修优先级序列（2026-09-29 用户定版，§40）：未在面板配置维修顺序的
+     * 设备按此序列排序——炮管最高（能还手才有维修窗口）→ 发动机（能走位）→ 雷达（能索敌）
+     * → 主动对抗类（干扰物/DIRCM/ECM/干扰机，用户点名提前）→ APS（硬拦截收尾）→ 其它
+     * 未来新增类型兜底尾位。骨的位次 = 骨上**最靠前的失效可修类型**在序列中的位置。
+     */
+    public static final List<BoneModuleType> DEVICE_REPAIR_PRIORITY = List.of(
+            BoneModuleType.BARREL,
+            BoneModuleType.BARREL_DAMAGED,
+            BoneModuleType.ENGINE,
+            BoneModuleType.ENGINE_DAMAGED,
+            BoneModuleType.RADAR,
+            BoneModuleType.COUNTERMEASURE,
+            BoneModuleType.DIRCM,
+            BoneModuleType.ECM_ACTIVE,
+            BoneModuleType.ECM_PASSIVE,
+            BoneModuleType.JAMMER,
+            BoneModuleType.APS
+    );
+
+    /**
+     * 骨的默认维修优先级位次（越小越先修）：骨上失效模块在
+     * {@link #DEVICE_REPAIR_PRIORITY} 中最靠前者的下标；序列未点名的类型（未来新增/兜底）
+     * 返回 {@code Integer.MAX_VALUE - 1}（排在点名类型之后、并列尾位）。
+     */
+    public static int resolveDevicePriorityRank(Set<BoneModuleType> inactiveTypes) {
+        if (inactiveTypes == null || inactiveTypes.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        int best = Integer.MAX_VALUE - 1;
+        for (BoneModuleType type : inactiveTypes) {
+            int index = DEVICE_REPAIR_PRIORITY.indexOf(type);
+            if (index >= 0 && index < best) {
+                best = index;
+            }
+        }
+        return best;
+    }
+
     /** 载具 JSON 顶层 {@code hit_indicator_rvp}（默认 true）：是否对命中该载具显示 RVP 命中提示。 */
     public boolean isHitIndicatorRvpEnabled(AbstractVehicle vehicle) {
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());

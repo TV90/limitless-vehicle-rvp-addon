@@ -12,6 +12,7 @@ import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.vehicle.RVP_BoneCumulativeDamageTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -241,6 +242,28 @@ public final class RVP_MaintenanceRuntimeManager {
             }
         }
         java.util.Collections.sort(outsideDevices);
+        // [RVP] 默认维修优先级（2026-09-29 用户定版 §40，未在面板配置顺序的设备）：
+        // ①主键 = 骨上最靠前的失效可修类型在 DEVICE_REPAIR_PRIORITY 序列中的位次
+        //  （炮管→发动机→雷达→干扰物/DIRCM/ECM/干扰机→APS→其它兜底）；
+        // ②次键 = 载具 JSON 顺序（面板行序号同款口径：部件按 getPartUnits() 顺序、
+        //  非部件骨按名兜底——moduleByBoneName 为 HashMap 不保序，必须显式排序保证确定性）
+        Map<String, Integer> jsonOrderIndex = new HashMap<>();
+        int jsonIndex = 0;
+        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            jsonOrderIndex.putIfAbsent(partUnit.getId(), jsonIndex++);
+        }
+        for (String bone : outsideDevices) {
+            jsonOrderIndex.putIfAbsent(bone, jsonIndex++);
+        }
+        outsideDevices.sort((a, b) -> {
+            int rankA = RVP_VehicleHitboxFactorManager.resolveDevicePriorityRank(inactive.get(a));
+            int rankB = RVP_VehicleHitboxFactorManager.resolveDevicePriorityRank(inactive.get(b));
+            if (rankA != rankB) {
+                return Integer.compare(rankA, rankB);
+            }
+            return Integer.compare(jsonOrderIndex.getOrDefault(a, Integer.MAX_VALUE),
+                    jsonOrderIndex.getOrDefault(b, Integer.MAX_VALUE));
+        });
         for (String bone : outsideDevices) {
             if (!brokenDevices.contains(bone)) {
                 brokenDevices.add(bone);
