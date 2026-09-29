@@ -15,6 +15,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle.SmokeLayer;
 import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Parameter;
+import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffController;
 import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
@@ -71,13 +72,21 @@ public final class RVP_WreckSmokeEmitter {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null || minecraft.player == null) {
+            // 调用本项目殉燃清理器，退出世界时同步释放挂点和预览。
+            RVP_WreckCookoffController.clear();
             // 调用本项目预览清理入口：离开世界后不再保留旧客户端世界对象。
             stopPreview();
             return;
         }
         // 调用本项目预览发射入口：准星位置的临时烟柱与真实残骸共用长程生成逻辑。
         emitPreviewSmoke(minecraft, level);
+        // 调用本项目殉燃 tick 门控，共用当前实体遍历而不改变烟雾自身周期。
+        boolean cookoffTick = RVP_WreckCookoffController.begin(level);
         for (Entity entity : level.entitiesForRendering()) {
+            if (cookoffTick && entity instanceof AbstractVehicle vehicle && !(entity instanceof VehiclePart)) {
+                // 调用自动殉燃观察器；它自行筛选地面车型、击毁状态以及显式预览。
+                RVP_WreckCookoffController.consider(vehicle);
+            }
             if (!(entity instanceof AbstractVehicle vehicle)
                     || entity instanceof VehiclePart
                     || !vehicle.isDestroyed()
@@ -92,6 +101,10 @@ public final class RVP_WreckSmokeEmitter {
             }
             // 调用本项目残骸烟生成器：只覆盖载具本体，脱落 VehiclePart 继续使用本体特效。
             emitVehicleSmoke(minecraft, level, vehicle, emitNear, emitLong);
+        }
+        if (cookoffTick) {
+            // 调用殉燃预算结算：先收集全部残骸，再公平分配原版火焰生成量。
+            RVP_WreckCookoffController.end();
         }
     }
 
