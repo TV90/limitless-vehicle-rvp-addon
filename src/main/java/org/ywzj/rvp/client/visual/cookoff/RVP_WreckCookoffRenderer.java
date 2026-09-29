@@ -64,13 +64,27 @@ public final class RVP_WreckCookoffRenderer implements ResourceManagerReloadList
     @SubscribeEvent
     public static void onRender(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER || !textureReady) return;
+        renderColumns(event);
+    }
+
+    /**
+     * 把殉燃火柱重画进本体热成像缓冲；由 {@code RVP_ThermalParticleChannel} 在
+     * AFTER_PARTICLES 阶段调用，调用时 thermal_buffer 已经绑定为当前渲染目标。
+     */
+    public static void renderThermal(RenderLevelStageEvent event) {
+        if (!textureReady) return;
+        renderColumns(event);
+    }
+
+    /** 绘制当前世界的火柱；主画面和热成像复用同一套挂点、生命周期和 LOD。 */
+    private static void renderColumns(RenderLevelStageEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) return;
         // 调用控制器的全局火柱预算，避免密集残骸导致无限几何绘制。
         var columns = RVP_WreckCookoffController.renderColumns();
         if (columns.isEmpty()) return;
         Vec3 camera = event.getCamera().getPosition();
-        // AFTER_WEATHER 的 RenderSystem ModelView 已包含事件 PoseStack 的视图变换。
+        // 主画面和热成像通道均已准备好对应阶段的 RenderSystem ModelView 视图变换。
         // CPU 顶点只减相机位置，禁止再乘事件矩阵，否则相机旋转/摇晃会被应用两次。
         double time = minecraft.level.getGameTime() + event.getPartialTick();
         VertexConsumer consumer = BUFFER.getBuffer(TYPE);

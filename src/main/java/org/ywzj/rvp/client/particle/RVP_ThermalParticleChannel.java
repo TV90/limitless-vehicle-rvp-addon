@@ -125,9 +125,6 @@ public final class RVP_ThermalParticleChannel {
         }
         List<Particle> visible = collectVisibleParticles(event);
         visible.addAll(collectVanillaThermalParticles(event, mc));
-        if (visible.isEmpty()) {
-            return;
-        }
         renderIntoThermalBuffer(mc, thermalBuffer, event, visible);
     }
 
@@ -296,6 +293,9 @@ public final class RVP_ThermalParticleChannel {
             // 下方 finally 共同兜底（2026-09-20 用户需求）
             org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher.renderThermal(event);
             org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager.renderThermal(event);
+            // 调用殉燃自绘火柱热成像入口：将舱盖/炮口火柱写入同一本体 thermal_buffer，
+            // 使按 4 的热成像视角能够按火柱贴图亮度显示高亮热源。
+            org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffRenderer.renderThermal(event);
         } finally {
             modelViewStack.popPose();
             RenderSystem.applyModelViewMatrix();
