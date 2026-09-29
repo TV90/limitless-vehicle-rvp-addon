@@ -1258,13 +1258,20 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
-     * [RVP] 辅助设备爆炸损伤（2026-09-29 用户定版）：爆炸实收伤害等额扣除**视距内**设备骨
-     * 虚拟血量——爆心与骨 OBB 中心连线未被本车其它骨骼 OBB 阻挡（复用 §36 视距过滤，
-     * 同一套防误挡三则）的设备骨各扣 {@code damage}；累计 ≥ min_damage 即模块失效
-     * （与直击累计同口径）。ERA 不参与（保留机制二半径百分比破坏，不双计）；引擎/炮管
-     * 不参与（自有专属累计段）。调用方 = RVP_VehicleHurtScalingHandler 爆炸伤害两入账点
-     * （RVP 弹 skip 路 amount / 本体武器重放路 desiredFinal，REAPPLY_GUARD 防双计）。
-     * 面板虚拟血量经 syncBoneDamageProgress 自动更新，失效红框/黄标三态随失效表自动刷新。
+     * [RVP] 部件爆炸损伤（2026-09-29 用户定版，§38.4 修订）：爆炸实收伤害**全额**等额扣除
+     * 视距内部件骨虚拟血量——爆心与骨 OBB 中心连线未被本车其它骨骼 OBB 阻挡（复用 §36
+     * 视距过滤，同一套防误挡三则）。范围（2026-09-29 用户定版扩大）：**辅助设备 + 炮管 +
+     * 引擎**三类全部参与；ERA 不参与（保留机制二半径百分比破坏，不双计）。
+     *
+     * <p>设备骨：累计 ≥ min_damage → 逐模块失效；引擎骨：累计走专属两档（重创 ENGINE_DAMAGED
+     * /瘫痪 ENGINE，与直击同构）；炮管骨：累计走专属两档（受损 BARREL_DAMAGED/损坏 BARREL）。
+     * <b>虚拟骨排除</b>（2026-09-29 用户实测反馈）：结构模型中不存在的配置骨（如 {@code
+     * ecm_bone}、{@code __vehicle__}）不参与——无空间位置、视距判定无意义，全车级系统
+     * （ECM）不再被单发爆炸秒掉（要坏仍走直击累计/快修）。</p>
+     *
+     * <p>调用方 = RVP_VehicleHurtScalingHandler 爆炸伤害两入账点（RVP 弹 skip 路 amount /
+     * 本体武器重放路 desiredFinal，REAPPLY_GUARD 防双计）。面板虚拟血量经
+     * syncBoneDamageProgress 自动更新，失效三态随失效表自动刷新。</p>
      */
     public void accumulateExplosionEquipmentDamage(
             AbstractVehicle vehicle, Vec3 blastCenter, float damage, @Nullable Entity shooter) {
@@ -1277,60 +1284,128 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return;
         }
         UUID vehicleId = vehicle.getUUID();
-        // 候选：配置了可直击打坏模块的设备骨（排除 ERA/引擎/炮管/维修；模块仍激活且阈值有限）
+        // 候选：设备骨 + 引擎骨 + 炮管骨（ERA 排除；模块仍激活；虚拟骨排除）
         List<String> candidates = new ArrayList<>();
+        List<String> engineBones = new ArrayList<>();
+        List<String> barrelBones = new ArrayList<>();
         for (Map.Entry<String, BoneModuleConfig> entry : cfg.moduleByBoneName.entrySet()) {
+            String boneName = entry.getKey();
             BoneModuleConfig moduleConfig = entry.getValue();
-            if (moduleConfig == null || !Float.isFinite(moduleConfig.minTriggerDamage())
-                    || moduleConfig.minTriggerDamage() <= 0f) {
-                continue; // min_damage 未配置（∞）＝不可打坏
+            if (moduleConfig == null || !moduleConfig.hasModules()) {
+                continue;
             }
+            boolean hasEra = false;
+            boolean hasEngine = false;
+            boolean hasBarrel = false;
+            boolean hasDestroyableDevice = false;
             for (BoneModuleType type : moduleConfig.modules()) {
-                if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
-                        || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
-                        || type == BoneModuleType.MAINTENANCE) {
-                    continue;
+                if (type == BoneModuleType.ERA) {
+                    hasEra = true;
+                } else if (type == BoneModuleType.ENGINE || type == BoneModuleType.ENGINE_DAMAGED) {
+                    hasEngine = true;
+                } else if (type == BoneModuleType.BARREL || type == BoneModuleType.BARREL_DAMAGED) {
+                    hasBarrel = true;
+                } else if (type != BoneModuleType.MAINTENANCE
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, type)
+                        && Float.isFinite(moduleConfig.minTriggerDamage())
+                        && moduleConfig.minTriggerDamage() > 0f) {
+                    hasDestroyableDevice = true;
                 }
-                if (RVP_BoneModuleStateTable.isModuleActive(vehicleId, entry.getKey(), type)) {
-                    candidates.add(entry.getKey());
-                    break;
-                }
+            }
+            if (hasEra || (!hasEngine && !hasBarrel && !hasDestroyableDevice)) {
+                continue; // ERA 排除；无任何可损伤角色（如纯维修骨）排除
+            }
+            candidates.add(boneName);
+            if (hasEngine) {
+                engineBones.add(boneName);
+            }
+            if (hasBarrel) {
+                barrelBones.add(boneName);
             }
         }
         if (candidates.isEmpty()) {
             return;
         }
-        // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除）
-        List<String> visible = filterBonesByLineOfSightWithResolution(vehicle, cfg, candidates, blastCenter);
+        // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除；虚拟骨在此一并剔除——
+        // filterBonesByLineOfSightWithResolution 按 boneMap 构建遮挡映射，解析为空的骨不进
+        // 候选映射 → 下方逐骨过滤时 own==null 的分支会"视为可见"，须先按 boneMap 显式剔除）
+        List<String> visible = filterExplosionCandidates(vehicle, cfg, candidates, blastCenter);
         if (visible.isEmpty()) {
             return;
         }
-        boolean anyDestroyed = false;
         boolean anyAccumulated = false;
+        boolean anyDestroyed = false;
         for (String boneName : visible) {
-            float threshold = resolveBoneDamageThreshold(vehicle, boneName);
-            if (!Float.isFinite(threshold) || threshold <= 0f) {
-                continue;
-            }
-            RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
-            anyAccumulated = true;
-            if (RVP_BoneCumulativeDamageTable.getAccumulated(vehicleId, boneName) < threshold) {
-                continue;
-            }
-            BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
-            if (moduleConfig == null) {
-                continue;
-            }
-            for (BoneModuleType type : moduleConfig.modules()) {
-                if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
-                        || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
-                        || type == BoneModuleType.MAINTENANCE) {
+            if (engineBones.contains(boneName)) {
+                // 引擎骨：爆炸全额入账专属两档（重创/瘫痪判定与直击 accumulateEngineDamage 同构）
+                BoneEngineConfig engineConfig = resolveEngineConfig(vehicle, boneName);
+                if (engineConfig == null) {
                     continue;
                 }
-                if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
-                    anyDestroyed = true;
-                    // [RVP] 部件战果通知：爆炸波及摧毁的设备同样推送给射手
-                    notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                anyAccumulated = true;
+                float before = accumulated - damage;
+                if (accumulated + 1.0E-3f >= engineConfig.thresholdHeavy()
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE)) {
+                    if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE)) {
+                        anyDestroyed = true;
+                        notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.ENGINE);
+                    }
+                } else if (before < engineConfig.thresholdLight()
+                        && accumulated + 1.0E-3f >= engineConfig.thresholdLight()
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE)) {
+                    if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE_DAMAGED)) {
+                        anyDestroyed = true;
+                    }
+                    if (RVP_BoneCumulativeDamageTable.tryMarkDamagedNotified(vehicleId, boneName)) {
+                        notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_ENGINE_DAMAGED, BoneModuleType.ENGINE);
+                    }
+                }
+            } else if (barrelBones.contains(boneName)) {
+                // 炮管骨：爆炸全额入账专属两档（受损/损坏判定与直击 accumulateBarrelDamage 同构）
+                BoneBarrelConfig barrelConfig = resolveBarrelConfig(vehicle, boneName);
+                if (barrelConfig == null) {
+                    continue;
+                }
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                anyAccumulated = true;
+                if (accumulated + 1.0E-3f >= barrelConfig.threshold()
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)) {
+                    clearBarrelDamagedStage(vehicle, boneName);
+                    if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL)) {
+                        anyDestroyed = true;
+                        notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, BoneModuleType.BARREL);
+                    }
+                } else if (barrelConfig.hasDamagedStage()
+                        && accumulated + 1.0E-3f >= barrelConfig.thresholdLight()
+                        && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)) {
+                    if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.BARREL_DAMAGED)) {
+                        anyDestroyed = true;
+                    }
+                }
+            } else {
+                // 设备骨：累计 ≥ min_damage → 逐模块失效（只毁设备类型）
+                BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
+                if (moduleConfig == null || !Float.isFinite(moduleConfig.minTriggerDamage())
+                        || moduleConfig.minTriggerDamage() <= 0f) {
+                    continue;
+                }
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage);
+                anyAccumulated = true;
+                if (accumulated + 1.0E-3f < moduleConfig.minTriggerDamage()) {
+                    continue;
+                }
+                for (BoneModuleType type : moduleConfig.modules()) {
+                    if (type == BoneModuleType.ERA || type == BoneModuleType.ENGINE
+                            || type == BoneModuleType.ENGINE_DAMAGED || type == BoneModuleType.BARREL
+                            || type == BoneModuleType.BARREL_DAMAGED || type == BoneModuleType.MAINTENANCE) {
+                        continue;
+                    }
+                    if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, type)) {
+                        anyDestroyed = true;
+                        // [RVP] 部件战果通知：爆炸波及摧毁的设备同样推送给射手
+                        notifyModuleHit(shooter, vehicle, S2CModuleHitNotify.KIND_MODULE_DESTROYED, type);
+                    }
                 }
             }
         }
@@ -1340,6 +1415,50 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (anyDestroyed) {
             syncBoneModuleState(vehicle);
         }
+    }
+
+    /**
+     * 爆炸候选解析 + 视距过滤（§38.4 修订）：先取结构模型 boneMap，**虚拟骨（boneMap 中
+     * 不存在的配置骨）直接剔除**——无空间位置不参与视距判定；其余骨解析实时 OBB 后走
+     * §36 纯函数。模型解析失败时返回原候选（保守，仅剔除虚拟骨语义不成立则维持原行为）。
+     */
+    private static List<String> filterExplosionCandidates(
+            AbstractVehicle vehicle, VehicleHitboxConfig cfg, List<String> candidates, Vec3 blastCenter) {
+        ResourceLocation structureId = cfg.structureModel;
+        if (structureId == null) {
+            return candidates;
+        }
+        BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
+        if (model == null) {
+            return candidates;
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        List<String> realBones = new ArrayList<>();
+        for (String bone : candidates) {
+            if (boneMap.containsKey(bone)) {
+                realBones.add(bone);
+            }
+        }
+        if (realBones.isEmpty()) {
+            return realBones;
+        }
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        Map<String, List<OBB>> obbsByBone = new HashMap<>();
+        for (String boneName : boneMap.keySet()) {
+            List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
+            if (resolved.isEmpty()) {
+                continue;
+            }
+            List<OBB> obbs = new ArrayList<>(resolved.size());
+            for (ResolvedObb resolvedObb : resolved) {
+                obbs.add(resolvedObb.obb());
+            }
+            obbsByBone.put(boneName, obbs);
+        }
+        if (obbsByBone.isEmpty()) {
+            return realBones;
+        }
+        return filterBonesByLineOfSight(blastCenter, obbsByBone, realBones);
     }
 
     public String dumpResolveDebug(AbstractVehicle vehicle) {
