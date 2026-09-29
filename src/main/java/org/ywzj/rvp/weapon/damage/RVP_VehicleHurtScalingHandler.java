@@ -94,6 +94,10 @@ public final class RVP_VehicleHurtScalingHandler {
         if (self == null || self.level().isClientSide()) {
             return;
         }
+        // [RVP] §41.7：部件入账改"本段 hurt 实际血量损失"口径——事件时点尚未扣血，
+        // 捕获重放前血量，重放后按差值入账（外源 mod 多段 hurt 每段各计各的实际损失，
+        // 总和恒等于载具总掉血，杜绝多段/倍率叠加造成的部件超额入账）
+        float healthBefore = self.getHealth();
         if (REAPPLY_GUARD.contains(self.getId())) {
             return;
         }
@@ -207,12 +211,6 @@ public final class RVP_VehicleHurtScalingHandler {
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
         }
-        // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = desiredFinal（重放入账伤害）；
-        // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
-        if (explosion && explosionPos != null && !RVP_HitVehicleListener.inRvpDamage()) {
-            RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
-                    self, explosionPos, desiredFinal, source.getEntity());
-        }
 
         // ── 反推输入量：本体 DamageSystem 内部会再乘一次自身缩放（predicted/amount）──
         float damageSystemScale = predicted / amount;
@@ -235,12 +233,25 @@ public final class RVP_VehicleHurtScalingHandler {
             REAPPLY_GUARD.remove(self.getId());
         }
 
+        // [RVP] §41.7 入账口径：本段 hurt 的**实际血量损失**（重放前后差值）——
+        // 外源 mod 多段武器（SBW 直击两段 forceHurt + 延迟爆炸段）每段各计各的实际损失，
+        // 总和恒等于载具总掉血；不再用 desiredFinal（含倍率叠加，多段相加会超额）
+        float actualLoss = Math.max(0f, healthBefore - self.getHealth());
+        // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = actualLoss；
+        // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
+        if (explosion && explosionPos != null && actualLoss > 0f
+                && !RVP_HitVehicleListener.inRvpDamage()) {
+            RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
+                    self, explosionPos, actualLoss, source.getEntity());
+        }
+
         // 骨骼模块消耗（ERA 等）；shooter = 伤害源攻击者（部件战果通知用）。
-        // [RVP] 2026-09-27 分轨：adjustedAmount 为重放入账伤害（近似实际到骨），predicted 为
-        // 模块前伤害——ERA 按 predicted（旧平衡），其余模块按 adjustedAmount（用户定版）
-        if (res != null) {
+        // [RVP] 2026-09-27 分轨：ERA 按 predicted（模块前伤害，旧平衡）；
+        // 其余模块（引擎/炮管/设备累计）2026-09-29 改按 **actualLoss（本段实际血量损失）**
+        // 入账——外源多段武器不再超额（见上）。
+        if (res != null && actualLoss > 0f) {
             RVP_VehicleHitboxFactorManager.INSTANCE.tryDestroyBoneModules(
-                    self, res, predicted, source.getEntity(), true, adjustedAmount);
+                    self, res, predicted, source.getEntity(), true, actualLoss);
         }
     }
 
