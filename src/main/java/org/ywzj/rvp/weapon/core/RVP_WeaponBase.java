@@ -268,7 +268,8 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     /**
      * [RVP] 炮管损坏门控（2026-09-28，用户定版"站级禁射"；2026-09-28 两档扩展）：本武器站
      * 炮管骨 BARREL 模块失效 → 彻底损坏禁止射击；两档配置（threshold_light）下进入受损档
-     * → 每次射击三选一：1/3 正常但散布 ×10（barrelDamageSpreadExtra 标记，出弹消费）、
+     * → 每次射击三选一：1/3 正常但固定扩散+5（barrelDamageSpreadExtra 标记，出弹消费；
+     *   2026-09-29 由 ×10 改固定+5，用户定版）、
      * 1/3 哑火、1/3 炸膛（炮管处爆炸特效 + 升级彻底损坏 + 战果通知）。站级判定，同武器站
      * 全部武器/弹种在服务端都必经本方法，切弹种无法绕过；gunner AI 同链路被拦。未配置
      * BARREL 部件恒放行。
@@ -307,8 +308,10 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             org.ywzj.rvp.debug.RVP_BarrelDebug.log("受损射击 roll=" + roll + "（0=正常散大 1=哑火 2=炸膛）武器="
                     + getData().getWeaponId() + " 骨=" + barrelBone);
             if (roll == 0) {
-                // 正常射击但散布 ×10（extraSpread = 原散布 ×9，出弹时消费）
-                this.barrelDamageSpreadExtra = getData().getInaccuracy() * 9f;
+                // 正常射击但精度下降（2026-09-29 用户定版改法）：固定扩散 +5（extraSpread=5，
+                // 出弹时与原散布相加——原 ×10 放大对小散布武器惩罚过轻、大散布武器过重，
+                // 固定增量对全武器一致）
+                this.barrelDamageSpreadExtra = 5f;
                 return true;
             }
             if (roll == 1) {

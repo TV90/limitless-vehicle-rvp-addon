@@ -101,8 +101,9 @@ public class RVP_ClientEvents {
     private static int ywzj_rvp$markerRefreshTick;
     private static final List<VehicleMarker> ywzj_rvp$vehicleMarkers = new ArrayList<>();
     private static boolean ywzj_rvp$artilleryFireKeyDown;
-    /** [RVP] 雷达键上升沿检测记忆（上一 tick 是否按下）。 */
-    private static boolean ywzj_rvp$radarKeyDown;
+    /** [RVP] 待校平的雷达主控翻转（实体id 集合）：InputEvent.Key 同源边沿置位（§41），
+     *  ClientTickEvent.END 下一 tick 把全车完好雷达校平到期望方向。 */
+    private static final java.util.Set<Integer> ywzj_rvp$radarPendingFlip = new java.util.HashSet<>();
     /** [RVP] "雷达已损坏"提示上次弹出时间（10 秒节流）。 */
     private static long ywzj_rvp$radarBrokenNoticeAt;
     /** [RVP] 上一 tick 完好雷达的开启集合（实体id → ON 的雷达部件 id），主控开关方向判定用。 */
@@ -124,24 +125,18 @@ public class RVP_ClientEvents {
     private static void tickRadarDestroyNotice(net.minecraft.world.entity.player.Player player) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null || vehicle.level() == null || !vehicle.level().isClientSide()) {
-            ywzj_rvp$radarKeyDown = false;
+            ywzj_rvp$radarPendingFlip.remove(vehicle == null ? 0 : vehicle.getId());
             ywzj_rvp$radarOnSnapshot.remove(vehicle == null ? 0 : vehicle.getId());
             return;
         }
-        boolean down = org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.isDown();
-        boolean pressed = down && !ywzj_rvp$radarKeyDown;
-        ywzj_rvp$radarKeyDown = down;
 
         // 分类：损坏雷达（RADAR 模块失效）/ 完好雷达，并记录完好雷达当前 ON 集合
-        boolean anyBroken = false;
         java.util.List<org.ywzj.vehicle.vehicle.part.RadarUnit> workingRadars = new java.util.ArrayList<>();
         java.util.Set<String> workingOnNow = new java.util.HashSet<>();
         for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
-                if (!org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                if (org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
                         vehicle.getId(), partUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR)) {
-                    anyBroken = true;
-                } else {
                     workingRadars.add(radarUnit);
                     if (radarUnit.isOn()) {
                         workingOnNow.add(radarUnit.getId());
@@ -149,18 +144,26 @@ public class RVP_ClientEvents {
                 }
             }
         }
-        // 刷新快照：以本 tick 状态为准（供下一次按键判定；本 tick 的翻转判定用上一 tick 快照）
+        // 刷新快照：以本 tick 状态为准（方向判定用上一 tick 快照——校平后的稳定态）
         java.util.Set<String> snapshot = ywzj_rvp$radarOnSnapshot.put(
                 vehicle.getId(), new java.util.HashSet<>(workingOnNow));
 
-        if (!pressed || !anyBroken || workingRadars.isEmpty()) {
+        // [RVP] §41 重写（用户实机"概率性交替开关"复发）：旧版用 isDown 轮询上升沿在本 tick
+        // 立即纠正——与本体 InputHandler（InputEvent.Key 回调，帧末 pollEvents 执行）是两个
+        // 门控不同的写者（action==PRESS vs isDown 上升沿、有无 mc.screen 门），存在"只有一方
+        // 执行"的错位窗口（快按 down/up 落同一帧间隙；按住 3 开/关界面后 REPEAT 恢复 isDown
+        // 造成假上升沿）→ 快照基线被污染 → 下次方向判定反转 → 概率性交替开关。
+        //
+        // 新架构：边沿判定改用与本体**同源**的 InputEvent.Key 事件（action==PRESS 才置位，
+        // 见 onRadarKeyEvent，天然排除 REPEAT 假边沿/界面态）；本方法只做**下一 tick 校平**：
+        // 本体翻转无论落在哪个 tick（键事件时序错位吸收），校平都把全车完好雷达收敛到同一
+        // 期望方向；坏雷达不触碰（客户端 enforce 每 tick 强压关闭，事件侧同帧即时压回防闪烁）。
+        Integer vehicleId = vehicle.getId();
+        if (!ywzj_rvp$radarPendingFlip.remove(vehicleId) || workingRadars.isEmpty()) {
             return;
         }
-        // [RVP] 方向判定（2026-09-28 修复）：必须用按键前快照，不能用 workingOnNow——
-        // 本体 InputHandler 的逐台翻转在本 tick 更早时已执行，workingOnNow 是被翻转后的
-        // 状态（永远≠快照 → 永远判为"全开"→ 纠正把刚关的又强行开回，关不掉的根因）。
-        // 快照语义：全部工作雷达 id 都在快照 ON 集合里 = 按键前全开 → 本次全关（反辐射反制）；
-        // 有未开的 → 本次全开（回到双雷达）。
+        // 方向判定：校平前快照（= 上一次校平后的稳定态）全开 → 本次全关（反辐射反制）；
+        // 有未开的 → 本次全开（回到双雷达）。校平是幂等 toggle，本体同帧多翻的一次被吸收。
         boolean allWereOn = snapshot != null && !snapshot.isEmpty()
                 && workingRadars.stream().allMatch(r -> snapshot.contains(r.getId()));
         boolean masterOn = !allWereOn;
@@ -169,11 +172,81 @@ public class RVP_ClientEvents {
                 radarUnit.toggle(masterOn);
             }
         }
+        // 校平后立即重写快照为本 tick 稳定态（下次按键方向以此为准，不再被翻转过程污染）
+        ywzj_rvp$radarOnSnapshot.put(vehicleId, new java.util.HashSet<>(masterOn
+                ? workingRadars.stream().map(org.ywzj.vehicle.vehicle.part.RadarUnit::getId).toList()
+                : java.util.List.of()));
         long now = System.currentTimeMillis();
         if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
             ywzj_rvp$radarBrokenNoticeAt = now;
             player.displayClientMessage(
                     Component.translatable("message.ywzj_rvp.radar_broken"), true);
+        }
+    }
+
+    /**
+     * [RVP] 雷达键鼠标绑定同源边沿（§41）：与本体 onKey(MouseButton.Pre) 同路由——雷达键
+     * 绑定到鼠标键时键盘事件不会触发，主控 pending 须同样置位；其余判定与 onRadarKeyEvent
+     * 完全一致（复用同一私有入口）。
+     */
+    @net.minecraftforge.eventbus.api.SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
+    public static void onRadarMouseButtonEvent(net.minecraftforge.client.event.InputEvent.MouseButton.Pre event) {
+        if (event.getAction() != org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null || mc.player == null
+                || !(org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.matches(event.getButton(), 0)
+                     || org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.matchesMouse(event.getButton()))) {
+            return;
+        }
+        ywzj_rvp$onRadarActionPress();
+    }
+
+    /**
+     * [RVP] 雷达键同源边沿监听（§41，InputEvent.Key，LOWEST 保证在本体 InputHandler 的
+     * 同事件处理之后执行）：仅物理按下（action==PRESS，天然排除 REPEAT 假边沿）、无界面
+     * （与本体 handleVehicleAction 同门）、在载具上且存在损坏雷达时置 pending 校平标记。
+     * 本体把**坏雷达**翻开的场景在此同帧即时压回（坏雷达不参与主控语义，不该闪开）。
+     * 注意：只置标记不翻雷达——方向校平统一在下一 tick END 执行（见 tickRadarDestroyNotice）。
+     */
+    @net.minecraftforge.eventbus.api.SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
+    public static void onRadarKeyEvent(net.minecraftforge.client.event.InputEvent.Key event) {
+        if (event.getAction() != org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+            return;
+        }
+        if (org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.matches(event.getKey(), event.getScanCode())
+                || org.ywzj.vehicle.all.AllKeys.TOGGLE_RADAR.matchesMouse(event.getKey())) {
+            ywzj_rvp$onRadarActionPress();
+        }
+    }
+
+    /** [RVP] 雷达动作按下公共入口（键盘/鼠标两监听器汇聚）：坏雷达即时压回 + 置 pending 校平标记。 */
+    private static void ywzj_rvp$onRadarActionPress() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null || mc.player == null) {
+            return;
+        }
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || !LocalVehiclePlayer.instance.onVehicle()) {
+            return;
+        }
+        boolean anyBroken = false;
+        for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
+            if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
+                boolean broken = !org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
+                        vehicle.getId(), partUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR);
+                if (broken) {
+                    anyBroken = true;
+                    // 本体无损坏 gate 把坏雷达翻开：同帧即时压回（LOWEST 晚于本体 handler）
+                    if (radarUnit.isOn()) {
+                        radarUnit.toggle(false);
+                    }
+                }
+            }
+        }
+        if (anyBroken) {
+            ywzj_rvp$radarPendingFlip.add(vehicle.getId());
         }
     }
 
