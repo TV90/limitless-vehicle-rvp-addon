@@ -55,11 +55,14 @@
 | **载具包维护目录（唯一权威源，git-ignored）** | `limitless_vehicle/rvp/`（仓库根） |
 | 服务端代码冒烟运行目录 | `run/server/`（仅服务端代码冒烟，不再维护载具包） |
 | 玩家 `.minecraft` 安装目录 | `.minecraft/limitless_vehicle/rvp/` |
+| RVP 双端通用配置 | `config/ywzj_rvp-common.toml` |
 | 武器数据 | `data/rvp/weapons/<id>.json` → 资源 ID `rvp:<id>` |
 | 武器显示 | `assets/rvp/display/weapon/<id>.json` |
 | 载具数据 | `data/rvp/vehicles/<id>.json` |
 
 发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`）。
+
+载具残骸保留时间由 common 配置的 `[vehicleLifecycle] wreckLifetimeSeconds` 控制，默认 60 秒；详细生命周期限制见 [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) §4。
 
 ## 硬约束（与根目录 agents.md 一致）
 

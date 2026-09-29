@@ -71,6 +71,8 @@ public class RVP_CommonConfig {
 
     /** 放置载具时是否自动补充创造弹药。 */
     private final ForgeConfigSpec.BooleanValue spawnVehicleWithCreativeAmmo;
+    /** 载具残骸保留时间，单位秒；默认值为 60 秒。 */
+    private final ForgeConfigSpec.IntValue wreckLifetimeSeconds;
     /** 是否启用服务端权威的载具超视距同步。 */
     private final ForgeConfigSpec.BooleanValue remoteVehicleRenderingEnabled;
     /** 客户端是否剔除普通空气环境的地形雾。 */
@@ -126,6 +128,12 @@ public class RVP_CommonConfig {
                 .define("spawnVehicleWithCreativeAmmo", false);
 
         builder.pop();
+        builder.push("vehicleLifecycle");
+        wreckLifetimeSeconds = builder
+                .comment("载具残骸保留时间，单位秒；超过该时间后服务端移除残骸。默认：60")
+                .defineInRange("wreckLifetimeSeconds", 60, 0, Integer.MAX_VALUE);
+        builder.pop();
+
         builder.push("remoteVehicleRendering");
 
         remoteVehicleRenderingEnabled = builder
@@ -209,6 +217,11 @@ public class RVP_CommonConfig {
     /** 返回是否在放置载具时补充创造弹药。 */
     public static boolean isSpawnVehicleWithCreativeAmmo() {
         return INSTANCE != null && INSTANCE.spawnVehicleWithCreativeAmmo.get();
+    }
+
+    /** 返回载具残骸保留时间，单位秒；配置尚未加载时回退到默认值 60 秒。 */
+    public static int getWreckLifetimeSeconds() {
+        return INSTANCE != null ? INSTANCE.wreckLifetimeSeconds.get() : 60;
     }
 
     /** 返回服务端是否启用载具超视距同步。 */
