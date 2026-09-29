@@ -108,7 +108,10 @@ public final class RVP_VehicleHurtScalingHandler {
         // 进入被 REAPPLY_GUARD 挡住，天然防双计）。
         if ("ywzj_vehicle.explosion".equals(source.getMsgId())) {
             Vec3 skipBlastPos = source.getSourcePosition();
-            if (skipBlastPos != null && shouldSkip(self)) {
+            // [RVP] §41.5 排除 RVP 结算窗口：近炸直伤（detonateFuseAt 强制全额定向伤害，
+            // hurt 包在 enterRvpDamage 窗口内）不是"面积爆炸对载具的实收"，不得按爆炸口径
+            // 给全车设备入账（导弹级全额一发清光视距内设备，用户实机 bug）
+            if (skipBlastPos != null && shouldSkip(self) && !RVP_HitVehicleListener.inRvpDamage()) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                         self, skipBlastPos, amount, source.getEntity());
             }
@@ -168,8 +171,9 @@ public final class RVP_VehicleHurtScalingHandler {
         // 无任何覆盖时完全放行（与原 mixin 净效果一致）；爆炸任一侧倍率 ≠1 时进入重放
         if (!hitboxEnabled && !vehicleExplosionHitboxEnabled && weaponExplosionDamageFactor == 1f
                 && (coreMult == 1f || explosion)) {
-            // [RVP] 辅助设备爆炸损伤·本体武器无倍率路（§38）：实收 = amount
-            if (explosion && explosionPos != null) {
+            // [RVP] 辅助设备爆炸损伤·本体武器无倍率路（§38）：实收 = amount；
+            // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
+            if (explosion && explosionPos != null && !RVP_HitVehicleListener.inRvpDamage()) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                         self, explosionPos, amount, source.getEntity());
             }
@@ -203,8 +207,9 @@ public final class RVP_VehicleHurtScalingHandler {
         if (!(desiredFinal > 0f) || !Float.isFinite(desiredFinal)) {
             return;
         }
-        // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = desiredFinal（重放入账伤害）
-        if (explosion && explosionPos != null) {
+        // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = desiredFinal（重放入账伤害）；
+        // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
+        if (explosion && explosionPos != null && !RVP_HitVehicleListener.inRvpDamage()) {
             RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                     self, explosionPos, desiredFinal, source.getEntity());
         }
