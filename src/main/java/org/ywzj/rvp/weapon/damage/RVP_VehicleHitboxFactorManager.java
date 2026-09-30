@@ -1199,6 +1199,35 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     /** 遮挡入射判定 ε：命中点至少位于线段 5% 处（与上条取与，双条件同满足才算遮挡）。 */
     private static final double LOS_MIN_ENTRY_FRACTION = 0.05;
 
+    /** [RVP] 部件虚拟血量爆炸伤害距离衰减下限（2026-09-29 用户定版"最远处衰减到 5%"）。 */
+    private static final float DEVICE_FALLOFF_MIN = 0.05f;
+    /** [RVP] 外源 mod 爆炸半径未知时的距离衰减参考半径（格，可调）；≤0 = 外源爆炸不衰减。 */
+    private static final float FALLOFF_DEFAULT_RADIUS = 24f;
+
+    /**
+     * [RVP] 当前爆炸半径登记（§41.9）：RVP 弹 {@code triggerExplosion} 触发前 push 真实
+     * 半径、finally pop——爆炸伤害结算（VehicleAttackEvent 钩子）在 同 tick 同线程 内发生，
+     * 读到的即本次爆炸真实半径；外源 mod 爆炸无登记 → peek 返回
+     * {@link #FALLOFF_DEFAULT_RADIUS}（固定参考半径）。仅服务端主线程使用。
+     */
+    private static final ThreadLocal<Float> CURRENT_EXPLOSION_RADIUS = new ThreadLocal<>();
+
+    /** 登记本次爆炸半径（RVP 弹触发前调用，finally 必须 pop）。 */
+    public static void pushExplosionRadius(float radius) {
+        CURRENT_EXPLOSION_RADIUS.set(radius);
+    }
+
+    /** 清除登记（triggerExplosion 的 finally 调用）。 */
+    public static void popExplosionRadius() {
+        CURRENT_EXPLOSION_RADIUS.remove();
+    }
+
+    /** 读取登记的爆炸半径；无登记（外源 mod 爆炸）返回 {@link #FALLOFF_DEFAULT_RADIUS}。 */
+    public static float peekExplosionRadius() {
+        Float radius = CURRENT_EXPLOSION_RADIUS.get();
+        return radius == null ? FALLOFF_DEFAULT_RADIUS : radius;
+    }
+
     /**
      * 视距过滤入口：解析结构模型**全骨**实时 OBB（车体/装甲骨无模块但才是主要遮挡物，
      * {@code moduleByBoneName} 不含它们），每次爆炸建一次 {@code 骨名→OBB列表} 映射后走
@@ -1322,9 +1351,15 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
      * <p>调用方 = RVP_VehicleHurtScalingHandler 爆炸伤害两入账点（RVP 弹 skip 路 amount /
      * 本体武器重放路 desiredFinal，REAPPLY_GUARD 防双计）。面板虚拟血量经
      * syncBoneDamageProgress 自动更新，失效三态随失效表自动刷新。</p>
+     *
+     * <p>距离衰减（2026-09-29 用户定版 §41.9）：入账量 = damage × mult，
+     * {@code mult = clamp(1 − 0.95 × (骨最近OBB中心距爆心 / 爆炸半径), 0.05, 1)}——
+     * 爆心贴脸全额、半径处 5%、更远维持 5% 保底。explosionRadius ≤0（外源 mod 爆炸
+     * 半径未知）不衰减（全额）。设备/炮管/引擎三类统一。</p>
      */
     public void accumulateExplosionEquipmentDamage(
-            AbstractVehicle vehicle, Vec3 blastCenter, float damage, @Nullable Entity shooter) {
+            AbstractVehicle vehicle, Vec3 blastCenter, float damage,
+            @Nullable Entity shooter, float explosionRadius) {
         if (vehicle == null || vehicle.level().isClientSide()
                 || !Float.isFinite(damage) || damage <= 0f || blastCenter == null) {
             return;
@@ -1377,24 +1412,84 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             return;
         }
         // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除；虚拟骨在此一并剔除——
-        // filterBonesByLineOfSightWithResolution 按 boneMap 构建遮挡映射，解析为空的骨不进
-        // 候选映射 → 下方逐骨过滤时 own==null 的分支会"视为可见"，须先按 boneMap 显式剔除）
-        List<String> visible = filterExplosionCandidates(vehicle, cfg, candidates, blastCenter);
+        // 遮挡映射在方法内构建一次（§41.9），视距过滤与逐骨距离衰减共用
+        ResourceLocation structureId = cfg.structureModel;
+        BedrockModel model = structureId == null ? null
+                : CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
+        if (model == null) {
+            return;
+        }
+        Map<String, BedrockBone> boneMap = model.getBoneMap();
+        // 虚拟骨排除（§38.4）：结构模型中不存在的配置骨不参与爆炸损伤
+        List<String> realBones = new ArrayList<>();
+        for (String bone : candidates) {
+            if (boneMap.containsKey(bone)) {
+                realBones.add(bone);
+            }
+        }
+        if (realBones.isEmpty()) {
+            return;
+        }
+        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+        Map<String, List<OBB>> obbsByBone = new HashMap<>();
+        for (String boneName : boneMap.keySet()) {
+            // 已引爆的 ERA 骨不作为遮挡物（§38.6 同款）
+            BoneModuleConfig occlCfg = cfg.moduleByBoneName.get(boneName);
+            if (occlCfg != null && occlCfg.modules().contains(BoneModuleType.ERA)
+                    && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
+                continue;
+            }
+            List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
+            if (resolved.isEmpty()) {
+                continue;
+            }
+            List<OBB> obbs = new ArrayList<>(resolved.size());
+            for (ResolvedObb resolvedObb : resolved) {
+                obbs.add(resolvedObb.obb());
+            }
+            obbsByBone.put(boneName, obbs);
+        }
+        if (obbsByBone.isEmpty()) {
+            return;
+        }
+        List<String> visible = filterBonesByLineOfSight(blastCenter, obbsByBone, realBones);
         if (visible.isEmpty()) {
             return;
         }
+        // [RVP] 距离衰减（§41.9 用户定版）：逐骨按最近 OBB 中心距爆心的距离线性衰减，
+        // 半径处及以远保底 5%；explosionRadius ≤0 不衰减（外源 mod 半径未知时维持全额）
+        float falloffRadius = explosionRadius;
         boolean anyAccumulated = false;
         boolean anyDestroyed = false;
         for (String boneName : visible) {
+            float credit = damage;
+            if (falloffRadius > 0f) {
+                List<OBB> ownObbs = obbsByBone.get(boneName);
+                if (ownObbs != null && !ownObbs.isEmpty()) {
+                    double nearest = Double.MAX_VALUE;
+                    for (OBB obb : ownObbs) {
+                        Vector3f c = obb.center();
+                        double d = new Vec3(c.x, c.y, c.z).distanceToSqr(blastCenter);
+                        nearest = Math.min(nearest, d);
+                    }
+                    nearest = Math.sqrt(nearest);
+                    float mult = (float) Math.max(DEVICE_FALLOFF_MIN,
+                            1.0 - 0.95 * (nearest / falloffRadius));
+                    credit = damage * mult;
+                }
+            }
+            if (credit <= 0f) {
+                continue;
+            }
             if (engineBones.contains(boneName)) {
                 // 引擎骨：爆炸全额入账专属两档（重创/瘫痪判定与直击 accumulateEngineDamage 同构）
                 BoneEngineConfig engineConfig = resolveEngineConfig(vehicle, boneName);
                 if (engineConfig == null) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, credit, vehicle.level().getGameTime());
                 anyAccumulated = true;
-                float before = accumulated - damage;
+                float before = accumulated - credit;
                 if (accumulated + 1.0E-3f >= engineConfig.thresholdHeavy()
                         && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ENGINE)) {
                     if (RVP_BoneModuleStateTable.destroyModule(vehicleId, boneName, BoneModuleType.ENGINE)) {
@@ -1417,7 +1512,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                 if (barrelConfig == null) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, credit, vehicle.level().getGameTime());
                 anyAccumulated = true;
                 if (accumulated + 1.0E-3f >= barrelConfig.threshold()
                         && RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.BARREL)) {
@@ -1440,7 +1535,7 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                         || moduleConfig.minTriggerDamage() <= 0f) {
                     continue;
                 }
-                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, damage, vehicle.level().getGameTime());
+                float accumulated = RVP_BoneCumulativeDamageTable.accumulate(vehicleId, boneName, credit, vehicle.level().getGameTime());
                 anyAccumulated = true;
                 if (accumulated + 1.0E-3f < moduleConfig.minTriggerDamage()) {
                     continue;
@@ -1465,57 +1560,6 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (anyDestroyed) {
             syncBoneModuleState(vehicle);
         }
-    }
-
-    /**
-     * 爆炸候选解析 + 视距过滤（§38.4 修订）：先取结构模型 boneMap，**虚拟骨（boneMap 中
-     * 不存在的配置骨）直接剔除**——无空间位置不参与视距判定；其余骨解析实时 OBB 后走
-     * §36 纯函数。模型解析失败时返回原候选（保守，仅剔除虚拟骨语义不成立则维持原行为）。
-     */
-    private static List<String> filterExplosionCandidates(
-            AbstractVehicle vehicle, VehicleHitboxConfig cfg, List<String> candidates, Vec3 blastCenter) {
-        ResourceLocation structureId = cfg.structureModel;
-        if (structureId == null) {
-            return candidates;
-        }
-        BedrockModel model = CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
-        if (model == null) {
-            return candidates;
-        }
-        Map<String, BedrockBone> boneMap = model.getBoneMap();
-        List<String> realBones = new ArrayList<>();
-        for (String bone : candidates) {
-            if (boneMap.containsKey(bone)) {
-                realBones.add(bone);
-            }
-        }
-        if (realBones.isEmpty()) {
-            return realBones;
-        }
-        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
-        UUID vehicleId = vehicle.getUUID();
-        Map<String, List<OBB>> obbsByBone = new HashMap<>();
-        for (String boneName : boneMap.keySet()) {
-            // 已引爆的 ERA 骨不作为遮挡物（2026-09-29 用户定版，同 filterBonesByLineOfSightWithResolution）
-            BoneModuleConfig moduleConfig = cfg.moduleByBoneName.get(boneName);
-            if (moduleConfig != null && moduleConfig.modules().contains(BoneModuleType.ERA)
-                    && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
-                continue;
-            }
-            List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
-            if (resolved.isEmpty()) {
-                continue;
-            }
-            List<OBB> obbs = new ArrayList<>(resolved.size());
-            for (ResolvedObb resolvedObb : resolved) {
-                obbs.add(resolvedObb.obb());
-            }
-            obbsByBone.put(boneName, obbs);
-        }
-        if (obbsByBone.isEmpty()) {
-            return realBones;
-        }
-        return filterBonesByLineOfSight(blastCenter, obbsByBone, realBones);
     }
 
     public String dumpResolveDebug(AbstractVehicle vehicle) {

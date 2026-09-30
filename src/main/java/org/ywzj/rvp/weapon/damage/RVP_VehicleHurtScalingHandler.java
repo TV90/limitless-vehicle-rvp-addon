@@ -117,7 +117,8 @@ public final class RVP_VehicleHurtScalingHandler {
             // 给全车设备入账（导弹级全额一发清光视距内设备，用户实机 bug）
             if (skipBlastPos != null && shouldSkip(self) && !RVP_HitVehicleListener.inRvpDamage()) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
-                        self, skipBlastPos, amount, source.getEntity());
+                        self, skipBlastPos, amount, source.getEntity(),
+                        RVP_VehicleHitboxFactorManager.peekExplosionRadius());
             }
         }
         if (shouldSkip(self)) {
@@ -179,7 +180,8 @@ public final class RVP_VehicleHurtScalingHandler {
             // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
             if (explosion && explosionPos != null && !RVP_HitVehicleListener.inRvpDamage()) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
-                        self, explosionPos, amount, source.getEntity());
+                        self, explosionPos, amount, source.getEntity(),
+                        RVP_VehicleHitboxFactorManager.peekExplosionRadius());
             }
             return;
         }
@@ -242,7 +244,8 @@ public final class RVP_VehicleHurtScalingHandler {
         if (explosion && explosionPos != null && actualLoss > 0f
                 && !RVP_HitVehicleListener.inRvpDamage()) {
             RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
-                    self, explosionPos, actualLoss, source.getEntity());
+                    self, explosionPos, actualLoss, source.getEntity(),
+                    RVP_VehicleHitboxFactorManager.peekExplosionRadius());
         }
 
         // 骨骼模块消耗（ERA 等）；shooter = 伤害源攻击者（部件战果通知用）。

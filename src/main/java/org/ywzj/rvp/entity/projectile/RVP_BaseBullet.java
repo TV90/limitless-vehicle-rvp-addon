@@ -4052,6 +4052,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 标记 RVP 弹体爆炸结算窗口：VehicleExplosion 内每辆载具的伤害都会走本体
         // DamageSystem.hurt 并 post HitVehicleEvent，监听器窗口内跳过，避免与下方
         // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
+        // [RVP] 登记本次爆炸半径（§41.9）：部件虚拟血量距离衰减（Handler 爆炸钩子）读真实半径；
+        // 与 enterRvpDamage 同窗 pop，防泄漏到后续伤害
+        RVP_VehicleHitboxFactorManager.INSTANCE.pushExplosionRadius(radius);
         RVP_HitVehicleListener.enterRvpDamage();
         // 调用 RVP 现有爆炸视觉抑制门面，HBM 特效生效或视觉成功发布且配置要求替换本体视觉时屏蔽本体视觉包。
         // 地形爆炸（A）先于杀伤爆炸（B）结算。双爆炸时只有半径更大的一发包保留本体视觉
@@ -4074,6 +4077,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             }
         } finally {
             RVP_HitVehicleListener.exitRvpDamage();
+            RVP_VehicleHitboxFactorManager.INSTANCE.popExplosionRadius();
         }
         // 爆炸药水效果（2026-09-22）：explosion_data.potion_effects，对杀伤半径内全体
         // LivingEntity（含载具乘员——乘员作为独立实体按各自离爆心距离判定）施加，
