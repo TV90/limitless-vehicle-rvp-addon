@@ -2724,12 +2724,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 对标本体 AmmoEntity.tickHit：检测盒向后偏移，捕获刚飞过的目标
         Vec3 backward = getLookAngle().normalize().scale(-radius);
         AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
-        for (Entity entity : level().getEntities(this, detectionBox,
-                e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
-                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
-                        && !isProximityDamageImmune(e)
-                        && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
-                        && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(e)))) {
+        // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
+        java.util.function.Predicate<Entity> proximityFilter = e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
+                && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
+                && !isProximityDamageImmune(e)
+                && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
+                && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(e));
+        for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+                detectionBox, level().getEntities(this, detectionBox, proximityFilter), proximityFilter)) {
             // 近炸(探测盒)起爆时的干扰状态诊断（开关：/rvpdebug flags fuse）
             if (RVP_DebugFlags.FUSE.isEnabled()) {
                 System.out.println("[RVP-DBG][FuseDetonate] seeker=" + getId()
@@ -2816,9 +2818,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         AABB detectionBox = getBoundingBox().expandTowards(0, -distance, 0).inflate(distance);
         double cosLimit = Math.cos(Math.toRadians(fov));
         Vec3 down = new Vec3(0, -1, 0);
-        for (Entity entity : level().getEntities(this, detectionBox, this::isTopAttackTarget)) {
+        // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
+        for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+                detectionBox, level().getEntities(this, detectionBox, this::isTopAttackTarget),
+                this::isTopAttackTarget)) {
             // 精筛：目标包围盒中心点须位于导弹正下方的锥形内
-            Vec3 offset = entity.getBoundingBox().getCenter().subtract(pos);
+            // [RVP] §46：攻顶检测/智能引信记录点与瞄准点同源（最大 OBB 中心，非载具回退 AABB 中心）
+            Vec3 offset = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(pos);
             if (offset.y >= 0 || offset.lengthSqr() > (double) distance * distance) {
                 continue;
             }
@@ -2836,9 +2843,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             + RVP_ProjectileLifecycleDebug.decimal(offset.length())
                             + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity));
             if (fuse.isTopAttackSmartEnabled()) {
-                // 智能引信：不立即/延时引爆，记录检测点（目标 AABB 中心）与触发时刻导弹高度，
+                // 智能引信：不立即/延时引爆，记录检测点（目标最大 OBB 中心）与触发时刻导弹高度，
                 // 目标点 = 检测点正上方 ±随机半径圆内、y = 触发高度；解除原制导后飞抵该点再引爆
-                Vec3 detect = entity.getBoundingBox().getCenter();
+                Vec3 detect = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity);
                 double radius = fuse.getTopAttackSmartTargetRadius();
                 double angle = level().random.nextDouble() * 2.0 * Math.PI;
                 double rad = level().random.nextDouble() * radius;
@@ -3127,10 +3134,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setDeltaMovement(step);
         try {
             Entity owner = getOwner();
-            List<Entity> entities = level().getEntities(
-                    this,
-                    getBoundingBox().expandTowards(step).inflate(1.0),
-                    entity -> entity != null && entity.isPickable() && !entity.isSpectator()
+            // [RVP] §48（2026-10-01）：原版 getEntities 的实体分节存储是单分节注册（按
+            // blockPosition）+ 查询盒 ±2 分节粗筛——AABB 横跨几十个分节的巨型载具（船），
+            // 其船体远离注册分节的部分对段盒查询确定性不可见 → 无候选 → 导弹/机炮弹过穿。
+            // 用载具注册表按包围盒补筛合并（粗筛标准与原版一致：makeBoundingBox 包络相交）。
+            AABB queryBox = getBoundingBox().expandTowards(step).inflate(1.0);
+            java.util.function.Predicate<Entity> candidateFilter =
+                    entity -> entity != null && entity.isPickable() && !entity.isSpectator();
+            List<Entity> entities = org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(
+                    level(), queryBox,
+                    level().getEntities(this, queryBox, candidateFilter),
+                    candidateFilter
             );
             BulletHitResult closestResult = null;
             double closestDistance = Double.MAX_VALUE;
@@ -3206,13 +3220,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return null;
         }
         AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
-        List<Entity> nearbyEntities = level().getEntities(this, detectionBox,
-                entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
-                        && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
-                        && !isProximityDamageImmune(entity)
-                        && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
-                        && (!rvpData.getFuseData().isProximityFuseRequireRadarLock()
-                            || isRadarIlluminatedTarget(entity)));
+        // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
+        java.util.function.Predicate<Entity> proximityFilter = entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
+                && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
+                && !isProximityDamageImmune(entity)
+                && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
+                && (!rvpData.getFuseData().isProximityFuseRequireRadarLock()
+                    || isRadarIlluminatedTarget(entity));
+        List<Entity> nearbyEntities = org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+                detectionBox, level().getEntities(this, detectionBox, proximityFilter), proximityFilter);
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;
         for (Entity entity : nearbyEntities) {
@@ -4350,7 +4366,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected Vec3 aimPoint(Entity entity) {
-        return entity.position().add(0, entity.getBbHeight() * 0.5, 0);
+        // [RVP] §46（2026-10-01 用户定版）：载具目标 = 最大体积 OBB 中心（长/斜载具不再瞄
+        // 悬空的 AABB 中心）；其余实体保持 position+半高旧口径（零回归）
+        return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity,
+                entity.position().add(0, entity.getBbHeight() * 0.5, 0));
     }
 
     private void resolveRemoteRefs() {

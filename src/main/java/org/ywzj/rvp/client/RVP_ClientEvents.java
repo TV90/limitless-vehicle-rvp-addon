@@ -111,16 +111,18 @@ public class RVP_ClientEvents {
             new java.util.HashMap<>();
 
     /**
-     * [RVP] 雷达骨骼部件（2026-09-28 定版）：按雷达键（本体 3 键 TOGGLE_RADAR）在
-     * 载具存在被击毁雷达时切换为<b>主控开关</b>语义——以按键前（上一 tick 末）快照判定：
+     * [RVP] 雷达骨骼部件主控开关（§44 2026-09-30 定版：**恒生效**，不再要求"存在被击毁
+     * 雷达"才接管）：按雷达键（本体 3 键 TOGGLE_RADAR）一律按主控语义校平——以按键前
+     * （上一 tick 末）快照判定：
      * <ul>
      *   <li>全部未损坏雷达都在开 → 本次按键 = <b>全部关闭</b>（打反辐射导弹时关雷达反制）；</li>
-     *   <li>有关闭的未损坏雷达（含刚修好自动开的）→ 本次按键 = <b>全部开启</b>（回到双雷达运行，
-     *       修复此前"逐台翻转把修好/开着的雷达关掉"的一开一关循环）。</li>
+     *   <li>有关闭的未损坏雷达（含刚修好自动开的）→ 本次按键 = <b>全部开启</b>（回到双雷达运行）。</li>
      * </ul>
+     * 旧版仅在存在被击毁雷达时武装（§20.2 遗留条件）：修好自动开机形成的混合态（A 开 B 关）
+     * 在全部修好后退回本体逐台翻转——按 3 变两台互换、混合态永远保持 → 一开一关交替、雷达
+     * 废掉（用户实测）。恒武装后混合态按 3 补齐全开，全开/全关两态间切换。
      * 被击毁的雷达不由本语义触碰（服务端网关 + 客户端 enforce 保持其关闭）。
-     * 全部雷达完好时走本体原版逐台翻转，行为不变。纯客户端实现，翻转经
-     * syncRadarPowerStates 自动同步服务端。
+     * 纯客户端实现，翻转经 syncRadarPowerStates 自动同步服务端。
      */
     private static void tickRadarDestroyNotice(net.minecraft.world.entity.player.Player player) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
@@ -133,6 +135,7 @@ public class RVP_ClientEvents {
         // 分类：损坏雷达（RADAR 模块失效）/ 完好雷达，并记录完好雷达当前 ON 集合
         java.util.List<org.ywzj.vehicle.vehicle.part.RadarUnit> workingRadars = new java.util.ArrayList<>();
         java.util.Set<String> workingOnNow = new java.util.HashSet<>();
+        int brokenCount = 0;
         for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
                 if (org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
@@ -141,6 +144,8 @@ public class RVP_ClientEvents {
                     if (radarUnit.isOn()) {
                         workingOnNow.add(radarUnit.getId());
                     }
+                } else {
+                    brokenCount++;
                 }
             }
         }
@@ -176,11 +181,15 @@ public class RVP_ClientEvents {
         ywzj_rvp$radarOnSnapshot.put(vehicleId, new java.util.HashSet<>(masterOn
                 ? workingRadars.stream().map(org.ywzj.vehicle.vehicle.part.RadarUnit::getId).toList()
                 : java.util.List.of()));
-        long now = System.currentTimeMillis();
-        if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
-            ywzj_rvp$radarBrokenNoticeAt = now;
-            player.displayClientMessage(
-                    Component.translatable("message.ywzj_rvp.radar_broken"), true);
+        // [RVP] §44：损坏提示仅在真有被击毁雷达时弹——恒武装后全部完好时按 3 也会走到这里，
+        // 不能误弹"雷达损坏"
+        if (brokenCount > 0) {
+            long now = System.currentTimeMillis();
+            if (now - ywzj_rvp$radarBrokenNoticeAt > 10_000L) {
+                ywzj_rvp$radarBrokenNoticeAt = now;
+                player.displayClientMessage(
+                        Component.translatable("message.ywzj_rvp.radar_broken"), true);
+            }
         }
     }
 
@@ -206,7 +215,8 @@ public class RVP_ClientEvents {
     /**
      * [RVP] 雷达键同源边沿监听（§41，InputEvent.Key，LOWEST 保证在本体 InputHandler 的
      * 同事件处理之后执行）：仅物理按下（action==PRESS，天然排除 REPEAT 假边沿）、无界面
-     * （与本体 handleVehicleAction 同门）、在载具上且存在损坏雷达时置 pending 校平标记。
+     * （与本体 handleVehicleAction 同门）、在载具上即置 pending 校平标记（§44 恒武装，
+     * 不再要求存在损坏雷达）。
      * 本体把**坏雷达**翻开的场景在此同帧即时压回（坏雷达不参与主控语义，不该闪开）。
      * 注意：只置标记不翻雷达——方向校平统一在下一 tick END 执行（见 tickRadarDestroyNotice）。
      */
@@ -231,13 +241,13 @@ public class RVP_ClientEvents {
         if (vehicle == null || !LocalVehiclePlayer.instance.onVehicle()) {
             return;
         }
-        boolean anyBroken = false;
+        boolean hasRadar = false;
         for (org.ywzj.vehicle.vehicle.part.PartUnit<?> partUnit : vehicle.getPartUnits()) {
             if (partUnit instanceof org.ywzj.vehicle.vehicle.part.RadarUnit radarUnit) {
+                hasRadar = true;
                 boolean broken = !org.ywzj.rvp.client.state.RVP_ClientBoneModuleState.isModuleActive(
                         vehicle.getId(), partUnit.getId(), org.ywzj.rvp.vehicle.BoneModuleType.RADAR);
                 if (broken) {
-                    anyBroken = true;
                     // 本体无损坏 gate 把坏雷达翻开：同帧即时压回（LOWEST 晚于本体 handler）
                     if (radarUnit.isOn()) {
                         radarUnit.toggle(false);
@@ -245,7 +255,13 @@ public class RVP_ClientEvents {
                 }
             }
         }
-        if (anyBroken) {
+        // [RVP] §44（2026-09-30 用户定版）：主控校平**恒武装**——不再要求"存在被击毁雷达"才
+        // 接管按 3。旧条件（anyBroken）下，修好自动开机（RVP_RadarModuleEnforcer.restoreRadar）
+        // 形成的混合态（A 开 B 关）在全部修好后由本体逐台翻转接管：按 3 = 两台同时互换，
+        // 混合态永远保持 → 一开一关交替、雷达废掉（用户实测：修好一台后按 3 反把修好的关掉，
+        // 此后永远交替）。恒武装后方向判定（上一 tick 快照：非全开→全开、全开→全关）对
+        // 所有按 3 统一生效；坏雷达同帧压回不受影响。
+        if (hasRadar) {
             ywzj_rvp$radarPendingFlip.add(vehicle.getId());
         }
     }

@@ -25,7 +25,8 @@ public record RVP_GuidanceTransitionContext(
     private static Vec3 resolveTarget(RVP_BaseBullet projectile) {
         Entity entity = projectile.getTargetEntity();
         if (entity != null && entity.isAlive()) {
-            return entity.getBoundingBox().getCenter();
+            // [RVP] §46：段切换判定点与瞄准点同源（最大 OBB 中心）
+            return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity);
         }
         if (projectile.getTargetPos() != null) {
             return projectile.getTargetPos();

@@ -34,7 +34,9 @@ public record RVP_GuidanceIntent(
             return delta.lengthSqr() > 1.0E-6 ? delta.normalize() : null;
         }
         if (aimEntity != null && aimEntity.isAlive()) {
-            Vec3 delta = aimEntity.getBoundingBox().getCenter().subtract(origin);
+            // [RVP] §46：意图方向同走"最大 OBB 中心"（与转向目标同源）
+            Vec3 delta = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(aimEntity).subtract(origin);
             return delta.lengthSqr() > 1.0E-6 ? delta.normalize() : null;
         }
         return null;

@@ -94,7 +94,8 @@ public final class RVP_IrLockHelper {
         }
 
         Vec3 checkStart = weaponUnit.worldPivotPosition();
-        Vec3 checkEnd = target.getBoundingBox().getCenter();
+        // [RVP] §46：IR 锁定距离/角度/LOS 判定点与瞄准点同源（最大 OBB 中心）
+        Vec3 checkEnd = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
         Vec3 toTarget = checkEnd.subtract(checkStart);
         if (toTarget.lengthSqr() <= 1.0E-6) {
             return true;
@@ -151,7 +152,8 @@ public final class RVP_IrLockHelper {
             return false;
         }
         Vec3 checkStart = weaponUnit.worldPivotPosition();
-        Vec3 checkEnd = target.getBoundingBox().getCenter();
+        // [RVP] §46：同上（最大 OBB 中心）
+        Vec3 checkEnd = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
         Vec3 toTarget = checkEnd.subtract(checkStart);
         if (toTarget.lengthSqr() <= 1.0E-6) {
             return containsAltitude(altitudeRange, target);

@@ -53,8 +53,10 @@ public final class RVP_GuidanceRuntimeGeometry {
             Entity target,
             RVP_GuidanceActiveConfig config
     ) {
+        // [RVP] §46：门限判定点与瞄准点同源（最大 OBB 中心）
         return target != null && target.isAlive()
-                && passesTrackLimits(projectile, target.getBoundingBox().getCenter(), config);
+                && passesTrackLimits(projectile,
+                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), config);
     }
 
     public static boolean passesTrackEnvelope(
@@ -62,8 +64,10 @@ public final class RVP_GuidanceRuntimeGeometry {
             Entity target,
             RVP_GuidanceActiveConfig config
     ) {
+        // [RVP] §46：同上
         return target != null && target.isAlive()
-                && passesTrackEnvelope(projectile, target.getBoundingBox().getCenter(), config);
+                && passesTrackEnvelope(projectile,
+                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target), config);
     }
 
     public static boolean passesAcquireLimits(
@@ -74,7 +78,8 @@ public final class RVP_GuidanceRuntimeGeometry {
         if (projectile == null || target == null || !target.isAlive() || config == null) {
             return false;
         }
-        Vec3 center = target.getBoundingBox().getCenter();
+        // [RVP] §46：截获门限与瞄准点同源（最大 OBB 中心）
+        Vec3 center = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
         double distance = projectile.position().distanceTo(center);
         if (!contains(config.targetDistanceRange(), distance)) {
             return false;

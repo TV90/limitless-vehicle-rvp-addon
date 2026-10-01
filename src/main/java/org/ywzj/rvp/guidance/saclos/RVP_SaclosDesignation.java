@@ -30,7 +30,9 @@ public final class RVP_SaclosDesignation {
         if (isHitlDesignate(projectile)) {
             Entity tracked = projectile.getTargetEntity();
             if (tracked != null && tracked.isAlive()) {
-                projectile.setTargetPos(tracked.getBoundingBox().getCenter());
+                // [RVP] §46：HITL 指定目标点与制导瞄准点同源（最大 OBB 中心）
+                projectile.setTargetPos(
+                        org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(tracked));
             }
             return;
         }
@@ -73,7 +75,8 @@ public final class RVP_SaclosDesignation {
         if (isHitlDesignate(projectile)) {
             Entity tracked = projectile.getTargetEntity();
             if (tracked != null && tracked.isAlive()) {
-                return tracked.getBoundingBox().getCenter();
+                // [RVP] §46：同上（最大 OBB 中心）
+                return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(tracked);
             }
             return projectile.getTargetPos();
         }

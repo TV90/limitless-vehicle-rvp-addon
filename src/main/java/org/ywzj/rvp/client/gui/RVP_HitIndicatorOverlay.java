@@ -329,28 +329,40 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
                 ? RVP_ClientHitIndicatorState.getDamage() / maxHealth * 100f : 0f;
         int damageColor = damagePercent >= 50f ? COLOR_DAMAGE_CRITICAL
                 : damagePercent >= 25f ? COLOR_DAMAGE_HURT : COLOR_DAMAGE_HIT;
-        String bone = RVP_ClientHitIndicatorState.getBoneDisplayName();
+        // [RVP] 标题占比仲裁（2026-09-30 用户定版）：服务端直击包先发、triggerExplosion 结算后的
+        // 爆炸波及补发包后发（同 tick），直击车自身必然收到自己的爆炸包——最后一条事件恒为爆炸，
+        // 标题取最后一条会被恒盖成”爆炸”。改为比较直击/爆炸两类事件的伤害合计：占比大者决定标题
+        // （平手归直击，改 TIE 归属调 directDominant 的比较符）；伤害数值恒为总伤累计（damagePercent 不变）。
+        boolean directDominant = RVP_ClientHitIndicatorState.getDirectDamageTotal()
+                >= RVP_ClientHitIndicatorState.getExplosionDamageTotal();
+        String bone = RVP_ClientHitIndicatorState.getLatestDirectBoneDisplayName();
+        // 无直击事件（纯波及/近炸直伤，bone 为空）或爆炸占比更大：显示”爆炸”
+        boolean showHit = !bone.isEmpty() && directDominant;
         // 服务端对未配置命中箱骨块（倍率骨骼）的载具下发的是载具名翻译 key（entity.<ns>.<path>），
-        // 这里翻译成可读载具名（如 "T-90M 突破3"）；骨骼显示别名等普通文本原样显示。
+        // 这里翻译成可读载具名（如 “T-90M 突破3”）；骨骼显示别名等普通文本原样显示。
         // [RVP] CN 别名重查（2026-09-28）：包内服务端解析串恒为服务端语言，中文环境凭
         // 骨名在客户端配置重查 hitbox_display_name_CN（entity.* 载具名走 lang 已双语，跳过）
-        String boneText;
-        if (bone.startsWith("entity.")) {
-            boneText = Component.translatable(bone).getString();
-        } else {
-            String boneName = RVP_ClientHitIndicatorState.getBoneName();
-            AbstractVehicle hitVehicle = mc.level == null ? null
-                    : mc.level.getEntity(RVP_ClientHitIndicatorState.getLastEntityId())
-                            instanceof AbstractVehicle v ? v : null;
-            boneText = hitVehicle != null && !boneName.isBlank()
-                    ? org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE
-                            .resolveHitboxDisplayNameLocalized(hitVehicle, boneName)
-                    : bone;
+        // [RVP] 骨名/载具 id 取自同一条”最新直击事件”（getLatestDirect* 同源），与标题一致
+        String boneText = "";
+        if (showHit) {
+            if (bone.startsWith("entity.")) {
+                boneText = Component.translatable(bone).getString();
+            } else {
+                String boneName = RVP_ClientHitIndicatorState.getLatestDirectBoneName();
+                AbstractVehicle hitVehicle = mc.level == null ? null
+                        : mc.level.getEntity(RVP_ClientHitIndicatorState.getLatestDirectEntityId())
+                                instanceof AbstractVehicle v ? v : null;
+                boneText = hitVehicle != null && !boneName.isBlank()
+                        ? org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE
+                                .resolveHitboxDisplayNameLocalized(hitVehicle, boneName)
+                        : bone;
+            }
         }
-        // 文案：直击命中显示“命中XX骨骼 -x%”（未配倍率骨骼时为载具名）；非直击爆炸（骨骼名为空）显示“爆炸 -x%”
-        String title = bone.isEmpty()
-                ? I18n.get("gui.ywzj_rvp.hit_panel.title_explode", String.format("%.1f", damagePercent))
-                : I18n.get("gui.ywzj_rvp.hit_panel.title_hit", boneText, String.format("%.1f", damagePercent));
+        // 文案：直击占比 ≥ 爆炸占比且有直击事件 → “命中XX骨骼 -x%”（未配倍率骨骼时为载具名）；
+        // 其余（纯爆炸波及/近炸、或爆炸伤害占比更大）→ “爆炸 -x%”；数值均为总伤累计
+        String title = showHit
+                ? I18n.get("gui.ywzj_rvp.hit_panel.title_hit", boneText, String.format("%.1f", damagePercent))
+                : I18n.get("gui.ywzj_rvp.hit_panel.title_explode", String.format("%.1f", damagePercent));
         float textScale = (float) (TEXT_HEIGHT_PX / 9.0 / guiScale);
         gg.pose().pushPose();
         // 文案：展板顶部水平居中（参考本体：文案在模型上方居中）

@@ -1411,48 +1411,55 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         if (candidates.isEmpty()) {
             return;
         }
-        // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除；虚拟骨在此一并剔除——
-        // 遮挡映射在方法内构建一次（§41.9），视距过滤与逐骨距离衰减共用
+        // 视距过滤（§36 同款：爆心连线被本车其它骨骼 OBB 挡住即剔除；虚拟骨在此一并剔除）——
+        // 遮挡映射在方法内构建一次（§41.9），视距过滤与逐骨距离衰减共用。
+        // [RVP] §43 恢复 §36 定版保守回退：模型/OBB 解析失败不过滤、不清零，全候选全额入账
+        // （§41.9 内联改造时曾误改为直接 return，解析异常会静默吞掉全部设备损伤）
         ResourceLocation structureId = cfg.structureModel;
         BedrockModel model = structureId == null ? null
                 : CommonAssetsManager.structureModelManager().getStructureModel(structureId).orElse(null);
-        if (model == null) {
-            return;
-        }
-        Map<String, BedrockBone> boneMap = model.getBoneMap();
-        // 虚拟骨排除（§38.4）：结构模型中不存在的配置骨不参与爆炸损伤
-        List<String> realBones = new ArrayList<>();
-        for (String bone : candidates) {
-            if (boneMap.containsKey(bone)) {
-                realBones.add(bone);
-            }
-        }
-        if (realBones.isEmpty()) {
-            return;
-        }
-        HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
         Map<String, List<OBB>> obbsByBone = new HashMap<>();
-        for (String boneName : boneMap.keySet()) {
-            // 已引爆的 ERA 骨不作为遮挡物（§38.6 同款）
-            BoneModuleConfig occlCfg = cfg.moduleByBoneName.get(boneName);
-            if (occlCfg != null && occlCfg.modules().contains(BoneModuleType.ERA)
-                    && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
-                continue;
+        List<String> visible;
+        if (model == null) {
+            // 保守回退（§36 定版）：结构模型解析失败 → 不过滤虚拟骨、不衰减，全候选全额
+            visible = candidates;
+        } else {
+            Map<String, BedrockBone> boneMap = model.getBoneMap();
+            // 虚拟骨排除（§38.4）：结构模型中不存在的配置骨不参与爆炸损伤
+            List<String> realBones = new ArrayList<>();
+            for (String bone : candidates) {
+                if (boneMap.containsKey(bone)) {
+                    realBones.add(bone);
+                }
             }
-            List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
-            if (resolved.isEmpty()) {
-                continue;
+            if (realBones.isEmpty()) {
+                return;
             }
-            List<OBB> obbs = new ArrayList<>(resolved.size());
-            for (ResolvedObb resolvedObb : resolved) {
-                obbs.add(resolvedObb.obb());
+            HashSet<BedrockBone> namedBones = new HashSet<>(boneMap.values());
+            for (String boneName : boneMap.keySet()) {
+                // 已引爆的 ERA 骨不作为遮挡物（§38.6 同款）
+                BoneModuleConfig occlCfg = cfg.moduleByBoneName.get(boneName);
+                if (occlCfg != null && occlCfg.modules().contains(BoneModuleType.ERA)
+                        && !RVP_BoneModuleStateTable.isModuleActive(vehicleId, boneName, BoneModuleType.ERA)) {
+                    continue;
+                }
+                List<ResolvedObb> resolved = resolveBoneObbs(vehicle, boneMap, namedBones, boneName, null);
+                if (resolved.isEmpty()) {
+                    continue;
+                }
+                List<OBB> obbs = new ArrayList<>(resolved.size());
+                for (ResolvedObb resolvedObb : resolved) {
+                    obbs.add(resolvedObb.obb());
+                }
+                obbsByBone.put(boneName, obbs);
             }
-            obbsByBone.put(boneName, obbs);
+            if (obbsByBone.isEmpty()) {
+                // 保守回退（§36 定版）：OBB 全部解析失败 → 视为全部可见，全额入账不衰减
+                visible = realBones;
+            } else {
+                visible = filterBonesByLineOfSight(blastCenter, obbsByBone, realBones);
+            }
         }
-        if (obbsByBone.isEmpty()) {
-            return;
-        }
-        List<String> visible = filterBonesByLineOfSight(blastCenter, obbsByBone, realBones);
         if (visible.isEmpty()) {
             return;
         }

@@ -44,7 +44,8 @@ public final class RVP_RuntimeHitlTvGuidanceSource implements RVP_RuntimeGuidanc
                 // 只把实体放回，本闸门每 tick 复查，再锁超速目标会立刻再脱锁，无需额外挂钩。
                 float breakKph = RVP_Config.getHitlTvBreakLockTargetSpeedKph();
                 if (breakKph > 0 && valid.getDeltaMovement().length() * 72.0 > breakKph) {
-                    Vec3 lastTracked = valid.getBoundingBox().getCenter();
+                    // [RVP] §46：脱锁跟踪点与瞄准点同源（最大 OBB 中心）
+                    Vec3 lastTracked = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(valid);
                     missile.rvp$markHitlSpeedBreak(lastTracked);
                     if (missile.getOwner() instanceof ServerPlayer operator) {
                         operator.displayClientMessage(

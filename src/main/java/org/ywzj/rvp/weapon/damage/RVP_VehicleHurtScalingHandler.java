@@ -112,10 +112,11 @@ public final class RVP_VehicleHurtScalingHandler {
         // 进入被 REAPPLY_GUARD 挡住，天然防双计）。
         if ("ywzj_vehicle.explosion".equals(source.getMsgId())) {
             Vec3 skipBlastPos = source.getSourcePosition();
-            // [RVP] §41.5 排除 RVP 结算窗口：近炸直伤（detonateFuseAt 强制全额定向伤害，
-            // hurt 包在 enterRvpDamage 窗口内）不是"面积爆炸对载具的实收"，不得按爆炸口径
-            // 给全车设备入账（导弹级全额一发清光视距内设备，用户实机 bug）
-            if (skipBlastPos != null && shouldSkip(self) && !RVP_HitVehicleListener.inRvpDamage()) {
+            // [RVP] §43（2026-09-30 用户定版）：§41.5 的 !inRvpDamage() 门整体取消——
+            // 该窗口同时包住 triggerExplosion 的全部爆炸波及（不只近炸直伤），把 RVP 弹
+            // 爆炸的设备入账全部误挡为零（用户实测"爆炸无法降低虚拟血量"根因）。近炸定向
+            // 直伤也恢复按爆炸口径入账（"近炸吃 0"定版同步取消），距离衰减随近炸距离生效。
+            if (skipBlastPos != null && shouldSkip(self)) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                         self, skipBlastPos, amount, source.getEntity(),
                         RVP_VehicleHitboxFactorManager.peekExplosionRadius());
@@ -177,8 +178,8 @@ public final class RVP_VehicleHurtScalingHandler {
         if (!hitboxEnabled && !vehicleExplosionHitboxEnabled && weaponExplosionDamageFactor == 1f
                 && (coreMult == 1f || explosion)) {
             // [RVP] 辅助设备爆炸损伤·本体武器无倍率路（§38）：实收 = amount；
-            // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
-            if (explosion && explosionPos != null && !RVP_HitVehicleListener.inRvpDamage()) {
+            // §43 取消 §41.5 的 inRvpDamage 门（见钩子 1 处注释）
+            if (explosion && explosionPos != null) {
                 RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                         self, explosionPos, amount, source.getEntity(),
                         RVP_VehicleHitboxFactorManager.peekExplosionRadius());
@@ -240,9 +241,8 @@ public final class RVP_VehicleHurtScalingHandler {
         // 总和恒等于载具总掉血；不再用 desiredFinal（含倍率叠加，多段相加会超额）
         float actualLoss = Math.max(0f, healthBefore - self.getHealth());
         // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = actualLoss；
-        // §41.5 排除 RVP 结算窗口（近炸直伤等定向伤害不入爆炸设备口径）
-        if (explosion && explosionPos != null && actualLoss > 0f
-                && !RVP_HitVehicleListener.inRvpDamage()) {
+        // §43 取消 §41.5 的 inRvpDamage 门（见钩子 1 处注释）
+        if (explosion && explosionPos != null && actualLoss > 0f) {
             RVP_VehicleHitboxFactorManager.INSTANCE.accumulateExplosionEquipmentDamage(
                     self, explosionPos, actualLoss, source.getEntity(),
                     RVP_VehicleHitboxFactorManager.peekExplosionRadius());

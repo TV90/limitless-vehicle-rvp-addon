@@ -195,6 +195,62 @@ public final class RVP_ClientHitIndicatorState {
         return events.isEmpty() ? "" : events.get(events.size() - 1).boneDisplayName;
     }
 
+    // ---- 直击/爆炸占比仲裁（2026-09-30 用户定版）----
+    // 服务端发包时序：直击包（骨骼名非空）先发，triggerExplosion 结算后的爆炸波及补发包
+    // （骨骼名空串）后发（同 tick），直击车自身必然收到自己的爆炸补发包。标题若取最后一条
+    // 事件会被爆炸包恒盖成"爆炸"——改为比较两类事件的伤害合计，占比大者决定标题。
+
+    /** 最近一条直击事件（倒序第一个骨骼名非空的事件），无直击事件时返回 null。 */
+    private static HitEvent latestDirectEvent() {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            HitEvent e = events.get(i);
+            if (!e.boneDisplayName.isEmpty()) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    /** 最近一条直击事件的骨骼显示别名（无直击事件时空串）：标题"命中XX"用。 */
+    public static String getLatestDirectBoneDisplayName() {
+        HitEvent e = latestDirectEvent();
+        return e == null ? "" : e.boneDisplayName;
+    }
+
+    /** 最近一条直击事件的原始骨名（无直击事件时空串）：客户端重查 CN 别名用。 */
+    public static String getLatestDirectBoneName() {
+        HitEvent e = latestDirectEvent();
+        return e == null ? "" : e.boneName;
+    }
+
+    /** 最近一条直击事件的被命中实体 id（无直击事件时 0）：客户端重查 CN 别名时定位载具用。 */
+    public static int getLatestDirectEntityId() {
+        HitEvent e = latestDirectEvent();
+        return e == null ? 0 : e.entityId;
+    }
+
+    /** 列表内直击事件（骨骼名非空，含非 RVP 源补发）伤害合计：标题占比仲裁的"直击"边。 */
+    public static float getDirectDamageTotal() {
+        float sum = 0f;
+        for (HitEvent e : events) {
+            if (!e.boneDisplayName.isEmpty()) {
+                sum += e.damage;
+            }
+        }
+        return sum;
+    }
+
+    /** 列表内爆炸事件（骨骼名空：爆炸波及补发/近炸直伤）伤害合计：标题占比仲裁的"爆炸"边。 */
+    public static float getExplosionDamageTotal() {
+        float sum = 0f;
+        for (HitEvent e : events) {
+            if (e.boneDisplayName.isEmpty()) {
+                sum += e.damage;
+            }
+        }
+        return sum;
+    }
+
     /** 最近一次命中的原始骨名（可空串）：客户端重查 CN 别名（hitbox_display_name_CN）用。 */
     public static String getBoneName() {
         return events.isEmpty() ? "" : events.get(events.size() - 1).boneName;

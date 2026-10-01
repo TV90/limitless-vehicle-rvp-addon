@@ -150,7 +150,9 @@ final class RVP_RuntimeSeekerSupport {
             if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pos);
+            // [RVP] §46：评分点与瞄准点同源（最大 OBB 中心；诱饵等非载具自动回退 AABB 中心）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(pos);
             double angle = RVP_GuidanceTargetUtil.angleBetween(look, toTarget);
             double score = angle * 4.0 + entity.distanceTo(projectile) / Math.max(effectiveRange, 1.0);
             if (score < bestScore) {
@@ -172,7 +174,8 @@ final class RVP_RuntimeSeekerSupport {
             if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pos);
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(pos);
             double angle = RVP_GuidanceTargetUtil.angleBetween(look, toTarget);
             double score = angle * 4.0 + entity.distanceTo(projectile) / Math.max(range, 1.0)
                     + config.chaffResistance() * 30.0;
@@ -210,7 +213,9 @@ final class RVP_RuntimeSeekerSupport {
             if (!RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, entity, config)) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pos);
+            // [RVP] §46：IR 评分点与瞄准点同源（最大 OBB 中心；热焰弹等非载具自动回退）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(pos);
             double angle = RVP_GuidanceTargetUtil.angleBetween(look, toTarget);
             double score = angle / Math.max(config.maxLockHalfAngle(), 1.0)
                     + entity.distanceTo(projectile) / Math.max(range, 1.0);

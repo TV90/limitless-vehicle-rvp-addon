@@ -37,7 +37,8 @@
     "WeaponUnitGroupedSlotMixin",
     "WeaponUnitMultiWeaponSwitchBlockMixin",
     "WeaponUnitSensorOverrideMixin",
-    "WeaponUnitParentAimOverrideMixin"
+    "WeaponUnitParentAimOverrideMixin",
+    "RVP_VesselTurnDepthMixin"
   ],
   "client": [
     "FirstPersonHandlerExplosionShakeMixin",

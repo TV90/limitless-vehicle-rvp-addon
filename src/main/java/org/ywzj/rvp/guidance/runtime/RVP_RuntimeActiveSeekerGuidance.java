@@ -26,7 +26,8 @@ final class RVP_RuntimeActiveSeekerGuidance {
         if (!missile.isAutonomousSeekerOn()) {
             if (!freeAcquire && designated != null) {
                 missile.setTargetEntity(designated);
-                Vec3 point = designated.getBoundingBox().getCenter();
+                // [RVP] §46：指定目标点与制导瞄准点同源（最大 OBB 中心）
+                Vec3 point = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(designated);
                 missile.setTargetPos(point);
                 return RVP_GuidanceIntent.entity(designated, false, 1.0, type);
             }

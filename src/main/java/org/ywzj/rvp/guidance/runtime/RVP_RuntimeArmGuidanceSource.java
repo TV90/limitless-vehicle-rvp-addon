@@ -128,7 +128,41 @@ public final class RVP_RuntimeArmGuidanceSource implements RVP_RuntimeGuidanceSo
         return RVP_GuidanceIntent.failed(RVP_EnumGuidanceType.ARM);
     }
 
+    /**
+     * [RVP] §46（2026-10-01 用户定版）：ARM 锁定点 = 目标雷达骨**体积最大的一块实时 OBB** 的
+     * 中心——用户明确"锁其中一块、多块雷达 OBB 不取平均点"。选块按 OBB 尺寸体积（extents
+     * 为半尺寸，旋转不改变形状），同一雷达骨的块集合由结构模型决定、顺序稳定 → "最大块"
+     * 是确定性结果，每 tick 重选零抖动，无需弹上锁存。
+     * <p>回退：ECM 伪脉冲（radarUnit=null，radarIndex=-1）无真实雷达骨 / 目标车不可用 /
+     * 雷达骨无 OBB 配置 → 维持现状雷达 pivot（{@code emitter.position()} =
+     * worldRadarPosition）。</p>
+     */
     private static Vec3 resolveEmitterAimPoint(AntiRadiationSeekerHelper.AntiRadiationEmitter emitter) {
+        if (emitter.radarUnit() != null && emitter.vehicle() != null
+                && !emitter.vehicle().isRemoved()) {
+            List<org.ywzj.vehicle.vehicle.structure.OBB> obbs =
+                    org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager.INSTANCE
+                            .resolveBoneObbsForSampling(emitter.vehicle(), emitter.radarUnit().getId());
+            if (obbs != null && !obbs.isEmpty()) {
+                org.ywzj.vehicle.vehicle.structure.OBB best = null;
+                double bestVolume = -1.0;
+                for (org.ywzj.vehicle.vehicle.structure.OBB obb : obbs) {
+                    if (obb == null) {
+                        continue;
+                    }
+                    org.joml.Vector3f e = obb.extents();
+                    double volume = (double) e.x * e.y * e.z;
+                    if (volume > bestVolume) {
+                        bestVolume = volume;
+                        best = obb;
+                    }
+                }
+                if (best != null) {
+                    org.joml.Vector3f c = best.center();
+                    return new Vec3(c.x, c.y, c.z);
+                }
+            }
+        }
         return emitter.position();
     }
 

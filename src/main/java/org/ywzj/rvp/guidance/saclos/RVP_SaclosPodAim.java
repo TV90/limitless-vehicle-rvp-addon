@@ -31,7 +31,8 @@ public final class RVP_SaclosPodAim {
         if (allowLockedEntity) {
             Entity locked = unit.getLockedEntity();
             if (locked != null && locked.isAlive()) {
-                return locked.getBoundingBox().getCenter();
+                // [RVP] §46：吊舱锁定点与制导瞄准点同源（最大 OBB 中心）
+                return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(locked);
             }
         }
         return unit.aimHitPosition();

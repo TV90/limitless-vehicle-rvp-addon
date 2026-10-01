@@ -27,8 +27,11 @@ public final class RVP_GuidanceRuntimeMath {
     ) {
         RVP_BaseBullet projectile = context.projectile();
         Entity entity = intent.aimEntity();
+        // [RVP] §46（2026-10-01 用户定版）：制导瞄准点 = 目标**最大体积 OBB** 的中心
+        // （非载具/广播克隆回退 AABB 中心），长/斜载具不再瞄悬空的 AABB 中心；
+        // 下方 PIP 预测消费同一 target 变量自动跟随
         Vec3 target = entity != null && entity.isAlive()
-                ? entity.getBoundingBox().getCenter()
+                ? org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity)
                 : intent.aimPoint();
         if (entity != null && entity.isAlive() && target != null) {
             projectile.rememberGuidancePos(target);
