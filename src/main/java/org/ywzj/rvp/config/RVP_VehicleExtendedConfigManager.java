@@ -105,6 +105,15 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return !get(vehicle).groundContactPartIds().isEmpty();
     }
 
+    /**
+     * [RVP] 载具的船转向 depth 倍率（{@code physics_info.turn_depth_scale}）：仅服务端消费
+     * （{@code VesselVehicle.tickMove()} 仅在服务端 tick 执行），由
+     * {@code RVP_VesselTurnDepthMixin} 逐字段读取调用；未配置/配置非法返回 1.0（不缩放）。
+     */
+    public static float getTurnDepthScale(AbstractVehicle vehicle) {
+        return INSTANCE.get(vehicle).turnDepthScale();
+    }
+
     /** 改装换弹允许的最大载具速度（km/h）：低于该值才可更换弹种。 */
     public static final double MAX_MODDING_SPEED_KPH = 5.0;
 
@@ -287,10 +296,12 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         Map<String, Set<Integer>> moddingOnlyMulti = parseModdingOnlyMulti(obj);
         Map<String, Set<Integer>> mergeIntoPreviousSlots = parseMergeIntoPreviousSlots(obj);
         Map<String, Map<Integer, String>> saveIds = parseWeaponSaveIds(obj);
+        float turnDepthScale = parseTurnDepthScale(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
-                && mergeIntoPreviousSlots.isEmpty()) {
+                && mergeIntoPreviousSlots.isEmpty()
+                && turnDepthScale == 1.0f) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -299,8 +310,27 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 Set.copyOf(physicsOnlyBones),
                 immutableIndexMap(moddingOnlyMulti),
                 immutableIndexMap(mergeIntoPreviousSlots),
-                immutableSaveIdMap(saveIds)
+                immutableSaveIdMap(saveIds),
+                turnDepthScale
         );
+    }
+
+    /**
+     * [RVP] 船转向 depth 倍率（2026-10-01）：顶层 {@code physics_info.turn_depth_scale}，
+     * float，缺省/非有限值/≤0 一律按 1.0（不缩放）。消费点 = {@code RVP_VesselTurnDepthMixin}
+     * 对本体 {@code VesselVehicle.tickMove()} 内 {@code mainCubeOBB.depth} 字段读取（double）
+     * 的单点缩放——只影响转向角速度，不碰碰撞路径（collectContacts/push/makeBoundingBox/tickPower）。
+     */
+    private static float parseTurnDepthScale(JsonObject obj) {
+        if (!obj.has("physics_info") || !obj.get("physics_info").isJsonObject()) {
+            return 1.0f;
+        }
+        JsonObject physicsObj = obj.getAsJsonObject("physics_info");
+        if (!physicsObj.has("turn_depth_scale") || !physicsObj.get("turn_depth_scale").isJsonPrimitive()) {
+            return 1.0f;
+        }
+        float scale = physicsObj.get("turn_depth_scale").getAsFloat();
+        return Float.isFinite(scale) && scale > 0f ? scale : 1.0f;
     }
 
     private static Set<String> parseGroundContactPartIds(JsonObject obj) {
@@ -502,10 +532,11 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             Set<String> physicsOnlyBones,
             Map<String, Set<Integer>> moddingOnlyMultiByPartId,
             Map<String, Set<Integer>> mergeIntoPreviousSlotsByPartId,
-            Map<String, Map<Integer, String>> saveIdsByPartId
+            Map<String, Map<Integer, String>> saveIdsByPartId,
+            float turnDepthScale
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of());
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f);
 
         /** 指定槽位配置的 {@code save_id}；未配置返回 null。 */
         @Nullable
@@ -518,7 +549,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             return !groundContactPartIds.isEmpty()
                     || !physicsOnlyBones.isEmpty()
                     || !moddingOnlyMultiByPartId.isEmpty()
-                    || !mergeIntoPreviousSlotsByPartId.isEmpty();
+                    || !mergeIntoPreviousSlotsByPartId.isEmpty()
+                    || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f;
         }
 
         public boolean hasPhysicsOnlyBones() {
