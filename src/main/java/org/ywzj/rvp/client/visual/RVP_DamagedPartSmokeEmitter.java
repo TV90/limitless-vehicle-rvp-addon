@@ -16,6 +16,7 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeRenderType;
+import org.ywzj.rvp.client.particle.RVP_NearSmokeParticle;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.client.state.RVP_ClientEngineDamageState;
 import org.ywzj.rvp.vehicle.BoneModuleType;
@@ -32,8 +33,8 @@ import java.util.Set;
  *
  * <p>语义（用户定版）：<b>除 ERA 外</b>的骨骼模块失效后（雷达/APS/ECM/干扰机/DIRCM/
  * 干扰物/维修等），在失效部件骨对应的<b>实时命中 OBB</b>（不含具名子骨骼的 OBB）内
- * 随机取样冒黑烟；OBB 体积越大每轮取样越多。引擎骨特殊：重创（档位 1）冒黑烟、
- * 瘫痪（档位 2）冒火星火焰粒子。修复后状态侧表回落 → 自动停烟。</p>
+ * 随机取样冒黑烟；OBB 体积越大每轮取样越多。引擎骨特殊：重创（档位 1）使用通用近处烟、
+ * 瘫痪（档位 2）使用橙色引擎烟并保留火星火焰粒子。修复后状态侧表回落 → 自动停烟。</p>
  *
  * <p>实现要点：
  * <ul>
@@ -47,7 +48,7 @@ import java.util.Set;
  * <li><b>状态来源</b>：既有 {@code S2CBoneModuleState}/{@code S2CEngineDamageState} 客户端
  *     侧表（{@link RVP_ClientBoneModuleState}/{@link RVP_ClientEngineDamageState}），
  *     零新增网络包，各客户端对可见载具本地生成粒子。</li>
- * <li><b>黑烟</b>：{@link RVP_MchrSmokeParticle#ofDark}（深灰→近黑 tint，与爆炸烟
+ * <li><b>普通部件黑烟</b>：{@link RVP_MchrSmokeParticle#ofDark}（深灰→近黑 tint，与爆炸烟
  *     {@code of} 灰黄随机分离互不影响），绑定 {@code DAMAGED_SMOKE_RENDER_TYPE}
  *     （深度只测不写，对齐火箭尾焰半透明约定，修复透过烟雾实体被剔穿）；烟团尺寸随
  *     OBB 体积收敛在 2~5（MCHR scale），远小于爆炸烟（1.5~20）——只缩尺寸不缩数量。
@@ -133,7 +134,8 @@ public final class RVP_DamagedPartSmokeEmitter {
             if (types.contains(BoneModuleType.ENGINE)) {
                 int stage = RVP_ClientEngineDamageState.getStage(entityId, bone);
                 if (stage == 1) {
-                    emitBlackSmoke(vehicle, bone, random);
+                    // 调用本项目通用近处烟：引擎受损档不触发橙色出生动画。
+                    emitNearSmoke(vehicle, bone, random, RVP_NearSmokeParticle.Style.GENERIC);
                 } else if (stage == 2) {
                     emitEngineFire(vehicle, bone, random);
                 }
@@ -186,7 +188,40 @@ public final class RVP_DamagedPartSmokeEmitter {
         }
     }
 
-    /** 瘫痪档火星火焰：原版 FLAME 上窜火焰 + LAVA 溅落火星（用户定版保持原版火星），少量黑烟打底。 */
+    /** 引擎受损/瘫痪档使用的通用近处烟；数量沿用原部件黑烟预算，尺寸复用击毁烟规则。 */
+    private static void emitNearSmoke(AbstractVehicle vehicle, String bone, RandomSource random,
+                                      RVP_NearSmokeParticle.Style style) {
+        ClientLevel level = (ClientLevel) vehicle.level();
+        for (OBB obb : resolveObbs(vehicle, bone)) {
+            int count = Mth.clamp(Mth.ceil(volume(obb) / CUBIC_METERS_PER_PARTICLE),
+                    SMOKE_MIN_PER_OBB, SMOKE_MAX_PER_OBB);
+            emitNearSmokeOnObb(level, obb, random, style, count);
+        }
+    }
+
+    /** 在单个引擎 OBB 内生成指定数量的通用近处烟团，尺寸按击毁载具近处烟规则计算。 */
+    private static void emitNearSmokeOnObb(ClientLevel level, OBB obb, RandomSource random,
+                                           RVP_NearSmokeParticle.Style style, int count) {
+        for (int i = 0; i < count; i++) {
+            Vec3 point = randomPointIn(obb, random);
+            if (point == null) {
+                continue;
+            }
+            Vector3f extents = obb.extents();
+            // OBB extents 是半尺寸；水平半径取 X/Z 半尺寸较小者，与击毁载具主 OBB 规则一致。
+            double radius = Math.max(0.5, Math.min(extents.x, extents.z));
+            float size = RVP_NearSmokeParticle.resolveWreckStyleSize(radius, random.nextDouble());
+            // 调用本项目通用近处烟粒子：由 style 选择普通烟或橙色引擎烟出生动画。
+            Minecraft.getInstance().particleEngine.add(RVP_NearSmokeParticle.create(level,
+                    point.x, point.y, point.z,
+                    (random.nextDouble() - 0.5) * 0.06,
+                    0.02 + random.nextDouble() * 0.02,
+                    (random.nextDouble() - 0.5) * 0.06,
+                    size, 40 + random.nextInt(40), random.nextInt(3), style));
+        }
+    }
+
+    /** 瘫痪档火星火焰：原版 FLAME 上窜火焰 + LAVA 溅落火星，并叠加橙色引擎烟。 */
     private static void emitEngineFire(AbstractVehicle vehicle, String bone, RandomSource random) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = (ClientLevel) vehicle.level();
@@ -210,14 +245,9 @@ public final class RVP_DamagedPartSmokeEmitter {
                             point.x, point.y, point.z, 0, 0.05, 0);
                 }
             }
-            // 少量黑烟打底（燃烧但不完全，与重创档黑烟观感衔接）
-            Vec3 smokePoint = randomPointIn(obb, random);
-            if (smokePoint != null) {
-                mc.particleEngine.add(RVP_MchrSmokeParticle.ofDark(level,
-                        smokePoint.x, smokePoint.y, smokePoint.z,
-                        0, 0.03, 0, 2.5f, 60)
-                        .withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE));
-            }
+            // 调用本项目橙色引擎烟：瘫痪档保留火焰/火星，并替换原有的一枚黑烟底层。
+            emitNearSmokeOnObb(level, obb, random,
+                    RVP_NearSmokeParticle.Style.ENGINE_DISABLED, 1);
         }
     }
 
