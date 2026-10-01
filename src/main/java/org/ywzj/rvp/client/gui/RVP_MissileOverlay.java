@@ -12,7 +12,7 @@ import org.ywzj.rvp.client.state.RVP_ClientArmState;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_IrHudProfile;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
-import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.render.util.Color;
@@ -130,8 +130,8 @@ public class RVP_MissileOverlay implements IGuiOverlay {
             locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();
         }
         if (locked != null) {
-            // 调用本项目广播载具插值器，与雷达硬锁绿框共用连续锚点，避免红圈单独阶梯跳动。
-            Vec3 renderCenter = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(locked, partialTick);
+            // 调用本项目统一弹体位置解析，与雷达框共用远距弹体外推或载具插值锚点。
+            Vec3 renderCenter = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(locked, partialTick);
             Vec3 sp = VectorUtil.worldToScreen(renderCenter);
             if (sp != null && sp.z >= 0) {
                 float sa = Math.sin((double) weaponUnit.getLockCoolingTick() / 5 * Math.PI) > 0 ? 0.8f : 1.0f;
