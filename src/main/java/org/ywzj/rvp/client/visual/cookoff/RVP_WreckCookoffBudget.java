@@ -14,9 +14,9 @@ public final class RVP_WreckCookoffBudget {
     public static final int MAX_COLUMNS = 96;
     /**
      * 满额距离，单位格；此距离内不做距离衰减。
-     * 2026-10-06 由 64 放宽到 96：接缝改为 12 点后 64 格外火星会明显变稀。
+     * 2026-10-01 由 96 放宽到 128
      */
-    public static final double FULL_DETAIL_DISTANCE = 96;
+    public static final double FULL_DETAIL_DISTANCE = 128;
     /** 舱盖出口的粒子权重；三档权重之比即 10 : 10 : 0。 */
     public static final int WEIGHT_HATCH = 10;
     /** 接缝出口的粒子权重；接缝点数最多，与舱盖同级，使每个采样点都有火星。 */
@@ -58,8 +58,8 @@ public final class RVP_WreckCookoffBudget {
     /** 根据距离降低粒子数；{@link #FULL_DETAIL_DISTANCE} 格内满额，更远逐档下降。 */
     public static double distanceScale(double distance) {
         return distance <= FULL_DETAIL_DISTANCE ? 1
-                : distance <= 128 ? 0.4
-                : distance <= 256 ? 0.1 : 0;
+                : distance <= 256 ? 0.6
+                : distance <= 512 ? 0.3 : 0;
     }
 
     /** 输入按近到远排列；逐轮每车分一个名额，剩余额度才给高需求车辆。 */

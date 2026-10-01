@@ -65,11 +65,11 @@ class RVP_WreckCookoffBudgetTest {
         // 调用生产距离策略，边界处仍保留当前档位，256 格外完全停止。
         double full = RVP_WreckCookoffBudget.FULL_DETAIL_DISTANCE;
         assertEquals(1, RVP_WreckCookoffBudget.distanceScale(full));
-        assertEquals(0.4, RVP_WreckCookoffBudget.distanceScale(full + 0.001));
-        assertEquals(0.4, RVP_WreckCookoffBudget.distanceScale(128));
-        assertEquals(0.1, RVP_WreckCookoffBudget.distanceScale(128.001));
-        assertEquals(0.1, RVP_WreckCookoffBudget.distanceScale(256));
-        assertEquals(0, RVP_WreckCookoffBudget.distanceScale(256.001));
+        assertEquals(0.6, RVP_WreckCookoffBudget.distanceScale(full + 0.001));
+        assertEquals(0.6, RVP_WreckCookoffBudget.distanceScale(256));
+        assertEquals(0.3, RVP_WreckCookoffBudget.distanceScale(256.001));
+        assertEquals(0.3, RVP_WreckCookoffBudget.distanceScale(512));
+        assertEquals(0, RVP_WreckCookoffBudget.distanceScale(512.001));
     }
 
     @Test

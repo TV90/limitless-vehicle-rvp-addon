@@ -7,7 +7,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -16,6 +15,7 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
@@ -53,8 +53,6 @@ public final class RVP_RemoteAmmoVisualRenderer {
     private static final double UNCONDITIONAL_RANGE_SQ = UNCONDITIONAL_RANGE * UNCONDITIONAL_RANGE;
     /** 弹药视觉最远边界平方。 */
     private static final double EXTENDED_RANGE_SQ = EXTENDED_RANGE * EXTENDED_RANGE;
-    /** 弹药克隆位置允许的最大外推 tick。 */
-    private static final double MAX_EXTRAPOLATION_TICK = 5.0D;
     /** 尾迹相邻采样点允许连接的最大距离平方。 */
     private static final double MAX_TRAIL_LINK_DISTANCE_SQ = 64.0D * 64.0D;
     /** 单次远程补线最多生成的尾迹粒子数，防止位置快照跳变造成瞬时粒子洪峰。 */
@@ -100,7 +98,9 @@ public final class RVP_RemoteAmmoVisualRenderer {
             if (!RVP_ClientRemoteAmmoVisualState.contains(currentDimension, entity.getId())) {
                 continue;
             }
-            Vec3 renderPos = extrapolatedPosition(minecraft, remote, entity, event.getPartialTick());
+            // 调用本项目统一弹体位置解析，使 3D 弹体与雷达/HUD 框共用同一外推轨迹。
+            Vec3 renderPos = RVP_ClientProjectileRenderInterpolator.resolveRenderOrigin(
+                    minecraft, remote, entity, event.getPartialTick());
             if (!isVisibleAtRange(entity, renderPos, cameraPos)) {
                 continue;
             }
@@ -178,15 +178,6 @@ public final class RVP_RemoteAmmoVisualRenderer {
         }
         vehicle.initDisplayData(display);
         return vehicle.getVehicleModelInstance() != null;
-    }
-
-    /** 根据本体远程克隆更新时间进行最多五 tick 的短时外推。 */
-    private static Vec3 extrapolatedPosition(Minecraft mc, LocalVehiclePlayer.ServerEntity remote,
-                                             Entity entity, float partialTick) {
-        int updateTick = remote.updateTick == null ? mc.player.tickCount : remote.updateTick;
-        double age = Mth.clamp(mc.player.tickCount - updateTick + partialTick,
-                0.0D, MAX_EXTRAPOLATION_TICK);
-        return entity.position().add(entity.getDeltaMovement().scale(age));
     }
 
     /** 应用弹药超视距距离边界。 */

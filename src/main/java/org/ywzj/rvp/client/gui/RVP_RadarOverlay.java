@@ -20,7 +20,7 @@ import org.ywzj.rvp.config.UIPresetManager;
 import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
-import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -133,8 +133,8 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                             drawScanLine(matrix, 0, 0, radius, scanAngle, 0.4f, lineColor);
                         }
                         radarUnit.getDetectedEntities().values().forEach(detectedObject -> {
-                            // 调用本项目广播载具插值器，让雷达显示器 TWS 航迹点与 HUD 单缺口框同源平滑。
-                            Vec3 detectedPosition = RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(
+                            // 调用本项目统一弹体位置解析，让雷达航迹点与 HUD 框共用外推/插值轨迹。
+                            Vec3 detectedPosition = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(
                                     detectedObject.entity, partialTick, detectedObject.detectedPosition);
                             Vec3 v = detectedPosition.subtract(radarUnit.worldRadarPosition());
                             v = radarUnit.worldVecToLocalVec(v);
@@ -278,7 +278,10 @@ public class RVP_RadarOverlay implements IGuiOverlay {
             double yaw = sector.yaw();
             Vec3 lockedLine = null;
             for (S2CExternalRadarSnapshot.Entry entry : entries) {
-                Vec3 v = entry.position().subtract(radarPos);
+                // 调用本项目外置雷达位置解析，让无本地实体的弹体快照也按速度短时外推。
+                Vec3 entryPosition = RVP_ClientProjectileRenderInterpolator.resolveExternalRadarEntryPosition(
+                        entry, partialTick);
+                Vec3 v = entryPosition.subtract(radarPos);
                 Vec3 local = rotateYaw(v, -yaw);
                 double l = Math.sqrt(local.x * local.x + local.z * local.z) / maxScanDistance * radius;
                 if (l <= 0) {

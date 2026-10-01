@@ -23,4 +23,12 @@ class RVP_WreckCookoffLifecycleTest {
         assertTrue(RVP_WreckCookoffController.growthLifecycleScale(0.5) > 0);
         assertEquals(1, RVP_WreckCookoffController.growthLifecycleScale(1), 1.0E-9);
     }
+
+    @Test
+    void cookoffDurationUsesConfiguredWreckLifetimePercentage() {
+        // 60 秒残骸寿命取 50%，结果应为 30 秒，即 600 tick。
+        assertEquals(600, RVP_WreckCookoffController.cookoffDurationTicks(60, 50));
+        assertEquals(0, RVP_WreckCookoffController.cookoffDurationTicks(0, 50));
+        assertEquals(0, RVP_WreckCookoffController.cookoffDurationTicks(60, 0));
+    }
 }

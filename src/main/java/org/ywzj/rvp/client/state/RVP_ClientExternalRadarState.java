@@ -21,18 +21,22 @@ public final class RVP_ClientExternalRadarState {
     private static boolean relayRadarOn;
     private static int requestedEntityId = Integer.MIN_VALUE;
     private static int lockedEntityId = Integer.MIN_VALUE;
+    /** 最近一份外置雷达快照在客户端世界时间线中的接收时刻。 */
+    private static long snapshotClientGameTime = Long.MIN_VALUE;
     private static final Map<Integer, S2CExternalRadarSnapshot.Entry> ENTRIES = new LinkedHashMap<>();
     private static final Map<String, S2CExternalRadarSnapshot.RadarSector> SECTORS = new LinkedHashMap<>();
 
     private RVP_ClientExternalRadarState() {}
 
     public static void applySnapshot(S2CExternalRadarSnapshot msg) {
+        Minecraft mc = Minecraft.getInstance();
         dimension = msg.dimension;
         launcherVehicleUuid = msg.launcherVehicleUuid;
         relayVehicleUuid = msg.relayVehicleUuid;
         relayRadarOn = msg.relayRadarOn;
         requestedEntityId = msg.requestedEntityId;
         lockedEntityId = msg.lockedEntityId;
+        snapshotClientGameTime = mc.level == null ? Long.MIN_VALUE : mc.level.getGameTime();
         ENTRIES.clear();
         for (S2CExternalRadarSnapshot.Entry entry : msg.entries) {
             ENTRIES.put(entry.entityId(), entry);
@@ -82,6 +86,11 @@ public final class RVP_ClientExternalRadarState {
         return matches(currentDimension, currentLauncherVehicleUuid) && relayRadarOn ? lockedEntityId : Integer.MIN_VALUE;
     }
 
+    /** 返回外置雷达快照的客户端接收时刻，供弹体显示外推复用。 */
+    public static long getSnapshotClientGameTime() {
+        return snapshotClientGameTime;
+    }
+
     private static boolean matches(@Nullable ResourceLocation currentDimension, @Nullable UUID currentLauncherVehicleUuid) {
         return currentDimension != null
                 && currentLauncherVehicleUuid != null
@@ -110,6 +119,7 @@ public final class RVP_ClientExternalRadarState {
         relayRadarOn = false;
         requestedEntityId = Integer.MIN_VALUE;
         lockedEntityId = Integer.MIN_VALUE;
+        snapshotClientGameTime = Long.MIN_VALUE;
         ENTRIES.clear();
         SECTORS.clear();
     }
