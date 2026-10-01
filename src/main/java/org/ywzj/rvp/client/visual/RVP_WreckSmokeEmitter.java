@@ -12,6 +12,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.particle.RVP_NearSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle.SmokeLayer;
 import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Parameter;
@@ -169,11 +170,12 @@ public final class RVP_WreckSmokeEmitter {
         double x = center.x + Math.cos(angle) * offset;
         double y = center.y + Math.max(0.1, height * 0.22) + random.nextDouble() * 0.25;
         double z = center.z + Math.sin(angle) * offset;
-        float size = (float) Mth.clamp(radius * (0.28 + random.nextDouble() * 0.1), 0.45, 1.65);
+        float size = RVP_NearSmokeParticle.resolveWreckStyleSize(radius, random.nextDouble());
         int lifetime = 42 + random.nextInt(24);
         int variant = random.nextInt(3);
-        // 调用本项目粒子添加函数：近处烟沿用原有三种轮廓和随机初速度。
-        addSmokeParticle(minecraft, level, random, x, y, z, size, lifetime, variant, SmokeLayer.NEAR);
+        // 调用本项目通用近处烟粒子：击毁载具使用普通样式，不触发引擎瘫痪动画。
+        addNearSmokeParticle(minecraft, level, random, x, y, z, size, lifetime, variant,
+                RVP_NearSmokeParticle.Style.GENERIC);
     }
 
     /** 从水平错相的单个生成点发射略微错位的深色核心与浅色外层。 */
@@ -202,14 +204,26 @@ public final class RVP_WreckSmokeEmitter {
                 Parameter.LIFETIME.intValue(), 0, SmokeLayer.LONG_OUTER);
     }
 
-    /** 按给定烟层创建一枚粒子；长程与近处烟共用随机初速度。 */
+    /** 添加一枚通用近处烟粒子；调用方通过样式选择普通烟或橙色引擎烟。 */
+    private static void addNearSmokeParticle(Minecraft minecraft, ClientLevel level, RandomSource random,
+                                             double x, double y, double z, float size, int lifetime,
+                                             int variant, RVP_NearSmokeParticle.Style style) {
+        double vx = (random.nextDouble() - 0.5) * 0.035;
+        double vy = 0.025 + random.nextDouble() * 0.025;
+        double vz = (random.nextDouble() - 0.5) * 0.035;
+        // 调用本项目通用近处烟粒子：由样式决定普通烟或橙色引擎烟出生动画。
+        minecraft.particleEngine.add(RVP_NearSmokeParticle.create(level, x, y, z,
+                vx, vy, vz, size, lifetime, variant, style));
+    }
+
+    /** 添加一枚长程烟粒子；核心和外层共用随机初速度。 */
     private static void addSmokeParticle(Minecraft minecraft, ClientLevel level, RandomSource random,
                                          double x, double y, double z, float size, int lifetime,
                                          int variant, SmokeLayer layer) {
         double vx = (random.nextDouble() - 0.5) * 0.035;
         double vy = 0.025 + random.nextDouble() * 0.025;
         double vz = (random.nextDouble() - 0.5) * 0.035;
-        // 调用本项目烟粒子工厂：按烟层选贴图，长程粒子再随上升高度增强东向风。
+        // 调用本项目长程烟粒子工厂：按核心/外层选择贴图和透明度。
         minecraft.particleEngine.add(RVP_WreckSmokeParticle.create(level, x, y, z,
                 vx, vy, vz, size, lifetime, variant, layer));
     }
