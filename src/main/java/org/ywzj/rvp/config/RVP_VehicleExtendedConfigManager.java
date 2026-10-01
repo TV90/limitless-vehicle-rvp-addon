@@ -114,6 +114,24 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         return INSTANCE.get(vehicle).turnDepthScale();
     }
 
+    /**
+     * [RVP] 载具的开火声是否走"方向机同款"相机相对路径（{@code audio_info.camera_relative_fire_sound_distance} > 0）：
+     * 仅客户端消费（{@code RVP_ClientCameraRelativeFireSound}），服务端返回 false。
+     */
+    public static boolean isCameraRelativeFireSoundEnabled(AbstractVehicle vehicle) {
+        return getCameraRelativeFireSoundDistance(vehicle) > 0f;
+    }
+
+    /**
+     * [RVP] 载具开火声的相机相对 distance 因子（{@code audio_info.camera_relative_fire_sound_distance}）。
+     * 语义与本体 {@code VehicleSound} 的 distance 参数一致：骑乘者声音恒渲染在相机 8 格内
+     * （该分支数学上与 distance 无关），非骑乘者可听半径 ≈ distance × 16 格
+     * （distance = 4 即与本体现行 volume=4 开火声的 64 格远域完全一致）。未配置返回 0（功能关闭）。
+     */
+    public static float getCameraRelativeFireSoundDistance(AbstractVehicle vehicle) {
+        return INSTANCE.get(vehicle).cameraRelativeFireSoundDistance();
+    }
+
     /** 改装换弹允许的最大载具速度（km/h）：低于该值才可更换弹种。 */
     public static final double MAX_MODDING_SPEED_KPH = 5.0;
 
@@ -297,11 +315,13 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         Map<String, Set<Integer>> mergeIntoPreviousSlots = parseMergeIntoPreviousSlots(obj);
         Map<String, Map<Integer, String>> saveIds = parseWeaponSaveIds(obj);
         float turnDepthScale = parseTurnDepthScale(obj);
+        float cameraRelativeFireSoundDistance = parseCameraRelativeFireSoundDistance(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
                 && mergeIntoPreviousSlots.isEmpty()
-                && turnDepthScale == 1.0f) {
+                && turnDepthScale == 1.0f
+                && cameraRelativeFireSoundDistance == 0f) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -311,8 +331,29 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 immutableIndexMap(moddingOnlyMulti),
                 immutableIndexMap(mergeIntoPreviousSlots),
                 immutableSaveIdMap(saveIds),
-                turnDepthScale
+                turnDepthScale,
+                cameraRelativeFireSoundDistance
         );
+    }
+
+    /**
+     * [RVP] 开火声相机相对 distance 因子（2026-10-02）：顶层 {@code audio_info.camera_relative_fire_sound_distance}，
+     * float。缺省/非有限值/≤0 一律按 0（功能关闭，开火声保持本体的原版定位播放）；
+     * >0 即启用——该载具全部武器的开火声由 {@code RVP_ClientCameraRelativeFireSound} 改走
+     * 本体 {@code VehicleSound}（与方向机转动声相同的相机相对锚定路径）。
+     * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定，否则只配此字段的载具配置会静默失效
+     * （§45 审计教训）。
+     */
+    private static float parseCameraRelativeFireSoundDistance(JsonObject obj) {
+        if (!obj.has("audio_info") || !obj.get("audio_info").isJsonObject()) {
+            return 0f;
+        }
+        JsonObject audioObj = obj.getAsJsonObject("audio_info");
+        if (!audioObj.has("camera_relative_fire_sound_distance") || !audioObj.get("camera_relative_fire_sound_distance").isJsonPrimitive()) {
+            return 0f;
+        }
+        float distance = audioObj.get("camera_relative_fire_sound_distance").getAsFloat();
+        return Float.isFinite(distance) && distance > 0f ? distance : 0f;
     }
 
     /**
@@ -533,10 +574,17 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             Map<String, Set<Integer>> moddingOnlyMultiByPartId,
             Map<String, Set<Integer>> mergeIntoPreviousSlotsByPartId,
             Map<String, Map<Integer, String>> saveIdsByPartId,
-            float turnDepthScale
+            float turnDepthScale,
+            /**
+             * [RVP] 开火声相机相对 distance 因子（audio_info.camera_relative_fire_sound_distance）。
+             * 单位：倍（VehicleSound.distance 同语义）。0 = 关闭（保持本体原版定位播放）；
+             * >0 = 启用，非骑乘可听半径 ≈ 该值 × 16 格（4 = 与本体现行 volume=4 开火声的 64 格一致），
+             * 骑乘者声音恒渲染在相机 8 格内（与该值无关，本体 VehicleSound.calRelativePos 骑乘分支决定）。
+             */
+            float cameraRelativeFireSoundDistance
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f);
 
         /** 指定槽位配置的 {@code save_id}；未配置返回 null。 */
         @Nullable
@@ -550,7 +598,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || !physicsOnlyBones.isEmpty()
                     || !moddingOnlyMultiByPartId.isEmpty()
                     || !mergeIntoPreviousSlotsByPartId.isEmpty()
-                    || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f;
+                    || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f
+                    || cameraRelativeFireSoundDistance > 0f;
         }
 
         public boolean hasPhysicsOnlyBones() {

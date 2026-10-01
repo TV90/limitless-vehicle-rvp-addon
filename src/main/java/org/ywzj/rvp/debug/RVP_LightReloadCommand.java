@@ -19,6 +19,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.time.StopWatch;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.config.RVP_WingSweepConfigManager;
+import org.ywzj.rvp.network.RVP_VehicleConfigSyncHandler;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.all.AllConfigs;
 import org.ywzj.vehicle.custom.CommonAssetsManager;
@@ -39,7 +40,10 @@ import java.util.concurrent.TimeUnit;
  * {@link CommonAssetsManager} 数据侧）、RVP 全部载具级数据缓存（挂架配置/出弹点写入/UI 预设/
  * 分角度 RCS/热量/发射架/无人机/起落架——均挂在本体 {@code VehicleDataManager.apply} TAIL 的
  * {@code VehicleDataManagerMixin}，手动调用 apply 同样经过，无需单独处理），
- * 以及已放置载具的销毁重建（与本体语义一致）。</p>
+ * 以及已放置载具的销毁重建（与本体语义一致）。2026-10-02 补漏：服务端段显式刷新 RVP 三个
+ * {@code AddReloadListenerEvent} 数据管理器（载具扩展配置含 audio_info / 命中倍率 / 后掠翼）并
+ * 重发 {@code S2CVehicleRvpConfig} 同步包——此前只随 vanilla {@code /reload} 刷新，多人环境
+ * 客户端配置停留在登录快照，表现为"热更新无效果"。</p>
  *
  * <p>不覆盖：display JSON、bedrock 模型、动画、贴图、音效——改这些仍需
  * {@code /ywzj_vehicle reload} 全量。客户端单机额外补跑三个 RVP 客户端数据监听器
@@ -70,6 +74,17 @@ public final class RVP_LightReloadCommand {
             MinecraftServer server = context.getSource().getServer();
             // 数据侧全量：结构模型 + 武器 + 载具 JSON；RVP 钩子经 VehicleDataManagerMixin（apply TAIL）自动重建
             CommonAssetsManager.INSTANCE.reload(server.getResourceManager());
+            // [RVP] 2026-10-02 补漏：RVP 三个 AddReloadListenerEvent 数据管理器（载具扩展配置/命中倍率/
+            // 后掠翼）只随 vanilla /reload（数据包重载）刷新，本体 CommonAssetsManager.reload 不触发它们
+            // ——轻量重载必须在服务端段显式补跑，否则 /rvp reload 后服务端配置仍是旧值
+            // （如 052d 的 audio_info.camera_relative_fire_sound_distance）。
+            RVP_VehicleExtendedConfigManager.INSTANCE.reloadFrom(server.getResourceManager());
+            RVP_VehicleHitboxFactorManager.INSTANCE.reloadFrom(server.getResourceManager());
+            RVP_WingSweepConfigManager.INSTANCE.reloadFrom(server.getResourceManager());
+            // 服务端配置已刷新 → 重发 S2CVehicleRvpConfig：多人环境客户端配置只在 OnDatapackSyncEvent
+            // （登录 / vanilla /reload 的 PlayerList.reload）时更新，不补发则客户端消费字段
+            // （如开火声相机相对路径）拿到的仍是登录快照，表现为"热更新无效果"。
+            RVP_VehicleConfigSyncHandler.syncToAll();
             reloadAllVehicles(context.getSource());
         }
         watch.stop();

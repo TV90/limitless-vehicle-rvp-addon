@@ -47,4 +47,26 @@ public class RVP_VehicleConfigSyncHandler {
             RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
         }
     }
+
+    /**
+     * [RVP] 服务端配置刷新后向全服客户端重发同步包（2026-10-02）：{@code /rvp reload} 在服务端段
+     * 手动重载 RVP 数据管理器后调用——多人环境下客户端的载具扩展配置（含
+     * {@code audio_info.camera_relative_fire_sound_distance} 等客户端消费字段）只在
+     * {@code OnDatapackSyncEvent}（玩家登录 / vanilla {@code /reload} 触发 {@code PlayerList.reload}）
+     * 时更新，轻量热重载必须显式补发，否则客户端侧消费（如开火声相机相对路径）拿到的仍是登录快照。
+     */
+    public static void syncToAll() {
+        Map<ResourceLocation, JsonElement> raw = RVP_VehicleExtendedConfigManager.INSTANCE.getRawVehicleJson();
+        if (raw.isEmpty()) {
+            return;
+        }
+        Map<ResourceLocation, String> payload = new LinkedHashMap<>();
+        for (Map.Entry<ResourceLocation, JsonElement> entry : raw.entrySet()) {
+            payload.put(entry.getKey(), entry.getValue().toString());
+        }
+        if (payload.isEmpty()) {
+            return;
+        }
+        RVP_Network.CHANNEL.send(PacketDistributor.ALL.noArg(), new S2CVehicleRvpConfig(payload));
+    }
 }
