@@ -76,6 +76,34 @@ public class RVP_Explosion extends Explosion {
         return explosionSound == null || explosionSound.isBlank() ? null : explosionSound.trim();
     }
 
+    /**
+     * [RVP] 爆心在水下时的爆炸伤害（2026-10-02，鱼雷专用，MCHeli {@code ExplosionInWater}
+     * 语义对齐）：爆心方块为水时 {@code triggerExplosion} 改用本值替代 {@code damage}。
+     * 适用于直击引爆、近炸引爆与寿终自爆（全部经同一参数解析点）。对实体（舰船/乘员）
+     * 伤害不受水衰减；{@code explosion_damage_factor} 在水下组同样生效。
+     * {@code null}（未配置）= 复用 {@code damage}。
+     */
+    @SerializedName("damage_in_water")
+    private Float damageInWater;
+
+    /**
+     * [RVP] 爆心在水下时的爆炸杀伤半径（格）。{@code null}（未配置）= 复用 {@code radius}。
+     * 注意：方块破坏不受本字段影响——原版水爆炸抗性 100 会天然吸收爆炸射线，水下基本
+     * 炸不动固体方块（原版固有行为），鱼雷建议 {@code destroy_block: false}。
+     */
+    @SerializedName("radius_in_water")
+    private Float radiusInWater;
+
+    /** 爆心在水下时的爆炸伤害（{@code null} = 未配置，复用 {@code damage}）。 */
+    public Float getDamageInWater() {
+        return damageInWater;
+    }
+
+    /** 爆心在水下时的爆炸杀伤半径（{@code null} = 未配置，复用 {@code radius}）。 */
+    public Float getRadiusInWater() {
+        return radiusInWater;
+    }
+
     public static RVP_Explosion disabled() {
         RVP_Explosion explosion = new RVP_Explosion();
         explosion.explode = false;

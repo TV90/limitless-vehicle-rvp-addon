@@ -150,8 +150,57 @@ public class RVP_EffectsData {
     @SerializedName("particle_projectile_data")
     private RVP_ParticleProjectileData particleProjectileData = new RVP_ParticleProjectileData();
 
+    /**
+     * [RVP] 水中尾迹粒子 id（2026-10-02，仅 {@code rvp:torpedo} 消费）：水中巡航段每 tick
+     * 沿弹后生成（原版粒子命名空间全名，如 {@code minecraft:bubble}），空气中不生成——
+     * 水中观感即"雷迹气泡带"。客户端本地判定入水状态生成，零网络包。空串 = 关闭。
+     */
+    @SerializedName("water_trail_particle")
+    private String waterTrailParticle = "minecraft:bubble";
+
+    /**
+     * [RVP] 水中尾迹每 tick 粒子数量（仅 {@code rvp:torpedo} 消费）；配置 ≤0 按默认 2 处理。
+     */
+    @SerializedName("water_trail_count")
+    private int waterTrailCount = 2;
+
+    /**
+     * [RVP] 入水水花粒子 id（仅 {@code rvp:torpedo} 消费）：入水瞬间在入水点生成一簇
+     * （默认 {@code minecraft:splash}）。客户端本地生成。空串 = 关闭。
+     */
+    @SerializedName("water_entry_particle")
+    private String waterEntryParticle = "minecraft:splash";
+
+    /**
+     * [RVP] 入水音效 SoundEvent id（仅 {@code rvp:torpedo} 消费，如
+     * {@code minecraft:entity.player.splash}）。客户端本地播放（按与爆点/声源距离衰减）。
+     * 空串 = 无声。
+     */
+    @SerializedName("water_entry_sound")
+    private String waterEntrySound = "";
+
     public String getTrajectoryParticle() {
         return trajectoryParticle == null ? "" : trajectoryParticle;
+    }
+
+    /** 水中尾迹粒子 id（{@code null}/空白 = 关闭水中尾迹）。 */
+    public String getWaterTrailParticle() {
+        return waterTrailParticle == null ? "" : waterTrailParticle;
+    }
+
+    /** 水中尾迹每 tick 粒子数量（≤0 回默认 2）。 */
+    public int getWaterTrailCount() {
+        return waterTrailCount > 0 ? waterTrailCount : 2;
+    }
+
+    /** 入水水花粒子 id（{@code null}/空白 = 关闭水花）。 */
+    public String getWaterEntryParticle() {
+        return waterEntryParticle == null ? "" : waterEntryParticle;
+    }
+
+    /** 入水音效 id（{@code null}/空白 = 无声）。 */
+    public String getWaterEntrySound() {
+        return waterEntrySound == null ? "" : waterEntrySound;
     }
 
     public boolean isMissileNativeTrailEnabled() {

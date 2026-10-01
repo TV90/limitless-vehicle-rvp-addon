@@ -3918,6 +3918,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /**
      * @param excludeEntity 如果非空，该实体将不会受到 {@link VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
      */
+    /**
+     * [RVP] 判定世界坐标是否处于水中（鱼雷水下参数/特效共用，2026-10-02）：
+     * 该坐标所在方块的水流体是否为水。含流动水；不含岩浆等其他流体。
+     */
+    protected static boolean isWaterAt(net.minecraft.world.level.Level level, Vec3 pos) {
+        return level.getFluidState(net.minecraft.core.BlockPos.containing(pos.x, pos.y, pos.z))
+                .is(net.minecraft.tags.FluidTags.WATER);
+    }
+
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
         // HBM 特效实际生效标记（由 hbm_effect_data 在数据层推导，经桥接层 Result.anyApplied 判定）。
@@ -3955,6 +3964,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 case PROXIMITY -> rvpData.resolveProximityFuseExplosionRadius();
                 default -> explosion.radius;
             };
+        }
+        // [RVP] 水下爆炸独立威力（2026-10-02，rvp:torpedo，MCHeli ExplosionInWater 语义对齐）：
+        // 爆心处于水中时使用 explosion_data.damage_in_water / radius_in_water（null=复用
+        // damage/radius）。只改参数选择，不触碰本体 VehicleExplosion 链路；直击/近炸/寿终
+        // 自爆全部经本解析点，一处生效。
+        if (explosion instanceof org.ywzj.rvp.weapon.data.RVP_Explosion rvpExplosionWater
+                && isWaterAt(level(), pos)) {
+            Float damageInWater = rvpExplosionWater.getDamageInWater();
+            Float radiusInWater = rvpExplosionWater.getRadiusInWater();
+            if (damageInWater != null) {
+                damage = damageInWater;
+            }
+            if (radiusInWater != null) {
+                radius = radiusInWater;
+            }
         }
         float resolvedDamage = damage;
         float resolvedRadius = radius;

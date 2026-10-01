@@ -33,6 +33,7 @@ public final class RVP_ProjectileEntityFactory {
             case ROCKET -> RVP_RocketEntity.class;
             case MACHINEGUN -> RVP_BulletEntity.class;
             case BOMB -> RVP_BombEntity.class;
+            case TORPEDO -> org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity.class;
             case DISPENSER -> RVP_DispensedEntity.class;
             case LASER, TARGETING_POD -> null;
         };
@@ -47,6 +48,7 @@ public final class RVP_ProjectileEntityFactory {
             case ROCKET -> RVP_Entities.RVP_ROCKET.get();
             case MACHINEGUN -> RVP_Entities.RVP_BULLET.get();
             case BOMB -> RVP_Entities.RVP_BOMB.get();
+            case TORPEDO -> RVP_Entities.RVP_TORPEDO.get();
             case DISPENSER -> RVP_Entities.RVP_DISPENSED.get();
             case LASER, TARGETING_POD -> null;
         };
@@ -66,6 +68,7 @@ public final class RVP_ProjectileEntityFactory {
             case ROCKET -> new RVP_RocketEntity(type, level, weaponId);
             case MACHINEGUN -> new RVP_BulletEntity(type, level, weaponId);
             case BOMB -> new RVP_BombEntity(type, level, weaponId);
+            case TORPEDO -> new org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity(type, level, weaponId);
             case DISPENSER -> new RVP_DispensedEntity(type, level, weaponId);
             case LASER, TARGETING_POD -> null;
         };

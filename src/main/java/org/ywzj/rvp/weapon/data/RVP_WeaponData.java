@@ -98,6 +98,14 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     private RVP_TargetingPodData targetingPodData = new RVP_TargetingPodData();
 
     /**
+     * [RVP] 鱼雷水中动力学参数（2026-10-02），仅 {@code type: "rvp:torpedo"} 消费，
+     * 见 {@link RVP_TorpedoData}。null（未配置）= 鱼雷运行时回退全默认值；其他武器类型
+     * 写该键会被 Gson 解析但无任何消费点。
+     */
+    @SerializedName("torpedo_data")
+    private RVP_TorpedoData torpedoData;
+
+    /**
      * 发射前是否要求火控锁定目标（导弹等）；为 true 且无锁时客户端提示
      * {@code ui.need_lock_entity}。
      */
@@ -231,6 +239,15 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
     /** 目标指示吊舱参数。 */
     public RVP_TargetingPodData getTargetingPodData() {
         return targetingPodData == null ? new RVP_TargetingPodData() : targetingPodData;
+    }
+
+    /**
+     * [RVP] 鱼雷水中动力学参数。仅 {@code rvp:torpedo} 消费；未配置（null）时返回
+     * 全默认值实例——调用方按 kind 判断是否为鱼雷，这里不区分（空 JSON 也能用默认
+     * 鱼雷行为发射）。
+     */
+    public RVP_TorpedoData getTorpedoData() {
+        return torpedoData == null ? new RVP_TorpedoData() : torpedoData;
     }
 
     @Nullable

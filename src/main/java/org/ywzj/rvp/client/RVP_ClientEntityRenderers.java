@@ -51,6 +51,11 @@ public final class RVP_ClientEntityRenderers {
                 new RVP_BedrockProjectileEntityRenderer<>(ctx, FALLBACK_ROCKET_MODEL, FALLBACK_ROCKET_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_BOMB.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RVP_BombEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
+        // [RVP] 鱼雷（rvp:torpedo）：fallback 暂用本体导弹模型（流线弹体最接近雷体），
+        // 正机模型走武器 display JSON + 载具包 bedrock 资产（assets/rvp/models/bedrock/entity/ammo/）
+        EntityRenderers.register(RVP_Entities.RVP_TORPEDO.get(), ctx ->
+                new RVP_BedrockProjectileEntityRenderer<org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity>(
+                        ctx, FALLBACK_MISSILE_MODEL, FALLBACK_MISSILE_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_DISPENSED.get(), ctx ->
                 new RVP_BedrockProjectileEntityRenderer<RVP_DispensedEntity>(ctx, FALLBACK_BOMB_MODEL, FALLBACK_BOMB_TEXTURE));
         EntityRenderers.register(RVP_Entities.RVP_DECOY.get(), RVP_DecoyRenderer::new);

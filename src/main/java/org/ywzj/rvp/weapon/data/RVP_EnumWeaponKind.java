@@ -20,5 +20,11 @@ public enum RVP_EnumWeaponKind {
     /** 投放器/布撒器载荷。 */
     DISPENSER,
     /** 目标指示吊舱，用于写入 GPS/SACLOS 目标点。 */
-    TARGETING_POD
+    TARGETING_POD,
+    /**
+     * 鱼雷类弹体（公开类型 {@code rvp:torpedo}）：出管段走普通弹道，有效入水后切换
+     * {@code torpedo_data} 定速直航（独立于 constant_speed 体系），出水恢复空中弹道。
+     * 运行时行为见 {@link org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity}。
+     */
+    TORPEDO
 }

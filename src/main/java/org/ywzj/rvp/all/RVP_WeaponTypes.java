@@ -44,6 +44,14 @@ public final class RVP_WeaponTypes {
     public static final RegistryObject<VehicleWeaponType<RVP_ProjectileWeapon, RVP_WeaponData>> BOMB =
             registerProjectile("bomb", RVP_EnumWeaponKind.BOMB, RVP_Entities.RVP_BOMB::get);
 
+    /**
+     * [RVP] 鱼雷公开类型（2026-10-02）：JSON {@code type: "rvp:torpedo"}。弹体走
+     * {@link org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity}（出管弹道 + 入水定速直航），
+     * 水中动力学参数在武器 JSON {@code torpedo_data}（见 {@code RVP_TorpedoData}）。
+     */
+    public static final RegistryObject<VehicleWeaponType<RVP_ProjectileWeapon, RVP_WeaponData>> TORPEDO =
+            registerProjectile("torpedo", RVP_EnumWeaponKind.TORPEDO, RVP_Entities.RVP_TORPEDO::get);
+
     public static final RegistryObject<VehicleWeaponType<RVP_LaserWeapon, RVP_WeaponData>> LASER =
             WEAPON_TYPES.register("laser",
                     () -> VehicleWeaponType.Builder.<RVP_LaserWeapon, RVP_WeaponData>of(id("laser"))

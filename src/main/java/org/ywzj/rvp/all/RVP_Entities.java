@@ -51,6 +51,15 @@ public class RVP_Entities {
     public static final RegistryObject<EntityType<RVP_BombEntity>> RVP_BOMB =
             registerRvpProjectile("rvp_bomb", RVP_BombEntity::new, RVP_BombEntity::new);
 
+    /**
+     * [RVP] 鱼雷实体（2026-10-02，{@code rvp:torpedo}）：出管弹道 + 入水定速直航状态机，
+     * 注册模板与其它 RVP 弹体一致（小碰撞箱、256 格客户端追踪、每 tick 同步、速度更新关闭——
+     * 位置服务端权威，客户端仅做插值与本地特效）。
+     */
+    public static final RegistryObject<EntityType<org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity>> RVP_TORPEDO =
+            registerRvpProjectile("rvp_torpedo", org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity::new,
+                    org.ywzj.rvp.entity.projectile.RVP_TorpedoEntity::new);
+
     public static final RegistryObject<EntityType<RVP_DispensedEntity>> RVP_DISPENSED =
             registerRvpProjectile("rvp_dispensed", RVP_DispensedEntity::new, RVP_DispensedEntity::new);
 

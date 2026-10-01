@@ -159,6 +159,21 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         WeaponUnit rootUnit = launchUnit.getRootParentWeaponUnit();
         RVP_WeaponOriginDebug.noteDispatchInvocation(this, launchUnit, rootUnit, shooter, aimContexts, chargeScale);
 
+        // [RVP] 鱼雷瞄水发射门（2026-10-02，torpedo_data.require_aim_water）：沿武器站瞄准方向
+        // 做射线检测（固体+流体），require_aim_water_range 内必须命中水方块才允许发射——
+        // 防止瞄着陆地/舰桥误发。拒绝不耗弹（与下方离轴终检同语义），动作栏提示。
+        if (data.getWeaponKind() == org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind.TORPEDO
+                && data.getTorpedoData().isRequireAimWater()
+                && shooter.level() instanceof net.minecraft.server.level.ServerLevel torpedoAimLevel) {
+            if (!passesTorpedoAimWaterGate(torpedoAimLevel, data, shooter, aimContexts)) {
+                if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                    notifyPlayer.displayClientMessage(
+                            net.minecraft.network.chat.Component.translatable("ui.rvp.torpedo_not_aiming_water"), true);
+                }
+                return;
+            }
+        }
+
         Entity lock = null;
         if (data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
@@ -197,6 +212,35 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             }
             getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
         }
+    }
+
+    /**
+     * [RVP] 鱼雷瞄水发射门（2026-10-02）：从武器站瞄准起点沿瞄准方向射线检测
+     * （ClipContext.Block.COLLIDER + Fluid.ANY——固体方块与流体都可终止射线），
+     * {@code require_aim_water_range} 内命中水流体方块才放行；命中固体（瞄着舰桥/陆地）
+     * 不放行。无瞄准上下文时不拦截（防御：正常发射链必有 AimContext）。
+     */
+    private boolean passesTorpedoAimWaterGate(net.minecraft.server.level.ServerLevel level,
+                                              RVP_WeaponData data, LivingEntity shooter,
+                                              List<AimContext> aimContexts) {
+        if (aimContexts == null || aimContexts.isEmpty()) {
+            return true;
+        }
+        AimContext aim = aimContexts.get(0);
+        Vec3 origin = aim.from != null ? aim.from : shooter.getEyePosition();
+        // 调用本体向量工具：AimContext 的 Vec2（xRot/yRot）转世界方向向量，与弹体初速同源
+        Vec3 direction = VectorUtil.rotToVec(aim.direction.x, aim.direction.y);
+        double range = data.getTorpedoData().getRequireAimWaterRange();
+        Vec3 end = origin.add(direction.scale(range));
+        net.minecraft.world.phys.BlockHitResult hit = level.clip(new net.minecraft.world.level.ClipContext(
+                origin, end,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                net.minecraft.world.level.ClipContext.Fluid.ANY,
+                shooter));
+        if (hit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
+            return false;
+        }
+        return level.getFluidState(hit.getBlockPos()).is(net.minecraft.tags.FluidTags.WATER);
     }
 
     private void shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
