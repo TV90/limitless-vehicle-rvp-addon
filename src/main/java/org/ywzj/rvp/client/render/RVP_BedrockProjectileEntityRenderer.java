@@ -23,6 +23,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
+import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
@@ -130,9 +131,18 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
             noteFlameGate(projectile, data == null ? "config_unresolved" : "no_rocket_engine");
             return;
         }
-        if (!projectile.isMotorBurningNow()) {
+        boolean remoteVisualClone = projectile.isRemoteVisualClone();
+        boolean localMotorBurning = !remoteVisualClone && projectile.isMotorBurningNow();
+        // 超视距克隆不推进自身飞行 Tick，必须使用服务端每 5 Tick 下发的权威燃烧集合；
+        // 快照不存在时按熄火处理，防止远程克隆的默认发动机状态把尾焰永久点亮。
+        boolean remoteSnapshotMotorBurning = remoteVisualClone
+                && RVP_ClientRemoteAmmoVisualState.isMotorBurning(
+                projectile.level().dimension().location(), projectile.getId());
+        if (!RVP_MotorFlameRenderGate.shouldRender(remoteVisualClone,
+                localMotorBurning, remoteSnapshotMotorBurning)) {
             FLAME_RUNNERS.remove(projectile);
-            noteFlameGate(projectile, "motor_idle");
+            noteFlameGate(projectile,
+                    remoteVisualClone ? "remote_motor_idle" : "motor_idle");
             return;
         }
         InternalAssets assets = ClientAssetsManager.INSTANCE.getInternalAssets();
@@ -194,7 +204,8 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
      *
      * @param projectile 正在渲染的弹体
      * @param gate       门控结论：{@code config_unresolved} / {@code no_rocket_engine} /
-     *                   {@code motor_idle} / {@code flame_assets_missing} / {@code rendering}
+     *                   {@code motor_idle} / {@code remote_motor_idle} /
+     *                   {@code flame_assets_missing} / {@code rendering}
      */
     private static void noteFlameGate(RVP_BaseBullet projectile, String gate) {
         if (!RVP_DebugFlags.MOTOR_FLAME.isEnabled()) {

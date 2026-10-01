@@ -334,6 +334,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
     protected int secondPulseStartTick = -1;
+    /** 是否为本体远程广播创建的客户端视觉克隆；仅用于远程渲染门控，不参与物理、制导或伤害计算。 */
+    private boolean remoteVisualClone;
     /** 是否在 HUD 显示 MSL 指示器，从 weapon data 同步到客户端。 */
     protected boolean showMslIndicator;
 
@@ -574,6 +576,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     @Override
     public void readData(CompoundTag data) {
+        // 调用本体 RemoteTickEntity 的远程数据接收入口：标记当前对象为超视距客户端视觉克隆，
+        // 供 RVP 类型化弹体渲染器改用服务端燃烧快照，避免读取未同步的本地发动机默认状态。
+        remoteVisualClone = true;
         if (data.contains("weaponId")) {
             ResourceLocation weaponId = ResourceLocation.tryParse(data.getString("weaponId"));
             if (weaponId != null) {
@@ -627,6 +632,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     @Override
     public void remoteTick() {
         resolveRemoteRefs();
+    }
+
+    /** @return 当前弹体是否由本体远程广播链创建为客户端视觉克隆。 */
+    public final boolean isRemoteVisualClone() {
+        return remoteVisualClone;
     }
 
     @Override
