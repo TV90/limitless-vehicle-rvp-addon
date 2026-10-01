@@ -18,6 +18,9 @@ public interface WeaponUnitPojoExt {
     /** 查询是否关闭CRT后处理效果。 */
     boolean ywzj_rvp$disableCrtEffect();
 
+    /** 查询开镜相机挂点是否跟随炮管俯仰（crt_ui_operator 语法糖展开的目标开关）；默认 false。 */
+    boolean ywzj_rvp$opticalSightFollowPitch();
+
     /** 取得仅跟随父部件姿态的部件ID列表。 */
     List<String> ywzj_rvp$getFollowParentOnlyPartUnitIds();
 

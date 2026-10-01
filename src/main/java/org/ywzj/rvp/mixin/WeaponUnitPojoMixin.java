@@ -35,6 +35,13 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private boolean ywzj_rvp$disableCrtEffect;
 
+    /** 开镜相机挂点跟随炮管俯仰（crt_ui_operator 语法糖展开的目标开关）；默认false。
+     *  <p>用原始类型 boolean：Gson 反序列化 pojo 走 Unsafe 分配，字段初始化器不执行，
+     *  原始类型"未配置"落 false，正好是默认关闭语义（不影响未配置的存量载具）。 */
+    @SerializedName("rvp_optical_sight_follow_pitch")
+    @Unique
+    private boolean ywzj_rvp$opticalSightFollowPitch;
+
     /** 仅跟随父部件姿态的部件ID列表；默认空列表。 */
     @SerializedName("rvp_follow_parent_only_part_unit_ids")
     @Unique
@@ -74,6 +81,11 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public boolean ywzj_rvp$disableCrtEffect() {
         return ywzj_rvp$disableCrtEffect;
+    }
+
+    @Override
+    public boolean ywzj_rvp$opticalSightFollowPitch() {
+        return ywzj_rvp$opticalSightFollowPitch;
     }
 
     @Override

@@ -51,6 +51,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private boolean ywzj_rvp$disableCrtEffect;
 
+    /** 开镜相机挂点跟随炮管俯仰（crt_ui_operator 语法糖展开的目标开关）；默认false（未配置=保持本体行为）。 */
+    @Unique
+    private boolean ywzj_rvp$opticalSightFollowPitch;
+
     /** 仅跟随父部件姿态的部件ID列表；默认空列表。 */
     @Unique
     private List<String> ywzj_rvp$followParentOnlyPartUnitIds = List.of();
@@ -74,6 +78,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$rfOffAxisDeg = ext.ywzj_rvp$getRfOffAxisDeg();
             this.ywzj_rvp$fireControlOffAxisDeg = ext.ywzj_rvp$getFireControlOffAxisDeg();
             this.ywzj_rvp$disableCrtEffect = ext.ywzj_rvp$disableCrtEffect();
+            this.ywzj_rvp$opticalSightFollowPitch = ext.ywzj_rvp$opticalSightFollowPitch();
             this.ywzj_rvp$followParentOnlyPartUnitIds = ywzj_rvp$safeCopy(ext.ywzj_rvp$getFollowParentOnlyPartUnitIds());
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
             this.ywzj_rvp$opticalSightPivot = ext.ywzj_rvp$getOpticalSightPivot();
@@ -177,6 +182,11 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public boolean ywzj_rvp$disableCrtEffect() {
         return ywzj_rvp$disableCrtEffect;
+    }
+
+    @Override
+    public boolean ywzj_rvp$opticalSightFollowPitch() {
+        return ywzj_rvp$opticalSightFollowPitch;
     }
 
     @Override

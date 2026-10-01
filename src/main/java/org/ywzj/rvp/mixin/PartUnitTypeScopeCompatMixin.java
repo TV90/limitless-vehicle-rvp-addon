@@ -41,13 +41,23 @@ public abstract class PartUnitTypeScopeCompatMixin {
             return jsonElement;
         }
         String sightType = opticalSightType.getAsString();
-        if (!"crt_ui".equalsIgnoreCase(sightType)) {
+        // crt_ui：关 CRT 后处理、保留 CRT 观瞄 HUD（既有语法糖）；
+        // crt_ui_operator：在 crt_ui 基础上再补 rvp_optical_sight_follow_pitch=true，
+        // 让开镜相机挂点走炮口骨（xTurnGroup）跟随炮管俯仰（本体 operator 的位置行为）。
+        // 语法糖必须在解析期把类型落成合法值 "crt"——本体枚举没有 crt_ui* 取值，
+        // 不改写的话 Gson 解析为 null，开镜界面退化为 1x1 小点且不报错。
+        boolean crtUi = "crt_ui".equalsIgnoreCase(sightType);
+        boolean crtUiOperator = "crt_ui_operator".equalsIgnoreCase(sightType);
+        if (!crtUi && !crtUiOperator) {
             return jsonElement;
         }
         JsonObject patched = jsonObject.deepCopy();
         patched.addProperty("optical_sight_type", "crt");
         if (!patched.has("rvp_disable_crt_effect")) {
             patched.addProperty("rvp_disable_crt_effect", true);
+        }
+        if (crtUiOperator && !patched.has("rvp_optical_sight_follow_pitch")) {
+            patched.addProperty("rvp_optical_sight_follow_pitch", true);
         }
         return patched;
     }
