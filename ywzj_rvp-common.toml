@@ -1,7 +1,9 @@
 #RVP Common Config
 [spawning]
     #When placing a vehicle with the spawn item, automatically add a stack of creative ammo
-    #to the vehicle's inventory so it can be used immediately.
+    #to the vehicle's inventory so it can be used immediately, and instantly refill ALL weapons
+    #to full ammo once at the moment the vehicle spawns (skipping long reload times).
+    #This refill is a one-time operation at spawn only and will not repeat as ammo is consumed.
     #Default: false
     spawnVehicleWithCreativeAmmo = true
 
@@ -11,8 +13,6 @@
     #是否在载具超视距渲染启用时剔除客户端普通地形雾，避免原生实体载具在 512 格接管边界前被雾墙遮挡。
     #仅影响普通空气雾；水下、熔岩、细雪、失明和黑暗仍保留原版限制。默认：true
     removeTerrainFog = true
-    #客户端设置。使用载具进入 `SCOPE` 且最终 FOV 达到缩放阈值时跳过 Billboard，改走普通 LOD、无 LOD 回退基础高模
-    scopeZoomPreferModelRendering = true
     #是否把没有任何成功烘焙 LOD 规则的超视距载具改为 Billboard。
     #该值由服务端随远距载具完整快照强制同步。默认：true
     aggressiveLodBillboard = true
@@ -34,9 +34,6 @@
     #载具超视距同步最大水平距离，单位格。范围：512..65536，默认：4096
     #Range: 512.0 ~ 65536.0
     maxDistance = 4096
-    #服务端参数：未安装 DH 或关闭 DH 地形渲染时，隐藏离地高度低于该值的超视距载具。
-    #单位米（1 米 = 1 格）；默认 25，-1 不启用限制，等于阈值仍显示。随快照下发，客户端本地值不覆盖。
-    minHeightAboveGroundWithoutDH = 25
     #载具视觉完整集合同步周期，单位 tick。范围：1..200，默认：5
     #Range: 1 ~ 200
     syncIntervalTicks = 5
@@ -53,11 +50,27 @@
     #按载具速度规划区块前探路径的 tick 数。范围：0..200，默认：5
     #Range: 0 ~ 200
     chunkLookAheadTicks = 5
+    #玩家正在使用载具、进入 SCOPE 观瞄视角且最终 FOV 达到缩放阈值时，
+    #是否仅覆盖服务端 Billboard 策略，优先使用普通 LOD、无有效 LOD 时回退基础高模。
+    #该值只影响当前客户端，不随服务端远距载具快照同步。默认：true
+    scopeZoomPreferModelRendering = true
+    #服务端参数：客户端未安装 DH 或关闭 DH 地形渲染时，隐藏离地高度低于该值的超视距载具。
+    #单位米（1 米 = 1 格），默认：25；-1 不启用限制，等于阈值时仍允许渲染。
+    #随完整快照强制同步；不受客户端本地 common 同名值覆盖，不影响原生追踪实体。
+    #Range: > -1
+    minHeightAboveGroundWithoutDH = 25
 
     [remoteVehicleRendering.visibilityByObserverVehicleType]
-        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
         helicopter = ["helicopter", "aircraft", "ground_vehicles"]
-        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
         aircraft = ["helicopter", "aircraft", "ground_vehicles"]
-        #允许该观察者载具类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
         ground_vehicles = ["helicopter", "aircraft"]
+        #允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。
+        walking_players = ["helicopter", "aircraft"]
+
+[vehicleLifecycle]
+    #载具残骸保留时间，单位秒；超过该时间后服务端移除残骸。默认：60
+    #Range: > 0
+    wreckLifetimeSeconds = 60

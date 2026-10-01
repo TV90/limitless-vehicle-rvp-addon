@@ -62,7 +62,7 @@
 
 发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`）。
 
-载具残骸保留时间由 common 配置的 `[vehicleLifecycle] wreckLifetimeSeconds` 控制，默认 60 秒；详细生命周期限制见 [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) §4。
+载具残骸保留时间由 common 配置的 `[vehicleLifecycle] wreckLifetimeSeconds` 控制，默认 60 秒；殉燃火柱总生命周期默认取该值的 50%，比例由代码字段 `RVP_WreckCookoffController.WRECK_LIFETIME_PERCENT` 调整。详细生命周期限制见 [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) §4。
 
 ## 硬约束（与根目录 agents.md 一致）
 
