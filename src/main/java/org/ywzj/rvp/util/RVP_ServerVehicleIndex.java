@@ -44,8 +44,11 @@ public final class RVP_ServerVehicleIndex {
      * 修复该缺陷。本体修复落地后（EntityUtil.findEntityOnPath 或 getOBBs 侧），把此开关
      * 改为 {@code false} 即完全关闭补筛（直通原版查询结果），无需其它改动；
      * 注册表本身仍随事件维护，开销可忽略。
+     *
+     * <p>2026-10-02：本体侧已修复该缺陷，补丁<b>暂时关闭</b>（{@code false}）。
+     * 若本体修复不完整（打大船艏/艉远端仍过穿），改回 {@code true} 即恢复兜底。</p>
      */
-    private static final boolean PATCH_ENABLED = true;
+    private static final boolean PATCH_ENABLED = false;
 
     /** 每维度（按 Level 的 dimension key 区分）的载具弱语义列表。 */
     private static final Map<String, List<AbstractVehicle>> VEHICLES_BY_LEVEL = new ConcurrentHashMap<>();
