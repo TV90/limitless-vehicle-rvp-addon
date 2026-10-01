@@ -430,7 +430,9 @@ public class RVP_ClientHitlState {
         if (hit != null && hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit
                 && entityHit.getEntity() != null) {
             int entityId = entityHit.getEntity().getId();
-            Vec3 point = entityHit.getEntity().getBoundingBox().getCenter();
+            // [RVP] §46：HITL 指定点与制导目标点同源（最大 OBB 中心，非载具回退 AABB 中心）
+            Vec3 point = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entityHit.getEntity());
             clientDesignatedPos = point;
             if (clientDesignatedEntityId == entityId) {
                 clientDesignatedEntityId = -1;

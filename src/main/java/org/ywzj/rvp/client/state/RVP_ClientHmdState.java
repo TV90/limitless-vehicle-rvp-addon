@@ -528,7 +528,9 @@ public class RVP_ClientHmdState {
                     || entity.getVehicle() != null) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(pivot);
+            // [RVP] §46：捕获评分点与锁定框/制导点同源（最大 OBB 中心，非载具回退 AABB 中心）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(pivot);
             double dist = toTarget.length();
             if (dist > EO_HMD_MAX_RANGE || dist < 1.0) {
                 continue;
@@ -594,7 +596,9 @@ public class RVP_ClientHmdState {
             return;
         }
         Vec3 pivot = weaponUnit.worldPivotPosition();
-        double dist = target.getBoundingBox().getCenter().subtract(pivot).length();
+        // [RVP] §46：EO 锁距与锁定框/制导点同源（最大 OBB 中心）
+        double dist = org.ywzj.rvp.util.RVP_AimPointResolver
+                .resolveLargestObbCenter(target).subtract(pivot).length();
         // 脱锁条件只看 距离 + 视线遮挡，不做视场角门：火控（如 rvp_ballistic_lead）带动炮塔
         // 指向提前点时天然偏离目标中心（离轴角内最多 10°），视场门会把有效 EO 锁误清，
         // 造成"提前量圈消失、炮塔回摆"的死循环（2026-09-24 实测修复）。
@@ -689,7 +693,9 @@ public class RVP_ClientHmdState {
             if (entity == null || !entity.isAlive()) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(radarPos);
+            // [RVP] §46：雷达头瞄捕获评分点与锁定框/制导点同源（最大 OBB 中心）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(radarPos);
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
                 continue;
@@ -723,7 +729,9 @@ public class RVP_ClientHmdState {
             if (channels.isIrActive()) {
                 Vec3 irBoresight = RVP_IrLockHelper.resolveIrBoresightDir(
                         weaponUnit, irOffAxisStacksWithStationRotation);
-                Vec3 targetDir = bestTarget.getBoundingBox().getCenter()
+                // [RVP] §46：IR 转交确认方向与瞄准点同源（最大 OBB 中心）
+                Vec3 targetDir = org.ywzj.rvp.util.RVP_AimPointResolver
+                        .resolveLargestObbCenter(bestTarget)
                         .subtract(weaponUnit.worldPivotPosition());
                 // 调用本项目 IR 锁定确认入口，把雷达 HMD 捕获到的同一实体显式交给 IR 通道。
                 confirmIrLock(weaponUnit, bestTarget, angleBetweenDeg(irBoresight, targetDir), "radar-cue");
@@ -771,7 +779,9 @@ public class RVP_ClientHmdState {
                 clearIrLockState(weaponUnit);
                 return;
             }
-            Vec3 toTarget = tracked.getBoundingBox().getCenter().subtract(seekerPos);
+            // [RVP] §46：IR 保持锁距离与瞄准点同源（最大 OBB 中心）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(tracked).subtract(seekerPos);
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
                 RVP_DebugStateLogs.logIrHms("drop range target=" + tracked.getId() + " dist=" + formatAngle(dist));
@@ -848,7 +858,9 @@ public class RVP_ClientHmdState {
                     weaponUnit, entity, irLaunchWeapon, 0f)) {
                 continue;
             }
-            Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(seekerPos);
+            // [RVP] §46：IR HMS 捕获评分点与锁定框/制导点同源（最大 OBB 中心，非载具回退）
+            Vec3 toTarget = org.ywzj.rvp.util.RVP_AimPointResolver
+                    .resolveLargestObbCenter(entity).subtract(seekerPos);
             double dist = toTarget.length();
             if (dist > maxRange || dist < 1.0) {
                 continue;

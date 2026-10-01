@@ -78,7 +78,8 @@ public final class RVP_ClientSaclosState {
         if (designatedEntityId >= 0 && mc.level != null) {
             Entity target = mc.level.getEntity(designatedEntityId);
             if (target != null && target.isAlive()) {
-                laserHudPos = target.getBoundingBox().getCenter();
+                // [RVP] §46：HITL 指定 HUD 点与制导目标点同源（最大 OBB 中心）
+                laserHudPos = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target);
                 return;
             }
         }

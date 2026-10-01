@@ -40,7 +40,8 @@ public final class RVP_ClientHitlUtil {
         if (hit != null) {
             if (hit.getType() == HitResult.Type.ENTITY && hit instanceof EntityHitResult entityHit
                     && entityHit.getEntity() != null) {
-                return entityHit.getEntity().getBoundingBox().getCenter();
+                // [RVP] §46：HITL 瞄准点与制导目标点同源（最大 OBB 中心，非载具回退 AABB 中心）
+                return org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entityHit.getEntity());
             }
             if (hit.getType() == HitResult.Type.BLOCK) {
                 return hit.getLocation();

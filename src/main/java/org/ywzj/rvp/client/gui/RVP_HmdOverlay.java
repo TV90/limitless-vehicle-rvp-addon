@@ -168,7 +168,9 @@ public class RVP_HmdOverlay {
 
         if (locked != null && locked.isAlive()) {
             // 锁定 → 框+十字在目标上
-            Vec3 screen = VectorUtil.worldToScreen(locked.getBoundingBox().getCenter());
+            // [RVP] §46：HMD 锁定框与火控/制导点同源（最大 OBB 中心，非载具回退 AABB 中心）
+            Vec3 screen = VectorUtil.worldToScreen(
+                    org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(locked));
             if (screen.z > 0) {
                 int tx = (int) screen.x, ty = (int) screen.y;
                 int boxHalf = calcBoxHalf(mc, tan, locked);
@@ -270,7 +272,9 @@ public class RVP_HmdOverlay {
 
     /** 根据目标和视角计算框半宽（×1.2）。 */
     private static int calcBoxHalf(Minecraft mc, double tan, Entity target) {
-        Vec3 s = VectorUtil.worldToScreen(target.getBoundingBox().getCenter());
+        // [RVP] §46：框尺寸基准与框中心同源（最大 OBB 中心）
+        Vec3 s = VectorUtil.worldToScreen(
+                org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(target));
         if (s.z <= 0) return 10;
         int cy = (int) s.y;
         int boxHalf = (int) (Math.tan(Math.toRadians(GROUND_IR_HALF_FOV_DEG)) / tan * cy * 1.1);

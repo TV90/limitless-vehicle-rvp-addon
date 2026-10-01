@@ -166,12 +166,19 @@ public final class RVP_ClientBroadcastVehicleInterpolator {
         trackedLevel = null;
     }
 
-    /** 普通实体沿用原有的单 Tick 插值，并在插值后补回包围盒中心相对实体原点的偏移。 */
+    /**
+     * 普通实体沿用原有的单 Tick 插值，并在插值后补回中心相对实体原点的偏移。
+     * <p>[RVP] §46（2026-10-01 用户定版）：偏移基准从 AABB 中心改为"最大体积 OBB 中心"
+     * ——本地载具的锁定框/火控点落在目标主体（船体/机身最大块）上；非载具目标解析回退
+     * AABB 中心（行为不变），广播克隆由调用方隔离（L98 采样仍用 AABB 中心，克隆 cube
+     * 陈旧不可用）。</p>
+     */
     private static Vec3 resolveVanillaCenter(Entity entity, float partialTick) {
         double x = Mth.lerp(partialTick, entity.xo, entity.getX());
         double y = Mth.lerp(partialTick, entity.yo, entity.getY());
         double z = Mth.lerp(partialTick, entity.zo, entity.getZ());
-        Vec3 centerOffset = entity.getBoundingBox().getCenter().subtract(entity.position());
+        Vec3 centerOffset = org.ywzj.rvp.util.RVP_AimPointResolver
+                .resolveLargestObbCenter(entity).subtract(entity.position());
         return new Vec3(x, y, z).add(centerOffset);
     }
 
