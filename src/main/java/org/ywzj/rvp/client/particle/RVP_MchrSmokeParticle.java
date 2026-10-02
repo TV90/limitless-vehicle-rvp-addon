@@ -38,6 +38,13 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
     /** 渲染类型（默认 MCHR 烟贴图；114514 彩蛋事件切换 EGG 贴图，布局一致）。 */
     private ParticleRenderType renderType = RVP_MchrSmokeRenderType.RENDER_TYPE;
 
+    /**
+     * splash 物理开关（2026-10-02，水下爆炸水幕专用）：true = MCHR
+     * {@code MCH_EntityParticleSplash} 物理（固定尺寸、无阻尼、重力 -0.06/tick 回落）；
+     * false（默认）= MCHR diffusible 烟物理（扩散 + 阻尼 0.96 + 慢升 0.001）。
+     */
+    private boolean splashPhysics = false;
+
     private RVP_MchrSmokeParticle(ClientLevel level, double x, double y, double z,
                                   double vx, double vy, double vz,
                                   float size, float r, float g, float b, float alpha,
@@ -137,6 +144,28 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         return this;
     }
 
+    /**
+     * 水下爆炸水幕粒子入口（2026-10-02，MCHR {@code effectExplosionInWater} 复刻）：
+     * 参数按 MCHR {@code MCH_EntityParticleSplash} 构造逐字——白色 0.7~1.0、
+     * particleScale 5~5.5（渲染半宽 0.5 格）、寿命 80/(rand×0.8+0.2)+2
+     * （MCHR 上限 402 tick，此处封顶 200 = 10 秒防长寿命堆积），并启用
+     * <b>splash 专属物理</b>（固定尺寸、无阻尼、重力 -0.06/tick——水幕升而复落，
+     * 首版误用烟物理慢升不回落，用户实测后修正）。速度由调用方按 MCHR
+     * 主循环公式传入（中心冲天、边缘悬停的穹顶水幕）。载体复用本烟粒子类（白色调色，
+     * MCHR 专用白色 splash 贴图不迁移）。
+     */
+    public static RVP_MchrSmokeParticle ofSplash(ClientLevel level, double x, double y, double z,
+                                                 double mx, double my, double mz) {
+        net.minecraft.util.RandomSource random = level.random;
+        float white = random.nextFloat() * 0.3f + 0.7f;
+        float size = random.nextFloat() * 0.5f + 5.0f;
+        int lifetime = Math.min(200, (int) (80.0D / (random.nextDouble() * 0.8D + 0.2D)) + 2);
+        RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(level, x, y, z, mx, my, mz,
+                size, white, white, white, 0.9f, lifetime);
+        particle.splashPhysics = true;
+        return particle;
+    }
+
     /** 切换渲染类型（链式）：爆炸工厂在 114514 彩蛋事件时切到 EGG 贴图（布局与 smoke.png 一致）。 */
     public RVP_MchrSmokeParticle withRenderType(ParticleRenderType renderType) {
         this.renderType = renderType;
@@ -185,19 +214,25 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
             this.remove();
             return;
         }
-        // MCHR diffusible：scale += 0.8/tick（封顶 maxScale），渲染半宽 = 0.1 × scale
-        if (this.mchrScale < this.maxScale) {
-            this.mchrScale = Math.min(this.maxScale, this.mchrScale + 0.8f);
+        if (this.splashPhysics) {
+            // MCHR MCH_EntityParticleSplash 物理逐字：固定尺寸（无扩散）、无阻尼、
+            // motionY -= 0.06/tick（升而复落的水幕回落），帧动画共用 8 帧序
+            this.yd -= 0.06D;
+        } else {
+            // MCHR diffusible：scale += 0.8/tick（封顶 maxScale），渲染半宽 = 0.1 × scale
+            if (this.mchrScale < this.maxScale) {
+                this.mchrScale = Math.min(this.maxScale, this.mchrScale + 0.8f);
+            }
+            this.quadSize = 0.1f * this.mchrScale;
+            // MCHR：三轴阻尼 0.96（diffusible），motionY += gravity（0.001 慢升，无上浮相位）
+            this.xd *= 0.96f;
+            this.yd *= 0.96f;
+            this.zd *= 0.96f;
+            this.yd += this.gravity;
         }
-        this.quadSize = 0.1f * this.mchrScale;
         // MCHR 帧：8 × age/maxAge
         this.frame = Mth.clamp((int) (8.0f * this.age / this.lifetime), 0,
                 RVP_MchrSmokeRenderType.FRAME_COUNT - 1);
-        // MCHR：三轴阻尼 0.96（diffusible），motionY += gravity（0.001 慢升，无上浮相位）
-        this.xd *= 0.96f;
-        this.yd *= 0.96f;
-        this.zd *= 0.96f;
-        this.yd += this.gravity;
         this.move(this.xd, this.yd, this.zd);
     }
 

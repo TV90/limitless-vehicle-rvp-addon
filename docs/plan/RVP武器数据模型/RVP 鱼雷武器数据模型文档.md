@@ -59,10 +59,9 @@
 
 | 引信能力 | 配置方式 | 鱼雷语义 |
 | -------- | -------- | -------- |
-| 出管保险 | `fuse_data.delay_tick` | 发射后 N tick 内不引爆（防止出管即撞船自爆），推荐 20~40 |
-| 触发引信 | `collision_data.direct_damage` + `detonate_data.explosion_data.explode: true` | 直击命中即爆 |
+| 碰炸（触发引信） | `collision_data.direct_damage` + `detonate_data.explosion_data.explode: true` | 直击命中即爆；鱼雷不需要 `delay_tick`（该字段是**定时引信**：飞行 N tick 后在当前位置引爆，非出管解保——配了会导致鱼雷升空段/入水瞬间自炸） |
 | 感应引信（近炸） | `fuse_data.proximity_radius`（>0 启用） | 水下可用——近炸候选收集与流体无关，可对水面舰船水下段起爆；`proximity_fuse_tick` 解保、`proximity_fuse_height` 保护语义照常 |
-| 寿终自爆 | `fuse_data.detonate_on_life_end` | life 耗尽在水中自爆 |
+| 寿终自爆 | `fuse_data.detonate_on_life_end` | life 耗尽在水中自爆（保险机制，防哑雷漂水面，推荐开启） |
 
 近炸已知边界：贴近水底的目标可能被近炸的近地面保护门（基于离地高度）误杀不触发——当前无水下载具目标，仅记录。
 
@@ -77,6 +76,8 @@
 
 适用位置：直击引爆、近炸引爆、寿终自爆——全部经 `triggerExplosion` 按爆心 `isInWater()` 选值。对实体（舰船/乘员）伤害不受水衰减（本体爆炸伤害无流体检测）；`explosion_damage_factor`（对载具倍率）在水下组同样生效。
 
+**水下爆炸视觉（2026-10-02 增补，MCHR `effectExplosionInWater` 同款）**：爆心在水方块中的 RVP 默认爆炸，客户端把整套闪光/烟/碎屑/火星替换为水柱效果——爆心球域气泡上涌 + 水面 splash 水柱（近中心高、边缘低，重力回落成水冠）+ 水面白浪泡沫圈；爆心在水面以上保持原视觉。深水爆炸（水体顶面超出爆心上方 radius×2）只冒气泡不上抛水柱。水花规模随爆炸 `radius`/`density` 缩放，全部 force 生成远距可见。
+
 **方块破坏边界**：原版水的爆炸抗性为 100，爆炸射线进入水体即被吸收——**水下爆炸基本炸不动固体方块**（原版固有行为，本项目原样继承）。鱼雷 `destroy_block` 建议 `false`；若需"水下爆破破坏地形"属本体侧行为变更，不在 RVP 范围。
 
 # 特效（effects_data 扩展字段）
@@ -85,7 +86,7 @@
 
 | RVP_EffectsData新增字段 | 解释 | 类型 | 默认值 |
 | ----------------------- | ---- | ---- | ------ |
-| waterTrailParticle | 水中尾迹粒子 id（原版粒子命名空间全名），水中巡航段每 tick 沿弹后生成。空串 = 关闭 | String | "minecraft:bubble" |
+| waterTrailParticle | 水中尾迹粒子 id（原版粒子命名空间全名），水中巡航段每 tick 沿弹后生成。**经 `addAlwaysParticle` force 生成，不受原版 32 格粒子生成距离剔除限制，远距可见**（2026-10-02 用户实测修正）。粒子尺寸决定远距观感：`minecraft:bubble` 近距细腻但太小，`minecraft:cloud` 白浪团更醒目（现役鱼雷 JSON 实配）。空串 = 关闭 | String | "minecraft:bubble" |
 | waterTrailCount | 水中尾迹每 tick 粒子数量 | int | 2 |
 | waterEntryParticle | 入水水花粒子 id，入水瞬间在入水点生成一簇 | String | "minecraft:splash" |
 | waterEntrySound | 入水音效 SoundEvent id，空串 = 无声。推荐 "minecraft:entity.player.splash" | String | "" |
@@ -125,7 +126,7 @@
     "water_entry_lerp_tick": 10,
     "depth_damping": 0.8,
     "water_entry_min_depth": 0.5,
-    "require_aim_water": true,
+    "require_aim_water": false,
     "require_aim_water_range": 150
   },
 
@@ -140,7 +141,7 @@
   "fire_data": { "spread": 0.5, "fire_mode": "SEMI_AUTO", "require_lock": false },
 
   "fuse_data": {
-    "delay_tick": 30,
+    "delay_tick": 0,
     "proximity_radius": 0,
     "detonate_on_life_end": true
   },
@@ -173,9 +174,9 @@
 324mm 轻型反潜鱼雷（感应引信版）差异段（其余同上）：
 
 ```json
-  "torpedo_data": { "water_speed": 2.0, "depth_damping": 0.7, "require_aim_water": true },
-  "fuse_data": { "delay_tick": 20, "proximity_radius": 4, "proximity_fuse_tick": 15, "detonate_on_life_end": true },
+  "torpedo_data": { "water_speed": 2.0, "depth_damping": 0.7 },
+  "fuse_data": { "delay_tick": 0, "proximity_radius": 4, "proximity_fuse_tick": 15, "detonate_on_life_end": true },
   "detonate_data": { "explosion_data": { "explode": true, "damage": 1200, "radius": 6, "destroy_block": false } }
 ```
 
-字段语义速记：`velocity`/`damage`（顶层）= 出管初速/直击伤害；`explosion_data.damage` = 爆炸伤害；`delay_tick` = 出管保险；水中航程 = `life` × `water_speed`。
+字段语义速记：`velocity`/`damage`（顶层）= 出管初速/直击伤害；`explosion_data.damage` = 爆炸伤害；`delay_tick` 是定时引信（飞行 N tick 后自爆）——碰炸鱼雷必须保持 0；水中航程 = `life` × `water_speed`。

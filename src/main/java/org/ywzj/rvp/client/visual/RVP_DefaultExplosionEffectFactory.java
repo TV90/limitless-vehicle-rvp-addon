@@ -46,6 +46,82 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
     /** 采样上限（近似 MCHR 受影响方块列表的遍历规模；radius=8 约 400 样本）。 */
     private static final int MAX_SAMPLES = 600;
 
+    /**
+     * 水下爆炸巨大水幕（<b>MCHR {@code effectExplosionInWater:364} 逐字复刻</b>，2026-10-02 三版）：
+     * 前两版"水花太小"的根因不是数量而是<b>粒子形态</b>——MCHR splash 粒子是 0.5 格大、
+     * 4~20 秒长寿的白色大颗粒（爆球内每个水方块 0~1 粒，穹顶式升腾），原版 SPLASH/CLOUD
+     * 是 0.1 格、1~3 秒的小水珠，怎么调数量都出不了"一面水幕"。
+     *
+     * <p>MCHR 主循环与速度公式逐字照抄：</p>
+     * <pre>range = round(radius);
+     * for (x,y,z) ∈ [-range,range]³ 且 x²+y²+z² < range² 且该方块为水：
+     *     n = nextInt(2);  // 0~1 粒
+     *     motionX/Z = x/range × (rand - 0.2);   // 向外漂
+     *     motionY   = 1.0 - √(x²+z²)/range + rand × 0.16 × range;  // 中心冲天、边缘悬停 → 穹顶</pre>
+     *
+     * <p>粒子载体 = {@link RVP_MchrSmokeParticle#ofSplash} 白色变体（零新粒子类、零新贴图——
+     * MCHR 专用白色 splash 贴图不迁移，smoke 贴图白色调色 = 浅白水雾）：
+     * size 5~5.5（渲染半宽 0.5 格，固定不扩散）、寿命 80/(rand×0.8+0.2)+2 封顶 200 tick，
+     * 并启用 splash 专属物理（无阻尼 + 重力 -0.06/tick，水幕升而复落——首版误用烟物理
+     * 慢升不回落，2026-10-02 用户实测后改为 MCHR splash 物理逐字）。</p>
+     *
+     * <p>与 MCHR 的唯一偏差：MCHR 无数量上限（radius 30 核爆 ≈9 万水方块必卡死），此处加采样
+     * 概率 {@code p = min(1, 900/range³)}——radius ≤9 全量忠实（鱼雷 6 不受影响），大半径按
+     * 比例采样保 FPS。另保留少量气泡上涌作水下细节。</p>
+     */
+    private static void spawnUnderwaterExplosionEffect(ClientLevel level, RandomSource random,
+                                                       Vec3 center, float radius, float density) {
+        // ── 0) 水下气泡上涌（水下细节层，非 MCHR 主水幕）──
+        int bubbleCount = (int) Math.min(radius * radius * radius * 2.0f * density, 400);
+        for (int i = 0; i < bubbleCount; i++) {
+            level.addParticle(ParticleTypes.BUBBLE, true,
+                    center.x + (random.nextDouble() - 0.5) * 1.8 * radius,
+                    center.y + (random.nextDouble() - 0.5) * 1.4 * radius,
+                    center.z + (random.nextDouble() - 0.5) * 1.8 * radius,
+                    (random.nextDouble() - 0.5) * 0.1,
+                    0.15 + random.nextDouble() * 0.25,
+                    (random.nextDouble() - 0.5) * 0.1);
+        }
+
+        // ── 1) MCHR 主水幕：爆球内逐水方块生成白色大颗粒（逐字复刻 effectExplosionInWater）──
+        int range = (int) (radius + 0.5D);
+        int ex = (int) (center.x + 0.5D);
+        int ey = (int) (center.y + 0.5D);
+        int ez = (int) (center.z + 0.5D);
+        // 数量保护采样概率：range³ > 900 时按比例抽取（radius ≤9 全量 = 1.0，鱼雷 6 全量）
+        double spawnChance = Math.min(1.0D, 900.0D / (range * range * (double) range));
+        for (int y = -range; y <= range; y++) {
+            for (int x = -range; x <= range; x++) {
+                for (int z = -range; z <= range; z++) {
+                    int d = x * x + y * y + z * z;
+                    if (d >= range * range) {
+                        continue;
+                    }
+                    if (!level.getFluidState(BlockPos.containing(ex + x, ey + y, ez + z))
+                            .is(net.minecraft.tags.FluidTags.WATER)) {
+                        continue;
+                    }
+                    // MCHR：nextInt(2) → 每个水方块 0~1 粒（叠加采样概率保大半径 FPS）
+                    int n = random.nextInt(2);
+                    for (int i = 0; i < n; i++) {
+                        if (random.nextDouble() > spawnChance) {
+                            continue;
+                        }
+                        // MCHR :380 速度公式逐字：中心 my≈1.0 冲天、边缘 my→0 悬停，水平向外漂
+                        double motionX = (double) x / (double) range * (random.nextDouble() - 0.2D);
+                        double motionY = 1.0D - Math.sqrt((double) (x * x + z * z)) / (double) range
+                                + random.nextDouble() * 0.4D * range * 0.4D;
+                        double motionZ = (double) z / (double) range * (random.nextDouble() - 0.2D);
+                        // MCHR splash 粒子参数（白 0.7~1.0 / scale 5~5.5 / 寿命 80/(r×0.8+0.2)+2 封顶 200）；
+                        // 实例粒子经 ParticleEngine.add 加入（同工厂主烟路径），绕过 32 格生成距离剔除
+                        Minecraft.getInstance().particleEngine.add(RVP_MchrSmokeParticle.ofSplash(level,
+                                ex + x, ey + y, ez + z, motionX, motionY, motionZ));
+                    }
+                }
+            }
+        }
+    }
+
     @Override
     public Optional<RVP_ClientVisualEffect> create(ClientLevel level, RVP_VisualEffectEvent event) {
         float radius = Math.max(0.5f, event.baseExplosionRadius());
@@ -53,6 +129,19 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
         RandomSource random = RandomSource.create(event.seed());
         ParticleEngine engine = Minecraft.getInstance().particleEngine;
         Vec3 center = event.position();
+
+        // ── 0) 水下爆炸：MCHR effectExplosionInWater 同款巨大水花（2026-10-02，用户需求）──
+        // 爆心在水方块中时，整套闪光/烟/碎屑/火星替换为水柱效果（水下无火无烟）；
+        // 爆心在水面上（空气位）保持原视觉；爆炸音效实例照常返回（按声速延迟播近远音）。
+        if (level.getFluidState(BlockPos.containing(center.x, center.y, center.z))
+                .is(net.minecraft.tags.FluidTags.WATER)) {
+            spawnUnderwaterExplosionEffect(level, random, center, radius, density);
+            RVP_EnumWeaponKind underwaterWeaponKind = RVP_DefaultExplosionEventData.decodeWeaponKind(
+                    event.canonicalPresetDataJson());
+            long underwaterElapsed = Math.max(0L, level.getGameTime() - event.startGameTime());
+            return Optional.of(new RVP_DefaultExplosionEffectInstance(level, event, underwaterWeaponKind,
+                    underwaterElapsed >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) underwaterElapsed));
+        }
 
         // ── 1) 起爆闪光：flare.png 大光斑快速放大淡出（替代 vanilla EXPLOSION_EMITTER）──
         if (event.flash()) {

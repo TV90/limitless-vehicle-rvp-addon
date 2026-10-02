@@ -49,9 +49,9 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 public class RVP_TorpedoEntity extends RVP_BaseBullet {
 
     /** 入水花粒子簇数量（客户端，一次性）。 */
-    private static final int SPLASH_PARTICLE_COUNT = 12;
+    private static final int SPLASH_PARTICLE_COUNT = 16;
     /** 入水花水平散布半径（格）。 */
-    private static final double SPLASH_SPREAD = 0.8;
+    private static final double SPLASH_SPREAD = 1.2;
 
     /** 服务端状态机：当前是否处于水中（出管段=false）。客户端不模拟运动，不读此字段。 */
     private boolean torpedoInWater = false;
@@ -134,13 +134,19 @@ public class RVP_TorpedoEntity extends RVP_BaseBullet {
 
     // ───────────────────────── 服务端状态机 ─────────────────────────
 
-    /** 解析鱼雷数据；非鱼雷 kind 或配置缺失返回 null（调用方退回基类行为）。 */
+    /**
+     * 解析鱼雷数据（<b>双端安全</b>，2026-10-02 修复）：非鱼雷 kind 返回 null。
+     * ⚠️ {@code rvpData} 只在服务端 {@code initFromWeapon} 赋值、不随生成包同步
+     * （{@code RVP_BaseBullet} :965 注释）——客户端必须经 {@link #resolveWeaponConfig()}
+     * 走配置索引解析（与基类客户端特效同一条路），否则客户端特效分支整体静默失效
+     * （首版实机"无入水花/无气泡尾迹"的根因）。
+     */
     private RVP_TorpedoData resolveTorpedoData() {
-        if (rvpData == null || rvpData.getWeaponKind() != RVP_EnumWeaponKind.TORPEDO) {
+        if (getWeaponKind() != RVP_EnumWeaponKind.TORPEDO) {
             return null;
         }
-        // getter 空安全：JSON 未配 torpedo_data 时返回全默认值实例
-        return rvpData.getTorpedoData();
+        RVP_WeaponData config = resolveWeaponConfig();
+        return config == null ? null : config.getTorpedoData();
     }
 
     /** 有效入水判定：实体在水中，且中心上方 water_entry_min_depth 处仍为水（消抖）。 */
@@ -224,31 +230,47 @@ public class RVP_TorpedoEntity extends RVP_BaseBullet {
         ParticleOptions particle = resolveWaterParticle(effects.getWaterEntryParticle());
         if (particle != null) {
             for (int i = 0; i < SPLASH_PARTICLE_COUNT; i++) {
-                level().addParticle(particle,
+                // addParticle(force=true) 重载：绕过原版 32 格生成距离剔除，远观入水也见水花
+                level().addParticle(particle, true,
                         pos.x + (random.nextFloat() - 0.5F) * SPLASH_SPREAD,
                         pos.y + random.nextFloat() * 0.2F,
                         pos.z + (random.nextFloat() - 0.5F) * SPLASH_SPREAD,
-                        (random.nextFloat() - 0.5F) * 0.2,
-                        0.15 + random.nextFloat() * 0.15,
-                        (random.nextFloat() - 0.5F) * 0.2);
+                        (random.nextFloat() - 0.5F) * 0.3,
+                        0.2 + random.nextFloat() * 0.3,
+                        (random.nextFloat() - 0.5F) * 0.3);
             }
         }
         playWaterEntrySound(effects.getWaterEntrySound());
     }
 
-    /** 水中巡航气泡尾迹（water_trail_particle × water_trail_count，弹后偏移生成）。 */
+    /**
+     * 水中巡航尾迹（两层）：①固定原版 {@code BUBBLE} ×2——水下气泡是鱼雷固有观感
+     * （MCHR 基类对所有入水弹体同款，不随配置）；②可配 {@code water_trail_particle}
+     * × water_trail_count（现役 JSON 配 {@code minecraft:cloud} 白浪团，远距可见）。
+     */
     private void spawnWaterTrailParticles() {
         RVP_WeaponData config = resolveWeaponConfig();
         RVP_EffectsData effects = config != null ? config.getEffectsData() : new RVP_EffectsData();
+        Vec3 pos = position();
+        Vec3 behind = getLookAngle().scale(-0.4);
+        // 1) 固定气泡层（近距水下细节）
+        for (int i = 0; i < 2; i++) {
+            level().addParticle(net.minecraft.core.particles.ParticleTypes.BUBBLE, true,
+                    pos.x + behind.x + (random.nextFloat() - 0.5F) * 0.15,
+                    pos.y + (random.nextFloat() - 0.5F) * 0.15,
+                    pos.z + behind.z + (random.nextFloat() - 0.5F) * 0.15,
+                    0, 0.02, 0);
+        }
+        // 2) 可配尾迹层（远距可见主尾迹）
         ParticleOptions particle = resolveWaterParticle(effects.getWaterTrailParticle());
         if (particle == null) {
             return;
         }
-        Vec3 pos = position();
-        Vec3 behind = getLookAngle().scale(-0.4);
         int count = effects.getWaterTrailCount();
         for (int i = 0; i < count; i++) {
-            level().addParticle(particle,
+            // addParticle(force=true) 重载：原版不带 force 的 7 参 addParticle 在离相机 32 格外静默不生成
+            // （ClientLevel.addParticle 距离剔除），远程尾迹必须用 force 重载（2026-10-02 用户实测）
+            level().addParticle(particle, true,
                     pos.x + behind.x + (random.nextFloat() - 0.5F) * 0.1,
                     pos.y + (random.nextFloat() - 0.5F) * 0.1,
                     pos.z + behind.z + (random.nextFloat() - 0.5F) * 0.1,
