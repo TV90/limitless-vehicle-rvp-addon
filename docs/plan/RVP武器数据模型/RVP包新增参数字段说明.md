@@ -490,8 +490,10 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `flak_particles_crack` | MCH `FlakParticlesCrack`：方块破碎粒子基数（实际 +0~2），默认 10。 |
 | `num_particles_flak` | MCH `NumParticlesFlak`：白烟数量，默认 3。 |
 | `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
-| `caliber` | **仅 `rvp:machinegun`**：口径（毫米），曳光条宽度与弹孔粒子大小。默认 `7.62`。 |
+| `caliber` | 弹体口径（毫米），默认 `7.62`；RVP 炮口烟按此字段以 `45 mm` 分为灰色即时烟/白色延迟烟，殉燃炮口喷火也要求 `>=45 mm`。不用于曳光宽度。 |
+| `tracer_caliber` | 曳光/弹体视觉口径（毫米），默认回退 `caliber`，再回退 `7.62`；仅 RVP 弹体 Renderer 的曳光宽度消费。 |
 | `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
+| `tracer_length_scale` | 机枪曳光长度倍率，默认 `1.0`，有效范围 `0..8`；`0` 关闭曳光长度，非法值回退 `1.0`。 |
 | `wire_link_enabled` | **线导视觉线**（导弹类弹体）：导弹与发射武器站枢轴间绘制一根原版钓鱼线风格的黑色细线（客户端世界渲染，正常游戏视角可见，非实体碰撞）。默认 `false` 关闭。线缆**中段受重力下垂呈曲线**（二次贝塞尔，下垂量随线长自动增大，约线长的 8%，钳制 0.4~12 格），端点精确连接导弹与发射枢轴并实时更新。导弹失去制导时线缆**立即消失**（失制导情形包括：HITL 链路切断 `hitlLinkSevered`、RADIO 信号源链路被遮挡 `hitlLinkBlocked`、`hitlLife` 耗尽，以及引导段结束 `guidance_type` 回到 `NONE`）；导弹消失（爆炸/自毁/生命周期结束）后，残留线缆将在 **20 tick** 内渐隐消失。 |
 | `particle_projectile_data` | `RVP_ParticleProjectileData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。启用后 RVP 类型化 Renderer 跳过弹体模型，由客户端实体 Tick 生成主体和路径尾迹，字段见下表。 |
 
@@ -585,7 +587,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `missile_native_trail_extra_flame` | 是否追加火焰粒子。 | `true` |
 | `missile_native_trail_extra_smoke` | 是否追加烟尘粒子。 | `true` |
 
-机枪飞行曳光与本体相同：固定 `ywzj_vehicle:entity/basic_bullet` + `textures/entity/basic_bullet.png`（`effects_data` 仅控制口径与 `tracer_*` 颜色）。导弹/炸弹飞行模型见 `assets/rvp/display/weapon/<id>.json`。
+机枪飞行曳光与本体相同：固定 `ywzj_vehicle:entity/basic_bullet` + `textures/entity/basic_bullet.png`（`effects_data.caliber` 是弹体口径，`tracer_caliber` 控制曳光宽度，`tracer_length_scale` 控制曳光长度，`tracer_*` 控制颜色）。导弹/炸弹飞行模型见 `assets/rvp/display/weapon/<id>.json`。
 
 机枪曳光示例：
 
@@ -594,6 +596,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
   "trajectory_particle": "none",
   "impact_particle": "minecraft:block",
   "caliber": 30,
+  "tracer_caliber": 30,
+  "tracer_length_scale": 1.0,
   "tracer_r": 1.0,
   "tracer_g": 0.5,
   "tracer_b": 0.1

@@ -40,7 +40,10 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
     private int lerpSuppressTicks;
     /** Position at tick start (after {@link #tick()} housekeeping), before hit-test / motion integration. */
     private Vec3 tickSegmentStart = Vec3.ZERO;
+    /** 弹体物理口径（effects_data.caliber），供本体弹孔等物理/命中逻辑使用。 */
     private float caliber = 7.62f;
+    /** 曳光/弹体视觉口径（effects_data.tracer_caliber），供客户端曳光宽度渲染使用。 */
+    private float tracerCaliber = 7.62f;
     private float tracerR = 1f;
     private float tracerG = 0.85f;
     private float tracerB = 0.2f;
@@ -74,6 +77,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         this.startPos = spawnPos;
         RVP_EffectsData effects = data.getEffectsData();
         this.caliber = effects.getCaliber();
+        this.tracerCaliber = effects.getTracerCaliber();
         this.tracerR = effects.getTracerR();
         this.tracerG = effects.getTracerG();
         this.tracerB = effects.getTracerB();
@@ -298,6 +302,11 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         return caliber;
     }
 
+    /** 返回曳光/弹体视觉口径，供客户端 RVP 弹体渲染计算宽度。 */
+    public float getTracerCaliber() {
+        return tracerCaliber;
+    }
+
     public float getTracerR() {
         return tracerR;
     }
@@ -329,6 +338,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         buffer.writeFloat(bounceIncidenceAngleMin);
         buffer.writeBoolean(bounceOnVehicle);
         buffer.writeFloat(tracerLengthScale);
+        buffer.writeFloat(tracerCaliber);
     }
 
     @Override
@@ -346,6 +356,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         bounceIncidenceAngleMin = buffer.readFloat();
         bounceOnVehicle = buffer.readBoolean();
         tracerLengthScale = buffer.readFloat();
+        tracerCaliber = buffer.readFloat();
         startPos = position();
         applyCannonFacingFromVelocity(getDeltaMovement(), false);
         yRotO = getYRot();

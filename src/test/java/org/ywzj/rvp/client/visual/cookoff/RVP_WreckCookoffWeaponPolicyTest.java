@@ -4,13 +4,15 @@ import org.junit.jupiter.api.Test;
 import org.ywzj.vehicle.item.AmmoItem;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 防止真实机炮因较小曳光口径被排除，或导弹因粗曳光被误识别。 */
+/** 防止殉燃炮口喷火被小口径弹体或非火炮弹药错误放行。 */
 class RVP_WreckCookoffWeaponPolicyTest {
     @Test
-    void autocannonWithNineteenMillimeterTracerStillHasMuzzleFire() {
-        // 调用生产规则，复现当前包内 25/30mm 机炮使用 19.05 可视口径的情况。
-        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.AUTO_CANNON, 19.05));
-        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.ARTILLERY, 7.62));
+    void onlyAtLeast45MillimeterCannonsHaveMuzzleFire() {
+        // 调用生产规则：弹药枚举不能绕过“仅 45 mm 以上”的口径阈值。
+        assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.AUTO_CANNON, 19.05));
+        assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.ARTILLERY, 24.765));
+        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.AUTO_CANNON, 45.0));
+        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, AmmoItem.AmmoType.ARTILLERY, 125.0));
     }
 
     @Test
@@ -24,8 +26,8 @@ class RVP_WreckCookoffWeaponPolicyTest {
     @Test
     void unknownAmmoUsesFiniteCaliberFallbackOnlyForBallisticWeapon() {
         // 调用生产规则，第三方弹药缺少类型时才允许有限口径回退。
-        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, null, 30));
-        assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(true, null, 7.62));
+        assertTrue(RVP_WreckCookoffWeaponPolicy.accepts(true, null, 45));
+        assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(true, null, 44.99));
         assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(false, null, 120));
         assertFalse(RVP_WreckCookoffWeaponPolicy.accepts(true, null, Double.POSITIVE_INFINITY));
     }

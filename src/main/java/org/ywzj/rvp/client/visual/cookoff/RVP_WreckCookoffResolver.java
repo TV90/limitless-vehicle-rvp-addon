@@ -166,10 +166,10 @@ public final class RVP_WreckCookoffResolver {
         var data = weapon.getData();
         boolean ballistic = data instanceof RVP_WeaponData rvp
                 ? rvp.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN : data instanceof VehicleCannonWeaponData;
-        double caliber = data instanceof RVP_WeaponData rvp ? rvp.getEffectsData().getTracerCaliber()
+        double caliber = data instanceof RVP_WeaponData rvp ? rvp.getEffectsData().getCaliber()
                 : data.getCaliber() == null ? 0 : data.getCaliber();
         boolean typedAmmo = false;
-        // 调用本体装填配方与 AmmoItem 枚举，机炮的可视口径缩小也不影响自动识别。
+        // 调用本体装填配方与 AmmoItem 枚举，先确认弹药属于火炮，再由 effects_data.caliber 施加 45 mm 阈值。
         if (data.getReload() != null && data.getReload().getAmmo() != null) {
             for (var stack : data.getReload().getAmmo().getItems()) {
                 if (stack.getItem() instanceof AmmoItem ammo) {
@@ -179,7 +179,7 @@ public final class RVP_WreckCookoffResolver {
                 }
             }
         }
-        // 调用本项目保守回退，仅未识别弹药类型时参考已有口径字段。
+        // 调用本项目口径规则，仅未识别弹药类型时仍要求有效的 45 mm 以上口径。
         return !typedAmmo && RVP_WreckCookoffWeaponPolicy.accepts(ballistic, null, caliber);
     }
 

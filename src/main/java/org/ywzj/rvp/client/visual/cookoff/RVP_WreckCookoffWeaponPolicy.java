@@ -6,12 +6,12 @@ import org.ywzj.vehicle.item.AmmoItem;
 public final class RVP_WreckCookoffWeaponPolicy {
     private RVP_WreckCookoffWeaponPolicy() {}
 
-    /** 弹道炮弹类才允许炮口喷燃；未知第三方弹药才以口径作保守回退。 */
+    /** 仅弹道火炮且弹体口径达到 45 mm 才允许炮口喷燃；弹药类型不能绕过口径阈值。 */
     public static boolean accepts(boolean ballistic, AmmoItem.AmmoType ammoType, double caliber) {
-        if (!ballistic) return false;
+        if (!ballistic || !Double.isFinite(caliber) || caliber < 45.0) return false;
         if (ammoType != null) {
             return ammoType == AmmoItem.AmmoType.AUTO_CANNON || ammoType == AmmoItem.AmmoType.ARTILLERY;
         }
-        return Double.isFinite(caliber) && caliber >= 20;
+        return true;
     }
 }

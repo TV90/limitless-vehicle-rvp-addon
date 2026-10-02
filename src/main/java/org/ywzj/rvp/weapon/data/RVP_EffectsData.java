@@ -118,18 +118,13 @@ public class RVP_EffectsData {
     @SerializedName("flak_particles_diff")
     private float flakParticlesDiff = 0.3f;
 
-    /**
-     * 真实身管口径，单位毫米，默认 null。
-     * 仅作语义数据，供按口径分档的外部逻辑使用；
-     * 【不参与】曳光、炮口烟等视觉尺寸计算 —— 那是 tracerCaliber 的职责。
-     */
+    /** 弹体口径，单位毫米，默认 null；未配置或非正值时按 7.62 mm 回退。 */
     @SerializedName("caliber")
     private Float caliber;
 
     /**
-     * 曳光/弹体视觉口径覆盖，单位毫米，默认 null。
-     * 未配置或非正值时回退 caliber，再回退 7.62。
-     * 仅影响炮口烟尺寸与烤燃判定等视觉/特效路径，不参与弹道物理。
+     * 曳光口径/弹体视觉口径，单位毫米，默认 null；未配置或非正值时回退 caliber，再回退 7.62 mm。
+     * 仅供 RVP 弹体渲染计算曳光宽度，不参与弹道物理、炮口烟或殉燃判定。
      */
     @SerializedName("tracer_caliber")
     private Float tracerCaliber;
@@ -352,11 +347,12 @@ public class RVP_EffectsData {
         return caliber != null && caliber > 0f ? caliber : 7.62f;
     }
 
+    /** 是否显式配置了曳光口径覆盖（effects_data.tracer_caliber）。 */
     public boolean hasTracerCaliberOverride() {
         return tracerCaliber != null;
     }
 
-    /** 曳光/弹体视觉口径：优先 tracer_caliber，其次 caliber，最后 7.62。 */
+    /** 曳光口径/弹体视觉口径：优先 tracer_caliber，其次 caliber，最后 7.62 mm。 */
     public float getTracerCaliber() {
         if (tracerCaliber != null && tracerCaliber > 0f) {
             return tracerCaliber;

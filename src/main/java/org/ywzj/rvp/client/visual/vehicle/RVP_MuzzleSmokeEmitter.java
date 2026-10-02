@@ -4,7 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -20,7 +19,6 @@ import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.VehicleCannonWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.item.AmmoItem;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
@@ -164,52 +162,15 @@ public final class RVP_MuzzleSmokeEmitter {
             if (rvpData.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
                 return Float.NaN;
             }
-            if (isHeavyArtilleryRound(rvpData)) {
-                return Float.NaN;
-            }
-            // 调用本项目 RVP 数据访问器：读取 effects_data.tracer_caliber，非法值按统一默认值处理。
-            return sanitizeCaliber(rvpData.getEffectsData().getTracerCaliber());
+            // 调用本项目 RVP 数据访问器：读取恢复为弹体口径语义的 effects_data.caliber，
+            // 非法值按统一默认值处理；45 mm 以上由延迟白烟路径负责，避免两条路径重复发烟。
+            return sanitizeCaliber(rvpData.getEffectsData().getCaliber());
         }
         if (rawData instanceof VehicleCannonWeaponData cannonData) {
             // 调用本体炮数据访问器：兼容未迁移到 RVP 类型的本体火炮。
             return sanitizeCaliber(cannonData.getCaliber());
         }
         return Float.NaN;
-    }
-
-    /**
-     * 判断 RVP 武器是否使用本体的火炮弹药类别。
-     *
-     * <p>RVP 的 {@code effects_data.tracer_caliber} 是弹体直径，不是身管口径；例如 T-90M 的
-     * 125 mm 主炮弹体配置为 24.765 mm。读取本体 {@link AmmoItem.AmmoType#ARTILLERY}
-     * 保留了数据类型语义，不依赖武器资源 ID，也不会把 125 mm 主炮误放进小口径烟雾路径。</p>
-     */
-    static boolean isHeavyArtilleryRound(RVP_WeaponData weaponData) {
-        if (weaponData == null || weaponData.getReload() == null
-                || weaponData.getReload().getAmmo() == null) {
-            return false;
-        }
-        return isHeavyArtilleryAmmo(weaponData.getReload().getAmmo());
-    }
-
-    /** 判断弹药配方是否包含本体定义的火炮弹药类别。 */
-    static boolean isHeavyArtilleryAmmo(Ingredient ammoIngredient) {
-        if (ammoIngredient == null) {
-            return false;
-        }
-        // 调用本体 Ingredient 接口：展开当前武器配置的弹药条目，按 AmmoItem 的类型判断火炮弹。
-        for (var stack : ammoIngredient.getItems()) {
-            if (stack.getItem() instanceof AmmoItem ammoItem
-                    && isHeavyArtilleryAmmoType(ammoItem.getAmmoType())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 判断本体弹药枚举是否属于大口径火炮弹药。 */
-    static boolean isHeavyArtilleryAmmoType(AmmoItem.AmmoType ammoType) {
-        return ammoType == AmmoItem.AmmoType.ARTILLERY;
     }
 
     /** 清洗口径，保证尺寸公式不会接收 NaN、无穷或非正数。 */
