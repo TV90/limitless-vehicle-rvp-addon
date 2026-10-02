@@ -166,7 +166,7 @@ public final class RVP_WreckCookoffResolver {
         var data = weapon.getData();
         boolean ballistic = data instanceof RVP_WeaponData rvp
                 ? rvp.getWeaponKind() == RVP_EnumWeaponKind.MACHINEGUN : data instanceof VehicleCannonWeaponData;
-        double caliber = data instanceof RVP_WeaponData rvp ? rvp.getEffectsData().getCaliber()
+        double caliber = data instanceof RVP_WeaponData rvp ? rvp.getEffectsData().getTracerCaliber()
                 : data.getCaliber() == null ? 0 : data.getCaliber();
         boolean typedAmmo = false;
         // 调用本体装填配方与 AmmoItem 枚举，机炮的可视口径缩小也不影响自动识别。

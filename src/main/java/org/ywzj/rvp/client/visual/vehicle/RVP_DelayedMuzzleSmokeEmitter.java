@@ -231,9 +231,9 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
             if (rvpData.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
                 return null;
             }
-            float caliber = rvpData.getEffectsData().getCaliber();
+            float caliber = rvpData.getEffectsData().getTracerCaliber();
             if (isHeavyArtilleryRound(rvpData) || supportsDelayedMuzzleSmoke(caliber)) {
-                // RVP 的 caliber 可能是脱壳弹体直径，大口径烟尺寸至少按 45 mm 计算。
+                // RVP 的 tracer_caliber 是脱壳弹体直径，大口径烟尺寸至少按 45 mm 计算。
                 return new HeavySmokeProfile(Math.max(caliber, MIN_HEAVY_CALIBER));
             }
             return null;

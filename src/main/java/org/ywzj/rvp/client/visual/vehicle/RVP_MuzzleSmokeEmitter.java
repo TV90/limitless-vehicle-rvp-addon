@@ -167,8 +167,8 @@ public final class RVP_MuzzleSmokeEmitter {
             if (isHeavyArtilleryRound(rvpData)) {
                 return Float.NaN;
             }
-            // 调用本项目 RVP 数据访问器：读取 effects_data.caliber，非法值按统一默认值处理。
-            return sanitizeCaliber(rvpData.getEffectsData().getCaliber());
+            // 调用本项目 RVP 数据访问器：读取 effects_data.tracer_caliber，非法值按统一默认值处理。
+            return sanitizeCaliber(rvpData.getEffectsData().getTracerCaliber());
         }
         if (rawData instanceof VehicleCannonWeaponData cannonData) {
             // 调用本体炮数据访问器：兼容未迁移到 RVP 类型的本体火炮。
@@ -180,7 +180,7 @@ public final class RVP_MuzzleSmokeEmitter {
     /**
      * 判断 RVP 武器是否使用本体的火炮弹药类别。
      *
-     * <p>RVP 的 {@code effects_data.caliber} 是弹体直径，不是身管口径；例如 T-90M 的
+     * <p>RVP 的 {@code effects_data.tracer_caliber} 是弹体直径，不是身管口径；例如 T-90M 的
      * 125 mm 主炮弹体配置为 24.765 mm。读取本体 {@link AmmoItem.AmmoType#ARTILLERY}
      * 保留了数据类型语义，不依赖武器资源 ID，也不会把 125 mm 主炮误放进小口径烟雾路径。</p>
      */
