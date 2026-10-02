@@ -90,6 +90,26 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
                 size, base + 0.02f, base + 0.01f, base, 0.55f + random.nextFloat() * 0.25f, lifetime);
     }
 
+    /**
+     * 炮口烟入口：复用 {@code boom/smoke.png} 的 8 帧烟雾动画，使用中性深灰色，
+     * 并切换到深度只测不写的渲染类型，避免透明烟团写入深度后遮挡载具模型。
+     *
+     * @param size 由炮口口径换算出的 MCHR 尺寸参数
+     * @param lifetime 炮口烟寿命，单位 tick
+     */
+    public static RVP_MchrSmokeParticle ofMuzzle(ClientLevel level, double x, double y, double z,
+                                                 double vx, double vy, double vz,
+                                                 float size, int lifetime) {
+        net.minecraft.util.RandomSource random = level.random;
+        float base = 0.18f + random.nextFloat() * 0.12f;
+        RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(
+                level, x, y, z, vx, vy, vz,
+                size, base + 0.02f, base + 0.01f, base, 0.58f + random.nextFloat() * 0.18f,
+                lifetime);
+        // 调用本项目渲染类型：炮口烟使用深度只测不写，避免半透明烟团破坏载具后续绘制。
+        return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
+    }
+
     /** 拖烟入口：MCHR 烟构造默认（亮灰 0.7~1.0、scale 5~5.5、寿命 18~84）。 */
     public static RVP_MchrSmokeParticle ofTrailDefault(ClientLevel level, double x, double y, double z) {
         net.minecraft.util.RandomSource random = level.random;
