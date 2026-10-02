@@ -259,6 +259,8 @@
   "fire_support.munition.rvp.gps_air_rafale": "GPS 空射 Storm Shadow",
   "fire_support.munition.rvp.gps_ground_atacms": "GPS 地射 ATACMS",
   "fire_support.munition.rvp.gps_ground_9k720": "GPS 地射 9M723",
+  "fire_support.munition.rvp.gps_ground_rgm109c": "GPS 地射 RGM-109C 巡航导弹",
+  "fire_support.munition.rvp.gps_ground_yj20": "GPS 地射 鹰击-20 弹道导弹",
   "fire_support.fire_mode.rvp.rapid": "急促打击",
   "fire_support.fire_mode.rvp.effect": "效力打击",
   "fire_support.fire_mode.rvp.monitor": "监视打击",

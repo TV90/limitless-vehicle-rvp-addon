@@ -259,6 +259,8 @@
   "fire_support.munition.rvp.gps_air_rafale": "GPS Air-Launched Storm Shadow",
   "fire_support.munition.rvp.gps_ground_atacms": "GPS Ground-Launched ATACMS",
   "fire_support.munition.rvp.gps_ground_9k720": "GPS Ground-Launched 9M723",
+  "fire_support.munition.rvp.gps_ground_rgm109c": "GPS Ground-Launched RGM-109C Cruise Missile",
+  "fire_support.munition.rvp.gps_ground_yj20": "GPS Ground-Launched YJ-20 Ballistic Missile",
   "fire_support.fire_mode.rvp.rapid": "Rapid Fire",
   "fire_support.fire_mode.rvp.effect": "Fire for Effect",
   "fire_support.fire_mode.rvp.monitor": "Watch Fire",
