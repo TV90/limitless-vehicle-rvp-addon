@@ -110,6 +110,25 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
     }
 
+    /**
+     * 大口径延迟炮口烟入口：使用高亮中性灰白 tint，保持与旧小口径炮口烟独立的颜色路径。
+     *
+     * @param size 大口径有效口径映射出的 MCHR 尺寸参数
+     * @param lifetime 白烟粒子寿命，单位 tick
+     */
+    public static RVP_MchrSmokeParticle ofWhiteMuzzle(ClientLevel level, double x, double y, double z,
+                                                      double vx, double vy, double vz,
+                                                      float size, int lifetime) {
+        net.minecraft.util.RandomSource random = level.random;
+        float base = 0.78f + random.nextFloat() * 0.17f;
+        RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(
+                level, x, y, z, vx, vy, vz,
+                size, base, base, base, 0.60f + random.nextFloat() * 0.20f,
+                lifetime);
+        // 调用本项目渲染类型：白色延迟烟同样只测深度不写深度，避免遮挡载具和其它烟雾。
+        return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
+    }
+
     /** 拖烟入口：MCHR 烟构造默认（亮灰 0.7~1.0、scale 5~5.5、寿命 18~84）。 */
     public static RVP_MchrSmokeParticle ofTrailDefault(ClientLevel level, double x, double y, double z) {
         net.minecraft.util.RandomSource random = level.random;
