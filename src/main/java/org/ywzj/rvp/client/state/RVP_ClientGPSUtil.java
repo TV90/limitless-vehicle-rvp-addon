@@ -13,12 +13,16 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.network.C2SSetGPSTarget;
 import org.ywzj.rvp.network.RVP_Network;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.gps.RVP_GpsModeSupport;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+
+import static org.ywzj.rvp.client.state.RVP_ClientGPSState.Mode;
 
 public class RVP_ClientGPSUtil {
 
@@ -31,6 +35,18 @@ public class RVP_ClientGPSUtil {
                 && weaponUnit.getCurrentWeapon().isPresent()
                 && weaponUnit.getCurrentWeapon().get() instanceof RVP_WeaponBase weapon
                 && usesDesignatedPoint(weapon);
+    }
+
+    /** 当前操作的武器站；未在载具返回 null。 */
+    private static WeaponUnit currentWeaponUnit() {
+        return LocalVehiclePlayer.instance.onVehicle()
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+    }
+
+    /** 当前选中武器的 RVP 数据；非 RVP/未选中返回 null（模式/上限走默认）。 */
+    private static RVP_WeaponData currentRvpWeaponData() {
+        return RVP_GpsModeSupport.currentRvpWeaponData(currentWeaponUnit());
     }
 
     // [RVP] 原 ensureGPSBombSelected（提示"未在载具/请切换 GPS 炸弹"）已删除：
@@ -51,8 +67,9 @@ public class RVP_ClientGPSUtil {
     }
 
     public static void addGpsPoint(LocalPlayer player, ResourceLocation dimension, Vec3 pos) {
+        int maxPoints = RVP_GpsModeSupport.multiMaxPoints(currentRvpWeaponData());
         RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.add(dimension, pos));
-        RVP_ClientGPSState.addPoint(dimension, pos);
+        RVP_ClientGPSState.addPoint(dimension, pos, maxPoints);
         player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.add_point", RVP_ClientGPSState.getPointCount()), true);
     }
 
@@ -62,20 +79,33 @@ public class RVP_ClientGPSUtil {
         player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.clear_all"), true);
     }
 
+    /**
+     * 循环切换 GPS 模式（原"单点/多点"二值切换的参数化版）：沿当前武器
+     * {@code gps_modes} 配置序列切到下一个<b>过传感器门禁</b>的模式——FAST 需要
+     * {@code rvp_fire_control_sensor_mode: "eo_ccip"}、RADAR 需要 RF 传感器，不满足即跳过。
+     */
     public static void toggleGpsMode(LocalPlayer player) {
-        setGpsMode(player, RVP_ClientGPSState.getMode().toggled());
+        Mode next = RVP_GpsModeSupport.nextAvailable(currentWeaponUnit(), currentRvpWeaponData(),
+                RVP_ClientGPSState.getMode());
+        setGpsMode(player, next);
     }
 
-    public static void setGpsMode(LocalPlayer player, RVP_ClientGPSState.Mode mode) {
+    public static void setGpsMode(LocalPlayer player, Mode mode) {
         RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.setMode(mode));
         RVP_ClientGPSState.setMode(mode);
-        player.displayClientMessage(Component.translatable(
-                mode == RVP_ClientGPSState.Mode.MULTI
-                        ? "message.ywzj_rvp.gps.mode_multi"
-                        : "message.ywzj_rvp.gps.mode_single"), true);
+        player.displayClientMessage(Component.translatable(modeMessageKey(mode)), true);
     }
 
-    /** 火控稳定器键按下时切换 GPS 单点/多点模式。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
+    private static String modeMessageKey(Mode mode) {
+        return switch (mode) {
+            case SINGLE -> "message.ywzj_rvp.gps.mode_single";
+            case MULTI -> "message.ywzj_rvp.gps.mode_multi";
+            case FAST -> "message.ywzj_rvp.gps.mode_fast";
+            case RADAR -> "message.ywzj_rvp.gps.mode_radar";
+        };
+    }
+
+    /** 火控稳定器键按下时循环切换 GPS 模式（可用性感知）。由按键消费方保证是 FIRE_CONTROL_STABILIZER 键。 */
     public static boolean tryHandleModeToggleKey() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
@@ -86,8 +116,44 @@ public class RVP_ClientGPSUtil {
         return true;
     }
 
+    /**
+     * [RVP] FAST 开火接管判定：当前模式为 FAST，且本武器就是本地玩家当前操作武器站的
+     * 选中 GPS 武器（以 {@code getCurrentWeapon()} 身份对齐为准——full_salvo 白名单/其它
+     * 站武器不满足）。由 {@code RVP_WeaponBase.doClientShoot()} 继承覆写调用（无 Mixin）。
+     */
+    public static boolean isFastActiveFor(RVP_WeaponBase weapon) {
+        if (RVP_ClientGPSState.getMode() != Mode.FAST || !LocalVehiclePlayer.instance.onVehicle()) {
+            return false;
+        }
+        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        return weaponUnit != null
+                && weaponUnit.getCurrentWeapon().isPresent()
+                && weaponUnit.getCurrentWeapon().get() == weapon
+                && usesDesignatedPoint(weapon);
+    }
+
+    /**
+     * [RVP] FAST 开火前写点：观瞄射线命中方块 → 写 FAST 装订点（保持 FAST 模式）并返回
+     * true；落空 → 提示并返回 false（调用方拒止发射）。写点后由调用方继续原发射流程。
+     */
+    public static boolean tryFastGpsMark() {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return false;
+        }
+        Vec3 target = raycastGPSTarget(Minecraft.getInstance());
+        if (target == null) {
+            player.displayClientMessage(Component.translatable("message.ywzj_rvp.gps.fast_no_block"), true);
+            return false;
+        }
+        ResourceLocation dimension = player.level().dimension().location();
+        RVP_Network.CHANNEL.sendToServer(C2SSetGPSTarget.fastSet(dimension, target));
+        RVP_ClientGPSState.fastSet(dimension, target);
+        return true;
+    }
+
     public static String currentModeTag() {
-        return RVP_ClientGPSState.isMultiMode() ? "MULTI" : "SINGLE";
+        return RVP_ClientGPSState.getMode().name();
     }
 
     public static String currentPointTag() {

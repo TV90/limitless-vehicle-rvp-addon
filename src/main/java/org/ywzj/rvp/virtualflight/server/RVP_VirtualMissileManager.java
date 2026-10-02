@@ -116,6 +116,12 @@ public final class RVP_VirtualMissileManager {
                 missile.getId(), missile.getColdLaunchTimeTick(), gameTime, gameTime,
                 integrator.implementationId(), integrator.implementationVersion(),
                 RVP_VirtualFlightPhase.VIRTUAL_CRUISE, 0, 0, 0, 0);
+        // [RVP] RADAR 上行改靶：标记与间隔从实体转快照（运行时字段，不入 NBT）
+        state.radarUplinkTargeting = missile.radarUplinkTargeting;
+        state.radarUplinkIntervalSecond = data == null
+                ? 5.0f
+                : org.ywzj.rvp.weapon.data.RVP_GuidanceDataGPS.resolveRadarUpdateIntervalSecond(
+                        data.getGuidanceData());
         // 通过维度 DataStorage 取得权威容器；add 成功会立即 mark dirty。
         RVP_VirtualMissileSavedData savedData = RVP_VirtualMissileSavedData.get(level);
         if (!state.isStructurallyValid() || !savedData.add(state)) return false;

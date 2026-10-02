@@ -6,7 +6,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
+import org.ywzj.rvp.weapon.gps.RVP_GpsModeSupport;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.function.Supplier;
 
@@ -16,7 +19,9 @@ public class C2SSetGPSTarget {
         SET_SINGLE,
         ADD_POINT,
         CLEAR_ALL,
-        SET_MODE
+        SET_MODE,
+        /** [RVP] FAST 模式开火键写点：覆盖单点但保持 FAST 模式（追加在枚举末尾，兼容旧序号）。 */
+        FAST_SET
     }
 
     public Action action;
@@ -64,6 +69,18 @@ public class C2SSetGPSTarget {
         return msg;
     }
 
+    /** [RVP] FAST 模式开火键写点：覆盖装订点且服务端保持 FAST 模式。 */
+    public static C2SSetGPSTarget fastSet(ResourceLocation dimension, Vec3 pos) {
+        C2SSetGPSTarget msg = new C2SSetGPSTarget();
+        msg.action = Action.FAST_SET;
+        msg.dimension = dimension;
+        msg.x = pos.x;
+        msg.y = pos.y;
+        msg.z = pos.z;
+        msg.mode = RVP_ClientGPSState.Mode.FAST;
+        return msg;
+    }
+
     public static void encode(C2SSetGPSTarget msg, FriendlyByteBuf buf) {
         buf.writeEnum(msg.action);
         buf.writeEnum(msg.mode);
@@ -99,7 +116,14 @@ public class C2SSetGPSTarget {
                 return;
             }
             if (msg.action == Action.SET_MODE) {
-                snapshot = GPSTargetManager.setMode(player, msg.mode);
+                // [RVP] 服务端权威校验：模式必须在当前武器配置列表内且过传感器门禁，非法忽略并回发快照
+                WeaponUnit unit = RVP_GpsModeSupport.operatedWeaponUnit(player);
+                RVP_WeaponData weaponData = RVP_GpsModeSupport.currentRvpWeaponData(unit);
+                if (!RVP_GpsModeSupport.isAvailable(unit, weaponData, msg.mode)) {
+                    snapshot = GPSTargetManager.snapshot(player);
+                } else {
+                    snapshot = GPSTargetManager.setMode(player, msg.mode);
+                }
                 RVP_Network.CHANNEL.sendTo(S2CGpsStateSync.of(snapshot), player.connection.connection, net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT);
                 return;
             }
@@ -111,9 +135,17 @@ public class C2SSetGPSTarget {
                 RVP_Network.CHANNEL.sendTo(S2CGpsStateSync.of(snapshot), player.connection.connection, net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT);
                 return;
             }
-            snapshot = msg.action == Action.ADD_POINT
-                    ? GPSTargetManager.add(player, msg.dimension, target)
-                    : GPSTargetManager.set(player, msg.dimension, target);
+            if (msg.action == Action.FAST_SET) {
+                // [RVP] FAST 开火键写点：覆盖单点且保持 FAST 模式
+                snapshot = GPSTargetManager.fastSet(player, msg.dimension, target);
+            } else {
+                // [RVP] MULTI 追加上限取发送者当前武器配置（非 GPS 武器/无武器走默认 8）
+                WeaponUnit unit = RVP_GpsModeSupport.operatedWeaponUnit(player);
+                int maxPoints = RVP_GpsModeSupport.multiMaxPoints(RVP_GpsModeSupport.currentRvpWeaponData(unit));
+                snapshot = msg.action == Action.ADD_POINT
+                        ? GPSTargetManager.add(player, msg.dimension, target, maxPoints)
+                        : GPSTargetManager.set(player, msg.dimension, target);
+            }
             RVP_Network.CHANNEL.sendTo(S2CGpsStateSync.of(snapshot), player.connection.connection, net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT);
         });
     }

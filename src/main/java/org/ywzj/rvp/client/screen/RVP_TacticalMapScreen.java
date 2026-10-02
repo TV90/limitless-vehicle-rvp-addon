@@ -455,7 +455,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                         RVP_ClientGPSUtil.toggleGpsMode(mc.player);
                     }
                 },
-                () -> RVP_ClientGPSState.isMultiMode(),
+                () -> RVP_ClientGPSState.getMode() != RVP_ClientGPSState.Mode.SINGLE,
                 () -> GPS_ICON_COLOR
         ));
         gpsClearAllButton = addRenderableWidget(new TerminalButton(
@@ -519,9 +519,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     private Component gpsModeLabel() {
-        return RVP_ClientGPSState.isMultiMode()
-                ? Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_mode_multi")
-                : Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_mode_single");
+        // [RVP] 模式参数化：SINGLE/MULTI/FAST/RADAR 各自翻译键
+        return Component.translatable("gui.ywzj_rvp.tactical_map.btn.gps_mode_"
+                + RVP_ClientGPSState.getMode().name().toLowerCase(java.util.Locale.ROOT));
     }
 
     private Component gpsQuickMarkLabel() {
@@ -2451,7 +2451,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             String label = RVP_ClientGPSState.isMultiMode()
                     ? "GPS " + RVP_ClientGPSState.getArmedPointNumber()
                     : "GPS";
-            String status = "MODE " + (RVP_ClientGPSState.isMultiMode() ? "MULTI" : "SINGLE")
+            String status = "MODE " + RVP_ClientGPSState.getMode().name()
                     + "  |  " + label
                     + "  |  CNT " + RVP_ClientGPSState.getPointCount();
             guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(status, textWidth), textX, targetTextY, GPS_ICON_COLOR, false);

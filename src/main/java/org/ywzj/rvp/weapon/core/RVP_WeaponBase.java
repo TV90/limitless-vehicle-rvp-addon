@@ -14,6 +14,7 @@ import org.ywzj.rvp.config.RVP_LauncherDeployConfig;
 import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
@@ -120,6 +121,13 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
             return false;
         }
         if (!passesShootLockGates()) {
+            return false;
+        }
+        // [RVP] GPS FAST 模式接管（2026-10-02，继承覆写方案，无 Mixin）：射手处于 FAST 模式
+        // 且本武器就是其当前操作武器站的选中 GPS 武器时，开火 = 观瞄射线命中方块处写入
+        // 装订点（fastSet，保持 FAST 模式）后按原流程发射；射线落空 → 拒止发射并提示。
+        // 全部常规门控（冷却/弹药/弹舱/锁定）通过后才写点，避免写点后被门控拒发。
+        if (RVP_ClientGPSUtil.isFastActiveFor(this) && !RVP_ClientGPSUtil.tryFastGpsMark()) {
             return false;
         }
         boolean fired = super.doClientShoot();

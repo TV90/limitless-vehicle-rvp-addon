@@ -50,6 +50,15 @@ public final class RVP_VirtualMissileState {
     public final long enteredGameTime;
     /** 最近一次积分或恢复等待更新的世界 gameTime。 */
     public long lastUpdatedGameTime;
+    /**
+     * [RVP] RADAR 模式上行改靶标记（2026-10-02）：发射时射者处于 GPS RADAR 模式并成功标记
+     * 雷达锁目标（≤25 格离地门）则为 true；{@code RVP_GpsRadarUplinkManager} 只对置位的
+     * 虚拟弹按 {@link #radarUplinkIntervalSecond} 周期替换 snapshot 目标点。
+     * 运行时标记不入 NBT（存档恢复后视为普通固定目标弹，保持发射时目标快照）。
+     */
+    public boolean radarUplinkTargeting;
+    /** [RVP] 上行改靶间隔（秒，转虚拟时从武器配置快照）；运行时字段不入 NBT，缺省 5 秒。 */
+    public float radarUplinkIntervalSecond = 5.0f;
     /** 创建记录时所用的轨迹实现 ID。 */
     public final String trajectoryImplementationId;
     /** 创建记录时所用的轨迹状态版本。 */
@@ -144,6 +153,27 @@ public final class RVP_VirtualMissileState {
                 snapshot.gpsTargetOffset(), snapshot.gpsTargetOffsetResolved(),
                 null, null, null, false,
                 -1, Integer.MIN_VALUE, false);
+    }
+
+    /**
+     * [RVP] RADAR 上行改靶（2026-10-02）：仅替换权威目标点与最近制导点，其余快照字段原样
+     * 保留——与 {@link #updateTrajectory} 不同，不推进相位、不重置弹载子系统状态。
+     * 积分器每 tick 从 {@code snapshot.targetPosition()} 现读（替换后下一 tick 生效），
+     * 恢复触发判定同源，因此超视距虚拟弹同样被改靶。新点为雷达修正真值，不再叠加 GPS 散布。
+     * 调用方负责对所属 SavedData 标脏。
+     */
+    public void updateTargetPosition(Vec3 newTargetPosition) {
+        snapshot = new RVP_VirtualMissileSnapshot(
+                snapshot.trajectory(), newTargetPosition, newTargetPosition,
+                snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(),
+                snapshot.guidancePhase(), snapshot.motorBurnEndTick(),
+                snapshot.secondPulseBurnTimeTick(), snapshot.activeRadarOn(),
+                snapshot.activeRadarCatch(), snapshot.activeRadarLostTargetTick(),
+                snapshot.gpsCruiseVerticalResetApplied(), snapshot.gpsTargetOffset(),
+                snapshot.gpsTargetOffsetResolved(), snapshot.topAttackLaunchPosition(),
+                snapshot.topAttackInitialTargetPosition(), snapshot.topAttackApexPosition(),
+                snapshot.topAttackApexReached(), snapshot.topAttackTriggerTick(),
+                snapshot.irSeekerGraceUntilTick(), snapshot.irSeekerLossGraceStarted());
     }
 
     /**

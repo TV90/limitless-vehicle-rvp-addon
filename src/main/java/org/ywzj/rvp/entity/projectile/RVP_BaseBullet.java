@@ -513,6 +513,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 主动ECM对GPS的落点偏移是否已施加（一次性，避免每 tick 累积抖动）。 */
     public boolean ecmGpsOffsetApplied;
 
+    /**
+     * [RVP] RADAR 模式上行改靶标记（2026-10-02，GPS 模式参数化）：发射瞬间射手处于 GPS
+     * RADAR 模式且成功标记雷达锁目标（含 25m 离地门）时由 {@code RVP_ProjectileSpawner}
+     * 置位；{@code RVP_GpsRadarUplinkManager} 只对置位弹按武器配置周期在途改靶。
+     * 运行时标记不入 NBT（存档恢复的旧弹不再参与改靶，保持发射时目标快照）。
+     */
+    public boolean radarUplinkTargeting;
+
     /** 烟雾脱锁后的固定惯导落点（脱锁瞬间算一次）：Y 取最后目标高度、X/Z 在烟雾 AABB 内且远离最后目标；无则回退 lastGuidancePos。 */
     @Nullable
     private Vec3 smokeInertialPoint = null;

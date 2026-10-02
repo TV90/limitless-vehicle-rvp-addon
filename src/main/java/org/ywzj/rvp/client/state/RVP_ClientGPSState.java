@@ -11,11 +11,11 @@ public class RVP_ClientGPSState {
 
     public enum Mode {
         SINGLE,
-        MULTI;
-
-        public Mode toggled() {
-            return this == SINGLE ? MULTI : SINGLE;
-        }
+        MULTI,
+        /** 快速模式（需 eo_ccip 传感器）：开火键直接打击观瞄所指点，R 键不可标点。 */
+        FAST,
+        /** 雷达模式（需 RF 传感器）：R 键走本体雷达锁定，发射注入锁目标位置并按周期在途改靶。 */
+        RADAR
     }
 
     public record Point(ResourceLocation dimension, Vec3 pos) {}
@@ -37,10 +37,20 @@ public class RVP_ClientGPSState {
         replace(Mode.SINGLE, List.of(new Point(dim, p)), 0);
     }
 
-    public static void addPoint(ResourceLocation dim, Vec3 p) {
+    /** FAST 模式专用：写单点但保持当前模式（FAST），供开火键"打击观瞄点"使用。 */
+    public static void fastSet(ResourceLocation dim, Vec3 p) {
+        replace(mode, List.of(new Point(dim, p)), 0);
+    }
+
+    /** MULTI 模式追加目标点；达到 {@code maxPoints} 上限时为滑动窗口——移除最旧、新点成末位。 */
+    public static void addPoint(ResourceLocation dim, Vec3 p, int maxPoints) {
         if (mode != Mode.MULTI) {
             set(dim, p);
             return;
+        }
+        int cap = Math.max(1, maxPoints);
+        while (POINTS.size() >= cap) {
+            POINTS.remove(0);
         }
         POINTS.add(new Point(dim, p));
         nextIndex = normalizeIndex(nextIndex, POINTS.size());
@@ -57,6 +67,11 @@ public class RVP_ClientGPSState {
                 Point last = POINTS.get(POINTS.size() - 1);
                 replace(Mode.SINGLE, List.of(last), 0);
             }
+            return;
+        }
+        // 进入 FAST/RADAR：清空全部 GPS 点（两模式各自重新取点）
+        if (newMode == Mode.FAST || newMode == Mode.RADAR) {
+            replace(newMode, List.of(), 0);
             return;
         }
         mode = Mode.MULTI;

@@ -81,7 +81,7 @@ public class RVP_GPSPanelScreen extends Screen {
     }
 
     private Component modeLabel() {
-        return RVP_ClientGPSState.isMultiMode() ? Component.literal("MULTI") : Component.literal("SINGLE");
+        return Component.literal(RVP_ClientGPSState.getMode().name());
     }
 
     private void clear() {

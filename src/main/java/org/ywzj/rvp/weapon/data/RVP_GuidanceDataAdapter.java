@@ -18,7 +18,12 @@ import java.util.Set;
 public final class RVP_GuidanceDataAdapter
         implements JsonDeserializer<RVP_GuidanceData>, JsonSerializer<RVP_GuidanceData> {
 
-    private static final Set<String> GPS_FIELDS = Set.of("gps_spread_radius");
+    private static final Set<String> GPS_FIELDS = Set.of(
+            "gps_spread_radius",
+            "gps_modes",
+            "multi_max_points",
+            "radar_update_interval_second"
+    );
     private static final Set<String> ARM_FIELDS = Set.of(
             "radiation_pulse_memory_tick",
             "arm_memory_tick",

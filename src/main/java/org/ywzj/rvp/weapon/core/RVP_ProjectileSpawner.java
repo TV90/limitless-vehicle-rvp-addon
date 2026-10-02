@@ -24,6 +24,10 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.gps.GPSTarget;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
+import org.ywzj.rvp.client.state.RVP_ClientGPSState;
+import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.util.RVP_AimPointResolver;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
@@ -38,6 +42,12 @@ import java.util.function.Supplier;
  * so weapon classes stay focused on firing rules rather than entity wiring.
  */
 public final class RVP_ProjectileSpawner {
+
+    /**
+     * [RVP] RADAR 模式标记门：雷达锁目标离地（MOTION_BLOCKING 地表）超过该高度不写 GPS 点
+     * （发射标记与周期在途改靶同一道门），用于拦截"锁到高空飞机"这类非地面目标。代码常量不参数化。
+     */
+    public static final double RADAR_UPLINK_MAX_HEIGHT_ABOVE_GROUND = 25.0;
 
     private RVP_ProjectileSpawner() {}
 
@@ -114,13 +124,17 @@ public final class RVP_ProjectileSpawner {
                 powerScale,
                 extraSpread
         );
-        Vec3 designatedTarget = resolveLegacyDesignatedTarget(data, kind, shooter, level, aim);
+        LegacyDesignatedTarget designated = resolveLegacyDesignatedTarget(data, kind, shooter, level, aim);
         // 调用本项目统一生成核心：旧载具入口只负责解析散布/GPS/挂架上下文，实体接线只保留一份。
         RVP_ProjectileSpawnResult result = spawn(new RVP_ProjectileSpawnContext(
                 level, data, kind, entityType.get(), vehicle, weaponUnit, launchUnit, shooter,
-                muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), motion, lockTarget, designatedTarget,
+                muzzle, new RVP_BaseBullet.AimRot(xRot, yRot), motion, lockTarget, designated.pos(),
                 data.isInheritVehicleVelocity(), weaponUnit != null, muzzle,
                 RVP_ProjectileChunkLoadingPolicy.DEFAULT, sightDisguise));
+        // [RVP] RADAR 模式上行弹标记：仅"RADAR 模式下发射且成功标记雷达锁目标（≤25m 离地）"的弹参与在途改靶
+        if (designated.radarUplink() && result.projectile() != null) {
+            result.projectile().radarUplinkTargeting = true;
+        }
         return result.projectile();
     }
 
@@ -255,8 +269,53 @@ public final class RVP_ProjectileSpawner {
         }
     }
 
-    private static Vec3 resolveLegacyDesignatedTarget(RVP_WeaponData data, RVP_EnumWeaponKind kind,
-                                                       LivingEntity shooter, ServerLevel level, AimContext aim) {
+    /** 旧入口 designatedTarget 解析结果：坐标 + 是否为 RADAR 模式雷达锁上行点（供弹体打改靶标记）。 */
+    private record LegacyDesignatedTarget(@Nullable Vec3 pos, boolean radarUplink) {
+        private static final LegacyDesignatedTarget NONE = new LegacyDesignatedTarget(null, false);
+    }
+
+    /**
+     * [RVP] RADAR 模式上行目标解析：射手处于 RADAR 模式时，GPS 目标不取自装订列表，
+     * 而是发射瞬间写为雷达确认硬锁目标（含外置雷达锁）的位置——
+     * 位置取 §46 最大 OBB 中心（非载具回退 position+半高），并过 <b>25 格离地门</b>
+     * （目标 Y − 所处方块地表 heightmap > 25 不标记，走无 GPS 点回退并提示一次）。
+     * 用于鹰击-20 这类反舰弹道导弹的"锁定即打、打后持续修正"。
+     */
+    @Nullable
+    private static Vec3 resolveRadarUplinkTarget(ServerPlayer player, ServerLevel level, AimContext aim) {
+        if (!(player.getVehicle() instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle)
+                || !(vehicle.getOwnOperatorUnit(player) instanceof WeaponUnit weaponUnit)) {
+            return null;
+        }
+        Entity lockTarget = RVP_RadarRoleHelper.getConfirmedRFHardLockedEntity(weaponUnit);
+        if (lockTarget == null || !lockTarget.isAlive()) {
+            return null;
+        }
+        Vec3 pos = RVP_AimPointResolver.resolveLargestObbCenter(lockTarget);
+        double aboveGround = pos.y - level.getHeight(
+                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                (int) Math.floor(pos.x), (int) Math.floor(pos.z));
+        if (aboveGround > RADAR_UPLINK_MAX_HEIGHT_ABOVE_GROUND) {
+            // 超过 25 格离地门：不标记（含周期更新同理），提示一次
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                    "message.ywzj_rvp.gps.radar_mark_high"), true);
+            return null;
+        }
+        return pos;
+    }
+
+    private static LegacyDesignatedTarget resolveLegacyDesignatedTarget(RVP_WeaponData data, RVP_EnumWeaponKind kind,
+                                                                       LivingEntity shooter, ServerLevel level, AimContext aim) {
+        // [RVP] RADAR 模式优先：GPS 目标 = 雷达确认硬锁位置（≤25 格离地），不经装订列表
+        if (data.usesGuidanceType(RVP_EnumGuidanceType.GPS)
+                && shooter instanceof ServerPlayer player
+                && GPSTargetManager.isMode(shooter, RVP_ClientGPSState.Mode.RADAR)) {
+            Vec3 radarTarget = resolveRadarUplinkTarget(player, level, aim);
+            if (radarTarget != null) {
+                return new LegacyDesignatedTarget(radarTarget, true);
+            }
+            // 无锁/超高 → 落到下方装订列表（RADAR 进入时已清空，通常为空）→ 回退准星落点
+        }
         GPSTarget gps = data.usesGuidanceType(RVP_EnumGuidanceType.GPS)
                 ? GPSTargetManager.consumeAssignedTarget(shooter, level.dimension().location()) : null;
         if (gps != null && gps.dimension().equals(level.dimension().location())) {
@@ -265,9 +324,11 @@ public final class RVP_ProjectileSpawner {
                 RVP_Network.CHANNEL.sendTo(S2CGpsStateSync.of(GPSTargetManager.snapshot(player)),
                         player.connection.connection, net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT);
             }
-            return gps.pos();
+            return new LegacyDesignatedTarget(gps.pos(), false);
         }
-        return kind == RVP_EnumWeaponKind.MISSILE ? RVP_AimContexts.impactPoint(aim) : null;
+        return kind == RVP_EnumWeaponKind.MISSILE
+                ? new LegacyDesignatedTarget(RVP_AimContexts.impactPoint(aim), false)
+                : LegacyDesignatedTarget.NONE;
     }
 
     private static float randomSpread(Level level, float spread) {
