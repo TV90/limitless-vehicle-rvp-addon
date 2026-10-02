@@ -194,13 +194,19 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
      * MCHR 专用白色 splash 贴图不迁移）。
      */
     public static RVP_MchrSmokeParticle ofSplash(ClientLevel level, double x, double y, double z,
-                                                 double mx, double my, double mz) {
+                                                 double mx, double my, double mz, float sizeScale) {
         net.minecraft.util.RandomSource random = level.random;
         float white = random.nextFloat() * 0.3f + 0.7f;
         float size = random.nextFloat() * 0.5f + 5.0f;
         int lifetime = Math.min(200, (int) (80.0D / (random.nextDouble() * 0.8D + 0.2D)) + 2);
         RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(level, x, y, z, mx, my, mz,
                 size, white, white, white, 0.9f, lifetime);
+        // MCHR splash 的 setParticleScale(5~5.5) 是【直接生效】的尺寸（渲染半宽 = 0.1 × scale
+        // ≈0.5 格，单粒 ~1 格宽的大水斑），不走烟粒子的 diffusible ×0.2 初始衰减路径——
+        // 首版误用构造默认（quadSize 0.1 格）导致水幕只剩小粒子（2026-10-03 用户实测）；
+        // splash 物理下不扩散，尺寸即终值。
+        particle.mchrScale = size * Math.max(sizeScale, 0.01F);
+        particle.quadSize = 0.1f * particle.mchrScale;
         particle.splashPhysics = true;
         return particle;
     }

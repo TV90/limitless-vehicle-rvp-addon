@@ -71,8 +71,26 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
      */
     private static void spawnUnderwaterExplosionEffect(ClientLevel level, RandomSource random,
                                                        Vec3 center, float radius, float density) {
-        // ── 0) 水下气泡上涌（水下细节层，非 MCHR 主水幕）──
-        int bubbleCount = (int) Math.min(radius * radius * radius * 2.0f * density, 400);
+        // 距离 LOD 分档（2026-10-03 用户需求，学视觉工厂远档降密思路）：
+        // 远档"以大代密"——水斑尺寸放大、数量按比例缩减，保持水幕体量感的同时控制 overdraw。
+        Vec3 cameraPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        double cameraDistSq = cameraPos.distanceToSqr(center);
+        float splashSizeScale;
+        float splashCountScale;
+        if (cameraDistSq < 256.0D * 256.0D) {
+            splashSizeScale = 1.0F;
+            splashCountScale = 1.0F;
+        } else if (cameraDistSq < 512.0D * 512.0D) {
+            splashSizeScale = 2.0F;
+            splashCountScale = 0.4F;
+        } else {
+            splashSizeScale = 4.0F;
+            splashCountScale = 0.12F;
+        }
+
+        // ── 0) 水下气泡上涌（水下细节层，非 MCHR 主水幕；远档按比例缩减）──
+        int bubbleCount = (int) Math.min(radius * radius * radius * 2.0f * density
+                * splashCountScale, 400);
         for (int i = 0; i < bubbleCount; i++) {
             level.addParticle(ParticleTypes.BUBBLE, true,
                     center.x + (random.nextDouble() - 0.5) * 1.8 * radius,
@@ -104,7 +122,7 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
                     // MCHR：nextInt(2) → 每个水方块 0~1 粒（叠加采样概率保大半径 FPS）
                     int n = random.nextInt(2);
                     for (int i = 0; i < n; i++) {
-                        if (random.nextDouble() > spawnChance) {
+                        if (random.nextDouble() > spawnChance * splashCountScale) {
                             continue;
                         }
                         // MCHR :380 速度公式逐字：中心 my≈1.0 冲天、边缘 my→0 悬停，水平向外漂
@@ -115,7 +133,7 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
                         // MCHR splash 粒子参数（白 0.7~1.0 / scale 5~5.5 / 寿命 80/(r×0.8+0.2)+2 封顶 200）；
                         // 实例粒子经 ParticleEngine.add 加入（同工厂主烟路径），绕过 32 格生成距离剔除
                         Minecraft.getInstance().particleEngine.add(RVP_MchrSmokeParticle.ofSplash(level,
-                                ex + x, ey + y, ez + z, motionX, motionY, motionZ));
+                                ex + x, ey + y, ez + z, motionX, motionY, motionZ, splashSizeScale));
                     }
                 }
             }
