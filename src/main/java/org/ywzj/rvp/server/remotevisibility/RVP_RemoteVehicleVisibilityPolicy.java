@@ -6,6 +6,7 @@ import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.entity.vehicle.VesselVehicle;
 
 import java.util.Collections;
 import java.util.Comparator;
@@ -35,6 +36,8 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
         AIRCRAFT("aircraft"),
         /** 履带、轮式及其他可同步地面车辆。 */
         GROUND_VEHICLES("ground_vehicles"),
+        /** 舰船与其他水面载具。 */
+        SHIPS("ships"),
         /** 步行玩家观察者；仅可作为矩阵的观察者键，不会作为载具目标分类。 */
         WALKING_PLAYERS("walking_players");
 
@@ -77,7 +80,7 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
     /**
      * 按本体公开实体基类分类完整载具。
      *
-     * <p>未命中固定翼或旋翼的完整载具统一归为地面车辆；拆分出来的 {@link VehiclePart}
+     * <p>未命中固定翼、旋翼或舰船的完整载具统一归为地面车辆；拆分出来的 {@link VehiclePart}
      * 不属于可同步目标。此处禁止按车型、display 或模型资源 ID 分类。</p>
      */
     public static Optional<VehicleCategory> classify(@Nullable AbstractVehicle vehicle) {
@@ -89,6 +92,9 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
         }
         if (vehicle instanceof FixedWingVehicle) {
             return Optional.of(VehicleCategory.AIRCRAFT);
+        }
+        if (vehicle instanceof VesselVehicle) {
+            return Optional.of(VehicleCategory.SHIPS);
         }
         return Optional.of(VehicleCategory.GROUND_VEHICLES);
     }

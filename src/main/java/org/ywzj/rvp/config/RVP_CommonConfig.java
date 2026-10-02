@@ -109,6 +109,8 @@ public class RVP_CommonConfig {
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> aircraftVisibleTargets;
     /** 地面车辆观察者允许看见的目标载具类型 token。 */
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> groundVehicleVisibleTargets;
+    /** 舰船观察者允许看见的目标载具类型 token。 */
+    private final ForgeConfigSpec.ConfigValue<List<? extends String>> shipsVisibleTargets;
     /** 步行玩家观察者允许看见的目标载具类型 token。 */
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> walkingPlayerVisibleTargets;
     /** 配置加载后生成的不可变观察者类型白名单。 */
@@ -200,6 +202,8 @@ public class RVP_CommonConfig {
                 List.of("helicopter", "aircraft", "ground_vehicles"));
         groundVehicleVisibleTargets = defineVehicleTypeList(builder, "ground_vehicles",
                 List.of("helicopter", "aircraft"));
+        shipsVisibleTargets = defineVehicleTypeList(builder, "ships",
+                List.of("helicopter", "aircraft", "ships"));
         walkingPlayerVisibleTargets = defineVehicleTypeList(builder, "walking_players",
                 List.of("helicopter", "aircraft"));
         builder.pop();
@@ -210,7 +214,7 @@ public class RVP_CommonConfig {
     private static ForgeConfigSpec.ConfigValue<List<? extends String>> defineVehicleTypeList(
             ForgeConfigSpec.Builder builder, String key, List<String> defaults) {
         return builder
-                .comment("允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles。")
+                .comment("允许该观察者类型看见的目标类型。仅接受 helicopter、aircraft、ground_vehicles、ships。")
                 .defineListAllowEmpty(List.of(key), () -> defaults, value -> value instanceof String);
     }
 
@@ -327,13 +331,14 @@ public class RVP_CommonConfig {
         INSTANCE.refreshVisibilityMatrix();
     }
 
-    /** 规范化四类观察者白名单，并为本次加载合并输出一次未知 token 告警。 */
+    /** 规范化五类观察者白名单，并为本次加载合并输出一次未知 token 告警。 */
     private void refreshVisibilityMatrix() {
         EnumMap<VehicleCategory, Set<VehicleCategory>> matrix = new EnumMap<>(VehicleCategory.class);
         java.util.LinkedHashSet<String> unknownTokens = new java.util.LinkedHashSet<>();
         normalizeEntry(matrix, unknownTokens, VehicleCategory.HELICOPTER, helicopterVisibleTargets.get());
         normalizeEntry(matrix, unknownTokens, VehicleCategory.AIRCRAFT, aircraftVisibleTargets.get());
         normalizeEntry(matrix, unknownTokens, VehicleCategory.GROUND_VEHICLES, groundVehicleVisibleTargets.get());
+        normalizeEntry(matrix, unknownTokens, VehicleCategory.SHIPS, shipsVisibleTargets.get());
         normalizeEntry(matrix, unknownTokens, VehicleCategory.WALKING_PLAYERS, walkingPlayerVisibleTargets.get());
         normalizedVisibilityMatrix = Map.copyOf(matrix);
         if (!unknownTokens.isEmpty()) {
@@ -346,7 +351,7 @@ public class RVP_CommonConfig {
                                        Set<String> unknownTokens,
                                        VehicleCategory observerType,
                                        List<? extends String> configuredTokens) {
-        // 调用服务端远距载具策略，集中解析并去重三类配置 token。
+        // 调用服务端远距载具策略，集中解析并去重四类配置 token。
         NormalizationResult result = RVP_RemoteVehicleVisibilityPolicy.normalizeConfiguredTypes(configuredTokens);
         matrix.put(observerType, result.accepted());
         unknownTokens.addAll(result.unknown());
@@ -355,12 +360,15 @@ public class RVP_CommonConfig {
     /** 创建配置尚未加载时使用的权威默认类型矩阵。 */
     private static Map<VehicleCategory, Set<VehicleCategory>> defaultVisibilityMatrix() {
         Set<VehicleCategory> all = Set.of(
-                VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.GROUND_VEHICLES);
+                VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT,
+                VehicleCategory.GROUND_VEHICLES, VehicleCategory.SHIPS);
         return Map.of(
                 VehicleCategory.HELICOPTER, all,
                 VehicleCategory.AIRCRAFT, all,
                 VehicleCategory.GROUND_VEHICLES,
                 Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
+                VehicleCategory.SHIPS,
+                Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.SHIPS),
                 VehicleCategory.WALKING_PLAYERS,
                 Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT));
     }

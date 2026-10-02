@@ -20,12 +20,16 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
         Set<VehicleCategory> all = Set.of(
                 VehicleCategory.HELICOPTER,
                 VehicleCategory.AIRCRAFT,
-                VehicleCategory.GROUND_VEHICLES);
+                VehicleCategory.GROUND_VEHICLES,
+                VehicleCategory.SHIPS);
 
         assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.HELICOPTER));
         assertEquals(all, RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.AIRCRAFT));
         assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
                 RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.GROUND_VEHICLES));
+        // 船默认设为开启（用户定版）：舰船观察者默认放行直升机/固定翼/舰船（船→船超视距可见）。
+        assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT, VehicleCategory.SHIPS),
+                RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.SHIPS));
         assertEquals(Set.of(VehicleCategory.HELICOPTER, VehicleCategory.AIRCRAFT),
                 RVP_CommonConfig.getRemoteVehicleVisibleTargetTypes(VehicleCategory.WALKING_PLAYERS));
     }
