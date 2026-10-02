@@ -4,7 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
@@ -22,7 +21,6 @@ import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.custom.weapon.data.VehicleCannonWeaponData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.item.AmmoItem;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
@@ -231,9 +229,10 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
             if (rvpData.getWeaponKind() != RVP_EnumWeaponKind.MACHINEGUN) {
                 return null;
             }
-            float caliber = rvpData.getEffectsData().getTracerCaliber();
-            if (isHeavyArtilleryRound(rvpData) || supportsDelayedMuzzleSmoke(caliber)) {
-                // RVP 的 tracer_caliber 是脱壳弹体直径，大口径烟尺寸至少按 45 mm 计算。
+            // 调用本项目 RVP 数据访问器：effects_data.caliber 已恢复为弹体口径，
+            // 只有其达到 45 mm 才进入延迟白烟路径；不再用弹药类型绕过数值阈值。
+            float caliber = rvpData.getEffectsData().getCaliber();
+            if (supportsDelayedMuzzleSmoke(caliber)) {
                 return new HeavySmokeProfile(Math.max(caliber, MIN_HEAVY_CALIBER));
             }
             return null;
@@ -250,22 +249,6 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
     /** 判断口径是否达到延迟白烟的 45 mm 边界，供分类逻辑和定向测试复用。 */
     static boolean supportsDelayedMuzzleSmoke(float caliber) {
         return Float.isFinite(caliber) && caliber >= MIN_HEAVY_CALIBER;
-    }
-
-    /** 判断 RVP 弹药配方是否包含本体定义的火炮弹药类别。 */
-    private static boolean isHeavyArtilleryRound(RVP_WeaponData weaponData) {
-        if (weaponData.getReload() == null || weaponData.getReload().getAmmo() == null) {
-            return false;
-        }
-        Ingredient ammoIngredient = weaponData.getReload().getAmmo();
-        // 调用本体 Ingredient 接口：展开当前配置的弹药条目，使用 AmmoType 表达火炮语义。
-        for (var stack : ammoIngredient.getItems()) {
-            if (stack.getItem() instanceof AmmoItem ammoItem
-                    && ammoItem.getAmmoType() == AmmoItem.AmmoType.ARTILLERY) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** 按本体武器站的轮射/齐射模式解析本次真正开火的炮口。 */

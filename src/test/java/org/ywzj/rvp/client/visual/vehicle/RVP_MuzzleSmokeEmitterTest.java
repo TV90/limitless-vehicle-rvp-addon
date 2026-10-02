@@ -1,6 +1,5 @@
 package org.ywzj.rvp.client.visual.vehicle;
 
-import org.ywzj.vehicle.item.AmmoItem;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,10 +49,10 @@ class RVP_MuzzleSmokeEmitterTest {
         assertFalse(RVP_MuzzleSmokeEmitter.supportsMuzzleSmoke(105.0f));
     }
 
-    /** T-90M 主炮弹体虽为 24.765 mm，火炮弹药类别仍必须阻止炮口烟。 */
+    /** 炮口烟路径只按 effects_data.caliber 分档，45 mm 以下弹体仍走灰色即时烟。 */
     @Test
-    void artilleryAmmoDoesNotUseMuzzleSmoke() {
-        assertTrue(RVP_MuzzleSmokeEmitter.isHeavyArtilleryAmmoType(AmmoItem.AmmoType.ARTILLERY));
-        assertFalse(RVP_MuzzleSmokeEmitter.isHeavyArtilleryAmmoType(AmmoItem.AmmoType.AUTO_CANNON));
+    void projectileCaliberControlsMuzzleSmokePath() {
+        assertTrue(RVP_MuzzleSmokeEmitter.supportsMuzzleSmoke(24.765f));
+        assertFalse(RVP_MuzzleSmokeEmitter.supportsMuzzleSmoke(45.0f));
     }
 }

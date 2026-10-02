@@ -41,7 +41,8 @@ final class VehicleProjectileRenderLogic {
                              MultiBufferSource bufferSource, int packedLight) {
         BedrockModel model = BedrockModelLoader.getModel(InternalAssets.BASIC_BULLET_MODEL);
         poseStack.pushPose();
-        float width = Math.min(0.04f * bullet.getCaliber() / 7.62f, 0.2f);
+        // 调用本项目弹体视觉口径入口：曳光宽度使用 tracer_caliber，不混用炮口烟/物理口径 caliber。
+        float width = Math.min(0.04f * bullet.getTracerCaliber() / 7.62f, 0.2f);
         Vec3 bulletPosition = bullet.getPosition(partialTicks);
         double disToEye = bulletPosition.distanceTo(bullet.getStartPos());
         // 曳光长度 = 0.3 × 当前速度 × effects_data.tracer_length_scale，上限 = 已飞距离 × 0.8
