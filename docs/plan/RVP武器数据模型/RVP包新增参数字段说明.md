@@ -1259,7 +1259,7 @@ velocity = worldDown × cos(theta) × launch_speed
 
 **子类型字段约束**（由 `RVP_GuidanceDataAdapter` 校验）：
 
-- `gps_spread_radius` 仅 `GPS` 可用。
+- `gps_spread_radius` / `gps_modes` / `multi_max_points` / `radar_update_interval_second` 仅 `GPS` 可用。
 - `radiation_pulse_memory_tick` / `arm_memory_tick` / `arm_locked_emitter_bonus` 仅 `ARM` 可用。
 - `hitl_*` / `signal_source` 仅 TV / HITL_TV / HITL_CLOS_TV 可用。
 - `semi_correction_*` 仅 `SACLOS` 可用。
@@ -1326,6 +1326,11 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | 字段 | 说明 | 类型 | 默认值 |
 | --- | --- | --- | --- |
 | `gps_spread_radius` | GPS 打击散布半径（格），使用正态分布。 | `float` | `0` |
+| `gps_modes` | GPS 目标模式列表（可写多个，玩家按**火控稳定器键** / GPS 面板 / 战术地图循环切换，大小写不敏感、无法识别的值忽略、去重、最多取前 4 个；缺省或全部无效回退默认）。可用值：<br>• `SINGLE`——单点：R 键锁定即覆盖装订点，所有发射弹打同一点；<br>• `MULTI`——多点：R 键追加进目标列表，发射按序轮转分配到不同点，上限见 `multi_max_points`；<br>• `FAST`——**快速打击**（需武器传感器 `rvp_fire_control_sensor_mode: "eo_ccip"`）：进入模式时清空全部 GPS 点、R 键不可标点；按**开火键**=观瞄射线命中方块处写入装订点并立即发射，射线落空则拒止发射并提示；<br>• `RADAR`——**雷达上行**（需 RF 传感器）：进入模式时清空全部 GPS 点、R 键走本体雷达锁定；发射瞬间把确认雷达硬锁目标（含外置雷达锁）的位置写为 GPS 目标点，并按 `radar_update_interval_second` 周期持续在途改靶——**已发射弹（实体态与超视距虚拟态）落点随锁定目标持续修正**；锁目标离地超过 25 格时不标记/不更新（反舰弹道导弹打水面舰船场景不受影响），锁丢失停止更新、保持最后坐标。 | `List<String>` | `["SINGLE","MULTI"]` |
+| `multi_max_points` | `MULTI` 模式目标点上限：标满后再标点为滑动窗口——新点成为末位、其余点依次前移、最旧的点丢弃。 | `int` | `8` |
+| `radar_update_interval_second` | `RADAR` 模式在途改靶间隔（秒）：雷达锁定期间按该周期把锁目标当前位置写入已发射弹的 GPS 目标点（写"修正真值"，不重掷 `gps_spread_radius` 散布）。 | `float` | `5` |
+
+**模式门禁与循环规则（2026-10-02）**：`FAST` 与 `RADAR` 受武器传感器门禁——`FAST` 要求 `rvp_fire_control_sensor_mode: "eo_ccip"`，`RADAR` 要求传感器为 `RF`；同一武器站传感器单选，两者互斥，故**最多可配置 4 种、最多同时生效 3 种**。循环切换只在"已配置 ∩ 过门禁"的序列内进行，不满足门禁的模式被跳过；服务端对模式切换包做同规则校验（非法切换忽略并回发当前状态）。 | | |
 
 #### `RVP_GuidanceDataARM`（`ARM`）
 
@@ -1368,24 +1373,27 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | `seeker_shut_off_time` | 失去制导后导引头关闭时长（tick），关闭结束后重启主动搜索复锁；`null` 表示失锁后立即恢复搜索。 | `Integer` | `null` |
 | `chaff_resistance` | 导引头对箔条目标的锁定抗性（0~1）：ARH/AIR 开启导引头后可锁箔条，但按此值施加评分罚分（越大优先级越低，非完全不可锁）。默认 `0.5`，具备相当的抗箔条能力。 | `float` | `0.5` |
 
-#### PRESET 三段式弹道（弹道导弹巡航）
+#### PRESET 弹道导弹弹道（弹道导弹巡航）
 
-弹道导弹（通常搭配 `guidance_type: GPS`）可启用**上升 → 巡航 → 俯冲**三段式弹道。**总开关为 `preset_cruise_altitude`**：`> 0` 即启用，`0`（默认）禁用。以下字段均写在 `guidance_data` 顶层。
+弹道导弹（`guidance_type: GPS`）可启用 **PRESET 抛物线弹道**。**总开关为 `preset_cruise_altitude`**：`> 0` 即启用，`0`（默认）禁用。以下字段均写在 `guidance_data` 顶层。
+
+**弹道形态（当前实现）**：对称抛物线——上升+中段合一，无三段硬切换、无平飞段。目标高度 = `发射点Y + base + (apogee − base)·4p(1−p)`，p 为水平进度（0 发射点 → 1 目标），顶点 apogee 在弹道水平中段，base = min(40, apogee×0.3)。实体端与虚拟中段（`RVP_BallisticTrajectoryMath`）共用同一公式与蛇形相位；已知差异：apogee 的射程比例上限实体端 0.50、虚拟端 0.35。远程弹建议搭配 `virtual_midcourse_data`（`FIXED_SNAPSHOT`）走虚拟中段，并配 `rotate_to_motion: true`、负 `gravity`、`altitude_drag_factor` 高空低值、`rvp_maxg`（同时影响俯冲启动距离与转向）、`max_guidance_angle` ≥ 90。
 
 | 字段 | 说明 | 类型 | 默认值 |
 | --- | --- | --- | --- |
-| `preset_cruise_altitude` | 巡航高度（相对发射点 Y，格）。**`> 0` 启用 PRESET 三段式弹道**，`0` 禁用。 | `float` | `0` |
-| `preset_max_ascent_lead` | 上升段前伸量上限（格），实际取 `min(值, 25% × 水平距离)`。 | `float` | `64` |
-| `preset_ascent_radius` | 上升段完成判定半径（格）。 | `float` | `24` |
+| `preset_cruise_altitude` | 弹道顶点高度基准（相对发射点 Y，格）。**`> 0` 启用 PRESET 抛物线弹道**，`0` 禁用；实际顶点 = min(本值, 水平射程 × 上限)（实体端 0.50 / 虚拟端 0.35）。 | `float` | `0` |
+| `preset_max_ascent_lead` | 中段追点前视距离上限（格）：追点 = 当前位置沿目标方向前看 `min(值, 30% × 剩余水平距离)`，高度取抛物线高度。 | `float` | `64` |
+| `preset_ascent_radius` | 上升段完成判定半径（格）。**当前抛物线实现未消费**（旧巡航式三段制遗留字段，随配置透传虚拟端）。 | `float` | `24` |
 | `preset_dive_radius` | 俯冲段最小启动水平距离（格）。 | `float` | `24` |
 | `preset_dive_altitude_factor` | 俯冲距离 = 高度差 × 该因子。 | `float` | `0.75` |
-| `preset_dive_lead_factor` | 俯冲距离 = 近似转弯半径 × 该因子。 | `float` | `1.5` |
-| `preset_cruise_altitude_gain` | 巡航段高度闭环 P 增益（越大收敛越快，过大易震荡）。 | `float` | `0.002` |
-| `preset_cruise_vertical_damping` | 巡航段高度闭环 D 阻尼（抑制高度震荡）。 | `float` | `0.05` |
-| `preset_cruise_max_vertical_component` | 垂直分量占速率的比例上限（0~1），限制爬升/俯冲的陡峭程度。 | `float` | `0.5` |
+| `preset_dive_lead_factor` | 俯冲距离 = 近似转弯半径 × 该因子（配 `rvp_maxg` 时半径 = speed²/(maxG×G)，否则 speed/turning_factor；均钳 8~80 格）。 | `float` | `1.5` |
+| `preset_cruise_altitude_gain` | 巡航段高度闭环 P 增益。**当前抛物线实现未消费**（旧巡航闭环遗留字段）。 | `float` | `0.002` |
+| `preset_cruise_vertical_damping` | 巡航段高度闭环 D 阻尼。**当前抛物线实现未消费**（遗留字段）。 | `float` | `0.05` |
+| `preset_cruise_max_vertical_component` | 垂直分量占速率的比例上限（0~1）。**当前抛物线实现未消费**（遗留字段）。 | `float` | `0.5` |
 | `preset_tactical_maneuver_amplitude` | 弹道中段战术机动（横向蛇形规避摆动）幅度（格）；`0` = 关闭。 | `float` | `0` |
 
 > 除 `preset_cruise_altitude` 外，以上参数**仅在 PRESET 启用**（巡航高度 > 0）时生效。全部字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
+> **俯冲启动**：距目标水平距离 ≤ max(`preset_dive_radius`, 垂直高度差×`preset_dive_altitude_factor`, 转弯半径×`preset_dive_lead_factor`)，或已越过目标；末端越过/极近时锁定水平方向全力下压，禁止翻转绕圈。现役范例：`9k720_9m723.json`（顶点 550 / 前视 25 / `preset_dive_altitude_factor` 0.3）。
 
 #### 示例
 
