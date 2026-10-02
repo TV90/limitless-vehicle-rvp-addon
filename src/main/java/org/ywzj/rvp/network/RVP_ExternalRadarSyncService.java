@@ -266,9 +266,9 @@ public final class RVP_ExternalRadarSyncService {
         // phase 模式改 O(实体) 扫描（避免 ±maxScanDistance 大箱子）；非 phase 保留本体 detectTargets
         List<Entity> targets = phaseMode
                 ? RVP_RadarScanHelper.scanRadarArea(allEntities, relayVehicle, radarUnit.worldRadarPosition(),
-                radarUnit.getMaxScanDistance(), pos -> isWithinRelayRadarVolume(radarUnit, pos, true))
+                radarUnit.getMaxScanDistance(), (entity, pos) -> isWithinRelayRadarVolume(radarUnit, entity, pos, true))
                 : Radar.detectTargets(relayVehicle, radarUnit.worldRadarPosition(), radarUnit.getMaxScanDistance(), radarUnit.isAntiGround(),
-                pos -> isWithinRelayRadarVolume(radarUnit, pos, false));
+                pos -> isWithinRelayRadarVolume(radarUnit, null, pos, false));
         targets.removeIf(entity -> entity instanceof RVP_BaseBullet bullet && !bullet.isRadarDetectableAmmo());
         appendAmmoTargets(radarUnit, relayVehicle, targets, !phaseMode);
         // 干扰物雷达可扫描性：热焰弹不入表、箔条入表
@@ -277,8 +277,8 @@ public final class RVP_ExternalRadarSyncService {
         return targets;
     }
 
-    private static boolean isWithinRelayRadarVolume(RadarUnit radarUnit, Vec3 targetPos, boolean phaseMode) {
-        if (!isWithinScanHeight(radarUnit, targetPos)) {
+    private static boolean isWithinRelayRadarVolume(RadarUnit radarUnit, Entity target, Vec3 targetPos, boolean phaseMode) {
+        if (!isWithinScanHeight(radarUnit, target, targetPos)) {
             return false;
         }
         Vec2 aimRot = radarUnit.aimRot(targetPos);
@@ -315,23 +315,9 @@ public final class RVP_ExternalRadarSyncService {
         return yaw;
     }
 
-    private static boolean isWithinScanHeight(RadarUnit radarUnit, Vec3 targetPos) {
-        float minHeight = 25f;
-        float maxHeight = 10000f;
-        RadarUnitData data = radarUnit.getData();
-        if (data instanceof RadarUnitDataExt ext) {
-            minHeight = ext.ywzj_rvp$getScanMinHeight();
-            maxHeight = ext.ywzj_rvp$getScanMaxHeight();
-        }
-        if (maxHeight < minHeight) {
-            float swap = minHeight;
-            minHeight = maxHeight;
-            maxHeight = swap;
-        }
-        int groundY = radarUnit.getVehicle().level().getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
-                (int) Math.floor(targetPos.x), (int) Math.floor(targetPos.z));
-        double heightAboveGround = targetPos.y - groundY;
-        return heightAboveGround >= minHeight && heightAboveGround <= maxHeight;
+    /** 委托公共实现（2026-10-03）：scan_sea 海面搜索旁路在 RVP_RadarScanHelper 统一维护，防多副本漂移。 */
+    private static boolean isWithinScanHeight(RadarUnit radarUnit, Entity target, Vec3 targetPos) {
+        return org.ywzj.rvp.radar.RVP_RadarScanHelper.isWithinScanHeight(radarUnit, target, targetPos);
     }
 
     private static void appendAmmoTargets(RadarUnit radarUnit, AbstractVehicle relayVehicle, List<Entity> targets, boolean requireTrackingLine) {
@@ -363,7 +349,7 @@ public final class RVP_ExternalRadarSyncService {
             if (pos.distanceToSqr(radarPos) > effectiveMaxSqr) {
                 continue;
             }
-            if (!isWithinScanHeight(radarUnit, pos)) {
+            if (!isWithinScanHeight(radarUnit, bullet, pos)) {
                 continue;
             }
             Vec2 aimRot = radarUnit.aimRot(pos);

@@ -11,6 +11,7 @@ import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.weapon.BulletEntity;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -34,6 +36,14 @@ public final class RVP_RadarScanHelper {
     }
 
     /**
+     * scan_sea 海面搜索模式的 RCS 门槛：目标 RCS 综合值
+     * （{@link RVP_AspectRcs#combinedFactor}，2026-10-03 起不封顶）≥ 此值即视为大型水面目标
+     * （舰船 500~1000），开启 {@code scan_sea} 的雷达可绕过最低扫描高度门扫描与锁定；
+     * 地面目标（RCS ~1）不会误触发。
+     */
+    public static final float SCAN_SEA_RCS_THRESHOLD = 500.0F;
+
+    /**
      * 雷达是否配置为仅扫描/跟踪载具（雷达参数 {@code scan_vehicle_only=true}）。
      * 为 true 时扫描与接触保活只保留 {@link org.ywzj.vehicle.entity.vehicle.AbstractVehicle}
      * 目标，排除弹药、箔条干扰物等非载具实体。
@@ -44,6 +54,16 @@ public final class RVP_RadarScanHelper {
     }
 
     public static boolean isWithinScanHeight(RadarUnit radar, Vec3 targetPos) {
+        return isWithinScanHeight(radar, null, targetPos);
+    }
+
+    /**
+     * 扫描高度门（带目标实体重载，2026-10-03）：目标 RCS 综合值 ≥ {@link #SCAN_SEA_RCS_THRESHOLD}
+     * 且雷达开启 {@code scan_sea} 时豁免最低扫描高度（海平面 0 离地的舰船可被扫描与锁定），
+     * 最高扫描高度仍生效。旁路只认 {@link RVP_AspectRcs#combinedFactor} 原始值（不封顶）；
+     * 扫描与保活共用本实现，"扫到后不会被保活门踢出"。
+     */
+    public static boolean isWithinScanHeight(RadarUnit radar, Entity target, Vec3 targetPos) {
         float minHeight = 25f;
         float maxHeight = 10000f;
         RadarUnitData data = radar.getData();
@@ -59,7 +79,23 @@ public final class RVP_RadarScanHelper {
         double groundY = radar.getVehicle().level().getHeight(Heightmap.Types.MOTION_BLOCKING,
                 (int) Math.floor(targetPos.x), (int) Math.floor(targetPos.z));
         double heightAboveGround = targetPos.y - groundY;
+        if (heightAboveGround < minHeight && isScanSeaLargeTarget(radar, target)) {
+            // scan_sea 旁路：仅豁免最低扫描高度（最高高度仍生效）
+            return heightAboveGround <= maxHeight;
+        }
         return heightAboveGround >= minHeight && heightAboveGround <= maxHeight;
+    }
+
+    /** scan_sea 判定：雷达开启海面搜索模式，且目标是 RCS 综合值 ≥ {@link #SCAN_SEA_RCS_THRESHOLD} 的载具。 */
+    private static boolean isScanSeaLargeTarget(RadarUnit radar, Entity target) {
+        if (!(target instanceof AbstractVehicle targetVehicle)) {
+            return false;
+        }
+        RadarUnitData data = radar.getData();
+        if (!(data instanceof RadarUnitDataExt ext) || !ext.ywzj_rvp$isScanSea()) {
+            return false;
+        }
+        return RVP_AspectRcs.combinedFactor(targetVehicle, radar.worldRadarPosition()) >= SCAN_SEA_RCS_THRESHOLD;
     }
 
     public static float normalizeYawForLimits(float yaw, float yMin, float yMax) {
@@ -122,7 +158,7 @@ public final class RVP_RadarScanHelper {
             if (targetPos.distanceToSqr(radarPos) > effectiveMaxSqr) {
                 continue;
             }
-            if (!isWithinScanHeight(radar, targetPos)) {
+            if (!isWithinScanHeight(radar, bullet, targetPos)) {
                 continue;
             }
             Vec2 aimRot = radar.aimRot(targetPos);
@@ -169,7 +205,7 @@ public final class RVP_RadarScanHelper {
      * @param allEntities 已加载实体清单（调用方从 ServerLevel / ClientLevel 的 getEntities().getAll() 取）
      */
     public static List<Entity> scanRadarArea(Iterable<Entity> allEntities, Entity radarOwner, Vec3 radarPos,
-                                             double maxScanDistance, Function<Vec3, Boolean> check) {
+                                             double maxScanDistance, BiFunction<Entity, Vec3, Boolean> check) {
         List<Entity> out = new ArrayList<>();
         double maxSqr = maxScanDistance * maxScanDistance;
         for (Entity entity : allEntities) {
@@ -181,7 +217,7 @@ public final class RVP_RadarScanHelper {
                     || entity.distanceToSqr(radarOwner) > maxSqr) {
                 continue;
             }
-            if (Boolean.TRUE.equals(check.apply(entity.getBoundingBox().getCenter()))) {
+            if (Boolean.TRUE.equals(check.apply(entity, entity.getBoundingBox().getCenter()))) {
                 out.add(entity);
             }
         }
@@ -213,7 +249,7 @@ public final class RVP_RadarScanHelper {
             if (targetPos.distanceToSqr(radarPos) > maxScanDistanceSqr) {
                 continue;
             }
-            if (!isWithinScanHeight(radar, targetPos)) {
+            if (!isWithinScanHeight(radar, decoy, targetPos)) {
                 continue;
             }
             Vec2 aimRot = radar.aimRot(targetPos);

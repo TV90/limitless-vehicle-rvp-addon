@@ -298,7 +298,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 Entity rcsReference = targetEntity != null ? targetEntity : designated;
                 if (rcsReference instanceof AbstractVehicle rcsVehicle) {
                     effectiveActivation = activeRadarActivationRange
-                            * RVP_AspectRcs.combinedFactor(rcsVehicle, position());
+                            * RVP_AspectRcs.detectionFactor(rcsVehicle, position());
                 }
                 // 干扰判定段：进入原定开机距离、尚未到有效开机距离
                 countermeasurePhaseActive = distToRef <= activeRadarActivationRange;

@@ -142,7 +142,7 @@ final class RVP_RuntimeSeekerSupport {
             // 仅雷达导引头分支生效；AIR 主动红外不受 RCS 影响。非载具（HBM 导弹）因子 1。
             double effectiveRange = range;
             if (entity instanceof AbstractVehicle targetVehicle) {
-                effectiveRange = range * RVP_AspectRcs.combinedFactor(targetVehicle, pos);
+                effectiveRange = range * RVP_AspectRcs.detectionFactor(targetVehicle, pos);
             }
             if (entity.distanceToSqr(projectile) > effectiveRange * effectiveRange) {
                 continue;

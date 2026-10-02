@@ -229,7 +229,7 @@ public final class GunnerExternalRadarController {
             if (!isHostileRelayTarget(launcher, entity, gunner, observations)) {
                 continue;
             }
-            double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(vehicle, radarPos);
+            double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.detectionFactor(vehicle, radarPos);
             Vec3 center = entity.getBoundingBox().getCenter();
             double distSqr = center.distanceToSqr(radarPos);
             if (distSqr > effectiveRange * effectiveRange) {
@@ -264,7 +264,7 @@ public final class GunnerExternalRadarController {
         if (targetPos.distanceToSqr(radarPos) > maxRange * maxRange) {
             return false;
         }
-        if (!isWithinScanHeight(radarUnit, targetPos)) {
+        if (!isWithinScanHeight(radarUnit, target, targetPos)) {
             return false;
         }
         Vec2 aimRot = radarUnit.aimRot(targetPos);
@@ -290,12 +290,12 @@ public final class GunnerExternalRadarController {
         Vec3 radarPos = radarUnit.worldRadarPosition();
         Vec3 targetPos = target.getBoundingBox().getCenter();
         double maxRange = radarUnit.getMaxScanDistance();
-        double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(
+        double effectiveRange = maxRange * org.ywzj.rvp.radar.RVP_AspectRcs.detectionFactor(
                 target instanceof AbstractVehicle targetVehicle ? targetVehicle : null, radarPos);
         if (targetPos.distanceToSqr(radarPos) > effectiveRange * effectiveRange) {
             return false;
         }
-        if (!isWithinScanHeight(radarUnit, targetPos)) {
+        if (!isWithinScanHeight(radarUnit, target, targetPos)) {
             return false;
         }
         Vec2 aimRot = radarUnit.aimRot(targetPos);
@@ -318,25 +318,9 @@ public final class GunnerExternalRadarController {
         return data instanceof RadarUnitDataExt ext ? ext.ywzj_rvp$getScanMaxHeight() : 10000f;
     }
 
-    private static boolean isWithinScanHeight(RadarUnit radarUnit, Vec3 targetPos) {
-        float minHeight = 25f;
-        float maxHeight = 10000f;
-        RadarUnitData data = radarUnit.getData();
-        if (data instanceof RadarUnitDataExt ext) {
-            minHeight = ext.ywzj_rvp$getScanMinHeight();
-            maxHeight = ext.ywzj_rvp$getScanMaxHeight();
-        }
-        if (maxHeight < minHeight) {
-            float swap = minHeight;
-            minHeight = maxHeight;
-            maxHeight = swap;
-        }
-        int groundY = radarUnit.getVehicle().level().getHeight(
-                Heightmap.Types.MOTION_BLOCKING,
-                Mth.floor(targetPos.x),
-                Mth.floor(targetPos.z));
-        double agl = targetPos.y - groundY;
-        return agl >= minHeight && agl <= maxHeight;
+    /** 委托公共实现（2026-10-03）：scan_sea 海面搜索旁路在 RVP_RadarScanHelper 统一维护，防多副本漂移。 */
+    private static boolean isWithinScanHeight(RadarUnit radarUnit, Entity target, Vec3 targetPos) {
+        return org.ywzj.rvp.radar.RVP_RadarScanHelper.isWithinScanHeight(radarUnit, target, targetPos);
     }
 
     private static boolean isYawWithin(float y, float yMin, float yMax) {

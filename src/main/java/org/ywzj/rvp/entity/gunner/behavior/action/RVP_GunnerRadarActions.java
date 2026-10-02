@@ -98,7 +98,7 @@ public final class RVP_GunnerRadarActions {
         // 发射授权都由本车锁决定，96L6 搜索中继不再顶替）；出烧穿距离按"探测难跟踪易"
         // 保持 100t（5 秒）宽限再脱锁（镜像客户端链 LOCKED_TRACK_GRACE_TICKS 语义），
         // 避免在烧穿边界反复闪烁。非隐身目标（因子 1.0）行为与旧裸距离门一致。
-        double burnThroughRange = maxRange * RVP_AspectRcs.combinedFactor(
+        double burnThroughRange = maxRange * RVP_AspectRcs.detectionFactor(
                 lockTarget instanceof AbstractVehicle targetVehicle ? targetVehicle : null,
                 radar.worldRadarPosition());
         long now = vehicle.level().getGameTime();

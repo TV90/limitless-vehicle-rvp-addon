@@ -156,7 +156,7 @@ public final class GunnerTargeting {
         // 独立候选进入索敌；原实现对非载具实体直接放行、不吃分角度 RCS，导致 AI 在
         // 全索敌半径（有中继时 3500 格）"感知到驾驶员"而载具隐身失效（AI 驾驶员是
         // GunnerEntity 非 Player，反向无此洞，造成"AI 看得见我、我看不见 AI"的不对称）。
-        // 修复：候选骑乘在载具上时，RCS 因子按所乘载具的 combinedFactor 判定；
+        // 修复：候选骑乘在载具上时，RCS 距离因子按所乘载具的 detectionFactor（封顶 1.0）判定；
         // 真正的步行玩家/弹药维持原"直接放行"。
         AbstractVehicle effectiveVehicle = entity instanceof AbstractVehicle targetVehicle
                 ? targetVehicle
@@ -164,7 +164,7 @@ public final class GunnerTargeting {
         if (effectiveVehicle == null) {
             return true;
         }
-        double factor = RVP_AspectRcs.combinedFactor(effectiveVehicle, observer.position());
+        double factor = RVP_AspectRcs.detectionFactor(effectiveVehicle, observer.position());
         double effective = radius * factor;
         double distSqr = observer.position().distanceToSqr(entity.position());
         if (distSqr > effective * effective) {

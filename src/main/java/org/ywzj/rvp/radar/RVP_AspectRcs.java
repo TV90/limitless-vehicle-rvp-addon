@@ -21,14 +21,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li>顶层 {@code rvp_radar_rcs_factor: [front, side, rear]}：分角度因子。方位角 =
  *       载具 yRot 前向单位向量与"载具→观察者"水平连线向量的夹角，段内（0~90°、90~180°）
- *       按 sin³ 缓动插值（左右对称、无俯仰维度），结果钳 [0.01,10]；</li>
+ *       按 sin³ 缓动插值（左右对称、无俯仰维度），单档钳 [0.01,10000]；</li>
  *   <li>弹舱部件条目 {@code open_radar_rcs_multiplier}：该弹舱<b>开启时</b>的 RCS 增幅倍率
  *       （逐弹舱独立，如隐身化侧弹舱小、主弹舱大），取所有开启弹舱倍率的连乘。</li>
  * </ul>
  *
- * <p>{@link #combinedFactor} = 分角度因子 × 弹舱增幅连乘，消费方将原距离上限乘以该值：
- * 客户端雷达探测表后过滤（mechanical/phase 通用）与 ARH 主动雷达导引头获取距离
- * （仅 {@code scanRadarTarget} 雷达分支，AIR 主动红外不受影响）。本体
+ * <p>{@link #combinedFactor} = 分角度因子 × 弹舱增幅连乘，<b>2026-10-03 定版：综合值不封顶
+ * 1</b>——保留原始量级作 scan_sea 大型目标判定（≥ {@code SCAN_SEA_RCS_THRESHOLD} 绕过最低
+ * 扫描高度门）等标识用途；与雷达扫描距离相乘的距离类消费方（发现距离/烧穿门/感知半径/
+ * ARH 获取距离）一律改用 {@link #detectionFactor}（封顶 1.0），确保距离不超标称量程。本体
  * {@code physics_info.radar_cross_section} 继续独立乘算，双栈并存。</p>
  *
  * <p>解析挂 {@code VehicleDataManagerMixin} 数据包 apply 链尾（双端各自执行），存储用
@@ -69,9 +70,9 @@ public final class RVP_AspectRcs {
         if (obj.has("rvp_radar_rcs_factor") && obj.get("rvp_radar_rcs_factor").isJsonArray()) {
             JsonArray arr = obj.getAsJsonArray("rvp_radar_rcs_factor");
             if (arr.size() >= 3) {
-                front = Mth.clamp(arr.get(0).getAsFloat(), 0.01F, 10.0F);
-                side = Mth.clamp(arr.get(1).getAsFloat(), 0.01F, 10.0F);
-                rear = Mth.clamp(arr.get(2).getAsFloat(), 0.01F, 10.0F);
+                front = Mth.clamp(arr.get(0).getAsFloat(), 0.01F, 10000.0F);
+                side = Mth.clamp(arr.get(1).getAsFloat(), 0.01F, 10000.0F);
+                rear = Mth.clamp(arr.get(2).getAsFloat(), 0.01F, 10000.0F);
                 hasAspect = true;
             }
         }
@@ -158,9 +159,21 @@ public final class RVP_AspectRcs {
                 }
             }
         }
-        // 目的：连乘后封顶 1（2026-09-16 用户定版）——弹舱开启只能吃掉隐身裕度、
-        // 让 RCS 回到"不隐身"基准，不会比不隐身更显眼。
-        return Mth.clamp(aspect * bayFactor, 0.01D, 1.0D);
+        // 目的：综合值【不再封顶 1】（2026-10-03 用户定版）——保留原始量级供 scan_sea
+        // 大型目标判定（≥ SCAN_SEA_RCS_THRESHOLD 绕过最低扫描高度门）等标识用途；
+        // 与扫描距离相乘的距离类消费方必须改用 detectionFactor（封顶 1.0）。
+        // 下限 0.01 防零/负。
+        return Math.max(aspect * bayFactor, 0.01D);
+    }
+
+    /**
+     * 距离语义因子 = {@link #combinedFactor} 封顶 1.0（2026-10-03 用户定版）：
+     * 发现距离/烧穿门/感知半径/ARH 获取距离等"与雷达扫描距离相乘"的消费方一律用本方法，
+     * 确保距离不超过雷达标称量程；combinedFactor 的原始值（可 >1，如舰船 500~1000）
+     * 仅用于 scan_sea 阈值判定等标识场景。
+     */
+    public static double detectionFactor(AbstractVehicle vehicle, Vec3 observerPos) {
+        return Math.min(1.0D, combinedFactor(vehicle, observerPos));
     }
 
     /** 供外部判断载具是否配置了剖面（未配置 = 无隐身行为）。 */

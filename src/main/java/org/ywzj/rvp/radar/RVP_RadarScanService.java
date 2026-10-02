@@ -115,7 +115,7 @@ public final class RVP_RadarScanService {
                 continue;
             }
             detectedObject.detectedPosition = targetEntity.getBoundingBox().getCenter();
-            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, detectedObject.detectedPosition)) {
+            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, targetEntity, detectedObject.detectedPosition)) {
                 it.remove();
                 continue;
             }
@@ -180,8 +180,8 @@ public final class RVP_RadarScanService {
             float sectorHalf = radar.getScanSectorAngle() / 2.0f;
             float yMin = radar.getYRotMin();
             float yMax = radar.getYRotMax();
-            List<Entity> targets = RVP_RadarScanHelper.scanRadarArea(allEntities, vehicle, radarPos, radar.getMaxScanDistance(), entityPos -> {
-                if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entityPos)) {
+            List<Entity> targets = RVP_RadarScanHelper.scanRadarArea(allEntities, vehicle, radarPos, radar.getMaxScanDistance(), (entity, entityPos) -> {
+                if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entity, entityPos)) {
                     return false;
                 }
                 Vec2 aimRot = radar.aimRot(entityPos);

@@ -56,6 +56,12 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Unique
     public boolean ywzj_rvp$scanVehicleOnly = false;
 
+    /** 海面搜索模式：true 时 RCS 综合值 ≥ SCAN_SEA_RCS_THRESHOLD（500）的大型目标（舰船）
+     * 不受最低扫描高度门限制，海平面 0 离地也可被扫描与锁定。默认 false。 */
+    @SerializedName("scan_sea")
+    @Unique
+    public boolean ywzj_rvp$scanSea = false;
+
     @Override
     public String ywzj_rvp$getRadarRole() {
         return ywzj_rvp$radarRole;
@@ -109,5 +115,10 @@ public class RadarUnitPojoMixin implements RadarUnitPojoExt {
     @Override
     public boolean ywzj_rvp$isScanVehicleOnly() {
         return ywzj_rvp$scanVehicleOnly;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isScanSea() {
+        return ywzj_rvp$scanSea;
     }
 }

@@ -20,4 +20,5 @@ public interface RadarUnitPojoExt {
     float ywzj_rvp$getScanMaxHeight();
     float ywzj_rvp$getChaffResistance();
     boolean ywzj_rvp$isScanVehicleOnly();
+    boolean ywzj_rvp$isScanSea();
 }

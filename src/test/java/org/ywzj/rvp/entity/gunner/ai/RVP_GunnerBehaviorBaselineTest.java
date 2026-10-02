@@ -439,7 +439,7 @@ class RVP_GunnerBehaviorBaselineTest {
         // 本车烧穿发射门（2026-09-16）：获取距离 = maxScanDistance × 目标 RCS 因子，
         // 出烧穿距离保持 100t（5 秒）宽限再脱锁（探测难跟踪易）。
         assertContainsAll(radar,
-                "maxRange * RVP_AspectRcs.combinedFactor(",
+                "maxRange * RVP_AspectRcs.detectionFactor(",  // 2026-10-03 定版：距离语义封顶 1.0
                 "BURN_THROUGH_GRACE_TICKS = 100L;");
         assertContainsAll(vehicleService,
                 "private static final int TICK_INTERVAL = 5;",

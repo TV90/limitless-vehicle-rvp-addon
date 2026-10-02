@@ -271,7 +271,7 @@ public final class RVP_ClientRadarTickHandler {
     /**
      * [RVP] 分角度 RCS 后过滤（2026-09-16，phase/非 phase 通用）：把"距离 > 雷达
      * max_scan_distance × 综合隐身因子（rvp_radar_rcs_factor 分角度插值 × 开启弹舱增幅，
-     * 见 {@link RVP_AspectRcs#combinedFactor}）"的<b>载具</b>条目从探测表移除。
+     * 见 {@link RVP_AspectRcs#detectionFactor}，封顶 1.0）"的<b>载具</b>条目从探测表移除。
      * 豁免：当前锁定目标（探测难、跟踪易——对标本体 MCHR 隐身机语义）与 RVP 弹体
      * （有自己的信号尺寸机制）。本体每 tick 重填探测表，本过滤在其后每 tick 执行，
      * 保证渲染与锁定候选拿到的表已裁剪。
@@ -287,7 +287,7 @@ public final class RVP_ClientRadarTickHandler {
             if (!(target instanceof AbstractVehicle targetVehicle) || !target.isAlive()) {
                 continue;
             }
-            double factor = RVP_AspectRcs.combinedFactor(targetVehicle, radarPos);
+            double factor = RVP_AspectRcs.detectionFactor(targetVehicle, radarPos);
             double effectiveRange = maxScan * factor;
             boolean withinBurnThrough = radarPos.distanceToSqr(target.position()) <= effectiveRange * effectiveRange;
             boolean isLockedTarget = locked != null && target.getId() == locked.getId();
@@ -381,7 +381,7 @@ public final class RVP_ClientRadarTickHandler {
                 continue;
             }
             detectedObject.detectedPosition = targetEntity.getBoundingBox().getCenter();
-            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, detectedObject.detectedPosition)) {
+            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, targetEntity, detectedObject.detectedPosition)) {
                 it.remove();
                 continue;
             }
@@ -436,8 +436,8 @@ public final class RVP_ClientRadarTickHandler {
         float yMax = radar.getYRotMax();
         float sectorHalf = radar.getScanSectorAngle() / 2.0f;
         List<Entity> entities = RVP_RadarScanHelper.scanRadarArea(allEntities, radar.getVehicle(), radarPos,
-                radar.getMaxScanDistance(), entityPos -> {
-            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entityPos)) {
+                radar.getMaxScanDistance(), (entity, entityPos) -> {
+            if (!RVP_RadarScanHelper.isWithinScanHeight(radar, entity, entityPos)) {
                 return false;
             }
             Vec2 aimRot = radar.aimRot(entityPos);

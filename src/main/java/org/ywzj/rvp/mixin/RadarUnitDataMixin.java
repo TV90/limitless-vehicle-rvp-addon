@@ -46,6 +46,9 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Unique
     private boolean ywzj_rvp$scanVehicleOnly = false;
 
+    @Unique
+    private boolean ywzj_rvp$scanSea = false;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/RadarUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(RadarUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof RadarUnitPojoExt ext) {
@@ -60,6 +63,7 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
             this.ywzj_rvp$scanMaxHeight = ext.ywzj_rvp$getScanMaxHeight();
             this.ywzj_rvp$chaffResistance = ext.ywzj_rvp$getChaffResistance();
             this.ywzj_rvp$scanVehicleOnly = ext.ywzj_rvp$isScanVehicleOnly();
+            this.ywzj_rvp$scanSea = ext.ywzj_rvp$isScanSea();
         }
     }
 
@@ -136,5 +140,10 @@ public class RadarUnitDataMixin implements RadarUnitDataExt {
     @Override
     public boolean ywzj_rvp$isScanVehicleOnly() {
         return ywzj_rvp$scanVehicleOnly;
+    }
+
+    @Override
+    public boolean ywzj_rvp$isScanSea() {
+        return ywzj_rvp$scanSea;
     }
 }
