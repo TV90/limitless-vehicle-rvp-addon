@@ -9,6 +9,7 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -47,27 +48,16 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
     private static final int MAX_SAMPLES = 600;
 
     /**
-     * 水下爆炸巨大水幕（<b>MCHR {@code effectExplosionInWater:364} 逐字复刻</b>，2026-10-02 三版）：
-     * 前两版"水花太小"的根因不是数量而是<b>粒子形态</b>——MCHR splash 粒子是 0.5 格大、
-     * 4~20 秒长寿的白色大颗粒（爆球内每个水方块 0~1 粒，穹顶式升腾），原版 SPLASH/CLOUD
-     * 是 0.1 格、1~3 秒的小水珠，怎么调数量都出不了"一面水幕"。
+     * 水下爆炸水幕：在爆炸影响范围的水面上采样，再从水面下 0~1 格生成主水幕粒子。
      *
-     * <p>MCHR 主循环与速度公式逐字照抄：</p>
-     * <pre>range = round(radius);
-     * for (x,y,z) ∈ [-range,range]³ 且 x²+y²+z² < range² 且该方块为水：
-     *     n = nextInt(2);  // 0~1 粒
-     *     motionX/Z = x/range × (rand - 0.2);   // 向外漂
-     *     motionY   = 1.0 - √(x²+z²)/range + rand × 0.16 × range;  // 中心冲天、边缘悬停 → 穹顶</pre>
+     * <p>当前主水幕不再遍历整个三维水球。每个水平水柱最多生成一枚粒子，粒子使用
+     * MCHR 风格的中心冲高、边缘外扩速度；所有水幕粒子先使用 3~6 倍随机尺寸，
+     * 再按距爆心的平滑阻尼向外围减小。
+     * 水下气泡仍作为独立细节层保留在爆心附近。</p>
      *
-     * <p>粒子载体 = {@link RVP_MchrSmokeParticle#ofSplash} 白色变体（零新粒子类、零新贴图——
-     * MCHR 专用白色 splash 贴图不迁移，smoke 贴图白色调色 = 浅白水雾）：
-     * size 5~5.5（渲染半宽 0.5 格，固定不扩散）、寿命 80/(rand×0.8+0.2)+2 封顶 200 tick，
-     * 并启用 splash 专属物理（无阻尼 + 重力 -0.06/tick，水幕升而复落——首版误用烟物理
-     * 慢升不回落，2026-10-02 用户实测后改为 MCHR splash 物理逐字）。</p>
-     *
-     * <p>与 MCHR 的唯一偏差：MCHR 无数量上限（radius 30 核爆 ≈9 万水方块必卡死），此处加采样
-     * 概率 {@code p = min(1, 900/range³)}——radius ≤9 全量忠实（鱼雷 6 不受影响），大半径按
-     * 比例采样保 FPS。另保留少量气泡上涌作水下细节。</p>
+     * <p>主水幕复用 {@link RVP_MchrSmokeParticle#ofSplash} 白色变体，不增加贴图资源。
+     * 创建时按照实际初始高度、初始速度、重力和下降阻尼预估回落时间，寿命不会早于
+     * 回到水面的时刻。大半径仍通过采样上限与距离 LOD 控制客户端粒子数量。</p>
      */
     private static void spawnUnderwaterExplosionEffect(ClientLevel level, RandomSource random,
                                                        Vec3 center, float radius, float density) {
@@ -101,43 +91,97 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
                     (random.nextDouble() - 0.5) * 0.1);
         }
 
-        // ── 1) MCHR 主水幕：爆球内逐水方块生成白色大颗粒（逐字复刻 effectExplosionInWater）──
+        // ── 1) 水面主水幕：每个水平水柱在水面下 0~1 格随机出生 ──
         int range = (int) (radius + 0.5D);
+        range = Math.max(range, 1);
         int ex = (int) (center.x + 0.5D);
         int ey = (int) (center.y + 0.5D);
         int ez = (int) (center.z + 0.5D);
-        // 数量保护采样概率：range³ > 900 时按比例抽取（radius ≤9 全量 = 1.0，鱼雷 6 全量）
-        double spawnChance = Math.min(1.0D, 900.0D / (range * range * (double) range));
-        for (int y = -range; y <= range; y++) {
-            for (int x = -range; x <= range; x++) {
-                for (int z = -range; z <= range; z++) {
-                    int d = x * x + y * y + z * z;
-                    if (d >= range * range) {
-                        continue;
-                    }
-                    if (!level.getFluidState(BlockPos.containing(ex + x, ey + y, ez + z))
-                            .is(net.minecraft.tags.FluidTags.WATER)) {
-                        continue;
-                    }
-                    // MCHR：nextInt(2) → 每个水方块 0~1 粒（叠加采样概率保大半径 FPS）
-                    int n = random.nextInt(2);
-                    for (int i = 0; i < n; i++) {
-                        if (random.nextDouble() > spawnChance * splashCountScale) {
-                            continue;
-                        }
-                        // MCHR :380 速度公式逐字：中心 my≈1.0 冲天、边缘 my→0 悬停，水平向外漂
-                        double motionX = (double) x / (double) range * (random.nextDouble() - 0.2D);
-                        double motionY = 1.0D - Math.sqrt((double) (x * x + z * z)) / (double) range
-                                + random.nextDouble() * 0.4D * range * 0.4D;
-                        double motionZ = (double) z / (double) range * (random.nextDouble() - 0.2D);
-                        // MCHR splash 粒子参数（白 0.7~1.0 / scale 5~5.5 / 寿命 80/(r×0.8+0.2)+2 封顶 200）；
-                        // 实例粒子经 ParticleEngine.add 加入（同工厂主烟路径），绕过 32 格生成距离剔除
-                        Minecraft.getInstance().particleEngine.add(RVP_MchrSmokeParticle.ofSplash(level,
-                                ex + x, ey + y, ez + z, motionX, motionY, motionZ, splashSizeScale));
-                    }
+        double spawnChance = Math.min(1.0D, MAX_SAMPLES / (double) (range * range * 4))
+                * Math.min(1.0D, density) * splashCountScale;
+        for (int x = -range; x <= range; x++) {
+            for (int z = -range; z <= range; z++) {
+                if (x * x + z * z >= range * range) {
+                    continue;
                 }
+                double surfaceY = resolveWaterSurfaceY(level, ex + x, ey, ez + z);
+                if (!Double.isFinite(surfaceY) || random.nextInt(2) == 0
+                        || random.nextDouble() > spawnChance) {
+                    continue;
+                }
+
+                // 水面内随机横向采样，避免所有水幕粒子落在方块中心线上。
+                double spawnX = ex + x + random.nextDouble();
+                double spawnZ = ez + z + random.nextDouble();
+                double spawnY = surfaceY - random.nextDouble();
+                double horizontalX = spawnX - center.x;
+                double horizontalZ = spawnZ - center.z;
+                double horizontalDistance = Math.sqrt(horizontalX * horizontalX + horizontalZ * horizontalZ);
+                double radial = Math.min(horizontalDistance / (double) range, 1.0D);
+
+                // 中心区域冲高，外围水幕沿水平面向外扩散；外扩趋势由客户端调参倍率整体收敛。
+                double outwardSpreadScale = RVP_UnderwaterExplosionTuning.getOutwardSpreadScale();
+                double motionX = horizontalX / (double) range * (random.nextDouble() - 0.2D)
+                        * outwardSpreadScale;
+                // 竖直运动拆成总速度、中心高度轮廓、随机抬升三部分，均可由客户端命令即时调整。
+                double upwardProfile = (1.0D - radial)
+                        * RVP_UnderwaterExplosionTuning.getUpwardHeightScale();
+                double randomLift = random.nextDouble() * 0.16D * range
+                        * RVP_UnderwaterExplosionTuning.getUpwardRandomScale();
+                double motionY = (upwardProfile + randomLift)
+                        * RVP_UnderwaterExplosionTuning.getUpwardSpeedScale();
+                double motionZ = horizontalZ / (double) range * (random.nextDouble() - 0.2D)
+                        * outwardSpreadScale;
+
+                // 所有水幕粒子先随机放大，再按距爆心的平滑阻尼向外围缩小；距离 LOD 仍作用于最终尺寸。
+                float sizeMultiplier = RVP_UnderwaterExplosionPhysics.resolveSizeMultiplier(
+                        random.nextFloat(), horizontalDistance, radius);
+                float sizeScale = splashSizeScale * sizeMultiplier;
+                int returnTicks = RVP_UnderwaterExplosionPhysics.resolveReturnTicks(
+                        spawnY, surfaceY, motionY, RVP_UnderwaterExplosionTuning.getDownwardDamping());
+                int lifetime = RVP_UnderwaterExplosionPhysics.resolveLifetime(random, returnTicks);
+                // 直接加入粒子引擎，绕过原版 32 格生成距离剔除，保证远距水幕仍按 LOD 可见。
+                Minecraft.getInstance().particleEngine.add(RVP_MchrSmokeParticle.ofSplash(level,
+                        spawnX, spawnY, spawnZ, motionX, motionY, motionZ, sizeScale, lifetime, surfaceY));
             }
         }
+    }
+
+    /**
+     * 查找指定水平水柱顶部的流体面高度。
+     *
+     * @param level 客户端世界
+     * @param x 水柱方块 X 坐标
+     * @param startY 从爆心所在方块开始向上搜索
+     * @param z 水柱方块 Z 坐标
+     * @return 水面世界 Y 坐标；若该水平列上方找不到水体则返回非有限值
+     */
+    private static double resolveWaterSurfaceY(ClientLevel level, int x, int startY, int z) {
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(x, startY, z);
+        int maxY = level.getMaxBuildHeight() - 1;
+        int waterY = startY;
+        while (waterY <= maxY) {
+            cursor.set(x, waterY, z);
+            if (level.getFluidState(cursor).is(net.minecraft.tags.FluidTags.WATER)) {
+                break;
+            }
+            waterY++;
+        }
+        if (waterY > maxY) {
+            return Double.NaN;
+        }
+        int topY = waterY;
+        while (topY < maxY) {
+            cursor.set(x, topY + 1, z);
+            FluidState above = level.getFluidState(cursor);
+            if (!above.is(net.minecraft.tags.FluidTags.WATER)) {
+                break;
+            }
+            topY++;
+        }
+        cursor.set(x, topY, z);
+        FluidState surfaceFluid = level.getFluidState(cursor);
+        return topY + surfaceFluid.getHeight(level, cursor);
     }
 
     @Override
