@@ -53,7 +53,7 @@ public final class RVP_RemoteAmmoVisualBroadcastService {
     /** 弹药超视距视觉最远边界平方。 */
     private static final double EXTENDED_RANGE_SQ = EXTENDED_RANGE * EXTENDED_RANGE;
     /** 弹药进入超视距视觉所需的最低离地高度，单位格。 */
-    private static final double MIN_AGL = 100.0D;
+    private static final double MIN_AGL = 10.0D;  // 2026-10-04 用户定版：100 → 10（掠海弹可见）
 
     private RVP_RemoteAmmoVisualBroadcastService() {
     }
