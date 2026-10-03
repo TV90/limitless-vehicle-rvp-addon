@@ -20,9 +20,10 @@ import java.util.List;
  *
  * <ul>
  *   <li>SINGLE/MULTI：恒可用（默认配置，存量武器行为不变）；</li>
- *   <li>FAST：武器数据 {@code rvp_fire_control_sensor_mode == "eo_ccip"}；</li>
- *   <li>RADAR：{@code RVP_WeaponSensorHelper.effectiveOrStatic(unit) == RF}——eo_ccip 动态
- *       模式只解析为 EO/CCIP，永不与 RADAR 同时可用。</li>
+ *   <li>FAST：CCIP 系传感器——武器数据 {@code rvp_fire_control_sensor_mode == "eo_ccip"}
+ *       动态模式，或有效传感器为静态 {@code ccip}（2026-10-03 放宽，任一即可）；</li>
+ *   <li>RADAR：{@code RVP_WeaponSensorHelper.effectiveOrStatic(unit) == RF}——CCIP 系传感器
+ *       （静态 ccip / eo_ccip）均不解析为 RF，永不与 RADAR 同时可用。</li>
  * </ul>
  *
  * <p>双端可用：客户端用于模式循环切换与 UI，服务端用于 {@code C2SSetGPSTarget.SET_MODE}
@@ -51,9 +52,12 @@ public final class RVP_GpsModeSupport {
                                         Mode mode) {
         return switch (mode) {
             case SINGLE, MULTI -> true;
-            // FAST 要求武器配置 eo_ccip 动态传感器模式（CCIP 弹着点 + EO 开镜）
-            case FAST -> weaponData != null
-                    && "eo_ccip".equalsIgnoreCase(weaponData.getFireControlSensorMode());
+            // FAST 要求 CCIP 系传感器（2026-10-03 放宽）：eo_ccip 动态模式，或有效传感器为
+            // 静态 ccip——任一即可；effectiveOrStatic 双端一致且不随开镜视角闪断
+            case FAST -> weaponData != null && (
+                    "eo_ccip".equalsIgnoreCase(weaponData.getFireControlSensorMode())
+                    || (unit != null && RVP_WeaponSensorHelper.effectiveOrStatic(unit, weaponData)
+                            == WeaponUnitData.FireControlSensorType.CCIP));
             // RADAR 要求 RF 传感器（eo_ccip 动态模式只出 EO/CCIP，天然互斥）
             case RADAR -> unit != null && RVP_WeaponSensorHelper.effectiveOrStatic(unit)
                     == WeaponUnitData.FireControlSensorType.RF;

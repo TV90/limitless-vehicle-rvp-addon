@@ -31,6 +31,14 @@ public final class RVP_ClientMissileTrackAlert {
         if (!isLocalDrivenVehicle(mc.player, target)) {
             return;
         }
+        // 告警音必须挂本地驾驶载具而非玩家本体：VehicleSound 的骑乘钳制分支只认
+        // “音源实体 == 相机玩家所骑载具”（calRelativePos），挂载具 id 时声源每 tick
+        // 被钳到相机 8 格内——第三人称相机后置任意距离都必然可闻；挂玩家 id 则退化为
+        // 非骑乘线性衰减（volume=4 → 16×4=64 格可听半径），战舰第三人称相机后置超过
+        // 该距离后告警音直接消失（观瞄视角相机贴近载具故不受影响，2026-10-04 实测）。
+        // 步行被锁场景 target==player 维持挂玩家（步行第三人称拉不远，行为与修复前一致）。
+        // 对齐 RVP_ClientSeekerTone 2026-09-16 的同款实机修复。
+        int attachId = target == mc.player ? mc.player.getId() : target.getId();
         if (guidanceType == S2CMissileTrackAlert.TYPE_ARH) {
             RVP_ClientLockWarningState.markArhTrack();
             return;
@@ -39,14 +47,14 @@ public final class RVP_ClientMissileTrackAlert {
             // 驾驶舱 RWR 提示音：本地播放（对齐本体 WarningReceiver 的 VehicleSound 一次性播放）
             RVP_ClientLockWarningState.markIrTrack();
             new org.ywzj.vehicle.audio.VehicleSound(
-                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, attachId).play();
             return;
         }
         if (guidanceType == S2CMissileTrackAlert.TYPE_HITL_TV) {
             // 人在回路电视制导：音效同红外告警
             RVP_ClientLockWarningState.markHitlTvTrack();
             new org.ywzj.vehicle.audio.VehicleSound(
-                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+                    RVP_Sounds.IR_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, attachId).play();
             return;
         }
         if (guidanceType == S2CMissileTrackAlert.TYPE_LASER) {
@@ -56,7 +64,7 @@ public final class RVP_ClientMissileTrackAlert {
             if (now - lastLaserSoundAt >= LASER_SOUND_INTERVAL_MS) {
                 lastLaserSoundAt = now;
                 new org.ywzj.vehicle.audio.VehicleSound(
-                        RVP_Sounds.LASER_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, mc.player.getId()).play();
+                        RVP_Sounds.LASER_ALERT.get(), 4f, 1f, 1f, false, 0, false, false, attachId).play();
             }
             return;
         }
