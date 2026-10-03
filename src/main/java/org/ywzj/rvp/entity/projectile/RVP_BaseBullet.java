@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.block.state.BlockState;
@@ -877,13 +878,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
-    protected boolean trySubmunitionTrigger(RVP_EnumSubmunitionTrigger trigger) {
+    protected boolean trySubmunitionTrigger(RVP_EnumSubmunitionTrigger trigger, @Nullable Vec3 anchor) {
         if (submunitionRunner == null || level().isClientSide()) {
             RVP_TopAttackDebug.noteSpawn(this, "SUBMUN skip runner=nullOrClient runner="
                     + (submunitionRunner != null) + " trigger=" + trigger);
             return false;
         }
-        boolean fired = submunitionRunner.fireTrigger(this, trigger);
+        boolean fired = submunitionRunner.fireTrigger(this, trigger, anchor);
         RVP_TopAttackDebug.noteSpawn(this, "SUBMUN trigger=" + trigger + " fired=" + fired);
         if (fired) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
@@ -2729,8 +2730,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         int fuseHeight = fuse.getProximityFuseHeight();
+        // 反鱼雷近炸（2026-10-03）：仅鱼雷弹体可触发，且不受离地高度限制（水中/贴水底可触发）
+        boolean antiTorpedo = fuse.isProximityFuseAntiTorpedo();
         if (targetEntity != null && targetEntity.isAlive()
-                && !isProximityFuseTargetTooLow(targetEntity, fuseHeight)
+                && (antiTorpedo ? isTorpedoAmmoTarget(targetEntity) : !isProximityFuseTargetTooLow(targetEntity, fuseHeight))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && !isProximityDamageImmune(targetEntity)
                 && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
@@ -2749,7 +2752,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 backward = getLookAngle().normalize().scale(-radius);
         AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
-        java.util.function.Predicate<Entity> proximityFilter = e -> canDamageEntity(e) && !isProximityFuseTargetTooLow(e, fuseHeight)
+        java.util.function.Predicate<Entity> proximityFilter = e -> canDamageEntity(e)
+                && (antiTorpedo ? isTorpedoAmmoTarget(e) : !isProximityFuseTargetTooLow(e, fuseHeight))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
                 && !isProximityDamageImmune(e)
                 && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
@@ -2900,6 +2904,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             topAttackTriggerTick = updateCount;
             return;
         }
+    }
+
+    /**
+     * 反鱼雷近炸的目标判定（2026-10-03）：仅 {@code rvp:torpedo} 武器弹体可触发。
+     * 按 {@code weapon_kind} 精确判（与机枪弹过滤同款约束，禁止 instanceof 基类一刀切）。
+     */
+    private boolean isTorpedoAmmoTarget(Entity entity) {
+        return entity instanceof RVP_BaseBullet rvpBullet
+                && rvpBullet.rvpData != null
+                && rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.TORPEDO;
     }
 
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
@@ -3245,7 +3259,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
-        java.util.function.Predicate<Entity> proximityFilter = entity -> canDamageEntity(entity) && !isProximityFuseTargetTooLow(entity, fuseHeight)
+        // 反鱼雷近炸：仅鱼雷弹体可触发且不受离地高度限制（开关取 fuse_data 同名参数）
+        boolean antiTorpedo = rvpData != null && rvpData.getFuseData().isProximityFuseAntiTorpedo();
+        java.util.function.Predicate<Entity> proximityFilter = entity -> canDamageEntity(entity)
+                && (antiTorpedo ? isTorpedoAmmoTarget(entity) : !isProximityFuseTargetTooLow(entity, fuseHeight))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
                 && !isProximityDamageImmune(entity)
                 && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）
@@ -3325,6 +3342,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 wallPenetrationLeft--;
                 applyPenetrationSpeedDecay();
                 penetrationEventCount++;
+                // [RVP] 穿透瞬间的可触发时机（PELE 等，2026-10-03）：按 trySubmunitionTrigger 返回值
+                // （= parent_action 决定"是否立刻丢弃母弹"）分派——continue ⇒ false ⇒ 母弹穿墙后继续飞；
+                // discard_* ⇒ true ⇒ 丢弃。与下方 on_block_hit 的无条件 discard 不同（撞击必然终结弹体）。
+                if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE, null)) {
+                    compensateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
+                    discard();
+                    return true;
+                }
                 BlockPos penetratedPos = blockPos;
                 RVP_ProjectileLifecycleDebug.noteEvent(this,
                         RVP_ProjectileLifecycleDebug.Event.WALL_PENETRATION,
@@ -3350,8 +3375,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             discard();
             return true;
         }
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT)
-                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, hit)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hit)) {
             compensateImpactTrail(hit);
             discard();
             return true;
@@ -3405,8 +3430,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         Vec3 hitPos = result.getLocation();
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT)
-                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT, hitPos)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hitPos)) {
             compensateImpactTrail(hitPos);
             discard();
             return;
@@ -3693,6 +3718,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 reflected = RVP_BounceUtil.reflect(velocity, normal, strength);
         bounceLeft--;
         bouncesConsumed++;
+        penetrationEventCount++;      // 跳弹计入伤害衰减计数
         if (!level().isClientSide() && bounceFuseTick > 0 && bounceFuseCountdown < 0) {
             bounceFuseCountdown = bounceFuseTick;
         }
@@ -3823,9 +3849,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return true;
         }
         Entity owner = getOwner();
-        if (owner != null && rootEntity.isPassengerOfSameVehicle(owner)) {
-            return true;
-        }
+        // 豁免口径 = 【发射该弹药的载具】及其乘客（2026-10-04 用户定版）：原 isPassengerOfSameVehicle(owner)
+        // 按 owner 当前乘坐载具动态重算——射手 TP 到目标船并登乘后，目标船根载具与 owner 一致被误豁免，
+        // 导弹穿体不命中（反舰 TP 测试实测；首次修复曾被并行会话 git 操作覆盖丢失，本次重应用）。
+        // 发射载具本身与发射载具乘客由上方分支覆盖，均锚定发射时的 shooterVehicle，不随射手移动变化。
         return shooterVehicle != null && shooterVehicle.getPassengers().contains(rootEntity);
     }
 
@@ -4230,7 +4257,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 () -> "type=" + kind
                         + " position=" + RVP_ProjectileLifecycleDebug.formatVec(pos)
                         + " proximityTarget=" + RVP_ProjectileLifecycleDebug.formatEntity(proximityTarget));
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE)) {
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_FUSE, null)) {
             discard();
             return;
         }
@@ -4860,6 +4887,33 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             RVP_TopAttackDebug.noteTick(this, "COMPENSATE_TRAIL particle="
                     + (configured == null ? ("fallback:" + primary) : configured)
                     + " hit=(" + String.format("%.1f,%.1f,%.1f", hitPos.x, hitPos.y, hitPos.z) + ")");
+        }
+    }
+
+    /** 曳光线补渲触发上限（tick）：超过视为"客户端曳光已正常显示"，不补。 */
+    private static final int TRACER_COMPENSATE_MAX_FLIGHT_TICK = 2;
+
+    /**
+     * 沿来袭方向补一条与客户端曳光同色同长的亮线：长度复用客户端同款公式
+     * {@code min(0.3 × 速度 × tracer_length_scale, 已飞距离 × 0.8)}（钳 [0.5, 8]），
+     * 颜色用弹体自身的 {@code tracer_r/g/b}。悬浮色尘（DustParticleOptions）不受
+     * "客户端实体是否存在"影响，专补近距离命中的曳光空窗。
+     */
+    private void compensateTracerLine(ServerLevel serverLevel, RVP_BulletEntity tracerBullet, Vec3 hitPos) {
+        Vec3 delta = getDeltaMovement();
+        double speed = delta.length();
+        if (speed <= 1.0E-4D) {
+            return;
+        }
+        Vec3 back = delta.scale(-1.0D / speed);
+        double length = Math.min(0.3D * speed * tracerBullet.getTracerLengthScale(), flightDistance * 0.8D);
+        length = net.minecraft.util.Mth.clamp(length, 0.5D, 8.0D);
+        DustParticleOptions dust = new DustParticleOptions(
+                new org.joml.Vector3f(tracerBullet.getTracerR(), tracerBullet.getTracerG(), tracerBullet.getTracerB()),
+                0.18F);
+        for (double d = 0.0D; d <= length + 0.001D; d += 0.25D) {
+            Vec3 p = hitPos.add(back.scale(d));
+            serverLevel.sendParticles(dust, p.x, p.y, p.z, 1, 0, 0, 0, 0);
         }
     }
 
