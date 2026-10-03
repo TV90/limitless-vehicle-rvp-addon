@@ -16,6 +16,9 @@ public enum RVP_EnumSubmunitionTrigger {
     /** Block impact only (before explosion/detonate). */
     ON_BLOCK_HIT,
 
+    /** 穿透方块成功后（在撞击处理继续/终止之前）。 */
+    ON_PENETRATE,
+
     /** Entity impact only (after penetration exhausted). */
     ON_ENTITY_HIT,
 
@@ -31,6 +34,7 @@ public enum RVP_EnumSubmunitionTrigger {
             case "in_flight", "flight", "air" -> IN_FLIGHT;
             case "on_impact", "impact" -> ON_IMPACT;
             case "on_block_hit", "block", "block_hit" -> ON_BLOCK_HIT;
+            case "on_penetrate", "penetrate", "penetration", "after_penetration" -> ON_PENETRATE;
             case "on_entity_hit", "entity", "entity_hit" -> ON_ENTITY_HIT;
             case "on_fuse", "fuse", "detonate" -> ON_FUSE;
             default -> IN_FLIGHT;
