@@ -19,7 +19,9 @@ import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualStat
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
+import org.ywzj.rvp.client.visual.RVP_MissileAirTargetImpactFragmentEffects;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
+import org.ywzj.rvp.network.RVP_MissileAirTargetImpactFragmentEndpoint;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
 import org.ywzj.rvp.network.firesupport.RVP_FireSupportClientEndpoint;
 import org.ywzj.rvp.network.gunner.RVP_GunnerProfileClientEndpoint;
@@ -40,6 +42,9 @@ public final class RVP_ClientBootstrap {
         event.enqueueWork(() -> {
             // 客户端初始化时安装通用视觉消费端，避免公共网络消息直接加载客户端渲染类。
             RVP_VisualEffectEndpoint.install(RVP_ClientVisualEffectDispatcher::accept);
+            // 安装导弹空中目标命中碎片消费端，把 S2C 快照转换为本地纯视觉粒子。
+            RVP_MissileAirTargetImpactFragmentEndpoint.install(
+                    RVP_MissileAirTargetImpactFragmentEffects::accept);
             // 调用 RVP 客户端视觉注册表，为通用事件协议注册温压效果工厂。
             RVP_ClientVisualEffectDispatcher.register(RVP_ThermobaricEffectFactory.EFFECT_TYPE,
                     new RVP_ThermobaricEffectFactory());

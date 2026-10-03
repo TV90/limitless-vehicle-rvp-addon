@@ -88,6 +88,7 @@ import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
+import org.ywzj.rvp.weapon.impact.RVP_MissileAirTargetImpactFragmentService;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil;
@@ -3409,6 +3410,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         Vec3 velocity = getDeltaMovement();
+        // 调用本体碰撞根解析方法，把 PartEntity 命中统一归并到固定翼/旋翼载具后再做空中目标判定。
+        Entity impactTarget = ywzj_rvp$resolveCollisionRoot(entity);
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
         rememberImpactIncidence(velocity, normal);
@@ -3437,7 +3440,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             discard();
             return;
         }
-        resolveImpactDetonation(hitPos, null, false, hbmFuseTriggered ? entity : null);
+        // 读取爆炸调用前的权威运动速度，确保碎片继承的是爆炸时刻而非更早采样的速度。
+        Vec3 impactVelocity = getDeltaMovement();
+        resolveImpactDetonation(hitPos, null, false, hbmFuseTriggered ? entity : null,
+                impactTarget, impactVelocity);
         if (explosion != null && explosion.explode) {
             compensateImpactTrail(hitPos);
             discard();
@@ -3890,13 +3896,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
                                            boolean blockImpact) {
-        resolveImpactDetonation(pos, blockHit, blockImpact, null);
+        resolveImpactDetonation(pos, blockHit, blockImpact, null, null, null);
     }
 
     protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
                                            boolean blockImpact, @Nullable Entity excludeEntity) {
+        resolveImpactDetonation(pos, blockHit, blockImpact, excludeEntity, null, null);
+    }
+
+    /**
+     * 解析爆炸前置效果，并在实体直击场景携带命中目标和导弹初速度给纯视觉碎片服务。
+     *
+     * @param impactTarget 实体直击时的碰撞根目标；非实体命中时为空
+     * @param impactVelocity 实体命中瞬间的导弹速度；非实体命中时为空
+     */
+    protected void resolveImpactDetonation(Vec3 pos, @org.jetbrains.annotations.Nullable BlockHitResult blockHit,
+                                           boolean blockImpact, @Nullable Entity excludeEntity,
+                                           @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
         if (rvpData == null) {
-            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity, impactTarget, impactVelocity);
             return;
         }
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonate = rvpData.getDetonateData();
@@ -3906,9 +3924,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 applyDispenserAt(pos, blockHit);
             }
             applyDetonateAt(pos, blockHit, blockImpact);
-            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity, impactTarget, impactVelocity);
         } else {
-            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity);
+            triggerExplosion(pos, FuseDetonation.NORMAL, excludeEntity, impactTarget, impactVelocity);
             if (applyDispenser) {
                 applyDispenserAt(pos, blockHit);
             }
@@ -3957,6 +3975,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         triggerExplosion(pos, kind, null);
     }
 
+    /** 发布实体直击后的导弹空中目标视觉碎片；普通爆炸路径没有命中目标，因此自然跳过。 */
+    private void publishMissileAirTargetImpactFragments(Vec3 impactPosition,
+                                                        @Nullable Entity impactTarget,
+                                                        @Nullable Vec3 impactVelocity) {
+        if (impactTarget == null || !(level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        // 调用本项目视觉碎片服务，按固定翼/旋翼且离地条件向附近客户端广播纯视觉事件。
+        RVP_MissileAirTargetImpactFragmentService.tryPublish(
+                serverLevel, this, impactTarget, impactPosition, impactVelocity);
+    }
+
     /**
      * @param excludeEntity 如果非空，该实体将不会受到 {@link VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
      */
@@ -3970,6 +4000,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity) {
+        triggerExplosion(pos, kind, excludeEntity, null, null);
+    }
+
+    /**
+     * 触发爆炸，并可选发布实体直击后的导弹空中目标视觉碎片。
+     *
+     * @param impactTarget 实体直击时的碰撞根目标；普通引信路径为空
+     * @param impactVelocity 实体直击瞬间导弹速度；普通引信路径为空
+     */
+    protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity,
+                                    @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
         // HBM 特效实际生效标记（由 hbm_effect_data 在数据层推导，经桥接层 Result.anyApplied 判定）。
         // 生效时本爆进入"HBM 特效接管视觉"模式：一律屏蔽 RVP MCHR 烟雾 / 本体爆炸视觉 / 视觉工厂其余特效，
@@ -3979,10 +4020,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             RVP_HbmEffectBridge.Result hbmResult =
                     RVP_HbmEffectBridge.apply(serverLevel, pos, detonateData.getHbmEffectData(), getOwner());
             if (hbmResult.realExplosionApplied()) {
+                publishMissileAirTargetImpactFragments(pos, impactTarget, impactVelocity);
                 return;
             }
             hbmApplied = hbmResult.anyApplied();
         }
+        publishMissileAirTargetImpactFragments(pos, impactTarget, impactVelocity);
         if (explosion == null || !explosion.explode) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.EXPLOSION,

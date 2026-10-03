@@ -1,5 +1,8 @@
 package org.ywzj.rvp.debug;
 
+import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.logging.LogUtils;
 import net.minecraft.commands.CommandSourceStack;
@@ -21,6 +24,7 @@ import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_DeployableUavLinkRegistry;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.weapon.impact.RVP_MissileAirTargetImpactFragmentSettings;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -77,6 +81,230 @@ public final class RVP_ServerDebugCommands {
         return builder;
     }
 
+    /**
+     * 构建 {@code /rvpdebug missileImpactFragments} 子树：运行时调整导弹命中离地空中目标的
+     * 纯视觉碎片参数，不读写武器 JSON，也不改变爆炸伤害。
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildMissileImpactFragmentsSubtree() {
+        return Commands.literal("missileImpactFragments")
+                .then(Commands.literal("status").executes(ctx -> {
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            "[RVP] missileImpactFragments "
+                                    + RVP_MissileAirTargetImpactFragmentSettings.describe()), false);
+                    return 1;
+                }))
+                .then(Commands.literal("reset").executes(ctx -> {
+                    RVP_MissileAirTargetImpactFragmentSettings.reset();
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            "[RVP] missileImpactFragments 已恢复默认: "
+                                    + RVP_MissileAirTargetImpactFragmentSettings.describe()), false);
+                    return 1;
+                }))
+                .then(Commands.literal("on").executes(ctx -> {
+                    RVP_MissileAirTargetImpactFragmentSettings.setEnabled(true);
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            "[RVP] missileImpactFragments=on"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("off").executes(ctx -> {
+                    RVP_MissileAirTargetImpactFragmentSettings.setEnabled(false);
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            "[RVP] missileImpactFragments=off"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("set")
+                        .then(Commands.literal("count")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_COUNT,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_COUNT))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setCount(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("farSideOffset")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_FAR_SIDE_OFFSET))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setFarSideOffset(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("speedScale")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SPEED_SCALE))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSpeedScale(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("fragmentConeHalfAngleDegrees")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings
+                                                        .MAX_FRAGMENT_CONE_HALF_ANGLE_DEGREES))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings
+                                                    .setFragmentConeHalfAngleDegrees(
+                                                            FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("damping")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_DAMPING,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_DAMPING))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setDamping(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("stopSpeed")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0001F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_STOP_SPEED))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setStopSpeed(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("spawnSpread")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SPAWN_SPREAD))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSpawnSpread(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("brownianStrength")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_BROWNIAN_STRENGTH))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setBrownianStrength(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeInterval")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                1,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_INTERVAL))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeInterval(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeSize")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_SMOKE_SIZE,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_SIZE))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeSize(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeLifetime")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                1,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_LIFETIME))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeLifetime(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeStartAlpha")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_SMOKE_ALPHA,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_ALPHA))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeStartAlpha(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeEndAlpha")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_SMOKE_ALPHA,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_ALPHA))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeEndAlpha(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeLayers")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_SMOKE_LAYERS,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_LAYERS))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeLayers(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokePointSpacing")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_SMOKE_POINT_SPACING,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_POINT_SPACING))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokePointSpacing(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeRotationDegrees")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_ROTATION_DEGREES))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeRotationDegrees(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeLayerScaleVariance")
+                                .then(Commands.argument("value", FloatArgumentType.floatArg(
+                                                0.0F,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_LAYER_SCALE_VARIANCE))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeLayerScaleVariance(
+                                                    FloatArgumentType.getFloat(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("smokeMaxPointsPerTick")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                1,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_SMOKE_MAX_POINTS_PER_TICK))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setSmokeMaxPointsPerTick(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("broadcastRange")
+                                .then(Commands.argument("value", DoubleArgumentType.doubleArg(
+                                                RVP_MissileAirTargetImpactFragmentSettings.MIN_BROADCAST_RANGE,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_BROADCAST_RANGE))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setBroadcastRange(
+                                                    DoubleArgumentType.getDouble(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        })))
+                        .then(Commands.literal("maxLifetime")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(
+                                                1,
+                                                RVP_MissileAirTargetImpactFragmentSettings.MAX_MAX_LIFETIME))
+                                        .executes(ctx -> {
+                                            RVP_MissileAirTargetImpactFragmentSettings.setMaxLifetime(
+                                                    IntegerArgumentType.getInteger(ctx, "value"));
+                                            return sendMissileImpactFragmentsStatus(ctx.getSource());
+                                        }))));
+    }
+
+    /** 发送运行时碎片参数摘要，供各个 set 子命令复用。 */
+    private static int sendMissileImpactFragmentsStatus(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(
+                "[RVP] missileImpactFragments 已更新: "
+                        + RVP_MissileAirTargetImpactFragmentSettings.describe()), false);
+        return 1;
+    }
+
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         // /rvp 根：目前仅挂轻量热重载（/rvp reload，见 RVP_LightReloadCommand）
@@ -85,6 +313,7 @@ public final class RVP_ServerDebugCommands {
         event.getDispatcher().register(
                 Commands.literal("rvpdebug")
                         .then(buildFlagsSubtree())
+                        .then(buildMissileImpactFragmentsSubtree())
                         .then(Commands.literal("dualpulse")
                                 .then(Commands.literal("on").executes(ctx -> {
                                     RVP_DualPulseDebug.clearLog();
