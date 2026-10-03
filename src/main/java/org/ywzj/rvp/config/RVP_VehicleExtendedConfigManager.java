@@ -115,6 +115,14 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     }
 
     /**
+     * [RVP] 载具是否启用持久区块保活（{@code rvp_persistent_chunk_lease}）：仅服务端消费
+     * （{@code RVP_PersistentChunkLeaseEventHandler} 每 tick 查询），未配置返回 false。
+     */
+    public static boolean isPersistentChunkLease(AbstractVehicle vehicle) {
+        return INSTANCE.get(vehicle).persistentChunkLease();
+    }
+
+    /**
      * [RVP] 载具的开火声是否走"方向机同款"相机相对路径（{@code audio_info.camera_relative_fire_sound_distance} > 0）：
      * 仅客户端消费（{@code RVP_ClientCameraRelativeFireSound}），服务端返回 false。
      */
@@ -316,12 +324,14 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         Map<String, Map<Integer, String>> saveIds = parseWeaponSaveIds(obj);
         float turnDepthScale = parseTurnDepthScale(obj);
         float cameraRelativeFireSoundDistance = parseCameraRelativeFireSoundDistance(obj);
+        boolean persistentChunkLease = parsePersistentChunkLease(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
                 && mergeIntoPreviousSlots.isEmpty()
                 && turnDepthScale == 1.0f
-                && cameraRelativeFireSoundDistance == 0f) {
+                && cameraRelativeFireSoundDistance == 0f
+                && !persistentChunkLease) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -332,7 +342,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 immutableIndexMap(mergeIntoPreviousSlots),
                 immutableSaveIdMap(saveIds),
                 turnDepthScale,
-                cameraRelativeFireSoundDistance
+                cameraRelativeFireSoundDistance,
+                persistentChunkLease
         );
     }
 
@@ -372,6 +383,22 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         }
         float scale = physicsObj.get("turn_depth_scale").getAsFloat();
         return Float.isFinite(scale) && scale > 0f ? scale : 1.0f;
+    }
+
+    /**
+     * [RVP] 舰船持久区块保活（2026-10-03）：顶层 {@code rvp_persistent_chunk_lease}，
+     * boolean，缺省/非布尔一律 false。true 时服务端每 tick 由
+     * {@code RVP_PersistentChunkLeaseEventHandler} 调本体 {@code EntityUtil.keepChunkLoaded}
+     * 提交临时区块票（POST_TELEPORT 超时仅 5 tick，必须每 tick 续），使舰船静止/无人也保持
+     * 加载、可被超视距雷达主动发现。与 uav 无关（不设 uav 标志，无其 5 处副作用）。
+     * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定，否则只配此字段的载具
+     * 配置会静默失效（§45 审计教训）。
+     */
+    private static boolean parsePersistentChunkLease(JsonObject obj) {
+        if (!obj.has("rvp_persistent_chunk_lease") || !obj.get("rvp_persistent_chunk_lease").isJsonPrimitive()) {
+            return false;
+        }
+        return obj.get("rvp_persistent_chunk_lease").getAsBoolean();
     }
 
     private static Set<String> parseGroundContactPartIds(JsonObject obj) {
@@ -463,7 +490,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 if (!GsonHelper.getAsBoolean(weaponObj, "modding_only_multi", false)) {
                     continue;
                 }
-                if (!weaponObj.has("ids") || !weaponObj.get("ids").isJsonArray() || weaponObj.getAsJsonArray("ids").size() < 2) {
+                if (!weaponObj.has("ids") || !weaponObj.get("ids").isJsonArray() || weaponObj.getAsJsonArray("ids").isEmpty()) {
                     continue;
                 }
                 out.computeIfAbsent(partId, key -> new LinkedHashSet<>()).add(i);
@@ -581,10 +608,16 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * >0 = 启用，非骑乘可听半径 ≈ 该值 × 16 格（4 = 与本体现行 volume=4 开火声的 64 格一致），
              * 骑乘者声音恒渲染在相机 8 格内（与该值无关，本体 VehicleSound.calRelativePos 骑乘分支决定）。
              */
-            float cameraRelativeFireSoundDistance
+            float cameraRelativeFireSoundDistance,
+            /**
+             * [RVP] 该载具是否持续保活所在区块（{@code rvp_persistent_chunk_lease}，2026-10-03）。
+             * 服务端每 tick 提交本体临时区块票（{@code EntityUtil.keepChunkLoaded}）；
+             * 仅影响加载，不影响渲染/碰撞/物理。
+             */
+            boolean persistentChunkLease
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false);
 
         /** 指定槽位配置的 {@code save_id}；未配置返回 null。 */
         @Nullable
@@ -599,7 +632,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || !moddingOnlyMultiByPartId.isEmpty()
                     || !mergeIntoPreviousSlotsByPartId.isEmpty()
                     || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f
-                    || cameraRelativeFireSoundDistance > 0f;
+                    || cameraRelativeFireSoundDistance > 0f
+                    || persistentChunkLease;
         }
 
         public boolean hasPhysicsOnlyBones() {
