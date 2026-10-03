@@ -55,8 +55,8 @@ public class RVP_EffectsData {
      *       MCHR 的 `MCH_EntityParticleSmoke` 逐条移植）——尺寸直接烘进构造、8 帧消散动画、
      *       天空光全亮，观感更接近真实导弹尾迹，且不依赖原版粒子的缩放行为。</li>
      *   <li>{@code rvp_rocket_flame}：HBM 风格火箭尾焰·固体发动机凝结云款（`RVP_RocketFlameParticle`，
-     *       从 HBM 的 `ParticleRocketFlame` 移植）——寿命前 25% 亮橙火焰团、烟相位出生中灰随寿命
-     *       smoothstep 渐变凝结云灰白，寿命延长（120~180t）+ 前段保持 + 距离 LOD；默认启用发射段
+     *       从 HBM 的 `ParticleRocketFlame` 移植）——喷口附近约 24~35t 亮橙火焰团，烟相位出生中灰随寿命
+     *       smoothstep 渐变凝结云灰白，保持期绑定发动机燃尽后缓慢淡出 + 距离 LOD；默认启用发射段
      *       贴地烟浪（见 {@code missile_native_trail_ground_wash}）；</li>
      *   <li>{@code rvp_kerosene_black_smoke}：液氧煤油黑烟款（同粒子类，技术储备）——09-19 前的
      *       原始观感：寿命 45~65t、深灰黑烟（0.15~0.30）、全程平方根淡出；贴地烟浪推导同开。</li>
@@ -69,8 +69,8 @@ public class RVP_EffectsData {
      * 发射段贴地烟浪开关，默认 null（按风格推导：{@code rvp_rocket_flame} 时开启、其余关闭）。
      *
      * <p>对齐 HBM 发射台 {@code launchSmoke}：导弹发动机燃烧且距地高度不足
-     * {@code 20} 格时，客户端在弹体地面投影点生成贴地横向冲刷的灰烟团（每 tick 6 粒，
-     * 尺寸 0.25 → 2.25 × {@code missile_native_trail_particle_scale} 线性膨胀带浮升）。</p>
+     * {@code 20} 格时，客户端在弹体地面投影点生成贴地横向冲刷的灰烟团（当前每 tick 8 粒，
+     * 尺寸 0.3 → 3.0 × {@code missile_native_trail_particle_scale} 线性膨胀带浮升）。</p>
      */
     @SerializedName("missile_native_trail_ground_wash")
     private Boolean missileNativeTrailGroundWash;

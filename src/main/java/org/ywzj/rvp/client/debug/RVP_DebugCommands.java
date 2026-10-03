@@ -53,6 +53,8 @@ public class RVP_DebugCommands {
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("rvpdebug")
+                        .then(RVP_RocketFlameDebugCommands.get())
+                        .then(RVP_UnderwaterExplosionDebugCommands.get())
                         .then(Commands.literal("tvMissileDump").executes(ctx -> {
                             RVP_TVMissileDebug.requestDump();
                             LOGGER.info("[RVP][TVMissile] tvMissileDump requested");

@@ -9,6 +9,8 @@ import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.util.Mth;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.ywzj.rvp.client.visual.RVP_UnderwaterExplosionPhysics;
+import org.ywzj.rvp.client.visual.RVP_UnderwaterExplosionTuning;
 
 /**
  * MCHR 风格默认爆炸的"翻滚灰黄大烟"——按 {@code MCH_EntityParticleSmoke} 渲染/更新数学逐条移植，
@@ -40,17 +42,30 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
 
     /**
      * splash 物理开关（2026-10-02，水下爆炸水幕专用）：true = MCHR
-     * {@code MCH_EntityParticleSplash} 物理（固定尺寸、无阻尼、重力 -0.06/tick 回落）；
+     * {@code MCH_EntityParticleSplash} 的重力回落物理，并在下降阶段应用 RVP 阻尼；
      * false（默认）= MCHR diffusible 烟物理（扩散 + 阻尼 0.96 + 慢升 0.001）。
      */
     private boolean splashPhysics = false;
+    /** 水幕粒子对应的水面世界 Y 坐标；非带水面锚点的兼容入口使用 NaN。 */
+    private final double splashSurfaceY;
+    /** 水幕粒子是否已经越过水面；只有越过后回落才允许触发水面清除。 */
+    private boolean splashHasClearedSurface = false;
+    /** 水幕成长阶段的初始 MCHR 尺寸值。 */
+    private float splashInitialScale;
+    /** 水幕成长阶段完成后的目标 MCHR 尺寸值。 */
+    private float splashMatureScale;
+    /** 是否在水幕成长到成熟帧后保持该帧。 */
+    private boolean holdMatureFrame = false;
+    /** 水幕是否已经进入成熟帧保持阶段。 */
+    private boolean matureFrameReached = false;
 
     private RVP_MchrSmokeParticle(ClientLevel level, double x, double y, double z,
                                   double vx, double vy, double vz,
                                   float size, float r, float g, float b, float alpha,
-                                  int lifetime) {
+                                  int lifetime, double splashSurfaceY) {
         super(level, x, y, z, 0.0, 0.0, 0.0);
         this.lifetime = Math.max(1, lifetime);
+        this.splashSurfaceY = splashSurfaceY;
         // MCH_ParticlesUtil.spawnParticle：diffusible → scale0 = size×0.2，maxScale = size×2.0
         this.mchrScale = size * 0.2f;
         this.maxScale = size * 2.0f;
@@ -80,7 +95,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         float b = base;
         float alpha = 0.4f + random.nextFloat() * 0.4f;
         return new RVP_MchrSmokeParticle(level, x, y, z, vx, vy, vz,
-                size, r, g, b, alpha, lifetime);
+                size, r, g, b, alpha, lifetime, Double.NaN);
     }
 
     /**
@@ -94,7 +109,8 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         net.minecraft.util.RandomSource random = level.random;
         float base = 0.06f + random.nextFloat() * 0.12f;
         return new RVP_MchrSmokeParticle(level, x, y, z, vx, vy, vz,
-                size, base + 0.02f, base + 0.01f, base, 0.55f + random.nextFloat() * 0.25f, lifetime);
+                size, base + 0.02f, base + 0.01f, base, 0.55f + random.nextFloat() * 0.25f,
+                lifetime, Double.NaN);
     }
 
     /**
@@ -112,7 +128,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(
                 level, x, y, z, vx, vy, vz,
                 size, base + 0.02f, base + 0.01f, base, 0.58f + random.nextFloat() * 0.18f,
-                lifetime);
+                lifetime, Double.NaN);
         // 调用本项目渲染类型：炮口烟使用深度只测不写，避免半透明烟团破坏载具后续绘制。
         return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
     }
@@ -131,7 +147,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(
                 level, x, y, z, vx, vy, vz,
                 size, base, base, base, 0.60f + random.nextFloat() * 0.20f,
-                lifetime);
+                lifetime, Double.NaN);
         // 调用本项目渲染类型：白色延迟烟同样只测深度不写深度，避免遮挡载具和其它烟雾。
         return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
     }
@@ -143,7 +159,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         float size = random.nextFloat() * 0.5f + 5.0f;
         int lifetime = (int) (16.0 / (random.nextDouble() * 0.8 + 0.2)) + 2;
         return new RVP_MchrSmokeParticle(level, x, y, z, 0.0, 0.0, 0.0,
-                size, grey, grey, grey, 1.0f, lifetime);
+                size, grey, grey, grey, 1.0f, lifetime, Double.NaN);
     }
 
     /** 拖烟入口（小型淡化版）：火星拖尾专用——小团（scale 2~2.5）、低不透明度 0.45、短寿命。 */
@@ -153,7 +169,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         float size = random.nextFloat() * 0.5f + 2.0f;
         int lifetime = (int) (12.0 / (random.nextDouble() * 0.8 + 0.2)) + 2;
         return new RVP_MchrSmokeParticle(level, x, y, z, 0.0, 0.0, 0.0,
-                size, grey, grey, grey, 0.45f, lifetime);
+                size, grey, grey, grey, 0.45f, lifetime, Double.NaN);
     }
 
     /**
@@ -174,7 +190,7 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         float size = (random.nextFloat() * 0.5f + 5.0f) * Math.max(sizeScale, 0f);
         int lifetime = (int) (16.0 / (random.nextDouble() * 0.8 + 0.2)) + 2;
         return new RVP_MchrSmokeParticle(level, x, y, z, 0.0, 0.0, 0.0,
-                size, grey, grey, grey, 1.0f, lifetime);
+                size, grey, grey, grey, 1.0f, lifetime, Double.NaN);
     }
 
     /** 按倍率衰减透明度（alpha 为父类 protected，须在类内修改；供火星拖烟 ×0.75 使用）。 */
@@ -186,26 +202,67 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
     /**
      * 水下爆炸水幕粒子入口（2026-10-02，MCHR {@code effectExplosionInWater} 复刻）：
      * 参数按 MCHR {@code MCH_EntityParticleSplash} 构造逐字——白色 0.7~1.0、
-     * particleScale 5~5.5（渲染半宽 0.5 格）、寿命 80/(rand×0.8+0.2)+2
-     * （MCHR 上限 402 tick，此处封顶 200 = 10 秒防长寿命堆积），并启用
-     * <b>splash 专属物理</b>（固定尺寸、无阻尼、重力 -0.06/tick——水幕升而复落，
-     * 首版误用烟物理慢升不回落，用户实测后修正）。速度由调用方按 MCHR
+     * particleScale 5~5.5（渲染半宽 0.5 格）、并启用
+     * <b>splash 专属物理</b>（成长到目标尺寸、下降阻尼、重力 -0.06/tick——水幕升而复落）。
+     * 寿命由调用方按实际回落轨迹计算，默认随机基础寿命仍沿用 MCHR 分布。
+     * 速度由调用方按 MCHR
      * 主循环公式传入（中心冲天、边缘悬停的穹顶水幕）。载体复用本烟粒子类（白色调色，
      * MCHR 专用白色 splash 贴图不迁移）。
      */
     public static RVP_MchrSmokeParticle ofSplash(ClientLevel level, double x, double y, double z,
                                                  double mx, double my, double mz, float sizeScale) {
+        int lifetime = Math.min(200,
+                (int) (80.0D / (level.random.nextDouble() * 0.8D + 0.2D)) + 2);
+        return ofSplash(level, x, y, z, mx, my, mz, sizeScale, lifetime);
+    }
+
+    /**
+     * 水下爆炸水幕粒子入口（显式寿命）。
+     *
+     * @param level 客户端世界
+     * @param x 粒子出生 X 坐标，单位格
+     * @param y 粒子出生 Y 坐标，单位格
+     * @param z 粒子出生 Z 坐标，单位格
+     * @param mx 粒子初始 X 速度，单位格/tick
+     * @param my 粒子初始 Y 速度，单位格/tick
+     * @param mz 粒子初始 Z 速度，单位格/tick
+     * @param sizeScale 粒子成熟尺寸倍率，包含距离 LOD 与外围尺寸阻尼
+     * @param lifetime 粒子寿命，单位 tick；由工厂保证至少覆盖回落水面过程
+     * @return 配置完成的水幕粒子
+     */
+    public static RVP_MchrSmokeParticle ofSplash(ClientLevel level, double x, double y, double z,
+                                                 double mx, double my, double mz,
+                                                 float sizeScale, int lifetime) {
+        return ofSplash(level, x, y, z, mx, my, mz, sizeScale, lifetime, Double.NaN);
+    }
+
+    /**
+     * 水下爆炸水幕粒子入口（显式寿命与水面锚点）。
+     *
+     * @param level 客户端世界
+     * @param x 粒子出生 X 坐标，单位格
+     * @param y 粒子出生 Y 坐标，单位格
+     * @param z 粒子出生 Z 坐标，单位格
+     * @param mx 粒子初始 X 速度，单位格/tick
+     * @param my 粒子初始 Y 速度，单位格/tick
+     * @param mz 粒子初始 Z 速度，单位格/tick
+     * @param sizeScale 粒子尺寸倍率，包含距离 LOD 与外围尺寸阻尼
+     * @param lifetime 粒子寿命，单位 tick；作为水面清除的安全上限
+     * @param surfaceY 水面世界 Y 坐标；粒子越过水面后回落至水面下 0～1 格立即消失
+     * @return 配置完成的水幕粒子
+     */
+    public static RVP_MchrSmokeParticle ofSplash(ClientLevel level, double x, double y, double z,
+                                                 double mx, double my, double mz,
+                                                 float sizeScale, int lifetime, double surfaceY) {
         net.minecraft.util.RandomSource random = level.random;
         float white = random.nextFloat() * 0.3f + 0.7f;
         float size = random.nextFloat() * 0.5f + 5.0f;
-        int lifetime = Math.min(200, (int) (80.0D / (random.nextDouble() * 0.8D + 0.2D)) + 2);
         RVP_MchrSmokeParticle particle = new RVP_MchrSmokeParticle(level, x, y, z, mx, my, mz,
-                size, white, white, white, 0.9f, lifetime);
-        // MCHR splash 的 setParticleScale(5~5.5) 是【直接生效】的尺寸（渲染半宽 = 0.1 × scale
-        // ≈0.5 格，单粒 ~1 格宽的大水斑），不走烟粒子的 diffusible ×0.2 初始衰减路径——
-        // 首版误用构造默认（quadSize 0.1 格）导致水幕只剩小粒子（2026-10-03 用户实测）；
-        // splash 物理下不扩散，尺寸即终值。
-        particle.mchrScale = size * Math.max(sizeScale, 0.01F);
+                size, white, white, white, 0.9f, lifetime, surfaceY);
+        // 水幕从 MCHR 初始尺寸成长到目标尺寸，避免生成瞬间跳到成熟状态。
+        particle.splashInitialScale = particle.mchrScale;
+        particle.splashMatureScale = size * Math.max(sizeScale, 0.01F);
+        particle.holdMatureFrame = RVP_UnderwaterExplosionTuning.isHoldMatureFrame();
         particle.quadSize = 0.1f * particle.mchrScale;
         particle.splashPhysics = true;
         return particle;
@@ -254,15 +311,26 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
         this.xo = this.x;
         this.yo = this.y;
         this.zo = this.z;
+        double previousY = this.y;
         ++this.age;
         if (this.age >= this.lifetime) {
             this.remove();
             return;
         }
         if (this.splashPhysics) {
-            // MCHR MCH_EntityParticleSplash 物理逐字：固定尺寸（无扩散）、无阻尼、
-            // motionY -= 0.06/tick（升而复落的水幕回落），帧动画共用 8 帧序
-            this.yd -= 0.06D;
+            // 水幕先成长到目标尺寸；成熟后保持目标尺寸，不再继续放大。
+            if (this.splashMatureScale > this.splashInitialScale) {
+                float growthProgress = Mth.clamp((float) this.age
+                        / Math.max(1, RVP_UnderwaterExplosionTuning.getMatureTicks()), 0.0F, 1.0F);
+                this.mchrScale = Mth.lerp(growthProgress,
+                        this.splashInitialScale, this.splashMatureScale);
+                this.quadSize = 0.1f * this.mchrScale;
+            }
+            // 下降阶段阻尼已有向下速度，再叠加重力，保证低阻尼值仍会回落水面。
+            if (this.yd < 0.0D) {
+                this.yd *= RVP_UnderwaterExplosionTuning.getDownwardDamping();
+            }
+            this.yd -= RVP_UnderwaterExplosionPhysics.SPLASH_GRAVITY;
         } else {
             // MCHR diffusible：scale += 0.8/tick（封顶 maxScale），渲染半宽 = 0.1 × scale
             if (this.mchrScale < this.maxScale) {
@@ -275,10 +343,44 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
             this.zd *= 0.96f;
             this.yd += this.gravity;
         }
-        // MCHR 帧：8 × age/maxAge
-        this.frame = Mth.clamp((int) (8.0f * this.age / this.lifetime), 0,
-                RVP_MchrSmokeRenderType.FRAME_COUNT - 1);
+        // 水幕可在成长到成熟帧后锁定；关闭布尔值时沿用完整寿命帧动画。
+        if (this.splashPhysics && this.holdMatureFrame) {
+            if (!this.matureFrameReached) {
+                float maturityProgress = Mth.clamp((float) this.age
+                        / Math.max(1, RVP_UnderwaterExplosionTuning.getMatureTicks()), 0.0F, 1.0F);
+                this.frame = Mth.clamp((int) (maturityProgress * RVP_MchrSmokeRenderType.FRAME_COUNT),
+                        0, RVP_MchrSmokeRenderType.FRAME_COUNT - 1);
+                if (this.age >= RVP_UnderwaterExplosionTuning.getMatureTicks()) {
+                    this.frame = RVP_MchrSmokeRenderType.FRAME_COUNT - 1;
+                    this.matureFrameReached = true;
+                }
+            }
+        } else {
+            // MCHR 帧：8 × age/maxAge
+            this.frame = Mth.clamp((int) (8.0f * this.age / this.lifetime), 0,
+                    RVP_MchrSmokeRenderType.FRAME_COUNT - 1);
+        }
         this.move(this.xd, this.yd, this.zd);
+        if (this.splashPhysics && Double.isFinite(this.splashSurfaceY)) {
+            // 出生点位于水面下 0~1 格，必须先真正越过水面，避免首个 Tick 就被当成“回落”清除。
+            if (this.y >= this.splashSurfaceY) {
+                this.splashHasClearedSurface = true;
+            }
+            boolean isFalling = this.yd < 0.0D;
+            boolean wasWithinSurfaceBand = previousY <= this.splashSurfaceY
+                    && previousY >= this.splashSurfaceY - 1.0D;
+            boolean isWithinReturnBand = this.y <= this.splashSurfaceY
+                    && this.y >= this.splashSurfaceY - 1.0D;
+            boolean skippedReturnBand = previousY >= this.splashSurfaceY
+                    && this.y < this.splashSurfaceY - 1.0D;
+            boolean fellBeforeClearing = !this.splashHasClearedSurface && wasWithinSurfaceBand;
+            if (isFalling && (fellBeforeClearing
+                    || (this.splashHasClearedSurface && (isWithinReturnBand || skippedReturnBand)))) {
+                // 水幕回落到水面下 0~1 格即消失，防止继续向下穿透水体。
+                this.remove();
+                return;
+            }
+        }
     }
 
     /** Provider：常规粒子分发兜底（正常路径走工厂静态构造；registerSpecial 注册，无 SpriteSet 依赖）。 */

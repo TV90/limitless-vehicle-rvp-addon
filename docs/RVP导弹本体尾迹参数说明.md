@@ -73,11 +73,58 @@
 ## HBM 风格火箭尾焰（`rvp_rocket_flame`）
 
 从 HBM（Hbm's Nuclear Tech Mod）`ParticleRocketFlame` / `ParticleSmokePlume` 移植的弹道导弹
-尾迹观感：寿命前 25% 亮橙火焰团 → 深灰烟持续膨胀（~0.35 → 2.6 × `particle_scale`）、
-α=√(1-age/maxAge)×0.75 缓出淡出、初速沿弹轴反方向喷出（阻尼 0.91/tick）、
+尾迹观感：喷口附近约 24～35 tick 亮橙火焰团 → 灰白凝结云持续膨胀，凝结云保持期
+α≈0.75，保持期结束后 smoothstep 缓慢淡出，初速沿弹轴反方向喷出（阻尼 0.91/tick）、
 3 层抖动 quad 伪体积感、全亮渲染。发射段另有贴地烟浪（燃烧且距地 <20 格时，
-弹体地面投影点每 tick 6 粒横向冲刷灰烟，0.25 → 2.25 × `particle_scale` 膨胀带浮升）。
+弹体地面投影点每 tick 8 粒横向冲刷灰烟，0.3 → 3.0 × `particle_scale` 膨胀带浮升）。
 参数对照详见 `docs/plan/RVP弹道导弹尾迹HBM风格移植方案_20260915.md`。
+
+## 游戏内临时调参
+
+客户端进入世界后，可使用本地客户端指令 `/rvprocketflame` 调整当前会话的 `rvp_rocket_flame`；
+在本项目调试根命令下也提供等价入口 `/rvpdebug rocketFlame`：
+
+```text
+/rvprocketflame status
+/rvprocketflame set particleScale 1.5
+/rvprocketflame set densityScale 0.6
+/rvprocketflame set groundWash false
+/rvprocketflame set holdMinTicks 180
+/rvprocketflame reset particleScale
+/rvprocketflame reset
+```
+
+该覆盖不写回武器 JSON，重启客户端或执行 `reset` 后恢复。尺寸、采样、贴地烟浪和尾迹生命周期参数
+只影响之后生成的粒子；尺寸、采样、生成间隔、密度、偏移和生命周期覆盖同时作用于近距尾迹和
+超视距远程尾迹，贴地烟浪与发射段加粗只作用于本地发射链路。可用参数包括：
+`particleScale`、`step`、`spawnInterval`、`densityScale`、`offset`、`launchBoost`、`enabled`、
+`groundWash`、`holdMinTicks`、`holdBufferTicks`、`fadeTicks`、`fadeRandomTicks`、`flameTicks`、
+`flameRandomTicks`、`smokeGreyMin`、`smokeGreySpread`、`trailLayers`、`jitterMinTicks`、
+`jitterMaxTicks`、`turbulenceDecay`、`jitterHorizontalScale`、`jitterVerticalScale`、
+`jitterSpreadScale`、`jitterInterpolation`、`rotationRandomDegrees`、`jitterDurationRatio`。
+
+抖动调试示例：
+
+```text
+/rvprocketflame set jitterHorizontalScale 0.35
+/rvprocketflame set jitterVerticalScale 0.8
+/rvprocketflame set jitterSpreadScale 0.5
+/rvprocketflame set jitterMinTicks 4
+/rvprocketflame set jitterMaxTicks 20
+/rvprocketflame set turbulenceDecay 0.9
+/rvprocketflame set jitterInterpolation 0
+/rvprocketflame set rotationRandomDegrees 180
+/rvprocketflame set jitterDurationRatio 0.5
+```
+
+其中 `jitterHorizontalScale` 控制 X/Z 方向，`jitterVerticalScale` 控制 Y 方向，
+`jitterSpreadScale` 控制粒子变老后的扩散增长；设为 `0` 可关闭对应方向或年龄扩散。
+`jitterInterpolation` 控制抖动重掷之间的位置插值，`0` 为线性插值，`1` 为当前默认的
+smoothstep 平滑插值；设为 `0` 便于观察重掷间隔和折角。
+`rotationRandomDegrees` 控制每个粒子的稳定随机旋转范围，实际角度为
+`[-rotationRandomDegrees, +rotationRandomDegrees]`；默认 `0`，设为 `180` 可获得完整随机朝向。
+`jitterDurationRatio` 控制抖动持续时间占粒子生命周期的比例；默认 `0` 表示不启用额外截止，
+设置为 `0.5` 时抖动平滑衰减，并在粒子生命周期一半时归零，之后不再抖动。
 
 ### 9M723（伊斯坎德尔）定稿配置
 

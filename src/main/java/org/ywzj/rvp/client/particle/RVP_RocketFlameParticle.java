@@ -19,6 +19,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -91,20 +92,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         }
     };
 
-    /** TRAIL 模式抖动 quad 层数（HBM 10 层的性能折衷；1 层为 WASH 模式标准渲染）。 */
-    private static final int TRAIL_LAYERS = 3;
+    /** TRAIL 模式最多可用的抖动 quad 层数；运行时调参只允许在 1～3 层内变化。 */
+    private static final int MAX_TRAIL_LAYERS = RVP_RocketFlameRuntimeTuning.DEFAULT_TRAIL_LAYERS;
     /** TRAIL 模式火焰相位占比：黑烟储备款 0.25（HBM dark 阈值）；固体款改用定长 tick（见 flameDurationTicks）。 */
     private static final float FLAME_PHASE_RATIO = 0.25f;
-    /** 固体款橙焰相位定长基准（tick）：24~36t ≈ 旧 0.12×240~340t 的观感——火焰只在喷口附近存在。 */
-    private static final int FLAME_FIXED_TICKS = 24;
-    /** 凝结云 alpha 保持期保底（tick）：短燃烧弹不回退到旧定值观感（旧 45%×240~340 ≈ 108~153t）以下。 */
-    private static final int HOLD_MIN_TICKS = 108;
-    /** 抖动重掷间隔随寿命插值下限（tick）：出生 2t（10Hz，仍湍急但比旧每 tick 的 20Hz 减半）。 */
-    private static final int JITTER_INTERVAL_MIN = 2;
-    /** 抖动重掷间隔随寿命插值上限（tick）：老期 14t（约 1.4Hz，趋于稳定）。 */
-    private static final int JITTER_INTERVAL_MAX = 14;
-    /** 湍流幅度衰减比例：年轻 1.0 → 老期 1-0.65=0.35（"刚喷射湍急、随时间趋于稳定"的幅度面）。 */
-    private static final float JITTER_TURBULENCE_DECAY = 0.65f;
     /** 烟相位灰度下限（R=G=B 的中性灰，黑烟观感；灰度上限 = 下限 + SPREAD）。 */
     private static final float SMOKE_GREY_MIN = 0.15f;
     /** 烟相位灰度随机幅度（保持单通道同值，避免逐通道独立随机产生彩色噪点）。 */
@@ -141,12 +132,16 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     /** 凝结云 alpha 保持期终点（tick，固体款）：保持至发动机燃尽+缓冲，之后 smoothstep 散开。 */
     private int holdEndTick;
     /** 层间抖动基值 [层][轴]：按 jitterInterval 间隔重掷，渲染跨间隔 smoothstep 插值——低频且连续。 */
-    private final float[][] jitterCur = new float[TRAIL_LAYERS][3];
-    private final float[][] jitterPrev = new float[TRAIL_LAYERS][3];
+    private final float[][] jitterCur = new float[MAX_TRAIL_LAYERS][3];
+    private final float[][] jitterPrev = new float[MAX_TRAIL_LAYERS][3];
     /** 上次重掷抖动基值时的粒子年龄（tick）：与渲染插值共同决定跨间隔进度。 */
     private int jitterRollAge;
     /** 当前抖动重掷间隔（tick）：随寿命从 2t（湍急）增大到 14t（趋于稳定）。 */
-    private int jitterInterval = JITTER_INTERVAL_MIN;
+    private int jitterInterval = RVP_RocketFlameRuntimeTuning.DEFAULT_JITTER_MIN_TICKS;
+    /** 单个粒子的稳定随机旋转因子；渲染时乘以运行时角度范围，避免逐帧重掷闪烁。 */
+    private final float rotationRandomFactor;
+    /** 每层尾迹 quad 的稳定随机半宽因子；创建时生成，避免 render 每帧重新随机导致尺寸抖动。 */
+    private final float[] trailSizeRandomFactors = new float[MAX_TRAIL_LAYERS];
 
     private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
                                     double x, double y, double z,
@@ -175,24 +170,37 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         this.zd = vz;
         this.hasPhysics = false;
         this.gravity = 0.0f;
+        // 使用每个粒子固定的随机因子：调参只改变角度范围，不在每帧重新随机，保持旋转稳定。
+        this.rotationRandomFactor = this.random.nextFloat() * 2.0f - 1.0f;
+        // 使用每层固定的尺寸随机因子：保留多层体积差异，避免渲染阶段反复抽样造成视觉抖动。
+        for (int l = 0; l < MAX_TRAIL_LAYERS; l++) {
+            this.trailSizeRandomFactors[l] = this.random.nextFloat();
+        }
         if (mode == Mode.TRAIL) {
             if (smokeWhiten) {
+                // 调用本项目运行时调参入口：按命令覆盖凝结云保持期、淡出期和橙焰相位时长。
                 // 固体发动机款（2026-09-19 用户需求 → 2026-09-20 绑定燃尽）：凝结云保持期
                 // = 距发动机燃尽 tick（holdTicks，由生成点按弹体燃烧数据传入）+ 20t 缓冲
                 // （防燃尽瞬间即淡），保底 108t 不低于旧定值观感——发动机开启时飞过的距离
                 // 全程留云；燃尽后 120~180t smoothstep 缓缓散开；LOD 见 render/tick
-                this.holdEndTick = Math.max(holdTicks + 20, HOLD_MIN_TICKS);
-                this.lifetime = this.holdEndTick + 120 + this.random.nextInt(60);
+                this.holdEndTick = Math.max(
+                        holdTicks + RVP_RocketFlameRuntimeTuning.resolveHoldBufferTicks(),
+                        RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks());
+                int fadeRandomTicks = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks();
+                this.lifetime = this.holdEndTick + RVP_RocketFlameRuntimeTuning.resolveFadeTicks()
+                        + (fadeRandomTicks <= 0 ? 0 : this.random.nextInt(fadeRandomTicks));
                 // 橙焰相位改定长 24~36t（≈旧 0.12×240~340t 观感）：火焰只在喷口附近存在，
                 // 不随寿命延长同步拉长
-                this.flameDurationTicks = FLAME_FIXED_TICKS + this.random.nextInt(12);
+                int flameRandomTicks = RVP_RocketFlameRuntimeTuning.resolveFlameRandomTicks();
+                this.flameDurationTicks = RVP_RocketFlameRuntimeTuning.resolveFlameTicks()
+                        + (flameRandomTicks <= 0 ? 0 : this.random.nextInt(flameRandomTicks));
             } else {
                 // HBM ParticleRocketFlame：寿命 45~65t（较原版 60~80t 缩短，压低同屏存活粒子数）
                 this.lifetime = 45 + this.random.nextInt(20);
             }
             // 抖动基值出生即掷（间隔重掷后不再依赖首 tick 补掷，首帧即有体积感）；
             // jitterRollAge=0、interval=2t：年轻粒子重掷最频繁（湍急），随寿命间隔递增（趋于稳定）
-            for (int l = 0; l < TRAIL_LAYERS; l++) {
+            for (int l = 0; l < MAX_TRAIL_LAYERS; l++) {
                 for (int a = 0; a < 3; a++) {
                     this.jitterCur[l][a] = (float) this.random.nextGaussian();
                 }
@@ -225,8 +233,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     public static RVP_RocketFlameParticle ofTrail(ClientLevel level, double x, double y, double z,
                                                   double mx, double my, double mz, float sizeScale,
                                                   int holdTicks) {
+        // 调用本项目运行时调参入口：把游戏内设置的烟相位灰度传入新生成的凝结云粒子。
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
-                0.55f, 0.15f, true, 0.12f, holdTicks, false);
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreyMin(),
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, false);
     }
 
     /**
@@ -236,8 +246,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     public static RVP_RocketFlameParticle ofRemoteTrail(ClientLevel level, double x, double y, double z,
                                                         double mx, double my, double mz, float sizeScale,
                                                         int holdTicks) {
+        // 调用本项目运行时调参入口：远程凝结云复用本地同一套烟相位颜色覆盖。
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
-                0.55f, 0.15f, true, 0.12f, holdTicks, true);
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreyMin(),
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, true);
     }
 
     /**
@@ -307,7 +319,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             if (this.age - this.jitterRollAge >= this.jitterInterval) {
                 this.jitterRollAge = this.age;
                 this.jitterInterval = nextJitterInterval();
-                for (int l = 0; l < TRAIL_LAYERS; l++) {
+                for (int l = 0; l < MAX_TRAIL_LAYERS; l++) {
                     System.arraycopy(this.jitterCur[l], 0, this.jitterPrev[l], 0, 3);
                     for (int a = 0; a < 3; a++) {
                         this.jitterCur[l][a] = (float) this.random.nextGaussian();
@@ -330,13 +342,16 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     }
 
     /**
-     * 下一次抖动重掷间隔（tick）：随寿命从 {@link #JITTER_INTERVAL_MIN}（2t，年轻粒子湍急）
-     * 线性增大到 {@link #JITTER_INTERVAL_MAX}（14t，老粒子趋于稳定）——模拟真实火箭发射
+     * 下一次抖动重掷间隔（tick）：随寿命从运行时调参的下限（年轻粒子湍急）
+     * 线性增大到运行时调参的上限（老粒子趋于稳定）——模拟真实火箭发射
      * "刚喷射的烟尘湍急、随时间越来越稳定"的湍流衰减。
      */
     private int nextJitterInterval() {
         float ageRatio = (float) this.age / this.lifetime;
-        return Math.round(Mth.lerp(ageRatio, JITTER_INTERVAL_MIN, JITTER_INTERVAL_MAX));
+        // 调用本项目运行时调参入口：让游戏内命令实时控制尾迹湍流的时间频率。
+        return Math.round(Mth.lerp(ageRatio,
+                RVP_RocketFlameRuntimeTuning.resolveJitterMinTicks(),
+                RVP_RocketFlameRuntimeTuning.resolveJitterMaxTicks()));
     }
 
     /**
@@ -392,24 +407,26 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         } else {
             this.alpha = Mth.sqrt(Math.max(1.0f - ageRatio, 0.0f)) * 0.75f;
         }
-        this.quadSize = trailQuadSize(ageRatio);
+        this.quadSize = trailQuadSize(0, ageRatio);
     }
 
     /** TRAIL 半宽曲线（半宽格）：{@code (0.5 + rand*0.3 + 1.3×ageRatio) × scale}——出生 0.5~0.8、
      * 末端约 1.8~2.1 × scale（2026-09-15 第三轮实机反馈：近地面烟柱由年轻小粒子主导显得太细，
-     * 出生尺寸与增长系数同步加大，整条烟柱加粗）。 */
-    private float trailQuadSize(float ageRatio) {
-        return (0.5f + this.random.nextFloat() * 0.3f + 1.3f * ageRatio) * this.sizeScale;
+     * 出生尺寸与增长系数同步加大，整条烟柱加粗）。随机半宽因子按层固定，不能在 render 中重掷。 */
+    private float trailQuadSize(int layer, float ageRatio) {
+        return (0.5f + this.trailSizeRandomFactors[layer] * 0.3f + 1.3f * ageRatio) * this.sizeScale;
     }
 
     /**
-     * TRAIL 模式渲染 {@link #TRAIL_LAYERS} 层抖动 quad（HBM 逐帧多层叠加的伪体积感）：
+     * TRAIL 模式渲染运行时配置层数的抖动 quad（HBM 逐帧多层叠加的伪体积感）：
      * 每层独立随机半宽与位置抖动，抖动幅度随寿命以 {@code (1 + 4*ageRatio)^1.5} 急剧扩大
      * （柱状 → 散开云）；WASH 模式退化为单 quad 标准渲染。
      */
     @Override
     public void render(VertexConsumer buffer, Camera renderInfo, float partialTicks) {
-        int layers = this.mode == Mode.TRAIL ? TRAIL_LAYERS : 1;
+        // 调用本项目运行时调参入口：按会话覆盖选择近距离尾迹的叠层数量。
+        int layers = this.mode == Mode.TRAIL
+                ? Math.min(RVP_RocketFlameRuntimeTuning.resolveTrailLayers(), MAX_TRAIL_LAYERS) : 1;
         Vec3 cameraPos = renderInfo.getPosition();
         float baseX = (float) (Mth.lerp(partialTicks, this.xo, this.x) - cameraPos.x());
         float baseY = (float) (Mth.lerp(partialTicks, this.yo, this.y) - cameraPos.y());
@@ -419,11 +436,22 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         // 目的：空中尾迹保持"柱状"——末端发散用线性小系数（最大 2.5×，2026-09-15 从 HBM 的
         // (1+4·ageRatio)^1.5≈11× 收敛：原式末端 Y 抖动 ±5 格以上，观感为烟柱末端炸散成云）。
         // 大发散只归属地面烟浪 WASH（其靠径向初速+尺寸膨胀发散，不走本系数）。
-        float spread = this.mode == Mode.TRAIL ? 1.0f + 1.5f * ageRatio : 1.0f;
+        // 调用本项目运行时调参入口：按命令控制尾迹层随年龄扩散的增长速度。
+        float spread = this.mode == Mode.TRAIL
+                ? 1.0f + RVP_RocketFlameRuntimeTuning.resolveJitterSpreadScale() * ageRatio : 1.0f;
         // 目的：湍流幅度随寿命衰减（年轻 1.0 → 老期 0.35，2026-09-20 用户需求"刚喷射湍急、
         // 随时间趋于稳定"的幅度面）；云的散开（spread 随寿命扩大）保留——扩散照旧、抖动趋稳
+        // 调用本项目运行时调参入口：按会话覆盖控制尾迹抖动随年龄的收敛速度。
         float turbulence = 1.0f
-                - JITTER_TURBULENCE_DECAY * (ageRatio * ageRatio * (3.0f - 2.0f * ageRatio));
+                - RVP_RocketFlameRuntimeTuning.resolveTurbulenceDecay()
+                * (ageRatio * ageRatio * (3.0f - 2.0f * ageRatio));
+        // 调用本项目运行时调参入口：可让抖动在指定生命周期比例内平滑衰减至零，之后保持稳定。
+        float jitterDurationRatio = RVP_RocketFlameRuntimeTuning.resolveJitterDurationRatio();
+        if (jitterDurationRatio > 0.0f) {
+            float jitterFadeRatio = Mth.clamp(ageRatio / jitterDurationRatio, 0.0f, 1.0f);
+            float jitterFade = jitterFadeRatio * jitterFadeRatio * (3.0f - 2.0f * jitterFadeRatio);
+            turbulence *= 1.0f - jitterFade;
+        }
         int light = this.getLightColor(partialTicks);
         // 距离 LOD 单层档（>128 格）：TRAIL 退化为单层渲染（顶点数省 3 倍），尺寸补 1.25×
         // 维持远观质量——仿视觉工厂 RVP_ExplosionVisualManager 的距离分档（layerStep + lodSizeBoost）
@@ -433,14 +461,15 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         // 目的：3 层抖动 quad 若每层都用全量 α（0.75），叠加等效不透明度 ≈ 1-(0.25)³ ≈ 98%，
         // 烟柱即实心墙——层间按 1/N 分摊 α，叠加后 ≈ 58%，半透明可透见载具（核爆云观感）；
         // LOD 单层时按全量 α 渲染（无层叠加，亮度与近观一致）
-        float layerAlpha = this.alpha * (this.mode == Mode.TRAIL && !lodSingleLayer ? 1.0f / TRAIL_LAYERS : 1.0f);
+        float layerAlpha = this.alpha
+                * (this.mode == Mode.TRAIL && !lodSingleLayer ? 1.0f / layers : 1.0f);
         float u0 = this.getU0();
         float u1 = this.getU1();
         float v0 = this.getV0();
         float v1 = this.getV1();
         for (int layer = 0; layer < layers; layer++) {
             // 目的：每层独立掷半宽（层间尺寸差 + 位置抖动共同构成体积感）；曲线同 tick 期一致
-            float quadSize = (this.mode == Mode.TRAIL ? trailQuadSize(ageRatio) : this.getQuadSize(partialTicks))
+            float quadSize = (this.mode == Mode.TRAIL ? trailQuadSize(layer, ageRatio) : this.getQuadSize(partialTicks))
                     * lodSizeBoost;
             // 目的：层间位置抖动为 TRAIL 专属（体积感；XZ 小抖 + Y 大抖，幅度随寿命扩大）。
             // WASH 严禁逐帧抖动——单层大 quad 每帧重掷高斯会呈现高频颤动（2026-09-15 实机反馈），
@@ -455,15 +484,21 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                 // 抖动取该层 prev/current 跨间隔插值：进度 = (age - 上次重掷age + partialTicks)/当前间隔
                 // （间隔随寿命 2t→14t 递增，见 nextJitterInterval），smoothstep 消除重掷瞬间折角；
                 // 层与层之间基值独立（体积感来源保留）
-                float rollT = Mth.clamp(
+                float linearRollT = Mth.clamp(
                         (this.age - this.jitterRollAge + partialTicks) / (float) this.jitterInterval,
                         0.0f, 1.0f);
-                rollT = rollT * rollT * (3.0f - 2.0f * rollT);
+                float smoothRollT = linearRollT * linearRollT * (3.0f - 2.0f * linearRollT);
+                // 调用本项目运行时调参入口：在保持默认 smoothstep 的前提下，可切换线性插值观察抖动折角。
+                float interpolation = RVP_RocketFlameRuntimeTuning.resolveJitterInterpolation();
+                float rollT = Mth.lerp(interpolation, linearRollT, smoothRollT);
                 float[] prev = this.jitterPrev[layer];
                 float[] cur = this.jitterCur[layer];
-                jitterX = Mth.lerp(rollT, prev[0], cur[0]) * 0.2f * spread * turbulence;
-                jitterY = Mth.lerp(rollT, prev[1], cur[1]) * 0.5f * spread * turbulence;
-                jitterZ = Mth.lerp(rollT, prev[2], cur[2]) * 0.2f * spread * turbulence;
+                // 调用本项目运行时调参入口：分别控制水平和垂直抖动幅度，便于调柱状/扁宽观感。
+                float horizontalJitterScale = RVP_RocketFlameRuntimeTuning.resolveJitterHorizontalScale();
+                float verticalJitterScale = RVP_RocketFlameRuntimeTuning.resolveJitterVerticalScale();
+                jitterX = Mth.lerp(rollT, prev[0], cur[0]) * horizontalJitterScale * spread * turbulence;
+                jitterY = Mth.lerp(rollT, prev[1], cur[1]) * verticalJitterScale * spread * turbulence;
+                jitterZ = Mth.lerp(rollT, prev[2], cur[2]) * horizontalJitterScale * spread * turbulence;
             } else {
                 yScale = Mth.lerp(ageRatio, 1.0F, WASH_FLATTEN_END);
             }
@@ -472,12 +507,16 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                     new Vector3f(-1.0F, 1.0F, 0.0F),
                     new Vector3f(1.0F, 1.0F, 0.0F),
                     new Vector3f(1.0F, -1.0F, 0.0F)};
-            // 目的：billboard 朝向取相机旋转，抖动只影响层中心不破坏面向
+            // 调用本项目运行时调参入口：在保持 billboard 朝向的前提下，为每个粒子增加稳定随机旋转。
+            float randomRotationRadians = (float) Math.toRadians(
+                    RVP_RocketFlameRuntimeTuning.resolveRotationRandomDegrees()) * this.rotationRandomFactor;
+            // 目的：billboard 朝向取相机旋转，抖动和旋转只影响面片局部形态，不破坏面向
             float cx = baseX + jitterX;
             float cy = baseY + jitterY;
             float cz = baseZ + jitterZ;
             for (Vector3f corner : corners) {
                 corner.y *= yScale;
+                corner.rotateZ(randomRotationRadians);
                 corner.rotate(rotation);
                 corner.mul(quadSize);
                 corner.add(cx, cy, cz);
