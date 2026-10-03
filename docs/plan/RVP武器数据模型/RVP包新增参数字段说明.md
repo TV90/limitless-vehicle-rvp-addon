@@ -352,6 +352,7 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 | `proximity_radius` | 近炸引信检测半径（米），0 表示不启用。未写时可读 `detonate_data.explosion_data.proximity_radius`。 |
 | `proximity_fuse_tick` | 近炸解保 tick：出生后至少经过该 tick 才启用；**-1** 表示不限制。 |
 | `proximity_fuse_height` | 近炸目标最低高度（格，MCH `ProximityFuseHeight`）：目标 `onGround` 或脚下该深度内有实心方块时**不触发**；默认 **20**。 |
+| `proximity_fuse_anti_torpedo` | 反鱼雷近炸引信（2026-10-03，反潜深弹/反鱼雷拦截弹用），默认 **false**。开启后近炸**不受离地高度限制**（水中/贴水底目标可触发，`proximity_fuse_height` 贴地保护门旁路），且**仅鱼雷弹体**（`rvp:torpedo` 武器弹体）可触发——地面/空中目标、载具、其它弹药一律不触发。需 `proximity_radius > 0` 配合；未开启时行为与现状完全一致。 |
 | `proximity_fuse_require_radar_lock` | 近炸是否要求目标为当前有效雷达锁定目标；默认 **false**（任何可伤实体均可触发，现行为）。开启后仅"发射武器站根的手动雷达锁（`RadarUnit.lockedEntity`，玩家锁定键写入）或外置雷达锁（外置雷达控制器 / AI 炮手写入）"锁定的目标可触发近炸——判定口径与 SARH 半主动照射源一致；雷达 TWS 自动跟踪与导引头自锁带来的目标**不算数**。ECM 干扰期近炸本就被诱饵干扰抑制关闭，无需重复配置。 |
 | `proximity_fuse_damage` | 近炸对触发目标实体的直接伤害（MCH `ProximityFuseDamage`）；0 表示仅爆炸。 |
 | `proximity_fuse_explosion_damage` / `proximity_fuse_explosion_radius` | 近炸引信触发的爆炸参数；未写时使用 `detonate_data.explosion_data`。 |
@@ -360,6 +361,9 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 | `detonate_on_life_end` | 生命周期结束时是否爆炸；false 时只消失。 |
 | `entity_collision_safe_tick` | 实体碰撞安全引信 tick；生效期间忽略实体碰撞与实体近炸，但仍会撞地。未写时 `rvp:missile` 默认 `3`、`rvp:bomb` 默认 `20`，其它弹种默认 `0`。 |
 
+> **反鱼雷近炸（2026-10-03）**：`proximity_fuse_anti_torpedo=true` 时触发实体收窄为仅鱼雷弹体
+>（按 `weapon_kind=torpedo` 精确判），且贴地保护门（`proximity_fuse_height`）整体旁路——
+>深弹可部署在水线以下等待鱼雷接近引爆。
 > **近炸触发实体过滤（2026-09-13 起，无需配置）**：机枪弹丸不再触发任何 RVP 近炸引信——RVP 弹体按 `weapon_kind` 精确判 `machinegun`（同基类的导弹/火箭/航弹不受影响，"近炸拦截敌方导弹"能力保留）；本体侧按 `BulletEntity`（机炮弹专用类）精确判。干扰物（`RVP_Decoy`）、贴地目标（`proximity_fuse_height`）、已直击/已近炸目标的排除维持不变。
 
 #### AHEAD 自动可编程空爆（`rvp:machinegun` 等）
@@ -1330,11 +1334,11 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 | 字段 | 说明 | 类型 | 默认值 |
 | --- | --- | --- | --- |
 | `gps_spread_radius` | GPS 打击散布半径（格），使用正态分布。 | `float` | `0` |
-| `gps_modes` | GPS 目标模式列表（可写多个，玩家按**火控稳定器键** / GPS 面板 / 战术地图循环切换，大小写不敏感、无法识别的值忽略、去重、最多取前 4 个；缺省或全部无效回退默认）。可用值：<br>• `SINGLE`——单点：R 键锁定即覆盖装订点，所有发射弹打同一点；<br>• `MULTI`——多点：R 键追加进目标列表，发射按序轮转分配到不同点，上限见 `multi_max_points`；<br>• `FAST`——**快速打击**（需武器传感器 `rvp_fire_control_sensor_mode: "eo_ccip"`）：进入模式时清空全部 GPS 点、R 键不可标点；按**开火键**=观瞄射线命中方块处写入装订点并立即发射，射线落空则拒止发射并提示；<br>• `RADAR`——**雷达上行**（需 RF 传感器）：进入模式时清空全部 GPS 点、R 键走本体雷达锁定；发射瞬间把确认雷达硬锁目标（含外置雷达锁）的位置写为 GPS 目标点，并按 `radar_update_interval_second` 周期持续在途改靶——**已发射弹（实体态与超视距虚拟态）落点随锁定目标持续修正**；锁目标离地超过 25 格时不标记/不更新（反舰弹道导弹打水面舰船场景不受影响），锁丢失停止更新、保持最后坐标。 | `List<String>` | `["SINGLE","MULTI"]` |
+| `gps_modes` | GPS 目标模式列表（可写多个，玩家按**火控稳定器键** / GPS 面板 / 战术地图循环切换，大小写不敏感、无法识别的值忽略、去重、最多取前 4 个；缺省或全部无效回退默认）。可用值：<br>• `SINGLE`——单点：R 键锁定即覆盖装订点，所有发射弹打同一点；<br>• `MULTI`——多点：R 键追加进目标列表，发射按序轮转分配到不同点，上限见 `multi_max_points`；<br>• `FAST`——**快速打击**（需 CCIP 系传感器：武器级 `rvp_fire_control_sensor_mode: "eo_ccip"` 动态模式，或站级静态 `fire_control_sensor_type: ccip`，任一即可）：进入模式时清空全部 GPS 点、R 键不可标点；按**开火键**=观瞄射线命中方块处写入装订点并立即发射，射线落空则拒止发射并提示；<br>• `RADAR`——**雷达上行**（需 RF 传感器）：进入模式时清空全部 GPS 点、R 键走本体雷达锁定；发射瞬间把确认雷达硬锁目标（含外置雷达锁）的位置写为 GPS 目标点，并按 `radar_update_interval_second` 周期持续在途改靶——**已发射弹（实体态与超视距虚拟态）落点随锁定目标持续修正**；锁目标离地超过 25 格时不标记/不更新（反舰弹道导弹打水面舰船场景不受影响），锁丢失停止更新、保持最后坐标。 | `List<String>` | `["SINGLE","MULTI"]` |
 | `multi_max_points` | `MULTI` 模式目标点上限：标满后再标点为滑动窗口——新点成为末位、其余点依次前移、最旧的点丢弃。 | `int` | `8` |
 | `radar_update_interval_second` | `RADAR` 模式在途改靶间隔（秒）：雷达锁定期间按该周期把锁目标当前位置写入已发射弹的 GPS 目标点（写"修正真值"，不重掷 `gps_spread_radius` 散布）。 | `float` | `5` |
 
-**模式门禁与循环规则（2026-10-02）**：`FAST` 与 `RADAR` 受武器传感器门禁——`FAST` 要求 `rvp_fire_control_sensor_mode: "eo_ccip"`，`RADAR` 要求传感器为 `RF`；同一武器站传感器单选，两者互斥，故**最多可配置 4 种、最多同时生效 3 种**。循环切换只在"已配置 ∩ 过门禁"的序列内进行，不满足门禁的模式被跳过；服务端对模式切换包做同规则校验（非法切换忽略并回发当前状态）。 | | |
+**模式门禁与循环规则（2026-10-02）**：`FAST` 与 `RADAR` 受武器传感器门禁——`FAST` 要求 CCIP 系传感器（`eo_ccip` 动态模式或静态 `ccip`），`RADAR` 要求传感器为 `RF`；同一武器站传感器单选，eo_ccip/静态 ccip 均不解析为 RF，两者互斥，故**最多可配置 4 种、最多同时生效 3 种**。循环切换只在"已配置 ∩ 过门禁"的序列内进行，不满足门禁的模式被跳过；服务端对模式切换包做同规则校验（非法切换忽略并回发当前状态）。 | | |
 
 #### `RVP_GuidanceDataARM`（`ARM`）
 
