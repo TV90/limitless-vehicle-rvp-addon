@@ -56,11 +56,30 @@ public class RVP_FuseData {
     private int proximityFuseHeight = 20;
 
     /**
+     * 反鱼雷近炸引信（2026-10-03，反潜深弹/反鱼雷拦截弹用），默认 {@code false}。
+     * 生效条件：{@code proximity_radius > 0} 时本字段才有意义。开启后：
+     * <ul>
+     * <li>近炸<b>不受离地高度限制</b>——水中/贴水底目标（离地高度为负）不再被
+     * {@code proximity_fuse_height} 贴地保护门过滤；</li>
+     * <li>且<b>仅鱼雷弹体</b>（{@code rvp:torpedo} 武器弹体）可触发近炸——地面/空中目标、
+     * 载具、其它弹药一律不触发，避免误伤。</li>
+     * </ul>
+     * 未开启时近炸行为与现状完全一致。
+     */
+    @SerializedName("proximity_fuse_anti_torpedo")
+    private boolean proximityFuseAntiTorpedo = false;
+
+    /**
      * 近炸引信半径（米），0 表示不启用 RVP 近炸检测。
      * 未写时可读 {@code detonate_data.explosion_data.proximity_radius}。
      */
     @SerializedName("proximity_radius")
     private float proximityRadius = 0f;
+
+    /** 反鱼雷近炸引信开关（见 {@link #proximityFuseAntiTorpedo} 字段注释）。 */
+    public boolean isProximityFuseAntiTorpedo() {
+        return proximityFuseAntiTorpedo;
+    }
 
     /**
      * 近炸引信是否要求目标为当前有效雷达锁定目标（默认 {@code false}）。
