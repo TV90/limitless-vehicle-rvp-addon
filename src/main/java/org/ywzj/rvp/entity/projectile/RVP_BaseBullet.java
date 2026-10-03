@@ -83,6 +83,7 @@ import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.effects.RVP_TerrainOnlyExplosion;
 import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
+import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
@@ -4472,7 +4473,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             trailMotorBurningO = false;
             return;
         }
-        if (missileNativeTrail && !effects.isMissileNativeTrailEnabled()) {
+        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
+        // 调用本项目运行时调参入口：允许客户端命令在不改武器 JSON 的情况下关闭火箭尾焰。
+        if (missileNativeTrail && (!effects.isMissileNativeTrailEnabled()
+                || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true)))) {
             trailMotorBurningO = false;
             return;
         }
@@ -4547,7 +4551,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     private void spawnMissileNativeTrailParticles(RVP_EffectsData effects) {
-        Vec3 pos = this.position().add(this.getLookAngle().scale(-effects.getMissileNativeTrailOffset()));
+        boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
+        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
+        boolean keroseneBlackStyle = effects.isMissileNativeTrailKeroseneBlackSmoke();
+        float configuredOffset = effects.getMissileNativeTrailOffset();
+        // 调用本项目运行时调参入口：仅对 rvp_rocket_flame 覆盖尾迹生成点偏移，其他风格保持原配置。
+        double trailOffset = rocketFlameStyle
+                ? RVP_RocketFlameRuntimeTuning.resolveOffset(configuredOffset) : configuredOffset;
+        Vec3 pos = this.position().add(this.getLookAngle().scale(-trailOffset));
         if (!trailMotorBurningO || trailParticleTickO != getFlightTickCount() - 1 || particlePosO == null) {
             particlePosO = pos;
         }
@@ -4565,17 +4576,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             trailParticleTickO = getFlightTickCount();
             return;
         }
-        boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
-        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
-        boolean keroseneBlackStyle = effects.isMissileNativeTrailKeroseneBlackSmoke();
-        int spawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
+        int configuredSpawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
+        // 调用本项目运行时调参入口：仅对 rvp_rocket_flame 覆盖路径采样和生成频率。
+        int spawnInterval = rocketFlameStyle
+                ? RVP_RocketFlameRuntimeTuning.resolveSpawnInterval(configuredSpawnInterval)
+                : configuredSpawnInterval;
         if ((rvpSmokeStyle || rocketFlameStyle || keroseneBlackStyle || primary != null) && getFlightTickCount() % spawnInterval == 0) {
             Vec3 posO = particlePosO == null ? pos : particlePosO;
             Vec3 step = pos.subtract(posO);
             double dist = step.length();
-            double segmentStep = effects.getMissileNativeTrailStep();
+            double configuredStep = effects.getMissileNativeTrailStep();
+            // 调用本项目运行时调参入口：运行时步长覆盖只改变火箭凝结云的采样间距。
+            double segmentStep = rocketFlameStyle
+                    ? RVP_RocketFlameRuntimeTuning.resolveStep((float) configuredStep) : configuredStep;
             int baseSegments = (int) (dist / segmentStep);
-            float densityScale = effects.getMissileNativeTrailDensityScale();
+            float configuredDensityScale = effects.getMissileNativeTrailDensityScale();
+            // 调用本项目运行时调参入口：运行时密度覆盖只改变火箭凝结云的粒子数量。
+            float densityScale = rocketFlameStyle
+                    ? RVP_RocketFlameRuntimeTuning.resolveDensityScale(configuredDensityScale)
+                    : configuredDensityScale;
             int segments = densityScale <= 0f ? -1 : Math.max(0, Math.round(baseSegments * densityScale));
             if (segments >= 0) {
                 Vec3 dir = dist > 1.0E-6D ? step.normalize() : Vec3.ZERO;
@@ -4585,7 +4604,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // rvp_rocket_flame：HBM 风格火箭尾焰·固体发动机凝结云款（先火后烟膨胀柱，初速沿弹轴
                 // 反方向喷出）；rvp_kerosene_black_smoke：液氧煤油黑烟技术储备款（09-19 前原始观感）。
                 // 服务端无粒子渲染管线（桥为 NOOP），本方法本就只在客户端实体 Tick 中调用。
-                float particleScale = effects.getMissileNativeTrailParticleScale();
+                float configuredParticleScale = effects.getMissileNativeTrailParticleScale();
+                // 调用本项目运行时调参入口：运行时尺寸覆盖同步作用于空中尾迹和本地发射烟浪。
+                float particleScale = rocketFlameStyle
+                        ? RVP_RocketFlameRuntimeTuning.resolveParticleScale(configuredParticleScale)
+                        : configuredParticleScale;
                 // 目的：凝结云保持期绑定发动机燃烧期（2026-09-20 用户需求）——距燃尽还有多少
                 // tick 传给粒子（固体款专用），发动机开启时飞过的距离全程留云、燃尽后缓缓散开
                 int holdTicks = rocketFlameStyle ? ticksUntilMotorStopsBurning() : 0;
@@ -4634,7 +4657,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (!(this instanceof RVP_MissileEntity)) {
             return;
         }
-        if (!effects.isMissileNativeTrailEnabled() || !effects.isMissileNativeTrailGroundWashEnabled()) {
+        boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
+        // 调用本项目运行时调参入口：贴地烟浪复用火箭尾焰总开关，避免只关闭空中尾迹。
+        boolean enabled = effects.isMissileNativeTrailEnabled()
+                && (!rocketFlameStyle || RVP_RocketFlameRuntimeTuning.resolveEnabled(true));
+        boolean groundWashEnabled = effects.isMissileNativeTrailGroundWashEnabled();
+        if (rocketFlameStyle) {
+            // 调用本项目运行时调参入口：允许命令单独开关发射段贴地烟浪。
+            groundWashEnabled = RVP_RocketFlameRuntimeTuning.resolveGroundWash(groundWashEnabled);
+        }
+        if (!enabled || !groundWashEnabled) {
             return;
         }
         // 冷发射弹射段：点火前（flightTick ≤ coldLaunchTimeTick）也出烟——弹射气体冲刷
@@ -4652,7 +4684,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (this.getY() - groundY >= 20.0D) {
             return;
         }
-        float washScale = effects.getMissileNativeTrailParticleScale();
+        float configuredParticleScale = effects.getMissileNativeTrailParticleScale();
+        // 调用本项目运行时调参入口：贴地烟浪复用火箭尾焰的尺寸覆盖，保证两条视觉链路一致。
+        float washScale = rocketFlameStyle
+                ? RVP_RocketFlameRuntimeTuning.resolveParticleScale(configuredParticleScale)
+                : configuredParticleScale;
         // 目的：烟浪滞留时长与扩散范围跟随"尾迹尺寸 × 发射段加粗"提升——
         // 粒子侧按 sizeScale 等比放大寿命与膨胀末端，发射段加粗窗口内同样全额生效
         washScale *= resolveLaunchBoostFactor(effects);
@@ -4668,7 +4704,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * （{@code motorBurnEndTick}）内随飞行进度从全额线性回落到 1.0；未配置（1.0）时快速返回。
      * 供空中尾迹与地面烟浪共同使用，保证两者发射段观感同步提升。
      */
-    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {        float boost = effects.getMissileNativeTrailLaunchBoost();
+    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {
+        float boost = effects.getMissileNativeTrailLaunchBoost();
+        if (effects.isMissileNativeTrailRocketFlame()) {
+            // 调用本项目运行时调参入口：仅对火箭尾焰覆盖发射段加粗倍率。
+            boost = RVP_RocketFlameRuntimeTuning.resolveLaunchBoost(boost);
+        }
         if (boost == 1.0f) {
             return 1.0f;
         }

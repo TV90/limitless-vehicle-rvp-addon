@@ -22,6 +22,7 @@ import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.VehicleDisplay;
@@ -219,7 +220,10 @@ public final class RVP_RemoteAmmoVisualRenderer {
 
         // 调用 RVP 远程克隆配置出口，以同步的 weaponId 读取客户端同款尾迹风格；本体弹保持 null 回退。
         RVP_EffectsData effects = resolveRemoteTrailEffects(entity);
-        if (effects != null && !effects.isMissileNativeTrailEnabled()) {
+        boolean rocketFlameStyle = effects != null && effects.isMissileNativeTrailRocketFlame();
+        // 调用本项目运行时调参入口：远程火箭尾迹也遵守客户端会话级总开关。
+        if (effects != null && (!effects.isMissileNativeTrailEnabled()
+                || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true)))) {
             TRAIL_STATES.remove(entity.getId());
             return;
         }
@@ -227,18 +231,31 @@ public final class RVP_RemoteAmmoVisualRenderer {
         double horizontalDistance = Math.sqrt(horizontalDistanceSqr(renderPos, cameraPos));
         int lodInterval = horizontalDistance < 768.0D ? 1 : horizontalDistance < 1152.0D ? 2 : 3;
         double lodSpacing = horizontalDistance < 768.0D ? 2.0D : horizontalDistance < 1152.0D ? 4.0D : 8.0D;
-        int interval = effects == null
-                ? lodInterval
-                : Math.max(lodInterval, effects.getMissileNativeTrailSpawnIntervalTick());
+        int configuredInterval = effects == null
+                ? lodInterval : effects.getMissileNativeTrailSpawnIntervalTick();
+        if (rocketFlameStyle) {
+            // 调用本项目运行时调参入口：让超视距火箭尾迹使用与近距相同的生成频率覆盖。
+            configuredInterval = RVP_RocketFlameRuntimeTuning.resolveSpawnInterval(configuredInterval);
+        }
+        int interval = effects == null ? lodInterval : Math.max(lodInterval, configuredInterval);
         double spacing = lodSpacing;
         if (effects != null) {
             // 调用 RVP 密度/步长解析出口：配置只能让远距尾迹更稀，不能突破远距性能下限。
             float densityScale = effects.getMissileNativeTrailDensityScale();
+            if (rocketFlameStyle) {
+                // 调用本项目运行时调参入口：让超视距火箭尾迹使用与近距相同的密度覆盖。
+                densityScale = RVP_RocketFlameRuntimeTuning.resolveDensityScale(densityScale);
+            }
             if (densityScale <= 0.0f) {
                 TRAIL_STATES.remove(entity.getId());
                 return;
             }
-            spacing = Math.max(lodSpacing, effects.getMissileNativeTrailStep() / densityScale);
+            double configuredStep = effects.getMissileNativeTrailStep();
+            if (rocketFlameStyle) {
+                // 调用本项目运行时调参入口：让超视距补线使用与近距相同的采样步长覆盖。
+                configuredStep = RVP_RocketFlameRuntimeTuning.resolveStep((float) configuredStep);
+            }
+            spacing = Math.max(lodSpacing, configuredStep / densityScale);
         }
 
         long gameTick = minecraft.level.getGameTime();
@@ -289,6 +306,10 @@ public final class RVP_RemoteAmmoVisualRenderer {
         if (effects != null && entity instanceof RVP_MissileEntity) {
             // 调用 RVP 效果数据出口，使远程尾喷口与近距 missile_native_trail_offset 完全同源。
             offset = effects.getMissileNativeTrailOffset();
+            if (effects.isMissileNativeTrailRocketFlame()) {
+                // 调用本项目运行时调参入口：让超视距尾喷口位置与近距尾迹同步调节。
+                offset = RVP_RocketFlameRuntimeTuning.resolveOffset((float) offset);
+            }
         } else {
             offset = entity instanceof RocketEntity || entity instanceof RVP_RocketEntity ? 1.0D : 2.0D;
         }

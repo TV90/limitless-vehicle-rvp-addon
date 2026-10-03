@@ -8,6 +8,7 @@ import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_RocketFlameParticle;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 
 import javax.annotation.Nullable;
 
@@ -37,7 +38,10 @@ final class RVP_RemoteMissileTrailEmitter {
         }
 
         // 调用 RVP 效果数据解析出口，让远距粒子尺寸与近距 native missile trail 使用同一配置。
-        float scale = effects.getMissileNativeTrailParticleScale();
+        float configuredScale = effects.getMissileNativeTrailParticleScale();
+        // 调用本项目运行时调参入口：让超视距火箭粒子尺寸与近距尾迹同步调节。
+        float scale = effects.isMissileNativeTrailRocketFlame()
+                ? RVP_RocketFlameRuntimeTuning.resolveParticleScale(configuredScale) : configuredScale;
         if (effects.isMissileNativeTrailRocketFlame()) {
             // 调用超视距专用 HBM 工厂，保留固体橙焰→凝结云曲线并放宽 1024 格消亡边界。
             minecraft.particleEngine.add(RVP_RocketFlameParticle.ofRemoteTrail(
