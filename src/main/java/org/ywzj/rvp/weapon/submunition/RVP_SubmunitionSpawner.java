@@ -40,7 +40,8 @@ public final class RVP_SubmunitionSpawner {
 
     private RVP_SubmunitionSpawner() {}
 
-    public static int spawnReleaseWave(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release, int eventsThisTick) {
+    public static int spawnReleaseWave(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release, int eventsThisTick,
+                                       @Nullable Vec3 anchor) {
         if (parent.level().isClientSide() || parent.getRvpData() == null) {
             RVP_TopAttackDebug.noteSpawn(parent, "SPAWN skip clientOrRvpDataNull events=" + eventsThisTick);
             return 0;
@@ -55,7 +56,7 @@ public final class RVP_SubmunitionSpawner {
             for (RVP_SubmunitionPayloadData payload : release.getPayloads()) {
                 int count = payload.getCount();
                 for (int i = 0; i < count; i++) {
-                    if (spawnPayload(parent, release, payload, globalPellet, count)) {
+                    if (spawnPayload(parent, release, payload, globalPellet, count, anchor)) {
                         spawned++;
                     }
                     globalPellet++;
@@ -65,18 +66,38 @@ public final class RVP_SubmunitionSpawner {
         return spawned;
     }
 
+    /**
+     * 释放基准点解析（2026-10-04）：命中触发（on_block_hit/on_entity_hit/on_impact）传入命中点
+     * 锚点——spawn_forward_offset > 0 时沿父弹弹道方向前推（打墙落在墙后），否则用命中点本身；
+     * 飞行中释放等未提供锚点的路径回退 parent.position()（旧行为）。
+     */
+    private static Vec3 resolveSpawnBase(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release, @Nullable Vec3 anchor) {
+        if (anchor == null) {
+            return parent.position();                       // 旧行为：飞行中释放等
+        }
+        float offset = release.getSpawnForwardOffset();
+        if (offset <= 0f) {
+            return anchor;                                  // 命中点本身（实体就是这条）
+        }
+        Vec3 step = parent.getDeltaMovement();
+        if (step.lengthSqr() <= 1.0E-12) {
+            return anchor;
+        }
+        return anchor.add(step.normalize().scale(offset));   // 沿弹道前推 ⇒ 落到墙后
+    }
+
     private static boolean spawnPayload(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
                                         RVP_SubmunitionPayloadData payload,
-                                        int pelletIndex, int pelletCount) {
+                                        int pelletIndex, int pelletCount, @Nullable Vec3 anchor) {
         return switch (payload.getKind()) {
-            case RVP_WEAPON -> spawnRvpWeapon(parent, release, payload, pelletIndex, pelletCount);
-            case ENTITY -> spawnEntity(parent, release, payload, pelletIndex, pelletCount);
+            case RVP_WEAPON -> spawnRvpWeapon(parent, release, payload, pelletIndex, pelletCount, anchor);
+            case ENTITY -> spawnEntity(parent, release, payload, pelletIndex, pelletCount, anchor);
         };
     }
 
     private static boolean spawnRvpWeapon(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
                                           RVP_SubmunitionPayloadData payload,
-                                          int pelletIndex, int pelletCount) {
+                                          int pelletIndex, int pelletCount, @Nullable Vec3 anchor) {
         ResourceLocation parentId = parent.getWeaponId();
         ResourceLocation childId = payload.resolveWeaponId(parentId);
         if (childId == null) {
@@ -108,15 +129,17 @@ public final class RVP_SubmunitionSpawner {
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
         // 调用本项目释放云采样工具：先把子体权威初始位置散布到 release 配置的球体积内。
+        // 释放锚点解析（2026-10-04）：命中触发传命中点（可沿弹道前推），飞行中释放传 null 回退母弹位置
+        Vec3 base = resolveSpawnBase(parent, release, anchor);
         Vec3 cloudPos = RVP_SubmunitionReleaseCloudUtil.samplePosition(
-                parent.position(), release, level.getRandom());
+                base, release, level.getRandom());
         // 调用本项目 payload 位置散布器：在释放云位置之上继续叠加载荷自身的位置偏移。
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
                 cloudPos, launchAim.xRot(), launchAim.yRot(),
                 payload.getSpread(), pelletIndex, pelletCount, level.getRandom());
         // 调用本项目速度生成器：把最终出生点相对释放点的偏移传入，使云径向模式沿云心外向采样。
         SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim,
-                pos.subtract(parent.position()), pelletIndex, pelletCount);
+                pos.subtract(base), pelletIndex, pelletCount);
         Vec3 velocity = spawnVelocity.totalVelocity();
         child.setSubmunitionDepth(parent.getSubmunitionDepth() + 1);
         child.initFromWeapon(childData, kind, vehicle, shooter, pos,
@@ -153,7 +176,7 @@ public final class RVP_SubmunitionSpawner {
 
     private static boolean spawnEntity(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
                                        RVP_SubmunitionPayloadData payload,
-                                       int pelletIndex, int pelletCount) {
+                                       int pelletIndex, int pelletCount, @Nullable Vec3 anchor) {
         ResourceLocation typeId = payload.resolveEntityType();
         if (typeId == null) {
             return false;
@@ -169,9 +192,10 @@ public final class RVP_SubmunitionSpawner {
         }
         RVP_BaseBullet.AimRot refAim = referenceAim(parent);
         RVP_BaseBullet.AimRot launchAim = resolveLaunchAim(payload, refAim);
-        // 调用本项目释放云采样工具：普通实体载荷与 RVP 弹体使用相同的权威球体积位置。
+        // 释放锚点解析（2026-10-04）：同 spawnRvpWeapon，命中触发用命中点（可沿弹道前推）
+        Vec3 base = resolveSpawnBase(parent, release, anchor);
         Vec3 cloudPos = RVP_SubmunitionReleaseCloudUtil.samplePosition(
-                parent.position(), release, level.getRandom());
+                base, release, level.getRandom());
         // 调用本项目 payload 位置散布器：允许配置作者继续叠加载荷级位置散布。
         Vec3 pos = RVP_SubmunitionSpreadApplicator.applyPositionOffset(
                 cloudPos, launchAim.xRot(), launchAim.yRot(),
@@ -180,7 +204,7 @@ public final class RVP_SubmunitionSpawner {
         applyEntityNbt(entity, payload.getEntityNbt());
         // 调用本项目速度生成器：普通实体载荷也复用最终出生点对应的云心外向采样规则。
         SpawnVelocity spawnVelocity = buildVelocity(parent, payload, launchAim, refAim,
-                pos.subtract(parent.position()), pelletIndex, pelletCount);
+                pos.subtract(base), pelletIndex, pelletCount);
         entity.setDeltaMovement(spawnVelocity.totalVelocity());
         if (entity instanceof Projectile projectile) {
             projectile.setOwner(parent.getOwner());

@@ -59,6 +59,12 @@ public class RVP_SubmunitionReleaseData {
     private String parentAction = "continue";
 
     /**
+     * 子体生成点相对"触发点"沿父弹弹道方向的【前推距离】（格），默认 0。仅当触发点提供了锚点时生效。
+     */
+    @SerializedName("spawn_forward_offset")
+    private float spawnForwardOffset = 0f;
+
+    /**
      * 是否把本释放方案生成的全部子体初始位置散布为三维椭球状云团，默认 {@code false}；
      * 释放云自身仅影响服务端权威生成位置，不直接增加速度或毁伤。payload 使用
      * {@code spread.mode=cloud_radial_horizontal} 时，会读取最终出生位置来确定水平外散方向。
@@ -111,6 +117,10 @@ public class RVP_SubmunitionReleaseData {
 
     public RVP_EnumSubmunitionParentAction getParentAction() {
         return RVP_EnumSubmunitionParentAction.fromString(parentAction);
+    }
+
+    public float getSpawnForwardOffset() {
+        return Math.max(spawnForwardOffset, 0f);
     }
 
     public boolean isReleaseCloudEnabled() {
