@@ -218,6 +218,8 @@ public final class RVP_GuidanceRuntimeMath {
         next = applyResolvedAeroSteering(
                 projectile, context.data(), current, next, factor, rvpMaxGs);
         projectile.setDeltaMovement(next);
+        // 标记本 Tick 已写入 PRESET 制导速度，供冷发射运动层在重叠窗口内完成速度接管。
+        projectile.markPresetGuidanceMotionAppliedThisTick();
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
     }
@@ -368,10 +370,15 @@ public final class RVP_GuidanceRuntimeMath {
         // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：全程单调平滑、无
         // 硬切换，竖直发射后追点自然略高于自身平滑转上爬，不会“压-拉-压”的蛇形振荡
         double base = Math.min(40.0, apogee * 0.3);
-        double targetY = launch == null ? position.y + 8.0
-                : launch.y + base + (apogee - base) * 4.0 * p * (1.0 - p);
         // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
         double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
+        // 前视点的水平坐标已经向前推进，垂直坐标同步采样前视进度，
+        // 避免 YJ-20 冷发射结束后追到“前方同高度”的水平点。
+        double lookAheadProgress = RVP_BallisticTrajectoryMath.resolvePresetLookAheadProgress(
+                hDist, totalH, lookAhead);
+        double targetY = launch == null ? position.y + 8.0
+                : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
+                        launch.y, base, apogee, lookAheadProgress);
         Vec3 targetPoint = new Vec3(
                 position.x + forwardH.x * lookAhead,
                 targetY,

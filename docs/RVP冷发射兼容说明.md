@@ -1,5 +1,7 @@
 # RVP 冷发射兼容说明
 
+> 当前实现状态：已实现。本文同时记录 2026-10-04 修复的 GPS PRESET 冷发射制导接管规则。
+
 本文档说明 `RVP` 侧对本体 `WeaponUnit` 冷发射字段的兼容方式。
 
 ## 适用范围
@@ -50,6 +52,26 @@ max(cold_launch_time_tick, ignition_delay_tick)
 
 - `cold_launch_time_tick` 阶段：按冷发射速度弹出
 - 若 `ignition_delay_tick` 更长：冷发射结束后继续无推力滑出，直到延迟结束再点火
+
+4. GPS 导弹启用 PRESET（`guidance_data.preset_cruise_altitude > 0`）时，若
+   `cold_launch_time_tick >= ignition_delay_tick`，冷发射与点火延迟存在重叠窗口：
+   - 当前 Tick 已成功计算出 PRESET 制导速度后，运动层保留该速度，不再用冷发射竖直速度覆盖；
+   - 尚未获得有效目标或尚未写入制导速度时，仍使用原来的载具速度 + 冷发射速度；
+   - 冷发射结束后进入正常发动机推进，推力沿接管后的弹体朝向施加。
+
+   该规则只改变“冷发射运动覆盖制导结果”的冲突，不改变冷发射字段的本地坐标语义，也不按武器 ID
+   分支。冷发射时长短于点火延迟的导弹继续沿用原有冷发射行为。
+
+### 典型对照
+
+| 弹体 | `cold_launch_time_tick` | `ignition_delay_tick` | 结果 |
+| --- | ---: | ---: | --- |
+| YJ-20（`052d_yj20`） | 20 | 20 | PRESET 制导在冷发射末段接管速度，避免发射后持续竖直上冲 |
+| 9M723 伊斯坎德尔-M（`9k720_9m723`） | 10 | 20 | 冷发射先完成，之后的点火等待段按原逻辑接受制导速度 |
+
+上述现象的根因不是 GPS 目标解析失败，而是冷发射运动阶段在同一 Tick 的制导计算之后覆盖了制导速度。
+插件侧通过 `RVP_BaseBullet` 的 Tick 瞬态标记与 `RVP_ProjectileMotion` 的接管判定修复，未修改
+`ywzj_vehicle` 本体。
 
 ## 与旧行为的区别
 

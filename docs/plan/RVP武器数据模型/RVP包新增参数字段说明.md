@@ -196,7 +196,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
-| `ignition_delay_tick` | 点火延迟；延迟内继承载具弹射速度（与本体弹仓弹射一致）。 |
+| `ignition_delay_tick` | 点火延迟，单位 tick；延迟内继承载具弹射速度（与本体弹仓弹射一致）。发动机实际点火时刻取 `max(cold_launch_time_tick, ignition_delay_tick)`；GPS PRESET 与冷发射窗口重叠时，当前 Tick 已生成的 PRESET 制导速度由运动层保留，不再被冷发射竖直速度覆盖。 |
 | `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；缺省或 JSON `null` 时使用下述默认大气表，显式空表、未命中区间或 value 非法时按 `1.0` 处理。 |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
@@ -1402,6 +1402,7 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 
 > 除 `preset_cruise_altitude` 外，以上参数**仅在 PRESET 启用**（巡航高度 > 0）时生效。全部字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
 > **俯冲启动**：距目标水平距离 ≤ max(`preset_dive_radius`, 垂直高度差×`preset_dive_altitude_factor`, 转弯半径×`preset_dive_lead_factor`)，或已越过目标；末端越过/极近时锁定水平方向全力下压，禁止翻转绕圈。现役范例：`9k720_9m723.json`（顶点 550 / 前视 25 / `preset_dive_altitude_factor` 0.3）。
+> **冷发射交接**：GPS PRESET 载具若配置 `cold_launch_time_tick >= ignition_delay_tick`，制导在冷发射期间已经产生有效速度时，运动层会保留该速度并平滑接管；无有效制导结果时仍按 `cold_launch_velocity` 弹出。该规则适用于参数关系，不按武器 ID 特判。
 
 #### 示例
 

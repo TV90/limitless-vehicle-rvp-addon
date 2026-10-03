@@ -6,6 +6,7 @@ import org.ywzj.rvp.weapon.data.RVP_Range;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_GuidanceRuntimeMathTest {
 
@@ -111,6 +112,29 @@ class RVP_GuidanceRuntimeMathTest {
         );
 
         assertEquals(0.0, guided.y, EPSILON);
+    }
+
+    /**
+     * 验证实体 PRESET 在冷发射结束后的首个追踪点仍带有上升分量，
+     * 防止前视水平点把垂发导弹先拉成一小段平飞。
+     */
+    @Test
+    void presetArcUsesLookAheadHeightForColdLaunchHandoff() {
+        RVP_PresetBallisticProfile preset = new RVP_PresetBallisticProfile(
+                750.0f, 25.0f, 24.0f, 24.0f, 0.3f, 1.5f,
+                0.002f, 0.01f, 0.5f, 0.0f);
+
+        Vec3 guided = RVP_GuidanceRuntimeMath.steerPresetBallisticArc(
+                new Vec3(0.0, 2.0, 0.0),
+                new Vec3(0.0, 40.0, 0.0),
+                new Vec3(2000.0, 0.0, 0.0),
+                Vec3.ZERO,
+                preset,
+                2.0,
+                1.0f);
+
+        assertTrue(guided.y > 0.0,
+                "cold-launch handoff must follow the rising side of the PRESET arc");
     }
 
     private static void assertVectorEquals(Vec3 expected, Vec3 actual) {
