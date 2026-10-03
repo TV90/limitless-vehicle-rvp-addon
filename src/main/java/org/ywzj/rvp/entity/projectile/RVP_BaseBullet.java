@@ -333,6 +333,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
+    /**
+     * 发动机点火起点（飞行 tick）：= max(ignition_delay_tick, 冷发射时长)，随生成数据包同步。
+     * 客户端焰效/尾迹以此做下界——否则延迟点火的导弹出管即喷焰，与服务端运动学脱节
+     * （2026-10-03 用户实测：yj20/hq9b/irist 出管滑行段带尾焰）。
+     */
+    protected int motorIgnitionStartTick = 0;
     protected int secondPulseStartTick = -1;
     /** 是否为本体远程广播创建的客户端视觉克隆；仅用于远程渲染门控，不参与物理、制导或伤害计算。 */
     private boolean remoteVisualClone;
@@ -4686,7 +4692,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected boolean isMotorBurning() {
         // 客户端 rvpData 为 null，用生成数据包同步的 motorBurnEndTick
         if (rvpData == null) {
-            if (getFlightTickCount() <= motorBurnEndTick) {
+            // 上下界夹取燃烧窗口：motorIgnitionStartTick 为生成包同步的点火起点（延迟点火），
+            // 只有上界会让延迟点火的导弹出管即喷焰（与服务端运动学脱节）
+            if (getFlightTickCount() >= motorIgnitionStartTick && getFlightTickCount() <= motorBurnEndTick) {
                 return true;
             }
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
@@ -4909,8 +4917,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData != null && rvpData.usesPropulsion()) {
             int ignition = Math.max(rvpData.getResolvedIgnitionDelayTick(), coldLaunchTimeTick);
             int burnTicks = Math.round(rvpData.getResolvedMotorBurnTime());
+            this.motorIgnitionStartTick = ignition;
             this.motorBurnEndTick = ignition + burnTicks;
         } else {
+            this.motorIgnitionStartTick = 0;
             this.motorBurnEndTick = Integer.MAX_VALUE;
         }
     }
@@ -4926,6 +4936,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeDouble(getDeltaMovement().z);
         buffer.writeDouble(currentFlightSpeed);
         buffer.writeVarInt(motorBurnEndTick);
+        buffer.writeVarInt(motorIgnitionStartTick);
         buffer.writeVarInt(coldLaunchTimeTick);
         buffer.writeDouble(coldLaunchVelocity.x);
         buffer.writeDouble(coldLaunchVelocity.y);
@@ -4972,6 +4983,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.currentFlightSpeed = buffer.readDouble();
         this.peakFlightSpeed = this.currentFlightSpeed;
         this.motorBurnEndTick = buffer.readVarInt();
+        this.motorIgnitionStartTick = buffer.readVarInt();
         this.coldLaunchTimeTick = buffer.readVarInt();
         this.coldLaunchVelocity = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         this.showMslIndicator = buffer.readBoolean();

@@ -460,7 +460,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     protected boolean isMotorBurning() {
         // 客户端 rvpData 可能为 null，需要同时支持双脉冲第二段的同步燃烧期判断。
         if (rvpData == null) {
-            if (getFlightTickCount() <= motorBurnEndTick) {
+            // 上下界夹取燃烧窗口（2026-10-03 与基类同款修复）：motorIgnitionStartTick 为
+            // 生成包同步的点火起点，只有上界会让延迟点火的导弹出管即喷焰
+            if (getFlightTickCount() >= motorIgnitionStartTick && getFlightTickCount() <= motorBurnEndTick) {
                 return true;
             }
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
