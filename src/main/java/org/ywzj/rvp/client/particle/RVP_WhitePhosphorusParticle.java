@@ -116,17 +116,24 @@ public final class RVP_WhitePhosphorusParticle extends SingleQuadParticle {
                 startColor, endColor, 0, 0, lifetime, fullBright, null);
     }
 
-    public static Particle createTrail(ClientLevel level, Vec3 position,
-                                       float startScale, float endScale,
-                                       float startAlpha, float endAlpha,
-                                       int startColor, int endColor,
-                                       int trailHotPhaseTicks, int trailHotColor,
-                                       int lifetime, boolean fullBright,
-                                       RVP_TrailLifetimeGate lifetimeGate) {
+    public static RVP_WhitePhosphorusParticle createTrail(ClientLevel level, Vec3 position,
+                                                          float startScale, float endScale,
+                                                          float startAlpha, float endAlpha,
+                                                          int startColor, int endColor,
+                                                          int trailHotPhaseTicks, int trailHotColor,
+                                                          int lifetime, boolean fullBright,
+                                                          RVP_TrailLifetimeGate lifetimeGate) {
         return new RVP_WhitePhosphorusParticle(
                 level, position, false, startScale, endScale, startAlpha, endAlpha,
                 startColor, endColor, trailHotPhaseTicks, trailHotColor,
                 lifetime, fullBright, lifetimeGate);
+    }
+
+    /** 设置白烟面片的初始随机旋转角，单位弧度；同时同步上一帧角度避免首帧插值跳转。 */
+    public RVP_WhitePhosphorusParticle withRollRadians(float rollRadians) {
+        this.roll = rollRadians;
+        this.oRoll = rollRadians;
+        return this;
     }
 
     @Override

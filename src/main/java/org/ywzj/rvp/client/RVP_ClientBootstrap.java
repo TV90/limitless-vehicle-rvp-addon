@@ -1,5 +1,6 @@
 package org.ywzj.rvp.client;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
@@ -19,7 +20,9 @@ import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualStat
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
+import org.ywzj.rvp.client.visual.RVP_MissileAirTargetImpactFragmentEffects;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
+import org.ywzj.rvp.network.RVP_MissileAirTargetImpactFragmentEndpoint;
 import org.ywzj.rvp.network.RVP_NuclearVisualEndpoint;
 import org.ywzj.rvp.network.firesupport.RVP_FireSupportClientEndpoint;
 import org.ywzj.rvp.network.gunner.RVP_GunnerProfileClientEndpoint;
@@ -40,6 +43,9 @@ public final class RVP_ClientBootstrap {
         event.enqueueWork(() -> {
             // 客户端初始化时安装通用视觉消费端，避免公共网络消息直接加载客户端渲染类。
             RVP_VisualEffectEndpoint.install(RVP_ClientVisualEffectDispatcher::accept);
+            // 安装导弹空中目标命中碎片消费端，把 S2C 快照转换为本地纯视觉粒子。
+            RVP_MissileAirTargetImpactFragmentEndpoint.install(
+                    RVP_MissileAirTargetImpactFragmentEffects::accept);
             // 调用 RVP 客户端视觉注册表，为通用事件协议注册温压效果工厂。
             RVP_ClientVisualEffectDispatcher.register(RVP_ThermobaricEffectFactory.EFFECT_TYPE,
                     new RVP_ThermobaricEffectFactory());
@@ -56,7 +62,9 @@ public final class RVP_ClientBootstrap {
             });
             // 安装 RVP 弹药视觉公共消费端，把完整集合写入客户端弹药视觉状态表。
             RVP_RemoteAmmoVisualEndpoint.install(message -> RVP_ClientRemoteAmmoVisualState.replace(
-                    message.dimension(), message.entityIds(), message.motorBurnRemainingTicksByEntityId()));
+                    message.dimension(), message.entityIds(), message.motorBurnRemainingTicksByEntityId(),
+                    Minecraft.getInstance().level == null
+                            ? Long.MIN_VALUE : Minecraft.getInstance().level.getGameTime()));
             // 安装 RVP 载具视觉公共消费端，把完整集合交给非世界代理状态管理器。
             RVP_RemoteVehicleVisualEndpoint.install(RVP_ClientRemoteVehicleVisualState::accept);
             // 安装炮火支援公共端口，阶段 C 的 profile、请求结果和任务状态只写入客户端快照。

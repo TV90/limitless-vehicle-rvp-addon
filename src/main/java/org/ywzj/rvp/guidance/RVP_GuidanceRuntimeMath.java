@@ -225,6 +225,8 @@ public final class RVP_GuidanceRuntimeMath {
         next = applyResolvedAeroSteering(
                 projectile, context.data(), current, next, factor, rvpMaxGs);
         projectile.setDeltaMovement(next);
+        // 标记本 Tick 已写入 PRESET 制导速度，供冷发射运动层在重叠窗口内完成速度接管。
+        projectile.markPresetGuidanceMotionAppliedThisTick();
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
     }
@@ -375,19 +377,24 @@ public final class RVP_GuidanceRuntimeMath {
         // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：全程单调平滑、无
         // 硬切换，竖直发射后追点自然略高于自身平滑转上爬，不会“压-拉-压”的蛇形振荡
         double base = Math.min(40.0, apogee * 0.3);
-        double targetY = launch == null ? position.y + 8.0
-                : launch.y + base + (apogee - base) * 4.0 * p * (1.0 - p);
         // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
         double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
-        // 冷发射垂直爬升衔接下限（2026-10-04 用户实测与两轮迭代定版）：垂直冷发射弹点火后
-        // 仍以 ~2 格/t 继续爬升，弹体高度会反超抛物线在该水平进度下的追踪点——追点落到
-        // 弹体后下方，期望方向转负仰角，制导把弹压低成水平下压段（弹速不衰减，纯几何
-        // 反超；20 格固定余量版实测仍下压，因其期望仰角下限仅 ~18°，弹从 90° 被持续压向
-        // 近水平）。上升半程（p<0.5）追点高度加"不低于弹体当前高度 + lookAhead"下限——
-        // 期望仰角下限恒 45°（atan(lookAhead/lookAhead)）：高度超前期间弹保持陡仰角爬升、
-        // 等水平进度 p 追上抛物线高度曲线（追点沿 4p(1-p) 陡升反超后自然接管），无下压段。
-        // lookAhead 末端收敛 0，下限自动失效不影响命中；p≥0.5 下半程与俯冲判据不受影响；
-        // 倾斜发射弹追点本在上方，max() 不触发零变化。
+        // 前视点的水平坐标已经向前推进，垂直坐标同步采样前视进度，
+        // 避免 YJ-20 冷发射结束后追到“前方同高度”的水平点。（并行会话 20b76ac5：
+        // 追点高度按前视点自身进度采样，修高度/水平采样错位）
+        double lookAheadProgress = RVP_BallisticTrajectoryMath.resolvePresetLookAheadProgress(
+                hDist, totalH, lookAhead);
+        double targetY = launch == null ? position.y + 8.0
+                : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
+                        launch.y, base, apogee, lookAheadProgress);
+        // 冷发射垂直爬升衔接兜底（2026-10-04 本会话迭代）：垂直冷发射弹点火后仍以
+        // ~2 格/t 继续爬升，弹体高度可能几何超前于抛物线前视点高度——追点落到弹体
+        // 后下方、期望方向转负仰角，制导把弹压低成水平下压段（弹速不衰减，纯几何
+        // 反超；本会话首版 20 格固定余量实测仍下压，期望仰角下限仅 ~18°）。上升半程
+        // （p<0.5）追点高度加"不低于弹体当前高度 + lookAhead"下限——期望仰角下限
+        // 恒 45°，高度超前期间弹保持陡仰角爬升、等前视进度推进抛物线高度反超后自然
+        // 接管；lookAhead 末端收敛 0 下限自动失效不影响命中；p≥0.5 下半程与俯冲判据
+        // 不受影响；倾斜发射弹追点本在上方，max() 不触发零变化。
         if (p < 0.5D) {
             targetY = Math.max(targetY, position.y + lookAhead);
         }

@@ -1,8 +1,12 @@
 # RVP GPS 弹道导弹三段式弹道（PRESET）设计方案
 
-> 状态：设计方案（调研已完成，未实施）
+> 状态：已实施并持续维护（2026-10-04 更新）
 > 适用项目：`limitless-vehicle-rvp-addon`，Minecraft 1.20.1 Forge
 > 约束：所有改动只落在 `ywzj_rvp`，不修改 `ywzj_vehicle` 本体源码
+
+> 实现口径说明：本文保留最初“三段式”方案的调研与参数设计。当前实体/虚拟实现采用共享的
+> 抛物线弧数学，而不是 ASCENT/CRUISE/DIVE 三个硬切换状态；现行字段语义以
+> `docs/plan/RVP武器数据模型/RVP包新增参数字段说明.md` 的 PRESET 小节为准。
 
 ## 1. 背景与目标
 
@@ -75,6 +79,15 @@
 ```
 
 不新增制导类型（`RVP_EnumGuidanceType` 仍为 GPS），避免波及 `RVP_GuidanceModelResolver`、HUD 类型判断等既有代码；三段式是 GPS 固定目标弹道的一个"飞行剖面"选项。
+
+**现行实现补充（2026-10-04）**：实体端由 `RVP_GuidanceRuntimeMath.applyPresetBallistic` 使用共享
+`RVP_BallisticTrajectoryMath` 生成抛物线参考高度，虚拟端复用同一数学口径。推进仍由
+`RVP_ProjectileMotion` 负责；制导先写入速度，再由运动层积分推力、阻力和重力。
+
+**冷发射边界补充（2026-10-04）**：PRESET 带终端段的弹体在冷发射/点火窗口结束前不会提前切换
+到终端 ARH，即使发射时目标已经落入终端距离门；否则终端角度门会从纯竖直冷发射速度拒绝转向，
+形成偶发直飞冲天。冷发射窗口内一旦成功写入 PRESET 速度，运动层还会粘性保留该接管状态，
+抵抗短暂的单 Tick 制导源失败。
 
 ### 3.2 三段式状态机（实体端）
 
@@ -317,15 +330,19 @@ diveDistance = max( preset_dive_radius,
 | 高空速度异常快 | 配 `altitude_drag_factor` 高空低值 + `max_speed` 兜底 |
 | 恢复实体瞬间轨迹折线 | 检查虚拟段 phase 快照/恢复（3.4 节）、恢复前姿态对齐（3.5 节） |
 
-## 7. 实施步骤与验证
+## 7. 实施状态与验证
 
-1. 数据模型：`RVP_GuidanceData` 加 9 个 `preset_*` 字段（默认值同本体，`presetCruiseAltitude=0` 禁用）；`RVP_GuidanceActiveConfig` 透传；默认值不改变现有 GPS 行为。
-2. 实体端：`RVP_BaseBullet` 加 phase 状态与初始化；`RVP_GuidanceRuntimeMath` 加弹道导弹分支（仅 GPS + `presetCruiseAltitude > 0`）。
-3. 虚拟端：`RVP_RvpTrajectoryIntegrator` VERSION 7 三段式与共享转向参数；`RVP_VirtualMissileEligibility` 放开 preset；快照/恢复加 phase 字段。
-4. 验证：
-   - 单测：三段式 phase 推进、高度闭环收敛、俯冲判定、实体/虚拟同参轨迹数值一致（黄金输入对照）；
-   - 游戏内：ATACMS 发射 → 上升 → 高空平飞 → 俯冲命中；开启虚拟中段后全程弹道连续；恢复点轨迹无折线；
-   - 回归：`presetCruiseAltitude=0` 的既有 GPS 导弹（spice/storm_shadow）行为不变。
+1. 数据模型已支持当前 schema 的 `preset_*` 字段；`preset_cruise_altitude=0` 时保持普通 GPS 行为。
+2. 实体端已接入 `RVP_GuidanceRuntimeMath.applyPresetBallistic`，并由
+   `RVP_BallisticTrajectoryMath` 提供实体/虚拟共用的抛物线高度采样。
+3. 虚拟中段已接入同一 PRESET 弹道数学，避免实体恢复时出现轨迹折线。
+4. 2026-10-04 修复了 YJ-20 的冷发射接管问题：当 GPS PRESET 的冷发射时长覆盖点火延迟时，
+   `RVP_BaseBullet` 记录当前 Tick 的制导写速，`RVP_ProjectileMotion` 不再用冷发射竖直速度覆盖它；
+   无目标和冷发射短于点火延迟的弹体保持原行为。
+5. 验证结果：
+   - PRESET、轨迹积分与冷发射接管定向测试通过；
+   - 按项目规定执行 `./gradlew build`，结果为 `BUILD SUCCESSFUL`；
+   - 服务端冒烟日志出现 `Done (3.134s)!`。
 
 ## 8. 风险与取舍
 

@@ -359,6 +359,14 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         int coldLaunchTick = projectile.getColdLaunchTimeTick();
+        // 读取冷发射窗口内的 PRESET 接管标记，使单 Tick 的 GPS 源抖动不会把弹体掰回竖直。
+        boolean presetGuidanceApplied = projectile.hasPresetGuidanceMotionAppliedDuringLaunch();
+        if (shouldPreserveGuidanceDuringColdLaunch(
+                projectile.getFlightTickCount(), coldLaunchTick,
+                projectile.rvpData.getResolvedIgnitionDelayTick(), presetGuidanceApplied)) {
+            // 当前速度已经由 PRESET 制导写入；保留其水平分量，避免冷发射配置每 Tick 将弹体掰回竖直。
+            return velocity;
+        }
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
         if (coldLaunchTick > 0 && projectile.getFlightTickCount() < coldLaunchTick) {
             Vec3 configured = projectile.getColdLaunchVelocity();
@@ -376,6 +384,31 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         return carrier.getDeltaMovement().add(eject);
+    }
+
+    /**
+     * 判断冷发射运动是否应让位给当前 Tick 的 PRESET 制导速度。
+     *
+     * <p>只有冷发射时长覆盖发动机点火延迟时才启用接管。这样 YJ-20 这类
+     * {@code cold_launch_time_tick == ignition_delay_tick} 的弹体可以在冷发射末段转向，
+     * 而伊斯坎德尔等冷发射更短的弹体继续沿原有冷发射速度运行。</p>
+     *
+     * @param flightTick 当前飞行 Tick
+     * @param coldLaunchTick 冷发射持续 Tick 数
+     * @param ignitionDelayTick 配置的发动机点火延迟 Tick 数
+     * @param guidanceApplied 当前冷发射窗口是否已经写入过 PRESET 制导速度
+     * @return 是否保留制导层刚写入的速度
+     */
+    static boolean shouldPreserveGuidanceDuringColdLaunch(
+            int flightTick,
+            int coldLaunchTick,
+            int ignitionDelayTick,
+            boolean guidanceApplied
+    ) {
+        return guidanceApplied
+                && coldLaunchTick > 0
+                && flightTick < coldLaunchTick
+                && coldLaunchTick >= Math.max(ignitionDelayTick, 0);
     }
 
     private static Vec3 applyPropulsionGravity(RVP_BaseBullet projectile, Vec3 velocity, RVP_WeaponData data) {

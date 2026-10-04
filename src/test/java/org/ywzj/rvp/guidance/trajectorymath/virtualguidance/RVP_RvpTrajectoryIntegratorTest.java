@@ -10,6 +10,8 @@ import org.knowm.xchart.XYChartBuilder;
 import org.knowm.xchart.XYSeries;
 import org.knowm.xchart.style.Styler;
 import org.knowm.xchart.style.markers.SeriesMarkers;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
@@ -35,6 +37,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RVP_RvpTrajectoryIntegratorTest {
     /** 浮点断言统一使用的绝对误差。 */
     private static final double EPSILON = 1.0E-9;
+
+    /** 验证实体端与虚拟端共用的 PRESET 前视进度会落在当前点之后。 */
+    @Test
+    void presetLookAheadHeightKeepsVirtualColdLaunchHandoffClimbing() {
+        RVP_VirtualPresetGuidance preset = new RVP_VirtualPresetGuidance(
+                Vec3.ZERO, 750.0, 25.0, 24.0, 24.0,
+                0.3, 1.5, 0.002, 0.01, 0.5, 0.0);
+        RVP_AeroSteeringLimits limits = new RVP_AeroSteeringLimits(
+                null, 1.0f, 0.0, 1.0, 0.0, 0.0, false);
+
+        RVP_AeroSteeringSolution solution = RVP_BallisticTrajectoryMath.steerPresetBallistic(
+                new Vec3(0.0, 40.0, 0.0),
+                new Vec3(0.0, 2.0, 0.0),
+                new Vec3(2000.0, 0.0, 0.0),
+                preset,
+                limits);
+
+        assertTrue(solution.velocity().y > 0.0,
+                "virtual PRESET handoff must not target a same-height horizontal point");
+    }
 
     /**
      * 验证 G 值转向同时满足“保持速率”和“限制单 Tick 速度变化量”两个核心契约。

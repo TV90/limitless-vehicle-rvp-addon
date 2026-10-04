@@ -27,10 +27,19 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
         RVP_GuidanceData guidance = data.getGuidanceData();
-        projectile.getGuidancePhaseState().update(
-                guidance.getTerminalGuidance(),
-                RVP_GuidanceTransitionContext.from(projectile)
-        );
+        // PRESET 弹在近距离发射时不能立即切到终端 ARH：冷发射仍是纯竖直速度，
+        // 终端 ARH 的角度门会拒绝从竖直轴直接转向 GPS 点，造成“直飞冲天”。
+        // 调用本项目制导阶段状态机时，先保留主段直到冷发射/点火窗口结束。
+        if (!shouldDeferPresetTerminalTransition(
+                guidance,
+                projectile.getFlightTickCount(),
+                projectile.getColdLaunchTimeTick(),
+                data.getResolvedIgnitionDelayTick())) {
+            projectile.getGuidancePhaseState().update(
+                    guidance.getTerminalGuidance(),
+                    RVP_GuidanceTransitionContext.from(projectile)
+            );
+        }
         RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(
                 guidance,
                 projectile.getGuidancePhaseState().phase()
@@ -60,5 +69,28 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
         return RVP_GuidanceRuntimeMath.applyIntent(context, intent);
+    }
+
+    /**
+     * 判断 PRESET 弹是否仍处于必须保留主段制导的发射窗口。
+     *
+     * <p>该门只影响已经配置 PRESET 且带终端段的弹体；普通 GPS/ARH 弹仍完全使用原有
+     * 终端切换条件。窗口取冷发射时长和发动机点火延迟的较大值，确保主段至少有机会
+     * 写入一帧非竖直速度后，再允许近距离目标触发终端段。</p>
+     */
+    static boolean shouldDeferPresetTerminalTransition(
+            RVP_GuidanceData guidance,
+            int flightTick,
+            int coldLaunchTick,
+            int ignitionDelayTick
+    ) {
+        if (guidance == null
+                || guidance.getTerminalGuidance() == null
+                || !RVP_PresetBallisticProfile.of(guidance).active()) {
+            return false;
+        }
+        int launchWindowEnd = Math.max(
+                Math.max(coldLaunchTick, 0), Math.max(ignitionDelayTick, 0));
+        return Math.max(flightTick, 0) < launchWindowEnd;
     }
 }

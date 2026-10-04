@@ -374,9 +374,12 @@ public final class RVP_BallisticTrajectoryMath {
                 1.0 - horizontalDistance / totalHorizontalDistance, 0.0, 1.0);
         double apogee = Math.min(preset.cruiseAltitude(), totalHorizontalDistance * 0.35);
         double base = Math.min(40.0, apogee * 0.3);
-        double targetY = launch.y + base
-                + (apogee - base) * 4.0 * progress * (1.0 - progress);
         double lookAhead = Math.min(preset.maxAscentLead(), horizontalDistance * 0.3);
+        // 前视点的水平坐标已经向目标推进，垂直坐标也必须采样同一个前视进度；
+        // 不能继续使用当前位置 progress，否则冷发射结束后会追到同高度的水平点。
+        double lookAheadProgress = resolvePresetLookAheadProgress(
+                horizontalDistance, totalHorizontalDistance, lookAhead);
+        double targetY = samplePresetArcHeight(launch.y, base, apogee, lookAheadProgress);
         Vec3 targetPoint = new Vec3(
                 position.x + forwardHorizontal.x * lookAhead,
                 targetY,
@@ -397,6 +400,47 @@ public final class RVP_BallisticTrajectoryMath {
         }
         // 调用本项目统一气动求解器，裁决抛物线中段追点方向的实际转角。
         return applyAeroSteering(velocity, targetPoint.subtract(position), limits);
+    }
+
+    /**
+     * 计算 PRESET 前视点对应的水平进度。
+     *
+     * <p>前视点的水平距离为当前位置到目标的剩余距离减去前视量，进度仍以发射点到目标
+     * 的总水平距离归一化。实体端和虚拟端必须共用该计算，避免冷发射交接时出现不同的
+     * 垂直追踪点。</p>
+     *
+     * @param horizontalDistance 当前到目标的剩余水平距离，单位格
+     * @param totalHorizontalDistance 发射点到目标的总水平距离，单位格
+     * @param lookAhead 前视距离，单位格
+     * @return 前视点在 PRESET 抛物线上的归一化水平进度
+     */
+    public static double resolvePresetLookAheadProgress(
+            double horizontalDistance, double totalHorizontalDistance, double lookAhead) {
+        if (!Double.isFinite(totalHorizontalDistance) || totalHorizontalDistance <= 1.0E-8) {
+            return 1.0;
+        }
+        double safeHorizontalDistance = Math.max(
+                0.0, Double.isFinite(horizontalDistance) ? horizontalDistance : totalHorizontalDistance);
+        double safeLookAhead = Math.max(0.0, Double.isFinite(lookAhead) ? lookAhead : 0.0);
+        double aheadDistance = Math.max(safeHorizontalDistance - safeLookAhead, 0.0);
+        return Mth.clamp(1.0 - aheadDistance / totalHorizontalDistance, 0.0, 1.0);
+    }
+
+    /**
+     * 按 PRESET 抛物线公式采样高度。
+     *
+     * @param launchY 发射点世界 Y 坐标，单位格
+     * @param base 抛物线起止基线相对发射点高度，单位格
+     * @param apogee 抛物线顶点相对发射点高度，单位格
+     * @param progress 水平进度，0 为发射端、1 为目标端
+     * @return 指定进度对应的世界 Y 坐标，单位格
+     */
+    public static double samplePresetArcHeight(
+            double launchY, double base, double apogee, double progress) {
+        double safeProgress = Mth.clamp(
+                Double.isFinite(progress) ? progress : 0.0, 0.0, 1.0);
+        return launchY + base
+                + (apogee - base) * 4.0 * safeProgress * (1.0 - safeProgress);
     }
 
     /**
