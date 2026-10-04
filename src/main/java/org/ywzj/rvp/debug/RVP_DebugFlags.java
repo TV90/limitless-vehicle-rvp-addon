@@ -60,7 +60,7 @@ public final class RVP_DebugFlags {
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC, PRESET_LEGACY);
 
     private RVP_DebugFlags() {
     }
