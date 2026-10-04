@@ -50,6 +50,9 @@ public record RVP_GuidanceActiveConfig(
         float semiCorrectionDamping,
         float semiCorrectionWobble,
         RVP_PresetBallisticProfile presetBallistic,
+        float loftHeightAboveTarget,
+        float loftEndDistance,
+        float loftBlendDistance,
         int seekerJamLimit,
         float seekerFovShrinkFactor,
         Integer seekerShutOffTime,
@@ -86,6 +89,9 @@ public record RVP_GuidanceActiveConfig(
         semiCorrectionDamping = Math.max(semiCorrectionDamping, 0f);
         semiCorrectionWobble = Math.max(semiCorrectionWobble, 0f);
         presetBallistic = presetBallistic == null ? RVP_PresetBallisticProfile.inactive() : presetBallistic;
+        loftHeightAboveTarget = Math.max(loftHeightAboveTarget, 0f);
+        loftEndDistance = Math.max(loftEndDistance, 0f);
+        loftBlendDistance = Math.max(loftBlendDistance, 0f);
         seekerJamLimit = Math.max(1, seekerJamLimit);
         seekerFovShrinkFactor = Float.isFinite(seekerFovShrinkFactor) ? Math.max(0.1f, seekerFovShrinkFactor) : 1.0f;
         seekerShutOffTime = seekerShutOffTime == null ? null : Math.max(0, seekerShutOffTime);

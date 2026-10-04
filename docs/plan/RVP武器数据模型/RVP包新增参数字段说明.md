@@ -1254,6 +1254,9 @@ velocity = worldDown × cos(theta) × launch_speed
 | `predict_target_pos_start_tick` | 预测制导生效的起始 tick（发射后多久才开始预测）。 | `int` | `10` |
 | `max_lateral_accel` | 最大横向加速度限制（度/秒² 量级）；`0` 表示不限制。 | `float` | `0` |
 | `top_attack_height` | 攻顶最大高度；`null` 为不启用，可填负数（如潜射武器）。 | `Float` | `null` |
+| `loft_height_above_target` | 空空高抛（loft）高度 = **目标高度 + 本值**（格）；`> 0` 启用，默认 `0` 禁用。瞄准点垂直塑形叠加在现有比例引导（预测拦截）之上：远距满偏置爬向目标上方并跟随目标升降（动对动），水平距离进入退坡区间后按 smoothstep 平滑归零、末端原生比例引导无缝接管。与 `top_attack_height` 互斥建议同时只配一个，同配时 loft 优先（恢复预测拦截可用性）。ARH/AIR 截获后（自主导引头接管）不施加。适用所有制导类型（SARH/ARH/AIR/GPS/IR），现役弹未配零变化。 | `float` | `0` |
+| `loft_end_distance` | loft 退坡完成水平距离（格）：弹与目标水平距离低于本值后偏置归零、纯原生比例引导，默认 `0`。 | `float` | `0` |
+| `loft_blend_distance` | loft 退坡区间长度（格）：水平距离在 `[loft_end_distance, +本值]` 区间内按 smoothstep 过渡，默认 `0`（出区间立即归零）。推荐与 end_distance 组合如 300/400。 | `float` | `0` |
 | `cruise_start_tick` | 多少 tick 后进入巡航段。激光架束、人在回路、指令线类通常不使用。 | `Integer` | `null` |
 | `cruise_end_horizontal_dist` | 距目标水平距离小于该值后退出巡航，进入末端。 | `float` | `10` |
 | `cruise_gravity_scale` | 巡航段重力系数。 | `float` | `1.0` |

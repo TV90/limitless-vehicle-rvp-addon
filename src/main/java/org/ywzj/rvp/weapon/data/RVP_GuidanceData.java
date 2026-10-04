@@ -128,6 +128,22 @@ public class RVP_GuidanceData {
     @SerializedName("preset_tactical_maneuver_amplitude")
     private float presetTacticalManeuverAmplitude = 0f;
 
+    /**
+     * 空空高抛（loft）高度 = 目标高度 + 本值（格），单位格；{@code > 0} 启用，默认 0 禁用。
+     * <p>与 {@code top_attack_height} 互斥建议同时只配一个：loft 是相对目标高度的动态
+     * 偏置 + 距离平滑退坡（抛物线拱形），top_attack 是固定高度 + 线性收缩。</p>
+     */
+    @SerializedName("loft_height_above_target")
+    private float loftHeightAboveTarget = 0f;
+
+    /** loft 退坡完成水平距离（格）：弹与目标水平距离低于本值后偏置归零、纯原生比例引导，默认 0。 */
+    @SerializedName("loft_end_distance")
+    private float loftEndDistance = 0f;
+
+    /** loft 退坡区间长度（格）：水平距离在 {@code [loft_end_distance, +本值]} 区间内按平滑步进过渡，默认 0（立即退坡）。 */
+    @SerializedName("loft_blend_distance")
+    private float loftBlendDistance = 0f;
+
     @SerializedName("lock_angle_gate")
     private Map<RVP_Range<Float>, RVP_Range<Float>> lockAngleGate;
 
@@ -280,6 +296,21 @@ public class RVP_GuidanceData {
 
     public float getPresetTacticalManeuverAmplitude() {
         return Math.max(presetTacticalManeuverAmplitude, 0f);
+    }
+
+    /** @return 空空高抛（loft）高度 = 目标高度 + 本值（格）；{@code > 0} 启用，负值钳 0。 */
+    public float getLoftHeightAboveTarget() {
+        return Math.max(loftHeightAboveTarget, 0f);
+    }
+
+    /** @return loft 退坡完成水平距离（格），负值钳 0。 */
+    public float getLoftEndDistance() {
+        return Math.max(loftEndDistance, 0f);
+    }
+
+    /** @return loft 退坡区间长度（格），负值钳 0。 */
+    public float getLoftBlendDistance() {
+        return Math.max(loftBlendDistance, 0f);
     }
 
     public Map<RVP_Range<Float>, RVP_Range<Float>> getLockAngleGate() {

@@ -71,6 +71,31 @@ public final class RVP_GuidanceRuntimeMath {
                 projectile.position(), target, context.active().topAttackHeight());
         boolean isTopAttack = context.active().topAttackHeight() != null
                 && Math.abs(context.active().topAttackHeight()) > 1.0E-6f;
+        // 空空高抛（loft，2026-10-04 用户需求）：瞄准点垂直塑形叠加在现有比例引导之上——
+        // 瞄准点 = 目标实时位置 + (0, loft_height_above_target, 0)（相对目标高度差，动对动
+        // 跟随目标升降），水平距离进入 [end, end+blend] 区间按 smoothstep 平滑退坡、低于
+        // end 归零——末端原生预测拦截（比例引导）无缝接管，全程一条制导链无分支切换。
+        // 近距（<end）blend 恒 0 等效无 loft；ARH/AIR 截获后不施加（自主导引头俯冲追击
+        // 不受干扰）；与 top_attack_height 互斥建议同时只配一个，同配时 loft 优先。
+        Vec3 loftedTarget = null;
+        float loftHeight = context.active().loftHeightAboveTarget();
+        if (loftHeight > 0f && !projectile.hasAutonomousSeekerCatch()) {
+            float loftEnd = context.active().loftEndDistance();
+            float loftBlend = context.active().loftBlendDistance();
+            double dxLoft = target.x - projectile.position().x;
+            double dzLoft = target.z - projectile.position().z;
+            double hDistLoft = Math.sqrt(dxLoft * dxLoft + dzLoft * dzLoft);
+            double blend = loftBlend > 0f
+                    ? Mth.clamp((hDistLoft - loftEnd) / loftBlend, 0.0D, 1.0D)
+                    : (hDistLoft > loftEnd ? 1.0D : 0.0D);
+            blend = blend * blend * (3.0D - 2.0D * blend);
+            loftedTarget = new Vec3(target.x, Mth.lerp(blend, target.y, target.y + loftHeight), target.z);
+            steeringTarget = loftedTarget;
+            if (isTopAttack) {
+                // 同配时 loft 优先：恢复预测拦截可用性（topAttack 会禁用预测拦截分支）
+                isTopAttack = false;
+            }
+        }
 
         Vec3 current = projectile.getDeltaMovement();
         double speed = Math.max(projectile.getMotionSpeedReference(), current.length());
@@ -140,7 +165,7 @@ public final class RVP_GuidanceRuntimeMath {
                     projectile,
                     projectile.position(),
                     current,
-                    target,
+                    loftedTarget != null ? loftedTarget : target,
                     entity.getDeltaMovement(),
                     speed,
                     steeringFactor
