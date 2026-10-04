@@ -453,5 +453,9 @@
   "gui.ywzj_rvp.hud.cm_destroyed": "%s: 损坏",
   "ui.rvp.barrel_damaged_misfire": "炮管受损，射击失败",
   "ui.rvp.barrel_burst": "炮管炸膛！",
-  "gui.ywzj_rvp.equipment.barrel_damaged": "受损"
+  "gui.ywzj_rvp.equipment.barrel_damaged": "受损",
+  "key.ywzj_rvp.toggle_flight_mode.desc": "直升机飞行模式循环（常规/自动总距/悬停）",
+  "rvp.flight_mode.normal": "飞行模式：常规",
+  "rvp.flight_mode.auto_collective": "飞行模式：自动总距（爬升/下坠率自动配平，姿态机动不受限）",
+  "rvp.flight_mode.hover": "飞行模式：悬停"
 }

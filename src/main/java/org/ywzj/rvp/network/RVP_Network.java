@@ -26,7 +26,8 @@ public class RVP_Network {
     /** 协议 20：新增 S2CBoneDamageProgress（全模块累计化配套：骨→累计伤害，面板虚拟血量）；旧客户端无法连新服。 */
     /** 协议 21：失效表新增 BARREL_DAMAGED（炮管受损档进失效表：可快修/队列/持久化）；旧客户端无法连新服。 */
     /** 协议 25：视觉碎片事件新增方向圆锥半角参数；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "25";
+    /** 协议 26：新增 C2SToggleFlightMode（直升机飞行模式三态循环：常规/自动总距/悬停）；旧客户端无法连新服，务必成对部署。 */
+    private static final String PROTOCOL = "26";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -374,6 +375,13 @@ public class RVP_Network {
                 .encoder(S2CGunnerProfileSnapshot::encode)
                 .decoder(S2CGunnerProfileSnapshot::decode)
                 .consumerMainThread(S2CGunnerProfileSnapshot::handle)
+                .add();
+        // [RVP] 直升机飞行模式三态循环切换（C2S，协议 26）：常规 → 自动总距 → 悬停 → 常规，
+        //       服务端 RVP_AutoCollectiveHandler 三态编码（hoverMode + autoCollective 侧表）
+        CHANNEL.messageBuilder(C2SToggleFlightMode.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SToggleFlightMode::encode)
+                .decoder(C2SToggleFlightMode::decode)
+                .consumerMainThread(C2SToggleFlightMode::handle)
                 .add();
     }
 }

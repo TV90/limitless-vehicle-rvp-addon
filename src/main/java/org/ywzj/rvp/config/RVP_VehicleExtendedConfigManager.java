@@ -123,6 +123,19 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     }
 
     /**
+     * [RVP] 载具的自动总距模式参数（{@code rvp_auto_collective}，2026-10-05）。
+     * 消费方 {@code RVP_AutoCollectiveHandler}（VehicleMoveEvent 每 tick，服务端），
+     * 未配置返回 null = 该载具不支持自动总距。
+     */
+    @Nullable
+    public static VehicleExtendedConfig.AutoCollectiveConfig getAutoCollectiveConfig(ResourceLocation vehicleId) {
+        if (vehicleId == null) {
+            return null;
+        }
+        return INSTANCE.configs.get(vehicleId).autoCollective();
+    }
+
+    /**
      * [RVP] 载具的开火声是否走"方向机同款"相机相对路径（{@code audio_info.camera_relative_fire_sound_distance} > 0）：
      * 仅客户端消费（{@code RVP_ClientCameraRelativeFireSound}），服务端返回 false。
      */
@@ -325,13 +338,15 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         float turnDepthScale = parseTurnDepthScale(obj);
         float cameraRelativeFireSoundDistance = parseCameraRelativeFireSoundDistance(obj);
         boolean persistentChunkLease = parsePersistentChunkLease(obj);
+        VehicleExtendedConfig.AutoCollectiveConfig autoCollective = parseAutoCollective(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
                 && mergeIntoPreviousSlots.isEmpty()
                 && turnDepthScale == 1.0f
                 && cameraRelativeFireSoundDistance == 0f
-                && !persistentChunkLease) {
+                && !persistentChunkLease
+                && autoCollective == null) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -343,7 +358,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 immutableSaveIdMap(saveIds),
                 turnDepthScale,
                 cameraRelativeFireSoundDistance,
-                persistentChunkLease
+                persistentChunkLease,
+                autoCollective
         );
     }
 
@@ -399,6 +415,41 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
             return false;
         }
         return obj.get("rvp_persistent_chunk_lease").getAsBoolean();
+    }
+
+    /**
+     * [RVP] 直升机自动总距模式参数（2026-10-05）：顶层 {@code rvp_auto_collective} 嵌套对象。
+     * 字段：enabled（默认 true——写了本块即视为启用）、threshold_climb（爬升介入阈值，
+     * 格/tick，默认 0.3）、threshold_descent（下坠介入阈值，默认 0.3）、rate_per_tick
+     * （总距调整速率，点/tick，默认 1.0 与本体悬停阻尼同款）。阈值/速率非法值回退默认；
+     * 未配置本块 = 该载具不支持自动总距（返回 null）。
+     */
+    @Nullable
+    private static VehicleExtendedConfig.AutoCollectiveConfig parseAutoCollective(JsonObject obj) {
+        if (!obj.has("rvp_auto_collective") || !obj.get("rvp_auto_collective").isJsonObject()) {
+            return null;
+        }
+        JsonObject block = obj.getAsJsonObject("rvp_auto_collective");
+        boolean enabled = !block.has("enabled") || !block.get("enabled").isJsonPrimitive()
+                || block.get("enabled").getAsBoolean();
+        return new VehicleExtendedConfig.AutoCollectiveConfig(
+                enabled,
+                readPositiveFloat(block, "threshold_climb", 0.3f),
+                readPositiveFloat(block, "threshold_descent", 0.3f),
+                readPositiveFloat(block, "rate_per_tick", 1.0f));
+    }
+
+    /** 读 float 字段：缺失/非数值/非有限/≤0 一律回退默认（防 JSON 手误零除或反向阈值）。 */
+    private static float readPositiveFloat(JsonObject obj, String key, float fallback) {
+        if (!obj.has(key) || !obj.get(key).isJsonPrimitive()) {
+            return fallback;
+        }
+        try {
+            float value = obj.get(key).getAsFloat();
+            return Float.isFinite(value) && value > 0f ? value : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private static Set<String> parseGroundContactPartIds(JsonObject obj) {
@@ -614,10 +665,30 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * 服务端每 tick 提交本体临时区块票（{@code EntityUtil.keepChunkLoaded}）；
              * 仅影响加载，不影响渲染/碰撞/物理。
              */
-            boolean persistentChunkLease
+            boolean persistentChunkLease,
+            /**
+             * [RVP] 直升机自动总距模式参数（{@code rvp_auto_collective}，2026-10-05）。
+             * null = 未配置 = 该载具不支持自动总距（V 键循环到该态无效果）；
+             * 非空 = 自动总距可用，字段见 {@link AutoCollectiveConfig}。
+             * 消费方 {@code RVP_AutoCollectiveHandler}（VehicleMoveEvent 每 tick）。
+             */
+            @Nullable AutoCollectiveConfig autoCollective
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null);
+
+        /**
+         * [RVP] 自动总距模式参数（{@code rvp_auto_collective} 块）：
+         * 阈值单位格/tick（悬停模式内置阻尼阈值为固定 0.01，本模式默认 0.3 更宽松——
+         * 只在大变化时介入）；速率单位总距点/tick（本体悬停固定 ±1，玩家手动输入为 ±5）。
+         */
+        public record AutoCollectiveConfig(
+                boolean enabled,
+                float thresholdClimb,
+                float thresholdDescent,
+                float ratePerTick
+        ) {
+        }
 
         /** 指定槽位配置的 {@code save_id}；未配置返回 null。 */
         @Nullable
@@ -633,7 +704,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || !mergeIntoPreviousSlotsByPartId.isEmpty()
                     || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f
                     || cameraRelativeFireSoundDistance > 0f
-                    || persistentChunkLease;
+                    || persistentChunkLease
+                    || autoCollective != null;
         }
 
         public boolean hasPhysicsOnlyBones() {
