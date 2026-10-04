@@ -457,5 +457,6 @@
   "key.ywzj_rvp.toggle_flight_mode.desc": "直升机飞行模式循环（常规/自动总距/悬停）",
   "rvp.flight_mode.normal": "飞行模式：常规",
   "rvp.flight_mode.auto_collective": "飞行模式：自动总距（爬升/下坠率自动配平，姿态机动不受限）",
-  "rvp.flight_mode.hover": "飞行模式：悬停"
+  "rvp.flight_mode.hover": "飞行模式：悬停",
+  "ui.rvp.target_rcs_below_sea_threshold": "目标 RCS 低于反舰导引头截获门限，无法锁定/发射"
 }

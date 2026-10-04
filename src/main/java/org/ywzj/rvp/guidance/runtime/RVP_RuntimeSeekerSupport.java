@@ -13,9 +13,9 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeGeometry;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
+import org.ywzj.rvp.radar.RVP_RadarScanHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.rvp.guidance.RVP_GuidanceTargetUtil;
-import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 final class RVP_RuntimeSeekerSupport {
 
@@ -59,6 +59,20 @@ final class RVP_RuntimeSeekerSupport {
             RVP_GuidanceActiveConfig config,
             boolean acquire
     ) {
+        // 反舰导引头（2026-10-05 用户需求）：仅截获阶段（acquire）过滤——目标 RCS 综合值
+        // 不足 SCAN_SEA_RCS_THRESHOLD（500，与 scan_sea 海面搜索同门限）时拒绝截获：
+        // 雷达/RF 硬锁指定的目标不满足 RCS 也不会被导引头自动套上（含自由扫描候选）。
+        // 跟踪阶段（acquire=false）不过滤——已截获目标的结算不在此处。
+        // SARH 无自主导引头，其"导引头"即照射追击链（validateEntity 亦为其唯一过滤点）：
+        // 照射目标不达标 → intent failed → 惯性直飞。
+        boolean antiShipGate = config.antiShipSeeker()
+                && (acquire || type == RVP_EnumGuidanceType.SARH);
+        if (antiShipGate
+                && !(target instanceof AbstractVehicle antiShipCandidate
+                && RVP_AspectRcs.combinedFactor(antiShipCandidate, projectile.position())
+                >= RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD)) {
+            return null;
+        }
         boolean withinLimits = acquire
                 ? RVP_GuidanceRuntimeGeometry.passesAcquireLimits(projectile, target, config)
                 : RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, config);
@@ -140,6 +154,14 @@ final class RVP_RuntimeSeekerSupport {
             // 目的：分角度 RCS + 弹舱开启增幅（2026-09-16）——载具目标的导引头截获距离
             // 按"扫描半径 × 综合隐身因子"缩放（正面隐身机要贴近才可被截获）。
             // 仅雷达导引头分支生效；AIR 主动红外不受 RCS 影响。非载具（HBM 导弹）因子 1。
+            // 反舰导引头（2026-10-05）：主动段开机自由扫描也只能寻的 RCS 综合值 ≥500 的大型
+            // 目标（舰船）——非载具与小型目标直接跳过，不进入评分候选。
+            if (config.antiShipSeeker()
+                    && (!(entity instanceof AbstractVehicle antiShipCandidate)
+                    || RVP_AspectRcs.combinedFactor(antiShipCandidate, pos)
+                    < RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD)) {
+                continue;
+            }
             double effectiveRange = range;
             if (entity instanceof AbstractVehicle targetVehicle) {
                 effectiveRange = range * RVP_AspectRcs.detectionFactor(targetVehicle, pos);

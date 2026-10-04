@@ -53,6 +53,7 @@ public record RVP_GuidanceActiveConfig(
         float loftHeightAboveTarget,
         float loftEndDistance,
         float loftBlendDistance,
+        boolean antiShipSeeker,
         int seekerJamLimit,
         float seekerFovShrinkFactor,
         Integer seekerShutOffTime,

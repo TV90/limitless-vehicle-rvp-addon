@@ -2760,7 +2760,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 反鱼雷近炸（2026-10-03）：仅鱼雷弹体可触发，且不受离地高度限制（水中/贴水底可触发）
         boolean antiTorpedo = fuse.isProximityFuseAntiTorpedo();
         if (targetEntity != null && targetEntity.isAlive()
-                && (antiTorpedo ? isTorpedoAmmoTarget(targetEntity) : !isProximityFuseTargetTooLow(targetEntity, fuseHeight))
+                && (antiTorpedo ? isTorpedoAmmoTarget(targetEntity)
+                        : (!isProximityFuseTargetTooLow(targetEntity, fuseHeight) || isMissileOrRocketAmmoTarget(targetEntity)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(targetEntity))
                 && !isProximityDamageImmune(targetEntity)
                 && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
@@ -2780,7 +2781,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         AABB detectionBox = getBoundingBox().inflate(radius).move(backward);
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
         java.util.function.Predicate<Entity> proximityFilter = e -> canDamageEntity(e)
-                && (antiTorpedo ? isTorpedoAmmoTarget(e) : !isProximityFuseTargetTooLow(e, fuseHeight))
+                && (antiTorpedo ? isTorpedoAmmoTarget(e)
+                        : (!isProximityFuseTargetTooLow(e, fuseHeight) || isMissileOrRocketAmmoTarget(e)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(e))
                 && !isProximityDamageImmune(e)
                 && !isAmmoIgnoredByProximityFuse(e) // 机枪弹丸不触发近炸（精确按弹种过滤）
@@ -2941,6 +2943,18 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return entity instanceof RVP_BaseBullet rvpBullet
                 && rvpBullet.rvpData != null
                 && rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.TORPEDO;
+    }
+
+    /**
+     * 近炸目标为导弹/火箭弹弹体（2026-10-05 用户需求）：近炸引信的高度下限保护
+     * （{@link #isProximityFuseTargetTooLow}）对其不生效——拦截贴地掠飞来袭导弹/火箭弹时
+     * 近炸照常触发，不会被"目标过低"保护门吞掉。
+     */
+    private boolean isMissileOrRocketAmmoTarget(Entity entity) {
+        return entity instanceof RVP_BaseBullet rvpBullet
+                && rvpBullet.rvpData != null
+                && (rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                || rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.ROCKET);
     }
 
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
@@ -3289,7 +3303,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 反鱼雷近炸：仅鱼雷弹体可触发且不受离地高度限制（开关取 fuse_data 同名参数）
         boolean antiTorpedo = rvpData != null && rvpData.getFuseData().isProximityFuseAntiTorpedo();
         java.util.function.Predicate<Entity> proximityFilter = entity -> canDamageEntity(entity)
-                && (antiTorpedo ? isTorpedoAmmoTarget(entity) : !isProximityFuseTargetTooLow(entity, fuseHeight))
+                && (antiTorpedo ? isTorpedoAmmoTarget(entity)
+                        : (!isProximityFuseTargetTooLow(entity, fuseHeight) || isMissileOrRocketAmmoTarget(entity)))
                 && (!rvpData.isAntiRadiationMissile() || hasActiveRadar(entity))
                 && !isProximityDamageImmune(entity)
                 && !isAmmoIgnoredByProximityFuse(entity) // 机枪弹丸不触发近炸（精确按弹种过滤）

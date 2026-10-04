@@ -221,6 +221,24 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     return false;
                 }
             }
+
+            // 反舰导引头发射终检（2026-10-05 用户需求）：anti_ship_seeker 弹只允许攻击
+            // RCS 综合值 ≥500（SCAN_SEA_RCS_THRESHOLD，与 scan_sea 海面搜索同门限）的大型
+            // 目标——锁定目标不足（含非载具）或无锁定直接拒射，防雷达/RF 硬锁强行发射。
+            if (data.getGuidanceData().isAntiShipSeeker() && requiresEntityLock(data)) {
+                Entity antiShipLock = RVP_ClientHmdState.getInstance().getLockedEntity();
+                if (antiShipLock == null) {
+                    antiShipLock = unit.getLockedEntity() != null ? unit.getLockedEntity() : externalLocked;
+                }
+                boolean rcsQualified = antiShipLock instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle antiShipTarget
+                        && org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(antiShipTarget,
+                        net.minecraft.client.Minecraft.getInstance().player.position())
+                        >= org.ywzj.rvp.radar.RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD;
+                if (!rcsQualified) {
+                    LocalVehiclePlayer.instance.sendMessage("ui.rvp.target_rcs_below_sea_threshold");
+                    return false;
+                }
+            }
         }
         return true;
     }

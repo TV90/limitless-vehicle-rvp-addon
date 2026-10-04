@@ -457,5 +457,6 @@
   "key.ywzj_rvp.toggle_flight_mode.desc": "Cycle helicopter flight mode (Normal / Auto Collective / Hover)",
   "rvp.flight_mode.normal": "Flight mode: Normal",
   "rvp.flight_mode.auto_collective": "Flight mode: Auto Collective (climb/descent rate auto-trim, full attitude control)",
-  "rvp.flight_mode.hover": "Flight mode: Hover"
+  "rvp.flight_mode.hover": "Flight mode: Hover",
+  "ui.rvp.target_rcs_below_sea_threshold": "Target RCS below anti-ship seeker threshold, cannot lock/launch"
 }

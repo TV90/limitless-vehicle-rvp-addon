@@ -144,6 +144,16 @@ public class RVP_GuidanceData {
     @SerializedName("loft_blend_distance")
     private float loftBlendDistance = 0f;
 
+    /**
+     * 反舰导引头（2026-10-05 用户需求）：{@code true} 时该弹（ARH/AIR/SARH 等主段型）
+     * 只能攻击 RCS 综合值 ≥ {@code RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD}（500）的
+     * 大型目标（舰船）：①发射校验拒绝 RCS 不足/无实体锁定；②导引头开机不自动套取
+     * RCS 不足的硬锁/指定目标；③自由扫描只寻的达标目标；④SARH 照射目标不达标转惯性。
+     * 与 scan_sea 海面搜索同一判定体系（RVP_AspectRcs.combinedFactor）。
+     */
+    @SerializedName("anti_ship_seeker")
+    private boolean antiShipSeeker = false;
+
     @SerializedName("lock_angle_gate")
     private Map<RVP_Range<Float>, RVP_Range<Float>> lockAngleGate;
 
@@ -311,6 +321,11 @@ public class RVP_GuidanceData {
     /** @return loft 退坡区间长度（格），负值钳 0。 */
     public float getLoftBlendDistance() {
         return Math.max(loftBlendDistance, 0f);
+    }
+
+    /** @return 反舰导引头开关：只攻击 RCS 综合值 ≥500 的大型目标。 */
+    public boolean isAntiShipSeeker() {
+        return antiShipSeeker;
     }
 
     public Map<RVP_Range<Float>, RVP_Range<Float>> getLockAngleGate() {

@@ -193,6 +193,20 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 return;
             }
         }
+        // 反舰导引头服务端权威终检（2026-10-05 用户需求）：anti_ship_seeker 弹的锁定目标
+        // RCS 综合值不足 SCAN_SEA_RCS_THRESHOLD（500）即拒射（不耗弹）——防改包客户端或
+        // EO 直瞄路径绕过客户端门；无锁定（lock==null）时 HOMING 弹本无末端制导基准，同样拒射。
+        if (data.getGuidanceData().isAntiShipSeeker()
+                && shooter.level() instanceof net.minecraft.server.level.ServerLevel
+                && !(lock instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle antiShipTarget
+                && org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(antiShipTarget, shooter.position())
+                >= org.ywzj.rvp.radar.RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD)) {
+            if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                notifyPlayer.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable("ui.rvp.target_rcs_below_sea_threshold"), true);
+            }
+            return;
+        }
 
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
