@@ -41,14 +41,16 @@ public final class RVP_GuidanceRuntimeMath {
         }
         // 弹道导弹（PRESET 三段式）分支：GPS 制导 + preset_cruise_altitude > 0 时接管全程制导。
         // 与本体 PRESET 一致，不参与 track envelope / guidance angle 门限检查。
-        // 冷发射点火门（2026-10-04 用户提议采纳）：点火前不接管制导——垂直冷发射弹保持
-        // 弹射方向垂直出筒（此前从 flightTick 0 即转向追点，弹体斜着出筒；9M723 冷发射
-        // 10t 短于点火 20t 的空窗期还会被普通 pursuit 拉偏朝向）；profile 随首个点火后
-        // 制导 tick 建立（hasPresetProfileInitialized 首次生效），launch = 点火时弹位置，
-        // 抛物线基线随冷发射爬升自然抬高。
+        // 冷发射点火门（2026-10-04 用户提议采纳）：**仅垂直冷发射弹**（cold_launch_time_tick>0）
+        // 点火前不接管制导——保持弹射方向垂直出筒（此前从 flightTick 0 即转向追点，弹体斜着
+        // 出筒；9M723 冷发射 10t 短于点火 20t 的空窗还会被普通 pursuit 拉偏朝向）；profile 随
+        // 首个点火后制导 tick 建立，launch = 点火时弹位置，抛物线基线随冷发射爬升自然抬高。
+        // 无冷发射的垂直出膛弹（如 rgm109：VLS 直接出膛、出膛速度仅 1、无弹射动能）**不设门**：
+        // 点火前即预转向追点，否则点火后推力沿垂直出膛朝向加速、一发射就冲天（用户实测）。
         RVP_PresetBallisticProfile preset = context.active().presetBallistic();
         if (preset != null && preset.active()
                 && context.active().guidanceType() == RVP_EnumGuidanceType.GPS
+                && projectile.getColdLaunchTimeTick() > 0
                 && projectile.getFlightTickCount() >= RVP_ProjectileMotion.resolveMotorIgnitionTick(
                         projectile, context.data())) {
             return applyPresetBallistic(context, target, preset);
