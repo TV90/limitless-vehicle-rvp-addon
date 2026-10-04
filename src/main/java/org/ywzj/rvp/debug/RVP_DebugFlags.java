@@ -38,14 +38,6 @@ public final class RVP_DebugFlags {
     public static final RVP_DebugFlag HUD = new RVP_DebugFlag("hud", "HUD/Overlay 注册探针");
     /** 火箭 CCIP 准星替换。客户端。 */
     public static final RVP_DebugFlag CCIP = new RVP_DebugFlag("ccip", "火箭 CCIP 准星");
-    /**
-     * PRESET 弹道回退测试开关（2026-10-05）：on = 关闭本会话的两处弹道改动
-     * （程序转弯受控下滑 + 冷发射点火门限定），回退到纯 fishking 20b76ac5 行为
-     * （纯前视进度采样、PRESET 从飞行第 0 tick 接管、冷发射重叠窗口速度接管），
-     * 供 A/B 对比测试；off（默认）= 当前修复版。命令：/rvpdebug flags preset_legacy on。
-     * 双端（服务端制导 + 客户端无关）。
-     */
-    public static final RVP_DebugFlag PRESET_LEGACY = new RVP_DebugFlag("preset_legacy", "PRESET 弹道回退测试（纯 fishking 20b76ac5）");
     /** 头盔显示（IR 锁定丢弃 / 宽限日志）。客户端。 */
     public static final RVP_DebugFlag HMD = new RVP_DebugFlag("hmd", "头盔显示（IR 锁定日志）");
     /** HITL 人在回路导弹转向链诊断（输入角/舵量角/锥角门限/转向应用）。双端。 */
@@ -60,7 +52,7 @@ public final class RVP_DebugFlags {
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC, PRESET_LEGACY);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC);
 
     private RVP_DebugFlags() {
     }

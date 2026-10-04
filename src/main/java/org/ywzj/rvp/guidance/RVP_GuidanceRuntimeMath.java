@@ -41,20 +41,13 @@ public final class RVP_GuidanceRuntimeMath {
         }
         // 弹道导弹（PRESET 三段式）分支：GPS 制导 + preset_cruise_altitude > 0 时接管全程制导。
         // 与本体 PRESET 一致，不参与 track envelope / guidance angle 门限检查。
-        // 冷发射点火门（2026-10-04 用户提议采纳）：**仅垂直冷发射弹**（cold_launch_time_tick>0）
-        // 点火前不接管制导——保持弹射方向垂直出筒（此前从 flightTick 0 即转向追点，弹体斜着
-        // 出筒；9M723 冷发射 10t 短于点火 20t 的空窗还会被普通 pursuit 拉偏朝向）；profile 随
-        // 首个点火后制导 tick 建立，launch = 点火时弹位置，抛物线基线随冷发射爬升自然抬高。
-        // 无冷发射的垂直出膛弹（如 rgm109：VLS 直接出膛、出膛速度仅 1、无弹射动能）**不设门**：
-        // 点火前即预转向追点，否则点火后推力沿垂直出膛朝向加速、一发射就冲天（用户实测）。
+        // 冷发射交接（2026-10-05 定版，纯 fishking 20b76ac5+31c0c988 行为）：PRESET 从
+        // flightTick 0 即接管，冷发射窗口内的速度覆盖由运动层接管机制处理
+        // （shouldPreserveGuidanceDuringColdLaunch + 粘性标记），窗口末段弹即开始转向；
+        // 本会话曾叠加的"点火门/程序转弯/45° 下限"经用户实测劣于纯 fishking 行为，已全部移除。
         RVP_PresetBallisticProfile preset = context.active().presetBallistic();
-        boolean presetLegacy = RVP_DebugFlags.PRESET_LEGACY.isEnabled();
         if (preset != null && preset.active()
-                && context.active().guidanceType() == RVP_EnumGuidanceType.GPS
-                && (presetLegacy
-                || (projectile.getColdLaunchTimeTick() > 0
-                && projectile.getFlightTickCount() >= RVP_ProjectileMotion.resolveMotorIgnitionTick(
-                        projectile, context.data())))) {
+                && context.active().guidanceType() == RVP_EnumGuidanceType.GPS) {
             return applyPresetBallistic(context, target, preset);
         }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
@@ -416,30 +409,10 @@ public final class RVP_GuidanceRuntimeMath {
         double targetY = launch == null ? position.y + 8.0
                 : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
                         launch.y, base, apogee, lookAheadProgress);
-        Vec3 targetPoint;
-        // PRESET 弹道 A/B 测试开关（/rvpdebug flags preset_legacy on）：跳过程序转弯与
-        // 45° 下限系改动，回退纯 fishking 20b76ac5 行为（纯前视进度采样追点）。
-        boolean presetLegacy = RVP_DebugFlags.PRESET_LEGACY.isEnabled();
-        if (!presetLegacy && position.y > targetY + 2.0D) {
-            // 程序转弯（2026-10-05 顶点失控修复，替代已删除的 45° 追点下限）：弹体高度超前
-            // 于抛物线前视点时，期望方向 = 前方 lookAhead 水平点 + 按高度差比例的受控浅下滑
-            // （斜率封顶 0.5 ≈ 26°）。原 45° 追点下限是正反馈爬升器——追点恒在弹上方，
-            // 弹持续大仰角爬升、水平进度推进缓慢、下限随弹高水涨船高，直到水平半程才解除，
-            // 实测顶点失控至 1600+ 后速降（用户实测）。程序转弯把超前高度在飞向目标途中
-            // 温和消耗：高度差随接近收敛、下滑角自动归零，无缝汇入抛物线；垂直冷发射衔接
-            // 段（弹高超前）同样走此形态（程序转弯观感，替代深下压）。
-            double excess = position.y - targetY;
-            double pitchDown = Mth.clamp(excess / (lookAhead * 2.0D), 0.0D, 0.5D);
-            targetPoint = new Vec3(
-                    position.x + forwardH.x * lookAhead,
-                    position.y - lookAhead * pitchDown,
-                    position.z + forwardH.z * lookAhead);
-        } else {
-            targetPoint = new Vec3(
-                    position.x + forwardH.x * lookAhead,
-                    targetY,
-                    position.z + forwardH.z * lookAhead);
-        }
+        Vec3 targetPoint = new Vec3(
+                position.x + forwardH.x * lookAhead,
+                targetY,
+                position.z + forwardH.z * lookAhead);
         // 弹道中段战术机动：水平横向正弦蛇形规避摆动（如 Iskander 末端规避）。
         // 仅中段（p 0.15~0.85）生效、两端渐入渐出，相位基于水平进度 p（与虚拟端一致），
         // 不影响发射初期与俯冲末段，横向偏移 ≤ 幅度，不导致脱靶。
