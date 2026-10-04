@@ -345,7 +345,8 @@ public final class RVP_ProjectileMotion {
         missile.updateFlightSpeedState(velocity);
     }
 
-    private static int resolveMotorIgnitionTick(RVP_BaseBullet projectile, RVP_WeaponData data) {
+    /** 运动学生效的点火 Tick = max(ignition_delay_tick, 冷发射时长)，冷发射窗口整体覆盖到点火。 */
+    public static int resolveMotorIgnitionTick(RVP_BaseBullet projectile, RVP_WeaponData data) {
         if (projectile == null || data == null) {
             return 0;
         }

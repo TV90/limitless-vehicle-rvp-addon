@@ -41,9 +41,16 @@ public final class RVP_GuidanceRuntimeMath {
         }
         // 弹道导弹（PRESET 三段式）分支：GPS 制导 + preset_cruise_altitude > 0 时接管全程制导。
         // 与本体 PRESET 一致，不参与 track envelope / guidance angle 门限检查。
+        // 冷发射点火门（2026-10-04 用户提议采纳）：点火前不接管制导——垂直冷发射弹保持
+        // 弹射方向垂直出筒（此前从 flightTick 0 即转向追点，弹体斜着出筒；9M723 冷发射
+        // 10t 短于点火 20t 的空窗期还会被普通 pursuit 拉偏朝向）；profile 随首个点火后
+        // 制导 tick 建立（hasPresetProfileInitialized 首次生效），launch = 点火时弹位置，
+        // 抛物线基线随冷发射爬升自然抬高。
         RVP_PresetBallisticProfile preset = context.active().presetBallistic();
         if (preset != null && preset.active()
-                && context.active().guidanceType() == RVP_EnumGuidanceType.GPS) {
+                && context.active().guidanceType() == RVP_EnumGuidanceType.GPS
+                && projectile.getFlightTickCount() >= RVP_ProjectileMotion.resolveMotorIgnitionTick(
+                        projectile, context.data())) {
             return applyPresetBallistic(context, target, preset);
         }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
@@ -372,6 +379,18 @@ public final class RVP_GuidanceRuntimeMath {
                 : launch.y + base + (apogee - base) * 4.0 * p * (1.0 - p);
         // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
         double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
+        // 冷发射垂直爬升衔接下限（2026-10-04 用户实测与两轮迭代定版）：垂直冷发射弹点火后
+        // 仍以 ~2 格/t 继续爬升，弹体高度会反超抛物线在该水平进度下的追踪点——追点落到
+        // 弹体后下方，期望方向转负仰角，制导把弹压低成水平下压段（弹速不衰减，纯几何
+        // 反超；20 格固定余量版实测仍下压，因其期望仰角下限仅 ~18°，弹从 90° 被持续压向
+        // 近水平）。上升半程（p<0.5）追点高度加"不低于弹体当前高度 + lookAhead"下限——
+        // 期望仰角下限恒 45°（atan(lookAhead/lookAhead)）：高度超前期间弹保持陡仰角爬升、
+        // 等水平进度 p 追上抛物线高度曲线（追点沿 4p(1-p) 陡升反超后自然接管），无下压段。
+        // lookAhead 末端收敛 0，下限自动失效不影响命中；p≥0.5 下半程与俯冲判据不受影响；
+        // 倾斜发射弹追点本在上方，max() 不触发零变化。
+        if (p < 0.5D) {
+            targetY = Math.max(targetY, position.y + lookAhead);
+        }
         Vec3 targetPoint = new Vec3(
                 position.x + forwardH.x * lookAhead,
                 targetY,
