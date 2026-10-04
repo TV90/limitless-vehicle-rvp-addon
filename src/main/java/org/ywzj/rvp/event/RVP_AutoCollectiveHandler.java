@@ -74,6 +74,9 @@ public final class RVP_AutoCollectiveHandler {
                 boolean wasAuto = AUTO_COLLECTIVE.getOrDefault(uuid, false);
                 if (!wasAuto) {
                     vehicle.hoverMode = false;
+                    // 快照必须对齐校正后的值：否则下 tick 读到校正后的 F 与快照 T 比对，
+                    // 误判为"又变化了一次（T→F）"走退出分支——表现为进自动总距瞬间回常规
+                    LAST_HOVER.put(uuid, false);
                     AUTO_COLLECTIVE.put(uuid, true);
                     notifyMode(vehicle, "rvp.flight_mode.auto_collective");
                 } else {
