@@ -81,6 +81,16 @@ public final class RVP_WarnRelayService {
             if (!(entity instanceof AbstractVehicle source) || source.isDestroyed() || !source.isAlive()) {
                 continue;
             }
+            // 无人载具（玩家/gunner 均不在车上）不产生锁定/搜索告警：本体锁定生命周期是
+            // 永久的——下车/登出/空车都没有解除逻辑（唯一自动清除=目标死亡），服务端雷达
+            // 还永远开机，玩家弃船后旧锁会持续驱动双通道告警（本体 WeaponUnit.tick 每
+            // 2 tick 发 RADAR_LOCK + 本服务每 5 tick 补发），目标载具登上人即无限循环
+            // 告警（2026-10-04 用户实测）。锁定与制导行为不动，只静音告警：乘员回到车上
+            // 锁定即恢复告警。外置雷达中继锁（玩家在车外用车雷达）的告警静音属已知边界，
+            // 如需保留可在此追加"外置链使用中"豁免判定。
+            if (source.getPassengers().isEmpty()) {
+                continue;
+            }
             for (PartUnit<?> partUnit : source.getPartUnits()) {
                 if (!(partUnit instanceof RadarUnit radar)) {
                     continue;
