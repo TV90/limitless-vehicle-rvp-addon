@@ -3880,6 +3880,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rootEntity == vehicle || rootEntity == shooterVehicle) {
             return true;
         }
+        // 客户端引用未还原窗口兜底（2026-10-04 用户实测 HPJ-12 出膛弹在自家 HPJ-38 处显示
+        // 撞击特效）：客户端弹（双侧积分，predictBounceBeforeMotion 每 tick 预测跳弹）的
+        // shooterVehicle/owner 实体引用经 resolveRemoteRefs 还原——readSpawnData 首次查询若早于
+        // 载具实体可达则暂为 null，需等 remoteTick 补齐；窗口内上述引用分支全部失效，客户端
+        // 预测跳弹把发射载具受击盒判成可命中并显示假撞击/跳弹特效（服务端豁免正常、纯视觉
+        // 分歧，用户实测 HPJ-38 无实际掉血）。生成包里的射手载具/射手实体 id 零延迟可用，
+        // 直接按 id 兜底豁免（id 默认 -1 恒不误配）。
+        if (rootEntity.getId() == remoteShooterVehicleId) {
+            return true;
+        }
+        if (remoteOwnerId >= 0 && rootEntity.getId() == remoteOwnerId) {
+            return true;
+        }
         Entity owner = getOwner();
         // 豁免口径 = 【发射该弹药的载具】及其乘客（2026-10-04 用户定版）：原 isPassengerOfSameVehicle(owner)
         // 按 owner 当前乘坐载具动态重算——射手 TP 到目标船并登乘后，目标船根载具与 owner 一致被误豁免，
