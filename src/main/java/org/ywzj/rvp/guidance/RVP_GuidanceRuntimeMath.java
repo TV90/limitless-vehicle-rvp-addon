@@ -48,11 +48,13 @@ public final class RVP_GuidanceRuntimeMath {
         // 无冷发射的垂直出膛弹（如 rgm109：VLS 直接出膛、出膛速度仅 1、无弹射动能）**不设门**：
         // 点火前即预转向追点，否则点火后推力沿垂直出膛朝向加速、一发射就冲天（用户实测）。
         RVP_PresetBallisticProfile preset = context.active().presetBallistic();
+        boolean presetLegacy = RVP_DebugFlags.PRESET_LEGACY.isEnabled();
         if (preset != null && preset.active()
                 && context.active().guidanceType() == RVP_EnumGuidanceType.GPS
-                && projectile.getColdLaunchTimeTick() > 0
+                && (presetLegacy
+                || (projectile.getColdLaunchTimeTick() > 0
                 && projectile.getFlightTickCount() >= RVP_ProjectileMotion.resolveMotorIgnitionTick(
-                        projectile, context.data())) {
+                        projectile, context.data())))) {
             return applyPresetBallistic(context, target, preset);
         }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
@@ -415,7 +417,10 @@ public final class RVP_GuidanceRuntimeMath {
                 : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
                         launch.y, base, apogee, lookAheadProgress);
         Vec3 targetPoint;
-        if (position.y > targetY + 2.0D) {
+        // PRESET 弹道 A/B 测试开关（/rvpdebug flags preset_legacy on）：跳过程序转弯与
+        // 45° 下限系改动，回退纯 fishking 20b76ac5 行为（纯前视进度采样追点）。
+        boolean presetLegacy = RVP_DebugFlags.PRESET_LEGACY.isEnabled();
+        if (!presetLegacy && position.y > targetY + 2.0D) {
             // 程序转弯（2026-10-05 顶点失控修复，替代已删除的 45° 追点下限）：弹体高度超前
             // 于抛物线前视点时，期望方向 = 前方 lookAhead 水平点 + 按高度差比例的受控浅下滑
             // （斜率封顶 0.5 ≈ 26°）。原 45° 追点下限是正反馈爬升器——追点恒在弹上方，
