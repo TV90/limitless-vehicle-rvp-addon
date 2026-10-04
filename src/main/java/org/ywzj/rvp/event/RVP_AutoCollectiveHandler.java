@@ -10,7 +10,6 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
-import org.ywzj.rvp.network.C2SToggleFlightMode;
 import org.ywzj.vehicle.api.event.VehicleMoveEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
@@ -21,55 +20,36 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * [RVP] 直升机自动总距模式（2026-10-05，用户需求）：三态飞行模式（常规 → 自动总距 → 悬停）
- * 的服务端状态与执行器。零 Mixin——写入路径全部走本体公共 API：
+ * [RVP] 直升机三态飞行模式（2026-10-05，用户需求）：常规 → 自动总距 → 悬停 → 常规，
+ * **由本体 Z 键（悬停切换）直接驱动，零 Mixin、零新增包**。
  *
+ * <p>原理：本体 Z 键每按一次翻转 public {@code hoverMode}（唯一入口，
+ * {@code onClientVehicleAction} 直翻，不同步、客户端不可见）。本处理器每 tick 检测
+ * {@code hoverMode} 变化并按三态校正：</p>
  * <ul>
- *   <li><b>三态编码</b>：{@code hoverMode}（本体 public 字段，本类可写）+ {@link #AUTO_COLLECTIVE}
- *       侧表两个正交布尔组合：常规 = hover+auto 双 false；自动总距 = hover=false + auto=true；
- *       悬停 = hover=true（auto 强制 false）。循环键每次切换前实时读 hoverMode 校准，
- *       本体 Z 键的直接操作被下一次循环正确吸收；</li>
- *   <li><b>执行闭环</b>：{@link VehicleMoveEvent} 在每 tick 物理（含 tickMove）之后发布，
- *       此处调本体 public {@code setCollectivePitch()}（写 SynchedEntityData）成为下一 tick
- *       {@code tickMove} 的总距读取基准——与 {@code RVP_EnginePowerHandler} 同款已验证模式。</li>
+ *   <li>常规(F,F) 按 Z → 本体翻为 T → 检测到 F→T 且此前非自动总距 → <b>校正回 F 并开启
+ *       自动总距</b>（进入自动总距态而非悬停）；</li>
+ *   <li>自动总距(F,T) 按 Z → 本体翻为 T → auto 已开 → 维持 T = 进入悬停态（auto 关闭）；</li>
+ *   <li>悬停(T,F) 按 Z → 本体翻为 F → 回到常规态。</li>
  * </ul>
  *
- * <p><b>自动总距语义（区别于悬停模式）</b>：只做垂直速度通道的阻尼，姿态/航向完全不受限，
- * 保留常规模式全部机动性——爬升率过高自动调低总距、下坠率过高自动调高总距，
- * 确保短时间内高度无巨大变化。vy 判定与本体悬停阻尼同源
- * （{@code vehicle.airSpeed.y - PhysicsEngine.G}，airSpeed 为 public 字段且在事件时刻
- * 精确持有 tickMove 推力结算后的值）。悬停开着时跳过（本体悬停自带 0.01 敏感阻尼，
- * 重复介入无意义）；玩家按着 SPACE/SHIFT（controlUnit.up/down）时本 tick 让位——手动优先。</p>
+ * <p><b>自动总距语义</b>：只做垂直速度通道阻尼（爬升率过高自动调低总距、下坠率过高自动
+ * 调高总距），姿态/航向完全不受限——区别于悬停模式的回平+锁航向。vy 与本体悬停阻尼同源
+ * （{@code vehicle.airSpeed.y - PhysicsEngine.G}，事件时刻精确持有推力结算后的值）；写入走
+ * 本体 public {@code setCollectivePitch()}（VehicleMoveEvent 后发布，下 tick 生效，
+ * {@code RVP_EnginePowerHandler} 同款已验证模式）。悬停开着时跳过（本体悬停自带 0.01
+ * 敏感阻尼）；玩家按着 SPACE/SHIFT 时让位（手动优先）。阈值/速率由载具 JSON
+ * {@code rvp_auto_collective} 可配。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_AutoCollectiveHandler {
 
     /** 自动总距模式侧表：载具 UUID → 是否启用。仅服务端读写；车辆卸载即清理。 */
     private static final Map<UUID, Boolean> AUTO_COLLECTIVE = new ConcurrentHashMap<>();
+    /** hoverMode 上一 tick 快照：检测本体 Z 键翻转（变化 = 用户按键，推进三态）。 */
+    private static final Map<UUID, Boolean> LAST_HOVER = new ConcurrentHashMap<>();
 
     private RVP_AutoCollectiveHandler() {}
-
-    /** 三态循环切换入口（{@link C2SToggleFlightMode} 服务端校验通过后调用）。 */
-    public static void toggleFlightMode(RotaryWingVehicle vehicle) {
-        boolean autoOn = AUTO_COLLECTIVE.getOrDefault(vehicle.getUUID(), false);
-        // 本体 Z 键可能直接翻过 hoverMode，切换前以实时值为准；auto 与 hover 互斥（悬停态强制 auto=false）
-        boolean hoverOn = vehicle.hoverMode;
-        if (hoverOn) {
-            // 悬停 → 常规
-            vehicle.hoverMode = false;
-            AUTO_COLLECTIVE.put(vehicle.getUUID(), false);
-            notifyMode(vehicle, "rvp.flight_mode.normal");
-        } else if (autoOn) {
-            // 自动总距 → 悬停（写本体 public 字段，行为与本体内 Z 键翻转完全一致）
-            AUTO_COLLECTIVE.put(vehicle.getUUID(), false);
-            vehicle.hoverMode = true;
-            notifyMode(vehicle, "rvp.flight_mode.hover");
-        } else {
-            // 常规 → 自动总距
-            AUTO_COLLECTIVE.put(vehicle.getUUID(), true);
-            notifyMode(vehicle, "rvp.flight_mode.auto_collective");
-        }
-    }
 
     /**
      * 每 tick 执行：垂直速度阻尼式自动总距。镜像本体 hoverMode 阻尼段
@@ -84,7 +64,30 @@ public final class RVP_AutoCollectiveHandler {
                 || vehicle.isRemoved()) {
             return;
         }
-        if (!AUTO_COLLECTIVE.getOrDefault(vehicle.getUUID(), false)
+        // --- Z 键三态检测：本体翻转 hoverMode = 用户按键信号，按三态推进/校正 ---
+        UUID uuid = vehicle.getUUID();
+        boolean hover = vehicle.hoverMode;
+        Boolean lastHover = LAST_HOVER.put(uuid, hover);
+        if (lastHover != null && hover != lastHover) {
+            if (!lastHover && hover) {
+                // F→T：此前常规（auto=false）→ 校正为自动总距态；此前自动总距 → 维持悬停
+                boolean wasAuto = AUTO_COLLECTIVE.getOrDefault(uuid, false);
+                if (!wasAuto) {
+                    vehicle.hoverMode = false;
+                    AUTO_COLLECTIVE.put(uuid, true);
+                    notifyMode(vehicle, "rvp.flight_mode.auto_collective");
+                } else {
+                    AUTO_COLLECTIVE.put(uuid, false);
+                    notifyMode(vehicle, "rvp.flight_mode.hover");
+                }
+            } else {
+                // T→F：悬停退出 → 常规态
+                AUTO_COLLECTIVE.put(uuid, false);
+                notifyMode(vehicle, "rvp.flight_mode.normal");
+            }
+            return; // 切换 tick 不执行阻尼，下 tick 按新态工作
+        }
+        if (!AUTO_COLLECTIVE.getOrDefault(uuid, false)
                 || vehicle.hoverMode) {
             // 未启用；或悬停态（本体自带更敏感的阻尼，重复介入无意义）
             return;

@@ -72,12 +72,6 @@ public class RVP_Keys {
     /** 快速维修（载具内一键回血 + 渐进恢复骨骼模块）。默认 ;（2026-09-25 由 G 改键，用户定版）。 */
     public static final KeyMapping USE_MAINTENANCE = key("use_maintenance", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_SEMICOLON);
 
-    /**
-     * 直升机飞行模式循环切换（常规 → 自动总距 → 悬停 → 常规）。默认 V。
-     * 服务端按当前态（本体 hoverMode 公开字段 + RVP autoCollective 侧表）走一步，
-     * 与本体 Z 键悬停共存：Z 直接翻 hoverMode，本键循环前实时读取校准（零 Mixin）。
-     */
-    public static final KeyMapping TOGGLE_FLIGHT_MODE = key("toggle_flight_mode", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V);
 
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
@@ -100,6 +94,5 @@ public class RVP_Keys {
         event.register(FIRE_ECM);
         event.register(FIRE_SMOKE);
         event.register(USE_MAINTENANCE);
-        event.register(TOGGLE_FLIGHT_MODE);
     }
 }

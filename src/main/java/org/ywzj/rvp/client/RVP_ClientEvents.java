@@ -346,17 +346,6 @@ public class RVP_ClientEvents {
             }
         }
 
-        // 直升机飞行模式循环切换（V）：常规 → 自动总距 → 悬停 → 常规。守卫：驾驶员 +
-        // RotaryWingVehicle（服务端 handle 内同口径复验，防伪造包）；非直升机白按无提示。
-        while (RVP_Keys.TOGGLE_FLIGHT_MODE.consumeClick()) {
-            LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-            if (lvp != null && lvp.vehicle != null && lvp.onVehicle()
-                    && lvp.vehicle instanceof org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle) {
-                RVP_Network.CHANNEL.sendToServer(
-                        new org.ywzj.rvp.network.C2SToggleFlightMode(lvp.vehicle.getId()));
-            }
-        }
-
         // [RVP] 可变后掠翼手动切换：复用本体 FUNCTIONAL ↑/↓（边沿检测 consumeClick，
         // 与本体 InputHandler 的 isDown 轮询互不干扰）。守卫：驾驶员 + 无矢量固定翼 +
         // 双隐藏部件存在；不满足时仅吞掉点击（白按无提示，见方案 §1.4）
