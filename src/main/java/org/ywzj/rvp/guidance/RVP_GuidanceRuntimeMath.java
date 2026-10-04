@@ -414,21 +414,27 @@ public final class RVP_GuidanceRuntimeMath {
         double targetY = launch == null ? position.y + 8.0
                 : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
                         launch.y, base, apogee, lookAheadProgress);
-        // 冷发射垂直爬升衔接兜底（2026-10-04 本会话迭代）：垂直冷发射弹点火后仍以
-        // ~2 格/t 继续爬升，弹体高度可能几何超前于抛物线前视点高度——追点落到弹体
-        // 后下方、期望方向转负仰角，制导把弹压低成水平下压段（弹速不衰减，纯几何
-        // 反超；本会话首版 20 格固定余量实测仍下压，期望仰角下限仅 ~18°）。上升半程
-        // （p<0.5）追点高度加"不低于弹体当前高度 + lookAhead"下限——期望仰角下限
-        // 恒 45°，高度超前期间弹保持陡仰角爬升、等前视进度推进抛物线高度反超后自然
-        // 接管；lookAhead 末端收敛 0 下限自动失效不影响命中；p≥0.5 下半程与俯冲判据
-        // 不受影响；倾斜发射弹追点本在上方，max() 不触发零变化。
-        if (p < 0.5D) {
-            targetY = Math.max(targetY, position.y + lookAhead);
+        Vec3 targetPoint;
+        if (position.y > targetY + 2.0D) {
+            // 程序转弯（2026-10-05 顶点失控修复，替代已删除的 45° 追点下限）：弹体高度超前
+            // 于抛物线前视点时，期望方向 = 前方 lookAhead 水平点 + 按高度差比例的受控浅下滑
+            // （斜率封顶 0.5 ≈ 26°）。原 45° 追点下限是正反馈爬升器——追点恒在弹上方，
+            // 弹持续大仰角爬升、水平进度推进缓慢、下限随弹高水涨船高，直到水平半程才解除，
+            // 实测顶点失控至 1600+ 后速降（用户实测）。程序转弯把超前高度在飞向目标途中
+            // 温和消耗：高度差随接近收敛、下滑角自动归零，无缝汇入抛物线；垂直冷发射衔接
+            // 段（弹高超前）同样走此形态（程序转弯观感，替代深下压）。
+            double excess = position.y - targetY;
+            double pitchDown = Mth.clamp(excess / (lookAhead * 2.0D), 0.0D, 0.5D);
+            targetPoint = new Vec3(
+                    position.x + forwardH.x * lookAhead,
+                    position.y - lookAhead * pitchDown,
+                    position.z + forwardH.z * lookAhead);
+        } else {
+            targetPoint = new Vec3(
+                    position.x + forwardH.x * lookAhead,
+                    targetY,
+                    position.z + forwardH.z * lookAhead);
         }
-        Vec3 targetPoint = new Vec3(
-                position.x + forwardH.x * lookAhead,
-                targetY,
-                position.z + forwardH.z * lookAhead);
         // 弹道中段战术机动：水平横向正弦蛇形规避摆动（如 Iskander 末端规避）。
         // 仅中段（p 0.15~0.85）生效、两端渐入渐出，相位基于水平进度 p（与虚拟端一致），
         // 不影响发射初期与俯冲末段，横向偏移 ≤ 幅度，不导致脱靶。
