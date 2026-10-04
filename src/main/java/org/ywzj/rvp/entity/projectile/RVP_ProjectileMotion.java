@@ -358,8 +358,8 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         int coldLaunchTick = projectile.getColdLaunchTimeTick();
-        // 读取本 Tick 的 PRESET 制导接管标记，使冷发射与点火延迟重叠时保留 GPS 制导方向。
-        boolean presetGuidanceApplied = projectile.hasPresetGuidanceMotionAppliedThisTick();
+        // 读取冷发射窗口内的 PRESET 接管标记，使单 Tick 的 GPS 源抖动不会把弹体掰回竖直。
+        boolean presetGuidanceApplied = projectile.hasPresetGuidanceMotionAppliedDuringLaunch();
         if (shouldPreserveGuidanceDuringColdLaunch(
                 projectile.getFlightTickCount(), coldLaunchTick,
                 projectile.rvpData.getResolvedIgnitionDelayTick(), presetGuidanceApplied)) {
@@ -395,7 +395,7 @@ public final class RVP_ProjectileMotion {
      * @param flightTick 当前飞行 Tick
      * @param coldLaunchTick 冷发射持续 Tick 数
      * @param ignitionDelayTick 配置的发动机点火延迟 Tick 数
-     * @param guidanceApplied 当前 Tick 是否已经写入 PRESET 制导速度
+     * @param guidanceApplied 当前冷发射窗口是否已经写入过 PRESET 制导速度
      * @return 是否保留制导层刚写入的速度
      */
     static boolean shouldPreserveGuidanceDuringColdLaunch(

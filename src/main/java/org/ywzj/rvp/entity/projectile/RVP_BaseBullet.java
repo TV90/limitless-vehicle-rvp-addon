@@ -542,6 +542,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private boolean guidanceWireDirectApplied;
     /** 当前服务端 Tick 是否已有 PRESET 制导写入速度，供冷发射与发动机接管重叠时保留制导结果。 */
     private boolean presetGuidanceMotionAppliedThisTick;
+    /** 冷发射窗口内是否曾经成功写入过 PRESET 制导速度，防止单 Tick 制导源抖动把弹体掰回竖直。 */
+    private boolean presetGuidanceMotionAppliedDuringLaunch;
     /**
      * 本 Tick 气动转向使用率 λ，范围 0～1，默认 0；仅服务端运动结算读取。
      * 该瞬态值每 Tick 制导前复位，不持久化、不参与网络同步。
@@ -1694,11 +1696,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 标记当前 Tick 已由 PRESET 制导写入弹体速度，避免后续冷发射运动阶段覆盖该结果。 */
     public void markPresetGuidanceMotionAppliedThisTick() {
         presetGuidanceMotionAppliedThisTick = true;
+        // 记录冷发射窗口内的首次成功接管，后续短暂制导失败时仍保留上一 Tick 的有效航向。
+        presetGuidanceMotionAppliedDuringLaunch = true;
     }
 
     /** @return 当前 Tick 是否已有 PRESET 制导速度，供运动积分决定是否完成冷发射制导接管。 */
     public boolean hasPresetGuidanceMotionAppliedThisTick() {
         return presetGuidanceMotionAppliedThisTick;
+    }
+
+    /**
+     * @return 冷发射期间当前弹体是否曾成功完成 PRESET 制导接管；仅服务端运动层使用
+     */
+    public boolean hasPresetGuidanceMotionAppliedDuringLaunch() {
+        return presetGuidanceMotionAppliedDuringLaunch;
     }
 
     /** @return 本 Tick 已记录的最大气动转向使用率 λ，范围 0～1。 */
