@@ -93,22 +93,21 @@ public class C2SToggleUavLoiter {
         ctx.setPacketHandled(true);
     }
 
-    /** 解析目标盘旋载具：无人机实例 → 自身有盘旋配置的载具 → 关联子无人机。 */
+    /** 解析目标盘旋载具（2026-10-06 用户定版：F 键只在骑乘盘旋载具时可用，母车不再遥控子机盘旋）。 */
     private static AbstractVehicle resolveTargetUav(AbstractVehicle vehicle) {
         // [RVP] 各分支统一判型：仅固定翼/旋翼可盘旋。地面子机（如 Buk-M3 / IRIS-T 的
         // 96l6、irist_slm_tads 轮式雷达车）无盘旋语义，静默返回 null，不再误报"未配置盘旋参数"。
         if (RVP_LinkedUavStateTable.isDeployableUavInstance(vehicle) && isLoiterCapable(vehicle)) {
             return vehicle;
         }
-        // AC130 等自身带盘旋配置的固定翼载具，直接对自身盘旋
+        // AC130 等自身带盘旋配置的固定翼载具，骑乘时直接对自身盘旋
         if (isLoiterCapable(vehicle)) {
             RVP_LoiterConfig selfConfig = RVP_LoiterConfigCache.get(vehicle.getVehicleId());
             if (selfConfig.isConfigured()) {
                 return vehicle;
             }
         }
-        Optional<AbstractVehicle> child = RVP_DeployableUavService.getLinkedChild(vehicle);
-        return child.filter(C2SToggleUavLoiter::isLoiterCapable).orElse(null);
+        return null;
     }
 
     /**
