@@ -16,6 +16,8 @@
   "item.ywzj_rvp.friendly_gunner": "Friendly Gunner",
   "item.ywzj_rvp.enemy_gunner": "Enemy Gunner",
   "item.ywzj_rvp.team_gunner": "Team Gunner",
+  "enchantment.ywzj_rvp.anti_g": "Anti-G",
+  "tips.ywzj_rvp.anti_g.chest_only": "Chestplate only",
   "entity.ywzj_rvp.gunner": "Gunner",
   "message.ywzj_rvp.gps.set_target": "GPS target set",
   "message.ywzj_rvp.gps.clear_target": "GPS target cleared",

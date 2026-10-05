@@ -16,6 +16,8 @@
   "item.ywzj_rvp.friendly_gunner": "友好炮手",
   "item.ywzj_rvp.enemy_gunner": "敌对炮手",
   "item.ywzj_rvp.team_gunner": "阵营炮手",
+  "enchantment.ywzj_rvp.anti_g": "抗荷",
+  "tips.ywzj_rvp.anti_g.chest_only": "仅胸甲可用",
   "entity.ywzj_rvp.gunner": "炮手",
   "message.ywzj_rvp.gps.set_target": "已设置 GPS 目标点",
   "message.ywzj_rvp.gps.clear_target": "已清除 GPS 目标点",

@@ -10,6 +10,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_DisplayTypes;
+import org.ywzj.rvp.all.RVP_Enchantments;
 import org.ywzj.rvp.all.RVP_Items;
 import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.all.RVP_Sounds;
@@ -45,6 +46,7 @@ public class RVP_MOD {
         IEventBus modBus = context.getModEventBus();
         RVP_Entities.register(modBus);
         RVP_DisplayTypes.register(modBus);
+        RVP_Enchantments.register(modBus);
         RVP_Items.register(modBus);
         RVP_Particles.register(modBus);
         RVP_Sounds.register(modBus);
