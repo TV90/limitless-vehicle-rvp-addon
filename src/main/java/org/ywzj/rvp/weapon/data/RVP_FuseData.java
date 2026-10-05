@@ -76,6 +76,32 @@ public class RVP_FuseData {
     @SerializedName("proximity_radius")
     private float proximityRadius = 0f;
 
+    /**
+     * 对弹药目标的近炸半径倍率（无因次，默认 {@code 1.0} = 行为与旧版完全一致）。
+     *
+     * <p>生效条件：{@code proximity_radius > 0} 且近炸候选目标为
+     * <b>导弹/火箭/炸弹/鱼雷</b>类 RVP 弹药（{@code weapon_kind} 精确判，不含机枪弹丸、
+     * 不含本体 AmmoEntity）时，近炸触发半径 = {@code proximity_radius × 本倍率}；
+     * 对载具/生物目标恒用原半径，触发行为逐位不变。仅支持放大（值域 ≥1，写入更小值
+     * 按 1.0 生效）。</p>
+     *
+     * <p>动机（2026-10-05 用户需求）：载具 AABB 动辄数格半轴，近炸"贴上就炸"观感范围大；
+     * 弹药 AABB 仅 1/16 格，等效触发距离几乎就是 {@code proximity_radius} 本身，
+     * 高速交汇的拦截几何窗口太小。弹药目标触发即无条件强制引爆（无伤害数字结算），
+     * 本倍率只放大拦截触发窗口，不影响伤害。</p>
+     */
+    @SerializedName("proximity_radius_ammo_factor")
+    private float proximityRadiusAmmoFactor = 1.0f;
+
+    /**
+     * 对弹药目标的近炸半径倍率（见 {@link #proximityRadiusAmmoFactor} 字段注释）。
+     * 仅支持放大：写入 &lt;1 的值一律按 {@code 1.0} 生效（探测盒第一遍查询需保持旧版
+     * 载具行为逐位一致，故不支持缩小语义）。
+     */
+    public float getProximityRadiusAmmoFactor() {
+        return Math.max(1.0f, proximityRadiusAmmoFactor);
+    }
+
     /** 反鱼雷近炸引信开关（见 {@link #proximityFuseAntiTorpedo} 字段注释）。 */
     public boolean isProximityFuseAntiTorpedo() {
         return proximityFuseAntiTorpedo;

@@ -56,4 +56,25 @@ class RVP_FuseDataTest {
         assertEquals(0, negative.getGroundProximityFuseArmTick());
         assertEquals(0f, nonFinite.getGroundProximityFuseDistance());
     }
+
+    @Test
+    void proximityAmmoRadiusFactorDefaultsToOneAndOnlyEnlarges() {
+        // 缺键 = 1.0（全弹零变化）；与 proximity_radius 解析互不干扰
+        RVP_FuseData defaults = gson.fromJson("{}", RVP_FuseData.class);
+        RVP_FuseData configured = gson.fromJson("""
+                {
+                  "proximity_radius": 5,
+                  "proximity_radius_ammo_factor": 3.0
+                }
+                """, RVP_FuseData.class);
+        // 仅支持放大：写入 <1 按 1.0 生效（探测盒第一遍查询保持旧版载具行为逐位一致的设计约束）
+        RVP_FuseData shrunk = gson.fromJson("""
+                {"proximity_radius_ammo_factor": 0.5}
+                """, RVP_FuseData.class);
+
+        assertEquals(1.0f, defaults.getProximityRadiusAmmoFactor());
+        assertEquals(5f, configured.getProximityRadius());
+        assertEquals(3.0f, configured.getProximityRadiusAmmoFactor());
+        assertEquals(1.0f, shrunk.getProximityRadiusAmmoFactor());
+    }
 }

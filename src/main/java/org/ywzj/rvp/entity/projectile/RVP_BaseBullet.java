@@ -2767,11 +2767,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && !(targetEntity instanceof RVP_Decoy) // 干扰物不触发近炸
                 && !isAmmoIgnoredByProximityFuse(targetEntity) // 机枪弹丸不触发近炸（精确按弹种过滤）
                 && (!fuse.isProximityFuseRequireRadarLock() || isRadarIlluminatedTarget(targetEntity))
-                && targetEntity.getBoundingBox().inflate(radius).contains(position())) {
+                && targetEntity.getBoundingBox().inflate(resolveProximityFuseRadius(targetEntity, radius)).contains(position())) {
             RVP_ProjectileLifecycleDebug.noteEvent(this,
                     RVP_ProjectileLifecycleDebug.Event.FUSE,
                     () -> "type=PROXIMITY_POST_MOTION source=locked_target radius="
-                            + RVP_ProjectileLifecycleDebug.decimal(radius)
+                            + RVP_ProjectileLifecycleDebug.decimal(resolveProximityFuseRadius(targetEntity, radius))
                             + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(targetEntity));
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, targetEntity);
             return;
@@ -2804,6 +2804,28 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity));
             detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
             return;
+        }
+        // 对弹药目标的放大半径第二遍查询（2026-10-05 proximity_radius_ammo_factor）：
+        // 第一遍严格保持旧版盒体与半径（载具触发行为逐位不变）；命中即引爆的探测盒无逐目标
+        // 复检环节，若直接放大第一遍盒体会连带放大载具触发范围，故仅在倍率 >1 时追加一轮
+        // "仅拦截类弹药"的放大盒查询（探测盒向后偏移同口径放大，保留捕获刚飞过目标的语义）
+        float ammoFactor = rvpData.getFuseData().getProximityRadiusAmmoFactor();
+        if (ammoFactor > 1f) {
+            float ammoRadius = radius * ammoFactor;
+            Vec3 ammoBackward = getLookAngle().normalize().scale(-ammoRadius);
+            AABB ammoDetectionBox = getBoundingBox().inflate(ammoRadius).move(ammoBackward);
+            java.util.function.Predicate<Entity> ammoProximityFilter =
+                    proximityFilter.and(this::isProximityInterceptableAmmoTarget);
+            for (Entity entity : org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(level(),
+                    ammoDetectionBox, level().getEntities(this, ammoDetectionBox, ammoProximityFilter), ammoProximityFilter)) {
+                RVP_ProjectileLifecycleDebug.noteEvent(this,
+                        RVP_ProjectileLifecycleDebug.Event.FUSE,
+                        () -> "type=PROXIMITY_POST_MOTION source=detection_box_ammo radius="
+                                + RVP_ProjectileLifecycleDebug.decimal(ammoRadius)
+                                + " target=" + RVP_ProjectileLifecycleDebug.formatEntity(entity));
+                detonateFuseAt(position(), FuseDetonation.PROXIMITY, entity);
+                return;
+            }
         }
     }
 
@@ -2955,6 +2977,49 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && rvpBullet.rvpData != null
                 && (rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                 || rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.ROCKET);
+    }
+
+    /**
+     * 近炸拦截类弹药目标（2026-10-05 用户需求）：导弹/火箭/炸弹/鱼雷四类 RVP 弹药。
+     * 用于 {@code fuse_data.proximity_radius_ammo_factor} 放大近炸触发半径——拦截来袭弹药时
+     * 1/16 格的目标 AABB 使等效触发距离过小，需按倍率扩大几何窗口。
+     * 按 {@code weapon_kind} 精确判（与机枪弹过滤同款约束，禁止 instanceof 基类一刀切）；
+     * 机枪弹丸本就被 {@link #isAmmoIgnoredByProximityFuse} 排除在近炸候选之外，
+     * 本体 AmmoEntity（MissileEntity 等）不在倍率适用范围（用户定版口径为 RVP 弹药四类）。
+     */
+    private boolean isProximityInterceptableAmmoTarget(Entity entity) {
+        return entity instanceof RVP_BaseBullet rvpBullet
+                && rvpBullet.rvpData != null
+                && (rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                || rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.ROCKET
+                || rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.BOMB
+                || rvpBullet.rvpData.getWeaponKind() == RVP_EnumWeaponKind.TORPEDO);
+    }
+
+    /**
+     * 按目标解析近炸触发半径（三处近炸判定——锁定/探测盒/扫掠——的统一单点）：
+     * 拦截类弹药目标（{@link #isProximityInterceptableAmmoTarget}）乘
+     * {@code fuse_data.proximity_radius_ammo_factor}，其余目标（载具/生物）用原半径，
+     * 载具触发行为与旧版逐位一致。倍率仅支持放大（getter 已钳 ≥1）。
+     */
+    private float resolveProximityFuseRadius(Entity target, float baseRadius) {
+        if (rvpData == null || baseRadius <= 0f) {
+            return baseRadius;
+        }
+        float factor = rvpData.getFuseData().getProximityRadiusAmmoFactor();
+        if (factor <= 1f || !isProximityInterceptableAmmoTarget(target)) {
+            return baseRadius;
+        }
+        return baseRadius * factor;
+    }
+
+    /** 扫掠/探测盒外层 cull 盒的预膨胀半径：倍率 >1 时按放大值构盒，保证弹药候选不被先剔除。 */
+    private float resolveProximityFuseMaxRadius(float baseRadius) {
+        if (rvpData == null || baseRadius <= 0f) {
+            return baseRadius;
+        }
+        float factor = rvpData.getFuseData().getProximityRadiusAmmoFactor();
+        return factor > 1f ? baseRadius * factor : baseRadius;
     }
 
     /** MCH proximity fuse skips targets on/near ground within {@link RVP_FuseData#getProximityFuseHeight()}. */
@@ -3280,7 +3345,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (target == null) {
             return false;
         }
-        float resolvedRadius = radius;
+        // 诊断日志记录命中目标的实际判定半径（拦截类弹药目标已按倍率放大）
+        float resolvedRadius = resolveProximityFuseRadius(target, radius);
         RVP_ProjectileLifecycleDebug.noteEvent(this,
                 RVP_ProjectileLifecycleDebug.Event.FUSE,
                 () -> "type=PROXIMITY_SWEPT radius="
@@ -3298,7 +3364,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (step.lengthSqr() < 1.0E-12 || radius <= 0f) {
             return null;
         }
-        AABB detectionBox = getBoundingBox().expandTowards(step).inflate(radius);
+        // 外层 cull 盒按放大半径预膨胀（倍率 ≤1 时与原值一致），保证弹药候选不被先剔除；
+        // 逐目标判定在循环内按 resolveProximityFuseRadius 精确解析，载具候选多进循环也会被
+        // 原半径检查挡住，触发结果与旧版一致
+        AABB detectionBox = getBoundingBox().expandTowards(step).inflate(resolveProximityFuseMaxRadius(radius));
         // [RVP] §48：巨型载具分节盲区补筛（同 findEntityOnPathForSegment）
         // 反鱼雷近炸：仅鱼雷弹体可触发且不受离地高度限制（开关取 fuse_data 同名参数）
         boolean antiTorpedo = rvpData != null && rvpData.getFuseData().isProximityFuseAntiTorpedo();
@@ -3315,7 +3384,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Entity closest = null;
         double closestDistance = Double.MAX_VALUE;
         for (Entity entity : nearbyEntities) {
-            AABB inflated = entity.getBoundingBox().inflate(radius);
+            AABB inflated = entity.getBoundingBox().inflate(resolveProximityFuseRadius(entity, radius));
             Vec3 hitPoint = null;
             if (inflated.contains(startVec)) {
                 hitPoint = startVec;
