@@ -58,6 +58,44 @@ public final class RVP_RadarScanHelper {
     }
 
     /**
+     * 照射包络判定（2026-10-06 中继二次修复）：雷达开机且目标处于其探测包络内即视为正被照射/跟踪。
+     * <p>与瞬时探测表口径（{@code radarCurrentlyDetects}）的区别：<b>不做"目标在当前碟位扇区内"
+     * 与跟踪线的瞬态检查</b>——探测表受扇区/超时修剪，脱锁后碟回扫掠会把目标从表里剪掉（一拍
+     * 瞬时断），导致 ARH/AIR 中继支持间歇/常断；TWS 语义下航迹本应跨扇区保持。保留物理包络：
+     * 距离（弹体按分角度信号缩放、载具按 aspect 隐身缩减）、扫描高度门、安装方位限位。</p>
+     * 消费点：ARH/AIR 中继支持链（{@code RVP_MissileEntity.rvp$hasActiveSeekerSupportForDesignatedTarget}）。
+     */
+    public static boolean isWithinIlluminationEnvelope(RadarUnit radar, Entity target) {
+        if (radar == null || target == null || !radar.isOn() || !target.isAlive()) {
+            return false;
+        }
+        Vec3 radarPos = radar.worldRadarPosition();
+        Vec3 targetPos = target.getBoundingBox().getCenter();
+        double maxDistance = radar.getMaxScanDistance();
+        if (target instanceof RVP_BaseBullet bullet) {
+            // 来袭弹药目标：不可探测弹直接排除；可探测弹按分角度信号缩放有效距离
+            if (!bullet.isRadarDetectableAmmo()) {
+                return false;
+            }
+            maxDistance *= bullet.getRadarSignatureTowards(radarPos);
+        } else if (target instanceof AbstractVehicle targetVehicle) {
+            // 载具目标：aspect 隐身缩减（与导引头开机判定同款因子）
+            maxDistance *= RVP_AspectRcs.detectionFactor(targetVehicle, radarPos);
+        }
+        double dx = targetPos.x - radarPos.x;
+        double dz = targetPos.z - radarPos.z;
+        if (dx * dx + dz * dz > maxDistance * maxDistance) {
+            return false;
+        }
+        if (!isWithinScanHeight(radar, target, targetPos)) {
+            return false;
+        }
+        Vec2 aimRot = radar.aimRot(targetPos);
+        float yaw = normalizeYawForLimits((float) aimRot.y, radar.getYRotMin(), radar.getYRotMax());
+        return isYawWithin(yaw, radar.getYRotMin(), radar.getYRotMax());
+    }
+
+    /**
      * 扫描高度门（带目标实体重载，2026-10-03）：目标 RCS 综合值 ≥ {@link #SCAN_SEA_RCS_THRESHOLD}
      * 且雷达开启 {@code scan_sea} 时豁免最低扫描高度（海平面 0 离地的舰船可被扫描与锁定），
      * 最高扫描高度仍生效。旁路只认 {@link RVP_AspectRcs#combinedFactor} 原始值（不封顶）；

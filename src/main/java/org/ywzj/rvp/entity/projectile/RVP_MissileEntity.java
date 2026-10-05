@@ -31,6 +31,7 @@ import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
+import org.ywzj.rvp.radar.RVP_RadarScanHelper;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CEnterHitlView;
 import org.ywzj.rvp.network.S2CHitlLinkState;
@@ -579,7 +580,9 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
 
         boolean anyRadarOn = false;
         // 2026-10-06 扩展：支持源从"发射站子雷达"扩为整车全部雷达——任意武器站的雷达
-        // 以 TWS 探测或硬锁跟踪 designated 即构成照射（用户定版"照射即中继"）
+        // 以 TWS 探测、硬锁或照射包络跟踪 designated 即构成照射（用户定版"照射即中继"）。
+        // 照射包络 = 距离×信号缩放 + 高度门 + 安装方位限位，不含"当前碟位扇区"瞬态项
+        // （探测表口径受扇区修剪，脱锁后碟回扫掠一拍即断，是上一版修复无效的根因）
         if (shooterVehicle != null) {
             for (PartUnit<?> partUnit : shooterVehicle.getPartUnits()) {
                 if (!(partUnit instanceof RadarUnit radarUnit) || !radarUnit.isOn()) {
@@ -587,7 +590,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 }
                 anyRadarOn = true;
                 if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
-                        || radarUnit.getLockedEntity() == designatedTarget) {
+                        || radarUnit.getLockedEntity() == designatedTarget
+                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(radarUnit, designatedTarget)) {
                     return true;
                 }
             }
@@ -599,7 +603,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 }
                 anyRadarOn = true;
                 if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
-                        || radarUnit.getLockedEntity() == designatedTarget) {
+                        || radarUnit.getLockedEntity() == designatedTarget
+                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(radarUnit, designatedTarget)) {
                     return true;
                 }
             }
@@ -612,7 +617,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 anyRadarOn = true;
                 if (RVP_RadarRoleHelper.radarCurrentlyDetects(relayRadar, designatedTarget)
                         || relayRadar.getLockedEntity() == designatedTarget
-                        || RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == designatedTarget.getId()) {
+                        || RVP_WeaponLockStateTable.getExternalRadarLockedEntityId(root) == designatedTarget.getId()
+                        || RVP_RadarScanHelper.isWithinIlluminationEnvelope(relayRadar, designatedTarget)) {
                     return true;
                 }
             }
