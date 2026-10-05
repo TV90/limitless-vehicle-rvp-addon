@@ -36,8 +36,6 @@ public final class RVP_UavLoiterManager {
             double altitude,
             @Nullable UUID followParentUuid,
             boolean markedCenter,
-            int signFlipCounter,
-            float lastYawError,
             int phaseTickCounter,
             int phaseTimeout
     ) {}
@@ -51,15 +49,13 @@ public final class RVP_UavLoiterManager {
         volatile double altitude = 80;
         @Nullable volatile UUID followParentUuid = null;
         volatile boolean markedCenter = false;
-        volatile int signFlipCounter = 0;
-        volatile float lastYawError = 0;
         volatile int phaseTickCounter = 0;
         volatile int phaseTimeout = 200;
 
         LoiterState snapshot() {
             return new LoiterState(
                     active, phase, centerX, centerY, centerZ, radius, altitude,
-                    followParentUuid, markedCenter, signFlipCounter, lastYawError,
+                    followParentUuid, markedCenter,
                     phaseTickCounter, phaseTimeout);
         }
     }
@@ -80,8 +76,6 @@ public final class RVP_UavLoiterManager {
         s.centerX = parentX;
         s.centerZ = parentZ;
         s.altitude = parentY + altitudeOffset;
-        s.signFlipCounter = 0;
-        s.lastYawError = 0;
         s.phaseTickCounter = 0;
         s.phaseTimeout = 200;
     }
@@ -99,8 +93,6 @@ public final class RVP_UavLoiterManager {
         s.centerZ = center.z;
         s.radius = radius;
         s.altitude = altitude;
-        s.signFlipCounter = 0;
-        s.lastYawError = 0;
         s.phaseTickCounter = 0;
         s.phaseTimeout = 200;
     }

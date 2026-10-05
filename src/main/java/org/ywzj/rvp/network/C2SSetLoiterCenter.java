@@ -60,6 +60,11 @@ public class C2SSetLoiterCenter {
             if (uav == null) {
                 return;
             }
+            // 信号范围守卫（2026-10-06）：失联的无人机不可标记圆心
+            if (RVP_DeployableUavService.isUavOutOfSignalRange(uav)) {
+                player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav.signal_lost"), true);
+                return;
+            }
 
             // 获取盘旋配置
             RVP_LoiterConfig config = resolveLoiterConfig(vehicle, uav);
@@ -69,16 +74,16 @@ public class C2SSetLoiterCenter {
             }
 
             Vec3 center = new Vec3(msg.x, msg.y, msg.z);
-            // 目标高度：切换盘旋时维持当前高度，避免自动爬升
-            double altitude = uav.getY();
+            // 目标高度 = 圆心 Y + 配置偏移（resolveTargetAltitude 统一计算）；圆心 Y 取标记点 Y，
+            // 高度语义不再混入"标记时的当前高度"（2026-10-06 参数精简）
             UUID uavUuid = uav.getUUID();
 
             if (RVP_UavLoiterManager.isLoitering(uavUuid)) {
                 // 已在盘旋：更新圆心
-                RVP_UavLoiterManager.updateCenter(uavUuid, center, altitude);
+                RVP_UavLoiterManager.updateCenter(uavUuid, center, center.y);
             } else {
                 // 未盘旋：以标记点为固定圆心激活
-                RVP_UavLoiterManager.enableMarkedCenter(uavUuid, center, config.loiterRadius(), altitude);
+                RVP_UavLoiterManager.enableMarkedCenter(uavUuid, center, config.loiterRadius(), center.y);
             }
             player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.center_set"), true);
         });

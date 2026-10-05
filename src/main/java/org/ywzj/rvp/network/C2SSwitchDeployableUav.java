@@ -8,6 +8,7 @@ import net.minecraftforge.network.NetworkEvent;
 import org.slf4j.Logger;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
@@ -61,9 +62,15 @@ public class C2SSwitchDeployableUav {
             // [RVP] 切换失败（无关联子机等不适用场景）静默：失败多代表该车没有无人机，
             // 属"键在这台车上没用"，不刷屏；成功提示照旧。切回母车的失败为真失败，保留提示。
             if (ok) {
-                player.displayClientMessage(Component.translatable(
-                        "message.ywzj_rvp.uav.switch_to_child_success"
-                ), true);
+                // 切入的子机正在盘旋时改发盘旋提示（2026-10-06 用户需求：进入无人机有文案）
+                AbstractVehicle child = RVP_DeployableUavService.getLinkedChild(vehicle).orElse(null);
+                if (child != null && RVP_UavLoiterManager.isLoitering(child.getUUID())) {
+                    player.displayClientMessage(Component.translatable(
+                            "message.ywzj_rvp.uav.switch_to_child_loitering"), true);
+                } else {
+                    player.displayClientMessage(Component.translatable(
+                            "message.ywzj_rvp.uav.switch_to_child_success"), true);
+                }
             }
         });
         ctx.setPacketHandled(true);

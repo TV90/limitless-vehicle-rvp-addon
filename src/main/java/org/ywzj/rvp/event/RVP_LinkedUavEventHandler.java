@@ -19,6 +19,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
+import org.ywzj.rvp.uav.RVP_UavLoiterManager;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.EntityUtil;
@@ -86,6 +87,8 @@ public class RVP_LinkedUavEventHandler {
                 }
                 refreshParentPosition(vehicle);
                 checkParentDestroyed(vehicle);
+                // 信号范围检查（2026-10-06）：超范围失联 → 持续超范围回收进冷却
+                RVP_DeployableUavService.checkSignalRange(vehicle);
             }
         }
     }
@@ -269,6 +272,12 @@ public class RVP_LinkedUavEventHandler {
             // 玩家登上部署实例（M 键切换或右键直接上车）→ 锁定母车座位
             RVP_DeployableUavService.getLinkedParent(vehicle).ifPresent(parent ->
                     RVP_DeployableUavService.lockParentSeat(parent, serverPlayer, vehicle));
+            // 盘旋中的无人机登机提示（2026-10-06 用户需求）：告知飞行输入由盘旋接管
+            if (RVP_UavLoiterManager.isLoitering(vehicle.getUUID())) {
+                serverPlayer.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable(
+                                "message.ywzj_rvp.uav.switch_to_child_loitering"), true);
+            }
         }
     }
 

@@ -120,6 +120,12 @@ public final class RVP_DeployableUavService {
             clearLinkedChild(parent);
             return false;
         }
+        // 信号范围守卫（2026-10-06）：失联的无人机不可切入驾驶
+        if (isUavOutOfSignalRange(child)) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                    "message.ywzj_rvp.uav.signal_lost"), true);
+            return false;
+        }
         if (!RVP_LinkedUavStateTable.isDeployableUavControlSwitchAllowed(child)) {
             return false;
         }
@@ -250,6 +256,7 @@ public final class RVP_DeployableUavService {
         }
         // 清除盘旋状态
         RVP_UavLoiterManager.remove(child.getUUID());
+        OUT_OF_SIGNAL_RANGE_TICKS.remove(child.getUUID());
         AbstractVehicle parent = resolveVehicleByUuid(child.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(child));
         if (parent != null) {
             UUID linkedChildUuid = RVP_LinkedUavStateTable.getLinkedChildVehicleUuid(parent);
@@ -264,6 +271,92 @@ public final class RVP_DeployableUavService {
             }
         }
         RVP_DeployableUavLinkRegistry.clearByChild(child.getUUID());
+    }
+
+    // ===== 信号范围（2026-10-06 新增）：母车与无人机超出 deployable_uav_signal_range 后失联并回收 =====
+
+    /** 信号范围失联计数（key = UAV UUID）：持续超出信号范围的 tick 数。 */
+    private static final Map<UUID, Integer> OUT_OF_SIGNAL_RANGE_TICKS = new HashMap<>();
+
+    /** 持续超出信号范围该 tick 数后回收（3 秒防抖，防边界抖动误回收）。 */
+    private static final int SIGNAL_LOST_RECALL_TICKS = 60;
+
+    /**
+     * 判断 UAV 是否已超出母车信号范围（水平距离）。
+     * <p>配置 ≤0 = 无限；母车实体暂不可用（卸载/换维度中）不判超范围——失联回收只针对
+     * "母车在场但距离过远"；无部署配置的载具（AC130 自身盘旋等）恒在范围内。</p>
+     */
+    public static boolean isUavOutOfSignalRange(AbstractVehicle uav) {
+        if (uav == null || !RVP_LinkedUavStateTable.isDeployableUavInstance(uav)) {
+            return false;
+        }
+        AbstractVehicle parent = resolveVehicleByUuid(uav.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav));
+        if (parent == null) {
+            return false;
+        }
+        RVP_DeployableUavConfig config = RVP_DeployableUavConfigCache.get(parent.getVehicleId());
+        if (!config.isConfigured()) {
+            return false;
+        }
+        double range = config.effectiveSignalRange();
+        double dx = uav.getX() - parent.getX();
+        double dz = uav.getZ() - parent.getZ();
+        return dx * dx + dz * dz > range * range;
+    }
+
+    /**
+     * 每 tick 信号范围检查（{@code RVP_LinkedUavEventHandler.tickVehicles} 对部署实例调用）：
+     * 超范围瞬间失联（盘旋关闭+清杆，M 切出/F 盘旋/地图标点被 guard 拒收）；
+     * 持续 {@link #SIGNAL_LOST_RECALL_TICKS} 后回收——机上玩家踢回母车（走 dismount 回传链）、
+     * UAV discard、清链接并进入重部署冷却。
+     */
+    public static void checkSignalRange(AbstractVehicle uav) {
+        UUID uavUuid = uav.getUUID();
+        if (!isUavOutOfSignalRange(uav)) {
+            OUT_OF_SIGNAL_RANGE_TICKS.remove(uavUuid);
+            return;
+        }
+        int ticks = OUT_OF_SIGNAL_RANGE_TICKS.merge(uavUuid, 1, Integer::sum);
+        if (ticks == 1) {
+            // 失联瞬间：关盘旋 + 清 controlUnit（防最后一次制导的油门/航向锁存直飞）
+            RVP_UavLoiterTickService.stopLoiterAndResetControls(uav);
+            messageEntity(uav.getDriver(), "message.ywzj_rvp.uav.signal_lost");
+            notifyParentOperator(uav, "message.ywzj_rvp.uav.signal_lost");
+        }
+        if (ticks < SIGNAL_LOST_RECALL_TICKS) {
+            return;
+        }
+        OUT_OF_SIGNAL_RANGE_TICKS.remove(uavUuid);
+        recallUav(uav);
+    }
+
+    /** 回收：机上乘客 stopRiding（触发 dismount 回传母车链）→ discard UAV → 清链 + 进重部署冷却。 */
+    private static void recallUav(AbstractVehicle uav) {
+        AbstractVehicle parent = resolveVehicleByUuid(uav.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uav));
+        // 先拷贝乘客列表再逐个踢下：stopRiding 过程会变更乘客集合
+        for (Entity passenger : new java.util.ArrayList<>(uav.getPassengers())) {
+            passenger.stopRiding();
+        }
+        uav.discard();
+        handleDeployableUavRemoved(uav);
+        notifyParentOperator(parent, "message.ywzj_rvp.uav.signal_recalled");
+    }
+
+    /** 给母车操作者发 actionbar 提示（非玩家操作者静默）。 */
+    private static void notifyParentOperator(AbstractVehicle uavOrParent, String key) {
+        AbstractVehicle parent = uavOrParent;
+        if (uavOrParent != null && RVP_LinkedUavStateTable.isDeployableUavInstance(uavOrParent)) {
+            parent = resolveVehicleByUuid(uavOrParent.level(), RVP_LinkedUavStateTable.getLinkedParentVehicleUuid(uavOrParent));
+        }
+        if (parent != null) {
+            messageEntity(parent.getDriver(), key);
+        }
+    }
+
+    private static void messageEntity(@Nullable LivingEntity entity, String key) {
+        if (entity instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.translatable(key), true);
+        }
     }
 
     private static void configureLink(AbstractVehicle parent, AbstractVehicle child, @Nullable LivingEntity operator, RVP_DeployableUavConfig config) {

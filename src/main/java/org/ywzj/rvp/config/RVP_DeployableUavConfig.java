@@ -27,8 +27,12 @@ public record RVP_DeployableUavConfig(
         int redeployCooldownTick,
         boolean autoLoiterOnSwitchBack,
         float initialSpeed,
+        double signalRange,
         List<Integer> allowedSeatIndexes
 ) {
+    /** 信号范围默认值（格）：母车与无人机的最大可控距离，超出即失联（2026-10-06 用户定版 2048）。 */
+    public static final double DEFAULT_SIGNAL_RANGE = 2048.0;
+
     public static final RVP_DeployableUavConfig DISABLED = new RVP_DeployableUavConfig(
             false,
             null,
@@ -41,11 +45,17 @@ public record RVP_DeployableUavConfig(
             0,
             true,
             0f,
+            DEFAULT_SIGNAL_RANGE,
             List.of()
     );
 
     public boolean isConfigured() {
         return enabled && vehicleId != null;
+    }
+
+    /** 信号范围（格）：≤0 视为无限（不检查距离）。 */
+    public double effectiveSignalRange() {
+        return signalRange <= 0 ? Double.MAX_VALUE : signalRange;
     }
 
     /** 是否允许在指定座位索引部署无人机：空列表表示仅驾驶位（0）。 */

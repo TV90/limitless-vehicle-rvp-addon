@@ -167,6 +167,8 @@ public class VehicleDataManagerMixin {
                 redeployCooldownTick,
                 GsonHelper.getAsBoolean(vehicleObj, "deployable_uav_auto_loiter_on_switch_back", true),
                 (float) GsonHelper.getAsDouble(vehicleObj, "deployable_uav_initial_speed", 0.0),
+                // 信号范围（格，2026-10-06 新增）：≤0 视为无限
+                GsonHelper.getAsDouble(vehicleObj, "deployable_uav_signal_range", RVP_DeployableUavConfig.DEFAULT_SIGNAL_RANGE),
                 ywzj_rvp$parseAllowedSeatIndexes(vehicleObj)
         );
     }
@@ -197,16 +199,13 @@ public class VehicleDataManagerMixin {
         if (!enabled) {
             return RVP_LoiterConfig.DISABLED;
         }
+        // 2026-10-06 精简：仅 4 键；旧 JSON 多写的 rvp_loiter_terrain_clearance / min_safe_altitude /
+        // fixed_wing_min_bank / bank / direction 键被 GsonHelper 忽略（算法参数已收敛为 RVP_LoiterConfig 常量）
         return new RVP_LoiterConfig(
                 true,
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_radius", 120.0),
                 GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_altitude_offset", 40.0),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_terrain_clearance", 30.0),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_min_safe_altitude", 80.0),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_fixed_wing_min_bank", 30.0),
-                GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false),
-                GsonHelper.getAsDouble(vehicleObj, "rvp_loiter_bank", 25.0),
-                "left".equalsIgnoreCase(GsonHelper.getAsString(vehicleObj, "rvp_loiter_direction", "right")) ? -1 : 1
+                GsonHelper.getAsBoolean(vehicleObj, "rvp_loiter_auto_on_takeoff", false)
         );
     }
 }

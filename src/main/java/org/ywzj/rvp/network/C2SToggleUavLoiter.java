@@ -3,12 +3,14 @@ package org.ywzj.rvp.network;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.uav.RVP_DeployableUavService;
 import org.ywzj.rvp.uav.RVP_LinkedUavStateTable;
 import org.ywzj.rvp.uav.RVP_UavLoiterManager;
+import org.ywzj.rvp.uav.RVP_UavLoiterTickService;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
@@ -47,10 +49,16 @@ public class C2SToggleUavLoiter {
             if (uav == null) {
                 return;
             }
+            // 信号范围守卫（2026-10-06）：失联的无人机不可操作盘旋
+            if (RVP_DeployableUavService.isUavOutOfSignalRange(uav)) {
+                player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav.signal_lost"), true);
+                return;
+            }
 
             UUID uavUuid = uav.getUUID();
             if (RVP_UavLoiterManager.isLoitering(uavUuid)) {
-                RVP_UavLoiterManager.disable(uavUuid);
+                // 关盘旋同时清空 ControlUnit（2026-10-06 修复油门/航向锁存直飞）
+                RVP_UavLoiterTickService.stopLoiterAndResetControls(uav);
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.disabled"), true);
             } else {
                 RVP_LoiterConfig config = resolveLoiterConfig(vehicle, uav);
@@ -59,21 +67,24 @@ public class C2SToggleUavLoiter {
                 if (!config.isConfigured()) {
                     return;
                 }
-                // 确定圆心：有母车则跟随母车，否则用当前位置
-                // 高度维持无人机当前高度，避免自动爬升
-                double loiterAlt = uav.getY();
+                // 确定圆心：有母车则跟随母车，否则用当前位置。
+                // 高度偏移用配置值（2026-10-06 修复：旧版把 uav.getY() 绝对高度当偏移传入，
+                // 目标高度变成"母车Y + UAV绝对Y"叠加错误 → UAV 疯狂爬升）
+                double loiterAltOffset = config.loiterAltitudeOffset();
                 AbstractVehicle parent = resolveParent(vehicle, uav);
                 if (parent != null) {
                     RVP_UavLoiterManager.enableFollowParent(
                             uavUuid, parent.getUUID(),
-                            config.loiterRadius(), loiterAlt,
+                            config.loiterRadius(), loiterAltOffset,
                             parent.getX(), parent.getY(), parent.getZ()
                     );
                 } else {
-                    // 无母车：以当前位置为固定圆心（AC130 等场景）
+                    // 无母车：以当前位置为固定圆心（AC130 等场景），圆心 Y 取当前高度减偏移，
+                    // 使目标高度（圆心Y+偏移）恰为当前高度——维持"按 F 时的高度"不爬升
+                    Vec3 center = new Vec3(uav.getX(), uav.getY() - loiterAltOffset, uav.getZ());
                     RVP_UavLoiterManager.enableMarkedCenter(
-                            uavUuid, uav.position(),
-                            config.loiterRadius(), loiterAlt
+                            uavUuid, center,
+                            config.loiterRadius(), uav.getY()
                     );
                 }
                 player.displayClientMessage(Component.translatable("message.ywzj_rvp.uav_loiter.enabled"), true);
