@@ -3851,6 +3851,14 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private Vec3 getMarkerTargetPos(Entity entity) {
         if (entity instanceof RVP_BaseBullet bullet) {
+            Minecraft mc = Minecraft.getInstance();
+            ResourceLocation dimension = mc.level != null ? mc.level.dimension().location() : null;
+            // 2026-10-06：快照的制导目标点每 5 tick 实时刷新（含视距内弹），
+            // 优先于客户端出生快照的 targetPos（中途改靶不反映的冻结值）
+            S2CRemoteAmmoSnapshot.Entry remoteEntry = RVP_ClientRemoteAmmoState.getEntry(dimension, entity.getId());
+            if (remoteEntry != null && remoteEntry.guidancePos() != null) {
+                return remoteEntry.guidancePos();
+            }
             Vec3 target = bullet.getTargetPos();
             return target != null ? target : bullet.getLastGuidancePos();
         }
@@ -3904,6 +3912,14 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     private Component resolveMarkerDisplayName(Entity entity) {
+        // 2026-10-06 修复视距内名称退化：本地 RVP 弹优先武器全名（与视距外快照路径同一语义），
+        // NCTR 分类短标签（MSL 等）仅作全名解析失败的回退——分类短标签语义保留给雷达航迹列表
+        if (entity instanceof RVP_BaseBullet bullet) {
+            String fullName = resolveWeaponDisplayName(bullet.getWeaponId());
+            if (fullName != null && !fullName.isBlank() && !"Unknown".equals(fullName)) {
+                return Component.literal(fullName);
+            }
+        }
         String special = resolveModernNctrLabel(entity);
         if (special != null && !special.isBlank() && !"?".equals(special)) {
             return Component.literal(special);
@@ -3953,11 +3969,13 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         if (entity instanceof RVP_BaseBullet bullet) {
             Minecraft mc = Minecraft.getInstance();
             ResourceLocation dimension = mc.level != null ? mc.level.dimension().location() : null;
-            if (!entity.level().isClientSide()) {
-                S2CRemoteAmmoSnapshot.Entry remoteEntry = RVP_ClientRemoteAmmoState.getEntry(dimension, entity.getId());
-                if (remoteEntry != null) {
-                    return remoteEntry.speedKmh();
-                }
+            // 2026-10-06 修复视距内速度冻结：旧条件 !isClientSide() 对客户端实体恒 false，
+            // "优先查广播快照实时速度"是死代码，实际恒走客户端出生即冻结的 deltaMovement
+            // （出膛初速 → 72kph 假象）。快照 6144 格内不过滤视距内弹、每 5 tick 实时刷新，
+            // 客户端实体同样优先消费它（与视距外同源同值）
+            S2CRemoteAmmoSnapshot.Entry remoteEntry = RVP_ClientRemoteAmmoState.getEntry(dimension, entity.getId());
+            if (remoteEntry != null) {
+                return remoteEntry.speedKmh();
             }
             return bullet.getCurrentSpeed() * 72.0;
         }
