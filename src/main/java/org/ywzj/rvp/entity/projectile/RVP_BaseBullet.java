@@ -4057,10 +4057,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * 触发爆炸，并可选发布实体直击后的导弹空中目标视觉碎片。
+     * 触发爆炸，并可选发布实体直击或近炸空中目标后的导弹视觉碎片。
      *
-     * @param impactTarget 实体直击时的碰撞根目标；普通引信路径为空
-     * @param impactVelocity 实体直击瞬间导弹速度；普通引信路径为空
+     * @param impactTarget 实体直击或近炸时的碰撞根目标；普通引信路径为空
+     * @param impactVelocity 实体直击或近炸瞬间的导弹速度；普通引信路径为空
      */
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity,
                                     @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
@@ -4408,8 +4408,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害
         Entity exclude = hadGuaranteedDamage ? resolvedProximityTarget : null;
+        // 近炸也要把解析后的空中目标和引爆瞬间速度传给视觉链，复用实体直击的碎片与白烟拖尾。
+        // 调用本项目视觉发布链的目的：近炸伤害与视觉事件保持同一次引爆，不让近炸退化为只有爆炸的路径。
+        Entity impactTarget = kind == FuseDetonation.PROXIMITY ? resolvedProximityTarget : null;
+        Vec3 impactVelocity = kind == FuseDetonation.PROXIMITY ? getDeltaMovement() : null;
         if (rvpData == null) {
-            triggerExplosion(pos, FuseDetonation.NORMAL, exclude);
+            triggerExplosion(pos, FuseDetonation.NORMAL, exclude, impactTarget, impactVelocity);
             discard();
             return;
         }
@@ -4420,9 +4424,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 applyDispenserAt(pos, lastBlockHit);
             }
             applyDetonateAt(pos, null, false);
-            triggerExplosion(pos, kind, exclude);
+            triggerExplosion(pos, kind, exclude, impactTarget, impactVelocity);
         } else {
-            triggerExplosion(pos, kind, exclude);
+            triggerExplosion(pos, kind, exclude, impactTarget, impactVelocity);
             if (applyDispenser) {
                 applyDispenserAt(pos, lastBlockHit);
             }
