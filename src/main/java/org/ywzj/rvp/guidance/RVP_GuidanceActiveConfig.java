@@ -28,6 +28,7 @@ public record RVP_GuidanceActiveConfig(
         Map<RVP_Range<Float>, RVP_Range<Float>> angleGate,
         int angleGateLockOutTick,
         int activeRadarActivationRange,
+        int relayLostSelfDestructTick,
         boolean enableInertialGuidance,
         boolean ignoreFlares,
         boolean ignoreChaff,
@@ -74,6 +75,7 @@ public record RVP_GuidanceActiveConfig(
         angleGate = immutableMapAllowingNullValues(angleGate);
         angleGateLockOutTick = Math.max(angleGateLockOutTick, 0);
         activeRadarActivationRange = Math.max(activeRadarActivationRange, 0);
+        relayLostSelfDestructTick = Math.max(relayLostSelfDestructTick, 0);
         jamResistance = Math.max(jamResistance, 0f);
         dircmResistance = Math.max(dircmResistance, 0f);
         decoyFilter = Math.max(decoyFilter, 0f);

@@ -166,6 +166,13 @@ public class RVP_GuidanceData {
     @SerializedName("active_radar_activation_range")
     private int activeRadarActivationRange = 256;
 
+    /**
+     * 中继滑行自毁上限（tick，2026-10-06）：ARH/AIR 中继段连续失援（无任何雷达照射指定目标）
+     * 达到该值后自爆，避免死点滑行的弹群过久滞留空域；≤0 关闭上限。默认 300（= 15 秒）。
+     */
+    @SerializedName("relay_lost_self_destruct_ticks")
+    private int relayLostSelfDestructTick = 300;
+
     @SerializedName("enable_inertial_guidance")
     private boolean enableInertialGuidance = false;
 
@@ -342,6 +349,11 @@ public class RVP_GuidanceData {
 
     public int getActiveRadarActivationRange() {
         return Math.max(activeRadarActivationRange, 0);
+    }
+
+    /** 中继滑行自毁上限（tick，见 {@link #relayLostSelfDestructTick}）；0 = 关闭上限。 */
+    public int getRelayLostSelfDestructTick() {
+        return Math.max(relayLostSelfDestructTick, 0);
     }
 
     public boolean isEnableInertialGuidance() {

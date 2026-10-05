@@ -26,6 +26,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
+import org.ywzj.rvp.guidance.runtime.RVP_ActiveSeekerRelayPolicy;
 import org.ywzj.rvp.countermeasure.RVP_CountermeasureState;
 import org.ywzj.rvp.radar.RVP_AspectRcs;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
@@ -42,6 +43,7 @@ import org.ywzj.rvp.weapon.core.RVP_WeaponLockStateTable;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.network.Channel;
 import org.ywzj.vehicle.network.message.ServerVehicleWarn;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
@@ -90,7 +92,16 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     /** 武器配置 {@code hitl_right_click_detonate}：HITL 视角下右键 = 提前引爆（客户端通过 spawn 数据读取）。 */
     private boolean hitlRightClickDetonate;
     private int activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
-    private boolean activeSeekerSupportReleased;
+    /**
+     * 中继失援标志（2026-10-06 实时语义，替代旧版永久锁存 {@code activeSeekerSupportReleased}）：
+     * 每 tick 由"有 designated 且支持链不可用"重算，<b>无记忆</b>——雷达重新照射目标后下一 tick
+     * 即自动恢复中继重绑，不存在"脱锁/关雷达后永久失效"。仅服务端制导逻辑使用，不进 NBT/同步。
+     */
+    private boolean activeSeekerRelayLost;
+    /** 中继连续失援计数（tick）：失援期间弹冻结最后已知点滑行，达到滑行自毁上限后自爆。 */
+    private int activeSeekerRelayLostTicks;
+    /** 中继滑行自毁上限（tick）：来自武器 {@code guidance_data.relay_lost_self_destruct_ticks}，≤0 关闭。 */
+    private int relayLostSelfDestructTicks;
 
     public RVP_MissileEntity(EntityType<? extends Projectile> type, Level level) {
         super(type, level);
@@ -263,21 +274,37 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
         activeRadarActivationRange = config.activeRadarActivationRange();
+        relayLostSelfDestructTicks = config.relayLostSelfDestructTick();
 
         Entity designated = rvp$getActiveSeekerDesignatedTargetEntity();
         boolean hasDesignation = rvp$hasActiveSeekerDesignation();
         boolean supportAvailable = designated != null && rvp$hasActiveSeekerSupportForDesignatedTarget();
-        if (hasDesignation && !supportAvailable) {
-            activeSeekerSupportReleased = true;
-        }
+        // 中继支持每 tick 实时评估（2026-10-06，替代旧版"断一拍即永久锁存"）：
+        // 支持可用 → 重绑 designated 持续修正；失援 → 冻结最后已知点滑行（不跟目标运动）；
+        // 恢复跟踪（重锁/碟扫回/雷达重开重新探测到）→ 下一 tick 立即恢复中继，无锁存阻挡
+        RVP_ActiveSeekerRelayPolicy.RelayDecision relayDecision = RVP_ActiveSeekerRelayPolicy.decide(
+                activeRadarCatch, hasDesignation, supportAvailable);
+        activeSeekerRelayLost = relayDecision.relayLost();
 
         if (!activeRadarCatch) {
-            if (designated != null && !activeSeekerSupportReleased && supportAvailable) {
+            if (relayDecision.rebind()) {
                 setTargetEntity(designated);
                 setTargetPos(designated.getBoundingBox().getCenter());
-            } else if (activeSeekerSupportReleased) {
+                activeSeekerRelayLostTicks = 0;
+            } else if (relayDecision.freeze()) {
+                // 失援：清目标，弹冻结最后已知点滑行（不跟目标运动）；连续失援达上限自爆
                 setTargetEntity(null);
+                activeSeekerRelayLostTicks++;
+                if (RVP_ActiveSeekerRelayPolicy.shouldSelfDestruct(
+                        activeSeekerRelayLostTicks, relayLostSelfDestructTicks)) {
+                    life = 0;
+                }
+            } else {
+                // 无 designated（LOAL 发射）：本就不承诺中继，不计失援
+                activeSeekerRelayLostTicks = 0;
             }
+        } else {
+            activeSeekerRelayLostTicks = 0;
         }
 
         // 目的：分角度 RCS 双阈值相位（2026-09-16）——
@@ -485,11 +512,12 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public void rvp$setActiveSeekerDesignatedTarget(@Nullable Entity target) {
         if (target == null) {
             this.activeSeekerDesignatedTargetId = Integer.MIN_VALUE;
-            this.activeSeekerSupportReleased = true;
+            // DIRCM 等对抗清除：显式清目标（实时中继语义下不再有"每 tick 强制清空"兜底，
+            // 必须在此一次性脱离真目标，转惯性/记忆点）
+            clearTarget();
             return;
         }
         this.activeSeekerDesignatedTargetId = target.getId();
-        this.activeSeekerSupportReleased = false;
         if (this.targetEntity == null) {
             this.targetEntity = target;
         }
@@ -524,7 +552,7 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
     public boolean rvp$canActiveSeekerFreeAcquire() {
         return activeRadarCatch
                 || activeSeekerDesignatedTargetId == Integer.MIN_VALUE
-                || activeSeekerSupportReleased;
+                || activeSeekerRelayLost;
     }
 
     public boolean rvp$canArhFreeAcquire() {
@@ -550,14 +578,30 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         }
 
         boolean anyRadarOn = false;
-        for (RadarUnit radarUnit : root.getRadarUnits()) {
-            if (!radarUnit.isOn()) {
-                continue;
+        // 2026-10-06 扩展：支持源从"发射站子雷达"扩为整车全部雷达——任意武器站的雷达
+        // 以 TWS 探测或硬锁跟踪 designated 即构成照射（用户定版"照射即中继"）
+        if (shooterVehicle != null) {
+            for (PartUnit<?> partUnit : shooterVehicle.getPartUnits()) {
+                if (!(partUnit instanceof RadarUnit radarUnit) || !radarUnit.isOn()) {
+                    continue;
+                }
+                anyRadarOn = true;
+                if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
+                        || radarUnit.getLockedEntity() == designatedTarget) {
+                    return true;
+                }
             }
-            anyRadarOn = true;
-            if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
-                    || radarUnit.getLockedEntity() == designatedTarget) {
-                return true;
+        } else {
+            // 母车引用不可得（边界）时退回发射站子雷达
+            for (RadarUnit radarUnit : root.getRadarUnits()) {
+                if (!radarUnit.isOn()) {
+                    continue;
+                }
+                anyRadarOn = true;
+                if (RVP_RadarRoleHelper.radarCurrentlyDetects(radarUnit, designatedTarget)
+                        || radarUnit.getLockedEntity() == designatedTarget) {
+                    return true;
+                }
             }
         }
 
