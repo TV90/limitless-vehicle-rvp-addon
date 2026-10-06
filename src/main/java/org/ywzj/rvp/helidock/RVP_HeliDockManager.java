@@ -68,9 +68,9 @@ public final class RVP_HeliDockManager {
     public static final double DESCENT_RANGE = 8.0;
     /** 吸附时相对坪面高度的宽松门（格）：直升机原点悬停在甲板上方即算到位（吸附时传送到标准位，无需苛刻）。 */
     public static final double DOCK_VERTICAL_MIN = -3.0;
-    public static final double DOCK_VERTICAL_MAX = 12.0;
+    public static final double DOCK_VERTICAL_MAX = 7.0;
     /** 吸附范围内的水平速度阻尼系数（每 tick 乘算）：抑制近距离模拟偏航回转率不足导致的绕圈过冲。 */
-    private static final double SNAP_DAMPING = 0.8;
+    private static final double SNAP_DAMPING = 0.9;
     /** 提示/驱动扫描间隔（tick）。 */
     private static final int SCAN_INTERVAL_TICKS = 10;
     /** 舰船失援兜底宽限（tick）：舰船实体查不到持续超过该值即解除着舰。 */
