@@ -339,6 +339,7 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         float cameraRelativeFireSoundDistance = parseCameraRelativeFireSoundDistance(obj);
         boolean persistentChunkLease = parsePersistentChunkLease(obj);
         VehicleExtendedConfig.AutoCollectiveConfig autoCollective = parseAutoCollective(obj);
+        Set<String> helipadBones = parseHelipadBones(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
@@ -346,7 +347,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 && turnDepthScale == 1.0f
                 && cameraRelativeFireSoundDistance == 0f
                 && !persistentChunkLease
-                && autoCollective == null) {
+                && autoCollective == null
+                && helipadBones.isEmpty()) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -359,8 +361,41 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 turnDepthScale,
                 cameraRelativeFireSoundDistance,
                 persistentChunkLease,
-                autoCollective
+                autoCollective,
+                Set.copyOf(helipadBones)
         );
+    }
+
+    /**
+     * [RVP] 舰船直升机停机坪骨骼（{@code rvp_helipads}，2026-10-07）：顶层字符串数组（骨骼名列表）
+     * 或单字符串。骨骼需存在于该载具结构模型（*.structure.json 具名骨 + cube 定坪位/尺寸），
+     * 世界系 OBB 由 {@code OBB.getOBBsFromBone} 按舰船实时位姿现算。
+     * 消费方 {@code org.ywzj.rvp.helidock.RVP_HeliDockManager}（直升机着舰）。
+     * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定，否则只配此字段的载具配置会
+     * 静默失效（§45 审计教训）。
+     */
+    private static Set<String> parseHelipadBones(JsonObject obj) {
+        if (!obj.has("rvp_helipads")) {
+            return Set.of();
+        }
+        JsonElement element = obj.get("rvp_helipads");
+        if (element.isJsonPrimitive()) {
+            String name = element.getAsString();
+            return name == null || name.isBlank() ? Set.of() : Set.of(name);
+        }
+        if (!element.isJsonArray()) {
+            return Set.of();
+        }
+        Set<String> bones = new java.util.LinkedHashSet<>();
+        for (JsonElement entry : element.getAsJsonArray()) {
+            if (entry.isJsonPrimitive()) {
+                String name = entry.getAsString();
+                if (name != null && !name.isBlank()) {
+                    bones.add(name);
+                }
+            }
+        }
+        return bones;
     }
 
     /**
@@ -672,10 +707,15 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * 非空 = 自动总距可用，字段见 {@link AutoCollectiveConfig}。
              * 消费方 {@code RVP_AutoCollectiveHandler}（VehicleMoveEvent 每 tick）。
              */
-            @Nullable AutoCollectiveConfig autoCollective
+            @Nullable AutoCollectiveConfig autoCollective,
+            /**
+             * [RVP] 舰船直升机停机坪骨骼名集合（{@code rvp_helipads}，2026-10-07）。
+             * 空 = 该载具无停机坪；消费方 {@code org.ywzj.rvp.helidock.RVP_HeliDockManager}。
+             */
+            Set<String> helipadBones
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null);
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of());
 
         /**
          * [RVP] 自动总距模式参数（{@code rvp_auto_collective} 块）：
@@ -705,7 +745,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || Math.abs(turnDepthScale - 1.0f) > 1.0E-6f
                     || cameraRelativeFireSoundDistance > 0f
                     || persistentChunkLease
-                    || autoCollective != null;
+                    || autoCollective != null
+                    || !helipadBones.isEmpty();
         }
 
         public boolean hasPhysicsOnlyBones() {

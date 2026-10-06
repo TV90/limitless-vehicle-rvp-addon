@@ -462,5 +462,13 @@
   "rvp.flight_mode.normal": "Flight mode: Normal",
   "rvp.flight_mode.auto_collective": "Flight mode: Auto Collective (climb/descent rate auto-trim, full attitude control)",
   "rvp.flight_mode.hover": "Flight mode: Hover",
-  "ui.rvp.target_rcs_below_sea_threshold": "Target RCS below anti-ship seeker threshold, cannot lock/launch"
+  "ui.rvp.target_rcs_below_sea_threshold": "Target RCS below anti-ship seeker threshold, cannot lock/launch",
+  "key.ywzj_rvp.toggle_heli_dock": "Helicopter Dock / Take Off",
+  "message.ywzj_rvp.helidock.prompt": "Press P to land on the ship",
+  "message.ywzj_rvp.helidock.approach": "Auto-landing: flight taken over by system",
+  "message.ywzj_rvp.helidock.approach_cancelled": "Auto-landing cancelled",
+  "message.ywzj_rvp.helidock.docked": "Docked: helicopter locked to deck (press P to take off)",
+  "message.ywzj_rvp.helidock.takeoff": "Auto take-off: controls unlock after climb",
+  "message.ywzj_rvp.helidock.released": "Controls restored",
+  "message.ywzj_rvp.helidock.ship_lost": "Ship lost — helicopter controls restored"
 }
