@@ -56,14 +56,21 @@ public final class RVP_HeliDockManager {
 
     /** 接近提示与按 P 的有效范围（格，水平距离）。 */
     public static final double PROMPT_RANGE = 48.0;
-    /** 吸附着舰的水平触发距离（格）：进入该范围即开始向坪面下降，边降边靠近（用户实测 5 格时会在着舰点附近打转，2026-10-07 调大）。 */
-    public static final double SNAP_RANGE = 10.0;
+    /** 吸附着舰的水平触发距离（格）：进入即吸附（吸附时本就传送到标准位），用户实测 5→10 仍打转，2026-10-07 再调大到 15。 */
+    public static final double SNAP_RANGE = 15.0;
     /** 起飞解锁所需的相对甲板高度（格）。 */
     public static final double TAKEOFF_HEIGHT = 15.0;
     /** 接近段的目标悬停高度（停机坪中心上方，格）。 */
     private static final double APPROACH_HOVER_HEIGHT = 6.0;
     /** 接近段判定"已到位"的水平距离（格）。 */
     private static final double APPROACH_ARRIVE_H = 8.0;
+    /** 接近段开始向坪面下降的水平距离（格）：比吸附门近，避免远距就贴甲板平飞穿舰体。 */
+    public static final double DESCENT_RANGE = 8.0;
+    /** 吸附时相对坪面高度的宽松门（格）：直升机原点悬停在甲板上方即算到位（吸附时传送到标准位，无需苛刻）。 */
+    public static final double DOCK_VERTICAL_MIN = -3.0;
+    public static final double DOCK_VERTICAL_MAX = 12.0;
+    /** 吸附范围内的水平速度阻尼系数（每 tick 乘算）：抑制近距离模拟偏航回转率不足导致的绕圈过冲。 */
+    private static final double SNAP_DAMPING = 0.8;
     /** 提示/驱动扫描间隔（tick）。 */
     private static final int SCAN_INTERVAL_TICKS = 10;
     /** 舰船失援兜底宽限（tick）：舰船实体查不到持续超过该值即解除着舰。 */
@@ -191,14 +198,16 @@ public final class RVP_HeliDockManager {
      * 偏航 = controlUnit.yRot 目标方向（旋翼模拟偏航自追踪）；前后 = controlUnit.xRot 目标俯仰角
      * （W/S 的 AI 等价物是压杆角度而非 forward 布尔）；高度 = 总距 up/down 闭环（collective<55
      * 先补升力，高度误差 ±2 死区）；下沉保护（下沉 >0.18 格/t 压头+提总距）。
-     * 目标点：接近段悬停坪上 6 格；水平 5 格内转坪面+1 下降对接；吸附 = 水平 5 格 ∧ 距坪面 ≤2.5。
+     * 目标点：8 格外悬停坪上 6 格；进入下降边界（8 格）转坪面+1 下降对接。
+     * 吸附门（放宽，2026-10-07 用户反馈打转）：水平 ≤15 格 ∧ 相对坪面高度 [-3, +12]——吸附时
+     * 本就传送到标准位，无需苛刻；吸附范围内水平速度阻尼（×0.8/tick）抑制绕圈过冲。
      */
     private static void tickApproach(RotaryWingVehicle heli, Vec3 padCenter) {
         var cu = heli.controlUnit;
         cu.reset();
         double horizontalDist = Math.sqrt(
                 Math.pow(padCenter.x - heli.getX(), 2) + Math.pow(padCenter.z - heli.getZ(), 2));
-        double targetY = horizontalDist <= SNAP_RANGE
+        double targetY = horizontalDist <= DESCENT_RANGE
                 ? padCenter.y + 1.0
                 : padCenter.y + APPROACH_HOVER_HEIGHT;
         Vec3 toTarget = new Vec3(padCenter.x - heli.getX(),
@@ -221,10 +230,19 @@ public final class RVP_HeliDockManager {
             cu.xRot = Math.min(cu.xRot, -4.0f);
             cu.up = true;
         }
+        // 吸附门：水平 15 格 ∧ 相对坪面高度 [-3, +12]
+        double verticalOffset = heli.getY() - padCenter.y;
         if (horizontalDist <= SNAP_RANGE
-                && heli.getY() - padCenter.y <= 2.5
-                && heli.getY() - padCenter.y >= -1.0) {
+                && verticalOffset >= DOCK_VERTICAL_MIN
+                && verticalOffset <= DOCK_VERTICAL_MAX) {
             dock(heli);
+            return;
+        }
+        // 未达吸附门的接近段：水平速度阻尼抑制绕圈过冲，并把俯仰 authority 压到 ±4 防绕圈加剧
+        if (horizontalDist <= SNAP_RANGE * 1.5) {
+            Vec3 mv = heli.getDeltaMovement();
+            heli.setDeltaMovement(new Vec3(mv.x * SNAP_DAMPING, mv.y, mv.z * SNAP_DAMPING));
+            cu.xRot = Mth.clamp(cu.xRot, -4.0f, 4.0f);
         }
     }
 
