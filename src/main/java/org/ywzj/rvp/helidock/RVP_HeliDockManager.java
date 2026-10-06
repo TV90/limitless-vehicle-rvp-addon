@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
@@ -129,13 +130,13 @@ public final class RVP_HeliDockManager {
                 }
             }
         }
-        // 未着舰：找 48 格内最近的有停机坪舰船
-        AbstractVehicle ship = findNearestHelipadShip(heli, player.serverLevel());
-        if (ship == null) {
+        // 未着舰：找 48 格内最近的停机坪（按 pad 骨骼 OBB 中心判定）
+        NearestHelipad nearest = findNearestHelipad(heli, player.serverLevel());
+        if (nearest == null) {
             return false;
         }
-        String padBone = nearestPadBone(ship, heli.position());
-        STATES.put(heliUuid, new DockingState(ship.getUUID(), padBone, Phase.APPROACH, 0));
+        STATES.put(heliUuid, new DockingState(nearest.ship().getUUID(),
+                nearest.padBone(), Phase.APPROACH, 0));
         SHIP_MISSING_TICKS.remove(heliUuid);
         heli.collision = false;
         syncClient(player, true);
@@ -175,7 +176,7 @@ public final class RVP_HeliDockManager {
             }
             switch (state.phase()) {
                 case APPROACH -> tickApproach((RotaryWingVehicle) heli, padCenter);
-                case DOCKED -> tickDocked(heli, padCenter);
+                case DOCKED -> tickDocked(heli, ship, padCenter);
                 case TAKEOFF -> tickTakeoff((RotaryWingVehicle) heli, padCenter);
             }
         }
@@ -185,25 +186,54 @@ public final class RVP_HeliDockManager {
         }
     }
 
-    /** 接近段：写 controlUnit 自动飞向停机坪上空，水平到位即吸附。 */
+    /**
+     * 接近段（2026-10-07 重写，参照 Gunner 旋翼飞控 tickRotaryDriving/tickRotaryCruise）：
+     * 偏航 = controlUnit.yRot 目标方向（旋翼模拟偏航自追踪）；前后 = controlUnit.xRot 目标俯仰角
+     * （W/S 的 AI 等价物是压杆角度而非 forward 布尔）；高度 = 总距 up/down 闭环（collective<55
+     * 先补升力，高度误差 ±2 死区）；下沉保护（下沉 >0.18 格/t 压头+提总距）。
+     * 目标点：接近段悬停坪上 6 格；水平 5 格内转坪面+1 下降对接；吸附 = 水平 5 格 ∧ 距坪面 ≤2.5。
+     */
     private static void tickApproach(RotaryWingVehicle heli, Vec3 padCenter) {
-        double dx = padCenter.x - heli.getX();
-        double dz = padCenter.z - heli.getZ();
-        double hDist = Math.sqrt(dx * dx + dz * dz);
-        float targetYaw = hDist > 0.5
-                ? (float) Math.toDegrees(Math.atan2(dx, -dz))
-                : heli.getYRot();
-        double altError = (padCenter.y + APPROACH_HOVER_HEIGHT) - heli.getY();
         var cu = heli.controlUnit;
         cu.reset();
-        cu.yRot = targetYaw;
+        double horizontalDist = Math.sqrt(
+                Math.pow(padCenter.x - heli.getX(), 2) + Math.pow(padCenter.z - heli.getZ(), 2));
+        double targetY = horizontalDist <= SNAP_RANGE
+                ? padCenter.y + 1.0
+                : padCenter.y + APPROACH_HOVER_HEIGHT;
+        Vec3 toTarget = new Vec3(padCenter.x - heli.getX(),
+                targetY - heli.getY(),
+                padCenter.z - heli.getZ());
+        org.joml.Vector2f targetRot = toRot(toTarget);
+        cu.yRot = targetRot.y;
         cu.yRotKeep = false;
-        cu.forward = hDist > APPROACH_ARRIVE_H;
-        cu.up = altError > 2;
-        cu.down = altError < -2;
-        if (hDist <= SNAP_RANGE && Math.abs(altError) < 8) {
+        cu.xRot = Mth.clamp(targetRot.x * 0.75F, -10.0F, 10.0F);
+        cu.xRotKeep = false;
+        if (heli.getCollectivePitch() < 55.0f) {
+            cu.up = true;
+        } else if (toTarget.y > 2.0) {
+            cu.up = true;
+        } else if (toTarget.y < -2.0) {
+            cu.down = true;
+        }
+        double vy = heli.getDeltaMovement().y;
+        if (vy < -0.18) {
+            cu.xRot = Math.min(cu.xRot, -4.0f);
+            cu.up = true;
+        }
+        if (horizontalDist <= SNAP_RANGE
+                && heli.getY() - padCenter.y <= 2.5
+                && heli.getY() - padCenter.y >= -1.0) {
             dock(heli);
         }
+    }
+
+    /** 方向向量 → (俯仰, 偏航) 角（度），本体 VectorUtil.vecToRot 同款语义（俯仰负=朝下看）。 */
+    private static org.joml.Vector2f toRot(Vec3 direction) {
+        double horizontal = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
+        float pitch = (float) -Math.toDegrees(Math.atan2(direction.y, horizontal));
+        float yaw = (float) Math.toDegrees(Math.atan2(-direction.x, direction.z));
+        return new org.joml.Vector2f(pitch, yaw);
     }
 
     /** 吸附着舰：瞬移到 pad 中心上方并切 DOCKED。 */
@@ -217,22 +247,26 @@ public final class RVP_HeliDockManager {
         notifyRider(heli, "message.ywzj_rvp.helidock.docked");
     }
 
-    /** 着舰锁定：每 tick 同步 pos/yaw 到停机坪世界坐标（随舰船行驶转向），清速度防下坠。 */
-    private static void tickDocked(AbstractVehicle heli, Vec3 padCenter) {
+    /** 着舰锁定：每 tick 同步 pos 到停机坪世界坐标、yaw 随舰船（行驶转向均跟随），清速度防下坠。 */
+    private static void tickDocked(AbstractVehicle heli, AbstractVehicle ship, Vec3 padCenter) {
         heli.teleportTo(padCenter.x, padCenter.y, padCenter.z);
+        heli.setYRot(ship.getYRot());
         heli.setDeltaMovement(Vec3.ZERO);
         heli.fallDistance = 0.0f;
         heli.controlUnit.reset();
     }
 
-    /** 起飞：自动爬升到相对甲板 15 格后解锁。 */
+    /** 起飞（gunner 起飞同款：悬停模式自稳 + 总距上升 + 保持姿态），相对甲板 15 格解锁。 */
     private static void tickTakeoff(RotaryWingVehicle heli, Vec3 padCenter) {
         double relHeight = heli.getY() - padCenter.y;
         var cu = heli.controlUnit;
         cu.reset();
+        heli.hoverMode = true;
         cu.up = true;
-        cu.forward = relHeight > TAKEOFF_HEIGHT * 0.5;
+        cu.xRotKeep = true;
+        cu.yRotKeep = true;
         if (relHeight >= TAKEOFF_HEIGHT) {
+            heli.hoverMode = false;
             release(heli);
             notifyRider(heli, "message.ywzj_rvp.helidock.released");
         }
@@ -257,8 +291,7 @@ public final class RVP_HeliDockManager {
                         || STATES.containsKey(heli.getUUID())) {
                     continue;
                 }
-                AbstractVehicle ship = findNearestHelipadShip(heli, level);
-                if (ship != null) {
+                if (findNearestHelipad(heli, level) != null) {
                     player.displayClientMessage(Component.translatable(
                             "message.ywzj_rvp.helidock.prompt"), true);
                 }
@@ -266,10 +299,18 @@ public final class RVP_HeliDockManager {
         }
     }
 
-    /** 找 48 格内最近的有停机坪舰船（未停靠其它直升机）。 */
-    private static AbstractVehicle findNearestHelipadShip(RotaryWingVehicle heli, ServerLevel level) {
-        AbstractVehicle nearest = null;
-        double nearestDist = Double.MAX_VALUE;
+    /** 最近停机坪查询结果：舰船 + 命中的 pad 骨名 + pad 世界中心。 */
+    public record NearestHelipad(AbstractVehicle ship, String padBone, Vec3 padCenter) {
+    }
+
+    /**
+     * 找 48 格内最近的停机坪（2026-10-07 修正：判定距离 = 直升机到 **pad 骨骼 OBB 中心**，
+     * 不再是舰船实体中心——停机坪在舰首/舰尾时舰心距离会严重失真）。
+     * 逐舰逐 pad 现算世界中心取最近；未停靠其它直升机的舰船才参与。
+     */
+    private static NearestHelipad findNearestHelipad(RotaryWingVehicle heli, ServerLevel level) {
+        NearestHelipad nearest = null;
+        double nearestDistSqr = Double.MAX_VALUE;
         for (AbstractVehicle vehicle : RVP_ServerVehicleIndex.getVehicles(level)) {
             if (!(vehicle instanceof VesselVehicle) || !vehicle.isAlive() || vehicle.isRemoved()) {
                 continue;
@@ -278,14 +319,18 @@ public final class RVP_HeliDockManager {
             if (pads.isEmpty()) {
                 continue;
             }
-            double dx = vehicle.getX() - heli.getX();
-            double dz = vehicle.getZ() - heli.getZ();
-            double distSqr = dx * dx + dz * dz;
-            if (distSqr > PROMPT_RANGE * PROMPT_RANGE || distSqr >= nearestDist) {
-                continue;
+            for (String padBone : pads) {
+                Vec3 padCenter = resolvePadWorldCenter(vehicle, padBone);
+                if (padCenter == null) {
+                    continue;
+                }
+                double distSqr = heli.position().distanceToSqr(padCenter);
+                if (distSqr > PROMPT_RANGE * PROMPT_RANGE || distSqr >= nearestDistSqr) {
+                    continue;
+                }
+                nearestDistSqr = distSqr;
+                nearest = new NearestHelipad(vehicle, padBone, padCenter);
             }
-            nearest = vehicle;
-            nearestDist = distSqr;
         }
         return nearest;
     }
@@ -294,28 +339,6 @@ public final class RVP_HeliDockManager {
     private static List<String> helipadBones(AbstractVehicle ship) {
         var config = RVP_VehicleExtendedConfigManager.INSTANCE.get(ship);
         return config == null ? List.of() : List.copyOf(config.helipadBones());
-    }
-
-    /** 距参考点最近的停机坪骨名（全部解析失败回退第一个配置名）。 */
-    private static String nearestPadBone(AbstractVehicle ship, Vec3 reference) {
-        List<String> pads = helipadBones(ship);
-        if (pads.isEmpty()) {
-            return "";
-        }
-        String nearest = pads.get(0);
-        double nearestDist = Double.MAX_VALUE;
-        for (String bone : pads) {
-            Vec3 center = resolvePadWorldCenter(ship, bone);
-            if (center == null) {
-                continue;
-            }
-            double dist = center.distanceToSqr(reference);
-            if (dist < nearestDist) {
-                nearestDist = dist;
-                nearest = bone;
-            }
-        }
-        return nearest;
     }
 
     /**
