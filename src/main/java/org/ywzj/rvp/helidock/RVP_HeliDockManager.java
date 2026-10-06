@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 只关推挤/撞击，不免疫武器）；两车间撞击伤害由 {@code RVP_HeliDockEventHandler} 经
  * {@code VehicleAttackEvent} 拦截。</p>
  */
-@Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID)
+@Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_HeliDockManager {
 
     private RVP_HeliDockManager() {

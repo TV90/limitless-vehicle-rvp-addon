@@ -39,9 +39,11 @@ public abstract class ControlUnitMixin {
         if (!(entity instanceof AbstractVehicle vehicle)) {
             return;
         }
-        // 盘旋中 或 直升机着舰/接管流程中：均屏蔽玩家运动输入（保留 functional 武器操作）
-        if (RVP_UavLoiterManager.isLoitering(vehicle.getUUID())
-                || org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID())) {
+        // 守卫（2026-10-07 修复：此条件曾写反导致全载具运动包被 cancel）：非盘旋且非着舰/接管
+        // → return 放行原方法（正常写入运动输入）；盘旋中 或 直升机着舰/接管流程中 → 落到下方
+        // 屏蔽段（保留 functional 武器操作，吞运动输入）
+        if (!RVP_UavLoiterManager.isLoitering(vehicle.getUUID())
+                && !org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID())) {
             return;
         }
         // 盘旋时只保留 functional 输入（武器操作），屏蔽运动输入
