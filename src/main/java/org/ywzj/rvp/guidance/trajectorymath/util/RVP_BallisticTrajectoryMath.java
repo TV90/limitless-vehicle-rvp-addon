@@ -215,21 +215,27 @@ public final class RVP_BallisticTrajectoryMath {
     public static RVP_AeroSteeringSolution steerGpsCruise(
             Vec3 position, Vec3 velocity, Vec3 target,
             Double configuredCruiseAltitude, RVP_AeroSteeringLimits limits) {
+        // 调用本项目方向生成器与原气动裁决器，保持未启用攻角时的原有求解顺序。
+        return applyAeroSteering(velocity, resolveGPSCruiseDirection(
+                position, velocity, target, configuredCruiseAltitude, limits), limits);
+    }
+
+    /** 生成 GPS 巡航期望方向，不对输出方向施加转角限制，供独立机头姿态求解使用。 */
+    public static Vec3 resolveGPSCruiseDirection(
+            Vec3 position, Vec3 velocity, Vec3 target,
+            Double configuredCruiseAltitude, RVP_AeroSteeringLimits limits) {
         double speed = velocity.length();
-        if (speed <= 1.0E-8) {
-            // 调用本项目统一气动求解器，以零转角结果保持输入速度和限制状态口径。
-            return applyAeroSteering(velocity, velocity, limits);
+        if (speed <= 1.0E-8 || target == null) {
+            return velocity;
         }
         Vec3 directTargetDelta = target.subtract(position);
         if (directTargetDelta.length() <= speed * (TERMINAL_RESERVE_TICKS + 1.0)) {
-            // 调用本项目统一气动求解器，近目标时优先直接追踪三维目标。
-            return applyAeroSteering(velocity, directTargetDelta, limits);
+            return directTargetDelta;
         }
 
         Vec3 horizontalDelta = new Vec3(target.x - position.x, 0.0, target.z - position.z);
         if (horizontalDelta.lengthSqr() <= 1.0E-12) {
-            // 调用本项目统一气动求解器，目标位于垂直方向时避免水平单位向量除零。
-            return applyAeroSteering(velocity, target.subtract(position), limits);
+            return target.subtract(position);
         }
         Vec3 horizontalDesired = horizontalDelta.normalize();
         double cruiseAltitude = configuredCruiseAltitude == null
@@ -253,10 +259,10 @@ public final class RVP_BallisticTrajectoryMath {
         // 调用本项目气动可达性判断，确保低动压时提前为末端转向保留距离。
         if (canReachTarget(candidatePosition, cruiseVelocity, target,
                 limits, TERMINAL_RESERVE_TICKS)) {
-            return cruiseSolution;
+            return desired;
         }
-        // 调用本项目统一气动求解器，不可达时放弃高度目标并直接追踪目标点。
-        return applyAeroSteering(velocity, directTargetDelta, limits);
+        // 不可达时放弃高度目标；实际转向仅由调用方裁决一次。
+        return directTargetDelta;
     }
 
     /**
@@ -310,11 +316,19 @@ public final class RVP_BallisticTrajectoryMath {
     public static RVP_AeroSteeringSolution steerPresetBallistic(
             Vec3 position, Vec3 velocity, Vec3 target,
             RVP_BallisticTrajectoryProfile preset, RVP_AeroSteeringLimits limits) {
+        // 调用本项目 PRESET 方向生成器与原气动裁决器，保留原公有入口语义。
+        return applyAeroSteering(velocity, resolvePresetBallisticDirection(
+                position, velocity, target, preset, limits), limits);
+    }
+
+    /** 生成 PRESET 中段或末段期望方向，供攻角模型直接使用，避免重复限幅。 */
+    public static Vec3 resolvePresetBallisticDirection(
+            Vec3 position, Vec3 velocity, Vec3 target,
+            RVP_BallisticTrajectoryProfile preset, RVP_AeroSteeringLimits limits) {
         double speed = velocity.length();
         if (speed <= 1.0E-8 || target == null || preset == null
                 || preset.launchPosition() == null) {
-            // 调用本项目统一气动求解器，以零转角结果保持非法几何输入的安全退化。
-            return applyAeroSteering(velocity, velocity, limits);
+            return velocity;
         }
         // 通过通用只读参数契约取得纯几何计算所需的冻结值，不依赖虚拟飞行业务类型。
         Vec3 launch = preset.launchPosition();
@@ -350,16 +364,14 @@ public final class RVP_BallisticTrajectoryMath {
             } else {
                 desired = toTarget;
             }
-            // 调用本项目统一气动求解器，裁决终端俯冲方向的实际转角。
-            return applyAeroSteering(velocity, desired, limits);
+            return desired;
         }
 
         Vec3 toTargetHorizontal = new Vec3(
                 target.x - position.x, 0.0, target.z - position.z);
         double horizontalDistance = toTargetHorizontal.length();
         if (horizontalDistance <= 1.0E-8) {
-            // 调用本项目统一气动求解器，水平距离退化时直接追踪三维目标。
-            return applyAeroSteering(velocity, target.subtract(position), limits);
+            return target.subtract(position);
         }
 
         Vec3 forwardHorizontal = toTargetHorizontal.normalize();
@@ -398,8 +410,7 @@ public final class RVP_BallisticTrajectoryMath {
                         lateral.scale(maneuverAmplitude * Math.sin(phase) * weight));
             }
         }
-        // 调用本项目统一气动求解器，裁决抛物线中段追点方向的实际转角。
-        return applyAeroSteering(velocity, targetPoint.subtract(position), limits);
+        return targetPoint.subtract(position);
     }
 
     /**

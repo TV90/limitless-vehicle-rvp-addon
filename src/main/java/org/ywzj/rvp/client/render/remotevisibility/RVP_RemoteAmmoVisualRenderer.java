@@ -292,6 +292,11 @@ public final class RVP_RemoteAmmoVisualRenderer {
 
     /** 使用速度方向更新弹药克隆的俯仰和偏航。 */
     private static void applyMotionFacing(Entity entity) {
+        // 调用本项目双端攻角门控，攻角导弹使用同步机头姿态，远距渲染不得抹平机头与速度夹角。
+        if (entity instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet projectile
+                && org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion.usesAttackAngle(projectile)) {
+            return;
+        }
         Vec3 velocity = entity.getDeltaMovement();
         if (velocity.lengthSqr() <= 1.0E-6D) {
             return;

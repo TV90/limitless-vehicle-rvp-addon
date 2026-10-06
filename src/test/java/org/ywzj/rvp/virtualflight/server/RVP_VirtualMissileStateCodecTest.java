@@ -16,6 +16,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_VirtualMissileStateCodecTest {
+    /** 攻角姿态与速度独立；NBT 往返不可用速度方向重建机头角。 */
+    @Test
+    void attackAngleBodySurvivesNbtRoundTrip() {
+        // 调用本项目状态构造与快照更新入口，建立速度向 Z、机头偏航 20 度的在途状态。
+        RVP_VirtualMissileState original = state();
+        RVP_VirtualTrajectoryState angled = new RVP_VirtualTrajectoryState(
+                new Vec3(100, 120, -200), new Vec3(0, 0, 10), 0, -20,
+                10, 1234.5, 210, 800, -1);
+        original.updateTrajectory(angled);
+        // 调用本项目 NBT 编解码器，验证既有姿态字段已经足够承载独立机头，无需新 schema。
+        RVP_VirtualMissileState loaded = RVP_VirtualMissileState.load(original.save()).orElseThrow();
+        assertEquals(angled, loaded.trajectory());
+        assertEquals(-20, loaded.trajectory().yRot());
+        assertEquals(new Vec3(0, 0, 10), loaded.trajectory().velocity());
+    }
+
     @Test
     void nbtRoundTripPreservesCompleteRuntimeState() {
         RVP_VirtualMissileState original = state();

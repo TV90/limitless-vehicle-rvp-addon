@@ -82,6 +82,16 @@ public class RVP_ProjectileData {
     private boolean rvpAeroSteering = false;
 
     /**
+     * 弹轴与相对气流速度方向的总攻角控制上限，单位度，默认 null（关闭）；
+     * 仅 RVP 导弹、{@code rvp_aero_steering=true} 且值为有限 (0, 90) 时生效。
+     * 首版沿用无环境风速的近似，气流速度取弹体速度；不单独模拟侧滑和滚转。
+     * 开启后姿态独立于速度，优先于 {@code rotate_to_motion}；未配置有限
+     * {@code rvp_maxg} 的 {@code turning_factor>=1} 瞬转弹仍豁免。非法值关闭功能。
+     */
+    @SerializedName("rvp_attack_angle_limit_deg")
+    private Double rvpAttackAngleLimitDeg;
+
+    /**
      * 诱导阻力系数，无量纲，默认 null；仅 {@code rvp_aero_steering=true} 时生效。
      * 未配置时复用有效 {@code drag_coefficient}，0 表示显式关闭诱导阻力。
      */
@@ -366,6 +376,13 @@ public class RVP_ProjectileData {
         return rvpAeroSteering;
     }
 
+    /** @return 有限 (0, 90) 度攻角上限；缺省、null 和非法配置返回 0（关闭）。 */
+    public double getRvpAttackAngleLimitDeg() {
+        return rvpAttackAngleLimitDeg != null && Double.isFinite(rvpAttackAngleLimitDeg)
+                && rvpAttackAngleLimitDeg > 0.0 && rvpAttackAngleLimitDeg < 90.0
+                ? rvpAttackAngleLimitDeg : 0.0;
+    }
+
     /**
      * @return 原始诱导阻力配置；null 表示运行时复用有效 {@code drag_coefficient}
      */
@@ -419,7 +436,9 @@ public class RVP_ProjectileData {
                 : 0.5F;
         return new RVP_AeroSteeringLimits(
                 getRvpMaxG(), turning, referenceSpeed, densityFactor,
-                inducedDrag, getRvpTurnRateLimit(), rvpAeroSteering);
+                inducedDrag, getRvpTurnRateLimit(), rvpAeroSteering,
+                // 调用本项目攻角解析器，将可选配置冻结到实体/虚拟共用的限制中。
+                getRvpAttackAngleLimitDeg());
     }
 
     /**

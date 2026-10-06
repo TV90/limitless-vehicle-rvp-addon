@@ -144,7 +144,8 @@ public final class RVP_GuidanceRuntimeMath {
         }
         // 调用本项目弹体数据访问器；配置 rvp_maxg 时先生成完整期望方向，再统一施加 G 钳制。
         Double rvpMaxGs = context.data().getProjectileData().getRvpMaxG();
-        float steeringFactor = rvpMaxGs != null ? 1.0F : factor;
+        // 调用本项目攻角门控；攻角控制器需要原始期望方向，不能先做一次速度插值。
+        float steeringFactor = rvpMaxGs != null || RVP_ProjectileMotion.usesAttackAngle(projectile) ? 1.0F : factor;
         Vec3 next;
         if (isGpsCruiseActive(context, steeringTarget)) {
             next = steerGpsCruise(
@@ -223,7 +224,8 @@ public final class RVP_GuidanceRuntimeMath {
         float factor = resolveTurningFactor(context);
         // 调用本项目弹体数据访问器；PRESET 实体链也遵守 rvp_maxg 高于 turning_factor。
         Double rvpMaxGs = context.data().getProjectileData().getRvpMaxG();
-        float steeringFactor = rvpMaxGs != null ? 1.0F : factor;
+        // 调用本项目攻角门控，PRESET 同样避免预插值后再二次限转。
+        float steeringFactor = rvpMaxGs != null || RVP_ProjectileMotion.usesAttackAngle(projectile) ? 1.0F : factor;
         // 调用本项目弹体数据解析器，使实体 PRESET 俯冲判据使用与最终转向相同的气动预算。
         RVP_AeroSteeringLimits presetLimits = context.data().getProjectileData()
                 .resolveAeroSteeringLimits(
@@ -628,6 +630,10 @@ public final class RVP_GuidanceRuntimeMath {
         // 调用本项目弹体数据解析器，冻结参考速度、密度、诱导阻力和转角上限。
         RVP_AeroSteeringLimits limits = data.getProjectileData().resolveAeroSteeringLimits(
                 data.getProjectileVelocity(), projectile.getY(), turningFactor);
+        if (projectile.isMissile() && limits.attackAngleEnabled()) {
+            // 调用本项目实体攻角适配器，写回弹轴与载荷而不再强制弹轴贴合速度。
+            return RVP_ProjectileMotion.applyAttackAngleSteering(projectile, current, desired, limits);
+        }
         if (!limits.enabled()) {
             if (rvpMaxGs == null) {
                 return desired;

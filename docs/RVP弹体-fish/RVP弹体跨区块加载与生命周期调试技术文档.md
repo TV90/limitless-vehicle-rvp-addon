@@ -258,6 +258,11 @@ watchdog 每 20 个服务器 Tick 扫描一次，连续 40 Tick 未更新后标�
 每条服务端 `TICK` 快照包含：
 
 - 当前速度、位置、旋转、制导相位/来源/阶段、目标、雷达与发动机状态。
+- 攻角/气动诊断：`aeroSteeringEnabled`、`attackAngleActive`、`attackAngleLimitDeg`、
+  `bodyVelocityAngleDeg`、`aeroLoadFactor`、`aeroAvailableG`、`aeroReferenceSpeed`、
+  `aeroDensityFactor` 和 `aeroInducedDrag`。其中 `bodyVelocityAngleDeg` 是运动阶段结束
+  后的实际机头—速度夹角，`aeroLoadFactor` 是本 Tick 制导/干扰路径合并后的最大载荷
+  使用率；关闭气动模型或配置不可用时，相关可用 G/参数字段会显示为 `<null>`。
 - `superTickMicros`：父类 `super.tick()` 耗时。
 - `rvpTickMicros`：RVP 自身 Tick 段耗时。
 - `totalTickMicros`：两段总耗时。

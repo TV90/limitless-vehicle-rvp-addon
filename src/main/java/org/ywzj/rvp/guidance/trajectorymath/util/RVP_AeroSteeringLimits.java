@@ -13,6 +13,7 @@ package org.ywzj.rvp.guidance.trajectorymath.util;
  * @param inducedDrag 诱导阻力系数，无量纲；非正值表示不产生诱导阻力损失
  * @param turnRateLimitDegPerTick 可选绝对转角上限，单位度/Tick；非正值表示不限制
  * @param enabled 是否启用气动转向；false 时严格委托旧版转向算法
+ * @param attackAngleLimitDeg 总攻角控制上限，单位度；0 表示关闭，合法范围为 (0, 90)
  */
 public record RVP_AeroSteeringLimits(
         Double rvpMaxGs,
@@ -21,6 +22,21 @@ public record RVP_AeroSteeringLimits(
         double densityFactor,
         double inducedDrag,
         double turnRateLimitDegPerTick,
-        boolean enabled
+        boolean enabled,
+        double attackAngleLimitDeg
 ) {
+    /** 未请求攻角的调用方保留现有七参数契约。 */
+    public RVP_AeroSteeringLimits(Double rvpMaxGs, float turningFactor, double referenceSpeed,
+                                 double densityFactor, double inducedDrag,
+                                 double turnRateLimitDegPerTick, boolean enabled) {
+        this(rvpMaxGs, turningFactor, referenceSpeed, densityFactor, inducedDrag,
+                turnRateLimitDegPerTick, enabled, 0.0);
+    }
+
+    /** 攻角要求显式启用；没有有限 G 预算的瞬转弹继续使用原转向方式。 */
+    public boolean attackAngleEnabled() {
+        return enabled && Double.isFinite(attackAngleLimitDeg)
+                && attackAngleLimitDeg > 0.0 && attackAngleLimitDeg < 90.0
+                && (rvpMaxGs != null || (Float.isFinite(turningFactor) && turningFactor < 1.0F));
+    }
 }

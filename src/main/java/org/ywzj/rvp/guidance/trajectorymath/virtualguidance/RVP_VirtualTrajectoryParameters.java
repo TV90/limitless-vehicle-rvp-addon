@@ -22,9 +22,11 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
  * @param ignitionTick 发射后开始点火的飞行 Tick
  * @param dragCoefficient 速度平方阻力系数；阻力按系数×速度平方÷阻力质量×高度倍率计算（质量小于 1 时阻力质量为原值千倍）
  * @param altitudeDragFactor 当前高度对应的阻力倍率
- * @param gravity 每 Tick 施加的 Y 轴重力增量；零值使用本体默认重力常量
+ * @param gravity 每 Tick 施加的 Y 轴重力增量；旧分支零值使用本体默认重力，攻角分支零值不施加重力
  * @param minSpeed 最低速率，单位格/Tick；非正值表示不限制
  * @param maxSpeed 最高速率，单位格/Tick；非正值表示不限制
+ * @param attackAngleLimitDeg 总攻角上限，单位度；0 默认关闭，开关与瞬转豁免由气动快照判定
+ * @param linearDrag 无发动机时的水平减速量，单位格/Tick²；默认 0
  */
 public record RVP_VirtualTrajectoryParameters(
         Double rvpMaxGs,
@@ -46,8 +48,22 @@ public record RVP_VirtualTrajectoryParameters(
         double altitudeDragFactor,
         double gravity,
         float minSpeed,
-        float maxSpeed
+        float maxSpeed,
+        double attackAngleLimitDeg,
+        double linearDrag
 ) {
+    /** 现有调用不传攻角参数时保持关闭；这是 Java 构造便利入口，不是 JSON 旧键兼容。 */
+    public RVP_VirtualTrajectoryParameters(Double rvpMaxGs, float turningFactor, boolean aeroSteering,
+            double rvpRefSpeed, double inducedDrag, double turnRateLimitDegPerTick, double densityFactor,
+            Double cruiseAltitude, boolean rotateToMotion, boolean constantSpeed, boolean propulsion,
+            double mass, double thrust, double motorBurnTime, int ignitionTick, double dragCoefficient,
+            double altitudeDragFactor, double gravity, float minSpeed, float maxSpeed) {
+        this(rvpMaxGs, turningFactor, aeroSteering, rvpRefSpeed, inducedDrag, turnRateLimitDegPerTick,
+                densityFactor, cruiseAltitude, rotateToMotion, constantSpeed, propulsion, mass, thrust,
+                motorBurnTime, ignitionTick, dragCoefficient, altitudeDragFactor, gravity, minSpeed,
+                maxSpeed, 0.0, 0.0);
+    }
+
     /**
      * 把虚拟积分参数投影为统一气动求解器的最小输入。
      *
@@ -56,6 +72,6 @@ public record RVP_VirtualTrajectoryParameters(
     public RVP_AeroSteeringLimits aeroSteeringLimits() {
         return new RVP_AeroSteeringLimits(
                 rvpMaxGs, turningFactor, rvpRefSpeed, densityFactor,
-                inducedDrag, turnRateLimitDegPerTick, aeroSteering);
+                inducedDrag, turnRateLimitDegPerTick, aeroSteering, attackAngleLimitDeg);
     }
 }

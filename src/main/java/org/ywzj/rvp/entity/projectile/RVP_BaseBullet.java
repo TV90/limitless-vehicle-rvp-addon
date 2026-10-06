@@ -547,6 +547,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected String activeStageName;
     /** Set when MCLOS {@code take_over_motion} applied wire-direct steering this tick. */
     private boolean guidanceWireDirectApplied;
+    /** 本 Tick 是否已积分攻角；仅服务端临时门控，姿态本身由 xRot/yRot 同步和快照。 */
+    private boolean attackAngleApplied;
     /** 当前服务端 Tick 是否已有 PRESET 制导写入速度，供冷发射与发动机接管重叠时保留制导结果。 */
     private boolean presetGuidanceMotionAppliedThisTick;
     /** 冷发射窗口内是否曾经成功写入过 PRESET 制导速度，防止单 Tick 制导源抖动把弹体掰回竖直。 */
@@ -1724,6 +1726,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return aeroLoadFactor;
     }
 
+    /** 标记本 Tick 攻角已求解，避免丢锁兜底重复施加升力。 */
+    public void markAttackAngleApplied() {
+        attackAngleApplied = true;
+    }
+
+    /** @return 本 Tick 是否已经由制导路径求解了攻角。 */
+    public boolean hasAttackAngleApplied() {
+        return attackAngleApplied;
+    }
+
     /**
      * 合并本 Tick 一次气动转向产生的载荷因子。
      *
@@ -1865,7 +1877,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // 每 Tick 重新建立 PRESET 制导到运动层的接管标记，避免上一 Tick 的状态泄漏。
             presetGuidanceMotionAppliedThisTick = false;
             aeroLoadFactor = 0.0;
+            attackAngleApplied = false;
             tickGuidance();
+            // 调用本项目攻角兜底：无制导指令时推进残留攻角；智能引信拥有独立运动契约。
+            if (!smartFuseActive) RVP_ProjectileMotion.finishAttackAngleGuidance(this);
             RVP_ChunkPathLoader.PathLoadResult pathLoadResult = requestDynamicChunkPath(
                     RVP_ChunkPathLoadManager.RequestPriority.ACTIVE_PROJECTILE);
             if (!pathLoadResult.currentTickPathReady()) {
@@ -2062,6 +2077,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * 在完整快照恢复后按权威速度校正弹体视线，并同步上一帧姿态供出生包与插值器使用。
      */
     public final void alignVirtualRestoredAttitudeToVelocity() {
+        // 调用本项目攻角门控：该模式的快照姿态为独立状态，必须原样恢复。
+        if (RVP_ProjectileMotion.usesAttackAngle(this)) {
+            xRotO = getXRot();
+            yRotO = getYRot();
+            return;
+        }
         Vec3 velocity = getDeltaMovement();
         if (velocity.lengthSqr() <= 1.0E-8) return;
         // 调用实体制导共用的旋转换算，保证恢复姿态与正常制导姿态语义一致。
@@ -2540,6 +2561,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             velocity = velocity.normalize().scale(getMotionSpeedReference());
         }
         velocity = clampSpeed(velocity);
+        // 调用本项目攻角门控和阻力结算，让无发动机导弹同样承担攻角能量代价。
+        if (RVP_ProjectileMotion.usesAttackAngle(this)) {
+            velocity = RVP_ProjectileMotion.applyInducedDrag(this, velocity, rvpData);
+        }
         setDeltaMovement(velocity);
         setPos(position().add(velocity));
         updateFlightSpeedState(velocity);

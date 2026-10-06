@@ -231,6 +231,8 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
                 hNew = hNew.normalize().scale(hSpeed);
                 Vec3 rotatedVelocity = new Vec3(hNew.x, vel.y, hNew.z);
                 projectile.setDeltaMovement(rotatedVelocity);
+                // 调用本项目攻角记账入口，强制干扰不受升力限制，但实际弹轴偏差产生阻力。
+                org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion.recordAttackAngleDeflection(projectile);
                 if (projectile.getRvpData() != null) {
                     // 调用本项目弹体数据解析器，取得当前 Tick 的 turningFactor 与气动预算。
                     Float configuredFactor = projectile.getRvpData().getProjectileData()
@@ -240,7 +242,7 @@ public final class RVP_RuntimeSaclosGuidanceSource implements RVP_RuntimeGuidanc
                             .resolveAeroSteeringLimits(
                                     projectile.getRvpData().getProjectileVelocity(),
                                     projectile.getY(), turningFactor);
-                    if (limits.enabled()) {
+                    if (limits.enabled() && !(projectile.isMissile() && limits.attackAngleEnabled())) {
                         // 调用本项目气动求解器只测算本次强制旋转对应的 λ；实际干扰转角不受裁决。
                         RVP_AeroSteeringSolution loadSolution =
                                 RVP_BallisticTrajectoryMath.applyAeroSteering(

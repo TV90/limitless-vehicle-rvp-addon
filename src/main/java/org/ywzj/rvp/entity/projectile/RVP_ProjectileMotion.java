@@ -8,6 +8,9 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.debug.RVP_DualPulseDebug;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleModel;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -24,6 +27,59 @@ public final class RVP_ProjectileMotion {
     private static final double MISSILE_COAST_LERP = 0.2D;
 
     private RVP_ProjectileMotion() {}
+
+    /** 只在导弹且显式请求攻角时接管姿态；瞬转豁免由共用参数快照判定。 */
+    public static boolean usesAttackAngle(RVP_BaseBullet projectile) {
+        if (projectile == null || !projectile.isMissile() || projectile.smartFuseActive) return false;
+        // 调用本项目双端配置出口，远程渲染克隆同样可按已同步的武器配置判断姿态门控。
+        RVP_WeaponData config = projectile.getResolvedWeaponConfig();
+        if (config == null) return false;
+        var data = config.getProjectileData();
+        // 调用本项目字段访问器，未启用时提前返回，避免在默认运动热路径反复分配快照。
+        if (!data.isRvpAeroSteering() || data.getRvpAttackAngleLimitDeg() <= 0.0) return false;
+        // 调用本项目数据解析器，区间切换时按当前飞行 Tick 重新判断，不缓存武器 ID。
+        Float factor = data.resolveTurningFactor(projectile.getFlightTickCount());
+        return data.resolveAeroSteeringLimits(config.getProjectileVelocity(),
+                projectile.getY(), factor == null ? 0.5F : factor).attackAngleEnabled();
+    }
+
+    /** 写回独立姿态和载荷；返回速度供原制导链在碰撞检测前使用。 */
+    public static Vec3 applyAttackAngleSteering(RVP_BaseBullet projectile, Vec3 current,
+                                               Vec3 desired, RVP_AeroSteeringLimits limits) {
+        // 调用本项目纯数学攻角模型，用同步姿态作为跨 Tick 机体轴。
+        RVP_AttackAngleSolution solution = RVP_AttackAngleModel.solve(
+                current, projectile.getLookAngle(), desired, limits);
+        // 调用本体向量工具把独立机体轴写入现有俯仰/偏航同步通道。
+        Vec2 rotation = VectorUtil.vecToRot(solution.bodyDirection());
+        projectile.setXRot(rotation.x);
+        projectile.setYRot(rotation.y);
+        // 调用本项目载荷与单步标记入口，避免本 Tick 无目标兜底重复积分。
+        projectile.recordAeroLoadFactor(solution.loadFactor());
+        projectile.markAttackAngleApplied();
+        return solution.velocity();
+    }
+
+    /** 丢锁、延迟制导或无目标时仍推进残留攻角，姿态逐步向当前速度回正。 */
+    public static void finishAttackAngleGuidance(RVP_BaseBullet projectile) {
+        // 调用本项目门控和单步标记，确保每个真实飞行 Tick 最多求解一次。
+        if (!usesAttackAngle(projectile) || projectile.hasAttackAngleApplied()) return;
+        var data = projectile.rvpData.getProjectileData();
+        Float factor = data.resolveTurningFactor(projectile.getFlightTickCount());
+        RVP_AeroSteeringLimits limits = data.resolveAeroSteeringLimits(
+                projectile.rvpData.getProjectileVelocity(), projectile.getY(), factor == null ? 0.5F : factor);
+        Vec3 velocity = projectile.getDeltaMovement();
+        // 调用本项目实体适配器，保留独立姿态并按残余攻角转向。
+        projectile.setDeltaMovement(applyAttackAngleSteering(projectile, velocity, velocity, limits));
+    }
+
+    /** 干扰强制改变速度后，在制导修正前记录实际攻角，防止大载荷被后续小修正覆盖。 */
+    public static void recordAttackAngleDeflection(RVP_BaseBullet projectile) {
+        // 调用本项目门控，普通弹继续沿用自己的干扰行为。
+        if (!usesAttackAngle(projectile)) return;
+        // 调用本项目攻角载荷测量和载荷合并入口，本函数不额外旋转速度。
+        projectile.recordAeroLoadFactor(RVP_AttackAngleModel.loadFactor(projectile.getDeltaMovement(),
+                projectile.getLookAngle(), projectile.rvpData.getProjectileData().getRvpAttackAngleLimitDeg()));
+    }
 
     /**
      * {@link org.ywzj.vehicle.entity.weapon.BulletEntity#tick()} 运动与朝向（含 lerp）。
@@ -67,7 +123,7 @@ public final class RVP_ProjectileMotion {
         int ignition = resolveMotorIgnitionTick(projectile, data);
 
         if (projectile.getFlightTickCount() >= ignition) {
-            if (data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
+            if (!usesAttackAngle(projectile) && data.getProjectileData().isRotateToMotion() && velocity.lengthSqr() > 1.0E-6) {
                 applyMissileCoastFacing(projectile, velocity, 1.0F);
             }
             Vec3 lookDir = projectile.getLookAngle();
@@ -128,7 +184,8 @@ public final class RVP_ProjectileMotion {
         // 调用本项目弹体速率状态入口，分离当前速率与只增不减的历史峰值。
         projectile.updateFlightSpeedState(velocity);
 
-        if (projectile.getFlightTickCount() >= ignition) {
+        // 攻角模式已由制导阶段更新姿态，运动结束不得重新对齐速度。
+        if (!usesAttackAngle(projectile) && projectile.getFlightTickCount() >= ignition) {
             int motorTick = projectile.getFlightTickCount() - ignition;
             boolean coasting = motorTick > data.getResolvedMotorBurnTime()
                     && (projectile.secondPulseStartTick < 0
@@ -244,6 +301,7 @@ public final class RVP_ProjectileMotion {
         } else {
             projectile.applySpawnAimRot(aim);
             if (projectile.rvpData != null
+                    && !usesAttackAngle(projectile)
                     && projectile.rvpData.getProjectileData().isRotateToMotion()
                     && vel.lengthSqr() > 1.0E-6) {
                 applyMissileCoastFacing(projectile, vel, 1.0F);
@@ -269,6 +327,8 @@ public final class RVP_ProjectileMotion {
 
     /** 制导改速后朝向：与 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 转向一致，用 {@link VectorUtil#vecToRot}。 */
     public static void applyGuidanceFacing(Entity entity, Vec3 direction) {
+        // 调用本项目攻角门控，防止普通制导出口覆盖刚写回的独立机体轴。
+        if (entity instanceof RVP_BaseBullet projectile && usesAttackAngle(projectile)) return;
         if (direction.lengthSqr() <= 1.0E-8) {
             return;
         }
@@ -278,6 +338,8 @@ public final class RVP_ProjectileMotion {
     }
 
     public static void applyRotationFromVelocity(RVP_BaseBullet projectile, Vec3 velocity) {
+        // 调用本项目攻角门控；穿透减速等外力只改速度，姿态留待下次求解。
+        if (usesAttackAngle(projectile)) return;
         if (velocity.lengthSqr() <= 1.0E-6) {
             return;
         }
@@ -296,6 +358,12 @@ public final class RVP_ProjectileMotion {
      * TV / HITL MOUSE flight: speed along {@link RVP_BaseBullet#getLookAngle()}, no {@code rotate_to_motion}.
      */
     public static void tickHitlTvMove(RVP_MissileEntity missile) {
+        // 调用本项目普通运动入口：攻角直控不再把速度强制投到视线，双脉冲也走统一推进链。
+        if (usesAttackAngle(missile)) {
+            if (missile.rvpData.usesPropulsion()) tickMissileMove(missile);
+            else missile.tickBallisticMotion();
+            return;
+        }
         RVP_WeaponData data = missile.rvpData;
         if (data == null) {
             return;
@@ -484,6 +552,8 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         double minimumSpeed = Math.max(projectileData.getMinSpeed(), 0.01);
+        // 调用本项目攻角门控，新分支与虚拟积分一致：阻力不可反向加速极低速弹体。
+        if (usesAttackAngle(projectile)) minimumSpeed = Math.min(speed, minimumSpeed);
         return velocity.normalize().scale(Math.max(speed - loss, minimumSpeed));
     }
 }

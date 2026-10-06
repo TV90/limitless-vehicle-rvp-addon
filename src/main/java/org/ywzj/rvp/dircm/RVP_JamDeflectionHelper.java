@@ -58,6 +58,8 @@ public final class RVP_JamDeflectionHelper {
             if (hNew.lengthSqr() > 1.0E-8) {
                 hNew = hNew.normalize().scale(hSpeed);
                 projectile.setDeltaMovement(hNew.x, vel.y, hNew.z);
+                // 调用本项目攻角载荷记账，让 DIRCM 强制偏转和 SACLOS 使用相同能量口径。
+                org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion.recordAttackAngleDeflection(projectile);
             }
         }
     }

@@ -14,6 +14,33 @@ class RVP_ProjectileDataAeroSteeringTest {
     /** JSON 反序列化器，仅用于验证当前 schema 字段。 */
     private final Gson gson = new Gson();
 
+    /** 攻角字段缺省、null、非正值、90 度及非有限值均不应自动启用。 */
+    @Test
+    void attackAngleDefaultsAndInvalidValuesRemainOff() {
+        assertEquals(0.0, new RVP_ProjectileData().getRvpAttackAngleLimitDeg());
+        for (String value : new String[]{"null", "0", "-1", "90", "120", "1e309", "\"NaN\""}) {
+            var data = gson.fromJson("{\"rvp_aero_steering\":true,\"rvp_attack_angle_limit_deg\":"
+                    + value + "}", RVP_ProjectileData.class);
+            // 调用本项目解析器验证安全关闭，不能用非法值生成满舵。
+            assertEquals(0.0, data.getRvpAttackAngleLimitDeg());
+            assertFalse(data.resolveAeroSteeringLimits(3.0, 0.0, 0.5f).attackAngleEnabled());
+        }
+    }
+
+    /** 攻角需气动总开关；瞬转豁免与显式 G 的优先级也从同一数据快照解析。 */
+    @Test
+    void attackAngleRequiresAeroAndPreservesInstantTurnExemption() {
+        var off = gson.fromJson("{\"rvp_attack_angle_limit_deg\":20}", RVP_ProjectileData.class);
+        assertFalse(off.resolveAeroSteeringLimits(3.0, 0.0, 0.5f).attackAngleEnabled());
+        var on = gson.fromJson("{\"rvp_aero_steering\":true,\"rvp_attack_angle_limit_deg\":20}", RVP_ProjectileData.class);
+        // 调用本项目参数投影，验证仅显式配置的有效值生效。
+        assertTrue(on.resolveAeroSteeringLimits(3.0, 0.0, 0.5f).attackAngleEnabled());
+        assertEquals(20.0, on.getRvpAttackAngleLimitDeg());
+        assertFalse(on.resolveAeroSteeringLimits(3.0, 0.0, 1.0f).attackAngleEnabled());
+        var withG = gson.fromJson("{\"rvp_aero_steering\":true,\"rvp_attack_angle_limit_deg\":20,\"rvp_maxg\":0}", RVP_ProjectileData.class);
+        assertTrue(withG.resolveAeroSteeringLimits(3.0, 0.0, 1.0f).attackAngleEnabled());
+    }
+
     /** 阶段 S2 未配置新键时必须保持全局静默，并复用最高速率与基础阻力作为推导值。 */
     @Test
     void defaultsRemainDisabledAndResolveExistingPhysicsFields() {

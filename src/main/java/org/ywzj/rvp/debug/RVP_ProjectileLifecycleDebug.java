@@ -15,6 +15,12 @@ import net.minecraftforge.fml.loading.FMLPaths;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
+import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
+import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 import java.io.IOException;
@@ -97,6 +103,11 @@ public final class RVP_ProjectileLifecycleDebug {
             {"alive", "存活"}, {"removed", "已移除"}, {"life", "剩余寿命"},
             {"position", "位置"}, {"velocity", "速度向量"}, {"speed", "速度"},
             {"turnAngleDegPerTick", "单Tick转向角度"}, {"overloadG", "过载G值"},
+            {"aeroSteeringEnabled", "气动转向开启"}, {"attackAngleActive", "攻角模式生效"},
+            {"attackAngleLimitDeg", "攻角上限度"}, {"bodyVelocityAngleDeg", "机头速度夹角度"},
+            {"aeroLoadFactor", "气动载荷使用率"}, {"aeroAvailableG", "当前可用过载G"},
+            {"aeroReferenceSpeed", "动压参考速度"}, {"aeroDensityFactor", "空气密度倍率"},
+            {"aeroInducedDrag", "诱导阻力系数"},
             {"rotation", "旋转"}, {"targetEntity", "目标实体"}, {"targetPos", "目标位置"},
             {"lastGuidancePos", "上次制导位置"}, {"phase", "制导相位"},
             {"source", "制导源"}, {"stage", "制导阶段"}, {"radarOn", "雷达开启"},
@@ -328,7 +339,8 @@ public final class RVP_ProjectileLifecycleDebug {
                         + " life=" + projectile.life
                         + " submunitionDepth=" + projectile.getSubmunitionDepth()
                         + " signatureSize=" + decimal(projectile.getSignatureSize())
-                        + " airburstDistance=" + projectile.getProgrammedAirburstDistance());
+                        + " airburstDistance=" + projectile.getProgrammedAirburstDistance()
+                        + " " + formatAeroDiagnostics(projectile));
     }
 
     /**
@@ -350,7 +362,8 @@ public final class RVP_ProjectileLifecycleDebug {
                         + " targetEntity=" + formatEntity(projectile.getTargetEntity())
                         + " targetPos=" + formatVec(projectile.getTargetPos())
                         + " coldLaunchTicks=" + projectile.getColdLaunchTimeTick()
-                        + " submunitionDepth=" + projectile.getSubmunitionDepth());
+                        + " submunitionDepth=" + projectile.getSubmunitionDepth()
+                        + " " + formatAeroDiagnostics(projectile));
         if (parent != null) {
             // 同时在父弹体 trace 中记录 child UUID/实体，便于跨 trace 追踪释放链。
             noteEvent(parent, Event.SUBMUNITION_TRIGGER,
@@ -416,6 +429,7 @@ public final class RVP_ProjectileLifecycleDebug {
                 + " speed=" + decimal(projectile.getCurrentSpeed())
                 + " turnAngleDegPerTick=" + decimalOrNull(maneuverMetrics.turnAngleDegPerTick())
                 + " overloadG=" + decimalOrNull(maneuverMetrics.overloadG())
+                + " " + formatAeroDiagnostics(projectile)
                 + " traveledDistance=" + decimal(flightMetrics.traveledDistance())
                 + " remainingDistance=" + decimalOrNull(remainingDistance)
                 + " actualElapsedSeconds=" + decimal(flightMetrics.actualElapsedSeconds())
@@ -745,6 +759,71 @@ public final class RVP_ProjectileLifecycleDebug {
     /** 非有限的“无可用距离”使用 null 占位，其他数值沿用统一三位小数格式。 */
     private static String decimalOrNull(double value) {
         return Double.isFinite(value) ? decimal(value) : "<null>";
+    }
+
+    /**
+     * 生成攻角/气动转向诊断字段，供 initialized、spawn_ready 和逐 Tick 日志复用。
+     *
+     * <p>这里记录的是当前快照和本 Tick 已记账的载荷，不会重新执行制导或运动计算；
+     * 因而开启生命周期日志不会改变弹体行为。</p>
+     *
+     * @param projectile 当前服务端弹体
+     * @return 规范英文键值串，最终由统一日志出口翻译中文键名
+     */
+    private static String formatAeroDiagnostics(RVP_BaseBullet projectile) {
+        // 调用本项目配置解析出口，取得当前 Tick 实际使用的武器数据，不按 weapon ID 分支。
+        RVP_WeaponData config = projectile.getResolvedWeaponConfig();
+        // 调用本项目弹体朝向与速度出口，记录运动阶段结束后的实际机头—速度夹角。
+        double bodyVelocityAngleDeg = resolveBodyVelocityAngleDeg(
+                projectile.getDeltaMovement(), projectile.getLookAngle());
+        // 调用本项目载荷记录器的读取出口，保留制导/干扰路径合并后的最大 λ。
+        double aeroLoadFactor = projectile.getAeroLoadFactor();
+        if (config == null) {
+            return "aeroSteeringEnabled=false"
+                    + " attackAngleActive=false"
+                    + " attackAngleLimitDeg=<null>"
+                    + " bodyVelocityAngleDeg=" + decimalOrNull(bodyVelocityAngleDeg)
+                    + " aeroLoadFactor=" + decimal(aeroLoadFactor)
+                    + " aeroAvailableG=<null>"
+                    + " aeroReferenceSpeed=<null>"
+                    + " aeroDensityFactor=<null>"
+                    + " aeroInducedDrag=<null>";
+        }
+
+        // 调用本项目弹体数据访问器，解析当前飞行 Tick 的 turning_factor 和气动快照。
+        RVP_ProjectileData projectileData = config.getProjectileData();
+        Float turningFactor = projectileData.resolveTurningFactor(projectile.getFlightTickCount());
+        RVP_AeroSteeringLimits limits = projectileData.resolveAeroSteeringLimits(
+                config.getProjectileVelocity(), projectile.getY(),
+                turningFactor == null ? 0.5F : turningFactor);
+        // 调用本项目攻角门控，准确记录本 Tick 是否真的进入导弹攻角分支。
+        boolean attackAngleActive = RVP_ProjectileMotion.usesAttackAngle(projectile);
+        double speed = projectile.getDeltaMovement().length();
+        // 调用本项目气动数学模型，记录当前速度下的可用 G；关闭气动时该值不参与运动。
+        double availableGs = projectileData.isRvpAeroSteering()
+                ? RVP_AeroSteeringModel.availableGs(speed, limits) : Double.NaN;
+        return "aeroSteeringEnabled=" + projectileData.isRvpAeroSteering()
+                + " attackAngleActive=" + attackAngleActive
+                + " attackAngleLimitDeg=" + decimal(projectileData.getRvpAttackAngleLimitDeg())
+                + " bodyVelocityAngleDeg=" + decimalOrNull(bodyVelocityAngleDeg)
+                + " aeroLoadFactor=" + decimal(aeroLoadFactor)
+                + " aeroAvailableG=" + (Double.isNaN(availableGs) ? "<null>" : decimal(availableGs))
+                + " aeroReferenceSpeed=" + decimal(limits.referenceSpeed())
+                + " aeroDensityFactor=" + decimal(limits.densityFactor())
+                + " aeroInducedDrag=" + decimal(limits.inducedDrag());
+    }
+
+    /** 计算机头轴与速度轴夹角；坏输入返回 NaN，避免污染生命周期日志。 */
+    private static double resolveBodyVelocityAngleDeg(@Nullable Vec3 velocity, @Nullable Vec3 body) {
+        if (velocity == null || body == null
+                || !RVP_BallisticTrajectoryMath.isFinite(velocity)
+                || !RVP_BallisticTrajectoryMath.isFinite(body)
+                || velocity.lengthSqr() <= 1.0E-12
+                || body.lengthSqr() <= 1.0E-12) {
+            return Double.NaN;
+        }
+        // 调用本项目统一夹角算法，确保调试值与攻角模型使用相同的数值口径。
+        return Math.toDegrees(RVP_BallisticTrajectoryMath.angleBetween(velocity, body));
     }
 
     /**

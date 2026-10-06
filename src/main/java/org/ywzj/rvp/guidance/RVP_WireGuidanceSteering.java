@@ -82,6 +82,14 @@ public final class RVP_WireGuidanceSteering {
                     projectile.getRvpData().getProjectileVelocity(), projectile.getY(),
                     (float) turningFactor);
         }
+        if (projectile.isMissile() && aeroLimits != null && aeroLimits.attackAngleEnabled()) {
+            // 调用本项目攻角适配器；提前返回，避免下方直控代码再次用速度覆盖独立姿态。
+            velocity = org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion.applyAttackAngleSteering(
+                    projectile, current, desired, aeroLimits);
+            projectile.setDeltaMovement(velocity);
+            projectile.rvp$markGuidanceWireDirectApplied();
+            return;
+        }
         if (aeroLimits != null && aeroLimits.enabled()) {
             // 调用本项目统一气动求解器，使直控制导同样受动压与绝对转角上限约束。
             RVP_AeroSteeringSolution solution = RVP_BallisticTrajectoryMath.applyAeroSteering(
