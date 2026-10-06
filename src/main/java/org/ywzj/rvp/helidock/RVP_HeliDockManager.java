@@ -127,6 +127,9 @@ public final class RVP_HeliDockManager {
                 case DOCKED -> {
                     STATES.put(heliUuid, new DockingState(state.shipUuid(), state.padBone(),
                             Phase.TAKEOFF, 0));
+                    // 起飞自动打开发动机并满功率（着舰时已自动关闭，2026-10-07 用户定版）
+                    heli.toggleEngine(true);
+                    heli.setPower(100f);
                     syncClient(player, true);
                     player.displayClientMessage(Component.translatable(
                             "message.ywzj_rvp.helidock.takeoff"), true);
@@ -262,6 +265,9 @@ public final class RVP_HeliDockManager {
             return;
         }
         STATES.put(heliUuid, new DockingState(state.shipUuid(), state.padBone(), Phase.DOCKED, 0));
+        // 着舰完毕自动关闭发动机（2026-10-07 用户定版）：功率归零旋翼停转，下次起飞再开启
+        heli.toggleEngine(false);
+        heli.setPower(0f);
         notifyRider(heli, "message.ywzj_rvp.helidock.docked");
     }
 
