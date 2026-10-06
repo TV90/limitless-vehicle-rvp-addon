@@ -10,7 +10,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.VelocityParameter;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
@@ -186,25 +186,26 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         }
     }
 
-    /** 在实时炮口位置生成一枚白色延迟烟，并复用本项目烟雾粒子渲染链路。 */
+    /** 在实时炮口位置生成一枚延迟烟（2026-10-07 测试：改用殉燃炮口烟新样式，grey=1 染白）。 */
     private static void emitWhiteSmoke(ClientLevel level, PendingEmission pending,
                                        AimContext currentAim, Vec3 realtimeMuzzle,
                                        RandomSource random) {
         // 调用本项目速度计算：使用当前炮管方向，让持续喷出的烟随实时炮口姿态自然逸出。
         Vec3 velocity = resolveSmokeVelocity(currentAim, random);
-        // 调用本项目白色炮口烟工厂：复用 boom/smoke.png，并使用上浮速度和指定寿命。
-        RVP_MchrSmokeParticle particle = RVP_MchrSmokeParticle.ofWhiteMuzzle(
+        // 调用本项目殉燃炮口烟新样式（试验）：复用车顶殉燃静态贴图 + 上浮/摆动，
+        // grey=1.0 染成白色替换旧 boom/smoke.png 白烟；尺寸/寿命沿用原延迟烟配置。
+        RVP_WreckMuzzleSmokeParticle.spawn(
+                Minecraft.getInstance().particleEngine,
                 level,
-                realtimeMuzzle.x,
-                realtimeMuzzle.y,
-                realtimeMuzzle.z,
-                velocity.x,
-                velocity.y,
-                velocity.z,
+                realtimeMuzzle,
+                velocity,
                 pending.particleSize(),
-                pending.particleLifetime());
-        // 调用原版客户端粒子引擎：延迟烟只在本地生命周期中运行，不创建服务端实体。
-        Minecraft.getInstance().particleEngine.add(particle);
+                0.9f,
+                pending.particleLifetime(),
+                random.nextInt(16),
+                0.08d,
+                0.05d,
+                1.0f);
     }
 
     /** 判断坐标是否在当前客户端烟雾生成范围内。 */
