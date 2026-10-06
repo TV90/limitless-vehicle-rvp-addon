@@ -337,6 +337,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 发动机熄火的 tick 数（服务端计算，通过生成数据包同步到客户端，解决 rvpData null 时持续出烟的问题）。 */
     protected int motorBurnEndTick = Integer.MAX_VALUE;
     /**
+     * 生成数据包同步的"发包时飞行 tick"（2026-10-06 尾焰修复）：飞行中途才进入玩家追踪范围的
+     * 导弹（来袭弹/远看弹），客户端实体 tickCount 从 0 重数，若燃烧窗口直接用
+     * {@code getFlightTickCount()} 会把整个燃烧窗口重放一遍（动力段结束仍喷焰长达数十秒）。
+     * 客户端视觉路径用 {@link #clientVisualFlightTickCount()} = 本值 + 本地 tickCount 重建真实飞行进度。
+     */
+    private int clientSpawnFlightTick;
+    /**
      * 发动机点火起点（飞行 tick）：= max(ignition_delay_tick, 冷发射时长)，随生成数据包同步。
      * 客户端焰效/尾迹以此做下界——否则延迟点火的导弹出管即喷焰，与服务端运动学脱节
      * （2026-10-03 用户实测：yj20/hq9b/irist 出管滑行段带尾焰）。
@@ -4926,18 +4933,30 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /** 发动机当前是否在燃烧期内（对标本体 MissileEntity.tickParticle）。非推进弹体始终返回 true。 */
+    /**
+     * 客户端视觉路径的飞行 tick（2026-10-06 尾焰修复）：生成包同步的"发包时飞行 tick" +
+     * 客户端本地 tickCount（生成时从 0 起）。客户端实体专用的燃烧窗口/尾焰保持期判定一律
+     * 用本值——旧版直接用 {@code getFlightTickCount()}（= 本地 tickCount − 区块等待），
+     * 对飞行途中才进入追踪范围的导弹会把燃烧窗口从 0 重放，动力段结束仍喷焰。
+     */
+    protected final int clientVisualFlightTickCount() {
+        return clientSpawnFlightTick + this.tickCount;
+    }
+
     protected boolean isMotorBurning() {
         // 客户端 rvpData 为 null，用生成数据包同步的 motorBurnEndTick
         if (rvpData == null) {
             // 上下界夹取燃烧窗口：motorIgnitionStartTick 为生成包同步的点火起点（延迟点火），
-            // 只有上界会让延迟点火的导弹出管即喷焰（与服务端运动学脱节）
-            if (getFlightTickCount() >= motorIgnitionStartTick && getFlightTickCount() <= motorBurnEndTick) {
+            // 只有上界会让延迟点火的导弹出管即喷焰（与服务端运动学脱节）；
+            // 飞行进度用 clientVisualFlightTickCount（含发包时已飞过的 tick，防窗口重放）
+            if (clientVisualFlightTickCount() >= motorIgnitionStartTick
+                    && clientVisualFlightTickCount() <= motorBurnEndTick) {
                 return true;
             }
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
             int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
             if (start >= 0 && burn > 0) {
-                int t2 = getFlightTickCount() - start;
+                int t2 = clientVisualFlightTickCount() - start;
                 return t2 >= 0 && t2 <= burn;
             }
             return false;
@@ -4981,13 +5000,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public final int ticksUntilMotorStopsBurning() {
         int lastBurningTick;
         if (rvpData == null) {
-            // 客户端克隆/同步实体：生成数据包同步的标量（与 isMotorBurning 客户端分支同源）
+            // 客户端克隆/同步实体：生成数据包同步的标量（与 isMotorBurning 客户端分支同源）；
+            // 差值用 clientVisualFlightTickCount（含发包时已飞 tick），防迟生成实体保持期重放
             lastBurningTick = this.motorBurnEndTick;
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
             int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
             if (start >= 0 && burn > 0) {
                 lastBurningTick = Math.max(lastBurningTick, start + burn);
             }
+            return Math.max(0, Math.min(lastBurningTick - clientVisualFlightTickCount(), 1200));
         } else {
             if (!isMotorPropulsion()) {
                 return 0;
@@ -5201,6 +5222,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         buffer.writeDouble(currentFlightSpeed);
         buffer.writeVarInt(motorBurnEndTick);
         buffer.writeVarInt(motorIgnitionStartTick);
+        // 尾焰修复（2026-10-06）：同步发包时飞行 tick，客户端据此 + 本地 tickCount 重建燃烧窗口进度
+        buffer.writeVarInt(Math.max(getFlightTickCount(), 0));
         buffer.writeVarInt(coldLaunchTimeTick);
         buffer.writeDouble(coldLaunchVelocity.x);
         buffer.writeDouble(coldLaunchVelocity.y);
@@ -5248,6 +5271,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.peakFlightSpeed = this.currentFlightSpeed;
         this.motorBurnEndTick = buffer.readVarInt();
         this.motorIgnitionStartTick = buffer.readVarInt();
+        this.clientSpawnFlightTick = buffer.readVarInt();
         this.coldLaunchTimeTick = buffer.readVarInt();
         this.coldLaunchVelocity = new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble());
         this.showMslIndicator = buffer.readBoolean();
