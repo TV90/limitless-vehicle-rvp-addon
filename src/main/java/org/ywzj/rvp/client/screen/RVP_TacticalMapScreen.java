@@ -36,6 +36,7 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapTool;
+import org.ywzj.rvp.client.render.RVP_MapIconTexture;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
@@ -3371,7 +3372,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                                int color, boolean rotate, float yaw, boolean tint) {
         float half = actualSize * 0.5f;
         if (filteredMapIcons.add(icon)) {
-            Minecraft.getInstance().getTextureManager().getTexture(icon).setFilter(true, false);
+            // 2026-10-06 icon 旋转变形修复：替换为带真实 mipmap 链 + 三线性过滤的纹理
+            // （旧版 SimpleTexture 0 层 mip + setFilter(true,false)，旋转缩小采样笔划不均/锯齿）
+            Minecraft.getInstance().getTextureManager().register(icon, new RVP_MapIconTexture(icon));
         }
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         if (tint) {
