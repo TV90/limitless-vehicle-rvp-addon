@@ -32,55 +32,70 @@ public class RVP_MapIconTexture extends AbstractTexture {
     @Override
     public void load(ResourceManager resourceManager) throws IOException {
         this.releaseId();
-        NativeImage base;
-        try (InputStream in = resourceManager.getResource(this.source).orElseThrow().open()) {
-            base = NativeImage.read(in);
-        }
-        try (base) {
-            int maxDim = Math.max(base.getWidth(), base.getHeight());
-            // mip 层数：封顶 6 级（64px 源到 1px 足够覆盖 16~18px 显示尺寸的采样需求）
-            int levels = Math.min(Mth.log2(maxDim) + 1, 6);
-            // 分配含 mip 链的存储（prepareImage 内部绑定本纹理 id 并逐层 texImage2D 占位）
-            TextureUtil.prepareImage(this.getId(), levels, base.getWidth(), base.getHeight());
-            uploadLevel(base, 0);
-            NativeImage level = base;
-            for (int i = 1; i < levels; i++) {
-                NativeImage next = boxDownsample(level);
-                uploadLevel(next, i);
-                if (level != base) {
-                    level.close();
+        // 2026-10-07 重构（修复打开地图即崩"Image is not allocated"）：mip 链全部在纯 Java
+        // int[] 数组上计算，NativeImage 仅作"逐级上传的一次性载体"（写入→上传→立即 close），
+        // 不存在跨调用复用已关闭图像的可能。像素布局沿用 NativeImage 的 ABGR 打包约定。
+        int[] basePixels;
+        int baseW;
+        int baseH;
+        try (NativeImage base = NativeImage.read(
+                resourceManager.getResource(this.source).orElseThrow().open())) {
+            baseW = base.getWidth();
+            baseH = base.getHeight();
+            basePixels = new int[baseW * baseH];
+            for (int y = 0; y < baseH; y++) {
+                for (int x = 0; x < baseW; x++) {
+                    basePixels[y * baseW + x] = base.getPixelRGBA(x, y);
                 }
-                level = next;
             }
-            if (level != base) {
-                level.close();
-            }
+        }
+        int maxDim = Math.max(baseW, baseH);
+        // mip 层数：封顶 6 级（64px 源到 1px 足够覆盖 16~18px 显示尺寸的采样需求）
+        int levels = Math.min(Mth.log2(maxDim) + 1, 6);
+        // 分配含 mip 链的存储（prepareImage 内部绑定本纹理 id 并逐层 texImage2D 占位）
+        TextureUtil.prepareImage(this.getId(), levels, baseW, baseH);
+        int[] levelPixels = basePixels;
+        int lw = baseW;
+        int lh = baseH;
+        uploadPixels(levelPixels, lw, lh, 0);
+        for (int i = 1; i < levels; i++) {
+            int nw = Math.max(1, lw / 2);
+            int nh = Math.max(1, lh / 2);
+            levelPixels = boxDownsample(levelPixels, lw, lh, nw, nh);
+            uploadPixels(levelPixels, nw, nh, i);
+            lw = nw;
+            lh = nh;
         }
         // 三线性 MIN 过滤器（mip 链已真实存在，setFilter(true,true) 语义安全）+ 线性 MAG + CLAMP 寻址
         this.setFilter(true, true);
     }
 
-    private void uploadLevel(NativeImage image, int level) {
-        // 4 参 upload = (mipLevel, xOffset, yOffset, ignoreMipmapErrors)；上传前纹理已由 prepareImage 绑定
+    /** 将 int[]（ABGR 打包）像素写入全新 NativeImage 并按 mip 层级上传，随后立即释放。 */
+    private static void uploadPixels(int[] abgr, int w, int h, int level) {
+        NativeImage image = new NativeImage(w, h, false);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                image.setPixelRGBA(x, y, abgr[y * w + x]);
+            }
+        }
         image.upload(level, 0, 0, true);
+        image.close();
     }
 
     /**
-     * alpha 加权 2×2 盒式降采样：RGB 按透明度预乘平均，避免半透明边缘在缩小后出现黑晕。
+     * alpha 加权 2×2 盒式降采样（纯 int[] 运算）：RGB 按透明度预乘平均，避免半透明边缘在缩小后出现黑晕。
      */
-    private static NativeImage boxDownsample(NativeImage src) {
-        int w = Math.max(1, src.getWidth() / 2);
-        int h = Math.max(1, src.getHeight() / 2);
-        NativeImage dst = new NativeImage(w, h, false);
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int x0 = Math.min(x * 2, src.getWidth() - 1);
-                int y0 = Math.min(y * 2, src.getHeight() - 1);
-                int x1 = Math.min(x0 + 1, src.getWidth() - 1);
-                int y1 = Math.min(y0 + 1, src.getHeight() - 1);
+    private static int[] boxDownsample(int[] src, int sw, int sh, int dw, int dh) {
+        int[] dst = new int[dw * dh];
+        for (int y = 0; y < dh; y++) {
+            for (int x = 0; x < dw; x++) {
+                int x0 = Math.min(x * 2, sw - 1);
+                int y0 = Math.min(y * 2, sh - 1);
+                int x1 = Math.min(x0 + 1, sw - 1);
+                int y1 = Math.min(y0 + 1, sh - 1);
                 long sumR = 0, sumG = 0, sumB = 0, sumA = 0;
-                int[] px = {src.getPixelRGBA(x0, y0), src.getPixelRGBA(x1, y0),
-                        src.getPixelRGBA(x0, y1), src.getPixelRGBA(x1, y1)};
+                int[] px = {src[y0 * sw + x0], src[y0 * sw + x1],
+                        src[y1 * sw + x0], src[y1 * sw + x1]};
                 for (int p : px) {
                     // NativeImage 像素为 ABGR 打包：R 低 8 位
                     int a = (p >>> 24) & 0xFF;
@@ -93,14 +108,14 @@ public class RVP_MapIconTexture extends AbstractTexture {
                     sumA += a;
                 }
                 if (sumA <= 0) {
-                    dst.setPixelRGBA(x, y, 0);
+                    dst[y * dw + x] = 0;
                     continue;
                 }
                 int r = (int) Math.min(255, sumR / sumA);
                 int g = (int) Math.min(255, sumG / sumA);
                 int b = (int) Math.min(255, sumB / sumA);
                 int a = (int) Math.min(255, sumA / px.length);
-                dst.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                dst[y * dw + x] = (a << 24) | (b << 16) | (g << 8) | r;
             }
         }
         return dst;
