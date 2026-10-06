@@ -56,8 +56,8 @@ public final class RVP_HeliDockManager {
 
     /** 接近提示与按 P 的有效范围（格，水平距离）。 */
     public static final double PROMPT_RANGE = 48.0;
-    /** 吸附着舰的水平触发距离（格）。 */
-    public static final double SNAP_RANGE = 5.0;
+    /** 吸附着舰的水平触发距离（格）：进入该范围即开始向坪面下降，边降边靠近（用户实测 5 格时会在着舰点附近打转，2026-10-07 调大）。 */
+    public static final double SNAP_RANGE = 10.0;
     /** 起飞解锁所需的相对甲板高度（格）。 */
     public static final double TAKEOFF_HEIGHT = 15.0;
     /** 接近段的目标悬停高度（停机坪中心上方，格）。 */
