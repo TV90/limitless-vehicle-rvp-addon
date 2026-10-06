@@ -3351,10 +3351,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             return;
         }
         float iconYaw = mapIconYaw(yaw);
+        // 2026-10-07 用户定版：删除航向指示短线（drawHeadingTick），icon 旋转本身已表达朝向
         drawScreenIcon(guiGraphics, icon, sx, sy, size, color, rotate, iconYaw, 1.0f, tint);
-        if (rotate) {
-            drawHeadingTick(guiGraphics, sx, sy, iconYaw, size, color);
-        }
     }
 
     private void drawScreenIcon(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, int size, int color,
@@ -3393,17 +3391,6 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 0, 0, 32, 32, 32, 32);
         pose.popPose();
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-    }
-
-    private void drawHeadingTick(GuiGraphics guiGraphics, int centerX, int centerY, float yaw, int size, int color) {
-        double rad = Math.toRadians(yaw);
-        int start = Math.max(3, size / 3);
-        int end = Math.max(start + 2, size / 2 + 2);
-        int x0 = centerX + Mth.floor((float) Math.sin(rad) * start);
-        int y0 = centerY - Mth.floor((float) Math.cos(rad) * start);
-        int x1 = centerX + Mth.floor((float) Math.sin(rad) * end);
-        int y1 = centerY - Mth.floor((float) Math.cos(rad) * end);
-        drawGuiLine(guiGraphics, x0, y0, x1, y1, 1.2f, withAlpha(color, 0xEE));
     }
 
     private int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
