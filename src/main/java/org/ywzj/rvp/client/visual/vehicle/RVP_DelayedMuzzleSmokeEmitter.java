@@ -4,13 +4,14 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
-import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.Parameter;
 import org.ywzj.rvp.client.visual.vehicle.RVP_DelayedMuzzleSmokeSettings.VelocityParameter;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
@@ -186,25 +187,47 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         }
     }
 
-    /** 在实时炮口位置生成一枚白色延迟烟，并复用本项目烟雾粒子渲染链路。 */
+    /**
+     * 在实时炮口位置生成延迟烟（2026-10-07 补完：19979b25 只换了贴图，本方法对齐殉燃炮口烟的
+     * 完整生成逻辑——炮口到 3 格喷出段的柱状连续分层、初速沿炮管 + 上浮 + 侧向抖动、
+     * 殉燃同款尺寸/透明度/寿命；grey=1.0 染白做白色试验）。
+     */
     private static void emitWhiteSmoke(ClientLevel level, PendingEmission pending,
                                        AimContext currentAim, Vec3 realtimeMuzzle,
                                        RandomSource random) {
-        // 调用本项目速度计算：使用当前炮管方向，让持续喷出的烟随实时炮口姿态自然逸出。
-        Vec3 velocity = resolveSmokeVelocity(currentAim, random);
-        // 调用本项目白色炮口烟工厂：复用 boom/smoke.png，并使用上浮速度和指定寿命。
-        RVP_MchrSmokeParticle particle = RVP_MchrSmokeParticle.ofWhiteMuzzle(
-                level,
-                realtimeMuzzle.x,
-                realtimeMuzzle.y,
-                realtimeMuzzle.z,
-                velocity.x,
-                velocity.y,
-                velocity.z,
-                pending.particleSize(),
-                pending.particleLifetime());
-        // 调用原版客户端粒子引擎：延迟烟只在本地生命周期中运行，不创建服务端实体。
-        Minecraft.getInstance().particleEngine.add(particle);
+        // 炮管轴向量（与 resolveSmokeVelocity 同源：按实时炮管姿态）
+        Vec3 axis = VectorUtil.rotToVec(currentAim.direction.x, currentAim.direction.y).normalize();
+        Vec3 side = axis.cross(new Vec3(0, 1, 0));
+        if (side.lengthSqr() < 1.0E-8) {
+            side = axis.cross(new Vec3(1, 0, 0));
+        }
+        side = side.normalize();
+        Vec3 cross = axis.cross(side).normalize();
+        // 喷出段长度与柱状连续分层数（殉燃 muzzleSmokeLayerCount 同式：间距 = max(0.18, size×0.56)）
+        double travel = 3.0;
+        double smokeSize = 0.65;
+        double spacing = Math.max(0.18, smokeSize * 0.56);
+        int layerCount = Mth.clamp((int) Math.ceil(travel / spacing) + 1, 1, 8);
+        net.minecraft.client.particle.ParticleEngine engine = Minecraft.getInstance().particleEngine;
+        for (int layer = 0; layer < layerCount; layer++) {
+            // 轴向等距覆盖炮口到喷出段（殉燃 muzzleSmokeLayerPosition 同语义）+ 横向抖动
+            double along = travel * (layerCount == 1 ? 0.5 : (double) layer / (layerCount - 1));
+            Vec3 pos = realtimeMuzzle.add(axis.scale(along))
+                    .add(side.scale((random.nextDouble() - 0.5) * 0.4))
+                    .add(cross.scale((random.nextDouble() - 0.5) * 0.4));
+            // 初速 = 炮管轴 × 轴向速度 + 竖直上浮 + 侧向抖动（粒子自身持续逼近上浮速度）
+            Vec3 velocity = axis.scale(0.18)
+                    .add(new Vec3(0, 0.08, 0))
+                    .add(side.scale((random.nextDouble() - 0.5) * 0.003))
+                    .add(cross.scale((random.nextDouble() - 0.5) * 0.003));
+            float size = (float) (smokeSize * (0.85 + random.nextDouble() * 0.30));
+            float alpha = (float) (0.60 * (0.85 + random.nextDouble() * 0.30));
+            int lifetime = 36;
+            // grey=1.0 → 白色（殉燃原版为 0.13 灰黑）
+            org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle.spawn(
+                    engine, level, pos, velocity, size, alpha, lifetime,
+                    random.nextInt(16), 0.08, 0.003, 1.0f);
+        }
     }
 
     /** 判断坐标是否在当前客户端烟雾生成范围内。 */

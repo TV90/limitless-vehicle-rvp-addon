@@ -26,7 +26,8 @@ public class RVP_Network {
     /** 协议 20：新增 S2CBoneDamageProgress（全模块累计化配套：骨→累计伤害，面板虚拟血量）；旧客户端无法连新服。 */
     /** 协议 21：失效表新增 BARREL_DAMAGED（炮管受损档进失效表：可快修/队列/持久化）；旧客户端无法连新服。 */
     /** 协议 25：视觉碎片事件新增方向圆锥半角参数；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "25";
+    /** 协议 26：新增 C2SHeliDockToggle（直升机着舰 P 键）+ S2CHeliDockState（着舰/接管控制锁定同步）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "26";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -216,6 +217,16 @@ public class RVP_Network {
                 .encoder(S2CLoiterStateSync::encode)
                 .decoder(S2CLoiterStateSync::decode)
                 .consumerMainThread(S2CLoiterStateSync::handle)
+                .add();
+        CHANNEL.messageBuilder(C2SHeliDockToggle.class, id++)
+                .encoder(C2SHeliDockToggle::encode)
+                .decoder(C2SHeliDockToggle::decode)
+                .consumerMainThread(C2SHeliDockToggle::handle)
+                .add();
+        CHANNEL.messageBuilder(S2CHeliDockState.class, id++)
+                .encoder(S2CHeliDockState::encode)
+                .decoder(S2CHeliDockState::decode)
+                .consumerMainThread(S2CHeliDockState::handle)
                 .add();
         CHANNEL.messageBuilder(S2CGunnerVehicleSync.class, id++)
                 .encoder(S2CGunnerVehicleSync::encode)

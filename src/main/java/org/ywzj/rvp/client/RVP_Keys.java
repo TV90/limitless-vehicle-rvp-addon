@@ -46,6 +46,9 @@ public class RVP_Keys {
     /** Toggle UAV auto-loiter. */
     public static final KeyMapping TOGGLE_UAV_LOITER = key("toggle_uav_loiter", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F);
 
+    /** [RVP] 直升机舰船着舰 P 键（接近/着舰/起飞三态切换，2026-10-07）。 */
+    public static final KeyMapping TOGGLE_HELI_DOCK = key("toggle_heli_dock", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_P);
+
     /** HMD helmet-mounted display / ACM dogfight mode toggle (5 key). */
     public static final KeyMapping HMD_TOGGLE = key("hmd_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_5);
     public static final KeyMapping FIRE_CONTROL_STABILIZER = key("fire_control_stabilizer", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_6);
@@ -83,6 +86,7 @@ public class RVP_Keys {
         event.register(DEPLOY_DEPLOYABLE_UAV);
         event.register(SWITCH_DEPLOYABLE_UAV);
         event.register(TOGGLE_UAV_LOITER);
+        event.register(TOGGLE_HELI_DOCK);
         event.register(HMD_TOGGLE);
         event.register(FIRE_CONTROL_STABILIZER);
         event.register(TOGGLE_LASER_DESIGNATION);

@@ -37,7 +37,11 @@ import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
+import org.ywzj.rvp.client.state.RVP_ClientHeliDockState;
 import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
+import org.ywzj.rvp.helidock.RVP_HeliDockManager;
+import org.ywzj.rvp.network.C2SHeliDockToggle;
+import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
 import org.ywzj.rvp.client.state.RVP_ClientHbmMissileState;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
 import org.ywzj.rvp.client.state.RVP_ClientRemoteAmmoState;
@@ -502,6 +506,12 @@ public class RVP_ClientEvents {
                 RVP_Network.CHANNEL.sendToServer(new C2SSwitchDeployableUav());
             }
         }
+        while (RVP_Keys.TOGGLE_HELI_DOCK.consumeClick()) {
+            // 直升机着舰 P 键：驾驶旋翼机即可发（服务端校验驾驶员与阶段）
+            if (player.getVehicle() instanceof RotaryWingVehicle) {
+                RVP_Network.CHANNEL.sendToServer(new C2SHeliDockToggle());
+            }
+        }
         while (RVP_Keys.TOGGLE_UAV_LOITER.consumeClick()) {
             LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
             // [RVP] F 键守卫：自身或关联子机配置了盘旋参数才发包；地面子机（如 96l6 雷达车）
@@ -959,8 +969,11 @@ public class RVP_ClientEvents {
         if (player == null) {
             return;
         }
+        boolean heliDockLocked = player.getVehicle() instanceof AbstractVehicle vehicle
+                && (RVP_ClientHeliDockState.isControlLocked()
+                    || org.ywzj.rvp.helidock.RVP_HeliDockManager.isControlLocked(vehicle.getUUID()));
         if (player.getVehicle() instanceof AbstractVehicle vehicle
-                && RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId())) {
+                && (RVP_ClientLoiterState.isVehicleLoitering(vehicle.getId()) || heliDockLocked)) {
             var cu = vehicle.controlUnit;
             cu.forward = false;
             cu.backward = false;

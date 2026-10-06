@@ -462,5 +462,13 @@
   "rvp.flight_mode.normal": "飞行模式：常规",
   "rvp.flight_mode.auto_collective": "飞行模式：自动总距（爬升/下坠率自动配平，姿态机动不受限）",
   "rvp.flight_mode.hover": "飞行模式：悬停",
-  "ui.rvp.target_rcs_below_sea_threshold": "目标 RCS 低于反舰导引头截获门限，无法锁定/发射"
+  "ui.rvp.target_rcs_below_sea_threshold": "目标 RCS 低于反舰导引头截获门限，无法锁定/发射",
+  "key.ywzj_rvp.toggle_heli_dock": "直升机着舰/起飞",
+  "message.ywzj_rvp.helidock.prompt": "按 P 降落在舰艇上",
+  "message.ywzj_rvp.helidock.approach": "自动着舰中：飞行已由系统接管",
+  "message.ywzj_rvp.helidock.approach_cancelled": "已取消自动着舰",
+  "message.ywzj_rvp.helidock.docked": "已着舰：直升机锁定于甲板（按 P 起飞）",
+  "message.ywzj_rvp.helidock.takeoff": "自动起飞中：爬升后恢复操控",
+  "message.ywzj_rvp.helidock.released": "已恢复操控",
+  "message.ywzj_rvp.helidock.ship_lost": "舰船失联，直升机已恢复操控"
 }
