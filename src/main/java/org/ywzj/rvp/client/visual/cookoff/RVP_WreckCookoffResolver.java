@@ -25,7 +25,7 @@ public final class RVP_WreckCookoffResolver {
     /**
      * 接缝采样时长表的周期，单位"段"。
      * {@link RVP_WreckCookoffGeometry#sampleBurstTicks(int)} 在 4 个取值上循环，因此取 4；
-     * 段序对它取模后，时长表进入稳定循环，"每段停留 3～6 tick"成为精确性质而非近似。
+     * 段序对它取模后，时长表进入稳定循环，"每段停留 3～12 tick"成为精确性质而非近似。
      */
     public static final int SEAM_CYCLE_TICKS = 4;
     /**
@@ -41,13 +41,13 @@ public final class RVP_WreckCookoffResolver {
     /** 每个舱盖用于绘制火柱的代表采样点；火星仍使用同一舱盖的全部采样点。 */
     public static final int HATCH_COLUMN_SAMPLE_INDEX = HATCH_POINTS_PER_HATCH / 2;
 
-    /** 三种出口分别参与分类粒子配额；炮口已不参与火星，只保留火柱。 */
+    /** 三种出口分别参与分类粒子配额；炮口已不参与火星，只保留灰烟。 */
     public enum Kind {
         /** 舱盖高柱与舱盖火星。 */
         HATCH,
         /** 炮塔接缝火星。 */
         SEAM,
-        /** 炮口轴向火柱（不喷火星）。 */
+        /** 炮口轴向灰烟（不喷火星）。 */
         MUZZLE
     }
 
@@ -65,10 +65,10 @@ public final class RVP_WreckCookoffResolver {
     public record Anchor(Kind kind, VehicleCubeOBB cube, Vec3 local, Vec3 localDirection,
                          WeaponUnit weapon, int sampleIndex, double width, PartUnit<?> owner) {}
 
-    /** 炮口火柱锚点；炮口既不参与火星预算，也不参与采样，因此与 {@link Anchor} 分开。 */
+    /** 炮口灰烟锚点；炮口既不参与火星预算，也不参与采样，因此与 {@link Anchor} 分开。 */
     public record MuzzleAnchor(WeaponUnit weapon, int muzzleIndex, double width) {}
 
-    /** 一次发现的结果：参与火星的出口 + 只画火柱的炮口。 */
+    /** 一次发现的结果：参与火星的出口 + 只画灰烟的炮口。 */
     public record Discovery(List<Anchor> anchors, List<MuzzleAnchor> muzzles, List<VehicleCubeOBB> turrets) {}
 
     /** 一帧/一 tick 的世界空间出口，不包含客户端渲染类。 */
@@ -85,7 +85,7 @@ public final class RVP_WreckCookoffResolver {
     /**
      * 每个实体建立一次绑定；所有识别都基于公开部件和武器数据。
      *
-     * @param includeMuzzles 是否收集炮口火柱锚点；控制器在初始化时收集一次，
+     * @param includeMuzzles 是否收集炮口灰烟锚点；控制器在初始化时收集一次，
      *                       每 tick 的重新发现只需要火星出口
      */
     public static Discovery discover(AbstractVehicle vehicle, boolean includeMuzzles) {
@@ -120,7 +120,7 @@ public final class RVP_WreckCookoffResolver {
         List<VehicleCubeOBB> usedTurrets = new ArrayList<>();
         int muzzleCount = 0;
         for (WeaponUnit weapon : cannons) {
-            // 调用本体出弹口配置，最多保留四个真实炮口用于绘制火柱。
+            // 调用本体出弹口配置，最多保留四个真实炮口用于绘制灰烟。
             for (int i = 0; i < weapon.getBolts().size() && muzzleCount < 4; i++) {
                 if (includeMuzzles) {
                     muzzles.add(new MuzzleAnchor(weapon, i, 0.4));
@@ -301,7 +301,7 @@ public final class RVP_WreckCookoffResolver {
     }
 
     /**
-     * 炮口火柱姿态：调用本体出弹计算，取包含炮管长度的真实起点与俯仰/偏航。
+     * 炮口灰烟姿态：调用本体出弹计算，取包含炮管长度的真实起点与俯仰/偏航。
      * 炮口不参与火星，因此没有采样种子参数。
      */
     public static Pose resolveMuzzle(MuzzleAnchor muzzle) {

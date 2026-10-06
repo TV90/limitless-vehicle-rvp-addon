@@ -7,7 +7,7 @@
 | 文档 | 适合谁 | 内容 |
 | --- | --- | --- |
 | [RVP 炮弹与导弹高亮爆炸特效实现调研](./RVP视觉工厂架构/RVP炮弹与导弹高亮爆炸特效实现调研_20261004.md) | 特效 / 客户端 / 架构 | 默认爆炸高亮现状、全亮/加色/Bloom/环境照明的区别、零新增 Mixin 的接入建议、资源复用与光影/热成像/DH 验证边界；仅调研，未实现 |
-| [RVP 地面载具自动殉燃实施与调试](./RVP视觉工厂架构/RVP地面载具自动殉燃实施与调试_20260929.md) | 特效 / 客户端 / QA | 无逐车配置的舱盖高柱、炮塔接缝随机采样喷焰、炮口轴向火柱与 RVP 自重火星（重力下坠 + 落地弹跳）、自动挂点近似边界、预算和 `/rvpcookoff` 调参 |
+| [RVP 地面载具自动殉燃实施与调试](./RVP视觉工厂架构/RVP地面载具自动殉燃实施与调试_20260929.md) | 特效 / 客户端 / QA | 无逐车配置的舱盖高柱、炮塔接缝随机采样喷焰、炮口轴向灰黑烟与向上漂移、RVP 自重火星（重力下坠 + 落地弹跳）、自动挂点近似边界、预算和 `/rvpcookoff` 调参 |
 | [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) | 视觉效果开发 / 客户端 / QA | 当前工作区的爆炸视觉工厂链路、内置类型、独立的整车/部件烟，以及 `/rvpwrecksmoke` 调试参数；炮口烟另见独立文档 |
 | [RVP 载具炮口烟实现与调试](./RVP视觉工厂架构/RVP载具炮口烟实现与调试_20261002.md) | 视觉效果开发 / 客户端 / QA | `VehicleFireEvent.Post` 炮口烟链路、`effects_data.caliber` 的 45 mm 规则、`tracer_caliber` 曳光宽度、`tracer_length_scale` 曳光长度、验证与实机回归清单 |
 | [RVP Gunner JSON 配置现状与详细指南](./RVP_gunner/RVP_Gunner_JSON配置现状与详细指南_20260928.md) | Gunner 配置作者 / 数值 / QA | schema v2 的 11 个现有 Profile 盘点、18 种行为的全字段默认值、范围、单位、生效条件、组合范本与排障 |
@@ -65,7 +65,7 @@
 
 发布或覆盖安装前请递增 `vehicle_pack.meta.json` 的 `version`）。
 
-载具残骸保留时间由 common 配置的 `[vehicleLifecycle] wreckLifetimeSeconds` 控制，默认 60 秒；殉燃火柱总生命周期默认取该值的 50%，比例由代码字段 `RVP_WreckCookoffController.WRECK_LIFETIME_PERCENT` 调整。详细生命周期限制见 [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) §4。
+载具残骸保留时间由 common 配置的 `[vehicleLifecycle] wreckLifetimeSeconds` 控制，默认 60 秒；殉燃火柱总生命周期默认取该值的 40%，比例由代码字段 `RVP_WreckCookoffController.WRECK_LIFETIME_PERCENT` 调整。详细生命周期限制见 [RVP 视觉系统当前架构与击毁烟现状](./RVP视觉工厂架构/RVP视觉系统当前架构与击毁烟现状_20260929.md) §4。
 
 ## 硬约束（与根目录 agents.md 一致）
 

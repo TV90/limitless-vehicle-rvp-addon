@@ -109,7 +109,7 @@ class RVP_WreckCookoffBudgetTest {
                 RVP_WreckCookoffResolver.Kind.HATCH));
         assertEquals(RVP_WreckCookoffBudget.WEIGHT_SEAM, RVP_WreckCookoffBudget.weightOf(
                 RVP_WreckCookoffResolver.Kind.SEAM));
-        // 用户定版 2026-10-06：取消炮口喷火星，只保留火柱 —— 炮口权重必须为 0
+        // 用户定版 2026-10-06：取消炮口喷火星，只保留独立灰烟 —— 炮口权重必须为 0
         assertEquals(0, RVP_WreckCookoffBudget.WEIGHT_MUZZLE);
         assertEquals(0, RVP_WreckCookoffBudget.weightOf(RVP_WreckCookoffResolver.Kind.MUZZLE));
     }
@@ -126,5 +126,15 @@ class RVP_WreckCookoffBudgetTest {
                 RVP_WreckCookoffResolver.Kind.SEAM));
         assertEquals(withoutMuzzle, withMuzzle, "炮口不应再占用火星预算");
         assertTrue(RVP_WreckCookoffBudget.PARTICLES_PER_VEHICLE >= withoutMuzzle);
+    }
+
+    @Test
+    void effectBudgetIsSeparateAndBounded() {
+        // 车顶火焰与炮口灰烟使用独立额度，不应改变火星的 320/tick 全局预算。
+        assertEquals(320, RVP_WreckCookoffBudget.PARTICLES_PER_TICK);
+        assertEquals(RVP_WreckCookoffBudget.MAX_COLUMNS * RVP_WreckCookoffBudget.EFFECT_LAYERS_PER_COLUMN,
+                RVP_WreckCookoffBudget.EFFECT_PARTICLES_PER_TICK);
+        assertEquals(48, RVP_WreckCookoffBudget.EFFECT_PARTICLES_PER_VEHICLE);
+        assertTrue(RVP_WreckCookoffBudget.EFFECT_PARTICLES_PER_TICK > 0);
     }
 }

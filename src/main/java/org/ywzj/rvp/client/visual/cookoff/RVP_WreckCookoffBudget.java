@@ -12,6 +12,12 @@ public final class RVP_WreckCookoffBudget {
     public static final int PARTICLES_PER_VEHICLE = 96;
     /** 同时渲染的出口总上限；所有车辆采用轮流分配而非整车抢占。 */
     public static final int MAX_COLUMNS = 96;
+    /** 炮口烟及非车顶出口的基础粒子层数；车顶会按目标高度动态增加连续分层。 */
+    public static final int EFFECT_LAYERS_PER_COLUMN = 2;
+    /** 车顶火焰/炮口灰烟每 tick 的全局生成尝试上限，与火星预算分开。 */
+    public static final int EFFECT_PARTICLES_PER_TICK = MAX_COLUMNS * EFFECT_LAYERS_PER_COLUMN;
+    /** 单辆载具每 tick 的车顶火焰/炮口灰烟上限；由出口公平轮询进一步限制。 */
+    public static final int EFFECT_PARTICLES_PER_VEHICLE = 48;
     /**
      * 满额距离，单位格；此距离内不做距离衰减。
      * 2026-10-01 由 96 放宽到 128
@@ -22,7 +28,7 @@ public final class RVP_WreckCookoffBudget {
     /** 接缝出口的粒子权重；接缝点数最多，与舱盖同级，使每个采样点都有火星。 */
     public static final int WEIGHT_SEAM = 10;
     /**
-     * 炮口出口的粒子权重；用户定版 2026-10-06：**取消炮口喷火星**，只保留炮口轴向火柱。
+     * 炮口出口的火星权重；用户定版 2026-10-06：**取消炮口喷火星**，仅保留独立的炮口轴向灰烟。
      * 权重为 0 使 {@link #baseDemand} 不再为炮口申请火星额度。
      */
     public static final int WEIGHT_MUZZLE = 0;

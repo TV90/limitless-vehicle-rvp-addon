@@ -256,6 +256,112 @@ class RVP_WreckCookoffGeometryTest {
     }
 
     @Test
+    void roofFlameUsesFastAxisSpeedAndExpandsAwayFromTheNozzle() {
+        // 车顶喷燃使用当前会话默认的 0.8～1.0 格/tick，并且远端截面必须明显宽于喷口根部。
+        assertEquals(0.8D, RVP_WreckCookoffController.roofFlameAxisSpeed(0.0D), 1e-9);
+        assertEquals(1.0D, RVP_WreckCookoffController.roofFlameAxisSpeed(1.0D), 1e-9);
+        double base = RVP_WreckCookoffController.roofConeRadius(0.0D, 0.25D);
+        double middle = RVP_WreckCookoffController.roofConeRadius(0.5D, 0.25D);
+        double tip = RVP_WreckCookoffController.roofConeRadius(1.0D, 0.25D);
+        assertTrue(base > 0.0D && base < middle && middle < tip,
+                "车顶喷燃截面必须从喷口向外连续扩大");
+        assertEquals(1.0D, RVP_WreckCookoffController.roofTextureScale(0.0D), 1.0E-9D);
+        assertEquals(3.0D, RVP_WreckCookoffController.roofTextureScale(1.0D), 1.0E-9D);
+    }
+
+    @Test
+    void roofFlameOriginCanMoveInsideOrOutsideWithoutMovingTheHatchPose() {
+        RVP_WreckCookoffSettings.reset();
+        Vec3 hatchOrigin = new Vec3(10.0D, 20.0D, 30.0D);
+        try {
+            // 调用本项目车顶喷燃原点入口，正值必须沿世界竖直方向向炮塔外/上偏移。
+            RVP_WreckCookoffSettings.setRoofVerticalOffset(1.25D);
+            assertEquals(new Vec3(10.0D, 21.25D, 30.0D),
+                    RVP_WreckCookoffController.roofFlameOrigin(hatchOrigin));
+            // 负值必须向炮塔内部/下方偏移，原始舱盖姿态对象本身不被修改。
+            RVP_WreckCookoffSettings.setRoofVerticalOffset(-0.75D);
+            assertEquals(new Vec3(10.0D, 19.25D, 30.0D),
+                    RVP_WreckCookoffController.roofFlameOrigin(hatchOrigin));
+            assertEquals(new Vec3(10.0D, 20.0D, 30.0D), hatchOrigin);
+        } finally {
+            // 调用本项目重置入口，避免静态会话参数污染其他测试。
+            RVP_WreckCookoffSettings.reset();
+        }
+    }
+
+    @Test
+    void roofAxisSpeedTwentyIsNotClampedToOne() {
+        RVP_WreckCookoffSettings.reset();
+        try {
+            // 调用本项目会话参数入口，复现用户把车顶速度下限调到 20 的场景。
+            RVP_WreckCookoffSettings.setRoofAxisSpeedMin(20.0D);
+            assertEquals(20.0D, RVP_WreckCookoffController.roofFlameAxisSpeed(0.0D), 1.0E-9D);
+            assertEquals(20.0D, RVP_WreckCookoffController.roofFlameAxisSpeed(1.0D), 1.0E-9D);
+        } finally {
+            // 调用本项目重置入口，避免静态会话参数污染其他测试。
+            RVP_WreckCookoffSettings.reset();
+        }
+    }
+
+    @Test
+    void roofFlameHeightAndLayerPositionsRemainPredictableAtHighSpeed() {
+        RVP_WreckCookoffSettings.reset();
+        try {
+            // 调用本项目高度计算入口：生命周期只缩放目标高度，不再由随机粒子寿命决定。
+            assertEquals(6.0D, RVP_WreckCookoffController.roofFlameTargetHeight(6.0D, 1.0D), 1.0E-9D);
+            assertEquals(3.0D, RVP_WreckCookoffController.roofFlameTargetHeight(6.0D, 0.5D), 1.0E-9D);
+
+            double targetHeight = RVP_WreckCookoffController.roofFlameTargetHeight(6.0D, 1.0D);
+            double travel = RVP_WreckCookoffController.roofFlameCenterTravel(targetHeight, 0.3D, 1.0D);
+            int layers = RVP_WreckCookoffController.roofFlameLayerCount(targetHeight, 0.3D, 1.0D);
+            assertTrue(travel > 0.0D);
+            assertTrue(layers > RVP_WreckCookoffBudget.EFFECT_LAYERS_PER_COLUMN);
+
+            double previous = -1.0D;
+            for (int layer = 0; layer < layers; layer++) {
+                double position = RVP_WreckCookoffController.roofFlameLayerPosition(travel, layer, layers);
+                // 调用本项目连续分层入口：每层位置固定、严格递增且不会超过中心活动范围。
+                assertTrue(position > previous);
+                assertTrue(position < travel);
+                previous = position;
+            }
+        } finally {
+            // 调用本项目重置入口，避免静态会话参数污染其他测试。
+            RVP_WreckCookoffSettings.reset();
+        }
+    }
+
+    @Test
+    void muzzleSmokeLayerPositionsCoverTheWholeAxialRange() {
+        RVP_WreckCookoffSettings.reset();
+        try {
+            double travel = 3.0D * 0.72D;
+            int layers = RVP_WreckCookoffController.muzzleSmokeLayerCount(travel, 1.0D);
+            // 默认烟片尺寸下必须超过原先固定两层，否则随机采样断层问题会回归。
+            assertTrue(layers > RVP_WreckCookoffBudget.EFFECT_LAYERS_PER_COLUMN);
+
+            double previous = -1.0D;
+            double spacing = 0.0D;
+            for (int layer = 0; layer < layers; layer++) {
+                double position = RVP_WreckCookoffController.muzzleSmokeLayerPosition(
+                        travel, layer, layers);
+                // 调用本项目连续分层入口：所有层位于轴向范围内且严格递增。
+                assertTrue(position > previous);
+                assertTrue(position < travel);
+                if (layer > 0) {
+                    spacing = position - previous;
+                }
+                previous = position;
+            }
+            // 等距中心的间隔必须小于整段长度，确认不是把粒子再次集中到单个随机区间。
+            assertEquals(travel / layers, spacing, 1.0E-9D);
+        } finally {
+            // 调用本项目重置入口，避免静态会话参数污染其他测试。
+            RVP_WreckCookoffSettings.reset();
+        }
+    }
+
+    @Test
     void directionInterpolationSurvivesDegenerateInput() {
         Vec3 up = RVP_WreckCookoffGeometry.UP;
         Vec3 forward = new Vec3(0.0, 0.0, -1.0);

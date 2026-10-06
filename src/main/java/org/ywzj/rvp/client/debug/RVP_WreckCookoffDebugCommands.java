@@ -44,7 +44,41 @@ public final class RVP_WreckCookoffDebugCommands {
                         .then(parameter("length", 0.5, 8, value -> RVP_WreckCookoffSettings.length = value))
                         .then(parameter("density", 0, 2, value -> RVP_WreckCookoffSettings.density = value))
                         .then(parameter("grow", 1, 120, value -> RVP_WreckCookoffSettings.growthTicks = value))
-                        .then(parameter("shrink", 1, 120, value -> RVP_WreckCookoffSettings.shrinkTicks = value)))
+                        .then(parameter("shrink", 1, 120, value -> RVP_WreckCookoffSettings.shrinkTicks = value))
+                        .then(parameter("roof_speed_min", 0.05, 20.0,
+                                RVP_WreckCookoffSettings::setRoofAxisSpeedMin))
+                        .then(parameter("roof_speed_max", 0.05, 20.0,
+                                RVP_WreckCookoffSettings::setRoofAxisSpeedMax))
+                        .then(parameter("roof_cone_base", 0.02, 1.5,
+                                RVP_WreckCookoffSettings::setRoofConeBase))
+                        .then(parameter("roof_cone_tip", 0.02, 2.5,
+                                RVP_WreckCookoffSettings::setRoofConeTip))
+                        .then(parameter("roof_outward", 0.0, 0.5,
+                                value -> RVP_WreckCookoffSettings.roofOutwardSpeed = value))
+                        .then(parameter("roof_scale_min", 0.1, 3.0,
+                                RVP_WreckCookoffSettings::setRoofTextureScaleMin))
+                        .then(parameter("roof_scale_max", 0.1, 3.0,
+                                RVP_WreckCookoffSettings::setRoofTextureScaleMax))
+                        .then(parameter("roof_vertical_offset",
+                                RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MIN,
+                                RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MAX,
+                                RVP_WreckCookoffSettings::setRoofVerticalOffset))
+                        .then(parameter("muzzle_smoke_density", 0.0, 2.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeDensity = value))
+                        .then(parameter("muzzle_smoke_size", 0.1, 3.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeSize = value))
+                        .then(parameter("muzzle_smoke_lifetime", 4.0, 120.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeLifetime = value))
+                        .then(parameter("muzzle_smoke_axis_speed", 0.0, 2.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeAxisSpeed = value))
+                        .then(parameter("muzzle_smoke_updraft", 0.0, 1.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeUpdraft = value))
+                        .then(parameter("muzzle_smoke_spread", 0.0, 0.25,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeSpread = value))
+                        .then(parameter("muzzle_smoke_alpha", 0.0, 1.0,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeAlpha = value))
+                        .then(parameter("muzzle_smoke_grey", 0.02, 0.5,
+                                value -> RVP_WreckCookoffSettings.muzzleSmokeGrey = value)))
                 .then(Commands.literal("preview")
                         .then(Commands.literal("start").executes(context -> preview(context.getSource())))
                         .then(Commands.literal("stop").executes(context -> {
@@ -72,7 +106,13 @@ public final class RVP_WreckCookoffDebugCommands {
     private static int show(CommandSourceStack source) {
         // 调用本项目状态描述，使用户能核对预算而不依赖日志猜测。
         source.sendSuccess(() -> Component.literal("[RVP 殉燃] " + RVP_WreckCookoffController.describe()), false);
-        source.sendSuccess(() -> Component.literal("/rvpcookoff set height|length|density|grow|shrink <数值>；reset；preview start|stop"), false);
+        source.sendSuccess(() -> Component.literal(
+                "/rvpcookoff set height|length|density|grow|shrink|roof_speed_min|roof_speed_max|"
+                        + "roof_cone_base|roof_cone_tip|roof_outward|roof_scale_min|roof_scale_max|"
+                        + "roof_vertical_offset|muzzle_smoke_density|muzzle_smoke_size|"
+                        + "muzzle_smoke_lifetime|muzzle_smoke_axis_speed|muzzle_smoke_updraft|"
+                        + "muzzle_smoke_spread|muzzle_smoke_alpha|muzzle_smoke_grey"
+                        + " <数值>；reset；preview start|stop"), false);
         return 1;
     }
 
@@ -110,7 +150,7 @@ public final class RVP_WreckCookoffDebugCommands {
                 .filter(RVP_WreckCookoffResolver::isHatchColumnAnchor).count();
         String counts = "舱盖火柱=" + hatchColumns + "（火星采样点=" + hatchSamples + "），接缝采样点=" + discovery.anchors().stream()
                 .filter(a -> a.kind() == RVP_WreckCookoffResolver.Kind.SEAM).count()
-                + "，炮口火柱=" + discovery.muzzles().size() + "（不喷火星）";
+                + "，炮口灰烟=" + discovery.muzzles().size() + "（不喷火星）";
         RVP_WreckCookoffController.preview(selected);
         source.sendSuccess(() -> Component.literal("[RVP 殉燃] 预览 60 秒；" + counts + "；无独立舱盖时使用顶部近似位置"), false);
         return 1;
