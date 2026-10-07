@@ -14,6 +14,7 @@
     "require_lock": true
   },
   "projectile_data": {
+    "collision_box_size": 0.7,
     "has_rocket_engine": true,
     "velocity": 2.5,
     "rotate_to_motion": true,

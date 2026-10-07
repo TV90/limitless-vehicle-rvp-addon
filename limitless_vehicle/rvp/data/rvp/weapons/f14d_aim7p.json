@@ -15,6 +15,7 @@
     "require_lock": true
   },
   "projectile_data": {
+    "collision_box_size": 0.7,
     "velocity": 0.5,
     "has_rocket_engine": true,
     "mass": 0.012,

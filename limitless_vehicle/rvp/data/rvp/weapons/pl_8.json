@@ -11,6 +11,7 @@
     "ammo": "ywzj_vehicle:ammo_missile"
   },
   "projectile_data": {
+    "collision_box_size": 0.7,
     "mass": 0.01,
     "thrust": 0.01,
     "motor_burn_time": 60,

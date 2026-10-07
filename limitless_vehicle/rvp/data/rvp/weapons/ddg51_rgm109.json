@@ -15,6 +15,7 @@
     "require_lock": true
   },
   "projectile_data": {
+    "collision_box_size": 0.7,
     "has_rocket_engine": true,
     "engine_nozzle_offset": [
       0.0,
