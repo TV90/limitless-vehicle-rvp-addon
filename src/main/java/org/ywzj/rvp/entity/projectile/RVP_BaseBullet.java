@@ -699,6 +699,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public void initFromWeapon(RVP_WeaponData data, RVP_EnumWeaponKind kind, AbstractVehicle vehicle, LivingEntity shooter,
                                Vec3 spawnPos, AimRot aim, Vec3 initialMotion) {
         this.rvpData = data;
+        // 碰撞箱边长（2026-10-07 新参数 collision_box_size）：服务端权威口径，默认 1/16 格历史行为
+        applyCollisionBoxSize(data.getProjectileData().getCollisionBoxSize());
         this.damageDecayRules = List.copyOf(data.getDamageDecayRules());
         this.weaponKind = kind == null ? RVP_EnumWeaponKind.ROCKET : kind;
         this.shooterVehicle = vehicle;
@@ -3922,6 +3924,30 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         xRotO = getXRot();
     }
 
+    /** 本弹碰撞箱边长（格）；实体注册默认 1/16，配置就绪后经 {@link #applyCollisionBoxSize(float)} 刷新。 */
+    private float collisionBoxSize = org.ywzj.rvp.weapon.data.RVP_ProjectileData.COLLISION_BOX_SIZE_DEFAULT;
+
+    /**
+     * 应用弹体碰撞箱边长（2026-10-07 新参数 {@code projectile_data.collision_box_size}）：
+     * 边长变化时 {@link #refreshDimensions()} 重建 AABB——直击命中（弹幕拦弹）、方块碰撞与
+     * 弹间碰撞按新尺寸判定；默认 1/16 格与实体注册一致，不配置零变化。
+     */
+    private void applyCollisionBoxSize(float size) {
+        float clamped = java.lang.Math.max(
+                org.ywzj.rvp.weapon.data.RVP_ProjectileData.COLLISION_BOX_SIZE_DEFAULT,
+                java.lang.Math.min(size, 16.0F));
+        if (clamped != collisionBoxSize) {
+            collisionBoxSize = clamped;
+            refreshDimensions();
+        }
+    }
+
+    @Override
+    public net.minecraft.world.entity.EntityDimensions getDimensions(net.minecraft.world.entity.Pose pose) {
+        // 覆写实体尺寸来源：注册尺寸恒 1/16，本弹按武器配置返回（客户端 readSpawnData 后与服务端一致）
+        return net.minecraft.world.entity.EntityDimensions.scalable(collisionBoxSize, collisionBoxSize);
+    }
+
     protected boolean canDamageEntity(Entity entity) {
         if (entity == null || !entity.isAlive()) {
             return false;
@@ -5288,6 +5314,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     @Override
     public void readSpawnData(FriendlyByteBuf buffer) {
         super.readSpawnData(buffer);
+        // 碰撞箱边长：客户端按远端武器配置同步（spawn 包不含 projectile_data），与双端判定保持一致
+        RVP_WeaponData spawnConfig = getResolvedWeaponConfig();
+        if (spawnConfig != null) {
+            applyCollisionBoxSize(spawnConfig.getProjectileData().getCollisionBoxSize());
+        }
         this.weaponKind = buffer.readEnum(RVP_EnumWeaponKind.class);
         setXRot(buffer.readFloat());
         setYRot(buffer.readFloat());

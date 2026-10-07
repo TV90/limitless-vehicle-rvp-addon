@@ -195,6 +195,15 @@ public class RVP_ProjectileData {
     @SerializedName("altitude_drag_factor")
     private Map<RVP_Range<Float>, Float> altitudeDragFactor;
 
+    /**
+     * 弹体碰撞箱边长（宽=高，单位格），默认 null → {@link #COLLISION_BOX_SIZE_DEFAULT}（1/16 格，
+     * 与实体注册尺寸一致，历史行为）；有限值钳 {@code [0.0625, 16]}。调大后直击命中（弹幕拦弹）
+     * 的几何窗口随之放大——命中结算、方块碰撞与弹间碰撞均按新碰撞箱判定；渲染与近炸触发
+     * 半径不受影响（近炸探测盒按发射方弹体自身膨胀）。
+     */
+    @SerializedName("collision_box_size")
+    private Double collisionBoxSize;
+
     /** 服务器权威风漂配置，默认使用禁用配置；仅配置 {@code wind_data.enabled=true} 时生效。 */
     @SerializedName("wind_data")
     private RVP_WindData windData = new RVP_WindData();
@@ -374,6 +383,17 @@ public class RVP_ProjectileData {
     /** @return 是否启用气动转向统一求解；阶段 S2 默认 false。 */
     public boolean isRvpAeroSteering() {
         return rvpAeroSteering;
+    }
+
+    /** RVP 弹体碰撞箱边长下限（格）：与实体注册尺寸一致，兼作默认值。 */
+    public static final float COLLISION_BOX_SIZE_DEFAULT = 0.0625F;
+
+    /** @return 弹体碰撞箱边长（格）；缺省/非法回退 {@link #COLLISION_BOX_SIZE_DEFAULT}，有效配置钳 [0.0625, 16]。 */
+    public float getCollisionBoxSize() {
+        if (collisionBoxSize == null || !Double.isFinite(collisionBoxSize) || collisionBoxSize < COLLISION_BOX_SIZE_DEFAULT) {
+            return COLLISION_BOX_SIZE_DEFAULT;
+        }
+        return (float) Math.min(collisionBoxSize, 16.0D);
     }
 
     /** @return 有限 (0, 90) 度攻角上限；缺省、null 和非法配置返回 0（关闭）。 */

@@ -200,6 +200,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `ignition_delay_tick` | 点火延迟，单位 tick；延迟内继承载具弹射速度（与本体弹仓弹射一致）。发动机实际点火时刻取 `max(cold_launch_time_tick, ignition_delay_tick)`；GPS PRESET 与冷发射窗口重叠时，窗口内一旦生成过 PRESET 制导速度，运动层会持续保留该接管方向，不再被冷发射竖直速度或单 Tick 制导抖动覆盖。带终端段且发射时已落入终端距离门的 PRESET 弹，也会等窗口结束后再切换终端 ARH。 |
 | `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；缺省或 JSON `null` 时使用下述默认大气表，显式空表、未命中区间或 value 非法时按 `1.0` 处理。 |
+| `collision_box_size` | 弹体碰撞箱边长（宽=高，格），**默认 0.0625（1/16 格，与实体注册尺寸一致，未配置零变化）**，有效配置钳 `[0.0625, 16]`。写于 `projectile_data` 内。调大后弹体 AABB 随之放大：**直击命中（弹幕拦弹）的几何窗口随之放大**（近炸触发半径不受影响——探测盒按发射方弹体自身膨胀）；命中结算、方块碰撞与弹间碰撞均按新尺寸判定（大碰撞箱导弹穿弹幕时撞上拦截弹即爆，等效被拦截）；渲染模型不受影响（渲染走模型不走 AABB）。用途：让慢速大弹（如 KD-88A 类）可以被机炮直击拦截。 | `float` | `0.0625` |
 | `wind_data` | `RVP_WindData` 嵌套对象，默认创建一份禁用配置；JSON 为 `null` 时读取端同样回退为禁用对象。当前只用于 RVP 子弹药的服务器权威风漂，字段见下表。 |
 | `deployment_horizontal_half_life_ticks` | 子弹药部署水平速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布/父弹继承 X/Z 生效，包含分层圆锥径向与云心水平径向分量；Y、风偏和显式附加速度不参与该衰减。 |
 | `deployment_vertical_half_life_ticks` | 子弹药部署纵向速度半衰期，单位 Tick，默认 `0`。正有限值启用分量化弹道；非正或非有限值按 0。仅由 `RVP_SubmunitionSpawner` 显式初始化的速度散布 Y 生效；重力、`payloads_velocity[1]`、风偏和其他外力不参与该衰减。 |
