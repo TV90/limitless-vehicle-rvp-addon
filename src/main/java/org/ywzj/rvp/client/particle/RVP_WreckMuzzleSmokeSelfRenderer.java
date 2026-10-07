@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.particle;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -123,13 +124,23 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
         }
         Camera camera = event.getCamera();
         float partialTick = event.getPartialTick();
+        // 镜像 ParticleEngine.render 的视图语义（字节码实证：引擎把 LevelRenderer 的 poseStack
+        // ——含相机旋转——push 进 ModelViewStack 再绘制，结束 popPose 恢复 identity）。本阶段
+        // 引擎已 pop，自绘必须同样补上相机旋转，否则烟顶点（相机相对坐标）缺视图变换、
+        // 位置随相机朝向错乱（2026-10-07 实机"出烟位置变了"根因）。
+        PoseStack poseStack = event.getPoseStack();
+        PoseStack modelViewStack = RenderSystem.getModelViewStack();
+        modelViewStack.pushPose();
+        modelViewStack.mulPoseMatrix(poseStack.last().pose());
+        RenderSystem.applyModelViewMatrix();
         // 距离降序（远先画）：alpha 混合下近处烟正确覆盖远处烟，多块叠加自然增浓。
         List<RVP_WreckMuzzleSmokeParticle> sorted = new ArrayList<>(ACTIVE);
         sorted.sort(Comparator.comparingDouble((RVP_WreckMuzzleSmokeParticle particle) ->
                 particle.distanceSqrTo(camera)).reversed());
 
-        // 镜像粒子引擎的渲染状态：粒子 shader + 光照层 + alpha 混合 + 深度只测不写。
+        // 镜像粒子引擎的渲染状态：粒子 shader + 深度测试 + 光照层 + alpha 混合 + 深度只测不写。
         RenderSystem.setShader(GameRenderer::getParticleShader);
+        RenderSystem.enableDepthTest();
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.depthMask(false);
@@ -157,6 +168,8 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
                 }
             }
         } finally {
+            modelViewStack.popPose();
+            RenderSystem.applyModelViewMatrix();
             RenderSystem.depthMask(true);
             Minecraft.getInstance().gameRenderer.lightTexture().turnOffLightLayer();
         }
