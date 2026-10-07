@@ -111,13 +111,22 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         return target + (current - target) * 0.98D;
     }
 
-    /** 创建车顶喷火贴图对应的深度只测不写半透明渲染类型。 */
+    /**
+     * 创建炮口烟渲染类型：<b>写深度</b>的半透明（对齐殉燃烟/爆炸烟 MCHR 语义）。
+     * <p>原因：本类与殉燃黑烟（RVP_MchrSmokeRenderType.RENDER_TYPE）分属两个自定义
+     * ParticleRenderType 批次，1.20.1 ParticleEngine 对自定义批不做距离排序、批间先后与
+     * 距离无关——若本烟只测不写（depthMask(false)），殉燃黑烟批后画时深度缓冲里没有本烟，
+     * 远处黑烟会整批盖住近处炮口烟（2026-10-07 实机症状）。写深度后无论两批谁先画，
+     * 深度缓冲都按真实前后正确互挡。</p>
+     * <p>已知代价（与 MCHR 爆炸烟现状同款）：渐隐期仍以全深度挡住后面物体；对同帧后画的
+     * 半透明切片（如载具 entityTranslucent 部件）按深度剔除。</p>
+     */
     private static ParticleRenderType renderType(ResourceLocation texture) {
         // 调用本项目车顶喷燃贴图入口：炮口只复用资源并通过颜色染成灰黑，不复制或覆盖贴图。
         return new ParticleRenderType() {
             @Override
             public void begin(BufferBuilder builder, TextureManager textureManager) {
-                RenderSystem.depthMask(false);
+                RenderSystem.depthMask(true);
                 RenderSystem.setShaderTexture(0, texture);
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
