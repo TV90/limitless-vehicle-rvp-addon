@@ -24,6 +24,35 @@ public final class RVP_WeaponLockStateTable {
     private static final Map<WeaponUnit, ExternalLockState> EXTERNAL_STATES = new HashMap<>();
     private static final Map<WeaponUnit, Integer> PENDING_IDS = new HashMap<>();
 
+    /**
+     * 待定雷达锁宽限（2026-10-08）：pending 实体在客户端原生跟踪范围外（BVR 广播克隆）解析不到时，
+     * 在宽限期内保留 pending 并维持炮塔指向最后已知位置，等战术地图 assist 重发或目标进入
+     * 跟踪雷达探测表后落锁；随 {@link #clearPendingRadarLockEntityId} 同生命周期清理。
+     */
+    public record PendingLockGrace(long expireTick, Vec3 lastPos) {
+    }
+
+    private static final Map<WeaponUnit, PendingLockGrace> PENDING_LOCK_GRACE = new HashMap<>();
+
+    /** 标记待定雷达锁宽限（applyRequestedLock 每次 pending 重发时刷新）。 */
+    public static void markPendingRadarLockGrace(WeaponUnit unit, long expireTick, Vec3 lastPos) {
+        if (unit != null) {
+            PENDING_LOCK_GRACE.put(unit, new PendingLockGrace(expireTick, lastPos));
+        }
+    }
+
+    /** @return 待定雷达锁宽限；无则 null。 */
+    public static PendingLockGrace getPendingRadarLockGrace(WeaponUnit unit) {
+        return unit == null ? null : PENDING_LOCK_GRACE.get(unit);
+    }
+
+    /** 清除待定雷达锁宽限。 */
+    public static void clearPendingRadarLockGrace(WeaponUnit unit) {
+        if (unit != null) {
+            PENDING_LOCK_GRACE.remove(unit);
+        }
+    }
+
     // ===================== ARM 预选目标 =====================
 
     public static int getArmPreselectedVehicleId(WeaponUnit unit) {
@@ -109,6 +138,7 @@ public final class RVP_WeaponLockStateTable {
     }
 
     public static void clearPendingRadarLockEntityId(WeaponUnit unit) {
+        PENDING_LOCK_GRACE.remove(unit);
         PENDING_IDS.remove(unit);
     }
 

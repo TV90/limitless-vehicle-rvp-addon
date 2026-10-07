@@ -130,10 +130,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private static final int QUICK_FIRE_LOCK_STABLE_TICKS = 2;
     private static final int QUICK_FIRE_RETRY_INTERVAL_TICKS = 2;
     private static final int IMPACT_CROSS_LIFE_TICKS = 20;
-    private static final int GPS_SECTION_GAP = 6;
-    private static final int GPS_SUMMARY_HEIGHT = 46;
+    private static final int GPS_SECTION_GAP = 4;
+    private static final int GPS_SUMMARY_HEIGHT = 44;
     private static final int GPS_CONTROLS_HEIGHT = 112;
-    private static final int GPS_TARGET_HEIGHT = 56;
+    private static final int GPS_TARGET_HEIGHT = 48;
     private static final int GPS_FIELD_HEIGHT = 16;
     private static final int GPS_FIELD_LABEL_GAP = 3;
     private static final int GPS_FIELD_INNER_GAP = 8;
@@ -2417,8 +2417,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         guiGraphics.drawString(this.font, Component.translatable("gui.ywzj_rvp.tactical_map.status"), textX, textY, 0xFF9CA9B8, false);
         textY += 9;
 
+        // 2026-10-08：改用本体载具显示名（载具 JSON name/name_CN）——原 getType().getDescription()
+        // 是本体 EntityType 翻译键，lang 无对应条目时会原样显示 "entity.ywzj_vehicle.tracked_vehicle"
         String vehicleName = mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle
-                ? vehicle.getType().getDescription().getString()
+                ? vehicle.getDisplayName().getString()
                 : "-";
         String vehicleLine = this.font.plainSubstrByWidth(
                 Component.translatable("gui.ywzj_rvp.tactical_map.vehicle", vehicleName).getString(), textWidth);
@@ -3113,7 +3115,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     private int gpsTargetSectionY() {
-        return gpsControlsSectionY() + GPS_CONTROLS_HEIGHT + GPS_SECTION_GAP;
+        int natural = gpsControlsSectionY() + GPS_CONTROLS_HEIGHT + GPS_SECTION_GAP;
+        // 2026-10-08：钳制到屏幕底缘内侧——大 GUI 缩放档（如 1080p ×4）下三段累计高度
+        // 曾贴屏导致"输入坐标并绑定"提示与按钮被截断（用户截图）
+        return Math.min(natural, this.height - panelMargin() - GPS_TARGET_HEIGHT);
     }
 
     private void drawSidePanelTitle(GuiGraphics guiGraphics, int x, int y, int width, Component title, int accentColor) {

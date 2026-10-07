@@ -290,9 +290,16 @@ public final class RVP_RadarRoleHelper {
             clearPendingRadarLock(weaponUnit);
         } else {
             setPendingRadarLock(weaponUnit, target.getId());
+            // 宽限标记：BVR 目标后续解析不到时保留 pending 并维持转塔（assist 重发会刷新此标记）
+            RVP_WeaponLockStateTable.markPendingRadarLockGrace(weaponUnit,
+                    weaponUnit.getVehicle().level().getGameTime() + PENDING_RADAR_LOCK_GRACE_TICKS,
+                    target.position());
         }
         return true;
     }
+
+    /** 待定雷达锁宽限（tick）：覆盖战术地图 assist 窗口（80t）并留出关图后的捕获余量。 */
+    public static final int PENDING_RADAR_LOCK_GRACE_TICKS = 200;
 
     public static void tickPendingRadarLock(WeaponUnit weaponUnit) {
         int pendingId = RVP_WeaponLockStateTable.getPendingRadarLockEntityId(weaponUnit);
@@ -301,7 +308,48 @@ public final class RVP_RadarRoleHelper {
         }
         Entity target = weaponUnit.getVehicle().level().getEntity(pendingId);
         if (target == null || !target.isAlive()) {
+            // 2026-10-08 宽限（修复"点击 BVR 目标不转塔不等待"）：目标在客户端原生跟踪范围外
+            // （level().getEntity 查不到广播克隆）时不再同 tick 清 pending——宽限期内按 id 从整车
+            // 雷达探测表尝试捕获（radarCurrentlyDetects 按 id 判，克隆/原生引用均可命中），
+            // 未捕获则用 focusLockPos 维持炮塔指向最后已知位置；等战术地图 assist 重发
+            // （刷新宽限）或目标进入跟踪雷达探测表即落锁。宽限过期才放弃。
+            if (target == null) {
+                RVP_WeaponLockStateTable.PendingLockGrace grace =
+                        RVP_WeaponLockStateTable.getPendingRadarLockGrace(weaponUnit);
+                long now = weaponUnit.getVehicle().level().getGameTime();
+                if (grace != null && now < grace.expireTick()) {
+                    WeaponUnit root = weaponUnit.getRootParentWeaponUnit();
+                    if (root != null && root.getRadarUnits() != null) {
+                        for (RadarUnit radarUnit : root.getRadarUnits()) {
+                            if (radarUnit == null || !radarUnit.isOn()) {
+                                continue;
+                            }
+                            RadarUnit.DetectedObject detected = radarUnit.getDetectedEntities().get(pendingId);
+                            if (detected == null || detected.entity == null || !detected.entity.isAlive()) {
+                                continue;
+                            }
+                            // 探测表已捕获：走与常规落锁相同的写锁 + 服务端同步
+                            if (!entityMatches(radarUnit.getLockedEntity(), pendingId)) {
+                                clearOtherRadarLocks(weaponUnit, radarUnit);
+                                radarUnit.setLockedEntity(detected.entity);
+                                syncRadarLockToServer(weaponUnit, detected.entity);
+                            }
+                            if (!entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
+                                weaponUnit.setLockedEntity(detected.entity);
+                            }
+                            weaponUnit.setFocusLockPos(null);
+                            clearPendingRadarLock(weaponUnit);
+                            return;
+                        }
+                    }
+                    // 未捕获：focusLockPos 独立于 lockedEntity 驱动炮塔指向（本体 withFocusLocker 分支）
+                    weaponUnit.setFocusLockPos(grace.lastPos());
+                    return;
+                }
+            }
+            weaponUnit.setFocusLockPos(null);
             RVP_WeaponLockStateTable.clearPendingRadarLockEntityId(weaponUnit);
+            RVP_WeaponLockStateTable.clearPendingRadarLockGrace(weaponUnit);
             if (entityMatches(weaponUnit.getLockedEntity(), pendingId)) {
                 weaponUnit.setLockedEntity(null);
             }
