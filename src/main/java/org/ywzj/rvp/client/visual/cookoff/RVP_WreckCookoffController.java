@@ -28,6 +28,10 @@ public final class RVP_WreckCookoffController {
 
     /** 殉燃火柱总生命周期占残骸保留时间的百分比；例如 50 表示 wreckLifetimeSeconds 的 50%。 */
     public static final double WRECK_LIFETIME_PERCENT = 40.0D;
+    /** 殉燃完成后允许生成长程击毁烟的最短等待时间，单位 tick。 */
+    private static final int LONG_SMOKE_DELAY_MIN_TICKS = 30;
+    /** 殉燃完成后允许生成长程击毁烟的最长等待时间，单位 tick。 */
+    private static final int LONG_SMOKE_DELAY_MAX_TICKS = 60;
 
     /** 当前世界绑定，换维度时清理所有实体引用。 */
     private static ClientLevel currentLevel;
@@ -37,6 +41,8 @@ public final class RVP_WreckCookoffController {
     private static final Map<UUID, Instance> INSTANCES = new HashMap<>();
     /** 已完成定时殉燃的车辆 UUID；防止残骸仍存在时下一 tick 被重新创建火柱。 */
     private static final Set<UUID> COMPLETED = new HashSet<>();
+    /** 每辆已完成殉燃的车辆允许开始生成长程击毁烟的客户端世界 tick。 */
+    private static final Map<UUID, Long> LONG_SMOKE_UNLOCK_TICKS = new HashMap<>();
     /** 本 tick 按距离排序后的实例，渲染和预算复用。 */
     private static final List<Instance> ORDERED = new ArrayList<>();
     /** 预览车辆 UUID；仅客户端模拟视觉，不伤害真实载具。 */
@@ -413,6 +419,39 @@ public final class RVP_WreckCookoffController {
         return vehicle instanceof TrackedVehicle || vehicle instanceof WheeledVehicle;
     }
 
+    /**
+     * 判断地面载具是否已经越过殉燃结束后的长程击毁烟等待门。
+     *
+     * <p>没有被殉燃控制器观察到的载具不阻塞长程烟，避免远距离载具因殉燃只在 256 格内绘制而永久无烟；
+     * 一旦本控制器已建立殉燃实例，则必须等实例完整收缩结束，并再经过每车一次的随机等待。</p>
+     *
+     * @param vehicle 待判断的载具
+     * @param gameTime 当前客户端世界 tick
+     * @return 非地面载具、未启用殉燃或未被本控制器接管时保持原行为；已完成等待时允许长程烟
+     */
+    public static boolean canEmitLongSmoke(AbstractVehicle vehicle, long gameTime) {
+        if (!isGroundVehicle(vehicle) || RVP_CommonConfig.getWreckLifetimeSeconds() <= 0) {
+            return true;
+        }
+        UUID vehicleId = vehicle.getUUID();
+        if (!INSTANCES.containsKey(vehicleId) && !COMPLETED.contains(vehicleId)) {
+            return true;
+        }
+        Long unlockTick = LONG_SMOKE_UNLOCK_TICKS.get(vehicleId);
+        return unlockTick != null && isLongSmokeUnlockReached(unlockTick, gameTime);
+    }
+
+    /** 将随机样本映射到包含边界的 30～60 tick 长程烟延迟，供生命周期计算和单元测试复用。 */
+    static int resolveLongSmokeDelayTicks(int randomSample) {
+        int range = LONG_SMOKE_DELAY_MAX_TICKS - LONG_SMOKE_DELAY_MIN_TICKS + 1;
+        return LONG_SMOKE_DELAY_MIN_TICKS + Math.floorMod(randomSample, range);
+    }
+
+    /** 判断当前世界 tick 是否已达到该车记录的长程烟解锁 tick。 */
+    static boolean isLongSmokeUnlockReached(long unlockTick, long currentTick) {
+        return currentTick >= unlockTick;
+    }
+
     /** 在旧烟遍历前调用；返回 false 表示本 tick 不应重复推进。 */
     public static boolean begin(ClientLevel level) {
         if (currentLevel != level) {
@@ -485,7 +524,12 @@ public final class RVP_WreckCookoffController {
             if (!instance.isExpired(lastTick)) return false;
             if (instance.timedEnding) {
                 // 定时殉燃已完整结束；保留终结标记，直到客户端世界清理，避免实体仍存活时重新创建实例。
-                COMPLETED.add(instance.vehicle.getUUID());
+                UUID vehicleId = instance.vehicle.getUUID();
+                COMPLETED.add(vehicleId);
+                // 调用本项目随机源，为每辆车锁定一次 30～60 tick 的长程烟启动延迟。
+                LONG_SMOKE_UNLOCK_TICKS.computeIfAbsent(vehicleId,
+                        ignored -> lastTick + resolveLongSmokeDelayTicks(currentLevel.random.nextInt(
+                                LONG_SMOKE_DELAY_MAX_TICKS - LONG_SMOKE_DELAY_MIN_TICKS + 1)));
             }
             return true;
         });
@@ -964,6 +1008,7 @@ public final class RVP_WreckCookoffController {
         INSTANCES.clear();
         ORDERED.clear();
         COMPLETED.clear();
+        LONG_SMOKE_UNLOCK_TICKS.clear();
         preview = null;
         previewEnd = 0;
         currentLevel = null;

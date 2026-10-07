@@ -17,9 +17,16 @@ import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckSmokeParticle.SmokeLayer;
 import org.ywzj.rvp.client.visual.RVP_WreckSmokeDebugSettings.Parameter;
 import org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffController;
+import org.ywzj.rvp.vehicle.BoneEngineConfig;
+import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
+import org.ywzj.vehicle.vehicle.structure.OBB;
+import org.joml.Vector3f;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** 客户端逐载具发射 RVP 击毁烟；与本体 tickParticle 的屏蔽注入点相互独立。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -96,7 +103,8 @@ public final class RVP_WreckSmokeEmitter {
                 continue;
             }
             boolean emitNear = vehicle.tickCount % EMIT_PERIOD_TICKS == 0;
-            boolean emitLong = vehicle.tickCount % Parameter.EMIT_PERIOD.intValue() == 0;
+            boolean emitLong = vehicle.tickCount % Parameter.EMIT_PERIOD.intValue() == 0
+                    && RVP_WreckCookoffController.canEmitLongSmoke(vehicle, level.getGameTime());
             if (!emitNear && !emitLong) {
                 continue;
             }
@@ -123,10 +131,8 @@ public final class RVP_WreckSmokeEmitter {
         RandomSource random = level.random;
         if (emitNear) {
             int count = Mth.clamp(Mth.ceil(Math.max(width, depth) / 2.5), 2, MAX_SMOKE_PER_ROUND);
-            for (int i = 0; i < count; i++) {
-                // 调用本项目短程烟发射函数：保留原有近处浓烟的数量和 42～65 tick 寿命。
-                emitNearSmokeParticle(minecraft, level, random, center, radius, height);
-            }
+            // 调用本项目发动机骨骼解析入口：短程击毁烟优先从车体发动机实时 OBB 内生成。
+            emitNearSmokeAtEngine(minecraft, level, random, vehicle, count, center, radius, height);
         }
         if (emitLong) {
             // 调用本项目相位计算入口：使用当前调试周期决定单点的水平错相位置。
@@ -214,6 +220,69 @@ public final class RVP_WreckSmokeEmitter {
         // 调用本项目通用近处烟粒子：由样式决定普通烟或橙色引擎烟出生动画。
         minecraft.particleEngine.add(RVP_NearSmokeParticle.create(level, x, y, z,
                 vx, vy, vz, size, lifetime, variant, style));
+    }
+
+    /**
+     * 在发动机实时 OBB 内生成短程击毁烟；数量沿用车体主 OBB 的原有预算。
+     *
+     * <p>调用本项目 {@link RVP_VehicleHitboxFactorManager} 的公共骨骼 OBB 入口，
+     * 让烟点随载具位移、姿态和发动机骨结构实时更新；发动机配置缺失时回退原主 OBB 取点。</p>
+     */
+    private static void emitNearSmokeAtEngine(Minecraft minecraft, ClientLevel level, RandomSource random,
+                                              AbstractVehicle vehicle, int count, Vec3 fallbackCenter,
+                                              double fallbackRadius, double fallbackHeight) {
+        List<OBB> engineObbs = resolveEngineObbs(vehicle);
+        if (engineObbs.isEmpty()) {
+            for (int i = 0; i < count; i++) {
+                // 调用本项目旧版主 OBB 短程烟入口：无发动机骨数据时保持原有视觉兜底。
+                emitNearSmokeParticle(minecraft, level, random, fallbackCenter, fallbackRadius, fallbackHeight);
+            }
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            OBB engineObb = engineObbs.get(i % engineObbs.size());
+            Vec3 point = randomPointIn(engineObb, random);
+            if (point == null) {
+                continue;
+            }
+            Vector3f extents = engineObb.extents();
+            // OBB extents 是半尺寸；用发动机 OBB 的水平半径复用击毁烟尺寸规则。
+            double engineRadius = Math.max(0.5, Math.min(extents.x, extents.z));
+            float size = RVP_NearSmokeParticle.resolveWreckStyleSize(engineRadius, random.nextDouble());
+            int lifetime = 42 + random.nextInt(24);
+            int variant = random.nextInt(3);
+            // 调用本项目通用近处烟粒子：发动机位置使用普通击毁烟样式。
+            addNearSmokeParticle(minecraft, level, random, point.x, point.y, point.z,
+                    size, lifetime, variant, RVP_NearSmokeParticle.Style.GENERIC);
+        }
+    }
+
+    /** 解析载具所有配置了 ENGINE 模块的实时 OBB；失败返回空列表，由调用方决定回退。 */
+    private static List<OBB> resolveEngineObbs(AbstractVehicle vehicle) {
+        // 调用本项目发动机配置解析器：只取当前载具 bone_modules 中的 ENGINE 骨名。
+        java.util.Map<String, BoneEngineConfig> engineModules =
+                RVP_VehicleHitboxFactorManager.INSTANCE.resolveEngineModules(vehicle);
+        if (engineModules == null || engineModules.isEmpty()) {
+            return List.of();
+        }
+        List<OBB> result = new ArrayList<>();
+        for (String boneName : engineModules.keySet()) {
+            // 调用本项目实时骨骼 OBB 入口：与损坏引擎冒烟共用同一位置解析链路。
+            result.addAll(RVP_VehicleHitboxFactorManager.INSTANCE
+                    .resolveBoneObbsForSampling(vehicle, boneName));
+        }
+        return result;
+    }
+
+    /** 在 OBB 局部空间均匀取样一点，并转换为当前载具姿态下的世界坐标。 */
+    private static Vec3 randomPointIn(OBB obb, RandomSource random) {
+        Vector3f extents = obb.extents();
+        Vector3f local = new Vector3f(
+                (random.nextFloat() * 2.0f - 1.0f) * extents.x,
+                (random.nextFloat() * 2.0f - 1.0f) * extents.y,
+                (random.nextFloat() * 2.0f - 1.0f) * extents.z);
+        Vector3f world = obb.localToWorld(local, obb.getAxes());
+        return new Vec3(world.x, world.y, world.z);
     }
 
     /** 添加一枚长程烟粒子；核心和外层共用随机初速度。 */

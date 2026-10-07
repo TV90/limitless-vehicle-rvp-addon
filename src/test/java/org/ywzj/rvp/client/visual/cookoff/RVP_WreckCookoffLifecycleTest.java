@@ -31,4 +31,14 @@ class RVP_WreckCookoffLifecycleTest {
         assertEquals(0, RVP_WreckCookoffController.cookoffDurationTicks(0, 50));
         assertEquals(0, RVP_WreckCookoffController.cookoffDurationTicks(60, 0));
     }
+
+    @Test
+    void longSmokeDelayStaysWithinThirtyToSixtyTicks() {
+        // 调用本项目长程烟延迟映射，确认随机边界包含 30 和 60 tick。
+        assertEquals(30, RVP_WreckCookoffController.resolveLongSmokeDelayTicks(0));
+        assertEquals(60, RVP_WreckCookoffController.resolveLongSmokeDelayTicks(30));
+        assertEquals(30, RVP_WreckCookoffController.resolveLongSmokeDelayTicks(31));
+        assertTrue(RVP_WreckCookoffController.isLongSmokeUnlockReached(130, 130));
+        assertTrue(!RVP_WreckCookoffController.isLongSmokeUnlockReached(130, 129));
+    }
 }
