@@ -220,21 +220,25 @@ public final class RVP_HeliDockManager {
         cu.yRotKeep = false;
         cu.xRot = Mth.clamp(targetRot.x * 0.75F, -10.0F, 10.0F);
         cu.xRotKeep = false;
-        // 总距：垂直速度闭环——目标爬升率 = clamp(高度误差 × 0.5, [-3, +4]) m/s，
-        // 按实际垂直速度差值补杆（降太快提总距缓冲 / 降太慢压总距加快），带 ±2 m/s 外死区与 0.4 m/s 内死区
+        // 总距：垂直速度闭环（2026-10-07 符号修正，用户定版：下降率 3 m/s、接近坪面收敛到 1 m/s）。
+        // MC y 轴向上为正：目标垂直速度 = −下降率（在目标面上方时为负 → 命令下降）；
+        // 按垂直速度误差补杆（误差 >0.4 提总距缓冲 / <−0.4 压总距加快），内外双死区。
         double vyMps = heli.getDeltaMovement().y * 20.0;
         double heightAboveTarget = heli.getY() - targetY;
-        double targetClimbRate = Mth.clamp(heightAboveTarget * 0.5F, -3.0F, 4.0F);
-        double climbRateError = targetClimbRate - vyMps;
         if (heli.getCollectivePitch() < 55.0f) {
+            // 升力亏空：先补总距
             cu.up = true;
         } else if (heightAboveTarget < -1.0) {
+            // 低于目标面：爬回
             cu.up = true;
         } else if (heightAboveTarget > 0.5) {
-            if (climbRateError > 0.4) {
-                cu.up = true;
-            } else if (climbRateError < -0.4) {
-                cu.down = true;
+            // 需下降：目标下降率随接近收敛（远处 3 m/s → 坪面 1 m/s）
+            double targetVyMps = -Mth.clamp(heightAboveTarget * 0.5, 1.0, 3.0);
+            double vyError = targetVyMps - vyMps;
+            if (vyError > 0.4) {
+                cu.up = true;   // 下沉不足目标速率：提总距缓冲
+            } else if (vyError < -0.4) {
+                cu.down = true; // 下沉超过目标速率：压总距
             }
         }
         // 硬性防坠地板：下沉超过 3.6 m/s 强拉（高于目标下降率上限，不干扰闭环）
