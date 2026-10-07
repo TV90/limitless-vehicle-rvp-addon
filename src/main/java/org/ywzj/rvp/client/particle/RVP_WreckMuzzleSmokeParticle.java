@@ -5,8 +5,8 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.texture.TextureManager;
@@ -17,26 +17,27 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 /**
- * 地面载具殉燃炮口的灰黑烟粒子。
+ * 地面载具殉燃炮口的灰黑烟粒子（<b>自绘管线</b>）。
  *
  * <p>复用车顶殉燃的静态喷火贴图，出生时随机选择一张白色 Alpha 轮廓并通过粒子颜色染成灰黑色；
  * 粒子沿炮管方向离口后，速度持续逼近可调的世界竖直上浮速度，形成向上飘散趋势。</p>
+ *
+ * <p><b>为什么自绘（2026-10-07 三轮实机迭代的结论）</b>：本烟与殉燃黑烟分属不同自定义
+ * ParticleRenderType 批次，1.20.1 ParticleEngine 对自定义批不做距离排序、批间先后与距离无关
+ * 且单次运行内稳定——在引擎内写深度则同批烟块互相深度剔除（多块叠加的增浓失效、烟变稀透出
+ * 背景）且后画的载具半透明切片被剔穿；不写深度则黑烟批后画时整批盖住白烟。本类因此脱离
+ * ParticleEngine，由 {@link RVP_WreckMuzzleSmokeSelfRenderer} 在 AFTER_PARTICLES 阶段
+ * （恒晚于黑烟批）按距离排序自绘，深度只测不写：层间叠加正确、载具按 alpha 混合软遮挡、
+ * 白烟恒在黑烟之前。已知边界：自绘粒子不进热成像白热通道（自定义批时代亦不被提白，无回归）；
+ * 贴图分组间顺序与距离无关（同色系白烟观感影响小）。</p>
  */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
 
-    /** 复用车顶殉燃的全部静态喷火贴图，不新增资源文件：<b>不透明期写深度</b>批（跨批遮挡仲裁）。 */
-    private static final ParticleRenderType[] OPAQUE_RENDER_TYPES = createRenderTypes(true);
+    /** 静态贴图渲染类型（深度只测不写）——仅作误入 ParticleEngine 时的兜底批，正常路径走自绘。 */
+    private static final ParticleRenderType[] RENDER_TYPES = createRenderTypes();
 
-    /** <b>渐隐期只测不写</b>批（对齐火箭冲刷/尾迹烟 d7141aac 语义）：半透明阶段靠 alpha 混合自然透出载具，不再以幽灵深度挡死。 */
-    private static final ParticleRenderType[] FADE_RENDER_TYPES = createRenderTypes(false);
-
-    /** 粒子 alpha 低于该值视为渐隐期，切换到只测不写渲染批（两批分属不同 ParticleRenderType，取舍见 renderType 注释）。 */
-    private static final float FADE_DEPTH_ALPHA = 0.4F;
-
-    /** 当前烟粒子绑定的静态贴图渲染类型（随 alpha 渐隐在不透明/渐隐两批间切换）。 */
-    private ParticleRenderType renderType;
-    /** 粒子绑定的贴图索引（切换渲染批时定位同贴图）。 */
+    /** 粒子绑定的静态贴图索引（自绘渲染时按贴图分组绘制）。 */
     private final int textureIndex;
     /** 粒子出生时的面片尺寸，单位格。 */
     private final float initialQuadSize;
@@ -50,12 +51,12 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
     private final float rollSpeed;
     /** 每枚烟团独立的水平摆动相位。 */
     private final double swayPhase;
-    private RVP_WreckMuzzleSmokeParticle(ClientLevel level, Vec3 position, Vec3 velocity,
+
+    RVP_WreckMuzzleSmokeParticle(ClientLevel level, Vec3 position, Vec3 velocity,
                                          float size, float alpha, int lifetime, int textureIndex,
                                          double updraft, double spread, float grey) {
         super(level, position.x, position.y, position.z);
         this.textureIndex = normalizeTextureIndex(textureIndex);
-        this.renderType = OPAQUE_RENDER_TYPES[this.textureIndex];
         this.initialQuadSize = Math.max(0.1F, size);
         this.initialAlpha = Mth.clamp(alpha, 0.0F, 1.0F);
         this.lifetime = Math.max(4, lifetime);
@@ -77,68 +78,49 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         this.hasPhysics = false;
     }
 
-    /**
-     * 加入一枚炮口殉燃灰烟粒子。
-     *
-     * @param engine 客户端粒子引擎
-     * @param level 客户端世界
-     * @param position 粒子出生位置
-     * @param velocity 粒子初速度，单位格/tick
-     * @param size 初始面片尺寸，单位格
-     * @param alpha 初始透明度
-     * @param lifetime 生命周期，单位 tick
-     * @param textureIndex 贴图变体索引
-     * @param updraft 目标竖直上浮速度，单位格/tick
-     * @param spread 水平摆动速度增量，单位格/tick
-     * @param grey 灰度，0 为黑色，1 为白色
-     */
-    public static void spawn(ParticleEngine engine, ClientLevel level, Vec3 position, Vec3 velocity,
-                             float size, float alpha, int lifetime, int textureIndex,
-                             double updraft, double spread, float grey) {
-        if (engine == null || level == null || position == null || velocity == null) {
-            return;
-        }
-        // 调用本类构造器：把炮口灰烟加入客户端粒子引擎，不触碰服务端载具状态。
-        engine.add(new RVP_WreckMuzzleSmokeParticle(level, position, velocity, size, alpha,
-                lifetime, textureIndex, updraft, spread, grey));
-    }
-
     /** 返回与车顶殉燃相同的静态贴图数量，供控制器和单元测试共享边界。 */
     static int textureCount() {
-        return OPAQUE_RENDER_TYPES.length;
+        return RENDER_TYPES.length;
     }
 
     /** 把任意输入索引规范化到车顶殉燃贴图范围。 */
     static int normalizeTextureIndex(int textureIndex) {
-        return Math.floorMod(textureIndex, OPAQUE_RENDER_TYPES.length);
+        return Math.floorMod(textureIndex, RENDER_TYPES.length);
     }
 
     /** 让竖直速度平滑逼近目标上浮速度，避免炮口烟出生时突然改变方向。 */
     static double approachUpdraft(double currentVelocity, double targetUpdraft) {
         double target = Double.isFinite(targetUpdraft) ? Math.max(0.0D, Math.min(1.0D, targetUpdraft)) : 0.0D;
-        double current = Double.isFinite(currentVelocity) ? currentVelocity : 0.0D;
+        double current = Double.isFinite(currentVelocity) ? Math.max(0.0D, currentVelocity) : 0.0D;
         return target + (current - target) * 0.98D;
     }
 
-    /**
-     * 创建炮口烟渲染类型（按 depthWrite 参数分两批）。
-     * <p>背景：本类与殉燃黑烟（RVP_MchrSmokeRenderType.RENDER_TYPE）分属两个自定义
-     * ParticleRenderType 批次，1.20.1 ParticleEngine 对自定义批不做距离排序、批间先后与
-     * 距离无关且单次运行内稳定——跨批遮挡只能靠深度缓冲仲裁。因此按 alpha 分桶：
-     * <b>不透明期（alpha ≥ {@link #FADE_DEPTH_ALPHA}）写深度</b>，无论两批谁先画，烟柱
-     * 都能正确挡住后方黑烟/载具（2026-10-07 "殉燃黑烟盖白烟"修复，用户认可不透明覆盖）；
-     * <b>渐隐期只测不写</b>（对齐火箭冲刷/尾迹烟 d7141aac："原 true 挡死后续粒子与载具"），
-     * 半透明部分靠 alpha 混合自然透出载具（2026-10-07 实机：全程写深度的渐隐期多块叠加
-     * 会把载具挡死）。</p>
-     * <p>已知代价：不透明期对同帧后画的半透明切片（如载具 entityTranslucent 部件）按深度
-     * 剔除；渐隐期与黑烟跨批仍有轻微混合错序（低 alpha 观感损失小）。</p>
-     */
-    private static ParticleRenderType renderType(ResourceLocation texture, boolean depthWrite) {
+    /** 返回本粒子绑定的贴图索引，供自绘管理器按贴图分组绘制。 */
+    int textureIndex() {
+        return this.textureIndex;
+    }
+
+    /** 返回本粒子是否已结束（寿命耗尽或被移除），供自绘管理器从列表摘除。 */
+    boolean isGone() {
+        return this.removed;
+    }
+
+    /** 返回本粒子到相机的距离平方（自绘排序用，避免跨包访问坐标字段）。 */
+    double distanceSqrTo(Camera camera) {
+        Vec3 cameraPos = camera.getPosition();
+        double dx = this.x - cameraPos.x;
+        double dy = this.y - cameraPos.y;
+        double dz = this.z - cameraPos.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /** 创建车顶喷火贴图对应的深度只测不写渲染类型（兜底批；排序自绘见 RVP_WreckMuzzleSmokeSelfRenderer）。 */
+    private static ParticleRenderType renderType(ResourceLocation texture) {
         // 调用本项目车顶喷燃贴图入口：炮口只复用资源并通过颜色染成灰黑，不复制或覆盖贴图。
         return new ParticleRenderType() {
             @Override
             public void begin(BufferBuilder builder, TextureManager textureManager) {
-                RenderSystem.depthMask(depthWrite);
+                RenderSystem.depthMask(false);
                 RenderSystem.setShaderTexture(0, texture);
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
@@ -158,20 +140,20 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         };
     }
 
-    /** 创建与车顶喷燃完全相同的静态贴图集合（depthWrite 决定该批是否写深度）。 */
-    private static ParticleRenderType[] createRenderTypes(boolean depthWrite) {
+    /** 创建与车顶喷燃完全相同的静态贴图集合。 */
+    private static ParticleRenderType[] createRenderTypes() {
         int textureCount = RVP_WreckFlameParticle.textureCount();
         ParticleRenderType[] types = new ParticleRenderType[textureCount];
         for (int i = 0; i < textureCount; i++) {
             // 调用本项目车顶喷燃贴图定位入口：确保两种殉燃效果永远使用同一组资源。
-            types[i] = renderType(RVP_WreckFlameParticle.textureLocation(i), depthWrite);
+            types[i] = renderType(RVP_WreckFlameParticle.textureLocation(i));
         }
         return types;
     }
 
     @Override
     public ParticleRenderType getRenderType() {
-        return this.renderType;
+        return RENDER_TYPES[this.textureIndex];
     }
 
     @Override
@@ -208,7 +190,7 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         this.oRoll = this.roll;
         ++this.age;
         if (this.age >= this.lifetime) {
-            // 调用基类移除入口：寿命耗尽后从客户端粒子引擎摘除。
+            // 调用基类移除入口：寿命耗尽后由自绘管理器从列表摘除。
             this.remove();
             return;
         }
@@ -216,8 +198,6 @@ public final class RVP_WreckMuzzleSmokeParticle extends SingleQuadParticle {
         this.quadSize = this.initialQuadSize * (0.7F + 1.0F * progress);
         this.alpha = this.initialAlpha * Mth.clamp(progress < 0.58F
                 ? 1.0F : (1.0F - progress) / 0.42F, 0.0F, 1.0F);
-        // 按 alpha 渐隐阈值切换渲染批：不透明期写深度挡后方黑烟/载具，渐隐期只测不写让载具透出
-        this.renderType = (this.alpha >= FADE_DEPTH_ALPHA ? OPAQUE_RENDER_TYPES : FADE_RENDER_TYPES)[this.textureIndex];
         this.roll += this.rollSpeed;
         double wave = this.age * 0.07D + this.swayPhase;
         this.xd = this.xd * 0.965D + Math.sin(wave) * this.spread;

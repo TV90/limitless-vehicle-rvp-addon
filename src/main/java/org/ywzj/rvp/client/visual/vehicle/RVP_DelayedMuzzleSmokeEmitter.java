@@ -208,7 +208,6 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
         double smokeSize = 0.65;
         double spacing = Math.max(0.18, smokeSize * 0.56);
         int layerCount = Mth.clamp((int) Math.ceil(travel / spacing) + 1, 1, 8);
-        net.minecraft.client.particle.ParticleEngine engine = Minecraft.getInstance().particleEngine;
         for (int layer = 0; layer < layerCount; layer++) {
             // 轴向等距覆盖炮口到喷出段（殉燃 muzzleSmokeLayerPosition 同语义）+ 横向抖动
             double along = travel * (layerCount == 1 ? 0.5 : (double) layer / (layerCount - 1));
@@ -223,9 +222,10 @@ public final class RVP_DelayedMuzzleSmokeEmitter {
             float size = (float) (smokeSize * (0.85 + random.nextDouble() * 0.30));
             float alpha = (float) (0.60 * (0.85 + random.nextDouble() * 0.30));
             int lifetime = 36;
-            // grey=1.0 → 白色（殉燃原版为 0.13 灰黑）
-            org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle.spawn(
-                    engine, level, pos, velocity, size, alpha, lifetime,
+            // grey=1.0 → 白色（殉燃原版为 0.13 灰黑）。调用本项目炮口烟自绘管理器：
+            // 脱离 ParticleEngine 批次，由 AFTER_PARTICLES 阶段按距离排序自绘（深度三难正解）。
+            org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer.spawn(
+                    level, pos, velocity, size, alpha, lifetime,
                     random.nextInt(16), 0.08, 0.003, 1.0f);
         }
     }

@@ -5,6 +5,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.particle.RVP_WreckFlameParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer;
 import org.ywzj.rvp.client.particle.RVP_WreckSparkParticle;
 import org.ywzj.rvp.config.RVP_CommonConfig;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -732,9 +733,10 @@ public final class RVP_WreckCookoffController {
         int lifetime = (int) Math.round(Math.max(4.0D,
                 Math.min(120.0D, RVP_WreckCookoffSettings.muzzleSmokeLifetime)));
         float grey = (float) Math.max(0.02D, Math.min(0.5D, RVP_WreckCookoffSettings.muzzleSmokeGrey));
-        // 调用本项目炮口灰烟粒子入口：复用已有近处烟贴图，不再生成炮口火焰贴图。
+        // 调用本项目炮口灰烟自绘管理器：复用已有近处烟贴图，脱离 ParticleEngine 批次，
+        // 由 AFTER_PARTICLES 阶段按距离排序自绘（与炮口白烟同一管线，深度三难正解）。
         int textureCount = RVP_WreckFlameParticle.textureCount();
-        RVP_WreckMuzzleSmokeParticle.spawn(Minecraft.getInstance().particleEngine, currentLevel,
+        RVP_WreckMuzzleSmokeSelfRenderer.spawn(currentLevel,
                 position, velocity, size, alpha, lifetime,
                 Math.floorMod(layer + currentLevel.random.nextInt(textureCount), textureCount),
                 updraft, spread, grey);
