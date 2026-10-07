@@ -27,7 +27,8 @@ public class RVP_Network {
     /** 协议 21：失效表新增 BARREL_DAMAGED（炮管受损档进失效表：可快修/队列/持久化）；旧客户端无法连新服。 */
     /** 协议 25：视觉碎片事件新增方向圆锥半角参数；旧客户端无法连新服。 */
     /** 协议 26：新增 C2SHeliDockToggle（直升机着舰 P 键）+ S2CHeliDockState（着舰/接管控制锁定同步）；旧客户端无法连新服。 */
-    private static final String PROTOCOL = "26";
+    /** 协议 27：新增地面载具击毁分支及权威殉燃时间表；双端必须一同更新。 */
+    private static final String PROTOCOL = "27";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -385,6 +386,12 @@ public class RVP_Network {
                 .encoder(S2CGunnerProfileSnapshot::encode)
                 .decoder(S2CGunnerProfileSnapshot::decode)
                 .consumerMainThread(S2CGunnerProfileSnapshot::handle)
+                .add();
+        // 调用本项目击毁快照编码/解码及安全桥处理器，只允许服务端向客户端发送。
+        CHANNEL.messageBuilder(S2CWreckDestructionState.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CWreckDestructionState::encode)
+                .decoder(S2CWreckDestructionState::decode)
+                .consumerMainThread(S2CWreckDestructionState::handle)
                 .add();
     }
 }

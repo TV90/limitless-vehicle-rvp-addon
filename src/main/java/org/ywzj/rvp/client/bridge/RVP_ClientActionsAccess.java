@@ -15,6 +15,12 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥转交击毁快照，公共网络代码不引用客户端状态类。 */
+    public static void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
+        // 调用按物理端选择的实现，专用服务端保持 NOOP。
+        INSTANCE.acceptWreckDestructionState(message);
+    }
+
     public static void tickParticleProjectile(RVP_BaseBullet projectile) {
         INSTANCE.tickParticleProjectile(projectile);
     }
@@ -89,6 +95,11 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
+            // 专用服务端不持有客户端效果状态。
+        }
+
         @Override
         public void tickParticleProjectile(RVP_BaseBullet projectile) {
             // 服务端不生成客户端粒子。

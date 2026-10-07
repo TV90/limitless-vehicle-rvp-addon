@@ -20,6 +20,12 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
+        // 调用客户端权威快照缓存，供殉燃与长程烟读取同一服务端时间表。
+        org.ywzj.rvp.client.visual.cookoff.RVP_ClientWreckDestructionState.accept(message);
+    }
+
+    @Override
     public void tickParticleProjectile(RVP_BaseBullet projectile) {
         // 调用本项目粒子弹体发射器：按 Tick 生成主体及历史路径采样点。
         RVP_ParticleProjectileEmitter.tick(projectile);

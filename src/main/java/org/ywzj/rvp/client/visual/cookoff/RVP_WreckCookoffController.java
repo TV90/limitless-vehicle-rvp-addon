@@ -8,6 +8,7 @@ import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer;
 import org.ywzj.rvp.client.particle.RVP_WreckSparkParticle;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.rvp.vehicle.wreck.RVP_WreckDestructionState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.entity.vehicle.WheeledVehicle;
@@ -26,8 +27,8 @@ import static org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffResolver.*;
 /** 地面载具持续殉燃；由击毁烟的既有遍历驱动，不增加全世界实体遍历。 */
 public final class RVP_WreckCookoffController {
 
-    /** 殉燃火柱总生命周期占残骸保留时间的百分比；例如 50 表示 wreckLifetimeSeconds 的 50%。 */
-    public static final double WRECK_LIFETIME_PERCENT = 40.0D;
+    /** 预览与真实殉燃共用公共时间规则，实际百分比在双端安全状态类中维护。 */
+    public static final double WRECK_LIFETIME_PERCENT = RVP_WreckDestructionState.WRECK_LIFETIME_PERCENT;
     /** 殉燃完成后允许生成长程击毁烟的最短等待时间，单位 tick。 */
     private static final int LONG_SMOKE_DELAY_MIN_TICKS = 30;
     /** 殉燃完成后允许生成长程击毁烟的最长等待时间，单位 tick。 */
@@ -128,8 +129,10 @@ public final class RVP_WreckCookoffController {
         private long seen;
         /** 到相机的距离，单位格。 */
         private double distance;
-        /** 本实例开始被客户端观察的世界 tick。 */
+        /** 真实残骸使用服务端击毁 tick；纯客户端预览使用本地开始 tick。 */
         private final long startedAt;
+        /** 是否为纯客户端预览，避免预览生命周期覆盖真实残骸的服务端时间表。 */
+        private final boolean previewInstance;
         /** 本实例开始收缩的世界 tick；Long.MIN_VALUE 表示仍在活动。 */
         private long endingAt = Long.MIN_VALUE;
         /** 开始收缩时的尺寸倍率，避免在增长未完成时突然跳到完整尺寸。 */
@@ -141,12 +144,13 @@ public final class RVP_WreckCookoffController {
         /** 是否因达到按残骸寿命比例计算的定时结束点而收缩；提前离开追踪范围不置为 true。 */
         private boolean timedEnding;
 
-        private Instance(AbstractVehicle vehicle) {
+        private Instance(AbstractVehicle vehicle, RVP_WreckDestructionState state) {
             this.vehicle = vehicle;
-            this.startedAt = lastTick;
-            // 调用本项目 common 配置读取服务端残骸保留秒数，作为殉燃火柱生命周期的基准。
-            this.cookoffDurationTicks = RVP_WreckCookoffController.cookoffDurationTicks(
-                    RVP_CommonConfig.getWreckLifetimeSeconds(), WRECK_LIFETIME_PERCENT);
+            this.previewInstance = state == null;
+            this.startedAt = state == null ? lastTick : state.startedAt();
+            // 调用本项目权威快照；仅无伤害预览读取本地 common 配置作为时长基准。
+            this.cookoffDurationTicks = state == null ? RVP_WreckCookoffController.cookoffDurationTicks(
+                    RVP_CommonConfig.getWreckLifetimeSeconds(), WRECK_LIFETIME_PERCENT) : state.durationTicks();
             this.endingDurationTicks = durationTicks(RVP_WreckCookoffSettings.shrinkTicks);
             // 调用自动挂点解析器，所有车型共用同一套只读规则；炮口只在建立绑定时收集一次
             Discovery discovery = discover(vehicle, true);
@@ -258,11 +262,8 @@ public final class RVP_WreckCookoffController {
 
     /** 将残骸保留秒数和代码百分比转换为火柱总生命周期，单位 tick。 */
     public static long cookoffDurationTicks(int wreckLifetimeSeconds, double percent) {
-        if (wreckLifetimeSeconds <= 0 || !Double.isFinite(percent) || percent <= 0) {
-            return 0;
-        }
-        double ticks = wreckLifetimeSeconds * 20.0D * percent / 100.0D;
-        return Math.max(1L, Math.round(ticks));
+        // 调用本项目双端公共规则，客户端预览与服务端延迟调度使用同一时长算法。
+        return RVP_WreckDestructionState.cookoffDurationTicks(wreckLifetimeSeconds, percent);
     }
 
     /** 增长阶段的生命周期倍率：从 0 平滑到 1。 */
@@ -422,16 +423,21 @@ public final class RVP_WreckCookoffController {
     /**
      * 判断地面载具是否已经越过殉燃结束后的长程击毁烟等待门。
      *
-     * <p>没有被殉燃控制器观察到的载具不阻塞长程烟，避免远距离载具因殉燃只在 256 格内绘制而永久无烟；
-     * 一旦本控制器已建立殉燃实例，则必须等实例完整收缩结束，并再经过每车一次的随机等待。</p>
+     * <p>真实残骸统一读取服务端快照，远距离观察、重连、资源重载均不会重新计时。
+     * 立即飞头不等待殉燃；纯客户端预览保留原来的本地生命周期。</p>
      *
      * @param vehicle 待判断的载具
      * @param gameTime 当前客户端世界 tick
-     * @return 非地面载具、未启用殉燃或未被本控制器接管时保持原行为；已完成等待时允许长程烟
+     * @return 非地面载具保持原行为；真实地面残骸由服务端时间表决定
      */
     public static boolean canEmitLongSmoke(AbstractVehicle vehicle, long gameTime) {
-        if (!isGroundVehicle(vehicle) || RVP_CommonConfig.getWreckLifetimeSeconds() <= 0) {
+        if (!isGroundVehicle(vehicle)) {
             return true;
+        }
+        if (vehicle.isDestroyed()) {
+            // 调用本项目权威状态；未收到快照时等待，防止长程烟先出现再被殉燃收回。
+            RVP_WreckDestructionState state = RVP_ClientWreckDestructionState.get(vehicle);
+            return state != null && state.canEmitLongSmoke(gameTime);
         }
         UUID vehicleId = vehicle.getUUID();
         if (!INSTANCES.containsKey(vehicleId) && !COMPLETED.contains(vehicleId)) {
@@ -473,15 +479,24 @@ public final class RVP_WreckCookoffController {
         // 调用本类类型门控和本体击毁标记，攻击来源不参与判定。
         if (!isGroundVehicle(vehicle) || vehicle.isRemoved()
                 || (!vehicle.isDestroyed() && !vehicle.getUUID().equals(preview))) return;
-        if (RVP_CommonConfig.getWreckLifetimeSeconds() <= 0) return;
-        if (!vehicle.getUUID().equals(preview) && COMPLETED.contains(vehicle.getUUID())) return;
+        boolean isPreview = !vehicle.isDestroyed() && vehicle.getUUID().equals(preview);
+        // 调用服务端快照缓存：真实残骸必须等到分支已知，立即飞头永不生成殉燃粒子。
+        RVP_WreckDestructionState state = isPreview ? null : RVP_ClientWreckDestructionState.get(vehicle);
+        if (!isPreview && (state == null || !state.isBurning(lastTick))) {
+            // 到期由 end() 按原定时刻完成收缩；立即分支/未知状态不能保留旧预览实例。
+            if (state == null || state.mode() == RVP_WreckDestructionState.Mode.IMMEDIATE) {
+                INSTANCES.remove(vehicle.getUUID());
+            }
+            return;
+        }
+        if (isPreview && RVP_CommonConfig.getWreckLifetimeSeconds() <= 0) return;
         Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         double distance = camera.distanceTo(vehicle.position());
         if (distance > 256) return;
         Instance instance = INSTANCES.get(vehicle.getUUID());
-        if (instance == null || instance.vehicle != vehicle
+        if (instance == null || instance.vehicle != vehicle || instance.previewInstance != isPreview
                 || (instance.columns.isEmpty() && lastTick % 20 == 0)) {
-            instance = new Instance(vehicle);
+            instance = new Instance(vehicle, state);
             INSTANCES.put(vehicle.getUUID(), instance);
         }
         // 重新观察到同一残骸时取消尚未完成的收缩，但不重新播放增长阶段。
@@ -522,7 +537,7 @@ public final class RVP_WreckCookoffController {
             instance.startTimedEndingIfNeeded(lastTick);
             instance.updateLifecycleScale(lastTick);
             if (!instance.isExpired(lastTick)) return false;
-            if (instance.timedEnding) {
+            if (instance.timedEnding && instance.previewInstance) {
                 // 定时殉燃已完整结束；保留终结标记，直到客户端世界清理，避免实体仍存活时重新创建实例。
                 UUID vehicleId = instance.vehicle.getUUID();
                 COMPLETED.add(vehicleId);
