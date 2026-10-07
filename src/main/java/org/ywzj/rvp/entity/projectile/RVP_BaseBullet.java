@@ -3317,8 +3317,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             // 其船体远离注册分节的部分对段盒查询确定性不可见 → 无候选 → 导弹/机炮弹过穿。
             // 用载具注册表按包围盒补筛合并（粗筛标准与原版一致：makeBoundingBox 包络相交）。
             AABB queryBox = getBoundingBox().expandTowards(step).inflate(1.0);
+            // 2026-10-08 直击拦截：Entity.isPickable() 基类恒 false 且 AmmoEntity 全系未覆写——
+            // RVP 弹药此前被本过滤器整类剔除，弹间直击命中从不执行（collision_box_size 只兑现了近炸 +0.32m）。
+            // 放开敌对弹药进入直击候选（仅服务端权威判定；近炸链不加，防双份误触）。
             java.util.function.Predicate<Entity> candidateFilter =
-                    entity -> entity != null && entity.isPickable() && !entity.isSpectator();
+                    entity -> entity != null && !entity.isSpectator()
+                            && (entity.isPickable() || isInterceptableEnemyAmmo(entity));
             List<Entity> entities = org.ywzj.rvp.util.RVP_ServerVehicleIndex.mergeWithVehicleIndex(
                     level(), queryBox,
                     level().getEntities(this, queryBox, candidateFilter),
@@ -3547,6 +3551,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (entity instanceof AbstractVehicle targetVehicle
                 && ywzj_rvp$isOnlyPhysicsOnlyVehicleHit(targetVehicle, collisionSegmentStart(), collisionSegmentEnd())) {
             setPos(RVP_WallPenetrationUtil.positionPastEntityHit(result.getLocation(), getDeltaMovement()));
+            return;
+        }
+        // 弹间直击拦截（2026-10-08，collision_box_size 配套结算）：命中敌对弹药即以其自身
+        // 引信语义（detonateFuseAt，继承 ON_FUSE 子母弹等配置；无爆炸配置退化为消失）就地引爆，
+        // 拦截弹同 tick 消耗（一发拦一枚）；跳过常规伤害/穿透/跳弹——弹药无血量，hurt 无意义。
+        if (entity instanceof RVP_BaseBullet targetBullet && isInterceptableEnemyAmmo(targetBullet)) {
+            targetBullet.detonateFuseAt(targetBullet.position(), FuseDetonation.NORMAL);
+            this.discard();
             return;
         }
         if (tryBounceFromEntityHit(result)) {
@@ -3946,6 +3958,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public net.minecraft.world.entity.EntityDimensions getDimensions(net.minecraft.world.entity.Pose pose) {
         // 覆写实体尺寸来源：注册尺寸恒 1/16，本弹按武器配置返回（客户端 readSpawnData 后与服务端一致）
         return net.minecraft.world.entity.EntityDimensions.scalable(collisionBoxSize, collisionBoxSize);
+    }
+
+    /**
+     * 该实体是否可作为"可直击拦截的敌对弹药"进入直击候选（2026-10-08 collision_box_size 配套）：
+     * 仅服务端判定（客户端预测不放行，直击命中以服务端结算为准）；目标为其它弹药实体、
+     * 非发射者自身、通过 canDamageEntity 既有约束（同车弹药/干扰物/本车乘客已排除），
+     * 且两弹发射载具按 {@link org.ywzj.rvp.ecm.RVP_EcmIff#areVehiclesFriendly} 口径敌对
+     * （gunner faction/Team 联盟；无车队与玩家车互不拦截，防己方弹幕自伤）。
+     */
+    private boolean isInterceptableEnemyAmmo(Entity entity) {
+        if (level().isClientSide() || entity == this || !(entity instanceof AmmoEntity ammo)) {
+            return false;
+        }
+        if (!canDamageEntity(entity)) {
+            return false;
+        }
+        return !org.ywzj.rvp.ecm.RVP_EcmIff.areVehiclesFriendly(this.vehicle, ammo.vehicle);
     }
 
     protected boolean canDamageEntity(Entity entity) {

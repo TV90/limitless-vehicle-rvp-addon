@@ -40,7 +40,12 @@ public class RVP_VehiclePartRender extends VehiclePartRender {
         List<String> hidden = unit == null
                 ? List.of()
                 : RVP_PartHiddenBonesCache.get(part.getVehicleId(), unit.getId());
-        if (!hidden.isEmpty()) {
+        // 动态快照（2026-10-08 增强）：源车击毁前已被隐藏的骨序号（JS 损坏隐藏/起落架状态等
+        // 全部来源的汇总结果，剔除距离 LOD 临时假值）——残件不跑动画，静态配置之外的损坏隐藏
+        // 由此快照延续到残件上；借源失败（源车已卸载）返回空集，降级为仅静态配置
+        java.util.Set<Integer> wreckHidden =
+                org.ywzj.rvp.client.state.RVP_ClientWreckHiddenBonesCache.snapshotFor(part);
+        if (!hidden.isEmpty() || !wreckHidden.isEmpty()) {
             // 调用 AbstractVehicle.getVehicleModelInstance 取残件自己的模型实例（可空，未就绪则不处理）
             BakedModelInstance instance = part.getVehicleModelInstance();
             if (instance != null) {
@@ -50,6 +55,13 @@ public class RVP_VehiclePartRender extends VehiclePartRender {
                     BoneState bone = instance.getBone(boneName);
                     if (bone != null) {
                         bone.visible = false;   // 不需要恢复：残件渲染器是本实例的唯一消费者
+                    }
+                }
+                // 动态快照按模型骨序应用（残件与源车共用同一 bedrock 模型，骨序一一对应）
+                for (int boneIndex : wreckHidden) {
+                    BoneState bone = instance.getBone(boneIndex);
+                    if (bone != null) {
+                        bone.visible = false;
                     }
                 }
             }
