@@ -50,6 +50,8 @@ forge*changelog.txt
 webeditor/node_modules/
 webeditor/dist/
 # 载具包（数据资产）不进 git，走安装目录分发；仅放行 RVP 武器配置
+# 载具包唯一权威副本（2026-10-08 迁移）：794MB 不进 git，开发/修改一律在此；limitless_vehicle/ 降为同步包
+limitless_vehicle_authoritative/
 limitless_vehicle/*
 !limitless_vehicle/rvp/
 limitless_vehicle/rvp/*
