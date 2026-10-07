@@ -470,5 +470,6 @@
   "message.ywzj_rvp.helidock.docked": "Docked: helicopter locked to deck (press P to take off)",
   "message.ywzj_rvp.helidock.takeoff": "Auto take-off: controls unlock after climb",
   "message.ywzj_rvp.helidock.released": "Controls restored",
-  "message.ywzj_rvp.helidock.ship_lost": "Ship lost — helicopter controls restored"
+  "message.ywzj_rvp.helidock.ship_lost": "Ship lost — helicopter controls restored",
+  "message.ywzj_rvp.helidock.pad_occupied": "Helipad is occupied by another helicopter"
 }

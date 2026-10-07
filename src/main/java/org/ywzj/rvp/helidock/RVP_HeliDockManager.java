@@ -112,6 +112,27 @@ public final class RVP_HeliDockManager {
         return false;
     }
 
+    /**
+     * 指定舰船的指定停机坪是否已被其它直升机占用（pad 级互斥，2026-10-07 用户需求）。
+     * APPROACH/DOCKED/TAKEOFF 任何阶段都算占用：APPROACH 防两架同时接管撞在一起，
+     * TAKEOFF 防起飞爬升段被别架插进同一坪面。
+     */
+    public static boolean isPadOccupied(UUID shipUuid, String padBone, UUID exceptHeli) {
+        if (shipUuid == null || padBone == null) {
+            return false;
+        }
+        for (Map.Entry<UUID, DockingState> entry : STATES.entrySet()) {
+            if (entry.getKey().equals(exceptHeli)) {
+                continue;
+            }
+            DockingState state = entry.getValue();
+            if (state.shipUuid().equals(shipUuid) && state.padBone().equals(padBone)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 按 P 切换（服务端，已校验玩家驾驶旋翼机）。返回是否接受。 */
     public static boolean toggle(ServerPlayer player, RotaryWingVehicle heli) {
         UUID heliUuid = heli.getUUID();
@@ -143,6 +164,11 @@ public final class RVP_HeliDockManager {
         // 未着舰：找 48 格内最近的停机坪（按 pad 骨骼 OBB 中心判定）
         NearestHelipad nearest = findNearestHelipad(heli, player.serverLevel());
         if (nearest == null) {
+            return false;
+        }
+        if (isPadOccupied(nearest.ship().getUUID(), nearest.padBone(), heliUuid)) {
+            player.displayClientMessage(Component.translatable(
+                    "message.ywzj_rvp.helidock.pad_occupied"), true);
             return false;
         }
         STATES.put(heliUuid, new DockingState(nearest.ship().getUUID(),
@@ -277,6 +303,12 @@ public final class RVP_HeliDockManager {
         if (state == null) {
             return;
         }
+        if (isPadOccupied(state.shipUuid(), state.padBone(), heliUuid)) {
+            // pad 被其它直升机占着（异常残留/极端时序）：放弃本次着舰并解除接管，不覆盖对方状态
+            release(heli);
+            notifyRider(heli, "message.ywzj_rvp.helidock.pad_occupied");
+            return;
+        }
         STATES.put(heliUuid, new DockingState(state.shipUuid(), state.padBone(), Phase.DOCKED, 0));
         // 着舰完毕自动关闭发动机（2026-10-07 用户定版）：功率归零旋翼停转，下次起飞再开启
         heli.toggleEngine(false);
@@ -365,6 +397,11 @@ public final class RVP_HeliDockManager {
                 continue;
             }
             for (String padBone : pads) {
+                // pad 级互斥：被其它直升机占用（APPROACH/DOCKED/TAKEOFF）的停机坪不参与
+                // 最近 pad 竞争——48 格提示与按 P 接管都只对空闲 pad 生效（2026-10-07 用户需求）
+                if (isPadOccupied(vehicle.getUUID(), padBone, heli.getUUID())) {
+                    continue;
+                }
                 Vec3 padCenter = resolvePadWorldCenter(vehicle, padBone);
                 if (padCenter == null) {
                     continue;
