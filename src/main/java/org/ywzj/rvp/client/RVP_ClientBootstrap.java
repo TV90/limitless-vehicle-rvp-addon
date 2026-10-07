@@ -16,6 +16,7 @@ import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBoots
 import org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager;
 import org.ywzj.rvp.client.nuclear.RVP_NuclearVisualManager;
 import org.ywzj.rvp.client.render.GunnerRenderer;
+import org.ywzj.rvp.client.render.RVP_VehiclePartRender;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
@@ -110,5 +111,8 @@ public final class RVP_ClientBootstrap {
         EntityRenderers.register(AllEntities.AH64D.get(), VehicleRender::new);
         EntityRenderers.register(AllEntities.LAV_AD.get(), VehicleRender::new);
         EntityRenderers.register(AllEntities.BGM_71_TOW.get(), VehicleRender::new);
+        // 残件渲染器覆盖注册：必须晚于本体 ClientSetupHandler 的注册（FMLClientSetupEvent）；
+        // 本方法在 FMLLoadCompleteEvent 的 onLoadComplete() 里会被再调一次，覆盖注册顺序有保证。
+        EntityRenderers.register(AllEntities.VEHICLE_PART.get(), RVP_VehiclePartRender::new);
     }
 }

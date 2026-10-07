@@ -17,6 +17,7 @@ import org.ywzj.rvp.config.RVP_LauncherDeployConfigCache;
 import org.ywzj.rvp.config.RVP_DeployableUavConfig;
 import org.ywzj.rvp.config.RVP_DeployableUavConfigCache;
 import org.ywzj.rvp.config.RVP_LoiterConfig;
+import org.ywzj.rvp.config.RVP_PartHiddenBonesCache;
 import org.ywzj.rvp.config.RVP_LoiterConfigCache;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
 import org.ywzj.rvp.config.RVP_CustomMountConfigCache;
@@ -27,6 +28,7 @@ import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.vehicle.custom.VehicleDataManager;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +55,8 @@ public class VehicleDataManagerMixin {
         RVP_LauncherDeployConfigCache.clear();
         // 分角度 RCS 雷达隐身：载具剖面缓存随数据包全量重建
         org.ywzj.rvp.radar.RVP_AspectRcs.clear();
+        // 残件隐藏骨：rvp_part_hidden_bones 缓存随数据包全量重建
+        RVP_PartHiddenBonesCache.clear();
         for (var entry : resources.entrySet()) {
             ResourceLocation vehicleId = entry.getKey();
             JsonElement json = entry.getValue();
@@ -69,6 +73,24 @@ public class VehicleDataManagerMixin {
                 // show_skeleton（观瞄时骨骼俯视图，默认 true）
                 VehicleUIPresetCache.putShowSkeleton(vehicleId,
                         GsonHelper.getAsBoolean(obj, "show_skeleton", true));
+
+                // 残件隐藏骨：rvp_part_hidden_bones = { "<partId>": ["bone", ...], ... }
+                Map<String, List<String>> partHiddenBones = new HashMap<>();
+                JsonElement hiddenEl = obj.get("rvp_part_hidden_bones");
+                if (hiddenEl != null && hiddenEl.isJsonObject()) {
+                    for (var e : hiddenEl.getAsJsonObject().entrySet()) {
+                        if (e.getValue() == null || !e.getValue().isJsonArray()) continue;
+                        List<String> bones = new ArrayList<>();
+                        for (JsonElement b : e.getValue().getAsJsonArray()) {
+                            if (b != null && b.isJsonPrimitive()) {
+                                String name = b.getAsString().trim();
+                                if (!name.isEmpty()) bones.add(name);
+                            }
+                        }
+                        if (!bones.isEmpty()) partHiddenBones.put(e.getKey(), List.copyOf(bones));
+                    }
+                }
+                RVP_PartHiddenBonesCache.put(vehicleId, partHiddenBones);   // 空表也要 put，便于重载时清干净
 
                 RVP_DeployableUavConfig deployableUavConfig = ywzj_rvp$parseDeployableUavConfig(obj);
                 if (deployableUavConfig.isConfigured()) {

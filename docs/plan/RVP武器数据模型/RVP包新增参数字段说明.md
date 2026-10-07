@@ -2225,6 +2225,26 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 
 > 黑烟使用 RVP 损坏烟渲染类型（深度只测不写）；配 `hideBone` 联动（JS 动画 `rvp_isModuleActive`）的部件建议关烟（如带 hurt 受损骨的坦克主炮）。
 
+### 2.19 残件隐藏渲染骨（`rvp_part_hidden_bones`，2026-10-07）
+
+载具 JSON **顶层**对象（与 `parts` 同级），由 `VehicleDataManagerMixin` 在数据包 apply 阶段解析进 `RVP_PartHiddenBonesCache`，**残件（脱落部件/飞头）渲染器** `RVP_VehiclePartRender` 消费：渲染该部件残件前，把列出的渲染模型骨 `BoneState.visible` 置 `false`——渲染库在画几何与子树递归之前检查该标志，**本骨连同整棵子树一并跳过**。用途：坦克飞头后炮口焰骨（如 `turret_muzzle_flash`）会跟着残件画出来（残件不走整车渲染的 `setSpecialBoneVisible(false)`、也不跑动画，`static` 动画压不下去），本字段在数据层隐藏之。
+
+```json
+"rvp_part_hidden_bones": {
+  "turret": ["turret_muzzle_flash"]
+}
+```
+
+| 项 | 说明 |
+| --- | --- |
+| 键 | `parts[].id`（部件 id，通常为飞头部件 `turret`）。 |
+| 值 | **渲染模型**（bedrock geometry）里的骨名数组，可多个；只对该键写明的部件生效。 |
+| 影响范围 | 仅残件渲染（含被隐藏骨的射线检测，`rayTraceCubes` 同样跳过）；整车渲染、动画、命中判定零变化；未配置载具零变化。 |
+
+**已知边界**：①专用服务器下客户端进程不执行数据包 apply，本表为空 → 专用服客户端不生效（同挂架配置根因；单人/集成服正常）；②飞头部件需已配 `render_bone` + `max_health` + `defense_stats.damage_threshold: 0.1` 才有正常残骸（参照 vt4/t90m/ztz99b 的 `turret` 条目与 `muzzle_flash` 幽灵部件写法，现役 t84bm/ztz100 已同款补齐）。
+
+**现役配置**：vt4 / t90m / ztz99b / t84bm / ztz100（均为 `{"turret": ["turret_muzzle_flash"]}`）。实现与反汇编证据：`docs/plan/残件隐藏渲染骨_实现文档_20261007.md`。
+
 ## 3 部件 JSON 扩展
 
 ### 3.1 武器站部件扩展
