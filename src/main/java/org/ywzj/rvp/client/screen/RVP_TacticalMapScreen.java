@@ -1815,7 +1815,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 entry.x(),
                 entry.z(),
                 entry.yaw(),
-                16,
+                10,
                 relationColorForAffiliation(entry.affiliation()),
                 true);
     }
@@ -1863,7 +1863,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (i == activeGlobalIndex) {
                 drawTargetMarker(guiGraphics, sx, sy, GPS_ICON_COLOR);
             } else {
-                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
+                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, GPS_ICON_COLOR, false, 0.0f, 1.0f);
             }
             // 炮兵地图模式下不显示 GPS 文案，仅保留图标标记
             if (!isArtilleryMode()) {
@@ -1899,7 +1899,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (sx < mapLeft || sx > mapRight || sy < mapTop || sy > mapBottom) {
                 continue;
             }
-            drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, GPS_ICON_COLOR, false, 0.0f, 1.0f);
+            drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, GPS_ICON_COLOR, false, 0.0f, 1.0f);
             String label = "TGT";
             int w = this.font.width(label);
             int tx = sx - w / 2;
@@ -1935,7 +1935,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             }
             // 绘制圆心图标
             if (sx >= mapLeft && sx <= mapRight && sy >= mapTop && sy <= mapBottom) {
-                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, LOITER_ICON_COLOR, false, 0.0f, 1.0f);
+                drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, LOITER_ICON_COLOR, false, 0.0f, 1.0f);
                 String label = "LOITER";
                 int w = this.font.width(label);
                 int tx = sx - w / 2;
@@ -3300,26 +3300,26 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
-            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
             return;
         }
         if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
-            drawMarkerIcon(guiGraphics, NORMAL_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 16, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, NORMAL_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
             return;
         }
-        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 16, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
     }
 
     private void drawVehicleMarker(GuiGraphics guiGraphics, AbstractVehicle vehicle, int color) {
-        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 18, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 12, color, true, true);
     }
 
     private void drawPlayerMarker(GuiGraphics guiGraphics, Player player, int color) {
-        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 16, color, false, true);
+        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 11, color, false, true);
     }
 
     private void drawMissileMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 16, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 10, color, true, true);
     }
 
     private float resolveMarkerYaw(Entity entity) {
@@ -3336,7 +3336,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private void drawTargetMarker(GuiGraphics guiGraphics, int sx, int sy, int color) {
         long millis = System.currentTimeMillis();
         float pulse = 1.0f + ((millis % 900L) / 900.0f) * 0.16f;
-        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 16, color, false, 0.0f, pulse, true);
+        drawScreenIcon(guiGraphics, GPS_ICON, sx, sy, 12, color, false, 0.0f, pulse, true);
     }
 
     private void drawMarkerIcon(GuiGraphics guiGraphics, ResourceLocation icon, double worldX, double worldZ, float yaw, int size, int color, boolean rotate) {
