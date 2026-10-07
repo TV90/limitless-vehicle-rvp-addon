@@ -199,11 +199,11 @@ public final class RVP_HeliDockManager {
     /**
      * 接近段（2026-10-07 重写，参照 Gunner 旋翼飞控 tickRotaryDriving/tickRotaryCruise）：
      * 偏航 = controlUnit.yRot 目标方向（旋翼模拟偏航自追踪）；前后 = controlUnit.xRot 目标俯仰角
-     * （W/S 的 AI 等价物是压杆角度而非 forward 布尔）；高度 = 总距 up/down 闭环（collective<55
-     * 先补升力，高度误差 ±2 死区）；下沉保护（下沉 >0.18 格/t 压头+提总距）。
+     * （W/S 的 AI 等价物是压杆角度而非 forward 布尔）。
+     * 总距 = 垂直速度闭环（2026-10-07 用户定版：下降率 3 m/s，接近坪面收敛到 1 m/s，按实际
+     * 下降率差值补杆）；硬性防坠地板 3.6 m/s。
      * 目标点：8 格外悬停坪上 6 格；进入下降边界（8 格）转坪面+1 下降对接。
-     * 吸附门（放宽，2026-10-07 用户反馈打转）：水平 ≤15 格 ∧ 相对坪面高度 [-3, +12]——吸附时
-     * 本就传送到标准位，无需苛刻；吸附范围内水平速度阻尼（×0.8/tick）抑制绕圈过冲。
+     * 吸附门：下降段内水平 ≤8 格 ∧ 高度到目标面 [−2, +2.5]。
      */
     private static void tickApproach(RotaryWingVehicle heli, Vec3 padCenter) {
         var cu = heli.controlUnit;
@@ -213,39 +213,48 @@ public final class RVP_HeliDockManager {
         double targetY = horizontalDist <= DESCENT_RANGE
                 ? padCenter.y + 1.0
                 : padCenter.y + APPROACH_HOVER_HEIGHT;
-        Vec3 toTarget = new Vec3(padCenter.x - heli.getX(),
+        org.joml.Vector2f targetRot = toRot(new Vec3(padCenter.x - heli.getX(),
                 targetY - heli.getY(),
-                padCenter.z - heli.getZ());
-        org.joml.Vector2f targetRot = toRot(toTarget);
+                padCenter.z - heli.getZ()));
         cu.yRot = targetRot.y;
         cu.yRotKeep = false;
         cu.xRot = Mth.clamp(targetRot.x * 0.75F, -10.0F, 10.0F);
         cu.xRotKeep = false;
+        // 总距：垂直速度闭环——目标爬升率 = clamp(高度误差 × 0.5, [-3, +4]) m/s，
+        // 按实际垂直速度差值补杆（降太快提总距缓冲 / 降太慢压总距加快），带 ±2 m/s 外死区与 0.4 m/s 内死区
+        double vyMps = heli.getDeltaMovement().y * 20.0;
+        double heightAboveTarget = heli.getY() - targetY;
+        double targetClimbRate = Mth.clamp(heightAboveTarget * 0.5F, -3.0F, 4.0F);
+        double climbRateError = targetClimbRate - vyMps;
         if (heli.getCollectivePitch() < 55.0f) {
             cu.up = true;
-        } else if (toTarget.y > 2.0) {
+        } else if (heightAboveTarget < -1.0) {
             cu.up = true;
-        } else if (toTarget.y < -2.0) {
-            cu.down = true;
+        } else if (heightAboveTarget > 0.5) {
+            if (climbRateError > 0.4) {
+                cu.up = true;
+            } else if (climbRateError < -0.4) {
+                cu.down = true;
+            }
         }
+        // 硬性防坠地板：下沉超过 3.6 m/s 强拉（高于目标下降率上限，不干扰闭环）
         double vy = heli.getDeltaMovement().y;
         if (vy < -0.18) {
             cu.xRot = Math.min(cu.xRot, -4.0f);
             cu.up = true;
         }
-        // 吸附门：水平 15 格 ∧ 相对坪面高度 [-3, +12]
-        double verticalOffset = heli.getY() - padCenter.y;
-        if (horizontalDist <= SNAP_RANGE
-                && verticalOffset >= DOCK_VERTICAL_MIN
-                && verticalOffset <= DOCK_VERTICAL_MAX) {
+        // 吸附门：下降段内水平 ≤8 格 ∧ 高度到目标面 [−2, +2.5]（目标面 = 坪面 +1）
+        if (horizontalDist <= DESCENT_RANGE
+                && horizontalDist <= 8.0
+                && heightAboveTarget <= 2.5
+                && heightAboveTarget >= -2.0) {
             dock(heli);
             return;
         }
-        // 未达吸附门的接近段：水平速度阻尼抑制绕圈过冲，并把俯仰 authority 压到 ±4 防绕圈加剧
-        if (horizontalDist <= SNAP_RANGE * 1.5) {
+        // 未进下降段的接近飞行：轻阻尼（0.9/tick）抑制绕圈过冲，不强压俯仰
+        if (horizontalDist <= SNAP_RANGE) {
             Vec3 mv = heli.getDeltaMovement();
             heli.setDeltaMovement(new Vec3(mv.x * SNAP_DAMPING, mv.y, mv.z * SNAP_DAMPING));
-            cu.xRot = Mth.clamp(cu.xRot, -4.0f, 4.0f);
         }
     }
 
