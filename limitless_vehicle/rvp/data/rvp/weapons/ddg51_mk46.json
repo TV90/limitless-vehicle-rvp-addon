@@ -1,0 +1,66 @@
+{
+  "type": "rvp:torpedo",
+  "name": "Mk46 ASW Torpedo",
+  "name_CN": "MK46 轻型反潜鱼雷",
+  "velocity": 2.0,
+  "life": 3600,
+  "shoot_interval": 30,
+  "max_capacity": 6,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0.3,
+    "fire_mode": "SEMI_AUTO",
+    "require_lock": false
+  },
+  "torpedo_data": {
+    "water_speed": 1.2,
+    "water_entry_lerp_tick": 10,
+    "depth_damping": 0.8,
+    "water_entry_min_depth": 0.5
+  },
+  "projectile_data": {
+    "gravity": -0.03,
+    "drag": 0.0,
+    "inherit_vehicle_velocity": true,
+    "rotate_to_motion": true,
+    "max_speed": 2.5
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 3.5,
+    "detonate_on_life_end": true
+  },
+  "collision_data": {
+    "direct_damage": 1400
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:cloud",
+    "water_trail_particle": "minecraft:cloud",
+    "water_trail_count": 3,
+    "water_entry_particle": "minecraft:splash",
+    "water_entry_sound": "minecraft:entity.player.splash"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 1500,
+      "radius": 15,
+      "damage_in_water": 1100,
+      "radius_in_water": 6,
+      "destroy_block": false
+    }
+  },
+  "misc_data": {
+    "ammo_radar_rcs_factor": [
+      1,
+      1,
+      1
+    ]
+  }
+}

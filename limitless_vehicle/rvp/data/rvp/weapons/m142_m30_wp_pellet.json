@@ -1,0 +1,88 @@
+{
+  "type": "rvp:bomb",
+  "name": "M30 WP Submunition",
+  "shoot_interval": 0,
+  "max_capacity": 1,
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 0.1,
+    "gravity": -0.002,
+    "drag": 0.0058,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 3.0,
+    "deployment_horizontal_half_life_ticks": 35,
+    "wind_data": {
+      "enabled": false,
+      "direction_mode": "north:+90",
+      "speed": 0.08,
+      "response": 0.045,
+      "vertical_factor": 0.0,
+      "turbulence": 0.01,
+      "turbulence_frequency": 0.0
+    }
+  },
+  "fuse_data": {
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "none",
+    "explosion_particle": "none",
+    "impact_trail_particles": false,
+    "particle_projectile_data": {
+      "enabled": true,
+      "particle_type": "rvp:white_phosphorus",
+      "full_bright": true,
+      "body_scale": 0.52,
+      "body_start_scale": 0.18,
+      "body_lifetime_ticks": 3,
+      "body_color": "#FF8A1F",
+      "body_end_color": "#FFAB5C",
+      "body_flicker": 0.9,
+      "body_horizontal_flicker": 0.5,
+      "body_flicker_interval_ticks": 1,
+      "body_sample_interval_ticks": 1,
+      "trail_enabled": true,
+      "trail_lifetime_ticks": 400,
+      "trail_lifetime_start_on_landing": false,
+      "trail_end_scale": 0.03,
+      "trail_start_alpha": 0.9,
+      "trail_end_alpha": 0.0,
+      "trail_start_color": "#998E8A",
+      "trail_end_color": "#998E8A"
+    }
+  },
+  "detonate_data": {
+    "effects_before_explosion": true,
+    "fire_data": {
+      "radius": 3,
+      "chance": 0.65,
+      "soul_fire": false,
+      "on_block": true,
+      "on_entity": true
+    },
+    "ignite_entity_data": {
+      "radius": 6.0,
+      "seconds": 40,
+      "targets": "non_allied"
+    }
+  },
+  "collision_data": {
+    "direct_damage": 11.0,
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0
+  },
+  "name_CN": "M30 白磷子体"
+}

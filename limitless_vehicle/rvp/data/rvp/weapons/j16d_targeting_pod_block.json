@@ -1,0 +1,24 @@
+{
+  "type": "rvp:targetingpod",
+  "name": "TGP",
+  "shoot_interval": 20,
+  "max_capacity": 10,
+  "reload": {
+    "time": 40,
+    "ammo": "ywzj_vehicle:ammo_creative"
+  },
+  "targeting_pod_data": {
+    "mode": "block",
+    "block_range": 600,
+    "mark_duration": 400,
+    "write_gps_target": false,
+    "team_share": true
+  },
+  "laser_data": {
+    "range": 600
+  },
+  "fire_data": {
+    "fire_mode": "SEMI_AUTO"
+  },
+  "name_CN": "坐标指示瞄准器"
+}

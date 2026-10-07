@@ -1,0 +1,87 @@
+{
+  "type": "rvp:missile",
+  "name": "AIM-260A DP-ARH-AAM",
+  "show_msl_indicator": true,
+  "shoot_interval": 500,
+  "max_capacity": 4,
+  "reload": {
+    "time": 80,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": true
+  },
+  "projectile_data": {
+    "velocity": 0.3,
+    "has_rocket_engine": true,
+    "mass": 0.012,
+    "thrust": 0.03,
+    "motor_burn_time": 60,
+    "second_pulse": true,
+    "second_pulse_trigger_speed": 3.5,
+    "second_pulse_trigger_distance": 200,
+    "second_pulse_thrust": 0.0095,
+    "second_pulse_burn_time": 140,
+    "drag_coefficient": 0.001,
+    "rotate_to_motion": true,
+    "max_speed": 6.0,
+    "turning_factor": {
+      "[[1,inf]]": 0.09
+    }
+  },
+  "fuse_data": {
+    "proximity_fuse_height": 30,
+    "proximity_fuse_tick": 30,
+    "delay_tick": 0,
+    "proximity_radius": 5.0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 1.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "guidance_type": "ARH",
+    "lock_target_distance_range": "[[0,1500]]",
+    "enable_inertial_guidance": true,
+    "max_lock_angle": 12,
+    "max_off_axis_lock_angle": 60,
+    "guidance_target_distance_range": "[[0,1500]]",
+    "max_guidance_angle": 40,
+    "scan_interval_tick": 2,
+    "predict_target_pos": true,
+    "active_radar_activation_range": 384,
+    "guidance_tick_range": "[[20,inf]]"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "missile_native_trail_enabled": true,
+    "missile_native_trail_particle": "minecraft:cloud",
+    "missile_native_trail_step": 0.8,
+    "missile_native_trail_spawn_interval_tick": 2,
+    "missile_native_trail_density_scale": 0.55,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_extra_flame": true,
+    "missile_native_trail_extra_smoke": false,
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 200,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 3,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 80
+  },
+  "name_CN": "AIM-260A 双脉冲主动雷达弹"
+}

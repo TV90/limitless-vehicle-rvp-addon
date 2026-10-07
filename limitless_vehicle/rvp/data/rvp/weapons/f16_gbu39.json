@@ -1,0 +1,73 @@
+{
+  "type": "rvp:bomb",
+  "name": "GBU-39 SDB (GPS)",
+  "recoil": 0,
+  "shoot_interval": 70,
+  "fire_control_sensor_type_override": "eo",
+  "rvp_fire_control_sensor_mode": "eo_ccip",
+  "max_capacity": 8,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_aerial_bomb"
+  },
+  "x_rot_max": 90,
+  "x_rot_min": -90,
+  "y_rot_max": 180,
+  "y_rot_min": -180,
+  "fuse_delay_tick": 0,
+  "gravity_scale": 0.35,
+  "projectile_data": {
+    "velocity": 0.1,
+    "gravity": -0.035,
+    "drag": 0,
+    "inherit_vehicle_velocity": true,
+    "rotate_to_motion": true,
+    "max_speed": 0
+  },
+  "effects_data": {
+    "trajectory_particle": "none"
+  },
+  "guidance_data": {
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 1.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "guidance_type": "GPS",
+    "gps_modes": ["SINGLE", "MULTI", "FAST"],
+    "guidance_tick_range": "[[0,inf]]",
+    "max_guidance_angle": 180,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "gps_spread_radius": 2,
+    "cruise_start_tick": 20,
+    "cruise_end_horizontal_dist": 70,
+    "cruise_gravity_scale": 0,
+    "cruise_leveling_factor": 0.2,
+    "guidance_target_distance_range": "[[1,inf]]"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 300,
+      "radius": 8,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 10
+  },
+  "fuse_data": {},
+  "fire_data": {
+    "require_lock": false
+  },
+  "misc_data": {
+    "ammo_radar_rcs_factor": [
+      0.5,
+      0.5,
+      0.5
+    ]
+  },
+  "name_CN": "GBU-39 GPS制导炸弹"
+}

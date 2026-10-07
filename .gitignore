@@ -49,8 +49,16 @@ eclipse
 forge*changelog.txt
 webeditor/node_modules/
 webeditor/dist/
-# 载具包（数据资产）不进 git，走安装目录分发
-limitless_vehicle/
+# 载具包（数据资产）不进 git，走安装目录分发；仅放行 RVP 武器配置
+limitless_vehicle/*
+!limitless_vehicle/rvp/
+limitless_vehicle/rvp/*
+!limitless_vehicle/rvp/data/
+limitless_vehicle/rvp/data/*
+!limitless_vehicle/rvp/data/rvp/
+limitless_vehicle/rvp/data/rvp/*
+!limitless_vehicle/rvp/data/rvp/weapons/
+!limitless_vehicle/rvp/data/rvp/weapons/**
 RVP-I18N迁移备份_20260928/
 CM命中别名补全备份_20260929/
 坦克烟雾弹补全备份_20260929/

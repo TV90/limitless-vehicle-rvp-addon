@@ -1,0 +1,72 @@
+{
+  "type": "rvp:missile",
+  "name": "MIM-146 LBR-SAM",
+  "show_msl_indicator": true,
+  "shoot_interval": 1000,
+  "max_capacity": 8,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "velocity": 0.5,
+    "has_rocket_engine": true,
+    "mass": 0.015,
+    "thrust": 0.04,
+    "motor_burn_time": 100,
+    "drag_coefficient": 0.0035,
+    "rotate_to_motion": true,
+    "max_speed": 6,
+    "turning_factor": {
+      "[[1,inf]]": 0.1
+    }
+  },
+  "fuse_data": {
+    "proximity_fuse_height": 20,
+    "proximity_fuse_tick": 20,
+    "delay_tick": 0,
+    "proximity_radius": 5.0,
+    "proximity_fuse_require_radar_lock": true,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "LBR",
+    "guidance_tick_range": "[[11,inf]]",
+    "max_guidance_angle": 80,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "guidance_target_distance_range": "[[0,4500]]"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "missile_native_trail_enabled": true,
+    "missile_native_trail_particle": "minecraft:cloud",
+    "missile_native_trail_step": 0.9,
+    "missile_native_trail_spawn_interval_tick": 2,
+    "missile_native_trail_density_scale": 0.45,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_extra_flame": true,
+    "missile_native_trail_extra_smoke": false,
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 150,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 10.0,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 300
+  },
+  "name_CN": "MIM-146 激光架束制导多用途导弹"
+}

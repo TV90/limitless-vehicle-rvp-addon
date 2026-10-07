@@ -1,0 +1,94 @@
+{
+  "type": "rvp:missile",
+  "name": "YJ19 ARH-RGM",
+  "shoot_interval": 500,
+  "max_capacity": 4,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": true
+  },
+  "projectile_data": {
+    "velocity": 0.5,
+    "has_rocket_engine": true,
+    "flame_scale": 0.575,
+    "mass": 0.008,
+    "thrust": 0.02,
+    "motor_burn_time": 300,
+    "ignition_delay_tick": 20,
+    "drag_coefficient": 0.01,
+    "rotate_to_motion": true,
+    "max_speed": 7.5,
+    "turning_factor": {
+      "[[1,inf]]": 0.1
+    },
+    "engine_nozzle_offset": [
+      0.0,
+      0.0,
+      -0.5
+    ],
+    "second_pulse": true,
+    "second_pulse_trigger_speed": 4.0,
+    "second_pulse_thrust": 0.0001,
+    "second_pulse_burn_time": 1800
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "interference_data": {
+      "seeker_jam_limit": 4,
+      "seeker_fov_shrink_factor": 1.0,
+      "seeker_shut_off_time": 60,
+      "chaff_resistance": 0.5
+    },
+    "guidance_type": "ARH",
+    "lock_target_distance_range": "[[0,4000]]",
+    "enable_inertial_guidance": true,
+    "max_lock_angle": 12,
+    "max_off_axis_lock_angle": 110,
+    "guidance_target_distance_range": "[[0,4000]]",
+    "max_guidance_angle": 110,
+    "scan_interval_tick": 2,
+    "lock_altitude_range": "[[inf,25]]",
+    "guidance_altitude_range": "[[inf,25]]",
+    "predict_target_pos": true,
+    "active_radar_activation_range": 256,
+    "guidance_tick_range": "[[20,inf]]",
+    "anti_ship_seeker": true,
+    "loft_height_above_target": 300.0,
+    "loft_end_distance": 300.0,
+    "loft_blend_distance": 400.0
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter",
+    "missile_native_trail_particle_style": "rvp_rocket_flame",
+    "missile_native_trail_particle_scale": 1.0,
+    "missile_native_trail_step": 2.0,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_launch_boost": 1.6
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 900,
+      "radius": 18,
+      "proximity_fuze": false,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 900
+  },
+  "seeker_color": "0xFFFFFF",
+  "parent_weapon_unit_aim_override": false,
+  "name_CN": "鹰击-19 主动雷达制导反舰导弹"
+}

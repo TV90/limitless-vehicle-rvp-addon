@@ -1,0 +1,68 @@
+{
+  "type": "rvp:missile",
+  "name": "AGM-179 TR MITL-AGM",
+  "shoot_interval": 500,
+  "max_capacity": 2,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "velocity": 0.5,
+    "has_rocket_engine": true,
+    "mass": 0.008,
+    "thrust": 0.001,
+    "motor_burn_time": 300,
+    "drag_coefficient": 0.01,
+    "rotate_to_motion": true,
+    "max_speed": 3.5,
+    "turning_factor": {
+      "[[1,inf]]": 0.12
+    }
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "HITL_TV",
+    "guidance_tick_range": "[[5,inf]]",
+    "guidance_target_distance_range": "[[0,2000]]",
+    "lock_target_distance_range": "[[0,2000]]",
+    "enable_inertial_guidance": true,
+    "max_guidance_angle": 50,
+    "max_lock_angle": 12,
+    "max_off_axis_lock_angle": 40,
+    "hitl_max_control_dist": 2000,
+    "hitl_max_control_tick": 400,
+    "hitl_max_look_offset": 20,
+    "hitl_video_modes": [
+      "BW"
+    ]
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 50,
+      "radius": 5,
+      "proximity_fuze": false,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "direct_damage": 800
+  },
+  "seeker_color": "0xFFFFFF",
+  "name_CN": "AGM-179 TR 人在回路空对地导弹"
+}

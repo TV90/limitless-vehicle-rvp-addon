@@ -1,0 +1,35 @@
+{
+  "type": "rvp:laser",
+  "name": "10kW Laser",
+  "shoot_interval": 20,
+  "max_capacity": 500,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_creative"
+  },
+  "damage": 5,
+  "fire_data": {
+    "fire_mode": "FULL_AUTO",
+    "heat_count": 20,
+    "max_heat_count": 1000,
+    "overheat_extra_heat": 100
+  },
+  "laser_data": {
+    "range": 512,
+    "blind_hit_count": 30,
+    "blind_hit_window_tick": 400,
+    "blind_duration_tick": 80,
+    "visual_data": {
+      "color": [
+        120,
+        255,
+        140,
+        235
+      ],
+      "width": 0.125,
+      "duration_tick": 2,
+      "pulsate": false
+    }
+  },
+  "name_CN": "10KW 小型激光器"
+}
