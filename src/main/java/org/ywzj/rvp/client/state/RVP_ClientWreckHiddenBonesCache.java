@@ -1,7 +1,5 @@
 package org.ywzj.rvp.client.state;
 
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BakedModelInstance;
 import com.github.mcmodderanchor.simplebedrockmodel.v2.common.model.runtime.BoneState;
 import net.minecraft.client.Minecraft;
@@ -46,9 +44,6 @@ public final class RVP_ClientWreckHiddenBonesCache {
     /** 缓存安全上限，防止极端战场残件数量下无限累积。 */
     private static final int MAX_ENTRIES = 256;
 
-    /** 借源诊断日志（定位后移除）。 */
-    private static final Logger LOGGER = LogUtils.getLogger();
-
     private RVP_ClientWreckHiddenBonesCache() {
     }
 
@@ -70,27 +65,7 @@ public final class RVP_ClientWreckHiddenBonesCache {
             SNAPSHOT.clear();
         }
         SNAPSHOT.put(partId, bones);
-        // 诊断日志（2026-10-08 借源链路排查，定位后移除）：残件借源结果与拍取内容
-        LOGGER.info("[RVP-WreckBones] part={} vehicleId={} source={} captured={} bones={}",
-                partId, part.getVehicleId(),
-                source == null ? "NONE" : source.getId() + "/" + source.getUUID(),
-                bones.size(),
-                source == null ? "-" : describe(source, bones));
         return bones;
-    }
-
-    /** 诊断用：按骨序号拼接快照内容（借源日志专用，不影响热路径）。 */
-    private static String describe(AbstractVehicle source, Set<Integer> indexes) {
-        BakedModelInstance instance = source.getVehicleModelInstance();
-        if (instance == null) {
-            return "no-instance";
-        }
-        StringBuilder sb = new StringBuilder("[");
-        for (Integer index : indexes) {
-            BoneState bone = instance.getBone(index);
-            sb.append(bone == null ? String.valueOf(index) : "?" + index).append(',');
-        }
-        return sb.append(']').toString();
     }
 
     /**
