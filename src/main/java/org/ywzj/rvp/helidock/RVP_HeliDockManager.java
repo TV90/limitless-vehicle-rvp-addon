@@ -284,10 +284,18 @@ public final class RVP_HeliDockManager {
         notifyRider(heli, "message.ywzj_rvp.helidock.docked");
     }
 
-    /** 着舰锁定：每 tick 同步 pos 到停机坪世界坐标、yaw 随舰船（行驶转向均跟随），清速度防下坠。 */
+    /**
+     * 着舰锁定：每 tick 同步 pos 到停机坪世界坐标、yaw 随舰船（行驶转向均跟随），清速度防下坠。
+     * 2026-10-07 补：同步清零俯仰/横滚（含旧值字段防客户端插值回放）——进场下降时残留的
+     * 压头/坡度姿态此前被冻结在甲板上，观感"机头扎进舰体"（用户截图实锤）。
+     */
     private static void tickDocked(AbstractVehicle heli, AbstractVehicle ship, Vec3 padCenter) {
         heli.teleportTo(padCenter.x, padCenter.y, padCenter.z);
         heli.setYRot(ship.getYRot());
+        heli.setXRot(0.0f);
+        heli.setZRot(0.0f);
+        heli.xRotO = 0.0f;
+        heli.zRotO = 0.0f;
         heli.setDeltaMovement(Vec3.ZERO);
         heli.fallDistance = 0.0f;
         heli.controlUnit.reset();
