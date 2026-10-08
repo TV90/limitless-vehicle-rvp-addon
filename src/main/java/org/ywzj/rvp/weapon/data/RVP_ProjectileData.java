@@ -9,15 +9,14 @@ import java.util.Map;
 
 public class RVP_ProjectileData {
 
-    /** 默认大气表的世界 Y 锚点；Y64 对应海平面，Y550 对应约 20 km。 */
+    /** 默认大气表的世界 Y 锚点；低于首锚点取首锚点倍率，高于末锚点取末锚点倍率。 */
     private static final float[] DEFAULT_ALTITUDE_DRAG_HEIGHTS = {
-            64f, 113f, 186f, 258f, 307f, 356f, 429f, 550f, 672f, 793f
+            -64f, 64f, 320f, 550f, 1000f
     };
 
     /** 默认大气表各锚点的空气密度相对海平面倍率；按相邻锚点线性插值。 */
     private static final float[] DEFAULT_ALTITUDE_DRAG_FACTORS = {
-            1.000f, 0.822f, 0.601f, 0.429f, 0.338f,
-            0.255f, 0.159f, 0.073f, 0.033f, 0.014f
+            2.0f, 1.5f, 0.5f, 0.25f, 0.014f
     };
 
     /** 可选弹体初速覆盖，单位格/Tick，默认 null；未配置时继承武器顶层速度。 */

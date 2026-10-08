@@ -22,7 +22,8 @@
     "fuel_mass": 15,
     "thrust": 6.4375,
     "motor_burn_time": 300,
-    "drag_coefficient": 0.01,
+    "drag_coefficient": 0.045625,
+    "rvp_induced_drag": 0.01,
     "rotate_to_motion": true,
     "max_speed": 3.5,
     "turning_factor": {

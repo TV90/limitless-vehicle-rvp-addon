@@ -24,7 +24,8 @@
     "thrust": 590.52,
     "motor_burn_time": 300000,
     "ignition_delay_tick": 20,
-    "drag_coefficient": 0.00045,
+    "drag_coefficient": 0.1605,
+    "rvp_induced_drag": 0.00045,
     "cruise_end_horizontal_distance": 0.0,
     "inherit_vehicle_velocity": true,
     "turning_factor": {

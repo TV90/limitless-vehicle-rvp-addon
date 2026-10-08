@@ -23,7 +23,8 @@
     "fuel_mass": 170,
     "thrust": 2700,
     "motor_burn_time": 80,
-    "drag_coefficient": 0.0055,
+    "drag_coefficient": 0.138875,
+    "rvp_induced_drag": 0.0055,
     "inherit_vehicle_velocity": true,
     "turning_factor": {
       "[[1,inf]]": 0.12

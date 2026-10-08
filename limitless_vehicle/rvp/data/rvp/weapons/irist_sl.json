@@ -20,9 +20,10 @@
     "ignition_delay_tick": 10,
     "mass": 155,
     "fuel_mass": 63,
-    "thrust": 108.5,
+    "thrust": 54.25,
     "motor_burn_time": 500,
-    "drag_coefficient": 0.003,
+    "drag_coefficient": 0.023,
+    "rvp_induced_drag": 0.003,
     "rotate_to_motion": true,
     "max_speed": 4.5,
     "turning_factor": {

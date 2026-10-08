@@ -28,10 +28,11 @@
     "min_speed": 0.01,
     "mass": 1500,
     "fuel_mass": 450,
-    "thrust": 301.00,
-    "motor_burn_time": 80,
+    "thrust": 301,
+    "motor_burn_time": 120,
     "ignition_delay_tick": 20,
-    "drag_coefficient": 0.0155,
+    "drag_coefficient": 0.1085,
+    "rvp_induced_drag": 0.0155,
     "inherit_vehicle_velocity": false,
     "gravity": -0.005,
     "altitude_drag_factor": {
@@ -44,7 +45,7 @@
     },
     "second_pulse": true,
     "second_pulse_trigger_speed": 20,
-    "second_pulse_thrust": 0.025,
+    "second_pulse_thrust": 376.25,
     "second_pulse_burn_time": 200,
     "rvp_aero_steering": true,
     "rvp_attack_angle_limit_deg": 60

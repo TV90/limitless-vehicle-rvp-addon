@@ -11,16 +11,17 @@ class RVP_ProjectileDataAltitudeDragTest {
     /** 当前 schema 的 JSON 反序列化器，用于验证缺省、空表和显式表的区别。 */
     private final Gson gson = new Gson();
 
-    /** 未配置时应在现实大气锚点间平滑变化，并在表外保持端点倍率。 */
+    /** 未配置时应在默认大气锚点间平滑变化，并在表外保持端点倍率。 */
     @Test
     void absentTableUsesCompressedAtmosphere() {
         RVP_ProjectileData data = gson.fromJson("{}", RVP_ProjectileData.class);
 
-        assertEquals(1.000f, data.resolveAltitudeDragFactor(-64), 1.0E-6f);
-        assertEquals(1.000f, data.resolveAltitudeDragFactor(64), 1.0E-6f);
-        assertEquals(0.338f, data.resolveAltitudeDragFactor(307), 1.0E-6f);
-        assertEquals(0.316f, data.resolveAltitudeDragFactor(320), 0.001f);
-        assertEquals(0.073f, data.resolveAltitudeDragFactor(550), 1.0E-6f);
+        assertEquals(2.000f, data.resolveAltitudeDragFactor(-64), 1.0E-6f);
+        assertEquals(1.750f, data.resolveAltitudeDragFactor(0), 1.0E-6f);
+        assertEquals(1.500f, data.resolveAltitudeDragFactor(64), 1.0E-6f);
+        assertEquals(1.000f, data.resolveAltitudeDragFactor(192), 1.0E-6f);
+        assertEquals(0.500f, data.resolveAltitudeDragFactor(320), 1.0E-6f);
+        assertEquals(0.250f, data.resolveAltitudeDragFactor(550), 1.0E-6f);
         assertEquals(0.014f, data.resolveAltitudeDragFactor(1000), 1.0E-6f);
         assertEquals(data.resolveAltitudeDragFactor(320),
                 data.resolveAeroSteeringLimits(3.0, 320).densityFactor(), 1.0E-6);
@@ -33,7 +34,7 @@ class RVP_ProjectileDataAltitudeDragTest {
         RVP_ProjectileData nullTable = gson.fromJson("{\"altitude_drag_factor\":null}", RVP_ProjectileData.class);
 
         assertEquals(1.0f, empty.resolveAltitudeDragFactor(550), 1.0E-6f);
-        assertEquals(0.073f, nullTable.resolveAltitudeDragFactor(550), 1.0E-6f);
+        assertEquals(0.250f, nullTable.resolveAltitudeDragFactor(550), 1.0E-6f);
     }
 
     /** 显式表按旧规则直接取段值；未命中或非法值不会落到默认大气表。 */

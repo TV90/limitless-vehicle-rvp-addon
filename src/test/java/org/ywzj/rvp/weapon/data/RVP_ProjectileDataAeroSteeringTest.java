@@ -84,7 +84,7 @@ class RVP_ProjectileDataAeroSteeringTest {
         assertEquals(0.0, limits.referenceSpeed());
         assertEquals(0.0, limits.inducedDrag());
         assertEquals(12.5, limits.turnRateLimitDegPerTick());
-        assertEquals(1.0, limits.densityFactor());
+        assertEquals(1.75, limits.densityFactor());
     }
 
     /** 缺少显式参考速度与最高速率时，应先采用武器初速，最终才回退到 3 格/Tick。 */
