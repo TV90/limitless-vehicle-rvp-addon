@@ -293,6 +293,9 @@ public final class RVP_ThermalParticleChannel {
             // 下方 finally 共同兜底（2026-09-20 用户需求）
             org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher.renderThermal(event);
             org.ywzj.rvp.client.nuclear.RVP_ExplosionVisualManager.renderThermal(event);
+            // 自绘炮口烟热成像重画（2026-10-08）：自绘烟脱离了 ParticleEngine，登记表/引擎批次
+            // 两条既有路径都覆盖不到——不补则热成像视角下烟不进热缓冲，被实体热源"覆盖"
+            RVP_WreckMuzzleSmokeSelfRenderer.renderThermal(event);
         } finally {
             modelViewStack.popPose();
             RenderSystem.applyModelViewMatrix();

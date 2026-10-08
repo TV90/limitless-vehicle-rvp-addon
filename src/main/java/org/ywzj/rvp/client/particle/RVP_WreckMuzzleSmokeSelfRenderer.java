@@ -174,4 +174,74 @@ public final class RVP_WreckMuzzleSmokeSelfRenderer {
             Minecraft.getInstance().gameRenderer.lightTexture().turnOffLightLayer();
         }
     }
+
+    /**
+     * 热成像重画入口（2026-10-08）：由 {@link RVP_ThermalParticleChannel} 在 thermal_buffer
+     * 绑定状态下调用（与温压/HBM 自绘几何 renderThermal 同模式——自绘烟脱离了 ParticleEngine，
+     * 热通道的引擎批次捞取与登记表两条路径都覆盖不到，此前热成像视角下炮口烟不进热缓冲、
+     * 被实体热源"覆盖"）。完全自包含：自行补视图（pushPose+eventPose，identity 起点单次变换）、
+     * 自设状态（粒子 shader + 热成像白热混合 + 深度只测不写 + 光照层）、按与主画面相同的
+     * 距离降序排序后按贴图分组重画；RenderTarget 的还原由通道 finally 兜底，本方法不碰。
+     * 白烟 RGB 亮色经白热混合（RGB 亮度叠加、alpha over 累积）写入热缓冲——烟越浓越热，
+     * 热成像下正确遮挡后方实体热源。
+     *
+     * @param event 关卡渲染阶段事件（AFTER_PARTICLES，热缓冲已绑定）
+     */
+    public static void renderThermal(net.minecraftforge.client.event.RenderLevelStageEvent event) {
+        if (ACTIVE.isEmpty()) {
+            return;
+        }
+        Camera camera = event.getCamera();
+        float partialTick = event.getPartialTick();
+        List<RVP_WreckMuzzleSmokeParticle> sorted = new ArrayList<>(ACTIVE);
+        sorted.sort(Comparator.comparingDouble((RVP_WreckMuzzleSmokeParticle particle) ->
+                particle.distanceSqrTo(camera)).reversed());
+
+        PoseStack modelViewStack = RenderSystem.getModelViewStack();
+        modelViewStack.pushPose();
+        try {
+            modelViewStack.mulPoseMatrix(event.getPoseStack().last().pose());
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.setShader(GameRenderer::getParticleShader);
+            RenderSystem.enableDepthTest();
+            RenderSystem.enableBlend();
+            // 热成像白热混合（与 RVP_ThermalParticleChannel.renderIntoThermalBuffer 同款）：
+            // RGB 亮度叠加饱和到白（越浓越热），alpha over 累积不衰减（显形强度不缩水）
+            RenderSystem.blendFuncSeparate(
+                    com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
+                    com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE,
+                    com.mojang.blaze3d.platform.GlStateManager.SourceFactor.ONE,
+                    com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+            RenderSystem.depthMask(false);
+            Minecraft.getInstance().gameRenderer.lightTexture().turnOnLightLayer();
+            Tesselator tesselator = Tesselator.getInstance();
+            BufferBuilder builder = tesselator.getBuilder();
+            int textureCount = RVP_WreckMuzzleSmokeParticle.textureCount();
+            for (int textureIndex = 0; textureIndex < textureCount; textureIndex++) {
+                boolean batchOpen = false;
+                for (RVP_WreckMuzzleSmokeParticle particle : sorted) {
+                    if (particle.textureIndex() != textureIndex) {
+                        continue;
+                    }
+                    if (!batchOpen) {
+                        RenderSystem.setShaderTexture(0, RVP_WreckFlameParticle.textureLocation(textureIndex));
+                        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
+                        batchOpen = true;
+                    }
+                    // 调用基类 billboard 绘制：几何与主画面完全一致，目标换成 thermal_buffer
+                    particle.render(builder, camera, partialTick);
+                }
+                if (batchOpen) {
+                    tesselator.end();
+                }
+            }
+        } finally {
+            modelViewStack.popPose();
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.depthMask(true);
+            RenderSystem.disableBlend();
+            RenderSystem.defaultBlendFunc();
+            Minecraft.getInstance().gameRenderer.lightTexture().turnOffLightLayer();
+        }
+    }
 }
