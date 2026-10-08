@@ -24,7 +24,9 @@
     "max_speed": 6.5,
     "turning_factor": {
       "[[5,inf]]": 0.2
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
     "delay_tick": 0,

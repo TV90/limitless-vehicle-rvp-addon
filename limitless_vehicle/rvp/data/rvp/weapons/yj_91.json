@@ -20,14 +20,17 @@
     "velocity": 0,
     "rotate_to_motion": true,
     "max_speed": 5.0,
-    "mass": 0.01,
-    "thrust": 0.006,
+    "mass": 600,
+    "fuel_mass": 119,
+    "thrust": 74.51,
     "motor_burn_time": 200,
     "drag_coefficient": 0.0005,
     "inherit_vehicle_velocity": true,
     "turning_factor": {
       "[[1,inf]]": 0.09
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "guidance_data": {
     "guidance_type": "ARM",

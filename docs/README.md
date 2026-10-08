@@ -14,6 +14,7 @@
 | [RVP Gunner JSON 配置现状与详细指南](./RVP_gunner/RVP_Gunner_JSON配置现状与详细指南_20260928.md) | Gunner 配置作者 / 数值 / QA | schema v2 的 11 个现有 Profile 盘点、18 种行为的全字段默认值、范围、单位、生效条件、组合范本与排障 |
 | [RVP包新增参数字段说明.md](./plan/RVP武器数据模型/RVP包新增参数字段说明.md) | 配置作者 | 武器 JSON 全字段说明（权威 schema） |
 | [弹体运动学开发与测试.md](./弹体运动学开发与测试.md) | 弹道 / 性能调试 | `projectile_data` 运行时流程、与本体对照、常见问题 |
+| [RVP导弹速度相关数据统计_20261008.md](./RVP弹体-fish/RVP导弹速度相关数据统计_20261008.md) | 导弹速度 / 推进 / 平衡 | 84 枚活动 `rvp:missile` 的初速、`max_speed`、推进参数、平衡速度，以及达到理论满速所需 Tick |
 | [无人机_TV弹_区块加载功能调研.md](./无人机_TV弹_区块加载功能调研.md) | 系统调研 / 接手开发 | 可部署 UAV、TV/HITL 导弹、区块加载器当前实现与风险 |
 | [RVP伤害倍率与爆炸.md](./RVP伤害倍率与爆炸.md) | 平衡 / 移植 | `damage_factor`、直击与本体 `VehicleExplosion` |
 | [子母弹系统与Mi28边界测试.md](./子母弹系统与Mi28边界测试.md) | 子母弹 / QA | 架构、release 级三维释放云、载荷速度/定向发射、`allow_submunition` 与边界测试 |

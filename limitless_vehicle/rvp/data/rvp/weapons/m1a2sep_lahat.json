@@ -18,14 +18,17 @@
     "velocity": 0,
     "rotate_to_motion": true,
     "max_speed": 3.5,
-    "mass": 0.01,
-    "thrust": 0.05,
+    "mass": 13,
+    "fuel_mass": 12,
+    "thrust": 65,
     "motor_burn_time": 50,
     "drag_coefficient": 0.0001,
     "inherit_vehicle_velocity": true,
     "turning_factor": {
       "[[1,inf]]": 0.12
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
     "delay_tick": 0,

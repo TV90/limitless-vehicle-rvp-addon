@@ -12,6 +12,7 @@
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
+    "inherit_vehicle_velocity": true,
     "velocity": 4,
     "gravity": -0.015,
     "drag": 0,

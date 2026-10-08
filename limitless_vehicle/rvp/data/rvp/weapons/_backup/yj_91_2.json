@@ -26,7 +26,9 @@
     "inherit_vehicle_velocity": true,
     "turning_factor": {
       "[[0,inf]]": 0.28
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "guidance_data": {
     "guidance_type": "ARM",

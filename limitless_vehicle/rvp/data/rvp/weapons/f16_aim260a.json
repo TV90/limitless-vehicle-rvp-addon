@@ -14,11 +14,13 @@
     "require_lock": true
   },
   "projectile_data": {
+    "inherit_vehicle_velocity": true,
     "collision_box_size": 0.7,
     "velocity": 0.3,
     "has_rocket_engine": true,
-    "mass": 0.012,
-    "thrust": 0.03,
+    "mass": 152,
+    "fuel_mass": 45,
+    "thrust": 380,
     "motor_burn_time": 60,
     "second_pulse": true,
     "second_pulse_trigger_speed": 3.5,
@@ -30,7 +32,9 @@
     "max_speed": 6.0,
     "turning_factor": {
       "[[1,inf]]": 0.09
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
     "proximity_fuse_height": 30,

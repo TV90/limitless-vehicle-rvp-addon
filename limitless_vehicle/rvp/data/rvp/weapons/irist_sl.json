@@ -18,15 +18,18 @@
     "velocity": 0.1,
     "has_rocket_engine": true,
     "ignition_delay_tick": 10,
-    "mass": 0.012,
-    "thrust": 0.0084,
+    "mass": 155,
+    "fuel_mass": 63,
+    "thrust": 108.5,
     "motor_burn_time": 500,
     "drag_coefficient": 0.003,
     "rotate_to_motion": true,
     "max_speed": 4.5,
     "turning_factor": {
       "[[1,inf]]": 0.09
-    }
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
     "proximity_fuse_height": 5,

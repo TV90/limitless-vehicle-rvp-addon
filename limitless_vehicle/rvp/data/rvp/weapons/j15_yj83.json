@@ -19,8 +19,9 @@
     "velocity": 0.2,
     "has_rocket_engine": true,
     "flame_scale": 0.575,
-    "mass": 0.008,
-    "thrust": 0.008,
+    "mass": 670,
+    "fuel_mass": 170,
+    "thrust": 55.11,
     "motor_burn_time": 300,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.01,
@@ -38,7 +39,9 @@
     "second_pulse_trigger_speed": 4.0,
     "second_pulse_thrust": 0.0001,
     "second_pulse_burn_time": 1800,
-    "inherit_vehicle_velocity": true
+    "inherit_vehicle_velocity": true,
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
     "delay_tick": 0,
