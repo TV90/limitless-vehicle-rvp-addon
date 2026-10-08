@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RVP 导弹计算器</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --line:#dfe4ea; --ink:#1c2733; --sub:#66788c;
+  --acc:#1a73e8; --acc2:#0b57d0; --warn:#c5221f; --ok:#188038;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:13px/1.5 "Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .logo{font-size:18px}
+header h1{font-size:15px;margin:0 10px 0 0;font-weight:600}
+button{font:inherit;padding:6px 12px;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;color:var(--ink)}
+button:hover{border-color:var(--acc);color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.primary:hover{background:var(--acc2)}
+button:disabled{opacity:.45;cursor:not-allowed}
+select,input[type=text],input[type=number]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+input[type=number]{width:100%}
+#dirLabel{color:var(--sub);font-size:12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#wrap{flex:1;display:flex;min-height:0}
+aside{width:292px;min-width:292px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:12px}
+aside h2{font-size:13px;margin:14px 0 8px;color:var(--acc2);border-bottom:1px dashed var(--line);padding-bottom:4px}
+aside h2:first-child{margin-top:0}
+.field{margin-bottom:8px}
+.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:2px}
+.field input:disabled{background:#eef1f5;color:#9aa7b5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hint{font-size:11px;color:var(--sub);margin:6px 0 0}
+#missileInfo{font-size:12px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:8px;white-space:pre-wrap}
+#loadInfo{font-size:12px;margin-top:8px}
+#loadInfo .err{color:var(--warn)}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+#timelineBar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+#scrub{flex:1;accent-color:var(--acc)}
+#timeLabel{font-variant-numeric:tabular-nums;min-width:120px;text-align:right}
+#hitLabel{color:var(--ok);font-weight:600;min-width:130px}
+#chartArea{flex:1;position:relative;min-height:0}
+canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
+#tooltip{position:absolute;pointer-events:none;background:rgba(21,46,80,.94);color:#fff;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.55;display:none;z-index:5;white-space:pre;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+#statusBar{padding:4px 14px;font-size:12px;color:var(--sub);background:var(--panel);border-top:1px solid var(--line)}
+#legend{position:absolute;top:8px;right:12px;font-size:12px;background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+#legend .sw{display:inline-block;width:18px;height:0;border-top:3px solid;margin:0 4px 2px 8px;vertical-align:middle}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🦈</span><h1>RVP 导弹计算器</h1>
+  <button id="pickDir" class="primary">选择工作目录</button>
+  <span id="dirLabel">未选择目录（读取目录下所有 rvp:missile 武器 JSON）</span>
+  <input type="text" id="search" placeholder="搜索导弹…" style="width:150px">
+  <select id="missileSelect" style="max-width:260px"><option value="">— 请先选择工作目录 —</option></select>
+  <select id="viewMode">
+    <option value="side">侧视图（前向×高度）</option>
+    <option value="top">顶视图（前向×横向）</option>
+  </select>
+  <label style="font-size:12px;color:var(--sub)"><input type="checkbox" id="equalAspect"> 等比例 1:1</label>
+</header>
+<div id="wrap">
+  <aside>
+    <h2>发射参数</h2>
+    <div class="field"><label>载机速度（公里/小时，仅 inherit_vehicle_velocity 导弹生效）</label><input type="number" id="carrierSpeed" value="0" step="50"></div>
+    <div class="field"><label>地面高度（MC 世界 Y，默认 -64=世界底；主世界海平面约 63）</label><input type="number" id="groundY" value="-64" step="1"></div>
+    <div class="field"><label>发射高度（MC 世界 Y，1.20.1 上限 320）</label><input type="number" id="launchAlt" value="200" step="10" min="-64" max="320"></div>
+    <div class="row2">
+      <div class="field"><label>发射角度（度，仰角为正）</label><input type="number" id="launchAngle" value="0" step="1"></div>
+      <div class="field"><label>发射偏航角（度）</label><input type="number" id="launchYaw" value="0" step="1"></div>
+    </div>
+    <h2>目标参数</h2>
+    <div class="field"><label><input type="checkbox" id="targetOn" checked> 启用目标交战（关闭则纯直飞弹道）</label></div>
+    <div class="row2">
+      <div class="field"><label>目标速度（公里/小时）</label><input type="number" id="tgtSpeed" value="100" step="50"></div>
+      <div class="field"><label>目标高度（MC 世界 Y）</label><input type="number" id="tgtAlt" value="200" step="10" min="-64" max="320"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>初始目标距离（米）</label><input type="number" id="tgtDist" value="1000" step="100"></div>
+      <div class="field"><label>目标方位角（度，相对发射航向）</label><input type="number" id="tgtBearing" value="0" step="1"></div>
+    </div>
+    <div class="field"><label>目标航向（度，0=迎头直奔发射点）</label><input type="number" id="tgtHeading" value="0" step="1"></div>
+    <div class="field"><label>模拟上限（秒）</label><input type="number" id="maxSeconds" value="240" step="30"></div>
+    <h2>导弹摘要</h2>
+    <div id="missileInfo">尚未加载导弹。</div>
+    <div id="loadInfo"></div>
+    <p class="hint">动力学内核按 RVP 实体链逐 Tick 移植：攻角模型 / 变质量推进 / 速度平方阻力 / 高度阻力表 / 二脉冲 / 诱导阻力。已知简化见同目录 README.md。</p>
+  </aside>
+  <main>
+    <div id="timelineBar">
+      <button id="btnReset" title="回到起点">⟲</button>
+      <button id="btnPlay" class="primary" title="播放/暂停">▶</button>
+      <button id="btnStep" title="单步（1 Tick）">⏭</button>
+      <input type="range" id="scrub" min="0" max="0" value="0">
+      <span id="timeLabel">0.00s / 0.00s</span>
+      <span id="hitLabel"></span>
+      <select id="playSpeed">
+        <option value="1">1×</option>
+        <option value="4" selected>4×</option>
+        <option value="16">16×</option>
+      </select>
+    </div>
+    <div id="chartArea">
+      <canvas id="chart"></canvas>
+      <div id="tooltip"></div>
+      <div id="legend">
+        <span style="color:#1a73e8"><span class="sw" style="border-color:#1a73e8"></span>导弹</span>
+        <span style="color:#c5221f"><span class="sw" style="border-color:#c5221f"></span>目标</span>
+      </div>
+    </div>
+    <div id="statusBar">就绪。① 选择工作目录 ② 选导弹 ③ 点播放；悬停图表查看逐 Tick 遥测。</div>
+  </main>
+</div>
+<input type="file" id="dirFallback" webkitdirectory multiple style="display:none">
+<script>
+"use strict";
+/* ============================================================
+ * RVP 导弹计算器 —— 动力学内核按 RVP 实体链逐 Tick 移植。
+ * 依据（本仓库源码）：RVP_AttackAngleModel / RVP_AeroSteeringModel /
+ * RVP_PropulsionMath / RVP_QuadraticAirDrag / RVP_ProjectileMotion /
+ * RVP_ProjectileData / RVP_GuidanceRuntimeMath。
+ * 单位：内部一律 格/Tick（1 格/Tick = 20 m/s = 72 km/h）；G = 0.0245 格/Tick²。
+ * ============================================================ */
+
+/* ---------- 向量 ---------- */
+class V3 {
+  constructor(x,y,z){ this.x=x||0; this.y=y||0; this.z=z||0; }
+  add(v){ return new V3(this.x+v.x,this.y+v.y,this.z+v.z); }
+  sub(v){ return new V3(this.x-v.x,this.y-v.y,this.z-v.z); }
+  scale(s){ return new V3(this.x*s,this.y*s,this.z*s); }
+  len(){ return Math.sqrt(this.x*this.x+this.y*this.y+this.z*this.z); }
+  norm(){ const l=this.len(); return l>1e-12?this.scale(1/l):new V3(0,0,0); }
+  dot(v){ return this.x*v.x+this.y*v.y+this.z*v.z; }
+  cross(v){ return new V3(this.y*v.z-this.z*v.y,this.z*v.x-this.x*v.z,this.x*v.y-this.y*v.x); }
+}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rad=d=>d*Math.PI/180;
+function angleBetween(a,b){ return Math.acos(clamp(a.norm().dot(b.norm()),-1,1)); }
+/** 移植 RVP_BallisticTrajectoryMath.slerpDirection：单位向量球面插值，反向不坍缩。 */
+function slerpDir(a,b,t){
+  a=a.norm(); b=b.norm();
+  const d=clamp(a.dot(b),-1,1), ang=Math.acos(d);
+  if(ang<1e-9) return a;
+  if(Math.PI-ang<1e-6){
+    const orth=Math.abs(a.x)<0.9?new V3(1,0,0):new V3(0,1,0);
+    const axis=a.cross(orth).norm();
+    const ca=Math.cos(t*Math.PI), sa=Math.sin(t*Math.PI);
+    return a.scale(ca).add(axis.cross(a).scale(sa)).norm();
+  }
+  const s=Math.sin(ang);
+  return a.scale(Math.sin((1-t)*ang)/s).add(b.scale(Math.sin(t*ang)/s)).norm();
+}
+function dirFromPitchYaw(pitchDeg,yawRad){
+  const p=rad(pitchDeg);
+  return new V3(Math.cos(p)*Math.cos(yawRad),Math.sin(p),Math.cos(p)*Math.sin(yawRad)).norm();
+}
+
+/* ---------- 常量与单位 ---------- */
+const G_CONST=0.0245;        // PhysicsEngine.G = 9.8/400
+const TPS=20;                // Tick/秒
+const KT_PER_KMH=1/72;       // km/h -> 格/Tick
+const toKMH=v=>v*72;
+const toMach=v=>v*20/343;
+const EPS=1e-8;
+
+/* ---------- 默认大气阻力表（与当前仓库 RVP_ProjectileData 一致） ---------- */
+const DEFAULT_ALT={h:[-64,64,320,550,1000],f:[2.0,1.5,0.5,0.25,0.014]};
+function defaultAltFactor(y){
+  const H=DEFAULT_ALT.h,F=DEFAULT_ALT.f;
+  if(y<=H[0]) return F[0];
+  for(let i=1;i<H.length;i++){
+    if(y<=H[i]){ const t=(y-H[i-1])/(H[i]-H[i-1]); return F[i-1]+(F[i]-F[i-1])*t; }
+  }
+  return F[F.length-1];
+}
+/** "[[a,b]]": v 区间表解析（RVP_Range：闭区间；inf / null = 无界）。 */
+function parseRangeMap(obj){
+  if(obj==null||typeof obj!=="object") return null;
+  const out=[];
+  for(const k of Object.keys(obj)){
+    const m=/^\[\[([^,\]]+),([^,\]]+)\]\]$/.exec(k.trim());
+    if(!m) continue;
+    function bound(s,lower){
+      s=s.trim().toLowerCase();
+      if(s===""||s==="null") return lower?-Infinity:Infinity;
+      if(s.indexOf("inf")>=0) return s[0]==="-"?-Infinity:Infinity;
+      const n=parseFloat(s);
+      return isNaN(n)?(lower?-Infinity:Infinity):n;
+    }
+    const v=parseFloat(obj[k]);
+    if(!isFinite(v)||v<=0) continue;
+    out.push({lo:bound(m[1],true),hi:bound(m[2],false),v});
+  }
+  out.sort((a,b)=>a.lo-b.lo);
+  return out.length?out:null;
+}
+function sampleRangeMap(map,y){
+  if(!map) return null;
+  for(const r of map){ if(y>=r.lo&&y<=r.hi) return r.v; }
+  return null;
+}
+/** 移植 resolveAltitudeDragFactor：显式表优先，缺省默认表；空表/未命中/非法=1.0。 */
+function altFactor(y,explicitMap){
+  if(explicitMap==null) return defaultAltFactor(y);
+  if(explicitMap.length===0) return 1.0;
+  const v=sampleRangeMap(explicitMap,y);
+  return (v!=null&&isFinite(v)&&v>0)?v:1.0;
+}
+
+/* ---------- 武器 JSON 解析 ---------- */
+function num(v,def){ return (typeof v==="number"&&isFinite(v))?v:def; }
+/** guidance_tick_range 之类区间串的起始 Tick。 */
+function rangeStart(v){
+  if(typeof v==="string"){
+    const m=/\[\[\s*(-?(?:\d+\.?\d*|\.\+)|inf|-inf|null)/i.exec(v);
+    if(!m) return 0;
+    const s=m[1].toLowerCase();
+    if(s==="inf"||s==="null") return 0;
+    if(s==="-inf") return 0;
+    const n=parseFloat(s);
+    return isNaN(n)?0:Math.max(0,n);
+  }
+  if(v&&typeof v==="object"){ const m=parseRangeMap(v); return m&&m.length?Math.max(0,m[0].lo):0; }
+  return 0;
+}
+function parseMissile(text,filename){
+  const w=JSON.parse(text);
+  if(w.type!=="rvp:missile") return null;
+  const p=w.projectile_data||{};
+  const gd=w.guidance_data||{};
+  const tfRaw=p.turning_factor;
+  const fuse=w.fuse_data||{};
+  const altRaw=p.altitude_drag_factor;
+  const altMap=(altRaw==null)?null:(parseRangeMap(altRaw)||[]);
+  return {
+    file:filename,
+    name:w.name_CN||w.name||filename,
+    enName:(w.name&&w.name!==w.name_CN)?w.name:"",
+    gtype:gd.guidance_type||"—",
+    preset:(gd.preset_cruise_altitude!=null)?{
+      cruiseAltitude:num(gd.preset_cruise_altitude,0),
+      maxAscentLead:num(gd.preset_max_ascent_lead,60),
+      diveRadius:num(gd.preset_dive_radius,0),
+      diveAltitudeFactor:num(gd.preset_dive_altitude_factor,0.3),
+      diveLeadFactor:num(gd.preset_dive_lead_factor,1.5),
+      maneuver:num(gd.preset_tactical_maneuver_amplitude,0),
+    }:null,
+    loft:(gd.loft_height_above_target!=null)?{
+      height:num(gd.loft_height_above_target,0),
+      end:num(gd.loft_end_distance,0),
+      blend:num(gd.loft_blend_distance,0),
+    }:null,
+    activeRadarRange:num(gd.active_radar_activation_range,0),
+    guideStart:rangeStart(gd.guidance_tick_range),
+    v0:num(p.velocity,num(w.velocity,10)),
+    gravity:num(p.gravity,0),
+    cd:num(p.drag_coefficient,0),
+    mass:num(p.mass,0),
+    fuel:num(p.fuel_mass,0),
+    thrust:num(p.thrust,0),
+    burn:num(p.motor_burn_time,0),
+    ign:num(p.ignition_delay_tick,0),
+    minSpeed:num(p.min_speed,0),
+    maxSpeed:num(p.max_speed,0),
+    engine:(p.has_rocket_engine!==false)&&(num(p.thrust,0)>0||p.has_rocket_engine===true),
+    constantSpeed:p.constant_speed===true,
+    aero:p.rvp_aero_steering===true,
+    aaLimit:num(p.rvp_attack_angle_limit_deg,0),
+    rvpMaxG:(p.rvp_maxg!=null)?num(p.rvp_maxg,null):null,
+    tfConst:(typeof tfRaw==="number")?tfRaw:null,
+    tfMap:(tfRaw&&typeof tfRaw==="object")?parseRangeMap(tfRaw):null,
+    refSpeedExplicit:(p.rvp_ref_speed!=null)?num(p.rvp_ref_speed,null):null,
+    turnRateLimit:num(p.rvp_turn_rate_limit,0),
+    inducedDragExplicit:(p.rvp_induced_drag!=null)?num(p.rvp_induced_drag,null):null,
+    altMap,
+    sp:{on:p.second_pulse===true, thrust:num(p.second_pulse_thrust,0), burn:num(p.second_pulse_burn_time,0),
+        speed:num(p.second_pulse_trigger_speed,0), dist:num(p.second_pulse_trigger_distance,0)},
+    ivv:p.inherit_vehicle_velocity===true,
+    cbs:num(p.collision_box_size,0.0625),
+    pfh:num(fuse.proximity_fuse_height,0),
+  };
+}
+function summary(prof){
+  const L=[];
+  L.push("名称: "+prof.name+(prof.enName?" ("+prof.enName+")":""));
+  L.push("文件: "+prof.file);
+  L.push("制导: "+prof.gtype+(prof.ivv?"  [继承载机速度]":""));
+  L.push("初速 "+prof.v0.toFixed(2)+" 格/Tick（"+toKMH(prof.v0).toFixed(0)+" km/h）"
+        +(prof.maxSpeed>0?"  最大 "+prof.maxSpeed.toFixed(1):"  无最大钳制"));
+  L.push("质量 "+prof.mass+" kg，燃料 "+prof.fuel+" kg，重力 "+prof.gravity);
+  if(prof.thrust>0)
+    L.push("主发动机: 推力 "+prof.thrust+" × "+prof.burn+"t，点火延迟 "+prof.ign+"t");
+  if(prof.sp.on)
+    L.push("二脉冲: 推力 "+prof.sp.thrust+" × "+prof.sp.burn+"t（速度触发 "+prof.sp.speed+" / 距离触发 "+prof.sp.dist+"）");
+  if(prof.preset)
+    L.push("PRESET 弹道: 巡航高 "+prof.preset.cruiseAltitude+"m，顶点≤0.5×射程，蛇形 ±"+prof.preset.maneuver+"m（瞄准目标初始位置=GPS 固定点）");
+  if(prof.loft)
+    L.push("Loft 高抛: 目标上方 +"+prof.loft.height+"m，"+prof.loft.end+"~"+(prof.loft.end+prof.loft.blend)+"m smoothstep 退坡"
+          +(prof.activeRadarRange>0?"，导引头 "+prof.activeRadarRange+"m 开机后转直追":"")
+          +"，引导自 Tick "+prof.guideStart);
+  L.push("Cd="+prof.cd
+        +(prof.aero?"  气动转向开，攻角上限 "+prof.aaLimit+"°":"  气动转向关")
+        +"  tf="+(prof.tfConst!=null?prof.tfConst:(prof.tfMap?"分区间":"缺省0.5"))
+        +(prof.rvpMaxG!=null?"  rvp_maxg="+prof.rvpMaxG:""));
+  L.push("命中半径: max(碰撞盒 "+prof.cbs+", 近炸 "+prof.pfh+")");
+  return L.join("\n");
+}
+
+/* ---------- 气动预算（移植 RVP_AeroSteeringModel） ---------- */
+function equivGsFromTF(tf,ref){
+  if(!isFinite(tf)||!isFinite(ref)||ref<=EPS) return 0;
+  tf=clamp(tf,0,1);
+  if(tf>=1) return Infinity;
+  if(tf<=0) return 0;
+  const designTurnAngle=Math.atan2(tf,1-tf);
+  return 2*ref*Math.sin(designTurnAngle/2)/G_CONST;
+}
+function availableGs(speed,designGs,ref,density){
+  if(!isFinite(designGs)) return Infinity;
+  const q=(ref<=EPS)?1:clamp(density*Math.pow(speed/ref,2),0.05,1.0);
+  return designGs*q;
+}
+/** 移植 RVP_AttackAngleModel.solve：机头/速度分离、攻角锥、λ、法向转角。 */
+function solveAttackAngle(vel,body,desired,lim){
+  const speed=vel.len();
+  if(speed<=EPS||!lim.enabled) return {vel,body,bodyNorm:body.norm(),load:0,alpha:0};
+  const axis=vel.norm();
+  const des=(desired&&desired.len()>EPS)?desired.norm():axis;
+  const response=(lim.rvpMaxG!=null)?0.5:clamp(lim.tf,0,1);
+  let nb=slerpDir(body,des,response);
+  const cap=rad(lim.aaLimit);
+  let ang=angleBetween(axis,nb);
+  if(ang>cap){ nb=slerpDir(axis,nb,cap/ang); ang=cap; }
+  const load=Math.sin(ang)/Math.sin(cap);
+  const nG=availableGs(speed,lim.designGs,lim.ref,lim.density)*load;
+  let turn=2*Math.asin(clamp(nG*G_CONST/(2*speed),0,1));
+  if(isFinite(lim.turnRateLimit)&&lim.turnRateLimit>0) turn=Math.min(turn,rad(lim.turnRateLimit));
+  turn=isFinite(turn)?Math.min(turn,ang):0;
+  const next=(ang>EPS&&turn>0)?slerpDir(axis,nb,turn/ang).scale(speed):vel;
+  return {vel:next,body:nb,bodyNorm:nb,load:clamp(load,0,1),alpha:ang};
+}
+
+/* ---------- PRESET 弹道（移植 RVP_GuidanceRuntimeMath.shouldBeginPresetDive /
+ * steerPresetTerminal / steerPresetBallisticArc + RVP_BallisticTrajectoryMath 弧线采样） ---------- */
+function resolveTurnRadiusRVP(speed,prof,tf,ref,density){
+  if(prof.aero){
+    const designGs=(prof.rvpMaxG!=null)?((isFinite(prof.rvpMaxG)&&prof.rvpMaxG>0)?prof.rvpMaxG:0)
+                                       :equivGsFromTF(tf,ref);
+    const gs=availableGs(speed,designGs,ref,density);
+    if(!isFinite(gs)) return 8.0;
+    if(!isFinite(gs)||gs<=0) return Infinity;
+    const mdv=gs*G_CONST;
+    if(mdv>=2*speed) return 8.0;
+    return clamp(speed*speed/mdv,8,80);
+  }
+  if(prof.rvpMaxG!=null){
+    const gs=(isFinite(prof.rvpMaxG)&&prof.rvpMaxG>0)?prof.rvpMaxG:0;
+    if(gs<=0) return 8.0;
+    const mdv=gs*G_CONST;
+    if(mdv>=2*speed) return 8.0;
+    return clamp(speed*speed/mdv,8,80);
+  }
+  const f=clamp(tf,0,1);
+  if(f<=0) return Infinity;
+  return clamp(speed/f,8,80);
+}
+/** 返回期望方向（未限幅），攻角/旧转向分支按各自裁决消费。 */
+function presetDesired(pos,vel,aim,launch,preset,prof,tf,ref,y){
+  const speed=vel.len();
+  const tr=resolveTurnRadiusRVP(speed,prof,tf,ref,altFactor(y,prof.altMap));
+  const dx=pos.x-aim.x,dz=pos.z-aim.z;
+  const vertDist=Math.max(0,pos.y-aim.y);
+  const diveDistance=Math.max(preset.diveRadius,Math.max(
+    vertDist*preset.diveAltitudeFactor,tr*preset.diveLeadFactor));
+  const hSqr=dx*dx+dz*dz;
+  let diving=hSqr<=diveDistance*diveDistance;
+  if(!diving){
+    const rx=aim.x-launch.x,rz=aim.z-launch.z;
+    const mx=aim.x-pos.x,mz=aim.z-pos.z;
+    diving=(mx*rx+mz*rz)<=0.0;
+  }
+  if(diving){
+    // 终端俯冲：未过顶指目标；过顶/极近则锁定水平方向全力下压
+    const toT=aim.sub(pos);
+    const hs=toT.x*toT.x+toT.z*toT.z;
+    const vh=new V3(vel.x,0,vel.z),vhs=vh.x*vh.x+vh.z*vh.z;
+    const overshoot=hs>1e-8&&vhs>1e-8&&(vh.x*toT.x+vh.z*toT.z)<0;
+    const veryClose=hs<=Math.max(1.0,speed*speed*0.25);
+    if(overshoot||veryClose){
+      return vhs>1e-8?vh.scale(0.25/Math.sqrt(vhs)).add(new V3(0,-1,0)):new V3(0,-1,0);
+    }
+    return toT;
+  }
+  // 抛物线中段：追 前视点 + 4p(1-p) 抛物线高度，顶点 = min(巡航高, 0.5×射程)
+  const toHx=aim.x-pos.x,toHz=aim.z-pos.z;
+  const hDist=Math.sqrt(toHx*toHx+toHz*toHz);
+  if(hDist<=1e-8) return aim.sub(pos);
+  const fHx=toHx/hDist,fHz=toHz/hDist;
+  let totalH=hDist;
+  { const ax=aim.x-launch.x,az=aim.z-launch.z; const ts=ax*ax+az*az; if(ts>1e-8) totalH=Math.sqrt(ts); }
+  const p=clamp(1.0-hDist/totalH,0,1);
+  const apogee=Math.min(preset.cruiseAltitude,totalH*0.50);
+  const base=Math.min(40.0,apogee*0.3);
+  const lookAhead=Math.min(preset.maxAscentLead,hDist*0.3);
+  const ahead=Math.max(hDist-lookAhead,0.0);
+  const laP=clamp(1.0-ahead/totalH,0,1);
+  const targetY=launch.y+base+(apogee-base)*4.0*laP*(1.0-laP);
+  let tp=new V3(pos.x+fHx*lookAhead,targetY,pos.z+fHz*lookAhead);
+  if(preset.maneuver>0){
+    const w=clamp((p-0.15)/0.05,0,1)*clamp((0.85-p)/0.05,0,1);
+    if(w>1e-4){
+      const phase=Math.PI*2.0*p*5.0;
+      tp=tp.add(new V3(-fHz,0,fHx).scale(preset.maneuver*Math.sin(phase)*w));
+    }
+  }
+  return tp.sub(pos);
+}
+
+/* ---------- 模拟器（实体链同序：制导 -> 推力 -> 阻力 -> 重力 -> 钳制 -> 诱导阻力） ---------- */
+function simulate(prof,prm){
+  const carrier=prm.carrierKmh*KT_PER_KMH;
+  let v0=prof.v0+(prof.ivv?Math.max(carrier,0):0);
+  const yawR=rad(prm.launchYaw);
+  const launchDir=dirFromPitchYaw(prm.launchAngle,yawR);
+  const fwd=new V3(Math.cos(yawR),0,Math.sin(yawR));
+  const right=new V3(-fwd.z,0,fwd.x);
+  let vel=launchDir.scale(v0);
+  let body=launchDir;
+  let pos=new V3(0,prm.launchAlt,0);
+  // 目标：方位角相对发射航向；航向 0 = 迎头直奔发射点
+  const bear=rad(prm.tgtBearing);
+  let tgt=null;
+  if(prm.target){
+    const tpos=new V3(
+      fwd.x*Math.cos(bear)+right.x*Math.sin(bear),
+      0,
+      fwd.z*Math.cos(bear)+right.z*Math.sin(bear)
+    ).scale(prm.tgtDist).add(new V3(0,prm.tgtAlt,0));
+    const tvel=dirFromPitchYaw(0,yawR+Math.PI+rad(prm.tgtHeading)).scale(prm.tgtSpeedKmh*KT_PER_KMH);
+    tgt={pos:tpos,vel:tvel};
+  }
+  // GPS 固定点语义：PRESET 瞄准目标初始位置（tgt.pos 每 Tick 重建新对象，此处引用即初始点）
+  const aimPoint=(tgt&&prof.preset)?tgt.pos:null;
+  const launchPos=new V3(0,prm.launchAlt,0);
+  // rvp_ref_speed 回退链：显式(0=关) -> max_speed -> 武器初速 -> 3.0
+  let ref;
+  if(prof.refSpeedExplicit!=null) ref=Math.max(prof.refSpeedExplicit,0);
+  else if(prof.maxSpeed>0) ref=prof.maxSpeed;
+  else if(isFinite(prof.v0)&&prof.v0>0) ref=prof.v0;
+  else ref=3.0;
+  function tfAt(tick){
+    if(prof.tfConst!=null) return prof.tfConst;
+    if(prof.tfMap){ const v=sampleRangeMap(prof.tfMap,Math.max(tick,0)); if(v!=null) return clamp(v,0,1); }
+    return 0.5;
+  }
+  function aaEnabled(tick){
+    if(!prof.aero) return false;
+    if(!(prof.aaLimit>0&&prof.aaLimit<90)) return false;
+    return (prof.rvpMaxG!=null)||(isFinite(tfAt(tick))&&tfAt(tick)<1);
+  }
+  const dry=Math.max(prof.mass-prof.fuel,0);
+  const burnWin=Math.max(prof.burn,1);
+  function massAt(motorTick){
+    if(!prof.engine||prof.fuel<=0||prof.mass<=0) return prof.mass;
+    const prog=clamp(motorTick/burnWin,0,1);
+    return dry+prof.fuel*(1-prog);
+  }
+  const dryEnd=massAt(Math.round(prof.burn));
+  const induced=prof.aero?(prof.inducedDragExplicit!=null?Math.max(prof.inducedDragExplicit,0)
+                                          :(prof.engine?Math.max(prof.cd,0):0)):0;
+  const hitR=Math.max(prof.cbs,prof.pfh>0?prof.pfh:0);
+  const maxTicks=Math.max(1,Math.round(prm.maxSeconds*TPS));
+  const frames=[];
+  let spStarted=-1,minMiss=Infinity,hitTick=-1,impactTick=-1,traveled=0,seekerCatch=false;
+  let prevSpeed=vel.len();
+  for(let tick=0;tick<=maxTicks;tick++){
+    /* --- 制导（攻角求解/旧转向） --- */
+    let nG=0,alpha=0,load=0;
+    const speed0=vel.len();
+    let desired;
+    if(aimPoint) desired=presetDesired(pos,vel,aimPoint,launchPos,prof.preset,prof,tfAt(tick),ref,pos.y);
+    else if(tgt&&tick>=prof.guideStart){
+      // ARH 主动导引头开机截获（距离闩锁近似；不含 ECM/诱饵/FOV）
+      if(!seekerCatch&&prof.activeRadarRange>0&&pos.sub(tgt.pos).len()<=prof.activeRadarRange) seekerCatch=true;
+      if(prof.loft&&!seekerCatch){
+        // loft 高抛：瞄准点 = 目标实时位置 + (0, 高度×smoothstep, 0)，近距退坡归零
+        const dxh=tgt.pos.x-pos.x,dzh=tgt.pos.z-pos.z;
+        const hDist=Math.sqrt(dxh*dxh+dzh*dzh);
+        let b=prof.loft.blend>0?clamp((hDist-prof.loft.end)/prof.loft.blend,0,1)
+                               :(hDist>prof.loft.end?1:0);
+        b=b*b*(3-2*b);
+        desired=new V3(tgt.pos.x,tgt.pos.y+prof.loft.height*b,tgt.pos.z).sub(pos);
+      } else desired=tgt.pos.sub(pos);
+    }
+    else desired=vel;
+    if(aaEnabled(tick)&&speed0>EPS){
+      const tf=tfAt(tick);
+      const lim={
+        enabled:true,aaLimit:prof.aaLimit,rvpMaxG:prof.rvpMaxG,tf,ref,
+        density:altFactor(pos.y,prof.altMap),turnRateLimit:prof.turnRateLimit,
+        designGs:(prof.rvpMaxG!=null)?((isFinite(prof.rvpMaxG)&&prof.rvpMaxG>0)?prof.rvpMaxG:0)
+                                     :equivGsFromTF(tf,ref)
+      };
+      const sol=solveAttackAngle(vel,body,desired,lim);
+      vel=sol.vel; body=sol.body; alpha=sol.alpha; load=sol.load;
+      nG=availableGs(vel.len(),lim.designGs,lim.ref,lim.density)*load;
+    } else if(speed0>EPS){
+      const tf=tfAt(tick);
+      if(tgt&&tf>0){
+        const nd=(tf>=1)?desired.norm():slerpDir(vel.norm(),desired.norm(),tf);
+        vel=nd.scale(speed0);
+      }
+      body=vel.norm();
+    }
+    /* --- 运动（tickMissileMove 同序） --- */
+    const ign=Math.max(prof.ign,0);
+    if(tick>=ign){
+      const motorTick=tick-ign;
+      let mass=dryEnd,thrust=0,burning=false;
+      if(prof.engine&&motorTick<=prof.burn&&prof.thrust>0){
+        burning=true; thrust=prof.thrust; mass=massAt(Math.max(motorTick,0));
+      } else if(prof.engine&&prof.sp.on&&prof.sp.thrust>0&&prof.sp.burn>0&&(prof.sp.speed>0||prof.sp.dist>0)){
+        if(spStarted<0&&motorTick>prof.burn){
+          const speedOk=prof.sp.speed>0&&vel.len()<=prof.sp.speed;
+          const distOk=prof.sp.dist>0&&tgt!=null&&pos.sub(tgt.pos).len()<=prof.sp.dist;
+          if(speedOk||distOk) spStarted=tick;
+        }
+        if(spStarted>=0){
+          const t2=tick-spStarted;
+          if(t2>=0&&t2<=prof.sp.burn){ burning=true; thrust=prof.sp.thrust; mass=dryEnd; }
+        }
+      }
+      if(burning&&thrust>0&&mass>0){
+        vel=vel.add(body.scale(thrust/Math.max(mass,1e-6)));
+      }
+      // 速度平方阻力（阻力质量 <1 按吨×1000）
+      const dragMass=mass<1?mass*1000:mass;
+      const spd=vel.len();
+      if(prof.cd>0&&spd>1e-12&&dragMass>0){
+        const loss=prof.cd*spd*spd/dragMass*altFactor(pos.y,prof.altMap);
+        vel=vel.scale(Math.max(0,1-loss/spd));
+      }
+      // 配置重力（84 弹多为 0）
+      if(prof.gravity!==0) vel=new V3(vel.x,vel.y+prof.gravity,vel.z);
+    }
+    // 速度钳制（先上限后下限；0=不限）
+    {
+      const spd=vel.len();
+      if(spd>1e-6){
+        let s=spd;
+        if(prof.maxSpeed>0&&s>prof.maxSpeed) s=prof.maxSpeed;
+        if(prof.minSpeed>0&&s<prof.minSpeed) s=prof.minSpeed;
+        if(s!==spd) vel=vel.norm().scale(s);
+      }
+    }
+    // 诱导阻力（速度钳制后一次；constant_speed 豁免）
+    if(prof.aero&&!prof.constantSpeed&&induced>0&&load>0){
+      const spd=vel.len();
+      if(spd>1e-8){
+        const loss=induced*load*load*spd;
+        const floor=Math.min(spd,Math.max(prof.minSpeed,0.01));
+        vel=vel.norm().scale(Math.max(spd-loss,floor));
+      }
+    }
+    // 平移
+    pos=pos.add(vel);
+    traveled+=vel.len();
+    let tFwd=Infinity,tLat=Infinity,tY=Infinity,tD=Infinity;
+    if(tgt){
+      tgt.pos=tgt.pos.add(tgt.vel);
+      tFwd=tgt.pos.x*fwd.x+tgt.pos.z*fwd.z;
+      tLat=tgt.pos.x*right.x+tgt.pos.z*right.z;
+      tY=tgt.pos.y;
+      tD=pos.sub(tgt.pos).len();
+      if(tD<minMiss) minMiss=tD;
+    }
+    frames.push({t:tick,
+      fwd:pos.x*fwd.x+pos.z*fwd.z, lat:pos.x*right.x+pos.z*right.z,
+      y:pos.y, speed:vel.len(), accel:(vel.len()-prevSpeed)*400,
+      nG, alphaDeg:alpha*180/Math.PI, load, distT:tD, traveled,
+      sp:(spStarted<0?0:((tick-spStarted)<=prof.sp.burn?1:2)),
+      tFwd,tLat,tY});
+    prevSpeed=vel.len();
+    if(tgt&&tD<=hitR){ hitTick=tick; break; }
+    if(pos.y<=prm.groundY&&tick>0){ impactTick=tick; break; }
+  }
+  return {frames,hitTick,impactTick,minMiss,hitR,groundY:prm.groundY,
+    end:frames.length?frames[frames.length-1]:null,fwd,right};
+}
+
+/* ---------- 应用状态 ---------- */
+const S={profiles:[],errors:[],current:null,result:null,cursor:0,playing:false,speed:4,lastT:0,chartMap:null};
+
+/* ---------- 目录扫描 ---------- */
+async function pickDirectory(){
+  if(window.showDirectoryPicker){
+    try{
+      const dir=await window.showDirectoryPicker();
+      S.profiles=[]; S.errors=[];
+      await walkHandle(dir,0);
+      afterLoad("（"+dir.name+"）");
+      return;
+    }catch(e){ if(e&&e.name==="AbortError") return; }
+  }
+  document.getElementById("dirFallback").click();
+}
+async function walkHandle(dir,depth){
+  for await(const entry of dir.values()){
+    if(entry.kind==="directory"){
+      if(entry.name==="_backup") continue;
+      if(depth<6) await walkHandle(entry,depth+1);
+      continue;
+    }
+    if(!entry.name.toLowerCase().endsWith(".json")) continue;
+    try{
+      const fh=await entry.getFile();
+      const prof=parseMissile(await fh.text(),entry.name);
+      if(prof) S.profiles.push(prof);
+    }catch(e){ S.errors.push(entry.name+": "+e.message); }
+  }
+}
+function onFallbackFiles(ev){
+  const files=[...ev.target.files].filter(f=>{
+    const rp=f.webkitRelativePath||"";
+    return /\.json$/i.test(f.name)&&rp.indexOf("_backup")<0;
+  });
+  S.profiles=[]; S.errors=[];
+  if(!files.length){ afterLoad("（浏览器回退模式）"); return; }
+  let pending=files.length;
+  files.forEach(f=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      try{ const prof=parseMissile(r.result,f.name); if(prof) S.profiles.push(prof); }
+      catch(e){ S.errors.push(f.name+": "+e.message); }
+      if(--pending===0) afterLoad("（浏览器回退模式）");
+    };
+    r.readAsText(f);
+  });
+}
+function afterLoad(label){
+  S.profiles.sort((a,b)=>a.file.localeCompare(b.file));
+  fillMissileOptions(document.getElementById("search").value);
+  document.getElementById("dirLabel").textContent="已加载 "+S.profiles.length+" 枚导弹 "+label
+    +(S.errors.length?"，"+S.errors.length+" 个解析失败":"");
+  document.getElementById("loadInfo").innerHTML=
+    S.errors.map(e=>'<div class="err">✗ '+e+"</div>").join("")
+    +(S.profiles.length?"":'<div class="err">未发现 type=="rvp:missile" 的武器 JSON</div>');
+  const sel=document.getElementById("missileSelect");
+  if(S.profiles.length){ sel.value=sel.options[0].value; selectMissile(); }
+}
+function fillMissileOptions(filter){
+  const sel=document.getElementById("missileSelect");
+  sel.innerHTML="";
+  const f=(filter||"").toLowerCase();
+  S.profiles.forEach(p=>{
+    if(f&&p.name.toLowerCase().indexOf(f)<0&&p.file.toLowerCase().indexOf(f)<0&&p.enName.toLowerCase().indexOf(f)<0) return;
+    const o=document.createElement("option");
+    o.value=p.file;
+    o.textContent=p.name+"（"+p.gtype+"）";
+    sel.appendChild(o);
+  });
+  if(!sel.children.length) sel.innerHTML='<option value="">— 无匹配 —</option>';
+}
+
+/* ---------- 计算 ---------- */
+function num2(v,def){ const n=parseFloat(v); return isFinite(n)?n:def; }
+function currentParams(){
+  return {
+    carrierKmh:num2(document.getElementById("carrierSpeed").value,0),
+    launchAlt:num2(document.getElementById("launchAlt").value,0),
+    launchAngle:num2(document.getElementById("launchAngle").value,0),
+    launchYaw:num2(document.getElementById("launchYaw").value,0),
+    target:document.getElementById("targetOn").checked,
+    tgtSpeedKmh:num2(document.getElementById("tgtSpeed").value,0),
+    tgtAlt:num2(document.getElementById("tgtAlt").value,0),
+    tgtDist:num2(document.getElementById("tgtDist").value,0),
+    tgtBearing:num2(document.getElementById("tgtBearing").value,0),
+    tgtHeading:num2(document.getElementById("tgtHeading").value,0),
+    maxSeconds:num2(document.getElementById("maxSeconds").value,240),
+    groundY:num2(document.getElementById("groundY").value,-64),
+  };
+}
+function recompute(){
+  document.getElementById("carrierSpeed").disabled=!(S.current&&S.current.ivv);
+  if(!S.current){ S.result=null; draw(); return; }
+  document.getElementById("missileInfo").textContent=summary(S.current);
+  try{ S.result=simulate(S.current,currentParams()); }
+  catch(e){
+    document.getElementById("statusBar").textContent="模拟出错: "+e.message;
+    S.result=null; draw(); return;
+  }
+  S.cursor=0;
+  const r=S.result;
+  document.getElementById("scrub").max=Math.max(0,r.frames.length-1);
+  document.getElementById("scrub").value=0;
+  document.getElementById("hitLabel").textContent=
+    r.hitTick>=0?("命中: "+(r.hitTick/TPS).toFixed(1)+" 秒"):
+    (r.impactTick>=0?("坠地: "+(r.impactTick/TPS).toFixed(1)+" 秒"):
+    (isFinite(r.minMiss)?"最小脱靶 "+r.minMiss.toFixed(0)+" m":""));
+  const last=r.end;
+  let peak=0; r.frames.forEach(f=>{ if(f.speed>peak) peak=f.speed; });
+  document.getElementById("statusBar").textContent=
+    S.current.name+" ｜ 弹道 "+(r.frames.length-1)+" Tick（"+((r.frames.length-1)/TPS).toFixed(1)+" 秒）"
+    +" ｜ 峰速 "+toKMH(peak).toFixed(0)+" km/h（M"+toMach(peak).toFixed(2)+"）"
+    +" ｜ 前向距离 "+Math.round(last?last.fwd:0)+" m"
+    +(r.hitTick>=0?" ｜ 命中":(r.impactTick>=0?" ｜ 坠地":" ｜ 达到模拟上限"));
+  updateCursor();
+}
+function selectMissile(){
+  const f=document.getElementById("missileSelect").value;
+  S.current=S.profiles.find(p=>p.file===f)||null;
+  recompute();
+}
+
+/* ---------- 图表 ---------- */
+const cv=document.getElementById("chart"),ctx=cv.getContext("2d");
+function fmtDist(v){ return Math.abs(v)>=10000?(v/1000).toFixed(1)+"k":String(Math.round(v)); }
+function niceStep(span,px){
+  const raw=span/Math.max(2,px/90);
+  const p=Math.pow(10,Math.floor(Math.log10(raw||1)));
+  const c=[1,2,5,10].map(k=>k*p).find(s=>s>=raw);
+  return c||raw||1;
+}
+function draw(){
+  const box=cv.parentElement.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  const w=Math.max(50,Math.round(box.width)),h=Math.max(50,Math.round(box.height));
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  if(!S.result||S.result.frames.length<2){
+    ctx.fillStyle="#8a97a5"; ctx.font="14px sans-serif"; ctx.textAlign="center";
+    ctx.fillText("加载导弹后此处绘制弹道",w/2,h/2);
+    S.chartMap=null; return;
+  }
+  const r=S.result,fr=r.frames;
+  const side=document.getElementById("viewMode").value==="side";
+  const keyA=f=>f.fwd, keyB=side?(f=>f.y):(f=>f.lat);
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  fr.forEach(f=>{
+    const a=keyA(f),b=keyB(f);
+    if(a<minX)minX=a; if(a>maxX)maxX=a;
+    if(b<minY)minY=b; if(b>maxY)maxY=b;
+    if(side&&f.tY<Infinity){ if(f.tFwd<minX)minX=f.tFwd; if(f.tFwd>maxX)maxX=f.tFwd; if(f.tY<minY)minY=f.tY; if(f.tY>maxY)maxY=f.tY; }
+    if(!side&&f.tLat<Infinity){ if(f.tFwd<minX)minX=f.tFwd; if(f.tFwd>maxX)maxX=f.tFwd; if(f.tLat<minY)minY=f.tLat; if(f.tLat>maxY)maxY=f.tLat; }
+  });
+  const padL=70,padR=24,padT=18,padB=44;
+  let spanX=Math.max(maxX-minX,10),spanY=Math.max(maxY-minY,10);
+  if(document.getElementById("equalAspect").checked){
+    // 等比例：两轴米/像素一致（取较紧的轴，数据居中）
+    const pxm=Math.min((w-padL-padR)/spanX,(h-padT-padB)/spanY);
+    const cX=(minX+maxX)/2,cY=(minY+maxY)/2;
+    spanX=(w-padL-padR)/pxm; spanY=(h-padT-padB)/pxm;
+    minX=cX-spanX/2; minY=cY-spanY/2;
+  }
+  const X=v=>padL+(v-minX)/spanX*(w-padL-padR);
+  const Y=v=>h-padB-(v-minY)/spanY*(h-padT-padB);
+  // 纵轴相对横轴的放大倍数（两轴比例尺失真提示）
+  const exagg=((h-padT-padB)/spanY)/((w-padL-padR)/spanX);
+  ctx.lineWidth=1; ctx.strokeStyle="#e3e8ee"; ctx.fillStyle="#66788c"; ctx.font="11px sans-serif";
+  const stepY=niceStep(spanY,h-padT-padB);
+  for(let v=Math.ceil(minY/stepY)*stepY;v<=maxY;v+=stepY){
+    ctx.beginPath(); ctx.moveTo(padL,Y(v)); ctx.lineTo(w-padR,Y(v)); ctx.stroke();
+    ctx.textAlign="right"; ctx.fillText(fmtDist(v),padL-6,Y(v)+4);
+  }
+  const stepX=niceStep(spanX,w-padL-padR);
+  for(let v=Math.ceil(minX/stepX)*stepX;v<=maxX;v+=stepX){
+    ctx.beginPath(); ctx.moveTo(X(v),padT); ctx.lineTo(X(v),h-padB); ctx.stroke();
+    ctx.textAlign="center"; ctx.fillText(fmtDist(v),X(v),h-padB+16);
+  }
+  ctx.strokeStyle="#c7d0da"; ctx.strokeRect(padL,padT,w-padL-padR,h-padT-padB);
+  ctx.textAlign="center";
+  ctx.fillText("前向距离 - X（米）",(padL+w-padR)/2,h-8);
+  ctx.save(); ctx.translate(14,(padT+h-padB)/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText(side?"高度（米）":"横向距离 - Z（米）",0,0); ctx.restore();
+  if(!document.getElementById("equalAspect").checked&&exagg>1.05){
+    ctx.fillStyle="#c5221f"; ctx.font="11px sans-serif"; ctx.textAlign="left";
+    ctx.fillText("⚠ 纵轴放大 "+exagg.toFixed(1)+"×（非等比例，勾选“等比例 1:1”查看真实尺度）",padL+8,padT+14);
+  }
+  // 地面参考线
+  if(r.groundY>=minY&&r.groundY<=maxY){
+    ctx.strokeStyle="#8d6e63"; ctx.lineWidth=2; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(padL,Y(r.groundY)); ctx.lineTo(w-padR,Y(r.groundY)); ctx.stroke();
+    ctx.fillStyle="#8d6e63"; ctx.font="11px sans-serif"; ctx.textAlign="left";
+    ctx.fillText("地面 Y="+Math.round(r.groundY),padL+6,Y(r.groundY)-4);
+  }
+  // 目标轨迹
+  if(currentParams().target){
+    ctx.strokeStyle="#c5221f"; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.beginPath();
+    let started=false;
+    fr.forEach(f=>{
+      if(f.tFwd===Infinity) return;
+      const a=keyA({fwd:f.tFwd,lat:f.tLat}),b=keyB({lat:f.tLat,y:f.tY});
+      started?ctx.lineTo(X(a),Y(b)):ctx.moveTo(X(a),Y(b)); started=true;
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  // 导弹轨迹
+  ctx.strokeStyle="#1a73e8"; ctx.lineWidth=2.2; ctx.beginPath();
+  fr.forEach((f,i)=>{ const a=keyA(f),b=keyB(f); i?ctx.lineTo(X(a),Y(b)):ctx.moveTo(X(a),Y(b)); });
+  ctx.stroke();
+  // 起点
+  const f0=fr[0];
+  ctx.fillStyle="#188038"; ctx.beginPath(); ctx.arc(X(keyA(f0)),Y(keyB(f0)),4,0,7); ctx.fill();
+  // 命中/坠地标记
+  ctx.font="12px sans-serif"; ctx.textAlign="left";
+  if(r.hitTick>=0){
+    const fh=fr[Math.min(r.hitTick,fr.length-1)];
+    ctx.fillStyle="#c5221f"; ctx.beginPath(); ctx.arc(X(keyA(fh)),Y(keyB(fh)),5,0,7); ctx.fill();
+    ctx.fillText("命中 "+(r.hitTick/TPS).toFixed(1)+"s",X(keyA(fh))+8,Y(keyB(fh))-6);
+  } else if(r.impactTick>=0){
+    const fi=fr[Math.min(r.impactTick,fr.length-1)];
+    ctx.fillStyle="#66788c"; ctx.beginPath(); ctx.arc(X(keyA(fi)),Y(keyB(fi)),4,0,7); ctx.fill();
+    ctx.fillText("坠地",X(keyA(fi))+8,Y(keyB(fi))-6);
+  }
+  // 当前游标
+  const cf=fr[clamp(S.cursor,0,fr.length-1)];
+  ctx.fillStyle="#1a73e8"; ctx.strokeStyle="#ffffff"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(X(keyA(cf)),Y(keyB(cf)),6,0,7); ctx.fill(); ctx.stroke();
+  S.chartMap={X,Y,keyA,keyB,minX,spanX,padL,padR,w};
+}
+
+/* ---------- 游标 / 时间轴 / 播放 ---------- */
+function updateCursor(){
+  if(!S.result||!S.result.frames.length) return;
+  const fr=S.result.frames;
+  S.cursor=clamp(S.cursor,0,fr.length-1);
+  document.getElementById("scrub").value=S.cursor;
+  const f=fr[S.cursor];
+  document.getElementById("timeLabel").textContent=(f.t/TPS).toFixed(2)+"s / "+((fr.length-1)/TPS).toFixed(2)+"s";
+  const tt=document.getElementById("tooltip");
+  if(tt.style.display==="block"){
+    tt.textContent=
+      "时间: "+(f.t/TPS).toFixed(2)+" 秒（Tick "+f.t+"）\n"+
+      "前向距离: "+Math.round(f.fwd)+" 米\n"+
+      "高度: "+Math.round(f.y)+" 米\n"+
+      "速度: "+f.speed.toFixed(2)+" 格/Tick = "+toKMH(f.speed).toFixed(0)+" km/h（M"+toMach(f.speed).toFixed(2)+"）\n"+
+      "加速度: "+f.accel.toFixed(1)+" m/s²\n"+
+      "G 载荷: "+f.nG.toFixed(2)+" G\n"+
+      "攻角: "+f.alphaDeg.toFixed(2)+"°\n"+
+      "到目标距离: "+(isFinite(f.distT)?Math.round(f.distT)+" 米":"—")+"\n"+
+      "已行驶距离: "+Math.round(f.traveled)+" 米"+
+      (f.sp===1?"\n[二脉冲燃烧中]":(f.sp===2?"\n[二脉冲已结束]":""));
+  }
+  draw();
+}
+cv.addEventListener("mousemove",ev=>{
+  if(!S.result||!S.chartMap) return;
+  const box=cv.getBoundingClientRect();
+  const tt=document.getElementById("tooltip");
+  tt.style.display="block";
+  tt.style.left=Math.min(ev.clientX-box.left+16,box.width-240)+"px";
+  tt.style.top=Math.min(ev.clientY-box.top+8,box.height-210)+"px";
+  const m=S.chartMap;
+  const val=m.minX+(ev.clientX-box.left-m.padL)/(m.w-m.padL-m.padR)*m.spanX;
+  let best=0,bd=Infinity;
+  S.result.frames.forEach((f,i)=>{ const d=Math.abs(m.keyA(f)-val); if(d<bd){bd=d;best=i;} });
+  if(S.cursor!==best){ S.cursor=best; updateCursor(); }
+});
+cv.addEventListener("mouseleave",()=>{ document.getElementById("tooltip").style.display="none"; });
+document.getElementById("scrub").addEventListener("input",e=>{ S.cursor=parseInt(e.target.value)||0; updateCursor(); });
+document.getElementById("btnStep").addEventListener("click",()=>{ if(S.result){ S.cursor++; updateCursor(); } });
+document.getElementById("btnReset").addEventListener("click",()=>{ S.cursor=0; updateCursor(); });
+document.getElementById("btnPlay").addEventListener("click",()=>{
+  if(!S.result) return;
+  S.playing=!S.playing;
+  document.getElementById("btnPlay").textContent=S.playing?"⏸":"▶";
+  if(S.playing){
+    if(S.cursor>=S.result.frames.length-1) S.cursor=0;
+    S.lastT=performance.now();
+    requestAnimationFrame(step);
+  }
+});
+function step(now){
+  if(!S.playing||!S.result) return;
+  const dt=(now-S.lastT)/1000; S.lastT=now;
+  S.cursor=clamp(S.cursor+Math.max(1,Math.round(dt*TPS*S.speed)),0,S.result.frames.length-1);
+  updateCursor();
+  if(S.cursor>=S.result.frames.length-1){ S.playing=false; document.getElementById("btnPlay").textContent="▶"; return; }
+  requestAnimationFrame(step);
+}
+document.getElementById("playSpeed").addEventListener("change",e=>{ S.speed=parseInt(e.target.value)||1; });
+
+/* ---------- 事件绑定 ---------- */
+document.getElementById("pickDir").addEventListener("click",pickDirectory);
+document.getElementById("dirFallback").addEventListener("change",onFallbackFiles);
+document.getElementById("search").addEventListener("input",e=>fillMissileOptions(e.target.value));
+document.getElementById("missileSelect").addEventListener("change",selectMissile);
+document.getElementById("viewMode").addEventListener("change",draw);
+document.getElementById("equalAspect").addEventListener("change",draw);
+["carrierSpeed","launchAlt","launchAngle","launchYaw","groundY","targetOn","tgtSpeed","tgtAlt","tgtDist","tgtBearing","tgtHeading","maxSeconds"]
+  .forEach(id=>document.getElementById(id).addEventListener("change",recompute));
+window.addEventListener("resize",draw);
+
+draw();
+</script>
+</body>
+</html>
