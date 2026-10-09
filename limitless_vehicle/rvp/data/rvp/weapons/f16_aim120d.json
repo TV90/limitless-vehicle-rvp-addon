@@ -57,7 +57,7 @@
     "scan_interval_tick": 2,
     "predict_target_pos": true,
     "active_radar_activation_range": 384,
-    "guidance_tick_range": "[[20,inf]]"
+    "guidance_tick_range": "[[10,inf]]"
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",

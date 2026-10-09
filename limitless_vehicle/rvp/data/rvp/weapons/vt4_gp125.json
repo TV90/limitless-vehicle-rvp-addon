@@ -37,7 +37,7 @@
   },
   "guidance_data": {
     "guidance_type": "LBR",
-    "guidance_tick_range": "[[5,inf]]",
+    "guidance_tick_range": "[[1,inf]]",
     "guidance_target_distance_range": "[[0,2000]]",
     "lock_target_distance_range": "[[0,2000]]",
     "enable_inertial_guidance": true,

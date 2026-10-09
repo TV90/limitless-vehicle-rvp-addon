@@ -62,7 +62,7 @@
     "scan_interval_tick": 2,
     "predict_target_pos": true,
     "active_radar_activation_range": 384,
-    "guidance_tick_range": "[[10,inf]]"
+    "guidance_tick_range": "[[1,inf]]"
   },
   "effects_data": {
     "trajectory_particle": "none"
