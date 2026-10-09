@@ -54,7 +54,7 @@ canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
 <header>
   <span class="logo">🦈</span><h1>RVP 导弹计算器</h1>
   <button id="pickDir" class="primary">选择工作目录</button>
-  <span id="dirLabel">未选择目录（读取目录下所有 rvp:missile 武器 JSON）</span>
+  <span id="dirLabel">未选择目录（读取 rvp:missile JSON；已内置 3 枚示例弹可直接互比）</span>
   <button id="loadDemo">载入示例弹</button>
   <div id="selftest" style="display:none;font:12px monospace;color:#188038"></div>
   <input type="text" id="search" placeholder="搜索导弹…" style="width:150px">
@@ -697,7 +697,7 @@ function simulate(prof,prm){
 }
 
 /* ---------- 内置示例弹（自检/演示用，AIM-120D 级参数 + 分层极速示例） ---------- */
-const DEMO_PROF={file:"内置示例.json",name:"内置示例弹（AIM-120D 级）",enName:"DEMO",gtype:"ARH",
+const DEMO_PROF={file:"内置示例A.json",name:"示例弹A·基准（AIM-120D 型）",enName:"DEMO",gtype:"ARH",
  preset:null,loft:null,activeRadarRange:0,predict:true,guideStart:0,
  v0:0.1,gravity:0,cd:0.0576,mass:161.5,fuel:45,thrust:8.33239,burn:100,ign:10,
  minSpeed:0,maxSpeed:5.5,engine:true,constantSpeed:false,aero:true,aaLimit:60,
@@ -705,14 +705,29 @@ const DEMO_PROF={file:"内置示例.json",name:"内置示例弹（AIM-120D 级�
  inducedDragExplicit:null,altMap:null,
  msfMap:(()=>{const m={"[[-64,100]]":0.8,"[[100,inf]]":1.15};return parseRangeMap(m)||[];})(),
  sp:{on:false,thrust:0,burn:0,speed:0,dist:0},ivv:true,cbs:0.7,pfh:30};
+/* 示例弹家族：无工作目录也能多弹互比（三种典型构型的行为演示） */
+const DEMO_FAMILY=[
+  DEMO_PROF,
+  Object.assign({},DEMO_PROF,{file:"内置示例B.json",name:"示例弹B·双脉冲（PL-15 型）",enName:"DEMO-B",gtype:"ARH",
+    cd:0.09,mass:190,fuel:70,thrust:6.7,burn:100,
+    sp:{on:true,thrust:4.0,burn:100,speed:3.6,dist:0}}),
+  Object.assign({},DEMO_PROF,{file:"内置示例C.json",name:"示例弹C·高机动（MICA 型）",enName:"DEMO-C",gtype:"IR",
+    cd:0.16,mass:112,fuel:35,thrust:16,burn:50,maxSpeed:6.0,tfConst:0.15}),
+];
+function injectDemoProfiles(){
+  DEMO_FAMILY.forEach(d=>{ if(!S.profiles.some(p=>p.file===d.file)) S.profiles.push(d); });
+}
 /** 深拷贝示例弹：JSON 往返会把 msfMap 的 Infinity 边界序列化成 null（边界失配→倍率恒 1.0），必须 structuredClone。 */
 function cloneDemo(){
   try{ return structuredClone(DEMO_PROF); }
   catch(e){ return JSON.parse(JSON.stringify(DEMO_PROF)); }
 }
 function loadDemo(){
-  S.current=cloneDemo();
-  recompute();
+  injectDemoProfiles();
+  fillMissileOptions(document.getElementById("search").value);
+  const sel=document.getElementById("missileSelect");
+  sel.value=DEMO_FAMILY[0].file;
+  selectMissile();
 }
 function countPixels(){
   const img=ctx.getImageData(0,0,cv.width,cv.height).data;
@@ -805,6 +820,7 @@ function onFallbackFiles(ev){
   });
 }
 function afterLoad(label){
+  injectDemoProfiles();
   S.profiles.sort((a,b)=>a.file.localeCompare(b.file));
   fillMissileOptions(document.getElementById("search").value);
   document.getElementById("dirLabel").textContent="已加载 "+S.profiles.length+" 枚导弹 "+label
@@ -1366,7 +1382,7 @@ document.getElementById("playSpeed").addEventListener("change",e=>{ S.speed=pars
 
 /* ---------- 事件绑定 ---------- */
 document.getElementById("pickDir").addEventListener("click",pickDirectory);
-document.getElementById("loadDemo").addEventListener("click",()=>{ S.current=cloneDemo(); recompute(); });
+document.getElementById("loadDemo").addEventListener("click",loadDemo);
 document.getElementById("dirFallback").addEventListener("change",onFallbackFiles);
 document.getElementById("search").addEventListener("input",e=>fillMissileOptions(e.target.value));
 document.getElementById("missileSelect").addEventListener("change",selectMissile);
@@ -1401,6 +1417,10 @@ document.getElementById("equalAspect").addEventListener("change",draw);
   .forEach(id=>document.getElementById(id).addEventListener("change",recompute));
 window.addEventListener("resize",draw);
 window.addEventListener("error",e=>{const s=document.getElementById("statusBar");if(s)s.textContent="脚本错误: "+e.message+" @行"+(e.lineno||"?");});
+
+/* 启动即注入示例弹家族，导弹下拉无需选目录即可用 */
+injectDemoProfiles();
+fillMissileOptions("");
 
 draw();
 </script>
