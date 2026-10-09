@@ -136,7 +136,7 @@ dependencies {
     testImplementation 'org.knowm.xchart:xchart:3.8.8'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // 本体
-    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.6.0-all")
+    implementation fg.deobf("libs:ywzj_vehicle-1.20.1:0.6.1-all")
     // ApricityUI（本体 AUI 适配后 VehicleModdingToolScreen 继承了 ApricityScreen，编译+dev 运行时需要；
     // 版本随本体 jarJar 的 AUI 版本对齐，当前本体 0.6.0 内嵌 1.2.5）。
     // 必须 fg.deobf：maven 工件是生产版 SRG 映射 jar，直接进 dev 运行时会
