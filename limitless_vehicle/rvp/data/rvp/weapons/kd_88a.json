@@ -26,7 +26,7 @@
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.36575,
     "rvp_induced_drag": 0.0055,
-        "second_pulse": true,
+    "second_pulse": true,
     "second_pulse_trigger_speed": 10,
     "second_pulse_thrust": 0.688876,
     "second_pulse_burn_time": 1800,
