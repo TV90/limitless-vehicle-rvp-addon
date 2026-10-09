@@ -508,7 +508,11 @@ public final class RVP_ProjectileMotion {
             return velocity;
         }
         float min = data.getProjectileData().getMinSpeed();
+        // 高度分层极速：实际极速 = max_speed × 当前高度倍率（未配置倍率表时恒 1.0，行为不变）
         float max = data.getProjectileData().getMaxSpeed();
+        if (max > 0f && projectile.isMissile()) {
+            max = (float) (max * data.getProjectileData().resolveAltitudeMaxSpeedFactor(projectile.getY()));
+        }
         if (max > 0f && min > 0f && min > max) {
             min = 0f;
         }

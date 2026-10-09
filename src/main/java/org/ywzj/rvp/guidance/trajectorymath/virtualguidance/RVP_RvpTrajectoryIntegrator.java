@@ -78,7 +78,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
         double turnAngleRadians = steeringSolution.turnAngleRadians();
         // 调用本项目弹道数学工具，在转向后执行最终速率上下限钳制。
         velocity = RVP_BallisticTrajectoryMath.clampSpeed(
-                steeringSolution.velocity(), parameters.minSpeed(), parameters.maxSpeed());
+                steeringSolution.velocity(), parameters.minSpeed(), (float)(parameters.maxSpeed() * parameters.altitudeMaxSpeedFactor()));
         if (parameters.aeroSteering() && !parameters.constantSpeed()
                 && velocity.lengthSqr() > 1.0E-8) {
             double speed = velocity.length();
@@ -156,12 +156,12 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
             }
         }
         // 调用本项目速度限制与诱导阻力公式，在所有转向/推力之后只结算一次能量代价。
-        velocity = RVP_BallisticTrajectoryMath.clampSpeed(velocity, parameters.minSpeed(), parameters.maxSpeed());
+        velocity = RVP_BallisticTrajectoryMath.clampSpeed(velocity, parameters.minSpeed(), (float)(parameters.maxSpeed() * parameters.altitudeMaxSpeedFactor()));
         double speed = velocity.length();
         if (speed > 1.0E-8) {
             if (parameters.constantSpeed()) {
                 velocity = velocity.normalize().scale(Math.max(state.peakFlightSpeed(), speed));
-                velocity = RVP_BallisticTrajectoryMath.clampSpeed(velocity, parameters.minSpeed(), parameters.maxSpeed());
+                velocity = RVP_BallisticTrajectoryMath.clampSpeed(velocity, parameters.minSpeed(), (float)(parameters.maxSpeed() * parameters.altitudeMaxSpeedFactor()));
             } else {
                 double loss = RVP_AeroSteeringModel.inducedDragLoss(parameters.inducedDrag(), steering.loadFactor(), speed);
                 // 阻力下限不可把已经低于下限的速度反向加速。

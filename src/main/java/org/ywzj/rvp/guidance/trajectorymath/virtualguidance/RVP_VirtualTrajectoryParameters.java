@@ -27,6 +27,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
  * @param maxSpeed 最高速率，单位格/Tick；非正值表示不限制
  * @param attackAngleLimitDeg 总攻角上限，单位度；0 默认关闭，开关与瞬转豁免由气动快照判定
  * @param linearDrag 无发动机时的水平减速量，单位格/Tick²；默认 0
+ * @param altitudeMaxSpeedFactor 发射高度冻结的极速倍率；实际极速=maxSpeed×该倍率，1.0=不分层
  */
 public record RVP_VirtualTrajectoryParameters(
         Double rvpMaxGs,
@@ -50,7 +51,8 @@ public record RVP_VirtualTrajectoryParameters(
         float minSpeed,
         float maxSpeed,
         double attackAngleLimitDeg,
-        double linearDrag
+        double linearDrag,
+        double altitudeMaxSpeedFactor
 ) {
     /** 现有调用不传攻角参数时保持关闭；这是 Java 构造便利入口，不是 JSON 旧键兼容。 */
     public RVP_VirtualTrajectoryParameters(Double rvpMaxGs, float turningFactor, boolean aeroSteering,
@@ -61,7 +63,20 @@ public record RVP_VirtualTrajectoryParameters(
         this(rvpMaxGs, turningFactor, aeroSteering, rvpRefSpeed, inducedDrag, turnRateLimitDegPerTick,
                 densityFactor, cruiseAltitude, rotateToMotion, constantSpeed, propulsion, mass, thrust,
                 motorBurnTime, ignitionTick, dragCoefficient, altitudeDragFactor, gravity, minSpeed,
-                maxSpeed, 0.0, 0.0);
+                maxSpeed, 0.0, 0.0, 1.0);
+    }
+
+    /** 22 参便利入口：未显式给极速倍率时按 1.0（不分层）处理。 */
+    public RVP_VirtualTrajectoryParameters(Double rvpMaxGs, float turningFactor, boolean aeroSteering,
+            double rvpRefSpeed, double inducedDrag, double turnRateLimitDegPerTick, double densityFactor,
+            Double cruiseAltitude, boolean rotateToMotion, boolean constantSpeed, boolean propulsion,
+            double mass, double thrust, double motorBurnTime, int ignitionTick, double dragCoefficient,
+            double altitudeDragFactor, double gravity, float minSpeed, float maxSpeed,
+            double attackAngleLimitDeg, double linearDrag) {
+        this(rvpMaxGs, turningFactor, aeroSteering, rvpRefSpeed, inducedDrag, turnRateLimitDegPerTick,
+                densityFactor, cruiseAltitude, rotateToMotion, constantSpeed, propulsion, mass, thrust,
+                motorBurnTime, ignitionTick, dragCoefficient, altitudeDragFactor, gravity, minSpeed,
+                maxSpeed, attackAngleLimitDeg, linearDrag, 1.0);
     }
 
     /**

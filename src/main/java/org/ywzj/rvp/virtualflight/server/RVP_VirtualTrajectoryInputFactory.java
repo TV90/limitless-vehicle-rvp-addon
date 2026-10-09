@@ -72,7 +72,8 @@ final class RVP_VirtualTrajectoryInputFactory {
                 projectile.getMinSpeed(),
                 projectile.getMaxSpeed(),
                 aeroLimits.attackAngleLimitDeg(),
-                data.getDragInAir());
+                data.getDragInAir(),
+                projectile.resolveAltitudeMaxSpeedFactor(altitude));
     }
 
     /**

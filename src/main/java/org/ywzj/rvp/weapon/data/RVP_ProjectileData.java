@@ -195,6 +195,15 @@ public class RVP_ProjectileData {
     private Map<RVP_Range<Float>, Float> altitudeDragFactor;
 
     /**
+     * 按世界 Y 高度配置的极速倍率，字段默认 null；<b>不存在默认分层表</b>——未配置、显式空表、
+     * 未命中区间或非法值（null/非有限/≤0）一律按 1.0 处理，即极速保持 {@code max_speed} 原值不随高度变化。
+     * 实际极速 = {@code max_speed × 当前高度倍率}，仅作用于钳制上限，不影响 min_speed；
+     * 仅导弹实体运动链与虚拟弹道链消费，CCIP/火箭预测/无制导弹道不读取。
+     */
+    @SerializedName("altitude_max_speed_factor")
+    private Map<RVP_Range<Float>, Float> altitudeMaxSpeedFactor;
+
+    /**
      * 弹体碰撞箱边长（宽=高，单位格），默认 null → {@link #COLLISION_BOX_SIZE_DEFAULT}（1/16 格，
      * 与实体注册尺寸一致，历史行为）；有限值钳 {@code [0.0625, 16]}。调大后直击命中（弹幕拦弹）
      * 的几何窗口随之放大——命中结算、方块碰撞与弹间碰撞均按新碰撞箱判定；渲染与近炸触发
@@ -641,6 +650,35 @@ public class RVP_ProjectileData {
             return 1.0f;
         }
         for (Map.Entry<RVP_Range<Float>, Float> entry : altitudeDragFactor.entrySet()) {
+            RVP_Range<Float> range = entry.getKey();
+            if (range == null || !range.contains(sample)) {
+                continue;
+            }
+            Float factor = entry.getValue();
+            if (factor == null || !Float.isFinite(factor) || factor <= 0f) {
+                return 1.0f;
+            }
+            return factor;
+        }
+        return 1.0f;
+    }
+
+    /** @return 原始极速倍率区间表（未配置时为 null）；供虚拟弹道参数冻结用。 */
+    public Map<RVP_Range<Float>, Float> getAltitudeMaxSpeedFactor() {
+        return altitudeMaxSpeedFactor;
+    }
+
+    /**
+     * 解析当前高度的极速倍率。与阻力倍率不同，<b>不存在默认分层表</b>：
+     * 未配置（null）、显式空表、未命中区间或非法值（null/非有限/≤0）一律返回 1.0，
+     * 即极速保持 {@code max_speed} 原值不随高度变化。
+     */
+    public float resolveAltitudeMaxSpeedFactor(double y) {
+        float sample = normalizeAltitudeSample(y);
+        if (altitudeMaxSpeedFactor == null || altitudeMaxSpeedFactor.isEmpty()) {
+            return 1.0f;
+        }
+        for (Map.Entry<RVP_Range<Float>, Float> entry : altitudeMaxSpeedFactor.entrySet()) {
             RVP_Range<Float> range = entry.getKey();
             if (range == null || !range.contains(sample)) {
                 continue;
