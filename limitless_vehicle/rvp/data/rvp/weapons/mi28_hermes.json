@@ -20,7 +20,7 @@
     "second_pulse": true,
     "second_pulse_thrust": 3.473438,
     "second_pulse_burn_time": 100,
-    "second_pulse_trigger_speed": 4.0,
+    "second_pulse_trigger_speed": 10.0,
     "has_rocket_engine": true,
     "mass": 130,
     "fuel_mass": 45,

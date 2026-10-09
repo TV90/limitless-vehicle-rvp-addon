@@ -44,7 +44,7 @@
       "[[1,inf]]": 0.1
     },
     "second_pulse": true,
-    "second_pulse_trigger_speed": 10,
+    "second_pulse_trigger_speed": 20,
     "second_pulse_thrust": 188.125,
     "second_pulse_burn_time": 100,
     "rvp_aero_steering": true,
