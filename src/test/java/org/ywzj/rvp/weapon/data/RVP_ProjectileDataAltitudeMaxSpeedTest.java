@@ -26,19 +26,21 @@ class RVP_ProjectileDataAltitudeMaxSpeedTest {
         assertEquals(1.0f, data.resolveAltitudeMaxSpeedFactor(4000), 1.0E-6f);
     }
 
-    /** 生产四档配置：节点=各档上边界（128→0.8、256→1.0、512→1.15），尾档 1.3 在 512+256=768 处达成。 */
+    /** 生产五档配置：节点=各档上边界（−64→0.8、128→0.9、256→1.05、512→1.15），尾档 1.3 于 768 达成。 */
     @Test
     void productionTiersInterpolateBetweenBoundaries() {
         RVP_ProjectileData data = gson.fromJson("""
                 {"altitude_max_speed_factor":{"[[512,inf]]":1.3,"[[256,512]]":1.15,
-                 "[[128,256]]":1.0,"[[-inf,128]]":0.8}}
+                 "[[128,256]]":1.05,"[[-64,128]]":0.9,"[[-inf,-64]]":0.8}}
                 """, RVP_ProjectileData.class);
 
-        assertEquals(0.8f, data.resolveAltitudeMaxSpeedFactor(50), 1.0E-6f);
-        assertEquals(0.8f, data.resolveAltitudeMaxSpeedFactor(128), 1.0E-6f);
-        assertEquals(0.9f, data.resolveAltitudeMaxSpeedFactor(192), 1.0E-6f);
-        assertEquals(1.0f, data.resolveAltitudeMaxSpeedFactor(256), 1.0E-6f);
-        assertEquals(1.075f, data.resolveAltitudeMaxSpeedFactor(384), 1.0E-6f);
+        assertEquals(0.8f, data.resolveAltitudeMaxSpeedFactor(-100), 1.0E-6f);
+        assertEquals(0.8f, data.resolveAltitudeMaxSpeedFactor(-64), 1.0E-6f);
+        assertEquals(0.85f, data.resolveAltitudeMaxSpeedFactor(32), 1.0E-6f);
+        assertEquals(0.9f, data.resolveAltitudeMaxSpeedFactor(128), 1.0E-6f);
+        assertEquals(0.975f, data.resolveAltitudeMaxSpeedFactor(192), 1.0E-6f);
+        assertEquals(1.05f, data.resolveAltitudeMaxSpeedFactor(256), 1.0E-6f);
+        assertEquals(1.1f, data.resolveAltitudeMaxSpeedFactor(384), 1.0E-6f);
         assertEquals(1.15f, data.resolveAltitudeMaxSpeedFactor(512), 1.0E-6f);
         assertEquals(1.225f, data.resolveAltitudeMaxSpeedFactor(640), 1.0E-6f);
         assertEquals(1.3f, data.resolveAltitudeMaxSpeedFactor(768), 1.0E-6f);
