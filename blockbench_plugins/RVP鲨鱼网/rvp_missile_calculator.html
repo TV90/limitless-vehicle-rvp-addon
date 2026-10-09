@@ -752,16 +752,19 @@ function runSelftest(){
       const c=countPixels();
       out.push(v+"{红"+c.red+",蓝"+c.blue+",黑"+c.black+"}");
     }
-    // 机动目标行为对照：直线 vs 6G 转弯+爬升（渲染不变式之外的内核行为信号）
+    // 示例弹家族命中对照：直线 vs 6G 转弯+爬升（内核行为信号）
     const prm=currentParams();
-    const straight=simulate(S.current,prm);
-    const turn=simulate(S.current,Object.assign({},prm,{tgtTurnG:6,tgtClimb:3,tgtHeading:90}));
     const fmt=x=>x.hitTick>=0?"命中"+(x.hitTick/TPS).toFixed(1)+"s"
       :"脱靶"+(isFinite(x.minMiss)?x.minMiss.toFixed(0):"?")+"m";
+    const duel=DEMO_FAMILY.map(d=>{
+      const st=simulate(d,prm);
+      const tn=simulate(d,Object.assign({},prm,{tgtTurnG:6,tgtClimb:3,tgtHeading:90}));
+      return d.enName+" 直线:"+fmt(st)+" 6G:"+fmt(tn);
+    }).join(" ｜ ");
     document.getElementById("viewMode").value="side";
     recompute();
     div.textContent="SELFTEST 渲染像素验证 "+out.join(" | ")
-      +" ｜ 机动对照 直线:"+fmt(straight)+" 6G转弯+90航向:"+fmt(turn)
+      +" ｜ "+duel
       +"（判定：各视图红/蓝计数应>0；黑点=命中/坠地标记）";
   }catch(e){
     div.textContent="SELFTEST THROW "+e.message+" @"+(e.lineNumber||"?");
@@ -905,6 +908,18 @@ function selectMissile(){
   recompute();
 }
 /* ---------- 对比 / 图例 / 预设 ---------- */
+/** 交战判定文案与配色（命中=绿 / 坠地=棕 / 到时脱靶=灰）。 */
+function verdictTxt(r){
+  if(!r||!r.frames||!r.frames.length) return "—";
+  if(r.hitTick>=0) return "命中 "+(r.hitTick/TPS).toFixed(1)+" 秒";
+  if(r.impactTick>=0) return "坠地 "+(r.impactTick/TPS).toFixed(1)+" 秒";
+  return "到时脱靶 "+(isFinite(r.minMiss)?r.minMiss.toFixed(0)+" m":"");
+}
+function verdictColor(r){
+  if(r&&r.hitTick>=0) return "#188038";
+  if(r&&r.impactTick>=0) return "#6d4c41";
+  return "#66788c";
+}
 function updateCmpBtn(){
   const b=document.getElementById("cmpBtn");
   b.disabled=!S.current;
@@ -913,10 +928,12 @@ function updateCmpBtn(){
 }
 function updateLegend(){
   const el=document.getElementById("legend");
-  let h='<span style="color:#1a73e8"><span class="sw" style="border-color:#1a73e8"></span>导弹</span>';
+  let h='<span style="color:#1a73e8"><span class="sw" style="border-color:#1a73e8"></span>导弹'
+    +(S.result?'<span style="color:'+verdictColor(S.result)+'">（'+verdictTxt(S.result)+'）</span>':"")+"</span>";
   S.compare.forEach(c=>{
     if(c.prof===S.current) return;
     h+='<span style="color:'+c.color+'"><span class="sw" style="border-color:'+c.color+'"></span>'+c.prof.name+"</span>";
+    if(c.result) h+='<span style="color:'+verdictColor(c.result)+'">（'+verdictTxt(c.result)+'）</span>';
   });
   h+='<span style="color:#c5221f"><span class="sw" style="border-color:#c5221f"></span>目标</span>';
   el.innerHTML=h;
@@ -1164,13 +1181,18 @@ function draw(){
       ctx.beginPath();ctx.arc(tS.sx,tS.sy,6,0,7);ctx.fill();ctx.stroke();
     }
   }
-  // 对比弹轨迹（虚线异色）与游标点
+  // 对比弹轨迹（虚线异色）与游标点；命中者在命中点画空心环标记
   (S.compare||[]).forEach(cp=>{
     if(!cp.result||cp.prof===S.current) return;
     const cpts=cp.result.frames.map(framePoint);
     ctx.strokeStyle=cp.color;ctx.lineWidth=1.8;ctx.setLineDash([3,3]);ctx.beginPath();
     cpts.forEach((q,i)=>{const s=toS(q);i?ctx.lineTo(s.sx,s.sy):ctx.moveTo(s.sx,s.sy);});
     ctx.stroke();ctx.setLineDash([]);
+    if(cp.result.hitTick>=0){
+      const hs=toS(framePoint(cp.result.frames[cp.result.hitTick]));
+      ctx.strokeStyle=cp.color;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(hs.sx,hs.sy,7,0,7);ctx.stroke();
+    }
     const ci=clamp(S.cursor,0,cpts.length-1),cs2=toS(cpts[ci]);
     ctx.fillStyle=cp.color;ctx.strokeStyle="#ffffff";ctx.lineWidth=1.5;
     ctx.beginPath();ctx.arc(cs2.sx,cs2.sy,4.5,0,7);ctx.fill();ctx.stroke();
@@ -1281,7 +1303,7 @@ function drawCurves(w,h){
       ctx.stroke();ctx.setLineDash([]);
     });
   });
-  // 图例（画布左侧，避开左上角 HTML 勾选面板，含量程）
+  // 图例（画布左侧，避开左上角 HTML 勾选面板，含量程）+ 各弹交战判定
   ctx.font="11px sans-serif";ctx.textAlign="left";
   let ly=padT+158;
   act.forEach((s,si)=>{
@@ -1291,6 +1313,15 @@ function drawCurves(w,h){
     ctx.fillText(s.label+"： "+rg.lo.toFixed(dec)+" ~ "+rg.hi.toFixed(dec),padL+28,ly);
     ly+=16;
   });
+  ly+=6;
+  const verdictLine=(name,color,r)=>{
+    ctx.fillStyle=color;ctx.fillRect(padL+8,ly-8,14,3);
+    ctx.fillStyle=verdictColor(r);
+    ctx.fillText(name+"： "+verdictTxt(r),padL+28,ly);
+    ly+=16;
+  };
+  if(S.result&&S.current) verdictLine(S.current.name,"#1a73e8",S.result);
+  (S.compare||[]).forEach(c=>{ if(c.result&&c.prof!==S.current) verdictLine(c.prof.name,c.color,c.result); });
   // 游标竖线
   const cI=clamp(S.cursor,0,fr.length-1);
   const cx=X(fr[cI].t);
