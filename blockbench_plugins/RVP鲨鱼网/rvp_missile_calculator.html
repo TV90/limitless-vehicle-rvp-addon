@@ -887,7 +887,11 @@ function recompute(){
   updateLegend();
   S.cursor=0;
   const r=S.result;
-  document.getElementById("scrub").max=Math.max(0,r.frames.length-1);
+  // 时间轴上限=全组最长弹道：当前弹命中后时间轴续播，对比弹继续飞到各自的命中/坠地
+  let maxLen=r.frames.length;
+  S.compare.forEach(c=>{ if(c.result&&c.result.frames.length>maxLen) maxLen=c.result.frames.length; });
+  S.maxCursor=Math.max(0,maxLen-1);
+  document.getElementById("scrub").max=S.maxCursor;
   document.getElementById("scrub").value=0;
   document.getElementById("hitLabel").textContent=
     r.hitTick>=0?("命中: "+(r.hitTick/TPS).toFixed(1)+" 秒"):
@@ -985,11 +989,14 @@ function draw(){
   // 速度剖面视图 Y=速度(km/h)；其余视图 Y=世界坐标
   const framePoint=speedView?(f=>({sx:f.fwd,sy:f.speed*72})):proj;
   const pts=fr.map(framePoint);
+  // 目标轨迹取全组最长帧源（各弹共享同一目标积分，逐 Tick 状态一致）：当前弹早终时目标随对比弹续播
+  let tgtSrc=fr;
+  (S.compare||[]).forEach(cp=>{ if(cp.result&&cp.result.frames.length>tgtSrc.length) tgtSrc=cp.result.frames; });
   let tMarkSX=null,tMarkSY=null;
   let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;
   pts.forEach(q=>{if(q.sx<mnx)mnx=q.sx;if(q.sx>mxx)mxx=q.sx;if(q.sy<mny)mny=q.sy;if(q.sy>mxy)mxy=q.sy;});
   if(!speedView){
-    fr.forEach(f=>{
+    tgtSrc.forEach(f=>{
       if(f.tFwd===Infinity) return;
       if(f.tFwd<mnx)mnx=f.tFwd; if(f.tFwd>mxx)mxx=f.tFwd;
       if(view3d){ if(f.tLat<mny)mny=f.tLat; if(f.tLat>mxy)mxy=f.tLat; }
@@ -1140,7 +1147,7 @@ function draw(){
   if(currentParams().target&&!speedView){
     ctx.strokeStyle="#c5221f";ctx.lineWidth=2;ctx.setLineDash([6,4]);ctx.beginPath();
     let started=false;
-    fr.forEach(f=>{
+    tgtSrc.forEach(f=>{
       if(f.tFwd===Infinity) return;
       const s=toS(proj({fwd:f.tFwd,lat:f.tLat,y:f.tY}));
       started?ctx.lineTo(s.sx,s.sy):ctx.moveTo(s.sx,s.sy);started=true;
@@ -1148,7 +1155,7 @@ function draw(){
     ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle="#c5221f";
     let lastT=null;
-    fr.forEach(f=>{
+    tgtSrc.forEach(f=>{
       if(f.tFwd===Infinity) return;
       const s=toS(proj({fwd:f.tFwd,lat:f.tLat,y:f.tY}));
       if(lastT&&Math.abs(s.sx-lastT.sx)+Math.abs(s.sy-lastT.sy)<8) return;
@@ -1174,14 +1181,14 @@ function draw(){
   ctx.fillStyle="#1a73e8";ctx.strokeStyle="#ffffff";ctx.lineWidth=2;
   ctx.beginPath();ctx.arc(cS.sx,cS.sy,6,0,7);ctx.fill();ctx.stroke();
   if(currentParams().target&&!speedView){
-    const tf=fr[cI];
-    if(tf.tFwd!==Infinity){
+    const tf=tgtSrc[Math.min(S.cursor,tgtSrc.length-1)];
+    if(tf&&tf.tFwd!==Infinity){
       const tS=toS(proj({fwd:tf.tFwd,lat:tf.tLat,y:tf.tY}));
       ctx.fillStyle="#c5221f";ctx.strokeStyle="#ffffff";ctx.lineWidth=2;
       ctx.beginPath();ctx.arc(tS.sx,tS.sy,6,0,7);ctx.fill();ctx.stroke();
     }
   }
-  // 对比弹轨迹（虚线异色）与游标点；命中者在命中点画空心环标记
+  // 对比弹轨迹（虚线异色）与游标点；命中者画同色空心环+命中时间文字
   (S.compare||[]).forEach(cp=>{
     if(!cp.result||cp.prof===S.current) return;
     const cpts=cp.result.frames.map(framePoint);
@@ -1192,6 +1199,11 @@ function draw(){
       const hs=toS(framePoint(cp.result.frames[cp.result.hitTick]));
       ctx.strokeStyle=cp.color;ctx.lineWidth=2.5;
       ctx.beginPath();ctx.arc(hs.sx,hs.sy,7,0,7);ctx.stroke();
+      ctx.font="bold 11px sans-serif";ctx.textAlign="left";
+      const htxt="命中 "+(cp.result.hitTick/TPS).toFixed(1)+" 秒";
+      const hw=ctx.measureText(htxt).width;
+      ctx.fillStyle="rgba(255,255,255,.85)";ctx.fillRect(hs.sx+9,hs.sy-20,hw+6,15);
+      ctx.fillStyle=cp.color;ctx.fillText(htxt,hs.sx+12,hs.sy-9);
     }
     const ci=clamp(S.cursor,0,cpts.length-1),cs2=toS(cpts[ci]);
     ctx.fillStyle=cp.color;ctx.strokeStyle="#ffffff";ctx.lineWidth=1.5;
@@ -1226,7 +1238,7 @@ function draw(){
   S.chartMap={markerSX:cS.sx,markerSY:cS.sy,markerTX:null,markerTY:null,w,h,
     pts:pts.map((q,i)=>{const s=toS(q);return{i,sx:s.sx,sy:s.sy};})};
   if(currentParams().target&&!speedView){
-    const tf=fr[cI];
+    const tf=tgtSrc[Math.min(S.cursor,tgtSrc.length-1)];
     if(tf&&tf.tFwd!==Infinity){
       const tS=toS(proj({fwd:tf.tFwd,lat:tf.tLat,y:tf.tY}));
       S.chartMap.markerTX=tS.sx; S.chartMap.markerTY=tS.sy;
@@ -1340,14 +1352,16 @@ function proj3Raw(fx,ly,ys){
 function updateCursor(){
   if(!S.result||!S.result.frames.length) return;
   const fr=S.result.frames;
-  S.cursor=clamp(S.cursor,0,fr.length-1);
+  const maxC=(S.maxCursor!=null)?S.maxCursor:fr.length-1;
+  S.cursor=clamp(S.cursor,0,maxC);
   document.getElementById("scrub").value=S.cursor;
-  const f=fr[S.cursor];
-  document.getElementById("timeLabel").textContent=(f.t/TPS).toFixed(2)+"s / "+((fr.length-1)/TPS).toFixed(2)+"s";
+  const f=fr[Math.min(S.cursor,fr.length-1)];
+  document.getElementById("timeLabel").textContent=(S.cursor/TPS).toFixed(2)+"s / "+(maxC/TPS).toFixed(2)+"s";
   const tt=document.getElementById("tooltip");
   if(S.playing||tt.style.display==="block"){
     tt.textContent=
-      "时间: "+(f.t/TPS).toFixed(2)+" 秒（Tick "+f.t+"）\n"+
+      (S.cursor>fr.length-1?"〔当前弹已结束："+verdictTxt(S.result)+"，续播对比弹〕\n":"")+
+      "时间: "+(S.cursor/TPS).toFixed(2)+" 秒（Tick "+S.cursor+"）\n"+
       "前向距离: "+Math.round(f.fwd)+" 米\n"+
       "高度: "+Math.round(f.y)+" 米\n"+
       "速度: "+f.speed.toFixed(2)+" 格/Tick = "+toKMH(f.speed).toFixed(0)+" km/h（M"+toMach(f.speed).toFixed(2)+"）\n"+
@@ -1394,7 +1408,8 @@ document.getElementById("btnPlay").addEventListener("click",()=>{
   S.playing=!S.playing;
   document.getElementById("btnPlay").textContent=S.playing?"⏸":"▶";
   if(S.playing){
-    if(S.cursor>=S.result.frames.length-1) S.cursor=0;
+    const maxC=(S.maxCursor!=null)?S.maxCursor:S.result.frames.length-1;
+    if(S.cursor>=maxC) S.cursor=0;
     S.acc=0;
     S.lastT=performance.now();
     requestAnimationFrame(step);
@@ -1405,8 +1420,9 @@ function step(now){
   const dt=Math.min((now-S.lastT)/1000,0.1); S.lastT=now; // 后台标签页回切的大 dt 钳制
   S.acc=(S.acc||0)+dt*TPS*S.speed;                        // 亚 Tick 累加：0.5×/1× 下按真实速率攒步
   const adv=Math.floor(S.acc);
-  if(adv>0){ S.acc-=adv; S.cursor=clamp(S.cursor+adv,0,S.result.frames.length-1); updateCursor(); }
-  if(S.cursor>=S.result.frames.length-1){ S.playing=false; S.acc=0; document.getElementById("btnPlay").textContent="▶"; return; }
+  const maxC=(S.maxCursor!=null)?S.maxCursor:S.result.frames.length-1;
+  if(adv>0){ S.acc-=adv; S.cursor=clamp(S.cursor+adv,0,maxC); updateCursor(); }
+  if(S.cursor>=maxC){ S.playing=false; S.acc=0; document.getElementById("btnPlay").textContent="▶"; return; }
   requestAnimationFrame(step);
 }
 document.getElementById("playSpeed").addEventListener("change",e=>{ S.speed=parseFloat(e.target.value)||1; S.acc=0; });
