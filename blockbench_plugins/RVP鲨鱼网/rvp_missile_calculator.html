@@ -105,6 +105,7 @@ canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
       <div class="field"><label>目标垂直航向（度，正=爬升）</label><input type="number" id="tgtClimb" value="0" step="1"></div>
       <div class="field"><label>目标恒定G转弯（G，正=左转）</label><input type="number" id="tgtTurnG" value="0" step="0.5"></div>
     </div>
+    <div class="field"><label>规避触发距离（米：弹目距离≤此值目标才开始G转弯，触发后持续规避；0=全程机动）</label><input type="number" id="tgtEvadeDist" value="0" step="50" min="0"></div>
     <div class="field"><label>目标尺寸半径（米，等效载具 OBB，命中判定用）</label><input type="number" id="tgtRadius" value="3" step="0.5"></div>
     <div class="field"><label>模拟上限（秒）</label><input type="number" id="maxSeconds" value="240" step="30"></div>
     <h2>导弹摘要</h2>
@@ -523,7 +524,7 @@ function simulate(prof,prm){
       fwd.z*Math.cos(bear)+right.z*Math.sin(bear)
     ).scale(prm.tgtDist).add(new V3(0,prm.tgtAlt,0));
     const tvel=dirFromPitchYaw(prm.tgtClimb||0,yawR+Math.PI+rad(prm.tgtHeading)).scale(tSpd);
-    tgt={pos:tpos,vel:tvel};
+    tgt={pos:tpos,vel:tvel,evading:prm.tgtEvadeDist<=0};
   }
   // GPS 固定点语义：PRESET 瞄准目标初始位置（tgt.pos 每 Tick 重建新对象，此处引用即初始点）
   const aimPoint=(tgt&&prof.preset)?tgt.pos:null;
@@ -665,8 +666,10 @@ function simulate(prof,prm){
     traveled+=vel.len();
     let tFwd=Infinity,tLat=Infinity,tY=Infinity,tD=Infinity,sweptD=Infinity;
     if(tgt){
+      // 规避触发（闩锁）：弹目距离≤阈值后才开始G转弯，触发后持续规避不解除；0=全程机动
+      if(!tgt.evading&&pos.sub(tgt.pos).len()<=prm.tgtEvadeDist) tgt.evading=true;
       // 恒定G协调转弯：仅旋转水平分量（保持爬升率），ω=G·g/v（rad/Tick），正=左转
-      if(prm.tgtTurnG>0&&tSpd>1e-6){
+      if(tgt.evading&&prm.tgtTurnG>0&&tSpd>1e-6){
         const w=prm.tgtTurnG*G_CONST/tSpd,c=Math.cos(w),s=Math.sin(w);
         tgt.vel=new V3(tgt.vel.x*c+tgt.vel.z*s,tgt.vel.y,-tgt.vel.x*s+tgt.vel.z*c);
       }
@@ -687,6 +690,7 @@ function simulate(prof,prm){
       thrust:curThrust, drag:curDrag, mass:curMass,
       availG:(availGr!=null&&isFinite(availGr))?availGr:null, fpa,
       sp:(spStarted<0?0:((tick-spStarted)<=prof.sp.burn?1:2)),
+      tge:(tgt&&tgt.evading)?1:0,
       tFwd,tLat,tY});
     prevSpeed=vel.len();
     if(tgt&&sweptD<=hitR){ hitTick=tick; break; }
@@ -759,7 +763,8 @@ function runSelftest(){
     const duel=DEMO_FAMILY.map(d=>{
       const st=simulate(d,prm);
       const tn=simulate(d,Object.assign({},prm,{tgtTurnG:6,tgtClimb:3,tgtHeading:90}));
-      return d.enName+" 直线:"+fmt(st)+" 6G:"+fmt(tn);
+      const ev=simulate(d,Object.assign({},prm,{tgtTurnG:6,tgtEvadeDist:600,tgtHeading:90}));
+      return d.enName+" 直线:"+fmt(st)+" 6G:"+fmt(tn)+" 6G规避600m:"+fmt(ev);
     }).join(" ｜ ");
     document.getElementById("viewMode").value="side";
     recompute();
@@ -864,6 +869,7 @@ function currentParams(){
     tgtHeading:num2(document.getElementById("tgtHeading").value,0),
     tgtClimb:num2(document.getElementById("tgtClimb").value,0),
     tgtTurnG:num2(document.getElementById("tgtTurnG").value,0),
+    tgtEvadeDist:Math.max(0,num2(document.getElementById("tgtEvadeDist").value,0)),
     tgtRadius:num2(document.getElementById("tgtRadius").value,3),
     maxSeconds:num2(document.getElementById("maxSeconds").value,240),
     groundY:num2(document.getElementById("groundY").value,-64),
@@ -945,13 +951,13 @@ function updateLegend(){
 const PRESETS={
   // 速度按 RVP 尺度标定（1 格/Tick=20 m/s：导弹极速约 400 km/h，目标 250~320 km/h 为典型喷气机档）
   bvrHead:{label:"超视距·迎头",carrierSpeed:450,launchAlt:250,launchAngle:0,launchYaw:0,
-    target:true,tgtSpeed:300,tgtAlt:250,tgtDist:3000,tgtBearing:0,tgtHeading:0,tgtClimb:0,tgtTurnG:0},
+    target:true,tgtSpeed:300,tgtAlt:250,tgtDist:3000,tgtBearing:0,tgtHeading:0,tgtClimb:0,tgtTurnG:0,tgtEvadeDist:0},
   bvrTail:{label:"超视距·尾追",carrierSpeed:450,launchAlt:250,launchAngle:0,launchYaw:0,
-    target:true,tgtSpeed:250,tgtAlt:250,tgtDist:1500,tgtBearing:0,tgtHeading:180,tgtClimb:0,tgtTurnG:0},
+    target:true,tgtSpeed:250,tgtAlt:250,tgtDist:1500,tgtBearing:0,tgtHeading:180,tgtClimb:0,tgtTurnG:0,tgtEvadeDist:0},
   wvr:{label:"格斗·迎头",carrierSpeed:300,launchAlt:120,launchAngle:0,launchYaw:0,
-    target:true,tgtSpeed:300,tgtAlt:120,tgtDist:800,tgtBearing:0,tgtHeading:0,tgtClimb:0,tgtTurnG:0},
+    target:true,tgtSpeed:300,tgtAlt:120,tgtDist:800,tgtBearing:0,tgtHeading:0,tgtClimb:0,tgtTurnG:0,tgtEvadeDist:0},
   offAxis:{label:"偏轴机动",carrierSpeed:350,launchAlt:150,launchAngle:0,launchYaw:0,
-    target:true,tgtSpeed:300,tgtAlt:150,tgtDist:1200,tgtBearing:-27,tgtHeading:0,tgtClimb:0,tgtTurnG:4},
+    target:true,tgtSpeed:300,tgtAlt:150,tgtDist:1200,tgtBearing:-27,tgtHeading:0,tgtClimb:0,tgtTurnG:4,tgtEvadeDist:600},
 };
 
 /* ---------- 图表 ---------- */
@@ -1163,6 +1169,20 @@ function draw(){
       lastT=s;
     });
   }
+  // 规避起点标记：目标从该点开始G转弯（配置了规避触发距离时）
+  if(currentParams().target&&!speedView&&currentParams().tgtEvadeDist>0){
+    const ev=tgtSrc.find(f=>f.tge===1);
+    if(ev&&ev.tFwd!==Infinity){
+      const s=toS(proj({fwd:ev.tFwd,lat:ev.tLat,y:ev.tY}));
+      ctx.fillStyle="#c5221f";
+      ctx.beginPath();ctx.moveTo(s.sx,s.sy-6);ctx.lineTo(s.sx-5,s.sy+4);ctx.lineTo(s.sx+5,s.sy+4);ctx.closePath();ctx.fill();
+      ctx.font="11px sans-serif";ctx.textAlign="left";
+      const et="开始规避";
+      const ew=ctx.measureText(et).width;
+      ctx.fillStyle="rgba(255,255,255,.85)";ctx.fillRect(s.sx+7,s.sy-17,ew+6,14);
+      ctx.fillStyle="#c5221f";ctx.fillText(et,s.sx+10,s.sy-6);
+    }
+  }
   // 导弹轨迹（线 + 逐 Tick 蓝点）
   ctx.strokeStyle="#1a73e8";ctx.lineWidth=2.2;ctx.beginPath();
   pts.forEach((q,i)=>{const s=toS(q);i?ctx.lineTo(s.sx,s.sy):ctx.moveTo(s.sx,s.sy);});
@@ -1370,7 +1390,8 @@ function updateCursor(){
       "攻角: "+f.alphaDeg.toFixed(2)+"°\n"+
       "到目标距离: "+(isFinite(f.distT)?Math.round(f.distT)+" 米":"—")+"\n"+
       "已行驶距离: "+Math.round(f.traveled)+" 米"+
-      (f.sp===1?"\n[二脉冲燃烧中]":(f.sp===2?"\n[二脉冲已结束]":""));
+      (f.sp===1?"\n[二脉冲燃烧中]":(f.sp===2?"\n[二脉冲已结束]":""))+
+      (f.tge===1?"\n[目标规避中]":"");
     tt.style.display="block";
     // 播放时信息面板跟随弹体标记（悬停时保持鼠标位置不动）
     if(S.playing&&S.chartMap){
@@ -1452,7 +1473,7 @@ document.getElementById("presetSel").addEventListener("change",e=>{
   document.getElementById("targetOn").checked=p.target;
   set("tgtSpeed",p.tgtSpeed); set("tgtAlt",p.tgtAlt); set("tgtDist",p.tgtDist);
   set("tgtBearing",p.tgtBearing); set("tgtHeading",p.tgtHeading);
-  set("tgtClimb",p.tgtClimb); set("tgtTurnG",p.tgtTurnG);
+  set("tgtClimb",p.tgtClimb); set("tgtTurnG",p.tgtTurnG); set("tgtEvadeDist",p.tgtEvadeDist||0);
   recompute();
 });
 CURVE_SERIES.forEach(s=>document.getElementById("cb_"+s.k).addEventListener("change",draw));
@@ -1460,7 +1481,7 @@ document.getElementById("flyLabel").addEventListener("change",draw);
 document.getElementById("viewYaw").addEventListener("input",draw);
 document.getElementById("viewZoom").addEventListener("input",draw);
 document.getElementById("equalAspect").addEventListener("change",draw);
-["carrierSpeed","launchAlt","launchAngle","launchYaw","groundY","tgtRadius","targetOn","tgtSpeed","tgtAlt","tgtDist","tgtBearing","tgtHeading","tgtClimb","tgtTurnG","maxSeconds"]
+["carrierSpeed","launchAlt","launchAngle","launchYaw","groundY","tgtRadius","targetOn","tgtSpeed","tgtAlt","tgtDist","tgtBearing","tgtHeading","tgtClimb","tgtTurnG","tgtEvadeDist","maxSeconds"]
   .forEach(id=>document.getElementById(id).addEventListener("change",recompute));
 window.addEventListener("resize",draw);
 window.addEventListener("error",e=>{const s=document.getElementById("statusBar");if(s)s.textContent="脚本错误: "+e.message+" @行"+(e.lineno||"?");});
