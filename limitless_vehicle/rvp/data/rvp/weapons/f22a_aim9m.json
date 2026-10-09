@@ -26,6 +26,12 @@
     "rvp_induced_drag": 0.005,
     "rotate_to_motion": true,
     "max_speed": 6,
+    "altitude_max_speed_factor": {
+      "[[512,inf]]": 1.5,
+      "[[256,512]]": 1.2,
+      "[[128,256]]": 1.0,
+      "[[-inf,128]]": 0.8
+    },
     "turning_factor": {
       "[[1,inf]]": 0.12
     },
