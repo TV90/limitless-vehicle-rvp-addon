@@ -1,0 +1,84 @@
+你在 Minecraft 1.20.1 Forge 的载具模组仓库 ywzj_rvp 里实施 3 处小改动。这不是自由发挥的任务，请严格按方案执行。
+
+【必读文档（先完整读一遍）】
+D:\ywzj\ywzj\ywzj_rvp\docs\plan\战车改装分组与PELE横向效应弹_调研与代码改动方案_20261003.md
+该文档已把原始需求、调研结论、3 处改动的落点（含 file:line）、代码骨架、影响面分析、验证与回退全部写清。文档没写到的执行细节以下面的指令为准；两者冲突时以下面为准。
+
+【背景（简版）】
+1) zbl08a 主炮被改成 t90m 式的「AP 组 / HE 组」两组（数据侧已完成）：AP 组只有 1 个弹种，导致 RVP 的分组解析硬门（ids 数量 >= 2）把它跳过，改装界面里两组会全部消失。
+2) 用户要做 PELE（横向效应增强弹）：母弹穿墙后向前方抛射子弹药，子弹药命中方块后弹射且弹射后伤害/速度下降。RVP 的 submunition_data（子母弹系统）已能覆盖大部分，但缺「穿透后」触发时机与「跳弹伤害衰减」两项。
+
+【仓库与边界】
+- 本体源码 D:\ywzj\ywzj\ywzj_vehicle\src\main\java\org\ywzj\vehicle\ —— 【只读，一个字都不许改】。查本体实现只信这里。
+- RVP 源码 D:\ywzj\ywzj\ywzj_rvp\src\main\java\org\ywzj\rvp\ —— 本次唯一改动落点。
+- 数据包 D:\ywzj\ywzj\ywzj_rvp\limitless_vehicle\rvp\ —— 【本次不要改】，数据侧已由他人完成。
+- run\client_1 / run\client_2 / run\server 下的副本【不要碰】。
+
+【实现要点（照做，不要自己换方案）】
+
+■ C-1　放宽分组槽的 ids 数量约束
+文件：src\main\java\org\ywzj\rvp\config\RVP_VehicleExtendedConfigManager.java，方法 parseModdingOnlyMulti
+把这一行里的数量判断：
+    || weaponObj.getAsJsonArray("ids").size() < 2) {
+改为：
+    || weaponObj.getAsJsonArray("ids").isEmpty()) {
+理由：单弹种的「组」也必须被认作分组载体（AP 组只有 1 个弹种）。该方法只影响判定表内容，其余逻辑（getModdingGroupEntries 只遍历这张表）不变。
+注意：getModdingGroupEntries 只遍历 moddingOnlyMultiByPartId，所以这处不改，改装界面里整组（含后续 merge 组）都不会出现。
+
+■ C-2　新增子母弹触发器 ON_PENETRATE（穿透方块后）
+文件 1：src\main\java\org\ywzj\rvp\weapon\data\RVP_EnumSubmunitionTrigger.java
+  - 枚举新增一项（放在 ON_BLOCK_HIT 之后、ON_ENTITY_HIT 之前均可，需带 javadoc）：
+        /** 穿透方块成功后（在撞击处理继续/终止之前）。 */
+        ON_PENETRATE,
+  - fromString 新增分支：
+        case "on_penetrate", "penetrate", "penetration", "after_penetration" -> ON_PENETRATE;
+文件 2：src\main\java\org\ywzj\rvp\entity\projectile\RVP_BaseBullet.java，方法 handleBlockImpact
+  位置：穿墙成功之后 —— 即 wallPenetrationLeft--; applyPenetrationSpeedDecay(); penetrationEventCount++; 这三行之后、BlockPos penetratedPos = blockPos; 附近（约 3341-3344 行）。
+  插入：
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE)) {
+            compensateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
+            discard();
+            return true;
+        }
+  ⚠️ 关键语义（务必理解，别改错）：trySubmunitionTrigger 的返回值 = 子母弹 runner 的 fireTrigger 返回值 = 「是否应立刻丢弃母弹」，由配方的 parent_action 决定：
+      - parent_action: "continue"          → 返回 false → 上面 if 不进入 → 母弹穿墙后继续飞（这是 PELE 想要的）
+      - parent_action: "discard_after_release" / "discard_on_first_spawn" → 返回 true → discard()
+  ⚠️ 不要照抄 on_block_hit 那段（约 3369 行）：那里是【无条件】discard()（不看返回值），因为撞击必然终结弹体；穿透路径必须用返回值，否则母弹会被误丢、穿墙后飞不出去。
+  ⚠️ 为什么必须新增：穿墙成功后若墙后无方块，代码会 return false 让弹体继续飞（约 3354 行），所以「穿透一格墙」这件事当前没有任何可挂钩的时机。
+
+■ C-3　跳弹计入伤害衰减
+文件：src\main\java\org\ywzj\rvp\entity\projectile\RVP_BaseBullet.java，方法 tryApplyBounce（约 3728 行）
+在 bounceLeft--; / bouncesConsumed++; （约 3741-3742 行）之后加一行：
+        penetrationEventCount++;      // 跳弹计入伤害衰减计数
+理由：伤害倍率 penetrationDamageFactor() = penetration_damage_multiplier ^ penetrationEventCount，而该计数原先只在穿墙/穿透生物时递增，跳弹不衰减。
+零影响依据（实施前请在代码里再确认一次）：penetrationDamageFactor() 首行是
+    if (penetrationDamageMultiplier >= 0.999f || penetrationEventCount <= 0) { return 1f; }
+而 collision_data.penetration_damage_multiplier 默认 1f ⇒ 所有未配置该字段的武器仍恒为 1 倍伤害。
+配好后：子弹药写 "penetration_damage_multiplier": 0.6 ⇒ 每弹射一次伤害 ×0.6。
+
+【绝对不要做的事】
+- 不要改本体任何文件。
+- 不要新增任何 mixin，不要改 ywzj_rvp.mixins.json。
+- 不要改任何数据包文件（limitless_vehicle/rvp/**），包括 zbl08a.json / zbl08a_canister.json。
+- 不要改 RVP 既有的子母弹系统其它部分（RVP_SubmunitionRunner / RVP_SubmunitionSpawner / RVP_SubmunitionSpreadData / RVP_SubmunitionPayloadData / RVP_SubmunitionReleaseData），只做上面 C-2 的枚举新增与触发点插入。
+- 不要改 fuse_data 相关逻辑（本次不用引信实现 PELE）。
+- 不要改动 on_block_hit / on_entity_hit / on_impact / on_fuse 的既有触发行为。
+- 不要顺手重构、格式化、改无关代码或删注释。
+- 不要为了「更通用」擅自扩大范围（例如顺手把 bounce 改成独立倍率字段）。
+
+【构建与验证】
+- JAVA_HOME 必须显式指向 jdk-21：C:/Program Files/Java/jdk-21.0.11（默认会指到 jre1.8）。
+- 构建前先探测 Gradle 的 .lck（判据：能否以 r+b 打开），被占就停手报告，不要强删。
+- 构建：JAVA_HOME=... ./gradlew build --console=plain > 新日志名.log 2>&1（免沙箱、前台跑；日志名不要复用）。先试 --offline。
+- 通过判据：compileJava BUILD SUCCESSFUL，且测试 XML 里 failures/errors 为 0。
+- 构建失败就停下来报告失败点，不要为了通过构建去改方案、放宽约束或绕过错误。
+
+【交付前自查】
+- 3 处改动是否齐全（C-1 一行、C-2 两个文件、C-3 一行）。
+- C-2 的 discard 是否严格按 trySubmunitionTrigger 的返回值决定。
+- C-3 实施前是否已确认 penetrationDamageFactor() 的首行短路判断存在（贴出该行）。
+- 是否只动了这 3 个文件（给 git status 输出为证）。
+- 未配置 on_penetrate 触发器的现有弹药，行为必须与改动前完全一致。
+
+【报告】
+最后报告：改了哪些文件（逐条列完整路径与关键行号）、构建结论（贴出日志里 compileJava 那一行）、以及任何你不确定或没解决的问题。有步骤没验证就不要说"已完成"，不要夸大。

@@ -1,0 +1,62 @@
+(function () {
+	if (typeof Mesh === 'undefined' || !Mesh.all) {
+		Blockbench.showQuickMessage('当前项目不支持 Mesh 对象');
+		return;
+	}
+
+	const meshes = Mesh.all.slice();
+
+	if (!meshes.length) {
+		Blockbench.showQuickMessage('当前 bbmodel 中没有 Mesh');
+		return;
+	}
+
+	let createdGroups = 0;
+	let movedMeshes = 0;
+	let skippedMeshes = 0;
+
+	Undo.initEdit({ outliner: true, elements: meshes });
+
+	try {
+		meshes.forEach((mesh) => {
+			if (!mesh) return;
+
+			// 关键改动：只要已经有父级组（不管组名是否和 Mesh 相同），一律跳过
+			if (mesh.parent && mesh.parent !== 'root') {
+				skippedMeshes++;
+				return;
+			}
+
+			// 走到这里说明 Mesh 裸露在根目录，siblings 就是大纲根层
+			const siblings = mesh.getParentArray();
+			const meshIndex = siblings.indexOf(mesh);
+
+			// 根层已有同名组就复用
+			let targetGroup = siblings.find(node => node instanceof Group && node.name === mesh.name);
+
+			// 没有才新建，插到 Mesh 原位置
+			if (!targetGroup) {
+				targetGroup = new Group({
+					name: mesh.name,
+					origin: Array.isArray(mesh.origin) ? mesh.origin.slice() : [0, 0, 0]
+				}).init();
+
+				targetGroup.addTo('root', meshIndex);
+				createdGroups++;
+			}
+
+			mesh.addTo(targetGroup);
+			movedMeshes++;
+		});
+
+		Undo.finishEdit('为根目录的 Mesh 创建同名组并归类，已有父级组的跳过');
+		Canvas.updateAll();
+		Blockbench.showQuickMessage(
+			`完成：新建组 ${createdGroups} 个，移动 Mesh ${movedMeshes} 个，跳过 ${skippedMeshes} 个`
+		);
+	} catch (err) {
+		Undo.cancelEdit();
+		console.error(err);
+		Blockbench.showQuickMessage('执行失败，已回滚。请看控制台报错');
+	}
+})();

@@ -1,0 +1,701 @@
+# 战车改装分组 + PELE 横向效应弹 —— 调研与代码改动方案
+
+> 状态：**数据侧已改（见 §三）；代码侧 C-1~C-3 已于 2026-10-03 22:09 实施并构建通过（C-2 本轮**不用**，保留无害）；⚠️ **C-4‴（释放锚点机制）待实施** —— 唯一剩下的代码缺口；方案于 2026-10-04 00:06 定案：**不穿墙**（撞墙即崩解）+ 破片生成在**命中点 + 沿弹道 1.5 格**、命中实体则**不前推**、子弹药**不继承母弹速度****
+> 修订 2026-10-03 22:30：补回用户原始需求「**命中敌人也撒破片**」⇒ PELE 定为 **`on_penetrate` + `on_entity_hit` 双释放波**（**不需要新增任何代码**，理由见 §1.4.1）；§四 模板同步重写
+> 修订 2026-10-03 22:36：用户补充「**穿墙后母弹消失**」⇒ 波 A 的 `parent_action` 改为 **`discard_after_release`**（正好是 C-2 返回值语义支持的行为）⇒ **两波由此互斥**（穿墙即毁，不可能之后再命中敌人）；§一 / §三 / §四 / §五 / §六 同步更新
+> 修订 2026-10-03 22:40：回答"破片到底生成在哪"时**查出真缺陷** ⇒ 追加 **C-4**：`ON_PENETRATE` 触发时 `parent.position()` 仍是**本 Tick 起点**（RVP 是"先碰撞检测、后运动积分"）⇒ 破片会生成在**墙前 0~|Δmovement| 格**、而不是墙里/墙后。修法 = 把 `setPos(positionPastBlockFace(...))` 提到触发之前（见 §二 C-4）
+> 修订 2026-10-03 23:00：用户定案 **方案 B** ——「让母弹也穿墙，把母弹穿墙伤害大幅调低伪装成破片，且**不要求二次布撒**」⇒ `parent_action` 回到 **`continue`**、`penetration_damage_multiplier` 降到 **0.08**（80→**6.4**≈弹片 6）、`on_entity_hit` 波**本轮取消**（单波）；新增 §1.6 方案对比、§四 模板重写
+> 修订 2026-10-03 23:50：用户追加「**只让子弹穿墙，不想摧毁墙体**」⇒ 查实 `collision_data` **没有**这种开关（唯一破坏点是 `RVP_WallPenetrationUtil.destroyForPenetration:3338`）⇒ 新增 **C-5**（`penetration_destroy_block`，默认 true）并把它与 **C-4** 合并为 **C-4′**：锚点在"破坏"时用原近面内推、在"不破坏"时改用**方块包围盒出口点**（否则弹体与子弹药会停在实心方块内部）；§一/§四/§五/§六 同步
+> 修订 2026-10-04 00:06：用户提出「既然破片靠"命中点 +1.5 格"生成，**母弹就不需要穿墙**」⇒ 采纳：改用现成的 **`on_block_hit`**（撞墙即崩解），连带走掉 4 个复杂度 —— ① 不需要 `penetration_destroy_block`（不穿墙 ⇒ 墙天然不破坏）② 不需要把弹体 `setPos` 出方块（没有卡墙风险）③ 不需要 AABB 出口数学 ④ 不需要"伤害降级伪装成破片"；方案定名 **C-4‴（释放锚点机制）**，代码从 5 文件减到 **4 文件**；`C-2`/`on_penetrate` 保留但本轮不用
+> 日期：2026-10-03
+> 适用：ywzj_rvp（Minecraft 1.20.1 Forge）
+> 实施方式：本文件 §五 的提示词交由实施 agent 执行
+
+---
+
+## ★ 最终方案（一页版 · 2026-10-03 23:30 定案）
+
+**一句话**：30mm 弹**打穿一格墙 → 就在洞里撒 10 枚前向破片 → 弹芯继续飞，但伤害已降到"破片级"**；破片撞墙会弹射，每弹一次伤害 ×0.6、速度 ×0.5。
+
+### A1. 选型定案
+
+| 项 | 定案 | 理由 |
+|---|---|---|
+| 母弹结局 | **撞墙即崩解消失**（`wall_penetration: 0`） | ★ 00:05 定案：既然破片靠"命中点 +1.5 格"生成，母弹**不必真穿墙**；顺带 ① 墙天然不被破坏 ② 不会卡在方块里 ③ 不需要"伤害降级伪装" |
+| 穿墙后母弹伤害 | **`penetration_damage_multiplier: 0.08`** ⇒ `80 × 0.08 ≈ 6.4` | 与弹片 `direct_damage: 6` 对齐 ⇒ 数值上"母弹 = 第 11 枚破片" |
+| 释放波 | **单波**（只 `on_penetrate`），不配 `on_entity_hit` | 用户 23:00："不要求二次布撒" |
+| 布撒锚点 | 锚点 = **撞击命中点**，再按 release 的 **`spawn_forward_offset`** 沿弹道前推（墙波 **1.5** / 实体波 **0**） | 用户 00:00：打击墙后目标；避免"打首上却在车体中部生成破片" |
+| 破片初速 | **不继承母弹**：`inherit_parent_velocity: false` + `launch_speed: 12` | 母弹撞击已损失动能（用户 00:00） |
+| 穿墙效果 | **不穿墙** ⇒ 墙**天然完好**（`wall_penetration: 0`，根本不调用 `destroyForPenetration`） | 用户 23:50 + 00:05 |
+| 归属 | **AP 组**（与 `zbl08a_apfsds` 同组，**F** 键切换） | 顺带让 AP 组凑够 2 个弹种 ⇒ **C-1 由"必需"变"保险"**（已实施，留着无妨） |
+
+### A2. 落地清单（5 个文件 = 1 处 Java + 3 新建 + 1 处改）
+
+| # | 目标 | 动作 |
+|---|---|---|
+| 1 | `RVP_SubmunitionReleaseData.java`、`RVP_SubmunitionRunner.java`、`RVP_SubmunitionSpawner.java`、`RVP_BaseBullet.java` | **C-4‴**：①`spawn_forward_offset`（默认 `0`）②`fireTrigger(…, anchor)` 透传 ③生成点用 `anchor + 弹道方向×offset`（为空则退回 `parent.position()`）④两个撞击路径把命中点当锚点传下去（见 §二 C-4‴）⇒ 重新构建 jar |
+| 2 | `limitless_vehicle/rvp/data/rvp/weapons/zbl08a_pele.json` | **新建**（母弹，模板 §四 4.1） |
+| 3 | `limitless_vehicle/rvp/data/rvp/weapons/zbl08a_pele_frag.json` | **新建**（弹片，模板 §四 4.2） |
+| 4 | `limitless_vehicle/rvp/assets/rvp/display/weapon/zbl08a_pele.json` | **新建**（4 行：type / bedrock_backend / sounds，照 `zbl08a_canister`） |
+| 5 | `limitless_vehicle/rvp/assets/rvp/display/weapon/zbl08a_pele_frag.json` | 新建（**可省**，见 §四 4.2 末：包内 6 个子弹药先例都没有 display 也能正常渲染） |
+| 6 | `limitless_vehicle/rvp/data/rvp/vehicles/zbl08a.json` | AP 组 ids 改为 `["rvp:zbl08a_apfsds", "rvp:zbl08a_pele"]` |
+
+> 弹体侧参数：**`wall_penetration: 0`（不穿墙）** + `bounce: 0`（必须，否则掠射硬方块会跳弹、不触发撞墙释放）+ 墙波 `spawn_forward_offset: 1.5`。
+
+> 武器名**不需要**动 `assets/rvp/lang/*.json`：`name` / `name_CN` 直接写在武器 JSON 里（已核实：全包 lang 里搜不到 `DTX-10-30`，霰弹也是这样跑的）。
+
+### A3. 验收三条
+
+1. 打一面 1 格厚石墙（墙后放标靶）：母弹**在墙面消失**、**墙完好无损**，破片在**墙后 0.5 格**（= 命中点 +1.5 − 墙厚 1.0）炸开；不是"墙前半空炸开"，也不是"墙被打碎"。
+2. 墙后的敌人/载具：只吃 **≈6.4**（一枚破片量），**不再是 80**。
+3. 破片打进墙角/密闭空间：**反复弹射**，每次伤害 ×0.6、速度 ×0.5，几次后自然消亡。
+
+### A4. 已知取舍
+
+- 破片生成那一 Tick 母弹会多走一整步（`RVP_UnguidedBallisticMath.stepCannon:31-35` = `position + velocity`）⇒ 画面是"残芯在前、破片云在后"；想贴近就把弹片 `velocity_scale` 提到 1.5~2.0。
+- 弹片想在**石墙**上弹起来，`bounce_min_block_hardness` 必须设 **1.0**（默认 2.1 > 石头 1.5 ⇒ 默认几乎不弹）。
+
+---
+
+## 零、原始需求（用户原话，逐字保留）
+
+### 需求 1：战车改装分组 + 霰弹命名
+
+> 「我想给zbl08a增加一个霰弹机炮，请你帮我写一个，备弹射速等参数要参考zbl08a现有的两门机炮」
+
+> 「名称给DTX-10-30 30MM霰弹 然后修改下武备配置，改为像t90m那样分为ap组和he组，把霰弹归类于he组」
+
+> 「为什么你文件名一下用shot，武器名又用canister，统一用canister吧」
+
+### 需求 2：PELE 横向效应增强弹
+
+> 「然后我还想做个横向效应增强弹 网上搜索资料如下：横向效应增强弹（PELE）是一种不含炸药和引信的新型动能弹药，采用"高密度外壳+低密度内芯"结构，典型外壳为钨合金或钢，内芯为铝、塑料等惰性材料。其原理是弹丸高速撞击目标时，外壳负责侵彻，低密度内芯受压减速并径向膨胀，迫使外壳横向崩解成大量高速破片，从而把部分轴向动能转化为径向杀伤，形成比弹径大得多的破片云。它的主要优点是结构简单、成本较低、无爆炸装药、附带损伤小，并兼具穿甲和破片杀伤效果，常用于反轻型装甲、航空器、城市作战破障和反器材狙击等，口径覆盖12.7毫米至125毫米，概念最早由德国迪尔公司于20世纪90年代提出。我的想法是通过修改fusedata进行实现，给弹药配置穿透方块（母弹药配置穿透一格墙体）后或者命中目标时向前方抛射霰弹以模拟pele弹的杀伤效果。看看rvp侧fusedata已有的功能能不能实现 同时pele弹散布的子弹药需要命中方块后进行弹射，提高密闭空间的杀伤效果，弹射后的子弹药，伤害和速度需要降低 rvp侧已有部分功能，看看还要在代码层补充什么新功能」
+
+### 需求 3：本文件要求
+
+> 「你把需要代码修改的部分汇总下，包括战车改装和PELE弹，重新写一个文档，并贴上我的原始需求，写调研文档，并给我提示词，我让另一个agent去实现」
+
+---
+
+## 一、调研结论（摘要）
+
+### 1.1 需求 → 现状 → 结论
+
+| 需求 | RVP 现有能力 | 结论 |
+|---|---|---|
+| **1.** 主炮分 AP / HE 两组，霰弹归 HE 组 | `modding_only_multi` + `merge_into_previous_slot` 配对（t90m 现成范例） | ⚠️ **配置已就位，但需 C-1 一行代码**（否则改装界面看不到分组） |
+| **2a.** 母弹抛射子弹药 | `submunition_data` 完整子母弹系统（包内 5 个先例） | ✅ 现成 |
+| **2b.** 撞墙即崩解，并在**墙后**布撒（★ 00:05 定案：**不穿墙**） | `on_block_hit`（现成）+ `spawn_forward_offset: 1.5` | ✅ 触发器现成，**需 C-4‴**（锚点） |
+| ~~2b″. 真·穿墙后再抛出（旧 C-2 路线）~~ | `on_penetrate`（已实施）| 💤 **本轮不用**（保留无害；将来若要"真穿墙"仍可用） |
+| **2c.** 「命中**敌人/目标**时」抛射 | `on_entity_hit`（原生，包内暂零先例） | ⏸ **本轮不需要**（23:00 用户："不要求二次布撒"）⇒ 仅当备用方案保存，见 §1.6 |
+| **2c′.** 把「穿墙」与「命中敌人」写进**同一个** release 波 | `RVP_SubmunitionRunner.fireTrigger` 一次性语义 | ❌ **做不到**，谁先发生谁把整波打光（见 §1.4.1）—— 以后要加回第二波时必读 |
+| **2d.** 向前方抛射 | `launch_pitch: 0` + `launch_angle_mode: "relative"` | ✅ 现成 |
+| **2e.** 子弹药命中方块后弹射 | `collision_data.bounce` + `bounce_strength` | ✅ 现成 |
+| **2f.** 弹射后**速度**降低 | `bounce_strength`（默认 0.6） | ✅ 现成 |
+| **2g.** 弹射后**伤害**降低 | ❌ 跳弹不参与伤害衰减计数 | ⚠️ **需 C-3** |
+| ~~2h. 穿墙后母弹继续飞 + 伤害降级伪装成破片（方案 B，**00:05 后废弃**）~~ | `parent_action: "continue"` + `penetration_damage_multiplier` | ❌ 不再需要（母弹不再穿墙） |
+| ~~2h′. 穿墙后母弹就地碎裂（方案 A，**已弃**）~~ | `parent_action: "discard_after_release"` | ✅ 可用但不采用 |
+| **2i.** 破片"向前方"的方向基准 | 发射角三字段全默认 ⇒ 基准 = **母弹速度方向**（`RVP_SubmunitionSpawner.referenceAim:270-277`） | ✅ 现成，见 §4.1.1 坑 6 |
+| **2j.** 破片生成在**墙里/墙后**（而不是墙前） | ❌ `position()` 是 Tick 起点（先碰撞后运动）⇒ 生成点在**墙前** | ⚠️ **需 C-4**（22:40 新发现） |
+| **2k.** 穿墙但**不摧毁墙体**（★ 23:50） | ✅ **不穿墙 ⇒ 不破坏**（`wall_penetration: 0` 时根本不会调用 `destroyForPenetration`） | ✅ **天然满足**（不需要开关） |
+| **2l.** 布撒锚点 = **撞击命中点**（+ 可选沿弹道前推）（★ 00:00） | ❌ 现状取 `parent.position()` = 本 Tick 起点 | ⚠️ **需 C-4‴**（锚点参数化） |
+| **2m.** 命中**实体**时不套用前推量（分流） | ✅ `on_entity_hit` 与 `on_penetrate` 本就是两个触发器/两个调用点 | ✅ 现成（数据侧两个波），但锚点要按 2l 一起参数化 |
+| **2n.** 子弹药**不继承母弹速度**（★ 00:00） | ✅ payload 的 `inherit_parent_velocity: false` + `launch_speed`（>0 时启用"发射角分支"，速度取 `launch_speed`、方向仍取母弹弹道方向） | ✅ **纯数据**（见 §4.2 末） |
+| — | 用 `fuse_data` 实现 2a/2b | ❌ **做不到**，见 §1.3 |
+
+### 1.2 战车改装「分组槽」机制（已查实）
+
+**配置形态**（两条 `WeaponInfo` 配对，t90m 范例）：
+
+```jsonc
+{ "ids": ["...AP弹1", "...AP弹2"], "save_id": "main_gun_ap", "modding_only_multi": true },
+{ "ids": ["...HE弹1", "...HE弹2"], "save_id": "main_gun_he", "merge_into_previous_slot": true }
+```
+
+| 环节 | 实现 |
+|---|---|
+| 装配 | `RVP_GroupedWeaponSlotAssembler.buildBlueprints` —— **两两配对**：第 i+1 条带 `merge_into_previous_slot`、且两条 `secondary` 相同、都非 independent ⇒ 合成 1 个 grouped 栏（外层 `RVP_VehicleMultiWeapons`，sub = [前组 multi, 后组 multi]）。`shouldHandle()` = 该部件**任意一条**有 merge 即接管整个武器装配 |
+| 战斗切换 | 外层 multi 的 **F 键**（`cycleSubWeapon`）切 AP ↔ HE；`RVP_VehicleMultiWeapons` 已修复嵌套 multi 切换后的装填（递归清空所有叶子弹药） |
+| 组内弹种 | 只能由**改装界面**切（`RVP_AuiVariantScreen`） |
+| HUD 圆点 | `VehicleWeaponOverlayMixin`：`isGroupedSlotCarrier(i)` 为真 ⇒ 显示；否则 `shouldBlockRuntimeMultiCycle(i)` 为真 ⇒ 隐藏；两者皆假 ⇒ 默认显示 |
+
+### 1.3 `fuse_data` 的能力边界（结论：**做不了抛子弹药**）
+
+`RVP_FuseData`（JSON 键 `fuse_data`）全部字段：
+
+| 类别 | 字段 |
+|---|---|
+| 定时 | `delay_tick` |
+| 可编程空爆 | `programmable_airburst`、`airburst_offset`、`airburst_measure_min/max`、`airburst_explosion_damage/radius` |
+| AHEAD | `ahead_enabled`、`ahead_burst_offset_meters`、`ahead_require_lock`、`ahead_min_ground_clearance` |
+| 近炸 | `proximity_radius`、`proximity_fuse_tick`、`proximity_fuse_height`(默认 20)、`proximity_fuse_require_radar_lock`、`proximity_fuse_anti_torpedo`、`proximity_fuse_damage`、`proximity_fuse_explosion_damage/radius` |
+| 近地 | `ground_proximity_fuse_distance`、`ground_proximity_fuse_arm_tick` |
+| 攻顶 | `top_attack_fuse_enabled`、`_distance`、`_fov`、`_delay_tick`、`_arm_tick`、`top_attack_smart_*` |
+| 其他 | `detonate_on_life_end`、`entity_collision_safe_tick` |
+
+⇒ **`fuse_data` 只负责"引信何时引爆"**，不负责"抛射子弹药"。抛射子弹药是 **`submunition_data`** 的职责；`fuse_data` 只是可作为其触发器之一（`on_fuse`）。
+
+⚠️ 且原生触发器**没有"穿透后"这种时机**（见 §1.4）—— 这正是 C-2 要新增 `on_penetrate` 的原因（现已补齐）。
+
+### 1.4 子母弹（submunition）系统（PELE 的正确载体）
+
+**JSON 键：`submunition_data`**（`RVP_WeaponData` 顶层）。**包内 5 个先例**：`cssa5_ahead`、`j16_akf98a`、`lav25_tow2b`、`m142_m30`、`m142_m30_wp`。
+
+**触发器（`RVP_EnumSubmunitionTrigger`）现有 6 个**（第 4 项 `ON_PENETRATE` 由 C-2 新增，其余 5 项原生）：
+
+| 触发器 | 别名 | 时机 |
+|---|---|---|
+| `in_flight` | `flight` / `air` | 飞行中（按 `delay_tick` / `interval_tick`） |
+| `on_impact` | `impact` | 任何致命撞击（方块或实体） |
+| **`on_block_hit`** | `block` / `block_hit` | **仅方块撞击**（爆炸/引爆之前）；该路径**无条件终结母弹** |
+| **`on_penetrate`** ★C-2 新增 | `penetrate` / `penetration` / `after_penetration` | **成功穿透一格方块之后**；母弹是否继续飞由 `parent_action` 决定 |
+| **`on_entity_hit`** ★「命中敌人撒破片」用它 | `entity` / `entity_hit` | **仅实体撞击**（`living_penetration` 耗尽后，`RVP_BaseBullet:3432`） |
+| `on_fuse` | `fuse` / `detonate` | 定时/近炸/空爆/寿命引信 |
+
+✅ `on_penetrate` 已由 C-2 补齐（2026-10-03 22:09 构建通过）；`on_entity_hit` **本来就存在**，是 P2c 的现成答案。
+
+**释放波次（`RVP_SubmunitionReleaseData`）**：`triggers[]` / `delay_tick` / `interval_tick` / `release_events` / `per_tick` / `payloads[]` / `parent_action` / `release_cloud_enabled` / `release_cloud_radius{horizontal,vertical}`。
+
+#### 1.4.1 ⚠️⚠️ 一个释放波**只能触发一次** ⇒ 「穿墙」与「命中敌人」必须拆成两个波
+
+> **本节 23:00 后的适用性**：定案方案 B 只保留「穿墙」一波 ⇒ 本节不影响当前实现；但**只要以后想加回"命中敌人也撒"**，就必须照本节拆波，切勿写进同一个 `triggers`。
+
+`RVP_SubmunitionRunner.fireTrigger`（`:101-129`）：
+
+```java
+if (wave.oneShotFired && isOneShotTrigger(trigger)) { continue; }   // :110
+...
+wave.eventsRemaining -= toFire;                                     // :119
+if (isOneShotTrigger(trigger)) { wave.oneShotFired = true; }        // :120-122
+// isOneShotTrigger(t) = (t != IN_FLIGHT)   →  除飞行中外全部一次性  :141-143
+```
+
+⇒ 一个波被任一非 `in_flight` 触发器**打光一次后就彻底失效**（`oneShotFired` + `eventsRemaining = 0`）。
+
+| 写法 | 结果 |
+|---|---|
+| `"triggers": ["on_penetrate", "on_entity_hit"]`（**同一波**） | ❌ 谁先发生谁把这波打完，**另一个永远不触发** |
+| **两个 release 波**：波 A `["on_penetrate"]`（穿墙后**母弹消失**）、波 B `["on_entity_hit"]` | ✅ 各管一路：撞墙 ⇒ 墙后撒破片且母弹消失；没撞墙、直接命中敌人 ⇒ 敌人处撒破片 |
+
+⚠️ `matches()`（`:131-139`）另有一条：配置里写了 `on_impact` 时，`on_block_hit` / `on_entity_hit` 都会被它**顺带匹配**（`ON_IMPACT` 是这两个的"超集"）⇒ **`on_impact` 不要与本方案混用**，否则一次撞击就吃掉整波。
+
+⚠️ **本方案下两波是互斥的**：波 A 触发即 `discard()` 母弹 ⇒ **穿墙之后不可能再命中敌人**，波 B 只覆盖"没穿墙、直接命中敌人"这一路。这不是缺陷 —— 正是"撞墙走 PELE、直击也走 PELE"的期望行为。
+
+⚠️⚠️ **第二个大坑：`release_events` 必须显式写 `1`。** `spawnReleaseWave(parent, release, events)`（`RVP_SubmunitionSpawner:43-66`）= **`events` 个事件 × 每事件 `payload.count` 枚**；而 `release_events` 未配时 `resolveReleaseEvents()` 回退为**所有 payload 的 count 之和**（`RVP_SubmunitionReleaseData:143-152`）⇒ 漏写就变成 **count × count 枚**（`count:10` ⇒ **100 枚**，瞬间卡服）。
+
+**载荷（`RVP_SubmunitionPayloadData`）**：
+
+| 字段 | 说明 |
+|---|---|
+| `kind` | `rvp_weapon`（默认）/ 实体 |
+| `weapon_id` | 子弹药武器 id；**留空 = 克隆母弹** |
+| `count` | 每次释放生成数量 |
+| `launch_yaw` / `launch_pitch` | 发射角；**`0` = 沿母弹弹轴 = 正前方**（`90` = 正下，见 TOW-2B 攻顶） |
+| `launch_angle_mode` | `relative` = 相对母弹姿态（**PELE 用这个**）/ `absolute` = 世界系固定 |
+| `launch_speed` | 附加发射速度 |
+| `inherit_parent_velocity` / `inherit_parent_horizontal_velocity` / `inherit_vehicle_velocity` | 速度继承 |
+| `velocity_scale` | 继承速度缩放 |
+| `payloads_velocity` / `payloads_velocity_factor` | 世界系附加速度向量 + 随机浮动 |
+| `spread` | 见下 |
+
+**散布（`RVP_SubmunitionSpreadData`）**：`mode` = `box`（默认）/ `canister` / `stratified_cone`；canister 模式复用 `canister_type` / `canister_diff` / `canister_distribution` / `canister_shape`（与 `fire_data` 的 canister 同款）。
+
+**现成配置参考**：
+
+```jsonc
+// lav25_tow2b：攻顶双 EFP，向下 15 枚，绝对角度
+"submunition_data": { "releases": [{
+  "triggers": ["on_fuse"], "release_events": 1, "parent_action": "continue",
+  "payloads": [{ "kind": "rvp_weapon", "weapon_id": "lav25_tow2b_efp", "count": 15,
+    "launch_yaw": 0, "launch_pitch": 90, "launch_angle_mode": "absolute", "launch_speed": 1.0,
+    "inherit_parent_velocity": false,
+    "spread": { "mode": "canister", "canister_type": 1, "canister_diff": 40.0 } }]
+}]}
+
+// m142_m30：集束火箭，48 枚，继承母弹速度 45%，整体下坠
+"velocity_scale": 0.45, "payloads_velocity": [0.0, -4.0, 0.0], "payloads_velocity_factor": 0.15,
+"spread": { "mode": "canister", "canister_type": 1, "canister_diff": 150.0 }
+```
+
+### 1.5 弹体碰撞链关键位置（`RVP_BaseBullet`）
+
+| 位置 | 内容 |
+|---|---|
+| **Tick 顺序**（关键） | `RVP_BaseBullet.tick():1844-1851`「**先碰撞检测再运动**」（`tickHit()` 早于 `tickMotion()`）；机枪/机炮走 `RVP_BulletEntity.tickBullet():98-113` —— `:99 tickSegmentStart = position()` → `:205 tickHit()` → `:109 tickBulletMotionAndFacing()`（`:271 setPos`）。⇒ **`handleBlockImpact` 执行期间 `position()` = 本 Tick 起点**，撞击点在同段靠后位置 |
+| `handleBlockImpact`（约 `:3305`） | 循环：①`tryBounceFromBlockHit`(`:3320`) ②`isPassThroughBlock`（草丛等，`:3325`）③**穿墙**：`wallPenetrationLeft--` + `applyPenetrationSpeedDecay()` + `penetrationEventCount++`（`:3341-3343`）→ 若墙后 MISS 则 `return false` **继续飞**；④跳出后 `trySubmunitionTrigger(ON_BLOCK_HIT \|\| ON_IMPACT)`（`:3369`）⑤`resolveImpactDetonation` + `discard()` |
+| `handleEntityImpact`（`:3393`） | ①`isOnlyPhysicsOnlyVehicleHit` 直接穿身（`:3401`）②`tryBounceFromEntityHit`（`:3406`，**仅当目标是 `AbstractVehicle` 且配了 `bounce_on_vehicle` 才成立**）③`livingPenetrationLeft > 0` 时穿透生物并 `return`（`:3417-3429`）⇒ **`living_penetration` 必须为 0，否则命中敌人不触发** ④`trySubmunitionTrigger(ON_ENTITY_HIT \|\| ON_IMPACT)`（`:3432`）⑤`resolveImpactDetonation` + `discard()`（`:3438-3445`，**命中实体后母弹必然终结**，与 `parent_action` 无关） |
+| `tryApplyBounce`（`:3728`） | `bounceLeft--` / `bouncesConsumed++`、`reflected = RVP_BounceUtil.reflect(velocity, normal, strength)`、`setDeltaMovement(reflected)`。⚠️ **不递增 `penetrationEventCount`** |
+| 伤害衰减 | `penetrationDamageFactor()` = `penetration_damage_multiplier ^ penetrationEventCount`；**首行 `if (multiplier >= 0.999f \|\| count <= 0) return 1f`** |
+| 速度衰减 | `applyPenetrationSpeedDecay()`（`penetration_speed_multiplier`，默认 1） |
+| `fireTrigger` 返回值 | `RVP_SubmunitionRunner.fireTrigger` 返回 **「是否应立刻丢弃母弹」**（由 `parent_action` 决定：`continue` ⇒ false） |
+
+---
+
+### 1.6 母弹结局的两个方案（2026-10-03 23:00 定案：**采用方案 B**）
+
+| | 方案 A：母弹在墙上就地碎裂 | **★ 方案 B：母弹穿墙 + 伤害降级伪装成破片（采用）** |
+|---|---|---|
+| `parent_action` | `discard_after_release` | **`continue`** |
+| 母弹之后 | 消失，不再参与任何结算 | **继续飞**，可命中墙后目标 |
+| 母弹伤害 | 不适用 | **`penetration_damage_multiplier: 0.08`** ⇒ `direct_damage 80 → 6.4` ≈ 弹片（6）⇒ **数值上就是"多了一枚破片"**（算法：弹片伤害 ÷ 母弹 `direct_damage` = 6/80 = 0.075，取 0.08） |
+| 物理贴合度 | ✅ 最贴 PELE（弹体撞击即崩解） | ✅ 也说得通（弹芯冲出去了，只是已失去穿甲能力） |
+| `on_entity_hit` 波 | 需要（与穿墙波拆开） | **本轮不需要**（"不要求二次布撒"）⇒ **单波** |
+| 观感 | 墙炸、弹没了 | 墙炸、破片涌出、残芯继续飞出 |
+| 代价 | 母弹"没有穿墙动作" | ⚠️ 母弹穿墙那一 tick 会**额外前进一整步**：`setPos(pastFace)` 之后本 tick 仍会执行运动积分，而 `RVP_UnguidedBallisticMath.stepCannon:31-35` = `position + velocity` ⇒ 破片生成瞬间母弹已领先约 **1 步（= `velocity`，12~20 格）**，之后按各自速度拉开。**所以"母弹混在破片里"只是数值事实，做不到视觉混杂**；想强化观感就把破片 `velocity_scale` 提到 1.5~2.0 让破片追上/超越 |
+
+---
+
+## 二、需要代码修改的清单（C-1 ~ C-3 已实施 ✓（C-2 本轮**不用**，保留无害）；**C-4‴（释放锚点机制）待实施 ← 唯一缺口**）
+
+### C-1　放宽分组槽的 `ids` 数量约束　【战车改装】
+
+**文件**：`src/main/java/org/ywzj/rvp/config/RVP_VehicleExtendedConfigManager.java` → `parseModdingOnlyMulti`
+
+**现状**：
+
+```java
+if (!weaponObj.has("ids") || !weaponObj.get("ids").isJsonArray()
+        || weaponObj.getAsJsonArray("ids").size() < 2) {
+    continue;
+}
+```
+
+**问题**：AP 组只有 1 个弹种 ⇒ 被跳过 ⇒ `moddingOnlyMultiByPartId` 无 turret ⇒ 而 **`getModdingGroupEntries()` 只遍历这张表** ⇒ **改装界面里 AP 组与 HE 组全部消失**（HE 组的 merge 条目也不会列出，因为循环起点是 AP 组）⇒ 玩家永远切不到霰弹。
+
+**改法**（1 行）：
+
+```java
+- || weaponObj.getAsJsonArray("ids").size() < 2) {
++ || weaponObj.getAsJsonArray("ids").isEmpty()) {
+```
+
+**影响面**：全包现存 **12 处** `modding_only_multi` 的 `ids` **全部 ≥ 2**（已扫描确认）⇒ **零行为变化**。
+
+**效果**：`isGroupedSlotCarrier(turret, 0)` = `isModdingOnlyMulti(0)` ✓ && `isMergeIntoPreviousSlot(1)` ✓ = true ⇒ 改装界面正确列出「AP 组 / `main_gun_ap`」与「HE 组 / `main_gun_he`」两栏。
+
+---
+
+### C-2　新增触发器 `ON_PENETRATE`（穿透方块后）　【PELE】
+
+**文件 1**：`src/main/java/org/ywzj/rvp/weapon/data/RVP_EnumSubmunitionTrigger.java`
+
+```java
+/** 穿透方块成功后（在撞击处理继续/终止之前）。 */
+ON_PENETRATE,
+```
+
+`fromString` 新增分支：
+
+```java
+case "on_penetrate", "penetrate", "penetration", "after_penetration" -> ON_PENETRATE;
+```
+
+**文件 2**：`src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java` → `handleBlockImpact`
+
+在**穿墙成功之后**（`:3341-3343` 的 `wallPenetrationLeft--` / `applyPenetrationSpeedDecay()` / `penetrationEventCount++` 之后，`BlockPos penetratedPos = blockPos;` 附近）插入：
+
+```java
+// 新增：穿透瞬间的可触发时机（PELE 等）
+if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE)) {
+    compensateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
+    discard();
+    return true;
+}
+```
+
+⚠️ **必须按返回值决定 discard**：
+
+- `parent_action: "discard_after_release"` / `"discard_on_first_spawn"` ⇒ `fireTrigger` 返回 **true** ⇒ 进入 `if` ⇒ **母弹穿墙后立刻消失** ← **PELE 用的就是这个**（用户要求"穿墙后母弹消失"）
+- `parent_action: "continue"` ⇒ 返回 **false** ⇒ 上面 `if` 不进入 ⇒ **母弹穿墙后继续飞**（其他武器若需要"过穿"走这条）✓
+
+⚠️ 两个方向都要保留判断能力：**C-2 的代码本身必须按返回值分派**，绝不能写死 `discard()` —— 否则"想让母弹继续飞"的配方会被误丢。
+
+⚠️ **不要照抄 `on_block_hit` 那段**（`:3369`）—— 那里是**无条件** `discard()`（不看返回值），因为撞击必然终结弹体。穿透路径不同，母弹是否继续飞由配方决定。
+
+**为什么必须新增**：`handleBlockImpact` 的穿墙分支成功后，若墙后无方块 ⇒ `return false` ⇒ **弹体继续飞且不触发任何东西**（`:3354` / `:3329`），所以"穿透一格墙"这件事**当前没有任何可挂钩的时机**。
+
+---
+
+### C-3　跳弹计入伤害衰减　【PELE】
+
+**文件**：`src/main/java/org/ywzj/rvp/entity/projectile/RVP_BaseBullet.java` → `tryApplyBounce`（`:3728`）
+
+在 `bounceLeft--;` / `bouncesConsumed++;`（`:3741-3742`）附近加一行：
+
+```java
+bounceLeft--;
+bouncesConsumed++;
+penetrationEventCount++;      // ← 新增：跳弹计入伤害衰减计数
+```
+
+**影响面（零影响）**：`penetrationDamageFactor()` 首行即
+
+```java
+if (penetrationDamageMultiplier >= 0.999f || penetrationEventCount <= 0) {
+    return 1f;
+}
+```
+
+而 `collision_data.penetration_damage_multiplier` **默认 1f** ⇒ 所有未配置该字段的武器（含全包现有跳弹武器）**仍恒为 1 倍伤害** ✓
+
+**配置用法**：PELE 子弹药写 `"penetration_damage_multiplier": 0.6` ⇒ 每弹射一次伤害 ×0.6（1 → 0.6 → 0.36 → …）。
+
+> 备选（改动更大，不推荐）：新增独立字段 `bounce_damage_multiplier`（需同时改 `RVP_CollisionData` + `RVP_WeaponData` + `RVP_BaseBullet`）。
+
+---
+
+### C-4‴　子母弹「释放锚点」机制（**不穿墙版**，2026-10-04 00:06 定案，取代 C-4″/C-4′）
+
+> **为什么又能砍一半**：既然破片是靠"**命中点 + 沿弹道前推 1.5 格**"生成的，母弹**根本不需要真的穿过墙** —— 用现成的 `on_block_hit` 触发器（撞墙即释放）就够了。
+> 连带消失的问题：① 墙不会被破坏（**不穿墙就不会调用 `destroyForPenetration`**）⇒ 不需要 `penetration_destroy_block` 开关；② 母弹不需要被 `setPos` 推出方块 ⇒ 不需要 `penetration_forward_offset` / `boxExitParameter` / AABB 数学；③ 没有"卡在方块里"的风险；④ 不需要"把母弹伤害降级伪装成破片"（母弹撞墙就没了）。
+> `C-2`（`ON_PENETRATE`）**保留不撤**（已实施且对未配置者零影响），本轮不用它；将来若确实想要"真·穿墙"仍可用。
+
+#### (a) 机制：给"释放"一个**显式锚点**（触发点 + 可选前推）
+
+现状：`RVP_SubmunitionSpawner` 直接取 `parent.position()`（`:112/:119/:174/:183`）—— 而碰撞处理期间 `position()` 是**本 Tick 起点**（`RVP_BaseBullet.tick():1845 tickHit()` 早于 `:1851 tickMotion()`），所以锚点天生是错的（破片会跑到撞击点**前方**最多 `velocity` 格）。
+
+改法：触发点把**裸命中点**传下去，前推量由 release 配置决定：
+
+```
+handleBlockImpact 的 ON_BLOCK_HIT / ON_IMPACT  ── anchor = hit（近面命中点，:3369 现成） ──┐
+handleEntityImpact 的 ON_ENTITY_HIT / ON_IMPACT ── anchor = result.getLocation()（实体命中点）─┤
+其它触发器（in_flight / on_fuse / on_penetrate） ── anchor = null ────────────────────────┘
+        → RVP_SubmunitionRunner.fireTrigger(parent, trigger, anchor)
+            → RVP_SubmunitionSpawner.spawnReleaseWave(parent, release, events, anchor)
+                → spawnRvpWeapon: Vec3 base = (anchor != null)
+                        ? anchor.add(父弹速度方向 × release.spawn_forward_offset)   // 前推
+                        : parent.position();                                        // 旧行为
+```
+
+**"命中墙体 / 命中实体"的分流**由数据侧两波各自给不同的 `spawn_forward_offset` 完成（墙 = 1.5 / 实体 = 0）—— 代码里不需要任何 `if (是不是墙)` 判断。
+
+#### (b) `RVP_SubmunitionReleaseData` 新增一个字段（默认 0 = 现状）
+
+```java
+/** 子体生成点相对"触发点"沿父弹弹道方向的**前推距离**（格），默认 0。仅当触发点提供了锚点时生效。 */
+@SerializedName("spawn_forward_offset")
+private float spawnForwardOffset = 0f;
+
+public float getSpawnForwardOffset() { return Math.max(spawnForwardOffset, 0f); }
+```
+
+#### (c) 生成点改法（`RVP_SubmunitionSpawner`）
+
+```java
+    public static int spawnReleaseWave(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release,
+                                       int eventsThisTick, @Nullable Vec3 anchor) { ... 透传给 spawnRvpWeapon / spawnEntity ... }
+
+    private static Vec3 resolveSpawnBase(RVP_BaseBullet parent, RVP_SubmunitionReleaseData release, @Nullable Vec3 anchor) {
+        if (anchor == null) {
+            return parent.position();                       // 旧行为：飞行中释放等
+        }
+        float offset = release.getSpawnForwardOffset();
+        if (offset <= 0f) {
+            return anchor;                                  // 命中点本身（实体就是这条）
+        }
+        Vec3 step = parent.getDeltaMovement();
+        if (step.lengthSqr() <= 1.0E-12) {
+            return anchor;
+        }
+        return anchor.add(step.normalize().scale(offset));   // 沿弹道前推 ⇒ 落到墙后
+    }
+```
+⚠️ `spawnRvpWeapon` 里**两处** `parent.position()` 必须**同时**换成同一个 `base`（`:112` 释放云中心、`:119` 的 `pos.subtract(parent.position())` 云径向偏移参照）；`spawnEntity` 路径（`:174/:183`）同理。**不要只换一处**，否则"参照点"和"生成点"不一致。
+
+#### (d) 触发点改法（`RVP_BaseBullet`）
+
+`trySubmunitionTrigger` 增加 `@Nullable Vec3 anchor` 并透传给 `runner.fireTrigger`；本轮只给两个撞击路径传锚点：
+
+```java
+        Vec3 hit = result.getLocation();                     // 近面命中点（:3369 现成）
+        ...
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, hit)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hit)) {
+            compensateImpactTrail(hit);
+            discard();
+            return true;
+        }
+```
+```java
+        Vec3 hitPos = result.getLocation();                  // 实体命中点
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_ENTITY_HIT, hitPos)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hitPos)) {
+            compensateImpactTrail(hitPos);
+            discard();
+            return true;
+        }
+```
+其余触发器（`in_flight` / `on_block_hit` 以外的一切，含 `on_fuse`、`on_penetrate`）**一律传 null** ⇒ 完全维持原行为。
+
+⚠️ `on_block_hit`/`on_impact` 这条路径本来就是**无条件 `discard()`**（不看 `trySubmunitionTrigger` 的返回值）—— 因为撞击必然终结弹体；所以墙波写 `parent_action: continue` 或 `discard_after_release` 结果一样（都会消失），数据里写 `discard_after_release` 更贴实。
+
+**为什么安全 / 零影响**
+- `spawn_forward_offset` 默认 0 ⇒ 未配置的弹药生成点仍是 `anchor`（= 命中点）而**不是** `parent.position()`。⚠️ 这一条对**已配置 `on_block_hit`/`on_entity_hit` 的弹药**是有意的行为修正（包内现为 **0 个**用户，已核实）⇒ 等价于"从错改对"；对**未配置这些触发器**的 153 个武器**完全无影响**（它们不会走这两个调用点）。
+- 若实施时想**绝对零风险**，可把锚点也做成"默认不传"：即给 `trySubmunitionTrigger` 加一个 `boolean useAnchor` 由字段控制 —— **不推荐**，没必要。
+
+#### (e) 数据侧对应（见 §四）
+
+| 波 | 触发器 | `spawn_forward_offset` | `parent_action` | 效果 |
+|---|---|---|---|---|
+| 波 1（打墙） | `on_block_hit` | **1.5** | `discard_after_release` | 撞墙即崩解；破片出现在**墙后 0.5 格**（1 格墙） |
+| 波 2（打实体） | `on_entity_hit` | **0** | `discard_after_release` | 破片出现在**装甲命中点**（不会钻到车体中部） |
+
+⚠️ `spawn_forward_offset` 应 **≥ 墙体厚度 + 0.5**：1 格墙用 1.5 正好；**2 格厚墙要写 2.5**，否则破片生成在第 2 格方块**内部**（下一 Tick 撞墙弹回/消亡）。
+
+#### (f) 可选：`C-7`　只有"硬目标"才崩解
+
+现在 `on_block_hit` 对**任何**方块撞击都会崩解 —— 包括打泥土/沙地（物理上 PELE 撞软介质不该崩解，而且前推量会把破片**埋进方块里**）。
+若要更讲究，可加一个"最小方块硬度"门槛（复用 `RVP_WallPenetrationUtil.canBlockBounce` 那套 `getDestroySpeed > 阈值` 思路，1 个字段）。
+**本轮不做**，先看实测观感。
+
+#### (g) 可选：`C-6`　禁止"穿墙后再来一次实体破裂"
+
+本轮已**不穿墙**（`wall_penetration: 0`）⇒ 母弹撞墙即消失 ⇒ **天然不存在**"穿墙后再命中敌人"的情况 ⇒ **C-6 也不再需要**。
+
+
+### 汇总表
+
+| 编号 | 文件 | 改动 | 影响面 |
+|---|---|---|---|
+| **C-1** | `config/RVP_VehicleExtendedConfigManager.java`（`parseModdingOnlyMulti`） | `size() < 2` → `isEmpty()` | 全包 12 处现存均 ≥2 ⇒ 零影响 |
+| **C-2** | `weapon/data/RVP_EnumSubmunitionTrigger.java` | 新增枚举 + `fromString` 分支 | 新增值，零影响 |
+| **C-2** | `entity/projectile/RVP_BaseBullet.java`（`handleBlockImpact` 穿墙成功后） | 插入 `ON_PENETRATE` 触发（按返回值 discard） | 仅在配置了该触发器时生效 |
+| **C-3** | `entity/projectile/RVP_BaseBullet.java`（`tryApplyBounce`） | `penetrationEventCount++` | 默认 multiplier=1 ⇒ 零影响 |
+| **C-4‴** ⏳待实施 | `weapon/data/RVP_SubmunitionReleaseData.java`（+1 字段/getter）、`weapon/submunition/RVP_SubmunitionRunner.java`、`RVP_SubmunitionSpawner.java`（各加 `@Nullable Vec3 anchor`）、`entity/projectile/RVP_BaseBullet.java`（两个撞击路径传锚点） | ①`spawn_forward_offset`（默认 **0**）②`fireTrigger(parent, trigger, anchor)` 透传③生成点 `base = anchor != null ? anchor + 弹道方向×offset : parent.position()`④`ON_BLOCK_HIT/ON_IMPACT` 传 `hit`、`ON_ENTITY_HIT/ON_IMPACT` 传 `result.getLocation()`，其余传 null | 未配 `on_block_hit`/`on_entity_hit` 的 153 个武器**完全无影响**；这两个触发器包内**零用户**⇒ 有意的行为修正 |
+| — | `ywzj_rvp.mixins.json` | **无需改动**（本次不新增 mixin） | — |
+
+---
+
+## 三、数据侧（本 agent 已完成）
+
+### 3.1 霰弹（canister）
+
+| 文件 | 内容 |
+|---|---|
+| `data/rvp/weapons/zbl08a_canister.json` | `DTX-10-30 30mm Canister` / `DTX-10-30 30MM 霰弹`；`rvp:machinegun`；`shoot_interval 300`；`max_capacity 30`；`reload{100, ammo_auto_cannon}`；`canister_count 8` / `canister_type 1` / `canister_diff 2.0`；`caliber 30` / `tracer_caliber 15.24` |
+| `assets/rvp/display/weapon/zbl08a_canister.json` | 外观音效（`rvp:zbl08a_ru_30_shot` + `ywzj_vehicle:gun_reload`） |
+
+⚠️ **命名已统一为 `canister`**（文件名 / 武器 id / 显示名），display 里音效 id `rvp:zbl08a_ru_30_shot` 是 sounds.json 的注册项，**不属命名范畴，保持不动**。
+
+### 3.2 zbl08a 主炮改为 AP / HE 两组
+
+`data/rvp/vehicles/zbl08a.json` → `parts[0]`（turret）`weapons`：
+
+```json
+[
+  { "ids": ["rvp:zbl08a_apfsds"],                 "save_id": "main_gun_ap", "modding_only_multi": true },
+  { "ids": ["rvp:zbl08a_hei", "rvp:zbl08a_canister"], "save_id": "main_gun_he", "merge_into_previous_slot": true },
+  { "part_unit_id": "missile" }
+]
+```
+
+⚠️ `save_id` 由 `main_gun` 变为 `main_gun_ap` / `main_gun_he` ⇒ **已存弹药会重置**（与 t90m 同款行为）。
+
+### 3.3 PELE 弹（**尚未创建**，代码前置条件已满足）
+
+C-2 / C-3 已落地 ⇒ 前置条件齐备。模板见 §四，**核心 = 两个释放波（穿墙 `on_penetrate`，母弹消失 + 命中敌人 `on_entity_hit`）**。是否把 PELE 归入 **AP 组**（作为 AP 组第二个弹种）由用户确认后再建。
+
+---
+
+## 四、PELE 配置模板（C-2 / C-3 已落地，可直接用）
+
+### 4.1 母弹 `zbl08a_pele.json`（示意）
+
+```jsonc
+{
+  "type": "rvp:machinegun",
+  "name": "DTX-10-30 30mm PELE",
+  "shoot_interval": 300, "max_capacity": 30,
+  "reload": { "time": 100, "ammo": "ywzj_vehicle:ammo_auto_cannon" },
+  "fire_data": { "spread": 0.35, "fire_mode": "FULL_AUTO" },
+  "projectile_data": { "velocity": 20, "gravity": -0.005, "drag": 0.01, "rotate_to_motion": true },
+  "collision_data": {
+    "direct_damage": 80,                          // 照 apfsds（直击敌人时的撞击伤害）
+    "direct_damage_factor": { /* 照 apfsds：vehicle_default 1.0 + tracked/wheeled 1.0 */ },
+    "damage_decay": [ /* 照 apfsds：distance 0→320，1.0→0.75；angle 三段 */ ],
+    "wall_penetration": 0,                        // ★★ 不穿墙：撞墙即崩解（因此墙也不会被破坏）
+                                                  //    ⚠️ 0 时不会调用 destroyForPenetration ⇒ 墙体天然完好
+    "living_penetration": 0,
+    "bounce": 0,                                  // ★★ 必须 0：掠射硬方块若跳弹（需 hardness>2.1 且入射角≥81°），
+                                                  //    就会绕开撞击释放路径 ⇒ PELE 变随机
+    "bounce_on_vehicle": false
+  },
+  "submunition_data": {
+    "releases": [
+      { // ★ 波 1（打墙）：命中墙体时，在"命中点 + 沿弹道 1.5 格"处撒破片（锚点由 C-4‴ 算，见 §二）
+        "triggers": ["on_block_hit"],             // ★★ 撞墙即释放（本轮不穿墙，不再用 on_penetrate）
+        "release_events": 1,                      // ⚠️ 必须写 1；漏写会按 payload.count 之和放大成 count×count
+        "spawn_forward_offset": 1.5,              // ★★ 从命中点沿弹道前推 1.5 格 ⇒ 1 格墙时落在墙后 0.5 格
+        "parent_action": "discard_after_release", // 撞击路径本来无条件 discard，写它更贴实
+        "payloads": [{
+          "kind": "rvp_weapon",
+          "weapon_id": "rvp:zbl08a_pele_frag",
+          "count": 10,
+          "inherit_parent_velocity": false,       // ★★ 不继承母弹速度（母弹撞击已损失动能）
+          "inherit_parent_horizontal_velocity": false,  // ★ 必须 false ⇒ 否则会额外叠加母弹水平速度
+          "inherit_vehicle_velocity": false,
+          "launch_speed": 12.0,                   // ★ 破片自身初速（格/Tick）；>0 ⇒ 启用"发射角分支"，不看母弹速度
+          "launch_pitch": 0.0,                    // 与 launch_yaw 一起：0 = 沿"母弹弹道方向"
+          "launch_yaw": 0.0,
+          "launch_angle_mode": "relative",        // ★ 相对母弹弹道方向（referenceAim）⇒ 正是"向前方"
+          "spread": {
+            "mode": "canister",
+            "canister_type": 1,
+            "canister_diff": 12.0,                // 前向 ±12° 锥
+            "canister_distribution": "normal",    // 中心密集（模拟外壳崩解）
+            "canister_shape": "circle"
+          }
+        }]
+      },
+      { // ★ 波 2（打实体）：命中敌人/载具时，锚点 = **实体命中点**（C-4″ 分流，**不加 1.5 前推**）
+        //     ⇒ 避免"打首上装甲却在车体中部生成破片"
+        "triggers": ["on_entity_hit"],
+        "release_events": 1,
+        "spawn_forward_offset": 0.0,              // ★★ 实体命中点本身（**不前推**），避免钻到车体中部
+        "parent_action": "discard_after_release", // 命中实体后母弹本来也必然终结
+        "payloads": [{
+          "kind": "rvp_weapon",
+          "weapon_id": "rvp:zbl08a_pele_frag",
+          "count": 10,                            // 可按需与波 1 取不同值
+          "inherit_parent_velocity": false,
+          "inherit_parent_horizontal_velocity": false,
+          "inherit_vehicle_velocity": false,
+          "launch_speed": 12.0,
+          "launch_pitch": 0.0, "launch_yaw": 0.0, "launch_angle_mode": "relative",
+          "spread": {
+            "mode": "canister", "canister_type": 1, "canister_diff": 12.0,
+            "canister_distribution": "normal", "canister_shape": "circle"
+          }
+        }]
+      }
+    ]
+  },
+  "fuse_data": {},                                // 不用引信
+  "name_CN": "DTX-10-30 30MM 横向效应增强弹"
+}
+```
+
+#### 4.1.1 母弹配置的 6 个坑（照抄模板即可避开）
+
+| # | 坑 | 后果 | 正确做法 |
+|---|---|---|---|
+| 1 | `release_events` 没写 | 按 payload 的 `count` 之和放大 ⇒ `count:10` 变 **100 枚**（瞬间卡服） | 显式写 `"release_events": 1` |
+| 2 | 以为"母弹会和破片混成一坨" | 母弹穿墙那一 tick 会**多走一整步**（`stepCannon = position + velocity`）⇒ 破片生成瞬间母弹已领先 ~`velocity` 格（12~20） | 「母弹=一枚破片」是**数值**事实（靠 `penetration_damage_multiplier`），不是视觉事实；要强化观感就把破片 `velocity_scale` 提到 1.5~2.0 |
+| 3 | 以为"穿墙后母弹还会再全额命中敌人一次" | ✅ 会命中，但伤害已降到弹片级（`80 × 0.08 = 6.4`），**这正是方案 B 想要的效果** | 无需处理；若想要"墙后敌人完全无伤"，那才需要方案 A（`discard`） |
+| 4 | 把 `launch_yaw` / `launch_pitch` 写 `0` 当成"零度角" | 三个发射角字段**全默认** ⇒ `isLaunchAnglesEnabled()` = false（`RVP_SubmunitionPayloadData:181-183`）⇒ **不启用**发射角分支 | 保持默认 = 方向基准取**母弹速度方向**（PELE 要的就是这个）；要沿炮口弹轴必须给**非 0** 值 |
+| 5 | （备用）以后加回 `on_entity_hit` 波时，配了 `living_penetration > 0` 或 `bounce` + `bounce_on_vehicle` | 命中生物先"穿透"、命中载具先"跳弹"，两条都在触发**之前** `return` ⇒ 该波不触发 | 那两个波上保持 `0` / 不配（`zbl08a_apfsds.json` 自带 `bounce_on_vehicle: true`，**别照抄**） |
+| 6 | （备用）把 `on_penetrate` 与 `on_entity_hit` 写进**同一个** release，或给 `discard_*` 的波配 `interval_tick` | ①一波只能触发一次 ⇒ 谁先发生谁吃掉整波；②`discard_after_release` 是"第一批发完立刻丢" ⇒ 分批被腰斩 | 拆成**两个波**（§1.4.1）；本方案单波 `continue`，两条都不涉及 |
+
+⚠️ **坑 4 是真实存在的**：`zbl08a_apfsds.json` 里就带着 `"bounce": 1` + `"bounce_on_vehicle": true`（已核实）⇒ 母弹**照抄 apfsds 会直接踩中**，命中的是载具时只跳弹、不撒破片。`living_penetration` 在 apfsds 里是 `0`（照抄无妨）。
+
+⚠️ **破片朝哪飞（"向前方"的准确含义）**：`launch_yaw` / `launch_pitch` / `launch_speed` 三项**全部保持默认**时，`isLaunchAnglesEnabled()` = false（`RVP_SubmunitionPayloadData:181-183`）⇒ 走"纯继承"分支：方向基准 = `referenceAim(parent)` = **母弹速度方向**（`RVP_SubmunitionSpawner:270-277`），速度 = 母弹当前速度 × `velocity_scale`（`:219-228`）⇒ 破片沿母弹飞行方向向前锥形崩解，正是 PELE 要的效果。若想要"沿炮口弹轴"而不是速度方向，必须显式给**非 0** 的 `launch_pitch` / `launch_yaw`（写 `0` 是**不启用**，不是"零度角"）。
+
+### 4.2 子弹药 `zbl08a_pele_frag.json`（示意）
+
+```jsonc
+{
+  "type": "rvp:machinegun",
+  "name": "DTX-10-30 30mm PELE Fragment", "name_CN": "DTX-10-30 30MM 横向效应破片",
+  "life": 200,                                    // 照 lav25_tow2b_efp：子弹药限寿，避免长留实体
+  "shoot_interval": 0, "max_capacity": 0,         // 子弹药不上槽位（照 lav25_tow2b_efp）
+  "reload": { "time": 100, "ammo": "ywzj_vehicle:ammo_machine_gun" },
+  "fire_data": { "spread": 1.0, "fire_mode": "FULL_AUTO" },
+  "projectile_data": { "velocity": 12, "gravity": -0.014, "drag": 0.03, "rotate_to_motion": true },   // 与 payload 的 launch_speed 对齐（仅作基准，实际初速由 launch_speed 给）
+  "effects_data": { /* caliber 30 / tracer_caliber 15.24 / 曳光色 照 apfsds */ },
+  "detonate_data": { "explosion_data": { "explode": false, "damage": 0, "radius": 0, "destroy_block": false } },
+  "collision_data": {
+    "direct_damage": 6,                           // ★ 与母弹穿墙后 6.4 同档
+    "living_penetration": 0, "wall_penetration": 0,
+    "bounce": 3,                                  // ★ 命中方块弹射（最多 3 次）
+    "bounce_strength": 0.5,                       // ★ 每次弹射速度 ×0.5
+    "bounce_incidence_angle": 30.0,               // ★ 入射角 ≥30°（离法线）就弹 ⇒ 密闭空间里"能弹得起来"
+    "bounce_min_block_hardness": 1.0,             // ★★ 默认是 2.1 > 石头 1.5 ⇒ **不改就几乎不弹**！
+    "penetration_damage_multiplier": 0.6,         // ★ 每次弹射伤害 ×0.6（依赖 C-3）
+    "bounce_on_vehicle": false,
+    "damage_decay": [
+      { "domain": "distance", "type": "linear", "start_distance": 0, "end_distance": 48,
+        "start_factor": 1.0, "end_factor": 0.15 }
+    ]
+  },
+  "fuse_data": {}
+}
+```
+
+**关于弹片 display**：**可以省**。已核实包内 **6 个**子弹药武器（`lav25_tow2b_efp`、`m142_m30`、`m142_m30_wp`、`m142_m30_wp_pellet`、`m142_m30_m77`、`j16_akf98a_munition`）**全都没有** `display/weapon/` 同名文件，照样能跑（按 `effects_data.caliber` 渲染）。
+（本文件早前"必须有同名 display 否则静默无外观"的说法**过度**了——那是**载具** display 的规则，武器 display 只是音效载体。）想统一观感建一个也无害：4 行 `{"type":"ywzj_rvp:weapon","bedrock_backend":"rvp","sounds":{...}}`。
+
+**「不继承母弹速度」怎么配（纯数据，已核实）**：`inherit_parent_velocity: false` + `launch_speed: 12`。
+- `launch_speed > 0` ⇒ `isLaunchAnglesEnabled()` 为真（`RVP_SubmunitionPayloadData:181-183`）⇒ 走"发射角分支"，速度直接取 `launch_speed`（`RVP_SubmunitionSpawner:199-201`），**完全不吃母弹速度**；
+- 该分支下除非 `inherit_parent_horizontal_velocity: true`，否则不会叠加母弹水平速度（`:207-211` / `RVP_SubmunitionVelocityUtil:21-28`）⇒ **必须显式写 false**（或省略）；
+- 方向 = `launch_angle_mode: "relative"` + `launch_pitch/yaw = 0` ⇒ 基准是 `referenceAim(parent)` = **母弹弹道方向**（`:270-277`）⇒ 破片沿弹道前方锥形散开，速度 12 格/Tick（母弹 20）⇒ 符合"母弹撞击后动能损失"的物理直觉。
+
+**弹片弹射参数的两个硬门槛（实测级）**：
+- `bounce_min_block_hardness` 默认 **2.1**（`RVP_CollisionData:72`），而**石头 = 1.5 / 石砖 = 1.5 / 木板 = 2.0** ⇒ 不改成 ≤1.0，弹片打在绝大多数建筑方块上**根本不会弹**（`canBlockBounce` 判据 `hardness > 门槛`，`:86-98`）。
+- `bounce_incidence_angle` 是"**离法线的入射角 ≥ 该值才弹**"（`RVP_BounceUtil.meetsIncidenceThreshold:31-36`，入射角由 `acos(|v̂·n̂|)` 得出）：写 81 ⇒ 只有近乎擦墙才弹；写 **30** ⇒ 大多数斜射都弹。
+
+### 4.3 纯数据折中（不等 C-2；**现已不必要**，C-2 已落地）
+
+把母弹 `triggers` 改为 `["on_block_hit"]`：撞墙即抛射，立即可用；代价是**母弹必定消失**、抛射点在**墙面**而非墙后，且穿墙（`wall_penetration:1` 生效）时**不触发**。
+⚠️ 注意 `on_block_hit` 同样是"一次性" ⇒ 它与"命中敌人"那条**也必须拆成两个波**，否则一样会丢需求。
+
+---
+
+## 五、验证与回退
+
+### 验证
+
+| # | 操作 | 预期 |
+|---|---|---|
+| C-1 | 进游戏 → 主炮 HUD | 显示圆点；按 **F** 能在「AP / HE」间切换 |
+| C-1 | 打开**改装界面** | 出现 **AP 组** 与 **HE 组** 两栏；HE 组内可见 HEI + 霰弹 |
+| C-2 | 用 PELE 母弹打一堵 1 格厚的墙 | 在**打穿那一刻**（洞里）撒出 10 枚前向破片，且**母弹继续飞**（墙后能看到残芯带曳光飞出） |
+| C-3 | 破片打进墙角/密闭空间 | **弹射数次**，每次弹射后伤害与速度明显下降（可与关掉 `penetration_damage_multiplier` 的版本对比） |
+| C-4‴ | 打一堵 1 格厚的墙（墙前留出空地、墙后放标靶） | 母弹**在墙面消失**；破片**出现在墙后 0.5 格**（命中点 +1.5 − 墙厚 1.0）并飞向标靶命中；**不是**在墙前十几格的半空中炸开 |
+| C-4‴ | 直接命中载具（中间无墙） | 破片在**装甲命中点**炸开（不是车体中部、也不是命中点前方十几格）；打首上就该在首上炸 |
+| C-4‴ | 看破片初速 | 破片**明显比母弹慢**（12 vs 20 格/Tick），且不同距离发射时初速一致（不吃母弹速度） |
+| C-4‴ | 打完墙后回头看那面墙 | **墙体完好无损**（不穿墙 ⇒ 天然不掉块）；连续打多发也不掉 |
+| C-4‴ | 用 PELE 打 2 格厚的墙 | 破片会生成在第 2 格方块**内部**（1.5 < 墙厚 2.0）⇒ 下一 Tick 撞墙弹回/消亡 ⇒ 这是"前推量不够"的表现，把 `spawn_forward_offset` 提到 **2.5** 即可（见 §六 16） |
+| P-1 | 用 PELE 母弹**直接命中敌人/载具**（中间无墙） | 只吃母弹本体伤害（正常 30mm），**不撒破片**（本轮不配 `on_entity_hit`） |
+| P-2 | **同一发**：先穿一格墙 → 墙后敌人 | 洞里撒 10 枚破片；母弹穿墙后**继续飞**并在敌人身上只造成**弹片级**伤害（`80 × 0.08 ≈ 6.4`），**不再是 80** ← 方案 B 的核心验收点 |
+| P-3 | 看 `RVP_TopAttackDebug` 日志 | 撞墙那发恰好**一条** `SUBMUN trigger=ON_PENETRATE fired=true`；直击敌人那发**一条都没有** |
+
+### 回退
+
+| 项 | 回退 |
+|---|---|
+| C-1 | `isEmpty()` 改回 `size() < 2` |
+| C-2 | 删除枚举值 + `fromString` 分支 + `handleBlockImpact` 里那段 |
+| C-3 | 删除 `penetrationEventCount++` 那一行 |
+| 数据 | `_bak/zbl08a.json.bak_20261003c`、`_bak/zbl08a_shot.json.bak_20261003c`（改名前的备份文件名仍为 `_shot`） |
+
+---
+
+## 六、注意事项
+
+1. **不要用 `uav`**、不要新增 mixin、不要改本体（`ywzj_vehicle` 只读）。
+2. **C-2 的 discard 语义**是本方案最容易翻车的地方：必须用 `trySubmunitionTrigger` 的**返回值**决定，不能无条件 `discard()`。
+3. C-3 依赖"默认 `penetration_damage_multiplier = 1f` 就不衰减"这一既有短路逻辑 —— 实施前请**在代码里再确认一次**该首行判断存在。
+4. 子弹药是**独立弹体**，`count` × 连射 = 实体数，是主要性能开销，调参需注意。
+5. `Penetration …` 相关字段与"跳弹"共用 `penetrationEventCount` 后，诊断日志（`RVP_ProjectileLifecycleDebug`）中该计数的语义变为「衰减事件数」。
+6. 本轮 PELE 是**单波**（只 `on_penetrate`，`parent_action: continue`）。若以后要加回"命中敌人也撒"，**必须**按 §1.4.1 拆成**第二个 release 波**，不能写进同一个 `triggers`。
+7. **每个 release 的 `release_events` 一律写 `1`**：漏写会按 payload 的 `count` 之和放大成 count² 枚。
+8. （备用波约束，本轮不涉及）若加回 `on_entity_hit`：母弹**不要**配 `bounce` / `bounce_on_vehicle`，也**不要**把 `living_penetration` 写成 >0 —— 前者让"命中载具"先跳弹、后者让"命中生物"先穿透，都会让那一波不触发。
+9. `on_impact` 是 `on_block_hit` / `on_entity_hit` 的**超集**（`matches()`），**不要**与本方案混用，否则一次撞击就吃掉整波。
+10. **方案 B（本轮）**：母弹写 `parent_action: "continue"` + `penetration_damage_multiplier: 0.08` ⇒ 穿墙后它变成"第 N+1 枚破片"（伤害 6.4 ≈ 弹片 6）。`penetrationEventCount` 会**累乘**（穿墙 / 穿透生物 / 跳弹各算一次）⇒ 连穿两格后伤害几乎归零，这也是合理的。
+11. 本轮**不用** `penetration_*` 三个字段（`wall_penetration: 0`）；它们仍留给"将来想做真穿墙"的弹药（配合已实施但本轮未用的 `on_penetrate`）。
+12. 「向前方」的基准是**母弹速度方向**（发射角三字段全默认时），不是炮口弹轴 —— 详见 §4.1.1 末尾。
+13. ⚠️ **C-4 未落地前不要进游戏验收 PELE**：破片会生成在墙前 0~|velocity| 格处（30mm 即 12~20 格），看起来像"半空炸开"。这类"数据和代码各自都对、组合起来错位"的问题只能靠**实机截图**暴露。
+14. 「母弹伪装成破片」是**数值**层面的（伤害降到破片级），**不是视觉层面**：`continue` 路径下母弹在穿墙那一 tick 会多走一整步（`RVP_UnguidedBallisticMath.stepCannon:31-35` = `position + velocity`），生成瞬间就领先破片云约 `velocity` 格（12~20）。
+15. **本轮不穿墙**（`wall_penetration: 0`）⇒ 撞击即崩解、**墙天然不掉块**（不走 `destroyForPenetration`）；"墙后布撒"完全由 **C-4‴ 锚点**（命中点 + 沿弹道 1.5 格）实现。
+16. ⚠️ **`spawn_forward_offset` 必须 ≥ 墙体厚度 + 0.5**：1 格墙写 **1.5**（落在墙外 0.5）；若目标墙是 2 格厚就要写 **2.5**，否则破片生成在第 2 格方块**内部** ⇒ 下一 Tick 撞墙弹回/消亡，看起来"破片全没了"。
+17. ⚠️ **穿而不拆的代价**：这发弹不再具备"破障"能力（原来一炮一块墙）。若希望"只对特定方块穿而不拆"（比如只有某种混凝土/玻璃），那需要额外做**方块标签白名单**（把判据从布尔开关改成"该方块是否属于 rvp 的某 tag"）—— 需要时再说，本轮不做。
+18. **子弹药不继承母弹速度的正确配法**：`inherit_parent_velocity: false` + `launch_speed: 12`。⚠️ `launch_speed > 0` 会**启用"发射角分支"**（与 `launch_pitch/yaw` 是否写 0 无关）；该分支下速度 = `launch_speed`，方向 = `launch_angle_mode: relative` + 0 ⇒ 基准是**母弹弹道方向**；⚠️ **不要**写 `inherit_parent_horizontal_velocity: true`（会额外叠加母弹水平速度）。
+19. **"命中墙体/命中实体"的分流是天然存在的**：`on_block_hit` 与 `on_entity_hit` 是两个触发器、两个调用点、两个 release 波，`spawn_forward_offset` 各写各的（墙 1.5 / 实体 0）⇒ 不需要在数据里做任何特殊判断。
+20. ⚠️ 因为已**不穿墙**，`on_block_hit` 对**任何**方块撞击都会崩解 —— 包括打地面/沙地：前推量会把破片**埋进方块里**（沿弹道向下 1.5 格）。若觉得难看，可后续加"最小方块硬度门槛"（§二 C-4‴ (f) 的 C-7，本轮不做）。
+
+---
+
+## 七、给实施 agent 的提示词
+
+- **C-1 / C-2 / C-3**（已实施）⇒ 见同目录 `提示词_战车改装分组与PELE_20261003.txt`
+- **C-4‴（释放锚点机制，不穿墙版）**（待实施）⇒ 见同目录 `提示词_C4释放锚点机制_20261004.txt`（可直接交给实施 agent）
