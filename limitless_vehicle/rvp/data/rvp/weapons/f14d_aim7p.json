@@ -26,7 +26,7 @@
     "drag_coefficient": 0.11592,
     "rvp_induced_drag": 0.003,
     "rotate_to_motion": true,
-    "max_speed": 5,
+    "max_speed": 5.5,
     "turning_factor": {
       "[[1,inf]]": 0.1
     },

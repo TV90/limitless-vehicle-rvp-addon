@@ -25,7 +25,7 @@
     "drag_coefficient": 0.079344,
     "rvp_induced_drag": 0.003,
     "rotate_to_motion": true,
-    "max_speed": 5,
+    "max_speed": 5.5,
     "rvp_aero_steering": true,
     "rvp_attack_angle_limit_deg": 60
   },

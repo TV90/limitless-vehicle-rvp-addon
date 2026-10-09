@@ -36,7 +36,7 @@
       -0.5
     ],
     "second_pulse": true,
-    "second_pulse_trigger_speed": 4.0,
+    "second_pulse_trigger_speed": 10,
     "second_pulse_thrust": 0.43025,
     "second_pulse_burn_time": 1800,
     "rvp_aero_steering": true,

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RVP 导弹计算器</title>
+<title>RVP鲨鱼网</title>
 <style>
 :root{
   --bg:#f4f6f9; --panel:#ffffff; --line:#dfe4ea; --ink:#1c2733; --sub:#66788c;
@@ -58,6 +58,7 @@ canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
   <select id="viewMode">
     <option value="side">侧视图（前向×高度）</option>
     <option value="top">顶视图（前向×横向）</option>
+    <option value="speed">速度剖面（前向×速度）</option>
   </select>
   <label style="font-size:12px;color:var(--sub)"><input type="checkbox" id="equalAspect"> 等比例 1:1</label>
 </header>
@@ -82,6 +83,7 @@ canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
       <div class="field"><label>目标方位角（度，相对发射航向）</label><input type="number" id="tgtBearing" value="0" step="1"></div>
     </div>
     <div class="field"><label>目标航向（度，0=迎头直奔发射点）</label><input type="number" id="tgtHeading" value="0" step="1"></div>
+    <div class="field"><label>目标尺寸半径（米，等效载具 OBB，命中判定用）</label><input type="number" id="tgtRadius" value="3" step="0.5"></div>
     <div class="field"><label>模拟上限（秒）</label><input type="number" id="maxSeconds" value="240" step="30"></div>
     <h2>导弹摘要</h2>
     <div id="missileInfo">尚未加载导弹。</div>
@@ -97,8 +99,10 @@ canvas#chart{position:absolute;inset:0;width:100%;height:100%;display:block}
       <span id="timeLabel">0.00s / 0.00s</span>
       <span id="hitLabel"></span>
       <select id="playSpeed">
-        <option value="1">1×</option>
-        <option value="4" selected>4×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1× 实时</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
         <option value="16">16×</option>
       </select>
     </div>
@@ -151,6 +155,14 @@ function slerpDir(a,b,t){
   }
   const s=Math.sin(ang);
   return a.scale(Math.sin((1-t)*ang)/s).add(b.scale(Math.sin(t*ang)/s)).norm();
+}
+function segPointDist(a,b,p){
+  const abx=b.x-a.x,aby=b.y-a.y,abz=b.z-a.z;
+  const l2=abx*abx+aby*aby+abz*abz;
+  let t=l2>1e-18?((p.x-a.x)*abx+(p.y-a.y)*aby+(p.z-a.z)*abz)/l2:0;
+  t=Math.max(0,Math.min(1,t));
+  const cx=a.x+abx*t-p.x,cy=a.y+aby*t-p.y,cz=a.z+abz*t-p.z;
+  return Math.sqrt(cx*cx+cy*cy+cz*cz);
 }
 function dirFromPitchYaw(pitchDeg,yawRad){
   const p=rad(pitchDeg);
@@ -470,7 +482,7 @@ function simulate(prof,prm){
   const dryEnd=massAt(Math.round(prof.burn));
   const induced=prof.aero?(prof.inducedDragExplicit!=null?Math.max(prof.inducedDragExplicit,0)
                                           :(prof.engine?Math.max(prof.cd,0):0)):0;
-  const hitR=Math.max(prof.cbs,prof.pfh>0?prof.pfh:0);
+  const hitR=Math.max(prof.cbs,prof.pfh>0?prof.pfh:0)+Math.max(prm.tgtRadius||0,0);
   const maxTicks=Math.max(1,Math.round(prm.maxSeconds*TPS));
   const frames=[];
   let spStarted=-1,minMiss=Infinity,hitTick=-1,impactTick=-1,traveled=0,seekerCatch=false;
@@ -564,17 +576,19 @@ function simulate(prof,prm){
         vel=vel.norm().scale(Math.max(spd-loss,floor));
       }
     }
-    // 平移
+    // 平移（扫掠命中：判定目标点到本 Tick 位移线段的最短距离，对应游戏射线扫掠）
+    const prevPos=pos;
     pos=pos.add(vel);
     traveled+=vel.len();
-    let tFwd=Infinity,tLat=Infinity,tY=Infinity,tD=Infinity;
+    let tFwd=Infinity,tLat=Infinity,tY=Infinity,tD=Infinity,sweptD=Infinity;
     if(tgt){
       tgt.pos=tgt.pos.add(tgt.vel);
       tFwd=tgt.pos.x*fwd.x+tgt.pos.z*fwd.z;
       tLat=tgt.pos.x*right.x+tgt.pos.z*right.z;
       tY=tgt.pos.y;
       tD=pos.sub(tgt.pos).len();
-      if(tD<minMiss) minMiss=tD;
+      sweptD=segPointDist(prevPos,pos,tgt.pos);
+      if(sweptD<minMiss) minMiss=sweptD;
     }
     frames.push({t:tick,
       fwd:pos.x*fwd.x+pos.z*fwd.z, lat:pos.x*right.x+pos.z*right.z,
@@ -583,7 +597,7 @@ function simulate(prof,prm){
       sp:(spStarted<0?0:((tick-spStarted)<=prof.sp.burn?1:2)),
       tFwd,tLat,tY});
     prevSpeed=vel.len();
-    if(tgt&&tD<=hitR){ hitTick=tick; break; }
+    if(tgt&&sweptD<=hitR){ hitTick=tick; break; }
     if(pos.y<=prm.groundY&&tick>0){ impactTick=tick; break; }
   }
   return {frames,hitTick,impactTick,minMiss,hitR,groundY:prm.groundY,
@@ -591,7 +605,7 @@ function simulate(prof,prm){
 }
 
 /* ---------- 应用状态 ---------- */
-const S={profiles:[],errors:[],current:null,result:null,cursor:0,playing:false,speed:4,lastT:0,chartMap:null};
+const S={profiles:[],errors:[],current:null,result:null,cursor:0,playing:false,speed:1,acc:0,lastT:0,chartMap:null};
 
 /* ---------- 目录扫描 ---------- */
 async function pickDirectory(){
@@ -678,6 +692,7 @@ function currentParams(){
     tgtDist:num2(document.getElementById("tgtDist").value,0),
     tgtBearing:num2(document.getElementById("tgtBearing").value,0),
     tgtHeading:num2(document.getElementById("tgtHeading").value,0),
+    tgtRadius:num2(document.getElementById("tgtRadius").value,3),
     maxSeconds:num2(document.getElementById("maxSeconds").value,240),
     groundY:num2(document.getElementById("groundY").value,-64),
   };
@@ -736,15 +751,16 @@ function draw(){
     S.chartMap=null; return;
   }
   const r=S.result,fr=r.frames;
-  const side=document.getElementById("viewMode").value==="side";
-  const keyA=f=>f.fwd, keyB=side?(f=>f.y):(f=>f.lat);
+  const mode=document.getElementById("viewMode").value;
+  const side=mode==="side", speedView=mode==="speed";
+  const keyA=f=>f.fwd, keyB=side?(f=>f.y):(speedView?(f=>f.speed*72):(f=>f.lat));
   let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   fr.forEach(f=>{
     const a=keyA(f),b=keyB(f);
     if(a<minX)minX=a; if(a>maxX)maxX=a;
     if(b<minY)minY=b; if(b>maxY)maxY=b;
     if(side&&f.tY<Infinity){ if(f.tFwd<minX)minX=f.tFwd; if(f.tFwd>maxX)maxX=f.tFwd; if(f.tY<minY)minY=f.tY; if(f.tY>maxY)maxY=f.tY; }
-    if(!side&&f.tLat<Infinity){ if(f.tFwd<minX)minX=f.tFwd; if(f.tFwd>maxX)maxX=f.tFwd; if(f.tLat<minY)minY=f.tLat; if(f.tLat>maxY)maxY=f.tLat; }
+    if(!side&&!speedView&&f.tLat<Infinity){ if(f.tFwd<minX)minX=f.tFwd; if(f.tFwd>maxX)maxX=f.tFwd; if(f.tLat<minY)minY=f.tLat; if(f.tLat>maxY)maxY=f.tLat; }
   });
   const padL=70,padR=24,padT=18,padB=44;
   let spanX=Math.max(maxX-minX,10),spanY=Math.max(maxY-minY,10);
@@ -774,20 +790,28 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText("前向距离 - X（米）",(padL+w-padR)/2,h-8);
   ctx.save(); ctx.translate(14,(padT+h-padB)/2); ctx.rotate(-Math.PI/2);
-  ctx.fillText(side?"高度（米）":"横向距离 - Z（米）",0,0); ctx.restore();
+  ctx.fillText(side?"高度（米）":(speedView?"速度（公里/小时）":"横向距离 - Z（米）"),0,0); ctx.restore();
   if(!document.getElementById("equalAspect").checked&&exagg>1.05){
     ctx.fillStyle="#c5221f"; ctx.font="11px sans-serif"; ctx.textAlign="left";
     ctx.fillText("⚠ 纵轴放大 "+exagg.toFixed(1)+"×（非等比例，勾选“等比例 1:1”查看真实尺度）",padL+8,padT+14);
   }
   // 地面参考线
-  if(r.groundY>=minY&&r.groundY<=maxY){
+  if(!speedView&&r.groundY>=minY&&r.groundY<=maxY){
     ctx.strokeStyle="#8d6e63"; ctx.lineWidth=2; ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(padL,Y(r.groundY)); ctx.lineTo(w-padR,Y(r.groundY)); ctx.stroke();
     ctx.fillStyle="#8d6e63"; ctx.font="11px sans-serif"; ctx.textAlign="left";
     ctx.fillText("地面 Y="+Math.round(r.groundY),padL+6,Y(r.groundY)-4);
   }
+  // 极速参考线（速度剖面视图）
+  if(speedView&&S.current&&S.current.maxSpeed>0){
+    ctx.strokeStyle="#188038"; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(padL,Y(S.current.maxSpeed*72)); ctx.lineTo(w-padR,Y(S.current.maxSpeed*72)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle="#188038"; ctx.font="11px sans-serif"; ctx.textAlign="left";
+    ctx.fillText("极速 "+toKMH(S.current.maxSpeed).toFixed(0)+" km/h",padL+6,Y(S.current.maxSpeed*72)-4);
+  }
   // 目标轨迹
-  if(currentParams().target){
+  if(currentParams().target&&!speedView){
     ctx.strokeStyle="#c5221f"; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.beginPath();
     let started=false;
     fr.forEach(f=>{
@@ -831,7 +855,7 @@ function updateCursor(){
   const f=fr[S.cursor];
   document.getElementById("timeLabel").textContent=(f.t/TPS).toFixed(2)+"s / "+((fr.length-1)/TPS).toFixed(2)+"s";
   const tt=document.getElementById("tooltip");
-  if(tt.style.display==="block"){
+  if(S.playing||tt.style.display==="block"){
     tt.textContent=
       "时间: "+(f.t/TPS).toFixed(2)+" 秒（Tick "+f.t+"）\n"+
       "前向距离: "+Math.round(f.fwd)+" 米\n"+
@@ -843,10 +867,23 @@ function updateCursor(){
       "到目标距离: "+(isFinite(f.distT)?Math.round(f.distT)+" 米":"—")+"\n"+
       "已行驶距离: "+Math.round(f.traveled)+" 米"+
       (f.sp===1?"\n[二脉冲燃烧中]":(f.sp===2?"\n[二脉冲已结束]":""));
+    tt.style.display="block";
+    // 播放时信息面板跟随弹体标记（悬停时保持鼠标位置不动）
+    if(S.playing&&S.chartMap){
+      const cf=fr[S.cursor];
+      const px=S.chartMap.X(S.chartMap.keyA(cf)),py=S.chartMap.Y(S.chartMap.keyB(cf));
+      const areaW=cv.parentElement.clientWidth,areaH=cv.parentElement.clientHeight;
+      let lx=px+16,ly=py-20;
+      if(ly+210>areaH-8||py<220) ly=Math.max(8,py+18);
+      if(lx+250>areaW-8) lx=px-260;
+      tt.style.left=Math.max(8,lx)+"px";
+      tt.style.top=Math.max(8,ly)+"px";
+    }
   }
   draw();
 }
 cv.addEventListener("mousemove",ev=>{
+  if(S.playing) return; // 播放中信息面板由弹体标记接管
   if(!S.result||!S.chartMap) return;
   const box=cv.getBoundingClientRect();
   const tt=document.getElementById("tooltip");
@@ -859,7 +896,7 @@ cv.addEventListener("mousemove",ev=>{
   S.result.frames.forEach((f,i)=>{ const d=Math.abs(m.keyA(f)-val); if(d<bd){bd=d;best=i;} });
   if(S.cursor!==best){ S.cursor=best; updateCursor(); }
 });
-cv.addEventListener("mouseleave",()=>{ document.getElementById("tooltip").style.display="none"; });
+cv.addEventListener("mouseleave",()=>{ if(!S.playing) document.getElementById("tooltip").style.display="none"; });
 document.getElementById("scrub").addEventListener("input",e=>{ S.cursor=parseInt(e.target.value)||0; updateCursor(); });
 document.getElementById("btnStep").addEventListener("click",()=>{ if(S.result){ S.cursor++; updateCursor(); } });
 document.getElementById("btnReset").addEventListener("click",()=>{ S.cursor=0; updateCursor(); });
@@ -869,19 +906,21 @@ document.getElementById("btnPlay").addEventListener("click",()=>{
   document.getElementById("btnPlay").textContent=S.playing?"⏸":"▶";
   if(S.playing){
     if(S.cursor>=S.result.frames.length-1) S.cursor=0;
+    S.acc=0;
     S.lastT=performance.now();
     requestAnimationFrame(step);
   }
 });
 function step(now){
   if(!S.playing||!S.result) return;
-  const dt=(now-S.lastT)/1000; S.lastT=now;
-  S.cursor=clamp(S.cursor+Math.max(1,Math.round(dt*TPS*S.speed)),0,S.result.frames.length-1);
-  updateCursor();
-  if(S.cursor>=S.result.frames.length-1){ S.playing=false; document.getElementById("btnPlay").textContent="▶"; return; }
+  const dt=Math.min((now-S.lastT)/1000,0.1); S.lastT=now; // 后台标签页回切的大 dt 钳制
+  S.acc=(S.acc||0)+dt*TPS*S.speed;                        // 亚 Tick 累加：0.5×/1× 下按真实速率攒步
+  const adv=Math.floor(S.acc);
+  if(adv>0){ S.acc-=adv; S.cursor=clamp(S.cursor+adv,0,S.result.frames.length-1); updateCursor(); }
+  if(S.cursor>=S.result.frames.length-1){ S.playing=false; S.acc=0; document.getElementById("btnPlay").textContent="▶"; return; }
   requestAnimationFrame(step);
 }
-document.getElementById("playSpeed").addEventListener("change",e=>{ S.speed=parseInt(e.target.value)||1; });
+document.getElementById("playSpeed").addEventListener("change",e=>{ S.speed=parseFloat(e.target.value)||1; S.acc=0; });
 
 /* ---------- 事件绑定 ---------- */
 document.getElementById("pickDir").addEventListener("click",pickDirectory);
@@ -890,7 +929,7 @@ document.getElementById("search").addEventListener("input",e=>fillMissileOptions
 document.getElementById("missileSelect").addEventListener("change",selectMissile);
 document.getElementById("viewMode").addEventListener("change",draw);
 document.getElementById("equalAspect").addEventListener("change",draw);
-["carrierSpeed","launchAlt","launchAngle","launchYaw","groundY","targetOn","tgtSpeed","tgtAlt","tgtDist","tgtBearing","tgtHeading","maxSeconds"]
+["carrierSpeed","launchAlt","launchAngle","launchYaw","groundY","tgtRadius","targetOn","tgtSpeed","tgtAlt","tgtDist","tgtBearing","tgtHeading","maxSeconds"]
   .forEach(id=>document.getElementById(id).addEventListener("change",recompute));
 window.addEventListener("resize",draw);
 
