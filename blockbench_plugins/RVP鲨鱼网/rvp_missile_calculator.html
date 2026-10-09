@@ -200,11 +200,32 @@ function segPointDist(a,b,p){
   const cx=a.x+abx*t-p.x,cy=a.y+aby*t-p.y,cz=a.z+abz*t-p.z;
   return Math.sqrt(cx*cx+cy*cy+cz*cz);
 }
-/** 高度分层极速倍率（无默认表）：未配置/空表/未命中/非法 → 1.0。 */
+/** 高度分层极速倍率（节点线性插值，全曲线连续无跳变）：每档 v 是该档上边界节点值，
+ * 低于首节点取首档值；上界无穷的尾档从上一节点起按前一档宽度过渡到尾档值并保持。
+ * 无表/无合法档 → 1.0。与本体 resolveAltitudeMaxSpeedFactor 同语义。 */
 function maxSpeedFactorAt(y,map){
   if(map==null||map.length===0) return 1.0;
-  const v=sampleRangeMap(map,y);
-  return (v!=null&&isFinite(v)&&v>0)?v:1.0;
+  let knots=[],tailStart=NaN,tailV=0,hasTail=false;
+  for(const r of map){
+    if(!isFinite(r.v)||r.v<=0) continue;
+    if(!isFinite(r.hi)){ tailStart=isFinite(r.lo)?r.lo:NaN; tailV=r.v; hasTail=true; continue; }
+    knots.push([r.hi,r.v]);
+  }
+  if(!knots.length) return hasTail?tailV:1.0;
+  knots.sort((a,b)=>a[0]-b[0]);
+  if(hasTail){
+    let width=knots.length>=2?knots[knots.length-1][0]-knots[knots.length-2][0]:(isFinite(tailStart)?tailStart:128);
+    if(!(width>0)) width=128;
+    knots.push([knots[knots.length-1][0]+width,tailV]);
+  }
+  if(y<=knots[0][0]) return knots[0][1];
+  const n=knots.length;
+  if(y>=knots[n-1][0]) return knots[n-1][1];
+  for(let i=0;i+1<n;i++){
+    const p=knots[i],q=knots[i+1];
+    if(y>=p[0]&&y<q[0]) return p[1]+(q[1]-p[1])*((y-p[0])/(q[0]-p[0]));
+  }
+  return knots[n-1][1];
 }
 /** 比例引导：二次方程解相遇时间 t，返回指向预测拦截点的期望方向（未归一化）。
  * 逐式移植 RVP_GuidanceRuntimeMath.steerPredictiveIntercept 的解算核（含线性退化与闭速回退）。 */

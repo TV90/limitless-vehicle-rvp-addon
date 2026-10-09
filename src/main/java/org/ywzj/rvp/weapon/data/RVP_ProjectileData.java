@@ -5,6 +5,9 @@ import com.google.gson.annotations.SerializedName;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 
 public class RVP_ProjectileData {
@@ -196,9 +199,11 @@ public class RVP_ProjectileData {
 
     /**
      * 按世界 Y 高度配置的极速倍率，字段默认 null；<b>不存在默认分层表</b>——未配置、显式空表、
-     * 未命中区间或非法值（null/非有限/≤0）一律按 1.0 处理，即极速保持 {@code max_speed} 原值不随高度变化。
+     * 非法值（null/非有限/≤0）一律按 1.0 处理，即极速保持 {@code max_speed} 原值不随高度变化。
      * 实际极速 = {@code max_speed × 当前高度倍率}，仅作用于钳制上限，不影响 min_speed；
      * 仅导弹实体运动链与虚拟弹道链消费，CCIP/火箭预测/无制导弹道不读取。
+     * <p>解析为<b>节点线性插值</b>：每档倍率是该档上边界处的节点值，高度在相邻节点之间线性过渡，
+     * 低于首节点取首档值；上界无穷的尾档从上一节点起按前一档宽度线性过渡到尾档值并保持。
      */
     @SerializedName("altitude_max_speed_factor")
     private Map<RVP_Range<Float>, Float> altitudeMaxSpeedFactor;
@@ -669,27 +674,74 @@ public class RVP_ProjectileData {
     }
 
     /**
-     * 解析当前高度的极速倍率。与阻力倍率不同，<b>不存在默认分层表</b>：
-     * 未配置（null）、显式空表、未命中区间或非法值（null/非有限/≤0）一律返回 1.0，
+     * 解析当前高度的极速倍率（节点线性插值，全曲线连续无跳变）。与阻力倍率不同，<b>不存在默认分层表</b>：
+     * 未配置（null）、显式空表或全部非法值（null/非有限/≤0）一律返回 1.0，
      * 即极速保持 {@code max_speed} 原值不随高度变化。
+     * <p>配置了区间表时，每档倍率是该档<b>上边界</b>处的节点值：高度在相邻节点之间线性过渡，
+     * 低于首节点取首档值；上界无穷的尾档从上一节点起按前一档宽度线性过渡到尾档值并在此后保持。
      */
     public float resolveAltitudeMaxSpeedFactor(double y) {
         float sample = normalizeAltitudeSample(y);
         if (altitudeMaxSpeedFactor == null || altitudeMaxSpeedFactor.isEmpty()) {
             return 1.0f;
         }
+        // 节点（区间上界, 倍率）按高度升序；非法倍率整档跳过；上界无穷的尾档单独记录
+        List<double[]> knots = new ArrayList<>();
+        double tailStartHeight = Double.NaN;
+        double tailFactor = 0f;
+        boolean hasTail = false;
         for (Map.Entry<RVP_Range<Float>, Float> entry : altitudeMaxSpeedFactor.entrySet()) {
             RVP_Range<Float> range = entry.getKey();
-            if (range == null || !range.contains(sample)) {
+            Float factor = entry.getValue();
+            if (range == null || factor == null || !Float.isFinite(factor) || factor <= 0f) {
                 continue;
             }
-            Float factor = entry.getValue();
-            if (factor == null || !Float.isFinite(factor) || factor <= 0f) {
-                return 1.0f;
+            List<RVP_Range.Interval<Float>> intervals = range.intervals();
+            if (intervals == null || intervals.isEmpty()) {
+                continue;
             }
-            return factor;
+            Float upper = intervals.get(intervals.size() - 1).upper();
+            if (upper == null) {
+                Float lower = intervals.get(0).lower();
+                tailStartHeight = lower == null ? Double.NaN : lower;
+                tailFactor = factor;
+                hasTail = true;
+                continue;
+            }
+            knots.add(new double[]{upper, factor});
         }
-        return 1.0f;
+        if (knots.isEmpty()) {
+            return hasTail ? (float) tailFactor : 1.0f;
+        }
+        knots.sort(Comparator.comparingDouble(knot -> knot[0]));
+        // 尾档（上界无穷）从最后节点起、按前一档宽度线性过渡到尾档值并保持
+        if (hasTail) {
+            double width = knots.size() >= 2
+                    ? knots.get(knots.size() - 1)[0] - knots.get(knots.size() - 2)[0]
+                    : (Double.isFinite(tailStartHeight) ? tailStartHeight : 128);
+            if (!(width > 0)) {
+                width = 128;
+            }
+            knots.add(new double[]{knots.get(knots.size() - 1)[0] + width, tailFactor});
+        }
+        if (sample <= knots.get(0)[0]) {
+            return (float) knots.get(0)[1];
+        }
+        int count = knots.size();
+        if (sample >= knots.get(count - 1)[0]) {
+            return (float) knots.get(count - 1)[1];
+        }
+        for (int index = 0; index + 1 < count; index++) {
+            double lowerHeight = knots.get(index)[0];
+            double upperHeight = knots.get(index + 1)[0];
+            if (sample >= lowerHeight && sample < upperHeight) {
+                double fraction = (sample - lowerHeight) / (upperHeight - lowerHeight);
+                double lowerFactor = knots.get(index)[1];
+                double upperFactor = knots.get(index + 1)[1];
+                return (float) (lowerFactor + (upperFactor - lowerFactor) * fraction);
+            }
+        }
+        return (float) knots.get(count - 1)[1];
     }
 
     /** 未配置 JSON 倍率表时，在压缩后的现实大气密度锚点间平滑插值。 */
