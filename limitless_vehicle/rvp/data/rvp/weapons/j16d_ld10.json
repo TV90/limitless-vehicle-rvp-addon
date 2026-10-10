@@ -20,7 +20,7 @@
     "has_rocket_engine": true,
     "mass": 234,
     "fuel_mass": 38,
-    "thrust": 16.09725,
+    "thrust": 17.707,
     "motor_burn_time": 120,
     "drag_coefficient": 0.049,
     "rvp_induced_drag": 0.003,

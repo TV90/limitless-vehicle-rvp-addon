@@ -21,7 +21,7 @@
     "max_speed": 2.5,
     "mass": 670,
     "fuel_mass": 170,
-    "thrust": 55.11,
+    "thrust": 60.621,
     "motor_burn_time": 300,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.36575,

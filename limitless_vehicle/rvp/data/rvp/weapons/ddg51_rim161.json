@@ -19,7 +19,7 @@
     "has_rocket_engine": true,
     "mass": 1500,
     "fuel_mass": 650,
-    "thrust": 531.242991,
+    "thrust": 584.3673,
     "motor_burn_time": 300,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.207917,

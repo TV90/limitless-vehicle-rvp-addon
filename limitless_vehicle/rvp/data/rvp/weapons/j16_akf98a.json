@@ -20,7 +20,7 @@
     "max_speed": 4.0,
     "mass": 300,
     "fuel_mass": 220,
-    "thrust": 13.62,
+    "thrust": 14.982,
     "motor_burn_time": 300,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.010667,

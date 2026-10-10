@@ -21,7 +21,7 @@
     "has_rocket_engine": true,
     "mass": 210,
     "fuel_mass": 45,
-    "thrust": 12.2793,
+    "thrust": 13.5072,
     "motor_burn_time": 100,
     "second_pulse": true,
     "second_pulse_trigger_speed": 4.0,

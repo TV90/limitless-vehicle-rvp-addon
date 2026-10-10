@@ -21,7 +21,7 @@
     "max_speed": 20.0,
     "mass": 1670,
     "fuel_mass": 600,
-    "thrust": 590.52,
+    "thrust": 649.572,
     "motor_burn_time": 300000,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.1605,

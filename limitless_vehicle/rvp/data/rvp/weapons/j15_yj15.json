@@ -21,7 +21,7 @@
     "flame_scale": 0.575,
     "mass": 1000,
     "fuel_mass": 300,
-    "thrust": 156.58,
+    "thrust": 172.238,
     "motor_burn_time": 300,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.4375,

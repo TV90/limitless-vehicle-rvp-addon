@@ -28,7 +28,7 @@
     "min_speed": 0.01,
     "mass": 3800,
     "fuel_mass": 1700,
-    "thrust": 588.64,
+    "thrust": 647.504,
     "motor_burn_time": 80,
     "ignition_delay_tick": 20,
     "drag_coefficient": 0.27125,

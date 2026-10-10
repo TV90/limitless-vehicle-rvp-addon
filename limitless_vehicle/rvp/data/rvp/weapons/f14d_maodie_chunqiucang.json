@@ -23,7 +23,7 @@
     "has_rocket_engine": true,
     "mass": 450,
     "fuel_mass": 140,
-    "thrust": 14.0625,
+    "thrust": 15.4688,
     "motor_burn_time": 140,
     "inherit_vehicle_velocity": true,
     "drag_coefficient": 0.17856,

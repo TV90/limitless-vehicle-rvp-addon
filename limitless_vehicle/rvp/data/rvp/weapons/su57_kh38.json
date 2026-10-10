@@ -20,7 +20,7 @@
     "max_speed": 6.5,
     "mass": 520,
     "fuel_mass": 50,
-    "thrust": 116.422222,
+    "thrust": 128.0644,
     "motor_burn_time": 80,
     "drag_coefficient": 0.2585,
     "rvp_induced_drag": 0.0055,
