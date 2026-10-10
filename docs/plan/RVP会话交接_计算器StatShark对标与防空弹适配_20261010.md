@@ -17,8 +17,10 @@
 ②载具包 limitless_vehicle/ 与权威包 limitless_vehicle_authoritative/ 的 weapons 目录
   已于 2026-10-10 全量镜像一致；此后改弹参数仍只在同步包改，定版后再整目录镜像；
 ③并行会话可能活跃改 weapons 目录，改前先 git status 重探；
-  用户测试客户端=「E:\client_ywzj - 副本」（jar 已是 10-10 版），日志在
-  versions/Optimized fps/logs/latest.log——冒烟/排查直接读它，几秒即出 Done。
+  冒烟=开发环境 ./gradlew runServer，判据读 run/server/logs/latest.log 的 Done 行
+  （构建后数秒即出，勿轮询 gradle stdout 重定向）；
+  实机问题排查才读用户副本客户端日志（E:\client_ywzj - 副本\...\logs\latest.log，
+  jar 已是 10-10 配对版）——两套日志别混。
 ```
 
 ---
