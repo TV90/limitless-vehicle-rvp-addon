@@ -68,7 +68,8 @@ public final class RVP_WreckDiag {
                 sb.append("\n  ").append(partUnit.getId())
                   .append(" detachable=").append(partUnit.isDetachable())
                   .append(" destroyed=").append(partUnit.isDestroyed())
-                  .append(" detached=").append(partUnit.isDetached());
+                  .append(" detached=").append(partUnit.isDetached())
+                  .append(" cubes=").append(partUnit.getPartCubeOBBs().size());
             }
             System.out.println(sb);
         }
