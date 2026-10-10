@@ -67,7 +67,10 @@
     "enable_ir_hmd": false,
     "scan_interval_tick": 3,
     "ignore_flares": false,
-    "off_axis_stacks_with_station_rotation": true
+    "off_axis_stacks_with_station_rotation": true,
+    "loft_height_above_target": 100,
+    "loft_end_distance": 700,
+    "loft_blend_distance": 700
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",

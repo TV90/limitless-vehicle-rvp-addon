@@ -55,7 +55,10 @@
     "guidance_altitude_range": "[[inf,25]]",
     "predict_target_pos": true,
     "active_radar_activation_range": 100,
-    "guidance_tick_range": "[[20,inf]]"
+    "guidance_tick_range": "[[20,inf]]",
+    "loft_height_above_target": 100,
+    "loft_end_distance": 700,
+    "loft_blend_distance": 700
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",

@@ -65,7 +65,10 @@
     "lock_altitude_range": "[[5,inf]]",
     "guidance_altitude_range": "[[5,inf]]",
     "scan_interval_tick": 3,
-    "ignore_flares": false
+    "ignore_flares": false,
+    "loft_height_above_target": 100,
+    "loft_end_distance": 700,
+    "loft_blend_distance": 700
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",
