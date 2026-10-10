@@ -70,7 +70,7 @@
     "predict_target_pos": true,
     "active_radar_activation_range": 384,
     "guidance_tick_range": "[[20,inf]]",
-    "loft_height_above_target": 100,
+    "loft_height_above_target": 200,
     "loft_end_distance": 600,
     "loft_blend_distance": 600
 
