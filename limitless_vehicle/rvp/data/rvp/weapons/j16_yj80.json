@@ -56,10 +56,7 @@
     "lock_altitude_range": "[[inf,25]]",
     "guidance_altitude_range": "[[inf,25]]",
     "scan_interval_tick": 3,
-    "ignore_flares": false,
-    "loft_height_above_target": 100,
-    "loft_end_distance": 700,
-    "loft_blend_distance": 700
+    "ignore_flares": false
   },
   "effects_data": {
     "missile_native_trail_particle_style": "rvp_rocket_flame",
