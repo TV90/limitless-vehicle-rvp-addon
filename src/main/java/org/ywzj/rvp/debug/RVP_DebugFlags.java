@@ -48,11 +48,13 @@ public final class RVP_DebugFlags {
     public static final RVP_DebugFlag MOTOR_FLAME = new RVP_DebugFlag("motorflame", "导弹尾焰渲染门控诊断");
     /** 通用弹道提前量火控执行器输入诊断（模式/传感器/机炮判定/稳定档位）。客户端。 */
     public static final RVP_DebugFlag LEAD_FC = new RVP_DebugFlag("lead_fc", "弹道提前量火控执行器输入诊断");
+    /** 残件/飞头生成与整车死亡部件状态表（detachable/destroyed/detached）。服务端。 */
+    public static final RVP_DebugFlag WRECK = new RVP_DebugFlag("wreck", "残件/飞头生成与部件状态表");
 
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC, WRECK);
 
     private RVP_DebugFlags() {
     }
