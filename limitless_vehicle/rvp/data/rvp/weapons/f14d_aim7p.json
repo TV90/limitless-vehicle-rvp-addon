@@ -15,6 +15,10 @@
     "require_lock": true
   },
   "projectile_data": {
+    "second_pulse": true,
+    "second_pulse_thrust": 4.817312,
+    "second_pulse_burn_time": 80,
+    "second_pulse_trigger_speed": 999,
     "inherit_vehicle_velocity": true,
     "collision_box_size": 0.7,
     "velocity": 0.1,
