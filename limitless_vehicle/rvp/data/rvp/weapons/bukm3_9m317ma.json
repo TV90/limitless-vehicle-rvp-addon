@@ -39,6 +39,7 @@
     "rvp_attack_angle_limit_deg": 60
   },
   "fuse_data": {
+    "entity_collision_safe_tick": 0,
     "proximity_fuse_height": 40,
     "proximity_fuse_tick": 40,
     "delay_tick": 0,

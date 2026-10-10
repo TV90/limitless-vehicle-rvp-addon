@@ -36,6 +36,7 @@
     "rvp_turn_rate_limit": 2.0
   },
   "fuse_data": {
+    "entity_collision_safe_tick": 0,
     "proximity_fuse_height": 20,
     "proximity_fuse_tick": 20,
     "delay_tick": 0,

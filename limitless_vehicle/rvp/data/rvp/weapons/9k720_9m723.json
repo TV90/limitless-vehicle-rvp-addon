@@ -70,6 +70,7 @@
     "preset_tactical_maneuver_amplitude": 0.0
   },
   "fuse_data": {
+    "entity_collision_safe_tick": 0,
     "delay_tick": 0,
     "proximity_radius": 0,
     "detonate_on_life_end": false
