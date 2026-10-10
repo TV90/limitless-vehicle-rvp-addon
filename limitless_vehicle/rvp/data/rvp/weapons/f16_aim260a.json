@@ -69,7 +69,10 @@
     "scan_interval_tick": 2,
     "predict_target_pos": true,
     "active_radar_activation_range": 384,
-    "guidance_tick_range": "[[20,inf]]"
+    "guidance_tick_range": "[[20,inf]]",
+    "loft_height_above_target": 160,
+    "loft_end_distance": 700,
+    "loft_blend_distance": 700
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",
