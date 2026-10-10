@@ -56,11 +56,7 @@
     "max_guidance_angle": 50,
     "predict_target_pos": true,
     "enable_inertial_guidance": true,
-    "guidance_target_distance_range": "[[0,4500]]",
-    "semi_correction_enabled": true,
-    "semi_correction_stiffness": 0.2,
-    "semi_correction_damping": 2,
-    "semi_correction_wobble": 1
+    "guidance_target_distance_range": "[[0,4500]]"
   },
   "effects_data": {
     "trajectory_particle": "minecraft:campfire_signal_smoke",
