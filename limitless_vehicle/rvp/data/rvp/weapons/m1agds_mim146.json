@@ -31,7 +31,9 @@
       "[[1,inf]]": 0.1
     },
     "rvp_aero_steering": true,
-    "rvp_attack_angle_limit_deg": 60
+    "rvp_attack_angle_limit_deg": 60,
+    "rvp_maxg": 30,
+    "rvp_turn_rate_limit": 2.0
   },
   "fuse_data": {
     "proximity_fuse_height": 20,

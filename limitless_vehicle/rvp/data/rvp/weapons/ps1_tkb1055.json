@@ -38,13 +38,15 @@
     "self_destruct_distance": 400,
     "self_destruct_explode": true,
     "rvp_aero_steering": true,
-    "rvp_attack_angle_limit_deg": 60
+    "rvp_attack_angle_limit_deg": 60,
+    "rvp_maxg": 22,
+    "rvp_turn_rate_limit": 2.5
   },
   "fuse_data": {
-    "proximity_fuse_height": 0,
-    "proximity_fuse_tick": 0,
+    "proximity_fuse_height": 20,
+    "proximity_fuse_tick": 20,
     "delay_tick": 0,
-    "proximity_radius": 0.0,
+    "proximity_radius": 6.0,
     "proximity_fuse_require_radar_lock": false,
     "detonate_on_life_end": false
   },
