@@ -12,6 +12,7 @@ import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.ParticleUtil;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 
@@ -143,5 +144,15 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     @Override
     public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
         return org.ywzj.rvp.client.state.RVP_ClientHitlState.shouldSuppressParticleNearActiveMissile(x, y, z);
+    }
+
+    /** 本地操作者是否处于 SCOPE（开镜）视角：读取本体本地玩家状态并比对视角类型。 */
+    @Override
+    public boolean isLocalOperatorInScopeView() {
+        // 调用本体客户端状态类，读取本地玩家是否正在操作载具及其视角类型。
+        LocalVehiclePlayer player = LocalVehiclePlayer.instance;
+        return player != null
+                && player.onVehicle()
+                && player.viewType == LocalVehiclePlayer.ViewType.SCOPE;
     }
 }

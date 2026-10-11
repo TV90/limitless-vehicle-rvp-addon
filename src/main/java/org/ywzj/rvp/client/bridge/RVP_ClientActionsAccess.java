@@ -93,6 +93,14 @@ public final class RVP_ClientActionsAccess {
         return INSTANCE.shouldSuppressTrailParticleNearHitlMissile(x, y, z);
     }
 
+    /**
+     * 经双端安全桥查询本地操作者是否开镜（eo_ccip 锚定方向判定用）。
+     * 服务端 NOOP 恒 false ⇒ 服务端行为与改动前完全一致。
+     */
+    public static boolean isLocalOperatorInScopeView() {
+        return INSTANCE.isLocalOperatorInScopeView();
+    }
+
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
         @Override
@@ -153,6 +161,12 @@ public final class RVP_ClientActionsAccess {
         @Override
         public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
             // 服务端不产生客户端粒子，屏蔽判定恒 false。
+            return false;
+        }
+
+        @Override
+        public boolean isLocalOperatorInScopeView() {
+            // 专用服务端没有本地玩家视角概念，恒 false ⇒ 不启用 eo_ccip 开镜锚定。
             return false;
         }
     }

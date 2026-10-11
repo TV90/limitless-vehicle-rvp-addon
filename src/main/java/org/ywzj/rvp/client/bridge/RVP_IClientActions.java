@@ -81,4 +81,15 @@ public interface RVP_IClientActions {
      * @return 客户端返回屏蔽判定结果；专用服 NOOP 恒 false。
      */
     boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z);
+
+    /**
+     * [RVP] 查询本地操作者是否处于 SCOPE（开镜）视角。
+     *
+     * <p>目的：公共侧解析 eo_ccip 武器的弹着点锚定方向时需要判断"是否开镜"，
+     * 而公共代码不得直接引用 @OnlyIn(CLIENT) 的 LocalVehiclePlayer，故经本桥接查询。
+     * 专用服务端为 NOOP，恒返回 false。</p>
+     *
+     * @return 本地玩家正在操作载具且视角为 SCOPE 时 true
+     */
+    boolean isLocalOperatorInScopeView();
 }

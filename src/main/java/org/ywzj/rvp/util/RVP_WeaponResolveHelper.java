@@ -1,7 +1,9 @@
 package org.ywzj.rvp.util;
 
 import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.weapon.VehicleMultiWeapons;
@@ -52,15 +54,32 @@ public final class RVP_WeaponResolveHelper {
     }
 
     /**
-     * 解析武器级 {@code parent_weapon_unit_aim_override}：当前武器为 RVP 武器且配置了
-     * 覆盖时返回该值；否则返回 null（调用方回退到所属武器站的静态配置）。
-     * 传入武器建议先经 {@link #currentPrimary} 解包（Agent/Multi → 具体武器）。
+     * 解析武器级 parent_weapon_unit_aim_override（弹着点/准心锚定方向）。
+     *
+     * <p>优先级：① 武器显式 parent_weapon_unit_aim_override（写了就以它为准，保证可预测）
+     * → ② eo_ccip 动态语义：SCOPE 视角按"电视/激光指示"处理，弹着点锚定母武器站（准星随动）
+     * → ③ 返回 null，由调用方回退武器站静态 parent_weapon_unit_aim。</p>
+     *
+     * <p>传入武器建议先经 {@link #currentPrimary} 解包（Agent/Multi → 具体武器）。</p>
      */
     @Nullable
     public static Boolean resolveParentWeaponUnitAimOverride(@Nullable AbstractVehicleWeapon<?> weapon) {
-        if (weapon instanceof RVP_WeaponBase rvpWeapon) {
-            return rvpWeapon.getData().getParentWeaponUnitAimOverride();
+        if (!(weapon instanceof RVP_WeaponBase rvpWeapon)) {
+            return null;
         }
+        // 调用本项目武器数据模型，读取覆盖配置与传感器模式。
+        RVP_WeaponData data = rvpWeapon.getData();
+        // ① 显式配置优先。
+        Boolean explicit = data.getParentWeaponUnitAimOverride();
+        if (explicit != null) {
+            return explicit;
+        }
+        // ② eo_ccip + 开镜 ⇒ 锚定母武器站；经桥接查询避免公共代码引用客户端类型。
+        if ("eo_ccip".equalsIgnoreCase(data.getFireControlSensorMode())
+                && RVP_ClientActionsAccess.isLocalOperatorInScopeView()) {
+            return Boolean.TRUE;
+        }
+        // ③ 回退武器站静态值。
         return null;
     }
 }
