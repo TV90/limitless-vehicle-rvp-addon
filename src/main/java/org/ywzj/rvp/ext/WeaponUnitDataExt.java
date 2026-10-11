@@ -9,6 +9,9 @@ public interface WeaponUnitDataExt {
     /** 取得RVP武器站火控模式。 */
     String ywzj_rvp$getFireControlMode();
 
+    /** 取得预瞄圈火控三态开放子集（原始 JSON 字符串数组）；null（JSON 未配置）表示三种全有。 */
+    List<String> ywzj_rvp$getFireControlModes();
+
     /** 取得现有RF软火控离轴角，单位为度。 */
     float ywzj_rvp$getRfOffAxisDeg();
 

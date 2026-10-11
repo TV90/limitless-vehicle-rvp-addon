@@ -2268,6 +2268,7 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
 | `rvp_fire_control_mode` | 火控模式标记：空（默认，不覆盖本体默认）；`rvp_rf` 要求当前传感器为RF，为RVP机炮启用弹道预瞄，为RVP导弹启用雷达硬锁目标三态跟踪，其他武器保留原软火控；`rvp_ballistic_lead` 为RVP机炮启用与传感器解耦的通用弹道提前量火控，可复用本体IR/EO/RF实体锁定链。 | `""` |
+| `rvp_fire_control_modes` | 预瞄圈火控三态**开放子集**（字符串数组，6 键循环只在此子集内轮转）：合法值为 `stable`/`auto`（自动锁预瞄圈）、`semi_auto`/`semi`（半自动叠加鼠标偏置）、`off`/`manual`（手动），大小写不敏感、重复项自动去重。未配置或全非法值 = 三种全有（存量载具零变化）；子集不含半自动时，初始模式取数组首个合法项。写法对齐 `guidance_data.hitl_video_modes`。 | 未配置（三种全有） |
 | `rvp_rf_off_axis_deg` | `rvp_rf` 火控离轴限制（度）。机炮获得有效提前量解时按历史规则使用该值的 `0.1` 倍；RVP导弹的 `SEMI_AUTO` 双轴锁存及其他非机炮软修正使用原值。 | `10.0` |
 | `rvp_fire_control_off_axis_deg` | `rvp_ballistic_lead` 通用弹道提前量火控离轴限制（度），仅当前武器为RVP `machinegun` 且IR/EO/RF锁定链有效时生效；执行器按配置原值使用。 | `10.0` |
 | `rvp_disable_crt_effect` | 是否禁用 CRT 显示器特效。 | `false` |
@@ -2281,6 +2282,22 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 {
   "rvp_fire_control_mode": "rvp_ballistic_lead",
   "rvp_fire_control_off_axis_deg": 10
+}
+```
+
+三态开放子集示例——只保留自动与手动两态（6 键在两态间循环）：
+
+```json
+{
+  "rvp_fire_control_modes": ["auto", "manual"]
+}
+```
+
+单态子集（如只允许自动）时 6 键按键无效果，模式恒为该态：
+
+```json
+{
+  "rvp_fire_control_modes": ["stable"]
 }
 ```
 

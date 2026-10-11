@@ -17,6 +17,12 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private String ywzj_rvp$fireControlMode = "";
 
+    /** 预瞄圈火控三态开放子集（rvp_fire_control_modes）；未配置为 null = 三种全有。
+     *  <p>用 List 引用类型：Gson 反序列化 pojo 走 Unsafe 分配，"未配置"落 null，由 getter 兜底。 */
+    @SerializedName("rvp_fire_control_modes")
+    @Unique
+    private List<String> ywzj_rvp$fireControlModes;
+
     /** 现有 {@code rvp_rf} 模式离轴角，单位为度，仅在RF软火控生效。
      *  <p>用 Float 而非 float：Gson 反序列化 pojo 走 Unsafe 分配，字段初始化器不执行，
      *  原始类型"未配置"会落 0 而非注释声称的 10；null 可穿透分配，由 getter 兜底默认。 */
@@ -66,6 +72,12 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     public String ywzj_rvp$getFireControlMode() {
         // Gson Unsafe 分配下 String 字段"未配置"实际为 null，兜底空串（= 完全使用本体火控）
         return ywzj_rvp$fireControlMode == null ? "" : ywzj_rvp$fireControlMode;
+    }
+
+    @Override
+    public List<String> ywzj_rvp$getFireControlModes() {
+        // Gson Unsafe 分配下引用类型"未配置"为 null；原样透传 null 表示三种全有，掩码归一由消费端负责
+        return ywzj_rvp$fireControlModes;
     }
 
     @Override

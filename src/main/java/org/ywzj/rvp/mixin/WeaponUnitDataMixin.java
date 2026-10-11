@@ -39,6 +39,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private String ywzj_rvp$fireControlMode = "";
 
+    /** 预瞄圈火控三态开放子集；null（JSON 未配置）= 三种全有，掩码归一由消费端负责。 */
+    @Unique
+    private List<String> ywzj_rvp$fireControlModes;
+
     /** 现有 {@code rvp_rf} 模式离轴角，单位为度，默认10度，仅在RF软火控生效。 */
     @Unique
     private float ywzj_rvp$rfOffAxisDeg = 10.0f;
@@ -75,6 +79,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     private void ywzj_rvp$init(WeaponUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof WeaponUnitPojoExt ext) {
             this.ywzj_rvp$fireControlMode = ext.ywzj_rvp$getFireControlMode();
+            this.ywzj_rvp$fireControlModes = ywzj_rvp$safeCopy(ext.ywzj_rvp$getFireControlModes());
             this.ywzj_rvp$rfOffAxisDeg = ext.ywzj_rvp$getRfOffAxisDeg();
             this.ywzj_rvp$fireControlOffAxisDeg = ext.ywzj_rvp$getFireControlOffAxisDeg();
             this.ywzj_rvp$disableCrtEffect = ext.ywzj_rvp$disableCrtEffect();
@@ -167,6 +172,11 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public String ywzj_rvp$getFireControlMode() {
         return ywzj_rvp$fireControlMode;
+    }
+
+    @Override
+    public List<String> ywzj_rvp$getFireControlModes() {
+        return ywzj_rvp$fireControlModes;
     }
 
     @Override
