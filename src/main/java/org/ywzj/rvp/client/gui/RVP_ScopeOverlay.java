@@ -502,10 +502,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return false;
         }
         Entity detectedEntity = detectedObject.entity;
-        // 调用本项目统一弹体位置解析：广播弹体外推、广播载具插值、普通实体插值各自保持原语义。
+        // 调用本项目统一实体位置解析：硬锁框必须跟随实体逐帧/跨包显示轨迹，不能退回雷达采样点。
         // 与 IR 锁定圈使用同一“插值后包围盒中心”锚点，保证两个通道锁定同一目标时视觉重合。
-        Vec3 renderCenter = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(detectedEntity, partialTick,
-                detectedObject.detectedPosition);
+        Vec3 renderCenter = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(detectedEntity, partialTick);
         Vec3 screenPos = VectorUtil.worldToScreen(renderCenter);
         if (screenPos.z < 0) {
             return false;

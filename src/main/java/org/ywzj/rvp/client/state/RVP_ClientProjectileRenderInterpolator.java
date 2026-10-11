@@ -28,10 +28,15 @@ public final class RVP_ClientProjectileRenderInterpolator {
      * 解析实体包围盒中心的显示位置。
      *
      * <p>远距弹体优先使用本体广播克隆的短时外推；其它实体继续交给既有远距载具插值器，
-     * 普通实体保持 Minecraft 的单 Tick 插值。</p>
+     * 普通实体保持 Minecraft 的单 Tick 插值。硬锁框必须使用本重载，避免回退到雷达快照点。</p>
      */
     public static Vec3 resolveRenderCenter(Entity entity, float partialTick) {
-        return resolveRenderCenter(entity, partialTick, resolveVanillaCenter(entity, partialTick));
+        Vec3 remoteAmmoCenter = resolveRemoteAmmoCenter(entity, partialTick);
+        if (remoteAmmoCenter != null) {
+            return remoteAmmoCenter;
+        }
+        // 调用本项目广播载具插值器，保留最大 OBB 瞄准点和远距载具显示轨迹语义。
+        return RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(entity, partialTick);
     }
 
     /**
@@ -39,7 +44,8 @@ public final class RVP_ClientProjectileRenderInterpolator {
      *
      * @param entity 需要显示的实体
      * @param partialTick 当前渲染帧的局部 Tick
-     * @param nonRemoteCenter 非远距弹体时的调用方位置；可为空，空时使用实体本体插值中心
+     * @param nonRemoteCenter 非远距弹体时的调用方位置；可为空，空时使用实体本体插值中心。
+     *                         仅适用于明确需要保留雷达采样点的软航迹/快照回退，硬锁框不要传入
      * @return 当前渲染帧应使用的包围盒中心
      */
     public static Vec3 resolveRenderCenter(Entity entity, float partialTick,
@@ -87,8 +93,8 @@ public final class RVP_ClientProjectileRenderInterpolator {
     /**
      * 解析外置雷达条目的显示位置。
      *
-     * <p>客户端能找到同 ID 实体时优先使用实体渲染轨迹；找不到实体时，仅对弹体快照按
-     * 快照接收时间做最多 5 Tick 外推，载具和其它雷达条目保持快照位置。</p>
+     * <p>客户端能找到同 ID 实体时优先使用实体渲染轨迹；找不到实体时，所有条目都按
+     * 快照接收时间和快照速度做最多 5 Tick 的短时外推，避免外置雷达框在快照周期内阶梯跳变。</p>
      */
     public static Vec3 resolveExternalRadarEntryPosition(S2CExternalRadarSnapshot.Entry entry,
                                                           float partialTick) {
@@ -96,10 +102,10 @@ public final class RVP_ClientProjectileRenderInterpolator {
         Entity resolved = findClientEntity(minecraft, entry.entityId());
         if (resolved != null && resolved.isAlive()) {
             // 调用本项目统一显示位置解析，复用实体广播克隆的弹体外推或载具插值轨迹。
-            return resolveRenderCenter(resolved, partialTick, entry.position());
+            return resolveRenderCenter(resolved, partialTick);
         }
         Vec3 position = entry.position();
-        if (!entry.ammo() || minecraft.level == null) {
+        if (minecraft.level == null) {
             return position;
         }
         long sampleGameTime = RVP_ClientExternalRadarState.getSnapshotClientGameTime();

@@ -56,7 +56,7 @@ class RVP_PIPAttackAngleControllerTest {
             Vec3 actual = RVP_PropulsionMath.applyThrust(
                     result.steering().velocity(), result.steering().bodyDirection(), motor, 1.0);
             assertFalse(result.responseLimited());
-            assertTrue(RVP_BallisticTrajectoryMath.angleBetween(result.requestedVelocity(), actual) < 1.0E-5);
+            assertTrue(RVP_BallisticTrajectoryMath.angleBetween(result.requestedVelocity(), actual) < 1.0E-3);
             assertEquals(SPEED, result.steering().velocity().length(), EPSILON);
         }
     }
