@@ -1,6 +1,6 @@
 {
   "type": "rvp:missile",
-  "name": "AGM-114 SALH-AGM",
+  "name": "AGM-114K SALH-AGM",
   "shoot_interval": 500,
   "max_capacity": 4,
   "reload": {
@@ -60,8 +60,8 @@
     }
   },
   "collision_data": {
-    "direct_damage": 800
+    "direct_damage": 850
   },
   "seeker_color": "0xFFFFFF",
-  "name_CN": "AGM-114 地狱火 激光制导空对地导弹"
+  "name_CN": "AGM-114K 地狱火2 激光制导空对地导弹"
 }

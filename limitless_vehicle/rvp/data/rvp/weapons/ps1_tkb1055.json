@@ -60,8 +60,8 @@
     "guidance_target_distance_range": "[[0,4500]]",
     "semi_correction_enabled": true,
     "semi_correction_stiffness": 0.2,
-    "semi_correction_damping": 0.895,
-    "semi_correction_wobble": 0.0
+    "semi_correction_damping": 10,
+    "semi_correction_wobble": 0.01
 
   },
   "effects_data": {

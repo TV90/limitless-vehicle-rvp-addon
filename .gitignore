@@ -64,3 +64,6 @@ limitless_vehicle/rvp/data/rvp/*
 RVP-I18N迁移备份_20260928/
 CM命中别名补全备份_20260929/
 坦克烟雾弹补全备份_20260929/
+
+# AI 逻辑删除回收站：只进不出，由用户手动清理（见 agents.md「删除操作铁律」）
+_recycle_bin/

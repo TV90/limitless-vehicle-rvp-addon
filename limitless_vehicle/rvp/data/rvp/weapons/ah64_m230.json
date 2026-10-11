@@ -37,7 +37,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 10
+    "direct_damage": 35
   },
   "fuse_data": {},
   "name_CN": "M230 30毫米机炮"
