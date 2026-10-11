@@ -14,6 +14,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
@@ -49,6 +50,12 @@ public final class RVP_ProjectileMotion {
         // 调用本项目纯数学攻角模型，用同步姿态作为跨 Tick 机体轴。
         RVP_AttackAngleSolution solution = RVP_AttackAngleModel.solve(
                 current, projectile.getLookAngle(), desired, limits);
+        // 调用统一写回入口，普通制导与 PIP 控制器都只能提交一次姿态及载荷。
+        return applyAttackAngleSolution(projectile, solution);
+    }
+
+    /** 提交已求解的攻角结果；PIP 的无副作用试算不能调用此方法。 */
+    public static Vec3 applyAttackAngleSolution(RVP_BaseBullet projectile, RVP_AttackAngleSolution solution) {
         // 调用本体向量工具把独立机体轴写入现有俯仰/偏航同步通道。
         Vec2 rotation = VectorUtil.vecToRot(solution.bodyDirection());
         projectile.setXRot(rotation.x);
@@ -57,6 +64,33 @@ public final class RVP_ProjectileMotion {
         projectile.recordAeroLoadFactor(solution.loadFactor());
         projectile.markAttackAngleApplied();
         return solution.velocity();
+    }
+
+    /** 读取本 Tick 动力状态供 PIP 反解，绝不在制导试算中触发二脉冲或修改点火时间。 */
+    public static RVP_PropulsionMath.MotorState resolvePIPMotorState(RVP_BaseBullet projectile) {
+        // 调用本项目状态访问器和纯时序解析入口，与运动阶段使用相同的点火及燃烧边界。
+        RVP_WeaponData data = projectile.getRvpData();
+        return resolvePIPMotorState(data == null ? null : data.getProjectileData(), projectile.getFlightTickCount(),
+                projectile.getColdLaunchTimeTick(), projectile.getSecondPulseStartTick(),
+                data != null && isDualPulseSupportedMissile(data));
+    }
+
+    /** 可独立回归的动力快照解析；等待二脉冲期间 PIP 原门控关闭，不预判未来点火。 */
+    static RVP_PropulsionMath.MotorState resolvePIPMotorState(RVP_ProjectileData data, int flightTick,
+            int coldLaunchTick, int secondPulseStartTick, boolean dualPulseSupported) {
+        // 调用本项目推进资格与点火配置，不给无发动机或点火前的弹体虚构推力。
+        if (data == null || !data.usesPropulsion()
+                || flightTick < Math.max(data.getResolvedIgnitionDelayTick(), coldLaunchTick)) {
+            return new RVP_PropulsionMath.MotorState(false, 0.0, 0.0);
+        }
+        int motorTick = flightTick - Math.max(data.getResolvedIgnitionDelayTick(), coldLaunchTick);
+        // 调用本项目二脉冲资格与配置出口，沿用运动阶段的闭区间燃烧窗口。
+        boolean secondBurning = motorTick > data.getResolvedMotorBurnTime()
+                && dualPulseSupported && data.usesSecondPulse()
+                && secondPulseStartTick >= 0 && flightTick >= secondPulseStartTick
+                && flightTick - secondPulseStartTick <= data.getResolvedSecondPulseBurnTime();
+        // 调用共用推进模型读取曲线推力与燃料质量，控制器和运动阶段不各写一套质量公式。
+        return RVP_PropulsionMath.resolveMotorState(data, motorTick, secondBurning);
     }
 
     /** 丢锁、延迟制导或无目标时仍推进残留攻角，姿态逐步向当前速度回正。 */

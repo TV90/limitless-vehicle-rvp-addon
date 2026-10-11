@@ -40,8 +40,8 @@ public final class RVP_AttackAngleModel {
         Vec3 axis = current.normalize();
         Vec3 desired = valid(desiredDirection) && desiredDirection.lengthSqr() > EPSILON * EPSILON
                 ? desiredDirection.normalize() : axis;
-        double response = limits.rvpMaxGs() != null ? G_CONTROL_RESPONSE
-                : Mth.clamp(limits.turningFactor(), 0.0, 1.0);
+        // 调用本项目统一姿态响应出口，使 PIP 逆响应与实际执行器采用同一比例。
+        double response = bodyResponse(limits);
         // 调用本项目球面插值推进弹轴，避免反向指令在线性插值中坍缩为零向量。
         body = RVP_BallisticTrajectoryMath.slerpDirection(body, desired, response);
         double cap = Math.toRadians(limits.attackAngleLimitDeg());
@@ -65,6 +65,12 @@ public final class RVP_AttackAngleModel {
                 ? RVP_BallisticTrajectoryMath.slerpDirection(axis, body, turn / angle).scale(current.length())
                 : current;
         return new RVP_AttackAngleSolution(next, body, angle, Mth.clamp(load, 0.0, 1.0), turn);
+    }
+
+    /** 返回既有机头响应比例；显式 G 优先，不改变普通制导的响应语义。 */
+    public static double bodyResponse(RVP_AeroSteeringLimits limits) {
+        return limits.rvpMaxGs() != null ? G_CONTROL_RESPONSE
+                : Mth.clamp(limits.turningFactor(), 0.0, 1.0);
     }
 
     /** 强制干扰造成的总攻角也计入能量代价；超过控制锥时饱和，不翻转升力符号。 */

@@ -108,6 +108,13 @@ public final class RVP_ProjectileLifecycleDebug {
             {"aeroLoadFactor", "气动载荷使用率"}, {"aeroAvailableG", "当前可用过载G"},
             {"aeroReferenceSpeed", "动压参考速度"}, {"aeroDensityFactor", "空气密度倍率"},
             {"aeroInducedDrag", "诱导阻力系数"},
+            {"branch", "制导分支"}, {"targetDistance", "制导目标距离"},
+            {"guidanceMaxAngle", "制导最大角度"}, {"pipStatus", "PIP求解状态"},
+            {"pipTimeTicks", "PIP相遇Tick"}, {"pipPoint", "PIP预测点"},
+            {"bodyCommand", "机头指令"}, {"requestedVelocity", "请求速度"},
+            {"predictedVelocity", "含推力预测速度"}, {"requestedTurnDeg", "请求转角度"},
+            {"aeroTurnDeg", "气动实际转角度"}, {"attackAngleDeg", "施力前攻角度"},
+            {"responseLimited", "机头响应限幅"},
             {"rotation", "旋转"}, {"targetEntity", "目标实体"}, {"targetPos", "目标位置"},
             {"lastGuidancePos", "上次制导位置"}, {"phase", "制导相位"},
             {"source", "制导源"}, {"stage", "制导阶段"}, {"radarOn", "雷达开启"},
@@ -198,6 +205,8 @@ public final class RVP_ProjectileLifecycleDebug {
         SPAWN_READY,
         /** 一次仍处于活动状态的服务端弹体 tick 已完成。 */
         TICK,
+        /** 制导分支、PIP 求解状态与攻角控制请求，仅在生命周期诊断开启时记录。 */
+        GUIDANCE,
         /** tick 阶段检查发现弹体已不存活，因此记录当前检查点和后续早退范围。 */
         NOT_ALIVE_TICK_EXIT,
         /** 弹体运行配置缺失。 */
@@ -1045,6 +1054,7 @@ public final class RVP_ProjectileLifecycleDebug {
             case TICK_STALLED -> "Tick停滞";
             case TICK_RESUMED -> "Tick恢复";
             case TICK -> "逐Tick状态";
+            case GUIDANCE -> "制导决策";
             case NOT_ALIVE_TICK_EXIT -> "弹体非存活早退";
             case CONFIG_MISSING -> "配置缺失";
             case SHOOTER_INVALID -> "发射者无效";

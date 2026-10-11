@@ -6,12 +6,15 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TrajectorySteeringMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PIPAttackAngleController;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PredictiveInterceptMath;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
@@ -55,6 +58,8 @@ public final class RVP_GuidanceRuntimeMath {
                 && context.active().guidanceType() == RVP_EnumGuidanceType.IR
                 && projectile.hasIrSeekerGrace();
         if (!trackEnvelopePassed && !irGrace) {
+            // 调用本项目惰性诊断，区分包线拒绝与 PIP 执行器没有跟上目标。
+            noteGuidanceDecision(context, "REJECTED", "TRACK_ENVELOPE", target, null, null);
             return false;
         }
 
@@ -126,6 +131,8 @@ public final class RVP_GuidanceRuntimeMath {
         }
         if (!withinGuidanceAngle && !irGrace && !intent.directMotion()) {
             // 电视弹（HITL_TV/DESIGNATE 追踪路径）与自动制导：超角维持原拒绝规则（行为不变）
+            // 调用本项目诊断记录速度轴超角，避免将停导误判为控制器弱响应。
+            noteGuidanceDecision(context, "REJECTED", "GUIDANCE_ANGLE", steeringTarget, null, null);
             return false;
         }
         if (intent.directMotion()) {
@@ -147,7 +154,12 @@ public final class RVP_GuidanceRuntimeMath {
         // 调用本项目攻角门控；攻角控制器需要原始期望方向，不能先做一次速度插值。
         float steeringFactor = rvpMaxGs != null || RVP_ProjectileMotion.usesAttackAngle(projectile) ? 1.0F : factor;
         Vec3 next;
+        boolean pipAttackApplied = false;
+        RVP_PredictiveInterceptMath.Solution intercept = null;
+        RVP_PIPAttackAngleController.Result pipControl = null;
+        String branch = "PURSUIT";
         if (isGpsCruiseActive(context, steeringTarget)) {
+            branch = "GPS_CRUISE";
             next = steerGpsCruise(
                     current,
                     steeringTarget.subtract(projectile.position()),
@@ -157,18 +169,27 @@ public final class RVP_GuidanceRuntimeMath {
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
         } else if (!isTopAttack && entity != null && canUsePredictiveIntercept(context)) {
-            next = steerPredictiveIntercept(
-                    projectile,
-                    projectile.position(),
-                    current,
-                    loftedTarget != null ? loftedTarget : target,
-                    entity.getDeltaMovement(),
-                    speed,
-                    steeringFactor
-            );
+            // 调用纯 PIP 几何求解一次，保留正根/回退状态供控制器和诊断共用。
+            intercept = RVP_PredictiveInterceptMath.solve(projectile.position(), current,
+                    loftedTarget != null ? loftedTarget : target, entity.getDeltaMovement());
+            branch = intercept.usable() ? "PIP" : "PIP_FALLBACK_PURSUIT";
+            // 调用既有方向插值；攻角开启时 factor=1，此处仅生成完整期望航迹。
+            next = intercept.usable() ? blendDirection(current,
+                    intercept.point().subtract(projectile.position()), speed, steeringFactor) : null;
             if (next == null || next.lengthSqr() <= 1.0E-8) {
+                // 调用原纯追踪回退；不可解时不伪造有限的 PIP 相遇点。
                 next = steerPursuit(
                         current, steeringTarget.subtract(projectile.position()), speed, steeringFactor);
+            } else if (RVP_ProjectileMotion.usesAttackAngle(projectile)) {
+                // 调用本项目配置与动力快照，冻结试算预算；不提前点火或写运动速度。
+                RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
+                        context.data().getProjectileVelocity(), projectile.getY(), factor);
+                pipControl = RVP_PIPAttackAngleController.solve(current, projectile.getLookAngle(), next,
+                        limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile));
+                // 调用本项目单次结果写回，禁止出口再次积分攻角或再次施加旧速度 blend。
+                next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, pipControl.steering());
+                pipAttackApplied = true;
+                branch = "PIP_ATTACK_ANGLE";
             }
         } else {
             next = steerPursuit(
@@ -178,10 +199,17 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         // 调用本项目实体气动转向收口；开关关闭时维持旧版 rvpMaxGs/turningFactor 行为。
-        next = applyResolvedAeroSteering(
-                projectile, context.data(), current, next, factor, rvpMaxGs);
+        if (!pipAttackApplied) {
+            next = applyResolvedAeroSteering(
+                    projectile, context.data(), current, next, factor, rvpMaxGs);
+        }
         projectile.setDeltaMovement(next);
+        // 调用本项目姿态收口，开启攻角时保持独立机头、不覆盖刚提交的控制结果。
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
+        // 调用本项目惰性诊断，记录真实执行分支与 PIP 暂停原因。
+        noteGuidanceDecision(context, branch, isTopAttack ? "TOP_ATTACK"
+                        : entity == null ? "NO_ENTITY_TARGET" : predictiveInterceptBlockReason(context),
+                steeringTarget, intercept, pipControl);
         return true;
     }
 
@@ -524,77 +552,19 @@ public final class RVP_GuidanceRuntimeMath {
     }
 
     /**
-     * 预测拦截点制导（Predictive Intercept Point, PIP）：
-     * 解算弹目相遇时间 t，计算目标未来位置 interceptPos = targetPos + targetVel * t，
-     * 然后转向该拦截点。对本体的 intercept() 方法做 RVP 适配。
-     *
-     * <p>RVP 适配差异：
-     * <ul>
-     *   <li>无 maxG/dynamicPressure — 用 RVP 的 turningFactor 做速度 blend</li>
-     *   <li>无 thrust/mass — 直接用当前 speed</li>
-     *   <li>无 MAGIC_NUMBER 降级 — 用 closing-speed 近似做 fallback</li>
-     * </ul>
+     * PIP 几何解到速度候选的兼容入口；机头/攻角控制在实体 PIP 分支单独适配。
+     * 无正根且未接近时返回 null，由调用方执行原有纯追踪回退。
      */
     public static Vec3 steerPredictiveIntercept(
-            RVP_BaseBullet projectile,
-            Vec3 missilePos,
-            Vec3 missileVelocity,
-            Vec3 targetPos,
-            Vec3 targetVelocity,
-            double speed,
-            float turningFactor
+            RVP_BaseBullet projectile, Vec3 missilePos, Vec3 missileVelocity,
+            Vec3 targetPos, Vec3 targetVelocity, double speed, float turningFactor
     ) {
-        if (missilePos == null || missileVelocity == null
-                || targetPos == null || targetVelocity == null || speed <= 1.0E-8) {
-            return null;
-        }
-
-        double missileSpeed = missileVelocity.length();
-        if (missileSpeed <= 1.0E-8) {
-            return null;
-        }
-
-        Vec3 relPos = targetPos.subtract(missilePos);
-        double targetSpeedSq = targetVelocity.lengthSqr();
-
-        // 解一元二次方程 a*t² + b*t + c = 0 求相遇时间 t
-        double a = targetSpeedSq - (missileSpeed * missileSpeed);
-        double b = 2.0 * relPos.dot(targetVelocity);
-        double c = relPos.lengthSqr();
-
-        double t = -1.0;
-        if (Math.abs(a) < 1.0E-8) {
-            // 速度相近：线性退化
-            if (b < 0) {
-                t = -c / b;
-            }
-        } else {
-            double discriminant = b * b - 4.0 * a * c;
-            if (discriminant >= 0.0) {
-                double sqrtD = Math.sqrt(discriminant);
-                double t1 = (-b + sqrtD) / (2.0 * a);
-                double t2 = (-b - sqrtD) / (2.0 * a);
-                if (t1 > 0.0 && t2 > 0.0) {
-                    t = Math.min(t1, t2);
-                } else {
-                    t = Math.max(t1, t2);
-                }
-            }
-        }
-
-        // Fallback：closing-speed 近似
-        if (t <= 0.0) {
-            Vec3 relVel = targetVelocity.subtract(missileVelocity);
-            double closingSpeed = missileSpeed - relVel.dot(relPos.normalize());
-            t = relPos.length() / Math.max(closingSpeed, 0.1);
-        }
-
-        // 计算预测拦截点
-        Vec3 interceptPos = targetPos.add(targetVelocity.scale(t));
-
-        // 转向拦截点（RVP 的 blend 模型）
-        Vec3 desired = interceptPos.subtract(missilePos).normalize().scale(speed);
-        return blendDirection(missileVelocity, desired, speed, turningFactor);
+        if (!Double.isFinite(speed) || speed <= 1.0E-8) return null;
+        // 调用本项目纯几何求解，统一实体、诊断及连续轨迹测试的相遇时间算法。
+        var intercept = RVP_PredictiveInterceptMath.solve(missilePos, missileVelocity, targetPos, targetVelocity);
+        if (!intercept.usable()) return null;
+        // 调用既有方向插值，保留无攻角路径的转向比例契约。
+        return blendDirection(missileVelocity, intercept.point().subtract(missilePos), speed, turningFactor);
     }
 
     private static Vec3 blendDirection(Vec3 current, Vec3 desired, double speed, float turningFactor) {
@@ -656,19 +626,47 @@ public final class RVP_GuidanceRuntimeMath {
      * 诱饵干扰期或二脉冲等待期仍走原SACLOS视线制导，而不是退化成实体纯追踪。</p>
      */
     public static boolean canUsePredictiveIntercept(RVP_GuidanceRuntimeContext context) {
-        if (context == null || !context.active().predictTargetPos()) {
-            return false;
-        }
+        // 调用统一原因解析，使 SACLOS STABLE 门控与实体诊断不会出现相反结论。
+        return "NONE".equals(predictiveInterceptBlockReason(context));
+    }
+
+    /** 解析既有 PIP 门控原因；只读状态，不改变二脉冲或干扰时序。 */
+    private static String predictiveInterceptBlockReason(RVP_GuidanceRuntimeContext context) {
+        if (context == null || context.active() == null || !context.active().predictTargetPos()) return "PREDICTION_DISABLED";
         RVP_BaseBullet projectile = context.projectile();
+        // 调用本项目飞行时钟与干扰状态出口，保持原先起始 Tick 和诱饵期暂停语义。
         if (projectile == null || projectile.getFlightTickCount() < context.active().predictTargetPosStartTick()) {
-            return false;
+            return "START_TICK";
         }
-        // 脱锁/诱饵期关闭提前量预测（比例引导 PIP）：追踪干扰物时用纯追踪指向当前位置，
-        // 避免比例引导前飞提前量、沿玩家航线追诱饵直击玩家
-        if (projectile.isJammedByDecoy()) {
-            return false;
-        }
-        return !isWaitingForSecondPulse(projectile);
+        if (projectile.isJammedByDecoy()) return "DECOY";
+        // 调用既有二脉冲等待判据，只报告原因，不触发点火。
+        return isWaitingForSecondPulse(projectile) ? "SECOND_PULSE_WAIT" : "NONE";
+    }
+
+    /** 复用生命周期日志记录真实分支，关闭诊断时不格式化向量或执行额外试算。 */
+    private static void noteGuidanceDecision(RVP_GuidanceRuntimeContext context, String branch,
+            String reason, Vec3 target, RVP_PredictiveInterceptMath.Solution intercept,
+            RVP_PIPAttackAngleController.Result control) {
+        // 调用本项目诊断开关与事件入口；详情仅在被追踪时构造，服务端无需客户端类型。
+        if (!RVP_ProjectileLifecycleDebug.isEnabled()) return;
+        RVP_BaseBullet projectile = context.projectile();
+        RVP_ProjectileLifecycleDebug.noteEvent(projectile, RVP_ProjectileLifecycleDebug.Event.GUIDANCE,
+                () -> "branch=" + branch + " reason=" + reason
+                        + " source=" + context.active().guidanceType()
+                        + " targetDistance=" + RVP_ProjectileLifecycleDebug.decimal(projectile.position().distanceTo(target))
+                        + " guidanceMaxAngle=" + context.active().maxGuidanceAngle()
+                        + " pipStatus=" + (intercept == null ? "NOT_EVALUATED" : intercept.status())
+                        + " pipTimeTicks=" + (intercept == null ? "<null>" : intercept.timeTicks())
+                        + " pipPoint=" + (intercept == null || intercept.point() == null ? "<null>"
+                            : RVP_ProjectileLifecycleDebug.formatVec(intercept.point()))
+                        + (control == null ? "" : " bodyCommand=" + RVP_ProjectileLifecycleDebug.formatVec(control.bodyCommand())
+                            + " requestedVelocity=" + RVP_ProjectileLifecycleDebug.formatVec(control.requestedVelocity())
+                            + " predictedVelocity=" + RVP_ProjectileLifecycleDebug.formatVec(control.predictedVelocity())
+                            + " requestedTurnDeg=" + Math.toDegrees(control.requestedTurnRadians())
+                            + " aeroTurnDeg=" + Math.toDegrees(control.steering().turnAngleRadians())
+                            + " attackAngleDeg=" + Math.toDegrees(control.steering().attackAngleRadians())
+                            + " responseLimited=" + control.responseLimited()
+                            + " aeroLoadFactor=" + control.steering().loadFactor()));
     }
 
     private static boolean isWaitingForSecondPulse(RVP_BaseBullet projectile) {

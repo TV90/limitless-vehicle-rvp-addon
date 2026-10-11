@@ -7,10 +7,27 @@ import org.ywzj.rvp.weapon.data.RVP_Range;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class RVP_GuidanceRuntimeMathTest {
 
     private static final double EPSILON = 1.0E-6;
+
+    /** 无攻角兼容入口仍按 factor 控制航迹，只有明确不可解的 PIP 才返回纯追踪回退信号。 */
+    @Test
+    void predictiveInterceptPreservesDirectionBlendAndSignalsUnreachableTarget() {
+        Vec3 velocity = new Vec3(5.5, 0, 0);
+        // 调用本项目公开 PIP 入口验证 factor=0 保持速度，factor=1 指向真实前置点。
+        assertVectorEquals(velocity, RVP_GuidanceRuntimeMath.steerPredictiveIntercept(
+                null, Vec3.ZERO, velocity, new Vec3(300, 0, 0), new Vec3(0, 0, 2), 5.5, 0));
+        Vec3 full = RVP_GuidanceRuntimeMath.steerPredictiveIntercept(
+                null, Vec3.ZERO, velocity, new Vec3(300, 0, 0), new Vec3(0, 0, 2), 5.5, 1);
+        assertEquals(5.5, full.length(), EPSILON);
+        assertEquals(2.0, full.z, EPSILON);
+        // 调用同一入口验证更快且远离的目标不再获得虚假的有限预测点。
+        assertNull(RVP_GuidanceRuntimeMath.steerPredictiveIntercept(
+                null, Vec3.ZERO, velocity, new Vec3(300, 0, 0), new Vec3(6, 0, 0), 5.5, 1));
+    }
 
     @Test
     void pursuitTurningFactorOwnsTheDirectionBlend() {
