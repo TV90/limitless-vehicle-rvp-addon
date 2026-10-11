@@ -25,16 +25,16 @@ class RVP_FireControlStabilizerStateTest {
         // 半自动未开放：从半自动按键按反序（SEMI_AUTO→STABLE→OFF）先命中 STABLE 跳入子集
         assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.SEMI_AUTO, autoAndManual));
 
-        int stableAndSemi = RVP_FireControlModeMask.parse("stable") | RVP_FireControlModeMask.parse("semi_auto");
-        assertEquals(Mode.SEMI_AUTO, RVP_FireControlStabilizerState.nextAllowedMode(Mode.STABLE, stableAndSemi));
-        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.SEMI_AUTO, stableAndSemi));
+        int autoAndSemi = RVP_FireControlModeMask.parse("auto") | RVP_FireControlModeMask.parse("semi");
+        assertEquals(Mode.SEMI_AUTO, RVP_FireControlStabilizerState.nextAllowedMode(Mode.STABLE, autoAndSemi));
+        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.SEMI_AUTO, autoAndSemi));
     }
 
     @Test
     void singleModeSubsetStaysPut() {
-        int stableOnly = RVP_FireControlModeMask.parse("stable");
-        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.STABLE, stableOnly));
-        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.SEMI_AUTO, stableOnly));
+        int autoOnly = RVP_FireControlModeMask.parse("auto");
+        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.STABLE, autoOnly));
+        assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.nextAllowedMode(Mode.SEMI_AUTO, autoOnly));
     }
 
     @Test
@@ -52,10 +52,10 @@ class RVP_FireControlStabilizerStateTest {
         // STABLE(0) 枚举序低于 OFF(2)，未开放半自动时取 STABLE
         assertEquals(Mode.STABLE, RVP_FireControlStabilizerState.resolveInitialMode(autoAndManual));
 
-        int semiAndManual = RVP_FireControlModeMask.parse("semi_auto") | RVP_FireControlModeMask.parse("manual");
+        int semiAndManual = RVP_FireControlModeMask.parse("semi") | RVP_FireControlModeMask.parse("manual");
         assertEquals(Mode.SEMI_AUTO, RVP_FireControlStabilizerState.resolveInitialMode(semiAndManual));
 
-        int offOnly = RVP_FireControlModeMask.parse("manual");
-        assertEquals(Mode.OFF, RVP_FireControlStabilizerState.resolveInitialMode(offOnly));
+        int manualOnly = RVP_FireControlModeMask.parse("manual");
+        assertEquals(Mode.OFF, RVP_FireControlStabilizerState.resolveInitialMode(manualOnly));
     }
 }

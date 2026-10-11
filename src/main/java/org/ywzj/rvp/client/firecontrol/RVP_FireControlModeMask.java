@@ -29,9 +29,9 @@ public final class RVP_FireControlModeMask {
             return 0;
         }
         return switch (mode.trim().toUpperCase(Locale.ROOT)) {
-            case "STABLE", "AUTO" -> STABLE;
-            case "SEMI_AUTO", "SEMIAUTO", "SEMI" -> SEMI_AUTO;
-            case "OFF", "MANUAL" -> OFF;
+            case "AUTO" -> STABLE;
+            case "SEMI" -> SEMI_AUTO;
+            case "MANUAL" -> OFF;
             default -> 0;
         };
     }

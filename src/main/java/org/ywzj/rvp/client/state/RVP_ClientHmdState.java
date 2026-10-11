@@ -3,6 +3,7 @@ package org.ywzj.rvp.client.state;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -117,6 +118,37 @@ public class RVP_ClientHmdState {
 
     public static RVP_ClientHmdState getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * 雷达 HMD 文案分流：头瞄是飞机的东西，直升机/战斗机保留"头盔瞄准具"，
+     * 其余载具（雷达头瞄只是自动搜索手段）提示"自动雷达搜索"。
+     */
+    public static boolean isAircraftVehicle(@Nullable AbstractVehicle vehicle) {
+        return vehicle instanceof org.ywzj.vehicle.entity.vehicle.FixedWingVehicle
+                || vehicle instanceof org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+    }
+
+    /** 按载具类型选雷达 HMD 文案键：航空器用头瞄文案，其它载具用自动雷达搜索文案。 */
+    public static net.minecraft.network.chat.Component radarHmdMessage(@Nullable AbstractVehicle vehicle,
+                                                                       HmdMessageType type) {
+        boolean aircraft = isAircraftVehicle(vehicle);
+        return net.minecraft.network.chat.Component.translatable(switch (type) {
+            case ON -> aircraft ? "message.ywzj_rvp.hmd.on" : "message.ywzj_rvp.hmd.radar_on";
+            case OFF -> aircraft ? "message.ywzj_rvp.hmd.off" : "message.ywzj_rvp.hmd.radar_off";
+            case LOCKED -> aircraft ? "message.ywzj_rvp.hmd.locked" : "message.ywzj_rvp.hmd.radar_locked";
+            case OUT_OF_BOUNDS -> aircraft
+                    ? "message.ywzj_rvp.hmd.out_of_bounds"
+                    : "message.ywzj_rvp.hmd.radar_out_of_bounds";
+        });
+    }
+
+    /** 雷达 HMD 提示种类（文案按载具类型分流）。 */
+    public enum HmdMessageType {
+        ON,
+        OFF,
+        LOCKED,
+        OUT_OF_BOUNDS
     }
 
     public boolean isHmdMode() {
@@ -678,7 +710,7 @@ public class RVP_ClientHmdState {
             radarWarningTicks = Math.min(radarWarningTicks + 1, OUT_OF_BOUNDS_TIMEOUT + 5);
             if (radarOutOfBoundsTicks >= OUT_OF_BOUNDS_TIMEOUT) {
                 mc.player.displayClientMessage(
-                        Component.translatable("message.ywzj_rvp.hmd.out_of_bounds"), true);
+                        radarHmdMessage(weaponUnit.getVehicle(), HmdMessageType.OUT_OF_BOUNDS), true);
                 disableRadarHmd();
             }
             return;
@@ -738,7 +770,7 @@ public class RVP_ClientHmdState {
             }
             disableRadarHmd();
             mc.player.displayClientMessage(
-                    Component.translatable("message.ywzj_rvp.hmd.locked"), true);
+                    radarHmdMessage(weaponUnit.getVehicle(), HmdMessageType.LOCKED), true);
         }
     }
 
