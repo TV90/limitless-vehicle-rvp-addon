@@ -1058,6 +1058,10 @@ function draw(){
     B.c.forEach(c=>{if(c.sx<mnx)mnx=c.sx;if(c.sx>mxx)mxx=c.sx;if(c.sy<mny)mny=c.sy;if(c.sy>mxy)mxy=c.sy;});
   }
   const padL=70,padR=24,padT=18,padB=44;
+  // 恒速弹速度剖面会退化为单点（span 仅浮点噪声）：span 极小时外扩半格，
+  // 否则 niceStep 给出低于 ULP 的步长，v+=step 被舍入吞噬 → 刻度循环死循环（2026-10-12 TOW 卡死根因）
+  if(mxx-mnx<1e-6){mnx-=0.5;mxx+=0.5;}
+  if(mxy-mny<1e-6){mny-=0.5;mxy+=0.5;}
   let toS;
   if(view3d){
     const spanX=Math.max(mxx-mnx,10),spanY=Math.max(mxy-mny,10);
@@ -1075,13 +1079,13 @@ function draw(){
   if(!view3d){
     ctx.strokeStyle="#e3e8ee";ctx.fillStyle="#66788c";ctx.font="11px sans-serif";
     const stepY=niceStep(mxy-mny,h-padT-padB);
-    for(let v=Math.ceil(mny/stepY)*stepY;v<=mxy;v+=stepY){
+    for(let v=Math.ceil(mny/stepY)*stepY,__g=0;v<=mxy&&__g++<4096;v+=stepY){
       const s=toS({sx:v,sy:v});
       ctx.beginPath();ctx.moveTo(padL,s.sy);ctx.lineTo(w-padR,s.sy);ctx.stroke();
       ctx.textAlign="right";ctx.fillText(fmtDist(v),padL-6,s.sy+4);
     }
     const stepX=niceStep(mxx-mnx,w-padL-padR);
-    for(let v=Math.ceil(mnx/stepX)*stepX;v<=mxx;v+=stepX){
+    for(let v=Math.ceil(mnx/stepX)*stepX,__g=0;v<=mxx&&__g++<4096;v+=stepX){
       const s=toS({sx:v,sy:0});
       ctx.beginPath();ctx.moveTo(s.sx,padT);ctx.lineTo(s.sx,h-padB);ctx.stroke();
       ctx.textAlign="center";ctx.fillText(fmtDist(v),s.sx,h-padB+16);
@@ -1118,28 +1122,28 @@ function draw(){
     quad(0,1,2,3,"rgba(250,251,253,.9)");
     ctx.strokeStyle="#dfe6ee";ctx.lineWidth=1;
     const stepF=niceStep(B.f1-B.f0,6), stepL=niceStep(B.l1-B.l0,6), stepY3=niceStep(B.y1-B.y0,6);
-    for(let v=Math.ceil(B.f0/stepF)*stepF;v<=B.f1;v+=stepF){
+    for(let v=Math.ceil(B.f0/stepF)*stepF,__g=0;v<=B.f1&&__g++<4096;v+=stepF){
       seg2(toS(p3(v,B.l0,B.y0)),toS(p3(v,B.l1,B.y0)));
       seg2(toS(p3(v,B.l1,B.y0)),toS(p3(v,B.l1,B.y1)));
     }
-    for(let v=Math.ceil(B.l0/stepL)*stepL;v<=B.l1;v+=stepL){
+    for(let v=Math.ceil(B.l0/stepL)*stepL,__g=0;v<=B.l1&&__g++<4096;v+=stepL){
       seg2(toS(p3(B.f0,v,B.y0)),toS(p3(B.f1,v,B.y0)));
       seg2(toS(p3(B.f1,v,B.y0)),toS(p3(B.f1,v,B.y1)));
     }
-    for(let v=Math.ceil(B.y0/stepY3)*stepY3;v<=B.y1;v+=stepY3){
+    for(let v=Math.ceil(B.y0/stepY3)*stepY3,__g=0;v<=B.y1&&__g++<4096;v+=stepY3){
       seg2(toS(p3(B.f0,B.l1,v)),toS(p3(B.f1,B.l1,v)));
       seg2(toS(p3(B.f1,B.l0,v)),toS(p3(B.f1,B.l1,v)));
     }
     ctx.strokeStyle="#b9c4d0";ctx.lineWidth=1.2;
     [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(e=>seg2(q[e[0]],q[e[1]]));
     ctx.fillStyle="#66788c";ctx.font="11px sans-serif";
-    for(let v=Math.ceil(B.f0/stepF)*stepF;v<=B.f1;v+=stepF){
+    for(let v=Math.ceil(B.f0/stepF)*stepF,__g=0;v<=B.f1&&__g++<4096;v+=stepF){
       const s=toS(p3(v,B.l0,B.y0));ctx.textAlign="center";ctx.fillText(fmtDist(v),s.sx,s.sy+14);
     }
-    for(let v=Math.ceil(B.l0/stepL)*stepL;v<=B.l1;v+=stepL){
+    for(let v=Math.ceil(B.l0/stepL)*stepL,__g=0;v<=B.l1&&__g++<4096;v+=stepL){
       const s=toS(p3(B.f0,v,B.y0));ctx.textAlign="right";ctx.fillText(fmtDist(v),s.sx-6,s.sy+4);
     }
-    for(let v=Math.ceil(B.y0/stepY3)*stepY3;v<=B.y1;v+=stepY3){
+    for(let v=Math.ceil(B.y0/stepY3)*stepY3,__g=0;v<=B.y1&&__g++<4096;v+=stepY3){
       const s=toS(p3(0,B.l1,v));ctx.textAlign="right";ctx.fillText(fmtDist(v),s.sx-6,s.sy+4);
     }
     const xl=toS(p3(B.f1/2,B.l0,B.y0)), zl=toS(p3(B.f0,B.l1,B.y0)), yl=toS(p3(0,B.l1,B.y1));
