@@ -4,7 +4,7 @@
   "shoot_interval": 100,
   "max_capacity": 19,
   "reload": {
-    "time": 60,
+    "time": 300,
     "ammo": "ywzj_vehicle:ammo_rocket"
   },
   "fire_data": {

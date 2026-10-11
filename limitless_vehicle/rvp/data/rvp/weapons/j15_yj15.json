@@ -6,7 +6,7 @@
   "max_capacity": 2,
   "life": 2400,
   "reload": {
-    "time": 200,
+    "time": 400,
     "ammo": "ywzj_vehicle:ammo_missile"
   },
   "fire_data": {

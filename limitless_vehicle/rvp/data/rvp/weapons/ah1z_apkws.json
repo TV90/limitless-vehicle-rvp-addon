@@ -1,0 +1,72 @@
+{
+  "type": "rvp:missile",
+  "name": "APKWS Laser-Guided Rocket",
+  "shoot_interval": 100,
+  "max_capacity": 14,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "rvp_fire_control_sensor_mode": "eo_ccip",
+  "fire_data": {
+    "spread": 0.05,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "collision_box_size": 0.35,
+    "velocity": 4.5,
+    "gravity": -0.01,
+    "drag": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 5.0,
+    "turning_factor": {
+      "[[1,inf]]": 0.1
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "SALH",
+    "guidance_tick_range": "[[2,inf]]",
+    "max_guidance_angle": 70,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "guidance_target_distance_range": "[[0,4000]]"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 20,
+      "radius": 4,
+      "destroy_block": true
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0,
+    "direct_damage": 150,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 2560,
+        "min_factor": 1
+      }
+    ]
+  },
+  "name_CN": "APKWS 激光制导火箭弹"
+}

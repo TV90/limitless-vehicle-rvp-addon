@@ -5,7 +5,7 @@
   "shoot_interval": 1000,
   "max_capacity": 8,
   "reload": {
-    "time": 100,
+    "time": 300,
     "ammo": "ywzj_vehicle:ammo_missile"
   },
   "fire_data": {
@@ -60,7 +60,7 @@
     "guidance_target_distance_range": "[[0,4500]]",
     "semi_correction_enabled": true,
     "semi_correction_stiffness": 0.25,
-    "semi_correction_damping": 10,
+    "semi_correction_damping": 1.5,
     "semi_correction_wobble": 0.01
 
   },

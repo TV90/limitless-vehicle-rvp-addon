@@ -5,7 +5,7 @@
   "shoot_interval": 200,
   "max_capacity": 2,
   "reload": {
-    "time": 100,
+    "time": 300,
     "ammo": "ywzj_vehicle:ammo_aerial_bomb"
   },
   "x_rot_max": 90,

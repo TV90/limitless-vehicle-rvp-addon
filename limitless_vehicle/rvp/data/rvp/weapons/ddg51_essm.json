@@ -6,7 +6,7 @@
   "fire_control_sensor_type_override": "rf",
   "max_capacity": 12,
   "reload": {
-    "time": 80,
+    "time": 300,
     "ammo": "ywzj_vehicle:ammo_missile"
   },
   "fire_data": {

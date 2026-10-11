@@ -1,0 +1,88 @@
+{
+  "type": "rvp:rocket",
+  "name": "M261 MPSM Cluster Rocket",
+  "shoot_interval": 100,
+  "max_capacity": 14,
+  "reload": {
+    "time": 200,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "rvp_fire_control_sensor_mode": "eo_ccip",
+  "fire_data": {
+    "spread": 0.2,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "velocity": 4.5,
+    "gravity": -0.01,
+    "drag": 0,
+    "constant_speed": true,
+    "rotate_to_motion": true,
+    "max_speed": 4.5
+  },
+  "fuse_data": {
+    "ground_proximity_fuse_distance": 20.0,
+    "ground_proximity_fuse_arm_tick": 10,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 10,
+      "radius": 2,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0,
+    "direct_damage": 50,
+    "damage_decay": [
+      {
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 2560,
+        "min_factor": 1
+      }
+    ]
+  },
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": [
+          "on_fuse"
+        ],
+        "release_events": 1,
+        "parent_action": "continue",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:ah1z_mpsm_m73",
+            "count": 5,
+            "inherit_parent_velocity": true,
+            "inherit_vehicle_velocity": false,
+            "velocity_scale": 1.0,
+                        "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 10.0,
+              "canister_distribution": "uniform",
+              "canister_shape": "circle"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "name_CN": "M261 多用途集束火箭弹"
+}
