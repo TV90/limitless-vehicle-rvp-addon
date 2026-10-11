@@ -76,7 +76,11 @@ public final class RVP_VehiclePackInstaller {
                 if (packMetaJar == null || packMetaJar.getVersion() == null) {
                     return true;
                 }
-                if (packMetaExist.getVersion().compareTo(packMetaJar.getVersion()) >= 0) {
+                // 调用本项目版本策略（2026-10-13 改"不等于"）：载具包版本为复合形态
+                // （如 0.0.1_alpha_0.6.1 = mod 版本 + 本体适配版本），存在版本线重启，
+                // 字典序/语义化"小于才覆盖"都不适配（旧线 0.5.9 字典序反而大于新线 0.0.1_alpha_…）。
+                // 改为：磁盘版本与 jar 内版本不一致即备份重装——玩家目录的包始终跟随 jar 镜像。
+                if (packMetaExist.getVersion().equals(packMetaJar.getVersion())) {
                     return true;
                 }
             }
