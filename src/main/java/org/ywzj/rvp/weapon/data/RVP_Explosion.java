@@ -1,5 +1,6 @@
 package org.ywzj.rvp.weapon.data;
 
+import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import org.ywzj.vehicle.vehicle.pojo.Explosion;
 
@@ -29,17 +30,24 @@ public class RVP_Explosion extends Explosion {
     }
 
     /**
-     * 弹药爆炸对载具的伤害倍率（2026-09-20 拆分新增，武器侧参数）：
+     * 弹药爆炸对载具的伤害倍率（2026-09-20 拆分新增，武器侧参数；2026-10-12 支持按机型）：
      * 作用于本体核心距离衰减之后的爆炸伤害（面板 300 → 命中偏差衰减 270 → ×2 = 540）。
-     * 仅对<b>载具目标</b>生效（经 {@code RVP_VehicleHurtScalingHandler} 爆炸分支乘算，
-     * 生物目标不乘）；与受击载具侧的 {@code vehicle_explosion_damage_factor}（per-bone）
-     * 独立相乘。未写 = 1.0（不缩放）。
+     * 仅对<b>载具目标</b>生效（经 {@code RVP_VehicleHurtScalingHandler} 爆炸分支按受击载具
+     * 实体类型求值乘算，生物目标不乘）；与受击载具侧的 {@code vehicle_explosion_damage_factor}
+     * （per-bone）独立相乘。两种 JSON 写法（经 {@link RVP_DamageFactorAdapter}，键名不变）：
+     * <ul>
+     *   <li>数字 {@code 2.0} —— 对所有载具统一 ×2（旧语义，等价 {@code vehicle_default}）；</li>
+     *   <li>对象 {@code {"vehicle_default":1.0,"vehicles":{"ywzj_vehicle:rotary_wing_vehicle":2.0}}}
+     *       —— 未命中 {@code vehicles} 的机型回退 {@code vehicle_default}。</li>
+     * </ul>
+     * 未写 / {@code null} / 数字 ≤0 = 1.0（不缩放）。
      */
+    @JsonAdapter(RVP_DamageFactorAdapter.class)
     @SerializedName("explosion_damage_factor")
-    private Float explosionDamageFactor;
+    private RVP_DamageFactor explosionDamageFactor;
 
     /** {@code null} 表示未配置（1.0，不缩放）。 */
-    public Float getExplosionDamageFactor() {
+    public RVP_DamageFactor getExplosionDamageFactor() {
         return explosionDamageFactor;
     }
 

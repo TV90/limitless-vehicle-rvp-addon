@@ -9,6 +9,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.physics.RVP_PhysicsOnlyCollisionHelper;
+import org.ywzj.rvp.weapon.data.RVP_DamageFactor;
 import org.ywzj.rvp.weapon.effects.RVP_ExplosionDamageFactor;
 import org.ywzj.vehicle.api.event.VehicleAttackEvent;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -153,8 +154,13 @@ public final class RVP_VehicleHurtScalingHandler {
         // 受击载具侧爆炸倍率（vehicle_explosion_damage_factor，per-bone + 默认）
         float vehicleExplosionHitboxMult = 1f;
         boolean vehicleExplosionHitboxEnabled = false;
-        // 武器侧爆炸倍率（explosion_data.explosion_damage_factor，RVP_ExplosionDamageFactor 窗口）
-        float weaponExplosionDamageFactor = RVP_ExplosionDamageFactor.current();
+        // 武器侧爆炸倍率（explosion_data.explosion_damage_factor，RVP_ExplosionDamageFactor 窗口）：
+        // 2026-10-12 起窗口存倍率表（RVP_DamageFactor），按受击载具 self 的实体类型求值——
+        // 数字写法经 adapter 归一为 vehicle_default，语义与旧单值完全一致。
+        RVP_DamageFactor weaponExplosionFactorTable = RVP_ExplosionDamageFactor.current();
+        float weaponExplosionDamageFactor = weaponExplosionFactorTable == null
+                ? 1f
+                : weaponExplosionFactorTable.getFactor(self);
         // [RVP] 辅助设备爆炸损伤（§38）：爆心提升到分支外，供下方设备损伤入账复用
         Vec3 explosionPos = null;
         if (explosion) {

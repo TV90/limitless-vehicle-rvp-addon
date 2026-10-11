@@ -64,6 +64,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeMath;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
+import org.ywzj.rvp.weapon.data.RVP_DamageFactor;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
 import org.ywzj.rvp.weapon.data.RVP_Explosion;
 import org.ywzj.rvp.weapon.data.RVP_ParticleProjectileData;
@@ -4167,11 +4168,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
 
     /**
      * 弹药爆炸对载具的伤害倍率窗口（2026-09-20 拆分，武器侧
-     * {@code explosion_data.explosion_damage_factor}）：倍率 ≠1 时把爆炸调用包进
-     * {@link RVP_ExplosionDamageFactor} 窗口，handler 爆炸分支对载具目标乘算。
+     * {@code explosion_data.explosion_damage_factor}）：倍率表已配置（{@code isConfigured()}）
+     * 时把爆炸调用包进 {@link RVP_ExplosionDamageFactor} 窗口，handler 爆炸分支按受击载具
+     * 机型求倍率（2026-10-12 起窗口存 {@link RVP_DamageFactor}，数字写法语义不变）。
      */
-    private static Runnable wrapExplosionDamageFactor(Runnable action, float damageFactor) {
-        return damageFactor != 1f
+    private static Runnable wrapExplosionDamageFactor(Runnable action, RVP_DamageFactor damageFactor) {
+        return damageFactor != null && damageFactor.isConfigured()
                 ? () -> RVP_ExplosionDamageFactor.run(damageFactor, action)
                 : action;
     }
@@ -4284,12 +4286,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Float destroyRadiusCfg = explosion instanceof RVP_Explosion rvpExplosion
                 ? rvpExplosion.getDestroyRadius()
                 : null;
-        // 武器侧爆炸伤害倍率（2026-09-20 拆分，仅载具目标乘算）：窗口包装见 wrapExplosionDamageFactor
-        float explosionDamageFactor = explosion instanceof RVP_Explosion rvpExplosion2
-                && rvpExplosion2.getExplosionDamageFactor() != null
-                && rvpExplosion2.getExplosionDamageFactor() > 0f
-                        ? rvpExplosion2.getExplosionDamageFactor()
-                        : 1f;
+        // 武器侧爆炸伤害倍率（2026-09-20 拆分，仅载具目标乘算）：窗口包装见 wrapExplosionDamageFactor。
+        // 2026-10-12 起取整张倍率表（null=未配置），handler 爆炸分支按受击载具机型求值；
+        // 数字写法经 RVP_DamageFactorAdapter 归一为 vehicle_default，≤0/非有限已由 adapter 过滤为 null。
+        RVP_DamageFactor explosionDamageFactor = explosion instanceof RVP_Explosion rvpExplosion2
+                ? rvpExplosion2.getExplosionDamageFactor()
+                : null;
         boolean disableTerrain = destroyRadiusCfg != null && destroyRadiusCfg <= 0f;
         boolean splitDestroyRadius = explosion.destroyBlock && destroyRadiusCfg != null
                 && !disableTerrain && destroyRadiusCfg != radius;
