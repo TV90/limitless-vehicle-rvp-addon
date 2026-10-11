@@ -221,6 +221,55 @@ tasks.matching { it.name == 'reobfJarJar' }.configureEach {
     finalizedBy tasks.named('reobfJarJarNamed')
 }
 
+// ===== 玩家完整版 jar（自解压载具包）=====
+// 默认 build 产物为轻量 jar（不含载具包，开发者日常用）；jarFull 额外把构建目录副本
+// build/rvp-pack 打进 jar 根 /rvp，玩家首次启动由 RVP_VehiclePackInstaller 自解压到
+// 游戏目录 limitless_vehicle/rvp（机制见 docs/plan/本体载具包自解压机制调研_20261012.md）。
+// 副本生成流程：复制 limitless_vehicle/rvp → build/rvp-pack，并按删除铁律把 *.bbmodel
+// 移入 _recycle_bin（bbmodel 为 Blockbench 源文件，不进玩家 jar）。
+tasks.register('jarFull', Jar) {
+    archiveClassifier = 'full'
+    // 副本存在性检查：gradle clean 会清掉 build/rvp-pack，缺失时明确报错提示重建。
+    doFirst {
+        if (!file("$buildDir/rvp-pack/vehicle_pack.meta.json").exists()) {
+            throw new GradleException('build/rvp-pack 缺失：请先复制 limitless_vehicle/rvp 到该目录（并按删除铁律剔除 bbmodel）后再构建 jarFull')
+        }
+    }
+    from sourceSets.main.output
+    from("$buildDir/rvp-pack") {
+        into 'rvp' // 与 RVP_VehiclePackInstaller 的 PACK_RESOURCE_ROOT("/rvp") 对齐
+    }
+    manifest {
+        attributes([
+                'MixinConfigs'            : "${mod_id}.mixins.json",
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+    finalizedBy 'reobfJarFull'
+}
+
+tasks.register('reobfJarFullNamed', Copy) {
+    dependsOn 'reobfJarFull'
+    from("$buildDir/reobfJarFull/output.jar")
+    into("$buildDir/libs/reobf")
+    rename { "${mod_id}-${minecraft_version}-${mod_version}-reobf-full.jar" }
+}
+
+tasks.matching { it.name == 'reobfJarFull' }.configureEach {
+    finalizedBy tasks.named('reobfJarFullNamed')
+}
+
+reobf {
+    // 玩家完整版同样需要 SRG 重映射（1.20.1 Forge 生产环境为 SRG 映射）
+    jarFull {}
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
