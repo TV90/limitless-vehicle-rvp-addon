@@ -43,6 +43,15 @@ public final class RVP_FireSupportPatternTypes {
 
     private static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath("rvp", path); }
 
+    /**
+     * 代码直构 point 几何实现（2026-10-13 坐标指示吊舱×火力支援整合）：
+     * 供 {@code RVP_PodFireSupportRegistry} 把吊舱内联条目转换为运行时 profile 时使用，
+     * 避免为拿一个 BuiltInPattern 而走 JSON 解析路径。仅限内建 point 类型。
+     */
+    public static RVP_FireSupportPattern createBuiltInPoint() {
+        return new BuiltInPattern(POINT);
+    }
+
     private record ParameterPatternFactory(ResourceLocation typeId, Map<String, Integer> required)
             implements RVP_FireSupportPatternFactory {
         @Override

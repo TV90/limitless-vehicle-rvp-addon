@@ -12,7 +12,28 @@
     "block_range": 600,
     "mark_duration": 400,
     "write_gps_target": true,
-    "team_share": true
+    "team_share": true,
+    "rvp_fire_support": [
+      {
+        "id": "test_bomb",
+        "display_CN": "测试炸弹投掷",
+        "call_duration_ticks": 100,
+        "cooldown_ticks": 200,
+        "max_target_distance_m": 600,
+        "max_rounds": 4,
+        "weapon": "rvp:f14d_mk84",
+        "rounds_per_call": 1,
+        "interval_ticks": 40,
+        "scatter_radius_m": 8,
+        "delivery": {
+          "type": "rvp:vertical_projectile",
+          "data": {
+            "spawn_height_above_impact_m": 200,
+            "entry_speed_m_per_tick": 4
+          }
+        }
+      }
+    ]
   },
   "laser_data": {
     "range": 600

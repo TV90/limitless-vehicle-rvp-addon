@@ -15,6 +15,8 @@ import org.ywzj.rvp.network.remotevisibility.S2CRemoteVehicleVisualSnapshot;
 import org.ywzj.rvp.network.visual.S2CVisualEffectEvent;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupport;
 import org.ywzj.rvp.network.firesupport.C2SRequestFireSupportCeaseFire;
+import org.ywzj.rvp.network.firesupport.C2SSavePodFireSupportSelection;
+import org.ywzj.rvp.network.firesupport.S2CPodFireSupportSelection;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportMissionUpdate;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportProfileSnapshot;
 import org.ywzj.rvp.network.firesupport.S2CFireSupportRequestResult;
@@ -334,6 +336,18 @@ public class RVP_Network {
                 .encoder(C2SRequestFireSupportCeaseFire::encode)
                 .decoder(C2SRequestFireSupportCeaseFire::decode)
                 .consumerMainThread(C2SRequestFireSupportCeaseFire::handle)
+                .add();
+        // [RVP] 吊舱火力支援选择保存（C2S，2026-10-13 整合批）：战术地图吊舱工具上行
+        CHANNEL.messageBuilder(C2SSavePodFireSupportSelection.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(C2SSavePodFireSupportSelection::encode)
+                .decoder(C2SSavePodFireSupportSelection::decode)
+                .consumerMainThread(C2SSavePodFireSupportSelection::handle)
+                .add();
+        // [RVP] 吊舱火力支援选择同步（S2C，2026-10-13 整合批）：保存 ACK + 登录/reload 下发
+        CHANNEL.messageBuilder(S2CPodFireSupportSelection.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CPodFireSupportSelection::encode)
+                .decoder(S2CPodFireSupportSelection::decode)
+                .consumerMainThread(S2CPodFireSupportSelection::handle)
                 .add();
         // [RVP] 激光致盲（S2C）：客户端白色闪光滤镜
         CHANNEL.messageBuilder(S2CLaserBlind.class, id++, NetworkDirection.PLAY_TO_CLIENT)

@@ -475,7 +475,14 @@ public class RVP_ClientEvents {
                 // 调用本项目双端安全桥：K 键持有终端时打开炮火工具上下文。
                 RVP_ClientActionsAccess.openFireSupportTerminal();
             } else {
-                mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
+                // 坐标指示吊舱×火力支援整合（2026-10-13）：当前选中武器配置了内联火力条目时，
+                // 打开吊舱配置工具（只能选配置并保存，不能直接打击；打击由吊舱标记自动触发）。
+                var podTool = ywzj_rvp$resolvePodFireSupportTool();
+                if (podTool != null) {
+                    mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode(), podTool));
+                } else {
+                    mc.setScreen(new RVP_TacticalMapScreen(ywzj_rvp$resolveMapMode()));
+                }
             }
         }
         // [RVP] O 键：辅助设备面板（俯视图 + 设备状态栏目 + 快修顺序设置）。
@@ -748,6 +755,29 @@ public class RVP_ClientEvents {
         return weapon.getData().getMiscData().isArtilleryMap()
                 ? RVP_TacticalMapScreen.MapMode.ARTILLERY
                 : RVP_TacticalMapScreen.MapMode.TACTICAL;
+    }
+
+    /**
+     * 坐标指示吊舱×火力支援整合（2026-10-13）：当前选中武器为配置了内联火力条目的吊舱时，
+     * 构造吊舱配置工具（选条目并保存，不发起打击）；否则返回 null 走普通地图。
+     */
+    private static org.ywzj.rvp.client.screen.tool.RVP_PodFireSupportMapTool ywzj_rvp$resolvePodFireSupportTool() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        WeaponUnit weaponUnit = lvp != null ? lvp.getWeaponUnit() : null;
+        if (weaponUnit == null) {
+            return null;
+        }
+        AbstractVehicleWeapon<?> currentWeapon = weaponUnit.getCurrentWeapon().orElse(null);
+        // 调用本项目武器解包助手：Agent/Multi 代理解到具体武器，再确认是 RVP 吊舱武器。
+        if (!(org.ywzj.rvp.util.RVP_WeaponResolveHelper.unwrap(currentWeapon) instanceof RVP_WeaponBase weapon)) {
+            return null;
+        }
+        var podData = weapon.getData().getTargetingPodData();
+        if (podData == null || podData.getFireSupportEntries().isEmpty()) {
+            return null;
+        }
+        return new org.ywzj.rvp.client.screen.tool.RVP_PodFireSupportMapTool(
+                weapon.getData().getWeaponId().getPath(), podData.getFireSupportEntries());
     }
 
     private static void ywzj_rvp$applyScopeOverrides() {

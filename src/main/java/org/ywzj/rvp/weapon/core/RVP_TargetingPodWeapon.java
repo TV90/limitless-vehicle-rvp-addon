@@ -90,6 +90,13 @@ public class RVP_TargetingPodWeapon extends RVP_WeaponBase {
             player.displayClientMessage(Component.translatable("message.ywzj_rvp.targeting_pod.no_target"), true);
         }
 
+        // 坐标指示吊舱×火力支援整合（2026-10-13）：配置了内联火力条目的吊舱，方块标记成功后
+        // 按玩家已保存选择自动呼叫火力打击（内部走 MissionManager 全链，结果 actionbar 反馈）。
+        if (blockPos != null && !podData.getFireSupportEntries().isEmpty()) {
+            org.ywzj.rvp.firesupport.server.RVP_PodFireSupportRegistry.tryTrigger(
+                    player, getData().getWeaponId().getPath(), blockPos);
+        }
+
         return true;
     }
 

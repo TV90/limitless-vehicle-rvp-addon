@@ -32,22 +32,41 @@ public final class RVP_FireSupportRequestValidator {
                                             RVP_FireSupportSnapshot snapshot, int activeForPlayer,
                                             int activeGlobal, long cooldownUntilTick) {
         if (!basicRequestValid(player, request)) return ValidationResult.reject(RVP_FireSupportEndReason.INVALID_PACKET);
-        if (request.revision() != snapshot.revision()) return ValidationResult.reject(RVP_FireSupportEndReason.STALE_REVISION);
 
-        ItemStack held = player.getItemInHand(request.hand());
         ResourceLocation profileId = request.profileId();
-        RVP_FireSupportProfile profile = snapshot.profiles().get(profileId);
-        if (profile == null) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
-        if (!RVP_FireSupportTerminalIdentity.isTerminal(held)
-                || !profileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(held))
-                || !RVP_FireSupportTerminalIdentity.isAllowedHand(player, request.hand(), profile.holderPolicy())) {
-            return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
-        }
+        RVP_FireSupportProfile profile;
+        UUID terminalId;
+        if (request.source() == RVP_FireSupportRequest.Source.POD) {
+            // ── POD 来源（2026-10-13 坐标指示吊舱×火力支援整合）：profile 从吊舱注册表直取
+            //（不经 datapack 快照，终端 UI 天然不可见），跳过 revision/手持终端/终端实例校验，
+            // 改为校验"请求与玩家已保存选择一致"——服务端不采信未经保存的任意参数组合。
+            profile = RVP_PodFireSupportRegistry.getProfile(profileId);
+            if (profile == null) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
+            String weaponPath = podWeaponPath(profileId);
+            String entryId = podEntryId(profileId);
+            if (weaponPath == null || entryId == null
+                    || !entryId.equals(RVP_PodFireSupportSelectionStore.getSelection(player, weaponPath))) {
+                // 已保存选择缺失/不匹配（reload 删除条目、跨武器串扰等）：按配置不存在拒绝。
+                return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
+            }
+            terminalId = RVP_PodFireSupportRegistry.sentinelTerminalId();
+        } else {
+            if (request.revision() != snapshot.revision()) return ValidationResult.reject(RVP_FireSupportEndReason.STALE_REVISION);
 
-        UUID terminalId = RVP_FireSupportTerminalIdentity.getOrCreate(player, held);
-        if (terminalId == null) return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
-        if (!RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(player, terminalId, profileId)) {
-            return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_DUPLICATED);
+            ItemStack held = player.getItemInHand(request.hand());
+            profile = snapshot.profiles().get(profileId);
+            if (profile == null) return ValidationResult.reject(RVP_FireSupportEndReason.PROFILE_NOT_FOUND);
+            if (!RVP_FireSupportTerminalIdentity.isTerminal(held)
+                    || !profileId.equals(RVP_FireSupportTerminalIdentity.readProfileId(held))
+                    || !RVP_FireSupportTerminalIdentity.isAllowedHand(player, request.hand(), profile.holderPolicy())) {
+                return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
+            }
+
+            terminalId = RVP_FireSupportTerminalIdentity.getOrCreate(player, held);
+            if (terminalId == null) return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_NOT_HELD);
+            if (!RVP_FireSupportTerminalIdentity.ownsUniqueTerminal(player, terminalId, profileId)) {
+                return ValidationResult.reject(RVP_FireSupportEndReason.TERMINAL_DUPLICATED);
+            }
         }
 
         RVP_FireSupportProfile.Munition munition = profile.munitions().get(request.munitionId());
@@ -143,6 +162,26 @@ public final class RVP_FireSupportRequestValidator {
     private static boolean validSelection(String value) {
         return value != null && !value.isEmpty() && value.length() <= MAX_SELECTION_LENGTH
                 && value.matches("[a-z0-9_.-]+");
+    }
+
+    /** @return POD profile ID 中的武器 path 段（{@code rvp:pod/<weaponPath>/<entryId>}）；形态不符返回 null。 */
+    private static String podWeaponPath(ResourceLocation profileId) {
+        String path = profileId.getPath();
+        if (!path.startsWith("pod/") || path.length() <= 4) return null;
+        String rest = path.substring(4);
+        int split = rest.lastIndexOf('/');
+        if (split <= 0 || split == rest.length() - 1) return null;
+        return rest.substring(0, split);
+    }
+
+    /** @return POD profile ID 中的条目 id 段；形态不符返回 null。 */
+    private static String podEntryId(ResourceLocation profileId) {
+        String path = profileId.getPath();
+        if (!path.startsWith("pod/") || path.length() <= 4) return null;
+        String rest = path.substring(4);
+        int split = rest.lastIndexOf('/');
+        if (split <= 0 || split == rest.length() - 1) return null;
+        return rest.substring(split + 1);
     }
 
     private static boolean targetValid(ServerPlayer player, RVP_FireSupportRequest request,

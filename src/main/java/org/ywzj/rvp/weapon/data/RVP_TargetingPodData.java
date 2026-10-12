@@ -43,6 +43,10 @@ public class RVP_TargetingPodData {
     @SerializedName("team_share")
     private boolean teamShare = true;
 
+    /** 内联火力支援条目列表（2026-10-13 坐标指示吊舱×火力支援整合）；空列表 = 该吊舱无打击能力。 */
+    @SerializedName("rvp_fire_support")
+    private List<RVP_PodFireSupportEntryData> fireSupport = new ArrayList<>();
+
     public String getMode() {
         return mode == null ? "entity" : mode;
     }
@@ -95,5 +99,26 @@ public class RVP_TargetingPodData {
 
     public boolean isTeamShare() {
         return teamShare;
+    }
+
+    /** 内联火力支援条目（只读快照；空列表 = 无打击能力）。 */
+    public List<RVP_PodFireSupportEntryData> getFireSupportEntries() {
+        if (fireSupport == null || fireSupport.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(fireSupport);
+    }
+
+    /** 按 id 查内联条目；未配置或 id 不存在返回 null。 */
+    public RVP_PodFireSupportEntryData findFireSupportEntry(String entryId) {
+        if (entryId == null || entryId.isBlank()) {
+            return null;
+        }
+        for (RVP_PodFireSupportEntryData entry : getFireSupportEntries()) {
+            if (entry.getId().equals(entryId)) {
+                return entry;
+            }
+        }
+        return null;
     }
 }

@@ -95,11 +95,12 @@ public record C2SRequestFireSupport(
         context.enqueueWork(() -> {
             if (context.getSender() == null) return;
             // 调用本项目权威任务管理器：在服务端主线程复核请求并执行 nonce 幂等创建。
+            // 终端 UI 上报来源固定 TERMINAL（吊舱自动触发走服务端 POD 路径，不经此包）。
             RVP_FireSupportMissionManager.SubmissionResult result = RVP_FireSupportMissionManager.submit(
                     context.getSender(), new RVP_FireSupportRequest(message.revision, message.hand,
                             message.profileId, message.munitionId, message.fireModeId, message.patternId, message.targetX,
                             message.targetZ, message.headingDegrees, message.inboundHeadingDegrees,
-                            message.parameters, message.nonce));
+                            message.parameters, message.nonce, RVP_FireSupportRequest.Source.TERMINAL));
             // 调用本项目网络通道，把权威接受/拒绝摘要只回复给请求玩家。
             RVP_Network.CHANNEL.sendTo(S2CFireSupportRequestResult.from(result),
                     context.getSender().connection.connection, NetworkDirection.PLAY_TO_CLIENT);
