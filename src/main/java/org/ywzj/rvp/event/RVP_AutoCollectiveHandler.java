@@ -103,7 +103,13 @@ public final class RVP_AutoCollectiveHandler {
         RVP_VehicleExtendedConfigManager.VehicleExtendedConfig.AutoCollectiveConfig config =
                 RVP_VehicleExtendedConfigManager.getAutoCollectiveConfig(vehicleId);
         if (config == null || !config.enabled()) {
-            // 未配置 rvp_auto_collective 参数块 = 该载具不支持自动总距（开关默认关闭语义）
+            // 未配置 rvp_auto_collective 参数块 = 该载具不支持自动总距（开关默认关闭语义）。
+            // 兜底（2026-10-12 玩家崩服后加）：非 RVP 直升机没有 rvp 扩展配置，若此前被
+            // Z 键切进了自动总距态（AUTO_COLLECTIVE=true），此处静默回常规态，避免
+            // 玩家停在"切了但永远无效果"的哑态（崩溃本体已由 Manager 判空修复）。
+            if (AUTO_COLLECTIVE.getOrDefault(uuid, false)) {
+                AUTO_COLLECTIVE.put(uuid, false);
+            }
             return;
         }
         // 与本体 hoverMode 阻尼同源的垂直速度基准（推力结算后、物理积分前）

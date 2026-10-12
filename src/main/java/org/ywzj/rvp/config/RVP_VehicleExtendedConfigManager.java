@@ -132,7 +132,11 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         if (vehicleId == null) {
             return null;
         }
-        return INSTANCE.configs.get(vehicleId).autoCollective();
+        // 非本包载具（其它载具包的直升机等）没有任何 RVP 扩展配置：configs 无条目，
+        // Map.get 返回 null——必须判空返回 null（= 不支持自动总距），不能直接解引用
+        // （2026-10-12 玩家崩服：非 RVP 直升机切自动总距态即 NPE，见 RVP_AutoCollectiveHandler）。
+        RVP_VehicleExtendedConfigManager.VehicleExtendedConfig config = INSTANCE.configs.get(vehicleId);
+        return config == null ? null : config.autoCollective();
     }
 
     /**
