@@ -65,6 +65,13 @@ public final class RVP_AutoCollectiveHandler {
             return;
         }
         // --- Z 键三态检测：本体翻转 hoverMode = 用户按键信号，按三态推进/校正 ---
+        // 资格前置（2026-10-13 玩家反馈"切不了悬停"后修正）：非 RVP 直升机（无 rvp 扩展配置）
+        // 不参与三态机——若放行进 toggle，wasAuto 恒 false 会把 hoverMode 强制改回 false
+        // （拦截悬停改去自动总距态），随后兜底又打回常规，玩家按 Z 永远进不了悬停。
+        // 此处直接放行：非 RVP 直升机的 Z 键保持本体原版悬停开/关（纯二态）。
+        if (!RVP_VehicleExtendedConfigManager.hasAutoCollectiveConfig(vehicle.getVehicleId())) {
+            return;
+        }
         UUID uuid = vehicle.getUUID();
         boolean hover = vehicle.hoverMode;
         Boolean lastHover = LAST_HOVER.put(uuid, hover);

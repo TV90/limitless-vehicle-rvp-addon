@@ -123,6 +123,19 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
     }
 
     /**
+     * [RVP] 载具是否配置了 {@code rvp_auto_collective} 参数块（不校验 enabled）：
+     * 供三态切换资格前置判定——未配置的载具（非本包直升机等）不参与三态机，
+     * Z 键直接保持本体原版悬停开/关。
+     */
+    public static boolean hasAutoCollectiveConfig(@Nullable ResourceLocation vehicleId) {
+        if (vehicleId == null) {
+            return false;
+        }
+        RVP_VehicleExtendedConfigManager.VehicleExtendedConfig config = INSTANCE.configs.get(vehicleId);
+        return config != null && config.autoCollective() != null;
+    }
+
+    /**
      * [RVP] 载具的自动总距模式参数（{@code rvp_auto_collective}，2026-10-05）。
      * 消费方 {@code RVP_AutoCollectiveHandler}（VehicleMoveEvent 每 tick，服务端），
      * 未配置返回 null = 该载具不支持自动总距。
