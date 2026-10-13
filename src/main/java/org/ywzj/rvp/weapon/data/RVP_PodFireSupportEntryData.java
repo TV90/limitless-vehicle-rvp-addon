@@ -54,6 +54,10 @@ public class RVP_PodFireSupportEntryData {
     @SerializedName("scatter_radius_m")
     private double scatterRadiusM = 8.0;
 
+    /** 独立入场方向（度）：弹体从发射点飞向目标的航向；空射投送建议配置（默认 0=北）。 */
+    @SerializedName("inbound_heading_degrees")
+    private Double inboundHeadingDegrees = 0.0;
+
     /** 投送定义：{@code type} = 投送工厂类型 ID，{@code data} = 投送参数（形态与终端 profile 的 delivery 完全一致）。 */
     @SerializedName("delivery")
     private JsonObject delivery;
@@ -104,6 +108,10 @@ public class RVP_PodFireSupportEntryData {
 
     public double getScatterRadiusM() {
         return Math.max(scatterRadiusM, 0.0);
+    }
+
+    public double getInboundHeadingDegrees() {
+        return inboundHeadingDegrees == null ? 0.0 : inboundHeadingDegrees;
     }
 
     /** 投送定义原始 JSON（含 type/data）；null 或缺 type 时条目无效。 */

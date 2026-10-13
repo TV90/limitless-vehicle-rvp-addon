@@ -138,7 +138,7 @@ public final class RVP_PodFireSupportRegistry {
                 target.x,
                 target.z,
                 0.0,
-                0.0,
+                entry.getInboundHeadingDegrees(),
                 Map.of("radius_m", entry.getScatterRadiusM()),
                 UUID.randomUUID(),
                 RVP_FireSupportRequest.Source.POD);
@@ -183,11 +183,13 @@ public final class RVP_PodFireSupportRegistry {
         if (org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes.get(deliveryType) == null) {
             return null;
         }
-        // V1 限制：空射投送需要 air_strike 打击模式与航线进场语义，与吊舱单点指示不匹配，
-        // 转换期直接跳过（Validator 的 air 判定也会拒绝该组合，此处提前拦截并留档）。
-        if (org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes.AIR_LAUNCHED_PROJECTILE.equals(deliveryType)) {
-            return null;
-        }
+        // 空射投送合法（2026-10-13 用户指定 AKF-98A 空射条目）：Validator 的 air 判定按
+        // 打击模式 ID 分流——空射必须用 air_strike 模式，非空射必须用其它模式，两者互斥。
+        boolean airDelivery = org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes
+                .AIR_LAUNCHED_PROJECTILE.equals(deliveryType);
+        String fireModeId = airDelivery
+                ? org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser.AIR_STRIKE_MODE_ID
+                : FIXED_FIRE_MODE_ID;
         String key = "rvp.pod_fs." + weaponPath + "." + entry.getId();
         RVP_FireSupportProfile.MunitionWeapon munitionWeapon = new RVP_FireSupportProfile.MunitionWeapon(
                 weaponId, 1, deliveryType, delivery);
@@ -195,7 +197,7 @@ public final class RVP_PodFireSupportRegistry {
                 munitionIdFor(entry.getId()), key, entry.getRoundsPerCall(), false, List.of(munitionWeapon));
         // 单"齐射"阶段：固定 rounds_per_call 发、固定间隔；基数无关（RoundRule.fixed 优先）。
         RVP_FireSupportProfile.FireMode fireMode = new RVP_FireSupportProfile.FireMode(
-                FIXED_FIRE_MODE_ID, key, 1.0, 1.0,
+                fireModeId, key, 1.0, 1.0,
                 List.of(new RVP_FireSupportProfile.Phase("volley", key, false, 0,
                         new RVP_FireSupportProfile.RoundRule(null, null, null, entry.getRoundsPerCall()),
                         entry.getIntervalTicks(), null)));
