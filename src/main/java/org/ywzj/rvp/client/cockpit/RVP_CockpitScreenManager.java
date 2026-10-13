@@ -84,6 +84,16 @@ public final class RVP_CockpitScreenManager {
         return ResourceLocation.fromNamespaceAndPath("rvp", "cockpit/" + kind.path);
     }
 
+    /**
+     * @return 该纹理是否为座舱屏动态纹理（渲染侧据此实现"非本车屏骨整块不渲染"：
+     * 动态纹理仅承载本车内容，非本车配屏车既不能串显也不回退建模原 UV——屏 UV 占比大，
+     * 原贴图过花，用户定案"要么渲染本车内容、要么整块骨不渲染"）。
+     */
+    public static boolean isCockpitScreenTexture(ResourceLocation texture) {
+        return texture != null && "rvp".equals(texture.getNamespace())
+                && texture.getPath().startsWith("cockpit/");
+    }
+
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
