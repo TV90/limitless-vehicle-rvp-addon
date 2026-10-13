@@ -1,0 +1,114 @@
+package org.ywzj.rvp.client.cockpit;
+
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
+import org.ywzj.vehicle.client.render.util.Color;
+import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
+import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
+import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+
+import java.util.HashMap;
+import java.util.List;
+
+/**
+ * 战术地图屏内容渲染器（2026-10-14 座舱屏幕批）。
+ *
+ * <p>按用户定案**去功能化**：不画雷达照射扇形、不画按钮/侧栏——只有地形瓦片
+ * （复用 {@link RVP_TacticalMapCache} 已有瓦片纹理，零额外生成开销）+ 本车/探测图标层。
+ * 以本车为中心固定比例（{@link #BLOCKS_PER_PIXEL}），随本车移动平移。</p>
+ */
+public final class RVP_MapScreenRenderer {
+
+    /** 比例：每屏像素对应的世界格数（512px × 2 = 1024 格视野）。 */
+    private static final double BLOCKS_PER_PIXEL = 2.0;
+    /** 本车图标半边长（像素）。 */
+    private static final int SELF_ICON_HALF = 5;
+    /** 探测图标半边长（像素）。 */
+    private static final int CONTACT_ICON_HALF = 3;
+
+    private RVP_MapScreenRenderer() {}
+
+    /** 渲染战术地图帧。 */
+    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
+        graphics.fill(0, 0, width, height, 0xFF0A0C0E);
+        double centerX = vehicle.getX();
+        double centerZ = vehicle.getZ();
+        double halfWorld = width / 2.0 * BLOCKS_PER_PIXEL;
+
+        // 地形瓦片：把可见范围内每块 256 格瓦片按比例 blit 到屏面（1 瓦片像素 = 1 世界格）。
+        List<RVP_TacticalMapCache.TilePos> tiles = RVP_TacticalMapCache.getVisibleTiles(
+                centerX - halfWorld, centerZ - halfWorld, centerX + halfWorld, centerZ + halfWorld);
+        for (RVP_TacticalMapCache.TilePos tile : tiles) {
+            ResourceLocation texture = RVP_TacticalMapCache.getTileTexture(tile);
+            if (texture == null) {
+                continue;
+            }
+            // 调用本项目地图缓存：瓦片左上角世界坐标 = (rx, rz) << 8（256 格/瓦片）。
+            // 调用本项目地图缓存：瓦片粒度 2^8=256 格（TILE_SIZE_BITS 同源值）。
+            double tileWorldX = (double) (tile.rx() << 8);
+            double tileWorldZ = (double) (tile.rz() << 8);
+            int dx = worldToScreenX(tileWorldX, centerX, width);
+            int dy = worldToScreenY(tileWorldZ, centerZ, height);
+            int tileSizePx = (int) Math.round(256 / BLOCKS_PER_PIXEL);
+            // 调用本项目地图缓存：整瓦片缩放 blit（瓦片纹理 256²，一像素一世界格）。
+            graphics.blit(texture, dx, dy, tileSizePx, tileSizePx, 0, 0, 256, 256, 256, 256);
+        }
+
+        // 探测图标层（雷达探测点；与雷达屏同数据源，仅本车）
+        WeaponUnit weaponUnit = RVP_CockpitScreenManager.currentWeaponUnit();
+        RadarUnit radar = weaponUnit == null ? null : weaponUnit.getMainRadarUnit();
+        if (radar != null) {
+            HashMap<Integer, RadarUnit.DetectedObject> detected = radar.getDetectedEntities();
+            if (detected != null) {
+                for (RadarUnit.DetectedObject detectedObject : detected.values()) {
+                    Entity entity = detectedObject.entity;
+                    Vec3Like pos = resolvePos(detectedObject);
+                    if (pos == null) {
+                        continue;
+                    }
+                    int x = worldToScreenX(pos.x(), centerX, width);
+                    int y = worldToScreenY(pos.z(), centerZ, height);
+                    if (x < 0 || y < 0 || x >= width || y >= height) {
+                        continue;
+                    }
+                    graphics.fill(x - CONTACT_ICON_HALF, y - CONTACT_ICON_HALF,
+                            x + CONTACT_ICON_HALF, y + CONTACT_ICON_HALF, Color.GREEN);
+                }
+            }
+        }
+
+        // 本车图标（居中三角，屏面随本车平移故恒在中心）
+        int cx = width / 2;
+        int cy = height / 2;
+        graphics.fill(cx - SELF_ICON_HALF, cy - SELF_ICON_HALF,
+                cx + SELF_ICON_HALF, cy + SELF_ICON_HALF, 0xFFFFFFFF);
+        graphics.fill(cx - SELF_ICON_HALF + 1, cy - SELF_ICON_HALF + 1,
+                cx + SELF_ICON_HALF - 1, cy + SELF_ICON_HALF - 1, 0xFF1A73E8);
+    }
+
+    /** 世界 X → 屏像素（本车居中）。 */
+    private static int worldToScreenX(double worldX, double centerX, int width) {
+        return (int) Math.round(width / 2.0 + (worldX - centerX) / BLOCKS_PER_PIXEL);
+    }
+
+    /** 世界 Z → 屏像素（本车居中）。 */
+    private static int worldToScreenY(double worldZ, double centerZ, int height) {
+        return (int) Math.round(height / 2.0 + (worldZ - centerZ) / BLOCKS_PER_PIXEL);
+    }
+
+    /** @return 探测位置（优先快照位置，回退实体实时位置）；两者皆无返回 null。 */
+    private static Vec3Like resolvePos(RadarUnit.DetectedObject detectedObject) {
+        if (detectedObject.detectedPosition != null) {
+            return new Vec3Like(detectedObject.detectedPosition.x,
+                    detectedObject.detectedPosition.y, detectedObject.detectedPosition.z);
+        }
+        Entity entity = detectedObject.entity;
+        return entity == null ? null : new Vec3Like(entity.getX(), entity.getY(), entity.getZ());
+    }
+
+    /** 轻量 xyz 只读载体（避免依赖 MC Vec3 的可变性）。 */
+    private record Vec3Like(double x, double y, double z) {}
+}
