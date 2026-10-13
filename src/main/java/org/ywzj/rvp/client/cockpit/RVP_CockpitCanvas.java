@@ -97,11 +97,16 @@ public final class RVP_CockpitCanvas {
         }
     }
 
-    /** 熄屏底色（深灰近黑）：无本车/未选择时 DynamicTexture 填充内容。 */
-    public static void fillIdle(DynamicTexture texture, int size) {
+    /**
+     * 全透明填充：非本车状态下 DynamicTexture 填 alpha=0——transparent 渲染下半透明
+     * 片元完全不可见，视觉效果等同"屏骨整块不渲染"（2026-10-14 用户定案：
+     * 非"渲染本车内容"即"不渲染"，不回退建模原 UV——屏 UV 占比大，原贴图过花）。
+     * 注意：Transparent RenderType 通常写深度，极端视角下透明片元可能留空洞感，实机确认。
+     */
+    public static void fillTransparent(DynamicTexture texture, int size) {
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
-                texture.getPixels().setPixelRGBA(x, y, 0xFF23262B);
+                texture.getPixels().setPixelRGBA(x, y, 0x00000000);
             }
         }
         texture.upload();

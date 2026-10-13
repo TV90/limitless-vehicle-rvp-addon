@@ -59,7 +59,7 @@ public final class RVP_CockpitScreenManager {
     private static final Map<ScreenKind, Long> LAST_RENDER = new HashMap<>();
     /** 纹理是否已注册（懒初始化，首次 ClientTick 时执行）。 */
     private static boolean registered;
-    /** 熄屏灰是否已填充（避免每 tick 重复填充）。 */
+    /** 透明填充是否已写入（避免每 tick 重复填充）。 */
     private static boolean idleFilled;
 
     private RVP_CockpitScreenManager() {}
@@ -98,10 +98,10 @@ public final class RVP_CockpitScreenManager {
         Entity vehicle = (lvp != null && lvp.onVehicle()) ? lvp.vehicle : null;
         long now = mc.level.getGameTime();
         if (vehicle == null) {
-            // 非乘载状态：三张屏全部回熄屏灰（仅一次，避免每 tick 像素循环）。
+            // 非乘载状态：三张屏填全透明（视觉=屏骨不渲染；仅一次，避免每 tick 像素循环）。
             if (!idleFilled) {
                 for (ScreenKind kind : ScreenKind.values()) {
-                    RVP_CockpitCanvas.fillIdle(TEXTURES.get(rl(kind)), SIZE);
+                    RVP_CockpitCanvas.fillTransparent(TEXTURES.get(rl(kind)), SIZE);
                 }
                 idleFilled = true;
                 LAST_RENDER.clear();
