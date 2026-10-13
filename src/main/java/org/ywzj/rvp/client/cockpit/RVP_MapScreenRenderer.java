@@ -22,13 +22,13 @@ import java.util.List;
  */
 public final class RVP_MapScreenRenderer {
 
-    /** 比例：每屏像素对应的世界格数（内容区 358px × 2 = 716 格视野）。 */
+    /** 比例：每屏像素对应的世界格数（内容区 502px × 2 = 1004 格视野）。 */
     private static final double BLOCKS_PER_PIXEL = 2.0;
     /**
-     * UV 占比（对齐 MCHR 雷达 0.70）：内容区为屏面中心 70% 正方形，四周留 15% 防出血；
-     * 底色（熄屏灰）从边缘露出形成自然边框。
+     * UV 占比：地图屏尽可能铺满（用户定案）——0.98 仅留 1% 防边缘采样渗色，
+     * 底色仅在渗色边缝可见。
      */
-    private static final double UV_DIAMETER_RATIO = 0.70;
+    private static final double UV_DIAMETER_RATIO = 0.98;
     /** 本车图标半边长（像素）。 */
     private static final int SELF_ICON_HALF = 5;
     /** 探测图标半边长（像素）。 */
