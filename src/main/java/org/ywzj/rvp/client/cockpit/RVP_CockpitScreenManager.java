@@ -100,6 +100,26 @@ public final class RVP_CockpitScreenManager {
     /** 上次回灌失败日志时间。 */
     private static long lastFailureLogAt = Long.MIN_VALUE;
 
+    /**
+     * 解析本地玩家当前乘坐/操作的载具：优先武器站所属载具（与雷达 HUD 同源），
+     * 回退 lvp.vehicle。两处都取不到返回 null（此时屏回熄屏透明）。
+     */
+    private static AbstractVehicle resolveLocalVehicle() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null) {
+            return null;
+        }
+        WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        if (weaponUnit != null) {
+            // 调用本体武器站 API：武器站所属载具（雷达 HUD 数据链同源，驾驶状态必已赋值）。
+            AbstractVehicle vehicle = weaponUnit.getVehicle();
+            if (vehicle != null) {
+                return vehicle;
+            }
+        }
+        return lvp.vehicle;
+    }
+
     /** @return 屏型对应的注册 RL（display 文件 {@code special_bone_effects.texture} 填本值）。 */
     public static ResourceLocation rl(ScreenKind kind) {
         return ResourceLocation.fromNamespaceAndPath("rvp", "cockpit/" + kind.path);
@@ -125,8 +145,9 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         ensureRegistered(mc);
-        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        Entity vehicle = (lvp != null && lvp.onVehicle()) ? lvp.vehicle : null;
+        // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
+        // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）。
+        AbstractVehicle vehicle = resolveLocalVehicle();
         long now = mc.level.getGameTime();
         if (vehicle == null) {
             // 非乘载状态：三张屏填全透明（视觉=屏骨不渲染；仅一次，避免每 tick 像素循环）。

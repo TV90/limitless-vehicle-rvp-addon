@@ -71,13 +71,6 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
             // 改用不透明材质渲染——既遮挡座舱丢失造成的难看，又去掉半透明排序开销。
             boolean distanceHidden = RVP_DistanceBoneHider.isBoneIndexHidden(instance, entry.boneIndex());
             SpecialBoneEffect effect = entry.effect();
-            // 座舱屏幕（2026-10-14）：动态纹理仅承载本车内容，非本车的配屏车屏骨
-            // 整块跳过渲染（用户定案"要么渲染本车内容、要么整块骨不渲染"——
-            // 屏 UV 占比大，回退建模原 UV 会过花）。
-            if (!isLocalPlayerVehicle
-                    && org.ywzj.rvp.client.cockpit.RVP_CockpitScreenManager.isCockpitScreenTexture(effect.texture)) {
-                continue;
-            }
             if (effect.type == SpecialBoneEffect.SpecialBoneEffectType.COCKPIT
                     && isLocalPlayerVehicle
                     && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.OPERATOR) {
