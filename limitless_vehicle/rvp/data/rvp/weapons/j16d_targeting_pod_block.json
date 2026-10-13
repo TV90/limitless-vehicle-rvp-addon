@@ -16,7 +16,7 @@
     "rvp_fire_support": [
       {
         "id": "s13_salvo",
-        "display_CN": "地射S-13火箭弹齐射",
+        "display_CN": "地射火箭弹齐射",
         "call_duration_ticks": 200,
         "cooldown_ticks": 600,
         "max_target_distance_m": 2048,
