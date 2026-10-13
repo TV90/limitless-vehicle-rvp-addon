@@ -145,6 +145,20 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         ensureRegistered(mc);
+        // 排查期诊断（每 100 tick 一条，放在一切分支之前）：无论后续走哪条路径都可追溯。
+        long nowDiag = mc.level.getGameTime();
+        if (nowDiag - lastDiagTick >= 100) {
+            lastDiagTick = nowDiag;
+            LocalVehiclePlayer lvpDiag = LocalVehiclePlayer.instance;
+            LOGGER.info("[RVP-Cockpit] 诊断: lvp={} onVehicle={} lvpVehicle={} weaponUnit={} registered={}",
+                    lvpDiag != null,
+                    lvpDiag != null && lvpDiag.onVehicle(),
+                    lvpDiag != null ? lvpDiag.vehicle : null,
+                    lvpDiag != null && lvpDiag.getWeaponUnit() != null
+                            ? lvpDiag.getWeaponUnit().getVehicle()
+                            : null,
+                    registered);
+        }
         // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
         // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）。
         AbstractVehicle vehicle = resolveLocalVehicle();
@@ -161,12 +175,6 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         idleFilled = false;
-        // 排查期诊断（每 100 tick 一条）：确认 Manager 驱动条件与降频状态。
-        if (now - lastDiagTick >= 100) {
-            lastDiagTick = now;
-            LOGGER.info("[RVP-Cockpit] 诊断: vehicle={} registered={} last={}",
-                    ((AbstractVehicle) vehicle).getDisplayId(), registered, LAST_RENDER);
-        }
         for (ScreenKind kind : ScreenKind.values()) {
             long last = LAST_RENDER.getOrDefault(kind, Long.MIN_VALUE);
             if (now - last < kind.intervalTicks) {
