@@ -22,8 +22,13 @@ import java.util.List;
  */
 public final class RVP_MapScreenRenderer {
 
-    /** 比例：每屏像素对应的世界格数（512px × 2 = 1024 格视野）。 */
+    /** 比例：每屏像素对应的世界格数（内容区 358px × 2 = 716 格视野）。 */
     private static final double BLOCKS_PER_PIXEL = 2.0;
+    /**
+     * UV 占比（对齐 MCHR 雷达 0.70）：内容区为屏面中心 70% 正方形，四周留 15% 防出血；
+     * 底色（熄屏灰）从边缘露出形成自然边框。
+     */
+    private static final double UV_DIAMETER_RATIO = 0.70;
     /** 本车图标半边长（像素）。 */
     private static final int SELF_ICON_HALF = 5;
     /** 探测图标半边长（像素）。 */
@@ -34,9 +39,13 @@ public final class RVP_MapScreenRenderer {
     /** 渲染战术地图帧。 */
     public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
+        // 内容区：屏面中心 70% 正方形（坐标映射全部基于该区域）。
+        int contentSize = (int) (Math.min(width, height) * UV_DIAMETER_RATIO);
+        int contentLeft = (width - contentSize) / 2;
+        int contentTop = (height - contentSize) / 2;
         double centerX = vehicle.getX();
         double centerZ = vehicle.getZ();
-        double halfWorld = width / 2.0 * BLOCKS_PER_PIXEL;
+        double halfWorld = contentSize / 2.0 * BLOCKS_PER_PIXEL;
 
         // 地形瓦片：把可见范围内每块 256 格瓦片按比例 blit 到屏面（1 瓦片像素 = 1 世界格）。
         List<RVP_TacticalMapCache.TilePos> tiles = RVP_TacticalMapCache.getVisibleTiles(
@@ -50,8 +59,8 @@ public final class RVP_MapScreenRenderer {
             // 调用本项目地图缓存：瓦片粒度 2^8=256 格（TILE_SIZE_BITS 同源值）。
             double tileWorldX = (double) (tile.rx() << 8);
             double tileWorldZ = (double) (tile.rz() << 8);
-            int dx = worldToScreenX(tileWorldX, centerX, width);
-            int dy = worldToScreenY(tileWorldZ, centerZ, height);
+            int dx = worldToScreenX(tileWorldX, centerX, width, contentLeft, contentSize);
+            int dy = worldToScreenY(tileWorldZ, centerZ, height, contentTop, contentSize);
             int tileSizePx = (int) Math.round(256 / BLOCKS_PER_PIXEL);
             // 调用本项目地图缓存：整瓦片缩放 blit（瓦片纹理 256²，一像素一世界格）。
             graphics.blit(texture, dx, dy, tileSizePx, tileSizePx, 0, 0, 256, 256, 256, 256);
@@ -69,9 +78,10 @@ public final class RVP_MapScreenRenderer {
                     if (pos == null) {
                         continue;
                     }
-                    int x = worldToScreenX(pos.x(), centerX, width);
-                    int y = worldToScreenY(pos.z(), centerZ, height);
-                    if (x < 0 || y < 0 || x >= width || y >= height) {
+                    int x = worldToScreenX(pos.x(), centerX, width, contentLeft, contentSize);
+                    int y = worldToScreenY(pos.z(), centerZ, height, contentTop, contentSize);
+                    if (x < contentLeft || y < contentTop || x >= contentLeft + contentSize
+                            || y >= contentTop + contentSize) {
                         continue;
                     }
                     graphics.fill(x - CONTACT_ICON_HALF, y - CONTACT_ICON_HALF,
@@ -81,22 +91,26 @@ public final class RVP_MapScreenRenderer {
         }
 
         // 本车图标（居中三角，屏面随本车平移故恒在中心）
-        int cx = width / 2;
-        int cy = height / 2;
+        int cx = contentLeft + contentSize / 2;
+        int cy = contentTop + contentSize / 2;
         graphics.fill(cx - SELF_ICON_HALF, cy - SELF_ICON_HALF,
                 cx + SELF_ICON_HALF, cy + SELF_ICON_HALF, 0xFFFFFFFF);
         graphics.fill(cx - SELF_ICON_HALF + 1, cy - SELF_ICON_HALF + 1,
                 cx + SELF_ICON_HALF - 1, cy + SELF_ICON_HALF - 1, 0xFF1A73E8);
     }
 
-    /** 世界 X → 屏像素（本车居中）。 */
-    private static int worldToScreenX(double worldX, double centerX, int width) {
-        return (int) Math.round(width / 2.0 + (worldX - centerX) / BLOCKS_PER_PIXEL);
+    /** 世界 X → 内容区屏像素（本车居中于 70% 内容区中心）。 */
+    private static int worldToScreenX(double worldX, double centerX, int width,
+                                      int contentLeft, int contentSize) {
+        return (int) Math.round(contentLeft + contentSize / 2.0
+                + (worldX - centerX) / BLOCKS_PER_PIXEL);
     }
 
-    /** 世界 Z → 屏像素（本车居中）。 */
-    private static int worldToScreenY(double worldZ, double centerZ, int height) {
-        return (int) Math.round(height / 2.0 + (worldZ - centerZ) / BLOCKS_PER_PIXEL);
+    /** 世界 Z → 内容区屏像素（本车居中）。 */
+    private static int worldToScreenY(double worldZ, double centerZ, int height,
+                                      int contentTop, int contentSize) {
+        return (int) Math.round(contentTop + contentSize / 2.0
+                + (worldZ - centerZ) / BLOCKS_PER_PIXEL);
     }
 
     /** @return 探测位置（优先快照位置，回退实体实时位置）；两者皆无返回 null。 */

@@ -35,7 +35,8 @@ public final class RVP_RwrScreenRenderer {
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         int cx = width / 2;
         int cy = height / 2;
-        int outer = (int) (Math.min(width, height) * 0.45f);
+        // UV 占比对齐 MCHR（RWR_UV_DIAMETER_RATIO=0.75）：圆盘直径=短边×0.75，四周留 12.5% 防出血。
+        int outer = (int) (Math.min(width, height) * 0.375f);
         var pose = graphics.pose();
 
         // 顶部告警文字（导弹来袭 > 被锁定，红色 1Hz 闪烁与 HUD 同款语义）
@@ -85,7 +86,7 @@ public final class RVP_RwrScreenRenderer {
                     // 调用本体绘制工具：锁定/来袭威胁画粗射线（与 HUD RWR 同款）。
                     RenderHelper.drawLine(pose, direction, 0.8f, Color.GREEN, 4, 1);
                 }
-                direction = direction.normalize().scale(scale * outer * 1.12);
+                direction = direction.normalize().scale(scale * outer * 0.88f);
                 pose.translate(cx + direction.x, cy + direction.z, 0);
                 pose.scale(0.9f, 0.9f, 0.9f);
                 String info = warnTarget.info();

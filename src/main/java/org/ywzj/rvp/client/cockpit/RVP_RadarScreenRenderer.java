@@ -32,7 +32,8 @@ public final class RVP_RadarScreenRenderer {
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         int cx = width / 2;
         int cy = height / 2;
-        int outer = (int) (Math.min(width, height) * 0.45f);
+        // UV 占比对齐 MCHR（RADAR_UV_DIAMETER_RATIO=0.70）：圆盘直径=短边×0.70，四周留 15% 防出血。
+        int outer = (int) (Math.min(width, height) * 0.35f);
         var pose = graphics.pose();
         long gameTime = vehicle.level().getGameTime();
 
@@ -49,7 +50,7 @@ public final class RVP_RadarScreenRenderer {
         GuiHelper.drawCircle(pose, cx, cy, outer * 0.98f, Color.GREEN, 0.01f, 0, 0);
         GuiHelper.drawCircle(pose, cx, cy, outer, Color.BG_DARK_DIM, 1f, 0, 0);
         double scanAngle = (gameTime % 60) / 60.0 * Math.PI * 2.0;
-        Vec3 scanDir = new Vec3(Math.sin(scanAngle), 0, -Math.cos(scanAngle)).scale(outer * 0.98f);
+        Vec3 scanDir = new Vec3(Math.sin(scanAngle), 0, -Math.cos(scanAngle)).scale(outer * 0.95f);
         pose.pushPose();
         RenderHelper.drawLine(pose, scanDir, 0.8f, Color.GREEN, 2, 1);
         pose.popPose();
@@ -73,7 +74,7 @@ public final class RVP_RadarScreenRenderer {
             Vec3 direction = vehicle
                     .relativeRotDirection(worldPos.subtract(vehicle.position()), true)
                     .normalize()
-                    .scale(scale * outer * 0.98f);
+                    .scale(scale * outer * 0.95f);
             int color = isFriendly(entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
             int r = 3;
             pose.pushPose();
