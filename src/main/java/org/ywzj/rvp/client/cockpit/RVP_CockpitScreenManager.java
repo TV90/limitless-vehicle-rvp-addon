@@ -62,6 +62,11 @@ public final class RVP_CockpitScreenManager {
     /** 透明填充是否已写入（避免每 tick 重复填充）。 */
     private static boolean idleFilled;
 
+    /** 排查期诊断日志：每 100 tick（5 秒）输出一条 Manager 状态。 */
+    private static long lastDiagTick = Long.MIN_VALUE;
+    /** 日志器。 */
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
+
     private RVP_CockpitScreenManager() {}
 
     /** 懒注册：首次 ClientTick 时把三张 DynamicTexture 挂进 TextureManager（先填透明底保证初始纹理有效）。 */
@@ -135,6 +140,12 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         idleFilled = false;
+        // 排查期诊断（每 100 tick 一条）：确认 Manager 驱动条件与降频状态。
+        if (now - lastDiagTick >= 100) {
+            lastDiagTick = now;
+            LOGGER.info("[RVP-Cockpit] 诊断: vehicle={} registered={} last={}",
+                    ((AbstractVehicle) vehicle).getDisplayId(), registered, LAST_RENDER);
+        }
         for (ScreenKind kind : ScreenKind.values()) {
             long last = LAST_RENDER.getOrDefault(kind, Long.MIN_VALUE);
             if (now - last < kind.intervalTicks) {
@@ -146,6 +157,11 @@ public final class RVP_CockpitScreenManager {
             // 调用本项目离屏画布：渲染对应屏内容并回灌（贴面由本体 renderSpecialBones 完成）。
             RVP_CockpitCanvas.renderAndUpload(TARGETS.get(rl), output, (graphics, width, height) ->
                     drawScreenContent(graphics, width, height, kind, vehicle));
+            // 排查期诊断：回灌后读 DynamicTexture 中心像素（证明内容真正写进注册纹理）。
+            if (output.getPixels() != null) {
+                int px = output.getPixels().getPixelRGBA(SIZE / 2, SIZE / 2);
+                LOGGER.info("[RVP-Cockpit] {} 回灌完成 中心像素RGBA(ABGR序)={}", kind.path, Integer.toHexString(px));
+            }
         }
     }
 
