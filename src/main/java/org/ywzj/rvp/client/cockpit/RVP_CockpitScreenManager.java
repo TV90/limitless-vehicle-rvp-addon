@@ -64,20 +64,36 @@ public final class RVP_CockpitScreenManager {
 
     private RVP_CockpitScreenManager() {}
 
-    /** 懒注册：首次 ClientTick 时把三张 DynamicTexture 挂进 TextureManager。 */
+    /** 懒注册：首次 ClientTick 时把三张 DynamicTexture 挂进 TextureManager（先填透明底保证初始纹理有效）。 */
     private static void ensureRegistered(Minecraft mc) {
         if (registered) {
             return;
         }
         for (ScreenKind kind : ScreenKind.values()) {
             ResourceLocation rl = rl(kind);
-            DynamicTexture texture = new DynamicTexture(SIZE, SIZE, false);
+            DynamicTexture texture = new DynamicTexture(SIZE, SIZE, true);
+            // 初始即填全透明并上传：未 upload 前纹理内容未定义，避免首帧屏骨渲染出垃圾像素。
+            RVP_CockpitCanvas.fillTransparent(texture, SIZE);
             mc.getTextureManager().register(rl, texture);
             TEXTURES.put(rl, texture);
             TARGETS.put(rl, RVP_CockpitCanvas.createTarget(SIZE));
         }
         registered = true;
     }
+
+    /** 回灌失败诊断：日志节流 60 秒一条（首条立即），定位 RT 管线故障。 */
+    public static void noteRenderFailure(Exception exception) {
+        long now = System.currentTimeMillis();
+        if (now - lastFailureLogAt < 60_000L && lastFailureLogAt != Long.MIN_VALUE) {
+            return;
+        }
+        lastFailureLogAt = now;
+        org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
+        LOGGER.warn("[RVP] 座舱屏幕离屏渲染/回灌失败（节流 60s）:", exception);
+    }
+
+    /** 上次回灌失败日志时间。 */
+    private static long lastFailureLogAt = Long.MIN_VALUE;
 
     /** @return 屏型对应的注册 RL（display 文件 {@code special_bone_effects.texture} 填本值）。 */
     public static ResourceLocation rl(ScreenKind kind) {

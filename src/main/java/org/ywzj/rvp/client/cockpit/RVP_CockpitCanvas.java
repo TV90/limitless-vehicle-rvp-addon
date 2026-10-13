@@ -59,6 +59,12 @@ public final class RVP_CockpitCanvas {
         Minecraft mc = Minecraft.getInstance();
         Matrix4f savedProjection = RenderSystem.getProjectionMatrix();
         VertexSorting savedSorting = RenderSystem.getVertexSorting();
+        // 调用 MC ModelView 栈：离屏 2D 渲染必须用单位 ModelView——ClientTick 阶段继承的
+        // 是世界相机 ModelView，不重置会把内容画到相机变换后的远处（回灌全空=屏透明）。
+        var modelViewStack = RenderSystem.getModelViewStack();
+        modelViewStack.pushPose();
+        modelViewStack.setIdentity();
+        RenderSystem.applyModelViewMatrix();
         try {
             // 调用本项目离屏画布：绑定 RT 并清为熄屏底色（内容自绘背景覆盖）。
             target.setClearColor(0.04f, 0.05f, 0.06f, 1f);
@@ -78,7 +84,7 @@ public final class RVP_CockpitCanvas {
             }
             painter.draw(graphics, target.width, target.height);
             bufferSource.endBatch();
-            // 回到主帧渲染目标，恢复主投影矩阵（避免污染后续世界/HUD 渲染）。
+            // 回到主帧渲染目标，恢复主投影与 ModelView 矩阵（避免污染后续世界/HUD 渲染）。
             target.unbindWrite();
             mc.getMainRenderTarget().bindWrite(false);
             RenderSystem.setProjectionMatrix(savedProjection, savedSorting);
@@ -92,8 +98,13 @@ public final class RVP_CockpitCanvas {
             output.setPixels(image);
             output.upload();
         } catch (Exception exception) {
-            // 单帧回灌失败不中断渲染循环：下一降频周期重试。
+            // 单帧回灌失败不中断渲染循环：下一降频周期重试；日志节流由调用方诊断开关控制。
+            org.ywzj.rvp.client.cockpit.RVP_CockpitScreenManager.noteRenderFailure(exception);
             RenderSystem.setProjectionMatrix(savedProjection, savedSorting);
+        } finally {
+            // 调用 MC ModelView 栈：恢复世界渲染的 ModelView（与 push 配对）。
+            modelViewStack.popPose();
+            RenderSystem.applyModelViewMatrix();
         }
     }
 
