@@ -32,8 +32,16 @@ import java.util.List;
 public class RVP_MslOverlay {
 
     private static final int DIAMOND_SIZE = 10;
-    /** 菱形描边厚度（像素）：原用 glLineWidth(5)，改四边形描边后保持同宽。 */
-    private static final float DIAMOND_THICKNESS = 5.0f;
+    /**
+     * 菱形描边厚度（像素，等于几何带宽）。
+     *
+     * <p>为什么是 1.0 而不是 5.0：旧实现写的 {@code GL11.glLineWidth(5.0f)} 在核心
+     * （forward-compatible）上下文里**非法**——NVIDIA 驱动直接忽略、线宽退回默认 1.0
+     * （就是那批 GL_INVALID_VALUE 报错的来源）。也就是说旧观感的实际宽度一直是 1 px；
+     * 换成真实四边形描边后若沿用 5.0 就会**真的画出 5 px**，看起来粗了 5 倍
+     * （2026-10-15 用户实测反馈）。想调粗细改这一个常量即可。</p>
+     */
+    private static final float DIAMOND_THICKNESS = 1.0f;
     private static final int LINE_COLOR = 0xFFCC0000; // 红色
     /** 自己的导弹动力段烧完后，最远渲染距离（格）。 */
     private static final double OWN_MAX_RENDER_DIST = 4096.0;
