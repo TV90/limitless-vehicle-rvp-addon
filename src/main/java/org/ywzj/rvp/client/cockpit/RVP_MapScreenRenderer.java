@@ -132,6 +132,10 @@ public final class RVP_MapScreenRenderer {
      * <p>判据：签名在变而 RT 画面指纹（md5）不变 ⇒ 画面真被冻住（管线问题）；
      * 签名本身不变 ⇒ 本来就无内容可动（例如驻车 + 无探测）。此前签名只写常量"地图"，
      * 在 z10 驻车场景下无法与"冻结"区分。</p>
+     *
+     * <p><b>2026-10-15 误报修正</b>：签名必须报**取整后的像素偏移**而非世界坐标——瓦片按整数
+     * 像素 blit 且 {@code BLOCKS_PER_PIXEL=2}，本车每移动 2 格才差 1 像素。实测 8 秒内车移
+     * 4.5 格（≈2px）时 md5 未变属**量化正常**，用世界坐标签名会误判成"冻结"。</p>
      */
     public static String describe(AbstractVehicle vehicle) {
         try {
@@ -140,8 +144,9 @@ public final class RVP_MapScreenRenderer {
             double cz = vehicle.getZ();
             List<RVP_TacticalMapCache.TilePos> tiles = RVP_TacticalMapCache.getVisibleTiles(
                     cx - halfWorld, cz - halfWorld, cx + halfWorld, cz + halfWorld);
-            return String.format(java.util.Locale.ROOT, "地图 本车%.0f,%.0f 瓦片=%d",
-                    cx, cz, tiles.size());
+            return String.format(java.util.Locale.ROOT, "地图 像素偏移=%d,%d 瓦片=%d",
+                    Math.round(-cx / BLOCKS_PER_PIXEL), Math.round(-cz / BLOCKS_PER_PIXEL),
+                    tiles.size());
         } catch (Throwable throwable) {
             return "地图 签名异常:" + throwable;
         }
