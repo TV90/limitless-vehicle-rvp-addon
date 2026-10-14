@@ -155,8 +155,10 @@ public final class RVP_CockpitDiagCommands {
 
     /** @return 黑匣子当前状态一行（命令反馈用）。 */
     private static String blackboxStateLine() {
+        int size = RVP_CockpitDiag.blackboxSize();
         return "[黑匣子] " + (RVP_CockpitDiag.isWatch() ? "待命中" : "已停止（默认）")
-                + " | 缓冲 " + RVP_CockpitDiag.blackboxSize() + " tick"
+                + " | 已记 " + size + " tick（≈" + (size / 20) + " 秒，满 600=30 秒）"
+                + " | 文件 logs/rvp_cockpit_blackbox.log（待命即写入表头；状态变化自动落盘）"
                 + " | 用法: on|off|dump|status（/cockpitdiag on 全量记录期间黑匣子同样工作）";
     }
 

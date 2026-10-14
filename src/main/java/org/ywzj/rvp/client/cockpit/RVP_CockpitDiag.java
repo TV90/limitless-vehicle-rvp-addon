@@ -94,10 +94,16 @@ public final class RVP_CockpitDiag {
         return watch;
     }
 
-    /** 开启/关闭黑匣子待命（不影响全量记录开关）。 */
+    /** 开启/关闭黑匣子待命（不影响全量记录开关）。开启时立即写表头，保证日志文件马上出现。 */
     public static void setWatch(boolean value) {
         watch = value;
-        if (!watch && !enabled) {
+        if (watch) {
+            // 2026-10-15 修正：原先"待命"不写任何东西，只有状态变化才落盘 ⇒ 状态一直不变时
+            // 用户敲了命令却看不到文件，误以为没生效。改为待命即写一行表头。
+            writeBlackboxLine("========== " + java.time.LocalDateTime.now()
+                    + " 黑匣子待命开始（每 tick 记 本体/原版/屏源 三元组；状态变化自动落盘，"
+                    + "也可 /rvpbb dump 手动落盘） ==========");
+        } else if (!enabled) {
             // 全关：清空环形缓冲，避免下次开启时混入半小时前的旧数据。
             BLACKBOX.clear();
             blackboxKey = "-";
@@ -599,20 +605,37 @@ public final class RVP_CockpitDiag {
 
     /** 把黑匣子环形缓冲整段落盘（只新建/追加，从不删除）。 */
     private static void dumpBlackbox(String reason) {
+        StringBuilder builder = new StringBuilder(64 * 1024);
+        builder.append("========== ").append(java.time.LocalDateTime.now())
+                .append(" 黑匣子触发： ").append(reason)
+                .append("（最近 ").append(BLACKBOX.size()).append(" tick） ==========\n");
+        for (String line : BLACKBOX) {
+            builder.append(line).append('\n');
+        }
+        if (writeBlackboxLine(builder.toString())) {
+            log("黑匣子已落盘：" + BLACKBOX_FILE + "（触发：" + reason + "）");
+        }
+    }
+
+    /**
+     * 向黑匣子文件追加一段文本（自动创建 logs 目录；只新建/追加，从不删除）。
+     *
+     * @return 是否写入成功（失败会写一条诊断日志说明原因，便于区分"没触发"与"写盘失败"）。
+     */
+    private static boolean writeBlackboxLine(String text) {
         try {
-            StringBuilder builder = new StringBuilder(64 * 1024);
-            builder.append("========== ").append(java.time.LocalDateTime.now())
-                    .append(" 黑匣子触发： ").append(reason)
-                    .append("（最近 ").append(BLACKBOX.size()).append(" tick） ==========\n");
-            for (String line : BLACKBOX) {
-                builder.append(line).append('\n');
+            Path parent = BLACKBOX_FILE.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
             }
-            Files.writeString(BLACKBOX_FILE, builder.toString(),
+            Files.writeString(BLACKBOX_FILE, text.endsWith("\n") ? text : text + "\n",
                     java.nio.charset.StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-            log("黑匣子已落盘：" + BLACKBOX_FILE + "（触发：" + reason + "）");
+            return true;
         } catch (Throwable throwable) {
-            log("黑匣子落盘失败: " + throwable);
+            // 落盘失败要显式说出来——否则用户只会看到"敲了命令却没文件"。
+            log("黑匣子写盘失败(" + BLACKBOX_FILE + "): " + throwable);
+            return false;
         }
     }
 }
