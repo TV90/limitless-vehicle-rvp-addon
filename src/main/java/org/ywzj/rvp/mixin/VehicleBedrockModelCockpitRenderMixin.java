@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitDiag;
 import org.ywzj.rvp.client.cockpit.RVP_CockpitScreenManager;
+import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderContext;
 import org.ywzj.rvp.client.render.RVP_CockpitPassengerRenderer;
 import org.ywzj.rvp.client.render.RVP_DistanceBoneHider;
 import org.ywzj.rvp.client.render.RVP_RenderTypes;
@@ -166,6 +167,15 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
             // 在本模型可用，而特殊通道 renderSingleBone/mulParentGlobalTransform 链无视觉产出）。
             // 此处复刻主通道成功路径：屏骨自身姿态 + sourceBones 匹配的 mesh chunk 直画。
             if (screenBone) {
+                // 距离钳制（2026-10-15 用户定案）：屏内容只画给"距本地玩家 N 格内"的载具——
+                // ①开改装/武器界面、暂停时本体 onVehicle 为 false，但载具就在身边 ⇒ 屏继续刷新不熄灭；
+                // ②远离的载具屏骨不再被重复画上本车 RT（此前每帧给场上所有带屏载具都画，
+                //   骨直绘帧率虚高、观感串味）。渲染上下文缺失时保持旧行为（无法判定则不钳制）。
+                var cockpitCtx = RVP_CockpitPassengerRenderContext.current();
+                if (cockpitCtx != null
+                        && !RVP_CockpitScreenManager.isScreenRenderTarget(cockpitCtx.vehicle())) {
+                    continue;
+                }
                 // 实体缓存的模型实例可能与 display 当前模型失配（F3+T/重载后 display 重建而
                 // 实体 vehicleModelInstance 仍指向旧烘焙模型）——失配时屏骨改用 display 配套
                 // 的默认实例（屏骨为静止骨，无动画副作用）。

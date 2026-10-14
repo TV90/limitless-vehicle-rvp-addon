@@ -125,4 +125,25 @@ public final class RVP_MapScreenRenderer {
 
     /** 轻量 xyz 只读载体（避免依赖 MC Vec3 的可变性）。 */
     private record Vec3Like(double x, double y, double z) {}
+
+    /**
+     * 诊断用内容签名（2026-10-15 用户反馈"日志不到位"后补）：把"地图是否**应该**在变"量化。
+     *
+     * <p>判据：签名在变而 RT 画面指纹（md5）不变 ⇒ 画面真被冻住（管线问题）；
+     * 签名本身不变 ⇒ 本来就无内容可动（例如驻车 + 无探测）。此前签名只写常量"地图"，
+     * 在 z10 驻车场景下无法与"冻结"区分。</p>
+     */
+    public static String describe(AbstractVehicle vehicle) {
+        try {
+            double halfWorld = 512 * UV_DIAMETER_RATIO / 2.0 * BLOCKS_PER_PIXEL;
+            double cx = vehicle.getX();
+            double cz = vehicle.getZ();
+            List<RVP_TacticalMapCache.TilePos> tiles = RVP_TacticalMapCache.getVisibleTiles(
+                    cx - halfWorld, cz - halfWorld, cx + halfWorld, cz + halfWorld);
+            return String.format(java.util.Locale.ROOT, "地图 本车%.0f,%.0f 瓦片=%d",
+                    cx, cz, tiles.size());
+        } catch (Throwable throwable) {
+            return "地图 签名异常:" + throwable;
+        }
+    }
 }

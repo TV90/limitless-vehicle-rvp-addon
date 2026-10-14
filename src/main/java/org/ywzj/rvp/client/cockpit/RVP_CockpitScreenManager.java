@@ -47,6 +47,12 @@ public final class RVP_CockpitScreenManager {
     /** 屏幕纹理边长默认值（正方形）；可被 display 条目 {@code ywzj_rvp_screen_size} 覆盖。 */
     public static final int SIZE = 512;
 
+    /**
+     * 屏渲染距离（格）：只给距本地玩家该范围内的载具画屏内容（2026-10-15 用户定案，
+     * 取代旧"必须坐在载具上"的钳制）。范围越小越省性能，越大越容易看到邻近载具的屏。
+     */
+    public static final double SCREEN_RENDER_RANGE = 10.0;
+
     /** display 条目自定义字段：屏纹理边长档位（256/512/1024，其它值归档到最近档）。 */
     private static final String SCREEN_SIZE_FIELD = "ywzj_rvp_screen_size";
 
@@ -238,6 +244,55 @@ public final class RVP_CockpitScreenManager {
         return lvp.vehicle;
     }
 
+    /**
+     * 屏内容只画给"距本地玩家 {@link #SCREEN_RENDER_RANGE} 格内"的载具
+     * （2026-10-15 用户定案：把旧钳制"必须坐在载具上"换成"距离"）。
+     *
+     * <p>动机：①开着载具改装/武器选择界面或暂停时，本体 {@code onVehicle()} 为 false，
+     * 载具却就在身边——按距离判则屏继续刷新，不再整块熄灭；②远离的载具屏骨不再被画上
+     * 本车 RT（此前每帧给场上所有带屏载具都画，直绘帧率虚高、观感串味）。</p>
+     *
+     * @return 是否在屏渲染距离内（用包围盒距离，坐在里面时为 0）
+     */
+    public static boolean isScreenRenderTarget(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return false;
+        }
+        net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return false;
+        }
+        double range = SCREEN_RENDER_RANGE;
+        return vehicle.getBoundingBox().distanceToSqr(player.position()) <= range * range;
+    }
+
+    /**
+     * 解析"屏内容所属载具"：先按乘坐/操作状态解析（与雷达 HUD 同源）；解析不到时
+     * （典型：改装/武器界面开着、游戏暂停）回退为**距离内最近的载具**——界面期间屏不熄灭。
+     */
+    private static AbstractVehicle resolveScreenVehicle() {
+        AbstractVehicle ridden = resolveLocalVehicle();
+        if (ridden != null) {
+            return ridden;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return null;
+        }
+        AbstractVehicle nearest = null;
+        double bestSq = SCREEN_RENDER_RANGE * SCREEN_RENDER_RANGE;
+        for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof AbstractVehicle candidate) {
+                double distanceSq = candidate.getBoundingBox().distanceToSqr(mc.player.position());
+                if (distanceSq <= bestSq) {
+                    bestSq = distanceSq;
+                    nearest = candidate;
+                }
+            }
+        }
+        return nearest;
+    }
+
     /** @return 屏型对应的注册 RL（display 文件 {@code special_bone_effects.texture} 填本值）。 */
     public static ResourceLocation rl(ScreenKind kind) {
         return ResourceLocation.fromNamespaceAndPath("rvp", "cockpit/" + kind.path);
@@ -300,11 +355,12 @@ public final class RVP_CockpitScreenManager {
             }
         }
         // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
-        // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）。
-        AbstractVehicle vehicle = resolveLocalVehicle();
+        // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）；
+        // 解析不到时回退距离内最近载具（2026-10-15：改装/武器界面、暂停期间屏不再熄灭）。
+        AbstractVehicle vehicle = resolveScreenVehicle();
         long now = mc.level.getGameTime();
         if (vehicle == null) {
-            // 非乘载状态：三块屏清为熄屏底（RT 清屏 alpha=0 → 屏骨整块不渲染；仅一次，避免重复清屏）。
+            // 范围内无载具：三块屏清为熄屏底（RT 清屏 alpha=0 → 屏骨整块不渲染；仅一次，避免重复清屏）。
             if (!idleFilled) {
                 for (ScreenKind kind : ScreenKind.values()) {
                     com.mojang.blaze3d.pipeline.TextureTarget target = TARGETS.get(rl(kind));
@@ -403,7 +459,7 @@ public final class RVP_CockpitScreenManager {
                     yield "威胁=" + receiver.targets.size() + " MSL=" + msl
                             + " LOCK=" + lock + " SEARCH=" + search;
                 }
-                case MAP -> "地图";
+                case MAP -> RVP_MapScreenRenderer.describe(vehicle);
             };
         } catch (Throwable throwable) {
             return "签名异常 " + throwable;
