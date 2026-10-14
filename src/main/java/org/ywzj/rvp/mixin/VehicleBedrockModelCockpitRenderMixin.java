@@ -213,7 +213,12 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                         float[] uvs = vtx.uvs();
                         int vertexCount = vtx.vertexCount();
                         if (target != null && pos != null && uvs != null && vertexCount > 0) {
-                            // chunk UV 包围盒归一化：动态画面铺满整个屏骨平面
+                            // UV 语义（2026-10-15 用户定案：一切按模型 UV，不自动铺）：
+                            // 默认直接采信模型 UV —— 展面决定画面取景/缩放/占比；
+                            // 仅当 display 条目显式写 "ywzj_rvp_screen_uv_mode": "fill"
+                            // 时才回退旧的「包围盒归一化铺满」语义（老配置逃生舱）。
+                            // 注：RT 纹理 wrap=CLAMP_TO_EDGE，模型 UV 超界会边缘渗色而非重复。
+                            boolean fillUv = RVP_CockpitScreenManager.isFillUvMode(effect.texture);
                             float uMin = Float.MAX_VALUE, vMin = Float.MAX_VALUE;
                             float uMax = -Float.MAX_VALUE, vMax = -Float.MAX_VALUE;
                             for (int i = 0; i < vertexCount; i++) {
@@ -250,8 +255,9 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                             buffer.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_TEX);
                             Matrix4f matrix = poseStack.last().pose();
                             for (int i = 0; i < vertexCount; i++) {
-                                float u = (uvs[i * 2] - uMin) / uSpan;
-                                float v = (uvs[i * 2 + 1] - vMin) / vSpan;
+                                // model 语义：UV 原值直采；fill 语义：包围盒归一化铺满
+                                float u = fillUv ? (uvs[i * 2] - uMin) / uSpan : uvs[i * 2];
+                                float v = fillUv ? (uvs[i * 2 + 1] - vMin) / vSpan : uvs[i * 2 + 1];
                                 buffer.vertex(matrix, pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])
                                         .uv(u, v).endVertex();
                             }
@@ -274,6 +280,10 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                             }
                             if (diagNow) {
                                 diagLine.append(" 直绘verts=").append(vertexCount);
+                                // UV 取证：模型 UV 实测范围 + 当前语义（排查取景/边缘渗色/镜像）
+                                diagLine.append(String.format(java.util.Locale.ROOT,
+                                                " uv=%.3f~%.3f/%.3f~%.3f", uMin, uMax, vMin, vMax))
+                                        .append(fillUv ? " UV铺满" : " UV模型");
                             }
                         }
                     }

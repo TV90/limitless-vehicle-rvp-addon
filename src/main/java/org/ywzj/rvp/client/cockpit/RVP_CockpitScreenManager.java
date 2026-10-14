@@ -54,6 +54,16 @@ public final class RVP_CockpitScreenManager {
     private static final Map<ResourceLocation, Integer> SCREEN_SIZES = new HashMap<>();
 
     /**
+     * display 条目自定义字段：屏骨 UV 语义。
+     * {@code "model"}（**缺省**，2026-10-15 用户定案）= 直接采信模型 UV——展面决定取景/缩放/占比；
+     * {@code "fill"} = 旧行为（chunk UV 包围盒归一化，动态画面铺满整个屏骨平面）。
+     */
+    private static final String SCREEN_UV_MODE_FIELD = "ywzj_rvp_screen_uv_mode";
+
+    /** 显式要求旧「铺满」语义的屏纹理 RL（集合为空 = 全部按模型 UV 采样）。 */
+    private static final java.util.Set<ResourceLocation> SCREEN_FILL_UV = new java.util.HashSet<>();
+
+    /**
      * @return 屏纹理 RL 的实际边长：display 条目 {@code ywzj_rvp_screen_size} 配置值，
      * 未配置回退 {@link #SIZE}。
      */
@@ -68,6 +78,7 @@ public final class RVP_CockpitScreenManager {
      */
     private static void parseScreenSizes(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
         SCREEN_SIZES.clear();
+        SCREEN_FILL_UV.clear();
         try {
             var resources = org.ywzj.vehicle.util.ResourceScanner.scanDirectory(resourceManager,
                     net.minecraft.resources.FileToIdConverter.json("display/vehicle"),
@@ -93,6 +104,16 @@ public final class RVP_CockpitScreenManager {
                         continue;
                     }
                     ResourceLocation rl = ResourceLocation.tryParse(texture);
+                    if (rl == null) {
+                        continue;
+                    }
+                    // UV 语义与分辨率同源解析（必须先于 size 的 continue：条目可能只写 uv_mode）：
+                    // 缺省 "model"（按模型 UV 采样）；显式 "fill" 才登记旧「铺满」语义。
+                    String uvMode = net.minecraft.util.GsonHelper.getAsString(
+                            effect, SCREEN_UV_MODE_FIELD, "model");
+                    if ("fill".equalsIgnoreCase(uvMode)) {
+                        SCREEN_FILL_UV.add(rl);
+                    }
                     if (!effect.has(SCREEN_SIZE_FIELD)) {
                         continue;
                     }
@@ -233,6 +254,14 @@ public final class RVP_CockpitScreenManager {
     public static boolean isCockpitScreenTexture(ResourceLocation texture) {
         return texture != null && "rvp".equals(texture.getNamespace())
                 && texture.getPath().startsWith("cockpit/");
+    }
+
+    /**
+     * @return 该屏纹理是否使用旧「铺满」UV 语义（chunk UV 包围盒归一化）。
+     * 缺省 false = **按模型 UV 采样**（2026-10-15 用户定案：一切按模型 UV，不自动铺）。
+     */
+    public static boolean isFillUvMode(ResourceLocation texture) {
+        return texture != null && SCREEN_FILL_UV.contains(texture);
     }
 
     @SubscribeEvent
