@@ -262,6 +262,35 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                             // 缺陷（圆盘区域 a=0 实测），启用混合时 a=0 区域会透出底下机体骨。
                             // disableBlend 后 alpha 通道无效，屏骨显示=RT 的 RGB 本身（黑就是
                             // 黑、地图就是地图），从物理上消灭透明问题。画完恢复混合供后续渲染。
+                            // 2026-10-15【直绘落空取证】："弹在场时屏完全透明"= 12 顶点提交成功、
+                            // glErr=0，却无处可见。裸立即绘制不经过 RenderType 管线，会继承
+                            // "上一个批量绘制"残留的全部 GL 状态；弹体在场改变批量 flush 的
+                            // 内容与顺序 ⇒ 残留状态随弹种/时机漂移（时好时坏）。此处取证
+                            // 直接决定可见性的四组状态，1Hz 落盘，失效瞬间自动留痕。
+                            if (diagNow) {
+                                int[] viewport = new int[4];
+                                org.lwjgl.opengl.GL11.glGetIntegerv(
+                                        org.lwjgl.opengl.GL11.GL_VIEWPORT, viewport);
+                                boolean scissor = org.lwjgl.opengl.GL11.glIsEnabled(
+                                        org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
+                                boolean depthTest = org.lwjgl.opengl.GL11.glGetBoolean(
+                                        org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                                boolean depthMask = org.lwjgl.opengl.GL11.glGetBoolean(
+                                        org.lwjgl.opengl.GL11.GL_DEPTH_WRITEMASK);
+                                int depthFunc = org.lwjgl.opengl.GL11.glGetInteger(
+                                        org.lwjgl.opengl.GL11.GL_DEPTH_FUNC);
+                                float[] colorMod = RenderSystem.getShaderColor();
+                                diagLine.append(" 预绘fbo=").append(org.lwjgl.opengl.GL11.glGetInteger(
+                                                org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING))
+                                        .append(" 视口=[").append(viewport[0]).append(',').append(viewport[1])
+                                        .append(',').append(viewport[2]).append('x').append(viewport[3]).append(']')
+                                        .append(scissor ? " 剪裁开" : " 剪裁关")
+                                        .append(" 深度=").append(depthTest).append('/').append(depthMask)
+                                        .append("/0x").append(Integer.toHexString(depthFunc))
+                                        .append(String.format(java.util.Locale.ROOT, " 色调=[%.2f,%.2f,%.2f,%.2f]",
+                                                colorMod == null ? 1f : colorMod[0], colorMod == null ? 1f : colorMod[1],
+                                                colorMod == null ? 1f : colorMod[2], colorMod == null ? 1f : colorMod[3]));
+                            }
                             RenderSystem.disableBlend();
                             RenderSystem.disableCull();
                             var tessellator = Tesselator.getInstance();
