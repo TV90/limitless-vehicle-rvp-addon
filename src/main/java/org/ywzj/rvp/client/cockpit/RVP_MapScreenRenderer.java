@@ -66,9 +66,8 @@ public final class RVP_MapScreenRenderer {
             graphics.blit(texture, dx, dy, tileSizePx, tileSizePx, 0, 0, 256, 256, 256, 256);
         }
 
-        // 探测图标层（雷达探测点；与雷达屏同数据源，仅本车）
-        WeaponUnit weaponUnit = RVP_CockpitScreenManager.currentWeaponUnit();
-        RadarUnit radar = weaponUnit == null ? null : weaponUnit.getMainRadarUnit();
+        // 探测图标层（雷达探测点；与雷达屏同数据源=载具自己的雷达，2026-10-15 起不读本体席位）
+        RadarUnit radar = RVP_CockpitScreenManager.mainRadarUnit(vehicle);
         if (radar != null) {
             HashMap<Integer, RadarUnit.DetectedObject> detected = radar.getDetectedEntities();
             if (detected != null) {

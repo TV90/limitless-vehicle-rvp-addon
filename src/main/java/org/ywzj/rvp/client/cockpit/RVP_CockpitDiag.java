@@ -567,7 +567,22 @@ public final class RVP_CockpitDiag {
                         + mc.player.getVehicle().getClass().getSimpleName())
                 : "null";
         String source = describeEntity(screenSource);
-        BLACKBOX.addLast(mc.level.getGameTime() + " 本体=" + local + " 原版=" + ridden + " 屏源=" + source);
+        // 逐 tick 附带"屏源与玩家的距离 / 屏源是否已被移除"与玩家坐标——这是判定
+        // 「车自己飞走了」vs「实体被移除/重建」vs「玩家被传送」的唯一直接证据
+        // （2026-10-15 03:55 事故里只知道车在 7 tick 后离开 10 格半径，无法区分三者）。
+        StringBuilder line = new StringBuilder(112);
+        line.append(mc.level.getGameTime()).append(" 本体=").append(local)
+                .append(" 原版=").append(ridden).append(" 屏源=").append(source);
+        if (screenSource != null && mc.player != null) {
+            line.append(String.format(java.util.Locale.ROOT, " 距=%.1fm%s",
+                    Math.sqrt(screenSource.getBoundingBox().distanceToSqr(mc.player.position())),
+                    screenSource.isRemoved() ? "/已移除" : ""));
+        }
+        if (mc.player != null) {
+            line.append(String.format(java.util.Locale.ROOT, " 玩家=%.0f,%.0f,%.0f",
+                    mc.player.getX(), mc.player.getY(), mc.player.getZ()));
+        }
+        BLACKBOX.addLast(line.toString());
         while (BLACKBOX.size() > BLACKBOX_TICKS) {
             BLACKBOX.removeFirst();
         }

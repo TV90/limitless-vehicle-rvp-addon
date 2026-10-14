@@ -130,14 +130,21 @@ public final class RVP_RwrScreenRenderer {
         return receiver.targets.values().stream().anyMatch(target -> target.warnType() == type);
     }
 
-    /** 威胁实体解析：优先本客户端实体，回退服务端实体快照（与 RVP_RadarOverlay 同款）。 */
+    /**
+     * 威胁实体解析：优先本客户端实体，回退服务端实体快照（与 RVP_RadarOverlay 同款）。
+     *
+     * <p>2026-10-15：主路径改走载具所在世界（{@code vehicle.level()}），不再经本体
+     * {@code LocalVehiclePlayer.getPlayer()}——本体状态被上游清空时该引用及其
+     * {@code serverEntities} 会一并失效，威胁符号会整片消失。</p>
+     */
     private static Entity resolveEntity(AbstractVehicle vehicle, int entityId) {
-        Entity entity = LocalVehiclePlayer.instance.getPlayer().level().getEntity(entityId);
+        Entity entity = vehicle.level().getEntity(entityId);
         if (entity != null) {
             return entity;
         }
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         LocalVehiclePlayer.ServerEntity serverEntity =
-                LocalVehiclePlayer.instance.serverEntities.get(entityId);
+                lvp == null ? null : lvp.serverEntities.get(entityId);
         return serverEntity == null ? null : serverEntity.entity;
     }
 

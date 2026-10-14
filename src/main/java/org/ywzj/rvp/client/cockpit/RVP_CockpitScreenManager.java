@@ -12,6 +12,8 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.screen.tool.RVP_TacticalMapHost;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
+import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.HashMap;
@@ -24,7 +26,8 @@ import java.util.Map;
  * 文件 {@code special_bone_effects.texture} 引用）——纹理为**离屏 RT 颜色纹理的包装**
  * （bind 直绑 RT 的 GL 纹理 id，零回读零上传，方案 B：RT 画完即所见，消灭
  * DynamicTexture 回灌管线的全部 GL 生命周期问题）；②ClientTick 降频驱动内容渲染
- * （雷达/RWR 每 tick=20Hz、地图每 4 tick=5Hz）；③仅本地玩家乘坐的载具绘制动态内容。</p>
+ * （雷达/RWR 每 tick=20Hz、地图每 4 tick=5Hz）；③屏内容源 = **距离内最近的载具**
+ * （2026-10-15 用户裁定：只按距离判定，不再依赖本体/原版的骑乘状态）。</p>
  */
 @Mod.EventBusSubscriber(modid = RVP_MOD.MOD_ID, value = Dist.CLIENT)
 public final class RVP_CockpitScreenManager {
@@ -267,14 +270,16 @@ public final class RVP_CockpitScreenManager {
     }
 
     /**
-     * 解析"屏内容所属载具"：先按乘坐/操作状态解析（与雷达 HUD 同源）；解析不到时
-     * （典型：改装/武器界面开着、游戏暂停）回退为**距离内最近的载具**——界面期间屏不熄灭。
+     * 解析"屏内容所属载具"——**只按距离**：取 {@link #SCREEN_RENDER_RANGE} 格内最近的载具。
+     *
+     * <p>2026-10-15 用户裁定：删除全部"骑乘载具"前置条件（本体 {@code LocalVehiclePlayer.vehicle}
+     * 与原版 {@code player.getVehicle()}）。黑匣子实证 03:55:11——这两个字段在**同一 tick** 被上游
+     * 一起清成 null，而车仍好好地停在玩家 10 格内（当时屏源就是靠距离兜底正确解析到它的）；
+     * 依赖骑乘状态只会把屏一起拖下水，距离才是唯一稳定判据。</p>
+     *
+     * <p>玩家在车里时包围盒距离=0，必然取到自己那台，故编队/邻近载具不会串味。</p>
      */
     private static AbstractVehicle resolveScreenVehicle() {
-        AbstractVehicle ridden = resolveLocalVehicle();
-        if (ridden != null) {
-            return ridden;
-        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) {
             return null;
@@ -397,9 +402,8 @@ public final class RVP_CockpitScreenManager {
                 RVP_CockpitDiag.tickTrace();
             }
         }
-        // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
-        // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）；
-        // 解析不到时回退距离内最近载具（2026-10-15：改装/武器界面、暂停期间屏不再熄灭）。
+        // 屏内容源：只按距离取 10 格内最近的载具（2026-10-15 用户裁定，
+        // 删除全部"骑乘载具"前置条件——本体/原版状态会被上游整体清空）。
         AbstractVehicle vehicle = resolveScreenVehicle();
         // 黑匣子（诊断）：每 tick 记 本体/原版/屏源 三元组，任一变化即把最近 30 秒落盘
         // （随机触发、1 秒采样抓不到的情况靠它取证；2026-10-15 随机闭屏排查）。
@@ -479,8 +483,9 @@ public final class RVP_CockpitScreenManager {
         try {
             return switch (kind) {
                 case RADAR -> {
-                    var unit = currentWeaponUnit();
-                    var radar = unit == null ? null : unit.getMainRadarUnit();
+                    // 与雷达屏同源（载具口径，2026-10-15 起不再读本体席位），
+                    // 保证内容签名 == 屏上真实内容（否则诊断会撒谎）。
+                    var radar = mainRadarUnit(vehicle);
                     var detected = radar == null ? null : radar.getDetectedEntities();
                     yield "探测=" + (detected == null ? "无雷达" : String.valueOf(detected.size()));
                 }
@@ -512,9 +517,53 @@ public final class RVP_CockpitScreenManager {
         }
     }
 
-    /** @return 本地玩家当前武器站（雷达/RWR 数据入口的统一解包点；无乘载返回 null）。 */
+    /**
+     * @return 本体口径的当前武器站。**已知会抖**：上游会把 {@code LocalVehiclePlayer} 整体清空
+     *         （2026-10-15 黑匣子实证）。屏侧自 2026-10-15 起改用 {@link #mainRadarUnit}，
+     *         本方法只保留给非屏模块。
+     */
     static WeaponUnit currentWeaponUnit() {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
         return lvp == null ? null : lvp.getWeaponUnit();
+    }
+
+    /**
+     * 取载具主雷达——**不经过本体 {@code LocalVehiclePlayer}**（2026-10-15 用户裁定：
+     * 屏只按距离取载具，雷达也从载具自己身上取）。查找顺序：
+     *
+     * <ol>
+     *   <li>玩家所坐部件（{@code vehicle.getOwnOperatorUnit(player)}——载具自己的座位表，
+     *       由实体同步维护、与本体状态无关）是武器站 ⇒ 取其主雷达；</li>
+     *   <li>载具部件表里第一个带雷达的武器站；</li>
+     *   <li>载具部件表里第一个雷达部件（{@code RadarUnit} 本身即部件）。</li>
+     * </ol>
+     *
+     * <p>动机：雷达屏与地图探测符号原本读本体席位，本体被清空的那几秒这两处会整块变空
+     * （实测 2026-10-15 03:55，屏源=rvp:j16 却只画 NO RADAR）。</p>
+     *
+     * @return 主雷达；载具确实没有雷达时返回 {@code null}。
+     */
+    static RadarUnit mainRadarUnit(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        // ① 玩家当前所坐部件（载具座位表口径，不依赖本体状态）
+        net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null
+                && vehicle.getOwnOperatorUnit(player) instanceof WeaponUnit ownUnit
+                && ownUnit.getMainRadarUnit() != null) {
+            return ownUnit.getMainRadarUnit();
+        }
+        // ② 部件表里第一个带雷达的武器站；③ 部件表里第一个雷达部件
+        RadarUnit fallback = null;
+        for (PartUnit<?> part : vehicle.getPartUnits()) {
+            if (part instanceof WeaponUnit weaponUnit && weaponUnit.getMainRadarUnit() != null) {
+                return weaponUnit.getMainRadarUnit();
+            }
+            if (fallback == null && part instanceof RadarUnit radarUnit) {
+                fallback = radarUnit;
+            }
+        }
+        return fallback;
     }
 }

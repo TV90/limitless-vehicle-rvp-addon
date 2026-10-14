@@ -40,8 +40,9 @@ public final class RVP_RadarScreenRenderer {
         int outer = (int) (Math.min(width, height) * 0.35f);
         long gameTime = vehicle.level().getGameTime();
 
-        WeaponUnit weaponUnit = RVP_CockpitScreenManager.currentWeaponUnit();
-        RadarUnit radar = weaponUnit == null ? null : weaponUnit.getMainRadarUnit();
+        // 雷达源：从"屏内容载具"自己身上取（玩家所坐部件 → 载具部件表），不再读本体席位——
+        // 本体状态被上游清空时席位变 null，这块屏会整块只剩 NO RADAR（2026-10-15 定案）。
+        RadarUnit radar = RVP_CockpitScreenManager.mainRadarUnit(vehicle);
         if (radar == null) {
             // 无雷达提示与其它屏内文字同款走放大版（GuiGraphics 文字攒批，endBatch 时在
             // 全部立即图元之上，层序正确）。
