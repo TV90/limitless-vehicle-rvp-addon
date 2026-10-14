@@ -240,6 +240,26 @@ public final class RVP_CockpitDiag {
         }
         log(rt.toString());
 
+        // 不在载具（下机 / 打开载具改装或武器选择界面 / 暂停）时：屏按设计熄屏，绘制停滞
+        // **不是**冻结——这里抑制误报，并记录空窗时长（2026-10-15 实测：4 次"疑冻结"全部
+        // 落在暂停/改装界面窗口内，用户看到的"关屏"即此）。
+        if (vehicle == null) {
+            if (!offVehicle) {
+                offVehicle = true;
+                offVehicleSinceTick = tick;
+                log("◆离开载具 tick=" + tick + "（屏熄屏=设计行为，期间的绘制停滞不计为冻结）");
+            }
+            FREEZE_FLAGGED.clear();
+            RENDER_ZERO_FLAGGED.clear();
+            log("GL " + glSnapshot());
+            log("相关性 " + missileSnapshot(null) + " MSL框/秒=" + mslDiamondPerSecond());
+            return;
+        }
+        if (offVehicle) {
+            offVehicle = false;
+            log("◆回到载具（空窗 " + (tick - offVehicleSinceTick) + " tick）");
+        }
+
         // 自动冻结检测（一次性标记；恢复时打恢复行）——不必等用户手敲 trace：
         //   ①RT 侧冻结：内容签名在变、RT 画面指纹却连续停滞 ⇒ 画了但没落进 RT（GL 状态问题）
         //   ②驱动侧停滞：该屏绘制落后超过 40 tick ⇒ ClientTick 驱动/载具解析断了
@@ -308,6 +328,12 @@ public final class RVP_CockpitDiag {
 
     /** 上次心跳的在场导弹数（-1=未初始化）。 */
     private static int lastMissileCount = -1;
+
+    /** 是否处于"不在载具"空窗期（下机/界面/暂停；用于抑制误报冻结）。 */
+    private static boolean offVehicle;
+
+    /** 空窗起始 tick（用于输出空窗时长）。 */
+    private static long offVehicleSinceTick = Long.MIN_VALUE;
 
     /** @return 场上存活的 RVP 导弹数（与 {@link #missileSnapshot} 同源）。 */
     private static int countMissiles() {
