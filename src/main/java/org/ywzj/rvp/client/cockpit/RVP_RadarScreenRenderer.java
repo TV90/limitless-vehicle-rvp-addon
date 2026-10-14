@@ -27,19 +27,25 @@ public final class RVP_RadarScreenRenderer {
 
     /** 渲染雷达罗盘帧。 */
     public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
-        // 熄屏底色（不透明深灰近黑，transparent 渲染下 alpha=1 区域为实心）
-        graphics.fill(0, 0, width, height, 0xFF0A0C0E);
+        var pose = graphics.pose();
+        // 熄屏底色（不透明深灰近黑，transparent 渲染下 alpha=1 区域为实心）。
+        // 必须走立即模式（2026-10-14 深夜修）：GuiGraphics.fill 攒批内容要到 painter 返回后
+        // 的 endBatch 才落屏，而本渲染器首次字体请求在末尾"512m"——若底色走攒批，会在立即
+        // 圆盘/环/扫描线之后才刷下，整屏盖掉它们（症状=屏上只剩深底+探测方块+量程文字）。
+        // RWR 同隐患是靠顶部告警文字先画触发提前 endBatch 才躲过的，勿效仿。
+        RVP_CockpitCanvas.fillRectImmediate(pose, 0, 0, width, height, 0xFF0A0C0E);
         int cx = width / 2;
         int cy = height / 2;
         // UV 占比对齐 MCHR（RADAR_UV_DIAMETER_RATIO=0.70）：圆盘直径=短边×0.70，四周留 15% 防出血。
         int outer = (int) (Math.min(width, height) * 0.35f);
-        var pose = graphics.pose();
         long gameTime = vehicle.level().getGameTime();
 
         WeaponUnit weaponUnit = RVP_CockpitScreenManager.currentWeaponUnit();
         RadarUnit radar = weaponUnit == null ? null : weaponUnit.getMainRadarUnit();
         if (radar == null) {
-            graphics.drawCenteredString(font(), "NO RADAR", cx, cy, Color.GREEN);
+            // 无雷达提示与其它屏内文字同款走放大版（GuiGraphics 文字攒批，endBatch 时在
+            // 全部立即图元之上，层序正确）。
+            RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "NO RADAR", cx, cy, Color.GREEN);
             return;
         }
 
@@ -79,8 +85,11 @@ public final class RVP_RadarScreenRenderer {
             int r = 3;
             pose.pushPose();
             {
-                graphics.fill(cx + (int) direction.x - r, cy + (int) direction.z - r,
-                        cx + (int) direction.x + r, cy + (int) direction.z + r, color);
+                // 探测方块同样走立即填充（防攒批/立即交错：攒批版会拖到 endBatch 才落屏，
+                // 层序与代码提交序脱钩——与底色同批次晚刷会盖掉先画的环/扫描线）。
+                float sx = cx + (float) direction.x;
+                float sy = cy + (float) direction.z;
+                RVP_CockpitCanvas.fillRectImmediate(pose, sx - r, sy - r, sx + r, sy + r, color);
                 // 速度矢量（搬 drawTarget：速度方向画短线，提示目标动向）
                 if (entity != null) {
                     Vec3 velocity = entity.getDeltaMovement();
@@ -110,10 +119,5 @@ public final class RVP_RadarScreenRenderer {
         }
         Entity driver = entity instanceof AbstractVehicle vehicle ? vehicle.getDriver() : entity;
         return driver != null && team.isAlliedTo(driver.getTeam());
-    }
-
-    /** 延迟取 MC 字体的小封装（避免静态初始化时序问题）。 */
-    private static net.minecraft.client.gui.Font font() {
-        return net.minecraft.client.Minecraft.getInstance().font;
     }
 }
