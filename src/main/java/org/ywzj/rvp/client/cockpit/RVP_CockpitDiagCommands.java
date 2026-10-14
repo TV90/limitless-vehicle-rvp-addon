@@ -20,15 +20,18 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
  * <pre>
  *   /cockpitdiag            查看用法与当前开关
  *   /cockpitdiag on|off     开启/关闭**全量**记录（logs/rvp_cockpit_diag.log：每秒心跳/特殊骨/PNG dump）
- *   /cockpitdiag watch      只待命**黑匣子**：不写心跳、不 dump PNG，出问题时再落盘（推荐长期挂着）
- *   /cockpitdiag blackbox   立即把黑匣子（最近 30 秒的 本体/原版/屏源 三元组）落盘
  *   /cockpitdiag status     聊天栏输出各屏分层计数（draws/fail/md5/内容 + 骨直绘帧/秒）
  *   /cockpitdiag gl         聊天栏输出当前 GL 状态快照
  *   /cockpitdiag trace 200  开启逐帧 trace（200 tick 内每帧一行全量快照）
+ *
+ *   /rvpbb  （长名 /rvpblackbox，等价）——黑匣子，2026-10-15 从 cockpitdiag 拆出成独立命令
+ *   /rvpbb on|off           开始/停止待命（只留最近 30 秒三元组，不写心跳、不 dump PNG）
+ *   /rvpbb dump             立即把最近 30 秒落盘 → logs/rvp_cockpit_blackbox.log
+ *   /rvpbb status           查看开关与缓冲长度
  * </pre>
  *
- * <p><b>默认全部关闭</b>（2026-10-15 用户裁定：改为命令驱动，避免长期自动写盘）。
- * 复现随机问题的推荐姿势：先 {@code /cockpitdiag watch} 挂着 → 出问题 → {@code /cockpitdiag blackbox}
+ * <p><b>默认全部关闭</b>（2026-10-15 用户裁定：命令驱动，避免长期自动写盘）。
+ * 复现随机问题的推荐姿势：{@code /rvpbb on} 挂着 → 出问题 → {@code /rvpbb dump}
  * （或直接看它自动落盘的那段）→ 再看同刻的 {@code 近旁载具=} / {@code 席位=} / {@code 接收器=}。</p>
  *
  * <p>排"屏绘戛然而止"的老姿势：先 {@code status} 看 draws 与骨直绘帧/秒是否还在涨，
@@ -51,7 +54,7 @@ public final class RVP_CockpitDiagCommands {
                             : (RVP_CockpitDiag.isWatch() ? "黑匣子待命" : "已关闭（默认）");
                     context.getSource().sendSuccess(() -> Component.literal(
                             "[座舱屏诊断] " + state
-                                    + " | 用法: on|off|watch|blackbox|status|gl|trace <tick>"), false);
+                                    + " | 用法: on|off|status|gl|trace <tick>（黑匣子见 /rvpbb）"), false);
                     return 1;
                 })
                 .then(Commands.literal("on").executes(context -> {
@@ -67,26 +70,6 @@ public final class RVP_CockpitDiagCommands {
                     context.getSource().sendSuccess(() -> Component.literal(
                             "[座舱屏诊断] 已关闭全量记录"
                                     + (RVP_CockpitDiag.isWatch() ? "（黑匣子仍在待命）" : "")), false);
-                    return 1;
-                }))
-                .then(Commands.literal("watch").executes(context -> {
-                    // 只待命黑匣子：不写每秒心跳、不 dump PNG；三元组任一变化即自动落盘。
-                    // 长期挂着不吵，随机复现后可直接取证（2026-10-15 用户要求）。
-                    boolean now = !RVP_CockpitDiag.isWatch();
-                    RVP_CockpitDiag.setWatch(now);
-                    context.getSource().sendSuccess(() -> Component.literal(now
-                            ? "[座舱屏诊断] 黑匣子已待命：只记 本体/原版/屏源 三元组（最近 30 秒），"
-                                    + "状态变化自动落盘；心跳与 PNG 不写"
-                            : "[座舱屏诊断] 黑匣子已停（缓冲已清空）"), false);
-                    return 1;
-                }))
-                .then(Commands.literal("blackbox").executes(context -> {
-                    // 立即把最近 30 秒三元组落盘（出现问题时马上敲这条）。
-                    int size = RVP_CockpitDiag.blackboxSize();
-                    RVP_CockpitDiag.dumpBlackboxNow("手动 /cockpitdiag blackbox");
-                    context.getSource().sendSuccess(() -> Component.literal(
-                            "[座舱屏诊断] 黑匣子已落盘：缓冲 " + size + " tick（≈" + (size / 20)
-                                    + " 秒）→ logs/rvp_cockpit_blackbox.log"), false);
                     return 1;
                 }))
                 .then(Commands.literal("status").executes(context -> {
@@ -119,6 +102,62 @@ public final class RVP_CockpitDiagCommands {
                                             "[座舱屏诊断] 逐帧 trace " + ticks + " tick"), false);
                                     return 1;
                                 }))));
+
+        // 黑匣子独立命令（2026-10-15 用户要求：不与 cockpitdiag 的全量记录混用）。
+        // 短名 rvpbb 便于随手敲，长名 rvpblackbox 便于自查；两者等价。
+        dispatcher.register(blackboxCommand("rvpbb"));
+        dispatcher.register(blackboxCommand("rvpblackbox"));
+    }
+
+    /**
+     * 黑匣子命令树：把"本体认为的车 / 原版乘坐 / 屏内容源"三元组的最近 30 秒留证。
+     *
+     * <pre>
+     *   /rvpbb            查看状态与用法
+     *   /rvpbb on|off     开始/停止待命（停止会清空环形缓冲）
+     *   /rvpbb dump       立即把最近 30 秒落盘 → logs/rvp_cockpit_blackbox.log
+     *   /rvpbb status     聊天栏看当前开关与缓冲长度
+     * </pre>
+     */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> blackboxCommand(
+            String name) {
+        return Commands.literal(name)
+                .executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(blackboxStateLine()), false);
+                    return 1;
+                })
+                .then(Commands.literal("on").executes(context -> {
+                    RVP_CockpitDiag.setWatch(true);
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "[黑匣子] 已待命：每 tick 记 本体/原版/屏源 三元组（最近 30 秒），"
+                                    + "任一变化自动落盘 logs/rvp_cockpit_blackbox.log；不写心跳、不 dump PNG"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("off").executes(context -> {
+                    RVP_CockpitDiag.setWatch(false);
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "[黑匣子] 已停止（环形缓冲已清空）"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("dump").executes(context -> {
+                    int size = RVP_CockpitDiag.blackboxSize();
+                    RVP_CockpitDiag.dumpBlackboxNow("手动 /" + name + " dump");
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            "[黑匣子] 已落盘：缓冲 " + size + " tick（≈" + (size / 20)
+                                    + " 秒）→ logs/rvp_cockpit_blackbox.log"), false);
+                    return 1;
+                }))
+                .then(Commands.literal("status").executes(context -> {
+                    context.getSource().sendSuccess(() -> Component.literal(blackboxStateLine()), false);
+                    return 1;
+                }));
+    }
+
+    /** @return 黑匣子当前状态一行（命令反馈用）。 */
+    private static String blackboxStateLine() {
+        return "[黑匣子] " + (RVP_CockpitDiag.isWatch() ? "待命中" : "已停止（默认）")
+                + " | 缓冲 " + RVP_CockpitDiag.blackboxSize() + " tick"
+                + " | 用法: on|off|dump|status（/cockpitdiag on 全量记录期间黑匣子同样工作）";
     }
 
     /** @return 各屏分层计数（聊天栏逐行展示）。 */
