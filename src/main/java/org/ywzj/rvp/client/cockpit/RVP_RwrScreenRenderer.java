@@ -110,7 +110,7 @@ public final class RVP_RwrScreenRenderer {
                 }
                 direction = direction.normalize().scale(scale * outer * 0.88f);
                 pose.translate(cx + direction.x, cy + direction.z, 0);
-                pose.scale(1.8f, 1.8f, 1.8f);
+                pose.scale(2.6f, 2.6f, 2.6f);
                 String info = warnTarget.info();
                 int color = Color.GREEN;
                 if (warnTarget.warnType() == WarnType.RADAR_SEARCH) {

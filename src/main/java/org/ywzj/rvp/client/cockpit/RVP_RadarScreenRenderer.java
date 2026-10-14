@@ -102,7 +102,7 @@ public final class RVP_RadarScreenRenderer {
             Vec3 direction = local.lengthSqr() > 1.0E-6
                     ? local.normalize().scale(-l) : new Vec3(0, 0, 0);
             int color = isFriendly(entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
-            int r = 5;
+            int r = 7;
             pose.pushPose();
             {
                 // 探测方块同样走立即填充（防攒批/立即交错：攒批版会拖到 endBatch 才落屏，
@@ -110,17 +110,34 @@ public final class RVP_RadarScreenRenderer {
                 float sx = cx + (float) direction.x;
                 float sy = cy + (float) direction.z;
                 RVP_CockpitCanvas.fillRectImmediate(pose, sx - r, sy - r, sx + r, sy + r, color);
+                // 锁定线（2026-10-15 补）：与 HUD 雷达同款虚线（RenderHelper.drawLine dash=3/gap=1
+                // ⇒ 屏上等比 dash 9/gap 3），从圆心画到锁定目标；线宽 4（屏比例）。
+                Entity locked = radar.getLockedEntity();
+                if (locked != null && locked == entity) {
+                    float dx = sx - cx;
+                    float dz = sy - cy;
+                    float len = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (len > 1.0E-4F) {
+                        float ux = dx / len;
+                        float uz = dz / len;
+                        for (float cur = 0.0F; cur < len; cur += 12.0F) {
+                            float end = Math.min(cur + 9.0F, len);
+                            RVP_CockpitCanvas.drawLineImmediate(pose, cx + ux * cur, cy + uz * cur,
+                                    cx + ux * end, cy + uz * end, 4.0F, Color.GREEN);
+                        }
+                    }
+                }
                 // 速度矢量：HUD drawTarget 同款数学（velocity 取负 → 雷达共轭变换），
-                // 方向必与 HUD 一致；长度按屏比例加大（HUD 5×0.8≈4px@半径50 ⇒ 屏上 18px），宽 3。
+                // 方向必与 HUD 一致；长度按屏比例加大（HUD 5×0.8≈4px@半径50 ⇒ 屏上 26px），宽 4。
                 if (entity != null) {
                     Vec3 velocity = entity.getDeltaMovement();
                     if (velocity.lengthSqr() > 1.0E-6) {
                         Vec3 vDir = radar.worldVecToLocalVec(velocity.normalize().scale(-5))
-                                .normalize().scale(18);
+                                .normalize().scale(26);
                         RVP_CockpitCanvas.drawLineImmediate(pose,
                                 sx, sy,
                                 sx + (float) vDir.x, sy + (float) vDir.z,
-                                3.0F, color);
+                                4.0F, color);
                     }
                 }
             }
