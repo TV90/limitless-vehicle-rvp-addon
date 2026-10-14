@@ -245,13 +245,15 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         ensureRegistered(mc);
-        // 排查期诊断走专有文件 RVP_CockpitDiag（开启时每 20 tick=1 秒写一条，不进 latest.log）。
+        // 排查期诊断走专有文件 RVP_CockpitDiag（开启时每 20 tick=1 秒写一组心跳，不进 latest.log）。
         if (RVP_CockpitDiag.isEnabled()) {
             long nowDiag = mc.level.getGameTime();
             // 哨兵首帧必须放行：lastDiagTick 初始为 Long.MIN_VALUE 时，nowDiag - lastDiagTick
             // 会因 long 溢出翻成大负数、节流判断恒 false，诊断一行都写不出（与
             // RVP_DistanceBoneHider.debugTick 同坑同修法，2026-10-14 屏不显示排查定案）。
-            if (lastDiagTick == Long.MIN_VALUE || nowDiag - lastDiagTick >= 20) {
+            // trace 模式（/cockpitdiag trace <tick>）：窗口内改为逐 tick 输出，抓"戛然而止"那一瞬。
+            if (lastDiagTick == Long.MIN_VALUE || RVP_CockpitDiag.isTracing()
+                    || nowDiag - lastDiagTick >= 20) {
                 lastDiagTick = nowDiag;
                 LocalVehiclePlayer lvpDiag = LocalVehiclePlayer.instance;
                 AbstractVehicle vehicleDiag = resolveLocalVehicle();
@@ -262,6 +264,10 @@ public final class RVP_CockpitScreenManager {
                                 ? lvpDiag.getWeaponUnit().getVehicle() : null)
                         + " 解析载具=" + (vehicleDiag != null ? vehicleDiag.getVehicleId() : null)
                         + " registered=" + registered);
+                // 分层心跳：RT 侧计数（draws/md5/内容签名）+ 显示侧计数（骨直绘帧/秒）
+                // + GL 状态快照 + 导弹/告警相关性——四组对齐后可判定"停在哪一层"。
+                RVP_CockpitDiag.heartbeat(nowDiag, vehicleDiag);
+                RVP_CockpitDiag.tickTrace();
             }
         }
         // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
@@ -294,8 +300,12 @@ public final class RVP_CockpitScreenManager {
             LAST_RENDER.put(kind, now);
             ResourceLocation rl = rl(kind);
             com.mojang.blaze3d.pipeline.TextureTarget target = TARGETS.get(rl);
-            // 调用本项目离屏画布：渲染对应屏内容到 RT（屏骨纹理直采，无回灌）。
-            RVP_CockpitCanvas.renderToTarget(target, (graphics, width, height) ->
+            // 记录 painter 执行（RT 侧计数）+ 数据层内容签名——冻结时与 md5 对比可区分
+            // "驱动没跑 / 跑了但没落进 RT / RT 正常但采样断了"三种情况。
+            RVP_CockpitDiag.noteDraw(kind.path, now, describeContent(kind, vehicle));
+            // 调用本项目离屏画布：渲染对应屏内容到 RT（屏骨纹理直采，无回灌）；
+            // label=屏型，异常时归档到对应屏的 fail 计数与节流堆栈。
+            RVP_CockpitCanvas.renderToTarget(target, kind.path, (graphics, width, height) ->
                     drawScreenContent(graphics, width, height, kind, vehicle));
             // 排查期诊断：环形 dump RT 当前帧为 PNG（每屏独立 2 秒一张、2 张轮换覆盖），
             // 供直接目检各屏映射纹理的真实画面（排查期三屏全开）。
@@ -308,8 +318,10 @@ public final class RVP_CockpitScreenManager {
                 try {
                     var dumpDir = RVP_CockpitDiag.DIAG_FILE.getParent().resolve("rvp_cockpit_dump");
                     java.nio.file.Files.createDirectories(dumpDir);
-                    RVP_CockpitCanvas.dumpTargetPNG(target,
-                            dumpDir.resolve(kind.path + "_" + dumpSlot + ".png").toFile());
+                    // RT 画面指纹：md5 连续不变 = 离屏画面冻结（与 draws 计数配合定位冻结层）。
+                    var dumpFile = dumpDir.resolve(kind.path + "_" + dumpSlot + ".png");
+                    RVP_CockpitCanvas.dumpTargetPNG(target, dumpFile.toFile());
+                    RVP_CockpitDiag.noteDump(kind.path, RVP_CockpitDiag.md5Of(dumpFile));
                 } catch (Exception dumpEx) {
                     RVP_CockpitDiag.log("PNG dump 失败: " + dumpEx);
                 }
@@ -325,6 +337,47 @@ public final class RVP_CockpitScreenManager {
             case RADAR -> RVP_RadarScreenRenderer.render(graphics, width, height, vehicle);
             case RWR -> RVP_RwrScreenRenderer.render(graphics, width, height, vehicle);
             case MAP -> RVP_MapScreenRenderer.render(graphics, width, height, vehicle);
+        }
+    }
+
+    /**
+     * 数据层内容签名（诊断用）：证明"数据还在变"，与 RT 画面指纹互补定位冻结层——
+     * 签名在变而 md5 停滞 ⇒ 内容算出来了但没落进 RT；两者都停滞 ⇒ 驱动/数据源断了。
+     */
+    private static String describeContent(ScreenKind kind, AbstractVehicle vehicle) {
+        try {
+            return switch (kind) {
+                case RADAR -> {
+                    var unit = currentWeaponUnit();
+                    var radar = unit == null ? null : unit.getMainRadarUnit();
+                    var detected = radar == null ? null : radar.getDetectedEntities();
+                    yield "探测=" + (detected == null ? "无雷达" : String.valueOf(detected.size()));
+                }
+                case RWR -> {
+                    var receiver = vehicle.warningReceiver;
+                    if (receiver == null) {
+                        yield "无接收器";
+                    }
+                    int msl = 0;
+                    int lock = 0;
+                    int search = 0;
+                    for (var target : receiver.targets.values()) {
+                        var type = target.warnType();
+                        if (type == org.ywzj.vehicle.vehicle.pojo.WarnType.MISSILE_LAUNCH) {
+                            msl++;
+                        } else if (type == org.ywzj.vehicle.vehicle.pojo.WarnType.RADAR_LOCK) {
+                            lock++;
+                        } else if (type == org.ywzj.vehicle.vehicle.pojo.WarnType.RADAR_SEARCH) {
+                            search++;
+                        }
+                    }
+                    yield "威胁=" + receiver.targets.size() + " MSL=" + msl
+                            + " LOCK=" + lock + " SEARCH=" + search;
+                }
+                case MAP -> "地图";
+            };
+        } catch (Throwable throwable) {
+            return "签名异常 " + throwable;
         }
     }
 

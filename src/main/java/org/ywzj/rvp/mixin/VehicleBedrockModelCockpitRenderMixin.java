@@ -204,6 +204,10 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                         // 立即绘制采样离屏 RT。已知限制：实体渲染流内的立即绘制路径存在显示
                         // 不稳定（详见交接文档），弹孔式 RenderType 批内方案曾尝试未成。
                         var target = RVP_CockpitScreenManager.getScreenTarget(effect.texture);
+                        // 诊断键：rvp:cockpit/<kind> → kind（与 ScreenKind.path 对齐）
+                        String screenKey = effect.texture.getPath().startsWith("cockpit/")
+                                ? effect.texture.getPath().substring("cockpit/".length())
+                                : effect.texture.toString();
                         var vtx = hitChunk.vertices();
                         float[] pos = vtx.positions();
                         float[] uvs = vtx.uvs();
@@ -252,6 +256,8 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                                         .uv(u, v).endVertex();
                             }
                             tessellator.end();
+                            // 诊断 v2：屏骨直绘成功计数（显示侧；归零=直绘整条路径没跑）
+                            RVP_CockpitDiag.noteBoneDraw(screenKey, vertexCount);
                             // 排查期 GL 取证（2026-10-16）：错误码/真实绑定/活动纹理单元——
                             // 定位"顶点提交正常但屏骨不可见"的 GL 层原因。
                             int glErr = org.lwjgl.opengl.GL11.glGetError();
@@ -280,6 +286,8 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
         }
         // 排查期诊断：汇总本帧特殊骨条目状态（与循环内 diagNow 同节拍，每秒一条）。
         if (diagLine.length() > 0) {
+            // 诊断 v2：附加渲染时点的 GL 快照（与 ClientTick 时点对照，暴露跨帧残留状态）
+            diagLine.append(" 渲染时GL ").append(RVP_CockpitDiag.glSnapshot());
             RVP_CockpitDiag.log(diagLine.toString());
             diagLine.setLength(0);
         }

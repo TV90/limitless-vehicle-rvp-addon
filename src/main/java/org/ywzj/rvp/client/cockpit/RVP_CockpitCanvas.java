@@ -185,6 +185,15 @@ public final class RVP_CockpitCanvas {
      * 不做任何回读/上传（方案 B：屏骨纹理=RT 颜色纹理直采）。
      */
     public static void renderToTarget(RenderTarget target, Painter painter) {
+        renderToTarget(target, "-", painter);
+    }
+
+    /**
+     * 离屏渲染（带屏型 label）：与无 label 版完全同逻辑，仅用于把异常归档到对应屏
+     * （诊断 v2：冻结时按屏型统计 fails 并按节流输出堆栈，避免三屏混在一起看不出
+     * 到底是哪块屏挂了）。
+     */
+    public static void renderToTarget(RenderTarget target, String label, Painter painter) {
         Minecraft mc = Minecraft.getInstance();
         Matrix4f savedProjection = RenderSystem.getProjectionMatrix();
         VertexSorting savedSorting = RenderSystem.getVertexSorting();
@@ -249,7 +258,8 @@ public final class RVP_CockpitCanvas {
             // 单帧渲染失败不中断渲染循环：下一降频周期重试；日志节流由调用方诊断开关控制。
             java.io.StringWriter sw = new java.io.StringWriter();
             exception.printStackTrace(new java.io.PrintWriter(sw));
-            RVP_CockpitDiag.log("renderToTarget 失败: " + sw);
+            RVP_CockpitDiag.log("renderToTarget 失败[" + label + "]: " + sw);
+            RVP_CockpitDiag.noteFail(label, exception);
             RenderSystem.setProjectionMatrix(savedProjection, savedSorting);
             if (savedShaderColor != null) {
                 RenderSystem.setShaderColor(savedShaderColor[0], savedShaderColor[1],
