@@ -92,15 +92,17 @@ public final class RVP_RadarScreenRenderer {
             if (worldPos == null) {
                 continue;
             }
-            double distance = worldPos.distanceTo(vehicle.position());
-            double scale = Math.min(1, distance / range);
-            // 调用本体相对方位解算：车体系方向（车头朝上），与 HUD 雷达同语义。
-            Vec3 direction = vehicle
-                    .relativeRotDirection(worldPos.subtract(vehicle.position()), true)
-                    .normalize()
-                    .scale(scale * outer * 0.95f);
+            // 目标换算与 HUD 雷达逐字同款（VehicleRadarOverlay:81-87）：
+            // 世界差矢量（相对雷达塔位）→ 雷达本体旋转共轭 → **取负** → 按量程线性映射。
+            // 此前用 vehicle.relativeRotDirection 且不带负号 ⇒ 与 HUD 差 180°（2026-10-15 实测：
+            // 飞机往右上飞、屏上往左下）。雷达共轭用 radarUnit.worldVecToLocalVec（雷达塔自身
+            // 旋转），不用载具旋转——雷达塔随航向转动时两者才有差异。
+            Vec3 local = radar.worldVecToLocalVec(worldPos.subtract(radar.worldRadarPosition()));
+            double l = Math.min(1.0, local.length() / range) * (outer * 0.95f);
+            Vec3 direction = local.lengthSqr() > 1.0E-6
+                    ? local.normalize().scale(-l) : new Vec3(0, 0, 0);
             int color = isFriendly(entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
-            int r = 3;
+            int r = 5;
             pose.pushPose();
             {
                 // 探测方块同样走立即填充（防攒批/立即交错：攒批版会拖到 endBatch 才落屏，
@@ -108,18 +110,17 @@ public final class RVP_RadarScreenRenderer {
                 float sx = cx + (float) direction.x;
                 float sy = cy + (float) direction.z;
                 RVP_CockpitCanvas.fillRectImmediate(pose, sx - r, sy - r, sx + r, sy + r, color);
-                // 速度矢量（搬 drawTarget：速度方向画短线，提示目标动向）
+                // 速度矢量：HUD drawTarget 同款数学（velocity 取负 → 雷达共轭变换），
+                // 方向必与 HUD 一致；长度按屏比例加大（HUD 5×0.8≈4px@半径50 ⇒ 屏上 18px），宽 3。
                 if (entity != null) {
                     Vec3 velocity = entity.getDeltaMovement();
                     if (velocity.lengthSqr() > 1.0E-6) {
-                        Vec3 vDir = vehicle
-                                .relativeRotDirection(velocity.normalize().scale(-8), false)
-                                .normalize()
-                                .scale(8);
+                        Vec3 vDir = radar.worldVecToLocalVec(velocity.normalize().scale(-5))
+                                .normalize().scale(18);
                         RVP_CockpitCanvas.drawLineImmediate(pose,
-                                cx + (float) direction.x, cy + (float) direction.z,
-                                cx + (float) direction.x + (float) vDir.x, cy + (float) direction.z + (float) vDir.z,
-                                2.0F, color);
+                                sx, sy,
+                                sx + (float) vDir.x, sy + (float) vDir.z,
+                                3.0F, color);
                     }
                 }
             }

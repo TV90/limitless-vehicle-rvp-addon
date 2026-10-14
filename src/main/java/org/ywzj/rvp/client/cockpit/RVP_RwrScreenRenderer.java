@@ -52,17 +52,17 @@ public final class RVP_RwrScreenRenderer {
             if (missile) {
                 RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
                         Component.translatable("ui.missile_incoming").getString(),
-                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410);
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, 3.2f);
             } else if (lock) {
                 RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
                         Component.translatable("ui.being_locked").getString(),
-                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410);
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, 3.2f);
             }
         }
 
         // 罗盘圈组（比例沿用 HUD RWR 的 3/20/25，映射到外径 outer；屏骨字体放大）。
         // 圈用 Canvas 自绘（position_color 立即模式，绕开 HUD_CIRCLE shader 的 RT alpha 失效）。
-        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "RWR", cx, cy - outer + 10, Color.GREEN);
+        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "RWR", cx, cy - outer + 10, Color.GREEN, 3.2f);
         RVP_CockpitCanvas.drawDiscImmediate(pose, cx, cy, 3, Color.GREEN);
         RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.92f + 2, outer * 0.92f - 2, Color.GREEN);
         RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.74f + 2, outer * 0.74f - 2, Color.GREEN);
@@ -87,27 +87,30 @@ public final class RVP_RwrScreenRenderer {
             pose.pushPose();
             {
                 if (warnTarget.warnType() == WarnType.RADAR_LOCK || warnTarget.warnType() == WarnType.MISSILE_LAUNCH) {
-                    // 锁定/来袭威胁的虚线粗射线（2026-10-15 红线合规化）：原调本体
-                    // RenderHelper.drawLine——它是立即模式且自带 enableBlend 却不复位，
-                    // 本体这套 draw* 工具链在离屏 RT 下已被证明不可靠（交接文档红线①）。
-                    // 现改为 RVP_CockpitCanvas 的立即绘制（与屏内其它图元同一条已验路径），
-                    // dash=4 / gap=1 的观感照旧。
+                    // 锁定/来袭威胁的虚线粗射线（2026-10-15 两次修正）：
+                    // ①原调本体 RenderHelper.drawLine（立即模式自带 enableBlend 不复位，红线①）改 Canvas 自绘；
+                    // ②修坐标系：pose 并未预平移到圆心，旧代码相对 RT 原点(0,0)画线 ⇒ 射线画到屏外
+                    //   （历史日志 告警 MSL/LOCK 全 0，该路径从未实跑过，故一直未暴露）；现从 (cx,cy) 出发；
+                    // ③信号源放大（2026-10-15 用户要求至少翻倍）：宽 2→4、虚线段 4/1→8/2、端点加 10px 方块。
                     float dx = (float) direction.x;
                     float dz = (float) direction.z;
                     float len = (float) Math.sqrt(dx * dx + dz * dz);
                     if (len > 1.0E-4F) {
                         float ux = dx / len;
                         float uz = dz / len;
-                        for (float cur = 0.0F; cur < len; cur += 5.0F) {
-                            float end = Math.min(cur + 4.0F, len);
-                            RVP_CockpitCanvas.drawLineImmediate(pose, ux * cur, uz * cur,
-                                    ux * end, uz * end, 2.0F, Color.GREEN);
+                        for (float cur = 0.0F; cur < len; cur += 10.0F) {
+                            float end = Math.min(cur + 8.0F, len);
+                            RVP_CockpitCanvas.drawLineImmediate(pose, cx + ux * cur, cy + uz * cur,
+                                    cx + ux * end, cy + uz * end, 4.0F, Color.GREEN);
                         }
+                        // 信号源端点标记：实心方块（边长 10px）
+                        RVP_CockpitCanvas.fillRectImmediate(pose,
+                                cx + dx - 5, cy + dz - 5, cx + dx + 5, cy + dz + 5, Color.GREEN);
                     }
                 }
                 direction = direction.normalize().scale(scale * outer * 0.88f);
                 pose.translate(cx + direction.x, cy + direction.z, 0);
-                pose.scale(0.9f, 0.9f, 0.9f);
+                pose.scale(1.8f, 1.8f, 1.8f);
                 String info = warnTarget.info();
                 int color = Color.GREEN;
                 if (warnTarget.warnType() == WarnType.RADAR_SEARCH) {

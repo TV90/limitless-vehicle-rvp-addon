@@ -48,9 +48,15 @@ public final class RVP_CockpitCanvas {
      */
     public static void drawScaledCenteredString(GuiGraphics graphics, PoseStack pose,
                                                 String text, int cx, int cy, int color) {
+        drawScaledCenteredString(graphics, pose, text, cx, cy, color, FONT_SCALE);
+    }
+
+    /** 带字号重载（RWR 屏告警/威胁标注等需要更大文字的场景）。 */
+    public static void drawScaledCenteredString(GuiGraphics graphics, PoseStack pose,
+                                                String text, int cx, int cy, int color, float fontScale) {
         pose.pushPose();
         pose.translate(cx, cy, 0);
-        pose.scale(FONT_SCALE, FONT_SCALE, 1.0F);
+        pose.scale(fontScale, fontScale, 1.0F);
         graphics.drawCenteredString(
                 net.minecraft.client.Minecraft.getInstance().font, text, 0, -4, color);
         pose.popPose();
