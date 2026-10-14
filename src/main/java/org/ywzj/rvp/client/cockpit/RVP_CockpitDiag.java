@@ -494,4 +494,88 @@ public final class RVP_CockpitDiag {
             return "err";
         }
     }
+
+    // ------------------------------------------------------------------
+    // 黑匣子（2026-10-15 随机闭屏排查）：
+    // 症状是"随机出现、几秒自愈"，1 秒一次的心跳采样经常整段抓不到。这里每 tick 记一行
+    // "本体认为的车 / 原版乘坐 / 屏内容源"三元组进环形缓冲，任一发生变化就把最近 30 秒
+    // 整段落盘到 rvp_cockpit_blackbox.log——事后可从变化点往前倒推"到底哪一层先动"。
+    // ------------------------------------------------------------------
+
+    /** 黑匣子保留的 tick 数（30 秒 @20tps）。 */
+    private static final int BLACKBOX_TICKS = 600;
+    /** 每 tick 一行摘要的环形缓冲。 */
+    private static final java.util.ArrayDeque<String> BLACKBOX = new java.util.ArrayDeque<>();
+    /** 黑匣子落盘文件（与诊断日志同目录，只追加）。 */
+    private static final Path BLACKBOX_FILE = DIAG_FILE.resolveSibling("rvp_cockpit_blackbox.log");
+    /** 上一次的三元组指纹（"-"=未初始化）。 */
+    private static String blackboxKey = "-";
+    /** 落盘冷却（毫秒）：状态连续抖动时避免刷爆文件。 */
+    private static long blackboxCooldownUntil;
+
+    /**
+     * 每 tick 由 Manager 调用：记录三元组；任一变化时把最近 {@link #BLACKBOX_TICKS} tick 落盘。
+     *
+     * @param localVehicle 本体解析出的载具（{@code LocalVehiclePlayer} 口径，未兜底）
+     * @param screenSource 屏内容实际使用的载具（含 10 格兜底）
+     */
+    public static void tickBlackbox(net.minecraft.world.entity.Entity localVehicle,
+                                    net.minecraft.world.entity.Entity screenSource) {
+        if (!isEnabled()) {
+            return;
+        }
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        String local = describeEntity(localVehicle);
+        String ridden = mc.player != null && mc.player.getVehicle() != null
+                ? ("#" + mc.player.getVehicle().getId() + " "
+                        + mc.player.getVehicle().getClass().getSimpleName())
+                : "null";
+        String source = describeEntity(screenSource);
+        BLACKBOX.addLast(mc.level.getGameTime() + " 本体=" + local + " 原版=" + ridden + " 屏源=" + source);
+        while (BLACKBOX.size() > BLACKBOX_TICKS) {
+            BLACKBOX.removeFirst();
+        }
+        String key = local + "|" + ridden + "|" + source;
+        if (!key.equals(blackboxKey)) {
+            String previous = blackboxKey;
+            blackboxKey = key;
+            long now = System.currentTimeMillis();
+            if (!"-".equals(previous) && now >= blackboxCooldownUntil) {
+                blackboxCooldownUntil = now + 3000L;
+                dumpBlackbox("状态变化  " + previous + "  →  " + key);
+            }
+        }
+    }
+
+    /** @return 实体摘要（"{@code #实体id 载具id}"；null 显示为 {@code null}）。 */
+    private static String describeEntity(net.minecraft.world.entity.Entity entity) {
+        if (entity == null) {
+            return "null";
+        }
+        String vehicleId = entity instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle
+                ? String.valueOf(vehicle.getVehicleId()) : "?";
+        return "#" + entity.getId() + " " + vehicleId;
+    }
+
+    /** 把黑匣子环形缓冲整段落盘（只新建/追加，从不删除）。 */
+    private static void dumpBlackbox(String reason) {
+        try {
+            StringBuilder builder = new StringBuilder(64 * 1024);
+            builder.append("========== ").append(java.time.LocalDateTime.now())
+                    .append(" 黑匣子触发： ").append(reason)
+                    .append("（最近 ").append(BLACKBOX.size()).append(" tick） ==========\n");
+            for (String line : BLACKBOX) {
+                builder.append(line).append('\n');
+            }
+            Files.writeString(BLACKBOX_FILE, builder.toString(),
+                    java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            log("黑匣子已落盘：" + BLACKBOX_FILE + "（触发：" + reason + "）");
+        } catch (Throwable throwable) {
+            log("黑匣子落盘失败: " + throwable);
+        }
+    }
 }

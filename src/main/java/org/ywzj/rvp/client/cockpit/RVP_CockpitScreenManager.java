@@ -53,17 +53,6 @@ public final class RVP_CockpitScreenManager {
      */
     public static final double SCREEN_RENDER_RANGE = 10.0;
 
-    /**
-     * 屏内容兜底距离（格）：本体状态短暂失效（邻近载具开火/被锁定 ⇒
-     * {@code LocalVehiclePlayer.vehicle} 与 {@code onVehicle()} 被清成 null，玩家却仍在机上）
-     * 时，只要"上次解析到的载具"仍存活、仍在该范围内，就继续用它当屏内容源。
-     *
-     * <p>为什么必须缓存而不是退化成"最近载具"：实测 2026-10-15 02:29:58–02:30:09（220 tick）
-     * 本体状态清空期间，屏内容源退化成了旁边那台没有雷达/没有告警接收器的车，三屏直接变成
-     * 空画面（内容签名 探测=无雷达 / 无接收器）——用户观感就是"闭屏"。</p>
-     */
-    public static final double SCREEN_FALLBACK_RANGE = 64.0;
-
     /** display 条目自定义字段：屏纹理边长档位（256/512/1024，其它值归档到最近档）。 */
     private static final String SCREEN_SIZE_FIELD = "ywzj_rvp_screen_size";
 
@@ -154,13 +143,6 @@ public final class RVP_CockpitScreenManager {
     /** 透明填充是否已写入（避免每 tick 重复填充）。 */
     private static boolean idleFilled;
 
-    /**
-     * 上一次"权威解析"（乘坐/操作/原版 getVehicle）到的载具——仅由 {@link #resolveScreenVehicle()}
-     * 的权威分支更新，不用"最近载具"兜底结果污染它。用于本体状态短暂清空时继续供给屏内容，
-     * 避免退化成旁边那台没有雷达/告警接收器的车（详见 {@link #SCREEN_FALLBACK_RANGE}）。
-     */
-    private static AbstractVehicle lastScreenVehicle;
-
     /** 诊断驱动节流（diag 开启时每 20 tick 一条）。 */
     private static long lastDiagTick = Long.MIN_VALUE;
 
@@ -238,8 +220,6 @@ public final class RVP_CockpitScreenManager {
                     LAST_RENDER.clear();
                     idleFilled = false;
                     registered = false;
-                    // 屏内容兜底缓存一并清空（实体引用跨重载不再可信）。
-                    lastScreenVehicle = null;
                     RVP_CockpitDiag.log("资源重载：离屏 RT 与注册状态已重置（下个 tick 重新创建）");
                 });
     }
@@ -250,28 +230,18 @@ public final class RVP_CockpitScreenManager {
      */
     private static AbstractVehicle resolveLocalVehicle() {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        if (lvp != null) {
-            WeaponUnit weaponUnit = lvp.getWeaponUnit();
-            if (weaponUnit != null) {
-                // 调用本体武器站 API：武器站所属载具（雷达 HUD 数据链同源，驾驶状态必已赋值）。
-                AbstractVehicle vehicle = weaponUnit.getVehicle();
-                if (vehicle != null) {
-                    return vehicle;
-                }
-            }
-            if (lvp.vehicle != null) {
-                return lvp.vehicle;
+        if (lvp == null) {
+            return null;
+        }
+        WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        if (weaponUnit != null) {
+            // 调用本体武器站 API：武器站所属载具（雷达 HUD 数据链同源，驾驶状态必已赋值）。
+            AbstractVehicle vehicle = weaponUnit.getVehicle();
+            if (vehicle != null) {
+                return vehicle;
             }
         }
-        // 原版兜底（2026-10-15）：本体状态在"被锁定/受击/切换乘员位"等情形下可能短暂把
-        // lvp.vehicle 与武器站载具都清成 null（用户实测现象：敌方导弹来袭时三屏整块熄灭）。
-        // 原版 getVehicle() 由实体 riding 关系直接维护、不参与本体的武器/锁定逻辑，
-        // 因此作为最后一道兜底——本体状态若"撒谎"，屏不会再被误判为无载具而熄屏。
-        net.minecraft.client.player.LocalPlayer localPlayer = Minecraft.getInstance().player;
-        if (localPlayer != null && localPlayer.getVehicle() instanceof AbstractVehicle ridden) {
-            return ridden;
-        }
-        return null;
+        return lvp.vehicle;
     }
 
     /**
@@ -297,38 +267,18 @@ public final class RVP_CockpitScreenManager {
     }
 
     /**
-     * 解析"屏内容所属载具"，按下列优先级（2026-10-15 加固，针对"邻近载具开火 ⇒ 三屏变空"）：
-     *
-     * <ol>
-     *   <li>乘坐/操作状态（武器站载具 → lvp.vehicle → 原版 {@code player.getVehicle()}）；</li>
-     *   <li>**上次权威解析到的载具**：仍存活且距玩家 ≤ {@link #SCREEN_FALLBACK_RANGE} ⇒ 继续用它
-     *       ——本体状态被清空时屏内容不降级（不会被旁边没雷达的车顶掉）；</li>
-     *   <li>范围内的最近载具（改装界面/暂停/刚下车时屏不熄灭）。</li>
-     * </ol>
+     * 解析"屏内容所属载具"：先按乘坐/操作状态解析（与雷达 HUD 同源）；解析不到时
+     * （典型：改装/武器界面开着、游戏暂停）回退为**距离内最近的载具**——界面期间屏不熄灭。
      */
     private static AbstractVehicle resolveScreenVehicle() {
         AbstractVehicle ridden = resolveLocalVehicle();
         if (ridden != null) {
-            lastScreenVehicle = ridden;
             return ridden;
         }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) {
             return null;
         }
-        // 兜底①：上次权威解析到的载具仍存活且在兜底范围内 ⇒ 继续用它。
-        // 实测（2026-10-15 02:29:58–02:30:09，220 tick）：邻近载具开火时本体
-        // LocalVehiclePlayer 把 vehicle/onVehicle 清成 null（玩家仍在机上），
-        // 若此时退化成"最近载具"，屏内容会切到旁边那台无雷达/无告警接收器的车，
-        // 内容签名变成 探测=无雷达 / 无接收器 ⇒ 三屏空画面（用户观感=闭屏）。
-        AbstractVehicle remembered = lastScreenVehicle;
-        if (remembered != null && !remembered.isRemoved() && remembered.isAlive()) {
-            double rememberedSq = remembered.getBoundingBox().distanceToSqr(mc.player.position());
-            if (rememberedSq <= SCREEN_FALLBACK_RANGE * SCREEN_FALLBACK_RANGE) {
-                return remembered;
-            }
-        }
-        // 兜底②：范围内的最近载具（典型：改装/武器界面开着、暂停、刚下车仍在车旁）。
         AbstractVehicle nearest = null;
         double bestSq = SCREEN_RENDER_RANGE * SCREEN_RENDER_RANGE;
         for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
@@ -341,6 +291,31 @@ public final class RVP_CockpitScreenManager {
             }
         }
         return nearest;
+    }
+
+    /**
+     * 诊断：列出距玩家 {@link #SCREEN_RENDER_RANGE} 格内的全部载具（实体 id / 载具 id / 距离）。
+     *
+     * <p>2026-10-15 随机闭屏排查用：本体状态被清空时屏会退化成"最近载具"，这条清单能直接
+     * 回答"我那台车当时在不在身边、是不是最近的"——不必再靠坐标反推。</p>
+     */
+    private static String nearbyVehicles(Minecraft mc) {
+        if (mc.level == null || mc.player == null) {
+            return "无";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof AbstractVehicle candidate) {
+                double distance = Math.sqrt(candidate.getBoundingBox().distanceToSqr(mc.player.position()));
+                if (distance <= SCREEN_RENDER_RANGE) {
+                    builder.append('#').append(candidate.getId()).append(' ')
+                            .append(candidate.getVehicleId()).append(' ')
+                            .append(String.format(java.util.Locale.ROOT, "%.1fm", distance))
+                            .append(" | ");
+                }
+            }
+        }
+        return builder.length() == 0 ? "无" : builder.toString();
     }
 
     /** @return 屏型对应的注册 RL（display 文件 {@code special_bone_effects.texture} 填本值）。 */
@@ -405,7 +380,17 @@ public final class RVP_CockpitScreenManager {
                         // null = 玩家真的没在载具上（熄屏属设计行为）。
                         + " 原版乘坐=" + (mc.player != null ? mc.player.getVehicle() : null)
                         + " 屏内容源=" + (screenSrcDiag != null ? screenSrcDiag.getVehicleId() : null)
+                        // 席位/接收器/本体缓存规模（2026-10-15 随机闭屏排查）：
+                        // 雷达屏数据源是"本体席位"（currentWeaponUnit），RWR 屏还要靠本体
+                        // serverEntities 把威胁 id 解析成实体——这三项能直接解释"屏为什么空"。
+                        + " 席位=" + (lvpDiag != null && lvpDiag.seat != null
+                                ? ("#" + lvpDiag.seat.seatIndex) : "无")
+                        + " 接收器=" + (vehicleDiag != null && vehicleDiag.warningReceiver != null)
+                        + " 服务端实体=" + (lvpDiag != null ? lvpDiag.serverEntities.size() : -1)
+                        + " 导弹表=" + (lvpDiag != null ? lvpDiag.missiles.size() : -1)
                         + " registered=" + registered);
+                // 近旁载具清单：直接回答"我那台车当时在不在我身边"（随机闭屏的关键证据）。
+                RVP_CockpitDiag.log("近旁载具=" + nearbyVehicles(mc));
                 // 分层心跳：RT 侧计数（draws/md5/内容签名）+ 显示侧计数（骨直绘帧/秒）
                 // + GL 状态快照 + 导弹/告警相关性——四组对齐后可判定"停在哪一层"。
                 RVP_CockpitDiag.heartbeat(nowDiag, vehicleDiag);
@@ -416,6 +401,9 @@ public final class RVP_CockpitScreenManager {
         // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）；
         // 解析不到时回退距离内最近载具（2026-10-15：改装/武器界面、暂停期间屏不再熄灭）。
         AbstractVehicle vehicle = resolveScreenVehicle();
+        // 黑匣子（诊断）：每 tick 记 本体/原版/屏源 三元组，任一变化即把最近 30 秒落盘
+        // （随机触发、1 秒采样抓不到的情况靠它取证；2026-10-15 随机闭屏排查）。
+        RVP_CockpitDiag.tickBlackbox(resolveLocalVehicle(), vehicle);
         long now = mc.level.getGameTime();
         if (vehicle == null) {
             // 范围内无载具：三块屏清为熄屏底（RT 清屏 alpha=0 → 屏骨整块不渲染；仅一次，避免重复清屏）。
