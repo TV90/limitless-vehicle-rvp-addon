@@ -62,10 +62,8 @@ public final class RVP_CockpitScreenManager {
     /** 透明填充是否已写入（避免每 tick 重复填充）。 */
     private static boolean idleFilled;
 
-    /** 排查期诊断日志：每 100 tick（5 秒）输出一条 Manager 状态。 */
+    /** 诊断驱动节流（diag 开启时每 20 tick 一条）。 */
     private static long lastDiagTick = Long.MIN_VALUE;
-    /** 日志器。 */
-    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
 
     private RVP_CockpitScreenManager() {}
 
@@ -86,19 +84,6 @@ public final class RVP_CockpitScreenManager {
         registered = true;
     }
 
-    /** 回灌失败诊断：日志节流 60 秒一条（首条立即），定位 RT 管线故障。 */
-    public static void noteRenderFailure(Exception exception) {
-        long now = System.currentTimeMillis();
-        if (now - lastFailureLogAt < 60_000L && lastFailureLogAt != Long.MIN_VALUE) {
-            return;
-        }
-        lastFailureLogAt = now;
-        org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
-        LOGGER.warn("[RVP] 座舱屏幕离屏渲染/回灌失败（节流 60s）:", exception);
-    }
-
-    /** 上次回灌失败日志时间。 */
-    private static long lastFailureLogAt = Long.MIN_VALUE;
 
     /**
      * 解析本地玩家当前乘坐/操作的载具：优先武器站所属载具（与雷达 HUD 同源），
@@ -145,19 +130,21 @@ public final class RVP_CockpitScreenManager {
             return;
         }
         ensureRegistered(mc);
-        // 排查期诊断（每 100 tick 一条，放在一切分支之前）：无论后续走哪条路径都可追溯。
-        long nowDiag = mc.level.getGameTime();
-        if (nowDiag - lastDiagTick >= 100) {
-            lastDiagTick = nowDiag;
-            LocalVehiclePlayer lvpDiag = LocalVehiclePlayer.instance;
-            LOGGER.info("[RVP-Cockpit] 诊断: lvp={} onVehicle={} lvpVehicle={} weaponUnit={} registered={}",
-                    lvpDiag != null,
-                    lvpDiag != null && lvpDiag.onVehicle(),
-                    lvpDiag != null ? lvpDiag.vehicle : null,
-                    lvpDiag != null && lvpDiag.getWeaponUnit() != null
-                            ? lvpDiag.getWeaponUnit().getVehicle()
-                            : null,
-                    registered);
+        // 排查期诊断走专有文件 RVP_CockpitDiag（开启时每 20 tick=1 秒写一条，不进 latest.log）。
+        if (RVP_CockpitDiag.isEnabled()) {
+            long nowDiag = mc.level.getGameTime();
+            if (nowDiag - lastDiagTick >= 20) {
+                lastDiagTick = nowDiag;
+                LocalVehiclePlayer lvpDiag = LocalVehiclePlayer.instance;
+                AbstractVehicle vehicleDiag = resolveLocalVehicle();
+                RVP_CockpitDiag.log("状态 lvp=" + (lvpDiag != null)
+                        + " onVehicle=" + (lvpDiag != null && lvpDiag.onVehicle())
+                        + " lvpVehicle=" + (lvpDiag != null ? lvpDiag.vehicle : null)
+                        + " 武器站载具=" + (lvpDiag != null && lvpDiag.getWeaponUnit() != null
+                                ? lvpDiag.getWeaponUnit().getVehicle() : null)
+                        + " 解析载具=" + (vehicleDiag != null ? vehicleDiag.getVehicleId() : null)
+                        + " registered=" + registered);
+            }
         }
         // 载具解析走武器站（与雷达 HUD 同源，不依赖 lvp.vehicle——直10 实测该字段
         // 在驾驶状态未跟上，导致屏骨被误判非本车而不渲染/不更新）。
@@ -187,9 +174,9 @@ public final class RVP_CockpitScreenManager {
             RVP_CockpitCanvas.renderAndUpload(TARGETS.get(rl), output, (graphics, width, height) ->
                     drawScreenContent(graphics, width, height, kind, vehicle));
             // 排查期诊断：回灌后读 DynamicTexture 中心像素（证明内容真正写进注册纹理）。
-            if (output.getPixels() != null) {
+            if (RVP_CockpitDiag.isEnabled() && output.getPixels() != null) {
                 int px = output.getPixels().getPixelRGBA(SIZE / 2, SIZE / 2);
-                LOGGER.info("[RVP-Cockpit] {} 回灌完成 中心像素RGBA(ABGR序)={}", kind.path, Integer.toHexString(px));
+                RVP_CockpitDiag.log(kind.path + " 回灌完成 中心像素RGBA(ABGR序)=" + Integer.toHexString(px));
             }
         }
     }

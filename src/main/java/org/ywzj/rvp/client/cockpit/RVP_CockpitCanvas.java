@@ -99,7 +99,9 @@ public final class RVP_CockpitCanvas {
             output.upload();
         } catch (Exception exception) {
             // 单帧回灌失败不中断渲染循环：下一降频周期重试；日志节流由调用方诊断开关控制。
-            org.ywzj.rvp.client.cockpit.RVP_CockpitScreenManager.noteRenderFailure(exception);
+            java.io.StringWriter sw = new java.io.StringWriter();
+            exception.printStackTrace(new java.io.PrintWriter(sw));
+            org.ywzj.rvp.client.cockpit.RVP_CockpitDiag.log("renderAndUpload 失败: " + sw);
             RenderSystem.setProjectionMatrix(savedProjection, savedSorting);
         } finally {
             // 调用 MC ModelView 栈：恢复世界渲染的 ModelView（与 push 配对）。
