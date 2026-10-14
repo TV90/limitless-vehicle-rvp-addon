@@ -295,17 +295,12 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                             // GL 残留状态；弹在场改变 flush 内容/顺序 ⇒ 残留随弹种/时机漂移
                             // （症状：屏"完全透明"=洞）。画前统一强制为实体渲染规范态，画后恢复：
                             // ①颜色调制=白 ②深度=开/LEQUAL/可写 ③剪裁关；
-                            // ④相机在载具包围盒内（座舱视角）时关深度测试——屏骨在座舱玻璃之后，
-                            //   玻璃若先于本直绘 flush 并写深度，屏会整体深度失败成洞；座舱视角下
-                            //   屏与眼之间只有玻璃，关深度无副作用；第三人称/影子 pass（相机在盒外）
-                            //   保持原深度语义。预绘快照保留：若仍失效，字段直接点名残余机制。
-                            boolean cameraInBox = false;
-                            var cockpitCtxForDepth = RVP_CockpitPassengerRenderContext.current();
-                            if (cockpitCtxForDepth != null && cockpitCtxForDepth.vehicle() != null) {
-                                cameraInBox = cockpitCtxForDepth.vehicle().getBoundingBox().contains(
-                                        net.minecraft.client.Minecraft.getInstance()
-                                                .gameRenderer.getMainCamera().getPosition());
-                            }
+                            // ④深度状态规范（2026-10-15 05:29 修订）：统一强制 test=开/LEQUAL/mask=开
+                            //   ——与正常显示时的实测预绘值完全一致（写相同值＝无行为差异，只防残留）。
+                            //   此前的"座舱盒内关深度测试"分支已被实测否决（提交 59b2cc70）：第一人称
+                            //   相机天然在包围盒内 ⇒ 13/13 帧全部命中深度关分支 ⇒ 未打导弹的正常情况
+                            //   屏整体不显示 ⇒ 屏骨直绘依赖深度测试开启（实测健康值 深度=true/true/0x203），
+                            //   不得改动。剪裁关是 05:22 日志实测根因修复（87 次直绘中 2 次 剪裁=开 ⇒ 屏透明）。
                             float[] prevColorMod = RenderSystem.getShaderColor();
                             boolean prevDepthTest = org.lwjgl.opengl.GL11.glGetBoolean(
                                     org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
@@ -316,16 +311,12 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                             boolean prevScissor = org.lwjgl.opengl.GL11.glIsEnabled(
                                     org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
                             RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-                            if (cameraInBox) {
-                                RenderSystem.disableDepthTest();
-                            } else {
-                                RenderSystem.enableDepthTest();
-                                RenderSystem.depthFunc(org.lwjgl.opengl.GL11.GL_LEQUAL);
-                                RenderSystem.depthMask(true);
-                            }
+                            RenderSystem.enableDepthTest();
+                            RenderSystem.depthFunc(org.lwjgl.opengl.GL11.GL_LEQUAL);
+                            RenderSystem.depthMask(true);
                             org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
                             if (diagNow) {
-                                diagLine.append(cameraInBox ? " 应用=深度关(座舱)" : " 应用=深度规范");
+                                diagLine.append(" 应用=深度规范");
                             }
                             RenderSystem.disableBlend();
                             RenderSystem.disableCull();
