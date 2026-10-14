@@ -230,18 +230,28 @@ public final class RVP_CockpitScreenManager {
      */
     private static AbstractVehicle resolveLocalVehicle() {
         LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        if (lvp == null) {
-            return null;
-        }
-        WeaponUnit weaponUnit = lvp.getWeaponUnit();
-        if (weaponUnit != null) {
-            // 调用本体武器站 API：武器站所属载具（雷达 HUD 数据链同源，驾驶状态必已赋值）。
-            AbstractVehicle vehicle = weaponUnit.getVehicle();
-            if (vehicle != null) {
-                return vehicle;
+        if (lvp != null) {
+            WeaponUnit weaponUnit = lvp.getWeaponUnit();
+            if (weaponUnit != null) {
+                // 调用本体武器站 API：武器站所属载具（雷达 HUD 数据链同源，驾驶状态必已赋值）。
+                AbstractVehicle vehicle = weaponUnit.getVehicle();
+                if (vehicle != null) {
+                    return vehicle;
+                }
+            }
+            if (lvp.vehicle != null) {
+                return lvp.vehicle;
             }
         }
-        return lvp.vehicle;
+        // 原版兜底（2026-10-15）：本体状态在"被锁定/受击/切换乘员位"等情形下可能短暂把
+        // lvp.vehicle 与武器站载具都清成 null（用户实测现象：敌方导弹来袭时三屏整块熄灭）。
+        // 原版 getVehicle() 由实体 riding 关系直接维护、不参与本体的武器/锁定逻辑，
+        // 因此作为最后一道兜底——本体状态若"撒谎"，屏不会再被误判为无载具而熄屏。
+        net.minecraft.client.player.LocalPlayer localPlayer = Minecraft.getInstance().player;
+        if (localPlayer != null && localPlayer.getVehicle() instanceof AbstractVehicle ridden) {
+            return ridden;
+        }
+        return null;
     }
 
     /**
@@ -347,6 +357,10 @@ public final class RVP_CockpitScreenManager {
                         + " 武器站载具=" + (lvpDiag != null && lvpDiag.getWeaponUnit() != null
                                 ? lvpDiag.getWeaponUnit().getVehicle() : null)
                         + " 解析载具=" + (vehicleDiag != null ? vehicleDiag.getVehicleId() : null)
+                        // 原版乘坐实体（2026-10-15 加）：判定"本体状态是否撒谎"的关键字段——
+                        // 有值 = 玩家确实骑在载具上（本体却报 null ⇒ 本体状态问题）；
+                        // null = 玩家真的没在载具上（熄屏属设计行为）。
+                        + " 原版乘坐=" + (mc.player != null ? mc.player.getVehicle() : null)
                         + " registered=" + registered);
                 // 分层心跳：RT 侧计数（draws/md5/内容签名）+ 显示侧计数（骨直绘帧/秒）
                 // + GL 状态快照 + 导弹/告警相关性——四组对齐后可判定"停在哪一层"。

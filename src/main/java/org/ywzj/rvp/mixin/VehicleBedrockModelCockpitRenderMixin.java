@@ -300,7 +300,7 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                 }
                 if (diagNow) {
                     diagLine.append(" 直画chunk=").append(matchedChunks)
-                            .append(" sameModel=").append(sameModel);
+                            .append(" sameModel=").append(sameModel).append(" |");
                 }
             }
         }
