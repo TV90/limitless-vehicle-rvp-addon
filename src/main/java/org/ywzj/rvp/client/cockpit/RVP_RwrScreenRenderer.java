@@ -1,12 +1,11 @@
 package org.ywzj.rvp.client.cockpit;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import org.apache.commons.lang3.StringUtils;
 import org.ywzj.vehicle.client.render.util.Color;
-import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
@@ -16,11 +15,13 @@ import org.ywzj.vehicle.vehicle.pojo.WarnType;
 import java.util.Map;
 
 /**
- * RWR 告警屏内容渲染器（2026-10-14 座舱屏幕批）：威胁罗盘绘制到 512² 屏画布。
+ * RWR 告警屏内容渲染器（2026-10-14 座舱屏幕批，2026-10-14b 回退至 20:32 基线）。
  *
- * <p>绘制原语搬自 {@code RVP_RadarOverlay}（同心圆+方位射线+距离映射+机型文字+淡出），
- * 数据源为本体 {@code WarningReceiver.targets}（本地乘客视角既有同步，零新增网络）。
- * 屏面内容随本车航向旋转（射线方位=威胁相对本车朝向），与 HUD RWR 语义一致。</p>
+ * <p>同心圆 + 威胁方位射线 + 机型文字 + 导弹/锁定告警红色 1Hz 闪烁（语义与 HUD RWR
+ * 同款）。圆盘底为 GuiHelper.drawCircle 实心熄屏黑（不透明，先于罗盘元素画）。
+ * 已知遗留问题：drawCircle（HUD_CIRCLE 自定义 shader）在离屏 RT 环境下覆盖区域的
+ * alpha 通道会被写成 0（RGB 正常）——中心圆盘区域直采时透出底下机体骨图案，
+ * 2026-10-14 用户实机反馈，待后续修复（详见交接文档）。</p>
  */
 public final class RVP_RwrScreenRenderer {
 
@@ -38,30 +39,34 @@ public final class RVP_RwrScreenRenderer {
         // UV 占比对齐 MCHR（RWR_UV_DIAMETER_RATIO=0.75）：圆盘直径=短边×0.75，四周留 12.5% 防出血。
         int outer = (int) (Math.min(width, height) * 0.375f);
         var pose = graphics.pose();
+        // 圆盘底不单独画（2026-10-14b 定案）：GuiHelper.drawCircle 的 HUD_CIRCLE 自定义
+        // shader 在离屏 RT 下把覆盖区 alpha 写成 0（实测圆盘内 a=0、四角 a=255），任何
+        // 颜色的实心底/半透明罩都会透出底下机体骨。全屏 fill 已是统一不透明熄屏黑，
+        // 圆盘视觉由最外圈绿环勾出即可。
 
-        // 顶部告警文字（导弹来袭 > 被锁定，红色 1Hz 闪烁与 HUD 同款语义）
+        // 顶部告警文字（导弹来袭 > 被锁定，红色 1Hz 闪烁与 HUD 同款语义；屏骨字体放大）
         WarningReceiver receiver = vehicle.warningReceiver;
         if (receiver != null) {
             boolean missile = anyWarn(receiver, WarnType.MISSILE_LAUNCH);
             boolean lock = anyWarn(receiver, WarnType.RADAR_LOCK);
             long blink = System.currentTimeMillis() / 500 % 2;
             if (missile) {
-                graphics.drawCenteredString(font(),
-                        Component.translatable("ui.missile_incoming").getString(), cx, cy - outer - 14,
-                        blink == 0 ? Color.RED : 0xFF551410);
+                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
+                        Component.translatable("ui.missile_incoming").getString(),
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410);
             } else if (lock) {
-                graphics.drawCenteredString(font(),
-                        Component.translatable("ui.being_locked").getString(), cx, cy - outer - 14,
-                        blink == 0 ? Color.RED : 0xFF551410);
+                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
+                        Component.translatable("ui.being_locked").getString(),
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410);
             }
         }
 
-        // 罗盘圈组（比例沿用 HUD RWR 的 3/20/25，映射到外径 outer）
-        graphics.drawCenteredString(font(), "RWR", cx, cy - outer + 10, Color.GREEN);
-        GuiHelper.drawCircle(pose, cx, cy, 3, Color.GREEN, 0.1f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer * 0.92f, Color.GREEN, 0.01f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer * 0.74f, Color.GREEN, 0.01f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer, Color.BG_DARK_DIM, 1f, 0, 0);
+        // 罗盘圈组（比例沿用 HUD RWR 的 3/20/25，映射到外径 outer；屏骨字体放大）。
+        // 圈用 Canvas 自绘（position_color 立即模式，绕开 HUD_CIRCLE shader 的 RT alpha 失效）。
+        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "RWR", cx, cy - outer + 10, Color.GREEN);
+        RVP_CockpitCanvas.drawDiscImmediate(pose, cx, cy, 3, Color.GREEN);
+        RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.92f + 2, outer * 0.92f - 2, Color.GREEN);
+        RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.74f + 2, outer * 0.74f - 2, Color.GREEN);
 
         if (receiver == null) {
             return;
@@ -100,7 +105,7 @@ public final class RVP_RwrScreenRenderer {
                     color = (alphaInt << 24) | (Color.GREEN & 0x00FFFFFF);
                 }
                 graphics.drawCenteredString(font(),
-                        StringUtils.isEmpty(info) ? "?" : info, 0, 0, color);
+                        info == null || info.isEmpty() ? "?" : info, 0, 0, color);
             }
             pose.popPose();
         }

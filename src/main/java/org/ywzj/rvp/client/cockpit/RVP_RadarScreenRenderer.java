@@ -1,24 +1,22 @@
 package org.ywzj.rvp.client.cockpit;
 
 import net.minecraft.client.gui.GuiGraphics;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.vehicle.client.render.util.Color;
-import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.RenderHelper;
-import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
 import java.util.HashMap;
 
 /**
- * 雷达屏内容渲染器（2026-10-14 座舱屏幕批）：探测罗盘绘制到 512² 屏画布。
+ * 雷达屏内容渲染器（2026-10-14 座舱屏幕批，2026-10-14b 回退至 20:32 基线）。
  *
- * <p>V1 简化版：量程圈+旋转扫描线+探测符号（方块+速度矢量，搬自
- * {@code RVP_RadarOverlay.drawTarget}）。扫描线用游戏时间匀速旋转，HUD 雷达的
- * HMD/相控阵/机械三态相位逻辑后续迭代接入。探测满程按 512 格（半径线性映射）。</p>
+ * <p>V1 简化版：量程圈+旋转扫描线+探测符号（方位随本车航向旋转、距离线性映射）。
+ * 探测满程按 512 格（半径线性映射）。圆盘底=不透明熄屏黑（2026-10-14 修复：
+ * BG_DARK_DIM 为半透明罩，屏骨直采时透出底下机体骨，已弃用）。</p>
  */
 public final class RVP_RadarScreenRenderer {
 
@@ -29,6 +27,7 @@ public final class RVP_RadarScreenRenderer {
 
     /** 渲染雷达罗盘帧。 */
     public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
+        // 熄屏底色（不透明深灰近黑，transparent 渲染下 alpha=1 区域为实心）
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         int cx = width / 2;
         int cy = height / 2;
@@ -44,16 +43,17 @@ public final class RVP_RadarScreenRenderer {
             return;
         }
 
-        // 量程圈组 + 中心点 + 扫描线（匀速旋转，60 tick 一圈）
-        GuiHelper.drawCircle(pose, cx, cy, 3, Color.GREEN, 0.1f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer * 0.5f, Color.GREEN, 0.01f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer * 0.98f, Color.GREEN, 0.01f, 0, 0);
-        GuiHelper.drawCircle(pose, cx, cy, outer, Color.BG_DARK_DIM, 1f, 0, 0);
+        // 量程圈组 + 中心点 + 扫描线（匀速旋转，60 tick 一圈）。
+        // 圆盘不透明底必须先画（在后会盖掉环/文字）；圈用 Canvas 自绘
+        // （position_color 立即模式，绕开 HUD_CIRCLE shader 的 RT alpha 失效）。
+        RVP_CockpitCanvas.drawDiscImmediate(pose, cx, cy, outer, 0xFF0A0C0E);
+        RVP_CockpitCanvas.drawDiscImmediate(pose, cx, cy, 3, Color.GREEN);
+        RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.5f + 2, outer * 0.5f - 2, Color.GREEN);
+        RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.98f + 2, outer * 0.98f - 2, Color.GREEN);
         double scanAngle = (gameTime % 60) / 60.0 * Math.PI * 2.0;
         Vec3 scanDir = new Vec3(Math.sin(scanAngle), 0, -Math.cos(scanAngle)).scale(outer * 0.95f);
-        pose.pushPose();
-        RenderHelper.drawLine(pose, scanDir, 0.8f, Color.GREEN, 2, 1);
-        pose.popPose();
+        RVP_CockpitCanvas.drawLineImmediate(pose, cx, cy,
+                cx + (float) scanDir.x, cy + (float) scanDir.z, 2.0F, Color.GREEN);
 
         // 探测符号：方位随本车航向旋转、距离线性映射 0~512 格
         HashMap<Integer, RadarUnit.DetectedObject> detected = radar.getDetectedEntities();
@@ -89,15 +89,17 @@ public final class RVP_RadarScreenRenderer {
                                 .relativeRotDirection(velocity.normalize().scale(-8), false)
                                 .normalize()
                                 .scale(8);
-                        pose.translate(cx + direction.x, cy + direction.z, 0);
-                        RenderHelper.drawLine(pose, vDir, 0.8f, color, -1, -1);
+                        RVP_CockpitCanvas.drawLineImmediate(pose,
+                                cx + (float) direction.x, cy + (float) direction.z,
+                                cx + (float) direction.x + (float) vDir.x, cy + (float) direction.z + (float) vDir.z,
+                                2.0F, color);
                     }
                 }
             }
             pose.popPose();
         }
-        // 量程文字
-        graphics.drawCenteredString(font(), "512m", cx, cy + outer - 10, Color.GREEN);
+        // 量程文字（屏骨字体放大）
+        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "512m", cx, cy + outer - 10, Color.GREEN);
     }
 
     /** 简易 IFF：同队为友军（绿色暗色调），其余按敌对亮绿。 */

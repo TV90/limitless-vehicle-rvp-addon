@@ -198,6 +198,52 @@ public class RVP_RenderTypes extends RenderType {
                 false, true, state);
     });
 
+    // 座舱屏骨专用"不透明+自发光"（2026-10-14 屏骨渲染定档）：半透明通道按片元深度排序，
+    // 屏骨在座舱玻璃（同为半透明）正后方会互相吞面/闪烁，且透明片元写深度留空洞——
+    // 屏骨改走 cutout 不透明通道：不参与半透明排序、深度写入正确；illum_ 骨在 SBM renderBone
+    // 侧强制 MAX_LIGHT_TEXTURE 全亮；非乘载填 alpha=0 时片元直接 discard（连深度都不写），"整块不渲染"语义不变。
+    private static final Function<ResourceLocation, RenderType> CUBE_SCREEN_OPAQUE = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_CUTOUT_SHADER)
+                .setTransparencyState(NO_TRANSPARENCY)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:cube_screen_opaque",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.QUADS,
+                256,
+                true,
+                false,
+                state
+        );
+    });
+
+    private static final Function<ResourceLocation, RenderType> POLY_MESH_SCREEN_OPAQUE = Util.memoize((location) -> {
+        RenderStateShard.TextureStateShard shard = new RenderStateShard.TextureStateShard(location, false, false);
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(shard)
+                .setShaderState(RENDERTYPE_ENTITY_CUTOUT_SHADER)
+                .setTransparencyState(NO_TRANSPARENCY)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .createCompositeState(true);
+        return create(
+                "ywzj_rvp:poly_mesh_screen_opaque",
+                DefaultVertexFormat.NEW_ENTITY,
+                VertexFormat.Mode.TRIANGLES,
+                256,
+                true,
+                false,
+                state
+        );
+    });
+
     public static RenderType polyMeshCutout(ResourceLocation texture) {
         return POLY_MESH_CUTOUT_CULLED.apply(texture);
     }
@@ -232,5 +278,13 @@ public class RVP_RenderTypes extends RenderType {
 
     public static RenderType texturedAdditiveNoDepthWrite(ResourceLocation texture) {
         return TEXTURED_ADDITIVE_NO_DEPTH_WRITE.apply(texture);
+    }
+
+    public static RenderType cubeScreenOpaque(ResourceLocation texture) {
+        return CUBE_SCREEN_OPAQUE.apply(texture);
+    }
+
+    public static RenderType polyMeshScreenOpaque(ResourceLocation texture) {
+        return POLY_MESH_SCREEN_OPAQUE.apply(texture);
     }
 }

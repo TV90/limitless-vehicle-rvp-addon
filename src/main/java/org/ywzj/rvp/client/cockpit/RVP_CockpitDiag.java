@@ -31,8 +31,8 @@ public final class RVP_CockpitDiag {
                         .resolve("logs").resolve("rvp_cockpit_diag.log")
                     : null;
 
-    /** 是否开启自动记录（/cockpitdiag on|off 控制）。 */
-    private static volatile boolean enabled;
+    /** 是否开启自动记录（默认开启：不依赖用户记得手敲 /cockpitdiag on，/cockpitdiag off 可关）。 */
+    private static volatile boolean enabled = true;
 
     private RVP_CockpitDiag() {}
 
