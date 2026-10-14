@@ -174,6 +174,10 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                 var cockpitCtx = RVP_CockpitPassengerRenderContext.current();
                 if (cockpitCtx != null
                         && !RVP_CockpitScreenManager.isScreenRenderTarget(cockpitCtx.vehicle())) {
+                    // 静默失败取证（2026-10-15）：屏骨"该画没画"必须留痕，否则"时好时坏"无从判层。
+                    if (diagNow) {
+                        diagLine.append(" 跳过=距离闸");
+                    }
                     continue;
                 }
                 // 实体缓存的模型实例可能与 display 当前模型失配（F3+T/重载后 display 重建而
@@ -296,7 +300,18 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                                         .append(fillUv ? " UV铺满" : " UV模型");
                             }
                         }
+                        if (diagNow && (target == null || pos == null || uvs == null || vertexCount <= 0)) {
+                            // 静默失败取证（2026-10-15）：有 chunk 但没画 ⇒ RT 未注册或顶点数据缺失。
+                            diagLine.append(" 跳过=").append(target == null ? "无RT" : "无顶点");
+                        }
                     }
+                    if (diagNow && hitChunk == null) {
+                        // 静默失败取证：模型网格里没有归属这根骨的 chunk（几何/索引失配）。
+                        diagLine.append(" 跳过=无chunk");
+                    }
+                } else if (diagNow) {
+                    // 静默失败取证：实例里找不到这根骨（实例与模型失配且默认实例也没有）。
+                    diagLine.append(" 跳过=无骨状态");
                 }
                 if (diagNow) {
                     diagLine.append(" 直画chunk=").append(matchedChunks)
