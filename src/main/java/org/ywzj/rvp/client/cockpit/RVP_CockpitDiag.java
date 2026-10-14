@@ -57,24 +57,50 @@ public final class RVP_CockpitDiag {
     /** 单文件超过该体积后轮换到分片文件（字节）。 */
     private static final long SHARD_BYTES = 16L * 1024 * 1024;
 
-    /** 是否开启自动记录（默认开启：不依赖用户记得手敲 /cockpitdiag on，/cockpitdiag off 可关）。 */
-    private static volatile boolean enabled = true;
+    /**
+     * 是否开启**全量**记录（默认关闭，2026-10-15 用户裁定：改为命令驱动，方便"出问题时再排查"）。
+     *
+     * <p>{@code /cockpitdiag on} 开启：写每秒心跳/特殊骨行、每 2 秒 PNG dump、黑匣子自动落盘；
+     * {@code /cockpitdiag watch} 只待命黑匣子（环形缓冲 + 状态变化落盘，不写心跳与 PNG）。</p>
+     */
+    private static volatile boolean enabled = false;
+
+    /**
+     * 黑匣子待命（默认关闭）：只维护"最近 30 秒三元组"环形缓冲并在状态变化时落盘，
+     * 不写每秒心跳、不 dump PNG——适合长期挂着等随机复现。由 {@code /cockpitdiag watch} 开关。
+     */
+    private static volatile boolean watch = false;
 
     /** 逐帧 trace 剩余 tick 数（&gt;0 时每帧输出一行全量快照；命令 /cockpitdiag trace &lt;tick&gt;）。 */
     private static volatile int traceTicksLeft;
 
     private RVP_CockpitDiag() {}
 
-    /** @return 自动记录是否开启。 */
+    /** @return 全量自动记录是否开启。 */
     public static boolean isEnabled() {
         return enabled;
     }
 
-    /** 开启/关闭自动记录；开启时写入分隔行。 */
+    /** 开启/关闭全量记录；开启时写入分隔行。 */
     public static void setEnabled(boolean value) {
         enabled = value;
         if (enabled) {
             log("========== 诊断开启（v2 分层计数）==========");
+        }
+    }
+
+    /** @return 黑匣子是否待命（含全量记录期间：全量记录时黑匣子一并工作）。 */
+    public static boolean isWatch() {
+        return watch;
+    }
+
+    /** 开启/关闭黑匣子待命（不影响全量记录开关）。 */
+    public static void setWatch(boolean value) {
+        watch = value;
+        if (!watch && !enabled) {
+            // 全关：清空环形缓冲，避免下次开启时混入半小时前的旧数据。
+            BLACKBOX.clear();
+            blackboxKey = "-";
         }
     }
 
@@ -521,7 +547,8 @@ public final class RVP_CockpitDiag {
      */
     public static void tickBlackbox(net.minecraft.world.entity.Entity localVehicle,
                                     net.minecraft.world.entity.Entity screenSource) {
-        if (!isEnabled()) {
+        // 全量记录或黑匣子待命时都工作；两者都关则彻底静默（2026-10-15 改为命令驱动）。
+        if (!enabled && !watch) {
             return;
         }
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
@@ -548,6 +575,16 @@ public final class RVP_CockpitDiag {
                 dumpBlackbox("状态变化  " + previous + "  →  " + key);
             }
         }
+    }
+
+    /** @return 黑匣子环形缓冲当前缓存的 tick 数（命令反馈用）。 */
+    public static int blackboxSize() {
+        return BLACKBOX.size();
+    }
+
+    /** 立即把黑匣子环形缓冲落盘（命令 {@code /cockpitdiag blackbox}；不必等状态变化）。 */
+    public static void dumpBlackboxNow(String reason) {
+        dumpBlackbox(reason);
     }
 
     /** @return 实体摘要（"{@code #实体id 载具id}"；null 显示为 {@code null}）。 */
