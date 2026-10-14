@@ -578,7 +578,10 @@ public final class RVP_CockpitDiag {
             long now = System.currentTimeMillis();
             if (!"-".equals(previous) && now >= blackboxCooldownUntil) {
                 blackboxCooldownUntil = now + 3000L;
-                dumpBlackbox("状态变化  " + previous + "  →  " + key);
+                // 只在"变化"这一刻补算数据源状态（不每 tick 算，避免开销）：
+                // 这样只开 /rvpbb 也能一次拿到 席位/雷达源/接收器/本体缓存/近旁载具数。
+                dumpBlackbox("状态变化  " + previous + "  →  " + key
+                        + describeSignals(mc, screenSource));
             }
         }
     }
@@ -591,6 +594,53 @@ public final class RVP_CockpitDiag {
     /** 立即把黑匣子环形缓冲落盘（命令 {@code /cockpitdiag blackbox}；不必等状态变化）。 */
     public static void dumpBlackboxNow(String reason) {
         dumpBlackbox(reason);
+    }
+
+    /**
+     * 关键时刻的数据源可用性（诊断，只在黑匣子触发时算一次）：
+     * {@code 席位/雷达/接收器/本体缓存serverEntities·missiles/10格内载具数}。
+     *
+     * <p>屏的"内容为空"全部由这些依赖决定：雷达屏要本体席位（{@code lvp.getWeaponUnit()}），
+     * RWR 屏要 {@code warningReceiver} + 本体 {@code serverEntities}——它们一起掉，屏就看着黑，
+     * 但渲染链路其实一直正常（draws 在涨、fail=0）。</p>
+     */
+    private static String describeSignals(net.minecraft.client.Minecraft mc,
+                                          net.minecraft.world.entity.Entity screenSource) {
+        org.ywzj.vehicle.vehicle.LocalVehiclePlayer lvp =
+                org.ywzj.vehicle.vehicle.LocalVehiclePlayer.instance;
+        String seat = lvp != null && lvp.seat != null ? ("#" + lvp.seat.seatIndex) : "无";
+        boolean radar = false;
+        boolean receiver = false;
+        if (screenSource instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle vehicle) {
+            receiver = vehicle.warningReceiver != null;
+            if (mc.player != null
+                    && vehicle.getOwnOperatorUnit(mc.player)
+                            instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit unit) {
+                radar = unit.getMainRadarUnit() != null;
+            }
+            if (!radar) {
+                // 载具口径兜底：本体席位抽风时，屏其实可以从"载具自己的武器站"取雷达。
+                for (org.ywzj.vehicle.vehicle.part.PartUnit<?> part : vehicle.getPartUnits()) {
+                    if (part instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit candidate
+                            && candidate.getMainRadarUnit() != null) {
+                        radar = true;
+                        break;
+                    }
+                }
+            }
+        }
+        int nearby = 0;
+        if (mc.level != null && mc.player != null) {
+            for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
+                if (entity instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle candidate
+                        && candidate.getBoundingBox().distanceToSqr(mc.player.position()) <= 100.0) {
+                    nearby++;
+                }
+            }
+        }
+        return " | 席位=" + seat + " 雷达源=" + radar + " 接收器=" + receiver
+                + " 本体缓存=" + (lvp != null ? (lvp.serverEntities.size() + "/" + lvp.missiles.size()) : "-")
+                + " 10格内载具=" + nearby;
     }
 
     /** @return 实体摘要（"{@code #实体id 载具id}"；null 显示为 {@code null}）。 */
