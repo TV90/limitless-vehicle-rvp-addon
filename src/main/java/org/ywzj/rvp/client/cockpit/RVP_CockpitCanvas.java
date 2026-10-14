@@ -151,6 +151,34 @@ public final class RVP_CockpitCanvas {
         t.end();
     }
 
+    /**
+     * 扇形（立即模式，中心+弧点三角形扇）。
+     * <p>角度语义与本体 HUD 雷达扫描线一致（VehicleRadarOverlay.drawScanLine）：
+     * 0°=屏幕正上（车头），角度顺时针增大；startDeg/endDeg 为雷达 yRotMin/yRotMax（度）。</p>
+     */
+    public static void drawSectorImmediate(PoseStack pose, float cx, float cy, float radius,
+                                           float startDeg, float endDeg, int argb) {
+        var t = Tesselator.getInstance();
+        var buf = t.getBuilder();
+        Matrix4f mat = pose.last().pose();
+        setupPositionColor(argb);
+        buf.begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
+        int segments = 48;
+        float prevX = cx + (float) Math.cos(Math.toRadians(startDeg - 90)) * radius;
+        float prevY = cy + (float) Math.sin(Math.toRadians(startDeg - 90)) * radius;
+        for (int i = 1; i <= segments; i++) {
+            float deg = startDeg + (endDeg - startDeg) * i / segments;
+            float px = cx + (float) Math.cos(Math.toRadians(deg - 90)) * radius;
+            float py = cy + (float) Math.sin(Math.toRadians(deg - 90)) * radius;
+            buf.vertex(mat, cx, cy, 0).color(currentR, currentG, currentB, currentA).endVertex();
+            buf.vertex(mat, prevX, prevY, 0).color(currentR, currentG, currentB, currentA).endVertex();
+            buf.vertex(mat, px, py, 0).color(currentR, currentG, currentB, currentA).endVertex();
+            prevX = px;
+            prevY = py;
+        }
+        t.end();
+    }
+
     /** 线段（立即模式，指定宽度的四边形）。 */
     public static void drawLineImmediate(PoseStack pose, float x1, float y1, float x2, float y2,
                                          float width, int argb) {

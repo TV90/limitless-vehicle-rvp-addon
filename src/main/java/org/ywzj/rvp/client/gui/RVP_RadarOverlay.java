@@ -397,6 +397,19 @@ public class RVP_RadarOverlay implements IGuiOverlay {
      * </p>
      */
     private float ywzj_rvp$computeScanAngle(RadarUnit radarUnit, float partialTick, double yRotO, double yRot) {
+        // HUD 与座舱屏共用同一扫描角计算（单一真源）：屏上雷达动画必须与 HUD 逐帧一致
+        // （2026-10-15 用户定案：此前屏上是独立装饰动画，与雷达 UI 毫无关联）。
+        return computeScanAngle(radarUnit, partialTick, yRotO, yRot);
+    }
+
+    /**
+     * [RVP] 计算雷达扫描线角度（静态公共版，供 HUD 与 {@code RVP_RadarScreenRenderer} 共用）。
+     * <p>
+     * 优先级：HMD 模式（窄范围 ping-pong）> 相控阵模式 (scan_period_tick) > 普通 yRot lerp。
+     * 仅当雷达数据标记了 {@code enable_hms: true} 时才启用 HMD 模式。
+     * </p>
+     */
+    public static float computeScanAngle(RadarUnit radarUnit, float partialTick, double yRotO, double yRot) {
         // HMD 雷达模式：仅在支持 HMD 的雷达上生效
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         if (hmdState.isRadarHmd()) {
