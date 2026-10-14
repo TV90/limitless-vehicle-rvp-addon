@@ -13,6 +13,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.cockpit.RVP_CockpitDiag;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.mixin.accessor.BaseBulletAccessor;
 import org.ywzj.rvp.util.RVP_RadarContactHelper;
@@ -31,6 +32,8 @@ import java.util.List;
 public class RVP_MslOverlay {
 
     private static final int DIAMOND_SIZE = 10;
+    /** 菱形描边厚度（像素）：原用 glLineWidth(5)，改四边形描边后保持同宽。 */
+    private static final float DIAMOND_THICKNESS = 5.0f;
     private static final int LINE_COLOR = 0xFFCC0000; // 红色
     /** 自己的导弹动力段烧完后，最远渲染距离（格）。 */
     private static final double OWN_MAX_RENDER_DIST = 4096.0;
@@ -139,33 +142,59 @@ public class RVP_MslOverlay {
     }
 
     /**
-     * 绘制红色空心菱形框（3px 粗线）。
+     * 绘制红色空心菱形框（4 条粗边，每边一个四边形）。
+     *
+     * <p>2026-10-15 修复：原实现为 {@code GL11.glLineWidth(5.0f)} + DEBUG_LINE_STRIP。
+     * 核心（forward-compatible）上下文下 glLineWidth(≠1.0) 非法 ⇒ 每次调用触发
+     * GL_INVALID_VALUE（NVIDIA 驱动措辞 "Operation is not valid from a preview context"），
+     * 实测有带 show_msl_indicator 的导弹时每秒刷出数十条错误；结尾的 disableBlend 还会
+     * 把混合状态遗留给后续渲染（例如下一帧的座舱离屏绘制）。</p>
+     *
+     * <p>现改为纯四边形几何描边（与 glLineWidth 无关），退出时恢复进入前的混合状态，
+     * 并计入座舱诊断计数（屏日志"相关性"行的 MSL框/秒）。</p>
      */
     private static void drawDiamond(GuiGraphics guiGraphics, int cx, int cy, int size) {
+        boolean blendWasEnabled = GL11.glGetBoolean(GL11.GL_BLEND);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        GL11.glLineWidth(5.0f);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         Matrix4f matrix = guiGraphics.pose().last().pose();
-        Tesselator tess = Tesselator.getInstance();
-        BufferBuilder buf = tess.getBuilder();
-        buf.begin(VertexFormat.Mode.DEBUG_LINE_STRIP, DefaultVertexFormat.POSITION_COLOR);
-
         float r = ((LINE_COLOR >> 16) & 0xFF) / 255.0f;
         float g = ((LINE_COLOR >> 8) & 0xFF) / 255.0f;
         float b = (LINE_COLOR & 0xFF) / 255.0f;
         float a = ((LINE_COLOR >> 24) & 0xFF) / 255.0f;
 
-        // 菱形四点闭合：上→右→下→左→上
-        buf.vertex(matrix, cx, cy - size, 0).color(r, g, b, a).endVertex();
-        buf.vertex(matrix, cx + size, cy, 0).color(r, g, b, a).endVertex();
-        buf.vertex(matrix, cx, cy + size, 0).color(r, g, b, a).endVertex();
-        buf.vertex(matrix, cx - size, cy, 0).color(r, g, b, a).endVertex();
-        buf.vertex(matrix, cx, cy - size, 0).color(r, g, b, a).endVertex();
-
+        // 菱形四顶点（与旧 DEBUG_LINE_STRIP 同序）：上→右→下→左→回上
+        float[] xs = {cx, cx + size, cx, cx - size};
+        float[] ys = {cy - size, cy, cy + size, cy};
+        float half = DIAMOND_THICKNESS / 2.0f;
+        Tesselator tess = Tesselator.getInstance();
+        BufferBuilder buf = tess.getBuilder();
+        buf.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        for (int i = 0; i < 4; i++) {
+            float x1 = xs[i];
+            float y1 = ys[i];
+            float x2 = xs[(i + 1) % 4];
+            float y2 = ys[(i + 1) % 4];
+            float dx = x2 - x1;
+            float dy = y2 - y1;
+            float len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len < 1.0E-4F) {
+                continue;
+            }
+            float nx = -dy / len * half;
+            float ny = dx / len * half;
+            buf.vertex(matrix, x1 - nx, y1 - ny, 0).color(r, g, b, a).endVertex();
+            buf.vertex(matrix, x1 + nx, y1 + ny, 0).color(r, g, b, a).endVertex();
+            buf.vertex(matrix, x2 + nx, y2 + ny, 0).color(r, g, b, a).endVertex();
+            buf.vertex(matrix, x2 - nx, y2 - ny, 0).color(r, g, b, a).endVertex();
+        }
         tess.end();
-        GL11.glLineWidth(1.0f);
-        RenderSystem.disableBlend();
+        if (!blendWasEnabled) {
+            RenderSystem.disableBlend();
+        }
+        RVP_CockpitDiag.noteMslDiamond();
     }
 }

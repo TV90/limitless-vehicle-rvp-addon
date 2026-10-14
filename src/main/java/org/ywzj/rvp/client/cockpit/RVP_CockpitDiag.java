@@ -108,6 +108,8 @@ public final class RVP_CockpitDiag {
         public long lastDrawTick = Long.MIN_VALUE;
         /** 数据层内容签名（探测数/威胁数等，证明"数据还在变"）。 */
         public String contentSig = "-";
+        /** 上一次心跳时的内容签名（用于判定"内容在变、RT 画面却不变"）。 */
+        public String lastContentSig = "-";
         /** 最近一次 dump 的 PNG 指纹（前 8 位）。 */
         public String md5 = "-";
         /** 指纹连续相同的轮次数（&gt;1 说明 RT 画面冻结）。 */
@@ -187,6 +189,23 @@ public final class RVP_CockpitDiag {
         stat.verts += vertexCount;
     }
 
+    /** MSL 指示器菱形框累计绘制次数（{@code RVP_MslOverlay} 内调用）。 */
+    private static long mslDiamondFrames;
+    /** 上次结算时的菱形框次数（用于算每秒值）。 */
+    private static long mslDiamondLastFrames;
+
+    /** 每绘制一个 MSL 菱形框调用一次（MslOverlay 内）。 */
+    public static void noteMslDiamond() {
+        mslDiamondFrames++;
+    }
+
+    /** @return 本秒 MSL 菱形框绘制次数（读取即结算差值）。 */
+    private static synchronized long mslDiamondPerSecond() {
+        long perSecond = mslDiamondFrames - mslDiamondLastFrames;
+        mslDiamondLastFrames = mslDiamondFrames;
+        return perSecond;
+    }
+
     /** @return 直绘统计快照副本（key=屏型）。 */
     public static Map<String, RenderStat> renderStats() {
         return new LinkedHashMap<>(RENDER_STATS);
@@ -221,6 +240,36 @@ public final class RVP_CockpitDiag {
         }
         log(rt.toString());
 
+        // 自动冻结检测（一次性标记；恢复时打恢复行）——不必等用户手敲 trace：
+        //   ①RT 侧冻结：内容签名在变、RT 画面指纹却连续停滞 ⇒ 画了但没落进 RT（GL 状态问题）
+        //   ②驱动侧停滞：该屏绘制落后超过 40 tick ⇒ ClientTick 驱动/载具解析断了
+        for (Map.Entry<String, ScreenStat> entry : allStats().entrySet()) {
+            ScreenStat stat = entry.getValue();
+            boolean contentChanged = !stat.contentSig.equals(stat.lastContentSig);
+            boolean rtFrozen = contentChanged && stat.md5Same >= 2;
+            boolean stale = stat.lastDrawTick != Long.MIN_VALUE && tick - stat.lastDrawTick > 40;
+            boolean flagged = Boolean.TRUE.equals(FREEZE_FLAGGED.get(entry.getKey()));
+            stat.lastContentSig = stat.contentSig;
+            if ((rtFrozen || stale) && !flagged) {
+                FREEZE_FLAGGED.put(entry.getKey(), Boolean.TRUE);
+                log("★疑冻结[" + entry.getKey() + "]"
+                        + (rtFrozen ? " RT画面停滞×" + stat.md5Same + "（内容仍在变:" + stat.contentSig + "）" : "")
+                        + (stale ? " 绘制落后" + (tick - stat.lastDrawTick) + "tick" : "")
+                        + " fail=" + stat.fails + " 异常=" + stat.lastError
+                        + " | " + glSnapshot() + " | " + missileSnapshot(vehicle));
+            } else if (!rtFrozen && !stale && flagged) {
+                FREEZE_FLAGGED.put(entry.getKey(), Boolean.FALSE);
+                log("☆恢复[" + entry.getKey() + "] RT 画面与绘制恢复正常");
+            }
+        }
+
+        // 在场导弹数变化标记：把"屏停"和"导弹出现/消失"在时间轴上对齐。
+        int missileCount = countMissiles();
+        if (missileCount != lastMissileCount) {
+            log("◆在场RVP导弹 " + lastMissileCount + " → " + missileCount);
+            lastMissileCount = missileCount;
+        }
+
         // 显示侧：屏骨直绘帧率（每秒增量；归零=Mixin 直绘整条路径没跑）
         StringBuilder render = new StringBuilder("显示 骨直绘/秒");
         for (Map.Entry<String, RenderStat> entry : RENDER_STATS.entrySet()) {
@@ -229,13 +278,50 @@ public final class RVP_CockpitDiag {
             stat.lastFrames = stat.frames;
             render.append(" ").append(entry.getKey()).append("=").append(perSec)
                     .append("(verts=").append(stat.verts).append(")");
+            // 显示侧断：RT 仍在画（draws 有历史）却这一秒一帧都没落到屏骨 ⇒ 采样/直绘路径断
+            ScreenStat screenStat = STATS.get(entry.getKey());
+            if (perSec == 0) {
+                if (screenStat != null && screenStat.draws > 0
+                        && !Boolean.TRUE.equals(RENDER_ZERO_FLAGGED.get(entry.getKey()))) {
+                    RENDER_ZERO_FLAGGED.put(entry.getKey(), Boolean.TRUE);
+                    log("★疑显示侧断[" + entry.getKey() + "] 本秒骨直绘=0帧（RT draws="
+                            + screenStat.draws + " 仍在增长）| " + glSnapshot());
+                }
+            } else if (Boolean.TRUE.equals(RENDER_ZERO_FLAGGED.get(entry.getKey()))) {
+                RENDER_ZERO_FLAGGED.put(entry.getKey(), Boolean.FALSE);
+                log("☆恢复[" + entry.getKey() + "] 骨直绘恢复 " + perSec + " 帧/秒");
+            }
         }
         log(render.toString());
 
         // GL 状态快照：FBO 绑定/纹理/shader/混合/深度/剔除/线宽/错误码
         log("GL " + glSnapshot());
         // 相关性：场上 RVP 导弹与 RWR 告警（"有导弹就停"的定量伴生指标）
-        log("相关性 " + missileSnapshot(vehicle));
+        log("相关性 " + missileSnapshot(vehicle) + " MSL框/秒=" + mslDiamondPerSecond());
+    }
+
+    /** 冻结标记（key=屏型；已标记为 true 时不再重复输出，恢复后复位）。 */
+    private static final Map<String, Boolean> FREEZE_FLAGGED = new LinkedHashMap<>();
+
+    /** 骨直绘归零标记（key=屏型）。 */
+    private static final Map<String, Boolean> RENDER_ZERO_FLAGGED = new LinkedHashMap<>();
+
+    /** 上次心跳的在场导弹数（-1=未初始化）。 */
+    private static int lastMissileCount = -1;
+
+    /** @return 场上存活的 RVP 导弹数（与 {@link #missileSnapshot} 同源）。 */
+    private static int countMissiles() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return 0;
+        }
+        int total = 0;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof RVP_BaseBullet bullet && bullet.isAlive()) {
+                total++;
+            }
+        }
+        return total;
     }
 
     /**

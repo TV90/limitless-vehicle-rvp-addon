@@ -7,7 +7,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.passenger.WarningReceiver;
 import org.ywzj.vehicle.vehicle.pojo.WarnType;
@@ -88,8 +87,23 @@ public final class RVP_RwrScreenRenderer {
             pose.pushPose();
             {
                 if (warnTarget.warnType() == WarnType.RADAR_LOCK || warnTarget.warnType() == WarnType.MISSILE_LAUNCH) {
-                    // 调用本体绘制工具：锁定/来袭威胁画粗射线（与 HUD RWR 同款）。
-                    RenderHelper.drawLine(pose, direction, 0.8f, Color.GREEN, 4, 1);
+                    // 锁定/来袭威胁的虚线粗射线（2026-10-15 红线合规化）：原调本体
+                    // RenderHelper.drawLine——它是立即模式且自带 enableBlend 却不复位，
+                    // 本体这套 draw* 工具链在离屏 RT 下已被证明不可靠（交接文档红线①）。
+                    // 现改为 RVP_CockpitCanvas 的立即绘制（与屏内其它图元同一条已验路径），
+                    // dash=4 / gap=1 的观感照旧。
+                    float dx = (float) direction.x;
+                    float dz = (float) direction.z;
+                    float len = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (len > 1.0E-4F) {
+                        float ux = dx / len;
+                        float uz = dz / len;
+                        for (float cur = 0.0F; cur < len; cur += 5.0F) {
+                            float end = Math.min(cur + 4.0F, len);
+                            RVP_CockpitCanvas.drawLineImmediate(pose, ux * cur, uz * cur,
+                                    ux * end, uz * end, 2.0F, Color.GREEN);
+                        }
+                    }
                 }
                 direction = direction.normalize().scale(scale * outer * 0.88f);
                 pose.translate(cx + direction.x, cy + direction.z, 0);
