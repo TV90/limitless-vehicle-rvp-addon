@@ -291,6 +291,42 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                                                 colorMod == null ? 1f : colorMod[0], colorMod == null ? 1f : colorMod[1],
                                                 colorMod == null ? 1f : colorMod[2], colorMod == null ? 1f : colorMod[3]));
                             }
+                            // 【直绘落空防御】（2026-10-15）裸立即绘制继承"上一个批量绘制"的
+                            // GL 残留状态；弹在场改变 flush 内容/顺序 ⇒ 残留随弹种/时机漂移
+                            // （症状：屏"完全透明"=洞）。画前统一强制为实体渲染规范态，画后恢复：
+                            // ①颜色调制=白 ②深度=开/LEQUAL/可写 ③剪裁关；
+                            // ④相机在载具包围盒内（座舱视角）时关深度测试——屏骨在座舱玻璃之后，
+                            //   玻璃若先于本直绘 flush 并写深度，屏会整体深度失败成洞；座舱视角下
+                            //   屏与眼之间只有玻璃，关深度无副作用；第三人称/影子 pass（相机在盒外）
+                            //   保持原深度语义。预绘快照保留：若仍失效，字段直接点名残余机制。
+                            boolean cameraInBox = false;
+                            var cockpitCtxForDepth = RVP_CockpitPassengerRenderContext.current();
+                            if (cockpitCtxForDepth != null && cockpitCtxForDepth.vehicle() != null) {
+                                cameraInBox = cockpitCtxForDepth.vehicle().getBoundingBox().contains(
+                                        net.minecraft.client.Minecraft.getInstance()
+                                                .gameRenderer.getMainCamera().getPosition());
+                            }
+                            float[] prevColorMod = RenderSystem.getShaderColor();
+                            boolean prevDepthTest = org.lwjgl.opengl.GL11.glGetBoolean(
+                                    org.lwjgl.opengl.GL11.GL_DEPTH_TEST);
+                            boolean prevDepthMask = org.lwjgl.opengl.GL11.glGetBoolean(
+                                    org.lwjgl.opengl.GL11.GL_DEPTH_WRITEMASK);
+                            int prevDepthFunc = org.lwjgl.opengl.GL11.glGetInteger(
+                                    org.lwjgl.opengl.GL11.GL_DEPTH_FUNC);
+                            boolean prevScissor = org.lwjgl.opengl.GL11.glIsEnabled(
+                                    org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
+                            RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+                            if (cameraInBox) {
+                                RenderSystem.disableDepthTest();
+                            } else {
+                                RenderSystem.enableDepthTest();
+                                RenderSystem.depthFunc(org.lwjgl.opengl.GL11.GL_LEQUAL);
+                                RenderSystem.depthMask(true);
+                            }
+                            org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
+                            if (diagNow) {
+                                diagLine.append(cameraInBox ? " 应用=深度关(座舱)" : " 应用=深度规范");
+                            }
                             RenderSystem.disableBlend();
                             RenderSystem.disableCull();
                             var tessellator = Tesselator.getInstance();
@@ -316,6 +352,21 @@ public abstract class VehicleBedrockModelCockpitRenderMixin {
                                     org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D);
                             RenderSystem.enableCull();
                             RenderSystem.enableBlend();
+                            // 画后按进入前值恢复（不污染后续渲染/后续帧）
+                            if (prevColorMod != null) {
+                                RenderSystem.setShaderColor(prevColorMod[0], prevColorMod[1],
+                                        prevColorMod[2], prevColorMod[3]);
+                            }
+                            if (prevScissor) {
+                                org.lwjgl.opengl.GL11.glEnable(org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
+                            }
+                            if (prevDepthTest) {
+                                RenderSystem.enableDepthTest();
+                            } else {
+                                RenderSystem.disableDepthTest();
+                            }
+                            RenderSystem.depthMask(prevDepthMask);
+                            RenderSystem.depthFunc(prevDepthFunc);
                             poseStack.popPose();
                             if (diagNow) {
                                 diagLine.append(" glErr=0x").append(Integer.toHexString(glErr))
