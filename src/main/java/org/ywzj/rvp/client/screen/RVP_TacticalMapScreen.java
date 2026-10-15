@@ -1405,7 +1405,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return true;
     }
 
-    private boolean isOwnAmmo(Entity player, AbstractVehicle playerVehicle, RVP_BaseBullet bullet) {
+    public static boolean isOwnAmmo(Entity player, AbstractVehicle playerVehicle, RVP_BaseBullet bullet) {
         if (bullet.getOwner() == player) {
             return true;
         }
@@ -3398,7 +3398,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
-    private int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
+    public static int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
         if (player == null) {
             return FRIEND_ICON_COLOR;
         }
@@ -3435,7 +3435,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return UNMANNED_VEHICLE_ICON_COLOR;
     }
 
-    private int relationColorForPlayer(@Nullable LocalPlayer player, Player target) {
+    public static int relationColorForPlayer(@Nullable LocalPlayer player, Player target) {
         if (player == null) {
             return FRIEND_ICON_COLOR;
         }
@@ -3445,7 +3445,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return isAlliedTeam(player, target.getTeam()) ? FRIEND_ICON_COLOR : HOSTILE_ICON_COLOR;
     }
 
-    private int relationColorForBullet(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle, RVP_BaseBullet bullet) {
+    public static int relationColorForBullet(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle, RVP_BaseBullet bullet) {
         if (player == null) {
             return FRIEND_ICON_COLOR;
         }
@@ -3489,12 +3489,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return mc.level != null ? mc.level.dimension().location() : null;
     }
 
-    private boolean isRealtimeVisibleRelation(int relationColor) {
+    public static boolean isRealtimeVisibleRelation(int relationColor) {
         int rgb = relationColor & 0x00FFFFFF;
         return rgb == (OWN_ICON_COLOR & 0x00FFFFFF) || rgb == (FRIEND_ICON_COLOR & 0x00FFFFFF);
     }
 
-    private int relationColorForEntity(@Nullable LocalPlayer player, @Nullable Entity entity) {
+    public static int relationColorForEntity(@Nullable LocalPlayer player, @Nullable Entity entity) {
         if (player == null || entity == null) {
             return FRIEND_ICON_COLOR;
         }
@@ -3529,7 +3529,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return isAlliedTeam(player, team) ? FRIEND_ICON_COLOR : HOSTILE_ICON_COLOR;
     }
 
-    private boolean isAlliedTeam(LocalPlayer player, @Nullable Team team) {
+    public static boolean isAlliedTeam(LocalPlayer player, @Nullable Team team) {
         Team playerTeam = player.getTeam();
         return playerTeam != null && team != null && team.isAlliedTo(playerTeam);
     }
@@ -3676,7 +3676,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         drawLine(guiGraphics, sx - 3, sy + 3, sx + 3, sy - 3, color);
     }
 
-    private RVP_EnumWeaponKind resolveProjectileKind(RVP_BaseBullet bullet) {
+    public static RVP_EnumWeaponKind resolveProjectileKind(RVP_BaseBullet bullet) {
         ResourceLocation weaponId = bullet.getWeaponId();
         if (weaponId != null) {
             RVP_EnumWeaponKind resolved = CommonAssetsManager.vehicleWeaponManager().getIndex(weaponId)
@@ -3692,7 +3692,36 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return bullet.getWeaponKind();
     }
 
-    private int relationColorForAffiliation(S2CRemoteAmmoSnapshot.Affiliation affiliation) {
+    /**
+     * 地图屏与战术地图共用的**弹药标记**判定（导弹/火箭弹/炸弹），条件完全同源：
+     * 弹种 ∈ {MISSILE, ROCKET, BOMB}（{@link #resolveProjectileKind}）且
+     * 关系实时可见（己方/友军）或已被雷达探测（{@code radarVisibleIds}，战术地图对应
+     * tacticalRadarVisibleIds）或已被战术揭示（{@link RVP_ClientTacticalRevealState}）。
+     *
+     * @return 应显示时返回关系色（己方蓝/友军绿/敌对红/中立白），不应显示返回 0
+     */
+    public static int tacticalAmmoMarkerColor(@Nullable LocalPlayer player, @Nullable AbstractVehicle playerVehicle,
+                                              RVP_BaseBullet bullet, @Nullable Set<Integer> radarVisibleIds) {
+        RVP_EnumWeaponKind kind = resolveProjectileKind(bullet);
+        if (kind != RVP_EnumWeaponKind.MISSILE && kind != RVP_EnumWeaponKind.ROCKET
+                && kind != RVP_EnumWeaponKind.BOMB) {
+            return 0;
+        }
+        int color = relationColorForBullet(player, playerVehicle, bullet);
+        if (isRealtimeVisibleRelation(color)) {
+            return color;
+        }
+        if (radarVisibleIds != null && radarVisibleIds.contains(bullet.getId())) {
+            return color;
+        }
+        if (player != null && RVP_ClientTacticalRevealState.isVisible(
+                player.level().dimension().location(), bullet.getId())) {
+            return color;
+        }
+        return 0;
+    }
+
+    public static int relationColorForAffiliation(S2CRemoteAmmoSnapshot.Affiliation affiliation) {
         return switch (affiliation) {
             case OWN -> OWN_ICON_COLOR;
             case FRIEND -> FRIEND_ICON_COLOR;
@@ -3700,7 +3729,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         };
     }
 
-    private int relationColorForAffiliation(S2CExternalRadarSnapshot.Affiliation affiliation) {
+    public static int relationColorForAffiliation(S2CExternalRadarSnapshot.Affiliation affiliation) {
         return switch (affiliation) {
             case OWN -> OWN_ICON_COLOR;
             case FRIEND -> FRIEND_ICON_COLOR;

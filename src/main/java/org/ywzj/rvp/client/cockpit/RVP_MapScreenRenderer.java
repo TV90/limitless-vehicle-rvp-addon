@@ -1,18 +1,22 @@
 package org.ywzj.rvp.client.cockpit;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
+import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
-import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.HashMap;
 import java.util.List;
 
@@ -103,6 +107,45 @@ public final class RVP_MapScreenRenderer {
             }
         }
 
+        // 弹药标记层（导弹/火箭弹/炸弹）：与战术地图**同源同条件**（RVP_TacticalMapScreen.tacticalAmmoMarkerColor
+        // = 弹种∈{MISSILE,ROCKET,BOMB} + 关系可见/雷达探测/战术揭示），屏面小故用点（小方块）而非 icon；
+        // 颜色=关系色：己方蓝 0xFF3AA7FF / 友军绿 0xFF64E08B / 敌对红 0xFFFF5B5B / 中立白（2026-10-15 用户要求）。
+        Minecraft mcMap = Minecraft.getInstance();
+        net.minecraft.client.player.LocalPlayer mapPlayer = mcMap.player;
+        AbstractVehicle mapPlayerVehicle = mapPlayer != null
+                && mapPlayer.getVehicle() instanceof AbstractVehicle playerRide ? playerRide : null;
+        // 雷达探测 id 集（战术地图对应 tacticalRadarVisibleIds；地图屏雷达数据同源）
+        Set<Integer> radarVisibleIds = new HashSet<>();
+        if (radar != null && radar.getDetectedEntities() != null) {
+            radarVisibleIds.addAll(radar.getDetectedEntities().keySet());
+        }
+        if (radar != null && radar.getLockedEntity() != null) {
+            radarVisibleIds.add(radar.getLockedEntity().getId());
+        }
+        int ordnanceHalf = (int) Math.max(1, Math.round(2.5F * elemScale));
+        // entitiesForRendering() 是 ClientLevel 的方法（Level 无此方法），故取客户端世界引用并判空。
+        net.minecraft.client.multiplayer.ClientLevel mapLevel = mcMap.level;
+        if (mapLevel != null) {
+            for (Entity entity : mapLevel.entitiesForRendering()) {
+                if (!(entity instanceof RVP_BaseBullet bullet)) {
+                    continue;
+                }
+                int ordColor = RVP_TacticalMapScreen.tacticalAmmoMarkerColor(
+                        mapPlayer, mapPlayerVehicle, bullet, radarVisibleIds);
+                if (ordColor == 0) {
+                    continue;
+                }
+                int ox = worldToScreenX(bullet.getX(), centerX, width, contentLeft, contentSize);
+                int oy = worldToScreenY(bullet.getZ(), centerZ, height, contentTop, contentSize);
+                if (ox < contentLeft || oy < contentTop || ox >= contentLeft + contentSize
+                        || oy >= contentTop + contentSize) {
+                    continue;
+                }
+                graphics.fill(ox - ordnanceHalf, oy - ordnanceHalf,
+                        ox + ordnanceHalf, oy + ordnanceHalf, ordColor);
+            }
+        }
+
         // 本车图标（居中三角，屏面随本车平移故恒在中心）
         int cx = contentLeft + contentSize / 2;
         int cy = contentTop + contentSize / 2;
@@ -135,45 +178,6 @@ public final class RVP_MapScreenRenderer {
                     sy + (float) (velocity.z / speed) * length,
                     3.0F * elemScale, friendly ? 0xFF3D9140 : Color.GREEN);
         }
-        // 弹药显示（2026-10-15 用户要求）：主武器 + 副武器，数据源=载具自身武器站（不读本体席位）。
-        // 文字走攒批（最后 flush ⇒ 恒在最上层）。
-        WeaponUnit weaponUnit = RVP_CockpitScreenManager.mainWeaponUnit(vehicle);
-        if (weaponUnit != null) {
-            int textY = contentTop + 14;
-            AbstractVehicleWeapon<?> mainWeapon = weaponUnit.getCurrentWeapon().orElse(null);
-            if (mainWeapon != null) {
-                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, ammoLine(mainWeapon),
-                        contentLeft + contentSize / 2, textY, ammoColor(mainWeapon), textScale);
-                textY += 14;
-            }
-            AbstractVehicleWeapon<?> secWeapon = weaponUnit.getCurrentSecondaryWeapon().orElse(null);
-            if (secWeapon != null) {
-                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, ammoLine(secWeapon),
-                        contentLeft + contentSize / 2, textY, ammoColor(secWeapon), textScale);
-            }
-        }
-    }
-
-    /** @return 弹药行文本（名称截断 10 字 + 剩余/上限；换弹中显示 RELOADING）。 */
-    private static String ammoLine(AbstractVehicleWeapon<?> weapon) {
-        String name = weapon.getDisplayName().getString();
-        if (name.length() > 10) {
-            name = name.substring(0, 10);
-        }
-        if (weapon.getReloadTime() > 0) {
-            return name + " RELOADING";
-        }
-        return name + " " + weapon.getRemainAmmo() + "/" + weapon.getMaxCapacity();
-    }
-
-    /** @return 弹药文字颜色：换弹中/耗尽=红，≤1/4=黄，其余绿（与本体武器 HUD 同语义）。 */
-    private static int ammoColor(AbstractVehicleWeapon<?> weapon) {
-        int remain = weapon.getRemainAmmo();
-        int max = weapon.getMaxCapacity();
-        if (weapon.getReloadTime() > 0 || remain == 0) {
-            return Color.RED;
-        }
-        return remain <= max / 4 ? Color.AMMO_WARNING : Color.GREEN;
     }
 
     /** 简易 IFF：同队为友军（暗绿），其余按敌对亮绿（与雷达屏同款判定）。 */
