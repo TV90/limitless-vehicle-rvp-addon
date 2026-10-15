@@ -30,7 +30,8 @@ public final class RVP_RwrScreenRenderer {
     private RVP_RwrScreenRenderer() {}
 
     /** 渲染 RWR 罗盘帧。 */
-    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
+    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle,
+                          float textScale, float elemScale) {
         // 熄屏底色（不透明深灰近黑，transparent 渲染下 alpha=1 区域为实心）
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         int cx = width / 2;
@@ -52,17 +53,17 @@ public final class RVP_RwrScreenRenderer {
             if (missile) {
                 RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
                         Component.translatable("ui.missile_incoming").getString(),
-                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, 3.2f);
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, textScale * 1.6f);
             } else if (lock) {
                 RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose,
                         Component.translatable("ui.being_locked").getString(),
-                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, 3.2f);
+                        cx, cy - outer - 14, blink == 0 ? Color.RED : 0xFF551410, textScale * 1.6f);
             }
         }
 
         // 罗盘圈组（比例沿用 HUD RWR 的 3/20/25，映射到外径 outer；屏骨字体放大）。
         // 圈用 Canvas 自绘（position_color 立即模式，绕开 HUD_CIRCLE shader 的 RT alpha 失效）。
-        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "RWR", cx, cy - outer + 10, Color.GREEN, 3.2f);
+        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "RWR", cx, cy - outer + 10, Color.GREEN, textScale * 1.6f);
         RVP_CockpitCanvas.drawDiscImmediate(pose, cx, cy, 3, Color.GREEN);
         RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.92f + 2, outer * 0.92f - 2, Color.GREEN);
         RVP_CockpitCanvas.drawRingImmediate(pose, cx, cy, outer * 0.74f + 2, outer * 0.74f - 2, Color.GREEN);
@@ -98,19 +99,20 @@ public final class RVP_RwrScreenRenderer {
                     if (len > 1.0E-4F) {
                         float ux = dx / len;
                         float uz = dz / len;
-                        for (float cur = 0.0F; cur < len; cur += 10.0F) {
-                            float end = Math.min(cur + 8.0F, len);
+                        for (float cur = 0.0F; cur < len; cur += 10.0F * elemScale) {
+                            float end = Math.min(cur + 8.0F * elemScale, len);
                             RVP_CockpitCanvas.drawLineImmediate(pose, cx + ux * cur, cy + uz * cur,
-                                    cx + ux * end, cy + uz * end, 4.0F, Color.GREEN);
+                                    cx + ux * end, cy + uz * end, 4.0F * elemScale, Color.GREEN);
                         }
                         // 信号源端点标记：实心方块（边长 10px）
                         RVP_CockpitCanvas.fillRectImmediate(pose,
-                                cx + dx - 5, cy + dz - 5, cx + dx + 5, cy + dz + 5, Color.GREEN);
+                                cx + dx - 5.0F * elemScale, cy + dz - 5.0F * elemScale,
+                            cx + dx + 5.0F * elemScale, cy + dz + 5.0F * elemScale, Color.GREEN);
                     }
                 }
                 direction = direction.normalize().scale(scale * outer * 0.88f);
                 pose.translate(cx + direction.x, cy + direction.z, 0);
-                pose.scale(2.6f, 2.6f, 2.6f);
+                pose.scale(textScale * 1.3f, textScale * 1.3f, textScale * 1.3f);
                 String info = warnTarget.info();
                 int color = Color.GREEN;
                 if (warnTarget.warnType() == WarnType.RADAR_SEARCH) {

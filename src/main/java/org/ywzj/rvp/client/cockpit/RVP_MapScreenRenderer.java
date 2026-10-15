@@ -30,14 +30,15 @@ public final class RVP_MapScreenRenderer {
      */
     private static final double UV_DIAMETER_RATIO = 0.98;
     /** 本车图标半边长（像素）。 */
-    private static final int SELF_ICON_HALF = 5;
+    private static final float SELF_ICON_HALF = 5f;
     /** 探测图标半边长（像素）。 */
-    private static final int CONTACT_ICON_HALF = 3;
+    private static final float CONTACT_ICON_HALF = 3f;
 
     private RVP_MapScreenRenderer() {}
 
     /** 渲染战术地图帧。 */
-    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
+    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle,
+                          float elemScale) {
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         // 内容区：屏面中心 70% 正方形（坐标映射全部基于该区域）。
         int contentSize = (int) (Math.min(width, height) * UV_DIAMETER_RATIO);
@@ -46,6 +47,9 @@ public final class RVP_MapScreenRenderer {
         double centerX = vehicle.getX();
         double centerZ = vehicle.getZ();
         double halfWorld = contentSize / 2.0 * BLOCKS_PER_PIXEL;
+// 元素缩放（display 条目 ywzj_rvp_element_scale，缺省 1.0=历史像素）。
+        int contactHalf = (int) Math.max(1, Math.round(CONTACT_ICON_HALF * elemScale));
+        int selfHalf = (int) Math.max(1, Math.round(SELF_ICON_HALF * elemScale));
 
         // 地形瓦片：把可见范围内每块 256 格瓦片按比例 blit 到屏面（1 瓦片像素 = 1 世界格）。
         List<RVP_TacticalMapCache.TilePos> tiles = RVP_TacticalMapCache.getVisibleTiles(
@@ -83,8 +87,8 @@ public final class RVP_MapScreenRenderer {
                             || y >= contentTop + contentSize) {
                         continue;
                     }
-                    graphics.fill(x - CONTACT_ICON_HALF, y - CONTACT_ICON_HALF,
-                            x + CONTACT_ICON_HALF, y + CONTACT_ICON_HALF, Color.GREEN);
+                    graphics.fill(x - contactHalf, y - contactHalf,
+                            x + contactHalf, y + contactHalf, Color.GREEN);
                 }
             }
         }
@@ -92,10 +96,10 @@ public final class RVP_MapScreenRenderer {
         // 本车图标（居中三角，屏面随本车平移故恒在中心）
         int cx = contentLeft + contentSize / 2;
         int cy = contentTop + contentSize / 2;
-        graphics.fill(cx - SELF_ICON_HALF, cy - SELF_ICON_HALF,
-                cx + SELF_ICON_HALF, cy + SELF_ICON_HALF, 0xFFFFFFFF);
-        graphics.fill(cx - SELF_ICON_HALF + 1, cy - SELF_ICON_HALF + 1,
-                cx + SELF_ICON_HALF - 1, cy + SELF_ICON_HALF - 1, 0xFF1A73E8);
+        graphics.fill(cx - selfHalf, cy - selfHalf,
+                cx + selfHalf, cy + selfHalf, 0xFFFFFFFF);
+        graphics.fill(cx - selfHalf + 1, cy - selfHalf + 1,
+                cx + selfHalf - 1, cy + selfHalf - 1, 0xFF1A73E8);
     }
 
     /** 世界 X → 内容区屏像素（本车居中于 70% 内容区中心）。 */

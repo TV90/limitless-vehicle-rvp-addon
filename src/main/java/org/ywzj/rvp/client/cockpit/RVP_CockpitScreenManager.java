@@ -59,8 +59,26 @@ public final class RVP_CockpitScreenManager {
     /** display 条目自定义字段：屏纹理边长档位（256/512/1024，其它值归档到最近档）。 */
     private static final String SCREEN_SIZE_FIELD = "ywzj_rvp_screen_size";
 
+    /** display 条目自定义字段：屏内文字字号（绝对值，默认 {@link #TEXT_SCALE}）。 */
+    private static final String TEXT_SCALE_FIELD = "ywzj_rvp_text_scale";
+
+    /** display 条目自定义字段：屏内元素（点/线/方块/虚线段）缩放倍率（默认 {@link #ELEMENT_SCALE}）。 */
+    private static final String ELEMENT_SCALE_FIELD = "ywzj_rvp_element_scale";
+
+    /** 屏内文字默认字号（= Canvas.FONT_SCALE，缺省行为与历史版本逐像素一致）。 */
+    private static final float TEXT_SCALE = 2.0f;
+
+    /** 屏内元素默认缩放（1.0 = 与历史版本逐像素一致）。 */
+    private static final float ELEMENT_SCALE = 1.0f;
+
     /** 屏纹理 RL → 实际边长（资源重载时从 display JSON 解析，未配置默认 {@link #SIZE}）。 */
     private static final Map<ResourceLocation, Integer> SCREEN_SIZES = new HashMap<>();
+
+    /** 屏纹理 RL → 屏内文字字号（未配置默认 {@link #TEXT_SCALE}）。 */
+    private static final Map<ResourceLocation, Float> TEXT_SCALES = new HashMap<>();
+
+    /** 屏纹理 RL → 屏内元素缩放（未配置默认 {@link #ELEMENT_SCALE}）。 */
+    private static final Map<ResourceLocation, Float> ELEMENT_SCALES = new HashMap<>();
 
     /**
      * display 条目自定义字段：屏骨 UV 语义。
@@ -80,6 +98,16 @@ public final class RVP_CockpitScreenManager {
         return SCREEN_SIZES.getOrDefault(rl, SIZE);
     }
 
+    /** @return 屏内文字字号：display 条目 {@code ywzj_rvp_text_scale} 配置值，缺省 {@link #TEXT_SCALE}。 */
+    public static float textScale(ResourceLocation rl) {
+        return TEXT_SCALES.getOrDefault(rl, TEXT_SCALE);
+    }
+
+    /** @return 屏内元素缩放：display 条目 {@code ywzj_rvp_element_scale} 配置值，缺省 {@link #ELEMENT_SCALE}。 */
+    public static float elementScale(ResourceLocation rl) {
+        return ELEMENT_SCALES.getOrDefault(rl, ELEMENT_SCALE);
+    }
+
     /**
      * 扫描 display/vehicle JSON，收集屏骨条目（texture=rvp:cockpit/*）的分辨率配置。
      * 同一 RL 被多个载具配置时取最大（共享纹理按最高清晰度需求分配）。
@@ -88,6 +116,8 @@ public final class RVP_CockpitScreenManager {
     private static void parseScreenSizes(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
         SCREEN_SIZES.clear();
         SCREEN_FILL_UV.clear();
+        TEXT_SCALES.clear();
+        ELEMENT_SCALES.clear();
         try {
             var resources = org.ywzj.vehicle.util.ResourceScanner.scanDirectory(resourceManager,
                     net.minecraft.resources.FileToIdConverter.json("display/vehicle"),
@@ -122,6 +152,15 @@ public final class RVP_CockpitScreenManager {
                             effect, SCREEN_UV_MODE_FIELD, "model");
                     if ("fill".equalsIgnoreCase(uvMode)) {
                         SCREEN_FILL_UV.add(rl);
+                    }
+                    // 文字/元素缩放同源解析（同样先于 size 的 continue：条目可能只写字号）。
+                    if (effect.has(TEXT_SCALE_FIELD)) {
+                        float rawText = net.minecraft.util.GsonHelper.getAsFloat(effect, TEXT_SCALE_FIELD, TEXT_SCALE);
+                        TEXT_SCALES.merge(rl, Math.max(0.5f, Math.min(8.0f, rawText)), Math::max);
+                    }
+                    if (effect.has(ELEMENT_SCALE_FIELD)) {
+                        float rawElem = net.minecraft.util.GsonHelper.getAsFloat(effect, ELEMENT_SCALE_FIELD, ELEMENT_SCALE);
+                        ELEMENT_SCALES.merge(rl, Math.max(0.5f, Math.min(8.0f, rawElem)), Math::max);
                     }
                     if (!effect.has(SCREEN_SIZE_FIELD)) {
                         continue;
@@ -441,7 +480,8 @@ public final class RVP_CockpitScreenManager {
             // 调用本项目离屏画布：渲染对应屏内容到 RT（屏骨纹理直采，无回灌）；
             // label=屏型，异常时归档到对应屏的 fail 计数与节流堆栈。
             RVP_CockpitCanvas.renderToTarget(target, kind.path, (graphics, width, height) ->
-                    drawScreenContent(graphics, width, height, kind, vehicle));
+                    drawScreenContent(graphics, width, height, kind, vehicle,
+                            textScale(rl), elementScale(rl)));
             // 排查期诊断：环形 dump RT 当前帧为 PNG（每屏独立 2 秒一张、2 张轮换覆盖），
             // 供直接目检各屏映射纹理的真实画面（排查期三屏全开）。
             long nowDumpMs = System.currentTimeMillis();
@@ -464,14 +504,15 @@ public final class RVP_CockpitScreenManager {
         }
     }
 
-    /** 按屏型分发内容渲染器（仅本地玩家载具被绘制）。 */
+    /** 按屏型分发内容渲染器（仅本地玩家载具被绘制）。字号/元素缩放由 display 条目配置。 */
     private static void drawScreenContent(net.minecraft.client.gui.GuiGraphics graphics, int width, int height,
-                                          ScreenKind kind, Entity vehicleEntity) {
+                                          ScreenKind kind, Entity vehicleEntity,
+                                          float textScale, float elementScale) {
         AbstractVehicle vehicle = (AbstractVehicle) vehicleEntity;
         switch (kind) {
-            case RADAR -> RVP_RadarScreenRenderer.render(graphics, width, height, vehicle);
-            case RWR -> RVP_RwrScreenRenderer.render(graphics, width, height, vehicle);
-            case MAP -> RVP_MapScreenRenderer.render(graphics, width, height, vehicle);
+            case RADAR -> RVP_RadarScreenRenderer.render(graphics, width, height, vehicle, textScale, elementScale);
+            case RWR -> RVP_RwrScreenRenderer.render(graphics, width, height, vehicle, textScale, elementScale);
+            case MAP -> RVP_MapScreenRenderer.render(graphics, width, height, vehicle, elementScale);
         }
     }
 

@@ -26,7 +26,8 @@ public final class RVP_RadarScreenRenderer {
     private RVP_RadarScreenRenderer() {}
 
     /** 渲染雷达罗盘帧。 */
-    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle) {
+    public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle,
+                          float textScale, float elemScale) {
         var pose = graphics.pose();
         // 熄屏底色（不透明深灰近黑，transparent 渲染下 alpha=1 区域为实心）。
         // 必须走立即模式（2026-10-14 深夜修）：GuiGraphics.fill 攒批内容要到 painter 返回后
@@ -45,7 +46,7 @@ public final class RVP_RadarScreenRenderer {
         if (radar == null) {
             // 无雷达提示与其它屏内文字同款走放大版（GuiGraphics 文字攒批，endBatch 时在
             // 全部立即图元之上，层序正确）。
-            RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "NO RADAR", cx, cy, Color.GREEN);
+            RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, "NO RADAR", cx, cy, Color.GREEN, textScale);
             return;
         }
 
@@ -76,7 +77,7 @@ public final class RVP_RadarScreenRenderer {
             double scanRad = Math.toRadians(scanDeg - 90);
             RVP_CockpitCanvas.drawLineImmediate(pose, cx, cy,
                     cx + (float) Math.cos(scanRad) * outer * 0.95f,
-                    cy + (float) Math.sin(scanRad) * outer * 0.95f, 2.0F, Color.GREEN);
+                    cy + (float) Math.sin(scanRad) * outer * 0.95f, 2.0F * elemScale, Color.GREEN);
         }
 
         // 探测符号：方位随本车航向旋转、距离线性映射 0~512 格
@@ -102,7 +103,7 @@ public final class RVP_RadarScreenRenderer {
             Vec3 direction = local.lengthSqr() > 1.0E-6
                     ? local.normalize().scale(-l) : new Vec3(0, 0, 0);
             int color = isFriendly(entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
-            int r = 7;
+            int r = (int) Math.max(1, Math.round(7 * elemScale));
             pose.pushPose();
             {
                 // 探测方块同样走立即填充（防攒批/立即交错：攒批版会拖到 endBatch 才落屏，
@@ -120,10 +121,10 @@ public final class RVP_RadarScreenRenderer {
                     if (len > 1.0E-4F) {
                         float ux = dx / len;
                         float uz = dz / len;
-                        for (float cur = 0.0F; cur < len; cur += 12.0F) {
-                            float end = Math.min(cur + 9.0F, len);
+                        for (float cur = 0.0F; cur < len; cur += 12.0F * elemScale) {
+                            float end = Math.min(cur + 9.0F * elemScale, len);
                             RVP_CockpitCanvas.drawLineImmediate(pose, cx + ux * cur, cy + uz * cur,
-                                    cx + ux * end, cy + uz * end, 4.0F, Color.GREEN);
+                                    cx + ux * end, cy + uz * end, 4.0F * elemScale, Color.GREEN);
                         }
                     }
                 }
@@ -133,18 +134,18 @@ public final class RVP_RadarScreenRenderer {
                     Vec3 velocity = entity.getDeltaMovement();
                     if (velocity.lengthSqr() > 1.0E-6) {
                         Vec3 vDir = radar.worldVecToLocalVec(velocity.normalize().scale(-5))
-                                .normalize().scale(26);
+                                .normalize().scale(26 * elemScale);
                         RVP_CockpitCanvas.drawLineImmediate(pose,
                                 sx, sy,
                                 sx + (float) vDir.x, sy + (float) vDir.z,
-                                4.0F, color);
+                                4.0F * elemScale, color);
                     }
                 }
             }
             pose.popPose();
         }
         // 量程文字（屏骨字体放大）：与 HUD 同源 maxScanDistance
-        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, range + " m", cx, cy + outer - 10, Color.GREEN);
+        RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, range + " m", cx, cy + outer - 10, Color.GREEN, textScale);
     }
 
     /** 简易 IFF：同队为友军（绿色暗色调），其余按敌对亮绿。 */
