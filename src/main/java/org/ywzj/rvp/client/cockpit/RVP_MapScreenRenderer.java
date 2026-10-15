@@ -7,6 +7,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
+import org.ywzj.rvp.client.state.RVP_ClientGPSState;
+import org.ywzj.rvp.client.state.RVP_ClientMarkedBlockState;
+import org.ywzj.rvp.network.S2CMarkedBlockSync;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -79,9 +82,10 @@ public final class RVP_MapScreenRenderer {
 
         // 探测图标层（雷达探测点；与雷达屏同数据源=载具自己的雷达，2026-10-15 起不读本体席位）
         RadarUnit radar = RVP_CockpitScreenManager.mainRadarUnit(vehicle);
-        // 矢量层需要图标的屏幕坐标与实体（判定 IFF / 取速度）：先收集，待瓦片与图标 flush 后再画立即线段。
-        java.util.List<double[]> contactPx = new ArrayList<>();
-        java.util.List<Entity> contactEntities = new ArrayList<>();
+        // 矢量层（探测点 + 弹药点都要画）需要屏幕坐标/实体/颜色：先收集，待 flush 后再画立即线段。
+        java.util.List<double[]> vectorPts = new ArrayList<>();
+        java.util.List<Entity> vectorEntities = new ArrayList<>();
+        java.util.List<Integer> vectorColors = new ArrayList<>();
         if (radar != null) {
             HashMap<Integer, RadarUnit.DetectedObject> detected = radar.getDetectedEntities();
             if (detected != null) {
@@ -101,8 +105,9 @@ public final class RVP_MapScreenRenderer {
                     int contactColor = isFriendly(detectedObject.entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
                     graphics.fill(x - contactHalf, y - contactHalf,
                             x + contactHalf, y + contactHalf, contactColor);
-                    contactPx.add(new double[]{x, y});
-                    contactEntities.add(detectedObject.entity);
+                    vectorPts.add(new double[]{x, y});
+                    vectorEntities.add(detectedObject.entity);
+                    vectorColors.add(contactColor);
                 }
             }
         }
@@ -143,6 +148,10 @@ public final class RVP_MapScreenRenderer {
                 }
                 graphics.fill(ox - ordnanceHalf, oy - ordnanceHalf,
                         ox + ordnanceHalf, oy + ordnanceHalf, ordColor);
+                // 弹药点同样画速度矢量（用户要求"都显示"），颜色=关系色
+                vectorPts.add(new double[]{ox, oy});
+                vectorEntities.add(bullet);
+                vectorColors.add(ordColor);
             }
         }
 
@@ -154,13 +163,53 @@ public final class RVP_MapScreenRenderer {
         graphics.fill(cx - selfHalf + 1, cy - selfHalf + 1,
                 cx + selfHalf - 1, cy + selfHalf - 1, 0xFF1A73E8);
 
+        // GPS 航点 + 吊舱标记（TGT）：与战术地图同源——RVP_ClientGPSState.getPoints()（点集，按当前维度过滤，
+        // 活动航点=getNextIndex 所指，更亮更大）/ RVP_ClientMarkedBlockState.getMarkedBlocks(维度)（吊舱标记）。
+        // 屏面小故用点（方块）而非 icon；色=战术地图 GPS_ICON_COLOR 亮黄 0xFFFFF08A（非活动点用暗黄区分）。
+        if (mapPlayer != null) {
+            ResourceLocation mapDim = mapPlayer.level().dimension().location();
+            java.util.List<RVP_ClientGPSState.Point> gpsPoints = RVP_ClientGPSState.getPoints();
+            if (!gpsPoints.isEmpty()) {
+                int activeIdx = Math.max(0, Math.min(RVP_ClientGPSState.getPointCount() - 1,
+                        RVP_ClientGPSState.getNextIndex()));
+                int gpsHalf = (int) Math.max(1, Math.round(2.5F * elemScale));
+                for (int i = 0; i < gpsPoints.size(); i++) {
+                    RVP_ClientGPSState.Point point = gpsPoints.get(i);
+                    if (!mapDim.equals(point.dimension())) {
+                        continue;
+                    }
+                    int gx = worldToScreenX(point.pos().x, centerX, width, contentLeft, contentSize);
+                    int gy = worldToScreenY(point.pos().z, centerZ, height, contentTop, contentSize);
+                    if (gx < contentLeft || gy < contentTop || gx >= contentLeft + contentSize
+                            || gy >= contentTop + contentSize) {
+                        continue;
+                    }
+                    boolean active = i == activeIdx;
+                    int half = active ? gpsHalf + 1 : gpsHalf;
+                    int gpsColor = active ? 0xFFFFF08A : 0xFF8F8440;
+                    graphics.fill(gx - half, gy - half, gx + half, gy + half, gpsColor);
+                }
+            }
+            for (S2CMarkedBlockSync.MarkedBlockEntry mark
+                    : RVP_ClientMarkedBlockState.getMarkedBlocks(mapDim)) {
+                int tx = worldToScreenX(mark.x(), centerX, width, contentLeft, contentSize);
+                int ty = worldToScreenY(mark.z(), centerZ, height, contentTop, contentSize);
+                if (tx < contentLeft || ty < contentTop || tx >= contentLeft + contentSize
+                        || ty >= contentTop + contentSize) {
+                    continue;
+                }
+                int markHalf = (int) Math.max(1, Math.round(3.5F * elemScale));
+                graphics.fill(tx - markHalf, ty - markHalf, tx + markHalf, ty + markHalf, 0xFFFFF08A);
+            }
+        }
+
         // 先落盘攒批内容（瓦片 blit + 图标 fill）：GuiGraphics 攒批要到 flush 才提交，
         // 否则下面立即模式的速度矢量会被随后 flush 的瓦片/图标整片盖掉（雷达屏同坑）。
         graphics.flush();
         // 速度矢量：地图为世界对齐（+X→右、+Z→下），故直接按世界速度分量映射，无需随航向旋转。
         var pose = graphics.pose();
-        for (int i = 0; i < contactPx.size(); i++) {
-            Entity entity = contactEntities.get(i);
+        for (int i = 0; i < vectorPts.size(); i++) {
+            Entity entity = vectorEntities.get(i);
             if (entity == null) {
                 continue;
             }
@@ -169,14 +218,13 @@ public final class RVP_MapScreenRenderer {
             if (speed < 1.0E-3) {
                 continue;
             }
-            boolean friendly = isFriendly(entity, vehicle);
             float length = 14.0F * elemScale;
-            float sx = (float) contactPx.get(i)[0];
-            float sy = (float) contactPx.get(i)[1];
+            float sx = (float) vectorPts.get(i)[0];
+            float sy = (float) vectorPts.get(i)[1];
             RVP_CockpitCanvas.drawLineImmediate(pose, sx, sy,
                     sx + (float) (velocity.x / speed) * length,
                     sy + (float) (velocity.z / speed) * length,
-                    3.0F * elemScale, friendly ? 0xFF3D9140 : Color.GREEN);
+                    3.0F * elemScale, vectorColors.get(i));
         }
     }
 
