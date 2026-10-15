@@ -3,13 +3,16 @@ package org.ywzj.rvp.client.cockpit;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.map.RVP_TacticalMapCache;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -38,7 +41,7 @@ public final class RVP_MapScreenRenderer {
 
     /** 渲染战术地图帧。 */
     public static void render(GuiGraphics graphics, int width, int height, AbstractVehicle vehicle,
-                          float elemScale) {
+                          float textScale, float elemScale) {
         graphics.fill(0, 0, width, height, 0xFF0A0C0E);
         // 内容区：屏面中心 70% 正方形（坐标映射全部基于该区域）。
         int contentSize = (int) (Math.min(width, height) * UV_DIAMETER_RATIO);
@@ -72,6 +75,9 @@ public final class RVP_MapScreenRenderer {
 
         // 探测图标层（雷达探测点；与雷达屏同数据源=载具自己的雷达，2026-10-15 起不读本体席位）
         RadarUnit radar = RVP_CockpitScreenManager.mainRadarUnit(vehicle);
+        // 矢量层需要图标的屏幕坐标与实体（判定 IFF / 取速度）：先收集，待瓦片与图标 flush 后再画立即线段。
+        java.util.List<double[]> contactPx = new ArrayList<>();
+        java.util.List<Entity> contactEntities = new ArrayList<>();
         if (radar != null) {
             HashMap<Integer, RadarUnit.DetectedObject> detected = radar.getDetectedEntities();
             if (detected != null) {
@@ -87,8 +93,12 @@ public final class RVP_MapScreenRenderer {
                             || y >= contentTop + contentSize) {
                         continue;
                     }
+                    // 敌我识别：友军（同队驾驶）暗绿、其余亮绿——与雷达屏同款判定（2026-10-15 用户要求）
+                    int contactColor = isFriendly(detectedObject.entity, vehicle) ? 0xFF3D9140 : Color.GREEN;
                     graphics.fill(x - contactHalf, y - contactHalf,
-                            x + contactHalf, y + contactHalf, Color.GREEN);
+                            x + contactHalf, y + contactHalf, contactColor);
+                    contactPx.add(new double[]{x, y});
+                    contactEntities.add(detectedObject.entity);
                 }
             }
         }
@@ -100,6 +110,80 @@ public final class RVP_MapScreenRenderer {
                 cx + selfHalf, cy + selfHalf, 0xFFFFFFFF);
         graphics.fill(cx - selfHalf + 1, cy - selfHalf + 1,
                 cx + selfHalf - 1, cy + selfHalf - 1, 0xFF1A73E8);
+
+        // 先落盘攒批内容（瓦片 blit + 图标 fill）：GuiGraphics 攒批要到 flush 才提交，
+        // 否则下面立即模式的速度矢量会被随后 flush 的瓦片/图标整片盖掉（雷达屏同坑）。
+        graphics.flush();
+        // 速度矢量：地图为世界对齐（+X→右、+Z→下），故直接按世界速度分量映射，无需随航向旋转。
+        var pose = graphics.pose();
+        for (int i = 0; i < contactPx.size(); i++) {
+            Entity entity = contactEntities.get(i);
+            if (entity == null) {
+                continue;
+            }
+            Vec3 velocity = entity.getDeltaMovement();
+            double speed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+            if (speed < 1.0E-3) {
+                continue;
+            }
+            boolean friendly = isFriendly(entity, vehicle);
+            float length = 14.0F * elemScale;
+            float sx = (float) contactPx.get(i)[0];
+            float sy = (float) contactPx.get(i)[1];
+            RVP_CockpitCanvas.drawLineImmediate(pose, sx, sy,
+                    sx + (float) (velocity.x / speed) * length,
+                    sy + (float) (velocity.z / speed) * length,
+                    3.0F * elemScale, friendly ? 0xFF3D9140 : Color.GREEN);
+        }
+        // 弹药显示（2026-10-15 用户要求）：主武器 + 副武器，数据源=载具自身武器站（不读本体席位）。
+        // 文字走攒批（最后 flush ⇒ 恒在最上层）。
+        WeaponUnit weaponUnit = RVP_CockpitScreenManager.mainWeaponUnit(vehicle);
+        if (weaponUnit != null) {
+            int textY = contentTop + 14;
+            AbstractVehicleWeapon<?> mainWeapon = weaponUnit.getCurrentWeapon().orElse(null);
+            if (mainWeapon != null) {
+                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, ammoLine(mainWeapon),
+                        contentLeft + contentSize / 2, textY, ammoColor(mainWeapon), textScale);
+                textY += 14;
+            }
+            AbstractVehicleWeapon<?> secWeapon = weaponUnit.getCurrentSecondaryWeapon().orElse(null);
+            if (secWeapon != null) {
+                RVP_CockpitCanvas.drawScaledCenteredString(graphics, pose, ammoLine(secWeapon),
+                        contentLeft + contentSize / 2, textY, ammoColor(secWeapon), textScale);
+            }
+        }
+    }
+
+    /** @return 弹药行文本（名称截断 10 字 + 剩余/上限；换弹中显示 RELOADING）。 */
+    private static String ammoLine(AbstractVehicleWeapon<?> weapon) {
+        String name = weapon.getDisplayName().getString();
+        if (name.length() > 10) {
+            name = name.substring(0, 10);
+        }
+        if (weapon.getReloadTime() > 0) {
+            return name + " RELOADING";
+        }
+        return name + " " + weapon.getRemainAmmo() + "/" + weapon.getMaxCapacity();
+    }
+
+    /** @return 弹药文字颜色：换弹中/耗尽=红，≤1/4=黄，其余绿（与本体武器 HUD 同语义）。 */
+    private static int ammoColor(AbstractVehicleWeapon<?> weapon) {
+        int remain = weapon.getRemainAmmo();
+        int max = weapon.getMaxCapacity();
+        if (weapon.getReloadTime() > 0 || remain == 0) {
+            return Color.RED;
+        }
+        return remain <= max / 4 ? Color.AMMO_WARNING : Color.GREEN;
+    }
+
+    /** 简易 IFF：同队为友军（暗绿），其余按敌对亮绿（与雷达屏同款判定）。 */
+    private static boolean isFriendly(Entity entity, AbstractVehicle observer) {
+        var team = observer.getTeam();
+        if (team == null || entity == null) {
+            return false;
+        }
+        Entity driver = entity instanceof AbstractVehicle vehicle ? vehicle.getDriver() : entity;
+        return driver != null && team.isAlliedTo(driver.getTeam());
     }
 
     /** 世界 X → 内容区屏像素（本车居中于 70% 内容区中心）。 */

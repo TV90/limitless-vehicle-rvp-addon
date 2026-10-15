@@ -512,7 +512,7 @@ public final class RVP_CockpitScreenManager {
         switch (kind) {
             case RADAR -> RVP_RadarScreenRenderer.render(graphics, width, height, vehicle, textScale, elementScale);
             case RWR -> RVP_RwrScreenRenderer.render(graphics, width, height, vehicle, textScale, elementScale);
-            case MAP -> RVP_MapScreenRenderer.render(graphics, width, height, vehicle, elementScale);
+            case MAP -> RVP_MapScreenRenderer.render(graphics, width, height, vehicle, textScale, elementScale);
         }
     }
 
@@ -606,5 +606,25 @@ public final class RVP_CockpitScreenManager {
             }
         }
         return fallback;
+    }
+
+    /**
+     * @return 屏内容用的武器站：①玩家当前所坐部件（载具座位表口径）②部件表第一个武器站。
+     * 不读本体席位——理由同 {@link #mainRadarUnit}（本体状态会被上游清空）。
+     */
+    static WeaponUnit mainWeaponUnit(AbstractVehicle vehicle) {
+        if (vehicle == null) {
+            return null;
+        }
+        net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null && vehicle.getOwnOperatorUnit(player) instanceof WeaponUnit ownUnit) {
+            return ownUnit;
+        }
+        for (PartUnit<?> part : vehicle.getPartUnits()) {
+            if (part instanceof WeaponUnit weaponUnit) {
+                return weaponUnit;
+            }
+        }
+        return null;
     }
 }
