@@ -12,6 +12,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.RVP_Network;
 import org.ywzj.rvp.network.S2CRvpWarn;
+import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
@@ -22,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 服务端雷达告警无钳制补发（替代本体通道的 ±45° 俯仰角钳制）。
@@ -77,18 +79,27 @@ public final class RVP_WarnRelayService {
     }
 
     private static void scanLevel(ServerLevel level, int serverTick) {
+        // 外置链豁免（2026-10-17 用户实测"外置雷达锁定/扫描不告警"）：外置链 = 母车/操作者
+        // 把雷达交给**无人子机（UAV）**使用，被用的雷达挂在没有乘员的子机身上，乘员门会把
+        // 这条链的锁定/搜索告警一并静音。先收集"当前正被当外置中继用"的载具 UUID，
+        // 属于该集合的无人载具照常补发告警；真正的孤儿旧锁（没人用）仍然静音。
+        Set<UUID> relayInUse = new HashSet<>();
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof AbstractVehicle launcher) {
+                RVP_ExternalRadarLinkHelper.getLinkedRelayVehicle(launcher)
+                        .ifPresent(relay -> relayInUse.add(relay.getUUID()));
+            }
+        }
         for (Entity entity : level.getEntities().getAll()) {
             if (!(entity instanceof AbstractVehicle source) || source.isDestroyed() || !source.isAlive()) {
                 continue;
             }
-            // 无人载具（玩家/gunner 均不在车上）不产生锁定/搜索告警：本体锁定生命周期是
-            // 永久的——下车/登出/空车都没有解除逻辑（唯一自动清除=目标死亡），服务端雷达
-            // 还永远开机，玩家弃船后旧锁会持续驱动双通道告警（本体 WeaponUnit.tick 每
-            // 2 tick 发 RADAR_LOCK + 本服务每 5 tick 补发），目标载具登上人即无限循环
-            // 告警（2026-10-04 用户实测）。锁定与制导行为不动，只静音告警：乘员回到车上
-            // 锁定即恢复告警。外置雷达中继锁（玩家在车外用车雷达）的告警静音属已知边界，
-            // 如需保留可在此追加"外置链使用中"豁免判定。
-            if (source.getPassengers().isEmpty()) {
+            // 无人载具（玩家/gunner 均不在车上）且不在外置链中 ⇒ 不产生锁定/搜索告警：
+            // 本体锁定生命周期是永久的——下车/登出/空车都没有解除逻辑（唯一自动清除=目标
+            // 死亡），服务端雷达还永远开机，玩家弃船后旧锁会持续驱动双通道告警（本体
+            // WeaponUnit.tick 每 2 tick 发 RADAR_LOCK + 本服务每 5 tick 补发），目标载具
+            // 登上人即无限循环告警（2026-10-04 用户实测）。锁定与制导行为不动，只静音告警。
+            if (source.getPassengers().isEmpty() && !relayInUse.contains(source.getUUID())) {
                 continue;
             }
             for (PartUnit<?> partUnit : source.getPartUnits()) {

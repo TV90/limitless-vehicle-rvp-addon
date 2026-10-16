@@ -49,6 +49,13 @@ public final class RVP_FireControlStabilizerState {
             RVP_LeadFcDebug.logToggleRejected(unit);
             return false;
         }
+        int allowedMask = resolveAllowedMask(unit);
+        // 单模式子集（载具只配了一种火控模式）时整键静默：不切模式、不弹提示、不清半自动微调。
+        // 2026-10-17 用户裁定：多弹种载具只配一种模式就是为了把该键位让给"切换弹种"，
+        // 旧实现会原地"切换"同一模式并弹出模式提示（观感=瞬间切走又回退）+ 清掉微调偏置。
+        if (Integer.bitCount(allowedMask) <= 1) {
+            return false;
+        }
         Mode mode = nextAllowedMode(getMode(unit), resolveAllowedMask(unit));
         MODES.put(unit, mode);
         // 调用本项目半自动微调状态，在任意模式切换时清除旧目标偏置，防止重新进入半自动后突然跳向旧方向。
