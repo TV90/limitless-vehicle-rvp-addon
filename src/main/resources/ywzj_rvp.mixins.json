@@ -41,7 +41,9 @@
     "WeaponUnitMultiWeaponSwitchBlockMixin",
     "WeaponUnitSensorOverrideMixin",
     "WeaponUnitParentAimOverrideMixin",
-    "RVP_VesselTurnDepthMixin"
+    "RVP_VesselTurnDepthMixin",
+    "CommonAssetsManagerSyncMixin",
+    "CommonAssetsManagerAccessor"
   ],
   "client": [
     "FirstPersonHandlerExplosionShakeMixin",
