@@ -16,22 +16,32 @@ import java.util.Set;
  *
  * <p>背景：本体 {@code TrackUnit.renderTrack} 用
  * {@code renderToBuffer(poseStack, VertexConsumer, light, overlay)} 直渲染链板模型——
- * 该调用落到 SBM v1 {@code BedrockBedrockBone.renderGeometryPass}，其中 mesh 分支优先交给
- * Accelerated Rendering 兼容层接管（返回 true 即不再走普通绘制）。实测在该直渲染上下文中
- * AR 接管后 mesh 并未真正落笔（cube 分支无此问题，99A 的 cube 链板正常），表现为 mesh
- * 链板整体不可见。</p>
+ * 该调用落到 SBM v1 {@code renderGeometryPass}，其中 mesh 分支优先交给 Accelerated
+ * Rendering 兼容层接管（返回 true 即不再走普通绘制）。实测在该直渲染上下文中 AR 接管后
+ * mesh 并未真正落笔（cube 分支走另一兼容分支无此问题，99A 的 cube 链板正常），表现为
+ * mesh 链板整体不可见。</p>
  *
- * <p>本类改走与车体 poly_mesh 完全相同的<b>烘焙实例管线</b>：构造时显式传入
- * {@link BakerOptions}（bakeStaticGeometry=true，poly_mesh 随静态几何一起烘焙，
- * 与车体 BaseDisplay.createBakerOptions 同款），并覆写直渲染入口，把烘焙实例
- * 直接画进 TrackUnit 已绑定 entityCutout(链板贴图) 的缓冲——烘焙实例管线
- * 渲染 poly_mesh 已被车体长期验证。</p>
+ * <p>本类改走与车体 poly_mesh 完全相同的<b>烘焙实例管线</b>，并在烘焙选项上做了一个
+ * 关键对齐：SBM 烘焙器把骨分成"运行时骨"（animatedBones∪preservedBones 集合内）与
+ * "静态骨"（折叠进静态几何、挂到最近运行时骨祖先）；链板模型没有动画/控制器，
+ * 空集合会让全部几何的挂载点落到 -1 而无法渲染——因此把模型全部骨名放入
+ * preservedBones，让每块几何都挂在自己的骨骼上、按实例正常渲染（与车体一致）。</p>
  */
 public class RVP_TrackLinkModel extends VehicleBedrockModel {
 
     public RVP_TrackLinkModel(BedrockModelPOJO pojo) {
-        // bakeStaticGeometry=true：poly_mesh 随静态几何烘焙（与车体 BaseDisplay 同款）
-        super(pojo, List.of(), new BakerOptions(Set.of(), Set.of(), new HashSet<>(), true, false, true));
+        super(pojo, List.of(), createBakerOptions(pojo));
+    }
+
+    /** 与车体 BaseDisplay.createBakerOptions 同款语义：bakeStaticGeometry=true + 骨骼全部 preserved。 */
+    private static BakerOptions createBakerOptions(BedrockModelPOJO pojo) {
+        Set<String> boneNames = new HashSet<>();
+        for (var geometry : pojo.getGeometryModelNew()) {
+            for (var bone : geometry.getBones()) {
+                boneNames.add(bone.getName());
+            }
+        }
+        return new BakerOptions(Set.of(), boneNames, new HashSet<>(), true, false, true);
     }
 
     @Override
