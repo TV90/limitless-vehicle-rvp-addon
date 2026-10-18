@@ -9,7 +9,6 @@ import org.ywzj.vehicle.client.render.animation.controller.AnimationController;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
 import org.ywzj.vehicle.client.resource.vehicle.BaseDisplayPojo;
 import org.ywzj.vehicle.client.resource.vehicle.TrackConfig;
-import org.ywzj.vehicle.client.resource.vehicle.VehicleBedrockModel;
 import org.ywzj.vehicle.client.resource.vehicle.TrackedVehicleDisplay;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -32,14 +31,11 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
     protected final List<RVP_LodModel> lodModels;
 
     private final TrackConfig trackConfig;
-    private final RVP_TrackedVehicleDisplayPojo rvpPojo;
-    private VehicleBedrockModel rvpTrackModel;
     private BedrockAnimation leftTrackAnimation;
     private BedrockAnimation rightTrackAnimation;
 
     public RVP_TrackedVehicleDisplay(RVP_TrackedVehicleDisplayPojo pojo) {
         super(pojo);
-        this.rvpPojo = pojo;
         this.bedrockBackend = RVP_BedrockBackend.fromString(pojo.bedrockBackend);
         this.noCullBones = pojo.noCullBones == null ? List.of() : List.copyOf(pojo.noCullBones);
         this.stateHiddenBones = pojo.stateHiddenBones == null ? List.of()
@@ -171,19 +167,5 @@ public class RVP_TrackedVehicleDisplay extends TrackedVehicleDisplay {
 
     public List<RVP_LodModel> getLodModels() {
         return lodModels;
-    }
-
-    /**
-     * rvp 后端：链板模型改走烘焙实例管线（绕过 v1 直渲染的 mesh 缺陷，
-     * 详见 {@link RVP_TrackLinkModel}）。懒构建一次后缓存。
-     */
-    @Override
-    @Nullable
-    public VehicleBedrockModel getTrackModel() {
-        if (rvpTrackModel == null && trackConfig != null && trackConfig.model != null) {
-            ClientAssetsManager.INSTANCE.getModel(trackConfig.model).ifPresent(
-                    modelPojo -> rvpTrackModel = new RVP_TrackLinkModel(modelPojo));
-        }
-        return rvpTrackModel;
     }
 }
