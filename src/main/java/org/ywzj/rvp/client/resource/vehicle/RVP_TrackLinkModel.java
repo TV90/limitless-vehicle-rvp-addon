@@ -36,7 +36,8 @@ public class RVP_TrackLinkModel extends VehicleBedrockModel {
     /** 与车体 BaseDisplay.createBakerOptions 同款语义：bakeStaticGeometry=true + 骨骼全部 preserved。 */
     private static BakerOptions createBakerOptions(BedrockModelPOJO pojo) {
         Set<String> boneNames = new HashSet<>();
-        for (var geometry : pojo.getGeometryModelNew()) {
+        var geometry = pojo.getGeometryModelNew();
+        if (geometry != null) {
             for (var bone : geometry.getBones()) {
                 boneNames.add(bone.getName());
             }
