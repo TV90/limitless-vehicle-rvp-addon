@@ -259,10 +259,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                     poseStack.popPose();
                 }
                 // 装填进度
-                weaponUnit.getCurrentWeapon().ifPresent(weapon -> VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weapon, 7f, 1.2f));
-                weaponUnit.getCurrentSecondaryWeapon().ifPresent(weapon -> VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weapon, 5.6f, 1f));
+                weaponUnit.getCurrentWeapon().ifPresent(weapon -> VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weapon, 7f, 1.2f, partialTick));
+                weaponUnit.getCurrentSecondaryWeapon().ifPresent(weapon -> VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weapon, 5.6f, 1f, partialTick));
                 if (!weaponUnit.independentWeapons.isEmpty()) {
-                    VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weaponUnit.independentWeapons.get(0), 4.4f, 0.8f);
+                    VehicleAimAtOverlay.renderReloadProgress(guiGraphics, weaponUnit.independentWeapons.get(0), 4.4f, 0.8f, partialTick);
                 }
             }
             poseStack.popPose();
