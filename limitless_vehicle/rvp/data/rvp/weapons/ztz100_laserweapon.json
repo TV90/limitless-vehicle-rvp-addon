@@ -1,13 +1,13 @@
 {
   "type": "rvp:laser",
   "name": "10kW Laser",
-  "shoot_interval": 20,
-  "max_capacity": 500,
+  "shoot_interval": 50,
+  "max_capacity": 100,
   "reload": {
     "time": 100,
     "ammo": "ywzj_vehicle:ammo_creative"
   },
-  "damage": 5,
+  "damage": 1,
   "fire_data": {
     "fire_mode": "FULL_AUTO",
     "heat_count": 20,
@@ -31,5 +31,5 @@
       "pulsate": false
     }
   },
-  "name_CN": "10KW 小型激光器"
+  "name_CN": "激光压制系统"
 }

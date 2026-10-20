@@ -46,7 +46,7 @@
   },
   "guidance_data": {
     "guidance_type": "LBR",
-    "guidance_tick_range": "[[11,inf]]",
+    "guidance_tick_range": "[[5,inf]]",
     "max_guidance_angle": 80,
     "predict_target_pos": true,
     "enable_inertial_guidance": true,
@@ -76,7 +76,41 @@
     }
   },
   "collision_data": {
-    "direct_damage": 300
+    "direct_damage": 300,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "name_CN": "MIM-146 激光架束制导多用途导弹"
 }

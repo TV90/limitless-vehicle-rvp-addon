@@ -1,7 +1,7 @@
 {
   "type": "rvp:rocket",
   "name": "M261 MPSM Cluster Rocket",
-  "shoot_interval": 100,
+  "shoot_interval": 200,
   "max_capacity": 14,
   "reload": {
     "time": 200,
@@ -39,7 +39,13 @@
       "explode": true,
       "damage": 10,
       "radius": 2,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
     }
   },
   "collision_data": {
@@ -49,12 +55,46 @@
     "direct_damage": 50,
     "damage_decay": [
       {
+        "domain": "angle",
         "type": "linear",
-        "start_distance": 0,
-        "end_distance": 2560,
-        "min_factor": 1
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
-    ]
+    ],
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    }
   },
   "submunition_data": {
     "releases": [
@@ -68,11 +108,11 @@
           {
             "kind": "rvp_weapon",
             "weapon_id": "rvp:ah1z_mpsm_m73",
-            "count": 5,
+            "count": 8,
             "inherit_parent_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 1.0,
-                        "spread": {
+            "spread": {
               "mode": "canister",
               "canister_type": 1,
               "canister_diff": 10.0,

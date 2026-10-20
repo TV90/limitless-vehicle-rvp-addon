@@ -37,7 +37,41 @@
     "detonate_on_life_end": true
   },
   "collision_data": {
-    "direct_damage": 1400
+    "direct_damage": 1400,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "effects_data": {
     "trajectory_particle": "minecraft:cloud",
@@ -53,7 +87,15 @@
       "radius": 15,
       "damage_in_water": 1100,
       "radius_in_water": 6,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     }
   },
   "misc_data": {

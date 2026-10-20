@@ -3,6 +3,7 @@ package org.ywzj.rvp.weapon.damage;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -246,6 +247,18 @@ public final class RVP_VehicleHurtScalingHandler {
         // 外源 mod 多段武器（SBW 直击两段 forceHurt + 延迟爆炸段）每段各计各的实际损失，
         // 总和恒等于载具总掉血；不再用 desiredFinal（含倍率叠加，多段相加会超额）
         float actualLoss = Math.max(0f, healthBefore - self.getHealth());
+        // [RVP] 2026-10-20 原版弹体复伤修复：AbstractArrow（弓箭/三叉戟）的原版契约是
+        // "entity.hurt() 返回 true 即 discard"。本 handler 取消原事件后重放扣血，
+        // 最外层 hurt 对投射物返回 false → 原版按"没打中"走弹反分支（速度×-0.1 反向）
+        // 保留箭体 → 下一 tick 再次命中载具并集 AABB → 再取消再重放 = 每 tick 持续伤害
+        // （车顶近似垂直命中的箭会被 -0.1 弹反+重力钉在 AABB 顶面无限振荡）。
+        // 此处在确认真实扣血后按原版语义丢弃非穿透箭，恢复"命中即消失"；
+        // 穿透箭（pierce>0）由原版 piercingIgnoreEntityIds 天然防同一实体复命中，
+        // 保持其继续穿透的原版行为，不在此丢弃。
+        if (actualLoss > 0f && source.getDirectEntity() instanceof AbstractArrow arrow
+                && arrow.getPierceLevel() <= 0) {
+            arrow.discard();
+        }
         // [RVP] 辅助设备爆炸损伤·本体武器重放路（§38）：实收 = actualLoss；
         // §43 取消 §41.5 的 inRvpDamage 门（见钩子 1 处注释）
         if (explosion && explosionPos != null && actualLoss > 0f) {

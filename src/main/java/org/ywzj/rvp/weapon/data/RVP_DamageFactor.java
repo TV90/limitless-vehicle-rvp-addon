@@ -6,6 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 
 import java.util.Collections;
@@ -81,7 +82,15 @@ public class RVP_DamageFactor {
             return sanitize(player);
         }
         if (entity instanceof AbstractVehicle) {
-            ResourceLocation typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            // [RVP] 2026-10-20 装甲类型重映射：受击载具配置 rvp_armor_type 时，vehicles 查表键
+            // 用配置的装甲类型实体 ID 替代真实实体类型——本方法是全包伤害倍率查表唯一收口，
+            // 直击（RVP_BaseBullet）/近炸+激光（RVP_DamageApplier）/武器侧爆炸倍率
+            // （RVP_VehicleHurtScalingHandler 的 explosion_damage_factor 窗口）统一生效。
+            // 未配置装甲类型时保持原行为（真实实体类型 ID 查表）。
+            ResourceLocation typeId = RVP_VehicleExtendedConfigManager.getArmorTypeId((AbstractVehicle) entity);
+            if (typeId == null) {
+                typeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+            }
             if (typeId != null) {
                 Float mapped = getVehicles().get(typeId.toString());
                 if (mapped != null) {

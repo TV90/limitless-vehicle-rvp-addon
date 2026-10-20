@@ -1,7 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "GSh-30-1 30mm Cannon [HE]",
-  "shoot_interval": 33,
+  "shoot_interval": 75,
   "max_capacity": 150,
   "reload": {
     "time": 120,
@@ -30,7 +30,7 @@
   },
   "detonate_data": {
     "explosion_data": {
-      "explode": false,
+      "explode": true,
       "damage": 20,
       "radius": 2,
       "destroy_block": false
@@ -40,13 +40,39 @@
     "living_penetration": 0,
     "wall_penetration": 0,
     "bounce": 0,
-    "direct_damage": 10,
+    "direct_damage": 20,
     "damage_decay": [
       {
+        "domain": "angle",
         "type": "linear",
-        "start_distance": 0,
-        "end_distance": 256,
-        "min_factor": 0.75
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
     ]
   },

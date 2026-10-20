@@ -45,7 +45,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 7,
+    "direct_damage": 20,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
@@ -58,33 +58,41 @@
         "domain": "distance",
         "type": "linear",
         "start_distance": 0,
-        "end_distance": 64,
+        "end_distance": 512,
         "start_factor": 1.0,
-        "end_factor": 0.25
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 0,
-        "end_distance": 30,
-        "start_factor": 1.0,
-        "end_factor": 0.85
+        "end_factor": 0.7
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 30,
         "end_distance": 60,
-        "start_factor": 0.85,
-        "end_factor": 0.58
+        "start_factor": 0.8,
+        "end_factor": 0.5
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 60,
-        "end_distance": 81,
-        "start_factor": 0.58,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
         "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
     ],
     "living_penetration": 0,

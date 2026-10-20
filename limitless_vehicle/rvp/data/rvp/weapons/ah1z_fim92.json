@@ -19,8 +19,8 @@
     "has_rocket_engine": true,
     "mass": 15.7,
     "fuel_mass": 4,
-    "thrust": 2.16568,
-    "motor_burn_time": 50,
+    "thrust": 5.16568,
+    "motor_burn_time": 40,
     "drag_coefficient": 0.006581,
     "rvp_induced_drag": 0.005,
     "rotate_to_motion": true,
@@ -54,7 +54,7 @@
       "chaff_resistance": 0.5
     },
     "guidance_type": "IR",
-    "guidance_tick_range": "[[10,inf]]",
+    "guidance_tick_range": "[[20,inf]]",
     "guidance_target_distance_range": "[[0,512]]",
     "lock_target_distance_range": "[[0,512]]",
     "max_lock_angle": 4,
@@ -93,7 +93,41 @@
     }
   },
   "collision_data": {
-    "direct_damage": 60
+    "direct_damage": 60,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "name_CN": "FIM-92K 红外格斗弹"
 }

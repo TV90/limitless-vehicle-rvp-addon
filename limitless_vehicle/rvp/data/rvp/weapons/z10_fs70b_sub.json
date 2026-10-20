@@ -1,0 +1,98 @@
+{
+  "type": "rvp:rocket",
+  "name": "FS70B Submunition",
+  "shoot_interval": 0,
+  "max_capacity": 1,
+  "life": 40,
+  "reload": {
+    "time": 1,
+    "ammo": "ywzj_vehicle:ammo_rocket"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 1.8,
+    "gravity": -0.02,
+    "drag": 0.0,
+    "constant_speed": false,
+    "rotate_to_motion": true,
+    "max_speed": 8
+  },
+  "fuse_data": {
+    "detonate_on_life_end": true
+  },
+  "guidance_data": {
+    "guidance_type": "NONE"
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:flame",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 12,
+      "radius": 2,
+      "destroy_block": true,
+      "destroy_radius": 1,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 24,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    },
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 0,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "name_CN": "FS70B 子弹药"
+}

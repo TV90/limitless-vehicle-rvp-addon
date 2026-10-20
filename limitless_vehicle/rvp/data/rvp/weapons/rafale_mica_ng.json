@@ -2,7 +2,7 @@
   "type": "rvp:missile",
   "name": "MICA-NG DP-ARH-AAM",
   "show_msl_indicator": true,
-  "shoot_interval": 500,
+  "shoot_interval": 1000,
   "max_capacity": 4,
   "reload": {
     "time": 300,
@@ -86,7 +86,41 @@
     }
   },
   "collision_data": {
-    "direct_damage": 80
+    "direct_damage": 80,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "name_CN": "米卡-NG 双脉冲 主动雷达弹"
 }

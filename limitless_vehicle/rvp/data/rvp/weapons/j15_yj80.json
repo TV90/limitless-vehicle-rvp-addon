@@ -1,6 +1,6 @@
 {
   "type": "rvp:missile",
-  "name": "YJ-80 ARH-ASM (J-15)",
+  "name": "YJ-80 IR-AGM",
   "shoot_interval": 500,
   "max_capacity": 4,
   "reload": {
@@ -71,7 +71,7 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 1000,
+      "damage": 800,
       "radius": 9,
       "proximity_fuze": false,
       "destroy_block": true
@@ -80,5 +80,5 @@
   "collision_data": {
     "direct_damage": 60
   },
-  "name_CN": "鹰击-80 主动雷达制导反舰导弹（J-15）"
+  "name_CN": "鹰击-80 红外制导空对地导弹"
 }

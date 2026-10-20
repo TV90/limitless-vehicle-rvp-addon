@@ -50,15 +50,57 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 1200,
+      "damage": 700,
       "radius": 8,
       "proximity_fuze": true,
       "proximity_radius": 4,
-      "destroy_block": true
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 300
+    "direct_damage": 100,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "fuse_data": {
     "proximity_radius": 5.0,

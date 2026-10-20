@@ -18,8 +18,6 @@ public class RVP_Config {
 
     private final ForgeConfigSpec.BooleanValue forceImmediateExplosionDestruction;
 
-    private final ForgeConfigSpec.DoubleValue eraMaxIncidenceAngle;
-
     private final ForgeConfigSpec.DoubleValue hitlTvBreakLockTargetSpeedKph;
 
     /** Parsed cache: sorted by maxRadius ascending. */
@@ -41,17 +39,8 @@ public class RVP_Config {
                 )
                 .define("forceImmediateExplosionDestruction", true);
 
-        eraMaxIncidenceAngle = builder
-                .comment(
-                        "Incidence angle upper bound for direct hits on bones with active ERA:",
-                        "when the hit bone has ERA configured (and not yet destroyed), the impact",
-                        "angle used by the damage_decay 'angle' rules is clamped to",
-                        "min(actualAngle, this value) - simulating ERA's equivalent protection",
-                        "against steep impacts. 90 disables the clamp (vanilla angle decay).",
-                        "Only affects direct-hit angle decay; ricochet judgment keeps the raw angle.",
-                        "Default: 35"
-                )
-                .defineInRange("eraMaxIncidenceAngle", 35.0D, 0.0D, 90.0D);
+        // [RVP] eraMaxIncidenceAngle 已于 2026-10-21 撤销：入射角上界改为载具侧
+        // rvp_max_incidence_angle（见 RVP_VehicleExtendedConfigManager），且跳弹判定同受约束。
 
         builder.push("guidance");
 
@@ -151,14 +140,8 @@ public class RVP_Config {
         return cfg != null && cfg.forceImmediateExplosionDestruction.get();
     }
 
-    /**
-     * 激活 ERA 骨骼直击的入射角上界（度）：伤害衰减角度取 min(实际入射角, 该值)。
-     * 高频调用（每枚命中弹一次），直接读缓存的 ConfigValue。
-     */
-    public static float getEraMaxIncidenceAngle() {
-        RVP_Config cfg = INSTANCE;
-        return cfg != null ? cfg.eraMaxIncidenceAngle.get().floatValue() : 35.0F;
-    }
+    // getEraMaxIncidenceAngle 已于 2026-10-21 随 eraMaxIncidenceAngle 配置项一并撤销，
+    // 入射角上界改为载具侧 rvp_max_incidence_angle（RVP_VehicleExtendedConfigManager.getMaxIncidenceAngle）。
 
     /**
      * HITL 电视制导速度脱锁阈值（km/h）：被锁实体速度超过该值即脱锁并冻结跟踪点。

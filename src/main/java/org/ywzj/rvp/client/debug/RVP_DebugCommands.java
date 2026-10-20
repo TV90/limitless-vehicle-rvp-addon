@@ -41,6 +41,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.world.phys.Vec3;
+import org.ywzj.vehicle.vehicle.part.SuspensionUnit;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_DebugCommands {
@@ -59,6 +63,44 @@ public class RVP_DebugCommands {
                             RVP_TVMissileDebug.requestDump();
                             LOGGER.info("[RVP][TVMissile] tvMissileDump requested");
                             ctx.getSource().sendSuccess(() -> Component.translatable("commands.ywzj_rvp.debug.tv_missile.dump"), false);
+                            return 1;
+                        }))
+                        // [RVP] 悬挂状态 dump：逐轮输出 grounded / compression / 行程上下限 / 枢轴，
+                        // 用于排查"某一侧轮子不接地导致车体侧倾"（t90m / bmpt72 左侧曾出现）。
+                        // 输出文件：logs/suspensiondebug.log；聊天栏会列出未接地的轮子。
+                        .then(Commands.literal("suspension").executes(ctx -> {
+                            AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
+                            if (vehicle == null) {
+                                ctx.getSource().sendFailure(Component.literal("[RVP] 当前不在载具上"));
+                                return 0;
+                            }
+                            List<SuspensionUnit<?>> units = vehicle.getSuspensionUnits();
+                            StringBuilder sb = new StringBuilder();
+                            sb.append("vehicle=").append(vehicle.getDisplayId())
+                                    .append(" units=").append(units.size())
+                                    .append(" yRot=").append(String.format("%.2f", vehicle.getYRot()))
+                                    .append(" xRot=").append(String.format("%.2f", vehicle.getXRot()))
+                                    .append('\n');
+                            sb.append("id,grounded,compression,minCompression,maxCompression,pivotX,pivotY,pivotZ\n");
+                            List<String> hung = new ArrayList<>();
+                            for (SuspensionUnit<?> unit : units) {
+                                Vec3 pivot = unit.getPivotOffset();
+                                sb.append(unit.getId()).append(',')
+                                        .append(unit.isGrounded()).append(',')
+                                        .append(String.format("%.5f", unit.getCompression())).append(',')
+                                        .append(String.format("%.5f", unit.getMinCompression())).append(',')
+                                        .append(String.format("%.5f", unit.getMaxCompression())).append(',')
+                                        .append(String.format("%.4f", pivot.x)).append(',')
+                                        .append(String.format("%.4f", pivot.y)).append(',')
+                                        .append(String.format("%.4f", pivot.z)).append('\n');
+                                if (!unit.isGrounded()) {
+                                    hung.add(unit.getId());
+                                }
+                            }
+                            Path path = FMLPaths.GAMEDIR.get().resolve("logs").resolve("suspensiondebug.log");
+                            writeLog(path, sb.toString());
+                            String summary = hung.isEmpty() ? "全部接地" : "未接地(" + hung.size() + "): " + String.join(",", hung);
+                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] 悬挂 dump -> " + path + " | " + summary), false);
                             return 1;
                         }))
                         .then(Commands.literal("tvMissileBwSpam")

@@ -128,7 +128,7 @@ public class RVP_BulletEntity extends RVP_BaseBullet {
         if (entityResult != null
                 && entityResult.getEntity() != vehicle
                 && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
-                && tryBounceFromEntityHit(entityResult)) {
+                && tryBounceFromEntityHit(entityResult, ywzj_rvp$impactAngleCapFor(entityResult.getEntity()))) {
             applyBounceVisualState(position(), getDeltaMovement(), getYRot(), getXRot(), bounceLeft);
             return;
         }

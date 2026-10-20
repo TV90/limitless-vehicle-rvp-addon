@@ -30,7 +30,49 @@
   },
   "detonate_data": {},
   "collision_data": {
-    "direct_damage": 55
+    "direct_damage": 55,
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 512,
+        "start_factor": 1.0,
+        "end_factor": 0.7
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "fuse_data": {},
   "name_CN": "TOW-2B 自锻破片"

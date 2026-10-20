@@ -1,0 +1,124 @@
+{
+  "type": "rvp:missile",
+  "name": "CM-502KG TV-LOS-AGM",
+  "shoot_interval": 2000,
+  "max_capacity": 4,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "require_lock": false,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "collision_box_size": 0.7,
+    "velocity": 1.0,
+    "has_rocket_engine": true,
+    "mass": 150,
+    "fuel_mass": 45,
+    "thrust": 2.4208,
+    "motor_burn_time": 160,
+    "drag_coefficient": 0.035,
+    "rvp_induced_drag": 0.005,
+    "rotate_to_motion": true,
+    "max_speed": 2.0,
+    "turning_factor": {
+      "[[1,inf]]": 0.12
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
+  },
+  "fuse_data": {
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "HITL_CLOS_TV",
+    "signal_source": "FIBER",
+    "guidance_tick_range": "[[10,inf]]",
+    "guidance_target_distance_range": "[[0,2000]]",
+    "lock_target_distance_range": "[[0,2000]]",
+    "max_guidance_angle": 45,
+    "max_lock_angle": 12,
+    "max_off_axis_lock_angle": 35,
+    "hitl_max_turn_deg_per_tick": 2.5,
+    "hitl_max_control_dist": 2000,
+    "hitl_max_control_tick": 600,
+    "hitl_video_modes": [
+      "BW"
+    ],
+    "hitl_right_click_detonate": true
+  },
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 450,
+      "radius": 6,
+      "proximity_fuze": false,
+      "proximity_radius": 0,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 65,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "misc_data": {
+    "ammo_radar_rcs_factor": [
+      1,
+      1,
+      1
+    ]
+  },
+  "name_CN": "CM-502KG 人在回路指令线制导空对地导弹"
+}

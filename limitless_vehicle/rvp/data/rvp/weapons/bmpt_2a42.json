@@ -2,13 +2,13 @@
   "type": "rvp:machinegun",
   "name": "3UBR8 30MM APDS",
   "shoot_interval": 100,
-  "max_capacity": 120,
+  "max_capacity": 40,
   "reload": {
     "time": 200,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
   },
   "fire_data": {
-    "spread": 0.35,
+    "spread": 0.525,
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
@@ -38,12 +38,13 @@
     }
   },
   "collision_data": {
-    "direct_damage": 50,
+    "direct_damage": 60,
     "direct_damage_factor": {
-      "vehicle_default": 1.2,
+      "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:tracked_vehicle": 1.35,
-        "ywzj_vehicle:wheeled_vehicle": 1.1
+        "ywzj_vehicle:wheeled_vehicle": 0.8,
+        "ywzj_vehicle:rotary_wing_vehicle": 0.8,
+        "ywzj_vehicle:fixed_wing_vehicle": 0.8
       }
     },
     "damage_decay": [
@@ -51,33 +52,41 @@
         "domain": "distance",
         "type": "linear",
         "start_distance": 0,
-        "end_distance": 320,
+        "end_distance": 512,
         "start_factor": 1.0,
-        "end_factor": 0.5
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 0,
-        "end_distance": 30,
-        "start_factor": 1.0,
-        "end_factor": 0.85
+        "end_factor": 0.7
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 30,
         "end_distance": 60,
-        "start_factor": 0.85,
-        "end_factor": 0.58
+        "start_factor": 0.8,
+        "end_factor": 0.5
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 60,
-        "end_distance": 81,
-        "start_factor": 0.58,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
         "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
     ],
     "living_penetration": 0,
@@ -88,5 +97,6 @@
     "bounce_on_vehicle": true
   },
   "fuse_data": {},
-  "name_CN": "3UBR8 30MM 脱壳穿甲弹"
+  "name_CN": "3UBR8 30MM 脱壳穿甲弹",
+  "recoil": 0.1
 }

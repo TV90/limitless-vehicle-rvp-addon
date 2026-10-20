@@ -1,7 +1,7 @@
 {
   "type": "rvp:rocket",
   "name": "M30 AT Cluster Rocket",
-  "shoot_interval": 200,
+  "shoot_interval": 400,
   "max_capacity": 6,
   "reload": {
     "time": 200,
@@ -37,7 +37,15 @@
       "explode": true,
       "damage": 80,
       "radius": 4,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     }
   },
   "collision_data": {
@@ -47,10 +55,36 @@
     "direct_damage": 50,
     "damage_decay": [
       {
+        "domain": "angle",
         "type": "linear",
-        "start_distance": 0,
-        "end_distance": 256,
-        "min_factor": 0.25
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
     ]
   },
@@ -66,7 +100,7 @@
           {
             "kind": "rvp_weapon",
             "weapon_id": "rvp:m142_m30_m77",
-            "count": 48,
+            "count": 24,
             "inherit_parent_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 0.45,
@@ -79,7 +113,7 @@
             "spread": {
               "mode": "canister",
               "canister_type": 1,
-              "canister_diff": 150.0,
+              "canister_diff": 300.0,
               "canister_distribution": "uniform",
               "canister_shape": "circle"
             }

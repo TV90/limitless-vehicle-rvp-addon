@@ -33,6 +33,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
 
     public static final RVP_VehicleExtendedConfigManager INSTANCE = new RVP_VehicleExtendedConfigManager();
 
+    private static final org.slf4j.Logger LOGGER = com.mojang.logging.LogUtils.getLogger();
+
     private Map<ResourceLocation, VehicleExtendedConfig> configs = Map.of();
     /** 原始载具 JSON（含 rvp_custom_mounts / modding_only_multi 等 RVP 扩展字段），供服务端向客户端同步。 */
     private Map<ResourceLocation, JsonElement> rawVehicleJson = Map.of();
@@ -120,6 +122,27 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
      */
     public static boolean isPersistentChunkLease(AbstractVehicle vehicle) {
         return INSTANCE.get(vehicle).persistentChunkLease();
+    }
+
+    /**
+     * [RVP] 载具装甲类型（{@code rvp_armor_type}，2026-10-20）：非 null 时攻击方武器的
+     * direct_damage_factor / explosion_damage_factor 载具倍率按该实体类型 ID 查表
+     * （查表收口 {@code RVP_DamageFactor#getFactor}，直击/近炸/激光/爆炸四条路径统一生效）。
+     * 未配置返回 null（按真实实体类型查表）。伤害结算仅服务端执行，本访问器仅服务端消费。
+     */
+    @Nullable
+    public static ResourceLocation getArmorTypeId(@Nullable AbstractVehicle vehicle) {
+        return vehicle == null ? null : INSTANCE.get(vehicle).armorType();
+    }
+
+    /**
+     * [RVP] 载具入射角上界（{@code rvp_max_incidence_angle}，2026-10-21）：命中该载具时
+     * 入射角在记录点钳到 min(实际角, 本值)，直击角度衰减、跳弹门槛判定、爆炸引信衰减与
+     * 调试包统一使用钳后角度（消费方 {@code RVP_BaseBullet}）。未配置/非法输入返回 90f（不钳制）。
+     */
+    public static float getMaxIncidenceAngle(@Nullable AbstractVehicle vehicle) {
+        Float bound = vehicle == null ? null : INSTANCE.get(vehicle).maxIncidenceAngle();
+        return bound == null ? 90f : bound;
     }
 
     /**
@@ -357,6 +380,8 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
         boolean persistentChunkLease = parsePersistentChunkLease(obj);
         VehicleExtendedConfig.AutoCollectiveConfig autoCollective = parseAutoCollective(obj);
         Set<String> helipadBones = parseHelipadBones(obj);
+        ResourceLocation armorType = parseArmorType(obj);
+        Float maxIncidenceAngle = parseMaxIncidenceAngle(obj);
         if (groundContactPartIds.isEmpty()
                 && physicsOnlyBones.isEmpty()
                 && moddingOnlyMulti.isEmpty()
@@ -365,7 +390,9 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 && cameraRelativeFireSoundDistance == 0f
                 && !persistentChunkLease
                 && autoCollective == null
-                && helipadBones.isEmpty()) {
+                && helipadBones.isEmpty()
+                && armorType == null
+                && maxIncidenceAngle == null) {
             return VehicleExtendedConfig.EMPTY;
         }
         return new VehicleExtendedConfig(
@@ -379,8 +406,71 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                 cameraRelativeFireSoundDistance,
                 persistentChunkLease,
                 autoCollective,
-                Set.copyOf(helipadBones)
+                Set.copyOf(helipadBones),
+                armorType,
+                maxIncidenceAngle
         );
+    }
+
+    /**
+     * [RVP] 入射角上界（{@code rvp_max_incidence_angle}，2026-10-21）：顶层数字，单位度，
+     * 合法区间 [0,90]。配置后，命中该载具（含部件实体归并到根载具）的入射角在**记录点**即钳到
+     * {@code min(实际角, 上界)}——直击角度衰减（{@code damage_decay} 的 {@code angle} 分段）、
+     * 跳弹门槛判定（{@code bounce_incidence_angle}）、爆炸引信衰减与调试包统一使用钳后角度。
+     * 语义为该载具碰撞箱的角度上界（替代已撤销的 ERA 全局上界 {@code eraMaxIncidenceAngle}，
+     * 且覆盖面从"仅直击衰减"扩大到"跳弹同样受约束"）。未配置 = 90 = 不钳制；
+     * 方块命中无载具侧配置，恒不钳制。非法值载入时 WARN 并按未配置处理。
+     * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定与 isEnabled()，否则只配
+     * 此字段的载具配置会静默失效（§45 审计教训）。
+     */
+    private static Float parseMaxIncidenceAngle(JsonObject obj) {
+        if (!obj.has("rvp_max_incidence_angle")) {
+            return null;
+        }
+        JsonElement element = obj.get("rvp_max_incidence_angle");
+        if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
+            LOGGER.warn("[RVP-ImpactAngle] {} rvp_max_incidence_angle 必须为数字（度，[0,90]），已忽略",
+                    obj.has("name") ? obj.get("name").getAsString() : "未知载具");
+            return null;
+        }
+        float value = element.getAsFloat();
+        if (!Float.isFinite(value) || value < 0f || value > 90f) {
+            LOGGER.warn("[RVP-ImpactAngle] {} rvp_max_incidence_angle={} 越界（合法 [0,90]），已忽略",
+                    obj.has("name") ? obj.get("name").getAsString() : "未知载具", value);
+            return null;
+        }
+        return value;
+    }
+
+    /**
+     * [RVP] 装甲类型（{@code rvp_armor_type}，2026-10-20）：顶层字符串，值为 Forge 实体类型 ID
+     * （如 {@code ywzj_vehicle:wheeled_vehicle}）。配置后，其它武器弹药对该车的
+     * {@code direct_damage_factor} / {@code explosion_damage_factor} 载具倍率查表按该装甲类型 ID
+     * 进行（{@code vehicles} 未列装甲类型时回落 {@code vehicle_default}），实现
+     * "履带车按轮式装甲结算"一类需求；查表收口在 {@code RVP_DamageFactor.getFactor}，
+     * 直击/近炸/激光/爆炸四条路径统一生效。仅影响攻击方武器倍率查表；受击侧命中箱系数、
+     * 装甲（armor_min/max）与本车 {@code vehicle_explosion_damage_factor} 不受影响。
+     * 未配置/非法值返回 null（按真实实体类型查表）。
+     * 注意：本字段必须纳入 parseVehicle 的"全空即 EMPTY"早退判定与 isEnabled()，否则只配
+     * 此字段的载具配置会静默失效（§45 审计教训）。
+     */
+    private static ResourceLocation parseArmorType(JsonObject obj) {
+        if (!obj.has("rvp_armor_type")) {
+            return null;
+        }
+        JsonElement element = obj.get("rvp_armor_type");
+        if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            LOGGER.warn("[RVP-ArmorType] {} rvp_armor_type 必须为字符串（实体类型 ID，如 ywzj_vehicle:wheeled_vehicle），已忽略",
+                    obj.has("name") ? obj.get("name").getAsString() : "未知载具");
+            return null;
+        }
+        String raw = element.getAsString().trim();
+        ResourceLocation parsed = raw.isEmpty() ? null : ResourceLocation.tryParse(raw);
+        if (parsed == null) {
+            LOGGER.warn("[RVP-ArmorType] {} rvp_armor_type 非法实体类型 ID: \"{}\"，已忽略",
+                    obj.has("name") ? obj.get("name").getAsString() : "未知载具", raw);
+        }
+        return parsed;
     }
 
     /**
@@ -729,10 +819,24 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
              * [RVP] 舰船直升机停机坪骨骼名集合（{@code rvp_helipads}，2026-10-07）。
              * 空 = 该载具无停机坪；消费方 {@code org.ywzj.rvp.helidock.RVP_HeliDockManager}。
              */
-            Set<String> helipadBones
+            Set<String> helipadBones,
+            /**
+             * [RVP] 装甲类型（{@code rvp_armor_type}，2026-10-20）：null = 未配置（按真实实体类型）。
+             * 非 null 时攻击方武器的 direct_damage_factor / explosion_damage_factor 载具倍率
+             * 按该实体类型 ID 查表（收口 {@code RVP_DamageFactor.getFactor}）。
+             * 消费方 {@code RVP_VehicleExtendedConfigManager#getArmorTypeId}。
+             */
+            @Nullable ResourceLocation armorType,
+            /**
+             * [RVP] 入射角上界（{@code rvp_max_incidence_angle}，2026-10-21）：null = 未配置（90 不钳制）。
+             * 非 null 时命中该载具的入射角在记录点钳到 min(实际角, 上界)，直击角度衰减、跳弹门槛
+             * 判定、爆炸引信衰减与调试包统一使用钳后角度。消费方
+             * {@code RVP_VehicleExtendedConfigManager#getMaxIncidenceAngle}。
+             */
+            @Nullable Float maxIncidenceAngle
     ) {
         public static final VehicleExtendedConfig EMPTY = new VehicleExtendedConfig(
-                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of());
+                Set.of(), null, Set.of(), Map.of(), Map.of(), Map.of(), 1.0f, 0.0f, false, null, Set.of(), null, null);
 
         /**
          * [RVP] 自动总距模式参数（{@code rvp_auto_collective} 块）：
@@ -763,7 +867,9 @@ public final class RVP_VehicleExtendedConfigManager extends SimplePreparableRelo
                     || cameraRelativeFireSoundDistance > 0f
                     || persistentChunkLease
                     || autoCollective != null
-                    || !helipadBones.isEmpty();
+                    || !helipadBones.isEmpty()
+                    || armorType != null
+                    || maxIncidenceAngle != null;
         }
 
         public boolean hasPhysicsOnlyBones() {

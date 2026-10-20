@@ -77,7 +77,11 @@
           "type": "rvp:air_launched_projectile",
           "data": {
             "aircraft_id": "ywzj_vehicle:j16",
-            "rack_offset": {"x": 0.0, "y": -2.0, "z": 0.0},
+            "rack_offset": {
+              "x": 0.0,
+              "y": -2.0,
+              "z": 0.0
+            },
             "entry_distance_m": 1280.0,
             "exit_distance_m": 768.0,
             "release_altitude_above_impact_m": 256.0,

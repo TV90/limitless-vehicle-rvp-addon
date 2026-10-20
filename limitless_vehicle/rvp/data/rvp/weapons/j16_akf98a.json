@@ -1,7 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "AKF-98A GPS-CM",
-  "shoot_interval": 500,
+  "shoot_interval": 2000,
   "max_capacity": 2,
   "reload": {
     "time": 300,
@@ -42,7 +42,11 @@
   "rvp_fire_control_sensor_mode": "eo_ccip",
   "guidance_data": {
     "guidance_type": "GPS",
-    "gps_modes": ["SINGLE", "MULTI", "FAST"],
+    "gps_modes": [
+      "SINGLE",
+      "MULTI",
+      "FAST"
+    ],
     "guidance_tick_range": "[[5,inf]]",
     "max_guidance_angle": 90,
     "predict_target_pos": true,
@@ -64,11 +68,53 @@
       "explode": true,
       "damage": 80,
       "radius": 4,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 50
+    "direct_damage": 50,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "misc_data": {
     "ammo_radar_rcs_factor": [
@@ -89,7 +135,7 @@
           {
             "kind": "rvp_weapon",
             "weapon_id": "rvp:j16_akf98a_munition",
-            "count": 48,
+            "count": 28,
             "inherit_parent_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 0.45,
@@ -102,7 +148,7 @@
             "spread": {
               "mode": "canister",
               "canister_type": 1,
-              "canister_diff": 150.0,
+              "canister_diff": 300.0,
               "canister_distribution": "uniform",
               "canister_shape": "circle"
             }

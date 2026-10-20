@@ -2,18 +2,18 @@
   "type": "rvp:machinegun",
   "name": "12.7mm HMG",
   "shoot_interval": 200,
-  "max_capacity": 100,
+  "max_capacity": 30,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_machine_gun"
   },
   "fire_data": {
-    "spread": 1.0,
+    "spread": 0.5,
     "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
     "velocity": 10,
-    "gravity": -0.02,
+    "gravity": -0.01,
     "drag": 0.01,
     "rotate_to_motion": true
   },
@@ -36,13 +36,47 @@
     }
   },
   "collision_data": {
-    "direct_damage": 9,
+    "direct_damage": 13,
     "damage_decay": [
       {
+        "domain": "distance",
         "type": "linear",
         "start_distance": 0,
-        "end_distance": 256,
-        "min_factor": 0.35
+        "end_distance": 512,
+        "start_factor": 1.0,
+        "end_factor": 0.7
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
     ]
   },

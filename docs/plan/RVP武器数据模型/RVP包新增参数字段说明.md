@@ -197,6 +197,8 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse_trigger_distance` | 第二段触发：距离锁定目标 ≤ 阈值时满足（0 表示不按距离触发；仅在存在锁定目标实体或锁定坐标时可判定）。 |
 | `second_pulse_thrust` | 第二段推力（与 `mass` 决定加速度）。 |
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
+| `self_destruct_distance` | 自毁距离（米，2026-09-29）：沿弹道累计飞行路程达到该值即自毁。未配置按武器类别取默认——机枪/机炮（`MACHINEGUN`）默认 1024，其它类别 0（不自毁）；显式 `0` = 关闭（含显式关闭机枪默认）。 |
+| `self_destruct_explode` | 自毁行为（仅 `self_destruct_distance` 生效时有意义）：`false`（默认）= 弹体直接消失；`true` = 按弹药自身引信语义在精确越界点引爆（继承 ON_FUSE 子母弹等引信配置；无爆炸配置时退化为消失）。 |
 | `ignition_delay_tick` | 点火延迟，单位 tick；延迟内继承载具弹射速度（与本体弹仓弹射一致）。发动机实际点火时刻取 `max(cold_launch_time_tick, ignition_delay_tick)`；GPS PRESET 与冷发射窗口重叠时，窗口内一旦生成过 PRESET 制导速度，运动层会持续保留该接管方向，不再被冷发射竖直速度或单 Tick 制导抖动覆盖。带终端段且发射时已落入终端距离门的 PRESET 弹，也会等窗口结束后再切换终端 ARH。 |
 | `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；缺省或 JSON `null` 时使用下述默认大气表，显式空表、未命中区间或 value 非法时按 `1.0` 处理。 |
@@ -355,6 +357,23 @@ fixedWind = normalize(sin(angle), 0, -cos(angle))
 
 `projectile_data.max_speed`、`min_speed`、`constant_speed` 对机枪**不生效**（机枪只用 `velocity` + `gravity` + `drag`）。
 
+#### `torpedo_data` 鱼雷（`rvp:torpedo`，2026-10-06）
+
+写在武器 JSON 顶层 `torpedo_data` 对象（仅 `rvp:torpedo` 消费；其它武器类型写了不报错但无消费点）。未配置 = 水下行为全默认：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `water_speed` | 水中恒定航速（格/tick，即真实航速指标；默认 1.5 ≈ 30 米/秒）。水中速率只由此值绑定，不受空气段 `max_speed`/`constant_speed` 影响；≤0 防呆回默认。 | `1.5` |
+| `water_entry_lerp_tick` | 入水过渡时长（tick）：从入水瞬间实际速率线性过渡到 `water_speed`（模拟入水减速与螺旋桨起转），过渡期间方向不变；`0` 立即定速，负值按 0。 | `0` |
+| `depth_damping` | 俯仰自然摆平系数（被动深度保持）：`1.0` = 保持入水俯仰角（可配 `gravity_in_water` 模拟下沉/上浮弧线），有效域 [0,1]。 | `0`（立即压平） |
+| `water_entry_min_depth` | 有效入水深度（格）：实体中心上方该距离处仍为水方块才判"完全入水"，防贴水皮反复切换状态；负值回默认。 | `0.5` |
+| `require_aim_water` | 瞄水发射门：开启后瞄准线未命中流体方块则拒发不耗弹并提示"未瞄准水面"（飞机空投、甲板直射不受限）。 | `false` |
+| `require_aim_water_range` | 瞄水检测最大距离（格）；≤0 回默认。 | `150` |
+
+入水粒子/音效与水中尾迹写在 `effects_data`：`water_entry_particle`（入水水花粒子，默认 `minecraft:splash`，空串关闭）、`water_entry_sound`（入水音效 SoundEvent id，客户端本地按距离衰减，空串无声）、`water_trail_particle`/`water_trail_count`（水中尾迹，见 §1.8）。
+
+配套字段（写在别处）：水下爆炸伤害/半径见 `detonate_data.explosion_data` 的 `damage_in_water`/`radius_in_water`；水中尾迹粒子见 `effects_data` 的 `water_trail_particle`/`water_trail_count`。
+
 ### 1.6 `fuse_data` 引信
 
 | 字段 | 说明 |
@@ -443,12 +462,51 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `vehicle_default` | 对未单独列出的 `AbstractVehicle` 倍率，默认 `1` |
 | `vehicles` | 对象：键为实体类型 ID（如 `ywzj_vehicle:rotary_wing_vehicle`），值为倍率 |
 
+#### 载具侧 `rvp_armor_type` 装甲类型（2026-10-20）
+
+写在**载具 JSON 顶层**（`data/rvp/vehicles/<id>.json` 的 RVP 扩展字段，非武器侧）：
+
+```json
+"rvp_armor_type": "ywzj_vehicle:wheeled_vehicle"
+```
+
+- 语义：该载具被命中时，攻击方武器的 `direct_damage_factor` 与 `explosion_damage_factor` 里
+  `vehicles` 查表按**装甲类型实体 ID** 进行（`vehicles` 未列该 ID 时回落 `vehicle_default`），
+  等效于"这台履带车的装甲按轮式车类别结算"。
+- 生效范围：直击 / 近炸直伤 / 激光 / 武器侧爆炸倍率四条路径（查表收口
+  `RVP_DamageFactor.getFactor`）。**不影响**受击侧命中箱系数、装甲（armor_min/max）、
+  本车 `vehicle_explosion_damage_factor` 与 `player`/`living` 倍率。
+- 值必须为合法实体类型 ID（`namespace:path`）；非法值载入时 WARN 并按未配置处理；
+  未配置 = 行为与改动前完全一致。
+
+#### 载具侧 `rvp_max_incidence_angle` 入射角上界（2026-10-21）
+
+写在**载具 JSON 顶层**（`data/rvp/vehicles/<id>.json` 的 RVP 扩展字段，非武器侧）：
+
+```json
+"rvp_max_incidence_angle": 35
+```
+
+- 语义：命中该载具（含部件实体归并到根载具）时，入射角在**记录点**钳到
+  `min(实际角, 上界)`（单位度，合法区间 [0,90]）——该载具碰撞箱的角度上界，
+  替代已撤销的 ERA 全局上界 `eraMaxIncidenceAngle`。
+- 生效范围：**直击角度衰减（`damage_decay` 的 `angle` 分段）、跳弹门槛判定
+  （`bounce_incidence_angle`）、调试包**统一使用钳后角度——
+  跳弹同样受上界约束（上界 < 跳弹阈值时该载具上不会跳弹）。
+  爆炸伤害不消费入射角（2026-10-21 定版：入射角衰减仅作用于直击伤害）。
+- 未配置 = 90 = 不钳制（与改动前行为一致）；方块命中不适用（恒不钳制）；
+  非法值载入时 WARN 并按未配置处理。
+- 与 ERA 无关：无论命中骨是否挂 ERA 都按上界钳制（是否配 ERA 骨只影响 ERA 模块消耗逻辑）。
+
 #### `damage_decay` 规则
+
+> **作用范围（2026-10-21 定版）**：`angle` 入射角分段**仅作用于直击伤害**；碰撞引信爆炸只吃
+> `distance` 距离衰减（不再乘入射角衰减），空炸/近炸爆炸两者都不吃。
 
 | `domain` | 说明 |
 | --- | --- |
-| `distance`（默认） | 已飞行距离（米）；多条**相乘**。 |
-| `angle` | 入射角（度）；多条**分段互斥**。 |
+| `distance`（默认） | 已飞行距离（米）；多条**相乘**。直击伤害与碰撞引信爆炸伤害均生效。 |
+| `angle` | 入射角（度）；多条**分段互斥**。**仅直击伤害生效**。 |
 
 | `type` | 参数 | 说明 |
 | --- | --- | --- |
@@ -625,6 +683,13 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 常用短名：`none`、`smoke`、`flame`、`cloud`、`block`、`explosion`、`explosion_emitter`。也可写完整粒子 ID。
 
+#### 水中尾迹（`water_trail_*`，仅 `rvp:torpedo`）
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `water_trail_particle` | 水中尾迹粒子（原版粒子命名空间全名，如 `minecraft:bubble`），沿弹后生成、空气中不生成（水中观感即"雷迹气泡带"）。客户端本地判定入水状态生成，零网络包；空串 = 关闭。 | 空 |
+| `water_trail_count` | 水中尾迹每 tick 粒子数量；≤0 按默认处理。 | `2` |
+
 ### 1.9 `detonate_data` 落点效果与爆炸
 
 弹体在**方块命中、实体命中、引信/近炸/空爆结束**时，于落点执行爆炸与下列自定义效果（服务端）。
@@ -654,10 +719,13 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `damage` | 爆炸伤害。 |
 | `radius` | 爆炸半径（杀伤半径，同时决定客户端视觉档位）。 |
 | `proximity_fuze` / `proximity_radius` | 近炸引信；`fuse_data.proximity_radius` 优先，未写时可读此处。 |
+| `proximity_radius_ammo_factor` | （`fuse_data.proximity_radius_ammo_factor`，2026-10-05）对**弹药目标**的近炸触发窗口倍率：载具 AABB 动辄数格半轴而弹药 AABB 仅 1/16 格，等效触发距离几乎就是 `proximity_radius` 本身，高速交汇拦截窗口太小；弹药目标触发即无条件强制引爆（无伤害结算），本倍率只放大拦截触发窗口、不影响伤害。 | `1.0` |
+| `damage_in_water` | 水下爆炸伤害（2026-10-06 鱼雷批）：水中结算时替换 `damage`，**不受水衰减**；`explosion_damage_factor` 在水下组同样生效。未写 = 复用 `damage`。 |
+| `radius_in_water` | 水下爆炸杀伤半径。注意方块破坏不受本字段影响——原版水爆炸抗性天然吸收爆炸射线，水下基本炸不动固体方块（鱼雷建议 `destroy_block: false`）。 |
 | `destroy_block` | 是否破坏方块。 |
 | `potion_effects` | 爆炸药水效果数组（2026-09-22，条目字段同 `collision_data.hit_potion_effects`，见 §1.7）：爆炸结算后对杀伤半径内全体 `LivingEntity`（含载具乘员——乘员按各自离爆心距离判定）施加，**时长按离爆心距离线性衰减到 30%**：爆心 = `duration_ticks` 满时长 → 杀伤半径（`radius`）边缘衰减到 30%（`90t` 配 300t 的例子）；缩放后不足 20 tick 不施加。`destroy_radius` 双爆炸场景只随杀伤爆炸施加一次。与 `collision_data.hit_potion_effects`（直击满时长）独立；与 `potion_effect_data`（落点范围均匀时长）互补共存。 |
 | `explosion_sound` | 自定义爆炸音效事件 ID（2026-09-22，如 `rvp:114514`，需在 `sounds.json` 注册）。经默认爆炸视觉事件的 `preset_data` 通道下发客户端，替换按武器类别选择的 `mchr_explosion_*_near/far` 爆音；传播距离与音高抖动仍按原类别档案。未写 = 使用类别默认音色。 |
-| `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，`crater_depth_rules` 弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。<br>**强制即时路径（2026-09-20）**：RVP 弹体爆炸默认（`explosion.forceImmediateExplosionDestruction=true`，common 配置）**不再被本体 32 阈值截断进核爆炸批处理**——任意破坏半径都走 ≤32 的即时路径（GridCollectionTask + 单 tick 即时破坏，无烧灼方块替换、无跨 tick 服务端持续负载，表现为单 tick 一次性 hitch）；本体的爆炸与其它 mod 不受影响，配置改 false 恢复本体阈值行为。 |
+| `destroy_radius` | **独立地形破坏半径**（可选，`Float`，2026-09-20 新增）。三态语义：<br>• **未写（null，默认）**：继承 `radius`——单爆炸，行为与历史版本完全一致；<br>• **`0`**：不破坏地形（只伤人，`destroy_block` 视为 false）；<br>• **`> 0` 且 ≠ `radius`**：走「地形爆炸 A + 杀伤爆炸 B」双爆炸——A 按 `destroy_radius` 破坏方块（伤害 0，toml 配置 `explosion.craterDepthRules` 的弹坑深度按此半径生效），B 按 `radius` 只做实体杀伤与视觉档位（不碰方块）。`destroy_radius > radius` 时保留半径更大的本体视觉，另一发由视觉抑制机制屏蔽（`suppress_native_explosion_effect` 时两者都抑制，由视觉工厂接管）。<br>注：>32 的破坏半径走本体核爆炸批量路径（分 tick 破坏 + 烧灼转化），服务端负载显著高于 ≤32 的即时路径。<br>**强制即时路径（2026-09-20）**：RVP 弹体爆炸默认（`explosion.forceImmediateExplosionDestruction=true`，common 配置）**不再被本体 32 阈值截断进核爆炸批处理**——任意破坏半径都走 ≤32 的即时路径（GridCollectionTask + 单 tick 即时破坏，无烧灼方块替换、无跨 tick 服务端持续负载，表现为单 tick 一次性 hitch）；本体的爆炸与其它 mod 不受影响，配置改 false 恢复本体阈值行为。 |
 
 9M723 示例（杀伤 64、地形爆破 33）：
 
@@ -948,6 +1016,8 @@ RVP 武器（机枪/火箭/导弹/炸弹）爆炸的**默认视觉**，不需要
 | `releases` | 释放方案数组；见下表。为空则关闭子母弹。 |
 
 #### `releases[]` 单条释放方案
+
+`releases[]` 条目还支持 `spawn_forward_offset`（2026-10-03）：子体生成点相对"触发点"沿父弹弹道方向的**前推距离**（格），默认 `0`；仅当触发点提供了锚点时生效。
 
 | 字段 | 说明                                                                        |
 | --- |---------------------------------------------------------------------------|
@@ -1301,6 +1371,8 @@ velocity = worldDown × cos(theta) × launch_speed
   - 类似 `[[30,inf]]` 的范围可视为空对空导引头逻辑。
   - 类似 `[[inf,10]]` 或低空区间可视为空对地/近地导引头逻辑。
 
+| `relay_lost_self_destruct_ticks` | 中继滑行自毁上限（tick，2026-10-06，ARH/AIR）：中继段连续失援（无任何雷达照射指定目标）达到该值后自爆，避免死点滑行的弹群过久滞留空域；≤0 关闭。 | `300`（15 秒） |
+
 #### `guidance_type` 公开值
 
 | 枚举值 | 说明 |
@@ -1530,6 +1602,21 @@ SACLOS 反坦克导弹（半自动修正）：
 
 实体标记沿瞄准方向扫描锥形区域（`spot_range` × `spot_angle` 半角）；方块标记走直线射线，命中后生成标记点并（可选）写入 GPS 目标。
 
+#### `rvp_fire_support` 内联火力支援（2026-10-13 吊舱×火力支援整合）
+
+`targeting_pod_data.rvp_fire_support[]`：内联火力支援条目列表（空 = 该吊舱无打击能力）。方块标记即触发打击（冷却/距离/发数上限照常）；条目在加载期被转换为**运行时隐藏 profile**（`rvp:pod/<武器>/<条目>`），不进 datapack 快照，终端 UI 天然隔离。
+
+条目字段（`RVP_PodFireSupportEntryData`）：
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `weapon_id` | 投送武器资源 id（必填）。 | 空 |
+| `call_duration_ticks` | 呼叫引导时长（tick）：接受后进入 CALLING 阶段，期间可被玩家死亡/断线取消。 | — |
+| `rounds_per_call` | 单次呼叫投送的弹数。 | — |
+| `scatter_radius_m` | 命中点散布半径（米）；`point` 几何参数 `radius_m` 的默认值。 | — |
+| `inbound_heading_degrees` | 独立入场方向（度）：弹体从发射点飞向目标的航向；**空射投送建议配置**（默认 0 = 北）。 | `0` |
+| `delivery` | 投送方式数据（地射/空射内联条目，形态同 `air_launched_and_ground_launched_test.json` 的 delivery 蓝本）。 | — |
+
 #### `rvp:targetingpod` 示例
 
 ```json
@@ -1690,45 +1777,56 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 
 > 机制说明：直击命中 ERA 骨骼且伤害超过 `min_trigger_damage` 时消耗该骨骼（同骨骼冷却期内不再触发）并播放松散特效；附近爆炸（非直击）按爆炸半径阈值表按百分比破坏 ERA（≤5 格不破坏、5–8 格 10%、8–12 格 25%、12–18 格 50%、>18 格全毁，直击至少 1 块保底）。配置过 `physics_info.physics_only_bone(s)` 时，若命中只落在“仅物理”碰撞体上则本次伤害判定被禁用。
 >
-> **ERA 入射角上界（2026-09-20）**：直击命中挂有激活 ERA 的骨骼时，直击伤害衰减（`damage_decay` 的 `angle` 分段）所用入射角被钳到 `min(实际入射角, eraMaxIncidenceAngle)`（common 配置 `explosion.eraMaxIncidenceAngle`，默认 35 度，90 关闭）——模拟 ERA 对大角度入射的等效防护；跳弹判定（`bounce_incidence_angle`）使用原始角度不受影响。
+> **入射角上界（2026-10-21 改版）**：原 `eraMaxIncidenceAngle` 全局配置与"仅直击衰减受钳"语义已撤销。现为载具侧字段 `rvp_max_incidence_angle`（见上方载具侧小节）：命中该载具时入射角在记录点钳到 `min(实际角, 上界)`（默认 90=不钳制），**直击角度衰减与跳弹判定（`bounce_incidence_angle`）同受上界约束**，与 ERA 是否激活无关。
 
-### 2.4 主动防护系统（`rvp_aps`）
+### 2.4 主动防护系统（`bone_modules.<骨>.aps`，模块 `APS`）
 
-载具顶层 `rvp_aps` 对象，启用后自动探测并拦截来袭射弹。**启用条件**：`enabled: true` 且 `ammo_max > 0` 且 `spawn_part_id` 非空。
+写在 `bone_modules.<骨块名>` 条目的 `aps` 子对象（`modules` 数组需含 `"aps"`）。每个配置了 `aps` 的传感器骨骼拥有**一个拦截通道**（如 `aps_sensor_left` / `aps_sensor_right` 分侧覆盖），配多骨骼即多通道。
+
+**启用条件**：`launcher_part` 非空且 `ammo_max > 0`（无独立 enabled 开关）。工作流程：按 `scan_interval_tick` 周期扫描 `detect_radius` 内、速度处于 `[projectile_speed_min, projectile_speed_max]`、位于 `facing_part`/`facing_yaw` 定义的扇区内的来袭射弹 → `intercept_delay_tick` 延迟后拦截（消耗 1 发弹药，随后 `reload_one_tick` 补弹、`cooldown_tick` 通道冷却）。
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `enabled` | 总开关。 | `false` |
-| `ammo_max` | 拦截弹药上限（消耗车体弹药计数）。 | `0` |
-| `reload_one_tick` | 每发拦截弹药补充耗时（tick）。 | `600` |
-| `cooldown_tick` | 连续拦截之间的冷却（tick）。 | `20` |
-| `intercept_delay_tick` | 探测到目标到实际拦截的延迟（tick）。 | `10` |
-| `scan_interval_tick` | 探测扫描间隔（tick）。 | `1` |
+| `launcher_part` | 拦截弹发射部件 id（必填，空 = 通道不启用）。 | 空 |
+| `facing_part` | 朝向参考部件 id（扇区中心以其朝向为基准）。 | 空 |
+| `facing_yaw` | 扇区中心相对参考部件的偏航角（度）。 | `0.0` |
+| `scan_fov` | 探测扇区完整视场角（度，运行时按 ±半角判定）。 | `120.0` |
 | `detect_radius` | 探测半径（格）。 | `32.0` |
-| `intercept_radius` | 拦截生效半径（格）。 | `8.0` |
+| `intercept_radius` | 拦截生效半径（格，≥0.1）。 | `8.0` |
+| `ammo_max` | 拦截弹药上限（`0` = 通道不启用）。 | `0` |
+| `reload_one_tick` | 每发拦截弹药补充耗时（tick，≥1）。 | `600` |
+| `cooldown_tick` | 相邻两次拦截的通道冷却（tick，≥1）。 | `20` |
+| `intercept_delay_tick` | 探测到目标到实际拦截的延迟（tick，≥0）。 | `0` |
+| `scan_interval_tick` | 探测扫描间隔（tick，≥1）。 | `10` |
 | `projectile_speed_min` | 可拦截射弹最小速度。 | `1.0` |
-| `projectile_speed_max` | 可拦截射弹最大速度。 | `80.0` |
-| `animation_part_ids` | 拦截动画部件 id 列表（旋转/开盖动画）。 | `[]` |
-| `spawn_part_id` | 拦截弹生成部件 id（必填；缺省时取 `animation_part_ids[0]`）。 | `""` |
+| `projectile_speed_max` | 可拦截射弹最大速度（< min 时取 min）。 | `80.0` |
 | `exclude_owner_projectile` | 是否不拦截本车自己发射的射弹。 | `true` |
 
 ```json
-"rvp_aps": {
-  "enabled": true,
-  "ammo_max": 8,
-  "reload_one_tick": 600,
-  "cooldown_tick": 20,
-  "intercept_delay_tick": 10,
-  "scan_interval_tick": 1,
-  "detect_radius": 32.0,
-  "intercept_radius": 8.0,
-  "projectile_speed_min": 1.0,
-  "projectile_speed_max": 80.0,
-  "animation_part_ids": ["aps_turret"],
-  "spawn_part_id": "aps_muzzle",
-  "exclude_owner_projectile": true
+"bone_modules": {
+  "aps_sensor_right": {
+    "modules": ["aps"],
+    "aps": {
+      "launcher_part": "aps_r",
+      "facing_part": "turret",
+      "facing_yaw": 45.0,
+      "scan_fov": 120,
+      "detect_radius": 16.0,
+      "intercept_radius": 8.0,
+      "ammo_max": 4,
+      "reload_one_tick": 600,
+      "cooldown_tick": 20,
+      "intercept_delay_tick": 0,
+      "scan_interval_tick": 1,
+      "projectile_speed_min": 1.0,
+      "projectile_speed_max": 80.0,
+      "exclude_owner_projectile": true
+    }
+  }
 }
 ```
+
+> 历史注记（2026-10-21 改版）：本节旧版写的"载具顶层 `rvp_aps` + `enabled`/`spawn_part_id`/`animation_part_ids`"为过期 schema，现行实现即上文的骨模块 `aps` 子对象。
 
 ### 2.5 自动盘旋（`rvp_loiter_*`）
 
@@ -1739,14 +1837,9 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | `rvp_loiter_enabled` | 总开关。 | `false` |
 | `rvp_loiter_radius` | 盘旋半径（格）。 | `120.0` |
 | `rvp_loiter_altitude_offset` | 盘旋高度相对初始高度偏移（格）。 | `40.0` |
-| `rvp_loiter_terrain_clearance` | 距地形最低安全高度（格）。 | `30.0` |
-| `rvp_loiter_min_safe_altitude` | 全局最低安全高度（格）。 | `80.0` |
-| `rvp_loiter_fixed_wing_min_bank` | 固定翼最小坡度（度），决定固定翼最小盘旋半径。 | `30.0` |
 | `rvp_loiter_auto_on_takeoff` | 起飞后自动进入盘旋（固定翼同时自动启动引擎并满油门）。 | `false` |
-| `rvp_loiter_bank` | 盘旋坡度（度）。 | `25.0` |
-| `rvp_loiter_direction` | 盘旋方向：`right`（默认）或 `left`。 | `right` |
 
-> 爬升/转场/进场的阶段超时、地形采样间隔与范围、震荡半径扩张等**内部算法参数**已固化为常量（见源码 `RVP_UavLoiterTickService`），不再暴露为 JSON 可配置项。
+> **2026-10-06 精简**：旧版另有的 `rvp_loiter_terrain_clearance` / `rvp_loiter_min_safe_altitude` / `rvp_loiter_fixed_wing_min_bank` / `rvp_loiter_bank` / `rvp_loiter_direction` 五键已从 schema 删除（算法参数收敛为 `RVP_LoiterConfig` 常量），旧 JSON 多写的这些键被静默忽略。爬升/转场/进场阶段超时、地形采样间隔与范围、震荡半径扩张等内部算法参数同样已固化为常量（见源码 `RVP_UavLoiterTickService`）。
 
 ### 2.6 可部署 UAV（`deployable_uav_*`）
 
@@ -1799,6 +1892,15 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | `physics_info.physics_only_bone` | 单根“仅物理”骨骼名（与 `physics_only_bones` 合并读取）。 |
 | `physics_info.physics_only_bones` | 多根“仅物理”骨骼列表。配置后命中只落在这些骨骼上时，受击伤害判定被禁用（见 §2.3）。这些骨骼的碰撞盒会被移出 `vehicleCubeOBBs`，因此不显示在碰撞箱俯视图 UI 中；F3+B 调试渲染中会以**灰色线框**单独标出。 |
 | `structure_model` | 结构模型资源 id，同时被物理系统与 hitbox/ERA（§2.3）使用。 |
+| `physics_info.turn_depth_scale` | 舰船转向 depth 倍率（`RVP_VesselTurnDepthMixin` 逐字段读取；仅服务端）。未配置/非法 = `1.0` 不缩放。 |
+| `rvp_persistent_chunk_lease` | 该载具是否持续保活所在区块（`true` 启用）：服务端每 tick 提交本体临时区块票，仅影响加载，不影响渲染/碰撞/物理。 | `false` |
+
+#### 干扰物/观瞄/音频杂项
+
+| 字段 | 说明 | 默认值 |
+| --- | --- | --- |
+| `audio_info.camera_relative_fire_sound_distance` | 开火声相机相对 distance 因子（倍）。`0` = 关闭（保持本体原版定位播放）；`>0` = 启用，非骑乘可听半径 ≈ 该值 × 16 格，骑乘者声音恒渲染在相机 8 格内。 | `0` |
+| `rvp_helipads` | 舰船直升机停机坪骨骼名列表（顶层字符串数组或单字符串）。骨骼需存在于结构模型（具名骨 + cube 定坪位/尺寸），世界系 OBB 按舰船实时位姿现算；消费方为直升机着舰系统（`RVP_HeliDockManager`）。 | 空 |
 
 #### 武器槽位分组（写在武器条目内）
 
@@ -1808,6 +1910,8 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | --- | --- |
 | `modding_only_multi` | `true` 时该槽位为“仅 mod 使用”的多联挂架槽；要求条目内 `ids` 数组至少 2 个武器。 |
 | `merge_into_previous_slot` | `true` 时该槽位合并到上一槽位（不占独立循环位）。 |
+| `save_id` | 该槽位的存档标识字符串（`RVP_VehicleExtendedConfigManager` 按「部件 id + 槽位索引」登记）。用于多武器槽位在存档/改装工具侧的稳定标识，避免仅靠索引在改配置后错位。 | 空 |
+| `rvp_full_salvo_immune` | 该武器条目**免疫**所在武器站的 full_salvo 齐射接管（2026-10-05；未配置 = 本体原行为参与齐射）。 | `false` |
 
 ```json
 "weapons": [
@@ -1940,6 +2044,10 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 | `zoom_distance` / `zoom_air_distance` | 缩放中（载具镜/RVP 武器缩放/原版望远镜）的显式进入阈值（方块）；缺省沿用 `distance × 全局缩放系数`（系数见 §6.3 `lod.lodZoom*`）。`-1` 表示未配置。 | `-1` |
 
 > LOD 切换带滞后防抖：进入某级使用配置阈值，退回使用 `0.85 × 阈值`，避免边界抖动。
+
+#### `special_bone_effects[]` 屏骨条目尺寸档位（`ywzj_rvp_screen_size`，2026-10-14 座舱屏）
+
+配置了座舱屏（`texture` 填 `rvp:cockpit/<类型>`）的 `special_bone_effects[]` 条目可加自定义字段 `ywzj_rvp_screen_size`：屏纹理边长档位 `256` / `512` / `1024`（其它值归档到最近档；同 RL 多载具取最大）。缺省 `512`。显存占用 256 档 ≈ 256KB、512 档 ≈ 1MB、1024 档 ≈ 4MB。
 
 #### `special_bone_effects[]` 内 RVP 透明模式扩展
 
@@ -2153,7 +2261,14 @@ ERA 与全部骨骼模块统一写在 `bone_modules.<骨>` 条目（详见各模
 
 ---
 
-### 2.15 观瞄视角射弹原点分离（`rvp_sight_fire_disguise`，写在武器站字段内）
+### 2.15 观瞄 CRT 语法糖与射弹原点分离
+
+**`optical_sight_type` CRT 语法糖（2026-10-14/20，解析期归一）**：武器条目 `optical_sight_type` 支持两个非枚举糖值——
+`crt_ui`：关闭 CRT 屏幕后处理、保留 CRT 观瞄 HUD（不改写会因本体枚举无此值静默退化为 1x1 小点）；
+`crt_ui_operator`：在 `crt_ui` 基础上自动补 `rvp_optical_sight_follow_pitch: true`，让开镜相机挂点走炮口骨（xTurnGroup）跟随炮管俯仰（对齐本体 operator 的位置行为）。两者解析期均落成合法值 `"crt"`。
+`rvp_optical_sight_follow_pitch` 也可作为独立布尔字段显式配置（不写 = false）。
+
+#### 观瞄视角射弹原点分离（`rvp_sight_fire_disguise`，写在武器站字段内）
 
 启用后：玩家处于观瞄视角（SCOPE）操作本站开火时，实际弹体从**观瞄相机坐标**射出（方向不变），
 消除观瞄相机离炮闩枢轴过远带来的抵近射击偏差；客户端在前 `disguise_ticks` 内把弹体模型/曳光
@@ -2411,45 +2526,46 @@ UI 预设决定载具 HUD 布局。加载来源（`UIPresetManager`）：
 
 ## 5 Gunner 配置文件（`gunner_profiles`）
 
-Gunner（炮手 AI）配置文件，字段以源码 `GunnerProfile` 为准：
+Gunner（炮手 AI）配置文件，**v2 行为式 schema**（字段以源码 `RVP_GunnerProfileCompiler` 为准）：
 
-| 字段 | 说明 | 默认值 |
+```json
+{
+  "schema_version": 2,
+  "name": "air",
+  "faction": "friendly",
+  "behaviors": [
+    { "id": "main_target", "type": "rvp:primary_targeting", "priority": 500,
+      "config": { "target_types": ["vehicle", "player"], "gps_prefer_farthest": true,
+                  "search_radius": 320.0, "scan_interval_tick": 6 } }
+  ]
+}
+```
+
+- 顶层键：`schema_version`（2）/ `name` / `faction`（`friendly` / `enemy` / `team`）/ `behaviors[]`。不在顶层白名单里的未知键报错。
+- 行为条目：`id`（实例名）/ `type`（行为类型，见下表）/ `priority`（排序）/ `config`（该行为参数，蛇形键）。
+- 未配置某行为 = 该能力不启用；同类型多实例按 priority 协作。
+
+### 5.1 行为类型与 config 键
+
+| `type` | 用途 | `config` 键（默认值） |
 | --- | --- | --- |
-| `name` | 配置名（缺省用文件名）。 | `default` |
-| `faction` | 阵营：`friendly` / `enemy`（或 `hostile`）/ `team`（或 `faction`）。 | `friendly` |
-| `target_types` | 目标类型过滤：`vehicle` / `player` / `monster` / `living` / `rvp:missile`。 | `["rvp:missile","vehicle","monster","player"]` |
-| `gps_prefer_farthest` | 是否优先用 GPS 武器打击索敌范围内**最远**的目标（GPS 属远程点打击武器，默认优先打最远目标）。 | `true` |
-| `search_radius` | 索敌半径（格）。 | `96.0` |
-| `scan_interval_tick` | 目标扫描间隔（tick）。 | `10` |
-| `fire_window_deg` | 开火窗口角（度）：目标进入该角锥内才开火。 | `6.0` |
-| `lead_scale` | 提前量补偿系数。 | `1.0` |
-| `burst_fire_tick` | 单次点射持续（tick）。 | `6` |
-| `burst_rest_tick` | 点射间隔（tick）。 | `10` |
-| `countermeasure_range` | 应对来袭导弹的告警/规避半径（格）。 | `36.0` |
-| `countermeasure_cooldown_tick` | 反制动作冷却（tick）。 | `80` |
-| `engagement_net_cooldown_tick` | 组网智能拦截窗口（tick，2026-09-15）：同 faction 网络内已被任一 gunner 射击过的导弹在该窗口内沉入第二池**降权**（非禁选），使多台同阵营防空车的弹幕自动分配到不同来袭导弹上；`0` 关闭组网去重。 | `0` |
-| `allow_drive` | 是否允许 AI 驾驶本车。 | `true` |
-| `drive_pursuit_distance` | 追击目标距离（格）。 | `64.0` |
-| `drive_stop_distance` | 停车距离（格）。 | `12.0` |
-| `drive_stuck_check_tick` | 卡住检测间隔（tick）。 | `20` |
-| `drive_stuck_distance` | 卡住判定位移（格）。 | `1.0` |
-| `drive_recovery_tick` | 脱困倒车时长（tick）。 | `20` |
-| `rotary_cruise_altitude_min` | 旋翼机巡航高度下限（格）。 | `28.0` |
-| `rotary_cruise_altitude_max` | 旋翼机巡航高度上限（格）。 | `60.0` |
-| `fixedwing_cruise_altitude_min` | 固定翼巡航高度下限（格）。 | `150.0` |
-| `fixedwing_cruise_altitude_max` | 固定翼巡航高度上限（格）。 | `500.0` |
-| `fixedwing_combat_radius_min` | 固定翼作战半径下限（格）。 | `40.0` |
-| `fixedwing_combat_radius_max` | 固定翼作战半径上限（格）。 | `550.0` |
-| `ground_wander_enabled` | 地面 AI 是否允许漫游。 | `true` |
-| `ground_big_turn_interval_tick_min` | 地面大转弯间隔下限（tick）。 | `300` |
-| `ground_big_turn_interval_tick_max` | 地面大转弯间隔上限（tick）。 | `600` |
-| `ground_big_turn_angle_deg_min` | 地面大转弯角度下限（度）。 | `120.0` |
-| `ground_big_turn_angle_deg_max` | 地面大转弯角度上限（度）。 | `180.0` |
-| `ground_big_turn_duration_tick` | 地面大转弯持续（tick）。 | `40` |
-| `air_attack_phase_tick` | 空中攻击阶段持续（tick）。 | `200` |
-| `air_disengage_phase_tick` | 空中脱离阶段持续（tick）。 | `200` |
-| `air_initial_disengage_tick_min` | 首次脱离延迟下限（tick）。 | `300` |
-| `air_initial_disengage_tick_max` | 首次脱离延迟上限（tick）。 | `400` |
+| `rvp:ciws_targeting` | CIWS 反导索敌 | `scan_interval_tick`(1)、`target_cooldown_tick`(100) |
+| `rvp:primary_targeting` | 主目标索敌 | `target_types`(`["rvp:missile","vehicle","monster","player"]`)、`gps_prefer_farthest`(true)、`search_radius`(96.0)、`scan_interval_tick`(10)、`engagement_net_cooldown_tick`(100，同 faction 组网拦截去重窗口，`0` 关闭) |
+| `weapon_engagement` | 开火（点射/提前量/制导武器节奏）；`gps_prefer_farthest`、`engagement_net_cooldown_tick`、CIWS 冷却可从其它行为继承 | `fire_window_deg`(6.0)、`lead_scale`(1.0)、`burst_fire_tick`(6)、`burst_rest_tick`(10)、`guided_weapon_cooldown_tick`(100)、`ciws_target_cooldown_tick`(继承) |
+| `weapon_countermeasure` | 本体式干扰弹反制 | `range`(36.0)、`cooldown_tick`(80) |
+| `rvp_countermeasure` | RVP 自动反制（导弹威胁+雷达锁定） | `scan_interval_tick`(5)、`cooldown_tick`(100)、`missile_threat_range`(256.0)、`radar_lock_threat_range`(1024.0) |
+| `active_ecm` | 主动 ECM | `threat_range`(200.0) |
+| `smoke_evasion` | 烟雾规避驶入 | `scan_interval_tick`(10)、`hold_tick`(260)、`look_radius`(48.0) |
+| `sead_revenge` | SEAD 复仇（被雷达锁定后飞离→回旋→打雷达） | `threat_scan_interval_tick`(10)、`radar_lock_range`(1024.0)、`fly_away_tick`(100)、`reversal_tick`(160)、`lock_fire_tick`(40)、`timeout_tick`(400)、`cooldown_tick`(400) |
+| `stuck_recovery` | 卡住脱困（移动控制） | `check_interval_tick`(20)、`stuck_distance`(1.0)、`recovery_tick`(20) |
+| `ground_engagement_move` | 地面接敌机动（停车/观察/侧移） | `stop_distance`(12.0)、`hold_tick`(100)、`evade_tick_min`(140)、`evade_tick_max`(280)、`evade_yaw_deg`(55.0) |
+| `launcher_positioning` | 发射架定位（复用接敌机动逻辑，固定默认值） | 无可调键 |
+| `ground_patrol` | 地面巡逻大转弯（移动控制） | `big_turn_interval_tick_min`(300)、`big_turn_interval_tick_max`(600)、`big_turn_angle_deg_min`(120.0)、`big_turn_angle_deg_max`(180.0)、`big_turn_duration_tick`(40) |
+| `fixed_wing_combat_flight` | 固定翼战斗飞行（移动控制） | `cruise_altitude_min`(150.0)、`cruise_altitude_max`(500.0)、`combat_radius_min`(40.0)、`combat_radius_max`(550.0)、`attack_phase_tick`(200)、`disengage_phase_tick`(200)、`initial_disengage_tick_min`(300)、`initial_disengage_tick_max`(400) |
+| `rotary_wing_combat_flight` | 旋翼战斗飞行（移动控制） | `cruise_altitude_min`(28.0)、`cruise_altitude_max`(60.0)、`attack_phase_tick`(200)、`disengage_phase_tick`(200)、`initial_disengage_tick_min`(300)、`initial_disengage_tick_max`(400) |
+| `driver_supply` / `ownship_radar` / `external_radar` / `guided_weapon_support` | 弹药供给/本机雷达/外置雷达/制导支援等无参行为 | 无 `config` 键 |
+
+> 历史注记（2026-10-21 改版）：本节旧版为 v1 平铺键 schema（`target_types` 等写在文件顶层，另有 `countermeasure_range`、`countermeasure_cooldown_tick`、`allow_drive`、`drive_pursuit_distance`、`drive_stop_distance`、`drive_stuck_*`、`drive_recovery_tick`、`ground_wander_enabled`、`max_turn_degree_per_tick`、`laser_range`、`lock_min_height`、`required_item`、`rotary_cruise_altitude_*`、`fixedwing_cruise_altitude_*`、`fixedwing_combat_radius_*`、`ground_big_turn_*`、`air_attack_phase_tick`、`air_disengage_phase_tick`、`air_initial_disengage_tick_*`）——全部失效，现行键随所属行为写在 `behaviors[].config` 内（上表），键名亦有多处精简（如 `ground_big_turn_*`→`big_turn_*`、`air_initial_disengage_tick_*`→`initial_disengage_tick_*`）。
 
 ---
 

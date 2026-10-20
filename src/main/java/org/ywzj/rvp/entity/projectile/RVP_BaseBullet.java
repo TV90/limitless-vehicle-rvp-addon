@@ -84,6 +84,7 @@ import org.ywzj.rvp.weapon.effects.RVP_ExplosionVisualSuppression;
 import org.ywzj.rvp.weapon.effects.RVP_ProjectileParticleEffects;
 import org.ywzj.rvp.weapon.effects.RVP_TerrainOnlyExplosion;
 import org.ywzj.rvp.config.RVP_Config;
+import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
 import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
@@ -3562,15 +3563,19 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             this.discard();
             return;
         }
-        if (tryBounceFromEntityHit(result)) {
-            return;
-        }
         Vec3 velocity = getDeltaMovement();
         // 调用本体碰撞根解析方法，把 PartEntity 命中统一归并到固定翼/旋翼载具后再做空中目标判定。
         Entity impactTarget = ywzj_rvp$resolveCollisionRoot(entity);
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
-        rememberImpactIncidence(velocity, normal);
+        // [RVP] 入射角记录前置 + 载具上界钳制（2026-10-21，替代已撤销的 ERA 全局上界）：
+        // 上界取被命中根载具的 rvp_max_incidence_angle（未配置=90 不钳），记录点即钳制，
+        // 直击角度衰减/跳弹门槛/爆炸引信衰减/调试包统一消费钳后角度；跳弹判定同样受上界约束。
+        float impactAngleCap = ywzj_rvp$vehicleImpactAngleCap(impactTarget);
+        rememberImpactIncidence(velocity, normal, impactAngleCap);
+        if (tryBounceFromEntityHit(result, impactAngleCap)) {
+            return;
+        }
         boolean hbmFuseTriggered = RVP_RadarContactHelper.triggerHbmMissileFuze(entity, result.getLocation());
         if (!hbmFuseTriggered) {
             applyEntityHitDamage(entity, result);
@@ -3629,17 +3634,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     targetVehicle, collisionSegmentStart(), collisionSegmentEnd());
             hitboxMult = hitboxRes.factor();
         }
-        // 入射角上界前置（2026-09-20 用户需求）：命中的骨 OBB 挂有 ERA 且未失效时，
-        // 伤害衰减用的入射角钳到 min(实际角, eraMaxIncidenceAngle)——模拟 ERA 对大角度
-        // 的等效防护。仅影响直击角度衰减；跳弹判定在更早的碰撞阶段用现算角，数据流独立；
-        // lastImpactIncidenceAngleDeg 字段不被改写（调试包与爆炸引信衰减仍读原值）。
+        // 入射角已在记录点被命中载具的 rvp_max_incidence_angle 钳制（2026-10-21，替代已撤销
+        // 的 ERA 全局上界 eraMaxIncidenceAngle），此处直接取记录角度做角度衰减。
         float effectiveIncidence = lastImpactIncidenceAngleDeg;
-        if (hitboxRes != null && hitboxRes.era()
-                && !hitboxRes.destroyedModules().contains(org.ywzj.rvp.vehicle.BoneModuleType.ERA)
-                && !Float.isNaN(effectiveIncidence)) {
-            effectiveIncidence = Math.min(effectiveIncidence,
-                    org.ywzj.rvp.config.RVP_Config.getEraMaxIncidenceAngle());
-        }
         float distanceMult = distanceDecayFactor();
         float incidenceMult = incidenceDecayFactor(effectiveIncidence);
         float penetrationMult = penetrationDamageFactor();
@@ -3774,12 +3771,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return RVP_DamageDecayUtil.distanceFactor(rules, decaySampleDistanceM());
     }
 
-    /** 无参形态：按命中时记录的原始入射角取角度衰减（调试/爆炸引信等仍读原始值）。 */
-    protected float incidenceDecayFactor() {
-        return incidenceDecayFactor(lastImpactIncidenceAngleDeg);
-    }
-
-    /** 带角形态：ERA 入射角上界前置（2026-09-20）由调用方先钳好角度再传入。 */
+    /** 带角形态：角度已在记录点按命中载具 rvp_max_incidence_angle 钳制，调用方直接传记录值。 */
     protected float incidenceDecayFactor(float incidenceAngleDeg) {
         List<RVP_DamageDecayRuleData> rules = damageDecayRules();
         if (rules.isEmpty()) {
@@ -3789,17 +3781,37 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     protected void rememberImpactIncidence(Vec3 velocity, Vec3 surfaceNormal) {
-        lastImpactIncidenceAngleDeg = RVP_BounceUtil.incidenceAngleDegrees(velocity, surfaceNormal);
+        rememberImpactIncidence(velocity, surfaceNormal, 90f);
     }
 
-    protected float impactDecayFactor() {
-        return distanceDecayFactor() * incidenceDecayFactor();
+    /**
+     * [RVP] 带上界形态（2026-10-21，替代已撤销的 ERA 全局上界）：载具命中路径在记录点即钳制，
+     * {@code min(实际角, 上界)}——直击角度衰减/跳弹门槛/爆炸引信衰减/调试包统一消费钳后角度。
+     * 2 参形态（方块路径）上界恒 90，行为不变。
+     */
+    protected void rememberImpactIncidence(Vec3 velocity, Vec3 surfaceNormal, float maxAngleDeg) {
+        float raw = RVP_BounceUtil.incidenceAngleDegrees(velocity, surfaceNormal);
+        lastImpactIncidenceAngleDeg = maxAngleDeg >= 90f ? raw : Math.min(raw, maxAngleDeg);
     }
 
-    protected float computeDamage(boolean headshot) {
-        float base = headshot ? damage * this.headShot : damage;
-        return base * impactDecayFactor();
+    /** [RVP] 命中目标的入射角上界（2026-10-21）：根载具查 rvp_max_incidence_angle，其余恒 90（不钳）。 */
+    private float ywzj_rvp$vehicleImpactAngleCap(Entity impactTarget) {
+        return impactTarget instanceof AbstractVehicle vehicle
+                ? RVP_VehicleExtendedConfigManager.getMaxIncidenceAngle(vehicle)
+                : 90f;
     }
+
+    /**
+     * [RVP] 供子类（客户端弹跳预测 {@code RVP_BulletEntity.predictBounceBeforeMotion}）使用的
+     * 上界入口：内部先做碰撞根归并再查上界，与服务端 {@code handleEntityImpact} 判定一致。
+     */
+    protected float ywzj_rvp$impactAngleCapFor(@Nullable Entity entity) {
+        return ywzj_rvp$vehicleImpactAngleCap(ywzj_rvp$resolveCollisionRoot(entity));
+    }
+
+    // [RVP] 2026-10-21 清理：impactDecayFactor（距离×角度组合）与 computeDamage（全库零调用的
+    // 死方法）已删——入射角衰减仅作用于直击伤害（applyEntityHitDamage 内 incidenceMult），
+    // 碰撞引信爆炸只乘 distanceDecayFactor，不再存在"距离×角度"组合衰减的消费方。
 
     /** Damage scale from prior penetrations: mult^penetrationEventCount (first hit = full damage). */
     protected float penetrationDamageFactor() {
@@ -3866,6 +3878,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * Apply ricochet when incidence angle and target type allow it. Safe on client for prediction.
      */
     protected boolean tryApplyBounce(Vec3 hitLocation, Vec3 surfaceNormal) {
+        return tryApplyBounce(hitLocation, surfaceNormal, 90f);
+    }
+
+    /**
+     * [RVP] 带上界形态（2026-10-21）：跳弹门槛比较角 = min(现算入射角, 载具入射角上界)——
+     * 上界来自被命中载具的 rvp_max_incidence_angle（未配置/方块路径=90 不钳），
+     * 保留 {@code meetsIncidenceThreshold} 的"minIncidence≤0 不设门槛"语义。
+     */
+    protected boolean tryApplyBounce(Vec3 hitLocation, Vec3 surfaceNormal, float impactAngleCap) {
         syncBounceBudgetFromConfig();
         if (bounceLeft <= 0 || getDeltaMovement().lengthSqr() <= 0.05) {
             return false;
@@ -3874,7 +3895,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         float minIncidence = config != null ? config.getBounceIncidenceAngle() : bounceIncidenceAngleMin;
         float strength = config != null ? config.getBounceStrength() : bounceStrength;
         Vec3 velocity = getDeltaMovement();
-        if (!RVP_BounceUtil.meetsIncidenceThreshold(velocity, surfaceNormal, minIncidence)) {
+        float incidence = RVP_BounceUtil.incidenceAngleDegrees(velocity, surfaceNormal);
+        if (minIncidence > 0f && Math.min(incidence, impactAngleCap) < minIncidence) {
             return false;
         }
         Vec3 normal = surfaceNormal.normalize();
@@ -3916,7 +3938,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return true;
     }
 
-    protected boolean tryBounceFromEntityHit(BulletHitResult result) {
+    protected boolean tryBounceFromEntityHit(BulletHitResult result, float impactAngleCap) {
         Entity entity = result.getEntity();
         if (!isBounceEnabledForEntity(entity)) {
             return false;
@@ -3924,7 +3946,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 velocity = getDeltaMovement();
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
-        if (!tryApplyBounce(result.getLocation(), normal)) {
+        if (!tryApplyBounce(result.getLocation(), normal, impactAngleCap)) {
             return false;
         }
         onBounceApplied();
@@ -4253,7 +4275,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 default -> explosion.damage;
             };
             if (kind == FuseDetonation.NORMAL && !Float.isNaN(lastImpactIncidenceAngleDeg)) {
-                damage *= impactDecayFactor();
+                // [RVP] 2026-10-21 用户定版：入射角衰减仅作用于直击伤害——爆炸伤害只保留
+                // 距离衰减分量，不再乘 incidenceDecayFactor（原 impactDecayFactor = 距离×角度）。
+                damage *= distanceDecayFactor();
             }
             radius = switch (kind) {
                 case AIRBURST -> rvpData.resolveAirburstExplosionRadius();

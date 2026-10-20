@@ -22,7 +22,7 @@
     "fuel_mass": 12,
     "thrust": 71.5,
     "motor_burn_time": 50,
-    "drag_coefficient": 0.00001,
+    "drag_coefficient": 1e-05,
     "rvp_induced_drag": 0.0001,
     "inherit_vehicle_velocity": true,
     "turning_factor": {
@@ -53,15 +53,63 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 30,
-      "radius": 6,
+      "damage": 20,
+      "radius": 5,
       "proximity_fuze": true,
       "proximity_radius": 0,
-      "destroy_block": true
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 500
+    "direct_damage": 600,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    },
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "misc_data": {
     "ammo_radar_rcs_factor": [

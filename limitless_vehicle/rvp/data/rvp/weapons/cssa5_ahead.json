@@ -2,7 +2,7 @@
   "type": "rvp:machinegun",
   "name": "PG-630 30mm AAA [AHEAD]",
   "recoil": 0.1,
-  "shoot_interval": 20,
+  "shoot_interval": 50,
   "max_capacity": 150,
   "reload": {
     "time": 120,
@@ -31,25 +31,65 @@
   },
   "detonate_data": {
     "explosion_data": {
-      "explode": false,
+      "explode": true,
       "damage": 10,
       "radius": 1,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
     }
   },
   "collision_data": {
     "living_penetration": 0,
     "wall_penetration": 0,
     "bounce": 0,
-    "direct_damage": 30,
+    "direct_damage": 15,
     "damage_decay": [
       {
+        "domain": "angle",
         "type": "linear",
-        "start_distance": 0,
-        "end_distance": 256,
-        "min_factor": 0.25
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
       }
-    ]
+    ],
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    }
   },
   "fuse_data": {
     "programmable_airburst": true,

@@ -54,7 +54,11 @@
   "fire_control_sensor_type_override": "rf",
   "guidance_data": {
     "guidance_type": "GPS",
-    "gps_modes": ["SINGLE", "MULTI", "RADAR"],
+    "gps_modes": [
+      "SINGLE",
+      "MULTI",
+      "RADAR"
+    ],
     "terminal_guidance": {
       "guidance_type": "ARH",
       "guidance_start_dist": 150,
@@ -65,7 +69,6 @@
       "predict_target_pos": true,
       "enable_inertial_guidance": true
     },
-
     "guidance_tick_range": "[[40,inf]]",
     "max_guidance_angle": 90,
     "predict_target_pos": false,
@@ -106,7 +109,15 @@
       "radius": 64,
       "proximity_fuze": false,
       "destroy_block": true,
-      "destroy_radius": 33
+      "destroy_radius": 33,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     },
     "visual_effect_data": [
       {
@@ -238,7 +249,41 @@
     }
   ],
   "collision_data": {
-    "direct_damage": 80
+    "direct_damage": 80,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "misc_data": {
     "ammo_radar_rcs_factor": [

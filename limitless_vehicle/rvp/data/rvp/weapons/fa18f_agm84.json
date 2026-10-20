@@ -2,7 +2,7 @@
   "type": "rvp:missile",
   "name": "AGM-84 ARH-ASM (FA-18F)",
   "name_CN": "AGM-84 主动雷达制导反舰导弹（FA-18F）",
-  "shoot_interval": 500,
+  "shoot_interval": 1000,
   "max_capacity": 4,
   "life": 2400,
   "reload": {
@@ -89,7 +89,41 @@
     }
   },
   "collision_data": {
-    "direct_damage": 900
+    "direct_damage": 900,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "seeker_color": "0xFFFFFF",
   "fire_control_sensor_type_override": "rf"

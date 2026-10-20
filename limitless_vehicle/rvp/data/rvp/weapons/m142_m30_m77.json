@@ -33,25 +33,66 @@
   "detonate_data": {
     "explosion_data": {
       "explode": true,
-      "damage": 10,
-      "radius": 1,
-      "destroy_block": false
+      "damage": 25,
+      "radius": 2,
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 2.0,
+          "ywzj_vehicle:rotary_wing_vehicle": 2.0,
+          "ywzj_vehicle:fixed_wing_vehicle": 2.0
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 300,
+    "direct_damage": 25,
     "direct_damage_factor": {
-      "player": 0.6,
-      "living": 0.8,
-      "vehicle_default": 5.0,
+      "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:tracked_vehicle": 5.0,
-        "ywzj_vehicle:wheeled_vehicle": 5.0
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }
     },
     "living_penetration": 0,
     "wall_penetration": 0,
-    "bounce": 0
+    "bounce": 0,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "name_CN": "M77 反装甲子弹药"
 }

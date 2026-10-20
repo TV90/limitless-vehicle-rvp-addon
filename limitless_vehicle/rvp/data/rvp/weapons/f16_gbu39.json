@@ -2,7 +2,7 @@
   "type": "rvp:bomb",
   "name": "GBU-39 SDB (GPS)",
   "recoil": 0,
-  "shoot_interval": 70,
+  "shoot_interval": 200,
   "fire_control_sensor_type_override": "eo",
   "rvp_fire_control_sensor_mode": "eo_ccip",
   "max_capacity": 8,
@@ -35,7 +35,11 @@
       "chaff_resistance": 0.5
     },
     "guidance_type": "GPS",
-    "gps_modes": ["SINGLE", "MULTI", "FAST"],
+    "gps_modes": [
+      "SINGLE",
+      "MULTI",
+      "FAST"
+    ],
     "guidance_tick_range": "[[0,inf]]",
     "max_guidance_angle": 180,
     "predict_target_pos": true,
@@ -51,12 +55,54 @@
     "explosion_data": {
       "explode": true,
       "damage": 300,
-      "radius": 8,
-      "destroy_block": true
+      "radius": 6,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.9,
+          "ywzj_vehicle:wheeled_vehicle": 1.2,
+          "ywzj_vehicle:vessel_vehicle": 2.0
+        }
+      }
     }
   },
   "collision_data": {
-    "direct_damage": 10
+    "direct_damage": 10,
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
   },
   "fuse_data": {},
   "fire_data": {
