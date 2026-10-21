@@ -17,6 +17,25 @@ public final class RVP_PIPAttackAngleController {
     private RVP_PIPAttackAngleController() { }
 
     /**
+     * 估计攻角双轴执行器在响应受限时需要的目标前视 Tick 数。
+     *
+     * <p>这不是把有效惯量当作真实刚体参数，而是把已有的姿态响应和质量降阶系数转换为
+     * 很小的有限时域补偿；仅在实际 {@link Result#responseLimited()} 时由外层调用，避免
+     * 正常状态对恒速 PIP 额外加提前量。</p>
+     */
+    public static double estimateResponseLeadTicks(Vec3 velocity,
+                                                    RVP_AeroSteeringLimits limits,
+                                                    double mass) {
+        if (!validDirection(velocity) || limits == null || !limits.attackAngleEnabled()) {
+            return 0.0D;
+        }
+        double response = Mth.clamp(
+                RVP_AttackAngleInertiaModel.response(velocity.length(), limits), 0.0D, 1.0D);
+        double inertia = RVP_AttackAngleInertiaModel.effectiveInertia(mass);
+        return Mth.clamp(1.0D + inertia * (1.0D - response), 0.0D, 3.0D);
+    }
+
+    /**
      * @param steering 本 Tick 实际姿态响应与攻角裁决结果，尚未写入实体
      * @param bodyCommand 送入原攻角求解器的机头指令方向
      * @param requestedVelocity 外环希望达到的速度方向及原速率
@@ -59,7 +78,8 @@ public final class RVP_PIPAttackAngleController {
         double speed = velocity.length();
         Vec3 axis = velocity.normalize();
         // 调用本项目有限方向判据，使控制器和执行器对缺失机头采用同一速度轴回退。
-        state = state.sanitized();
+        // 调用双轴状态极点脱离入口：PIP 首次给出水平指令时沿目标水平投影选定转弯平面。
+        state = state.sanitized().reanchorPoleYaw(desiredDirection);
         // 调用本项目旧航迹插值作为外环请求；显式 G 下保留完整期望方向。
         Vec3 request = limits.rvpMaxGs() != null ? desiredDirection
                 : RVP_TrajectorySteeringMath.applyTurningFactor(

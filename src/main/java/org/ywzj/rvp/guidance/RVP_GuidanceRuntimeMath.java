@@ -15,6 +15,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TrajectorySteeringMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PIPAttackAngleController;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PredictiveInterceptMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
@@ -42,6 +43,11 @@ public final class RVP_GuidanceRuntimeMath {
         if (target == null) {
             return false;
         }
+        // 调用本项目弹体的目标运动采样器；PIP/PRESET 共用同一份速度与短时加速度历史，
+        // 避免不同制导分支分别读取实体状态而产生一个 Tick 的预测相位差。
+        RVP_TargetMotionState targetMotion = entity != null && entity.isAlive()
+                ? projectile.updateGuidanceTargetMotion(entity, target)
+                : RVP_TargetMotionState.stationary(target);
         // 弹道导弹（PRESET 三段式）分支：GPS 制导 + preset_cruise_altitude > 0 时接管全程制导。
         // 与本体 PRESET 一致，不参与 track envelope / guidance angle 门限检查。
         // 冷发射交接（2026-10-05 定版，纯 fishking 20b76ac5+31c0c988 行为）：PRESET 从
@@ -51,7 +57,7 @@ public final class RVP_GuidanceRuntimeMath {
         RVP_PresetBallisticProfile preset = context.active().presetBallistic();
         if (preset != null && preset.active()
                 && context.active().guidanceType() == RVP_EnumGuidanceType.GPS) {
-            return applyPresetBallistic(context, target, preset);
+            return applyPresetBallistic(context, target, targetMotion, preset);
         }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
         boolean irGrace = entity != null
@@ -169,9 +175,11 @@ public final class RVP_GuidanceRuntimeMath {
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
         } else if (!isTopAttack && entity != null && canUsePredictiveIntercept(context)) {
+            Vec3 pipTarget = loftedTarget != null ? loftedTarget : target;
+            RVP_TargetMotionState pipMotion = targetMotion.withPosition(pipTarget);
             // 调用纯 PIP 几何求解一次，保留正根/回退状态供控制器和诊断共用。
             intercept = RVP_PredictiveInterceptMath.solve(projectile.position(), current,
-                    loftedTarget != null ? loftedTarget : target, entity.getDeltaMovement());
+                    pipMotion.position(), pipMotion.velocity(), pipMotion.effectiveAcceleration());
             branch = intercept.usable() ? "PIP" : "PIP_FALLBACK_PURSUIT";
             // 调用既有方向插值；攻角开启时 factor=1，此处仅生成完整期望航迹。
             next = intercept.usable() ? blendDirection(current,
@@ -187,6 +195,34 @@ public final class RVP_GuidanceRuntimeMath {
                 pipControl = RVP_PIPAttackAngleController.solve(current, projectile.getAttackAngleState(), next,
                         limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile),
                         RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+                if (pipControl.responseLimited()
+                        && (pipMotion.velocity().lengthSqr() > 1.0E-8
+                        || pipMotion.effectiveAcceleration().lengthSqr() > 1.0E-8)) {
+                    double responseLead = RVP_PIPAttackAngleController.estimateResponseLeadTicks(
+                            current, limits, RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+                    if (responseLead > 0.0D && intercept.timeTicks() > responseLead) {
+                        // 控制器实际受限时，把目标快照前移一个很短的执行器响应窗，再重算一次 PIP；
+                        // 正常可达时不额外加提前量，避免破坏原恒速交会几何。
+                        RVP_TargetMotionState responseMotion = new RVP_TargetMotionState(
+                                pipMotion.predictPosition(responseLead),
+                                pipMotion.predictVelocity(responseLead),
+                                pipMotion.acceleration(), pipMotion.confidence()).sanitized();
+                        RVP_PredictiveInterceptMath.Solution responseIntercept =
+                                RVP_PredictiveInterceptMath.solve(projectile.position(), current,
+                                        responseMotion.position(), responseMotion.velocity(),
+                                        responseMotion.effectiveAcceleration());
+                        if (responseIntercept.usable()) {
+                            intercept = responseIntercept;
+                            next = blendDirection(current,
+                                    intercept.point().subtract(projectile.position()), speed, steeringFactor);
+                            pipControl = RVP_PIPAttackAngleController.solve(current,
+                                    projectile.getAttackAngleState(), next, limits,
+                                    RVP_ProjectileMotion.resolvePIPMotorState(projectile),
+                                    RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+                            branch = "PIP_ATTACK_ANGLE_RESPONSE";
+                        }
+                    }
+                }
                 // 调用本项目单次结果写回，禁止出口再次积分攻角或再次施加旧速度 blend。
                 next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, pipControl.steering());
                 pipAttackApplied = true;
@@ -223,6 +259,7 @@ public final class RVP_GuidanceRuntimeMath {
     private static boolean applyPresetBallistic(
             RVP_GuidanceRuntimeContext context,
             Vec3 target,
+            RVP_TargetMotionState targetMotion,
             RVP_PresetBallisticProfile preset
     ) {
         RVP_BaseBullet projectile = context.projectile();
@@ -232,10 +269,13 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.rememberGuidancePos(target);
         projectile.setGuidanceTargetPos(target);
 
+        Vec3 movingTarget = resolvePresetMovingTarget(
+                projectile.position(), target, targetMotion, projectile.getMotionSpeedReference());
+
         if (!projectile.hasPresetProfileInitialized()) {
             Vec3 launch = projectile.getVirtualMidcourseLaunchPosition();
-            Vec3 ascentPos = computePresetAscentPos(projectile.position(), target, launch, preset);
-            Vec3 overheadPos = new Vec3(target.x, launch.y + preset.cruiseAltitude(), target.z);
+            Vec3 ascentPos = computePresetAscentPos(projectile.position(), movingTarget, launch, preset);
+            Vec3 overheadPos = new Vec3(movingTarget.x, launch.y + preset.cruiseAltitude(), movingTarget.z);
             projectile.initializePresetProfile(launch, ascentPos, overheadPos);
         }
         Vec3 ascentPos = projectile.getPresetAscentPos();
@@ -261,15 +301,15 @@ public final class RVP_GuidanceRuntimeMath {
                         context.data().getProjectileVelocity(), projectile.getY(), factor);
         Vec3 next;
         if (shouldBeginPresetDive(
-                projectile.position(), target, launchPos, current, preset, presetLimits)) {
+                projectile.position(), movingTarget, launchPos, current, preset, presetLimits)) {
             next = steerPresetTerminal(
-                    current, projectile.position(), target, speed, steeringFactor);
+                    current, projectile.position(), movingTarget, speed, steeringFactor);
         } else {
             // 弹道导弹抛物线制导：上升+中段合一。整条弹道是一条对称抛物线弧，
             // 最高点（apogee）位于弹道水平中段，爬升/下降角按射程自适应保持平缓，
             // 无陡直线爬升、尖顶与平飞段（弹道导弹形态而非巡航导弹形态）。
             next = steerPresetBallisticArc(
-                    current, projectile.position(), target, launchPos, preset, speed, steeringFactor);
+                    current, projectile.position(), movingTarget, launchPos, preset, speed, steeringFactor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
@@ -282,6 +322,26 @@ public final class RVP_GuidanceRuntimeMath {
         projectile.markPresetGuidanceMotionAppliedThisTick();
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
+    }
+
+    /**
+     * 为 PRESET 路点加入有限的目标运动提前量。
+     *
+     * <p>路点只需要覆盖“导弹抵达当前水平距离”的时间窗；每 Tick 重新计算，
+     * 因而不会把长时间恒加速度外推固化到整条弹道。目标没有实体历史时退化为固定点。</p>
+     */
+    private static Vec3 resolvePresetMovingTarget(
+            Vec3 projectilePosition, Vec3 target, RVP_TargetMotionState motion, double speed) {
+        if (projectilePosition == null || target == null || motion == null) {
+            return target;
+        }
+        double dx = target.x - projectilePosition.x;
+        double dz = target.z - projectilePosition.z;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        double referenceSpeed = Math.max(1.0D, Double.isFinite(speed) ? speed : 1.0D);
+        double leadTicks = Mth.clamp(horizontalDistance / referenceSpeed, 0.0D, 60.0D);
+        Vec3 predicted = motion.predictPosition(leadTicks);
+        return RVP_BallisticTrajectoryMath.isFinite(predicted) ? predicted : target;
     }
 
     /**

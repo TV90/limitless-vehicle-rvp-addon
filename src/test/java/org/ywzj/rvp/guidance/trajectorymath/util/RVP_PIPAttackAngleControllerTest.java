@@ -66,6 +66,22 @@ class RVP_PIPAttackAngleControllerTest {
         }
     }
 
+    /** 竖直点火首 Tick 的水平分量必须沿目标侧脱离，不能先落入载具前向的固定偏航平面。 */
+    @Test
+    void exitsVerticalPoleTowardDesiredHorizontalDirection() {
+        Vec3 velocity = new Vec3(0, 2, 0);
+        Vec3 desired = new Vec3(1, 2, -1);
+        var state = new RVP_AttackAngleState(-90, 0, 0, 0);
+        var result = RVP_PIPAttackAngleController.solve(
+                velocity, state, desired, limits(0.5),
+                new RVP_PropulsionMath.MotorState(true, 0.4, 100), 100);
+
+        assertTrue(result.steering().velocity().x > 0.0);
+        assertTrue(result.steering().velocity().z < 0.0);
+        assertTrue(result.predictedVelocity().z < 0.0);
+        assertEquals(-135.0, result.steering().state().yawDeg(), 1.0E-6);
+    }
+
     @Test
     void respectsGTurnRateAndBodyReachabilityInThreeDimensions() {
         Vec3 velocity = new Vec3(1, 2, 3).normalize().scale(SPEED);

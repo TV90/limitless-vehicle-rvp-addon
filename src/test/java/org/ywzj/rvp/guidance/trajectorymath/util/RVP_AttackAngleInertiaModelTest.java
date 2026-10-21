@@ -91,6 +91,18 @@ class RVP_AttackAngleInertiaModelTest {
         assertEquals(0, vertical.yawRateDeg(), 1e-8);
     }
 
+    /** 竖直冷发射首次收到水平指令时，必须沿指令水平投影离开极点，不能继承任意前向偏航。 */
+    @Test
+    void reanchorsVerticalPoleToDesiredHorizontalPlane() {
+        var pole = new RVP_AttackAngleState(-90, 0, 0, 0);
+        var desired = new Vec3(1, 2, -1);
+        var reanchored = pole.reanchorPoleYaw(desired);
+
+        assertEquals(-135.0, reanchored.yawDeg(), 1e-8);
+        assertEquals(0.0, reanchored.yawRateDeg(), 1e-8);
+        assertEquals(-90.0, reanchored.pitchDeg(), 1e-8);
+    }
+
     /** 三维圆锥硬限幅同时耗散边界角速度，极端残余姿态也不能产生 NaN。 */
     @Test
     void coneSaturationAbsorbsRatesAndZeroSpeedStopsActuator() {

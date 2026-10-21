@@ -10,6 +10,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
 
 /**
  * 从 RVP 实体制导/运动链抽出的纯虚拟弹道 Tick 编排器。
@@ -60,7 +61,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
                 parameters.altitudeDragFactor(),
                 parameters.gravity());
 
-        Vec3 target = guidance.fixedTargetPosition();
+        Vec3 target = resolveGuidanceTarget(state.position(), velocity, guidance);
         // 调用本项目虚拟参数投影，构造与实体链同口径的气动转向限制快照。
         RVP_AeroSteeringLimits aeroLimits = parameters.aeroSteeringLimits();
         RVP_AeroSteeringSolution steeringSolution;
@@ -130,9 +131,9 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
         RVP_AeroSteeringLimits limits = parameters.aeroSteeringLimits();
         Vec3 desired = guidance.preset() != null && guidance.preset().cruiseAltitude() > 0.0
                 ? RVP_BallisticTrajectoryMath.resolvePresetBallisticDirection(state.position(), velocity,
-                        guidance.fixedTargetPosition(), guidance.preset(), limits)
+                        resolveGuidanceTarget(state.position(), velocity, guidance), guidance.preset(), limits)
                 : RVP_BallisticTrajectoryMath.resolveGPSCruiseDirection(state.position(), velocity,
-                        guidance.fixedTargetPosition(), parameters.cruiseAltitude(), limits);
+                        resolveGuidanceTarget(state.position(), velocity, guidance), parameters.cruiseAltitude(), limits);
         // 调用本项目共用双轴执行器，读取持久化角速度，不从速度轴重建或清零惯量状态。
         RVP_AttackAngleSolution steering = RVP_AttackAngleModel.solve(velocity,
                 new RVP_AttackAngleState(state.xRot(), state.yRot(), state.pitchRateDeg(), state.yawRateDeg()),
@@ -187,5 +188,28 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
                 && Double.isFinite(state.pitchRateDeg()) && Double.isFinite(state.yawRateDeg())
                 && Double.isFinite(next.pitchRateDeg()) && Double.isFinite(next.yawRateDeg());
         return new RVP_VirtualTrajectoryResult(next, steering.turnAngleRadians(), !finite);
+    }
+
+    /**
+     * 将虚拟段当前目标快照投影到有限路程时间窗。
+     *
+     * <p>管理器每 Tick 更新实体目标位置和速度；积分器只使用传入快照，不触碰 Level，
+     * 从而让变速、变向目标在卸载期间仍沿同一目标运动链推进。</p>
+     */
+    private static Vec3 resolveGuidanceTarget(Vec3 missilePosition, Vec3 velocity,
+                                              RVP_VirtualGuidanceInput guidance) {
+        Vec3 fixed = guidance.fixedTargetPosition();
+        if (fixed == null) {
+            return null;
+        }
+        RVP_TargetMotionState motion = guidance.targetMotion();
+        if (motion == null) {
+            return fixed;
+        }
+        double distance = missilePosition.distanceTo(fixed);
+        double speed = Math.max(1.0D, velocity.length());
+        double leadTicks = Math.max(0.0D, Math.min(60.0D, distance / speed));
+        Vec3 predicted = motion.predictPosition(leadTicks);
+        return RVP_BallisticTrajectoryMath.isFinite(predicted) ? predicted : fixed;
     }
 }

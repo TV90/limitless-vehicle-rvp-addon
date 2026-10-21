@@ -17,7 +17,7 @@ import java.util.UUID;
  * @param targetPosition 当前权威目标点
  * @param lastGuidancePosition 最近有效制导点
  * @param targetEntityUuid 可选目标实体稳定 UUID
- * @param lastKnownTargetVelocity 进入虚拟态时目标最后已知速度
+ * @param lastKnownTargetVelocity 当前目标最后已知速度；虚拟巡航期间可由管理器滚动刷新
  * @param guidancePhase MAIN/TERMINAL 制导相位
  * @param motorBurnEndTick 主发动机燃烧结束 Tick
  * @param secondPulseBurnTimeTick 第二脉冲持续 Tick
