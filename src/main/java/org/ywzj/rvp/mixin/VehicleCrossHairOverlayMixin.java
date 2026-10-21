@@ -38,7 +38,7 @@ public class VehicleCrossHairOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "drawCrosshair",
             at = @At(
                     value = "INVOKE",
                     target = "Lorg/ywzj/vehicle/util/RenderHelper;drawCross(Lnet/minecraft/client/gui/GuiGraphics;IIII)V"
@@ -68,7 +68,7 @@ public class VehicleCrossHairOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "drawCrosshair",
             at = @At(
                     value = "INVOKE",
                     target = "Lorg/ywzj/vehicle/util/RenderHelper;drawSquare(Lnet/minecraft/client/gui/GuiGraphics;IIII)V"
@@ -98,7 +98,7 @@ public class VehicleCrossHairOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "drawCrosshair",
             at = @At(
                     value = "INVOKE",
                     target = "Lorg/ywzj/vehicle/util/RenderHelper;drawCrossDiagonal(Lnet/minecraft/client/gui/GuiGraphics;IIIII)V"
@@ -129,7 +129,7 @@ public class VehicleCrossHairOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "lambda$render$2",
             at = @At(
                     value = "INVOKE",
                     target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V",
