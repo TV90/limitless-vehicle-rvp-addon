@@ -31,7 +31,9 @@ class RVP_GuidanceDataAdapterTest {
                 }
                 """);
 
-        assertEquals(RVP_GuidanceData.class, guidance.getClass());
+        // [RVP] 2026-10-21：IR 现解析到专属子类 RVP_GuidanceDataIR（连续跟踪锁定三参数载体），
+        // 旧断言（基类）随适配器 targetClass 的 IR 分支一并更新。
+        assertEquals(RVP_GuidanceDataIR.class, guidance.getClass());
         assertEquals(RVP_EnumGuidanceType.IR, guidance.getGuidanceType());
         assertEquals(5f, guidance.getMaxLockHalfAngle());
         assertEquals(45, guidance.getMaxOffAxisLockAngle());

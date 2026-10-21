@@ -127,14 +127,21 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         Entity locked = null;
         if (weaponUnit.isSeekerOn()) {
-            locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();
+            // [RVP] 2026-10-21（方案 D2）：IR 弹红圈只认 armed 通道（连续 dwell 授权）——
+            // EO/RF/站级 cue 锁在 armed 之前不再触发锁定圈；非 IR 弹保持原读取。
+            if (data != null && RVP_IrLockHelper.isIrLaunchWeapon(data)) {
+                locked = hmdState.getIrArmedEntity();
+            } else {
+                locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : weaponUnit.getLockedEntity();
+            }
         }
         if (locked != null) {
             // 调用本项目统一弹体位置解析，与雷达框共用远距弹体外推或载具插值锚点。
             Vec3 renderCenter = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(locked, partialTick);
             Vec3 sp = VectorUtil.worldToScreen(renderCenter);
             if (sp != null && sp.z >= 0) {
-                float sa = Math.sin((double) weaponUnit.getLockCoolingTick() / 5 * Math.PI) > 0 ? 0.8f : 1.0f;
+                // [RVP] 2026-10-21：armed 后 lockCoolingTick 冻结，闪烁改用载具 tickCount 保持呼吸。
+                float sa = Math.sin((double) weaponUnit.getVehicle().tickCount / 5 * Math.PI) > 0 ? 0.8f : 1.0f;
                 int sc = (Color.RED & 0x00FFFFFF) | ((int) (sa * 255) << 24);
                 poseStack.pushPose();
                 poseStack.translate(sp.x, sp.y, 0);

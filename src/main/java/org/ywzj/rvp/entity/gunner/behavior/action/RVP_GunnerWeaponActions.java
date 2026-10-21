@@ -176,6 +176,16 @@ public final class RVP_GunnerWeaponActions {
             }
         }
 
+        // [RVP] 2026-10-21 IR 连续跟踪锁定（方案 D3）：AI 炮手同样必须等 dwell——
+        // IR 发射武器在 shoot 前经服务端 tracker 自算包线驻留，满 D 才写服务端 armed 表；
+        // 未满/目标丢失 → GATED（不发射），下一 tick 继续（目标切换清零由 tracker 处理）。
+        if (selectedWeapon instanceof org.ywzj.rvp.weapon.core.RVP_WeaponBase rvpWeapon
+                && org.ywzj.rvp.guidance.RVP_IrLockHelper.isIrLaunchWeapon(rvpWeapon.getData())) {
+            if (!org.ywzj.rvp.entity.gunner.ai.RVP_ServerIrSeekerTracker.tickIrDwell(
+                    weaponUnit.getRootParentWeaponUnit(), rvpWeapon, target)) {
+                return RVP_GunnerActionResult.GATED;
+            }
+        }
         // 调用制导动作适配器，在本体 shoot 前准备本发 GPS/照射/HITL 控制源。
         guidance.prepareLaunch(gunner, vehicle, weaponUnit, selectedWeapon, target);
         // 使用实际发射武器站的 aimContexts（对 VehicleWeaponAgent 而言是目标武器站，如 launcher_weapon）

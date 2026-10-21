@@ -43,6 +43,12 @@ public final class RVP_GuidanceDataAdapter
             "semi_correction_damping",
             "semi_correction_wobble"
     );
+    /** IR 导引头连续跟踪锁定三参数（2026-10-21）：仅 guidance_type:"IR" 可用，其余类型报错。 */
+    private static final Set<String> IR_FIELDS = Set.of(
+            "seeker_lock_dwell_tick",
+            "seeker_dwell_grace_tick",
+            "seeker_lock_hold_grace_tick"
+    );
     private static final EnumSet<RVP_EnumGuidanceType> HITL_TYPES = EnumSet.of(
             RVP_EnumGuidanceType.TV,
             RVP_EnumGuidanceType.HITL_TV,
@@ -104,6 +110,7 @@ public final class RVP_GuidanceDataAdapter
         boolean hitlSubtype = source instanceof RVP_GuidanceDataHITL;
         boolean armSubtype = source instanceof RVP_GuidanceDataARM;
         boolean saclosSubtype = source instanceof RVP_GuidanceDataSACLOS;
+        boolean irSubtype = source instanceof RVP_GuidanceDataIR;
         Class<? extends RVP_GuidanceData> expected = targetClass(type, hitlSubtype, armSubtype, saclosSubtype);
         if (expected != RVP_GuidanceData.class && !expected.isInstance(source)) {
             throw new JsonParseException(type + " guidance requires " + expected.getSimpleName());
@@ -112,7 +119,8 @@ public final class RVP_GuidanceDataAdapter
                 && (source instanceof RVP_GuidanceDataGPS
                 || source instanceof RVP_GuidanceDataHITL
                 || source instanceof RVP_GuidanceDataARM
-                || source instanceof RVP_GuidanceDataSACLOS)) {
+                || source instanceof RVP_GuidanceDataSACLOS
+                || irSubtype)) {
             throw new JsonParseException(source.getClass().getSimpleName() + " does not match " + type);
         }
         return context.serialize(source, source.getClass());
@@ -120,7 +128,8 @@ public final class RVP_GuidanceDataAdapter
 
     private static void rejectSubtypeFieldsWithoutType(JsonObject object) {
         if (containsAny(object, GPS_FIELDS) || containsAny(object, HITL_FIELDS)
-                || containsAny(object, ARM_FIELDS) || containsAny(object, SACLOS_FIELDS)) {
+                || containsAny(object, ARM_FIELDS) || containsAny(object, SACLOS_FIELDS)
+                || containsAny(object, IR_FIELDS)) {
             throw new JsonParseException("Guidance subtype fields require guidance_type");
         }
     }
@@ -141,6 +150,9 @@ public final class RVP_GuidanceDataAdapter
         if (type != RVP_EnumGuidanceType.SACLOS && containsAny(object, SACLOS_FIELDS)) {
             throw new JsonParseException("SACLOS subtype fields require guidance_type SACLOS");
         }
+        if (type != RVP_EnumGuidanceType.IR && containsAny(object, IR_FIELDS)) {
+            throw new JsonParseException("IR seeker fields require guidance_type IR");
+        }
     }
 
     private static boolean containsAny(JsonObject object, Set<String> fields) {
@@ -160,6 +172,9 @@ public final class RVP_GuidanceDataAdapter
     ) {
         if (type == RVP_EnumGuidanceType.GPS) {
             return RVP_GuidanceDataGPS.class;
+        }
+        if (type == RVP_EnumGuidanceType.IR) {
+            return RVP_GuidanceDataIR.class;
         }
         if (type == RVP_EnumGuidanceType.ARM || hasArmFields) {
             return RVP_GuidanceDataARM.class;

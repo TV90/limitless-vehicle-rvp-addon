@@ -68,6 +68,64 @@ public class RVP_DebugCommands {
                         // [RVP] 悬挂状态 dump：逐轮输出 grounded / compression / 行程上下限 / 枢轴，
                         // 用于排查"某一侧轮子不接地导致车体侧倾"（t90m / bmpt72 左侧曾出现）。
                         // 输出文件：logs/suspensiondebug.log；聊天栏会列出未接地的轮子。
+                        // [RVP] IR 导引头连续跟踪锁定 dump（2026-10-21）：当前操作站每个 IR 弹的
+                        // phase / candidateId / dwell / armedId + 包线判定明细（acquire/hold）。
+                        // 输出文件：logs/irseekerdebug.log；聊天栏按弹种汇总 phase。
+                        .then(Commands.literal("irseeker").executes(ctx -> {
+                            WeaponUnit weaponUnit = LocalVehiclePlayer.instance == null
+                                    ? null : LocalVehiclePlayer.instance.getWeaponUnit();
+                            if (weaponUnit == null) {
+                                ctx.getSource().sendFailure(Component.literal("[RVP] 当前不在载具上"));
+                                return 0;
+                            }
+                            StringBuilder sb = new StringBuilder();
+                            sb.append("unit=").append(weaponUnit.getId())
+                                    .append(" seekerOn=").append(weaponUnit.isSeekerOn())
+                                    .append(" stationLock=").append(weaponUnit.getLockedEntity() == null
+                                    ? -1 : weaponUnit.getLockedEntity().getId()).append('\n');
+                            int shown = 0;
+                            for (AbstractVehicleWeapon<?> weapon : weaponUnit.getIndexedWeapons()) {
+                                if (!(weapon instanceof org.ywzj.rvp.weapon.core.RVP_WeaponBase rvpWeapon)) {
+                                    continue;
+                                }
+                                org.ywzj.rvp.weapon.data.RVP_WeaponData data = rvpWeapon.getData();
+                                if (!org.ywzj.rvp.guidance.RVP_IrLockHelper.isIrLaunchWeapon(data)) {
+                                    continue;
+                                }
+                                org.ywzj.rvp.client.state.RVP_IrSeekerStateTable.State st =
+                                        org.ywzj.rvp.client.state.RVP_IrSeekerStateTable.find(
+                                                weaponUnit, data.getWeaponId());
+                                sb.append("weapon=").append(data.getWeaponId())
+                                        .append(" dwell=").append(org.ywzj.rvp.weapon.data.RVP_GuidanceDataIR
+                                        .resolveLockDwellTick(data.getGuidanceData()))
+                                        .append(" grace=").append(org.ywzj.rvp.weapon.data.RVP_GuidanceDataIR
+                                        .resolveDwellGraceTick(data.getGuidanceData()))
+                                        .append(" hold=").append(org.ywzj.rvp.weapon.data.RVP_GuidanceDataIR
+                                        .resolveHoldGraceTick(data.getGuidanceData())).append('\n');
+                                if (st == null) {
+                                    sb.append("  state=OFF(未进入通道：需开导引头+选中IR弹+对应传感器)\n");
+                                    continue;
+                                }
+                                sb.append("  phase=").append(st.phase)
+                                        .append(" candidateId=").append(st.candidateId)
+                                        .append(" dwellTicks=").append(st.dwellTicks)
+                                        .append(" armedId=").append(st.armedId)
+                                        .append(" armedEntity=").append(
+                                        org.ywzj.rvp.client.state.RVP_IrSeekerStateTable.getArmedEntity(
+                                                weaponUnit, data.getWeaponId()) == null ? -1
+                                                : st.armedId).append('\n');
+                                shown++;
+                            }
+                            if (shown == 0) {
+                                sb.append("(当前站无 IR 发射武器)\n");
+                            }
+                            Path irPath = FMLPaths.GAMEDIR.get().resolve("logs").resolve("irseekerdebug.log");
+                            writeLog(irPath, sb.toString());
+                            String firstLine = sb.toString().split("\n")[0];
+                            ctx.getSource().sendSuccess(() -> Component.literal("[RVP] IR seeker dump -> "
+                                    + irPath + " | " + firstLine), false);
+                            return 1;
+                        }))
                         .then(Commands.literal("suspension").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
                             if (vehicle == null) {

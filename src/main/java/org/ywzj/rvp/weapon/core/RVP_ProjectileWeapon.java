@@ -177,9 +177,23 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         Entity lock = null;
         if (data.isHomingProjectile()
                 && (!data.isVehicleLaserGuided() && !data.isCommandGuided() || data.isSaclosTvGuided())) {
-            lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
-                    ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
-                    : rootUnit.getLockedEntity();
+            // [RVP] 2026-10-21 IR 反泄漏收口（方案 §6 L3）：IR 发射武器的导弹目标只认
+            // 服务端 armed 表（客户端跃迁上报经包线复算写入 / AI 炮手服务端自算 dwell 写入）。
+            // 表空即拒射（不耗弹，提示 ui.rvp.ir_seeker_not_armed）——宁可拒射不可放行。
+            if (org.ywzj.rvp.guidance.RVP_IrLockHelper.isIrLaunchWeapon(data)) {
+                lock = RVP_ServerIrSeekerArmedTable.getArmedEntity(rootUnit, data.getWeaponId());
+                if (lock == null) {
+                    if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                        notifyPlayer.displayClientMessage(net.minecraft.network.chat.Component
+                                .translatable("ui.rvp.ir_seeker_not_armed"), true);
+                    }
+                    return;
+                }
+            } else {
+                lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
+                        ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
+                        : rootUnit.getLockedEntity();
+            }
         }
         // 服务端离轴角权威终检（2026-09-20 离轴角 bug 修复，bug B 兜底）：IR 发射武器的
         // 锁可能来自 EO 捕获/RF 落锁/切武器恢复——这些来源都不查离轴角，改包客户端也可能
