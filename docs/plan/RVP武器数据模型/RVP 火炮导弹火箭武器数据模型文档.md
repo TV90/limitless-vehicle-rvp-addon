@@ -90,6 +90,20 @@ GPS模式下定义了RVP_GuidanceDataGPS数据模型，继承自RVP_GuidanceData
 
 
 
+IR模式下定义了RVP_GuidanceDataIR数据模型，继承自RVP_GuidanceData（2026-10-21「IR导引头连续跟踪锁定」）
+
+## RVP_GuidanceDataIR
+
+> 仅 `guidance_type:"IR"` 可用；其余制导类型的 guidance_data 写这些字段会被 RVP_GuidanceDataAdapter 拒绝并抛 JsonParseException。三字段均可缺省，缺省即按默认值生效（在用的 IR 武器 JSON 一个都不用改）。
+
+| RVP_GuidanceDataIR特有字段 | 解释 | 类型 | 默认值 |
+| -------------------------- | ---- | ---- | ------ |
+| seeker_lock_dwell_tick | IR 锁定驻留：同一目标连续停留在导引头跟踪包线内多少 tick 才落锁（armed）。玩家与 AI 炮手共用；追踪期武器站自动跟随目标（自动锁定延迟手感即来源于此）。0 = 捕获即锁 | int | 20 |
+| seeker_dwell_grace_tick | 追踪期宽限：驻留累积期间目标短暂掉出包线（遮挡/机动）不清零进度的最大 tick（期间不涨不降）；超过则清零重新扫描 | int | 3 |
+| seeker_lock_hold_grace_tick | 锁定保活：armed 后目标超出 hold 包线仍保持锁定的最大 tick（吸收短暂遮挡/机动）；超时掉锁并清空状态。同时取代原 IR 弹 6 tick 重锁宽限与 HMD 的 20 tick 保活常量（HMD 弹想保留 20 就显式写 20） | int | 6 |
+
+包线语义：无头瞄（enable_ir_hmd:false）= `max_lock_angle`/2 半角绕武器站当前瞄准轴；有头瞄 = `max_off_axis_lock_angle` 单侧绕中立安装轴（可配 `off_axis_stacks_with_station_rotation` 叠加站旋转）；两种都必须同时满足 `lock_target_distance_range` 距离、`lock_altitude_range` 离地高与视线通畅（LOS）门。
+
 ## RVP_TerminalGuidanceData
 
 末端制导数据模型

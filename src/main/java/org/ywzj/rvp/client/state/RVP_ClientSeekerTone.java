@@ -90,14 +90,14 @@ public final class RVP_ClientSeekerTone {
         if (unit == null || !unit.isSeekerOn()) {
             return false;
         }
+        // [RVP] 2026-10-21（方案 D2）：红外锁定音只认 armed 通道（连续 dwell 授权）——
+        // EO/RF/站级 cue 锁不再触发红外锁定音；HMD 与非 HMD 路径统一读 tracker armed。
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
-        // IR HMD 使用本项目独立锁定通道作为唯一真值源：PL-10 等 NONE 传感器武器站
-        // 会被本体火控每 Tick 清掉共享锁，但 HMD 自身仍然有效；非 HMD 路径继续读本体共享锁。
-        Entity locked = hmdState.isIrHmd() ? hmdState.getLockedEntity() : unit.getLockedEntity();
-        if (locked == null || !locked.isAlive()) {
+        if (!RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
             return false;
         }
-        return RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData());
+        Entity locked = hmdState.getIrArmedEntity();
+        return locked != null && locked.isAlive();
     }
 
     /** 取当前武器站的主武器（RVP 武器），非 RVP 武器返回 null。 */

@@ -52,11 +52,11 @@ public class VehicleRadarOverlayMixin {
     }
 
     @Inject(
-            method = "render",
+            method = "renderInstruments",
             at = @At(
                     value = "INVOKE",
                     target = "Lcom/mojang/blaze3d/vertex/PoseStack;translate(DDD)V",
-                    ordinal = 1,
+                    ordinal = 0,
                     shift = At.Shift.AFTER
             ),
             slice = @Slice(
@@ -79,7 +79,7 @@ public class VehicleRadarOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "renderInstruments",
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/RadarUnit;isOn()Z"),
             remap = false
     )
@@ -89,7 +89,7 @@ public class VehicleRadarOverlayMixin {
     }
 
     @Redirect(
-            method = "render",
+            method = "renderInstruments",
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/RadarUnit;getLockedEntity()Lnet/minecraft/world/entity/Entity;", ordinal = 0),
             remap = false
     )
@@ -102,7 +102,7 @@ public class VehicleRadarOverlayMixin {
     }
 
     @ModifyArg(
-            method = "render",
+            method = "renderInstruments",
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/gui/VehicleRadarOverlay;drawScanLine(Lorg/joml/Matrix4f;IIFFFI)V"),
             index = 4,
             remap = false
@@ -186,7 +186,7 @@ public class VehicleRadarOverlayMixin {
      * 使间距恒为 ~-1.256*radius。
      */
     @ModifyArg(
-            method = "render",
+            method = "renderInstruments",
             at = @At(value = "INVOKE", target = "Ljava/lang/Math;sin(D)D"),
             index = 0,
             remap = false
@@ -200,7 +200,7 @@ public class VehicleRadarOverlayMixin {
     }
 
     @Inject(
-            method = "render",
+            method = "renderInstruments",
             at = @At(
                     value = "INVOKE",
                     target = "Lcom/mojang/blaze3d/vertex/PoseStack;translate(DDD)V",

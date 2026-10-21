@@ -32,7 +32,6 @@ import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
-import org.ywzj.vehicle.vehicle.weapon.seeker.Infrared;
 import org.ywzj.vehicle.vehicle.weapon.seeker.Radar;
 
 import java.util.Optional;
@@ -44,11 +43,8 @@ import java.util.Optional;
 @Mixin(value = WeaponUnit.class, remap = false)
 public abstract class WeaponUnitTickFireControlMixin {
 
-    @Unique private static final int ywzj_rvp$IR_RELOCK_GRACE_TICKS = 6;
-    @Unique private static final float ywzj_rvp$IR_RELOCK_FOV_MARGIN_DEG = 1.25f;
-
-    @Unique private Entity ywzj_rvp$lastIrLockedEntity;
-    @Unique private int ywzj_rvp$lastIrLockTick = Integer.MIN_VALUE;
+    // [RVP] 2026-10-21：原 6 tick 重锁宽限与 lastIr 记忆字段删除——IR 锁定改由
+    // RVP_IrSeekerTracker 连续 dwell 状态机接管（hold 保活读 seeker_lock_hold_grace_tick）。
 
     @OnlyIn(Dist.CLIENT)
     @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)
@@ -61,49 +57,36 @@ public abstract class WeaponUnitTickFireControlMixin {
         }
 
         if (!self.isSeekerOn()) {
-            rvp$clearIrLockMemory();
             return;
         }
 
         if (weaponOpt.isEmpty()) {
-            rvp$clearIrLockMemory();
             return;
         }
         AbstractVehicleWeapon<?> resolved = RVP_LaserWeapons.unwrap(weaponOpt.get());
         if (!(resolved instanceof RVP_WeaponBase rvpWeapon)) {
-            rvp$clearIrLockMemory();
             return;
         }
         if (!rvpWeapon.getData().isHomingProjectile()) {
-            rvp$clearIrLockMemory();
             return;
         }
         if (rvpWeapon.getData().isAntiRadiationMissile()) {
             if (self.getLockedEntity() != null) {
                 self.setLockedEntity(null);
             }
-            rvp$clearIrLockMemory();
             return;
         }
 
         WeaponUnitData.FireControlSensorType sensorType = self.getFireControlSensorType();
-        if (sensorType == WeaponUnitData.FireControlSensorType.IR && self.getLockedEntity() != null) {
-            ywzj_rvp$lastIrLockedEntity = self.getLockedEntity();
-            ywzj_rvp$lastIrLockTick = self.getVehicle().tickCount;
-            return;
-        }
-        if (self.getLockedEntity() != null) {
-            return;
-        }
-        if (self.getLockCoolingTick() <= 20) {
-            return;
-        }
-
-        Entity entity = null;
-        if (sensorType == WeaponUnitData.FireControlSensorType.IR
-                || RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
-            entity = rvp$resolveIrLockWithHysteresis(self, rvpWeapon);
-        } else if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
+        if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
+            // [RVP] 2026-10-21：20t 门控与"已有锁早退"自公共路径【移进 RF 分支】（非删除）——
+            // ARH 雷达弹的 TWS 门控手感保持原值不变（方案 §5.3 / 红线 1）。
+            if (self.getLockCoolingTick() <= 20) {
+                return;
+            }
+            if (self.getLockedEntity() != null) {
+                return;
+            }
             // 雷达自动锁定（TWS 扫描跟踪）：ARH 等通过雷达 TWS 数据链制导，保持自动锁定
             // （模拟现实中雷达边扫描边跟踪给主动弹提供数据链目标更新）；
             // SARH 半主动雷达弹需要载具【锁定】目标才制导，扫描阶段不自动锁定，
@@ -111,21 +94,28 @@ public abstract class WeaponUnitTickFireControlMixin {
             if (!rvpWeapon.getData().usesGuidanceType(RVP_EnumGuidanceType.SARH)) {
                 RadarUnit radar = RVP_RadarRoleHelper.getPreferredLockRadar(self);
                 if (radar != null) {
-                    entity = Radar.findTarget(radar, 90, self);
-                }
-                // IR 发射武器的 RF 供锁补离轴校验（2026-09-20 离轴角 bug 修复，bug B 治本）：
-                // 雷达 TWS 锥（90°）远大于 IR 导引头离轴角，直接落锁会让 IR 弹获得超锥锁
-                //（发射授权的离轴终检会兜底拒射，这里在锁建立时就拦掉，语义更干净）。
-                // ARH 等雷达制导弹不受 IR 离轴角约束（isIrLaunchWeapon 已排除雷达/反辐射/GPS）。
-                if (entity != null && !RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
-                        self, entity, rvpWeapon.getData(), 0f)) {
-                    entity = null;
+                    Entity entity = Radar.findTarget(radar, 90, self);
+                    // IR 发射武器的 RF 供锁补离轴校验（2026-09-20 离轴角 bug 修复，bug B 治本）：
+                    // 雷达 TWS 锥（90°）远大于 IR 导引头离轴角，直接落锁会让 IR 弹获得超锥锁
+                    //（发射授权的离轴终检会兜底拒射，这里在锁建立时就拦掉，语义更干净）。
+                    // ARH 等雷达制导弹不受 IR 离轴角约束（isIrLaunchWeapon 已排除雷达/反辐射/GPS）。
+                    if (entity != null && !RVP_IrLockHelper.isLaunchTargetWithinOffAxis(
+                            self, entity, rvpWeapon.getData(), 0f)) {
+                        entity = null;
+                    }
+                    if (entity != null) {
+                        self.setLockedEntity(entity);
+                    }
                 }
             }
+            return;
         }
 
-        if (entity != null) {
-            self.setLockedEntity(entity);
+        // IR / EO 代捕获分支：只喂 RVP_IrSeekerTracker（连续 dwell 状态机），不再直接落锁。
+        // 站级 lockedEntity（EO/RF/HMD 写入的）对本弹只是候选提示，绝不直接给 IR 授权。
+        if (sensorType == WeaponUnitData.FireControlSensorType.IR
+                || RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
+            org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tickFor(self, rvpWeapon);
         }
     }
 
@@ -153,34 +143,8 @@ public abstract class WeaponUnitTickFireControlMixin {
         }
     }
 
-    @Unique
-    private Entity rvp$resolveIrLockWithHysteresis(WeaponUnit self, RVP_WeaponBase rvpWeapon) {
-        var data = rvpWeapon.getData();
-        if (ywzj_rvp$lastIrLockedEntity != null
-                && ywzj_rvp$lastIrLockedEntity.isAlive()
-                && self.getVehicle().tickCount - ywzj_rvp$lastIrLockTick <= ywzj_rvp$IR_RELOCK_GRACE_TICKS
-                && RVP_IrLockHelper.isTargetWithinAcquireLimits(
-                        self,
-                        ywzj_rvp$lastIrLockedEntity,
-                        data,
-                        ywzj_rvp$IR_RELOCK_FOV_MARGIN_DEG
-                )) {
-            return ywzj_rvp$lastIrLockedEntity;
-        }
-        Entity found = Infrared.findTarget(self, RVP_IrLockHelper.halfAngleFromFull(data.resolveLaunchSeekerFullFov()));
-        if (found != null && RVP_IrLockHelper.isTargetWithinAcquireLimits(self, found, data)) {
-            ywzj_rvp$lastIrLockedEntity = found;
-            ywzj_rvp$lastIrLockTick = self.getVehicle().tickCount;
-            return found;
-        }
-        return null;
-    }
-
-    @Unique
-    private void rvp$clearIrLockMemory() {
-        ywzj_rvp$lastIrLockedEntity = null;
-        ywzj_rvp$lastIrLockTick = Integer.MIN_VALUE;
-    }
+    // [RVP] 2026-10-21：rvp$resolveIrLockWithHysteresis / rvp$clearIrLockMemory 删除——
+    // 候选扫描与 dwell 移入 RVP_IrSeekerTracker.tickFor（client/state）。
 
     @OnlyIn(Dist.CLIENT)
     private static void rvp$restoreExternalRadarLock(WeaponUnit self, AbstractVehicleWeapon<?> rawWeapon) {

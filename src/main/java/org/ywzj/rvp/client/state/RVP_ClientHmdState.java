@@ -45,8 +45,8 @@ public class RVP_ClientHmdState {
     private static final int IR_HMD_SCAN_INTERVAL = 2;
     /** 目标可见轮廓之外允许的轻微捕获容差（度），只影响头瞄捕获，不放宽发射离轴终检。 */
     private static final double IR_HMD_OUTLINE_TOLERANCE_DEG = 0.0;
-    /** IR 目标短暂越出离轴范围后的保锁宽限，单位 Tick。 */
-    private static final int IR_LOCK_GRACE_TICKS = 20;
+    // [RVP] 2026-10-21：原 IR_LOCK_GRACE_TICKS=20 常量删除——IR 超包线保活改由
+    // RVP_IrSeekerTracker 按 seeker_lock_hold_grace_tick（默认 6；数据显式写 20 可保留原手感）统一管理。
     /** 雷达 HMD 连续越界扫描达到该次数后自动关闭。 */
     private static final int OUT_OF_BOUNDS_TIMEOUT = 20;
     /** HUD 头瞄方向每 Tick 的插值比例。 */
@@ -192,6 +192,22 @@ public class RVP_ClientHmdState {
         return channels.isIrActive() && irLockedEntityId != -1;
     }
 
+    /**
+     * [RVP] 2026-10-21（方案 D2）：IR 通道 armed 目标（连续 dwell 状态机授权的唯一结果）。
+     * HUD 红圈/对地锁定框/锁定音只认它——站级 lockedEntity（EO/RF/HMD cue 写入）不再是
+     * "已锁定"的依据。当前操作站无 IR 弹或未 armed 返回 null。
+     */
+    @Nullable
+    public Entity getIrArmedEntity() {
+        WeaponUnit unit = LocalVehiclePlayer.instance.onVehicle()
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        if (unit == null || irLaunchWeapon == null) {
+            return null;
+        }
+        return RVP_IrSeekerStateTable.getArmedEntity(unit, irLaunchWeapon.getWeaponId());
+    }
+
     public Entity getLockedEntity() {
         if (irLockedEntityId == -1) {
             return null;
@@ -203,13 +219,8 @@ public class RVP_ClientHmdState {
         return mc.level.getEntity(irLockedEntityId);
     }
 
-    public boolean shouldKeepIrLockGrace(Entity target) {
-        return channels.isIrActive()
-                && target != null
-                && target.isAlive()
-                && target.getId() == irCachedLockedEntityId
-                && tickCount - irLastConfirmedLockTick <= IR_LOCK_GRACE_TICKS;
-    }
+    // [RVP] 2026-10-21：shouldKeepIrLockGrace 删除——超包线保活统一由 tracker 的
+    // seeker_lock_hold_grace_tick 管理（IR_LOCK_GRACE_TICKS 常量一并移除）。
 
     public float getSmoothPitch() {
         return smoothPitch;
@@ -765,8 +776,11 @@ public class RVP_ClientHmdState {
                 Vec3 targetDir = org.ywzj.rvp.util.RVP_AimPointResolver
                         .resolveLargestObbCenter(bestTarget)
                         .subtract(weaponUnit.worldPivotPosition());
-                // 调用本项目 IR 锁定确认入口，把雷达 HMD 捕获到的同一实体显式交给 IR 通道。
-                confirmIrLock(weaponUnit, bestTarget, angleBetweenDeg(irBoresight, targetDir), "radar-cue");
+                // [RVP] 2026-10-21：雷达 HMD 捕获改喂 tracker 连续 dwell 状态机——雷达只是 cue，
+                // 不得直接给 IR 授权（方案 D 决策：站级锁降级为候选提示）。
+                RVP_IrSeekerTracker.feedHmdCandidate(
+                        weaponUnit, irLaunchWeapon, bestTarget,
+                        angleBetweenDeg(irBoresight, targetDir));
             }
             disableRadarHmd();
             mc.player.displayClientMessage(
@@ -835,28 +849,11 @@ public class RVP_ClientHmdState {
                 clearIrLockState(weaponUnit);
                 return;
             }
-            if (offBoresightAngle <= irGuideHeadMaxAngle) {
-                confirmIrLock(weaponUnit, tracked, offBoresightAngle, "hold");
-                return;
-            }
-            if (shouldKeepIrLockGrace(tracked)) {
-                if (weaponUnit.getLockedEntity() == null || weaponUnit.getLockedEntity().getId() != tracked.getId()) {
-                    weaponUnit.setLockedEntity(tracked);
-                }
-                irLockedEntityId = tracked.getId();
-                if (irGraceTargetId != tracked.getId()) {
-                    irGraceTargetId = tracked.getId();
-                    irGraceStartTick = tickCount;
-                    RVP_DebugStateLogs.logIrHms("grace-start target=" + tracked.getId()
-                            + " angle=" + formatAngle(offBoresightAngle)
-                            + " expireIn=" + (IR_LOCK_GRACE_TICKS - (tickCount - irLastConfirmedLockTick)));
-                }
-                return;
-            }
-            RVP_DebugStateLogs.logIrHms("grace-expire target=" + tracked.getId()
-                    + " angle=" + formatAngle(offBoresightAngle)
-                    + " lostFor=" + (tickCount - irLastConfirmedLockTick));
-            clearIrLockState(weaponUnit);
+            // [RVP] 2026-10-21：确认/保活全部交给 RVP_IrSeekerTracker 连续 dwell 状态机——
+            // 超离轴也照喂（tracker 按 hold 包线自行宽限/掉锁，方案 D2：dwell 满才有锁定视觉）。
+            RVP_IrSeekerTracker.feedHmdCandidate(
+                    weaponUnit, irLaunchWeapon, tracked, offBoresightAngle);
+            return;
         }
 
         if (++irScanCounter < IR_HMD_SCAN_INTERVAL) {
@@ -919,12 +916,13 @@ public class RVP_ClientHmdState {
         }
 
         if (bestTarget != null) {
-            confirmIrLock(weaponUnit, bestTarget, bestEffectiveAngle, "acquire");
-            mc.player.displayClientMessage(
-                    Component.translatable("message.ywzj_rvp.hmd.ir_locked"), true);
-        } else if (irGraceTargetId != -1 && tickCount - irLastConfirmedLockTick > IR_LOCK_GRACE_TICKS) {
-            irGraceTargetId = -1;
-            irGraceStartTick = Integer.MIN_VALUE;
+            // [RVP] 2026-10-21：直锁改喂 tracker（dwell 满才 armed）；"已锁定"提示只在 armed 跃迁出现（方案 D2）。
+            boolean armedNow = RVP_IrSeekerTracker.feedHmdCandidate(
+                    weaponUnit, irLaunchWeapon, bestTarget, bestEffectiveAngle);
+            if (armedNow) {
+                mc.player.displayClientMessage(
+                        Component.translatable("message.ywzj_rvp.hmd.ir_locked"), true);
+            }
         }
     }
 
@@ -969,23 +967,27 @@ public class RVP_ClientHmdState {
         return cached != null && cached.isAlive() ? cached : null;
     }
 
-    private void confirmIrLock(WeaponUnit weaponUnit, Entity target, double angle, String reason) {
-        if (weaponUnit.getLockedEntity() == null || weaponUnit.getLockedEntity().getId() != target.getId()) {
-            weaponUnit.setLockedEntity(target);
+    // [RVP] 2026-10-21：confirmIrLock 删除——IR 锁定授权统一走 RVP_IrSeekerTracker（dwell 状态机），
+    // HUD 侧 irLockedEntityId 由下方两个对齐回调维护。
+
+    /** [RVP] tracker armed 跃迁回调：HMD 通道视图同步为该目标（仅 IR 通道活跃时有意义）。 */
+    void noteTrackerIrArm(Entity target) {
+        if (!channels.isIrActive() || target == null) {
+            return;
         }
         irLockedEntityId = target.getId();
         irCachedLockedEntityId = target.getId();
         irLastConfirmedLockTick = tickCount;
-        if (irGraceTargetId == target.getId()) {
-            RVP_DebugStateLogs.logIrHms("grace-recapture target=" + target.getId()
-                    + " angle=" + formatAngle(angle)
-                    + " heldFor=" + (tickCount - irGraceStartTick));
-        } else {
-            RVP_DebugStateLogs.logIrHms(reason + " target=" + target.getId()
-                    + " angle=" + formatAngle(angle));
-        }
         irGraceTargetId = -1;
         irGraceStartTick = Integer.MIN_VALUE;
+    }
+
+    /** [RVP] tracker 掉锁回调：仅当 HMD 通道当前 IR 锁即该目标时收起（不动雷达通道的锁）。 */
+    void noteTrackerIrUnarm(int targetId) {
+        if (irLockedEntityId == targetId) {
+            irLockedEntityId = -1;
+            clearIrLockState();
+        }
     }
 
     private void clearIrLockState() {

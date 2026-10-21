@@ -111,6 +111,11 @@ public class RVP_Network {
                 .decoder(C2SRequestExternalRadarLock::decode)
                 .consumerMainThread(C2SRequestExternalRadarLock::handle)
                 .add();
+        CHANNEL.messageBuilder(C2SIrSeekerArmed.class, id++)
+                .encoder(C2SIrSeekerArmed::encode)
+                .decoder(C2SIrSeekerArmed::decode)
+                .consumerMainThread(C2SIrSeekerArmed::handle)
+                .add();
         CHANNEL.messageBuilder(C2SClearExternalRadarLock.class, id++)
                 .encoder(C2SClearExternalRadarLock::encode)
                 .decoder(C2SClearExternalRadarLock::decode)

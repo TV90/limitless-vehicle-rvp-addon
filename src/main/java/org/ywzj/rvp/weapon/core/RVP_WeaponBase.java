@@ -161,6 +161,39 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
                     && !data.isGpsMissile()
                     && data.isEnableIrHmd();
 
+            // ===== IR 反泄漏收口（2026-10-21，方案 §6 L2）：IR 弹只认本通道 armed 状态 =====
+            // 站级 lockedEntity（EO/RF/HMD cue 写入）与外置雷达锁对 IR 只是候选提示，
+            // 不再构成发射授权；armed 之前的任何"站级锁"都拒射（宁可拒射不可放行）。
+            if (isIrLaunchWeapon) {
+                Entity irArmed = org.ywzj.rvp.client.state.RVP_IrSeekerStateTable
+                        .getArmedEntity(unit, data.getWeaponId());
+                if (irArmed == null) {
+                    LocalVehiclePlayer.instance.sendMessage("ui.need_lock_entity");
+                    return false;
+                }
+                // 离轴角发射终检（2026-09-20 bug A/B 统一收口，保留）：以中立安装轴
+                //（或按配置叠加站旋转）为基准复验，超锥拒射。入参换成 armed 目标。
+                if (!RVP_IrLockHelper.isLaunchTargetWithinOffAxis(unit, irArmed, data, 1.0f)) {
+                    LocalVehiclePlayer.instance.sendMessage("ui.ir_target_off_axis");
+                    return false;
+                }
+                // 反舰导引头发射终检（2026-10-05 用户需求，保留）：anti_ship_seeker 弹只打
+                // RCS 综合值 ≥ SCAN_SEA_RCS_THRESHOLD 的大型目标，入参换成 armed 目标。
+                if (data.getGuidanceData().isAntiShipSeeker()) {
+                    boolean rcsQualified = irArmed instanceof org.ywzj.vehicle.entity.vehicle.AbstractVehicle antiShipTarget
+                            && org.ywzj.rvp.radar.RVP_AspectRcs.combinedFactor(antiShipTarget,
+                            net.minecraft.client.Minecraft.getInstance().player.position())
+                            >= org.ywzj.rvp.radar.RVP_RadarScanHelper.SCAN_SEA_RCS_THRESHOLD;
+                    if (!rcsQualified) {
+                        LocalVehiclePlayer.instance.sendMessage("ui.rvp.target_rcs_below_sea_threshold");
+                        return false;
+                    }
+                }
+                // armed 目标幂等写回站级锁（导弹 target/同步链路消费；tracker arm 时已写）。
+                unit.setLockedEntity(irArmed);
+                return true;
+            }
+
             Entity externalLocked = null;
             int externalLockedId = Integer.MIN_VALUE;
             if (!isIrHmdManaged

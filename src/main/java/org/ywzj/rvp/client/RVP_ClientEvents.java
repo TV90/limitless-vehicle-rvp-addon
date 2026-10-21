@@ -533,6 +533,9 @@ public class RVP_ClientEvents {
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         hmdState.checkIrHmd();
         hmdState.tick();
+        // [RVP] IR 导引头连续跟踪 tracker（2026-10-21）：全局维护 + ARMED 保活；
+        // 候选扫描分别在 mixin 非 HMD 路径（tickFor）与 HMD 路径（feedHmdCandidate）。
+        org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tick(mc);
         // 调用本项目 IR HMD 状态更新后再判定锁定音，保证新锁/脱锁当 Tick 生效，
         // 且不再读到被本体 NONE 传感器火控短暂清空的过渡状态。
         RVP_ClientSeekerTone.tick();
