@@ -71,6 +71,8 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
     private final Vec3 travelAxis;
     /** 有界车顶粒子的轴向循环长度，单位格；无边界喷燃粒子为正无穷。 */
     private final double maxTravelDistance;
+    /** 车顶喷燃沿自身轴向的持续上浮加速度，单位格/tick²。 */
+    private static final double AXIAL_UPDRAFT_PER_TICK = 0.0025D;
 
     private RVP_WreckFlameParticle(ClientLevel level, double x, double y, double z,
                                    double vx, double vy, double vz,
@@ -215,10 +217,17 @@ public final class RVP_WreckFlameParticle extends SingleQuadParticle {
         this.alpha = this.initialAlpha * Mth.clamp(fade, 0.0f, 1.0f);
         this.roll += this.rollSpeed;
 
-        // 轻微阻尼配合世界向上漂移，保留轴向喷出感而不形成静止贴图柱。
+        // 轻微阻尼配合沿车顶自身轴向漂移，载具侧翻时不会被世界 Y 轴重新拉回。
         this.xd *= 0.965;
-        this.yd = this.yd * 0.975 + 0.0025;
+        this.yd *= 0.975;
         this.zd *= 0.965;
+        if (this.travelAxis == null) {
+            this.yd += AXIAL_UPDRAFT_PER_TICK;
+        } else {
+            this.xd += this.travelAxis.x * AXIAL_UPDRAFT_PER_TICK;
+            this.yd += this.travelAxis.y * AXIAL_UPDRAFT_PER_TICK;
+            this.zd += this.travelAxis.z * AXIAL_UPDRAFT_PER_TICK;
+        }
         if (this.travelAxis == null) {
             // 调用基类碰撞位移入口：无边界喷燃粒子保持普通运动轨迹。
             this.move(this.xd, this.yd, this.zd);

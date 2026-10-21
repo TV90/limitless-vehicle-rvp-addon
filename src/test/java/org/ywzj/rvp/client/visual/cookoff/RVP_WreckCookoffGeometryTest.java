@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 验证侧翻姿态下的世界竖直喷焰、以及接缝采样点/方向的随机性与约束。
+ * 验证侧翻姿态下沿载具自身上方喷焰、以及接缝采样点/方向的随机性与约束。
  *
  * <p>接缝部分覆盖"沿接缝随机采样 + 单点持续一小段 + 同炮塔多点同时喷 + 水平 0°～+30°"的要求：
  * 采样必须落在炮塔 OBB 底缘上、法线必须朝外、俯仰必须落在 0°～+30°、
@@ -28,14 +28,16 @@ class RVP_WreckCookoffGeometryTest {
     private static final double EDGE_EPSILON = 1e-6;
 
     @Test
-    void hatchPositionRollsWithVehicleButFlameRemainsWorldVertical() {
+    void hatchPositionAndFlameAxisFollowVehicleRotation() {
         Quaternionf rolled = new Quaternionf().rotationZ((float) (Math.PI / 2));
-        // 调用真实坐标计算；局部顶部翻到侧面，出口方向仍须由解析器给世界向上
+        // 调用真实坐标计算；局部顶部翻到侧面，车顶火柱轴也必须跟随载具自身上方
         Vec3 point = RVP_WreckCookoffGeometry.point(new Vec3(10, 20, 30), rolled, new Vec3(0, 2, 0));
         assertEquals(8, point.x, 1e-5);
         assertEquals(20, point.y, 1e-5);
         assertEquals(30, point.z, 1e-5);
         assertEquals(new Vec3(0, 1, 0), RVP_WreckCookoffGeometry.UP);
+        assertEquals(new Vec3(-1, 0, 0),
+                RVP_WreckCookoffGeometry.rotateDirection(rolled, RVP_WreckCookoffGeometry.UP));
     }
 
     @Test
@@ -238,21 +240,22 @@ class RVP_WreckCookoffGeometryTest {
     }
 
     @Test
-    void hatchColumnStaysWorldUpWhileOnlySparksUseTheCone() {
-        // 用户定版：舱盖顶部火柱固定向上喷（保持原行为），只有火星喷口呈 30° 锥形散开。
-        // 回归点：火星方向现在是随机锥向，若火柱复用它，柱子会跟着歪。
+    void hatchColumnFollowsVehicleUpWhileSparksUseTheLocalCone() {
+        // 回归点：火柱沿车自身上方稳定喷发，火星则围绕同一自身上方做 30° 锥形散开。
+        Quaternionf rolled = new Quaternionf().rotationZ((float) (Math.PI / 2));
+        Vec3 vehicleUp = RVP_WreckCookoffGeometry.rotateDirection(rolled, RVP_WreckCookoffGeometry.UP);
         for (int seed = 0; seed < 200; seed++) {
-            Vec3 sparkAxis = RVP_WreckCookoffGeometry.hatchConeDirection(seed);
-            Vec3 column = RVP_WreckCookoffGeometry.columnDirection(true, sparkAxis);
-            assertEquals(RVP_WreckCookoffGeometry.UP, column,
-                    "seed=" + seed + " 的舱盖柱偏离了世界向上");
-            // 同时确认火星方向确实是锥内的（两者已解耦，互不影响）
-            assertTrue(sparkAxis.dot(RVP_WreckCookoffGeometry.UP)
+            Vec3 sparkAxis = RVP_WreckCookoffGeometry.hatchConeDirection(rolled, seed);
+            Vec3 column = RVP_WreckCookoffGeometry.columnDirection(true, sparkAxis, vehicleUp);
+            assertEquals(vehicleUp, column,
+                    "seed=" + seed + " 的舱盖柱偏离了载具自身上方");
+            // 同时确认火星方向确实围绕载具自身上方取样（两者已解耦，互不影响）
+            assertTrue(sparkAxis.dot(vehicleUp)
                             >= Math.cos(Math.toRadians(RVP_WreckCookoffGeometry.HATCH_CONE_HALF_ANGLE_DEGREES)) - 1e-9);
         }
         // 非舱盖出口（如炮口）仍按自己的火星/炮管方向，不被舱盖规则波及
         Vec3 arbitrary = new Vec3(0.3, 0.5, -0.8).normalize();
-        assertEquals(arbitrary, RVP_WreckCookoffGeometry.columnDirection(false, arbitrary));
+        assertEquals(arbitrary, RVP_WreckCookoffGeometry.columnDirection(false, arbitrary, vehicleUp));
     }
 
     @Test
@@ -274,7 +277,7 @@ class RVP_WreckCookoffGeometryTest {
         RVP_WreckCookoffSettings.reset();
         Vec3 hatchOrigin = new Vec3(10.0D, 20.0D, 30.0D);
         try {
-            // 调用本项目车顶喷燃原点入口，正值必须沿世界竖直方向向炮塔外/上偏移。
+            // 调用本项目车顶喷燃原点入口，默认方向正值沿载具局部上方向炮塔外/上偏移。
             RVP_WreckCookoffSettings.setRoofVerticalOffset(1.25D);
             assertEquals(new Vec3(10.0D, 21.25D, 30.0D),
                     RVP_WreckCookoffController.roofFlameOrigin(hatchOrigin));
@@ -282,6 +285,9 @@ class RVP_WreckCookoffGeometryTest {
             RVP_WreckCookoffSettings.setRoofVerticalOffset(-0.75D);
             assertEquals(new Vec3(10.0D, 19.25D, 30.0D),
                     RVP_WreckCookoffController.roofFlameOrigin(hatchOrigin));
+            // 侧翻时同一偏置必须沿载具自身上方移动，而不是继续沿世界 Y 轴移动。
+            assertEquals(new Vec3(10.75D, 20.0D, 30.0D),
+                    RVP_WreckCookoffController.roofFlameOrigin(hatchOrigin, new Vec3(-1.0D, 0.0D, 0.0D)));
             assertEquals(new Vec3(10.0D, 20.0D, 30.0D), hatchOrigin);
         } finally {
             // 调用本项目重置入口，避免静态会话参数污染其他测试。
@@ -374,15 +380,15 @@ class RVP_WreckCookoffGeometryTest {
 
     @Test
     void hatchConeDirectionStaysWithinThirtyDegreesOfWorldUp() {
-        // 用户定版：舱盖火星沿世界 Y 轴向上做 30° 圆锥随机采样
+        // 载具未旋转时，舱盖火星沿世界 Y 轴向上做 30° 圆锥随机采样。
         double cosLimit = Math.cos(Math.toRadians(RVP_WreckCookoffGeometry.HATCH_CONE_HALF_ANGLE_DEGREES));
         double lowestCos = 1.0;
         double highestCos = -1.0;
         for (int seed = 0; seed < 300; seed++) {
-            Vec3 direction = RVP_WreckCookoffGeometry.hatchConeDirection(seed);
+            Vec3 direction = RVP_WreckCookoffGeometry.hatchConeDirection(new Quaternionf(), seed);
             assertEquals(1.0, direction.length(), 1e-9);
             double cos = direction.dot(RVP_WreckCookoffGeometry.UP);
-            // 与世界上方夹角必须 ≤ 30°，即 cos ≥ cos30°；也就绝不会朝下
+            // 与自身上方夹角必须 ≤ 30°；未旋转载具的自身上方就是世界 Y 轴。
             assertTrue(cos >= cosLimit - 1e-9,
                     "seed=" + seed + " 的舱盖火星偏离世界 Y 轴超过 30°: cos=" + cos);
             lowestCos = Math.min(lowestCos, cos);
@@ -400,7 +406,7 @@ class RVP_WreckCookoffGeometryTest {
         int[] hits = new int[bins];
         int samples = 0;
         for (int seed = 0; seed < 400; seed++) {
-            Vec3 direction = RVP_WreckCookoffGeometry.hatchConeDirection(seed);
+            Vec3 direction = RVP_WreckCookoffGeometry.hatchConeDirection(new Quaternionf(), seed);
             double azimuth = Math.atan2(direction.z, direction.x);
             int bin = (int) Math.floor((azimuth + Math.PI) / (2.0 * Math.PI) * bins) % bins;
             hits[Math.min(bins - 1, Math.max(0, bin))]++;
@@ -415,13 +421,14 @@ class RVP_WreckCookoffGeometryTest {
 
     @Test
     void hatchConeDirectionsAreReproducibleAndVaryAcrossSeeds() {
-        Vec3 first = RVP_WreckCookoffGeometry.hatchConeDirection(42);
-        Vec3 again = RVP_WreckCookoffGeometry.hatchConeDirection(42);
+        Quaternionf rotation = new Quaternionf().rotationXYZ(0.3f, 1.2f, 0.5f);
+        Vec3 first = RVP_WreckCookoffGeometry.hatchConeDirection(rotation, 42);
+        Vec3 again = RVP_WreckCookoffGeometry.hatchConeDirection(rotation, 42);
         assertEquals(first.x, again.x, 1e-12);
         assertEquals(first.y, again.y, 1e-12);
         assertEquals(first.z, again.z, 1e-12);
         // 换点后方向必须明显不同，否则看不出"换向"
-        Vec3 next = RVP_WreckCookoffGeometry.hatchConeDirection(43);
+        Vec3 next = RVP_WreckCookoffGeometry.hatchConeDirection(rotation, 43);
         assertTrue(first.distanceTo(next) > 0.02, "换点后方向几乎没变: " + first.distanceTo(next));
     }
 

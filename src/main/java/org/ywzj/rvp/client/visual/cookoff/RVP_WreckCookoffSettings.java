@@ -30,7 +30,7 @@ public final class RVP_WreckCookoffSettings {
     public static double roofTextureScaleMin = 1.0D;
     /** 车顶喷燃贴图随机倍率上限，无单位，默认 3.0；调试范围 0.1～3.0。 */
     public static double roofTextureScaleMax = 3.0D;
-    /** 车顶喷燃生成点沿世界竖直方向的偏置，单位格，正值向外/上，负值向内/下。 */
+    /** 车顶喷燃生成点沿载具自身上方的偏置，单位格，正值向外/上，负值向内/下。 */
     public static double roofVerticalOffset = -0.5D;
     /** 炮口灰烟生成倍率，无单位，默认 1；调试范围 0～2。 */
     public static double muzzleSmokeDensity = 0.8D;
@@ -112,7 +112,7 @@ public final class RVP_WreckCookoffSettings {
         roofTextureScaleMin = Math.min(roofTextureScaleMin, value);
     }
 
-    /** 设置车顶喷燃生成点竖直偏置；超出调试范围时钳制到安全边界。 */
+    /** 设置车顶喷燃生成点沿载具自身上方的偏置；超出调试范围时钳制到安全边界。 */
     public static void setRoofVerticalOffset(double value) {
         roofVerticalOffset = Double.isFinite(value)
                 ? Math.max(ROOF_VERTICAL_OFFSET_MIN, Math.min(ROOF_VERTICAL_OFFSET_MAX, value))

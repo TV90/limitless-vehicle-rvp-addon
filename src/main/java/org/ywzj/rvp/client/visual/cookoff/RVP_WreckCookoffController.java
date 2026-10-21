@@ -399,15 +399,28 @@ public final class RVP_WreckCookoffController {
      * 计算车顶喷燃的实际生成原点；只偏置喷燃贴图，不改变火星采样点或载具姿态。
      *
      * @param hatchOrigin 解析出的舱盖/顶部近似出口原点
-     * @return 沿世界竖直方向偏置后的喷燃原点
+     * @return 沿载具局部上方的默认方向偏置后的喷燃原点
      */
     static Vec3 roofFlameOrigin(Vec3 hatchOrigin) {
+        return roofFlameOrigin(hatchOrigin, RVP_WreckCookoffGeometry.UP);
+    }
+
+    /**
+     * 计算车顶喷燃的实际生成原点，并沿当前车顶火柱轴向偏置。
+     *
+     * @param hatchOrigin 解析出的舱盖/顶部近似出口原点
+     * @param roofAxis    载具自身上方的世界方向
+     * @return 沿载具自身上方偏置后的喷燃原点
+     */
+    static Vec3 roofFlameOrigin(Vec3 hatchOrigin, Vec3 roofAxis) {
         double offset = Double.isFinite(RVP_WreckCookoffSettings.roofVerticalOffset)
                 ? Math.max(RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MIN,
                 Math.min(RVP_WreckCookoffSettings.ROOF_VERTICAL_OFFSET_MAX,
                         RVP_WreckCookoffSettings.roofVerticalOffset))
                 : 0.0D;
-        return hatchOrigin.add(RVP_WreckCookoffGeometry.UP.scale(offset));
+        Vec3 safeAxis = roofAxis == null || roofAxis.lengthSqr() < 1.0E-8D
+                ? RVP_WreckCookoffGeometry.UP : roofAxis.normalize();
+        return hatchOrigin.add(safeAxis.scale(offset));
     }
 
     /** 平滑三次插值，避免火柱在起止边界突然改变速度。 */
@@ -507,7 +520,7 @@ public final class RVP_WreckCookoffController {
             // 接缝出口按"单个采样点持续 3～12 tick 再换点"推进；换点时为跳变，
             // 因此这里先判定是否换点，再决定要不要保留上一 tick 姿态供插值
             boolean jumped = column.reseed(lastTick);
-            // 调用本项目姿态求解器：舱盖按世界 Y 轴 30° 圆锥采样方向，接缝按环绕方位采样
+            // 调用本项目姿态求解器：舱盖按载具自身上方 30° 圆锥采样方向，接缝按环绕方位采样
             Pose pose = resolve(column.anchor, column.sampleSeed);
             column.previous = (column.current == null || jumped) ? pose : column.current;
             column.current = pose;
@@ -730,7 +743,8 @@ public final class RVP_WreckCookoffController {
         double coneProgress = along / Math.max(0.1D, travel);
         double azimuth = currentLevel.random.nextDouble() * (Math.PI * 2.0D);
         Vec3 radialDirection = side.scale(Math.cos(azimuth)).add(cross.scale(Math.sin(azimuth))).normalize();
-        Vec3 flameOrigin = roofFlameOrigin(pose.position());
+        // 调用本项目车顶原点入口：偏置沿载具自身上方，而不是固定世界 Y 轴。
+        Vec3 flameOrigin = roofFlameOrigin(pose.position(), axis);
         Vec3 position = flameOrigin.add(axis.scale(along));
         // 车顶喷口采用圆盘内均匀采样：截面半径随轴向扩大，粒子整体形成倒梯形圆锥体积。
         double coneRadius = roofConeRadius(coneProgress, width)
@@ -829,15 +843,10 @@ public final class RVP_WreckCookoffController {
         /** 当前 tick 的世界姿态。 */
         Pose currentPose();
 
-        /**
-         * 火柱方向；与"火星采样方向"解耦。
-         *
-         * <p>舱盖必须恒为世界向上：火星方向是在世界 Y 轴 30° 圆锥内随机采样的，
-         * 若火柱直接复用火星方向，柱子会跟着随机锥角歪掉。</p>
-         */
+        /** 火柱方向；与火星采样方向解耦，车顶沿载具自身上方。 */
         Vec3 columnDirection();
 
-        /** 上一 tick 的火柱方向，供渲染插值；舱盖为常量世界向上。 */
+        /** 上一 tick 的火柱方向，供渲染插值；舱盖随载具自身姿态变化。 */
         Vec3 previousColumnDirection();
 
         /** 与类别无关的柱宽，单位格。 */
@@ -873,17 +882,14 @@ public final class RVP_WreckCookoffController {
 
         @Override
         public Vec3 columnDirection() {
-            // 调用本项目柱向规则：舱盖柱恒向上（用户定版），只有火星走 30° 圆锥；
-            // 接缝不画柱，该分支不会被渲染走到
-            return RVP_WreckCookoffGeometry.columnDirection(column.anchor.kind() == Kind.HATCH,
-                    column.current.direction());
+            // 调用本项目姿态解析结果：车顶火柱使用稳定的载具自身上方，火星仍使用圆锥采样方向。
+            return column.current.columnDirection();
         }
 
         @Override
         public Vec3 previousColumnDirection() {
             Pose previous = column.previous == null ? column.current : column.previous;
-            return RVP_WreckCookoffGeometry.columnDirection(column.anchor.kind() == Kind.HATCH,
-                    previous.direction());
+            return previous.columnDirection();
         }
 
         @Override

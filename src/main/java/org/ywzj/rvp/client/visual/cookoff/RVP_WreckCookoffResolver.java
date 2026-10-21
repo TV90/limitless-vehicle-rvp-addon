@@ -56,7 +56,7 @@ public final class RVP_WreckCookoffResolver {
      * @param kind 出口类别
      * @param cube OBB 模式的锚点，炮口模式为 null
      * @param local 相对 OBB 中心的坐标（格）
-     * @param localDirection 部件局部方向；舱盖/接缝改用采样方向，故舱盖留 UP 仅作占位
+     * @param localDirection 部件局部方向；舱盖使用局部 +Y 变换为载具自身上方
      * @param weapon 炮口所属武器站，其余为 null
      * @param sampleIndex 采样点序号（舱盖 3 点、接缝 12 点各自编号）；炮口恒为 0
      * @param width 柱宽，单位格
@@ -71,8 +71,14 @@ public final class RVP_WreckCookoffResolver {
     /** 一次发现的结果：参与火星的出口 + 只画灰烟的炮口。 */
     public record Discovery(List<Anchor> anchors, List<MuzzleAnchor> muzzles, List<VehicleCubeOBB> turrets) {}
 
-    /** 一帧/一 tick 的世界空间出口，不包含客户端渲染类。 */
-    public record Pose(Vec3 position, Vec3 direction) {}
+    /**
+     * 一帧/一 tick 的世界空间出口，不包含客户端渲染类。
+     *
+     * @param position 出口世界坐标
+     * @param direction 当前出口用于火星/炮口烟的喷发方向
+     * @param columnDirection 当前出口用于车顶火柱的稳定轴向；非车顶出口与 direction 相同
+     */
+    public record Pose(Vec3 position, Vec3 direction, Vec3 columnDirection) {}
 
     private RVP_WreckCookoffResolver() {}
 
@@ -199,7 +205,8 @@ public final class RVP_WreckCookoffResolver {
 
     /**
      * 舱盖出口：登记 OBB、柱宽与采样点序号。每 tick 的喷口位置固定在该舱盖顶部，
-     * 方向由 {@link RVP_WreckCookoffGeometry#hatchConeDirection} 在世界 Y 轴 30° 圆锥内现采样；
+     * 方向由 {@link RVP_WreckCookoffGeometry#hatchConeDirection(Quaternionf, int)} 在载具自身上方
+     * 30° 圆锥内现采样；
      * 同一舱盖的 3 个点用于火星分布，只有中心点用于绘制该舱盖的一根火柱。
      *
      * @param cube        舱盖 OBB
@@ -311,20 +318,24 @@ public final class RVP_WreckCookoffResolver {
         if (muzzle.muzzleIndex() >= bolts.size()) return null;
         var aim = muzzle.weapon().aimContext(bolts.get(muzzle.muzzleIndex()));
         Vec3 direction = VectorUtil.rotToVec(aim.direction.x, aim.direction.y);
-        return new Pose(aim.from, direction.normalize());
+        Vec3 normalized = direction.normalize();
+        return new Pose(aim.from, normalized, normalized);
     }
 
     /**
      * 舱盖出口：位置固定在舱盖顶部（3 个采样点横向错开），
-     * 方向按世界 Y 轴 30° 圆锥随机采样，单点停留 3～12 tick 后换向。
+     * 方向按载具自身上方 30° 圆锥随机采样，单点停留 3～12 tick 后换向。
      */
     private static Pose resolveHatch(Anchor anchor, int sampleSeed) {
         VehicleCubeOBB cube = anchor.cube;
         if (cube == null || cube.position == null || cube.rotation == null) return null;
         Quaternionf rotation = new Quaternionf(cube.rotation);
-        // 调用本项目几何规则得到世界坐标；调用舱盖圆锥采样得到本段的方向
+        // 调用本项目几何规则得到世界坐标；调用舱盖圆锥采样得到沿载具自身上方的火星方向。
+        Vec3 roofAxis = RVP_WreckCookoffGeometry.rotateDirection(rotation, anchor.localDirection);
+        Vec3 sparkAxis = RVP_WreckCookoffGeometry.hatchConeDirection(rotation,
+                sampleSeed * 31 + anchor.sampleIndex());
         return new Pose(RVP_WreckCookoffGeometry.point(cube.position, rotation, anchor.local),
-                RVP_WreckCookoffGeometry.hatchConeDirection(sampleSeed * 31 + anchor.sampleIndex()));
+                sparkAxis, roofAxis);
     }
 
     /**
@@ -343,7 +354,7 @@ public final class RVP_WreckCookoffResolver {
         // 底缘高度沿用旧实现的 40% 下沿，保持接缝仍在炮塔底部
         Vec3 local = sample.local(-cube.height * 0.40);
         // 调用本项目接缝方向规则，得到世界水平面内外法线并叠加 0°～+30° 俯仰
-        return new Pose(RVP_WreckCookoffGeometry.point(cube.position, rotation, local),
-                RVP_WreckCookoffGeometry.seamDirection(rotation, sample.normal(), sampleSeed, sampleIndex));
+        Vec3 direction = RVP_WreckCookoffGeometry.seamDirection(rotation, sample.normal(), sampleSeed, sampleIndex);
+        return new Pose(RVP_WreckCookoffGeometry.point(cube.position, rotation, local), direction, direction);
     }
 }

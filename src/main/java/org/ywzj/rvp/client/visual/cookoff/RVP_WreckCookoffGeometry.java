@@ -4,11 +4,11 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 
-/** 纯几何计算；舱盖位置跟随车体而方向恒为世界向上。 */
+/** 纯几何计算；舱盖位置与喷发方向都跟随载具自身姿态。 */
 public final class RVP_WreckCookoffGeometry {
-    /** 世界竖直方向，与残骸是否侧翻无关；舱盖火星的圆锥轴即此方向。 */
+    /** 局部坐标中的上方向；通过 OBB 旋转后得到载具自身上方。 */
     public static final Vec3 UP = new Vec3(0, 1, 0);
-    /** 舱盖火星的圆锥半角，单位度；用户定版：沿世界 Y 轴向上做 30° 圆锥随机采样。 */
+    /** 舱盖火星的圆锥半角，单位度；沿载具自身上方做 30° 圆锥随机采样。 */
     public static final double HATCH_CONE_HALF_ANGLE_DEGREES = 30.0;
     /** 接缝火星相对水平面的抬升角，单位度；与舱盖圆锥半角同名同源（都是 30°）。 */
     public static final double SEAM_ELEVATION_DEGREES = HATCH_CONE_HALF_ANGLE_DEGREES;
@@ -37,19 +37,6 @@ public final class RVP_WreckCookoffGeometry {
     }
 
     /**
-     * 火柱方向：舱盖柱恒为世界向上，与它的火星采样方向解耦。
-     *
-     * <p>舱盖火星只在世界 Y 轴 30° 圆锥内随机（见 {@link #hatchConeDirection}），
-     * 若火柱直接复用火星方向，柱子会跟着随机锥角歪掉；用户定版要求柱子保持原来的竖直行为。</p>
-     *
-     * @param hatch      是否为舱盖出口
-     * @param sparkAxis  该出口本 tick 的火星采样方向
-     */
-    public static Vec3 columnDirection(boolean hatch, Vec3 sparkAxis) {
-        return hatch ? UP : sparkAxis;
-    }
-
-    /**
      * 渲染插值方向：先对前后两帧方向做线性插值再归一化；退化时回退当前帧方向。
      *
      * @param previous      上一 tick 方向
@@ -59,6 +46,18 @@ public final class RVP_WreckCookoffGeometry {
     public static Vec3 interpolateDirection(Vec3 previous, Vec3 current, float partialTick) {
         Vec3 blended = previous.lerp(current, partialTick);
         return blended.lengthSqr() < 1.0e-8 ? current : blended.normalize();
+    }
+
+    /**
+     * 选择稳定火柱轴向；车顶使用载具自身上方，其他出口沿各自喷发方向。
+     *
+     * @param hatch 是否为车顶舱盖出口
+     * @param sparkAxis 当前出口用于火星的方向
+     * @param roofAxis 载具自身上方的世界方向
+     * @return 火柱轴向
+     */
+    public static Vec3 columnDirection(boolean hatch, Vec3 sparkAxis, Vec3 roofAxis) {
+        return hatch ? roofAxis : sparkAxis;
     }
 
     /** 将相对 OBB 中心的局部坐标转为世界坐标，不修改调用者的四元数。 */
@@ -106,22 +105,40 @@ public final class RVP_WreckCookoffGeometry {
     }
 
     /**
-     * 舱盖火星方向：以<b>世界 Y 轴</b>为轴、在 {@link #HATCH_CONE_HALF_ANGLE_DEGREES} 半角内
-     * 均匀随机取一条母线。
+     * 舱盖火星方向：以载具局部 +Y 经世界旋转后的方向为轴、在
+     * {@link #HATCH_CONE_HALF_ANGLE_DEGREES} 半角内均匀随机取一条母线。
      *
      * <p>用"圆盘均匀采样"的半径分布 {@code sinθ = √u · sinα}：若直接对极角线性取样，
      * 点会向圆锥中心聚集；开方后圆锥内各方向的立体角密度才均匀。</p>
      *
      * @param seed 采样种子
-     * @return 归一化世界方向，与 {@link #UP} 的夹角恒 ≤ 30°
+     * @param worldRotation 舱盖所属 OBB 的世界旋转
+     * @return 归一化世界方向，与载具自身上方的夹角恒 ≤ 30°
      */
-    public static Vec3 hatchConeDirection(int seed) {
+    public static Vec3 hatchConeDirection(Quaternionf worldRotation, int seed) {
         double sinHalfAngle = Math.sin(Math.toRadians(HATCH_CONE_HALF_ANGLE_DEGREES));
         double polarSin = Math.sqrt(seedRandom(seed * 17 + 5)) * sinHalfAngle;
         double polarCos = Math.sqrt(Math.max(0.0, 1.0 - polarSin * polarSin));
         double azimuth = seedRandom(seed * 29 + 11) * 2.0 * Math.PI;
-        // 以世界 Y 轴为锥轴：cosθ 取竖直分量，水平分量沿随机方位铺开
-        return new Vec3(Math.cos(azimuth) * polarSin, polarCos, Math.sin(azimuth) * polarSin).normalize();
+        // 先在载具局部坐标的 +Y 圆锥内取样，再整体旋转到世界空间，保证侧翻时仍朝车自身上方喷发。
+        Vec3 localDirection = new Vec3(Math.cos(azimuth) * polarSin, polarCos,
+                Math.sin(azimuth) * polarSin);
+        return rotateDirection(worldRotation, localDirection);
+    }
+
+    /**
+     * 把载具局部方向变换到世界空间并归一化；不修改调用方持有的四元数。
+     *
+     * @param worldRotation 方向所属 OBB 的世界旋转
+     * @param localDirection 载具局部坐标中的方向
+     * @return 归一化世界方向；输入退化时回退到局部 +Y 的世界方向
+     */
+    public static Vec3 rotateDirection(Quaternionf worldRotation, Vec3 localDirection) {
+        if (worldRotation == null || localDirection == null || localDirection.lengthSqr() < 1.0E-8D) {
+            return UP;
+        }
+        Vec3 worldDirection = new Vec3(worldRotation.transform(localDirection.toVector3f()));
+        return worldDirection.lengthSqr() < 1.0E-8D ? UP : worldDirection.normalize();
     }
 
     /**
