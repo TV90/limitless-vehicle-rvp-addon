@@ -266,6 +266,8 @@ public final class RVP_VirtualMissileState {
                 && validOptionalVec(snapshot.topAttackInitialTargetPosition())
                 && validOptionalVec(snapshot.topAttackApexPosition())
                 && Double.isFinite(trajectory.peakFlightSpeed())
+                && Float.isFinite(trajectory.xRot()) && Float.isFinite(trajectory.yRot())
+                && Double.isFinite(trajectory.pitchRateDeg()) && Double.isFinite(trajectory.yawRateDeg())
                 && Double.isFinite(trajectory.flightDistance()) && trajectory.remainingLife() >= 0;
     }
 
@@ -293,6 +295,8 @@ public final class RVP_VirtualMissileState {
         tag.put("velocity", writeVec3(t.velocity()));
         tag.putFloat("xRot", t.xRot());
         tag.putFloat("yRot", t.yRot());
+        tag.putDouble("pitchRateDeg", t.pitchRateDeg());
+        tag.putDouble("yawRateDeg", t.yawRateDeg());
         tag.putDouble("peakFlightSpeed", t.peakFlightSpeed());
         tag.putDouble("flightDistance", t.flightDistance());
         tag.putInt("flightTick", t.flightTick());
@@ -327,7 +331,7 @@ public final class RVP_VirtualMissileState {
                 readVec3(tag.getCompound("position")), readVec3(tag.getCompound("velocity")),
                 tag.getFloat("xRot"), tag.getFloat("yRot"), tag.getDouble("peakFlightSpeed"),
                 tag.getDouble("flightDistance"), tag.getInt("flightTick"), tag.getInt("remainingLife"),
-                tag.getInt("secondPulseStartTick"));
+                tag.getInt("secondPulseStartTick"), tag.getDouble("pitchRateDeg"), tag.getDouble("yawRateDeg"));
         return new RVP_VirtualMissileSnapshot(
                 trajectory, readVec3(tag.getCompound("targetPosition")),
                 readOptionalVec(tag, "lastGuidancePosition"), getUuid(tag, "targetEntityUuid"),

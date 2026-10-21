@@ -23,12 +23,14 @@ class RVP_VirtualMissileStateCodecTest {
         RVP_VirtualMissileState original = state();
         RVP_VirtualTrajectoryState angled = new RVP_VirtualTrajectoryState(
                 new Vec3(100, 120, -200), new Vec3(0, 0, 10), 0, -20,
-                10, 1234.5, 210, 800, -1);
+                10, 1234.5, 210, 800, -1, 1.25, -2.5);
         original.updateTrajectory(angled);
         // 调用本项目 NBT 编解码器，验证既有姿态字段已经足够承载独立机头，无需新 schema。
         RVP_VirtualMissileState loaded = RVP_VirtualMissileState.load(original.save()).orElseThrow();
         assertEquals(angled, loaded.trajectory());
         assertEquals(-20, loaded.trajectory().yRot());
+        assertEquals(1.25, loaded.trajectory().pitchRateDeg());
+        assertEquals(-2.5, loaded.trajectory().yawRateDeg());
         assertEquals(new Vec3(0, 0, 10), loaded.trajectory().velocity());
     }
 
@@ -69,6 +71,21 @@ class RVP_VirtualMissileStateCodecTest {
         CompoundTag nonFinite = state().save();
         nonFinite.getCompound("snapshot").getCompound("position").putDouble("x", Double.NaN);
         assertTrue(RVP_VirtualMissileState.load(nonFinite).isEmpty());
+
+        CompoundTag badRate = state().save();
+        badRate.getCompound("snapshot").putDouble("yawRateDeg", Double.NaN);
+        assertTrue(RVP_VirtualMissileState.load(badRate).isEmpty());
+    }
+
+    /** 缺失运行态角速度安全读零；积分器版本仍由管理器另行检查，不迁移武器 JSON。 */
+    @Test
+    void absentAngularRatesDefaultToRest() {
+        CompoundTag saved = state().save();
+        saved.getCompound("snapshot").remove("pitchRateDeg");
+        saved.getCompound("snapshot").remove("yawRateDeg");
+        var loaded = RVP_VirtualMissileState.load(saved).orElseThrow();
+        assertEquals(0.0, loaded.trajectory().pitchRateDeg());
+        assertEquals(0.0, loaded.trajectory().yawRateDeg());
     }
 
     @Test

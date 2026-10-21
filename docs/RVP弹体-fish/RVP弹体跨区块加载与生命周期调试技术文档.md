@@ -263,6 +263,11 @@ watchdog 每 20 个服务器 Tick 扫描一次，连续 40 Tick 未更新后标�
   `aeroDensityFactor` 和 `aeroInducedDrag`。其中 `bodyVelocityAngleDeg` 是运动阶段结束
   后的实际机头—速度夹角，`aeroLoadFactor` 是本 Tick 制导/干扰路径合并后的最大载荷
   使用率；关闭气动模型或配置不可用时，相关可用 G/参数字段会显示为 `<null>`。
+- 2026-10-21 新增双轴诊断：`attackPitchRateDeg`、`attackYawRateDeg`（均为度/Tick）和
+  `attackEffectiveInertia`（质量派生的无量纲有效惯量系数，不是 kg·m²）。结合
+  `attackAngleActive` 判断是否实际启用；角速度反向需要先制动，丢锁后的攻角不保证逐 Tick
+  单调减小。区块等待门暂停时不推进执行器，不能将等待的墙钟时间当作飞行积分 Tick。
+  公式、PIP 可达性与存档交接见[双轴有效惯量实现](RVP攻角双轴有效惯量降阶模型实现_20261021.md)。
 - `superTickMicros`：父类 `super.tick()` 耗时。
 - `rvpTickMicros`：RVP 自身 Tick 段耗时。
 - `totalTickMicros`：两段总耗时。

@@ -5,7 +5,7 @@ import net.minecraft.world.phys.Vec3;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 /**
- * 机体轴和速度轴分离的准三自由度模型，不模拟力矩、角动量或滚转。
+ * 机体轴和速度轴分离的降阶模型，双轴有效惯量推进姿态，不模拟刚体力矩或滚转。
  * 使用游戏化的总攻角升力曲线；没有风场时速度轴视为相对气流方向。
  * 纯函数不访问实体、世界或客户端，实体和虚拟中段共用。
  */
@@ -29,26 +29,46 @@ public final class RVP_AttackAngleModel {
      */
     public static RVP_AttackAngleSolution solve(Vec3 velocity, Vec3 bodyDirection,
                                                 Vec3 desiredDirection, RVP_AeroSteeringLimits limits) {
+        // 调用状态入口供无历史状态的单步预测使用；连续飞行必须显式传递返回状态。
+        Vec3 body = valid(bodyDirection) && bodyDirection.lengthSqr() > EPSILON * EPSILON
+                ? bodyDirection : valid(velocity) && velocity.lengthSqr() > EPSILON * EPSILON
+                ? velocity : new Vec3(0, 0, 1);
+        return solve(velocity, RVP_AttackAngleState.fromDirection(body, 0), desiredDirection,
+                limits, RVP_AttackAngleInertiaModel.DEFAULT_MASS_KG);
+    }
+
+    /** 连续飞行入口：双轴角速度只能在正式提交时写回，mass 使用现有推进质量约定。 */
+    public static RVP_AttackAngleSolution solve(Vec3 velocity, RVP_AttackAngleState state,
+            Vec3 desiredDirection, RVP_AeroSteeringLimits limits, double mass) {
         // 调用本项目有限值检查，隔离坏输入；零速保持已有姿态，不凭空制造速度。
         Vec3 current = valid(velocity) ? velocity : Vec3.ZERO;
-        Vec3 body = valid(bodyDirection) && bodyDirection.lengthSqr() > EPSILON * EPSILON
-                ? bodyDirection.normalize() : (current.lengthSqr() > EPSILON * EPSILON
-                ? current.normalize() : new Vec3(0.0, 0.0, 1.0));
+        // 调用不可变状态校验，实体与预测器使用同一数值防线。
+        state = state.sanitized();
+        Vec3 body = state.direction();
         if (current.length() <= EPSILON || limits == null || !limits.attackAngleEnabled()) {
-            return new RVP_AttackAngleSolution(current, body, 0.0, 0.0, 0.0);
+            return new RVP_AttackAngleSolution(current, body, 0.0, 0.0, 0.0,
+                    new RVP_AttackAngleState(state.pitchDeg(), state.yawDeg(), 0, 0));
         }
         Vec3 axis = current.normalize();
         Vec3 desired = valid(desiredDirection) && desiredDirection.lengthSqr() > EPSILON * EPSILON
                 ? desiredDirection.normalize() : axis;
-        // 调用本项目统一姿态响应出口，使 PIP 逆响应与实际执行器采用同一比例。
-        double response = bodyResponse(limits);
-        // 调用本项目球面插值推进弹轴，避免反向指令在线性插值中坍缩为零向量。
-        body = RVP_BallisticTrajectoryMath.slerpDirection(body, desired, response);
+        // 调用双轴有效惯量执行器，每 Tick 仅推进一次角速度和机体姿态。
+        var next = RVP_AttackAngleInertiaModel.step(current, state, desired, limits, mass);
+        return evaluateBody(current, next, limits);
+    }
+
+    /** 只结算指定姿态的气动力；PIP 试算不能通过再次积分执行器伪造“已达姿态”。 */
+    public static RVP_AttackAngleSolution evaluateBody(Vec3 current, RVP_AttackAngleState state,
+                                                       RVP_AeroSteeringLimits limits) {
+        Vec3 axis = current.normalize();
+        Vec3 body = state.direction();
         double cap = Math.toRadians(limits.attackAngleLimitDeg());
         // 调用本项目夹角/球面插值，将受控姿态限制在速度轴周围的攻角锥内。
         double angle = RVP_BallisticTrajectoryMath.angleBetween(axis, body);
         if (angle > cap) {
-            body = RVP_BallisticTrajectoryMath.slerpDirection(axis, body, cap / angle);
+            // 调用状态硬约束，让施力轴、推力轴和持久化姿态一致，同时保留锥面切向角速度。
+            state = RVP_AttackAngleInertiaModel.constrainState(axis, state, limits.attackAngleLimitDeg());
+            body = state.direction();
             angle = cap;
         }
         double load = Math.sin(angle) / Math.sin(cap);
@@ -64,7 +84,7 @@ public final class RVP_AttackAngleModel {
         Vec3 next = angle > EPSILON && turn > 0.0
                 ? RVP_BallisticTrajectoryMath.slerpDirection(axis, body, turn / angle).scale(current.length())
                 : current;
-        return new RVP_AttackAngleSolution(next, body, angle, Mth.clamp(load, 0.0, 1.0), turn);
+        return new RVP_AttackAngleSolution(next, body, angle, Mth.clamp(load, 0.0, 1.0), turn, state);
     }
 
     /** 返回既有机头响应比例；显式 G 优先，不改变普通制导的响应语义。 */

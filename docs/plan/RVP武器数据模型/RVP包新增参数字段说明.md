@@ -180,7 +180,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `turning_factor` | 旧版 MCHR 风格方向插值参数表。类型为 `Map<RVP_Range<Integer>, Float>`，key 为飞行 Tick 区间，value 为 0～1 的转向因子；仅未配置 `rvp_maxg` 时约束实体与虚拟制导，区间未命中时使用 0.5。 |
 | `rvp_maxg` | 可选 RVP 最大法向过载，单位 G，默认不配置；优先于 `turning_factor`。气动转向启用时表示设计动压点过载上限；负数和非有限值按 0 G 安全处理，0 表示不允许转向。 |
 | `rvp_aero_steering` | 气动转向总开关，阶段 S2 默认 `false`。关闭时完整保留旧版 `turning_factor` / 常量 `rvp_maxg` 转向且不结算诱导阻力；显式 `true` 时实体与虚拟链共同启用动压减载。 |
-| `rvp_attack_angle_limit_deg` | 可选总攻角控制上限，单位度，默认 null（关闭）。仅 RVP 导弹、`rvp_aero_steering=true` 且值为有限 `(0,90)` 时生效；非法值关闭。启用后机头轴与速度轴独立，机头姿态优先于 `rotate_to_motion`，升力按 `sin(攻角)/sin(上限)` 缩放可用 G，诱导阻力按该载荷平方结算。未配 `rvp_maxg` 且 `turning_factor>=1` 的瞬转弹豁免；显式 G 优先（含 0 G）。智能引信精确追点接管期间保持原行为。此上限限制制导阶段的机头偏角，不硬裁剪后续重力/外力产生的瞬时夹角。详见 [阶段1实现](../RVP导弹攻角阶段1实现_20261007.md)。 |
+| `rvp_attack_angle_limit_deg` | 可选总攻角控制上限，单位度，默认 null（关闭）。仅 RVP 导弹、`rvp_aero_steering=true` 且值为有限 `(0,90)` 时生效；非法值关闭。启用后机头轴与速度轴独立，机头姿态优先于 `rotate_to_motion`，升力按 `sin(攻角)/sin(上限)` 缩放可用 G，诱导阻力按该载荷平方结算。当前机头执行器为无滚转、俯仰/偏航双轴模型，持续保存角度与角速度，利用既有质量、动压和转向参数计算有效惯量响应；有效惯量是无量纲经验系数，不新增 JSON 参数或开关。未配 `rvp_maxg` 且 `turning_factor>=1` 的瞬转弹豁免；显式 G 优先（含 0 G）。智能引信精确追点接管期间保持原行为。此上限限制制导阶段的机头偏角，不硬裁剪后续重力/外力产生的瞬时夹角。详见 [双轴有效惯量实现](../../RVP弹体-fish/RVP攻角双轴有效惯量降阶模型实现_20261021.md)。 |
 | `rvp_induced_drag` | 可选诱导阻力系数，无量纲，默认 null；仅 `rvp_aero_steering=true` 时生效。null 复用有效 `drag_coefficient`，0 显式关闭。 |
 | `rvp_ref_speed` | 可选动压参考速度，单位格/Tick，默认 null；依次回退 `max_speed`、武器初速、3.0。显式 0 关闭动压减载。 |
 | `rvp_turn_rate_limit` | 单 Tick 绝对转角上限，单位度/Tick，默认 0；仅 `rvp_aero_steering=true` 且为正值时生效，0 表示不限制。 |
@@ -1686,7 +1686,7 @@ SACLOS 反坦克导弹（半自动修正）：
 - 虚拟积分不读取 `guidance_data.cruise_leveling_factor` 或 `max_turn_degree_per_tick`。
 - 不添加旧键别名、`legacy*` 或迁移逻辑；历史 JSON 由 `scripts/` 批量修改。
 
-`rvp_maxg`、`turning_factor` 与 `rvp_aero_steering` 等新增字段共同构成实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级、动压解析与诱导阻力实现。攻角阶段1接入后积分器版本由 8 升到 **9**，快照结构版本仍为 1；启用攻角时 xRot/yRot 保存机头轴而非速度轴。**升级后既有版本 8 的在途虚拟记录会被管理器以 INCOMPATIBLE_INTEGRATOR 终止，不会重建；请在没有在途虚拟弹时升级。** 未启用攻角的数值积分仍走原分支。
+`rvp_maxg`、`turning_factor` 与 `rvp_aero_steering` 等既有字段共同构成实体态、虚拟态共用的弹体机动契约，不读取本体 `max_g`。两种状态共用相同优先级、动压解析与诱导阻力实现。双轴有效惯量模型接入后积分器版本由 9 升到 **10**，快照结构版本仍为 1；启用攻角时 xRot/yRot 保存机头轴而非速度轴，另保存 `pitchRateDeg` / `yawRateDeg`（度/Tick）。缺失角速度键按 0 读取，但不绕过积分器版本检查。**升级后既有旧版本（包括 8、9）的在途虚拟记录会被管理器以 INCOMPATIBLE_INTEGRATOR 终止，不会自动迁移或重建；未启用攻角的旧虚拟记录同样受版本检查影响，请在没有在途虚拟弹时升级。** 未启用攻角的数值积分仍走原分支。本次不新增 JSON 配置项，详见 [双轴有效惯量实现](../../RVP弹体-fish/RVP攻角双轴有效惯量降阶模型实现_20261021.md)。
 
 ---
 

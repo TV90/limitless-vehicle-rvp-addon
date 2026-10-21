@@ -101,6 +101,7 @@ import org.ywzj.rvp.util.RVP_RadarContactHelper;
 import org.ywzj.rvp.util.RVP_ChunkPathLoader;
 import org.ywzj.rvp.util.RVP_ChunkPathLoadManager;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryState;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.virtualflight.server.RVP_VirtualMissileSnapshot;
 import org.ywzj.vehicle.all.AllDamageTypes;
 import org.ywzj.vehicle.api.entity.RemoteTickEntity;
@@ -551,6 +552,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private boolean guidanceWireDirectApplied;
     /** 本 Tick 是否已积分攻角；仅服务端临时门控，姿态本身由 xRot/yRot 同步和快照。 */
     private boolean attackAngleApplied;
+    /** 跨 Tick 俯仰角速度，度/Tick；仅权威模拟使用，虚拟化时一并交接。 */
+    private double attackPitchRateDeg;
+    /** 跨 Tick 偏航角速度，度/Tick；无滚转轴，不向客户端增加同步字段。 */
+    private double attackYawRateDeg;
     /** 当前服务端 Tick 是否已有 PRESET 制导写入速度，供冷发射与发动机接管重叠时保留制导结果。 */
     private boolean presetGuidanceMotionAppliedThisTick;
     /** 冷发射窗口内是否曾经成功写入过 PRESET 制导速度，防止单 Tick 制导源抖动把弹体掰回竖直。 */
@@ -1740,6 +1745,52 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return attackAngleApplied;
     }
 
+    /** 读取现有姿态与双轴角速度，供纯数学执行器或无副作用预测使用。 */
+    public RVP_AttackAngleState getAttackAngleState() {
+        return new RVP_AttackAngleState(getXRot(), getYRot(), attackPitchRateDeg, attackYawRateDeg);
+    }
+
+    /** 提交一次完整执行器状态；姿态仍由本体既有旋转通道同步。 */
+    public void setAttackAngleState(RVP_AttackAngleState state) {
+        // 调用状态校验，避免坏状态进入旋转同步及后续三角函数。
+        state = state.sanitized();
+        setXRot((float) state.pitchDeg());
+        setYRot((float) state.yawDeg());
+        attackPitchRateDeg = state.pitchRateDeg();
+        attackYawRateDeg = state.yawRateDeg();
+    }
+
+    /** 攻角门控关闭时释放双轴状态，不改动普通制导负责的姿态。 */
+    public void resetAttackAngleRates() {
+        attackPitchRateDeg = 0.0;
+        attackYawRateDeg = 0.0;
+    }
+
+    /** 实体存档保留角速度；远程视觉克隆的 writeData 不承载权威积分状态。 */
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        // 调用本体/原版存档入口保留所有父类字段。
+        super.addAdditionalSaveData(tag);
+        tag.putDouble("rvpAttackPitchRateDeg", attackPitchRateDeg);
+        tag.putDouble("rvpAttackYawRateDeg", attackYawRateDeg);
+    }
+
+    /** 缺少运行态字段时 NBT 自动读零；这不是武器 JSON schema 迁移。 */
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        // 调用本体/原版恢复入口后，再校验并恢复本项目双轴状态。
+        super.readAdditionalSaveData(tag);
+        restoreAttackAngleRates(tag.getDouble("rvpAttackPitchRateDeg"), tag.getDouble("rvpAttackYawRateDeg"));
+    }
+
+    /** 恢复时只校验角速度，不环绕已有旋转角，避免影响非攻角弹及其旧帧插值。 */
+    private void restoreAttackAngleRates(double pitchRate, double yawRate) {
+        // 调用双轴数值校验，保留父类/快照恢复的原始姿态角表示。
+        var rates = new RVP_AttackAngleState(0, 0, pitchRate, yawRate).sanitized();
+        attackPitchRateDeg = rates.pitchRateDeg();
+        attackYawRateDeg = rates.yawRateDeg();
+    }
+
     /**
      * 合并本 Tick 一次气动转向产生的载荷因子。
      *
@@ -1882,6 +1933,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             presetGuidanceMotionAppliedThisTick = false;
             aeroLoadFactor = 0.0;
             attackAngleApplied = false;
+            // 调用攻角门控，智能引信/瞬转区间接管前清理上一阶段角速度。
+            if (!RVP_ProjectileMotion.usesAttackAngle(this)) resetAttackAngleRates();
             tickGuidance();
             // 调用本项目攻角兜底：无制导指令时推进残留攻角；智能引信拥有独立运动契约。
             if (!smartFuseActive) RVP_ProjectileMotion.finishAttackAngleGuidance(this);
@@ -1978,7 +2031,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     public final RVP_VirtualTrajectoryState createVirtualTrajectoryState() {
         return new RVP_VirtualTrajectoryState(position(), getDeltaMovement(), getXRot(), getYRot(),
-                peakFlightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick);
+                peakFlightSpeed, flightDistance, getFlightTickCount(), life, secondPulseStartTick,
+                attackPitchRateDeg, attackYawRateDeg);
     }
 
     /** 在 discard 前标记“真实转虚拟”专用移除语义。 */
@@ -2027,6 +2081,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         setDeltaMovement(state.velocity());
         setXRot(state.xRot());
         setYRot(state.yRot());
+        // 调用角速度恢复入口，保留原姿态及旧帧插值表示，同时交回虚拟段残余角速度。
+        restoreAttackAngleRates(state.pitchRateDeg(), state.yawRateDeg());
         xRotO = state.xRot();
         yRotO = state.yRot();
         // 调用本项目速率状态更新入口：当前基准取恢复瞬间速度，不从虚拟段历史峰值回填。

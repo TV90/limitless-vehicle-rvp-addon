@@ -10,8 +10,9 @@ import net.minecraft.world.phys.Vec3;
  * @param attackAngleRadians 本次施力前的总攻角，单位弧度
  * @param loadFactor sin(攻角)/sin(上限) 的饱和值，范围 0～1，供诱导阻力使用
  * @param turnAngleRadians 实际速度方向转角，单位弧度
+ * @param state 更新后的双轴姿态与角速度，供下一 Tick 和虚拟化交接使用
  */
 public record RVP_AttackAngleSolution(Vec3 velocity, Vec3 bodyDirection,
                                      double attackAngleRadians, double loadFactor,
-                                     double turnAngleRadians) {
+                                     double turnAngleRadians, RVP_AttackAngleState state) {
 }

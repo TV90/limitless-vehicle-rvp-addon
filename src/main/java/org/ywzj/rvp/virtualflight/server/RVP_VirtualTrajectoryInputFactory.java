@@ -45,11 +45,15 @@ final class RVP_VirtualTrajectoryInputFactory {
         RVP_PropulsionMath.MotorState motorState = RVP_PropulsionMath.resolveMotorState(
                 projectile, motorTick, false);
         double resolvedThrust = motorState.thrust();
+        // 调用共用惯量质量解析器，点火前/无有效发动机不提前消耗燃料；非攻角路径保持原值。
         double resolvedMass = motorState.mass();
         float turningFactor = configuredTurningFactor != null ? configuredTurningFactor : 0.5F;
         // 调用本项目弹体数据解析器，把实体链使用的参考速度、密度与诱导阻力冻结给虚拟链。
         var aeroLimits = projectile.resolveAeroSteeringLimits(
                 data.getProjectileVelocity(), altitude, turningFactor);
+        if (aeroLimits.attackAngleEnabled()) {
+            resolvedMass = RVP_PropulsionMath.resolveAttitudeMass(projectile, motorTick);
+        }
         return new RVP_VirtualTrajectoryParameters(
                 projectile.getRvpMaxG(),
                 turningFactor,

@@ -32,15 +32,16 @@ class RVP_AttackAngleModelTest {
         assertEquals(0.0, RVP_AeroSteeringModel.inducedDragLoss(0.2, result.loadFactor(), 10.0));
     }
 
-    /** 大指令使机头抵达攻角锥，而速度仍受 G 预算限制，二者不可合并。 */
+    /** 大指令先受惯量限制，随后逐步进入攻角锥；速度始终受 G 预算限制。 */
     @Test
     void saturationSeparatesBodyFromVelocityAndHonorsG() {
         // 调用本项目模型以及夹角工具，验证受控机头锥与实际速度的独立性。
         var result = RVP_AttackAngleModel.solve(FORWARD, FORWARD, RIGHT, limits(10.0, 0.5f, 20.0));
-        assertEquals(Math.toRadians(20.0), result.attackAngleRadians(), EPSILON);
-        assertEquals(1.0, result.loadFactor(), EPSILON);
+        assertEquals(Math.toRadians(10.0 * (1.0 - Math.exp(-1.0))), result.attackAngleRadians(), EPSILON);
+        assertTrue(result.loadFactor() < 1.0);
         assertEquals(10.0, result.velocity().length(), EPSILON);
-        assertEquals(10.0 * PhysicsEngine.G, result.velocity().subtract(FORWARD).length(), EPSILON);
+        assertEquals(10.0 * PhysicsEngine.G * result.loadFactor(),
+                result.velocity().subtract(FORWARD).length(), EPSILON);
         assertTrue(RVP_BallisticTrajectoryMath.angleBetween(result.bodyDirection(), result.velocity()) > 0.01);
     }
 
@@ -49,9 +50,10 @@ class RVP_AttackAngleModelTest {
     void partialLoadUsesSineRatioAndSquaredDrag() {
         double angle = Math.toRadians(10.0);
         Vec3 desired = new Vec3(Math.sin(angle), 0.0, Math.cos(angle));
-        // 调用本项目模型，显式 G 的 0.5 姿态响应将 10 度指令变为 5 度攻角。
+        // 调用本项目模型，基准惯量的首 Tick 角速度为目标角速度的 1-exp(-1)。
         var result = RVP_AttackAngleModel.solve(FORWARD, FORWARD, desired, limits(10.0, 0.5f, 20.0));
-        double expected = Math.sin(Math.toRadians(5.0)) / Math.sin(Math.toRadians(20.0));
+        double expected = Math.sin(Math.toRadians(5.0 * (1.0 - Math.exp(-1.0))))
+                / Math.sin(Math.toRadians(20.0));
         assertEquals(expected, result.loadFactor(), EPSILON);
         // 调用本项目诱导阻力公式，保证新的载荷定义仍只扣一次平方代价。
         assertEquals(2.0 * expected * expected,
@@ -68,11 +70,11 @@ class RVP_AttackAngleModelTest {
         var low = RVP_AttackAngleModel.solve(FORWARD, FORWARD, RIGHT, thin);
         var slowVelocity = FORWARD.scale(0.5);
         var slow = RVP_AttackAngleModel.solve(slowVelocity, FORWARD, RIGHT, dense);
-        assertEquals(high.velocity().subtract(FORWARD).length() * 0.25,
+        assertEquals(high.velocity().subtract(FORWARD).length() * 0.25 * low.loadFactor() / high.loadFactor(),
                 low.velocity().subtract(FORWARD).length(), EPSILON);
-        assertEquals(high.velocity().subtract(FORWARD).length() * 0.25,
+        assertEquals(low.velocity().subtract(FORWARD).length(),
                 slow.velocity().subtract(slowVelocity).length(), EPSILON);
-        assertEquals(high.bodyDirection(), low.bodyDirection());
+        assertEquals(high.state().yawRateDeg() * 0.5, low.state().yawRateDeg(), EPSILON);
     }
 
     /** 绝对角速率与最大 G 同时存在时取较紧限制。 */
@@ -117,7 +119,7 @@ class RVP_AttackAngleModelTest {
         assertTrue(opposite.attackAngleRadians() <= Math.toRadians(20.0) + EPSILON);
         var stopped = RVP_AttackAngleModel.solve(Vec3.ZERO, RIGHT, FORWARD, limits(10.0, 0.5f, 20.0));
         assertEquals(Vec3.ZERO, stopped.velocity());
-        assertEquals(RIGHT, stopped.bodyDirection());
+        assertTrue(RIGHT.distanceTo(stopped.bodyDirection()) < EPSILON);
         var invalid = RVP_AttackAngleModel.solve(FORWARD, null, new Vec3(Double.NaN, 0, 0), limits(10.0, 0.5f, 20.0));
         assertEquals(FORWARD, invalid.velocity());
     }
@@ -128,13 +130,14 @@ class RVP_AttackAngleModelTest {
         var limits = limits(1.0, 0.5f, 20.0);
         // 调用本项目模型生成一次机头偏转，再以当前速度作为无目标回正指令。
         var initial = RVP_AttackAngleModel.solve(FORWARD, FORWARD, RIGHT, limits);
-        var next = RVP_AttackAngleModel.solve(initial.velocity(), initial.bodyDirection(), initial.velocity(), limits);
+        var next = RVP_AttackAngleModel.solve(initial.velocity(), initial.state(), initial.velocity(), limits, 100);
         assertTrue(next.loadFactor() > 0.0);
-        assertTrue(next.loadFactor() < initial.loadFactor());
+        // 角速度仍可能使首个回正 Tick 的攻角增长；应检查最终收敛而非强制瞬时单调。
+        assertTrue(next.loadFactor() < 1.0);
         double previous = next.loadFactor();
-        for (int tick = 0; tick < 15; tick++) {
-            next = RVP_AttackAngleModel.solve(next.velocity(), next.bodyDirection(), next.velocity(), limits);
-            assertTrue(next.loadFactor() <= previous + EPSILON);
+        for (int tick = 0; tick < 80; tick++) {
+            next = RVP_AttackAngleModel.solve(next.velocity(), next.state(), next.velocity(), limits, 100);
+            assertTrue(next.loadFactor() >= 0 && next.loadFactor() <= 1);
             previous = next.loadFactor();
         }
         assertTrue(previous < 0.001);

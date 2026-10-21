@@ -7,6 +7,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringSolution;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleSolution;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 
@@ -21,7 +22,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */
     public static final String ID = "rvp_current";
     /** 当前 RVP 纯数学弹道状态版本，用于阻止不兼容状态继续积分。 */
-    public static final int VERSION = 9;
+    public static final int VERSION = 10;
 
     /** {@inheritDoc} */
     @Override
@@ -132,9 +133,10 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
                         guidance.fixedTargetPosition(), guidance.preset(), limits)
                 : RVP_BallisticTrajectoryMath.resolveGPSCruiseDirection(state.position(), velocity,
                         guidance.fixedTargetPosition(), parameters.cruiseAltitude(), limits);
-        Vec3 body = Vec3.directionFromRotation(state.xRot(), state.yRot());
-        // 调用本项目共用攻角模型，把已持久化的机头轴作为当前姿态，不从速度重建。
-        RVP_AttackAngleSolution steering = RVP_AttackAngleModel.solve(velocity, body, desired, limits);
+        // 调用本项目共用双轴执行器，读取持久化角速度，不从速度轴重建或清零惯量状态。
+        RVP_AttackAngleSolution steering = RVP_AttackAngleModel.solve(velocity,
+                new RVP_AttackAngleState(state.xRot(), state.yRot(), state.pitchRateDeg(), state.yawRateDeg()),
+                desired, limits, parameters.mass());
         velocity = steering.velocity();
         if (parameters.propulsion()) {
             if (tick >= parameters.ignitionTick()) {
@@ -171,17 +173,19 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
         }
         // 调用本项目角度换算，以机体轴保存姿态，使实体恢复后保留攻角。
         RVP_VirtualTrajectoryState next = new RVP_VirtualTrajectoryState(state.position().add(velocity), velocity,
-                RVP_BallisticTrajectoryMath.pitchFromVelocity(steering.bodyDirection()),
-                RVP_BallisticTrajectoryMath.yawFromVelocity(steering.bodyDirection()),
+                (float) steering.state().pitchDeg(), (float) steering.state().yawDeg(),
                 Math.max(state.peakFlightSpeed(), velocity.length()), state.flightDistance() + velocity.length(),
-                tick, state.remainingLife() - 1, state.secondPulseStartTick());
+                tick, state.remainingLife() - 1, state.secondPulseStartTick(),
+                steering.state().pitchRateDeg(), steering.state().yawRateDeg());
         // 调用本项目有限值检查，坏状态仍由现有虚拟飞行管理器终止，不静默修复在途记录。
         boolean finite = RVP_BallisticTrajectoryMath.isFinite(next.position())
                 && RVP_BallisticTrajectoryMath.isFinite(next.velocity())
                 && Float.isFinite(next.xRot()) && Float.isFinite(next.yRot())
                 && Double.isFinite(next.peakFlightSpeed()) && Double.isFinite(next.flightDistance())
                 && RVP_BallisticTrajectoryMath.isFinite(state.velocity())
-                && Float.isFinite(state.xRot()) && Float.isFinite(state.yRot());
+                && Float.isFinite(state.xRot()) && Float.isFinite(state.yRot())
+                && Double.isFinite(state.pitchRateDeg()) && Double.isFinite(state.yawRateDeg())
+                && Double.isFinite(next.pitchRateDeg()) && Double.isFinite(next.yawRateDeg());
         return new RVP_VirtualTrajectoryResult(next, steering.turnAngleRadians(), !finite);
     }
 }

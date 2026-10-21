@@ -184,8 +184,9 @@ public final class RVP_GuidanceRuntimeMath {
                 // 调用本项目配置与动力快照，冻结试算预算；不提前点火或写运动速度。
                 RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
                         context.data().getProjectileVelocity(), projectile.getY(), factor);
-                pipControl = RVP_PIPAttackAngleController.solve(current, projectile.getLookAngle(), next,
-                        limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile));
+                pipControl = RVP_PIPAttackAngleController.solve(current, projectile.getAttackAngleState(), next,
+                        limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile),
+                        RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
                 // 调用本项目单次结果写回，禁止出口再次积分攻角或再次施加旧速度 blend。
                 next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, pipControl.steering());
                 pipAttackApplied = true;

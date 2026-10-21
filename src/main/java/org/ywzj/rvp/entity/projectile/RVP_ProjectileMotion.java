@@ -11,6 +11,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringLimits;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleSolution;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -49,17 +50,15 @@ public final class RVP_ProjectileMotion {
                                                Vec3 desired, RVP_AeroSteeringLimits limits) {
         // 调用本项目纯数学攻角模型，用同步姿态作为跨 Tick 机体轴。
         RVP_AttackAngleSolution solution = RVP_AttackAngleModel.solve(
-                current, projectile.getLookAngle(), desired, limits);
+                current, projectile.getAttackAngleState(), desired, limits, resolveAttackAngleMass(projectile));
         // 调用统一写回入口，普通制导与 PIP 控制器都只能提交一次姿态及载荷。
         return applyAttackAngleSolution(projectile, solution);
     }
 
     /** 提交已求解的攻角结果；PIP 的无副作用试算不能调用此方法。 */
     public static Vec3 applyAttackAngleSolution(RVP_BaseBullet projectile, RVP_AttackAngleSolution solution) {
-        // 调用本体向量工具把独立机体轴写入现有俯仰/偏航同步通道。
-        Vec2 rotation = VectorUtil.vecToRot(solution.bodyDirection());
-        projectile.setXRot(rotation.x);
-        projectile.setYRot(rotation.y);
+        // 调用统一双轴状态写回，保留极点偏航及角速度，姿态仍走现有同步通道。
+        projectile.setAttackAngleState(solution.state());
         // 调用本项目载荷与单步标记入口，避免本 Tick 无目标兜底重复积分。
         projectile.recordAeroLoadFactor(solution.loadFactor());
         projectile.markAttackAngleApplied();
@@ -73,6 +72,17 @@ public final class RVP_ProjectileMotion {
         return resolvePIPMotorState(data == null ? null : data.getProjectileData(), projectile.getFlightTickCount(),
                 projectile.getColdLaunchTimeTick(), projectile.getSecondPulseStartTick(),
                 data != null && isDualPulseSupportedMissile(data));
+    }
+
+    /** 惯量独立于是否正在燃烧：点火前为满载质量，燃烧中为剩余质量，燃尽为干质量。 */
+    public static double resolveAttackAngleMass(RVP_BaseBullet projectile) {
+        // 调用配置和飞行时序出口，不在读取质量时触发二脉冲或消耗燃料。
+        var config = projectile.getRvpData();
+        if (config == null) return 0.0;
+        var data = config.getProjectileData();
+        int ignition = Math.max(data.getResolvedIgnitionDelayTick(), projectile.getColdLaunchTimeTick());
+        // 调用共用惯量质量解析器，与虚拟态使用完全相同的点火前/燃烧中/滑翔质量。
+        return RVP_PropulsionMath.resolveAttitudeMass(data, projectile.getFlightTickCount() - ignition);
     }
 
     /** 可独立回归的动力快照解析；等待二脉冲期间 PIP 原门控关闭，不预判未来点火。 */
@@ -96,7 +106,12 @@ public final class RVP_ProjectileMotion {
     /** 丢锁、延迟制导或无目标时仍推进残留攻角，姿态逐步向当前速度回正。 */
     public static void finishAttackAngleGuidance(RVP_BaseBullet projectile) {
         // 调用本项目门控和单步标记，确保每个真实飞行 Tick 最多求解一次。
-        if (!usesAttackAngle(projectile) || projectile.hasAttackAngleApplied()) return;
+        if (!usesAttackAngle(projectile)) {
+            // 调用状态清理出口，离开攻角区间后不能遗留角动量给下一次启用。
+            projectile.resetAttackAngleRates();
+            return;
+        }
+        if (projectile.hasAttackAngleApplied()) return;
         var data = projectile.rvpData.getProjectileData();
         Float factor = data.resolveTurningFactor(projectile.getFlightTickCount());
         RVP_AeroSteeringLimits limits = data.resolveAeroSteeringLimits(
@@ -334,6 +349,8 @@ public final class RVP_ProjectileMotion {
             }
         } else {
             projectile.applySpawnAimRot(aim);
+            // 冷发射攻角弹的机头必须先对齐弹射轴；否则初始瞄准姿态会在点火后被当作推力方向。
+            initializeColdLaunchAttackAngle(projectile, aim);
             if (projectile.rvpData != null
                     && !usesAttackAngle(projectile)
                     && projectile.rvpData.getProjectileData().isRotateToMotion()
@@ -343,6 +360,44 @@ public final class RVP_ProjectileMotion {
         }
         projectile.yRotO = projectile.getYRot();
         projectile.xRotO = projectile.getXRot();
+    }
+
+    /**
+     * 冷发射开始前初始化一次攻角机头状态，消除“初始瞄准轴”和“冷发射速度轴”的断层。
+     *
+     * <p>这里不能直接使用最终 deltaMovement：它仍包含出膛初速及可选载机速度，
+     * 而冷发射弹的机头应沿武器单元配置的局部弹射轴。方向转换必须与
+     * {@link #applyPreIgnitionVelocity(RVP_BaseBullet, Vec3, int)} 使用同一套载具 OBB 轴。</p>
+     */
+    private static void initializeColdLaunchAttackAngle(RVP_BaseBullet projectile, RVP_BaseBullet.AimRot aim) {
+        // 调用本项目攻角门控，仅改变启用冷发射攻角模型的导弹，普通弹及普通导弹保持原有发射姿态。
+        if (projectile.getColdLaunchTimeTick() <= 0 || !usesAttackAngle(projectile)) {
+            return;
+        }
+        AbstractVehicle carrier = projectile.shooterVehicle;
+        if (carrier == null || carrier.getMainCubeOBB() == null) {
+            return;
+        }
+        Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
+        Vec3 coldDirection = resolveColdLaunchDirection(projectile.getColdLaunchVelocity(), axes);
+        if (coldDirection.lengthSqr() <= 1.0E-8) {
+            return;
+        }
+        // 调用本项目双轴状态入口：从冷发射轴静止起步，避免继承初始瞄准角速度或产生虚假的前向推力。
+        projectile.setAttackAngleState(RVP_AttackAngleState.fromDirection(coldDirection, aim.yRot()));
+    }
+
+    /** 按载具主 OBB 轴把局部冷发射速度转换为世界方向，供实体初始化和单元测试共用。 */
+    static Vec3 resolveColdLaunchDirection(Vec3 configuredVelocity, Vector3f[] axes) {
+        if (configuredVelocity == null || axes == null || axes.length < 3
+                || configuredVelocity.lengthSqr() <= 1.0E-8) {
+            return Vec3.ZERO;
+        }
+        // 与 applyPreIgnitionVelocity 保持相同的局部 X/Y/Z 轴映射，禁止冷发射方向另走一套坐标约定。
+        Vec3 world = new Vec3(axes[0]).scale(configuredVelocity.x)
+                .add(new Vec3(axes[1]).scale(configuredVelocity.y))
+                .add(new Vec3(axes[2]).scale(configuredVelocity.z));
+        return world.lengthSqr() <= 1.0E-8 ? Vec3.ZERO : world.normalize();
     }
 
     /**

@@ -1,24 +1,25 @@
 # RVP 制导转向气动化方案（最小 JSON 改动）
 
-> 状态：基础气动转向与导弹攻角阶段 1 已实现；默认关闭，尚未替任何载具包武器批量开启攻角。
+> 状态：基础气动、导弹攻角及无滚转双轴有效惯量已实现；本页按 2026-10-21 当前代码更新。配置默认关闭不等于现有载具包未启用；本次惯量改动不修改任何武器 JSON。
 >
 > 适用项目：`limitless-vehicle-rvp-addon`，Minecraft 1.20.1 Forge；不修改 `ywzj_vehicle` 本体源码。
 >
 > 本文只描述当前工作区已经存在的实现。不要把旧的设计草案参数（例如
 > `rvp_alpha_max`、`rvp_alpha_tau`、`rvp_lift_gain` 或 `alphaRadians`）当作当前 JSON
 > schema；当前攻角开关只有 `rvp_attack_angle_limit_deg`。
+> 质量惯量、PIP 状态反解、NBT 和升级验证详见[双轴有效惯量实现](RVP攻角双轴有效惯量降阶模型实现_20261021.md)，没有新增独立惯量配置键。
 
 ---
 
 ## 1. 当前结论
 
-原有转向链仍然保留两层行为：
+当前转向链保留三种行为：
 
 1. `rvp_aero_steering=false`：严格走旧版 `rvp_maxg` 或 `turning_factor` 转向，不产生新的气动载荷和诱导阻力。
 2. `rvp_aero_steering=true` 且未开启攻角：走已有的归一化动压、可用 G、绝对转角和 `λ²` 诱导阻力模型。
 3. `rvp_aero_steering=true` 且满足攻角门控：导弹的机头轴与速度轴分离，机头先转向期望方向，速度只按攻角产生的法向过载转动；推力沿机头轴，转弯付出诱导阻力。
 
-因此，**相对于已经接入基础气动转向的数据模型，攻角只新增 1 个 JSON 键**：
+阶段 1 相对于基础气动转向只新增过 1 个 JSON 键；2026-10-21 惯量扩展不再新增任何键：
 `rvp_attack_angle_limit_deg`。如果某个旧武器还没有开启基础气动转向，则最小启用片段是：
 
 ```json
@@ -30,7 +31,7 @@
 }
 ```
 
-这里的 `20` 只是示例，不是全弹种推荐值。当前工作区没有把这两个键写入任何载具包武器 JSON；开启前仍需按具体弹种实测。
+这里的 `20` 只是示例，不是全弹种推荐值。配置是否已启用应读取当前武器 JSON；本次代码不更改启用面，已有攻角弹会直接使用惯量响应，仍需按具体弹种实测。
 
 旧 JSON 的默认行为保持不变：`rvp_aero_steering` 默认 `false`，
 `rvp_attack_angle_limit_deg` 缺省或非法时等价于关闭攻角。
@@ -56,7 +57,7 @@
 - 不在实体或渲染类用武器 ID 区分弹种。
 - 不修改 `ywzj_vehicle` 本体源码。
 - 不新增 Mixin，也不新增资源、模型、贴图或音效依赖。
-- 不把当前攻角实现描述成完整 6DOF：没有滚转、转动惯量、力矩、侧滑状态或真实升阻力表。
+- 不把当前攻角实现描述成完整 6DOF：只有双轴角速度与质量派生的有效惯量系数，没有滚转、真实惯量张量、力矩、侧滑状态或真实升阻力表。
 - `turning_factor >= 1` 且未显式配置 `rvp_maxg` 的瞬转弹继续保留瞬转豁免。
 
 ---
@@ -135,15 +136,15 @@
 
 | 配置情况 | `turning_factor` 的新语义 |
 | --- | --- |
-| 未配置 `rvp_maxg`，且 `turning_factor < 1` | 机头轴朝期望方向的响应比例；同时用于折算设计 G |
-| 显式配置 `rvp_maxg` | 基本不再控制攻角转向，机头响应固定为 `0.5`，可用 G 由 `rvp_maxg` 决定 |
+| 未配置 `rvp_maxg`，且 `turning_factor < 1` | 机头目标角速度的基础响应增益；再乘 √qp 并经过质量惯量松弛，同时用于折算设计 G |
+| 显式配置 `rvp_maxg` | 基础响应增益固定 `0.5`，并非最终机头每 Tick 插值比例；仍受 √qp、惯量和残余角速度影响。可用 G 由 `rvp_maxg` 决定 |
 | 未配置 `rvp_maxg`，且 `turning_factor >= 1` | 继续作为瞬转豁免，攻角模型不生效，保持旧的瞬转行为 |
 
 攻角模式下的实际流程是：
 
 ```text
 turning_factor
-    → 机头轴响应速度
+    → 基础增益 × √qp → 质量惯量下的双轴角速度 → 机头姿态
     → 当前机头—速度夹角 α
     → λ = sin(α) / sin(攻角上限)
     → G_normal = G_available × λ
@@ -163,10 +164,11 @@ turning_factor
 
 ## 4. 当前数学模型
 
-当前模型是“无滚转、无角动量的准三自由度近似”：
+当前模型是“无滚转、双轴、有效惯量的降阶近似”：
 
 - 速度轴暂作为无风条件下的相对气流方向；
-- 机头轴由现有 `xRot/yRot` 表示并跨 Tick 保留；
+- 机头轴由现有 `xRot/yRot` 表示，并跨 Tick 保留俯仰/偏航角速度；
+- 有效惯量为 `clamp(sqrt(massKg/100),0.6,3)`，是经验响应系数而非 kg·m²；
 - 不单独积分攻角变量，不引入 `alphaRadians`；
 - 不模拟真实升力面、静稳定性、侧滑和滚转。
 
@@ -204,10 +206,10 @@ G_available = G_design × qp
 
 开启攻角后，`RVP_AttackAngleModel.solve` 按以下顺序计算：
 
-1. 使用上一 Tick 的机头轴；若机头轴无效，回退到当前速度轴。
+1. 读取上一 Tick 的机头姿态和双轴角速度；连续模拟使用显式状态入口，不每步清零角速度。
 2. 制导层提供未经旧版 `turning_factor`/G 裁决的期望方向。
-3. 机头轴以球面插值朝期望方向推进：未显式配置 G 时响应比例为当前 `turning_factor`；显式配置 G 时固定为 `0.5`，避免同时配置 `turning_factor` 改变显式 G 的主控语义。
-4. 将机头轴限制在当前速度轴周围的攻角锥内：
+3. 先把期望方向限制在速度轴攻角锥内。基础响应（显式 G 为 0.5，否则为 factor）乘 √qp 生成目标角速度，以 `k=1-exp(-1/Ieff)` 推进双轴角速度，再积分姿态。质量取点火前满载、燃烧中当前质量和燃尽质量；不可用时回退 100 kg。详见[完整公式与质量约定](RVP攻角双轴有效惯量降阶模型实现_20261021.md)。
+4. 对实际机头再做总攻角锥约束，移除朝锥外增长的角速度分量，保留切向运动：
 
    ```text
    α = angle(velocity_axis, body_axis)
@@ -218,7 +220,7 @@ G_available = G_design × qp
 5. 用 `G_available × λ` 得到本 Tick 法向过载，再换算实际速度转角。速度最多转到机头轴，不会超过当前机头攻角。
 6. 速度转向只改变方向，保持进入求解器时的速率；诱导阻力由运动阶段统一扣除。
 
-因此，开启攻角后会出现可观察的“机头先转、速度滞后”：机头与速度的夹角越大，`λ` 越大，法向转向和诱导阻力越强，但攻角不会超过配置上限。
+因此会同时出现机头响应滞后和“机头先转、速度随后转向”。机头与速度的夹角越大，`λ` 越大，法向转向和诱导阻力越强。控制阶段不超过攻角上限；后续运动或外力造成的瞬时夹角不在这里硬裁剪。
 
 #### 假设数据：
 
@@ -324,7 +326,7 @@ min(2.7°, 2°) = 2°/Tick
 
 ### 4.3 无目标、丢锁与强制干扰
 
-- 无目标、丢锁或本 Tick 没有制导指令时，以当前速度方向作为期望方向；机头逐步回正，残余攻角仍会产生对应的载荷和诱导阻力。
+- 无目标、丢锁或本 Tick 没有制导指令时，以当前速度方向作为期望方向；保留角速度继续回正，首个制动 Tick 的攻角可能继续增大，不能要求逐 Tick 严格单调下降。残余攻角仍产生载荷和诱导阻力。
 - SACLOS/DIRCM 等强制偏转可以直接改变速度，不受攻角模型的法向转角裁决；但实际机头—速度夹角会被测量并记账，仍承担诱导阻力代价。
 - 同一 Tick 先后出现干扰偏转和制导修正时，弹体只保留较大的载荷使用率，避免后一次小修正覆盖前一次大载荷。
 - 智能引信路径不使用攻角模型，继续沿用原来的精确追点速度与姿态约束。
@@ -341,7 +343,7 @@ min(2.7°, 2°) = 2°/Tick
 原有制导算法
   → 生成期望方向
   → RVP_AttackAngleModel（仅满足攻角门控时）
-       ├─ 更新 xRot/yRot 机头轴
+       ├─ 更新双轴角速度与 xRot/yRot 机头轴
        ├─ 记录本 Tick λ
        └─ 返回法向速度转向结果
   → 碰撞/命中相关逻辑
@@ -354,6 +356,8 @@ min(2.7°, 2°) = 2°/Tick
 ```
 
 开启攻角时，`RVP_GuidanceRuntimeMath` 和 `RVP_WireGuidanceSteering` 都会跳过旧的速度预插值，直接把原始期望方向交给攻角模型，避免同一 Tick 被转向两次。普通制导朝向入口 `applyGuidanceFacing` 也不会再覆盖攻角模式刚写入的机头姿态。
+
+PIP 有效时由 `RVP_PIPAttackAngleController` 先按原航迹预算反解机头指令；读取本 Tick 双轴状态、当前质量及冻结推力，候选试算不回写实体，最终只提交一次。控制器自身不保存可变状态，但其输入不再是无角速度记忆的姿态。
 
 ### 5.2 发动机与恒速
 
@@ -368,15 +372,15 @@ min(2.7°, 2°) = 2°/Tick
 
 ### 6.1 虚拟积分器
 
-`RVP_RvpTrajectoryIntegrator.VERSION` 已从 8 提升为 **9**。攻角分支在 `step` 中执行：
+`RVP_RvpTrajectoryIntegrator.VERSION` 在阶段 1 从 8 升到 9，本次再从 9 升为 **10**。攻角分支在 `step` 中执行：
 
 ```text
 原始 GPS/PRESET 期望方向
-  → RVP_AttackAngleModel（使用 state.xRot/yRot 作为当前机头轴）
+  → RVP_AttackAngleModel（读取 state.xRot/yRot 与两轴角速度、当前质量）
   → 沿机头轴施加推力
   → 基础阻力、显式重力、速度钳制
   → 非恒速时扣除诱导阻力
-  → 用机头轴写回 state.xRot/yRot
+  → 写回机头 state.xRot/yRot 与 pitchRateDeg/yawRateDeg
   → 平移并生成下一状态
 ```
 
@@ -387,9 +391,9 @@ GPS/PRESET 在攻角分支使用 `RVP_BallisticTrajectoryMath.resolveGPSCruiseDi
 
 ### 6.2 持久化和交接
 
-- `RVP_VirtualTrajectoryState` 原有的 `xRot/yRot` 已足够保存独立机头姿态，不新增 `alphaRadians` 字段。
-- `RVP_VirtualMissileState` 的状态 schema 仍为 `1`，NBT 仍使用原有 `xRot`/`yRot` 字段。
-- 实体进入虚拟态、虚拟态恢复实体时都携带机头姿态；恢复时攻角模式不会把机头重新强制对齐到速度。
+- `RVP_VirtualTrajectoryState` 在原有 `xRot/yRot` 外增加 `pitchRateDeg/yawRateDeg`，不新增 `alphaRadians`。
+- `RVP_VirtualMissileState` 的 schema 仍为 `1`；NBT 保存姿态和两轴角速度，缺键读零不代表积分器版本兼容。
+- 虚实交接同时携带机头姿态和角速度；恢复攻角模式不强制对齐速度，也不重新从静止角速度起步。实体 NBT 使用 `rvpAttackPitchRateDeg/rvpAttackYawRateDeg`，不增加网络字段。
 - 积分器版本变化不是旧状态迁移。管理器遇到旧积分器版本的在途虚拟弹会以 `INCOMPATIBLE_INTEGRATOR` 终止，不会自动重建或迁移。部署该版本前应尽量清空在途虚拟弹。
 
 ### 6.3 当前边界
@@ -410,7 +414,9 @@ GPS/PRESET 在攻角分支使用 `RVP_BallisticTrajectoryMath.resolveGPSCruiseDi
 | `RVP_ProjectileData` | 解析 `rvp_attack_angle_limit_deg`，构造实体/虚拟共用的 `RVP_AeroSteeringLimits`。 |
 | `RVP_AeroSteeringLimits` | 保存当前 Tick 的气动快照，并负责攻角门控；七参数构造入口默认攻角关闭。 |
 | `RVP_AttackAngleModel` | 无实体/世界依赖的机头轴、攻角锥、载荷和法向速度转向计算。 |
-| `RVP_AttackAngleSolution` | 返回速度、机头轴、攻角、载荷使用率和实际转角。 |
+| `RVP_AttackAngleState`、`RVP_AttackAngleInertiaModel` | 不可变双轴状态、质量惯量响应和圆锥边界角速度投影。 |
+| `RVP_AttackAngleSolution` | 返回速度、机头轴、攻角、载荷、实际转角及下一双轴状态。 |
+| `RVP_PIPAttackAngleController`、`RVP_PropulsionMath.resolveAttitudeMass` | 有状态 PIP 反解及实体/虚拟共用惯量质量解析。 |
 | `RVP_GuidanceRuntimeMath` | 常规制导、GPS/PRESET 实体路径接入攻角模型。 |
 | `RVP_WireGuidanceSteering` | HITL/线导接入攻角模型，并防止后续直控代码覆盖独立姿态。 |
 | `RVP_ProjectileMotion` | 实体姿态写回、无指令时攻角回正、沿机头推力和诱导阻力结算。 |
@@ -438,10 +444,13 @@ GPS/PRESET 在攻角分支使用 `RVP_BallisticTrajectoryMath.resolveGPSCruiseDi
 - 攻角越大，法向转向和诱导阻力越强；
 - 诱导阻力在速度钳制后扣除，非恒速弹会掉速；
 - 高度和低速会通过 `qp` 降低有限 G 的可用转向。
+- 机头响应另受 √qp 和质量惯量影响；转向和反向有角速度记忆，不再等价于旧 slerp。四组 PIP 自动化首次交会误差较无攻角基线最多增加约 0.15 格，实机命中率尚未测量。
 
 ### 8.3 回滚方式
 
 优先对单个武器设置 `"rvp_aero_steering": false`，即可同时关闭基础气动与攻角分支并回到旧行为。也可以删除 `rvp_attack_angle_limit_deg`，仅保留基础气动转向。当前没有全局开启攻角的默认值修改。
+
+上述是经用户确认后可选的配置回退方式，本次没有执行。它们不能恢复“有攻角但无惯量”的阶段 1；该需求必须成组回退执行器、PIP、状态交接与版本契约。升级/回退前均应清空在途虚拟弹。
 
 ---
 
@@ -449,7 +458,9 @@ GPS/PRESET 在攻角分支使用 `RVP_BallisticTrajectoryMath.resolveGPSCruiseDi
 
 ### 9.1 自动化验证
 
-当前工作区已验证：
+2026-10-21 当前增量已验证：`./gradlew build` 成功，833 项测试全部通过；服务端 `Done (2.069s)!`，对比既有基线无新增错误，进程和端口已清理。PIP 测试容许预算变化、状态连续性覆盖及实机边界见[本次验证记录](RVP攻角双轴有效惯量降阶模型实现_20261021.md)。
+
+以下保留阶段 1 当时的历史验证，不作为当前测试数量：
 
 - `./gradlew build` 成功；
 - 强制重新编译与测试通过，**771 项测试，失败/错误/跳过均为 0**；

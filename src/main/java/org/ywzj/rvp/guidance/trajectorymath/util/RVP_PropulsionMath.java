@@ -20,6 +20,15 @@ public final class RVP_PropulsionMath {
     public record MotorState(boolean burning, double thrust, double mass) {
     }
 
+    /** 惯量质量不以“是否正在提供推力”为门控；点火前/无有效发动机保持满载，之后沿用变质量。 */
+    public static double resolveAttitudeMass(RVP_ProjectileData data, int motorTick) {
+        if (data == null) return 0.0;
+        // 调用既有质量和推进资格出口，避免未燃烧时提前扣除燃料。
+        if (motorTick < 0 || !data.usesPropulsion()) return data.getResolvedMass();
+        // 调用已有动力解析公式；二脉冲仍使用主燃尽干质量，不需要在此触发点火。
+        return resolveMotorState(data, motorTick, false).mass();
+    }
+
     /**
      * 根据点火后的燃烧 Tick 与第二脉冲状态解析当前发动机状态。
      * 主燃烧期使用推力曲线和变质量；第二脉冲与燃尽阶段使用主燃烧结束时的干质量。

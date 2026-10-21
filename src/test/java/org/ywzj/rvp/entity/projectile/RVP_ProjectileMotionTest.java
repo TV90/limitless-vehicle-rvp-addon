@@ -1,7 +1,9 @@
 package org.ywzj.rvp.entity.projectile;
 
 import com.google.gson.Gson;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
+import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,5 +64,21 @@ class RVP_ProjectileMotionTest {
     void completedColdLaunchDoesNotTriggerHandoff() {
         assertFalse(RVP_ProjectileMotion.shouldPreserveGuidanceDuringColdLaunch(
                 20, 20, 20, true));
+    }
+
+    /** 冷发射局部轴必须转换为世界单位轴，供攻角机头初始化而不是继承初始瞄准方向。 */
+    @Test
+    void coldLaunchDirectionUsesVehicleAxes() {
+        var axes = new Vector3f[]{
+                new Vector3f(1, 0, 0),
+                new Vector3f(0, 0, 1),
+                new Vector3f(0, 1, 0)
+        };
+        Vec3 direction = RVP_ProjectileMotion.resolveColdLaunchDirection(
+                new Vec3(0, 2, 0), axes);
+
+        assertEquals(0.0, direction.x, 1.0E-9);
+        assertEquals(0.0, direction.y, 1.0E-9);
+        assertEquals(1.0, direction.z, 1.0E-9);
     }
 }

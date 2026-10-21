@@ -5,7 +5,7 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * PIP 专用的航迹到机头指令适配器，纯数学、无积分状态、不修改实体。
- * 外环沿用旧航迹响应和 G 预算，内环反解现有攻角执行器并计入本 Tick 沿机头推力。
+ * 外环沿用旧航迹响应和 G 预算，内环读取不可变双轴状态反解执行器，并计入沿机头推力。
  * 不预先扣诱导阻力；正式载荷与姿态只由返回的实际求解结果写回一次。
  */
 public final class RVP_PIPAttackAngleController {
@@ -13,8 +13,6 @@ public final class RVP_PIPAttackAngleController {
     private static final double EPSILON = 1.0E-8;
     /** 单步攻角反解最多 INVERSE_ITERATIONS 轮，避免热路径随交战距离增长。 */
     private static final int INVERSE_ITERATIONS = 10;
-    /** 避开共用 slerp 的完全反向分支，保留期望旋转平面，单位弧度。 */
-    private static final double MAX_INPUT_ANGLE = Math.PI - 0.003;
 
     private RVP_PIPAttackAngleController() { }
 
@@ -42,16 +40,26 @@ public final class RVP_PIPAttackAngleController {
      */
     public static Result solve(Vec3 velocity, Vec3 bodyDirection, Vec3 desiredDirection,
                                RVP_AeroSteeringLimits limits, RVP_PropulsionMath.MotorState motor) {
+        // 调用状态构造器提供零角速度的独立预测入口；连续仿真与实体改用显式状态重载。
+        Vec3 body = validDirection(bodyDirection) ? bodyDirection
+                : validDirection(velocity) ? velocity : new Vec3(0, 0, 1);
+        return solve(velocity, RVP_AttackAngleState.fromDirection(body, 0), desiredDirection,
+                limits, motor, motor == null ? 0.0 : motor.mass());
+    }
+
+    /** 读取当前角速度及惯量质量的无副作用入口；试算始终从同一个输入状态开始。 */
+    public static Result solve(Vec3 velocity, RVP_AttackAngleState state, Vec3 desiredDirection,
+            RVP_AeroSteeringLimits limits, RVP_PropulsionMath.MotorState motor, double mass) {
         // 调用本项目输入判据；非攻角分支不应使用此控制器，坏输入按原求解器安全退化。
         if (!validDirection(velocity) || !validDirection(desiredDirection)
                 || limits == null || !limits.attackAngleEnabled()) {
-            var unchanged = RVP_AttackAngleModel.solve(velocity, bodyDirection, desiredDirection, limits);
+            var unchanged = RVP_AttackAngleModel.solve(velocity, state, desiredDirection, limits, mass);
             return new Result(unchanged, unchanged.bodyDirection(), unchanged.velocity(), unchanged.velocity(), 0.0, false);
         }
         double speed = velocity.length();
         Vec3 axis = velocity.normalize();
         // 调用本项目有限方向判据，使控制器和执行器对缺失机头采用同一速度轴回退。
-        Vec3 body = validDirection(bodyDirection) ? bodyDirection.normalize() : axis;
+        state = state.sanitized();
         // 调用本项目旧航迹插值作为外环请求；显式 G 下保留完整期望方向。
         Vec3 request = limits.rvpMaxGs() != null ? desiredDirection
                 : RVP_TrajectorySteeringMath.applyTurningFactor(
@@ -79,15 +87,32 @@ public final class RVP_PIPAttackAngleController {
         }
         // 调用本类方向构造，取得达到请求所需的机头姿态；能力不足时自然饱和到攻角锥。
         Vec3 desiredBody = directionAt(axis, tangent, (low + high) * 0.5);
-        // 调用原模型响应比例与夹角算法，反解 slerp 输入，不能把攻角再无条件乘一次 factor。
-        double response = RVP_AttackAngleModel.bodyResponse(limits);
-        double bodyStep = RVP_BallisticTrajectoryMath.angleBetween(body, desiredBody);
-        boolean limited = response <= EPSILON || bodyStep > MAX_INPUT_ANGLE * response;
-        // 调用本类确定性平面与方向构造；请求超过响应可达性时限幅，不产生积分累积。
-        Vec3 command = response <= EPSILON ? body : directionAt(body, tangentToward(body, desiredBody),
-                Math.min(bodyStep / response, MAX_INPUT_ANGLE));
+        // 调用共用增益和角度转换反解双轴执行器，显式扣除上一 Tick 尚未消散的角速度。
+        double response = RVP_AttackAngleInertiaModel.response(speed, limits);
+        double gain = RVP_AttackAngleInertiaModel.rateResponse(mass);
+        var target = RVP_AttackAngleState.fromDirection(desiredBody, state.yawDeg());
+        double pitchStep = target.pitchDeg() - state.pitchDeg();
+        double yawStep = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
+        double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg()
+                + (pitchStep - (1.0 - gain) * state.pitchRateDeg()) / (gain * response);
+        double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg()
+                + (yawStep - (1.0 - gain) * state.yawRateDeg()) / (gain * response);
+        // 两轴反解只提供指令，不绕过实际攻角锥/角速度限制；过大的偏航误差不能环绕为反向指令。
+        Vec3 command = new RVP_AttackAngleState(Mth.clamp(pitchCommand, -90, 90),
+                state.yawDeg() + Mth.clamp(yawCommand - state.yawDeg(), -179.9, 179.9), 0, 0).direction();
         // 调用真实攻角模型，以当前机头执行一次实际响应；与上面假定已达姿态的试算区分。
-        var steering = RVP_AttackAngleModel.solve(velocity, body, command, limits);
+        var steering = RVP_AttackAngleModel.solve(velocity, state, command, limits, mass);
+        // 逆解超出可达域时，欧拉角外推可能跨越半球；补试同转弯平面的锥边指令，
+        // 仅选择更接近目标姿态的结果。两个试算都读取原始状态，绝不累计积分。
+        Vec3 saturatedCommand = directionAt(axis, tangent, Math.toRadians(limits.attackAngleLimitDeg()));
+        var saturated = RVP_AttackAngleModel.solve(velocity, state, saturatedCommand, limits, mass);
+        if (RVP_BallisticTrajectoryMath.angleBetween(saturated.bodyDirection(), desiredBody)
+                < RVP_BallisticTrajectoryMath.angleBetween(steering.bodyDirection(), desiredBody)) {
+            command = saturatedCommand;
+            steering = saturated;
+        }
+        // 调用实际姿态误差判据标记不可达请求，不能把理想反解当作已实现的转弯。
+        boolean limited = RVP_BallisticTrajectoryMath.angleBetween(steering.bodyDirection(), desiredBody) > 1.0E-4;
         // 调用本项目推力工具预估运动阶段额外转向；返回值只用于诊断，不提前施加推力。
         Vec3 predicted = RVP_PropulsionMath.applyThrust(steering.velocity(), steering.bodyDirection(), motor, 1.0);
         return new Result(steering, command, requestedVelocity, predicted, requestedTurn, limited);
@@ -97,7 +122,8 @@ public final class RVP_PIPAttackAngleController {
     private static Vec3 predictSettledBody(Vec3 velocity, Vec3 body, RVP_AeroSteeringLimits limits,
                                            RVP_PropulsionMath.MotorState motor) {
         // 调用本项目攻角模型；起始和目标机头相同，单独隔离升力响应供攻角反解。
-        var steering = RVP_AttackAngleModel.solve(velocity, body, body, limits);
+        var steering = RVP_AttackAngleModel.evaluateBody(velocity,
+                RVP_AttackAngleState.fromDirection(body, 0), limits);
         // 调用本项目推进公式，计入推力法向分量，避免动力段重复给足气动修正。
         return RVP_PropulsionMath.applyThrust(steering.velocity(), steering.bodyDirection(), motor, 1.0);
     }
