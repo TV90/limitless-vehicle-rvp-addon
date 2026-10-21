@@ -3625,9 +3625,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
         // [RVP] 入射角记录前置 + 载具上界钳制（2026-10-21，替代已撤销的 ERA 全局上界）：
-        // 上界取被命中根载具的 rvp_max_incidence_angle（未配置=90 不钳），记录点即钳制，
+        // 上界取被命中根载具的 rvp_max_incidence_angle（未配置=90 不钳）+ 命中骨的
+        // hitbox_max_incidence_angle（骨级，如首上/首上爆反 20 度）取二者更小值，记录点即钳制，
         // 直击角度衰减/跳弹门槛/爆炸引信衰减/调试包统一消费钳后角度；跳弹判定同样受上界约束。
-        float impactAngleCap = ywzj_rvp$vehicleImpactAngleCap(impactTarget);
+        float impactAngleCap = Math.min(ywzj_rvp$vehicleImpactAngleCap(impactTarget),
+                ywzj_rvp$hitBoneImpactAngleCap(impactTarget));
         rememberImpactIncidence(velocity, normal, impactAngleCap);
         if (tryBounceFromEntityHit(result, impactAngleCap)) {
             return;
@@ -3863,6 +3865,21 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     protected float ywzj_rvp$impactAngleCapFor(@Nullable Entity entity) {
         return ywzj_rvp$vehicleImpactAngleCap(ywzj_rvp$resolveCollisionRoot(entity));
+    }
+
+    /**
+     * [RVP] 命中骨级入射角上界（hitbox_max_incidence_angle，2026-10-21）：对命中骨做归属后
+     * 查其骨级上界（如首上/首上爆反 20 度），与车级上界取更小值组合使用。
+     */
+    private float ywzj_rvp$hitBoneImpactAngleCap(@Nullable Entity vehicleEntity) {
+        if (!(vehicleEntity instanceof AbstractVehicle vehicle)) {
+            return 90f;
+        }
+        var res = RVP_VehicleHitboxFactorManager.INSTANCE.resolveHitboxDamage(
+                vehicle, collisionSegmentStart(), collisionSegmentEnd());
+        String bone = res.hitBoneName();
+        return bone == null ? 90f
+                : RVP_VehicleHitboxFactorManager.INSTANCE.resolveBoneMaxIncidenceAngle(vehicle, bone);
     }
 
     // [RVP] 2026-10-21 清理：impactDecayFactor（距离×角度组合）与 computeDamage（全库零调用的

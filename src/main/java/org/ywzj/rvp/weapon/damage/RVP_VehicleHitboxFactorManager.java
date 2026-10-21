@@ -155,6 +155,20 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
         return cfg.resolve(model, vehicle, explosionPos, targetCenter, true).factor();
     }
 
+    /**
+     * [RVP] 命中箱骨级入射角上界（{@code hitbox_max_incidence_angle}，2026-10-21）：
+     * 命中骨在骨级上界表内时返回该值（度），否则返回 90（不钳制）。
+     * 消费方 {@code RVP_BaseBullet}（记录点与跳弹门槛的组合钳制）。
+     */
+    public float resolveBoneMaxIncidenceAngle(AbstractVehicle vehicle, @Nullable String boneName) {
+        VehicleHitboxConfig cfg = boneName == null ? null : configs.get(vehicle.getVehicleId());
+        if (cfg == null || cfg.maxIncidenceAngleByBone() == null || cfg.maxIncidenceAngleByBone().isEmpty()) {
+            return 90f;
+        }
+        Float bound = cfg.maxIncidenceAngleByBone().get(boneName);
+        return bound == null ? 90f : Math.max(0f, Math.min(bound, 90f));
+    }
+
     public float resolveCoreDistanceScaleMultiplier(AbstractVehicle vehicle) {
         VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
         if (cfg == null) {
@@ -1961,7 +1975,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             float coreDistanceScaleMultiplier,
             float armorMinDamage,
             float armorMaxDamage,
-            boolean hitIndicatorRvp
+            boolean hitIndicatorRvp,
+            /**
+             * [RVP] 命中箱骨级入射角上界（{@code hitbox_max_incidence_angle}，2026-10-21）：
+             * 骨名 → 上界（度）。命中该骨时入射角按 min(记录角, 骨上界) 再钳一次，
+             * 使正面装甲（如首上/首上爆反）不吃大角度衰减折扣。空/缺省 = 不钳制。
+             */
+            @Nullable Map<String, Float> maxIncidenceAngleByBone
     ) {
         boolean isEnabled() {
             return defaultFactor != 1f
@@ -1969,7 +1989,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     || (vehicleExplosionFactorByBoneName != null && !vehicleExplosionFactorByBoneName.isEmpty())
                     || vehicleExplosionFactorDefault != 1f
                     || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
-                    || (moduleByBoneName != null && !moduleByBoneName.isEmpty());
+                    || (moduleByBoneName != null && !moduleByBoneName.isEmpty())
+                    || (maxIncidenceAngleByBone != null && !maxIncidenceAngleByBone.isEmpty());
         }
 
         HitboxDamageResult resolve(BedrockModel model, AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
@@ -2107,6 +2128,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Map<String, String> aliasMap = parseAliasMap(obj.get("hitbox_display_name"));
             // 中文名映射（可选，2026-09-28）：与 hitbox_display_name 同构，缺省 null=未配置
             Map<String, String> aliasCnMap = parseAliasMap(obj.get("hitbox_display_name_CN"));
+            // [RVP] 命中箱骨级入射角上界（2026-10-21）：骨名 → 上界（度），如首上/首上爆反 20。
+            Map<String, Float> maxIncidenceMap = parseFactorMap(obj.get("hitbox_max_incidence_angle"));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             // 装甲：armor_min_damage 与本体 damage_threshold 互斥（同时存在仅装甲生效）；
             // armor_max_damage 封在全部系数算完之后（最终伤害上限）。<=0 均视为未配置。
@@ -2146,7 +2169,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     && coreM == 1f
                     && armorMin <= 0f
                     && armorMax <= 0f
-                    && hitIndicatorRvp) {
+                    && hitIndicatorRvp
+                    && (maxIncidenceMap == null || maxIncidenceMap.isEmpty())) {
                 return null;
             }
             return new VehicleHitboxConfig(
@@ -2161,7 +2185,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     coreM,
                     armorMin,
                     armorMax,
-                    hitIndicatorRvp
+                    hitIndicatorRvp,
+                    maxIncidenceMap == null ? Map.of() : Map.copyOf(maxIncidenceMap)
             );
         }
 
