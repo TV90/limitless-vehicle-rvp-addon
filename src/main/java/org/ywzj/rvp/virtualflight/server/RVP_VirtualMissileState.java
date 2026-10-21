@@ -137,7 +137,8 @@ public final class RVP_VirtualMissileState {
     /**
      * 替换纯轨迹子状态，并按第一阶段固定 GPS 准入契约推进其余运行状态。
      *
-     * <p>目标点、GPS 散布和发动机绝对时间字段冻结；飞行 Tick/life 由轨迹继续计时；
+     * <p>目标点、GPS 散布和发动机绝对时间字段冻结；已绑定目标 UUID 与最后已知速度保留，
+     * 由管理器在目标实体可见时滚动更新；飞行 Tick/life 由轨迹继续计时；
      * 最近制导点与 GPS 垂直重置按虚拟闭环结果重算；终端制导、雷达、IR 与 Top Attack
      * 均被准入规则禁止，因此恢复为明确的未激活状态，不能把入口时的陈旧记忆写回实体。</p>
      *
@@ -146,7 +147,7 @@ public final class RVP_VirtualMissileState {
     public void updateTrajectory(RVP_VirtualTrajectoryState trajectory) {
         snapshot = new RVP_VirtualMissileSnapshot(
                 trajectory, snapshot.targetPosition(), snapshot.targetPosition(),
-                null, Vec3.ZERO, RVP_GuidancePhase.MAIN,
+                snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(), RVP_GuidancePhase.MAIN,
                 snapshot.motorBurnEndTick(),
                 snapshot.secondPulseBurnTimeTick(), false, false,
                 0, true,
@@ -166,6 +167,26 @@ public final class RVP_VirtualMissileState {
         snapshot = new RVP_VirtualMissileSnapshot(
                 snapshot.trajectory(), newTargetPosition, newTargetPosition,
                 snapshot.targetEntityUuid(), snapshot.lastKnownTargetVelocity(),
+                snapshot.guidancePhase(), snapshot.motorBurnEndTick(),
+                snapshot.secondPulseBurnTimeTick(), snapshot.activeRadarOn(),
+                snapshot.activeRadarCatch(), snapshot.activeRadarLostTargetTick(),
+                snapshot.gpsCruiseVerticalResetApplied(), snapshot.gpsTargetOffset(),
+                snapshot.gpsTargetOffsetResolved(), snapshot.topAttackLaunchPosition(),
+                snapshot.topAttackInitialTargetPosition(), snapshot.topAttackApexPosition(),
+                snapshot.topAttackApexReached(), snapshot.topAttackTriggerTick(),
+                snapshot.irSeekerGraceUntilTick(), snapshot.irSeekerLossGraceStarted());
+    }
+
+    /**
+     * 更新虚拟段当前目标位置和速度，保留其余弹载快照。
+     *
+     * <p>调用方仅在服务端成功解析到同维度目标实体时使用；目标不可见时保留上一次快照，
+     * 由纯积分器按最后已知速度做有限前视。</p>
+     */
+    public void updateTargetMotion(Vec3 newTargetPosition, Vec3 newTargetVelocity) {
+        snapshot = new RVP_VirtualMissileSnapshot(
+                snapshot.trajectory(), newTargetPosition, newTargetPosition,
+                snapshot.targetEntityUuid(), newTargetVelocity,
                 snapshot.guidancePhase(), snapshot.motorBurnEndTick(),
                 snapshot.secondPulseBurnTimeTick(), snapshot.activeRadarOn(),
                 snapshot.activeRadarCatch(), snapshot.activeRadarLostTargetTick(),

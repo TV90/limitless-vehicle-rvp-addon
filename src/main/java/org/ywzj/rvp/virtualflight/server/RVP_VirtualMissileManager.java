@@ -18,6 +18,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
+import org.ywzj.rvp.util.RVP_AimPointResolver;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightPhase;
 import org.ywzj.rvp.virtualflight.common.RVP_VirtualFlightReason;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_RvpTrajectoryIntegrator;
@@ -25,6 +26,7 @@ import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualGuidanceI
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryIntegrator;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryParameters;
 import org.ywzj.rvp.guidance.trajectorymath.virtualguidance.RVP_VirtualTrajectoryResult;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.data.RVP_VirtualMidcourseData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -167,6 +169,9 @@ public final class RVP_VirtualMissileManager {
                 continue;
             }
             if (state.phase == RVP_VirtualFlightPhase.VIRTUAL_CRUISE) {
+                // 调用本项目目标点解析器和虚拟状态更新入口；目标实体仍加载时滚动刷新位置/速度，
+                // 让卸载期间的纯积分继续看到变速、变向目标，而不是永远追初始 GPS 点。
+                refreshLiveTargetMotion(ref, state);
                 // 巡航态只调用一次纯积分；失败时 integrateOneTick 已负责终止记录。
                 if (!integrateOneTick(ref, data)) continue;
                 double horizontalSpeed = Math.sqrt(state.trajectory().velocity().x * state.trajectory().velocity().x
@@ -213,6 +218,23 @@ public final class RVP_VirtualMissileManager {
         fairnessCursor = 0;
     }
 
+    /** 在不强制加载目标区块的前提下刷新虚拟弹的最后已知目标运动。 */
+    private static void refreshLiveTargetMotion(StateRef ref, RVP_VirtualMissileState state) {
+        Entity target = resolveEntity(ref.level, state.snapshot.targetEntityUuid());
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        Vec3 targetPosition = RVP_AimPointResolver.resolveLargestObbCenter(target);
+        if (targetPosition == null) {
+            return;
+        }
+        state.updateTargetMotion(targetPosition, target.getDeltaMovement());
+        if (ref.level.getGameTime() % 20L == 0L) {
+            // 调用本项目 SavedData 脏标记，按既有 20 Tick 持久化节奏保存滚动目标快照。
+            ref.data.setDirty();
+        }
+    }
+
     /**
      * 推进一枚巡航态记录的一个逻辑 Tick，并处理寿命、版本和数值异常。
      *
@@ -236,7 +258,9 @@ public final class RVP_VirtualMissileManager {
         // PRESET 弹道导弹的纯输入从当前武器配置与固定发射点冻结，未启用时为 null。
         RVP_VirtualTrajectoryResult result = integrator.step(state.trajectory(),
                 new RVP_VirtualGuidanceInput(state.snapshot.targetPosition(),
-                        RVP_VirtualTrajectoryInputFactory.createPresetGuidance(data, state.launchPosition)),
+                        RVP_VirtualTrajectoryInputFactory.createPresetGuidance(data, state.launchPosition),
+                        new RVP_TargetMotionState(state.snapshot.targetPosition(),
+                                state.snapshot.lastKnownTargetVelocity(), Vec3.ZERO, 0.0D)),
                 parameters);
         RVP_VirtualMissileDebug.noteIntegrationNanos(System.nanoTime() - start);
         // 将不可变积分结果替换回完整快照，同时保留制导/雷达/GPS/Top Attack 状态。

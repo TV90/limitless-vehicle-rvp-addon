@@ -62,6 +62,7 @@ import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidancePhaseState;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
 import org.ywzj.rvp.guidance.RVP_GuidanceRuntimeMath;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
 import org.ywzj.rvp.weapon.data.RVP_CollisionData;
 import org.ywzj.rvp.weapon.data.RVP_DamageDecayRuleData;
 import org.ywzj.rvp.weapon.data.RVP_DamageFactor;
@@ -131,6 +132,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Common runtime base for all new RVP projectile entities.
@@ -149,6 +151,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final int PROJECTILE_CHUNK_HORIZON_TICKS = 1;
     /** 区块持续无法进入 entity-ticking 时的安全等待上限。 */
     private static final int MAX_PROJECTILE_CHUNK_WAIT_TICKS = 200;
+    /** 目标局部加速度估计的限幅，单位格/Tick^2，防止单次同步跳变制造远距虚假提前量。 */
+    private static final double MAX_TARGET_ACCELERATION = 2.0D;
+    /** 目标加速度指数平滑中原历史值的权重。 */
+    private static final double TARGET_ACCELERATION_HISTORY_WEIGHT = 0.55D;
 
     static final EntityDataAccessor<Integer> DATA_SECOND_PULSE_START_TICK =
             SynchedEntityData.defineId(RVP_BaseBullet.class, EntityDataSerializers.INT);
@@ -316,6 +322,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected Vec3 targetPos;
     @Nullable
     protected Vec3 lastGuidancePos;
+    /** 当前用于 PIP/PRESET 的目标运动快照所属实体 UUID，目标切换时必须清空历史。 */
+    @Nullable
+    private UUID guidanceMotionTargetUuid;
+    /** 目标运动快照当前采样点位置，主要用于诊断和丢失速度时的连续性判断。 */
+    @Nullable
+    private Vec3 guidanceMotionPosition;
+    /** 目标运动快照中的当前速度，单位格/Tick。 */
+    private Vec3 guidanceMotionVelocity = Vec3.ZERO;
+    /** 目标运动快照中的滤波加速度，单位格/Tick^2。 */
+    private Vec3 guidanceMotionAcceleration = Vec3.ZERO;
+    /** 加速度估计置信度，范围 0～1；首个样本只启用恒速预测。 */
+    private double guidanceMotionConfidence;
+    /** 目标运动快照上一采样对应的飞行 Tick，用于计算速度差时间间隔。 */
+    private int guidanceMotionSampleTick = Integer.MIN_VALUE;
     /** True when launch captured an entity lock snapshot; prevents accidental post-launch retargeting. */
     protected boolean launchTargetSnapshot;
     /** IR seeker temporary retain window for brief off-axis loss. */
@@ -1220,6 +1240,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     public void setTargetEntity(@Nullable Entity target) {
         if (target == null) {
             noteDecoyTargetLost();
+            resetGuidanceTargetMotion();
+        } else if (guidanceMotionTargetUuid != null
+                && !guidanceMotionTargetUuid.equals(target.getUUID())) {
+            // 目标切换时清掉上一目标的速度/加速度历史，避免诱饵或重锁目标继承错误的转向趋势。
+            resetGuidanceTargetMotion();
         }
         // 转锁诱饵（干扰物）时开启 30 tick 载具碰撞免疫：追诱饵期间不与载具机体相撞
         if (target instanceof RVP_Decoy) {
@@ -1271,12 +1296,90 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         this.targetPos = null;
         this.gpsCruiseVerticalResetApplied = false;
         resetIrSeekerGrace();
+        resetGuidanceTargetMotion();
     }
 
     /** 清除制导记忆点（lastGuidancePos）。DIRCM 干扰结束恢复时调用，防止惯性制导
      *  沿保留的目标位置继续追踪原目标（避免"干扰结束后又向截获目标飞去"）。 */
     public void clearGuidanceMemory() {
         this.lastGuidancePos = null;
+        resetGuidanceTargetMotion();
+    }
+
+    /**
+     * 更新服务器权威目标运动快照。
+     *
+     * <p>调用方在每次生成制导意图前调用本项目目标点解析器后再进入此方法；这里仅消费
+     * 目标实体速度差，不直接改实体位置或速度。加速度采用指数平滑并限幅，首样本只提供
+     * 恒速预测，避免发射/重锁瞬间把同步抖动当成目标机动。</p>
+     */
+    public RVP_TargetMotionState updateGuidanceTargetMotion(
+            @Nullable Entity target, @Nullable Vec3 position) {
+        if (target == null || position == null || !finiteGuidanceVec(position)) {
+            resetGuidanceTargetMotion();
+            return RVP_TargetMotionState.EMPTY;
+        }
+        UUID targetUuid = target.getUUID();
+        Vec3 velocity = finiteGuidanceVec(target.getDeltaMovement())
+                ? target.getDeltaMovement() : Vec3.ZERO;
+        int sampleTick = getFlightTickCount();
+        boolean sameTarget = targetUuid.equals(guidanceMotionTargetUuid);
+        int deltaTick = sampleTick - guidanceMotionSampleTick;
+        Vec3 acceleration = Vec3.ZERO;
+        double confidence = 0.0D;
+        if (sameTarget && guidanceMotionPosition != null && deltaTick == 0) {
+            // 同一服务器 Tick 被重复请求意图时复用已采集的运动历史，不因重复调用清零置信度。
+            acceleration = guidanceMotionAcceleration;
+            confidence = guidanceMotionConfidence;
+        } else if (sameTarget && guidanceMotionPosition != null && deltaTick > 0 && deltaTick <= 10) {
+            Vec3 rawAcceleration = velocity.subtract(guidanceMotionVelocity).scale(1.0D / deltaTick);
+            double rawLength = rawAcceleration.length();
+            if (Double.isFinite(rawLength)) {
+                Vec3 boundedRaw = rawLength > MAX_TARGET_ACCELERATION
+                        ? rawAcceleration.scale(MAX_TARGET_ACCELERATION / rawLength) : rawAcceleration;
+                acceleration = guidanceMotionAcceleration.scale(TARGET_ACCELERATION_HISTORY_WEIGHT)
+                        .add(boundedRaw.scale(1.0D - TARGET_ACCELERATION_HISTORY_WEIGHT));
+                double accelerationLength = acceleration.length();
+                if (accelerationLength > MAX_TARGET_ACCELERATION) {
+                    acceleration = acceleration.scale(MAX_TARGET_ACCELERATION / accelerationLength);
+                }
+                confidence = Math.min(1.0D, guidanceMotionConfidence + 0.25D);
+                if (rawLength > MAX_TARGET_ACCELERATION * 1.5D) {
+                    // 调用本方法的目标速度采样若出现突跳，降低加速度外推权重但保留恒速项。
+                    confidence *= 0.5D;
+                }
+            }
+        }
+        guidanceMotionTargetUuid = targetUuid;
+        guidanceMotionPosition = position;
+        guidanceMotionVelocity = velocity;
+        guidanceMotionAcceleration = acceleration;
+        guidanceMotionConfidence = confidence;
+        guidanceMotionSampleTick = sampleTick;
+        return new RVP_TargetMotionState(position, velocity, acceleration, confidence).sanitized();
+    }
+
+    /** 返回本 Tick 已采集的目标运动快照；尚未采集时返回安全空快照。 */
+    public RVP_TargetMotionState getGuidanceTargetMotion() {
+        return guidanceMotionPosition == null ? RVP_TargetMotionState.EMPTY
+                : new RVP_TargetMotionState(guidanceMotionPosition, guidanceMotionVelocity,
+                        guidanceMotionAcceleration, guidanceMotionConfidence).sanitized();
+    }
+
+    /** 清空目标运动历史，供失锁、换锁和导引记忆清理路径复用。 */
+    public void resetGuidanceTargetMotion() {
+        guidanceMotionTargetUuid = null;
+        guidanceMotionPosition = null;
+        guidanceMotionVelocity = Vec3.ZERO;
+        guidanceMotionAcceleration = Vec3.ZERO;
+        guidanceMotionConfidence = 0.0D;
+        guidanceMotionSampleTick = Integer.MIN_VALUE;
+    }
+
+    /** 目标运动采样的有限向量判据，避免把实体同步异常传入制导求解器。 */
+    private static boolean finiteGuidanceVec(@Nullable Vec3 value) {
+        return value != null && Double.isFinite(value.x)
+                && Double.isFinite(value.y) && Double.isFinite(value.z);
     }
 
     /** DIRCM 永久干扰弹体到时自毁：按武器 detonate_data 结算爆炸后移除（服务端调用）。 */
@@ -2380,20 +2483,23 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     || rvpData.isSaclosTvGuided();
             if (!allowEntityTracking && targetEntity != null) {
                 targetEntity = null;
+                resetGuidanceTargetMotion();
             }
             org.ywzj.rvp.guidance.saclos.RVP_SaclosDesignation.tickUpdateLiveTarget(this);
             // Mid-course update: if we have a live targetEntity (from launch lock),
-            // periodically update targetPos so IOG/coast phase tracks the moving target.
-            // This mirrors the base MissileEntity behavior where targetEntity is a
-            // live Java Entity reference updated every tick.
+            // update targetPos every tick so IOG/coast phase and the new motion snapshot
+            // both track a moving target. The base MissileEntity path also uses a live
+            // Java Entity reference; five-tick sampling made high-acceleration targets lag.
             if (allowEntityTracking && targetEntity != null && targetEntity.isAlive()) {
-                if (tickCount % 5 == 0) {
-                    targetPos = aimPoint(targetEntity);
-                    lastGuidancePos = targetPos;
-                }
+                targetPos = aimPoint(targetEntity);
+                lastGuidancePos = targetPos;
+                // 调用本项目目标运动采样器，即使本 Tick 因包线/干扰未产生制导意图也保留速度历史，
+                // 防止重新进入 PIP 时把连续变向误判成首个恒速样本。
+                updateGuidanceTargetMotion(targetEntity, targetPos);
             } else if (targetEntity != null && !targetEntity.isAlive()) {
                 // Target died, clear it
                 targetEntity = null;
+                resetGuidanceTargetMotion();
             }
         }
         // 服务器弹体位置积分调用

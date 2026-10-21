@@ -53,6 +53,21 @@ class RVP_PredictiveInterceptMathTest {
     }
 
     @Test
+    void acceleratedSolutionTracksParabolicTargetWithinFiniteHorizon() {
+        Vec3 missileVelocity = new Vec3(5.5, 0, 0);
+        Vec3 targetAcceleration = new Vec3(0, -0.08, 0);
+        // 调用本项目恒加速度 PIP 解算器，模拟抛物线目标的局部竖直加速度。
+        var solution = RVP_PredictiveInterceptMath.solve(Vec3.ZERO, missileVelocity,
+                new Vec3(300, 40, 0), new Vec3(0, 0, 2), targetAcceleration);
+        assertEquals(RVP_PredictiveInterceptMath.Status.ACCELERATED, solution.status());
+        assertTrue(solution.usable());
+        Vec3 relative = solution.point();
+        assertEquals(missileVelocity.length() * solution.timeTicks(), relative.length(), 1.0E-4);
+        assertTrue(solution.point().y < 40.0, "加速度预测点应低于当前抛物线顶端参考点");
+        assertTrue(solution.timeTicks() > 0.0 && solution.timeTicks() <= 1200.0);
+    }
+
+    @Test
     void rejectsBadInputsAndKeepsCoincidentTargetFinite() {
         // 调用本项目 PIP 覆盖零速、坏数值与重合目标，不允许 NaN 方向进入实体。
         assertFalse(RVP_PredictiveInterceptMath.solve(Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO).usable());

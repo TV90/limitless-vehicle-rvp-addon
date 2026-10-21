@@ -48,6 +48,8 @@ public final class RVP_ProjectileMotion {
     /** 写回独立姿态和载荷；返回速度供原制导链在碰撞检测前使用。 */
     public static Vec3 applyAttackAngleSteering(RVP_BaseBullet projectile, Vec3 current,
                                                Vec3 desired, RVP_AeroSteeringLimits limits) {
+        // 调用双轴状态极点脱离修复：首次有效制导必须先确定目标水平转弯平面，避免任意 yaw=0 产生载具前向偏航。
+        projectile.setAttackAngleState(projectile.getAttackAngleState().reanchorPoleYaw(desired));
         // 调用本项目纯数学攻角模型，用同步姿态作为跨 Tick 机体轴。
         RVP_AttackAngleSolution solution = RVP_AttackAngleModel.solve(
                 current, projectile.getAttackAngleState(), desired, limits, resolveAttackAngleMass(projectile));
@@ -383,8 +385,23 @@ public final class RVP_ProjectileMotion {
         if (coldDirection.lengthSqr() <= 1.0E-8) {
             return;
         }
-        // 调用本项目双轴状态入口：从冷发射轴静止起步，避免继承初始瞄准角速度或产生虚假的前向推力。
-        projectile.setAttackAngleState(RVP_AttackAngleState.fromDirection(coldDirection, aim.yRot()));
+        // 调用本项目目标位置入口：竖直冷发射没有唯一偏航，预先保存目标水平投影作为首个脱离转弯平面。
+        double coldLaunchYaw = resolveColdLaunchYaw(projectile, aim.yRot());
+        // 调用本项目双轴状态入口：从冷发射轴静止起步，但不再使用任意的载具前向备用偏航。
+        projectile.setAttackAngleState(RVP_AttackAngleState.fromDirection(coldDirection, coldLaunchYaw));
+    }
+
+    /** 解析竖直冷发射的稳定备用偏航；目标没有水平投影时才回退到生成姿态。 */
+    private static double resolveColdLaunchYaw(RVP_BaseBullet projectile, float fallbackYaw) {
+        // 调用本项目弹体目标点访问器：读取生成阶段已经锁定的目标点，确定冷发射首个水平转弯平面。
+        Vec3 target = projectile.getTargetPos();
+        if (target == null) {
+            return fallbackYaw;
+        }
+        // 调用本项目实体位置入口：将目标点转换为相对发射位置的世界方向。
+        Vec3 horizontal = target.subtract(projectile.position());
+        // 调用本项目双轴角度解析器：只使用目标水平投影，不改变冷发射的竖直速度方向。
+        return RVP_AttackAngleState.resolveHorizontalYaw(horizontal, fallbackYaw);
     }
 
     /** 按载具主 OBB 轴把局部冷发射速度转换为世界方向，供实体初始化和单元测试共用。 */
