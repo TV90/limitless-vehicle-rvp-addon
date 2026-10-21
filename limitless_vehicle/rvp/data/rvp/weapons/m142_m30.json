@@ -39,6 +39,8 @@
       "radius": 4,
       "destroy_block": false,
       "explosion_damage_factor": {
+        "player": 0.3125,
+        "living": 0.3125,
         "vehicle_default": 1.0,
         "vehicles": {
           "ywzj_vehicle:tracked_vehicle": 0.9,
@@ -51,7 +53,9 @@
   "collision_data": {
     "living_penetration": 0,
     "wall_penetration": 0,
-    "bounce": 0,
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
     "direct_damage": 50,
     "damage_decay": [
       {

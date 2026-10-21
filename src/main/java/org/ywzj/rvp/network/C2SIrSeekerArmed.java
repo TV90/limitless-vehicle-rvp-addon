@@ -80,8 +80,11 @@ public class C2SIrSeekerArmed {
                 return;
             }
             // ② weaponId 与当前弹种一致（防切弹种串状态）；且必须是 IR 发射武器。
+            // 2026-10-21 夜间修复（诊断 D5）：多弹种 / agent 站当前武器是 VehicleMultiWeapons /
+            // VehicleWeaponAgent，不解包则恒不是 RVP_WeaponBase ⇒ 所有包被丢弃、服务端表永远为空。
             AbstractVehicleWeapon<?> current = operatorUnit.getCurrentWeapon().orElse(null);
-            if (!(current instanceof RVP_WeaponBase rvpWeapon)
+            AbstractVehicleWeapon<?> resolvedCurrent = org.ywzj.rvp.util.RVP_WeaponResolveHelper.unwrap(current);
+            if (!(resolvedCurrent instanceof RVP_WeaponBase rvpWeapon)
                     || !msg.weaponId.equals(rvpWeapon.getData().getWeaponId())
                     || !RVP_IrLockHelper.isIrLaunchWeapon(rvpWeapon.getData())) {
                 return;
@@ -99,7 +102,9 @@ public class C2SIrSeekerArmed {
             }
             // ⑤ 包线复算（服务端可算：worldPivotPosition/worldVec；含离轴/距离/高度/LOS）。
             RVP_WeaponData data = rvpWeapon.getData();
-            if (!RVP_IrLockHelper.isTargetWithinHoldLimits(root, target, data)) {
+            // 几何复算用"武器自己的站"（与 tracker / 客户端门控同源），根站只作表键。
+            WeaponUnit geo = rvpWeapon.getWeaponUnit() != null ? rvpWeapon.getWeaponUnit() : root;
+            if (!RVP_IrLockHelper.isTargetWithinHoldLimits(geo, target, data)) {
                 return;
             }
             // 全部通过 → 写服务端 armed 表。

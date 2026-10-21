@@ -16,6 +16,7 @@ import org.ywzj.rvp.guidance.RVP_HmdTargetingMath;
 import org.ywzj.rvp.guidance.RVP_IrLockHelper;
 import org.ywzj.rvp.mixin.PartUnitAccessorMixin;
 import org.ywzj.rvp.radar.RVP_RadarHmsMode;
+import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
@@ -197,15 +198,40 @@ public class RVP_ClientHmdState {
      * HUD 红圈/对地锁定框/锁定音只认它——站级 lockedEntity（EO/RF/HMD cue 写入）不再是
      * "已锁定"的依据。当前操作站无 IR 弹或未 armed 返回 null。
      */
+    /**
+     * 追踪期（已捕获、未锁定）候选目标，供 HUD 在 IR 框下显示「截获中」；armed 后返回 null。
+     */
+    @Nullable
+    public Entity getIrTrackingEntity() {
+        WeaponUnit unit = LocalVehiclePlayer.instance.onVehicle()
+                ? LocalVehiclePlayer.instance.getWeaponUnit()
+                : null;
+        if (unit == null) {
+            return null;
+        }
+        RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        if (weapon == null || !RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
+            return null;
+        }
+        return RVP_IrSeekerTracker.getTrackingCandidate(unit, weapon.getData().getWeaponId());
+    }
+
     @Nullable
     public Entity getIrArmedEntity() {
         WeaponUnit unit = LocalVehiclePlayer.instance.onVehicle()
                 ? LocalVehiclePlayer.instance.getWeaponUnit()
                 : null;
-        if (unit == null || irLaunchWeapon == null) {
+        if (unit == null) {
             return null;
         }
-        return RVP_IrSeekerStateTable.getArmedEntity(unit, irLaunchWeapon.getWeaponId());
+        // 2026-10-21 夜间修复（诊断 D4）：原实现依赖 irLaunchWeapon，而它只在 HMD 通道赋值，
+        // 导致 enable_ir_hmd=false 的 IR 弹即使 armed 也不出红圈/锁定音（看着像"锁不上"）。
+        // 改为按"当前武器所属站"解析，与 tracker 的根站键口径一致。
+        RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);
+        if (weapon == null || !RVP_IrLockHelper.isIrLaunchWeapon(weapon.getData())) {
+            return null;
+        }
+        return RVP_IrSeekerStateTable.getArmedEntity(unit, weapon.getData().getWeaponId());
     }
 
     public Entity getLockedEntity() {

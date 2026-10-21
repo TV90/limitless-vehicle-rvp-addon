@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
@@ -21,6 +22,8 @@ public class RVP_HmdOverlay {
     private static final int COLOR_WHITE = 0xFFFFFFFF;
     private static final float GROUND_IR_HALF_FOV_DEG = 2.4f;
     private static final int CROSS_HALF = 8;
+    private static final Component IR_ACQUIRING =
+            Component.translatable("message.ywzj_rvp.hmd.ir_acquiring");
 
     private RVP_HmdOverlay() {}
 
@@ -166,6 +169,8 @@ public class RVP_HmdOverlay {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        int labelX = Integer.MIN_VALUE;
+        int labelY = 0;
 
         if (locked != null && locked.isAlive()) {
             // 锁定 → 框+十字在目标上
@@ -198,8 +203,16 @@ public class RVP_HmdOverlay {
                     ? (visible ? COLOR_RED : (COLOR_RED & 0x00FFFFFF) | 0x02000000)
                     : (visible ? COLOR_WHITE : (COLOR_WHITE & 0x00FFFFFF) | 0x02000000);
             drawCornerBox(guiGraphics, hx - boxHalf, hx + boxHalf, hy - boxHalf, hy + boxHalf, color);
+            if (state.getIrTrackingEntity() != null) {
+                // 追踪期（已捕获、未锁定）：框下显示「截获中」，armed 后由锁定框取代。
+                labelX = hx;
+                labelY = hy + boxHalf;
+            }
         }
         RenderSystem.disableBlend();
+        if (labelX != Integer.MIN_VALUE) {
+            drawAcquiringLabel(guiGraphics, labelX, labelY);
+        }
     }
 
     // ==================== IR HMD（对空）====================
@@ -252,6 +265,10 @@ public class RVP_HmdOverlay {
         RenderSystem.defaultBlendFunc();
         GuiHelper.drawArc(guiGraphics, hx, hy, 15, 0.5f, 0f, 1f, color);
         RenderSystem.disableBlend();
+        if (state.getIrTrackingEntity() != null) {
+            // 追踪期（已捕获、未锁定）：捕获弧下显示「截获中」。
+            drawAcquiringLabel(guiGraphics, hx, hy + 16);
+        }
     }
 
     /** A mixed altitude envelope has no preferred air/ground presentation before acquisition. */
@@ -271,6 +288,13 @@ public class RVP_HmdOverlay {
         gg.fill(left, bottom - cl, left + 1, bottom, color);
         gg.fill(right - cl, bottom - 1, right, bottom, color);
         gg.fill(right - 1, bottom - cl, right, bottom, color);
+    }
+
+    /** IR 头瞄框下方的「截获中」文案（居中，带阴影）。 */
+    private static void drawAcquiringLabel(GuiGraphics guiGraphics, int cx, int bottomY) {
+        Minecraft mc = Minecraft.getInstance();
+        int width = mc.font.width(IR_ACQUIRING);
+        guiGraphics.drawString(mc.font, IR_ACQUIRING, cx - width / 2, bottomY + 3, COLOR_WHITE, true);
     }
 
     /** 根据目标和视角计算框半宽（×1.2）。 */

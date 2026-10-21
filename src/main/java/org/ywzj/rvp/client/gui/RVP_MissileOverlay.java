@@ -1,7 +1,9 @@
 package org.ywzj.rvp.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec2;
@@ -30,6 +32,10 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
  * 此处自渲染离轴圈（同 IR 算法）+ 预选锁定雷达上的 RF 风格红双小圈头瞄圈。
  */
 public class RVP_MissileOverlay implements IGuiOverlay {
+
+    /** 无头瞄 IR 弹（AIM-9M / FIM-92 / 天燕-90）追踪期的「截获中」，与 HMD 通道同源。 */
+    private static final Component IR_ACQUIRING =
+            Component.translatable("message.ywzj_rvp.hmd.ir_acquiring");
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -125,6 +131,17 @@ public class RVP_MissileOverlay implements IGuiOverlay {
         // HMD 激活时调用本项目 HMD 状态读取 IR 通道自己的目标，禁止把雷达写入的共享火控目标
         // 误画成 IR 锁定圈；非 HMD IR 模式保持读取本体 WeaponUnit 锁定目标的既有行为。
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+
+        // [RVP] 2026-10-22：无头瞄 IR 弹没有 HMD 框（RVP_HmdOverlay 不进入 IR 分支），
+        // 截获文案改挂在导引头大圈下方；armed 后 tracker 候选转 null ⇒ 文案自动消失。
+        if (!data.isEnableIrHmd() && weaponUnit.isSeekerOn()
+                && hmdState.getIrTrackingEntity() != null) {
+            Minecraft mc = Minecraft.getInstance();
+            int labelHalf = mc.font.width(IR_ACQUIRING) / 2;
+            guiGraphics.drawString(mc.font, IR_ACQUIRING,
+                    (int) x - labelHalf, (int) y + 18, 0xFFFFFFFF, true);
+        }
+
         Entity locked = null;
         if (weaponUnit.isSeekerOn()) {
             // [RVP] 2026-10-21（方案 D2）：IR 弹红圈只认 armed 通道（连续 dwell 授权）——

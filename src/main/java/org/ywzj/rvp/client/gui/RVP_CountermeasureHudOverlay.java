@@ -1,12 +1,11 @@
 package org.ywzj.rvp.client.gui;
 
 import net.minecraft.client.KeyMapping;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
-import net.minecraft.client.resources.language.I18n;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.RVP_Keys;
 import org.ywzj.rvp.client.state.RVP_ClientMaintenanceState;
 import org.ywzj.rvp.client.state.RVP_CountermeasureHudState;
@@ -15,26 +14,43 @@ import org.ywzj.rvp.countermeasure.RVP_EnumCountermeasureType;
 import org.ywzj.rvp.vehicle.BoneModuleType;
 import org.ywzj.rvp.vehicle.RVP_BoneModuleStateTable;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
+import org.ywzj.vehicle.client.gui.VehicleHudLayout;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.FixedWingVehicle;
 import org.ywzj.vehicle.entity.vehicle.RotaryWingVehicle;
+import org.ywzj.vehicle.util.VehicleHudText;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
- * 干扰物 HUD：显示「数量/总数 [键位]」行，装填时显示「装填 X 秒」倒计时。
- * 样式对齐本体（绿字，耗尽红字）。位置按载具类型分开锚定：
- * <ul>
- *   <li>固定翼：热诱/箔条组紧跟本体信息列（{@link FixedWingVehicleOverlay} 末行燃油在 leftY+48）；</li>
- *   <li>旋翼：同上（{@link RotaryWingVehicleOverlay} 末行燃油在 leftY+36）；</li>
- *   <li>地面载具：本体无左侧信息列，烟雾行置于屏幕竖直中部。</li>
- * </ul>
- * 飞行器上若同时有热诱/箔条与烟雾，两组之间空一行分隔。
+ * 干扰物 / ECM / 快速维修 HUD（2026-10-21 重构：对齐本体新版 HUD 样式）。
+ *
+ * <p><b>样式</b>：本体自 2026-10 起 HUD 走 {@link VehicleHudLayout}（虚拟 480 高坐标系，
+ * 整体按 {@code guiHeight / 480} 缩放）+ {@link VehicleHudText#telemetry}（标签在左、
+ * 数值固定列）与 12px 阴影字。本类改为同款：同一缩放、同一列位（标签列 = {@code telemetryX}、
+ * 数值列 +54、键位紧随数值）、行距 {@link VehicleHudLayout#ROW_HEIGHT}（15），
+ * 因此与本体遥测列严丝合缝。</p>
+ *
+ * <p><b>行内容</b>：标签（绿） ｜ 数值（绿 / 部分受损黄 / 耗尽·装填·冷却红） ｜ 键位（同色降透明，
+ * 只有"可立即使用"状态才显示；装填/冷却/损坏时不显示）。</p>
+ *
+ * <p><b>位置</b>：飞行器紧接本体遥测列第 4 行之后（本体固定 4 行：
+ * 旋翼 转速/桨距/速度/燃油，固定翼 油门/速度/高度/燃油）；地面载具本体无左侧遥测列，
+ * 自屏幕中线下方起排（首行为速度）。</p>
  */
 public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
 
     /** 部分受损黄（2026-09-29 用户定版）：与俯视图受损线框 #D4C44F 同色，alpha 对齐 HUD 其它色。 */
     private static final int DAMAGED_YELLOW = 0xDDD4C44F;
+
+    /** 数值列偏移：与本体 telemetry 的 {@code max(54, 标签宽+10)} 对齐（本类标签均为 2 字）。 */
+    private static final float VALUE_COLUMN = 54f;
+
+    /** 键位与数值之间的间距（紧贴数值，不设固定列）。 */
+    private static final float KEY_GAP = 5f;
+
+    /** 键位提示透明度（只作提示，弱于数值）。 */
+    private static final int KEY_ALPHA = 0x99;
 
     @Override
     public void render(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight) {
@@ -75,115 +91,142 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
                 && !flareDestroyed && !chaffDestroyed && !smokeDestroyed) {
             return;
         }
-        var font = Minecraft.getInstance().font;
-        // 本体左侧信息列：leftX = centerX - 120，leftY = centerY - 21，行距 12
-        int leftX = screenWidth / 2 - 120;
-        int centerY = screenHeight / 2;
-        boolean rotaryWing = vehicle instanceof RotaryWingVehicle;
-        boolean airborne = rotaryWing || vehicle instanceof FixedWingVehicle;
-        if (airborne) {
-            // 飞行器：热诱/箔条/ECM 组起点紧贴本体信息列末行（旋翼末行 leftY+36 → 组起点 leftY+48；
-            // 固定翼末行 leftY+48 → 组起点 leftY+60），三者在组内按 热诱→箔条→ECM 顺序紧凑排列，缺失则递补
-            int y = centerY - 21 + (rotaryWing ? 48 : 60);
-            boolean airDecoyDrawn = false;
-            if (hasFlare || flareDestroyed) {
-                if (flareDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE, flareDamaged);
+
+        // 本体 HUD 坐标系（虚拟 480 高）：所有坐标都在这个空间里，字号/行距与本体一致。
+        try (VehicleHudLayout layout = VehicleHudLayout.begin(guiGraphics)) {
+            float centerX = layout.width() / 2f;
+            float leftX = VehicleHudLayout.telemetryX(centerX);
+            float rowH = VehicleHudLayout.ROW_HEIGHT;
+            boolean rotaryWing = vehicle instanceof RotaryWingVehicle;
+            boolean airborne = rotaryWing || vehicle instanceof FixedWingVehicle;
+            int flareRemain = state == null ? 0 : state.flareRemain();
+            int flareTotal = state == null ? 0 : state.flareTotal();
+            int flareReload = state == null ? 0 : state.flareReloadRemain();
+            int chaffRemain = state == null ? 0 : state.chaffRemain();
+            int chaffTotal = state == null ? 0 : state.chaffTotal();
+            int chaffReload = state == null ? 0 : state.chaffReloadRemain();
+            int smokeRemain = state == null ? 0 : state.smokeRemain();
+            int smokeTotal = state == null ? 0 : state.smokeTotal();
+            int smokeReload = state == null ? 0 : state.smokeReloadRemain();
+            if (airborne) {
+                // 飞行器：本体遥测固定 4 行（末行 TELEMETRY_Y + 3 * ROW_HEIGHT），本组紧接其下
+                float y = VehicleHudLayout.TELEMETRY_Y + 4f * rowH;
+                boolean airDecoyDrawn = false;
+                if (hasFlare || flareDestroyed) {
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_flare"),
+                            flareDestroyed, flareDamaged, RVP_Keys.FIRE_FLARE, leftX, y,
+                            flareRemain, flareTotal, flareReload);
+                    y += rowH;
+                    airDecoyDrawn = true;
                 }
-                y += 12;
-                airDecoyDrawn = true;
-            }
-            if (hasChaff || chaffDestroyed) {
-                if (chaffDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF, chaffDamaged);
+                if (hasChaff || chaffDestroyed) {
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_chaff"),
+                            chaffDestroyed, chaffDamaged, RVP_Keys.FIRE_CHAFF, leftX, y,
+                            chaffRemain, chaffTotal, chaffReload);
+                    y += rowH;
+                    airDecoyDrawn = true;
                 }
-                y += 12;
-                airDecoyDrawn = true;
-            }
-            if (hasEcm) {
-                drawEcmRow(guiGraphics, font, vehicle, leftX, y);
-                y += 12;
-                airDecoyDrawn = true;
-            }
-            if (hasSmoke || smokeDestroyed) {
-                // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
-                int smokeY = airDecoyDrawn ? y + 12 : y;
-                if (smokeDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, smokeY);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                            state.smokeReloadRemain(), leftX, smokeY, RVP_Keys.FIRE_SMOKE, smokeDamaged);
+                if (hasEcm) {
+                    drawEcmRow(guiGraphics, vehicle, leftX, y);
+                    y += rowH;
+                    airDecoyDrawn = true;
                 }
-                y = smokeY + 12;
-            }
-            if (maintenanceState != null) {
-                // 维修行挂在干扰物组之后（烟雾缺失时自动递补其位置）
-                drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
-            }
-        } else {
-            // 地面载具：速度行置顶（用户 2026-09-27），其后 ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
-            int y = centerY - 4;
-            // [RVP] 速度行（仅地面载具）：前进正 KPH / 倒车负 KPH（水平速度在本体前向上的投影，
-            // tick/s → km/h），样式对齐干扰物行（绿字带阴影）
-            drawSpeedRow(guiGraphics, font, vehicle, leftX, y);
-            y += 12;
-            if (hasFlare || flareDestroyed) {
-                if (flareDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), leftX, y);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_flare"), state.flareRemain(), state.flareTotal(),
-                            state.flareReloadRemain(), leftX, y, RVP_Keys.FIRE_FLARE, flareDamaged);
+                if (hasSmoke || smokeDestroyed) {
+                    // 烟雾属另一类型干扰物组：已绘制空战干扰物组时再空一行分隔
+                    float smokeY = airDecoyDrawn ? y + rowH : y;
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_smoke"),
+                            smokeDestroyed, smokeDamaged, RVP_Keys.FIRE_SMOKE, leftX, smokeY,
+                            smokeRemain, smokeTotal, smokeReload);
+                    y = smokeY + rowH;
                 }
-                y += 12;
-            }
-            if (hasChaff || chaffDestroyed) {
-                if (chaffDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), leftX, y);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_chaff"), state.chaffRemain(), state.chaffTotal(),
-                            state.chaffReloadRemain(), leftX, y, RVP_Keys.FIRE_CHAFF, chaffDamaged);
+                if (maintenanceState != null) {
+                    // 维修行挂在干扰物组之后（烟雾缺失时自动递补其位置）
+                    drawMaintenanceRow(guiGraphics, maintenanceState, leftX, y);
                 }
-                y += 12;
-            }
-            if (hasSmoke || smokeDestroyed) {
-                if (smokeDestroyed) {
-                    drawDestroyedRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), leftX, y);
-                } else {
-                    drawRow(guiGraphics, font, I18n.get("gui.ywzj_rvp.hud.label_smoke"), state.smokeRemain(), state.smokeTotal(),
-                            state.smokeReloadRemain(), leftX, y, RVP_Keys.FIRE_SMOKE, smokeDamaged);
+            } else {
+                // 地面载具：速度行置顶（用户 2026-09-27），其后 ECM 置于烟雾下方；无烟雾时 ECM 递补烟雾位
+                float y = VehicleHudLayout.CENTER_Y + 10f;
+                drawSpeedRow(guiGraphics, vehicle, leftX, y);
+                y += rowH;
+                if (hasFlare || flareDestroyed) {
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_flare"),
+                            flareDestroyed, flareDamaged, RVP_Keys.FIRE_FLARE, leftX, y,
+                            flareRemain, flareTotal, flareReload);
+                    y += rowH;
                 }
-                y += 12;
-            }
-            if (hasEcm) {
-                drawEcmRow(guiGraphics, font, vehicle, leftX, y);
-                y += 12;
-            }
-            if (maintenanceState != null) {
-                // 维修行递补干扰物/ECM 组末尾的空位
-                drawMaintenanceRow(guiGraphics, font, maintenanceState, leftX, y);
+                if (hasChaff || chaffDestroyed) {
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_chaff"),
+                            chaffDestroyed, chaffDamaged, RVP_Keys.FIRE_CHAFF, leftX, y,
+                            chaffRemain, chaffTotal, chaffReload);
+                    y += rowH;
+                }
+                if (hasSmoke || smokeDestroyed) {
+                    drawDecoyRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_smoke"),
+                            smokeDestroyed, smokeDamaged, RVP_Keys.FIRE_SMOKE, leftX, y,
+                            smokeRemain, smokeTotal, smokeReload);
+                    y += rowH;
+                }
+                if (hasEcm) {
+                    drawEcmRow(guiGraphics, vehicle, leftX, y);
+                    y += rowH;
+                }
+                if (maintenanceState != null) {
+                    // 维修行递补干扰物/ECM 组末尾的空位
+                    drawMaintenanceRow(guiGraphics, maintenanceState, leftX, y);
+                }
             }
         }
     }
 
+    // ==================== 行绘制（本体 telemetry 三段式） ====================
+
     /**
-     * [RVP] 绘制速度行（2026-09-27 用户需求，仅地面载具）：显示当前水平速度，
-     * 单位 KPH，前进为正、倒车为负（向下取整）；数值 = 载具水平速度在本体前向单位向量上
-     * 的投影（格/tick）× 20 tick/s × 3.6 / 1（1 格 = 1 米）→ km/h。样式对齐干扰物行
-     * （绿字带阴影；无键位段、无数量段，纯读数）。
+     * 一行 = 标签 ｜ 数值 ｜ 键位。
+     *
+     * @param key 键位名；null/空 = 不画（装填、冷却、损坏等不可操作状态）
      */
-    private static void drawSpeedRow(GuiGraphics guiGraphics, Font font, AbstractVehicle vehicle, int x, int y) {
+    private static void drawRow(GuiGraphics guiGraphics, Component label, Component value,
+                                @Nullable String key, float x, float y, int valueColor) {
+        VehicleHudText.drawString(guiGraphics, label, x, y, Color.GREEN);
+        float valueX = x + VALUE_COLUMN;
+        VehicleHudText.drawString(guiGraphics, value, valueX, y, valueColor);
+        if (key != null && !key.isEmpty()) {
+            // 键位紧贴数值（不设固定列）：数值宽度随状态变化，键位跟着走，视觉上贴着左侧文案。
+            int keyColor = (valueColor & 0x00FFFFFF) | (KEY_ALPHA << 24);
+            float keyX = valueX + VehicleHudText.width(value.getString()) + KEY_GAP;
+            VehicleHudText.drawString(guiGraphics, "[" + key + "]", keyX, y, keyColor);
+        }
+    }
+
+    /** 干扰物行：损坏 → 红字"损坏"；装填中 → 红字倒计时（无键位）；否则数量 + 键位。 */
+    private static void drawDecoyRow(GuiGraphics guiGraphics, Component label, boolean destroyed, boolean damaged,
+                                     KeyMapping key, float x, float y, int remain, int total, int reloadRemain) {
+        if (destroyed) {
+            drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_destroyed"),
+                    null, x, y, Color.RED);
+            return;
+        }
+        if (total <= 0) {
+            return;
+        }
+        if (reloadRemain > 0) {
+            drawRow(guiGraphics, label,
+                    Component.translatable("gui.ywzj_rvp.hud.value_reload", (reloadRemain + 19) / 20),
+                    null, x, y, Color.RED);
+            return;
+        }
+        int color = damaged ? DAMAGED_YELLOW : (remain <= 0 ? Color.RED : Color.GREEN);
+        drawRow(guiGraphics, label, Component.literal(String.valueOf(remain)),
+                shortenKeyName(key.getTranslatedKeyMessage().getString()), x, y, color);
+    }
+
+    /** 地面载具速度行：前进正 / 倒车负（水平速度在本体前向上的投影，格/tick × 72 = km/h）。 */
+    private static void drawSpeedRow(GuiGraphics guiGraphics, AbstractVehicle vehicle, float x, float y) {
         var velocity = vehicle.getDeltaMovement();
         double horizontalSq = velocity.x * velocity.x + velocity.z * velocity.z;
         int kph = 0;
         if (horizontalSq > 1.0E-6) {
             var forward = vehicle.getLookAngle();
-            double horizontalLen = Math.sqrt(horizontalSq);
             // 前向水平单位向量（抑制俯仰分量，倒车判定=速度与前向水平投影反向）
             double fx = forward.x, fz = forward.z;
             double forwardLenSq = fx * fx + fz * fz;
@@ -196,8 +239,51 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             // 格/tick → km/h：×20 tick/s × 3.6 km/h per m/s（1 格 = 1 米）
             kph = (int) Math.floor(proj * 20.0 * 3.6 + (proj >= 0 ? 1.0E-3 : -1.0E-3));
         }
-        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.speed", kph), x, y, Color.GREEN);
+        drawRow(guiGraphics, Component.translatable("gui.ywzj_rvp.hud.label_speed"),
+                Component.literal(kph + " KPH"), null, x, y, Color.GREEN);
     }
+
+    /** 主动 ECM 行（反制中 / 冷却 / 就绪 + 键位）。 */
+    private static void drawEcmRow(GuiGraphics guiGraphics, AbstractVehicle vehicle, float x, float y) {
+        Component label = Component.translatable("gui.ywzj_rvp.hud.label_ecm");
+        var snapshot = RVP_EcmActiveHudState.get(vehicle.getId());
+        if (snapshot != null && snapshot.isActive()) {
+            int seconds = (snapshot.activeRemainTick() + 19) / 20;
+            drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_jamming", seconds),
+                    null, x, y, Color.GREEN);
+            return;
+        }
+        if (snapshot != null && snapshot.isCoolingDown()) {
+            int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
+            drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_cooling", seconds),
+                    null, x, y, Color.RED);
+            return;
+        }
+        drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_ready"),
+                shortenKeyName(RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString()), x, y, Color.GREEN);
+    }
+
+    /** 快速维修行（维修中 / 冷却 / 就绪 + 键位）。 */
+    private static void drawMaintenanceRow(GuiGraphics guiGraphics, RVP_ClientMaintenanceState.Snapshot state,
+                                           float x, float y) {
+        Component label = Component.translatable("gui.ywzj_rvp.hud.label_maintenance");
+        if (state.isUsing()) {
+            int remainSec = (state.useRemain() + 19) / 20;
+            drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_repairing", remainSec),
+                    null, x, y, Color.GREEN);
+            return;
+        }
+        if (state.isCoolingDown()) {
+            int seconds = (state.cooldownRemain() + 19) / 20;
+            drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_cooling", seconds),
+                    null, x, y, Color.RED);
+            return;
+        }
+        drawRow(guiGraphics, label, Component.translatable("gui.ywzj_rvp.hud.value_ready"),
+                shortenKeyName(RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString()), x, y, Color.GREEN);
+    }
+
+    // ==================== 判定 ====================
 
     /** 是否装备主动ECM（任一骨块存活）。 */
     private static boolean isEcmAvailable(AbstractVehicle vehicle) {
@@ -212,12 +298,6 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
         }
         // 无骨骼ECM（__vehicle__）始终可用
         return devices.containsKey("__vehicle__");
-    }
-
-    /** 本地玩家当前座位索引（未上载具/座位缺失返回 -1）。 */
-    private static int localSeatIndex() {
-        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
-        return lvp == null || lvp.seat == null ? -1 : lvp.seat.seatIndex;
     }
 
     /** 当前座位是否允许使用某类干扰物（读载具包 countermeasure 配置的 allowed_seat_indexes）。 */
@@ -256,77 +336,6 @@ public class RVP_CountermeasureHudOverlay implements IGuiOverlay {
             }
         }
         return false;
-    }
-
-    /** 绘制 ECM 行（无“(主动)”后缀，样式对齐干扰物）。 */
-    private static void drawEcmRow(GuiGraphics guiGraphics, Font font, AbstractVehicle vehicle, int x, int y) {
-        var snapshot = RVP_EcmActiveHudState.get(vehicle.getId());
-        if (snapshot != null && snapshot.isActive()) {
-            int seconds = (snapshot.activeRemainTick() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_jamming", seconds), x, y, Color.GREEN);
-            return;
-        }
-        if (snapshot != null && snapshot.isCoolingDown()) {
-            int seconds = (snapshot.cooldownRemainTick() + 19) / 20;
-            // 装填/冷却类红字（2026-09-29 用户定版）
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_reload", seconds), x, y, Color.RED);
-            return;
-        }
-        String keyName = shortenKeyName(RVP_Keys.FIRE_ECM.getTranslatedKeyMessage().getString());
-        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.ecm_ready", keyName), x, y, Color.GREEN);
-    }
-
-    /** 绘制快速维修行（文案对齐干扰物/ECM 行：就绪带键位 / 维修中 / 冷却倒计时）。 */
-    private static void drawMaintenanceRow(GuiGraphics guiGraphics, Font font,
-                                           RVP_ClientMaintenanceState.Snapshot state, int x, int y) {
-        if (state.isUsing()) {
-            // [RVP] 维修中 + 倒计时（2026-09-28）：useRemain → 秒（Snapshot 已含 useRemain）
-            int remainSec = (state.useRemain() + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_repairing", remainSec), x, y, Color.GREEN);
-            return;
-        }
-        if (state.isCoolingDown()) {
-            int seconds = (state.cooldownRemain() + 19) / 20;
-            // [RVP] 冷却红字（2026-09-29 用户定版）：冷却期按键无效，红色警示对齐干扰物耗尽行
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_cooling", seconds), x, y, Color.RED);
-            return;
-        }
-        String keyName = shortenKeyName(RVP_Keys.USE_MAINTENANCE.getTranslatedKeyMessage().getString());
-        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.maintenance_ready", keyName), x, y, Color.GREEN);
-    }
-
-    private static void drawRow(GuiGraphics guiGraphics, Font font, String label,
-                                int remain, int total, int reloadRemain, int x, int y, KeyMapping key,
-                                boolean damaged) {
-        if (total <= 0) {
-            return;
-        }
-        // 对齐本体纵向 HUD：正常绿字，耗尽红字，带阴影（同本体 drawString 默认样式）；
-        // 部分受损黄（2026-09-29）：部分发射器打坏系统仍可用，优先于耗尽红；
-        // 装填红字（2026-09-29 用户定版：装填类一律红，优先于受损黄）
-        int color;
-        if (reloadRemain > 0) {
-            color = Color.RED;
-        } else {
-            color = damaged ? DAMAGED_YELLOW : (remain <= 0 ? Color.RED : Color.GREEN);
-        }
-        if (reloadRemain > 0) {
-            // 装填倒计时（秒）
-            int seconds = (reloadRemain + 19) / 20;
-            guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.reload", label, seconds), x, y, color);
-        } else {
-            // 当前数量 + 键位（英文冒号 + 空格，同本体 lang 样式）
-            String keyName = shortenKeyName(key.getTranslatedKeyMessage().getString());
-            guiGraphics.drawString(font, label + ": " + remain + " [" + keyName + "]",
-                    x, y, color);
-        }
-    }
-
-    /** 发射器全损行：红字 "标签: 损坏"（无数量无键位）。 */
-    private static void drawDestroyedRow(net.minecraft.client.gui.GuiGraphics guiGraphics,
-                                         net.minecraft.client.gui.Font font, String label, int x, int y) {
-        guiGraphics.drawString(font, I18n.get("gui.ywzj_rvp.hud.cm_destroyed", label), x, y,
-                org.ywzj.vehicle.client.render.util.Color.RED);
     }
 
     /**

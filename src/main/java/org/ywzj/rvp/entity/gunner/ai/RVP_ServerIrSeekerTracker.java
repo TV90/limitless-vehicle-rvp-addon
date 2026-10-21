@@ -52,7 +52,9 @@ public final class RVP_ServerIrSeekerTracker {
             state.targetId = target.getId();
             state.dwellTicks = 0;
         }
-        if (RVP_IrLockHelper.isTargetWithinAcquireLimits(root, target, data)) {
+        // 几何用"武器自己的站"，根站只作表键（与客户端 tracker / 收包校验同口径）。
+        WeaponUnit geo = rvpWeapon.getWeaponUnit() != null ? rvpWeapon.getWeaponUnit() : root;
+        if (RVP_IrLockHelper.isTargetWithinAcquireLimits(geo, target, data)) {
             state.dwellTicks++;
         } else {
             // 出包线（角度/距离/高度/LOS 任一不过）→ 清零。

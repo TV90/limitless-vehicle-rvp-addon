@@ -71,14 +71,20 @@ public final class RVP_DamageDecayUtil {
         if (angleDeg < angleRules.get(0).getStartDistance()) {
             return 1f;
         }
+        RVP_DamageDecayRuleData previous = null;
         for (RVP_DamageDecayRuleData rule : angleRules) {
             float start = rule.getStartDistance();
             float end = rule.getBandEnd();
-            if (angleDeg < start || angleDeg > end) {
-                continue;
+            if (angleDeg >= start && angleDeg <= end) {
+                return rule.evaluateSample(angleDeg);
             }
-            return rule.evaluateSample(angleDeg);
+            if (angleDeg > end) {
+                previous = rule;
+            }
         }
-        return 1f;
+        // 超出最后一段（如 75-80 之后的掠射）或落在段间空隙：按前一段终值钳制。
+        // 旧实现此处 return 1f ⇒ 入射角越大反而吃全额伤害（2026-10-21 实机反馈：
+        // 99B 侧面掠射 82° 打出 52.3% 血量）。角度衰减必须单调不回升。
+        return previous == null ? 1f : previous.evaluateSample(previous.getBandEnd());
     }
 }

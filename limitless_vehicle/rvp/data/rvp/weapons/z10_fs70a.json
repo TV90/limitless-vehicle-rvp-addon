@@ -1,7 +1,7 @@
 {
   "type": "rvp:missile",
   "name": "FS70A Laser-Guided Rocket",
-  "shoot_interval": 2000,
+  "shoot_interval": 200,
   "max_capacity": 14,
   "reload": {
     "time": 200,

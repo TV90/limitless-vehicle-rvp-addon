@@ -126,6 +126,30 @@ public class RVP_DebugCommands {
                                     + irPath + " | " + firstLine), false);
                             return 1;
                         }))
+                        // [RVP] 火箭 CCIP 准星诊断（2026-10-22）：一次命令打出 门控/传感器/贴图/锚点/
+                        // 渲染帧计数/TAIL 分支原因，用于定位"常规火箭弹 CCIP 图标不显示"。
+                        // 输出文件：logs/ccipdebug.log；聊天栏同时贴出全文。
+                        // 用法：/rvpdebug ccip（快照）｜/rvpdebug ccip reset（计数清零，便于看增量）
+                        .then(Commands.literal("ccip")
+                                .executes(ctx -> {
+                                    String dump;
+                                    try {
+                                        dump = org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay.dbgSnapshot();
+                                    } catch (Throwable t) {
+                                        ctx.getSource().sendFailure(Component.literal("[RVP] CCIP 诊断异常: " + t));
+                                        return 0;
+                                    }
+                                    Path ccipPath = FMLPaths.GAMEDIR.get().resolve("logs").resolve("ccipdebug.log");
+                                    writeLog(ccipPath, dump);
+                                    ctx.getSource().sendSuccess(() -> Component.literal(dump), false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] CCIP dump -> " + ccipPath), false);
+                                    return 1;
+                                })
+                                .then(Commands.literal("reset").executes(ctx -> {
+                                    org.ywzj.rvp.client.gui.RVP_RocketCcipOverlay.dbgResetCounters();
+                                    ctx.getSource().sendSuccess(() -> Component.literal("[RVP] CCIP 帧计数已清零"), false);
+                                    return 1;
+                                })))
                         .then(Commands.literal("suspension").executes(ctx -> {
                             AbstractVehicle vehicle = LocalVehiclePlayer.instance == null ? null : LocalVehiclePlayer.instance.vehicle;
                             if (vehicle == null) {

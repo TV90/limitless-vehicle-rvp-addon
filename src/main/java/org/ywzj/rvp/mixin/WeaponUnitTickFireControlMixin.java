@@ -78,6 +78,14 @@ public abstract class WeaponUnitTickFireControlMixin {
         }
 
         WeaponUnitData.FireControlSensorType sensorType = self.getFireControlSensorType();
+        // [RVP] 2026-10-21 夜间修复（诊断 D3）：IR 发射武器一律进连续 dwell 状态机，
+        // 不再按传感器类型分流——此前只有 IR 传感器站（或 EO+未开 HMD）能喂入，
+        // RF 站被下面直接 return、CCIP/无传感器站根本没有分支，14/17 个 IR 武器站
+        // 在不开头盔瞄准时完全没有锁定入口。
+        if (RVP_IrLockHelper.isIrLaunchWeapon(rvpWeapon.getData())) {
+            org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tickFor(self, rvpWeapon);
+            return;
+        }
         if (sensorType == WeaponUnitData.FireControlSensorType.RF) {
             // [RVP] 2026-10-21：20t 门控与"已有锁早退"自公共路径【移进 RF 分支】（非删除）——
             // ARH 雷达弹的 TWS 门控手感保持原值不变（方案 §5.3 / 红线 1）。
@@ -111,12 +119,7 @@ public abstract class WeaponUnitTickFireControlMixin {
             return;
         }
 
-        // IR / EO 代捕获分支：只喂 RVP_IrSeekerTracker（连续 dwell 状态机），不再直接落锁。
-        // 站级 lockedEntity（EO/RF/HMD 写入的）对本弹只是候选提示，绝不直接给 IR 授权。
-        if (sensorType == WeaponUnitData.FireControlSensorType.IR
-                || RVP_IrLockHelper.usesIrAcquireOnEo(sensorType, rvpWeapon.getData())) {
-            org.ywzj.rvp.client.state.RVP_IrSeekerTracker.tickFor(self, rvpWeapon);
-        }
+        // 非 IR 发射武器（SACLOS/激光/GPS 等）无需导引头搜索，交给各自链路。
     }
 
     @Inject(method = "tickFireControl", at = @At("TAIL"), remap = false)

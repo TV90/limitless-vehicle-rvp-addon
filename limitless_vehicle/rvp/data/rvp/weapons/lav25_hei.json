@@ -1,6 +1,6 @@
 {
   "type": "rvp:machinegun",
-  "name": "M791 25mm HE",
+  "name": "M792 25mm HE",
   "shoot_interval": 300,
   "max_capacity": 30,
   "reload": {
@@ -96,5 +96,5 @@
     "bounce_on_vehicle": true
   },
   "fuse_data": {},
-  "name_CN": "M791 25MM 高爆弹"
+  "name_CN": "M792 25MM 高爆弹"
 }

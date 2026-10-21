@@ -24,6 +24,7 @@ import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.gps.GPSTarget;
 import org.ywzj.rvp.weapon.gps.GPSTargetManager;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.util.RVP_AimPointResolver;
@@ -33,7 +34,6 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.pojo.AimContext;
-import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.function.Supplier;
 
@@ -170,8 +170,10 @@ public final class RVP_ProjectileSpawner {
         }
         projectile.name = Component.translatable(context.weaponData().getName());
         if (context.bindProgrammableAirburst() && context.sourceWeaponUnit() != null) {
-            int weaponIndex = context.sourceWeaponUnit().getCurrentWeapon()
-                    .map(AbstractVehicleWeapon::getIndex).orElse(0);
+            // 2026-10-22：多弹种/分组槽下 getCurrentWeapon() 是外层 multi，其索引与装订时
+            // 写入的叶子武器索引不一致（RVP_AirburstInput / C2SSetAirburstRange 均按叶子索引），
+            // 必须解到当前选中叶子武器取索引，否则查不到装订距离、空爆不触发。
+            int weaponIndex = RVP_WeaponLeafResolver.resolveLeafIndex(context.sourceWeaponUnit());
             // 调用本项目可编程引信存储：只对明确携带真实武器单元的旧载具入口生效。
             projectile.bindProgrammableAirburstRange(context.sourceWeaponUnit(), weaponIndex);
         }

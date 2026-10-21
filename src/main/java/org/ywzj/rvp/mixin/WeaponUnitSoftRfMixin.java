@@ -21,6 +21,11 @@ public class WeaponUnitSoftRfMixin {
             remap = false
     )
     private void ywzj_rvp$applyConfiguredFireControl(WeaponUnit self, Vec3 worldPos) {
+        // IR 通道占用期间跳过本体站级锁定瞄准（AABB 中心）：炮塔不强制转向目标，
+        // 保持玩家鼠标控制（HUD 锁定框与弹体目标仍读站级锁/armed 表）。
+        if (org.ywzj.rvp.client.state.RVP_IrSeekerTracker.isIrLockActive(self)) {
+            return;
+        }
         Entity lockedEntity = self.getLockedEntity();
         Vec3 resolvedWorldPos = worldPos;
         if (lockedEntity != null) {

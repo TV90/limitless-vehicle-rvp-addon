@@ -7,6 +7,7 @@ import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_FuseData;
 import org.ywzj.rvp.weapon.fuse.RVP_AirburstRangeStore;
+import org.ywzj.rvp.weapon.util.RVP_WeaponLeafResolver;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -64,11 +65,10 @@ public class C2SSetAirburstRange {
             if (unit == null) {
                 return;
             }
-            AbstractVehicleWeapon<?> weapon = unit.getIndexedWeapons().stream()
-                    .filter(w -> w.getIndex() == msg.weaponIndex)
-                    .findFirst()
-                    .orElse(null);
-            if (!(weapon instanceof RVP_WeaponBase rvp)) {
+            // 2026-10-22：分组/多弹种槽的顶层 indexedWeapons 里是外层 VehicleMultiWeapons，
+            // 按索引找不到叶子武器（如 T90M HE 组 3OF82）；改为解当前选中叶子武器并校验索引一致。
+            AbstractVehicleWeapon<?> weapon = RVP_WeaponLeafResolver.resolveLeaf(unit).orElse(null);
+            if (!(weapon instanceof RVP_WeaponBase rvp) || rvp.getIndex() != msg.weaponIndex) {
                 return;
             }
             RVP_FuseData fuse = rvp.getData().getFuseData();

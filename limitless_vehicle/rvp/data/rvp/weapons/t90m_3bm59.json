@@ -36,6 +36,9 @@
     }
   },
   "collision_data": {
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
     "direct_damage": 650,
     "damage_decay": [
       {

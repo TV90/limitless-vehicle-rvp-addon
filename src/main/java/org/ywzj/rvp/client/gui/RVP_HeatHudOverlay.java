@@ -7,22 +7,34 @@ import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
+import org.ywzj.vehicle.client.gui.VehicleHudLayout;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
-import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.PartUnit;
-import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
+/**
+ * 过热读数（HEAT xx%）。
+ *
+ * <p><b>定位</b>：本体自 2026-10 起 HUD 走 {@link VehicleHudLayout}（虚拟 480 高坐标系，
+ * 右下角武器栏从 {@code MARGIN=18} 往上堆：弹种行 + 分隔线 + 弹药/装填读出区）。
+ * 这里也进同一坐标系，并且用 {@link RVP_WeaponPanelMetrics} 抓到本帧武器栏分隔线的真实 y，
+ * 把读数顶在读出区（约 42 高）上方 —— 不再按屏幕像素自己估，避免和新武器栏重叠。</p>
+ */
 public class RVP_HeatHudOverlay implements IGuiOverlay {
 
-    private static final int CARD_W = 130;
-    private static final int CARD_H = 58;
-    private static final int MARGIN_RIGHT = 4;
-    private static final int MARGIN_BOTTOM = -12;
-    private static final int TAB_H = 14;
-    private static final int TAB_EXTRA = 5;
+    /** 与本体武器栏一致的右边距（VehicleWeaponOverlay.MARGIN）。 */
+    private static final float MARGIN_RIGHT = 18f;
+
+    /** 本体弹药/装填读出区高度（VehicleWeaponOverlay.DETAIL_HEIGHT）。 */
+    private static final float READOUT_HEIGHT = 42f;
+
+    /** 读数与读出区之间的间隙。 */
+    private static final float GAP_ABOVE_READOUT = 6f;
+
+    /** 抓不到武器栏时（无武器栏/本体改签名）的回退位置，仍高于常见面板。 */
+    private static final float FALLBACK_BOTTOM = VehicleHudLayout.HEIGHT - 18f - 96f;
 
     private static final int BG = 0xB0101010;
     private static final int BORDER = 0xCC3A3A3A;
@@ -39,7 +51,7 @@ public class RVP_HeatHudOverlay implements IGuiOverlay {
         }
 
         PartUnit<?> operatorUnit = vehicle.getOwnOperatorUnit(LocalVehiclePlayer.instance.getPlayer());
-        if (!(operatorUnit instanceof WeaponUnit weaponUnit)) {
+        if (!(operatorUnit instanceof org.ywzj.vehicle.vehicle.part.WeaponUnit weaponUnit)) {
             return;
         }
 
@@ -61,29 +73,32 @@ public class RVP_HeatHudOverlay implements IGuiOverlay {
         Font font = Minecraft.getInstance().font;
         int textWidth = font.width(text);
 
-        int tabRowH = TAB_H + TAB_EXTRA;
-        int cardRight = screenWidth - MARGIN_RIGHT;
-        int cardBottom = screenHeight - MARGIN_BOTTOM - tabRowH;
+        try (VehicleHudLayout layout = VehicleHudLayout.begin(guiGraphics)) {
+            float right = layout.width() - MARGIN_RIGHT;
+            float textX = right - textWidth;
+            float bottom = resolveBottom();
+            float textY = bottom - font.lineHeight;
 
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(cardRight, cardBottom, 0);
-        guiGraphics.pose().scale(0.75f, 0.75f, 0.75f);
-
-        int textX = -CARD_W + (CARD_W - textWidth) / 2;
-        int textY = -CARD_H - font.lineHeight - 6;
-
-        RenderHelper.fill(guiGraphics, net.minecraft.client.renderer.RenderType.guiOverlay(),
-                textX - 4, textY - 2, textX + textWidth + 4, textY + font.lineHeight + 2, 0, BG);
-        guiGraphics.hLine(textX - 4, textX + textWidth + 3, textY - 2, BORDER);
-        guiGraphics.hLine(textX - 4, textX + textWidth + 3, textY + font.lineHeight + 1, BORDER);
-        guiGraphics.vLine(textX - 4, textY - 2, textY + font.lineHeight + 1, BORDER);
-        guiGraphics.vLine(textX + textWidth + 3, textY - 2, textY + font.lineHeight + 1, BORDER);
-        guiGraphics.drawString(font, text, textX, textY, color, false);
-
-        guiGraphics.pose().popPose();
+            guiGraphics.fill((int) textX - 3, (int) textY - 2,
+                    (int) textX + textWidth + 3, (int) textY + font.lineHeight + 1, BG);
+            guiGraphics.fill((int) textX - 3, (int) textY - 2,
+                    (int) textX + textWidth + 3, (int) textY - 1, BORDER);
+            guiGraphics.fill((int) textX - 3, (int) textY + font.lineHeight,
+                    (int) textX + textWidth + 3, (int) textY + font.lineHeight + 1, BORDER);
+            guiGraphics.drawString(font, text, (int) textX, (int) textY, color, false);
+        }
     }
 
-    private static AbstractVehicleWeapon<?> resolveActiveWeapon(WeaponUnit weaponUnit) {
+    /** 读数底边：优先顶在本帧武器栏读出区上方，抓不到才用回退位置。 */
+    private static float resolveBottom() {
+        if (!RVP_WeaponPanelMetrics.hasSeparator()) {
+            return FALLBACK_BOTTOM;
+        }
+        // separatorY 之上是读出区（高 READOUT_HEIGHT），再往上留 GAP_ABOVE_READOUT
+        return RVP_WeaponPanelMetrics.separatorY() - READOUT_HEIGHT - GAP_ABOVE_READOUT;
+    }
+
+    private static AbstractVehicleWeapon<?> resolveActiveWeapon(org.ywzj.vehicle.vehicle.part.WeaponUnit weaponUnit) {
         AbstractVehicleWeapon<?> weapon = weaponUnit.getCurrentWeapon().orElse(null);
         if (weapon != null) {
             return weapon;

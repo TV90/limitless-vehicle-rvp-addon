@@ -50,9 +50,18 @@ public final class RVP_IrSeekerStateTable {
 
     private static final Map<WeaponUnit, Map<ResourceLocation, State>> STATES = new HashMap<>();
 
+    /** 统一键：一切站级状态都挂到根武器站（null 安全）。发射门 / HUD / 服务端表都按根站读。 */
+    public static WeaponUnit keyOf(WeaponUnit unit) {
+        if (unit == null) {
+            return null;
+        }
+        WeaponUnit root = unit.getRootParentWeaponUnit();
+        return root != null ? root : unit;
+    }
+
     /** 取（或创建）指定站 + 弹种的状态。 */
     public static State stateFor(WeaponUnit unit, ResourceLocation weaponId) {
-        return STATES.computeIfAbsent(unit, u -> new HashMap<>())
+        return STATES.computeIfAbsent(keyOf(unit), u -> new HashMap<>())
                 .computeIfAbsent(weaponId, id -> {
                     State state = new State();
                     state.weaponId = id;
@@ -63,13 +72,13 @@ public final class RVP_IrSeekerStateTable {
     /** 查指定站 + 弹种的状态；无则 null（不创建）。 */
     @Nullable
     public static State find(WeaponUnit unit, ResourceLocation weaponId) {
-        Map<ResourceLocation, State> byWeapon = STATES.get(unit);
+        Map<ResourceLocation, State> byWeapon = STATES.get(keyOf(unit));
         return byWeapon == null ? null : byWeapon.get(weaponId);
     }
 
     /** 重置指定站 + 弹种的状态（保留 weaponId 绑定）。 */
     public static void reset(WeaponUnit unit, ResourceLocation weaponId) {
-        Map<ResourceLocation, State> byWeapon = STATES.get(unit);
+        Map<ResourceLocation, State> byWeapon = STATES.get(keyOf(unit));
         if (byWeapon != null) {
             byWeapon.remove(weaponId);
         }
@@ -77,7 +86,7 @@ public final class RVP_IrSeekerStateTable {
 
     /** 清空指定站的全部 IR 状态（站被移除/切换操作站时）。 */
     public static void clearUnit(WeaponUnit unit) {
-        STATES.remove(unit);
+        STATES.remove(keyOf(unit));
     }
 
     /** 清空全表（玩家离开载具时）。 */
@@ -92,7 +101,7 @@ public final class RVP_IrSeekerStateTable {
 
     /** 指定站全部弹种状态的只读快照（遍历期间防并发修改）。 */
     public static Map<ResourceLocation, State> snapshot(WeaponUnit unit) {
-        Map<ResourceLocation, State> byWeapon = STATES.get(unit);
+        Map<ResourceLocation, State> byWeapon = STATES.get(keyOf(unit));
         return byWeapon == null ? Map.of() : Map.copyOf(byWeapon);
     }
 

@@ -23,6 +23,7 @@ import org.ywzj.rvp.ext.VehicleRocketWeaponDataExt;
 import org.ywzj.rvp.client.state.RVP_RocketCcipScreenState;
 import org.ywzj.rvp.weapon.RVP_RocketBallistics;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
+import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.core.RVP_WeaponSensorHelper;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
@@ -60,6 +61,17 @@ public final class RVP_RocketCcipOverlay {
     private static ResourceLocation ywzj_rvp$activeTexture = FALLBACK_TEXTURE;
     private static boolean ywzj_rvp$hasTexture;
     private static String ywzj_rvp$lastTextureDebugState = "";
+
+    /**
+     * 当前贴图的实际像素尺寸（载入时读取，绘制时按尺寸整体缩放）。
+     *
+     * <p>历史 bug（2026-10-22）：绘制固定用 {@code blit(tex, x, y, 0, 0, 32, 32, 128, 128)}，
+     * 采样源区恒为贴图左上角 0~32 像素。包内 ccip.png 是 128×128、图案只落在
+     * x44~83 / y22~95，于是每次都采样到纯透明区域 ⇒ 门控/贴图/锚点全部正常、
+     * 绘制调用也跑了上千次，屏幕上却什么都没有。改为按真实尺寸整图采样 + pose 缩放。</p>
+     */
+    private static int ywzj_rvp$texW = CCIP_TEXTURE_SIZE;
+    private static int ywzj_rvp$texH = CCIP_TEXTURE_SIZE;
 
     private RVP_RocketCcipOverlay() {}
 
@@ -111,9 +123,248 @@ public final class RVP_RocketCcipOverlay {
         return getActiveRocketContext() != null;
     }
 
-    public static boolean shouldReplaceReticle() {
-        return isBallisticRocketActive() && ensureTexture();
+    /**
+     * 是否启用「用 RVP 自己的贴图替换本体准星」这套老方案。
+     *
+     * <p><b>2026-10-22 起关闭</b>：用户确认一直使用的就是<b>本体样式</b>的 CCIP 准星
+     * （本体在配 {@code ccip} 传感器的站上把准星染绿、画在弹着预测点），
+     * 包内 {@code assets/rvp/textures/ui/ccip.png} 是早年废弃素材（128×128 里只有
+     * 一小块 T 形图案，且原绘制固定采样左上角 0~32 像素，取到的全是透明）。
+     * 适配新本体时把这套替换接进了 {@code drawCrosshair} 新的分发路径，
+     * 结果变成「隐藏本体准星 + 画一张看不见的图」⇒ 常规火箭弹 CCIP 准星凭空消失。
+     * 因此改为只保留本体的准星，RVP 不再隐藏、不再替换。</p>
+     *
+     * <p>RVP 仍然负责「落点」：{@code LocalVehiclePlayerRocketAimMixin} 在 tickAim 尾部
+     * 把 {@code weaponHitPos/weaponHitPosO} 覆盖成弹道预测点，本体据此把 CCIP 准星
+     * 画在正确位置。若哪天要恢复贴图替换，把此开关改回 true 即可。</p>
+     */
+    private static final boolean ywzj_rvp$enableLegacyIconReplace = false;
+
+    public static boolean isLegacyIconReplaceEnabled() {
+        return ywzj_rvp$enableLegacyIconReplace;
     }
+
+    public static boolean shouldReplaceReticle() {
+        return ywzj_rvp$enableLegacyIconReplace && isBallisticRocketActive() && ensureTexture();
+    }
+
+    /** 本帧是否已在「本体准星锚点」处画过 CCIP 图标（mixin 重定向内绘制时置位）。 */
+    private static boolean ywzj_rvp$drewAtAnchorThisFrame;
+
+    /** 每帧渲染入口调用：清本帧锚点绘制标记。 */
+    public static void beginRenderFrame() {
+        ywzj_rvp$drewAtAnchorThisFrame = false;
+    }
+
+    /** 本帧是否已由锚点路径绘制（供 TAIL 兜底路径避免重复绘制）。 */
+    public static boolean drewAtAnchorThisFrame() {
+        return ywzj_rvp$drewAtAnchorThisFrame;
+    }
+
+    /**
+     * 在本体准星锚点处直接绘制 CCIP 图标（2026-10-22）。
+     *
+     * <p>本体 HUD 重制后，准星绘制被移入 {@code VehicleAimAtOverlay.drawCrosshair} 分发，
+     * 且锚点已经由本体摆到「弹着预测点」并做过 {@code translate/scale}——
+     * 此时 pose 原点就是准星位置。原先依赖 {@code render} TAIL +
+     * {@link #getCurrentScreenHitPos()} 重新投影的路径在新本体下拿不到有效点，
+     * 表现为：本体准星被隐藏、RVP 图标又没画出来 ⇒ 常规火箭弹 CCIP 准星空白
+     * （激光制导火箭弹是 {@code rvp:missile}，门控 false 不隐藏本体准星，所以它反而有准星）。
+     * 因此把「隐藏本体准星」与「画 CCIP 图标」合并到同一处，锚点直接复用本体已算好的结果。</p>
+     */
+    public static void drawAtCrosshairAnchor(GuiGraphics guiGraphics, int size) {
+        if (!ensureTexture()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        float roll = 0.0f;
+        if (mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle) {
+            roll = Mth.lerp(mc.getFrameTime(), vehicle.zRotO, vehicle.getZRot());
+        }
+        ywzj_rvp$drewAtAnchorThisFrame = true;
+        ywzj_rvp$dbgAnchorDraws++;
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        ywzj_rvp$blitIcon(guiGraphics, roll, size);
+        // 视觉探针（/rvpdebug flags ccip on）：图元画的品红方框与贴图管线无关，必定可见。
+        // 方框出现=锚点绘制确实跑到（问题在贴图 blit）；方框不出现=锚点路径没执行。
+        if (RVP_DebugFlags.CCIP.isEnabled()) {
+            int probe = 0xFFFF00FF;
+            int half = size / 2;
+            guiGraphics.fill(-half - 3, -half - 3, half + 3, -half - 2, probe);
+            guiGraphics.fill(-half - 3, half + 2, half + 3, half + 3, probe);
+            guiGraphics.fill(-half - 3, -half - 3, -half - 2, half + 3, probe);
+            guiGraphics.fill(half + 2, -half - 3, half + 3, half + 3, probe);
+        }
+        RenderSystem.disableBlend();
+    }
+
+    /**
+     * 按贴图真实尺寸整图绘制 CCIP 图标，再用 pose 缩放到目标尺寸。
+     *
+     * <p>不再假设图案铺满整张贴图，也不再硬编码 128，因此换成任意尺寸的 ccip.png 都能正确显示。
+     * 调用方负责把 pose 平移到锚点，本方法只叠加横滚旋转与缩放。</p>
+     */
+    private static void ywzj_rvp$blitIcon(GuiGraphics guiGraphics, float roll, int size) {
+        int texW = Math.max(1, ywzj_rvp$texW);
+        int texH = Math.max(1, ywzj_rvp$texH);
+        float scale = size / (float) Math.max(texW, texH);
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees(roll));
+        guiGraphics.pose().scale(scale, scale, 1.0f);
+        guiGraphics.blit(ywzj_rvp$activeTexture, -texW / 2, -texH / 2,
+                0, 0, texW, texH, texW, texH);
+        guiGraphics.pose().popPose();
+    }
+
+    /** 记录贴图真实像素尺寸，供 {@link #ywzj_rvp$blitIcon} 整图采样。 */
+    private static void ywzj_rvp$applyImageMetrics(NativeImage image) {
+        ywzj_rvp$texW = Math.max(1, image.getWidth());
+        ywzj_rvp$texH = Math.max(1, image.getHeight());
+    }
+
+    // ===================== /rvpdebug ccip 诊断（2026-10-22） =====================
+    // 目的：常规火箭弹 CCIP 图标不显示时，一次命令定位断点在哪一段：
+    // 门控（传感器/kind）→ 贴图 → 锚点 → 渲染期调用计数 → TAIL 兜底分支。
+
+    public static long ywzj_rvp$dbgRenderCalls;
+    public static long ywzj_rvp$dbgCrosshairCalls;
+    public static long ywzj_rvp$dbgReplaceTrue;
+    public static long ywzj_rvp$dbgReplaceFalse;
+    public static long ywzj_rvp$dbgAnchorDraws;
+    public static long ywzj_rvp$dbgTailDraws;
+    public static String ywzj_rvp$dbgLastStyle = "-";
+    public static String ywzj_rvp$dbgTailState = "未进入";
+    public static Vec3 ywzj_rvp$dbgLastHit;
+    public static Vec3 ywzj_rvp$dbgLastScreen;
+
+    public static void dbgNoteRender() {
+        ywzj_rvp$dbgRenderCalls++;
+    }
+
+    public static void dbgNoteCrosshair(String styleName, boolean replace) {
+        ywzj_rvp$dbgCrosshairCalls++;
+        ywzj_rvp$dbgLastStyle = styleName == null ? "null" : styleName;
+        if (replace) {
+            ywzj_rvp$dbgReplaceTrue++;
+        } else {
+            ywzj_rvp$dbgReplaceFalse++;
+        }
+    }
+
+    public static void dbgNoteTail(String state) {
+        ywzj_rvp$dbgTailState = state;
+    }
+
+    public static void dbgResetCounters() {
+        ywzj_rvp$dbgRenderCalls = 0;
+        ywzj_rvp$dbgCrosshairCalls = 0;
+        ywzj_rvp$dbgReplaceTrue = 0;
+        ywzj_rvp$dbgReplaceFalse = 0;
+        ywzj_rvp$dbgAnchorDraws = 0;
+        ywzj_rvp$dbgTailDraws = 0;
+        ywzj_rvp$dbgLastStyle = "-";
+        ywzj_rvp$dbgTailState = "未进入";
+        ywzj_rvp$dbgLastHit = null;
+        ywzj_rvp$dbgLastScreen = null;
+    }
+
+    /** 供命令输出：外部 ccip.png 是否被找到（找不到则为 null，走资源包回退）。 */
+    public static String dbgTexturePath() {
+        try {
+            Path p = resolvePackTexturePath();
+            return p == null ? "null(走资源包回退)" : p.toString();
+        } catch (Throwable t) {
+            return "异常:" + t.getClass().getSimpleName();
+        }
+    }
+
+    /** 一次性诊断快照（/rvpdebug ccip 写入 logs/ccipdebug.log）。 */
+    public static String dbgSnapshot() {
+        StringBuilder sb = new StringBuilder();
+        Minecraft mc = Minecraft.getInstance();
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        sb.append("=== RVP Rocket CCIP dump ===\n");
+        sb.append("viewType=").append(lvp == null ? "null" : lvp.viewType)
+                .append(" onVehicle=").append(lvp != null && lvp.onVehicle())
+                .append(" hideGui=").append(mc.options.hideGui)
+                .append('\n');
+        WeaponUnit unit = lvp == null ? null : lvp.getWeaponUnit();
+        if (unit == null) {
+            sb.append("unit=null（当前不在武器站）\n");
+            return sb.toString();
+        }
+        sb.append("unit=").append(unit.getId()).append(" index=").append(unit.getIndex())
+                .append(" currentWeaponIndex=").append(unit.getCurrentWeaponIndex())
+                .append(" crosshairStyle=").append(unit.crosshairStyle)
+                .append('\n');
+        AbstractVehicleWeapon<?> current = unit.getCurrentWeapon().orElse(null);
+        sb.append("currentWeapon=").append(current == null ? "null" : current.getClass().getSimpleName())
+                .append('\n');
+        AbstractVehicleWeapon<?> primary = org.ywzj.rvp.util.RVP_WeaponResolveHelper.currentPrimary(unit);
+        if (primary instanceof RVP_WeaponBase rvp) {
+            sb.append("  primaryRvp=").append(rvp.getData().getWeaponId())
+                    .append(" kind=").append(rvp.getData().getWeaponKind())
+                    .append(" sensorMode='").append(rvp.getData().getFireControlSensorMode()).append('\'')
+                    .append(" sensorOverride=").append(rvp.getData().getFireControlSensorTypeOverride())
+                    .append('\n');
+        } else {
+            sb.append("  primaryRvp=null（解包后不是 RVP 武器，门控必 false）\n");
+        }
+        sb.append("gate:\n");
+        try {
+            sb.append("  effectiveSensorType(unit)=").append(RVP_WeaponSensorHelper.effectiveSensorType(unit)).append('\n');
+        } catch (Throwable t) {
+            sb.append("  effectiveSensorType 异常=").append(t).append('\n');
+        }
+        sb.append("  unit.staticSensor=").append(unit.getFireControlSensorType()).append('\n');
+        if (current != null && current.getWeaponUnit() != null) {
+            sb.append("  weaponStation=").append(current.getWeaponUnit().getId())
+                    .append(" staticSensor=").append(current.getWeaponUnit().getFireControlSensorType())
+                    .append('\n');
+        }
+        sb.append("  isBallisticRocketWeapon=").append(isBallisticRocketWeapon(current, unit))
+                .append(" isActive=").append(isBallisticRocketActive())
+                .append(" shouldReplace=").append(isBallisticRocketActive() && ensureTexture())
+                .append('\n');
+        sb.append("  legacyIconReplace=").append(ywzj_rvp$enableLegacyIconReplace)
+                .append(ywzj_rvp$enableLegacyIconReplace ? "（走 RVP 贴图替换）" : "（用本体样式准星，RVP 不隐藏不替换）")
+                .append('\n');
+        sb.append("texture:\n");
+        sb.append("  ensureTexture=").append(ensureTexture())
+                .append(" active=").append(ywzj_rvp$activeTexture)
+                .append(" packPath=").append(dbgTexturePath())
+                .append('\n');
+        sb.append("  texSize=").append(ywzj_rvp$texW).append('x').append(ywzj_rvp$texH).append('\n');
+        ActiveRocketContext ctx = getActiveRocketContext();
+        sb.append("anchor:\n");
+        if (ctx == null) {
+            sb.append("  context=null\n");
+        } else {
+            sb.append("  context.unit=").append(ctx.weaponUnit().getId())
+                    .append(" weaponHitPos=").append(ctx.weaponUnit().weaponHitPos)
+                    .append(" weaponHitPosO=").append(ctx.weaponUnit().weaponHitPosO).append('\n');
+            Vec3 screen = getCurrentScreenHitPos();
+            sb.append("  screenHitPos=").append(screen)
+                    .append(screen == null ? " (null => 不画)" : (screen.z < 0 ? " (z<0 在相机背后 => 不画)" : ""))
+                    .append('\n');
+        }
+        sb.append("frame(last-reset累计): renderCalls=").append(ywzj_rvp$dbgRenderCalls)
+                .append(" drawCrosshairCalls=").append(ywzj_rvp$dbgCrosshairCalls)
+                .append(" replaceTrue=").append(ywzj_rvp$dbgReplaceTrue)
+                .append(" replaceFalse=").append(ywzj_rvp$dbgReplaceFalse)
+                .append(" anchorDraws=").append(ywzj_rvp$dbgAnchorDraws)
+                .append(" tailDraws=").append(ywzj_rvp$dbgTailDraws)
+                .append(" lastStyle=").append(ywzj_rvp$dbgLastStyle)
+                .append(" tailState=").append(ywzj_rvp$dbgTailState)
+                .append('\n');
+        sb.append("判读：drawCrosshairCalls=0 ⇒ 本体没画准星（样式为空/落点为空，隐藏也无从发生）；\n");
+        sb.append("      replaceTrue>0 且 anchorDraws=0 ⇒ 隐藏了但没进绘制（重定向未生效）；\n");
+        sb.append("      anchorDraws>0 但仍看不到 ⇒ 贴图 blit 在该 HUD 相位不可见（需改图元绘制）。\n");
+        return sb.toString();
+    }
+
 
     public static void draw(GuiGraphics guiGraphics, float partialTick) {
         draw(guiGraphics, partialTick, CCIP_SIZE);
@@ -133,7 +384,7 @@ public final class RVP_RocketCcipOverlay {
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         guiGraphics.pose().pushPose();
         guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees(roll));
-        guiGraphics.blit(ywzj_rvp$activeTexture, -size / 2, -size / 2, 0, 0, size, size, CCIP_TEXTURE_SIZE, CCIP_TEXTURE_SIZE);
+        ywzj_rvp$blitIcon(guiGraphics, 0.0f, size);
         guiGraphics.pose().popPose();
         RenderSystem.disableBlend();
     }
@@ -142,6 +393,7 @@ public final class RVP_RocketCcipOverlay {
         if (!ensureTexture()) {
             return;
         }
+        ywzj_rvp$dbgTailDraws++;
         Minecraft mc = Minecraft.getInstance();
         float roll = 0.0f;
         if (mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle vehicle) {
@@ -153,7 +405,7 @@ public final class RVP_RocketCcipOverlay {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(x, y, 0);
         guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees(roll));
-        guiGraphics.blit(ywzj_rvp$activeTexture, -size / 2, -size / 2, 0, 0, size, size, CCIP_TEXTURE_SIZE, CCIP_TEXTURE_SIZE);
+        ywzj_rvp$blitIcon(guiGraphics, 0.0f, size);
         guiGraphics.pose().popPose();
         RenderSystem.disableBlend();
     }
@@ -257,6 +509,8 @@ public final class RVP_RocketCcipOverlay {
                 if (mtime != ywzj_rvp$loadedTextureMtime) {
                     try (InputStream inputStream = Files.newInputStream(texturePath)) {
                         NativeImage image = NativeImage.read(inputStream);
+                        // 先量出真实尺寸与内容包围盒，再交给 DynamicTexture 上传（绘制只采样有像素的区域）
+                        ywzj_rvp$applyImageMetrics(image);
                         if (ywzj_rvp$dynamicTexture != null) {
                             ywzj_rvp$dynamicTexture.close();
                         }
@@ -276,6 +530,17 @@ public final class RVP_RocketCcipOverlay {
 
         ywzj_rvp$hasTexture = mc.getResourceManager().getResource(FALLBACK_TEXTURE).isPresent();
         ywzj_rvp$activeTexture = FALLBACK_TEXTURE;
+        // 回退到资源包贴图时同样量一次尺寸/包围盒，避免沿用上一次（或默认 128）导致采样错位
+        if (ywzj_rvp$hasTexture) {
+            try (InputStream inputStream = mc.getResourceManager().getResource(FALLBACK_TEXTURE)
+                    .orElseThrow().open()) {
+                NativeImage image = NativeImage.read(inputStream);
+                ywzj_rvp$applyImageMetrics(image);
+                image.close();
+            } catch (IOException ignored) {
+                // 读不出来就保持上一次度量值，至少不会崩
+            }
+        }
         ywzj_rvp$debugTextureState("fallback:" + FALLBACK_TEXTURE + ", present=" + ywzj_rvp$hasTexture);
         if (!ywzj_rvp$hasTexture) {
             ywzj_rvp$loadedTextureMtime = Long.MIN_VALUE;

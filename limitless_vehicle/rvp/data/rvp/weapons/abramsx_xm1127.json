@@ -43,9 +43,11 @@
       "proximity_fuze": true,
       "proximity_radius": 5,
       "explosion_damage_factor": {
+        "player": 0.2667,
+        "living": 0.2667,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 2.0,
+          "ywzj_vehicle:wheeled_vehicle": 3.0,
           "ywzj_vehicle:rotary_wing_vehicle": 2.0,
           "ywzj_vehicle:fixed_wing_vehicle": 2.0
         }
@@ -53,6 +55,9 @@
     }
   },
   "collision_data": {
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
     "direct_damage": 50,
     "damage_decay": [
       {

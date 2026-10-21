@@ -3739,6 +3739,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         DamageSource source = AllDamageTypes.Sources.bullet(level().registryAccess(), this, owner, result.getLocation());
         float hurtAmount = finalDamage;
+        // [RVP] 2026-10-22：命中面板改用「实测血量差」——finalDamage 只是估算，残血封顶、
+        // 装甲保底、命中箱重放都会让真实掉血偏离它，面板百分比必须与血条一致。
+        float healthBeforeHit = Float.NaN;
+        if (entity instanceof AbstractVehicle healthProbe) {
+            healthBeforeHit = healthProbe.getHealth();
+        }
         if (entity instanceof AbstractVehicle targetVehicleForHurt) {
             // 弹体已自行结算命中箱系数（pushSkip 跳过全局缩放），但 hurt 仍会走本体
             // DamageSystem.hurt 的核心距离衰减；按 core_distance_scale_multiplier 预补偿，
@@ -3763,6 +3769,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // RVP 命中提示：仅向射手本人推送（右上角展板 UI）；载具 JSON 配置 hit_indicator_rvp=false 时走本体。
         // 必须在本体 DamageSystem.hurt（内部发送 ServerHitVehicleEvent 到附近玩家）之后再发包，
         // 使客户端收到的最后一个命中包是 RVP 包，随后清空本体 events 实现二选一。
+        float reportedDamage = finalDamage;
+        if (!Float.isNaN(healthBeforeHit) && entity instanceof AbstractVehicle afterHitProbe) {
+            float actualDealt = healthBeforeHit - afterHitProbe.getHealth();
+            if (actualDealt > 0f && Float.isFinite(actualDealt)) {
+                reportedDamage = actualDealt;
+            }
+        }
         if (owner instanceof ServerPlayer shooter && entity instanceof AbstractVehicle targetVehicle
                 && !level().isClientSide()
                 && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(targetVehicle)) {
@@ -3782,7 +3795,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                             targetVehicle.getId(),
                             result.getLocation(),
                             vel.lengthSqr() > 1.0E-6 ? vel.normalize() : Vec3.ZERO,
-                            finalDamage,
+                            reportedDamage,
                             boneDisp,
                             ammoKey,
                             weaponId == null ? null : weaponId.toString(),
@@ -4479,6 +4492,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体
         // ServerHitVehicleEvent 到达 → 命中提示回退到本体（大范围秒杀爆炸的回退根因）。
         List<AbstractVehicle> blastTargets = new ArrayList<>();
+        // 爆炸前的血量快照（与 blastTargets 同批采集）：结算后用差值上报面板，
+        // 天然包含武器侧/受击方爆炸倍率、本体距离衰减、秒杀封顶等全部真实因素。
+        Map<Integer, Float> blastHealthBefore = new HashMap<>();
         if (!level().isClientSide() && explosion != null && explosion.explode
                 && getOwner() instanceof ServerPlayer) {
             double half = radius;
@@ -4489,6 +4505,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (!v.isDestroyed()
                         && RVP_VehicleHitboxFactorManager.INSTANCE.isHitIndicatorRvpEnabled(v)) {
                     blastTargets.add(v);
+                    blastHealthBefore.put(v.getId(), v.getHealth());
                 }
             }
         }
@@ -4560,8 +4577,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (dist > radius) {
                     continue;
                 }
-                float boomDamage = (float) (resolvedDamage * (1.0 - 0.5 * dist / radius));
-                if (!(boomDamage > 0f)) {
+                Float healthBefore = blastHealthBefore.get(v.getId());
+                float boomDamage = healthBefore != null
+                        ? healthBefore - v.getHealth()
+                        : (float) (resolvedDamage * (1.0 - 0.5 * dist / radius));
+                if (!(boomDamage > 0f) || !Float.isFinite(boomDamage)) {
                     continue;
                 }
                 // 命中位置用爆炸中心 pos：客户端在“离车体一定距离”的爆炸中心渲染弹体/红圈/破片

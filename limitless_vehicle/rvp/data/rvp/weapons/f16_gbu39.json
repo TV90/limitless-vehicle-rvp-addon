@@ -58,6 +58,8 @@
       "radius": 6,
       "destroy_block": true,
       "explosion_damage_factor": {
+        "player": 0.1333,
+        "living": 0.1333,
         "vehicle_default": 1.0,
         "vehicles": {
           "ywzj_vehicle:tracked_vehicle": 0.9,

@@ -66,6 +66,7 @@
     "VehicleScopeOverlayWeaponUnitsMixin",
     "VehicleCrossHairOverlayMixin",
     "VehicleWeaponOverlayMixin",
+    "VehicleWeaponOverlayMetricsMixin",
     "VehicleOverlayWeaponListSuppressMixin",
     "VehicleRadarOverlayMixin",
     "VehicleExplosionClientVisualMixin",
