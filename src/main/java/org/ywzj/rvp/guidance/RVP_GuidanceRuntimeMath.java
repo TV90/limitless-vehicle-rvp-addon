@@ -278,9 +278,19 @@ public final class RVP_GuidanceRuntimeMath {
                 projectile.position(), target, targetMotion, projectile.getMotionSpeedReference());
 
         if (!projectile.hasPresetProfileInitialized()) {
-            Vec3 launch = projectile.getVirtualMidcourseLaunchPosition();
+            // 调用本项目运动时序解析入口，取得发动机实际开始工作的飞行 Tick；
+            // PRESET 参考点必须等到这个 Tick 的实体当前位置确定后再冻结。
+            int ignitionTick = RVP_ProjectileMotion.resolveMotorIgnitionTick(
+                    projectile, context.data());
+            if (projectile.getFlightTickCount() < ignitionTick) {
+                // 点火前只保留冷发射/延迟点火运动，不能提前用生成点冻结整条 PRESET 弧线。
+                return true;
+            }
+            // 使用当前服务端权威位置作为实际点火点，而不是弹体生成位置。
+            Vec3 launch = projectile.position();
             Vec3 ascentPos = computePresetAscentPos(projectile.position(), movingTarget, launch, preset);
             Vec3 overheadPos = new Vec3(movingTarget.x, launch.y + preset.cruiseAltitude(), movingTarget.z);
+            // 调用本项目弹体状态入口，保存以实际点火点为原点的 PRESET 参考轨迹。
             projectile.initializePresetProfile(launch, ascentPos, overheadPos);
         }
         Vec3 ascentPos = projectile.getPresetAscentPos();
@@ -463,8 +473,9 @@ public final class RVP_GuidanceRuntimeMath {
     /**
      * 弹道导弹抛物线制导（上升+中段合一）：追“目标方向前方 lookAhead + 抛物线高度”的点。
      *
-     * <p>弹道为对称抛物线：高度 = {@code launch.y + max(8, apogee×4p(1-p))}，p 为水平进度
-     * （0 发射点 → 1 目标），最高点（apogee）在弹道水平中段。apogee 自适应为
+     * <p>弹道为目标高度弦线加中段抬升：高度 = {@code lerp(launch.y, target.y, p)
+     * + apogee×4p(1-p)}，p 为水平进度（0 发射点 → 1 目标），最高点在弹道水平中段。
+     * apogee 自适应为
      * {@code min(配置巡航高度, 水平射程×0.50)}（2026-09-15 应用户要求从 0.35 上调——
      * 抬高弹道顶点，爬升/下降角上限约 45°；当前载具包内仅 9M723 使用 PRESET 弹道），
      * 仍保留射程比例上限，避免短射程下形成过陡尖弧。取代旧的“追 ascentPos 陡直线
@@ -500,23 +511,35 @@ public final class RVP_GuidanceRuntimeMath {
         double p = Mth.clamp(1.0 - hDist / totalH, 0.0, 1.0);
         // 自适应弹道顶点：过高 apogee 在短射程下会形成陡尖弧；0.50 = 射程的 50% 上限（原 0.35，抬高弹道）
         double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.50);
-        // 抛物线高度（基线 base 起步，顶点 = apogee，末端回到 base）：全程单调平滑、无
-        // 硬切换，竖直发射后追点自然略高于自身平滑转上爬，不会“压-拉-压”的蛇形振荡
-        double base = Math.min(40.0, apogee * 0.3);
         // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
         double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
         // 前视点的水平坐标已经向前推进，垂直坐标同步采样前视进度，
         // 避免 YJ-20 冷发射结束后追到“前方同高度”的水平点。（并行会话 20b76ac5：
         // 追点高度按前视点自身进度采样，修高度/水平采样错位）
-        double lookAheadProgress = RVP_BallisticTrajectoryMath.resolvePresetLookAheadProgress(
-                hDist, totalH, lookAhead);
-        double targetY = launch == null ? position.y + 8.0
-                : RVP_BallisticTrajectoryMath.samplePresetArcHeight(
-                        launch.y, base, apogee, lookAheadProgress);
+        RVP_BallisticTrajectoryMath.PresetLookAhead lookAheadPlan = launch == null
+                ? new RVP_BallisticTrajectoryMath.PresetLookAhead(
+                        RVP_BallisticTrajectoryMath.resolvePresetLookAheadProgress(
+                                hDist, totalH, lookAhead),
+                        lookAhead,
+                        target.y,
+                        false)
+                : RVP_BallisticTrajectoryMath.resolvePresetHeightLookAhead(
+                        position.y,
+                        launch.y,
+                        target.y,
+                        p,
+                        totalH,
+                        lookAhead,
+                        apogee);
+        // 高度超前补偿：当前弹体高于前视点时，保持原水平前视距离，
+        // 仅按原抛物线在当前前视窗口内应有的爬升量抬高追点，避免追低点导致水平压平；
+        // 补偿只改变追点，不绕过现有攻角/气动转向限制。
+        double lookAheadDistance = lookAheadPlan.lookAhead();
+        double targetY = lookAheadPlan.targetY();
         Vec3 targetPoint = new Vec3(
-                position.x + forwardH.x * lookAhead,
+                position.x + forwardH.x * lookAheadDistance,
                 targetY,
-                position.z + forwardH.z * lookAhead);
+                position.z + forwardH.z * lookAheadDistance);
         // 弹道中段战术机动：水平横向正弦蛇形规避摆动（如 Iskander 末端规避）。
         // 仅中段（p 0.15~0.85）生效、两端渐入渐出，相位基于水平进度 p（与虚拟端一致），
         // 不影响发射初期与俯冲末段，横向偏移 ≤ 幅度，不导致脱靶。

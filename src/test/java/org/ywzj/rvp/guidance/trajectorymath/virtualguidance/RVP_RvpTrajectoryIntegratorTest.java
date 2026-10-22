@@ -42,7 +42,7 @@ class RVP_RvpTrajectoryIntegratorTest {
     @Test
     void presetLookAheadHeightKeepsVirtualColdLaunchHandoffClimbing() {
         RVP_VirtualPresetGuidance preset = new RVP_VirtualPresetGuidance(
-                Vec3.ZERO, 750.0, 25.0, 24.0, 24.0,
+                new Vec3(0.0, 40.0, 0.0), 750.0, 25.0, 24.0, 24.0,
                 0.3, 1.5, 0.002, 0.01, 0.5, 0.0);
         RVP_AeroSteeringLimits limits = new RVP_AeroSteeringLimits(
                 null, 1.0f, 0.0, 1.0, 0.0, 0.0, false);

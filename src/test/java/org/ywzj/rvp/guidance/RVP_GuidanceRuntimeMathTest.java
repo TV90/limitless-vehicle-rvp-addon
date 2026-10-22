@@ -2,6 +2,7 @@ package org.ywzj.rvp.guidance;
 
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.data.RVP_Range;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -145,13 +146,71 @@ class RVP_GuidanceRuntimeMathTest {
                 new Vec3(0.0, 2.0, 0.0),
                 new Vec3(0.0, 40.0, 0.0),
                 new Vec3(2000.0, 0.0, 0.0),
-                Vec3.ZERO,
+                new Vec3(0.0, 40.0, 0.0),
                 preset,
                 2.0,
                 1.0f);
 
         assertTrue(guided.y > 0.0,
                 "cold-launch handoff must follow the rising side of the PRESET arc");
+    }
+
+    /** 抛物线必须从实际点火高度出发，并在末端收敛到目标高度，不能保留固定基线偏移。 */
+    @Test
+    void presetArcUsesActualIgnitionAndTargetHeights() {
+        assertEquals(40.0, RVP_BallisticTrajectoryMath.samplePresetArcHeight(
+                40.0, 0.0, 750.0, 0.0), EPSILON);
+        assertEquals(0.0, RVP_BallisticTrajectoryMath.samplePresetArcHeight(
+                40.0, 0.0, 750.0, 1.0), EPSILON);
+        assertEquals(770.0, RVP_BallisticTrajectoryMath.samplePresetArcHeight(
+                40.0, 0.0, 750.0, 0.5), EPSILON);
+    }
+
+    /** 当前弹体高于低追点时，保持原水平前视并沿抛物线正常斜率抬高追点，避免被压成平飞。 */
+    @Test
+    void presetArcCompensatesAheadWhenProjectileIsAboveCurrentPoint() {
+        RVP_BallisticTrajectoryMath.PresetLookAhead plan =
+                RVP_BallisticTrajectoryMath.resolvePresetHeightLookAhead(
+                        400.0, 0.0, 0.0, 0.10, 4000.0, 60.0, 750.0);
+
+        assertTrue(plan.compensated(), "高度超前时必须启用未来追点补偿");
+        assertEquals(60.0, plan.lookAhead(), EPSILON,
+                "高度补偿不得扩大水平前视距离");
+        assertTrue(plan.targetY() > 400.0, "补偿后的追点高度必须高于当前弹体");
+        assertTrue(Math.atan2(plan.targetY() - 400.0, plan.lookAhead())
+                        > Math.toRadians(10.0),
+                "补偿后的追点仍必须保留明显爬升角");
+    }
+
+    /** 当前弹体没有超过追点高度时，补偿器不得改变原有前视距离。 */
+    @Test
+    void presetArcDoesNotCompensateWhenProjectileIsBelowCurrentPoint() {
+        RVP_BallisticTrajectoryMath.PresetLookAhead plan =
+                RVP_BallisticTrajectoryMath.resolvePresetHeightLookAhead(
+                        100.0, 0.0, 0.0, 0.10, 4000.0, 60.0, 750.0);
+
+        assertTrue(!plan.compensated(), "未超过当前追点时不应提前改变路线");
+        assertEquals(60.0, plan.lookAhead(), EPSILON);
+    }
+
+    /** 实体抛物线追点在高度超前时仍应保留爬升指令，而不是被低追点拉平。 */
+    @Test
+    void presetArcSteeringKeepsClimbAfterHeightCompensation() {
+        RVP_PresetBallisticProfile preset = new RVP_PresetBallisticProfile(
+                750.0f, 60.0f, 24.0f, 24.0f, 0.3f, 1.5f,
+                0.002f, 0.01f, 0.5f, 0.0f);
+
+        Vec3 guided = RVP_GuidanceRuntimeMath.steerPresetBallisticArc(
+                new Vec3(0.0, 400.0, 0.0),
+                new Vec3(400.0, 400.0, 0.0),
+                new Vec3(4000.0, 0.0, 0.0),
+                Vec3.ZERO,
+                preset,
+                11.0,
+                1.0f);
+
+        assertTrue(guided.y > 0.0,
+                "高度超前补偿后，期望速度仍应指向未来上升追点");
     }
 
     private static void assertVectorEquals(Vec3 expected, Vec3 actual) {

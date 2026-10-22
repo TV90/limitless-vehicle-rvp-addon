@@ -19,6 +19,12 @@ public final class RVP_BallisticTrajectoryMath {
     private static final double CRUISE_MAX_VERTICAL_COMPONENT = 0.5;
     /** 末端可达性判断额外保留的直线飞行 Tick。 */
     private static final double TERMINAL_RESERVE_TICKS = 2.0;
+    /** PRESET 当前追点低于弹体时，允许的高度误差死区，单位格。 */
+    private static final double PRESET_HEIGHT_OVERRUN_TOLERANCE = 8.0;
+    /** PRESET 高度超前补偿从死区外逐渐完全接管的高度范围，单位格。 */
+    private static final double PRESET_HEIGHT_COMPENSATION_BLEND_RANGE = 16.0;
+    /** 对称抛物线上升支的顶点进度；0 为发射点，1 为目标点。 */
+    private static final double PRESET_ASCENDING_APOGEE_PROGRESS = 0.5;
 
     /** 工具类不允许实例化。 */
     private RVP_BallisticTrajectoryMath() {
@@ -384,14 +390,22 @@ public final class RVP_BallisticTrajectoryMath {
         }
         double progress = Mth.clamp(
                 1.0 - horizontalDistance / totalHorizontalDistance, 0.0, 1.0);
-        double apogee = Math.min(preset.cruiseAltitude(), totalHorizontalDistance * 0.35);
-        double base = Math.min(40.0, apogee * 0.3);
+        // 虚拟端与实体端使用同一条“目标高度弦线 + 中段抬升”曲线，避免交接时顶点高度不一致。
+        double apogee = Math.min(preset.cruiseAltitude(), totalHorizontalDistance * 0.50);
         double lookAhead = Math.min(preset.maxAscentLead(), horizontalDistance * 0.3);
         // 前视点的水平坐标已经向目标推进，垂直坐标也必须采样同一个前视进度；
         // 不能继续使用当前位置 progress，否则冷发射结束后会追到同高度的水平点。
-        double lookAheadProgress = resolvePresetLookAheadProgress(
-                horizontalDistance, totalHorizontalDistance, lookAhead);
-        double targetY = samplePresetArcHeight(launch.y, base, apogee, lookAheadProgress);
+        PresetLookAhead lookAheadPlan = resolvePresetHeightLookAhead(
+                position.y,
+                launch.y,
+                target.y,
+                progress,
+                totalHorizontalDistance,
+                lookAhead,
+                apogee);
+        // 虚拟中段与实体端共用高度超前补偿，保证虚拟化交接后不会重新追低点。
+        lookAhead = lookAheadPlan.lookAhead();
+        double targetY = lookAheadPlan.targetY();
         Vec3 targetPoint = new Vec3(
                 position.x + forwardHorizontal.x * lookAhead,
                 targetY,
@@ -438,20 +452,111 @@ public final class RVP_BallisticTrajectoryMath {
     }
 
     /**
-     * 按 PRESET 抛物线公式采样高度。
+     * PRESET 高度超前补偿后的前视追点方案。
+     *
+     * <p>当弹体高度已经超过当前前视追点时，单纯继续追当前点会把期望方向压平，
+     * 形成“上升—平飞—再次上升”。本方案在抛物线上升支中反解一个高度略高于当前
+     * 弹体的未来点，并保持原有水平前视距离；如果弹体已经高于抛物线顶点，
+     * 则保持当前高度，避免追逐不可能达到的低点并产生额外下压。</p>
+     *
+     * @param positionY 当前弹体世界 Y 坐标，单位格
+     * @param launchY 发射点世界 Y 坐标，单位格
+     * @param targetY 目标点世界 Y 坐标，单位格
+     * @param currentProgress 当前弹体在发射点到目标连线上的水平进度，范围 0～1
+     * @param totalHorizontalDistance 发射点到目标点的总水平距离，单位格
+     * @param initialLookAhead 当前未补偿的前视距离，单位格
+     * @param apogee 抛物线中段相对发射点—目标点弦线的抬升高度，单位格
+     * @return 补偿后的前视进度、距离、高度及是否发生补偿
+     */
+    public static PresetLookAhead resolvePresetHeightLookAhead(
+            double positionY,
+            double launchY,
+            double targetY,
+            double currentProgress,
+            double totalHorizontalDistance,
+            double initialLookAhead,
+            double apogee
+    ) {
+        double safeTotal = Double.isFinite(totalHorizontalDistance)
+                ? Math.max(totalHorizontalDistance, 1.0E-8) : 1.0;
+        double safeProgress = Mth.clamp(
+                Double.isFinite(currentProgress) ? currentProgress : 0.0, 0.0, 1.0);
+        double safeLookAhead = Math.max(
+                0.0, Double.isFinite(initialLookAhead) ? initialLookAhead : 0.0);
+        double initialProgress = Mth.clamp(
+                safeProgress + safeLookAhead / safeTotal, 0.0, 1.0);
+        double initialTargetY = samplePresetArcHeight(
+                launchY, targetY, apogee, initialProgress);
+
+        // 只有上升支且当前高度明显高于追点时才补偿；下降支应交给末端俯冲逻辑。
+        if (!Double.isFinite(positionY)
+                || !Double.isFinite(launchY)
+                || !Double.isFinite(targetY)
+                || !Double.isFinite(apogee)
+                || apogee <= 0.0
+                || safeProgress >= PRESET_ASCENDING_APOGEE_PROGRESS
+                || !Double.isFinite(initialTargetY)) {
+            return new PresetLookAhead(initialProgress, safeLookAhead, initialTargetY, false);
+        }
+
+        double apexY = (launchY + targetY) * 0.5 + apogee;
+        // 读取当前位置对应的原始抛物线高度，计算当前前视窗口本来应该产生的爬升量。
+        double currentArcY = samplePresetArcHeight(
+                launchY, targetY, apogee, safeProgress);
+        double nominalRise = Math.max(0.0, initialTargetY - currentArcY);
+        double compensatedTargetY;
+        if (positionY >= apexY) {
+            // 弹体已经高于抛物线顶点时只保持当前高度，不向下追逐不可能达到的低点。
+            compensatedTargetY = positionY;
+        } else {
+            // 保持原水平前视距离，只沿抛物线的正常爬升斜率抬高追踪点，避免
+            // “当前高度 + 4 格”配合超长前视距离后把期望爬升角压到接近水平。
+            compensatedTargetY = Math.min(apexY, positionY + nominalRise);
+        }
+        // 用平滑混合替代“超过 8 格就瞬间切换”的硬阈值，避免每 Tick 在两套目标高度之间跳变。
+        double overrun = Math.max(0.0, positionY - initialTargetY);
+        double blend = Mth.clamp(
+                (overrun - PRESET_HEIGHT_OVERRUN_TOLERANCE)
+                        / PRESET_HEIGHT_COMPENSATION_BLEND_RANGE,
+                0.0, 1.0);
+        blend = blend * blend * (3.0 - 2.0 * blend);
+        double futureTargetY = Mth.lerp((float) blend, initialTargetY, compensatedTargetY);
+        return new PresetLookAhead(
+                initialProgress, safeLookAhead, futureTargetY, blend > 1.0E-8);
+    }
+
+    /**
+     * 高度超前补偿后的 PRESET 前视方案。
+     *
+     * @param progress 追点在发射点到目标连线上的归一化水平进度，范围 0～1
+     * @param lookAhead 追点相对当前弹体的水平前视距离，单位格
+     * @param targetY 追点世界 Y 坐标，单位格
+     * @param compensated 是否因为当前高度超过原追点而启用了补偿
+     */
+    public record PresetLookAhead(
+            double progress,
+            double lookAhead,
+            double targetY,
+            boolean compensated
+    ) {
+    }
+
+    /**
+     * 按 PRESET 弹道公式采样高度：发射点到目标点的高度弦线，加上中段抬升。
      *
      * @param launchY 发射点世界 Y 坐标，单位格
-     * @param base 抛物线起止基线相对发射点高度，单位格
-     * @param apogee 抛物线顶点相对发射点高度，单位格
+     * @param targetY 目标点世界 Y 坐标，单位格
+     * @param apogee 弹道中段相对发射点—目标点弦线的抬升高度，单位格
      * @param progress 水平进度，0 为发射端、1 为目标端
      * @return 指定进度对应的世界 Y 坐标，单位格
      */
     public static double samplePresetArcHeight(
-            double launchY, double base, double apogee, double progress) {
+            double launchY, double targetY, double apogee, double progress) {
         double safeProgress = Mth.clamp(
                 Double.isFinite(progress) ? progress : 0.0, 0.0, 1.0);
-        return launchY + base
-                + (apogee - base) * 4.0 * safeProgress * (1.0 - safeProgress);
+        double chordY = Mth.lerp((float) safeProgress, launchY, targetY);
+        double liftY = apogee * 4.0 * safeProgress * (1.0 - safeProgress);
+        return chordY + liftY;
     }
 
     /**
