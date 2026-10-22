@@ -237,8 +237,13 @@ public final class RVP_GuidanceRuntimeMath {
         }
         // 调用本项目实体气动转向收口；开关关闭时维持旧版 rvpMaxGs/turningFactor 行为。
         if (!pipAttackApplied) {
-            next = applyResolvedAeroSteering(
-                    projectile, context.data(), current, next, factor, rvpMaxGs);
+            if (RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
+                // 冷发射点火前允许继续计算目标/PIP 状态，但不把任何制导结果写入速度方向。
+                next = current;
+            } else {
+                next = applyResolvedAeroSteering(
+                        projectile, context.data(), current, next, factor, rvpMaxGs);
+            }
         }
         projectile.setDeltaMovement(next);
         // 调用本项目姿态收口，开启攻角时保持独立机头、不覆盖刚提交的控制结果。
@@ -315,11 +320,19 @@ public final class RVP_GuidanceRuntimeMath {
             return false;
         }
         // 调用本项目实体气动转向收口，使 PRESET 与普通制导共享动压和载荷结算。
-        next = applyResolvedAeroSteering(
-                projectile, context.data(), current, next, factor, rvpMaxGs);
+        if (RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
+            // 冷发射点火前保留冷发射速度轴，PRESET 路点只用于后续点火后的制导接管。
+            next = current;
+        } else {
+            next = applyResolvedAeroSteering(
+                    projectile, context.data(), current, next, factor, rvpMaxGs);
+        }
         projectile.setDeltaMovement(next);
         // 标记本 Tick 已写入 PRESET 制导速度，供冷发射运动层在重叠窗口内完成速度接管。
-        projectile.markPresetGuidanceMotionAppliedThisTick();
+        if (!RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
+            // 点火前没有真正写入 PRESET 速度，不能设置接管标记以免运动层保留错误方向。
+            projectile.markPresetGuidanceMotionAppliedThisTick();
+        }
         RVP_ProjectileMotion.applyGuidanceFacing(projectile, next);
         return true;
     }

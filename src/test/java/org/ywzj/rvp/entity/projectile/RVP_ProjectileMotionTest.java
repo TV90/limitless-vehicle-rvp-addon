@@ -81,4 +81,41 @@ class RVP_ProjectileMotionTest {
         assertEquals(0.0, direction.y, 1.0E-9);
         assertEquals(1.0, direction.z, 1.0E-9);
     }
+
+    /** 空射冷发射的有效速度必须同时包含发射瞬间载机速度和本地冷发射分离速度。 */
+    @Test
+    void effectiveColdLaunchVelocityIncludesLaunchVehicleSnapshot() {
+        var axes = new Vector3f[]{
+                new Vector3f(1, 0, 0),
+                new Vector3f(0, 0, 1),
+                new Vector3f(0, 1, 0)
+        };
+        Vec3 velocity = RVP_ProjectileMotion.resolveEffectiveColdLaunchVelocity(
+                new Vec3(4, 0, 0), new Vec3(0, 2, 0), axes);
+
+        assertEquals(4.0, velocity.x, 1.0E-9);
+        assertEquals(0.0, velocity.y, 1.0E-9);
+        assertEquals(2.0, velocity.z, 1.0E-9);
+    }
+
+    /** 冷发射弹在点火前锁定姿态，点火边界 Tick 必须立即解除锁定。 */
+    @Test
+    void preIgnitionAttitudeLockUsesColdLaunchAndIgnitionBoundary() {
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 10, 5));
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(9, 10, 5));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(10, 10, 5));
+    }
+
+    /** 配置点火延迟长于冷发射时，姿态锁定应覆盖到实际点火 Tick。 */
+    @Test
+    void preIgnitionAttitudeLockUsesLaterIgnitionBoundary() {
+        assertTrue(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(19, 10, 20));
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(20, 10, 20));
+    }
+
+    /** 没有冷发射窗口的普通延迟点火弹不应被新增的姿态锁定逻辑影响。 */
+    @Test
+    void delayedIgnitionWithoutColdLaunchDoesNotLockAttitude() {
+        assertFalse(RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(0, 0, 20));
+    }
 }

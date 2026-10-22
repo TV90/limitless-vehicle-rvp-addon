@@ -199,7 +199,7 @@ JSON 文件本身不能写注释，字段解释以本文档和 `org.ywzj.rvp.wea
 | `second_pulse_burn_time` | 第二段燃烧时间（tick）。 |
 | `self_destruct_distance` | 自毁距离（米，2026-09-29）：沿弹道累计飞行路程达到该值即自毁。未配置按武器类别取默认——机枪/机炮（`MACHINEGUN`）默认 1024，其它类别 0（不自毁）；显式 `0` = 关闭（含显式关闭机枪默认）。 |
 | `self_destruct_explode` | 自毁行为（仅 `self_destruct_distance` 生效时有意义）：`false`（默认）= 弹体直接消失；`true` = 按弹药自身引信语义在精确越界点引爆（继承 ON_FUSE 子母弹等引信配置；无爆炸配置时退化为消失）。 |
-| `ignition_delay_tick` | 点火延迟，单位 tick；延迟内继承载具弹射速度（与本体弹仓弹射一致）。发动机实际点火时刻取 `max(cold_launch_time_tick, ignition_delay_tick)`；GPS PRESET 与冷发射窗口重叠时，窗口内一旦生成过 PRESET 制导速度，运动层会持续保留该接管方向，不再被冷发射竖直速度或单 Tick 制导抖动覆盖。带终端段且发射时已落入终端距离门的 PRESET 弹，也会等窗口结束后再切换终端 ARH。 |
+| `ignition_delay_tick` | 点火延迟，单位 tick，默认 `0`；仅控制火箭发动机何时开始产生推力。延迟期间按普通出弹/载机速度无推力滑行，不会单独启用 `WeaponUnit` 的冷发射速度或点火前姿态锁定。若实际发射位配置了 `cold_launch_time_tick`，发动机实际点火时刻取 `max(cold_launch_time_tick, ignition_delay_tick)`：冷发射结束而该延迟尚未结束的剩余时间属于普通无推力等待段。GPS PRESET 与冷发射窗口重叠时，窗口内一旦生成过 PRESET 制导速度，运动层会持续保留该接管方向，不再被冷发射竖直速度或单 Tick 制导抖动覆盖。带终端段且发射时已落入终端距离门的 PRESET 弹，也会等窗口结束后再切换终端 ARH。 |
 | `drag_coefficient` | 速度平方阻力系数；推进弹体每 Tick 按 `drag_coefficient × |v|² / dragMass × altitude_drag_factor` 沿速度反方向扣速，其中 `mass < 1` 时 `dragMass = mass × 1000`，否则 `dragMass = mass`。仅火箭发动机分支读取。 |
 | `altitude_drag_factor` | 高空空气阻力倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为水平阻力倍率；缺省或 JSON `null` 时使用下述默认大气表，显式空表、未命中区间或 value 非法时按 `1.0` 处理。 |
 | `altitude_max_speed_factor` | 高度分层极速倍率表。类型为 `Map<RVP_Range<Float>, Float>`，key 为 **世界 Y 坐标区间**，value 为极速倍率（该区间**上边界**处的节点值）；实际极速 = `max_speed × 当前高度倍率`，高度在相邻节点之间线性过渡（全曲线连续无跳变）。**不存在默认分层表**：缺省、JSON `null`、显式空表或 value 非法时按 `1.0` 处理（极速不随高度变化）。仅导弹实体运动链与虚拟弹道链消费；CCIP/火箭预测/无制导弹道不读取。 |
@@ -1494,7 +1494,7 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 
 > 除 `preset_cruise_altitude` 外，以上参数**仅在 PRESET 启用**（巡航高度 > 0）时生效。全部字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
 > **俯冲启动**：距目标水平距离 ≤ max(`preset_dive_radius`, 垂直高度差×`preset_dive_altitude_factor`, 转弯半径×`preset_dive_lead_factor`)，或已越过目标；末端越过/极近时锁定水平方向全力下压，禁止翻转绕圈。现役范例：`9k720_9m723.json`（顶点 550 / 前视 25 / `preset_dive_altitude_factor` 0.3）。
-> **冷发射交接**：GPS PRESET 载具若配置 `cold_launch_time_tick >= ignition_delay_tick`，制导在冷发射期间已经产生有效速度时，运动层会保留该速度并平滑接管；窗口内短暂失去制导时沿用上一有效接管方向；无有效制导结果时仍按 `cold_launch_velocity` 弹出。带终端段的 PRESET 弹在窗口结束前不会提前切终端 ARH。该规则适用于参数关系，不按武器 ID 特判。
+> **冷发射交接**：GPS PRESET 载具若配置 `cold_launch_time_tick >= ignition_delay_tick`，制导在冷发射期间已经产生有效速度时，运动层会保留该速度并平滑接管；窗口内短暂失去制导时沿用上一有效接管方向；无有效制导结果时仍按 `cold_launch_velocity` 弹出。带终端段的 PRESET 弹在窗口结束前不会提前切终端 ARH。若 `cold_launch_time_tick = 0`，即使配置了正数 `ignition_delay_tick`，也只是普通延迟点火，不进入冷发射交接规则。该规则适用于参数关系，不按武器 ID 特判。
 
 #### 示例
 

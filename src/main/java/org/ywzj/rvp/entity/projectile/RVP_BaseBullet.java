@@ -218,6 +218,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private List<RVP_DamageDecayRuleData> damageDecayRules = List.of();
     protected RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
     protected AbstractVehicle shooterVehicle;
+    /** 发射瞬间捕获的载机世界速度；仅在生成时启用载机速度继承时写入，冷发射期间保持不变。 */
+    protected Vec3 launchVehicleVelocity = Vec3.ZERO;
     protected WeaponUnit shooterWeaponUnit;
     /** 实际发射单元（导弹所在的武器站部件），线导起点跟随其出膛管口。 */
     protected WeaponUnit launchWeaponUnit;
@@ -1232,6 +1234,27 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         return coldLaunchVelocity;
     }
 
+    /**
+     * 保存发射瞬间的载机速度快照，避免冷发射阶段因载机当前速度变化造成弹体速度跳变。
+     *
+     * @param vehicleVelocity 发射时载机的世界速度；为空或含非法数值时按零速度处理
+     */
+    public void captureLaunchVehicleVelocity(@Nullable Vec3 vehicleVelocity) {
+        if (vehicleVelocity == null
+                || !Double.isFinite(vehicleVelocity.x)
+                || !Double.isFinite(vehicleVelocity.y)
+                || !Double.isFinite(vehicleVelocity.z)) {
+            this.launchVehicleVelocity = Vec3.ZERO;
+            return;
+        }
+        this.launchVehicleVelocity = vehicleVelocity;
+    }
+
+    /** @return 发射瞬间捕获的载机世界速度；未启用继承或未捕获时为零向量。 */
+    public Vec3 getLaunchVehicleVelocity() {
+        return launchVehicleVelocity;
+    }
+
     @Nullable
     public Entity getTargetEntity() {
         return targetEntity;
@@ -1876,6 +1899,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         super.addAdditionalSaveData(tag);
         tag.putDouble("rvpAttackPitchRateDeg", attackPitchRateDeg);
         tag.putDouble("rvpAttackYawRateDeg", attackYawRateDeg);
+        // 调用本项目向量存档工具：保存冷发射期间仍需使用的发射瞬间载机速度快照。
+        writeRemoteVec3(tag, "rvpLaunchVehicleVelocity", launchVehicleVelocity);
     }
 
     /** 缺少运行态字段时 NBT 自动读零；这不是武器 JSON schema 迁移。 */
@@ -1884,6 +1909,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本体/原版恢复入口后，再校验并恢复本项目双轴状态。
         super.readAdditionalSaveData(tag);
         restoreAttackAngleRates(tag.getDouble("rvpAttackPitchRateDeg"), tag.getDouble("rvpAttackYawRateDeg"));
+        // 调用本项目向量读取工具：兼容没有该运行态字段的旧存档，缺失时回退为零速度。
+        captureLaunchVehicleVelocity(readRemoteVec3(tag, "rvpLaunchVehicleVelocity"));
     }
 
     /** 恢复时只校验角速度，不环绕已有旋转角，避免影响非攻角弹及其旧帧插值。 */
@@ -2513,6 +2540,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      */
     private void tickSmartFuseGuidance() {
         if (smartFuseTargetPos == null) {
+            return;
+        }
+        if (RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(this)) {
+            // 冷发射点火前不让智能引信直控改写弹体速度方向或模型朝向，点火后再接管目标点飞行。
             return;
         }
         RVP_FuseData fuse = rvpData == null ? null : rvpData.getFuseData();

@@ -48,6 +48,10 @@ public final class RVP_ProjectileMotion {
     /** 写回独立姿态和载荷；返回速度供原制导链在碰撞检测前使用。 */
     public static Vec3 applyAttackAngleSteering(RVP_BaseBullet projectile, Vec3 current,
                                                Vec3 desired, RVP_AeroSteeringLimits limits) {
+        if (isPreIgnitionAttitudeLocked(projectile)) {
+            // 冷发射点火前只保持生成时姿态；目标和制导状态仍可刷新，但不能提前改写攻角轴。
+            return current;
+        }
         // 调用双轴状态极点脱离修复：首次有效制导必须先确定目标水平转弯平面，避免任意 yaw=0 产生载具前向偏航。
         projectile.setAttackAngleState(projectile.getAttackAngleState().reanchorPoleYaw(desired));
         // 调用本项目纯数学攻角模型，用同步姿态作为跨 Tick 机体轴。
@@ -59,6 +63,10 @@ public final class RVP_ProjectileMotion {
 
     /** 提交已求解的攻角结果；PIP 的无副作用试算不能调用此方法。 */
     public static Vec3 applyAttackAngleSolution(RVP_BaseBullet projectile, RVP_AttackAngleSolution solution) {
+        if (isPreIgnitionAttitudeLocked(projectile)) {
+            // 点火前不提交 PIP/攻角结果，避免试算结果污染冷发射阶段的速度方向和姿态状态。
+            return projectile.getDeltaMovement();
+        }
         // 调用统一双轴状态写回，保留极点偏航及角速度，姿态仍走现有同步通道。
         projectile.setAttackAngleState(solution.state());
         // 调用本项目载荷与单步标记入口，避免本 Tick 无目标兜底重复积分。
@@ -107,6 +115,10 @@ public final class RVP_ProjectileMotion {
 
     /** 丢锁、延迟制导或无目标时仍推进残留攻角，姿态逐步向当前速度回正。 */
     public static void finishAttackAngleGuidance(RVP_BaseBullet projectile) {
+        if (isPreIgnitionAttitudeLocked(projectile)) {
+            // 冷发射阶段保持生成时攻角，点火 Tick 之后再由兜底求解器接管残余攻角。
+            return;
+        }
         // 调用本项目门控和单步标记，确保每个真实飞行 Tick 最多求解一次。
         if (!usesAttackAngle(projectile)) {
             // 调用状态清理出口，离开攻角区间后不能遗留角动量给下一次启用。
@@ -367,8 +379,9 @@ public final class RVP_ProjectileMotion {
     /**
      * 冷发射开始前初始化一次攻角机头状态，消除“初始瞄准轴”和“冷发射速度轴”的断层。
      *
-     * <p>这里不能直接使用最终 deltaMovement：它仍包含出膛初速及可选载机速度，
-     * 而冷发射弹的机头应沿武器单元配置的局部弹射轴。方向转换必须与
+     * <p>这里不能直接使用最终 deltaMovement：它仍包含出膛初速，
+     * 而冷发射弹的机头应沿“发射瞬间载机速度 + 武器单元配置的局部弹射速度”合成轴。
+     * 方向转换必须与
      * {@link #applyPreIgnitionVelocity(RVP_BaseBullet, Vec3, int)} 使用同一套载具 OBB 轴。</p>
      */
     private static void initializeColdLaunchAttackAngle(RVP_BaseBullet projectile, RVP_BaseBullet.AimRot aim) {
@@ -381,7 +394,11 @@ public final class RVP_ProjectileMotion {
             return;
         }
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
-        Vec3 coldDirection = resolveColdLaunchDirection(projectile.getColdLaunchVelocity(), axes);
+        Vec3 effectiveColdVelocity = resolveEffectiveColdLaunchVelocity(
+                projectile.getLaunchVehicleVelocity(), projectile.getColdLaunchVelocity(), axes);
+        Vec3 coldDirection = effectiveColdVelocity.lengthSqr() <= 1.0E-8
+                ? Vec3.ZERO
+                : effectiveColdVelocity.normalize();
         if (coldDirection.lengthSqr() <= 1.0E-8) {
             return;
         }
@@ -404,8 +421,8 @@ public final class RVP_ProjectileMotion {
         return RVP_AttackAngleState.resolveHorizontalYaw(horizontal, fallbackYaw);
     }
 
-    /** 按载具主 OBB 轴把局部冷发射速度转换为世界方向，供实体初始化和单元测试共用。 */
-    static Vec3 resolveColdLaunchDirection(Vec3 configuredVelocity, Vector3f[] axes) {
+    /** 按载具主 OBB 轴把局部冷发射速度转换为世界速度，供实体初始化和单元测试共用。 */
+    static Vec3 resolveColdLaunchVelocity(Vec3 configuredVelocity, Vector3f[] axes) {
         if (configuredVelocity == null || axes == null || axes.length < 3
                 || configuredVelocity.lengthSqr() <= 1.0E-8) {
             return Vec3.ZERO;
@@ -414,6 +431,29 @@ public final class RVP_ProjectileMotion {
         Vec3 world = new Vec3(axes[0]).scale(configuredVelocity.x)
                 .add(new Vec3(axes[1]).scale(configuredVelocity.y))
                 .add(new Vec3(axes[2]).scale(configuredVelocity.z));
+        if (!Double.isFinite(world.x) || !Double.isFinite(world.y) || !Double.isFinite(world.z)
+                || world.lengthSqr() <= 1.0E-8) {
+            return Vec3.ZERO;
+        }
+        return world;
+    }
+
+    /** 合成冷发射阶段的有效世界速度；载机速度只使用发射瞬间快照，不读取后续实时速度。 */
+    static Vec3 resolveEffectiveColdLaunchVelocity(Vec3 launchVehicleVelocity,
+                                                   Vec3 configuredVelocity,
+                                                   Vector3f[] axes) {
+        Vec3 inherited = launchVehicleVelocity == null
+                || !Double.isFinite(launchVehicleVelocity.x)
+                || !Double.isFinite(launchVehicleVelocity.y)
+                || !Double.isFinite(launchVehicleVelocity.z)
+                ? Vec3.ZERO
+                : launchVehicleVelocity;
+        return inherited.add(resolveColdLaunchVelocity(configuredVelocity, axes));
+    }
+
+    /** 按载具主 OBB 轴把局部冷发射速度转换为世界单位方向，保留原测试与调用语义。 */
+    static Vec3 resolveColdLaunchDirection(Vec3 configuredVelocity, Vector3f[] axes) {
+        Vec3 world = resolveColdLaunchVelocity(configuredVelocity, axes);
         return world.lengthSqr() <= 1.0E-8 ? Vec3.ZERO : world.normalize();
     }
 
@@ -434,7 +474,11 @@ public final class RVP_ProjectileMotion {
     /** 制导改速后朝向：与 {@link org.ywzj.vehicle.entity.weapon.MissileEntity} 转向一致，用 {@link VectorUtil#vecToRot}。 */
     public static void applyGuidanceFacing(Entity entity, Vec3 direction) {
         // 调用本项目攻角门控，防止普通制导出口覆盖刚写回的独立机体轴。
-        if (entity instanceof RVP_BaseBullet projectile && usesAttackAngle(projectile)) return;
+        if (entity instanceof RVP_BaseBullet projectile
+                && (usesAttackAngle(projectile) || isPreIgnitionAttitudeLocked(projectile))) {
+            // 冷发射点火前模型朝向必须保持为生成时朝向，制导只更新目标状态不更新姿态。
+            return;
+        }
         if (direction.lengthSqr() <= 1.0E-8) {
             return;
         }
@@ -445,7 +489,10 @@ public final class RVP_ProjectileMotion {
 
     public static void applyRotationFromVelocity(RVP_BaseBullet projectile, Vec3 velocity) {
         // 调用本项目攻角门控；穿透减速等外力只改速度，姿态留待下次求解。
-        if (usesAttackAngle(projectile)) return;
+        if (usesAttackAngle(projectile) || isPreIgnitionAttitudeLocked(projectile)) {
+            // 冷发射点火前禁止风阻、穿透减速等运动出口按速度改写模型朝向。
+            return;
+        }
         if (velocity.lengthSqr() <= 1.0E-6) {
             return;
         }
@@ -527,9 +574,30 @@ public final class RVP_ProjectileMotion {
         return Math.max(data.getResolvedIgnitionDelayTick(), projectile.getColdLaunchTimeTick());
     }
 
+    /** 判断冷发射弹是否仍处于点火前姿态锁定窗口；普通延迟点火弹不进入本锁定。 */
+    public static boolean isPreIgnitionAttitudeLocked(RVP_BaseBullet projectile) {
+        if (projectile == null || !projectile.isMissile() || projectile.getColdLaunchTimeTick() <= 0) {
+            return false;
+        }
+        RVP_WeaponData data = projectile.getRvpData();
+        return data != null && isPreIgnitionAttitudeLocked(
+                projectile.getFlightTickCount(),
+                projectile.getColdLaunchTimeTick(),
+                data.getResolvedIgnitionDelayTick());
+    }
+
+    /** 按纯时序判断锁定窗口，供单元测试覆盖冷发射与配置点火延迟的边界。 */
+    static boolean isPreIgnitionAttitudeLocked(int flightTick, int coldLaunchTick, int ignitionDelayTick) {
+        if (coldLaunchTick <= 0) {
+            return false;
+        }
+        int ignitionTick = Math.max(Math.max(ignitionDelayTick, 0), coldLaunchTick);
+        return flightTick >= 0 && flightTick < ignitionTick;
+    }
+
     private static Vec3 applyPreIgnitionVelocity(RVP_BaseBullet projectile, Vec3 velocity, int ignition) {
         AbstractVehicle carrier = projectile.shooterVehicle;
-        if (carrier == null) {
+        if (carrier == null || carrier.getMainCubeOBB() == null) {
             return velocity;
         }
         int coldLaunchTick = projectile.getColdLaunchTimeTick();
@@ -543,11 +611,9 @@ public final class RVP_ProjectileMotion {
         }
         Vector3f[] axes = carrier.getMainCubeOBB().obb().getAxes();
         if (coldLaunchTick > 0 && projectile.getFlightTickCount() < coldLaunchTick) {
-            Vec3 configured = projectile.getColdLaunchVelocity();
-            Vec3 launchVelocity = new Vec3(axes[0]).scale(configured.x)
-                    .add(new Vec3(axes[1]).scale(configured.y))
-                    .add(new Vec3(axes[2]).scale(configured.z));
-            return carrier.getDeltaMovement().add(launchVelocity);
+            // 调用本项目冷发射速度解析：冷段每 Tick 重算局部弹射速度，但载机部分固定为发射快照。
+            return resolveEffectiveColdLaunchVelocity(
+                    projectile.getLaunchVehicleVelocity(), projectile.getColdLaunchVelocity(), axes);
         }
         Vec3 eject = new Vec3(axes[1].negate());
         float muzzle = projectile.rvpData.getProjectileVelocity();
@@ -557,7 +623,8 @@ public final class RVP_ProjectileMotion {
             }
             return velocity;
         }
-        return carrier.getDeltaMovement().add(eject);
+        // 调用本项目发射速度快照入口：无枪口初速的延迟点火弹同样不得读取载机实时速度。
+        return projectile.getLaunchVehicleVelocity().add(eject);
     }
 
     /**

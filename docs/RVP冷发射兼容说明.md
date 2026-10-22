@@ -42,10 +42,27 @@
 “自身 Y 轴向上”也会随载具姿态变化，不是永远固定使用世界坐标的 `+Y`。例如 052D HQ9B 的
 `[0, 2.0, 0]` 表示沿 052D 当前主 OBB 的本地 Y 轴向上弹射。
 
+## 冷发射与普通延迟点火的区别
+
+两者都可能表现为“出射后暂时没有发动机推力”，但控制的是不同阶段：
+
+| 对比项 | 内冷发射 | 普通延迟点火 |
+| --- | --- | --- |
+| 配置来源 | 实际发射 `WeaponUnit` 的 `cold_launch_time_tick`、`cold_launch_velocity` | RVP 武器 JSON 的 `projectile_data.ignition_delay_tick` |
+| 物理含义 | 先由弹射机构把弹体推出舱/筒，再启动发动机 | 弹体已经正常出射，只把发动机启动时间推迟 |
+| 点火前速度 | 发射瞬间载机速度快照 + `cold_launch_velocity` 的世界方向；冷段内持续作为弹射速度 | 按普通出弹速度/载机速度处理，不使用独立的 `cold_launch_velocity` 冷段 |
+| 点火前姿态 | 冷发射导弹保持生成时姿态，制导不能提前改写弹体方向 | 不启用冷发射专用的姿态锁定 |
+| 适用场景 | 垂直发射、弹舱下抛、舰载冷垂发等 | 出筒后延迟几 Tick 再启动发动机 |
+
+因此，`ignition_delay_tick` 本身不会把弹体变成冷发射弹；只有实际发射的
+`WeaponUnit` 配置了正数 `cold_launch_time_tick`，才会进入 RVP 的冷发射速度和点火前姿态逻辑。
+当 `cold_launch_time_tick` 为 `0` 时，即使 `ignition_delay_tick` 大于 `0`，也只是普通延迟点火。
+
 ## RVP 运行规则
 
 1. `RVP` 读取“实际发射的那个 `WeaponUnit`”上的 `cold_launch_*`。
-2. 冷发射阶段内，导弹每 tick 继承载具当前速度，再叠加 `cold_launch_velocity` 对应的本地轴向速度。
+2. 冷发射阶段内，导弹每 tick 使用发射瞬间捕获的载机速度快照，再叠加 `cold_launch_velocity` 对应的本地轴向速度；
+   不会因载机在发射后继续加速、减速或转向而把弹体速度重置为新的载机当前速度。
 3. 若同时配置了 `projectile_data.ignition_delay_tick`，发动机实际点火时刻取：
 
 ```text
@@ -57,12 +74,21 @@ max(cold_launch_time_tick, ignition_delay_tick)
 - `cold_launch_time_tick` 阶段：按冷发射速度弹出
 - 若 `ignition_delay_tick` 更长：冷发射结束后继续无推力滑出，直到延迟结束再点火
 
-4. 启用 `rvp_aero_steering` 且设置有效 `rvp_attack_angle_limit_deg` 的冷发射导弹，生成时还会把攻角
-   模型的初始机头设置为上述世界冷发射方向，并将俯仰/偏航角速度清零。这样点火后沿机头施加的推力
-   不会继承发射瞄准方向的前向分量。该步骤只改初始姿态，不改实际冷发射速度、发动机点火时刻或
-   制导起始 Tick；没有载具主 OBB 或有效向量时保留原有发射姿态。
+例如 `cold_launch_time_tick = 10`、`ignition_delay_tick = 20` 时，前 10 Tick 是冷发射弹射段，
+第 10～20 Tick 是冷发射结束后的普通无推力等待段，第 20 Tick 才开始发动机推进；
+若 `cold_launch_time_tick = 0`、`ignition_delay_tick = 20`，则全程都是普通延迟点火，不存在独立冷发射段。
 
-5. GPS 导弹启用 PRESET（`guidance_data.preset_cruise_altitude > 0`）时，若
+4. 启用 `rvp_aero_steering` 且设置有效 `rvp_attack_angle_limit_deg` 的冷发射导弹，生成时还会把攻角
+   模型的初始机头设置为“发射瞬间载机速度 + 上述世界冷发射速度”的合成方向，并将俯仰/偏航角速度清零。
+   这样空射导弹不会因只看下抛向量而先把机头压向下方，点火推力会沿实际冷段合速度接管。该步骤只改初始姿态，
+   不改实际冷发射速度、发动机点火时刻或制导起始 Tick；没有载具主 OBB 或有效向量时保留原有发射姿态。
+
+5. 冷发射弹从生成到实际点火前保持生成时的弹体攻角和模型朝向不变；PIP、PRESET、线导、普通制导
+   以及按速度归正的运动出口在该窗口内只保留目标/阶段状态，不改写速度方向或模型朝向。实际点火 Tick
+   到达后自动解除锁定，恢复正常制导和速度归正。该规则只对 `cold_launch_time_tick > 0` 的导弹生效，
+   不影响普通延迟点火弹，也不新增 `cold_launch_mode` 字段。
+
+6. GPS 导弹启用 PRESET（`guidance_data.preset_cruise_altitude > 0`）时，若
    `cold_launch_time_tick >= ignition_delay_tick`，冷发射与点火延迟存在重叠窗口：
    - 当前 Tick 已成功计算出 PRESET 制导速度后，运动层保留该速度，不再用冷发射竖直速度覆盖；
    - 一旦在窗口内成功接管，后续短暂的单 Tick 制导源失败仍沿用上一有效制导速度，不会重新回到竖直冷发射速度；
@@ -72,7 +98,7 @@ max(cold_launch_time_tick, ignition_delay_tick)
    该规则只改变“冷发射运动覆盖制导结果”的冲突，不改变冷发射字段的本地坐标语义，也不按武器 ID
    分支。冷发射时长短于点火延迟的导弹继续沿用原有冷发射行为。
 
-6. PRESET 导弹若在发射时已经进入终端段的距离门（例如 YJ-20 的 `guidance_start_dist=200`），
+7. PRESET 导弹若在发射时已经进入终端段的距离门（例如 YJ-20 的 `guidance_start_dist=200`），
    不会在冷发射/点火窗口结束前切换到终端 ARH。这样主段至少能完成一次有效的 GPS/PRESET 方向接管，
    避免终端 ARH 的角度门从纯竖直速度拒绝转向，导致近距离目标也直飞冲天。
 

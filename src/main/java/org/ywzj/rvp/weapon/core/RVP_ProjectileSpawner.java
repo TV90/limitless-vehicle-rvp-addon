@@ -185,8 +185,14 @@ public final class RVP_ProjectileSpawner {
             // GPS 坐标在旧入口中具有高于实体锁定的优先级；炮火任务也必须覆盖无载具实体弹体。
             projectile.setTargetPos(context.designatedTarget());
         }
-        if (context.inheritVehicleVelocity() && context.sourceVehicle() != null) {
-            projectile.setDeltaMovement(projectile.getDeltaMovement().add(context.sourceVehicle().getDeltaMovement()));
+        Vec3 launchVehicleVelocity = context.inheritVehicleVelocity() && context.sourceVehicle() != null
+                ? context.sourceVehicle().getDeltaMovement()
+                : Vec3.ZERO;
+        // 调用本项目弹体快照入口：把是否继承载机速度固化为发射瞬间的世界速度，供冷发射运动和攻角初始化共用。
+        projectile.captureLaunchVehicleVelocity(launchVehicleVelocity);
+        if (launchVehicleVelocity.lengthSqr() > 1.0E-12) {
+            // 调用本体实体速度入口：保留初始出膛速度与发射瞬间载机速度的合成结果。
+            projectile.setDeltaMovement(projectile.getDeltaMovement().add(launchVehicleVelocity));
         }
         projectile.finalizeSpawnOrientation(context.aim());
 

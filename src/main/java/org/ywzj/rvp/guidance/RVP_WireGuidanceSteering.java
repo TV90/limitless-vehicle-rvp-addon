@@ -57,6 +57,10 @@ public final class RVP_WireGuidanceSteering {
         if (direction.lengthSqr() <= 1.0E-6) {
             return;
         }
+        if (org.ywzj.rvp.entity.projectile.RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
+            // 冷发射点火前保留生成时速度轴和模型朝向，线导指令在点火后继续生效。
+            return;
+        }
         Vec3 dir = direction.normalize();
 
         double speed = projectile.getDeltaMovement().length();
