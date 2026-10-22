@@ -17,6 +17,10 @@ public final class RVP_ParticleIds {
     public static final ResourceLocation MCHR_FLARE =
             ResourceLocation.fromNamespaceAndPath("rvp", "mchr_flare");
 
+    /** 近距命中曳光残影：与实体渲染同款的速度对齐发光箱体（颜色/宽度/长度随包携带）。 */
+    public static final ResourceLocation TRACER_GHOST =
+            ResourceLocation.fromNamespaceAndPath("rvp", "tracer_ghost");
+
     private RVP_ParticleIds() {
     }
 }

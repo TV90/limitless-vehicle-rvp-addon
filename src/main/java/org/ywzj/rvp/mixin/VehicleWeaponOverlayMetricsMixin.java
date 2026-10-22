@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.ywzj.rvp.client.gui.RVP_WeaponPanelMetrics;
 import org.ywzj.vehicle.client.gui.VehicleWeaponOverlay;
+import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 /**
  * 抓取本体武器栏本帧的分隔线纵坐标，让 RVP 右侧辅助 HUD（过热/蓄力等）能与新 HUD 对齐。
@@ -32,6 +33,15 @@ public class VehicleWeaponOverlayMetricsMixin {
                                           boolean vertical, CallbackInfo ci) {
         if (!vertical) {
             RVP_WeaponPanelMetrics.captureSeparator(y);
+            RVP_WeaponPanelMetrics.captureExtent(x, length);
         }
+    }
+
+    /** 读出区高度随副武器条数变化，抓 {@code renderReloadArea} 的 {@code top} 取最小值＝整块读出区顶。 */
+    @Inject(method = "renderReloadArea", at = @At("HEAD"), require = 0, remap = false)
+    private void ywzj_rvp$captureReadoutTop(GuiGraphics graphics, AbstractVehicleWeapon<?> weapon,
+                                            float left, float top, float right, float bottom,
+                                            float partialTick, CallbackInfo ci) {
+        RVP_WeaponPanelMetrics.captureReadoutTop(top);
     }
 }

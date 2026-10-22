@@ -106,6 +106,13 @@ public class RVP_EffectsData {
     @SerializedName("impact_trail_particles")
     private Boolean impactTrailParticles;
 
+    /**
+     * 穿透丢弃路径（on_penetrate parent_action，PELE 等）专用命中补渲开关；
+     * 与 impact_trail_particles 互不联动，缺省关——该路径轨迹簇观感欠佳，仅 PELE 类子弹药显式开启。
+     */
+    @SerializedName("penetrate_impact_trail_particles")
+    private Boolean penetrateImpactTrailParticles;
+
     /** 方块破碎粒子基数，单位个，默认 10；非负值仅在默认方块命中粒子模式生效。 */
     @SerializedName("flak_particles_crack")
     private int flakParticlesCrack = 10;
@@ -413,6 +420,11 @@ public class RVP_EffectsData {
     /** 命中瞬间补渲轨迹粒子开关（effects_data.impact_trail_particles）。 */
     public boolean isImpactTrailParticles() {
         return impactTrailParticles != null && impactTrailParticles;
+    }
+
+    /** 穿透丢弃路径专用补渲开关（effects_data.penetrate_impact_trail_particles），缺省关。 */
+    public boolean isPenetrateImpactTrailParticles() {
+        return penetrateImpactTrailParticles != null && penetrateImpactTrailParticles;
     }
 
     public boolean isImpactDisabled() {

@@ -37,7 +37,9 @@ public class RVP_OverlayRegistry {
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_missile", new RVP_MissileOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_machinegun_lead", new RVP_MachinegunLeadOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_charge_bar", new RVP_ChargeBarOverlay());
-        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_heat_hud", new RVP_HeatHudOverlay());
+        // 弹药栏上方的右侧信息栈（过热 → AHEAD 装订 → 定距空爆装订）：
+        // 必须排在 rvp_machinegun_lead 之后 —— AHEAD 解算结果由该 overlay 每帧上报，本层紧随其后读取。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_heat_hud", RVP_RightInfoStackOverlay.create());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_aps_hud", new RVP_ApsHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_dircm_hud", new RVP_DircmHudOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_hud", new RVP_EcmHudOverlay());

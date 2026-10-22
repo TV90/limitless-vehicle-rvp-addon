@@ -22,11 +22,11 @@ public record RVP_WreckDestructionState(Mode mode, long startedAt, long duration
 
     /** 每车只抽一次的互斥击毁结果；名称同时用作当前 NBT schema 的枚举值。 */
     public enum Mode {
-        /** 30%：立即飞出所有本体可脱落部件，不播放殉燃。 */
+        /** 5%：立即飞出所有本体可脱落部件，不播放殉燃。 */
         IMMEDIATE,
-        /** 30%：只殉燃，始终不调用本体飞头生成器。 */
+        /** 40%：只殉燃，始终不调用本体飞头生成器。 */
         BURN_ONLY,
-        /** 40%：先殉燃，到总时长的 40%～80% 时飞头。 */
+        /** 55%：先殉燃，到总时长的 40%～80% 时飞头。 */
         DELAYED
     }
 
@@ -48,10 +48,10 @@ public record RVP_WreckDestructionState(Mode mode, long startedAt, long duration
         return Math.max(1L, Math.round(wreckLifetimeSeconds * 20.0D * percent / 100.0D));
     }
 
-    /** 输入均匀整数 0～99，得到严格的 30 / 30 / 40 分段。 */
+    /** 输入均匀整数 0～99，得到严格的 5 / 40 / 55 分段。 */
     public static Mode selectMode(int roll) {
         if (roll < 0 || roll >= 100) throw new IllegalArgumentException("roll must be in [0, 100)");
-        return roll < 30 ? Mode.IMMEDIATE : roll < 60 ? Mode.BURN_ONLY : Mode.DELAYED;
+        return roll < 5 ? Mode.IMMEDIATE : roll < 45 ? Mode.BURN_ONLY : Mode.DELAYED;
     }
 
     /** 延迟下界向上取整，保证不会早于总时长的 40%。 */

@@ -11,15 +11,15 @@ import static org.junit.jupiter.api.Assertions.*;
 /** 验证互斥概率、实际时间边界及保存后一次性执行，不依赖客户端观察时间。 */
 class RVP_WreckDestructionStateTest {
     @Test
-    void allOneHundredOutcomesHaveExactThirtyThirtyFortyWeights() {
+    void allOneHundredOutcomesHaveExactFiveFortyFiftyFiveWeights() {
         EnumMap<Mode, Integer> counts = new EnumMap<>(Mode.class);
         for (int roll = 0; roll < 100; roll++) {
             // 调用生产分段，穷举均匀整数域验证权重而非依赖有波动的随机统计。
             counts.merge(RVP_WreckDestructionState.selectMode(roll), 1, Integer::sum);
         }
-        assertEquals(30, counts.get(Mode.IMMEDIATE));
-        assertEquals(30, counts.get(Mode.BURN_ONLY));
-        assertEquals(40, counts.get(Mode.DELAYED));
+        assertEquals(5, counts.get(Mode.IMMEDIATE));
+        assertEquals(40, counts.get(Mode.BURN_ONLY));
+        assertEquals(55, counts.get(Mode.DELAYED));
         assertThrows(IllegalArgumentException.class, () -> RVP_WreckDestructionState.selectMode(100));
     }
 

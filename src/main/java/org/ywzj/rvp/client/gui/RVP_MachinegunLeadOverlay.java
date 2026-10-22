@@ -1,8 +1,6 @@
 package org.ywzj.rvp.client.gui;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
@@ -36,6 +34,8 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
             if (weaponUnit != null) {
                 RVP_MachinegunLeadState.clear(weaponUnit);
             }
+            // 当前不是可解算武器：清掉右侧信息栈里的 AHEAD 行
+            RVP_RightInfoStackOverlay.reportAhead(null);
             return;
         }
         // 调用本项目每 tick 解算缓存；HUD 在相邻 EMA 相位补偿解间做帧插值，与实际火控保持一致。
@@ -53,7 +53,10 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
             // 调用本项目 AHEAD 编程入口并复用缓存提前量，避免客户端为同一目标再次执行弹道解算。
             aheadSolution = RVP_AheadProgrammer.solveFromResolvedLead(
                     data, weaponUnit, launchAim, solution);
-            renderAheadReadout(guiGraphics, screenWidth, screenHeight, aheadSolution);
+            // AHEAD 装订读数不再画在左上角：交给右侧信息栈（贴在本体弹药栏上方，与本体检视风格一致）
+            RVP_RightInfoStackOverlay.reportAhead(aheadSolution);
+        } else {
+            RVP_RightInfoStackOverlay.reportAhead(null);
         }
         if (solution == null) {
             return;
@@ -85,20 +88,5 @@ public class RVP_MachinegunLeadOverlay implements IGuiOverlay {
         GuiHelper.drawCircle(poseStack, 0, 0, 7, LEAD_COLOR, 0.05f, 0f, 1f);
         GuiHelper.drawCircle(poseStack, 0, 0, 2, LEAD_COLOR, 0.12f, 0f, 1f);
         poseStack.popPose();
-    }
-
-    private static void renderAheadReadout(net.minecraft.client.gui.GuiGraphics guiGraphics, int screenWidth,
-                                           int screenHeight, RVP_AheadSolution solution) {
-        Component text = solution != null && solution.isValid()
-                ? Component.translatable("overlay.ywzj_rvp.ahead.range", solution.programmedDistanceMeters())
-                : Component.translatable("overlay.ywzj_rvp.ahead.pending");
-        guiGraphics.drawString(
-                Minecraft.getInstance().font,
-                text,
-                15,
-                15,
-                LEAD_COLOR,
-                false
-        );
     }
 }

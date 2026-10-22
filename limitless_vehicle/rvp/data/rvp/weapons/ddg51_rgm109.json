@@ -1,7 +1,6 @@
 {
   "type": "rvp:missile",
   "name": "RGM-109C CM",
-  "show_msl_indicator": true,
   "life": 2400,
   "shoot_interval": 500,
   "max_capacity": 8,

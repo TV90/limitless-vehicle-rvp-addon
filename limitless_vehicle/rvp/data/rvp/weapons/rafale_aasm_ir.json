@@ -48,7 +48,7 @@
     "guidance_tick_range": "[[40,inf]]",
     "guidance_target_distance_range": "[[0,512]]",
     "lock_target_distance_range": "[[0,512]]",
-    "seeker_lock_dwell_tick": 20,
+    "seeker_lock_dwell_tick": 30,
     "seeker_dwell_grace_tick": 5,
     "max_lock_angle": 4,
     "max_off_axis_lock_angle": 25,
@@ -85,41 +85,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 0,
-    "damage_decay": [
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 30,
-        "end_distance": 60,
-        "start_factor": 0.8,
-        "end_factor": 0.5
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 60,
-        "end_distance": 70,
-        "start_factor": 0.5,
-        "end_factor": 0.35
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 70,
-        "end_distance": 75,
-        "start_factor": 0.35,
-        "end_factor": 0.2
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 75,
-        "end_distance": 80,
-        "start_factor": 0.2,
-        "end_factor": 0.1
-      }
-    ]
+    "direct_damage": 0
   },
   "misc_data": {
     "ammo_radar_rcs_factor": [

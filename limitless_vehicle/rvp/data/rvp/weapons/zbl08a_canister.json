@@ -31,7 +31,7 @@
     "flak_particles_crack": 20,
     "flak_particles_diff": 1.2,
     "caliber": 30,
-    "tracer_caliber": 15.24,
+    "tracer_caliber": 8.0,
     "tracer_r": 0.85,
     "tracer_g": 0.9,
     "tracer_b": 1.0

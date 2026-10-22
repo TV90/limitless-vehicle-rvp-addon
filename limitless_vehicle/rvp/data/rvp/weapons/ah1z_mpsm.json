@@ -110,7 +110,7 @@
           {
             "kind": "rvp_weapon",
             "weapon_id": "rvp:ah1z_mpsm_m73",
-            "count": 8,
+            "count": 7,
             "inherit_parent_velocity": true,
             "inherit_vehicle_velocity": false,
             "velocity_scale": 1.0,

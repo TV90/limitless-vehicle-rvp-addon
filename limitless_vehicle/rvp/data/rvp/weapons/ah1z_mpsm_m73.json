@@ -27,7 +27,7 @@
     "guidance_type": "NONE"
   },
   "effects_data": {
-    "trajectory_particle": "none",
+    "trajectory_particle": "minecraft:flame",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion"
   },
@@ -35,7 +35,7 @@
     "explosion_data": {
       "explode": true,
       "damage": 15,
-      "radius": 2,
+      "radius": 3,
       "destroy_block": true,
       "destroy_radius": 1,
       "explosion_damage_factor": {
@@ -47,7 +47,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 30,
+    "direct_damage": 40,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {

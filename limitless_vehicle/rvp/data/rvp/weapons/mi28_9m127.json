@@ -87,41 +87,7 @@
         "ywzj_vehicle:rotary_wing_vehicle": 1.1,
         "ywzj_vehicle:fixed_wing_vehicle": 1.1
       }
-    },
-    "damage_decay": [
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 30,
-        "end_distance": 60,
-        "start_factor": 0.8,
-        "end_factor": 0.5
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 60,
-        "end_distance": 70,
-        "start_factor": 0.5,
-        "end_factor": 0.35
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 70,
-        "end_distance": 75,
-        "start_factor": 0.35,
-        "end_factor": 0.2
-      },
-      {
-        "domain": "angle",
-        "type": "linear",
-        "start_distance": 75,
-        "end_distance": 80,
-        "start_factor": 0.2,
-        "end_factor": 0.1
-      }
-    ]
+    }
   },
   "name_CN": "9M127 激光架束反坦克导弹"
 }

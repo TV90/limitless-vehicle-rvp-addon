@@ -1,7 +1,6 @@
 {
   "type": "rvp:missile",
   "name": "FIM-92K IR-SAM",
-  "show_msl_indicator": true,
   "shoot_interval": 1000,
   "max_capacity": 4,
   "reload": {

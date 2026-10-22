@@ -31,6 +31,15 @@ public final class RVP_Particles {
             PARTICLES.register(RVP_ParticleIds.MCHR_FLARE.getPath(),
                     () -> new SimpleParticleType(false));
 
+    /**
+     * 近距命中曳光残影：数据驱动的速度对齐发光箱体，
+     * 颜色/宽度/长度/方向随 ParticleOptions 携带（见 {@link RVP_TracerGhostOptions}）。
+     */
+    public static final RegistryObject<net.minecraft.core.particles.ParticleType<RVP_TracerGhostOptions>> TRACER_GHOST =
+            PARTICLES.register(RVP_ParticleIds.TRACER_GHOST.getPath(),
+                    () -> org.ywzj.vehicle.all.AllParticleTypes.createOptions(
+                            RVP_TracerGhostOptions.CODEC, RVP_TracerGhostOptions.DESERIALIZER));
+
     private RVP_Particles() {}
 
     public static void register(IEventBus eventBus) {

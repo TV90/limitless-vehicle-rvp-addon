@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.BlockParticleOption;
-import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.level.block.state.BlockState;
@@ -34,6 +33,7 @@ import net.minecraftforge.entity.PartEntity;
 import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
+import org.ywzj.rvp.all.RVP_TracerGhostOptions;
 import org.ywzj.rvp.countermeasure.RVP_Decoy;
 import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
@@ -3690,7 +3690,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // （= parent_action 决定"是否立刻丢弃母弹"）分派——continue ⇒ false ⇒ 母弹穿墙后继续飞；
                 // discard_* ⇒ true ⇒ 丢弃。与下方 on_block_hit 的无条件 discard 不同（撞击必然终结弹体）。
                 if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_PENETRATE, null)) {
-                    compensateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
+                    compensatePenetrateImpactTrail(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
                     discard();
                     return true;
                 }
@@ -5420,6 +5420,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * 且配置开启本开关时，在命中点沿来袭方向补渲一段轨迹粒子簇，避免"看不见弹道"。</p>
      */
     protected void compensateImpactTrail(Vec3 hitPos) {
+        RVP_WeaponData config = resolveWeaponConfig();
+        compensateImpactTrail(hitPos, config != null && config.getEffectsData().isImpactTrailParticles());
+    }
+
+    /**
+     * 穿透丢弃路径（PELE 等子弹药 {@code on_penetrate} parent_action）专用补渲，
+     * 独立开关 {@code effects_data.penetrate_impact_trail_particles}（缺省关）：
+     * 该路径的轨迹簇观感欠佳，仅 PELE 类子弹药数据显式开启时生效，
+     * 与 {@code impact_trail_particles} 互不联动。
+     */
+    protected void compensatePenetrateImpactTrail(Vec3 hitPos) {
+        RVP_WeaponData config = resolveWeaponConfig();
+        compensateImpactTrail(hitPos, config != null && config.getEffectsData().isPenetrateImpactTrailParticles());
+    }
+
+    private void compensateImpactTrail(Vec3 hitPos, boolean enabled) {
         if (!(level() instanceof ServerLevel serverLevel)) {
             return;
         }
@@ -5428,7 +5444,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         RVP_WeaponData config = resolveWeaponConfig();
-        if (config == null || !config.getEffectsData().isImpactTrailParticles()) {
+        if (config == null || !enabled) {
             return;
         }
         String configured = config.getEffectsData().getTrajectoryParticle();
@@ -5461,10 +5477,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     private static final int TRACER_COMPENSATE_MAX_FLIGHT_TICK = 2;
 
     /**
-     * 沿来袭方向补一条与客户端曳光同色同长的亮线：长度复用客户端同款公式
-     * {@code min(0.3 × 速度 × tracer_length_scale, 已飞距离 × 0.8)}（钳 [0.5, 8]），
-     * 颜色用弹体自身的 {@code tracer_r/g/b}。悬浮色尘（DustParticleOptions）不受
-     * "客户端实体是否存在"影响，专补近距离命中的曳光空窗。
+     * 沿来袭方向补一条与客户端曳光同款的自绘发光箱体（{@code rvp:tracer_ghost}）：
+     * 长度复用客户端同款公式 {@code min(0.3 × 速度 × tracer_length_scale, 已飞距离 × 0.8)}（钳 [0.5, 8]），
+     * 颜色/宽度用弹体自身的 {@code tracer_r/g/b} 与 {@code tracer_caliber}。残影粒子不受
+     * "客户端实体是否存在"影响，专补近距离命中的曳光空窗，观感与正常曳光一致。
      */
     private void compensateTracerLine(ServerLevel serverLevel, RVP_BulletEntity tracerBullet, Vec3 hitPos) {
         Vec3 delta = getDeltaMovement();
@@ -5472,16 +5488,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (speed <= 1.0E-4D) {
             return;
         }
-        Vec3 back = delta.scale(-1.0D / speed);
+        Vec3 dir = delta.normalize();
         double length = Math.min(0.3D * speed * tracerBullet.getTracerLengthScale(), flightDistance * 0.8D);
         length = net.minecraft.util.Mth.clamp(length, 0.5D, 8.0D);
-        DustParticleOptions dust = new DustParticleOptions(
-                new org.joml.Vector3f(tracerBullet.getTracerR(), tracerBullet.getTracerG(), tracerBullet.getTracerB()),
-                0.18F);
-        for (double d = 0.0D; d <= length + 0.001D; d += 0.25D) {
-            Vec3 p = hitPos.add(back.scale(d));
-            serverLevel.sendParticles(dust, p.x, p.y, p.z, 1, 0, 0, 0, 0);
-        }
+        float width = (float) Math.min(0.04D * tracerBullet.getTracerCaliber() / 7.62D, 0.2D);
+        Vec3 center = hitPos.add(dir.scale(-length / 2.0D));
+        serverLevel.sendParticles(new RVP_TracerGhostOptions(
+                        tracerBullet.getTracerR(), tracerBullet.getTracerG(), tracerBullet.getTracerB(),
+                        width, (float) length, dir.x, dir.y, dir.z),
+                center.x, center.y, center.z, 0, 0.0D, 0.0D, 0.0D, 0.0D);
     }
 
     /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */

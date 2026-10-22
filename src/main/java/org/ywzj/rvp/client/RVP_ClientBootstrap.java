@@ -8,6 +8,7 @@ import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
+import org.ywzj.rvp.client.particle.RVP_TracerGhostParticle;
 import org.ywzj.rvp.client.particle.RVP_WhitePhosphorusParticle;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
@@ -93,6 +94,8 @@ public final class RVP_ClientBootstrap {
         // MCHR 风格默认爆炸烟雾：粒子直接绑定 MCHR 原版 smoke.png（textures/boom/smoke.png，
         // 灰白底样 8 帧横排），帧集仅用于 Provider 兜底分发，工厂路径直接构造实例。
         event.registerSpecial(RVP_Particles.MCHR_SMOKE.get(), new RVP_MchrSmokeParticle.Provider());
+        // 近距命中曳光残影：自绘速度对齐发光箱体（替代 DustParticleOptions 色尘补渲的观感方案）。
+        event.registerSpecial(RVP_Particles.TRACER_GHOST.get(), new RVP_TracerGhostParticle.Provider());
 
     }
 

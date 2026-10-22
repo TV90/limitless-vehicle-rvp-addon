@@ -14,22 +14,59 @@ public final class RVP_WeaponPanelMetrics {
     /** 本体武器栏分隔线的纵坐标（480 坐标系）；NaN = 本帧没抓到。 */
     private static float separatorY = Float.NaN;
 
-    private static boolean capturedThisFrame;
+    /** 武器栏面板左沿与宽度（取本帧最长的横向分隔线，即面板主轴）；NaN/0 = 未抓到。 */
+    private static float panelLeft = Float.NaN;
+    private static float panelWidth;
+
+    /**
+     * 弹药/装填读出区（面板上半部分）的上沿：由 {@code renderReloadArea} 每帧的
+     * {@code top} 取最小值得到。读出区高度随副武器条数变化，固定按 42 算会压进去。
+     */
+    private static float readoutTop = Float.NaN;
 
     private RVP_WeaponPanelMetrics() {}
 
-    /** 每帧入口调用：允许本帧重新抓取一次（取第一次非纵向分隔线=武器栏主分隔线）。 */
+    /** 每帧入口调用：清空本帧记录，等待 mixin 重新抓取。 */
     public static void beginFrame() {
-        capturedThisFrame = false;
+        separatorY = Float.NaN;
+        panelLeft = Float.NaN;
+        panelWidth = 0f;
+        readoutTop = Float.NaN;
     }
 
-    /** 只在首次非纵向分隔线时记录，后续内部细分隔线不覆盖。 */
+    /** 只在首次非纵向分隔线时记录 y，后续内部细分隔线不覆盖。 */
     public static void captureSeparator(float y) {
-        if (capturedThisFrame) {
-            return;
+        if (Float.isNaN(separatorY)) {
+            separatorY = y;
         }
-        capturedThisFrame = true;
-        separatorY = y;
+    }
+
+    /**
+     * 记录本帧最长的横向分隔线范围＝武器栏面板主轴（内部细分隔线更短，不会覆盖）。
+     *
+     * <p>过热条的宽度要跟面板等宽才有「长在弹药栏上」的观感，而面板宽度只存在于
+     * {@code drawSeparator} 的局部变量里，故一并抓下来。</p>
+     */
+    public static void captureExtent(float x, float length) {
+        if (length > panelWidth) {
+            panelLeft = x;
+            panelWidth = length;
+        }
+    }
+
+    /** 记录读出区上沿（{@code renderReloadArea} 的 {@code top}）；取本帧最小值即整块读出区的顶。 */
+    public static void captureReadoutTop(float top) {
+        if (Float.isNaN(readoutTop) || top < readoutTop) {
+            readoutTop = top;
+        }
+    }
+
+    public static boolean hasReadoutTop() {
+        return !Float.isNaN(readoutTop);
+    }
+
+    public static float readoutTop() {
+        return readoutTop;
     }
 
     public static boolean hasSeparator() {
@@ -43,5 +80,18 @@ public final class RVP_WeaponPanelMetrics {
     /** 弹种列表的上沿（分隔线上方留一点间距）。 */
     public static float listTop() {
         return separatorY + 3f;
+    }
+
+    /** 本帧是否抓到了面板主轴范围。 */
+    public static boolean hasExtent() {
+        return !Float.isNaN(panelLeft) && panelWidth > 0f;
+    }
+
+    public static float panelLeft() {
+        return panelLeft;
+    }
+
+    public static float panelWidth() {
+        return panelWidth;
     }
 }

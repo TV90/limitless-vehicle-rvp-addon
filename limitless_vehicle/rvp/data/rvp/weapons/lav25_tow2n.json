@@ -1,7 +1,6 @@
 {
   "type": "rvp:missile",
   "name": "TOW-2N SACLOS-ATGM",
-  "show_msl_indicator": true,
   "shoot_interval": 1000,
   "max_capacity": 2,
   "reload": {

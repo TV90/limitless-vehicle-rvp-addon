@@ -2,7 +2,7 @@
   "type": "rvp:machinegun",
   "name": "PG-630 30mm AAA [AHEAD]",
   "recoil": 0.1,
-  "shoot_interval": 50,
+  "shoot_interval": 33,
   "max_capacity": 150,
   "reload": {
     "time": 120,

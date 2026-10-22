@@ -156,17 +156,23 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
     }
 
     /**
-     * [RVP] 命中箱骨级入射角上界（{@code hitbox_max_incidence_angle}，2026-10-21）：
-     * 命中骨在骨级上界表内时返回该值（度），否则返回 90（不钳制）。
+     * [RVP] 命中箱入射角上界查询（2026-10-22 扩展）：优先命中骨的骨级上界
+     * （{@code hitbox_max_incidence_angle}），骨未配置或未归属时回退全车缺省
+     * （{@code hitbox_max_incidence_angle_default}），两者都未配置返回 90（不钳制）。
      * 消费方 {@code RVP_BaseBullet}（记录点与跳弹门槛的组合钳制）。
      */
     public float resolveBoneMaxIncidenceAngle(AbstractVehicle vehicle, @Nullable String boneName) {
-        VehicleHitboxConfig cfg = boneName == null ? null : configs.get(vehicle.getVehicleId());
-        if (cfg == null || cfg.maxIncidenceAngleByBone() == null || cfg.maxIncidenceAngleByBone().isEmpty()) {
+        VehicleHitboxConfig cfg = configs.get(vehicle.getVehicleId());
+        if (cfg == null) {
             return 90f;
         }
-        Float bound = cfg.maxIncidenceAngleByBone().get(boneName);
-        return bound == null ? 90f : Math.max(0f, Math.min(bound, 90f));
+        if (boneName != null && cfg.maxIncidenceAngleByBone() != null && !cfg.maxIncidenceAngleByBone().isEmpty()) {
+            Float bound = cfg.maxIncidenceAngleByBone().get(boneName);
+            if (bound != null) {
+                return Math.max(0f, Math.min(bound, 90f));
+            }
+        }
+        return cfg.maxIncidenceAngleDefault();
     }
 
     public float resolveCoreDistanceScaleMultiplier(AbstractVehicle vehicle) {
@@ -1981,7 +1987,13 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
              * 骨名 → 上界（度）。命中该骨时入射角按 min(记录角, 骨上界) 再钳一次，
              * 使正面装甲（如首上/首上爆反）不吃大角度衰减折扣。空/缺省 = 不钳制。
              */
-            @Nullable Map<String, Float> maxIncidenceAngleByBone
+            @Nullable Map<String, Float> maxIncidenceAngleByBone,
+            /**
+             * [RVP] 全车入射角上界缺省（{@code hitbox_max_incidence_angle_default}，2026-10-22）：
+             * 命中骨未在骨级表内（或骨未归属）时使用的全车上界（度）。
+             * 优先级：骨名精确匹配 > 本缺省 > 90。90 = 不钳制。
+             */
+            float maxIncidenceAngleDefault
     ) {
         boolean isEnabled() {
             return defaultFactor != 1f
@@ -1990,7 +2002,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     || vehicleExplosionFactorDefault != 1f
                     || (aliasByBoneName != null && !aliasByBoneName.isEmpty())
                     || (moduleByBoneName != null && !moduleByBoneName.isEmpty())
-                    || (maxIncidenceAngleByBone != null && !maxIncidenceAngleByBone.isEmpty());
+                    || (maxIncidenceAngleByBone != null && !maxIncidenceAngleByBone.isEmpty())
+                    || maxIncidenceAngleDefault != 90f;
         }
 
         HitboxDamageResult resolve(BedrockModel model, AbstractVehicle vehicle, Vec3 segmentStart, Vec3 segmentEnd) {
@@ -2130,6 +2143,9 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
             Map<String, String> aliasCnMap = parseAliasMap(obj.get("hitbox_display_name_CN"));
             // [RVP] 命中箱骨级入射角上界（2026-10-21）：骨名 → 上界（度），如首上/首上爆反 20。
             Map<String, Float> maxIncidenceMap = parseFactorMap(obj.get("hitbox_max_incidence_angle"));
+            // [RVP] 全车入射角上界缺省（2026-10-22）：未命中骨级表时对全车生效；90 = 不钳制。
+            float maxIncidenceDefault = Math.max(0f,
+                    Math.min(GsonHelper.getAsFloat(obj, "hitbox_max_incidence_angle_default", 90f), 90f));
             float coreM = GsonHelper.getAsFloat(obj, "core_distance_scale_multiplier", 1f);
             // 装甲：armor_min_damage 与本体 damage_threshold 互斥（同时存在仅装甲生效）；
             // armor_max_damage 封在全部系数算完之后（最终伤害上限）。<=0 均视为未配置。
@@ -2170,7 +2186,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     && armorMin <= 0f
                     && armorMax <= 0f
                     && hitIndicatorRvp
-                    && (maxIncidenceMap == null || maxIncidenceMap.isEmpty())) {
+                    && (maxIncidenceMap == null || maxIncidenceMap.isEmpty())
+                    && maxIncidenceDefault == 90f) {
                 return null;
             }
             return new VehicleHitboxConfig(
@@ -2186,7 +2203,8 @@ public class RVP_VehicleHitboxFactorManager extends SimplePreparableReloadListen
                     armorMin,
                     armorMax,
                     hitIndicatorRvp,
-                    maxIncidenceMap == null ? Map.of() : Map.copyOf(maxIncidenceMap)
+                    maxIncidenceMap == null ? Map.of() : Map.copyOf(maxIncidenceMap),
+                    maxIncidenceDefault
             );
         }
 
