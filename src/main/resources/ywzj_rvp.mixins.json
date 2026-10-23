@@ -50,6 +50,7 @@
     "ClientLevelHitlTrailParticleMixin",
     "ClientAssetsManagerCustomMountMixin",
     "VehicleAimAtOverlaySeekerColorMixin",
+    "RotatableUnitAimRotAccessor",
     "InfraredMixin",
     "InfraredSignatureMixin",
     "InputHandlerAirburstMixin",

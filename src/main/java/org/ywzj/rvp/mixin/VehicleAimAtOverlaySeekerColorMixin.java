@@ -179,6 +179,25 @@ public class VehicleAimAtOverlaySeekerColorMixin {
         }
     }
 
+    @Shadow
+    private static net.minecraft.world.phys.Vec3 aimScreenPosition(WeaponUnit weaponUnit) {
+        throw new AssertionError();
+    }
+
+    @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
+            target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;aimScreenPosition(Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;)Lnet/minecraft/world/phys/Vec3;"))
+    private net.minecraft.world.phys.Vec3 rvp$disguiseAimPosition(
+            WeaponUnit weaponUnit, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) float partialTick) {
+        if (org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimActive(weaponUnit)) {
+            net.minecraft.world.phys.Vec3 cameraAim =
+                    org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimWorldPos(weaponUnit, partialTick);
+            if (cameraAim != null) {
+                return org.ywzj.vehicle.util.VectorUtil.worldToScreen(cameraAim);
+            }
+        }
+        return aimScreenPosition(weaponUnit);
+    }
+
     /**
      * [RVP] 武器级准星样式覆盖（{@code crosshair_style_override}）：当前选中武器为配置了
      * 该字段的 RVP 武器时，HUD 准星样式用武器 JSON 的覆盖值替换所属武器站的
