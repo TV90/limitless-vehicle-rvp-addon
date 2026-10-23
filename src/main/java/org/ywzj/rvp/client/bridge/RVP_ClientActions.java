@@ -21,6 +21,12 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
+        // 调用客户端发射器，结合来弹方向与装甲表面生成下坠火星。
+        org.ywzj.rvp.client.visual.RVP_VehicleImpactSparkEffects.accept(message);
+    }
+
+    @Override
     public void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
         // 调用客户端权威快照缓存，供殉燃与长程烟读取同一服务端时间表。
         org.ywzj.rvp.client.visual.cookoff.RVP_ClientWreckDestructionState.accept(message);

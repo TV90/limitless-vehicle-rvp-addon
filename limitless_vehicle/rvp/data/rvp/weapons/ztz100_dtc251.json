@@ -21,6 +21,7 @@
     "rotate_to_motion": true
   },
   "effects_data": {
+    "vehicle_impact_sparks": true,
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion",

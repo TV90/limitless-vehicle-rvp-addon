@@ -15,6 +15,12 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥消费命中火花，避免公共网络类引用客户端粒子类型。 */
+    public static void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
+        // 调用物理侧实现；客户端创建粒子，服务端为空操作。
+        INSTANCE.acceptVehicleImpactSparks(message);
+    }
+
     /** 经双端安全桥转交击毁快照，公共网络代码不引用客户端状态类。 */
     public static void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
         // 调用按物理端选择的实现，专用服务端保持 NOOP。
@@ -103,6 +109,10 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
+            // 专用服务端不渲染火花。
+        }
         @Override
         public void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
             // 专用服务端不持有客户端效果状态。

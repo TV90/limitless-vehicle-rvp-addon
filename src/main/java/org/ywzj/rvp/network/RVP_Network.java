@@ -30,7 +30,9 @@ public class RVP_Network {
     /** 协议 25：视觉碎片事件新增方向圆锥半角参数；旧客户端无法连新服。 */
     /** 协议 26：新增 C2SHeliDockToggle（直升机着舰 P 键）+ S2CHeliDockState（着舰/接管控制锁定同步）；旧客户端无法连新服。 */
     /** 协议 27：新增地面载具击毁分支及权威殉燃时间表；双端必须一同更新。 */
-    private static final String PROTOCOL = "27";
+    /** 协议 28：新增载具表面命中火花消息；双端必须一同更新。 */
+    /** 协议 29：命中火星消息增加入射方向，用于按装甲面采样飞溅；双端必须一同更新。 */
+    private static final String PROTOCOL = "29";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
@@ -411,6 +413,12 @@ public class RVP_Network {
                 .encoder(S2CWreckDestructionState::encode)
                 .decoder(S2CWreckDestructionState::decode)
                 .consumerMainThread(S2CWreckDestructionState::handle)
+                .add();
+        // 注册服务端权威命中火花消息，客户端经安全桥创建纯视觉粒子。
+        CHANNEL.messageBuilder(S2CVehicleImpactSparks.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CVehicleImpactSparks::encode)
+                .decoder(S2CVehicleImpactSparks::decode)
+                .consumerMainThread(S2CVehicleImpactSparks::handle)
                 .add();
     }
 }

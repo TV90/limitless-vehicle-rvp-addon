@@ -7,6 +7,9 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
 
+    /** 接收载具表面命中火花；服务端空实现不加载客户端粒子类。 */
+    void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message);
+
     /** 接收服务端地面载具击毁时间表；专用服务端实现为空操作。 */
     void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message);
 

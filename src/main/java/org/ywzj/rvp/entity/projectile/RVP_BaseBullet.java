@@ -3761,6 +3761,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Entity impactTarget = ywzj_rvp$resolveCollisionRoot(entity);
         Vec3 normal = RVP_BounceUtil.impactNormal(
                 entity, collisionSegmentStart(), collisionSegmentEnd(), result.getLocation(), velocity);
+        // 调用 RVP 命中火花出口：在跳弹返回及伤害结算前广播一次真实接触，未造成伤害也可擦出火星。
+        org.ywzj.rvp.weapon.impact.RVP_VehicleImpactSparks.publish(
+                level(), impactTarget, resolveWeaponConfig(), result.getLocation(), normal, velocity);
         // [RVP] 入射角记录前置 + 载具上界钳制（2026-10-21，替代已撤销的 ERA 全局上界）：
         // 上界取被命中根载具的 rvp_max_incidence_angle（未配置=90 不钳）+ 命中骨的
         // hitbox_max_incidence_angle（骨级，如首上/首上爆反 20 度）取二者更小值，记录点即钳制，
