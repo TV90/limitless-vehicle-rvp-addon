@@ -352,6 +352,45 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         return localRadarHardLock || hasRadarContacts || rfAim || hasExternalRadarEntries();
     }
 
+    /**
+     * [RVP] 是否跳过本体 {@code VehicleAimAtOverlay.renderAimLockTarget} 的绘制。
+     *
+     * <p>2026-10-23（本体 27552d7）根因：0.6.1 的锁框绘制挂在 {@code VehicleScopeOverlay.render}
+     * 里，与 scope 分支同处一个 overlay，天然互斥；0.6.2 把它搬进 {@code VehicleAimAtOverlay.render}
+     * 的末尾且<b>不再判断视角</b>，于是观瞄视角下本体与 {@link #render} 的 scope 分支各画一套
+     * 同一目标的框 —— 两套锚点（实体插值位置 vs 雷达探测记录位置）与距离来源不同，
+     * 表现为"框重影 + 距离数字来回跳"。</p>
+     *
+     * <p>非观瞄视角沿用原 {@link #hudLockTakeoverActive()} 门控；观瞄视角改为镜像 scope 分支
+     * 的绘制前置条件（有载体/有 ui_preset/非 HITL）—— 只要 scope 分支真的会画，就让本体闭嘴，
+     * 反之（无 preset 的载具、HITL 视角）仍由本体绘制，避免两边都不画。</p>
+     */
+    public static boolean shouldSkipVanillaAimLockTarget() {
+        if (hudLockTakeoverActive()) {
+            return true;
+        }
+        if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
+            return false;
+        }
+        return scopeDrawsLockTarget();
+    }
+
+    /** 与 {@link #render} 的 scope 分支前置条件保持一致：有载体、有 ui_preset、非 HITL。 */
+    private static boolean scopeDrawsLockTarget() {
+        if (!LocalVehiclePlayer.instance.onVehicle()) {
+            return false;
+        }
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || vehicle.getVehicleId() == null) {
+            return false;
+        }
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) {
+            return false;
+        }
+        String presetName = VehicleUIPresetCache.get(vehicle.getVehicleId());
+        return presetName != null && !presetName.isEmpty();
+    }
+
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
         // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
         if (RVP_BVR_DEBUG) {

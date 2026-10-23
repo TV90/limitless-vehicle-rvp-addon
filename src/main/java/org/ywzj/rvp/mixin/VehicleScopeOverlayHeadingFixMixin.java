@@ -1,7 +1,9 @@
 package org.ywzj.rvp.mixin;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -66,7 +68,69 @@ public class VehicleScopeOverlayHeadingFixMixin {
             color = 0xFF000000 | (c << 16) | (c << 8) | c;
             fillColor = 0;
         }
+        // 竖直薄板修正：本体 0.6.2 用「中心 + halfWidth/halfDepth + 单个 Y 角」近似 cube，
+        // 其角度取 cube 局部 +Z 轴的 yaw；当 cube 绕 X 轴立起（如 99B 首上 ERA 的 -90° 薄板）时
+        // +Z 轴变为竖直，VectorUtil.vecToRot 的 atan2(x,z) 在 (0,·,0) 上退化为 0，
+        // 角度变成 -vehicleYaw（行进间随车体朝向反向漂移），且 depth 用的是立起前的值导致框过厚。
+        // 这里仅在俯视投影退化时接管：厚度改用 height（X 轴 ±90° 时 y/z 互换），
+        // 角度改用水平面的局部 +Y 轴求 yaw（该轴在立起后仍保持水平，数值稳定）。
+        if (vehicle != null && ywzj_rvp$isVerticalPlate(cube)) {
+            float correctedRotation = ywzj_rvp$resolveVerticalPlateRotation(cube, vehicle, partialTick);
+            double originalDepth = cube.depth;
+            cube.depth = cube.height;
+            try {
+                addHeadingCube(cubes, cube, vehiclePos, axisX, axisZ, heading, correctedRotation,
+                        partialTick, color, fillColor);
+            } finally {
+                cube.depth = originalDepth;
+            }
+            return;
+        }
         addHeadingCube(cubes, cube, vehiclePos, axisX, axisZ, heading, rotation, partialTick, color, fillColor);
+    }
+
+    /**
+     * 判定该 cube 是否属于「俯视投影退化」的竖直薄板：
+     * 模型坐标系下局部 +Z 轴（本体用来算 rotation 的轴）几乎竖直，说明 depth 轴已立起，
+     * 俯视投影无法由 width/depth + 单个 Y 角正确表达。
+     */
+    @org.spongepowered.asm.mixin.Unique
+    private static boolean ywzj_rvp$isVerticalPlate(VehicleCubeOBB cube) {
+        org.joml.Vector3f zAxis = ywzj_rvp$selfAxis(cube, 0f, 0f, 1f);
+        return zAxis != null && Math.abs(zAxis.y) > 0.9f;
+    }
+
+    /**
+     * 计算竖直薄板在俯视图里的正确 Y 旋转角（度）：取模型坐标系局部 +Y 轴在世界中的方向，
+     * 该轴在 cube 绕 X 轴 ±90° 立起后转成水平朝前的 depth 方向，yaw 稳定。
+     */
+    @org.spongepowered.asm.mixin.Unique
+    private static float ywzj_rvp$resolveVerticalPlateRotation(VehicleCubeOBB cube, AbstractVehicle vehicle,
+                                                              float partialTick) {
+        Quaternionf rotation = cube.rotation;
+        if (rotation == null) {
+            return 0f;
+        }
+        Vector3f yAxis = new Vector3f(0f, 1f, 0f);
+        rotation.transform(yAxis);
+        Vec3 dir = new Vec3(yAxis.x, yAxis.y, yAxis.z);
+        float yaw = org.ywzj.vehicle.util.VectorUtil.vecToRot(dir).y;
+        // AbstractVehicle 只暴露无参 getYRot()；partialTick 插值对本面板无观感差异
+        return Mth.wrapDegrees(yaw - vehicle.getYRot());
+    }
+
+    /** 取模型坐标系（不含车体朝向）下局部轴的朝向；旋转缺失时返回 null。 */
+    @org.spongepowered.asm.mixin.Unique
+    private static Vector3f ywzj_rvp$selfAxis(VehicleCubeOBB cube, float x, float y, float z) {
+        if (cube.group == null) {
+            return null;
+        }
+        Quaternionf selfRot = cube.selfRot();
+        if (selfRot == null) {
+            return null;
+        }
+        Vector3f axis = new Vector3f(x, y, z);
+        return selfRot.transform(axis);
     }
 
     /** 单帧 cube→部件 反查缓存：键=载具，值=[帧号, cube, 部件]（俯视图每帧自上而下顺序绘制）。 */

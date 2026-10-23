@@ -174,7 +174,7 @@ public class VehicleAimAtOverlaySeekerColorMixin {
     @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
             target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;renderAimLockTarget(Lnet/minecraft/client/gui/GuiGraphics;F)V"))
     private void rvp$takeoverHudLockTarget(net.minecraft.client.gui.GuiGraphics guiGraphics, float partialTick) {
-        if (!RVP_ScopeOverlay.hudLockTakeoverActive()) {
+        if (!RVP_ScopeOverlay.shouldSkipVanillaAimLockTarget()) {
             renderAimLockTarget(guiGraphics, partialTick);
         }
     }
