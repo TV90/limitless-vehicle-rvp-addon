@@ -3757,6 +3757,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             return;
         }
         Vec3 velocity = getDeltaMovement();
+        // 命中载具/实体：溅射火星（方向 = 命中方向的反方向）。放在弹间拦截之后——
+        // 拦截是弹打弹，不应产生载具命中火花。
+        if (level() instanceof ServerLevel serverLevel) {
+            spawnImpactSparks(serverLevel, result.getLocation(), velocity.scale(-1.0D));
+        }
         // 调用本体碰撞根解析方法，把 PartEntity 命中统一归并到固定翼/旋翼载具后再做空中目标判定。
         Entity impactTarget = ywzj_rvp$resolveCollisionRoot(entity);
         Vec3 normal = RVP_BounceUtil.impactNormal(
@@ -5493,15 +5498,65 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         length = net.minecraft.util.Mth.clamp(length, 0.5D, 8.0D);
         float width = (float) Math.min(0.04D * tracerBullet.getTracerCaliber() / 7.62D, 0.2D);
         Vec3 center = hitPos.add(dir.scale(-length / 2.0D));
+        // 2026-10-24 曾尝试在伪装期内给补渲叠加 disguise offset（与客户端模型同走炮口平行线），
+        // 用户实测观感更差，已回退：补渲仍直接用真实弹道上的 hitPos。
         serverLevel.sendParticles(new RVP_TracerGhostOptions(
                         tracerBullet.getTracerR(), tracerBullet.getTracerG(), tracerBullet.getTracerB(),
                         width, (float) length, dir.x, dir.y, dir.z),
                 center.x, center.y, center.z, 0, 0.0D, 0.0D, 0.0D, 0.0D);
     }
 
+    /**
+     * 命中火星：弹药命中载具/方块后在命中点溅出的扩散火花（仅 MACHINEGUN 类）。
+     *
+     * <ul>
+     *   <li>数量与尺寸：随 {@code effects_data.caliber}（mm）放大，小口径稀疏、大口径成簇；</li>
+     *   <li>方向：{@code reflect}（= 命中方向的反方向，调用方传 {@code -deltaMovement}）为基准轴，
+     *       客户端在锥内随机展开；</li>
+     *   <li>速度：命中弹速打 {@link #IMPACT_SPARK_SPEED_SCALE} 折（刻意不是原速），并设上限，
+     *       避免高速弹一发喷出几十格远的火线；</li>
+     *   <li>阻力：由粒子端 {@code RVP_ImpactSparkParticle.DRAG} 全轴衰减，形成快速减速下坠。</li>
+     * </ul>
+     *
+     * @param reflect 命中方向的反方向（未归一化亦可，粒子端会归一化）
+     */
+    protected void spawnImpactSparks(ServerLevel serverLevel, Vec3 hitPos, Vec3 reflect) {
+        if (weaponKind != RVP_EnumWeaponKind.MACHINEGUN || rvpData == null) {
+            return;
+        }
+        if (serverLevel.getGameTime() % 2L != 0L && getFlightTickCount() > 4) {
+            // 远距离连发时节流：每 2 tick 才允许一批，避免密集成片
+            return;
+        }
+        float caliber = rvpData.getEffectsData().getCaliber();
+        int count = Mth.clamp(Math.round(caliber / 8.0F), 3, 18);
+        double impactSpeed = getDeltaMovement().length();
+        double speed = Math.min(impactSpeed * IMPACT_SPARK_SPEED_SCALE, IMPACT_SPARK_SPEED_MAX);
+        if (speed <= 0.01D) {
+            return;
+        }
+        float size = Mth.clamp(0.035F + caliber / 1100.0F, 0.04F, 0.32F);
+        float spread = Mth.clamp(0.25F + caliber / 320.0F, 0.25F, 1.0F);
+        int lifetime = 8 + serverLevel.random.nextInt(9);
+        org.ywzj.rvp.all.RVP_ImpactSparkOptions options =
+                new org.ywzj.rvp.all.RVP_ImpactSparkOptions(
+                        1.0F, 0.78F, 0.35F, size,
+                        reflect.x, reflect.y, reflect.z,
+                        speed, spread, lifetime);
+        serverLevel.sendParticles(options, hitPos.x, hitPos.y, hitPos.z,
+                count, 0.0D, 0.0D, 0.0D, 0.0D);
+    }
+
+    /** 命中火星速度相对命中弹速的折减；0.22 使 75 格/tick 的 APFSDS 也只溅出约 1.2 格/tick。 */
+    private static final double IMPACT_SPARK_SPEED_SCALE = 0.22D;
+
+    /** 命中火星初速上限（格/tick），防止高速弹一发喷出几十格远的火线。 */
+    private static final double IMPACT_SPARK_SPEED_MAX = 1.2D;
+
     /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */
     protected void spawnAmmoBlockImpactEffects(BlockHitResult result) {
         if (level() instanceof ServerLevel serverLevel) {
+            spawnImpactSparks(serverLevel, result.getLocation(), getDeltaMovement().scale(-1.0D));
             if (rvpData != null) {
                 RVP_ProjectileParticleEffects.spawnBlockImpact(
                         serverLevel, result, rvpData.getEffectsData(), getBbWidth());
