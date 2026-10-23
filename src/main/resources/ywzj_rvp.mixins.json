@@ -70,6 +70,7 @@
     "VehicleOverlayWeaponListSuppressMixin",
     "VehicleExplosionClientVisualMixin",
     "accessor.VehicleModdingToolScreenAccessor",
+    "VehicleRadarOverlayMixin",
     "RadarRemoteHbmEntitiesMixin",
     "WeaponUnitBombCcipMixin",
     "WeaponUnitGetSeekerFovMixin",

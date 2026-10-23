@@ -17,15 +17,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.ModifyArgs;
-import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.client.gui.VehicleRadarOverlay;
@@ -105,13 +101,131 @@ public class VehicleRadarOverlayMixin {
     }
 
     /**
-     * [挂起 2026-10-24] 扫描线角度修饰（HMD 捕获半视场 ping-pong / 数据侧 phase 扫描模式）
-     * 暂未随本体 27552d7 适配：drawScanLine 为私有实例方法，其 invokespecial 重定向要求
-     * static handler + 显式接收者，private 调用需 @Invoker 桥（注解处理器对私有目标误报
-     * could not locate，编译被拦）。两项子功能现状：phase 扫描模式当前零武器配置；
-     * HMD 扫描线摆动仅影响雷达面板扫描线的摆动方式。恢复方案：@Redirect static+receiver
-     * （已验证到 handler 校验一步）+ @Invoker 桥绕过 AP 误报（如改为抽象类形式或关 AP 校验）。
+     * 扫描线角度修饰（HMD 捕获半视场 ping-pong / 数据侧 phase 扫描模式）。
+     *
+     * <p><b>2026-10-23 适配本体 27552d7（0.6.2）</b>：{@code drawScanLine} 是私有实例方法，
+     * 重定向它时 handler <b>必须是非 static 的实例方法</b>，且首参显式声明接收者 {@code VehicleRadarOverlay self}
+     * （写 static 会报 {@code 'static' modifier of handler method does not match target}，
+     * 整个 mixin APPLY 失败并崩在 GuiOverlayManager.init）；
+     * 而私有目标又无法用 {@code @Invoker} 桥（Mixin AP 对私有目标误报 could not locate）。
+     * 因此本注入走实例 {@code @Redirect} + 显式 receiver，并把本体 drawScanLine 的方法体
+     * 内联为 {@link #ywzj_rvp$drawScanLine}，用修饰后的角度自行绘制。
+     * 内联来源：{@code VehicleRadarOverlay.drawScanLine}（0.6.2，L250 起）；本体若改该实现需同步。</p>
      */
+    @Redirect(
+            method = "renderInstruments",
+            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/gui/VehicleRadarOverlay;drawScanLine(Lorg/joml/Matrix4f;IIFFFI)V"),
+            remap = false
+    )
+    private void ywzj_rvp$modifyScanAngle(VehicleRadarOverlay self, Matrix4f matrix, int cx, int cy,
+                                          float r, float angleDeg, float thickness, int color) {
+        ywzj_rvp$drawScanLine(matrix, cx, cy, r, ywzj_rvp$resolveScanAngle(angleDeg), thickness, color);
+    }
+
+    /**
+     * 计算扫描线角度：HMD 模式在共享捕获半视场内 ping-pong；否则当雷达数据侧为 phase 扫描模式时，
+     * 按 {@code scan_period_tick} 周期性扫过整个视场（360° 时单向循环，其余 ping-pong）。
+     * 其余情况原样返回本体算出的角度。
+     */
+    @Unique
+    private static float ywzj_rvp$resolveScanAngle(float angleDeg) {
+        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
+        if (hmdState.isRadarHmd()) {
+            RadarUnit radar = ywzj_rvp$currentRadarUnit;
+            if (radar != null) {
+                Vec3 radarPos = radar.worldRadarPosition();
+                // 使用平滑角度（与 HMD 框位置一致）
+                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+                Vec3 aimDir = hmdState.resolveRadarAimDir(weaponUnit, radar);
+                Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
+                Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
+                float yMin = radar.getYRotMin();
+                float yMax = radar.getYRotMax();
+                if (yMax - yMin >= 360f) {
+                    yMin = 0f;
+                    yMax = 360f;
+                }
+                float center = Mth.clamp((float) localRot.y, yMin, yMax);
+                // 在共享捕获视场内 ping-pong，5 tick 一个完整显示周期
+                int tick = hmdState.getTickCount();
+                float phase = ((tick % 5) + ywzj_rvp$partialTick) / 5.0f;
+                phase = Mth.clamp(phase, 0f, 1f);
+                float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
+                float halfFov = RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG;
+                return center - halfFov + halfFov * 2.0f * pingPong;
+            }
+            return angleDeg;
+        }
+
+        RadarUnit radarUnit = ywzj_rvp$currentRadarUnit;
+        if (radarUnit == null) {
+            return angleDeg;
+        }
+        RadarUnitDataExt ext = ywzj_rvp$getRadarDataExt(radarUnit);
+        if (ext == null) {
+            return angleDeg;
+        }
+        if (!"phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())) {
+            return angleDeg;
+        }
+        int periodTick = ext.ywzj_rvp$getScanPeriodTick();
+        if (periodTick <= 0) {
+            return angleDeg;
+        }
+        float yRotMin = radarUnit.getYRotMin();
+        float yRotMax = radarUnit.getYRotMax();
+        float scanAz = yRotMax - yRotMin;
+        if (scanAz >= 360f) {
+            yRotMin = 0f;
+            scanAz = 360f;
+        }
+        float phase = ((radarUnit.getVehicle().tickCount % periodTick) + ywzj_rvp$partialTick) / periodTick;
+        phase = Mth.clamp(phase, 0f, 1f);
+        if (scanAz >= 360f) {
+            return phase * 360f;
+        }
+        float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
+        return yRotMin + scanAz * pingPong;
+    }
+
+    /**
+     * 内联自本体 {@code VehicleRadarOverlay.drawScanLine}（0.6.2，L250 起）。
+     *
+     * <p>本体该方法是私有实例方法，mixin 无法直接调用也无法用 @Invoker 桥（AP 误报），
+     * 故此处复制其绘制实现（QUADS 粗线）。若本体修改扫描线画法，这里需同步。</p>
+     */
+    @Unique
+    private static void ywzj_rvp$drawScanLine(Matrix4f matrix, int cx, int cy, float r, float angleDeg,
+                                              float thickness, int color) {
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder bufferbuilder = tesselator.getBuilder();
+        bufferbuilder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+
+        float a = (float) (color >> 24 & 255) / 255.0F;
+        float rCol = (float) (color >> 16 & 255) / 255.0F;
+        float g = (float) (color >> 8 & 255) / 255.0F;
+        float b = (float) (color & 255) / 255.0F;
+
+        float rad = (float) Math.toRadians(angleDeg - 90);
+        float dirX = (float) Math.cos(rad);
+        float dirY = (float) Math.sin(rad);
+        float perpX = (float) -Math.sin(rad);
+        float perpY = (float) Math.cos(rad);
+        float halfWidth = thickness / 2.0f;
+
+        // A 圆心左偏移 | B 圆心右偏移 | C 终点右偏移 | D 终点左偏移
+        bufferbuilder.vertex(matrix, cx - perpX * halfWidth, cy - perpY * halfWidth, 0).color(rCol, g, b, a).endVertex();
+        bufferbuilder.vertex(matrix, cx + perpX * halfWidth, cy + perpY * halfWidth, 0).color(rCol, g, b, a).endVertex();
+        bufferbuilder.vertex(matrix, cx + dirX * r + perpX * halfWidth, cy + dirY * r + perpY * halfWidth, 0).color(rCol, g, b, a).endVertex();
+        bufferbuilder.vertex(matrix, cx + dirX * r - perpX * halfWidth, cy + dirY * r - perpY * halfWidth, 0).color(rCol, g, b, a).endVertex();
+
+        tesselator.end();
+        RenderSystem.disableBlend();
+    }
 
     @Unique
     private static RadarUnitDataExt ywzj_rvp$getRadarDataExt(RadarUnit radarUnit) {
