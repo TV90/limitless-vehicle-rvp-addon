@@ -23,7 +23,6 @@ import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 import org.ywzj.rvp.guidance.RVP_EnumHitlControlMode;
 import org.ywzj.rvp.guidance.RVP_GuidanceActiveConfig;
 import org.ywzj.rvp.guidance.RVP_GuidanceModelResolver;
-import org.ywzj.rvp.guidance.RVP_GuidanceTransitionContext;
 import org.ywzj.rvp.guidance.RVP_HitlSteeringMath;
 import org.ywzj.rvp.guidance.RVP_TvVideoModeMask;
 import org.ywzj.rvp.guidance.runtime.RVP_ActiveSeekerRelayPolicy;
@@ -191,10 +190,8 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
             return;
         }
 
-        getGuidancePhaseState().update(
-                rvpData.getGuidanceData().getTerminalGuidance(),
-                RVP_GuidanceTransitionContext.from(this)
-        );
+        // 调用统一阶段更新，先通过冷发射/姿态保护，再按本刻阶段管理主动导引头。
+        org.ywzj.rvp.guidance.RVP_GuidanceRuntimeController.updatePhase(this);
 
         RVP_EnumGuidanceType activeType = resolveNewActiveSeekerType();
         if (activeType == RVP_EnumGuidanceType.ARH || activeType == RVP_EnumGuidanceType.AIR) {

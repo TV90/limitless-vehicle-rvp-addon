@@ -4,7 +4,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * PIP 专用的航迹到机头指令适配器，纯数学、无积分状态、不修改实体。
+ * 航迹到机头指令适配器，供 PIP、固定坐标与 PRESET 共用，纯数学、不修改实体。
  * 外环沿用旧航迹响应和 G 预算，内环读取不可变双轴状态反解执行器，并计入沿机头推力。
  * 不预先扣诱导阻力；正式载荷与姿态只由返回的实际求解结果写回一次。
  */
@@ -69,21 +69,35 @@ public final class RVP_PIPAttackAngleController {
     /** 读取当前角速度及惯量质量的无副作用入口；试算始终从同一个输入状态开始。 */
     public static Result solve(Vec3 velocity, RVP_AttackAngleState state, Vec3 desiredDirection,
             RVP_AeroSteeringLimits limits, RVP_PropulsionMath.MotorState motor, double mass) {
-        // 调用本项目输入判据；非攻角分支不应使用此控制器，坏输入按原求解器安全退化。
+        // 调用原退化路径，保留空方向/零速及攻角关闭时的行为，不先做方向插值。
         if (!validDirection(velocity) || !validDirection(desiredDirection)
                 || limits == null || !limits.attackAngleEnabled()) {
-            var unchanged = RVP_AttackAngleModel.solve(velocity, state, desiredDirection, limits, mass);
+            return solveVelocityRequest(velocity, state, desiredDirection, limits, motor, mass);
+        }
+        // 调用公共反解入口；PIP 与中段追点保留原 turning_factor 外环响应。
+        Vec3 request = limits == null || limits.rvpMaxGs() != null ? desiredDirection
+                : RVP_TrajectorySteeringMath.applyTurningFactor(
+                        velocity, desiredDirection, velocity.length(), limits.turningFactor());
+        return solveVelocityRequest(velocity, state, request, limits, motor, mass);
+    }
+
+    /**
+     * 反解外环已生成的单刻航迹请求，不再重复乘 turning_factor。
+     * 固定点末段按剩余交会时间生成请求；气动 G、攻角、质量惯量限制仍在此完整生效。
+     */
+    public static Result solveVelocityRequest(Vec3 velocity, RVP_AttackAngleState state, Vec3 request,
+            RVP_AeroSteeringLimits limits, RVP_PropulsionMath.MotorState motor, double mass) {
+        // 调用本项目输入判据；非攻角分支不应使用此控制器，坏输入按原求解器安全退化。
+        if (!validDirection(velocity) || !validDirection(request)
+                || limits == null || !limits.attackAngleEnabled()) {
+            var unchanged = RVP_AttackAngleModel.solve(velocity, state, request, limits, mass);
             return new Result(unchanged, unchanged.bodyDirection(), unchanged.velocity(), unchanged.velocity(), 0.0, false);
         }
         double speed = velocity.length();
         Vec3 axis = velocity.normalize();
         // 调用本项目有限方向判据，使控制器和执行器对缺失机头采用同一速度轴回退。
         // 调用双轴状态极点脱离入口：PIP 首次给出水平指令时沿目标水平投影选定转弯平面。
-        state = state.sanitized().reanchorPoleYaw(desiredDirection);
-        // 调用本项目旧航迹插值作为外环请求；显式 G 下保留完整期望方向。
-        Vec3 request = limits.rvpMaxGs() != null ? desiredDirection
-                : RVP_TrajectorySteeringMath.applyTurningFactor(
-                        velocity, desiredDirection, speed, limits.turningFactor());
+        state = state.sanitized().reanchorPoleYaw(request);
         // 调用本项目气动裁决，仅取得外环目标，不把此速度直接写入实体。
         Vec3 requestedVelocity = RVP_AeroSteeringModel.solve(velocity, request, limits).velocity();
         Vec3 requestedAxis = requestedVelocity.normalize();
@@ -110,7 +124,8 @@ public final class RVP_PIPAttackAngleController {
         // 调用共用增益和角度转换反解双轴执行器，显式扣除上一 Tick 尚未消散的角速度。
         double response = RVP_AttackAngleInertiaModel.response(speed, limits);
         double gain = RVP_AttackAngleInertiaModel.rateResponse(mass);
-        var target = RVP_AttackAngleState.fromDirection(desiredBody, state.yawDeg());
+        // 调用与前向执行器相同的等价角选择，反解与正式推进必须采用同一跨极点路径。
+        var target = state.nearestRotation(desiredBody);
         double pitchStep = target.pitchDeg() - state.pitchDeg();
         double yawStep = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
         double pitchCommand = response <= EPSILON ? state.pitchDeg() : state.pitchDeg()
@@ -118,7 +133,8 @@ public final class RVP_PIPAttackAngleController {
         double yawCommand = response <= EPSILON ? state.yawDeg() : state.yawDeg()
                 + (yawStep - (1.0 - gain) * state.yawRateDeg()) / (gain * response);
         // 两轴反解只提供指令，不绕过实际攻角锥/角速度限制；过大的偏航误差不能环绕为反向指令。
-        Vec3 command = new RVP_AttackAngleState(Mth.clamp(pitchCommand, -90, 90),
+        Vec3 command = new RVP_AttackAngleState(state.pitchDeg()
+                + Mth.clamp(pitchCommand - state.pitchDeg(), -179.9, 179.9),
                 state.yawDeg() + Mth.clamp(yawCommand - state.yawDeg(), -179.9, 179.9), 0, 0).direction();
         // 调用真实攻角模型，以当前机头执行一次实际响应；与上面假定已达姿态的试算区分。
         var steering = RVP_AttackAngleModel.solve(velocity, state, command, limits, mass);

@@ -11,6 +11,8 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AttackAngleState;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_QuadraticAirDrag;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PointGuidanceController;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PIPAttackAngleController;
 
 /**
  * 从 RVP 实体制导/运动链抽出的纯虚拟弹道 Tick 编排器。
@@ -23,7 +25,7 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
     /** 当前 RVP 纯数学弹道实现的稳定标识，用于校验持久化状态兼容性。 */
     public static final String ID = "rvp_current";
     /** 当前 RVP 纯数学弹道状态版本，用于阻止不兼容状态继续积分。 */
-    public static final int VERSION = 10;
+    public static final int VERSION = 11;
 
     /** {@inheritDoc} */
     @Override
@@ -129,15 +131,32 @@ public final class RVP_RvpTrajectoryIntegrator implements RVP_VirtualTrajectoryI
         Vec3 velocity = state.velocity();
         // 调用本项目快照投影及方向生成器，只生成期望方向，不提前对速度执行第二次转向。
         RVP_AeroSteeringLimits limits = parameters.aeroSteeringLimits();
-        Vec3 desired = guidance.preset() != null && guidance.preset().cruiseAltitude() > 0.0
+        Vec3 target = resolveGuidanceTarget(state.position(), velocity, guidance);
+        boolean presetActive = guidance.preset() != null && guidance.preset().cruiseAltitude() > 0.0;
+        Vec3 desired = presetActive
                 ? RVP_BallisticTrajectoryMath.resolvePresetBallisticDirection(state.position(), velocity,
-                        resolveGuidanceTarget(state.position(), velocity, guidance), guidance.preset(), limits)
+                        target, guidance.preset(), limits)
                 : RVP_BallisticTrajectoryMath.resolveGPSCruiseDirection(state.position(), velocity,
-                        resolveGuidanceTarget(state.position(), velocity, guidance), parameters.cruiseAltitude(), limits);
-        // 调用本项目共用双轴执行器，读取持久化角速度，不从速度轴重建或清零惯量状态。
-        RVP_AttackAngleSolution steering = RVP_AttackAngleModel.solve(velocity,
-                new RVP_AttackAngleState(state.xRot(), state.yRot(), state.pitchRateDeg(), state.yawRateDeg()),
-                desired, limits, parameters.mass());
+                        target, parameters.cruiseAltitude(), limits);
+        // 调用状态构造器，两个分支共用同一原始姿态，不从速度轴重建或清零角速度。
+        var attitude = new RVP_AttackAngleState(state.xRot(), state.yRot(),
+                state.pitchRateDeg(), state.yawRateDeg());
+        RVP_AttackAngleSolution steering;
+        if (presetActive && target != null) {
+            // 调用实体同款反解控制器；试算从原始姿态开始，只有选中的结果参与后续积分。
+            boolean burning = parameters.propulsion() && tick >= parameters.ignitionTick()
+                    && tick - parameters.ignitionTick() <= parameters.motorBurnTime();
+            var motor = new RVP_PropulsionMath.MotorState(burning, parameters.thrust(), parameters.mass());
+            boolean diving = RVP_BallisticTrajectoryMath.shouldBeginPresetDive(
+                    state.position(), velocity, target, guidance.preset(), limits);
+            steering = diving ? RVP_PointGuidanceController.solve(state.position(), velocity, target,
+                    attitude, limits, motor, parameters.mass())
+                    : RVP_PIPAttackAngleController.solve(velocity, attitude, desired,
+                            limits, motor, parameters.mass()).steering();
+        } else {
+            // 普通虚拟 GPS 保留原执行器行为，不受 PRESET 控制策略改变影响。
+            steering = RVP_AttackAngleModel.solve(velocity, attitude, desired, limits, parameters.mass());
+        }
         velocity = steering.velocity();
         if (parameters.propulsion()) {
             if (tick >= parameters.ignitionTick()) {

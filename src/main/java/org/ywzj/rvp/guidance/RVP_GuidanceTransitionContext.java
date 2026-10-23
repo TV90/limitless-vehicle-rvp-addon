@@ -22,7 +22,8 @@ public record RVP_GuidanceTransitionContext(
         );
     }
 
-    private static Vec3 resolveTarget(RVP_BaseBullet projectile) {
+    /** 切段与交接姿态判定共用目标，优先存活实体的实际瞄准点。 */
+    public static Vec3 resolveTarget(RVP_BaseBullet projectile) {
         Entity entity = projectile.getTargetEntity();
         if (entity != null && entity.isAlive()) {
             // [RVP] §46：段切换判定点与瞄准点同源（最大 OBB 中心）

@@ -16,6 +16,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TrajectorySteeringMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PIPAttackAngleController;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PredictiveInterceptMath;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_TargetMotionState;
+import org.ywzj.rvp.guidance.trajectorymath.util.RVP_PointGuidanceController;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 
 /** New-schema steering math. It never reads legacy steering_data. */
@@ -58,6 +59,12 @@ public final class RVP_GuidanceRuntimeMath {
         if (preset != null && preset.active()
                 && context.active().guidanceType() == RVP_EnumGuidanceType.GPS) {
             return applyPresetBallistic(context, target, targetMotion, preset);
+        }
+        // 主动雷达已进入搜索阶段但没有实体意图时，飞行控制继续使用 GPS 弹道；
+        // 只有真正获得实体意图后才交接到末段跟踪，不因一次扫描失败放弃坐标纠偏。
+        if (usesPresetPointFallback(context.data().getGuidanceData(), context.active(), entity != null)) {
+            return applyPresetBallistic(context, target, targetMotion,
+                    RVP_PresetBallisticProfile.of(context.data().getGuidanceData()));
         }
         boolean trackEnvelopePassed = RVP_GuidanceRuntimeGeometry.passesTrackEnvelope(projectile, target, context.active());
         boolean irGrace = entity != null
@@ -174,6 +181,19 @@ public final class RVP_GuidanceRuntimeMath {
                     context.active().cruiseLevelingFactor(),
                     projectile.consumeGpsCruiseVerticalResetPending()
             );
+        } else if (!isTopAttack && RVP_ProjectileMotion.usesAttackAngle(projectile)
+                && context.data().getGuidanceData().getGuidanceType() == RVP_EnumGuidanceType.GPS
+                && targetMotion.velocity().lengthSqr() <= 1.0E-8
+                && targetMotion.effectiveAcceleration().lengthSqr() <= 1.0E-8) {
+            // 调用固定点控制器；静止实体与相同坐标共享收敛规则，不再取决于是否存在 Entity。
+            RVP_AeroSteeringLimits limits = context.data().getProjectileData().resolveAeroSteeringLimits(
+                    context.data().getProjectileVelocity(), projectile.getY(), factor);
+            var solution = RVP_PointGuidanceController.solve(projectile.position(), current, steeringTarget,
+                    projectile.getAttackAngleState(), limits, RVP_ProjectileMotion.resolvePIPMotorState(projectile),
+                    RVP_ProjectileMotion.resolveAttackAngleMass(projectile));
+            next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, solution);
+            pipAttackApplied = true;
+            branch = "GPS_POINT_INTERCEPT";
         } else if (!isTopAttack && entity != null && canUsePredictiveIntercept(context)) {
             Vec3 pipTarget = loftedTarget != null ? loftedTarget : target;
             RVP_TargetMotionState pipMotion = targetMotion.withPosition(pipTarget);
@@ -255,11 +275,20 @@ public final class RVP_GuidanceRuntimeMath {
         return true;
     }
 
+    /** 主段为预设 GPS、末段允许记忆制导且尚无实体意图时，保留原坐标飞行控制。 */
+    static boolean usesPresetPointFallback(org.ywzj.rvp.weapon.data.RVP_GuidanceData main,
+            RVP_GuidanceActiveConfig active, boolean hasEntityIntent) {
+        return !hasEntityIntent && active.phase() == RVP_GuidancePhase.TERMINAL
+                && active.enableInertialGuidance()
+                && (active.guidanceType() == RVP_EnumGuidanceType.ARH
+                    || active.guidanceType() == RVP_EnumGuidanceType.AIR)
+                && main.getGuidanceType() == RVP_EnumGuidanceType.GPS
+                && RVP_PresetBallisticProfile.of(main).active();
+    }
+
     /**
-     * 弹道导弹（PRESET 三段式）全程制导：按上升/巡航/俯冲段生成转向速度。
-     *
-     * <p>阶段判定无记忆，由几何直接推断（与本体显式 phase 状态机等价）：未到上升段终点
-     * 视为上升，否则按本体俯冲判据决定是否俯冲，两者皆否进入高度闭环巡航。</p>
+     * PRESET 全程制导：点火后按共享曲线生成中段追点，预留转向距离后进入固定点俯冲。
+     * <p>攻角模式把期望速度反算成机头指令，每刻仅执行一次姿态与气动力求解。</p>
      */
     private static boolean applyPresetBallistic(
             RVP_GuidanceRuntimeContext context,
@@ -314,17 +343,20 @@ public final class RVP_GuidanceRuntimeMath {
         RVP_AeroSteeringLimits presetLimits = context.data().getProjectileData()
                 .resolveAeroSteeringLimits(
                         context.data().getProjectileVelocity(), projectile.getY(), factor);
+        boolean diving = shouldBeginPresetDive(
+                projectile.position(), movingTarget, launchPos, current, preset, presetLimits);
         Vec3 next;
-        if (shouldBeginPresetDive(
-                projectile.position(), movingTarget, launchPos, current, preset, presetLimits)) {
+        if (diving) {
             next = steerPresetTerminal(
                     current, projectile.position(), movingTarget, speed, steeringFactor);
         } else {
             // 弹道导弹抛物线制导：上升+中段合一。整条弹道是一条对称抛物线弧，
             // 最高点（apogee）位于弹道水平中段，爬升/下降角按射程自适应保持平缓，
             // 无陡直线爬升、尖顶与平飞段（弹道导弹形态而非巡航导弹形态）。
-            next = steerPresetBallisticArc(
-                    current, projectile.position(), movingTarget, launchPos, preset, speed, steeringFactor);
+            // 调用共享中段追点，以实际速度/气动响应扩展前视窗口。
+            Vec3 desired = RVP_BallisticTrajectoryMath.resolvePresetArcDirection(
+                    projectile.position(), current, movingTarget, preset.at(launchPos), presetLimits);
+            next = steerPursuit(current, desired, speed, steeringFactor);
         }
         if (next == null || next.lengthSqr() <= 1.0E-8) {
             return false;
@@ -333,6 +365,15 @@ public final class RVP_GuidanceRuntimeMath {
         if (RVP_ProjectileMotion.isPreIgnitionAttitudeLocked(projectile)) {
             // 冷发射点火前保留冷发射速度轴，PRESET 路点只用于后续点火后的制导接管。
             next = current;
+        } else if (RVP_ProjectileMotion.usesAttackAngle(projectile)) {
+            // 调用共同机头反解：中段沿抛物线追点，俯冲按剩余交会时间消除横向速度。
+            var motor = RVP_ProjectileMotion.resolvePIPMotorState(projectile);
+            double mass = RVP_ProjectileMotion.resolveAttackAngleMass(projectile);
+            var solution = diving ? RVP_PointGuidanceController.solve(projectile.position(), current,
+                    movingTarget, projectile.getAttackAngleState(), presetLimits, motor, mass)
+                    : RVP_PIPAttackAngleController.solve(current, projectile.getAttackAngleState(), next,
+                            presetLimits, motor, mass).steering();
+            next = RVP_ProjectileMotion.applyAttackAngleSolution(projectile, solution);
         } else {
             next = applyResolvedAeroSteering(
                     projectile, context.data(), current, next, factor, rvpMaxGs);
@@ -367,39 +408,13 @@ public final class RVP_GuidanceRuntimeMath {
         return RVP_BallisticTrajectoryMath.isFinite(predicted) ? predicted : target;
     }
 
-    /**
-     * 终端俯冲段转向：未过顶时正常指向目标；一旦已越过目标或极度接近，
-     * 锁定当前水平方向、全力下压坠落，禁止 pure pursuit 翻转掉头导致的绕圈。
-     *
-     * <p>锁定后导弹不再水平追目标，靠下坠碰撞命中；水平偏差受锁定时刻的
-     * 距离阈值（{@code speed*0.5}）约束，配合近炸/碰撞引信在目标附近引爆。</p>
-     */
-    static Vec3 steerPresetTerminal(
-            Vec3 current,
-            Vec3 position,
-            Vec3 target,
-            double speed,
-            float turningFactor
-    ) {
-        if (target == null || speed <= 1.0E-8) {
-            return current;
-        }
-        Vec3 toTarget = target.subtract(position);
-        double horizontalSqr = toTarget.x * toTarget.x + toTarget.z * toTarget.z;
-        Vec3 velocityHorizontal = new Vec3(current.x, 0, current.z);
-        double velocityHorizontalSqr = velocityHorizontal.lengthSqr();
-        boolean overshoot = horizontalSqr > 1.0E-8 && velocityHorizontalSqr > 1.0E-8
-                && velocityHorizontal.dot(toTarget) < 0.0;
-        boolean veryClose = horizontalSqr <= Math.max(1.0, speed * speed * 0.25);
-        if (overshoot || veryClose) {
-            // 终端锁定：保留当前水平方向分量（禁止 180° 翻转），垂直全力下压。
-            Vec3 desired = velocityHorizontalSqr > 1.0E-8
-                    ? velocityHorizontal.scale(0.25 / Math.sqrt(velocityHorizontalSqr)).add(0, -1, 0)
-                    : new Vec3(0, -1, 0);
-            return blendDirection(current, desired.normalize().scale(speed), speed,
-                    Math.max(turningFactor, 0.5F));
-        }
-        return blendDirection(current, toTarget.normalize().scale(speed), speed, turningFactor);
+    /** 末段方向委托共用三维判据，高空水平过顶继续修正，不锁死朝外漂移。 */
+    static Vec3 steerPresetTerminal(Vec3 current, Vec3 position, Vec3 target,
+            double speed, float turningFactor) {
+        if (target == null || speed <= 1.0E-8) return current;
+        // 调用实体/虚拟共用方向生成器；这里只生成请求，不提前结算气动能力。
+        Vec3 desired = RVP_BallisticTrajectoryMath.resolvePresetTerminalDirection(position, current, target);
+        return blendDirection(current, desired, speed, turningFactor);
     }
 
     /** 计算上升段终点：水平前伸 {@code min(maxAscentLead, 25%×水平距离)}，高度 = 发射点Y + 巡航高度。 */
@@ -438,48 +453,15 @@ public final class RVP_GuidanceRuntimeMath {
             RVP_PresetBallisticProfile preset,
             RVP_AeroSteeringLimits limits
     ) {
-        if (projectilePos == null || target == null || preset == null) {
-            return true;
-        }
-        double dx = projectilePos.x - target.x;
-        double dz = projectilePos.z - target.z;
-        double horizontalDistanceSqr = dx * dx + dz * dz;
-        double verticalDistance = Math.max(0.0, projectilePos.y - target.y);
-        double speed = velocity != null ? velocity.length() : 0.0;
-        double turnRadius;
-        if (limits != null && limits.enabled()) {
-            // 调用本项目共享转弯半径估算，使实体 PRESET 俯冲点随动压减载同步前移。
-            turnRadius = RVP_BallisticTrajectoryMath.resolveTurnRadius(speed, limits);
-        } else {
-            // 气动开关关闭时保留实体 PRESET 原有的 0.05 最小 factor 与 8～80 格钳制。
-            double effectiveFactor = Mth.clamp(
-                    limits == null ? 0.5F : limits.turningFactor(), 0.05F, 1.0F);
-            turnRadius = Mth.clamp(speed / effectiveFactor, 8.0, 80.0);
-        }
-        double diveDistance = Math.max(preset.diveRadius(), Math.max(
-                verticalDistance * preset.diveAltitudeFactor(),
-                turnRadius * preset.diveLeadFactor()));
-        if (horizontalDistanceSqr <= diveDistance * diveDistance) {
-            return true;
-        }
-        if (launch == null) {
-            return false;
-        }
-        Vec3 route = new Vec3(target.x - launch.x, 0, target.z - launch.z);
-        Vec3 remaining = new Vec3(target.x - projectilePos.x, 0, target.z - projectilePos.z);
-        return remaining.dot(route) <= 0.0;
+        if (projectilePos == null || target == null || preset == null) return true;
+        // 调用统一俯冲门，消除实体与虚拟路径的提前量差异。
+        return RVP_BallisticTrajectoryMath.shouldBeginPresetDive(projectilePos,
+                velocity == null ? Vec3.ZERO : velocity, target, preset.at(launch), limits);
     }
 
     /**
-     * 弹道导弹抛物线制导（上升+中段合一）：追“目标方向前方 lookAhead + 抛物线高度”的点。
-     *
-     * <p>弹道为目标高度弦线加中段抬升：高度 = {@code lerp(launch.y, target.y, p)
-     * + apogee×4p(1-p)}，p 为水平进度（0 发射点 → 1 目标），最高点在弹道水平中段。
-     * apogee 自适应为
-     * {@code min(配置巡航高度, 水平射程×0.50)}（2026-09-15 应用户要求从 0.35 上调——
-     * 抬高弹道顶点，爬升/下降角上限约 45°；当前载具包内仅 9M723 使用 PRESET 弹道），
-     * 仍保留射程比例上限，避免短射程下形成过陡尖弧。取代旧的“追 ascentPos 陡直线
-     * 爬升 → 尖顶 → 高度闭环平飞”巡航式三段制导。</p>
+     * 不带攻角响应参数的兼容入口：委托共享曲线生成器沿起终点高度连线叠加中段抬升。
+     * <p>真实运行入口直接传入气动限制，以便按速度和响应时间调整前视及短射程抬升。</p>
      */
     static Vec3 steerPresetBallisticArc(
             Vec3 current,
@@ -490,73 +472,11 @@ public final class RVP_GuidanceRuntimeMath {
             double speed,
             float turningFactor
     ) {
-        if (target == null || preset == null) {
-            return steerPursuit(current, target == null ? Vec3.ZERO : target, speed, turningFactor);
-        }
-        Vec3 toTargetH = new Vec3(target.x - position.x, 0, target.z - position.z);
-        double hDist = toTargetH.length();
-        if (hDist <= 1.0E-8) {
-            return steerPursuit(current, target.subtract(position), speed, turningFactor);
-        }
-        Vec3 forwardH = toTargetH.scale(1.0 / hDist);
-        double totalH = hDist;
-        if (launch != null) {
-            double dx = target.x - launch.x;
-            double dz = target.z - launch.z;
-            double totalSqr = dx * dx + dz * dz;
-            if (totalSqr > 1.0E-8) {
-                totalH = Math.sqrt(totalSqr);
-            }
-        }
-        double p = Mth.clamp(1.0 - hDist / totalH, 0.0, 1.0);
-        // 自适应弹道顶点：过高 apogee 在短射程下会形成陡尖弧；0.50 = 射程的 50% 上限（原 0.35，抬高弹道）
-        double apogee = Math.min(preset.cruiseAltitude(), totalH * 0.50);
-        // 前方 lookAhead：末端（hDist→0）自动收敛到目标，追点法弹道圆润
-        double lookAhead = Math.min(preset.maxAscentLead(), hDist * 0.3);
-        // 前视点的水平坐标已经向前推进，垂直坐标同步采样前视进度，
-        // 避免 YJ-20 冷发射结束后追到“前方同高度”的水平点。（并行会话 20b76ac5：
-        // 追点高度按前视点自身进度采样，修高度/水平采样错位）
-        RVP_BallisticTrajectoryMath.PresetLookAhead lookAheadPlan = launch == null
-                ? new RVP_BallisticTrajectoryMath.PresetLookAhead(
-                        RVP_BallisticTrajectoryMath.resolvePresetLookAheadProgress(
-                                hDist, totalH, lookAhead),
-                        lookAhead,
-                        target.y,
-                        false)
-                : RVP_BallisticTrajectoryMath.resolvePresetHeightLookAhead(
-                        position.y,
-                        launch.y,
-                        target.y,
-                        p,
-                        totalH,
-                        lookAhead,
-                        apogee);
-        // 高度超前补偿：当前弹体高于前视点时，保持原水平前视距离，
-        // 仅按原抛物线在当前前视窗口内应有的爬升量抬高追点，避免追低点导致水平压平；
-        // 补偿只改变追点，不绕过现有攻角/气动转向限制。
-        double lookAheadDistance = lookAheadPlan.lookAhead();
-        double targetY = lookAheadPlan.targetY();
-        Vec3 targetPoint = new Vec3(
-                position.x + forwardH.x * lookAheadDistance,
-                targetY,
-                position.z + forwardH.z * lookAheadDistance);
-        // 弹道中段战术机动：水平横向正弦蛇形规避摆动（如 Iskander 末端规避）。
-        // 仅中段（p 0.15~0.85）生效、两端渐入渐出，相位基于水平进度 p（与虚拟端一致），
-        // 不影响发射初期与俯冲末段，横向偏移 ≤ 幅度，不导致脱靶。
-        float maneuverAmp = preset.tacticalManeuverAmplitude();
-        if (maneuverAmp > 0f) {
-            double fadeIn = Mth.clamp((p - 0.15) / 0.05, 0.0, 1.0);
-            double fadeOut = Mth.clamp((0.85 - p) / 0.05, 0.0, 1.0);
-            double weight = fadeIn * fadeOut;
-            if (weight > 1.0E-4) {
-                double phase = Math.PI * 2.0 * p * 5.0; // 每 0.2 进度一个完整周期
-                // 目标方向水平法向（发射→目标连线垂直方向），左右交替
-                Vec3 lateral = new Vec3(-forwardH.z, 0, forwardH.x);
-                double offset = maneuverAmp * Math.sin(phase) * weight;
-                targetPoint = targetPoint.add(lateral.scale(offset));
-            }
-        }
-        return steerPursuit(current, targetPoint.subtract(position), speed, turningFactor);
+        if (target == null || preset == null) return current;
+        // 调用统一中段方向生成器；无攻角便利入口保持旧前视参数，正式实体传实际气动限制。
+        Vec3 desired = RVP_BallisticTrajectoryMath.resolvePresetArcDirection(
+                position, current, target, preset.at(launch), null);
+        return steerPursuit(current, desired, speed, turningFactor);
     }
 
     /**

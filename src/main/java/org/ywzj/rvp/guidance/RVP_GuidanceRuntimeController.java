@@ -27,19 +27,8 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
         RVP_GuidanceData guidance = data.getGuidanceData();
-        // PRESET 弹在近距离发射时不能立即切到终端 ARH：冷发射仍是纯竖直速度，
-        // 终端 ARH 的角度门会拒绝从竖直轴直接转向 GPS 点，造成“直飞冲天”。
-        // 调用本项目制导阶段状态机时，先保留主段直到冷发射/点火窗口结束。
-        if (!shouldDeferPresetTerminalTransition(
-                guidance,
-                projectile.getFlightTickCount(),
-                projectile.getColdLaunchTimeTick(),
-                data.getResolvedIgnitionDelayTick())) {
-            projectile.getGuidancePhaseState().update(
-                    guidance.getTerminalGuidance(),
-                    RVP_GuidanceTransitionContext.from(projectile)
-            );
-        }
+        // 调用统一阶段入口；导弹在管理导引头前也调用同一入口，重复调用不会越过保护门。
+        updatePhase(projectile);
         RVP_GuidanceActiveConfig active = RVP_GuidanceModelResolver.resolveActive(
                 guidance,
                 projectile.getGuidancePhaseState().phase()
@@ -69,6 +58,46 @@ public final class RVP_GuidanceRuntimeController {
             return false;
         }
         return RVP_GuidanceRuntimeMath.applyIntent(context, intent);
+    }
+
+    /** 统一实体与通用制导的阶段更新，避免实体先切段绕过冷发射保护。 */
+    public static void updatePhase(RVP_BaseBullet projectile) {
+        // 调用配置出口，无配置或被强制干扰时不推进阶段。
+        RVP_WeaponData data = projectile.getRvpData();
+        if (data == null || projectile.dircmJammed) return;
+        RVP_GuidanceData guidance = data.getGuidanceData();
+        if (guidance.getTerminalGuidance() == null || projectile.getGuidancePhaseState().isTerminal()) return;
+        if (guidance.getGuidanceType() != RVP_EnumGuidanceType.GPS
+                || !RVP_PresetBallisticProfile.of(guidance).active()) {
+            // 非预设弹只调用原状态机，不增加世界高度查询与姿态门。
+            projectile.getGuidancePhaseState().update(guidance.getTerminalGuidance(),
+                    RVP_GuidanceTransitionContext.from(projectile));
+            return;
+        }
+        // 调用共同目标解析器，切段距离和可接管方向必须对着同一个目标。
+        Vec3 target = RVP_GuidanceTransitionContext.resolveTarget(projectile);
+        RVP_GuidanceActiveConfig terminal = RVP_GuidanceModelResolver.resolveActive(
+                guidance, RVP_GuidancePhase.TERMINAL);
+        // 预设弹先完成上升转弯，进入下降侧后才交给末段雷达，避免近距离发射刚转头就切走。
+        boolean canSteer = target != null && projectile.getDeltaMovement().y <= 0.0
+                && RVP_GuidanceRuntimeGeometry.passesTrackLimits(projectile, target, terminal);
+        // 调用可单测阶段入口；计时、初始化、姿态就绪必须一起通过。
+        updatePhase(projectile.getGuidancePhaseState(), guidance,
+                RVP_GuidanceTransitionContext.from(projectile), projectile.getColdLaunchTimeTick(),
+                data.getResolvedIgnitionDelayTick(), projectile.hasPresetProfileInitialized(), canSteer);
+    }
+
+    /** 纯阶段编排供边界回归使用；非 PRESET 保留原有切换条件。 */
+    static boolean updatePhase(RVP_GuidancePhaseState state, RVP_GuidanceData guidance,
+            RVP_GuidanceTransitionContext context, int coldLaunchTick, int ignitionTick,
+            boolean presetInitialized, boolean terminalCanSteer) {
+        // 调用 PRESET 参数与冷发射门；未初始化或姿态不可接管时继续主段转弯。
+        boolean preset = guidance.getGuidanceType() == RVP_EnumGuidanceType.GPS
+                && RVP_PresetBallisticProfile.of(guidance).active();
+        if (preset && (shouldDeferPresetTerminalTransition(guidance, context.tick(),
+                coldLaunchTick, ignitionTick) || !presetInitialized || !terminalCanSteer)) return false;
+        // 调用原状态机保留单向切换语义，不倒退已生效的阶段。
+        return state.update(guidance.getTerminalGuidance(), context);
     }
 
     /**

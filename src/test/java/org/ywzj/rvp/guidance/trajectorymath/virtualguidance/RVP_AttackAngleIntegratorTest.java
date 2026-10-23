@@ -130,17 +130,18 @@ class RVP_AttackAngleIntegratorTest {
         }
     }
 
-    /** PRESET 与 GPS 均直接把原始方向交给攻角模型，末段仍受攻角锥控制。 */
+    /** PRESET 末段使用实体同款机头反解，虚拟入口不能再次推进姿态。 */
     @Test
     void presetDirectionAlsoUsesAttackAngleModel() {
         var parameters = parameters(20, 0, false, false, 0, 10.0);
         var preset = new RVP_VirtualPresetGuidance(Vec3.ZERO, 750, 25, 24, 24, 0.3, 1.5, 0.002, 0.01, 0.5, 0);
         var target = new Vec3(0, 0, 1);
-        // 调用本项目 PRESET 原始方向生成器与模型，核验虚拟入口不重复裁决。
-        var desired = RVP_BallisticTrajectoryMath.resolvePresetBallisticDirection(state().position(), state().velocity(),
-                target, preset, parameters.aeroSteeringLimits());
-        var expected = RVP_AttackAngleModel.solve(state().velocity(), new RVP_AttackAngleState(0, 0, 0, 0),
-                desired, parameters.aeroSteeringLimits(), parameters.mass());
+        // 调用实体采用的固定点控制器，核验虚拟路径没有重复施加转向。
+        var expected = org.ywzj.rvp.guidance.trajectorymath.util.RVP_PointGuidanceController.solve(
+                state().position(), state().velocity(), target, new RVP_AttackAngleState(0, 0, 0, 0),
+                parameters.aeroSteeringLimits(),
+                new org.ywzj.rvp.guidance.trajectorymath.util.RVP_PropulsionMath.MotorState(false, 0, parameters.mass()),
+                parameters.mass());
         var actual = integrator.step(state(), new RVP_VirtualGuidanceInput(target, preset), parameters);
         assertEquals(expected.velocity(), actual.state().velocity());
         assertTrue(actual.state().xRot() > 0);

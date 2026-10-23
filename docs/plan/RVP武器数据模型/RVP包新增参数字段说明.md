@@ -1477,24 +1477,24 @@ SACLOS 采用“射手瞄准线 + 半自动修正”模型，可选启用弹性�
 
 弹道导弹（`guidance_type: GPS`）可启用 **PRESET 抛物线弹道**。**总开关为 `preset_cruise_altitude`**：`> 0` 即启用，`0`（默认）禁用。以下字段均写在 `guidance_data` 顶层。
 
-**弹道形态（当前实现）**：对称抛物线——上升+中段合一，无三段硬切换、无平飞段。目标高度 = `发射点Y + base + (apogee − base)·4p(1−p)`，p 为水平进度（0 发射点 → 1 目标），顶点 apogee 在弹道水平中段，base = min(40, apogee×0.3)。实体端与虚拟中段（`RVP_BallisticTrajectoryMath`）共用同一公式与蛇形相位；已知差异：apogee 的射程比例上限实体端 0.50、虚拟端 0.35。远程弹建议搭配 `virtual_midcourse_data`（`FIXED_SNAPSHOT`）走虚拟中段，并配 `rotate_to_motion: true`、负 `gravity`、`altitude_drag_factor` 高空低值、`rvp_maxg`（同时影响俯冲启动距离与转向）、`max_guidance_angle` ≥ 90。
+**弹道形态（2026-10-23）**：实体与虚拟数学路径共用“起终点高度连线 + 中段抬升”的曲线，基础高度为 `lerp(点火后起点Y, 目标Y, p) + apogee×4p(1−p)`，p 为水平进度。前视点还执行高度超前补偿；进入俯冲后直接收敛到三维目标点。攻角模式（机头与实际速度方向分开计算）按转弯半径和响应路程调整短射程抬升、前视与俯冲时机，不突破原气动限制。带 `terminal_guidance` 的武器目前不具备虚拟中段资格，不能仅添加 `virtual_midcourse_data` 强行启用。
 
 | 字段 | 说明 | 类型 | 默认值 |
 | --- | --- | --- | --- |
-| `preset_cruise_altitude` | 弹道顶点高度基准（相对发射点 Y，格）。**`> 0` 启用 PRESET 抛物线弹道**，`0` 禁用；实际顶点 = min(本值, 水平射程 × 上限)（实体端 0.50 / 虚拟端 0.35）。 | `float` | `0` |
-| `preset_max_ascent_lead` | 中段追点前视距离上限（格）：追点 = 当前位置沿目标方向前看 `min(值, 30% × 剩余水平距离)`，高度取抛物线高度。 | `float` | `64` |
+| `preset_cruise_altitude` | 中段相对起终点高度连线的抬升上限（格）。**`> 0` 启用 PRESET**，`0` 禁用；基础抬升为 min(本值, 水平射程×0.5)。攻角模式把后者提高到至少“两倍转弯半径 + 响应路程”，仍受本值约束；实际飞行可能因惯性超出曲线高度。 | `float` | `0` |
+| `preset_max_ascent_lead` | 中段前视距离基准（格）：攻角模式先取 max(本值, 响应路程)，再取 min(该结果, 剩余水平距离×0.3)，随后执行高度超前补偿。 | `float` | `64` |
 | `preset_ascent_radius` | 上升段完成判定半径（格）。**当前抛物线实现未消费**（旧巡航式三段制遗留字段，随配置透传虚拟端）。 | `float` | `24` |
 | `preset_dive_radius` | 俯冲段最小启动水平距离（格）。 | `float` | `24` |
 | `preset_dive_altitude_factor` | 俯冲距离 = 高度差 × 该因子。 | `float` | `0.75` |
-| `preset_dive_lead_factor` | 俯冲距离 = 近似转弯半径 × 该因子（配 `rvp_maxg` 时半径 = speed²/(maxG×G)，否则 speed/turning_factor；均钳 8~80 格）。 | `float` | `1.5` |
+| `preset_dive_lead_factor` | 转弯提前量系数：俯冲候选距离 = 近似转弯半径×本值；攻角模式另加响应路程。半径沿用共享气动限制计算。 | `float` | `1.5` |
 | `preset_cruise_altitude_gain` | 巡航段高度闭环 P 增益。**当前抛物线实现未消费**（旧巡航闭环遗留字段）。 | `float` | `0.002` |
 | `preset_cruise_vertical_damping` | 巡航段高度闭环 D 阻尼。**当前抛物线实现未消费**（遗留字段）。 | `float` | `0.05` |
 | `preset_cruise_max_vertical_component` | 垂直分量占速率的比例上限（0~1）。**当前抛物线实现未消费**（遗留字段）。 | `float` | `0.5` |
-| `preset_tactical_maneuver_amplitude` | 弹道中段战术机动（横向蛇形规避摆动）幅度（格）；`0` = 关闭。 | `float` | `0` |
+| `preset_tactical_maneuver_amplitude` | 中段横向蛇形摆动幅度（格）；`0` 关闭。攻角模式按转弯及响应路程在俯冲前提前淡出，短射程可能全程被抑制，以免横摆延续到落点。 | `float` | `0` |
 
 > 除 `preset_cruise_altitude` 外，以上参数**仅在 PRESET 启用**（巡航高度 > 0）时生效。全部字段取负值时按 `0` 处理（getter 统一 `Math.max(x, 0)`）。
-> **俯冲启动**：距目标水平距离 ≤ max(`preset_dive_radius`, 垂直高度差×`preset_dive_altitude_factor`, 转弯半径×`preset_dive_lead_factor`)，或已越过目标；末端越过/极近时锁定水平方向全力下压，禁止翻转绕圈。现役范例：`9k720_9m723.json`（顶点 550 / 前视 25 / `preset_dive_altitude_factor` 0.3）。
-> **冷发射交接**：GPS PRESET 载具若配置 `cold_launch_time_tick >= ignition_delay_tick`，制导在冷发射期间已经产生有效速度时，运动层会保留该速度并平滑接管；窗口内短暂失去制导时沿用上一有效接管方向；无有效制导结果时仍按 `cold_launch_velocity` 弹出。带终端段的 PRESET 弹在窗口结束前不会提前切终端 ARH。若 `cold_launch_time_tick = 0`，即使配置了正数 `ignition_delay_tick`，也只是普通延迟点火，不进入冷发射交接规则。该规则适用于参数关系，不按武器 ID 特判。
+> **俯冲启动**：距目标水平距离 ≤ max(`preset_dive_radius`, 非负高度差×`preset_dive_altitude_factor`, 转弯半径×`preset_dive_lead_factor` + 响应路程)，或已水平越过目标。攻角模式上升时先检查转向高度是否足够，避免短射程垂发立即压向地面。俯冲继续修正三维目标偏差，仅在已越过且三维距离不超过一刻路程时保持原速度方向，不再把“高空水平接近”误判为已经命中。
+> **冷发射与雷达交接**：PRESET 点火前不接管转向。带末段的 GPS PRESET 统一等待冷发射/点火窗口结束、弹道初始化、进入下降且目标通过末段角度限制，再检查配置的切段条件。进入 ARH/AIR 后，启用了惯性回退且尚无实体制导意图时保留 PRESET 坐标控制；取得实体目标后按既有实体路径处理。普通雷达自由搜索策略保持原有规则。
 
 #### 示例
 

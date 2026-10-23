@@ -88,11 +88,11 @@ public class RVP_GuidanceData {
     @SerializedName("cruise_leveling_factor")
     private float cruiseLevelingFactor = 0.15f;
 
-    /** 弹道导弹巡航高度（相对发射点Y）；{@code > 0} 启用 PRESET 三段式弹道，默认 0 禁用。 */
+    /** GPS PRESET 中段相对起终点高度连线的抬升上限，单位格；默认 0 禁用。启用攻角时短射程会预留转弯高度，但不超过本值。 */
     @SerializedName("preset_cruise_altitude")
     private float presetCruiseAltitude = 0f;
 
-    /** 上升段前伸量上限，实际取 {@code min(值, 25%×水平距离)}。 */
+    /** PRESET 前视距离基准，单位格，默认 64；攻角模式至少覆盖转向响应路程，再受剩余水平距离的 30% 约束。 */
     @SerializedName("preset_max_ascent_lead")
     private float presetMaxAscentLead = 64f;
 
@@ -108,7 +108,7 @@ public class RVP_GuidanceData {
     @SerializedName("preset_dive_altitude_factor")
     private float presetDiveAltitudeFactor = 0.75f;
 
-    /** 俯冲距离 = 近似转弯半径 × 因子。 */
+    /** PRESET 转弯提前量系数，无单位，默认 1.5；俯冲候选距离为近似转弯半径乘本值，攻角模式另加响应路程。 */
     @SerializedName("preset_dive_lead_factor")
     private float presetDiveLeadFactor = 1.5f;
 
@@ -124,7 +124,7 @@ public class RVP_GuidanceData {
     @SerializedName("preset_cruise_max_vertical_component")
     private float presetCruiseMaxVerticalComponent = 0.5f;
 
-    /** 弹道中段战术机动（横向蛇形规避摆动）幅度，格；0 = 关闭。 */
+    /** PRESET 中段横向蛇形摆动幅度，单位格，默认 0 关闭；攻角模式会在接近俯冲前按转弯及响应路程提前淡出。 */
     @SerializedName("preset_tactical_maneuver_amplitude")
     private float presetTacticalManeuverAmplitude = 0f;
 

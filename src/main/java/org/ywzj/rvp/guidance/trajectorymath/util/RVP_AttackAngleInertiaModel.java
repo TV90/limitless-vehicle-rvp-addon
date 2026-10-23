@@ -42,21 +42,22 @@ public final class RVP_AttackAngleInertiaModel {
         var state = input.sanitized();
         Vec3 axis = velocity.normalize();
         Vec3 command = constrain(axis, desired, limits.attackAngleLimitDeg());
-        var target = RVP_AttackAngleState.fromDirection(command, state.yawDeg());
+        // 调用最近等价角表示，跨竖直方向的几度修正不能变成 180° 偏航。
+        var target = state.nearestRotation(command);
         double authority = response(velocity.length(), limits);
         double gain = rateResponse(mass);
         double pitchError = target.pitchDeg() - state.pitchDeg();
         double yawError = Mth.wrapDegrees(target.yawDeg() - state.yawDeg());
         double pitchRate = advanceRate(state.pitchRateDeg(), pitchError, authority, gain);
         double yawRate = advanceRate(state.yawRateDeg(), yawError, authority, gain);
-        double pitch = Mth.clamp(state.pitchDeg() + pitchRate, -90.0, 90.0);
+        double pitch = state.pitchDeg() + pitchRate;
         double yaw = Mth.wrapDegrees(state.yawDeg() + yawRate);
-        if (pitch != state.pitchDeg() + pitchRate) pitchRate = 0.0;
         // 恰好到达目标或越过目标时耗散角速度；反向指令下未到目标前仍保留惯性。
         if (pitchError != 0.0 && pitchRate == pitchError) pitchRate = 0.0;
         if (yawError != 0.0 && yawRate == yawError) yawRate = 0.0;
+        // 调用极点折回，保持存储角合法；仅换坐标表示，不跳转机头方向或增加转向权限。
         var next = new RVP_AttackAngleState(pitch, yaw,
-                pitchRate, yawRate);
+                pitchRate, yawRate).foldPole();
         // 调用共用夹角工具检测饱和，再移除朝锥外的角速度分量，保留边界切向响应。
         if (RVP_BallisticTrajectoryMath.angleBetween(axis, next.direction())
                 > Math.toRadians(limits.attackAngleLimitDeg()) + 1.0E-10) {

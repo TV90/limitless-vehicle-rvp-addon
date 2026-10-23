@@ -13,6 +13,34 @@ import net.minecraft.world.phys.Vec3;
  */
 public record RVP_AttackAngleState(double pitchDeg, double yawDeg,
                                   double pitchRateDeg, double yawRateDeg) {
+    /**
+     * 为连续执行器选择最近的等价欧拉角表示。跨过竖直方向时，继续俯仰几度与偏航
+     * 翻转 180° 表示同一方向；选择前者避免高空俯冲把小修正误当作大掉头。
+     * 返回的临时 pitch 可超过 ±90°，只能用于计算角度误差，持久化前必须折回。
+     */
+    public RVP_AttackAngleState nearestRotation(Vec3 desired) {
+        // 调用方向解码获得标准角，再比较等价的跨极点角表示。
+        var canonical = fromDirection(desired, yawDeg);
+        double pitchError = canonical.pitchDeg - pitchDeg;
+        double yawError = Mth.wrapDegrees(canonical.yawDeg - yawDeg);
+        double alternatePitch = canonical.pitchDeg >= 0 ? 180.0 - canonical.pitchDeg : -180.0 - canonical.pitchDeg;
+        double alternateYaw = Mth.wrapDegrees(canonical.yawDeg + 180.0);
+        double alternatePitchError = alternatePitch - pitchDeg;
+        double alternateYawError = Mth.wrapDegrees(alternateYaw - yawDeg);
+        return alternatePitchError * alternatePitchError + alternateYawError * alternateYawError
+                < pitchError * pitchError + yawError * yawError
+                ? new RVP_AttackAngleState(alternatePitch, alternateYaw, 0, 0) : canonical;
+    }
+
+    /** 把一刻连续俯仰跨极点的状态折回标准角度；翻转俯仰速率以保持真实旋转连续。 */
+    public RVP_AttackAngleState foldPole() {
+        if (pitchDeg > 90.0) return new RVP_AttackAngleState(180.0 - pitchDeg,
+                Mth.wrapDegrees(yawDeg + 180.0), -pitchRateDeg, yawRateDeg);
+        if (pitchDeg < -90.0) return new RVP_AttackAngleState(-180.0 - pitchDeg,
+                Mth.wrapDegrees(yawDeg + 180.0), -pitchRateDeg, yawRateDeg);
+        return this;
+    }
+
     /** 从方向初始化静止执行器；竖直方向保留指定偏航，避免 atan2(0,0) 随机翻面。 */
     public static RVP_AttackAngleState fromDirection(Vec3 direction, double fallbackYaw) {
         double horizontal = Math.hypot(direction.x, direction.z);

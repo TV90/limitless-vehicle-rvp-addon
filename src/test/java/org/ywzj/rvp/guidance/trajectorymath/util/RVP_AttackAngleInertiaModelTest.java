@@ -91,6 +91,29 @@ class RVP_AttackAngleInertiaModelTest {
         assertEquals(0, vertical.yawRateDeg(), 1e-8);
     }
 
+    /** 跨正下/正上方的微小修正应连续俯仰，不能先水平旋转 180°。 */
+    @Test
+    void crossesVerticalPoleWithContinuousPhysicalRotation() {
+        for (double sign : new double[]{-1, 1}) {
+            var state = new RVP_AttackAngleState(sign * 89, 40, sign * 2, 0);
+            Vec3 velocity = state.direction().scale(10);
+            Vec3 desired = new RVP_AttackAngleState(sign * 89, -140, 0, 0).direction();
+            // 调用前向执行器推进一刻，物理方向只能转很小的角度。
+            var next = RVP_AttackAngleInertiaModel.step(velocity, state, desired, LIMITS, 100);
+            assertTrue(Math.abs(next.pitchDeg()) <= 90);
+            assertEquals(0, next.yawRateDeg(), 1e-8);
+            assertTrue(RVP_BallisticTrajectoryMath.angleBetween(next.direction(), desired)
+                    < RVP_BallisticTrajectoryMath.angleBetween(state.direction(), desired));
+            assertTrue(RVP_BallisticTrajectoryMath.angleBetween(next.direction(), state.direction()) < Math.toRadians(3));
+            // 调用等价坐标折回，确认只换表示，不改变方向，也不丢失俯仰角速度。
+            var unfolded = new RVP_AttackAngleState(sign * 92, 40, sign * 2, 3);
+            var folded = unfolded.foldPole();
+            assertTrue(folded.direction().distanceTo(unfolded.direction()) < 1e-12);
+            assertEquals(-sign * 2, folded.pitchRateDeg());
+            assertEquals(3, folded.yawRateDeg());
+        }
+    }
+
     /** 竖直冷发射首次收到水平指令时，必须沿指令水平投影离开极点，不能继承任意前向偏航。 */
     @Test
     void reanchorsVerticalPoleToDesiredHorizontalPlane() {

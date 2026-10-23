@@ -336,43 +336,58 @@ public final class RVP_BallisticTrajectoryMath {
                 || preset.launchPosition() == null) {
             return velocity;
         }
-        // 通过通用只读参数契约取得纯几何计算所需的冻结值，不依赖虚拟飞行业务类型。
-        Vec3 launch = preset.launchPosition();
+        // 调用共用俯冲门与方向生成器，实体和虚拟态不再维护两份过顶逻辑。
+        if (shouldBeginPresetDive(position, velocity, target, preset, limits)) {
+            return resolvePresetTerminalDirection(position, velocity, target);
+        }
+        return resolvePresetArcDirection(position, velocity, target, preset, limits);
+    }
 
-        // 调用本项目气动转弯半径估算，使 PRESET 俯冲点响应当前动压权限。
+    /** 三维接近时保留碰撞方向；高空水平过顶继续纠偏，禁止人为加入朝外水平速度。 */
+    public static Vec3 resolvePresetTerminalDirection(Vec3 position, Vec3 velocity, Vec3 target) {
+        Vec3 delta = target.subtract(position);
+        if (delta.lengthSqr() <= 1.0E-12
+                || (delta.dot(velocity) < 0.0 && delta.lengthSqr() <= velocity.lengthSqr())) {
+            return velocity;
+        }
+        return delta;
+    }
+
+    /** 俯冲提前量包含转弯半径与攻角执行器响应路程，不把理想瞬时满舵当作已达姿态。 */
+    public static boolean shouldBeginPresetDive(Vec3 position, Vec3 velocity, Vec3 target,
+            RVP_BallisticTrajectoryProfile preset, RVP_AeroSteeringLimits limits) {
+        if (target == null || preset == null) return true;
+        double speed = velocity.length();
+        // 调用共同半径与响应估计，低动压、高速状态提前开始末段修正。
         double turnRadius = resolveTurnRadius(speed, limits);
+        double responseDistance = speed * resolvePresetResponseTicks(speed, limits);
+        Vec3 launch = preset.launchPosition();
+        if (launch != null && limits != null && limits.attackAngleEnabled() && velocity.y > 0.0) {
+            // 短射程垂发不能因“水平已很近”立刻向地面压头；先留出完成转向的高度。
+            // 高度预算来自实际转弯半径/响应路程，并受配置最高抬升限制。
+            double clearance = Math.min(preset.cruiseAltitude(), turnRadius * 2.0 + responseDistance);
+            if (position.y < Math.max(launch.y, target.y) + clearance) return false;
+        }
         double diveDistance = Math.max(preset.diveRadius(), Math.max(
                 Math.max(0.0, position.y - target.y) * preset.diveAltitudeFactor(),
-                turnRadius * preset.diveLeadFactor()));
-        double dx = position.x - target.x;
-        double dz = position.z - target.z;
-        boolean diving = dx * dx + dz * dz <= diveDistance * diveDistance;
-        if (!diving) {
-            Vec3 route = new Vec3(target.x - launch.x, 0.0, target.z - launch.z);
-            Vec3 remaining = new Vec3(target.x - position.x, 0.0, target.z - position.z);
-            diving = remaining.dot(route) <= 0.0;
-        }
+                turnRadius * preset.diveLeadFactor() + responseDistance));
+        Vec3 remaining = target.subtract(position).multiply(1, 0, 1);
+        if (remaining.lengthSqr() <= diveDistance * diveDistance) return true;
+        return launch != null && remaining.dot(target.subtract(launch).multiply(1, 0, 1)) <= 0.0;
+    }
 
-        if (diving) {
-            Vec3 toTarget = target.subtract(position);
-            double horizontalSqr = toTarget.x * toTarget.x + toTarget.z * toTarget.z;
-            Vec3 velocityHorizontal = new Vec3(velocity.x, 0.0, velocity.z);
-            double velocityHorizontalSqr = velocityHorizontal.lengthSqr();
-            boolean overshoot = horizontalSqr > 1.0E-8 && velocityHorizontalSqr > 1.0E-8
-                    && velocityHorizontal.dot(toTarget) < 0.0;
-            boolean veryClose = horizontalSqr <= Math.max(1.0, speed * speed * 0.25);
-            Vec3 desired;
-            if (overshoot || veryClose) {
-                desired = velocityHorizontalSqr > 1.0E-8
-                        ? velocityHorizontal.scale(0.25 / Math.sqrt(velocityHorizontalSqr))
-                                .add(0.0, -1.0, 0.0)
-                        : new Vec3(0.0, -1.0, 0.0);
-            } else {
-                desired = toTarget;
-            }
-            return desired;
-        }
+    /** 攻角模式预留一阶响应时间及最大惯量松弛时间；关闭攻角时保持原前视距离。 */
+    public static double resolvePresetResponseTicks(double speed, RVP_AeroSteeringLimits limits) {
+        if (limits == null || !limits.attackAngleEnabled()) return 0.0;
+        // 调用真实执行器响应公式；有限上限防止低动压时追点跳过整条弹道。
+        double response = RVP_AttackAngleInertiaModel.response(speed, limits);
+        return Mth.clamp(1.0 / Math.max(response, 0.05) + 3.0, 3.0, 23.0);
+    }
 
+    /** 中段统一追点：前视距离至少覆盖执行器响应路程，末端仍被剩余距离约束。 */
+    public static Vec3 resolvePresetArcDirection(Vec3 position, Vec3 velocity, Vec3 target,
+            RVP_BallisticTrajectoryProfile preset, RVP_AeroSteeringLimits limits) {
+        Vec3 launch = preset.launchPosition();
         Vec3 toTargetHorizontal = new Vec3(
                 target.x - position.x, 0.0, target.z - position.z);
         double horizontalDistance = toTargetHorizontal.length();
@@ -382,8 +397,8 @@ public final class RVP_BallisticTrajectoryMath {
 
         Vec3 forwardHorizontal = toTargetHorizontal.normalize();
         double totalHorizontalDistance = horizontalDistance;
-        double totalDx = target.x - launch.x;
-        double totalDz = target.z - launch.z;
+        double totalDx = target.x - (launch == null ? position.x : launch.x);
+        double totalDz = target.z - (launch == null ? position.z : launch.z);
         double totalDistanceSqr = totalDx * totalDx + totalDz * totalDz;
         if (totalDistanceSqr > 1.0E-8) {
             totalHorizontalDistance = Math.sqrt(totalDistanceSqr);
@@ -391,13 +406,18 @@ public final class RVP_BallisticTrajectoryMath {
         double progress = Mth.clamp(
                 1.0 - horizontalDistance / totalHorizontalDistance, 0.0, 1.0);
         // 虚拟端与实体端使用同一条“目标高度弦线 + 中段抬升”曲线，避免交接时顶点高度不一致。
-        double apogee = Math.min(preset.cruiseAltitude(), totalHorizontalDistance * 0.50);
-        double lookAhead = Math.min(preset.maxAscentLead(), horizontalDistance * 0.3);
+        double responseDistance = velocity.length() * resolvePresetResponseTicks(velocity.length(), limits);
+        double turnRadius = limits == null ? 0.0 : resolveTurnRadius(velocity.length(), limits);
+        // 攻角模式下短射程也给转弯留出高度；仍不超过 JSON 设定的顶点抬升上限。
+        double clearance = limits != null && limits.attackAngleEnabled() ? turnRadius * 2.0 + responseDistance : 0.0;
+        double apogee = Math.min(preset.cruiseAltitude(), Math.max(totalHorizontalDistance * 0.50, clearance));
+        double lookAhead = Math.min(Math.max(preset.maxAscentLead(),
+                velocity.length() * resolvePresetResponseTicks(velocity.length(), limits)), horizontalDistance * 0.3);
         // 前视点的水平坐标已经向目标推进，垂直坐标也必须采样同一个前视进度；
         // 不能继续使用当前位置 progress，否则冷发射结束后会追到同高度的水平点。
         PresetLookAhead lookAheadPlan = resolvePresetHeightLookAhead(
                 position.y,
-                launch.y,
+                launch == null ? position.y : launch.y,
                 target.y,
                 progress,
                 totalHorizontalDistance,
@@ -416,6 +436,12 @@ public final class RVP_BallisticTrajectoryMath {
             double fadeIn = Mth.clamp((progress - 0.15) / 0.05, 0.0, 1.0);
             double fadeOut = Mth.clamp((0.85 - progress) / 0.05, 0.0, 1.0);
             double weight = fadeIn * fadeOut;
+            if (limits != null && limits.attackAngleEnabled()) {
+                // 接近末段前先消除蛇形指令，至少预留一段转弯加响应路程，避免横摆惯量带入俯冲。
+                double settleDistance = turnRadius * preset.diveLeadFactor() + responseDistance;
+                weight *= Mth.clamp((horizontalDistance - 2.0 * settleDistance)
+                        / Math.max(settleDistance, 1.0), 0.0, 1.0);
+            }
             if (weight > 1.0E-4) {
                 double phase = Math.PI * 2.0 * progress * 5.0;
                 Vec3 lateral = new Vec3(
