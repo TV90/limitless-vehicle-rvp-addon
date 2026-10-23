@@ -17,6 +17,7 @@ import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.client.render.RVP_CustomMountRenderLogic;
 import org.ywzj.rvp.debug.RVP_AheadDebug;
 import org.ywzj.rvp.debug.RVP_HitboxDebug;
+import org.ywzj.rvp.debug.RVP_ShotDumpDiag;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.weapon.damage.RVP_VehicleHitboxFactorManager;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -59,6 +60,14 @@ public class RVP_DebugCommands {
                 Commands.literal("rvpdebug")
                         .then(RVP_RocketFlameDebugCommands.get())
                         .then(RVP_UnderwaterExplosionDebugCommands.get())
+                        // [RVP] 观瞄射弹原点分离单发取证：武装后下一发输出炮口/实际出弹点/
+                        // 伪装出发点与 offset-弹道夹角，用于判定"模型从炮口斜飞"是否因平移向量不平行。
+                        .then(Commands.literal("shotdump").executes(ctx -> {
+                            RVP_ShotDumpDiag.arm();
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[RVP] 已武装单发取证，下一次出弹写入 logs/rvp_shotdump.log"), false);
+                            return 1;
+                        }))
                         .then(Commands.literal("tvMissileDump").executes(ctx -> {
                             RVP_TVMissileDebug.requestDump();
                             LOGGER.info("[RVP][TVMissile] tvMissileDump requested");
