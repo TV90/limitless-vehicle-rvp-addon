@@ -17,12 +17,15 @@ import net.minecraft.client.gui.GuiGraphics;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.vehicle.client.gui.VehicleRadarOverlay;
@@ -101,73 +104,14 @@ public class VehicleRadarOverlayMixin {
         return radarUnit.getLockedEntity();
     }
 
-    @ModifyArg(
-            method = "renderInstruments",
-            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/gui/VehicleRadarOverlay;drawScanLine(Lorg/joml/Matrix4f;IIFFFFI)V"),
-            index = 4,
-            remap = false
-    )
-    private float ywzj_rvp$modifyScanAngle(float angleDeg) {
-        // HMD 模式：扫描线在共享捕获半视场内摆动；显示仍使用平滑方向。
-        RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
-        if (hmdState.isRadarHmd()) {
-            RadarUnit radar = ywzj_rvp$currentRadarUnit;
-            if (radar != null) {
-                Vec3 radarPos = radar.worldRadarPosition();
-                // 使用平滑角度（同 HMD 框位置）
-                RVP_ClientHmdState hmd = RVP_ClientHmdState.getInstance();
-                WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
-                Vec3 aimDir = hmd.resolveRadarAimDir(weaponUnit, radar);
-                Vec3 radarToHead = radarPos.add(aimDir.scale(100)).subtract(radarPos);
-                Vec2 localRot = radar.worldVecToLocalRot(radarToHead);
-                float yMin = radar.getYRotMin();
-                float yMax = radar.getYRotMax();
-                if (yMax - yMin >= 360f) {
-                    yMin = 0f;
-                    yMax = 360f;
-                }
-                float center = Mth.clamp((float) localRot.y, yMin, yMax);
-                // 在共享捕获视场内 ping-pong，每 5 tick 一个完整显示周期。
-                int tick = hmd.getTickCount();
-                float phase = ((tick % 5) + ywzj_rvp$partialTick) / 5.0f;
-                phase = Mth.clamp(phase, 0f, 1f);
-                float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
-                float halfFov = RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG;
-                return center - halfFov + halfFov * 2.0f * pingPong;
-            }
-            return angleDeg;
-        }
-
-        RadarUnit radarUnit = ywzj_rvp$currentRadarUnit;
-        if (radarUnit == null) {
-            return angleDeg;
-        }
-        RadarUnitDataExt ext = ywzj_rvp$getRadarDataExt(radarUnit);
-        if (ext == null) {
-            return angleDeg;
-        }
-        if (!"phase".equalsIgnoreCase(ext.ywzj_rvp$getScanAnimationMode())) {
-            return angleDeg;
-        }
-        int periodTick = ext.ywzj_rvp$getScanPeriodTick();
-        if (periodTick <= 0) {
-            return angleDeg;
-        }
-        float yRotMin = radarUnit.getYRotMin();
-        float yRotMax = radarUnit.getYRotMax();
-        float scanAz = yRotMax - yRotMin;
-        if (scanAz >= 360f) {
-            yRotMin = 0f;
-            scanAz = 360f;
-        }
-        float phase = ((radarUnit.getVehicle().tickCount % periodTick) + ywzj_rvp$partialTick) / periodTick;
-        phase = Mth.clamp(phase, 0f, 1f);
-        if (scanAz >= 360f) {
-            return phase * 360f;
-        }
-        float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
-        return yRotMin + scanAz * pingPong;
-    }
+    /**
+     * [挂起 2026-10-24] 扫描线角度修饰（HMD 捕获半视场 ping-pong / 数据侧 phase 扫描模式）
+     * 暂未随本体 27552d7 适配：drawScanLine 为私有实例方法，其 invokespecial 重定向要求
+     * static handler + 显式接收者，private 调用需 @Invoker 桥（注解处理器对私有目标误报
+     * could not locate，编译被拦）。两项子功能现状：phase 扫描模式当前零武器配置；
+     * HMD 扫描线摆动仅影响雷达面板扫描线的摆动方式。恢复方案：@Redirect static+receiver
+     * （已验证到 handler 校验一步）+ @Invoker 桥绕过 AP 误报（如改为抽象类形式或关 AP 校验）。
+     */
 
     @Unique
     private static RadarUnitDataExt ywzj_rvp$getRadarDataExt(RadarUnit radarUnit) {
@@ -185,10 +129,16 @@ public class VehicleRadarOverlayMixin {
      * 拦截 translate 中的 Math.sin 调用，固定返回 sin(75°) 对应的弧度值 1.309，
      * 使间距恒为 ~-1.256*radius。
      */
-    @ModifyArg(
+    /**
+     * 多雷达固定间距：原代码 translate(-radius * sin(yRotMax) * 1.3) 因不同雷达
+     * yRotMax 值差异（如 180°→sin=0 vs 45°→sin≈0.85）导致间距不一致。
+     * 2026-10-23 适配本体 27552d7：@ModifyArg 在重构后的 renderInstruments 上无法绑定，
+     * 改为 @Redirect 包裹该 Math.sin 调用（方法内唯一一处）：角度值 > 10 时固定返回
+     * sin(75°) 对应弧度 1.309，使间距恒为 ~-1.256*radius。
+     */
+    @Redirect(
             method = "renderInstruments",
             at = @At(value = "INVOKE", target = "Ljava/lang/Math;sin(D)D"),
-            index = 0,
             remap = false
     )
     private double ywzj_rvp$fixRadarSpacing(double a) {
@@ -196,7 +146,7 @@ public class VehicleRadarOverlayMixin {
             // Math.toRadians(75°) ≈ 1.309 → Math.sin(1.309) ≈ 0.966
             return 1.309;
         }
-        return a;
+        return Math.sin(a);
     }
 
     @Inject(
