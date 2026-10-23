@@ -21,6 +21,8 @@ import java.util.Set;
 public final class RVP_RemoteVehicleVisibilityPolicy {
     /** 原生实体追踪与远距视觉接管的水平距离边界，单位格。 */
     static final double NATIVE_TRACKING_DISTANCE = 512.0D;
+    /** 提前 128 格发送备用视觉快照，覆盖低频同步与客户端简化图预热的交接空档。 */
+    static final double HANDOVER_PREPARE_DISTANCE = 384.0D;
     /** 雷达模式无需探测即可直接显示的水平距离边界，单位格。 */
     static final double RADAR_DIRECT_VISIBILITY_DISTANCE = 1024.0D;
 
@@ -130,19 +132,22 @@ public final class RVP_RemoteVehicleVisibilityPolicy {
             return List.of();
         }
 
-        double nativeDistanceSq = NATIVE_TRACKING_DISTANCE * NATIVE_TRACKING_DISTANCE;
+        double prepareDistanceSq = HANDOVER_PREPARE_DISTANCE * HANDOVER_PREPARE_DISTANCE;
         double maximumDistanceSq = maxDistance * maxDistance;
         double directRadarDistanceSq = RADAR_DIRECT_VISIBILITY_DISTANCE * RADAR_DIRECT_VISIBILITY_DISTANCE;
         return candidates.stream()
                 .filter(candidate -> candidate.entityId() != observerVehicleId)
-                .filter(candidate -> candidate.horizontalDistanceSq() > nativeDistanceSq
+                .filter(candidate -> candidate.horizontalDistanceSq() >= prepareDistanceSq
                         && candidate.horizontalDistanceSq() <= maximumDistanceSq)
                 .filter(candidate -> observerCategory == null
                         || allowedTargetTypes.contains(candidate.category()))
                 .filter(candidate -> mode != VisibilityMode.RADAR_DETECTED
                         || candidate.horizontalDistanceSq() <= directRadarDistanceSq
                         || candidate.radarDetected())
-                .sorted(Comparator.comparingDouble(Candidate::horizontalDistanceSq)
+                // 已在远距的目标优先占用原有数量预算，近距备用条目只使用剩余名额。
+                .sorted(Comparator.comparing((Candidate candidate) -> candidate.horizontalDistanceSq()
+                                <= NATIVE_TRACKING_DISTANCE * NATIVE_TRACKING_DISTANCE)
+                        .thenComparingDouble(Candidate::horizontalDistanceSq)
                         .thenComparingInt(Candidate::entityId))
                 .limit(Math.max(0, maxTargets))
                 .toList();
