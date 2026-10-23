@@ -361,9 +361,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
      * 同一目标的框 —— 两套锚点（实体插值位置 vs 雷达探测记录位置）与距离来源不同，
      * 表现为"框重影 + 距离数字来回跳"。</p>
      *
-     * <p>非观瞄视角沿用原 {@link #hudLockTakeoverActive()} 门控；观瞄视角改为镜像 scope 分支
-     * 的绘制前置条件（有载体/有 ui_preset/非 HITL）—— 只要 scope 分支真的会画，就让本体闭嘴，
-     * 反之（无 preset 的载具、HITL 视角）仍由本体绘制，避免两边都不画。</p>
+     * <p>非观瞄视角沿用原 {@link #hudLockTakeoverActive()} 门控；观瞄视角下 RVP 的两条补画路径
+     * （有 preset 走 {@link #render} 的 scope 分支、无 preset 走 {@code RVP_OverlayCancelHandler} 补画）
+     * 都会画，故一律接管，仅 HITL（TV 弹专用准星）与无载具时放行本体。</p>
      */
     public static boolean shouldSkipVanillaAimLockTarget() {
         if (hudLockTakeoverActive()) {
@@ -375,7 +375,19 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         return scopeDrawsLockTarget();
     }
 
-    /** 与 {@link #render} 的 scope 分支前置条件保持一致：有载体、有 ui_preset、非 HITL。 */
+    /**
+     * 观瞄视角下 RVP 是否已在画锁定框。
+     *
+     * <p><b>2026-10-23 实测修正</b>：原先这里按「preset 非空」判断，但日志
+     * （`rvp:bukm3`、`preset=null`、`lockTarget/帧=1.00`、`skipFalse帧=1209`）证明判据错了 ——
+     * 无 ui_preset 的载具由 {@code RVP_OverlayCancelHandler} 取消本体 {@code VehicleScopeOverlay}
+     * 整层后自己补画 {@link #renderAimLockTarget}，所以 preset 为空时 RVP 照样在画；
+     * 而 0.6.2 已把锁框搬进 {@code VehicleAimAtOverlay}，该 handler 取消不到那一层，
+     * 于是本体每帧又多画一套 ⇒ 双框重影。</p>
+     *
+     * <p>结论：观瞄视角下 preset 有无都已被 RVP 接管（有 preset 走 {@link #render} 的 scope 分支，
+     * 无 preset 走 CancelHandler 补画），因此这里一律接管；只有 HITL（TV 弹专用准星）、无载具时放行本体。</p>
+     */
     private static boolean scopeDrawsLockTarget() {
         if (!LocalVehiclePlayer.instance.onVehicle()) {
             return false;
@@ -387,8 +399,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) {
             return false;
         }
-        String presetName = VehicleUIPresetCache.get(vehicle.getVehicleId());
-        return presetName != null && !presetName.isEmpty();
+        return true;
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
