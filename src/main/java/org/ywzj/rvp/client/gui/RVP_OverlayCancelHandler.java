@@ -87,9 +87,8 @@ public class RVP_OverlayCancelHandler {
                     graphics.guiWidth(), graphics.guiHeight(), vehicle);
             // 调用本项目目标绘制，让无预设载具的扫描框、硬锁框和外置雷达框也统一平滑。
             RVP_ScopeOverlay.renderAimLockTarget(graphics, partialTick);
-            // 调用本体机身图绘制，保留已有骨骼显示配置与姿态修正。
-            scopeOverlay.renderVehicleHeading(graphics, partialTick,
-                    graphics.guiWidth(), graphics.guiHeight(), vehicle);
+            // 本体 27552d7 将机身朝向图迁入 VehicleStatusOverlay 新 HUD 面板自绘（renderVehicleHeading
+            // 自 VehicleScopeOverlay 移除），此处不再补画，随本体状态面板正常展示。
         }
     }
 }

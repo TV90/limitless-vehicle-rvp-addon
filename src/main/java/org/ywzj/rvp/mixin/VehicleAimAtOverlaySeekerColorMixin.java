@@ -8,13 +8,13 @@ import org.ywzj.rvp.client.gui.RVP_ScopeOverlay;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.vehicle.client.gui.VehicleAimAtOverlay;
-import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.custom.part.data.WeaponUnitData;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -162,12 +162,20 @@ public class VehicleAimAtOverlaySeekerColorMixin {
      * 由 RVP_ScopeOverlay.renderAimLockTarget 统一绘制（额外含 NCTR 目标名与外置
      * 雷达框）；门控不命中（如 j15 观瞄 crt、机炮无传感器）保持本体原行为。
      * 本 Mixin 位于 client 数组、目标为纯客户端 HUD 类，服务端零加载。</p>
+     *
+     * <p>2026-10-23 适配本体 27552d7：renderAimLockTarget 自 VehicleScopeOverlay 迁入
+     * VehicleAimAtOverlay 私有静态方法，重定向目标随之改指同类调用点，回退经 @Shadow 调原实现。</p>
      */
+    @Shadow
+    private static void renderAimLockTarget(net.minecraft.client.gui.GuiGraphics guiGraphics, float partialTick) {
+        throw new AssertionError();
+    }
+
     @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
-            target = "Lorg/ywzj/vehicle/client/gui/VehicleScopeOverlay;renderAimLockTarget(Lnet/minecraft/client/gui/GuiGraphics;F)V"))
+            target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;renderAimLockTarget(Lnet/minecraft/client/gui/GuiGraphics;F)V"))
     private void rvp$takeoverHudLockTarget(net.minecraft.client.gui.GuiGraphics guiGraphics, float partialTick) {
         if (!RVP_ScopeOverlay.hudLockTakeoverActive()) {
-            VehicleScopeOverlay.renderAimLockTarget(guiGraphics, partialTick);
+            renderAimLockTarget(guiGraphics, partialTick);
         }
     }
 
