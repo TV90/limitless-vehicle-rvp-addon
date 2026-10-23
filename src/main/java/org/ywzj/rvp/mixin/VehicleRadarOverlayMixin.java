@@ -37,18 +37,18 @@ import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 public class VehicleRadarOverlayMixin {
 
     @Unique
-    private RadarUnit ywzj_rvp$currentRadarUnit;
+    private static RadarUnit ywzj_rvp$currentRadarUnit;
 
     @Unique
-    private float ywzj_rvp$partialTick;
+    private static float ywzj_rvp$partialTick;
 
     @Unique
     private static final float ywzj_rvp$RWR_SCALE = 1.3f;
 
     @Inject(method = "render", at = @At("HEAD"), remap = false)
     private void ywzj_rvp$captureFrame(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
-        this.ywzj_rvp$partialTick = partialTick;
-        this.ywzj_rvp$currentRadarUnit = null;
+        ywzj_rvp$partialTick = partialTick;
+        ywzj_rvp$currentRadarUnit = null;
     }
 
     @Inject(
@@ -74,7 +74,7 @@ public class VehicleRadarOverlayMixin {
             require = 0,
             remap = false
     )
-    private void ywzj_rvp$scaleRwrDial(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
+    private void ywzj_rvp$scaleRwrDial(GuiGraphics guiGraphics, float partialTick, WeaponUnit weaponUnit, float centerX, float radarY, CallbackInfo ci) {
         guiGraphics.pose().scale(ywzj_rvp$RWR_SCALE, ywzj_rvp$RWR_SCALE, ywzj_rvp$RWR_SCALE);
     }
 
@@ -84,7 +84,7 @@ public class VehicleRadarOverlayMixin {
             remap = false
     )
     private boolean ywzj_rvp$captureRadarUnit(RadarUnit radarUnit) {
-        this.ywzj_rvp$currentRadarUnit = radarUnit;
+        ywzj_rvp$currentRadarUnit = radarUnit;
         return radarUnit.isOn();
     }
 
@@ -103,7 +103,7 @@ public class VehicleRadarOverlayMixin {
 
     @ModifyArg(
             method = "renderInstruments",
-            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/gui/VehicleRadarOverlay;drawScanLine(Lorg/joml/Matrix4f;IIFFFI)V"),
+            at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/client/gui/VehicleRadarOverlay;drawScanLine(Lorg/joml/Matrix4f;IIFFFFI)V"),
             index = 4,
             remap = false
     )
@@ -111,7 +111,7 @@ public class VehicleRadarOverlayMixin {
         // HMD 模式：扫描线在共享捕获半视场内摆动；显示仍使用平滑方向。
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         if (hmdState.isRadarHmd()) {
-            RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
+            RadarUnit radar = ywzj_rvp$currentRadarUnit;
             if (radar != null) {
                 Vec3 radarPos = radar.worldRadarPosition();
                 // 使用平滑角度（同 HMD 框位置）
@@ -129,7 +129,7 @@ public class VehicleRadarOverlayMixin {
                 float center = Mth.clamp((float) localRot.y, yMin, yMax);
                 // 在共享捕获视场内 ping-pong，每 5 tick 一个完整显示周期。
                 int tick = hmd.getTickCount();
-                float phase = ((tick % 5) + this.ywzj_rvp$partialTick) / 5.0f;
+                float phase = ((tick % 5) + ywzj_rvp$partialTick) / 5.0f;
                 phase = Mth.clamp(phase, 0f, 1f);
                 float pingPong = phase <= 0.5f ? phase * 2f : 2f - phase * 2f;
                 float halfFov = RVP_ClientHmdState.RADAR_HMD_HALF_FOV_DEG;
@@ -138,7 +138,7 @@ public class VehicleRadarOverlayMixin {
             return angleDeg;
         }
 
-        RadarUnit radarUnit = this.ywzj_rvp$currentRadarUnit;
+        RadarUnit radarUnit = ywzj_rvp$currentRadarUnit;
         if (radarUnit == null) {
             return angleDeg;
         }
@@ -160,7 +160,7 @@ public class VehicleRadarOverlayMixin {
             yRotMin = 0f;
             scanAz = 360f;
         }
-        float phase = ((radarUnit.getVehicle().tickCount % periodTick) + this.ywzj_rvp$partialTick) / periodTick;
+        float phase = ((radarUnit.getVehicle().tickCount % periodTick) + ywzj_rvp$partialTick) / periodTick;
         phase = Mth.clamp(phase, 0f, 1f);
         if (scanAz >= 360f) {
             return phase * 360f;
@@ -210,16 +210,16 @@ public class VehicleRadarOverlayMixin {
             remap = false,
             require = 0
     )
-    private void ywzj_rvp$renderHmdSectorInRadarSpace(ForgeGui gui, GuiGraphics guiGraphics, float partialTick, int screenWidth, int screenHeight, CallbackInfo ci) {
+    private void ywzj_rvp$renderHmdSectorInRadarSpace(GuiGraphics guiGraphics, float partialTick, WeaponUnit weaponUnit, float centerX, float radarY, CallbackInfo ci) {
         RVP_ClientHmdState hmdState = RVP_ClientHmdState.getInstance();
         if (!hmdState.isRadarHmd()) return;
-        RadarUnit radar = this.ywzj_rvp$currentRadarUnit;
+        RadarUnit radar = ywzj_rvp$currentRadarUnit;
         if (radar == null) return;
 
         RadarUnitData data = radar.getData();
         if (!(data instanceof RadarUnitDataExt ext) || !ext.ywzj_rvp$isEnableHms()) return;
 
-        WeaponUnit weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
+        if (weaponUnit == null) weaponUnit = LocalVehiclePlayer.instance.getWeaponUnit();
         if (weaponUnit == null) return;
         int radarCount = weaponUnit.getRadarUnits().size();
         if (radarCount <= 0) return;

@@ -68,7 +68,6 @@
     "VehicleWeaponOverlayMixin",
     "VehicleWeaponOverlayMetricsMixin",
     "VehicleOverlayWeaponListSuppressMixin",
-    "VehicleRadarOverlayMixin",
     "VehicleExplosionClientVisualMixin",
     "accessor.VehicleModdingToolScreenAccessor",
     "RadarRemoteHbmEntitiesMixin",

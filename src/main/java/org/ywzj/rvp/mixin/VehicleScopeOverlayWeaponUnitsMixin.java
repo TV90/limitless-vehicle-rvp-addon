@@ -23,7 +23,7 @@ public class VehicleScopeOverlayWeaponUnitsMixin {
             at = @At(value = "INVOKE", target = "Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;isSeat()Z"),
             remap = false
     )
-    private boolean ywzj_rvp$showWeaponUnitsInBones(WeaponUnit weaponUnit) {
+    private static boolean ywzj_rvp$showWeaponUnitsInBones(WeaponUnit weaponUnit) {
         ResourceLocation vehicleId = weaponUnit.getVehicle().getVehicleId();
         if (vehicleId != null && "rvp".equals(vehicleId.getNamespace())) {
             return true;
