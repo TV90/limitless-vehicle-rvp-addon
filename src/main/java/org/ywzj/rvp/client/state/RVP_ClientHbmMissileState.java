@@ -17,11 +17,19 @@ public final class RVP_ClientHbmMissileState {
     private static final Map<Integer, RVP_RemoteHbmMissileEntity> PROXIES = new LinkedHashMap<>();
     @Nullable
     private static ResourceLocation dimension;
+    /** 最近一次导弹快照的客户端接收 Tick，供既有显示外推逻辑使用。 */
+    private static long snapshotGameTime = Long.MIN_VALUE;
 
     private RVP_ClientHbmMissileState() {}
 
     public static void applySnapshot(S2CHbmMissileSnapshot msg) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!msg.dimension.equals(dimension)) {
+            // 调用本类清理入口，防止跨维度复用代理和快照时钟。
+            clear();
+        }
         dimension = msg.dimension;
+        snapshotGameTime = mc.level != null ? mc.level.getGameTime() : Long.MIN_VALUE;
         ENTRIES.clear();
         for (S2CHbmMissileSnapshot.Entry entry : msg.entries) {
             ENTRIES.put(entry.entityId(), entry);
@@ -63,6 +71,12 @@ public final class RVP_ClientHbmMissileState {
         dimension = null;
         ENTRIES.clear();
         PROXIES.clear();
+        snapshotGameTime = Long.MIN_VALUE;
+    }
+
+    /** 返回当前代理的真实收包时刻；重复读取代理不得重置显示外推时间。 */
+    public static long getSnapshotGameTime(Entity entity) {
+        return PROXIES.get(entity.getId()) == entity ? snapshotGameTime : Long.MIN_VALUE;
     }
 
     private static void rebuildProxyCache() {

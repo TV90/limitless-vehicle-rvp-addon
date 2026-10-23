@@ -22,7 +22,6 @@ import org.ywzj.rvp.config.UIPresetManager.UIPosition;
 import org.ywzj.rvp.config.UIPresetManager.UIPreset;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
-import org.ywzj.rvp.client.state.RVP_ClientBroadcastVehicleInterpolator;
 import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.ext.RadarUnitDataExt;
 import org.ywzj.rvp.network.S2CExternalRadarSnapshot;
@@ -325,7 +324,7 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
     }
 
     /**
-     * [RVP] HUD 非观瞄视角的锁定框接管门控：存在本机雷达硬锁、RF 武器 + 无光学瞄
+     * [RVP] HUD 非观瞄视角的锁定框接管门控：存在本机雷达航迹/硬锁、RF 武器 + 无光学瞄
      *（或存在外置雷达条目）时，
      * 锁定目标框由本 overlay（rvp_scope 非观瞄分支）统一绘制，本体 VehicleAimAtOverlay
      * 的 renderAimLockTarget 跳过（见 VehicleAimAtOverlaySeekerColorMixin 的接管重定向），
@@ -347,9 +346,10 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         // 调用本项目雷达角色解析，确保任何武器/光学配置下的真实雷达硬锁都由平滑渲染器接管。
         RadarUnit lockedRadar = RVP_RadarRoleHelper.getLockedRadar(weaponUnit);
         boolean localRadarHardLock = lockedRadar != null && lockedRadar.getLockedEntity() != null;
-        // TWS 单缺口航迹若来自本体广播载具，也必须接管；否则带光学瞄具时会回落到本体离散锚点。
-        boolean smoothableTwsContact = hasSmoothableRadarContact(weaponUnit);
-        return localRadarHardLock || smoothableTwsContact || rfAim || hasExternalRadarEntries();
+        // 调用本体合并航迹表：近距目标也需要逐帧插值，不能只接管远距广播目标。
+        boolean hasRadarContacts = !weaponUnit.getRadarDetectedEntities().isEmpty();
+        // 调用本项目外置航迹判断，保证中继目标也走统一平滑绘制。
+        return localRadarHardLock || hasRadarContacts || rfAim || hasExternalRadarEntries();
     }
 
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
@@ -441,7 +441,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                     RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
                     RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
                     alliesInfoExternal(guiGraphics, externalLockedEntry);
-                    radarInfoExternal(guiGraphics, poseStack, externalLockedEntry, externalLockedEntity, vehicle);
+                    // 调用本项目雷达信息绘制，距离读数与当前平滑框位置保持一致。
+                    radarInfoExternal(guiGraphics, poseStack, externalLockedEntry, externalLockedEntity, vehicle, targetPos);
                 }
                 poseStack.popPose();
             }
@@ -454,9 +455,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 if (lockedEntity != null && detectedObject.entity.getId() == lockedEntity.getId()) {
                     continue;
                 }
-                // 调用本项目统一弹体位置解析；普通实体自动回退到原有单 Tick 插值。
+                // 调用本项目统一显示位置解析，让缺口单框与硬锁双框共用逐帧位置，禁止回退探测快照。
                 Vec3 detectedPosition = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(
-                        detectedObject.entity, partialTick, detectedObject.detectedPosition);
+                        detectedObject.entity, partialTick);
                 Vec3 screenPos = VectorUtil.worldToScreen(detectedPosition);
                 if (screenPos.z < 0) {
                     continue;
@@ -470,7 +471,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                     } else {
                         RenderHelper.drawSquareCorners(guiGraphics, 0, 0, 15, 5, Color.GREEN);
                         alliesInfo(guiGraphics, detectedObject);
-                        radarInfo(guiGraphics, poseStack, detectedObject);
+                        // 调用本项目雷达信息绘制，共用缺口框本帧位置，避免距离读数仍按扫描周期跳变。
+                        radarInfo(guiGraphics, poseStack, detectedObject, detectedPosition);
                     }
                 }
                 poseStack.popPose();
@@ -516,7 +518,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             RenderHelper.drawSquare(guiGraphics, 0, 0, 15, Color.GREEN);
             RenderHelper.drawSquare(guiGraphics, 0, 0, 10, Color.GREEN);
             alliesInfo(guiGraphics, detectedObject);
-            radarInfo(guiGraphics, poseStack, detectedObject);
+            // 调用本项目雷达信息绘制，让距离和方位计算跟随硬锁框的平滑位置。
+            radarInfo(guiGraphics, poseStack, detectedObject, renderCenter);
             // RF 导引头继续沿用原有“红双圈并入雷达框”的显示；IR 红圈由
             // RVP_MissileOverlay 按 IR 通道独立绘制，二者可在同一目标上并存。
             if (weaponUnit.getLockedEntity() == radarLocked
@@ -539,19 +542,6 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
             return false;
         }
         return !RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()).isEmpty();
-    }
-
-    /** 当前雷达合并航迹中是否包含需要跨广播周期平滑的远距载具或弹体。 */
-    private static boolean hasSmoothableRadarContact(WeaponUnit weaponUnit) {
-        for (RadarUnit.DetectedObject detectedObject : weaponUnit.getRadarDetectedEntities()) {
-            if (detectedObject != null
-                    && detectedObject.entity != null
-                    && (RVP_ClientBroadcastVehicleInterpolator.isBroadcastVehicle(detectedObject.entity)
-                    || RVP_ClientProjectileRenderInterpolator.isRemoteProjectile(detectedObject.entity))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void renderExternalRadarContacts(GuiGraphics guiGraphics, float partialTick,
@@ -595,7 +585,8 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 } else {
                     RenderHelper.drawSquareCorners(guiGraphics, 0, 0, 15, 5, Color.GREEN);
                     alliesInfoExternal(guiGraphics, entry);
-                    radarInfoExternal(guiGraphics, poseStack, entry, resolvedEntity, vehicle);
+                    // 调用本项目雷达信息绘制，共用外置扫描框的平滑位置。
+                    radarInfoExternal(guiGraphics, poseStack, entry, resolvedEntity, vehicle, targetPos);
                 }
             }
             poseStack.popPose();
@@ -628,7 +619,9 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         }
     }
 
-    private static void radarInfo(GuiGraphics guiGraphics, PoseStack poseStack, RadarUnit.DetectedObject detectedObject) {
+    /** 绘制本机航迹附属信息，位置与本帧目标框共享同一个平滑结果。 */
+    private static void radarInfo(GuiGraphics guiGraphics, PoseStack poseStack,
+                                  RadarUnit.DetectedObject detectedObject, Vec3 renderPosition) {
         AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
         if (vehicle == null) {
             return;
@@ -664,11 +657,11 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
                 poseStack.translate(12, -12, 0);
             }
             poseStack.scale(0.8f, 0.8f, 0.8f);
-            double distance = detectedObject.detectedPosition.distanceTo(vehicle.position());
+            double distance = renderPosition.distanceTo(vehicle.position());
             guiGraphics.drawString(Minecraft.getInstance().font, String.format("%.2f m", distance), 0, 0, Color.GREEN, false);
             poseStack.translate(0, 12, 0);
             Vec3 approach = velocity.subtract(vehicle.getDeltaMovement());
-            Vec3 relative = detectedObject.entity.position().subtract(vehicle.position());
+            Vec3 relative = renderPosition.subtract(vehicle.position());
             int sig = approach.dot(relative) > 0 ? -1 : 1;
             double approachRate = sig * approach.length() * 20;
             guiGraphics.drawString(Minecraft.getInstance().font, String.format("%.2f m/s", approachRate), 0, 0, Color.GREEN, false);
@@ -676,13 +669,13 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         poseStack.popPose();
     }
 
+    /** 绘制外置航迹附属信息，不再另取离散的实体/快照位置。 */
     private static void radarInfoExternal(GuiGraphics guiGraphics, PoseStack poseStack,
                                           S2CExternalRadarSnapshot.Entry entry,
                                           @Nullable Entity resolvedEntity,
-                                          AbstractVehicle vehicle) {
+                                          AbstractVehicle vehicle, Vec3 detectedPos) {
         String nctrLabel = entry.nctrLabel();
         Vec3 velocity = resolvedEntity != null ? resolvedEntity.getDeltaMovement() : RVP_ExternalRadarLinkHelper.velocity(entry);
-        Vec3 detectedPos = resolvedEntity != null ? resolvedEntity.getBoundingBox().getCenter() : RVP_ExternalRadarLinkHelper.position(entry);
         poseStack.pushPose();
         {
             poseStack.translate(0, 12, 0);

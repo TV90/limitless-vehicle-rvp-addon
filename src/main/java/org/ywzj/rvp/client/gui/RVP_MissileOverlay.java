@@ -251,7 +251,11 @@ public class RVP_MissileOverlay implements IGuiOverlay {
                 if (contact.vehicleId() != lockedVehicleId || contact.radarIndex() != lockedRadarIndex) {
                     continue;
                 }
-                Vec3 sp = VectorUtil.worldToScreen(contact.position());
+                // 调用本项目雷达源显示位置解析，使反辐射红双圈与同目标绿框始终同心。
+                Vec3 renderPosition = RVP_ClientProjectileRenderInterpolator.resolveRadarEmitterPosition(
+                        contact.vehicleId(), contact.position(), partialTick);
+                // 调用本体投影，将统一平滑位置转换为屏幕坐标。
+                Vec3 sp = VectorUtil.worldToScreen(renderPosition);
                 if (sp != null && sp.z >= 0) {
                     float sa = Math.sin((double) weaponUnit.getLockCoolingTick() / 5 * Math.PI) > 0 ? 0.8f : 1.0f;
                     int sc = (Color.RED & 0x00FFFFFF) | ((int) (sa * 255) << 24);

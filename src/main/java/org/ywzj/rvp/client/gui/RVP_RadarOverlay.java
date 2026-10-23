@@ -135,7 +135,7 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                         radarUnit.getDetectedEntities().values().forEach(detectedObject -> {
                             // 调用本项目统一弹体位置解析，让雷达航迹点与 HUD 框共用外推/插值轨迹。
                             Vec3 detectedPosition = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(
-                                    detectedObject.entity, partialTick, detectedObject.detectedPosition);
+                                    detectedObject.entity, partialTick);
                             Vec3 v = detectedPosition.subtract(radarUnit.worldRadarPosition());
                             v = radarUnit.worldVecToLocalVec(v);
                             double l = v.length() / maxScanDistance * radius;
@@ -199,10 +199,12 @@ public class RVP_RadarOverlay implements IGuiOverlay {
                         }
                         entity = serverEntity.entity;
                     }
-                    double distance = entity.position().distanceTo(vehicle.position());
+                    // 调用本项目统一显示位置解析，让雷达告警方位与同目标锁定框使用相同平滑轨迹。
+                    Vec3 warningPosition = RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(entity, partialTick);
+                    double distance = warningPosition.distanceTo(vehicle.position());
                     double scale = Math.min(1, distance / 512);
                     Vec3 direction = vehicle
-                            .relativeRotDirection(entity.position().subtract(vehicle.position()), true)
+                            .relativeRotDirection(warningPosition.subtract(vehicle.position()), true)
                             .normalize()
                             .scale(scale * -25);
                     poseStack.pushPose();

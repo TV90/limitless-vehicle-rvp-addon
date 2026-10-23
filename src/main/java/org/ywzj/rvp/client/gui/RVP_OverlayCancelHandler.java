@@ -13,6 +13,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.config.VehicleUIPresetCache;
 import org.ywzj.rvp.debug.RVP_DebugFlags;
+import org.ywzj.vehicle.client.gui.VehicleScopeOverlay;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 
 /**
@@ -71,6 +72,24 @@ public class RVP_OverlayCancelHandler {
         String preset = VehicleUIPresetCache.get(vehicle.getVehicleId());
         if (preset != null && !preset.isEmpty()) {
             event.setCanceled(true);
+        } else if (LocalVehiclePlayer.instance.onVehicle()
+                && LocalVehiclePlayer.instance.viewType == LocalVehiclePlayer.ViewType.SCOPE
+                && event.getOverlay().overlay() instanceof VehicleScopeOverlay scopeOverlay) {
+            // 无 UI 预设时，复用本体准心、射界和机身图，只把目标绘制交给本项目平滑入口。
+            // 通过现有 Forge 事件取消原整层，避免本体随后再画一套未经平滑的雷达框。
+            event.setCanceled(true);
+            var graphics = event.getGuiGraphics();
+            float partialTick = event.getPartialTick();
+            // 调用本体准心绘制，保留光学/CRT 瞄具与装填提示。
+            scopeOverlay.renderCrosshair(graphics, partialTick, vehicle);
+            // 调用本体射界绘制，保留原始布局及武器角度限制。
+            scopeOverlay.renderWeaponEngagementEnvelope(graphics, partialTick,
+                    graphics.guiWidth(), graphics.guiHeight(), vehicle);
+            // 调用本项目目标绘制，让无预设载具的扫描框、硬锁框和外置雷达框也统一平滑。
+            RVP_ScopeOverlay.renderAimLockTarget(graphics, partialTick);
+            // 调用本体机身图绘制，保留已有骨骼显示配置与姿态修正。
+            scopeOverlay.renderVehicleHeading(graphics, partialTick,
+                    graphics.guiWidth(), graphics.guiHeight(), vehicle);
         }
     }
 }

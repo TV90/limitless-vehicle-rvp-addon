@@ -6,6 +6,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.apache.commons.lang3.StringUtils;
 import org.ywzj.rvp.client.state.RVP_ClientArmState;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.custom.part.data.RadarUnitData;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
@@ -38,7 +39,7 @@ public class RVP_ArmOverlay {
     /** 型号文案最大长度（对齐 NCTR 截断）。 */
     private static final int LABEL_MAX_LENGTH = 14;
 
-    public static void render(GuiGraphics guiGraphics) {
+    public static void render(GuiGraphics guiGraphics, float partialTick) {
         RVP_ClientArmState state = RVP_ClientArmState.getInstance();
         if (!state.isActive()) {
             return;
@@ -55,7 +56,11 @@ public class RVP_ArmOverlay {
         int lockedRadarIndex = state.getLockedRadarIndex();
 
         for (RVP_ClientArmState.Contact contact : contacts) {
-            Vec3 screen = VectorUtil.worldToScreen(contact.position());
+            // 调用本项目雷达源显示位置解析，让预选单框和锁定双框复用已有插值轨迹。
+            Vec3 renderPosition = RVP_ClientProjectileRenderInterpolator.resolveRadarEmitterPosition(
+                    contact.vehicleId(), contact.position(), partialTick);
+            // 调用本体投影，将平滑后的世界位置转换为屏幕位置。
+            Vec3 screen = VectorUtil.worldToScreen(renderPosition);
             if (screen.z <= 0) {
                 continue;
             }

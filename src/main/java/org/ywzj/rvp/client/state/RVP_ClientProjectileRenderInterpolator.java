@@ -28,7 +28,8 @@ public final class RVP_ClientProjectileRenderInterpolator {
      * 解析实体包围盒中心的显示位置。
      *
      * <p>远距弹体优先使用本体广播克隆的短时外推；其它实体继续交给既有远距载具插值器，
-     * 普通实体保持 Minecraft 的单 Tick 插值。硬锁框必须使用本重载，避免回退到雷达快照点。</p>
+     * 普通实体保持 Minecraft 的单 Tick 插值。扫描框、硬锁框及雷达盘航迹统一使用本入口，
+     * 不允许用离散的雷达探测快照替代显示位置。</p>
      */
     public static Vec3 resolveRenderCenter(Entity entity, float partialTick) {
         Vec3 remoteAmmoCenter = resolveRemoteAmmoCenter(entity, partialTick);
@@ -40,25 +41,45 @@ public final class RVP_ClientProjectileRenderInterpolator {
     }
 
     /**
-     * 按调用方提供的普通实体位置语义解析显示中心。
+     * 为火控保留调用方指定的近距瞄准位置；HUD 应使用双参数入口，避免误用雷达探测快照。
      *
-     * @param entity 需要显示的实体
-     * @param partialTick 当前渲染帧的局部 Tick
-     * @param nonRemoteCenter 非远距弹体时的调用方位置；可为空，空时使用实体本体插值中心。
-     *                         仅适用于明确需要保留雷达采样点的软航迹/快照回退，硬锁框不要传入
-     * @return 当前渲染帧应使用的包围盒中心
+     * @param entity 当前火控目标实体
+     * @param partialTick 当前 Tick 或帧进度
+     * @param nonRemoteCenter 非远距目标的火控瞄准点；为空时使用单 Tick 包围盒中心插值
+     * @return 远距目标的平滑中心，或原火控瞄准点
      */
     public static Vec3 resolveRenderCenter(Entity entity, float partialTick,
                                            @Nullable Vec3 nonRemoteCenter) {
+        // 调用本项目弹体外推解析，为远距弹体提供连续轨迹。
         Vec3 remoteAmmoCenter = resolveRemoteAmmoCenter(entity, partialTick);
         if (remoteAmmoCenter != null) {
             return remoteAmmoCenter;
         }
+        // 调用本类普通实体插值，仅在火控未提供瞄准点时补齐回退坐标。
         Vec3 fallback = nonRemoteCenter != null
-                ? nonRemoteCenter
-                : resolveVanillaCenter(entity, partialTick);
-        // 调用本项目广播载具插值器，保持弹体之外的远距载具 HUD 轨迹行为不变。
+                ? nonRemoteCenter : resolveVanillaCenter(entity, partialTick);
+        // 调用本项目广播载具插值，保留现有火控对普通实体的瞄准语义。
         return RVP_ClientBroadcastVehicleInterpolator.resolveRenderCenter(entity, partialTick, fallback);
+    }
+
+    /**
+     * 解析反辐射 HUD 的雷达源位置，保留辐射源相对载具中心的偏移。
+     *
+     * @param entityId 辐射源所属载具 ID
+     * @param emitterPosition 当前雷达源位置；实体已不可用时保持最后探测点
+     * @param partialTick 当前渲染帧的局部 Tick
+     * @return 沿既有实体平滑轨迹移动的雷达源位置
+     */
+    public static Vec3 resolveRadarEmitterPosition(int entityId, Vec3 emitterPosition, float partialTick) {
+        // 调用本项目实体查找入口，兼容近距实体和远距广播载具。
+        Entity entity = findClientEntity(Minecraft.getInstance(), entityId);
+        if (entity == null || !entity.isAlive()) {
+            return emitterPosition;
+        }
+        // 调用本项目瞄准点解析，取得与平滑器一致的当前中心，再保留雷达部件偏移。
+        Vec3 center = org.ywzj.rvp.util.RVP_AimPointResolver.resolveLargestObbCenter(entity);
+        // 调用本项目统一位置解析，使反辐射单/双框和导引头双圈沿同一轨迹移动。
+        return resolveRenderCenter(entity, partialTick).add(emitterPosition.subtract(center));
     }
 
     /**
@@ -120,6 +141,16 @@ public final class RVP_ClientProjectileRenderInterpolator {
     /** 解析一个远距 RVP/本体弹药广播克隆的包围盒中心。 */
     @Nullable
     private static Vec3 resolveRemoteAmmoCenter(Entity entity, float partialTick) {
+        if (entity instanceof RVP_RemoteHbmMissileEntity) {
+            // 调用本项目 HBM 快照时钟，复用远距弹体最多 5 Tick 的速度外推；不改代理真实坐标。
+            long sampleTick = RVP_ClientHbmMissileState.getSnapshotGameTime(entity);
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.level != null && entity.level() == minecraft.level && sampleTick != Long.MIN_VALUE) {
+                double age = Mth.clamp(minecraft.level.getGameTime() - sampleTick + partialTick,
+                        0.0D, MAX_EXTRAPOLATION_TICK);
+                return entity.getBoundingBox().getCenter().add(entity.getDeltaMovement().scale(age));
+            }
+        }
         if (!(entity instanceof AmmoEntity)) {
             return null;
         }
@@ -153,7 +184,7 @@ public final class RVP_ClientProjectileRenderInterpolator {
         return remote == null ? null : remote.entity;
     }
 
-    /** 计算普通实体的单 Tick 包围盒中心，保持原版 HUD 位置语义。 */
+    /** 计算火控未提供回退点时的普通实体包围盒中心，保持既有语义。 */
     private static Vec3 resolveVanillaCenter(Entity entity, float partialTick) {
         double x = Mth.lerp(partialTick, entity.xo, entity.getX());
         double y = Mth.lerp(partialTick, entity.yo, entity.getY());

@@ -53,7 +53,8 @@ public class RVP_ClientArmTickHandler {
         if (event.getOverlay().id() != VanillaGuiOverlay.CHAT_PANEL.id()) {
             return;
         }
-        RVP_ArmOverlay.render(event.getGuiGraphics());
+        // 调用本项目反辐射 HUD，传入当前帧进度以平滑雷达源单框和双框。
+        RVP_ArmOverlay.render(event.getGuiGraphics(), event.getPartialTick());
     }
 
     // [RVP] 原 onKeyInput（InputEvent.Key 中重复消费 ARM_SELECT_PREV/NEXT）已删除：

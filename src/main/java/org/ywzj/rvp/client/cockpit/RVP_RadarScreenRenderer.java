@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.client.gui.RVP_RadarOverlay;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.vehicle.client.render.util.Color;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
@@ -87,9 +88,10 @@ public final class RVP_RadarScreenRenderer {
         }
         for (RadarUnit.DetectedObject detectedObject : detected.values()) {
             Entity entity = detectedObject.entity;
-            Vec3 worldPos = detectedObject.detectedPosition != null
-                    ? detectedObject.detectedPosition
-                    : (entity != null ? entity.position() : null);
+            // 调用本项目统一显示位置解析，与 HUD 航迹同源；屏幕每 Tick 刷新，取该 Tick 的插值位置。
+            Vec3 worldPos = entity != null
+                    ? RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(entity, 0f)
+                    : detectedObject.detectedPosition;
             if (worldPos == null) {
                 continue;
             }

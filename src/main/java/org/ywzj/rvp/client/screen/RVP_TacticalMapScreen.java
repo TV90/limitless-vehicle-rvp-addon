@@ -40,6 +40,7 @@ import org.ywzj.rvp.client.render.RVP_MapIconTexture;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.gui.RadarEnabledTickHelper;
 import org.ywzj.rvp.client.state.RVP_ClientExternalRadarState;
+import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSState;
 import org.ywzj.rvp.client.state.RVP_ClientGPSUtil;
@@ -251,6 +252,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private double viewWorldX;
     private double viewWorldZ;
+    /** 当前地图帧的 Tick 内进度，供图标、连线、列表和点击区域共用已有位置插值。 */
+    private float renderPartialTick;
+    /** 单帧实体位置缓存；按对象身份区分，避免同 ID 的本地实体和广播代理串用。 */
+    private final Map<Entity, Vec3> renderPositions = new java.util.IdentityHashMap<>();
     private double blocksPerPixel = 2.5;
     private final Set<ResourceLocation> filteredMapIcons = new HashSet<>();
     private boolean followPlayer = true;
@@ -1130,6 +1135,14 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        renderPartialTick = partialTick;
+        renderPositions.clear();
+        if (followPlayer && !draggingMap && Minecraft.getInstance().player != null) {
+            // 调用原版玩家帧插值，让地图跟随中心与逐帧移动的目标保持同一时间基准。
+            Vec3 playerPosition = Minecraft.getInstance().player.getPosition(partialTick);
+            viewWorldX = playerPosition.x;
+            viewWorldZ = playerPosition.z;
+        }
         refreshLayout();
         updateArtilleryHoverTarget(mouseX, mouseY);
         renderBackground(guiGraphics);
@@ -1266,7 +1279,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (!shouldShowEntityOnTacticalMap(mc.player, playerVehicle, bullet)) {
                 continue;
             }
-            trackAmmoPosition(bullet.getId(), bullet.position(), resolveProjectileKind(bullet));
+            // 调用本项目地图显示位置，消失标记落在最后绘出的弹体位置。
+            trackAmmoPosition(bullet.getId(), mapRenderPosition(bullet), resolveProjectileKind(bullet));
             drawMissileMarker(guiGraphics, bullet, relationColorForBullet(mc.player, playerVehicle, bullet));
             registerMarkerHit(entity, MarkerKind.MISSILE, entity.getX(), entity.getY(), entity.getZ(), 8, getMarkerTargetPos(entity));
         }
@@ -1330,8 +1344,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             return false;
         }
         int lineColor = withAlpha(relationColorForBullet(player instanceof LocalPlayer localPlayer ? localPlayer : null, playerVehicle, bullet), 0xC0);
+        // 调用本项目统一显示位置，使制导连线起点贴合弹体图标。
+        Vec3 renderPosition = mapRenderPosition(bullet);
         drawDashedWorldLine(guiGraphics,
-                bullet.getX(), bullet.getZ(),
+                renderPosition.x, renderPosition.z,
                 target.x, target.z,
                 4, 4,
                 lineColor);
@@ -1343,8 +1359,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             return false;
         }
         int lineColor = withAlpha(relationColorForAffiliation(entry.affiliation()), 0xC0);
+        // 调用本项目快照平滑入口，与只有快照的弹体图标保持一致。
+        Vec3 renderPosition = remoteAmmoRenderPosition(entry);
         drawDashedWorldLine(guiGraphics,
-                entry.x(), entry.z(),
+                renderPosition.x, renderPosition.z,
                 entry.guidancePos().x, entry.guidancePos().z,
                 4, 4,
                 lineColor);
@@ -1390,14 +1408,16 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             return false;
         }
         int baseColor = relationColorForBullet(player instanceof LocalPlayer localPlayer ? localPlayer : null, playerVehicle, bullet);
+        // 调用本项目统一显示位置，使主动雷达导弹的连线始终从图标出发。
+        Vec3 renderPosition = mapRenderPosition(bullet);
         if (bullet.isActiveRadarCatch()) {
             drawWorldLine(guiGraphics,
-                    bullet.getX(), bullet.getZ(),
+                    renderPosition.x, renderPosition.z,
                     target.x, target.z,
                     withAlpha(baseColor, 0xD8));
         } else {
             drawDashedWorldLine(guiGraphics,
-                    bullet.getX(), bullet.getZ(),
+                    renderPosition.x, renderPosition.z,
                     target.x, target.z,
                     3, 3,
                     withAlpha(baseColor, 0xA8));
@@ -1439,7 +1459,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private Vec3 resolveArhAmmoTargetPos(RVP_BaseBullet bullet) {
         Entity targetEntity = bullet.getTargetEntity();
         if (targetEntity != null && targetEntity.isAlive()) {
-            return targetEntity.getBoundingBox().getCenter();
+            // 调用本项目显示位置解析，仅调整地图连线终点，不回写弹体制导目标。
+            return mapRenderPosition(targetEntity);
         }
         Vec3 targetPos = bullet.getTargetPos();
         if (targetPos != null) {
@@ -1634,7 +1655,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (!shouldShowRemoteAmmoOnTacticalMap(entry)) {
                 continue;
             }
-            trackAmmoPosition(entry.entityId(), new Vec3(entry.x(), entry.y(), entry.z()), entry.weaponKind());
+            // 调用本项目快照插值，使消失标记与弹体图标使用相同位置。
+            trackAmmoPosition(entry.entityId(), remoteAmmoRenderPosition(entry), entry.weaponKind());
             drawRemoteAmmoMarker(guiGraphics, entry);
             registerRemoteAmmoHit(entry);
         }
@@ -1703,8 +1725,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         guiGraphics.enableScissor(mapLeft, mapTop, mapRight, mapBottom);
         for (RadarUnit radarUnit : tacticalRadarUnits) {
             float radarYaw = interpolatedRadarMapYaw(radarUnit, partialTick);
-            double centerWorldX = radarUnit.worldRadarPosition().x;
-            double centerWorldZ = radarUnit.worldRadarPosition().z;
+            // 调用本项目雷达源插值，保留雷达部件偏移并平滑扫描扇区的移动。
+            Vec3 radarPosition = RVP_ClientProjectileRenderInterpolator.resolveRadarEmitterPosition(
+                    radarUnit.getVehicle().getId(), radarUnit.worldRadarPosition(), partialTick);
+            double centerWorldX = radarPosition.x;
+            double centerWorldZ = radarPosition.z;
             float radiusPixels = (float) Math.max(1.0, radarUnit.getMaxScanDistance() / blocksPerPixel);
             float yRotMin = radarUnit.getYRotMin();
             float yRotMax = radarUnit.getYRotMax();
@@ -1722,7 +1747,9 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 float scanAngle = computeRadarScanAngle(radarUnit, partialTick, radarUnit.yRotO, radarUnit.getYRot());
                 drawRadarScanLineOnMap(guiGraphics, centerWorldX, centerWorldZ, radiusPixels, radarYaw, scanAngle, 1.0f, lineColor);
             } else {
-                drawWorldLine(guiGraphics, centerWorldX, centerWorldZ, lockedEntity.getX(), lockedEntity.getZ(), lineColor);
+                // 调用本项目地图显示位置，让锁定线准确连到目标图标。
+                Vec3 lockedPosition = mapRenderPosition(lockedEntity);
+                drawWorldLine(guiGraphics, centerWorldX, centerWorldZ, lockedPosition.x, lockedPosition.z, lineColor);
             }
         }
         if (mc.level != null && mc.player != null && mc.player.getVehicle() instanceof AbstractVehicle launcher) {
@@ -1747,15 +1774,19 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                         sector.yaw(), yRotMin, yRotMax, segments, sectorColor);
                 Entity externalLocked = getExternalRadarLockedEntity();
                 if (externalLocked != null && externalLocked.isAlive()) {
+                    // 调用本项目统一位置，外置雷达锁定线与目标图标同源。
+                    Vec3 lockedPosition = mapRenderPosition(externalLocked);
                     drawWorldLine(guiGraphics, centerWorldX, centerWorldZ,
-                            externalLocked.getX(), externalLocked.getZ(), lineColor);
+                            lockedPosition.x, lockedPosition.z, lineColor);
                 } else {
                     int lockedId = RVP_ClientExternalRadarState.getLockedEntityId(mc.level.dimension().location(), launcher.getUUID());
                     S2CExternalRadarSnapshot.Entry lockedEntry =
                             lockedId == Integer.MIN_VALUE ? null
                                     : RVP_ClientExternalRadarState.getEntry(mc.level.dimension().location(), launcher.getUUID(), lockedId);
                     if (lockedEntry != null) {
-                        Vec3 lockedPos = lockedEntry.position();
+                        // 调用本项目外置快照位置解析，复用 HUD 已有的短时外推。
+                        Vec3 lockedPos = RVP_ClientProjectileRenderInterpolator.resolveExternalRadarEntryPosition(
+                                lockedEntry, partialTick);
                         drawWorldLine(guiGraphics, centerWorldX, centerWorldZ, lockedPos.x, lockedPos.z, lineColor);
                     } else {
                         float scanAngle = externalScanAngle(sector, partialTick, mc.player.tickCount);
@@ -1810,10 +1841,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     private void drawRemoteAmmoMarker(GuiGraphics guiGraphics, S2CRemoteAmmoSnapshot.Entry entry) {
+        // 调用本项目快照插值，避免无实体弹体仍按收包周期跳动。
+        Vec3 renderPosition = remoteAmmoRenderPosition(entry);
         drawMarkerIcon(guiGraphics,
                 resolveRemoteAmmoIcon(entry),
-                entry.x(),
-                entry.z(),
+                renderPosition.x,
+                renderPosition.z,
                 entry.yaw(),
                 10,
                 relationColorForAffiliation(entry.affiliation()),
@@ -2502,16 +2535,17 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                     continue;
                 }
                 Vec3 radarPos = radarUnit.worldRadarPosition();
-                Vec2 aimRot = radarUnit.aimRot(detectedObject.detectedPosition);
-                double distanceMeters = horizontalDistance(radarPos, detectedObject.detectedPosition);
+                // 调用本项目地图显示位置，列表距离、高度与图标同步，不读取离散探测坐标。
+                Vec3 renderPosition = mapRenderPosition(entity);
+                double distanceMeters = horizontalDistance(radarPos, renderPosition);
                 boolean locked = isRadarLockedEntity(entity);
                 radarContactRows.add(new RadarContactRow(
                         entity.getId(),
                         entity,
                         radarUnit,
-                        detectedObject.detectedPosition,
+                        renderPosition,
                         distanceMeters,
-                        detectedObject.detectedPosition.y,
+                        renderPosition.y,
                         entity.getDeltaMovement().length() * 72.0,
                         resolveRadarNctrLabel(radarUnit, entity),
                         relationLabelForColor(relationColor),
@@ -2521,7 +2555,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             }
         }
         AbstractVehicle currentVehicle = localVehicle();
-        Vec3 referencePos = currentVehicle != null ? currentVehicle.position() : player.position();
+        // 调用本项目显示位置，使列表测距两端都使用当前帧坐标。
+        Vec3 referencePos = mapRenderPosition(currentVehicle != null ? currentVehicle : player);
         for (S2CExternalRadarSnapshot.Entry entry : externalEntries) {
             if (!seen.add(entry.entityId())) {
                 continue;
@@ -2548,7 +2583,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (hideFriendlyRadarRows && isRealtimeVisibleRelation(relationColor)) {
                 continue;
             }
-            Vec3 detectedPos = RVP_ExternalRadarLinkHelper.position(entry);
+            // 调用本项目外置雷达插值/外推入口，列表和 HUD 共用显示位置。
+            Vec3 detectedPos = RVP_ClientProjectileRenderInterpolator.resolveExternalRadarEntryPosition(entry, renderPartialTick);
             radarContactRows.add(new RadarContactRow(
                     entry.entityId(),
                     resolvedEntity,
@@ -3303,28 +3339,55 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return String.format(Locale.ROOT, "%.0f", speedKph);
     }
 
+    /** 同帧只解析一次实体位置，图标、连线、列表和点击区域复用 HUD 已有平滑结果。 */
+    private Vec3 mapRenderPosition(Entity entity) {
+        // 调用本项目统一位置解析，不另建地图专用的实体运动时间线。
+        return renderPositions.computeIfAbsent(entity,
+                target -> RVP_ClientProjectileRenderInterpolator.resolveRenderCenter(target, renderPartialTick));
+    }
+
+    /** 只有远距弹药快照时使用快照插值；已有实体时与 HUD 共用实体显示位置。 */
+    private Vec3 remoteAmmoRenderPosition(S2CRemoteAmmoSnapshot.Entry entry) {
+        // 调用本项目实体查找入口，优先复用正常实体或广播弹体的已有轨迹。
+        Entity entity = RVP_ExternalRadarLinkHelper.resolveClientEntity(entry.entityId());
+        if (entity != null && entity.isAlive()) {
+            // 调用本帧位置缓存，与已解析的实体图标保持一致。
+            return mapRenderPosition(entity);
+        }
+        // 调用本项目弹药快照状态，读取跨快照周期的插值位置。
+        return RVP_ClientRemoteAmmoState.resolveRenderPosition(entry, renderPartialTick);
+    }
+
     private void drawContactMarker(GuiGraphics guiGraphics, Entity entity, int color) {
+        // 调用本帧位置缓存，让普通雷达目标也逐帧移动。
+        Vec3 position = mapRenderPosition(entity);
         if (RVP_RadarContactHelper.usesMonsterIcon(entity)) {
-            drawMarkerIcon(guiGraphics, MONSTER_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, MONSTER_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), 10, 0xFFFFFFFF, false, false);
             return;
         }
         if (RVP_RadarContactHelper.usesNeutralIcon(entity)) {
-            drawMarkerIcon(guiGraphics, NORMAL_ICON, entity.getX(), entity.getZ(), entity.getYRot(), 10, 0xFFFFFFFF, false, false);
+            drawMarkerIcon(guiGraphics, NORMAL_ICON, position.x, position.z, entity.getViewYRot(renderPartialTick), 10, 0xFFFFFFFF, false, false);
             return;
         }
-        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), entity.getX(), entity.getZ(), entity.getYRot(), 10, color, true, true);
+        drawMarkerIcon(guiGraphics, resolveFallbackEntityIcon(entity), position.x, position.z, entity.getViewYRot(renderPartialTick), 10, color, true, true);
     }
 
     private void drawVehicleMarker(GuiGraphics guiGraphics, AbstractVehicle vehicle, int color) {
-        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), vehicle.getX(), vehicle.getZ(), vehicle.getYRot(), 12, color, true, true);
+        // 调用本帧位置缓存，广播载具复用与 HUD 相同的跨包插值。
+        Vec3 position = mapRenderPosition(vehicle);
+        drawMarkerIcon(guiGraphics, resolveVehicleIcon(vehicle), position.x, position.z, vehicle.getViewYRot(renderPartialTick), 12, color, true, true);
     }
 
     private void drawPlayerMarker(GuiGraphics guiGraphics, Player player, int color) {
-        drawMarkerIcon(guiGraphics, PLAYER_ICON, player.getX(), player.getZ(), player.getYRot(), 11, color, false, true);
+        // 调用本帧位置缓存，使玩家标记与地图跟随中心逐帧更新。
+        Vec3 position = mapRenderPosition(player);
+        drawMarkerIcon(guiGraphics, PLAYER_ICON, position.x, position.z, player.getViewYRot(renderPartialTick), 11, color, false, true);
     }
 
     private void drawMissileMarker(GuiGraphics guiGraphics, Entity entity, int color) {
-        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), entity.getX(), entity.getZ(), resolveMarkerYaw(entity), 10, color, true, true);
+        // 调用本帧位置缓存，使远距弹体与 HUD 框沿相同轨迹移动。
+        Vec3 position = mapRenderPosition(entity);
+        drawMarkerIcon(guiGraphics, resolveMissileIcon(entity), position.x, position.z, resolveMarkerYaw(entity), 10, color, true, true);
     }
 
     private float resolveMarkerYaw(Entity entity) {
@@ -3335,7 +3398,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                 return (float) (Math.toDegrees(Math.atan2(velocity.z, velocity.x)) - 90.0D);
             }
         }
-        return entity.getYRot();
+        return entity.getViewYRot(renderPartialTick);
     }
 
     private void drawTargetMarker(GuiGraphics guiGraphics, int sx, int sy, int color) {
@@ -3829,8 +3892,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     private void registerMarkerHit(Entity entity, MarkerKind kind, double worldX, double worldY, double worldZ, int radius, Vec3 targetPos) {
-        int sx = Mth.floor(worldToScreenX(worldX));
-        int sy = Mth.floor(worldToScreenY(worldZ));
+        // 调用本帧位置缓存，让鼠标命中区域和选中框跟随平滑图标；动作目标仍保留实体真实位置。
+        Vec3 position = mapRenderPosition(entity);
+        int sx = Mth.floor(worldToScreenX(position.x));
+        int sy = Mth.floor(worldToScreenY(position.z));
         if (!isMarkerVisible(sx, sy, radius)) {
             return;
         }
@@ -3847,8 +3912,10 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private void registerRemoteAmmoHit(S2CRemoteAmmoSnapshot.Entry entry) {
         int radius = 7;
-        int sx = Mth.floor(worldToScreenX(entry.x()));
-        int sy = Mth.floor(worldToScreenY(entry.z()));
+        // 调用本项目快照显示位置，与远距图标及其选中框保持同一屏幕坐标。
+        Vec3 position = remoteAmmoRenderPosition(entry);
+        int sx = Mth.floor(worldToScreenX(position.x));
+        int sy = Mth.floor(worldToScreenY(position.z));
         if (!isMarkerVisible(sx, sy, radius)) {
             return;
         }
