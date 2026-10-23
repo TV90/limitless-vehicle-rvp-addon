@@ -2,8 +2,8 @@ package org.ywzj.rvp.client.compat.distanthorizons;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
-import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.config.RVP_ClientConfig.DistantHorizonsFallbackMode;
+import org.ywzj.rvp.debug.RVP_DebugFlags;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -20,8 +20,22 @@ public final class RVP_DhCompatDiagnostics {
     private RVP_DhCompatDiagnostics() {
     }
 
-    /** 每种不可用原因只警告一次，避免渲染事件逐帧刷日志。 */
+    /**
+     * 返回 DH 兼容诊断（日志与 GPU/像素探针）是否开启。
+     *
+     * <p>默认关闭，只由客户端命令 {@code /rvpdebug flags dh on} 打开，避免正常游玩时
+     * 每帧/每秒输出 DH 状态；关闭时所有 DH 日志与同步回读探针都零开销跳过。</p>
+     */
+    static boolean isDiagnosticsEnabled() {
+        // 调用本项目统一调试开关，DH 日志必须由指令显式开启，不写常驻无条件日志。
+        return RVP_DebugFlags.DH.isEnabled();
+    }
+
+    /** 每种不可用原因只警告一次，避免渲染事件逐帧刷日志；开关关闭时连登记都不做。 */
     public static void warnOnce(String reason, String detail) {
+        if (!isDiagnosticsEnabled()) {
+            return;
+        }
         if (WARNED_REASONS.add(reason)) {
             LOGGER.warn("RVP DH compat: state=FALLBACK reason={} detail={}", reason, detail);
         }
@@ -33,7 +47,7 @@ public final class RVP_DhCompatDiagnostics {
                                        int trackedSelected, int remoteAlphaSamples,
                                        int remotePassedSamples, int trackedAlphaSamples,
                                        int trackedPassedSamples, double milliseconds) {
-        if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled()) {
+        if (!isDiagnosticsEnabled()) {
             return;
         }
         boolean containsGpuSamples = remoteAlphaSamples >= 0 || trackedAlphaSamples >= 0;
@@ -59,7 +73,7 @@ public final class RVP_DhCompatDiagnostics {
 
     /** 在诊断启用时每秒至多输出一次 RVP 优先显示统计。 */
     public static void recordRvpFirst(int remoteSelected, int trackedSelected) {
-        if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled() || !canLogStatistics()) {
+        if (!isDiagnosticsEnabled() || !canLogStatistics()) {
             return;
         }
         LOGGER.info("RVP DH compat: state=RVP_FIRST stage=AFTER_LEVEL "
@@ -71,7 +85,7 @@ public final class RVP_DhCompatDiagnostics {
     public static void recordFallback(String reason, DistantHorizonsFallbackMode fallback,
                                       int remoteSelected, int trackedSelected) {
         warnOnce(reason, "fallback=" + fallback);
-        if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled() || !canLogStatistics()) {
+        if (!isDiagnosticsEnabled() || !canLogStatistics()) {
             return;
         }
         LOGGER.info("RVP DH compat: state=FALLBACK reason={} fallback={} "

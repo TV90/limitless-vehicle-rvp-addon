@@ -43,12 +43,12 @@
 - 成功合成后回写 DH 深度，避免后续透明/合成阶段把载具误当作无深度颜色。
 - 深度通道不可用时提供四种明确的回退语义。
 - 资源重载、世界卸载和退出服务器时释放 RVP 自有 GL 资源。
-- 调试日志按原因去重，周期统计最多每秒一次。
+- 调试日志按原因去重，周期统计最多每秒一次；默认完全不输出，需在客户端执行 `/rvpdebug flags dh on` 才开启。
 
 ### 2.2 当前没有实现
 
 - 没有按候选包围盒裁剪到局部矩形；当前离屏目标与合成均使用完整 DH 纹理尺寸。
-- 当前诊断版每秒至多一帧使用同步 GPU query 统计 alpha / passed 样本，并每五秒至多一帧回读源附件、DH 附件与世界目标的同点像素；回读可能造成短暂卡顿，单点或计数不能代替整帧视觉验收。仅开启 `diagnostics=true` 不改变颜色；同时开启 `diagnosticLayerColors=true` 才会将 remote / tracked 染为青色 / 品红色，仍保留真实深度、覆盖率与地形遮挡。
+- 当前诊断版每秒至多一帧使用同步 GPU query 统计 alpha / passed 样本，并每五秒至多一帧回读源附件、DH 附件与世界目标的同点像素；回读可能造成短暂卡顿，单点或计数不能代替整帧视觉验收。诊断只在客户端命令 `/rvpdebug flags dh on` 开启后运行（默认关闭，正常游玩零开销）；仅开启该开关不改变颜色，同时把 `diagnosticLayerColors` 配置设为 `true` 才会将 remote / tracked 染为青色 / 品红色，仍保留真实深度、覆盖率与地形遮挡。
 - 没有针对某个光影 Mod、Oculus 或延迟透明实现专用的第二合成阶段。
 - `occlusionBiasBlocks` 是固定格数，不随目标距离自动增长。
 - 未把 `allowExperimentalShaderPipeline=true` 解释为“已兼容所有光影”；它只允许尝试当前 before-apply 路径。
@@ -204,8 +204,9 @@ DH 颜色、深度纹理只在当帧借用并挂接到 RVP 自建 FBO。RVP 不�
 | `trackedOcclusionBiasBlocks` | 0.0～2.0 | 0.5 | 真实载具保护层的独立地形遮挡容差，单位格 |
 | `maxProtectedTrackedVehicles` | 1～256 | 64 | 每帧真实载具保护层上限；按屏幕贡献、距离、实体 ID 稳定排序 |
 | `allowExperimentalShaderPipeline` | `true` / `false` | `false` | 是否允许在 DH 延迟透明/未验证光影管线上尝试当前合成 |
-| `diagnostics` | `true` / `false` | `false` | 是否每秒最多输出一次状态、候选数与耗时 |
-| `diagnosticLayerColors` | `true` / `false` | `false` | 仅 diagnostics 开启时生效；远距青色、真实载具品红，仅改颜色，不改深度或遮挡 |
+| `diagnosticLayerColors` | `true` / `false` | `false` | 仅在 `/rvpdebug flags dh on` 且本项为 `true` 时生效；远距青色、真实载具品红，仅改颜色，不改深度或遮挡 |
+
+> 诊断日志开关已从头文件配置中移除：原 `diagnostics` 配置项不再读取。DH 兼容日志（合成统计、降级原因、GPU 样本、像素回读）默认全部关闭，需在客户端执行 `/rvpdebug flags dh on` 开启，`/rvpdebug flags dh off` 关闭，`/rvpdebug flags list` 可查看当前状态。该开关与 `RVP_DebugFlags` 其它调试开关一致，不进存档、重启后回到关闭状态。
 
 四个容易误解的规则：
 
@@ -294,18 +295,18 @@ compatMode = "OFF"
 | --- | --- | --- |
 | 载具贴着远处山脊时闪烁、被坡面错误吞掉 | DH 简化地形比视觉轮廓更靠近相机 | 每次把 bias 增加 0.5～1.0 格 |
 | 载具已经深入山体后仍有部分露出 | 容差过大 | 每次把 bias 减少 0.5～1.0 格 |
-| 所有遮挡都像失效 | 多半不是 bias，而是 `ALWAYS_VISIBLE` 回退或深度通道失败 | 开启 diagnostics，先查状态 |
+| 所有遮挡都像失效 | 多半不是 bias，而是 `ALWAYS_VISIBLE` 回退或深度通道失败 | 开启 `/rvpdebug flags dh on`，先查状态 |
 | 目标完全消失且无日志统计 | 可能是 `DEPTH_AWARE/HIDE`、无候选或未进入 DH 路径 | 临时改为 `AUTO + SILHOUETTE` 定位 |
 
 ### 9.2 推荐校准步骤
 
-1. 固定分辨率、FOV、DH 质量和光影状态，开启 `diagnostics=true`。
+1. 固定分辨率、FOV、DH 质量和光影状态，执行 `/rvpdebug flags dh on` 开启诊断。
 2. 选择一条轮廓明显的山脊，在山前、山脊相切、山后各放置一个载具。
 3. 分别在约 500、1000、2000 格观察静止、横移和缩放瞄准镜场景。
 4. 从 `occlusionBiasBlocks=0.0` 开始，每次增加 0.5 格，直到山脊相切目标不再持续闪烁。
 5. 检查山后目标是否仍能漏出；若漏出，回退 0.5 格。
 6. 把 `maxOcclusionBiasBlocks` 设为最终允许的上限。由于当前没有距离缩放，它主要是配置保险，不会主动增加容差。
-7. 关闭诊断日志，保留最终参数。
+7. 执行 `/rvpdebug flags dh off` 关闭诊断日志，保留最终参数。
 
 建议起点：
 
@@ -360,7 +361,7 @@ RVP DH compat: state=FALLBACK reason=<原因> fallback=<模式> selected=<数量
 | `NO_DH_EVENT_THIS_FRAME` | 桥已就绪且已准备计划，但本帧没有成功收到/消费 DH apply 前事件 | 检查 DH 是否实际绘制 LOD 及事件顺序；版本/绑定失败会报告更具体原因 |
 | `DH_BRIDGE_LOAD_FAILED` | 反射加载强类型桥失败 | 检查 DH API 类兼容性和完整异常栈 |
 
-`diagnostics` 当前给出的 `compositeMs` 是整段 RVP 离屏绘制、DH 深度复制与全屏合成的 CPU 侧经过时间，不是纯 GPU query，不能直接当成精确 GPU 耗时。
+`/rvpdebug flags dh on` 开启后输出的 `compositeMs` 是整段 RVP 离屏绘制、DH 深度复制与全屏合成的 CPU 侧经过时间，不是纯 GPU query，不能直接当成精确 GPU 耗时。
 
 ## 11. 性能调优
 
@@ -379,7 +380,7 @@ RVP DH compat: state=FALLBACK reason=<原因> fallback=<模式> selected=<数量
 2. 再用 `maxFallbackHighModels` 限制没有整模型 LOD 时的高模回退数。
 3. 4K 或高分辨率下若 `compositeMs` 明显增加，优先降低输出分辨率/渲染比例，而不是调整 bias；bias 只改变遮挡判定。
 4. `SILHOUETTE` 与 `ALWAYS_VISIBLE` 回退仍需一次离屏绘制和全屏合成；`HIDE` 在失败帧最省，`CURRENT_PASS` 则回到原渲染成本。
-5. 完成诊断后关闭 `diagnostics`，减少日志噪声；日志本身通常不是主要渲染瓶颈。
+5. 完成诊断后执行 `/rvpdebug flags dh off` 关闭日志与像素探针，减少日志噪声与回读卡顿；日志本身通常不是主要渲染瓶颈。
 
 ## 12. 光影与延迟透明
 
@@ -389,8 +390,9 @@ RVP DH compat: state=FALLBACK reason=<原因> fallback=<模式> selected=<数量
 
 ```toml
 allowExperimentalShaderPipeline = true
-diagnostics = true
 ```
+
+并在客户端执行 `/rvpdebug flags dh on` 采集日志（默认关闭）。
 
 测试后必须检查：
 
@@ -437,7 +439,7 @@ diagnostics = true
 
 ### 只看到青色轮廓
 
-说明当前进入 `SILHOUETTE`，不是深度合成的正常颜色。开启 `diagnostics`，按 `reason` 定位。不要先调 bias，因为回退轮廓不读取 DH 深度。
+说明当前进入 `SILHOUETTE`，不是深度合成的正常颜色。执行 `/rvpdebug flags dh on` 开启日志，按 `reason` 定位。不要先调 bias，因为回退轮廓不读取 DH 深度。
 
 ### 载具完整穿山
 

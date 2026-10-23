@@ -18,7 +18,6 @@ import org.lwjgl.opengl.GL21;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
-import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.client.compat.distanthorizons.realvehicleprotect.RVP_DhTrackedVehicleFramePlan;
 
 import java.io.IOException;
@@ -31,7 +30,7 @@ import java.util.List;
 final class RVP_DhPixelDiagnostics {
     /** 日志统一使用 RVP DH pixel 前缀，便于从 debug.log 提取同帧证据。 */
     private static final Logger LOGGER = LogUtils.getLogger();
-    /** 全图 alpha 扫描最短间隔；关闭 diagnostics 时不执行任何 GL 查询。 */
+    /** 全图 alpha 扫描最短间隔；未用 {@code /rvpdebug flags dh on} 开启诊断时不执行任何 GL 查询。 */
     private static final long INTERVAL_NANOS = 5_000_000_000L;
     /** 防止异常窗口尺寸触发超大同步回读，最多覆盖常见 4K 画面。 */
     private static final long MAX_PIXELS = 8_847_360L;
@@ -53,8 +52,8 @@ final class RVP_DhPixelDiagnostics {
         frame = null;
         compositing = false;
         long now = System.nanoTime();
-        // 调用本项目配置入口，只允许显式 diagnostics 会话执行同步回读。
-        if (!sampled || !RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled()
+        // 调用本项目 DH 调试开关，只有显式 /rvpdebug flags dh on 会话才执行同步回读。
+        if (!sampled || !RVP_DhCompatDiagnostics.isDiagnosticsEnabled()
                 || now - lastCaptureNanos < INTERVAL_NANOS
                 || (long) width * height > MAX_PIXELS) {
             return;

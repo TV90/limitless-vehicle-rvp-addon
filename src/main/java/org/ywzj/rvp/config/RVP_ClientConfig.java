@@ -101,9 +101,7 @@ public class RVP_ClientConfig {
     private final ForgeConfigSpec.IntValue distantHorizonsMaxProtectedTrackedVehicles;
     /** 是否允许在未经实机验证的光影/延迟透明管线中实验性合成。 */
     private final ForgeConfigSpec.BooleanValue distantHorizonsAllowExperimentalShaderPipeline;
-    /** 是否输出受频率限制的 DH 兼容诊断。 */
-    private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnostics;
-    /** 是否启用分层诊断染色；默认 false，仅在 diagnostics=true 时生效，不改变深度。 */
+    /** 是否启用分层诊断染色；默认 false，不改变深度。 */
     private final ForgeConfigSpec.BooleanValue distantHorizonsDiagnosticLayerColors;
 
     public RVP_ClientConfig(ForgeConfigSpec.Builder builder) {
@@ -235,13 +233,13 @@ public class RVP_ClientConfig {
                         "默认 false；关闭时明确进入安全降级。")
                 .define("allowExperimentalShaderPipeline", false);
 
-        distantHorizonsDiagnostics = builder
-                .comment("是否每秒至多一次输出 DH 兼容状态与耗时统计。")
-                .define("diagnostics", false);
+        // [RVP] diagnostics 配置项已于 2026-10-23 撤销：DH 兼容诊断日志、GPU 样本查询与像素回读
+        // 统一改由客户端命令 /rvpdebug flags dh on 控制（见 RVP_DebugFlags.DH），默认关闭，
+        // 不再读取旧配置键；旧配置里残留的 diagnostics 键不生效也不会影响加载。
 
         distantHorizonsDiagnosticLayerColors = builder
                 .comment("是否将 DH 合成的远距代理染为青色、真实载具保护层染为品红色。",
-                        "默认 false，仅在 diagnostics=true 时生效；保留真实深度与遮挡判断。")
+                        "默认 false，且需 /rvpdebug flags dh on 同时开启才生效；保留真实深度与遮挡判断。")
                 .define("diagnosticLayerColors", false);
 
         builder.pop();
@@ -353,15 +351,14 @@ public class RVP_ClientConfig {
         return INSTANCE != null && INSTANCE.distantHorizonsAllowExperimentalShaderPipeline.get();
     }
 
-    /** 返回是否启用受频率限制的 DH 兼容诊断。 */
-    public static boolean isDistantHorizonsDiagnosticsEnabled() {
-        return INSTANCE != null && INSTANCE.distantHorizonsDiagnostics.get();
-    }
-
-    /** 返回是否启用仅改变颜色的 DH 分层探针；关闭诊断总开关时同时禁用染色。 */
+    /**
+     * 返回是否启用仅改变颜色的 DH 分层染色探针。
+     *
+     * <p>DH 诊断总开关已改为客户端命令 {@code /rvpdebug flags dh on}（见 {@code RVP_DebugFlags.DH}），
+     * 染色是否真正生效还需该开关同时开启；本方法只负责读取配置值。</p>
+     */
     public static boolean isDistantHorizonsDiagnosticLayerColorsEnabled() {
-        // 调用本项目诊断总开关，保证关闭诊断后不会残留可视探针。
-        return isDistantHorizonsDiagnosticsEnabled() && INSTANCE.distantHorizonsDiagnosticLayerColors.get();
+        return INSTANCE != null && INSTANCE.distantHorizonsDiagnosticLayerColors.get();
     }
 
     /** Register the client config. Must be called from mod constructor. */

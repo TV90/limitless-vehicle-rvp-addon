@@ -246,9 +246,11 @@ public final class RVP_DhDepthCompositeRenderer {
         setFloat(dhNearDepthUniform, dhAnalysis.nearDepth());
         setFloat(dhFarPlaneUniform, dhAnalysis.farPlane());
         setFloat(occlusionBiasUniform, occlusionBiasBlocks);
-        // 调用本项目独立染色开关，仅在显式启用时标识来源层，正常验收保持原色。
+        // 调用本项目染色开关与 DH 调试总开关：只有 /rvpdebug flags dh on 且配置允许时才标识来源层，
+        // 正常游玩保持原色，避免默认画面被诊断色污染。
         setInt(diagnosticLayerColorModeUniform,
-                RVP_ClientConfig.isDistantHorizonsDiagnosticLayerColorsEnabled()
+                RVP_DhCompatDiagnostics.isDiagnosticsEnabled()
+                        && RVP_ClientConfig.isDistantHorizonsDiagnosticLayerColorsEnabled()
                         ? ("remote".equals(layerName) ? 1 : 2) : 0);
         int alphaSamples = countLayerAlphaSamples(capturePassedSamples);
         setInt(diagnosticBypassOcclusionUniform, 0);
@@ -307,9 +309,10 @@ public final class RVP_DhDepthCompositeRenderer {
     private record LayerSampleCounts(int alphaSamples, int passedSamples) {
     }
 
-    /** 每秒至多允许一帧执行同步 GPU 样本诊断；关闭 diagnostics 时完全不创建查询。 */
+    /** 每秒至多允许一帧执行同步 GPU 样本诊断；未用 {@code /rvpdebug flags dh on} 开启诊断时完全不创建查询。 */
     private static boolean shouldCaptureLayerSamples() {
-        if (!RVP_ClientConfig.isDistantHorizonsDiagnosticsEnabled()) {
+        // 调用本项目 DH 调试开关，默认关闭时不产生 GPU query 与同步回读。
+        if (!RVP_DhCompatDiagnostics.isDiagnosticsEnabled()) {
             return false;
         }
         long now = System.nanoTime();
