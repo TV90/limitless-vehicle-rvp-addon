@@ -352,6 +352,56 @@ public class RVP_ScopeOverlay implements IGuiOverlay {
         return localRadarHardLock || hasRadarContacts || rfAim || hasExternalRadarEntries();
     }
 
+    /**
+     * [RVP] 是否跳过本体 {@code VehicleAimAtOverlay.renderAimLockTarget} 的绘制。
+     *
+     * <p>2026-10-23（本体 27552d7）根因：0.6.1 的锁框绘制挂在 {@code VehicleScopeOverlay.render}
+     * 里，与 scope 分支同处一个 overlay，天然互斥；0.6.2 把它搬进 {@code VehicleAimAtOverlay.render}
+     * 的末尾且<b>不再判断视角</b>，于是观瞄视角下本体与 {@link #render} 的 scope 分支各画一套
+     * 同一目标的框 —— 两套锚点（实体插值位置 vs 雷达探测记录位置）与距离来源不同，
+     * 表现为"框重影 + 距离数字来回跳"。</p>
+     *
+     * <p>非观瞄视角沿用原 {@link #hudLockTakeoverActive()} 门控；观瞄视角下 RVP 的两条补画路径
+     * （有 preset 走 {@link #render} 的 scope 分支、无 preset 走 {@code RVP_OverlayCancelHandler} 补画）
+     * 都会画，故一律接管，仅 HITL（TV 弹专用准星）与无载具时放行本体。</p>
+     */
+    public static boolean shouldSkipVanillaAimLockTarget() {
+        if (hudLockTakeoverActive()) {
+            return true;
+        }
+        if (LocalVehiclePlayer.instance.viewType != LocalVehiclePlayer.ViewType.SCOPE) {
+            return false;
+        }
+        return scopeDrawsLockTarget();
+    }
+
+    /**
+     * 观瞄视角下 RVP 是否已在画锁定框。
+     *
+     * <p><b>2026-10-23 实测修正</b>：原先这里按「preset 非空」判断，但日志
+     * （`rvp:bukm3`、`preset=null`、`lockTarget/帧=1.00`、`skipFalse帧=1209`）证明判据错了 ——
+     * 无 ui_preset 的载具由 {@code RVP_OverlayCancelHandler} 取消本体 {@code VehicleScopeOverlay}
+     * 整层后自己补画 {@link #renderAimLockTarget}，所以 preset 为空时 RVP 照样在画；
+     * 而 0.6.2 已把锁框搬进 {@code VehicleAimAtOverlay}，该 handler 取消不到那一层，
+     * 于是本体每帧又多画一套 ⇒ 双框重影。</p>
+     *
+     * <p>结论：观瞄视角下 preset 有无都已被 RVP 接管（有 preset 走 {@link #render} 的 scope 分支，
+     * 无 preset 走 CancelHandler 补画），因此这里一律接管；只有 HITL（TV 弹专用准星）、无载具时放行本体。</p>
+     */
+    private static boolean scopeDrawsLockTarget() {
+        if (!LocalVehiclePlayer.instance.onVehicle()) {
+            return false;
+        }
+        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
+        if (vehicle == null || vehicle.getVehicleId() == null) {
+            return false;
+        }
+        if (org.ywzj.rvp.client.state.RVP_ClientHitlState.isActive()) {
+            return false;
+        }
+        return true;
+    }
+
     public static void renderAimLockTarget(GuiGraphics guiGraphics, float partialTick) {
         // 调试（BVR 扫描框排查，默认关闭）：无条件节流日志，定位外置扫描框不渲染
         if (RVP_BVR_DEBUG) {

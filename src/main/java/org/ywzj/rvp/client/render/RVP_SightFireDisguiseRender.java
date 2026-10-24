@@ -19,7 +19,7 @@ public final class RVP_SightFireDisguiseRender {
     private RVP_SightFireDisguiseRender() {
     }
 
-    /** 渲染器入口：有伪装数据且未过合流期时对 PoseStack 施加平移；否则零开销返回。 */
+/** 渲染器入口：有伪装数据且未过合流期时对 PoseStack 施加平移；否则零开销返回。 */
     public static void applyDisguiseTranslate(Entity entity, PoseStack poseStack, float partialTick) {
         if (!(entity instanceof RVP_BaseBullet bullet)) {
             return;

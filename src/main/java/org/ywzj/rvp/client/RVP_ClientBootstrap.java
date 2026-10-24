@@ -9,6 +9,7 @@ import org.ywzj.rvp.all.RVP_Entities;
 import org.ywzj.rvp.all.RVP_Particles;
 import org.ywzj.rvp.client.particle.RVP_MchrSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_TracerGhostParticle;
+import org.ywzj.rvp.client.particle.RVP_ImpactSparkParticle;
 import org.ywzj.rvp.client.particle.RVP_WhitePhosphorusParticle;
 import org.ywzj.rvp.client.debug.RVP_SbmProbeDebug;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
@@ -96,7 +97,8 @@ public final class RVP_ClientBootstrap {
         event.registerSpecial(RVP_Particles.MCHR_SMOKE.get(), new RVP_MchrSmokeParticle.Provider());
         // 近距命中曳光残影：自绘速度对齐发光箱体（替代 DustParticleOptions 色尘补渲的观感方案）。
         event.registerSpecial(RVP_Particles.TRACER_GHOST.get(), new RVP_TracerGhostParticle.Provider());
-
+        // 命中火星：弹药命中载具/方块后溅出的扩散火花（方向=命中反方向，大阻力衰减）。
+        event.registerSpecial(RVP_Particles.IMPACT_SPARK.get(), new RVP_ImpactSparkParticle.Provider());
     }
 
     private static void registerVehicleRenderers() {

@@ -40,6 +40,15 @@ public final class RVP_Particles {
                     () -> org.ywzj.vehicle.all.AllParticleTypes.createOptions(
                             RVP_TracerGhostOptions.CODEC, RVP_TracerGhostOptions.DESERIALIZER));
 
+    /**
+     * 命中火星：数据驱动的扩散火花，方向/速度/散布/寿命随 ParticleOptions 携带
+     * （见 {@link RVP_ImpactSparkOptions}）。
+     */
+    public static final RegistryObject<net.minecraft.core.particles.ParticleType<RVP_ImpactSparkOptions>> IMPACT_SPARK =
+            PARTICLES.register(RVP_ParticleIds.IMPACT_SPARK.getPath(),
+                    () -> org.ywzj.vehicle.all.AllParticleTypes.createOptions(
+                            RVP_ImpactSparkOptions.CODEC, RVP_ImpactSparkOptions.DESERIALIZER));
+
     private RVP_Particles() {}
 
     public static void register(IEventBus eventBus) {

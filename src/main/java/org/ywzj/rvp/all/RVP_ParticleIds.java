@@ -21,6 +21,10 @@ public final class RVP_ParticleIds {
     public static final ResourceLocation TRACER_GHOST =
             ResourceLocation.fromNamespaceAndPath("rvp", "tracer_ghost");
 
+    /** 弹药命中载具/方块后溅出的扩散火星（方向=命中反方向，速度按命中弹速打折，大阻力衰减）。 */
+    public static final ResourceLocation IMPACT_SPARK =
+            ResourceLocation.fromNamespaceAndPath("rvp", "impact_spark");
+
     private RVP_ParticleIds() {
     }
 }

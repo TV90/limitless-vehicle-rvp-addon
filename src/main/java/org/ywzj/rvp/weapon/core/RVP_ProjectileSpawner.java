@@ -97,6 +97,7 @@ public final class RVP_ProjectileSpawner {
         float muzzleSpeed = data.resolveMuzzleSpeed(kind);
         Vec3 motion = direction.scale(Math.max(muzzleSpeed * powerScale, 0.01f));
         Vec3 muzzle = RVP_AimContexts.muzzle(aim);
+        Vec3 normalMuzzle = muzzle;
         // 观瞄视角射弹原点分离（rvp_sight_fire_disguise）：玩家处于本站观瞄视角开火时，
         // 实际出弹点覆盖为观瞄相机坐标（方向不变=炮管指向=准星方向，消除观瞄离炮闩枢轴的抵近偏差）；
         // 炮口位置本身不进 aimContext，本体枪口烟特效天然留在炮管。查不到有效状态即原样出弹。
@@ -108,6 +109,11 @@ public final class RVP_ProjectileSpawner {
         if (sightDisguise != null) {
             muzzle = sightDisguise.actualSpawn();
         }
+        // [RVP] 单发取证（/rvpdebug shotdump 武装后才输出）：判定伪装平移向量是否与弹道平行
+        org.ywzj.rvp.debug.RVP_ShotDumpDiag.capture(
+                data.getWeaponId() == null ? null : data.getWeaponId().toString(),
+                kind == null ? "<null>" : kind.name(),
+                muzzle, normalMuzzle, motion, xRot, yRot, sightDisguise);
         RVP_WeaponOriginDebug.noteSpawnInvocation(
                 vehicle,
                 new RVP_WeaponOriginDebug.ResourceRef(
@@ -236,6 +242,10 @@ public final class RVP_ProjectileSpawner {
         if (sightMuzzle.distanceTo(vehicle.position()) > config.maxDistance()) {
             return null;
         }
+        // ===== 2026-10-24 回退到 2026-09-19 定版（commit b44d5dbc）=====
+        // 原始实现：视觉出发点 = 真实炮口，实际出弹点 = 观瞄相机，时长取站配置。
+        // 期间加过的「投影到弹道直线」「极近/失真门限」「视觉总开关」「首 tick 不渲染」全部撤回，
+        // 便于排查「贴近俯射模型斜飞」的真实来源（当前怀疑曳光补渲，而非本功能）。
         return new RVP_SightFireDisguise(normalMuzzle, sightMuzzle, config.disguiseTicks(), config.blendTicks());
     }
 
