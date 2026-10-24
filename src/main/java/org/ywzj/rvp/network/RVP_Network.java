@@ -32,7 +32,8 @@ public class RVP_Network {
     /** 协议 27：新增地面载具击毁分支及权威殉燃时间表；双端必须一同更新。 */
     /** 协议 28：新增载具表面命中火花消息；双端必须一同更新。 */
     /** 协议 29：命中火星消息增加入射方向，用于按装甲面采样飞溅；双端必须一同更新。 */
-    private static final String PROTOCOL = "29";
+    /** 协议 30：通用视觉事件增加可选的八方向冲击波形状；双端必须一同更新。 */
+    private static final String PROTOCOL = "30";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))

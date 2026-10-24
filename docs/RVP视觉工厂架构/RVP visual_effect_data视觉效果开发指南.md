@@ -753,3 +753,10 @@ rg -n "weaponId.*(equals|contains)" src/main/java/org/ywzj/rvp/entity src/main/j
 10. 完整构建、自动测试和游戏内矩阵通过。
 
 达到以上条件后，新视觉才真正融入现有 `visual_effect_data` 工厂体系，而不是与温压弹并列维护的一套孤立特例。
+
+
+## 2026-10-24：威尔逊云与马赫杆工厂
+
+新增 `rvp:wilson_mach_shockwave`，使用既有通用字段，无额外武器 JSON 键；详细配置和测试命令见 [实施记录](RVP威尔逊云和马赫杆实现计划_20261024.md#八2026-10-24-实施记录)。该类型在服务端采样地形后，将可选的 `shockwaveProfile` 通过 schema 2 视觉消息发送；其它类型为 null。网络通道为 30，双端需同步升级。
+
+本类型至少广播 8192 格，不按距离减少云团，每实例默认 384、上限 512 个，同时最多四个。核爆与本类型共用 `RVP_ShockwaveCloudField`、单位球壳网格和着色器资源；核爆仍由 `RVP_NuclearShockwaveRenderer` 按原参数独立推进和绘制，新工厂由 `RVP_ShockwaveRenderer` 管理。两者的实例预算、投影和生命周期互不影响，热成像不得调用屏幕折射。

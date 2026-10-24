@@ -26,6 +26,7 @@ import java.util.Objects;
  * @param sound 是否允许声音
  * @param flash 是否允许闪光
  * @param shake 是否允许镜头震动
+ * @param shockwaveProfile 可选的服务端冲击波形状，非冲击波效果为 null
  * @param experimentalDynamicParticleBudget 是否启用由具体视觉类型解释的实验性动态粒子预算
  */
 public record RVP_VisualEffectEvent(
@@ -44,7 +45,8 @@ public record RVP_VisualEffectEvent(
         boolean sound,
         boolean flash,
         boolean shake,
-        boolean experimentalDynamicParticleBudget
+        boolean experimentalDynamicParticleBudget,
+        @javax.annotation.Nullable RVP_ShockwaveProfile shockwaveProfile
 ) {
     /** 单个预设覆盖允许的最大 UTF-8 字节数。 */
     public static final int MAX_PRESET_DATA_BYTES = 8 * 1024;

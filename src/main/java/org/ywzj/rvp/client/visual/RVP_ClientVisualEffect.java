@@ -21,6 +21,9 @@ public interface RVP_ClientVisualEffect {
     default void renderThermal(RenderLevelStageEvent event) {
     }
 
+    /** 通过 Forge 相机事件施加实例自身的震动；默认无反馈。 */
+    default void applyCameraShake(net.minecraftforge.client.event.ViewportEvent.ComputeCameraAngles event) { }
+
     /** 返回该实例是否已经结束。 */
     boolean isFinished();
 

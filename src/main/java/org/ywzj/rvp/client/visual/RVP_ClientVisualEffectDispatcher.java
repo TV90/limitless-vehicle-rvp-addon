@@ -21,6 +21,8 @@ public final class RVP_ClientVisualEffectDispatcher {
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 同时活动的视觉实例硬上限。 */
     private static final int MAX_ACTIVE_EFFECTS = 24;
+    /** 威尔逊云复杂效果同时最多四个。 */
+    private static final int MAX_COMPLEX_EFFECTS = 4;
     /** 效果类型到客户端工厂的注册表。 */
     private static final Map<ResourceLocation, RVP_ClientVisualEffectFactory> FACTORIES = new ConcurrentHashMap<>();
     /** 已记录未知类型警告的集合，避免连续爆炸刷屏。 */
@@ -62,6 +64,18 @@ public final class RVP_ClientVisualEffectDispatcher {
             // 调用效果生命周期接口清理最旧实例，保证连续引爆不会突破全局实例预算。
             ACTIVE_EFFECTS.remove(0).close();
         }
+        if (created.get() instanceof RVP_WilsonMachEffectInstance) {
+            long count = ACTIVE_EFFECTS.stream().filter(effect -> effect instanceof RVP_WilsonMachEffectInstance).count();
+            if (count >= MAX_COMPLEX_EFFECTS) {
+                for (int index = 0; index < ACTIVE_EFFECTS.size(); index++) {
+                    if (ACTIVE_EFFECTS.get(index) instanceof RVP_WilsonMachEffectInstance) {
+                        // 调用关闭入口，同时取消最旧复杂效果的云团、球壳与延迟音。
+                        ACTIVE_EFFECTS.remove(index).close();
+                        break;
+                    }
+                }
+            }
+        }
         ACTIVE_EFFECTS.add(created.get());
     }
 
@@ -96,6 +110,14 @@ public final class RVP_ClientVisualEffectDispatcher {
     public static void renderThermal(RenderLevelStageEvent event) {
         for (RVP_ClientVisualEffect effect : ACTIVE_EFFECTS) {
             effect.renderThermal(event);
+        }
+    }
+
+    /** 把相机反馈分发给实例，避免渲染时直接改玩家状态。 */
+    public static void applyCameraShake(net.minecraftforge.client.event.ViewportEvent.ComputeCameraAngles event) {
+        for (RVP_ClientVisualEffect effect : ACTIVE_EFFECTS) {
+            // 调用实例反馈钩子，统一遵守生命周期与淘汰结果。
+            effect.applyCameraShake(event);
         }
     }
 

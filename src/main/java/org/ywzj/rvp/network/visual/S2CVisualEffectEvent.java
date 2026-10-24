@@ -11,6 +11,10 @@ import net.minecraftforge.network.NetworkEvent;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEndpoint;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
+import org.ywzj.rvp.weapon.visual.api.RVP_ShockwaveProfile;
+import java.util.ArrayList;
+import java.util.List;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -33,6 +37,7 @@ import java.util.function.Supplier;
  * @param sound 是否允许声音
  * @param flash 是否允许闪光
  * @param shake 是否允许镜头震动
+ * @param shockwaveProfile 可选的权威冲击波形状，非冲击波事件为 null
  * @param experimentalDynamicParticleBudget 是否启用实验性动态粒子预算
  */
 public record S2CVisualEffectEvent(
@@ -51,10 +56,11 @@ public record S2CVisualEffectEvent(
         boolean sound,
         boolean flash,
         boolean shake,
-        boolean experimentalDynamicParticleBudget
+        boolean experimentalDynamicParticleBudget,
+        @javax.annotation.Nullable RVP_ShockwaveProfile shockwaveProfile
 ) {
     /** 当前消息载荷 schema 版本。 */
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     /** 声音开关位。 */
     private static final int FLAG_SOUND = 1;
     /** 闪光开关位。 */
@@ -77,7 +83,7 @@ public record S2CVisualEffectEvent(
         this(event.effectType(), event.preset(), event.canonicalPresetDataJson(), event.dimension().location(),
                 event.position(), event.baseExplosionRadius(), event.scale(), event.density(), event.durationTicks(),
                 event.broadcastRange(), event.seed(), event.startGameTime(), event.sound(), event.flash(), event.shake(),
-                event.experimentalDynamicParticleBudget());
+                event.experimentalDynamicParticleBudget(), event.shockwaveProfile());
     }
 
     public static void encode(S2CVisualEffectEvent message, FriendlyByteBuf buffer) {
@@ -107,6 +113,17 @@ public record S2CVisualEffectEvent(
                 | (message.experimentalDynamicParticleBudget
                         ? FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET : 0);
         buffer.writeByte(flags);
+        buffer.writeBoolean(message.shockwaveProfile != null);
+        if (message.shockwaveProfile != null) {
+            // 固定八方向编码，禁止由包内长度申请任意大小数组。
+            RVP_ShockwaveProfile profile = message.shockwaveProfile;
+            buffer.writeByte(profile.hitClass().ordinal());
+            buffer.writeDouble(profile.groundY());
+            buffer.writeFloat(profile.solidity());
+            for (float reach : profile.reach()) {
+                buffer.writeFloat(reach);
+            }
+        }
     }
 
     public static S2CVisualEffectEvent decode(FriendlyByteBuf buffer) {
@@ -131,6 +148,25 @@ public record S2CVisualEffectEvent(
         long seed = buffer.readLong();
         long startGameTime = buffer.readLong();
         int flags = buffer.readUnsignedByte();
+        RVP_ShockwaveProfile profile = null;
+        if (buffer.readBoolean()) {
+            int hitClass = buffer.readUnsignedByte();
+            if (hitClass >= RVP_ShockwaveProfile.HitClass.values().length) {
+                throw new DecoderException("Invalid shockwave hit class");
+            }
+            double groundY = buffer.readDouble();
+            float solidity = buffer.readFloat();
+            List<Float> reach = new ArrayList<>(RVP_ShockwaveProfile.DIRECTION_COUNT);
+            for (int index = 0; index < RVP_ShockwaveProfile.DIRECTION_COUNT; index++) {
+                reach.add(buffer.readFloat());
+            }
+            try {
+                // 调用不可变形状构造器统一拒绝非有限值与越界半径。
+                profile = new RVP_ShockwaveProfile(RVP_ShockwaveProfile.HitClass.values()[hitClass], groundY, solidity, reach);
+            } catch (IllegalArgumentException exception) {
+                throw new DecoderException("Invalid shockwave profile", exception);
+            }
+        }
         validateNumbers(position, radius, scale, density, durationTicks, broadcastRange);
         return new S2CVisualEffectEvent(
                 effectType,
@@ -148,7 +184,7 @@ public record S2CVisualEffectEvent(
                 (flags & FLAG_SOUND) != 0,
                 (flags & FLAG_FLASH) != 0,
                 (flags & FLAG_SHAKE) != 0,
-                (flags & FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET) != 0);
+                (flags & FLAG_EXPERIMENTAL_DYNAMIC_PARTICLE_BUDGET) != 0, profile);
     }
 
     public static void handle(S2CVisualEffectEvent message, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -165,7 +201,7 @@ public record S2CVisualEffectEvent(
         return new RVP_VisualEffectEvent(
                 effectType, preset, canonicalPresetDataJson, dimensionKey, position, baseExplosionRadius,
                 scale, density, durationTicks, broadcastRange, seed, startGameTime, sound, flash, shake,
-                experimentalDynamicParticleBudget);
+                experimentalDynamicParticleBudget, shockwaveProfile);
     }
 
     private static void validateNumbers(

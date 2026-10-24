@@ -33,6 +33,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.network.S2CNuclearVisualEffect;
 
+import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveCloudField.*;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -102,6 +103,7 @@ public final class RVP_NuclearVisualManager {
         Effect effect = new Effect(level, message, minecraft.player);
         EFFECTS.add(effect);
         long elapsed = Math.max(0L, level.getGameTime() - message.startGameTime());
+        // 调用核爆专用球壳，保留原参数与迟到事件的 219 tick 年龄上限。
         RVP_NuclearShockwaveRenderer.spawn(message.x(), message.y(), message.z(),
                 (int) Math.min(elapsed, 219L));
         renderCacheDirty = true;
@@ -136,6 +138,7 @@ public final class RVP_NuclearVisualManager {
                 EFFECTS.remove(i);
             }
         }
+        // 调用核爆自身的更新入口，保留原来的推进时机。
         RVP_NuclearShockwaveRenderer.tick();
         renderCacheDirty = true;
     }
@@ -176,6 +179,7 @@ public final class RVP_NuclearVisualManager {
         EFFECTS.clear();
         RENDER_CLOUDS.clear();
         RENDER_CLOUD_POOL.clear();
+        // 只清理核爆球壳，威尔逊云持有独立生命周期。
         RVP_NuclearShockwaveRenderer.clear();
         activeLevel = nextLevel;
         cachedRenderGameTime = Long.MIN_VALUE;
@@ -192,6 +196,7 @@ public final class RVP_NuclearVisualManager {
     }
 
     private static void render(RenderLevelStageEvent event, Minecraft minecraft) {
+        // 维持原顺序：先画核爆球壳，再画核爆云团和闪光。
         RVP_NuclearShockwaveRenderer.render(event);
         Camera camera = event.getCamera();
         Vec3 cameraPos = camera.getPosition();
@@ -471,15 +476,9 @@ public final class RVP_NuclearVisualManager {
 
     private static void updateRange(List<Cloud> clouds, UpdateContext context, int start, int end) {
         for (int i = start; i < end; i++) {
+            // 调用共享云团运动算法，核爆与威尔逊云共用同一套翻滚和抬升计算。
             clouds.get(i).update(context);
         }
-    }
-
-    private enum CloudType {
-        STANDARD,
-        SHOCK,
-        RING,
-        CONDENSATION
     }
 
     private static final class RenderCloud {
@@ -508,20 +507,7 @@ public final class RVP_NuclearVisualManager {
         }
     }
 
-    private record UpdateContext(
-            double centerX,
-            double centerY,
-            double centerZ,
-            double coreHeight,
-            double torusWidth,
-            double rollerSize,
-            double convectionHeight,
-            double simulationSpeed,
-            double heat,
-            int effectAge
-    ) {}
-
-    private static final class Effect {
+    private static final class Effect implements Appearance {
         private final Vec3 center;
         private final double groundY;
         private final float effectYield;
@@ -711,6 +697,12 @@ public final class RVP_NuclearVisualManager {
             }
         }
 
+        /** 向共享云团算法提供核爆外观参数，保持原缩放与淡出。 */
+        public Vec3 center() { return center; }
+        public float cloudScale() { return cloudScale; }
+        public int age() { return age; }
+        public int maxAge() { return maxAge; }
+
         private double groundSimulationY() {
             return center.y + (groundY - center.y) / Math.max(cloudScale, 0.001F);
         }
@@ -727,7 +719,7 @@ public final class RVP_NuclearVisualManager {
             return 1.0D;
         }
 
-        private double greying() {
+        public double greying() {
             int start = maxAge * 3 / 4;
             return age > start ? 1.0D + (age - start) / (double) Math.max(1, maxAge - start) : 1.0D;
         }
@@ -774,248 +766,5 @@ public final class RVP_NuclearVisualManager {
         }
     }
 
-    private static final class Cloud {
-        private double x;
-        private double y;
-        private double z;
-        private double previousX;
-        private double previousY;
-        private double previousZ;
-        private double motionX;
-        private double motionY;
-        private double motionZ;
-        private final float angle;
-        private final int lifetime;
-        private final CloudType type;
-        private final float startScale;
-        private final float growScale;
-        private final float rangeMod;
-        private final float colorMod;
-        private final float renderSample;
-        private double motionMult = 1.0D;
-        private double colorR = 0.25D;
-        private double colorG = 0.25D;
-        private double colorB = 0.25D;
-        private double previousColorR = 0.25D;
-        private double previousColorG = 0.25D;
-        private double previousColorB = 0.25D;
-        private double computedMotionX;
-        private double computedMotionY;
-        private double computedMotionZ;
-        private int age;
-        private boolean dead;
 
-        private Cloud(double x, double y, double z, float angle, int lifetime, CloudType type,
-                float startScale, float growScale, Random random) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            previousX = x;
-            previousY = y;
-            previousZ = z;
-            this.angle = angle;
-            this.lifetime = Math.max(1, lifetime);
-            this.type = type;
-            this.startScale = startScale;
-            this.growScale = growScale;
-            rangeMod = 0.3F + random.nextFloat() * 0.7F;
-            colorMod = 0.8F + random.nextFloat() * 0.2F;
-            long hash = stableHash(x, y, z, angle, type.ordinal());
-            renderSample = (hash & 0xFFFFFFL) / 16777216.0F;
-        }
-
-        private void update(UpdateContext context) {
-            age++;
-            if (age > lifetime) {
-                dead = true;
-                return;
-            }
-            previousX = x;
-            previousY = y;
-            previousZ = z;
-            double simDeltaX = context.centerX - x;
-            double simDeltaZ = context.centerZ - z;
-            double simPosX = context.centerX + Math.sqrt(simDeltaX * simDeltaX + simDeltaZ * simDeltaZ);
-            double simPosZ = context.centerZ;
-
-            if (type == CloudType.STANDARD) {
-                computeConvectionMotion(context, simPosX, simPosZ);
-                double convectionX = computedMotionX;
-                double convectionY = computedMotionY;
-                double convectionZ = computedMotionZ;
-                computeLiftMotion(context, simPosX);
-                double liftScale = Mth.clamp(1.0D - (simPosX - (context.centerX + context.torusWidth)), 0.0D, 1.0D);
-                computedMotionX *= liftScale;
-                computedMotionY *= liftScale;
-                computedMotionZ *= liftScale;
-                double factor = Mth.clamp((y - context.centerY) / Math.max(context.coreHeight, 0.001D), 0.0D, 1.0D);
-                motionX = convectionX * factor + computedMotionX * (1.0D - factor);
-                motionY = convectionY * factor + computedMotionY * (1.0D - factor);
-                motionZ = convectionZ * factor + computedMotionZ * (1.0D - factor);
-            } else if (type == CloudType.SHOCK) {
-                double factor = Mth.clamp((y - context.centerY) / Math.max(context.coreHeight, 0.001D), 0.0D, 1.0D);
-                motionX = Mth.cos(angle) * factor;
-                motionY = 0.0D;
-                motionZ = -Mth.sin(angle) * factor;
-            } else if (type == CloudType.RING) {
-                computeRingMotion(context, simPosX, simPosZ);
-                motionX = computedMotionX;
-                motionY = computedMotionY;
-                motionZ = computedMotionZ;
-            } else {
-                double speed = 0.00002D * context.effectAge;
-                motionX = (x - context.centerX) * speed;
-                motionY = 0.0D;
-                motionZ = (z - context.centerZ) * speed;
-            }
-            double mult = motionMult * context.simulationSpeed;
-            x += motionX * mult;
-            y += motionY * mult;
-            z += motionZ * mult;
-            updateColor(context);
-        }
-
-        private void computeLiftMotion(UpdateContext context, double simPosX) {
-            setNormalizedMotion(context.centerX - x,
-                    context.centerY + context.convectionHeight - y,
-                    context.centerZ - z);
-        }
-
-        private void computeConvectionMotion(UpdateContext context, double simPosX, double simPosZ) {
-            computeTorusMotion(context, simPosX, simPosZ,
-                    context.centerY + context.coreHeight, context.rollerSize * rangeMod, 1.0D);
-        }
-
-        private void computeRingMotion(UpdateContext context, double simPosX, double simPosZ) {
-            if (simPosX > context.centerX + context.torusWidth * 2.0D) {
-                setComputedMotion(0.0D, 0.0D, 0.0D);
-                return;
-            }
-            computeTorusMotion(context, simPosX, simPosZ,
-                    context.centerY + context.coreHeight * 0.42D,
-                    context.rollerSize * rangeMod * 0.25D, 0.001D);
-        }
-
-        private void computeTorusMotion(UpdateContext context, double simPosX, double simPosZ,
-                double targetY, double roller, double targetScale) {
-            if (roller < 1.0E-4D) {
-                setComputedMotion(0.0D, 0.0D, 0.0D);
-                return;
-            }
-            double targetX = context.centerX + context.torusWidth;
-            double deltaX = targetX - simPosX;
-            double deltaY = targetY - y;
-            double deltaZ = context.centerZ - simPosZ;
-            double dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ) / roller - 1.0D;
-            if (Math.abs(dist) < 1.0E-6D) {
-                setComputedMotion(0.0D, 0.0D, 0.0D);
-                return;
-            }
-            double func = 1.0D - Math.exp(-dist);
-            float turn = (float) (func * Math.PI * 0.5D);
-            double rotX = -deltaX / dist;
-            double rotY = -deltaY / dist;
-            double rotZ = -deltaZ / dist;
-            double cos = Mth.cos(turn);
-            double sin = Mth.sin(turn);
-            double rotatedX = rotX * cos + rotY * sin;
-            double rotatedY = rotY * cos - rotX * sin;
-            setNormalizedMotion(
-                    (targetX + rotatedX - simPosX) * targetScale,
-                    (targetY + rotatedY - y) * targetScale,
-                    (context.centerZ + rotZ - simPosZ) * targetScale);
-            double outX = computedMotionX * Mth.cos(angle) + computedMotionZ * Mth.sin(angle);
-            double outZ = computedMotionZ * Mth.cos(angle) - computedMotionX * Mth.sin(angle);
-            computedMotionX = outX;
-            computedMotionZ = outZ;
-        }
-
-        private void setNormalizedMotion(double x, double y, double z) {
-            double length = Math.sqrt(x * x + y * y + z * z);
-            if (length < 1.0E-4D) {
-                setComputedMotion(0.0D, 0.0D, 0.0D);
-                return;
-            }
-            setComputedMotion(x / length, y / length, z / length);
-        }
-
-        private void setComputedMotion(double x, double y, double z) {
-            computedMotionX = x;
-            computedMotionY = y;
-            computedMotionZ = z;
-        }
-
-        private void updateColor(UpdateContext context) {
-            previousColorR = colorR;
-            previousColorG = colorG;
-            previousColorB = colorB;
-            double dx = context.centerX - x;
-            double dy = context.centerY + context.coreHeight - y;
-            double dz = context.centerZ - z;
-            double distSq = (dx * dx + dy * dy + dz * dz) / Math.max(context.heat, 0.001D);
-            double col = 2.0D / Math.max(Math.sqrt(distSq), 1.0D);
-            colorR = Math.max(col * 2.0D, 0.25D);
-            colorG = Math.max(col * 1.5D, 0.25D);
-            colorB = Math.max(col * 0.5D, 0.25D);
-        }
-
-        private boolean decorative() {
-            return type == CloudType.SHOCK || type == CloudType.CONDENSATION;
-        }
-
-        private float scale(Effect effect) {
-            float base = startScale + age / (float) lifetime * growScale;
-            return type == CloudType.SHOCK ? base : base * effect.cloudScale;
-        }
-
-        private float alpha(Effect effect) {
-            float local = 1.0F - Mth.clamp(age / (float) lifetime, 0.0F, 1.0F);
-            float global = effect.age <= effect.maxAge * 0.75F
-                    ? 1.0F
-                    : 1.0F - (effect.age - effect.maxAge * 0.75F) / (effect.maxAge * 0.25F);
-            float alpha = Mth.clamp(local * global, 0.0F, 1.0F);
-            return type == CloudType.CONDENSATION ? alpha * 0.25F : alpha;
-        }
-
-        private void writeColor(Effect effect, float partialTick, float[] output) {
-            if (type == CloudType.CONDENSATION) {
-                output[0] = 0.9F;
-                output[1] = 0.9F;
-                output[2] = 0.9F;
-                return;
-            }
-            double greying = effect.greying() + (type == CloudType.RING ? 1.0D : 0.0D);
-            float brightness = 0.75F * colorMod;
-            output[0] = Mth.clamp((float) (Mth.lerp(partialTick, previousColorR, colorR) * greying) * brightness, 0.0F, 1.0F);
-            output[1] = Mth.clamp((float) (Mth.lerp(partialTick, previousColorG, colorG) * greying) * brightness, 0.0F, 1.0F);
-            output[2] = Mth.clamp((float) (Mth.lerp(partialTick, previousColorB, colorB) * greying) * brightness, 0.0F, 1.0F);
-        }
-
-        private double renderX(Effect effect, float partialTick) {
-            double value = Mth.lerp(partialTick, previousX, x);
-            return type == CloudType.SHOCK ? value : (value - effect.center.x) * effect.cloudScale + effect.center.x;
-        }
-
-        private double renderY(Effect effect, float partialTick) {
-            double value = Mth.lerp(partialTick, previousY, y);
-            return type == CloudType.SHOCK ? value : (value - effect.center.y) * effect.cloudScale + effect.center.y;
-        }
-
-        private double renderZ(Effect effect, float partialTick) {
-            double value = Mth.lerp(partialTick, previousZ, z);
-            return type == CloudType.SHOCK ? value : (value - effect.center.z) * effect.cloudScale + effect.center.z;
-        }
-
-        private static long stableHash(double x, double y, double z, float angle, int type) {
-            long hash = Double.doubleToLongBits(x);
-            hash = hash * 31L + Double.doubleToLongBits(y);
-            hash = hash * 31L + Double.doubleToLongBits(z);
-            hash = hash * 31L + Float.floatToIntBits(angle);
-            hash = hash * 31L + type;
-            hash ^= hash >>> 33;
-            hash *= 0xff51afd7ed558ccdL;
-            hash ^= hash >>> 33;
-            return hash;
-        }
-    }
 }

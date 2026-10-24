@@ -11,6 +11,7 @@ import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteAmmoVisualRenderer;
 import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardManager;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
@@ -28,13 +29,15 @@ public final class RVP_ClientVisualEvents {
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
+        if (event.phase != TickEvent.Phase.END || Minecraft.getInstance().isPaused()) {
             return;
         }
         ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             // 调用 RVP 客户端视觉分派器，清除退出世界后遗留的实例。
             RVP_ClientVisualEffectDispatcher.clear();
+            // 退出或卸载世界时释放共享球壳和场景缓冲。
+            RVP_ShockwaveRenderer.clear();
             // 调用 RVP 弹药视觉状态与渲染器，清除退出世界后遗留的授权集合和尾迹。
             clearRemoteAmmoVisuals();
             // 调用 RVP 载具视觉状态，清除退出世界后遗留的非世界代理。
@@ -50,6 +53,8 @@ public final class RVP_ClientVisualEvents {
         }
         // 调用 RVP 客户端视觉分派器，统一推进当前世界的效果实例。
         RVP_ClientVisualEffectDispatcher.tick(level);
+        // 新工厂球壳仅在此处推进一次；核爆仍由自身管理器推进。
+        RVP_ShockwaveRenderer.tick();
         // 调用 RVP 载具视觉状态，执行维度互斥与 25 Tick 代理超时清理。
         RVP_ClientRemoteVehicleVisualState.tick(level);
     }
@@ -59,6 +64,8 @@ public final class RVP_ClientVisualEvents {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             // 调用 RVP 客户端视觉分派器，在天气之后统一渲染半透明世界效果。
             RVP_ClientVisualEffectDispatcher.render(event);
+            // 集中复制一次场景并绘制新工厂球壳；核爆保留原绘制阶段，热成像不执行折射。
+            RVP_ShockwaveRenderer.render(event);
         }
     }
 
@@ -72,6 +79,8 @@ public final class RVP_ClientVisualEvents {
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
         // 调用温压屏幕反馈服务，通过 Forge 相机事件叠加声波到达后的适度震动。
         RVP_ThermobaricScreenFeedback.applyCameraShake(event);
+        // 调用工厂实例的反馈入口，新增效果无需 Mixin。
+        RVP_ClientVisualEffectDispatcher.applyCameraShake(event);
     }
 
     @SubscribeEvent
@@ -79,6 +88,8 @@ public final class RVP_ClientVisualEvents {
         if (event.getLevel().isClientSide()) {
             // 调用 RVP 客户端视觉分派器，确保切换维度时实例不会跨世界复用。
             RVP_ClientVisualEffectDispatcher.clear();
+            // 退出或卸载世界时释放共享球壳和场景缓冲。
+            RVP_ShockwaveRenderer.clear();
             // 调用 RVP 弹药视觉状态与渲染器，确保切换维度后不保留旧世界集合和尾迹。
             clearRemoteAmmoVisuals();
             // 调用 RVP 载具视觉状态，确保换维度后不复用旧世界代理与样本。

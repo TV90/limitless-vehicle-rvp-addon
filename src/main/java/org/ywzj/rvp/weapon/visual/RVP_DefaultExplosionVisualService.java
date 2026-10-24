@@ -58,7 +58,7 @@ public final class RVP_DefaultExplosionVisualService {
                 true,
                 true,
                 false,
-                false);
+                false, null);
         // 调用 RVP 网络视觉发布器，把同一份视觉与声音事件发送给广播范围内的客户端。
         PUBLISHER.publish(level, event);
         // 水中状态不进入事件参数：客户端按服务端权威 position 处的流体状态自行判定水花。

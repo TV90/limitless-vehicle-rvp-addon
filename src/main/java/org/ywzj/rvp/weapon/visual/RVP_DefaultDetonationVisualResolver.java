@@ -7,6 +7,8 @@ import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualResolver;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
 import java.util.Optional;
+import org.ywzj.rvp.server.visual.RVP_ShockwaveProfileSampler;
+import org.ywzj.rvp.weapon.visual.api.RVP_ShockwaveProfile;
 
 /** 首版通用解析器：只校验公共字段，不绑定任何具体温压客户端实现。 */
 public final class RVP_DefaultDetonationVisualResolver implements RVP_DetonationVisualResolver {
@@ -28,6 +30,11 @@ public final class RVP_DefaultDetonationVisualResolver implements RVP_Detonation
             return Optional.empty();
         }
         ResourceLocation effectType = data.getEffectType().orElseThrow();
+        boolean shockwave = RVP_ShockwaveProfileSampler.EFFECT_TYPE.equals(effectType);
+        // 在真实爆炸破坏地形前采样；只有本效果类型承担这笔开销。
+        RVP_ShockwaveProfile profile = shockwave
+                ? RVP_ShockwaveProfileSampler.sample(context.level(), context.position(), context.baseExplosionRadius(), data.getScale())
+                : null;
         return Optional.of(new RVP_VisualEffectEvent(
                 effectType,
                 data.getPreset(),
@@ -38,12 +45,12 @@ public final class RVP_DefaultDetonationVisualResolver implements RVP_Detonation
                 data.getScale(),
                 data.getDensity(),
                 data.getDurationTicks(),
-                data.getBroadcastRange(),
+                shockwave ? Math.max(8192.0D, data.getBroadcastRange()) : data.getBroadcastRange(),
                 context.level().random.nextLong(),
                 context.startGameTime(),
                 data.isSound(),
                 data.isFlash(),
                 data.isShake(),
-                data.isExperimentalDynamicParticleBudget()));
+                data.isExperimentalDynamicParticleBudget(), profile));
     }
 }

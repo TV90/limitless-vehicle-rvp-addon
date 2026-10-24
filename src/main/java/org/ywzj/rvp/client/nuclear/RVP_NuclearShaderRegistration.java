@@ -5,6 +5,7 @@ import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
 
 import java.io.IOException;
 
@@ -15,6 +16,7 @@ public final class RVP_NuclearShaderRegistration {
 
     @SubscribeEvent
     public static void registerShaders(RegisterShadersEvent event) throws IOException {
-        RVP_NuclearShockwaveRenderer.registerShaders(event);
+        // 调用共享冲击波入口注册既有 warp_world 资源，核爆与新工厂共用同一着色器。
+        RVP_ShockwaveRenderer.registerShaders(event);
     }
 }

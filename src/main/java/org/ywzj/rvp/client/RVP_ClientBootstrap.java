@@ -23,6 +23,7 @@ import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualStat
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.RVP_ClientVisualEffectDispatcher;
 import org.ywzj.rvp.client.visual.RVP_DefaultExplosionEffectFactory;
+import org.ywzj.rvp.client.visual.RVP_WilsonMachEffectFactory;
 import org.ywzj.rvp.client.visual.RVP_MissileAirTargetImpactFragmentEffects;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricEffectFactory;
 import org.ywzj.rvp.network.RVP_MissileAirTargetImpactFragmentEndpoint;
@@ -55,6 +56,9 @@ public final class RVP_ClientBootstrap {
             // 调用 RVP 客户端视觉注册表，为通用事件协议注册 RVP 内置默认爆炸（MCHR 风格）工厂。
             RVP_ClientVisualEffectDispatcher.register(RVP_DefaultExplosionEffectFactory.EFFECT_TYPE,
                     new RVP_DefaultExplosionEffectFactory());
+            // 注册由数据选择的威尔逊云/马赫杆工厂，复用公共视觉网络事件。
+            RVP_ClientVisualEffectDispatcher.register(RVP_WilsonMachEffectFactory.EFFECT_TYPE,
+                    new RVP_WilsonMachEffectFactory());
             // 客户端初始化时安装既有核爆视觉消费端，保持旧 HBM 视觉行为并隔离物理侧。
             RVP_NuclearVisualEndpoint.install(message -> {
                 if ("nuclear".equalsIgnoreCase(message.preset()) || "nuke".equalsIgnoreCase(message.preset())) {

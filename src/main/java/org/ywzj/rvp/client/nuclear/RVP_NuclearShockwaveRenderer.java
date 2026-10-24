@@ -17,46 +17,36 @@ import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
-import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
+import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveMesh;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Screen-space refractive sphere used by the standalone nuclear backend. */
+/**
+ * HBM 核爆专用折射球壳，保留改造前的参数、生命周期及绘制顺序。
+ * 与威尔逊云仅复用无状态网格和已注册的着色器，不共享实例上限或远距投影。
+ */
 public final class RVP_NuclearShockwaveRenderer {
 
-    private static final ResourceLocation SHADER = RVP_MOD.modLocation("warp_world");
-    private static final int RINGS = 16;
-    private static final int SEGMENTS = 48;
+    /** 原核爆球壳寿命（tick），不随威尔逊云时长改变。 */
     private static final int LIFETIME = 220;
+    /** 原核爆淡出开始时刻（tick）。 */
     private static final int FADE_START = 100;
+    /** 原核爆球壳扩张速度（格/tick）。 */
     private static final float RADIUS_PER_TICK = 2.25F;
-    private static final float[] SPHERE = buildSphereMesh();
+    /** 原 16×48 分段单位球壳，调用共享网格生成器保持相同顶点。 */
+    private static final float[] SPHERE = RVP_ShockwaveMesh.buildSphereMesh();
+    /** 仅核爆使用的实例列表，不参与新效果的预算淘汰。 */
     private static final List<Shockwave> ACTIVE = new ArrayList<>();
 
-    private static ShaderInstance shader;
-    private static Uniform useTypeUniform;
-    private static Uniform timeUniform;
-    private static Uniform intensityUniform;
+    /** 核爆原绘制阶段的场景副本，不与新效果交叉清理。 */
     private static TextureTarget sceneCopy;
 
     private RVP_NuclearShockwaveRenderer() {}
-
-    public static void registerShaders(RegisterShadersEvent event) throws IOException {
-        event.registerShader(new ShaderInstance(event.getResourceProvider(), SHADER,
-                DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL), loaded -> {
-            shader = loaded;
-            useTypeUniform = loaded.getUniform("useType");
-            timeUniform = loaded.getUniform("time");
-            intensityUniform = loaded.getUniform("intensity");
-        });
-    }
 
     public static void spawn(double x, double y, double z, int initialAge) {
         if (initialAge < LIFETIME) {
@@ -77,6 +67,8 @@ public final class RVP_NuclearShockwaveRenderer {
     }
 
     public static void render(RenderLevelStageEvent event) {
+        // 调用共享资源入口取得着色器，避免重复注册同名 shader；状态与参数仍归核爆持有。
+        ShaderInstance shader = RVP_ShockwaveRenderer.shader();
         if (ACTIVE.isEmpty() || shader == null
                 || event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             return;
@@ -108,6 +100,9 @@ public final class RVP_NuclearShockwaveRenderer {
         RenderSystem.enableCull();
         RenderSystem.setShader(() -> shader);
         shader.setSampler("ScreenTexture", sceneCopy);
+        Uniform useTypeUniform = shader.getUniform("useType");
+        Uniform timeUniform = shader.getUniform("time");
+        Uniform intensityUniform = shader.getUniform("intensity");
         setUniform(useTypeUniform, 1);
         setUniform(timeUniform, minecraft.level.getGameTime() + partialTick);
 
@@ -180,39 +175,6 @@ public final class RVP_NuclearShockwaveRenderer {
         }
     }
 
-    private static float[] buildSphereMesh() {
-        float[] vertices = new float[RINGS * SEGMENTS * 4 * 5];
-        int offset = 0;
-        for (int ring = 0; ring < RINGS; ring++) {
-            float v0 = ring / (float) RINGS;
-            float v1 = (ring + 1) / (float) RINGS;
-            float theta0 = (float) (Math.PI * v0);
-            float theta1 = (float) (Math.PI * v1);
-            for (int segment = 0; segment < SEGMENTS; segment++) {
-                float u0 = segment / (float) SEGMENTS;
-                float u1 = (segment + 1) / (float) SEGMENTS;
-                float phi0 = (float) (Math.PI * 2.0D * u0);
-                float phi1 = (float) (Math.PI * 2.0D * u1);
-                offset = putVertex(vertices, offset, theta0, phi0, u0, v0);
-                offset = putVertex(vertices, offset, theta1, phi0, u0, v1);
-                offset = putVertex(vertices, offset, theta1, phi1, u1, v1);
-                offset = putVertex(vertices, offset, theta0, phi1, u1, v0);
-            }
-        }
-        return vertices;
-    }
-
-    private static int putVertex(float[] vertices, int offset,
-            float theta, float phi, float u, float v) {
-        float sinTheta = Mth.sin(theta);
-        vertices[offset++] = sinTheta * Mth.cos(phi);
-        vertices[offset++] = Mth.cos(theta);
-        vertices[offset++] = sinTheta * Mth.sin(phi);
-        vertices[offset++] = u;
-        vertices[offset++] = v;
-        return offset;
-    }
-
     private static void setUniform(Uniform uniform, int value) {
         if (uniform != null) {
             uniform.set(value);
@@ -226,9 +188,13 @@ public final class RVP_NuclearShockwaveRenderer {
     }
 
     private static final class Shockwave {
+        /** 球心 X 坐标（格）。 */
         private final double x;
+        /** 球心 Y 坐标（格）。 */
         private final double y;
+        /** 球心 Z 坐标（格）。 */
         private final double z;
+        /** 核爆球壳年龄（tick）。 */
         private int age;
 
         private Shockwave(double x, double y, double z, int age) {
