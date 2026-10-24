@@ -3685,6 +3685,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 setPos(pastPos);
                 BlockHitResult next = clipBlockSegment(position(), segmentEnd);
                 if (next.getType() == HitResult.Type.MISS) {
+                    // segment 内已无碰撞：pass-through 属正常穿出障碍，保持原语义——
+                    // 弹丸以推进后位置存活，下一 tick 继续飞行。
                     return false;
                 }
                 result = next;
@@ -3718,6 +3720,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 setPos(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
                 BlockHitResult next = clipBlockSegment(position(), segmentEnd);
                 if (next.getType() == HitResult.Type.MISS) {
+                    // [RVP] 配额已耗尽且 segment 内再无碰撞（2026-10-25 修复"越墙瞬移空爆"）：
+                    // 弹丸已被 setPos 瞬移到墙背面，若就此存活会带着穿墙状态继续飞——下一 tick
+                    // 的 clip 看不到身后的墙，最终在墙后数格空中引爆（第二三层墙完好）。
+                    // 回到本次入射面走正常撞击，爆炸贴墙而非穿出。
+                    if (wallPenetrationLeft <= 0) {
+                        setPos(hit);
+                        break;
+                    }
                     return false;
                 }
                 result = next;
