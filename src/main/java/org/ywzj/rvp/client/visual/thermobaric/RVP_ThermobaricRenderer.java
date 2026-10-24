@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** 只负责绘制温压火球、压力波、凝结云、贴地尘环和后燃烟云。 */
+/** 只负责绘制温压火球、压力波、凝结云、地面冲击环、马赫杆和后燃烟云。 */
 public final class RVP_ThermobaricRenderer {
     /** 纯白贴图用作球壳 */
     private static final ResourceLocation WHITE_TEXTURE =
@@ -33,6 +33,16 @@ public final class RVP_ThermobaricRenderer {
     private static final float[] PRESSURE_SHELL_OFFSETS = {-0.5F, 0.5F};
     /** 凝结云墙各层基础透明度。 */
     private static final float[] PRESSURE_SHELL_ALPHAS = {0.85F, 0.85F};
+    /** 地面冲击环的最大几何分段数，避免极端 JSON 把客户端顶点数推到无界。 */
+    private static final int MAX_GROUND_IMPACT_SEGMENTS = 96;
+    /** 地面冲击环在低质量档仍保留的最小分段数。 */
+    private static final int MIN_GROUND_IMPACT_SEGMENTS = 24;
+    /** 马赫杆高度相对温压视觉半径的倍率。 */
+    private static final float MACH_ROD_HEIGHT_FACTOR = 0.60F;
+    /** 马赫杆高度上限，单位为格。 */
+    private static final float MACH_ROD_MAX_HEIGHT = 24.0F;
+    /** 环形几何离地面的最小抬升，避免深度缓冲与地表共面闪烁。 */
+    private static final float GROUND_IMPACT_CLEARANCE = 0.06F;
 
     /** 半透明云团绘制时使用的临时排序表。 */
     private static final List<RenderCloud> SORTED_CLOUDS = new ArrayList<>();
@@ -91,13 +101,14 @@ public final class RVP_ThermobaricRenderer {
             renderCondensationCloud(effect, visualAge, cameraPosition, particleRatio);
         }
 
-        // 压力波、尘环和烟云使用标准透明混合，保持与世界几何的深度关系。
+        // 压力波、地面冲击环、马赫杆和烟云使用标准透明混合，保持与世界几何的深度关系。
         if (effect.preset().showPressureWave()) {
             renderPressureWave(effect, visualAge, cameraPosition);
         }
-        // 调用温压实例的离地高度门控，空爆超过代码配置阈值时跳过尘环绘制。
+        // 调用温压实例的离地高度门控，空爆超过代码配置阈值时跳过地面冲击几何绘制。
         if (effect.dustRingEnabled() && effect.preset().showDustRing()) {
-            renderDustRing(effect, visualAge, cameraPosition, particleRatio);
+            // 调用地面冲击环渲染，复用温压实例的地表采样并绘制马赫杆竖直前沿。
+            renderGroundImpactRing(effect, visualAge, cameraPosition, particleRatio, thermalMode);
         }
         if (effect.preset().showCloud()) {
             renderClouds(effect, visualAge, cameraPosition, particleRatio);
@@ -428,7 +439,7 @@ public final class RVP_ThermobaricRenderer {
                 halfSize, textureCoverage);
     }
 
-    /** 返回三个尘环带在当前帧需要覆盖的总环带面积。 */
+    /** 返回旧版尘环预算对应的环形覆盖面积，供预算单元测试和兼容计算使用。 */
     static double resolveDustGeometryArea(float radius, float size) {
         double area = 0.0D;
         for (int band = -1; band <= 1; band++) {
@@ -440,31 +451,15 @@ public final class RVP_ThermobaricRenderer {
         return area;
     }
 
-    /** 返回一个尘环环段实际绘制的三张 billboard 的有效面积总和。 */
-    private static double resolveDustSegmentEffectiveArea(
-            RVP_ThermobaricEffectInstance effect, int segmentIndex,
-            float radius, float size, float sampledMaximumRadius,
-            float textureCoverage) {
-        if (segmentIndex < 0) {
-            return 0.0D;
-        }
-        double effectiveArea = 0.0D;
-        for (int band = -1; band <= 1; band++) {
-            float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
-            float groundProgress = sampledMaximumRadius <= 1.0E-4F
-                    ? 0.0F : bandRadius / sampledMaximumRadius;
-            if (!Float.isFinite(effect.dustGroundHeight(segmentIndex, groundProgress))) {
-                continue;
-            }
-            float halfSize = size * (band == 0 ? 1.25F : 1.0F);
-            effectiveArea += RVP_ThermobaricParticleBudget.resolveBillboardEffectiveArea(
-                    halfSize, textureCoverage);
-        }
-        return effectiveArea;
-    }
-
-    private static void renderDustRing(RVP_ThermobaricEffectInstance effect,
-            float age, Vec3 camera, float particleRatio) {
+    /**
+     * 绘制贴地地面冲击环，并在环边缘竖起低矮的马赫杆前沿。
+     *
+     * <p>这里仍沿用旧字段名 {@code dustRing}，是为了兼容现有温压预设 JSON；实际绘制已经
+     * 从三条 billboard 粒子带改成 POSITION_COLOR 顶点几何。环和马赫杆都读取同一组地表
+     * 高度采样，因此两者不会出现一个贴地、另一个悬空的错位。</p>
+     */
+    private static void renderGroundImpactRing(RVP_ThermobaricEffectInstance effect,
+            float age, Vec3 camera, float particleRatio, boolean thermalMode) {
         int startTick = effect.preset().dustRingStartTick();
         int fullTick = effect.preset().dustRingFullTick();
         float endTick = Math.min(effect.preset().dustRingEndTick(), effect.duration());
@@ -478,65 +473,132 @@ public final class RVP_ThermobaricRenderer {
         float radius = maximumRadius * radialProgress;
         float alpha = Mth.clamp(formationProgress * 2.0F, 0.0F, 1.0F)
                 * resolveDustFadeAlpha(age, fullTick, endTick) * 0.82F;
-        float lifetimeProgress = Mth.clamp((age - startTick)
-                / Math.max(1.0F, endTick - startTick), 0.0F, 1.0F);
-        // 尘环从生成的第一帧起线性变细，以持续收窄的白色环带表现能量衰减。
-        float size = effect.visualRadius() * resolveDustThicknessFactor(lifetimeProgress);
-        float sampledMaximumRadius = RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
-                effect.visualRadius(), effect.preset().dustRadiusFactor());
-        int segmentCount = effect.dustSegmentCount();
-        boolean dynamicBudget = effect.dynamicParticleBudgetEnabled();
-        int coverageLimitedCount = segmentCount;
-        if (dynamicBudget) {
-            // 三条环带分别计算圆周展开面积，full tick 后继续使用实际外扩半径与收窄尺寸。
-            double geometryArea = resolveDustGeometryArea(radius, size);
-            float textureCoverage = RVP_ThermobaricParticleCoverage.effectiveCoverage();
-            coverageLimitedCount = RVP_ThermobaricParticleBudget.resolveCoverageLimitedCount(
-                    segmentCount, geometryArea,
-                    RVP_ThermobaricParticleBudget.DUST_OVERLAP_FACTOR,
-                    renderIndex -> resolveDustSegmentEffectiveArea(effect,
-                            effect.progressiveDustSegmentIndex(renderIndex), radius, size,
-                            sampledMaximumRadius, textureCoverage));
-        }
-        int renderSegmentCount = RVP_ThermobaricParticleBudget.resolveRenderCount(
-                dynamicBudget, segmentCount, particleRatio, coverageLimitedCount);
-        if (renderSegmentCount <= 0) {
+        if (!Float.isFinite(particleRatio) || particleRatio <= 0.0F) {
             return;
         }
+        float lifetimeProgress = Mth.clamp((age - startTick)
+                / Math.max(1.0F, endTick - startTick), 0.0F, 1.0F);
+        // 冲击环从生成的第一帧起线性变窄，以持续收窄的亮环表现能量衰减。
+        float halfWidth = effect.visualRadius()
+                * resolveDustThicknessFactor(lifetimeProgress) * 0.85F;
+        float sampledMaximumRadius = RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(
+                effect.visualRadius(), effect.preset().dustRadiusFactor());
+        int sampledSegmentCount = effect.dustSegmentCount();
+        int renderSegmentCount = resolveGroundImpactSegmentCount(sampledSegmentCount, particleRatio);
+        if (renderSegmentCount < 3 || sampledMaximumRadius <= 0.0F) {
+            return;
+        }
+        // 调用温压实例读取服务端爆心，所有顶点都以同一个水平投影生成。
+        Vec3 center = effect.center();
+        float rodHeight = resolveMachRodHeight(effect.visualRadius())
+                * Mth.clamp(formationProgress * 1.5F, 0.0F, 1.0F);
+        int ringColor = thermalMode ? 0xFFFFFF : 0xFFF5DE;
+        float ringAlpha = alpha * 0.92F;
+        float rodAlpha = alpha * 0.42F;
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder builder = tesselator.getBuilder();
-        RenderSystem.setShaderTexture(0, RVP_ThermobaricParticleCoverage.PARTICLE_TEXTURE);
-        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
-        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-        for (int renderIndex = 0; renderIndex < renderSegmentCount; renderIndex++) {
-            // 实验开启时读取实例的稳定渐进顺序；关闭时继续调用原有均匀选段算法。
-            int index = dynamicBudget
-                    ? effect.progressiveDustSegmentIndex(renderIndex)
-                    : RVP_ThermobaricParticleLod.resolveEvenlySpacedIndex(
-                            renderIndex, renderSegmentCount, segmentCount);
-            float angle = Mth.TWO_PI * index / segmentCount;
-            for (int band = -1; band <= 1; band++) {
-                float bandRadius = Math.max(0.0F, radius + band * size * 0.72F);
-                float groundProgress = sampledMaximumRadius <= 1.0E-4F
-                        ? 0.0F : bandRadius / sampledMaximumRadius;
-                float groundHeight = effect.dustGroundHeight(index, groundProgress);
-                if (!Float.isFinite(groundHeight)) {
-                    continue;
-                }
-                // 【世界坐标生成位置·贴地尘环】X/Z 由爆心水平投影和当前环半径决定，Y 来自地表碰撞面采样。
-                float x = (float) (effect.center().x + Mth.cos(angle) * bandRadius - camera.x);
-                // 方块团粒子的中心至少抬高一个半尺寸，保证其下缘不会进入地表。
-                float y = groundHeight - (float) camera.y
-                        + size * (1.05F + Math.abs(band) * 0.08F);
-                float z = (float) (effect.center().z + Mth.sin(angle) * bandRadius - camera.z);
-                int color = band == 0 ? 0xFFFFFF : (band < 0 ? 0xE8ECEF : 0xF7F5EE);
-                float bandAlpha = alpha * (band == 0 ? 1.0F : 0.68F);
-                writeParticleBillboard(builder, x, y, z,
-                        size * (band == 0 ? 1.25F : 1.0F), angle + band * 0.47F,
-                        color, bandAlpha);
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        for (int segment = 0; segment < renderSegmentCount; segment++) {
+            float angle0 = Mth.TWO_PI * segment / renderSegmentCount;
+            float angle1 = Mth.TWO_PI * (segment + 1) / renderSegmentCount;
+            int sample0 = resolveGroundImpactSampleIndex(segment, renderSegmentCount,
+                    sampledSegmentCount);
+            int sample1 = resolveGroundImpactSampleIndex(segment + 1, renderSegmentCount,
+                    sampledSegmentCount);
+            float innerRadius = Math.max(0.0F, radius - halfWidth);
+            float outerRadius = radius + halfWidth;
+            // 调用温压实例的预采样地表高度，让冲击环和马赫杆共享同一条贴地曲线。
+            float innerGround0 = effect.dustGroundHeight(sample0,
+                    innerRadius / sampledMaximumRadius);
+            float outerGround0 = effect.dustGroundHeight(sample0,
+                    outerRadius / sampledMaximumRadius);
+            float innerGround1 = effect.dustGroundHeight(sample1,
+                    innerRadius / sampledMaximumRadius);
+            float outerGround1 = effect.dustGroundHeight(sample1,
+                    outerRadius / sampledMaximumRadius);
+            if (!Float.isFinite(innerGround0) || !Float.isFinite(outerGround0)
+                    || !Float.isFinite(innerGround1) || !Float.isFinite(outerGround1)) {
+                continue;
+            }
+            writeGroundImpactRingSegment(builder, center, camera, angle0, angle1,
+                    innerRadius, outerRadius, innerGround0, outerGround0,
+                    innerGround1, outerGround1, ringColor, ringAlpha);
+            if (rodHeight > 0.0F) {
+                writeMachRodSegment(builder, center, camera, angle0, angle1, radius,
+                        outerGround0, outerGround1, rodHeight, ringColor, rodAlpha);
             }
         }
         BufferUploader.drawWithShader(builder.end());
+    }
+
+    /** 按视觉密度缩减地面冲击环的几何分段，但不低于可识别的环形最低分辨率。 */
+    static int resolveGroundImpactSegmentCount(int sampledSegmentCount, float particleRatio) {
+        if (sampledSegmentCount <= 0 || !Float.isFinite(particleRatio) || particleRatio <= 0.0F) {
+            return 0;
+        }
+        int maximum = Math.min(MAX_GROUND_IMPACT_SEGMENTS, sampledSegmentCount);
+        int minimum = Math.min(MIN_GROUND_IMPACT_SEGMENTS, maximum);
+        float ratio = Mth.clamp(particleRatio, 0.0F, 1.0F);
+        int scaled = Math.round(Mth.lerp(ratio, minimum, maximum));
+        return Mth.clamp(scaled, minimum, maximum);
+    }
+
+    /** 把几何环段映射回原始地表采样数组，保证首尾方向在闭环处连续。 */
+    private static int resolveGroundImpactSampleIndex(int geometrySegment,
+            int geometrySegmentCount, int sampledSegmentCount) {
+        if (geometrySegmentCount <= 0 || sampledSegmentCount <= 0) {
+            return -1;
+        }
+        int wrappedSegment = Math.floorMod(geometrySegment, geometrySegmentCount);
+        return Math.min(sampledSegmentCount - 1,
+                wrappedSegment * sampledSegmentCount / geometrySegmentCount);
+    }
+
+    /** 返回马赫杆的显示高度，单位为格；高度过大时收敛到固定上限。 */
+    static float resolveMachRodHeight(float visualRadius) {
+        if (!Float.isFinite(visualRadius) || visualRadius <= 0.0F) {
+            return 0.0F;
+        }
+        return Mth.clamp(visualRadius * MACH_ROD_HEIGHT_FACTOR, 2.0F, MACH_ROD_MAX_HEIGHT);
+    }
+
+    /** 写入一段贴合四个地表采样点的地面冲击环。 */
+    private static void writeGroundImpactRingSegment(BufferBuilder builder, Vec3 center,
+            Vec3 camera, float angle0, float angle1, float innerRadius, float outerRadius,
+            float innerGround0, float outerGround0, float innerGround1, float outerGround1,
+            int color, float alpha) {
+        writeGroundVertex(builder, center, camera, angle0, outerRadius,
+                outerGround0 + GROUND_IMPACT_CLEARANCE, color, alpha);
+        writeGroundVertex(builder, center, camera, angle1, outerRadius,
+                outerGround1 + GROUND_IMPACT_CLEARANCE, color, alpha);
+        writeGroundVertex(builder, center, camera, angle1, innerRadius,
+                innerGround1 + GROUND_IMPACT_CLEARANCE, color, alpha * 0.35F);
+        writeGroundVertex(builder, center, camera, angle0, innerRadius,
+                innerGround0 + GROUND_IMPACT_CLEARANCE, color, alpha * 0.35F);
+    }
+
+    /** 写入一段从地面向上淡出的马赫杆竖直墙。 */
+    private static void writeMachRodSegment(BufferBuilder builder, Vec3 center, Vec3 camera,
+            float angle0, float angle1, float radius, float ground0, float ground1,
+            float height, int color, float alpha) {
+        writeGroundVertex(builder, center, camera, angle0, radius,
+                ground0 + GROUND_IMPACT_CLEARANCE, color, alpha);
+        writeGroundVertex(builder, center, camera, angle1, radius,
+                ground1 + GROUND_IMPACT_CLEARANCE, color, alpha);
+        writeGroundVertex(builder, center, camera, angle1, radius * 0.985F,
+                ground1 + GROUND_IMPACT_CLEARANCE + height, color, 0.0F);
+        writeGroundVertex(builder, center, camera, angle0, radius * 0.985F,
+                ground0 + GROUND_IMPACT_CLEARANCE + height, color, 0.0F);
+    }
+
+    /** 写入一个按角度和地表高度定位的世界坐标顶点。 */
+    private static void writeGroundVertex(BufferBuilder builder, Vec3 center, Vec3 camera,
+            float angle, float radius, float groundY, int color, float alpha) {
+        float x = (float) (center.x + Mth.cos(angle) * radius - camera.x);
+        float y = groundY - (float) camera.y;
+        float z = (float) (center.z + Mth.sin(angle) * radius - camera.z);
+        builder.vertex(x, y, z).color(red(color), green(color), blue(color), alpha).endVertex();
     }
 
     /**
@@ -1050,13 +1112,13 @@ public final class RVP_ThermobaricRenderer {
         return (gray << 16) | (gray << 8) | gray;
     }
 
-    /** 返回尘环从生成到消失期间线性递减的半宽倍率。 */
+    /** 返回地面冲击环从生成到消失期间线性递减的半宽倍率。 */
     static float resolveDustThicknessFactor(float lifetimeProgress) {
         return Mth.lerp(Mth.clamp(lifetimeProgress, 0.0F, 1.0F), 0.29F, 0.055F);
     }
 
     /**
-     * 把尘环年龄换算为不分段的线性径向进度；full tick 为 {@code 1}，派生结束 tick 为 {@code 2}。
+     * 把地面冲击环年龄换算为不分段的线性径向进度；full tick 为 {@code 1}，派生结束 tick 为 {@code 2}。
      */
     static float resolveDustRadialProgress(float age, int startTick, int fullTick) {
         if (fullTick <= startTick) {

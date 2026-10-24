@@ -1,6 +1,6 @@
 package org.ywzj.rvp.client.visual.thermobaric;
 
-/** 温压火球、凝结云、尘环与后燃烟云共用的粒子数量 LOD 计算。 */
+/** 温压火球、凝结云与后燃烟云共用的粒子数量 LOD 计算。 */
 final class RVP_ThermobaricParticleLod {
     private RVP_ThermobaricParticleLod() {
     }
@@ -25,7 +25,7 @@ final class RVP_ThermobaricParticleLod {
     }
 
     /**
-     * 从完整尘环中近似均匀地选取一个原始环段索引，避免 LOD 后只剩连续局部圆弧。
+     * 从历史粒子环段列表中近似均匀地选取一个原始索引；当前地面冲击环使用自己的几何分段逻辑。
      */
     static int resolveEvenlySpacedIndex(int renderIndex, int renderCount, int generatedCount) {
         if (renderIndex < 0 || renderIndex >= renderCount || renderCount <= 0

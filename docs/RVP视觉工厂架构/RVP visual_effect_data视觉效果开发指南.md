@@ -408,7 +408,7 @@ visualRadius = baseExplosionRadius × scale
 ```text
 0 ── 点火核心 ───────── 淡出
      └── 压力波/凝结云 ── 派生结束
-         └── 贴地尘环 ─── 淡出
+         └── 地面冲击环 + 马赫杆 ─── 淡出
 0 ───────── 后燃烟云运动 ───────── 淡出
 ```
 
@@ -422,12 +422,14 @@ visualRadius = baseExplosionRadius × scale
 
 曲线计算尽量抽成无 Minecraft 客户端依赖的纯函数，便于单元测试边界和单调性。
 
-温压实现对贴地尘环还有一层代码级空爆门控：
+温压实现对地面冲击环和马赫杆还有一层代码级空爆门控：
 
-- `RVP_ThermobaricEffectInstance.MAX_DUST_RING_AIRBORNE_HEIGHT` 是尘环允许生成的最大爆心离地高度，当前为 `20.0F` 格；
+- `RVP_ThermobaricEffectInstance.MAX_DUST_RING_AIRBORNE_HEIGHT` 是旧字段名兼容下的最大爆心离地高度，当前为 `20.0F` 格；
 - 客户端以爆心中心 X/Z 下方的 `MOTION_BLOCKING` 高度图候选碰撞表面作为地面，并使用碰撞形状顶面进行最终高度判定；
-- `explosionY - groundY <= 20.0` 时照常采样地表并渲染尘环，严格超过 20 格时跳过地表采样、尘环环段数据和渲染；恰好 20 格仍生成；
-- 该阈值是 Java 代码配置字段，不新增或覆盖 `preset_data` JSON 字段。地面暂不可用时不作超过阈值的推断，以避免客户端区块不同步导致尘环误消失。
+- `explosionY - groundY <= 20.0` 时照常采样地表并渲染地面冲击环与马赫杆，严格超过 20 格时跳过地表采样、环段数据和两种几何；恰好 20 格仍生成；
+- 该阈值是 Java 代码配置字段，不新增或覆盖 `preset_data` JSON 字段。地面暂不可用时不作超过阈值的推断，以避免客户端区块不同步导致地面冲击几何误消失。
+
+温压工厂的贴地效果已从三条 billboard 粒子带改为顶点几何：地面冲击环是沿地表展开的亮色环带，马赫杆是从环边缘向上淡出的低矮竖直冲击前沿。两者共用同一组径向地表采样，且按距离 LOD（根据距离降低绘制分段数）限制几何分段，客户端几何分段最多 96 段；现有 `show_dust_ring`、`dust_ring_start_tick`、`dust_ring_full_tick`、`dust_radius_factor` 等 JSON 字段继续沿用，只是字段名仍保留历史称呼。
 
 ## 12. 密度、LOD 与性能预算
 
@@ -452,6 +454,8 @@ visualRadius = baseExplosionRadius × scale
 - 活动实例已有全局 24 个上限，本效果仍需限制单实例成本。
 
 温压实现的 `experimental.dynamic_particle_budget` 是该类型的实验算法，不是所有新效果必须复用的通用策略。新效果若需要类似能力，应先判断它是否能作为本类型 `preset_data` 字段实现；只有确实需要跨类型公共开关时，才扩展 `experimental` 和网络事件。
+
+温压的地面冲击环和马赫杆不再使用 billboard 粒子覆盖率预算；`max_dust_segments` 仍决定地表方向采样的基础上限，客户端质量档通过几何分段数降低绘制成本。动态粒子预算仍只影响火球、凝结云和后燃烟云等粒子组。
 
 ## 13. 声音、闪光和镜头震动
 

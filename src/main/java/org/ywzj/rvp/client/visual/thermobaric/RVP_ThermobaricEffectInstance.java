@@ -21,12 +21,10 @@ import java.util.Random;
 
 /** 单次温压爆炸的确定性客户端状态。 */
 public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffect {
-    /** 客户端区块包会同步的尘环地表候选高度图类型。 */
+    /** 客户端区块包会同步的地面冲击几何地表候选高度图类型。 */
     private static final Heightmap.Types DUST_GROUND_HEIGHTMAP = Heightmap.Types.MOTION_BLOCKING;
-    /** 尘环允许生成的最大爆心离地高度，单位为格；超过该高度的空爆不生成尘环。 */
+    /** 兼容旧字段命名的地面几何门控：最大爆心离地高度，单位为格。 */
     static final float MAX_DUST_RING_AIRBORNE_HEIGHT = 20.0F;
-    /** 实验关闭时复用的空尘环渐进顺序。 */
-    private static final int[] NO_PROGRESSIVE_DUST_SEGMENTS = new int[0];
     /** 效果所属的客户端世界。 */
     private final ClientLevel level;
     /** 服务端权威爆心。 */
@@ -51,12 +49,10 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     private final List<PressureSmoke> pressureSmokeParticles;
     /** 压力波光学球壳在淡出阶段的确定性额外扩张倍率。 */
     private final float pressureWaveFadeSpread;
-    /** 尘环各径向层、各环段预采样得到的地表高度。 */
+    /** 地面冲击环与马赫杆各径向层、各环段预采样得到的地表高度。 */
     private final float[][] dustGroundHeights;
-    /** 本实例是否满足离地高度条件并允许生成尘环。 */
+    /** 本实例是否满足离地高度条件并允许生成地面冲击几何。 */
     private final boolean dustRingEnabled;
-    /** 仅实验模式使用的尘环渐进稳定环段顺序。 */
-    private final int[] progressiveDustSegmentOrder;
     /** 后燃烟云的竖直生成基准；贴地爆炸使用地表，空爆使用爆心。 */
     private final float cloudOriginY;
     /** 后燃烟云是否需要让粒子底边贴住地面。 */
@@ -74,7 +70,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         this.preset = preset;
         this.duration = duration;
         dynamicParticleBudgetEnabled = event.experimentalDynamicParticleBudget();
-        // 调用客户端配置读取质量上限，只在实例创建时下调作者给出的粒子密度。
+        // 调用客户端配置读取质量上限，只在实例创建时下调作者给出的视觉密度。
         float effectiveDensity = resolveClientLimitedDensity(
                 event.density(), RVP_ClientConfig.getThermobaricQualityDensity());
         dynamicCoreLayerCapacity = dynamicParticleBudgetEnabled
@@ -97,16 +93,12 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         Random fadeRandom = new Random(event.seed() ^ 0x6D2B79F5A4C381E7L);
         pressureWaveFadeSpread = 0.18F + fadeRandom.nextFloat() * 0.16F;
         float centerGroundHeight = sampleGroundSurfaceHeight(Mth.floor(center.x), Mth.floor(center.z));
-        // 调用本实例的离地高度判定，超过代码配置阈值时不创建尘环地表采样数据。
+        // 调用本实例的离地高度判定，超过代码配置阈值时不创建地面冲击几何采样数据。
         dustRingEnabled = shouldGenerateDustRing(center.y, centerGroundHeight);
         int dustSegmentCount = dustRingEnabled
                 ? resolveDensityLimitedCount(preset.maxDustSegments(), effectiveDensity) : 0;
-        // 不满足离地高度条件时直接跳过地表采样，避免空爆创建任何尘环数据。
+        // 不满足离地高度条件时直接跳过地表采样，避免空爆创建任何地面冲击数据。
         dustGroundHeights = dustRingEnabled ? sampleGround(dustSegmentCount) : new float[0][0];
-        // 仅在实验开关开启时创建渐进顺序，确保默认关闭不增加旧路径的数组分配和选段变化。
-        progressiveDustSegmentOrder = dynamicParticleBudgetEnabled
-                ? RVP_ThermobaricParticleBudget.createProgressiveSegmentOrder(dustSegmentCount)
-                : NO_PROGRESSIVE_DUST_SEGMENTS;
         float groundAnchorDistance = Math.max(2.0F, visualRadius * 0.25F);
         cloudGroundAnchored = Float.isFinite(centerGroundHeight)
                 && center.y >= centerGroundHeight - 1.0D
@@ -138,7 +130,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     @Override
     public void renderThermal(RenderLevelStageEvent event) {
-        // 调用同一温压渲染器把四层几何（凝结云/压力波/尘环/烟云 + additive 火球）重画进
+        // 调用同一温压渲染器把四层几何（凝结云/压力波/地面冲击环与马赫杆/烟云 + additive 火球）重画进
         // 本体热成像 thermal_buffer——渲染器完全自包含（pushPose+setIdentity+相机旋转的
         // 视图语义与进入时 ModelViewStack 无关、混合/深度/shader 自管理），在热成像通道
         // 的 AFTER_PARTICLES 窗口重调位置正确（2026-09-20 用户需求：温压蘑菇云热成像下白热）。
@@ -186,7 +178,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         return dynamicCoreLayerCapacity;
     }
 
-    /** 返回本实例是否允许渲染贴地尘环。 */
+    /** 返回本实例是否允许渲染贴地地面冲击环和马赫杆。 */
     boolean dustRingEnabled() {
         return dustRingEnabled;
     }
@@ -227,15 +219,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
         return dustGroundHeights.length == 0 ? 0 : dustGroundHeights[0].length;
     }
 
-    /** 返回实验渐进顺序中的原始尘环环段索引；无效请求返回 {@code -1}。 */
-    int progressiveDustSegmentIndex(int renderIndex) {
-        if (renderIndex < 0 || renderIndex >= progressiveDustSegmentOrder.length) {
-            return -1;
-        }
-        return progressiveDustSegmentOrder[renderIndex];
-    }
-
-    /** 按尘环当前径向进度在预采样地表层之间插值，避免扩散途中悬空或埋地。 */
+    /** 按地面冲击几何当前径向进度在预采样地表层之间插值，避免扩散途中悬空或埋地。 */
     float dustGroundHeight(int segmentIndex, float radialProgress) {
         int radialSampleCount = dustGroundHeights.length;
         if (radialSampleCount == 0 || segmentIndex < 0
@@ -261,7 +245,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     /**
      * 在相邻地表采样之间插值；若一端因区块未加载或无碰撞表面而无效，则使用另一端，
-     * 避免单个 {@code NaN} 经线性插值污染整段尘环。
+     * 避免单个 {@code NaN} 经线性插值污染整段地面冲击几何。
      */
     static float interpolateGroundHeight(float lowerHeight, float upperHeight, float interpolation) {
         boolean lowerFinite = Float.isFinite(lowerHeight);
@@ -442,14 +426,14 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
     }
 
     /**
-     * 返回尘环地表预采样的最大半径；派生淡出阶段会以原速度再移动一个配置半径。
+     * 返回地面冲击几何地表预采样的最大半径；派生淡出阶段会以原速度再移动一个配置半径。
      */
     static float resolveDustGroundSampleRadius(float visualRadius, float dustRadiusFactor) {
         return multiplyNonNegative(multiplyNonNegative(visualRadius, dustRadiusFactor), 2.0F);
     }
 
     /**
-     * 判断爆心是否足够接近可识别地表；地表暂不可用时保留旧行为，避免客户端区块不同步时误删尘环。
+     * 判断爆心是否足够接近可识别地表；地表暂不可用时保留旧行为，避免客户端区块不同步时误删地面冲击几何。
      */
     static boolean shouldGenerateDustRing(double explosionY, float groundY) {
         if (!Double.isFinite(explosionY) || !Float.isFinite(groundY)) {
@@ -490,7 +474,7 @@ public final class RVP_ThermobaricEffectInstance implements RVP_ClientVisualEffe
 
     /**
      * 采样给定水平坐标的实际碰撞表面高度。
-     * 高度图只用于定位候选方块，最终使用碰撞形状顶面，避免把尘环中心塞进命中方块。
+     * 高度图只用于定位候选方块，最终使用碰撞形状顶面，避免把地面冲击几何塞进命中方块。
      */
     private float sampleGroundSurfaceHeight(int x, int z) {
         BlockPos chunkProbe = BlockPos.containing(x, center.y, z);

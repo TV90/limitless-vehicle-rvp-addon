@@ -708,7 +708,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `knockback_data` | `radius`、`strength`、`targets`。 |
 | `clear_plants_data` | `radius`：清除草、花、树叶等可替换植物。 |
 | `hbm_effect_data` | 大威力爆炸视觉/特效（见下）。 |
-| `visual_effect_data` | 当前 schema 的通用爆炸视觉配置数组；默认空，不改变旧武器行为。已注册 `rvp:thermobaric` 最小视觉工厂，支持火球、压力波、尘环和烟云。 |
+| `visual_effect_data` | 当前 schema 的通用爆炸视觉配置数组；默认空，不改变旧武器行为。已注册 `rvp:thermobaric` 最小视觉工厂，支持火球、压力波、地面冲击环、马赫杆和烟云。 |
 
 `targets`（范围类效果共用）：`living`（默认）、`players`、`hostile`、`non_allied`（排除 owner 与发射载具乘员）、`all`。
 
@@ -832,7 +832,7 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
-| `dynamic_particle_budget` | 实验性动态粒子预算。当前仅 `effect_type: "rvp:thermobaric"` 消费；为 `true` 时火球、粒子凝结云、贴地尘环和后燃烟云按各自几何覆盖面积与实际 billboard 有效面积求出饱满所需数量，再受 `density`、对应 `max_*` 和距离 LOD 钳制。其它视觉类型忽略该字段。 | `false` |
+| `dynamic_particle_budget` | 实验性动态粒子预算。当前仅 `effect_type: "rvp:thermobaric"` 消费；为 `true` 时火球、粒子凝结云和后燃烟云按各自几何覆盖面积与实际 billboard 有效面积求出饱满所需数量，再受 `density`、对应 `max_*` 和距离 LOD 钳制。地面冲击环与马赫杆是顶点几何，不参与 billboard 覆盖率预算。其它视觉类型忽略该字段。 | `false` |
 
 ##### `rvp:thermobaric` / `rvp:thermobaric_standard` 温压预设字段
 
@@ -841,28 +841,28 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | 字段 | 说明 | 内建默认值                                                                   |
 | --- | --- |-------------------------------------------------------------------------|
 | `core_color` / `flame_color` / `smoke_color` | 点火核心、主火球/早期云团、后期烟云的 `#RRGGBB` 颜色。 | `#FFE0B0` / `#FF6820` / `#332A27`                                       |
-| `show_core` / `show_dust_ring` / `show_cloud` | 分别控制主火球、贴地尘环和后燃烟云是否显示；每项均独立生效。 | 均为 `true`                                                               |
+| `show_core` / `show_dust_ring` / `show_cloud` | 分别控制主火球、地面冲击环与马赫杆、后燃烟云是否显示；`show_dust_ring` 字段名保留历史兼容性。每项均独立生效。 | 均为 `true`                                                               |
 | `show_pressure_wave` | 是否显示压力波光学球壳。 | `false`                                                                 |
 | `show_condensation_cloud` | 是否显示使用 `WHITE_TEXTURE` 双层球壳实现的凝结云墙；与粒子凝结云独立。 | `false`                                                                 |
 | `show_condensation_cloud_particles` | 是否显示仅使用 `PARTICLE_TEXTURE` billboard 实现的粒子凝结云；与球壳凝结云独立。 | `true`                                                                  |
 | `condensation_cloud_particle_max_count` | 完整视觉密度下粒子凝结云允许显示的最大粒子数量；接受非负整数、不设业务上限，实际数量还会乘以顶层 `density` 并受 `thermobaric_lod` 下调。 | `768`                                                                  |
 | `condensation_cloud_particle_scale` | 粒子凝结云的贴图尺寸缩放倍率；接受非负有限值，不设业务上限。 | `6.0`                                                                   |
 | `condensation_cloud_particle_spawn_thickness_factor` | 粒子凝结云在 start tick 的墙体厚度倍率；接受非负有限值、不设业务上限。厚度按 `visualRadius × lerp(formationProgress, 1.25 × factor, 0.12)` 计算，只改变起始厚度，full tick 及以后恢复原有厚度；不影响数量、贴图尺寸、扩张、裁切、淡出、寿命或可选凝结云球壳。 | `1.0` |
-| `thermobaric_lod` | 温压火球、粒子凝结云、贴地尘环、后燃基础云团和连接粒子共用的嵌套四档距离 LOD；结构见下表。压力波和可选白色凝结云球壳不受其影响。 | 见下表 |
+| `thermobaric_lod` | 温压火球、粒子凝结云、地面冲击环/马赫杆、后燃基础云团和连接粒子共用的嵌套四档距离 LOD；地面冲击几何按档位降低环的分段数。结构见下表。压力波和可选白色凝结云球壳不受其影响。 | 见下表 |
 | `condensation_cloud_cut_speed_factor` | 粒子凝结云与可选凝结云球壳在 full tick 后从当前球体 Y 轴最高点向下连续裁切的速度倍率；接受非负有限值、不设业务上限。`0` 关闭裁切，`1.0` 恰好在派生阶段结束时裁切至最低点；只改变裁切进度，不改变径向速度、淡出或寿命。 | `0.75` |
 | `pressure_wave_fade_speed_factor` | 压力波光学球壳、粒子凝结云与可选凝结云球壳从 full tick 到派生结束 tick 的线性淡出速度倍率；接受非负有限值、不设业务上限。`0` 不启用线性淡出，`1.0` 恰在派生结束 tick 淡至透明，大于 `1.0` 提前淡完，`0..1` 只完成部分淡出；不改变径向速度、裁切或寿命。 | `0.0` |
 | `max_clouds` | 完整视觉密度下三层基础后燃烟云允许生成的最大云团数量；接受非负整数，不设业务上限。为保证爆心覆盖层与中心上升层连续，客户端可基于固定锚点派生额外连接粒子，派生数量最多为基础烟云数的四分之一且绝不超过 64，不计入本字段。 | `1024`                                                                   |
 | `max_fireball_clouds` | 完整视觉密度下温压火球允许生成的最大团状云数量；接受非负整数，不设业务上限。 | `150`                                                                   |
-| `max_dust_segments` | 完整视觉密度下贴地尘环允许生成的最大环段数量；接受非负整数，不设业务上限。 | `425`                                                                   |
-| `dust_ground_radial_samples` | 尘环沿扩散半径预采样的地表层数；接受非负整数，不设业务上限，`0` 关闭地表采样。 | `9`                                                                     |
+| `max_dust_segments` | 完整视觉密度下地面冲击几何允许使用的最大方向采样/环段数量；接受非负整数，不设业务上限。字段名保留历史 dust_ring 兼容性。 | `425`                                                                   |
+| `dust_ground_radial_samples` | 地面冲击环和马赫杆沿扩散半径预采样的地表层数；接受非负整数，不设业务上限，`0` 关闭地表采样。 | `9`                                                                     |
 | `pressure_rings` / `pressure_segments` | 压力波及凝结云球壳的纬向/经向细分数；接受非负整数，不设业务上限，任一为 `0` 时不提交球壳。 | `16` / `32`                                                             |
 | `core_start_tick` / `core_full_tick` / `core_fade_duration_ticks` | 主火球的绝对开始时刻、完整成形时刻、完整成形后到消失的持续时间（tick）；均接受非负整数，不设业务上限。 | `0` / `20` / `40`                                                        |
 | `pressure_wave_start_tick` / `pressure_wave_full_tick` | 球形压力波、粒子凝结云与可选凝结云球壳的绝对开始、完整成形时刻（tick）；均接受非负整数、不设业务上限。派生阶段时长自动等于成形时长，结束 tick 为 `full + (full - start)`。两种凝结云从开始到 full tick 匀速扩张，随后保持相同径向速度继续外扩，结束半径为 full tick 半径两倍；压力波光学球壳共用派生寿命并保留其独立扩张表现。是否线性变淡由 `pressure_wave_fade_speed_factor` 控制。 | `10` / `25` |
-| `dust_ring_start_tick` / `dust_ring_full_tick` | 贴地尘环的绝对开始时刻，以及到达 `dust_radius_factor` 配置半径并立即开始消散的时刻（tick）；均接受非负整数、不设业务上限。尘环从开始到 full tick 匀速扩张，之后以相同径向速度继续外扩并线性变淡；消散时长自动等于成形时长，结束时半径为 full tick 半径的两倍。地面高度按爆心中心 X/Z 的碰撞地表采样；爆心离地高度不超过 20 格时允许生成，超过 20 格时直接跳过尘环地表采样、环段创建和绘制。20 格阈值由代码字段 `RVP_ThermobaricEffectInstance.MAX_DUST_RING_AIRBORNE_HEIGHT`（`20.0F`）控制，不属于 `preset_data` JSON schema；客户端暂时无法识别地面时保留原行为。 | `10` / `25`                                                       |
+| `dust_ring_start_tick` / `dust_ring_full_tick` | 地面冲击环和马赫杆的绝对开始时刻，以及环到达 `dust_radius_factor` 配置半径并立即开始消散的时刻（tick）；均接受非负整数、不设业务上限。环从开始到 full tick 匀速扩张，之后以相同径向速度继续外扩并线性变淡；消散时长自动等于成形时长，结束时半径为 full tick 半径的两倍。地面高度按爆心中心 X/Z 的碰撞地表采样；爆心离地高度不超过 20 格时允许生成，超过 20 格时直接跳过地表采样、环段创建和两种几何绘制。20 格阈值由代码字段 `RVP_ThermobaricEffectInstance.MAX_DUST_RING_AIRBORNE_HEIGHT`（`20.0F`）控制，不属于 `preset_data` JSON schema；客户端暂时无法识别地面时保留原行为。 | `10` / `25`                                                       |
 | `cloud_start_tick` / `cloud_full_tick` / `cloud_fade_duration_ticks` | 后燃烟云的绝对开始时刻、开始消散时刻、开始消散后到消失的持续时间（tick）；大型云团从 `cloud_start_tick` 到 `cloud_full_tick + cloud_fade_duration_ticks` 共用一条连续动画时钟，持续上升、翻滚、卷吸和平流。`cloud_full_tick` 仅启动独立淡出进度：稳定径向层级最外侧的云团先向外扩散和变淡，随后逐层向内，淡出结束时全部消失。均接受非负整数、不设业务上限，顶层 `duration_ticks>=0` 可覆盖实例寿命。 | `0` / `90` / `140`                                                       |
 | `cloud_color_change_start_tick` / `cloud_color_change_end_tick` | 后燃烟云从 `flame_color` 向 `smoke_color` 线性变色的绝对开始、结束时刻（tick）；开始前保持火焰色，结束后保持烟色。均接受非负整数、不设业务上限；结束早于开始时钳制为开始时刻并立即变色。 | `30` / `85` |
 | `pressure_radius_factor` | 压力波与凝结云在 `pressure_wave_full_tick` 时相对最终爆炸半径的半径倍率；接受非负有限值，不设业务上限。凝结云派生结束时半径为该半径的两倍。 | `3.5`                                                                   |
-| `dust_radius_factor` | 尘环最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。 | `5.0`                                                                   |
+| `dust_radius_factor` | 地面冲击环最大半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。字段名保留历史 dust_ring 兼容性。 | `5.0`                                                                   |
 | `cloud_radius_factor` | 烟云横向半径相对最终爆炸半径的倍率；接受非负有限值，不设业务上限。高倍率造成爆心覆盖层与中心上升层实际分离时，客户端按几何间隙自动生成粒子连接链，不按武器 ID 或固定倍率阈值分支。 | `1.7`                                                                   |
 | `cloud_rise_factor` | 后燃烟云最终最高升起高度相对最终爆炸半径的直接倍率；接受非负有限值、不设业务上限，配置值本身不钳制到 `0..1`。实际高度为最终爆炸半径乘该字段，再乘独立且限制在 `0..1` 的内部完成度；例如 `5.0` 表示最高五倍半径。高倍率下中心上升层仍必须通过自动派生粒子与爆心覆盖层保持连续。 | `1.5`                                                                   |
 | `cloud_rise_speed_factor` | 后燃烟云竖直基础升起速度的无量纲倍率；接受非负有限值、不设业务上限。大于 `1.0` 时更早到达高度上限，小于 `1.0` 时可能在消失前未到顶，`0` 停止基础升起；不改变淡出、变色或寿命。 | `12.0` |
@@ -883,9 +883,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 
 `preset_data` 可以只覆盖一个档位或一个子字段；其余值继续继承所选 preset。合并后距离自动规范化为 `near <= medium <= far`，粒子比例自动规范化为 `near >= medium >= far >= beyond`。未知档位、未知子字段、错误类型或非法范围只回退对应局部字段，不影响同对象内其它合法值。各粒子组按完整数量乘当前档比例计算目标数量，正比例且原数量非零时至少保留一个；LOD 在粒子姿态计算、透明排序和顶点提交前生效。
 
-`experimental.dynamic_particle_budget` 默认为 `false`，关闭时严格使用上述原有完整数量与 LOD 逻辑，固定三层火球核心和尘环均匀选段也不变。显式开启后先按 `capacity = min(max_*, round(max_* × density))` 得到容量。客户端资源重载时从实际 `particle_base.png` 按 `Σ(alpha / 255) / pixelCount` 计算贴图有效覆盖率；当前内置贴图为 `116 / 256 = 0.453125`，读取失败回退该值。单个 billboard 的有效面积为 `(2 × halfSize)² × textureCoverage`；实现按稳定候选顺序累计实际有效面积，取满足 `geometryArea × overlapFactor` 的最短前缀，再依次受容量和距离 LOD 钳制。运行时透明度不进入覆盖面积，避免淡出期补生粒子；固定核心以 `3` 为容量且仅在实验开启时应用 `density`。
+`experimental.dynamic_particle_budget` 默认为 `false`，关闭时严格使用上述原有完整数量与 LOD 逻辑。显式开启后先按 `capacity = min(max_*, round(max_* × density))` 得到火球、粒子凝结云和后燃烟云的粒子容量。客户端资源重载时从实际 `particle_base.png` 按 `Σ(alpha / 255) / pixelCount` 计算贴图有效覆盖率；当前内置贴图为 `116 / 256 = 0.453125`，读取失败回退该值。单个 billboard 的有效面积为 `(2 × halfSize)² × textureCoverage`；实现按稳定候选顺序累计实际有效面积，取满足 `geometryArea × overlapFactor` 的最短前缀，再依次受容量和距离 LOD 钳制。地面冲击环和马赫杆使用独立的顶点几何分段逻辑，不读取该贴图覆盖率；固定火球核心以 `3` 为容量且仅在实验开启时应用 `density`。
 
-四类几何模型分别为：粒子凝结云使用未裁切可见球面 `4πr² × (1 - cutProgress)`，重叠系数 `2.50`，粒子实际尺寸包含 `condensation_cloud_particle_scale`；贴地尘环把三个径向带分别展开为 `2π × bandRadius × 2 × halfSize`，每个环段的覆盖量为三张 billboard 有效面积之和，重叠系数 `1.20`；火球以实际核心外包半径计算 `4πr²`，重叠系数 `1.50`；后燃云以最大水平包络半径 `a` 与垂直半包络 `b` 计算 `π × a × max(a,b)`，重叠系数 `3.00`。凝结云和尘环在 full tick 后继续随外扩、裁切和收窄几何重算；火球与后燃云冻结 full tick 的面积需求。尘环仅在实验开启时使用稳定渐进环段顺序；后燃云仍优先保留连接锚点，派生连接粒子不计入 `max_clouds`。
+三类粒子几何模型分别为：粒子凝结云使用未裁切可见球面 `4πr² × (1 - cutProgress)`，重叠系数 `2.50`，粒子实际尺寸包含 `condensation_cloud_particle_scale`；火球以实际核心外包半径计算 `4πr²`，重叠系数 `1.50`；后燃云以最大水平包络半径 `a` 与垂直半包络 `b` 计算 `π × a × max(a,b)`，重叠系数 `3.00`。凝结云在 full tick 后继续随外扩和裁切重算；火球与后燃云冻结 full tick 的面积需求。地面冲击环和马赫杆不进入粒子覆盖率预算，按独立的几何分段数绘制；后燃云仍优先保留连接锚点，派生连接粒子不计入 `max_clouds`。
 
 阶段 C 客户端资源与反馈规则：客户端资源包可在 `assets/<namespace>/visual_effects/*.json` 提供稀疏预设，例如 `rvp:thermobaric_standard` 对应 `assets/rvp/visual_effects/thermobaric_standard.json`。字段按“内建安全默认值 < 资源预设 < 武器 `preset_data` < 顶层 `sound`/`flash`/`shake` 开关 < 客户端性能与无障碍上限”合并；F3+T 重载后只影响新建实例，已有实例继续持有旧快照。未知、缺失或完整解析失败的预设回退内建标准值，单个非法字段只回退该字段。
 
@@ -898,9 +898,9 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `thermobaricFlashIntensity` | 立即闪光强度倍率，范围 `0..1`。 | `1.0` |
 | `thermobaricShakeIntensity` | 声波抵达后镜头震动强度倍率，范围 `0..1`。 | `1.0` |
 
-主火球和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。压力波与两种凝结云的结束时刻为 `pressure_wave_full_tick + (pressure_wave_full_tick - pressure_wave_start_tick)`；贴地尘环同样使用 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`。对应 `full_tick <= start_tick` 时没有有效移动周期，不绘制该阶段。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
+主火球和后燃烟云的消失时刻等于 `*_full_tick + *_fade_duration_ticks`。压力波与两种凝结云的结束时刻为 `pressure_wave_full_tick + (pressure_wave_full_tick - pressure_wave_start_tick)`；地面冲击环和马赫杆同样使用 `dust_ring_full_tick + (dust_ring_full_tick - dust_ring_start_tick)`。对应 `full_tick <= start_tick` 时没有有效移动周期，不绘制该阶段。若其它阶段的 `*_full_tick` 早于对应 `*_start_tick`，客户端会把阶段切换时刻钳制到开始时刻；其中后燃烟云的 `cloud_full_tick` 仅表示开始消散。不接受旧版结束时间/总持续时间键。
 
-主火球在 `core_full_tick` 后由外向内线性变灰、轻微内敛收缩并线性降低透明度；贴地尘环为白色，从生成到消失持续线性变细，并在 `dust_ring_full_tick` 后立即以原速度继续外扩和线性变淡，不使用随机径向加速。压力波光学球壳在 `pressure_wave_full_tick` 后继续使用服务端同步种子生成的稳定随机漂移参数。粒子凝结云与可选球壳在 full tick 前后保持同一径向速度；三者共同按 `pressure_wave_fade_speed_factor` 决定是否及多快线性淡出，默认 `0` 时保持透明度，并按 `condensation_cloud_cut_speed_factor` 共用自顶向下裁切边界。后燃烟云从开始到消失持续上升、翻滚、卷吸和平流，并分别使用 `cloud_rise_speed_factor` 与 `cloud_roll_speed_factor` 缩放两类运动时钟；`cloud_full_tick` 始终启动按稳定径向层级从外向内传播的淡出，实验性动态预算开启时还冻结该时刻按云团最大视向轮廓计算出的覆盖需求，但仍不切换运动曲线。凝结云先于其它温压子效果提交，避免近距离观察时外层透明云错误覆盖其它特效，同时仍遵守世界几何的深度遮挡。
+主火球在 `core_full_tick` 后由外向内线性变灰、轻微内敛收缩并线性降低透明度；地面冲击环为白色，从生成到消失持续线性变窄，并在 `dust_ring_full_tick` 后立即以原速度继续外扩和线性变淡，不使用随机径向加速；马赫杆与冲击环共用生命周期并从环边缘向上淡出。压力波光学球壳在 `pressure_wave_full_tick` 后继续使用服务端同步种子生成的稳定随机漂移参数。粒子凝结云与可选球壳在 full tick 前后保持同一径向速度；三者共同按 `pressure_wave_fade_speed_factor` 决定是否及多快线性淡出，默认 `0` 时保持透明度，并按 `condensation_cloud_cut_speed_factor` 共用自顶向下裁切边界。后燃烟云从开始到消失持续上升、翻滚、卷吸和平流，并分别使用 `cloud_rise_speed_factor` 与 `cloud_roll_speed_factor` 缩放两类运动时钟；`cloud_full_tick` 始终启动按稳定径向层级从外向内传播的淡出，实验性动态预算开启时还冻结该时刻按云团最大视向轮廓计算出的覆盖需求，但仍不切换运动曲线。凝结云先于其它温压子效果提交，避免近距离观察时外层透明云错误覆盖其它特效，同时仍遵守世界几何的深度遮挡。
 
 爆心覆盖层与中心上升层会从基础云团中按角度、径向距离和原始索引确定一对跨帧固定锚点。若锚点当前 billboard 已重叠则不追加粒子；若存在实际三维间隙，则沿中心线派生连接粒子，并在达到内部数量上限时扩大粒子尺寸以维持连续覆盖。该行为没有新增 JSON 字段，不改变伤害、寿命、颜色或原三层运动曲线。
 

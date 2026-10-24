@@ -209,6 +209,20 @@ class RVP_ThermobaricVisualCurveTest {
     }
 
     @Test
+    void groundImpactGeometryKeepsRingResolutionBoundedAndMachRodHeightClamped() {
+        assertEquals(96,
+                RVP_ThermobaricRenderer.resolveGroundImpactSegmentCount(425, 1.0F));
+        assertTrue(RVP_ThermobaricRenderer.resolveGroundImpactSegmentCount(425, 0.35F) < 96);
+        assertEquals(25,
+                RVP_ThermobaricRenderer.resolveGroundImpactSegmentCount(425, 0.01F));
+        assertEquals(0,
+                RVP_ThermobaricRenderer.resolveGroundImpactSegmentCount(425, 0.0F));
+        assertEquals(2.0F, RVP_ThermobaricRenderer.resolveMachRodHeight(0.1F));
+        assertEquals(6.0F, RVP_ThermobaricRenderer.resolveMachRodHeight(10.0F));
+        assertEquals(24.0F, RVP_ThermobaricRenderer.resolveMachRodHeight(100.0F));
+    }
+
+    @Test
     void dustGroundSamplingCoversDerivedFinalRadius() {
         assertEquals(48.0F,
                 RVP_ThermobaricEffectInstance.resolveDustGroundSampleRadius(10.0F, 2.4F));

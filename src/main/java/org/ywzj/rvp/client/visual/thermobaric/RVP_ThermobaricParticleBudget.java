@@ -6,13 +6,13 @@ import java.util.function.IntToDoubleFunction;
 final class RVP_ThermobaricParticleBudget {
     /** 粒子凝结云用于填补球面空隙的覆盖重叠系数。 */
     static final double CONDENSATION_OVERLAP_FACTOR = 2.50D;
-    /** 三条尘环带用于保持连续圆周的覆盖重叠系数。 */
+    /** 历史三条尘环带覆盖预算的重叠系数；当前地面冲击几何不使用 billboard 覆盖率预算。 */
     static final double DUST_OVERLAP_FACTOR = 1.20D;
     /** 体积火球用于形成多层饱满外观的覆盖重叠系数。 */
     static final double FIREBALL_OVERLAP_FACTOR = 1.50D;
     /** 不规则后燃云用于填补层间空隙的覆盖重叠系数。 */
     static final double CLOUD_OVERLAP_FACTOR = 3.0D;
-    /** 禁用实验功能时复用的空尘环顺序，避免改变旧路径的实例分配。 */
+    /** 历史粒子环路径使用的空顺序；当前地面冲击几何不创建渐进粒子环段。 */
     private static final int[] EMPTY_SEGMENT_ORDER = new int[0];
 
     private RVP_ThermobaricParticleBudget() {
@@ -125,7 +125,7 @@ final class RVP_ThermobaricParticleBudget {
         return 4.0D * Math.PI * radius * (double) radius * normalizedVisibleFraction;
     }
 
-    /** 返回单条尘环带按其 billboard 直径展开后的环带面积。 */
+    /** 返回历史单条 billboard 尘环带按其直径展开后的环带面积。 */
     static double resolveRingBandArea(float radius, float halfSize) {
         if (!Float.isFinite(radius) || radius <= 0.0F
                 || !Float.isFinite(halfSize) || halfSize <= 0.0F) {

@@ -11,12 +11,12 @@ import org.ywzj.rvp.RVP_MOD;
 import java.io.IOException;
 import java.io.InputStream;
 
-/** 在客户端资源重载时解析温压 billboard 贴图的 alpha 有效覆盖率。 */
+/** 在客户端资源重载时解析温压粒子 billboard 贴图的 alpha 有效覆盖率。 */
 public final class RVP_ThermobaricParticleCoverage implements ResourceManagerReloadListener {
     /** 客户端资源重载监听器单例。 */
     public static final RVP_ThermobaricParticleCoverage INSTANCE =
             new RVP_ThermobaricParticleCoverage();
-    /** 温压火球、凝结云、尘环与后燃云共同使用的粒子贴图。 */
+    /** 温压火球、凝结云与后燃云共同使用的粒子贴图；地面冲击几何不使用此贴图。 */
     static final ResourceLocation PARTICLE_TEXTURE =
             RVP_MOD.modLocation("textures/nuclear/particle_base.png");
     /** 内置 16×16 贴图的非透明像素占比，资源读取失败时使用。 */

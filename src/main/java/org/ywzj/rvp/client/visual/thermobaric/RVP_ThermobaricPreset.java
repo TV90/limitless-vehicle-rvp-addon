@@ -18,13 +18,13 @@ import net.minecraft.resources.ResourceLocation;
  *                                                        只影响生成阶段起始厚度，full tick 后恢复原曲线
  * @param condensationCloudCutSpeedFactor 凝结云在完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率，默认 0.75；
  *                                          接受非负有限值，0 关闭裁切，只在凝结云显示时生效且不改变径向速度、淡出或寿命
- * @param thermobaricLod 火球、粒子凝结云、尘环与后燃烟云共用的四档距离 LOD
- * @param showDustRing 是否显示贴地尘环
+ * @param thermobaricLod 火球、粒子凝结云、地面冲击环/马赫杆与后燃烟云共用的四档距离 LOD
+ * @param showDustRing 是否显示贴地地面冲击环和马赫杆；字段名保留历史 dust_ring 兼容性
  * @param showCloud 是否显示后燃烟云
  * @param maxClouds 完整视觉密度下后燃烟云允许生成的最大云团数量
  * @param maxFireballClouds 完整视觉密度下温压火球允许生成的最大团状云数量
- * @param maxDustSegments 完整视觉密度下贴地尘环允许生成的最大环段数量
- * @param dustGroundRadialSamples 尘环沿扩散半径预采样的地表层数
+ * @param maxDustSegments 完整视觉密度下地面冲击几何允许使用的最大方向采样/环段数量
+ * @param dustGroundRadialSamples 地面冲击几何沿扩散半径预采样的地表层数
  * @param pressureRings 压力波及凝结云球壳的纬向细分数
  * @param pressureSegments 压力波及凝结云球壳的经向细分数
  * @param coreStartTick 主火球相对整个效果起点的绝对开始 tick
@@ -34,8 +34,8 @@ import net.minecraft.resources.ResourceLocation;
  * @param pressureWaveFullTick 压力波到达最大半径的绝对 tick
  * @param pressureWaveFadeSpeedFactor 压力波与两种凝结云从 full tick 到派生结束 tick 的线性淡出速度倍率，默认 0；
  *                                        接受非负有限值，0 关闭线性淡出，且不改变径向速度、裁切或寿命
- * @param dustRingStartTick 贴地尘环相对整个效果起点的绝对开始 tick
- * @param dustRingFullTick 贴地尘环到达配置半径并立即开始匀速外扩消散的绝对 tick
+ * @param dustRingStartTick 贴地地面冲击环和马赫杆相对整个效果起点的绝对开始 tick
+ * @param dustRingFullTick 地面冲击环到达配置半径并立即开始匀速外扩消散的绝对 tick
  * @param cloudStartTick 后燃烟云相对整个效果起点的绝对开始 tick
  * @param cloudFullTick 后燃烟云开始消散的绝对 tick，不切换运动曲线；实验性动态预算开启时，
  *                      同时表示基础烟云粒子数达到完整容量
@@ -43,7 +43,7 @@ import net.minecraft.resources.ResourceLocation;
  * @param cloudColorChangeStartTick 后燃烟云从火焰色向烟色变化的绝对开始 tick
  * @param cloudColorChangeEndTick 后燃烟云完全变为烟色的绝对结束 tick
  * @param pressureRadiusFactor 压力波与凝结云在 full tick 时相对基础爆炸半径的半径倍率
- * @param dustRadiusFactor 尘环相对基础爆炸半径的倍率
+ * @param dustRadiusFactor 地面冲击环相对基础爆炸半径的倍率
  * @param cloudRadiusFactor 烟云横向相对基础爆炸半径的倍率
  * @param cloudRiseFactor 烟云最终最高升起高度相对基础爆炸半径的倍率，默认 1.5 且不设上限
  * @param cloudRiseSpeedFactor 烟云竖直升起速度的无量纲倍率，默认 12.0，零值停止基础升起
@@ -155,7 +155,7 @@ public record RVP_ThermobaricPreset(
     }
 
     /**
-     * 返回尘环的派生结束 tick；淡出时长与成形时长相同，保证 full tick 前后径向速度一致。
+     * 返回地面冲击环和马赫杆的派生结束 tick；淡出时长与成形时长相同，保证 full tick 前后径向速度一致。
      */
     public int dustRingEndTick() {
         if (dustRingFullTick <= dustRingStartTick) {

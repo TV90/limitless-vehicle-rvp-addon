@@ -60,9 +60,9 @@ public final class RVP_ThermobaricPresetPatch {
     private final Float condensationCloudParticleSpawnThicknessFactor;
     /** 凝结云完整成形后从 Y 轴最高点向下连续裁切的无量纲速度倍率覆盖；非负有限值，0 关闭裁切。 */
     private final Float condensationCloudCutSpeedFactor;
-    /** 火球、粒子凝结云、尘环和后燃烟云共用的嵌套四档 LOD 覆盖。 */
+    /** 火球、粒子凝结云、地面冲击环/马赫杆和后燃烟云共用的嵌套四档 LOD 覆盖。 */
     private final ThermobaricLodPatch thermobaricLod;
-    /** 贴地尘环显示开关覆盖。 */
+    /** 贴地地面冲击环和马赫杆显示开关覆盖；字段名保留 dust_ring 兼容性。 */
     private final Boolean showDustRing;
     /** 后燃烟云显示开关覆盖。 */
     private final Boolean showCloud;
@@ -70,9 +70,9 @@ public final class RVP_ThermobaricPresetPatch {
     private final Integer maxClouds;
     /** 完整视觉密度下温压火球最大团状云数量覆盖。 */
     private final Integer maxFireballClouds;
-    /** 完整视觉密度下贴地尘环最大环段数量覆盖。 */
+    /** 完整视觉密度下地面冲击几何最大方向采样/环段数量覆盖。 */
     private final Integer maxDustSegments;
-    /** 尘环沿扩散半径预采样的地表层数覆盖。 */
+    /** 地面冲击几何沿扩散半径预采样的地表层数覆盖。 */
     private final Integer dustGroundRadialSamples;
     /** 压力波及凝结云球壳纬向细分数覆盖。 */
     private final Integer pressureRings;
@@ -90,9 +90,9 @@ public final class RVP_ThermobaricPresetPatch {
     private final Integer pressureWaveFullTick;
     /** 压力波与两种凝结云在派生阶段的线性淡出速度倍率覆盖；非负有限值，0 关闭线性淡出。 */
     private final Float pressureWaveFadeSpeedFactor;
-    /** 尘环开始 tick 覆盖。 */
+    /** 地面冲击环和马赫杆开始 tick 覆盖。 */
     private final Integer dustRingStartTick;
-    /** 尘环到达最大半径 tick 覆盖。 */
+    /** 地面冲击环到达最大半径 tick 覆盖。 */
     private final Integer dustRingFullTick;
     /** 烟云开始 tick 覆盖。 */
     private final Integer cloudStartTick;
@@ -106,7 +106,7 @@ public final class RVP_ThermobaricPresetPatch {
     private final Integer cloudColorChangeEndTick;
     /** 压力波半径倍率覆盖。 */
     private final Float pressureRadiusFactor;
-    /** 尘环半径倍率覆盖。 */
+    /** 地面冲击环半径倍率覆盖。 */
     private final Float dustRadiusFactor;
     /** 烟云横向半径倍率覆盖。 */
     private final Float cloudRadiusFactor;
