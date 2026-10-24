@@ -22,7 +22,9 @@ import org.ywzj.rvp.all.RVP_ImpactSparkOptions;
  * <ul>
  *   <li><b>方向</b>：以调用方给的基准方向（= 命中方向的反方向）为轴，在锥内随机取一条母线，
  *       因此整体朝弹源侧/反弹侧溅出，同时有自然散布；</li>
- *   <li><b>速度</b>：基准速度由命中弹速打折而来（刻意不是原速），每颗再乘 0.6～1.0 的随机浮动；</li>
+ *   <li><b>速度</b>：基准速度由命中弹速打折而来（刻意不是原速），每颗再乘 0.35～1.0 的随机浮动。
+ *       浮动区间刻意拉宽（原 0.6～1.0）：慢颗粒停在命中点附近、快颗粒冲到锥尖，喷溅在轴向上
+ *       被"填满"，才看得出锥形而不是一圈等距的亮点；</li>
  *   <li><b>阻力</b>：全轴空气阻尼 {@link #DRAG}（明显大于普通粒子的 0.96），配合微重力
  *       形成"溅出即快速减速下坠"的观感，不做落地弹跳（与殉燃火星区分）。</li>
  * </ul>
@@ -78,23 +80,7 @@ public final class RVP_ImpactSparkParticle extends SingleQuadParticle {
         if (engine == null || level == null || options == null) {
             return;
         }
-        Vec3 axis = new Vec3(options.dirX(), options.dirY(), options.dirZ());
-        // 在与基准方向垂直的平面上取随机方向，再按 spread 缩放到锥内，保证主体仍朝基准方向
-        Vec3 helper = Math.abs(axis.y) < 0.9D ? new Vec3(0.0D, 1.0D, 0.0D) : new Vec3(1.0D, 0.0D, 0.0D);
-        Vec3 tangent1 = axis.cross(helper).normalize();
-        Vec3 tangent2 = axis.cross(tangent1).normalize();
-        double coneRadians = Math.toRadians(MAX_CONE_HALF_ANGLE) * options.spread();
-        double lateral = Math.tan(coneRadians);
-        double angle = level.random.nextDouble() * Math.PI * 2.0D;
-        double radius = lateral * Math.sqrt(level.random.nextDouble());
-        Vec3 lateralVec = tangent1.scale(Math.cos(angle) * radius)
-                .add(tangent2.scale(Math.sin(angle) * radius));
-        // 速度大小在 0.6～1.0 间浮动，避免所有火星等速成"壳"
-        double speedScale = 0.6D + 0.4D * level.random.nextDouble();
-        Vec3 velocity = axis.add(lateralVec).normalize().scale(options.speed() * speedScale);
-        engine.add(new RVP_ImpactSparkParticle(level, x, y, z,
-                velocity.x, velocity.y, velocity.z, options.size(), options.lifetime(),
-                options.r(), options.g(), options.b()));
+        engine.add(create(level, x, y, z, options));
     }
 
     @Override
@@ -119,33 +105,22 @@ public final class RVP_ImpactSparkParticle extends SingleQuadParticle {
                 : this.startQuadSize;
     }
 
-    @Override
-    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera,
-                       float partialTicks) {
-        Vec3 cam = camera.getPosition();
-        Vec3 center = new Vec3(this.x - cam.x(), this.y - cam.y(), this.z - cam.z());
-        float quad = this.quadSize;
-        float alpha = this.alpha;
-        float r = this.rCol;
-        float g = this.gCol;
-        float b = this.bCol;
-        int light = this.getLightColor(partialTicks);
-        buffer.vertex(center.x - quad, center.y - quad, center.z)
-                .uv(0.0F, 1.0F).color(r, g, b, alpha).uv2(light).endVertex();
-        buffer.vertex(center.x - quad, center.y + quad, center.z)
-                .uv(0.0F, 0.0F).color(r, g, b, alpha).uv2(light).endVertex();
-        buffer.vertex(center.x + quad, center.y + quad, center.z)
-                .uv(1.0F, 0.0F).color(r, g, b, alpha).uv2(light).endVertex();
-        buffer.vertex(center.x + quad, center.y - quad, center.z)
-                .uv(1.0F, 1.0F).color(r, g, b, alpha).uv2(light).endVertex();
-    }
+    // 渲染直接继承 SingleQuadParticle：由基类套用相机旋转的四元数做 billboard，并做帧间位置插值。
+    // 不要在这里自绘面片——自绘会得到固定世界朝向（非相机朝向）的单面 quad，
+    // 大多数视角下侧棱为零面积或被背面剔除，表现为"粒子已生成但完全看不见"。
 
     @Override
     public ParticleRenderType getRenderType() {
         return RENDER_TYPE;
     }
 
-    /** {@code SingleQuadParticle} 四个 UV 抽象方法：本类自绘 render()，这里给整幅贴图占位。 */
+    /** 全亮自发光：加法混合的火星光斑不应被方块光压暗（与 {@code RVP_WreckSparkParticle} 同一处理）。 */
+    @Override
+    public int getLightColor(float partialTick) {
+        return 0xF000F0;
+    }
+
+    /** {@code SingleQuadParticle} 四个 UV 抽象方法：整张 flare 贴图铺满一个面片。 */
     @Override
     protected float getU0() {
         return 0.0f;
@@ -200,11 +175,12 @@ public final class RVP_ImpactSparkParticle extends SingleQuadParticle {
         }
     }
 
-    /** Provider 入口：与 {@link #spawn} 同一构造路径，仅供粒子工厂调用。 */
+    /** Provider 入口：锥形随机生成 + 构造，粒子工厂与 {@link #spawn} 共用这一条路径。 */
     private static net.minecraft.client.particle.Particle create(ClientLevel level,
                                                                 double x, double y, double z,
                                                                 RVP_ImpactSparkOptions options) {
         Vec3 axis = new Vec3(options.dirX(), options.dirY(), options.dirZ());
+        // 在与基准方向垂直的平面上取随机方向，再按 spread 缩放到锥内，保证主体仍朝基准方向
         Vec3 helper = Math.abs(axis.y) < 0.9D ? new Vec3(0.0D, 1.0D, 0.0D) : new Vec3(1.0D, 0.0D, 0.0D);
         Vec3 tangent1 = axis.cross(helper).normalize();
         Vec3 tangent2 = axis.cross(tangent1).normalize();
@@ -214,7 +190,8 @@ public final class RVP_ImpactSparkParticle extends SingleQuadParticle {
         double radius = lateral * Math.sqrt(level.random.nextDouble());
         Vec3 lateralVec = tangent1.scale(Math.cos(angle) * radius)
                 .add(tangent2.scale(Math.sin(angle) * radius));
-        double speedScale = 0.6D + 0.4D * level.random.nextDouble();
+        // 速度大小在 0.35～1.0 间浮动（原 0.6～1.0）：拉开轴向停驻距离，让锥体内部被填满
+        double speedScale = 0.35D + 0.65D * level.random.nextDouble();
         Vec3 velocity = axis.add(lateralVec).normalize().scale(options.speed() * speedScale);
         return new RVP_ImpactSparkParticle(level, x, y, z,
                 velocity.x, velocity.y, velocity.z, options.size(), options.lifetime(),

@@ -5518,40 +5518,67 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      *   <li>阻力：由粒子端 {@code RVP_ImpactSparkParticle.DRAG} 全轴衰减，形成快速减速下坠。</li>
      * </ul>
      *
+     * <p>2026-10-24 视觉加强：原实现大口径只有 16 颗、尺寸斜率 1/1100，且速度上限 1.2 让所有
+     * 弹种（7.62 到 125mm）撞上限后速度完全一样——观感是"几个亮点"而不是锥形喷溅。现在数量斜率
+     * 改为 1/4（7.62 仍是 3 颗，125mm 到 31 颗）、尺寸/锥角斜率同步调陡、寿命随口径略增，
+     * 速度上限抬到 2.0 让大口径真正打得更远，锥形才立得住。</p>
+     *
      * @param reflect 命中方向的反方向（未归一化亦可，粒子端会归一化）
      */
     protected void spawnImpactSparks(ServerLevel serverLevel, Vec3 hitPos, Vec3 reflect) {
         if (weaponKind != RVP_EnumWeaponKind.MACHINEGUN || rvpData == null) {
             return;
         }
-        if (serverLevel.getGameTime() % 2L != 0L && getFlightTickCount() > 4) {
-            // 远距离连发时节流：每 2 tick 才允许一批，避免密集成片
-            return;
-        }
+        // 不要用 gameTime 奇偶做"远距节流"：单发武器的弹道固定，命中 tick 的奇偶也恒定
+        // （例：20 格/tick 的主炮在 80 格外飞行 > 4 tick 后，奇数 gameTime 命中会把该武器
+        // 全部远距火星节流掉，表现为 90 格左右突然完全无粒子）。火星密度由武器射速与
+        // 粒子寿命自然约束，无需额外按 tick 抽稀。
         float caliber = rvpData.getEffectsData().getCaliber();
-        int count = Mth.clamp(Math.round(caliber / 8.0F), 3, 18);
+        // 数量：7.62mm ≈ round(1.9) 后仍被下限兜到 3 颗（用户认可的小口径观感不变），
+        // 20mm=5、30mm=8、105mm=26、125mm≈31、130mm≈33，大口径成簇才看得见锥形。
+        int count = Mth.clamp(Math.round(caliber / 4.0F), 3, 36);
         double impactSpeed = getDeltaMovement().length();
         double speed = Math.min(impactSpeed * IMPACT_SPARK_SPEED_SCALE, IMPACT_SPARK_SPEED_MAX);
         if (speed <= 0.01D) {
             return;
         }
-        float size = Mth.clamp(0.035F + caliber / 1100.0F, 0.04F, 0.32F);
-        float spread = Mth.clamp(0.25F + caliber / 320.0F, 0.25F, 1.0F);
-        int lifetime = 8 + serverLevel.random.nextInt(9);
+        // 尺寸斜率由 1/1100 提高到 1/700：大口径单颗也够醒目，不会被新加的数量稀释。
+        float size = Mth.clamp(0.035F + caliber / 700.0F, 0.04F, 0.34F);
+        // 锥角斜率由 1/320 提高到 1/240：125/130mm 到 0.77~0.79（半角约 42~43°），
+        // 7.62mm 仍约 0.28（半角约 15°），小口径的紧凑感不变。
+        float spread = Mth.clamp(0.25F + caliber / 240.0F, 0.25F, 1.0F);
+        // 寿命：7.62mm 保持 8~16 tick 不变；大口径每 40mm 多 1 tick（125mm 为 11~19），
+        // 让高速喷溅有足够时间把锥形尾巴铺开，而不是刚起飞就消失。
+        int lifetime = 8 + Math.round(caliber / 40.0F) + serverLevel.random.nextInt(9);
         org.ywzj.rvp.all.RVP_ImpactSparkOptions options =
                 new org.ywzj.rvp.all.RVP_ImpactSparkOptions(
                         1.0F, 0.78F, 0.35F, size,
                         reflect.x, reflect.y, reflect.z,
                         speed, spread, lifetime);
-        serverLevel.sendParticles(options, hitPos.x, hitPos.y, hitPos.z,
-                count, 0.0D, 0.0D, 0.0D, 0.0D);
+        // 必须逐玩家 force=true 发送：服务端不带 longDistance 的 sendParticles 只投递给命中点
+        // 32 格内的玩家（ServerLevel 的 32/512 两个门限），客户端 LevelRenderer 同样会裁掉
+        // 相机 1024²（32 格）以外的非强制粒子。命中点通常在数十格外，非强制发送等于一个包都不发。
+        // force=true 已跳过客户端距离裁剪，故这里不再沿用弹孔/碎块的 128 格门限，改用原版
+        // 远距粒子上限 512 格（超出最大视距，火星也已小于一个像素）。
+        for (ServerPlayer player : serverLevel.players()) {
+            if (player.distanceToSqr(hitPos) < 512.0D * 512.0D) {
+                serverLevel.sendParticles(player, options, true,
+                        hitPos.x, hitPos.y, hitPos.z, count, 0.0D, 0.0D, 0.0D, 0.0D);
+            }
+        }
     }
 
-    /** 命中火星速度相对命中弹速的折减；0.22 使 75 格/tick 的 APFSDS 也只溅出约 1.2 格/tick。 */
-    private static final double IMPACT_SPARK_SPEED_SCALE = 0.22D;
+    /**
+     * 命中火星速度相对命中弹速的折减。
+     *
+     * <p>0.12 让 10 格/tick 的 7.62 步枪弹保持原观感的 1.2 格/tick，而 20 格/tick 及以上的
+     * 坦克炮弹顶到 {@link #IMPACT_SPARK_SPEED_MAX}——既满足"速度取决于弹速但绝不是原速"，
+     * 又让大口径喷溅明显更有冲劲（原 0.22 + 上限 1.2 使所有弹种撞上限后速度完全相同）。</p>
+     */
+    private static final double IMPACT_SPARK_SPEED_SCALE = 0.12D;
 
-    /** 命中火星初速上限（格/tick），防止高速弹一发喷出几十格远的火线。 */
-    private static final double IMPACT_SPARK_SPEED_MAX = 1.2D;
+    /** 命中火星初速上限（格/tick）：2.0 为大口径喷溅的冲劲上限，再高会喷出十几格长的火线。 */
+    private static final double IMPACT_SPARK_SPEED_MAX = 2.0D;
 
     /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */
     protected void spawnAmmoBlockImpactEffects(BlockHitResult result) {

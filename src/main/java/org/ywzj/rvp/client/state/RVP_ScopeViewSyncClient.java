@@ -214,12 +214,19 @@ public final class RVP_ScopeViewSyncClient {
     }
 
     /**
-     * 炮塔目标角的帧间插值缓存，按 WeaponUnit 实例分键。
+     * 意图方向的帧间插值缓存，按 WeaponUnit 实例分键；布局 {@code Vec3[2]}：
+     * {@code [0]} = 上一 tick 的世界方向，{@code [1]} = 当前 tick 的世界方向。
      *
-     * <p>布局 {@code float[4]}：{@code [0..1]} = 上一 tick 值，{@code [2..3]} = 当前 tick 值。
-     * 滚动条件必须是「当前值真的变了」而不是「每次渲染」，原因见 {@link #disguiseAimWorldPos}。</p>
+     * <p><b>为什么必须缓存世界方向、不能缓存局部目标角（2026-10-24 定位）</b>：本体
+     * {@code WeaponUnit.tickRot()} 的双向稳定器分支在车体转动时，每 tick 会把
+     * {@code xAimRot/yAimRot} 改写为「保持同一个世界目标方向所需的局部角」——车体偏航 Δ，
+     * 局部目标角就反向变化约 Δ。若在局部角空间做 rotLerp、再乘车体姿态的帧间增量，两个
+     * 插值分量在 tick 内不是同一条路径：圈每 tick 被车体偏航量反向拉一次、tick 末尾再弹回，
+     * 即用户实测的「车体左右转时高频小幅左右横跳」；静止时 Δ=0，所以看不出来。
+     * 世界方向两端在 tick 边界严格连续，插值路径与相机（本体 CameraMixin 对世界朝向做
+     * slerp）一致，转车体/转炮塔都不会再出现台阶。</p>
      */
-    private static final Map<WeaponUnit, float[]> INTENT_AIM_ROT = new java.util.IdentityHashMap<>();
+    private static final Map<WeaponUnit, Vec3[]> INTENT_AIM_DIR = new java.util.IdentityHashMap<>();
 
     private static WeaponUnit lastIntentStation;
 
@@ -236,8 +243,12 @@ public final class RVP_ScopeViewSyncClient {
      * 取后者（{@code weaponHitPos} 走炮口实际姿态 + 弹道 march）：转向时圈先走、准星按方向机
      * 节奏追；炮塔到位后两者同向、落点重合。</p>
      *
-     * <p>平滑：目标角每 tick 才更新，按 {@code Mth.rotLerp(partialTick)} 在上一 tick 与当前 tick
-     * 之间插值，消除 20Hz 台阶；静止时目标角不变，命中点天然稳定（不再需要死区）。</p>
+     * <p>平滑：在<b>世界方向</b>空间按 partialTick 插值（缓存布局见 {@link #INTENT_AIM_DIR}）。
+     * 不能在局部角空间插值——本体稳定器会在车体转动时逐 tick 反向改写
+     * {@code xAimRot/yAimRot}，局部角插值与车体插值两条路径不同步，圈会被每 tick 反向拉一次
+     * 再弹回（2026-10-24 用户实测的车体转动时高频横跳）。世界方向插值的两端在 tick 边界严格
+     * 连续，且与相机（CameraMixin 对世界朝向做 slerp）同一路径；静止时方向不变，命中点天然
+     * 稳定（不需要死区）。</p>
      */
     @Nullable
     public static Vec3 disguiseAimWorldPos(WeaponUnit station, float partialTick) {
@@ -247,63 +258,32 @@ public final class RVP_ScopeViewSyncClient {
         }
         org.ywzj.rvp.mixin.RotatableUnitAimRotAccessor accessor =
                 (org.ywzj.rvp.mixin.RotatableUnitAimRotAccessor) (Object) station;
-        // 必须叠加炮管自身旋转（WeaponUnit.xBarrelSelfRot / yBarrelSelfRot，本体维护、与
-        // xAimRot 同单位同向）：炮塔角只是炮塔朝向，结构模型里炮管可能还带固定旋转
-        // ——99B 的 turret_barrel 就带 2.4° 上仰用来抵消炮塔前倾。不加这一项，圈的落点会
-        // 比真实炮口指向低一截（2026-10-24 用户实测）。
-        //
-        // 【帧间插值缓存的滚动条件】——2026-10-24 用户实测「高频小幅度左右横跳」的根因。
-        // xAimRot/yAimRot 是 tick 级字段，一 tick 内通常有 2~3 帧渲染。若在渲染路径里直接覆写
-        // 「上一 tick」缓存，同一 tick 的第 2 帧起 prev 就被污染成当前值，rotLerp 退化成「直接取
-        // 当前值」，于是每个 tick 边界多出一次跳变：第 1 帧还在旧位置、第 2 帧起跳到新位置，
-        // 远距落点把这个 tick 级差放大成肉眼可见的横跳。
-        // 本体（toAimPosition -> aimGlobalTransform + vehicle.rotYXZ）压根不做 partialTick
-        // 插值、一 tick 内值恒定，所以反而没有这种台阶——差异不在本体，在我自己加的这层。
-        // 故滚动判据改成「当前值是否真的变了」：只有进入新 tick 才把旧 cur 移成 prev，
-        // 同一 tick 内任意次渲染都拿到同一对 (prev, cur)，逐帧结果一致。
-        if (lastIntentStation != station) {
-            INTENT_AIM_ROT.clear();
-            lastIntentStation = station;
+        // 意图世界方向：本体稳定器已把 xAimRot/yAimRot 改写为「世界目标的局部角」，
+        // 这里按本体 worldVec() 的同一套链路（车体姿态 × 结构基准 × 目标角）还原成世界方向。
+        // 叠加炮管自身旋转（xBarrelSelfRot/yBarrelSelfRot，本体 field、与相机口径同向）：
+        // 与 cameraAimWith() 的观瞄相机方向保持同一参考系（99B 的 turret_barrel 带 2.4° 上仰）。
+        Vec3 curDir = station.worldVec(
+                accessor.ywzj_rvp$getXAimRot() + station.xBarrelSelfRot,
+                accessor.ywzj_rvp$getYAimRot() + station.yBarrelSelfRot).normalize();
+        Vec3[] dirs = INTENT_AIM_DIR.get(station);
+        if (dirs == null) {
+            dirs = new Vec3[]{curDir, curDir};
+            INTENT_AIM_DIR.put(station, dirs);
+        } else if (dirs[1].distanceToSqr(curDir) > 1.0E-10) {
+            // 只在「世界方向真的变了」时滚动：同一 tick 内多次渲染必须拿到同一对 (prev, cur)，
+            // 否则第 2 帧起 prev 被污染，插值退化成逐 tick 跳变。
+            dirs[0] = dirs[1];
+            dirs[1] = curDir;
         }
-        float curX = accessor.ywzj_rvp$getXAimRot() + station.xBarrelSelfRot;
-        float curY = accessor.ywzj_rvp$getYAimRot() + station.yBarrelSelfRot;
-        float[] rot = INTENT_AIM_ROT.get(station);
-        if (rot == null) {
-            rot = new float[]{curX, curY, curX, curY};
-            INTENT_AIM_ROT.put(station, rot);
-        } else if (curX != rot[2] || curY != rot[3]) {
-            rot[0] = rot[2];
-            rot[1] = rot[3];
-            rot[2] = curX;
-            rot[3] = curY;
-        }
-        float aimX = net.minecraft.util.Mth.rotLerp(partialTick, rot[0], rot[2]);
-        float aimY = net.minecraft.util.Mth.rotLerp(partialTick, rot[1], rot[3]);
+        // 世界空间插值：两端方向转成 (pitch, yaw)，yaw 用 rotLerp 处理 ±180 环绕。
+        // 插值路径与相机一致（CameraMixin 对世界朝向做 slerp），不再受车体/炮塔在局部角
+        // 空间分解方式的影响：车体转动时稳定器反向改写局部目标角不会再把圈拉出台阶。
+        net.minecraft.world.phys.Vec2 fromRot = VectorUtil.vecToRot(dirs[0]);
+        net.minecraft.world.phys.Vec2 toRot = VectorUtil.vecToRot(dirs[1]);
+        float aimX = net.minecraft.util.Mth.lerp(partialTick, fromRot.x, toRot.x);
+        float aimY = net.minecraft.util.Mth.rotLerp(partialTick, fromRot.y, toRot.y);
+        Vec3 dir = VectorUtil.rotToVec(aimX, aimY).normalize();
         AbstractVehicle vehicle = local.vehicle;
-        Vec3 dir = station.worldVec(aimX, aimY);
-        // 车体姿态帧间补偿（2026-10-24 用户实测：车体左转/右转时意图圈左右剧烈晃动，静止时不晃）。
-        //
-        // 根因：worldVec(FF) 内部走 baseRot() → AbstractVehicle.rotYXZ()，后者用车体 tick 级字段
-        // yRot/xRot/zRot 构造四元数，**不带 partialTick 插值**。车体转动时该值每 tick 跳一次，而渲染
-        // 发生在 tick 之间，圈就跟着 tick 台阶左右跳；静止时 yRot 不变，所以看不出问题。
-        //
-        // 修正：dirFrame = (rotYXZ(pt) × rotYXZ()⁻¹) × dirTick。
-        // baseRot() = rotYXZ() × group.baseRotation（× 父链），其中 group.baseRotation 是结构模型的
-        // **静态**量，在这个 delta 里会被约掉，因此该式与「用插值车体重算一遍 worldVec」严格等价，
-        // 不需要访问 protected 的 structureGroup。
-        //
-        // 与上面的 Mth.rotLerp(目标角) 是互补而非重复：后者补「局部目标角」的帧间差，这里补
-        // 「基准姿态」的帧间差，两者合起来才是完整的帧间插值。
-        if (vehicle != null && partialTick > 0.0F && partialTick < 1.0F) {
-            org.joml.Quaternionf tickRot = vehicle.rotYXZ();
-            org.joml.Quaternionf frameRot = vehicle.rotYXZ(partialTick);
-            if (tickRot != null && frameRot != null) {
-                org.joml.Quaternionf delta =
-                        new org.joml.Quaternionf(frameRot).mul(new org.joml.Quaternionf(tickRot).conjugate());
-                dir = new Vec3(delta.transform(dir.toVector3f(), new org.joml.Vector3f()));
-            }
-        }
-        dir = dir.normalize();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.gameRenderer == null || mc.level == null) {
             return station.weaponHitPos;
