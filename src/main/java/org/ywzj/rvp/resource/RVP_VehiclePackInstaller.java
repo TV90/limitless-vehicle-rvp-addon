@@ -50,6 +50,16 @@ public final class RVP_VehiclePackInstaller {
             }
             copyModDirectory(PACK_RESOURCE_ROOT, targetPath);
             LOGGER.info("Installed RVP vehicle pack to {}", targetPath);
+            // [RVP] 首启即有内容的关键补扫（2026-10-25）：本体 YwzjVehicle 构造器在依赖顺序上
+            // 先于本 mod 构造，其 scanVehiclePacks 跑在 RVP 包落盘之前（全新安装或版本
+            // 不等触发"备份删除重装"时），构造期唯一一次扫描读不到 rvp——表现为首启无内容、
+            // 二启才有。此处解压完成后主动重扫一次覆盖该空扫（幂等：default_vehicle 版本
+            // 相同时自跳过重装，packType 已由本体设好不受影响）。
+            org.ywzj.vehicle.resource.VehiclePackLoader.INSTANCE.scanVehiclePacks();
+            // [RVP] 首启创造栏补注册（2026-10-25）：本体 AllTabs.register 同样消费构造期扫描
+            // 列表，tab 注册窗口早于补扫——首启 RealVehiclePack 标签页缺失（物品/实体经补扫
+            // 已可用）。已注册（二启后本体自建）自动跳过，见 RVP_PackTabInjector。
+            RVP_PackTabInjector.injectIfNeeded();
         } catch (Exception exception) {
             LOGGER.warn("Failed to install RVP vehicle pack to {}", targetPath, exception);
         }
