@@ -179,6 +179,6 @@ class RVP_ClientRemoteVehicleVisualStateTest {
 
     /** 解析测试资源 ID。 */
     private static ResourceLocation id(String value) {
-        return ResourceLocation.parse(value);
+        return new ResourceLocation(value);
     }
 }

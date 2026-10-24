@@ -35,7 +35,7 @@ class RVP_FireSupportStageDMapToolTest {
     @Test
     void clientProfilePreservesDynamicParametersAndGenericPhases() {
         RVP_ClientFireSupportProfile profile = RVP_ClientFireSupportProfile.parse(
-                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("rvp", "test"), PROFILE_JSON);
+                new net.minecraft.resources.ResourceLocation("rvp", "test"), PROFILE_JSON);
         assertEquals("item.ywzj_rvp.fire_support_terminal.test", profile.itemTranslationKey());
         assertEquals(3, profile.patterns().size());
         assertEquals(java.util.Set.of("length_m", "width_m", "step_m"), profile.patterns().get(2).parameters().keySet());

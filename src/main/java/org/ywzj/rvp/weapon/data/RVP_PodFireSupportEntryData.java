@@ -92,7 +92,7 @@ public class RVP_PodFireSupportEntryData {
             return null;
         }
         try {
-            return ResourceLocation.parse(weapon.trim());
+            return new ResourceLocation(weapon.trim());
         } catch (Exception exception) {
             return null;
         }

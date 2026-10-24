@@ -88,7 +88,7 @@ public final class RVP_FireSupportJson {
         ResourceLocation id = ResourceLocation.tryParse(value);
         if (id == null) {
             problems.add(path, "不是合法资源 ID");
-            return ResourceLocation.fromNamespaceAndPath("minecraft", "invalid");
+            return new ResourceLocation("minecraft", "invalid");
         }
         return id;
     }

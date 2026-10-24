@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class RVP_ThermobaricPresetManagerTest {
     @Test
     void sparseResourcePatchUsesBuiltInDefaultsForMissingFields() {
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("rvp", "custom");
+        ResourceLocation id = new ResourceLocation("rvp", "custom");
         Map<ResourceLocation, RVP_ThermobaricPreset> loaded =
                 RVP_ThermobaricPresetManager.buildPresetMap(Map.of(
                         id, JsonParser.parseString("{\"max_clouds\":42}")));
@@ -24,8 +24,8 @@ class RVP_ThermobaricPresetManagerTest {
 
     @Test
     void invalidFieldFallsBackIndividuallyAndInvalidDocumentIsIgnored() {
-        ResourceLocation partial = ResourceLocation.fromNamespaceAndPath("rvp", "partial");
-        ResourceLocation invalid = ResourceLocation.fromNamespaceAndPath("rvp", "invalid");
+        ResourceLocation partial = new ResourceLocation("rvp", "partial");
+        ResourceLocation invalid = new ResourceLocation("rvp", "invalid");
         Map<ResourceLocation, RVP_ThermobaricPreset> loaded =
                 RVP_ThermobaricPresetManager.buildPresetMap(Map.of(
                         partial, JsonParser.parseString(

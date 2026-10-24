@@ -11,9 +11,9 @@ import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.guidance.RVP_EnumGuidanceType;
 
 final class RVP_FireSupportTestProfiles {
-    static final ResourceLocation PROFILE_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test");
-    static final ResourceLocation WEAPON_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test_round");
-    static final ResourceLocation SECOND_WEAPON_ID = ResourceLocation.fromNamespaceAndPath("rvp", "test_rocket");
+    static final ResourceLocation PROFILE_ID = new ResourceLocation("rvp", "test");
+    static final ResourceLocation WEAPON_ID = new ResourceLocation("rvp", "test_round");
+    static final ResourceLocation SECOND_WEAPON_ID = new ResourceLocation("rvp", "test_rocket");
 
     private RVP_FireSupportTestProfiles() {}
 

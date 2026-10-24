@@ -12,7 +12,7 @@ import java.util.Optional;
 public final class RVP_ThermobaricEffectFactory implements RVP_ClientVisualEffectFactory {
     /** 通用视觉协议中的温压效果类型。 */
     public static final ResourceLocation EFFECT_TYPE =
-            ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric");
+            new ResourceLocation("rvp", "thermobaric");
 
     @Override
     public Optional<RVP_ClientVisualEffect> create(ClientLevel level, RVP_VisualEffectEvent event) {

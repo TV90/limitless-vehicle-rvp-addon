@@ -887,7 +887,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         }
         try {
             Optional<BaseDisplay> display = ClientAssetsManager.INSTANCE
-                    .getWeaponDisplay(ResourceLocation.parse(weaponId));
+                    .getWeaponDisplay(new ResourceLocation(weaponId));
             if (display.isPresent()) {
                 VehicleBedrockModel m = display.get().getModel();
                 if (m != null && m.hasBakedModel()) {

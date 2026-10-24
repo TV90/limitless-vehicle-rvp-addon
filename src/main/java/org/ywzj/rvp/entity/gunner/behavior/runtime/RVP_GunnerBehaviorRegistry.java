@@ -68,7 +68,7 @@ public final class RVP_GunnerBehaviorRegistry {
 
     private static void register(Map<ResourceLocation, RVP_GunnerBehaviorType> entries, String path,
                                  Set<String> keys, int defaultPriority) {
-        ResourceLocation id = ResourceLocation.fromNamespaceAndPath("rvp", path);
+        ResourceLocation id = new ResourceLocation("rvp", path);
         RVP_GunnerBehaviorType previous = entries.putIfAbsent(id,
                 new RVP_GunnerBehaviorType(id, keys, defaultPriority, 0, 1000));
         if (previous != null) throw new IllegalStateException("重复注册 Gunner 行为类型: " + id);

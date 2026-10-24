@@ -517,7 +517,7 @@ public final class RVP_CustomMountRenderLogic {
     private static VehicleBedrockModel loadAttachmentModelDirect(ResourceLocation modelId,
                                                                  List<SpecialBoneEffect> effects,
                                                                  Set<String> preservedBones) {
-        ResourceLocation resourcePath = ResourceLocation.fromNamespaceAndPath(
+        ResourceLocation resourcePath = new ResourceLocation(
                 modelId.getNamespace(),
                 "models/bedrock/" + modelId.getPath() + ".json"
         );

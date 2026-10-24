@@ -42,7 +42,7 @@ public final class RVP_FireSupportDeliveryTypes {
     /** @return 已注册投送类型的不可变视图。 */
     public static Map<ResourceLocation, RVP_FireSupportDeliveryFactory> all() { return factories; }
 
-    private static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath("rvp", path); }
+    private static ResourceLocation id(String path) { return new ResourceLocation("rvp", path); }
 
     /** 垂直投送在阶段 B 使用的不可变参数。 */
     public record VerticalProjectileData(

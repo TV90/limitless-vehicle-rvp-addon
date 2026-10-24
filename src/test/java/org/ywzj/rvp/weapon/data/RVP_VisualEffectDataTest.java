@@ -25,7 +25,7 @@ class RVP_VisualEffectDataTest {
 
         assertFalse(data.isEnabled());
         assertTrue(data.getEffectType().isEmpty());
-        assertEquals(ResourceLocation.fromNamespaceAndPath("rvp", "default"), data.getPreset());
+        assertEquals(new ResourceLocation("rvp", "default"), data.getPreset());
         assertEquals(1.0F, data.getScale());
         assertEquals(1.0F, data.getDensity());
         assertEquals(-1, data.getDurationTicks());
@@ -79,7 +79,7 @@ class RVP_VisualEffectDataTest {
 
         assertTrue(data.isEnabled());
         assertTrue(data.getEffectType().isEmpty());
-        assertEquals(ResourceLocation.fromNamespaceAndPath("rvp", "default"), data.getPreset());
+        assertEquals(new ResourceLocation("rvp", "default"), data.getPreset());
         assertEquals(99.0F, data.getScale());
         assertEquals(0.0F, data.getDensity());
         assertEquals(9999, data.getDurationTicks());
@@ -93,7 +93,7 @@ class RVP_VisualEffectDataTest {
                 """, RVP_DetonateData.class);
 
         assertEquals(1, detonateData.getVisualEffectData().size());
-        assertEquals(ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric"),
+        assertEquals(new ResourceLocation("rvp", "thermobaric"),
                 detonateData.getVisualEffectData().get(0).getEffectType().orElseThrow());
     }
 }

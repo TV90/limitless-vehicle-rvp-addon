@@ -86,7 +86,7 @@ class RVP_FireSupportDeliveryTypesTest {
 
     @Test
     void capabilityValidationAcceptsGpsChainsAndRejectsAirToAir() {
-        ResourceLocation weaponId = ResourceLocation.fromNamespaceAndPath("rvp", "test");
+        ResourceLocation weaponId = new ResourceLocation("rvp", "test");
         RVP_FireSupportResolvedWeapon guidedRocket = new RVP_FireSupportResolvedWeapon(
                 RVP_EnumWeaponKind.ROCKET, RVP_EnumGuidanceType.GPS, false, false,
                 false, false, false, 1200, 0, false, 10.0F, 2.0F);

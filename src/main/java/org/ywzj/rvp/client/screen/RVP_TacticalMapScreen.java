@@ -311,7 +311,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     /** 可空的地图工具；终端上下文安装炮火工具，普通地图保持为空。 */ @Nullable private final RVP_TacticalMapTool mapTool;
 
     private static ResourceLocation mapIcon(String fileName) {
-        return ResourceLocation.fromNamespaceAndPath("ywzj_rvp", ICON_TEXTURE_ROOT + fileName);
+        return new ResourceLocation("ywzj_rvp", ICON_TEXTURE_ROOT + fileName);
     }
 
     /** @return 当前可空载具客户端上下文；步行玩家或切换时序中允许为空。 */
@@ -3852,7 +3852,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
             if (!path.startsWith("textures/")) {
                 path = ICON_TEXTURE_ROOT + path;
             }
-            return ResourceLocation.fromNamespaceAndPath(parsed.getNamespace(), path);
+            return new ResourceLocation(parsed.getNamespace(), path);
         }
         String file = raw.endsWith(".png") ? raw : raw + ".png";
         return mapIcon(file);

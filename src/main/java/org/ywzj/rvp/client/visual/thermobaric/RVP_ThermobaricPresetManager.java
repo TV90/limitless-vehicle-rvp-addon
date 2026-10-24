@@ -28,10 +28,10 @@ public final class RVP_ThermobaricPresetManager extends SimpleJsonResourceReload
             new RVP_ThermobaricPresetManager();
     /** 标准温压预设 ID。 */
     public static final ResourceLocation STANDARD_PRESET =
-            ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_standard");
+            new ResourceLocation("rvp", "thermobaric_standard");
     /** 公共数据缺省预设 ID。 */
     private static final ResourceLocation DEFAULT_PRESET =
-            ResourceLocation.fromNamespaceAndPath("rvp", "default");
+            new ResourceLocation("rvp", "default");
     /** 已记录的未知预设集合。 */
     private static final Set<ResourceLocation> WARNED_PRESETS = ConcurrentHashMap.newKeySet();
     /** 最近一次成功重载得到的不可变预设表。 */

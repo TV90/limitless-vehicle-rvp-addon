@@ -56,7 +56,7 @@ public class C2SSetGPSTarget {
     public static C2SSetGPSTarget clear() {
         C2SSetGPSTarget msg = new C2SSetGPSTarget();
         msg.action = Action.CLEAR_ALL;
-        msg.dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+        msg.dimension = new ResourceLocation("minecraft", "overworld");
         msg.mode = RVP_ClientGPSState.Mode.SINGLE;
         return msg;
     }
@@ -65,7 +65,7 @@ public class C2SSetGPSTarget {
         C2SSetGPSTarget msg = new C2SSetGPSTarget();
         msg.action = Action.SET_MODE;
         msg.mode = mode == null ? RVP_ClientGPSState.Mode.SINGLE : mode;
-        msg.dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+        msg.dimension = new ResourceLocation("minecraft", "overworld");
         return msg;
     }
 

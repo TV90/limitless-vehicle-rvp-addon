@@ -364,7 +364,7 @@ public final class RVP_CockpitScreenManager {
 
     /** @return 屏型对应的注册 RL（display 文件 {@code special_bone_effects.texture} 填本值）。 */
     public static ResourceLocation rl(ScreenKind kind) {
-        return ResourceLocation.fromNamespaceAndPath("rvp", "cockpit/" + kind.path);
+        return new ResourceLocation("rvp", "cockpit/" + kind.path);
     }
 
     /** @return 屏型对应的离屏渲染目标（世界空间直绘采样其颜色纹理；未注册返回 null）。 */

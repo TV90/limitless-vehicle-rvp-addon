@@ -64,7 +64,7 @@ public class RVP_DispenserPayloadData {
         if (raw.contains(":")) {
             return ResourceLocation.tryParse(raw);
         }
-        return ResourceLocation.fromNamespaceAndPath("minecraft", raw);
+        return new ResourceLocation("minecraft", raw);
     }
 
     public int getDamage() {

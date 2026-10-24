@@ -46,7 +46,7 @@ public class RVP_PodFireSupportMapTool implements RVP_TacticalMapTool {
 
     @Override
     public ResourceLocation id() {
-        return ResourceLocation.fromNamespaceAndPath("rvp", "pod_fire_support");
+        return new ResourceLocation("rvp", "pod_fire_support");
     }
 
     @Override

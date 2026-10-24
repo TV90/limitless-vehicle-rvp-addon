@@ -23,16 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class S2CRemoteVehicleVisualSnapshotTest {
     /** 测试快照使用的维度 ID。 */
     private static final ResourceLocation DIMENSION =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+            new ResourceLocation("minecraft", "overworld");
     /** 测试条目使用的载具实体类型 ID。 */
     private static final ResourceLocation ENTITY_TYPE =
-            ResourceLocation.fromNamespaceAndPath("ywzj_vehicle", "fixed_wing_vehicle");
+            new ResourceLocation("ywzj_vehicle", "fixed_wing_vehicle");
     /** 测试条目使用的车型数据 ID。 */
     private static final ResourceLocation VEHICLE_ID =
-            ResourceLocation.fromNamespaceAndPath("rvp", "test_aircraft");
+            new ResourceLocation("rvp", "test_aircraft");
     /** 测试条目使用的显示变体 ID。 */
     private static final ResourceLocation DISPLAY_ID =
-            ResourceLocation.fromNamespaceAndPath("rvp", "test_aircraft_display");
+            new ResourceLocation("rvp", "test_aircraft_display");
 
     @Test
     void codecRoundTripPreservesEveryField() {

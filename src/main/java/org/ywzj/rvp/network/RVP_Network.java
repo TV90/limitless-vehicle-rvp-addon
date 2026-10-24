@@ -35,7 +35,7 @@ public class RVP_Network {
     private static final String PROTOCOL = "29";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
-            .named(ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "main"))
+            .named(new ResourceLocation(RVP_MOD.MOD_ID, "main"))
             .networkProtocolVersion(() -> PROTOCOL)
             .clientAcceptedVersions(PROTOCOL::equals)
             .serverAcceptedVersions(PROTOCOL::equals)

@@ -16,7 +16,7 @@ class S2CWreckDestructionStateTest {
     @Test
     void roundTripPreservesDestructionTimeline() {
         S2CWreckDestructionState original = new S2CWreckDestructionState(
-                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"), UUID.randomUUID(),
+                new ResourceLocation("minecraft", "overworld"), UUID.randomUUID(),
                 new RVP_WreckDestructionState(Mode.DELAYED, 123456, 480, 384, 60, true));
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
@@ -35,7 +35,7 @@ class S2CWreckDestructionStateTest {
     void rejectsAbsentTimeline() {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
-            buffer.writeResourceLocation(ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"));
+            buffer.writeResourceLocation(new ResourceLocation("minecraft", "overworld"));
             buffer.writeUUID(UUID.randomUUID());
             buffer.writeNbt(null);
             // 调用生产解码，缺失时间表不能静默退化为会随机点燃的默认分支。

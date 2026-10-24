@@ -169,7 +169,7 @@ class RVP_FireSupportProfileParserTest {
                 1200, 0, false, 0.0F, 0.0F);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> RVP_FireSupportProfileParser.parseAll(
-                        Map.of(ResourceLocation.fromNamespaceAndPath("rvp", "laser"), RVP_FireSupportTestProfiles.validJson()), id -> laser));
+                        Map.of(new ResourceLocation("rvp", "laser"), RVP_FireSupportTestProfiles.validJson()), id -> laser));
         assertTrue(error.getMessage().contains("不是可投送"));
     }
 

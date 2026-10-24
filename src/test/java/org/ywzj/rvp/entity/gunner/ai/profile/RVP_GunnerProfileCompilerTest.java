@@ -103,16 +103,16 @@ class RVP_GunnerProfileCompilerTest {
                 """);
         var candidates = new LinkedHashMap<ResourceLocation, JsonElement>();
         candidates.put(GunnerProfileManager.DEFAULT_PROFILE_ID, valid);
-        candidates.put(ResourceLocation.fromNamespaceAndPath("ywzj_rvp", "bad"), invalid);
+        candidates.put(new ResourceLocation("ywzj_rvp", "bad"), invalid);
         assertThrows(IllegalArgumentException.class, () -> GunnerProfileManager.compileSnapshot(candidates));
         assertThrows(IllegalArgumentException.class, () -> GunnerProfileManager.compileSnapshot(java.util.Map.of(
-                ResourceLocation.fromNamespaceAndPath("ywzj_rvp", "other"), valid)));
+                new ResourceLocation("ywzj_rvp", "other"), valid)));
         assertEquals(1, GunnerProfileManager.compileSnapshot(java.util.Map.of(
                 GunnerProfileManager.DEFAULT_PROFILE_ID, valid)).size());
     }
 
     private static GunnerProfile compile(String id, String json) {
-        return RVP_GunnerProfileCompiler.compile(ResourceLocation.fromNamespaceAndPath("rvp", id), JsonParser.parseString(json));
+        return RVP_GunnerProfileCompiler.compile(new ResourceLocation("rvp", id), JsonParser.parseString(json));
     }
 
     private static GunnerProfile compileFile(Path path) throws IOException {

@@ -49,7 +49,7 @@ public final class RVP_RocketCcipOverlay {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final ResourceLocation FALLBACK_TEXTURE =
-            ResourceLocation.fromNamespaceAndPath("rvp", "textures/ui/ccip.png");
+            new ResourceLocation("rvp", "textures/ui/ccip.png");
     private static final ResourceLocation REGISTERED_TEXTURE = RVP_MOD.modLocation("dynamic/ccip");
     private static final int CCIP_SIZE = 32;
     private static final int CCIP_TEXTURE_SIZE = 128;

@@ -30,11 +30,11 @@ public class RVP_MOD {
     public static final String MOD_ID = "ywzj_rvp";
 
     public static ResourceLocation modLocation(String path) {
-        return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
+        return new ResourceLocation(MOD_ID, path);
     }
 
     public static ResourceLocation resourceLocation(String location) {
-        return ResourceLocation.parse(location);
+        return new ResourceLocation(location);
     }
 
     public RVP_MOD(FMLJavaModLoadingContext context) {

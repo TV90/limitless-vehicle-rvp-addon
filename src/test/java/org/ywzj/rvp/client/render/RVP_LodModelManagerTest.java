@@ -55,7 +55,7 @@ class RVP_LodModelManagerTest {
     /** 创建测试 LOD 规则。 */
     private static RVP_LodModel rule(String modelId, double distance, double airDistance,
                                      double airHeight, double zoomDistance, double zoomAirDistance) {
-        return new RVP_LodModel(ResourceLocation.parse(modelId), null, null,
+        return new RVP_LodModel(new ResourceLocation(modelId), null, null,
                 distance, airDistance, airHeight, zoomDistance, zoomAirDistance);
     }
 }

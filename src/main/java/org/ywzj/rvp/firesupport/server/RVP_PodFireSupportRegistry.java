@@ -91,7 +91,7 @@ public final class RVP_PodFireSupportRegistry {
 
     /** @return 运行时 profile ID（rvp:pod/<weaponPath>/<entryId>）。 */
     public static ResourceLocation profileId(String weaponPath, String entryId) {
-        return ResourceLocation.fromNamespaceAndPath("rvp",
+        return new ResourceLocation("rvp",
                 "pod/" + weaponPath + "/" + entryId.toLowerCase(Locale.ROOT));
     }
 
@@ -176,7 +176,7 @@ public final class RVP_PodFireSupportRegistry {
         // 校验投送工厂类型存在（delivery.data 原样透传，投送工厂在任务接受时严格解析）。
         ResourceLocation deliveryType;
         try {
-            deliveryType = ResourceLocation.parse(delivery.get("type").getAsString().trim());
+            deliveryType = new ResourceLocation(delivery.get("type").getAsString().trim());
         } catch (Exception exception) {
             return null;
         }

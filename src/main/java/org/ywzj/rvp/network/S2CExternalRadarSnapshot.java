@@ -15,7 +15,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 public class S2CExternalRadarSnapshot {
-    public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
+    public ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
     @Nullable
     public UUID launcherVehicleUuid;
     @Nullable

@@ -13,7 +13,7 @@ import java.util.function.Supplier;
 
 public class S2CTacticalRevealSnapshot {
 
-    public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
+    public ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
     public List<Integer> fireRevealIds = List.of();
     /** 吊舱标记的实体（含 IFF 类型） */
     public List<MarkedEntry> markedEntries = List.of();

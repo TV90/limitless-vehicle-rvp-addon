@@ -14,7 +14,7 @@ class S2CMissileAirTargetImpactFragmentsTest {
     @Test
     void codecRoundTripPreservesVisualSnapshot() {
         S2CMissileAirTargetImpactFragments message = new S2CMissileAirTargetImpactFragments(
-                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+                new ResourceLocation("minecraft", "overworld"),
                 12.5D, 70.0D, -7.25D,
                 1.2D, -0.3D, 2.4D,
                 3, 1234L, 5678L,
@@ -39,7 +39,7 @@ class S2CMissileAirTargetImpactFragmentsTest {
     void decoderRejectsInvalidFragmentCount() {
         FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
         try {
-            buffer.writeResourceLocation(ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"));
+            buffer.writeResourceLocation(new ResourceLocation("minecraft", "overworld"));
             buffer.writeDouble(0.0D);
             buffer.writeDouble(64.0D);
             buffer.writeDouble(0.0D);
