@@ -5529,7 +5529,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * @param reflect 命中方向的反方向（未归一化亦可，粒子端会归一化）
      */
     protected void spawnImpactSparks(ServerLevel serverLevel, Vec3 hitPos, Vec3 reflect) {
-        if (weaponKind != RVP_EnumWeaponKind.MACHINEGUN || rvpData == null) {
+        if (!IMPACT_SPARK_ENABLED || weaponKind != RVP_EnumWeaponKind.MACHINEGUN || rvpData == null) {
             return;
         }
         // 不要用 gameTime 奇偶做"远距节流"：单发武器的弹道固定，命中 tick 的奇偶也恒定
@@ -5583,10 +5583,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 命中火星初速上限（格/tick）：2.0 为大口径喷溅的冲劲上限，再高会喷出十几格长的火线。 */
     private static final double IMPACT_SPARK_SPEED_MAX = 2.0D;
 
+    /**
+     * RVP 自研命中火星总开关（{@code rvp:impact_spark}）。
+     *
+     * <p>2026-10-24 二选一对照：设为 false 时本实现（载具与方块）完全不再发包，场上只剩鱼王的载具/方块命中火星；改回 true 即恢复。
+     * 粒子类型注册与客户端实现保持不变。</p>
+     */
+    private static boolean IMPACT_SPARK_ENABLED = false;
+
     /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */
     protected void spawnAmmoBlockImpactEffects(BlockHitResult result) {
         if (level() instanceof ServerLevel serverLevel) {
             spawnImpactSparks(serverLevel, result.getLocation(), getDeltaMovement().scale(-1.0D));
+            // 调用 RVP 方块表面命中火花出口：法线取命中面朝向，与载具命中共用同一套广播与客户端生成。
+            org.ywzj.rvp.weapon.impact.RVP_VehicleImpactSparks.publishBlock(
+                    serverLevel, resolveWeaponConfig(), result.getLocation(),
+                    Vec3.atLowerCornerOf(result.getDirection().getNormal()), getDeltaMovement());
             if (rvpData != null) {
                 RVP_ProjectileParticleEffects.spawnBlockImpact(
                         serverLevel, result, rvpData.getEffectsData(), getBbWidth());

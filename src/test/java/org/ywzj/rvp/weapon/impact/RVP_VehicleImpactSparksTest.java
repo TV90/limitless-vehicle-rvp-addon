@@ -12,22 +12,22 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 覆盖弹种显式开关、实际载具包配置、口径缩放和朝外喷射，防止 HE 被误判。 */
+/** 覆盖开关默认值、显式关闭、实际载具包配置、口径缩放和朝外喷射。 */
 class RVP_VehicleImpactSparksTest {
     /** 只解析实际消费的视觉分组，不在纯单元测试中启动物品配方等 Minecraft 注册表。 */
     private final Gson gson = new Gson();
 
     @Test
-    void requiresExplicitSwitchAndVehicleContact() {
+    void defaultsOnAndHonorsExplicitDisable() {
         RVP_EffectsData enabled = gson.fromJson(
                 "{\"vehicle_impact_sparks\":true}", RVP_EffectsData.class);
         // 调用真实触发规则；不依赖名称、爆炸半径或穿透次数。
-        assertTrue(RVP_VehicleImpactSparks.shouldEmit(enabled, true));
-        assertFalse(RVP_VehicleImpactSparks.shouldEmit(enabled, false));
-        assertFalse(RVP_VehicleImpactSparks.shouldEmit(null, true));
-        assertFalse(RVP_VehicleImpactSparks.shouldEmit(gson.fromJson("{}", RVP_EffectsData.class), true));
+        assertTrue(RVP_VehicleImpactSparks.shouldEmit(enabled));
+        assertFalse(RVP_VehicleImpactSparks.shouldEmit(null));
+        // 未配置开关的弹种默认生效（2026-10-24 改为默认开启），显式 false 仍可单独关闭。
+        assertTrue(RVP_VehicleImpactSparks.shouldEmit(gson.fromJson("{}", RVP_EffectsData.class)));
         assertFalse(RVP_VehicleImpactSparks.shouldEmit(gson.fromJson(
-                "{\"vehicle_impact_sparks\":false}", RVP_EffectsData.class), true));
+                "{\"vehicle_impact_sparks\":false}", RVP_EffectsData.class)));
     }
 
     @Test
@@ -123,7 +123,7 @@ class RVP_VehicleImpactSparksTest {
     }
 
     @Test
-    void packEnablesConfirmedArmorPiercingRoundsAndKeepsHEOff() throws Exception {
+    void packKeepsArmorPiercingRoundsEnabledAndHeDefaultsOn() throws Exception {
         Path root = Path.of("limitless_vehicle/rvp/data/rvp/weapons");
         for (String weapon : List.of("abramsx_xm829a5", "bmpt_2a42", "gsh_30_1", "lav25_apfsds",
                 "m1a2sep_m829a2", "mi28_2a42", "t84bm_3bm42", "t90m_3bm59", "vt4_dtc10",
@@ -132,16 +132,16 @@ class RVP_VehicleImpactSparksTest {
             RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(root.resolve(weapon + ".json")))
                     .getAsJsonObject().get("effects_data"), RVP_EffectsData.class);
             // 调用生产规则核实真实穿甲弹配置已启用，并且口径与曳光宽度分开。
-            assertTrue(RVP_VehicleImpactSparks.shouldEmit(data, true), weapon);
+            assertTrue(RVP_VehicleImpactSparks.shouldEmit(data), weapon);
             assertTrue(data.getCaliber() >= 25f, weapon);
         }
         for (String weapon : List.of("gsh_30_1_he", "lav25_hei", "zbl08a_hei", "t84bm_3of26",
                 "t90m_3of26", "vt4_dtb10", "abramsx_xm1127", "ztz100_dtb251", "m1a2sep_m830a1")) {
-            // 提取实际 HE 配置的视觉分组，缺省开关也必须保持关闭。
+            // 提取实际 HE 配置的视觉分组；开关改为默认开启后 HE 同样生效。
             RVP_EffectsData data = gson.fromJson(JsonParser.parseString(Files.readString(root.resolve(weapon + ".json")))
                     .getAsJsonObject().get("effects_data"), RVP_EffectsData.class);
-            // 调用生产规则核实 HE/HEAT 仍关闭，不因同口径而触发穿甲火花。
-            assertFalse(RVP_VehicleImpactSparks.shouldEmit(data, true), weapon);
+            // 调用生产规则核实 HE/HEAT 走默认开启；需要关闭时在 JSON 显式写 false，由上一用例覆盖。
+            assertTrue(RVP_VehicleImpactSparks.shouldEmit(data), weapon);
         }
     }
 }

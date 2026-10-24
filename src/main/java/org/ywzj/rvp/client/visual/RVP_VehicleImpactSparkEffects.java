@@ -9,7 +9,7 @@ import org.ywzj.rvp.client.particle.RVP_WreckSparkParticle;
 import org.ywzj.rvp.network.S2CVehicleImpactSparks;
 import org.ywzj.rvp.weapon.impact.RVP_VehicleImpactSparks;
 
-/** 复用带重力火星，按穿甲弹入射方向和装甲表面朝向生成飞溅。 */
+/** 复用带重力火星，按弹丸入射方向与载具/方块表面朝向生成飞溅。 */
 @OnlyIn(Dist.CLIENT)
 public final class RVP_VehicleImpactSparkEffects {
     /** 单客户端每个游戏 tick 最多新增的火星总数，限制密集机炮命中的开销。 */
