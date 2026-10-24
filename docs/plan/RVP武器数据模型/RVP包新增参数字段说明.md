@@ -567,7 +567,8 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `flak_particles_crack` | MCH `FlakParticlesCrack`：方块破碎粒子基数（实际 +0~2），默认 10。 |
 | `num_particles_flak` | MCH `NumParticlesFlak`：白烟数量，默认 3。 |
 | `flak_particles_diff` | MCH `FlakParticlesDiff`：破碎粒子速度散布（步枪约 0.1，反坦克约 0.6），默认 0.3。 |
-| `caliber` | 弹体口径（毫米），默认 `7.62`；RVP 炮口烟按此字段以 `45 mm` 分为灰色即时烟/白色延迟烟，殉燃炮口喷火也要求 `>=45 mm`。不用于曳光宽度。 |
+| `caliber` | 弹体口径（毫米），默认 `7.62`；RVP 炮口烟按此字段以 `45 mm` 分为灰色即时烟/白色延迟烟，殉燃炮口喷火也要求 `>=45 mm`。开启 `vehicle_impact_sparks` 后还控制命中火星的尺寸、数量与飞溅速度（视觉口径限制 1～200 mm）。不用于曳光宽度。 |
+| `vehicle_impact_sparks` | 布尔值，默认 `false`。穿甲弹填 `true`，HE 等高爆弹保持 `false`；只在弹体直接命中载具表面时产生飞溅火星，无额外命中闪光，跳弹及未造成伤害的接触也触发。用命中装甲碰撞盒的表面朝向和跳弹前来弹方向采样：以反射方向为中心，正面命中散射半角 60°，擦板命中逐渐收窄到 12°，朝板内的采样方向折回板外；使用真实几何入射角，不受伤害角度上限影响。近炸、爆炸波及、地面和生物命中不触发。与 `impact_particle` 独立，不推测武器名称、ID 或爆炸能力。服务端广播到命中点 192 格内，客户端每 tick 最多新增 160 颗火星；协议 29 要求双端更新。 |
 | `tracer_caliber` | 曳光/弹体视觉口径（毫米），默认回退 `caliber`，再回退 `7.62`；仅 RVP 弹体 Renderer 的曳光宽度消费。 |
 | `tracer_r` / `tracer_g` / `tracer_b` | **仅机枪**：曳光 `energySwirl` RGB，0–1。默认 `1` / `0.85` / `0.2`。 |
 | `tracer_length_scale` | 机枪曳光长度倍率，默认 `1.0`，有效范围 `0..8`；`0` 关闭曳光长度，非法值回退 `1.0`。 |

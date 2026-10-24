@@ -7,6 +7,9 @@ import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 /** 公共弹体可安全调用的客户端动作接口；服务端实现不引用任何纯客户端类型。 */
 public interface RVP_IClientActions {
 
+    /** 接收载具表面命中火花；服务端空实现不加载客户端粒子类。 */
+    void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message);
+
     /** 接收服务端地面载具击毁时间表；专用服务端实现为空操作。 */
     void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message);
 
@@ -81,6 +84,20 @@ public interface RVP_IClientActions {
      * @return 客户端返回屏蔽判定结果；专用服 NOOP 恒 false。
      */
     boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z);
+
+    /**
+     * 生成一枚热诱弹（flare）拖尾烟粒子。
+     *
+     * <p>公共实体 {@code RVP_DecoyEntity} 只在客户端 tick 中调用本方法；服务端实现为
+     * NOOP——粒子是纯客户端表现，公共实体类不得直接引用 {@code @OnlyIn(CLIENT)} 的粒子类。
+     * 客户端实现复用 {@code textures/wreck_cookoff/particle/} 的殉燃贴图集。</p>
+     *
+     * @param x         粒子出生 X 坐标
+     * @param y         粒子出生 Y 坐标
+     * @param z         粒子出生 Z 坐标
+     * @param sizeScale 尺寸倍率，1 为默认观感
+     */
+    void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale);
 
     /**
      * [RVP] 查询本地操作者是否处于 SCOPE（开镜）视角。

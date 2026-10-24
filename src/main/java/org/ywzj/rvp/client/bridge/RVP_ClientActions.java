@@ -21,6 +21,12 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
+        // 调用客户端发射器，结合来弹方向与装甲表面生成下坠火星。
+        org.ywzj.rvp.client.visual.RVP_VehicleImpactSparkEffects.accept(message);
+    }
+
+    @Override
     public void acceptWreckDestructionState(org.ywzj.rvp.network.S2CWreckDestructionState message) {
         // 调用客户端权威快照缓存，供殉燃与长程烟读取同一服务端时间表。
         org.ywzj.rvp.client.visual.cookoff.RVP_ClientWreckDestructionState.accept(message);
@@ -137,6 +143,24 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         }
         Minecraft.getInstance().particleEngine.add(
                 org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofLaunchWash(
+                        level, x, y, z, sizeScale));
+    }
+
+    /**
+     * 生成一枚热诱弹（flare）拖尾烟粒子：直接构造本项目静态贴图烟并加入客户端引擎。
+     *
+     * <p>不走 {@code ParticleEngine.createParticle}（那需要已注册的 particle type + provider），
+     * 与殉燃火柱/炮口烟同一路径；贴图集与渲染批次由 {@code RVP_WreckCookoffParticleTextures}
+     * 统一提供，热诱弹拖尾因此复用 {@code textures/wreck_cookoff/particle/} 下的烟雾。</p>
+     */
+    @Override
+    public void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale) {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        Minecraft.getInstance().particleEngine.add(
+                org.ywzj.rvp.client.particle.RVP_FlareTrailSmokeParticle.of(
                         level, x, y, z, sizeScale));
     }
 

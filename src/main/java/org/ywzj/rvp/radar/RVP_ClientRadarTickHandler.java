@@ -5,6 +5,7 @@ import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.jetbrains.annotations.Nullable;
@@ -76,6 +77,46 @@ public final class RVP_ClientRadarTickHandler {
     private static final int BROADCAST_HANDOVER_FRESHNESS_MULTIPLIER = 2;
 
     private RVP_ClientRadarTickHandler() {
+    }
+
+    /** 原生实体卸载时立即交接；不能等到 END，否则本体可能已经清掉硬锁。 */
+    @SubscribeEvent
+    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+        if (event.getLevel().isClientSide()
+                && event.getEntity().getRemovalReason() == Entity.RemovalReason.UNLOADED_TO_CHUNK) {
+            // 调用本项目统一交接入口，仅迁移仍有新鲜广播样本的已有接触与硬锁。
+            reconcilePlayerRadarTargets();
+        }
+    }
+
+    /** 在世界实体开始更新前统一引用，覆盖网络包先替换探测对象的情况。 */
+    @SubscribeEvent
+    public static void onClientTickStart(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.START) {
+            // 调用本项目交接入口，避免本体按旧对象引用检查锁定。
+            reconcilePlayerRadarTargets();
+        }
+    }
+
+    /** 只处理当前玩家拥有且开启的雷达，不重新建立已经解除的锁定。 */
+    private static void reconcilePlayerRadarTargets() {
+        LocalVehiclePlayer player = LocalVehiclePlayer.instance;
+        if (player == null || player.getPlayer() == null || player.vehicle == null
+                || !(player.vehicle.level() instanceof net.minecraft.client.multiplayer.ClientLevel level)) {
+            return;
+        }
+        // 调用本体武器站入口，确认当前玩家拥有火控权限。
+        WeaponUnit weapon = player.getWeaponUnit();
+        if (weapon == null || weapon.getOwner() != player.getPlayer()) {
+            return;
+        }
+        // 调用本体部件列表，只向启用中的雷达迁移同 ID 对象。
+        for (PartUnit<?> part : player.vehicle.getPartUnits()) {
+            if (part instanceof RadarUnit radar && radar.isOn()) {
+                // 调用既有接管逻辑，保留新鲜度校验及本地实体优先规则。
+                reconcileTrackedEntityRepresentations(radar, weapon, level);
+            }
+        }
     }
 
     @SubscribeEvent
@@ -484,11 +525,8 @@ public final class RVP_ClientRadarTickHandler {
         for (Entity entity : clientLevel.entitiesForRendering()) {
             merged.add(entity);
             ids.add(entity.getId());
-            if (!isHardLockedTarget(entity.getId())) {
-                // 非硬锁目标沿用既有鬼影治理：本地实体已接管时删除同 ID 广播克隆。
-                // 硬锁目标保留克隆作为近→远待命对象，但不会加入本次扫描结果。
-                LocalVehiclePlayer.instance.serverEntities.remove(entity.getId());
-            }
+            // 保留广播待命对象；下方按 ID 去重和样本年龄过滤，既不重复扫描，
+            // 也不因本帧刚锁定或下一帧卸载而必须等待下一次服务端广播。
         }
         int nowTick = LocalVehiclePlayer.instance.getPlayer().tickCount;
         int intervalTicks = AllConfigs.server.serverBroadcastEntitiesInterval.get();
@@ -504,25 +542,6 @@ public final class RVP_ClientRadarTickHandler {
             merged.add(serverEntity.entity);
         }
         return merged;
-    }
-
-    /** 判断实体 ID 是否正被本车任一 RadarUnit 硬锁，用于只保留必要的待命广播克隆。 */
-    private static boolean isHardLockedTarget(int entityId) {
-        AbstractVehicle vehicle = LocalVehiclePlayer.instance.vehicle;
-        if (vehicle == null) {
-            return false;
-        }
-        for (PartUnit<?> partUnit : vehicle.getPartUnits()) {
-            if (!(partUnit instanceof RadarUnit radar)) {
-                continue;
-            }
-            // 调用本体雷达锁定读取接口，只为当前正式硬锁目标保留同 ID 广播克隆。
-            Entity locked = radar.getLockedEntity();
-            if (locked != null && locked.getId() == entityId) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** 复刻原 mixin {@code shouldSkipScan}：phase 雷达按 scanPeriodTick 节流扫描。 */

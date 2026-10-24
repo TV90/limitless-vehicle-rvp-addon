@@ -105,7 +105,34 @@ class RVP_RemoteVehicleVisibilityPolicyTest {
                 32,
                 candidates);
 
-        assertEquals(List.of(2, 3, 5, 6), ids(selected));
+        assertEquals(List.of(2, 3, 5, 6, 1), ids(selected));
+    }
+
+    /** 边界前已有备用快照，但备用目标不能挤掉当前远距显示的目标。 */
+    @Test
+    void handoverOverlapIsPreparedWithoutDisplacingRemoteTargets() {
+        List<Candidate> candidates = List.of(
+                candidate(1, VehicleCategory.AIRCRAFT, 383.99, true),
+                candidate(2, VehicleCategory.AIRCRAFT, 384, true),
+                candidate(3, VehicleCategory.AIRCRAFT, 500, true),
+                candidate(4, VehicleCategory.AIRCRAFT, 600, true));
+        // 调用授权策略验证边界前快照与远距优先的数量限制。
+        assertEquals(List.of(4, 2, 3), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 4096, 32, candidates)));
+        assertEquals(List.of(4), ids(select(
+                VisibilityMode.ALL_PLAYERS, null, -1, Set.of(), 4096, 1, candidates)));
+    }
+
+    /** 备用快照仍受类型授权约束，不能借预热扩大观察者可见的车型。 */
+    @Test
+    void handoverOverlapStillRequiresTypeAuthorization() {
+        List<Candidate> candidates = List.of(
+                candidate(1, VehicleCategory.GROUND_VEHICLES, 400, true),
+                candidate(2, VehicleCategory.AIRCRAFT, 400, false));
+        // 调用雷达模式策略验证近距直接可见与类型白名单同时生效。
+        assertEquals(List.of(2), ids(select(VisibilityMode.RADAR_DETECTED,
+                VehicleCategory.HELICOPTER, 99, Set.of(VehicleCategory.AIRCRAFT),
+                4096, 32, candidates)));
     }
 
     /** 观察者类型白名单在数量排序前过滤，空白名单合法且不会被绕过。 */

@@ -50,11 +50,6 @@ import java.util.Map;
 /** 准备并绘制服务端授权的远距载具静态主体，允许同一计划输出到不同目标缓冲。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class RVP_RemoteVehicleVisualRenderer {
-    /** 原生实体追踪与扩展视觉的水平接管边界，单位格。 */
-    private static final double NATIVE_TRACKING_BOUNDARY = 512.0D;
-    /** 原生实体追踪与扩展视觉的水平接管边界平方。 */
-    private static final double NATIVE_TRACKING_BOUNDARY_SQ =
-            NATIVE_TRACKING_BOUNDARY * NATIVE_TRACKING_BOUNDARY;
     /** 客户端没有目标区块时使用的受控中性光照。 */
     private static final int UNLOADED_CHUNK_LIGHT = LightTexture.pack(8, 10);
     /** 远距载具独立批次的初始缓冲容量，缓冲不足时会由 BufferBuilder 自动扩容。 */
@@ -131,19 +126,17 @@ public final class RVP_RemoteVehicleVisualRenderer {
         // 调用无 DH 类型入口，每帧读取 DH 实际地形开关，使游戏内切换立即影响高度过滤。
         boolean dhRenderingEnabled = RVP_DistantHorizonsCompatBootstrap.isDhRenderingEnabled();
         List<CandidateContext> preCandidates = new ArrayList<>();
+        // 近距仍显示本地模型时，只为已获服务端授权的备用代理预热简化图。
+        List<BillboardPlan> standbyPlans = new ArrayList<>();
         List<FarPlaneDemand> farPlaneDemands = new ArrayList<>();
         for (RVP_ClientRemoteVehicleVisualState.RenderEntry entry
                 : RVP_ClientRemoteVehicleVisualState.renderEntries(level, event.getPartialTick())) {
-            if (level.getEntity(entry.entityId()) != null) {
-                continue;
-            }
             // 调用服务端策略，在投影、预算及 Billboard 预热之前排除无 DH 时过低的远距代理。
             if (!renderPolicy.allowsHeightAboveGround(entry.heightAboveGround(), dhRenderingEnabled)) {
                 continue;
             }
             double horizontalDistanceSquared = horizontalDistanceSquared(entry.position(), cameraPosition);
-            if (!Double.isFinite(horizontalDistanceSquared)
-                    || horizontalDistanceSquared <= NATIVE_TRACKING_BOUNDARY_SQ) {
+            if (!Double.isFinite(horizontalDistanceSquared)) {
                 continue;
             }
             double distanceSquared = entry.position().distanceToSqr(cameraPosition);
@@ -180,6 +173,11 @@ public final class RVP_RemoteVehicleVisualRenderer {
                     cameraPosition,
                     hasValidLod,
                     preferModelRendering);
+            if (level.getEntity(entry.entityId()) != null) {
+                standbyPlans.add(billboardPlan);
+                continue;
+            }
+            // 以本地实体是否存在决定接管，避免相机位置或插值滞后于 512 格门槛时再次隐藏。
             boolean fallbackHighModel = RVP_RemoteVehicleBillboardManager
                     .usesHighModelBudget(billboardPlan)
                     || (RVP_RemoteVehicleBillboardManager.usesNormalModelPath(billboardPlan)
@@ -198,6 +196,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
             farPlaneDemands.add(projectionDemand);
         }
         if (preCandidates.isEmpty()) {
+            // 调用已有每帧单张预算入口，在尚未跨出原生跟踪范围时准备备用简化图。
+            RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(standbyPlans);
             return null;
         }
 
@@ -236,6 +236,8 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 RVP_ClientConfig.getRemoteVehicleMaxRenderedVehicles(),
                 RVP_ClientConfig.getRemoteVehicleMaxFallbackHighModels());
         if (selected.isEmpty()) {
+            // 调用相同预算入口，即使远距候选在视锥外也继续预热近距备用图。
+            RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(standbyPlans);
             return null;
         }
 
@@ -249,11 +251,13 @@ public final class RVP_RemoteVehicleVisualRenderer {
                 .plan(event.getProjectionMatrix(), selectedProjectionDemands)
                 .orElse(projectionPlan);
 
-        List<BillboardPlan> selectedBillboardPlans = selected.stream()
+        List<BillboardPlan> selectedBillboardPlans = new ArrayList<>(selected.stream()
                 .map(candidate -> contexts.get(candidate.entityId()))
                 .filter(java.util.Objects::nonNull)
                 .map(CandidateContext::billboardPlan)
-                .toList();
+                .toList());
+        // 远距可见目标优先，备用图排在后面；合并后仍然每次最多生成一张图。
+        selectedBillboardPlans.addAll(standbyPlans);
         // 调用独立 Billboard 管理器，在切换远距投影前按预算优先级预热至多一张动态快照。
         RVP_RemoteVehicleBillboardManager.prepareOneSnapshot(selectedBillboardPlans);
         PoseStack savedPoseStack = new PoseStack();
