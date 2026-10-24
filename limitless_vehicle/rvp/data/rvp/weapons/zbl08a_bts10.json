@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "BTS-10",
   "name_CN": "BTS-10 横向效应增强弹",
   "shoot_interval": 300,

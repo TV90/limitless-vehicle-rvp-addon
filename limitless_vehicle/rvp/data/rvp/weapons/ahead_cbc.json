@@ -38,7 +38,7 @@
     "living_penetration": 0,
     "wall_penetration": 0,
     "bounce": 0,
-    "direct_damage": 10,
+    "direct_damage": 17,
     "damage_decay": [
       {
         "domain": "distance",

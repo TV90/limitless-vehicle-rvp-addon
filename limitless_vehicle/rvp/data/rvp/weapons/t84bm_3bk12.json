@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 1,
   "name": "3BK12 HEAT",
   "shoot_interval": 20,
   "max_capacity": 1,
@@ -42,7 +43,7 @@
         "living": 0.5,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 1.2
+          "ywzj_vehicle:wheeled_vehicle": 2.2
         }
       }
     }

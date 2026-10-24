@@ -50,11 +50,17 @@ public final class RVP_DebugFlags {
     public static final RVP_DebugFlag LEAD_FC = new RVP_DebugFlag("lead_fc", "弹道提前量火控执行器输入诊断");
     /** Distant Horizons 兼容诊断（合成统计 / 降级原因 / 像素回读 / 分层染色）。客户端。 */
     public static final RVP_DebugFlag DH = new RVP_DebugFlag("dh", "Distant Horizons 兼容诊断（合成统计/降级原因/像素取证）");
+    /**
+     * 爆炸诊断（墙后遮挡判定 / 爆炸波及命中包）。输出到独立文件
+     * {@code logs/rvp_explosion_debug.log}，<b>默认关闭且不写 latest.log</b>；
+     * 开启：{@code /rvpdebug flags explosion on}。服务端。
+     */
+    public static final RVP_DebugFlag EXPLOSION = new RVP_DebugFlag("explosion", "爆炸遮挡/命中包诊断（独立文件）");
 
     /** 全部开关的有序只读列表，用于命令 {@code list} 展示。 */
     public static final List<RVP_DebugFlag> ALL = List.of(
             FUSE, JAM, CM, ECM, UAV, GUNNER, SPAWN, PHYSICS, LAUNCH_DEPLOY,
-            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC, DH);
+            CLIENT_STATE, HIT_UI, HUD, CCIP, HMD, HITL, SHOOT_BOLT, MOTOR_FLAME, LEAD_FC, DH, EXPLOSION);
 
     private RVP_DebugFlags() {
     }

@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "GIAT-30 M791 Cannon",
   "shoot_interval": 75,
   "max_capacity": 150,

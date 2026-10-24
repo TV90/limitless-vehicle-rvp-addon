@@ -7,6 +7,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.resource.RVP_CustomMountReloadListener;
 import org.ywzj.rvp.client.resource.RVP_DisplayTransparentModeManager;
+import org.ywzj.rvp.client.resource.pylon.RVP_PylonDisplayReloadListener;
 import org.ywzj.rvp.client.resource.remotevisibility.RVP_RemoteVehicleVisualReloadListener;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricParticleCoverage;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricPresetManager;
@@ -24,6 +25,8 @@ public final class RVP_ClientReloadListeners {
         event.registerReloadListener(org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffRenderer.INSTANCE);
         event.registerReloadListener(RVP_DisplayTransparentModeManager.INSTANCE);
         event.registerReloadListener(RVP_CustomMountReloadListener.INSTANCE);
+        // 注册 RVP 自有挂架 display 目录，避免挂架模型被注册成本体饰品。
+        event.registerReloadListener(RVP_PylonDisplayReloadListener.INSTANCE);
         // 注册远距载具代理清理器，资源重载后由后续权威快照按新 display/模型重建。
         event.registerReloadListener(RVP_RemoteVehicleVisualReloadListener.INSTANCE);
         // 注册温压粒子贴图覆盖率扫描，使资源包替换贴图后动态预算仍读取真实 alpha 面积。

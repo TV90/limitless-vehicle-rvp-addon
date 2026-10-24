@@ -32,7 +32,8 @@ public class RVP_Network {
     /** 协议 27：新增地面载具击毁分支及权威殉燃时间表；双端必须一同更新。 */
     /** 协议 28：新增载具表面命中火花消息；双端必须一同更新。 */
     /** 协议 29：命中火星消息增加入射方向，用于按装甲面采样飞溅；双端必须一同更新。 */
-    private static final String PROTOCOL = "29";
+    /** 协议 30：新增 S2CDamageNumber（生物头顶伤害飘字）；旧客户端无法连新服。 */
+    private static final String PROTOCOL = "30";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
             .named(new ResourceLocation(RVP_MOD.MOD_ID, "main"))
@@ -419,6 +420,12 @@ public class RVP_Network {
                 .encoder(S2CVehicleImpactSparks::encode)
                 .decoder(S2CVehicleImpactSparks::decode)
                 .consumerMainThread(S2CVehicleImpactSparks::handle)
+                .add();
+        // 生物头顶伤害飘字：服务端结算出实际掉血后单发推送，客户端纯视觉渲染。
+        CHANNEL.messageBuilder(S2CDamageNumber.class, id++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(S2CDamageNumber::encode)
+                .decoder(S2CDamageNumber::decode)
+                .consumerMainThread(S2CDamageNumber::handle)
                 .add();
     }
 }

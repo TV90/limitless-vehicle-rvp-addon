@@ -43,7 +43,8 @@ import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.debug.RVP_TopAttackDebug;
 import org.ywzj.rvp.weapon.core.RVP_ProjectileSpawner;
 import org.ywzj.rvp.weapon.data.RVP_GuidanceData;
-import org.ywzj.vehicle.util.VehicleExplosion;
+import org.ywzj.rvp.weapon.effects.RVP_VehicleExplosion;
+import org.ywzj.rvp.weapon.effects.RVP_ExplosionWallOcclusion;
 import org.ywzj.rvp.weapon.util.RVP_BounceUtil;
 import org.ywzj.rvp.weapon.util.RVP_WallPenetrationUtil;
 import org.ywzj.rvp.weapon.damage.RVP_DamageApplier;
@@ -3651,6 +3652,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         Vec3 segmentEnd = collisionSegmentEnd();
         BlockHitResult result = firstHit;
         int guard = 0;
+        // [RVP] 穿墙循环边界（2026-10-25 修复"配 1 格穿多格"）：
+        // ① pass-through 块（玻璃/树叶等不耗配额）累计推进不得超过本 tick 剩余飞行距离的
+        //    1.5 倍——超限判定为穿出 segment 末端异常，回正常撞击；
+        // ② 配额耗尽（wallPenetrationLeft==0）再遇实体墙时，弹丸位置必须回到入射点再撞击，
+        //    禁止带着"已 setPos 到墙背面 0.35 格"的残留位移结算——那会表现为穿到墙后瞬移爆。
+        Vec3 passThroughAnchor = firstHit.getLocation();
+        double maxPassThroughDist = firstHit.getLocation().distanceTo(segmentEnd) * 1.5 + 2.0;
         while (result.getType() != HitResult.Type.MISS && guard++ < 32) {
             lastBlockHit = result;
             BlockHitResult debugHit = result;
@@ -3668,7 +3676,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             BlockPos blockPos = result.getBlockPos();
             BlockState blockState = level().getBlockState(blockPos);
             if (RVP_WallPenetrationUtil.isPassThroughBlock(blockState)) {
-                setPos(RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result));
+                Vec3 pastPos = RVP_WallPenetrationUtil.positionPastBlockFace(hit, getDeltaMovement(), result);
+                // pass-through 无限推进护栏（B）：累计越过本 tick 段末端 1.5 倍即回正常撞击。
+                if (passThroughAnchor.distanceTo(pastPos) > maxPassThroughDist) {
+                    setPos(hit);
+                    break;
+                }
+                setPos(pastPos);
                 BlockHitResult next = clipBlockSegment(position(), segmentEnd);
                 if (next.getType() == HitResult.Type.MISS) {
                     return false;
@@ -3709,6 +3723,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 result = next;
                 continue;
             }
+            // [RVP] 配额耗尽（A）：弹丸位置可能已被上一轮 setPos 推到墙背面/更深处，
+            // 必须先回到本次入射点再走正常撞击，杜绝"穿到墙后瞬移爆"。
+            setPos(hit);
             break;
         }
         Vec3 hit = result.getLocation();
@@ -4408,7 +4425,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * RVP 弹体爆炸强制即时破坏路径窗口（2026-09-20 用户定版）：配置
      * {@code forceImmediateExplosionDestruction}（默认 true）开启时，把爆炸调用包进
      * {@link RVP_ExplosionImmediatePath} ThreadLocal 窗口——窗口内
-     * {@code VehicleExplosionImmediatePathMixin} 将本体批量破坏半径阈值（32）抬到正无穷，
+     * {@code RVP_VehicleExplosion#batchedDestructionRadiusThreshold()} 将批量破坏半径阈值（32）抬到正无穷，
      * 任意半径都走 ≤32 的即时破坏路径（GridCollectionTask + destroyBlocksImmediately，
      * 单 tick 完成、无烧灼方块替换、无跨 tick 服务端持续负载），不再被 32 截断进核爆炸
      * 批处理。配置关闭或本体/其它 mod 的爆炸不受影响。
@@ -4452,7 +4469,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     }
 
     /**
-     * @param excludeEntity 如果非空，该实体将不会受到 {@link VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
+     * @param excludeEntity 如果非空，该实体将不会受到 {@link RVP_VehicleExplosion} 伤害（已通过近炸直伤扣血，避免重复）。
      */
     /**
      * [RVP] 判定世界坐标是否处于水中（鱼雷水下参数/特效共用，2026-10-02）：
@@ -4518,7 +4535,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
         // [RVP] 水下爆炸独立威力（2026-10-02，rvp:torpedo，MCHeli ExplosionInWater 语义对齐）：
         // 爆心处于水中时使用 explosion_data.damage_in_water / radius_in_water（null=复用
-        // damage/radius）。只改参数选择，不触碰本体 VehicleExplosion 链路；直击/近炸/寿终
+        // damage/radius）。只改参数选择，不触碰 RVP 自维护的爆炸链路；直击/近炸/寿终
         // 自爆全部经本解析点，一处生效。
         if (explosion instanceof org.ywzj.rvp.weapon.data.RVP_Explosion rvpExplosionWater
                 && isWaterAt(level(), pos)) {
@@ -4603,18 +4620,24 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         + " exclude=" + RVP_ProjectileLifecycleDebug.formatEntity(excludeEntity)
                         + " suppressNativeVisual=" + resolvedSuppressNative);
         // 爆炸 A（地形）：只破坏方块——引擎的 ≤32 即时 Grid 与 >32 核爆炸批量路径均由破坏半径驱动，
-        // 实体伤害由 RVP_TerrainOnlyExplosion 窗口经 VehicleExplosionHurtSkipMixin 跳过。
-        VehicleExplosion terrainExplosion = splitDestroyRadius
-                ? new VehicleExplosion(level(), getOwner(), vehicle, pos, destroyRadiusCfg, 0f, true)
-                : null;
+        // 实体伤害由 RVP_TerrainOnlyExplosion 窗口在 RVP_VehicleExplosion.hurt 里直接跳过。
+        // [RVP] 飞行方向给墙后衰减的起点探针用（沿入射反方向贴入射面），必须在 explode() 前设置。
+        RVP_VehicleExplosion terrainExplosion = null;
+        if (splitDestroyRadius) {
+            terrainExplosion = new RVP_VehicleExplosion(level(), getOwner(), vehicle, pos, destroyRadiusCfg, 0f, true);
+            terrainExplosion.setFlightDirection(getDeltaMovement());
+        }
+        // 供 lambda 捕获的最终引用（terrainExplosion 为条件赋值非事实最终，直接捕获编译不过）。
+        final RVP_VehicleExplosion terrainExplosionFinal = terrainExplosion;
         // 爆炸 B / 默认单爆炸：对实体杀伤 + 客户端视觉档位按杀伤半径；destroy_radius=0 时不破坏方块。
         // 拆分模式（destroy_radius>0 且 ≠ radius）下 B 必须 destroyBlock=false——地形破坏全权归
         // 爆炸 A（按 destroy_radius），否则 B 仍按完整杀伤 radius 走核爆炸批量路径把地形炸到
         // radius，destroy_radius 完全失效且（9M723 的 64）方块扫描/灼烧替换量是 A 的数倍
         //（2026-09-20 审计发现的实现与文档语义矛盾，也是">32 爆炸卡顿"的主因）。
         // 本体 explode() 的 if (destroyBlocks) 门控会跳过全部方块扫描/入队，B 只做杀伤与发包。
-        VehicleExplosion ex = new VehicleExplosion(level(), getOwner(), vehicle, pos,
+        RVP_VehicleExplosion ex = new RVP_VehicleExplosion(level(), getOwner(), vehicle, pos,
                 radius, damage, explosion.destroyBlock && !disableTerrain && !splitDestroyRadius);
+        ex.setFlightDirection(getDeltaMovement());
         Set<Entity> excluded = new HashSet<>();
         if (excludeEntity != null) {
             excluded.add(excludeEntity);
@@ -4625,13 +4648,16 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 excluded.add(shooterVehicle);
             }
         }
-        Runnable explosionAction = wrapImmediatePath(wrapExplosionDamageFactor(!excluded.isEmpty()
-                ? () -> ex.explode(List.copyOf(excluded))
+        // excluded 供两处 lambda 捕获（本体爆炸与地形爆炸），Java 要求捕获变量为事实上最终值，
+        // 故组装完成后不再原地修改（后续新增排除目标应先加进 excluded 再到达本行）。
+        Set<Entity> excludedSnapshot = Set.copyOf(excluded);
+        Runnable explosionAction = wrapImmediatePath(wrapExplosionDamageFactor(!excludedSnapshot.isEmpty()
+                ? () -> ex.explode(List.copyOf(excludedSnapshot))
                 : ex::explode, explosionDamageFactor));
-        Runnable terrainExplosionAction = terrainExplosion == null ? null
-                : wrapImmediatePath(wrapExplosionDamageFactor(!excluded.isEmpty()
-                        ? () -> terrainExplosion.explode(List.copyOf(excluded))
-                        : terrainExplosion::explode, explosionDamageFactor));
+        Runnable terrainExplosionAction = terrainExplosionFinal == null ? null
+                : wrapImmediatePath(wrapExplosionDamageFactor(!excludedSnapshot.isEmpty()
+                        ? () -> terrainExplosionFinal.explode(List.copyOf(excludedSnapshot))
+                        : terrainExplosionFinal::explode, explosionDamageFactor));
         // RVP 爆炸命中提示：载具集合必须在爆炸伤害结算前快照 —— AbstractVehicle.hurt
         // 会把被炸死的载具同步 setDestroyed()（已在销毁状态的直接 discard），若结算后再
         // 查询/按 isDestroyed 过滤，被秒杀载具会被全部跳过，客户端只剩本体
@@ -4654,7 +4680,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 }
             }
         }
-        // 标记 RVP 弹体爆炸结算窗口：VehicleExplosion 内每辆载具的伤害都会走本体
+        // 标记 RVP 弹体爆炸结算窗口：RVP_VehicleExplosion 内每辆载具的伤害都会走本体
         // DamageSystem.hurt 并 post HitVehicleEvent，监听器窗口内跳过，避免与下方
         // 爆炸波及的 sendHitIndicator 重复（RVP 弹体爆炸语义由自身发送覆盖）。
         // [RVP] 登记本次爆炸半径（§41.9）：部件虚拟血量距离衰减（Handler 爆炸钩子）读真实半径；
@@ -4723,8 +4749,13 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     continue;
                 }
                 Float healthBefore = blastHealthBefore.get(v.getId());
+                // ⚠️ 被本发爆炸击毁的载具不能直接做血量差：本体 AbstractVehicle.setDestroyed()
+                // （AbstractVehicle:1429-1433）会把血量重置为满血用于残骸表现，差值变负数后被下面的
+                // >0 过滤掉 ⇒ RVP 命中包不发 ⇒ 客户端只剩本体 ServerHitVehicleEvent ⇒ 展板回退本体样式
+                // （2026-10-25 实测：非直击击毁时显示本体展板）。销毁状态一律按 0 血计算。
+                float healthAfter = v.isDestroyed() ? 0f : v.getHealth();
                 float boomDamage = healthBefore != null
-                        ? healthBefore - v.getHealth()
+                        ? healthBefore - healthAfter
                         : (float) (resolvedDamage * (1.0 - 0.5 * dist / radius));
                 if (!(boomDamage > 0f) || !Float.isFinite(boomDamage)) {
                     continue;
@@ -4793,7 +4824,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             } else if (!directHitIds.contains(resolvedProximityTarget.getId())
                     && !proximityDamagedIds.contains(resolvedProximityTarget.getId())) {
                 // 非弹药实体：直击与近炸互斥，同一目标不叠加第二次伤害。
-                // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 VehicleExplosion 距离衰减
+                // 强制对触发近炸的目标造成全额爆炸伤害，不依赖 RVP_VehicleExplosion 距离衰减
                 // （修复高速目标炸不到的 bug）；触发即全额，目标随后逃出范围也照样扣满。
                 float guaranteed = rvpData.getProximityFuseDirectDamage();
                 if (guaranteed <= 0f) {
@@ -4806,6 +4837,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     hadGuaranteedDamage = true;
                 } else if (guaranteed > 0f) {
                     guaranteed = RVP_DamageApplier.applyScaled(guaranteed, resolvedProximityTarget, rvpData);
+                    // [RVP] 墙后衰减：近炸直伤直接 hurt、绕过 RVP_VehicleExplosion，必须在这里单独乘一次。
+                    guaranteed *= RVP_ExplosionWallOcclusion.factorFor(level(), pos, resolvedProximityTarget, getDeltaMovement());
                     DamageSource source = AllDamageTypes.Sources.explosion(
                             level().registryAccess(), this, getOwner(), pos);
                     // 标记近炸伤害结算窗口：resolvedProximityTarget.hurt 会走本体 DamageSystem.hurt
@@ -4826,7 +4859,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 }
             }
         }
-        // 已吃全额近炸的目标排除在 VehicleExplosion 之外，避免二次伤害
+        // 已吃全额近炸的目标排除在 RVP_VehicleExplosion 之外，避免二次伤害
         Entity exclude = hadGuaranteedDamage ? resolvedProximityTarget : null;
         // 近炸也要把解析后的空中目标和引爆瞬间速度传给视觉链，复用实体直击的碎片与白烟拖尾。
         // 调用本项目视觉发布链的目的：近炸伤害与视觉事件保持同一次引爆，不让近炸退化为只有爆炸的路径。

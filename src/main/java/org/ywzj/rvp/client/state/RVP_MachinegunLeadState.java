@@ -4,9 +4,11 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.client.lead.RVP_ClientMachinegunLeadResolver;
+import org.ywzj.rvp.client.lead.RVP_MachinegunLeadSolver;
 import org.ywzj.rvp.client.lead.RVP_LeadSolution;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
+import org.ywzj.vehicle.util.VectorUtil;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
 
 import java.util.HashMap;
@@ -122,6 +124,28 @@ public final class RVP_MachinegunLeadState {
         }
         state.controlSolution = state.currentControlSolution;
         state.lastSeenTick = nowTick;
+    }
+
+    /**
+     * 判断当前这一帧机炮预瞄圈是否真的会画出来。
+     *
+     * <p>判定与 {@code RVP_MachinegunLeadOverlay.render} 保持同源：当前选中武器是可解算的机炮、
+     * 存在帧间插值解、提前点能投影到屏幕正面。意图圈只在此时让位——否则"火控开着但目标丢失 /
+     * 预瞄圈未显示"时屏幕上会一个圈都没有，比留着抖动的意图圈更糟。</p>
+     */
+    public static boolean isLeadIndicatorVisible(@Nullable WeaponUnit weaponUnit, float partialTick) {
+        if (weaponUnit == null || weaponUnit.getVehicle() == null) {
+            return false;
+        }
+        if (RVP_MachinegunLeadSolver.resolveCurrentWeaponData(weaponUnit) == null) {
+            return false;
+        }
+        RVP_LeadSolution solution = resolveDisplayCurrent(weaponUnit, partialTick);
+        if (solution == null) {
+            return false;
+        }
+        Vec3 leadScreen = VectorUtil.worldToScreen(solution.leadWorldPos());
+        return leadScreen != null && leadScreen.z >= 0;
     }
 
     public static void clear(WeaponUnit weaponUnit) {

@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "23mm GSh-23-2",
   "shoot_interval": 50,
   "max_capacity": 150,

@@ -53,5 +53,7 @@ public class RVP_OverlayRegistry {
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_lock_warning", new RVP_LockWarningOverlay());
+        // 生物头顶伤害飘字：注册在最后（该层最上层），避免被命中展板/雷达面板压住。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_damage_number", new RVP_DamageNumberOverlay());
     }
 }

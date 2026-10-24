@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "GSh-30-1 30mm Cannon [AP]",
   "shoot_interval": 75,
   "max_capacity": 150,
@@ -19,7 +20,6 @@
     "rotate_to_motion": true
   },
   "effects_data": {
-    "vehicle_impact_sparks": true,
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion",

@@ -18,33 +18,27 @@
 
 **现象**：调试日志显示 `render SKIP: attachmentModel null`
 
-**根因**：`ClientAssetsManager` 在资源重载完成后会 **清空原始模型 POJO 缓存**（`models.clearData()`，见 `ClientAssetsManager.java:75`）。`getAttachmentModel` 按以下顺序查找模型：
+**根因**：`ClientAssetsManager` 在资源重载完成后会 **清空原始模型 POJO 缓存**（`models.clearData()`，见 `ClientAssetsManager.java:75`）。`getAttachmentModel` 的查找顺序（2026-10-24 起）：
 
-1. `getDecorationDisplay(id)` → 持久化的装饰 display 模型
-2. `getWeaponDisplay(id)` → 持久化的武器 display 模型
-3. `getModel(id)` → 原始模型 POJO（**重载后被清空，运行时不可用**）
+1. `RVP_PylonDisplayCache`（`assets/rvp/display/pylon`，RVP 自有目录，**推荐**）
+2. `getDecorationDisplay(id)` → 持久化的装饰 display 模型
+3. `getWeaponDisplay(id)` → 持久化的武器 display 模型
+4. `getModel(id)` → 原始模型 POJO（重载后被清空）
+5. `loadAttachmentModelDirect` → 直接读 `models/bedrock/<model>.json`（最终兜底）
 
-如果挂架模型 ID 没有被任何 **decoration display** 或 **weapon display** 注册，则三个路径全部返回空，模型加载失败。
-
-**易错点**：
-- 挂架模型 JSON 文件（如 `weapon_mount_aasm.json`）存在于 `models/bedrock/entity/` 目录 **不代表运行时可用**
-- 必须同时创建对应的 **decoration display 配置文件**，才能让 display manager 在重载时持久化该模型
-
-**正确做法**：每个挂架模型必须创建对应的 decoration display 文件：
+**推荐做法**：每个挂架模型在 RVP 自有目录建一条 pylon display，**不要再放到 `display/decoration`**——那会把挂架注册成本体饰品，出现在饰品选择界面：
 
 ```
-路径：assets/rvp/display/decoration/entity/weapon_mount_aasm.json
+路径：assets/rvp/display/pylon/entity/weapon_mount/weapon_mount_aasm.json
 内容：
 {
-  "type": "ywzj_vehicle:weapon",
-  "model": "rvp:entity/weapon_mount_aasm",
-  "texture": "rvp:textures/entity/weapon_mount/pylon_aasm.png",
-  "description": "",
-  "tab_index": 0
+  "model": "rvp:entity/weapon_mount/weapon_mount_aasm"
 }
 ```
 
-**对照参考**：J15 的 4 个挂架模型（`weapon_mount_pl12`、`weapon_mount_pl15`、`weapon_mount_yj91`、`weapon_mount_kd88a`）全部有对应的 decoration display 文件，所以正常工作。
+- 文件路径由 `model` 推导（`rvp:` 后的路径 + `.json`），使 display id 与 `model` 一致，渲染侧可按 id 直接命中。
+- 可选字段 `special_bone_effects`，格式同本体 display，参与模型烘焙；`texture` 等其余字段不读取（挂架贴图仍取 `rvp_custom_mounts.texture`）。
+- 未配置 pylon display 时，渲染侧仍按上面的 2～5 回退，不会直接失效。
 
 ---
 
@@ -154,7 +148,7 @@ String structureBone = ((PartUnitDataAccessor)(Object)this).getStructureBone();
 
 - [ ] **挂架模型 JSON**：`assets/rvp/models/bedrock/entity/weapon_mount_xxx.json`
 - [ ] **挂架贴图**：`assets/rvp/textures/entity/weapon_mount/pylon_xxx.png`
-- [ ] **decoration display**：`assets/rvp/display/decoration/entity/weapon_mount_xxx.json`（⚠️ 最易遗漏！）
+- [ ] **pylon display**：`assets/rvp/display/pylon/entity/weapon_mount/weapon_mount_xxx.json`（推荐；不要放 `display/decoration`，会被注册为饰品）
 - [ ] **武器 display**：`assets/rvp/display/weapon/xxx.json`
 - [ ] **武器数据**：`data/rvp/weapons/xxx.json`
 - [ ] **载具 JSON** 中 `rvp_custom_mounts` 条目完整（`part_unit_id`、`attach_part_unit_id`、`weapon_id`、`model`、`texture`、`rack_bones`、`missile_bones`）

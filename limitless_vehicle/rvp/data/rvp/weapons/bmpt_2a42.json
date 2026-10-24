@@ -18,7 +18,6 @@
     "rotate_to_motion": true
   },
   "effects_data": {
-    "vehicle_impact_sparks": true,
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "none",
@@ -99,5 +98,5 @@
   },
   "fuse_data": {},
   "name_CN": "3UBR8 30MM 脱壳穿甲弹",
-  "recoil": 0.1
+  "recoil": 0.3
 }
