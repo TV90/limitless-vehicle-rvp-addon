@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PlayMessages;
 import org.jetbrains.annotations.NotNull;
 import org.ywzj.rvp.all.RVP_Entities;
+import org.ywzj.rvp.client.bridge.RVP_ClientActionsAccess;
 import org.ywzj.vehicle.particle.SmokeCloudOption;
 
 /**
@@ -104,10 +105,12 @@ public class RVP_DecoyEntity extends Entity implements RVP_Decoy {
             if (tickCount % 2 == 0) {
                 level().addParticle(ParticleTypes.FLASH, true, pos.x, pos.y, pos.z, 0, 0, 0);
             }
-            int smokeCount = tickCount < 60 ? 1 : 3;
+            // 热诱弹拖尾烟：改用车顶殉燃同一套静态贴图烟（textures/wreck_cookoff/particle/）。
+            // 前 60 tick 弹体高速前飞，每 tick 一枚连成拖尾；之后弹体减速，每 tick 两枚补足烟柱浓度。
+            int smokeCount = tickCount < 60 ? 1 : 2;
             for (int i = 0; i < smokeCount; i++) {
-                level().addParticle(ParticleTypes.CAMPFIRE_COSY_SMOKE, true,
-                        pos.x, pos.y, pos.z, 0, 0, 0);
+                // 调用本项目双端安全桥：公共实体类不直接引用 @OnlyIn(CLIENT) 的粒子类，服务端为 NOOP。
+                RVP_ClientActionsAccess.addFlareTrailSmokeParticle(pos.x, pos.y, pos.z, 1.0F);
             }
         } else {
             level().addParticle(new SmokeCloudOption(0.7F, 0.7F, 0.7F, 20, 0.3F, 0.0F), true,

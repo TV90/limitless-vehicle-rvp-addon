@@ -100,6 +100,14 @@ public final class RVP_ClientActionsAccess {
     }
 
     /**
+     * 经双端安全桥生成一枚热诱弹（flare）拖尾烟粒子。
+     * 服务端为 NOOP——粒子是纯客户端表现，公共实体类不引用客户端粒子类。
+     */
+    public static void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale) {
+        INSTANCE.addFlareTrailSmokeParticle(x, y, z, sizeScale);
+    }
+
+    /**
      * 经双端安全桥查询本地操作者是否开镜（eo_ccip 锚定方向判定用）。
      * 服务端 NOOP 恒 false ⇒ 服务端行为与改动前完全一致。
      */
@@ -172,6 +180,11 @@ public final class RVP_ClientActionsAccess {
         public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
             // 服务端不产生客户端粒子，屏蔽判定恒 false。
             return false;
+        }
+
+        @Override
+        public void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale) {
+            // 服务端不产生客户端粒子，热诱弹拖尾烟只在客户端实体 tick 中生成。
         }
 
         @Override

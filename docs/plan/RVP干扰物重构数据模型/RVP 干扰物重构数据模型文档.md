@@ -104,13 +104,17 @@
 
 | 干扰物 | 发光 | 光圈/尺寸 | 运动 | 附加粒子 |
 | --- | --- | --- | --- | --- |
-| 热焰弹 FLARE | **红色发光**（`glowColor` 红） | **光圈更大**（`haloScale` 1.6） | 缓缓下落、飘散（`gravity` 0.05、`drag` 0.02、`speed` 1.0） | `ParticleTypes.FLASH` 爆闪 + 后段 `CAMPFIRE_COSY_SMOKE` 浓烟 + 拖尾音 |
+| 热焰弹 FLARE | **红色发光**（`glowColor` 红） | **光圈更大**（`haloScale` 1.6） | 缓缓下落、飘散（`gravity` 0.05、`drag` 0.02、`speed` 1.0） | `ParticleTypes.FLASH` 爆闪 + 殉燃贴图集静态烟拖尾（`RVP_FlareTrailSmokeParticle`，复用 `textures/wreck_cookoff/particle/`）+ 拖尾音 |
 | 箔条 CHAFF | **白色发光**（`glowColor` 白） | **光圈更小**（`haloScale` 0.7） | 低速铺开、悬浮（`gravity` 0、`drag` 0.3、`speed` 0.2） | 灰色 `SmokeCloudOption` 细粒子按 `spread` 散布成云，不带 FLASH |
 
 实现要点（对齐本体）：
 - billboard 用 `RenderType.entityTranslucent` 渲染贴图，`glowColor` 作颜色倍乘，`haloScale` 作 billboard 缩放（可叠加脉动 `sin`）。
 - 热焰弹 `FULL_BRIGHT` 自发光；箔条可降低自发光或加轻微灰度以区分。
 - 粒子/声音仅在客户端 tick 生成（服务端只做实体运动与存活），对齐本体 `DecoyFlareEntity.tickParticle/tickSound`。
+- 热焰弹拖尾烟**不用原版 `CAMPFIRE_COSY_SMOKE`**：公共实体经 `RVP_ClientActionsAccess.addFlareTrailSmokeParticle`
+  双端安全桥交给客户端 `RVP_FlareTrailSmokeParticle` 生成（公共类不引用 `@OnlyIn(CLIENT)` 粒子）；
+  贴图目录、文件名表与每张贴图的渲染批次由 `RVP_WreckCookoffParticleTextures` 统一加载，
+  与车顶殉燃火柱、炮口灰烟共用同一批 `textures/wreck_cookoff/particle/` 烟雾贴图（同一张图共用同一批次）。
 
 ## 发射逻辑（一次按键 = 一次齐射）
 

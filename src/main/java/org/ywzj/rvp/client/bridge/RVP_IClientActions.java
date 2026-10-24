@@ -86,6 +86,20 @@ public interface RVP_IClientActions {
     boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z);
 
     /**
+     * 生成一枚热诱弹（flare）拖尾烟粒子。
+     *
+     * <p>公共实体 {@code RVP_DecoyEntity} 只在客户端 tick 中调用本方法；服务端实现为
+     * NOOP——粒子是纯客户端表现，公共实体类不得直接引用 {@code @OnlyIn(CLIENT)} 的粒子类。
+     * 客户端实现复用 {@code textures/wreck_cookoff/particle/} 的殉燃贴图集。</p>
+     *
+     * @param x         粒子出生 X 坐标
+     * @param y         粒子出生 Y 坐标
+     * @param z         粒子出生 Z 坐标
+     * @param sizeScale 尺寸倍率，1 为默认观感
+     */
+    void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale);
+
+    /**
      * [RVP] 查询本地操作者是否处于 SCOPE（开镜）视角。
      *
      * <p>目的：公共侧解析 eo_ccip 武器的弹着点锚定方向时需要判断"是否开镜"，

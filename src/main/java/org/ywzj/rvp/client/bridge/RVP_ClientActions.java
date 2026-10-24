@@ -146,6 +146,24 @@ public final class RVP_ClientActions implements RVP_IClientActions {
                         level, x, y, z, sizeScale));
     }
 
+    /**
+     * 生成一枚热诱弹（flare）拖尾烟粒子：直接构造本项目静态贴图烟并加入客户端引擎。
+     *
+     * <p>不走 {@code ParticleEngine.createParticle}（那需要已注册的 particle type + provider），
+     * 与殉燃火柱/炮口烟同一路径；贴图集与渲染批次由 {@code RVP_WreckCookoffParticleTextures}
+     * 统一提供，热诱弹拖尾因此复用 {@code textures/wreck_cookoff/particle/} 下的烟雾。</p>
+     */
+    @Override
+    public void addFlareTrailSmokeParticle(double x, double y, double z, float sizeScale) {
+        net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        Minecraft.getInstance().particleEngine.add(
+                org.ywzj.rvp.client.particle.RVP_FlareTrailSmokeParticle.of(
+                        level, x, y, z, sizeScale));
+    }
+
     /** HITL 粒子屏蔽查询：委托 RVP_ClientHitlState（激活导弹半径内返回 true）。 */
     @Override
     public boolean shouldSuppressTrailParticleNearHitlMissile(double x, double y, double z) {
