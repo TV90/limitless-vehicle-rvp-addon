@@ -17,6 +17,7 @@ import org.ywzj.rvp.client.render.remotevisibility.RVP_RemoteVehicleBillboardMan
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteVehicleVisualState;
 import org.ywzj.rvp.client.visual.thermobaric.RVP_ThermobaricScreenFeedback;
+import org.ywzj.rvp.client.visual.shake.RVP_ScreenShakeExecutor;
 
 /** 通用客户端视觉效果的 Tick、渲染和世界清理事件入口。 */
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -44,11 +45,13 @@ public final class RVP_ClientVisualEvents {
             RVP_ClientRemoteVehicleVisualState.clear();
             // 调用 RVP Billboard 管理器，释放退出世界后遗留的动态纹理与 RenderTarget。
             RVP_RemoteVehicleBillboardManager.clear();
-            clearThermobaricFeedback();
+            // 清理温压反馈及所有调用方的通用震动任务。
+            clearScreenFeedback();
             return;
         }
         if (feedbackLevel != level) {
-            clearThermobaricFeedback();
+            // 切换客户端世界时丢弃旧世界的屏幕反馈。
+            clearScreenFeedback();
             feedbackLevel = level;
         }
         // 调用 RVP 客户端视觉分派器，统一推进当前世界的效果实例。
@@ -77,8 +80,8 @@ public final class RVP_ClientVisualEvents {
 
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        // 调用温压屏幕反馈服务，通过 Forge 相机事件叠加声波到达后的适度震动。
-        RVP_ThermobaricScreenFeedback.applyCameraShake(event);
+        // 调用通用震动执行器，统一应用温压及其他参数调用方提交的镜头偏移。
+        RVP_ScreenShakeExecutor.applyCameraShake(event);
         // 调用工厂实例的反馈入口，新增效果无需 Mixin。
         RVP_ClientVisualEffectDispatcher.applyCameraShake(event);
     }
@@ -96,7 +99,8 @@ public final class RVP_ClientVisualEvents {
             RVP_ClientRemoteVehicleVisualState.clear();
             // 调用 RVP Billboard 管理器，确保换维度后不复用旧世界的离屏快照。
             RVP_RemoteVehicleBillboardManager.clear();
-            clearThermobaricFeedback();
+            // 卸载世界时同步清理所有调用方的震动任务。
+            clearScreenFeedback();
         }
     }
 
@@ -106,9 +110,12 @@ public final class RVP_ClientVisualEvents {
         RVP_RemoteAmmoVisualRenderer.clear();
     }
 
-    /** 同时清理温压声音去重表与屏幕反馈脉冲。 */
-    private static void clearThermobaricFeedback() {
+    /** 同时清理温压声音、闪光与全部调用方的通用震动任务。 */
+    private static void clearScreenFeedback() {
+        // 清空温压声音去重表与其闪光、震动任务。
         RVP_ThermobaricScreenFeedback.clearAll();
+        // 额外清空其他调用方的震动，保证通用系统不会跨世界残留。
+        RVP_ScreenShakeExecutor.clearAll();
         feedbackLevel = null;
     }
 }

@@ -7,14 +7,15 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.util.Mth;
 import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.client.event.ViewportEvent;
+import org.ywzj.rvp.client.visual.shake.RVP_ScreenShakeParameters;
+import org.ywzj.rvp.client.visual.shake.RVP_ScreenShakeScheduler;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-/** 温压闪光与镜头震动的专用客户端反馈服务。 */
+/** 温压闪光服务与通用震动调度器的温压参数入口。 */
 public final class RVP_ThermobaricScreenFeedback {
     /** 闪光总持续时间。 */
     static final int FLASH_DURATION_TICKS = 10;
@@ -24,12 +25,15 @@ public final class RVP_ThermobaricScreenFeedback {
     static final int SHAKE_DURATION_TICKS = 12;
     /** 多次震动叠加后每个相机轴允许的最大角度。 */
     static final float MAX_COMBINED_SHAKE_DEGREES = 2.0F;
+    /** 保留原温压寿命、三轴角度和角频率；仅由本调用方定义，不写入通用执行器。 */
+    static final RVP_ScreenShakeParameters SHAKE_PARAMETERS = new RVP_ScreenShakeParameters(
+            SHAKE_DURATION_TICKS, 0.90F, 0.70F, 0.50F, 2.17D, 2.63D, 1.91D);
     /** 当前世界中按事件键去重的闪光脉冲。 */
     private static final Map<RVP_ThermobaricSoundController.EventKey, FlashPulse> FLASHES =
             new HashMap<>();
-    /** 当前世界中按事件键去重的震动脉冲。 */
-    private static final Map<RVP_ThermobaricSoundController.EventKey, ShakePulse> SHAKES =
-            new HashMap<>();
+    /** 温压专属调度器；通过客户端配置实时读取原温压强度倍率，与其他调用方隔离。 */
+    private static final RVP_ScreenShakeScheduler SHAKES = new RVP_ScreenShakeScheduler(
+            MAX_COMBINED_SHAKE_DEGREES, RVP_ClientConfig::getThermobaricShakeIntensity);
 
     private RVP_ThermobaricScreenFeedback() {
     }
@@ -53,11 +57,9 @@ public final class RVP_ThermobaricScreenFeedback {
     static void triggerShake(RVP_ThermobaricSoundController.EventKey key, ClientLevel level,
             long seed, double listenerDistance, float visualRadius) {
         double range = Math.max(48.0D, Math.max(0.0F, visualRadius) * 12.0D);
-        float distanceFactor = resolveDistanceFactor(listenerDistance, range);
-        if (distanceFactor <= 0.0F) {
-            return;
-        }
-        SHAKES.putIfAbsent(key, new ShakePulse(level.getGameTime(), seed, distanceFactor));
+        // 提交原温压参数，在声波抵达这一刻立即开始；距离衰减与相机写入由通用系统处理。
+        SHAKES.schedule(key, level.getGameTime(), level.getGameTime(), seed,
+                listenerDistance, range, SHAKE_PARAMETERS);
     }
 
     /** 在 GUI 最后阶段绘制当前最强闪光，多个事件不会通过相加造成过曝。 */
@@ -98,46 +100,17 @@ public final class RVP_ThermobaricScreenFeedback {
         RenderSystem.disableBlend();
     }
 
-    /** 通过 Forge 相机角度事件叠加当前全部温压震动。 */
-    public static void applyCameraShake(ViewportEvent.ComputeCameraAngles event) {
-        ClientLevel level = Minecraft.getInstance().level;
-        if (level == null || SHAKES.isEmpty()) {
-            return;
-        }
-        double now = level.getGameTime() + event.getPartialTick();
-        float yaw = 0.0F;
-        float pitch = 0.0F;
-        float roll = 0.0F;
-        Iterator<ShakePulse> iterator = SHAKES.values().iterator();
-        while (iterator.hasNext()) {
-            ShakePulse pulse = iterator.next();
-            float progress = resolveProgress(now, pulse.startGameTime(), SHAKE_DURATION_TICKS);
-            if (progress >= 1.0F) {
-                iterator.remove();
-                continue;
-            }
-            ShakeOffset offset = resolveShakeOffset(
-                    now - pulse.startGameTime(), progress, pulse.seed(), pulse.distanceFactor());
-            yaw += offset.yaw();
-            pitch += offset.pitch();
-            roll += offset.roll();
-        }
-        // 调用客户端配置读取实时震动上限；该倍率与声音和闪光互不关联。
-        float clientScale = RVP_ClientConfig.getThermobaricShakeIntensity();
-        event.setYaw(event.getYaw() + clampShake(yaw * clientScale));
-        event.setPitch(event.getPitch() + clampShake(pitch * clientScale));
-        event.setRoll(event.getRoll() + clampShake(roll * clientScale));
-    }
-
     /** 取消指定实例的反馈脉冲。 */
     static void cancel(RVP_ThermobaricSoundController.EventKey key) {
         FLASHES.remove(key);
-        SHAKES.remove(key);
+        // 撤销温压调度器内的对应脉冲，不影响其他调用方的同名事件。
+        SHAKES.cancel(key);
     }
 
     /** 清空当前世界的全部反馈。 */
     static void clear() {
         FLASHES.clear();
+        // 仅清空温压调用方的震动，世界级清理由通用执行器负责。
         SHAKES.clear();
     }
 
@@ -150,11 +123,8 @@ public final class RVP_ThermobaricScreenFeedback {
 
     /** 返回线性距离衰减；无效距离视作爆心位置。 */
     static float resolveDistanceFactor(double distance, double range) {
-        if (!Double.isFinite(range) || range <= 0.0D) {
-            return 0.0F;
-        }
-        double normalizedDistance = Double.isFinite(distance) ? Math.max(0.0D, distance) : 0.0D;
-        return (float) Mth.clamp(1.0D - normalizedDistance / range, 0.0D, 1.0D);
+        // 闪光与震动共用原有距离公式，避免维护两份相同算法。
+        return RVP_ScreenShakeScheduler.resolveDistanceFactor(distance, range);
     }
 
     /** 返回脉冲生命周期进度。 */
@@ -165,35 +135,11 @@ public final class RVP_ThermobaricScreenFeedback {
         return (float) Mth.clamp((now - start) / durationTicks, 0.0D, 1.0D);
     }
 
-    /** 按 seed 和连续年龄计算可复现的三轴震动。 */
-    static ShakeOffset resolveShakeOffset(double age, float progress, long seed,
-            float distanceFactor) {
-        float envelope = (1.0F - Mth.clamp(progress, 0.0F, 1.0F));
-        envelope = envelope * envelope * Mth.clamp(distanceFactor, 0.0F, 1.0F);
-        double phaseA = ((seed >>> 8) & 0xFFFFL) / 65535.0D * Math.PI * 2.0D;
-        double phaseB = ((seed >>> 24) & 0xFFFFL) / 65535.0D * Math.PI * 2.0D;
-        double phaseC = ((seed >>> 40) & 0xFFFFL) / 65535.0D * Math.PI * 2.0D;
-        return new ShakeOffset(
-                (float) Math.sin(age * 2.17D + phaseA) * 0.90F * envelope,
-                (float) Math.sin(age * 2.63D + phaseB) * 0.70F * envelope,
-                (float) Math.sin(age * 1.91D + phaseC) * 0.50F * envelope);
-    }
-
-    /** 把多事件叠加震动限制在适度范围内。 */
-    static float clampShake(float value) {
-        return Mth.clamp(value, -MAX_COMBINED_SHAKE_DEGREES,
-                MAX_COMBINED_SHAKE_DEGREES);
-    }
-
-    /** 单次闪光脉冲。 */
+    /**
+     * 单次闪光脉冲。
+     * @param startGameTime 闪光开始的世界时间，单位游戏刻
+     * @param distanceFactor 线性距离衰减倍率，范围 0 至 1
+     */
     private record FlashPulse(double startGameTime, float distanceFactor) {
-    }
-
-    /** 单次震动脉冲。 */
-    private record ShakePulse(double startGameTime, long seed, float distanceFactor) {
-    }
-
-    /** 三轴镜头偏移。 */
-    record ShakeOffset(float yaw, float pitch, float roll) {
     }
 }
