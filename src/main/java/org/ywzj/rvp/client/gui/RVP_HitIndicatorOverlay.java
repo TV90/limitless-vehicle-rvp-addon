@@ -309,12 +309,7 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         gg.enableScissor(x0, y0, x1, y1);
         try {
         // 展板：灰色不透明底 + 黑边框（GL_ALWAYS 填充，盖住先前绘制的 HUD 文字）
-        fillBg(gg, x0, y0, x1, y1, COLOR_BACKGROUND);
-        int border = Math.max(1, (int) (BORDER_PX / guiScale));
-        fillBg(gg, x0, y0, x1, y0 + border, COLOR_BORDER);
-        fillBg(gg, x0, y1 - border, x1, y1, COLOR_BORDER);
-        fillBg(gg, x0, y0, x0 + border, y1, COLOR_BORDER);
-        fillBg(gg, x1 - border, y0, x1, y1, COLOR_BORDER);
+        drawPanelFrame(gg, x0, y0, x1, y1, guiScale);
         // 展板底先单独落帧缓冲：GL_ALWAYS 底色盖住先前已绘制的 HUD 文字（雷达/RWR 的 XX°、XX m 等）。
         // 不能等帧末统一 flush —— MultiBufferSource 各 RenderType 分桶刷新顺序不保证，
         // 底色/文字/模型若同一批刷新，模型可能先于底色落帧而被 GL_ALWAYS 底色盖住（模型消失）。
@@ -789,6 +784,21 @@ public final class RVP_HitIndicatorOverlay implements IGuiOverlay {
         vc.vertex(m, (float) x0, (float) y1, 0.0F).color(r, g, b, a).endVertex();
         vc.vertex(m, (float) x1, (float) y1, 0.0F).color(r, g, b, a).endVertex();
         vc.vertex(m, (float) x1, (float) y0, 0.0F).color(r, g, b, a).endVertex();
+    }
+
+    /**
+     * 展板外框（灰底 + 黑边，GL_ALWAYS 覆盖先前 HUD）：命中展板与轻量化炮兵地图共用同一样式。
+     *
+     * @return 实际边框厚度（GUI 像素），供调用方计算内容区内缩
+     */
+    static int drawPanelFrame(GuiGraphics gg, int x0, int y0, int x1, int y1, double guiScale) {
+        fillBg(gg, x0, y0, x1, y1, COLOR_BACKGROUND);
+        int border = Math.max(1, (int) (BORDER_PX / guiScale));
+        fillBg(gg, x0, y0, x1, y0 + border, COLOR_BORDER);
+        fillBg(gg, x0, y1 - border, x1, y1, COLOR_BORDER);
+        fillBg(gg, x0, y0, x0 + border, y1, COLOR_BORDER);
+        fillBg(gg, x1 - border, y0, x1, y1, COLOR_BORDER);
+        return border;
     }
 
     /**

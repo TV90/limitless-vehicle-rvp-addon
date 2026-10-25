@@ -49,6 +49,8 @@ public class RVP_OverlayRegistry {
         // 让本覆盖层在本体 vehicle_radar 之后绘制，落在 RWR 表盘之上。
         // 必须排在命中展板(rvp_hit_indicator)之前：展板最后注册=最上层，blip 不能盖住命中提示栏。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_ecm_fake_rwr", new RVP_EcmFakeRwrOverlay());
+        // 轻量化炮兵地图：注册在命中展板之前（展板仍为该层最上层），选中炮兵武器时左上角显示。
+        event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_mini_artillery_map", new RVP_MiniArtilleryMapOverlay());
         // 命中展板注册在最后：同锚点下按注册顺序绘制，展板最后绘制即为该层最上层。
         // 展板内显式分步 flush 固定层级：雷达/RWR 文字 < 展板底 < 标题文字 < 模型。
         event.registerBelow(VanillaGuiOverlay.CHAT_PANEL.id(), "rvp_hit_indicator", new RVP_HitIndicatorOverlay());

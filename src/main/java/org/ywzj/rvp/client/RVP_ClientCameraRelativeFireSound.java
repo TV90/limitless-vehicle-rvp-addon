@@ -83,6 +83,12 @@ public final class RVP_ClientCameraRelativeFireSound {
         if (!event.isClientSide()) {
             return;
         }
+        // 本车（本地玩家乘坐的载具）且武器配置了 sight_fire 时，开火声整体由
+        // RVP_ClientSightFireSound 接管：它同时起播 fire/sight_fire 两条音轨并按视角切换（与开火瞬间的
+        // 视角无关），此处必须让出，否则会再叠一层重放
+        if (RVP_ClientSightFireSound.resolveSightFireSound(event) != null) {
+            return;
+        }
         AbstractVehicle vehicle = event.getVehicle();
         float distanceFactor = RVP_VehicleExtendedConfigManager.getCameraRelativeFireSoundDistance(vehicle);
         if (distanceFactor <= 0f) {
@@ -155,8 +161,8 @@ public final class RVP_ClientCameraRelativeFireSound {
         return weapon;
     }
 
-    /** 登记待抑制键（先清理过期项；超上限丢最旧）。仅客户端主线程调用。 */
-    private static void registerPending(ResourceLocation soundLocation, Vec3 pos) {
+    /** 登记待抑制键（先清理过期项；超上限丢最旧）。仅客户端主线程调用（观瞄开火声处理器共用）。 */
+    static void registerPending(ResourceLocation soundLocation, Vec3 pos) {
         long now = System.currentTimeMillis();
         Iterator<PendingSuppress> it = PENDING.iterator();
         while (it.hasNext()) {
