@@ -7,6 +7,8 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
+import org.jetbrains.annotations.Nullable;
+import org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug;
 import org.ywzj.rvp.debug.RVP_WeaponOriginDebug;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
@@ -38,10 +40,19 @@ import java.util.function.Supplier;
  */
 public class RVP_ProjectileWeapon extends RVP_WeaponBase {
 
+    /** 按配置创建 RVP 类型化弹体的实体类型。 */
     private final Supplier<EntityType<? extends Projectile>> entityType;
 
+    /** 本轮点射使用的发射点；独立副本避免扣弹裁剪修改调用方列表。 */
     private List<AimContext> burstVolleyAimContexts;
+    /** 本轮点射的操作者，供后续服务端 Tick 重新检查发射条件。 */
     private LivingEntity burstVolleyShooter;
+
+    /** 本次发射通过检查后的目标快照；无锁允许发射时 target 可以为空，整个记录为空表示拒射。 */
+    protected record ApprovedShot(
+            /** 实际出弹的武器部件。 */ WeaponUnit launchUnit,
+            /** 提供火控与锁定的根武器站。 */ WeaponUnit rootUnit,
+            /** 已通过本次发射检查的目标。 */ @Nullable Entity target) {}
 
     public RVP_ProjectileWeapon(AbstractVehicle vehicle, WeaponUnit unit, int index, RVP_WeaponData data,
                                 String serializeId, Supplier<EntityType<? extends Projectile>> entityType) {
@@ -81,11 +92,12 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (!canShootOnServer(shooter)) {
             return false;
         }
-        if (!consumeAmmo(aimContexts)) {
+        // 统一入口先检查目标，再扣弹并生成；拒射必须向本体返回 false，禁止广播成功开火。
+        if (!dispatchShots(aimContexts, shooter)) {
             return false;
         }
         this.lastShootTime = System.currentTimeMillis();
-        dispatchShots(aimContexts, shooter, consumeChargeScale());
+        // 只有实际生成弹体才记录热量和消耗射击模式状态。
         getFireController().onShotFired();
         return true;
     }
@@ -108,7 +120,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         if (!canShootOnServer(shooter)) {
             return false;
         }
-        if (!consumeAmmo(aimContexts)) {
+        // 点射首发也必须经过同一检查与生成入口，失败时不启动后续连发。
+        if (!dispatchShots(aimContexts, shooter)) {
             return false;
         }
 
@@ -116,8 +129,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         burstVolleyShooter = shooter;
         this.lastShootTime = System.currentTimeMillis();
 
-        float chargeScale = consumeChargeScale();
-        dispatchShots(aimContexts, shooter, chargeScale);
+        // 首发确实生成后才记录热量。
         controller.recordHeatForShot();
 
         int burstCount = fire.getBurstCount();
@@ -129,22 +141,21 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         return true;
     }
 
-    private void fireBurstVolleyShot() {
+    private boolean fireBurstVolleyShot() {
         if (burstVolleyAimContexts == null || burstVolleyShooter == null) {
-            return;
+            return false;
         }
         // [RVP] 炮管损坏门控（2026-09-28）：canShootOnServer 只拦首发起，连发续发路径绕过它——
         // 连发中段炮管被打坏须在此中断剩余弹（completeBurstRound 结束本轮）
         if (!passesBarrelDamageGate(burstVolleyShooter)) {
-            getFireController().completeBurstRound(getData().getFireData());
-            return;
+            return false;
         }
-        if (!consumeAmmo(burstVolleyAimContexts)) {
-            getFireController().completeBurstRound(getData().getFireData());
-            return;
+        // 每一发重新检查当前锁定；脱锁拒射时交由控制器结束连发，不能继续扣弹或加热。
+        if (!dispatchShots(burstVolleyAimContexts, burstVolleyShooter)) {
+            return false;
         }
         this.lastShootTime = System.currentTimeMillis();
-        dispatchShots(burstVolleyAimContexts, burstVolleyShooter, consumeChargeScale());
+        return true;
     }
 
     /**
@@ -153,11 +164,57 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
      * 装订距离由 {@link RVP_AheadProgrammer#programForShot} 在 {@code dispatchShots} 内解算存储，
      * 弹丸生成时经 {@code bindProgrammableAirburstRange} 读取后于飞行中空爆释放弹幕。
      */
-    private void dispatchShots(List<AimContext> aimContexts, LivingEntity shooter, float chargeScale) {
+    private boolean dispatchShots(List<AimContext> aimContexts, LivingEntity shooter) {
+        if (aimContexts == null || aimContexts.isEmpty()) {
+            // 无出弹点也是发射失败，必须在本体 consumeAmmo 的空列表路径前拦截。
+            noteLaunchResult("SHOT_REJECTED", "NO_AIM_CONTEXT", 0);
+            return false;
+        }
+        // 先完成所有可能拒射的检查，并将本次使用的锁定目标固定下来。
+        ApprovedShot approved = prepareShot(aimContexts, shooter);
+        if (approved == null) {
+            return false;
+        }
+        List<AimContext> shots = new ArrayList<>(aimContexts);
+        // 调用本体扣弹：弹量不足齐射时只裁剪本次副本，保持后续连发原始出弹点不变。
+        if (!consumeAmmo(shots)) {
+            noteLaunchResult("SHOT_REJECTED", "NO_AMMO", 0);
+            return false;
+        }
+        // 蓄力在检查通过后才消费；所有实体生成失败时恢复蓄力。
+        int chargeBefore = getChargeTick();
+        float chargeScale = consumeChargeScale();
+        RVP_WeaponData data = getData();
+        // 调用原点诊断：此处才是已获准、即将真正生成弹体的发射请求。
+        RVP_WeaponOriginDebug.noteDispatchInvocation(this, approved.launchUnit(), approved.rootUnit(),
+                shooter, shots, chargeScale);
+        int fired = 0;
+        for (AimContext aim : shots) {
+            // 每个出弹点消费一枚弹药；霰弹/子弹束至少成功生成一个实体才算该枚发射成功。
+            if (spawnShot(data, shooter, aim, approved, chargeScale)) {
+                fired++;
+                // 仅实际出弹才施加本体后坐力。
+                applyShotRecoil(data);
+            } else {
+                // 工厂构造失败或世界拒绝加入实体时退还该发弹药，不能只看是否拿到 Java 对象。
+                setRemainAmmo(getRemainAmmo() + 1);
+            }
+        }
+        if (fired == 0) {
+            // 恢复本项目的蓄力计数，调用方不会推进冷却、热量或开火成功回包。
+            setChargeTick(chargeBefore);
+        }
+        noteLaunchResult(fired > 0 ? "SHOT_FIRED" : "SHOT_REJECTED",
+                fired == shots.size() ? "SPAWNED" : "SPAWN_FAILED", fired);
+        return fired > 0;
+    }
+
+    /** 发射前检查：只读取本次目标并提示拒射原因，不扣弹、不消费蓄力、不生成实体。 */
+    @Nullable
+    protected ApprovedShot prepareShot(List<AimContext> aimContexts, LivingEntity shooter) {
         RVP_WeaponData data = getData();
         WeaponUnit launchUnit = getWeaponUnit();
         WeaponUnit rootUnit = launchUnit.getRootParentWeaponUnit();
-        RVP_WeaponOriginDebug.noteDispatchInvocation(this, launchUnit, rootUnit, shooter, aimContexts, chargeScale);
 
         // [RVP] 鱼雷瞄水发射门（2026-10-02，torpedo_data.require_aim_water）：沿武器站瞄准方向
         // 做射线检测（固体+流体），require_aim_water_range 内必须命中水方块才允许发射——
@@ -170,7 +227,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                     notifyPlayer.displayClientMessage(
                             net.minecraft.network.chat.Component.translatable("ui.rvp.torpedo_not_aiming_water"), true);
                 }
-                return;
+                noteLaunchResult("SHOT_REJECTED", "NOT_AIMING_WATER", 0);
+                return null;
             }
         }
 
@@ -182,18 +240,30 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             // 表空即拒射（不耗弹，提示 ui.rvp.ir_seeker_not_armed）——宁可拒射不可放行。
             if (org.ywzj.rvp.guidance.RVP_IrLockHelper.isIrLaunchWeapon(data)) {
                 lock = RVP_ServerIrSeekerArmedTable.getArmedEntity(rootUnit, data.getWeaponId());
-                if (lock == null) {
+                if (lock == null && data.isRequireLock()) {
                     if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
                         notifyPlayer.displayClientMessage(net.minecraft.network.chat.Component
                                 .translatable("ui.rvp.ir_seeker_not_armed"), true);
                     }
-                    return;
+                    noteLaunchResult("SHOT_REJECTED", "IR_NOT_ARMED", 0);
+                    return null;
                 }
             } else {
                 lock = RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) == WeaponUnitData.FireControlSensorType.RF
                         ? RVP_RadarRoleHelper.getEffectiveRfLockedEntity(rootUnit)
                         : rootUnit.getLockedEntity();
             }
+        }
+        // 雷达要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。
+        if (data.isRadarHoming() && data.isRequireLock()
+                && (lock == null || !lock.isAlive())
+                && RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) != WeaponUnitData.FireControlSensorType.EO) {
+            if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
+                notifyPlayer.displayClientMessage(net.minecraft.network.chat.Component
+                        .translatable("ui.need_lock_entity"), true);
+            }
+            noteLaunchResult("SHOT_REJECTED", "RADAR_LOCK_LOST", 0);
+            return null;
         }
         // 服务端离轴角权威终检（2026-09-20 离轴角 bug 修复，bug B 兜底）：IR 发射武器的
         // 锁可能来自 EO 捕获/RF 落锁/切武器恢复——这些来源都不查离轴角，改包客户端也可能
@@ -204,7 +274,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                     notifyPlayer.displayClientMessage(
                             net.minecraft.network.chat.Component.translatable("ui.ir_target_off_axis"), true);
                 }
-                return;
+                noteLaunchResult("SHOT_REJECTED", "TARGET_OFF_AXIS", 0);
+                return null;
             }
         }
         // 反舰导引头服务端权威终检（2026-10-05 用户需求）：anti_ship_seeker 弹的锁定目标
@@ -219,8 +290,24 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 notifyPlayer.displayClientMessage(
                         net.minecraft.network.chat.Component.translatable("ui.rvp.target_rcs_below_sea_threshold"), true);
             }
-            return;
+            noteLaunchResult("SHOT_REJECTED", "TARGET_RCS_TOO_SMALL", 0);
+            return null;
         }
+        return new ApprovedShot(launchUnit, rootUnit, lock);
+    }
+
+    /** 发射诊断也覆盖实体尚未生成的阶段，沿用生命周期日志的开关和文件。 */
+    private void noteLaunchResult(String event, String reason, int fired) {
+        // 记录武器、发射站、剩余弹药及原因，便于区分拒射和飞行途中销毁。
+        RVP_ProjectileLifecycleDebug.noteLaunchResult(this, event, reason, fired);
+    }
+
+    /** 对本次已经批准的单个出弹点生成弹体，返回是否至少一枚成功加入世界。 */
+    protected boolean spawnShot(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
+                                ApprovedShot approved, float chargeScale) {
+        WeaponUnit rootUnit = approved.rootUnit();
+        WeaponUnit launchUnit = approved.launchUnit();
+        Entity lock = approved.target();
 
         int armPreselectVehicleId = -1;
         int armPreselectRadarIndex = -1;
@@ -231,15 +318,18 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             armPreselectPos = RVP_WeaponLockStateTable.getArmPreselectedPos(rootUnit);
         }
 
-        for (AimContext aim : aimContexts) {
-            if (data.getFireData().isCanister()) {
-                shootCanister(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale);
-            } else {
-                shootProjectiles(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale,
-                        armPreselectVehicleId, armPreselectRadarIndex, armPreselectPos);
-            }
-            getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
+        if (data.getFireData().isCanister()) {
+            // 霰弹只按真实成功加入世界的弹丸计数。
+            return shootCanister(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale);
         }
+        // 普通弹体携带本次目标快照与反辐射预选信息。
+        return shootProjectiles(data, shooter, aim, lock, rootUnit, launchUnit, chargeScale,
+                armPreselectVehicleId, armPreselectRadarIndex, armPreselectPos);
+    }
+
+    /** 发射成功后把后坐力交给本体物理引擎。 */
+    protected void applyShotRecoil(RVP_WeaponData data) {
+        getVehicle().physicsEngine.recoil(getWeaponUnit(), data.getRecoil());
     }
 
     /**
@@ -271,13 +361,14 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
         return level.getFluidState(hit.getBlockPos()).is(net.minecraft.tags.FluidTags.WATER);
     }
 
-    private void shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
+    private boolean shootProjectiles(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
                                   Entity lock, WeaponUnit rootUnit, WeaponUnit launchUnit, float chargeScale,
                                   int armPreselectVehicleId, int armPreselectRadarIndex, Vec3 armPreselectPos) {
         int totalProjectiles = data.getFireData().getCanisterCount() * data.getFireData().getCanisterBurstCount();
         if (RVP_AheadProgrammer.isAheadWeapon(data)) {
             RVP_AheadProgrammer.programForShot(getVehicle(), rootUnit, getIndex(), data, aim, 1.0f);
         }
+        boolean spawned = false;
         for (int i = 0; i < totalProjectiles; i++) {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
                     data, data.getWeaponKind(), entityType, getVehicle(), shooter, aim, lock,
@@ -290,11 +381,13 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                     projectile.rememberGuidancePos(armPreselectPos);
                 }
             }
+            spawned |= projectile != null;
             maybeEnterHitlView(data, shooter, projectile, i);
         }
+        return spawned;
     }
 
-    private void shootCanister(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
+    private boolean shootCanister(RVP_WeaponData data, LivingEntity shooter, AimContext aim,
                                Entity lock, WeaponUnit rootUnit, WeaponUnit launchUnit, float chargeScale) {
         RVP_FireData fire = data.getFireData();
         int pellets = Math.max(fire.getCanisterCount(), 1);
@@ -304,6 +397,7 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                 : null;
         float spread = data.getInaccuracy();
         float[] centerOffset = new float[]{0f, 0f};
+        boolean spawned = false;
         for (int i = 0; i < total; i++) {
             int pelletIndex = i % pellets;
             if (pelletIndex == 0) {
@@ -316,8 +410,10 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             RVP_BaseBullet projectile = RVP_ProjectileSpawner.spawn(
                     data, data.getWeaponKind(), entityType, getVehicle(), shooter, pelletAim, lock,
                     rootUnit, launchUnit, chargeScale, getBarrelDamageSpreadExtra(), false);
+            spawned |= projectile != null;
             maybeEnterHitlView(data, shooter, projectile, i);
         }
+        return spawned;
     }
 
     private AimContext canisterAim(AimContext base, int pelletIndex, int[][] gridCells, RVP_FireData fire,

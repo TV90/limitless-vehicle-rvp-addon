@@ -597,7 +597,9 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
     }
 
     protected boolean requiresEntityLock(RVP_WeaponData data) {
-        return data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+        // 制导炸弹也使用同一锁定门，避免 GB-3 等 BOMB 在客户端绕过 IR armed 检查。
+        return (data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
+                || data.getWeaponKind() == RVP_EnumWeaponKind.BOMB && data.isHomingProjectile())
                 && data.isRequireLock()
                 && !data.isAntiRadiationMissile()
                 && !data.isGpsMissile();

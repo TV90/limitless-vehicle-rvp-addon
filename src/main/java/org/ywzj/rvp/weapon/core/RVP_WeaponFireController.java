@@ -11,6 +11,8 @@ import org.ywzj.vehicle.all.AllKeys;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 
+import java.util.function.BooleanSupplier;
+
 /**
  * 按 {@link RVP_EnumFireMode} 驱动客户端是否发送开火包，以及服务端 spin / 轨道炮蓄力状态。
  */
@@ -226,7 +228,7 @@ public final class RVP_WeaponFireController {
      *
      * @return 本 tick 是否打出了一发
      */
-    public boolean tickBurstVolley(Runnable fireShot) {
+    public boolean tickBurstVolley(BooleanSupplier fireShot) {
         if (burstVolleyShotsRemaining <= 0) {
             return false;
         }
@@ -238,7 +240,12 @@ public final class RVP_WeaponFireController {
             completeBurstRound(weapon.getData().getFireData());
             return false;
         }
-        fireShot.run();
+        // 回调报告真实出弹结果；中途脱锁/炮管损坏/生成失败应结束本轮，不能给空发射记热量。
+        if (!fireShot.getAsBoolean()) {
+            completeBurstRound(weapon.getData().getFireData());
+            return false;
+        }
+        // 仅成功出弹才增加热量和推进剩余发数。
         recordHeatForShot();
         burstVolleyShotsRemaining--;
         burstVolleyCooldownTicks = burstVolleyIntervalTicks;

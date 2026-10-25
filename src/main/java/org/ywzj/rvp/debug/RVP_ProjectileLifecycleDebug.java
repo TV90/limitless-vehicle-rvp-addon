@@ -21,6 +21,7 @@ import org.ywzj.rvp.guidance.trajectorymath.util.RVP_AeroSteeringModel;
 import org.ywzj.rvp.guidance.trajectorymath.util.RVP_BallisticTrajectoryMath;
 import org.ywzj.rvp.weapon.data.RVP_ProjectileData;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
+import org.ywzj.rvp.weapon.core.RVP_ProjectileWeapon;
 import org.ywzj.vehicle.vehicle.PhysicsEngine;
 
 import java.io.IOException;
@@ -324,6 +325,29 @@ public final class RVP_ProjectileLifecycleDebug {
                 LOGGER.error("[RVP][ProjectileLifecycleDebug] Failed to clear {}", LOG_PATH, e);
             }
         }
+    }
+
+    /**
+     * 记录实体生成之前的发射结果：被锁定门拒绝时没有弹体 UUID，不能依赖 noteInitialized。
+     * 与弹体追踪共用开关，仅写服务端独立日志，不为失败请求建立永远不会结束的弹体记录。
+     */
+    public static void noteLaunchResult(RVP_ProjectileWeapon weapon, String event, String reason, int fired) {
+        if (!ENABLED.get()) {
+            return;
+        }
+        // 调用本体武器接口获取运行上下文；客户端预测射击不进入权威诊断。
+        var vehicle = weapon.getVehicle();
+        if (vehicle == null || !(vehicle.level() instanceof ServerLevel level)) {
+            return;
+        }
+        var unit = weapon.getWeaponUnit();
+        // 沿用统一文件输出，不需要先创建弹体，失败记录也能查到武器与剩余弹药。
+        appendFileLog("event=" + event
+                + " gameTime=" + level.getGameTime()
+                + " weapon=" + weapon.getData().getWeaponId()
+                + " shooterVehicle=" + formatEntity(vehicle)
+                + " weaponUnit=" + (unit == null ? "<null>" : unit.getId())
+                + " reason=" + reason + " fired=" + fired + " ammoRemaining=" + weapon.getRemainAmmo());
     }
 
     /**
@@ -1000,6 +1024,23 @@ public final class RVP_ProjectileLifecycleDebug {
             localized = localized.replace(field[0] + "=", field[1] + "=");
         }
         return localized
+                .replace("=SHOT_REJECTED", "=发射拒绝")
+                .replace("=SHOT_FIRED", "=发射成功")
+                .replace("=IR_NOT_ARMED", "=红外尚未锁定")
+                .replace("=RADAR_LOCK_LOST", "=雷达锁定失效")
+                .replace("=RADAR_RELAY_LOST", "=雷达中继失援")
+                .replace("=RADAR_RELAY_RESTORED", "=雷达中继恢复或导引头接管")
+                .replace("=RADAR_RELAY_TIMEOUT", "=雷达中继失援超时")
+                .replace("=COUNTERMEASURE_INTERCEPTED", "=遭到硬拦截")
+                .replace("=TARGET_OFF_AXIS", "=目标超出离轴限制")
+                .replace("=TARGET_RCS_TOO_SMALL", "=目标雷达反射不足")
+                .replace("=NOT_AIMING_WATER", "=鱼雷未瞄准水面")
+                .replace("=NO_AIM_CONTEXT", "=没有出弹点")
+                .replace("=NO_AMMO", "=没有弹药")
+                .replace("=SPAWN_FAILED", "=部分或全部弹体生成失败")
+                .replace("=SPAWNED", "=弹体已加入世界")
+                .replace("ammoRemaining=", "剩余弹药=")
+                .replace("fired=", "成功出弹点数=")
                 .replace("=== RVP Projectile Lifecycle Debug ===", "=== RVP 弹体生命周期调试 ===")
                 .replace("=<null>", "=<无>")
                 .replace("=<none>", "=<无>")

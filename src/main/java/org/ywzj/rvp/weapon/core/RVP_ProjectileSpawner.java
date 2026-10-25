@@ -138,6 +138,10 @@ public final class RVP_ProjectileSpawner {
                 data.isInheritVehicleVelocity(), weaponUnit != null, muzzle,
                 RVP_ProjectileChunkLoadingPolicy.DEFAULT, sightDisguise));
         // [RVP] RADAR 模式上行弹标记：仅"RADAR 模式下发射且成功标记雷达锁目标（≤25m 离地）"的弹参与在途改靶
+        // 必须先检查入世结果：构造出对象但 addFreshEntity 被拒绝仍然是发射失败。
+        if (!result.spawned()) {
+            return null;
+        }
         if (designated.radarUplink() && result.projectile() != null) {
             result.projectile().radarUplinkTargeting = true;
         }

@@ -100,6 +100,10 @@ final class RVP_RuntimeSeekerSupport {
                     + " | " + near);
         }
         if (result.intercepted()) {
+            // 拦截才会直接移除；留下明确原因，避免与箔条/热焰弹导致的普通脱锁混淆。
+            org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.noteEvent(projectile,
+                    org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.Event.GUIDANCE,
+                    () -> "reason=COUNTERMEASURE_INTERCEPTED action=discard guidanceType=" + type);
             projectile.discard();
             return null;
         }

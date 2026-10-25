@@ -282,6 +282,14 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
         // 恢复跟踪（重锁/碟扫回/雷达重开重新探测到）→ 下一 tick 立即恢复中继，无锁存阻挡
         RVP_ActiveSeekerRelayPolicy.RelayDecision relayDecision = RVP_ActiveSeekerRelayPolicy.decide(
                 activeRadarCatch, hasDesignation, supportAvailable);
+        // 调用生命周期诊断：只在中继失援/恢复的状态边沿记录，避免逐 Tick 重复刷屏。
+        if (activeSeekerRelayLost != relayDecision.relayLost()) {
+            org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.noteEvent(this,
+                    org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.Event.GUIDANCE,
+                    () -> "reason=" + (relayDecision.relayLost() ? "RADAR_RELAY_LOST" : "RADAR_RELAY_RESTORED")
+                            + " action=" + (relayDecision.freeze() ? "coast" : "track")
+                            + " selfDestructLimit=" + relayLostSelfDestructTicks);
+        }
         activeSeekerRelayLost = relayDecision.relayLost();
 
         if (!activeRadarCatch) {
@@ -295,6 +303,11 @@ public class RVP_MissileEntity extends RVP_BaseBullet {
                 activeSeekerRelayLostTicks++;
                 if (RVP_ActiveSeekerRelayPolicy.shouldSelfDestruct(
                         activeSeekerRelayLostTicks, relayLostSelfDestructTicks)) {
+                    // 在统一寿命终止之前说明真正原因；后续 LIFE_END/REMOVED 仍由基类负责。
+                    org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.noteEvent(this,
+                            org.ywzj.rvp.debug.RVP_ProjectileLifecycleDebug.Event.GUIDANCE,
+                            () -> "reason=RADAR_RELAY_TIMEOUT lostTicks=" + activeSeekerRelayLostTicks
+                                    + " selfDestructLimit=" + relayLostSelfDestructTicks);
                     life = 0;
                 }
             } else {
