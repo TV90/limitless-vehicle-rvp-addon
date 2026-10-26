@@ -521,6 +521,7 @@
   "gui.ywzj_rvp.pod_fire_support.saved_stale": "（已失效，请重新选择）",
   "gui.ywzj_rvp.pod_fire_support.save": "保存选择",
   "gui.ywzj_rvp.pod_fire_support.hint": "标记坐标后将按已保存配置自动呼叫打击",
+  "message.ywzj_rvp.pod_fire_support.no_selection": "未选择打击条目：打开战术地图（吊舱选中时）先选条目并保存",
   "message.ywzj_rvp.pod_fire_support.called": "火力支援已呼叫：%s（引导约 %d 秒）",
   "message.ywzj_rvp.pod_fire_support.selection_stale": "吊舱火力配置已失效，请打开战术地图重新选择",
   "message.ywzj_rvp.pod_fire_support.rejected.profile_not_found": "吊舱火力配置不存在或已失效",

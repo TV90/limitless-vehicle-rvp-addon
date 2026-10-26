@@ -109,7 +109,10 @@ public final class RVP_PodFireSupportRegistry {
         }
         String savedEntryId = RVP_PodFireSupportSelectionStore.getSelection(player, weaponPath);
         if (savedEntryId == null || savedEntryId.isBlank()) {
-            // 未选配置：静默返回由 UI 引导（地图工具会提示）；不刷 actionbar 干扰正常标记。
+            // 未选配置：actionbar 引导玩家开吊舱地图工具选条目（2026-10-25 由静默改为提示，
+            // 用户反馈"标记后毫无反应无法区分是没选还是坏了"）。
+            player.displayClientMessage(Component.translatable(
+                    "message.ywzj_rvp.pod_fire_support.no_selection"), true);
             return;
         }
         RVP_PodFireSupportEntryData entry = null;

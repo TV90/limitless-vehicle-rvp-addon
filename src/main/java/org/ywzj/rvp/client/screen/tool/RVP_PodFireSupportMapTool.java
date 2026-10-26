@@ -73,8 +73,10 @@ public class RVP_PodFireSupportMapTool implements RVP_TacticalMapTool {
                 return true;
             }
         }
-        // 保存按钮（条目列表下方两行处）
-        int buttonTop = top + entries.size() * ROW_HEIGHT + 10;
+        // 保存按钮（与 renderOverlay 同几何：savedTop = top + 条目列表高，按钮在其下 28px——
+        // 2026-10-25 修复点击区/绘制区错开 18px 导致可见按钮点不到、选择永远保存不进服务器）。
+        int savedTop = top + entries.size() * ROW_HEIGHT;
+        int buttonTop = savedTop + 28;
         if (mouseX >= left && mouseX <= right && mouseY >= buttonTop && mouseY <= buttonTop + 18) {
             // 调用本项目网络通道：上行保存请求（服务端校验条目存在后持久化并 ACK）。
             RVP_Network.CHANNEL.sendToServer(new C2SSavePodFireSupportSelection(weaponPath, draftEntryId));

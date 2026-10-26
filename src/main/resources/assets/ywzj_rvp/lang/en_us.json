@@ -521,6 +521,7 @@
   "gui.ywzj_rvp.pod_fire_support.saved_stale": "(stale, reselect)",
   "gui.ywzj_rvp.pod_fire_support.save": "Save Selection",
   "gui.ywzj_rvp.pod_fire_support.hint": "Marking a position auto-calls fire support with the saved configuration",
+  "message.ywzj_rvp.pod_fire_support.no_selection": "No strike entry selected: open the tactical map (with pod selected) to pick and save one",
   "message.ywzj_rvp.pod_fire_support.called": "Fire support called: %s (guidance ~%ds)",
   "message.ywzj_rvp.pod_fire_support.selection_stale": "Pod fire support config is stale; open the tactical map to reselect",
   "message.ywzj_rvp.pod_fire_support.rejected.profile_not_found": "Pod fire support config missing or stale",
