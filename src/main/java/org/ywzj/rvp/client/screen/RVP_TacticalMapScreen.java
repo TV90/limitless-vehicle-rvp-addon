@@ -118,12 +118,12 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     private static final ResourceLocation JET_ICON = mapIcon("jet.png");
     private static final ResourceLocation GROUND_ICON = mapIcon("mbt.png");
     private static final ResourceLocation SHIP_ICON = mapIcon("ship.png");
-    private static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
-    private static final ResourceLocation NORMAL_ICON = mapIcon("normal.png");
+    public static final ResourceLocation MONSTER_ICON = mapIcon("monster.png");
+    public static final ResourceLocation NORMAL_ICON = mapIcon("normal.png");
     private static final ResourceLocation MISSILE_ICON = mapIcon("msl.png");
     private static final ResourceLocation CRUISE_MISSILE_ICON = mapIcon("cruise_msl.png");
     private static final ResourceLocation BOMB_ICON = mapIcon("jdam.png");
-    private static final ResourceLocation GPS_ICON = mapIcon("gps.png");
+    public static final ResourceLocation GPS_ICON = mapIcon("gps.png");
     private static final float TOOLBAR_BUTTON_TEXT_SCALE = 0.78f;
     private static final long DOUBLE_CLICK_WINDOW_MS = 350L;
     private static final int RADAR_LOCK_ASSIST_TICKS = 80;
@@ -257,7 +257,6 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     /** 单帧实体位置缓存；按对象身份区分，避免同 ID 的本地实体和广播代理串用。 */
     private final Map<Entity, Vec3> renderPositions = new java.util.IdentityHashMap<>();
     private double blocksPerPixel = 2.5;
-    private final Set<ResourceLocation> filteredMapIcons = new HashSet<>();
     private boolean followPlayer = true;
     private boolean draggingMap;
     // 右键拖动优化：记录右键按下时间和初始位置，松开时再判断是否弹出菜单
@@ -3436,29 +3435,8 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
 
     private void drawIconLayer(GuiGraphics guiGraphics, ResourceLocation icon, int centerX, int centerY, float actualSize,
                                int color, boolean rotate, float yaw, boolean tint) {
-        float half = actualSize * 0.5f;
-        if (filteredMapIcons.add(icon)) {
-            // 2026-10-06 icon 旋转变形修复：替换为带真实 mipmap 链 + 三线性过滤的纹理
-            // （旧版 SimpleTexture 0 层 mip + setFilter(true,false)，旋转缩小采样笔划不均/锯齿）
-            Minecraft.getInstance().getTextureManager().register(icon, new RVP_MapIconTexture(icon));
-        }
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        if (tint) {
-            RenderSystem.setShaderColor(red(color), green(color), blue(color), alpha(color));
-        } else {
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-        }
-        var pose = guiGraphics.pose();
-        pose.pushPose();
-        pose.translate(centerX, centerY, 0.0f);
-        if (rotate) {
-            pose.mulPose(Axis.ZP.rotationDegrees(yaw));
-        }
-        pose.scale(actualSize / 32.0f, actualSize / 32.0f, 1.0f);
-        guiGraphics.blit(icon, Mth.floor(-half * 32.0f / actualSize), Mth.floor(-half * 32.0f / actualSize),
-                0, 0, 32, 32, 32, 32);
-        pose.popPose();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        // 2026-10-26 绘制逻辑移交 RVP_MapIconTexture.blitIcon：轻量化炮兵地图与战术地图共用同一 icon 管线
+        RVP_MapIconTexture.blitIcon(guiGraphics, icon, centerX, centerY, actualSize, color, rotate, yaw, tint);
     }
 
     public static int relationColorForVehicle(@Nullable LocalPlayer player, AbstractVehicle vehicle) {
@@ -3597,7 +3575,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return playerTeam != null && team != null && team.isAlliedTo(playerTeam);
     }
 
-    private ResourceLocation resolveVehicleIcon(AbstractVehicle vehicle) {
+    public static ResourceLocation resolveVehicleIcon(AbstractVehicle vehicle) {
         BaseVehicleData<?> data = CommonAssetsManager.vehicleDataManager().getVehicleData(vehicle.getVehicleId()).orElse(null);
         if (data != null) {
             ResourceLocation configured = resolveConfiguredIcon(readVehicleIconOverride(data));
@@ -3619,7 +3597,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return GROUND_ICON;
     }
 
-    private ResourceLocation resolveMissileIcon(Entity entity) {
+    public static ResourceLocation resolveMissileIcon(Entity entity) {
         if (RVP_RadarContactHelper.isHbmMissile(entity)) {
             return CRUISE_MISSILE_ICON;
         }
@@ -3633,7 +3611,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                         .map(index -> index.data())
                         .filter(RVP_WeaponData.class::isInstance)
                         .map(RVP_WeaponData.class::cast)
-                        .map(this::resolveWeaponIcon)
+                        .map(RVP_TacticalMapScreen::resolveWeaponIcon)
                         .orElse(null);
                 if (weaponIcon != null) {
                     return weaponIcon;
@@ -3655,7 +3633,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
                     .map(index -> index.data())
                     .filter(RVP_WeaponData.class::isInstance)
                     .map(RVP_WeaponData.class::cast)
-                    .map(this::resolveWeaponIcon)
+                    .map(RVP_TacticalMapScreen::resolveWeaponIcon)
                     .orElse(null);
             if (weaponIcon != null) {
                 return weaponIcon;
@@ -3664,7 +3642,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return entry.weaponKind() == RVP_EnumWeaponKind.BOMB ? BOMB_ICON : MISSILE_ICON;
     }
 
-    private ResourceLocation resolveWeaponIcon(RVP_WeaponData weaponData) {
+    public static ResourceLocation resolveWeaponIcon(RVP_WeaponData weaponData) {
         if (weaponData.getWeaponKind() == RVP_EnumWeaponKind.ROCKET) {
             return MISSILE_ICON;
         }
@@ -3810,11 +3788,11 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
         return List.copyOf(RVP_ExternalRadarLinkHelper.getClientEntries(vehicle, mc.level.dimension().location()));
     }
 
-    private float mapIconYaw(float yaw) {
+    public static float mapIconYaw(float yaw) {
         return yaw + 180.0f;
     }
 
-    private ResourceLocation resolveFallbackEntityIcon(Entity entity) {
+    public static ResourceLocation resolveFallbackEntityIcon(Entity entity) {
         // 被动电子战假目标：以飞机 icon 呈现（用户批示），增强欺骗观感
         if (entity instanceof org.ywzj.rvp.entity.ecm.RVP_EcmDecoyEntity) {
             return JET_ICON;
@@ -3835,7 +3813,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     @Nullable
-    private ResourceLocation resolveConfiguredIcon(String iconValue) {
+    private static ResourceLocation resolveConfiguredIcon(String iconValue) {
         if (iconValue == null || iconValue.isBlank()) {
             return null;
         }
@@ -3859,7 +3837,7 @@ public class RVP_TacticalMapScreen extends Screen implements RVP_TacticalMapHost
     }
 
     @Nullable
-    private String readVehicleIconOverride(BaseVehicleData<?> data) {
+    private static String readVehicleIconOverride(BaseVehicleData<?> data) {
         try {
             Method method = data.getClass().getMethod("getTacticalMapIcon");
             Object value = method.invoke(data);

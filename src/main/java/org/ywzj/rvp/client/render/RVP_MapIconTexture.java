@@ -25,6 +25,43 @@ public class RVP_MapIconTexture extends AbstractTexture {
 
     private final ResourceLocation source;
 
+    /** 已按 mipmap 链纹理注册过的 icon（注册幂等，战术地图与轻量化炮兵地图共用）。 */
+    private static final java.util.Set<ResourceLocation> REGISTERED_ICONS = new java.util.HashSet<>();
+
+    /**
+     * 战术地图/轻量化炮兵地图共用的 icon 落批：首次使用注册 mipmap 链纹理，随后染色 + 旋转 + 缩放 blit。
+     * 2026-10-26 自 {@code RVP_TacticalMapScreen#drawIconLayer} 移入，保证两套地图元素渲染完全一致。
+     */
+    public static void blitIcon(net.minecraft.client.gui.GuiGraphics guiGraphics, ResourceLocation icon,
+                                int centerX, int centerY, float actualSize, int color,
+                                boolean rotate, float yaw, boolean tint) {
+        if (REGISTERED_ICONS.add(icon)) {
+            // 2026-10-06 icon 旋转变形修复：带真实 mipmap 链 + 三线性过滤的纹理
+            // （旧版 SimpleTexture 0 层 mip + setFilter(true,false)，旋转缩小采样笔划不均/锯齿）
+            net.minecraft.client.Minecraft.getInstance().getTextureManager().register(icon, new RVP_MapIconTexture(icon));
+        }
+        com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionTexShader);
+        if (tint) {
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(
+                    (color >> 16 & 0xFF) / 255.0F, (color >> 8 & 0xFF) / 255.0F, (color & 0xFF) / 255.0F, (color >>> 24) / 255.0F);
+        } else {
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        var pose = guiGraphics.pose();
+        pose.pushPose();
+        pose.translate(centerX, centerY, 0.0f);
+        if (rotate) {
+            pose.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(yaw));
+        }
+        pose.scale(actualSize / 32.0f, actualSize / 32.0f, 1.0f);
+        float half = actualSize * 0.5f;
+        guiGraphics.blit(icon, Mth.floor(-half * 32.0f / actualSize), Mth.floor(-half * 32.0f / actualSize),
+                0, 0, 32, 32, 32, 32);
+        pose.popPose();
+        // 复位 shader 颜色：批处理的 fill 在 flush 时才采样该状态，不复位会把染色泄漏给后续全部 HUD
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
     public RVP_MapIconTexture(ResourceLocation source) {
         this.source = source;
     }
