@@ -16,7 +16,7 @@ import java.util.function.Supplier;
  */
 public class S2CMarkedBlockSync {
 
-    public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
+    public ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
     public List<MarkedBlockEntry> blocks = List.of();
 
     public record MarkedBlockEntry(float x, float y, float z, String markerName) {}

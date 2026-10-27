@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "23-L 23mm Cannon",
   "shoot_interval": 50,
   "max_capacity": 40,

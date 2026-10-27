@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "3UBR8 30MM APDS",
   "shoot_interval": 100,
   "max_capacity": 120,
@@ -19,7 +20,6 @@
     "rotate_to_motion": true
   },
   "effects_data": {
-    "vehicle_impact_sparks": true,
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "none",

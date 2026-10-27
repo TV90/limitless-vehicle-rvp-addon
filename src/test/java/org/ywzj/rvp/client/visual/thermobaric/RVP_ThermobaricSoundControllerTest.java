@@ -45,8 +45,8 @@ class RVP_ThermobaricSoundControllerTest {
 
     @Test
     void dedupeKeySeparatesDimensionQuantizedPositionAndSeed() {
-        ResourceLocation overworld = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
-        ResourceLocation nether = ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether");
+        ResourceLocation overworld = new ResourceLocation("minecraft", "overworld");
+        ResourceLocation nether = new ResourceLocation("minecraft", "the_nether");
         RVP_ThermobaricSoundController.EventKey base =
                 RVP_ThermobaricSoundController.createEventKey(overworld,
                         new Vec3(10.01D, 20.01D, 30.01D), 9L);

@@ -99,15 +99,15 @@ public class RVP_EffectsData {
     private String impactParticle = "";
 
     /**
-     * 载具表面命中火花开关，无单位，默认 false；穿甲弹配置为 true，HE 等高爆弹保持 false。
-     * 仅实体直接碰撞载具（含跳弹）时生效，爆炸波及、近炸、地面及生物命中不触发。
+     * 表面命中火花开关，无单位，默认 true（未配置的弹种也生效，显式 false 可单独关闭）。
+     * 实体直接碰撞载具（含跳弹）与方块表面命中均触发；生物命中、爆炸波及与近炸不触发。
      * 火花尺寸、数量与飞溅速度由 caliber（毫米）决定，不使用 tracer_caliber，
      * 与 impact_particle 的方块命中效果独立；本字段只控制视觉，不改变穿甲或伤害能力。
      */
     @SerializedName("vehicle_impact_sparks")
-    private boolean vehicleImpactSparks;
+    private boolean vehicleImpactSparks = true;
 
-    /** 是否为本弹药启用载具表面命中火花；不按武器名称推断弹种。 */
+    /** 是否为本弹药启用表面命中火星（载具与方块）；不按武器名称推断弹种。 */
     public boolean isVehicleImpactSparks() {
         return vehicleImpactSparks;
     }

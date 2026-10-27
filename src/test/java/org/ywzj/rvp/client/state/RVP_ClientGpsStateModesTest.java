@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class RVP_ClientGpsStateModesTest {
 
     private static final ResourceLocation DIM =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+            new ResourceLocation("minecraft", "overworld");
 
     @BeforeEach
     void reset() {

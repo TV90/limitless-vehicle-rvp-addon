@@ -570,10 +570,10 @@ public final class RVP_ServerDebugCommands {
                                 .then(Commands.literal("status").executes(ctx -> {
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal(RVP_TopAttackDebug.buildStatus(
-                                                    ResourceLocation.fromNamespaceAndPath("rvp", "lav25_tow2b"))), false);
+                                                    new ResourceLocation("rvp", "lav25_tow2b"))), false);
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal(RVP_TopAttackDebug.buildStatus(
-                                                    ResourceLocation.fromNamespaceAndPath("rvp", "lav25_tow2b_efp"))), false);
+                                                    new ResourceLocation("rvp", "lav25_tow2b_efp"))), false);
                                     return 1;
                                 }))
                                 .then(Commands.literal("clear").executes(ctx -> {

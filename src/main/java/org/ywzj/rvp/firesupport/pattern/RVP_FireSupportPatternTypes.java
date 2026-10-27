@@ -41,7 +41,7 @@ public final class RVP_FireSupportPatternTypes {
     /** @return 已注册类型的不可变视图。 */
     public static Map<ResourceLocation, RVP_FireSupportPatternFactory> all() { return factories; }
 
-    private static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath("rvp", path); }
+    private static ResourceLocation id(String path) { return new ResourceLocation("rvp", path); }
 
     /**
      * 代码直构 point 几何实现（2026-10-13 坐标指示吊舱×火力支援整合）：

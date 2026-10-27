@@ -199,6 +199,32 @@ public class VehicleAimAtOverlaySeekerColorMixin {
     }
 
     /**
+     * [RVP] 隐藏本体意图圈：稳定 / 半自动火控下屏幕已有 RVP 预瞄圈，两者叠加互相干扰，
+     * 且意图圈取点走相机射线 + 帧间插值，实测比预瞄圈更抖（2026-10-24 用户反馈）。
+     *
+     * <p>只拦 {@code render} 主体里的第 1 次 {@code drawCircle}（ordinal 0 = 意图圈本体）：
+     * 装填进度环由独立的 {@code renderReloadProgress} 绘制，不受影响；导引头圈在
+     * {@code lambda$render$2} 里（另一个方法），也不会被误伤；{@code isOnlyPhysicsOnlyVehicleHit}
+     * 之外的第三人称准星走 {@code lambda$render$2} 的 {@code drawCrosshair}，同样不受影响。</p>
+     *
+     * <p>{@code OFF} 模式或非 RVP 武器站：原样调用本体绘制。处理入参为实例方法（与宿主
+     * {@code render} 一致），写成 static 会报 modifier mismatch。</p>
+     */
+    @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
+            target = "Lorg/ywzj/vehicle/client/render/util/GuiHelper;drawCircle(Lcom/mojang/blaze3d/vertex/PoseStack;FFFIFFF)V",
+            ordinal = 0))
+    private void rvp$hideIntentAimCircle(PoseStack poseStack, float x, float y, float radius, int color,
+                                         float thickness, float start, float end) {
+        WeaponUnit current = LocalVehiclePlayer.instance == null
+                ? null : LocalVehiclePlayer.instance.getWeaponUnit();
+        if (org.ywzj.rvp.client.state.RVP_FireControlStabilizerState
+                .shouldHideVanillaAimCircle(current)) {
+            return;
+        }
+        GuiHelper.drawCircle(poseStack, x, y, radius, color, thickness, start, end);
+    }
+
+    /**
      * [RVP] 武器级准星样式覆盖（{@code crosshair_style_override}）：当前选中武器为配置了
      * 该字段的 RVP 武器时，HUD 准星样式用武器 JSON 的覆盖值替换所属武器站的
      * {@code crosshair_style}——适配"同一武器站内不同挂架武器需要不同准星"。

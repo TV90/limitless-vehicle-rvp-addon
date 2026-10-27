@@ -121,6 +121,30 @@ public final class RVP_FireControlStabilizerState {
         return mask != 0 ? mask : RVP_FireControlModeMask.ALL;
     }
 
+    /**
+     * 是否应隐藏本体意图圈（{@code VehicleAimAtOverlay.render} 里半径 8 的白/绿圆环）。
+     *
+     * <p>需同时满足三条才隐藏：①武器站有 RVP 火控资格（稳定 / 半自动可用）；②当前模式不是
+     * {@code OFF}；③<b>屏幕上确实画出了 RVP 机炮预瞄圈</b>。前两条来自 2026-10-24 的初版规则——
+     * 这两种模式下意图圈与预瞄圈叠加会互相干扰，且意图圈取点走相机射线 + 帧间插值，实测比预瞄圈更抖。</p>
+     *
+     * <p>第三条是 2026-10-25 追加的限制：火控开着但没解（目标丢失、提前点投影到相机背面、
+     * 当前武器不可解算）时预瞄圈并不显示，此时必须保留意图圈，否则屏幕上会一个瞄准参照都没有。</p>
+     *
+     * <p>非 RVP 武器站（无 RVP 数据扩展）恒 false —— 本体载具的 HUD 行为完全不变。</p>
+     */
+    public static boolean shouldHideVanillaAimCircle(@Nullable WeaponUnit unit) {
+        if (unit == null || !isEligible(unit)) {
+            return false;
+        }
+        // 未手动切换过的站默认 SEMI_AUTO ⇒ 默认即进入隐藏判定，符合「有预瞄圈就别再画意图圈」的语义
+        if (getMode(unit) == Mode.OFF) {
+            return false;
+        }
+        // 预瞄圈本帧可见才让位：火控开但无解时保留意图圈作为瞄准参照。
+        return RVP_MachinegunLeadState.isLeadIndicatorVisible(unit, Minecraft.getInstance().getFrameTime());
+    }
+
     private static boolean isEligible(WeaponUnit unit) {
         // 调用本项目武器解析器，解包Agent/Multi后确认当前实际武器种类。
         RVP_WeaponBase weapon = RVP_WeaponResolveHelper.currentPrimaryRvp(unit);

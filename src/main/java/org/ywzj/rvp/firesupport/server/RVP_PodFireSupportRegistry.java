@@ -91,7 +91,7 @@ public final class RVP_PodFireSupportRegistry {
 
     /** @return 运行时 profile ID（rvp:pod/<weaponPath>/<entryId>）。 */
     public static ResourceLocation profileId(String weaponPath, String entryId) {
-        return ResourceLocation.fromNamespaceAndPath("rvp",
+        return new ResourceLocation("rvp",
                 "pod/" + weaponPath + "/" + entryId.toLowerCase(Locale.ROOT));
     }
 
@@ -109,7 +109,10 @@ public final class RVP_PodFireSupportRegistry {
         }
         String savedEntryId = RVP_PodFireSupportSelectionStore.getSelection(player, weaponPath);
         if (savedEntryId == null || savedEntryId.isBlank()) {
-            // 未选配置：静默返回由 UI 引导（地图工具会提示）；不刷 actionbar 干扰正常标记。
+            // 未选配置：actionbar 引导玩家开吊舱地图工具选条目（2026-10-25 由静默改为提示，
+            // 用户反馈"标记后毫无反应无法区分是没选还是坏了"）。
+            player.displayClientMessage(Component.translatable(
+                    "message.ywzj_rvp.pod_fire_support.no_selection"), true);
             return;
         }
         RVP_PodFireSupportEntryData entry = null;
@@ -176,13 +179,23 @@ public final class RVP_PodFireSupportRegistry {
         // 校验投送工厂类型存在（delivery.data 原样透传，投送工厂在任务接受时严格解析）。
         ResourceLocation deliveryType;
         try {
-            deliveryType = ResourceLocation.parse(delivery.get("type").getAsString().trim());
+            deliveryType = new ResourceLocation(delivery.get("type").getAsString().trim());
         } catch (Exception exception) {
             return null;
         }
-        if (org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes.get(deliveryType) == null) {
+        org.ywzj.rvp.firesupport.api.RVP_FireSupportDeliveryFactory deliveryFactory =
+                org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes.get(deliveryType);
+        if (deliveryFactory == null) {
             return null;
         }
+        // [RVP] 2026-10-25 修复"打击弹药不可用"：Validator 的 factory.create 需要已解析的
+        // 强类型投送数据（终端链路在 datapack 快照解析时已完成 parse，POD 链路此前一直
+        // 传入原始 JsonObject → IllegalArgumentException → 全部条目 WEAPON_UNAVAILABLE）。
+        // 此处在注册表构建时完成 parse，配置问题即跳过该条目（problems 非致命项由
+        // RVP_FireSupportJson 的缺省值兜底，致命缺键会在 collector 中留痕并跳过）。
+        String key = "rvp.pod_fs." + weaponPath + "." + entry.getId();
+        var problemCollector = new org.ywzj.rvp.firesupport.api.RVP_FireSupportProblemCollector();
+        Object parsedDelivery = deliveryFactory.parse(delivery, problemCollector, key);
         // 空射投送合法（2026-10-13 用户指定 AKF-98A 空射条目）：Validator 的 air 判定按
         // 打击模式 ID 分流——空射必须用 air_strike 模式，非空射必须用其它模式，两者互斥。
         boolean airDelivery = org.ywzj.rvp.firesupport.delivery.RVP_FireSupportDeliveryTypes
@@ -190,9 +203,8 @@ public final class RVP_PodFireSupportRegistry {
         String fireModeId = airDelivery
                 ? org.ywzj.rvp.firesupport.config.RVP_FireSupportProfileParser.AIR_STRIKE_MODE_ID
                 : FIXED_FIRE_MODE_ID;
-        String key = "rvp.pod_fs." + weaponPath + "." + entry.getId();
         RVP_FireSupportProfile.MunitionWeapon munitionWeapon = new RVP_FireSupportProfile.MunitionWeapon(
-                weaponId, 1, deliveryType, delivery);
+                weaponId, 1, deliveryType, parsedDelivery);
         RVP_FireSupportProfile.Munition munition = new RVP_FireSupportProfile.Munition(
                 munitionIdFor(entry.getId()), key, entry.getRoundsPerCall(), false, List.of(munitionWeapon));
         // 单"齐射"阶段：固定 rounds_per_call 发、固定间隔；基数无关（RoundRule.fixed 优先）。

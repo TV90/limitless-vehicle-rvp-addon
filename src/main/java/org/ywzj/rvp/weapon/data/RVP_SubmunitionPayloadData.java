@@ -118,7 +118,7 @@ public class RVP_SubmunitionPayloadData {
         if (weaponId.contains(":")) {
             return ResourceLocation.tryParse(weaponId);
         }
-        return ResourceLocation.fromNamespaceAndPath("rvp", weaponId);
+        return new ResourceLocation("rvp", weaponId);
     }
 
     public ResourceLocation resolveEntityType() {

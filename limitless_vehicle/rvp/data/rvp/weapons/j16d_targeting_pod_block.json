@@ -76,7 +76,7 @@
         "delivery": {
           "type": "rvp:air_launched_projectile",
           "data": {
-            "aircraft_id": "ywzj_vehicle:j16",
+            "aircraft_id": "rvp:j16",
             "rack_offset": {
               "x": 0.0,
               "y": -2.0,

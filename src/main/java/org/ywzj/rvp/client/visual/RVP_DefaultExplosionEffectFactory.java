@@ -42,7 +42,7 @@ public final class RVP_DefaultExplosionEffectFactory implements RVP_ClientVisual
 
     /** 工厂注册类型（与服务端 {@code RVP_DefaultExplosionVisualService.EFFECT_TYPE} 一致）。 */
     public static final ResourceLocation EFFECT_TYPE =
-            ResourceLocation.fromNamespaceAndPath("rvp", "mchr_explosion");
+            new ResourceLocation("rvp", "mchr_explosion");
 
     /** 采样上限（近似 MCHR 受影响方块列表的遍历规模；radius=8 约 400 样本）。 */
     private static final int MAX_SAMPLES = 600;

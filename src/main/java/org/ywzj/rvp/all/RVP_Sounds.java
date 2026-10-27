@@ -81,6 +81,13 @@ public final class RVP_Sounds {
      */
     public static final RegistryObject<SoundEvent> BOMBS_INCOMING = register("bombs_incoming");
 
+    /** 125mm 坦克炮开火（assets/rvp/sounds/weapon/ru_125_fire_snd.ogg）。 */
+    public static final RegistryObject<SoundEvent> RU_125_FIRE = register("ru_125_fire_snd");
+    /** 炮射导弹发射（assets/rvp/sounds/weapon/tank_atgm_fire_snd.ogg）。 */
+    public static final RegistryObject<SoundEvent> TANK_ATGM_FIRE = register("tank_atgm_fire_snd");
+    /** 北约 120mm 坦克炮开火（assets/rvp/sounds/weapon/nato_120_snd.ogg）。 */
+    public static final RegistryObject<SoundEvent> NATO_120_FIRE = register("nato_120_snd");
+
     private RVP_Sounds() {}
 
     public static void register(IEventBus eventBus) {

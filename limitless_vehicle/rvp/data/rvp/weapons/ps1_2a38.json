@@ -1,7 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "2A38M 30mm AAA",
-  "recoil": 0.1,
+  "recoil": 0.3,
   "shoot_interval": 75,
   "max_capacity": 150,
   "reload": {

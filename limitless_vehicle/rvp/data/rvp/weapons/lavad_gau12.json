@@ -1,7 +1,7 @@
 {
   "type": "rvp:machinegun",
   "name": "GAU-12 25mm Cannon",
-  "recoil": 0.1,
+  "recoil": 0.3,
   "shoot_interval": 50,
   "max_capacity": 150,
   "reload": {

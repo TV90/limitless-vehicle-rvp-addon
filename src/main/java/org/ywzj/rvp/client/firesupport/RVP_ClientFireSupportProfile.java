@@ -105,7 +105,7 @@ public record RVP_ClientFireSupportProfile(
                         spec.get("step").getAsDouble(), spec.get("unit").getAsString()));
             }
             out.add(new Pattern(value.get("id").getAsString(), value.get("translation_key").getAsString(),
-                    ResourceLocation.parse(value.get("type").getAsString()), parameters));
+                    new ResourceLocation(value.get("type").getAsString()), parameters));
         }
         return out;
     }

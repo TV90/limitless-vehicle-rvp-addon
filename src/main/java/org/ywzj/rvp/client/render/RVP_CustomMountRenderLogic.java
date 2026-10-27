@@ -12,6 +12,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.ywzj.rvp.client.laser.RVP_LaserWeapons;
+import org.ywzj.rvp.client.resource.pylon.RVP_PylonDisplay;
+import org.ywzj.rvp.client.resource.pylon.RVP_PylonDisplayCache;
 import org.ywzj.rvp.client.resource.vehicle.RVP_BedrockBackend;
 import org.ywzj.rvp.client.resource.vehicle.RVP_VehicleModelFactory;
 import org.ywzj.rvp.config.RVP_CustomMountConfig;
@@ -423,6 +425,16 @@ public final class RVP_CustomMountRenderLogic {
     @Nullable
     private static VehicleBedrockModel getAttachmentModel(ResourceLocation modelId) {
         return MODEL_CACHE.computeIfAbsent(modelId, id -> {
+            // 优先读取 RVP 自有挂架 display（display/pylon）：不注册进本体饰品/武器管理器，
+            // 避免挂架模型出现在饰品选择界面；未配置时继续走下方 decoration/weapon/直读兜底。
+            RVP_PylonDisplay pylonDisplay = RVP_PylonDisplayCache.find(id);
+            if (pylonDisplay != null) {
+                VehicleBedrockModel pylonModel = loadAttachmentModelDirect(pylonDisplay.model(),
+                        pylonDisplay.effects(), collectCustomMountPreservedBones(pylonDisplay.model()));
+                if (pylonModel != null) {
+                    return pylonModel;
+                }
+            }
             BaseDisplay persistedDisplay = resolveAttachmentDisplay(id);
             if (persistedDisplay != null) {
                 VehicleBedrockModel rebuiltDisplayModel = rebuildAttachmentModelFromDisplay(id, persistedDisplay);
@@ -517,7 +529,7 @@ public final class RVP_CustomMountRenderLogic {
     private static VehicleBedrockModel loadAttachmentModelDirect(ResourceLocation modelId,
                                                                  List<SpecialBoneEffect> effects,
                                                                  Set<String> preservedBones) {
-        ResourceLocation resourcePath = ResourceLocation.fromNamespaceAndPath(
+        ResourceLocation resourcePath = new ResourceLocation(
                 modelId.getNamespace(),
                 "models/bedrock/" + modelId.getPath() + ".json"
         );

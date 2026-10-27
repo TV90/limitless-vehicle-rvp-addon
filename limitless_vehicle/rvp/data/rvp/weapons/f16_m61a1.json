@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 0.3,
   "name": "M61A1 Vulcan",
   "shoot_interval": 50,
   "max_capacity": 150,

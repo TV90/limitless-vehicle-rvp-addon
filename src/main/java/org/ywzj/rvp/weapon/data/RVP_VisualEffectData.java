@@ -88,7 +88,7 @@ public final class RVP_VisualEffectData {
     }
 
     public ResourceLocation getPreset() {
-        return parseLocation(preset).orElseGet(() -> ResourceLocation.fromNamespaceAndPath("rvp", "default"));
+        return parseLocation(preset).orElseGet(() -> new ResourceLocation("rvp", "default"));
     }
 
     public float getScale() {

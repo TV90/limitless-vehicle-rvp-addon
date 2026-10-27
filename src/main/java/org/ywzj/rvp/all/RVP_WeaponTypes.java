@@ -320,7 +320,7 @@ public final class RVP_WeaponTypes {
     }
 
     private static ResourceLocation id(String name) {
-        return ResourceLocation.fromNamespaceAndPath(PUBLIC_NAMESPACE, name);
+        return new ResourceLocation(PUBLIC_NAMESPACE, name);
     }
 
     public static void register(IEventBus bus) {

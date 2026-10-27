@@ -16,7 +16,7 @@ import java.util.function.Supplier;
 
 public class S2CRemoteAmmoSnapshot {
 
-    public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
+    public ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
     public List<Entry> entries = List.of();
 
     public enum Affiliation {

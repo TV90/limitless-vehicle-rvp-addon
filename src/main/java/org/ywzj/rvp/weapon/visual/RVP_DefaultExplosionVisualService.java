@@ -22,7 +22,7 @@ public final class RVP_DefaultExplosionVisualService {
 
     /** 默认爆炸视觉事件类型（客户端工厂按此注册）。 */
     public static final ResourceLocation EFFECT_TYPE =
-            ResourceLocation.fromNamespaceAndPath("rvp", "mchr_explosion");
+            new ResourceLocation("rvp", "mchr_explosion");
 
     private static final RVP_NetworkVisualEventPublisher PUBLISHER = new RVP_NetworkVisualEventPublisher();
 
@@ -42,7 +42,7 @@ public final class RVP_DefaultExplosionVisualService {
                              @Nullable String explosionSound) {
         RVP_VisualEffectEvent event = new RVP_VisualEffectEvent(
                 EFFECT_TYPE,
-                ResourceLocation.fromNamespaceAndPath("rvp", "default"),
+                new ResourceLocation("rvp", "default"),
                 // 调用 RVP 默认爆炸事件编码器，把类型化武器分类与自定义音效写入受限公共载荷。
                 RVP_DefaultExplosionEventData.encode(weaponKind, explosionSound),
                 level.dimension(),

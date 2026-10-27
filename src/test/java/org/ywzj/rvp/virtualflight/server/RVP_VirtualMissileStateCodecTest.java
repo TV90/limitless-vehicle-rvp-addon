@@ -124,7 +124,7 @@ class RVP_VirtualMissileStateCodecTest {
 
     private static RVP_VirtualMissileState state() {
         UUID flight = UUID.fromString("11111111-2222-3333-4444-555555555555");
-        ResourceLocation dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+        ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
         RVP_VirtualTrajectoryState trajectory = new RVP_VirtualTrajectoryState(
                 new Vec3(100, 120, -200), new Vec3(4, 0.2, 7), 3, 25,
                 9.5, 1234.5, 210, 800, 190);
@@ -134,7 +134,7 @@ class RVP_VirtualMissileStateCodecTest {
                 new Vec3(1, 2, 3), true, new Vec3(0, 80, 0), new Vec3(5000, 70, 6000),
                 new Vec3(300, 160, 400), true, 88, 240, true);
         return new RVP_VirtualMissileState(
-                flight, dimension, ResourceLocation.fromNamespaceAndPath("rvp", "test_gps"),
+                flight, dimension, new ResourceLocation("rvp", "test_gps"),
                 UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), null,
                 Vec3.ZERO, snapshot, 77, 10, 1000, 1050,
                 RVP_RvpTrajectoryIntegrator.ID, RVP_RvpTrajectoryIntegrator.VERSION,

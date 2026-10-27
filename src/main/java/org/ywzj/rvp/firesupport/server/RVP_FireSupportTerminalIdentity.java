@@ -18,7 +18,7 @@ public final class RVP_FireSupportTerminalIdentity {
     /** 根标签内保存实例 UUID 的键。 */ private static final String INSTANCE_TAG = "terminal_instance";
     /** 根标签内保存 profile 资源 ID 的键。 */ private static final String PROFILE_TAG = "profile_id";
     /** 没有 profile 标识的旧终端默认绑定的 profile。 */ public static final ResourceLocation LEGACY_DEFAULT_PROFILE =
-            ResourceLocation.fromNamespaceAndPath("rvp", "default");
+            new ResourceLocation("rvp", "default");
 
     private RVP_FireSupportTerminalIdentity() {}
 

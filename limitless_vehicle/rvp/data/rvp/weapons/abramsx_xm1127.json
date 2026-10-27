@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 1,
   "name": "XM1127 MPHE",
   "shoot_interval": 300,
   "max_capacity": 1,
@@ -47,7 +48,7 @@
         "living": 0.2667,
         "vehicle_default": 1.0,
         "vehicles": {
-          "ywzj_vehicle:wheeled_vehicle": 3.0,
+          "ywzj_vehicle:wheeled_vehicle": 4.0,
           "ywzj_vehicle:rotary_wing_vehicle": 2.0,
           "ywzj_vehicle:fixed_wing_vehicle": 2.0
         }

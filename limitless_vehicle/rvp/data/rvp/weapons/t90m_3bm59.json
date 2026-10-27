@@ -1,5 +1,6 @@
 {
   "type": "rvp:machinegun",
+  "recoil": 1,
   "name": "3BM59 APFSDS",
   "shoot_interval": 20,
   "max_capacity": 1,
@@ -18,7 +19,6 @@
     "rotate_to_motion": true
   },
   "effects_data": {
-    "vehicle_impact_sparks": true,
     "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion",

@@ -19,7 +19,7 @@ import java.util.function.Supplier;
  * 远程实体的 faction / yRot / xRot）。非 mixin 方案：RVP 自建低频广播，客户端侧表按 entityId 存储。</p>
  */
 public class S2CGunnerVehicleSync {
-    public ResourceLocation dimension = ResourceLocation.withDefaultNamespace("overworld");
+    public ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
     public List<Entry> entries = List.of();
 
     public S2CGunnerVehicleSync() {}

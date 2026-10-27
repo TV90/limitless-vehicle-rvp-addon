@@ -27,7 +27,7 @@ import org.ywzj.rvp.network.RVP_Network;
 
 /** 炮火终端战术地图工具：动态选择、参数控件、落区预览、提交和权威状态展示。 */
 public final class RVP_FireSupportMapTool implements RVP_TacticalMapTool {
-    /** 工具稳定 ID。 */ private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("ywzj_rvp", "fire_support");
+    /** 工具稳定 ID。 */ private static final ResourceLocation ID = new ResourceLocation("ywzj_rvp", "fire_support");
     /** 侧栏强调色。 */ private static final int ACCENT = 0xFFE7B85C;
     /** 每个交互行高度，单位 GUI 像素。 */ private static final int ROW_HEIGHT = 18;
     /** 方向手柄命中半径，单位 GUI 像素。 */ private static final double HANDLE_RADIUS = 9.0;

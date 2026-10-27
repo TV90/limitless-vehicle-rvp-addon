@@ -55,10 +55,10 @@ class S2CVisualEffectEventTest {
     @Test
     void codecRoundTripPreservesDomainEvent() {
         S2CVisualEffectEvent message = new S2CVisualEffectEvent(
-                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric"),
-                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_standard"),
+                new ResourceLocation("rvp", "thermobaric"),
+                new ResourceLocation("rvp", "thermobaric_standard"),
                 "{\"scale\":1.25}",
-                ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
+                new ResourceLocation("minecraft", "the_nether"),
                 new Vec3(12.5D, 64.0D, -7.25D),
                 8.0F,
                 25.0F,
@@ -98,10 +98,10 @@ class S2CVisualEffectEventTest {
     @Test
     void zeroValuesAreAcceptedWithoutBeingRaisedToFormerMinimums() {
         S2CVisualEffectEvent message = new S2CVisualEffectEvent(
-                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric"),
-                ResourceLocation.fromNamespaceAndPath("rvp", "thermobaric_standard"),
+                new ResourceLocation("rvp", "thermobaric"),
+                new ResourceLocation("rvp", "thermobaric_standard"),
                 "{}",
-                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+                new ResourceLocation("minecraft", "overworld"),
                 Vec3.ZERO,
                 0.0F,
                 0.0F,

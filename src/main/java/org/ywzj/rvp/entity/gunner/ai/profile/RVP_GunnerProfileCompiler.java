@@ -59,7 +59,7 @@ public final class RVP_GunnerProfileCompiler {
             ResourceLocation typeId = ResourceLocation.tryParse(string(spec, "type", specPath));
             if (typeId == null) fail(specPath + ".type", "不是合法资源 ID");
             if ("minecraft".equals(typeId.getNamespace())) {
-                typeId = ResourceLocation.fromNamespaceAndPath("rvp", typeId.getPath());
+                typeId = new ResourceLocation("rvp", typeId.getPath());
             }
             RVP_GunnerBehaviorType type = RVP_GunnerBehaviorRegistry.INSTANCE.get(typeId);
             if (type == null) fail(specPath + ".type", "未知行为类型: " + typeId);

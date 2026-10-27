@@ -15,7 +15,7 @@ class S2CRemoteAmmoVisualSnapshotTest {
     @Test
     void codecRoundTripPreservesVisibleIdsAndRemainingBurnTicks() {
         S2CRemoteAmmoVisualSnapshot message = new S2CRemoteAmmoVisualSnapshot(
-                ResourceLocation.fromNamespaceAndPath("minecraft", "the_nether"),
+                new ResourceLocation("minecraft", "the_nether"),
                 Set.of(3, 7, 11),
                 Map.of(7, 0, 11, 240));
 
@@ -25,7 +25,7 @@ class S2CRemoteAmmoVisualSnapshotTest {
     @Test
     void emptySnapshotRoundTrips() {
         S2CRemoteAmmoVisualSnapshot message = new S2CRemoteAmmoVisualSnapshot(
-                ResourceLocation.fromNamespaceAndPath("minecraft", "overworld"),
+                new ResourceLocation("minecraft", "overworld"),
                 Set.of(),
                 Map.of());
 
@@ -34,7 +34,7 @@ class S2CRemoteAmmoVisualSnapshotTest {
 
     @Test
     void rejectsBurnStateForEntityOutsideVisibleSet() {
-        ResourceLocation dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+        ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
 
         assertThrows(IllegalArgumentException.class, () -> new S2CRemoteAmmoVisualSnapshot(
                 dimension, Set.of(3), Map.of(7, 20)));
@@ -42,7 +42,7 @@ class S2CRemoteAmmoVisualSnapshotTest {
 
     @Test
     void rejectsRemainingBurnTicksBeyondProtocolLimit() {
-        ResourceLocation dimension = ResourceLocation.fromNamespaceAndPath("minecraft", "overworld");
+        ResourceLocation dimension = new ResourceLocation("minecraft", "overworld");
 
         assertThrows(IllegalArgumentException.class, () -> new S2CRemoteAmmoVisualSnapshot(
                 dimension, Set.of(3),

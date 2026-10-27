@@ -1,0 +1,103 @@
+{
+  "type": "rvp:machinegun",
+  "recoil": 1,
+  "name": "M1028 Canister",
+  "shoot_interval": 20,
+  "max_capacity": 1,
+  "reload": {
+    "time": 90,
+    "ammo": "ywzj_vehicle:ammo_artillery"
+  },
+  "fire_data": {
+    "spread": 0.1,
+    "fire_mode": "FULL_AUTO",
+    "canister_count": 25,
+    "canister_type": 1,
+    "canister_shape": "circle",
+    "canister_distribution": "uniform",
+    "canister_diff": 2.0,
+    "canister_burst_count": 1
+  },
+  "projectile_data": {
+    "velocity": 8,
+    "gravity": -0.0025,
+    "drag": 0.0,
+    "rotate_to_motion": true,
+    "self_destruct_distance": 512
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "none",
+    "caliber": 120,
+    "tracer_caliber": 12.0,
+    "tracer_r": 0.6,
+    "tracer_g": 0.85,
+    "tracer_b": 1.0
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": false,
+      "damage": 0,
+      "radius": 0,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
+    "direct_damage": 40,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:tracked_vehicle": 0.5,
+        "ywzj_vehicle:wheeled_vehicle": 1.5
+      }
+    },
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 512,
+        "start_factor": 1.0,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 80,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "fuse_data": {},
+  "name_CN": "M1028 炮射霰弹"
+}
