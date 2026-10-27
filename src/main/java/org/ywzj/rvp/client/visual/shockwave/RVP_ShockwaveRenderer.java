@@ -1,65 +1,57 @@
 package org.ywzj.rvp.client.visual.shockwave;
 
-import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.pipeline.TextureTarget;
-import com.mojang.blaze3d.platform.GlConst;
-import com.mojang.blaze3d.platform.GlStateManager;
-import com.mojang.blaze3d.shaders.Uniform;
+import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.blaze3d.vertex.VertexSorting;
-import com.mojang.math.Axis;
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterShadersEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
+import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 新视觉工厂的屏幕折射冲击波；着色器供核爆复用，核爆实例与参数独立管理。 */
+import static org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning.Group.sphere;
+import static org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning.Parameter.*;
+
+/** 普通爆炸的球形空气冲击层；沿用尺寸时间和压薄曲线，核爆使用原独立画法。 */
 public final class RVP_ShockwaveRenderer {
-
-    /** 复用已存在的 warp_world 着色器资源。 */
+    /** 每个新波面只记录一次首帧，帮助核对现场相机参数，不输出聊天消息。 */
+    private static final Logger LOGGER = LogUtils.getLogger();
+    /** 核爆继续使用的原有折射资源，不修改也不用于普通空气层。 */
     private static final ResourceLocation SHADER = RVP_MOD.modLocation("warp_world");
-    /** 新效果淡出曲线的标准化时间长度（tick）。 */
+    /** 既有事件参数的标准时间长度（tick）。 */
     private static final int LIFETIME = 220;
-    /** 新效果标准化曲线的淡出起始年龄（tick）。 */
-    private static final int FADE_START = 100;
-    /** 共享的单位球壳顶点缓存。 */
-    private static final float[] SPHERE = RVP_ShockwaveMesh.buildSphereMesh();
-    /** 当前世界活动球壳，集中绘制。 */
+    /** 最多同时保留 8 个空气层，不生成粒子或逐帧查询地形。 */
     private static final List<Shockwave> ACTIVE = new ArrayList<>();
-
-    /** 已加载着色器。 */
+    /** 普通空气层的屏幕合成器；临时颜色与深度只保存在显存。 */
+    private static final RVP_PressureWavePass VOLUME = new RVP_PressureWavePass();
+    /** 核爆使用的既有折射着色器。 */
     private static ShaderInstance shader;
-    /** 着色器用途参数。 */
-    private static Uniform useTypeUniform;
-    /** 着色器动画时间。 */
-    private static Uniform timeUniform;
-    /** 扭曲强度参数。 */
-    private static Uniform intensityUniform;
-    /** 当前帧场景颜色副本，全部球壳共用。 */
-    private static TextureTarget sceneCopy;
+    /** 当前所属世界。 */
+    private static ClientLevel activeLevel;
+    /** 本帧地形使用的完整观察矩阵；Forge 1.20.1 的 AFTER_LEVEL 事件栈实际装的是投影矩阵。 */
+    private static final Matrix4f FRAME_VIEW = new Matrix4f();
+    /** 与上述观察矩阵配对的投影，包含视野变化和镜头晃动。 */
+    private static final Matrix4f FRAME_PROJECTION = new Matrix4f();
+    /** 本帧是否取得配套的世界矩阵和深度，结束阶段消费后立即清零。 */
+    private static boolean frameReady;
 
-    /** 新工厂球壳所属世界，不参与核爆的初始化与清理。 */
-    private static net.minecraft.client.multiplayer.ClientLevel activeLevel;
-
-    private RVP_ShockwaveRenderer() {}
+    private RVP_ShockwaveRenderer() { }
 
     private static void ensureLevel() {
         if (activeLevel != Minecraft.getInstance().level) {
+            // 调用统一清理入口，避免跨维度保留旧位置和旧画面。
             clear();
             activeLevel = Minecraft.getInstance().level;
         }
@@ -67,206 +59,134 @@ public final class RVP_ShockwaveRenderer {
 
     public static void registerShaders(RegisterShadersEvent event) throws IOException {
         event.registerShader(new ShaderInstance(event.getResourceProvider(), SHADER,
-                DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL), loaded -> {
-            shader = loaded;
-            useTypeUniform = loaded.getUniform("useType");
-            timeUniform = loaded.getUniform("time");
-            intensityUniform = loaded.getUniform("intensity");
-        });
+                DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL), loaded -> shader = loaded);
+        // 调用独立合成器注册新增空气层程序，保留核爆原有资源及入口。
+        VOLUME.registerShader(event);
     }
 
-    /** 返回可取消的球壳句柄，调用方关闭效果时必须移除。 */
-    public static Shockwave spawn(double x, double y, double z, int initialAge,
-            int duration, float radiusPerTick) {
+    /** 创建可取消的空气冲击层；尺寸、时间和会话快照仍来自同一正式事件。 */
+    public static Shockwave spawn(double x, double y, double z, int initialAge, int baseDuration,
+            float radius, RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
+        // 调用世界检查和寿命换算，保持既有扩张速度。
         ensureLevel();
-        if (initialAge >= duration || radiusPerTick <= 0) {
-            return null;
-        }
-        // 新工厂球壳设硬上限；不会因连续引爆无限积累场景绘制。
-        if (ACTIVE.size() >= 8) {
-            ACTIVE.remove(0);
-        }
-        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, radiusPerTick);
+        int duration = tuning.duration(sphere, baseDuration);
+        if (initialAge >= duration || !Float.isFinite(radius) || radius <= 0) { return null; }
+        if (ACTIVE.size() >= 8) { ACTIVE.remove(0); }
+        Shockwave wave = new Shockwave(x, y, z, Math.max(0, initialAge), duration, baseDuration, tuning);
         ACTIVE.add(wave);
         return wave;
     }
 
-    /** 返回统一注册的着色器资源；调用方自行设置参数，不借此共享实例状态。 */
+    /** 核爆取用原折射着色器。 */
     @javax.annotation.Nullable
-    public static ShaderInstance shader() {
-        return shader;
-    }
+    public static ShaderInstance shader() { return shader; }
 
-    /** 取消单个新工厂效果，不干扰其它冲击波。 */
-    public static void remove(Shockwave wave) {
-        ACTIVE.remove(wave);
-    }
+    /** 取消单个实例。 */
+    public static void remove(Shockwave wave) { ACTIVE.remove(wave); }
 
     public static void tick() {
+        // 调用世界检查，只在客户端逻辑 tick 推进一次年龄。
         ensureLevel();
         for (int i = ACTIVE.size() - 1; i >= 0; i--) {
-            if (++ACTIVE.get(i).age >= ACTIVE.get(i).duration) {
-                ACTIVE.remove(i);
-            }
+            if (++ACTIVE.get(i).age >= ACTIVE.get(i).duration) { ACTIVE.remove(i); }
         }
     }
 
     public static void clear() {
         ACTIVE.clear();
         activeLevel = null;
-        if (sceneCopy != null) {
-            sceneCopy.destroyBuffers();
-            sceneCopy = null;
-        }
+        frameReady = false;
+        // 调用合成器释放临时显存；退出世界后的清理也允许由非绘制线程转交。
+        if (RenderSystem.isOnRenderThread()) { VOLUME.release(); }
+        else { RenderSystem.recordRenderCall(VOLUME::release); }
+    }
+
+    /** 在后处理运行前保存本帧世界输入；由高优先级 Forge 事件调用，不修改本体的画面处理。 */
+    public static void captureFrame(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) { return; }
+        frameReady = false;
+        // 调用深度失效入口，暂停、离开世界或无波面时不能遗留上一帧的遮挡。
+        VOLUME.discardDepth();
+        if (ACTIVE.isEmpty() || Minecraft.getInstance().level == null) { return; }
+        // Forge 47.4.13 末尾传出的栈含投影，不能用来变换爆心；此处仍是真实世界观察矩阵。
+        FRAME_VIEW.set(event.getPoseStack().last().pose());
+        FRAME_PROJECTION.set(event.getProjectionMatrix());
+        // 调用提前复制入口，保留过载等末端画面处理尚未改写的真实地形和实体遮挡。
+        frameReady = VOLUME.captureDepth();
     }
 
     public static void render(RenderLevelStageEvent event) {
-        if (ACTIVE.isEmpty() || shader == null
-                || event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+        // 完整世界合成后再读取背景，避免 Fabulous 的天气独立缓冲使折射只读到透明画面。
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) { return; }
+        boolean ready = frameReady;
+        frameReady = false;
+        if (!ready || ACTIVE.isEmpty() || Minecraft.getInstance().level == null) {
+            // 调用失效入口，未能完成配对的世界输入不得留到下一帧。
+            VOLUME.discardDepth();
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) {
-            return;
-        }
-
-        RenderTarget mainTarget = minecraft.getMainRenderTarget();
-        ensureSceneCopy(mainTarget);
-        copyMainTarget(mainTarget);
-
-        Camera camera = event.getCamera();
-        Vec3 cameraPos = camera.getPosition();
-        float partialTick = event.getPartialTick();
-
-        RenderSystem.backupProjectionMatrix();
-        // 保留原 FOV、缩放与抖动，仅延长远裁剪面至一万格。
-        org.joml.Matrix4f projection = new org.joml.Matrix4f(event.getProjectionMatrix());
-        projection.m22(-(10000.0F + 0.05F) / (10000.0F - 0.05F));
-        projection.m32(-(2 * 10000.0F * 0.05F) / (10000.0F - 0.05F));
-        RenderSystem.setProjectionMatrix(projection, VertexSorting.DISTANCE_TO_ORIGIN);
-        PoseStack modelView = RenderSystem.getModelViewStack();
-        modelView.pushPose();
-        try {
-            modelView.setIdentity();
-            modelView.mulPose(Axis.XP.rotationDegrees(camera.getXRot()));
-            modelView.mulPose(Axis.YP.rotationDegrees(camera.getYRot() + 180.0F));
-            RenderSystem.applyModelViewMatrix();
-
-            RenderSystem.enableDepthTest();
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.depthMask(false);
-            RenderSystem.enableCull();
-            RenderSystem.setShader(() -> shader);
-            shader.setSampler("ScreenTexture", sceneCopy);
-            setUniform(useTypeUniform, 1);
-            setUniform(timeUniform, minecraft.level.getGameTime() + partialTick);
-
-            Tesselator tesselator = Tesselator.getInstance();
-            for (Shockwave shockwave : ACTIVE) {
-                float visualAge = shockwave.age + partialTick;
-                float alpha = alpha(visualAge * LIFETIME / shockwave.duration);
-                if (alpha <= 0.0F) {
-                    continue;
+        Vec3 camera = event.getCamera().getPosition();
+        // 每个爆炸最多一层宽厚雾和一层透明压力波前；活跃爆炸总量仍限制为 8 个。
+        List<RVP_PressureWavePass.Wave> visible = new ArrayList<>(ACTIVE.size() * 2);
+        for (Shockwave wave : ACTIVE) {
+            float age = (wave.age + event.getPartialTick()) * LIFETIME / wave.baseDuration;
+            // 调用同一快照的扩张、淡出与厚度压缩公式，避免出现两个不同的动画时钟。
+            float fade = wave.tuning.alpha(sphere, age);
+            float radius = wave.tuning.sphereRadius(age);
+            float width = wave.tuning.sphereThickness(age);
+            if (fade <= 0.0001F || radius <= 0.05F || width <= 0.0001F) { continue; }
+            // 世界坐标先用 double 相减，再使用包含镜头摇晃的完整观察矩阵，避免远坐标抖动。
+            Vector3f center = new Vector3f((float) (wave.x - camera.x), (float) (wave.y - camera.y),
+                    (float) (wave.z - camera.z));
+            FRAME_VIEW.transformPosition(center);
+            // 调用保守投影范围计算；离屏不读取背景，也不运行逐像素体积积分。
+            var bounds = RVP_PressureWaveGeometry.screenBounds(FRAME_PROJECTION,
+                    center.x, center.y, center.z, radius);
+            if (!wave.firstFrameLogged) {
+                wave.firstFrameLogged = true;
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("RVP冲击波首帧: age={} radius={} fade={} center={} projectionScale=({}, {}) bounds={}",
+                            age, radius, fade, center, FRAME_PROJECTION.m00(), FRAME_PROJECTION.m11(), bounds);
+                    // 调用只读绘制状态记录，把矩阵裁剪与程序/深度/采样状态问题区分开。
+                    VOLUME.logFrameState();
                 }
-                setUniform(intensityUniform, alpha);
-                BufferBuilder builder = tesselator.getBuilder();
-                builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
-                buildSphere(builder,
-                        (float) (shockwave.x - cameraPos.x),
-                        (float) (shockwave.y - cameraPos.y),
-                        (float) (shockwave.z - cameraPos.z),
-                        visualAge * shockwave.radiusPerTick + 1.0F,
-                        Mth.clamp((int) (alpha * 255.0F), 0, 255));
-                BufferUploader.drawWithShader(builder.end());
             }
-        } finally {
-            RenderSystem.enableDepthTest();
-            RenderSystem.enableCull();
-            RenderSystem.depthMask(true);
-            modelView.popPose();
-            RenderSystem.applyModelViewMatrix();
-            RenderSystem.restoreProjectionMatrix();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.disableBlend();
-            mainTarget.bindWrite(false);
+            if (bounds == null) { continue; }
+            // 调用双层组装：先保留宽厚雾层，再复用同一绘图资源强化外侧透明波前。
+            RVP_PressureWavePass.appendLayers(visible, new RVP_PressureWavePass.Wave(center, radius * (1 - width), radius,
+                    wave.tuning.get(sphere, brightness), fade, wave.tuning.get(sphere, refraction),
+                    wave.tuning.get(sphere, dispersion), age, bounds,
+                    new Vector3f((float) (wave.x % 97), (float) (wave.y % 89), (float) (wave.z % 83))), wave.tuning, age);
         }
-    }
-
-    private static float alpha(float age) {
-        if (age <= FADE_START) {
-            return 1.0F;
-        }
-        float progress = Mth.clamp((age - FADE_START) / (LIFETIME - FADE_START), 0.0F, 1.0F);
-        float remaining = 1.0F - progress;
-        return remaining * remaining * remaining;
-    }
-
-    private static void ensureSceneCopy(RenderTarget mainTarget) {
-        if (sceneCopy == null) {
-            sceneCopy = new TextureTarget(mainTarget.width, mainTarget.height, false, Minecraft.ON_OSX);
-        } else if (sceneCopy.width != mainTarget.width || sceneCopy.height != mainTarget.height) {
-            sceneCopy.resize(mainTarget.width, mainTarget.height, Minecraft.ON_OSX);
-        }
-    }
-
-    private static void copyMainTarget(RenderTarget mainTarget) {
-        GlStateManager._glBindFramebuffer(GlConst.GL_READ_FRAMEBUFFER, mainTarget.frameBufferId);
-        GlStateManager._glBindFramebuffer(GlConst.GL_DRAW_FRAMEBUFFER, sceneCopy.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(0, 0, mainTarget.width, mainTarget.height,
-                0, 0, sceneCopy.width, sceneCopy.height,
-                GlConst.GL_COLOR_BUFFER_BIT, GlConst.GL_NEAREST);
-        GlStateManager._glBindFramebuffer(GlConst.GL_FRAMEBUFFER, mainTarget.frameBufferId);
-        RenderSystem.viewport(0, 0, mainTarget.viewWidth, mainTarget.viewHeight);
-    }
-
-    private static void buildSphere(BufferBuilder builder, float centerX, float centerY,
-            float centerZ, float radius, int alpha) {
-        for (int offset = 0; offset < SPHERE.length; offset += 5) {
-            float nx = SPHERE[offset];
-            float ny = SPHERE[offset + 1];
-            float nz = SPHERE[offset + 2];
-            builder.vertex(centerX + nx * radius, centerY + ny * radius, centerZ + nz * radius)
-                    .uv(SPHERE[offset + 3], SPHERE[offset + 4])
-                    .color(255, 255, 255, alpha)
-                    .normal(nx, ny, nz)
-                    .endVertex();
-        }
-    }
-
-    private static void setUniform(Uniform uniform, int value) {
-        if (uniform != null) {
-            uniform.set(value);
-        }
-    }
-
-    private static void setUniform(Uniform uniform, float value) {
-        if (uniform != null) {
-            uniform.set(value);
-        }
+        // 调用体积合成器，用提前保存的本帧世界深度裁掉遮挡，末端画面处理不再影响波面是否可见。
+        if (!visible.isEmpty()) { VOLUME.render(FRAME_PROJECTION, FRAME_VIEW, visible); }
+        // 调用失效入口，所有波面都在屏幕外时也要结束本帧的深度使用期。
+        else { VOLUME.discardDepth(); }
     }
 
     public static final class Shockwave {
-        /** 球心 X（格）。 */
+        /** 爆心世界 X。 */
         private final double x;
-        /** 球心 Y（格）。 */
+        /** 爆心世界 Y，保留真实爆炸高度。 */
         private final double y;
-        /** 球心 Z（格）。 */
+        /** 爆心世界 Z。 */
         private final double z;
-        /** 球壳年龄（tick）。 */
+        /** 当前年龄（tick）。 */
         private int age;
-        /** 此球壳的寿命（tick）。 */
+        /** 是否已经记录本实例首帧；只控制调试日志，不参与播放和可见性判定。 */
+        private boolean firstFrameLogged;
+        /** 实际寿命（tick）。 */
         private final int duration;
-        /** 每 tick 扩张半径（格）。 */
-        private final float radiusPerTick;
+        /** 事件基准时长（tick）。 */
+        private final int baseDuration;
+        /** 本次爆炸的固定参数快照。 */
+        private final RVP_ShockwaveRuntimeTuning.Snapshot tuning;
 
-        private Shockwave(double x, double y, double z, int age, int duration, float radiusPerTick) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            this.age = age;
-            this.duration = duration;
-            this.radiusPerTick = radiusPerTick;
+        private Shockwave(double x, double y, double z, int age, int duration, int baseDuration,
+                RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
+            this.x = x; this.y = y; this.z = z;
+            this.age = age; this.duration = duration; this.baseDuration = baseDuration;
+            this.tuning = tuning;
         }
     }
 }

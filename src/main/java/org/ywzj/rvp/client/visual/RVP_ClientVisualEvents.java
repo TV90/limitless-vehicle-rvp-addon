@@ -8,6 +8,7 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.ywzj.rvp.RVP_MOD;
@@ -62,13 +63,20 @@ public final class RVP_ClientVisualEvents {
         RVP_ClientRemoteVehicleVisualState.tick(level);
     }
 
+    /** 世界绘制结束前先保存冲击波遮挡，避免载具过载等后处理把深度改成整屏常数。 */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onCaptureShockwaveFrame(RenderLevelStageEvent event) {
+        // 调用空气冲击层的输入保存入口，只在天气后的世界阶段执行，不提前读取最终画面颜色。
+        RVP_ShockwaveRenderer.captureFrame(event);
+    }
+
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
+        // 调用空气冲击层入口，在完整世界画面之后做带深度遮挡的体积折射；入口自行筛选阶段。
+        RVP_ShockwaveRenderer.render(event);
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             // 调用 RVP 客户端视觉分派器，在天气之后统一渲染半透明世界效果。
             RVP_ClientVisualEffectDispatcher.render(event);
-            // 集中复制一次场景并绘制新工厂球壳；核爆保留原绘制阶段，热成像不执行折射。
-            RVP_ShockwaveRenderer.render(event);
         }
     }
 

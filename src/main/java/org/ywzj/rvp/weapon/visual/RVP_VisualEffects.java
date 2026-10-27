@@ -59,6 +59,7 @@ public final class RVP_VisualEffects {
         }
         int publishedCount = 0;
         boolean suppressNative = false;
+        boolean shockwavePublished = false;
         for (RVP_VisualEffectData data : visualEffectData) {
             Optional<RVP_VisualEffectEvent> event = resolve(context, data);
             if (event.isEmpty()) {
@@ -69,6 +70,8 @@ public final class RVP_VisualEffects {
                 publisher.publish(context.level(), event.get());
                 publishedCount++;
                 suppressNative |= data.isSuppressNativeExplosionEffect();
+                // 调用自动冲击波服务判断已发布事件能否覆盖三种前沿，避免同次爆炸重复绘制。
+                shockwavePublished |= RVP_AutomaticShockwaveService.providesShockwave(event.get());
             } catch (RuntimeException exception) {
                 LOGGER.warn("无法发布 RVP 爆炸视觉事件 {}，将保留本体普通爆炸视觉",
                         event.get().effectType(), exception);
@@ -76,7 +79,7 @@ public final class RVP_VisualEffects {
         }
         return publishedCount == 0
                 ? RVP_VisualPublishResult.NONE
-                : new RVP_VisualPublishResult(publishedCount, suppressNative);
+                : new RVP_VisualPublishResult(publishedCount, suppressNative, shockwavePublished);
     }
 
     private static Optional<RVP_VisualEffectEvent> resolve(

@@ -1,0 +1,15 @@
+{
+  "blend": {"func": "add", "srcrgb": "srcalpha", "dstrgb": "one"},
+  "vertex": "ywzj_rvp:shockwave_white",
+  "fragment": "ywzj_rvp:shockwave_white",
+  "attributes": ["Position", "Normal"],
+  "samplers": [],
+  "uniforms": [
+    {"name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+    {"name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+    {"name": "uCenter", "type": "float", "count": 3, "values": [0, 0, 0]},
+    {"name": "uRadii", "type": "float", "count": 2, "values": [0, 1]},
+    {"name": "uBrightness", "type": "float", "count": 1, "values": [0.2]},
+    {"name": "uLifeFade", "type": "float", "count": 1, "values": [1]}
+  ]
+}

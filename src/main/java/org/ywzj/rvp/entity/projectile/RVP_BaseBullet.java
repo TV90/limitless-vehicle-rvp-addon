@@ -87,9 +87,11 @@ import org.ywzj.rvp.weapon.effects.RVP_TerrainOnlyExplosion;
 import org.ywzj.rvp.config.RVP_Config;
 import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionVisualService;
+import org.ywzj.rvp.weapon.visual.RVP_AutomaticShockwaveService;
 import org.ywzj.rvp.weapon.visual.RVP_RocketFlameRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_VisualEffects;
 import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
+import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.impact.RVP_MissileAirTargetImpactFragmentService;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
@@ -4476,14 +4478,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     protected void triggerExplosion(Vec3 pos, FuseDetonation kind, @Nullable Entity excludeEntity,
                                     @Nullable Entity impactTarget, @Nullable Vec3 impactVelocity) {
         org.ywzj.rvp.weapon.data.RVP_DetonateData detonateData = rvpData != null ? rvpData.getDetonateData() : null;
+        // 调用自动冲击波服务，按原始 explosion_data.radius >= 8 准备附加效果；
+        // 必须早于 HBM 和普通爆炸破坏地形，且不使用引信覆盖或 destroy_radius 作为门槛。
+        RVP_VisualEffectEvent automaticShockwave = explosion != null && explosion.explode
+                && level() instanceof ServerLevel shockwaveLevel
+                ? RVP_AutomaticShockwaveService.prepare(shockwaveLevel, pos, explosion.radius) : null;
         // HBM 特效实际生效标记（由 hbm_effect_data 在数据层推导，经桥接层 Result.anyApplied 判定）。
-        // 生效时本爆进入"HBM 特效接管视觉"模式：一律屏蔽 RVP MCHR 烟雾 / 本体爆炸视觉 / 视觉工厂其余特效，
+        // 生效时本爆进入"HBM 特效接管视觉"模式：屏蔽 RVP MCHR 烟雾 / 本体爆炸视觉 / 配置的其它主特效，
+        // 半径门槛自动追加的三种冲击前沿独立保留。
         // 避免画面出现双重特效（任务1）。anyApplied 已包含 visualApplied，故不依赖 suppress_native_explosion_effect 开关。
         boolean hbmApplied = false;
         if (detonateData != null && detonateData.hasHbmEffect() && level() instanceof ServerLevel serverLevel) {
             RVP_HbmEffectBridge.Result hbmResult =
                     RVP_HbmEffectBridge.apply(serverLevel, pos, detonateData.getHbmEffectData(), getOwner());
             if (hbmResult.realExplosionApplied()) {
+                // 调用自动冲击波发布入口，覆盖 HBM 真实爆炸接管后提前返回的路径。
+                RVP_AutomaticShockwaveService.publish(serverLevel, automaticShockwave, false);
                 publishMissileAirTargetImpactFragments(pos, impactTarget, impactVelocity);
                 return;
             }
@@ -4566,6 +4576,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             visualResult = RVP_VisualEffects.publishDetonation(
                     visualContext,
                     detonateData.getVisualEffectData());
+        }
+        if (level() instanceof ServerLevel shockwaveLevel) {
+            // 调用独立附加发布入口，不改变主特效互斥；完整威尔逊效果已成功发布时跳过重复项。
+            RVP_AutomaticShockwaveService.publish(shockwaveLevel, automaticShockwave,
+                    visualResult.shockwavePublished());
         }
         // ── RVP 内置默认爆炸视觉（MCHR 风格）屏蔽判定（方案 v2 屏蔽矩阵）──
         // a) 视觉工厂其它特效发布成功（温压等已完整替代爆炸视觉）→ 屏蔽默认视觉；

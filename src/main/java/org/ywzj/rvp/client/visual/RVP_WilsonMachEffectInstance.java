@@ -12,6 +12,7 @@ import org.ywzj.rvp.client.visual.shockwave.RVP_ShockwaveRenderer;
 import org.ywzj.rvp.config.RVP_ClientConfig;
 import org.ywzj.rvp.weapon.visual.api.RVP_ShockwaveProfile;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
+import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,10 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
     private final Vec3 origin;
     /** 实际持续时间（tick）；整条 220 tick 时间线按比例伸缩。 */
     private final int duration;
+    /** 本次爆炸的客户端调参快照，不影响原云团时间线。 */
+    final RVP_ShockwaveRuntimeTuning.Snapshot tuning;
+    /** 原云团及三个前沿全部结束的时间（实际 tick）。 */
+    private final int totalDuration;
     /** 各层云团与出现时刻，最多 512 个。 */
     final List<CloudBirth> clouds = new ArrayList<>();
     /** 共享球壳句柄，用于预算淘汰时立即取消。 */
@@ -46,11 +51,16 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
     /** 是否已释放，关闭操作幂等。 */
     private boolean closed;
 
-    RVP_WilsonMachEffectInstance(ClientLevel level, RVP_VisualEffectEvent event, int duration, int initialAge) {
+    RVP_WilsonMachEffectInstance(ClientLevel level, RVP_VisualEffectEvent event, int duration, int initialAge,
+                                RVP_ShockwaveRuntimeTuning.Snapshot tuning) {
         this.level = level;
         this.event = event;
         this.profile = event.shockwaveProfile();
         this.duration = duration;
+        this.tuning = tuning;
+        // 调用寿命换算，调慢前沿时不会被原云团寿命提前清理。
+        totalDuration = event.density() > 0 || event.flash() || event.shake()
+                ? tuning.totalDuration(duration) : tuning.frontDuration(duration);
         age = initialAge;
         // 调用共享尺寸函数与服务端保持一致。
         radius = RVP_ShockwaveProfile.visualRadius(event.baseExplosionRadius(), event.scale());
@@ -62,8 +72,9 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
         sound = new RVP_DefaultExplosionSoundController(level, event, null, initialAge);
         createClouds();
         simulateTo((int) timeline(0));
-        // 调用共享折射服务，球壳从服务端事件年龄继续扩张。
-        wave = RVP_ShockwaveRenderer.spawn(origin.x, origin.y, origin.z, initialAge, duration, radius / duration);
+        // 调用球面亮带服务，保留真实爆心；球面由地形深度遮挡，不再按八方向压扁形状。
+        wave = RVP_ShockwaveRenderer.spawn(event.position().x, event.position().y, event.position().z,
+                initialAge, duration, radius, tuning);
     }
 
     private void createClouds() {
@@ -124,6 +135,8 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
         sound.tick(age);
         if (age >= duration) {
             clouds.clear();
+        }
+        if (age >= totalDuration) {
             // 调用共享球壳清理入口，保证视觉生命周期结束即清理。
             RVP_ShockwaveRenderer.remove(wave);
         }
@@ -131,6 +144,9 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
 
     /** 返回标准化的 0～220 时间线年龄。 */
     float timeline(float partialTick) { return (float) Math.min(220, (age + (double) partialTick) * 220 / duration); }
+
+    /** 前沿使用未截断的标准年龄，支持指令延长寿命。 */
+    float frontTimeline(float partialTick) { return (float) ((age + (double) partialTick) * 220 / duration); }
 
     @Override
     public void render(RenderLevelStageEvent renderEvent) {
@@ -156,7 +172,7 @@ public final class RVP_WilsonMachEffectInstance implements RVP_ClientVisualEffec
     }
 
     @Override
-    public boolean isFinished() { return closed || level != Minecraft.getInstance().level || age >= duration && sound.isFinished(); }
+    public boolean isFinished() { return closed || level != Minecraft.getInstance().level || age >= totalDuration && sound.isFinished(); }
 
     @Override
     public void close() {

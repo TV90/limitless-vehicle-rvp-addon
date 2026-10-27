@@ -1,0 +1,20 @@
+{
+  "vertex": "ywzj_rvp:pressure_wave_volume",
+  "fragment": "ywzj_rvp:pressure_wave_front",
+  "attributes": ["Position"],
+  "samplers": [{"name": "SceneColor"}, {"name": "SceneDepth"}],
+  "uniforms": [
+    {"name": "InverseProjection", "type": "matrix4x4", "count": 16, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]},
+    {"name": "ViewToWorld", "type": "matrix3x3", "count": 9, "values": [1, 0, 0, 0, 1, 0, 0, 0, 1]},
+    {"name": "ProjectionScale", "type": "float", "count": 2, "values": [1, 1]},
+    {"name": "ScreenSize", "type": "float", "count": 2, "values": [1, 1]},
+    {"name": "CenterView", "type": "float", "count": 3, "values": [0, 0, -10]},
+    {"name": "Radii", "type": "float", "count": 2, "values": [0.4, 1]},
+    {"name": "Brightness", "type": "float", "count": 1, "values": [0.2]},
+    {"name": "LifeFade", "type": "float", "count": 1, "values": [1]},
+    {"name": "Refraction", "type": "float", "count": 1, "values": [1]},
+    {"name": "Dispersion", "type": "float", "count": 1, "values": [0.06]},
+    {"name": "Age", "type": "float", "count": 1, "values": [0]},
+    {"name": "NoiseOrigin", "type": "float", "count": 3, "values": [0, 0, 0]}
+  ]
+}
