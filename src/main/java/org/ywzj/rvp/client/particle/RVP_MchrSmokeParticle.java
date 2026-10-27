@@ -129,6 +129,11 @@ public class RVP_MchrSmokeParticle extends SingleQuadParticle {
                 level, x, y, z, vx, vy, vz,
                 size, base + 0.02f, base + 0.01f, base, 0.58f + random.nextFloat() * 0.18f,
                 lifetime, Double.NaN);
+        // 小口径炮口烟出生时绕面向相机的烟片法线随机旋转 0～180 度，
+        // 同步旧角度可避免首帧从 0 度插值转入随机角度；后续不更新角度，因此烟团不会持续自转。
+        float initialRoll = random.nextFloat() * Mth.PI;
+        particle.roll = initialRoll;
+        particle.oRoll = initialRoll;
         // 调用本项目渲染类型：炮口烟使用深度只测不写，避免半透明烟团破坏载具后续绘制。
         return particle.withRenderType(RVP_MchrSmokeRenderType.DAMAGED_SMOKE_RENDER_TYPE);
     }

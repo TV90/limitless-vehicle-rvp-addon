@@ -22,7 +22,7 @@ public final class RVP_ShockwaveRuntimeTuning {
     /** 指令参数定义；NaN 默认值表示该组件不使用这个参数。 */
     public enum Parameter {
         /** 整段动画加速，范围不变，扩张、升起和淡出一起加快。 */
-        speed("整体速度倍率", 0.05F, 100, 1, 1, 1),
+        speed("整体速度倍率", 0.05F, 100, 1.2F, 1.2F, 1.2F),
         /** 只加快扩张，寿命和淡出不跟随。 */
         expansionSpeed("仅扩张速度倍率", 0.05F, 100, 1, 1, 1),
         /** 最终视觉范围倍率，不改变伤害。 */

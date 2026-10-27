@@ -10,6 +10,9 @@ import static org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning.Parameter.*;
 
 /** 调参曲线、互相隔离及寿命边界的回归验证。 */
 class RVP_ShockwaveRuntimeTuningTest {
+    /** 当前代码中球、环、马赫杆共用的整体速度默认倍率。 */
+    private static final float EXPECTED_DEFAULT_SPEED = 1.2F;
+
     @BeforeEach
     @AfterEach
     void reset() {
@@ -20,14 +23,19 @@ class RVP_ShockwaveRuntimeTuningTest {
     @Test
     void defaultsMatchReferenceSphereAndParticleMotionWithOriginalNormalizedWallShape() {
         var tuning = RVP_ShockwaveRuntimeTuning.snapshot();
+        assertEquals(EXPECTED_DEFAULT_SPEED, tuning.get(sphere, speed));
+        assertEquals(EXPECTED_DEFAULT_SPEED, tuning.get(ring, speed));
+        assertEquals(EXPECTED_DEFAULT_SPEED, tuning.get(mach, speed));
+        float sphereDuration = 18 / EXPECTED_DEFAULT_SPEED;
+        float groundDuration = 15 / EXPECTED_DEFAULT_SPEED;
         for (float age = 0; age < 20; age += 0.5F) {
-            assertEquals(90 * Math.min(1, age / 18), tuning.sphereRadius(age), 0.00002F);
-            float sphereAlpha = Math.max(0, 1 - (age / 18) * (age / 18));
+            assertEquals(90 * Math.min(1, age / sphereDuration), tuning.sphereRadius(age), 0.00002F);
+            float sphereAlpha = Math.max(0, 1 - (age / sphereDuration) * (age / sphereDuration));
             assertEquals(sphereAlpha, tuning.alpha(sphere, age), 0.00001F);
-            float groundAlpha = Math.max(0, 1 - (float) Math.pow(age / 15, 3));
+            float groundAlpha = Math.max(0, 1 - (float) Math.pow(age / groundDuration, 3));
             assertEquals(groundAlpha, tuning.alpha(ring, age), 0.00001F);
             assertEquals(tuning.groundRadius(ring, age), tuning.groundRadius(mach, age));
-            float originalAge = age * 130 / 15;
+            float originalAge = age * EXPECTED_DEFAULT_SPEED * 130 / 15;
             float originalFade = originalAge >= 130 ? 0 : Math.min(1, originalAge / 4) * (1 - originalAge / 130);
             float height = Math.min(24, 40 * (0.15F + 0.65F * 0.7F))
                     * Math.max(0, Math.min(1, (originalAge - 8) / 12)) * originalFade;
@@ -42,8 +50,9 @@ class RVP_ShockwaveRuntimeTuningTest {
         var fast = RVP_ShockwaveRuntimeTuning.snapshot();
         assertEquals(2, fast.duration(sphere, 220));
         for (float age = 0; age < 2; age += 0.25F) {
-            assertEquals(original.sphereRadius(age * 11), fast.sphereRadius(age), 0.00001F);
-            assertEquals(original.alpha(sphere, age * 11), fast.alpha(sphere, age));
+            float equivalentOriginalAge = age * 11 / EXPECTED_DEFAULT_SPEED;
+            assertEquals(original.sphereRadius(equivalentOriginalAge), fast.sphereRadius(age), 0.00001F);
+            assertEquals(original.alpha(sphere, equivalentOriginalAge), fast.alpha(sphere, age));
             assertEquals(original.expansion(ring, age), fast.expansion(ring, age));
         }
         assertEquals(0, fast.alpha(sphere, 2));
@@ -57,7 +66,7 @@ class RVP_ShockwaveRuntimeTuningTest {
         assertEquals(90, fast.sphereRadius(2));
         assertEquals(90, fast.sphereRadius(15));
         assertEquals(original.alpha(sphere, 12), fast.alpha(sphere, 12));
-        assertEquals(18, fast.duration(sphere, 220));
+        assertEquals(15, fast.duration(sphere, 220));
     }
 
     @Test
@@ -80,9 +89,9 @@ class RVP_ShockwaveRuntimeTuningTest {
         var during = RVP_ShockwaveRuntimeTuning.snapshot();
         RVP_ShockwaveRuntimeTuning.reset(ring);
         var after = RVP_ShockwaveRuntimeTuning.snapshot();
-        assertEquals(1, before.get(ring, speed));
+        assertEquals(EXPECTED_DEFAULT_SPEED, before.get(ring, speed));
         assertEquals(5, during.get(ring, speed));
-        assertEquals(1, after.get(ring, speed));
+        assertEquals(EXPECTED_DEFAULT_SPEED, after.get(ring, speed));
         assertEquals(7, after.get(mach, speed));
     }
 
@@ -104,10 +113,12 @@ class RVP_ShockwaveRuntimeTuningTest {
         RVP_ShockwaveRuntimeTuning.set(mach, fadeInTicks, 0);
         RVP_ShockwaveRuntimeTuning.set(mach, fadeStartTicks, 2400);
         var tuning = RVP_ShockwaveRuntimeTuning.snapshot();
-        assertEquals(0, tuning.wallHeight(40, 0.7F, 7));
-        assertTrue(tuning.wallHeight(40, 0.7F, 8) > 0);
-        assertEquals(1, tuning.alpha(mach, 14));
-        assertEquals(0, tuning.alpha(mach, 15));
+        assertEquals(0, tuning.wallHeight(40, 0.7F,
+                (8F - 0.01F) / EXPECTED_DEFAULT_SPEED));
+        assertTrue(tuning.wallHeight(40, 0.7F,
+                (8F + 0.01F) / EXPECTED_DEFAULT_SPEED) > 0);
+        assertEquals(1, tuning.alpha(mach, 14 / EXPECTED_DEFAULT_SPEED));
+        assertEquals(0, tuning.alpha(mach, (15F + 0.01F) / EXPECTED_DEFAULT_SPEED));
         RVP_ShockwaveRuntimeTuning.set(sphere, radiusScale, 16);
         tuning = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(2048, 1);
         assertEquals(2048, tuning.sphereRadius(220));
@@ -120,13 +131,18 @@ class RVP_ShockwaveRuntimeTuningTest {
         float distance = 0;
         float velocity = 1.5F;
         for (int tick = 0; tick <= 15; tick++) {
-            assertEquals(distance, tuning.groundRadius(ring, tick), 0.00001F);
-            if (tick < 15) { assertEquals(distance + velocity * 0.5F, tuning.groundRadius(ring, tick + 0.5F), 0.00001F); }
+            assertEquals(distance, tuning.groundRadius(ring,
+                    tick / EXPECTED_DEFAULT_SPEED), 0.00001F);
+            if (tick < 15) {
+                assertEquals(distance + velocity * 0.5F, tuning.groundRadius(ring,
+                        (tick + 0.5F) / EXPECTED_DEFAULT_SPEED), 0.00001F);
+            }
             distance += velocity;
             velocity *= 0.8F;
         }
         RVP_ShockwaveRuntimeTuning.set(ring, damping, 1);
-        assertEquals(22.5F, RVP_ShockwaveRuntimeTuning.snapshot().groundRadius(ring, 15));
+        assertEquals(22.5F, RVP_ShockwaveRuntimeTuning.snapshot().groundRadius(ring,
+                15 / EXPECTED_DEFAULT_SPEED), 0.00001F);
     }
 
     @Test
@@ -136,9 +152,11 @@ class RVP_ShockwaveRuntimeTuningTest {
             double expectedTicks = 12 * Math.max(0.45, Math.min(2, expectedRadius / 60));
             var tuning = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(radius, 1);
             assertEquals(expectedRadius, tuning.sphereRadius(100), 0.0001);
-            assertEquals((int) Math.ceil(expectedTicks), tuning.duration(sphere, 220));
-            assertEquals(expectedRadius / 2, tuning.sphereRadius((float) expectedTicks / 2), 0.0001);
-            assertEquals(0.75F, tuning.alpha(sphere, (float) expectedTicks / 2), 0.00001F);
+            assertEquals((int) Math.ceil(expectedTicks / EXPECTED_DEFAULT_SPEED),
+                    tuning.duration(sphere, 220));
+            float halfAge = (float) expectedTicks / (2 * EXPECTED_DEFAULT_SPEED);
+            assertEquals(expectedRadius / 2, tuning.sphereRadius(halfAge), 0.0001);
+            assertEquals(0.75F, tuning.alpha(sphere, halfAge), 0.00001F);
         }
     }
 
@@ -156,12 +174,13 @@ class RVP_ShockwaveRuntimeTuningTest {
     @Test
     void pureFrontsReleaseBudgetEarlyWhileCloudsKeepTheirTimeline() {
         var tuning = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(16, 1);
-        assertEquals(14, tuning.frontDuration(220));
+        assertEquals(tuning.duration(sphere, 220), tuning.frontDuration(220));
         assertEquals(220, tuning.totalDuration(220));
         RVP_ShockwaveRuntimeTuning.set(sphere, expansionPower, 2);
         tuning = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(24, 1);
-        assertEquals(67.5F, tuning.sphereRadius(9), 0.0001F);
-        assertEquals(0.4375F, tuning.alpha(sphere, 9), 0.00001F);
+        float halfAge = 9 / EXPECTED_DEFAULT_SPEED;
+        assertEquals(67.5F, tuning.sphereRadius(halfAge), 0.0001F);
+        assertEquals(0.4375F, tuning.alpha(sphere, halfAge), 0.00001F);
     }
 
     @Test
@@ -190,7 +209,8 @@ class RVP_ShockwaveRuntimeTuningTest {
         RVP_ShockwaveRuntimeTuning.set(sphere, thickness, 0.2F);
         RVP_ShockwaveRuntimeTuning.set(sphere, refraction, 0);
         var adjusted = RVP_ShockwaveRuntimeTuning.snapshot();
-        assertEquals(original.sphereRadius(9), adjusted.sphereRadius(4.5F));
+        assertEquals(original.sphereRadius(9),
+                adjusted.sphereRadius(9 * EXPECTED_DEFAULT_SPEED / 2));
         assertEquals(0.2F, original.get(sphere, brightness));
         assertEquals(1, original.get(sphere, thickness));
         assertEquals(1, original.get(sphere, refraction));
@@ -203,12 +223,13 @@ class RVP_ShockwaveRuntimeTuningTest {
     void volumeThicknessCompressesOnTheSameScaledLifetimeAndCanReachZero() {
         var tuning = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(24, 1);
         assertEquals(0.6F, tuning.sphereThickness(0), 0.000001F);
-        assertEquals(0.6F, tuning.sphereThickness(9), 0.000001F);
-        assertEquals(0.4375F, tuning.sphereThickness(13.5F), 0.000001F);
-        assertEquals(0.25F, tuning.sphereThickness(18), 0.000001F);
+        assertEquals(0.6F, tuning.sphereThickness(9 / EXPECTED_DEFAULT_SPEED), 0.000001F);
+        assertEquals(0.4375F, tuning.sphereThickness(13.5F / EXPECTED_DEFAULT_SPEED), 0.000001F);
+        assertEquals(0.25F, tuning.sphereThickness(18 / EXPECTED_DEFAULT_SPEED), 0.000001F);
         RVP_ShockwaveRuntimeTuning.set(sphere, speed, 2);
         var fast = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(24, 1);
-        assertEquals(tuning.sphereThickness(13.5F), fast.sphereThickness(6.75F), 0.000001F);
+        assertEquals(tuning.sphereThickness(13.5F / EXPECTED_DEFAULT_SPEED),
+                fast.sphereThickness(6.75F), 0.000001F);
         RVP_ShockwaveRuntimeTuning.set(sphere, finalThicknessRatio, 0);
         assertEquals(0, RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(24, 1).sphereThickness(9));
     }
@@ -221,9 +242,10 @@ class RVP_ShockwaveRuntimeTuningTest {
         RVP_ShockwaveRuntimeTuning.set(sphere, finalThicknessRatio, 0.5F);
         RVP_ShockwaveRuntimeTuning.set(sphere, compressionPower, 2);
         var adjusted = RVP_ShockwaveRuntimeTuning.snapshot();
-        assertEquals(0.5F, adjusted.sphereThickness(9), 0.000001F);
-        assertEquals(original.sphereRadius(9), adjusted.sphereRadius(9));
-        assertEquals(original.alpha(sphere, 9), adjusted.alpha(sphere, 9));
+        float halfAge = 9 / EXPECTED_DEFAULT_SPEED;
+        assertEquals(0.5F, adjusted.sphereThickness(halfAge), 0.000001F);
+        assertEquals(original.sphereRadius(halfAge), adjusted.sphereRadius(halfAge));
+        assertEquals(original.alpha(sphere, halfAge), adjusted.alpha(sphere, halfAge));
     }
 
     @Test
@@ -231,12 +253,15 @@ class RVP_ShockwaveRuntimeTuningTest {
         var tuning = RVP_ShockwaveRuntimeTuning.snapshot();
         assertEquals(0, tuning.pressureRefraction(-1));
         assertEquals(0, tuning.pressureRefraction(0));
-        assertTrue(tuning.pressureRefraction(0.18F) < tuning.pressureRefraction(1.44F));
-        assertTrue(tuning.pressureRefraction(2.25F) > tuning.pressureRefraction(9));
-        assertTrue(tuning.pressureRefraction(9) > tuning.pressureRefraction(15.75F));
-        assertEquals(0, tuning.pressureRefraction(18));
+        assertTrue(tuning.pressureRefraction(0.18F / EXPECTED_DEFAULT_SPEED)
+                < tuning.pressureRefraction(1.44F / EXPECTED_DEFAULT_SPEED));
+        assertTrue(tuning.pressureRefraction(2.25F / EXPECTED_DEFAULT_SPEED)
+                > tuning.pressureRefraction(9 / EXPECTED_DEFAULT_SPEED));
+        assertTrue(tuning.pressureRefraction(9 / EXPECTED_DEFAULT_SPEED)
+                > tuning.pressureRefraction(15.75F / EXPECTED_DEFAULT_SPEED));
+        assertEquals(0, tuning.pressureRefraction(18 / EXPECTED_DEFAULT_SPEED));
         assertEquals(0, tuning.pressureRefraction(40));
-        assertEquals(18, tuning.duration(sphere, 220));
+        assertEquals(15, tuning.duration(sphere, 220));
     }
 
     @Test
@@ -245,11 +270,13 @@ class RVP_ShockwaveRuntimeTuningTest {
         var small = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(8, 1);
         float smallLife = 12 * RVP_ShockwaveReference.sphereTimeScale(
                 RVP_ShockwaveReference.sphereRadius(8, 1.5F));
-        assertEquals(standard.pressureRefraction(9), small.pressureRefraction(smallLife / 2), 0.00001F);
+        float standardHalfAge = 9 / EXPECTED_DEFAULT_SPEED;
+        assertEquals(standard.pressureRefraction(standardHalfAge),
+                small.pressureRefraction(smallLife / (2 * EXPECTED_DEFAULT_SPEED)), 0.00001F);
         RVP_ShockwaveRuntimeTuning.set(sphere, speed, 2);
         var fast = RVP_ShockwaveRuntimeTuning.snapshot().forExplosion(24, 1);
-        assertEquals(standard.pressureRefraction(9), fast.pressureRefraction(4.5F));
-        assertEquals(standard.pressureThickness(9), fast.pressureThickness(4.5F));
+        assertEquals(standard.pressureRefraction(standardHalfAge), fast.pressureRefraction(4.5F));
+        assertEquals(standard.pressureThickness(standardHalfAge), fast.pressureThickness(4.5F));
     }
 
     @Test
