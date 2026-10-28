@@ -13,7 +13,7 @@ import org.ywzj.rvp.server.visual.RVP_ShockwaveProfileSampler;
 import org.ywzj.rvp.weapon.visual.api.RVP_ShockwaveProfile;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 
-/** 大半径爆炸的附加冲击波：复用现有球壳、地面环和马赫杆，不参与主爆炸视觉的互斥。 */
+/** 普通大半径爆炸及载具击毁爆炸的附加冲击波服务。 */
 public final class RVP_AutomaticShockwaveService {
     /** 自动启用的配置半径下限（格），包含恰好 8 格。 */
     private static final float MIN_RADIUS = 8.0F;
@@ -29,16 +29,42 @@ public final class RVP_AutomaticShockwaveService {
         return Float.isFinite(configuredRadius) && configuredRadius >= MIN_RADIUS;
     }
 
-    /** 在普通爆炸或 HBM 改写地形前取得轮廓；返回空表示未达到门槛或采样失败。 */
+    /** 在普通爆炸或 HBM 改写地形前取得轮廓；普通路径仍要求半径至少 8 格。 */
     @Nullable
     public static RVP_VisualEffectEvent prepare(ServerLevel level, Vec3 position, float configuredRadius) {
-        // 调用统一门槛判断，小爆炸不承担地形采样开销。
+        // 调用普通爆炸门槛判断，小爆炸不承担地形采样开销。
         if (!isEnabled(configuredRadius)) { return null; }
+        return prepareInternal(level, position, configuredRadius);
+    }
+
+    /**
+     * 为载具击毁爆炸准备冲击波；该专用路径不使用普通爆炸的 8 格门槛。
+     *
+     * <p>这里仍拒绝负数、无穷大和 NaN（不是有效爆炸半径），但 0 格以及任何小于
+     * 8 格的有限半径都会进入视觉采样；冲击波视觉半径本身有最小显示尺寸。</p>
+     */
+    @Nullable
+    public static RVP_VisualEffectEvent prepareForVehicleDestruction(
+            ServerLevel level, Vec3 position, float explosionRadius) {
+        // 只校验爆炸数据是否可用于采样，不复用普通路径的 radius >= 8 门槛。
+        if (!isVehicleDestructionRadiusValid(explosionRadius)) { return null; }
+        return prepareInternal(level, position, explosionRadius);
+    }
+
+    /** 载具击毁路径允许的半径范围；0 仍可生成最小可见冲击波，负数不属于有效爆炸。 */
+    static boolean isVehicleDestructionRadiusValid(float explosionRadius) {
+        return Float.isFinite(explosionRadius) && explosionRadius >= 0.0F;
+    }
+
+    /** 复用地形采样和事件构造；调用方已经完成各自路径的半径校验。 */
+    @Nullable
+    private static RVP_VisualEffectEvent prepareInternal(ServerLevel level, Vec3 position,
+            float explosionRadius) {
         try {
             // 调用现有八方向采样，只读取已加载地形，不额外生成区块。
-            RVP_ShockwaveProfile profile = RVP_ShockwaveProfileSampler.sample(level, position, configuredRadius, 1.0F);
+            RVP_ShockwaveProfile profile = RVP_ShockwaveProfileSampler.sample(level, position, explosionRadius, 1.0F);
             // 调用无副作用的事件构造，固定关闭附加云团、声音、闪光与震动。
-            return createEvent(level.dimension(), position, configuredRadius, profile,
+            return createEvent(level.dimension(), position, explosionRadius, profile,
                     level.random.nextLong(), level.getGameTime());
         } catch (RuntimeException exception) {
             LOGGER.warn("无法准备 RVP 自动冲击波，保留原爆炸流程", exception);

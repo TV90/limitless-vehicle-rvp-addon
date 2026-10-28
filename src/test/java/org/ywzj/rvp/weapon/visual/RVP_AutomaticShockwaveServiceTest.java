@@ -27,6 +27,19 @@ class RVP_AutomaticShockwaveServiceTest {
     }
 
     @Test
+    void vehicleDestructionPathAcceptsEveryNonNegativeFiniteRadius() {
+        // 调用载具击毁专用判断，确认小于 8 格和 0 格不会被普通爆炸门槛拦截。
+        assertTrue(RVP_AutomaticShockwaveService.isVehicleDestructionRadiusValid(0.0F));
+        assertTrue(RVP_AutomaticShockwaveService.isVehicleDestructionRadiusValid(1.0F));
+        assertTrue(RVP_AutomaticShockwaveService.isVehicleDestructionRadiusValid(Math.nextDown(8.0F)));
+        assertTrue(RVP_AutomaticShockwaveService.isVehicleDestructionRadiusValid(8.0F));
+        for (float radius : new float[] {-0.01F, -8.0F, Float.NaN,
+                Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY}) {
+            assertFalse(RVP_AutomaticShockwaveService.isVehicleDestructionRadiusValid(radius));
+        }
+    }
+
+    @Test
     void supplementsEveryTerrainClassWithoutCloudsSoundFlashOrShake() {
         for (RVP_ShockwaveProfile.HitClass hitClass : RVP_ShockwaveProfile.HitClass.values()) {
             RVP_ShockwaveProfile profile = new RVP_ShockwaveProfile(hitClass, 64, 0.7F,
