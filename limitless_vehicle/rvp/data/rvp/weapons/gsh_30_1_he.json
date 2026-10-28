@@ -3,7 +3,7 @@
   "recoil": 0.3,
   "name": "GSh-30-1 30mm Cannon [HE]",
   "shoot_interval": 75,
-  "max_capacity": 150,
+  "max_capacity": 60,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
@@ -34,7 +34,13 @@
       "explode": true,
       "damage": 20,
       "radius": 2,
-      "destroy_block": false
+      "destroy_block": false,
+      "explosion_damage_factor": {
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:tracked_vehicle": 0.5
+        }
+      }
     }
   },
   "collision_data": {
@@ -49,14 +55,30 @@
         "domain": "angle",
         "type": "linear",
         "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
         "end_distance": 60,
         "start_factor": 0.8,
-        "end_factor": 0.5
+        "end_factor": 0.6
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
         "end_distance": 70,
         "start_factor": 0.5,
         "end_factor": 0.35
@@ -73,11 +95,20 @@
         "domain": "angle",
         "type": "linear",
         "start_distance": 75,
-        "end_distance": 80,
+        "end_distance": 81,
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    ]
+    ],
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:fixed_wing_vehicle": 0.9,
+        "ywzj_vehicle:rotary_wing_vehicle": 0.9,
+        "ywzj_vehicle:wheeled_vehicle": 1.2,
+        "ywzj_vehicle:tracked_vehicle": 0
+      }
+    }
   },
   "fuse_data": {},
   "name_CN": "GSh-30-1 30MM 机炮 [HE]"

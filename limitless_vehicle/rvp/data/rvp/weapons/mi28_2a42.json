@@ -1,9 +1,9 @@
 {
   "type": "rvp:machinegun",
   "recoil": 0.3,
-  "name": "3UBR8 30MM APDS",
-  "shoot_interval": 100,
-  "max_capacity": 120,
+  "name": "2A42 30MM [AP]",
+  "shoot_interval": 150,
+  "max_capacity": 40,
   "reload": {
     "time": 120,
     "ammo": "ywzj_vehicle:ammo_auto_cannon"
@@ -44,9 +44,10 @@
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
-        "ywzj_vehicle:wheeled_vehicle": 0.8,
-        "ywzj_vehicle:rotary_wing_vehicle": 0.8,
-        "ywzj_vehicle:fixed_wing_vehicle": 0.8
+        "ywzj_vehicle:wheeled_vehicle": 0.87,
+        "ywzj_vehicle:rotary_wing_vehicle": 0.87,
+        "ywzj_vehicle:fixed_wing_vehicle": 0.87,
+        "ywzj_vehicle:tracked_vehicle": 1.1
       }
     },
     "damage_decay": [
@@ -62,14 +63,30 @@
         "domain": "angle",
         "type": "linear",
         "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
         "end_distance": 60,
         "start_factor": 0.8,
-        "end_factor": 0.5
+        "end_factor": 0.6
       },
       {
         "domain": "angle",
         "type": "linear",
         "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
         "end_distance": 70,
         "start_factor": 0.5,
         "end_factor": 0.35
@@ -86,7 +103,7 @@
         "domain": "angle",
         "type": "linear",
         "start_distance": 75,
-        "end_distance": 80,
+        "end_distance": 81,
         "start_factor": 0.2,
         "end_factor": 0.1
       }
@@ -99,5 +116,5 @@
     "bounce_on_vehicle": true
   },
   "fuse_data": {},
-  "name_CN": "3UBR8 30MM 脱壳穿甲弹"
+  "name_CN": "2A42 30毫米穿甲弹"
 }

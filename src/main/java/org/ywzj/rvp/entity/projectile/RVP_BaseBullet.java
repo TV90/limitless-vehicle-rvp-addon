@@ -3870,7 +3870,11 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 的 ERA 全局上界 eraMaxIncidenceAngle），此处直接取记录角度做角度衰减。
         float effectiveIncidence = lastImpactIncidenceAngleDeg;
         float distanceMult = distanceDecayFactor();
-        float incidenceMult = incidenceDecayFactor(effectiveIncidence);
+        // 角度减伤只对载具生效（2026-10-27 用户定版）：生物/玩家没有"跳弹角"语义——
+        // 0.6 格宽的生物不该因为擦边吃掉 90% 伤害（其法线取自 AABB 最近面，斜射时角度虚高）。
+        // 载具 AbstractVehicle 不是 LivingEntity，仍按入射角衰减并受上界钳制；玩家是 LivingEntity，
+        // 与生物一并豁免。
+        float incidenceMult = entity instanceof LivingEntity ? 1f : incidenceDecayFactor(effectiveIncidence);
         float penetrationMult = penetrationDamageFactor();
         RVP_WeaponData config = resolveWeaponConfig();
         float vehicleMult = config != null ? config.getDirectDamageFactor().getFactor(entity) : 1f;
@@ -4663,6 +4667,10 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         RVP_VehicleExplosion ex = new RVP_VehicleExplosion(level(), getOwner(), vehicle, pos,
                 radius, damage, explosion.destroyBlock && !disableTerrain && !splitDestroyRadius);
         ex.setFlightDirection(getDeltaMovement());
+        // [RVP] 直击目标保底半伤：小半径高爆弹命中大载具时，爆心到载具锚点常超出半径，
+        // 原逻辑直接跳过 ⇒ 命中却零爆炸伤害。此处把本发弹直击过的载具集合传给爆炸。
+        // 传引用安全：RVP_VehicleExplosion 内部会 Set.copyOf（大半径爆炸走批处理时集合已被 clear）。
+        ex.setDirectHitEntityIds(directHitVehicleIds);
         Set<Entity> excluded = new HashSet<>();
         if (excludeEntity != null) {
             excluded.add(excludeEntity);

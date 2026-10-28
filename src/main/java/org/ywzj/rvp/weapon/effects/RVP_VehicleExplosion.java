@@ -79,11 +79,29 @@ public class RVP_VehicleExplosion {
     private Map<Integer, Float> wallAttenuation = Map.of();
     /** [RVP] 炮弹飞行方向（引爆前动量）：墙后衰减的起点探针沿其反方向贴入射面，可为 null。 */
     private Vec3 flightDirection;
+    /** [RVP] 被本发弹直击的载具 ID：爆炸伤害保底半伤、不受半径截断。 */
+    private Set<Integer> directHitEntityIds = Set.of();
 
     /** [RVP] 由发射方在 explode() 前设置炮弹飞行方向；null 时遮挡判定回退连线反向探针。 */
     public void setFlightDirection(@org.jetbrains.annotations.Nullable Vec3 direction) {
         this.flightDirection = direction;
     }
+
+    /**
+     * [RVP] 被本发弹直击的载具实体 ID。
+     * <p>
+     * 这些目标吃爆炸伤害时不受 {@code radius} 截断、且衰减保底 0.5：小半径高爆弹命中大载具时，
+     * 爆心到载具锚点（{@code entity.position()}）的距离经常超过半径（如 r=2 打坦克），
+     * 按原逻辑会直接 {@code continue} 吃不到任何爆炸伤害。传进来的集合会被复制 ——
+     * 大半径爆炸走批处理队列，调用方的集合可能已被 clear。
+     * </p>
+     */
+    public void setDirectHitEntityIds(@org.jetbrains.annotations.Nullable Set<Integer> ids) {
+        this.directHitEntityIds = ids == null || ids.isEmpty() ? Set.of() : Set.copyOf(ids);
+    }
+
+    /** 直击目标吃爆炸伤害的衰减下限。 */
+    private static final double DIRECT_HIT_ATTENUATION_FLOOR = 0.5;
 
     public RVP_VehicleExplosion(Level level, Entity source, Entity entity, Vec3 position, float radius, float damage) {
         this(level, source, entity, position, radius, damage, AllConfigs.common.canDestroyBlock.get(), AllConfigs.common.explosionDropBlock.get());
@@ -444,10 +462,16 @@ public class RVP_VehicleExplosion {
             }
             Vec3 position = new Vec3(x, y, z);
             double distance = entity.position().distanceTo(position);
-            if (distance > radius) {
+            // [RVP] 直击载具：不受半径截断（小半径弹种命中大载具时爆心到锚点常超半径），
+            // 且衰减保底 0.5 —— 保证"命中即掉血"，但贴脸之外最多只吃半伤。
+            boolean directHit = directHitEntityIds.contains(entity.getId());
+            if (!directHit && distance > radius) {
                 continue;
             }
             double attenuation = 1.0 - 0.5 * (distance / radius);
+            if (directHit && attenuation < DIRECT_HIT_ATTENUATION_FLOOR) {
+                attenuation = DIRECT_HIT_ATTENUATION_FLOOR;
+            }
             // [RVP] 墙后衰减：爆心与该实体包围盒中心的连线被方块阻断时按半伤结算。
             double damage = this.damage * attenuation * wallAttenuation.getOrDefault(entity.getId(), 1.0F);
             if (entity instanceof LivingEntity livingEntity) {

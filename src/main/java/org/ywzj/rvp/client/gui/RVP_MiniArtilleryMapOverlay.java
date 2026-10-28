@@ -27,6 +27,7 @@ import org.ywzj.vehicle.client.render.util.GuiHelper;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.util.RenderHelper;
 import org.ywzj.vehicle.vehicle.LocalVehiclePlayer;
+import org.ywzj.vehicle.vehicle.part.PartUnit;
 import org.ywzj.vehicle.vehicle.part.RadarUnit;
 import org.ywzj.vehicle.vehicle.part.WeaponUnit;
 import org.ywzj.vehicle.vehicle.weapon.AbstractVehicleWeapon;
@@ -136,7 +137,8 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
             lastSolveTick = Long.MIN_VALUE;
             smoothImpact = null;
         }
-        if (!context.scopeHandCrank()) {
+        // 手摇观瞄且车上带炮兵弹种时同样解算 CCIP（launchUnit != null 即走解算路径）。
+        if (context.launchUnit() != null) {
             solveImpact(mc, context);
         }
         Vec3 center = smoothImpact != null ? smoothImpact : context.vehicle().position();
@@ -161,10 +163,30 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
             return null;
         }
         if (lvp.viewType == LocalVehiclePlayer.ViewType.SCOPE) {
-            // 手摇观瞄简化版：仅本地判定，不依赖当前武器是炮兵弹种。
+            // 手摇观瞄：本地判定 need_power=false 的武器站才进入本框。
             if (operatorUnit.needPower) {
                 return null;
             }
+            // 调用目的：扫本车找带「炮兵地图」弹种（artillery_map + 火箭/炸弹）的武器站，
+            // 找到则在该观瞄视角下照样解算火箭 CCIP 落点（与常规炮兵模式同一条路径）。
+            for (PartUnit<?> part : vehicle.getPartUnits()) {
+                if (!(part instanceof WeaponUnit unit)) {
+                    continue;
+                }
+                AbstractVehicleWeapon<?> partWeapon = unit.getCurrentWeapon().orElse(null);
+                if (!(partWeapon instanceof RVP_WeaponBase partRvpWeapon)) {
+                    continue;
+                }
+                RVP_WeaponData partData = partRvpWeapon.getData();
+                RVP_EnumWeaponKind partKind = partData.getWeaponKind();
+                if (!partData.getMiscData().isArtilleryMap()
+                        || (partKind != RVP_EnumWeaponKind.ROCKET && partKind != RVP_EnumWeaponKind.BOMB)
+                        || partData.getWeaponId() == null) {
+                    continue;
+                }
+                return new Context(vehicle, operatorUnit, unit, partData, partData.getWeaponId(), true);
+            }
+            // 车上没有炮兵弹种（如纯机枪车）：退化为以本车为中心的纯简化模式（无落点解算）。
             return new Context(vehicle, operatorUnit, null, null, null, true);
         }
         AbstractVehicleWeapon<?> currentWeapon = operatorUnit.getCurrentWeapon().orElse(null);
@@ -239,8 +261,18 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
         gg.fill(contentX0, contentY0, contentX1, contentY1, COLOR_MAP_BACKGROUND);
         gg.enableScissor(contentX0, contentY0, contentX1, contentY1);
         try {
-            double radiusBlocks = VIEW_RADIUS_BLOCKS
-                    / (context.vehicle().isViewZoomed() ? ZOOM_VIEW_DIVISOR : 1.0D);
+            double zoomDivisor = 1.0D;
+            if (context.vehicle().isViewZoomed()) {
+                zoomDivisor = ZOOM_VIEW_DIVISOR;
+            } else if (context.scopeHandCrank()) {
+                // 观瞄视角下右键（MAGNIFICATION_CHANGE）走的是武器站 switchZoom()，
+                // 不会设置 vehicle.viewZoomed，这里按观瞄倍率等比收缩地图视野（倍率=zoom/zoomMin）。
+                float zoomMin = context.operatorUnit().getData().getZoomMin();
+                if (context.operatorUnit().getZoom() > zoomMin) {
+                    zoomDivisor = context.operatorUnit().getZoom() / zoomMin;
+                }
+            }
+            double radiusBlocks = VIEW_RADIUS_BLOCKS / zoomDivisor;
             double blocksPerPixel = radiusBlocks * 2.0D / (contentY1 - contentY0);
             double halfWidth = (contentX1 - contentX0) / 2.0D * blocksPerPixel;
             double halfHeight = (contentY1 - contentY0) / 2.0D * blocksPerPixel;
@@ -268,14 +300,14 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
             // 落点圆环（套住白十字）+ 落点白十字（全屏炮兵地图 CCIP 标记同款，缩至 40%）。
             // 先 flush 掉批处理的连线/地形，圆环走自定义 shader 立即模式，避免被后 flush 的批处理盖住。
             // 圆环/十字都以 (0,0) 为基准，共用同一 pose 平移到标记点。
-            // 炮兵模式固定画在面板中心（=落点）；手摇观瞄简化模式画在当前观瞄射线与地形的交点
-            // （交点即直射弹着参考，指向天空时交点远在图外、被裁剪板自然裁掉）。
+            // 有炮兵弹种（常规模式或手摇观瞄）固定画在面板中心（=CCIP 落点）；
+            // 纯简化模式（车上无炮兵弹种）才画在观瞄射线与地形的交点。
             gg.flush();
             var impactPose = gg.pose();
             impactPose.pushPose();
             double crossX = midX;
             double crossY = midY;
-            if (context.scopeHandCrank()) {
+            if (context.scopeHandCrank() && context.launchUnit() == null) {
                 // 调用目的：与 LocalVehiclePlayer 的观瞄 tick 同源取当前武器站瞄准落点（1 射线/帧，只读）
                 Vec3 aimPos = context.operatorUnit().aimHitPosition();
                 crossX = worldToScreen(aimPos.x, center.x, midX, blocksPerPixel);

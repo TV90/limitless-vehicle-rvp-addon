@@ -98,6 +98,7 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Mod.EventBusSubscriber(value = Dist.CLIENT, modid = RVP_MOD.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class RVP_ClientEvents {
@@ -271,6 +272,42 @@ public class RVP_ClientEvents {
     }
 
     private record VehicleMarker(int vehicleId, int argb) {}
+
+    /**
+     * 上一次观察到的客户端 display 表实例。
+     *
+     * <p>本体 {@code DisplayManager.apply(...)} 每次重载都 {@code build()} 出新的 ImmutableMap，
+     * 所以"实例变了"= 发生了一次 display 重载。</p>
+     */
+    private static Map<?, ?> rvp$lastSeenDisplays;
+
+    /**
+     * [RVP] display 表变化 → 重载 UI 预设。
+     *
+     * <p>2026-10-28 替代 {@code ClientAssetsManagerCustomMountMixin} 剩下的这一半职责：
+     * 该 mixin 原先挂在 {@code ClientAssetsManager.reload} TAIL 上重载 UI 预设。客户端资源重载
+     * （启动 / F3+T / 服务器资源包）已由 {@code RVP_CustomMountReloadListener.apply} 覆盖，
+     * 但本体 {@code /ywzj_vehicle reload} 命令只调 {@code ClientAssetsManager.reload}、**不触发资源重载**，
+     * 那条路径就没地方重载预设了。这里用「display 表实例变化」当统一信号补上，与三个规则表的
+     * 惰性重建同源，不依赖任何 mixin。</p>
+     *
+     * <p>不与 player 判空挂钩：主菜单执行 {@code /ywzj_vehicle reload} 也要生效。</p>
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onClientTickDisplayReload(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        Map<?, ?> displays = org.ywzj.vehicle.client.resource.ClientAssetsManager.INSTANCE.getVehicleDisplays();
+        if (displays != rvp$lastSeenDisplays) {
+            rvp$lastSeenDisplays = displays;
+            org.ywzj.rvp.config.UIPresetManager.load(mc.getResourceManager());
+        }
+    }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onClientTick(TickEvent.ClientTickEvent event) {

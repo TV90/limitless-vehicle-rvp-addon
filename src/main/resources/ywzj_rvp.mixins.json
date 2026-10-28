@@ -43,7 +43,6 @@
   "client": [
     "FirstPersonHandlerExplosionShakeMixin",
     "ClientLevelHitlTrailParticleMixin",
-    "ClientAssetsManagerCustomMountMixin",
     "VehicleAimAtOverlaySeekerColorMixin",
     "RotatableUnitAimRotAccessor",
     "InfraredMixin",
@@ -81,7 +80,6 @@
     "VehicleRenderCustomMountMixin",
     "VehicleRenderStateHiddenBoneMixin",
     "VehicleRenderLodMixin",
-    "MinecraftReloadResourcePacksMixin",
     "BedrockModelRenderTypesMixin",
     "EntityRenderDispatcherPhysicsOnlyMixin",
     "AbstractVehicleWeaponSoundMixin",

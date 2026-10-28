@@ -50,6 +50,15 @@ public final class RVP_DistanceBoneHider {
 
     /** 规则表是否已绑定；首次 apply 时若未绑定则补一次重建（资源重载挂钩漏掉时的兜底）。 */
     private static volatile boolean bound = false;
+    /**
+     * 绑定时所依据的 display 表实例。
+     *
+     * <p>本体 {@code DisplayManager.apply(...)} 每次都 {@code build()} 出新的 ImmutableMap
+     * （DisplayManager.java:93），资源重载后引用必变。据此即可在重载后自动重建规则缓存，
+     * 不再需要混入 {@code Minecraft.reloadResourcePacks()} / {@code ClientAssetsManager.reload()}
+     * （原 MinecraftReloadResourcePacksMixin + ClientAssetsManagerCustomMountMixin，2026-10-28 退休）。</p>
+     */
+    private static Map<?, BaseDisplay> boundVehicleDisplays;
 
     private RVP_DistanceBoneHider() {}
 
@@ -61,6 +70,7 @@ public final class RVP_DistanceBoneHider {
             bindDisplays(vehicleDisplays.values());
         }
         bindDisplays(ClientAssetsManager.INSTANCE.getDecorationDisplays());
+        boundVehicleDisplays = vehicleDisplays;
         bound = true;
         if (RVP_BoneHideDebug.isEnabled()) {
             RVP_BoneHideDebug.log("距离规则重建完成：已绑定 " + MODEL_RULES.size() + " 个模型的 distance_hidden_bones 规则");
@@ -69,6 +79,11 @@ public final class RVP_DistanceBoneHider {
 
     private static void ensureBound() {
         if (!bound) {
+            rebindAll();
+            return;
+        }
+        // 资源重载会整体替换 display 表（新的 ImmutableMap 实例）⇒ 引用变了就重建规则。
+        if (ClientAssetsManager.INSTANCE.getVehicleDisplays() != boundVehicleDisplays) {
             rebindAll();
         }
     }

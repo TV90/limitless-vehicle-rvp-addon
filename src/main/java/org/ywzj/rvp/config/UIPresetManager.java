@@ -181,9 +181,14 @@ public class UIPresetManager {
         return preset == null ? null : preset.dircmHud;
     }
 
-    /** 加载所有预设文件 */
+    /**
+     * 加载 config 目录下的预设（只补空缺，不清空已加载的 datapack 预设）。
+     * <p>
+     * 本方法在 mod 构造期由 {@code RVP_MOD} 调用，此时 PRESETS 为空；
+     * 运行期若被调用也不应把 datapack 预设清掉（{@link #registerPreset} 是 putIfAbsent，不会互相覆盖）。
+     * </p>
+     */
     public static void load() {
-        PRESETS.clear();
         loadConfigPresets();
         if (PRESETS.isEmpty()) {
             LOGGER.warn("No UI presets found, creating default presets");
@@ -191,29 +196,42 @@ public class UIPresetManager {
         }
     }
 
-    /** 从数据包 + config 加载预设。数据包同名预设优先，config 仅作回退。 */
+    /**
+     * 从数据包 + config 加载预设。数据包同名预设优先，config 仅作回退。
+     * <p>
+     * 预设文件位于 {@code data/<ns>/ui_presets/}，只有 SERVER_DATA 资源栈能看到；
+     * 客户端的 {@code Minecraft#getResourceManager()} 只挂 assets，扫这个目录必然为空。
+     * 所以"扫到空"不等于"预设被删光"：若此时直接 clear，会把服务端刚加载的 datapack 预设
+     * 一并清掉，只剩 {@code config/limitless_vehicle/ui_presets/} 里的旧布局 ——
+     * 表现为自定义 UI 预设全部不生效、所有 HUD 回到默认位置。
+     * </p>
+     */
     public static void load(@Nullable ResourceManager resourceManager) {
-        PRESETS.clear();
         if (resourceManager != null) {
-            loadDatapackPresets(resourceManager);
+            Map<ResourceLocation, JsonElement> entries =
+                    ResourceScanner.scanDirectory(resourceManager, DATAPACK_PRESET_DIR, GSON);
+            if (entries.isEmpty() && !PRESETS.isEmpty()) {
+                LOGGER.debug("UI preset datapack scan is empty (resource stack without data/), keep {} loaded preset(s)",
+                        PRESETS.size());
+                return;
+            }
+            PRESETS.clear();
+            entries.forEach((id, json) -> {
+                try {
+                    UIPreset preset = GSON.fromJson(json, UIPreset.class);
+                    registerPreset(preset, id.getPath(), id.toString(), "data/" + id);
+                } catch (Exception e) {
+                    LOGGER.error("Failed to load UI preset from data pack: {}", id, e);
+                }
+            });
+        } else {
+            PRESETS.clear();
         }
         loadConfigPresets();
         if (PRESETS.isEmpty()) {
             LOGGER.warn("No UI presets found, creating default presets");
             createDefaultPresets(configPresetDir());
         }
-    }
-
-    private static void loadDatapackPresets(ResourceManager resourceManager) {
-        Map<ResourceLocation, JsonElement> entries = ResourceScanner.scanDirectory(resourceManager, DATAPACK_PRESET_DIR, GSON);
-        entries.forEach((id, json) -> {
-            try {
-                UIPreset preset = GSON.fromJson(json, UIPreset.class);
-                registerPreset(preset, id.getPath(), id.toString(), "data/" + id);
-            } catch (Exception e) {
-                LOGGER.error("Failed to load UI preset from data pack: {}", id, e);
-            }
-        });
     }
 
     private static void loadConfigPresets() {

@@ -179,15 +179,15 @@ public class VehicleAimAtOverlaySeekerColorMixin {
         }
     }
 
+    // 本体 bfdd69a5 起 aimScreenPosition 增加 partialTick 参数（帧间插值），签名同步跟进。
     @Shadow
-    private static net.minecraft.world.phys.Vec3 aimScreenPosition(WeaponUnit weaponUnit) {
+    private static net.minecraft.world.phys.Vec3 aimScreenPosition(WeaponUnit weaponUnit, float partialTick) {
         throw new AssertionError();
     }
 
     @Redirect(method = "render", remap = false, at = @At(value = "INVOKE", remap = false,
-            target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;aimScreenPosition(Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;)Lnet/minecraft/world/phys/Vec3;"))
-    private net.minecraft.world.phys.Vec3 rvp$disguiseAimPosition(
-            WeaponUnit weaponUnit, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) float partialTick) {
+            target = "Lorg/ywzj/vehicle/client/gui/VehicleAimAtOverlay;aimScreenPosition(Lorg/ywzj/vehicle/vehicle/part/WeaponUnit;F)Lnet/minecraft/world/phys/Vec3;"))
+    private net.minecraft.world.phys.Vec3 rvp$disguiseAimPosition(WeaponUnit weaponUnit, float partialTick) {
         if (org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimActive(weaponUnit)) {
             net.minecraft.world.phys.Vec3 cameraAim =
                     org.ywzj.rvp.client.state.RVP_ScopeViewSyncClient.disguiseAimWorldPos(weaponUnit, partialTick);
@@ -195,7 +195,7 @@ public class VehicleAimAtOverlaySeekerColorMixin {
                 return org.ywzj.vehicle.util.VectorUtil.worldToScreen(cameraAim);
             }
         }
-        return aimScreenPosition(weaponUnit);
+        return aimScreenPosition(weaponUnit, partialTick);
     }
 
     /**
