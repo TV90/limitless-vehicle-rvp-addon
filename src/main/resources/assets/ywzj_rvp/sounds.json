@@ -56,6 +56,24 @@
       "ywzj_rvp:nuclear/explosion_small_far2"
     ]
   },
+  "mchr_explosion_cannon_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near"
+    ]
+  },
+  "mchr_explosion_cannon_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/cannon_exp/far/cannon_def_explode_far"
+    ]
+  },
+  "mchr_explosion_cannon_very_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/cannon_exp/far/cannon_def_explode_very_far"
+    ]
+  },
   "mchr_explosion_rocket_near": {
     "subtitle": "subtitles.ywzj_rvp.explosion",
     "sounds": [

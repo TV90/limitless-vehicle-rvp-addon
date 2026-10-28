@@ -10,6 +10,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData;
@@ -33,8 +34,8 @@ final class RVP_DefaultExplosionSoundController {
     private final double listenerDistance;
     /** 主爆音相对事件起点的抵达 tick。 */
     private final int arrivalAge;
-    /** 当前客户端是否应选择近距离素材。 */
-    private final boolean useNearSound;
+    /** 当前客户端按听者距离选择的声音档位。 */
+    private final SoundDistanceBand soundBand;
     /** 事件是否允许播放声音。 */
     private final boolean soundEnabled;
     /** 事件确定性随机种子，用于声音变体与轻微音高抖动。 */
@@ -50,16 +51,17 @@ final class RVP_DefaultExplosionSoundController {
             RVP_EnumWeaponKind weaponKind, int initialAge) {
         this.level = level;
         center = event.position();
-        profile = resolveProfile(weaponKind, event.baseExplosionRadius());
+        boolean cannonSound = RVP_DefaultExplosionEventData.decodeCannonSound(event.canonicalPresetDataJson());
+        profile = resolveProfile(weaponKind, event.baseExplosionRadius(), cannonSound);
         // 解析事件参数里的自定义爆炸音效（explosion_data.explosion_sound 经 preset_data 通道下发）。
         customSoundId = RVP_DefaultExplosionEventData.decodeExplosionSound(event.canonicalPresetDataJson());
         net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
         listenerDistance = player == null ? 0.0D : player.position().distanceTo(center);
         arrivalAge = resolveArrivalTick(listenerDistance);
-        useNearSound = listenerDistance <= resolveNearSoundDistance(event.baseExplosionRadius());
+        soundBand = resolveSoundBand(profile, listenerDistance, event.baseExplosionRadius());
         soundEnabled = event.sound();
         seed = event.seed();
-        if (!soundEnabled || listenerDistance > profile.maximumRange()) {
+        if (!soundEnabled || soundBand == SoundDistanceBand.OUT_OF_RANGE) {
             handled = true;
             return;
         }
@@ -82,7 +84,15 @@ final class RVP_DefaultExplosionSoundController {
             sound = ResourceLocation.tryParse(customSoundId);
         }
         if (sound == null) {
-            sound = useNearSound ? profile.nearSound() : profile.farSound();
+            sound = switch (soundBand) {
+                case NEAR -> profile.nearSound();
+                case FAR -> profile.farSound();
+                case VERY_FAR -> profile.veryFarSound();
+                case OUT_OF_RANGE -> null;
+            };
+        }
+        if (sound == null) {
+            return;
         }
         float jitter = (RandomSource.create(seed).nextFloat() - 0.5F) * 0.06F;
         float pitch = Mth.clamp(profile.basePitch() + jitter, 0.5F, 1.5F);
@@ -119,8 +129,39 @@ final class RVP_DefaultExplosionSoundController {
         return Math.max(CLOSE_SOUND_DISTANCE, safeRadius * 20.0D);
     }
 
-    /** 按 RVP 类型化武器分类选择声音档案；非爆炸型类别按半径安全回退。 */
+    /**
+     * 按听者距离选择声音档位；炮弹档位固定使用 200/512/1536 格三段，其他档位保留旧逻辑。
+     */
+    static SoundDistanceBand resolveSoundBand(SoundProfile profile, double listenerDistance,
+                                               float explosionRadius) {
+        double safeDistance = Double.isFinite(listenerDistance) ? Math.max(0.0D, listenerDistance) : 0.0D;
+        if (safeDistance > profile.maximumRange()) {
+            return SoundDistanceBand.OUT_OF_RANGE;
+        }
+        if (profile == SoundProfile.CANNON) {
+            if (safeDistance <= CLOSE_SOUND_DISTANCE) {
+                return SoundDistanceBand.NEAR;
+            }
+            if (safeDistance <= 512.0D) {
+                return SoundDistanceBand.FAR;
+            }
+            return SoundDistanceBand.VERY_FAR;
+        }
+        return safeDistance <= resolveNearSoundDistance(explosionRadius)
+                ? SoundDistanceBand.NEAR : SoundDistanceBand.FAR;
+    }
+
+    /** 按 RVP 类型化武器分类选择声音档案；炮音效只由服务端传入的标记启用。 */
     static SoundProfile resolveProfile(RVP_EnumWeaponKind weaponKind, float explosionRadius) {
+        return resolveProfile(weaponKind, explosionRadius, false);
+    }
+
+    /** 按武器类型和服务端炮音效标记选择声音档案，禁止通过武器 ID 字符串分流。 */
+    static SoundProfile resolveProfile(RVP_EnumWeaponKind weaponKind, float explosionRadius,
+                                       boolean cannonSound) {
+        if (weaponKind == RVP_EnumWeaponKind.MACHINEGUN && cannonSound) {
+            return SoundProfile.CANNON;
+        }
         if (weaponKind == RVP_EnumWeaponKind.MACHINEGUN) {
             return SoundProfile.MACHINEGUN;
         }
@@ -136,10 +177,21 @@ final class RVP_DefaultExplosionSoundController {
         return explosionRadius >= 8.0F ? SoundProfile.MISSILE : SoundProfile.ROCKET;
     }
 
+    /** 默认爆炸音效的距离档位；OUT_OF_RANGE 表示不应播放声音。 */
+    enum SoundDistanceBand {
+        NEAR,
+        FAR,
+        VERY_FAR,
+        OUT_OF_RANGE
+    }
+
     /** 各武器类别的独立资源入口、最大传播距离、基础音高与响度叠加层数。 */
     enum SoundProfile {
         /** 机枪/机炮弹：短促高音，小范围传播。 */
         MACHINEGUN("mchr_explosion_machinegun_near", "mchr_explosion_machinegun_far", 1.00F, 512.0D, 1),
+        /** 大口径机炮/炮弹：使用 cannon_exp 的近、中、远三段声音。 */
+        CANNON("mchr_explosion_cannon_near", "mchr_explosion_cannon_far",
+                "mchr_explosion_cannon_very_far", 1.00F, 1536.0D, 1),
         /** 火箭弹：中性高爆音，中等范围传播 */
         ROCKET("mchr_explosion_rocket_near", "mchr_explosion_rocket_far", 0.98F, 1536.0D, 1),
         /** 导弹：厚重低音，远距离传播 */
@@ -151,6 +203,9 @@ final class RVP_DefaultExplosionSoundController {
         private final ResourceLocation nearSound;
         /** 远距离声音事件资源 ID。 */
         private final ResourceLocation farSound;
+        /** 炮弹专用的超远距离声音事件资源 ID；普通武器档案为空。 */
+        @Nullable
+        private final ResourceLocation veryFarSound;
         /** 该武器类别的基础音高。 */
         private final float basePitch;
         /** 该武器类别声音的最大传播距离，单位格。 */
@@ -159,9 +214,15 @@ final class RVP_DefaultExplosionSoundController {
         private final int loudnessLayers;
 
         SoundProfile(String nearSound, String farSound, float basePitch, double maximumRange, int loudnessLayers) {
+            this(nearSound, farSound, null, basePitch, maximumRange, loudnessLayers);
+        }
+
+        SoundProfile(String nearSound, String farSound, @Nullable String veryFarSound,
+                     float basePitch, double maximumRange, int loudnessLayers) {
             // 调用 RVP 资源定位入口，为每类武器建立可由资源包独立替换的近远声音事件 ID。
             this.nearSound = RVP_MOD.modLocation(nearSound);
             this.farSound = RVP_MOD.modLocation(farSound);
+            this.veryFarSound = veryFarSound == null ? null : RVP_MOD.modLocation(veryFarSound);
             this.basePitch = basePitch;
             this.maximumRange = maximumRange;
             this.loudnessLayers = Mth.clamp(loudnessLayers, 1, 3);
@@ -173,6 +234,11 @@ final class RVP_DefaultExplosionSoundController {
 
         ResourceLocation farSound() {
             return farSound;
+        }
+
+        @Nullable
+        ResourceLocation veryFarSound() {
+            return veryFarSound;
         }
 
         float basePitch() {

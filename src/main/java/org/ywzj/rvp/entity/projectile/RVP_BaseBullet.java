@@ -4628,9 +4628,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         boolean defaultVisualSpawned = false;
         if (!suppressRvpDefault && level() instanceof ServerLevel defaultVisualLevel) {
             // 水中水花由客户端按爆心流体状态自行判定（事件不含 water 标记）
-            // 调用 RVP 默认爆炸发布端，同时把类型化武器分类与自定义爆炸音效交给客户端。
+            // 调用本项目配置解析，按顶层 caliber 与 effects_data.caliber 为机炮弹选择炮音效档案。
+            boolean cannonSound = RVP_DefaultExplosionVisualService.shouldUseCannonSound(
+                    weaponKind, resolveWeaponConfig());
+            // 调用 RVP 默认爆炸发布端，把类型化武器分类、自定义爆炸音效和炮音效标记交给客户端。
             RVP_DefaultExplosionVisualService.spawn(defaultVisualLevel, pos, radius, weaponKind,
-                    detonateData == null ? null : detonateData.getExplosionData().getExplosionSound());
+                    detonateData == null ? null : detonateData.getExplosionData().getExplosionSound(), cannonSound);
             defaultVisualSpawned = true;
         }
         boolean resolvedSuppressNative = hbmApplied
