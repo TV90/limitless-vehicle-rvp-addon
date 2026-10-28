@@ -19,6 +19,12 @@ class RVP_DefaultExplosionSoundControllerTest {
     void weaponKindsResolveToIndependentProfilesWithoutWeaponIds() {
         assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.MACHINEGUN,
                 RVP_DefaultExplosionSoundController.resolveProfile(RVP_EnumWeaponKind.MACHINEGUN, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.CANNON,
+                RVP_DefaultExplosionSoundController.resolveProfile(
+                        RVP_EnumWeaponKind.MACHINEGUN, 4.0F, true));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.MACHINEGUN,
+                RVP_DefaultExplosionSoundController.resolveProfile(
+                        RVP_EnumWeaponKind.MACHINEGUN, 4.0F, false));
         assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.ROCKET,
                 RVP_DefaultExplosionSoundController.resolveProfile(RVP_EnumWeaponKind.ROCKET, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.MISSILE,
@@ -29,6 +35,24 @@ class RVP_DefaultExplosionSoundControllerTest {
                 RVP_DefaultExplosionSoundController.resolveProfile(RVP_EnumWeaponKind.DISPENSER, 4.0F));
         assertEquals(RVP_DefaultExplosionSoundController.SoundProfile.MISSILE,
                 RVP_DefaultExplosionSoundController.resolveProfile(RVP_EnumWeaponKind.DISPENSER, 8.0F));
+    }
+
+    @Test
+    void cannonSoundUsesThreeDistanceBandsAndStopsAfterMaximumRange() {
+        RVP_DefaultExplosionSoundController.SoundProfile cannon =
+                RVP_DefaultExplosionSoundController.SoundProfile.CANNON;
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.NEAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 200.0D, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 200.01D, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 512.0D, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 512.01D, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.VERY_FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.0D, 4.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.OUT_OF_RANGE,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.01D, 4.0F));
     }
 
 }

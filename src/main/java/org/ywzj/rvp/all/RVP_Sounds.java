@@ -29,6 +29,15 @@ public final class RVP_Sounds {
     /** MCHR 默认机枪/机炮弹爆炸远音。 */
     public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_MACHINEGUN_FAR =
             register("mchr_explosion_machinegun_far");
+    /** MCHR 大口径机炮/炮弹爆炸近音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_CANNON_NEAR =
+            register("mchr_explosion_cannon_near");
+    /** MCHR 大口径机炮/炮弹爆炸远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_CANNON_FAR =
+            register("mchr_explosion_cannon_far");
+    /** MCHR 大口径机炮/炮弹爆炸超远音。 */
+    public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_CANNON_VERY_FAR =
+            register("mchr_explosion_cannon_very_far");
     /** MCHR 默认火箭弹爆炸近音。 */
     public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_ROCKET_NEAR =
             register("mchr_explosion_rocket_near");

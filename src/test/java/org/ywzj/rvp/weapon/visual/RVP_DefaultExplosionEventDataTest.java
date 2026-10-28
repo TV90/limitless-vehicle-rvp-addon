@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RVP_DefaultExplosionEventDataTest {
     @Test
@@ -24,5 +26,26 @@ class RVP_DefaultExplosionEventDataTest {
                 RVP_DefaultExplosionEventData.decodeWeaponKind("{}"));
         assertEquals(RVP_EnumWeaponKind.ROCKET,
                 RVP_DefaultExplosionEventData.decodeWeaponKind("{\"weapon_kind\":\"unknown\"}"));
+    }
+
+    @Test
+    void cannonSoundFlagRoundTripsAndDefaultsToFalse() {
+        assertTrue(RVP_DefaultExplosionEventData.decodeCannonSound(
+                RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.MACHINEGUN, null, true)));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(
+                RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.MACHINEGUN, null, false)));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(
+                RVP_DefaultExplosionEventData.encode(RVP_EnumWeaponKind.MACHINEGUN)));
+    }
+
+    @Test
+    void malformedOrMissingCannonSoundFlagFallsBackToFalse() {
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(null));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound("not-json"));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound("{}"));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(
+                "{\"cannon_sound\":\"true\"}"));
+        assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(
+                "{\"cannon_sound\":false}"));
     }
 }
