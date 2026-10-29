@@ -5084,7 +5084,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             trailMotorBurningO = false;
             return;
         }
-        boolean missileNativeTrail = this instanceof RVP_MissileEntity;
+        // 目的：导弹沿用原生尾迹链路；普通火箭只有在 effects_data 明确配置自定义尾迹时才接入，
+        // 避免未配置的其他火箭弹被意外改变。不按武器 ID 分支。
+        boolean missileNativeTrail = this instanceof RVP_MissileEntity
+                || (this instanceof RVP_RocketEntity
+                && (effects.hasMissileNativeTrailParticleOverride()
+                || effects.hasMissileNativeTrailParticleStyle()));
         if (!motorBurning) {
             trailMotorBurningO = false;
             return;
@@ -5457,7 +5462,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 完整观感，服务端广播烟 + 尾焰粒子会与之叠加成"本地粗烟 + 广播细烟"两路混合
         // ——按配置整体跳过（无风格配置的弹保持原有广播行为不变）。
         RVP_EffectsData effects = config.getEffectsData();
-        if (this instanceof RVP_MissileEntity && effects.isMissileNativeTrailEnabled()
+        // 目的：导弹/火箭使用自定义尾迹时，关闭服务端原版烟雾广播，避免两套尾迹重叠。
+        if ((this instanceof RVP_MissileEntity || this instanceof RVP_RocketEntity)
+                && effects.isMissileNativeTrailEnabled()
                 && effects.hasMissileNativeTrailParticleStyle()) {
             return;
         }

@@ -77,7 +77,11 @@
     "proximity_fuse_height": 0
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke"
+    "trajectory_particle": "none",
+    "missile_native_trail_particle_style": "rvp_rocket_flame",
+    "missile_native_trail_particle_scale": 0.5,
+    "missile_native_trail_step": 0.7,
+    "missile_native_trail_offset": 3.0
   },
   "fire_data": {
     "require_lock": true

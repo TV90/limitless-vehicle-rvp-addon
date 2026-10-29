@@ -28,9 +28,13 @@
     "guidance_type": "NONE"
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "trajectory_particle": "none",
     "impact_particle": "minecraft:block",
-    "explosion_particle": "minecraft:explosion"
+    "explosion_particle": "minecraft:explosion",
+    "missile_native_trail_particle_style": "rvp_rocket_flame",
+    "missile_native_trail_particle_scale": 1.0,
+    "missile_native_trail_step": 0.7,
+    "missile_native_trail_offset": 3.0
   },
   "detonate_data": {
     "explosion_data": {

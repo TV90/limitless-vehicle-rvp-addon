@@ -19,6 +19,7 @@ import org.ywzj.rvp.client.state.RVP_ClientProjectileRenderInterpolator;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
 import org.ywzj.rvp.entity.projectile.RVP_BombEntity;
 import org.ywzj.rvp.entity.projectile.RVP_BulletEntity;
+import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.entity.projectile.RVP_MissileEntity;
 import org.ywzj.rvp.entity.projectile.RVP_RocketEntity;
 import org.ywzj.rvp.weapon.data.RVP_EffectsData;
@@ -406,8 +407,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
         Vec3 velocity = entity.getDeltaMovement();
         Vec3 rear = velocity.lengthSqr() > 1.0E-6D ? velocity.normalize().scale(-1.0D) : Vec3.ZERO;
         double offset;
-        if (effects != null && entity instanceof RVP_MissileEntity) {
-            // 调用 RVP 效果数据出口，使远程尾喷口与近距 missile_native_trail_offset 完全同源。
+        if (effects != null && (entity instanceof RVP_MissileEntity || entity instanceof RVP_RocketEntity)) {
+            // 调用 RVP 效果数据出口，使远程导弹/火箭尾喷口与近距配置完全同源。
             offset = effects.getMissileNativeTrailOffset();
             if (effects.isMissileNativeTrailRocketFlame()) {
                 // 调用本项目运行时调参入口：让超视距尾喷口位置与近距尾迹同步调节。
@@ -425,14 +426,14 @@ public final class RVP_RemoteAmmoVisualRenderer {
         return velocity.lengthSqr() > 1.0E-6D ? velocity.normalize().scale(-1.0D) : Vec3.ZERO;
     }
 
-    /** 从 RVP 远程导弹克隆恢复效果配置；本体导弹、火箭或资源尚未就绪时返回 null。 */
+    /** 从 RVP 远程导弹/火箭克隆恢复效果配置；本体弹或资源尚未就绪时返回 null。 */
     @Nullable
     private static RVP_EffectsData resolveRemoteTrailEffects(Entity entity) {
-        if (!(entity instanceof RVP_MissileEntity missile)) {
+        if (!(entity instanceof RVP_BaseBullet bullet)) {
             return null;
         }
-        // 调用 RVP 弹体公共配置解析出口，按远程广播同步的 weaponId 查询武器数据。
-        RVP_WeaponData config = missile.getResolvedWeaponConfig();
+        // 调用本项目弹体公共配置解析出口，按远程广播同步的 weaponId 查询武器数据。
+        RVP_WeaponData config = bullet.getResolvedWeaponConfig();
         return config == null ? null : config.getEffectsData();
     }
 

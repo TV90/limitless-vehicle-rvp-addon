@@ -72,7 +72,9 @@
     "off_axis_stacks_with_station_rotation": true
   },
   "effects_data": {
-    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "trajectory_particle": "none",
+    "missile_native_trail_particle_style": "rvp_rocket_flame",
+    "missile_native_trail_particle_scale": 0.5,
     "missile_native_trail_enabled": true,
     "missile_native_trail_particle": "minecraft:cloud",
     "missile_native_trail_step": 0.9,
