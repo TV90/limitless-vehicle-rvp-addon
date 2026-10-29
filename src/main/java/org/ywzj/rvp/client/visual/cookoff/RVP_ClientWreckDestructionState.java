@@ -23,6 +23,8 @@ public final class RVP_ClientWreckDestructionState {
     private static ClientLevel currentLevel;
     /** 允许先于实体生成包抵达的 UUID 快照；实体离开时清理，重新追踪由服务端补发。 */
     private static final Map<UUID, RVP_WreckDestructionState> STATES = new HashMap<>();
+    /** 已播放殉爆声的残骸及其殉燃结束 tick；跨实体重新追踪和资源重载保留，过期后释放。 */
+    private static final Map<UUID, Long> AMMO_BURST_PLAYED_UNTIL = new HashMap<>();
 
     private RVP_ClientWreckDestructionState() {}
 
@@ -32,6 +34,7 @@ public final class RVP_ClientWreckDestructionState {
         if (level == null || !level.dimension().location().equals(message.dimension())) return;
         if (currentLevel != level) {
             STATES.clear();
+            AMMO_BURST_PLAYED_UNTIL.clear();
             currentLevel = level;
         }
         STATES.put(message.vehicleId(), message.state());
@@ -40,6 +43,18 @@ public final class RVP_ClientWreckDestructionState {
     /** 无快照时返回 null，控制器等待权威结果，避免立即飞头车先闪一帧殉燃。 */
     public static RVP_WreckDestructionState get(AbstractVehicle vehicle) {
         return vehicle.level() == currentLevel ? STATES.get(vehicle.getUUID()) : null;
+    }
+
+    /** 领取本次真实殉燃的一次性播放资格；效果重建与重复快照不能再次领取。 */
+    public static boolean claimAmmoBurst(AbstractVehicle vehicle) {
+        if (currentLevel == null || vehicle.level() != currentLevel) return false;
+        long now = currentLevel.getGameTime();
+        AMMO_BURST_PLAYED_UNTIL.values().removeIf(endTick -> endTick <= now);
+        // 调用本类快照查询及权威殉燃时间判断，立即飞头、未知和过期状态均不播放。
+        RVP_WreckDestructionState state = get(vehicle);
+        return state != null && state.isBurning(now)
+                && AMMO_BURST_PLAYED_UNTIL.putIfAbsent(vehicle.getUUID(),
+                        state.startedAt() + state.durationTicks()) == null;
     }
 
     /** 客户端实体卸载/移除时释放条目，不能无限累积战场残骸 UUID。 */
@@ -53,6 +68,7 @@ public final class RVP_ClientWreckDestructionState {
     public static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() == currentLevel) {
             STATES.clear();
+            AMMO_BURST_PLAYED_UNTIL.clear();
             currentLevel = null;
         }
     }

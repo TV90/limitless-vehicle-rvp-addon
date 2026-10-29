@@ -59,7 +59,11 @@
   "mchr_explosion_cannon_near": {
     "subtitle": "subtitles.ywzj_rvp.explosion",
     "sounds": [
-      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near"
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near",
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near1",
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near2",
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near3",
+      "ywzj_rvp:defaultexplosion/cannon_exp/near/cannon_def_explode_near4"
     ]
   },
   "mchr_explosion_cannon_far": {
@@ -103,7 +107,13 @@
     "sounds": [
       "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_1",
       "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_2",
-      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_3"
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_3",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_4",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_5",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_6",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_7",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_8",
+      "ywzj_rvp:defaultexplosion/missile_exp/far/missile_def_explode_distant_9"
     ]
   },
   "mchr_explosion_bomb_near": {
@@ -128,6 +138,22 @@
       {
         "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near",
         "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near1",
+        "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near2",
+        "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near3",
+        "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near4",
+        "stream": false
       }
     ]
   },
@@ -137,7 +163,27 @@
       {
         "name": "ywzj_rvp:defaultexplosion/vehicle_exp/far/vehicle_explosion_far",
         "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/far/vehicle_explosion_far1",
+        "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/far/vehicle_explosion_far2",
+        "stream": false
+      },
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/far/vehicle_explosion_far3",
+        "stream": false
       }
+    ]
+  },
+  "vehicle_ammo_burst": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-001",
+      "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-002",
+      "ywzj_rvp:defaultexplosion/vehicle_exp/burst/ammo_burst-003"
     ]
   },
   "vehicle_fire_burning": {

@@ -186,6 +186,13 @@ public final class RVP_WreckCookoffController {
             if (!Float.isFinite(soundDistance) || soundDistance <= 0.0F) {
                 soundDistance = 1.0F;
             }
+            // 调用本项目一次性资格缓存：真实履带坦克首次殉燃时播放，重建实例或重载资源不重播。
+            if (vehicle instanceof TrackedVehicle
+                    && RVP_ClientWreckDestructionState.claimAmmoBurst(vehicle)) {
+                // 调用本体跟随声音实现：随机选择一个殉爆变体，非循环、无淡入淡出，沿用载具声音距离。
+                new VehicleSound(RVP_Sounds.VEHICLE_AMMO_BURST.get(),
+                        1.0F, soundDistance, 1.0F, false, 0, false, false, vehicle.getId()).play();
+            }
             // 调用本体 VehicleSound：循环、跟随残骸、使用载具 sound_distance，并保留 50 tick 淡入淡出。
             burningSound = new VehicleSound(RVP_Sounds.VEHICLE_FIRE_BURNING.get(),
                     1.0F, soundDistance, 1.0F, true, 50, true, true, vehicle.getId());

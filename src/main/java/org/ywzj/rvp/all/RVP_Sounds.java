@@ -63,6 +63,9 @@ public final class RVP_Sounds {
     /** 完整载具击毁爆炸的远距离声音。 */
     public static final RegistryObject<SoundEvent> VEHICLE_EXPLOSION_FAR =
             register("vehicle_explosion_far");
+    /** 载具弹药殉爆的随机变体声音；当前仅注册事件，不自动触发播放。 */
+    public static final RegistryObject<SoundEvent> VEHICLE_AMMO_BURST =
+            register("vehicle_ammo_burst");
     /** 地面载具残骸殉燃循环声音。 */
     public static final RegistryObject<SoundEvent> VEHICLE_FIRE_BURNING =
             register("vehicle_fire_burning");
