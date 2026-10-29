@@ -1,0 +1,58 @@
+{
+  "type": "rvp:machinegun",
+  "name": "AGM-114K SALH-AGM Warhead",
+  "shoot_interval": 0,
+  "max_capacity": 0,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_machine_gun"
+  },
+  "fire_control_sensor_type_override": "eo",
+  "fire_data": {
+    "spread": 0.0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 0.5,
+    "gravity": -0.005,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "fuse_data": {},
+  "effects_data": {
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 50,
+      "radius": 5,
+      "proximity_fuze": false,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.6,
+        "living": 0.6,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 700.0,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    }
+  },
+  "seeker_color": "0xFFFFFF",
+  "name_CN": "AGM-114K 地狱火2 激光制导空对地导弹 战斗部",
+  "life": 15
+}

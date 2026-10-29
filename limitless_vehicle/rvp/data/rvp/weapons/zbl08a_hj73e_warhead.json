@@ -1,0 +1,116 @@
+{
+  "type": "rvp:machinegun",
+  "name": "HJ-73E SACLOS-ATGM Warhead",
+  "shoot_interval": 0,
+  "max_capacity": 0,
+  "reload": {
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_machine_gun"
+  },
+  "fire_data": {
+    "spread": 0.0,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "velocity": 1.5,
+    "gravity": -0.005,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "fuse_data": {},
+  "effects_data": {
+    "wire_link_enabled": true,
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "missile_native_trail_enabled": true,
+    "missile_native_trail_particle": "minecraft:cloud",
+    "missile_native_trail_step": 0.9,
+    "missile_native_trail_spawn_interval_tick": 2,
+    "missile_native_trail_density_scale": 0.45,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_extra_flame": true,
+    "missile_native_trail_extra_smoke": false,
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 50,
+      "radius": 6,
+      "proximity_fuze": true,
+      "proximity_radius": 0,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.5,
+        "living": 0.5,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 650.0,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    },
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "name_CN": "红箭73E 半主动指令线反坦克导弹 战斗部",
+  "life": 15
+}

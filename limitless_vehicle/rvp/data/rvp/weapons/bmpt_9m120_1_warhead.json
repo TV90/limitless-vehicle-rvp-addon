@@ -1,60 +1,25 @@
 {
-  "type": "rvp:missile",
-  "name": "TOW-2N SACLOS-ATGM",
-  "shoot_interval": 1000,
-  "max_capacity": 2,
+  "type": "rvp:machinegun",
+  "name": "9M120-1 LBR-ATGM Warhead",
+  "shoot_interval": 0,
+  "max_capacity": 0,
   "reload": {
-    "time": 300,
-    "ammo": "ywzj_vehicle:ammo_missile"
+    "time": 100,
+    "ammo": "ywzj_vehicle:ammo_machine_gun"
   },
   "fire_data": {
-    "spread": 0,
-    "fire_mode": "FULL_AUTO",
-    "require_lock": false
+    "spread": 0.0,
+    "fire_mode": "FULL_AUTO"
   },
   "projectile_data": {
-    "collision_box_size": 0.7,
-    "velocity": 1.5,
-    "has_rocket_engine": true,
-    "mass": 22.6,
-    "fuel_mass": 7,
-    "thrust": 2.1894178,
-    "motor_burn_time": 100,
-    "drag_coefficient": 0.0156,
-    "rvp_induced_drag": 0.005,
-    "rotate_to_motion": true,
-    "max_speed": 3.5,
-    "turning_factor": {
-      "[[1,inf]]": 1
-    },
-    "rvp_aero_steering": true,
-    "rvp_attack_angle_limit_deg": 60
+    "velocity": 2.2,
+    "gravity": -0.005,
+    "drag": 0.01,
+    "rotate_to_motion": true
   },
-  "fuse_data": {
-    "entity_collision_safe_tick": 0,
-    "delay_tick": 0,
-    "proximity_radius": 0,
-    "detonate_on_life_end": false
-  },
-  "guidance_data": {
-    "guidance_type": "SACLOS",
-    "guidance_tick_range": "[[1,inf]]",
-    "max_guidance_angle": 150,
-    "predict_target_pos": true,
-    "enable_inertial_guidance": true,
-    "guidance_target_distance_range": "[[0,750]]"
-  },
+  "fuse_data": {},
   "effects_data": {
-    "wire_link_enabled": true,
     "trajectory_particle": "minecraft:campfire_signal_smoke",
-    "missile_native_trail_enabled": true,
-    "missile_native_trail_particle": "minecraft:cloud",
-    "missile_native_trail_step": 0.9,
-    "missile_native_trail_spawn_interval_tick": 2,
-    "missile_native_trail_density_scale": 0.45,
-    "missile_native_trail_offset": 3.0,
-    "missile_native_trail_extra_flame": true,
-    "missile_native_trail_extra_smoke": false,
     "impact_particle": "minecraft:block",
     "explosion_particle": "minecraft:explosion_emitter"
   },
@@ -62,7 +27,7 @@
     "explosion_data": {
       "explode": true,
       "damage": 50,
-      "radius": 6,
+      "radius": 4,
       "proximity_fuze": true,
       "proximity_radius": 0,
       "destroy_block": true,
@@ -77,7 +42,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 850,
+    "direct_damage": 500.0,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
@@ -135,8 +100,8 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
-  "name_CN": "TOW-2N 半主动指令线反坦克导弹"
+  "name_CN": "9M120-1 激光驾束反坦克导弹 战斗部",
+  "life": 15
 }

@@ -94,6 +94,50 @@ public class RVP_EffectsData {
     @SerializedName("missile_native_trail_extra_smoke")
     private Boolean missileNativeTrailExtraSmoke;
 
+    /**
+     * 尾迹凝结云保持期保底时长，单位 Tick，默认 {@code null}（沿用代码默认 108）。
+     *
+     * <p>仅 {@code rvp_rocket_flame} 风格生效：凝结云的 alpha 保持期 =
+     * {@code max(距发动机燃尽 tick + 燃尽缓冲, 本值)}，保持期结束才开始淡出。
+     * 因此<b>调小本值是缩短尾迹存留时间最直接的手段</b>：默认 108t = 5.4 秒，
+     * 配合默认淡出 120~180t，单个烟粒子的总寿命约 11~14 秒。</p>
+     */
+    @SerializedName("missile_native_trail_hold_min_ticks")
+    private Integer missileNativeTrailHoldMinTicks;
+
+    /**
+     * 尾迹凝结云 **alpha 保持期占寿命的比例**，默认 {@code null}（沿用代码默认 1.0）。
+     *
+     * <p>仅 {@code rvp_rocket_flame} 风格生效。固体发动机款的凝结云在保持期内 alpha 恒为
+     * {@code 0.75}（完全不透明），保持期结束才开始淡出——所以<b>总寿命缩短后，浓烟仍会"挂着"
+     * 整个保持期</b>，看上去依旧很久。本项把 alpha 保持期独立出来：</p>
+     *
+     * <pre>
+     * alpha 保持 = min(保持期, 总寿命 × 本比例)
+     * </pre>
+     *
+     * <p>{@code 1.0} = 保持到保持期末（原始行为）；{@code 0.3} = 只在前 30% 寿命浓着，
+     * 剩下 70% 一路淡出，视觉"存在感"大幅缩短。写 {@code 0} 则从出生就开始淡。</p>
+     */
+    @SerializedName("missile_native_trail_alpha_hold_ratio")
+    private Float missileNativeTrailAlphaHoldRatio;
+
+    /**
+     * 尾迹凝结云淡出基础时长，单位 Tick，默认 {@code null}（沿用代码默认 120）。
+     * 仅 {@code rvp_rocket_flame} 风格生效；与 {@code missile_native_trail_fade_random_ticks}
+     * 相加构成淡出期（smoothstep 散开）。总寿命 = 保持期 + 淡出期。
+     */
+    @SerializedName("missile_native_trail_fade_ticks")
+    private Integer missileNativeTrailFadeTicks;
+
+    /**
+     * 尾迹凝结云淡出随机增量上限，单位 Tick，默认 {@code null}（沿用代码默认 60）。
+     * 仅 {@code rvp_rocket_flame} 风格生效；每个粒子在 {@code [0, 本值)} 内随机延寿，
+     * 让同一段尾迹的散开不齐、避免整条云同时消失。写 {@code 0} 则完全同步散开。
+     */
+    @SerializedName("missile_native_trail_fade_random_ticks")
+    private Integer missileNativeTrailFadeRandomTicks;
+
     /** 命中粒子短名或资源 ID，默认空（使用方块命中默认表现）；写 {@code none} 时关闭。 */
     @SerializedName("impact_particle")
     private String impactParticle = "";
@@ -286,6 +330,39 @@ public class RVP_EffectsData {
     /** 尾迹粒子风格原始值（小写化）；空串表示原版粒子。 */
     public String getMissileNativeTrailParticleStyle() {
         return missileNativeTrailParticleStyle == null ? "" : missileNativeTrailParticleStyle.trim().toLowerCase();
+    }
+
+    /** 凝结云保持期保底（Tick）；未配置返回 -1，表示沿用代码默认 108。 */
+    public int getMissileNativeTrailHoldMinTicks() {
+        return clampTrailTicks(missileNativeTrailHoldMinTicks);
+    }
+
+    /** 凝结云 alpha 保持期比例；未配置返回 -1，表示沿用代码默认 1.0（保持到保持期末）。 */
+    public float getMissileNativeTrailAlphaHoldRatio() {
+        if (missileNativeTrailAlphaHoldRatio == null
+                || Float.isNaN(missileNativeTrailAlphaHoldRatio)
+                || Float.isInfinite(missileNativeTrailAlphaHoldRatio)) {
+            return -1f;
+        }
+        return Math.max(0f, Math.min(missileNativeTrailAlphaHoldRatio, 1f));
+    }
+
+    /** 凝结云淡出基础时长（Tick）；未配置返回 -1，表示沿用代码默认 120。 */
+    public int getMissileNativeTrailFadeTicks() {
+        return clampTrailTicks(missileNativeTrailFadeTicks);
+    }
+
+    /** 凝结云淡出随机增量上限（Tick）；未配置返回 -1，表示沿用代码默认 60。 */
+    public int getMissileNativeTrailFadeRandomTicks() {
+        return clampTrailTicks(missileNativeTrailFadeRandomTicks);
+    }
+
+    /** 尾迹时长类字段的统一钳制：null → -1（沿用代码默认），其余限制在 [0, 6000]。 */
+    private static int clampTrailTicks(Integer value) {
+        if (value == null) {
+            return -1;
+        }
+        return Math.max(0, Math.min(value, 6000));
     }
 
     /** 尾迹是否使用本项目 MCHR 风格翻滚烟团（{@code rvp_smoke}）。 */

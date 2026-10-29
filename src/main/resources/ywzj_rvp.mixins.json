@@ -28,7 +28,6 @@
     "WeaponUnitOpticalSightFollowPitchMixin",
     "ClientVehicleActionWeaponBayOverrideMixin",
     "AutoLandingGearManualOverrideMixin",
-    "VehicleDataManagerMixin",
     "ClientRadarActionMixin",
     "WeaponUnitMainRadarUnitMixin",
     "VectorUtilPhysicsOnlyHitFilterMixin",
@@ -82,7 +81,6 @@
     "VehicleRenderLodMixin",
     "BedrockModelRenderTypesMixin",
     "EntityRenderDispatcherPhysicsOnlyMixin",
-    "AbstractVehicleWeaponSoundMixin",
     "AbstractVehicleClientMixin",
     "EntityContextEraStateMixin",
     "WarningReceiverSearchWarnMixin"

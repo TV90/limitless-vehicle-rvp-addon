@@ -54,7 +54,7 @@
     "explosion_data": {
       "explode": true,
       "damage": 20,
-      "radius": 5,
+      "radius": 2,
       "proximity_fuze": true,
       "proximity_radius": 0,
       "destroy_block": true,
@@ -67,7 +67,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 600,
+    "direct_damage": 100,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
@@ -125,7 +125,6 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
   "misc_data": {
@@ -135,5 +134,33 @@
       1
     ]
   },
-  "name_CN": "拉哈特 激光制导反坦克导弹"
+  "name_CN": "拉哈特 激光制导反坦克导弹",
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": [
+          "on_entity_hit"
+        ],
+        "release_events": 1,
+        "spawn_forward_offset": 0.0,
+        "parent_action": "discard_after_release",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:m1a2sep_lahat_warhead",
+            "count": 1,
+            "inherit_parent_velocity": true,
+            "inherit_parent_horizontal_velocity": false,
+            "inherit_vehicle_velocity": false,
+            "launch_speed": 0.0,
+            "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 0.0
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

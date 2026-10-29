@@ -5233,6 +5233,17 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 // 目的：凝结云保持期绑定发动机燃烧期（2026-09-20 用户需求）——距燃尽还有多少
                 // tick 传给粒子（固体款专用），发动机开启时飞过的距离全程留云、燃尽后缓缓散开
                 int holdTicks = rocketFlameStyle ? ticksUntilMotorStopsBurning() : 0;
+                // 目的：凝结云时长三项按武器 JSON 配置（2026-10-30 M142 需求）——保持期保底 /
+                // 淡出基础 / 淡出随机会直接影响单个烟粒子的总寿命（此前只有代码默认
+                // 108 + 120~180t ≈ 11~14 秒，火箭类尾迹过长过浓）。未配置传 -1 回落默认。
+                int trailHoldMinTicks = rocketFlameStyle
+                        ? effects.getMissileNativeTrailHoldMinTicks() : -1;
+                int trailFadeTicks = rocketFlameStyle ? effects.getMissileNativeTrailFadeTicks() : -1;
+                int trailFadeRandomTicks = rocketFlameStyle
+                        ? effects.getMissileNativeTrailFadeRandomTicks() : -1;
+                // alpha 保持期占寿命比例：总寿命与"浓多久"解耦，解决缩短寿命后浓烟仍挂满保持期的问题。
+                float trailAlphaHoldRatio = rocketFlameStyle
+                        ? effects.getMissileNativeTrailAlphaHoldRatio() : -1f;
                 // 目的：发射段烟柱加粗（effects_data.missile_native_trail_launch_boost）——
                 // 在一级燃烧窗口（motorBurnEndTick = 点火延迟 + 一级燃烧时长，随生成数据包同步）
                 // 内随飞行进度线性回落到 1.0，发射时全额加粗、一级燃尽恢复常规粗细，平滑无突变
@@ -5245,7 +5256,9 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                     if (rocketFlameStyle) {
                         RVP_ClientActionsAccess.addRocketFlameTrailParticle(
                                 particlePos.x, particlePos.y, particlePos.z,
-                                exhaust.x, exhaust.y, exhaust.z, particleScale, holdTicks);
+                                exhaust.x, exhaust.y, exhaust.z, particleScale, holdTicks,
+                                trailHoldMinTicks, trailFadeTicks, trailFadeRandomTicks,
+                                trailAlphaHoldRatio);
                     } else if (keroseneBlackStyle) {
                         RVP_ClientActionsAccess.addKeroseneBlackSmokeTrailParticle(
                                 particlePos.x, particlePos.y, particlePos.z,
@@ -5420,12 +5433,20 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         if (rvpData == null) {
             // 客户端克隆/同步实体：生成数据包同步的标量（与 isMotorBurning 客户端分支同源）；
             // 差值用 clientVisualFlightTickCount（含发包时已飞 tick），防迟生成实体保持期重放
-            lastBurningTick = this.motorBurnEndTick;
             int start = this.entityData.get(DATA_SECOND_PULSE_START_TICK);
             int burn = this.entityData.get(DATA_SECOND_PULSE_BURN_TIME_TICK);
-            if (start >= 0 && burn > 0) {
-                lastBurningTick = Math.max(lastBurningTick, start + burn);
+            boolean hasSecondPulse = start >= 0 && burn > 0;
+            // [RVP] 2026-10-30 修复：非推进弹体（火箭/炮弹）的 motorBurnEndTick 由
+            // refreshMotorBurnWindow() 显式写成 Integer.MAX_VALUE 表示"无燃烧期"。
+            // 旧写法 min(MAX_VALUE - flight, 1200) 恒等于 1200，被凝结云当成"还要烧 60 秒"，
+            // 于是远程克隆/超视距实体的火箭尾迹粒子寿命被撑到 60 秒（实测"烟雾存在几十秒"）。
+            // MAX_VALUE 且无二脉冲 ⇒ 无燃烧期，按非推进弹体返回 0（与服务端 rvpData 分支一致）。
+            if (this.motorBurnEndTick == Integer.MAX_VALUE && !hasSecondPulse) {
+                return 0;
             }
+            lastBurningTick = this.motorBurnEndTick == Integer.MAX_VALUE
+                    ? start + burn
+                    : (hasSecondPulse ? Math.max(this.motorBurnEndTick, start + burn) : this.motorBurnEndTick);
             return Math.max(0, Math.min(lastBurningTick - clientVisualFlightTickCount(), 1200));
         } else {
             if (!isMotorPropulsion()) {

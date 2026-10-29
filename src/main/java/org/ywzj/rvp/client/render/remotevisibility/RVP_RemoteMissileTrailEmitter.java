@@ -44,10 +44,15 @@ final class RVP_RemoteMissileTrailEmitter {
                 ? RVP_RocketFlameRuntimeTuning.resolveParticleScale(configuredScale) : configuredScale;
         if (effects.isMissileNativeTrailRocketFlame()) {
             // 调用超视距专用 HBM 工厂，保留固体橙焰→凝结云曲线并放宽 1024 格消亡边界。
+            // 时长三项与近距尾迹同源：武器 JSON 的保持期保底 / 淡出 / 淡出随机会一并生效。
             minecraft.particleEngine.add(RVP_RocketFlameParticle.ofRemoteTrail(
                     minecraft.level, position.x, position.y, position.z,
                     exhaustVelocity.x, exhaustVelocity.y, exhaustVelocity.z,
-                    scale, remainingBurnTicks));
+                    scale, remainingBurnTicks,
+                    effects.getMissileNativeTrailHoldMinTicks(),
+                    effects.getMissileNativeTrailFadeTicks(),
+                    effects.getMissileNativeTrailFadeRandomTicks(),
+                    effects.getMissileNativeTrailAlphaHoldRatio()));
             return;
         }
         if (effects.isMissileNativeTrailKeroseneBlackSmoke()) {

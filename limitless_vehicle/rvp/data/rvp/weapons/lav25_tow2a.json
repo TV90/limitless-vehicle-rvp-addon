@@ -1,0 +1,169 @@
+{
+  "type": "rvp:missile",
+  "name": "TOW-2A SACLOS-ATGM",
+  "shoot_interval": 1000,
+  "max_capacity": 2,
+  "reload": {
+    "time": 300,
+    "ammo": "ywzj_vehicle:ammo_missile"
+  },
+  "fire_data": {
+    "spread": 0,
+    "fire_mode": "FULL_AUTO",
+    "require_lock": false
+  },
+  "projectile_data": {
+    "collision_box_size": 0.7,
+    "velocity": 1.5,
+    "has_rocket_engine": true,
+    "mass": 22.6,
+    "fuel_mass": 7,
+    "thrust": 2.1894178,
+    "motor_burn_time": 100,
+    "drag_coefficient": 0.0156,
+    "rvp_induced_drag": 0.005,
+    "rotate_to_motion": true,
+    "max_speed": 3.5,
+    "turning_factor": {
+      "[[1,inf]]": 1
+    },
+    "rvp_aero_steering": true,
+    "rvp_attack_angle_limit_deg": 60
+  },
+  "fuse_data": {
+    "entity_collision_safe_tick": 0,
+    "delay_tick": 0,
+    "proximity_radius": 0,
+    "detonate_on_life_end": false
+  },
+  "guidance_data": {
+    "guidance_type": "SACLOS",
+    "guidance_tick_range": "[[1,inf]]",
+    "max_guidance_angle": 150,
+    "predict_target_pos": true,
+    "enable_inertial_guidance": true,
+    "guidance_target_distance_range": "[[0,750]]"
+  },
+  "effects_data": {
+    "wire_link_enabled": true,
+    "trajectory_particle": "minecraft:campfire_signal_smoke",
+    "missile_native_trail_enabled": true,
+    "missile_native_trail_particle": "minecraft:cloud",
+    "missile_native_trail_step": 0.9,
+    "missile_native_trail_spawn_interval_tick": 2,
+    "missile_native_trail_density_scale": 0.45,
+    "missile_native_trail_offset": 3.0,
+    "missile_native_trail_extra_flame": true,
+    "missile_native_trail_extra_smoke": false,
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion_emitter"
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 20,
+      "radius": 2,
+      "proximity_fuze": true,
+      "proximity_radius": 0,
+      "destroy_block": true,
+      "explosion_damage_factor": {
+        "player": 0.5,
+        "living": 0.5,
+        "vehicle_default": 1.0,
+        "vehicles": {
+          "ywzj_vehicle:wheeled_vehicle": 1.2
+        }
+      }
+    }
+  },
+  "collision_data": {
+    "direct_damage": 100,
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:wheeled_vehicle": 1.1,
+        "ywzj_vehicle:rotary_wing_vehicle": 1.1,
+        "ywzj_vehicle:fixed_wing_vehicle": 1.1
+      }
+    },
+    "damage_decay": [
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ]
+  },
+  "name_CN": "TOW-2A 半主动指令线反坦克导弹",
+  "submunition_data": {
+    "releases": [
+      {
+        "triggers": [
+          "on_entity_hit"
+        ],
+        "release_events": 1,
+        "spawn_forward_offset": 0.0,
+        "parent_action": "discard_after_release",
+        "payloads": [
+          {
+            "kind": "rvp_weapon",
+            "weapon_id": "rvp:lav25_tow2a_warhead",
+            "count": 1,
+            "inherit_parent_velocity": true,
+            "inherit_parent_horizontal_velocity": false,
+            "inherit_vehicle_velocity": false,
+            "launch_speed": 0.0,
+            "spread": {
+              "mode": "canister",
+              "canister_type": 1,
+              "canister_diff": 0.0
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

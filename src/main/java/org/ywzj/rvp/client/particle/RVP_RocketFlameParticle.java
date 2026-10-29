@@ -131,6 +131,10 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     private int flameDurationTicks = -1;
     /** 凝结云 alpha 保持期终点（tick，固体款）：保持至发动机燃尽+缓冲，之后 smoothstep 散开。 */
     private int holdEndTick;
+    /** alpha 保持期上限（Tick）：{@code age < alphaHoldTick} 时 alpha 恒 0.75。
+     * 由 {@code missile_native_trail_alpha_hold_ratio} 按寿命比例压低，与 {@link #holdEndTick} 分离
+     * ——前者决定总寿命，后者只决定"浓多久"。默认两者相等（原始行为）。 */
+    private int alphaHoldTick;
     /** 层间抖动基值 [层][轴]：按 jitterInterval 间隔重掷，渲染跨间隔 smoothstep 插值——低频且连续。 */
     private final float[][] jitterCur = new float[MAX_TRAIL_LAYERS][3];
     private final float[][] jitterPrev = new float[MAX_TRAIL_LAYERS][3];
@@ -148,7 +152,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                                     double vx, double vy, double vz,
                                     float sizeScale) {
         this(level, mode, x, y, z, vx, vy, vz, sizeScale, SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false,
-                FLAME_PHASE_RATIO, 0, false);
+                FLAME_PHASE_RATIO, 0, false, -1, -1, -1, -1f);
     }
 
     private RVP_RocketFlameParticle(ClientLevel level, Mode mode,
@@ -156,7 +160,9 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                                     double vx, double vy, double vz,
                                     float sizeScale,
                                     float smokeGreyMin, float smokeGreySpread, boolean smokeWhiten,
-                                    float flamePhaseRatio, int holdTicks, boolean remoteVisual) {
+                                    float flamePhaseRatio, int holdTicks, boolean remoteVisual,
+                                    int holdMinTicks, int fadeTicks, int fadeRandomTicks,
+                                    float alphaHoldRatio) {
         super(level, x, y, z, 0.0D, 0.0D, 0.0D);
         this.mode = mode;
         this.sizeScale = Math.max(sizeScale, 0.0f);
@@ -183,12 +189,24 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
                 // = 距发动机燃尽 tick（holdTicks，由生成点按弹体燃烧数据传入）+ 20t 缓冲
                 // （防燃尽瞬间即淡），保底 108t 不低于旧定值观感——发动机开启时飞过的距离
                 // 全程留云；燃尽后 120~180t smoothstep 缓缓散开；LOD 见 render/tick
+                // 保持期保底 / 淡出时长：武器 JSON（missile_native_trail_hold_min_ticks 等）
+                // 优先，未配置时回落代码默认（108 / 120 / 60）；会话覆盖在 resolve 内最高优先。
+                int resolvedHoldMin = RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks(holdMinTicks);
+                int resolvedFadeTicks = RVP_RocketFlameRuntimeTuning.resolveFadeTicks(fadeTicks);
+                int resolvedFadeRandom = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks(fadeRandomTicks);
                 this.holdEndTick = Math.max(
                         holdTicks + RVP_RocketFlameRuntimeTuning.resolveHoldBufferTicks(),
-                        RVP_RocketFlameRuntimeTuning.resolveHoldMinTicks());
-                int fadeRandomTicks = RVP_RocketFlameRuntimeTuning.resolveFadeRandomTicks();
-                this.lifetime = this.holdEndTick + RVP_RocketFlameRuntimeTuning.resolveFadeTicks()
-                        + (fadeRandomTicks <= 0 ? 0 : this.random.nextInt(fadeRandomTicks));
+                        resolvedHoldMin);
+                this.lifetime = this.holdEndTick + resolvedFadeTicks
+                        + (resolvedFadeRandom <= 0 ? 0 : this.random.nextInt(resolvedFadeRandom));
+                // alpha 保持期：默认等于保持期（原始行为）；配了比例则按寿命比例提前开始淡出，
+                // 解决"总寿命已缩短、但浓烟仍挂满整个保持期，看着还是很久"的问题。
+                float resolvedAlphaRatio =
+                        RVP_RocketFlameRuntimeTuning.resolveAlphaHoldRatio(alphaHoldRatio);
+                this.alphaHoldTick = resolvedAlphaRatio >= 1.0f
+                        ? this.holdEndTick
+                        : Math.max(1, Math.min(this.holdEndTick,
+                                Math.round(this.lifetime * Math.max(resolvedAlphaRatio, 0f))));
                 // 橙焰相位改定长 24~36t（≈旧 0.12×240~340t 观感）：火焰只在喷口附近存在，
                 // 不随寿命延长同步拉长
                 int flameRandomTicks = RVP_RocketFlameRuntimeTuning.resolveFlameRandomTicks();
@@ -233,10 +251,39 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     public static RVP_RocketFlameParticle ofTrail(ClientLevel level, double x, double y, double z,
                                                   double mx, double my, double mz, float sizeScale,
                                                   int holdTicks) {
+        return ofTrail(level, x, y, z, mx, my, mz, sizeScale, holdTicks, -1, -1, -1, -1f);
+    }
+
+    /**
+     * 飞行尾迹入口（含时长三项可配）：供 {@code missile_native_trail_hold_min_ticks} /
+     * {@code _fade_ticks} / {@code _fade_random_ticks} 把武器级时长传进粒子。
+     *
+     * @param holdMinTicks     凝结云保持期保底（Tick）；负数表示未配置、用代码默认 108
+     * @param fadeTicks        淡出基础时长（Tick）；负数表示未配置、用代码默认 120
+     * @param fadeRandomTicks  淡出随机增量上限（Tick）；负数表示未配置、用代码默认 60
+     */
+    public static RVP_RocketFlameParticle ofTrail(ClientLevel level, double x, double y, double z,
+                                                  double mx, double my, double mz, float sizeScale,
+                                                  int holdTicks, int holdMinTicks, int fadeTicks,
+                                                  int fadeRandomTicks) {
+        return ofTrail(level, x, y, z, mx, my, mz, sizeScale, holdTicks,
+                holdMinTicks, fadeTicks, fadeRandomTicks, -1f);
+    }
+
+    /**
+     * 飞行尾迹入口（含 alpha 保持期比例）。
+     *
+     * @param alphaHoldRatio alpha 保持期占寿命的比例；负数表示未配置、用代码默认 1.0
+     */
+    public static RVP_RocketFlameParticle ofTrail(ClientLevel level, double x, double y, double z,
+                                                  double mx, double my, double mz, float sizeScale,
+                                                  int holdTicks, int holdMinTicks, int fadeTicks,
+                                                  int fadeRandomTicks, float alphaHoldRatio) {
         // 调用本项目运行时调参入口：把游戏内设置的烟相位灰度传入新生成的凝结云粒子。
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
                 RVP_RocketFlameRuntimeTuning.resolveSmokeGreyMin(),
-                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, false);
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, false,
+                holdMinTicks, fadeTicks, fadeRandomTicks, alphaHoldRatio);
     }
 
     /**
@@ -245,11 +292,13 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
      */
     public static RVP_RocketFlameParticle ofRemoteTrail(ClientLevel level, double x, double y, double z,
                                                         double mx, double my, double mz, float sizeScale,
-                                                        int holdTicks) {
+                                                        int holdTicks, int holdMinTicks, int fadeTicks,
+                                                        int fadeRandomTicks, float alphaHoldRatio) {
         // 调用本项目运行时调参入口：远程凝结云复用本地同一套烟相位颜色覆盖。
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
                 RVP_RocketFlameRuntimeTuning.resolveSmokeGreyMin(),
-                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, true);
+                RVP_RocketFlameRuntimeTuning.resolveSmokeGreySpread(), true, 0.12f, holdTicks, true,
+                holdMinTicks, fadeTicks, fadeRandomTicks, alphaHoldRatio);
     }
 
     /**
@@ -262,7 +311,7 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
     public static RVP_RocketFlameParticle ofKeroseneBlackSmokeTrail(ClientLevel level, double x, double y, double z,
                                                                     double mx, double my, double mz, float sizeScale) {
         return new RVP_RocketFlameParticle(level, Mode.TRAIL, x, y, z, mx, my, mz, sizeScale,
-                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO, 0, false);
+                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO, 0, false, -1, -1, -1, -1f);
     }
 
     /**
@@ -274,7 +323,8 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
         double angle = level.random.nextDouble() * Math.PI * 2.0D;
         double horizontal = 0.5D + level.random.nextDouble() * 0.4D;
         return new RVP_RocketFlameParticle(level, Mode.WASH, x, y, z,
-                Math.cos(angle) * horizontal, 0.02D, Math.sin(angle) * horizontal, sizeScale);
+                Math.cos(angle) * horizontal, 0.02D, Math.sin(angle) * horizontal, sizeScale,
+                SMOKE_GREY_MIN, SMOKE_GREY_SPREAD, false, FLAME_PHASE_RATIO, 0, false, -1, -1, -1, -1f);
     }
 
     @Override
@@ -400,8 +450,8 @@ public class RVP_RocketFlameParticle extends SingleQuadParticle {
             // 凝结云持久化 alpha：age < holdEndTick（绑发动机燃尽+缓冲，见构造器）恒 0.75——
             // 发动机开启时飞过的距离全程留云（2026-09-20 从"寿命前 45% 保持"改为绑定燃尽时刻），
             // 之后 smoothstep 缓缓散开淡出
-            float fade = Mth.clamp((this.age - this.holdEndTick)
-                    / (float) Math.max(this.lifetime - this.holdEndTick, 1), 0.0f, 1.0f);
+            float fade = Mth.clamp((this.age - this.alphaHoldTick)
+                    / (float) Math.max(this.lifetime - this.alphaHoldTick, 1), 0.0f, 1.0f);
             fade = fade * fade * (3.0f - 2.0f * fade);
             this.alpha = 0.75f * (1.0f - fade);
         } else {

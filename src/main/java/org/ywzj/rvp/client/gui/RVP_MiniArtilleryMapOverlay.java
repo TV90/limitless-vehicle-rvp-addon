@@ -147,7 +147,7 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
 
     /**
      * @return 当前是否正在操控炮兵地图武器（且非瞄准镜视角）；或处于手摇（need_power=false）武器观瞄视角
-     * （此时返回简化模式，地图以本车为中心、不做落点解算）；否则本框不显示。
+     * 且本车带炮兵弹种（此时同样解算 CCIP 落点）；其余情况一律返回 null，本框不显示。
      */
     @Nullable
     private static Context resolveContext(Minecraft mc, LocalPlayer player) {
@@ -186,8 +186,9 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
                 }
                 return new Context(vehicle, operatorUnit, unit, partData, partData.getWeaponId(), true);
             }
-            // 车上没有炮兵弹种（如纯机枪车）：退化为以本车为中心的纯简化模式（无落点解算）。
-            return new Context(vehicle, operatorUnit, null, null, null, true);
+            // 本车没有炮兵弹种（如 T-84BM 二号位 12.7mm 手摇机枪）时不显示本框：
+            // 炮兵地图只服务于带火箭/炸弹炮兵弹种的载具，纯机枪车的观瞄视角不该出现它。
+            return null;
         }
         AbstractVehicleWeapon<?> currentWeapon = operatorUnit.getCurrentWeapon().orElse(null);
         if (!(currentWeapon instanceof RVP_WeaponBase weapon)) {
@@ -299,21 +300,11 @@ public final class RVP_MiniArtilleryMapOverlay implements IGuiOverlay {
 
             // 落点圆环（套住白十字）+ 落点白十字（全屏炮兵地图 CCIP 标记同款，缩至 40%）。
             // 先 flush 掉批处理的连线/地形，圆环走自定义 shader 立即模式，避免被后 flush 的批处理盖住。
-            // 圆环/十字都以 (0,0) 为基准，共用同一 pose 平移到标记点。
-            // 有炮兵弹种（常规模式或手摇观瞄）固定画在面板中心（=CCIP 落点）；
-            // 纯简化模式（车上无炮兵弹种）才画在观瞄射线与地形的交点。
+            // 圆环/十字都以 (0,0) 为基准，共用同一 pose 平移到标记点；标记点恒为面板中心（=CCIP 落点）。
             gg.flush();
             var impactPose = gg.pose();
             impactPose.pushPose();
-            double crossX = midX;
-            double crossY = midY;
-            if (context.scopeHandCrank() && context.launchUnit() == null) {
-                // 调用目的：与 LocalVehiclePlayer 的观瞄 tick 同源取当前武器站瞄准落点（1 射线/帧，只读）
-                Vec3 aimPos = context.operatorUnit().aimHitPosition();
-                crossX = worldToScreen(aimPos.x, center.x, midX, blocksPerPixel);
-                crossY = worldToScreen(aimPos.z, center.z, midY, blocksPerPixel);
-            }
-            impactPose.translate(crossX, crossY, 0.0D);
+            impactPose.translate(midX, midY, 0.0D);
             drawImpactRing(gg);
             // drawCross 的 half = size/2 且为整数像素：size<4 时横线退化成 1px，故保底 4；
             // 其内部 rotateAround(45°) 绕姿态原点旋转，必须先 translate 到落点再画 (0,0)，

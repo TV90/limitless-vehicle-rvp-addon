@@ -60,10 +60,15 @@ public interface RVP_IClientActions {
      * @param mx/my/mz 粒子初速（弹轴反方向，由调用方按 -lookAngle × 1.0 计算）
      * @param sizeScale 尺寸倍率（对标本体 getContrailScale：大弹 1.0 / 小弹 0.5）
      * @param holdTicks 距发动机燃尽的 tick 数（凝结云 alpha 保持期绑定燃烧期：
-     *                  保持至 max(holdTicks+20, 108) 后缓缓散开——发动机开启时飞过的距离全程留云）
+     *                  保持至 max(holdTicks+20, JSON 保持期保底) 后缓缓散开）
+     * @param holdMinTicks     凝结云保持期保底（Tick），负数表示未配置、用代码默认 108
+     * @param fadeTicks        淡出基础时长（Tick），负数表示未配置、用代码默认 120
+     * @param fadeRandomTicks  淡出随机增量上限（Tick），负数表示未配置、用代码默认 60
      */
     void addRocketFlameTrailParticle(double x, double y, double z,
-                                     double mx, double my, double mz, float sizeScale, int holdTicks);
+                                     double mx, double my, double mz, float sizeScale, int holdTicks,
+                                     int holdMinTicks, int fadeTicks, int fadeRandomTicks,
+                                     float alphaHoldRatio);
 
     /**
      * 生成一个 HBM 风格液氧煤油黑烟尾焰粒子（技术储备：09-19 前的原始黑烟观感）。

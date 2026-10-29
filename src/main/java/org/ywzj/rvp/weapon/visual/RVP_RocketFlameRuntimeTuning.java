@@ -28,6 +28,8 @@ public final class RVP_RocketFlameRuntimeTuning {
     public static final int DEFAULT_HOLD_BUFFER_TICKS = 20;
     /** 凝结云燃尽后的最短淡出时长，单位 Tick。 */
     public static final int DEFAULT_FADE_TICKS = 120;
+    /** 凝结云 alpha 保持期占寿命比例的默认值（1.0 = 保持到保持期末，原始行为）。 */
+    public static final float DEFAULT_ALPHA_HOLD_RATIO = 1.0f;
     /** 凝结云淡出时长的随机增量上限，单位 Tick。 */
     public static final int DEFAULT_FADE_RANDOM_TICKS = 60;
     /** 固体发动机橙焰相位的最短时长，单位 Tick。 */
@@ -79,6 +81,8 @@ public final class RVP_RocketFlameRuntimeTuning {
     private static volatile Integer holdMinTicksOverride;
     /** 燃尽后保持缓冲时长的临时覆盖值，单位 Tick。 */
     private static volatile Integer holdBufferTicksOverride;
+    /** 凝结云 alpha 保持期比例的临时覆盖值；为空表示跟随武器 JSON。 */
+    private static volatile Float alphaHoldRatioOverride;
     /** 燃尽后最短淡出时长的临时覆盖值，单位 Tick。 */
     private static volatile Integer fadeTicksOverride;
     /** 淡出随机增量上限的临时覆盖值，单位 Tick。 */
@@ -244,6 +248,56 @@ public final class RVP_RocketFlameRuntimeTuning {
     /** 返回当前生效的燃尽后保持缓冲时长。 */
     public static int resolveHoldBufferTicks() {
         return holdBufferTicksOverride == null ? DEFAULT_HOLD_BUFFER_TICKS : holdBufferTicksOverride;
+    }
+
+    /**
+     * 解析凝结云保持期保底：武器 JSON 配置优先，会话覆盖最高优先。
+     *
+     * @param configured 武器 JSON 的 {@code missile_native_trail_hold_min_ticks}；
+     *                   传负数表示未配置，回落到 {@link #DEFAULT_HOLD_MIN_TICKS}
+     */
+    public static int resolveHoldMinTicks(int configured) {
+        if (holdMinTicksOverride != null) {
+            return holdMinTicksOverride;
+        }
+        return configured >= 0 ? configured : DEFAULT_HOLD_MIN_TICKS;
+    }
+
+    /**
+     * 解析凝结云 alpha 保持期比例：武器 JSON 配置优先，会话覆盖最高优先。
+     *
+     * @param configured 武器 JSON 的 {@code missile_native_trail_alpha_hold_ratio}；
+     *                   负数表示未配置，回落到 {@link #DEFAULT_ALPHA_HOLD_RATIO}
+     */
+    public static float resolveAlphaHoldRatio(float configured) {
+        if (alphaHoldRatioOverride != null) {
+            return alphaHoldRatioOverride;
+        }
+        return configured >= 0f ? Math.min(configured, 1f) : DEFAULT_ALPHA_HOLD_RATIO;
+    }
+
+    /**
+     * 解析凝结云淡出基础时长：武器 JSON 配置优先，会话覆盖最高优先。
+     *
+     * @param configured 武器 JSON 的 {@code missile_native_trail_fade_ticks}；负数表示未配置
+     */
+    public static int resolveFadeTicks(int configured) {
+        if (fadeTicksOverride != null) {
+            return fadeTicksOverride;
+        }
+        return configured >= 0 ? configured : DEFAULT_FADE_TICKS;
+    }
+
+    /**
+     * 解析凝结云淡出随机增量上限：武器 JSON 配置优先，会话覆盖最高优先。
+     *
+     * @param configured 武器 JSON 的 {@code missile_native_trail_fade_random_ticks}；负数表示未配置
+     */
+    public static int resolveFadeRandomTicks(int configured) {
+        if (fadeRandomTicksOverride != null) {
+            return fadeRandomTicksOverride;
+        }
+        return configured >= 0 ? configured : DEFAULT_FADE_RANDOM_TICKS;
     }
 
     /** 返回当前生效的燃尽后最短淡出时长。 */

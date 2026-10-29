@@ -662,6 +662,10 @@ AHEAD 由引信自动编程：母弹飞行中按“预瞄点 − `ahead_burst_of
 | `missile_native_trail_spawn_interval_tick` | 粒子生成间隔（tick）。 | `1` |
 | `missile_native_trail_density_scale` | 粒子密度倍率。 | `1` |
 | `missile_native_trail_offset` | 粒子相对弹体尾部的偏移距离（格）。 | `3` |
+| `missile_native_trail_alpha_hold_ratio` | 凝结云 alpha 保持期占寿命的比例（`0~1`，仅 `rvp_rocket_flame`）：`alpha 保持 = min(保持期, 总寿命 × 本比例)`，保持期内 alpha 恒 0.75。`1.0` 为原始行为；调小可让浓烟提早开始淡出，同时总寿命不变。 | `null`（代码默认 `1.0`） |
+| `missile_native_trail_hold_min_ticks` | 凝结云保持期保底（tick，仅 `rvp_rocket_flame`）：保持期 = `max(距发动机燃尽 tick + 20, 本值)`，保持期结束才开始淡出；调小它可显著缩短尾迹存留时间。 | `null`（代码默认 `108`） |
+| `missile_native_trail_fade_ticks` | 凝结云淡出基础时长（tick，仅 `rvp_rocket_flame`）。总寿命 = 保持期 + 本值 + `[0, fade_random_ticks)`。 | `null`（代码默认 `120`） |
+| `missile_native_trail_fade_random_ticks` | 凝结云淡出随机增量上限（tick，仅 `rvp_rocket_flame`）；`0` 表示该段尾迹同步消失。 | `null`（代码默认 `60`） |
 | `missile_native_trail_extra_flame` | 是否追加火焰粒子。 | `true` |
 | `missile_native_trail_extra_smoke` | 是否追加烟尘粒子。 | `true` |
 

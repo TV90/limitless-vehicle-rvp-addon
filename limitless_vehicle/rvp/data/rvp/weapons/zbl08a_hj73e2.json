@@ -76,7 +76,7 @@
     }
   },
   "collision_data": {
-    "direct_damage": 600,
+    "direct_damage": 750,
     "direct_damage_factor": {
       "vehicle_default": 1.0,
       "vehicles": {
@@ -134,7 +134,6 @@
         "start_factor": 0.2,
         "end_factor": 0.1
       }
-    
     ]
   },
   "name_CN": "红箭73E2 激光架束反坦克导弹"

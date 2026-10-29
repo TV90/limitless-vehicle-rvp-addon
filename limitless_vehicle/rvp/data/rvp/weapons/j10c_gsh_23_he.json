@@ -1,0 +1,117 @@
+{
+  "type": "rvp:machinegun",
+  "recoil": 0.3,
+  "name": "23mm GSh-23-2 [HE]",
+  "shoot_interval": 50,
+  "max_capacity": 80,
+  "reload": {
+    "time": 120,
+    "ammo": "ywzj_vehicle:ammo_auto_cannon"
+  },
+  "fire_data": {
+    "spread": 0.3,
+    "fire_mode": "FULL_AUTO"
+  },
+  "projectile_data": {
+    "inherit_vehicle_velocity": true,
+    "velocity": 16,
+    "gravity": -0.005,
+    "drag": 0.01,
+    "rotate_to_motion": true
+  },
+  "effects_data": {
+    "trajectory_particle": "none",
+    "impact_particle": "minecraft:block",
+    "explosion_particle": "minecraft:explosion",
+    "caliber": 23,
+    "tracer_caliber": 30,
+    "tracer_r": 1.0,
+    "tracer_g": 0.5,
+    "tracer_b": 0.1
+  },
+  "detonate_data": {
+    "explosion_data": {
+      "explode": true,
+      "damage": 12,
+      "radius": 2,
+      "destroy_block": false
+    }
+  },
+  "collision_data": {
+    "living_penetration": 0,
+    "wall_penetration": 0,
+    "bounce": 1,
+    "bounce_incidence_angle": 80,
+    "bounce_on_vehicle": true,
+    "direct_damage": 20,
+    "damage_decay": [
+      {
+        "domain": "distance",
+        "type": "linear",
+        "start_distance": 0,
+        "end_distance": 512,
+        "start_factor": 1.0,
+        "end_factor": 0.7
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 30,
+        "end_distance": 45,
+        "start_factor": 0.9,
+        "end_factor": 0.8
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 45,
+        "end_distance": 60,
+        "start_factor": 0.8,
+        "end_factor": 0.6
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 60,
+        "end_distance": 65,
+        "start_factor": 0.6,
+        "end_factor": 0.5
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 65,
+        "end_distance": 70,
+        "start_factor": 0.5,
+        "end_factor": 0.35
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 70,
+        "end_distance": 75,
+        "start_factor": 0.35,
+        "end_factor": 0.2
+      },
+      {
+        "domain": "angle",
+        "type": "linear",
+        "start_distance": 75,
+        "end_distance": 81,
+        "start_factor": 0.2,
+        "end_factor": 0.1
+      }
+    ],
+    "direct_damage_factor": {
+      "vehicle_default": 1.0,
+      "vehicles": {
+        "ywzj_vehicle:fixed_wing_vehicle": 0.89,
+        "ywzj_vehicle:rotary_wing_vehicle": 0.89,
+        "ywzj_vehicle:wheeled_vehicle": 1.04,
+        "ywzj_vehicle:tracked_vehicle": 0
+      }
+    }
+  },
+  "fuse_data": {},
+  "name_CN": "GSh-23-2 23MM机炮 [HE]"
+}

@@ -306,6 +306,9 @@ public class RVP_ClientEvents {
         if (displays != rvp$lastSeenDisplays) {
             rvp$lastSeenDisplays = displays;
             org.ywzj.rvp.config.UIPresetManager.load(mc.getResourceManager());
+            // 同一条信号顺带补 RVP 扩展字段缓存（原 VehicleDataManagerMixin 的职责，2026-10-30 迁移）：
+            // /ywzj_vehicle reload 只重建 display、不触发数据重载事件，这里按 display 实例变化补扫一次。
+            org.ywzj.rvp.config.RVP_VehicleSupplementListener.INSTANCE.reloadFrom(mc.getResourceManager());
         }
     }
 

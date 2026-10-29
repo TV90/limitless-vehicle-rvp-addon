@@ -75,8 +75,10 @@ public final class RVP_ClientActionsAccess {
      */
     public static void addRocketFlameTrailParticle(double x, double y, double z,
                                                    double mx, double my, double mz, float sizeScale,
-                                                   int holdTicks) {
-        INSTANCE.addRocketFlameTrailParticle(x, y, z, mx, my, mz, sizeScale, holdTicks);
+                                                   int holdTicks, int holdMinTicks, int fadeTicks,
+                                                   int fadeRandomTicks, float alphaHoldRatio) {
+        INSTANCE.addRocketFlameTrailParticle(x, y, z, mx, my, mz, sizeScale, holdTicks,
+                holdMinTicks, fadeTicks, fadeRandomTicks, alphaHoldRatio);
     }
 
     /**
@@ -172,7 +174,8 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void addRocketFlameTrailParticle(double x, double y, double z,
                                                 double mx, double my, double mz, float sizeScale,
-                                                int holdTicks) {
+                                                int holdTicks, int holdMinTicks, int fadeTicks,
+                                                int fadeRandomTicks, float alphaHoldRatio) {
             // 服务端无粒子渲染管线，火箭尾焰尾迹只在客户端实体 Tick 中产生。
         }
 

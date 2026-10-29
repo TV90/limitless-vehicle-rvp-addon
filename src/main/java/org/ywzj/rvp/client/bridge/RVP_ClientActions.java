@@ -118,14 +118,16 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     @Override
     public void addRocketFlameTrailParticle(double x, double y, double z,
                                             double mx, double my, double mz, float sizeScale,
-                                            int holdTicks) {
+                                            int holdTicks, int holdMinTicks, int fadeTicks,
+                                            int fadeRandomTicks, float alphaHoldRatio) {
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return;
         }
         Minecraft.getInstance().particleEngine.add(
                 org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofTrail(
-                        level, x, y, z, mx, my, mz, sizeScale, holdTicks));
+                        level, x, y, z, mx, my, mz, sizeScale, holdTicks,
+                        holdMinTicks, fadeTicks, fadeRandomTicks, alphaHoldRatio));
     }
 
     /** 生成 HBM 风格液氧煤油黑烟尾焰粒子（技术储备款，TRAIL 模式，09-19 前原始黑烟观感）。 */

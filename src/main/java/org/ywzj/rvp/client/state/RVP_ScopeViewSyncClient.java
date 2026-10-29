@@ -206,6 +206,13 @@ public final class RVP_ScopeViewSyncClient {
                 || ext.ywzj_rvp$getSightFireDisguise() == null) {
             return false;
         }
+        // [RVP] 2026-10-30：观瞄视角射弹只对 MACHINEGUN 生效（服务端出弹覆盖同条件，见
+        // RVP_ProjectileSpawner:106 的 kind 判断）——炮射导弹（rvp:missile）本身不走相机出弹，
+        // 意图圈必须保持本体原行为（炮口口径），否则导弹的圈会被错误搬到观瞄相机上。
+        org.ywzj.rvp.weapon.data.RVP_WeaponData currentWeaponData = resolveStationWeaponData(station);
+        if (currentWeaponData == null || !marchable(currentWeaponData.getWeaponKind())) {
+            return false;
+        }
         org.ywzj.rvp.config.RVP_SightFireDisguiseConfig config = ext.ywzj_rvp$getSightFireDisguise();
         Vec3 sight = station.getOpticalSightType() == WeaponUnitData.OpticalSightType.OPERATOR
                 ? station.worldOwnerViewPosition(1.0f)

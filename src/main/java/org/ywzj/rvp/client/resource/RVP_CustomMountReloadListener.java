@@ -40,5 +40,9 @@ public final class RVP_CustomMountReloadListener extends SimplePreparableReloadL
         RVP_DisplayBackendUtil.clearCache();
         // UI 预设：数据包同名优先、config 兜底，只依赖 resourceManager，可在此立即重读。
         UIPresetManager.load(resourceManager);
+        // 载具 JSON 的 RVP 扩展字段（ui_preset / 隐藏骨 / 挂架 / 过热 / RCS …）：
+        // 原先由 VehicleDataManagerMixin 贴在 VehicleDataManager.apply 末尾，2026-10-30 改为数据重载监听器；
+        // 客户端资源重载（启动 / F3+T / 服务器资源包）不走 AddReloadListenerEvent，在这里补一次。
+        org.ywzj.rvp.config.RVP_VehicleSupplementListener.INSTANCE.reloadFrom(resourceManager);
     }
 }

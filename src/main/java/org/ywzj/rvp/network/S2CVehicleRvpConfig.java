@@ -98,6 +98,9 @@ public class S2CVehicleRvpConfig {
         // 干扰物配置（countermeasure）同样只在服务端有完整数据，客户端需同步填充，
         // 否则专用服连接模式下客户端侧箔条判定（RVP_ClientRadarTickHandler）与 HUD 无法解析
         RVP_CountermeasureConfigManager.INSTANCE.applyFromJsonMap(jsonMap);
+        // ui_preset / 隐藏骨 / 挂架 / RCS 等扩展字段（原 VehicleDataManagerMixin 职责）：
+        // 专用服务器客户端不触发 AddReloadListenerEvent，用同一份同步 JSON 补填；传 null 表示没有本地仓库（不重读 UI 预设）。
+        org.ywzj.rvp.config.RVP_VehicleSupplementListener.INSTANCE.applyFromJsonMap(jsonMap, null);
         // 过热配置（vehicle_heat_count 等）同样只在服务端数据中有，客户端需同步填充，
         // 否则专用服连接模式下客户端热系统 resolve 永远 MISS（无热）
         Map<ResourceLocation, Map<RVP_VehicleWeaponHeatConfigCache.SlotKey, RVP_VehicleWeaponHeatConfig>> heatByVehicle = new HashMap<>();
