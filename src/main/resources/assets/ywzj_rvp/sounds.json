@@ -122,6 +122,32 @@
       "ywzj_rvp:defaultexplosion/bomb_exp/far/def_bomb_dist_3"
     ]
   },
+  "vehicle_explosion_near": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/near/vehicle_explosion_near",
+        "stream": false
+      }
+    ]
+  },
+  "vehicle_explosion_far": {
+    "subtitle": "subtitles.ywzj_rvp.explosion",
+    "sounds": [
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/far/vehicle_explosion_far",
+        "stream": false
+      }
+    ]
+  },
+  "vehicle_fire_burning": {
+    "sounds": [
+      {
+        "name": "ywzj_rvp:defaultexplosion/vehicle_exp/burning/vehicle_fire_burning",
+        "stream": true
+      }
+    ]
+  },
   "countermeasure_flare": {
     "subtitle": "subtitles.rvp.countermeasure_flare",
     "sounds": [

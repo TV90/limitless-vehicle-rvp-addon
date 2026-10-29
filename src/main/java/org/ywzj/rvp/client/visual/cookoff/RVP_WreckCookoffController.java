@@ -3,11 +3,13 @@ package org.ywzj.rvp.client.visual.cookoff;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
+import org.ywzj.rvp.all.RVP_Sounds;
 import org.ywzj.rvp.client.particle.RVP_WreckFlameParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeParticle;
 import org.ywzj.rvp.client.particle.RVP_WreckMuzzleSmokeSelfRenderer;
 import org.ywzj.rvp.client.particle.RVP_WreckSparkParticle;
 import org.ywzj.rvp.config.RVP_CommonConfig;
+import org.ywzj.vehicle.audio.VehicleSound;
 import org.ywzj.rvp.vehicle.wreck.RVP_WreckDestructionState;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.entity.vehicle.TrackedVehicle;
@@ -143,6 +145,8 @@ public final class RVP_WreckCookoffController {
         private long endingDurationTicks;
         /** 是否因达到按残骸寿命比例计算的定时结束点而收缩；提前离开追踪范围不置为 true。 */
         private boolean timedEnding;
+        /** 当前地面残骸的循环燃烧声；每个实例最多持有一个。 */
+        private VehicleSound burningSound;
 
         private Instance(AbstractVehicle vehicle, RVP_WreckDestructionState state) {
             this.vehicle = vehicle;
@@ -167,6 +171,39 @@ public final class RVP_WreckCookoffController {
             }
             // 调用本实例生命周期同步：新残骸第一帧从最小火柱开始增长。
             updateLifecycleScale(lastTick);
+            if (!previewInstance) {
+                // 调用本体 VehicleSound 通用跟随实现，为真实殉燃残骸启动一条循环声音。
+                startBurningSound();
+            }
+        }
+
+        /** 创建一条循环燃烧声；已有活动声音时不重复创建。 */
+        private void startBurningSound() {
+            if (previewInstance || (burningSound != null && !burningSound.isStopped())) {
+                return;
+            }
+            float soundDistance = vehicle.getViewInfo() == null ? 1.0F : vehicle.getViewInfo().soundDistance;
+            if (!Float.isFinite(soundDistance) || soundDistance <= 0.0F) {
+                soundDistance = 1.0F;
+            }
+            // 调用本体 VehicleSound：循环、跟随残骸、使用载具 sound_distance，并保留 50 tick 淡入淡出。
+            burningSound = new VehicleSound(RVP_Sounds.VEHICLE_FIRE_BURNING.get(),
+                    1.0F, soundDistance, 1.0F, true, 50, true, true, vehicle.getId());
+            burningSound.play();
+        }
+
+        /** 实例重新回到活动追踪状态时补建已完全淡出的声音，避免同一残骸叠加多条音轨。 */
+        private void ensureBurningSound() {
+            if (!previewInstance && (burningSound == null || burningSound.isStopped())) {
+                startBurningSound();
+            }
+        }
+
+        /** 停止当前燃烧声；VehicleSound 自己按 50 tick 淡出并跟随实体移除状态结束。 */
+        private void stopBurningSound() {
+            if (burningSound != null) {
+                burningSound.stop();
+            }
         }
 
         /** 判断本实例是否已经进入结束收缩阶段。 */
@@ -189,11 +226,15 @@ public final class RVP_WreckCookoffController {
 
         /** 实例重新进入追踪范围时恢复活动状态，不重复播放增长动画。 */
         private void resumeActive(long tick) {
-            if (!isEnding()) return;
+            if (!isEnding()) {
+                ensureBurningSound();
+                return;
+            }
             if (timedEnding || shouldStartTimedEnding(tick)) return;
             this.endingAt = Long.MIN_VALUE;
             this.endStartScale = 1;
             setLifecycleScale(1);
+            ensureBurningSound();
         }
 
         /** 判断结束收缩是否已经完成。 */
@@ -434,6 +475,24 @@ public final class RVP_WreckCookoffController {
     }
 
     /**
+     * 判断本体 {@code AbstractVehicle.tickSound} 是否应被客户端注入点取消。
+     * 只有地面载具且权威时间表仍在殉燃窗口内才替换本体 FIRE_AMBIENT；
+     * 飞机、舰船、立即飞头分支和未知状态均保留本体余火声。
+     */
+    public static boolean shouldSuppressBaseBurningSound(AbstractVehicle vehicle) {
+        if (vehicle == null || !vehicle.isDestroyed() || !isGroundVehicle(vehicle)) {
+            return false;
+        }
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || vehicle.level() != level) {
+            return false;
+        }
+        // 调用本项目客户端权威快照，避免仅凭实体 destroyed 标记误替换立即飞头分支。
+        RVP_WreckDestructionState state = RVP_ClientWreckDestructionState.get(vehicle);
+        return state != null && state.isBurning(level.getGameTime());
+    }
+
+    /**
      * 判断地面载具是否已经越过殉燃结束后的长程击毁烟等待门。
      *
      * <p>真实残骸统一读取服务端快照，远距离观察、重连、资源重载均不会重新计时。
@@ -497,6 +556,10 @@ public final class RVP_WreckCookoffController {
         RVP_WreckDestructionState state = isPreview ? null : RVP_ClientWreckDestructionState.get(vehicle);
         if (!isPreview && (state == null || !state.isBurning(lastTick))) {
             // 到期由 end() 按原定时刻完成收缩；立即分支/未知状态不能保留旧预览实例。
+            Instance existing = INSTANCES.get(vehicle.getUUID());
+            if (existing != null) {
+                existing.stopBurningSound();
+            }
             if (state == null || state.mode() == RVP_WreckDestructionState.Mode.IMMEDIATE) {
                 INSTANCES.remove(vehicle.getUUID());
             }
@@ -509,6 +572,9 @@ public final class RVP_WreckCookoffController {
         Instance instance = INSTANCES.get(vehicle.getUUID());
         if (instance == null || instance.vehicle != vehicle || instance.previewInstance != isPreview
                 || (instance.columns.isEmpty() && lastTick % 20 == 0)) {
+            if (instance != null) {
+                instance.stopBurningSound();
+            }
             instance = new Instance(vehicle, state);
             INSTANCES.put(vehicle.getUUID(), instance);
         }
@@ -540,6 +606,7 @@ public final class RVP_WreckCookoffController {
         INSTANCES.values().removeIf(instance -> {
             if (instance.seen != lastTick) {
                 // 未在本 tick 被客户端追踪到，进入结束收缩而不是立即消失。
+                instance.stopBurningSound();
                 if (instance.shouldStartTimedEnding(lastTick)) {
                     instance.startTimedEndingIfNeeded(lastTick);
                 } else {
@@ -550,6 +617,7 @@ public final class RVP_WreckCookoffController {
             instance.startTimedEndingIfNeeded(lastTick);
             instance.updateLifecycleScale(lastTick);
             if (!instance.isExpired(lastTick)) return false;
+            instance.stopBurningSound();
             if (instance.timedEnding && instance.previewInstance) {
                 // 定时殉燃已完整结束；保留终结标记，直到客户端世界清理，避免实体仍存活时重新创建实例。
                 UUID vehicleId = instance.vehicle.getUUID();
@@ -1026,6 +1094,8 @@ public final class RVP_WreckCookoffController {
 
     /** 客户端世界退出或资源重载时清空强引用。 */
     public static void clear() {
+        // 调用本体 VehicleSound 的淡出入口，切世界或资源重载时不遗留旧残骸音轨。
+        INSTANCES.values().forEach(Instance::stopBurningSound);
         INSTANCES.clear();
         ORDERED.clear();
         COMPLETED.clear();

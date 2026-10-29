@@ -19,6 +19,12 @@ public final class RVP_DefaultExplosionEventData {
     /** 事件参数中承载是否使用大口径炮弹音效档案的键（可缺失，缺失按机枪音效处理）。 */
     private static final String CANNON_SOUND = "cannon_sound";
 
+    /** 事件参数中承载非武器专用声音档案的内部标记键。 */
+    private static final String SOUND_PROFILE = "sound_profile";
+
+    /** 完整载具击毁声音档案的当前标记值。 */
+    private static final String VEHICLE_SOUND_PROFILE = "vehicle";
+
     private RVP_DefaultExplosionEventData() {
     }
 
@@ -56,6 +62,19 @@ public final class RVP_DefaultExplosionEventData {
             data.addProperty(CANNON_SOUND, true);
         }
         // 调用 RVP 视觉参数规范化器，保证事件载荷排序稳定并受统一字节上限约束。
+        return RVP_VisualPresetDataCodec.canonicalize(data).orElse("{}");
+    }
+
+    /**
+     * 编码完整载具击毁专用声音档案。
+     *
+     * <p>载具击毁复用威尔逊冲击波视觉事件，但不属于任一 RVP 武器类型，
+     * 因此只在现有 {@code preset_data} 通道中写入当前声音档案标记。</p>
+     */
+    public static String encodeVehicleSoundProfile() {
+        JsonObject data = new JsonObject();
+        data.addProperty(SOUND_PROFILE, VEHICLE_SOUND_PROFILE);
+        // 调用 RVP 视觉参数规范化器，保证新增的内部标记遵守公共载荷格式限制。
         return RVP_VisualPresetDataCodec.canonicalize(data).orElse("{}");
     }
 
@@ -122,6 +141,27 @@ public final class RVP_DefaultExplosionEventData {
             return value != null && value.isJsonPrimitive()
                     && value.getAsJsonPrimitive().isBoolean()
                     && value.getAsBoolean();
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * 判断客户端收到的事件是否使用完整载具击毁声音档案；缺失、畸形或其他档案均为 false。
+     */
+    public static boolean decodeVehicleSoundProfile(String canonicalJson) {
+        if (canonicalJson == null || canonicalJson.isBlank()) {
+            return false;
+        }
+        try {
+            JsonElement root = JsonParser.parseString(canonicalJson);
+            if (!root.isJsonObject()) {
+                return false;
+            }
+            JsonElement value = root.getAsJsonObject().get(SOUND_PROFILE);
+            return value != null && value.isJsonPrimitive()
+                    && value.getAsJsonPrimitive().isString()
+                    && VEHICLE_SOUND_PROFILE.equals(value.getAsString().trim());
         } catch (RuntimeException ignored) {
             return false;
         }

@@ -36,6 +36,11 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.preserveDestroyedVehicleWaterBubbles(vehicle);
     }
 
+    /** 经双端安全桥查询是否替换本体地面残骸余火声；服务端实现恒为 false。 */
+    public static boolean shouldSuppressDestroyedVehicleBurning(AbstractVehicle vehicle) {
+        return INSTANCE.shouldSuppressDestroyedVehicleBurning(vehicle);
+    }
+
     /** 经物理侧桥请求打开终端，公共物品类不会加载客户端 Screen。 */
     public static void openFireSupportTerminal() {
         INSTANCE.openFireSupportTerminal();
@@ -134,6 +139,12 @@ public final class RVP_ClientActionsAccess {
         @Override
         public void preserveDestroyedVehicleWaterBubbles(AbstractVehicle vehicle) {
             // 服务端不执行击毁载具的客户端粒子 Tick。
+        }
+
+        @Override
+        public boolean shouldSuppressDestroyedVehicleBurning(AbstractVehicle vehicle) {
+            // 服务端不替换客户端余火声。
+            return false;
         }
 
         @Override

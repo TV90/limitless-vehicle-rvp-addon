@@ -59,6 +59,19 @@ class RVP_AutomaticShockwaveServiceTest {
     }
 
     @Test
+    void vehicleDestructionEventEnablesOnlyTheVehicleSoundProfile() {
+        RVP_ShockwaveProfile profile = new RVP_ShockwaveProfile(RVP_ShockwaveProfile.HitClass.GROUND,
+                64, 0.7F, Collections.nCopies(8, 20.0F));
+        RVP_VisualEffectEvent event = RVP_AutomaticShockwaveService.createEvent(
+                dimension(), new Vec3(10, 64, 20), 4, profile, 42, 100, true);
+        assertTrue(event.sound());
+        assertFalse(event.flash());
+        assertFalse(event.shake());
+        assertTrue(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(
+                event.canonicalPresetDataJson()));
+    }
+
+    @Test
     void disabledOrUnrelatedConfiguredEffectsCannotSuppressAutomaticFronts() {
         RVP_ShockwaveProfile profile = new RVP_ShockwaveProfile(RVP_ShockwaveProfile.HitClass.GROUND,
                 64, 0.7F, Collections.nCopies(8, 20.0F));

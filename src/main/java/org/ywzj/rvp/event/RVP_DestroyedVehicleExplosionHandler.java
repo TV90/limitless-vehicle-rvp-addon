@@ -12,6 +12,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.weapon.visual.RVP_AutomaticShockwaveService;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 import org.ywzj.vehicle.api.event.VehicleAttackEvent;
+import org.ywzj.vehicle.entity.misc.VehiclePart;
 import org.ywzj.vehicle.entity.vehicle.AbstractVehicle;
 import org.ywzj.vehicle.vehicle.structure.VehicleCubeOBB;
 
@@ -51,6 +52,10 @@ public final class RVP_DestroyedVehicleExplosionHandler {
         // 调用本体事件接口取得受击载具，作为后续识别击毁爆炸的候选对象。
         AbstractVehicle vehicle = event.getVehicle();
         if (vehicle == null) {
+            return;
+        }
+        // 调用本体部件类型判断：脱落 VehiclePart 的局部爆炸不属于完整载具击毁音效。
+        if (vehicle instanceof VehiclePart) {
             return;
         }
         // 调用本体世界接口确认只在服务端记录；客户端不会执行权威击毁爆炸。
@@ -126,6 +131,11 @@ public final class RVP_DestroyedVehicleExplosionHandler {
         while (iterator.hasNext()) {
             Map.Entry<UUID, AbstractVehicle> entry = iterator.next();
             AbstractVehicle vehicle = entry.getValue();
+            // 调用本体部件类型判断：只允许完整 AbstractVehicle 进入击毁爆炸声音路径。
+            if (vehicle instanceof VehiclePart) {
+                iterator.remove();
+                continue;
+            }
             // 调用本体世界接口限定维度，避免跨维度候选参与当前爆炸匹配。
             if (vehicle.level() != serverLevel) {
                 continue;

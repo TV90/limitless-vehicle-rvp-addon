@@ -55,4 +55,19 @@ class RVP_DefaultExplosionSoundControllerTest {
                 RVP_DefaultExplosionSoundController.resolveSoundBand(cannon, 1536.01D, 4.0F));
     }
 
+    @Test
+    void vehicleSoundUsesTwoHundredBlockNearBoundaryAnd1536BlockMaximumRange() {
+        RVP_DefaultExplosionSoundController.SoundProfile vehicle =
+                RVP_DefaultExplosionSoundController.SoundProfile.VEHICLE;
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.NEAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 200.0D, 100.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 200.01D, 100.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.FAR,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 1536.0D, 100.0F));
+        assertEquals(RVP_DefaultExplosionSoundController.SoundDistanceBand.OUT_OF_RANGE,
+                RVP_DefaultExplosionSoundController.resolveSoundBand(vehicle, 1536.01D, 100.0F));
+        assertEquals(1536.0D, vehicle.maximumRange());
+    }
+
 }

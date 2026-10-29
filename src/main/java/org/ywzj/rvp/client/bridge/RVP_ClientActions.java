@@ -50,6 +50,13 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     }
 
     @Override
+    public boolean shouldSuppressDestroyedVehicleBurning(AbstractVehicle vehicle) {
+        // 调用本项目殉燃控制器：仅地面载具且权威快照仍在燃烧时替换本体 FIRE_AMBIENT。
+        return org.ywzj.rvp.client.visual.cookoff.RVP_WreckCookoffController
+                .shouldSuppressBaseBurningSound(vehicle);
+    }
+
+    @Override
     public void openFireSupportTerminal() {
         // 调用本项目战术地图 Screen：保留普通地图画布并安装独立炮火工具，不进入载具 ARTILLERY 链路。
         Minecraft.getInstance().setScreen(new RVP_TacticalMapScreen(

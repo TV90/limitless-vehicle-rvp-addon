@@ -19,6 +19,9 @@ public interface RVP_IClientActions {
     /** 本体载具击毁烟被客户端注入点屏蔽后，保留同一方法中原有的水面气泡效果。 */
     void preserveDestroyedVehicleWaterBubbles(AbstractVehicle vehicle);
 
+    /** 查询地面载具是否正在 RVP 殉燃窗口内，以替换本体 FIRE_AMBIENT 余火声。 */
+    boolean shouldSuppressDestroyedVehicleBurning(AbstractVehicle vehicle);
+
     /** 请求客户端打开炮火支援终端上下文；阶段 D 安装实际地图工具前允许安全无操作。 */
     void openFireSupportTerminal();
 

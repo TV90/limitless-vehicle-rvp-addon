@@ -48,4 +48,16 @@ class RVP_DefaultExplosionEventDataTest {
         assertFalse(RVP_DefaultExplosionEventData.decodeCannonSound(
                 "{\"cannon_sound\":false}"));
     }
+
+    @Test
+    void vehicleSoundProfileRoundTripsWithoutPretendingToBeAWeaponKind() {
+        String encoded = RVP_DefaultExplosionEventData.encodeVehicleSoundProfile();
+        assertTrue(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(encoded));
+        assertFalse(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(null));
+        assertFalse(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile("not-json"));
+        assertFalse(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(
+                "{\"sound_profile\":\"missile\"}"));
+        assertFalse(RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(
+                "{\"sound_profile\":true}"));
+    }
 }

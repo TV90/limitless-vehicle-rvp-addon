@@ -57,6 +57,16 @@ public final class RVP_Sounds {
     public static final RegistryObject<SoundEvent> MCHR_EXPLOSION_BOMB_FAR =
             register("mchr_explosion_bomb_far");
 
+    /** 完整载具击毁爆炸的近距离声音。 */
+    public static final RegistryObject<SoundEvent> VEHICLE_EXPLOSION_NEAR =
+            register("vehicle_explosion_near");
+    /** 完整载具击毁爆炸的远距离声音。 */
+    public static final RegistryObject<SoundEvent> VEHICLE_EXPLOSION_FAR =
+            register("vehicle_explosion_far");
+    /** 地面载具残骸殉燃循环声音。 */
+    public static final RegistryObject<SoundEvent> VEHICLE_FIRE_BURNING =
+            register("vehicle_fire_burning");
+
     /** 热焰弹抛洒音效（assets/rvp/sounds/misc/flare.ogg）。 */
     public static final RegistryObject<SoundEvent> COUNTERMEASURE_FLARE = register("countermeasure_flare");
     /** 箔条抛洒音效（assets/rvp/sounds/misc/chaff.ogg）。 */

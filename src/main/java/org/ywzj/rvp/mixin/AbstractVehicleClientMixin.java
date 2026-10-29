@@ -37,6 +37,23 @@ public abstract class AbstractVehicleClientMixin {
     }
 
     /**
+     * RVP 地面残骸殉燃期间取消本体 FIRE_AMBIENT。
+     * 本体使用 playLocalSound，不经过 Forge 位置声音事件，所以只能在既有客户端 Mixin
+     * 中做这一处最小 HEAD 转发；具体状态判断仍放在双端安全桥后的客户端控制器内。
+     */
+    @Inject(method = "tickSound", at = @At("HEAD"), cancellable = true, remap = false)
+    private void ywzj_rvp$replaceDestroyedVehicleBurningSound(CallbackInfo ci) {
+        AbstractVehicle vehicle = (AbstractVehicle) (Object) this;
+        if (!vehicle.isDestroyed()) {
+            return;
+        }
+        // 调用双端安全桥查询地面载具殉燃状态，服务端 NOOP 不会引用客户端类型。
+        if (RVP_ClientActionsAccess.shouldSuppressDestroyedVehicleBurning(vehicle)) {
+            ci.cancel();
+        }
+    }
+
+    /**
      * 客户端从一辆载具转移到另一辆载具时，阻止旧载具把 LocalVehiclePlayer 的座位清空。
      * 本体 onLeaveVehicle 会在 toLeave 为 true 时调用 toSeat(null, this)；目标载具接管后，
      * 由 ServerVehicleSeatsChange 完成新座位状态同步。

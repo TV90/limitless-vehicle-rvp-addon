@@ -12,6 +12,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.ywzj.rvp.RVP_MOD;
+import org.ywzj.rvp.client.RVP_ClientVehicleExplosionSound;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
 import org.ywzj.rvp.weapon.visual.RVP_DefaultExplosionEventData;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
@@ -52,7 +53,10 @@ final class RVP_DefaultExplosionSoundController {
         this.level = level;
         center = event.position();
         boolean cannonSound = RVP_DefaultExplosionEventData.decodeCannonSound(event.canonicalPresetDataJson());
-        profile = resolveProfile(weaponKind, event.baseExplosionRadius(), cannonSound);
+        boolean vehicleSound = RVP_DefaultExplosionEventData.decodeVehicleSoundProfile(
+                event.canonicalPresetDataJson());
+        profile = vehicleSound ? SoundProfile.VEHICLE
+                : resolveProfile(weaponKind, event.baseExplosionRadius(), cannonSound);
         // 解析事件参数里的自定义爆炸音效（explosion_data.explosion_sound 经 preset_data 通道下发）。
         customSoundId = RVP_DefaultExplosionEventData.decodeExplosionSound(event.canonicalPresetDataJson());
         net.minecraft.client.player.LocalPlayer player = Minecraft.getInstance().player;
@@ -61,6 +65,11 @@ final class RVP_DefaultExplosionSoundController {
         soundBand = resolveSoundBand(profile, listenerDistance, event.baseExplosionRadius());
         soundEnabled = event.sound();
         seed = event.seed();
+        if (soundEnabled && profile == SoundProfile.VEHICLE
+                && soundBand != SoundDistanceBand.OUT_OF_RANGE) {
+            // 登记一次性本体爆音抑制键：客户端先收到 RVP 事件时，随后到达的本体 GENERIC_EXPLODE 才会被吞掉。
+            RVP_ClientVehicleExplosionSound.registerPending(level, center);
+        }
         if (!soundEnabled || soundBand == SoundDistanceBand.OUT_OF_RANGE) {
             handled = true;
             return;
@@ -147,6 +156,10 @@ final class RVP_DefaultExplosionSoundController {
             }
             return SoundDistanceBand.VERY_FAR;
         }
+        if (profile == SoundProfile.VEHICLE) {
+            return safeDistance <= CLOSE_SOUND_DISTANCE
+                    ? SoundDistanceBand.NEAR : SoundDistanceBand.FAR;
+        }
         return safeDistance <= resolveNearSoundDistance(explosionRadius)
                 ? SoundDistanceBand.NEAR : SoundDistanceBand.FAR;
     }
@@ -197,7 +210,9 @@ final class RVP_DefaultExplosionSoundController {
         /** 导弹：厚重低音，远距离传播 */
         MISSILE("mchr_explosion_missile_near", "mchr_explosion_missile_far", 0.90F, 1536.0D, 1),
         /** 航弹：最低沉且传播最远。 */
-        BOMB("mchr_explosion_bomb_near", "mchr_explosion_bomb_far", 0.80F, 1536.0D, 1);
+        BOMB("mchr_explosion_bomb_near", "mchr_explosion_bomb_far", 0.80F, 1536.0D, 1),
+        /** 完整载具击毁：200 格内近音，超过 200 格使用远音，最多传播 1536 格。 */
+        VEHICLE("vehicle_explosion_near", "vehicle_explosion_far", 1.00F, 1536.0D, 1);
 
         /** 近距离声音事件资源 ID。 */
         private final ResourceLocation nearSound;

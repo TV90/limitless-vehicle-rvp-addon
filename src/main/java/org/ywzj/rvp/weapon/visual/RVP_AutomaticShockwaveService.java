@@ -34,7 +34,7 @@ public final class RVP_AutomaticShockwaveService {
     public static RVP_VisualEffectEvent prepare(ServerLevel level, Vec3 position, float configuredRadius) {
         // 调用普通爆炸门槛判断，小爆炸不承担地形采样开销。
         if (!isEnabled(configuredRadius)) { return null; }
-        return prepareInternal(level, position, configuredRadius);
+        return prepareInternal(level, position, configuredRadius, false);
     }
 
     /**
@@ -48,7 +48,7 @@ public final class RVP_AutomaticShockwaveService {
             ServerLevel level, Vec3 position, float explosionRadius) {
         // 只校验爆炸数据是否可用于采样，不复用普通路径的 radius >= 8 门槛。
         if (!isVehicleDestructionRadiusValid(explosionRadius)) { return null; }
-        return prepareInternal(level, position, explosionRadius);
+        return prepareInternal(level, position, explosionRadius, true);
     }
 
     /** 载具击毁路径允许的半径范围；0 仍可生成最小可见冲击波，负数不属于有效爆炸。 */
@@ -59,13 +59,13 @@ public final class RVP_AutomaticShockwaveService {
     /** 复用地形采样和事件构造；调用方已经完成各自路径的半径校验。 */
     @Nullable
     private static RVP_VisualEffectEvent prepareInternal(ServerLevel level, Vec3 position,
-            float explosionRadius) {
+            float explosionRadius, boolean vehicleSound) {
         try {
             // 调用现有八方向采样，只读取已加载地形，不额外生成区块。
             RVP_ShockwaveProfile profile = RVP_ShockwaveProfileSampler.sample(level, position, explosionRadius, 1.0F);
-            // 调用无副作用的事件构造，固定关闭附加云团、声音、闪光与震动。
+            // 调用无副作用的事件构造；只有完整载具击毁路径打开专用声音档案。
             return createEvent(level.dimension(), position, explosionRadius, profile,
-                    level.random.nextLong(), level.getGameTime());
+                    level.random.nextLong(), level.getGameTime(), vehicleSound);
         } catch (RuntimeException exception) {
             LOGGER.warn("无法准备 RVP 自动冲击波，保留原爆炸流程", exception);
             return null;
@@ -75,10 +75,19 @@ public final class RVP_AutomaticShockwaveService {
     /** 构造仅包含三种冲击前沿的事件；尺寸使用配置半径，沿用既有 220 tick 时间线。 */
     static RVP_VisualEffectEvent createEvent(ResourceKey<Level> dimension, Vec3 position,
             float configuredRadius, RVP_ShockwaveProfile profile, long seed, long startGameTime) {
+        return createEvent(dimension, position, configuredRadius, profile, seed, startGameTime, false);
+    }
+
+    /** 构造自动冲击波；载具击毁分支可在同一事件中开启专用声音。 */
+    static RVP_VisualEffectEvent createEvent(ResourceKey<Level> dimension, Vec3 position,
+            float configuredRadius, RVP_ShockwaveProfile profile, long seed, long startGameTime,
+            boolean vehicleSound) {
         return new RVP_VisualEffectEvent(RVP_ShockwaveProfileSampler.EFFECT_TYPE,
-                ResourceLocation.fromNamespaceAndPath("rvp", "default"), "{}", dimension, position,
+                ResourceLocation.fromNamespaceAndPath("rvp", "default"),
+                vehicleSound ? RVP_DefaultExplosionEventData.encodeVehicleSoundProfile() : "{}",
+                dimension, position,
                 configuredRadius, 1.0F, 0.0F, 220, 8192.0D, seed, startGameTime,
-                false, false, false, false, profile);
+                vehicleSound, false, false, false, profile);
     }
 
     /** 独立追加效果，不计入主视觉发布数量，避免误屏蔽默认爆炸；已有完整冲击波时不重复。 */
