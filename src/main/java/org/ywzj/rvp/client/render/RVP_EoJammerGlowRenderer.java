@@ -19,6 +19,8 @@ import org.joml.Vector3f;
 import org.ywzj.rvp.client.light.RVP_LightSourceType;
 import org.ywzj.rvp.client.light.RVP_ScreenLightManager;
 import org.ywzj.rvp.client.resource.RVP_EoJammerGlowManager;
+import org.ywzj.rvp.client.shader.RVP_NvgGlowPass;
+import org.ywzj.rvp.client.shader.RVP_NvgHandler;
 import org.ywzj.rvp.client.state.RVP_ClientBoneModuleState;
 import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.light.RVP_LightParameters;
@@ -147,11 +149,21 @@ public final class RVP_EoJammerGlowRenderer {
             }
             glowBones.add(boneIndex);
             Vec3 pivot = boneOrigin(vehicle, modelInstance, boneIndex, partialTick);
+            // [RVP 2026-10-31] 夜视仪激活时，玻片红光改由 NVG 椭圆光斑呈现：这里只上报世界坐标，
+            // 真正绘制在 RVP_NvgGlowPass（自绘加性 quad，多台干扰机靠近时自然叠加）。
+            if (RVP_NvgHandler.isActive()) {
+                RVP_NvgGlowPass.add(pivot);
+            }
             double distance = cameraPosition.distanceToSqr(pivot);
             if (distance < nearestAnchor) {
                 nearestAnchor = distance;
                 anchorBase = pivot;
             }
+        }
+        // 夜视下不画原来的玻片自发光：它会被椭圆光斑盖住，留着反而在光斑外圈露出硬边
+        if (RVP_NvgHandler.isActive()) {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());
+            return;
         }
         if (glowBones.isEmpty()) {
             RVP_ScreenLightManager.INSTANCE.removePersistent(vehicle.getUUID());

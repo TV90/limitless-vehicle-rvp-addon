@@ -36,6 +36,7 @@ import org.ywzj.rvp.client.screen.RVP_TacticalMapScreen;
 import org.ywzj.rvp.radar.RVP_ExternalRadarLinkHelper;
 import org.ywzj.rvp.radar.RVP_RadarRoleHelper;
 import org.ywzj.rvp.client.shader.RVP_CrtUiLiteHandler;
+import org.ywzj.rvp.client.shader.RVP_NvgHandler;
 import org.ywzj.rvp.client.state.RVP_ClientHmdState;
 import org.ywzj.rvp.client.state.RVP_ClientHeliDockState;
 import org.ywzj.rvp.client.state.RVP_ClientLoiterState;
@@ -53,6 +54,7 @@ import org.ywzj.rvp.client.state.RVP_FireControlStabilizerState;
 import org.ywzj.rvp.client.state.RVP_ClientHitlState;
 import org.ywzj.rvp.client.state.RVP_ClientSaclosState;
 import org.ywzj.rvp.client.state.RVP_ClientTacticalRevealState;
+import org.ywzj.rvp.client.state.RVP_NvgState;
 import org.ywzj.rvp.client.firesupport.RVP_ClientFireSupportState;
 import org.ywzj.rvp.client.gunner.RVP_ClientGunnerProfileState;
 import org.ywzj.rvp.client.state.RVP_ClientGunnerVehicleState;
@@ -484,7 +486,14 @@ public class RVP_ClientEvents {
             RVP_FireControlStabilizerState.tryHandleToggleKey(weaponUnit);
         }
 
+        // 夜视仪键：复用本体热成像键，走 consumeClick 直接读 KeyMapping 点击队列，
+        // 玩家改键后立刻跟随（InputEvent.Key + matches 实测不跟随，2026-10-31）
+        while (AllKeys.TOGGLE_THERMAL_IMAGING.consumeClick()) {
+            ywzj_rvp$handleNvgToggleKey();
+        }
+
         ywzj_rvp$applyScopeOverrides();
+        ywzj_rvp$applyNvgState();
 
         boolean artilleryMapPassthrough = mc.screen instanceof RVP_TacticalMapScreen screen
                 && screen.allowsVehicleInputPassthrough();
@@ -850,6 +859,90 @@ public class RVP_ClientEvents {
         } else if (ThermalHandler.isActive()) {
             ThermalHandler.setActive(false);
         }
+    }
+
+    /**
+     * 夜视仪开关：复用本体热成像键，不新增按钮（2026-10-31 用户要求）。
+     *
+     * <p>走 {@code consumeClick()} 而不是 {@code InputEvent.Key + KeyMapping.matches}：后者在
+     * 玩家改绑键位后出现"夜视仪仍按默认 4 键"的不跟随问题（2026-10-31 实测），
+     * 而 consumeClick 读的是 KeyMapping 自身维护的点击队列，改键立刻生效。
+     * 本体 InputHandler 走 InputEvent.Key、不消费该队列，因此两边不会互抢。</p>
+     *
+     * <p>语义：观瞄态且该站有热成像时开关归本体 thermalImaging，这里直接让位（不翻两次）；
+     * 第三人称被本体 {@code viewType == SCOPE} 硬条件挡住，由本方法接管。</p>
+     */
+    private static void ywzj_rvp$handleNvgToggleKey() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen != null || minecraft.player == null) {
+            return;
+        }
+        // HITL 遥控导弹期间该键默认归 HITL_SWITCH_VIDEO_MODE，此时不抢
+        if (RVP_ClientHitlState.isActive()) {
+            return;
+        }
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            return;
+        }
+        WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        if (weaponUnit == null) {
+            return;
+        }
+        boolean hasThermal = weaponUnit.withThermalImager();
+        boolean hasNightVision = ywzj_rvp$withNightVision(weaponUnit);
+        if (lvp.viewType == LocalVehiclePlayer.ViewType.SCOPE) {
+            // 有热成像的站：观瞄开关归本体，本方法不介入
+            if (hasThermal) {
+                return;
+            }
+            if (hasNightVision) {
+                RVP_NvgState.toggleScope();
+            }
+        } else if (hasNightVision || hasThermal) {
+            RVP_NvgState.toggleThirdPerson();
+        }
+    }
+
+    /**
+     * 夜视仪滤镜派生（2026-10-31 用户定版）。
+     *
+     * <p>观瞄态与第三人称是<b>两个完全独立的状态位</b>，只共用同一个按键：切视角不联动、
+     * 不自动同步——第三人称开关夜视不会影响观瞄态的热成像或夜视，反之亦然。</p>
+     * <ul>
+     *   <li>观瞄态：该站有热成像 ⇒ 开关由本体 {@code thermalImaging} 管，夜视一律让位
+     *       （夜视仪与热成像互斥，热成像优先）；无热成像、仅有夜视仪 ⇒ 用 scope 状态位。</li>
+     *   <li>第三人称：本体热成像在第三人称根本不存在，用 thirdPerson 状态位；
+     *       有夜视仪或有热成像都能开。</li>
+     * </ul>
+     */
+    private static void ywzj_rvp$applyNvgState() {
+        LocalVehiclePlayer lvp = LocalVehiclePlayer.instance;
+        if (lvp == null || lvp.vehicle == null || !lvp.onVehicle()) {
+            RVP_NvgState.reset();
+            RVP_NvgHandler.setActive(false);
+            return;
+        }
+        RVP_NvgState.bindVehicle(lvp.vehicle.getId());
+        WeaponUnit weaponUnit = lvp.getWeaponUnit();
+        if (weaponUnit == null) {
+            RVP_NvgHandler.setActive(false);
+            return;
+        }
+        boolean hasThermal = weaponUnit.withThermalImager();
+        boolean hasNightVision = ywzj_rvp$withNightVision(weaponUnit);
+        boolean nvg;
+        if (lvp.viewType == LocalVehiclePlayer.ViewType.SCOPE) {
+            nvg = !hasThermal && hasNightVision && RVP_NvgState.isScopeEnabled();
+        } else {
+            nvg = RVP_NvgState.isThirdPersonEnabled() && (hasNightVision || hasThermal);
+        }
+        RVP_NvgHandler.setActive(nvg);
+    }
+
+    /** 读取该武器站的夜视仪选配；本体 pojo 不认识该字段，由 RVP 的 mixin 承载。 */
+    private static boolean ywzj_rvp$withNightVision(WeaponUnit weaponUnit) {
+        return weaponUnit.getData() instanceof WeaponUnitDataExt ext && ext.ywzj_rvp$withNightVision();
     }
 
     private static boolean ywzj_rvp$shouldUpdateBombCcip(RVP_WeaponBase weapon) {

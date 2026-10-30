@@ -1,0 +1,81 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "one",
+    "dstrgb": "zero"
+  },
+  "vertex": "ywzj_rvp:nvg_vertex",
+  "fragment": "ywzj_rvp:nvg_composite",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    {
+      "name": "DiffuseSampler"
+    },
+    {
+      "name": "BloomSampler"
+    }
+  ],
+  "uniforms": [
+    {
+      "name": "Resolution",
+      "type": "float",
+      "count": 2,
+      "values": [
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "name": "PhosphorColor",
+      "type": "float",
+      "count": 3,
+      "values": [
+        0.3,
+        1.0,
+        0.42
+      ]
+    },
+    {
+      "name": "Gain",
+      "type": "float",
+      "count": 1,
+      "values": [
+        2.05
+      ]
+    },
+    {
+      "name": "BloomIntensity",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1.9
+      ]
+    },
+    {
+      "name": "Whiten",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.85
+      ]
+    },
+    {
+      "name": "Time",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "ColorMix",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    }
+  ]
+}

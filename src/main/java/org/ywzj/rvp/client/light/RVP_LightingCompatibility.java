@@ -7,7 +7,7 @@ import org.joml.Matrix4fc;
 import java.lang.reflect.Method;
 
 /** 光影只读桥：兼容 Oculus/Iris 的两种包名，不改变光影包、外部附件或管线配置。 */
-final class RVP_LightingCompatibility {
+public final class RVP_LightingCompatibility {
     /** 已探测的可选光影桥；无光影模组时为空。 */
     private static IrisBridge iris;
     /** 可选类只扫描一次，切换光影包时仍逐帧读取实时状态。 */
@@ -22,7 +22,7 @@ final class RVP_LightingCompatibility {
     }
 
     /** 查询活动光影；未知版本保留主目标的通用路径，不能因安装模组而关闭灯光。 */
-    static boolean shadersActive() {
+    public static boolean shadersActive() {
         // 调用延迟探测，保证专用服务器不会加载任何可选客户端类型。
         probe();
         if (iris == null) { return false; }

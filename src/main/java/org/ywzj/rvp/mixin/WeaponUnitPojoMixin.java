@@ -68,6 +68,13 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Unique
     private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
 
+    /** 夜视仪选配（与本体 with_thermal_imager 同层级写法）；默认 false。
+     *  <p>主键沿用本体风格不加 rvp_ 前缀；alternate 兼容带前缀写法，避免和本体将来撞名。
+     *  <p>用原始类型 boolean：Gson Unsafe 分配下未配置落 false，正好是默认关闭语义。 */
+    @SerializedName(value = "with_night_vision", alternate = {"rvp_with_night_vision"})
+    @Unique
+    private boolean ywzj_rvp$withNightVision;
+
     @Override
     public String ywzj_rvp$getFireControlMode() {
         // Gson Unsafe 分配下 String 字段"未配置"实际为 null，兜底空串（= 完全使用本体火控）
@@ -118,5 +125,10 @@ public class WeaponUnitPojoMixin implements WeaponUnitPojoExt {
     @Override
     public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
         return ywzj_rvp$sightFireDisguise;
+    }
+
+    @Override
+    public boolean ywzj_rvp$withNightVision() {
+        return ywzj_rvp$withNightVision;
     }
 }

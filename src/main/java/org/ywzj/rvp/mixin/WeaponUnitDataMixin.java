@@ -75,6 +75,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Unique
     private RVP_SightFireDisguiseConfig ywzj_rvp$sightFireDisguise;
 
+    /** 夜视仪选配（从 pojo 透传，与本体 withThermalImager 同级）；默认 false。 */
+    @Unique
+    private boolean ywzj_rvp$withNightVision;
+
     @Inject(method = "<init>(Lorg/ywzj/vehicle/custom/part/data/WeaponUnitPojo;)V", at = @At("TAIL"), remap = false)
     private void ywzj_rvp$init(WeaponUnitPojo pojo, CallbackInfo ci) {
         if (pojo instanceof WeaponUnitPojoExt ext) {
@@ -88,6 +92,7 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
             this.ywzj_rvp$structureBoltBones = ywzj_rvp$safeCopy(ext.ywzj_rvp$getStructureBoltBones());
             this.ywzj_rvp$opticalSightPivot = ext.ywzj_rvp$getOpticalSightPivot();
             this.ywzj_rvp$sightFireDisguise = ext.ywzj_rvp$getSightFireDisguise();
+            this.ywzj_rvp$withNightVision = ext.ywzj_rvp$withNightVision();
             RVP_HitboxDebug.noteConfigLoaded(this.ywzj_rvp$followParentOnlyPartUnitIds);
         }
     }
@@ -217,5 +222,10 @@ public class WeaponUnitDataMixin implements WeaponUnitDataExt {
     @Override
     public RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise() {
         return ywzj_rvp$sightFireDisguise;
+    }
+
+    @Override
+    public boolean ywzj_rvp$withNightVision() {
+        return ywzj_rvp$withNightVision;
     }
 }

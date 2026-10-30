@@ -47,6 +47,8 @@ public final class RVP_ClientBootstrap {
     public static void onRegisterLightShaders(net.minecraftforge.client.event.RegisterShadersEvent event) {
         // 调用独立灯光程序注册；加载失败时该层自行降级，不阻断已有特效。
         org.ywzj.rvp.client.light.RVP_ScreenLightPass.registerShaders(event);
+        // 夜视仪干扰机光斑：自绘 quad 程序，不依赖 PostChain，光影下同样可用。
+        org.ywzj.rvp.client.shader.RVP_NvgGlowPass.registerShaders(event);
     }
 
     public static void onClientSetup(FMLClientSetupEvent event) {

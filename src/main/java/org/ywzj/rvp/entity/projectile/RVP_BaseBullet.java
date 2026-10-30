@@ -3757,15 +3757,22 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             break;
         }
         Vec3 hit = result.getLocation();
-        rememberImpactIncidence(getDeltaMovement(), Vec3.atLowerCornerOf(result.getDirection().getNormal()));
+        Vec3 blockFaceNormal = Vec3.atLowerCornerOf(result.getDirection().getNormal());
+        rememberImpactIncidence(getDeltaMovement(), blockFaceNormal);
         if (dispenserOnlyImpact()) {
             applyDispenserAt(hit, result);
             compensateImpactTrail(hit);
             discard();
             return true;
         }
-        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, hit)
-                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, hit)) {
+        // [RVP] 方块命中的子母弹释放锚点沿面法线外移 5cm（2026-10-31）：串联破甲撞墙时二级战斗部
+        // 同样要释放并起爆。clip 命中点正好压在方块表面的浮点边界上，子体若原地出生，其首 tick 的
+        // 弹道线段起点会落在方块内部而被 clip 判定为 MISS，表现为"二级战斗部钻进墙里不响"。
+        // 锚点外移后子体稳定落在墙面外侧，下一 tick 正面撞墙引爆；对 spawn_forward_offset > 0
+        // 的前推类释放（PELE 破片）只相当于前推距离少 5cm，不影响穿透语义。
+        Vec3 blockReleaseAnchor = hit.add(blockFaceNormal.scale(0.05D));
+        if (trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_BLOCK_HIT, blockReleaseAnchor)
+                || trySubmunitionTrigger(RVP_EnumSubmunitionTrigger.ON_IMPACT, blockReleaseAnchor)) {
             compensateImpactTrail(hit);
             discard();
             return true;

@@ -103,7 +103,8 @@
     "releases": [
       {
         "triggers": [
-          "on_entity_hit"
+          "on_entity_hit",
+          "on_block_hit"
         ],
         "release_events": 1,
         "spawn_forward_offset": 0.0,

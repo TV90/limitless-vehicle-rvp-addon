@@ -33,4 +33,7 @@ public interface WeaponUnitDataExt {
     Vec3 ywzj_rvp$getOpticalSightPivot();
     /** 观瞄视角射弹原点分离配置；为 null（JSON 未配置）时功能关闭。 */
     RVP_SightFireDisguiseConfig ywzj_rvp$getSightFireDisguise();
+
+    /** 夜视仪选配（weapon unit 级，与本体 withThermalImager 同级）；默认 false。 */
+    boolean ywzj_rvp$withNightVision();
 }
