@@ -20,7 +20,7 @@ class RVP_LightParametersTest {
                 RVP_LightParameters.muzzle(125, false), RVP_LightParameters.muzzle(120, true),
                 RVP_LightParameters.engine()}) {
             assertTrue(light.enabled());
-            assertTrue(light.radius() > 0 && light.radius() <= 48);
+            assertTrue(light.radius() > 0 && light.radius() <= RVP_LightParameters.ENGINE_MAX_RADIUS);
             assertTrue(light.intensity() > 0 && light.intensity() <= 4);
             assertTrue(light.durationTicks() >= 1 && light.durationTicks() <= 40);
             assertEquals(0, light.blockLightLevel());
@@ -69,7 +69,8 @@ class RVP_LightParametersTest {
         RVP_LightParameters second = RVP_LightParameters.enginePhase(defaults, true, 100);
         RVP_LightParameters ending = RVP_LightParameters.enginePhase(defaults, false, 1);
         assertTrue(first.intensity() > second.intensity());
-        assertTrue(first.radius() > second.radius());
+        assertEquals(first.radius(), second.radius());
+        assertTrue(second.radius() >= 20);
         assertTrue(first.green() > second.green());
         assertTrue(first.intensity() > ending.intensity());
         assertEquals(0, first.blockLightLevel());
@@ -100,7 +101,8 @@ class RVP_LightParametersTest {
         RVP_LightParameters.EngineEmission secondGlow = RVP_LightParameters.engineEmission(second.radius(), second.intensity());
         RVP_LightParameters.EngineEmission endingGlow = RVP_LightParameters.engineEmission(ending.radius(), ending.intensity());
         assertEquals(firstGlow.coreIntensity() * 0.7F, secondGlow.coreIntensity(), 0.001F);
-        assertTrue(secondGlow.coreRadius() < firstGlow.coreRadius());
+        // 旧圆形喷口处于代码暂停状态；扩大环境范围也不能把它的物理核心放大到几百格。
+        assertEquals(firstGlow.coreRadius(), secondGlow.coreRadius());
         assertTrue(endingGlow.coreIntensity() < firstGlow.coreIntensity());
         assertTrue(endingGlow.haloIntensity() < firstGlow.haloIntensity());
     }
@@ -133,6 +135,35 @@ class RVP_LightParametersTest {
         assertTrue(data.getEffectType().isEmpty());
         assertEquals(12, data.copyPresetData().get("max_clouds").getAsInt());
         assertFalse(data.copyPresetData().has("rvp_screen_light"));
+    }
+
+    @Test
+    void engineWorldRadiusAddsMillimeterCaliberAndCapsAtFiveHundred() {
+        float[][] cases = {{0, 20}, {100, 30}, {300, 50}, {4800, 500}, {5000, 500}, {Float.MAX_VALUE, 500}};
+        for (float[] value : cases) {
+            RVP_LightParameters engine = RVP_LightParameters.engine(value[0]);
+            assertEquals(value[1], engine.radius(), 0.00001F);
+            assertEquals(4, engine.intensity());
+            assertEquals(0, engine.blockLightLevel());
+        }
+        for (float invalid : new float[] {-1, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY}) {
+            assertEquals(20, RVP_LightParameters.engine(invalid).radius());
+        }
+    }
+
+    @Test
+    void stageAndBurnoutDimBrightnessWithoutChangingTheCaliberRange() {
+        for (float caliber : new float[] {0, 100, 4800}) {
+            RVP_LightParameters first = RVP_LightParameters.engine(caliber);
+            for (boolean second : new boolean[] {false, true}) {
+                for (int remaining : new int[] {100, 20, 1, 0}) {
+                    RVP_LightParameters sample = RVP_LightParameters.enginePhase(first, second, remaining);
+                    assertEquals(first.radius(), sample.radius());
+                    assertTrue(sample.radius() >= 20 && sample.radius() <= 500);
+                    assertTrue(sample.intensity() <= first.intensity());
+                }
+            }
+        }
     }
 
     /** 比较真实解析结果，确认未知光字段不改变普通武器数据的序列化语义。 */

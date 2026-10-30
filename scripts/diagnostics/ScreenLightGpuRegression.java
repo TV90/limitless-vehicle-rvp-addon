@@ -57,6 +57,8 @@ public final class ScreenLightGpuRegression {
             // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
             plume = program(shaders, "rocket_plume");
             testRocketPlume(Path.of(args[0]), plume, bloom);
+            testWorldEngineHalo(Path.of(args[0]), plume);
+            testExtendedEngineSurface(light);
             smoke = program(shaders, "smoke_light");
             testSmokeLighting(smoke);
             testMuzzleLighting(Path.of(args[0]), smoke);
@@ -671,6 +673,161 @@ public final class ScreenLightGpuRegression {
     private static void plumeGeometry(int program, float x, float y, float z, float dx, float dy, float dz, float length, float radius) {
         GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeOriginLength"), x, y, z, length);
         GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeAxisRadius"), dx, dy, dz, radius);
+    }
+
+    /** 生产广域光晕两个模式：一像素可见度和按世界半径扩散；近景/DH/手持物均使用真实深度输入。 */
+    private static void testWorldEngineHalo(Path root, int shader) throws Exception {
+        int size = 256;
+        int sky = depth(size, size, 0, false);
+        int[] visible = target(1, 1), output = target(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "PlumeEmission"), 60000, 16, 0.2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "Time"), 0.7F);
+        sampler(shader, "SceneDepth", 1, sky); sampler(shader, "DistantDepth", 2, sky);
+        plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 20);
+        float fullVisibility = worldHaloDraw(shader, visible, output, sky, size);
+        require(fullVisibility > .2F && fullVisibility <= 1, "one-pixel emitter visibility is missing or invalid");
+        float[] inner = pixel(output[0], 144, 128);
+        require(inner[0] > .1F && inner[0] > inner[1] && inner[1] > inner[2], "twenty-block orange halo did not extend beyond the thin plume");
+        zero(pixel(output[0], 163, 128), "world halo escaped its twenty-block boundary");
+        int[] nearBounds = brightBounds(pixels(output[0], size, size), size);
+        plumeGeometry(shader, 0, 0, -160, 1, 0, 0, 3, .45F);
+        worldHaloDraw(shader, visible, output, sky, size);
+        int[] farBounds = brightBounds(pixels(output[0], size, size), size);
+        require(nearBounds[2] - nearBounds[0] > 1.8F * (farBounds[2] - farBounds[0]), "world halo stayed at a fixed pixel radius instead of scaling with distance");
+        plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
+        matrix(shader, "Projection", new float[] {2,0,0,0, 0,2,0,0, 0,0,A,-1, 0,0,B,0});
+        matrix(shader, "InverseProjection", new float[] {.5F,0,0,0, 0,.5F,0,0, 0,0,0,1/B, 0,0,-1,A/B});
+        worldHaloDraw(shader, visible, output, sky, size);
+        int[] zoomBounds = brightBounds(pixels(output[0], size, size), size);
+        require(zoomBounds[2] - zoomBounds[0] > 1.8F * (nearBounds[2] - nearBounds[0]), "FOV zoom did not scale the world halo projection");
+        matrix(shader, "Projection", new float[] {1,0,0,0, 0,1,0,0, 0,0,A,-1, 0,0,B,0});
+        matrix(shader, "InverseProjection", new float[] {1,0,0,0, 0,1,0,0, 0,0,0,1/B, 0,0,-1,A/B});
+        int[] halfOutput = target(size / 2, size / 2);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size / 2, size / 2);
+        worldHaloDraw(shader, visible, halfOutput, sky, size / 2);
+        int[] halfBounds = brightBounds(pixels(halfOutput[0], size / 2, size / 2), size / 2);
+        require(Math.abs((nearBounds[2] - nearBounds[0]) - 2 * (halfBounds[2] - halfBounds[0])) <= 6,
+                "resolution change altered world halo size instead of pixel coverage");
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 50);
+        worldHaloDraw(shader, visible, output, sky, size);
+        require(pixel(output[0], 168, 128)[0] > .1F, "three-hundred-mm fifty-block halo failed to expand");
+        int[] fiftyBounds = brightBounds(pixels(output[0], size, size), size);
+        require(fiftyBounds[2] - fiftyBounds[0] > 2.2F * (nearBounds[2] - nearBounds[0]), "caliber radius changed brightness without expanding the halo");
+
+        // 500 格环境光与光晕不会被近景 far=100 的空天空裁掉。
+        plumeGeometry(shader, 0, 0, -1000, 1, 0, 0, 3, .45F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 500);
+        worldHaloDraw(shader, visible, output, sky, size);
+        float cap = pixel(output[0], 172, 128)[0];
+        require(cap > .02F, "five-hundred-block halo disappeared beyond the near far plane");
+        zero(pixel(output[0], 193, 128), "five-hundred-block halo exceeded its boundary");
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 10000);
+        worldHaloDraw(shader, visible, output, sky, size);
+        near(cap, pixel(output[0], 172, 128)[0], "shader radius cap failed");
+
+        plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), 30);
+        sampler(shader, "SceneDepth", 1, depth(size, size, 30, false));
+        near(0, worldHaloDraw(shader, visible, output, sky, size), "solid foreground did not hide the actual emitter");
+        zero(pixel(output[0], 128, 128), "large halo leaked around a fully hidden source");
+        sampler(shader, "SceneDepth", 1, sky);
+        for (boolean reverse : new boolean[] {false, true}) {
+            sampler(shader, "DistantDepth", 2, projectedDepth(size / 2, size / 2, 30, 7.5F, 4096, reverse, false));
+            distantProjection(shader, 7.5F, 4096, reverse, 1);
+            near(0, worldHaloDraw(shader, visible, output, sky, size), "DH foreground did not hide the actual emitter");
+            zero(pixel(output[0], 144, 128), "wide halo leaked around a DH-occluded source");
+        }
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "HasDistantDepth"), 0);
+        sampler(shader, "DistantDepth", 2, sky);
+
+        // 半边墙遮住喷口、另一半露出尾段：只有可见的真实喷流样点可提供光晕能量。
+        float[] partial = new float[size * size];
+        float wall = ((-A * 30 + B) / 30) * .5F + .5F;
+        for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) { partial[y * size + x] = x < size / 2 ? wall : 1; } }
+        sampler(shader, "SceneDepth", 1, texture(size, size, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, partial));
+        plumeGeometry(shader, -3, 0, -80, 1, 0, 0, 6, .45F);
+        float exposed = worldHaloDraw(shader, visible, output, sky, size);
+        require(exposed > .01F && exposed < fullVisibility, "visible tail must retain a weaker halo when nozzle is hidden");
+        sampler(shader, "SceneDepth", 1, sky);
+        plumeGeometry(shader, 0, 0, -80, 1, 0, 0, 3, .45F);
+
+        float[] hand = new float[size * size];
+        for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) { hand[y * size + x] = x < size / 2 - 4 ? .55F : 1; } }
+        sampler(shader, "SceneDepth", 1, texture(size, size, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, hand));
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "HandDepthLimit"), .5625F);
+        require(worldHaloDraw(shader, visible, output, sky, size) > .2F, "unmasked source was incorrectly hidden by an adjacent hand");
+        zero(pixel(output[0], 112, 128), "world halo painted over shader hand mask");
+        require(pixel(output[0], 144, 128)[0] > .1F, "hand mask incorrectly removed halo outside its silhouette");
+        GL20.glUniform1f(GL20.glGetUniformLocation(shader, "HandDepthLimit"), 0);
+        sampler(shader, "SceneDepth", 1, sky);
+
+        // 真正硬件混合保持原世界 Alpha；预览也使用同一可见度 + 广域 + 高亮核心顺序。
+        worldHaloDraw(shader, visible, output, sky, size);
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, output[0]);
+        GL11.glClearColor(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], BACKGROUND[3]); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glEnable(GL11.GL_BLEND); GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
+        GL14.glBlendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
+        render(output, size, size);
+        near(BACKGROUND[3], pixel(output[0], 144, 128)[3], "world halo changed scene alpha");
+        GL11.glDisable(GL11.GL_BLEND);
+
+        var preview = new java.awt.image.BufferedImage(size * 2, size * 2, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        float[][] cases = {{20,80}, {30,80}, {50,80}, {500,1000}};
+        for (int index = 0; index < cases.length; index++) {
+            // 对齐一个真实像素中心展示细核心，避免四宫格参考图恰好都落在两行像素之间。
+            plumeGeometry(shader, 0, cases[index][1] / size, -cases[index][1], 1, 0, 0, 3, .45F);
+            GL20.glUniform1f(GL20.glGetUniformLocation(shader, "PlumeHaloRadius"), cases[index][0]);
+            worldHaloDraw(shader, visible, output, sky, size);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, output[0]);
+            GL11.glClearColor(BACKGROUND[0], BACKGROUND[1], BACKGROUND[2], BACKGROUND[3]); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+            GL11.glEnable(GL11.GL_BLEND); render(output, size, size);
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 2); render(output, size, size);
+            GL11.glDisable(GL11.GL_BLEND);
+            float[] image = pixels(output[0], size, size);
+            for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) {
+                int at = (y * size + x) * 4;
+                near(BACKGROUND[3], image[at + 3], "world halo preview alpha");
+                int red = Math.round(Math.min(1, image[at]) * 255), green = Math.round(Math.min(1, image[at + 1]) * 255), blue = Math.round(Math.min(1, image[at + 2]) * 255);
+                preview.setRGB(index % 2 * size + x, index / 2 * size + size - 1 - y, red << 16 | green << 8 | blue);
+            } }
+            var graphics = preview.createGraphics(); graphics.setColor(java.awt.Color.WHITE);
+            graphics.drawString("R=" + cases[index][0] + " blocks / distance=" + cases[index][1], index % 2 * size + 8, index / 2 * size + 20); graphics.dispose();
+        }
+        Path directory = root.resolve("build/engine-world-halo-gpu-regression"); Files.createDirectories(directory);
+        javax.imageio.ImageIO.write(preview, "png", directory.resolve("preview.png").toFile());
+        System.out.println("PASS world halo radii 20/30/50/500, distance/FOV/resolution scaling, near/DH normal+reverse source occlusion, exposed tail, hand mask and scene Alpha");
+    }
+
+    /** 与生产一致的一像素先写后读；半径与场景输入均来自调用者当前上传值。 */
+    private static float worldHaloDraw(int shader, int[] visibility, int[] output, int safeTexture, int size) {
+        sampler(shader, "PlumeVisibility", 0, safeTexture);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(visibility, 1, 1);
+        float result = pixel(visibility[0], 0, 0)[0];
+        sampler(shader, "PlumeVisibility", 0, visibility[1]);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 4); render(output, size, size);
+        return result;
+    }
+
+    /** 真正 500 格照明：距发动机 450 格的 DH 表面仍受光，窄口径范围不能冒充同样远距照明。 */
+    private static void testExtendedEngineSurface(int shader) {
+        GL20.glUseProgram(shader); uniforms(shader);
+        int sky = depth(SIZE, SIZE, 0, false);
+        int[] output = target(SIZE, SIZE);
+        sampler(shader, "SceneColor", 0, color(SIZE, SIZE, BACKGROUND)); sampler(shader, "SceneDepth", 1, sky);
+        sampler(shader, "DistantDepth", 2, projectedDepth(SIZE / 2, SIZE / 2, 460, 7.5F, 4096, false, false));
+        distantProjection(shader, 7.5F, 4096, false, 1);
+        RVP_LightParameters large = RVP_LightParameters.engine(4800);
+        lights(shader, 1, 0, 0, -10, large.radius(), large.intensity(), large.surfaceWeight(), 0);
+        render(output, SIZE, SIZE);
+        require(pixel(output[0], 8, 8)[0] > BACKGROUND[0] + .02F, "engine did not illuminate a DH surface 450 blocks from source");
+        RVP_LightParameters small = RVP_LightParameters.engine(100);
+        lights(shader, 1, 0, 0, -10, small.radius(), small.intensity(), small.surfaceWeight(), 0);
+        render(output, SIZE, SIZE); background(pixel(output[0], 8, 8), "narrow caliber engine escaped its thirty-block range");
+        System.out.println("PASS actual 500-block engine preset lights a DH surface at 450 blocks; caliber range and P5-off semantics preserved");
     }
 
     /** 整幅浮点回读检查无穷值；诊断 PNG 由实际生产 Shader 输出生成。 */

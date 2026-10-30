@@ -72,6 +72,22 @@ public final class ScreenLightFrameGpuRegression {
             for (int i = 0; i < 4; i++) { near(COLOR[i], copiedColor[i], "production final color/alpha"); }
             System.out.println("PASS production near/DH/final-color copies under external MRT and offset viewport");
 
+            int plumeVisibility;
+            try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+                // 调用正式广域光晕目标，验证仅分配一像素且重复申请复用，外部多目标状态完整恢复。
+                frame.ensurePlumeVisibility(); plumeVisibility = frame.plumeVisibility();
+                frame.ensurePlumeVisibility();
+                require(frame.plumeVisibility() == plumeVisibility, "plume visibility target was allocated per emitter");
+                frame.bind(frame.plumeVisibilityTarget(), 1, 1);
+                require(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE, "visibility FBO incomplete");
+                int[] viewport = new int[4]; GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
+                require(viewport[2] == 1 && viewport[3] == 1, "plume visibility did not use a one-pixel viewport");
+                GL11.glClearColor(.4F, 0, 0, 1); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+                near(.4F, read(plumeVisibility, 1, 1, false)[0], "production emitter visibility target");
+            }
+            assertExternalState();
+            System.out.println("PASS production single-pixel emitter visibility target, reuse and external GL state preservation");
+
             try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
                 frame.bind(frame.lightTarget(), 16, 16);
                 require(!GL11.glIsEnabled(GL11.GL_STENCIL_TEST), "stencil was not isolated");
@@ -115,6 +131,9 @@ public final class ScreenLightFrameGpuRegression {
             frame.discard();
             require(!frame.captureColor(world, 16, 16), "discarded frame was reused");
             System.out.println("PASS production same-ID DH resize, single-use depth, target identity and discarded-frame checks");
+            frame.release();
+            require(frame.plumeVisibility() == 0 && frame.plumeVisibilityTarget() == 0, "world/resource release retained plume visibility state");
+            require(!GL11.glIsTexture(plumeVisibility), "plume visibility texture leaked after release");
             require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL error at completion");
             System.out.println("PASS all production screen-frame GPU regressions; OpenGL error=0");
         } finally {

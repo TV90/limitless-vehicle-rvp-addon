@@ -165,4 +165,15 @@ class RVP_ScreenLightManagerTest {
                 null, RVP_LightParameters.explosion(4), 100));
         assertEquals(0, manager.size());
     }
+
+    @Test
+    void engineVolumeWithinFiveHundredBlocksSurvivesTheObserverDistanceBudget() {
+        UUID key = UUID.randomUUID();
+        manager.upsertPersistent(key, new Vec3(0, 0, -500), RVP_LightParameters.engine(4800));
+        var selected = manager.collectVisible(Vec3.ZERO, 0, 256, 8, light -> true);
+        assertEquals(1, selected.size());
+        assertEquals(500, selected.get(0).radius());
+        manager.upsertPersistent(key, new Vec3(0, 0, -800), RVP_LightParameters.engine(4800));
+        assertTrue(manager.collectVisible(Vec3.ZERO, 0, 256, 8, light -> true).isEmpty());
+    }
 }

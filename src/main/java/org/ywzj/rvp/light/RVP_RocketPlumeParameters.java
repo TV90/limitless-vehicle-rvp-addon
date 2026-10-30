@@ -1,6 +1,6 @@
 package org.ywzj.rvp.light;
 
-/** RVP 程序喷焰的代码参数；武器 JSON 只提供既有 flame_scale，不增加亮度或光晕配置。 */
+/** RVP 程序喷焰代码参数；几何沿用 flame_scale，广域范围沿用既有口径，不新增亮度/光晕 JSON。 */
 public final class RVP_RocketPlumeParameters {
     /** 新的三维程序喷焰总开关。 */
     public static final boolean ENABLED = true;

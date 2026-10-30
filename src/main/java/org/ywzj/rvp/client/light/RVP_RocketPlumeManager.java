@@ -2,6 +2,8 @@ package org.ywzj.rvp.client.light;
 
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
+import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -30,7 +32,7 @@ public final class RVP_RocketPlumeManager {
 
     /** 正常喷流两 tick 无心跳失效；预览最多四十 tick，使用同一形状程序。 */
     public void upsert(UUID key, Vec3 position, Vec3 direction, Float configuredScale,
-            float strength, boolean preview) {
+            float caliber, float strength, boolean preview) {
         if (world == null || key == null || !finite(position) || !finite(direction)
                 || !Double.isFinite(direction.lengthSqr()) || direction.lengthSqr() < 1.0E-12
                 || !Float.isFinite(strength) || strength <= 0) {
@@ -41,7 +43,8 @@ public final class RVP_RocketPlumeManager {
         float seed = (key.getLeastSignificantBits() & 0xFFFFL) / 65536F;
         RVP_RocketPlume plume = new RVP_RocketPlume(position, direction.normalize(),
                 RVP_RocketPlumeParameters.BASE_LENGTH * scale,
-                RVP_RocketPlumeParameters.BASE_RADIUS * scale, Math.min(1F, strength), seed);
+                RVP_RocketPlumeParameters.BASE_RADIUS * scale,
+                RVP_LightParameters.engineRadius(caliber), Math.min(1F, strength), seed);
         if (!entries.containsKey(key) && entries.size() >= RVP_RocketPlumeParameters.MAX_TRACKED) {
             entries.remove(entries.keySet().iterator().next());
         }
@@ -55,7 +58,11 @@ public final class RVP_RocketPlumeManager {
         for (Tracked entry : entries.values()) {
             if (entry.expires <= now) { continue; }
             float fade = entry.preview ? (float) Math.max(0, 1 - (now - entry.start) / 40.0) : 1;
-            RVP_RocketPlume sample = entry.plume.withStrength(entry.plume.strength() * fade);
+            // 调用共享半径调参，已有预览和真实喷焰都立即响应，且不会影响喷焰长宽。
+            RVP_RocketPlume base = entry.plume;
+            RVP_RocketPlume sample = new RVP_RocketPlume(base.position(), base.direction(), base.length(), base.radius(),
+                    RVP_LightRuntimeTuning.radius(RVP_LightRuntimeTuning.Group.engine, base.haloRadius()),
+                    base.strength() * fade, base.seed());
             if (sample.strength() > 0 && visible.test(sample)) { result.add(sample); }
         }
         return result.stream().sorted(Comparator.comparingDouble(plume -> plume.center().distanceToSqr(camera)))

@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.light;
 
 import net.minecraft.world.phys.Vec3;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -154,18 +155,24 @@ public final class RVP_ScreenLightManager {
 
         /** 爆炸从白热过渡到橙红；持续光只受燃烧事实和预算影响。 */
         private RVP_ScreenLight sample(double now, UUID key) {
+            // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
+            RVP_LightParameters tuned = RVP_LightRuntimeTuning.apply(switch (type) {
+                case EXPLOSION -> RVP_LightRuntimeTuning.Group.explosion;
+                case MUZZLE -> RVP_LightRuntimeTuning.Group.muzzle;
+                case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
+            }, parameters);
             float progress = (float) Math.max(0, Math.min(1, (now - start) / parameters.durationTicks()));
-            float fade = key == null ? (float) Math.pow(1 - progress, parameters.decay()) : 1;
-            float green = parameters.green();
-            float blue = parameters.blue();
+            float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
+            float green = tuned.green();
+            float blue = tuned.blue();
             if (type == RVP_LightSourceType.EXPLOSION) {
                 green *= 1 - progress * 0.6F;
                 blue *= 1 - progress * 0.9F;
             }
-            return new RVP_ScreenLight(position, parameters.red(), green, blue, parameters.radius(),
-                    now >= expires ? 0 : parameters.intensity() * fade,
-                    (float) Math.max(0, expires - now), type, key, parameters.surfaceWeight(),
-                    parameters.bloom(), parameters.volumetricStrength());
+            return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(),
+                    now >= expires ? 0 : tuned.intensity() * fade,
+                    (float) Math.max(0, expires - now), type, key, tuned.surfaceWeight(),
+                    tuned.bloom(), tuned.volumetricStrength());
         }
     }
 }

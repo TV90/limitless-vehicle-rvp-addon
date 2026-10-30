@@ -36,6 +36,10 @@ final class RVP_ScreenFrameResources {
     private int lightTexture;
     /** 光照贡献帧缓冲，只写自身附件。 */
     private int lightFramebuffer;
+    /** 单条喷焰可见发光比例，使用一像素缓冲，避免广域光晕每个像素重复检查整个尾焰。 */
+    private int plumeVisibilityTexture;
+    /** 一像素可见度绘制目标；逐条喷焰覆盖复用，不分配每弹体纹理。 */
+    private int plumeVisibilityFramebuffer;
     /** 半分辨率光晕纹理，两次模糊交替使用。 */
     private final int[] bloomTextures = new int[2];
     /** 半分辨率光晕目标。 */
@@ -175,6 +179,13 @@ final class RVP_ScreenFrameResources {
         }
     }
 
+    /** 广域光晕只额外申请一个一像素目标，所有喷焰在本帧顺序复用。 */
+    void ensurePlumeVisibility() {
+        if (plumeVisibilityTexture != 0) { return; }
+        plumeVisibilityTexture = texture(1, 1, GL30.GL_RGBA16F, GL11.GL_RGBA, GL11.GL_NEAREST);
+        plumeVisibilityFramebuffer = framebuffer(plumeVisibilityTexture);
+    }
+
     /** 申请自己的纹理，不修改其它模组附件上的过滤/比较模式。 */
     private static int texture(int width, int height, int internal, int format, int filter) {
         int texture = GL11.glGenTextures();
@@ -272,6 +283,8 @@ final class RVP_ScreenFrameResources {
         if (depthReadFramebuffer != 0) { GL30.glDeleteFramebuffers(depthReadFramebuffer); depthReadFramebuffer = 0; }
         if (lightTexture != 0) { RenderSystem.deleteTexture(lightTexture); lightTexture = 0; }
         if (lightFramebuffer != 0) { GL30.glDeleteFramebuffers(lightFramebuffer); lightFramebuffer = 0; }
+        if (plumeVisibilityTexture != 0) { RenderSystem.deleteTexture(plumeVisibilityTexture); plumeVisibilityTexture = 0; }
+        if (plumeVisibilityFramebuffer != 0) { GL30.glDeleteFramebuffers(plumeVisibilityFramebuffer); plumeVisibilityFramebuffer = 0; }
         for (int i = 0; i < 2; i++) {
             if (bloomTextures[i] != 0) { RenderSystem.deleteTexture(bloomTextures[i]); bloomTextures[i] = 0; }
             if (bloomFramebuffers[i] != 0) { GL30.glDeleteFramebuffers(bloomFramebuffers[i]); bloomFramebuffers[i] = 0; }
@@ -293,6 +306,10 @@ final class RVP_ScreenFrameResources {
     int light() { return lightTexture; }
     /** 光贡献目标。 */
     int lightTarget() { return lightFramebuffer; }
+    /** 只读一像素尾焰可见发光比例；不得在写入该目标时同时采样。 */
+    int plumeVisibility() { return plumeVisibilityTexture; }
+    /** 一像素可见度目标。 */
+    int plumeVisibilityTarget() { return plumeVisibilityFramebuffer; }
     /** 半分辨率纹理。 */
     int bloom(int index) { return bloomTextures[index]; }
     /** 半分辨率目标。 */

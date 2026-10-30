@@ -2,6 +2,8 @@
 // RVP 自有程序喷焰：不读取本体贴图，不写场景深度，所有发光参数由 Java 代码提供。
 uniform sampler2D SceneDepth;
 uniform sampler2D DistantDepth;
+// 每条喷流顺序复用的一像素可见度，写入可见度模式时绑定其它有效纹理，避免附件反馈。
+uniform sampler2D PlumeVisibility;
 uniform mat4 InverseProjection;
 uniform mat4 Projection;
 uniform mat4 DistantProjection;
@@ -18,6 +20,8 @@ uniform vec4 PlumeOriginLength;
 uniform vec4 PlumeAxisRadius;
 // HDR 核心上限、橙焰强度、逐弹稳定相位、仅光晕输入的软压缩峰值。
 uniform vec4 PlumeEmission;
+// 由既有毫米口径计算的世界光晕半径，与发动机环境照明共同限制在 20～500 格。
+uniform float PlumeHaloRadius;
 uniform float Time;
 uniform int OutputMode;
 in vec2 screenUV;
@@ -99,7 +103,7 @@ bool plumeInterval(vec3 ray, vec3 origin, vec3 axis, float extent, float radius,
 }
 
 // 整条喷流只用已配对的近景/DH 深度裁剪；不因喷口被弹体挡住而丢弃实际露出的尾段。
-vec3 plumeRadiance(vec3 ray, float sceneDistance) {
+vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV) {
     vec3 origin = PlumeOriginLength.xyz;
     float extent = PlumeOriginLength.w;
     vec3 axis = normalize(PlumeAxisRadius.xyz);
@@ -113,7 +117,7 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance) {
     if (bound < pixelWorld * 1.5) {
         vec4 clip = Projection * vec4(center, 1.0);
         if (clip.w <= 0.00001) { return vec3(0.0); }
-        vec2 pixelDelta = (screenUV - (clip.xy / clip.w * 0.5 + 0.5)) * ScreenSize;
+        vec2 pixelDelta = (rayUV - (clip.xy / clip.w * 0.5 + 0.5)) * ScreenSize;
         float coverage = exp(-dot(pixelDelta, pixelDelta) * 0.7);
         float distanceAlong = dot(ray, center);
         float axialFacing = abs(dot(ray, axis));
@@ -151,13 +155,67 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance) {
     return vec3(1.0, 0.38, 0.07) * (core * PlumeEmission.x + outer * PlumeEmission.y);
 }
 
+// 只在一像素目标中执行：沿喷流七个轴向位置、每处三个横向样点，复用真实二十步辐射和近景/DH 裁剪。
+// 不能按“半径五百格的大球在墙前有一部分”判断可见，否则整条尾焰在墙后也会漏出巨型光晕。
+float visiblePlumeEmission() {
+    if (PlumeEmission.x <= 0.0 || PlumeOriginLength.w <= 0.0 || PlumeAxisRadius.w <= 0.0) { return 0.0; }
+    vec3 origin = PlumeOriginLength.xyz;
+    vec3 axis = normalize(PlumeAxisRadius.xyz);
+    vec3 center = origin + axis * PlumeOriginLength.w * 0.5;
+    vec3 toward = dot(center, center) > 0.000001 ? normalize(center) : vec3(0.0, 0.0, -1.0);
+    vec3 lateral = cross(axis, toward);
+    if (dot(lateral, lateral) < 0.000001) { lateral = cross(axis, vec3(0.0, 1.0, 0.0)); }
+    if (dot(lateral, lateral) < 0.000001) { lateral = vec3(1.0, 0.0, 0.0); }
+    lateral = normalize(lateral);
+    float visible = 0.0;
+    for (int sampleIndex = 0; sampleIndex < 7; sampleIndex++) {
+        float along = (float(sampleIndex) + 0.5) / 7.0;
+        float slice = 0.0;
+        for (int side = -1; side <= 1; side++) {
+            vec3 point = origin + axis * PlumeOriginLength.w * along
+                    + lateral * (float(side) * PlumeAxisRadius.w * 0.5);
+            vec4 clip = Projection * vec4(point, 1.0);
+            if (clip.w <= 0.000001) { continue; }
+            vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+            if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { continue; }
+            vec4 surface = scenePosition(uv);
+            if (surface.w < -0.5) { continue; }
+            float limit = surface.w > 0.5 ? length(surface.xyz) : 1.0e20;
+            vec3 emission = plumeRadiance(normalize(point), limit, uv);
+            float peak = max(emission.r, max(emission.g, emission.b));
+            slice = max(slice, clamp(peak / max(PlumeEmission.x, 0.0001), 0.0, 1.0));
+        }
+        visible += slice;
+    }
+    return visible / 7.0;
+}
+
+// 在喷口深度的相机朝向平面上按世界半径求径向扩散，保留橙色色比，边缘平滑归零。
+// 这是可见发光源的光晕，不是额外的五百格烟雾体积；只有源本身可见时才叠加。
+vec3 worldHalo(vec3 ray) {
+    float visible = texture(PlumeVisibility, vec2(0.5)).r;
+    if (visible <= 0.0001 || PlumeEmission.y <= 0.0 || PlumeOriginLength.z >= -0.0001 || ray.z >= -0.0001) { return vec3(0.0); }
+    vec3 point = ray * (PlumeOriginLength.z / ray.z);
+    float radius = clamp(PlumeHaloRadius, 20.0, 500.0);
+    vec2 delta = point.xy - PlumeOriginLength.xy;
+    float radialSq = dot(delta, delta) / (radius * radius);
+    if (radialSq >= 1.0) { return vec3(0.0); }
+    // 世界半径决定轮廓，亮度/阶段只改变强度；指数中心和平方边缘避免硬圆盘边界。
+    float falloff = exp(-6.0 * radialSq) * pow(1.0 - radialSq, 2.0);
+    float response = 1.0 - exp(-PlumeEmission.y * visible * falloff);
+    return vec3(1.0, 0.38, 0.07) * response;
+}
+
 void main() {
+    // 模式 3 不使用当前一像素目标的 screenUV 查询主世界，所有遮挡由上面的实际样点位置决定。
+    if (OutputMode == 3) { fragColor = vec4(visiblePlumeEmission(), 0.0, 0.0, 1.0); return; }
     vec4 surface = scenePosition(screenUV);
     if (surface.w < -0.5) { fragColor = vec4(0.0); return; }
     vec3 ray = normalize(viewPosition(screenUV, 0.5));
+    if (OutputMode == 4) { fragColor = vec4(worldHalo(ray), 0.0); return; }
     // 天空不使用近景远平面裁掉远程克隆喷流；有表面时仍严格按真实深度截断。
     float sceneDistance = surface.w > 0.5 ? length(surface.xyz) : 1.0e20;
-    vec3 emission = clamp(plumeRadiance(ray, sceneDistance), vec3(0.0), vec3(60000.0));
+    vec3 emission = clamp(plumeRadiance(ray, sceneDistance, screenUV), vec3(0.0), vec3(60000.0));
     if (OutputMode == 0) {
         // 原始辐射量供显卡诊断回读，生产显示使用模式 2，光晕输入使用模式 1。
         fragColor = vec4(emission, dot(emission, vec3(0.2126, 0.7152, 0.0722)));

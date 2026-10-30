@@ -18,6 +18,7 @@ import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhProjectionMath;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
@@ -230,6 +231,8 @@ public final class RVP_ScreenLightPass {
                 FRAME.draw(lightShader);
                 // 调用喷口独立叠加，即使关闭光晕，核心仍可达到显示白点而非旧的 0.9 上限。
                 renderEmission();
+                // 调用世界尺寸光晕；小分辨率 Bloom 目标失败时，仍可保留独立广域扩散。
+                RVP_RocketPlumePass.renderHalos(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime);
                 // 调用真实喷流的独立显示叠加；关闭 Bloom 或环境照明不取消发动机视觉。
                 RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
                 // 调用独立烟雾受光，纯天空背景也按烟雾自己的几何位置计算，不拿背景墙代替它。
@@ -243,7 +246,10 @@ public final class RVP_ScreenLightPass {
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
             // 调用半分辨率提取、横向模糊和纵向模糊；全部只读取灯光贡献，不把 HUD 或整片白天纳入光晕。
             bloomPass(0, FRAME.light(), FRAME.bloomTarget(0), 0, 0);
-            float blurStep = plumes.isEmpty() ? 2F : RVP_RocketPlumeParameters.BLOOM_BLUR_STEP;
+            // 调用范围倍率，只改变原高斯核的采样间距，提取阈值、核权重和采样次数保持不变。
+            float blurStep = (plumes.isEmpty() ? 2F : RVP_RocketPlumeParameters.BLOOM_BLUR_STEP)
+                    * RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.bloom,
+                            RVP_LightRuntimeTuning.Parameter.blurScale);
             bloomPass(1, FRAME.bloom(0), FRAME.bloomTarget(1), blurStep / FRAME.bloomWidth(), 0);
             bloomPass(1, FRAME.bloom(1), FRAME.bloomTarget(0), 0, blurStep / FRAME.bloomHeight());
             // 调用最终合成，不再复制背景，保留场景 Alpha。
@@ -255,6 +261,8 @@ public final class RVP_ScreenLightPass {
             FRAME.draw(bloomShader);
             // 调用只增强喷口的显示峰值，不提高普通爆炸/炮口光的曝光上限。
             renderEmission();
+            // 调用半径至少二十格的独立光晕，再叠加真实细长核心，保持白热形状清晰。
+            RVP_RocketPlumePass.renderHalos(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime);
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
             RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }

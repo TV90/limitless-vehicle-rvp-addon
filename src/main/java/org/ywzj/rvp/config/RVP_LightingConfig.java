@@ -3,6 +3,9 @@ package org.ywzj.rvp.config;
 import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Group;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Parameter;
 
 /** 客户端屏幕光画质设置；具体光源参数由代码控制，P5 真实方块光在本轮固定关闭。 */
 public final class RVP_LightingConfig {
@@ -48,17 +51,33 @@ public final class RVP_LightingConfig {
     }
 
     /** 配置未加载时允许安全客户端默认值。 */
-    public static boolean screenEnabled() { return !CLIENT_SPEC.isLoaded() || SCREEN_LIGHT.get(); }
+    public static boolean screenEnabled() {
+        // 调用本机会话覆盖；未调参时沿用已加载的画质配置。
+        return RVP_LightRuntimeTuning.getOrDefault(Group.global, Parameter.enabled,
+                !CLIENT_SPEC.isLoaded() || SCREEN_LIGHT.get() ? 1 : 0) == 1;
+    }
     /** 配置未加载时使用默认光晕。 */
-    public static boolean bloomEnabled() { return !CLIENT_SPEC.isLoaded() || BLOOM.get(); }
+    public static boolean bloomEnabled() {
+        // 调用光晕临时开关；reset 后重新尊重 TOML，不改写磁盘文件。
+        return RVP_LightRuntimeTuning.getOrDefault(Group.bloom, Parameter.enabled,
+                !CLIENT_SPEC.isLoaded() || BLOOM.get() ? 1 : 0) == 1;
+    }
     /** 默认关闭实验性空气散射。 */
     public static boolean volumetricEnabled() { return CLIENT_SPEC.isLoaded() && VOLUMETRIC.get(); }
     /** 返回客户端灯数预算。 */
     public static int maxLights() { return CLIENT_SPEC.isLoaded() ? MAX_LIGHTS.get() : 8; }
     /** 返回客户端距离预算。 */
-    public static double maxDistance() { return CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 256; }
+    public static double maxDistance() {
+        // 调用距离倍率；仍受既有16～1024格预算约束，不影响喷焰独立的远距可见性。
+        return Math.max(16, Math.min(1024, (CLIENT_SPEC.isLoaded() ? MAX_DISTANCE.get() : 256)
+                * RVP_LightRuntimeTuning.get(Group.global, Parameter.distanceScale)));
+    }
     /** 返回客户端亮度倍率。 */
-    public static float intensity() { return CLIENT_SPEC.isLoaded() ? INTENSITY.get().floatValue() : 1; }
+    public static float intensity() {
+        // 调用总亮度倍率；真实光源与烟雾共用结果，喷焰保持独立自发光。
+        return (CLIENT_SPEC.isLoaded() ? INTENSITY.get().floatValue() : 1)
+                * RVP_LightRuntimeTuning.get(Group.global, Parameter.brightness);
+    }
     /** 本轮固定返回 false；已有 TOML 的 blockLight=true 也不能开启真实方块光。 */
     public static boolean blockLightEnabled() { return P5_ENABLED; }
     /** 返回 P5 保留代码的条目预算；当前不会放置新光源。 */

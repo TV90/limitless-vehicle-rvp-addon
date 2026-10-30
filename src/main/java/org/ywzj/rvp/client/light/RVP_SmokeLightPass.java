@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.particle.*;
 import org.ywzj.rvp.config.RVP_LightingConfig;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import org.ywzj.vehicle.client.particle.DustSmokeParticle;
 import org.ywzj.vehicle.client.particle.SmokeCloudParticle;
 import org.ywzj.vehicle.client.particle.TrackDustParticle;
@@ -171,8 +172,11 @@ public final class RVP_SmokeLightPass {
             VIEW_LIGHT_SPHERES[index * 4 + 2] = position.z;
             VIEW_LIGHT_SPHERES[index * 4 + 3] = light.radius();
             shader.safeGetUniform("LightPositionRadius" + index).set(position.x, position.y, position.z, light.radius());
+            // 调用烟雾独立亮度倍率，沿用同一批已调参光源、透明边缘和场景遮挡。
             shader.safeGetUniform("LightColorIntensity" + index).set(light.red(), light.green(), light.blue(),
-                    light.intensity() * light.surfaceWeight() * RVP_LightingConfig.intensity());
+                    light.intensity() * light.surfaceWeight() * RVP_LightingConfig.intensity()
+                            * RVP_LightRuntimeTuning.get(RVP_LightRuntimeTuning.Group.global,
+                                    RVP_LightRuntimeTuning.Parameter.smokeBrightness));
         }
         if (vertexBuffer == null) { vertexBuffer = new VertexBuffer(VertexBuffer.Usage.DYNAMIC); }
         for (RVP_SmokeLightGeometry.Batch batch : GEOMETRY.batches()) {

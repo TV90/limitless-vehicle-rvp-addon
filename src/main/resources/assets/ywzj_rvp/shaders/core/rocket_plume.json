@@ -10,6 +10,9 @@
     },
     {
       "name": "DistantDepth"
+    },
+    {
+      "name": "PlumeVisibility"
     }
   ],
   "uniforms": [
@@ -223,6 +226,14 @@
         16,
         0,
         12
+      ]
+    },
+    {
+      "name": "PlumeHaloRadius",
+      "type": "float",
+      "count": 1,
+      "values": [
+        20
       ]
     },
     {

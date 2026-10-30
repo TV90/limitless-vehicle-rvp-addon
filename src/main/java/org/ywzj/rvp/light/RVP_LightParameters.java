@@ -6,7 +6,7 @@ package org.ywzj.rvp.light;
  * @param red 红色，0～1
  * @param green 绿色，0～1
  * @param blue 蓝色，0～1
- * @param radius 影响半径，单位格，最大 48
+ * @param radius 影响半径，单位格；发动机按口径计算为 20～500，爆炸/炮口沿用各自上限
  * @param intensity 亮度倍率，0～4
  * @param durationTicks 闪光寿命，单位 tick，1～40
  * @param mergeWindowTicks 同源短光合并窗口，单位 tick，0～10
@@ -25,6 +25,12 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
     public static final float ENGINE_CORE_INTENSITY = 60000F;
     /** 喷口周围橙色发光气团的 HDR 峰值，不依赖可选空气散射开关。 */
     public static final float ENGINE_HALO_INTENSITY = 16F;
+    /** 发动机广域光晕与环境照明的共同最小半径，单位格，缺失口径时采用此值。 */
+    public static final float ENGINE_MIN_RADIUS = 20F;
+    /** 每毫米弹体口径增加的共同半径，单位格/mm；100 mm 对应总半径 30 格。 */
+    public static final float ENGINE_RADIUS_PER_MM = 0.1F;
+    /** 发动机广域光晕与环境照明的共同半径硬上限，单位格。 */
+    public static final float ENGINE_MAX_RADIUS = 500F;
     /** 一级喷口核心的物理半径，单位格。 */
     private static final float ENGINE_CORE_RADIUS = 0.28F;
     /** 橙色气团相对核心的半径倍数。 */
@@ -48,8 +54,21 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
 
     /** 发动机只更新屏幕光；默认绝不逐 tick 写入真实方块光。 */
     public static RVP_LightParameters engine() {
-        return new RVP_LightParameters(true, 1, 0.48F, 0.12F, 7, ENGINE_SURFACE_INTENSITY,
+        // 调用相同口径规则，命令及缺少明确口径的预览采用二十格基础半径。
+        return engine(0);
+    }
+
+    /** 既有 effects_data.caliber 单位为毫米；只控制共同照明/光晕半径，不改变喷焰模型尺寸。 */
+    public static RVP_LightParameters engine(float caliber) {
+        // 调用唯一半径计算入口，环境光与程序光晕不会分别硬编码一套范围。
+        return new RVP_LightParameters(true, 1, 0.48F, 0.12F, engineRadius(caliber), ENGINE_SURFACE_INTENSITY,
                 3, 0, 0.8F, 1, true, 0, 0);
+    }
+
+    /** 按毫米口径叠加，非法值回退最小值；有限超大值限制为五百格，不把 NaN/Inf 交给显卡。 */
+    public static float engineRadius(float caliber) {
+        float safeCaliber = Float.isFinite(caliber) ? Math.max(0F, caliber) : 0F;
+        return Math.min(ENGINE_MAX_RADIUS, ENGINE_MIN_RADIUS + safeCaliber * ENGINE_RADIUS_PER_MM);
     }
 
     /** 按真实阶段/年龄生成独立喷口自发光；所有数值由代码控制，不加入武器 JSON。 */
@@ -72,13 +91,13 @@ public record RVP_LightParameters(boolean enabled, float red, float green, float
      */
     public record EngineEmission(float coreRadius, float haloRadius, float coreIntensity, float haloIntensity) { }
 
-    /** 一级最亮；二脉冲略收窄、偏暖并降低强度，临近燃尽再平滑收敛，但不延长真实燃烧窗口。 */
+    /** 一级最亮；二脉冲偏暖并减弱，临近燃尽再收敛；共同半径保持口径规则，不低于二十格。 */
     public static RVP_LightParameters enginePhase(RVP_LightParameters parameters, boolean secondPulse, int remainingTicks) {
         float phase = (0.7F + 0.3F * Math.min(1, Math.max(0, remainingTicks) / 20.0F))
                 * (secondPulse ? 0.7F : 1);
         return new RVP_LightParameters(parameters.enabled(), parameters.red(),
                 parameters.green() * (secondPulse ? 0.9F : 1), parameters.blue() * (secondPulse ? 0.8F : 1),
-                parameters.radius() * (secondPulse ? 0.8F : 1), parameters.intensity() * phase,
+                Math.max(ENGINE_MIN_RADIUS, Math.min(ENGINE_MAX_RADIUS, parameters.radius())), parameters.intensity() * phase,
                 parameters.durationTicks(), parameters.mergeWindowTicks(), parameters.surfaceWeight(), parameters.decay(),
                 parameters.bloom(), parameters.volumetricStrength(), 0);
     }

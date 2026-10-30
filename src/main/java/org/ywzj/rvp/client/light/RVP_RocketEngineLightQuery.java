@@ -61,12 +61,15 @@ public final class RVP_RocketEngineLightQuery {
             return;
         }
         // 调用代码中的统一发动机光参数；已有推进/喷口数据仍复用，颜色、半径、强度不从 JSON 读取。
-        RVP_LightParameters parameters = RVP_LightParameters.engine();
+        // 调用既有弹体口径，缺失时只采用二十格基础范围，不混用曳光口径或新增 JSON 光源字段。
+        var effects = bullet.getResolvedWeaponConfig().getEffectsData();
+        float caliber = effects.hasCaliberOverride() ? effects.getCaliber() : 0F;
+        RVP_LightParameters parameters = RVP_LightParameters.engine(caliber);
         // 调用燃尽倒计时，一级充足燃烧期最亮，临近燃尽略收敛；燃尽状态仍由事实立即关闭。
         int remaining = bullet.isRemoteVisualClone()
                 ? RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(bullet.level().dimension().location(), bullet.getId())
                 : bullet.ticksUntilMotorStopsBurning();
-        // 调用共用阶段包络，明确区分已同步的二脉冲窗口，一级保持最亮，颜色/半径随阶段变化。
+        // 调用共用阶段包络，二脉冲改变颜色/强度，口径决定的共同半径保持不变。
         RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, bullet.isSecondMotorPulseBurningNow(), remaining);
         // 调用持续光更新，喷口先计算再按相机位置转换，避免远坐标浮点抖动。
         Vec3 position = nozzle(bullet, renderOrigin, partialTick);
@@ -74,6 +77,6 @@ public final class RVP_RocketEngineLightQuery {
         // 调用独立喷流登记，只复用旧 flame_scale，亮度使用统一发动机阶段，数量/距离不套用八灯预算。
         RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
                 bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
-                phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
+                caliber, phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
     }
 }
