@@ -63,6 +63,10 @@ public final class RVP_RocketFlameDebugCommands {
     /** 显示全部火箭尾焰运行时覆盖值及其默认状态。 */
     private static int show(CommandContext<CommandSourceStack> context) {
         send(context, "[RVP RocketFlame] 当前为客户端会话级覆盖；未覆盖项继续使用武器 JSON/代码默认值。");
+        // 调用新尾烟状态，明确旧粒子已关闭；原调参项继续保留，但不假装旧面片抖动会影响体积烟。
+        send(context, "[RVP RocketFlame] 当前使用世界轨迹体积烟；旧贴图尾迹已关闭。缓存烟段="
+                + org.ywzj.rvp.client.light.RVP_RocketTrailManager.INSTANCE.size());
+        send(context, "尺寸、间隔、密度、偏移、保持和淡出项影响新烟；flameTicks、trailLayers、jitter 等项仅供保留的旧粒子使用。");
         for (Parameter parameter : Parameter.values()) {
             // 调用本项目运行时调参入口：把当前覆盖状态和默认值输出到聊天栏。
             send(context, RVP_RocketFlameRuntimeTuning.describe(parameter));
@@ -87,7 +91,7 @@ public final class RVP_RocketFlameDebugCommands {
         }
         send(context, "[RVP RocketFlame] 已设置 "
                 + RVP_RocketFlameRuntimeTuning.describe(parameter)
-                + "；只影响之后生成的粒子。");
+                + "；影响之后生成的烟；旧粒子专属项不会改变当前体积烟。");
         return 1;
     }
 

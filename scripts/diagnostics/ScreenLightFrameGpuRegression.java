@@ -109,6 +109,13 @@ public final class ScreenLightFrameGpuRegression {
                 require(GL11.glGetInteger(GL20.GL_BLEND_EQUATION_ALPHA) == GL14.GL_MAX, "plume bloom-energy maximum merge");
                 require(GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB) == GL11.GL_ONE, "plume source RGB factor");
                 require(GL11.glGetInteger(GL14.GL_BLEND_DST_RGB) == GL11.GL_ONE, "plume destination RGB factor");
+                // 调用真实体积烟混合入口，检查它按透明度覆盖背景、保留目标 Alpha，且恢复时不遗留加法状态。
+                frame.beginVolumeSmokeBlend();
+                require(GL11.glGetInteger(GL20.GL_BLEND_EQUATION_RGB) == GL14.GL_FUNC_ADD, "volume smoke RGB equation");
+                require(GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB) == GL11.GL_ONE, "volume smoke premultiplied source");
+                require(GL11.glGetInteger(GL14.GL_BLEND_DST_RGB) == GL11.GL_ONE_MINUS_SRC_ALPHA, "volume smoke absorption");
+                require(GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA) == GL11.GL_ZERO, "volume smoke source alpha preservation");
+                require(GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA) == GL11.GL_ONE, "volume smoke target alpha preservation");
             }
             assertExternalState();
             System.out.println("PASS production scope restores draw/read FBO, MRT outputs, viewport, VAO/VBO, textures, samplers, masks and source-blend equations");

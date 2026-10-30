@@ -41,6 +41,8 @@ public final class RVP_ScreenLightDebugCommands {
                     // 调用光源取消入口，下一帧无活动灯即完全跳过场景复制。
                     RVP_ScreenLightManager.INSTANCE.clear();
                     RVP_RocketPlumeManager.INSTANCE.clear();
+                    // 调用新尾烟清理，显式 clear 同时清除残留的世界烟段。
+                    RVP_RocketTrailManager.INSTANCE.clear();
                     send(context.getSource(), "已清除当前预览与光源；调参值保留，仍在燃烧的发动机会继续更新。");
                     return 1;
                 }))
@@ -177,6 +179,7 @@ public final class RVP_ScreenLightDebugCommands {
                 + "，screen=" + RVP_LightingConfig.screenEnabled() + "，bloom=" + RVP_LightingConfig.bloomEnabled()
                 + "，block=" + RVP_LightingConfig.blockLightEnabled()
                 + "，plumes=" + RVP_RocketPlumeManager.INSTANCE.size()
+                + "，体积尾烟段=" + RVP_RocketTrailManager.INSTANCE.size()
                 + "，环境光总倍率=" + RVP_LightingConfig.intensity()
                 + "，观察距离=" + RVP_LightingConfig.maxDistance() + "格"
                 + "，调参覆盖组数=" + RVP_LightRuntimeTuning.overrides().size()

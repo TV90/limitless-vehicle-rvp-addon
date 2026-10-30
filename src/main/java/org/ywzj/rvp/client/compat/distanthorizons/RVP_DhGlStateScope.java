@@ -11,6 +11,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.BufferUtils;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
+import org.ywzj.rvp.client.render.RVP_BlendModeState;
 
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -20,6 +21,8 @@ import java.nio.IntBuffer;
 final class RVP_DhGlStateScope implements AutoCloseable {
     /** 本兼容 pass 最多使用的二维纹理单元数。 */
     private static final int TRACKED_TEXTURE_UNITS = 3;
+    /** 原 Shader/Effect 混合历史，和 GL 混合开关独立保存，防止载具保护层影响后续过载滤镜。 */
+    private final RVP_BlendModeState blendModeState = RVP_BlendModeState.capture();
     /** 进入作用域前的 draw framebuffer。 */
     private final int drawFramebuffer;
     /** 进入作用域前的 read framebuffer。 */
@@ -146,6 +149,8 @@ final class RVP_DhGlStateScope implements AutoCloseable {
         RVP_GlStateSync.cull(cullEnabled);
         RVP_GlStateSync.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
         GL11.glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+        // 调用独立历史恢复，保留原版 RenderType 与本体后处理各自的状态语义。
+        blendModeState.restore();
     }
 
     /** 读取固定长度的整数向量状态。 */

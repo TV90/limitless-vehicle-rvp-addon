@@ -73,6 +73,13 @@ public interface RVP_IClientActions {
                                      int holdMinTicks, int fadeTicks, int fadeRandomTicks,
                                      float alphaHoldRatio);
 
+    /** 登记新的世界空间火箭尾烟；scale≤0 表示只断开后续路径，专用服务端不加载渲染类。 */
+    void addRocketVolumeTrail(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position,
+                              net.minecraft.world.phys.Vec3 exhaust, float scale, int remainingBurnTicks);
+
+    /** 登记体积贴地烟浪，代替 rvp_rocket_flame 原有的 WASH 贴图粒子。 */
+    void addRocketVolumeWash(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position, float scale);
+
     /**
      * 生成一个 HBM 风格液氧煤油黑烟尾焰粒子（技术储备：09-19 前的原始黑烟观感）。
      *

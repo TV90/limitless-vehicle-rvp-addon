@@ -1,7 +1,6 @@
 package org.ywzj.rvp.client.render;
 
 import com.mojang.blaze3d.platform.GlStateManager;
-import com.mojang.blaze3d.shaders.BlendMode;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
@@ -91,16 +90,13 @@ public final class RVP_GlStateSync {
     }
 
     /**
-     * 退出自绘通道时恢复混合，并同步 ShaderInstance 使用的另一层 BlendMode 缓存。
-     * 先经过不透明模式再恢复原模式，避免 BlendMode 的相等判断跳过状态设置；
-     * 最后分别恢复 RGB/Alpha 方程，因为原版 BlendMode 只能表达共用一个方程。
+     * 退出自绘通道时仅恢复实际混合与 RenderSystem 缓存，不伪造 Shader 的 BlendMode 调用历史。
+     * 原版常由 RenderType 开启透明混合，再应用没有独立混合配置的默认 Shader；
+     * 此处若伪造一次透明 BlendMode.apply，下一段默认 Shader 会关闭混合，透明黑色就会盖住世界。
+     * 原调用历史须由 RVP_BlendModeState 独立捕获并原样归还，实际开关不能用来推导历史。
      */
     public static void restoreBlend(boolean enabled, int sourceRgb, int destinationRgb,
             int sourceAlpha, int destinationAlpha, int equationRgb, int equationAlpha) {
-        new BlendMode().apply();
-        if (enabled) {
-            new BlendMode(sourceRgb, destinationRgb, sourceAlpha, destinationAlpha, equationRgb).apply();
-        }
         // 调用双向同步入口，原版或第三方缓存无论处于何种状态都必须恢复真实因子和开关。
         blendFunction(sourceRgb, destinationRgb, sourceAlpha, destinationAlpha);
         GL20.glBlendEquationSeparate(equationRgb, equationAlpha);

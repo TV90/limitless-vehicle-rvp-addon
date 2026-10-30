@@ -5097,6 +5097,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         spawnLaunchWash(effects, motorBurning);
         // 观瞄伪装期内跳过客户端本地尾迹：粒子生成在真实弹道位置，会出卖炮口伪装
         if (sightDisguiseRenderOffset != null && tickCount < sightDisguiseTicks) {
+            // 调用体积烟断链，观瞄伪装结束后不能把隐藏期间的路径重新补成一条烟线。
+            stopRocketVolumeTrail(effects);
             trailMotorBurningO = false;
             return;
         }
@@ -5107,6 +5109,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && (effects.hasMissileNativeTrailParticleOverride()
                 || effects.hasMissileNativeTrailParticleStyle()));
         if (!motorBurning) {
+            // 调用体积烟断链，燃尽不再排烟，但已经生成的烟段继续按自身寿命消散。
+            stopRocketVolumeTrail(effects);
             trailMotorBurningO = false;
             return;
         }
@@ -5114,6 +5118,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 调用本项目运行时调参入口：允许客户端命令在不改武器 JSON 的情况下关闭火箭尾焰。
         if (missileNativeTrail && (!effects.isMissileNativeTrailEnabled()
                 || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true)))) {
+            // 调用体积烟断链，快速重新打开开关也不能补出被关闭期间的路径。
+            stopRocketVolumeTrail(effects);
             trailMotorBurningO = false;
             return;
         }
@@ -5187,6 +5193,15 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         }
     }
 
+    /** 停止生成时只清理未来连接，使用既有客户端桥传零尺寸，不让公共实体加载渲染类。 */
+    private void stopRocketVolumeTrail(RVP_EffectsData effects) {
+        if (effects.isMissileNativeTrailRocketFlame()
+                && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+            // 调用客户端尾烟入口的零尺寸语义，客户端断链，专用服务端为空操作。
+            RVP_ClientActionsAccess.addRocketVolumeTrail(this, this.position(), Vec3.ZERO, 0, 0);
+        }
+    }
+
     private void spawnMissileNativeTrailParticles(RVP_EffectsData effects) {
         boolean rvpSmokeStyle = effects.isMissileNativeTrailRvpSmoke();
         boolean rocketFlameStyle = effects.isMissileNativeTrailRocketFlame();
@@ -5209,8 +5224,25 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 绕过了 ClientLevel.addParticle 的 HITL 拦截 Mixin，TV 导弹视角会看见自身尾焰——
         // 生成前经桥查询激活导弹屏蔽半径（修复回归）。
         if (RVP_ClientActionsAccess.shouldSuppressTrailParticleNearHitlMissile(pos.x, pos.y, pos.z)) {
+            // 调用体积烟断链，从 TV 相机切回后不补出被屏蔽期间的烟。
+            stopRocketVolumeTrail(effects);
             particlePosO = pos;
             trailParticleTickO = getFlightTickCount();
+            return;
+        }
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+            // 调用既有尺寸/发射段加粗解析，将同一个 rvp_rocket_flame 配置交给新的世界烟段通道。
+            float volumeScale = RVP_RocketFlameRuntimeTuning.resolveParticleScale(effects.getMissileNativeTrailParticleScale())
+                    * resolveLaunchBoostFactor(effects);
+            // 调用双端安全桥；公共弹体不引用客户端管理器或显卡类型，且不进入旧逐颗粒子补点循环。
+            RVP_ClientActionsAccess.addRocketVolumeTrail(this, pos, this.getLookAngle().scale(-1),
+                    volumeScale, ticksUntilMotorStopsBurning());
+            particlePosO = pos;
+            trailParticleTickO = getFlightTickCount();
+            trailMotorBurningO = true;
+            return;
+        }
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) {
             return;
         }
         int configuredSpawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
@@ -5342,6 +5374,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 目的：烟浪滞留时长与扩散范围跟随"尾迹尺寸 × 发射段加粗"提升——
         // 粒子侧按 sizeScale 等比放大寿命与膨胀末端，发射段加粗窗口内同样全额生效
         washScale *= resolveLaunchBoostFactor(effects);
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+            // 调用新的体积贴地烟浪，保持原发射/冷发射条件，旧 WASH 贴图粒子不再生成。
+            RVP_ClientActionsAccess.addRocketVolumeWash(this, new Vec3(this.getX(), groundY + 0.5D, this.getZ()), washScale);
+            return;
+        }
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
         // 每 tick 8 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
         for (int i = 0; i < 8; i++) {
             RVP_ClientActionsAccess.addLaunchWashParticle(
@@ -5354,7 +5392,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
      * （{@code motorBurnEndTick}）内随飞行进度从全额线性回落到 1.0；未配置（1.0）时快速返回。
      * 供空中尾迹与地面烟浪共同使用，保证两者发射段观感同步提升。
      */
-    private float resolveLaunchBoostFactor(RVP_EffectsData effects) {
+    public float resolveLaunchBoostFactor(RVP_EffectsData effects) {
         float boost = effects.getMissileNativeTrailLaunchBoost();
         if (effects.isMissileNativeTrailRocketFlame()) {
             // 调用本项目运行时调参入口：仅对火箭尾焰覆盖发射段加粗倍率。

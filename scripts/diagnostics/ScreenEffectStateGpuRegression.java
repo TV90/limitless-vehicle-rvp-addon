@@ -4,10 +4,12 @@ import com.mojang.blaze3d.shaders.BlendMode;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.client.renderer.EffectInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceProvider;
+import net.minecraft.server.packs.resources.ResourceManager;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
@@ -20,7 +22,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+import net.minecraft.server.packs.PackResources;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
+import org.ywzj.rvp.client.render.RVP_GlStateSync;
 
 /** 用真实生产作用域及 ShaderInstance 检查 DH、光照与冲击波之间的状态交接，不启动游戏世界。 */
 public final class ScreenEffectStateGpuRegression {
@@ -42,7 +50,7 @@ public final class ScreenEffectStateGpuRegression {
             GL.createCapabilities(); RenderSystem.initRenderThread();
             System.out.println("GPU=" + GL11.glGetString(GL11.GL_RENDERER));
             int failures = 0;
-            for (String test : List.of("DH", "lighting", "pressure", "pressure pixels")) {
+            for (String test : List.of("DH", "lighting", "pressure", "pressure pixels", "vehicle overload", "blend history")) {
                 try {
                     switch (test) {
                         // 调用真实 DH 作用域，检查恢复后的下一次引擎请求。
@@ -53,6 +61,10 @@ public final class ScreenEffectStateGpuRegression {
                         case "pressure" -> testPressureWaveState();
                         // 调用完整生产冲击波，对抗残留减法混合与外部独立采样器。
                         case "pressure pixels" -> testPressureWaveDraw(Path.of(args[0]));
+                        // 调用本体真实过载 Shader，验证高度变化激活后与三个 RVP 作用域的连续交接。
+                        case "vehicle overload" -> testVehicleOverload(Path.of(args[0]));
+                        // 调用实际作用域，验证反向状态组合、嵌套、异常退出和首次绘制前的 null 历史。
+                        case "blend history" -> testBlendHistoryContracts();
                     }
                 } catch (Throwable failure) {
                     failures++;
@@ -132,6 +144,25 @@ public final class ScreenEffectStateGpuRegression {
                 float[] capturedDepth = new float[1];
                 GL11.glReadPixels(8, 8, 1, 1, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, capturedDepth);
                 require(Math.abs(capturedDepth[0] - 1F) < .00001F, "screen draw overwrote world/sky depth");
+                // 模拟原版 RenderType：先启用透明混合，再应用未自带 blend 配置的默认 Shader。
+                // 自绘作用域不能把 BlendMode 的全局历史改成“透明 Shader”，否则默认 Shader 会关闭混合。
+                new BlendMode().apply();
+                RVP_GlStateSync.restoreBlend(true, GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                        GL11.GL_ZERO, GL11.GL_ONE, GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
+                RenderSystem.enableBlend();
+                shader.safeGetUniform("OutputMode").set(2);
+                shader.apply();
+                try {
+                    // 零盏灯的自发光通道输出全透明黑；正确透明混合必须完整保留背后的世界。
+                    GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+                    GL11.glReadPixels(8, 8, 1, 1, GL11.GL_RGBA, GL11.GL_FLOAT, pixel);
+                    System.out.println("Next transparent world pass=" + java.util.Arrays.toString(pixel)
+                            + "; blend=" + GL11.glIsEnabled(GL11.GL_BLEND));
+                    for (int channel = 0; channel < 4; channel++) {
+                        require(Math.abs(pixel[channel] - SKY[channel]) < .002F,
+                                "restoring external blend changed Shader BlendMode history and blackened the next world pass");
+                    }
+                } finally { shader.clear(); }
             }
             System.out.println("PASS production opaque screen draw preserves sky RGB/alpha and world depth under stale blend cache");
         } finally {
@@ -228,8 +259,142 @@ public final class ScreenEffectStateGpuRegression {
         PathPackResources pack = new PathPackResources("rvp-screen-state-regression", root.resolve("src/main/resources"), false);
         return location -> {
             Path file = root.resolve("src/main/resources/assets").resolve(location.getNamespace()).resolve(location.getPath());
-            return Files.isRegularFile(file) ? Optional.of(new Resource(pack, () -> Files.newInputStream(file))) : Optional.empty();
+            if (Files.isRegularFile(file)) { return Optional.of(new Resource(pack, () -> Files.newInputStream(file))); }
+            java.net.URL bundled = ScreenEffectStateGpuRegression.class.getResource(
+                    "/assets/" + location.getNamespace() + "/" + location.getPath());
+            return bundled == null ? Optional.empty() : Optional.of(new Resource(pack, bundled::openStream));
         };
+    }
+
+    /** 重放“天空/DH 的 Alpha 为零→RVP→本体过载”的真实程序链，近景 Alpha=1 用于对照。 */
+    private static void testVehicleOverload(Path root) throws Exception {
+        int sourceColor = texture(false); int depth = texture(true); int outputColor = texture(false);
+        int source = GL30.glGenFramebuffers(); int output = GL30.glGenFramebuffers();
+        int triangle = GL30.glGenVertexArrays(); int positions = GL15.glGenBuffers();
+        RVP_ScreenFrameResources frame = new RVP_ScreenFrameResources();
+        float[] pattern = new float[SIZE * SIZE * 4];
+        for (int y = 0; y < SIZE; y++) {
+            for (int x = 0; x < SIZE; x++) {
+                int at = (y * SIZE + x) * 4;
+                pattern[at] = .125F; pattern[at + 1] = .25F; pattern[at + 2] = .5F;
+                pattern[at + 3] = x < SIZE / 2 ? 0F : 1F;
+            }
+        }
+        RVP_GlStateSync.activeTexture(GL13.GL_TEXTURE0); RVP_GlStateSync.bindTexture2D(sourceColor);
+        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, SIZE, SIZE, GL11.GL_RGBA, GL11.GL_FLOAT, pattern);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, source);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, sourceColor, 0);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, depth, 0);
+        GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0); GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+        // 调用真实场景捕获，颜色和深度从同一来源配对。
+        require(frame.captureDepth(source, depth, SIZE, SIZE), "overload scene depth capture");
+        try (RVP_ScreenFrameResources.State ignored = new RVP_ScreenFrameResources.State()) {
+            require(frame.captureColor(source, SIZE, SIZE), "overload scene color capture");
+        }
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, output);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, outputColor, 0);
+        GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0); GL11.glReadBuffer(GL30.GL_COLOR_ATTACHMENT0);
+        GL30.glBindVertexArray(triangle); GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, positions);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, new float[] {0,0,0, SIZE*2,0,0, 0,SIZE*2,0}, GL15.GL_STATIC_DRAW);
+        GL20.glEnableVertexAttribArray(0); GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 12, 0L);
+        try (ShaderInstance light = new ShaderInstance(resources(root),
+                    ResourceLocation.fromNamespaceAndPath("ywzj_rvp", "screen_light"), DefaultVertexFormat.POSITION);
+             EffectInstance overload = new EffectInstance(manager(root), "ywzj_vehicle:overload")) {
+            light.setSampler("SceneColor", frame.color()); light.setSampler("SceneDepth", frame.depth());
+            light.setSampler("DistantDepth", frame.depth()); light.safeGetUniform("NearEmptyDepth").set(1F);
+            light.safeGetUniform("InverseProjection").set(new Matrix4f().perspective((float)Math.PI/2,1,.1F,100).invert());
+            light.safeGetUniform("OutputMode").set(0); light.safeGetUniform("LightCount").set(0);
+            overload.setSampler("DiffuseSampler", () -> sourceColor);
+            overload.safeGetUniform("ProjMat").set(new Matrix4f().setOrtho(0, SIZE, 0, SIZE, -1, 1));
+            overload.safeGetUniform("OutSize").set((float)SIZE, (float)SIZE);
+            overload.safeGetUniform("Progress").set(0F); overload.safeGetUniform("Type").set(0);
+            java.util.List<String> failures = new java.util.ArrayList<>();
+            for (String route : List.of("control", "lighting", "pressure", "DH")) {
+                // 重现无特效时的调用历史：透明后处理已经 apply 过，而世界渲染通过 RenderSystem 关闭混合。
+                new BlendMode().apply(); overload.apply(); overload.clear(); RVP_GlStateSync.blend(false);
+                if (!route.equals("control")) {
+                    AutoCloseable saved = route.equals("lighting") ? new RVP_ScreenFrameResources.State()
+                            : scope(route.equals("DH") ? "org.ywzj.rvp.client.compat.distanthorizons.RVP_DhGlStateScope"
+                            : "org.ywzj.rvp.client.visual.shockwave.RVP_PressureWavePass$State");
+                    try (saved) {
+                        if (route.equals("lighting")) {
+                            // 调用生产光照绘制；零盏灯只重写原背景，排除光照数值影响。
+                            frame.bind(source, SIZE, SIZE); frame.draw(light);
+                        } else {
+                            // 冲击波/DH 同样使用默认不透明 Shader，已有专项覆盖其实际几何和颜色输出。
+                            light.apply(); RVP_GlStateSync.blend(false); light.clear();
+                        }
+                    }
+                }
+                GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, output);
+                GL11.glViewport(0,0,SIZE,SIZE); RVP_GlStateSync.scissor(false); RVP_GlStateSync.depthTest(false);
+                RVP_GlStateSync.colorMask(true,true,true,true); RVP_GlStateSync.cull(false);
+                GL11.glClearColor(0,0,0,0); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+                GL30.glBindVertexArray(triangle);
+                overload.apply();
+                GL11.glDrawArrays(GL11.GL_TRIANGLES,0,3);
+                float[] sky = new float[4]; float[] near = new float[4];
+                GL11.glReadPixels(3,8,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,sky);
+                GL11.glReadPixels(12,8,1,1,GL11.GL_RGBA,GL11.GL_FLOAT,near);
+                System.out.println("Actual overload after " + route + ": sky=" + java.util.Arrays.toString(sky)
+                        + " near=" + java.util.Arrays.toString(near) + " blend=" + GL11.glIsEnabled(GL11.GL_BLEND));
+                for (int c=0;c<3;c++) {
+                    if (Math.abs(sky[c]-SKY[c])>.002F || Math.abs(near[c]-SKY[c])>.002F) { failures.add(route); break; }
+                }
+                overload.clear();
+            }
+            require(failures.isEmpty(), "RVP changed overload blend history; zero-alpha sky/DH black after " + failures);
+            System.out.println("PASS actual vehicle overload preserves zero-alpha sky/DH and opaque near scene after all RVP scopes");
+        } finally {
+            frame.release(); GL30.glDeleteFramebuffers(source); GL30.glDeleteFramebuffers(output);
+            GL15.glDeleteBuffers(positions); GL30.glDeleteVertexArrays(triangle);
+            RenderSystem.deleteTexture(sourceColor); RenderSystem.deleteTexture(depth); RenderSystem.deleteTexture(outputColor);
+        }
+    }
+
+    /** 为本体 EffectInstance 提供真实只读资源，读取 mod jar 和 Minecraft 的原始 blit 程序。 */
+    private static ResourceManager manager(Path root) {
+        ResourceProvider provider = resources(root);
+        return new ResourceManager() {
+            @Override public Optional<Resource> getResource(ResourceLocation location) { return provider.getResource(location); }
+            @Override public Set<String> getNamespaces() { return Set.of("minecraft", "ywzj_vehicle", "ywzj_rvp"); }
+            @Override public List<Resource> getResourceStack(ResourceLocation location) { return getResource(location).stream().toList(); }
+            @Override public Map<ResourceLocation,Resource> listResources(String path, Predicate<ResourceLocation> filter) { return Map.of(); }
+            @Override public Map<ResourceLocation,List<Resource>> listResourceStacks(String path, Predicate<ResourceLocation> filter) { return Map.of(); }
+            @Override public Stream<PackResources> listPacks() { return Stream.empty(); }
+        };
+    }
+
+    /** 同时覆盖“历史不透明但实际混合开启”，防止修远景黑屏时重引入上轮默认黑屏。 */
+    private static void testBlendHistoryContracts() throws Exception {
+        Field history = BlendMode.class.getDeclaredField("lastApplied"); history.setAccessible(true);
+        Object original = history.get(null);
+        try {
+            for (String type : List.of("org.ywzj.rvp.client.light.RVP_ScreenFrameResources$State",
+                    "org.ywzj.rvp.client.visual.shockwave.RVP_PressureWavePass$State",
+                    "org.ywzj.rvp.client.compat.distanthorizons.RVP_DhGlStateScope")) {
+                new BlendMode().apply(); Object before = history.get(null); RVP_GlStateSync.blend(true);
+                try (AutoCloseable ignored = scope(type)) {
+                    new BlendMode(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL14.GL_FUNC_ADD).apply();
+                }
+                require(history.get(null) == before, "scope fabricated/replaced shader blend history: " + type);
+                new BlendMode().apply();
+                require(GL11.glIsEnabled(GL11.GL_BLEND), "next default shader disabled transparent world rendering: " + type);
+            }
+            history.set(null, null);
+            try {
+                try (AutoCloseable outer = scope("org.ywzj.rvp.client.light.RVP_ScreenFrameResources$State")) {
+                    new BlendMode().apply(); Object middle = history.get(null);
+                    try (AutoCloseable inner = scope("org.ywzj.rvp.client.visual.shockwave.RVP_PressureWavePass$State")) {
+                        new BlendMode(GL11.GL_ONE, GL11.GL_ONE, GL14.GL_MAX).apply();
+                    }
+                    require(history.get(null) == middle, "nested scope did not restore its own caller history");
+                    throw new IllegalArgumentException("expected diagnostic exception");
+                }
+            } catch (IllegalArgumentException expected) { /* 异常退出也必须走生产 close。 */ }
+            require(history.get(null) == null, "exceptional outer scope did not preserve initial null history");
+            System.out.println("PASS exact caller blend history, opposite GL state, nesting, exceptions and null startup state");
+        } finally { history.set(null, original); }
     }
 
     /** 仅诊断程序反射调用生产私有入口，避免为测试扩大正式 API 或新增注入。 */

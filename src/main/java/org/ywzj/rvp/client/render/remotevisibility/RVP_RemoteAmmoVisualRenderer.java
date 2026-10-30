@@ -323,6 +323,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
         long gameTick = minecraft.level.getGameTime();
         if (!RVP_ClientRemoteAmmoVisualState.isMotorBurningForTrail(
                 dimension, entity.getId(), gameTick)) {
+            // 调用体积烟断链，远距快照明确燃尽时不继续连接下一段；已排出的烟保留。
+            org.ywzj.rvp.client.light.RVP_RocketTrailManager.INSTANCE.stop(entity.getId());
             TRAIL_STATES.remove(entity.getId());
             return;
         }
@@ -333,10 +335,25 @@ public final class RVP_RemoteAmmoVisualRenderer {
         // 调用本项目运行时调参入口：远程火箭尾迹也遵守客户端会话级总开关。
         if (effects != null && (!effects.isMissileNativeTrailEnabled()
                 || (rocketFlameStyle && !RVP_RocketFlameRuntimeTuning.resolveEnabled(true)))) {
+            // 调用体积烟断链，重新开启时从当前位置开始，而不是补出关闭期间的烟。
+            org.ywzj.rvp.client.light.RVP_RocketTrailManager.INSTANCE.stop(entity.getId());
             TRAIL_STATES.remove(entity.getId());
             return;
         }
 
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED
+                && entity instanceof RVP_BaseBullet bullet) {
+            // 调用同一个世界烟段入口，跳过旧远距粒子补点队列；同步实体编号让近远接管不会重复出烟。
+            int remaining = RVP_ClientRemoteAmmoVisualState.getMotorBurnRemainingTicks(dimension, entity.getId());
+            float scale = RVP_RocketFlameRuntimeTuning.resolveParticleScale(effects.getMissileNativeTrailParticleScale());
+            // 调用弹体同一发射段加粗曲线，近远接管时尺寸不因换入口突然跳变。
+            scale *= bullet.resolveLaunchBoostFactor(effects);
+            org.ywzj.rvp.client.light.RVP_RocketTrailEmitter.emit(bullet, effects,
+                    remoteNozzlePosition(entity, renderPos, effects), remoteExhaustVelocity(entity), scale, remaining, true);
+            TRAIL_STATES.remove(entity.getId());
+            return;
+        }
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
         double horizontalDistance = Math.sqrt(horizontalDistanceSqr(renderPos, cameraPos));
         int lodInterval = horizontalDistance < 768.0D ? 1 : horizontalDistance < 1152.0D ? 2 : 3;
         double lodSpacing = horizontalDistance < 768.0D ? 2.0D : horizontalDistance < 1152.0D ? 4.0D : 8.0D;

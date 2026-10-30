@@ -126,6 +126,8 @@ public final class RVP_ClientActions implements RVP_IClientActions {
                                             double mx, double my, double mz, float sizeScale,
                                             int holdTicks, int holdMinTicks, int fadeTicks,
                                             int fadeRandomTicks, float alphaHoldRatio) {
+        // 调用代码总开关停用旧贴图尾迹；下面的原始构造和寿命实现完整保留。
+        if (!org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return;
@@ -152,6 +154,7 @@ public final class RVP_ClientActions implements RVP_IClientActions {
     /** 生成 HBM 风格发射地面烟浪粒子（WASH 模式，初速内部随机径向冲刷 + 浮升）。 */
     @Override
     public void addLaunchWashParticle(double x, double y, double z, float sizeScale) {
+        // rvp_rocket_flame 已在公共弹体处分流；其它显式配置旧烟浪的风格继续沿用原实现。
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return;
@@ -159,6 +162,25 @@ public final class RVP_ClientActions implements RVP_IClientActions {
         Minecraft.getInstance().particleEngine.add(
                 org.ywzj.rvp.client.particle.RVP_RocketFlameParticle.ofLaunchWash(
                         level, x, y, z, sizeScale));
+    }
+
+    /** 接收公共弹体的世界尾迹采样，真实配置解析和烟段管理都留在纯客户端。 */
+    @Override
+    public void addRocketVolumeTrail(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position,
+            net.minecraft.world.phys.Vec3 exhaust, float scale, int remainingBurnTicks) {
+        // 调用弹体已有的类型化配置出口，不按武器 ID 或模型名称判断尾烟。
+        var config = projectile.getResolvedWeaponConfig();
+        if (config == null) { return; }
+        // 调用新世界烟段入口，保持近距和远距使用相同的配置和寿命规则。
+        org.ywzj.rvp.client.light.RVP_RocketTrailEmitter.emit(projectile, config.getEffectsData(),
+                position, exhaust, scale, remainingBurnTicks, false);
+    }
+
+    /** 接收原冷发射和贴地阶段的烟浪请求，改为程序体积烟。 */
+    @Override
+    public void addRocketVolumeWash(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position, float scale) {
+        // 调用独立烟浪入口，保留已有生成条件而替换显示方式。
+        org.ywzj.rvp.client.light.RVP_RocketTrailEmitter.wash(projectile, position, scale);
     }
 
     /**

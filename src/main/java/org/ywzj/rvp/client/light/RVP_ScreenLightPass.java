@@ -44,6 +44,8 @@ public final class RVP_ScreenLightPass {
     private static List<RVP_ScreenLight> lights = List.of();
     /** 本帧独立筛选的程序喷焰，不占环境光的八个槽位。 */
     private static List<RVP_RocketPlume> plumes = List.of();
+    /** 独立于灯光和仍燃烧喷口的本帧世界尾烟。 */
+    private static List<RVP_RocketTrailSegment> trails = List.of();
     /** 世界时钟驱动动画，暂停时冻结；资源重载不沿用系统实时时间。 */
     private static float plumeTime;
     /** 捕获时的相机位置，世界坐标 double 相减后再交显卡。 */
@@ -69,9 +71,12 @@ public final class RVP_ScreenLightPass {
     public static void beginFrame() {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null;
         plumes = List.of();
+        trails = List.of();
         Minecraft mc = Minecraft.getInstance();
         // 调用独立喷焰世界检查，早期 DH 回调到来之前先淘汰旧世界/过期状态。
         RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
+        // 调用世界尾烟时钟，燃尽后即使没有活动灯，也继续淘汰和绘制残留烟段。
+        RVP_RocketTrailManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
         // 调用当帧烟雾几何清空，暂停及同一 tick 的多帧也不重复累加光照。
         RVP_SmokeLightPass.beginFrame();
         // 调用两份帧状态清空；游戏暂停或没有 DH 回调时也不会复用旧深度。
@@ -126,11 +131,16 @@ public final class RVP_ScreenLightPass {
             // 调用烟雾独立受光材质注册，复用已有贴图，不新增粒子资源。
             RVP_SmokeLightPass.register(event);
         } catch (Exception exception) { LOGGER.warn("RVP 烟雾受光程序加载失败", exception); }
+        try {
+            // 调用已获确认的新体积尾烟资源注册，不覆盖任何既有喷焰或烟贴图资源。
+            RVP_RocketTrailPass.register(event);
+        } catch (Exception exception) { LOGGER.warn("RVP 体积尾烟加载失败，请检查 rocket_trail_volume 资源", exception); }
     }
 
     /** 尾焰是弹体视觉；关闭环境光或八灯预算为零时，仍要保留喷焰所需 DH 当帧输入。 */
     private static boolean hasVisualInputs() {
         return RVP_RocketPlumeManager.INSTANCE.hasActive()
+                || RVP_RocketTrailManager.INSTANCE.hasActive()
                 || RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
     }
 
@@ -140,6 +150,7 @@ public final class RVP_ScreenLightPass {
         RVP_SmokeLightPass.worldStage(event.getStage());
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRIPWIRE_BLOCKS) { return; }
         lights = List.of(); plumes = List.of(); frameLevel = null;
+        trails = List.of();
         // 调用帧输入失效，暂停、窗口变化和无光帧均不复用旧深度。
         FRAME.discard();
         Minecraft mc = Minecraft.getInstance();
@@ -173,7 +184,12 @@ public final class RVP_ScreenLightPass {
             plumes = RVP_RocketPlumeManager.INSTANCE.collect(camera, event.getPartialTick(),
                     plume -> RVP_RocketPlumePass.bounds(plume, VIEW, PROJECTION, camera, mc.getMainRenderTarget().height) != null);
         }
-        if (lights.isEmpty() && plumes.isEmpty()) { return; }
+        if (RVP_RocketTrailPass.available()) {
+            // 调用世界烟段收集；相机离开喷口或弹体移除，都不取消仍可见的旧烟。
+            trails = RVP_RocketTrailManager.INSTANCE.collect(camera, event.getPartialTick(),
+                    segment -> RVP_RocketTrailPass.bounds(segment, VIEW, PROJECTION, camera) != null);
+        }
+        if (lights.isEmpty() && plumes.isEmpty() && trails.isEmpty()) { return; }
         plumeTime = ((mc.level.getGameTime() & 0xFFFFL) + event.getPartialTick()) / 20F;
         try {
             // 调用共享帧资源，每帧最多复制一次深度，与本帧矩阵配对。
@@ -208,7 +224,7 @@ public final class RVP_ScreenLightPass {
         ClientLevel expected = frameLevel;
         frameLevel = null;
         if (expected == null || expected != Minecraft.getInstance().level
-                || lights.isEmpty() && plumes.isEmpty() || lightShader == null) {
+                || lights.isEmpty() && plumes.isEmpty() && trails.isEmpty() || lightShader == null) {
             FRAME.discard(); return;
         }
         // 调用状态作用域，包含绘制/读取目标、视口、采样器和原版渲染状态的完整恢复。
@@ -237,6 +253,8 @@ public final class RVP_ScreenLightPass {
                 RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
                 // 调用独立烟雾受光，纯天空背景也按烟雾自己的几何位置计算，不拿背景墙代替它。
                 RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
+                // 调用独立体积烟合成；无活动灯、关闭 Bloom 时也需要保留尾烟。
+                RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
                 return;
             }
             lightShader.safeGetUniform("OutputMode").set(1);
@@ -265,8 +283,10 @@ public final class RVP_ScreenLightPass {
             RVP_RocketPlumePass.renderHalos(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime);
             RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
             RVP_SmokeLightPass.render(FRAME, event.getCamera(), event.getPartialTick());
+            // 调用烟的吸收/散射混合，不加入高亮提取，也不污染用于遮挡的场景深度。
+            RVP_RocketTrailPass.render(FRAME, trails, VIEW, PROJECTION, camera);
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
-        finally { lights = List.of(); plumes = List.of(); FRAME.discard(); }
+        finally { lights = List.of(); plumes = List.of(); trails = List.of(); FRAME.discard(); }
     }
 
     /** 上传固定八盏光；未用的槽位清零，避免上一帧数据泄漏。 */
@@ -396,6 +416,7 @@ public final class RVP_ScreenLightPass {
     public static void clear() {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null; nearAnalysis = null;
         plumes = List.of();
+        trails = List.of();
         lastFrameStatus = "资源已清理，等待活动光源";
         // 调用借用引用清理，卸载后不触碰 DH 或光影拥有的纹理。
         RVP_LightDepthFrame.INSTANCE.clear();

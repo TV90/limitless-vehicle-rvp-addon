@@ -19,7 +19,10 @@ public class RVP_EffectsData {
     @SerializedName("missile_native_trail_particle")
     private String missileNativeTrailParticle = "";
 
-    /** 导弹尾迹沿路径采样间距，单位格，默认 0.5；启用原生尾迹时最小为 0.05。 */
+    /**
+     * 导弹尾迹沿路径采样间距，单位格，默认 0.5；启用原生尾迹时最小为 0.05。
+     * {@code rvp_rocket_flame} 的体积烟将其换算为有界烟段细分精度，不再按此间距生成贴图粒子。
+     */
     @SerializedName("missile_native_trail_step")
     private Float missileNativeTrailStep;
 
@@ -27,7 +30,10 @@ public class RVP_EffectsData {
     @SerializedName("missile_native_trail_spawn_interval_tick")
     private Integer missileNativeTrailSpawnIntervalTick;
 
-    /** 导弹尾迹采样密度倍率，默认 1；启用原生尾迹时限制为非负有限值。 */
+    /**
+     * 导弹尾迹采样密度倍率，默认 1；启用原生尾迹时限制为非负有限值。
+     * {@code rvp_rocket_flame} 体积烟用它控制空间烟密度（上限 16），零关闭新增烟段；其它风格仍控制粒子数量。
+     */
     @SerializedName("missile_native_trail_density_scale")
     private Float missileNativeTrailDensityScale;
 
@@ -38,8 +44,8 @@ public class RVP_EffectsData {
     /**
      * 导弹尾迹粒子渲染尺寸倍率，默认 {@code 1}（原尺寸）。
      *
-     * <p>与 {@code missile_native_trail_density_scale}（只增加粒子<b>数量</b>）互补：本项放大
-     * 单个粒子的<b>渲染尺寸</b>，是让尾迹"变粗"的直接手段。仅客户端本地尾迹生效
+     * <p>本项让尾迹变粗；{@code rvp_rocket_flame} 体积烟按它缩放世界半径（最大 64 倍），
+     * 其它风格按它放大单个粒子的渲染尺寸。与密度项独立，近距和 RVP 远距尾迹均生效
      * （服务端广播的 {@code trajectory_particle} 走原版 {@code sendParticles}，无法携带尺寸）。</p>
      */
     @SerializedName("missile_native_trail_particle_scale")
@@ -54,10 +60,10 @@ public class RVP_EffectsData {
      *   <li>{@code rvp_smoke}：改用本项目 MCHR 风格翻滚烟团（`RVP_MchrSmokeParticle`，从
      *       MCHR 的 `MCH_EntityParticleSmoke` 逐条移植）——尺寸直接烘进构造、8 帧消散动画、
      *       天空光全亮，观感更接近真实导弹尾迹，且不依赖原版粒子的缩放行为。</li>
-     *   <li>{@code rvp_rocket_flame}：HBM 风格火箭尾焰·固体发动机凝结云款（`RVP_RocketFlameParticle`，
-     *       从 HBM 的 `ParticleRocketFlame` 移植）——喷口附近约 24~35t 亮橙火焰团，烟相位出生中灰随寿命
-     *       smoothstep 渐变凝结云灰白，保持期绑定发动机燃尽后缓慢淡出 + 距离 LOD；默认启用发射段
-     *       贴地烟浪（见 {@code missile_native_trail_ground_wash}）；</li>
+     *   <li>{@code rvp_rocket_flame}：世界轨迹体积烟，保留路径后逐像素计算连续烟柱，
+     *       无烟雾图片；尺寸、发射段加粗、保持期、alpha 比例和淡出字段继续生效。
+     *       喷口火焰由独立程序喷焰负责；旧 HBM 贴图粒子代码由代码开关停用但完整保留。
+     *       默认启用程序体积贴地烟浪（见 {@code missile_native_trail_ground_wash}）；</li>
      *   <li>{@code rvp_kerosene_black_smoke}：液氧煤油黑烟款（同粒子类，技术储备）——09-19 前的
      *       原始观感：寿命 45~65t、深灰黑烟（0.15~0.30）、全程平方根淡出；贴地烟浪推导同开。</li>
      * </ul>
@@ -69,8 +75,9 @@ public class RVP_EffectsData {
      * 发射段贴地烟浪开关，默认 null（按风格推导：{@code rvp_rocket_flame} 时开启、其余关闭）。
      *
      * <p>对齐 HBM 发射台 {@code launchSmoke}：导弹发动机燃烧且距地高度不足
-     * {@code 20} 格时，客户端在弹体地面投影点生成贴地横向冲刷的灰烟团（当前每 tick 8 粒，
-     * 尺寸 0.3 → 3.0 × {@code missile_native_trail_particle_scale} 线性膨胀带浮升）。</p>
+     * {@code 20} 格时（也含冷发射弹射段），客户端在弹体地面投影点生成横向冲刷的灰烟。
+     * {@code rvp_rocket_flame} 当前每 tick 两团程序体积烟；其它显式开启旧烟浪的风格仍沿用八颗粒子。
+     * 半径 0.3 → 3.0 × {@code missile_native_trail_particle_scale}，膨胀带缓慢浮升。</p>
      */
     @SerializedName("missile_native_trail_ground_wash")
     private Boolean missileNativeTrailGroundWash;
@@ -108,9 +115,9 @@ public class RVP_EffectsData {
     /**
      * 尾迹凝结云 **alpha 保持期占寿命的比例**，默认 {@code null}（沿用代码默认 1.0）。
      *
-     * <p>仅 {@code rvp_rocket_flame} 风格生效。固体发动机款的凝结云在保持期内 alpha 恒为
-     * {@code 0.75}（完全不透明），保持期结束才开始淡出——所以<b>总寿命缩短后，浓烟仍会"挂着"
-     * 整个保持期</b>，看上去依旧很久。本项把 alpha 保持期独立出来：</p>
+     * <p>仅 {@code rvp_rocket_flame} 风格生效。体积烟在保持期内维持配置密度，
+     * 屏幕透明度由视线穿过的烟厚度计算，不再固定为旧粒子的 {@code 0.75}。
+     * 本项把开始淡出的时间从总寿命中独立出来：</p>
      *
      * <pre>
      * alpha 保持 = min(保持期, 总寿命 × 本比例)

@@ -13,6 +13,7 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL33;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
+import org.ywzj.rvp.client.render.RVP_BlendModeState;
 import java.util.Arrays;
 
 /**
@@ -285,6 +286,24 @@ final class RVP_ScreenFrameResources {
         RVP_GlStateSync.blendFunction(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
     }
 
+    /** 体积烟的 RGB 已乘透明度；按吸收/散射覆盖背景，原场景 Alpha 保持不变。 */
+    void drawVolumeSmoke(ShaderInstance shader) {
+        shader.apply();
+        try {
+            // 调用独立预乘混合，烟不能复用喷焰加亮通道，否则灰烟会变成发光白条。
+            beginVolumeSmokeBlend();
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+        } finally { shader.clear(); }
+    }
+
+    /** 与真实显卡状态回归共用的混合入口，调用方必须处在 State 作用域内。 */
+    void beginVolumeSmokeBlend() {
+        // 调用强制状态同步，同时维护 OpenGL 实际状态和原版缓存。
+        RVP_GlStateSync.blend(true);
+        RenderSystem.blendEquation(GL14.GL_FUNC_ADD);
+        RVP_GlStateSync.blendFunction(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
+    }
+
     /** 释放显存；着色器本身由资源重载管理。 */
     void release() {
         depthReady = false;
@@ -338,6 +357,8 @@ final class RVP_ScreenFrameResources {
 
     /** 仅保存本管线会改动的 GL 状态，包含原版缓存、外部采样器和非默认读取目标。 */
     static final class State implements AutoCloseable {
+        /** 与实际 GL 混合状态分开保存的 Shader/Effect 调用历史，必须在任何自绘 Shader 之前捕获。 */
+        private final RVP_BlendModeState blendModeState = RVP_BlendModeState.capture();
         /** 原绘制目标。 */
         private final int drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         /** 原读取目标。 */
@@ -425,6 +446,8 @@ final class RVP_ScreenFrameResources {
             RVP_GlStateSync.colorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
             RVP_GlStateSync.restoreBlend(blend, blendFactors[0], blendFactors[1], blendFactors[2], blendFactors[3],
                     blendEquations[0], blendEquations[1]);
+            // 调用独立历史恢复，后续本体过载/CRT 不能因 RVP 默认 Shader 而重新启用错误的 Alpha 混合。
+            blendModeState.restore();
         }
 
         /** 恢复一个未经过缓存改写的 GL 能力开关。 */

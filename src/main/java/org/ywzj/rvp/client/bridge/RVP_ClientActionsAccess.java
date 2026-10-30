@@ -104,6 +104,19 @@ public final class RVP_ClientActionsAccess {
         INSTANCE.addLaunchWashParticle(x, y, z, sizeScale);
     }
 
+    /** 经双端安全桥登记世界尾迹；服务端不引用任何屏幕渲染实现。 */
+    public static void addRocketVolumeTrail(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position,
+            net.minecraft.world.phys.Vec3 exhaust, float scale, int remainingBurnTicks) {
+        // 调用按物理端选择的实现，专用服务端为空操作。
+        INSTANCE.addRocketVolumeTrail(projectile, position, exhaust, scale, remainingBurnTicks);
+    }
+
+    /** 经双端安全桥登记新的体积烟浪，冷发射阶段也可复用。 */
+    public static void addRocketVolumeWash(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position, float scale) {
+        // 调用按物理端选择的实现，避免公共弹体加载纯客户端渲染类型。
+        INSTANCE.addRocketVolumeWash(projectile, position, scale);
+    }
+
     /**
      * 经双端安全桥查询 HITL 粒子屏蔽（TV 导弹视角下屏蔽导弹自身尾焰/烟浪）。
      * 服务端 NOOP 恒 false——粒子生成只发生在客户端。
@@ -130,6 +143,15 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        /** 专用服务端不保存客户端体积烟。 */
+        @Override
+        public void addRocketVolumeTrail(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position,
+                net.minecraft.world.phys.Vec3 exhaust, float scale, int remainingBurnTicks) { }
+
+        /** 专用服务端不生成体积贴地烟浪。 */
+        @Override
+        public void addRocketVolumeWash(RVP_BaseBullet projectile, net.minecraft.world.phys.Vec3 position, float scale) { }
+
         @Override
         public void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
             // 专用服务端不播放客户端声音。

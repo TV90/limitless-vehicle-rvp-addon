@@ -79,6 +79,8 @@ public final class RVP_ClientLightEvents {
             // 调用统一清理，登出后没有灯或旧显存资源残留。
             RVP_ScreenLightManager.INSTANCE.clear();
             RVP_RocketPlumeManager.INSTANCE.clear();
+            // 调用新尾烟世界清理，登出后不保留旧烟和世界引用。
+            RVP_RocketTrailManager.INSTANCE.clear();
             RVP_ScreenLightPass.clear();
             return;
         }
@@ -86,6 +88,8 @@ public final class RVP_ClientLightEvents {
         RVP_ScreenLightManager.INSTANCE.tick(level, level.getGameTime());
         // 调用独立喷焰时钟，清理远端失去心跳的喷流；暂停时与模型一起冻结。
         RVP_RocketPlumeManager.INSTANCE.beginWorld(level, level.getGameTime());
+        // 调用尾烟自身时钟，发动机燃尽后仍按各段寿命继续消散。
+        RVP_RocketTrailManager.INSTANCE.beginWorld(level, level.getGameTime());
         LOCAL_ENGINES.clear();
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet bullet) {
@@ -105,6 +109,8 @@ public final class RVP_ClientLightEvents {
             // 调用 UUID 删除入口，销毁、区块卸载不等到两 tick 心跳超时。
             RVP_ScreenLightManager.INSTANCE.removePersistent(event.getEntity().getUUID());
             RVP_RocketPlumeManager.INSTANCE.remove(event.getEntity().getUUID());
+            // 世界尾烟不随实体卸载断链：超出原版同步距离时，远距克隆需按相同编号接上端点。
+            // 真正停止生成时由燃烧/开关门控断开，或由管理器的采样超时自动断开；旧烟始终自然消散。
         }
     }
 
@@ -115,6 +121,8 @@ public final class RVP_ClientLightEvents {
             // 调用两个独立生命周期，CPU 光表和 GPU 画面副本均在换维度时丢弃。
             RVP_ScreenLightManager.INSTANCE.clear();
             RVP_RocketPlumeManager.INSTANCE.clear();
+            // 调用尾烟世界清理，跨维度不能显示上一个世界的轨迹。
+            RVP_RocketTrailManager.INSTANCE.clear();
             RVP_ScreenLightPass.clear();
         }
     }

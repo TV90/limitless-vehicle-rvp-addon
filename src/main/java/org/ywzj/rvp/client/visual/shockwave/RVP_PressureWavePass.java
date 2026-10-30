@@ -20,6 +20,7 @@ import org.lwjgl.opengl.GL33;
 import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.client.render.RVP_GlStateSync;
+import org.ywzj.rvp.client.render.RVP_BlendModeState;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.weapon.visual.RVP_ShockwaveRuntimeTuning;
 
@@ -242,6 +243,8 @@ final class RVP_PressureWavePass {
 
     /** 只保存本 pass 会触碰的状态；不改观察矩阵、投影矩阵、视口或世界深度。 */
     private static final class State implements AutoCloseable {
+        /** 原 Shader/Effect 混合调用历史，不能用进入时实际的 GL_BLEND 开关替代。 */
+        private final RVP_BlendModeState blendModeState = RVP_BlendModeState.capture();
         /** 进入时实际绘制缓冲，不能替换成猜测的主缓冲。 */
         private final int drawFramebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         /** 进入时读取缓冲。 */
@@ -376,6 +379,8 @@ final class RVP_PressureWavePass {
             // 调用完整混合恢复，因子、RGB/Alpha 方程、实际开关与 Shader 的 BlendMode 缓存一同恢复。
             RVP_GlStateSync.restoreBlend(blend, blendSourceRgb, blendDestinationRgb,
                     blendSourceAlpha, blendDestinationAlpha, blendEquationRgb, blendEquationAlpha);
+            // 调用独立历史恢复，冲击波不改变其后本体过载滤镜对混合状态的判断。
+            blendModeState.restore();
         }
 
         /** 恢复未经过 RenderSystem 缓存修改的能力开关。 */
