@@ -123,6 +123,8 @@ public class RVP_BedrockProjectileEntityRenderer<T extends AmmoEntity> extends E
      */
     private void renderMotorFlame(RVP_BaseBullet projectile, float entityYaw, float partialTick,
                                   PoseStack poseStack) {
+        // 新喷焰由 RVP 独立程序在世界末端绘制；旧模型/动画/贴图实现完整保留，暂时只在代码层关闭。
+        if (!org.ywzj.rvp.light.RVP_RocketPlumeParameters.ORIGINAL_MODEL_ENABLED) { return; }
         // 调用本项目弹体的客户端安全配置出口：rvpData 只在服务端赋值、不随生成数据包同步，
         // 客户端必须按已同步的 weaponId 查武器索引取回配置，否则本门控在客户端恒为 false 而整段尾焰永不执行。
         RVP_WeaponData data = projectile.getResolvedWeaponConfig();

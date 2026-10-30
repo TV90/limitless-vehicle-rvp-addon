@@ -213,8 +213,6 @@ public final class RVP_RemoteAmmoVisualRenderer {
                 continue;
             }
 
-            // 调用按弹体维护的环境光入口；在粒子采样之外更新，尾迹密度不影响灯的数量。
-            org.ywzj.rvp.client.light.RVP_RocketEngineLightQuery.update(entity, renderPos, event.getPartialTick());
             spawnRemoteTrail(minecraft, entity, renderPos, cameraPos, currentDimension);
 
             Vec3 oldPos = entity.position();
@@ -228,6 +226,8 @@ public final class RVP_RemoteAmmoVisualRenderer {
             entity.yo = renderPos.y;
             entity.zo = renderPos.z;
             try {
+                // 调用共用环境光/程序喷焰入口；先采用本帧远端模型朝向，防止喷流用上一快照方向而转错。
+                org.ywzj.rvp.client.light.RVP_RocketEngineLightQuery.update(entity, renderPos, event.getPartialTick());
                 // 调用本体实体渲染分派器，使用已注册的 RVP 类型化弹体渲染器绘制远程弹药克隆。
                 dispatcher.render(entity,
                         renderPos.x - cameraPos.x,

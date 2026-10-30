@@ -37,6 +37,7 @@ public final class ScreenLightGpuRegression {
         if (window == 0) { throw new IllegalStateException("Hidden GL 3.2 context failed"); }
         int light = 0;
         int bloom = 0;
+        int plume = 0;
         try {
             GLFW.glfwMakeContextCurrent(window);
             GL.createCapabilities();
@@ -52,6 +53,9 @@ public final class ScreenLightGpuRegression {
             testBorrowedPackedDepthCopy();
             testEngineEmission(light, bloom);
             testBloom(light, bloom);
+            // 调用 RVP 新喷流程序专项回读，旧圆形喷口测试继续保留用于防止误删旧实现。
+            plume = program(shaders, "rocket_plume");
+            testRocketPlume(Path.of(args[0]), plume, bloom);
             if (GL11.glGetError() != GL11.GL_NO_ERROR) { throw new AssertionError("OpenGL error at completion"); }
             System.out.println("PASS all RVP screen light GPU regressions; OpenGL error=0");
         } finally {
@@ -60,6 +64,7 @@ public final class ScreenLightGpuRegression {
             for (int texture : TEXTURES) { GL11.glDeleteTextures(texture); }
             if (light != 0) { GL20.glDeleteProgram(light); }
             if (bloom != 0) { GL20.glDeleteProgram(bloom); }
+            if (plume != 0) { GL20.glDeleteProgram(plume); }
             if (vbo != 0) { GL15.glDeleteBuffers(vbo); }
             if (vao != 0) { GL30.glDeleteVertexArrays(vao); }
             GLFW.glfwDestroyWindow(window);
@@ -543,6 +548,145 @@ public final class ScreenLightGpuRegression {
         render(halfA, SIZE / 2, SIZE / 2);
         require(pixel(halfA[0], 4, 4)[0] > 0.01F, "new soft threshold rejected weak orange edge below the old 0.55 threshold");
         System.out.println("PASS lowered soft bloom threshold extracts weak orange edges that the former 0.55 threshold discarded");
+    }
+
+    /** 新程序喷流实际像素：形状、缩放、近景/DH/手持物遮挡、亚像素和橙色光晕。 */
+    private static void testRocketPlume(Path root, int plume, int bloom) throws Exception {
+        int size = 256;
+        int scene = color(size, size, BACKGROUND);
+        int sky = depth(size, size, 0, false);
+        int[] hdr = target(size, size);
+        int[] display = target(size, size);
+        int[] halfA = target(size / 2, size / 2);
+        int[] halfB = target(size / 2, size / 2);
+        GL20.glUseProgram(plume); uniforms(plume);
+        GL20.glUniform2f(GL20.glGetUniformLocation(plume, "ScreenSize"), size, size);
+        sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+        GL20.glUniform4f(GL20.glGetUniformLocation(plume, "PlumeEmission"), 60000, 16, 0.2F, 12);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "Time"), 0.7F);
+        plumeGeometry(plume, -1.5F, 0, -6, 1, 0, 0, 3, 0.45F);
+        GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 0);
+        render(hdr, size, size);
+        float[] first = pixels(hdr[0], size, size);
+        int[] bounds = brightBounds(first, size);
+        require(bounds[2] - bounds[0] > 3 * (bounds[3] - bounds[1]), "new plume still looks like a round source");
+        float peak = 0;
+        for (int index = 0; index < first.length; index += 4) { peak = Math.max(peak, first[index]); }
+        require(peak > 50000 && peak <= 60000, "new plume high-brightness core missing or overflowing");
+        plumeGeometry(plume, -3, 0, -6, 1, 0, 0, 6, 0.9F);
+        render(hdr, size, size);
+        int[] doubled = brightBounds(pixels(hdr[0], size, size), size);
+        require(doubled[2] - doubled[0] > (bounds[2] - bounds[0]) * 1.8F, "JSON scale did not double plume length");
+        require(doubled[3] - doubled[1] > (bounds[3] - bounds[1]) * 1.7F, "JSON scale did not double plume width");
+        System.out.println("PASS RVP plume is elongated and tapered; scale doubles length and width; HDR peak=" + peak);
+
+        plumeGeometry(plume, -1.5F, 0, -6, 1, 0, 0, 3, 0.45F);
+        int wall = depth(size, size, 4, false);
+        sampler(plume, "SceneDepth", 1, wall); render(hdr, size, size);
+        require(brightBounds(pixels(hdr[0], size, size), size)[2] < 0, "near wall did not hide plume");
+        sampler(plume, "SceneDepth", 1, sky);
+        for (boolean reverse : new boolean[] {false, true}) {
+            int dh = projectedDepth(size / 2, size / 2, 4, 0.5F, 512, reverse, false);
+            sampler(plume, "DistantDepth", 2, dh); distantProjection(plume, 0.5F, 512, reverse, 1);
+            render(hdr, size, size);
+            require(brightBounds(pixels(hdr[0], size, size), size)[2] < 0, "DH foreground wall did not hide plume");
+        }
+        GL20.glUniform1i(GL20.glGetUniformLocation(plume, "HasDistantDepth"), 0);
+        sampler(plume, "DistantDepth", 2, sky);
+        float[] partialDepth = new float[size * size]; java.util.Arrays.fill(partialDepth, 1);
+        for (int y = 0; y < size; y++) { for (int x = 0; x < 123; x++) { partialDepth[y * size + x] = depthValue(4); } }
+        int partialWall = texture(size, size, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, partialDepth);
+        sampler(plume, "SceneDepth", 1, partialWall); render(hdr, size, size);
+        require(pixel(hdr[0], 110, 128)[0] == 0 && pixel(hdr[0], 140, 128)[0] > 1,
+                "hidden nozzle incorrectly removed visible tail or plume leaked through wall");
+        sampler(plume, "SceneDepth", 1, sky);
+        plumeGeometry(plume, 0, 0, -4096, 0, 0, -1, 3, 0.45F);
+        render(hdr, size, size);
+        require(pixel(hdr[0], 128, 128)[0] > 1000, "distant subpixel plume disappeared beyond scene far plane");
+        float[] handValues = new float[size * size]; java.util.Arrays.fill(handValues, 0.55F);
+        int hand = texture(size, size, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, handValues);
+        sampler(plume, "SceneDepth", 1, hand);
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "HandDepthLimit"), 0.5625F);
+        render(hdr, size, size);
+        require(brightBounds(pixels(hdr[0], size, size), size)[2] < 0, "shader hand mask missing for plume");
+        GL20.glUniform1f(GL20.glGetUniformLocation(plume, "HandDepthLimit"), 0);
+        sampler(plume, "SceneDepth", 1, sky);
+        System.out.println("PASS plume near/DH normal+reverse depth, half-resolution DH, exposed tail, 4096-block coverage and shader hand mask");
+
+        java.awt.image.BufferedImage preview = new java.awt.image.BufferedImage(size * 2, size * 2,
+                java.awt.image.BufferedImage.TYPE_INT_RGB);
+        String[] labels = {"SIDE / scale 0.3", "REAR / scale 0.3", "ANGLED / scale 0.3", "SIDE / scale 0.6"};
+        for (int view = 0; view < 4; view++) {
+            GL20.glUseProgram(plume);
+            if (view == 0) { plumeGeometry(plume, -1.5F, 0, -6, 1, 0, 0, 3, 0.45F); }
+            if (view == 1) { plumeGeometry(plume, 0, 0, -6, 0, 0, 1, 3, 0.45F); }
+            if (view == 2) { plumeGeometry(plume, -1, 0, -6, 0.707107F, 0, 0.707107F, 3, 0.45F); }
+            if (view == 3) { plumeGeometry(plume, -3, 0, -6, 1, 0, 0, 6, 0.9F); }
+            GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 1);
+            render(hdr, size, size);
+            GL20.glUseProgram(bloom);
+            sampler(bloom, "InputTexture", 0, hdr[1]); sampler(bloom, "SceneColor", 1, scene); sampler(bloom, "BloomTexture", 2, hdr[1]);
+            GL20.glUniform1i(GL20.glGetUniformLocation(bloom, "Mode"), 0); render(halfA, size / 2, size / 2);
+            GL20.glUniform1i(GL20.glGetUniformLocation(bloom, "Mode"), 1);
+            GL20.glUniform2f(GL20.glGetUniformLocation(bloom, "Direction"), 2F / size, 0);
+            sampler(bloom, "InputTexture", 0, halfA[1]); render(halfB, size / 2, size / 2);
+            GL20.glUniform2f(GL20.glGetUniformLocation(bloom, "Direction"), 0, 2F / size);
+            sampler(bloom, "InputTexture", 0, halfB[1]); render(halfA, size / 2, size / 2);
+            GL20.glUniform1i(GL20.glGetUniformLocation(bloom, "Mode"), 2);
+            sampler(bloom, "InputTexture", 0, hdr[1]); sampler(bloom, "BloomTexture", 2, halfA[1]); render(display, size, size);
+            GL20.glUseProgram(plume); GL20.glUniform1i(GL20.glGetUniformLocation(plume, "OutputMode"), 2);
+            sampler(plume, "SceneDepth", 1, sky); sampler(plume, "DistantDepth", 2, sky);
+            GL11.glEnable(GL11.GL_BLEND); GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
+            GL14.glBlendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
+            render(display, size, size); GL11.glDisable(GL11.GL_BLEND);
+            float[] image = pixels(display[0], size, size);
+            boolean white = false; boolean orangeHalo = false;
+            float[] source = pixels(hdr[0], size, size);
+            for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) {
+                int index = (y * size + x) * 4;
+                near(BACKGROUND[3], image[index + 3], "plume preserves scene alpha");
+                white |= image[index] > 0.99F && image[index + 1] > 0.99F && image[index + 2] > 0.99F;
+                orangeHalo |= source[index] < 0.001F && image[index] > BACKGROUND[0] + 0.1F
+                        && image[index] > image[index + 1] && image[index + 1] > image[index + 2];
+                int red = Math.round(Math.min(1, Math.max(0, image[index])) * 255);
+                int green = Math.round(Math.min(1, Math.max(0, image[index + 1])) * 255);
+                int blue = Math.round(Math.min(1, Math.max(0, image[index + 2])) * 255);
+                preview.setRGB(view % 2 * size + x, view / 2 * size + size - 1 - y, red << 16 | green << 8 | blue);
+            } }
+            require(white && orangeHalo, "plume white core or orange external bloom missing: " + labels[view]);
+            java.awt.Graphics2D graphics = preview.createGraphics();
+            graphics.setColor(java.awt.Color.WHITE); graphics.drawString(labels[view], view % 2 * size + 12, view / 2 * size + 22); graphics.dispose();
+        }
+        Path directory = root.resolve("build/rocket-plume-gpu-regression"); Files.createDirectories(directory);
+        javax.imageio.ImageIO.write(preview, "png", directory.resolve("preview.png").toFile());
+        System.out.println("PASS RVP side/rear/angled/scaled plume core and orange Bloom; Alpha preserved; preview=" + directory.resolve("preview.png"));
+    }
+
+    /** 上传和生产一致的观察空间喷口/方向/缩放尺寸。 */
+    private static void plumeGeometry(int program, float x, float y, float z, float dx, float dy, float dz, float length, float radius) {
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeOriginLength"), x, y, z, length);
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, "PlumeAxisRadius"), dx, dy, dz, radius);
+    }
+
+    /** 整幅浮点回读检查无穷值；诊断 PNG 由实际生产 Shader 输出生成。 */
+    private static float[] pixels(int framebuffer, int width, int height) {
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, framebuffer);
+        float[] result = new float[width * height * 4];
+        GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_FLOAT, result);
+        require(GL11.glGetError() == GL11.GL_NO_ERROR, "plume pixel readback error");
+        for (float value : result) { require(Float.isFinite(value), "non-finite plume pixel"); }
+        return result;
+    }
+
+    /** 有效喷流亮部包围框，空图返回 right=-1。 */
+    private static int[] brightBounds(float[] image, int size) {
+        int[] bounds = {size, size, -1, -1};
+        for (int y = 0; y < size; y++) { for (int x = 0; x < size; x++) {
+            if (image[(y * size + x) * 4] <= 0.1F) { continue; }
+            bounds[0] = Math.min(bounds[0], x); bounds[1] = Math.min(bounds[1], y);
+            bounds[2] = Math.max(bounds[2], x); bounds[3] = Math.max(bounds[3], y);
+        } }
+        return bounds;
     }
 
     /** 上传真实发动机的表面与自发光参数，位置对准中央像素，便于回读峰值。 */

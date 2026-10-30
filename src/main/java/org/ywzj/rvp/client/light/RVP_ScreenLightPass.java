@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.ywzj.rvp.RVP_MOD;
 import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_RocketPlumeParameters;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DhProjectionMath;
 import org.ywzj.rvp.client.compat.distanthorizons.RVP_DistantHorizonsCompatBootstrap;
@@ -38,6 +39,10 @@ public final class RVP_ScreenLightPass {
     private static final Matrix4f PROJECTION = new Matrix4f();
     /** 已筛选的本帧光源，不在后处理时重新推进生命周期。 */
     private static List<RVP_ScreenLight> lights = List.of();
+    /** 本帧独立筛选的程序喷焰，不占环境光的八个槽位。 */
+    private static List<RVP_RocketPlume> plumes = List.of();
+    /** 世界时钟驱动动画，暂停时冻结；资源重载不沿用系统实时时间。 */
+    private static float plumeTime;
     /** 捕获时的相机位置，世界坐标 double 相减后再交显卡。 */
     private static Vec3 camera = Vec3.ZERO;
     /** 深度输入所属世界，换维度不能消费旧画面。 */
@@ -60,6 +65,10 @@ public final class RVP_ScreenLightPass {
     /** 渲染帧开始即丢弃旧来源，早于 DH 的天空/地形事件。 */
     public static void beginFrame() {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null;
+        plumes = List.of();
+        Minecraft mc = Minecraft.getInstance();
+        // 调用独立喷焰世界检查，早期 DH 回调到来之前先淘汰旧世界/过期状态。
+        RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level == null ? 0 : mc.level.getGameTime());
         // 调用两份帧状态清空；游戏暂停或没有 DH 回调时也不会复用旧深度。
         FRAME.discard();
         RVP_LightDepthFrame.INSTANCE.beginFrame(Minecraft.getInstance().level);
@@ -68,7 +77,7 @@ public final class RVP_ScreenLightPass {
     /** 由已隔离的 DH 公共 API 桥调用，只记录有活动光源的非阴影帧。 */
     public static void acceptDistantDepth(int texture, Matrix4f projection, Matrix4f view) {
         // 调用光源存在与光影阴影状态查询，太阳阴影贴图不能进入玩家画面的深度通道。
-        if (!RVP_LightingConfig.screenEnabled() || !RVP_ScreenLightManager.INSTANCE.hasActiveLights()
+        if (!hasVisualInputs()
                 || RVP_LightingCompatibility.shadowPass()) { return; }
         RVP_LightDepthFrame.INSTANCE.publish(Minecraft.getInstance().level, texture, projection, view);
     }
@@ -76,7 +85,7 @@ public final class RVP_ScreenLightPass {
     /** DH 已完成地形绘制的当帧证明，光影覆盖 API 纹理时仍可使用它自己的公开 getter。 */
     public static void markDistantRendered() {
         // 调用阴影过滤，太阳方向的 DH 绘制不能给玩家画面颁发新帧证明。
-        if (RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights()
+        if (hasVisualInputs()
                 && !RVP_LightingCompatibility.shadowPass()) {
             RVP_LightDepthFrame.INSTANCE.markRendered(Minecraft.getInstance().level);
         }
@@ -102,20 +111,31 @@ public final class RVP_ScreenLightPass {
         } catch (Exception exception) {
             LOGGER.warn("RVP 光晕程序加载失败，回退基础屏幕光", exception);
         }
+        try {
+            // 调用独立程序喷焰注册，旧模型及圆形核心资源不做删除或覆盖。
+            RVP_RocketPlumePass.register(event);
+        } catch (Exception exception) {
+            LOGGER.warn("RVP 程序喷焰加载失败，请检查 rocket_plume 资源", exception);
+        }
+    }
+
+    /** 尾焰是弹体视觉；关闭环境光或八灯预算为零时，仍要保留喷焰所需 DH 当帧输入。 */
+    private static boolean hasVisualInputs() {
+        return RVP_RocketPlumeManager.INSTANCE.hasActive()
+                || RVP_LightingConfig.screenEnabled() && RVP_ScreenLightManager.INSTANCE.hasActiveLights();
     }
 
     /** 只有可见活动光才保存一次场景深度；这里的事件矩阵仍是真实观察矩阵。 */
     public static void capture(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) { return; }
-        lights = List.of(); frameLevel = null;
+        lights = List.of(); plumes = List.of(); frameLevel = null;
         // 调用帧输入失效，暂停、窗口变化和无光帧均不复用旧深度。
         FRAME.discard();
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || lightShader == null || !RVP_LightingConfig.screenEnabled()
-                || RVP_LightingConfig.maxLights() <= 0 || RVP_LightingConfig.intensity() <= 0) { return; }
+        if (mc.level == null || lightShader == null) { return; }
         // 调用世界身份检查，渲染先于客户端 tick 的新世界首帧也能正确清理。
         RVP_ScreenLightManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
-        if (!RVP_ScreenLightManager.INSTANCE.hasActiveLights()) { return; }
+        if (!hasVisualInputs()) { return; }
         // 调用只读兼容性检查，拿不到可信世界输入时不操作外部目标。
         String reason = RVP_LightingCompatibility.disabledReason();
         if (!reason.isEmpty()) { diagnostic(reason, null); return; }
@@ -129,14 +149,21 @@ public final class RVP_ScreenLightPass {
         if (nearAnalysis == null) { diagnostic("近景投影端点无效，跳过本帧", null); return; }
         camera = event.getCamera().getPosition();
         // 调用统一预算和球体投影裁剪，先剔除离屏光，最多只为八盏光查询实体/地形遮挡。
-        List<RVP_ScreenLight> candidates = RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
+        List<RVP_ScreenLight> candidates = !RVP_LightingConfig.screenEnabled() || RVP_LightingConfig.intensity() <= 0
+                ? List.of() : RVP_ScreenLightManager.INSTANCE.collectVisible(camera, event.getPartialTick(),
                 RVP_LightingConfig.maxDistance(), RVP_LightingConfig.maxLights(), light -> {
                     Vector3f center = viewPosition(light.position());
                     return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z, light.radius()) != null;
                 });
         // 调用世界碰撞查询补足屏幕外遮挡：被墙完全藏住的灯不照亮墙的正面。
         lights = candidates.stream().filter(light -> visibleFromCamera(mc, light)).toList();
-        if (lights.isEmpty()) { return; }
+        // 调用独立视锥预算，不按光心方块射线拒绝整条喷流：喷口被遮住时，露出的尾段仍应正确裁剪。
+        if (RVP_RocketPlumePass.available()) {
+            plumes = RVP_RocketPlumeManager.INSTANCE.collect(camera, event.getPartialTick(),
+                    plume -> RVP_RocketPlumePass.bounds(plume, VIEW, PROJECTION, camera, mc.getMainRenderTarget().height) != null);
+        }
+        if (lights.isEmpty() && plumes.isEmpty()) { return; }
+        plumeTime = ((mc.level.getGameTime() & 0xFFFFL) + event.getPartialTick()) / 20F;
         try {
             // 调用共享帧资源，每帧最多复制一次深度，与本帧矩阵配对。
             if (!FRAME.captureDepth()) {
@@ -169,7 +196,8 @@ public final class RVP_ScreenLightPass {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) { return; }
         ClientLevel expected = frameLevel;
         frameLevel = null;
-        if (expected == null || expected != Minecraft.getInstance().level || lights.isEmpty() || lightShader == null) {
+        if (expected == null || expected != Minecraft.getInstance().level
+                || lights.isEmpty() && plumes.isEmpty() || lightShader == null) {
             FRAME.discard(); return;
         }
         // 调用状态作用域，包含绘制/读取目标、视口、采样器和原版渲染状态的完整恢复。
@@ -178,7 +206,7 @@ public final class RVP_ScreenLightPass {
             // 调用统一参数上传；世界位置先用 double 减相机，远坐标不会抖动。
             uploadLights();
             boolean useBloom = RVP_LightingConfig.bloomEnabled() && bloomShader != null && bloomAvailable
-                    && lights.stream().anyMatch(RVP_ScreenLight::bloom);
+                    && (!plumes.isEmpty() || lights.stream().anyMatch(RVP_ScreenLight::bloom));
             if (useBloom) {
                 try { FRAME.ensureBloom(); }
                 catch (RuntimeException exception) {
@@ -192,15 +220,20 @@ public final class RVP_ScreenLightPass {
                 FRAME.draw(lightShader);
                 // 调用喷口独立叠加，即使关闭光晕，核心仍可达到显示白点而非旧的 0.9 上限。
                 renderEmission();
+                // 调用真实喷流的独立显示叠加；关闭 Bloom 或环境照明不取消发动机视觉。
+                RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
                 return;
             }
             lightShader.safeGetUniform("OutputMode").set(1);
             FRAME.bind(FRAME.lightTarget(), FRAME.width(), FRAME.height());
             FRAME.draw(lightShader);
+            // 调用定向喷焰 HDR 合并；之后只执行一套统一提取/模糊，不为每枚导弹重复复制背景。
+            RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
             // 调用半分辨率提取、横向模糊和纵向模糊；全部只读取灯光贡献，不把 HUD 或整片白天纳入光晕。
             bloomPass(0, FRAME.light(), FRAME.bloomTarget(0), 0, 0);
-            bloomPass(1, FRAME.bloom(0), FRAME.bloomTarget(1), 2.0F / FRAME.bloomWidth(), 0);
-            bloomPass(1, FRAME.bloom(1), FRAME.bloomTarget(0), 0, 2.0F / FRAME.bloomHeight());
+            float blurStep = plumes.isEmpty() ? 2F : RVP_RocketPlumeParameters.BLOOM_BLUR_STEP;
+            bloomPass(1, FRAME.bloom(0), FRAME.bloomTarget(1), blurStep / FRAME.bloomWidth(), 0);
+            bloomPass(1, FRAME.bloom(1), FRAME.bloomTarget(0), 0, blurStep / FRAME.bloomHeight());
             // 调用最终合成，不再复制背景，保留场景 Alpha。
             bloomShader.setSampler("InputTexture", FRAME.light());
             bloomShader.setSampler("SceneColor", FRAME.color());
@@ -210,33 +243,45 @@ public final class RVP_ScreenLightPass {
             FRAME.draw(bloomShader);
             // 调用只增强喷口的显示峰值，不提高普通爆炸/炮口光的曝光上限。
             renderEmission();
+            RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 2);
         } catch (RuntimeException exception) { diagnostic("灯光合成失败，保留世界画面", exception); }
-        finally { lights = List.of(); FRAME.discard(); }
+        finally { lights = List.of(); plumes = List.of(); FRAME.discard(); }
     }
 
     /** 上传固定八盏光；未用的槽位清零，避免上一帧数据泄漏。 */
     private static void uploadLights() {
-        lightShader.setSampler("SceneColor", FRAME.color());
-        lightShader.setSampler("SceneDepth", FRAME.depth());
+        // 调用近景/DH 共用输入上传，新旧程序使用完全相同的深度约定。
+        uploadScene(lightShader);
+        lightShader.safeGetUniform("LightCount").set(lights.size());
+        uploadLightSlots();
+    }
+
+    /** 上传同一帧近景、DH 与手持物输入，独立喷焰不另建一份深度管线。 */
+    static void uploadScene(ShaderInstance target) {
+        target.setSampler("SceneColor", FRAME.color());
+        target.setSampler("SceneDepth", FRAME.depth());
         // 没有 DH 时仍绑定完整有效的纹理，避免未用采样器携带外部阴影比较模式。
-        lightShader.setSampler("DistantDepth", distant == null ? FRAME.depth() : FRAME.distantDepth());
-        lightShader.safeGetUniform("InverseProjection").set(nearAnalysis.inverseProjection());
-        lightShader.safeGetUniform("Projection").set(PROJECTION);
-        lightShader.safeGetUniform("NearEmptyDepth").set(nearAnalysis.emptyDepth());
+        target.setSampler("DistantDepth", distant == null ? FRAME.depth() : FRAME.distantDepth());
+        target.safeGetUniform("InverseProjection").set(nearAnalysis.inverseProjection());
+        target.safeGetUniform("Projection").set(PROJECTION);
+        target.safeGetUniform("NearEmptyDepth").set(nearAnalysis.emptyDepth());
         // Iris/Oculus 在世界结束前已绘制手持物，其压缩到近处的深度不能当作真实墙面受光。
-        lightShader.safeGetUniform("HandDepthLimit").set(RVP_LightingCompatibility.handDepthLimit());
-        lightShader.safeGetUniform("HasDistantDepth").set(distant == null ? 0 : 1);
-        lightShader.safeGetUniform("DistantEmptyDepth").set(distantAnalysis == null ? 1F : distantAnalysis.emptyDepth());
-        lightShader.safeGetUniform("DistantProjection").set(distant == null ? PROJECTION : distant.projection());
-        lightShader.safeGetUniform("InverseDistantProjection").set(distantAnalysis == null
+        target.safeGetUniform("HandDepthLimit").set(RVP_LightingCompatibility.handDepthLimit());
+        target.safeGetUniform("HasDistantDepth").set(distant == null ? 0 : 1);
+        target.safeGetUniform("DistantEmptyDepth").set(distantAnalysis == null ? 1F : distantAnalysis.emptyDepth());
+        target.safeGetUniform("DistantProjection").set(distant == null ? PROJECTION : distant.projection());
+        target.safeGetUniform("InverseDistantProjection").set(distantAnalysis == null
                 ? nearAnalysis.inverseProjection() : distantAnalysis.inverseProjection());
         // 两种深度必须先还原到同一观察空间，再按实际距离挑选最近可见表面。
         Matrix4f distantToView = distant == null ? new Matrix4f()
                 : new Matrix4f(VIEW).mul(distant.view().invert());
-        lightShader.safeGetUniform("DistantToView").set(distantToView);
-        lightShader.safeGetUniform("ViewToDistant").set(new Matrix4f(distantToView).invert());
-        lightShader.safeGetUniform("ScreenSize").set((float) FRAME.width(), (float) FRAME.height());
-        lightShader.safeGetUniform("LightCount").set(lights.size());
+        target.safeGetUniform("DistantToView").set(distantToView);
+        target.safeGetUniform("ViewToDistant").set(new Matrix4f(distantToView).invert());
+        target.safeGetUniform("ScreenSize").set((float) FRAME.width(), (float) FRAME.height());
+    }
+
+    /** 上传环境光槽位；旧圆形喷口自发光由代码开关暂停，旧 Shader 实现仍保留。 */
+    private static void uploadLightSlots() {
         for (int index = 0; index < RVP_ScreenLightBudget.MAX_LIGHTS; index++) {
             if (index >= lights.size()) {
                 lightShader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
@@ -254,7 +299,7 @@ public final class RVP_ScreenLightPass {
             lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F, 0F);
-            if (light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
+            if (RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
                 // 调用统一代码预设；已采样的强度包含二脉冲、燃尽和预览年龄，不能重复乘阶段。
                 RVP_LightParameters.EngineEmission emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
                 lightShader.safeGetUniform("LightEmission" + index).set(emission.coreRadius(), emission.haloRadius(),
@@ -266,6 +311,7 @@ public final class RVP_ScreenLightPass {
 
     /** 核心独立达到显示峰值；使用硬件混合读取现有颜色，不增加背景复制或引入读写反馈。 */
     private static void renderEmission() {
+        if (!RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED) { return; }
         if (lights.stream().noneMatch(light -> light.type() == RVP_LightSourceType.ROCKET_ENGINE)) { return; }
         lightShader.safeGetUniform("OutputMode").set(2);
         // 调用原主目标和专用混合，深度/手持物遮罩仍使用已配对的近景与 DH 来源。
@@ -318,6 +364,7 @@ public final class RVP_ScreenLightPass {
     /** 世界卸载和资源重载释放临时显存；非渲染线程只排队，不直接调用 GL。 */
     public static void clear() {
         lights = List.of(); frameLevel = null; distant = null; distantAnalysis = null; nearAnalysis = null;
+        plumes = List.of();
         lastFrameStatus = "资源已清理，等待活动光源";
         // 调用借用引用清理，卸载后不触碰 DH 或光影拥有的纹理。
         RVP_LightDepthFrame.INSTANCE.clear();

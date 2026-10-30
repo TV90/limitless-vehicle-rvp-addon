@@ -78,11 +78,14 @@ public final class RVP_ClientLightEvents {
             LOCAL_ENGINES.clear();
             // 调用统一清理，登出后没有灯或旧显存资源残留。
             RVP_ScreenLightManager.INSTANCE.clear();
+            RVP_RocketPlumeManager.INSTANCE.clear();
             RVP_ScreenLightPass.clear();
             return;
         }
         // 调用生命周期清理，先淘汰过期条目，再为仍燃烧的本地实体续期。
         RVP_ScreenLightManager.INSTANCE.tick(level, level.getGameTime());
+        // 调用独立喷焰时钟，清理远端失去心跳的喷流；暂停时与模型一起冻结。
+        RVP_RocketPlumeManager.INSTANCE.beginWorld(level, level.getGameTime());
         LOCAL_ENGINES.clear();
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof org.ywzj.rvp.entity.projectile.RVP_BaseBullet bullet) {
@@ -101,6 +104,7 @@ public final class RVP_ClientLightEvents {
             LOCAL_ENGINES.remove(event.getEntity());
             // 调用 UUID 删除入口，销毁、区块卸载不等到两 tick 心跳超时。
             RVP_ScreenLightManager.INSTANCE.removePersistent(event.getEntity().getUUID());
+            RVP_RocketPlumeManager.INSTANCE.remove(event.getEntity().getUUID());
         }
     }
 
@@ -110,6 +114,7 @@ public final class RVP_ClientLightEvents {
             LOCAL_ENGINES.clear();
             // 调用两个独立生命周期，CPU 光表和 GPU 画面副本均在换维度时丢弃。
             RVP_ScreenLightManager.INSTANCE.clear();
+            RVP_RocketPlumeManager.INSTANCE.clear();
             RVP_ScreenLightPass.clear();
         }
     }

@@ -121,7 +121,7 @@ public class RVP_ProjectileData {
     /**
      * 尾焰喷口偏移（实体空间，[x,y,z]，格；Z- 为弹尾）。默认 {@code [0,0,-0.5]}。
      * 生效条件：{@code has_rocket_engine=true} 且发动机燃烧中，用于客户端尾焰渲染位置
-     * （复用本体火箭尾焰模型/动画/贴图三件套）。
+     * （RVP 自有高亮程序喷焰与发动机环境光共用该位置；旧模型通道保留但暂时关闭）。
      */
     @SerializedName("engine_nozzle_offset")
     private float[] engineNozzleOffset;
@@ -129,7 +129,9 @@ public class RVP_ProjectileData {
     /**
      * 尾焰渲染缩放，默认 {@code 0.3}（2026-09-15 由 0.2 上调）。语义同本体
      * {@code caliber/1000}，即数值 ≈ 弹体直径（格）；尾焰模型自身直径约 3.09 格，
-     * 缩放后约为弹径的 3 倍。配置示例：9M723（弹径 0.92 格）取 {@code 1.15} 以显更粗。
+     * RVP 新程序喷焰长度为 {@code 10*flame_scale} 格，最大直径为 {@code 3*flame_scale} 格，
+     * 不按速度或亮度额外缩放；颜色、亮度和光晕由代码控制。旧模型自身直径约 3.09 格的通道保留。
+     * 配置示例：9M723（弹径 0.92 格）取 {@code 1.15} 以显更粗。
      * 生效条件：同 {@code engine_nozzle_offset}。
      */
     @SerializedName("flame_scale")

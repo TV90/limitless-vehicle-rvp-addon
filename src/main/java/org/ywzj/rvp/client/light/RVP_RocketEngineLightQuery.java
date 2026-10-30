@@ -36,15 +36,28 @@ public final class RVP_RocketEngineLightQuery {
         float pitch = Mth.lerp(partialTick, bullet.xRotO, bullet.getXRot()) * Mth.DEG_TO_RAD;
         float yaw = Mth.rotLerp(partialTick, bullet.yRotO, bullet.getYRot()) * Mth.DEG_TO_RAD;
         local.rotateX(pitch).rotateY(-yaw);
-        return origin.add(local.x, local.y, local.z);
+        // 调用共用观瞄伪装平移，避免喷焰与“从炮口射出”的临时视觉弹道分离。
+        return origin.add(local.x, local.y, local.z).add(
+                org.ywzj.rvp.client.render.RVP_SightFireDisguiseRender.renderOffset(bullet, partialTick));
+    }
+
+    /** 从弹体局部 Z- 轴取得喷流朝向，与模型的 X→Y 旋转顺序一致，不按速度猜测喷口方向。 */
+    public static Vec3 exhaustDirection(RVP_BaseBullet bullet, float partialTick) {
+        float pitch = Mth.lerp(partialTick, bullet.xRotO, bullet.getXRot()) * Mth.DEG_TO_RAD;
+        float yaw = Mth.rotLerp(partialTick, bullet.yRotO, bullet.getYRot()) * Mth.DEG_TO_RAD;
+        Vector3f direction = new Vector3f(0, 0, -1).rotateX(pitch).rotateY(-yaw);
+        return new Vec3(direction.x, direction.y, direction.z);
     }
 
     /** 每枚弹体只更新 UUID 对应的一盏灯；燃尽、配置关闭或远端超时立即删除。 */
     public static void update(Entity entity, Vec3 renderOrigin, float partialTick) {
         if (!(entity instanceof RVP_BaseBullet bullet)) { return; }
+        // 调用喷焰世界检查，远端更新也不依赖本地发动机是否存在。
+        RVP_RocketPlumeManager.INSTANCE.beginWorld(bullet.level(), bullet.level().getGameTime());
         // 调用燃烧查询，模型尾焰与环境光共用相同窗口。
         if (!isBurning(bullet)) {
             RVP_ScreenLightManager.INSTANCE.removePersistent(entity.getUUID());
+            RVP_RocketPlumeManager.INSTANCE.remove(entity.getUUID());
             return;
         }
         // 调用代码中的统一发动机光参数；已有推进/喷口数据仍复用，颜色、半径、强度不从 JSON 读取。
@@ -56,6 +69,11 @@ public final class RVP_RocketEngineLightQuery {
         // 调用共用阶段包络，明确区分已同步的二脉冲窗口，一级保持最亮，颜色/半径随阶段变化。
         RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, bullet.isSecondMotorPulseBurningNow(), remaining);
         // 调用持续光更新，喷口先计算再按相机位置转换，避免远坐标浮点抖动。
-        RVP_ScreenLightManager.INSTANCE.upsertPersistent(bullet.getUUID(), nozzle(bullet, renderOrigin, partialTick), phased);
+        Vec3 position = nozzle(bullet, renderOrigin, partialTick);
+        RVP_ScreenLightManager.INSTANCE.upsertPersistent(bullet.getUUID(), position, phased);
+        // 调用独立喷流登记，只复用旧 flame_scale，亮度使用统一发动机阶段，数量/距离不套用八灯预算。
+        RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
+                bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),
+                phased.intensity() / RVP_LightParameters.ENGINE_SURFACE_INTENSITY, false);
     }
 }

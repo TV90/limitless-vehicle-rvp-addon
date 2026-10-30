@@ -246,6 +246,23 @@ final class RVP_ScreenFrameResources {
         RenderSystem.blendFuncSeparate(GL11.GL_ONE_MINUS_DST_COLOR, GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_ONE);
     }
 
+    /** 多条喷焰以最大值合入 HDR，避免每条 60000 相加导致半精度纹理溢出；场景 Alpha 不在此目标中。 */
+    void drawContribution(ShaderInstance shader) {
+        shader.apply();
+        try {
+            // 调用与显卡状态回归共用的峰值合并入口，重叠喷流也只写有限亮度。
+            beginContributionBlend();
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+        } finally { shader.clear(); }
+    }
+
+    /** HDR 贡献最大值混合，调用方必须处于 State 作用域内，退出恢复外部混合方程。 */
+    void beginContributionBlend() {
+        RenderSystem.enableBlend();
+        RenderSystem.blendEquation(GL14.GL_MAX);
+        RenderSystem.blendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ONE);
+    }
+
     /** 释放显存；着色器本身由资源重载管理。 */
     void release() {
         depthReady = false;

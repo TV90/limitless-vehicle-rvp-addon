@@ -19,26 +19,33 @@ public final class RVP_SightFireDisguiseRender {
     private RVP_SightFireDisguiseRender() {
     }
 
-/** 渲染器入口：有伪装数据且未过合流期时对 PoseStack 施加平移；否则零开销返回。 */
+    /** 渲染器入口：有伪装数据且未过合流期时对 PoseStack 施加平移；否则使用零偏移。 */
     public static void applyDisguiseTranslate(Entity entity, PoseStack poseStack, float partialTick) {
         if (!(entity instanceof RVP_BaseBullet bullet)) {
             return;
         }
+        // 调用共享偏移计算，模型、新喷焰和环境光必须落在同一条视觉弹道上。
+        Vec3 offset = renderOffset(bullet, partialTick);
+        poseStack.translate(offset.x, offset.y, offset.z);
+    }
+
+    /** 返回观瞄伪装的世界平移，新程序喷焰不使用模型 PoseStack，也必须应用相同合流包络。 */
+    public static Vec3 renderOffset(RVP_BaseBullet bullet, float partialTick) {
         Vec3 offset = bullet.rvp$getSightDisguiseRenderOffset();
         if (offset == null) {
-            return;
+            return Vec3.ZERO;
         }
         int disguiseTicks = bullet.rvp$getSightDisguiseTicks();
         int endTick = bullet.rvp$getSightDisguiseEndTick();
         float age = bullet.tickCount + partialTick;
         if (age >= endTick) {
-            return;
+            return Vec3.ZERO;
         }
         // smoothstep（3t²−2t³）缓入缓出：伪装期结束进入合流段时不是线性匀速回收，
         // 而是起步缓、收尾缓，肉眼过渡更顺（2026-09-19 用户反馈线性过渡生硬后调整）
         float blendRatio = (age - disguiseTicks) / Math.max(1, endTick - disguiseTicks);
         blendRatio = Mth.clamp(blendRatio, 0.0F, 1.0F);
         float factor = 1.0F - blendRatio * blendRatio * (3.0F - 2.0F * blendRatio);
-        poseStack.translate(offset.x * factor, offset.y * factor, offset.z * factor);
+        return offset.scale(factor);
     }
 }

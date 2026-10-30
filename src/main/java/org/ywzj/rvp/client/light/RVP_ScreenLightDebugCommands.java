@@ -27,12 +27,16 @@ public final class RVP_ScreenLightDebugCommands {
                 .then(Commands.literal("clear").executes(context -> {
                     // 调用光源取消入口，下一帧无活动灯即完全跳过场景复制。
                     RVP_ScreenLightManager.INSTANCE.clear();
+                    RVP_RocketPlumeManager.INSTANCE.clear();
                     return 1;
                 }))
                 .then(Commands.literal("preview").executes(context -> preview(8))
                         .then(Commands.argument("radius", FloatArgumentType.floatArg(0.5F, 48))
                                 .executes(context -> preview(FloatArgumentType.getFloat(context, "radius")))))
-                .then(Commands.literal("engine").executes(context -> preview(7, true))));
+                .then(Commands.literal("engine").executes(context -> preview(7, true))
+                        .then(Commands.argument("scale", FloatArgumentType.floatArg(0.01F, 16F))
+                                .executes(context -> preview(7, true,
+                                        FloatArgumentType.getFloat(context, "scale"))))));
     }
 
     /** 展示实际可用/降级状态，方便分别验证 CRT/TV、热成像和光影组合。 */
@@ -44,6 +48,7 @@ public final class RVP_ScreenLightDebugCommands {
         mc.player.displayClientMessage(Component.literal("[RVP Light] tracked=" + RVP_ScreenLightManager.INSTANCE.size()
                 + "，screen=" + RVP_LightingConfig.screenEnabled() + "，bloom=" + RVP_LightingConfig.bloomEnabled()
                 + "，block=" + RVP_LightingConfig.blockLightEnabled()
+                + "，plumes=" + RVP_RocketPlumeManager.INSTANCE.size()
                 + "；" + (reason.isEmpty() ? RVP_ScreenLightPass.frameStatus() : reason)), false);
         return 1;
     }
@@ -56,6 +61,12 @@ public final class RVP_ScreenLightDebugCommands {
 
     /** engine 模式用真实代码预设显示两秒喷口核心和橙色光晕，朝天空也可验证。 */
     private static int preview(float radius, boolean engine) {
+        // 调用相同预览程序，默认喷流尺寸沿用未配 flame_scale 时的 0.3。
+        return preview(radius, engine, org.ywzj.rvp.light.RVP_RocketPlumeParameters.DEFAULT_SCALE);
+    }
+
+    /** 缩放预览只改变喷焰几何，便于检查旧 JSON 缩放语义，亮度不从命令或 JSON 读取。 */
+    private static int preview(float radius, boolean engine, float scale) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) { return 0; }
         Vec3 position = mc.gameRenderer.getMainCamera().getPosition().add(mc.player.getLookAngle().scale(4));
@@ -75,6 +86,13 @@ public final class RVP_ScreenLightDebugCommands {
         RVP_ScreenLightManager.INSTANCE.addTransient(position,
                 engine ? RVP_LightSourceType.ROCKET_ENGINE : RVP_LightSourceType.EXPLOSION, null,
                 parameters, mc.level.getGameTime());
+        if (engine) {
+            // 调用正式喷流管理器，侧向展示完整形状，实际导弹则沿弹体局部尾轴喷出。
+            Vec3 direction = mc.player.getLookAngle().cross(new Vec3(0, 1, 0)).normalize();
+            if (direction.lengthSqr() < 0.01) { direction = new Vec3(1, 0, 0); }
+            RVP_RocketPlumeManager.INSTANCE.beginWorld(mc.level, mc.level.getGameTime());
+            RVP_RocketPlumeManager.INSTANCE.upsert(java.util.UUID.randomUUID(), position, direction, scale, 1, true);
+        }
         return 1;
     }
 }

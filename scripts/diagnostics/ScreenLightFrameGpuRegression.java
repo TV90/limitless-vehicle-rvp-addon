@@ -78,6 +78,12 @@ public final class ScreenLightFrameGpuRegression {
                 require(GL11.glGetInteger(GL14.GL_BLEND_DST_RGB) == GL11.GL_ONE, "destination screen blend");
                 require(GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA) == GL11.GL_ZERO, "source alpha preservation");
                 require(GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA) == GL11.GL_ONE, "destination alpha preservation");
+                // 调用实际喷焰 HDR 混合入口；最大值合并避免齐射导致半精度纹理累加溢出。
+                frame.beginContributionBlend();
+                require(GL11.glGetInteger(GL20.GL_BLEND_EQUATION_RGB) == GL14.GL_MAX, "plume RGB maximum merge");
+                require(GL11.glGetInteger(GL20.GL_BLEND_EQUATION_ALPHA) == GL14.GL_MAX, "plume bloom-energy maximum merge");
+                require(GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB) == GL11.GL_ONE, "plume source RGB factor");
+                require(GL11.glGetInteger(GL14.GL_BLEND_DST_RGB) == GL11.GL_ONE, "plume destination RGB factor");
             }
             assertExternalState();
             System.out.println("PASS production scope restores draw/read FBO, MRT outputs, viewport, VAO/VBO, textures, samplers, masks and source-blend equations");
