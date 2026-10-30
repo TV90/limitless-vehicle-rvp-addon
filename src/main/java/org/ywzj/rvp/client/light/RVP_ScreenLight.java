@@ -12,6 +12,7 @@ import java.util.UUID;
  * @param radius 照亮半径，单位格；0 表示不照亮环境
  * @param haloRadius 独立光晕半径，单位格；不由已调参的照亮半径推导
  * @param intensity 已应用年龄衰减的强度
+ * @param haloIntensity 独立采样的光晕强度；爆炸不随照亮brightness变化，炮口沿用本身光强
  * @param remainingTicks 剩余 tick
  * @param type 来源类型
  * @param persistentKey 发动机 UUID，短光为 null
@@ -20,5 +21,11 @@ import java.util.UUID;
  * @param volumetricStrength 空气散射强度
  */
 public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius, float haloRadius,
-        float intensity, float remainingTicks, RVP_LightSourceType type, UUID persistentKey,
-        float surfaceWeight, boolean bloom, float volumetricStrength) { }
+        float intensity, float haloIntensity, float remainingTicks,
+        RVP_LightSourceType type, UUID persistentKey,
+        float surfaceWeight, boolean bloom, float volumetricStrength) {
+    /** 只使用仍有可见贡献的一路范围，照亮结束后不能拿它的大半径占据光晕预算。 */
+    public float visibleRadius() {
+        return Math.max(intensity > 0.001F ? radius : 0, haloIntensity > 0.001F ? haloRadius : 0);
+    }
+}

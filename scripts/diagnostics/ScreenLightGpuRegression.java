@@ -4,6 +4,7 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.light.RVP_BloomParameters;
+import org.ywzj.rvp.light.RVP_TransientLightTimeline;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ public final class ScreenLightGpuRegression {
             System.out.println("GPU=" + GL11.glGetString(GL11.GL_RENDERER));
             Path shaders = Path.of(args[0]).resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
             // 编译真实生产文件，不能用测试内的简化 Shader 替代。
-            light = program(shaders, "screen_light_ranges");
+            light = program(shaders, "screen_light_halo_timeline");
             bloom = program(shaders, "screen_light_bloom_multiscale");
             System.out.println("PASS both production GLSL programs compile and link");
             setupTriangle();
@@ -63,6 +64,7 @@ public final class ScreenLightGpuRegression {
             testMultiscaleBloom(Path.of(args[0]), bloom, plume);
             testIndependentPlumeGlow(plume);
             testSeparatedLightHalo(light);
+            testTransientLightTimeline(light, bloom);
             testExtendedEngineSurface(light);
             smoke = program(shaders, "smoke_light");
             testSmokeLighting(smoke);
@@ -91,7 +93,7 @@ public final class ScreenLightGpuRegression {
     static void testMotorFlameDepthCapture(Path root, Runnable oldMask, Runnable fixedMask, Runnable fixedDepthTest)
             throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light_ranges");
+        int light = program(shaders, "screen_light_halo_timeline");
         int flame = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
                 "#version 150\nin vec3 Position; void main(){gl_Position=vec4(Position,1.0);}");
@@ -163,7 +165,7 @@ public final class ScreenLightGpuRegression {
     static void testExplosionSmokeDepthCapture(Path root, Runnable smokeDepth,
             java.util.function.IntBinaryOperator captureDepth) throws Exception {
         Path shaders = root.resolve("src/main/resources/assets/ywzj_rvp/shaders/core");
-        int light = program(shaders, "screen_light_ranges");
+        int light = program(shaders, "screen_light_halo_timeline");
         int smoke = program(shaders, "smoke_light");
         int baseSmoke = GL20.glCreateProgram();
         int vertex = compile(GL20.GL_VERTEX_SHADER,
@@ -1126,6 +1128,8 @@ public final class ScreenLightGpuRegression {
             lights(shader, 1, 0, 0, -3, 4, preset.intensity(), preset.surfaceWeight(), 0);
             GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightColorIntensity0"),
                     preset.red(), preset.green(), preset.blue(), preset.intensity());
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"),
+                    preset.red(), preset.green(), preset.blue(), preset.intensity());
             GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), preset.surfaceWeight(), 0, 1, 1);
             GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
             float[] originalLight = pixels(lit[0], size, size);
@@ -1173,6 +1177,72 @@ public final class ScreenLightGpuRegression {
         float[] maximum = pixel(glow[0], 64, 64);
         require(maximum[0] >= 50000 && maximum[0] <= 60000, "expanded eight-light halo range overflowed HDR");
         System.out.println("PASS explosion/muzzle independent lighting and halo radii, halo-only sky, zero range, normal/reverse DH walls and expanded eight-light HDR bounds");
+    }
+
+    /** 回读独立爆炸广域亮度及整盏光源的平滑时间线；照亮与光晕必须一起结束。 */
+    private static void testTransientLightTimeline(int shader, int bloom) {
+        int size = 64;
+        int sky = depth(size, size, 0, false), surface = depth(size, size, 5, false);
+        int scene = color(size, size, BACKGROUND);
+        int[] lit = target(size, size), glow = target(size, size), display = target(size, size);
+        int[][][] levels = bloomTargets(size, size);
+        GL20.glUseProgram(shader); uniforms(shader);
+        GL20.glUniform2f(GL20.glGetUniformLocation(shader, "ScreenSize"), size, size);
+        sampler(shader, "SceneColor", 0, scene); sampler(shader, "SceneDepth", 1, surface);
+        sampler(shader, "DistantDepth", 2, sky);
+        lights(shader, 1, 0, 0, -3, 60, 25, .85F, 0);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightShape0"), .85F, 0, 1, 12);
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+        float referenceLight = pixel(lit[0], size / 2, size / 2)[0];
+        for (float intensity : new float[] {0, 1, 16, 60000}) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, intensity);
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+            near(referenceLight, pixel(lit[0], size / 2, size / 2)[0], "wide halo intensity changed surface lighting");
+            GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+            if (intensity == 0) { zero(pixel(glow[0], size / 2, size / 2), "zero explosion wide halo intensity"); }
+            else { require(pixel(glow[0], size / 2, size / 2)[0] > 0, "independent wide halo brightness has no effect"); }
+        }
+        GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16);
+        GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+        float referenceGlow = pixel(glow[0], size / 2, size / 2)[0];
+        for (float intensity : new float[] {0, 25, 320}) {
+            GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightColorIntensity0"), 1, .82F, .48F, intensity);
+            render(glow, size, size);
+            near(referenceGlow, pixel(glow[0], size / 2, size / 2)[0], "surface brightness changed explosion wide halo");
+        }
+        for (float scale : new float[] {.5F, 1, 2}) {
+            // 调用正式时间线，逐点读真实GLSL及四层合成，不能只比较参数元数据。
+            float duration = RVP_TransientLightTimeline.durationTicks(32, scale);
+            float previousLight = Float.MAX_VALUE, previousGlow = Float.MAX_VALUE;
+            for (float fraction : new float[] {0, .5F, .8F, .95F, .99F, .999F, 1}) {
+                float fade = RVP_TransientLightTimeline.fade(duration * fraction, 32, .3F, scale);
+                GL20.glUseProgram(shader);
+                // 多尺度合成会复用采样单元，切回光源时恢复真实场景和深度输入。
+                sampler(shader, "SceneColor", 0, scene); sampler(shader, "SceneDepth", 1, surface);
+                sampler(shader, "DistantDepth", 2, sky);
+                GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightColorIntensity0"), 1, .82F, .48F, 25 * fade);
+                GL20.glUniform4f(GL20.glGetUniformLocation(shader, "LightHaloColorIntensity0"), 1, .82F, .48F, 16 * fade);
+                GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 1); render(lit, size, size);
+                float lightValue = pixel(lit[0], size / 2, size / 2)[0];
+                GL20.glUniform1i(GL20.glGetUniformLocation(shader, "OutputMode"), 3); render(glow, size, size);
+                float glowValue = pixel(glow[0], size / 2, size / 2)[0];
+                require(lightValue <= previousLight + .002F && glowValue <= previousGlow + .002F,
+                        "light or halo brightened again during its fade");
+                previousLight = lightValue; previousGlow = glowValue;
+                multiscaleBloom(bloom, glow[1], scene, levels, size, size, 1, 1);
+                GL20.glUseProgram(bloom); sampler(bloom, "InputTexture", 0, lit[1]);
+                sampler(bloom, "SceneColor", 1, scene); sampler(bloom, "BloomTexture", 2, levels[0][1][1]);
+                GL20.glUniform1i(GL20.glGetUniformLocation(bloom, "Mode"), 2); render(display, size, size);
+                float[] result = pixel(display[0], size / 2, size / 2);
+                near(BACKGROUND[3], result[3], "timeline changed scene alpha");
+                if (fraction == .999F) {
+                    require(result[0] - BACKGROUND[0] < .01F, "last visible frame retained a brightness cliff");
+                }
+                if (fraction == 1) { background(result, "whole light did not end at its adjusted lifetime"); }
+            }
+        }
+        System.out.println("PASS independent explosion wide halo gain 0..60000, brightness isolation, whole-source 0.5/1/2 decay timing, smooth final composite and Alpha");
     }
 
     /** 真正 500 格照明：距发动机 450 格的 DH 表面仍受光，窄口径范围不能冒充同样远距照明。 */
@@ -1422,6 +1492,7 @@ public final class ScreenLightGpuRegression {
         for (int index = 0; index < 8; index++) {
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightPositionRadius" + index), x, y, z, radius);
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightColorIntensity" + index), 1, 0.7F, 0.2F, intensity);
+            GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightHaloColorIntensity" + index), 1, 0.7F, 0.2F, intensity);
             GL20.glUniform4f(GL20.glGetUniformLocation(program, "LightShape" + index), surface, volume, 1, 0);
         }
     }

@@ -36,6 +36,8 @@ class RVP_ScreenLightDebugCommandsTest {
                 "rvplight engine 0.3 300", "rvplight clear", "rvplight help", "rvplight copy",
                 "rvplight set engine haloIntensity 8", "rvplight status engine coreIntensity",
                 "rvplight set engine worldHaloIntensity 4", "rvplight set bloom nearStrength 0",
+                "rvplight set explosion worldHaloIntensity 16", "rvplight set explosion worldHaloIntensity 0",
+                "rvplight status explosion worldHaloIntensity", "rvplight reset explosion worldHaloIntensity",
                 "rvplight set bloom farStrength 2", "rvplight reset bloom farStrength",
                 "rvplight set explosion haloRadiusScale 1024", "rvplight set muzzle radiusScale 0",
                 "rvplight set engine haloRadiusScale 0", "rvplight set engine radiusScale 1024",
@@ -51,6 +53,7 @@ class RVP_ScreenLightDebugCommandsTest {
         }
         for (String command : new String[] {"rvplight set engine coreIntensity 60001",
                 "rvplight set engine worldHaloIntensity 60001", "rvplight set bloom nearStrength -1",
+                "rvplight set explosion worldHaloIntensity 60001", "rvplight set muzzle worldHaloIntensity 16",
                 "rvplight set bloom farStrength 257", "rvplight set engine nearStrength 1",
                 "rvplight set explosion haloRadiusScale -1", "rvplight set muzzle haloRadiusScale 1025",
                 "rvplight set engine radiusScale -1", "rvplight set explosion coreIntensity 2"}) {

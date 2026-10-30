@@ -2,8 +2,12 @@ package org.ywzj.rvp.client.light;
 
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Group;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning.Parameter;
 import java.util.List;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,7 +20,17 @@ class RVP_ScreenLightManagerTest {
     private final Object world = new Object();
 
     @BeforeEach
-    void start() { manager.beginWorld(world, 100); }
+    void start() {
+        // 调用会话重置，每个时间线测试都从正式默认值开始，避免互相污染衰减倍率。
+        RVP_LightRuntimeTuning.reset();
+        manager.beginWorld(world, 100);
+    }
+
+    @AfterEach
+    void resetTuning() {
+        // 调用统一重置，慢衰减测试不会影响其他测试类。
+        RVP_LightRuntimeTuning.reset();
+    }
 
     /** 读取无视锥裁剪的实际快照，用于检查生命周期，预算仍正常执行。 */
     private List<RVP_ScreenLight> sample(float partialTick) {
@@ -88,7 +102,7 @@ class RVP_ScreenLightManagerTest {
         RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
         assertEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 60));
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 96);
-        assertTrue(sample(0).get(0).intensity() < parameters.intensity());
+        assertTrue(sample(0).get(0).intensity() < parameters.intensity() * 20);
         assertEquals(28, sample(0).get(0).remainingTicks());
     }
 
@@ -108,7 +122,7 @@ class RVP_ScreenLightManagerTest {
         manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 100);
         manager.tick(world, 116);
         RVP_ScreenLight middle = sample(0).get(0);
-        assertEquals(parameters.intensity() * Math.pow(.5, .3), middle.intensity(), .00001);
+        assertEquals(parameters.intensity() * 20 * Math.pow(.5, .3), middle.intensity(), .00001);
         assertEquals(16, middle.remainingTicks());
         manager.tick(world, 131);
         RVP_ScreenLight last = sample(.5F).get(0);
@@ -117,6 +131,79 @@ class RVP_ScreenLightManagerTest {
         for (int i = 0; i < 240; i++) { assertEquals(last, sample(.5F).get(0)); }
         manager.tick(world, 132);
         assertTrue(sample(0).isEmpty());
+    }
+
+    @Test
+    void decayScaleStretchesAndShortensTheWholeExplosionAndMuzzleLight() {
+        for (RVP_LightSourceType type : new RVP_LightSourceType[] {RVP_LightSourceType.EXPLOSION, RVP_LightSourceType.MUZZLE}) {
+            // 调用两类真实预设和管理器，检查慢衰减下照亮、光晕都超过原始寿命后仍有效。
+            RVP_LightRuntimeTuning.reset();
+            Group group = type == RVP_LightSourceType.EXPLOSION ? Group.explosion : Group.muzzle;
+            RVP_LightParameters parameters = type == RVP_LightSourceType.EXPLOSION
+                    ? RVP_LightParameters.explosion(4) : RVP_LightParameters.muzzle(125, false);
+            RVP_ScreenLightManager lightManager = new RVP_ScreenLightManager();
+            lightManager.beginWorld(world, 100);
+            RVP_LightRuntimeTuning.set(group, Parameter.decayScale, .5F);
+            long handle = lightManager.addTransient(Vec3.ZERO, type, null, parameters, 100);
+            lightManager.tick(world, 100 + parameters.durationTicks() + 1);
+            var extended = lightManager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+            assertTrue(extended.intensity() > 0);
+            assertTrue(extended.haloIntensity() > 0);
+            assertEquals(parameters.durationTicks() - 1, extended.remainingTicks());
+            assertTrue(lightManager.hasTransient(handle));
+            lightManager.tick(world, 100 + parameters.durationTicks() * 2);
+            assertFalse(lightManager.hasTransient(handle));
+            assertFalse(lightManager.hasActiveLights());
+
+            // 调用快衰减路径，整盏光源在半寿命处结束，效果包装器查询也同步变为false。
+            lightManager.beginWorld(world, 200);
+            RVP_LightRuntimeTuning.set(group, Parameter.decayScale, 2);
+            long shortened = lightManager.addTransient(Vec3.ZERO, type, null, parameters, 200);
+            lightManager.tick(world, 200 + (parameters.durationTicks() + 1) / 2);
+            assertFalse(lightManager.hasTransient(shortened));
+            assertTrue(lightManager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).isEmpty());
+        }
+    }
+
+    @Test
+    void liveDecayChangesKeepBirthTimeAndDelayedSourcesUseTheAdjustedLifetime() {
+        // 调用实时调参与迟包登记，不重置出生年龄；恢复参数不能让已结束的条目复活。
+        RVP_LightParameters parameters = RVP_LightParameters.explosion(4);
+        long handle = manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 100);
+        manager.tick(world, 108);
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.decayScale, .5F);
+        var slowed = sample(0).get(0);
+        assertEquals(56, slowed.remainingTicks());
+        assertTrue(slowed.intensity() > 0 && slowed.intensity() < 25);
+        assertTrue(slowed.haloIntensity() > 0 && slowed.haloIntensity() < 16);
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.decayScale, 2);
+        assertEquals(8, sample(0).get(0).remainingTicks());
+        manager.tick(world, 116);
+        assertFalse(manager.hasTransient(handle));
+        RVP_LightRuntimeTuning.reset(Group.explosion, Parameter.decayScale);
+        assertFalse(manager.hasActiveLights());
+
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.decayScale, .5F);
+        long late = manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 76);
+        assertNotEquals(0, late);
+        assertEquals(24, sample(0).get(0).remainingTicks());
+        manager.removeTransient(late);
+        assertFalse(manager.hasTransient(late));
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.decayScale, 2);
+        assertEquals(0, manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, parameters, 76));
+    }
+
+    @Test
+    void zeroDecayScaleHasAFiniteSlowFadeAndEventuallyExpires() {
+        // 调用0倍率下的有限下限规则，防止调参生成永不结束的光源。
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.decayScale, 0);
+        long handle = manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null,
+                RVP_LightParameters.explosion(4), 100);
+        manager.tick(world, 739);
+        assertTrue(manager.hasTransient(handle));
+        manager.tick(world, 740);
+        assertFalse(manager.hasTransient(handle));
+        assertFalse(manager.hasActiveLights());
     }
 
     @Test

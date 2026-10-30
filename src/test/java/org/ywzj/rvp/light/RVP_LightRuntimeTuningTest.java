@@ -24,7 +24,7 @@ class RVP_LightRuntimeTuningTest {
     }
 
     @Test
-    void defaultsKeepOriginalPresetsAndUnconfiguredSwitchesRespectUserConfig() {
+    void defaultsApplyTwentyTimesExplosionLightAndFiveTimesRangeWhileOtherPresetsStayUnchanged() {
         // 调用正式预设和调参入口对照默认值，确认覆盖/重置不会丢失原有画质开关的选择。
         for (Group group : new Group[] {Group.explosion, Group.muzzle, Group.engine}) {
             RVP_LightParameters original = switch (group) {
@@ -32,7 +32,12 @@ class RVP_LightRuntimeTuningTest {
                 case muzzle -> RVP_LightParameters.muzzle(125, false);
                 default -> RVP_LightParameters.engine(300);
             };
-            assertSame(original, RVP_LightRuntimeTuning.apply(group, original));
+            var actual = RVP_LightRuntimeTuning.apply(group, original);
+            if (group == Group.explosion) {
+                assertEquals(original.intensity() * 20, actual.intensity());
+                assertEquals(original.radius() * 5, actual.radius());
+                assertEquals(16, RVP_LightRuntimeTuning.get(group, Parameter.worldHaloIntensity));
+            } else { assertSame(original, actual); }
         }
         assertEquals(0, RVP_LightRuntimeTuning.getOrDefault(Group.bloom, Parameter.enabled, 0));
         RVP_LightRuntimeTuning.set(Group.bloom, Parameter.enabled, 1);
@@ -53,8 +58,9 @@ class RVP_LightRuntimeTuningTest {
         RVP_LightRuntimeTuning.set(Group.explosion, Parameter.brightness, 2);
         RVP_LightRuntimeTuning.set(Group.explosion, Parameter.radiusScale, 3);
         var tuned = manager.collectVisible(Vec3.ZERO, 0.5F, 256, 8, light -> true).get(0);
-        assertEquals(original.radius() * 3, tuned.radius());
-        assertEquals(original.intensity() * 2, tuned.intensity(), 0.00001F);
+        assertEquals(36, tuned.radius());
+        assertEquals(original.intensity() * .1F, tuned.intensity(), 0.00001F);
+        assertEquals(original.haloIntensity(), tuned.haloIntensity());
         assertEquals(original.remainingTicks(), tuned.remainingTicks());
         assertEquals(original.green(), tuned.green());
         assertEquals(tuned, manager.collectVisible(Vec3.ZERO, 0.5F, 256, 8, light -> true).get(0));
@@ -67,10 +73,10 @@ class RVP_LightRuntimeTuningTest {
         // 调用正式预算路径，检查半径扩大能保留边缘光，临时关亮度不会取消尚未过期的条目。
         RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
         manager.beginWorld(new Object(), 100);
-        manager.addTransient(new Vec3(28, 0, 0), RVP_LightSourceType.EXPLOSION, null,
+        manager.addTransient(new Vec3(100, 0, 0), RVP_LightSourceType.EXPLOSION, null,
                 RVP_LightParameters.explosion(4), 100);
         assertTrue(manager.collectVisible(Vec3.ZERO, 0, 10, 8, light -> true).isEmpty());
-        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.radiusScale, 2);
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.radiusScale, 10);
         assertEquals(1, manager.collectVisible(Vec3.ZERO, 0, 10, 8, light -> true).size());
         RVP_LightRuntimeTuning.set(Group.explosion, Parameter.brightness, 0);
         assertTrue(manager.collectVisible(Vec3.ZERO, 0, 10, 8, light -> true).isEmpty());
@@ -153,7 +159,7 @@ class RVP_LightRuntimeTuningTest {
             assertEquals(1, manager.size());
             RVP_LightRuntimeTuning.set(group, Parameter.radiusScale, 4);
             var lightingOnly = manager.collectVisible(Vec3.ZERO, .5F, 256, 8, value -> true).get(0);
-            assertEquals(original.radius() * 4, lightingOnly.radius());
+            assertEquals(preset.radius() * 4, lightingOnly.radius());
             assertEquals(0, lightingOnly.haloRadius());
             RVP_LightRuntimeTuning.reset(group, null);
             assertEquals(original, manager.collectVisible(Vec3.ZERO, .5F, 256, 8, value -> true).get(0));
@@ -179,6 +185,34 @@ class RVP_LightRuntimeTuningTest {
         assertEquals(32768, org.ywzj.rvp.config.RVP_LightingConfig.maxDistance());
         assertThrows(IllegalArgumentException.class, () -> RVP_LightRuntimeTuning.set(Group.engine, Parameter.coreIntensity, 60001));
         assertThrows(IllegalArgumentException.class, () -> RVP_LightRuntimeTuning.set(Group.bloom, Parameter.farStrength, Float.POSITIVE_INFINITY));
+    }
+
+    @Test
+    void explosionWideHaloBrightnessIsIndependentAndResetRestoresTheNewDefaults() {
+        // 调用正式爆炸采样；广域光晕改亮不改变照地，照亮倍率改动也不反向改变广域光晕。
+        RVP_ScreenLightManager manager = new RVP_ScreenLightManager();
+        manager.beginWorld(new Object(), 100);
+        manager.addTransient(Vec3.ZERO, RVP_LightSourceType.EXPLOSION, null, RVP_LightParameters.explosion(4), 100);
+        var original = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(25, original.intensity());
+        assertEquals(60, original.radius());
+        assertEquals(12, original.haloRadius());
+        assertEquals(16, original.haloIntensity());
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.worldHaloIntensity, 3);
+        var dimmed = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(3, dimmed.haloIntensity());
+        assertEquals(original.intensity(), dimmed.intensity());
+        assertEquals(original.radius(), dimmed.radius());
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.brightness, 0);
+        var haloOnly = manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0);
+        assertEquals(0, haloOnly.intensity());
+        assertEquals(3, haloOnly.haloIntensity());
+        RVP_LightRuntimeTuning.set(Group.explosion, Parameter.worldHaloIntensity, 0);
+        assertTrue(manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).isEmpty());
+        RVP_LightRuntimeTuning.reset(Group.explosion, null);
+        assertEquals(original, manager.collectVisible(Vec3.ZERO, 0, 256, 8, value -> true).get(0));
+        assertEquals(20, RVP_LightRuntimeTuning.get(Group.explosion, Parameter.brightness));
+        assertEquals(5, RVP_LightRuntimeTuning.get(Group.explosion, Parameter.radiusScale));
     }
 
     @Test

@@ -14,19 +14,13 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
     private final RVP_ClientVisualEffect delegate;
     /** 管理器返回的取消句柄。 */
     private final long handle;
-    /** 当前实例年龄，已扣除网络迟到。 */
-    private long age;
-    /** 光源结束年龄，原效果提前结束时也要保留短闪。 */
-    private final int duration;
     /** 原效果结束后仅关闭一次，不能在等待短光时继续推进已关闭模拟。 */
     private boolean delegateClosed;
 
     RVP_LitVisualEffect(ClientLevel level, RVP_VisualEffectEvent event, RVP_ClientVisualEffect delegate) {
         this.delegate = delegate;
-        age = Math.max(0, level.getGameTime() - event.startGameTime());
         // 调用代码中的爆炸光参数，现有事件仍只负责爆心、半径、时间和闪光事实。
         RVP_LightParameters parameters = RVP_LightParameters.explosion(event.baseExplosionRadius());
-        duration = parameters.enabled() ? parameters.durationTicks() : 0;
         RVP_ScreenLightManager.INSTANCE.beginWorld(level, level.getGameTime());
         handle = RVP_ScreenLightManager.INSTANCE.addTransient(event.position(), RVP_LightSourceType.EXPLOSION,
                 null, parameters, event.startGameTime());
@@ -34,7 +28,6 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
 
     @Override
     public void tick() {
-        age++;
         if (!delegateClosed) {
             // 调用原工厂实例，附加光不会替换其时间线。
             delegate.tick();
@@ -61,7 +54,10 @@ final class RVP_LitVisualEffect implements RVP_ClientVisualEffect {
     }
 
     @Override
-    public boolean isFinished() { return delegateClosed && age >= duration; }
+    public boolean isFinished() {
+        // 调用整盏光源的实际存活查询；原效果结束后等待短光平滑淡出，不重播已关闭效果。
+        return delegateClosed && !RVP_ScreenLightManager.INSTANCE.hasTransient(handle);
+    }
 
     @Override
     public void close() {

@@ -112,7 +112,7 @@ public final class RVP_ScreenLightPass {
         clear();
         try {
             // 调用另名的双范围程序，原有屏幕光资源完整保留。
-            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_ranges"),
+            event.registerShader(new ShaderInstance(event.getResourceProvider(), RVP_MOD.modLocation("screen_light_halo_timeline"),
                     DefaultVertexFormat.POSITION), loaded -> lightShader = loaded);
         } catch (Exception exception) {
             LOGGER.warn("RVP 屏幕光程序加载失败，已关闭屏幕光，保留现有爆炸和尾焰", exception);
@@ -182,7 +182,7 @@ public final class RVP_ScreenLightPass {
                 RVP_LightingConfig.maxDistance(), RVP_LightingConfig.maxLights(), light -> {
                     Vector3f center = viewPosition(light.position());
                     return RVP_PressureWaveGeometry.screenBounds(PROJECTION, center.x, center.y, center.z,
-                            Math.max(light.radius(), light.haloRadius())) != null;
+                            light.visibleRadius()) != null;
                 });
         // 调用世界碰撞查询补足屏幕外遮挡：被墙完全藏住的灯不照亮墙的正面。
         lights = candidates.stream().filter(light -> visibleFromCamera(mc, light)).toList();
@@ -347,6 +347,7 @@ public final class RVP_ScreenLightPass {
             if (index >= lights.size()) {
                 lightShader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F);
+                lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightShape" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F);
                 continue;
@@ -357,6 +358,9 @@ public final class RVP_ScreenLightPass {
             lightShader.safeGetUniform("LightPositionRadius" + index).set(center.x, center.y, center.z, light.radius());
             lightShader.safeGetUniform("LightColorIntensity" + index).set(light.red(), light.green(), light.blue(),
                     light.intensity() * RVP_LightingConfig.intensity());
+            // 调用独立光晕强度；照亮结束或爆炸brightness改动都不会覆盖该时间线和亮度。
+            lightShader.safeGetUniform("LightHaloColorIntensity" + index).set(light.red(), light.green(), light.blue(),
+                    light.haloIntensity() * RVP_LightingConfig.intensity());
             lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F,

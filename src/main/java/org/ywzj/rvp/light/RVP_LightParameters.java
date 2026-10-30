@@ -11,7 +11,7 @@ package org.ywzj.rvp.light;
  * @param durationTicks 闪光寿命，单位 tick，1～40
  * @param mergeWindowTicks 同源短光合并窗口，单位 tick，0～10
  * @param surfaceWeight 代码预设表面受光倍率为 0～1；游戏内调参允许额外放大
- * @param decay 剩余寿命的幂指数，爆炸默认 0.3；越小越晚变暗，0 表示到期前不衰减
+ * @param decay 基础衰减指数，爆炸默认0.3；decayScale同时控制整盏短光的寿命和末段平滑淡出
  * @param bloom 是否允许亮部形成光晕
  * @param volumetricStrength 空气散射强度，0～1，0 关闭可选雾光
  * @param blockLightLevel P5 预留字段；当前只验证屏幕空间光，所有代码预设固定为 0

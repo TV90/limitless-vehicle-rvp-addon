@@ -116,11 +116,12 @@ public final class RVP_ScreenLightDebugCommands {
         send(source, "/rvplight set <组> <参数> <值>；status <组> [参数] 查看数值、默认值及中文含义，支持Tab补全。");
         send(source, "/rvplight reset [组] [参数] 恢复默认；copy 将本次全部修改复制成可重放指令。");
         send(source, "explosion/muzzle/engine 均支持 radiusScale 调照亮半径、haloRadiusScale 调光晕半径；两者分开，0可单独关闭。");
-        send(source, "例：set explosion radiusScale 4；set explosion haloRadiusScale 0.5；set engine worldHaloIntensity 8 调广域橙晕亮度。");
+        send(source, "例：set explosion worldHaloIntensity 8 独立调爆炸广域光晕；set explosion haloRadiusScale 0.5 调其范围。");
         send(source, "bloom nearStrength 调贴近亮焰的两层光晕，farStrength 调向周围消散的两层辉光；两者互不补偿。");
-        send(source, "brightness 调环境光强，爆炸/炮口光晕也随光强变化；coreIntensity 调白热核心，inputPeak 调模糊输入亮度。");
+        send(source, "爆炸默认brightness=20、radiusScale=5；worldHaloIntensity默认16，独立于照亮亮度。发动机亮度继续分开调。");
         send(source, "/rvplight preview [半径] 预览爆炸类短光；engine [喷焰缩放] [毫米口径] 预览真实发动机算法。");
         send(source, "两种半径均允许0～8192格；爆炸光默认32刻即1.6秒，衰减系数0.3；喷焰长宽仍由原有缩放决定。");
+        send(source, "explosion/muzzle的decayScale越小整盏光源越长，越大越短；爆炸0.5约3.2秒、2约0.8秒，照亮和光晕同步平滑淡出。");
         send(source, "所有修改下一帧生效，仅本机；重连/换维度保留，重启游戏恢复默认。不会写配置或载具包。");
         return 1;
     }

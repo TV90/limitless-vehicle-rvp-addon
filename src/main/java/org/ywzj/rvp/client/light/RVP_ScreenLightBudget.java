@@ -15,9 +15,10 @@ public final class RVP_ScreenLightBudget {
     /** 先排除无贡献和离屏光，随后优先附近光，再比较亮度与覆盖面积。 */
     public static List<RVP_ScreenLight> collect(List<RVP_ScreenLight> source, Vec3 camera,
             double maxDistance, int limit, Predicate<RVP_ScreenLight> visible) {
-        return source.stream().filter(light -> Math.max(light.radius(), light.haloRadius()) > 0 && light.intensity() > 0.001F)
+        // 调用快照的有效范围，结束的照亮不能借大半径保留远处无贡献的光晕。
+        return source.stream().filter(light -> light.visibleRadius() > 0)
                 .filter(light -> light.position().distanceToSqr(camera)
-                        <= Math.pow(maxDistance + Math.max(light.radius(), light.haloRadius()), 2))
+                        <= Math.pow(maxDistance + light.visibleRadius(), 2))
                 .filter(visible)
                 .sorted(Comparator.<RVP_ScreenLight>comparingInt(light ->
                         light.position().distanceToSqr(camera) <= 32 * 32 ? 0 : 1)
@@ -28,8 +29,8 @@ public final class RVP_ScreenLightBudget {
 
     /** 用球体角面积近似屏幕覆盖，避免遥远且很弱的灯挤掉近处炮口。 */
     private static double score(RVP_ScreenLight light, Vec3 camera) {
-        float boundRadius = Math.max(light.radius(), light.haloRadius());
-        return light.intensity() * boundRadius * boundRadius
+        return Math.max(light.intensity() * light.radius() * light.radius(),
+                        light.haloIntensity() * light.haloRadius() * light.haloRadius())
                 / Math.max(1, light.position().distanceToSqr(camera));
     }
 }

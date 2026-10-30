@@ -13,8 +13,6 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
     private final RVP_DefaultExplosionSoundController soundController;
     /** 管理器返回的短光取消句柄；0 表示关闭或网络迟到到已过期。 */
     private final long lightHandle;
-    /** 光源实际结束年龄，声音提前结束也不能提早取消闪光。 */
-    private final int lightDuration;
 
     RVP_DefaultExplosionEffectInstance(ClientLevel level, RVP_VisualEffectEvent event,
             RVP_EnumWeaponKind weaponKind, int initialAge) {
@@ -23,7 +21,6 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
         // 调用代码中的爆炸光参数，仅从现有事件读取爆炸半径，不解析 JSON 光配置或新增闪光事件。
         org.ywzj.rvp.light.RVP_LightParameters parameters =
                 org.ywzj.rvp.light.RVP_LightParameters.explosion(event.baseExplosionRadius());
-        lightDuration = event.flash() && parameters.enabled() ? parameters.durationTicks() : 0;
         org.ywzj.rvp.client.light.RVP_ScreenLightManager manager = org.ywzj.rvp.client.light.RVP_ScreenLightManager.INSTANCE;
         // 调用世界检查与短光登记，startGameTime 自动扣除网络延迟。
         manager.beginWorld(level, level.getGameTime());
@@ -46,7 +43,9 @@ final class RVP_DefaultExplosionEffectInstance implements RVP_ClientVisualEffect
 
     @Override
     public boolean isFinished() {
-        return soundController.isFinished() && age >= lightDuration;
+        // 调用短光实际存活查询，包装器跟随整盏光源的动态寿命，不用旧固定32刻提前结束。
+        return soundController.isFinished()
+                && !org.ywzj.rvp.client.light.RVP_ScreenLightManager.INSTANCE.hasTransient(lightHandle);
     }
 
     @Override
