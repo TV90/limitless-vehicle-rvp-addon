@@ -83,6 +83,10 @@ public final class RVP_ClientCameraRelativeFireSound {
         if (!event.isClientSide()) {
             return;
         }
+        // 调用 RVP 武器声音管理器：已由默认音接管时，本处理器不能重复重放本体声音。
+        if (RVP_ClientWeaponFireSound.willTakeOver(event)) {
+            return;
+        }
         // 本车（本地玩家乘坐的载具）且武器配置了 sight_fire 时，开火声整体由
         // RVP_ClientSightFireSound 接管：它同时起播 fire/sight_fire 两条音轨并按视角切换（与开火瞬间的
         // 视角无关），此处必须让出，否则会再叠一层重放

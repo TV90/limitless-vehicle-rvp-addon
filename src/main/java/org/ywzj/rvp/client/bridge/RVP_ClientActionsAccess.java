@@ -15,6 +15,12 @@ public final class RVP_ClientActionsAccess {
 
     private RVP_ClientActionsAccess() {}
 
+    /** 经双端安全桥转交小口径弹体声音消息，不让公共网络类加载客户端声音类型。 */
+    public static void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
+        // 调用按物理端选择的实现；服务端为空操作。
+        INSTANCE.acceptSmallCaliberSound(message);
+    }
+
     /** 经双端安全桥消费命中火花，避免公共网络类引用客户端粒子类型。 */
     public static void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
         // 调用物理侧实现；客户端创建粒子，服务端为空操作。
@@ -124,6 +130,11 @@ public final class RVP_ClientActionsAccess {
 
     /** 专用服务端空实现。 */
     private static final class NoopClientActions implements RVP_IClientActions {
+        @Override
+        public void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
+            // 专用服务端不播放客户端声音。
+        }
+
         @Override
         public void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
             // 专用服务端不渲染火花。

@@ -21,6 +21,12 @@ import net.minecraft.client.particle.Particle;
 public final class RVP_ClientActions implements RVP_IClientActions {
 
     @Override
+    public void acceptSmallCaliberSound(org.ywzj.rvp.network.S2CSmallCaliberSound message) {
+        // 调用本项目客户端播放器，播放服务端确认的小口径声音。
+        org.ywzj.rvp.client.RVP_ClientSmallCaliberSound.accept(message);
+    }
+
+    @Override
     public void acceptVehicleImpactSparks(org.ywzj.rvp.network.S2CVehicleImpactSparks message) {
         // 调用客户端发射器，结合来弹方向与装甲表面生成下坠火星。
         org.ywzj.rvp.client.visual.RVP_VehicleImpactSparkEffects.accept(message);

@@ -95,6 +95,7 @@ import org.ywzj.rvp.weapon.visual.api.RVP_DetonationVisualContext;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualEffectEvent;
 import org.ywzj.rvp.weapon.visual.api.RVP_VisualPublishResult;
 import org.ywzj.rvp.weapon.impact.RVP_MissileAirTargetImpactFragmentService;
+import org.ywzj.rvp.weapon.sound.RVP_SmallCaliberSoundService;
 import org.ywzj.rvp.weapon.data.RVP_EnumSubmunitionTrigger;
 import org.ywzj.rvp.weapon.submunition.RVP_SubmunitionRunner;
 import org.ywzj.rvp.weapon.physics.RVP_WindDriftUtil;
@@ -3445,6 +3446,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 && entityResult.getEntity() != vehicle
                 && (vehicle == null || !vehicle.getPassengers().contains(entityResult.getEntity()))
                 && !piercedLivingIds.contains(entityResult.getEntity().getId())) {
+            // 调用小口径声音服务：飞行段截止于实际实体命中点，不检查目标之后的延长路径。
+            RVP_SmallCaliberSoundService.publishIncoming(this, startVec, entityResult.getLocation());
             handleEntityImpact(entityResult);
             return;
         }
@@ -3459,9 +3462,14 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             BlockHitResult blockResult = level().clip(
                     new ClipContext(startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
             if (blockResult.getType() != HitResult.Type.MISS) {
+                // 调用小口径声音服务：飞行段截止于首个方块命中点，不检查未穿透的墙后路径。
+                RVP_SmallCaliberSoundService.publishIncoming(this, startVec, blockResult.getLocation());
                 onAmmoBlockHit(blockResult);
+                return;
             }
         }
+        // 调用小口径声音服务：本 Tick 没有碰撞时检查整段飞行路径。
+        RVP_SmallCaliberSoundService.publishIncoming(this, startVec, endVec);
     }
 
     protected boolean isEntityCollisionSafetyActive() {
@@ -3689,8 +3697,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                 if (next.getType() == HitResult.Type.MISS) {
                     // segment 内已无碰撞：pass-through 属正常穿出障碍，保持原语义——
                     // 弹丸以推进后位置存活，下一 tick 继续飞行。
+                    // 调用小口径声音服务：透明方块穿出后仍要检查本段剩余飞行路径。
+                    RVP_SmallCaliberSoundService.publishIncoming(this, position(), segmentEnd);
                     return false;
                 }
+                // 调用小口径声音服务：继续检查透明方块与下一个接触面之间的实际路径。
+                RVP_SmallCaliberSoundService.publishIncoming(this, position(), next.getLocation());
                 result = next;
                 continue;
             }
@@ -3730,8 +3742,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
                         setPos(hit);
                         break;
                     }
+                    // 调用小口径声音服务：穿墙后弹体继续存活时检查剩余飞行段。
+                    RVP_SmallCaliberSoundService.publishIncoming(this, position(), segmentEnd);
                     return false;
                 }
+                // 调用小口径声音服务：检查穿墙出口到下一个接触面的路径。
+                RVP_SmallCaliberSoundService.publishIncoming(this, position(), next.getLocation());
                 result = next;
                 continue;
             }
@@ -5701,6 +5717,8 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** Base block-hit VFX from {@link AmmoEntity#tickHit()} plus optional RVP impact particles. */
     protected void spawnAmmoBlockImpactEffects(BlockHitResult result) {
         if (level() instanceof ServerLevel serverLevel) {
+            // 调用小口径声音服务：仅服务端确认的方块接触发声，并按爆炸半径过滤。
+            RVP_SmallCaliberSoundService.publishBlockImpact(this, result.getLocation());
             spawnImpactSparks(serverLevel, result.getLocation(), getDeltaMovement().scale(-1.0D));
             // 调用 RVP 方块表面命中火花出口：法线取命中面朝向，与载具命中共用同一套广播与客户端生成。
             org.ywzj.rvp.weapon.impact.RVP_VehicleImpactSparks.publishBlock(
