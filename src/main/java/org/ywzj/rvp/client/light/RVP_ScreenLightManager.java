@@ -67,20 +67,30 @@ public final class RVP_ScreenLightManager {
         reserveSpace();
         long id = ++nextId;
         transients.put(id, new Entry(position, type, sourceKey, parameters, startTime,
-                startTime + parameters.durationTicks()));
+                startTime + parameters.durationTicks(), null));
         return id;
     }
 
-    /** 更新持续光；两 tick 没有心跳就失效，实体移除与远端超时无需依赖粒子存活。 */
+    /** 更新发动机持续光；两 tick 没有心跳就失效，实体移除与远端超时无需依赖粒子存活。 */
     public void upsertPersistent(UUID key, Vec3 position, RVP_LightParameters parameters) {
+        upsertPersistent(key, position, RVP_LightSourceType.ROCKET_ENGINE, parameters);
+    }
+
+    /** 持续光可指定来源；干扰机与发动机共享生命周期，但不混用调参和烟雾受光。 */
+    public void upsertPersistent(UUID key, Vec3 position, RVP_LightSourceType type, RVP_LightParameters parameters) {
+        upsertPersistent(key, position, type, parameters, null);
+    }
+
+    /** 半球光版本：axis 为世界空间半球朝向，null 表示全向球光。 */
+    public void upsertPersistent(UUID key, Vec3 position, RVP_LightSourceType type,
+            RVP_LightParameters parameters, Vec3 hemisphereAxis) {
         if (world == null || key == null || !valid(position, parameters)) {
             // 调用持续光删除入口，关闭配置立即生效。
             removePersistent(key);
             return;
         }
         if (!persistent.containsKey(key)) { reserveSpace(); }
-        persistent.put(key, new Entry(position, RVP_LightSourceType.ROCKET_ENGINE, key,
-                parameters, gameTime, gameTime + 2));
+        persistent.put(key, new Entry(position, type, key, parameters, gameTime, gameTime + 2, hemisphereAxis));
     }
 
     /** 燃尽或移除时立即取消对应发动机光。 */
@@ -146,21 +156,26 @@ public final class RVP_ScreenLightManager {
         private long start;
         /** 过期世界 tick。 */
         private long expires;
+        /** 半球光轴向（世界空间）；null 表示全向球光。 */
+        private final Vec3 hemisphereAxis;
 
         private Entry(Vec3 position, RVP_LightSourceType type, Object sourceKey,
-                RVP_LightParameters parameters, long start, long expires) {
+                RVP_LightParameters parameters, long start, long expires, Vec3 hemisphereAxis) {
             this.position = position; this.type = type; this.sourceKey = sourceKey;
             this.parameters = parameters; this.start = start; this.expires = expires;
+            this.hemisphereAxis = hemisphereAxis;
         }
 
         /** 爆炸从白热过渡到橙红；持续光只受燃烧事实和预算影响。 */
         private RVP_ScreenLight sample(double now, UUID key) {
             // 调用采样时调参，使已有光源下一帧也能响应；不修改存储的原始预设或重置年龄。
-            RVP_LightParameters tuned = RVP_LightRuntimeTuning.apply(switch (type) {
-                case EXPLOSION -> RVP_LightRuntimeTuning.Group.explosion;
-                case MUZZLE -> RVP_LightRuntimeTuning.Group.muzzle;
-                case ROCKET_ENGINE -> RVP_LightRuntimeTuning.Group.engine;
-            }, parameters);
+            RVP_LightParameters tuned = switch (type) {
+                case EXPLOSION -> RVP_LightRuntimeTuning.apply(RVP_LightRuntimeTuning.Group.explosion, parameters);
+                case MUZZLE -> RVP_LightRuntimeTuning.apply(RVP_LightRuntimeTuning.Group.muzzle, parameters);
+                case ROCKET_ENGINE -> RVP_LightRuntimeTuning.apply(RVP_LightRuntimeTuning.Group.engine, parameters);
+                // 干扰机玻片没有发动机阶段，也不接受发动机/炮口调参覆盖。
+                case EO_JAMMER -> parameters;
+            };
             float progress = (float) Math.max(0, Math.min(1, (now - start) / parameters.durationTicks()));
             float fade = key == null ? (float) Math.pow(1 - progress, tuned.decay()) : 1;
             float green = tuned.green();
@@ -172,7 +187,7 @@ public final class RVP_ScreenLightManager {
             return new RVP_ScreenLight(position, tuned.red(), green, blue, tuned.radius(),
                     now >= expires ? 0 : tuned.intensity() * fade,
                     (float) Math.max(0, expires - now), type, key, tuned.surfaceWeight(),
-                    tuned.bloom(), tuned.volumetricStrength());
+                    tuned.bloom(), tuned.volumetricStrength(), hemisphereAxis);
         }
     }
 }

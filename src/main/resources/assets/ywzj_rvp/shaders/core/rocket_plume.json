@@ -251,6 +251,14 @@
       "values": [
         1
       ]
+    },
+    {
+      "name": "HaloEnabled",
+      "type": "int",
+      "count": 1,
+      "values": [
+        0
+      ]
     }
   ]
 }

@@ -16,7 +16,7 @@ public final class RVP_RocketTrailEmitter {
     public static void emit(RVP_BaseBullet bullet, RVP_EffectsData effects, Vec3 position, Vec3 exhaust,
             float scale, int remainingBurnTicks, boolean remote) {
         Minecraft mc = Minecraft.getInstance();
-        if (!RVP_RocketTrailParameters.VOLUME_ENABLED || mc.level == null || bullet.level() != mc.level
+        if (!RVP_RocketTrailParameters.volumeEnabled() || mc.level == null || bullet.level() != mc.level
                 || effects == null || !effects.isMissileNativeTrailRocketFlame() || mc.isPaused()) { return; }
         // 调用世界身份检查，客户端 tick 早于首个渲染帧时也能安全登记。
         RVP_RocketTrailManager manager = RVP_RocketTrailManager.INSTANCE;
@@ -59,7 +59,7 @@ public final class RVP_RocketTrailEmitter {
     /** 新贴地烟浪沿用旧开关与尺寸，只将实际绘制切换为独立的体积烟团。 */
     public static void wash(RVP_BaseBullet bullet, Vec3 position, float scale) {
         Minecraft mc = Minecraft.getInstance();
-        if (!RVP_RocketTrailParameters.VOLUME_ENABLED || mc.level == null || bullet.level() != mc.level
+        if (!RVP_RocketTrailParameters.volumeEnabled() || mc.level == null || bullet.level() != mc.level
                 || mc.isPaused() || !Float.isFinite(scale) || scale <= 0) { return; }
         RVP_RocketTrailManager manager = RVP_RocketTrailManager.INSTANCE;
         // 调用同一世界检查；烟浪和空中尾烟分别去重，不相互吞掉采样。

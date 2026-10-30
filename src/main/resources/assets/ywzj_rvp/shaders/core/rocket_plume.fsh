@@ -24,6 +24,8 @@ uniform vec4 PlumeEmission;
 uniform float PlumeHaloRadius;
 uniform float Time;
 uniform int OutputMode;
+// 导弹发动机光晕开关；0 时远距亚像素喷流不再补固定像素亮斑，只按真实世界尺寸随距离缩小。
+uniform int HaloEnabled;
 in vec2 screenUV;
 out vec4 fragColor;
 
@@ -114,7 +116,9 @@ vec3 plumeRadiance(vec3 ray, float sceneDistance, vec2 rayUV) {
     if (center.z - bound >= 0.0) { return vec3(0.0); }
     float pixelWorld = 2.0 * max(abs(center.z), 0.01) / max(ScreenSize.y * abs(Projection[1][1]), 0.0001);
     // 亚像素喷流只补屏幕采样覆盖，不扩大参与墙体遮挡的实际三维尺寸。
+    // 光晕关闭时不补固定像素亮斑：否则远距喷流会一直是同一屏幕尺寸，违反透视规律。
     if (bound < pixelWorld * 1.5) {
+        if (HaloEnabled == 0) { return vec3(0.0); }
         vec4 clip = Projection * vec4(center, 1.0);
         if (clip.w <= 0.00001) { return vec3(0.0); }
         vec2 pixelDelta = (rayUV - (clip.xy / clip.w * 0.5 + 0.5)) * ScreenSize;

@@ -260,8 +260,11 @@ public final class RVP_ScreenLightPass {
             lightShader.safeGetUniform("OutputMode").set(1);
             FRAME.bind(FRAME.lightTarget(), FRAME.width(), FRAME.height());
             FRAME.draw(lightShader);
-            // 调用定向喷焰 HDR 合并；之后只执行一套统一提取/模糊，不为每枚导弹重复复制背景。
-            RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
+            // 调用光晕开关：关闭时喷焰不进入亮部提取，避免半分辨率模糊把远处喷口放大成固定尺寸光圈。
+            if (RVP_LightingConfig.missileHaloEnabled()) {
+                // 调用定向喷焰 HDR 合并；之后只执行一套统一提取/模糊，不为每枚导弹重复复制背景。
+                RVP_RocketPlumePass.render(FRAME, plumes, VIEW, PROJECTION, camera, plumeTime, 1);
+            }
             // 调用半分辨率提取、横向模糊和纵向模糊；全部只读取灯光贡献，不把 HUD 或整片白天纳入光晕。
             bloomPass(0, FRAME.light(), FRAME.bloomTarget(0), 0, 0);
             // 调用范围倍率，只改变原高斯核的采样间距，提取阈值、核权重和采样次数保持不变。
@@ -338,6 +341,7 @@ public final class RVP_ScreenLightPass {
                 lightShader.safeGetUniform("LightPositionRadius" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightColorIntensity" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightShape" + index).set(0F, 0F, 0F, 0F);
+                lightShader.safeGetUniform("LightDirection" + index).set(0F, 0F, 0F, 0F);
                 lightShader.safeGetUniform("LightEmission" + index).set(0F, 0F, 0F, 0F);
                 continue;
             }
@@ -350,6 +354,14 @@ public final class RVP_ScreenLightPass {
             lightShader.safeGetUniform("LightShape" + index).set(light.surfaceWeight(),
                     RVP_LightingConfig.volumetricEnabled() ? light.volumetricStrength() : 0,
                     light.bloom() ? 1F : 0F, 0F);
+            // 半球光轴向从世界空间转到观察空间；w=1 表示启用半球裁剪，0 退回全向球光。
+            Vec3 axis = light.hemisphereAxis();
+            if (axis == null) {
+                lightShader.safeGetUniform("LightDirection" + index).set(0F, 0F, 0F, 0F);
+            } else {
+                Vector3f direction = viewDirection(axis);
+                lightShader.safeGetUniform("LightDirection" + index).set(direction.x, direction.y, direction.z, 1F);
+            }
             if (RVP_RocketPlumeParameters.ROUND_SOURCE_ENABLED && light.type() == RVP_LightSourceType.ROCKET_ENGINE) {
                 // 调用统一代码预设；已采样的强度包含二脉冲、燃尽和预览年龄，不能重复乘阶段。
                 RVP_LightParameters.EngineEmission emission = RVP_LightParameters.engineEmission(light.radius(), light.intensity());
@@ -386,6 +398,12 @@ public final class RVP_ScreenLightPass {
     static Vector3f viewPosition(Vec3 position) {
         return VIEW.transformPosition(new Vector3f((float) (position.x - camera.x),
                 (float) (position.y - camera.y), (float) (position.z - camera.z)));
+    }
+
+    /** 世界空间方向转到观察空间：只取旋转，不带平移。 */
+    static Vector3f viewDirection(Vec3 direction) {
+        return VIEW.transformDirection(new Vector3f((float) direction.x,
+                (float) direction.y, (float) direction.z)).normalize();
     }
 
     /** 保守遮挡补充：不可见光源直接不提交，避免深度图没有记录的侧墙漏光。 */

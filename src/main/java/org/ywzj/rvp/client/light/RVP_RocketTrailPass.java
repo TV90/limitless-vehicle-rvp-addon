@@ -32,7 +32,7 @@ final class RVP_RocketTrailPass {
     }
 
     /** 只有新程序可用且代码开关开启时才收集本帧烟段。 */
-    static boolean available() { return shader != null && RVP_RocketTrailParameters.VOLUME_ENABLED; }
+    static boolean available() { return shader != null && RVP_RocketTrailParameters.volumeEnabled(); }
 
     /** 整段烟与端点都参与裁剪；离屏的导弹留下的可见烟仍会被绘制。 */
     static RVP_PressureWaveGeometry.Bounds bounds(RVP_RocketTrailSegment segment,
@@ -83,7 +83,9 @@ final class RVP_RocketTrailPass {
 
     /** 每段只上传附近四盏光，避免所有烟段都进行八灯多步遮挡计算。 */
     private static void uploadLights(RVP_RocketTrailSegment segment) {
+        // 与粒子烟一致：发动机光只照世界表面，不重新点亮仍残留的旧尾迹烟段。
         List<RVP_ScreenLight> lights = RVP_ScreenLightPass.currentLights().stream()
+                .filter(light -> light.type() != RVP_LightSourceType.ROCKET_ENGINE)
                 .filter(light -> light.position().distanceToSqr(segment.center())
                         < Math.pow(light.radius() + segment.boundRadius(), 2))
                 .sorted(Comparator.comparingDouble(light -> light.position().distanceToSqr(segment.center())))

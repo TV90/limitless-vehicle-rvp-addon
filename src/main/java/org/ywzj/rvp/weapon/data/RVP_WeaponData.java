@@ -578,6 +578,21 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
         return usesGuidanceType(RVP_EnumGuidanceType.GPS);
     }
 
+    /**
+     * 发射阶段是否依赖导引头实体锁定（IR / AIR / ARH / SARH）。
+     *
+     * <p>只看主段 {@code guidance_type}，不看末端阶段：GPS 主段 + 末端 ARH 的弹（YJ-20、
+     * RGM-109）发射时使用装订点，末端导引头在飞行中自行截获，发射前不需要实体锁。
+     * 反辐射（ARM）走独立的预选通道，也不计入本判定；激光/指令/GPS 同样不需要。</p>
+     */
+    public boolean launchPhaseRequiresSeekerLock() {
+        RVP_EnumGuidanceType type = resolveLaunchGuidanceConfig().guidanceType();
+        return type == RVP_EnumGuidanceType.IR
+                || type == RVP_EnumGuidanceType.AIR
+                || type == RVP_EnumGuidanceType.ARH
+                || type == RVP_EnumGuidanceType.SARH;
+    }
+
     public int getDelayFuse() {
         return getFuseData().getDelayTick();
     }

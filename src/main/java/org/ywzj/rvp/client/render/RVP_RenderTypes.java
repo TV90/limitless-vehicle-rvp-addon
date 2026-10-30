@@ -200,6 +200,23 @@ public class RVP_RenderTypes extends RenderType {
                 false, true, state);
     });
 
+    /** 三角网格的叠加自发光：与纹理相乘后直接加到已绘制像素上，用于玻片"亮起来"的观感。 */
+    private static final Function<ResourceLocation, RenderType> POLY_MESH_ADDITIVE_NO_DEPTH_WRITE = Util.memoize((location) -> {
+        RenderType.CompositeState state = RenderType.CompositeState.builder()
+                .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
+                .setShaderState(RENDERTYPE_ENTITY_TRANSLUCENT_SHADER)
+                .setTransparencyState(ADDITIVE_TRANSPARENCY)
+                .setDepthTestState(LEQUAL_DEPTH_TEST)
+                .setCullState(NO_CULL)
+                .setOverlayState(OVERLAY)
+                .setLightmapState(LIGHTMAP)
+                .setWriteMaskState(COLOR_WRITE)
+                .createCompositeState(false);
+        return create("ywzj_rvp:poly_mesh_additive_no_depth_write_" + location.toString().replace(':', '_'),
+                DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.TRIANGLES, 262_144,
+                false, true, state);
+    });
+
     private static final Function<ResourceLocation, RenderType> TEXTURED_ADDITIVE_NO_DEPTH_WRITE = Util.memoize((location) -> {
         RenderType.CompositeState state = RenderType.CompositeState.builder()
                 .setTextureState(new RenderStateShard.TextureStateShard(location, false, false))
@@ -302,6 +319,10 @@ public class RVP_RenderTypes extends RenderType {
 
     public static RenderType texturedAdditiveNoDepthWrite(ResourceLocation texture) {
         return TEXTURED_ADDITIVE_NO_DEPTH_WRITE.apply(texture);
+    }
+
+    public static RenderType polyMeshAdditiveNoDepthWrite(ResourceLocation texture) {
+        return POLY_MESH_ADDITIVE_NO_DEPTH_WRITE.apply(texture);
     }
 
     public static RenderType cubeScreenOpaque(ResourceLocation texture) {

@@ -254,10 +254,8 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
                         : rootUnit.getLockedEntity();
             }
         }
-        // 雷达要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。
-        if (data.isRadarHoming() && data.isRequireLock()
-                && (lock == null || !lock.isAlive())
-                && RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit) != WeaponUnitData.FireControlSensorType.EO) {
+        // 雷达/导引头要求锁定时复查服务端目标，堵住客户端发包后目标失效的窗口；保留现有 EO 直瞄豁免。
+        if (requiresServerSeekerLock(data, lock, RVP_WeaponSensorHelper.effectiveOrStatic(rootUnit))) {
             if (shooter instanceof net.minecraft.server.level.ServerPlayer notifyPlayer) {
                 notifyPlayer.displayClientMessage(net.minecraft.network.chat.Component
                         .translatable("ui.need_lock_entity"), true);
@@ -294,6 +292,23 @@ public class RVP_ProjectileWeapon extends RVP_WeaponBase {
             return null;
         }
         return new ApprovedShot(launchUnit, rootUnit, lock);
+    }
+
+    /**
+     * 服务端导引头锁定终检：发射段依赖导引头接管（IR/AIR/ARH/SARH）且 require_lock 的弹
+     * 必须有存活目标锁，否则拒射且不耗弹。
+     *
+     * <p>2026-10-31 修复 GPS 弹被误拒：{@code isRadarHoming()} 经 {@code usesGuidanceType} 把
+     * 末端阶段的 ARH 也算作雷达制导，使 YJ-20（GPS + 末端 ARH）、RGM-109 这类弹在无锁时被
+     * 本门拒射，提示 {@code ui.need_lock_entity}（本体语言为“导引头需要先锁定目标”）。
+     * 现按发射段制导类型判定，与客户端 {@link RVP_WeaponBase#requiresEntityLock} 同口径；
+     * EO 直瞄豁免保持不变。</p>
+     */
+    static boolean requiresServerSeekerLock(RVP_WeaponData data, @Nullable Entity lock,
+                                            WeaponUnitData.FireControlSensorType sensor) {
+        return data.launchPhaseRequiresSeekerLock() && data.isRequireLock()
+                && (lock == null || !lock.isAlive())
+                && sensor != WeaponUnitData.FireControlSensorType.EO;
     }
 
     /** 发射诊断也覆盖实体尚未生成的阶段，沿用生命周期日志的开关和文件。 */

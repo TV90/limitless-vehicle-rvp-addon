@@ -7,5 +7,7 @@ public enum RVP_LightSourceType {
     /** 沿用现有视觉事件的爆炸短光。 */
     EXPLOSION,
     /** 按弹体 UUID 更新的发动机持续光。 */
-    ROCKET_ENGINE
+    ROCKET_ENGINE,
+    /** 光电干扰机玻片持续光；不继承发动机调参、喷口 HDR 核心和烟雾受光。 */
+    EO_JAMMER
 }

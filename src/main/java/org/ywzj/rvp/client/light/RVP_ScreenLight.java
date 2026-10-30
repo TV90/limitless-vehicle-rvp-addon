@@ -17,7 +17,8 @@ import java.util.UUID;
  * @param surfaceWeight 表面受光权重
  * @param bloom 是否进入光晕提取
  * @param volumetricStrength 空气散射强度
+ * @param hemisphereAxis 半球光轴向（世界空间）；null 表示全向球光
  */
 public record RVP_ScreenLight(Vec3 position, float red, float green, float blue, float radius,
         float intensity, float remainingTicks, RVP_LightSourceType type, UUID persistentKey,
-        float surfaceWeight, boolean bloom, float volumetricStrength) { }
+        float surfaceWeight, boolean bloom, float volumetricStrength, Vec3 hemisphereAxis) { }

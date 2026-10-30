@@ -598,11 +598,12 @@ public abstract class RVP_WeaponBase extends AbstractVehicleWeapon<RVP_WeaponDat
 
     protected boolean requiresEntityLock(RVP_WeaponData data) {
         // 制导炸弹也使用同一锁定门，避免 GB-3 等 BOMB 在客户端绕过 IR armed 检查。
+        // 只有发射段需要导引头接管的弹（IR/AIR/ARH/SARH）才要求实体锁定；
+        // GPS（含末端 ARH）、激光、指令与反辐射预选都不在此列，不按 GPS 写特判。
         return (data.getWeaponKind() == RVP_EnumWeaponKind.MISSILE
                 || data.getWeaponKind() == RVP_EnumWeaponKind.BOMB && data.isHomingProjectile())
                 && data.isRequireLock()
-                && !data.isAntiRadiationMissile()
-                && !data.isGpsMissile();
+                && data.launchPhaseRequiresSeekerLock();
     }
 
     protected boolean hasArmPreselectedTarget(WeaponUnit unit) {

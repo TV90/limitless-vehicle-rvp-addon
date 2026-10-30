@@ -5196,7 +5196,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
     /** 停止生成时只清理未来连接，使用既有客户端桥传零尺寸，不让公共实体加载渲染类。 */
     private void stopRocketVolumeTrail(RVP_EffectsData effects) {
         if (effects.isMissileNativeTrailRocketFlame()
-                && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+                && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.volumeEnabled()) {
             // 调用客户端尾烟入口的零尺寸语义，客户端断链，专用服务端为空操作。
             RVP_ClientActionsAccess.addRocketVolumeTrail(this, this.position(), Vec3.ZERO, 0, 0);
         }
@@ -5230,7 +5230,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             trailParticleTickO = getFlightTickCount();
             return;
         }
-        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.volumeEnabled()) {
             // 调用既有尺寸/发射段加粗解析，将同一个 rvp_rocket_flame 配置交给新的世界烟段通道。
             float volumeScale = RVP_RocketFlameRuntimeTuning.resolveParticleScale(effects.getMissileNativeTrailParticleScale())
                     * resolveLaunchBoostFactor(effects);
@@ -5242,7 +5242,7 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
             trailMotorBurningO = true;
             return;
         }
-        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) {
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.originalParticlesEnabled()) {
             return;
         }
         int configuredSpawnInterval = effects.getMissileNativeTrailSpawnIntervalTick();
@@ -5374,12 +5374,12 @@ public abstract class RVP_BaseBullet extends AmmoEntity implements RemoteTickEnt
         // 目的：烟浪滞留时长与扩散范围跟随"尾迹尺寸 × 发射段加粗"提升——
         // 粒子侧按 sizeScale 等比放大寿命与膨胀末端，发射段加粗窗口内同样全额生效
         washScale *= resolveLaunchBoostFactor(effects);
-        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.VOLUME_ENABLED) {
+        if (rocketFlameStyle && org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.volumeEnabled()) {
             // 调用新的体积贴地烟浪，保持原发射/冷发射条件，旧 WASH 贴图粒子不再生成。
             RVP_ClientActionsAccess.addRocketVolumeWash(this, new Vec3(this.getX(), groundY + 0.5D, this.getZ()), washScale);
             return;
         }
-        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.ORIGINAL_PARTICLES_ENABLED) { return; }
+        if (rocketFlameStyle && !org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters.originalParticlesEnabled()) { return; }
         // 每 tick 8 粒（HBM 发射台为 15 粒/固定烟源，本处跟随弹体按观感收敛）
         for (int i = 0; i < 8; i++) {
             RVP_ClientActionsAccess.addLaunchWashParticle(

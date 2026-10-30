@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.ywzj.rvp.light.RVP_LightParameters;
+import org.ywzj.rvp.light.RVP_LightRuntimeTuning;
 import java.util.List;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
@@ -112,6 +113,21 @@ class RVP_ScreenLightManagerTest {
         assertEquals(key, sample(0).get(0).persistentKey());
         manager.tick(world, 103);
         assertFalse(manager.hasActiveLights());
+    }
+
+    @Test
+    void jammerPersistentLightKeepsItsOwnSourceAndIgnoresEngineTuning() {
+        UUID key = UUID.randomUUID();
+        RVP_LightRuntimeTuning.set(RVP_LightRuntimeTuning.Group.engine,
+                RVP_LightRuntimeTuning.Parameter.radiusScale, 4F);
+        try {
+            manager.upsertPersistent(key, Vec3.ZERO, RVP_LightSourceType.EO_JAMMER, RVP_LightParameters.eoJammer());
+            RVP_ScreenLight light = sample(0).get(0);
+            assertEquals(RVP_LightSourceType.EO_JAMMER, light.type());
+            assertEquals(RVP_LightParameters.eoJammer().radius(), light.radius(), 1.0E-4F);
+        } finally {
+            RVP_LightRuntimeTuning.reset();
+        }
     }
 
     @Test

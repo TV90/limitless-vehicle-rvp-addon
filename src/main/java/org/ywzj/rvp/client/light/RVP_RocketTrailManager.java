@@ -164,7 +164,7 @@ public final class RVP_RocketTrailManager {
     }
 
     /** 是否有存活烟段，供 DH 的早期深度回调使用；不依赖仍有发动机或活动灯。 */
-    public boolean hasActive() { return RVP_RocketTrailParameters.VOLUME_ENABLED && storedSegments > 0; }
+    public boolean hasActive() { return storedSegments > 0; }
     /** 当前缓存烟段数，供调试命令和预算测试回读。 */
     public int size() { return storedSegments; }
     /** 登出、换维度或显式清理时释放世界引用。 */

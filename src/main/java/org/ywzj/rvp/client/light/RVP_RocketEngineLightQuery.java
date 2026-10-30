@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.ywzj.rvp.client.state.remotevisibility.RVP_ClientRemoteAmmoVisualState;
+import org.ywzj.rvp.config.RVP_LightingConfig;
 import org.ywzj.rvp.entity.projectile.RVP_BaseBullet;
 import org.ywzj.rvp.light.RVP_LightParameters;
 import org.ywzj.rvp.weapon.data.RVP_WeaponData;
@@ -73,7 +74,12 @@ public final class RVP_RocketEngineLightQuery {
         RVP_LightParameters phased = RVP_LightParameters.enginePhase(parameters, bullet.isSecondMotorPulseBurningNow(), remaining);
         // 调用持续光更新，喷口先计算再按相机位置转换，避免远坐标浮点抖动。
         Vec3 position = nozzle(bullet, renderOrigin, partialTick);
-        RVP_ScreenLightManager.INSTANCE.upsertPersistent(bullet.getUUID(), position, phased);
+        // 关闭导弹光圈时同时停用发动机对周围世界/烟雾的光照；核心喷焰仍由独立喷流通道绘制。
+        if (RVP_LightingConfig.missileHaloEnabled()) {
+            RVP_ScreenLightManager.INSTANCE.upsertPersistent(bullet.getUUID(), position, phased);
+        } else {
+            RVP_ScreenLightManager.INSTANCE.removePersistent(bullet.getUUID());
+        }
         // 调用独立喷流登记，只复用旧 flame_scale，亮度使用统一发动机阶段，数量/距离不套用八灯预算。
         RVP_RocketPlumeManager.INSTANCE.upsert(bullet.getUUID(), position, exhaustDirection(bullet, partialTick),
                 bullet.getResolvedWeaponConfig().getProjectileData().getFlameScale(),

@@ -1,11 +1,25 @@
 package org.ywzj.rvp.weapon.visual;
 
+import org.ywzj.rvp.config.RVP_ClientConfig;
+
 /** 火箭体积尾烟的代码开关和预算；不依赖客户端类型，也不按武器 ID 区分。 */
 public final class RVP_RocketTrailParameters {
-    /** 新的世界轨迹与逐像素体积烟通道，沿用 rvp_rocket_flame 风格入口。 */
-    public static final boolean VOLUME_ENABLED = true;
-    /** 旧贴图尾迹和贴地烟浪停止生成；保留全部构造、动画和绘制代码供显式切回。 */
-    public static final boolean ORIGINAL_PARTICLES_ENABLED = false;
+    /**
+     * 新的世界轨迹与逐像素体积烟通道是否启用。
+     *
+     * <p>读取客户端配置 {@code rocketTrail.newVolumeTrail}，默认 false：恢复旧贴图尾迹与
+     * 旧贴地烟浪。配置只在客户端渲染路径中读取，服务端不会加载该客户端配置。</p>
+     */
+    public static boolean volumeEnabled() {
+        // 调用客户端配置读取器；未注册/未加载时返回旧版默认。
+        return RVP_ClientConfig.isRocketTrailVolumeEnabled();
+    }
+
+    /** 旧贴图尾迹和贴地烟浪是否启用；与新体积烟通道互斥。 */
+    public static boolean originalParticlesEnabled() {
+        return !volumeEnabled();
+    }
+
     /** 同一世界最多缓存的弹体来源；近距实体与远距克隆共用同步实体编号。 */
     public static final int MAX_SOURCES = 128;
     /** 全部来源最多保存的烟段，防止长时间齐射无限占用内存。 */
