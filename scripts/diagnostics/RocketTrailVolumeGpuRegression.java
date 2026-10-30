@@ -2,6 +2,7 @@ package org.ywzj.rvp.client.light;
 
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.*;
+import org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -35,6 +36,8 @@ public final class RocketTrailVolumeGpuRegression {
     private static int vbo;
     /** 实际从生产资源编译的程序。 */
     private static int shader;
+    /** 带 Minecraft 类路径的入口可追加实际 Java 烟段选择回归，独立 GLSL 入口仍可单独运行。 */
+    static Runnable afterVolumeChecks;
 
     public static void main(String[] args) throws Exception {
         require(GLFW.glfwInit(), "GLFW initialization");
@@ -63,6 +66,7 @@ public final class RocketTrailVolumeGpuRegression {
             GL11.glDisable(GL11.GL_DEPTH_TEST); GL11.glDepthMask(false); GL11.glDisable(GL11.GL_CULL_FACE);
             // 调用正式程序的像素回读，不以测试内的简化绘图逻辑替代体积烟算法。
             tests();
+            if (afterVolumeChecks != null) { afterVolumeChecks.run(); }
             preview(root);
             require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL error at completion");
             System.out.println("PASS all production rocket trail volume GPU regressions; OpenGL error=0");
@@ -126,6 +130,19 @@ public final class RocketTrailVolumeGpuRegression {
         clear(output, SIZE, SIZE, new float[4]); draw();
         require(pixel(output, 32, 32)[3] > 0.8F, "axially parallel smoke ray");
         System.out.println("PASS camera-inside volume and axially parallel ray intervals");
+
+        // 调用正式体积程序，比较同一个球形冲刷烟在旧浓度和当前代码浓度下的真实透明度。
+        base(SIZE, SIZE, sky);
+        uniform4("TrailStart", 0, 0, -8, 1.2F); uniform4("TrailEnd", 0, 0, -8, 1.2F);
+        uniform2("TrailDensity", 0.65F, 0.65F);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        float previousWashAlpha = pixel(output, 32, 32)[3];
+        uniform2("TrailDensity", RVP_RocketTrailParameters.WASH_DENSITY, RVP_RocketTrailParameters.WASH_DENSITY);
+        clear(output, SIZE, SIZE, new float[4]); draw();
+        float currentWashAlpha = pixel(output, 32, 32)[3];
+        require(currentWashAlpha > previousWashAlpha + 0.10F && currentWashAlpha < 1,
+                "ground-wash opacity must increase without forcing a solid surface");
+        System.out.println("PASS denser ground wash: alpha=" + previousWashAlpha + " -> " + currentWashAlpha);
 
         base(SIZE, SIZE, sky);
         uniform1i("LightCount", 1);
@@ -199,6 +216,7 @@ public final class RocketTrailVolumeGpuRegression {
                     uniform4("TrailColor", 0.75F, 90 - index * 10, 0.3F, 0.7F); draw();
                 }
             } else {
+                uniform2("TrailDensity", RVP_RocketTrailParameters.WASH_DENSITY, RVP_RocketTrailParameters.WASH_DENSITY);
                 for (int index = 0; index < 7; index++) {
                     float x = (index - 3) * 3;
                     uniform4("TrailStart", x, -2 + (index % 2), -17, 1.7F);
@@ -232,7 +250,7 @@ public final class RocketTrailVolumeGpuRegression {
     }
 
     /** 每项验证显式重新设置输入，不能继承上一项的 DH/光源/手持物状态。 */
-    private static void base(int width, int height, int nearDepth) {
+    static void base(int width, int height, int nearDepth) {
         GL20.glUseProgram(shader); GL11.glDisable(GL11.GL_BLEND);
         matrix("Projection", projection(false, 1)); matrix("InverseProjection", inverse(false, 1));
         matrix("DistantProjection", projection(false, 1)); matrix("InverseDistantProjection", inverse(false, 1));
@@ -262,7 +280,7 @@ public final class RocketTrailVolumeGpuRegression {
     /** 宽屏透视的配对逆矩阵。 */
     private static float[] inversePerspective(float aspect) { float[] result = inverse(false, 1); result[0] *= aspect; return result; }
     /** 真实深度纹理；零距离表示天空，支持正向/反向两种约定。 */
-    private static int depth(int size, float distance, boolean reverse) {
+    static int depth(int size, float distance, boolean reverse) {
         float value = distance == 0 ? 1 : ((-A * distance + B) / distance) * 0.5F + 0.5F;
         return flatDepth(size, reverse ? 1 - value : value);
     }
@@ -272,7 +290,7 @@ public final class RocketTrailVolumeGpuRegression {
         return texture(size, size, GL30.GL_DEPTH_COMPONENT32F, GL11.GL_DEPTH_COMPONENT, values);
     }
     /** 创建独立的 RGBA16F 输出目标。 */
-    private static int target(int width, int height) {
+    static int target(int width, int height) {
         int texture = texture(width, height, GL30.GL_RGBA16F, GL11.GL_RGBA, new float[width * height * 4]);
         int target = GL30.glGenFramebuffers(); TARGETS.add(target);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, target);
@@ -294,19 +312,19 @@ public final class RocketTrailVolumeGpuRegression {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, previous); return texture;
     }
     /** 正式预乘混合的数值验证；生产状态入口另外由 ScreenLightFrameGpuRegression 验证。 */
-    private static void premultipliedBlend() {
+    static void premultipliedBlend() {
         GL11.glEnable(GL11.GL_BLEND); GL20.glBlendEquationSeparate(GL14.GL_FUNC_ADD, GL14.GL_FUNC_ADD);
         GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
     }
     /** 清空本验证目标，保留输入纹理不变。 */
-    private static void clear(int target, int width, int height, float[] color) {
+    static void clear(int target, int width, int height, float[] color) {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, target); GL11.glViewport(0, 0, width, height);
         GL11.glClearColor(color[0], color[1], color[2], color[3]); GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
     }
     /** 用已绑定的正式生产程序绘制。 */
-    private static void draw() { GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3); }
+    static void draw() { GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3); }
     /** 读取真实浮点像素，并拒绝 NaN/无穷输出。 */
-    private static float[] pixel(int target, int x, int y) {
+    static float[] pixel(int target, int x, int y) {
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, target);
         float[] result = new float[4]; GL11.glReadPixels(x, y, 1, 1, GL11.GL_RGBA, GL11.GL_FLOAT, result);
         require(GL11.glGetError() == GL11.GL_NO_ERROR, "OpenGL readback error");
@@ -325,15 +343,15 @@ public final class RocketTrailVolumeGpuRegression {
     /** 上传与生产接口同名的矩阵。 */
     private static void matrix(String name, float[] values) { GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(shader, name), false, values); }
     /** 上传整数参数。 */
-    private static void uniform1i(String name, int value) { GL20.glUniform1i(GL20.glGetUniformLocation(shader, name), value); }
+    static void uniform1i(String name, int value) { GL20.glUniform1i(GL20.glGetUniformLocation(shader, name), value); }
     /** 上传单个浮点参数。 */
     private static void uniform1(String name, float value) { GL20.glUniform1f(GL20.glGetUniformLocation(shader, name), value); }
     /** 上传二分量参数。 */
-    private static void uniform2(String name, float x, float y) { GL20.glUniform2f(GL20.glGetUniformLocation(shader, name), x, y); }
+    static void uniform2(String name, float x, float y) { GL20.glUniform2f(GL20.glGetUniformLocation(shader, name), x, y); }
     /** 上传三分量参数。 */
-    private static void uniform3(String name, float x, float y, float z) { GL20.glUniform3f(GL20.glGetUniformLocation(shader, name), x, y, z); }
+    static void uniform3(String name, float x, float y, float z) { GL20.glUniform3f(GL20.glGetUniformLocation(shader, name), x, y, z); }
     /** 上传四分量参数。 */
-    private static void uniform4(String name, float x, float y, float z, float w) { GL20.glUniform4f(GL20.glGetUniformLocation(shader, name), x, y, z, w); }
+    static void uniform4(String name, float x, float y, float z, float w) { GL20.glUniform4f(GL20.glGetUniformLocation(shader, name), x, y, z, w); }
     /** 检查无烟或全遮挡时确实不写入颜色。 */
     private static void zero(float[] value, String message) { near(new float[4], value, message); }
     /** 检查四通道误差。 */

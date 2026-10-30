@@ -88,8 +88,10 @@ public final class RVP_WeaponTypes {
         JsonElement prepared = prepareWeaponJson(json);
         RVP_WeaponData data = GsonUtil.GSON.fromJson(prepared, RVP_WeaponData.class);
         if (data != null && prepared.isJsonObject()) {
-            data.setWeaponKind(kind);
             JsonObject root = prepared.getAsJsonObject();
+            // 记录根级 caliber 是否真正写入；基类默认 5.8 mm 不能挡住 effects_data.caliber 回退。
+            data.setRootCaliberConfigured(root.has("caliber") && !root.get("caliber").isJsonNull());
+            data.setWeaponKind(kind);
             JsonObject proj = root.has("projectile_data") && root.get("projectile_data").isJsonObject()
                     ? root.getAsJsonObject("projectile_data")
                     : new JsonObject();

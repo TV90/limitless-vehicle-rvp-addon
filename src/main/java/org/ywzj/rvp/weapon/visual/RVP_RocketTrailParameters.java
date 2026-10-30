@@ -12,10 +12,12 @@ public final class RVP_RocketTrailParameters {
     public static final int MAX_STORED_SEGMENTS = 16384;
     /** 每个来源最多保留的烟段，避免单枚长航程导弹占满全局预算。 */
     public static final int MAX_SEGMENTS_PER_SOURCE = 1024;
-    /** 每帧绘制上限；先按来源公平取样，再按前后距离排序。 */
-    public static final int MAX_VISIBLE_SEGMENTS = 512;
-    /** 单帧烟段投影矩形总面积最多相当于三张屏幕，限制进入密烟时的重复逐像素计算。 */
-    public static final double MAX_SCREEN_COVERAGE = 3.0;
+    /** 每帧最多绘制 2048 段，比原 512 段提高四倍；先按来源公平取样，再按前后距离排序。 */
+    public static final int MAX_VISIBLE_SEGMENTS = 2048;
+    /** 单帧投影矩形累计最多 32 屏，比原三屏提高约 10.7 倍，允许更多重叠体积烟参与绘制。 */
+    public static final double MAX_SCREEN_COVERAGE = 32.0;
+    /** 相机在烟内时，最多为烟外体积预留 24 屏，比原两屏提高十二倍；未用完的份额仍可借用。 */
+    public static final double EXTERIOR_SCREEN_RESERVE = 24.0;
     /** 一次位置更新最多拆出的烟段数；异常跳点直接断开，不连接跨地图烟柱。 */
     public static final int MAX_SEGMENTS_PER_UPDATE = 32;
     /** 正常尾迹允许连接的最大距离，单位格。 */
@@ -26,6 +28,8 @@ public final class RVP_RocketTrailParameters {
     public static final int RAY_STEPS = 24;
     /** 新贴地烟浪每 tick 两团体积烟，替代旧的八颗贴图片片。 */
     public static final int WASH_PUFFS_PER_TICK = 2;
+    /** 贴地冲刷烟的出生密度；原为 0.65，提高到 1.5，实际透明度仍由穿烟厚度和淡出决定。 */
+    public static final float WASH_DENSITY = 1.5F;
 
     private RVP_RocketTrailParameters() { }
 }

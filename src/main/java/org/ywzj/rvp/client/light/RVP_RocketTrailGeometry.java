@@ -7,7 +7,6 @@ import org.joml.Vector4f;
 import org.ywzj.rvp.weapon.visual.RVP_PressureWaveGeometry.Bounds;
 import org.ywzj.rvp.weapon.visual.RVP_RocketTrailParameters;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
@@ -49,22 +48,51 @@ final class RVP_RocketTrailGeometry {
     }
 
     /**
-     * 输入已从远到近排序；先保留近处烟，再限制全部矩形覆盖总量，最后恢复透明合成顺序。
-     * 这同时限制绘制条数之外的像素开销，避免身处烟里时 512 段烟都覆盖整屏。
+     * 输入已从远到近排序；烟内和烟外分别分配面积预算，再恢复原透明合成顺序。
+     * 相机所在烟团不能占光所有份额，否则站进几团冲刷烟便会使远处体积烟突然消失。
      */
-    static List<Projected> budget(List<RVP_RocketTrailSegment> segments, Function<RVP_RocketTrailSegment, Bounds> project) {
-        List<Projected> result = new ArrayList<>();
-        double remaining = RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE;
+    static List<Projected> budget(List<RVP_RocketTrailSegment> segments, Vec3 camera,
+            Function<RVP_RocketTrailSegment, Bounds> project) {
+        List<Projected> nearestFirst = new ArrayList<>();
+        double exteriorArea = 0;
         for (int index = segments.size() - 1; index >= 0; index--) {
             RVP_RocketTrailSegment segment = segments.get(index);
             Bounds bounds = project.apply(segment);
             if (bounds == null) { continue; }
             double area = (bounds.right() - bounds.left()) * (bounds.top() - bounds.bottom()) * 0.25;
-            if (area <= 0 || area > remaining + 0.000001) { continue; }
-            remaining -= area;
-            result.add(new Projected(segment, bounds, area));
+            if (!Double.isFinite(area) || area <= 0) { continue; }
+            nearestFirst.add(new Projected(segment, bounds, area));
+            // 调用真实烟段包含判定，跨近裁剪面的整屏投影并不一定意味着眼睛在烟里面。
+            if (!segment.contains(camera)) { exteriorArea += area; }
         }
-        Collections.reverse(result);
+        boolean[] selected = new boolean[nearestFirst.size()];
+        double remaining = RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE;
+        double interiorRemaining = remaining - Math.min(RVP_RocketTrailParameters.EXTERIOR_SCREEN_RESERVE, exteriorArea);
+        for (int index = 0; index < nearestFirst.size(); index++) {
+            Projected input = nearestFirst.get(index);
+            // 调用烟内判定和独立额度，只挑可以装下的近处烟，不侵占预留给其它体积烟的面积。
+            if (input.segment().contains(camera) && input.area() <= interiorRemaining + 0.000001) {
+                selected[index] = true; interiorRemaining -= input.area(); remaining -= input.area();
+            }
+        }
+        for (int index = 0; index < nearestFirst.size(); index++) {
+            Projected input = nearestFirst.get(index);
+            // 调用同一烟内判定，烟外尾迹使用预留和剩余额度，不因眼前烟团变成整屏而被全部跳过。
+            if (!input.segment().contains(camera) && input.area() <= remaining + 0.000001) {
+                selected[index] = true; remaining -= input.area();
+            }
+        }
+        for (int index = 0; index < nearestFirst.size(); index++) {
+            Projected input = nearestFirst.get(index);
+            // 烟外实际用不完的额度还给烟内，只有自己一团烟时不无故降低表现。
+            if (!selected[index] && input.segment().contains(camera) && input.area() <= remaining + 0.000001) {
+                selected[index] = true; remaining -= input.area();
+            }
+        }
+        List<Projected> result = new ArrayList<>();
+        for (int index = nearestFirst.size() - 1; index >= 0; index--) {
+            if (selected[index]) { result.add(nearestFirst.get(index)); }
+        }
         return result;
     }
 

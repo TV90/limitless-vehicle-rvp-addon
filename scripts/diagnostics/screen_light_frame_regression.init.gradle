@@ -66,5 +66,26 @@ allprojects { lightingProject ->
             systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
                     layout.buildDirectory.dir('motor-flame-depth-gpu-regression/natives').get().asFile.absolutePath
         }
+        // 烟内外可见性：实际 Java 选择器 + 正式体积烟 GLSL，单独验证多团近烟不会挤掉烟外体积。
+        def trailInteriorOutput = lightingProject.layout.buildDirectory.dir('rocket-trail-interior-gpu-regression/classes')
+        def trailInteriorCompile = tasks.register('compileRocketTrailInteriorGpuRegression', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = lightingProject.files(
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/RocketTrailVolumeGpuRegression.java'),
+                    new File(lightingProject.projectDir, 'scripts/diagnostics/RocketTrailInteriorGpuRegression.java'))
+            classpath = sourceSets.test.runtimeClasspath
+            destinationDirectory.set(trailInteriorOutput)
+            options.encoding = 'UTF-8'
+            javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+        }
+        tasks.register('rocketTrailInteriorGpuRegression', JavaExec) {
+            dependsOn trailInteriorCompile
+            classpath = sourceSets.test.runtimeClasspath + lightingProject.files(trailInteriorOutput) + lightingProject.files(lightingNatives)
+            mainClass.set('org.ywzj.rvp.client.light.RocketTrailInteriorGpuRegression')
+            args lightingProject.projectDir.absolutePath
+            javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+            systemProperty 'org.lwjgl.system.SharedLibraryExtractPath',
+                    layout.buildDirectory.dir('rocket-trail-interior-gpu-regression/natives').get().asFile.absolutePath
+        }
     }
 }

@@ -168,6 +168,35 @@ class RVP_RocketTrailManagerTest {
         assertTrue(visible.stream().allMatch(segment -> segment.center().z < -4000), "不受环境光 256 格距离限制");
     }
 
+    /** 调用完整烟段收集，数量上限不能在面积预算之前就把同来源的烟外尾迹全部裁掉。 */
+    @Test
+    void manyEnclosingWashPuffsDoNotConsumeAllSlotsBeforeExteriorTrail() {
+        manager.beginWorld(world, 0);
+        var distant = new RVP_RocketTrailManager.Profile(1, 1, 1000, 1000, 1, 0.65F, 8, 4, false);
+        var wash = new RVP_RocketTrailManager.Profile(1, RVP_RocketTrailParameters.WASH_DENSITY,
+                1000, 1000, 1, 0.62F, 4, 4, true);
+        int sources = RVP_RocketTrailParameters.MAX_VISIBLE_SEGMENTS / RVP_RocketTrailParameters.MAX_SEGMENTS_PER_SOURCE + 1;
+        int ticks = RVP_RocketTrailParameters.MAX_VISIBLE_SEGMENTS
+                / (sources * RVP_RocketTrailParameters.WASH_PUFFS_PER_TICK) + 8;
+        for (int source = 0; source < sources; source++) {
+            // 调用实际来源缓存，让测试数量超过当前绘制上限，同时不突破单来源缓存限制。
+            manager.append(source, new Vec3(source * 2, 0, -40), Vec3.ZERO, distant, false);
+        }
+        for (int tick = 0; tick < ticks; tick++) {
+            manager.beginWorld(world, tick);
+            for (int source = 0; source < sources; source++) {
+                // 调用正式冲刷烟入口，产生包住相机的大量烟团，确保扩大后的数量预算也不会挤掉烟外尾迹。
+                manager.addWash(source, Vec3.ZERO, Vec3.ZERO, wash);
+                manager.addWash(source, Vec3.ZERO, Vec3.ZERO, wash);
+            }
+        }
+        assertTrue(manager.size() > RVP_RocketTrailParameters.MAX_VISIBLE_SEGMENTS);
+        var visible = all();
+        assertTrue(visible.stream().anyMatch(segment -> segment.center().z < -30), "烟内很多同源烟团也不能使外部烟消失");
+        assertTrue(visible.stream().anyMatch(segment -> segment.contains(Vec3.ZERO)));
+        assertTrue(visible.size() <= RVP_RocketTrailParameters.MAX_VISIBLE_SEGMENTS);
+    }
+
     /** 通过生产收集接口读取全部可见烟，不修改管理器内部状态。 */
     private List<RVP_RocketTrailSegment> all() { return manager.collect(Vec3.ZERO, 0, sample -> true); }
 }

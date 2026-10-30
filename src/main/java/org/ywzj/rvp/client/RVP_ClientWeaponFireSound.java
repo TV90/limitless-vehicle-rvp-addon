@@ -21,6 +21,8 @@ import org.ywzj.rvp.config.RVP_VehicleExtendedConfigManager;
 import org.ywzj.rvp.util.RVP_WeaponResolveHelper;
 import org.ywzj.rvp.weapon.core.RVP_WeaponBase;
 import org.ywzj.rvp.weapon.data.RVP_EnumWeaponKind;
+import org.ywzj.rvp.weapon.data.RVP_EffectsData;
+import org.ywzj.rvp.weapon.data.RVP_WeaponData;
 import org.ywzj.vehicle.api.event.VehicleFireEvent;
 import org.ywzj.vehicle.audio.VehicleSound;
 import org.ywzj.vehicle.client.resource.ClientAssetsManager;
@@ -49,7 +51,7 @@ public final class RVP_ClientWeaponFireSound {
             ResourceLocation.fromNamespaceAndPath(RVP_MOD.MOD_ID, "default_ground_rocket_launch");
     /** 用户提供的火箭音频资源路径，不含 sounds/ 前缀和 .ogg 后缀。 */
     private static final String GROUND_ROCKET_SAMPLE_ID =
-            "ywzj_rvp:default/rocket_launch/large_rocket_launch";
+            "ywzj_rvp:default/rocket_launch/large/large_rocket_launch";
     /** 音频文件自身的音量和音调倍率，固定为 1，由播放实例控制最终音量。 */
     private static final SampledFloat UNIT_SAMPLE = random -> 1.0F;
     /** 单个火箭音频的原版播放描述；原版资源系统仍负责读取和缓存对应的 .ogg。 */
@@ -149,12 +151,32 @@ public final class RVP_ClientWeaponFireSound {
                 .map(sounds -> sounds.values().stream().filter(Objects::nonNull)
                         .map(SoundEvent::getLocation).toList())
                 .orElseGet(List::of);
+        // 调用本项目口径解析：优先根级 caliber，根级缺失时才回退 effects_data.caliber。
+        Float caliberMm = resolveRocketCaliber(weapon);
         // 音频不存在时不接管，避免把已配置的本体声音抑制掉。
         boolean sampleAvailable = Minecraft.getInstance().getResourceManager()
                 .getResource(GROUND_ROCKET_SAMPLE.getPath()).isPresent();
-        // 调用优先级策略：任何非本体声音均保留，缺失表现文件则允许使用 RVP 默认声。
+        // 调用本项目声音策略：只有解析后的有效口径达到 220 mm 且无自定义声音时才接管发射声。
         return RVP_WeaponFireSoundPolicy.useGroundRocketSound(groundVehicle, rocketWeapon,
-                sampleAvailable, configuredSounds) ? weapon : null;
+                caliberMm, sampleAvailable, configuredSounds) ? weapon : null;
+    }
+
+    /**
+     * 解析当前火箭的有效口径。
+     * RVP 基类根级 caliber 缺省为 5.8 mm，因此必须用加载器记录的配置标记，
+     * 否则这个基类默认值会错误地阻止 effects_data.caliber 回退。
+     */
+    @Nullable
+    private static Float resolveRocketCaliber(AbstractVehicleWeapon<?> weapon) {
+        if (weapon.getData() instanceof RVP_WeaponData rvpData) {
+            Float rootCaliberMm = rvpData.hasRootCaliberOverride() ? rvpData.getCaliber() : null;
+            RVP_EffectsData effectsData = rvpData.getEffectsData();
+            Float effectsCaliberMm = effectsData.hasCaliberOverride() ? effectsData.getCaliber() : null;
+            // 调用本项目声音策略的口径回退方法，保持根级与 effects_data 的优先级集中定义。
+            return RVP_WeaponFireSoundPolicy.resolveRocketCaliber(rootCaliberMm, effectsCaliberMm);
+        }
+        // 调用本体武器数据 getter：本体火箭没有 effects_data，直接使用根级 caliber。
+        return weapon.getData().getCaliber();
     }
 
     /**

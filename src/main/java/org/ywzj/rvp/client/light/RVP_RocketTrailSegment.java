@@ -25,4 +25,14 @@ public record RVP_RocketTrailSegment(int source, Vec3 start, Vec3 end, float sta
     public float boundRadius() {
         return (float) (start.distanceTo(end) * 0.5 + Math.max(startRadius, endRadius));
     }
+
+    /** 按烟段两端插值半径判断眼睛是否在烟内，不能用松散包围球把烟旁边也当成内部。 */
+    public boolean contains(Vec3 point) {
+        Vec3 axis = end.subtract(start);
+        double lengthSquared = axis.lengthSqr();
+        double along = lengthSquared > 1.0E-12
+                ? Math.max(0, Math.min(1, point.subtract(start).dot(axis) / lengthSquared)) : 0;
+        double radius = startRadius + (endRadius - startRadius) * along;
+        return point.distanceToSqr(start.lerp(end, along)) <= radius * radius;
+    }
 }

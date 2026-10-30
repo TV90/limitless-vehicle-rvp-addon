@@ -49,7 +49,7 @@ final class RVP_RocketTrailPass {
         RVP_ScreenLightPass.uploadScene(shader);
         shader.safeGetUniform("ViewToWorld").set(new Matrix4f(view).invert());
         // 调用投影面积总预算，进入密烟时也不会对数百层整屏烟重复运行二十四步。
-        var projected = RVP_RocketTrailGeometry.budget(segments, segment -> bounds(segment, view, projection, camera));
+        var projected = RVP_RocketTrailGeometry.budget(segments, camera, segment -> bounds(segment, view, projection, camera));
         for (RVP_RocketTrailGeometry.Projected input : projected) {
             RVP_RocketTrailSegment segment = input.segment();
             var box = input.bounds();

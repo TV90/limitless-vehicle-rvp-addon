@@ -46,12 +46,74 @@ class RVP_RocketTrailGeometryTest {
     void overlappingFullscreenSmokeHasBoundedPixelWorkAndKeepsNearestLayers() {
         var input = new ArrayList<RVP_RocketTrailSegment>();
         for (int index = 0; index < 100; index++) { input.add(segment(-1, 1, -100 + index)); }
-        var result = RVP_RocketTrailGeometry.budget(input, segment -> new Bounds(-1, -1, 1, 1));
+        var result = RVP_RocketTrailGeometry.budget(input, Vec3.ZERO, segment -> new Bounds(-1, -1, 1, 1));
         assertEquals((int) RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE, result.size());
         assertTrue(result.stream().mapToDouble(RVP_RocketTrailGeometry.Projected::area).sum()
                 <= RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE);
         assertEquals(input.get(99), result.get(result.size() - 1).segment());
         assertTrue(result.get(0).segment().center().z < result.get(result.size() - 1).segment().center().z);
+    }
+
+    /** 调用实际面积预算，三团包住相机的整屏烟不能把远处正常尾烟完全挤掉。 */
+    @Test
+    void enclosingSmokeKeepsExteriorTrailVisibleWithoutIncreasingTotalAreaBudget() {
+        var distant = segment(-2, 2, -20);
+        var input = new ArrayList<RVP_RocketTrailSegment>();
+        input.add(distant);
+        for (int index = 0; index < 3; index++) {
+            input.add(new RVP_RocketTrailSegment(index + 2, Vec3.ZERO, Vec3.ZERO, 3, 3,
+                    0.3F, 0.3F, 20, 0.3F, 0.6F, 0.7F));
+        }
+        var result = RVP_RocketTrailGeometry.budget(input, Vec3.ZERO,
+                sample -> RVP_RocketTrailGeometry.bounds(sample, view, projection, Vec3.ZERO));
+        assertTrue(result.stream().anyMatch(value -> value.segment() == distant), "烟外尾迹不能因相机在烟内而消失");
+        assertTrue(result.stream().anyMatch(value -> value.segment().contains(Vec3.ZERO)), "眼前的烟也必须继续绘制");
+        assertEquals(distant, result.get(0).segment(), "分配份额后仍需保持从远到近合成");
+        assertTrue(result.stream().mapToDouble(RVP_RocketTrailGeometry.Projected::area).sum()
+                <= RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE + 0.000001);
+    }
+
+    /** 调用真实的变化半径烟段包含判定，排除很长但离眼睛很远的烟。 */
+    @Test
+    void cameraContainmentUsesActualSegmentRadiusInsteadOfItsBoundingSphere() {
+        var longTrail = new RVP_RocketTrailSegment(1, new Vec3(-50, 10, 0), new Vec3(50, 10, 0),
+                1, 3, 1, 1, 20, 0.3F, 0.6F, 0.7F);
+        assertFalse(longTrail.contains(Vec3.ZERO));
+        assertTrue(longTrail.contains(new Vec3(40, 12, 0)));
+        assertFalse(longTrail.contains(new Vec3(-40, 12, 0)));
+        assertTrue(longTrail.contains(new Vec3(-50.5, 10, 0)), "端部圆帽也属于烟团");
+    }
+
+    /** 调用实际预算，无烟外输入时允许近处烟用足当前扩大的整屏额度。 */
+    @Test
+    void noExteriorSmokeDoesNotWasteInteriorBudget() {
+        var input = new ArrayList<RVP_RocketTrailSegment>();
+        int limit = (int) RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE;
+        for (int index = 0; index < limit + 5; index++) {
+            input.add(new RVP_RocketTrailSegment(index, Vec3.ZERO, Vec3.ZERO, 3, 3,
+                    0.3F, 0.3F, 20, 0.3F, 0.6F, 0.7F));
+        }
+        var result = RVP_RocketTrailGeometry.budget(input, Vec3.ZERO, sample -> new Bounds(-1, -1, 1, 1));
+        assertEquals(limit, result.size());
+    }
+
+    /** 调用真实预算，烟外的大体积也能获得份额，而不是只允许面积很小的远处烟线。 */
+    @Test
+    void largeExteriorVolumesRetainReservedCoverageWhileInsideSmoke() {
+        var input = new ArrayList<RVP_RocketTrailSegment>();
+        int exteriorLimit = (int) RVP_RocketTrailParameters.EXTERIOR_SCREEN_RESERVE;
+        int totalLimit = (int) RVP_RocketTrailParameters.MAX_SCREEN_COVERAGE;
+        for (int index = 0; index < exteriorLimit + 4; index++) {
+            input.add(segment(-1, 1, -100 + index));
+        }
+        for (int index = 0; index < totalLimit + 4; index++) {
+            input.add(new RVP_RocketTrailSegment(index + 10, Vec3.ZERO, Vec3.ZERO, 3, 3,
+                    0.3F, 0.3F, 20, 0.3F, 0.6F, 0.7F));
+        }
+        var result = RVP_RocketTrailGeometry.budget(input, Vec3.ZERO, sample -> new Bounds(-1, -1, 1, 1));
+        assertEquals(totalLimit, result.size());
+        assertEquals(exteriorLimit, result.stream().filter(value -> !value.segment().contains(Vec3.ZERO)).count());
+        assertEquals(totalLimit - exteriorLimit, result.stream().filter(value -> value.segment().contains(Vec3.ZERO)).count());
     }
 
     /** 创建可供实际几何函数投影的固定世界烟段。 */

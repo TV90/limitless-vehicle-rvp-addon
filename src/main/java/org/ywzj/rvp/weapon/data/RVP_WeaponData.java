@@ -39,6 +39,8 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     @SerializedName("tactical_map_icon")
     private String tacticalMapIcon = "";
+    /** 根级 {@code caliber} 是否在当前武器 JSON 中实际配置且不为 null；用于区分基类默认 5.8 mm。 */
+    private transient boolean rootCaliberConfigured;
     private transient RVP_EnumWeaponKind weaponKind = RVP_EnumWeaponKind.ROCKET;
 
     /** 子类型标签（如 incendiary），供逻辑分支或显示；非 MCH 迁移字段。 */
@@ -181,6 +183,16 @@ public class RVP_WeaponData extends BaseVehicleWeaponData {
 
     public void setWeaponKind(RVP_EnumWeaponKind weaponKind) {
         this.weaponKind = weaponKind == null ? RVP_EnumWeaponKind.ROCKET : weaponKind;
+    }
+
+    /** 根级 {@code caliber} 是否实际配置；false 时声音口径解析才允许回退到 effects_data.caliber。 */
+    public boolean hasRootCaliberOverride() {
+        return rootCaliberConfigured;
+    }
+
+    /** 记录根级 {@code caliber} 的配置存在性，供 RVP JSON 加载器区分缺省值与显式值。 */
+    public void setRootCaliberConfigured(boolean configured) {
+        this.rootCaliberConfigured = configured;
     }
 
     public String getSubType() {

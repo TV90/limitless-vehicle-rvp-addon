@@ -111,7 +111,8 @@ public final class RVP_RocketTrailManager {
             Predicate<RVP_RocketTrailSegment> visible) {
         if (!finite(camera)) { return List.of(); }
         double now = gameTime + (Float.isFinite(partialTick) ? Math.max(0, Math.min(1, partialTick)) : 0);
-        List<ArrayDeque<RVP_RocketTrailSegment>> groups = new ArrayList<>();
+        List<ArrayDeque<RVP_RocketTrailSegment>> exteriorGroups = new ArrayList<>();
+        List<ArrayDeque<RVP_RocketTrailSegment>> interiorGroups = new ArrayList<>();
         for (Map.Entry<Integer, Source> entry : sources.entrySet()) {
             List<RVP_RocketTrailSegment> candidates = new ArrayList<>();
             RVP_RocketTrailSegment pending = null;
@@ -130,9 +131,23 @@ public final class RVP_RocketTrailManager {
             }
             if (pending != null && visible.test(pending)) { candidates.add(pending); }
             candidates.sort(Comparator.comparingDouble(segment -> segment.center().distanceToSqr(camera)));
-            if (!candidates.isEmpty()) { groups.add(new ArrayDeque<>(candidates)); }
+            ArrayDeque<RVP_RocketTrailSegment> exterior = new ArrayDeque<>();
+            ArrayDeque<RVP_RocketTrailSegment> interior = new ArrayDeque<>();
+            for (RVP_RocketTrailSegment candidate : candidates) {
+                // 调用真实烟段包含判定，数量预算也要给烟外留入口，避免面积预算之前已经丢光远处烟。
+                (candidate.contains(camera) ? interior : exterior).addLast(candidate);
+            }
+            if (!exterior.isEmpty()) { exteriorGroups.add(exterior); }
+            if (!interior.isEmpty()) { interiorGroups.add(interior); }
         }
-        groups.sort(Comparator.comparingDouble(group -> group.peekFirst().center().distanceToSqr(camera)));
+        exteriorGroups.sort(Comparator.comparingDouble(group -> group.peekFirst().center().distanceToSqr(camera)));
+        interiorGroups.sort(Comparator.comparingDouble(group -> group.peekFirst().center().distanceToSqr(camera)));
+        List<ArrayDeque<RVP_RocketTrailSegment>> groups = new ArrayList<>();
+        for (int index = 0; index < Math.max(exteriorGroups.size(), interiorGroups.size()); index++) {
+            // 交替安排烟外和烟内来源；站进同一来源的大量烟团时，其外部尾迹仍能参加后续绘制。
+            if (index < exteriorGroups.size()) { groups.add(exteriorGroups.get(index)); }
+            if (index < interiorGroups.size()) { groups.add(interiorGroups.get(index)); }
+        }
         List<RVP_RocketTrailSegment> result = new ArrayList<>();
         boolean added = true;
         while (added && result.size() < RVP_RocketTrailParameters.MAX_VISIBLE_SEGMENTS) {

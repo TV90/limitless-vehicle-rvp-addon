@@ -65,7 +65,8 @@ public final class RVP_RocketTrailEmitter {
         // 调用同一世界检查；烟浪和空中尾烟分别去重，不相互吞掉采样。
         manager.beginWorld(mc.level, mc.level.getGameTime());
         int lifetime = Math.max(40, Math.min(600, Math.round((80 + 20 * random(bullet.getId(), mc.level.getGameTime())) * scale)));
-        var profile = new RVP_RocketTrailManager.Profile(Math.min(scale, 64), 0.65F, 0, lifetime, 0,
+        // 调用独立冲刷烟密度，增加遮盖程度，不连带加浓空中尾烟或延长烟团寿命。
+        var profile = new RVP_RocketTrailManager.Profile(Math.min(scale, 64), RVP_RocketTrailParameters.WASH_DENSITY, 0, lifetime, 0,
                 0.62F, 4, 4, true);
         for (int index = 0; index < RVP_RocketTrailParameters.WASH_PUFFS_PER_TICK; index++) {
             double angle = (random(bullet.getId() + index * 173, mc.level.getGameTime()) + index * 0.5) * Math.PI * 2;

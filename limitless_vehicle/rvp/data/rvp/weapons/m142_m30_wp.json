@@ -3,6 +3,7 @@
   "name": "M30 WP AB Rocket",
   "shoot_interval": 400,
   "max_capacity": 6,
+  "caliber": 227,
   "reload": {
     "time": 200,
     "ammo": "ywzj_vehicle:ammo_rocket"
@@ -28,6 +29,7 @@
     "guidance_type": "NONE"
   },
   "effects_data": {
+    "caliber": 227,
     "trajectory_particle": "none",
     "impact_particle": "none",
     "explosion_particle": "none",
